@@ -11,7 +11,7 @@
  */
 
 use Automattic\Jetpack\Constants;
-
+use Automattic\WooCommerce\Utilities\SessionUtils;
 defined( 'ABSPATH' ) || exit;
 
 /**
@@ -256,19 +256,7 @@ class WC_Session_Handler extends WC_Session {
 	 * @return string
 	 */
 	public function generate_customer_id() {
-		$customer_id = '';
-
-		if ( is_user_logged_in() ) {
-			$customer_id = strval( get_current_user_id() );
-		}
-
-		if ( empty( $customer_id ) ) {
-			require_once ABSPATH . 'wp-includes/class-phpass.php';
-			$hasher      = new PasswordHash( 8, false );
-			$customer_id = 't_' . substr( md5( $hasher->get_random_bytes( 32 ) ), 2 );
-		}
-
-		return $customer_id;
+		return SessionUtils::generate_customer_id();
 	}
 
 	/**

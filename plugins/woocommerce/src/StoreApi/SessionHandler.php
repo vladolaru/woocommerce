@@ -4,6 +4,7 @@ namespace Automattic\WooCommerce\StoreApi;
 
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\StoreApi\Utilities\JsonWebToken;
+use Automattic\WooCommerce\Utilities\SessionUtils;
 use WC_Session;
 
 defined( 'ABSPATH' ) || exit;
@@ -37,7 +38,7 @@ final class SessionHandler extends WC_Session {
 	 * Constructor for the session class.
 	 */
 	public function __construct() {
-		$this->token = wc_clean( wp_unslash( $_SERVER['HTTP_CART_TOKEN'] ?? '' ) );
+		$this->token = SessionUtils::get_cart_token();
 		$this->table = $GLOBALS['wpdb']->prefix . 'woocommerce_sessions';
 	}
 
