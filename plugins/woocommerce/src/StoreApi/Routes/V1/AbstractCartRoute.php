@@ -14,6 +14,7 @@ use Automattic\WooCommerce\StoreApi\Utilities\CartController;
 use Automattic\WooCommerce\StoreApi\Utilities\DraftOrderTrait;
 use Automattic\WooCommerce\StoreApi\Utilities\JsonWebToken;
 use Automattic\WooCommerce\StoreApi\Utilities\OrderController;
+use Automattic\WooCommerce\Utilities\SessionUtils;
 
 /**
  * Abstract Cart Route
@@ -203,17 +204,8 @@ abstract class AbstractCartRoute extends AbstractRoute {
 				'exp'     => $this->get_cart_token_expiration(),
 				'iss'     => $this->namespace,
 			],
-			$this->get_cart_token_secret()
+			SessionUtils::get_cart_token_secret()
 		);
-	}
-
-	/**
-	 * Gets the secret for the cart token using wp_salt.
-	 *
-	 * @return string
-	 */
-	protected function get_cart_token_secret() {
-		return '@' . wp_salt();
 	}
 
 	/**
@@ -240,7 +232,7 @@ abstract class AbstractCartRoute extends AbstractRoute {
 	 */
 	protected function has_cart_token( \WP_REST_Request $request ) {
 		if ( is_null( $this->has_cart_token ) ) {
-			$this->has_cart_token = JsonWebToken::validate( $request->get_header( 'Cart-Token' ) ?? '', $this->get_cart_token_secret() );
+			$this->has_cart_token = JsonWebToken::validate( $request->get_header( 'Cart-Token' ) ?? '', SessionUtils::get_cart_token_secret() );
 		}
 		return $this->has_cart_token;
 	}
