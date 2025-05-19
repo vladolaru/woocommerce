@@ -35,7 +35,7 @@ final class CheckoutLink {
 					$_SERVER['HTTP_CART_TOKEN'] = $this->generate_cart_token();
 					return SessionHandler::class;
 				} elseif ( $this->has_cart_session() ) {
-					$_SERVER['HTTP_CART_TOKEN'] = wc_clean( wp_unslash( $_GET['session'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+					$_SERVER['HTTP_CART_TOKEN'] = wc_clean( wp_unslash( $_GET['session'] ?? '' ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 					return SessionHandler::class;
 				}
 				return $handler;
@@ -61,7 +61,7 @@ final class CheckoutLink {
 	 * @return bool
 	 */
 	public function has_cart_session() {
-		return ! empty( $_GET['session'] );
+		return ! empty( $_GET['session'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 	}
 
 	/**
