@@ -1406,13 +1406,18 @@ function wc_get_user_agent() {
  *
  * @since  2.4.0
  * @param  string $prefix Prefix for the hash.
+ * @param  ?int   $max_length Maximum length of the hash.
  * @return string
  */
-function wc_rand_hash( $prefix = '' ) {
+function wc_rand_hash( $prefix = '', $max_length = null ) {
 	try {
 		$random = bin2hex( random_bytes( 20 ) );
 	} catch ( Exception $e ) {
 		$random = bin2hex( substr( wp_fast_hash( wp_rand() ), -20 ) );
+	}
+
+	if ( $max_length ) {
+		$random = substr( $random, 0, $max_length - strlen( $prefix ) );
 	}
 
 	return $prefix . $random;

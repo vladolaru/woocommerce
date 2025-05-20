@@ -37,7 +37,7 @@ class SessionUtils {
 	 * @return string
 	 */
 	public static function generate_customer_id() {
-		return is_user_logged_in() ? strval( get_current_user_id() ) : wc_rand_hash( 't_' );
+		return is_user_logged_in() ? strval( get_current_user_id() ) : wc_rand_hash( 't_', 32 );
 	}
 
 	/**

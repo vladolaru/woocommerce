@@ -23,20 +23,7 @@ final class CheckoutLink {
 	public function init() {
 		add_action( 'init', array( $this, 'add_checkout_link_endpoint' ) );
 		add_filter( 'query_vars', array( $this, 'add_query_vars' ), 0 );
-		add_action( 'parse_request', array( $this, 'handle_session_cookie' ) );
 		add_action( 'template_redirect', array( $this, 'handle_checkout_link_endpoint' ) );
-	}
-
-	/**
-	 * Returns true if the request is a checkout-link request.
-	 *
-	 * @return bool
-	 */
-	public function is_checkout_link_request() {
-		if ( empty( $_SERVER['REQUEST_URI'] ) ) {
-			return false;
-		}
-		return ( false !== strpos( wc_clean( wp_unslash( $_SERVER['REQUEST_URI'] ) ), 'checkout-link' ) );
 	}
 
 	/**
@@ -56,51 +43,15 @@ final class CheckoutLink {
 		$vars[] = 'checkout-link';
 		$vars[] = 'products';
 		$vars[] = 'coupon';
-		$vars[] = 'session';
 		return $vars;
-	}
-
-	/**
-	 * Initialize the session cookie based on the query string parameter.
-	 *
-	 * https://store.local/checkout/?session=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoidF8zM2Q4OWY2NjJhN2E4NjE5Y2IzZDhiOWM4NjljZmM0YmNmYjZhNzA0IiwiZXhwIjoxNzQ3OTE1Nzg4LCJpc3MiOiJzdG9yZS1hcGkiLCJpYXQiOjE3NDc3NDI5ODh9.WvPBuMIPiQh9_FNAVIxwg_arH_4qidZ7xrbbGpF3fU8
-	 */
-	public function handle_session_cookie() {
-		if ( ! get_query_var( 'session' ) ) {
-			return;
-		}
-
-		$controller = new CartController();
-		$controller->empty_cart();
-
-		$session_token = get_query_var( 'session' );
-
-		if ( SessionUtils::validate_cart_token( $session_token ) ) {
-			$payload         = JsonWebToken::get_parts( $session_token )->payload;
-			$session_handler = new \WC_Session_Handler();
-			ob_start();
-			var_dump( $session_handler->has_session() );
-			var_dump( $payload->user_id );
-			var_dump( substr( $payload->user_id, 0, 2 ) === 't_' );
-			var_dump( headers_sent() );
-
-			if ( substr( $payload->user_id, 0, 2 ) === 't_' && ! $session_handler->has_session() ) {
-				$session_handler->set_customer_id( $payload->user_id );
-				$session_handler->set_customer_session_cookie( true );
-				// wp_safe_redirect( add_query_arg( 'session', $session_token, wc_get_checkout_url() ) );
-				// exit;
-			}
-		}
-
-		// wp_safe_redirect( wc_get_checkout_url() );
-		// exit;
 	}
 
 	/**
 	 * Handle the checkout link endpoint.
 	 *
 	 * Example: https://store.local/checkout-link/?products=18,19&coupon=test
-	 * https://store.local/checkout-link/?products=18,19,aav,test,123222&coupon=test
+	 *
+	 * hhttps://store.local/checkout/?session=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoidF9hM2Y2OTE3Yjg5N2Y4YzE0YzExMzZjNTI4ZTM0YjEiLCJleHAiOjE3NDc5MTk4NzAsImlzcyI6InN0b3JlLWFwaSIsImlhdCI6MTc0Nzc0NzA3MH0.-ZRy3KnqSJxON6PeZE9GCEx3fq3ckM4ITzVr2u5GFas
 	 *
 	 * @return void
 	 */
@@ -142,7 +93,7 @@ final class CheckoutLink {
 		if ( is_user_logged_in() ) {
 			$redirect_url = wc_get_checkout_url();
 		} else {
-			$session_token = SessionUtils::get_cart_token_for_customer( SessionUtils::generate_customer_id() );
+			$session_token = SessionUtils::get_cart_token_for_customer( wc()->session->get_customer_id() );
 			$redirect_url  = add_query_arg( 'session', $session_token, wc_get_checkout_url() );
 		}
 

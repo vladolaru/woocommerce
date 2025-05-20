@@ -113,7 +113,6 @@ abstract class WC_Session {
 	public function set( $key, $value ) {
 		if ( null === $value ) {
 			$this->__unset( $key );
-
 			return;
 		}
 
@@ -136,5 +135,14 @@ abstract class WC_Session {
 	 */
 	public function get_customer_id() {
 		return $this->_customer_id;
+	}
+
+	/**
+	 * Set customer ID.
+	 *
+	 * @param string $customer_id Customer ID.
+	 */
+	public function set_customer_id( string $customer_id ) {
+		$this->_customer_id = $customer_id;
 	}
 }

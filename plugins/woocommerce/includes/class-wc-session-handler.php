@@ -1,7 +1,6 @@
 <?php
 /**
  * Handle data for the current customers session.
- * Implements the WC_Session abstract class.
  *
  * From 2.5 this uses a custom table for session storage. Based on https://github.com/kloon/woocommerce-large-sessions.
  *
@@ -10,8 +9,13 @@
  * @package  WooCommerce\Classes
  */
 
+declare(strict_types=1);
+
 use Automattic\Jetpack\Constants;
-use Automattic\WooCommerce\Utilities\SessionUtils;
+use Automattic\WooCommerce\Utilities\StringUtil;
+use Automattic\WooCommerce\StoreApi\Utilities\SessionUtils;
+use Automattic\WooCommerce\StoreApi\Utilities\JsonWebToken;
+
 defined( 'ABSPATH' ) || exit;
 
 /**
@@ -24,42 +28,50 @@ class WC_Session_Handler extends WC_Session {
 	 *
 	 * @var string cookie name
 	 */
-	protected $_cookie;
+	protected $_cookie; // phpcs:ignore PSR2.Classes.PropertyDeclaration.Underscore
 
 	/**
 	 * Stores session expiry.
 	 *
 	 * @var string session due to expire timestamp
 	 */
-	protected $_session_expiring;
+	protected $_session_expiring; // phpcs:ignore PSR2.Classes.PropertyDeclaration.Underscore
 
 	/**
 	 * Stores session due to expire timestamp.
 	 *
 	 * @var string session expiration timestamp
 	 */
-	protected $_session_expiration;
+	protected $_session_expiration; // phpcs:ignore PSR2.Classes.PropertyDeclaration.Underscore
 
 	/**
 	 * True when the cookie exists.
 	 *
 	 * @var bool Based on whether a cookie exists.
 	 */
-	protected $_has_cookie = false;
+	protected $_has_cookie = false; // phpcs:ignore PSR2.Classes.PropertyDeclaration.Underscore
 
 	/**
 	 * Table name for session data.
 	 *
 	 * @var string Custom session table name
 	 */
-	protected $_table;
+	protected $_table; // phpcs:ignore PSR2.Classes.PropertyDeclaration.Underscore
 
 	/**
 	 * Constructor for the session class.
 	 */
 	public function __construct() {
+		/**
+		 * Filter the cookie name.
+		 *
+		 * @since 3.6.0
+		 *
+		 * @param string $cookie Cookie name.
+		 */
 		$this->_cookie = apply_filters( 'woocommerce_cookie', 'wp_woocommerce_session_' . COOKIEHASH );
 		$this->_table  = $GLOBALS['wpdb']->prefix . 'woocommerce_sessions';
+		$this->set_session_expiration();
 	}
 
 	/**
@@ -68,8 +80,14 @@ class WC_Session_Handler extends WC_Session {
 	 * @since 3.3.0
 	 */
 	public function init() {
-		$this->init_session_cookie();
+		$this->init_hooks();
+		$this->init_session();
+	}
 
+	/**
+	 * Initialize the hooks.
+	 */
+	protected function init_hooks() {
 		add_action( 'woocommerce_set_cart_cookies', array( $this, 'set_customer_session_cookie' ), 10 );
 		add_action( 'wp', array( $this, 'maybe_set_customer_session_cookie' ), 99 );
 		add_action( 'shutdown', array( $this, 'save_data' ), 20 );
@@ -81,6 +99,38 @@ class WC_Session_Handler extends WC_Session {
 	}
 
 	/**
+	 * Initialize the session from either the request or the cookie. If neither are present, generate a new customer ID.
+	 */
+	protected function init_session() {
+		$this->init_session_from_request();
+
+		if ( ! $this->get_customer_id() ) {
+			$this->init_session_cookie();
+		}
+
+		if ( ! $this->get_customer_id() ) {
+			$this->set_customer_id( $this->generate_customer_id() );
+		}
+	}
+
+	/**
+	 * Initialize the session from the query string parameter.
+	 */
+	protected function init_session_from_request() {
+		$session_token = wc_clean( wp_unslash( $_GET['session'] ?? '' ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+
+		if ( ! empty( $session_token ) && ! is_user_logged_in() ) {
+			$payload = JsonWebToken::get_parts( $session_token )->payload;
+
+			if ( substr( $payload->user_id, 0, 2 ) === 't_' ) {
+				$this->set_customer_id( $payload->user_id );
+				$this->set_customer_session_cookie( true );
+				$this->restore_session_data();
+			}
+		}
+	}
+
+	/**
 	 * Setup cookie and customer ID.
 	 *
 	 * @since 3.6.0
@@ -88,79 +138,84 @@ class WC_Session_Handler extends WC_Session {
 	public function init_session_cookie() {
 		$cookie = $this->get_session_cookie();
 
-		if ( $cookie ) {
-			// Customer ID will be an MD5 hash id this is a guest session.
-			$this->_customer_id        = $cookie[0];
-			$this->_session_expiration = $cookie[1];
-			$this->_session_expiring   = $cookie[2];
-			$this->_has_cookie         = true;
+		if ( ! $cookie ) {
+			return;
+		}
+
+		// Customer ID will be an MD5 hash id this is a guest session.
+		$this->_customer_id        = $cookie[0];
+		$this->_session_expiration = $cookie[1];
+		$this->_session_expiring   = $cookie[2];
+		$this->_has_cookie         = true;
+
+		$this->restore_session_data();
+
+		if ( ! $this->is_session_cookie_valid() ) {
+			$this->destroy_session();
+		} elseif ( empty( $this->_data ) && ! isset( WC()->cart ) ) {
+			/**
+			 * Only destroy an empty session if the cart has not been previously initialized.
+			 * We cannot always safely remove the session cookie and destroy the session if the cart is already
+			 * initialized as $this->forget_session() calls `wc_empty_cart()` and can't be removed without potentially
+			 * breaking backward compatibility in cases where another extension already loaded and modified the cart
+			 * before the session.
+			 */
+			$this->destroy_session();
+		}
+
+		// If the user logs in, update session.
+		if ( is_user_logged_in() && strval( get_current_user_id() ) !== $this->_customer_id ) {
+			$guest_session_id   = $this->_customer_id;
+			$this->_customer_id = strval( get_current_user_id() );
+			$this->_dirty       = true;
+			$this->save_data( $guest_session_id );
+			$this->set_customer_session_cookie( true );
 
 			/**
-			 * Filters the session data when restoring from storage during initialization.
+			 * Fires after a customer has logged in, and their guest session id has been
+			 * deleted with its data migrated to a customer id.
 			 *
-			 * This filter allows you to:
-			 * 1. Modify the session data before it's loaded, including adding or removing specific session data entries
-			 * 2. Clear the entire session by returning an empty array
+			 * This hook gives extensions the chance to connect the old session id to the
+			 * customer id, if the key is being used externally.
 			 *
-			 * Note: If the filtered data is empty, the session will be destroyed and the
-			 * guest's session cookie will be removed. This can be useful for high-traffic
-			 * sites that prioritize page caching over maintaining all session data.
+			 * @since 8.8.0
 			 *
-			 * @since 9.9.0
-			 *
-			 * @param array $session_data The session data loaded from storage.
-			 * @return array Modified session data to be used for initialization.
+			 * @param string $guest_session_id The former session ID, as generated by `::generate_customer_id()`.
+			 * @param int    $customer_id      The Customer ID that the former session was converted to.
 			 */
-			$this->_data = apply_filters( 'woocommerce_restored_session_data', $this->get_session_data() );
-
-			if ( ! $this->is_session_cookie_valid() ) {
-				$this->destroy_session();
-				$this->set_session_expiration();
-			} elseif ( empty( $this->_data ) && ! isset( WC()->cart ) ) {
-				/**
-				 * Only destroy an empty session if the cart has not been previously initialized.
-				 * We cannot always safely remove the session cookie and destroy the session if the cart is already
-				 * initialized as $this->forget_session() calls `wc_empty_cart()` and can't be removed without potentially
-				 * breaking backward compatibility in cases where another extension already loaded and modified the cart
-				 * before the session.
-				 */
-				$this->destroy_session();
-				$this->set_session_expiration();
-			}
-
-			// If the user logs in, update session.
-			if ( is_user_logged_in() && strval( get_current_user_id() ) !== $this->_customer_id ) {
-				$guest_session_id   = $this->_customer_id;
-				$this->_customer_id = strval( get_current_user_id() );
-				$this->_dirty       = true;
-				$this->save_data( $guest_session_id );
-				$this->set_customer_session_cookie( true );
-
-				/**
-				 * Fires after a customer has logged in, and their guest session id has been
-				 * deleted with its data migrated to a customer id.
-				 *
-				 * This hook gives extensions the chance to connect the old session id to the
-				 * customer id, if the key is being used externally.
-				 *
-				 * @since 8.8.0
-				 *
-				 * @param string $guest_session_id The former session ID, as generated by `::generate_customer_id()`.
-				 * @param int    $customer_id      The Customer ID that the former session was converted to.
-				 */
-				do_action( 'woocommerce_guest_session_to_user_id', $guest_session_id, $this->_customer_id );
-			}
-
-			// Update session if its close to expiring.
-			if ( time() > $this->_session_expiring ) {
-				$this->set_session_expiration();
-				$this->update_session_timestamp( $this->_customer_id, $this->_session_expiration );
-			}
-		} else {
-			$this->set_session_expiration();
-			$this->_customer_id = $this->generate_customer_id();
-			$this->_data        = $this->get_session_data();
+			do_action( 'woocommerce_guest_session_to_user_id', $guest_session_id, $this->_customer_id );
 		}
+
+		// Update session if its close to expiring.
+		if ( time() > $this->_session_expiring ) {
+			$this->set_session_expiration();
+			$this->update_session_timestamp( $this->_customer_id, $this->_session_expiration );
+		}
+	}
+
+	/**
+	 * Restore the session data from the database.
+	 *
+	 * @since 10.0.0
+	 */
+	private function restore_session_data() {
+		/**
+		 * Filters the session data when restoring from storage during initialization.
+		 *
+		 * This filter allows you to:
+		 * 1. Modify the session data before it's loaded, including adding or removing specific session data entries
+		 * 2. Clear the entire session by returning an empty array
+		 *
+		 * Note: If the filtered data is empty, the session will be destroyed and the
+		 * guest's session cookie will be removed. This can be useful for high-traffic
+		 * sites that prioritize page caching over maintaining all session data.
+		 *
+		 * @since 9.9.0
+		 *
+		 * @param array $session_data The session data loaded from storage.
+		 * @return array Modified session data to be used for initialization.
+		 */
+		$this->_data = apply_filters( 'woocommerce_restored_session_data', $this->get_session_data() );
 	}
 
 	/**
@@ -217,6 +272,9 @@ class WC_Session_Handler extends WC_Session {
 
 			if ( ! isset( $_COOKIE[ $this->_cookie ] ) || $_COOKIE[ $this->_cookie ] !== $cookie_value ) {
 				wc_setcookie( $this->_cookie, $cookie_value, $this->_session_expiration, $this->use_secure_cookie(), true );
+
+				// Set so cookie is visible for the current request.
+				$_COOKIE[ $this->_cookie ] = $cookie_value;
 			}
 		}
 	}
@@ -228,6 +286,13 @@ class WC_Session_Handler extends WC_Session {
 	 * @return bool
 	 */
 	protected function use_secure_cookie() {
+		/**
+		 * Filter whether to use a secure cookie.
+		 *
+		 * @since 3.6.0
+		 *
+		 * @param bool $use_secure_cookie Whether to use a secure cookie.
+		 */
 		return apply_filters( 'wc_session_use_secure_cookie', wc_site_is_https() && is_ssl() );
 	}
 
@@ -387,6 +452,8 @@ class WC_Session_Handler extends WC_Session {
 		if ( $this->_dirty && $this->has_session() ) {
 			global $wpdb;
 
+			var_dump( $this->_customer_id );
+
 			$wpdb->query(
 				$wpdb->prepare(
 					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
@@ -417,6 +484,7 @@ class WC_Session_Handler extends WC_Session {
 	public function destroy_session() {
 		$this->delete_session( $this->_customer_id );
 		$this->forget_session();
+		$this->set_session_expiration();
 	}
 
 	/**
@@ -460,10 +528,9 @@ class WC_Session_Handler extends WC_Session {
 	 * @return int|string
 	 */
 	public function maybe_update_nonce_user_logged_out( $uid, $action ) {
-		if ( Automattic\WooCommerce\Utilities\StringUtil::starts_with( $action, 'woocommerce' ) ) {
+		if ( StringUtil::starts_with( $action, 'woocommerce' ) ) {
 			return $this->has_session() && $this->_customer_id ? $this->_customer_id : $uid;
 		}
-
 		return $uid;
 	}
 
@@ -484,10 +551,10 @@ class WC_Session_Handler extends WC_Session {
 	 * Returns the session.
 	 *
 	 * @param string $customer_id Customer ID.
-	 * @param mixed  $default Default session value.
+	 * @param mixed  $default_value Default session value.
 	 * @return string|array
 	 */
-	public function get_session( $customer_id, $default = false ) {
+	public function get_session( $customer_id, $default_value = false ) {
 		global $wpdb;
 
 		if ( Constants::is_defined( 'WP_SETUP_CONFIG' ) ) {
@@ -501,7 +568,7 @@ class WC_Session_Handler extends WC_Session {
 			$value = $wpdb->get_var( $wpdb->prepare( "SELECT session_value FROM $this->_table WHERE session_key = %s", $customer_id ) ); // @codingStandardsIgnoreLine.
 
 			if ( is_null( $value ) ) {
-				$value = $default;
+				$value = $default_value;
 			}
 
 			$cache_duration = $this->_session_expiration - time();
