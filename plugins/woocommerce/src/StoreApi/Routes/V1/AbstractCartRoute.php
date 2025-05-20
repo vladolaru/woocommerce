@@ -12,9 +12,8 @@ use Automattic\WooCommerce\StoreApi\Schemas\V1\CartSchema;
 use Automattic\WooCommerce\StoreApi\SessionHandler;
 use Automattic\WooCommerce\StoreApi\Utilities\CartController;
 use Automattic\WooCommerce\StoreApi\Utilities\DraftOrderTrait;
-use Automattic\WooCommerce\StoreApi\Utilities\JsonWebToken;
 use Automattic\WooCommerce\StoreApi\Utilities\OrderController;
-use Automattic\WooCommerce\Utilities\SessionUtils;
+use Automattic\WooCommerce\StoreApi\Utilities\SessionUtils;
 
 /**
  * Abstract Cart Route
@@ -198,30 +197,7 @@ abstract class AbstractCartRoute extends AbstractRoute {
 			return null;
 		}
 
-		return JsonWebToken::create(
-			[
-				'user_id' => wc()->session->get_customer_id(),
-				'exp'     => $this->get_cart_token_expiration(),
-				'iss'     => $this->namespace,
-			],
-			SessionUtils::get_cart_token_secret()
-		);
-	}
-
-	/**
-	 * Gets the expiration of the cart token. Defaults to 48h.
-	 *
-	 * @return int
-	 */
-	protected function get_cart_token_expiration() {
-		/**
-		 * Filters the session expiration.
-		 *
-		 * @since 8.7.0
-		 *
-		 * @param int $expiration Expiration in seconds.
-		 */
-		return time() + intval( apply_filters( 'wc_session_expiration', DAY_IN_SECONDS * 2 ) );
+		return SessionUtils::get_cart_token_for_customer( wc()->session->get_customer_id() );
 	}
 
 	/**
@@ -232,7 +208,7 @@ abstract class AbstractCartRoute extends AbstractRoute {
 	 */
 	protected function has_cart_token( \WP_REST_Request $request ) {
 		if ( is_null( $this->has_cart_token ) ) {
-			$this->has_cart_token = JsonWebToken::validate( $request->get_header( 'Cart-Token' ) ?? '', SessionUtils::get_cart_token_secret() );
+			$this->has_cart_token = SessionUtils::validate_cart_token( $request->get_header( 'Cart-Token' ) ?? '' );
 		}
 		return $this->has_cart_token;
 	}

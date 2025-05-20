@@ -4,7 +4,7 @@ namespace Automattic\WooCommerce\StoreApi;
 
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\StoreApi\Utilities\JsonWebToken;
-use Automattic\WooCommerce\Utilities\SessionUtils;
+use Automattic\WooCommerce\StoreApi\Utilities\SessionUtils;
 use WC_Session;
 
 defined( 'ABSPATH' ) || exit;

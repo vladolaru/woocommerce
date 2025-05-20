@@ -3,9 +3,8 @@ declare( strict_types=1 );
 namespace Automattic\WooCommerce\StoreApi;
 
 use Automattic\WooCommerce\StoreApi\Utilities\RateLimits;
-use Automattic\WooCommerce\StoreApi\Utilities\JsonWebToken;
+use Automattic\WooCommerce\StoreApi\Utilities\SessionUtils;
 use Automattic\WooCommerce\Utilities\FeaturesUtil;
-use Automattic\WooCommerce\Utilities\SessionUtils;
 
 /**
  * Authentication class.
@@ -84,7 +83,7 @@ class Authentication {
 
 		// Allow preflight requests, certain http origins, and any origin if a cart token is present. Preflight requests
 		// are allowed because we'll be unable to validate cart token headers at that point.
-		if ( $this->is_preflight() || JsonWebToken::validate( $this->get_cart_token( $request ), SessionUtils::get_cart_token_secret() ) || is_allowed_http_origin( $origin ) ) {
+		if ( $this->is_preflight() || SessionUtils::validate_cart_token( $this->get_cart_token( $request ) ) || is_allowed_http_origin( $origin ) ) {
 			$server->send_header( 'Access-Control-Allow-Origin', $origin );
 		}
 
