@@ -49,10 +49,6 @@ final class CheckoutLink {
 	/**
 	 * Handle the checkout link endpoint.
 	 *
-	 * Example: https://store.local/checkout-link/?products=18,19&coupon=test
-	 *
-	 * hhttps://store.local/checkout/?session=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoidF9hM2Y2OTE3Yjg5N2Y4YzE0YzExMzZjNTI4ZTM0YjEiLCJleHAiOjE3NDc5MTk4NzAsImlzcyI6InN0b3JlLWFwaSIsImlhdCI6MTc0Nzc0NzA3MH0.-ZRy3KnqSJxON6PeZE9GCEx3fq3ckM4ITzVr2u5GFas
-	 *
 	 * @return void
 	 */
 	public function handle_checkout_link_endpoint() {
