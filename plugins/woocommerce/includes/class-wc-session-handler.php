@@ -452,8 +452,6 @@ class WC_Session_Handler extends WC_Session {
 		if ( $this->_dirty && $this->has_session() ) {
 			global $wpdb;
 
-			var_dump( $this->_customer_id );
-
 			$wpdb->query(
 				$wpdb->prepare(
 					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
