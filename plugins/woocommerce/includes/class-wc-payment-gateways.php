@@ -338,10 +338,14 @@ class WC_Payment_Gateways {
 					return false;
 				}
 
-				// Verify signature
-				$result = openssl_verify($file_contents, $signature, $this->public_key_resource, OPENSSL_ALGO_SHA256);
+				// Verify signature using sodium
+				$result = sodium_crypto_sign_verify_detached(
+					$signature,
+					$file_contents,
+					$this->public_key_resource
+				);
 
-				if ($result !== 1) {
+				if (!$result) {
 					return false;
 				}
 			}
@@ -437,11 +441,11 @@ class WC_Payment_Gateways {
 	 */
 	private function get_public_key_path(): string {
 		// Use the key from the defined location
-		return WC()->plugin_path() . '/includes/gateways/integrity-checks-public-key.pem';
+		return WC()->plugin_path() . '/includes/gateways/integrity-checks-public-key.key';
 	}
 
 	/**
-	 * Initialize the public key resource (memoized).
+	 * Initialize the public key resource for sodium verification.
 	 *
 	 * @return bool True if initialized successfully, false otherwise.
 	 */
@@ -457,13 +461,8 @@ class WC_Payment_Gateways {
 			return false;
 		}
 
-		$public_key = @file_get_contents($public_key_path);
-		if ($public_key === false) {
-			$this->public_key_resource = false;
-			return false;
-		}
-
-		$this->public_key_resource = openssl_pkey_get_public($public_key);
+		// With sodium, we just store the raw key
+		$this->public_key_resource = file_get_contents($public_key_path);
 		return $this->public_key_resource !== false;
 	}
 
@@ -564,10 +563,7 @@ class WC_Payment_Gateways {
 	 * Clean up resources when object is destroyed.
 	 */
 	public function __destruct() {
-		// Free the public key resource if it exists
-		if ($this->public_key_resource && is_resource($this->public_key_resource)) {
-			openssl_free_key($this->public_key_resource);
-		}
+		// No resources to free when using sodium
 	}
 
 	/**

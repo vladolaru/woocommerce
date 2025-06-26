@@ -31,8 +31,7 @@ class WC_Gateway_Signer_Command {
 	 * Constructor that sets up default paths.
 	 */
 	public function __construct() {
-		// Set default private key path to the plugin directory
-		$this->default_private_key_path = WP_CONTENT_DIR . '/uploads/wc-gateway-keys/private-key.pem';
+		$this->default_private_key_path = WP_CONTENT_DIR . '/uploads/wc-gateway-keys/private-key.key';
 	}
 
 	/**
@@ -281,32 +280,27 @@ class WC_Gateway_Signer_Command {
 			return false;
 		}
 
-		$private_key_resource = openssl_pkey_get_private($private_key);
-		if ($private_key_resource === false) {
+		try {
+			// Use sodium for signing
+			$signature = sodium_crypto_sign_detached(
+				$file_contents,
+				$private_key
+			);
+
+			// Base64 encode the signature for storage
+			$encoded_signature = base64_encode($signature);
+
+			// Ensure the directory exists
+			$signature_dir = dirname($signature_path);
+			if (!is_dir($signature_dir)) {
+				wp_mkdir_p($signature_dir);
+			}
+
+			return file_put_contents($signature_path, $encoded_signature) !== false;
+		} catch (Exception $e) {
+			WP_CLI::error("Signing failed: " . $e->getMessage());
 			return false;
 		}
-
-		$signature = '';
-		$result = openssl_sign($file_contents, $signature, $private_key_resource, OPENSSL_ALGO_SHA256);
-
-		if ($private_key_resource) {
-			openssl_free_key($private_key_resource);
-		}
-
-		if (!$result) {
-			return false;
-		}
-
-		// Base64 encode the signature for storage
-		$encoded_signature = base64_encode($signature);
-
-		// Ensure the directory exists
-		$signature_dir = dirname($signature_path);
-		if (!is_dir($signature_dir)) {
-			wp_mkdir_p($signature_dir);
-		}
-
-		return file_put_contents($signature_path, $encoded_signature) !== false;
 	}
 
 	/**
@@ -335,18 +329,17 @@ class WC_Gateway_Signer_Command {
 			return false;
 		}
 
-		$public_key_resource = openssl_pkey_get_public($public_key);
-		if ($public_key_resource === false) {
+		try {
+			// Verify using sodium
+			return sodium_crypto_sign_verify_detached(
+				$signature,
+				$file_contents,
+				$public_key
+			);
+		} catch (Exception $e) {
+			WP_CLI::error("Verification failed: " . $e->getMessage());
 			return false;
 		}
-
-		$result = openssl_verify($file_contents, $signature, $public_key_resource, OPENSSL_ALGO_SHA256);
-
-		if ($public_key_resource) {
-			openssl_free_key($public_key_resource);
-		}
-
-		return $result === 1;
 	}
 
 	/**
@@ -364,76 +357,52 @@ class WC_Gateway_Signer_Command {
 			}
 		}
 
-		// Generate a new key pair
-		$config = [
-			'digest_alg' => 'sha256',
-			'private_key_bits' => 2048,
-			'private_key_type' => OPENSSL_KEYTYPE_RSA,
-		];
+		try {
+			// Generate key pair using sodium Ed25519
+			$keypair = sodium_crypto_sign_keypair();
+			$private_key = sodium_crypto_sign_secretkey($keypair);
+			$public_key = sodium_crypto_sign_publickey($keypair);
 
-		// Create the keypair
-		$res = openssl_pkey_new($config);
-		if ($res === false) {
-			WP_CLI::error('Failed to generate a new key pair: ' . openssl_error_string());
-			return false;
-		}
+			// Save the keys
+			$private_key_path = $output_dir . '/private-key.key';
+			$public_key_path = $output_dir . '/public-key.key';
+			$wc_public_key_path = WP_PLUGIN_DIR . '/woocommerce/includes/gateways/integrity-checks-public-key.key';
 
-		// Extract private key
-		$private_key = '';
-		if (!openssl_pkey_export($res, $private_key)) {
-			WP_CLI::error('Failed to export private key: ' . openssl_error_string());
-			openssl_pkey_free($res);
-			return false;
-		}
-
-		// Extract public key
-		$public_key_details = openssl_pkey_get_details($res);
-		if ($public_key_details === false) {
-			WP_CLI::error('Failed to get public key details: ' . openssl_error_string());
-			openssl_pkey_free($res);
-			return false;
-		}
-		$public_key = $public_key_details['key'];
-
-		// Free the key resource
-		openssl_pkey_free($res);
-
-		// Save the keys
-		$private_key_path = $output_dir . '/private-key.pem';
-		$public_key_path = $output_dir . '/public-key.pem';
-		$wc_public_key_path = WP_PLUGIN_DIR . '/woocommerce/includes/gateways/integrity-checks-public-key.pem';
-
-		if (file_put_contents($private_key_path, $private_key) === false) {
-			WP_CLI::error("Failed to write private key to $private_key_path");
-			return false;
-		}
-
-		if (file_put_contents($public_key_path, $public_key) === false) {
-			WP_CLI::error("Failed to write public key to $public_key_path");
-			return false;
-		}
-
-		// Set restrictive permissions on private key
-		chmod($private_key_path, 0600);
-
-		// Copy public key to WooCommerce directory if possible
-		if (is_writable(dirname($wc_public_key_path))) {
-			if (!copy($public_key_path, $wc_public_key_path)) {
-				WP_CLI::warning("Could not copy public key to WooCommerce directory: $wc_public_key_path");
-				WP_CLI::log("You will need to manually copy the public key from $public_key_path to $wc_public_key_path");
-			} else {
-				WP_CLI::success("Public key copied to WooCommerce directory");
+			if (file_put_contents($private_key_path, $private_key) === false) {
+				WP_CLI::error("Failed to write private key to $private_key_path");
+				return false;
 			}
-		} else {
-			WP_CLI::warning("Cannot write to WooCommerce directory");
-			WP_CLI::log("You will need to manually copy the public key from $public_key_path to $wc_public_key_path");
+
+			if (file_put_contents($public_key_path, $public_key) === false) {
+				WP_CLI::error("Failed to write public key to $public_key_path");
+				return false;
+			}
+
+			// Set restrictive permissions on private key
+			chmod($private_key_path, 0600);
+
+			// Copy public key to WooCommerce directory if possible
+			if (is_writable(dirname($wc_public_key_path))) {
+				if (!copy($public_key_path, $wc_public_key_path)) {
+					WP_CLI::warning("Could not copy public key to WooCommerce directory: $wc_public_key_path");
+					WP_CLI::log("You will need to manually copy the public key from $public_key_path to $wc_public_key_path");
+				} else {
+					WP_CLI::success("Public key copied to WooCommerce directory");
+				}
+			} else {
+				WP_CLI::warning("Cannot write to WooCommerce directory");
+				WP_CLI::log("You will need to manually copy the public key from $public_key_path to $wc_public_key_path");
+			}
+
+			WP_CLI::success("Keys generated successfully");
+			WP_CLI::log("Private key: $private_key_path");
+			WP_CLI::log("Public key: $public_key_path");
+
+			return true;
+		} catch (Exception $e) {
+			WP_CLI::error("Key generation failed: " . $e->getMessage());
+			return false;
 		}
-
-		WP_CLI::success("Keys generated successfully");
-		WP_CLI::log("Private key: $private_key_path");
-		WP_CLI::log("Public key: $public_key_path");
-
-		return true;
 	}
 }
 
