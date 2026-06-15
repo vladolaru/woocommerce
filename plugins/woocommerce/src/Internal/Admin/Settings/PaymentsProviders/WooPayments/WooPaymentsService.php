@@ -9,6 +9,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\Exceptions\ApiArgumentExcepti
 use Automattic\WooCommerce\Internal\Admin\Settings\Exceptions\ApiException;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Exception;
 use WP_Error;
@@ -145,16 +146,25 @@ class WooPaymentsService {
 	private PaymentsProviders\PaymentGateway $provider;
 
 	/**
+	 * The WooPayments onboarding adapter.
+	 *
+	 * @var WooPaymentsOnboardingAdapter|null
+	 */
+	private ?WooPaymentsOnboardingAdapter $onboarding_adapter = null;
+
+	/**
 	 * Initialize the class instance.
 	 *
-	 * @param PaymentsProviders $payment_providers The PaymentsProviders instance.
-	 * @param LegacyProxy       $proxy             The LegacyProxy instance.
+	 * @param PaymentsProviders                 $payment_providers  The PaymentsProviders instance.
+	 * @param LegacyProxy                       $proxy              The LegacyProxy instance.
+	 * @param WooPaymentsOnboardingAdapter|null $onboarding_adapter Optional WooPayments onboarding adapter.
 	 *
 	 * @internal
 	 */
-	final public function init( PaymentsProviders $payment_providers, LegacyProxy $proxy ): void {
+	final public function init( PaymentsProviders $payment_providers, LegacyProxy $proxy, ?WooPaymentsOnboardingAdapter $onboarding_adapter = null ): void {
 		$this->payments_providers = $payment_providers;
 		$this->proxy              = $proxy;
+		$this->onboarding_adapter = $onboarding_adapter;
 
 		$this->wpcom_connection_manager = $this->proxy->get_instance_of( WPCOM_Connection_Manager::class, 'woocommerce' );
 		$this->provider                 = $this->payments_providers->get_payment_gateway_provider_instance( self::GATEWAY_ID );
@@ -1994,8 +2004,8 @@ class WooPaymentsService {
 	 * @throws ApiException If the extension is not active or onboarding is locked.
 	 */
 	private function check_if_onboarding_action_is_acceptable() {
-		// If the WooPayments plugin is not active, we can't do anything.
-		if ( ! $this->is_extension_active() ) {
+		// If no WooPayments onboarding runtime is active, we can't do anything.
+		if ( ! $this->is_onboarding_runtime_available() ) {
 			throw new ApiException(
 				'woocommerce_woopayments_onboarding_extension_not_active',
 				/* translators: %s: WooPayments. */
@@ -2843,12 +2853,12 @@ class WooPaymentsService {
 	}
 
 	/**
-	 * Check if the WooPayments plugin is active.
+	 * Check if a WooPayments onboarding runtime is available.
 	 *
 	 * @return boolean
 	 */
-	private function is_extension_active(): bool {
-		return $this->proxy->call_function( 'class_exists', '\WC_Payments' );
+	private function is_onboarding_runtime_available(): bool {
+		return $this->get_onboarding_adapter()->is_onboarding_runtime_available();
 	}
 
 	/**
@@ -2857,7 +2867,7 @@ class WooPaymentsService {
 	 * @return \WC_Payment_Gateway The main payment gateway instance.
 	 */
 	private function get_payment_gateway(): \WC_Payment_Gateway {
-		return $this->proxy->call_static( '\WC_Payments', 'get_gateway' );
+		return $this->get_onboarding_adapter()->get_payment_gateway();
 	}
 
 	/**
@@ -2866,7 +2876,7 @@ class WooPaymentsService {
 	 * @return bool Whether WooPayments has an account set up.
 	 */
 	private function has_account(): bool {
-		return $this->provider->is_account_connected( $this->get_payment_gateway() );
+		return $this->get_onboarding_adapter()->has_account( $this->provider );
 	}
 
 	/**
@@ -2875,13 +2885,7 @@ class WooPaymentsService {
 	 * @return bool Whether WooPayments has a valid, fully onboarded account set up.
 	 */
 	private function has_valid_account(): bool {
-		if ( ! $this->has_account() ) {
-			return false;
-		}
-
-		$account_service = $this->proxy->call_static( '\WC_Payments', 'get_account_service' );
-
-		return $account_service->is_stripe_account_valid();
+		return $this->get_onboarding_adapter()->has_valid_account( $this->provider );
 	}
 
 	/**
@@ -2892,14 +2896,7 @@ class WooPaymentsService {
 	 * @return bool Whether WooPayments has a working account set up.
 	 */
 	private function has_working_account(): bool {
-		if ( ! $this->has_account() ) {
-			return false;
-		}
-
-		$account_service = $this->proxy->call_static( '\WC_Payments', 'get_account_service' );
-		$account_status  = $account_service->get_account_status_data();
-
-		return ! empty( $account_status['paymentsEnabled'] );
+		return $this->get_onboarding_adapter()->has_working_account( $this->provider );
 	}
 
 	/**
@@ -2908,14 +2905,7 @@ class WooPaymentsService {
 	 * @return bool Whether WooPayments has a test account set up.
 	 */
 	private function has_test_account(): bool {
-		if ( ! $this->has_account() ) {
-			return false;
-		}
-
-		$account_service = $this->proxy->call_static( '\WC_Payments', 'get_account_service' );
-		$account_status  = $account_service->get_account_status_data();
-
-		return ! empty( $account_status['testDrive'] );
+		return $this->get_onboarding_adapter()->has_test_account( $this->provider );
 	}
 
 	/**
@@ -2924,14 +2914,7 @@ class WooPaymentsService {
 	 * @return bool Whether WooPayments has a sandbox account set up.
 	 */
 	private function has_sandbox_account(): bool {
-		if ( ! $this->has_account() ) {
-			return false;
-		}
-
-		$account_service = $this->proxy->call_static( '\WC_Payments', 'get_account_service' );
-		$account_status  = $account_service->get_account_status_data();
-
-		return empty( $account_status['isLive'] ) && empty( $account_status['testDrive'] );
+		return $this->get_onboarding_adapter()->has_sandbox_account( $this->provider );
 	}
 
 	/**
@@ -2940,14 +2923,7 @@ class WooPaymentsService {
 	 * @return bool Whether WooPayments has a test account set up.
 	 */
 	private function has_live_account(): bool {
-		if ( ! $this->has_account() ) {
-			return false;
-		}
-
-		$account_service = $this->proxy->call_static( '\WC_Payments', 'get_account_service' );
-		$account_status  = $account_service->get_account_status_data();
-
-		return ! empty( $account_status['isLive'] );
+		return $this->get_onboarding_adapter()->has_live_account( $this->provider );
 	}
 
 	/**
@@ -2992,15 +2968,7 @@ class WooPaymentsService {
 	 * @return string The fallback URL for the embedded KYC flow.
 	 */
 	private function get_onboarding_kyc_fallback_url(): string {
-		if ( $this->proxy->call_function( 'is_callable', '\WC_Payments_Account::get_connect_url' ) ) {
-			return $this->proxy->call_static( '\WC_Payments_Account', 'get_connect_url', self::FROM_NOX_IN_CONTEXT );
-		}
-
-		// Fall back to the provider onboarding URL.
-		return $this->provider->get_onboarding_url(
-			$this->get_payment_gateway(),
-			Utils::wc_payments_settings_url( self::ONBOARDING_PATH_BASE, array( 'from' => self::FROM_KYC ) )
-		);
+		return $this->get_onboarding_adapter()->get_onboarding_kyc_fallback_url( $this->provider );
 	}
 
 	/**
@@ -3009,24 +2977,20 @@ class WooPaymentsService {
 	 * @return string The WooPayments Overview page URL.
 	 */
 	private function get_overview_page_url(): string {
-		if ( $this->proxy->call_function( 'is_callable', '\WC_Payments_Account::get_overview_page_url' ) ) {
-			return add_query_arg(
-				array(
-					'from' => self::FROM_NOX_IN_CONTEXT,
-				),
-				$this->proxy->call_static( '\WC_Payments_Account', 'get_overview_page_url' )
-			);
+		return $this->get_onboarding_adapter()->get_overview_page_url();
+	}
+
+	/**
+	 * Get the WooPayments onboarding adapter.
+	 *
+	 * @return WooPaymentsOnboardingAdapter
+	 */
+	private function get_onboarding_adapter(): WooPaymentsOnboardingAdapter {
+		if ( ! isset( $this->onboarding_adapter ) ) {
+			$this->onboarding_adapter = wc_get_container()->get( WooPaymentsOnboardingAdapter::class );
 		}
 
-		// Fall back to the known WooPayments Overview page URL.
-		return add_query_arg(
-			array(
-				'page' => 'wc-admin',
-				'path' => '/payments/overview',
-				'from' => self::FROM_NOX_IN_CONTEXT,
-			),
-			admin_url( 'admin.php' )
-		);
+		return $this->onboarding_adapter;
 	}
 
 	/**
