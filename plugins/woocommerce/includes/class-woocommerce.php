@@ -421,6 +421,8 @@ final class WooCommerce {
 		$container->get( Automattic\WooCommerce\Internal\Admin\Settings\PaymentsController::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsController::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\Payments\Shadow\NativePaymentsShadowMode::class )->register();
+		$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWebhookRestController::class )->register();
+		$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWebhookReliabilityService::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\Utilities\LegacyRestApiStub::class )->register();
 		$container->get( LegacySelect2UsageTracker::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\VariationGallery\Telemetry::class )->register();
