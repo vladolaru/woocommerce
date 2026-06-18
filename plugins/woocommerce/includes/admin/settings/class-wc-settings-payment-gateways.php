@@ -25,9 +25,19 @@ class WC_Settings_Payment_Gateways extends WC_Settings_Page {
 
 	const MAIN_SECTION_NAME    = 'main';
 	const OFFLINE_SECTION_NAME = 'offline';
-	const COD_SECTION_NAME     = 'cod';  // Cash on delivery.
-	const BACS_SECTION_NAME    = 'bacs';  // Direct bank transfer.
-	const CHEQUE_SECTION_NAME  = 'cheque';  // Cheque payments.
+	/**
+	 * Cash on delivery section name.
+	 */
+	const COD_SECTION_NAME = 'cod';
+	/**
+	 * Direct bank transfer section name.
+	 */
+	const BACS_SECTION_NAME = 'bacs';
+	/**
+	 * Cheque payments section name.
+	 */
+	const CHEQUE_SECTION_NAME      = 'cheque';
+	const WOOPAYMENTS_SECTION_NAME = 'woocommerce_payments';
 
 	/**
 	 * Setting page icon.
@@ -74,7 +84,9 @@ class WC_Settings_Payment_Gateways extends WC_Settings_Page {
 	 * @return bool Whether the section should be rendered using React.
 	 */
 	public function should_render_react_section( $section ): bool {
-		return in_array( $this->standardize_section_name( $section ), $this->get_reactified_sections(), true );
+		$section = $this->standardize_section_name( $section );
+
+		return in_array( $section, $this->get_reactified_sections(), true ) && ! $this->should_preserve_classic_gateway_settings( $section );
 	}
 
 	/**
@@ -184,6 +196,7 @@ class WC_Settings_Payment_Gateways extends WC_Settings_Page {
 			self::COD_SECTION_NAME,
 			self::BACS_SECTION_NAME,
 			self::CHEQUE_SECTION_NAME,
+			self::WOOPAYMENTS_SECTION_NAME,
 		);
 
 		/**
@@ -243,6 +256,21 @@ class WC_Settings_Payment_Gateways extends WC_Settings_Page {
 		$registry = $this->get_settings_section_registry();
 
 		return null !== $registry && null !== $registry->get_registered( self::TAB_NAME, (string) $section );
+	}
+
+	/**
+	 * Tell whether a gateway section should keep the classic settings renderer.
+	 *
+	 * @param string $section The standardized section name.
+	 *
+	 * @return bool Whether to preserve the classic gateway settings renderer.
+	 */
+	private function should_preserve_classic_gateway_settings( string $section ): bool {
+		if ( self::WOOPAYMENTS_SECTION_NAME !== $section ) {
+			return false;
+		}
+
+		return false !== has_filter( 'woocommerce_settings_api_form_fields_' . self::WOOPAYMENTS_SECTION_NAME );
 	}
 
 	/**
