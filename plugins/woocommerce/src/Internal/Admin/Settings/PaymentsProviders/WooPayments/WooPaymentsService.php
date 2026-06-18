@@ -36,6 +36,8 @@ class WooPaymentsService {
 
 	const ONBOARDING_PATH_BASE = '/woopayments/onboarding';
 
+	const OVERVIEW_PATH = '/woopayments/overview';
+
 	const ONBOARDING_STEP_PAYMENT_METHODS       = 'payment_methods';
 	const ONBOARDING_STEP_WPCOM_CONNECTION      = 'wpcom_connection';
 	const ONBOARDING_STEP_TEST_ACCOUNT          = 'test_account';
@@ -3217,10 +3219,7 @@ class WooPaymentsService {
 	 * @return string
 	 */
 	private function get_native_onboarding_return_url(): string {
-		return $this->proxy->call_function(
-			'admin_url',
-			'admin.php?page=wc-admin&path=/payments/overview'
-		);
+		return Utils::wc_payments_settings_url( self::OVERVIEW_PATH );
 	}
 
 	/**
@@ -3744,7 +3743,7 @@ class WooPaymentsService {
 	 * @return string The WooPayments Overview page URL.
 	 */
 	private function get_overview_page_url(): string {
-		return $this->get_onboarding_adapter()->get_overview_page_url();
+		return Utils::wc_payments_settings_url( self::OVERVIEW_PATH );
 	}
 
 	/**
