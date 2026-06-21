@@ -18,12 +18,20 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
  */
 class WooPaymentsCheckoutBridge {
 	/**
-	 * WooPayments checkout support features exposed to Checkout Blocks.
+	 * WooPayments checkout base support features exposed to Checkout Blocks.
 	 *
 	 * @var string[]
 	 */
-	private const BLOCKS_SUPPORTS = array(
+	private const BASE_BLOCKS_SUPPORTS = array(
 		'products',
+	);
+
+	/**
+	 * WooPayments subscription support features exposed to Checkout Blocks when WCS is active.
+	 *
+	 * @var string[]
+	 */
+	private const SUBSCRIPTION_BLOCKS_SUPPORTS = array(
 		'subscriptions',
 		'multiple_subscriptions',
 		'subscription_cancellation',
@@ -344,7 +352,7 @@ class WooPaymentsCheckoutBridge {
 			array(
 				'title'       => __( 'Card', 'woocommerce' ),
 				'description' => __( 'Pay securely using WooPayments.', 'woocommerce' ),
-				'supports'    => self::BLOCKS_SUPPORTS,
+				'supports'    => $this->get_blocks_supports(),
 			)
 		);
 	}
@@ -445,10 +453,40 @@ class WooPaymentsCheckoutBridge {
 				'forceNetworkSavedCards' => $this->should_force_network_saved_cards(),
 				'cardBrandIcons'         => $this->get_card_brand_icons(),
 				'showSaveOption'         => $this->should_show_card_save_option( $saved_cards_enabled ),
-				'supports'               => self::BLOCKS_SUPPORTS,
+				'supports'               => $this->get_blocks_supports(),
 				'testingInstructions'    => $this->get_card_testing_instructions(),
 			),
 		);
+	}
+
+	/**
+	 * Get WooPayments support features exposed to Checkout Blocks.
+	 *
+	 * @return string[]
+	 */
+	private function get_blocks_supports(): array {
+		$supports = self::BASE_BLOCKS_SUPPORTS;
+
+		if ( $this->is_subscriptions_enabled() ) {
+			$supports = array_merge( $supports, self::SUBSCRIPTION_BLOCKS_SUPPORTS );
+		}
+
+		return array_values( array_unique( $supports ) );
+	}
+
+	/**
+	 * Tell whether WooCommerce Subscriptions support is available for Blocks.
+	 *
+	 * @return bool
+	 */
+	private function is_subscriptions_enabled(): bool {
+		if ( class_exists( 'WC_Subscriptions' ) ) {
+			$version = isset( \WC_Subscriptions::$version ) ? (string) \WC_Subscriptions::$version : '';
+
+			return '' !== $version && version_compare( $version, '2.2.0', '>=' );
+		}
+
+		return class_exists( 'WC_Subscriptions_Core_Plugin' );
 	}
 
 	/**

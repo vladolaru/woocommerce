@@ -8,7 +8,9 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use RuntimeException;
+use Throwable;
 use WC_Order;
 use WC_Payment_Token;
 use WC_Payment_Token_CC;
@@ -39,14 +41,203 @@ class WooPaymentsTokenService {
 	private WooPaymentsPaymentMethodDetailsService $payment_method_details_service;
 
 	/**
+	 * Native API client.
+	 *
+	 * @var WooPaymentsApiClient|null
+	 */
+	private ?WooPaymentsApiClient $api_client = null;
+
+	/**
+	 * Native customer service.
+	 *
+	 * @var WooPaymentsCustomerService|null
+	 */
+	private ?WooPaymentsCustomerService $customer_service = null;
+
+	/**
+	 * Native account service.
+	 *
+	 * @var WooPaymentsAccountService|null
+	 */
+	private ?WooPaymentsAccountService $account_service = null;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
 	 * @param WooPaymentsPaymentMethodDetailsService $payment_method_details_service Payment method details service.
+	 * @param WooPaymentsApiClient|null              $api_client                     Optional native API client.
+	 * @param WooPaymentsCustomerService|null        $customer_service               Optional native customer service.
+	 * @param WooPaymentsAccountService|null         $account_service                Optional native account service.
 	 */
-	final public function init( WooPaymentsPaymentMethodDetailsService $payment_method_details_service ): void {
+	final public function init( WooPaymentsPaymentMethodDetailsService $payment_method_details_service, ?WooPaymentsApiClient $api_client = null, ?WooPaymentsCustomerService $customer_service = null, ?WooPaymentsAccountService $account_service = null ): void {
 		$this->payment_method_details_service = $payment_method_details_service;
+		$this->api_client                     = $api_client;
+		$this->customer_service               = $customer_service;
+		$this->account_service                = $account_service;
+		$this->register_hooks();
+	}
+
+	/**
+	 * Register saved-payment-method lifecycle hooks.
+	 *
+	 * @return void
+	 */
+	private function register_hooks(): void {
+		if ( false === has_action( 'woocommerce_payment_token_deleted', array( $this, 'handle_woocommerce_payment_token_deleted' ) ) ) {
+			add_action( 'woocommerce_payment_token_deleted', array( $this, 'handle_woocommerce_payment_token_deleted' ), 10, 2 );
+		}
+
+		if ( false === has_action( 'woocommerce_payment_token_set_default', array( $this, 'handle_woocommerce_payment_token_set_default' ) ) ) {
+			add_action( 'woocommerce_payment_token_set_default', array( $this, 'handle_woocommerce_payment_token_set_default' ), 10, 2 );
+		}
+
+		if ( false === has_filter( 'woocommerce_get_customer_payment_tokens', array( $this, 'handle_woocommerce_get_customer_payment_tokens' ) ) ) {
+			add_filter( 'woocommerce_get_customer_payment_tokens', array( $this, 'handle_woocommerce_get_customer_payment_tokens' ), 10, 3 );
+		}
+
+		if ( false === has_filter( 'woocommerce_payment_methods_list_item', array( $this, 'handle_woocommerce_payment_methods_list_item' ) ) ) {
+			add_filter( 'woocommerce_payment_methods_list_item', array( $this, 'handle_woocommerce_payment_methods_list_item' ), 10, 2 );
+		}
+	}
+
+	/**
+	 * Handle the woocommerce_payment_token_deleted hook.
+	 *
+	 * @internal
+	 *
+	 * @param int|string $token_id WooCommerce payment token ID.
+	 * @param mixed      $token    Deleted payment token.
+	 * @return void
+	 */
+	public function handle_woocommerce_payment_token_deleted( $token_id, $token ): void {
+		unset( $token_id );
+
+		if ( ! $this->is_native_woopayments_card_token( $token ) ) {
+			return;
+		}
+
+		if ( $this->should_skip_remote_detach_for_environment() ) {
+			return;
+		}
+
+		$api_client = $this->get_api_client();
+		if ( null !== $api_client ) {
+			try {
+				$api_client->detach_payment_method( (string) $token->get_token() );
+			} catch ( Throwable $exception ) {
+				wc_get_logger()->error(
+					'Error detaching native WooPayments payment method: ' . $exception->getMessage(),
+					array( 'source' => 'woopayments' )
+				);
+			}
+		}
+
+		$this->clear_cached_payment_methods_for_user( $token->get_user_id() );
+	}
+
+	/**
+	 * Handle the woocommerce_payment_token_set_default hook.
+	 *
+	 * @internal
+	 *
+	 * @param int|string $token_id WooCommerce payment token ID.
+	 * @param mixed      $token    Default payment token.
+	 * @return void
+	 */
+	public function handle_woocommerce_payment_token_set_default( $token_id, $token ): void {
+		unset( $token_id );
+
+		if ( ! $this->is_native_woopayments_card_token( $token ) ) {
+			return;
+		}
+
+		$customer_service = $this->get_customer_service();
+		if ( null !== $customer_service ) {
+			$customer_id = $customer_service->get_customer_id_by_user_id( $token->get_user_id() );
+			if ( null !== $customer_id ) {
+				try {
+					$customer_service->set_default_payment_method_for_customer( $customer_id, (string) $token->get_token() );
+				} catch ( Throwable $exception ) {
+					wc_get_logger()->error(
+						'Error setting native WooPayments default payment method: ' . $exception->getMessage(),
+						array( 'source' => 'woopayments' )
+					);
+				}
+			}
+		}
+
+		$this->clear_cached_payment_methods_for_user( $token->get_user_id() );
+	}
+
+	/**
+	 * Handle the woocommerce_get_customer_payment_tokens filter.
+	 *
+	 * Native WooPayments only persists reusable card tokens today, so it should not expose
+	 * unsupported non-card tokens under the native WooPayments gateway ID.
+	 *
+	 * @internal
+	 *
+	 * @param array<int|string,mixed> $tokens     Customer payment tokens.
+	 * @param int|string              $user_id    WooCommerce user ID.
+	 * @param string                  $gateway_id Requested gateway ID.
+	 * @return array<int|string,mixed>
+	 */
+	public function handle_woocommerce_get_customer_payment_tokens( array $tokens, $user_id, string $gateway_id ): array {
+		if ( 0 >= absint( $user_id ) || ( '' !== $gateway_id && OrderPaymentStore::GATEWAY_ID !== $gateway_id ) ) {
+			return $tokens;
+		}
+
+		foreach ( $tokens as $token_key => $token ) {
+			if ( $token instanceof WC_Payment_Token && OrderPaymentStore::GATEWAY_ID === $token->get_gateway_id() && ! $token instanceof WC_Payment_Token_CC ) {
+				unset( $tokens[ $token_key ] );
+			}
+		}
+
+		return $tokens;
+	}
+
+	/**
+	 * Handle the woocommerce_payment_methods_list_item filter.
+	 *
+	 * @internal
+	 *
+	 * @param array<string,mixed> $item          Saved payment method list item.
+	 * @param mixed               $payment_token Payment token associated with the list item.
+	 * @return array<string,mixed>
+	 */
+	public function handle_woocommerce_payment_methods_list_item( array $item, $payment_token ): array {
+		if ( ! $this->is_native_woopayments_card_token( $payment_token ) ) {
+			return $item;
+		}
+
+		$wallet_type = $payment_token->get_meta( '_wcpay_wallet_type', true );
+		$wallet_type = is_string( $wallet_type ) ? $wallet_type : '';
+		if ( '' === $wallet_type ) {
+			return $item;
+		}
+
+		$wallet_label = $this->get_wallet_label( $wallet_type );
+		if ( '' === $wallet_label || ! isset( $item['method'] ) || ! is_array( $item['method'] ) ) {
+			return $item;
+		}
+
+		$original_brand = isset( $item['method']['brand'] ) ? (string) $item['method']['brand'] : '';
+		if ( '' !== $original_brand && 0 === strpos( $original_brand, $wallet_label . ' ' ) ) {
+			return $item;
+		}
+
+		$item['method']['brand'] = trim(
+			sprintf(
+				/* translators: 1: wallet name, 2: card brand. */
+				_x( '%1$s %2$s', 'Payment token with wallet', 'woocommerce' ),
+				$wallet_label,
+				$original_brand
+			)
+		);
+
+		return $item;
 	}
 
 	/**
@@ -236,6 +427,121 @@ class WooPaymentsTokenService {
 		if ( self::CACHE_CLEAR_BATCH_SIZE <= (int) $deleted_meta_rows || self::CACHE_CLEAR_BATCH_SIZE <= count( $option_names ) ) {
 			throw new RuntimeException( 'WooPayments payment-method cache cleanup partially completed and should be retried.' );
 		}
+	}
+
+	/**
+	 * Clear preserved WooPayments cached payment methods for a user.
+	 *
+	 * @param int $user_id User ID.
+	 * @return void
+	 */
+	private function clear_cached_payment_methods_for_user( int $user_id ): void {
+		if ( 0 >= $user_id ) {
+			return;
+		}
+
+		delete_user_meta( $user_id, self::CACHED_PAYMENT_METHODS_META_KEY );
+	}
+
+	/**
+	 * Check if a token is a locally supported native WooPayments card token.
+	 *
+	 * @param mixed $token Payment token candidate.
+	 * @return bool
+	 */
+	private function is_native_woopayments_card_token( $token ): bool {
+		return $token instanceof WC_Payment_Token_CC && OrderPaymentStore::GATEWAY_ID === $token->get_gateway_id();
+	}
+
+	/**
+	 * Get a supported wallet label.
+	 *
+	 * @param string $wallet_type Wallet type.
+	 * @return string
+	 */
+	private function get_wallet_label( string $wallet_type ): string {
+		switch ( strtolower( $wallet_type ) ) {
+			case 'apple_pay':
+				return __( 'Apple Pay', 'woocommerce' );
+			case 'google_pay':
+				return __( 'Google Pay', 'woocommerce' );
+		}
+
+		return '';
+	}
+
+	/**
+	 * Get the native API client when available.
+	 *
+	 * @return WooPaymentsApiClient|null
+	 */
+	private function get_api_client(): ?WooPaymentsApiClient {
+		if ( null !== $this->api_client ) {
+			return $this->api_client;
+		}
+
+		try {
+			$this->api_client = wc_get_container()->get( WooPaymentsApiClient::class );
+		} catch ( Throwable $exception ) {
+			unset( $exception );
+			return null;
+		}
+
+		return $this->api_client;
+	}
+
+	/**
+	 * Get the native customer service when available.
+	 *
+	 * @return WooPaymentsCustomerService|null
+	 */
+	private function get_customer_service(): ?WooPaymentsCustomerService {
+		if ( null !== $this->customer_service ) {
+			return $this->customer_service;
+		}
+
+		try {
+			$this->customer_service = wc_get_container()->get( WooPaymentsCustomerService::class );
+		} catch ( Throwable $exception ) {
+			unset( $exception );
+			return null;
+		}
+
+		return $this->customer_service;
+	}
+
+	/**
+	 * Get the native account service when available.
+	 *
+	 * @return WooPaymentsAccountService|null
+	 */
+	private function get_account_service(): ?WooPaymentsAccountService {
+		if ( null !== $this->account_service ) {
+			return $this->account_service;
+		}
+
+		try {
+			$this->account_service = wc_get_container()->get( WooPaymentsAccountService::class );
+		} catch ( Throwable $exception ) {
+			unset( $exception );
+			return null;
+		}
+
+		return $this->account_service;
+	}
+
+	/**
+	 * Determine whether a remote detach should be skipped for the current environment.
+	 *
+	 * @return bool
+	 */
+	private function should_skip_remote_detach_for_environment(): bool {
+		$account_service = $this->get_account_service();
+
+		return null !== $account_service
+			&& ! $account_service->is_test_mode_enabled()
+			&& is_admin()
+			&& 'production' !== wp_get_environment_type();
 	}
 
 	/**

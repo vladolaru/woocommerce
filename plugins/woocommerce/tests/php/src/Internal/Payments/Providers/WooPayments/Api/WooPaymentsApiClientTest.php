@@ -689,6 +689,32 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should detach payment methods through the native transport.
+	 */
+	public function test_detach_payment_method_posts_to_payment_method_detach_endpoint(): void {
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id  = 123;
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode( array( 'id' => 'pm_test' ) ),
+		);
+
+		$sut = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( true ) );
+
+		$result = $sut->detach_payment_method( 'pm_test' );
+
+		$body = json_decode( (string) $http_client->last_body, true );
+
+		$this->assertSame( 'pm_test', $result['id'] );
+		$this->assertSame( '/sites/123/wcpay/payment_methods/pm_test/detach', $http_client->last_path );
+		$this->assertSame( 'POST', $http_client->last_method );
+		$this->assertIsArray( $body );
+		$this->assertTrue( $body['test_mode'] );
+	}
+
+	/**
 	 * @testdox Should retrieve timeline events through the native transport.
 	 */
 	public function test_get_timeline_reads_timeline_endpoint(): void {

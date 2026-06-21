@@ -6,6 +6,7 @@ import { getPaymentMethodData } from '@woocommerce/settings';
 import { decodeEntities } from '@wordpress/html-entities';
 import { __ } from '@wordpress/i18n';
 import { createRoot, useEffect, useRef, useState } from '@wordpress/element';
+import { useSelect } from '@wordpress/data';
 
 /**
  * Internal dependencies
@@ -181,6 +182,23 @@ const parseConfirmationRedirect = ( value ) => {
 	}, null );
 };
 
+const isChangingPaymentMethodForSubscription = () => {
+	if ( typeof window !== 'undefined' ) {
+		const search = window.location?.search || '';
+		if ( /[?&]change_payment_method=/.test( search ) ) {
+			return true;
+		}
+	}
+
+	if ( typeof document !== 'undefined' ) {
+		return !! document.querySelector(
+			'input[name="change_payment_method"]'
+		);
+	}
+
+	return false;
+};
+
 const updateOrderStatusAfterConfirmation = async (
 	confirmation,
 	intentId,
@@ -205,7 +223,10 @@ const updateOrderStatusAfterConfirmation = async (
 		'should_save_payment_method',
 		shouldSavePaymentMethod ? 'true' : 'false'
 	);
-	body.append( 'is_changing_payment', 'false' );
+	body.append(
+		'is_changing_payment',
+		isChangingPaymentMethodForSubscription() ? 'true' : 'false'
+	);
 
 	const response = await window.fetch( settings.ajaxUrl, {
 		method: 'POST',
@@ -226,6 +247,70 @@ const updateOrderStatusAfterConfirmation = async (
 	}
 
 	return result?.return_url || '';
+};
+
+const handleConfirmationResponse = async (
+	response,
+	emitResponse,
+	shouldSavePaymentMethod,
+	getStripeClient
+) => {
+	const confirmation = parseConfirmationRedirect( response );
+	if ( ! confirmation ) {
+		return getSuccessResponse( emitResponse, {} );
+	}
+
+	const stripeClient = getStripeClient();
+
+	if ( ! stripeClient ) {
+		return getSuccessResponse( emitResponse, {} );
+	}
+
+	let result;
+
+	if ( confirmation.type === 'si' ) {
+		result = confirmation.confirmationToken
+			? await stripeClient.confirmSetup( {
+					clientSecret: confirmation.clientSecret,
+					confirmParams: {
+						confirmation_token: confirmation.confirmationToken,
+					},
+					redirect: 'if_required',
+			  } )
+			: await stripeClient.handleNextAction( {
+					clientSecret: confirmation.clientSecret,
+			  } );
+	} else {
+		result = await stripeClient.handleNextAction( {
+			clientSecret: confirmation.clientSecret,
+		} );
+	}
+
+	if ( result.error ) {
+		return getErrorResponse(
+			emitResponse,
+			result.error.message ||
+				__(
+					'There was a problem confirming your payment.',
+					'woocommerce'
+				)
+		);
+	}
+
+	const intentId =
+		result.paymentIntent?.id ||
+		result.setupIntent?.id ||
+		result.error?.payment_intent?.id ||
+		result.error?.setup_intent?.id ||
+		confirmation.intentId;
+
+	const redirectUrl = await updateOrderStatusAfterConfirmation(
+		confirmation,
+		intentId,
+		shouldSavePaymentMethod
+	);
+
+	return getSuccessResponse( emitResponse, {}, redirectUrl );
 };
 
 const shouldUsePlatformStripeForCard = () =>
@@ -561,6 +646,59 @@ const getBillingDetails = () => {
 	};
 };
 
+const SavedTokenHandler = ( { eventRegistration, emitResponse } ) => {
+	const { onPaymentSetup, onCheckoutSuccess } = eventRegistration || {};
+	const accountStripe = useRef( null );
+	const emitResponseRef = useRef( emitResponse );
+	const paymentMethodData = useSelect( ( select ) => {
+		const store = select( 'wc/store/payment' );
+		return store.getPaymentMethodData();
+	} );
+
+	emitResponseRef.current = emitResponse;
+
+	useEffect( () => {
+		if ( ! onPaymentSetup ) {
+			return undefined;
+		}
+
+		const unsubscribe = onPaymentSetup( () => {
+			const fraudPreventionToken = window.wcpayFraudPreventionToken;
+
+			return getSuccessResponse( emitResponseRef.current, {
+				...paymentMethodData,
+				'wcpay-fraud-prevention-token': fraudPreventionToken ?? '',
+			} );
+		} );
+
+		return typeof unsubscribe === 'function' ? unsubscribe : undefined;
+	}, [ onPaymentSetup, paymentMethodData ] );
+
+	useEffect( () => {
+		if ( ! onCheckoutSuccess ) {
+			return undefined;
+		}
+
+		const unsubscribe = onCheckoutSuccess( async ( response ) =>
+			handleConfirmationResponse(
+				response,
+				emitResponseRef.current,
+				false,
+				() => {
+					accountStripe.current =
+						accountStripe.current || createStripe( true );
+
+					return accountStripe.current;
+				}
+			)
+		);
+
+		return typeof unsubscribe === 'function' ? unsubscribe : undefined;
+	}, [ onCheckoutSuccess ] );
+
+	return null;
+};
+
 const WooPaymentsContent = ( {
 	eventRegistration,
 	emitResponse,
@@ -743,67 +881,19 @@ const WooPaymentsContent = ( {
 			return undefined;
 		}
 
-		const unsubscribe = onCheckoutSuccess( async ( response ) => {
-			const currentEmitResponse = emitResponseRef.current;
-			const confirmation = parseConfirmationRedirect( response );
-			if ( ! confirmation ) {
-				return getSuccessResponse( currentEmitResponse, {} );
-			}
+		const unsubscribe = onCheckoutSuccess( async ( response ) =>
+			handleConfirmationResponse(
+				response,
+				emitResponseRef.current,
+				Boolean( shouldSavePaymentRef.current ),
+				() => {
+					accountStripe.current =
+						accountStripe.current || createStripe( true );
 
-			accountStripe.current =
-				accountStripe.current || createStripe( true );
-
-			if ( ! accountStripe.current ) {
-				return getSuccessResponse( currentEmitResponse, {} );
-			}
-
-			let result;
-
-			if ( confirmation.type === 'si' ) {
-				result = confirmation.confirmationToken
-					? await accountStripe.current.confirmSetup( {
-							clientSecret: confirmation.clientSecret,
-							confirmParams: {
-								confirmation_token:
-									confirmation.confirmationToken,
-							},
-							redirect: 'if_required',
-					  } )
-					: await accountStripe.current.handleNextAction( {
-							clientSecret: confirmation.clientSecret,
-					  } );
-			} else {
-				result = await accountStripe.current.handleNextAction( {
-					clientSecret: confirmation.clientSecret,
-				} );
-			}
-
-			if ( result.error ) {
-				return getErrorResponse(
-					currentEmitResponse,
-					result.error.message ||
-						__(
-							'There was a problem confirming your payment.',
-							'woocommerce'
-						)
-				);
-			}
-
-			const intentId =
-				result.paymentIntent?.id ||
-				result.setupIntent?.id ||
-				result.error?.payment_intent?.id ||
-				result.error?.setup_intent?.id ||
-				confirmation.intentId;
-
-			const redirectUrl = await updateOrderStatusAfterConfirmation(
-				confirmation,
-				intentId,
-				Boolean( shouldSavePaymentRef.current )
-			);
-
-			return getSuccessResponse( currentEmitResponse, {}, redirectUrl );
-		} );
+					return accountStripe.current;
+				}
+			)
+		);
 
 		return typeof unsubscribe === 'function' ? unsubscribe : undefined;
 	}, [ onCheckoutSuccess ] );
@@ -838,6 +928,7 @@ export const getWooPaymentsPaymentMethod = () => ( {
 	label: <Label />,
 	content: <WooPaymentsContent />,
 	edit: <WooPaymentsContent />,
+	savedTokenComponent: <SavedTokenHandler />,
 	canMakePayment: () => Boolean( settings.isCoreNativeCheckoutAvailable ),
 	ariaLabel,
 	supports: {

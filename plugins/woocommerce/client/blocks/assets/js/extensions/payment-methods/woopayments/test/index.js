@@ -3,6 +3,7 @@
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createElement } from '@wordpress/element';
+import { useSelect } from '@wordpress/data';
 import { registerExpressPaymentMethod } from '@woocommerce/blocks-registry';
 
 /**
@@ -114,9 +115,26 @@ jest.mock( '@woocommerce/settings', () => ( {
 	} ) ),
 } ) );
 
+jest.mock( '@wordpress/data', () => ( {
+	useSelect: jest.fn(),
+} ) );
+
 const originalFetch = window.fetch;
 
 describe( 'wc-payment-method-woopayments', () => {
+	beforeEach( () => {
+		useSelect.mockImplementation( ( callback ) =>
+			callback( () => ( {
+				getPaymentMethodData: () => ( {
+					payment_method: 'woocommerce_payments',
+					'wc-woocommerce_payments-payment-token': '12',
+					token: '12',
+					isSavedToken: true,
+				} ),
+			} ) )
+		);
+	} );
+
 	afterEach( () => {
 		jest.useRealTimers();
 		jest.restoreAllMocks();
@@ -124,6 +142,7 @@ describe( 'wc-payment-method-woopayments', () => {
 		delete window.navigator.clipboard;
 		window.fetch = originalFetch;
 		document.body.innerHTML = '';
+		window.history.pushState( {}, '', '/' );
 		window.localStorage.clear();
 		jest.clearAllMocks();
 	} );
@@ -257,6 +276,60 @@ describe( 'wc-payment-method-woopayments', () => {
 				showSaveOption: false,
 			} )
 		);
+	} );
+
+	it( 'returns saved-token payment data during Blocks payment setup without creating a new payment method', async () => {
+		window.wcpayFraudPreventionToken = 'fraud-token-123';
+		const createPaymentMethod = jest.fn();
+		window.Stripe = jest.fn( () => ( {
+			elements: jest.fn(),
+			createPaymentMethod,
+		} ) );
+		const registration = registerWooPayments();
+		let setupResult;
+		const onPaymentSetup = jest.fn( ( callback ) => {
+			setupResult = callback();
+		} );
+		const emitResponse = {
+			responseTypes: {
+				SUCCESS: 'success',
+				ERROR: 'error',
+			},
+			noticeContexts: {
+				PAYMENTS: 'payments',
+			},
+		};
+		const savedTokenComponent = registration.savedTokenComponent;
+
+		render(
+			createElement( savedTokenComponent.type, {
+				...savedTokenComponent.props,
+				eventRegistration: {
+					onPaymentSetup,
+					onCheckoutSuccess: jest.fn(),
+				},
+				emitResponse,
+			} )
+		);
+
+		await waitFor( () => {
+			expect( onPaymentSetup ).toHaveBeenCalled();
+		} );
+
+		expect( setupResult ).toEqual( {
+			type: 'success',
+			meta: {
+				paymentMethodData: {
+					payment_method: 'woocommerce_payments',
+					'wc-woocommerce_payments-payment-token': '12',
+					token: '12',
+					isSavedToken: true,
+					'wcpay-fraud-prevention-token': 'fraud-token-123',
+				},
+			},
+		} );
+		expect( createPaymentMethod ).not.toHaveBeenCalled();
+		delete window.wcpayFraudPreventionToken;
 	} );
 
 	it( 'shows the test mode badge in the payment method label', () => {
@@ -1322,7 +1395,90 @@ describe( 'wc-payment-method-woopayments', () => {
 		);
 	} );
 
+	it( 'handles PaymentIntent next actions from Blocks saved-token redirects', async () => {
+		const handleNextAction = jest.fn().mockResolvedValue( {
+			paymentIntent: {
+				id: 'pi_123',
+			},
+		} );
+		window.fetch = jest.fn().mockResolvedValue( {
+			json: jest.fn().mockResolvedValue( {
+				return_url: 'https://example.test/checkout/order-received/123/',
+			} ),
+		} );
+		window.Stripe = jest.fn( () => ( {
+			handleNextAction,
+		} ) );
+
+		const registration = registerWooPayments();
+		let checkoutSuccessResult;
+		const onCheckoutSuccess = jest.fn( ( callback ) => {
+			checkoutSuccessResult = callback( {
+				processingResponse: {
+					paymentDetails: {
+						redirect:
+							'#wcpay-confirm-pi:123:pi_123_secret_abc:nonce_123',
+					},
+				},
+			} );
+		} );
+		const emitResponse = {
+			responseTypes: {
+				SUCCESS: 'success',
+				ERROR: 'error',
+			},
+			noticeContexts: {
+				PAYMENTS: 'payments',
+			},
+		};
+		const savedTokenComponent = registration.savedTokenComponent;
+
+		render(
+			createElement( savedTokenComponent.type, {
+				...savedTokenComponent.props,
+				eventRegistration: {
+					onPaymentSetup: jest.fn(),
+					onCheckoutSuccess,
+				},
+				emitResponse,
+			} )
+		);
+
+		await waitFor( () => {
+			expect( onCheckoutSuccess ).toHaveBeenCalled();
+		} );
+
+		await expect( checkoutSuccessResult ).resolves.toEqual( {
+			type: 'success',
+			redirectUrl: 'https://example.test/checkout/order-received/123/',
+			meta: {
+				paymentMethodData: {},
+			},
+		} );
+		expect( handleNextAction ).toHaveBeenCalledWith( {
+			clientSecret: 'pi_123_secret_abc',
+		} );
+		expect( window.Stripe ).toHaveBeenCalledWith( 'pk_test_123', {
+			locale: 'auto',
+			stripeAccount: 'acct_123',
+		} );
+		const requestBody = window.fetch.mock.calls[ 0 ][ 1 ].body;
+		expect( requestBody.get( 'action' ) ).toBe( 'update_order_status' );
+		expect( requestBody.get( 'order_id' ) ).toBe( '123' );
+		expect( requestBody.get( '_ajax_nonce' ) ).toBe( 'nonce_123' );
+		expect( requestBody.get( 'intent_id' ) ).toBe( 'pi_123' );
+		expect( requestBody.get( 'should_save_payment_method' ) ).toBe(
+			'false'
+		);
+		expect( requestBody.get( 'is_changing_payment' ) ).toBe( 'false' );
+	} );
+
 	it( 'confirms full #wcpay-confirm-si redirects with confirmation tokens', async () => {
+		window.history.pushState(
+			{},
+			'',
+			'/checkout/order-pay/123/?change_payment_method=123'
+		);
 		const confirmSetup = jest.fn().mockResolvedValue( {
 			setupIntent: {
 				id: 'seti_123',
@@ -1402,6 +1558,7 @@ describe( 'wc-payment-method-woopayments', () => {
 		expect( requestBody.get( 'should_save_payment_method' ) ).toBe(
 			'false'
 		);
+		expect( requestBody.get( 'is_changing_payment' ) ).toBe( 'true' );
 	} );
 
 	it( 'handles SetupIntent next actions when no confirmation token is present', async () => {

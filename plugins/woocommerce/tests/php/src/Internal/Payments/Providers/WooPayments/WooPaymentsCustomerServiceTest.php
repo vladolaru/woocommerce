@@ -95,6 +95,19 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should update the customer's default WooPayments payment method.
+	 */
+	public function test_set_default_payment_method_for_customer_updates_invoice_settings(): void {
+		$api_client = $this->create_customer_api_client( array() );
+		$sut        = $this->create_sut( false, $api_client );
+
+		$sut->set_default_payment_method_for_customer( 'cus_test', 'pm_default' );
+
+		$this->assertSame( 'cus_test', $api_client->updated_customers[0]['customer_id'] );
+		$this->assertSame( 'pm_default', $api_client->updated_customers[0]['customer_data']['invoice_settings']['default_payment_method'] );
+	}
+
+	/**
 	 * Create a customer service System Under Test.
 	 *
 	 * @param bool                 $test_mode  Whether test mode is enabled.
@@ -131,6 +144,13 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 			private array $customer_ids;
 
 			/**
+			 * Updated customer payloads.
+			 *
+			 * @var array<int,array{customer_id:string,customer_data:array<string,mixed>}>
+			 */
+			public array $updated_customers = array();
+
+			/**
 			 * Constructor.
 			 *
 			 * @param string[] $customer_ids Customer IDs to return.
@@ -158,7 +178,10 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 			 * @param array<string,mixed> $customer_data Customer data.
 			 */
 			public function update_customer( string $customer_id, array $customer_data = array() ): void {
-				unset( $customer_id, $customer_data );
+				$this->updated_customers[] = array(
+					'customer_id'   => $customer_id,
+					'customer_data' => $customer_data,
+				);
 			}
 		};
 	}

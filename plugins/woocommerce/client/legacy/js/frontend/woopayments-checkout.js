@@ -429,6 +429,14 @@
 		);
 	}
 
+	function isUsingSavedPaymentMethod() {
+		var newPaymentTokenInput = document.getElementById(
+			'wc-' + gatewayId + '-payment-token-new'
+		);
+
+		return !! newPaymentTokenInput && ! newPaymentTokenInput.checked;
+	}
+
 	function getStripePaymentElementOptions() {
 		return {
 			fields: {
@@ -1356,6 +1364,20 @@
 		};
 	}
 
+	function isChangingPaymentMethodForSubscription() {
+		if (
+			window.location &&
+			/[?&]change_payment_method=/.test( window.location.search || '' )
+		) {
+			return true;
+		}
+
+		return (
+			$( 'form.checkout, form#order_review, form#add_payment_method' )
+				.find( 'input[name="change_payment_method"]' ).length > 0
+		);
+	}
+
 	function updateOrderStatusAfterConfirmation( confirmation, intentId ) {
 		if (
 			! config.ajaxUrl ||
@@ -1373,7 +1395,9 @@
 			_ajax_nonce: confirmation.nonce,
 			intent_id: intentId,
 			should_save_payment_method: 'false',
-			is_changing_payment: 'false',
+			is_changing_payment: isChangingPaymentMethodForSubscription()
+				? 'true'
+				: 'false',
 		} );
 	}
 
@@ -1480,6 +1504,11 @@
 
 		if ( isSubmittingWithPaymentMethod ) {
 			isSubmittingWithPaymentMethod = false;
+			return true;
+		}
+
+		if ( isUsingSavedPaymentMethod() ) {
+			appendPaymentFields( $( 'form.checkout' ), null, null );
 			return true;
 		}
 

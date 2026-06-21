@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
@@ -221,13 +222,23 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 				return $this->error_response( __( "We're not able to process this payment. Please try again later.", 'woocommerce' ), 409 );
 			}
 
+			$is_subscription_payment_method_change = $this->is_subscription_change_payment_request( $request );
+			if ( $is_subscription_payment_method_change ) {
+				$this->maybe_update_subscription_payment_method( $order );
+			}
+
 			return array(
-				'return_url'  => $this->get_return_url( $order ),
+				'return_url'  => $is_subscription_payment_method_change ? $order->get_view_order_url() : $this->get_return_url( $order ),
 				'status_code' => 200,
 			);
 		} catch ( WooPaymentsApiException $exception ) {
 			return $this->error_response( $exception->getMessage(), 502 );
 		} catch ( Throwable $exception ) {
+			wc_get_logger()->error(
+				'Error completing native WooPayments authenticated payment: ' . $exception->getMessage(),
+				array( 'source' => 'payment-info' )
+			);
+
 			return $this->error_response( __( "We're not able to process this payment. Please try again later.", 'woocommerce' ), 500 );
 		}
 	}
@@ -650,7 +661,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	 */
 	private function maybe_save_payment_method_for_order( WC_Order $order, array $intent, array $request ): ?array {
 		$is_recurring     = $this->is_recurring_payment( $order );
-		$should_save_card = $is_recurring || $this->should_save_payment_method( $request );
+		$should_save_card = $is_recurring || $this->should_save_payment_method( $request ) || $this->is_subscription_change_payment_request( $request );
 		if ( ! $should_save_card ) {
 			return null;
 		}
@@ -686,6 +697,37 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	 */
 	private function should_save_payment_method( array $request ): bool {
 		return 'true' === strtolower( $this->get_request_string( $request, 'should_save_payment_method' ) );
+	}
+
+	/**
+	 * Tell whether the current callback is completing a WC Subscriptions payment-method change.
+	 *
+	 * @param array<string,mixed> $request Request data.
+	 * @return bool
+	 */
+	private function is_subscription_change_payment_request( array $request ): bool {
+		return 'true' === strtolower( $this->get_request_string( $request, 'is_changing_payment' ) );
+	}
+
+	/**
+	 * Update WC Subscriptions after a successful native WooPayments payment-method change.
+	 *
+	 * @param WC_Order $order Subscription order.
+	 * @return void
+	 */
+	private function maybe_update_subscription_payment_method( WC_Order $order ): void {
+		if ( ! class_exists( 'WC_Subscriptions_Change_Payment_Gateway' ) ) {
+			return;
+		}
+
+		\WC_Subscriptions_Change_Payment_Gateway::update_payment_method( $order, OrderPaymentStore::GATEWAY_ID );
+
+		$will_update_all_callback = array( 'WC_Subscriptions_Change_Payment_Gateway', 'will_subscription_update_all_payment_methods' );
+		$update_all_callback      = array( 'WC_Subscriptions_Change_Payment_Gateway', 'update_all_payment_methods_from_subscription' );
+
+		if ( is_callable( $will_update_all_callback ) && is_callable( $update_all_callback ) && (bool) call_user_func( $will_update_all_callback, $order ) ) {
+			call_user_func( $update_all_callback, $order, OrderPaymentStore::GATEWAY_ID );
+		}
 	}
 
 	/**

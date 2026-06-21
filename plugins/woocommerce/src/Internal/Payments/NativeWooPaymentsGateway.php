@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPl
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsFailedAuthenticationRetryEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsFailedRenewalAuthenticationEmail;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Throwable;
 use WC_Order;
@@ -699,7 +700,16 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			);
 		}
 
-		return $this->get_processing_service()->process_checkout(
+		if ( ! empty( $_POST['is-woopay-preflight-check'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
+			$order->update_status( 'pending' );
+
+			return array(
+				'result'   => 'success',
+				'redirect' => '',
+			);
+		}
+
+		$result = $this->get_processing_service()->process_checkout(
 			PaymentContext::for_checkout(
 				$order,
 				$this->id,
@@ -709,6 +719,10 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			),
 			$this->get_provider()
 		);
+
+		$this->maybe_handle_subscription_change_payment_success( $order, $result );
+
+		return $result;
 	}
 
 	/**
@@ -931,6 +945,86 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
+	 * Complete WC Subscriptions bookkeeping after a successful customer payment-method change.
+	 *
+	 * @param WC_Order             $order  Subscription order.
+	 * @param array<string,string> $result Native checkout result.
+	 * @return void
+	 */
+	private function maybe_handle_subscription_change_payment_success( WC_Order $order, array $result ): void {
+		if ( ! $this->is_subscription_change_payment_request( $order ) ) {
+			return;
+		}
+
+		if ( $this->is_confirmation_redirect_result( $result ) ) {
+			$this->maybe_set_delayed_subscription_update_all_marker( $order );
+			return;
+		}
+
+		if ( ! class_exists( 'WC_Subscriptions_Change_Payment_Gateway' ) ) {
+			return;
+		}
+
+		\WC_Subscriptions_Change_Payment_Gateway::update_payment_method( $order, $this->id );
+
+		remove_filter( 'woocommerce_subscriptions_update_payment_via_pay_shortcode', array( WooPaymentsSubscriptionAdminPaymentMethodHandler::instance(), 'update_payment_method_for_subscriptions' ), 10 );
+	}
+
+	/**
+	 * Tell whether the current request is a WC Subscriptions new-payment-method change.
+	 *
+	 * @param WC_Order $order Subscription order.
+	 * @return bool
+	 */
+	private function is_subscription_change_payment_request( WC_Order $order ): bool {
+		if ( ! isset( $_POST['_wcsnonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['_wcsnonce'] ) ), 'wcs_change_payment_method' ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
+			return false;
+		}
+
+		$token_key = 'wc-' . $this->id . '-payment-token';
+		if ( isset( $_POST[ $token_key ] ) && 'new' !== sanitize_text_field( wp_unslash( $_POST[ $token_key ] ) ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
+			return false;
+		}
+
+		$request_id = 0;
+		if ( isset( $_POST['change_payment_method'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
+			$request_id = absint( $_POST['change_payment_method'] ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		} elseif ( isset( $_GET['change_payment_method'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			$request_id = absint( $_GET['change_payment_method'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		}
+
+		return 0 === $request_id || $order->get_id() === $request_id;
+	}
+
+	/**
+	 * Tell whether the native result redirects into the WooPayments confirmation bridge.
+	 *
+	 * @param array<string,string> $result Checkout result.
+	 * @return bool
+	 */
+	private function is_confirmation_redirect_result( array $result ): bool {
+		$redirect = isset( $result['redirect'] ) ? (string) $result['redirect'] : '';
+
+		return 0 === strpos( $redirect, '#wcpay-confirm-' );
+	}
+
+	/**
+	 * Set the delayed update-all marker for SCA subscription payment-method changes when requested.
+	 *
+	 * @param WC_Order $order Subscription order.
+	 * @return void
+	 */
+	private function maybe_set_delayed_subscription_update_all_marker( WC_Order $order ): void {
+		if ( empty( $_POST['update_all_subscriptions_payment_method'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
+			return;
+		}
+
+		$gateway_id = isset( $_POST['payment_method'] ) ? sanitize_text_field( wp_unslash( $_POST['payment_method'] ) ) : $this->id; // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		$order->update_meta_data( '_delayed_update_payment_method_all', $gateway_id );
+		$order->save();
+	}
+
+	/**
 	 * Initialize the WooPayments support list.
 	 *
 	 * @return void
@@ -990,6 +1084,8 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		if ( false === has_action( $failing_hook, array( $this, 'update_failing_payment_method' ) ) ) {
 			add_action( $failing_hook, array( $this, 'update_failing_payment_method' ), 10, 2 );
 		}
+
+		WooPaymentsSubscriptionAdminPaymentMethodHandler::instance()->register_hooks();
 	}
 
 	/**

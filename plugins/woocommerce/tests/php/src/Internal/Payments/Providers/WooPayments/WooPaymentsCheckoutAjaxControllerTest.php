@@ -46,6 +46,9 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		remove_all_actions( 'wp_ajax_create_setup_intent' );
 		remove_all_filters( 'woocommerce_native_woopayments_is_recurring_payment' );
 		remove_all_filters( 'woocommerce_native_woopayments_related_subscriptions_for_order' );
+		if ( class_exists( 'WC_Subscriptions_Change_Payment_Gateway', false ) && method_exists( 'WC_Subscriptions_Change_Payment_Gateway', 'reset' ) ) {
+			\WC_Subscriptions_Change_Payment_Gateway::reset();
+		}
 		wp_set_current_user( 0 );
 		update_option( 'woocommerce_currency', $this->original_currency );
 		parent::tearDown();
@@ -597,6 +600,102 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Order-status callback should update WC Subscriptions after SCA change-payment confirmation.
+	 */
+	public function test_update_order_status_updates_subscription_payment_method_after_change_payment_confirmation(): void {
+		$this->ensure_wcs_change_payment_gateway_double();
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+
+		$order = $this->create_woopayments_order( '0.00' );
+		$order->set_customer_id( $user_id );
+		$order->update_meta_data( '_intent_id', 'seti_native' );
+		$order->update_meta_data( '_delayed_update_payment_method_all', OrderPaymentStore::GATEWAY_ID );
+		$order->save();
+
+		$api_client    = new class() extends WooPaymentsApiClient {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Retrieve a SetupIntent.
+			 *
+			 * @param string $setup_intent_id SetupIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_setup_intention( string $setup_intent_id ): array {
+				if ( 'seti_native' !== $setup_intent_id ) {
+					throw new \RuntimeException( 'Unexpected setup intent ID.' );
+				}
+
+				return array(
+					'id'             => 'seti_native',
+					'status'         => 'succeeded',
+					'customer'       => 'cus_native',
+					'payment_method' => 'pm_native',
+				);
+			}
+		};
+		$token_service = $this->create_token_service(
+			array(
+				'pm_native' => array(
+					'id'   => 'pm_native',
+					'type' => 'card',
+					'card' => array(
+						'brand'     => 'visa',
+						'last4'     => '4242',
+						'exp_month' => 12,
+						'exp_year'  => 2030,
+					),
+				),
+			)
+		);
+		$sut           = $this->create_controller( $api_client, null, $token_service );
+
+		$response = $sut->get_update_order_status_response(
+			array(
+				'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+				'order_id'                   => $order->get_id(),
+				'intent_id'                  => 'seti_native',
+				'should_save_payment_method' => 'false',
+				'is_changing_payment'        => 'true',
+			)
+		);
+		$order    = wc_get_order( $order->get_id() );
+		$tokens   = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, OrderPaymentStore::GATEWAY_ID ) );
+		$token    = $tokens[0] ?? null;
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertInstanceOf( WC_Payment_Token_CC::class, $token );
+		$this->assertContains( $token->get_id(), $order->get_payment_tokens() );
+		$this->assertSame(
+			array(
+				array(
+					'order_id'   => $order->get_id(),
+					'gateway_id' => OrderPaymentStore::GATEWAY_ID,
+				),
+			),
+			\WC_Subscriptions_Change_Payment_Gateway::$updated_payment_methods
+		);
+		$this->assertSame(
+			array(
+				array(
+					'order_id'   => $order->get_id(),
+					'gateway_id' => OrderPaymentStore::GATEWAY_ID,
+				),
+			),
+			\WC_Subscriptions_Change_Payment_Gateway::$updated_all_payment_methods
+		);
+	}
+
+	/**
 	 * @testdox Order-status callback should block recurring orders when token saving fails.
 	 */
 	public function test_update_order_status_blocks_recurring_order_when_token_save_fails(): void {
@@ -904,5 +1003,52 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$order->save();
 
 		return $order;
+	}
+
+	/**
+	 * Ensure a minimal WC Subscriptions change-payment gateway double exists.
+	 *
+	 * @return void
+	 */
+	private function ensure_wcs_change_payment_gateway_double(): void {
+		if ( class_exists( 'WC_Subscriptions_Change_Payment_Gateway', false ) ) {
+			\WC_Subscriptions_Change_Payment_Gateway::reset();
+			return;
+		}
+
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- The production class is optional; tests need a process-local stand-in.
+		eval(
+			'class WC_Subscriptions_Change_Payment_Gateway {
+				public static $updated_payment_methods = array();
+				public static $updated_all_payment_methods = array();
+				public static $will_update_all_payment_methods = true;
+
+				public static function reset() {
+					self::$updated_payment_methods = array();
+					self::$updated_all_payment_methods = array();
+					self::$will_update_all_payment_methods = true;
+				}
+
+				public static function update_payment_method( $order, $gateway_id ) {
+					self::$updated_payment_methods[] = array(
+						"order_id" => is_object( $order ) && method_exists( $order, "get_id" ) ? $order->get_id() : 0,
+						"gateway_id" => $gateway_id,
+					);
+				}
+
+				public static function will_subscription_update_all_payment_methods( $order ) {
+					unset( $order );
+					return self::$will_update_all_payment_methods;
+				}
+
+				public static function update_all_payment_methods_from_subscription( $order, $gateway_id ) {
+					self::$updated_all_payment_methods[] = array(
+						"order_id" => is_object( $order ) && method_exists( $order, "get_id" ) ? $order->get_id() : 0,
+						"gateway_id" => $gateway_id,
+					);
+					return true;
+				}
+			}'
+		);
 	}
 }

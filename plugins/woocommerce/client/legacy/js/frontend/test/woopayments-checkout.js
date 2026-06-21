@@ -223,6 +223,7 @@ describe( 'WooPayments checkout', () => {
 		window.fetch = originalFetch;
 		window.localStorage.clear();
 		document.body.innerHTML = '';
+		window.history.pushState( {}, '', '/' );
 		window.location.hash = '';
 	} );
 
@@ -487,6 +488,26 @@ describe( 'WooPayments checkout', () => {
 		);
 	} );
 
+	test( 'marks confirmation callbacks as subscription payment-method changes on change-payment URLs', async () => {
+		window.history.pushState(
+			{},
+			'',
+			'/checkout/order-pay/123/?change_payment_method=123#wcpay-confirm-pi:123:pi_native_secret_abc:nonce'
+		);
+
+		require( '../woopayments-checkout' );
+
+		await flushPromises();
+
+		expect( global.jQuery.post ).toHaveBeenCalledWith(
+			'https://example.test/admin-ajax.php',
+			expect.objectContaining( {
+				action: 'update_order_status',
+				is_changing_payment: 'true',
+			} )
+		);
+	} );
+
 	test( 'submits Stripe Elements before creating a checkout payment method', async () => {
 		require( '../woopayments-checkout' );
 
@@ -503,6 +524,28 @@ describe( 'WooPayments checkout', () => {
 		expect( submitElements.mock.invocationCallOrder[ 0 ] ).toBeLessThan(
 			stripeMock.createPaymentMethod.mock.invocationCallOrder[ 0 ]
 		);
+	} );
+
+	test( 'submits classic checkout without creating a payment method when a saved token is selected', async () => {
+		document.body.innerHTML =
+			'<form class="checkout">' +
+			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
+			'<input id="wc-woocommerce_payments-payment-token-new" ' +
+			'name="wc-woocommerce_payments-payment-token" type="radio" value="new" />' +
+			'<input id="wc-woocommerce_payments-payment-token-12" ' +
+			'name="wc-woocommerce_payments-payment-token" type="radio" value="12" checked />' +
+			'<div id="wcpay-core-payment-element"></div>' +
+			'</form>';
+		require( '../woopayments-checkout' );
+
+		expect(
+			bodyEventHandlers.checkout_place_order_woocommerce_payments()
+		).toBe( true );
+
+		await flushPromises();
+
+		expect( submitElements ).not.toHaveBeenCalled();
+		expect( stripeMock.createPaymentMethod ).not.toHaveBeenCalled();
 	} );
 
 	test( 'records a place-order event when the shopper clicks the classic checkout button', () => {

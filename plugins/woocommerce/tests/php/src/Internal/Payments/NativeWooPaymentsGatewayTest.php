@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutBridge;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressPaymentMethodTypes;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use WC_Order;
 use WC_Payment_Token_CC;
@@ -30,6 +31,20 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	public function tearDown(): void {
 		remove_all_actions( 'woocommerce_scheduled_subscription_payment_' . OrderPaymentStore::GATEWAY_ID );
 		remove_all_actions( 'woocommerce_subscription_failing_payment_method_updated_' . OrderPaymentStore::GATEWAY_ID );
+		remove_all_filters( 'woocommerce_subscription_payment_meta' );
+		remove_all_actions( 'woocommerce_subscription_validate_payment_meta' );
+		remove_all_actions( 'wcs_save_other_payment_meta' );
+		remove_all_filters( 'wcs_copy_payment_meta_to_order' );
+		remove_all_filters( 'woocommerce_my_subscriptions_payment_method' );
+		remove_all_filters( 'woocommerce_subscription_payment_method_to_display' );
+		remove_all_filters( 'wcs_view_subscription_actions' );
+		remove_all_filters( 'user_has_cap' );
+		remove_all_filters( 'woocommerce_subscription_note_old_payment_method_title' );
+		remove_all_filters( 'woocommerce_subscription_note_new_payment_method_title' );
+		remove_all_actions( 'woocommerce_admin_order_data_after_billing_address' );
+		remove_all_filters( 'woocommerce_subscriptions_update_subscription_token' );
+		remove_all_filters( 'woocommerce_subscriptions_update_payment_via_pay_shortcode' );
+		remove_all_actions( 'wp_ajax_wcpay_get_user_payment_tokens' );
 		remove_all_actions( 'woocommerce_woocommerce_payments_payment_requires_action' );
 		remove_all_filters( 'woocommerce_native_woopayments_subscriptions_for_renewal_order' );
 		remove_all_filters( 'woocommerce_email_classes' );
@@ -39,6 +54,14 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		unset( $_POST['wcpay-is-platform-payment-method'] );
 		unset( $_POST['wcpay-express-payment-method-types'] );
 		unset( $_POST['wcpay-express-checkout-context'] );
+		unset( $_POST['is-woopay-preflight-check'] );
+		unset( $_POST['_wcsnonce'] );
+		unset( $_POST['change_payment_method'] );
+		unset( $_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' ] );
+		unset( $_POST['update_all_subscriptions_payment_method'] );
+		if ( class_exists( 'WC_Subscriptions_Change_Payment_Gateway', false ) && method_exists( 'WC_Subscriptions_Change_Payment_Gateway', 'reset' ) ) {
+			\WC_Subscriptions_Change_Payment_Gateway::reset();
+		}
 		wp_set_current_user( 0 );
 		parent::tearDown();
 	}
@@ -231,6 +254,20 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 10, has_action( 'woocommerce_scheduled_subscription_payment_' . OrderPaymentStore::GATEWAY_ID, array( $gateway, 'scheduled_subscription_payment' ) ) );
 		$this->assertSame( 10, has_action( 'woocommerce_subscription_failing_payment_method_updated_' . OrderPaymentStore::GATEWAY_ID, array( $gateway, 'update_failing_payment_method' ) ) );
+		$this->assertSame( 10, has_filter( 'woocommerce_subscription_payment_meta', array( WooPaymentsSubscriptionAdminPaymentMethodHandler::instance(), 'add_subscription_payment_meta' ) ) );
+		$this->assertSame( 10, has_action( 'woocommerce_subscription_validate_payment_meta', array( WooPaymentsSubscriptionAdminPaymentMethodHandler::instance(), 'validate_subscription_payment_meta' ) ) );
+		$this->assertSame( 10, has_action( 'wcs_save_other_payment_meta', array( WooPaymentsSubscriptionAdminPaymentMethodHandler::instance(), 'save_meta_in_order_tokens' ) ) );
+		$this->assertSame( 10, has_filter( 'wcs_copy_payment_meta_to_order', array( WooPaymentsSubscriptionAdminPaymentMethodHandler::instance(), 'append_payment_meta' ) ) );
+		$this->assertSame( 10, has_filter( 'woocommerce_my_subscriptions_payment_method', array( WooPaymentsSubscriptionAdminPaymentMethodHandler::instance(), 'maybe_render_subscription_payment_method' ) ) );
+		$this->assertSame( 10, has_filter( 'woocommerce_subscription_payment_method_to_display', array( WooPaymentsSubscriptionAdminPaymentMethodHandler::instance(), 'maybe_render_subscription_payment_method' ) ) );
+		$this->assertSame( 10, has_filter( 'wcs_view_subscription_actions', array( WooPaymentsSubscriptionAdminPaymentMethodHandler::instance(), 'maybe_hide_change_payment_for_manual_subscriptions' ) ) );
+		$this->assertSame( 100, has_filter( 'user_has_cap', array( WooPaymentsSubscriptionAdminPaymentMethodHandler::instance(), 'maybe_hide_auto_renew_toggle_for_manual_subscriptions' ) ) );
+		$this->assertSame( 10, has_filter( 'woocommerce_subscription_note_old_payment_method_title', array( WooPaymentsSubscriptionAdminPaymentMethodHandler::instance(), 'get_specific_old_payment_method_title' ) ) );
+		$this->assertSame( 10, has_filter( 'woocommerce_subscription_note_new_payment_method_title', array( WooPaymentsSubscriptionAdminPaymentMethodHandler::instance(), 'get_specific_new_payment_method_title' ) ) );
+		$this->assertSame( 10, has_action( 'woocommerce_admin_order_data_after_billing_address', array( WooPaymentsSubscriptionAdminPaymentMethodHandler::instance(), 'add_payment_method_select_to_subscription_edit' ) ) );
+		$this->assertSame( 10, has_filter( 'woocommerce_subscriptions_update_subscription_token', array( WooPaymentsSubscriptionAdminPaymentMethodHandler::instance(), 'update_subscription_token' ) ) );
+		$this->assertSame( 10, has_filter( 'woocommerce_subscriptions_update_payment_via_pay_shortcode', array( WooPaymentsSubscriptionAdminPaymentMethodHandler::instance(), 'update_payment_method_for_subscriptions' ) ) );
+		$this->assertSame( 10, has_action( 'wp_ajax_wcpay_get_user_payment_tokens', array( WooPaymentsSubscriptionAdminPaymentMethodHandler::instance(), 'ajax_get_user_payment_tokens' ) ) );
 
 		remove_action( 'woocommerce_scheduled_subscription_payment_' . OrderPaymentStore::GATEWAY_ID, array( $gateway, 'scheduled_subscription_payment' ) );
 		remove_action( 'woocommerce_subscription_failing_payment_method_updated_' . OrderPaymentStore::GATEWAY_ID, array( $gateway, 'update_failing_payment_method' ) );
@@ -762,6 +799,65 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should hand successful subscription payment-method changes back to WC Subscriptions.
+	 */
+	public function test_process_payment_updates_subscription_payment_method_after_successful_new_method_change(): void {
+		$this->ensure_wcs_change_payment_gateway_double();
+		$order   = $this->create_order();
+		$service = new RecordingPaymentProcessingService();
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		add_filter( 'woocommerce_subscriptions_update_payment_via_pay_shortcode', array( WooPaymentsSubscriptionAdminPaymentMethodHandler::instance(), 'update_payment_method_for_subscriptions' ), 10, 3 );
+		$_POST['_wcsnonce'] = wp_create_nonce( 'wcs_change_payment_method' );
+
+		$_POST['change_payment_method'] = (string) $order->get_id();
+
+		$_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' ] = 'new';
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$this->assertSame( 'success', $result['result'] );
+		$this->assertSame(
+			array(
+				array(
+					'order_id'   => $order->get_id(),
+					'gateway_id' => OrderPaymentStore::GATEWAY_ID,
+				),
+			),
+			\WC_Subscriptions_Change_Payment_Gateway::$updated_payment_methods
+		);
+		$this->assertFalse( has_filter( 'woocommerce_subscriptions_update_payment_via_pay_shortcode', array( WooPaymentsSubscriptionAdminPaymentMethodHandler::instance(), 'update_payment_method_for_subscriptions' ) ) );
+	}
+
+	/**
+	 * @testdox Should short-circuit WooPay preflight checks before charging an order.
+	 */
+	public function test_process_payment_short_circuits_woopay_preflight_checks(): void {
+		$order = $this->create_order();
+		$order->update_status( 'failed' );
+
+		$service = new RecordingPaymentProcessingService();
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+		$_POST['is-woopay-preflight-check'] = '1';
+
+		$result = $gateway->process_payment( $order->get_id() );
+		$order  = wc_get_order( $order->get_id() );
+
+		$this->assertSame(
+			array(
+				'result'   => 'success',
+				'redirect' => '',
+			),
+			$result
+		);
+		$this->assertNull( $service->last_checkout_context );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'pending', $order->get_status() );
+	}
+
+	/**
 	 * @testdox Should pass platform-created payment method state through provider data.
 	 */
 	public function test_process_payment_passes_platform_payment_method_state_to_provider_data(): void {
@@ -1069,5 +1165,52 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		} finally {
 			remove_filter( 'pre_option_woocommerce_woocommerce_payments_settings', $filter );
 		}
+	}
+
+	/**
+	 * Ensure a minimal WC Subscriptions change-payment gateway double exists.
+	 *
+	 * @return void
+	 */
+	private function ensure_wcs_change_payment_gateway_double(): void {
+		if ( class_exists( 'WC_Subscriptions_Change_Payment_Gateway', false ) ) {
+			\WC_Subscriptions_Change_Payment_Gateway::reset();
+			return;
+		}
+
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- The production class is optional; tests need a process-local stand-in.
+		eval(
+			'class WC_Subscriptions_Change_Payment_Gateway {
+				public static $updated_payment_methods = array();
+				public static $updated_all_payment_methods = array();
+				public static $will_update_all_payment_methods = true;
+
+				public static function reset() {
+					self::$updated_payment_methods = array();
+					self::$updated_all_payment_methods = array();
+					self::$will_update_all_payment_methods = true;
+				}
+
+				public static function update_payment_method( $order, $gateway_id ) {
+					self::$updated_payment_methods[] = array(
+						"order_id" => is_object( $order ) && method_exists( $order, "get_id" ) ? $order->get_id() : 0,
+						"gateway_id" => $gateway_id,
+					);
+				}
+
+				public static function will_subscription_update_all_payment_methods( $order ) {
+					unset( $order );
+					return self::$will_update_all_payment_methods;
+				}
+
+				public static function update_all_payment_methods_from_subscription( $order, $gateway_id ) {
+					self::$updated_all_payment_methods[] = array(
+						"order_id" => is_object( $order ) && method_exists( $order, "get_id" ) ? $order->get_id() : 0,
+						"gateway_id" => $gateway_id,
+					);
+					return true;
+				}
+			}'
+		);
 	}
 }

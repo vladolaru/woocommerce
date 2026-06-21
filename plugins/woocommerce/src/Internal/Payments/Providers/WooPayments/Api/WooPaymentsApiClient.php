@@ -415,6 +415,19 @@ class WooPaymentsApiClient {
 	}
 
 	/**
+	 * Detach a WooPayments payment method.
+	 *
+	 * @param string $payment_method_id Payment method ID.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 */
+	public function detach_payment_method( string $payment_method_id ): array {
+		$this->validate_route_resource_id( $payment_method_id );
+
+		return $this->request( array(), self::PAYMENT_METHODS_API . '/' . $payment_method_id . '/detach', 'POST' );
+	}
+
+	/**
 	 * Retrieve visible WooPayments payment method promotions for the current store context.
 	 *
 	 * @param array<string,mixed> $store_context Store context parameters.

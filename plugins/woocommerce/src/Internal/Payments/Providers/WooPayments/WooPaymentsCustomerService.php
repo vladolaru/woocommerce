@@ -155,6 +155,24 @@ class WooPaymentsCustomerService {
 	}
 
 	/**
+	 * Set a payment method as the default for a WooPayments customer.
+	 *
+	 * @param string $customer_id       WooPayments customer ID.
+	 * @param string $payment_method_id WooPayments payment method ID.
+	 * @return void
+	 */
+	public function set_default_payment_method_for_customer( string $customer_id, string $payment_method_id ): void {
+		$this->api_client->update_customer(
+			$customer_id,
+			array(
+				'invoice_settings' => array(
+					'default_payment_method' => $payment_method_id,
+				),
+			)
+		);
+	}
+
+	/**
 	 * Map WooCommerce order data to the WooPayments customer payload.
 	 *
 	 * @param WC_Order $order Order being charged.
@@ -239,7 +257,7 @@ class WooPaymentsCustomerService {
 	 * @param int|null $user_id WordPress user ID or null for guests.
 	 * @return string|null
 	 */
-	private function get_customer_id_by_user_id( ?int $user_id ): ?string {
+	public function get_customer_id_by_user_id( ?int $user_id ): ?string {
 		if ( null === $user_id || 0 === $user_id ) {
 			$customer_id = WC()->session ? WC()->session->get( self::CUSTOMER_ID_SESSION_KEY ) : null;
 			return is_string( $customer_id ) && '' !== $customer_id ? $customer_id : null;
