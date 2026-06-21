@@ -1,0 +1,196 @@
+Skip to main content
+Skip to toolbar
+
+
+Dashboard
+Home
+Updates
+
+
+Posts
+All Posts
+Add Post
+Categories
+Tags
+
+
+Media
+Library
+Add Media File
+
+
+Pages
+All Pages
+Add Page
+
+
+Comments
+
+
+WooCommerce
+Home 3
+Orders 200
+Subscriptions
+Customers
+Coupons
+Reports
+Settings
+Status
+Extensions
+
+
+Products
+All Products
+Add new product
+Brands
+Categories
+Tags
+Attributes
+Reviews
+
+
+Payments
+Overview
+Payouts
+Transactions
+Disputes 8
+Settings
+
+
+Analytics
+Overview
+Products
+Revenue
+Orders
+Variations
+Categories
+Coupons
+Taxes
+Downloads
+Stock
+Settings
+
+
+Marketing
+Overview
+Coupons
+
+
+Appearance
+Themes
+Editor
+Fonts
+
+
+Plugins
+Installed Plugins
+Add Plugin
+
+
+Users
+All Users
+Add User
+Profile
+
+
+Tools
+Available Tools
+Import
+Export
+Site Health 7
+Export Personal Data
+Erase Personal Data
+WPCOM Local Helper
+Scheduled Actions
+Theme File Editor
+Plugin File Editor
+
+
+Settings
+General
+Connectors
+Writing
+Reading
+Discussion
+Media
+Permalinks
+Privacy
+Zoho
+
+
+Jetpack Debug
+Jetpack Debug
+Broken Token
+Connection Errors
+
+
+Email Logs
+
+
+WCPay Dev
+⚙️ Settings
+🧪 Test Lab
+Collapse Menu
+About WordPress
+WooCommerce Payments Dev
+Live
+⌘K
+Open command palette
+0
+0 Comments in moderation
+New
+default:8082
+WCPay
+Howdy, admin
+Settings
+General
+Products
+Shipping
+Payments
+Accounts & Privacy
+Emails
+Integration
+Site visibility
+Point of Sale
+Multi-currency
+Subscriptions
+Advanced
+Payments
+Payment providers
+Business location:United Kingdom (UK)
+Accept payments with Woo
+Test account
+Official
+Credit/debit cards, Apple Pay, Google Pay, and more.
++ 10
+Manage
+PayPal Payments
+Official
+PayPal Payments lets you offer PayPal, Venmo (US only), Pay Later options and more.
+Enable
+Take offline payments
+Accept payments offline using multiple different methods. These can also be used to test purchases.
+🤖 Custom BACS | From plain must-use plugin 🙀 | Direct bank transfer 🏦
+Inactive
+This is from the plain must-use plugin. Supports everything! 🤦
+Enable
+Manage
+🤖 Custom BACS | Plain MU | Test+Dev mode 🦾 | Force-enabled 🤘 | Trimmed
+Test mode
+This is from the plain must-use plugin. Supports everything, is onboarded, is always in test+dev mode, and it is force-enabled! 😤…
+Manage
+🤖 Custom BACS | From elaborate must-use plugin 💄 | Direct bank transfer
+Inactive
+This is from the elaborate must-use plugin.
+Enable
+Manage
+Zoho Subscriptions
+Active
+Cette transaction est sécurisée par notre prestataire de paiement sécurisé Zoho Subscriptions. Vos informations bancaires ne transitent…
+Manage
+More payment options
+Expand section
+
+If you like WooCommerce please leave us a ★★★★★ rating. A huge thanks in advance!
+
+Version 11.0.0-dev

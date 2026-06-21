@@ -1,0 +1,158 @@
+{
+    "schema": "woopayments_measured_gate.v1",
+    "mode": "perf",
+    "php_version": "8.1",
+    "wc_version": "11.0.0-dev",
+    "has_wcpay": true,
+    "probes": {
+        "gateway_registration": {
+            "status": "measured",
+            "metrics": {
+                "queries": 0,
+                "external_requests": 0,
+                "median_ms": 0,
+                "gateway_count": 26,
+                "gateway_ids": [
+                    "woocommerce_payments",
+                    "woocommerce_payments_affirm",
+                    "woocommerce_payments_afterpay_clearpay",
+                    "woocommerce_payments_alipay",
+                    "woocommerce_payments_bancontact",
+                    "woocommerce_payments_au_becs_debit",
+                    "woocommerce_payments_eps",
+                    "woocommerce_payments_giropay",
+                    "woocommerce_payments_grabpay",
+                    "woocommerce_payments_ideal",
+                    "woocommerce_payments_multibanco",
+                    "woocommerce_payments_klarna",
+                    "woocommerce_payments_p24",
+                    "woocommerce_payments_sepa_debit",
+                    "woocommerce_payments_sofort",
+                    "woocommerce_payments_wechat_pay",
+                    "woocommerce_payments_apple_pay",
+                    "woocommerce_payments_google_pay",
+                    "woocommerce_payments_amazon_pay",
+                    "bacs",
+                    "cheque",
+                    "cod",
+                    "custom-plain-mu-bacs",
+                    "custom-plain-mu-testmode-bacs",
+                    "custom-mu-bacs",
+                    "zoho_subscriptions_hosted_page"
+                ],
+                "duplicate_gateway_ids": [],
+                "action_callback_count": 6,
+                "action_callback_counts": {
+                    "woocommerce_payment_gateways": 4,
+                    "woocommerce_blocks_payment_method_type_registration": 2
+                }
+            }
+        },
+        "autoload_options": {
+            "status": "measured",
+            "metrics": {
+                "autoload_bytes": 115767,
+                "option_count": 453
+            }
+        },
+        "wcpay_account_data": {
+            "status": "measured",
+            "metrics": {
+                "exists": true,
+                "autoload": "off",
+                "autoloaded": false
+            }
+        },
+        "rest_boot": {
+            "status": "measured",
+            "metrics": {
+                "queries": 0,
+                "external_requests": 0,
+                "median_ms": 0,
+                "measurement_mode": "preinitialized_snapshot_only",
+                "route_count": 817,
+                "payment_route_count": 85,
+                "route_registration_status": "preinitialized",
+                "route_registration_message": "REST API was initialized before the perf probe, so route registration timing is not isolated.",
+                "controller_instantiation_count": 28,
+                "controller_instantiation_status": "measured",
+                "controller_callback_classes": [
+                    "WC_REST_Payments_Accounts_Controller",
+                    "WC_REST_Payments_Deposits_Controller",
+                    "WC_REST_Payments_Transactions_Controller",
+                    "WC_REST_Payments_Disputes_Controller",
+                    "WC_REST_Payments_Dispute_Readiness_Controller",
+                    "WC_REST_Payments_Charges_Controller",
+                    "WC_REST_Payments_Connection_Tokens_Controller",
+                    "WC_REST_Payments_Orders_Controller",
+                    "WC_REST_Payments_Fraud_Outcomes_Controller",
+                    "WC_REST_Payments_Timeline_Controller",
+                    "WC_REST_Payments_Webhook_Controller",
+                    "WC_REST_Payments_Tos_Controller",
+                    "WC_REST_Payments_Terminal_Locations_Controller",
+                    "WC_REST_Payments_Settings_Controller",
+                    "WC_REST_Payments_Settings_Option_Controller",
+                    "WC_REST_Payments_Reader_Controller",
+                    "WC_REST_Payments_Files_Controller",
+                    "WC_REST_Payments_Capital_Controller",
+                    "WC_REST_Payments_PM_Promotions_Controller",
+                    "WC_REST_Payments_Onboarding_Controller",
+                    "WC_REST_Payments_Customer_Controller",
+                    "WC_REST_Payments_Refunds_Controller",
+                    "WC_REST_Payments_Payment_Intents_Controller",
+                    "WC_REST_Payments_Authorizations_Controller",
+                    "WC_REST_Payments_Reports_Transactions_Controller",
+                    "WC_REST_Payments_Reports_Authorizations_Controller",
+                    "WC_REST_WooPay_Session_Controller",
+                    "WCPay\\MultiCurrency\\RestController"
+                ]
+            }
+        },
+        "process_payment": {
+            "status": "measured",
+            "metrics": {
+                "queries": 111,
+                "external_requests": 18,
+                "median_ms": 190.84,
+                "result_kind": "array",
+                "result_code": "fail",
+                "threw": false,
+                "order_id": 525,
+                "order_status_before": "pending",
+                "order_status_after": "failed",
+                "measurement_mode": "single_invocation_blocked_http"
+            }
+        },
+        "refund": {
+            "status": "measured",
+            "metrics": {
+                "queries": 21,
+                "external_requests": 3,
+                "median_ms": 10.4,
+                "result_kind": "wp_error",
+                "result_code": "wcpay_edit_order_refund_failure",
+                "threw": false,
+                "order_id": 526,
+                "amount": 20,
+                "order_status_before": "processing",
+                "order_status_after": "processing",
+                "measurement_mode": "single_invocation_blocked_http"
+            }
+        },
+        "capture": {
+            "status": "measured",
+            "metrics": {
+                "queries": 30,
+                "external_requests": 15,
+                "median_ms": 27.4,
+                "result_kind": "array",
+                "result_code": "",
+                "threw": false,
+                "order_id": 527,
+                "order_status_before": "on-hold",
+                "order_status_after": "on-hold",
+                "measurement_mode": "single_invocation_blocked_http"
+            }
+        }
+    }
+}

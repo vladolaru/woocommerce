@@ -1,0 +1,1832 @@
+{
+  "url": "http://store8889.localhost:8889/checkout/?codex_h18=1781721864838",
+  "hasBlocksCheckout": true,
+  "hasClassicCheckout": false,
+  "hasExpressWrapper": false,
+  "hasExpressElement": false,
+  "expressElementClasses": null,
+  "stripeFrameCount": 6,
+  "expressParams": null,
+  "resources": [
+    "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments.css?ver=1781695475",
+    "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments-woopay.css?ver=1781692828",
+    "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments-express-checkout.css?ver=1781720945",
+    "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/css/woopayments-woopay.css?ver=11.0.0-dev",
+    "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/js/frontend/woopayments-woopay.js?ver=11.0.0-dev",
+    "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments.js?ver=0c95b3b25ce4c25ead16",
+    "https://js.stripe.com/v3/",
+    "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments-woopay.js?ver=37edabf9da42d663bb64",
+    "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments-express-checkout.js?ver=5e0fae72f13c71c05194",
+    "https://js.stripe.com/v3/controller-with-preconnect-1ed807296a062819b3d4bb2aae4959b2.html#__shared_params__[version]=v3&__shared_params__[light_experiment_assignments]=%7B%22token%22%3A%224b6b9e3d-ca5c-442e-94a2-6aae4c25dfce%22%2C%22assignments%22%3A%7B%7D%7D&apiKey=pk_test_51HHncdJ5cIRIG92xWV6ZRUF50GHxLiDwJqeVgnzvT3iH75NQv0OJbaVa3781JgjwCoD4okbd5OGfoPDQ6edrpHA400vMtnxe2D&stripeAccount=acct_1TjCnhJd67Ti1EoI&stripeJsId=4b6b9e3d-ca5c-442e-94a2-6aae4c25dfce&stripeObjId=sobj-6c9b3881-5229-4349-b8d9-b5796d2da7b2&firstStripeInstanceCreatedLatency=90&locale=en-us&controllerCount=1&isCheckout=false&stripeJsLoadTime=1781721865236&manualBrowserDeprecationRollout=false&mids[guid]=NA&mids[muid]=995b9e60-c7f3-4048-8e2c-353cf63bbd7b7253e0&mids[sid]=e60bfae7-3f50-417b-8a46-d9486a19b25f2e0d6b&referrer=http%3A%2F%2Fstore8889.localhost%3A8889%2Fcheckout%2F%3Fcodex_h18%3D1781721864838&controllerId=__privateStripeController5591",
+    "https://js.stripe.com/v3/controller-with-preconnect-1ed807296a062819b3d4bb2aae4959b2.html#__shared_params__[version]=v3&__shared_params__[light_experiment_assignments]=%7B%22token%22%3A%224b6b9e3d-ca5c-442e-94a2-6aae4c25dfce%22%2C%22assignments%22%3A%7B%7D%7D&apiKey=pk_test_51HHncdJ5cIRIG92xWV6ZRUF50GHxLiDwJqeVgnzvT3iH75NQv0OJbaVa3781JgjwCoD4okbd5OGfoPDQ6edrpHA400vMtnxe2D&stripeAccount=acct_1TjCnhJd67Ti1EoI&stripeJsId=4b6b9e3d-ca5c-442e-94a2-6aae4c25dfce&stripeObjId=sobj-b584de6c-eb54-4470-bd35-e6f9d9ddde64&firstStripeInstanceCreatedLatency=90&locale=en-us&controllerCount=2&isCheckout=false&stripeJsLoadTime=1781721865236&manualBrowserDeprecationRollout=false&mids[guid]=NA&mids[muid]=995b9e60-c7f3-4048-8e2c-353cf63bbd7b7253e0&mids[sid]=e60bfae7-3f50-417b-8a46-d9486a19b25f2e0d6b&referrer=http%3A%2F%2Fstore8889.localhost%3A8889%2Fcheckout%2F%3Fcodex_h18%3D1781721864838&controllerId=__privateStripeController5593",
+    "https://js.stripe.com/v3/controller-with-preconnect-1ed807296a062819b3d4bb2aae4959b2.html#__shared_params__[version]=v3&__shared_params__[light_experiment_assignments]=%7B%22token%22%3A%224b6b9e3d-ca5c-442e-94a2-6aae4c25dfce%22%2C%22assignments%22%3A%7B%7D%7D&apiKey=pk_test_51HHncdJ5cIRIG92xWV6ZRUF50GHxLiDwJqeVgnzvT3iH75NQv0OJbaVa3781JgjwCoD4okbd5OGfoPDQ6edrpHA400vMtnxe2D&stripeJsId=4b6b9e3d-ca5c-442e-94a2-6aae4c25dfce&stripeObjId=sobj-b5c14c30-9a73-41a6-9170-9bf438fd8be3&firstStripeInstanceCreatedLatency=90&locale=en-us&controllerCount=3&isCheckout=false&stripeJsLoadTime=1781721865236&manualBrowserDeprecationRollout=false&mids[guid]=NA&mids[muid]=995b9e60-c7f3-4048-8e2c-353cf63bbd7b7253e0&mids[sid]=e60bfae7-3f50-417b-8a46-d9486a19b25f2e0d6b&referrer=http%3A%2F%2Fstore8889.localhost%3A8889%2Fcheckout%2F%3Fcodex_h18%3D1781721864838&controllerId=__privateStripeController5595",
+    "https://js.stripe.com/v3/elements-inner-accessory-target-214384d1d7c402361552347246a13859.html#__shared_params__[version]=v3&__shared_params__[light_experiment_assignments]=%7B%22token%22%3A%224b6b9e3d-ca5c-442e-94a2-6aae4c25dfce%22%2C%22assignments%22%3A%7B%7D%7D&wait=false&rtl=false&publicOptions[fields][billingDetails][name]=never&publicOptions[fields][billingDetails][phone]=never&publicOptions[fields][billingDetails][email]=never&publicOptions[fields][billingDetails][address][country]=never&publicOptions[fields][billingDetails][address][postalCode]=never&publicOptions[fields][billingDetails][address][state]=never&publicOptions[fields][billingDetails][address][city]=never&publicOptions[fields][billingDetails][address][line1]=never&publicOptions[fields][billingDetails][address][line2]=never&publicOptions[terms][card]=always&publicOptions[wallets][applePay]=never&publicOptions[wallets][googlePay]=never&publicOptions[wallets][link]=never&locale=en-us&elementsInitSource=stripe.elements&elementId=payment-d0e2ee6f-7a8f-4e18-a6d7-5f5410ca5f0a&componentName=payment&keyMode=test&apiKey=pk_test_51HHncdJ5cIRIG92xWV6ZRUF50GHxLiDwJqeVgnzvT3iH75NQv0OJbaVa3781JgjwCoD4okbd5OGfoPDQ6edrpHA400vMtnxe2D&frameMessagingStrategy=direct&cryptoWalletDetected=false&accessoryCssUrl=https%3A%2F%2Fjs.stripe.com%2Fv3%2Ffingerprinted%2Fcss%2Felements-inner-payment-ad06f76720b165da1b6459d1e33ef075.css&referrer=http%3A%2F%2Fstore8889.localhost%3A8889%2Fcheckout%2F%3Fcodex_h18%3D1781721864838&controllerId=__privateStripeController5595",
+    "https://js.stripe.com/v3/m-outer-3437aaddcdf6922d623e172c2d6f9278.html#url=http%3A%2F%2Fstore8889.localhost%3A8889%2Fcheckout%2F%3Fcodex_h18%3D1781721864838&title=Checkout%20%E2%80%93%20woocommerce&referrer=&muid=995b9e60-c7f3-4048-8e2c-353cf63bbd7b7253e0&sid=e60bfae7-3f50-417b-8a46-d9486a19b25f2e0d6b&version=6&preview=false&__shared_params__[version]=v3",
+    "https://js.stripe.com/v3/hcaptcha-invisible-c563f5576dce6ded4cbfa6fcf6ea0f57.html#debugMode=false&parentOrigin=http%3A%2F%2Fstore8889.localhost%3A8889"
+  ],
+  "visibleText": "About WordPress\nwoocommerce\nLive\nEdit Site\n0\n0 Comments in moderation\nNew\nEdit Page\nWCPay\nHowdy, admin\nSearch\nSkip to content\n\nwoocommerce\n\n“Codex Native Card Product” has been added to your cart.\nView cart\n“Codex Native Card Product” has been added to your cart.\nView cart\nContact information\nContact information\nEmail address\nBilling address\nBilling address\nCountry/Region\nSelect a country/region\nAfghanistan\nÅland Islands\nAlbania\nAlgeria\nAmerican Samoa\nAndorra\nAngola\nAnguilla\nAntarctica\nAntigua and Barbuda\nArgentina\nArmenia\nAruba\nAustralia\nAustria\nAzerbaijan\nBahamas\nBahrain\nBangladesh\nBarbados\nBelarus\nBelau\nBelgium\nBelize\nBenin\nBermuda\nBhutan\nBolivia\nBonaire, Saint Eustatius and Saba\nBosnia and Herzegovina\nBotswana\nBouvet Island\nBrazil\nBritish Indian Ocean Territory\nBrunei\nBulgaria\nBurkina Faso\nBurundi\nCambodia\nCameroon\nCanada\nCape Verde\nCayman Islands\nCentral African Republic\nChad\nChile\nChina\nChristmas Island\nCocos (Keeling) Islands\nColombia\nComoros\nCongo (Brazzaville)\nCongo (Kinshasa)\nCook Islands\nCosta Rica\nCroatia\nCuba\nCuraçao\nCyprus\nCzech Republic\nDenmark\nDjibouti\nDominica\nDominican Republic\nEcuador\nEgypt\nEl Salvador\nEquatorial Guinea\nEritrea\nEstonia\nEswatini\nEthiopia\nFalkland Islands\nFaroe Islands\nFiji\nFinland\nFrance\nFrench Guiana\nFrench Polynesia\nFrench Southern Territories\nGabon\nGambia\nGeorgia\nGermany\nGhana\nGibraltar\nGreece\nGreenland\nGrenada\nGuadeloupe\nGuam\nGuatemala\nGuernsey\nGuinea\nGuinea-Bissau\nGuyana\nHaiti\nHeard Island and McDonald Islands\nHonduras\nHong Kong\nHungary\nIceland\nIndia\nIndonesia\nIran\nIraq\nIreland\nIsle of Man\nIsrael\nItaly\nIvory Coast\nJamaica\nJapan\nJersey\nJordan\nKazakhstan\nKenya\nKiribati\nKosovo\nKuwait\nKyrgyzstan\nLaos\nLatvia\nLebanon\nLesotho\nLiberia\nLibya\nLiechtenstein\nLithuania\nLuxembourg\nMacao\nMadagascar\nMalawi\nMalaysia\nMaldives\nMali\nMalta\nMarshall Islands\nMartinique\nMauritania\nMauritius\nMayotte\nMexico\nMicronesia\nMoldova\nMonaco\nMongolia\nMontenegro\nMontserrat\nMorocco\nMozambique\nMyanmar\nNamibia\nNauru\nNepal\nNetherlands\nNew Caledonia\nNew Zealand\nNicar",
+  "snapshot": "          - paragraph:\n            - role=link[name=\"woocommerce\"]\n            - role=link[name=\"Cart\"]\n    - main:\n          - alert:\n            - text: \"“Codex Native Card Product” has been added to your cart.\"\n            - role=link[name=\"View cart\"] >> nth=0\n          - alert:\n            - text: \"“Codex Native Card Product” has been added to your cart.\"\n            - role=link[name=\"View cart\"] >> nth=1\n          - form \"Checkout\":\n              - heading \"Contact information\"\n              - textbox \"Email address\" [id=\"email\"]:\n                - text: \"native-platform-pm-1781709309707@example.test\"\n---\n                - labeltext:\n                  - text: \"ZIP Code\"\n                - textbox \"Phone (optional)\" [id=\"billing-phone\"]\n                - labeltext:\n                  - text: \"Phone (optional)\"\n              - heading \"Payment options\"\n              - labeltext:\n                - \"Test Mode Visa Mastercard American Express Discover + 2 Card\" [id=\"radio-control-wc-payment-method-options-woocommerce_payments\"]\n                        - text: \"Test Mode\"\n                        - button \"Visa Mastercard American Express Discover + 2\" [data-testid=\"payment-methods-logos\"]:\n                          - image \"Visa\"\n                          - image \"Mastercard\"\n                          - image \"American Express\"\n                          - image \"Discover\"\n                      - text: \"Card\"\n              - paragraph:\n                - text: \"Use test card\"\n                - role=button[name=\"Click to copy the test number to clipboard\"]:\n                    - text: \"4242 4242 4242 4242\"\n                - text: \"or refer to our\"\n                - role=link[name=\"testing guide\"]\n                - text: \".\"",
+  "requests": [
+    {
+      "method": "GET",
+      "url": "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments.css?ver=1781695475",
+      "resourceType": "stylesheet",
+      "headers": {
+        "referer": "http://store8889.localhost:8889/?add-to-cart=37&codex_h18=1781721862640&doing_wp_cron=1781721862.8250939846038818359375",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments-woopay.css?ver=1781692828",
+      "resourceType": "stylesheet",
+      "headers": {
+        "referer": "http://store8889.localhost:8889/?add-to-cart=37&codex_h18=1781721862640&doing_wp_cron=1781721862.8250939846038818359375",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments-express-checkout.css?ver=1781720945",
+      "resourceType": "stylesheet",
+      "headers": {
+        "referer": "http://store8889.localhost:8889/?add-to-cart=37&codex_h18=1781721862640&doing_wp_cron=1781721862.8250939846038818359375",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-settings.js?ver=5cdaba16c87338181b77",
+      "resourceType": "script",
+      "headers": {
+        "referer": "http://store8889.localhost:8889/?add-to-cart=37&codex_h18=1781721862640&doing_wp_cron=1781721862.8250939846038818359375",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-settings.js?ver=5cdaba16c87338181b77",
+      "resourceType": "other",
+      "headers": {
+        "referer": "http://store8889.localhost:8889/?add-to-cart=37&codex_h18=1781721862640&doing_wp_cron=1781721862.8250939846038818359375",
+        "sec-purpose": "prefetch",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://store8889.localhost:8889/wp-json/wc/store/v1/cart",
+      "resourceType": "fetch",
+      "headers": {
+        "content-type": "application/json",
+        "referer": "http://store8889.localhost:8889/?add-to-cart=37&codex_h18=1781721862640&doing_wp_cron=1781721862.8250939846038818359375",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments.css?ver=1781695475",
+      "resourceType": "stylesheet",
+      "headers": {
+        "referer": "http://store8889.localhost:8889/checkout/?codex_h18=1781721864838",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments-woopay.css?ver=1781692828",
+      "resourceType": "stylesheet",
+      "headers": {
+        "referer": "http://store8889.localhost:8889/checkout/?codex_h18=1781721864838",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments-express-checkout.css?ver=1781720945",
+      "resourceType": "stylesheet",
+      "headers": {
+        "referer": "http://store8889.localhost:8889/checkout/?codex_h18=1781721864838",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/css/woopayments-woopay.css?ver=11.0.0-dev",
+      "resourceType": "stylesheet",
+      "headers": {
+        "referer": "http://store8889.localhost:8889/checkout/?codex_h18=1781721864838",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/js/frontend/woopayments-woopay.js?ver=11.0.0-dev",
+      "resourceType": "script",
+      "headers": {
+        "referer": "http://store8889.localhost:8889/checkout/?codex_h18=1781721864838",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-settings.js?ver=5cdaba16c87338181b77",
+      "resourceType": "other",
+      "headers": {
+        "referer": "http://store8889.localhost:8889/checkout/?codex_h18=1781721864838",
+        "sec-purpose": "prefetch",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-settings.js?ver=5cdaba16c87338181b77",
+      "resourceType": "script",
+      "headers": {
+        "referer": "http://store8889.localhost:8889/checkout/?codex_h18=1781721864838",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://js.stripe.com/v3/",
+      "resourceType": "script",
+      "headers": {
+        "referer": "http://store8889.localhost:8889/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments.js?ver=0c95b3b25ce4c25ead16",
+      "resourceType": "script",
+      "headers": {
+        "referer": "http://store8889.localhost:8889/checkout/?codex_h18=1781721864838",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments-woopay.js?ver=37edabf9da42d663bb64",
+      "resourceType": "script",
+      "headers": {
+        "referer": "http://store8889.localhost:8889/checkout/?codex_h18=1781721864838",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments-express-checkout.js?ver=5e0fae72f13c71c05194",
+      "resourceType": "script",
+      "headers": {
+        "referer": "http://store8889.localhost:8889/checkout/?codex_h18=1781721864838",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://js.stripe.com/v3/controller-with-preconnect-1ed807296a062819b3d4bb2aae4959b2.html",
+      "resourceType": "document",
+      "headers": {
+        "referer": "http://store8889.localhost:8889/",
+        "upgrade-insecure-requests": "1",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://js.stripe.com/v3/controller-with-preconnect-1ed807296a062819b3d4bb2aae4959b2.html",
+      "resourceType": "document",
+      "headers": {
+        "referer": "http://store8889.localhost:8889/",
+        "upgrade-insecure-requests": "1",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://js.stripe.com/v3/controller-with-preconnect-1ed807296a062819b3d4bb2aae4959b2.html",
+      "resourceType": "document",
+      "headers": {
+        "referer": "http://store8889.localhost:8889/",
+        "upgrade-insecure-requests": "1",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://js.stripe.com/v3/elements-inner-accessory-target-214384d1d7c402361552347246a13859.html",
+      "resourceType": "document",
+      "headers": {
+        "referer": "http://store8889.localhost:8889/",
+        "upgrade-insecure-requests": "1",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://js.stripe.com/v3/fingerprinted/js/shared-5da8c9e98037f9882b1f1662c0966fe2.js",
+      "resourceType": "script",
+      "headers": {
+        "referer": "https://js.stripe.com/v3/controller-with-preconnect-1ed807296a062819b3d4bb2aae4959b2.html",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://js.stripe.com/v3/fingerprinted/js/controller-with-preconnect-eb3b5e43740a82bc911c68b7f89c10c0.js",
+      "resourceType": "script",
+      "headers": {
+        "referer": "https://js.stripe.com/v3/controller-with-preconnect-1ed807296a062819b3d4bb2aae4959b2.html",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://js.stripe.com/v3/fingerprinted/js/shared-5da8c9e98037f9882b1f1662c0966fe2.js",
+      "resourceType": "script",
+      "headers": {
+        "referer": "https://js.stripe.com/v3/controller-with-preconnect-1ed807296a062819b3d4bb2aae4959b2.html",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://js.stripe.com/v3/fingerprinted/js/controller-with-preconnect-eb3b5e43740a82bc911c68b7f89c10c0.js",
+      "resourceType": "script",
+      "headers": {
+        "referer": "https://js.stripe.com/v3/controller-with-preconnect-1ed807296a062819b3d4bb2aae4959b2.html",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://js.stripe.com/v3/fingerprinted/js/shared-5da8c9e98037f9882b1f1662c0966fe2.js",
+      "resourceType": "script",
+      "headers": {
+        "referer": "https://js.stripe.com/v3/controller-with-preconnect-1ed807296a062819b3d4bb2aae4959b2.html",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://js.stripe.com/v3/fingerprinted/js/controller-with-preconnect-eb3b5e43740a82bc911c68b7f89c10c0.js",
+      "resourceType": "script",
+      "headers": {
+        "referer": "https://js.stripe.com/v3/controller-with-preconnect-1ed807296a062819b3d4bb2aae4959b2.html",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://js.stripe.com/v3/fingerprinted/css/elements-inner-payment-ad06f76720b165da1b6459d1e33ef075.css",
+      "resourceType": "stylesheet",
+      "headers": {
+        "referer": "https://js.stripe.com/v3/elements-inner-accessory-target-214384d1d7c402361552347246a13859.html",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://js.stripe.com/v3/.deploy_status_henson.json",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/v3/controller-with-preconnect-1ed807296a062819b3d4bb2aae4959b2.html",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://js.stripe.com/v3/.deploy_status_henson.json",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/v3/controller-with-preconnect-1ed807296a062819b3d4bb2aae4959b2.html",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://js.stripe.com/v3/fingerprinted/js/stripe-cookies-99315d136700f132b072c563090f72a7.js",
+      "resourceType": "script",
+      "headers": {
+        "referer": "https://js.stripe.com/v3/controller-with-preconnect-1ed807296a062819b3d4bb2aae4959b2.html",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://js.stripe.com/v3/.deploy_status_henson.json",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/v3/controller-with-preconnect-1ed807296a062819b3d4bb2aae4959b2.html",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://js.stripe.com/v3/.deploy_status_henson.json",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/v3/controller-with-preconnect-1ed807296a062819b3d4bb2aae4959b2.html",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://js.stripe.com/v3/.deploy_status_henson.json",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/v3/controller-with-preconnect-1ed807296a062819b3d4bb2aae4959b2.html",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://js.stripe.com/v3/fingerprinted/js/stripe-cookies-99315d136700f132b072c563090f72a7.js",
+      "resourceType": "script",
+      "headers": {
+        "referer": "https://js.stripe.com/v3/controller-with-preconnect-1ed807296a062819b3d4bb2aae4959b2.html",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://js.stripe.com/v3/.deploy_status_henson.json",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/v3/controller-with-preconnect-1ed807296a062819b3d4bb2aae4959b2.html",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://js.stripe.com/v3/.deploy_status_henson.json",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/v3/controller-with-preconnect-1ed807296a062819b3d4bb2aae4959b2.html",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://js.stripe.com/v3/.deploy_status_henson.json",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/v3/controller-with-preconnect-1ed807296a062819b3d4bb2aae4959b2.html",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://js.stripe.com/v3/fingerprinted/js/stripe-cookies-99315d136700f132b072c563090f72a7.js",
+      "resourceType": "script",
+      "headers": {
+        "referer": "https://js.stripe.com/v3/controller-with-preconnect-1ed807296a062819b3d4bb2aae4959b2.html",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://js.stripe.com/v3/.deploy_status_henson.json",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/v3/controller-with-preconnect-1ed807296a062819b3d4bb2aae4959b2.html",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://api.stripe.com/v1/elements/sessions?deferred_intent[mode]=payment&deferred_intent[amount]=17000&deferred_intent[currency]=usd&deferred_intent[payment_method_types][0]=card&currency=usd&key=pk_test_51HHncdJ5cIRIG92xWV6ZRUF50GHxLiDwJqeVgnzvT3iH75NQv0OJbaVa3781JgjwCoD4okbd5OGfoPDQ6edrpHA400vMtnxe2D&_stripe_account=acct_1TjCnhJd67Ti1EoI&elements_init_source=stripe.elements&referrer_host=store8889.localhost%3A8889&stripe_js_id=4b6b9e3d-ca5c-442e-94a2-6aae4c25dfce&locale=en-us&type=deferred_intent",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://js.stripe.com/v3/fingerprinted/js/elements-inner-accessory-render-7f9bab65d60e599d2c794e53704ff06a.js",
+      "resourceType": "script",
+      "headers": {
+        "referer": "https://js.stripe.com/v3/controller-with-preconnect-1ed807296a062819b3d4bb2aae4959b2.html",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://merchant-ui-api.stripe.com/link/get-cookie?referrer_host=store8889.localhost%3A8889",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://api.stripe.com/v1/elements/sessions?deferred_intent[mode]=payment&deferred_intent[amount]=17000&deferred_intent[currency]=usd&deferred_intent[payment_method_types][0]=card&currency=usd&key=pk_test_51HHncdJ5cIRIG92xWV6ZRUF50GHxLiDwJqeVgnzvT3iH75NQv0OJbaVa3781JgjwCoD4okbd5OGfoPDQ6edrpHA400vMtnxe2D&_stripe_account=acct_1TjCnhJd67Ti1EoI&elements_init_source=stripe.elements&referrer_host=store8889.localhost%3A8889&stripe_js_id=4b6b9e3d-ca5c-442e-94a2-6aae4c25dfce&locale=en-us&type=deferred_intent",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://js.stripe.com/v3/fingerprinted/js/elements-inner-accessory-render-7f9bab65d60e599d2c794e53704ff06a.js",
+      "resourceType": "script",
+      "headers": {
+        "referer": "https://js.stripe.com/v3/controller-with-preconnect-1ed807296a062819b3d4bb2aae4959b2.html",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://merchant-ui-api.stripe.com/link/get-cookie?referrer_host=store8889.localhost%3A8889",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://api.stripe.com/v1/elements/sessions?deferred_intent[mode]=payment&deferred_intent[amount]=17000&deferred_intent[currency]=usd&deferred_intent[payment_method_types][0]=card&currency=usd&key=pk_test_51HHncdJ5cIRIG92xWV6ZRUF50GHxLiDwJqeVgnzvT3iH75NQv0OJbaVa3781JgjwCoD4okbd5OGfoPDQ6edrpHA400vMtnxe2D&elements_init_source=stripe.elements&referrer_host=store8889.localhost%3A8889&stripe_js_id=4b6b9e3d-ca5c-442e-94a2-6aae4c25dfce&locale=en-us&type=deferred_intent",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://js.stripe.com/v3/fingerprinted/js/elements-inner-accessory-render-7f9bab65d60e599d2c794e53704ff06a.js",
+      "resourceType": "script",
+      "headers": {
+        "referer": "https://js.stripe.com/v3/controller-with-preconnect-1ed807296a062819b3d4bb2aae4959b2.html",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://merchant-ui-api.stripe.com/link/get-cookie?referrer_host=store8889.localhost%3A8889",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://js.stripe.com/v3/fingerprinted/js/consumerSchema-b415a44787df0507a440b401f8131955.js",
+      "resourceType": "script",
+      "headers": {
+        "referer": "https://js.stripe.com/v3/controller-with-preconnect-1ed807296a062819b3d4bb2aae4959b2.html",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://js.stripe.com/v3/fingerprinted/js/consumerSchema-b415a44787df0507a440b401f8131955.js",
+      "resourceType": "script",
+      "headers": {
+        "referer": "https://js.stripe.com/v3/controller-with-preconnect-1ed807296a062819b3d4bb2aae4959b2.html",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://js.stripe.com/v3/fingerprinted/js/consumerSchema-b415a44787df0507a440b401f8131955.js",
+      "resourceType": "script",
+      "headers": {
+        "referer": "https://js.stripe.com/v3/controller-with-preconnect-1ed807296a062819b3d4bb2aae4959b2.html",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://js.stripe.com/v3/m-outer-3437aaddcdf6922d623e172c2d6f9278.html",
+      "resourceType": "document",
+      "headers": {
+        "referer": "http://store8889.localhost:8889/",
+        "upgrade-insecure-requests": "1",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://api.stripe.com/v1/consumers/sessions/lookup",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "accept-language": "en",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://js.stripe.com/v3/hcaptcha-invisible-c563f5576dce6ded4cbfa6fcf6ea0f57.html",
+      "resourceType": "document",
+      "headers": {
+        "upgrade-insecure-requests": "1",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://js.stripe.com/v3/.deploy_status_henson.json",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/v3/controller-with-preconnect-1ed807296a062819b3d4bb2aae4959b2.html",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://api.stripe.com/v1/consumers/sessions/lookup",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "accept-language": "en",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://js.stripe.com/v3/fingerprinted/js/m-outer-15a2b40a058ddff1cffdb63779fe3de1.js",
+      "resourceType": "script",
+      "headers": {
+        "referer": "https://js.stripe.com/v3/m-outer-3437aaddcdf6922d623e172c2d6f9278.html",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://m.stripe.network/inner.html",
+      "resourceType": "document",
+      "headers": {
+        "referer": "https://js.stripe.com/",
+        "upgrade-insecure-requests": "1",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://b.stripecdn.com/stripethirdparty-srv/assets/v32.18/HCaptchaInvisible.html?id=4c275233-b88b-45e2-8e86-603d82b51e51&origin=https%3A%2F%2Fjs.stripe.com",
+      "resourceType": "document",
+      "headers": {
+        "referer": "https://js.stripe.com/",
+        "upgrade-insecure-requests": "1",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://m.stripe.network/out-4.5.45.js",
+      "resourceType": "script",
+      "headers": {
+        "referer": "https://m.stripe.network/inner.html",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://m.stripe.com/6",
+      "resourceType": "xhr",
+      "headers": {
+        "content-type": "text/plain;charset=UTF-8",
+        "referer": "https://m.stripe.network/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://api.stripe.com/v1/consumers/sessions/lookup",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "accept-language": "en",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://b.stripecdn.com/stripethirdparty-srv/assets/v32.18/vendors~AddressAutocomplete~AffirmInContext~AfterpayInContext~AlgoliaSearch~AmazonPayButton~ApplePay~834487d7.1fe7f389cb7255baebcd.bundle.js",
+      "resourceType": "script",
+      "headers": {
+        "referer": "https://b.stripecdn.com/stripethirdparty-srv/assets/v32.18/HCaptchaInvisible.html?id=4c275233-b88b-45e2-8e86-603d82b51e51&origin=https%3A%2F%2Fjs.stripe.com",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://b.stripecdn.com/stripethirdparty-srv/assets/v32.18/HCaptchaInvisible.962a48f44139f43b4943.bundle.js",
+      "resourceType": "script",
+      "headers": {
+        "referer": "https://b.stripecdn.com/stripethirdparty-srv/assets/v32.18/HCaptchaInvisible.html?id=4c275233-b88b-45e2-8e86-603d82b51e51&origin=https%3A%2F%2Fjs.stripe.com",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://api.hcaptcha.com/checksiteconfig?v=e26b9b28e05cb0018f2e0c76512bad0ae51c9672&host=b.stripecdn.com&sitekey=20000000-ffff-ffff-ffff-000000000002&sc=1&swa=1&spst=1",
+      "resourceType": "xhr",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "text/plain",
+        "referer": "https://newassets.hcaptcha.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://m.stripe.com/6",
+      "resourceType": "xhr",
+      "headers": {
+        "content-type": "text/plain;charset=UTF-8",
+        "referer": "https://m.stripe.network/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://m.stripe.com/6",
+      "resourceType": "xhr",
+      "headers": {
+        "content-type": "text/plain;charset=UTF-8",
+        "referer": "https://m.stripe.network/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch",
+      "headers": {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+        "referer": "https://js.stripe.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\""
+      }
+    }
+  ],
+  "responses": [
+    {
+      "status": 200,
+      "url": "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments.css?ver=1781695475",
+      "resourceType": "stylesheet"
+    },
+    {
+      "status": 200,
+      "url": "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments-woopay.css?ver=1781692828",
+      "resourceType": "stylesheet"
+    },
+    {
+      "status": 200,
+      "url": "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments-express-checkout.css?ver=1781720945",
+      "resourceType": "stylesheet"
+    },
+    {
+      "status": 200,
+      "url": "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-settings.js?ver=5cdaba16c87338181b77",
+      "resourceType": "script"
+    },
+    {
+      "status": 200,
+      "url": "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-settings.js?ver=5cdaba16c87338181b77",
+      "resourceType": "other"
+    },
+    {
+      "status": 200,
+      "url": "http://store8889.localhost:8889/wp-json/wc/store/v1/cart",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments.css?ver=1781695475",
+      "resourceType": "stylesheet"
+    },
+    {
+      "status": 200,
+      "url": "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments-woopay.css?ver=1781692828",
+      "resourceType": "stylesheet"
+    },
+    {
+      "status": 200,
+      "url": "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments-express-checkout.css?ver=1781720945",
+      "resourceType": "stylesheet"
+    },
+    {
+      "status": 200,
+      "url": "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/css/woopayments-woopay.css?ver=11.0.0-dev",
+      "resourceType": "stylesheet"
+    },
+    {
+      "status": 200,
+      "url": "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-settings.js?ver=5cdaba16c87338181b77",
+      "resourceType": "script"
+    },
+    {
+      "status": 200,
+      "url": "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments-woopay.js?ver=37edabf9da42d663bb64",
+      "resourceType": "script"
+    },
+    {
+      "status": 200,
+      "url": "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments-express-checkout.js?ver=5e0fae72f13c71c05194",
+      "resourceType": "script"
+    },
+    {
+      "status": 200,
+      "url": "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments.js?ver=0c95b3b25ce4c25ead16",
+      "resourceType": "script"
+    },
+    {
+      "status": 200,
+      "url": "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/js/frontend/woopayments-woopay.js?ver=11.0.0-dev",
+      "resourceType": "script"
+    },
+    {
+      "status": 200,
+      "url": "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-settings.js?ver=5cdaba16c87338181b77",
+      "resourceType": "other"
+    },
+    {
+      "status": 200,
+      "url": "https://js.stripe.com/v3/",
+      "resourceType": "script"
+    },
+    {
+      "status": 200,
+      "url": "https://js.stripe.com/v3/controller-with-preconnect-1ed807296a062819b3d4bb2aae4959b2.html",
+      "resourceType": "document"
+    },
+    {
+      "status": 200,
+      "url": "https://js.stripe.com/v3/controller-with-preconnect-1ed807296a062819b3d4bb2aae4959b2.html",
+      "resourceType": "document"
+    },
+    {
+      "status": 200,
+      "url": "https://js.stripe.com/v3/controller-with-preconnect-1ed807296a062819b3d4bb2aae4959b2.html",
+      "resourceType": "document"
+    },
+    {
+      "status": 200,
+      "url": "https://js.stripe.com/v3/elements-inner-accessory-target-214384d1d7c402361552347246a13859.html",
+      "resourceType": "document"
+    },
+    {
+      "status": 200,
+      "url": "https://js.stripe.com/v3/fingerprinted/js/shared-5da8c9e98037f9882b1f1662c0966fe2.js",
+      "resourceType": "script"
+    },
+    {
+      "status": 200,
+      "url": "https://js.stripe.com/v3/fingerprinted/js/shared-5da8c9e98037f9882b1f1662c0966fe2.js",
+      "resourceType": "script"
+    },
+    {
+      "status": 200,
+      "url": "https://js.stripe.com/v3/fingerprinted/js/shared-5da8c9e98037f9882b1f1662c0966fe2.js",
+      "resourceType": "script"
+    },
+    {
+      "status": 200,
+      "url": "https://js.stripe.com/v3/fingerprinted/js/controller-with-preconnect-eb3b5e43740a82bc911c68b7f89c10c0.js",
+      "resourceType": "script"
+    },
+    {
+      "status": 200,
+      "url": "https://js.stripe.com/v3/fingerprinted/js/controller-with-preconnect-eb3b5e43740a82bc911c68b7f89c10c0.js",
+      "resourceType": "script"
+    },
+    {
+      "status": 200,
+      "url": "https://js.stripe.com/v3/fingerprinted/js/controller-with-preconnect-eb3b5e43740a82bc911c68b7f89c10c0.js",
+      "resourceType": "script"
+    },
+    {
+      "status": 200,
+      "url": "https://js.stripe.com/v3/fingerprinted/css/elements-inner-payment-ad06f76720b165da1b6459d1e33ef075.css",
+      "resourceType": "stylesheet"
+    },
+    {
+      "status": 200,
+      "url": "https://js.stripe.com/v3/fingerprinted/js/stripe-cookies-99315d136700f132b072c563090f72a7.js",
+      "resourceType": "script"
+    },
+    {
+      "status": 200,
+      "url": "https://js.stripe.com/v3/fingerprinted/js/stripe-cookies-99315d136700f132b072c563090f72a7.js",
+      "resourceType": "script"
+    },
+    {
+      "status": 200,
+      "url": "https://js.stripe.com/v3/fingerprinted/js/stripe-cookies-99315d136700f132b072c563090f72a7.js",
+      "resourceType": "script"
+    },
+    {
+      "status": 200,
+      "url": "https://js.stripe.com/v3/fingerprinted/js/elements-inner-accessory-render-7f9bab65d60e599d2c794e53704ff06a.js",
+      "resourceType": "script"
+    },
+    {
+      "status": 200,
+      "url": "https://js.stripe.com/v3/fingerprinted/js/consumerSchema-b415a44787df0507a440b401f8131955.js",
+      "resourceType": "script"
+    },
+    {
+      "status": 200,
+      "url": "https://js.stripe.com/v3/fingerprinted/js/elements-inner-accessory-render-7f9bab65d60e599d2c794e53704ff06a.js",
+      "resourceType": "script"
+    },
+    {
+      "status": 200,
+      "url": "https://js.stripe.com/v3/fingerprinted/js/elements-inner-accessory-render-7f9bab65d60e599d2c794e53704ff06a.js",
+      "resourceType": "script"
+    },
+    {
+      "status": 200,
+      "url": "https://js.stripe.com/v3/.deploy_status_henson.json",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://js.stripe.com/v3/.deploy_status_henson.json",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://js.stripe.com/v3/.deploy_status_henson.json",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://js.stripe.com/v3/.deploy_status_henson.json",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://js.stripe.com/v3/.deploy_status_henson.json",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://js.stripe.com/v3/.deploy_status_henson.json",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://js.stripe.com/v3/.deploy_status_henson.json",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://js.stripe.com/v3/.deploy_status_henson.json",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://js.stripe.com/v3/.deploy_status_henson.json",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://js.stripe.com/v3/fingerprinted/js/consumerSchema-b415a44787df0507a440b401f8131955.js",
+      "resourceType": "script"
+    },
+    {
+      "status": 200,
+      "url": "https://js.stripe.com/v3/fingerprinted/js/consumerSchema-b415a44787df0507a440b401f8131955.js",
+      "resourceType": "script"
+    },
+    {
+      "status": 200,
+      "url": "https://api.stripe.com/v1/elements/sessions?deferred_intent[mode]=payment&deferred_intent[amount]=17000&deferred_intent[currency]=usd&deferred_intent[payment_method_types][0]=card&currency=usd&key=pk_test_51HHncdJ5cIRIG92xWV6ZRUF50GHxLiDwJqeVgnzvT3iH75NQv0OJbaVa3781JgjwCoD4okbd5OGfoPDQ6edrpHA400vMtnxe2D&_stripe_account=acct_1TjCnhJd67Ti1EoI&elements_init_source=stripe.elements&referrer_host=store8889.localhost%3A8889&stripe_js_id=4b6b9e3d-ca5c-442e-94a2-6aae4c25dfce&locale=en-us&type=deferred_intent",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://merchant-ui-api.stripe.com/link/get-cookie?referrer_host=store8889.localhost%3A8889",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://js.stripe.com/v3/m-outer-3437aaddcdf6922d623e172c2d6f9278.html",
+      "resourceType": "document"
+    },
+    {
+      "status": 200,
+      "url": "https://api.stripe.com/v1/elements/sessions?deferred_intent[mode]=payment&deferred_intent[amount]=17000&deferred_intent[currency]=usd&deferred_intent[payment_method_types][0]=card&currency=usd&key=pk_test_51HHncdJ5cIRIG92xWV6ZRUF50GHxLiDwJqeVgnzvT3iH75NQv0OJbaVa3781JgjwCoD4okbd5OGfoPDQ6edrpHA400vMtnxe2D&elements_init_source=stripe.elements&referrer_host=store8889.localhost%3A8889&stripe_js_id=4b6b9e3d-ca5c-442e-94a2-6aae4c25dfce&locale=en-us&type=deferred_intent",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://js.stripe.com/v3/hcaptcha-invisible-c563f5576dce6ded4cbfa6fcf6ea0f57.html",
+      "resourceType": "document"
+    },
+    {
+      "status": 200,
+      "url": "https://js.stripe.com/v3/.deploy_status_henson.json",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://merchant-ui-api.stripe.com/link/get-cookie?referrer_host=store8889.localhost%3A8889",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://api.stripe.com/v1/elements/sessions?deferred_intent[mode]=payment&deferred_intent[amount]=17000&deferred_intent[currency]=usd&deferred_intent[payment_method_types][0]=card&currency=usd&key=pk_test_51HHncdJ5cIRIG92xWV6ZRUF50GHxLiDwJqeVgnzvT3iH75NQv0OJbaVa3781JgjwCoD4okbd5OGfoPDQ6edrpHA400vMtnxe2D&_stripe_account=acct_1TjCnhJd67Ti1EoI&elements_init_source=stripe.elements&referrer_host=store8889.localhost%3A8889&stripe_js_id=4b6b9e3d-ca5c-442e-94a2-6aae4c25dfce&locale=en-us&type=deferred_intent",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://js.stripe.com/v3/fingerprinted/js/m-outer-15a2b40a058ddff1cffdb63779fe3de1.js",
+      "resourceType": "script"
+    },
+    {
+      "status": 200,
+      "url": "https://m.stripe.network/inner.html",
+      "resourceType": "document"
+    },
+    {
+      "status": 200,
+      "url": "https://m.stripe.network/out-4.5.45.js",
+      "resourceType": "script"
+    },
+    {
+      "status": 200,
+      "url": "https://api.stripe.com/v1/consumers/sessions/lookup",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://merchant-ui-api.stripe.com/link/get-cookie?referrer_host=store8889.localhost%3A8889",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://b.stripecdn.com/stripethirdparty-srv/assets/v32.18/HCaptchaInvisible.html?id=4c275233-b88b-45e2-8e86-603d82b51e51&origin=https%3A%2F%2Fjs.stripe.com",
+      "resourceType": "document"
+    },
+    {
+      "status": 200,
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://b.stripecdn.com/stripethirdparty-srv/assets/v32.18/vendors~AddressAutocomplete~AffirmInContext~AfterpayInContext~AlgoliaSearch~AmazonPayButton~ApplePay~834487d7.1fe7f389cb7255baebcd.bundle.js",
+      "resourceType": "script"
+    },
+    {
+      "status": 200,
+      "url": "https://b.stripecdn.com/stripethirdparty-srv/assets/v32.18/HCaptchaInvisible.962a48f44139f43b4943.bundle.js",
+      "resourceType": "script"
+    },
+    {
+      "status": 200,
+      "url": "https://api.stripe.com/v1/consumers/sessions/lookup",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://api.hcaptcha.com/checksiteconfig?v=e26b9b28e05cb0018f2e0c76512bad0ae51c9672&host=b.stripecdn.com&sitekey=20000000-ffff-ffff-ffff-000000000002&sc=1&swa=1&spst=1",
+      "resourceType": "xhr"
+    },
+    {
+      "status": 200,
+      "url": "https://api.stripe.com/v1/consumers/sessions/lookup",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://m.stripe.com/6",
+      "resourceType": "xhr"
+    },
+    {
+      "status": 200,
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://m.stripe.com/6",
+      "resourceType": "xhr"
+    },
+    {
+      "status": 200,
+      "url": "https://m.stripe.com/6",
+      "resourceType": "xhr"
+    },
+    {
+      "status": 200,
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch"
+    },
+    {
+      "status": 200,
+      "url": "https://r.stripe.com/b",
+      "resourceType": "fetch"
+    }
+  ],
+  "console": [
+    {
+      "type": "warning",
+      "text": "The usage of data-wp-init--mark-as-hydrated (two hyphens for unique ID) is deprecated and will stop working in WordPress 7.1. Please use data-wp-init---mark-as-hydrated (three hyphens for unique ID) from now on."
+    },
+    {
+      "type": "warning",
+      "text": "The `useSelect` hook returns different values when called with the same state and parameters.\nThis can lead to unnecessary re-renders and performance issues if not fixed.\n\nNon-equal value keys: %s\n\n getValidationError Error Component Stack\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at co (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:13383)\n    at div (<anonymous>)\n    at l (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:36647)\n    at a (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:6156)\n    at m (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:31232)\n    at y (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:33969)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:22577)\n    at u (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:30436)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:17550)\n    at s (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:23918)\n    at P (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:22823)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:14355\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:37400\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:50303)"
+    },
+    {
+      "type": "warning",
+      "text": "The `useSelect` hook returns different values when called with the same state and parameters.\nThis can lead to unnecessary re-renders and performance issues if not fixed.\n\nNon-equal value keys: %s\n\n getValidationError Error Component Stack\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at form (<anonymous>)\n    at div (<anonymous>)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:5824\n    at component (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:3896)\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at co (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:13383)\n    at div (<anonymous>)\n    at l (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:36647)\n    at a (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:6156)\n    at m (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:31232)\n    at y (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:33969)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:22577)\n    at u (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:30436)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:17550)\n    at s (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:23918)\n    at P (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:22823)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:14355\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:37400\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:50303)"
+    },
+    {
+      "type": "warning",
+      "text": "The `useSelect` hook returns different values when called with the same state and parameters.\nThis can lead to unnecessary re-renders and performance issues if not fixed.\n\nNon-equal value keys: %s\n\n getValidationError Error Component Stack\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at form (<anonymous>)\n    at div (<anonymous>)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:5824\n    at component (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:3896)\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at co (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:13383)\n    at div (<anonymous>)\n    at l (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:36647)\n    at a (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:6156)\n    at m (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:31232)\n    at y (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:33969)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:22577)\n    at u (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:30436)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:17550)\n    at s (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:23918)\n    at P (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:22823)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:14355\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:37400\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:50303)"
+    },
+    {
+      "type": "warning",
+      "text": "The `useSelect` hook returns different values when called with the same state and parameters.\nThis can lead to unnecessary re-renders and performance issues if not fixed.\n\nNon-equal value keys: %s\n\n getValidationError Error Component Stack\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at form (<anonymous>)\n    at div (<anonymous>)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:5824\n    at component (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:3896)\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at co (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:13383)\n    at div (<anonymous>)\n    at l (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:36647)\n    at a (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:6156)\n    at m (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:31232)\n    at y (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:33969)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:22577)\n    at u (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:30436)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:17550)\n    at s (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:23918)\n    at P (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:22823)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:14355\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:37400\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:50303)"
+    },
+    {
+      "type": "warning",
+      "text": "The `useSelect` hook returns different values when called with the same state and parameters.\nThis can lead to unnecessary re-renders and performance issues if not fixed.\n\nNon-equal value keys: %s\n\n getValidationError Error Component Stack\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at form (<anonymous>)\n    at div (<anonymous>)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:5824\n    at component (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:3896)\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at co (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:13383)\n    at div (<anonymous>)\n    at l (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:36647)\n    at a (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:6156)\n    at m (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:31232)\n    at y (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:33969)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:22577)\n    at u (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:30436)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:17550)\n    at s (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:23918)\n    at P (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:22823)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:14355\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:37400\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:50303)"
+    },
+    {
+      "type": "warning",
+      "text": "The `useSelect` hook returns different values when called with the same state and parameters.\nThis can lead to unnecessary re-renders and performance issues if not fixed.\n\nNon-equal value keys: %s\n\n getValidationError Error Component Stack\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at form (<anonymous>)\n    at div (<anonymous>)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:5824\n    at component (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:3896)\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at co (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:13383)\n    at div (<anonymous>)\n    at l (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:36647)\n    at a (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:6156)\n    at m (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:31232)\n    at y (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:33969)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:22577)\n    at u (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:30436)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:17550)\n    at s (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:23918)\n    at P (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:22823)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:14355\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:37400\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:50303)"
+    },
+    {
+      "type": "warning",
+      "text": "The `useSelect` hook returns different values when called with the same state and parameters.\nThis can lead to unnecessary re-renders and performance issues if not fixed.\n\nNon-equal value keys: %s\n\n getValidationError Error Component Stack\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at form (<anonymous>)\n    at div (<anonymous>)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:5824\n    at component (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:3896)\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at co (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:13383)\n    at div (<anonymous>)\n    at l (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:36647)\n    at a (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:6156)\n    at m (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:31232)\n    at y (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:33969)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:22577)\n    at u (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:30436)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:17550)\n    at s (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:23918)\n    at P (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:22823)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:14355\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:37400\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:50303)"
+    },
+    {
+      "type": "warning",
+      "text": "The `useSelect` hook returns different values when called with the same state and parameters.\nThis can lead to unnecessary re-renders and performance issues if not fixed.\n\nNon-equal value keys: %s\n\n getValidationError Error Component Stack\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at form (<anonymous>)\n    at div (<anonymous>)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:5824\n    at component (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:3896)\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at co (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:13383)\n    at div (<anonymous>)\n    at l (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:36647)\n    at a (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:6156)\n    at m (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:31232)\n    at y (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:33969)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:22577)\n    at u (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:30436)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:17550)\n    at s (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:23918)\n    at P (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:22823)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:14355\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:37400\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:50303)"
+    },
+    {
+      "type": "warning",
+      "text": "The `useSelect` hook returns different values when called with the same state and parameters.\nThis can lead to unnecessary re-renders and performance issues if not fixed.\n\nNon-equal value keys: %s\n\n getValidationError Error Component Stack\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at form (<anonymous>)\n    at div (<anonymous>)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:5824\n    at component (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:3896)\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at co (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:13383)\n    at div (<anonymous>)\n    at l (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:36647)\n    at a (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:6156)\n    at m (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:31232)\n    at y (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:33969)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:22577)\n    at u (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:30436)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:17550)\n    at s (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:23918)\n    at P (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:22823)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:14355\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:37400\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:50303)"
+    },
+    {
+      "type": "warning",
+      "text": "The `useSelect` hook returns different values when called with the same state and parameters.\nThis can lead to unnecessary re-renders and performance issues if not fixed.\n\nNon-equal value keys: %s\n\n getValidationError Error Component Stack\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at form (<anonymous>)\n    at div (<anonymous>)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:5824\n    at component (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:3896)\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at co (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:13383)\n    at div (<anonymous>)\n    at l (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:36647)\n    at a (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:6156)\n    at m (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:31232)\n    at y (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:33969)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:22577)\n    at u (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:30436)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:17550)\n    at s (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:23918)\n    at P (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:22823)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:14355\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:37400\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:50303)"
+    },
+    {
+      "type": "warning",
+      "text": "The `useSelect` hook returns different values when called with the same state and parameters.\nThis can lead to unnecessary re-renders and performance issues if not fixed.\n\nNon-equal value keys: %s\n\n getValidationError Error Component Stack\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at form (<anonymous>)\n    at div (<anonymous>)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:5824\n    at component (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:3896)\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at co (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:13383)\n    at div (<anonymous>)\n    at l (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:36647)\n    at a (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:6156)\n    at m (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:31232)\n    at y (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:33969)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:22577)\n    at u (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:30436)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:17550)\n    at s (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:23918)\n    at P (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:22823)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:14355\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:37400\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:50303)"
+    },
+    {
+      "type": "warning",
+      "text": "The `useSelect` hook returns different values when called with the same state and parameters.\nThis can lead to unnecessary re-renders and performance issues if not fixed.\n\nNon-equal value keys: %s\n\n getValidationError Error Component Stack\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at co (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:13383)\n    at div (<anonymous>)\n    at l (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:36647)\n    at a (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:6156)\n    at m (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:31232)\n    at y (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:33969)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:22577)\n    at u (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:30436)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:17550)\n    at s (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:23918)\n    at P (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:22823)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:14355\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:37400\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:50303)"
+    },
+    {
+      "type": "warning",
+      "text": "The `useSelect` hook returns different values when called with the same state and parameters.\nThis can lead to unnecessary re-renders and performance issues if not fixed.\n\nNon-equal value keys: %s\n\n getValidationError Error Component Stack\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at div (<anonymous>)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:6379\n    at component (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:6153)\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at co (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:13383)\n    at div (<anonymous>)\n    at l (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:36647)\n    at a (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:6156)\n    at m (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:31232)\n    at y (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:33969)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:22577)\n    at u (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:30436)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:17550)\n    at s (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:23918)\n    at P (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:22823)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:14355\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:37400\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:50303)"
+    },
+    {
+      "type": "warning",
+      "text": "The `useSelect` hook returns different values when called with the same state and parameters.\nThis can lead to unnecessary re-renders and performance issues if not fixed.\n\nNon-equal value keys: %s\n\n getValidationError Error Component Stack\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at div (<anonymous>)\n    at div (<anonymous>)\n    at component (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:6529)\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at div (<anonymous>)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:6379\n    at component (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:6153)\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at co (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:13383)\n    at div (<anonymous>)\n    at l (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:36647)\n    at a (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:6156)\n    at m (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:31232)\n    at y (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:33969)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:22577)\n    at u (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:30436)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:17550)\n    at s (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:23918)\n    at P (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:22823)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:14355\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:37400\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:50303)"
+    },
+    {
+      "type": "warning",
+      "text": "The `useSelect` hook returns different values when called with the same state and parameters.\nThis can lead to unnecessary re-renders and performance issues if not fixed.\n\nNon-equal value keys: %s\n\n getValidationError Error Component Stack\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at div (<anonymous>)\n    at div (<anonymous>)\n    at component (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:6529)\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at div (<anonymous>)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:6379\n    at component (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:6153)\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at co (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:13383)\n    at div (<anonymous>)\n    at l (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:36647)\n    at a (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:6156)\n    at m (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:31232)\n    at y (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:33969)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:22577)\n    at u (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:30436)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:17550)\n    at s (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:23918)\n    at P (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:22823)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:14355\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:37400\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:50303)"
+    },
+    {
+      "type": "warning",
+      "text": "The `useSelect` hook returns different values when called with the same state and parameters.\nThis can lead to unnecessary re-renders and performance issues if not fixed.\n\nNon-equal value keys: %s\n\n getValidationError Error Component Stack\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at div (<anonymous>)\n    at div (<anonymous>)\n    at div (<anonymous>)\n    at component (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:6529)\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at div (<anonymous>)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:6379\n    at component (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:6153)\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at co (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:13383)\n    at div (<anonymous>)\n    at l (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:36647)\n    at a (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:6156)\n    at m (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:31232)\n    at y (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:33969)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:22577)\n    at u (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:30436)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:17550)\n    at s (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:23918)\n    at P (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:22823)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:14355\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:37400\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:50303)"
+    },
+    {
+      "type": "warning",
+      "text": "The `useSelect` hook returns different values when called with the same state and parameters.\nThis can lead to unnecessary re-renders and performance issues if not fixed.\n\nNon-equal value keys: %s\n\n getValidationError Error Component Stack\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at div (<anonymous>)\n    at div (<anonymous>)\n    at div (<anonymous>)\n    at component (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:6529)\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at div (<anonymous>)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:6379\n    at component (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:6153)\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at co (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:13383)\n    at div (<anonymous>)\n    at l (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:36647)\n    at a (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:6156)\n    at m (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:31232)\n    at y (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:33969)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:22577)\n    at u (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:30436)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:17550)\n    at s (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:23918)\n    at P (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:22823)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:14355\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:37400\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:50303)"
+    },
+    {
+      "type": "warning",
+      "text": "The `useSelect` hook returns different values when called with the same state and parameters.\nThis can lead to unnecessary re-renders and performance issues if not fixed.\n\nNon-equal value keys: %s\n\n getValidationError Error Component Stack\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at div (<anonymous>)\n    at div (<anonymous>)\n    at div (<anonymous>)\n    at component (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:6529)\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at div (<anonymous>)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:6379\n    at component (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:6153)\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at co (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:13383)\n    at div (<anonymous>)\n    at l (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:36647)\n    at a (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:6156)\n    at m (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:31232)\n    at y (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:33969)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:22577)\n    at u (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:30436)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:17550)\n    at s (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:23918)\n    at P (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:22823)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:14355\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:37400\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:50303)"
+    },
+    {
+      "type": "warning",
+      "text": "The `useSelect` hook returns different values when called with the same state and parameters.\nThis can lead to unnecessary re-renders and performance issues if not fixed.\n\nNon-equal value keys: %s\n\n getValidationError Error Component Stack\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at div (<anonymous>)\n    at div (<anonymous>)\n    at div (<anonymous>)\n    at component (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:6529)\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at div (<anonymous>)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:6379\n    at component (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:6153)\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at co (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:13383)\n    at div (<anonymous>)\n    at l (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:36647)\n    at a (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:6156)\n    at m (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:31232)\n    at y (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:33969)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:22577)\n    at u (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:30436)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:17550)\n    at s (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:23918)\n    at P (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:22823)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:14355\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:37400\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:50303)"
+    },
+    {
+      "type": "warning",
+      "text": "The `useSelect` hook returns different values when called with the same state and parameters.\nThis can lead to unnecessary re-renders and performance issues if not fixed.\n\nNon-equal value keys: %s\n\n getValidationError Error Component Stack\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at div (<anonymous>)\n    at div (<anonymous>)\n    at div (<anonymous>)\n    at component (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:6529)\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at div (<anonymous>)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:6379\n    at component (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:6153)\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at co (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:13383)\n    at div (<anonymous>)\n    at l (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:36647)\n    at a (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:6156)\n    at m (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:31232)\n    at y (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:33969)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:22577)\n    at u (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:30436)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:17550)\n    at s (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:23918)\n    at P (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:22823)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:14355\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:37400\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:50303)"
+    },
+    {
+      "type": "error",
+      "text": "The above error occurred in the <b> component:\n\n    at b (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments-express-checkout.js?ver=5e0fae72f13c71c05194:1:2728)\n    at li\n    at ul\n    at l (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:38:9843)\n    at g (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:38:813)\n    at div\n    at div\n    at g (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:38:5096)\n    at div\n    at I (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:1:13871)\n    at component (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:4420)\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at form\n    at div\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:5824\n    at component (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:3896)\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at co (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:13383)\n    at div\n    at l (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:36647)\n    at a (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:6156)\n    at m (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:31232)\n    at y (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:33969)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:22577)\n    at u (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:30436)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:17550)\n    at s (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:23918)\n    at P (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:22823)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:14355\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:37400\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:50303)\n\nReact will try to recreate this component tree from scratch using the error boundary you provided, l."
+    },
+    {
+      "type": "error",
+      "text": "The above error occurred in the <b> component:\n\n    at b (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments-express-checkout.js?ver=5e0fae72f13c71c05194:1:2728)\n    at li\n    at ul\n    at l (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:38:9843)\n    at g (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:38:813)\n    at div\n    at div\n    at g (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:38:5096)\n    at div\n    at I (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:1:13871)\n    at component (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:4420)\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at form\n    at div\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:5824\n    at component (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:3896)\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at co (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:13383)\n    at div\n    at l (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:36647)\n    at a (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:6156)\n    at m (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:31232)\n    at y (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:33969)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:22577)\n    at u (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:30436)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:17550)\n    at s (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:23918)\n    at P (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:22823)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:14355\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:37400\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:50303)\n\nReact will try to recreate this component tree from scratch using the error boundary you provided, l."
+    },
+    {
+      "type": "warning",
+      "text": "[WooCommerce] An inline or unknown script accessed wc.wcBlocksData without proper dependency declaration. This script should declare \"wc-blocks-data-store\" as a dependency. Error Component Stack\n    at Le (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:3:8433)\n    at $e (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:3:9159)\n    at div (<anonymous>)\n    at fieldset (<anonymous>)\n    at E (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:48:1018)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:3:9961\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-blocks-shared-hocs.js?ver=781196b1e16b60e862cb:1:3229\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at form (<anonymous>)\n    at div (<anonymous>)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:5824\n    at component (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:3896)\n    at blockWrapper (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:15862)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at co (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:13383)\n    at div (<anonymous>)\n    at l (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:36647)\n    at a (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:34:6156)\n    at m (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:31232)\n    at y (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:33969)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:22577)\n    at u (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:30436)\n    at f (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:17550)\n    at s (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:23918)\n    at P (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-vendors-frontend.js?ver=6406d73a624f4b740506:1:22823)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/checkout-frontend.js?ver=419c7fa6a22d353804b2:5:14355\n    at http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:37400\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:1:3294)\n    at c (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-cart-checkout-base-frontend.js?ver=e571ffa05a1009171adc:36:50303)"
+    }
+  ]
+}

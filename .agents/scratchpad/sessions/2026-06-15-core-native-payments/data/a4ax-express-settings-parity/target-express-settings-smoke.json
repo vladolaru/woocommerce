@@ -1,0 +1,397 @@
+{
+  "status": "pass",
+  "generatedAt": "2026-06-20T19:18:55.558Z",
+  "target": "http://store8889.localhost:8889",
+  "note": "This smoke asserts the current connected target account state. Fixture-only WooPay disabled/store-page policy branches remain covered by Jest.",
+  "results": [
+    {
+      "name": "settings-root",
+      "requestedUrl": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings",
+      "finalUrl": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings",
+      "expectedPath": "/woopayments/settings",
+      "actualPath": "/woopayments/settings",
+      "missingText": [],
+      "missingLinks": [],
+      "logs": [],
+      "unexpectedLogs": [],
+      "screenshot": "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4ax-express-settings-parity/settings-root.png",
+      "relevantLinks": [
+        {
+          "text": "Skip to main content",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings#wpbody-content"
+        },
+        {
+          "text": "Skip to toolbar",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings#wp-toolbar"
+        },
+        {
+          "text": "Payments",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview&from=PAYMENTS_MENU_ITEM"
+        },
+        {
+          "text": "Overview",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview&from=PAYMENTS_MENU_ITEM"
+        },
+        {
+          "text": "Payouts",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/payouts&from=PAYMENTS_MENU_ITEM"
+        },
+        {
+          "text": "Transactions",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/transactions&from=PAYMENTS_MENU_ITEM"
+        },
+        {
+          "text": "Reports",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/reports&from=PAYMENTS_MENU_ITEM"
+        },
+        {
+          "text": "Disputes 10",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/disputes&from=PAYMENTS_MENU_ITEM&filter=awaiting_response"
+        },
+        {
+          "text": "Settings",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/settings&from=PAYMENTS_MENU_ITEM"
+        },
+        {
+          "text": "Privacy",
+          "href": "http://store8889.localhost:8889/wp-admin/options-privacy.php"
+        },
+        {
+          "text": "Menu",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings#"
+        },
+        {
+          "text": "⌘K Open command palette",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings#"
+        },
+        {
+          "text": "About WooCommerce",
+          "href": "https://woocommerce.com/?utm_source=helptab&utm_medium=product&utm_content=about&utm_campaign=woocommerceplugin"
+        },
+        {
+          "text": "Official themes",
+          "href": "https://woocommerce.com/product-category/themes/?utm_source=helptab&utm_medium=product&utm_content=wcthemes&utm_campaign=woocommerceplugin"
+        },
+        {
+          "text": "Official extensions",
+          "href": "https://woocommerce.com/product-category/woocommerce-extensions/?utm_source=helptab&utm_medium=product&utm_content=wcextensions&utm_campaign=woocommerceplugin"
+        },
+        {
+          "text": "Accounts & Privacy",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=account"
+        },
+        {
+          "text": "Learn more↗",
+          "href": "https://woocommerce.com/document/woopayments/testing-and-troubleshooting/test-accounts/#developer-notes"
+        },
+        {
+          "text": "Learn more↗",
+          "href": "https://woocommerce.com/document/woopayments/settings-guide/#express-checkouts"
+        },
+        {
+          "text": "Customize",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings%2Fexpress-checkout%2Fwoopay&from=woopayments-settings"
+        },
+        {
+          "text": "Customize",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings%2Fexpress-checkout%2Fpayment_request&from=woopayments-settings"
+        },
+        {
+          "text": "Link by Stripe terms↗",
+          "href": "https://link.com/terms"
+        },
+        {
+          "text": "Privacy Policy↗",
+          "href": "https://link.com/privacy"
+        },
+        {
+          "text": "Read more",
+          "href": "https://woocommerce.com/document/woopayments/payment-methods/link-by-stripe/"
+        },
+        {
+          "text": "Stripe↗",
+          "href": "https://stripe.com/legal/ssa"
+        },
+        {
+          "text": "Amazon↗",
+          "href": "https://stripe.com/legal/amazon-pay"
+        },
+        {
+          "text": "Customize",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings%2Fexpress-checkout%2Famazon_pay&from=woopayments-settings"
+        },
+        {
+          "text": "Learn more about fraud protection↗",
+          "href": "https://woocommerce.com/document/woopayments/fraud-and-disputes/fraud-protection/"
+        },
+        {
+          "text": "Learn more↗",
+          "href": "https://woocommerce.com/document/woopayments/currencies/multi-currency-setup/"
+        },
+        {
+          "text": "WooCommerce Subscriptions↗",
+          "href": "https://woocommerce.com/products/woocommerce-subscriptions/"
+        }
+      ],
+      "textExcerpt": "Skip to main content\nSkip to toolbar\n\n\nDashboard\nHome\nUpdates\n\n\nPosts\nAll Posts\nAdd Post\nCategories\nTags\n\n\nMedia\nLibrary\nAdd Media File\n\n\nPages\nAll Pages\nAdd Page\n\n\nComments\n\n\nWooCommerce\nHome 3\nOrders 198\nSubscriptions\nCustomers\nCoupons\nReports\nSettings\nStatus\nExtensions\n\n\nProducts\nAll Products\nAdd new product\nBrands\nCategories\nTags\nAttributes\nReviews\n\n\nPayments\nOverview\nPayouts\nTransactions\nReports\nDisputes 10\nSettings\n\n\nAnalytics\nOverview\nProducts\nRevenue\nOrders\nVariations\nCategories\nCoupons\nTaxes\nDownloads\nStock\nSettings\n\n\nMarketing\nOverview\nCoupons\n\n\nAppearance\nThemes\nEditor\nFonts\n\n\nPlugins\nInstalled Plugins\nAdd Plugin\n\n\nUsers\nAll Users\nAdd User\nProfile\n\n\nTools\nAvailable Tools\nImport\nExport\nSite Health 2\nExport Personal Data\nErase Personal Data\nWPCOM Local Helper\nScheduled Actions\nTheme File Editor\nPlugin File Editor\n\n\nSettings\nGeneral\nConnectors\nWriting\nReading\nDiscussion\nMedia\nPermalinks\nPrivacy\n\n\nJetpack Debug\nJetpack Debug\nBroken Token\nConnection Errors\n\n\nWCPay Dev\n⚙️ Settings\n🧪 Test Lab\nCollapse Menu\nAbout WordPress\nwoocommerce\nLive\n⌘K\nOpen command palette\n0\n0 Comments in moderation\nNew\nWCPay\nHowdy, admin\nSettings\nGeneral\nProducts\nShipping\nPayments\nAccounts & Privacy\nEmails\nIntegration\nSite visibility\nPoint of Sale\nMulti-currency\nSubscriptions\nAdvanced\nPayments\nWooPayments settings\n\nManage WooPayments payment methods, express checkouts, payouts, notifications, fraud protection, and advanced settings.\n\nGeneral\n\nEnable or disable WooPayments and choose the account mode used for transactions.\n\nWarning notice\n\nYou are using a test account. ⚠️ Development mode is enabled for the store! There can be no live onboarding process while using development, testing, or staging WordPress environments!\nTo begin accepting real payments, please go to the live store or change your WordPress environment↗ to a production one. Learn more↗\n\nEnable WooPayments\nPayments accepted on checkout\n\nAdd and edit the payment methods customers can use at checkout.\n\nPayment methods\nCredit / Debit Cards\nCredit / Debit Cards\n(Required)\n\nLet your customers pay with major credit and debit cards without leaving your store.\n\nFrom 2.9% + $0.30\nBancontact\nBancontact\n\nBancontact is a bank redirect payment method offered by more than 80% of online businesses in Belgium.\n\nFrom 1.4% + $0.30\nEPS\nEPS\n\nAccept your payment with EPS — a common payment method in Austria.\n\nFrom 1.8% + $0.30\niDEAL | Wero\niDEAL | Wero\n\nExpand your business with iDEAL | Wero — Netherlands's most popular payment method.\n\nFrom 0% + $0.80\nPrzelewy24 (P24)\nPrzelewy24 (P24)\n\nAccept payments with Przelewy24 (P24), the most popular payment method in Poland.\n\nFrom 2.2% + $0.30\nMultibanco\nMultibanco\n\nA voucher based payment method for your customers in Portugal.\n\nFrom 2.95% + $0.30\nAlipay\nAlipay\n\nA digital wallet for customers with mainland China Alipay accounts. Regional versions like AlipayHK are not supported.\n\nFrom 2.9% + $0.30\nWeChat Pay\nWeChat Pay\n\nA digital wallet for customers with mainland China WeChat Pay wallets. Regional versions like WeChat Pay HK are not supported.\n\nFrom 2.9% + $0.30\nBuy now, pay later\n\nOffer flexible payment options when they are available for your account.\n\nInstallment options\nKlarna\nKlarna\n\nAllow customers to pay over time or pay now with Klarna.\n\nFrom 5.99% + $0.30\nAffirm\nAffirm\n\nAllow customers to pay over time with Affirm.\n\nFrom 6% + $0.30\nCash App Afterpay\nCash App Afterpay\n\nAllow customers to pay over time with Cash App Afterpay.\n\nFrom 6% + $0.30\nExpress checkouts\n\nLet customers use digital wallets and express payment methods across your store.\n\nLearn more↗\nWooPay\nWooPay\n\nBoost conversion and customer loyalty by offering a single click, secure way to pay.\n\nCustomize\nApple Pay / Google Pay\nApple Pay / Google Pay\n\nAllow customers to make payments using Apple Pay and Google Pay.\n\nCustomize\nLink by Stripe\nLink by Stripe\n\nLet customers use Link for faster checkout. By enabling this feature, you agree to the Link by Stripe terms↗, and Privacy Policy↗.\n\nWarning notice\nTo enable Link by Stripe, you must first disable WooPay.\nRead more\nAmazon Pay\nAmazon Pay\n\nAllow customers to make payments using Amazon Pay. By activating this feature, you accept Stripe↗ and Amazon↗'s terms of use.\n\nCustomize\nTransactions\n\nUpdate transaction preferences, customer statements, and support contact details.\n\nTransaction preferences\nEnable payments via saved cards\n\nWhen enabled, users will be able to pay with a saved card during checkout. Card details are stored in our platform, not on your store.\n\nIssue an authorization on checkout and capture later\n\nAuthorize charges first and capture funds later.\n\nCustomer statements\n\nEdit the way your store name appears on your customers' bank statements.\n\nCUSTOMER BANK STATEMENT\n\n11 of 22 characters\n\nCustomer support\n\nProvide contact information where customers can reach you for support.\n\nSUPPORT EMAIL\n\nThis may be visible on receipts, invoices, and automated emails from your store.\n\nSUPPORT PHONE NUMBER\n+1\n\nThis may be visible on ",
+      "pass": true
+    },
+    {
+      "name": "payment-request-detail",
+      "requestedUrl": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings%2Fexpress-checkout%2Fpayment_request",
+      "finalUrl": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings%2Fexpress-checkout%2Fpayment_request",
+      "expectedPath": "/woopayments/settings/express-checkout/payment_request",
+      "actualPath": "/woopayments/settings/express-checkout/payment_request",
+      "missingText": [],
+      "missingLinks": [],
+      "logs": [],
+      "unexpectedLogs": [],
+      "screenshot": "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4ax-express-settings-parity/payment-request-detail.png",
+      "relevantLinks": [
+        {
+          "text": "Skip to main content",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings%2Fexpress-checkout%2Fpayment_request#wpbody-content"
+        },
+        {
+          "text": "Skip to toolbar",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings%2Fexpress-checkout%2Fpayment_request#wp-toolbar"
+        },
+        {
+          "text": "Payments",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview&from=PAYMENTS_MENU_ITEM"
+        },
+        {
+          "text": "Overview",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview&from=PAYMENTS_MENU_ITEM"
+        },
+        {
+          "text": "Payouts",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/payouts&from=PAYMENTS_MENU_ITEM"
+        },
+        {
+          "text": "Transactions",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/transactions&from=PAYMENTS_MENU_ITEM"
+        },
+        {
+          "text": "Reports",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/reports&from=PAYMENTS_MENU_ITEM"
+        },
+        {
+          "text": "Disputes 10",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/disputes&from=PAYMENTS_MENU_ITEM&filter=awaiting_response"
+        },
+        {
+          "text": "Settings",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/settings&from=PAYMENTS_MENU_ITEM"
+        },
+        {
+          "text": "Privacy",
+          "href": "http://store8889.localhost:8889/wp-admin/options-privacy.php"
+        },
+        {
+          "text": "Menu",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings%2Fexpress-checkout%2Fpayment_request#"
+        },
+        {
+          "text": "⌘K Open command palette",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings%2Fexpress-checkout%2Fpayment_request#"
+        },
+        {
+          "text": "About WooCommerce",
+          "href": "https://woocommerce.com/?utm_source=helptab&utm_medium=product&utm_content=about&utm_campaign=woocommerceplugin"
+        },
+        {
+          "text": "Official themes",
+          "href": "https://woocommerce.com/product-category/themes/?utm_source=helptab&utm_medium=product&utm_content=wcthemes&utm_campaign=woocommerceplugin"
+        },
+        {
+          "text": "Official extensions",
+          "href": "https://woocommerce.com/product-category/woocommerce-extensions/?utm_source=helptab&utm_medium=product&utm_content=wcextensions&utm_campaign=woocommerceplugin"
+        },
+        {
+          "text": "Accounts & Privacy",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=account"
+        },
+        {
+          "text": "Return to payments",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings&from=woopayments-settings"
+        }
+      ],
+      "textExcerpt": "Skip to main content\nSkip to toolbar\n\n\nDashboard\nHome\nUpdates\n\n\nPosts\nAll Posts\nAdd Post\nCategories\nTags\n\n\nMedia\nLibrary\nAdd Media File\n\n\nPages\nAll Pages\nAdd Page\n\n\nComments\n\n\nWooCommerce\nHome 3\nOrders 198\nSubscriptions\nCustomers\nCoupons\nReports\nSettings\nStatus\nExtensions\n\n\nProducts\nAll Products\nAdd new product\nBrands\nCategories\nTags\nAttributes\nReviews\n\n\nPayments\nOverview\nPayouts\nTransactions\nReports\nDisputes 10\nSettings\n\n\nAnalytics\nOverview\nProducts\nRevenue\nOrders\nVariations\nCategories\nCoupons\nTaxes\nDownloads\nStock\nSettings\n\n\nMarketing\nOverview\nCoupons\n\n\nAppearance\nThemes\nEditor\nFonts\n\n\nPlugins\nInstalled Plugins\nAdd Plugin\n\n\nUsers\nAll Users\nAdd User\nProfile\n\n\nTools\nAvailable Tools\nImport\nExport\nSite Health 2\nExport Personal Data\nErase Personal Data\nWPCOM Local Helper\nScheduled Actions\nTheme File Editor\nPlugin File Editor\n\n\nSettings\nGeneral\nConnectors\nWriting\nReading\nDiscussion\nMedia\nPermalinks\nPrivacy\n\n\nJetpack Debug\nJetpack Debug\nBroken Token\nConnection Errors\n\n\nWCPay Dev\n⚙️ Settings\n🧪 Test Lab\nCollapse Menu\nAbout WordPress\nwoocommerce\nLive\n⌘K\nOpen command palette\n0\n0 Comments in moderation\nNew\nWCPay\nHowdy, admin\nSettings\nGeneral\nProducts\nShipping\nPayments\nAccounts & Privacy\nEmails\nIntegration\nSite visibility\nPoint of Sale\nMulti-currency\nSubscriptions\nAdvanced\nPayments\nReturn to payments\nApple Pay / Google Pay\nApple Pay / Google Pay\n\nAllow your customers to collect payments via Apple Pay and Google Pay.\n\nEnable Apple Pay / Google Pay as express payment buttons\n\nShow express payment buttons on store pages for faster purchases. Customers with Apple Pay or Google Pay enabled will be able to pay with their preferred wallet.\n\nEnable express checkout methods as options in the payment methods list\n\nApple Pay, Google Pay, and Amazon Pay will appear as options in the payment methods list instead of as separate express checkout buttons.\n\nShow on product page\nShow on cart page\nShow on checkout page\nSettings\n\nConfigure the display of Apple Pay and Google Pay buttons on your store.\n\nWarning notice\nThese settings will also apply to the WooPay button on your store.\nWarning notice\nSome appearance settings may be overridden in the express payment section of the Cart & Checkout blocks.\nCALL TO ACTION\nOnly icon\nBuy with\nDonate with\nBook with\n\nSelect a button label that fits best with the flow of purchase or payment experience on your store.\n\nBUTTON SIZE\nSmall (40 px)\nMedium (48 px)\nLarge (55 px)\nTHEME\nDark\nLight\nOutline\nBORDER RADIUS\nBorder radius, number input\nBorder radius, slider\n\nControls the corner roundness of express payment buttons.\n\nPREVIEW\nSee the preview of enabled express payment buttons.\nWooPay\nExpress checkout preview\nInformation notice\nTo preview the express checkout buttons, ensure your store uses HTTPS on a publicly available domain, and you are viewing this page in a Safari or Chrome browser. Your device must be configured to use Apple Pay or Google Pay.\nSave changes\n\nSettings are up to date.\n\nIf you like WooCommerce please leave us a ★★★★★ rating. A huge thanks in advance!\n\nVersion 11.0.0-dev\n\nNotifications\n\nTo preview the express checkout buttons, ensure your store uses HTTPS on a publicly available domain, and you are viewing this page in a Safari or Chrome browser. Your device must be configured to use Apple Pay or Google Pay.",
+      "pass": true
+    },
+    {
+      "name": "woopay-detail",
+      "requestedUrl": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings%2Fexpress-checkout%2Fwoopay",
+      "finalUrl": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings%2Fexpress-checkout%2Fwoopay",
+      "expectedPath": "/woopayments/settings/express-checkout/woopay",
+      "actualPath": "/woopayments/settings/express-checkout/woopay",
+      "missingText": [],
+      "missingLinks": [],
+      "logs": [],
+      "unexpectedLogs": [],
+      "screenshot": "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4ax-express-settings-parity/woopay-detail.png",
+      "relevantLinks": [
+        {
+          "text": "Skip to main content",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings%2Fexpress-checkout%2Fwoopay#wpbody-content"
+        },
+        {
+          "text": "Skip to toolbar",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings%2Fexpress-checkout%2Fwoopay#wp-toolbar"
+        },
+        {
+          "text": "Payments",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview&from=PAYMENTS_MENU_ITEM"
+        },
+        {
+          "text": "Overview",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview&from=PAYMENTS_MENU_ITEM"
+        },
+        {
+          "text": "Payouts",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/payouts&from=PAYMENTS_MENU_ITEM"
+        },
+        {
+          "text": "Transactions",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/transactions&from=PAYMENTS_MENU_ITEM"
+        },
+        {
+          "text": "Reports",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/reports&from=PAYMENTS_MENU_ITEM"
+        },
+        {
+          "text": "Disputes 10",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/disputes&from=PAYMENTS_MENU_ITEM&filter=awaiting_response"
+        },
+        {
+          "text": "Settings",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/settings&from=PAYMENTS_MENU_ITEM"
+        },
+        {
+          "text": "Privacy",
+          "href": "http://store8889.localhost:8889/wp-admin/options-privacy.php"
+        },
+        {
+          "text": "Menu",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings%2Fexpress-checkout%2Fwoopay#"
+        },
+        {
+          "text": "⌘K Open command palette",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings%2Fexpress-checkout%2Fwoopay#"
+        },
+        {
+          "text": "About WooCommerce",
+          "href": "https://woocommerce.com/?utm_source=helptab&utm_medium=product&utm_content=about&utm_campaign=woocommerceplugin"
+        },
+        {
+          "text": "Official themes",
+          "href": "https://woocommerce.com/product-category/themes/?utm_source=helptab&utm_medium=product&utm_content=wcthemes&utm_campaign=woocommerceplugin"
+        },
+        {
+          "text": "Official extensions",
+          "href": "https://woocommerce.com/product-category/woocommerce-extensions/?utm_source=helptab&utm_medium=product&utm_content=wcextensions&utm_campaign=woocommerceplugin"
+        },
+        {
+          "text": "Accounts & Privacy",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=account"
+        },
+        {
+          "text": "Return to payments",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings&from=woopayments-settings"
+        },
+        {
+          "text": "Learn more↗",
+          "href": "https://woocommerce.com/document/woopay-merchant-documentation/#checkout-appearance"
+        }
+      ],
+      "targetNotes": "Target account has WooPay enabled; the WooPay merchant-docs root link is only visible in disabled-WooPay help. Store policy page links are conditional on window.wcSettings.storePages and are not present in this target state.",
+      "textExcerpt": "Skip to main content\nSkip to toolbar\n\n\nDashboard\nHome\nUpdates\n\n\nPosts\nAll Posts\nAdd Post\nCategories\nTags\n\n\nMedia\nLibrary\nAdd Media File\n\n\nPages\nAll Pages\nAdd Page\n\n\nComments\n\n\nWooCommerce\nHome 3\nOrders 198\nSubscriptions\nCustomers\nCoupons\nReports\nSettings\nStatus\nExtensions\n\n\nProducts\nAll Products\nAdd new product\nBrands\nCategories\nTags\nAttributes\nReviews\n\n\nPayments\nOverview\nPayouts\nTransactions\nReports\nDisputes 10\nSettings\n\n\nAnalytics\nOverview\nProducts\nRevenue\nOrders\nVariations\nCategories\nCoupons\nTaxes\nDownloads\nStock\nSettings\n\n\nMarketing\nOverview\nCoupons\n\n\nAppearance\nThemes\nEditor\nFonts\n\n\nPlugins\nInstalled Plugins\nAdd Plugin\n\n\nUsers\nAll Users\nAdd User\nProfile\n\n\nTools\nAvailable Tools\nImport\nExport\nSite Health 2\nExport Personal Data\nErase Personal Data\nWPCOM Local Helper\nScheduled Actions\nTheme File Editor\nPlugin File Editor\n\n\nSettings\nGeneral\nConnectors\nWriting\nReading\nDiscussion\nMedia\nPermalinks\nPrivacy\n\n\nJetpack Debug\nJetpack Debug\nBroken Token\nConnection Errors\n\n\nWCPay Dev\n⚙️ Settings\n🧪 Test Lab\nCollapse Menu\nAbout WordPress\nwoocommerce\nLive\n⌘K\nOpen command palette\n0\n0 Comments in moderation\nNew\nWCPay\nHowdy, admin\nSettings\nGeneral\nProducts\nShipping\nPayments\nAccounts & Privacy\nEmails\nIntegration\nSite visibility\nPoint of Sale\nMulti-currency\nSubscriptions\nAdvanced\nPayments\nReturn to payments\nWooPay\nWooPay\n\nAllow your customers to collect payments via WooPay.\n\nEnable WooPay\n\nWhen enabled, customers will be able to checkout using WooPay.\n\nShow on product page\nShow on cart page\nShow on checkout page\nCheckout appearance\nCHECKOUT LOGO\n\nUpload a custom logo. Upload a horizontal image with a white or transparent background for best results. Use a PNG or JPG image format. Recommended width: 512 pixels minimum.\n\nCHECKOUT POLICIES\n\nOverride the default privacy policy and terms of service, or add custom text to WooPay checkout. Learn more↗.\n\nPREVIEW OF CHECKOUT\nReturn to cart\nwoocommerce\njane@example.com\nShip to\n›\nJane Smith, 123 Main St, San Francisco, CA 94105\nShipping method\n›\nFree shipping - Free\nPay with\n›\nVisa .... 4242 Exp. 12/29\nPlace order\nBy placing this order, you agree to our Terms of Service and understand our Privacy Policy.\nOrder summary\n1 item\nHide\n›\n1\nBeanie\n$ 18.00\n$ 18.00\nAdd a coupon\nAdd a gift card\nSubtotal\n$ 18.00\nShipping\nFree\nTotal\n$ 18.00\nCheckout as guest\n•\nTerms of use\n•\nPrivacy policy\n•\nHelp\nSettings\n\nConfigure the display of WooPay buttons on your store.\n\nWarning notice\nThese settings will also apply to the Apple Pay / Google Pay button on your store.\nWarning notice\nSome appearance settings may be overridden in the express payment section of the Cart & Checkout blocks.\nCALL TO ACTION\nOnly icon\nBuy with\nDonate with\nBook with\n\nSelect a button label that fits best with the flow of purchase or payment experience on your store.\n\nBUTTON SIZE\nSmall (40 px)\nMedium (48 px)\nLarge (55 px)\nTHEME\nDark\nLight\nOutline\nBORDER RADIUS\nBorder radius, number input\nBorder radius, slider\n\nControls the corner roundness of express payment buttons.\n\nPREVIEW\nSee the preview of enabled express payment buttons.\nWooPay\nExpress checkout preview\nInformation notice\nTo preview the express checkout buttons, ensure your store uses HTTPS on a publicly available domain, and you are viewing this page in a Safari or Chrome browser. Your device must be configured to use Apple Pay or Google Pay.\nSave changes\n\nSettings are up to date.\n\nIf you like WooCommerce please leave us a ★★★★★ rating. A huge thanks in advance!\n\nVersion 11.0.0-dev\n\nNotifications\n\nTo preview the express checkout buttons, ensure your store uses HTTPS on a publicly available domain, and you are viewing this page in a Safari or Chrome browser. Your device must be configured to use Apple Pay or Google Pay.",
+      "pass": true
+    },
+    {
+      "name": "amazon-pay-detail",
+      "requestedUrl": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings%2Fexpress-checkout%2Famazon_pay",
+      "finalUrl": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings%2Fexpress-checkout%2Famazon_pay",
+      "expectedPath": "/woopayments/settings/express-checkout/amazon_pay",
+      "actualPath": "/woopayments/settings/express-checkout/amazon_pay",
+      "missingText": [],
+      "missingLinks": [],
+      "logs": [],
+      "unexpectedLogs": [],
+      "screenshot": "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4ax-express-settings-parity/amazon-pay-detail.png",
+      "relevantLinks": [
+        {
+          "text": "Skip to main content",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings%2Fexpress-checkout%2Famazon_pay#wpbody-content"
+        },
+        {
+          "text": "Skip to toolbar",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings%2Fexpress-checkout%2Famazon_pay#wp-toolbar"
+        },
+        {
+          "text": "Payments",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview&from=PAYMENTS_MENU_ITEM"
+        },
+        {
+          "text": "Overview",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview&from=PAYMENTS_MENU_ITEM"
+        },
+        {
+          "text": "Payouts",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/payouts&from=PAYMENTS_MENU_ITEM"
+        },
+        {
+          "text": "Transactions",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/transactions&from=PAYMENTS_MENU_ITEM"
+        },
+        {
+          "text": "Reports",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/reports&from=PAYMENTS_MENU_ITEM"
+        },
+        {
+          "text": "Disputes 10",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/disputes&from=PAYMENTS_MENU_ITEM&filter=awaiting_response"
+        },
+        {
+          "text": "Settings",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/settings&from=PAYMENTS_MENU_ITEM"
+        },
+        {
+          "text": "Privacy",
+          "href": "http://store8889.localhost:8889/wp-admin/options-privacy.php"
+        },
+        {
+          "text": "Menu",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings%2Fexpress-checkout%2Famazon_pay#"
+        },
+        {
+          "text": "⌘K Open command palette",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings%2Fexpress-checkout%2Famazon_pay#"
+        },
+        {
+          "text": "About WooCommerce",
+          "href": "https://woocommerce.com/?utm_source=helptab&utm_medium=product&utm_content=about&utm_campaign=woocommerceplugin"
+        },
+        {
+          "text": "Official themes",
+          "href": "https://woocommerce.com/product-category/themes/?utm_source=helptab&utm_medium=product&utm_content=wcthemes&utm_campaign=woocommerceplugin"
+        },
+        {
+          "text": "Official extensions",
+          "href": "https://woocommerce.com/product-category/woocommerce-extensions/?utm_source=helptab&utm_medium=product&utm_content=wcextensions&utm_campaign=woocommerceplugin"
+        },
+        {
+          "text": "Accounts & Privacy",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=account"
+        },
+        {
+          "text": "Return to payments",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings&from=woopayments-settings"
+        }
+      ],
+      "textExcerpt": "Skip to main content\nSkip to toolbar\n\n\nDashboard\nHome\nUpdates\n\n\nPosts\nAll Posts\nAdd Post\nCategories\nTags\n\n\nMedia\nLibrary\nAdd Media File\n\n\nPages\nAll Pages\nAdd Page\n\n\nComments\n\n\nWooCommerce\nHome 3\nOrders 198\nSubscriptions\nCustomers\nCoupons\nReports\nSettings\nStatus\nExtensions\n\n\nProducts\nAll Products\nAdd new product\nBrands\nCategories\nTags\nAttributes\nReviews\n\n\nPayments\nOverview\nPayouts\nTransactions\nReports\nDisputes 10\nSettings\n\n\nAnalytics\nOverview\nProducts\nRevenue\nOrders\nVariations\nCategories\nCoupons\nTaxes\nDownloads\nStock\nSettings\n\n\nMarketing\nOverview\nCoupons\n\n\nAppearance\nThemes\nEditor\nFonts\n\n\nPlugins\nInstalled Plugins\nAdd Plugin\n\n\nUsers\nAll Users\nAdd User\nProfile\n\n\nTools\nAvailable Tools\nImport\nExport\nSite Health 2\nExport Personal Data\nErase Personal Data\nWPCOM Local Helper\nScheduled Actions\nTheme File Editor\nPlugin File Editor\n\n\nSettings\nGeneral\nConnectors\nWriting\nReading\nDiscussion\nMedia\nPermalinks\nPrivacy\n\n\nJetpack Debug\nJetpack Debug\nBroken Token\nConnection Errors\n\n\nWCPay Dev\n⚙️ Settings\n🧪 Test Lab\nCollapse Menu\nAbout WordPress\nwoocommerce\nLive\n⌘K\nOpen command palette\n0\n0 Comments in moderation\nNew\nWCPay\nHowdy, admin\nSettings\nGeneral\nProducts\nShipping\nPayments\nAccounts & Privacy\nEmails\nIntegration\nSite visibility\nPoint of Sale\nMulti-currency\nSubscriptions\nAdvanced\nPayments\nReturn to payments\nAmazon Pay\nAmazon Pay\n\nAllow your customers to collect payments via Amazon Pay.\n\nEnable Amazon Pay as an express payment button\n\nShow Amazon Pay buttons on store pages for faster purchases. Customers with Amazon accounts can use their stored payment information.\n\nEnable express checkout methods as options in the payment methods list\n\nApple Pay, Google Pay, and Amazon Pay will appear as options in the payment methods list instead of as separate express checkout buttons.\n\nShow on product page\nShow on cart page\nShow on checkout page\nSettings\n\nConfigure the display of Amazon Pay buttons on your store.\n\nWarning notice\nThese settings will also apply to the WooPay and Apple Pay / Google Pay buttons on your store.\nWarning notice\nSome appearance settings may be overridden in the express payment section of the Cart & Checkout blocks.\nBUTTON SIZE\nSmall (40 px)\nMedium (48 px)\nLarge (55 px)\nSave changes\n\nSettings are up to date.\n\nIf you like WooCommerce please leave us a ★★★★★ rating. A huge thanks in advance!\n\nVersion 11.0.0-dev\n\nNotifications\n\nSome appearance settings may be overridden in the express payment section of the Cart & Checkout blocks.",
+      "pass": true
+    }
+  ]
+}

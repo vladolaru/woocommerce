@@ -1,0 +1,137 @@
+{
+  "gate": "a5e-soft-cutover-browser-gate",
+  "status": "complete",
+  "lastUpdatedAt": "2026-06-21T00:18:06.855Z",
+  "urls": {
+    "plugins": "http://store8889.localhost:8889/wp-admin/plugins.php",
+    "initial": "http://store8889.localhost:8889/wp-admin/plugins.php",
+    "afterDisableClick": "http://store8889.localhost:8889/wp-admin/plugins.php?wc_woopayments_cutover_status=disabled",
+    "pluginsCheck": "http://store8889.localhost:8889/wp-admin/plugins.php?wc_woopayments_cutover_status=disabled"
+  },
+  "checks": [
+    {
+      "id": "authenticated-wp-admin",
+      "passed": true,
+      "bodyClasses": "wp-admin wp-core-ui js theme-twentytwentyfive wc-wp-version-gte-53 wc-wp-version-gte-55 wc-wp-version-gte-70 plugins-php auto-fold admin-bar branch-7 version-7-0 admin-color-modern locale-en-us svg wp-theme-twentytwentyfive customize-support sticky-menu",
+      "hasAdminBody": true,
+      "hasAdminMenu": true,
+      "hasWpbodyContent": true,
+      "hasLoginForm": false
+    },
+    {
+      "id": "soft-cutover-notice",
+      "passed": true,
+      "requiredTokens": [
+        "WooPayments",
+        "now part of WooCommerce core",
+        "Disable WooPayments"
+      ],
+      "missingTokens": [],
+      "fallbackTokens": [
+        "WooPayments",
+        "WooCommerce core",
+        "Disable WooPayments"
+      ],
+      "missingFallbackTokens": []
+    },
+    {
+      "id": "disable-woopayments-control",
+      "passed": true,
+      "found": true,
+      "tagName": "a",
+      "text": "Disable WooPayments",
+      "href": "http://store8889.localhost:8889/wp-admin/admin.php?wc_woopayments_cutover_action=disable_woopayments&_wc_woopayments_cutover_nonce=ab76f67925",
+      "name": null,
+      "type": null,
+      "classes": "button button-primary",
+      "noticeText": "WooPayments is now part of WooCommerce core. Disable the WooPayments extension to continue processing payments with WooPayments. Disable WooPayments"
+    },
+    {
+      "id": "disable-woopayments-click",
+      "passed": true,
+      "finalUrl": "http://store8889.localhost:8889/wp-admin/plugins.php?wc_woopayments_cutover_status=disabled"
+    },
+    {
+      "id": "soft-cutover-success-notice",
+      "passed": true,
+      "finalUrl": "http://store8889.localhost:8889/wp-admin/plugins.php?wc_woopayments_cutover_status=disabled",
+      "requiredLanguage": [
+        "WooPayments",
+        "native/core",
+        "successfully disabled/deactivated"
+      ]
+    },
+    {
+      "id": "woopayments-plugin-inactive",
+      "passed": true,
+      "finalUrl": "http://store8889.localhost:8889/wp-admin/plugins.php?wc_woopayments_cutover_status=disabled",
+      "pluginRows": [
+        {
+          "id": "",
+          "classes": "inactive",
+          "titleText": "WooPaymentsActivate | DeleteShow more details",
+          "textSample": "Select WooPayments WooPayments Activate | Delete Accept payments via credit card. Manage transactions within WordPress. Version 10.8.0 | By WooCommerce | View details Requires: WooCommerce Enable auto-updates",
+          "actions": [
+            {
+              "text": "Activate",
+              "href": "plugins.php?action=activate&plugin=woocommerce-payments%2Fwoocommerce-payments.php&plugin_status=all&paged=1&s&_wpnonce=f087e8a382",
+              "name": null,
+              "classes": "edit"
+            },
+            {
+              "text": "Delete",
+              "href": "plugins.php?action=delete-selected&checked%5B0%5D=woocommerce-payments%2Fwoocommerce-payments.php&plugin_status=all&paged=1&s&_wpnonce=8499effb68",
+              "name": null,
+              "classes": "delete"
+            },
+            {
+              "text": "Show more details",
+              "href": null,
+              "name": null,
+              "classes": "toggle-row"
+            },
+            {
+              "text": "WooCommerce",
+              "href": "https://woocommerce.com/",
+              "name": null,
+              "classes": ""
+            },
+            {
+              "text": "View details",
+              "href": "http://store8889.localhost:8889/wp-admin/plugin-install.php?tab=plugin-information&plugin=woocommerce-payments&TB_iframe=true&width=600&height=550",
+              "name": null,
+              "classes": "thickbox open-plugin-details-modal"
+            },
+            {
+              "text": "WooCommerce",
+              "href": "http://store8889.localhost:8889/wp-admin/plugin-install.php?tab=plugin-information&plugin=woocommerce&TB_iframe=true&width=600&height=550",
+              "name": null,
+              "classes": "thickbox open-plugin-details-modal"
+            },
+            {
+              "text": "Enable auto-updates",
+              "href": "plugins.php?action=enable-auto-update&plugin=woocommerce-payments%2Fwoocommerce-payments.php&paged=1&plugin_status=all&_wpnonce=e97f0381d7",
+              "name": null,
+              "classes": "toggle-auto-update aria-button-if-js"
+            }
+          ],
+          "looksLikeWooPaymentsRow": true,
+          "hasDeactivateAction": false,
+          "hasActiveClass": false
+        }
+      ],
+      "rowsWithActiveDeactivate": [],
+      "rowsWithDeactivate": []
+    }
+  ],
+  "failedResponses": [],
+  "ignoredFailedResponses": [],
+  "consoleIssues": [],
+  "ignoredConsoleIssues": [],
+  "screenshots": [
+    "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a5e-soft-cutover-before-disable.png",
+    "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a5e-soft-cutover-after-disable.png",
+    "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a5e-soft-cutover-plugins-inactive.png"
+  ],
+  "pass": true
+}

@@ -1,0 +1,28 @@
+{
+  "result": {
+    "title": "WooCommerce settings ‹ woocommerce — WordPress",
+    "url": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings%23payment-methods",
+    "bodyTextStart": "Skip to main content\nSkip to toolbar\n\n\nDashboard\nHome\nUpdates\n\n\nPosts\nAll Posts\nAdd Post\nCategories\nTags\n\n\nMedia\nLibrary\nAdd Media File\n\n\nPages\nAll Pages\nAdd Page\n\n\nComments\n\n\nWooCommerce\nHome 3\nOrders 198\nSubscriptions\nCustomers\nCoupons\nReports\nSettings\nStatus\nExtensions\n\n\nProducts\nAll Products\nAdd new product\nBrands\nCategories\nTags\nAttributes\nReviews\n\n\nPayments\nOverview\nPayouts\nTransactions\nReports\nDisputes 10\nSettings\n\n\nAnalytics\nOverview\nProducts\nRevenue\nOrders\nVariations\nCategories\nCoupons\nTaxes\nDownloads\nStock\nSettings\n\n\nMarketing\nOverview\nCoupons\n\n\nAppearance\nThemes\nEditor\nFonts\n\n\nPlugins\nInstalled Plugins\nAdd Plugin\n\n\nUsers\nAll Users\nAdd User\nProfile\n\n\nTools\nAvailable Tools\nImport\nExport\nSite Health 2\nExport Personal Data\nErase Personal Data\nWPCOM Local Helper\nScheduled Actions\nTheme File Editor\nPlugin File Editor\n\n\nSettings\nGeneral\nConnectors\nWriting\nReading\nDiscussion\nMedia\nPermalinks\nPrivacy\n\n\nJetpack Debug\nJetpack Debug\nBroken Token\nConnection Errors\n\n\nWCPay Dev\n⚙️ Settings\n🧪 Test Lab\nCollapse Menu\nAbout WordPress\nwoocommerce\nLive\n⌘K\nOpen command palette\n0\n0 Comments in moderation\nNew\nWCPay\nHowdy, admin\nSettings\nGeneral\nProducts\nShipping\nPayments\nAccounts & Privacy\nEmails\nIntegration\nSite visibility\nPoint of Sale\nMulti-currency\nSubscriptions\nAdvanced\nPayments\nPayment providers\nBusiness location:United States (US)\nAccept payments with Woo\nTest account\nOfficial\nCredit/debit cards, Apple Pay, Google Pay, and more.\n+ 11\nManage\nPayPal Payments\nOfficial\nPayPal Payments lets you offer PayPal, Venmo (US only), Pay Later options and more.\nInstall\nTake offline payments\nAccept payments offline using multiple different methods. These can also be used to test purchases.\nMore payment options\nExpand section\n\nIf you like WooCommerce please leave us a ★★★★★ rating. A huge thanks in advance!\n\nVersion 11.0.0-dev",
+    "selectors": {
+      "wpbody": true,
+      "wcSettingsPage": true,
+      "woopaymentsSettingsPage": false,
+      "paymentProviders": true
+    }
+  },
+  "logs": [
+    {
+      "type": "log",
+      "text": "JQMIGRATE: Migrate is installed with logging active, version 3.4.1"
+    },
+    {
+      "type": "error",
+      "text": "Permissions policy violation: unload is not allowed in this document."
+    },
+    {
+      "type": "warning",
+      "text": "List with items prop is deprecated is deprecated and will be removed in version 9.0.0. Note: See ExperimentalList / ExperimentalListItem for the new API that will replace this component in future versions. Error Component Stack\n    at Rc (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/admin/components/index.js?ver=1781829226:2:616208)\n    at n (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/admin/wp-admin-scripts/settings-embed.js?ver=1781829226:9:582564)\n    at div (<anonymous>)\n    at div (<anonymous>)\n    at Suspense (<anonymous>)\n    at F (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/admin/wp-admin-scripts/settings-embed.js?ver=1781829226:9:668019)\n    at N (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/admin/wp-admin-scripts/settings-embed.js?ver=1781829226:9:650272)\n    at C (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/admin/wp-admin-scripts/settings-embed.js?ver=1781829226:9:649717)\n    at G (http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/admin/wp-admin-scripts/settings-embed.js?ver=1781829226:9:665385)\n    at w (<anonymous>)"
+    }
+  ],
+  "pageErrors": []
+}

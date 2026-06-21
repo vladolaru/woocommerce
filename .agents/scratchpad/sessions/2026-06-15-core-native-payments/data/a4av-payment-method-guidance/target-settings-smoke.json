@@ -1,0 +1,25 @@
+{
+  "status": "pass",
+  "targetUrl": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings#payment-methods",
+  "finalUrl": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings#payment-methods",
+  "visiblePaymentMethodsHeading": true,
+  "visibleCheckoutMethodsCopy": true,
+  "rowCount": 11,
+  "rows": [
+    "Credit / Debit Cards",
+    "Bancontact",
+    "EPS",
+    "iDEAL | Wero",
+    "Przelewy24 (P24)",
+    "Multibanco",
+    "Alipay",
+    "WeChat Pay",
+    "Klarna",
+    "Affirm",
+    "Cash App Afterpay"
+  ],
+  "sectionTextSample": "Payments accepted on checkoutAdd and edit the payment methods customers can use at checkout.Payment methodsCredit / Debit CardsCredit / Debit Cards(Required)Let your customers pay with major credit and debit cards without leaving your store.From 2.9% + $0.30BancontactBancontactBancontact is a bank redirect payment method offered by more than 80% of online businesses in Belgium.From 1.4% + $0.30EPSEPSAccept your payment with EPS — a common payment method in Austria.From 1.8% + $0.30iDEAL | WeroiDEAL | WeroExpand your business with iDEAL | Wero — Netherlands's most popular payment method.From 0% + $0.80Przelewy24 (P24)Przelewy24 (P24)Accept payments with Przelewy24 (P24), the most popular payment method in Poland.From 2.2% + $0.30MultibancoMultibancoA voucher based payment method for your customers in Portugal.From 2.95% + $0.30AlipayAlipayA digital wallet for customers with mainland China Alipay accounts. Regional versions like AlipayHK are not supported.From 2.9% + $0.30WeChat PayWeCha",
+  "relevantLogs": [],
+  "unexpectedLogs": [],
+  "screenshotPath": "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4av-payment-method-guidance/target-settings-smoke.png"
+}

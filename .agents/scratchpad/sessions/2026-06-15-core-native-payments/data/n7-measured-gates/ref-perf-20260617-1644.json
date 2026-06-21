@@ -1,0 +1,91 @@
+{
+    "schema": "woopayments_measured_gate.v1",
+    "mode": "perf",
+    "php_version": "8.1",
+    "wc_version": "11.0.0-dev",
+    "has_wcpay": true,
+    "probes": {
+        "gateway_registration": {
+            "status": "measured",
+            "metrics": {
+                "queries": 0,
+                "external_requests": 0,
+                "median_ms": 0,
+                "gateway_count": 26,
+                "gateway_ids": [
+                    "woocommerce_payments",
+                    "woocommerce_payments_affirm",
+                    "woocommerce_payments_afterpay_clearpay",
+                    "woocommerce_payments_alipay",
+                    "woocommerce_payments_bancontact",
+                    "woocommerce_payments_au_becs_debit",
+                    "woocommerce_payments_eps",
+                    "woocommerce_payments_giropay",
+                    "woocommerce_payments_grabpay",
+                    "woocommerce_payments_ideal",
+                    "woocommerce_payments_multibanco",
+                    "woocommerce_payments_klarna",
+                    "woocommerce_payments_p24",
+                    "woocommerce_payments_sepa_debit",
+                    "woocommerce_payments_sofort",
+                    "woocommerce_payments_wechat_pay",
+                    "woocommerce_payments_apple_pay",
+                    "woocommerce_payments_google_pay",
+                    "woocommerce_payments_amazon_pay",
+                    "bacs",
+                    "cheque",
+                    "cod",
+                    "custom-plain-mu-bacs",
+                    "custom-plain-mu-testmode-bacs",
+                    "custom-mu-bacs",
+                    "zoho_subscriptions_hosted_page"
+                ],
+                "duplicate_gateway_ids": [],
+                "action_callback_count": 6,
+                "action_callback_counts": {
+                    "woocommerce_payment_gateways": 4,
+                    "woocommerce_blocks_payment_method_type_registration": 2
+                }
+            }
+        },
+        "autoload_options": {
+            "status": "measured",
+            "metrics": {
+                "autoload_bytes": 116258,
+                "option_count": 450
+            }
+        },
+        "wcpay_account_data": {
+            "status": "measured",
+            "metrics": {
+                "exists": true,
+                "autoload": "off",
+                "autoloaded": false
+            }
+        },
+        "rest_boot": {
+            "status": "measured",
+            "metrics": {
+                "queries": 0,
+                "external_requests": 0,
+                "median_ms": 71.61,
+                "route_count": 817,
+                "payment_route_count": 139,
+                "controller_instantiation_count": 0,
+                "controller_instantiation_status": "not_implemented"
+            }
+        },
+        "process_payment": {
+            "status": "requires_fixture",
+            "reason": "Requires supplied driven order fixtures so the gate can measure the same payment intent\/order path on ref and target."
+        },
+        "refund": {
+            "status": "requires_fixture",
+            "reason": "Requires supplied driven refund fixture tied to a captured order."
+        },
+        "capture": {
+            "status": "requires_fixture",
+            "reason": "Requires supplied authorization\/capture fixture tied to a captured order."
+        }
+    }
+}

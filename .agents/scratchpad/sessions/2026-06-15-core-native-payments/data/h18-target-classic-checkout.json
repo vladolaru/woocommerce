@@ -1,0 +1,17 @@
+{
+  "url": "http://store8889.localhost:8889/codex-classic-checkout/?codex_h18_classic=1781722304495",
+  "hasClassicCheckout": true,
+  "hasBlocksCheckout": false,
+  "hasGlobal": false,
+  "globalSummary": null,
+  "hasWrapper": true,
+  "hasElement": false,
+  "elementClasses": null,
+  "separatorHidden": false,
+  "stripeExpressFrameCount": 0,
+  "stripeFrameCount": 4,
+  "resources": [
+    "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments-express-checkout.css?ver=1781720945"
+  ],
+  "visibleText": "About WordPress\nwoocommerce\nLive\nEdit Site\n0\n0 Comments in moderation\nNew\nEdit Page\nWCPay\nHowdy, admin\nSearch\nSkip to content\n\nwoocommerce\n\nCart\nCheckout\nCodex Blocks Checkout\nCodex Classic Checkout\nMy account\nSample Page\nShop\nCodex Classic Checkout\n“Codex Native Card Product” has been added to your cart.\nView cart\n“Codex Native Card Product” has been added to your cart.\nView cart\nHave a coupon? Click here to enter your code\n\n— OR —\n\nBilling details\n\nFirst name *\n\nLast name *\n\nCountry / Region *\nSelect a country / region…\nAfghanistan\nÅland Islands\nAlbania\nAlgeria\nAmerican Samoa\nAndorra\nAngola\nAnguilla\nAntarctica\nAntigua and Barbuda\nArgentina\nArmenia\nAruba\nAustralia\nAustria\nAzerbaijan\nBahamas\nBahrain\nBangladesh\nBarbados\nBelarus\nBelau\nBelgium\nBelize\nBenin\nBermuda\nBhutan\nBolivia\nBonaire, Saint Eustatius and Saba\nBosnia and Herzegovina\nBotswana\nBouvet Island\nBrazil\nBritish Indian Ocean Territory\nBrunei\nBulgaria\nBurkina Faso\nBurundi\nCambodia\nCameroon\nCanada\nCape Verde\nCayman Islands\nCentral African Republic\nChad\nChile\nChina\nChristmas Island\nCocos (Keeling) Islands\nColombia\nComoros\nCongo (Brazzaville)\nCongo (Kinshasa)\nCook Islands\nCosta Rica\nCroatia\nCuba\nCuraçao\nCyprus\nCzech Republic\nDenmark\nDjibouti\nDominica\nDominican Republic\nEcuador\nEgypt\nEl Salvador\nEquatorial Guinea\nEritrea\nEstonia\nEswatini\nEthiopia\nFalkland Islands\nFaroe Islands\nFiji\nFinland\nFrance\nFrench Guiana\nFrench Polynesia\nFrench Southern Territories\nGabon\nGambia\nGeorgia\nGermany\nGhana\nGibraltar\nGreece\nGreenland\nGrenada\nGuadeloupe\nGuam\nGuatemala\nGuernsey\nGuinea\nGuinea-Bissau\nGuyana\nHaiti\nHeard Island and McDonald Islands\nHonduras\nHong Kong\nHungary\nIceland\nIndia\nIndonesia\nIran\nIraq\nIreland\nIsle of Man\nIsrael\nItaly\nIvory Coast\nJamaica\nJapan\nJersey\nJordan\nKazakhstan\nKenya\nKiribati\nKosovo\nKuwait\nKyrgyzstan\nLaos\nLatvia\nLebanon\nLesotho\nLiberia\nLibya\nLiechtenstein\nLithuania\nLuxembourg\nMacao\nMadagascar\nMalawi\nMalaysia\nMaldives\nMali\nMalta\nMarshall Islands\nMartinique\nMauritania\nMauritius\nMayotte\nMexico\nMicronesia\nMoldova\nMonaco\nMongolia\nMontenegro\nMontserrat\nMorocco\nMozambique\nMyanmar\nNamibia\nNauru\nNepal\nNetherlands\nNew Caledonia\nNew Zealand\nNicaragua\nNiger\nNigeria\nNiue\nNorfolk Island\nNorth Korea\nNorth Macedonia\nNort"
+}

@@ -1,0 +1,66 @@
+{
+  "status": "pass",
+  "generatedAt": "2026-06-20T19:43:13.712Z",
+  "results": [
+    {
+      "name": "settings-root-post-review",
+      "url": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings",
+      "logs": [
+        {
+          "type": "log",
+          "text": "JQMIGRATE: Migrate is installed with logging active, version 3.4.1"
+        },
+        {
+          "type": "error",
+          "text": "Permissions policy violation: unload is not allowed in this document."
+        }
+      ],
+      "unexpectedLogs": []
+    },
+    {
+      "name": "payment-request-detail-post-review",
+      "url": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings%2Fexpress-checkout%2Fpayment_request",
+      "logs": [
+        {
+          "type": "log",
+          "text": "JQMIGRATE: Migrate is installed with logging active, version 3.4.1"
+        },
+        {
+          "type": "error",
+          "text": "Permissions policy violation: unload is not allowed in this document."
+        }
+      ],
+      "unexpectedLogs": []
+    },
+    {
+      "name": "woopay-detail-post-review",
+      "url": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings%2Fexpress-checkout%2Fwoopay",
+      "logs": [
+        {
+          "type": "log",
+          "text": "JQMIGRATE: Migrate is installed with logging active, version 3.4.1"
+        },
+        {
+          "type": "error",
+          "text": "Permissions policy violation: unload is not allowed in this document."
+        }
+      ],
+      "unexpectedLogs": []
+    },
+    {
+      "name": "amazon-pay-detail-post-review",
+      "url": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings%2Fexpress-checkout%2Famazon_pay",
+      "logs": [
+        {
+          "type": "log",
+          "text": "JQMIGRATE: Migrate is installed with logging active, version 3.4.1"
+        },
+        {
+          "type": "error",
+          "text": "Permissions policy violation: unload is not allowed in this document."
+        }
+      ],
+      "unexpectedLogs": []
+    }
+  ]
+}

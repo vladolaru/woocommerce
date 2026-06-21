@@ -1,0 +1,14 @@
+  - text: "You are using a test account. ⚠️ Development mode is enabled for the store! There can be no live onboarding process while using development, testing, or staging WordPress environments! To begin accepting real payments, please go to the live store or change your WordPress environment ↗ to a production one. Learn more ↗"
+  - dialog:
+    - document:
+        - heading "Set your tax details"
+      - role=button[name="Close"]
+                  - "I have a valid VAT Number" [id="inspector-checkbox-control-17"]
+              - labeltext:
+                - text: "VAT NUMBER"
+              - textbox "VAT NUMBER" [id="inspector-text-control-0"]
+            - role=button[name="Cancel"]
+            - role=button[name="Continue"]
+  - toolbar "Playwriter tools":
+    - role=button[name="Pin element — click any element to copy inspection code for a playwriter -e call"]
+    - role=button[name="Close Playwriter toolbar"]

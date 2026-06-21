@@ -1,0 +1,34 @@
+{
+  "status": "pass",
+  "url": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings%2Ffraud-protection",
+  "screenshots": {
+    "purchase": "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4ba-advanced-fraud-ui-parity/target-purchase-threshold-card.png",
+    "order": "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4ba-advanced-fraud-ui-parity/target-order-items-threshold-card.png"
+  },
+  "assertions": {
+    "routeLoaded": true,
+    "purchaseLimitsVisible": true,
+    "purchaseLabelsVisible": true,
+    "purchaseHelpVisible": true,
+    "purchaseInlineErrorVisible": true,
+    "currencyCueAccessible": true,
+    "orderLimitsVisible": true,
+    "orderLabelsVisible": true,
+    "orderHelpVisible": true,
+    "orderInlineErrorVisible": true,
+    "noFailedResponses": true,
+    "noUnexpectedLogs": true
+  },
+  "failedResponses": [],
+  "unexpectedLogs": [],
+  "allowedLogs": [
+    {
+      "label": "after-goto",
+      "text": "[log] JQMIGRATE: Migrate is installed with logging active, version 3.4.1"
+    },
+    {
+      "label": "after-goto",
+      "text": "[error] Permissions policy violation: unload is not allowed in this document."
+    }
+  ]
+}

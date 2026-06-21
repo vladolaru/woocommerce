@@ -1,0 +1,290 @@
+{
+  "gate": "a5e-soft-cutover-browser-gate",
+  "status": "failed",
+  "lastUpdatedAt": "2026-06-19T22:21:53.381Z",
+  "urls": {
+    "plugins": "http://store8889.localhost:8889/wp-admin/plugins.php",
+    "initial": "http://store8889.localhost:8889/wp-admin/plugins.php",
+    "afterDisableClick": "http://store8889.localhost:8889/wp-admin/plugins.php?wc_woopayments_cutover_status=disabled",
+    "pluginsCheck": "http://store8889.localhost:8889/wp-admin/plugins.php?wc_woopayments_cutover_status=disabled"
+  },
+  "checks": [
+    {
+      "id": "authenticated-wp-admin",
+      "passed": true,
+      "bodyClasses": "wp-admin wp-core-ui js theme-twentytwentyfive wc-wp-version-gte-53 wc-wp-version-gte-55 wc-wp-version-gte-70 plugins-php auto-fold admin-bar branch-7 version-7-0 admin-color-modern locale-en-us svg wp-theme-twentytwentyfive customize-support sticky-menu",
+      "hasAdminBody": true,
+      "hasAdminMenu": true,
+      "hasWpbodyContent": true,
+      "hasLoginForm": false
+    },
+    {
+      "id": "soft-cutover-notice",
+      "passed": true,
+      "requiredTokens": [
+        "WooPayments",
+        "now part of WooCommerce core",
+        "Disable WooPayments"
+      ],
+      "missingTokens": [],
+      "fallbackTokens": [
+        "WooPayments",
+        "WooCommerce core",
+        "Disable WooPayments"
+      ],
+      "missingFallbackTokens": []
+    },
+    {
+      "id": "disable-woopayments-control",
+      "passed": true,
+      "found": true,
+      "tagName": "a",
+      "text": "Disable WooPayments",
+      "href": "http://store8889.localhost:8889/wp-admin/admin.php?wc_woopayments_cutover_action=disable_woopayments&_wc_woopayments_cutover_nonce=a42a282445",
+      "name": null,
+      "type": null,
+      "classes": "button button-primary",
+      "noticeText": "WooPayments is now part of WooCommerce core. Disable the WooPayments extension to continue processing payments with WooPayments. Disable WooPayments"
+    },
+    {
+      "id": "disable-woopayments-click",
+      "passed": true,
+      "finalUrl": "http://store8889.localhost:8889/wp-admin/plugins.php?wc_woopayments_cutover_status=disabled"
+    },
+    {
+      "id": "soft-cutover-success-notice",
+      "passed": true,
+      "finalUrl": "http://store8889.localhost:8889/wp-admin/plugins.php?wc_woopayments_cutover_status=disabled",
+      "requiredLanguage": [
+        "WooPayments",
+        "native/core",
+        "successfully disabled/deactivated"
+      ]
+    },
+    {
+      "id": "woopayments-plugin-inactive",
+      "passed": false,
+      "finalUrl": "http://store8889.localhost:8889/wp-admin/plugins.php?wc_woopayments_cutover_status=disabled",
+      "pluginRows": [
+        {
+          "id": "",
+          "classes": "active is-uninstallable",
+          "titleText": "WooCommerceSettings | DeactivateYou cannot deactivate this plugin as other plugins depend on it.Show more details",
+          "textSample": "Select WooCommerce WooCommerce Settings | Deactivate You cannot deactivate this plugin as other plugins depend on it. An ecommerce toolkit that helps you sell anything. Beautifully. Version 11.0.0-dev | By Automattic | View details | Docs | API docs | Community support Required by: WooCommerce Subscriptions, WooPayments Note: This plugin cannot be deactivated or deleted until the plugins that require it are deactivated or deleted. Enable auto-updates",
+          "actions": [
+            {
+              "text": "Settings",
+              "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings",
+              "name": null,
+              "classes": ""
+            },
+            {
+              "text": "Show more details",
+              "href": null,
+              "name": null,
+              "classes": "toggle-row"
+            },
+            {
+              "text": "Automattic",
+              "href": "https://woocommerce.com",
+              "name": null,
+              "classes": ""
+            },
+            {
+              "text": "View details",
+              "href": "http://store8889.localhost:8889/wp-admin/plugin-install.php?tab=plugin-information&plugin=woocommerce&TB_iframe=true&width=600&height=550",
+              "name": null,
+              "classes": "thickbox open-plugin-details-modal"
+            },
+            {
+              "text": "Docs",
+              "href": "https://woocommerce.com/documentation/plugins/woocommerce/",
+              "name": null,
+              "classes": ""
+            },
+            {
+              "text": "API docs",
+              "href": "https://woocommerce.com/wc-apidocs/",
+              "name": null,
+              "classes": ""
+            },
+            {
+              "text": "Community support",
+              "href": "https://wordpress.org/support/plugin/woocommerce/",
+              "name": null,
+              "classes": ""
+            },
+            {
+              "text": "Enable auto-updates",
+              "href": "plugins.php?action=enable-auto-update&plugin=woocommerce%2Fwoocommerce.php&paged=1&plugin_status=all&_wpnonce=9bb7f2e889",
+              "name": null,
+              "classes": "toggle-auto-update aria-button-if-js"
+            }
+          ],
+          "looksLikeWooPaymentsRow": true,
+          "hasDeactivateAction": false,
+          "hasActiveClass": true
+        },
+        {
+          "id": "",
+          "classes": "inactive",
+          "titleText": "WooPaymentsActivate | DeleteShow more details",
+          "textSample": "Select WooPayments WooPayments Activate | Delete Accept payments via credit card. Manage transactions within WordPress. Version 10.8.0 | By WooCommerce | View details Requires: WooCommerce Enable auto-updates",
+          "actions": [
+            {
+              "text": "Activate",
+              "href": "plugins.php?action=activate&plugin=woocommerce-payments%2Fwoocommerce-payments.php&plugin_status=all&paged=1&s&_wpnonce=9bfa78173c",
+              "name": null,
+              "classes": "edit"
+            },
+            {
+              "text": "Delete",
+              "href": "plugins.php?action=delete-selected&checked%5B0%5D=woocommerce-payments%2Fwoocommerce-payments.php&plugin_status=all&paged=1&s&_wpnonce=aed5719972",
+              "name": null,
+              "classes": "delete"
+            },
+            {
+              "text": "Show more details",
+              "href": null,
+              "name": null,
+              "classes": "toggle-row"
+            },
+            {
+              "text": "WooCommerce",
+              "href": "https://woocommerce.com/",
+              "name": null,
+              "classes": ""
+            },
+            {
+              "text": "View details",
+              "href": "http://store8889.localhost:8889/wp-admin/plugin-install.php?tab=plugin-information&plugin=woocommerce-payments&TB_iframe=true&width=600&height=550",
+              "name": null,
+              "classes": "thickbox open-plugin-details-modal"
+            },
+            {
+              "text": "WooCommerce",
+              "href": "http://store8889.localhost:8889/wp-admin/plugin-install.php?tab=plugin-information&plugin=woocommerce&TB_iframe=true&width=600&height=550",
+              "name": null,
+              "classes": "thickbox open-plugin-details-modal"
+            },
+            {
+              "text": "Enable auto-updates",
+              "href": "plugins.php?action=enable-auto-update&plugin=woocommerce-payments%2Fwoocommerce-payments.php&paged=1&plugin_status=all&_wpnonce=9bb7f2e889",
+              "name": null,
+              "classes": "toggle-auto-update aria-button-if-js"
+            }
+          ],
+          "looksLikeWooPaymentsRow": true,
+          "hasDeactivateAction": false,
+          "hasActiveClass": false
+        },
+        {
+          "id": "",
+          "classes": "active is-uninstallable",
+          "titleText": "WooPayments Dev ToolsDeactivateShow more details",
+          "textSample": "Select WooPayments Dev Tools WooPayments Dev Tools Deactivate Dev tools for WooPayments. Only effective when WooPayments is active. Version 1.25.0 | By Automattic",
+          "actions": [
+            {
+              "text": "Deactivate",
+              "href": "plugins.php?action=deactivate&plugin=woocommerce-payments-dev-tools%2Fwoocommerce-payments-dev-tools.php&plugin_status=all&paged=1&s&_wpnonce=bc23a0a6be",
+              "name": null,
+              "classes": ""
+            },
+            {
+              "text": "Show more details",
+              "href": null,
+              "name": null,
+              "classes": "toggle-row"
+            },
+            {
+              "text": "Automattic",
+              "href": "https://woocommerce.com/",
+              "name": null,
+              "classes": ""
+            }
+          ],
+          "looksLikeWooPaymentsRow": true,
+          "hasDeactivateAction": true,
+          "hasActiveClass": true
+        }
+      ],
+      "rowsWithActiveDeactivate": [
+        {
+          "id": "",
+          "classes": "active is-uninstallable",
+          "titleText": "WooPayments Dev ToolsDeactivateShow more details",
+          "textSample": "Select WooPayments Dev Tools WooPayments Dev Tools Deactivate Dev tools for WooPayments. Only effective when WooPayments is active. Version 1.25.0 | By Automattic",
+          "actions": [
+            {
+              "text": "Deactivate",
+              "href": "plugins.php?action=deactivate&plugin=woocommerce-payments-dev-tools%2Fwoocommerce-payments-dev-tools.php&plugin_status=all&paged=1&s&_wpnonce=bc23a0a6be",
+              "name": null,
+              "classes": ""
+            },
+            {
+              "text": "Show more details",
+              "href": null,
+              "name": null,
+              "classes": "toggle-row"
+            },
+            {
+              "text": "Automattic",
+              "href": "https://woocommerce.com/",
+              "name": null,
+              "classes": ""
+            }
+          ],
+          "looksLikeWooPaymentsRow": true,
+          "hasDeactivateAction": true,
+          "hasActiveClass": true
+        }
+      ],
+      "rowsWithDeactivate": [
+        {
+          "id": "",
+          "classes": "active is-uninstallable",
+          "titleText": "WooPayments Dev ToolsDeactivateShow more details",
+          "textSample": "Select WooPayments Dev Tools WooPayments Dev Tools Deactivate Dev tools for WooPayments. Only effective when WooPayments is active. Version 1.25.0 | By Automattic",
+          "actions": [
+            {
+              "text": "Deactivate",
+              "href": "plugins.php?action=deactivate&plugin=woocommerce-payments-dev-tools%2Fwoocommerce-payments-dev-tools.php&plugin_status=all&paged=1&s&_wpnonce=bc23a0a6be",
+              "name": null,
+              "classes": ""
+            },
+            {
+              "text": "Show more details",
+              "href": null,
+              "name": null,
+              "classes": "toggle-row"
+            },
+            {
+              "text": "Automattic",
+              "href": "https://woocommerce.com/",
+              "name": null,
+              "classes": ""
+            }
+          ],
+          "looksLikeWooPaymentsRow": true,
+          "hasDeactivateAction": true,
+          "hasActiveClass": true
+        }
+      ]
+    },
+    {
+      "id": "uncaught-error",
+      "passed": false,
+      "message": "WooPayments still presents an active-state Deactivate action on the plugins page.",
+      "stack": "Error: WooPayments still presents an active-state Deactivate action on the plugins page.\n    at assertWooPaymentsInactiveOnPluginsPage (evalmachine.<anonymous>:268:9)\n    at async evalmachine.<anonymous>:310:2\n    at async file:///Users/vladolaru/.nvm/versions/node/v22.22.0/lib/node_modules/playwriter/dist/executor.js:986:28\n    at async PlaywrightExecutor.execute (file:///Users/vladolaru/.nvm/versions/node/v22.22.0/lib/node_modules/playwriter/dist/executor.js:984:28)\n    at async file:///Users/vladolaru/.nvm/versions/node/v22.22.0/lib/node_modules/playwriter/dist/cdp-relay.js:1468:28\n    at async dispatch (file:///Users/vladolaru/.nvm/versions/node/v22.22.0/lib/node_modules/playwriter/node_modules/hono/dist/compose.js:22:17)\n    at async dispatch (file:///Users/vladolaru/.nvm/versions/node/v22.22.0/lib/node_modules/playwriter/node_modules/hono/dist/compose.js:22:17)\n    at async cors2 (file:///Users/vladolaru/.nvm/versions/node/v22.22.0/lib/node_modules/playwriter/node_modules/hono/dist/middleware/cors/index.js:76:5)\n    at async dispatch (file:///Users/vladolaru/.nvm/versions/node/v22.22.0/lib/node_modules/playwriter/node_modules/hono/dist/compose.js:22:17)\n    at async file:///Users/vladolaru/.nvm/versions/node/v22.22.0/lib/node_modules/playwriter/node_modules/hono/dist/hono-base.js:306:25"
+    }
+  ],
+  "failedResponses": [],
+  "ignoredFailedResponses": [],
+  "consoleIssues": [],
+  "ignoredConsoleIssues": [],
+  "screenshots": [
+    "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a5e-soft-cutover-before-disable.png",
+    "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a5e-soft-cutover-after-disable.png"
+  ],
+  "pass": false
+}

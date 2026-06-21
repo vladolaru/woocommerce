@@ -1,0 +1,28 @@
+{
+    "home_url": "http:\/\/store8889.localhost:8889",
+    "current_user_id": 1,
+    "jetpack_options_class_available": true,
+    "jetpack_connection_class_available": true,
+    "jetpack_manager_available": true,
+    "blog_id": 4,
+    "has_blog_id": true,
+    "is_store_connected": true,
+    "connection_owner_id": 1,
+    "has_connection_owner": true,
+    "connection_owner_user_token_present": true,
+    "native_transport_client_available": true,
+    "native_transport_is_connected": true,
+    "native_transport_blog_id": 4,
+    "native_platform_service_available": true,
+    "native_platform_readiness_failures": [],
+    "active_plugin_slugs": [
+        "jetpack-debug-helper-224",
+        "wc-email-template-sync-test-helper",
+        "woocommerce",
+        "woocommerce-payments-dev-tools",
+        "woocommerce-subscriptions",
+        "wpcom-local-helper"
+    ],
+    "ready": true,
+    "failures": []
+}

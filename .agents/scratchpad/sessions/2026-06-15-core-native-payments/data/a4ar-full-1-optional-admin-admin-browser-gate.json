@@ -1,0 +1,419 @@
+{
+  "gate": "a4ar-full-1-optional-admin-admin-browser-gate",
+  "gateSlug": "a4ar-full-1-optional-admin",
+  "status": "complete",
+  "startedAt": "2026-06-20T13:32:23.526Z",
+  "lastUpdatedAt": "2026-06-20T13:32:43.368Z",
+  "surfaces": [
+    "documents",
+    "card-readers",
+    "capital"
+  ],
+  "viewports": [
+    "desktop",
+    "mobile"
+  ],
+  "stores": [
+    "target"
+  ],
+  "results": [
+    {
+      "store": "target",
+      "surface": "admin-navigation",
+      "viewport": "desktop",
+      "requestedUrl": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Foverview",
+      "finalUrl": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Foverview",
+      "requiredRoutes": [
+        "/woopayments/overview",
+        "/woopayments/payouts",
+        "/woopayments/transactions",
+        "/woopayments/disputes",
+        "/woopayments/settings"
+      ],
+      "routeAvailability": {
+        "gatewayEnabled": true,
+        "accountState": "full",
+        "allowedRoutes": {
+          "/woopayments/settings": true,
+          "/woopayments/onboarding": false,
+          "/woopayments/overview": true,
+          "/woopayments/payouts": true,
+          "/woopayments/payouts/details": true,
+          "/woopayments/transactions": true,
+          "/woopayments/transactions/details": true,
+          "/woopayments/disputes": true,
+          "/woopayments/disputes/details": true,
+          "/woopayments/disputes/challenge": true,
+          "/woopayments/reports": true,
+          "/woopayments/card-readers": true,
+          "/woopayments/loans": true,
+          "/woopayments/documents": true
+        }
+      },
+      "unavailableRoutesPresent": [],
+      "missingRoutes": [],
+      "passed": true
+    },
+    {
+      "store": "target",
+      "surface": "documents",
+      "viewport": "desktop",
+      "requestedUrl": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fdocuments",
+      "finalUrl": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fdocuments",
+      "expectedTokens": [
+        "Documents"
+      ],
+      "missingTokens": [],
+      "unmetRequiredTokens": [],
+      "unavailableTokenMissing": false,
+      "strictTokens": true,
+      "strictReferenceOptional": false,
+      "referenceOptional": null,
+      "routeAvailability": {
+        "gatewayEnabled": true,
+        "accountState": "full",
+        "allowedRoutes": {
+          "/woopayments/settings": true,
+          "/woopayments/onboarding": false,
+          "/woopayments/overview": true,
+          "/woopayments/payouts": true,
+          "/woopayments/payouts/details": true,
+          "/woopayments/transactions": true,
+          "/woopayments/transactions/details": true,
+          "/woopayments/disputes": true,
+          "/woopayments/disputes/details": true,
+          "/woopayments/disputes/challenge": true,
+          "/woopayments/reports": true,
+          "/woopayments/card-readers": true,
+          "/woopayments/loans": true,
+          "/woopayments/documents": true
+        }
+      },
+      "targetSurfaceAvailable": true,
+      "coverageStatus": "available-route-pass",
+      "failedResponses": [],
+      "ignoredFailedResponses": [],
+      "consoleIssues": [],
+      "ignoredConsoleIssues": [
+        {
+          "type": "error",
+          "text": "Permissions policy violation: unload is not allowed in this document."
+        }
+      ],
+      "pageErrors": [],
+      "scripts": [],
+      "resources": [
+        "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/admin/chunks/settings-payments-woopayments-documents.js?ver=116768666ad8e8ad5f84"
+      ],
+      "expectedTargetAssets": [
+        "settings-payments-woopayments-documents.js"
+      ],
+      "missingTargetAssets": [],
+      "forbiddenTargetAssets": [],
+      "targetAssetNote": null,
+      "screenshotPath": "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4ar-full-1-optional-admin/target-documents-desktop.png",
+      "passed": true
+    },
+    {
+      "store": "target",
+      "surface": "card-readers",
+      "viewport": "desktop",
+      "requestedUrl": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fcard-readers",
+      "finalUrl": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fcard-readers",
+      "expectedTokens": [
+        "Connected card readers"
+      ],
+      "missingTokens": [],
+      "unmetRequiredTokens": [],
+      "unavailableTokenMissing": false,
+      "strictTokens": true,
+      "strictReferenceOptional": false,
+      "referenceOptional": null,
+      "routeAvailability": {
+        "gatewayEnabled": true,
+        "accountState": "full",
+        "allowedRoutes": {
+          "/woopayments/settings": true,
+          "/woopayments/onboarding": false,
+          "/woopayments/overview": true,
+          "/woopayments/payouts": true,
+          "/woopayments/payouts/details": true,
+          "/woopayments/transactions": true,
+          "/woopayments/transactions/details": true,
+          "/woopayments/disputes": true,
+          "/woopayments/disputes/details": true,
+          "/woopayments/disputes/challenge": true,
+          "/woopayments/reports": true,
+          "/woopayments/card-readers": true,
+          "/woopayments/loans": true,
+          "/woopayments/documents": true
+        }
+      },
+      "targetSurfaceAvailable": true,
+      "coverageStatus": "available-route-pass",
+      "failedResponses": [],
+      "ignoredFailedResponses": [],
+      "consoleIssues": [],
+      "ignoredConsoleIssues": [
+        {
+          "type": "error",
+          "text": "Permissions policy violation: unload is not allowed in this document."
+        }
+      ],
+      "pageErrors": [],
+      "scripts": [],
+      "resources": [
+        "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/admin/chunks/settings-payments-woopayments-card-readers.js?ver=da145118653cfc289bc7"
+      ],
+      "expectedTargetAssets": [
+        "settings-payments-woopayments-card-readers.js"
+      ],
+      "missingTargetAssets": [],
+      "forbiddenTargetAssets": [],
+      "targetAssetNote": null,
+      "screenshotPath": "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4ar-full-1-optional-admin/target-card-readers-desktop.png",
+      "passed": true
+    },
+    {
+      "store": "target",
+      "surface": "capital",
+      "viewport": "desktop",
+      "requestedUrl": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Floans",
+      "finalUrl": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Floans",
+      "expectedTokens": [
+        "Capital Loans"
+      ],
+      "missingTokens": [],
+      "unmetRequiredTokens": [],
+      "unavailableTokenMissing": false,
+      "strictTokens": true,
+      "strictReferenceOptional": false,
+      "referenceOptional": null,
+      "routeAvailability": {
+        "gatewayEnabled": true,
+        "accountState": "full",
+        "allowedRoutes": {
+          "/woopayments/settings": true,
+          "/woopayments/onboarding": false,
+          "/woopayments/overview": true,
+          "/woopayments/payouts": true,
+          "/woopayments/payouts/details": true,
+          "/woopayments/transactions": true,
+          "/woopayments/transactions/details": true,
+          "/woopayments/disputes": true,
+          "/woopayments/disputes/details": true,
+          "/woopayments/disputes/challenge": true,
+          "/woopayments/reports": true,
+          "/woopayments/card-readers": true,
+          "/woopayments/loans": true,
+          "/woopayments/documents": true
+        }
+      },
+      "targetSurfaceAvailable": true,
+      "coverageStatus": "available-route-pass",
+      "failedResponses": [],
+      "ignoredFailedResponses": [],
+      "consoleIssues": [],
+      "ignoredConsoleIssues": [
+        {
+          "type": "error",
+          "text": "Permissions policy violation: unload is not allowed in this document."
+        }
+      ],
+      "pageErrors": [],
+      "scripts": [],
+      "resources": [
+        "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/admin/chunks/settings-payments-woopayments-capital.js?ver=eceb73f8b7ff3324aa2d"
+      ],
+      "expectedTargetAssets": [
+        "settings-payments-woopayments-capital.js"
+      ],
+      "missingTargetAssets": [],
+      "forbiddenTargetAssets": [],
+      "targetAssetNote": null,
+      "screenshotPath": "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4ar-full-1-optional-admin/target-capital-desktop.png",
+      "passed": true
+    },
+    {
+      "store": "target",
+      "surface": "documents",
+      "viewport": "mobile",
+      "requestedUrl": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fdocuments",
+      "finalUrl": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fdocuments",
+      "expectedTokens": [
+        "Documents"
+      ],
+      "missingTokens": [],
+      "unmetRequiredTokens": [],
+      "unavailableTokenMissing": false,
+      "strictTokens": true,
+      "strictReferenceOptional": false,
+      "referenceOptional": null,
+      "routeAvailability": {
+        "gatewayEnabled": true,
+        "accountState": "full",
+        "allowedRoutes": {
+          "/woopayments/settings": true,
+          "/woopayments/onboarding": false,
+          "/woopayments/overview": true,
+          "/woopayments/payouts": true,
+          "/woopayments/payouts/details": true,
+          "/woopayments/transactions": true,
+          "/woopayments/transactions/details": true,
+          "/woopayments/disputes": true,
+          "/woopayments/disputes/details": true,
+          "/woopayments/disputes/challenge": true,
+          "/woopayments/reports": true,
+          "/woopayments/card-readers": true,
+          "/woopayments/loans": true,
+          "/woopayments/documents": true
+        }
+      },
+      "targetSurfaceAvailable": true,
+      "coverageStatus": "available-route-pass",
+      "failedResponses": [],
+      "ignoredFailedResponses": [],
+      "consoleIssues": [],
+      "ignoredConsoleIssues": [
+        {
+          "type": "error",
+          "text": "Permissions policy violation: unload is not allowed in this document."
+        }
+      ],
+      "pageErrors": [],
+      "scripts": [],
+      "resources": [
+        "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/admin/chunks/settings-payments-woopayments-documents.js?ver=116768666ad8e8ad5f84"
+      ],
+      "expectedTargetAssets": [
+        "settings-payments-woopayments-documents.js"
+      ],
+      "missingTargetAssets": [],
+      "forbiddenTargetAssets": [],
+      "targetAssetNote": null,
+      "screenshotPath": "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4ar-full-1-optional-admin/target-documents-mobile.png",
+      "passed": true
+    },
+    {
+      "store": "target",
+      "surface": "card-readers",
+      "viewport": "mobile",
+      "requestedUrl": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fcard-readers",
+      "finalUrl": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fcard-readers",
+      "expectedTokens": [
+        "Connected card readers"
+      ],
+      "missingTokens": [],
+      "unmetRequiredTokens": [],
+      "unavailableTokenMissing": false,
+      "strictTokens": true,
+      "strictReferenceOptional": false,
+      "referenceOptional": null,
+      "routeAvailability": {
+        "gatewayEnabled": true,
+        "accountState": "full",
+        "allowedRoutes": {
+          "/woopayments/settings": true,
+          "/woopayments/onboarding": false,
+          "/woopayments/overview": true,
+          "/woopayments/payouts": true,
+          "/woopayments/payouts/details": true,
+          "/woopayments/transactions": true,
+          "/woopayments/transactions/details": true,
+          "/woopayments/disputes": true,
+          "/woopayments/disputes/details": true,
+          "/woopayments/disputes/challenge": true,
+          "/woopayments/reports": true,
+          "/woopayments/card-readers": true,
+          "/woopayments/loans": true,
+          "/woopayments/documents": true
+        }
+      },
+      "targetSurfaceAvailable": true,
+      "coverageStatus": "available-route-pass",
+      "failedResponses": [],
+      "ignoredFailedResponses": [],
+      "consoleIssues": [],
+      "ignoredConsoleIssues": [
+        {
+          "type": "error",
+          "text": "Permissions policy violation: unload is not allowed in this document."
+        }
+      ],
+      "pageErrors": [],
+      "scripts": [],
+      "resources": [
+        "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/admin/chunks/settings-payments-woopayments-card-readers.js?ver=da145118653cfc289bc7"
+      ],
+      "expectedTargetAssets": [
+        "settings-payments-woopayments-card-readers.js"
+      ],
+      "missingTargetAssets": [],
+      "forbiddenTargetAssets": [],
+      "targetAssetNote": null,
+      "screenshotPath": "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4ar-full-1-optional-admin/target-card-readers-mobile.png",
+      "passed": true
+    },
+    {
+      "store": "target",
+      "surface": "capital",
+      "viewport": "mobile",
+      "requestedUrl": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Floans",
+      "finalUrl": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Floans",
+      "expectedTokens": [
+        "Capital Loans"
+      ],
+      "missingTokens": [],
+      "unmetRequiredTokens": [],
+      "unavailableTokenMissing": false,
+      "strictTokens": true,
+      "strictReferenceOptional": false,
+      "referenceOptional": null,
+      "routeAvailability": {
+        "gatewayEnabled": true,
+        "accountState": "full",
+        "allowedRoutes": {
+          "/woopayments/settings": true,
+          "/woopayments/onboarding": false,
+          "/woopayments/overview": true,
+          "/woopayments/payouts": true,
+          "/woopayments/payouts/details": true,
+          "/woopayments/transactions": true,
+          "/woopayments/transactions/details": true,
+          "/woopayments/disputes": true,
+          "/woopayments/disputes/details": true,
+          "/woopayments/disputes/challenge": true,
+          "/woopayments/reports": true,
+          "/woopayments/card-readers": true,
+          "/woopayments/loans": true,
+          "/woopayments/documents": true
+        }
+      },
+      "targetSurfaceAvailable": true,
+      "coverageStatus": "available-route-pass",
+      "failedResponses": [],
+      "ignoredFailedResponses": [],
+      "consoleIssues": [],
+      "ignoredConsoleIssues": [
+        {
+          "type": "error",
+          "text": "Permissions policy violation: unload is not allowed in this document."
+        }
+      ],
+      "pageErrors": [],
+      "scripts": [],
+      "resources": [
+        "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/admin/chunks/settings-payments-woopayments-capital.js?ver=eceb73f8b7ff3324aa2d"
+      ],
+      "expectedTargetAssets": [
+        "settings-payments-woopayments-capital.js"
+      ],
+      "missingTargetAssets": [],
+      "forbiddenTargetAssets": [],
+      "targetAssetNote": null,
+      "screenshotPath": "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4ar-full-1-optional-admin/target-capital-mobile.png",
+      "passed": true
+    }
+  ],
+  "failures": []
+}

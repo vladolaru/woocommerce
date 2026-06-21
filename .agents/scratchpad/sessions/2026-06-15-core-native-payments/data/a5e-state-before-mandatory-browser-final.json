@@ -1,0 +1,21 @@
+{
+    "home_url": "http:\/\/store8889.localhost:8889",
+    "current_user_id": 0,
+    "active_plugin_slugs": [
+        "jetpack-debug-helper-224",
+        "wc-email-template-sync-test-helper",
+        "woocommerce",
+        "woocommerce-payments",
+        "woocommerce-payments-dev-tools",
+        "woocommerce-subscriptions",
+        "wpcom-local-helper"
+    ],
+    "runtime_owner": "plugin",
+    "native_runtime_enabled": true,
+    "plugin_runtime_active": true,
+    "should_native_register": false,
+    "preflight_failures": [],
+    "soft_notice": false,
+    "ready": true,
+    "failures": []
+}

@@ -1,0 +1,88 @@
+{
+  "gate": "a5e-negative-preflight-browser-check",
+  "finalUrl": "http://store8889.localhost:8889/wp-admin/plugins.php",
+  "blockedNotice": true,
+  "rows": [
+    {
+      "classes": "active",
+      "text": "Select WooPayments WooPayments Settings | Deactivate Accept payments via credit card. Manage transactions within WordPress. Version 10.8.0 | By WooCommerce | View details Requires: WooCommerce Enable auto-updates",
+      "actions": [
+        {
+          "text": "Settings",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&section=woocommerce_payments"
+        },
+        {
+          "text": "Deactivate",
+          "href": "plugins.php?action=deactivate&plugin=woocommerce-payments%2Fwoocommerce-payments.php&plugin_status=all&paged=1&s&_wpnonce=1818642b3c"
+        },
+        {
+          "text": "Show more details",
+          "href": ""
+        },
+        {
+          "text": "WooCommerce",
+          "href": "https://woocommerce.com/"
+        },
+        {
+          "text": "View details",
+          "href": "http://store8889.localhost:8889/wp-admin/plugin-install.php?tab=plugin-information&plugin=woocommerce-payments&TB_iframe=true&width=600&height=550"
+        },
+        {
+          "text": "WooCommerce",
+          "href": "http://store8889.localhost:8889/wp-admin/plugin-install.php?tab=plugin-information&plugin=woocommerce&TB_iframe=true&width=600&height=550"
+        },
+        {
+          "text": "Enable auto-updates",
+          "href": "plugins.php?action=enable-auto-update&plugin=woocommerce-payments%2Fwoocommerce-payments.php&paged=1&plugin_status=all&_wpnonce=9bb7f2e889"
+        }
+      ],
+      "isWooPayments": true,
+      "hasDeactivate": true,
+      "hasActivate": false
+    }
+  ],
+  "activeWooPaymentsRows": [
+    {
+      "classes": "active",
+      "text": "Select WooPayments WooPayments Settings | Deactivate Accept payments via credit card. Manage transactions within WordPress. Version 10.8.0 | By WooCommerce | View details Requires: WooCommerce Enable auto-updates",
+      "actions": [
+        {
+          "text": "Settings",
+          "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&section=woocommerce_payments"
+        },
+        {
+          "text": "Deactivate",
+          "href": "plugins.php?action=deactivate&plugin=woocommerce-payments%2Fwoocommerce-payments.php&plugin_status=all&paged=1&s&_wpnonce=1818642b3c"
+        },
+        {
+          "text": "Show more details",
+          "href": ""
+        },
+        {
+          "text": "WooCommerce",
+          "href": "https://woocommerce.com/"
+        },
+        {
+          "text": "View details",
+          "href": "http://store8889.localhost:8889/wp-admin/plugin-install.php?tab=plugin-information&plugin=woocommerce-payments&TB_iframe=true&width=600&height=550"
+        },
+        {
+          "text": "WooCommerce",
+          "href": "http://store8889.localhost:8889/wp-admin/plugin-install.php?tab=plugin-information&plugin=woocommerce&TB_iframe=true&width=600&height=550"
+        },
+        {
+          "text": "Enable auto-updates",
+          "href": "plugins.php?action=enable-auto-update&plugin=woocommerce-payments%2Fwoocommerce-payments.php&paged=1&plugin_status=all&_wpnonce=9bb7f2e889"
+        }
+      ],
+      "isWooPayments": true,
+      "hasDeactivate": true,
+      "hasActivate": false
+    }
+  ],
+  "inactiveWooPaymentsRows": [],
+  "failedResponses": [],
+  "consoleIssues": [],
+  "pass": true,
+  "lastUpdatedAt": "2026-06-19T22:33:57.787Z"
+}

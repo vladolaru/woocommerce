@@ -1,0 +1,152 @@
+{
+  "checks": [
+    {
+      "category": "admin",
+      "command": [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14",
+        "/Users/vladolaru/Work/a8c/woocommerce-develop-2/tools/woopayments-merge/a4-admin-surface-gate.py",
+        "--repo",
+        "/Users/vladolaru/Work/a8c/woocommerce-develop-2",
+        "--plugin-repo",
+        "/Users/vladolaru/Work/a8c/woocommerce-payments",
+        "--out",
+        "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-smoke-2/admin-source.json"
+      ],
+      "completed_at": "2026-06-20T11:23:40.899779+00:00",
+      "evidence_path": "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-smoke-2/admin-source.json",
+      "exit_code": 0,
+      "failures": [],
+      "id": "admin-source",
+      "incomplete_reasons": [],
+      "started_at": "2026-06-20T11:23:40.742356+00:00",
+      "status": "pass",
+      "stderr_tail": "",
+      "stdout_tail": "[a4-admin] Using repo /Users/vladolaru/Work/a8c/woocommerce-develop-2\n[a4-admin] Scanning 281 native admin source files\n[a4-admin] Checking expected source chunk names\n[a4-admin] Checking native route paths\n[a4-admin] Checking native/settings-payments source for private registries\n[a4-admin] Checking native admin navigation source contract\n[a4-admin] Checking native PM promotions source contract\n[a4-admin] Checking native Overview financial summary source contract\n[a4-admin] Checking native money-detail source contract\n[a4-admin] Checking built native admin chunks\n[a4-admin] Measured settings: 10632 raw bytes, 2997 gzip bytes\n[a4-admin] Measured overview: 52802 raw bytes, 13444 gzip bytes\n[a4-admin] Measured payouts: 11624 raw bytes, 3720 gzip bytes\n[a4-admin] Measured money-movement: 96026 raw bytes, 22586 gzip bytes\n[a4-admin] Measured card-readers: 2593 raw bytes, 1042 gzip bytes\n[a4-admin] Measured capital: 12722 raw bytes, 3809 gzip bytes\n[a4-admin] Measured documents: 21842 raw bytes, 7138 gzip bytes\n[a4-admin] Measured reports: 28239 raw bytes, 8332 gzip bytes\n[a4-admin] Checking reference plugin admin baseline at /Users/vladolaru/Work/a8c/woocommerce-payments\n[a4-admin] Measured reference admin-index-js: 140547 raw bytes, 39377 gzip bytes\n[a4-admin] Measured reference admin-index-css: 20907 raw bytes, 3773 gzip bytes\n[a4-admin] Measured reference settings-js: 295676 raw bytes, 80976 gzip bytes\n[a4-admin] Measured reference settings-css: 77208 raw bytes, 13111 gzip bytes\n[a4-admin] Measured reference overview-js: 63268 raw bytes, 17975 gzip bytes\n[a4-admin] Measured reference payouts-js: 14568 raw bytes, 4595 gzip bytes\n[a4-admin] Measured reference money-movement-js: 282614 raw bytes, 54060 gzip bytes\n[a4-admin] Measured reference card-readers-js: 5568 raw bytes, 1974 gzip bytes\n[a4-admin] Measured reference capital-js: 4897 raw bytes, 1816 gzip bytes\n[a4-admin] Wrote JSON evidence to /Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-smoke-2/admin-source.json\nRESULT: PASS A4 admin surface gate\n"
+    },
+    {
+      "category": "bundle",
+      "command": [
+        "bash",
+        "/Users/vladolaru/Work/a8c/woocommerce-develop-2/tools/woopayments-merge/bundle-size-gate.sh",
+        "capture",
+        "--repo",
+        "/Users/vladolaru/Work/a8c/woocommerce-payments",
+        "--profile",
+        "wcpay-plugin",
+        "--out",
+        "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-smoke-2/bundle-reference.json"
+      ],
+      "completed_at": "2026-06-20T11:23:40.950188+00:00",
+      "evidence_path": "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-smoke-2/bundle-reference.json",
+      "exit_code": 0,
+      "failures": [],
+      "id": "bundle-reference",
+      "incomplete_reasons": [],
+      "started_at": "2026-06-20T11:23:40.900224+00:00",
+      "status": "pass",
+      "stderr_tail": "",
+      "stdout_tail": "Captured bundle sizes to /Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-smoke-2/bundle-reference.json\n"
+    },
+    {
+      "category": "bundle",
+      "command": [
+        "bash",
+        "/Users/vladolaru/Work/a8c/woocommerce-develop-2/tools/woopayments-merge/bundle-size-gate.sh",
+        "capture",
+        "--repo",
+        "/Users/vladolaru/Work/a8c/woocommerce-develop-2",
+        "--profile",
+        "wc-core",
+        "--out",
+        "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-smoke-2/bundle-target.json"
+      ],
+      "completed_at": "2026-06-20T11:23:40.989386+00:00",
+      "evidence_path": "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-smoke-2/bundle-target.json",
+      "exit_code": 0,
+      "failures": [],
+      "id": "bundle-target",
+      "incomplete_reasons": [],
+      "started_at": "2026-06-20T11:23:40.950720+00:00",
+      "status": "pass",
+      "stderr_tail": "",
+      "stdout_tail": "Captured bundle sizes to /Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-smoke-2/bundle-target.json\n"
+    },
+    {
+      "category": "bundle",
+      "command": [
+        "bash",
+        "/Users/vladolaru/Work/a8c/woocommerce-develop-2/tools/woopayments-merge/bundle-size-gate.sh",
+        "compare",
+        "--ref",
+        "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-smoke-2/bundle-reference.json",
+        "--target",
+        "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-smoke-2/bundle-target.json",
+        "--budget",
+        "/Users/vladolaru/Work/a8c/woocommerce-develop-2/tools/woopayments-merge/a4aq-bundle-budget.json"
+      ],
+      "completed_at": "2026-06-20T11:23:41.033449+00:00",
+      "evidence_path": null,
+      "exit_code": 0,
+      "failures": [],
+      "id": "bundle-compare",
+      "incomplete_reasons": [],
+      "started_at": "2026-06-20T11:23:40.989939+00:00",
+      "status": "pass",
+      "stderr_tail": "",
+      "stdout_tail": "ok    blocks-card.css: raw_bytes 19353 -> 4331 (limit 19353)\nok    blocks-card.css: gzip_bytes 3438 -> 1614 (limit 3438)\nok    blocks-card.js: raw_bytes 167611 -> 23807 (limit 167611)\nok    blocks-card.js: gzip_bytes 56368 -> 8133 (limit 56368)\nALLOW blocks-express-checkout.css: missing in ref, present in target\nALLOW blocks-express-checkout.js: missing in ref, present in target\nok    classic-card.css: raw_bytes 4514 -> 5571 (limit 5714)\nok    classic-card.css: gzip_bytes 1017 -> 1238 (limit 1317)\nok    classic-card.js: raw_bytes 99694 -> 36056 (limit 99694)\nok    classic-card.js: gzip_bytes 34820 -> 8518 (limit 34820)\nok    express-checkout.css: raw_bytes 1203 -> 991 (limit 1203)\nok    express-checkout.css: gzip_bytes 378 -> 323 (limit 378)\nok    express-checkout.js: raw_bytes 34664 -> 25246 (limit 34664)\nok    express-checkout.js: gzip_bytes 10947 -> 5764 (limit 10947)\nok    multi-currency-admin.css: raw_bytes 22698 -> 2551 (limit 22698)\nok    multi-currency-admin.css: gzip_bytes 3903 -> 696 (limit 3903)\nok    multi-currency-admin.js: raw_bytes 56399 -> 12866 (limit 56399)\nok    multi-currency-admin.js: gzip_bytes 14875 -> 3841 (limit 14875)\nALLOW multi-currency-analytics.js: present in ref, missing in target\nok    multi-currency-frontend.css: raw_bytes 595 -> 586 (limit 595)\nok    multi-currency-frontend.css: gzip_bytes 345 -> 336 (limit 345)\nok    multi-currency-frontend.js: raw_bytes 21065 -> 14183 (limit 21065)\nok    multi-currency-frontend.js: gzip_bytes 8218 -> 3482 (limit 8218)\nALLOW multi-currency-setup.css: present in ref, missing in target\nskip  multi-currency-setup.js: missing in both captures\nALLOW multi-currency-switcher-block.js: present in ref, missing in target\nALLOW settings-main.css: present in ref, missing in target\nok    settings-main.js: raw_bytes 295676 -> 49654 (limit 295676)\nok    settings-main.js: gzip_bytes 80976 -> 12994 (limit 80976)\nok    woopay-direct-checkout.js: raw_bytes 18728 -> 29417 (limit 30728)\nok    woopay-direct-checkout.js: gzip_bytes 5600 -> 8396 (limit 11600)\nok    woopay-express-button.js: raw_bytes 70888 -> 29417 (limit 82888)\nok    woopay-express-button.js: gzip_bytes 23068 -> 8396 (limit 29068)\nok    woopay.css: raw_bytes 30374 -> 3752 (limit 30374)\nok    woopay.css: gzip_bytes 4250 -> 1146 (limit 4250)\nok    woopay.js: raw_bytes 16513 -> 14484 (limit 16513)\nok    woopay.js: gzip_bytes 6118 -> 6053 (limit 6118)\nRESULT: PASS bundle byte gate with explicit budget /Users/vladolaru/Work/a8c/woocommerce-develop-2/tools/woopayments-merge/a4aq-bundle-budget.json\n"
+    },
+    {
+      "category": "logs",
+      "command": [],
+      "completed_at": "2026-06-20T11:23:41.191968+00:00",
+      "exit_code": 0,
+      "failures": [],
+      "id": "log-scan",
+      "incomplete_reasons": [],
+      "started_at": "2026-06-20T11:23:41.191947+00:00",
+      "status": "pass",
+      "summary": {
+        "failures": [],
+        "findings": [
+          {
+            "container": "24860d14de30dc62f7b324ebef10b5fb-wordpress-1",
+            "debug_diagnostics": [],
+            "docker_5xx": [],
+            "docker_diagnostics": [],
+            "label": "target"
+          },
+          {
+            "container": "wcpay_wp_default",
+            "debug_diagnostics": [
+              "[20-Jun-2026 09:07:43 UTC] PHP Warning:  Trying to access array offset on value of type bool in /var/www/html/wp-content/mu-plugins/sopreda/archi/zoho/class-zoho-integration.php on line 61",
+              "[20-Jun-2026 09:07:43 UTC] PHP Warning:  Trying to access array offset on value of type bool in /var/www/html/wp-content/mu-plugins/sopreda/archi/zoho/class-zoho-integration.php on line 62",
+              "[20-Jun-2026 09:07:43 UTC] PHP Warning:  Trying to access array offset on value of type bool in /var/www/html/wp-content/mu-plugins/sopreda/archi/zoho/class-zoho-integration.php on line 64",
+              "[20-Jun-2026 09:53:26 UTC] PHP Notice:  Function _load_textdomain_just_in_time was called <strong>incorrectly</strong>. Translation loading for the <code>woocommerce-payments</code> domain was triggered too early. This is usually an indicator for some code in the plugin or theme running too early. Translations should be loaded at the <code>init</code> action or later. Please see <a href=\"https://developer.wordpress.org/advanced-administration/debug/debug-wordpress/\">Debugging in WordPress</a> for more information. (This message was added in version 6.7.0.) in /var/www/html/wp-includes/functions.php on line 6170"
+            ],
+            "docker_5xx": [],
+            "docker_diagnostics": [],
+            "label": "reference"
+          }
+        ],
+        "incomplete_reasons": [],
+        "since": "2026-06-20T11:23:40Z"
+      }
+    }
+  ],
+  "environment": {
+    "plugin_repo": "/Users/vladolaru/Work/a8c/woocommerce-payments",
+    "reference_url": "http://localhost:8082",
+    "repo": "/Users/vladolaru/Work/a8c/woocommerce-develop-2",
+    "target_url": "http://store8889.localhost:8889"
+  },
+  "failures": [],
+  "gate": "a4aq-accumulated-gate",
+  "incomplete": [],
+  "last_updated_at": "2026-06-20T11:23:41.192367+00:00",
+  "limitations": [
+    "reference log scan has 4 diagnostic lines; inspect log-scan evidence"
+  ],
+  "schema": "woopayments_a4aq_accumulated_gate.v1",
+  "started_at": "2026-06-20T11:23:40.741941+00:00",
+  "status": "pass"
+}

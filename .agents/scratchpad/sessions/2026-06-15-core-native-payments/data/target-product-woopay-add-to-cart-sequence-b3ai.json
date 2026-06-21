@@ -1,0 +1,1 @@
+{"ok":true,"button":{"ariaLabel":"WooPay","className":"woopay-express-button","dataSize":"medium","height":"48px","width":"474px"},"calls":[{"url":"/?wc-ajax=wcpay_add_to_cart","data":{"security":"1614a83087","quantity":"1","product_id":"37"}}]}

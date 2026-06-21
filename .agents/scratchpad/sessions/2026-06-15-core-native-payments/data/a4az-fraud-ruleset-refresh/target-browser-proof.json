@@ -1,0 +1,13 @@
+{
+  "url": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings%2Ffraud-protection",
+  "title": "WooCommerce settings ‹ woocommerce — WordPress",
+  "hasWpAdminBar": 1,
+  "hasFraudProtectionText": true,
+  "hasProblemText": false,
+  "failedNetwork": [],
+  "logs": [
+    "[log] JQMIGRATE: Migrate is installed with logging active, version 3.4.1",
+    "[error] Permissions policy violation: unload is not allowed in this document."
+  ],
+  "snapshot": "        - role=link[name=\"Point of Sale\"]\n        - role=link[name=\"Multi-currency\"]\n        - role=link[name=\"Subscriptions\"] >> nth=1\n        - role=link[name=\"Advanced\"]\n      - heading \"Payments\"\n      - role=link[name=\"Back to WooPayments settings\"]\n      - heading \"Advanced fraud protection\"\n        - heading \"Filter configuration\"\n        - paragraph:\n          - text: \"Set up advanced fraud filters. Enable at least one filter to activate advanced protection.\"\n          - heading \"AVS Mismatch\"\n                    - \"Enable AVS Mismatch filter\" [id=\"inspector-checkbox-control-0\"]\n              - paragraph:\n                - text: \"This filter compares the post code submitted by the customer against the post code on file with the card issuer. The payment will be blocked if the two post codes do not match. AVS checks are not supported by every country or card issuer, so this filter will not block all payments with a mismatched post code.\"\n            - strong:"
+}

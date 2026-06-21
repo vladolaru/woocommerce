@@ -1,0 +1,378 @@
+{
+  "checks": [
+    {
+      "category": "admin",
+      "command": [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14",
+        "/Users/vladolaru/Work/a8c/woocommerce-develop-2/tools/woopayments-merge/a4-admin-surface-gate.py",
+        "--repo",
+        "/Users/vladolaru/Work/a8c/woocommerce-develop-2",
+        "--plugin-repo",
+        "/Users/vladolaru/Work/a8c/woocommerce-payments",
+        "--out",
+        "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4ar-perf-smoke/admin-source.json"
+      ],
+      "completed_at": "2026-06-20T13:22:43.535152+00:00",
+      "evidence_path": "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4ar-perf-smoke/admin-source.json",
+      "exit_code": 0,
+      "failures": [],
+      "id": "admin-source",
+      "incomplete_reasons": [],
+      "started_at": "2026-06-20T13:22:43.340376+00:00",
+      "status": "pass",
+      "stderr_tail": "",
+      "stdout_tail": "[a4-admin] Using repo /Users/vladolaru/Work/a8c/woocommerce-develop-2\n[a4-admin] Scanning 281 native admin source files\n[a4-admin] Checking expected source chunk names\n[a4-admin] Checking native route paths\n[a4-admin] Checking native/settings-payments source for private registries\n[a4-admin] Checking native admin navigation source contract\n[a4-admin] Checking native PM promotions source contract\n[a4-admin] Checking native Overview financial summary source contract\n[a4-admin] Checking native money-detail source contract\n[a4-admin] Checking built native admin chunks\n[a4-admin] Measured settings: 10632 raw bytes, 2997 gzip bytes\n[a4-admin] Measured overview: 52802 raw bytes, 13444 gzip bytes\n[a4-admin] Measured payouts: 11624 raw bytes, 3720 gzip bytes\n[a4-admin] Measured money-movement: 96026 raw bytes, 22586 gzip bytes\n[a4-admin] Measured card-readers: 2593 raw bytes, 1042 gzip bytes\n[a4-admin] Measured capital: 12722 raw bytes, 3809 gzip bytes\n[a4-admin] Measured documents: 21842 raw bytes, 7138 gzip bytes\n[a4-admin] Measured reports: 28239 raw bytes, 8332 gzip bytes\n[a4-admin] Checking reference plugin admin baseline at /Users/vladolaru/Work/a8c/woocommerce-payments\n[a4-admin] Measured reference admin-index-js: 140547 raw bytes, 39377 gzip bytes\n[a4-admin] Measured reference admin-index-css: 20907 raw bytes, 3773 gzip bytes\n[a4-admin] Measured reference settings-js: 295676 raw bytes, 80976 gzip bytes\n[a4-admin] Measured reference settings-css: 77208 raw bytes, 13111 gzip bytes\n[a4-admin] Measured reference overview-js: 63268 raw bytes, 17975 gzip bytes\n[a4-admin] Measured reference payouts-js: 14568 raw bytes, 4595 gzip bytes\n[a4-admin] Measured reference money-movement-js: 282614 raw bytes, 54060 gzip bytes\n[a4-admin] Measured reference card-readers-js: 5568 raw bytes, 1974 gzip bytes\n[a4-admin] Measured reference capital-js: 4897 raw bytes, 1816 gzip bytes\n[a4-admin] Wrote JSON evidence to /Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4ar-perf-smoke/admin-source.json\nRESULT: PASS A4 admin surface gate\n"
+    },
+    {
+      "category": "perf",
+      "command": [],
+      "completed_at": "2026-06-20T13:23:10.250737+00:00",
+      "exit_code": 0,
+      "failures": [],
+      "id": "perf-fixtures",
+      "incomplete_reasons": [],
+      "started_at": "2026-06-20T13:22:43.535532+00:00",
+      "status": "pass",
+      "summary": {
+        "failures": [],
+        "incomplete_reasons": [],
+        "stores": {
+          "reference": {
+            "native": false,
+            "operations": {
+              "capture_order": {
+                "charge_id": "ch_3TkOrKJAuuJ9nlT31g5k4lE9",
+                "currency_requested": "",
+                "error": "",
+                "intent_id": "pi_3TkOrKJAuuJ9nlT31c35YjRZ",
+                "intention_status": "requires_capture",
+                "manual_capture": "yes",
+                "order_currency": "USD",
+                "order_default_currency": "",
+                "order_exchange_rate": "",
+                "order_id": 573,
+                "order_status": "on-hold",
+                "stripe_exchange_rate": "",
+                "success": true
+              },
+              "process_order": {
+                "op": "unpaid_order",
+                "order_id": 571,
+                "payment_method": "woocommerce_payments",
+                "status": "pending",
+                "total": "50.00"
+              },
+              "refund_order": {
+                "charge_id": "ch_3TkOrFJAuuJ9nlT31Ytwf0TJ",
+                "currency_requested": "",
+                "error": "",
+                "intent_id": "pi_3TkOrFJAuuJ9nlT3144VZKPQ",
+                "intention_status": "succeeded",
+                "manual_capture": "no",
+                "order_currency": "USD",
+                "order_default_currency": "",
+                "order_exchange_rate": "",
+                "order_id": 572,
+                "order_status": "processing",
+                "stripe_exchange_rate": "",
+                "success": true
+              }
+            },
+            "order_ids": {
+              "capture": 573,
+              "process_payment": 571,
+              "refund": 572
+            },
+            "preflight": {
+              "capture": {
+                "charge_id": "ch_3TkOrKJAuuJ9nlT31g5k4lE9",
+                "exists": true,
+                "gateway_id": "woocommerce_payments",
+                "intent_id": "pi_3TkOrKJAuuJ9nlT31c35YjRZ",
+                "intention_status": "requires_capture",
+                "needs_payment": false,
+                "order_id": 573,
+                "payment_method": "woocommerce_payments",
+                "refunded_amount": "0",
+                "remaining_refund_amount": "50.00",
+                "status": "on-hold",
+                "total": "50.00",
+                "transaction_id": "pi_3TkOrKJAuuJ9nlT31c35YjRZ"
+              },
+              "process_payment": {
+                "charge_id": "",
+                "exists": true,
+                "gateway_id": "woocommerce_payments",
+                "intent_id": "",
+                "intention_status": "",
+                "needs_payment": true,
+                "order_id": 571,
+                "payment_method": "woocommerce_payments",
+                "refunded_amount": "0",
+                "remaining_refund_amount": "50.00",
+                "status": "pending",
+                "total": "50.00",
+                "transaction_id": ""
+              },
+              "refund": {
+                "charge_id": "ch_3TkOrFJAuuJ9nlT31Ytwf0TJ",
+                "exists": true,
+                "gateway_id": "woocommerce_payments",
+                "intent_id": "pi_3TkOrFJAuuJ9nlT3144VZKPQ",
+                "intention_status": "succeeded",
+                "needs_payment": false,
+                "order_id": 572,
+                "payment_method": "woocommerce_payments",
+                "refunded_amount": "0",
+                "remaining_refund_amount": "50.00",
+                "status": "processing",
+                "total": "50.00",
+                "transaction_id": "pi_3TkOrFJAuuJ9nlT3144VZKPQ"
+              }
+            },
+            "store": "reference"
+          },
+          "target": {
+            "native": true,
+            "operations": {
+              "capture_order": {
+                "charge_id": "ch_3TkOrXJd67Ti1EoI1s442XXb",
+                "currency_requested": "",
+                "intent_id": "pi_3TkOrXJd67Ti1EoI19SPOSOy",
+                "intention_status": "requires_capture",
+                "manual_capture": "yes",
+                "op": "native_charge",
+                "order_currency": "USD",
+                "order_default_currency": "",
+                "order_exchange_rate": "",
+                "order_id": 272,
+                "redirect": "http://store8889.localhost:8889/checkout/order-received/272/?key=wc_order_pwo3TCuadaEeV",
+                "result": "success",
+                "status": "on-hold",
+                "stripe_exchange_rate": "",
+                "transaction_id": "pi_3TkOrXJd67Ti1EoI19SPOSOy"
+              },
+              "process_order": {
+                "op": "unpaid_order",
+                "order_id": 270,
+                "payment_method": "woocommerce_payments",
+                "status": "pending",
+                "total": "50.00"
+              },
+              "refund_order": {
+                "charge_id": "ch_3TkOrSJd67Ti1EoI1wJF8xus",
+                "currency_requested": "",
+                "intent_id": "pi_3TkOrSJd67Ti1EoI1NFwqlnU",
+                "intention_status": "succeeded",
+                "manual_capture": "no",
+                "op": "native_charge",
+                "order_currency": "USD",
+                "order_default_currency": "",
+                "order_exchange_rate": "",
+                "order_id": 271,
+                "redirect": "http://store8889.localhost:8889/checkout/order-received/271/?key=wc_order_wdC6xPdb080JB",
+                "result": "success",
+                "status": "processing",
+                "stripe_exchange_rate": "",
+                "transaction_id": "pi_3TkOrSJd67Ti1EoI1NFwqlnU"
+              }
+            },
+            "order_ids": {
+              "capture": 272,
+              "process_payment": 270,
+              "refund": 271
+            },
+            "preflight": {
+              "capture": {
+                "charge_id": "ch_3TkOrXJd67Ti1EoI1s442XXb",
+                "exists": true,
+                "gateway_id": "woocommerce_payments",
+                "intent_id": "pi_3TkOrXJd67Ti1EoI19SPOSOy",
+                "intention_status": "requires_capture",
+                "needs_payment": false,
+                "order_id": 272,
+                "payment_method": "woocommerce_payments",
+                "refunded_amount": "0",
+                "remaining_refund_amount": "50.00",
+                "status": "on-hold",
+                "total": "50.00",
+                "transaction_id": "pi_3TkOrXJd67Ti1EoI19SPOSOy"
+              },
+              "process_payment": {
+                "charge_id": "",
+                "exists": true,
+                "gateway_id": "woocommerce_payments",
+                "intent_id": "",
+                "intention_status": "",
+                "needs_payment": true,
+                "order_id": 270,
+                "payment_method": "woocommerce_payments",
+                "refunded_amount": "0",
+                "remaining_refund_amount": "50.00",
+                "status": "pending",
+                "total": "50.00",
+                "transaction_id": ""
+              },
+              "refund": {
+                "charge_id": "ch_3TkOrSJd67Ti1EoI1wJF8xus",
+                "exists": true,
+                "gateway_id": "woocommerce_payments",
+                "intent_id": "pi_3TkOrSJd67Ti1EoI1NFwqlnU",
+                "intention_status": "succeeded",
+                "needs_payment": false,
+                "order_id": 271,
+                "payment_method": "woocommerce_payments",
+                "refunded_amount": "0",
+                "remaining_refund_amount": "50.00",
+                "status": "processing",
+                "total": "50.00",
+                "transaction_id": "pi_3TkOrSJd67Ti1EoI1NFwqlnU"
+              }
+            },
+            "store": "target"
+          }
+        }
+      }
+    },
+    {
+      "category": "perf",
+      "command": [
+        "bash",
+        "/Users/vladolaru/Work/a8c/woocommerce-develop-2/tools/woopayments-merge/perf-surface-gate.sh",
+        "capture",
+        "--wp",
+        "docker exec -i wcpay_wp_default wp --allow-root --user=1",
+        "--out",
+        "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4ar-perf-smoke/perf-reference.json",
+        "--process-order-id",
+        "571",
+        "--refund-order-id",
+        "572",
+        "--capture-order-id",
+        "573"
+      ],
+      "completed_at": "2026-06-20T13:23:11.338927+00:00",
+      "evidence_path": "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4ar-perf-smoke/perf-reference.json",
+      "exit_code": 0,
+      "failures": [],
+      "id": "perf-reference",
+      "incomplete_reasons": [],
+      "started_at": "2026-06-20T13:23:10.251274+00:00",
+      "status": "pass",
+      "stderr_tail": "[perf-surface-gate] starting capture via WP-CLI\n[perf-surface-gate] process_payment fixture: order #571\n[perf-surface-gate] refund fixture: order #572\n[perf-surface-gate] capture fixture: order #573\n[perf-surface-gate] measuring gateway registration\n[perf-surface-gate] measuring autoload options\n[perf-surface-gate] measuring REST route registration\n[perf-surface-gate] measuring process_payment on order #571 with outbound HTTP blocked\nsh: 1: /usr/sbin/sendmail: not found\nsh: 1: /usr/sbin/sendmail: not found\n[perf-surface-gate] measuring refund on order #572 for 25 with outbound HTTP blocked\n[perf-surface-gate] measuring capture on order #573 with outbound HTTP blocked\n",
+      "stdout_tail": "Captured perf surface metrics to /Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4ar-perf-smoke/perf-reference.json\n"
+    },
+    {
+      "category": "perf",
+      "command": [
+        "bash",
+        "/Users/vladolaru/Work/a8c/woocommerce-develop-2/tools/woopayments-merge/perf-surface-gate.sh",
+        "capture",
+        "--wp",
+        "docker exec -i 24860d14de30dc62f7b324ebef10b5fb-cli-1 wp --allow-root --user=1",
+        "--out",
+        "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4ar-perf-smoke/perf-target.json",
+        "--process-order-id",
+        "270",
+        "--refund-order-id",
+        "271",
+        "--capture-order-id",
+        "272"
+      ],
+      "completed_at": "2026-06-20T13:23:12.007172+00:00",
+      "evidence_path": "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4ar-perf-smoke/perf-target.json",
+      "exit_code": 0,
+      "failures": [],
+      "id": "perf-target",
+      "incomplete_reasons": [],
+      "started_at": "2026-06-20T13:23:11.339408+00:00",
+      "status": "pass",
+      "stderr_tail": "[perf-surface-gate] starting capture via WP-CLI\n[perf-surface-gate] process_payment fixture: order #270\n[perf-surface-gate] refund fixture: order #271\n[perf-surface-gate] capture fixture: order #272\n[perf-surface-gate] measuring gateway registration\n[perf-surface-gate] measuring autoload options\n[perf-surface-gate] measuring REST route registration\n[perf-surface-gate] measuring process_payment on order #270 with outbound HTTP blocked\nsendmail: can't connect to remote host (127.0.0.1): Connection refused\nsendmail: can't connect to remote host (127.0.0.1): Connection refused\n[perf-surface-gate] measuring refund on order #271 for 25 with outbound HTTP blocked\n[perf-surface-gate] measuring capture on order #272 with outbound HTTP blocked\n",
+      "stdout_tail": "Captured perf surface metrics to /Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4ar-perf-smoke/perf-target.json\n"
+    },
+    {
+      "category": "perf",
+      "command": [
+        "bash",
+        "/Users/vladolaru/Work/a8c/woocommerce-develop-2/tools/woopayments-merge/perf-surface-gate.sh",
+        "compare",
+        "--ref",
+        "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4ar-perf-smoke/perf-reference.json",
+        "--target",
+        "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4ar-perf-smoke/perf-target.json"
+      ],
+      "completed_at": "2026-06-20T13:23:12.059552+00:00",
+      "evidence_path": null,
+      "exit_code": 3,
+      "failures": [],
+      "id": "perf-compare",
+      "incomplete_reasons": [
+        "perf-compare: exited incomplete"
+      ],
+      "started_at": "2026-06-20T13:23:12.007693+00:00",
+      "status": "incomplete",
+      "stderr_tail": "",
+      "stdout_tail": "NOTE: perf timings are coarse local smoke signals with expected variance; this gate is intended to catch large deltas, query growth, and missing coverage, not to prove exact latency.\nok    process_payment: queries 135 -> 111 (limit 168.75)\nok    process_payment: external_requests 27 -> 5\nok    process_payment: median_ms 209.55 -> 102.57 (limit 314.325)\nok    refund: queries 20 -> 7 (limit 25)\nok    refund: external_requests 3 -> 2\nok    refund: median_ms 10.45 -> 6.9 (limit 35.45)\nok    capture: queries 30 -> 34 (limit 37.5)\nok    capture: external_requests 15 -> 2\nok    capture: median_ms 24.51 -> 14.83 (limit 49.51)\nok    gateway_registration: gateway_count 26 -> 4\nok    gateway_registration: action_callback_count 6 -> 2\nok    gateway_registration: external_requests 0 -> 0\nnote  gateway_registration: measurement_mode ref=warmed_in_process target=warmed_in_process\nok    gateway_registration: median_ms 0 -> 0 (large-delta smoke limit 25)\nok    rest_boot: external_requests 0 -> 0\nok    rest_boot: controller_instantiation_count 31 -> 13\nok    autoload_options: autoload_bytes 115779 -> 85363\nok    wcpay_account_data: autoload=off\nINCOMPLETE rest_boot: route_registration_status ref=preinitialized target=preinitialized\nRESULT: INCOMPLETE perf gate (required surfaces are explicitly unmeasured)\n"
+    },
+    {
+      "category": "logs",
+      "command": [],
+      "completed_at": "2026-06-20T13:23:12.229940+00:00",
+      "exit_code": 0,
+      "failures": [],
+      "id": "log-scan",
+      "incomplete_reasons": [],
+      "started_at": "2026-06-20T13:23:12.229921+00:00",
+      "status": "pass",
+      "summary": {
+        "failures": [],
+        "findings": [
+          {
+            "container": "24860d14de30dc62f7b324ebef10b5fb-wordpress-1",
+            "debug_diagnostics": [],
+            "debug_log_baseline_bytes": 112,
+            "debug_log_returncode": 0,
+            "docker_5xx": [],
+            "docker_diagnostics": [],
+            "docker_logs_returncode": 0,
+            "label": "target"
+          },
+          {
+            "container": "wcpay_wp_default",
+            "debug_diagnostics": [
+              "[20-Jun-2026 13:22:52 UTC] PHP Warning:  Trying to access array offset on value of type bool in /var/www/html/wp-content/mu-plugins/sopreda/archi/zoho/class-zoho-integration.php on line 61",
+              "[20-Jun-2026 13:22:52 UTC] PHP Warning:  Trying to access array offset on value of type bool in /var/www/html/wp-content/mu-plugins/sopreda/archi/zoho/class-zoho-integration.php on line 62",
+              "[20-Jun-2026 13:22:52 UTC] PHP Warning:  Trying to access array offset on value of type bool in /var/www/html/wp-content/mu-plugins/sopreda/archi/zoho/class-zoho-integration.php on line 64"
+            ],
+            "debug_log_baseline_bytes": 340138,
+            "debug_log_returncode": 0,
+            "docker_5xx": [],
+            "docker_diagnostics": [],
+            "docker_logs_returncode": 0,
+            "label": "reference"
+          }
+        ],
+        "incomplete_reasons": [],
+        "since": "2026-06-20T13:22:42Z"
+      }
+    }
+  ],
+  "environment": {
+    "plugin_repo": "/Users/vladolaru/Work/a8c/woocommerce-payments",
+    "reference_url": "http://localhost:8082",
+    "repo": "/Users/vladolaru/Work/a8c/woocommerce-develop-2",
+    "target_url": "http://store8889.localhost:8889"
+  },
+  "failures": [],
+  "gate": "a4aq-accumulated-gate",
+  "incomplete": [
+    "perf-compare: exited incomplete"
+  ],
+  "last_updated_at": "2026-06-20T13:23:12.230425+00:00",
+  "limitations": [
+    "reference log scan has 3 diagnostic lines; inspect log-scan evidence"
+  ],
+  "schema": "woopayments_a4aq_accumulated_gate.v1",
+  "started_at": "2026-06-20T13:22:42.474571+00:00",
+  "status": "incomplete"
+}

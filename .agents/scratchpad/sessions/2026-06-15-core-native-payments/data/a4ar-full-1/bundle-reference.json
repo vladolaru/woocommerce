@@ -1,0 +1,134 @@
+{
+  "assets": {
+    "blocks-card.css": {
+      "gzip_bytes": 3438,
+      "path": "dist/blocks-checkout.css",
+      "raw_bytes": 19353,
+      "status": "present"
+    },
+    "blocks-card.js": {
+      "gzip_bytes": 56368,
+      "path": "dist/blocks-checkout.js",
+      "raw_bytes": 167611,
+      "status": "present"
+    },
+    "blocks-express-checkout.css": {
+      "path": null,
+      "status": "missing"
+    },
+    "blocks-express-checkout.js": {
+      "path": null,
+      "status": "missing"
+    },
+    "classic-card.css": {
+      "gzip_bytes": 1017,
+      "path": "dist/checkout.css",
+      "raw_bytes": 4514,
+      "status": "present"
+    },
+    "classic-card.js": {
+      "gzip_bytes": 34820,
+      "path": "dist/checkout.js",
+      "raw_bytes": 99694,
+      "status": "present"
+    },
+    "express-checkout.css": {
+      "gzip_bytes": 378,
+      "path": "dist/express-checkout.css",
+      "raw_bytes": 1203,
+      "status": "present"
+    },
+    "express-checkout.js": {
+      "gzip_bytes": 10947,
+      "path": "dist/express-checkout.js",
+      "raw_bytes": 34664,
+      "status": "present"
+    },
+    "multi-currency-admin.css": {
+      "gzip_bytes": 3903,
+      "path": "dist/multi-currency.css",
+      "raw_bytes": 22698,
+      "status": "present"
+    },
+    "multi-currency-admin.js": {
+      "gzip_bytes": 14875,
+      "path": "dist/multi-currency.js",
+      "raw_bytes": 56399,
+      "status": "present"
+    },
+    "multi-currency-analytics.js": {
+      "gzip_bytes": 1036,
+      "path": "dist/multi-currency-analytics.js",
+      "raw_bytes": 2455,
+      "status": "present"
+    },
+    "multi-currency-frontend.css": {
+      "gzip_bytes": 345,
+      "path": "dist/multi-currency-async-renderer.css",
+      "raw_bytes": 595,
+      "status": "present"
+    },
+    "multi-currency-frontend.js": {
+      "gzip_bytes": 8218,
+      "path": "dist/multi-currency-async-renderer.js",
+      "raw_bytes": 21065,
+      "status": "present"
+    },
+    "multi-currency-setup.css": {
+      "gzip_bytes": 1887,
+      "path": "dist/wcpay-multi-currency-setup.css",
+      "raw_bytes": 7961,
+      "status": "present"
+    },
+    "multi-currency-setup.js": {
+      "path": "dist/wcpay-multi-currency-setup.js",
+      "status": "missing"
+    },
+    "multi-currency-switcher-block.js": {
+      "gzip_bytes": 7410,
+      "path": "dist/multi-currency-switcher-block.js",
+      "raw_bytes": 26009,
+      "status": "present"
+    },
+    "settings-main.css": {
+      "gzip_bytes": 13111,
+      "path": "dist/settings.css",
+      "raw_bytes": 77208,
+      "status": "present"
+    },
+    "settings-main.js": {
+      "gzip_bytes": 80976,
+      "path": "dist/settings.js",
+      "raw_bytes": 295676,
+      "status": "present"
+    },
+    "woopay-direct-checkout.js": {
+      "gzip_bytes": 5600,
+      "path": "dist/woopay-direct-checkout.js",
+      "raw_bytes": 18728,
+      "status": "present"
+    },
+    "woopay-express-button.js": {
+      "gzip_bytes": 23068,
+      "path": "dist/woopay-express-button.js",
+      "raw_bytes": 70888,
+      "status": "present"
+    },
+    "woopay.css": {
+      "gzip_bytes": 4250,
+      "path": "dist/woopay.css",
+      "raw_bytes": 30374,
+      "status": "present"
+    },
+    "woopay.js": {
+      "gzip_bytes": 6118,
+      "path": "dist/woopay.js",
+      "raw_bytes": 16513,
+      "status": "present"
+    }
+  },
+  "mode": "bundle",
+  "profile": "wcpay-plugin",
+  "repo": "/Users/vladolaru/Work/a8c/woocommerce-payments",
+  "schema": "woopayments_measured_gate.v1"
+}

@@ -1,0 +1,77 @@
+{
+  "targetUrl": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&section=woocommerce_payments",
+  "finalUrl": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&section=woocommerce_payments",
+  "result": {
+    "url": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&section=woocommerce_payments",
+    "title": "WooCommerce settings ‹ woocommerce — WordPress",
+    "h1": "WooPayments settings",
+    "h2": [
+      "Connected account"
+    ],
+    "badge": "Test drive",
+    "details": [
+      "Account ID",
+      "acct_1TjCnhJd67Ti1EoI",
+      "Default currency",
+      "USD",
+      "Readiness",
+      "Payments ready",
+      "Processing",
+      "Can process payments"
+    ],
+    "text": "WooPayments settingsConnected accountTest driveAccount IDacct_1TjCnhJd67Ti1EoIDefault currencyUSDReadinessPayments readyProcessingCan process payments",
+    "hasError": false
+  },
+  "accountResponses": [
+    {
+      "url": "http://store8889.localhost:8889/wp-json/wc-admin/settings/payments/woopayments/account?_locale=user",
+      "status": 200,
+      "body": "response.json: Protocol error (Network.getResponseBody): No resource with given identifier found"
+    },
+    {
+      "url": "http://store8889.localhost:8889/wp-json/wc-admin/settings/payments/woopayments/account?_locale=user",
+      "status": 200,
+      "body": {
+        "account": {
+          "id": "acct_1TjCnhJd67Ti1EoI",
+          "mode": "test",
+          "default_currency": "usd",
+          "connected": true,
+          "working": true,
+          "can_process_payments": true,
+          "test_mode": true,
+          "test_drive": true,
+          "sandbox": false,
+          "live": false
+        },
+        "urls": {
+          "overview_page": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-admin&path=/payments/overview&from=WCADMIN_NOX_IN_CONTEXT",
+          "setup": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&section=woocommerce_payments&from=WCADMIN_PAYMENT_SETTINGS&source=wcadmin-settings-page&redirect_to_settings_page=true"
+        }
+      }
+    }
+  ],
+  "badResponses": [],
+  "consoleMessages": [
+    {
+      "type": "log",
+      "text": "JQMIGRATE: Migrate is installed with logging active, version 3.4.1"
+    },
+    {
+      "type": "log",
+      "text": "JQMIGRATE: Migrate is installed with logging active, version 3.4.1"
+    },
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold"
+    },
+    {
+      "type": "log",
+      "text": "JQMIGRATE: Migrate is installed with logging active, version 3.4.1"
+    },
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold"
+    }
+  ]
+}

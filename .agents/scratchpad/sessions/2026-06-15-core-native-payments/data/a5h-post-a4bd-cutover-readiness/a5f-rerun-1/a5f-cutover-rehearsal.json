@@ -1,0 +1,720 @@
+{
+  "browser_evidence_paths": [
+    "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a5h-post-a4bd-cutover-readiness/a5f-rerun-1/a5f-soft-cutover-browser-gate.json",
+    "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a5h-post-a4bd-cutover-readiness/a5f-rerun-1/a5f-mandatory-auto-deactivation-browser-check.json",
+    "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a5h-post-a4bd-cutover-readiness/a5f-rerun-1/a5f-blocked-mandatory-browser-gate.json"
+  ],
+  "failures": [],
+  "gate": "a5f-post-a4as-cutover-rehearsal",
+  "lastUpdatedAt": "2026-06-20T23:43:58.884845+00:00",
+  "log_window": {
+    "debug_log": "/var/www/html/wp-content/debug.log",
+    "started_at": "2026-06-20T23:43:16.888843+00:00"
+  },
+  "pass": true,
+  "phase_results": [
+    {
+      "command": "docker exec -i 24860d14de30dc62f7b324ebef10b5fb-cli-1 wp --allow-root --user=1 eval '\n$path = '\"'\"'/var/www/html/wp-content/debug.log'\"'\"';\n$result = false;\nif ( file_exists( $path ) ) {\n\t$result = file_put_contents( $path, '\"'\"''\"'\"' );\n} else {\n\t$dir = dirname( $path );\n\tif ( is_dir( $dir ) ) {\n\t\t$result = file_put_contents( $path, '\"'\"''\"'\"' );\n\t}\n}\nWP_CLI::line( wp_json_encode( array( '\"'\"'path'\"'\"' => $path, '\"'\"'cleared'\"'\"' => false !== $result, '\"'\"'bytes'\"'\"' => false === $result ? null : $result ) ) );\n'",
+      "exit_code": 0,
+      "finished_at": "2026-06-20T23:43:16.888426+00:00",
+      "id": "clear-target-debug-log",
+      "json": {
+        "bytes": 0,
+        "cleared": true,
+        "path": "/var/www/html/wp-content/debug.log"
+      },
+      "started_at": "2026-06-20T23:43:16.372177+00:00",
+      "status": "pass",
+      "stderr_tail": "",
+      "stdout_tail": "{\"path\":\"\\/var\\/www\\/html\\/wp-content\\/debug.log\",\"cleared\":true,\"bytes\":0}"
+    },
+    {
+      "command": "docker exec -i 24860d14de30dc62f7b324ebef10b5fb-cli-1 wp --allow-root --user=1 eval-file -",
+      "exit_code": 0,
+      "finished_at": "2026-06-20T23:43:17.368228+00:00",
+      "id": "baseline-native-state",
+      "json": {
+        "active_plugin_slugs": [
+          "jetpack-debug-helper-224",
+          "wc-email-template-sync-test-helper",
+          "woocommerce",
+          "woocommerce-payments-dev-tools",
+          "woocommerce-subscriptions",
+          "wpcom-local-helper"
+        ],
+        "current_user_id": 1,
+        "failures": [],
+        "home_url": "http://store8889.localhost:8889",
+        "native_runtime_enabled": true,
+        "plugin_runtime_active": false,
+        "preflight_failures": [],
+        "ready": true,
+        "runtime_owner": "native",
+        "should_native_register": true,
+        "soft_notice": false
+      },
+      "started_at": "2026-06-20T23:43:16.889031+00:00",
+      "status": "pass",
+      "stderr_tail": "",
+      "stdout_tail": "{\n    \"home_url\": \"http:\\/\\/store8889.localhost:8889\",\n    \"current_user_id\": 1,\n    \"active_plugin_slugs\": [\n        \"jetpack-debug-helper-224\",\n        \"wc-email-template-sync-test-helper\",\n        \"woocommerce\",\n        \"woocommerce-payments-dev-tools\",\n        \"woocommerce-subscriptions\",\n        \"wpcom-local-helper\"\n    ],\n    \"runtime_owner\": \"native\",\n    \"native_runtime_enabled\": true,\n    \"plugin_runtime_active\": false,\n    \"should_native_register\": true,\n    \"preflight_failures\": [],\n    \"soft_notice\": false,\n    \"ready\": true,\n    \"failures\": []\n}"
+    },
+    {
+      "command": "docker exec -i 24860d14de30dc62f7b324ebef10b5fb-cli-1 wp --allow-root --user=1 plugin activate woocommerce-payments",
+      "exit_code": 0,
+      "finished_at": "2026-06-20T23:43:17.872811+00:00",
+      "id": "activate-plugin-for-default-off-proof",
+      "started_at": "2026-06-20T23:43:17.369028+00:00",
+      "status": "pass",
+      "stderr_tail": "",
+      "stdout_tail": "Plugin 'woocommerce-payments' activated.\nSuccess: Activated 1 of 1 plugins."
+    },
+    {
+      "command": "docker exec -i 24860d14de30dc62f7b324ebef10b5fb-cli-1 wp --allow-root --user=1 eval-file -",
+      "exit_code": 0,
+      "finished_at": "2026-06-20T23:43:18.396535+00:00",
+      "id": "default-off-plugin-state",
+      "json": {
+        "active_plugin_slugs": [
+          "jetpack-debug-helper-224",
+          "wc-email-template-sync-test-helper",
+          "woocommerce",
+          "woocommerce-payments",
+          "woocommerce-payments-dev-tools",
+          "woocommerce-subscriptions",
+          "wpcom-local-helper"
+        ],
+        "current_user_id": 1,
+        "failures": [],
+        "home_url": "http://store8889.localhost:8889",
+        "native_runtime_enabled": true,
+        "plugin_runtime_active": true,
+        "preflight_failures": [],
+        "ready": true,
+        "runtime_owner": "plugin",
+        "should_native_register": false,
+        "soft_notice": true
+      },
+      "started_at": "2026-06-20T23:43:17.873292+00:00",
+      "status": "pass",
+      "stderr_tail": "",
+      "stdout_tail": "{\n    \"home_url\": \"http:\\/\\/store8889.localhost:8889\",\n    \"current_user_id\": 1,\n    \"active_plugin_slugs\": [\n        \"jetpack-debug-helper-224\",\n        \"wc-email-template-sync-test-helper\",\n        \"woocommerce\",\n        \"woocommerce-payments\",\n        \"woocommerce-payments-dev-tools\",\n        \"woocommerce-subscriptions\",\n        \"wpcom-local-helper\"\n    ],\n    \"runtime_owner\": \"plugin\",\n    \"native_runtime_enabled\": true,\n    \"plugin_runtime_active\": true,\n    \"should_native_register\": false,\n    \"preflight_failures\": [],\n    \"soft_notice\": true,\n    \"ready\": true,\n    \"failures\": []\n}"
+    },
+    {
+      "command": "npx --yes playwriter@latest -s 5 -f /Users/vladolaru/Work/a8c/woocommerce-develop-2/tools/woopayments-merge/a5-cutover-browser-gate.playwriter.mjs --timeout 300000",
+      "exit_code": 0,
+      "finished_at": "2026-06-20T23:43:29.252533+00:00",
+      "id": "soft-cutover-browser-gate",
+      "started_at": "2026-06-20T23:43:18.397347+00:00",
+      "status": "pass",
+      "stderr_tail": "npm warn Unknown project config \"manage-package-manager-versions\". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.\nnpm warn Unknown user config \"minimum-release-age\". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.",
+      "stdout_tail": "Console output:\n[log] {\n  \"evidencePath\": \"/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a5e-soft-cutover-browser-gate.json\",\n  \"pass\": true,\n  \"checks\": 6,\n  \"failedResponses\": 0,\n  \"consoleIssues\": 0\n}\n\n[WARNING] Page closed (url: http://store8889.localhost:8889/wp-admin/plugins.php?wc_woopayments_cutover_status=disabled) for state.page. Assign a new open page to state.page before reusing it."
+    },
+    {
+      "command": "docker exec -i 24860d14de30dc62f7b324ebef10b5fb-cli-1 wp --allow-root --user=1 eval-file -",
+      "exit_code": 0,
+      "finished_at": "2026-06-20T23:43:29.901269+00:00",
+      "id": "post-soft-native-state",
+      "json": {
+        "active_plugin_slugs": [
+          "jetpack-debug-helper-224",
+          "wc-email-template-sync-test-helper",
+          "woocommerce",
+          "woocommerce-payments-dev-tools",
+          "woocommerce-subscriptions",
+          "wpcom-local-helper"
+        ],
+        "current_user_id": 1,
+        "failures": [],
+        "home_url": "http://store8889.localhost:8889",
+        "native_runtime_enabled": true,
+        "plugin_runtime_active": false,
+        "preflight_failures": [],
+        "ready": true,
+        "runtime_owner": "native",
+        "should_native_register": true,
+        "soft_notice": false
+      },
+      "started_at": "2026-06-20T23:43:29.253771+00:00",
+      "status": "pass",
+      "stderr_tail": "",
+      "stdout_tail": "{\n    \"home_url\": \"http:\\/\\/store8889.localhost:8889\",\n    \"current_user_id\": 1,\n    \"active_plugin_slugs\": [\n        \"jetpack-debug-helper-224\",\n        \"wc-email-template-sync-test-helper\",\n        \"woocommerce\",\n        \"woocommerce-payments-dev-tools\",\n        \"woocommerce-subscriptions\",\n        \"wpcom-local-helper\"\n    ],\n    \"runtime_owner\": \"native\",\n    \"native_runtime_enabled\": true,\n    \"plugin_runtime_active\": false,\n    \"should_native_register\": true,\n    \"preflight_failures\": [],\n    \"soft_notice\": false,\n    \"ready\": true,\n    \"failures\": []\n}"
+    },
+    {
+      "command": "docker exec -i 24860d14de30dc62f7b324ebef10b5fb-cli-1 wp --allow-root --user=1 plugin activate woocommerce-payments",
+      "exit_code": 0,
+      "finished_at": "2026-06-20T23:43:30.419404+00:00",
+      "id": "reactivate-plugin-default-off-after-soft",
+      "started_at": "2026-06-20T23:43:29.901896+00:00",
+      "status": "pass",
+      "stderr_tail": "",
+      "stdout_tail": "Plugin 'woocommerce-payments' activated.\nSuccess: Activated 1 of 1 plugins."
+    },
+    {
+      "command": "docker exec -i 24860d14de30dc62f7b324ebef10b5fb-cli-1 wp --allow-root --user=1 eval-file -",
+      "exit_code": 0,
+      "finished_at": "2026-06-20T23:43:30.990437+00:00",
+      "id": "default-off-reactivation-state",
+      "json": {
+        "active_plugin_slugs": [
+          "jetpack-debug-helper-224",
+          "wc-email-template-sync-test-helper",
+          "woocommerce",
+          "woocommerce-payments",
+          "woocommerce-payments-dev-tools",
+          "woocommerce-subscriptions",
+          "wpcom-local-helper"
+        ],
+        "current_user_id": 1,
+        "failures": [],
+        "home_url": "http://store8889.localhost:8889",
+        "native_runtime_enabled": true,
+        "plugin_runtime_active": true,
+        "preflight_failures": [],
+        "ready": true,
+        "runtime_owner": "plugin",
+        "should_native_register": false,
+        "soft_notice": true
+      },
+      "started_at": "2026-06-20T23:43:30.419929+00:00",
+      "status": "pass",
+      "stderr_tail": "",
+      "stdout_tail": "{\n    \"home_url\": \"http:\\/\\/store8889.localhost:8889\",\n    \"current_user_id\": 1,\n    \"active_plugin_slugs\": [\n        \"jetpack-debug-helper-224\",\n        \"wc-email-template-sync-test-helper\",\n        \"woocommerce\",\n        \"woocommerce-payments\",\n        \"woocommerce-payments-dev-tools\",\n        \"woocommerce-subscriptions\",\n        \"wpcom-local-helper\"\n    ],\n    \"runtime_owner\": \"plugin\",\n    \"native_runtime_enabled\": true,\n    \"plugin_runtime_active\": true,\n    \"should_native_register\": false,\n    \"preflight_failures\": [],\n    \"soft_notice\": true,\n    \"ready\": true,\n    \"failures\": []\n}"
+    },
+    {
+      "command": "docker exec -i 24860d14de30dc62f7b324ebef10b5fb-cli-1 wp --allow-root --user=1 eval '\n$path = WPMU_PLUGIN_DIR . '\"'\"'/a5f-mandatory-cutover.php'\"'\"';\nif ( ! is_dir( WPMU_PLUGIN_DIR ) ) {\n\twp_mkdir_p( WPMU_PLUGIN_DIR );\n}\n$written = file_put_contents( $path, base64_decode( '\"'\"'PD9waHAKLyoqCiAqIExvY2FsLW9ubHkgQTUgbWFuZGF0b3J5IFdvb1BheW1lbnRzIGN1dG92ZXIgaGVscGVyLgogKgogKiBDb3B5IHRoaXMgZmlsZSBpbnRvIGEgdGFyZ2V0IHdwLWVudiBjb250YWluZXIncyBgd3AtY29udGVudC9tdS1wbHVnaW5zL2AKICogZGlyZWN0b3J5IHdoZW4gdmFsaWRhdGluZyBtYW5kYXRvcnkgY3V0b3ZlciBiZWhhdmlvci4gUmVtb3ZlIGl0IGFmdGVyIHRoZQogKiBwcm9iZS4gVGhpcyBlbmFibGVzIHRoZSBuYXRpdmUgcnVudGltZSBhbmQgbWFuZGF0b3J5IGN1dG92ZXIgZ2F0ZSBvbmx5OyBpdAogKiBkb2VzIG5vdCBmb3JjZSB0cmFuc3BvcnQsIHBsYXRmb3JtLCBhZG1pbiwgcXVldWUsIG9yIGZpbmFuY2lhbCByZWFkaW5lc3MuCiAqCiAqIEBwYWNrYWdlIFdvb0NvbW1lcmNlXFRvb2xzXFdvb1BheW1lbnRzTWVyZ2UKICovCgphZGRfZmlsdGVyKCAnd29vY29tbWVyY2VfbmF0aXZlX3BheW1lbnRzX2VuYWJsZWQnLCAnX19yZXR1cm5fdHJ1ZScgKTsKYWRkX2ZpbHRlciggJ3dvb2NvbW1lcmNlX3dvb3BheW1lbnRzX25hdGl2ZV9tYW5kYXRvcnlfY3V0b3Zlcl9lbmFibGVkJywgJ19fcmV0dXJuX3RydWUnICk7Cg=='\"'\"' ) );\nif ( false === $written ) {\n\tWP_CLI::error( '\"'\"'failed_to_write_mu_helper:a5f-mandatory-cutover.php'\"'\"' );\n}\nWP_CLI::line( wp_json_encode( array( '\"'\"'path'\"'\"' => $path, '\"'\"'bytes'\"'\"' => $written ) ) );\n'",
+      "exit_code": 0,
+      "finished_at": "2026-06-20T23:43:31.516139+00:00",
+      "id": "install-mandatory-helper",
+      "json": {
+        "bytes": 592,
+        "path": "/var/www/html/wp-content/mu-plugins/a5f-mandatory-cutover.php"
+      },
+      "started_at": "2026-06-20T23:43:30.991803+00:00",
+      "status": "pass",
+      "stderr_tail": "",
+      "stdout_tail": "{\"path\":\"\\/var\\/www\\/html\\/wp-content\\/mu-plugins\\/a5f-mandatory-cutover.php\",\"bytes\":592}"
+    },
+    {
+      "command": "npx --yes playwriter@latest -s 5 -f /Users/vladolaru/Work/a8c/woocommerce-develop-2/tools/woopayments-merge/a5-mandatory-browser-gate.playwriter.mjs --timeout 300000",
+      "exit_code": 0,
+      "finished_at": "2026-06-20T23:43:39.951048+00:00",
+      "id": "mandatory-browser-gate",
+      "started_at": "2026-06-20T23:43:31.516947+00:00",
+      "status": "pass",
+      "stderr_tail": "npm warn Unknown project config \"manage-package-manager-versions\". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.\nnpm warn Unknown user config \"minimum-release-age\". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.",
+      "stdout_tail": "Console output:\n[log] {\n  \"evidencePath\": \"/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a5e-mandatory-auto-deactivation-browser-check.json\",\n  \"pass\": true,\n  \"checks\": 3,\n  \"failedResponses\": 0,\n  \"consoleIssues\": 0\n}\n\n[WARNING] Page closed (url: http://store8889.localhost:8889/wp-admin/plugins.php) for state.page. Assign a new open page to state.page before reusing it."
+    },
+    {
+      "command": "docker exec -i 24860d14de30dc62f7b324ebef10b5fb-cli-1 wp --allow-root --user=1 eval-file -",
+      "exit_code": 0,
+      "finished_at": "2026-06-20T23:43:40.542639+00:00",
+      "id": "post-mandatory-native-state",
+      "json": {
+        "active_plugin_slugs": [
+          "jetpack-debug-helper-224",
+          "wc-email-template-sync-test-helper",
+          "woocommerce",
+          "woocommerce-payments-dev-tools",
+          "woocommerce-subscriptions",
+          "wpcom-local-helper"
+        ],
+        "current_user_id": 1,
+        "failures": [],
+        "home_url": "http://store8889.localhost:8889",
+        "native_runtime_enabled": true,
+        "plugin_runtime_active": false,
+        "preflight_failures": [],
+        "ready": true,
+        "runtime_owner": "native",
+        "should_native_register": true,
+        "soft_notice": false
+      },
+      "started_at": "2026-06-20T23:43:39.952008+00:00",
+      "status": "pass",
+      "stderr_tail": "",
+      "stdout_tail": "{\n    \"home_url\": \"http:\\/\\/store8889.localhost:8889\",\n    \"current_user_id\": 1,\n    \"active_plugin_slugs\": [\n        \"jetpack-debug-helper-224\",\n        \"wc-email-template-sync-test-helper\",\n        \"woocommerce\",\n        \"woocommerce-payments-dev-tools\",\n        \"woocommerce-subscriptions\",\n        \"wpcom-local-helper\"\n    ],\n    \"runtime_owner\": \"native\",\n    \"native_runtime_enabled\": true,\n    \"plugin_runtime_active\": false,\n    \"should_native_register\": true,\n    \"preflight_failures\": [],\n    \"soft_notice\": false,\n    \"ready\": true,\n    \"failures\": []\n}"
+    },
+    {
+      "command": "docker exec -i 24860d14de30dc62f7b324ebef10b5fb-cli-1 wp --allow-root --user=1 plugin activate woocommerce-payments",
+      "exit_code": 1,
+      "expected_failure": true,
+      "finished_at": "2026-06-20T23:43:41.065686+00:00",
+      "id": "activation-guard-blocks-under-mandatory",
+      "observed_exit_code": 1,
+      "required_message": "now included in WooCommerce core",
+      "started_at": "2026-06-20T23:43:40.543304+00:00",
+      "status": "pass",
+      "stderr_tail": "Error: WooPayments cannot be activated because its functionality is now included in WooCommerce core.",
+      "stdout_tail": ""
+    },
+    {
+      "command": "docker exec -i 24860d14de30dc62f7b324ebef10b5fb-cli-1 wp --allow-root --user=1 eval '\n$path = WPMU_PLUGIN_DIR . '\"'\"'/a5f-mandatory-cutover.php'\"'\"';\n$removed = false;\nif ( file_exists( $path ) ) {\n\t$removed = unlink( $path );\n}\nWP_CLI::line( wp_json_encode( array( '\"'\"'path'\"'\"' => $path, '\"'\"'removed'\"'\"' => (bool) $removed, '\"'\"'exists'\"'\"' => file_exists( $path ) ) ) );\n'",
+      "exit_code": 0,
+      "finished_at": "2026-06-20T23:43:41.551511+00:00",
+      "id": "remove-mandatory-helper-before-blocker-proof",
+      "json": {
+        "exists": false,
+        "path": "/var/www/html/wp-content/mu-plugins/a5f-mandatory-cutover.php",
+        "removed": true
+      },
+      "started_at": "2026-06-20T23:43:41.066118+00:00",
+      "status": "pass",
+      "stderr_tail": "",
+      "stdout_tail": "{\"path\":\"\\/var\\/www\\/html\\/wp-content\\/mu-plugins\\/a5f-mandatory-cutover.php\",\"removed\":true,\"exists\":false}"
+    },
+    {
+      "command": "docker exec -i 24860d14de30dc62f7b324ebef10b5fb-cli-1 wp --allow-root --user=1 eval '\n$path = WPMU_PLUGIN_DIR . '\"'\"'/a5f-mandatory-cutover.php'\"'\"';\nif ( ! is_dir( WPMU_PLUGIN_DIR ) ) {\n\twp_mkdir_p( WPMU_PLUGIN_DIR );\n}\n$written = file_put_contents( $path, base64_decode( '\"'\"'PD9waHAKLyoqCiAqIExvY2FsLW9ubHkgQTUgbWFuZGF0b3J5IFdvb1BheW1lbnRzIGN1dG92ZXIgaGVscGVyLgogKgogKiBDb3B5IHRoaXMgZmlsZSBpbnRvIGEgdGFyZ2V0IHdwLWVudiBjb250YWluZXIncyBgd3AtY29udGVudC9tdS1wbHVnaW5zL2AKICogZGlyZWN0b3J5IHdoZW4gdmFsaWRhdGluZyBtYW5kYXRvcnkgY3V0b3ZlciBiZWhhdmlvci4gUmVtb3ZlIGl0IGFmdGVyIHRoZQogKiBwcm9iZS4gVGhpcyBlbmFibGVzIHRoZSBuYXRpdmUgcnVudGltZSBhbmQgbWFuZGF0b3J5IGN1dG92ZXIgZ2F0ZSBvbmx5OyBpdAogKiBkb2VzIG5vdCBmb3JjZSB0cmFuc3BvcnQsIHBsYXRmb3JtLCBhZG1pbiwgcXVldWUsIG9yIGZpbmFuY2lhbCByZWFkaW5lc3MuCiAqCiAqIEBwYWNrYWdlIFdvb0NvbW1lcmNlXFRvb2xzXFdvb1BheW1lbnRzTWVyZ2UKICovCgphZGRfZmlsdGVyKCAnd29vY29tbWVyY2VfbmF0aXZlX3BheW1lbnRzX2VuYWJsZWQnLCAnX19yZXR1cm5fdHJ1ZScgKTsKYWRkX2ZpbHRlciggJ3dvb2NvbW1lcmNlX3dvb3BheW1lbnRzX25hdGl2ZV9tYW5kYXRvcnlfY3V0b3Zlcl9lbmFibGVkJywgJ19fcmV0dXJuX3RydWUnICk7Cg=='\"'\"' ) );\nif ( false === $written ) {\n\tWP_CLI::error( '\"'\"'failed_to_write_mu_helper:a5f-mandatory-cutover.php'\"'\"' );\n}\nWP_CLI::line( wp_json_encode( array( '\"'\"'path'\"'\"' => $path, '\"'\"'bytes'\"'\"' => $written ) ) );\n'",
+      "exit_code": 0,
+      "finished_at": "2026-06-20T23:43:42.037648+00:00",
+      "id": "install-mandatory-helper-for-blocker",
+      "json": {
+        "bytes": 592,
+        "path": "/var/www/html/wp-content/mu-plugins/a5f-mandatory-cutover.php"
+      },
+      "started_at": "2026-06-20T23:43:41.552045+00:00",
+      "status": "pass",
+      "stderr_tail": "",
+      "stdout_tail": "{\"path\":\"\\/var\\/www\\/html\\/wp-content\\/mu-plugins\\/a5f-mandatory-cutover.php\",\"bytes\":592}"
+    },
+    {
+      "command": "docker exec -i 24860d14de30dc62f7b324ebef10b5fb-cli-1 wp --allow-root --user=1 eval '\n$path = WPMU_PLUGIN_DIR . '\"'\"'/a5f-preflight-blocker.php'\"'\"';\nif ( ! is_dir( WPMU_PLUGIN_DIR ) ) {\n\twp_mkdir_p( WPMU_PLUGIN_DIR );\n}\n$written = file_put_contents( $path, base64_decode( '\"'\"'PD9waHAKLyoqCiAqIExvY2FsLW9ubHkgQTUgbmVnYXRpdmUgcHJlZmxpZ2h0IHByb29mIGhlbHBlci4KICoKICogQ29weSB0aGlzIGZpbGUgaW50byBhIHRhcmdldCB3cC1lbnYgY29udGFpbmVyJ3MgYHdwLWNvbnRlbnQvbXUtcGx1Z2lucy9gCiAqIGRpcmVjdG9yeSB3aGVuIHZhbGlkYXRpbmcgYmxvY2tlZCBjdXRvdmVyIGJlaGF2aW9yLiBSZW1vdmUgaXQgYWZ0ZXIgdGhlCiAqIHByb2JlLiBUaGlzIGVuYWJsZXMgdGhlIG5hdGl2ZSBydW50aW1lIGFuZCBhZGRzIGEgc3ludGhldGljIHByZWZsaWdodCBtYXJrZXIKICogb25seTsgaXQgZG9lcyBub3QgZm9yY2UgcmVhbCB0cmFuc3BvcnQsIHBsYXRmb3JtLCBhZG1pbiwgcXVldWUsIG9yIGZpbmFuY2lhbAogKiByZWFkaW5lc3MgY2hlY2tzIHRvIHBhc3MuCiAqCiAqIEBwYWNrYWdlIFdvb0NvbW1lcmNlXFRvb2xzXFdvb1BheW1lbnRzTWVyZ2UKICovCgphZGRfZmlsdGVyKCAnd29vY29tbWVyY2VfbmF0aXZlX3BheW1lbnRzX2VuYWJsZWQnLCAnX19yZXR1cm5fdHJ1ZScgKTsKYWRkX2ZpbHRlcigKCSd3b29jb21tZXJjZV93b29wYXltZW50c19uYXRpdmVfY3V0b3Zlcl9wcmVmbGlnaHRfZmFpbHVyZXMnLAoJc3RhdGljIGZ1bmN0aW9uICggJGZhaWx1cmVzICk6IGFycmF5IHsKCQkkZmFpbHVyZXMgPSBpc19hcnJheSggJGZhaWx1cmVzICkgPyAkZmFpbHVyZXMgOiBhcnJheSggJ3ByZWZsaWdodF9maWx0ZXJfaW52YWxpZCcgKTsKCQkkZmFpbHVyZXNbXSA9ICdhNV9zeW50aGV0aWNfcHJlZmxpZ2h0X2Jsb2NrZXInOwoKCQlyZXR1cm4gYXJyYXlfdmFsdWVzKCBhcnJheV91bmlxdWUoIGFycmF5X21hcCggJ3N0cnZhbCcsICRmYWlsdXJlcyApICkgKTsKCX0KKTsK'\"'\"' ) );\nif ( false === $written ) {\n\tWP_CLI::error( '\"'\"'failed_to_write_mu_helper:a5f-preflight-blocker.php'\"'\"' );\n}\nWP_CLI::line( wp_json_encode( array( '\"'\"'path'\"'\"' => $path, '\"'\"'bytes'\"'\"' => $written ) ) );\n'",
+      "exit_code": 0,
+      "finished_at": "2026-06-20T23:43:42.528428+00:00",
+      "id": "install-synthetic-preflight-blocker",
+      "json": {
+        "bytes": 861,
+        "path": "/var/www/html/wp-content/mu-plugins/a5f-preflight-blocker.php"
+      },
+      "started_at": "2026-06-20T23:43:42.038412+00:00",
+      "status": "pass",
+      "stderr_tail": "",
+      "stdout_tail": "{\"path\":\"\\/var\\/www\\/html\\/wp-content\\/mu-plugins\\/a5f-preflight-blocker.php\",\"bytes\":861}"
+    },
+    {
+      "command": "docker exec -i 24860d14de30dc62f7b324ebef10b5fb-cli-1 wp --allow-root --user=1 plugin activate woocommerce-payments",
+      "exit_code": 0,
+      "finished_at": "2026-06-20T23:43:43.037483+00:00",
+      "id": "activate-plugin-for-blocked-mandatory",
+      "started_at": "2026-06-20T23:43:42.528957+00:00",
+      "status": "pass",
+      "stderr_tail": "",
+      "stdout_tail": "Plugin 'woocommerce-payments' activated.\nSuccess: Activated 1 of 1 plugins."
+    },
+    {
+      "command": "docker exec -i 24860d14de30dc62f7b324ebef10b5fb-cli-1 wp --allow-root --user=1 eval-file -",
+      "exit_code": 0,
+      "finished_at": "2026-06-20T23:43:43.556434+00:00",
+      "id": "blocked-mandatory-plugin-state",
+      "json": {
+        "active_plugin_slugs": [
+          "jetpack-debug-helper-224",
+          "wc-email-template-sync-test-helper",
+          "woocommerce",
+          "woocommerce-payments",
+          "woocommerce-payments-dev-tools",
+          "woocommerce-subscriptions",
+          "wpcom-local-helper"
+        ],
+        "current_user_id": 1,
+        "failures": [],
+        "home_url": "http://store8889.localhost:8889",
+        "native_runtime_enabled": true,
+        "plugin_runtime_active": true,
+        "preflight_failures": [
+          "a5_synthetic_preflight_blocker"
+        ],
+        "ready": false,
+        "runtime_owner": "plugin",
+        "should_native_register": false,
+        "soft_notice": false
+      },
+      "started_at": "2026-06-20T23:43:43.038121+00:00",
+      "status": "pass",
+      "stderr_tail": "",
+      "stdout_tail": "{\n    \"home_url\": \"http:\\/\\/store8889.localhost:8889\",\n    \"current_user_id\": 1,\n    \"active_plugin_slugs\": [\n        \"jetpack-debug-helper-224\",\n        \"wc-email-template-sync-test-helper\",\n        \"woocommerce\",\n        \"woocommerce-payments\",\n        \"woocommerce-payments-dev-tools\",\n        \"woocommerce-subscriptions\",\n        \"wpcom-local-helper\"\n    ],\n    \"runtime_owner\": \"plugin\",\n    \"native_runtime_enabled\": true,\n    \"plugin_runtime_active\": true,\n    \"should_native_register\": false,\n    \"preflight_failures\": [\n        \"a5_synthetic_preflight_blocker\"\n    ],\n    \"soft_notice\": false,\n    \"ready\": false,\n    \"failures\": []\n}"
+    },
+    {
+      "command": "npx --yes playwriter@latest -s 5 -f /Users/vladolaru/Work/a8c/woocommerce-develop-2/tools/woopayments-merge/a5-blocked-mandatory-browser-gate.playwriter.mjs --timeout 300000",
+      "exit_code": 0,
+      "finished_at": "2026-06-20T23:43:51.300203+00:00",
+      "id": "blocked-mandatory-browser-gate",
+      "started_at": "2026-06-20T23:43:43.557534+00:00",
+      "status": "pass",
+      "stderr_tail": "npm warn Unknown project config \"manage-package-manager-versions\". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.\nnpm warn Unknown user config \"minimum-release-age\". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.",
+      "stdout_tail": "[WARNING] Page closed (url: http://store8889.localhost:8889/wp-admin/plugins.php) for state.page. Assign a new open page to state.page before reusing it."
+    },
+    {
+      "command": "docker exec -i 24860d14de30dc62f7b324ebef10b5fb-cli-1 wp --allow-root --user=1 eval-file -",
+      "exit_code": 0,
+      "finished_at": "2026-06-20T23:43:51.901042+00:00",
+      "id": "blocked-mandatory-after-browser-state",
+      "json": {
+        "active_plugin_slugs": [
+          "jetpack-debug-helper-224",
+          "wc-email-template-sync-test-helper",
+          "woocommerce",
+          "woocommerce-payments",
+          "woocommerce-payments-dev-tools",
+          "woocommerce-subscriptions",
+          "wpcom-local-helper"
+        ],
+        "current_user_id": 1,
+        "failures": [],
+        "home_url": "http://store8889.localhost:8889",
+        "native_runtime_enabled": true,
+        "plugin_runtime_active": true,
+        "preflight_failures": [
+          "a5_synthetic_preflight_blocker"
+        ],
+        "ready": false,
+        "runtime_owner": "plugin",
+        "should_native_register": false,
+        "soft_notice": false
+      },
+      "started_at": "2026-06-20T23:43:51.301804+00:00",
+      "status": "pass",
+      "stderr_tail": "",
+      "stdout_tail": "{\n    \"home_url\": \"http:\\/\\/store8889.localhost:8889\",\n    \"current_user_id\": 1,\n    \"active_plugin_slugs\": [\n        \"jetpack-debug-helper-224\",\n        \"wc-email-template-sync-test-helper\",\n        \"woocommerce\",\n        \"woocommerce-payments\",\n        \"woocommerce-payments-dev-tools\",\n        \"woocommerce-subscriptions\",\n        \"wpcom-local-helper\"\n    ],\n    \"runtime_owner\": \"plugin\",\n    \"native_runtime_enabled\": true,\n    \"plugin_runtime_active\": true,\n    \"should_native_register\": false,\n    \"preflight_failures\": [\n        \"a5_synthetic_preflight_blocker\"\n    ],\n    \"soft_notice\": false,\n    \"ready\": false,\n    \"failures\": []\n}"
+    },
+    {
+      "command": "docker exec -i 24860d14de30dc62f7b324ebef10b5fb-cli-1 wp --allow-root --user=1 eval '\n$path = WPMU_PLUGIN_DIR . '\"'\"'/a5f-preflight-blocker.php'\"'\"';\n$removed = false;\nif ( file_exists( $path ) ) {\n\t$removed = unlink( $path );\n}\nWP_CLI::line( wp_json_encode( array( '\"'\"'path'\"'\"' => $path, '\"'\"'removed'\"'\"' => (bool) $removed, '\"'\"'exists'\"'\"' => file_exists( $path ) ) ) );\n'",
+      "exit_code": 0,
+      "finished_at": "2026-06-20T23:43:52.424328+00:00",
+      "id": "remove-synthetic-preflight-blocker",
+      "json": {
+        "exists": false,
+        "path": "/var/www/html/wp-content/mu-plugins/a5f-preflight-blocker.php",
+        "removed": true
+      },
+      "started_at": "2026-06-20T23:43:51.901949+00:00",
+      "status": "pass",
+      "stderr_tail": "",
+      "stdout_tail": "{\"path\":\"\\/var\\/www\\/html\\/wp-content\\/mu-plugins\\/a5f-preflight-blocker.php\",\"removed\":true,\"exists\":false}"
+    },
+    {
+      "command": "docker exec -i 24860d14de30dc62f7b324ebef10b5fb-cli-1 wp --allow-root --user=1 eval '\n$path = WPMU_PLUGIN_DIR . '\"'\"'/a5f-mandatory-cutover.php'\"'\"';\n$removed = false;\nif ( file_exists( $path ) ) {\n\t$removed = unlink( $path );\n}\nWP_CLI::line( wp_json_encode( array( '\"'\"'path'\"'\"' => $path, '\"'\"'removed'\"'\"' => (bool) $removed, '\"'\"'exists'\"'\"' => file_exists( $path ) ) ) );\n'",
+      "exit_code": 0,
+      "finished_at": "2026-06-20T23:43:52.931767+00:00",
+      "id": "remove-mandatory-helper",
+      "json": {
+        "exists": false,
+        "path": "/var/www/html/wp-content/mu-plugins/a5f-mandatory-cutover.php",
+        "removed": true
+      },
+      "started_at": "2026-06-20T23:43:52.424926+00:00",
+      "status": "pass",
+      "stderr_tail": "",
+      "stdout_tail": "{\"path\":\"\\/var\\/www\\/html\\/wp-content\\/mu-plugins\\/a5f-mandatory-cutover.php\",\"removed\":true,\"exists\":false}"
+    },
+    {
+      "command": "docker exec -i 24860d14de30dc62f7b324ebef10b5fb-cli-1 wp --allow-root --user=1 plugin deactivate woocommerce-payments",
+      "exit_code": 0,
+      "finished_at": "2026-06-20T23:43:53.490516+00:00",
+      "id": "restore-native-ownership",
+      "started_at": "2026-06-20T23:43:52.932277+00:00",
+      "status": "pass",
+      "stderr_tail": "",
+      "stdout_tail": "Plugin 'woocommerce-payments' deactivated.\nSuccess: Deactivated 1 of 1 plugins."
+    },
+    {
+      "command": "docker exec -i 24860d14de30dc62f7b324ebef10b5fb-cli-1 wp --allow-root --user=1 eval-file -",
+      "exit_code": 0,
+      "finished_at": "2026-06-20T23:43:53.991551+00:00",
+      "id": "restored-native-state",
+      "json": {
+        "active_plugin_slugs": [
+          "jetpack-debug-helper-224",
+          "wc-email-template-sync-test-helper",
+          "woocommerce",
+          "woocommerce-payments-dev-tools",
+          "woocommerce-subscriptions",
+          "wpcom-local-helper"
+        ],
+        "current_user_id": 1,
+        "failures": [],
+        "home_url": "http://store8889.localhost:8889",
+        "native_runtime_enabled": true,
+        "plugin_runtime_active": false,
+        "preflight_failures": [],
+        "ready": true,
+        "runtime_owner": "native",
+        "should_native_register": true,
+        "soft_notice": false
+      },
+      "started_at": "2026-06-20T23:43:53.491089+00:00",
+      "status": "pass",
+      "stderr_tail": "",
+      "stdout_tail": "{\n    \"home_url\": \"http:\\/\\/store8889.localhost:8889\",\n    \"current_user_id\": 1,\n    \"active_plugin_slugs\": [\n        \"jetpack-debug-helper-224\",\n        \"wc-email-template-sync-test-helper\",\n        \"woocommerce\",\n        \"woocommerce-payments-dev-tools\",\n        \"woocommerce-subscriptions\",\n        \"wpcom-local-helper\"\n    ],\n    \"runtime_owner\": \"native\",\n    \"native_runtime_enabled\": true,\n    \"plugin_runtime_active\": false,\n    \"should_native_register\": true,\n    \"preflight_failures\": [],\n    \"soft_notice\": false,\n    \"ready\": true,\n    \"failures\": []\n}"
+    },
+    {
+      "command": "/Users/vladolaru/Work/a8c/woocommerce-develop-2/tools/woopayments-merge/a5-local-wpcom-readiness.sh /Users/vladolaru/Work/a8c/woocommerce-develop-2",
+      "exit_code": 0,
+      "finished_at": "2026-06-20T23:43:57.410604+00:00",
+      "id": "local-wpcom-readiness",
+      "started_at": "2026-06-20T23:43:53.992346+00:00",
+      "status": "pass",
+      "stderr_tail": "",
+      "stdout_tail": "n a separate shell before connecting, or wpcom-local calypso disable to use the built-in consent screen.\"\n    },\n    {\n      \"level\": \"info\",\n      \"text\": \"PHPUnit readiness was not checked. Top-level doctor only validates normal runtime readiness.\",\n      \"hint\": \"Run wpcom-local phpunit doctor to verify the profiled PHPUnit service, schema mount, generated test files, and private DB.\"\n    }\n  ],\n  \"errors\": [],\n  \"artifacts\": []\n}\n==> wpcom-local identity status\n{\n  \"command\": \"identity status\",\n  \"status\": \"success\",\n  \"exit_code\": 0,\n  \"context\": {\n    \"compose_file\": \"/Users/vladolaru/.wpcom-local/generated/compose/docker-compose.yml\",\n    \"default_user_id\": \"1\",\n    \"home\": \"/Users/vladolaru/.wpcom-local\",\n    \"oauth2_clients\": \"present\",\n    \"oauth2_codes\": \"present\",\n    \"oauth2_tokens\": \"present\",\n    \"wpcom_path\": \"/Users/vladolaru/Work/a8c/wpcom\"\n  },\n  \"summary\": \"Loaded local identity status.\",\n  \"messages\": [],\n  \"errors\": [],\n  \"artifacts\": []\n}\n==> wpcom-local transact status\n{\n  \"command\": \"transact status\",\n  \"status\": \"success\",\n  \"exit_code\": 0,\n  \"context\": {\n    \"allow_real_stripe\": \"true\",\n    \"async_jobs_generation_state\": \"current\",\n    \"async_jobs_mode\": \"automatic\",\n    \"async_jobs_planned_action\": \"none\",\n    \"async_jobs_ready\": \"true\",\n    \"async_jobs_service_state\": \"active\",\n    \"async_jobs_would_mutate\": \"false\",\n    \"home\": \"/Users/vladolaru/.wpcom-local\",\n    \"jobs_mode\": \"automatic\",\n    \"mailpit_active\": \"true\",\n    \"mailpit_enabled\": \"true\",\n    \"mailpit_port\": \"8893\",\n    \"mailpit_url\": \"http://mail.localhost:8893\",\n    \"secrets_path\": \"/Users/vladolaru/.wpcom-local/secrets/transact.json\",\n    \"stripe_files_sink_enabled\": \"false\",\n    \"stripe_test_kyc_read_api_key\": \"configured\",\n    \"stripe_test_platform_webhook_signature_key\": \"configured\",\n    \"stripe_test_public_key\": \"configured\",\n    \"stripe_test_secret_key\": \"configured\",\n    \"stripe_test_webhook_signature_key\": \"configured\",\n    \"wpcom_path\": \"/Users/vladolaru/Work/a8c/wpcom\"\n  },\n  \"summary\": \"Loaded local Transact Platform workflow status.\",\n  \"messages\": [],\n  \"errors\": [],\n  \"artifacts\": []\n}\n==> wpcom-local tracks status\n{\n  \"command\": \"tracks status\",\n  \"status\": \"success\",\n  \"exit_code\": 0,\n  \"context\": {\n    \"checkout_id\": \"wpcom-242c9ecfccb4740a\",\n    \"endpoint_path\": \"/__wpcom-local/tracks/events\",\n    \"endpoint_url\": \"http://wpcom.localhost:30001/__wpcom-local/tracks/events\",\n    \"home\": \"/Users/vladolaru/.wpcom-local\",\n    \"secrets_path\": \"/Users/vladolaru/.wpcom-local/secrets/tracks.json\",\n    \"sink_enabled\": \"true\",\n    \"store_path\": \"/Users/vladolaru/.wpcom-local/logs/wpcom-242c9ecfccb4740a/provider-sinks/tracks-events.ndjson\",\n    \"token_status\": \"configured\",\n    \"wpcom_path\": \"/Users/vladolaru/Work/a8c/wpcom\"\n  },\n  \"summary\": \"Loaded local Tracks sink status.\",\n  \"messages\": [\n    {\n      \"level\": \"info\",\n      \"text\": \"sink enabled: true\"\n    },\n    {\n      \"level\": \"info\",\n      \"text\": \"Run wpcom-local env up after changing sink state.\"\n    }\n  ],\n  \"errors\": [],\n  \"artifacts\": []\n}\n==> wpcom-local store doctor\n{\n  \"command\": \"store doctor\",\n  \"status\": \"success\",\n  \"exit_code\": 0,\n  \"context\": {\n    \"advisory_codes\": \"no_wp_env_config\",\n    \"live_checked\": \"true\",\n    \"store_dir\": \"/Users/vladolaru/Work/a8c/woocommerce-develop-2\",\n    \"wp_env_found\": \"false\"\n  },\n  \"summary\": \"No wp-env store config found here; nothing to advise (best-effort).\",\n  \"messages\": [\n    {\n      \"level\": \"info\",\n      \"text\": \"No .wp-env.json or .wp-env.override.json found in /Users/vladolaru/Work/a8c/woocommerce-develop-2. If this store uses a different or custom local env setup, that is fine \u2014 store doctor only understands wp-env today.\",\n      \"hint\": \"Run from the store's wp-env directory or pass --path \\u003cstore-dir\\u003e. See the skill reference connecting-a-local-store.md (or the wpcom-local docs) for the full setup and recovery steps.\"\n    }\n  ],\n  \"errors\": [],\n  \"artifacts\": []\n}\nA5 local WPCOM readiness checks passed."
+    },
+    {
+      "command": "docker exec -i 24860d14de30dc62f7b324ebef10b5fb-cli-1 wp --allow-root --user=1 eval-file -",
+      "exit_code": 0,
+      "finished_at": "2026-06-20T23:43:57.900190+00:00",
+      "id": "owner-user-token-readiness",
+      "json": {
+        "active_plugin_slugs": [
+          "jetpack-debug-helper-224",
+          "wc-email-template-sync-test-helper",
+          "woocommerce",
+          "woocommerce-payments-dev-tools",
+          "woocommerce-subscriptions",
+          "wpcom-local-helper"
+        ],
+        "blog_id": 4,
+        "connection_owner_id": 1,
+        "connection_owner_user_token_present": true,
+        "current_user_id": 1,
+        "failures": [],
+        "has_blog_id": true,
+        "has_connection_owner": true,
+        "home_url": "http://store8889.localhost:8889",
+        "is_store_connected": true,
+        "jetpack_connection_class_available": true,
+        "jetpack_manager_available": true,
+        "jetpack_options_class_available": true,
+        "native_platform_readiness_failures": [],
+        "native_platform_service_available": true,
+        "native_transport_blog_id": 4,
+        "native_transport_client_available": true,
+        "native_transport_is_connected": true,
+        "ready": true
+      },
+      "started_at": "2026-06-20T23:43:57.411339+00:00",
+      "status": "pass",
+      "stderr_tail": "",
+      "stdout_tail": "{\n    \"home_url\": \"http:\\/\\/store8889.localhost:8889\",\n    \"current_user_id\": 1,\n    \"jetpack_options_class_available\": true,\n    \"jetpack_connection_class_available\": true,\n    \"jetpack_manager_available\": true,\n    \"blog_id\": 4,\n    \"has_blog_id\": true,\n    \"is_store_connected\": true,\n    \"connection_owner_id\": 1,\n    \"has_connection_owner\": true,\n    \"connection_owner_user_token_present\": true,\n    \"native_transport_client_available\": true,\n    \"native_transport_is_connected\": true,\n    \"native_transport_blog_id\": 4,\n    \"native_platform_service_available\": true,\n    \"native_platform_readiness_failures\": [],\n    \"active_plugin_slugs\": [\n        \"jetpack-debug-helper-224\",\n        \"wc-email-template-sync-test-helper\",\n        \"woocommerce\",\n        \"woocommerce-payments-dev-tools\",\n        \"woocommerce-subscriptions\",\n        \"wpcom-local-helper\"\n    ],\n    \"ready\": true,\n    \"failures\": []\n}"
+    },
+    {
+      "command": "docker exec -i 24860d14de30dc62f7b324ebef10b5fb-cli-1 wp --allow-root --user=1 eval-file -",
+      "exit_code": 0,
+      "finished_at": "2026-06-20T23:43:58.383576+00:00",
+      "id": "transport-continuity",
+      "json": {
+        "captured_requests": [
+          {
+            "blocking": true,
+            "body": {
+              "statement_descriptor": "A5 LOCAL PROBE",
+              "test_mode": true
+            },
+            "headers": {
+              "Content-Type": "application/json; charset=utf-8",
+              "Idempotency-Key": "01a220f1-d848-4766-93dc-5f120775a711",
+              "User-Agent": "WooCommerce Payments/10.8.0",
+              "X-Request-Initiated": "1781999038.376"
+            },
+            "method": "POST",
+            "path": "/sites/123456789/wcpay/accounts",
+            "timeout": 70,
+            "use_user_token": true
+          }
+        ],
+        "failures": [],
+        "ready": true
+      },
+      "started_at": "2026-06-20T23:43:57.901128+00:00",
+      "status": "pass",
+      "stderr_tail": "",
+      "stdout_tail": "{\n    \"ready\": true,\n    \"failures\": [],\n    \"captured_requests\": [\n        {\n            \"method\": \"POST\",\n            \"path\": \"\\/sites\\/123456789\\/wcpay\\/accounts\",\n            \"headers\": {\n                \"Content-Type\": \"application\\/json; charset=utf-8\",\n                \"User-Agent\": \"WooCommerce Payments\\/10.8.0\",\n                \"Idempotency-Key\": \"01a220f1-d848-4766-93dc-5f120775a711\",\n                \"X-Request-Initiated\": \"1781999038.376\"\n            },\n            \"body\": {\n                \"test_mode\": true,\n                \"statement_descriptor\": \"A5 LOCAL PROBE\"\n            },\n            \"timeout\": 70,\n            \"use_user_token\": true,\n            \"blocking\": true\n        }\n    ]\n}"
+    },
+    {
+      "command": "docker exec -i 24860d14de30dc62f7b324ebef10b5fb-cli-1 wp --allow-root --user=1 eval '\n$path = '\"'\"'/var/www/html/wp-content/debug.log'\"'\"';\n$content = file_exists( $path ) ? file_get_contents( $path ) : '\"'\"''\"'\"';\n$patterns = array(\n\t'\"'\"'php_notice'\"'\"' => '\"'\"'/PHP Notice|Notice:/i'\"'\"',\n\t'\"'\"'php_warning'\"'\"' => '\"'\"'/PHP Warning|Warning:/i'\"'\"',\n\t'\"'\"'php_deprecated'\"'\"' => '\"'\"'/Deprecated:/i'\"'\"',\n\t'\"'\"'php_fatal'\"'\"' => '\"'\"'/PHP Fatal|Fatal error/i'\"'\"',\n\t'\"'\"'uncaught'\"'\"' => '\"'\"'/Uncaught/i'\"'\"',\n\t'\"'\"'database'\"'\"' => '\"'\"'/database error|wpdb/i'\"'\"',\n\t'\"'\"'stack_trace'\"'\"' => '\"'\"'/Stack trace:/i'\"'\"',\n);\n$matches = array();\nforeach ( $patterns as $id => $pattern ) {\n\tif ( preg_match_all( $pattern, (string) $content, $found ) ) {\n\t\t$matches[ $id ] = count( $found[0] );\n\t}\n}\nWP_CLI::line(\n\twp_json_encode(\n\t\tarray(\n\t\t\t'\"'\"'path'\"'\"' => $path,\n\t\t\t'\"'\"'bytes'\"'\"' => strlen( (string) $content ),\n\t\t\t'\"'\"'matches'\"'\"' => $matches,\n\t\t\t'\"'\"'ready'\"'\"' => empty( $matches ),\n\t\t)\n\t)\n);\n'",
+      "exit_code": 0,
+      "finished_at": "2026-06-20T23:43:58.884316+00:00",
+      "id": "scan-target-debug-log",
+      "json": {
+        "bytes": 0,
+        "matches": [],
+        "path": "/var/www/html/wp-content/debug.log",
+        "ready": true
+      },
+      "started_at": "2026-06-20T23:43:58.384151+00:00",
+      "status": "pass",
+      "stderr_tail": "",
+      "stdout_tail": "{\"path\":\"\\/var\\/www\\/html\\/wp-content\\/debug.log\",\"bytes\":0,\"matches\":[],\"ready\":true}"
+    }
+  ],
+  "state_snapshots": {
+    "baseline-native-state": {
+      "active_plugin_slugs": [
+        "jetpack-debug-helper-224",
+        "wc-email-template-sync-test-helper",
+        "woocommerce",
+        "woocommerce-payments-dev-tools",
+        "woocommerce-subscriptions",
+        "wpcom-local-helper"
+      ],
+      "current_user_id": 1,
+      "failures": [],
+      "home_url": "http://store8889.localhost:8889",
+      "native_runtime_enabled": true,
+      "plugin_runtime_active": false,
+      "preflight_failures": [],
+      "ready": true,
+      "runtime_owner": "native",
+      "should_native_register": true,
+      "soft_notice": false
+    },
+    "blocked-mandatory-after-browser-state": {
+      "active_plugin_slugs": [
+        "jetpack-debug-helper-224",
+        "wc-email-template-sync-test-helper",
+        "woocommerce",
+        "woocommerce-payments",
+        "woocommerce-payments-dev-tools",
+        "woocommerce-subscriptions",
+        "wpcom-local-helper"
+      ],
+      "current_user_id": 1,
+      "failures": [],
+      "home_url": "http://store8889.localhost:8889",
+      "native_runtime_enabled": true,
+      "plugin_runtime_active": true,
+      "preflight_failures": [
+        "a5_synthetic_preflight_blocker"
+      ],
+      "ready": false,
+      "runtime_owner": "plugin",
+      "should_native_register": false,
+      "soft_notice": false
+    },
+    "blocked-mandatory-plugin-state": {
+      "active_plugin_slugs": [
+        "jetpack-debug-helper-224",
+        "wc-email-template-sync-test-helper",
+        "woocommerce",
+        "woocommerce-payments",
+        "woocommerce-payments-dev-tools",
+        "woocommerce-subscriptions",
+        "wpcom-local-helper"
+      ],
+      "current_user_id": 1,
+      "failures": [],
+      "home_url": "http://store8889.localhost:8889",
+      "native_runtime_enabled": true,
+      "plugin_runtime_active": true,
+      "preflight_failures": [
+        "a5_synthetic_preflight_blocker"
+      ],
+      "ready": false,
+      "runtime_owner": "plugin",
+      "should_native_register": false,
+      "soft_notice": false
+    },
+    "default-off-plugin-state": {
+      "active_plugin_slugs": [
+        "jetpack-debug-helper-224",
+        "wc-email-template-sync-test-helper",
+        "woocommerce",
+        "woocommerce-payments",
+        "woocommerce-payments-dev-tools",
+        "woocommerce-subscriptions",
+        "wpcom-local-helper"
+      ],
+      "current_user_id": 1,
+      "failures": [],
+      "home_url": "http://store8889.localhost:8889",
+      "native_runtime_enabled": true,
+      "plugin_runtime_active": true,
+      "preflight_failures": [],
+      "ready": true,
+      "runtime_owner": "plugin",
+      "should_native_register": false,
+      "soft_notice": true
+    },
+    "default-off-reactivation-state": {
+      "active_plugin_slugs": [
+        "jetpack-debug-helper-224",
+        "wc-email-template-sync-test-helper",
+        "woocommerce",
+        "woocommerce-payments",
+        "woocommerce-payments-dev-tools",
+        "woocommerce-subscriptions",
+        "wpcom-local-helper"
+      ],
+      "current_user_id": 1,
+      "failures": [],
+      "home_url": "http://store8889.localhost:8889",
+      "native_runtime_enabled": true,
+      "plugin_runtime_active": true,
+      "preflight_failures": [],
+      "ready": true,
+      "runtime_owner": "plugin",
+      "should_native_register": false,
+      "soft_notice": true
+    },
+    "post-mandatory-native-state": {
+      "active_plugin_slugs": [
+        "jetpack-debug-helper-224",
+        "wc-email-template-sync-test-helper",
+        "woocommerce",
+        "woocommerce-payments-dev-tools",
+        "woocommerce-subscriptions",
+        "wpcom-local-helper"
+      ],
+      "current_user_id": 1,
+      "failures": [],
+      "home_url": "http://store8889.localhost:8889",
+      "native_runtime_enabled": true,
+      "plugin_runtime_active": false,
+      "preflight_failures": [],
+      "ready": true,
+      "runtime_owner": "native",
+      "should_native_register": true,
+      "soft_notice": false
+    },
+    "post-soft-native-state": {
+      "active_plugin_slugs": [
+        "jetpack-debug-helper-224",
+        "wc-email-template-sync-test-helper",
+        "woocommerce",
+        "woocommerce-payments-dev-tools",
+        "woocommerce-subscriptions",
+        "wpcom-local-helper"
+      ],
+      "current_user_id": 1,
+      "failures": [],
+      "home_url": "http://store8889.localhost:8889",
+      "native_runtime_enabled": true,
+      "plugin_runtime_active": false,
+      "preflight_failures": [],
+      "ready": true,
+      "runtime_owner": "native",
+      "should_native_register": true,
+      "soft_notice": false
+    },
+    "restored-native-state": {
+      "active_plugin_slugs": [
+        "jetpack-debug-helper-224",
+        "wc-email-template-sync-test-helper",
+        "woocommerce",
+        "woocommerce-payments-dev-tools",
+        "woocommerce-subscriptions",
+        "wpcom-local-helper"
+      ],
+      "current_user_id": 1,
+      "failures": [],
+      "home_url": "http://store8889.localhost:8889",
+      "native_runtime_enabled": true,
+      "plugin_runtime_active": false,
+      "preflight_failures": [],
+      "ready": true,
+      "runtime_owner": "native",
+      "should_native_register": true,
+      "soft_notice": false
+    }
+  },
+  "status": "pass",
+  "target_url": "http://store8889.localhost:8889",
+  "target_wp": "docker exec -i 24860d14de30dc62f7b324ebef10b5fb-cli-1 wp --allow-root --user=1"
+}

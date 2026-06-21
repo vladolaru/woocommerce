@@ -1,0 +1,54 @@
+{
+  "status": "pass",
+  "proof": {
+    "title": "WooCommerce settings ‹ woocommerce — WordPress",
+    "url": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings",
+    "textCounts": {
+      "heading": 1,
+      "paymentMethodsCopy": 1,
+      "bnplCopy": 1,
+      "transactionsCopy": 1,
+      "payoutsLinkText": 1,
+      "notificationsCopy": 1,
+      "advancedCopy": 1
+    },
+    "requiredHrefCounts": {
+      "bnpl": 1,
+      "woopaymentsDocs": 1,
+      "manualCapture": 1,
+      "payoutSchedule": 1,
+      "notifications": 1,
+      "advanced": 1
+    },
+    "optionalHrefCounts": {
+      "inPersonPayments": 0
+    },
+    "layout": {
+      "page": {
+        "x": 202,
+        "y": 165,
+        "width": 1120,
+        "height": 4595
+      },
+      "paymentMethods": {
+        "x": 202,
+        "y": 549,
+        "width": 1120,
+        "height": 1030
+      },
+      "transactions": {
+        "x": 202,
+        "y": 2760,
+        "width": 1120,
+        "height": 733
+      }
+    }
+  },
+  "logs": [
+    "[log] JQMIGRATE: Migrate is installed with logging active, version 3.4.1",
+    "[error] Permissions policy violation: unload is not allowed in this document."
+  ],
+  "unexpectedLogs": [],
+  "screenshotPath": "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4bc-settings-loading-docs-copy-parity/target-settings-page.png",
+  "jsonPath": "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4bc-settings-loading-docs-copy-parity/target-settings-page.json"
+}

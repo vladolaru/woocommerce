@@ -1,0 +1,149 @@
+{
+  "gate": "a5f-blocked-mandatory-browser-gate",
+  "status": "complete",
+  "lastUpdatedAt": "2026-06-20T15:29:08.023Z",
+  "urls": {
+    "plugins": "http://store8889.localhost:8889/wp-admin/plugins.php",
+    "initial": "http://store8889.localhost:8889/wp-admin/plugins.php",
+    "pluginsCheck": "http://store8889.localhost:8889/wp-admin/plugins.php"
+  },
+  "checks": [
+    {
+      "id": "authenticated-wp-admin",
+      "passed": true,
+      "bodyClasses": "wp-admin wp-core-ui js theme-twentytwentyfive wc-wp-version-gte-53 wc-wp-version-gte-55 wc-wp-version-gte-70 plugins-php auto-fold admin-bar branch-7 version-7-0 admin-color-modern locale-en-us svg wp-theme-twentytwentyfive customize-support sticky-menu",
+      "hasAdminBody": true,
+      "hasAdminMenu": true,
+      "hasWpbodyContent": true,
+      "hasLoginForm": false
+    },
+    {
+      "id": "blocked-notice",
+      "passed": true,
+      "finalUrl": "http://store8889.localhost:8889/wp-admin/plugins.php",
+      "requiredTokens": [
+        "WooPayments could not be disabled because native WooPayments is not ready"
+      ]
+    },
+    {
+      "id": "woopayments-plugin-active",
+      "passed": true,
+      "finalUrl": "http://store8889.localhost:8889/wp-admin/plugins.php",
+      "pluginRows": [
+        {
+          "id": "",
+          "classes": "active",
+          "titleText": "WooPaymentsSettings | DeactivateShow more details",
+          "textSample": "Select WooPayments WooPayments Settings | Deactivate Accept payments via credit card. Manage transactions within WordPress. Version 10.8.0 | By WooCommerce | View details Requires: WooCommerce Enable auto-updates",
+          "actions": [
+            {
+              "text": "Settings",
+              "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&section=woocommerce_payments",
+              "name": null,
+              "classes": ""
+            },
+            {
+              "text": "Deactivate",
+              "href": "plugins.php?action=deactivate&plugin=woocommerce-payments%2Fwoocommerce-payments.php&plugin_status=all&paged=1&s&_wpnonce=64f2d60dc8",
+              "name": null,
+              "classes": ""
+            },
+            {
+              "text": "Show more details",
+              "href": null,
+              "name": null,
+              "classes": "toggle-row"
+            },
+            {
+              "text": "WooCommerce",
+              "href": "https://woocommerce.com/",
+              "name": null,
+              "classes": ""
+            },
+            {
+              "text": "View details",
+              "href": "http://store8889.localhost:8889/wp-admin/plugin-install.php?tab=plugin-information&plugin=woocommerce-payments&TB_iframe=true&width=600&height=550",
+              "name": null,
+              "classes": "thickbox open-plugin-details-modal"
+            },
+            {
+              "text": "WooCommerce",
+              "href": "http://store8889.localhost:8889/wp-admin/plugin-install.php?tab=plugin-information&plugin=woocommerce&TB_iframe=true&width=600&height=550",
+              "name": null,
+              "classes": "thickbox open-plugin-details-modal"
+            },
+            {
+              "text": "Enable auto-updates",
+              "href": "plugins.php?action=enable-auto-update&plugin=woocommerce-payments%2Fwoocommerce-payments.php&paged=1&plugin_status=all&_wpnonce=b7a1591d2f",
+              "name": null,
+              "classes": "toggle-auto-update aria-button-if-js"
+            }
+          ],
+          "looksLikeWooPaymentsRow": true,
+          "hasDeactivateAction": true,
+          "hasActiveClass": true
+        }
+      ],
+      "rowsWithActiveDeactivate": [
+        {
+          "id": "",
+          "classes": "active",
+          "titleText": "WooPaymentsSettings | DeactivateShow more details",
+          "textSample": "Select WooPayments WooPayments Settings | Deactivate Accept payments via credit card. Manage transactions within WordPress. Version 10.8.0 | By WooCommerce | View details Requires: WooCommerce Enable auto-updates",
+          "actions": [
+            {
+              "text": "Settings",
+              "href": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&section=woocommerce_payments",
+              "name": null,
+              "classes": ""
+            },
+            {
+              "text": "Deactivate",
+              "href": "plugins.php?action=deactivate&plugin=woocommerce-payments%2Fwoocommerce-payments.php&plugin_status=all&paged=1&s&_wpnonce=64f2d60dc8",
+              "name": null,
+              "classes": ""
+            },
+            {
+              "text": "Show more details",
+              "href": null,
+              "name": null,
+              "classes": "toggle-row"
+            },
+            {
+              "text": "WooCommerce",
+              "href": "https://woocommerce.com/",
+              "name": null,
+              "classes": ""
+            },
+            {
+              "text": "View details",
+              "href": "http://store8889.localhost:8889/wp-admin/plugin-install.php?tab=plugin-information&plugin=woocommerce-payments&TB_iframe=true&width=600&height=550",
+              "name": null,
+              "classes": "thickbox open-plugin-details-modal"
+            },
+            {
+              "text": "WooCommerce",
+              "href": "http://store8889.localhost:8889/wp-admin/plugin-install.php?tab=plugin-information&plugin=woocommerce&TB_iframe=true&width=600&height=550",
+              "name": null,
+              "classes": "thickbox open-plugin-details-modal"
+            },
+            {
+              "text": "Enable auto-updates",
+              "href": "plugins.php?action=enable-auto-update&plugin=woocommerce-payments%2Fwoocommerce-payments.php&paged=1&plugin_status=all&_wpnonce=b7a1591d2f",
+              "name": null,
+              "classes": "toggle-auto-update aria-button-if-js"
+            }
+          ],
+          "looksLikeWooPaymentsRow": true,
+          "hasDeactivateAction": true,
+          "hasActiveClass": true
+        }
+      ]
+    }
+  ],
+  "failedResponses": [],
+  "ignoredFailedResponses": [],
+  "consoleIssues": [],
+  "ignoredConsoleIssues": [],
+  "pass": true
+}

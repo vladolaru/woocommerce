@@ -1,0 +1,32 @@
+{
+  "assets": {
+    "blocks-express-checkout.css": {
+      "allow_new": true
+    },
+    "blocks-express-checkout.js": {
+      "allow_new": true
+    },
+    "classic-card.css": {
+      "allow_missing": true
+    },
+    "multi-currency-admin.css": {
+      "allow_missing": true
+    },
+    "multi-currency-analytics.js": {
+      "allow_missing": true
+    },
+    "multi-currency-setup.css": {
+      "allow_missing": true
+    },
+    "multi-currency-switcher-block.js": {
+      "allow_missing": true
+    },
+    "settings-main.css": {
+      "allow_missing": true
+    },
+    "woopay-direct-checkout.js": {
+      "gzip_growth_bytes": 1024,
+      "raw_growth_bytes": 2048
+    }
+  }
+}

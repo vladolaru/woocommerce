@@ -1,0 +1,6 @@
+{
+  "gate": "a5e-mandatory-activation-guard",
+  "exit_code": 1,
+  "blocked": true,
+  "output": "Error: WooPayments cannot be activated because its functionality is now included in WooCommerce core."
+}

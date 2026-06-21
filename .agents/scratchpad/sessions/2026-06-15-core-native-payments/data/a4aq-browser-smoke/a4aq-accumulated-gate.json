@@ -1,0 +1,225 @@
+{
+  "checks": [
+    {
+      "category": "admin",
+      "command": [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14",
+        "/Users/vladolaru/Work/a8c/woocommerce-develop-2/tools/woopayments-merge/a4-admin-surface-gate.py",
+        "--repo",
+        "/Users/vladolaru/Work/a8c/woocommerce-develop-2",
+        "--plugin-repo",
+        "/Users/vladolaru/Work/a8c/woocommerce-payments",
+        "--out",
+        "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-browser-smoke/admin-source.json"
+      ],
+      "completed_at": "2026-06-20T11:41:03.689933+00:00",
+      "evidence_path": "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-browser-smoke/admin-source.json",
+      "exit_code": 0,
+      "failures": [],
+      "id": "admin-source",
+      "incomplete_reasons": [],
+      "started_at": "2026-06-20T11:41:03.514732+00:00",
+      "status": "pass",
+      "stderr_tail": "",
+      "stdout_tail": "[a4-admin] Using repo /Users/vladolaru/Work/a8c/woocommerce-develop-2\n[a4-admin] Scanning 281 native admin source files\n[a4-admin] Checking expected source chunk names\n[a4-admin] Checking native route paths\n[a4-admin] Checking native/settings-payments source for private registries\n[a4-admin] Checking native admin navigation source contract\n[a4-admin] Checking native PM promotions source contract\n[a4-admin] Checking native Overview financial summary source contract\n[a4-admin] Checking native money-detail source contract\n[a4-admin] Checking built native admin chunks\n[a4-admin] Measured settings: 10632 raw bytes, 2997 gzip bytes\n[a4-admin] Measured overview: 52802 raw bytes, 13444 gzip bytes\n[a4-admin] Measured payouts: 11624 raw bytes, 3720 gzip bytes\n[a4-admin] Measured money-movement: 96026 raw bytes, 22586 gzip bytes\n[a4-admin] Measured card-readers: 2593 raw bytes, 1042 gzip bytes\n[a4-admin] Measured capital: 12722 raw bytes, 3809 gzip bytes\n[a4-admin] Measured documents: 21842 raw bytes, 7138 gzip bytes\n[a4-admin] Measured reports: 28239 raw bytes, 8332 gzip bytes\n[a4-admin] Checking reference plugin admin baseline at /Users/vladolaru/Work/a8c/woocommerce-payments\n[a4-admin] Measured reference admin-index-js: 140547 raw bytes, 39377 gzip bytes\n[a4-admin] Measured reference admin-index-css: 20907 raw bytes, 3773 gzip bytes\n[a4-admin] Measured reference settings-js: 295676 raw bytes, 80976 gzip bytes\n[a4-admin] Measured reference settings-css: 77208 raw bytes, 13111 gzip bytes\n[a4-admin] Measured reference overview-js: 63268 raw bytes, 17975 gzip bytes\n[a4-admin] Measured reference payouts-js: 14568 raw bytes, 4595 gzip bytes\n[a4-admin] Measured reference money-movement-js: 282614 raw bytes, 54060 gzip bytes\n[a4-admin] Measured reference card-readers-js: 5568 raw bytes, 1974 gzip bytes\n[a4-admin] Measured reference capital-js: 4897 raw bytes, 1816 gzip bytes\n[a4-admin] Wrote JSON evidence to /Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-browser-smoke/admin-source.json\nRESULT: PASS A4 admin surface gate\n"
+    },
+    {
+      "category": "admin",
+      "command": [
+        "npx",
+        "playwriter@latest",
+        "-s",
+        "1",
+        "--timeout",
+        "900000",
+        "-f",
+        "/Users/vladolaru/Work/a8c/woocommerce-develop-2/tools/woopayments-merge/a4-admin-browser-gate.playwriter.mjs"
+      ],
+      "completed_at": "2026-06-20T11:44:20.354573+00:00",
+      "evidence_path": "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-browser-smoke-admin-browser-gate.json",
+      "exit_code": 1,
+      "failures": [
+        "admin-browser: exit 1"
+      ],
+      "id": "admin-browser",
+      "incomplete_reasons": [],
+      "started_at": "2026-06-20T11:41:03.690310+00:00",
+      "status": "fail",
+      "stderr_tail": "s/2026-06-15-core-native-payments/data/a4aq-checkout-full-smoke-2-admin-browser-gate.json\"\n}\n[log] {\n  \"status\": \"PASS\",\n  \"checked\": 45,\n  \"failures\": 4,\n  \"store\": \"reference\",\n  \"surface\": \"transactions\",\n  \"viewport\": \"mobile\",\n  \"evidencePath\": \"/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-checkout-full-smoke-2-admin-browser-gate.json\"\n}\n[log] {\n  \"status\": \"PASS\",\n  \"checked\": 46,\n  \"failures\": 4,\n  \"store\": \"target\",\n  \"surface\": \"uncaptured\",\n  \"viewport\": \"mobile\",\n  \"evidencePath\": \"/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-checkout-full-smoke-2-admin-browser-gate.json\"\n}\n[log] {\n  \"status\": \"PASS\",\n  \"checked\": 47,\n  \"failures\": 4,\n  \"store\": \"reference\",\n  \"surface\": \"uncaptured\",\n  \"viewport\": \"mobile\",\n  \"evidencePath\": \"/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-checkout-full-smoke-2-admin-browser-gate.json\"\n}\n[log] {\n  \"status\": \"PASS\",\n  \"checked\": 48,\n  \"failures\": 4,\n  \"store\": \"target\",\n  \"surface\": \"disputes\",\n  \"viewport\": \"mobile\",\n  \"evidencePath\": \"/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-checkout-full-smoke-2-admin-browser-gate.json\"\n}\n[log] {\n  \"status\": \"PASS\",\n  \"checked\": 49,\n  \"failures\": 4,\n  \"store\": \"reference\",\n  \"surface\": \"disputes\",\n  \"viewport\": \"mobile\",\n  \"evidencePath\": \"/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-checkout-full-smoke-2-admin-browser-gate.json\"\n}\n[log] {\n  \"status\": \"PASS\",\n  \"checked\": 50,\n  \"failures\": 4,\n  \"store\": \"target\",\n  \"surface\": \"documents\",\n  \"viewport\": \"mobile\",\n  \"evidencePath\": \"/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-checkout-full-smoke-2-admin-browser-gate.json\"\n}\n[log] {\n  \"status\": \"PASS\",\n  \"checked\": 51,\n  \"failures\": 4,\n  \"store\": \"reference\",\n  \"surface\": \"documents\",\n  \"viewport\": \"mobile\",\n  \"evidencePath\": \"/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-checkout-full-smoke-2-admin-browser-gate.json\"\n}\n[log] {\n  \"status\": \"PASS\",\n  \"checked\": 52,\n  \"failures\": 4,\n  \"store\": \"target\",\n  \"surface\": \"reports-fees\",\n  \"viewport\": \"mobile\",\n  \"evidencePath\": \"/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-checkout-full-smoke-2-admin-browser-gate.json\"\n}\n[log] {\n  \"status\": \"PASS\",\n  \"checked\": 53,\n  \"failures\": 4,\n  \"store\": \"reference\",\n  \"surface\": \"reports-fees\",\n  \"viewport\": \"mobile\",\n  \"evidencePath\": \"/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-checkout-full-smoke-2-admin-browser-gate.json\"\n}\n[log] {\n  \"status\": \"PASS\",\n  \"checked\": 54,\n  \"failures\": 4,\n  \"store\": \"target\",\n  \"surface\": \"card-readers\",\n  \"viewport\": \"mobile\",\n  \"evidencePath\": \"/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-checkout-full-smoke-2-admin-browser-gate.json\"\n}\n[log] {\n  \"status\": \"PASS\",\n  \"checked\": 55,\n  \"failures\": 4,\n  \"store\": \"reference\",\n  \"surface\": \"card-readers\",\n  \"viewport\": \"mobile\",\n  \"evidencePath\": \"/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-checkout-full-smoke-2-admin-browser-gate.json\"\n}\n[log] {\n  \"status\": \"PASS\",\n  \"checked\": 56,\n  \"failures\": 4,\n  \"store\": \"target\",\n  \"surface\": \"capital\",\n  \"viewport\": \"mobile\",\n  \"evidencePath\": \"/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-checkout-full-smoke-2-admin-browser-gate.json\"\n}\n[log] {\n  \"status\": \"PASS\",\n  \"checked\": 57,\n  \"failures\": 4,\n  \"store\": \"reference\",\n  \"surface\": \"capital\",\n  \"viewport\": \"mobile\",\n  \"evidencePath\": \"/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-checkout-full-smoke-2-admin-browser-gate.json\"\n}\n[log] {\n  \"evidencePath\": \"/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-checkout-full-smoke-2-admin-browser-gate.json\",\n  \"checked\": 57,\n  \"failures\": 4\n}\n\n\nError executing code: Error: A4 admin browser gate failed with 4 route checks failing. See /Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-checkout-full-smoke-2-admin-browser-gate.json\n    at evalmachine.<anonymous>:484:8\n    at async file:///Users/vladolaru/.npm/_npx/945f35517ce0271a/node_modules/playwriter/dist/executor.js:986:28\n    at async PlaywrightExecutor.execute (file:///Users/vladolaru/.npm/_npx/945f35517ce0271a/node_modules/playwriter/dist/executor.js:984:28)\n    at async file:///Users/vladolaru/.npm/_npx/945f35517ce0271a/node_modules/playwriter/dist/cdp-relay.js:1468:28\n    at async dispatch (file:///Users/vladolaru/.npm/_npx/945f35517ce0271a/node_modules/hono/dist/compose.js:22:17)\n    at async dispatch (file:///Users/vladolaru/.npm/_npx/945f35517ce0271a/node_modules/hono/dist/compose.js:22:17)\n    at async cors2 (file:///Users/vladolaru/.npm/_npx/945f35517ce0271a/node_modules/hono/dist/middleware/cors/index.js:76:5)\n    at async dispatch (file:///Users/vladolaru/.npm/_npx/945f35517ce0271a/node_modules/hono/dist/compose.js:22:17)\n    at async file:///Users/vladolaru/.npm/_npx/945f35517ce0271a/node_modules/hono/dist/hono-base.js:306:25\n    at async responseViaResponseObject (file:///Users/vladolaru/.npm/_npx/945f35517ce0271a/node_modules/@hono/node-server/dist/index.mjs:487:13)\n\n[HINT: If this is an internal Playwright error, page/browser closed, or connection issue, call reset to reconnect.]\n",
+      "stdout_tail": ""
+    },
+    {
+      "category": "checkout",
+      "command": [
+        "npx",
+        "playwriter@latest",
+        "-s",
+        "1",
+        "--timeout",
+        "900000",
+        "-f",
+        "/Users/vladolaru/Work/a8c/woocommerce-develop-2/tools/woopayments-merge/a4-checkout-browser-gate.playwriter.mjs"
+      ],
+      "completed_at": "2026-06-20T11:45:47.659582+00:00",
+      "evidence_path": "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-browser-smoke/a4aq-browser-smoke-checkout-browser-gate.json",
+      "exit_code": 0,
+      "failures": [],
+      "id": "checkout-browser",
+      "incomplete_reasons": [],
+      "started_at": "2026-06-20T11:44:20.355498+00:00",
+      "status": "pass",
+      "stderr_tail": "npm warn Unknown project config \"manage-package-manager-versions\". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.\nnpm warn Unknown user config \"minimum-release-age\". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.\n",
+      "stdout_tail": "\": 0,\n  \"store\": \"target\",\n  \"surface\": \"classic-add-payment-method\",\n  \"viewport\": \"desktop\",\n  \"evidencePath\": \"/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-checkout-full-smoke-2/a4aq-checkout-full-smoke-2-checkout-browser-gate.json\"\n}\n[log] {\n  \"status\": \"PASS\",\n  \"checked\": 10,\n  \"failures\": 0,\n  \"store\": \"reference\",\n  \"surface\": \"classic-add-payment-method\",\n  \"viewport\": \"desktop\",\n  \"evidencePath\": \"/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-checkout-full-smoke-2/a4aq-checkout-full-smoke-2-checkout-browser-gate.json\"\n}\n[log] {\n  \"status\": \"PASS\",\n  \"checked\": 11,\n  \"failures\": 0,\n  \"store\": \"target\",\n  \"surface\": \"product-express\",\n  \"viewport\": \"desktop\",\n  \"evidencePath\": \"/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-checkout-full-smoke-2/a4aq-checkout-full-smoke-2-checkout-browser-gate.json\"\n}\n[log] {\n  \"status\": \"PASS\",\n  \"checked\": 12,\n  \"failures\": 0,\n  \"store\": \"reference\",\n  \"surface\": \"product-express\",\n  \"viewport\": \"desktop\",\n  \"evidencePath\": \"/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-checkout-full-smoke-2/a4aq-checkout-full-smoke-2-checkout-browser-gate.json\"\n}\n[log] {\n  \"status\": \"PASS\",\n  \"checked\": 13,\n  \"failures\": 0,\n  \"store\": \"target\",\n  \"surface\": \"blocks-checkout-card\",\n  \"viewport\": \"mobile\",\n  \"evidencePath\": \"/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-checkout-full-smoke-2/a4aq-checkout-full-smoke-2-checkout-browser-gate.json\"\n}\n[log] {\n  \"status\": \"PASS\",\n  \"checked\": 14,\n  \"failures\": 0,\n  \"store\": \"reference\",\n  \"surface\": \"blocks-checkout-card\",\n  \"viewport\": \"mobile\",\n  \"evidencePath\": \"/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-checkout-full-smoke-2/a4aq-checkout-full-smoke-2-checkout-browser-gate.json\"\n}\n[log] {\n  \"status\": \"PASS\",\n  \"checked\": 15,\n  \"failures\": 0,\n  \"store\": \"target\",\n  \"surface\": \"blocks-checkout-express\",\n  \"viewport\": \"mobile\",\n  \"evidencePath\": \"/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-checkout-full-smoke-2/a4aq-checkout-full-smoke-2-checkout-browser-gate.json\"\n}\n[log] {\n  \"status\": \"PASS\",\n  \"checked\": 16,\n  \"failures\": 0,\n  \"store\": \"reference\",\n  \"surface\": \"blocks-checkout-express\",\n  \"viewport\": \"mobile\",\n  \"evidencePath\": \"/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-checkout-full-smoke-2/a4aq-checkout-full-smoke-2-checkout-browser-gate.json\"\n}\n[log] {\n  \"status\": \"PASS\",\n  \"checked\": 17,\n  \"failures\": 0,\n  \"store\": \"target\",\n  \"surface\": \"blocks-cart-express\",\n  \"viewport\": \"mobile\",\n  \"evidencePath\": \"/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-checkout-full-smoke-2/a4aq-checkout-full-smoke-2-checkout-browser-gate.json\"\n}\n[log] {\n  \"status\": \"PASS\",\n  \"checked\": 18,\n  \"failures\": 0,\n  \"store\": \"reference\",\n  \"surface\": \"blocks-cart-express\",\n  \"viewport\": \"mobile\",\n  \"evidencePath\": \"/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-checkout-full-smoke-2/a4aq-checkout-full-smoke-2-checkout-browser-gate.json\"\n}\n[log] {\n  \"status\": \"PASS\",\n  \"checked\": 19,\n  \"failures\": 0,\n  \"store\": \"target\",\n  \"surface\": \"classic-checkout-card\",\n  \"viewport\": \"mobile\",\n  \"evidencePath\": \"/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-checkout-full-smoke-2/a4aq-checkout-full-smoke-2-checkout-browser-gate.json\"\n}\n[log] {\n  \"status\": \"PASS\",\n  \"checked\": 20,\n  \"failures\": 0,\n  \"store\": \"reference\",\n  \"surface\": \"classic-checkout-card\",\n  \"viewport\": \"mobile\",\n  \"evidencePath\": \"/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-checkout-full-smoke-2/a4aq-checkout-full-smoke-2-checkout-browser-gate.json\"\n}\n[log] {\n  \"status\": \"PASS\",\n  \"checked\": 21,\n  \"failures\": 0,\n  \"store\": \"target\",\n  \"surface\": \"classic-add-payment-method\",\n  \"viewport\": \"mobile\",\n  \"evidencePath\": \"/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-checkout-full-smoke-2/a4aq-checkout-full-smoke-2-checkout-browser-gate.json\"\n}\n[log] {\n  \"status\": \"PASS\",\n  \"checked\": 22,\n  \"failures\": 0,\n  \"store\": \"reference\",\n  \"surface\": \"classic-add-payment-method\",\n  \"viewport\": \"mobile\",\n  \"evidencePath\": \"/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-checkout-full-smoke-2/a4aq-checkout-full-smoke-2-checkout-browser-gate.json\"\n}\n[log] {\n  \"status\": \"PASS\",\n  \"checked\": 23,\n  \"failures\": 0,\n  \"store\": \"target\",\n  \"surface\": \"product-express\",\n  \"viewport\": \"mobile\",\n  \"evidencePath\": \"/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-checkout-full-smoke-2/a4aq-checkout-full-smoke-2-checkout-browser-gate.json\"\n}\n[log] {\n  \"status\": \"PASS\",\n  \"checked\": 24,\n  \"failures\": 0,\n  \"store\": \"reference\",\n  \"surface\": \"product-express\",\n  \"viewport\": \"mobile\",\n  \"evidencePath\": \"/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-checkout-full-smoke-2/a4aq-checkout-full-smoke-2-checkout-browser-gate.json\"\n}\n[log] {\n  \"evidencePath\": \"/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-checkout-full-smoke-2/a4aq-checkout-full-smoke-2-checkout-browser-gate.json\",\n  \"checked\": 24,\n  \"failures\": 0\n}\n"
+    },
+    {
+      "category": "bundle",
+      "command": [
+        "bash",
+        "/Users/vladolaru/Work/a8c/woocommerce-develop-2/tools/woopayments-merge/bundle-size-gate.sh",
+        "capture",
+        "--repo",
+        "/Users/vladolaru/Work/a8c/woocommerce-payments",
+        "--profile",
+        "wcpay-plugin",
+        "--out",
+        "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-browser-smoke/bundle-reference.json"
+      ],
+      "completed_at": "2026-06-20T11:45:47.718441+00:00",
+      "evidence_path": "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-browser-smoke/bundle-reference.json",
+      "exit_code": 0,
+      "failures": [],
+      "id": "bundle-reference",
+      "incomplete_reasons": [],
+      "started_at": "2026-06-20T11:45:47.660138+00:00",
+      "status": "pass",
+      "stderr_tail": "",
+      "stdout_tail": "Captured bundle sizes to /Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-browser-smoke/bundle-reference.json\n"
+    },
+    {
+      "category": "bundle",
+      "command": [
+        "bash",
+        "/Users/vladolaru/Work/a8c/woocommerce-develop-2/tools/woopayments-merge/bundle-size-gate.sh",
+        "capture",
+        "--repo",
+        "/Users/vladolaru/Work/a8c/woocommerce-develop-2",
+        "--profile",
+        "wc-core",
+        "--out",
+        "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-browser-smoke/bundle-target.json"
+      ],
+      "completed_at": "2026-06-20T11:45:47.761093+00:00",
+      "evidence_path": "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-browser-smoke/bundle-target.json",
+      "exit_code": 0,
+      "failures": [],
+      "id": "bundle-target",
+      "incomplete_reasons": [],
+      "started_at": "2026-06-20T11:45:47.718907+00:00",
+      "status": "pass",
+      "stderr_tail": "",
+      "stdout_tail": "Captured bundle sizes to /Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-browser-smoke/bundle-target.json\n"
+    },
+    {
+      "category": "bundle",
+      "command": [
+        "bash",
+        "/Users/vladolaru/Work/a8c/woocommerce-develop-2/tools/woopayments-merge/bundle-size-gate.sh",
+        "compare",
+        "--ref",
+        "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-browser-smoke/bundle-reference.json",
+        "--target",
+        "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aq-browser-smoke/bundle-target.json",
+        "--budget",
+        "/Users/vladolaru/Work/a8c/woocommerce-develop-2/tools/woopayments-merge/a4aq-bundle-budget.json"
+      ],
+      "completed_at": "2026-06-20T11:45:47.805236+00:00",
+      "evidence_path": null,
+      "exit_code": 0,
+      "failures": [],
+      "id": "bundle-compare",
+      "incomplete_reasons": [],
+      "started_at": "2026-06-20T11:45:47.761581+00:00",
+      "status": "pass",
+      "stderr_tail": "",
+      "stdout_tail": "ok    blocks-card.css: raw_bytes 19353 -> 4331 (limit 19353)\nok    blocks-card.css: gzip_bytes 3438 -> 1614 (limit 3438)\nok    blocks-card.js: raw_bytes 167611 -> 23807 (limit 167611)\nok    blocks-card.js: gzip_bytes 56368 -> 8133 (limit 56368)\nALLOW blocks-express-checkout.css: missing in ref, present in target\nALLOW blocks-express-checkout.js: missing in ref, present in target\nok    classic-card.css: raw_bytes 4514 -> 5571 (limit 5714)\nok    classic-card.css: gzip_bytes 1017 -> 1238 (limit 1317)\nok    classic-card.js: raw_bytes 99694 -> 36056 (limit 99694)\nok    classic-card.js: gzip_bytes 34820 -> 8518 (limit 34820)\nok    express-checkout.css: raw_bytes 1203 -> 991 (limit 1203)\nok    express-checkout.css: gzip_bytes 378 -> 323 (limit 378)\nok    express-checkout.js: raw_bytes 34664 -> 25246 (limit 34664)\nok    express-checkout.js: gzip_bytes 10947 -> 5764 (limit 10947)\nok    multi-currency-admin.css: raw_bytes 22698 -> 2551 (limit 22698)\nok    multi-currency-admin.css: gzip_bytes 3903 -> 696 (limit 3903)\nok    multi-currency-admin.js: raw_bytes 56399 -> 12866 (limit 56399)\nok    multi-currency-admin.js: gzip_bytes 14875 -> 3841 (limit 14875)\nALLOW multi-currency-analytics.js: present in ref, missing in target\nok    multi-currency-frontend.css: raw_bytes 595 -> 586 (limit 595)\nok    multi-currency-frontend.css: gzip_bytes 345 -> 336 (limit 345)\nok    multi-currency-frontend.js: raw_bytes 21065 -> 14183 (limit 21065)\nok    multi-currency-frontend.js: gzip_bytes 8218 -> 3482 (limit 8218)\nALLOW multi-currency-setup.css: present in ref, missing in target\nskip  multi-currency-setup.js: missing in both captures\nALLOW multi-currency-switcher-block.js: present in ref, missing in target\nALLOW settings-main.css: present in ref, missing in target\nok    settings-main.js: raw_bytes 295676 -> 49654 (limit 295676)\nok    settings-main.js: gzip_bytes 80976 -> 12994 (limit 80976)\nok    woopay-direct-checkout.js: raw_bytes 18728 -> 29417 (limit 30728)\nok    woopay-direct-checkout.js: gzip_bytes 5600 -> 8396 (limit 11600)\nok    woopay-express-button.js: raw_bytes 70888 -> 29417 (limit 82888)\nok    woopay-express-button.js: gzip_bytes 23068 -> 8396 (limit 29068)\nok    woopay.css: raw_bytes 30374 -> 3752 (limit 30374)\nok    woopay.css: gzip_bytes 4250 -> 1146 (limit 4250)\nok    woopay.js: raw_bytes 16513 -> 14484 (limit 16513)\nok    woopay.js: gzip_bytes 6118 -> 6053 (limit 6118)\nRESULT: PASS bundle byte gate with explicit budget /Users/vladolaru/Work/a8c/woocommerce-develop-2/tools/woopayments-merge/a4aq-bundle-budget.json\n"
+    },
+    {
+      "category": "logs",
+      "command": [],
+      "completed_at": "2026-06-20T11:45:48.085384+00:00",
+      "exit_code": 0,
+      "failures": [],
+      "id": "log-scan",
+      "incomplete_reasons": [],
+      "started_at": "2026-06-20T11:45:48.085366+00:00",
+      "status": "pass",
+      "summary": {
+        "failures": [],
+        "findings": [
+          {
+            "container": "24860d14de30dc62f7b324ebef10b5fb-wordpress-1",
+            "debug_diagnostics": [],
+            "docker_5xx": [],
+            "docker_diagnostics": [],
+            "label": "target"
+          },
+          {
+            "container": "wcpay_wp_default",
+            "debug_diagnostics": [
+              "[20-Jun-2026 09:07:43 UTC] PHP Warning:  Trying to access array offset on value of type bool in /var/www/html/wp-content/mu-plugins/sopreda/archi/zoho/class-zoho-integration.php on line 61",
+              "[20-Jun-2026 09:07:43 UTC] PHP Warning:  Trying to access array offset on value of type bool in /var/www/html/wp-content/mu-plugins/sopreda/archi/zoho/class-zoho-integration.php on line 62",
+              "[20-Jun-2026 09:07:43 UTC] PHP Warning:  Trying to access array offset on value of type bool in /var/www/html/wp-content/mu-plugins/sopreda/archi/zoho/class-zoho-integration.php on line 64",
+              "[20-Jun-2026 09:53:26 UTC] PHP Notice:  Function _load_textdomain_just_in_time was called <strong>incorrectly</strong>. Translation loading for the <code>woocommerce-payments</code> domain was triggered too early. This is usually an indicator for some code in the plugin or theme running too early. Translations should be loaded at the <code>init</code> action or later. Please see <a href=\"https://developer.wordpress.org/advanced-administration/debug/debug-wordpress/\">Debugging in WordPress</a> for more information. (This message was added in version 6.7.0.) in /var/www/html/wp-includes/functions.php on line 6170",
+              "[20-Jun-2026 11:24:00 UTC] PHP Warning:  Trying to access array offset on value of type bool in /var/www/html/wp-content/mu-plugins/sopreda/archi/zoho/class-zoho-integration.php on line 61",
+              "[20-Jun-2026 11:24:00 UTC] PHP Warning:  Trying to access array offset on value of type bool in /var/www/html/wp-content/mu-plugins/sopreda/archi/zoho/class-zoho-integration.php on line 62",
+              "[20-Jun-2026 11:24:00 UTC] PHP Warning:  Trying to access array offset on value of type bool in /var/www/html/wp-content/mu-plugins/sopreda/archi/zoho/class-zoho-integration.php on line 64",
+              "[20-Jun-2026 11:31:50 UTC] PHP Deprecated:  Function credit_card_form is <strong>deprecated</strong> since version 2.6! Use WC_Payment_Gateway_CC-&gt;form instead. in /var/www/html/wp-includes/functions.php on line 6170",
+              "[20-Jun-2026 11:33:32 UTC] PHP Deprecated:  Function credit_card_form is <strong>deprecated</strong> since version 2.6! Use WC_Payment_Gateway_CC-&gt;form instead. in /var/www/html/wp-includes/functions.php on line 6170",
+              "[20-Jun-2026 11:33:36 UTC] PHP Deprecated:  Function credit_card_form is <strong>deprecated</strong> since version 2.6! Use WC_Payment_Gateway_CC-&gt;form instead. in /var/www/html/wp-includes/functions.php on line 6170",
+              "[20-Jun-2026 11:34:04 UTC] PHP Deprecated:  Function credit_card_form is <strong>deprecated</strong> since version 2.6! Use WC_Payment_Gateway_CC-&gt;form instead. in /var/www/html/wp-includes/functions.php on line 6170",
+              "[20-Jun-2026 11:34:09 UTC] PHP Deprecated:  Function credit_card_form is <strong>deprecated</strong> since version 2.6! Use WC_Payment_Gateway_CC-&gt;form instead. in /var/www/html/wp-includes/functions.php on line 6170",
+              "[20-Jun-2026 11:35:32 UTC] PHP Deprecated:  Function credit_card_form is <strong>deprecated</strong> since version 2.6! Use WC_Payment_Gateway_CC-&gt;form instead. in /var/www/html/wp-includes/functions.php on line 6170",
+              "[20-Jun-2026 11:35:41 UTC] PHP Deprecated:  Function credit_card_form is <strong>deprecated</strong> since version 2.6! Use WC_Payment_Gateway_CC-&gt;form instead. in /var/www/html/wp-includes/functions.php on line 6170",
+              "[20-Jun-2026 11:36:40 UTC] PHP Deprecated:  Function credit_card_form is <strong>deprecated</strong> since version 2.6! Use WC_Payment_Gateway_CC-&gt;form instead. in /var/www/html/wp-includes/functions.php on line 6170",
+              "[20-Jun-2026 11:36:50 UTC] PHP Deprecated:  Function credit_card_form is <strong>deprecated</strong> since version 2.6! Use WC_Payment_Gateway_CC-&gt;form instead. in /var/www/html/wp-includes/functions.php on line 6170",
+              "[20-Jun-2026 11:37:47 UTC] PHP Deprecated:  Function credit_card_form is <strong>deprecated</strong> since version 2.6! Use WC_Payment_Gateway_CC-&gt;form instead. in /var/www/html/wp-includes/functions.php on line 6170",
+              "[20-Jun-2026 11:37:56 UTC] PHP Deprecated:  Function credit_card_form is <strong>deprecated</strong> since version 2.6! Use WC_Payment_Gateway_CC-&gt;form instead. in /var/www/html/wp-includes/functions.php on line 6170",
+              "[20-Jun-2026 11:39:34 UTC] PHP Deprecated:  Function credit_card_form is <strong>deprecated</strong> since version 2.6! Use WC_Payment_Gateway_CC-&gt;form instead. in /var/www/html/wp-includes/functions.php on line 6170",
+              "[20-Jun-2026 11:39:41 UTC] PHP Deprecated:  Function credit_card_form is <strong>deprecated</strong> since version 2.6! Use WC_Payment_Gateway_CC-&gt;form instead. in /var/www/html/wp-includes/functions.php on line 6170",
+              "[20-Jun-2026 11:40:16 UTC] PHP Deprecated:  Function credit_card_form is <strong>deprecated</strong> since version 2.6! Use WC_Payment_Gateway_CC-&gt;form instead. in /var/www/html/wp-includes/functions.php on line 6170",
+              "[20-Jun-2026 11:40:23 UTC] PHP Deprecated:  Function credit_card_form is <strong>deprecated</strong> since version 2.6! Use WC_Payment_Gateway_CC-&gt;form instead. in /var/www/html/wp-includes/functions.php on line 6170",
+              "[20-Jun-2026 11:41:14 UTC] PHP Notice:  Function _load_textdomain_just_in_time was called <strong>incorrectly</strong>. Translation loading for the <code>woocommerce-payments</code> domain was triggered too early. This is usually an indicator for some code in the plugin or theme running too early. Translations should be loaded at the <code>init</code> action or later. Please see <a href=\"https://developer.wordpress.org/advanced-administration/debug/debug-wordpress/\">Debugging in WordPress</a> for more information. (This message was added in version 6.7.0.) in /var/www/html/wp-includes/functions.php on line 6170",
+              "[20-Jun-2026 11:44:49 UTC] PHP Deprecated:  Function credit_card_form is <strong>deprecated</strong> since version 2.6! Use WC_Payment_Gateway_CC-&gt;form instead. in /var/www/html/wp-includes/functions.php on line 6170",
+              "[20-Jun-2026 11:44:56 UTC] PHP Deprecated:  Function credit_card_form is <strong>deprecated</strong> since version 2.6! Use WC_Payment_Gateway_CC-&gt;form instead. in /var/www/html/wp-includes/functions.php on line 6170",
+              "[20-Jun-2026 11:45:30 UTC] PHP Deprecated:  Function credit_card_form is <strong>deprecated</strong> since version 2.6! Use WC_Payment_Gateway_CC-&gt;form instead. in /var/www/html/wp-includes/functions.php on line 6170",
+              "[20-Jun-2026 11:45:37 UTC] PHP Deprecated:  Function credit_card_form is <strong>deprecated</strong> since version 2.6! Use WC_Payment_Gateway_CC-&gt;form instead. in /var/www/html/wp-includes/functions.php on line 6170"
+            ],
+            "docker_5xx": [],
+            "docker_diagnostics": [],
+            "label": "reference"
+          }
+        ],
+        "incomplete_reasons": [],
+        "since": "2026-06-20T11:41:03Z"
+      }
+    }
+  ],
+  "environment": {
+    "plugin_repo": "/Users/vladolaru/Work/a8c/woocommerce-payments",
+    "reference_url": "http://localhost:8082",
+    "repo": "/Users/vladolaru/Work/a8c/woocommerce-develop-2",
+    "target_url": "http://store8889.localhost:8889"
+  },
+  "failures": [
+    "admin-browser: exit 1"
+  ],
+  "gate": "a4aq-accumulated-gate",
+  "incomplete": [],
+  "last_updated_at": "2026-06-20T11:45:48.085813+00:00",
+  "limitations": [
+    "reference log scan has 27 diagnostic lines; inspect log-scan evidence"
+  ],
+  "schema": "woopayments_a4aq_accumulated_gate.v1",
+  "started_at": "2026-06-20T11:41:03.514154+00:00",
+  "status": "fail"
+}

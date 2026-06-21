@@ -1,0 +1,869 @@
+{
+  "chunks": {
+    "capital": {
+      "chunk_name": "settings-payments-woopayments-capital",
+      "gzip_bytes": 3469,
+      "path": "plugins/woocommerce/assets/client/admin/chunks/settings-payments-woopayments-capital.js",
+      "raw_bytes": 11445,
+      "status": "present"
+    },
+    "card-readers": {
+      "chunk_name": "settings-payments-woopayments-card-readers",
+      "gzip_bytes": 1042,
+      "path": "plugins/woocommerce/assets/client/admin/chunks/settings-payments-woopayments-card-readers.js",
+      "raw_bytes": 2593,
+      "status": "present"
+    },
+    "documents": {
+      "chunk_name": "settings-payments-woopayments-documents",
+      "gzip_bytes": 6941,
+      "path": "plugins/woocommerce/assets/client/admin/chunks/settings-payments-woopayments-documents.js",
+      "raw_bytes": 21149,
+      "status": "present"
+    },
+    "money-movement": {
+      "chunk_name": "settings-payments-woopayments-money-movement",
+      "gzip_bytes": 10956,
+      "path": "plugins/woocommerce/assets/client/admin/chunks/settings-payments-woopayments-money-movement.js",
+      "raw_bytes": 41385,
+      "status": "present"
+    },
+    "overview": {
+      "chunk_name": "settings-payments-woopayments-overview",
+      "gzip_bytes": 12007,
+      "path": "plugins/woocommerce/assets/client/admin/chunks/settings-payments-woopayments-overview.js",
+      "raw_bytes": 46511,
+      "status": "present"
+    },
+    "payouts": {
+      "chunk_name": "settings-payments-woopayments-payouts",
+      "gzip_bytes": 3650,
+      "path": "plugins/woocommerce/assets/client/admin/chunks/settings-payments-woopayments-payouts.js",
+      "raw_bytes": 11396,
+      "status": "present"
+    },
+    "reports": {
+      "chunk_name": "settings-payments-woopayments-reports",
+      "gzip_bytes": 7856,
+      "path": "plugins/woocommerce/assets/client/admin/chunks/settings-payments-woopayments-reports.js",
+      "raw_bytes": 25984,
+      "status": "present"
+    },
+    "settings": {
+      "chunk_name": "settings-payments-woopayments-settings",
+      "gzip_bytes": 2997,
+      "path": "plugins/woocommerce/assets/client/admin/chunks/settings-payments-woopayments-settings.js",
+      "raw_bytes": 10632,
+      "status": "present"
+    }
+  },
+  "failures": [],
+  "reference_plugin": {
+    "baseline_files": null,
+    "repo": null
+  },
+  "repo": "/Users/vladolaru/Work/a8c/woocommerce-develop-2",
+  "result": "pass",
+  "schema": "woopayments_a4_admin_surface_gate.v1",
+  "source": {
+    "admin_navigation": {
+      "account_service": {
+        "path": "plugins/woocommerce/src/Internal/Payments/Providers/WooPayments/WooPaymentsAccountService.php",
+        "required_methods": {
+          "has_card_readers_available": true,
+          "has_previous_capital_loans": true,
+          "has_valid_account_for_admin_navigation": true,
+          "is_account_rejected": true,
+          "is_account_under_review": true,
+          "is_card_present_eligible": true,
+          "is_details_submitted": true,
+          "is_documents_enabled": true,
+          "is_gateway_enabled": true,
+          "is_reports_enabled": true
+        }
+      },
+      "api_client": {
+        "path": "plugins/woocommerce/src/Internal/Payments/Providers/WooPayments/Api/WooPaymentsApiClient.php",
+        "required_methods": {
+          "get_authorizations_summary": true,
+          "get_dispute_status_counts": true
+        }
+      },
+      "badge_service": {
+        "path": "plugins/woocommerce/src/Internal/Payments/Providers/WooPayments/WooPaymentsAdminMenuBadgeService.php",
+        "required_tokens": {
+          "authorization-live-cache-key": true,
+          "authorization-test-cache-key": true,
+          "class": true,
+          "dispute-live-cache-key": true,
+          "dispute-test-cache-key": true,
+          "manual-capture-gate": true,
+          "stale-fallback-helper": true
+        }
+      },
+      "bootstrap": {
+        "path": "plugins/woocommerce/includes/class-woocommerce.php",
+        "registered": true
+      },
+      "controller": {
+        "expected_routes": {
+          "capital": {
+            "present": true,
+            "route": "/woopayments/loans"
+          },
+          "card-readers": {
+            "present": true,
+            "route": "/woopayments/card-readers"
+          },
+          "disputes": {
+            "present": true,
+            "route": "/woopayments/disputes"
+          },
+          "documents": {
+            "present": true,
+            "route": "/woopayments/documents"
+          },
+          "onboarding": {
+            "present": true,
+            "route": "/woopayments/onboarding"
+          },
+          "overview": {
+            "present": true,
+            "route": "/woopayments/overview"
+          },
+          "payouts": {
+            "present": true,
+            "route": "/woopayments/payouts"
+          },
+          "reports": {
+            "present": true,
+            "route": "/woopayments/reports"
+          },
+          "settings": {
+            "present": true,
+            "route": "/woopayments/settings"
+          },
+          "transactions": {
+            "present": true,
+            "route": "/woopayments/transactions"
+          }
+        },
+        "forbidden_legacy_redirect_routes": [],
+        "legacy_redirect_routes": [
+          {
+            "line": 61,
+            "path": "plugins/woocommerce/src/Internal/Admin/Settings/PaymentsProviders/WooPayments/WooPaymentsAdminNavigationController.php",
+            "route": "/payments/documents"
+          },
+          {
+            "line": 63,
+            "path": "plugins/woocommerce/src/Internal/Admin/Settings/PaymentsProviders/WooPayments/WooPaymentsAdminNavigationController.php",
+            "route": "/payments/reports"
+          },
+          {
+            "line": 66,
+            "path": "plugins/woocommerce/src/Internal/Admin/Settings/PaymentsProviders/WooPayments/WooPaymentsAdminNavigationController.php",
+            "route": "/payments/overview"
+          },
+          {
+            "line": 67,
+            "path": "plugins/woocommerce/src/Internal/Admin/Settings/PaymentsProviders/WooPayments/WooPaymentsAdminNavigationController.php",
+            "route": "/payments/deposits"
+          },
+          {
+            "line": 68,
+            "path": "plugins/woocommerce/src/Internal/Admin/Settings/PaymentsProviders/WooPayments/WooPaymentsAdminNavigationController.php",
+            "route": "/payments/deposits/details"
+          },
+          {
+            "line": 69,
+            "path": "plugins/woocommerce/src/Internal/Admin/Settings/PaymentsProviders/WooPayments/WooPaymentsAdminNavigationController.php",
+            "route": "/payments/payouts"
+          },
+          {
+            "line": 70,
+            "path": "plugins/woocommerce/src/Internal/Admin/Settings/PaymentsProviders/WooPayments/WooPaymentsAdminNavigationController.php",
+            "route": "/payments/payouts/details"
+          },
+          {
+            "line": 71,
+            "path": "plugins/woocommerce/src/Internal/Admin/Settings/PaymentsProviders/WooPayments/WooPaymentsAdminNavigationController.php",
+            "route": "/payments/transactions"
+          },
+          {
+            "line": 72,
+            "path": "plugins/woocommerce/src/Internal/Admin/Settings/PaymentsProviders/WooPayments/WooPaymentsAdminNavigationController.php",
+            "route": "/payments/transactions/details"
+          },
+          {
+            "line": 74,
+            "path": "plugins/woocommerce/src/Internal/Admin/Settings/PaymentsProviders/WooPayments/WooPaymentsAdminNavigationController.php",
+            "route": "/payments/disputes"
+          },
+          {
+            "line": 75,
+            "path": "plugins/woocommerce/src/Internal/Admin/Settings/PaymentsProviders/WooPayments/WooPaymentsAdminNavigationController.php",
+            "route": "/payments/disputes/details"
+          },
+          {
+            "line": 76,
+            "path": "plugins/woocommerce/src/Internal/Admin/Settings/PaymentsProviders/WooPayments/WooPaymentsAdminNavigationController.php",
+            "route": "/payments/disputes/challenge"
+          },
+          {
+            "line": 77,
+            "path": "plugins/woocommerce/src/Internal/Admin/Settings/PaymentsProviders/WooPayments/WooPaymentsAdminNavigationController.php",
+            "route": "/payments/card-readers"
+          },
+          {
+            "line": 78,
+            "path": "plugins/woocommerce/src/Internal/Admin/Settings/PaymentsProviders/WooPayments/WooPaymentsAdminNavigationController.php",
+            "route": "/payments/loans"
+          },
+          {
+            "line": 80,
+            "path": "plugins/woocommerce/src/Internal/Admin/Settings/PaymentsProviders/WooPayments/WooPaymentsAdminNavigationController.php",
+            "route": "/payments/settings"
+          }
+        ],
+        "path": "plugins/woocommerce/src/Internal/Admin/Settings/PaymentsProviders/WooPayments/WooPaymentsAdminNavigationController.php",
+        "required_tokens": {
+          "account-service": true,
+          "admin-menu-hook": true,
+          "badge-format": true,
+          "badge-service": true,
+          "capability-gate": true,
+          "class": true,
+          "disputes-filter": true,
+          "documents-menu-gate": true,
+          "hook-interface": true,
+          "native-runtime-gate": true,
+          "payments-menu-from": true,
+          "provider-enabled-menu-gate": true,
+          "reports-menu-gate": true,
+          "runtime-arbiter": true,
+          "settings-url-helper": true
+        },
+        "unexpected_plugin_era_routes": []
+      }
+    },
+    "expected_chunks": {
+      "capital": {
+        "chunk_name": "settings-payments-woopayments-capital",
+        "present": true
+      },
+      "card-readers": {
+        "chunk_name": "settings-payments-woopayments-card-readers",
+        "present": true
+      },
+      "documents": {
+        "chunk_name": "settings-payments-woopayments-documents",
+        "present": true
+      },
+      "money-movement": {
+        "chunk_name": "settings-payments-woopayments-money-movement",
+        "present": true
+      },
+      "overview": {
+        "chunk_name": "settings-payments-woopayments-overview",
+        "present": true
+      },
+      "payouts": {
+        "chunk_name": "settings-payments-woopayments-payouts",
+        "present": true
+      },
+      "reports": {
+        "chunk_name": "settings-payments-woopayments-reports",
+        "present": true
+      },
+      "settings": {
+        "chunk_name": "settings-payments-woopayments-settings",
+        "present": true
+      }
+    },
+    "money_details": {
+      "dispute_challenge": {
+        "path": "plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/dispute-challenge-page.tsx",
+        "required_tokens": {
+          "challenge-component": true,
+          "file-details": true,
+          "file-limit-copy": true,
+          "loaded-message": true
+        }
+      },
+      "dispute_details": {
+        "path": "plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/dispute-details.tsx",
+        "required_tokens": {
+          "dispute-fetch": true,
+          "no-standalone-render": true,
+          "redirect-component": true,
+          "settings-route": true,
+          "transaction-route": true
+        }
+      },
+      "dispute_evidence_cover_letter": {
+        "path": "plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/dispute-evidence-cover-letter.ts",
+        "required_tokens": {
+          "cover-letter-generator": true,
+          "product-description": true,
+          "shipping-tracking": true
+        }
+      },
+      "dispute_evidence_fields": {
+        "path": "plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/dispute-evidence-fields.ts",
+        "required_tokens": {
+          "recommended-helper": true,
+          "refund-receipt": true,
+          "shipping-helper": true,
+          "visa-helper": true
+        }
+      },
+      "dispute_evidence_form": {
+        "path": "plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/dispute-evidence-form.tsx",
+        "required_tokens": {
+          "autosave-continue": true,
+          "basics-step": true,
+          "final-submit-confirm": true,
+          "recommended-documents": true,
+          "review-step": true,
+          "save-draft": true,
+          "shipping-step": true,
+          "submit-evidence": true,
+          "success-confirmation": true,
+          "upload-wait": true,
+          "visa-heading": true,
+          "visa-textarea": true
+        }
+      },
+      "money_movement_data": {
+        "path": "plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/data.ts",
+        "required_tokens": {
+          "charge-helper": true,
+          "payment-intent-helper": true,
+          "timeline-helper": true,
+          "timeline-path": true
+        }
+      },
+      "payment_details_rest_controller": {
+        "path": "plugins/woocommerce/src/Internal/Payments/Providers/WooPayments/WooPaymentsPaymentDetailsRestController.php",
+        "required_tokens": {
+          "fraud-review-event": true,
+          "manual-fraud-outcome": true,
+          "timeline-api-client": true,
+          "timeline-callback": true,
+          "timeline-route": true
+        }
+      },
+      "payout_details": {
+        "path": "plugins/woocommerce/client/admin/client/woopayments/admin/payout-details.tsx",
+        "required_tokens": {
+          "bank-reference-copy": true,
+          "copy-announcement": true,
+          "deposit-filter": true,
+          "history-handoff": true,
+          "instant-payout-detection": true,
+          "instant-payout-doc-anchor": true,
+          "instant-payout-no-history": true
+        }
+      },
+      "transaction_details": {
+        "path": "plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/transaction-details-page.tsx",
+        "required_tokens": {
+          "charge-id": true,
+          "charge-id-path": true,
+          "net-amount": true,
+          "payment-heading": true,
+          "payment-id": true,
+          "payment-intent-id-path": true,
+          "payment-method": true,
+          "risk-evaluation": true,
+          "timeline-heading": true,
+          "timeline-helper": true,
+          "transaction-id-path": true
+        }
+      }
+    },
+    "overview_financial_summary": {
+      "account_balances": {
+        "path": "plugins/woocommerce/client/admin/client/woopayments/admin/overview/components/account-balances-card.tsx",
+        "required_tokens": {
+          "available-funds": true,
+          "currency-selector": true,
+          "instant-payout-button": true,
+          "instant-payout-modal": true,
+          "instant-payout-notice": true,
+          "instant-payout-submit-prop": true,
+          "instant-payout-success": true,
+          "total-balance": true
+        }
+      },
+      "overview_data": {
+        "path": "plugins/woocommerce/client/admin/client/woopayments/admin/overview/data.ts",
+        "required_tokens": {
+          "instant-payout-submit": true,
+          "instant-payout-type": true
+        }
+      },
+      "overview_page": {
+        "path": "plugins/woocommerce/client/admin/client/woopayments/admin/overview/page.tsx",
+        "required_tokens": {
+          "balance-currency-handler": true,
+          "instant-payout-refresh": true,
+          "instant-payout-submit": true,
+          "payout-selected-currency-prop": true,
+          "recent-deposits-call": true,
+          "selected-currency-helper": true,
+          "selected-currency-state": true
+        }
+      },
+      "payouts_card": {
+        "path": "plugins/woocommerce/client/admin/client/woopayments/admin/overview/components/payouts-overview-card.tsx",
+        "required_tokens": {
+          "change-schedule": true,
+          "failed-payout-copy": true,
+          "payout-details-link": true,
+          "pending-copy": true,
+          "schedule-copy": true,
+          "schedule-docs": true,
+          "selected-currency": true,
+          "status-chip": true,
+          "suspended-copy": true
+        }
+      },
+      "utils": {
+        "path": "plugins/woocommerce/client/admin/client/woopayments/admin/overview/utils.ts",
+        "required_tokens": {
+          "currency-options": true,
+          "instant-balance": true,
+          "monthly-anchor": true,
+          "selected-currency": true,
+          "status-class": true
+        }
+      }
+    },
+    "plugin_era_routes": [],
+    "pm_promotions": {
+      "activate_request": {
+        "path": "plugins/woocommerce/src/Internal/Payments/Providers/WooPayments/Api/WooPaymentsActivatePmPromotionRequest.php",
+        "required_tokens": {
+          "activate-path": true,
+          "class": true,
+          "legacy-alias": true,
+          "platform-api": true,
+          "promotion-id": true
+        }
+      },
+      "api_client": {
+        "path": "plugins/woocommerce/src/Internal/Payments/Providers/WooPayments/Api/WooPaymentsApiClient.php",
+        "required_tokens": {
+          "activate-hook": true,
+          "activate-method": true,
+          "get-hook": true,
+          "get-method": true
+        }
+      },
+      "frontend_actions": {
+        "path": "plugins/woocommerce/client/admin/client/woopayments/promotions/data/actions.ts",
+        "required_tokens": {
+          "activate-endpoint": true,
+          "dismiss-endpoint": true,
+          "invalidate-resolution": true,
+          "success-activation-notice": true,
+          "success-dismissal-notice": true
+        }
+      },
+      "frontend_store": {
+        "path": "plugins/woocommerce/client/admin/client/woopayments/promotions/data/store-name.ts",
+        "required_tokens": {
+          "store-name": true
+        }
+      },
+      "get_request": {
+        "path": "plugins/woocommerce/src/Internal/Payments/Providers/WooPayments/Api/WooPaymentsGetPmPromotionsRequest.php",
+        "required_tokens": {
+          "class": true,
+          "legacy-alias": true,
+          "platform-api": true,
+          "store-context": true
+        }
+      },
+      "rest_controller": {
+        "path": "plugins/woocommerce/src/Internal/Admin/Settings/PaymentsProviders/WooPayments/WooPaymentsRestController.php",
+        "required_tokens": {
+          "activate-callback": true,
+          "dismiss-callback": true,
+          "get-callback": true,
+          "id-validation": true,
+          "route-activate": true,
+          "route-dismiss": true,
+          "route-get": true
+        }
+      },
+      "row_badge": {
+        "path": "plugins/woocommerce/client/admin/client/woopayments/settings/payment-methods-list.tsx",
+        "required_tokens": {
+          "badge-filter": true,
+          "component": true,
+          "discount-precedence": true,
+          "promotion-prop": true
+        }
+      },
+      "service": {
+        "path": "plugins/woocommerce/src/Internal/Payments/Providers/WooPayments/WooPaymentsPmPromotionsService.php",
+        "required_tokens": {
+          "activate": true,
+          "active-discount-filter": true,
+          "cache-key": true,
+          "class": true,
+          "dismiss": true,
+          "dismissals-option": true,
+          "manage-woocommerce-gate": true,
+          "settings-save-activation": true,
+          "visible-promotions": true
+        }
+      },
+      "settings_service": {
+        "path": "plugins/woocommerce/src/Internal/Payments/Providers/WooPayments/WooPaymentsSettingsService.php",
+        "required_tokens": {
+          "service-injection": true,
+          "settings-save-activation": true,
+          "source-backed-settings-field": true
+        }
+      },
+      "spotlight": {
+        "path": "plugins/woocommerce/client/admin/client/woopayments/promotions/spotlight.tsx",
+        "required_tokens": {
+          "activate-track": true,
+          "component": true,
+          "dismiss-track": true,
+          "native-route-source": true,
+          "safe-url": true,
+          "view-track": true
+        }
+      },
+      "spotlight_mounts": {
+        "disputes": {
+          "path": "plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/disputes-page.tsx",
+          "required_tokens": {
+            "import": true,
+            "mount": true
+          }
+        },
+        "overview": {
+          "path": "plugins/woocommerce/client/admin/client/woopayments/admin/overview/page.tsx",
+          "required_tokens": {
+            "import": true,
+            "mount": true
+          }
+        },
+        "payouts": {
+          "path": "plugins/woocommerce/client/admin/client/woopayments/admin/payouts.tsx",
+          "required_tokens": {
+            "import": true,
+            "mount": true
+          }
+        },
+        "settings": {
+          "path": "plugins/woocommerce/client/admin/client/woopayments/settings/settings-page.tsx",
+          "required_tokens": {
+            "import": true,
+            "mount": true
+          }
+        },
+        "transactions": {
+          "path": "plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/transactions-page.tsx",
+          "required_tokens": {
+            "import": true,
+            "mount": true
+          }
+        }
+      }
+    },
+    "registry_tokens": [],
+    "scanned_files": [
+      "plugins/woocommerce/client/admin/client/settings-payments/components/bank-accounts-list/bank-account-modal.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/bank-accounts-list/bank-accounts-list.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/bank-accounts-list/index.ts",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/bank-accounts-list/test/bank-account-modal.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/bank-accounts-list/test/bank-accounts-list.test.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/bank-accounts-list/types.ts",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/bank-accounts-list/utils.ts",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/bank-accounts-list/validation.ts",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/buttons/activate-payments-button.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/buttons/back-button.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/buttons/complete-setup-button.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/buttons/enable-gateway-button.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/buttons/index.ts",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/buttons/navigation.ts",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/buttons/reactivate-live-payments-button.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/buttons/settings-button.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/buttons/test/complete-setup-button.test.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/buttons/test/enable-gateway-button.test.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/buttons/test/settings-button.test.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/country-selector/country-selector.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/country-selector/index.ts",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/country-selector/test/country-selector.test.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/country-selector/types.ts",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/ellipsis-menu-content/ellipsis-menu-content.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/ellipsis-menu-content/ellipsis-menu.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/ellipsis-menu-content/index.ts",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/ellipsis-menu-content/test/ellipsis-menu-content.test.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/field-placeholder/field-placeholder.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/field-placeholder/index.ts",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/grid-item-placeholder/grid-item-placeholder.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/grid-item-placeholder/index.ts",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/header/header.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/incentive-banner/incentive-banner.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/incentive-banner/index.ts",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/incentive-banner/test/incentive-banner.test.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/incentive-modal/incentive-modal.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/incentive-modal/index.ts",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/incentive-modal/test/incentive-modal.test.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/incentive-status-badge/incentive-status-badge.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/incentive-status-badge/index.ts",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/list-placeholder/index.ts",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/list-placeholder/list-placeholder.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/modals/index.ts",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/modals/test/woo-payments-post-sandbox-account-setup-modal.test.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/modals/test/woo-payments-update-required-modal.test.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/modals/woo-payments-post-sandbox-account-setup-modal.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/modals/woo-payments-reset-account-modal.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/modals/woo-payments-update-required-modal.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/official-badge/index.ts",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/official-badge/official-badge.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/offline-payment-gateway-list/index.ts",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/offline-payment-gateway-list/offline-payment-gateway-list.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/other-payment-gateways/index.ts",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/other-payment-gateways/other-payment-gateways.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/payment-extension-suggestion-list-item/index.ts",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/payment-extension-suggestion-list-item/payment-extension-suggestion-list-item.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/payment-extension-suggestion-list-item/test/payment-extension-suggestion-list-item.test.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/payment-gateway-list/index.ts",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/payment-gateway-list/payment-gateway-list.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/payment-gateway-list-item/index.ts",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/payment-gateway-list-item/payment-gateway-list-item.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/payment-gateway-list-item/test/payment-gateway-list-item.test.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/payment-gateways/index.ts",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/payment-gateways/payment-gateways.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/settings/index.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/settings/test/index.test.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/sortable/index.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/sortable/sortable-container.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/sortable/sortable-drag-handle.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/sortable/sortable-item.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/sortable/test/sortable-container.test.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/sortable/test/sortable-item.test.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/status-badge/index.ts",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/status-badge/status-badge.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/components/status-badge/test/status-badge.test.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/constants.ts",
+      "plugins/woocommerce/client/admin/client/settings-payments/index.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/offline/settings-payments-bacs.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/offline/settings-payments-cheque.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/offline/settings-payments-cod.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/offline/utils.ts",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/components/modal/index.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/components/stepper/index.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/components/stepper/sidebar-item.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/components/banner-notice/index.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/components/custom-select-control/index.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/components/custom-select-control/test/index.test.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/components/grouped-select-control/index.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/components/header/index.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/components/onboarding/index.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/components/snackbar/index.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/components/stripe-spinner/index.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/data/onboarding-context.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/index.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/steps/business-verification/components/embedded/appearance.ts",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/steps/business-verification/components/embedded/index.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/steps/business-verification/components/form/fields.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/steps/business-verification/components/form/index.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/steps/business-verification/components/step/index.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/steps/business-verification/components/stepper/index.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/steps/business-verification/data/business-verification-context.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/steps/business-verification/index.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/steps/business-verification/sections/activate-payments.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/steps/business-verification/sections/business-details.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/steps/business-verification/sections/embedded-kyc.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/steps/business-verification/strings.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/steps/business-verification/test/business-details-flow.test.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/steps/business-verification/test/index.test.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/steps/business-verification/translations/descriptions.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/steps/business-verification/types.ts",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/steps/business-verification/utils/actions.ts",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/steps/business-verification/utils/index.ts",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/steps/business-verification/utils/validation.ts",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/steps/finish/index.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/steps/index.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/steps/payment-methods-selection/index.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/steps/payment-methods-selection/list-item.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/steps/payment-methods-selection/test/list-item.test.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/steps/test-account/index.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/steps/test-or-live-account/index.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/providers/woopayments/steps/wpcom-connection/index.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/onboarding/types.ts",
+      "plugins/woocommerce/client/admin/client/settings-payments/provider-routes.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/register-provider-routes.ts",
+      "plugins/woocommerce/client/admin/client/settings-payments/settings-payments-main.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/settings-payments-offline.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/settings-payments-woopayments.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/test/provider-routes.test.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/test/register-provider-routes.test.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/test/settings-payments-main.test.tsx",
+      "plugins/woocommerce/client/admin/client/settings-payments/utils.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/capital/data.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/capital/index.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/capital/page.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/capital/types.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/card-readers/data.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/card-readers/index.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/card-readers/page.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/card-readers/types.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/documents/data.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/documents/index.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/documents/page.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/documents/query.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/documents/types.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/documents/vat-modal.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/data.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/dataviews.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/dispute-challenge-page.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/dispute-challenge.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/dispute-details.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/dispute-evidence-cover-letter.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/dispute-evidence-fields.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/dispute-evidence-file-upload.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/dispute-evidence-form.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/disputes-details.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/disputes-page.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/disputes.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/export.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/query.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/table.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/transaction-details-page.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/transaction-details.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/transactions-page.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/transactions.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/types.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/utils.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/view-preferences.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/overview/components/account-balances-card.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/overview/components/connection-success-modal.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/overview/components/overview-notices.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/overview/components/overview-task-list.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/overview/components/overview-tasks.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/overview/components/payouts-overview-card.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/overview/components/update-business-details-modal.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/overview/data.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/overview/page.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/overview/types.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/overview/utils.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/overview.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/payout-details.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/payouts.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/reports/data.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/reports/index.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/reports/page.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/reports/query.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/reports/report-state.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/reports/types.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/routes.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/test/account-balances-card.test.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/test/capital-page.test.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/test/card-readers-page.test.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/test/dispute-challenge-page.test.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/test/dispute-evidence-fields.test.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/test/documents-data.test.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/test/documents-page.test.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/test/money-movement-data.test.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/test/money-movement-dataviews.test.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/test/money-movement-export.test.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/test/money-movement-pages.test.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/test/money-movement-query.test.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/test/money-movement-view-preferences.test.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/test/overview-data.test.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/test/overview-page.test.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/test/overview-task-list.test.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/test/overview-tasks.test.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/test/payout-details-page.test.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/test/payouts-overview-card.test.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/test/reports-data.test.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/test/reports-page.test.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/test/reports-query.test.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/test/routes.test.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/test/utils.test.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/test-mode-notice.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/admin/utils.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/onboarding/index.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/promotions/data/action-types.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/promotions/data/actions.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/promotions/data/constants.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/promotions/data/hooks.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/promotions/data/reducer.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/promotions/data/resolvers.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/promotions/data/selectors.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/promotions/data/store-name.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/promotions/data/store.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/promotions/data/test/pm-promotions-data.test.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/promotions/index.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/promotions/spotlight.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/promotions/test/spotlight.test.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/promotions/types.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/account-mode-notice.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/account-settings.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/api.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/bootstrap.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/data/action-types.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/data/actions.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/data/constants.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/data/hooks.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/data/reducer.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/data/resolvers.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/data/selectors.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/data/store-name.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/data/store.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/express-checkout/amazon-pay-settings.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/express-checkout/appearance-settings.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/express-checkout/color-utils.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/express-checkout/components.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/express-checkout/express-checkout-settings.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/express-checkout/index.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/express-checkout/method-icons.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/express-checkout/notices.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/express-checkout/payment-request-settings.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/express-checkout/settings-utils.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/express-checkout/woopay-preview.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/express-checkout/woopay-settings.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/fraud-protection/advanced/constants.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/fraud-protection/advanced/index.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/fraud-protection/advanced/types.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/fraud-protection/advanced/utils.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/fraud-protection/index.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/index.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/payment-method-definitions.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/payment-methods-list.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/payout-bank-account.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/settings-busy-state.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/settings-page.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/test/account-settings.test.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/test/express-checkout-settings.test.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/test/fraud-protection-advanced.test.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/test/settings-data.test.ts",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/test/settings-page.test.tsx",
+      "plugins/woocommerce/client/admin/client/woopayments/settings/types.ts"
+    ]
+  },
+  "summary": {
+    "native_admin_chunks": {
+      "file_count": 8,
+      "gzip_bytes": 48918,
+      "raw_bytes": 171095
+    },
+    "reference_plugin_admin_baseline": {
+      "file_count": 0,
+      "gzip_bytes": 0,
+      "raw_bytes": 0
+    }
+  }
+}

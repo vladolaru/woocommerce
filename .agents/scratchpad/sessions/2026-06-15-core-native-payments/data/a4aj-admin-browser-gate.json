@@ -1,0 +1,142 @@
+{
+  "gate": "a4aj-admin-browser-gate",
+  "gateSlug": "a4aj",
+  "status": "complete",
+  "startedAt": "2026-06-20T04:24:04.033Z",
+  "lastUpdatedAt": "2026-06-20T04:24:12.963Z",
+  "surfaces": [
+    "settings-express-payment-request"
+  ],
+  "viewports": [
+    "desktop",
+    "mobile"
+  ],
+  "stores": [
+    "target"
+  ],
+  "results": [
+    {
+      "store": "target",
+      "surface": "settings-express-payment-request",
+      "viewport": "desktop",
+      "requestedUrl": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings%2Fexpress-checkout%2Fpayment_request",
+      "finalUrl": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings%2Fexpress-checkout%2Fpayment_request",
+      "expectedTokens": [
+        "Apple Pay / Google Pay",
+        "Configure the display of Apple Pay and Google Pay buttons",
+        "CALL TO ACTION",
+        "BUTTON SIZE",
+        "THEME",
+        "PREVIEW",
+        "Save changes"
+      ],
+      "missingTokens": [],
+      "unmetRequiredTokens": [],
+      "unavailableTokenMissing": false,
+      "strictTokens": true,
+      "referenceOptional": null,
+      "routeAvailability": {
+        "gatewayEnabled": true,
+        "accountState": "full",
+        "allowedRoutes": {
+          "/woopayments/settings": true,
+          "/woopayments/onboarding": false,
+          "/woopayments/overview": true,
+          "/woopayments/payouts": true,
+          "/woopayments/payouts/details": true,
+          "/woopayments/transactions": true,
+          "/woopayments/transactions/details": true,
+          "/woopayments/disputes": true,
+          "/woopayments/disputes/details": true,
+          "/woopayments/disputes/challenge": true,
+          "/woopayments/reports": true,
+          "/woopayments/card-readers": false,
+          "/woopayments/loans": false,
+          "/woopayments/documents": false
+        }
+      },
+      "targetSurfaceAvailable": true,
+      "failedResponses": [],
+      "ignoredFailedResponses": [],
+      "consoleIssues": [],
+      "ignoredConsoleIssues": [],
+      "pageErrors": [],
+      "scripts": [],
+      "resources": [
+        "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/admin/chunks/settings-payments-woopayments-express-checkout-settings.js?ver=4fd77c8a9992d4e80659",
+        "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/admin/chunks/settings-payments-woopayments-express-checkout-payment-request.js?ver=3d2ee3bcf62fed056262"
+      ],
+      "expectedTargetAssets": [
+        "settings-payments-woopayments-express-checkout-settings.js",
+        "settings-payments-woopayments-express-checkout-payment-request.js"
+      ],
+      "missingTargetAssets": [],
+      "forbiddenTargetAssets": [],
+      "targetAssetNote": null,
+      "screenshotPath": "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aj/target-settings-express-payment-request-desktop.png",
+      "passed": true
+    },
+    {
+      "store": "target",
+      "surface": "settings-express-payment-request",
+      "viewport": "mobile",
+      "requestedUrl": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings%2Fexpress-checkout%2Fpayment_request",
+      "finalUrl": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings%2Fexpress-checkout%2Fpayment_request",
+      "expectedTokens": [
+        "Apple Pay / Google Pay",
+        "Configure the display of Apple Pay and Google Pay buttons",
+        "CALL TO ACTION",
+        "BUTTON SIZE",
+        "THEME",
+        "PREVIEW",
+        "Save changes"
+      ],
+      "missingTokens": [],
+      "unmetRequiredTokens": [],
+      "unavailableTokenMissing": false,
+      "strictTokens": true,
+      "referenceOptional": null,
+      "routeAvailability": {
+        "gatewayEnabled": true,
+        "accountState": "full",
+        "allowedRoutes": {
+          "/woopayments/settings": true,
+          "/woopayments/onboarding": false,
+          "/woopayments/overview": true,
+          "/woopayments/payouts": true,
+          "/woopayments/payouts/details": true,
+          "/woopayments/transactions": true,
+          "/woopayments/transactions/details": true,
+          "/woopayments/disputes": true,
+          "/woopayments/disputes/details": true,
+          "/woopayments/disputes/challenge": true,
+          "/woopayments/reports": true,
+          "/woopayments/card-readers": false,
+          "/woopayments/loans": false,
+          "/woopayments/documents": false
+        }
+      },
+      "targetSurfaceAvailable": true,
+      "failedResponses": [],
+      "ignoredFailedResponses": [],
+      "consoleIssues": [],
+      "ignoredConsoleIssues": [],
+      "pageErrors": [],
+      "scripts": [],
+      "resources": [
+        "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/admin/chunks/settings-payments-woopayments-express-checkout-settings.js?ver=4fd77c8a9992d4e80659",
+        "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/admin/chunks/settings-payments-woopayments-express-checkout-payment-request.js?ver=3d2ee3bcf62fed056262"
+      ],
+      "expectedTargetAssets": [
+        "settings-payments-woopayments-express-checkout-settings.js",
+        "settings-payments-woopayments-express-checkout-payment-request.js"
+      ],
+      "missingTargetAssets": [],
+      "forbiddenTargetAssets": [],
+      "targetAssetNote": null,
+      "screenshotPath": "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4aj/target-settings-express-payment-request-mobile.png",
+      "passed": true
+    }
+  ],
+  "failures": []
+}

@@ -1,0 +1,309 @@
+{
+  "generatedAt": "2026-06-18T18:50:33.852Z",
+  "routes": [
+    {
+      "id": "provider-list",
+      "url": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout",
+      "title": "WooCommerce settings ‹ woocommerce — WordPress",
+      "matchedExpected": true,
+      "bodySnippet": "Skip to main content\nSkip to toolbar\n\n\nDashboard\nHome\nUpdates\n\n\nPosts\nAll Posts\nAdd Post\nCategories\nTags\n\n\nMedia\nLibrary\nAdd Media File\n\n\nPages\nAll Pages\nAdd Page\n\n\nComments\n\n\nWooCommerce\nHome 3\nOrders 176\nSubscriptions\nCustomers\nCoupons\nReports\nSettings\nStatus\nExtensions\n\n\nProducts\nAll Products\nAdd new product\nBrands\nCategories\nTags\nAttributes\nReviews\n\n\nPayments\n\n\nAnalytics\nOverview\nProducts\nRevenue\nOrders\nVariations\nCategories\nCoupons\nTaxes\nDownloads\nStock\nSettings\n\n\nMarketing\nOverview\nCoupons\n\n\nAppearance\nThemes\nEditor\nFonts\n\n\nPlugins\nInstalled Plugins\nAdd Plugin\n\n\nUsers\nAll Users\nAdd User\nProfile\n\n\nTools\nAvailable Tools\nImport\nExport\nSite Health 5\nExport Personal Data\nErase Personal Data\nWPCOM Local Helper\nScheduled Actions\nTheme File Editor\nPlugin File Editor\n\n\nSettings\nGeneral\nConnec",
+      "failedResponses": [],
+      "unexpectedFailedResponses": [],
+      "pluginDistScripts": [],
+      "nativeRouteChunks": [
+        "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/admin/chunks/settings-payments-main.js?ver=ca968023abcc47e8eb50"
+      ],
+      "registry": {
+        "wpDataPresent": true,
+        "nativeSettingsStoreInHostRegistry": false
+      }
+    },
+    {
+      "id": "settings",
+      "url": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings",
+      "title": "WooCommerce settings ‹ woocommerce — WordPress",
+      "matchedExpected": true,
+      "bodySnippet": "Skip to main content\nSkip to toolbar\n\n\nDashboard\nHome\nUpdates\n\n\nPosts\nAll Posts\nAdd Post\nCategories\nTags\n\n\nMedia\nLibrary\nAdd Media File\n\n\nPages\nAll Pages\nAdd Page\n\n\nComments\n\n\nWooCommerce\nHome 3\nOrders 176\nSubscriptions\nCustomers\nCoupons\nReports\nSettings\nStatus\nExtensions\n\n\nProducts\nAll Products\nAdd new product\nBrands\nCategories\nTags\nAttributes\nReviews\n\n\nPayments\n\n\nAnalytics\nOverview\nProducts\nRevenue\nOrders\nVariations\nCategories\nCoupons\nTaxes\nDownloads\nStock\nSettings\n\n\nMarketing\nOverview\nCoupons\n\n\nAppearance\nThemes\nEditor\nFonts\n\n\nPlugins\nInstalled Plugins\nAdd Plugin\n\n\nUsers\nAll Users\nAdd User\nProfile\n\n\nTools\nAvailable Tools\nImport\nExport\nSite Health 5\nExport Personal Data\nErase Personal Data\nWPCOM Local Helper\nScheduled Actions\nTheme File Editor\nPlugin File Editor\n\n\nSettings\nGeneral\nConnec",
+      "failedResponses": [],
+      "unexpectedFailedResponses": [],
+      "pluginDistScripts": [],
+      "nativeRouteChunks": [],
+      "registry": {
+        "wpDataPresent": true,
+        "nativeSettingsStoreInHostRegistry": true
+      }
+    },
+    {
+      "id": "overview",
+      "url": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Foverview",
+      "title": "WooCommerce settings ‹ woocommerce — WordPress",
+      "matchedExpected": true,
+      "bodySnippet": "Skip to main content\nSkip to toolbar\n\n\nDashboard\nHome\nUpdates\n\n\nPosts\nAll Posts\nAdd Post\nCategories\nTags\n\n\nMedia\nLibrary\nAdd Media File\n\n\nPages\nAll Pages\nAdd Page\n\n\nComments\n\n\nWooCommerce\nHome 3\nOrders 176\nSubscriptions\nCustomers\nCoupons\nReports\nSettings\nStatus\nExtensions\n\n\nProducts\nAll Products\nAdd new product\nBrands\nCategories\nTags\nAttributes\nReviews\n\n\nPayments\n\n\nAnalytics\nOverview\nProducts\nRevenue\nOrders\nVariations\nCategories\nCoupons\nTaxes\nDownloads\nStock\nSettings\n\n\nMarketing\nOverview\nCoupons\n\n\nAppearance\nThemes\nEditor\nFonts\n\n\nPlugins\nInstalled Plugins\nAdd Plugin\n\n\nUsers\nAll Users\nAdd User\nProfile\n\n\nTools\nAvailable Tools\nImport\nExport\nSite Health 5\nExport Personal Data\nErase Personal Data\nWPCOM Local Helper\nScheduled Actions\nTheme File Editor\nPlugin File Editor\n\n\nSettings\nGeneral\nConnec",
+      "failedResponses": [],
+      "unexpectedFailedResponses": [],
+      "pluginDistScripts": [],
+      "nativeRouteChunks": [
+        "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/admin/chunks/settings-payments-woopayments-overview.js?ver=80242aee9774b20afe45"
+      ],
+      "registry": {
+        "wpDataPresent": true,
+        "nativeSettingsStoreInHostRegistry": false
+      }
+    },
+    {
+      "id": "payouts",
+      "url": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fpayouts",
+      "title": "WooCommerce settings ‹ woocommerce — WordPress",
+      "matchedExpected": true,
+      "bodySnippet": "Skip to main content\nSkip to toolbar\n\n\nDashboard\nHome\nUpdates\n\n\nPosts\nAll Posts\nAdd Post\nCategories\nTags\n\n\nMedia\nLibrary\nAdd Media File\n\n\nPages\nAll Pages\nAdd Page\n\n\nComments\n\n\nWooCommerce\nHome 3\nOrders 176\nSubscriptions\nCustomers\nCoupons\nReports\nSettings\nStatus\nExtensions\n\n\nProducts\nAll Products\nAdd new product\nBrands\nCategories\nTags\nAttributes\nReviews\n\n\nPayments\n\n\nAnalytics\nOverview\nProducts\nRevenue\nOrders\nVariations\nCategories\nCoupons\nTaxes\nDownloads\nStock\nSettings\n\n\nMarketing\nOverview\nCoupons\n\n\nAppearance\nThemes\nEditor\nFonts\n\n\nPlugins\nInstalled Plugins\nAdd Plugin\n\n\nUsers\nAll Users\nAdd User\nProfile\n\n\nTools\nAvailable Tools\nImport\nExport\nSite Health 5\nExport Personal Data\nErase Personal Data\nWPCOM Local Helper\nScheduled Actions\nTheme File Editor\nPlugin File Editor\n\n\nSettings\nGeneral\nConnec",
+      "failedResponses": [],
+      "unexpectedFailedResponses": [],
+      "pluginDistScripts": [],
+      "nativeRouteChunks": [
+        "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/admin/chunks/settings-payments-woopayments-payouts.js?ver=a250e7ac0631efa3a05f"
+      ],
+      "registry": {
+        "wpDataPresent": true,
+        "nativeSettingsStoreInHostRegistry": false
+      }
+    },
+    {
+      "id": "payout-details",
+      "url": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fpayouts%2Fdetails&id=po_missing",
+      "title": "WooCommerce settings ‹ woocommerce — WordPress",
+      "matchedExpected": true,
+      "bodySnippet": "Skip to main content\nSkip to toolbar\n\n\nDashboard\nHome\nUpdates\n\n\nPosts\nAll Posts\nAdd Post\nCategories\nTags\n\n\nMedia\nLibrary\nAdd Media File\n\n\nPages\nAll Pages\nAdd Page\n\n\nComments\n\n\nWooCommerce\nHome 3\nOrders 176\nSubscriptions\nCustomers\nCoupons\nReports\nSettings\nStatus\nExtensions\n\n\nProducts\nAll Products\nAdd new product\nBrands\nCategories\nTags\nAttributes\nReviews\n\n\nPayments\n\n\nAnalytics\nOverview\nProducts\nRevenue\nOrders\nVariations\nCategories\nCoupons\nTaxes\nDownloads\nStock\nSettings\n\n\nMarketing\nOverview\nCoupons\n\n\nAppearance\nThemes\nEditor\nFonts\n\n\nPlugins\nInstalled Plugins\nAdd Plugin\n\n\nUsers\nAll Users\nAdd User\nProfile\n\n\nTools\nAvailable Tools\nImport\nExport\nSite Health 5\nExport Personal Data\nErase Personal Data\nWPCOM Local Helper\nScheduled Actions\nTheme File Editor\nPlugin File Editor\n\n\nSettings\nGeneral\nConnec",
+      "failedResponses": [
+        {
+          "status": 500,
+          "url": "http://store8889.localhost:8889/wp-json/wc/v3/payments/deposits/po_missing?_locale=user",
+          "route": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fpayouts%2Fdetails&id=po_missing"
+        }
+      ],
+      "unexpectedFailedResponses": [],
+      "pluginDistScripts": [],
+      "nativeRouteChunks": [
+        "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/admin/chunks/settings-payments-woopayments-payouts.js?ver=a250e7ac0631efa3a05f"
+      ],
+      "registry": {
+        "wpDataPresent": true,
+        "nativeSettingsStoreInHostRegistry": false
+      }
+    },
+    {
+      "id": "transactions",
+      "url": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions",
+      "title": "WooCommerce settings ‹ woocommerce — WordPress",
+      "matchedExpected": true,
+      "bodySnippet": "Skip to main content\nSkip to toolbar\n\n\nDashboard\nHome\nUpdates\n\n\nPosts\nAll Posts\nAdd Post\nCategories\nTags\n\n\nMedia\nLibrary\nAdd Media File\n\n\nPages\nAll Pages\nAdd Page\n\n\nComments\n\n\nWooCommerce\nHome 3\nOrders 176\nSubscriptions\nCustomers\nCoupons\nReports\nSettings\nStatus\nExtensions\n\n\nProducts\nAll Products\nAdd new product\nBrands\nCategories\nTags\nAttributes\nReviews\n\n\nPayments\n\n\nAnalytics\nOverview\nProducts\nRevenue\nOrders\nVariations\nCategories\nCoupons\nTaxes\nDownloads\nStock\nSettings\n\n\nMarketing\nOverview\nCoupons\n\n\nAppearance\nThemes\nEditor\nFonts\n\n\nPlugins\nInstalled Plugins\nAdd Plugin\n\n\nUsers\nAll Users\nAdd User\nProfile\n\n\nTools\nAvailable Tools\nImport\nExport\nSite Health 5\nExport Personal Data\nErase Personal Data\nWPCOM Local Helper\nScheduled Actions\nTheme File Editor\nPlugin File Editor\n\n\nSettings\nGeneral\nConnec",
+      "failedResponses": [],
+      "unexpectedFailedResponses": [],
+      "pluginDistScripts": [],
+      "nativeRouteChunks": [
+        "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/admin/chunks/settings-payments-woopayments-money-movement.js?ver=ca255e3aa50c8a9506a5"
+      ],
+      "registry": {
+        "wpDataPresent": true,
+        "nativeSettingsStoreInHostRegistry": false
+      }
+    },
+    {
+      "id": "transaction-details",
+      "url": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions%2Fdetails&id=txn_missing",
+      "title": "WooCommerce settings ‹ woocommerce — WordPress",
+      "matchedExpected": true,
+      "bodySnippet": "Skip to main content\nSkip to toolbar\n\n\nDashboard\nHome\nUpdates\n\n\nPosts\nAll Posts\nAdd Post\nCategories\nTags\n\n\nMedia\nLibrary\nAdd Media File\n\n\nPages\nAll Pages\nAdd Page\n\n\nComments\n\n\nWooCommerce\nHome 3\nOrders 176\nSubscriptions\nCustomers\nCoupons\nReports\nSettings\nStatus\nExtensions\n\n\nProducts\nAll Products\nAdd new product\nBrands\nCategories\nTags\nAttributes\nReviews\n\n\nPayments\n\n\nAnalytics\nOverview\nProducts\nRevenue\nOrders\nVariations\nCategories\nCoupons\nTaxes\nDownloads\nStock\nSettings\n\n\nMarketing\nOverview\nCoupons\n\n\nAppearance\nThemes\nEditor\nFonts\n\n\nPlugins\nInstalled Plugins\nAdd Plugin\n\n\nUsers\nAll Users\nAdd User\nProfile\n\n\nTools\nAvailable Tools\nImport\nExport\nSite Health 5\nExport Personal Data\nErase Personal Data\nWPCOM Local Helper\nScheduled Actions\nTheme File Editor\nPlugin File Editor\n\n\nSettings\nGeneral\nConnec",
+      "failedResponses": [
+        {
+          "status": 404,
+          "url": "http://store8889.localhost:8889/wp-json/wc/v3/payments/transactions/txn_missing?_locale=user",
+          "route": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions%2Fdetails&id=txn_missing"
+        }
+      ],
+      "unexpectedFailedResponses": [],
+      "pluginDistScripts": [],
+      "nativeRouteChunks": [
+        "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/admin/chunks/settings-payments-woopayments-money-movement.js?ver=ca255e3aa50c8a9506a5"
+      ],
+      "registry": {
+        "wpDataPresent": true,
+        "nativeSettingsStoreInHostRegistry": false
+      }
+    },
+    {
+      "id": "transaction-details-intent",
+      "url": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions%2Fdetails&id=pi_missing",
+      "title": "WooCommerce settings ‹ woocommerce — WordPress",
+      "matchedExpected": true,
+      "bodySnippet": "Skip to main content\nSkip to toolbar\n\n\nDashboard\nHome\nUpdates\n\n\nPosts\nAll Posts\nAdd Post\nCategories\nTags\n\n\nMedia\nLibrary\nAdd Media File\n\n\nPages\nAll Pages\nAdd Page\n\n\nComments\n\n\nWooCommerce\nHome 3\nOrders 176\nSubscriptions\nCustomers\nCoupons\nReports\nSettings\nStatus\nExtensions\n\n\nProducts\nAll Products\nAdd new product\nBrands\nCategories\nTags\nAttributes\nReviews\n\n\nPayments\n\n\nAnalytics\nOverview\nProducts\nRevenue\nOrders\nVariations\nCategories\nCoupons\nTaxes\nDownloads\nStock\nSettings\n\n\nMarketing\nOverview\nCoupons\n\n\nAppearance\nThemes\nEditor\nFonts\n\n\nPlugins\nInstalled Plugins\nAdd Plugin\n\n\nUsers\nAll Users\nAdd User\nProfile\n\n\nTools\nAvailable Tools\nImport\nExport\nSite Health 5\nExport Personal Data\nErase Personal Data\nWPCOM Local Helper\nScheduled Actions\nTheme File Editor\nPlugin File Editor\n\n\nSettings\nGeneral\nConnec",
+      "failedResponses": [
+        {
+          "status": 404,
+          "url": "http://store8889.localhost:8889/wp-json/wc/v3/payments/payment_intents/pi_missing?_locale=user",
+          "route": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions%2Fdetails&id=pi_missing"
+        }
+      ],
+      "unexpectedFailedResponses": [],
+      "pluginDistScripts": [],
+      "nativeRouteChunks": [
+        "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/admin/chunks/settings-payments-woopayments-money-movement.js?ver=ca255e3aa50c8a9506a5"
+      ],
+      "registry": {
+        "wpDataPresent": true,
+        "nativeSettingsStoreInHostRegistry": false
+      }
+    },
+    {
+      "id": "transaction-details-charge",
+      "url": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions%2Fdetails&id=ch_missing",
+      "title": "WooCommerce settings ‹ woocommerce — WordPress",
+      "matchedExpected": true,
+      "bodySnippet": "Skip to main content\nSkip to toolbar\n\n\nDashboard\nHome\nUpdates\n\n\nPosts\nAll Posts\nAdd Post\nCategories\nTags\n\n\nMedia\nLibrary\nAdd Media File\n\n\nPages\nAll Pages\nAdd Page\n\n\nComments\n\n\nWooCommerce\nHome 3\nOrders 176\nSubscriptions\nCustomers\nCoupons\nReports\nSettings\nStatus\nExtensions\n\n\nProducts\nAll Products\nAdd new product\nBrands\nCategories\nTags\nAttributes\nReviews\n\n\nPayments\n\n\nAnalytics\nOverview\nProducts\nRevenue\nOrders\nVariations\nCategories\nCoupons\nTaxes\nDownloads\nStock\nSettings\n\n\nMarketing\nOverview\nCoupons\n\n\nAppearance\nThemes\nEditor\nFonts\n\n\nPlugins\nInstalled Plugins\nAdd Plugin\n\n\nUsers\nAll Users\nAdd User\nProfile\n\n\nTools\nAvailable Tools\nImport\nExport\nSite Health 5\nExport Personal Data\nErase Personal Data\nWPCOM Local Helper\nScheduled Actions\nTheme File Editor\nPlugin File Editor\n\n\nSettings\nGeneral\nConnec",
+      "failedResponses": [
+        {
+          "status": 404,
+          "url": "http://store8889.localhost:8889/wp-json/wc/v3/payments/charges/ch_missing?_locale=user",
+          "route": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions%2Fdetails&id=ch_missing"
+        }
+      ],
+      "unexpectedFailedResponses": [],
+      "pluginDistScripts": [],
+      "nativeRouteChunks": [
+        "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/admin/chunks/settings-payments-woopayments-money-movement.js?ver=ca255e3aa50c8a9506a5"
+      ],
+      "registry": {
+        "wpDataPresent": true,
+        "nativeSettingsStoreInHostRegistry": false
+      }
+    },
+    {
+      "id": "disputes",
+      "url": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fdisputes",
+      "title": "WooCommerce settings ‹ woocommerce — WordPress",
+      "matchedExpected": true,
+      "bodySnippet": "Skip to main content\nSkip to toolbar\n\n\nDashboard\nHome\nUpdates\n\n\nPosts\nAll Posts\nAdd Post\nCategories\nTags\n\n\nMedia\nLibrary\nAdd Media File\n\n\nPages\nAll Pages\nAdd Page\n\n\nComments\n\n\nWooCommerce\nHome 3\nOrders 176\nSubscriptions\nCustomers\nCoupons\nReports\nSettings\nStatus\nExtensions\n\n\nProducts\nAll Products\nAdd new product\nBrands\nCategories\nTags\nAttributes\nReviews\n\n\nPayments\n\n\nAnalytics\nOverview\nProducts\nRevenue\nOrders\nVariations\nCategories\nCoupons\nTaxes\nDownloads\nStock\nSettings\n\n\nMarketing\nOverview\nCoupons\n\n\nAppearance\nThemes\nEditor\nFonts\n\n\nPlugins\nInstalled Plugins\nAdd Plugin\n\n\nUsers\nAll Users\nAdd User\nProfile\n\n\nTools\nAvailable Tools\nImport\nExport\nSite Health 5\nExport Personal Data\nErase Personal Data\nWPCOM Local Helper\nScheduled Actions\nTheme File Editor\nPlugin File Editor\n\n\nSettings\nGeneral\nConnec",
+      "failedResponses": [],
+      "unexpectedFailedResponses": [],
+      "pluginDistScripts": [],
+      "nativeRouteChunks": [
+        "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/admin/chunks/settings-payments-woopayments-money-movement.js?ver=ca255e3aa50c8a9506a5"
+      ],
+      "registry": {
+        "wpDataPresent": true,
+        "nativeSettingsStoreInHostRegistry": false
+      }
+    },
+    {
+      "id": "dispute-challenge",
+      "url": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fdisputes%2Fchallenge&id=dp_missing",
+      "title": "WooCommerce settings ‹ woocommerce — WordPress",
+      "matchedExpected": true,
+      "bodySnippet": "Skip to main content\nSkip to toolbar\n\n\nDashboard\nHome\nUpdates\n\n\nPosts\nAll Posts\nAdd Post\nCategories\nTags\n\n\nMedia\nLibrary\nAdd Media File\n\n\nPages\nAll Pages\nAdd Page\n\n\nComments\n\n\nWooCommerce\nHome 3\nOrders 176\nSubscriptions\nCustomers\nCoupons\nReports\nSettings\nStatus\nExtensions\n\n\nProducts\nAll Products\nAdd new product\nBrands\nCategories\nTags\nAttributes\nReviews\n\n\nPayments\n\n\nAnalytics\nOverview\nProducts\nRevenue\nOrders\nVariations\nCategories\nCoupons\nTaxes\nDownloads\nStock\nSettings\n\n\nMarketing\nOverview\nCoupons\n\n\nAppearance\nThemes\nEditor\nFonts\n\n\nPlugins\nInstalled Plugins\nAdd Plugin\n\n\nUsers\nAll Users\nAdd User\nProfile\n\n\nTools\nAvailable Tools\nImport\nExport\nSite Health 5\nExport Personal Data\nErase Personal Data\nWPCOM Local Helper\nScheduled Actions\nTheme File Editor\nPlugin File Editor\n\n\nSettings\nGeneral\nConnec",
+      "failedResponses": [
+        {
+          "status": 404,
+          "url": "http://store8889.localhost:8889/wp-json/wc/v3/payments/disputes/dp_missing?_locale=user",
+          "route": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fdisputes%2Fchallenge&id=dp_missing"
+        }
+      ],
+      "unexpectedFailedResponses": [],
+      "pluginDistScripts": [],
+      "nativeRouteChunks": [
+        "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/admin/chunks/settings-payments-woopayments-money-movement.js?ver=ca255e3aa50c8a9506a5"
+      ],
+      "registry": {
+        "wpDataPresent": true,
+        "nativeSettingsStoreInHostRegistry": false
+      }
+    },
+    {
+      "id": "card-readers",
+      "url": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fcard-readers",
+      "title": "WooCommerce settings ‹ woocommerce — WordPress",
+      "matchedExpected": true,
+      "bodySnippet": "Skip to main content\nSkip to toolbar\n\n\nDashboard\nHome\nUpdates\n\n\nPosts\nAll Posts\nAdd Post\nCategories\nTags\n\n\nMedia\nLibrary\nAdd Media File\n\n\nPages\nAll Pages\nAdd Page\n\n\nComments\n\n\nWooCommerce\nHome 3\nOrders 176\nSubscriptions\nCustomers\nCoupons\nReports\nSettings\nStatus\nExtensions\n\n\nProducts\nAll Products\nAdd new product\nBrands\nCategories\nTags\nAttributes\nReviews\n\n\nPayments\n\n\nAnalytics\nOverview\nProducts\nRevenue\nOrders\nVariations\nCategories\nCoupons\nTaxes\nDownloads\nStock\nSettings\n\n\nMarketing\nOverview\nCoupons\n\n\nAppearance\nThemes\nEditor\nFonts\n\n\nPlugins\nInstalled Plugins\nAdd Plugin\n\n\nUsers\nAll Users\nAdd User\nProfile\n\n\nTools\nAvailable Tools\nImport\nExport\nSite Health 5\nExport Personal Data\nErase Personal Data\nWPCOM Local Helper\nScheduled Actions\nTheme File Editor\nPlugin File Editor\n\n\nSettings\nGeneral\nConnec",
+      "failedResponses": [],
+      "unexpectedFailedResponses": [],
+      "pluginDistScripts": [],
+      "nativeRouteChunks": [
+        "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/admin/chunks/settings-payments-woopayments-card-readers.js?ver=db912f5c97b864aea093"
+      ],
+      "registry": {
+        "wpDataPresent": true,
+        "nativeSettingsStoreInHostRegistry": false
+      }
+    },
+    {
+      "id": "capital",
+      "url": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Floans",
+      "title": "WooCommerce settings ‹ woocommerce — WordPress",
+      "matchedExpected": true,
+      "bodySnippet": "Skip to main content\nSkip to toolbar\n\n\nDashboard\nHome\nUpdates\n\n\nPosts\nAll Posts\nAdd Post\nCategories\nTags\n\n\nMedia\nLibrary\nAdd Media File\n\n\nPages\nAll Pages\nAdd Page\n\n\nComments\n\n\nWooCommerce\nHome 3\nOrders 176\nSubscriptions\nCustomers\nCoupons\nReports\nSettings\nStatus\nExtensions\n\n\nProducts\nAll Products\nAdd new product\nBrands\nCategories\nTags\nAttributes\nReviews\n\n\nPayments\n\n\nAnalytics\nOverview\nProducts\nRevenue\nOrders\nVariations\nCategories\nCoupons\nTaxes\nDownloads\nStock\nSettings\n\n\nMarketing\nOverview\nCoupons\n\n\nAppearance\nThemes\nEditor\nFonts\n\n\nPlugins\nInstalled Plugins\nAdd Plugin\n\n\nUsers\nAll Users\nAdd User\nProfile\n\n\nTools\nAvailable Tools\nImport\nExport\nSite Health 5\nExport Personal Data\nErase Personal Data\nWPCOM Local Helper\nScheduled Actions\nTheme File Editor\nPlugin File Editor\n\n\nSettings\nGeneral\nConnec",
+      "failedResponses": [],
+      "unexpectedFailedResponses": [],
+      "pluginDistScripts": [],
+      "nativeRouteChunks": [
+        "http://store8889.localhost:8889/wp-content/plugins/woocommerce/assets/client/admin/chunks/settings-payments-woopayments-capital.js?ver=35125b41957d0e1b83ed"
+      ],
+      "registry": {
+        "wpDataPresent": true,
+        "nativeSettingsStoreInHostRegistry": false
+      }
+    }
+  ],
+  "console": [
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+      "url": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fpayouts%2Fdetails&id=po_missing"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
+      "url": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions%2Fdetails&id=txn_missing"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
+      "url": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions%2Fdetails&id=pi_missing"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
+      "url": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions%2Fdetails&id=ch_missing"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
+      "url": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fdisputes%2Fchallenge&id=dp_missing"
+    }
+  ],
+  "failedResponses": [
+    {
+      "status": 500,
+      "url": "http://store8889.localhost:8889/wp-json/wc/v3/payments/deposits/po_missing?_locale=user",
+      "route": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fpayouts%2Fdetails&id=po_missing"
+    },
+    {
+      "status": 404,
+      "url": "http://store8889.localhost:8889/wp-json/wc/v3/payments/transactions/txn_missing?_locale=user",
+      "route": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions%2Fdetails&id=txn_missing"
+    },
+    {
+      "status": 404,
+      "url": "http://store8889.localhost:8889/wp-json/wc/v3/payments/payment_intents/pi_missing?_locale=user",
+      "route": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions%2Fdetails&id=pi_missing"
+    },
+    {
+      "status": 404,
+      "url": "http://store8889.localhost:8889/wp-json/wc/v3/payments/charges/ch_missing?_locale=user",
+      "route": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions%2Fdetails&id=ch_missing"
+    },
+    {
+      "status": 404,
+      "url": "http://store8889.localhost:8889/wp-json/wc/v3/payments/disputes/dp_missing?_locale=user",
+      "route": "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fdisputes%2Fchallenge&id=dp_missing"
+    }
+  ],
+  "unexpectedFailedResponses": []
+}

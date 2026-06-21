@@ -1,0 +1,34 @@
+{
+  "assets": {
+    "blocks-express-checkout.css": {
+      "allow_new": true
+    },
+    "blocks-express-checkout.js": {
+      "allow_new": true
+    },
+    "classic-card.css": {
+      "gzip_growth_bytes": 64,
+      "raw_growth_bytes": 256,
+      "_reason": "Core native classic card CSS now includes the server-rendered +N card-brand count badge styling; measured delta after trimming unused popover rules is +120 raw/+23 gzip bytes."
+    },
+    "multi-currency-admin.css": {
+      "allow_missing": true
+    },
+    "multi-currency-analytics.js": {
+      "allow_missing": true
+    },
+    "multi-currency-setup.css": {
+      "allow_missing": true
+    },
+    "multi-currency-switcher-block.js": {
+      "allow_missing": true
+    },
+    "settings-main.css": {
+      "allow_missing": true
+    },
+    "woopay-direct-checkout.js": {
+      "gzip_growth_bytes": 1024,
+      "raw_growth_bytes": 2048
+    }
+  }
+}

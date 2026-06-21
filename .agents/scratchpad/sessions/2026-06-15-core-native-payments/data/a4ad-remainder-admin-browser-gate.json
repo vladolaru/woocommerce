@@ -1,0 +1,64 @@
+{
+  "gate": "a4ad-remainder-admin-browser-gate",
+  "gateSlug": "a4ad-remainder",
+  "status": "complete",
+  "startedAt": "2026-06-19T23:45:51.297Z",
+  "lastUpdatedAt": "2026-06-19T23:45:59.457Z",
+  "surfaces": [
+    "capital"
+  ],
+  "viewports": [
+    "mobile"
+  ],
+  "stores": [
+    "reference"
+  ],
+  "results": [
+    {
+      "store": "reference",
+      "surface": "capital",
+      "viewport": "mobile",
+      "requestedUrl": "http://localhost:8082/wp-admin/admin.php?page=wc-admin&path=%2Fpayments%2Floans",
+      "finalUrl": "http://localhost:8082/wp-admin/admin.php?page=wc-admin&path=%2Fpayments%2Floans",
+      "expectedTokens": [
+        "Capital Loans"
+      ],
+      "missingTokens": [
+        "Capital Loans"
+      ],
+      "unmetRequiredTokens": [],
+      "unavailableTokenMissing": false,
+      "strictTokens": false,
+      "referenceOptional": "Reference capital route is account/feature gated in this local account.",
+      "routeAvailability": null,
+      "targetSurfaceAvailable": true,
+      "failedResponses": [],
+      "ignoredFailedResponses": [],
+      "consoleIssues": [],
+      "ignoredConsoleIssues": [
+        {
+          "type": "warning",
+          "text": "The `useSelect` hook returns different values when called with the same state and parameters.\nThis can lead to unnecessary re-renders and performance issues if not fixed.\n\nNon-equal value keys: %s\n\n previewSiteBtnTrackData Error Component Stack\n    at ae (http://localhost:8082/wp-content/plugins/woocommerce/assets/client/admin/app/index.js?ver=1780388033:2:168036)\n    at Slot (http://localhost:8082/wp-includes/js/dist/components.js?ver=5dedfe13f08880193a28:28316:7)\n    at http://localhost:8082/wp-includes/js/dist/components.js?ver=5dedfe13f08880193a28:28527:7\n    at http://localhost:8082/wp-content/plugins/woocommerce/assets/client/admin/admin-layout/index.js?ver=1780388033:2:2006\n    at div (<anonymous>)\n    at div (<anonymous>)\n    at Be (http://localhost:8082/wp-content/plugins/woocommerce/assets/client/admin/app/index.js?ver=1780388033:2:181776)\n    at Qe (http://localhost:8082/wp-content/plugins/woocommerce/assets/client/admin/app/index.js?ver=1780388033:2:183252)\n    at div (<anonymous>)\n    at SlotFillProvider (http://localhost:8082/wp-includes/js/dist/components.js?ver=5dedfe13f08880193a28:28475:5)\n    at Provider (http://localhost:8082/wp-includes/js/dist/components.js?ver=5dedfe13f08880193a28:28542:5)\n    at w (http://localhost:8082/wp-content/plugins/woocommerce/assets/client/admin/admin-layout/index.js?ver=1780388033:2:2770)\n    at Pn (http://localhost:8082/wp-content/plugins/woocommerce/assets/client/admin/app/index.js?ver=1780388033:2:238908)\n    at O (http://localhost:8082/wp-content/plugins/woocommerce/assets/client/admin/app/index.js?ver=1780388033:2:145276)\n    at P (http://localhost:8082/wp-content/plugins/woocommerce/assets/client/admin/app/index.js?ver=1780388033:2:144721)\n    at a (http://localhost:8082/wp-content/plugins/woocommerce/assets/client/admin/app/index.js?ver=1780388033:2:139275)\n    at http://localhost:8082/wp-content/plugins/woocommerce/assets/client/admin/app/index.js?ver=1780388033:2:241535\n    at http://localhost:8082/wp-content/plugins/woocommerce/assets/client/admin/data/index.js?ver=1780388033:2:160290\n    at http://localhost:8082/wp-content/plugins/woocommerce/assets/client/admin/data/index.js?ver=1780388033:2:161343\n    at http://localhost:8082/wp-content/plugins/woocommerce/assets/client/admin/data/index.js?ver=1780388033:2:158242\n    at http://localhost:8082/wp-content/plugins/woocommerce/assets/client/admin/data/index.js?ver=1780388033:2:158242\n    at http://localhost:8082/wp-content/plugins/woocommerce/assets/client/admin/data/index.js?ver=1780388033:2:159435\n    at zn (http://localhost:8082/wp-content/plugins/woocommerce/assets/client/admin/app/index.js?ver=1780388033:2:245980)"
+        },
+        {
+          "type": "warning",
+          "text": "The `useSelect` hook returns different values when called with the same state and parameters.\nThis can lead to unnecessary re-renders and performance issues if not fixed.\n\nNon-equal value keys: %s\n\n alerts Error Component Stack\n    at B (http://localhost:8082/wp-content/plugins/woocommerce/assets/client/admin/chunks/store-alerts.js?ver=b9974ca33b45fd8b979c:1:2208)\n    at Suspense (<anonymous>)\n    at div (<anonymous>)\n    at ye (http://localhost:8082/wp-content/plugins/woocommerce/assets/client/admin/app/index.js?ver=1780388033:2:176524)\n    at div (<anonymous>)\n    at SlotFillProvider (http://localhost:8082/wp-includes/js/dist/components.js?ver=5dedfe13f08880193a28:28475:5)\n    at Provider (http://localhost:8082/wp-includes/js/dist/components.js?ver=5dedfe13f08880193a28:28542:5)\n    at w (http://localhost:8082/wp-content/plugins/woocommerce/assets/client/admin/admin-layout/index.js?ver=1780388033:2:2770)\n    at Pn (http://localhost:8082/wp-content/plugins/woocommerce/assets/client/admin/app/index.js?ver=1780388033:2:238908)\n    at O (http://localhost:8082/wp-content/plugins/woocommerce/assets/client/admin/app/index.js?ver=1780388033:2:145276)\n    at P (http://localhost:8082/wp-content/plugins/woocommerce/assets/client/admin/app/index.js?ver=1780388033:2:144721)\n    at a (http://localhost:8082/wp-content/plugins/woocommerce/assets/client/admin/app/index.js?ver=1780388033:2:139275)\n    at http://localhost:8082/wp-content/plugins/woocommerce/assets/client/admin/app/index.js?ver=1780388033:2:241535\n    at http://localhost:8082/wp-content/plugins/woocommerce/assets/client/admin/data/index.js?ver=1780388033:2:160290\n    at http://localhost:8082/wp-content/plugins/woocommerce/assets/client/admin/data/index.js?ver=1780388033:2:161343\n    at http://localhost:8082/wp-content/plugins/woocommerce/assets/client/admin/data/index.js?ver=1780388033:2:158242\n    at http://localhost:8082/wp-content/plugins/woocommerce/assets/client/admin/data/index.js?ver=1780388033:2:158242\n    at http://localhost:8082/wp-content/plugins/woocommerce/assets/client/admin/data/index.js?ver=1780388033:2:159435\n    at zn (http://localhost:8082/wp-content/plugins/woocommerce/assets/client/admin/app/index.js?ver=1780388033:2:245980)"
+        }
+      ],
+      "scripts": [
+        "http://localhost:8082/wp-content/plugins/woocommerce-payments/dist/multi-currency-analytics.js?ver=1781894819"
+      ],
+      "resources": [
+        "http://localhost:8082/wp-content/plugins/woocommerce-payments/dist/blocks-checkout.css?ver=1781894819",
+        "http://localhost:8082/wp-content/plugins/woocommerce-payments/dist/multi-currency-analytics.js?ver=1781894819"
+      ],
+      "expectedTargetAssets": [],
+      "missingTargetAssets": [],
+      "forbiddenTargetAssets": [],
+      "targetAssetNote": null,
+      "screenshotPath": "/Users/vladolaru/Work/a8c/woocommerce-develop-2/.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/a4ad-remainder/reference-capital-mobile.png",
+      "passed": true
+    }
+  ],
+  "failures": []
+}
