@@ -24,9 +24,11 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_tax_based_on' );
 		delete_option( 'woocommerce_calc_taxes' );
 		unset( $_GET['pay_for_order'], $_GET['key'] );
-			remove_all_filters( 'woocommerce_native_woopayments_express_checkout_enabled_methods' );
-			remove_all_filters( 'wcpay_payment_request_supported_types' );
-			remove_all_filters( 'woocommerce_is_product' );
+		remove_all_filters( 'woocommerce_native_woopayments_express_checkout_enabled_methods' );
+		remove_all_filters( 'wcpay_payment_request_supported_types' );
+		remove_all_filters( 'woocommerce_is_checkout' );
+		remove_all_filters( 'woocommerce_is_cart' );
+		remove_all_filters( 'woocommerce_is_product' );
 		$this->set_order_pay_query_var( 0 );
 		wp_reset_postdata();
 		parent::tearDown();
@@ -78,6 +80,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	public function test_builds_product_page_express_checkout_params(): void {
 		update_option( 'woocommerce_default_country', 'US:CA' );
 		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'woocommerce_calc_taxes', 'no' );
 		$product = \WC_Helper_Product::create_simple_product(
 			true,
 			array(
@@ -642,6 +645,10 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	 * @param \WC_Product $product Product object.
 	 */
 	private function set_current_product( \WC_Product $product ): void {
+		remove_all_filters( 'woocommerce_is_checkout' );
+		remove_all_filters( 'woocommerce_is_cart' );
+		remove_all_filters( 'woocommerce_is_product' );
+
 		global $post;
 
 		$post               = get_post( $product->get_id() ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited

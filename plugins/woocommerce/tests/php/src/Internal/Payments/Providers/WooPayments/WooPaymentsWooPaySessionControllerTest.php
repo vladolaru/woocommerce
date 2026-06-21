@@ -40,6 +40,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 			remove_filter( 'wcpay_metadata_from_order', array( $this->sut, 'maybe_add_woopay_user_metadata' ) );
 		}
 
+		delete_option( 'woocommerce_checkout_page_id' );
 		wc_clear_notices();
 		remove_all_filters( 'wcpay_woopay_is_signed_with_blog_token' );
 		remove_all_filters( 'woocommerce_is_checkout' );
@@ -536,24 +537,34 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * Set the current request to a product page.
 	 */
 	private function set_current_product(): void {
+		remove_all_filters( 'woocommerce_is_checkout' );
+		remove_all_filters( 'woocommerce_is_cart' );
+		remove_all_filters( 'woocommerce_is_product' );
+
 		$product = \WC_Helper_Product::create_simple_product( true );
 		$this->go_to( get_permalink( $product->get_id() ) );
 		$GLOBALS['product'] = $product;
+		add_filter( 'woocommerce_is_product', '__return_true' );
 	}
 
 	/**
 	 * Set the current request to a classic checkout shortcode page.
 	 */
 	private function set_checkout_shortcode_page(): void {
-		$this->set_current_page_with_content( '[woocommerce_checkout]' );
+		remove_all_filters( 'woocommerce_is_checkout' );
+		remove_all_filters( 'woocommerce_is_cart' );
+		remove_all_filters( 'woocommerce_is_product' );
+
+		update_option( 'woocommerce_checkout_page_id', $this->set_current_page_with_content( '[woocommerce_checkout]' ) );
 	}
 
 	/**
 	 * Set the current request to a page containing the given content.
 	 *
 	 * @param string $content Page content.
+	 * @return int
 	 */
-	private function set_current_page_with_content( string $content ): void {
+	private function set_current_page_with_content( string $content ): int {
 		$page_id = self::factory()->post->create(
 			array(
 				'post_type'    => 'page',
@@ -566,6 +577,8 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->go_to( get_permalink( $page_id ) );
 		$post = get_post( $page_id ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
 		setup_postdata( $post );
+
+		return $page_id;
 	}
 
 	/**

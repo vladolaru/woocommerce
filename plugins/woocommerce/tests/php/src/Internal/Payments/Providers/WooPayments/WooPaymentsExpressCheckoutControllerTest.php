@@ -31,6 +31,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 			remove_filter( 'wcpay_tracks_event_properties', array( $this->sut, 'add_tracking_event_properties' ) );
 		}
 
+		delete_option( 'woocommerce_checkout_page_id' );
 		remove_all_filters( 'woocommerce_is_checkout' );
 		remove_all_filters( 'woocommerce_is_cart' );
 		remove_all_filters( 'woocommerce_is_product' );
@@ -339,24 +340,37 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	 * Set the current request to a classic checkout shortcode page.
 	 */
 	private function set_checkout_shortcode_page(): void {
-		$this->set_current_page_with_content( '[woocommerce_checkout]' );
+		remove_all_filters( 'woocommerce_is_checkout' );
+		remove_all_filters( 'woocommerce_is_cart' );
+		remove_all_filters( 'woocommerce_is_product' );
+
+		update_option( 'woocommerce_checkout_page_id', $this->set_current_page_with_content( '[woocommerce_checkout]' ) );
 	}
 
 	/**
 	 * Set the current request to a product page.
 	 */
 	private function set_current_product(): void {
+		remove_all_filters( 'woocommerce_is_checkout' );
+		remove_all_filters( 'woocommerce_is_cart' );
+		remove_all_filters( 'woocommerce_is_product' );
+
 		$product = \WC_Helper_Product::create_simple_product( true );
-		$this->set_current_page_with_content( '[product_page id="' . $product->get_id() . '"]' );
+		global $post;
+		$post               = get_post( $product->get_id() ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
 		$GLOBALS['product'] = $product;
+		$this->go_to( get_permalink( $product->get_id() ) );
+		setup_postdata( $post );
+		add_filter( 'woocommerce_is_product', '__return_true' );
 	}
 
 	/**
 	 * Set the current request to a page containing the given content.
 	 *
 	 * @param string $content Page content.
+	 * @return int
 	 */
-	private function set_current_page_with_content( string $content ): void {
+	private function set_current_page_with_content( string $content ): int {
 		$page_id = self::factory()->post->create(
 			array(
 				'post_type'    => 'page',
@@ -369,5 +383,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 		$this->go_to( get_permalink( $page_id ) );
 		$post = get_post( $page_id ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
 		setup_postdata( $post );
+
+		return $page_id;
 	}
 }
