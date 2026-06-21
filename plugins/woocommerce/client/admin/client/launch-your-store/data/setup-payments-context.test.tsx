@@ -97,12 +97,12 @@ describe( 'SetUpPaymentsProvider', () => {
 			</SetUpPaymentsProvider>
 		);
 
-		expect( screen.getByTestId( 'is-active' ) ).toHaveTextContent(
-			'true'
-		);
+		expect( screen.getByTestId( 'is-active' ) ).toHaveTextContent( 'true' );
 		expect( screen.getByTestId( 'is-installed' ) ).toHaveTextContent(
 			'true'
 		);
-		expect( screen.getByTestId( 'onboarding-provider' ) ).toBeInTheDocument();
+		expect(
+			screen.getByTestId( 'onboarding-provider' )
+		).toBeInTheDocument();
 	} );
 } );

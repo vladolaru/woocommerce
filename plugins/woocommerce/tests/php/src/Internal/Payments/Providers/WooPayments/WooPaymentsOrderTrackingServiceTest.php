@@ -409,22 +409,22 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Create an order-tracking service.
 	 *
-	 * @param NativePaymentsRuntimeArbiter      $arbiter         Runtime arbiter.
-	 * @param WooPaymentsActionSchedulerService $scheduler       Scheduler service.
-	 * @param WooPaymentsApiClient|null         $api_client      API client.
-	 * @param WooPaymentsAccountService|null    $account_service Account service.
+	 * @param NativePaymentsRuntimeArbiter           $arbiter         Runtime arbiter.
+	 * @param WooPaymentsActionSchedulerService|null $scheduler       Scheduler service.
+	 * @param WooPaymentsApiClient|null              $api_client      API client.
+	 * @param WooPaymentsAccountService|null         $account_service Account service.
 	 * @return WooPaymentsOrderTrackingService
 	 */
 	private function create_service(
 		NativePaymentsRuntimeArbiter $arbiter,
-		WooPaymentsActionSchedulerService $scheduler = new RecordingActionSchedulerService(),
+		?WooPaymentsActionSchedulerService $scheduler = null,
 		?WooPaymentsApiClient $api_client = null,
 		?WooPaymentsAccountService $account_service = null
 	): WooPaymentsOrderTrackingService {
 		$service = new WooPaymentsOrderTrackingService();
 		$service->init(
 			$arbiter,
-			$scheduler,
+			$scheduler ?? new RecordingActionSchedulerService(),
 			$api_client ?? $this->create_api_client(),
 			$account_service ?? $this->create_account_service( true )
 		);

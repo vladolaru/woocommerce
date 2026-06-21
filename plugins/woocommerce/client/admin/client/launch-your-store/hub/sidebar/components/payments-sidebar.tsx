@@ -140,32 +140,40 @@ export const PaymentsSidebar = ( props: SidebarComponentProps ) => {
 		isStepComplete,
 	}: {
 		isStepComplete: boolean;
-	} ) => (
-		<SidebarNavigationItem
-			key="install-woopayments"
-			className={ clsx( 'install-woopayments', {
-				active: isStepComplete,
-				'payment-step': true,
-				'payment-step--active': isStepComplete,
-				'payment-step--disabled': isStepComplete,
-				'is-complete': isStepComplete,
-			} ) }
-			icon={
-				isStepComplete ? taskCompleteIcon : taskIcons.activePaymentStep
-			}
-			disabled={ true }
-			showChevron={ false }
-		>
-			{ isWooPaymentsActive
-				? /* translators: %s: WooPayments */
-				  sprintf( __( 'Set up %s', 'woocommerce' ), 'WooPayments' )
-				: payments_task?.additionalData?.wooPaymentsIsInstalled
-				? /* translators: %s: WooPayments */
-				  sprintf( __( 'Enable %s', 'woocommerce' ), 'WooPayments' )
-				: /* translators: %s: WooPayments */
-				  sprintf( __( 'Install %s', 'woocommerce' ), 'WooPayments' ) }
-		</SidebarNavigationItem>
-	);
+	} ) => {
+		/* translators: %s: WooPayments */
+		let label = sprintf( __( 'Install %s', 'woocommerce' ), 'WooPayments' );
+
+		if ( isWooPaymentsActive ) {
+			/* translators: %s: WooPayments */
+			label = sprintf( __( 'Set up %s', 'woocommerce' ), 'WooPayments' );
+		} else if ( payments_task?.additionalData?.wooPaymentsIsInstalled ) {
+			/* translators: %s: WooPayments */
+			label = sprintf( __( 'Enable %s', 'woocommerce' ), 'WooPayments' );
+		}
+
+		return (
+			<SidebarNavigationItem
+				key="install-woopayments"
+				className={ clsx( 'install-woopayments', {
+					active: isStepComplete,
+					'payment-step': true,
+					'payment-step--active': isStepComplete,
+					'payment-step--disabled': isStepComplete,
+					'is-complete': isStepComplete,
+				} ) }
+				icon={
+					isStepComplete
+						? taskCompleteIcon
+						: taskIcons.activePaymentStep
+				}
+				disabled={ true }
+				showChevron={ false }
+			>
+				{ label }
+			</SidebarNavigationItem>
+		);
+	};
 
 	return (
 		<div

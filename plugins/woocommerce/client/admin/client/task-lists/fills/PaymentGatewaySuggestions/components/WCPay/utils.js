@@ -1,9 +1,7 @@
 const WCPAY_NATIVE_ONBOARDING_PATH =
 	'admin.php?page=wc-settings&tab=checkout&path=/woopayments/onboarding';
 
-export function getWcpayNativeOnboardingUrl(
-	from = 'WCADMIN_PAYMENT_TASK'
-) {
+export function getWcpayNativeOnboardingUrl( from = 'WCADMIN_PAYMENT_TASK' ) {
 	return `${ WCPAY_NATIVE_ONBOARDING_PATH }&from=${ encodeURIComponent(
 		from
 	) }`;
@@ -13,11 +11,7 @@ export function connectWcpay() {
 	window.location.href = getWcpayNativeOnboardingUrl();
 }
 
-export function installActivateAndConnectWcpay(
-	_reject,
-	_createNotice,
-	_installAndActivatePlugins
-) {
+export function installActivateAndConnectWcpay() {
 	connectWcpay();
 }
 

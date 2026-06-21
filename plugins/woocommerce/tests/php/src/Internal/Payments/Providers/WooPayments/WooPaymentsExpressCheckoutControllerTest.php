@@ -35,10 +35,10 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'woocommerce_is_cart' );
 		remove_all_filters( 'woocommerce_is_product' );
 		$this->set_order_pay_query_var( 0 );
-			wp_dequeue_script( 'wc-woopayments-express-checkout' );
-			wp_dequeue_style( 'wc-woopayments-express-checkout' );
-			wp_dequeue_script( 'wp-hooks' );
-			wp_deregister_script( 'wc-woopayments-express-checkout' );
+		wp_dequeue_script( 'wc-woopayments-express-checkout' );
+		wp_dequeue_style( 'wc-woopayments-express-checkout' );
+		wp_dequeue_script( 'wp-hooks' );
+		wp_deregister_script( 'wc-woopayments-express-checkout' );
 		wp_deregister_style( 'wc-woopayments-express-checkout' );
 		wp_deregister_script( 'stripe' );
 		wp_reset_postdata();
@@ -92,7 +92,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_enqueue_frontend_assets_loads_separate_express_checkout_bundle(): void {
 		$this->sut = $this->create_controller( true, true );
-		add_filter( 'woocommerce_is_checkout', '__return_true' );
+		$this->set_checkout_shortcode_page();
 
 		$this->sut->enqueue_frontend_assets();
 
@@ -136,8 +136,8 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	public function test_enqueue_frontend_assets_loads_on_order_pay_page(): void {
 		$service   = new RecordingExpressCheckoutService();
 		$this->sut = $this->create_controller( true, true, $service );
+		$this->set_checkout_shortcode_page();
 		$this->set_order_pay_query_var( 123 );
-		add_filter( 'woocommerce_is_checkout', '__return_true' );
 
 		$this->sut->enqueue_frontend_assets();
 
@@ -197,7 +197,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_display_express_checkout_buttons_renders_ece_container(): void {
 		$this->sut = $this->create_controller( true, true );
-		add_filter( 'woocommerce_is_checkout', '__return_true' );
+		$this->set_checkout_shortcode_page();
 
 		ob_start();
 		$this->sut->display_express_checkout_buttons();
@@ -214,8 +214,8 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	public function test_display_express_checkout_buttons_renders_on_order_pay_page(): void {
 		$service   = new RecordingExpressCheckoutService();
 		$this->sut = $this->create_controller( true, true, $service );
+		$this->set_checkout_shortcode_page();
 		$this->set_order_pay_query_var( 123 );
-		add_filter( 'woocommerce_is_checkout', '__return_true' );
 
 		ob_start();
 		$this->sut->display_express_checkout_buttons();
@@ -248,7 +248,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_display_express_checkout_buttons_renders_nothing_when_payment_request_is_disabled(): void {
 		$this->sut = $this->create_controller( true, false );
-		add_filter( 'woocommerce_is_checkout', '__return_true' );
+		$this->set_checkout_shortcode_page();
 
 		ob_start();
 		$this->sut->display_express_checkout_buttons();
@@ -336,11 +336,38 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Set the current request to a classic checkout shortcode page.
+	 */
+	private function set_checkout_shortcode_page(): void {
+		$this->set_current_page_with_content( '[woocommerce_checkout]' );
+	}
+
+	/**
 	 * Set the current request to a product page.
 	 */
 	private function set_current_product(): void {
 		$product = \WC_Helper_Product::create_simple_product( true );
-		$this->go_to( get_permalink( $product->get_id() ) );
+		$this->set_current_page_with_content( '[product_page id="' . $product->get_id() . '"]' );
 		$GLOBALS['product'] = $product;
+	}
+
+	/**
+	 * Set the current request to a page containing the given content.
+	 *
+	 * @param string $content Page content.
+	 */
+	private function set_current_page_with_content( string $content ): void {
+		$page_id = self::factory()->post->create(
+			array(
+				'post_type'    => 'page',
+				'post_status'  => 'publish',
+				'post_content' => $content,
+			)
+		);
+
+		global $post;
+		$this->go_to( get_permalink( $page_id ) );
+		$post = get_post( $page_id ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
+		setup_postdata( $post );
 	}
 }

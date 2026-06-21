@@ -7,6 +7,7 @@ describe( 'WooPayments express checkout', () => {
 	let elements;
 	let expressElement;
 	let expressHandlers;
+	let originalFetch;
 	let stripe;
 
 	async function flushPromises() {
@@ -179,6 +180,7 @@ describe( 'WooPayments express checkout', () => {
 			apiFetch: jest.fn().mockResolvedValue( getCartResponse() ),
 		};
 		window.wcpayExpressCheckoutParams = getBaseConfig();
+		originalFetch = window.fetch;
 		expressElement = {
 			mount: jest.fn(),
 			on: jest.fn( ( eventName, handler ) => {
@@ -209,7 +211,7 @@ describe( 'WooPayments express checkout', () => {
 		delete window.$;
 		delete window.wp;
 		delete window.Stripe;
-		delete window.fetch;
+		window.fetch = originalFetch;
 		delete window.wcpayExpressCheckoutParams;
 		document.body.innerHTML = '';
 	} );

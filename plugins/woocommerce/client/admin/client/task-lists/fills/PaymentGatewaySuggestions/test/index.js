@@ -478,19 +478,13 @@ describe( 'PaymentGatewaySuggestions', () => {
 			container.querySelector( '.woocommerce-wcpay-suggestion button' )
 		);
 
-		await waitFor( () => {
-			expect( mockLocation.href ).toContain( 'page=wc-settings' );
-			expect( mockLocation.href ).toContain( 'tab=checkout' );
-			expect( mockLocation.href ).toContain(
-				'path=/woopayments/onboarding'
-			);
-			expect( mockLocation.href ).toContain(
-				'from=WCADMIN_PAYMENT_TASK'
-			);
-			expect( mockLocation.href ).not.toContain(
-				'/plugins/connect-wcpay'
-			);
-		} );
+		await waitFor( () =>
+			expect( mockLocation.href ).toContain( 'page=wc-settings' )
+		);
+		expect( mockLocation.href ).toContain( 'tab=checkout' );
+		expect( mockLocation.href ).toContain( 'path=/woopayments/onboarding' );
+		expect( mockLocation.href ).toContain( 'from=WCADMIN_PAYMENT_TASK' );
+		expect( mockLocation.href ).not.toContain( '/plugins/connect-wcpay' );
 	} );
 
 	test( 'should keep WooPayments setup action when native provider is enabled but needs onboarding', async () => {
@@ -536,12 +530,10 @@ describe( 'PaymentGatewaySuggestions', () => {
 
 		fireEvent.click( button );
 
-		await waitFor( () => {
-			expect( mockLocation.href ).toContain( 'page=wc-settings' );
-			expect( mockLocation.href ).toContain(
-				'path=/woopayments/onboarding'
-			);
-		} );
+		await waitFor( () =>
+			expect( mockLocation.href ).toContain( 'page=wc-settings' )
+		);
+		expect( mockLocation.href ).toContain( 'path=/woopayments/onboarding' );
 	} );
 
 	test( 'should navigate to the marketplace when clicking the WooCommerce Marketplace link', async () => {

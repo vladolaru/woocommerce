@@ -710,14 +710,11 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 				'limit'          => 1,
 				'return'         => 'ids',
 				'status'         => array( 'wc-completed', 'wc-processing' ),
-				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
-				'meta_query'     => array(
-					array(
-						'key'     => '_wcpay_mode',
-						'value'   => array( 'production', 'prod', 'live' ),
-						'compare' => 'IN',
-					),
-				),
+				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
+				'meta_key'       => '_wcpay_mode',
+				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
+				'meta_value'     => array( 'production', 'prod', 'live' ),
+				'meta_compare'   => 'IN',
 			)
 		);
 

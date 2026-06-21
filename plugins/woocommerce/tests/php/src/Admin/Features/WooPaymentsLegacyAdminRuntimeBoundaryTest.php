@@ -218,7 +218,7 @@ class WooPaymentsLegacyAdminRuntimeBoundaryTest extends WC_Unit_Test_Case {
 		$old_name_source_files = array(
 			'client/admin/client/settings-payments/index.tsx',
 			'client/admin/client/settings-payments/settings-payments-woopayments.tsx',
-			'client/admin/client/settings-payments/settings-payments-woopayments.scss',
+			'client/admin/client/settings-payments/settings-payments-main.scss',
 		);
 
 		foreach ( $old_name_source_files as $source_file ) {

@@ -136,7 +136,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$service->should_show_woopay_button = false;
 		$this->sut                          = $this->create_controller( true, true, $service );
 
-		add_filter( 'woocommerce_is_checkout', '__return_true' );
+		$this->set_checkout_shortcode_page();
 
 		$this->sut->enqueue_frontend_assets();
 
@@ -177,7 +177,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function test_display_express_checkout_buttons_renders_separator_on_checkout(): void {
 		$this->sut = $this->create_controller( true, true );
-		add_filter( 'woocommerce_is_checkout', '__return_true' );
+		$this->set_checkout_shortcode_page();
 
 		ob_start();
 		$this->sut->display_express_checkout_buttons();
@@ -539,6 +539,33 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$product = \WC_Helper_Product::create_simple_product( true );
 		$this->go_to( get_permalink( $product->get_id() ) );
 		$GLOBALS['product'] = $product;
+	}
+
+	/**
+	 * Set the current request to a classic checkout shortcode page.
+	 */
+	private function set_checkout_shortcode_page(): void {
+		$this->set_current_page_with_content( '[woocommerce_checkout]' );
+	}
+
+	/**
+	 * Set the current request to a page containing the given content.
+	 *
+	 * @param string $content Page content.
+	 */
+	private function set_current_page_with_content( string $content ): void {
+		$page_id = self::factory()->post->create(
+			array(
+				'post_type'    => 'page',
+				'post_status'  => 'publish',
+				'post_content' => $content,
+			)
+		);
+
+		global $post;
+		$this->go_to( get_permalink( $page_id ) );
+		$post = get_post( $page_id ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
+		setup_postdata( $post );
 	}
 
 	/**

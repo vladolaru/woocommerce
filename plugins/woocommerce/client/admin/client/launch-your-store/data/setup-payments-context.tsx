@@ -67,8 +67,7 @@ export const SetUpPaymentsProvider: React.FC< {
 				( wooPaymentsProvider?.plugin?.slug === 'woocommerce' ||
 					wooPaymentsProvider?.onboarding?.type ===
 						'native_in_context' ||
-					!! wooPaymentsProvider?.onboarding?._links?.onboard
-						?.href );
+					!! wooPaymentsProvider?.onboarding?._links?.onboard?.href );
 
 			return {
 				wooPaymentsPluginSlug: resolvedSlug ?? wooPaymentsExtensionSlug,
