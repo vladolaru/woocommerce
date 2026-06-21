@@ -45604,12 +45604,6 @@ parameters:
 			path: src/Admin/Features/OnboardingTasks/DeprecatedExtendedTask.php
 
 		-
-			message: '#^Cannot call method is_connected\(\) on class\-string\|object\.$#'
-			identifier: method.nonObject
-			count: 1
-			path: src/Admin/Features/OnboardingTasks/Init.php
-
-		-
 			message: '#^Method Automattic\\WooCommerce\\Admin\\Features\\OnboardingTasks\\Init\:\:get_instance\(\) has no return type specified\.$#'
 			identifier: missingType.return
 			count: 1
@@ -55199,12 +55193,6 @@ parameters:
 
 		-
 			message: '#^Method Automattic\\WooCommerce\\Internal\\Admin\\Events\:\:possibly_add_notes\(\) has no return type specified\.$#'
-			identifier: missingType.return
-			count: 1
-			path: src/Internal/Admin/Events.php
-
-		-
-			message: '#^Method Automattic\\WooCommerce\\Internal\\Admin\\Events\:\:possibly_delete_notes\(\) has no return type specified\.$#'
 			identifier: missingType.return
 			count: 1
 			path: src/Internal/Admin/Events.php
