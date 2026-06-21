@@ -110,6 +110,12 @@ class WooPaymentsOrderTrackingService implements RegisterHooksInterface {
 		add_action( 'woocommerce_update_order', array( $this, 'handle_woocommerce_update_order' ), 10, 2 );
 		add_action( self::TRACK_NEW_ORDER_ACTION, array( $this, 'handle_wcpay_track_new_order' ), 10, 1 );
 		add_action( self::TRACK_UPDATE_ORDER_ACTION, array( $this, 'handle_wcpay_track_update_order' ), 10, 1 );
+
+		if ( class_exists( 'WC_Subscriptions_Data_Copier' ) ) {
+			add_filter( 'wc_subscriptions_renewal_order_data', array( $this, 'handle_wc_subscriptions_renewal_order_data' ), 10, 3 );
+		} else {
+			add_filter( 'wcs_renewal_order_meta_query', array( $this, 'handle_wcs_renewal_order_meta_query' ), 10, 3 );
+		}
 	}
 
 	/**
@@ -172,6 +178,42 @@ class WooPaymentsOrderTrackingService implements RegisterHooksInterface {
 	 */
 	public function handle_wcpay_track_update_order( $order_id ): void {
 		$this->track_update_order_action( (int) $order_id );
+	}
+
+	/**
+	 * Handle the wc_subscriptions_renewal_order_data filter.
+	 *
+	 * @internal
+	 *
+	 * @param array<string,mixed> $order_data Renewal order data.
+	 * @param mixed               $to_order   Renewal order.
+	 * @param mixed               $from_order Source order.
+	 * @return array<string,mixed>
+	 */
+	public function handle_wc_subscriptions_renewal_order_data( array $order_data, $to_order = null, $from_order = null ): array {
+		unset( $to_order, $from_order );
+
+		unset( $order_data[ self::NEW_ORDER_TRACKING_COMPLETE_META_KEY ] );
+
+		return $order_data;
+	}
+
+	/**
+	 * Handle the wcs_renewal_order_meta_query filter.
+	 *
+	 * @internal
+	 *
+	 * @param string $order_meta_query Renewal order metadata SQL query.
+	 * @param mixed  $to_order         Renewal order.
+	 * @param mixed  $from_order       Source order.
+	 * @return string
+	 */
+	public function handle_wcs_renewal_order_meta_query( string $order_meta_query, $to_order = null, $from_order = null ): string {
+		unset( $to_order, $from_order );
+
+		$order_meta_query .= sprintf( " AND `meta_key` NOT IN ('%s')", self::NEW_ORDER_TRACKING_COMPLETE_META_KEY );
+
+		return $order_meta_query;
 	}
 
 	/**

@@ -51,6 +51,24 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should register renewal tracking meta filters when native owns runtime.
+	 */
+	public function test_registers_renewal_tracking_meta_filter_when_native_owns_runtime(): void {
+		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ) );
+
+		$service->register();
+
+		if ( class_exists( 'WC_Subscriptions_Data_Copier' ) ) {
+			$this->assertSame( 10, has_filter( 'wc_subscriptions_renewal_order_data', array( $service, 'handle_wc_subscriptions_renewal_order_data' ) ) );
+			$this->assertFalse( has_filter( 'wcs_renewal_order_meta_query', array( $service, 'handle_wcs_renewal_order_meta_query' ) ) );
+			return;
+		}
+
+		$this->assertSame( 10, has_filter( 'wcs_renewal_order_meta_query', array( $service, 'handle_wcs_renewal_order_meta_query' ) ) );
+		$this->assertFalse( has_filter( 'wc_subscriptions_renewal_order_data', array( $service, 'handle_wc_subscriptions_renewal_order_data' ) ) );
+	}
+
+	/**
 	 * @testdox Should not register order-tracking hooks when plugin owns runtime.
 	 */
 	public function test_registers_no_order_tracking_hooks_when_plugin_owns_runtime(): void {
@@ -61,6 +79,48 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 		$this->assertFalse( has_action( 'woocommerce_update_order', array( $service, 'handle_woocommerce_update_order' ) ) );
 		$this->assertFalse( has_action( 'wcpay_track_new_order', array( $service, 'handle_wcpay_track_new_order' ) ) );
 		$this->assertFalse( has_action( 'wcpay_track_update_order', array( $service, 'handle_wcpay_track_update_order' ) ) );
+	}
+
+	/**
+	 * @testdox Should not register renewal tracking meta filters when plugin owns runtime.
+	 */
+	public function test_registers_no_renewal_tracking_meta_filter_when_plugin_owns_runtime(): void {
+		$service = $this->create_service( new StaticNativeRuntimeArbiter( false ) );
+
+		$service->register();
+
+		$this->assertFalse( has_filter( 'wc_subscriptions_renewal_order_data', array( $service, 'handle_wc_subscriptions_renewal_order_data' ) ) );
+		$this->assertFalse( has_filter( 'wcs_renewal_order_meta_query', array( $service, 'handle_wcs_renewal_order_meta_query' ) ) );
+	}
+
+	/**
+	 * @testdox Should remove tracking completion meta from renewal order data.
+	 */
+	public function test_removes_tracking_complete_meta_from_renewal_order_data(): void {
+		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ) );
+
+		$result = $service->handle_wc_subscriptions_renewal_order_data(
+			array(
+				'_new_order_tracking_complete' => 'yes',
+				'_payment_method_id'           => 'pm_123',
+			)
+		);
+
+		$this->assertArrayNotHasKey( '_new_order_tracking_complete', $result );
+		$this->assertSame( 'pm_123', $result['_payment_method_id'] );
+	}
+
+	/**
+	 * @testdox Should remove tracking completion meta from legacy renewal meta queries.
+	 */
+	public function test_removes_tracking_complete_meta_from_legacy_renewal_meta_query(): void {
+		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ) );
+		$query   = 'SELECT meta_key, meta_value FROM wp_postmeta WHERE post_id = 123';
+
+		$result = $service->handle_wcs_renewal_order_meta_query( $query );
+
+		$this->assertStringContainsString( $query, $result );
+		$this->assertStringContainsString( "`meta_key` NOT IN ('_new_order_tracking_complete')", $result );
 	}
 
 	/**
@@ -472,5 +532,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 		remove_action( 'woocommerce_update_order', array( $service, 'handle_woocommerce_update_order' ) );
 		remove_action( 'wcpay_track_new_order', array( $service, 'handle_wcpay_track_new_order' ) );
 		remove_action( 'wcpay_track_update_order', array( $service, 'handle_wcpay_track_update_order' ) );
+		remove_filter( 'wc_subscriptions_renewal_order_data', array( $service, 'handle_wc_subscriptions_renewal_order_data' ) );
+		remove_filter( 'wcs_renewal_order_meta_query', array( $service, 'handle_wcs_renewal_order_meta_query' ) );
 	}
 }

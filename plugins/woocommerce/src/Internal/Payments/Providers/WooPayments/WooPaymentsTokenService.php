@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use RuntimeException;
@@ -41,6 +42,13 @@ class WooPaymentsTokenService {
 	private WooPaymentsPaymentMethodDetailsService $payment_method_details_service;
 
 	/**
+	 * Runtime owner arbiter.
+	 *
+	 * @var NativePaymentsRuntimeArbiter
+	 */
+	private NativePaymentsRuntimeArbiter $arbiter;
+
+	/**
 	 * Native API client.
 	 *
 	 * @var WooPaymentsApiClient|null
@@ -67,12 +75,14 @@ class WooPaymentsTokenService {
 	 * @internal
 	 *
 	 * @param WooPaymentsPaymentMethodDetailsService $payment_method_details_service Payment method details service.
+	 * @param NativePaymentsRuntimeArbiter           $arbiter                        Runtime owner arbiter.
 	 * @param WooPaymentsApiClient|null              $api_client                     Optional native API client.
 	 * @param WooPaymentsCustomerService|null        $customer_service               Optional native customer service.
 	 * @param WooPaymentsAccountService|null         $account_service                Optional native account service.
 	 */
-	final public function init( WooPaymentsPaymentMethodDetailsService $payment_method_details_service, ?WooPaymentsApiClient $api_client = null, ?WooPaymentsCustomerService $customer_service = null, ?WooPaymentsAccountService $account_service = null ): void {
+	final public function init( WooPaymentsPaymentMethodDetailsService $payment_method_details_service, NativePaymentsRuntimeArbiter $arbiter, ?WooPaymentsApiClient $api_client = null, ?WooPaymentsCustomerService $customer_service = null, ?WooPaymentsAccountService $account_service = null ): void {
 		$this->payment_method_details_service = $payment_method_details_service;
+		$this->arbiter                        = $arbiter;
 		$this->api_client                     = $api_client;
 		$this->customer_service               = $customer_service;
 		$this->account_service                = $account_service;
@@ -85,6 +95,10 @@ class WooPaymentsTokenService {
 	 * @return void
 	 */
 	private function register_hooks(): void {
+		if ( ! $this->arbiter->should_native_register() ) {
+			return;
+		}
+
 		if ( false === has_action( 'woocommerce_payment_token_deleted', array( $this, 'handle_woocommerce_payment_token_deleted' ) ) ) {
 			add_action( 'woocommerce_payment_token_deleted', array( $this, 'handle_woocommerce_payment_token_deleted' ), 10, 2 );
 		}

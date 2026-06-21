@@ -3,12 +3,14 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
+use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
 use RuntimeException;
 use WC_Order;
 use WC_Payment_Token_CC;
@@ -194,6 +196,18 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 10, has_action( 'woocommerce_payment_token_set_default', array( $sut, 'handle_woocommerce_payment_token_set_default' ) ) );
 		$this->assertSame( 10, has_filter( 'woocommerce_get_customer_payment_tokens', array( $sut, 'handle_woocommerce_get_customer_payment_tokens' ) ) );
 		$this->assertSame( 10, has_filter( 'woocommerce_payment_methods_list_item', array( $sut, 'handle_woocommerce_payment_methods_list_item' ) ) );
+	}
+
+	/**
+	 * @testdox Should not register saved-payment-method lifecycle hooks when native does not own runtime.
+	 */
+	public function test_registers_no_saved_payment_method_lifecycle_hooks_when_native_does_not_own_runtime(): void {
+		$sut = $this->create_service( array(), null, null, null, new StaticNativeRuntimeArbiter( false ) );
+
+		$this->assertFalse( has_action( 'woocommerce_payment_token_deleted', array( $sut, 'handle_woocommerce_payment_token_deleted' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_payment_token_set_default', array( $sut, 'handle_woocommerce_payment_token_set_default' ) ) );
+		$this->assertFalse( has_filter( 'woocommerce_get_customer_payment_tokens', array( $sut, 'handle_woocommerce_get_customer_payment_tokens' ) ) );
+		$this->assertFalse( has_filter( 'woocommerce_payment_methods_list_item', array( $sut, 'handle_woocommerce_payment_methods_list_item' ) ) );
 	}
 
 	/**
@@ -486,9 +500,10 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 * @param WooPaymentsApiClient|null         $api_client             Optional native API client.
 	 * @param WooPaymentsCustomerService|null   $customer_service       Optional native customer service.
 	 * @param WooPaymentsAccountService|null    $account_service        Optional native account service.
+	 * @param NativePaymentsRuntimeArbiter|null $arbiter                Optional native runtime arbiter.
 	 * @return WooPaymentsTokenService
 	 */
-	private function create_service( array $payment_method_details = array(), ?WooPaymentsApiClient $api_client = null, ?WooPaymentsCustomerService $customer_service = null, ?WooPaymentsAccountService $account_service = null ): WooPaymentsTokenService {
+	private function create_service( array $payment_method_details = array(), ?WooPaymentsApiClient $api_client = null, ?WooPaymentsCustomerService $customer_service = null, ?WooPaymentsAccountService $account_service = null, ?NativePaymentsRuntimeArbiter $arbiter = null ): WooPaymentsTokenService {
 		$details_service = new class( $payment_method_details ) extends WooPaymentsPaymentMethodDetailsService {
 			/**
 			 * Payment method details keyed by ID.
@@ -518,7 +533,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		};
 
 		$sut = new WooPaymentsTokenService();
-		$sut->init( $details_service, $api_client, $customer_service, $account_service );
+		$sut->init( $details_service, $arbiter ?? new StaticNativeRuntimeArbiter( true ), $api_client, $customer_service, $account_service );
 		$this->created_services[] = $sut;
 
 		return $sut;
