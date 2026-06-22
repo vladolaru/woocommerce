@@ -200,6 +200,10 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 			return $this->error_response( __( "We're not able to process this payment. Please try again later.", 'woocommerce' ), 409 );
 		}
 
+		if ( ! $this->current_user_can_act_on_order( $order ) ) {
+			return $this->error_response( __( "We're not able to process this payment. Please refresh the page and try again.", 'woocommerce' ), 403 );
+		}
+
 		try {
 			$intent = 0.0 >= (float) $order->get_total()
 				? $this->api_client->get_setup_intention( $intent_id )
@@ -321,6 +325,22 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 		$nonce = $this->get_request_string( $request, '_ajax_nonce' );
 
 		return '' !== $nonce && (bool) wp_verify_nonce( $nonce, $action );
+	}
+
+	/**
+	 * Tell whether the current user is allowed to act on the given order.
+	 *
+	 * Defense-in-depth for the guest-accessible (`nopriv`) order-status callback: the nonce is the
+	 * primary guard, but an authenticated caller must never be able to complete an order that belongs
+	 * to a different customer. This mirrors core's `pay_for_order` meta-capability, which grants access
+	 * when the caller owns the order or when the order has no owner (guest checkout), and otherwise
+	 * defers to the user's capabilities (e.g. shop managers).
+	 *
+	 * @param WC_Order $order Order being updated.
+	 * @return bool
+	 */
+	private function current_user_can_act_on_order( WC_Order $order ): bool {
+		return (bool) current_user_can( 'pay_for_order', $order->get_id() );
 	}
 
 	/**

@@ -358,6 +358,230 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Order-status callback should reject an authenticated user acting on another customer's order.
+	 */
+	public function test_update_order_status_rejects_cross_customer_order_access(): void {
+		$owner_id    = $this->factory()->user->create();
+		$attacker_id = $this->factory()->user->create();
+
+		$order = $this->create_woopayments_order( '0.00' );
+		$order->set_customer_id( $owner_id );
+		$order->update_meta_data( '_intent_id', 'seti_native' );
+		$order->save();
+
+		wp_set_current_user( $attacker_id );
+
+		$api_client = new class() extends WooPaymentsApiClient {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- This test double must fail if the transport is called.
+			/**
+			 * Retrieve a SetupIntent.
+			 *
+			 * @param string $setup_intent_id SetupIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_setup_intention( string $setup_intent_id ): array {
+				unset( $setup_intent_id );
+				throw new \RuntimeException( 'Cross-customer access should not call the transport.' );
+			}
+			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
+		};
+		$sut        = $this->create_controller( $api_client );
+		$response   = $sut->get_update_order_status_response(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => 'seti_native',
+			)
+		);
+		$order      = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertArrayHasKey( 'error', $response );
+		$this->assertArrayNotHasKey( 'return_url', $response );
+		$this->assertSame( 403, $response['status_code'] );
+		$this->assertNotSame( 'completed', $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_intention_status', true ), 'A cross-customer caller must not mutate the order.' );
+	}
+
+	/**
+	 * @testdox Order-status callback should allow the owning customer to complete their own order.
+	 */
+	public function test_update_order_status_allows_owner_to_complete_own_order(): void {
+		$owner_id = $this->factory()->user->create();
+
+		$order = $this->create_woopayments_order( '0.00' );
+		$order->set_customer_id( $owner_id );
+		$order->update_meta_data( '_intent_id', 'seti_native' );
+		$order->save();
+
+		wp_set_current_user( $owner_id );
+
+		$api_client = new class() extends WooPaymentsApiClient {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Retrieve a SetupIntent.
+			 *
+			 * @param string $setup_intent_id SetupIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_setup_intention( string $setup_intent_id ): array {
+				if ( 'seti_native' !== $setup_intent_id ) {
+					throw new \RuntimeException( 'Unexpected setup intent ID.' );
+				}
+
+				return array(
+					'id'             => 'seti_native',
+					'status'         => 'succeeded',
+					'customer'       => 'cus_native',
+					'payment_method' => 'pm_native',
+				);
+			}
+		};
+		$sut        = $this->create_controller( $api_client );
+		$response   = $sut->get_update_order_status_response(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => 'seti_native',
+			)
+		);
+		$order      = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertArrayHasKey( 'return_url', $response );
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertSame( 'completed', $order->get_status() );
+	}
+
+	/**
+	 * @testdox Order-status callback should allow a guest to complete an unowned order via the nopriv flow.
+	 */
+	public function test_update_order_status_allows_guest_to_complete_unowned_order(): void {
+		wp_set_current_user( 0 );
+
+		$order = $this->create_woopayments_order( '0.00' );
+		$order->update_meta_data( '_intent_id', 'seti_native' );
+		$order->save();
+
+		$api_client = new class() extends WooPaymentsApiClient {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Retrieve a SetupIntent.
+			 *
+			 * @param string $setup_intent_id SetupIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_setup_intention( string $setup_intent_id ): array {
+				if ( 'seti_native' !== $setup_intent_id ) {
+					throw new \RuntimeException( 'Unexpected setup intent ID.' );
+				}
+
+				return array(
+					'id'             => 'seti_native',
+					'status'         => 'succeeded',
+					'customer'       => 'cus_native',
+					'payment_method' => 'pm_native',
+				);
+			}
+		};
+		$sut        = $this->create_controller( $api_client );
+		$response   = $sut->get_update_order_status_response(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => 'seti_native',
+			)
+		);
+		$order      = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertArrayHasKey( 'return_url', $response );
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertSame( 'completed', $order->get_status() );
+	}
+
+	/**
+	 * @testdox Order-status callback should allow an authenticated user to complete a guest order they do not own.
+	 */
+	public function test_update_order_status_allows_authenticated_user_on_guest_order(): void {
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+
+		$order = $this->create_woopayments_order( '0.00' );
+		$order->update_meta_data( '_intent_id', 'seti_native' );
+		$order->save();
+
+		$api_client = new class() extends WooPaymentsApiClient {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Retrieve a SetupIntent.
+			 *
+			 * @param string $setup_intent_id SetupIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_setup_intention( string $setup_intent_id ): array {
+				if ( 'seti_native' !== $setup_intent_id ) {
+					throw new \RuntimeException( 'Unexpected setup intent ID.' );
+				}
+
+				return array(
+					'id'             => 'seti_native',
+					'status'         => 'succeeded',
+					'customer'       => 'cus_native',
+					'payment_method' => 'pm_native',
+				);
+			}
+		};
+		$sut        = $this->create_controller( $api_client );
+		$response   = $sut->get_update_order_status_response(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => 'seti_native',
+			)
+		);
+		$order      = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertArrayHasKey( 'return_url', $response );
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertSame( 'completed', $order->get_status() );
+	}
+
+	/**
 	 * @testdox Order-status callback should reject non-authorized intent statuses after syncing the order.
 	 */
 	public function test_update_order_status_rejects_non_authorized_intent_status(): void {
