@@ -57,4 +57,46 @@ class PaymentOperationIdempotencyTest extends WC_Unit_Test_Case {
 			'Refund amount must participate in the key so distinct refunds do not collapse together.'
 		);
 	}
+
+	/**
+	 * @testdox Should change the key when the per-instance discriminator changes for otherwise identical operations.
+	 */
+	public function test_changes_key_when_instance_changes(): void {
+		$order = wc_create_order();
+		$sut   = new PaymentOperationIdempotency();
+
+		$this->assertNotSame(
+			$sut->derive_key( $order, OrderPaymentStore::GATEWAY_ID, 'refund', 5.00, 'USD', 'Customer request', '101' ),
+			$sut->derive_key( $order, OrderPaymentStore::GATEWAY_ID, 'refund', 5.00, 'USD', 'Customer request', '102' ),
+			'Two refund instances of the same amount and reason must yield different keys so the provider cannot replay the first.'
+		);
+	}
+
+	/**
+	 * @testdox Should derive the same key for identical operations sharing the same per-instance discriminator.
+	 */
+	public function test_derives_same_key_for_identical_inputs_and_instance(): void {
+		$order = wc_create_order();
+		$sut   = new PaymentOperationIdempotency();
+
+		$this->assertSame(
+			$sut->derive_key( $order, OrderPaymentStore::GATEWAY_ID, 'refund', 5.00, 'USD', 'Customer request', '101' ),
+			$sut->derive_key( $order, OrderPaymentStore::GATEWAY_ID, 'refund', 5.00, 'USD', 'Customer request', '101' ),
+			'A retry of the same refund instance must collapse to one provider operation.'
+		);
+	}
+
+	/**
+	 * @testdox A null per-instance discriminator must keep the key byte-identical to the six-argument form.
+	 */
+	public function test_null_instance_preserves_backward_compatible_key(): void {
+		$order = wc_create_order();
+		$sut   = new PaymentOperationIdempotency();
+
+		$this->assertSame(
+			$sut->derive_key( $order, OrderPaymentStore::GATEWAY_ID, 'refund', 5.00, 'USD', 'Customer request' ),
+			$sut->derive_key( $order, OrderPaymentStore::GATEWAY_ID, 'refund', 5.00, 'USD', 'Customer request', null ),
+			'Passing a null instance must not change the key, preserving the pre-instance backward-compatible contract.'
+		);
+	}
 }

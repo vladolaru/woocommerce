@@ -177,14 +177,41 @@ class PaymentProcessingService {
 	}
 
 	/**
+	 * Provider refund-link meta key written onto a `WC_Order_Refund` once it has been processed.
+	 *
+	 * Both the synchronous refund path ({@see WooPaymentsProviderGatewayAdapter}, via the
+	 * `refund_meta` returned to apply_refund_outcome()) and the asynchronous webhook path
+	 * ({@see WooPaymentsRefundEventHandler}) stamp this key on the refund. Its presence is the
+	 * stable signal that a refund has already reached the provider, so refund-instance resolution
+	 * uses it to exclude already-processed refunds and lock onto the fresh, unprocessed one.
+	 *
+	 * @var string
+	 */
+	private const PROCESSED_REFUND_LINK_META_KEY = '_wcpay_refund_id';
+
+	/**
 	 * Resolve the ID of the specific WooCommerce refund this operation is processing.
 	 *
-	 * The local `WC_Order_Refund` row is created and saved before the gateway refund call,
-	 * so it is already present here. Using its ID as a per-instance discriminator in the
-	 * idempotency key ensures two distinct refunds of the same amount and reason never
-	 * share a key, which would otherwise let the provider replay the first refund and drop
-	 * the second. Returns null when no matching refund can be located, leaving the key
-	 * unchanged for that edge case.
+	 * The local `WC_Order_Refund` row is created and saved before the gateway refund call, so it is
+	 * already present here. Its ID is used as a per-instance discriminator in the idempotency key so
+	 * two distinct refunds of the same amount and reason never share a key, which would otherwise let
+	 * the provider replay the first refund and silently drop the second.
+	 *
+	 * Resolution must identify the *fresh, unprocessed* refund rather than rely on row ordering. An
+	 * equal-amount, equal-reason refund that has already been processed carries
+	 * {@see self::PROCESSED_REFUND_LINK_META_KEY}; passing that key as the exclusion set makes
+	 * find_matching_refund() skip such refunds. Without this exclusion, resolution would depend on
+	 * the order get_refunds() happens to return rows (CPT vs HPOS, same-second ties, future query
+	 * changes) and could latch onto an already-processed refund — reusing its key and reintroducing
+	 * the exact collision this guard prevents.
+	 *
+	 * Returns null only when no matching refund can be located. In the normal synchronous WooCommerce
+	 * refund flow this cannot happen: core creates and saves the `WC_Order_Refund` row before invoking
+	 * the gateway, so the row is always present at this point. The null fallback therefore omits the
+	 * instance from the key, which is the deterministic pre-instance behavior — safe because the only
+	 * way to reach it is the absence of a concurrent equal refund to collide with. The fallback stays
+	 * deterministic on purpose: a random or microtime discriminator would break idempotency on
+	 * legitimate retries of the same refund.
 	 *
 	 * @param WC_Order $order  Parent order.
 	 * @param float    $amount Refund amount.
@@ -192,7 +219,7 @@ class PaymentProcessingService {
 	 * @return string|null
 	 */
 	private function resolve_refund_instance_id( WC_Order $order, float $amount, string $reason ): ?string {
-		$matched_refund = $this->find_matching_refund( $order, $amount, $reason, array() );
+		$matched_refund = $this->find_matching_refund( $order, $amount, $reason, array( self::PROCESSED_REFUND_LINK_META_KEY ) );
 
 		return $matched_refund instanceof WC_Order_Refund ? (string) $matched_refund->get_id() : null;
 	}
