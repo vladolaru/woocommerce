@@ -425,9 +425,13 @@ const SettingsSection = ( {
 	description: React.ReactNode;
 	children: React.ReactNode;
 } ) => (
-	<section className="woopayments-settings-section" id={ id }>
+	<section
+		className="woopayments-settings-section"
+		id={ id }
+		aria-labelledby={ `${ id }__heading` }
+	>
 		<div className="woopayments-settings-section__details">
-			<h2>{ title }</h2>
+			<h2 id={ `${ id }__heading` }>{ title }</h2>
 			<div className="woopayments-settings-section__description">
 				{ description }
 			</div>

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Harden native WooPayments settings tests: use userEvent for modal flows, drop source-introspection chunk assertions, reset TourKit mock state, and scope assertions by ARIA role. Settings sections now expose accessible region landmarks via aria-labelledby.

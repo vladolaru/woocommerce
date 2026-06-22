@@ -3,8 +3,6 @@
  */
 import { speak } from '@wordpress/a11y';
 import apiFetch from '@wordpress/api-fetch';
-import fs from 'fs';
-import nodePath from 'path';
 import {
 	act,
 	fireEvent,
@@ -392,15 +390,15 @@ const getGatewayToggleEventCalls = ( expectedAction: string ) =>
 			properties.action === expectedAction
 	);
 
-const getGeneralSettingsSection = () =>
-	screen
-		.getByRole( 'heading', { name: 'General' } )
-		.closest( '.woopayments-settings-section' ) as HTMLElement;
+// Each settings section renders as a labeled `region` landmark whose accessible
+// name is its title heading (see SettingsSection in settings-page.tsx, which
+// wires `aria-labelledby` to its <h2>). Scope assertions by role + accessible
+// name rather than the `.woopayments-settings-section` class so a CSS rename
+// with no behavior change does not break these queries.
+const getSettingsSectionByName = ( name: string | RegExp ) =>
+	screen.getByRole( 'region', { name } );
 
-const getSettingsSectionByHeading = ( name: string | RegExp ) =>
-	screen
-		.getByRole( 'heading', { name } )
-		.closest( '.woopayments-settings-section' ) as HTMLElement;
+const getGeneralSettingsSection = () => getSettingsSectionByName( 'General' );
 
 const getSectionLinkByHref = ( section: HTMLElement, href: string ) =>
 	within( section )
@@ -555,6 +553,14 @@ describe( 'WooPaymentsSettingsPage', () => {
 		setHookDefaults();
 	} );
 
+	afterEach( () => {
+		// Belt-and-suspenders: also clear the module-scoped TourKit capture here
+		// so a test that throws mid-render cannot leak stale configs into the
+		// next test (beforeEach alone would not run before assertions on a
+		// partially-rendered prior test).
+		mockTourKitConfigs.length = 0;
+	} );
+
 	it( 'renders the native settings manager sections', () => {
 		render( <WooPaymentsSettingsPage /> );
 
@@ -647,6 +653,10 @@ describe( 'WooPaymentsSettingsPage', () => {
 		expect(
 			screen.queryByRole( 'button', { name: 'Save changes' } )
 		).not.toBeInTheDocument();
+		// Loading placeholders are intentionally `aria-hidden` decorative skeletons
+		// with no role or accessible name, so there is no ARIA anchor to scope by.
+		// This assertion depends on the `.woopayments-settings-loadable-placeholder`
+		// class name; update it if that styling hook is renamed.
 		expect(
 			container.querySelectorAll(
 				'.woopayments-settings-loadable-placeholder[aria-hidden="true"]'
@@ -657,7 +667,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 	it( 'renders reference section descriptions and documentation links', () => {
 		render( <WooPaymentsSettingsPage /> );
 
-		const paymentMethodsSection = getSettingsSectionByHeading(
+		const paymentMethodsSection = getSettingsSectionByName(
 			'Payments accepted on checkout'
 		);
 		expect(
@@ -666,7 +676,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 			)
 		).toBeInTheDocument();
 
-		const bnplSection = getSettingsSectionByHeading( 'Buy now, pay later' );
+		const bnplSection = getSettingsSectionByName( 'Buy now, pay later' );
 		expect(
 			within( bnplSection ).getByText(
 				/Boost sales by offering customers additional buying power and flexible payment options./
@@ -679,8 +689,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 			)
 		).toHaveTextContent( /Learn more/ );
 
-		const transactionsSection =
-			getSettingsSectionByHeading( 'Transactions' );
+		const transactionsSection = getSettingsSectionByName( 'Transactions' );
 		expect(
 			within( transactionsSection ).getByText(
 				"Update your store's configuration to ensure smooth transactions."
@@ -705,7 +714,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 			)
 		).toHaveTextContent( /In-Person Payments/ );
 
-		const payoutsSection = getSettingsSectionByHeading( 'Payouts' );
+		const payoutsSection = getSettingsSectionByName( 'Payouts' );
 		expect(
 			getSectionLinkByHref(
 				payoutsSection,
@@ -713,7 +722,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 			)
 		).toHaveTextContent( /Learn more about pending schedules/ );
 
-		const notificationsSection = getSettingsSectionByHeading(
+		const notificationsSection = getSettingsSectionByName(
 			'Account notifications'
 		);
 		expect(
@@ -723,8 +732,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 			)
 		).toHaveTextContent( /Learn more/ );
 
-		const advancedSection =
-			getSettingsSectionByHeading( 'Advanced settings' );
+		const advancedSection = getSettingsSectionByName( 'Advanced settings' );
 		expect(
 			within( advancedSection ).getByText(
 				'More options for specific payment needs.'
@@ -736,28 +744,6 @@ describe( 'WooPaymentsSettingsPage', () => {
 				'https://woocommerce.com/document/woopayments/settings-guide/#advanced-settings'
 			)
 		).toHaveTextContent( /View our documentation/ );
-	} );
-
-	it( 'keeps the tax details modal in a dedicated optional settings chunk with its styles', () => {
-		const settingsPageSource = fs.readFileSync(
-			nodePath.resolve( __dirname, '../settings-page.tsx' ),
-			'utf8'
-		);
-		const vatModalSource = fs.readFileSync(
-			nodePath.resolve(
-				__dirname,
-				'../../admin/documents/vat-modal.tsx'
-			),
-			'utf8'
-		);
-
-		expect( settingsPageSource ).toContain(
-			'webpackChunkName: "settings-payments-woopayments-vat-modal"'
-		);
-		expect( settingsPageSource ).not.toContain(
-			"import { WooPaymentsVatModal } from '../admin/documents/vat-modal'"
-		);
-		expect( vatModalSource ).toContain( "import './vat-modal.scss'" );
 	} );
 
 	it( 'opens the tax details modal from the VAT settings deep link when tax details are missing', async () => {
@@ -1017,12 +1003,14 @@ describe( 'WooPaymentsSettingsPage', () => {
 	it( 'keeps express payment methods out of the standard payment methods list', () => {
 		render( <WooPaymentsSettingsPage /> );
 
+		// Field groups render as plain <div>s (no landmark role / accessible name),
+		// so they are scoped by walking up to the `.woopayments-settings-field-group`
+		// class from their heading. Update this selector if that class is renamed.
 		const paymentMethodsGroup = screen
 			.getByRole( 'heading', { name: 'Payment methods' } )
 			.closest( '.woopayments-settings-field-group' ) as HTMLElement;
-		const expressCheckoutsSection = screen
-			.getByRole( 'heading', { name: 'Express checkouts' } )
-			.closest( '.woopayments-settings-section' ) as HTMLElement;
+		const expressCheckoutsSection =
+			getSettingsSectionByName( 'Express checkouts' );
 
 		expect(
 			within( paymentMethodsGroup ).getByRole( 'checkbox', {
@@ -1068,9 +1056,8 @@ describe( 'WooPaymentsSettingsPage', () => {
 
 		render( <WooPaymentsSettingsPage /> );
 
-		const expressCheckoutsSection = screen
-			.getByRole( 'heading', { name: 'Express checkouts' } )
-			.closest( '.woopayments-settings-section' ) as HTMLElement;
+		const expressCheckoutsSection =
+			getSettingsSectionByName( 'Express checkouts' );
 
 		expect(
 			within( expressCheckoutsSection ).queryByRole( 'checkbox', {
@@ -1527,9 +1514,8 @@ describe( 'WooPaymentsSettingsPage', () => {
 
 		render( <WooPaymentsSettingsPage /> );
 
-		const expressCheckoutsSection = screen
-			.getByRole( 'heading', { name: 'Express checkouts' } )
-			.closest( '.woopayments-settings-section' ) as HTMLElement;
+		const expressCheckoutsSection =
+			getSettingsSectionByName( 'Express checkouts' );
 
 		expect(
 			within( expressCheckoutsSection ).queryByRole( 'checkbox', {
@@ -1600,9 +1586,8 @@ describe( 'WooPaymentsSettingsPage', () => {
 
 		render( <WooPaymentsSettingsPage /> );
 
-		const expressCheckoutsSection = screen
-			.getByRole( 'heading', { name: 'Express checkouts' } )
-			.closest( '.woopayments-settings-section' ) as HTMLElement;
+		const expressCheckoutsSection =
+			getSettingsSectionByName( 'Express checkouts' );
 
 		expect(
 			within( expressCheckoutsSection ).queryByRole( 'checkbox', {
@@ -1652,9 +1637,8 @@ describe( 'WooPaymentsSettingsPage', () => {
 
 		render( <WooPaymentsSettingsPage /> );
 
-		const expressCheckoutsSection = screen
-			.getByRole( 'heading', { name: 'Express checkouts' } )
-			.closest( '.woopayments-settings-section' ) as HTMLElement;
+		const expressCheckoutsSection =
+			getSettingsSectionByName( 'Express checkouts' );
 
 		expect(
 			within( expressCheckoutsSection ).queryByRole( 'checkbox', {
@@ -1685,9 +1669,8 @@ describe( 'WooPaymentsSettingsPage', () => {
 
 		render( <WooPaymentsSettingsPage /> );
 
-		const expressCheckoutsSection = screen
-			.getByRole( 'heading', { name: 'Express checkouts' } )
-			.closest( '.woopayments-settings-section' ) as HTMLElement;
+		const expressCheckoutsSection =
+			getSettingsSectionByName( 'Express checkouts' );
 
 		expect(
 			within( expressCheckoutsSection ).getByRole( 'link', {
@@ -1730,9 +1713,8 @@ describe( 'WooPaymentsSettingsPage', () => {
 
 		render( <WooPaymentsSettingsPage /> );
 
-		const expressCheckoutsSection = screen
-			.getByRole( 'heading', { name: 'Express checkouts' } )
-			.closest( '.woopayments-settings-section' ) as HTMLElement;
+		const expressCheckoutsSection =
+			getSettingsSectionByName( 'Express checkouts' );
 
 		expect(
 			within( expressCheckoutsSection ).getByRole( 'checkbox', {
@@ -1767,9 +1749,8 @@ describe( 'WooPaymentsSettingsPage', () => {
 
 		render( <WooPaymentsSettingsPage /> );
 
-		const expressCheckoutsSection = screen
-			.getByRole( 'heading', { name: 'Express checkouts' } )
-			.closest( '.woopayments-settings-section' ) as HTMLElement;
+		const expressCheckoutsSection =
+			getSettingsSectionByName( 'Express checkouts' );
 		const rejectedNotice = within( expressCheckoutsSection )
 			.getByText( /Your application to use Amazon Pay has been rejected/ )
 			.closest( '.components-notice' );
@@ -1800,9 +1781,8 @@ describe( 'WooPaymentsSettingsPage', () => {
 
 		render( <WooPaymentsSettingsPage /> );
 
-		const expressCheckoutsSection = screen
-			.getByRole( 'heading', { name: 'Express checkouts' } )
-			.closest( '.woopayments-settings-section' ) as HTMLElement;
+		const expressCheckoutsSection =
+			getSettingsSectionByName( 'Express checkouts' );
 
 		expect(
 			within( expressCheckoutsSection ).getAllByText(
@@ -1923,7 +1903,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 		).toBeInTheDocument();
 	} );
 
-	it( 'confirms unrequested payment method activation before enabling the method', () => {
+	it( 'confirms unrequested payment method activation before enabling the method', async () => {
 		const selectPaymentMethod = jest.fn();
 		mockUseEnabledPaymentMethodIds.mockReturnValue( [ [ 'card' ], noop ] );
 		mockUseSelectedPaymentMethod.mockReturnValue( [
@@ -1944,7 +1924,9 @@ describe( 'WooPaymentsSettingsPage', () => {
 
 		render( <WooPaymentsSettingsPage /> );
 
-		fireEvent.click( screen.getByRole( 'checkbox', { name: /Affirm/ } ) );
+		await userEvent.click(
+			screen.getByRole( 'checkbox', { name: /Affirm/ } )
+		);
 
 		expect( selectPaymentMethod ).not.toHaveBeenCalled();
 		expect(
@@ -1953,7 +1935,9 @@ describe( 'WooPaymentsSettingsPage', () => {
 			} )
 		).toBeInTheDocument();
 
-		fireEvent.click( screen.getByRole( 'button', { name: 'Continue' } ) );
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Continue' } )
+		);
 
 		expect( selectPaymentMethod ).toHaveBeenCalledWith( 'affirm' );
 	} );
@@ -2284,13 +2268,13 @@ describe( 'WooPaymentsSettingsPage', () => {
 		).toBeInTheDocument();
 	} );
 
-	it( 'requires confirmation before enabling test mode', () => {
+	it( 'requires confirmation before enabling test mode', async () => {
 		const setTestMode = jest.fn();
 		mockUseTestMode.mockReturnValue( [ false, setTestMode ] );
 
 		render( <WooPaymentsSettingsPage /> );
 
-		fireEvent.click(
+		await userEvent.click(
 			screen.getByRole( 'checkbox', { name: 'Enable test mode' } )
 		);
 
@@ -2304,7 +2288,9 @@ describe( 'WooPaymentsSettingsPage', () => {
 			} )
 		).toBeInTheDocument();
 
-		fireEvent.click( screen.getByRole( 'button', { name: 'Enable' } ) );
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Enable' } )
+		);
 
 		expect( setTestMode ).toHaveBeenCalledWith( true );
 		expect( mockRecordEvent ).toHaveBeenCalledWith(
@@ -2983,15 +2969,16 @@ describe( 'WooPaymentsSettingsPage', () => {
 
 		render( <WooPaymentsSettingsPage /> );
 
-		const section = screen
-			.getByRole( 'heading', { name: 'Payouts' } )
-			.closest( '.woopayments-settings-section' ) as HTMLElement;
+		const section = getSettingsSectionByName( 'Payouts' );
 
 		expect(
 			within( section ).getByRole( 'heading', {
 				name: 'Payout schedule',
 			} )
 		).toBeInTheDocument();
+		// Field groups have no landmark role; this asserts the 'Payout schedule'
+		// heading lives in the group with the expected id, so it intentionally
+		// depends on the `.woopayments-settings-field-group` class.
 		expect(
 			within( section )
 				.getByRole( 'heading', {
@@ -3192,9 +3179,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 
 		render( <WooPaymentsSettingsPage /> );
 
-		const section = screen
-			.getByRole( 'heading', { name: 'Account notifications' } )
-			.closest( '.woopayments-settings-section' ) as HTMLElement;
+		const section = getSettingsSectionByName( 'Account notifications' );
 
 		expect(
 			within( section ).getByRole( 'heading', {
@@ -3251,9 +3236,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 
 		render( <WooPaymentsSettingsPage /> );
 
-		const section = screen
-			.getByRole( 'heading', { name: 'Account notifications' } )
-			.closest( '.woopayments-settings-section' ) as HTMLElement;
+		const section = getSettingsSectionByName( 'Account notifications' );
 		const emailInput = within( section ).getByRole( 'textbox', {
 			name: 'Email address',
 		} );
@@ -3285,9 +3268,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 
 		render( <WooPaymentsSettingsPage /> );
 
-		const section = screen
-			.getByRole( 'heading', { name: 'Transactions' } )
-			.closest( '.woopayments-settings-section' ) as HTMLElement;
+		const section = getSettingsSectionByName( 'Transactions' );
 
 		expect(
 			within( section ).getByText(
@@ -3449,9 +3430,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 
 		render( <WooPaymentsSettingsPage /> );
 
-		const section = screen
-			.getByRole( 'heading', { name: 'Transactions' } )
-			.closest( '.woopayments-settings-section' ) as HTMLElement;
+		const section = getSettingsSectionByName( 'Transactions' );
 
 		expect(
 			within( section ).getByText(
@@ -3726,9 +3705,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 
 		render( <WooPaymentsSettingsPage /> );
 
-		const section = screen
-			.getByRole( 'heading', { name: 'Fraud protection' } )
-			.closest( '.woopayments-settings-section' ) as HTMLElement;
+		const section = getSettingsSectionByName( 'Fraud protection' );
 
 		expect(
 			within( section ).getByText(
@@ -4145,9 +4122,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 
 		render( <WooPaymentsSettingsPage /> );
 
-		const section = screen
-			.getByRole( 'heading', { name: 'Fraud protection' } )
-			.closest( '.woopayments-settings-section' ) as HTMLElement;
+		const section = getSettingsSectionByName( 'Fraud protection' );
 		expect(
 			within( section ).getByText(
 				'There was an error retrieving your fraud protection settings. Please refresh the page to try again.'
@@ -4215,20 +4190,6 @@ describe( 'WooPaymentsSettingsPage', () => {
 		}
 	} );
 
-	it( 'loads the fraud tour through an optional settings chunk', () => {
-		const source = fs.readFileSync(
-			nodePath.resolve( __dirname, '../fraud-protection/index.tsx' ),
-			'utf8'
-		);
-
-		expect( source ).toContain(
-			'webpackChunkName: "settings-payments-woopayments-fraud-tour"'
-		);
-		expect( source ).not.toContain(
-			"import { FraudProtectionTour } from './tour'"
-		);
-	} );
-
 	it( 'honors explicitly disabled Basic fraud checks from the native settings contract', async () => {
 		mockUseCurrentProtectionLevel.mockReturnValue( [ 'basic', noop ] );
 		mockUseGetSettings.mockReturnValue( {
@@ -4286,9 +4247,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 
 		render( <WooPaymentsSettingsPage /> );
 
-		const section = screen
-			.getByRole( 'heading', { name: 'Advanced settings' } )
-			.closest( '.woopayments-settings-section' ) as HTMLElement;
+		const section = getSettingsSectionByName( 'Advanced settings' );
 
 		expect(
 			within( section ).getByText(
