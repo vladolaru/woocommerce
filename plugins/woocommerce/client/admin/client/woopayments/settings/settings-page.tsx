@@ -18,6 +18,7 @@ import {
 	lazy,
 	Suspense,
 	useEffect,
+	useId,
 	useRef,
 	useState,
 } from '@wordpress/element';
@@ -450,12 +451,25 @@ const FieldGroup = ( {
 	id?: string;
 	title: string;
 	children: React.ReactNode;
-} ) => (
-	<div className="woopayments-settings-field-group" id={ id }>
-		<h3>{ title }</h3>
-		{ children }
-	</div>
-);
+} ) => {
+	// Expose each field group as a labelled `group` landmark (named by its
+	// heading) so it can be located by role + accessible name rather than by
+	// CSS class. `useId` gives the heading a stable, unique id even when no
+	// `id` prop is passed.
+	const headingId = useId();
+
+	return (
+		<div
+			className="woopayments-settings-field-group"
+			id={ id }
+			role="group"
+			aria-labelledby={ headingId }
+		>
+			<h3 id={ headingId }>{ title }</h3>
+			{ children }
+		</div>
+	);
+};
 
 const SettingsSectionLoadingPlaceholder = ( { lines }: { lines: number } ) => (
 	<div

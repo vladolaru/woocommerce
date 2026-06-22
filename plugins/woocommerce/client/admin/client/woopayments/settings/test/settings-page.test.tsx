@@ -1003,12 +1003,11 @@ describe( 'WooPaymentsSettingsPage', () => {
 	it( 'keeps express payment methods out of the standard payment methods list', () => {
 		render( <WooPaymentsSettingsPage /> );
 
-		// Field groups render as plain <div>s (no landmark role / accessible name),
-		// so they are scoped by walking up to the `.woopayments-settings-field-group`
-		// class from their heading. Update this selector if that class is renamed.
-		const paymentMethodsGroup = screen
-			.getByRole( 'heading', { name: 'Payment methods' } )
-			.closest( '.woopayments-settings-field-group' ) as HTMLElement;
+		// Field groups are labelled `group` landmarks (named by their heading),
+		// so scope by role + accessible name rather than a CSS class.
+		const paymentMethodsGroup = screen.getByRole( 'group', {
+			name: 'Payment methods',
+		} );
 		const expressCheckoutsSection =
 			getSettingsSectionByName( 'Express checkouts' );
 
@@ -2976,15 +2975,12 @@ describe( 'WooPaymentsSettingsPage', () => {
 				name: 'Payout schedule',
 			} )
 		).toBeInTheDocument();
-		// Field groups have no landmark role; this asserts the 'Payout schedule'
-		// heading lives in the group with the expected id, so it intentionally
-		// depends on the `.woopayments-settings-field-group` class.
+		// The 'Payout schedule' field group is a labelled `group` landmark;
+		// assert it carries the expected stable id.
 		expect(
-			within( section )
-				.getByRole( 'heading', {
-					name: 'Payout schedule',
-				} )
-				.closest( '.woopayments-settings-field-group' )
+			within( section ).getByRole( 'group', {
+				name: 'Payout schedule',
+			} )
 		).toHaveAttribute( 'id', 'payout-schedule' );
 		expect(
 			within( section ).getByRole( 'heading', {
