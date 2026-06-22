@@ -153,7 +153,14 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	/**
 	 * Process a queued failed webhook event.
 	 *
+	 * The stored event is removed only after the ingestor settles it: on success because it is
+	 * handled, and on InvalidArgumentException because a malformed event can never succeed and must
+	 * not loop on every retry. Any other failure is treated as transient, so the event is left in the
+	 * store for Action Scheduler retries or the next failed-event poll to re-attempt. The exception is
+	 * always re-thrown so the failure surfaces to the caller and the Action Scheduler retry machinery.
+	 *
 	 * @param string $event_id Event ID.
+	 * @throws \InvalidArgumentException When the event is malformed and gets dropped before re-throwing; any other ingestor failure also propagates, but the event is preserved for retry.
 	 */
 	public function process_event( string $event_id ): void {
 		$event = $this->failed_event_store->get_event( $event_id );
@@ -161,7 +168,14 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 			return;
 		}
 
+		try {
+			$this->event_ingestor->process( $event );
+		} catch ( \InvalidArgumentException $exception ) {
+			// Malformed/unprocessable event: drop it so it does not retry forever, then surface the failure.
+			$this->failed_event_store->delete_event( $event_id );
+			throw $exception;
+		}
+
 		$this->failed_event_store->delete_event( $event_id );
-		$this->event_ingestor->process( $event );
 	}
 }

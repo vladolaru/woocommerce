@@ -200,6 +200,66 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Processing keeps the stored event when the ingestor fails transiently.
+	 */
+	public function test_process_event_preserves_event_on_transient_failure(): void {
+		$store   = wc_get_container()->get( WooPaymentsFailedEventStore::class );
+		$event   = array(
+			'id'   => 'evt_process',
+			'type' => 'payment_intent.succeeded',
+		);
+		$service = $this->create_service(
+			new RecordingActionSchedulerService(),
+			$store,
+			new StaticFailedEventsProvider(),
+			new ThrowingEventIngestor( new \RuntimeException( 'transient boom' ) )
+		);
+
+		$store->set_event( 'evt_process', $event );
+
+		$thrown = null;
+		try {
+			$service->process_event( 'evt_process' );
+		} catch ( \RuntimeException $exception ) {
+			$thrown = $exception;
+		}
+
+		$this->assertInstanceOf( \RuntimeException::class, $thrown, 'A transient failure should propagate to the caller.' );
+		$this->assertSame( $event, $store->get_event( 'evt_process' ), 'A transiently failed event should remain in the store for retry.' );
+	}
+
+	/**
+	 * @testdox Processing drops the stored event when the ingestor reports it is malformed.
+	 */
+	public function test_process_event_drops_event_on_invalid_argument(): void {
+		$store   = wc_get_container()->get( WooPaymentsFailedEventStore::class );
+		$service = $this->create_service(
+			new RecordingActionSchedulerService(),
+			$store,
+			new StaticFailedEventsProvider(),
+			new ThrowingEventIngestor( new \InvalidArgumentException( 'malformed event' ) )
+		);
+
+		$store->set_event(
+			'evt_process',
+			array(
+				'id'   => 'evt_process',
+				'type' => 'payment_intent.succeeded',
+			)
+		);
+
+		$thrown = null;
+		try {
+			$service->process_event( 'evt_process' );
+		} catch ( \InvalidArgumentException $exception ) {
+			$thrown = $exception;
+		}
+
+		$this->assertInstanceOf( \InvalidArgumentException::class, $thrown, 'A malformed event should still surface the failure to the caller.' );
+		$this->assertNull( $store->get_event( 'evt_process' ), 'A malformed event should be dropped so it does not retry forever.' );
+	}
+
+	/**
 	 * Remove reliability hooks for this SUT.
 	 */
 	private function remove_reliability_hooks(): void {
