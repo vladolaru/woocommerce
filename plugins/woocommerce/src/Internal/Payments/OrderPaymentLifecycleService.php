@@ -49,6 +49,7 @@ class OrderPaymentLifecycleService {
 
 		if ( null !== $payment_reference ) {
 			if ( ! $this->order_payment_store->claim_order_payment_lock( $order, $payment_reference ) ) {
+				$this->log_skipped_locked_event( $order, $event, $payment_reference );
 				return;
 			}
 
@@ -62,6 +63,35 @@ class OrderPaymentLifecycleService {
 				$this->order_payment_store->unlock_order_payment( $order );
 			}
 		}
+	}
+
+	/**
+	 * Log a warning when a lifecycle event is skipped because the order payment lock is contested.
+	 *
+	 * Webhook-triggered lifecycle events can arrive while a checkout or capture is mid-flight and
+	 * already holds the order payment lock. Skipping is the correct behavior, but a silent drop
+	 * leaves the order in a stale state with no diagnostic trail until the reliability service
+	 * recovers it. Emit a structured warning so the skip is observable.
+	 *
+	 * @param WC_Order              $order             Order object.
+	 * @param PaymentLifecycleEvent $event             Lifecycle event being skipped.
+	 * @param string                $payment_reference Provider payment reference for the event.
+	 */
+	private function log_skipped_locked_event( WC_Order $order, PaymentLifecycleEvent $event, string $payment_reference ): void {
+		if ( ! function_exists( 'wc_get_logger' ) ) {
+			return;
+		}
+
+		wc_get_logger()->warning(
+			'Native WooPayments lifecycle event skipped due to order payment lock contention.',
+			array(
+				'source'            => 'native-payments-webhook',
+				'order_id'          => $order->get_id(),
+				'payment_reference' => $payment_reference,
+				'event_type'        => $event->get_status(),
+				'reason'            => 'order_locked',
+			)
+		);
 	}
 
 	/**

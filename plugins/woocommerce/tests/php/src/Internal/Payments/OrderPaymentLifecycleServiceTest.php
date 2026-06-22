@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
+use Automattic\WooCommerce\RestApi\UnitTests\LoggerSpyTrait;
 use WC_Order;
 use WC_Unit_Test_Case;
 
@@ -13,6 +14,8 @@ use WC_Unit_Test_Case;
  * Tests for the OrderPaymentLifecycleService class.
  */
 class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
+
+	use LoggerSpyTrait;
 
 	/**
 	 * The System Under Test.
@@ -309,6 +312,63 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment complete.' ) );
 		$this->assertTrue( $this->order_payment_store->is_order_payment_locked( $order, 'native_charge_operation' ) );
 		$this->order_payment_store->unlock_order_payment( $order );
+	}
+
+	/**
+	 * @testdox A lifecycle event skipped because the order is lock-contested is logged as a warning with full context.
+	 */
+	public function test_skipped_locked_event_is_logged_with_context(): void {
+		$order = $this->create_woopayments_order();
+		$this->assertTrue( $this->order_payment_store->claim_order_payment_lock( $order, 'native_charge_operation' ) );
+
+		$this->sut->apply(
+			$order,
+			new PaymentLifecycleEvent(
+				PaymentLifecycleEvent::STATUS_COMPLETED,
+				'pi_webhook',
+				array( '_intent_id' => 'pi_webhook' ),
+				array(),
+				'Payment complete.'
+			)
+		);
+
+		$this->assertLogged(
+			'warning',
+			'lock contention',
+			array(
+				'source'            => 'native-payments-webhook',
+				'order_id'          => $order->get_id(),
+				'payment_reference' => 'pi_webhook',
+				'event_type'        => PaymentLifecycleEvent::STATUS_COMPLETED,
+				'reason'            => 'order_locked',
+			)
+		);
+
+		$this->order_payment_store->unlock_order_payment( $order );
+	}
+
+	/**
+	 * @testdox A lifecycle event applied with an available lock does not log a skip warning.
+	 */
+	public function test_applied_event_does_not_log_skip_warning(): void {
+		$order = $this->create_woopayments_order();
+
+		$this->sut->apply(
+			$order,
+			new PaymentLifecycleEvent(
+				PaymentLifecycleEvent::STATUS_COMPLETED,
+				'pi_applied',
+				array( '_intent_id' => 'pi_applied' ),
+				array(),
+				'Payment complete.'
+			)
+		);
+
+		$warnings = array_filter(
+			$this->captured_logs,
+			static fn( $log ) => 'warning' === $log['level'] && str_contains( $log['message'], 'lock contention' )
+		);
+		$this->assertCount( 0, $warnings, 'A successfully applied lifecycle event must not emit a lock-contention warning.' );
 	}
 
 	/**
