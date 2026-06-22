@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use WC_Customer;
 use WC_Order;
 
@@ -18,7 +19,12 @@ use WC_Order;
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class WooPaymentsCustomerService {
+class WooPaymentsCustomerService implements RegisterHooksInterface {
+
+	/**
+	 * Personal-data eraser identifier registered with WordPress.
+	 */
+	private const ERASER_ID = 'woocommerce-payments-customer';
 
 	/**
 	 * Deprecated customer ID option key.
@@ -65,6 +71,87 @@ class WooPaymentsCustomerService {
 	final public function init( WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service ): void {
 		$this->api_client      = $api_client;
 		$this->account_service = $account_service;
+	}
+
+	/**
+	 * Register the GDPR personal-data eraser for stored WooPayments customer IDs.
+	 *
+	 * The eraser is registered unconditionally rather than behind the native
+	 * runtime arbiter: the customer-ID user options can persist on a site
+	 * regardless of which payments runtime currently owns it (native or the
+	 * standalone plugin), and erasure coverage must not blink off when ownership
+	 * changes. The callback only deletes user options, so it is idempotent and
+	 * harmless when there is nothing to remove.
+	 *
+	 * @internal
+	 */
+	public function register() {
+		add_filter( 'wp_privacy_personal_data_erasers', array( $this, 'register_personal_data_eraser' ) );
+	}
+
+	/**
+	 * Filter callback that adds this service's eraser to WP's GDPR registry.
+	 *
+	 * @internal
+	 *
+	 * @param array<string, array{eraser_friendly_name: string, callback: callable}> $erasers Existing erasers.
+	 * @return array<string, array{eraser_friendly_name: string, callback: callable}>
+	 */
+	public function register_personal_data_eraser( array $erasers ): array {
+		$erasers[ self::ERASER_ID ] = array(
+			'eraser_friendly_name' => __( 'WooPayments Customer Data', 'woocommerce' ),
+			'callback'             => array( $this, 'erase_customer_data' ),
+		);
+
+		return $erasers;
+	}
+
+	/**
+	 * Erase the WooPayments customer IDs linking a WordPress user to Stripe.
+	 *
+	 * Resolves the user by email and deletes the deprecated, live, and test
+	 * customer-ID user options. Each option is stored via `update_user_option()`
+	 * with the default `$global = false`, so deletion mirrors that by leaving the
+	 * `$global` argument at its default.
+	 *
+	 * @internal
+	 *
+	 * @param string $email_address Email address being erased.
+	 * @param int    $page          Pagination page (unused; all data fits one page).
+	 * @return array{items_removed: bool, items_retained: bool, messages: string[], done: bool}
+	 */
+	public function erase_customer_data( string $email_address, int $page = 1 ): array {
+		unset( $page );
+
+		$result = array(
+			'items_removed'  => false,
+			'items_retained' => false,
+			'messages'       => array(),
+			'done'           => true,
+		);
+
+		$user = get_user_by( 'email', $email_address );
+		if ( ! $user ) {
+			return $result;
+		}
+
+		$option_keys = array(
+			self::DEPRECATED_CUSTOMER_ID_OPTION,
+			self::LIVE_CUSTOMER_ID_OPTION,
+			self::TEST_CUSTOMER_ID_OPTION,
+		);
+
+		foreach ( $option_keys as $option_key ) {
+			if ( false === get_user_option( $option_key, $user->ID ) ) {
+				continue;
+			}
+
+			if ( delete_user_option( $user->ID, $option_key ) ) {
+				$result['items_removed'] = true;
+			}
+		}
+
+		return $result;
 	}
 
 	/**
