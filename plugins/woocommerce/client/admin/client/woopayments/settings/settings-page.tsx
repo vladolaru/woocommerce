@@ -86,11 +86,11 @@ import {
 	useMultiCurrency,
 	usePaymentRequestEnabledSettings,
 	useSavedCards,
-	useSelectedPaymentMethod as getSelectedPaymentMethodSetting,
+	useSelectedPaymentMethod as usePaymentMethodSelection,
 	useSettings,
 	useTestMode,
 	useTestModeOnboarding,
-	useUnselectedPaymentMethod as getUnselectedPaymentMethodSetting,
+	useUnselectedPaymentMethod as usePaymentMethodDeselection,
 	useWooPayEnabledSettings,
 	useWooPayShowIncompatibilityNotice,
 	useWCPaySubscriptions,
@@ -910,6 +910,42 @@ const GeneralSettingsSection = () => {
 	);
 };
 
+/**
+ * Shared state and handler for dismissing duplicate payment method notices.
+ *
+ * Collapses the identical wiring (duplicated method ids, the dismissed-notices
+ * state, and the dismiss handler that persists the option) that the payment
+ * methods, BNPL, and express checkout sections all need.
+ */
+const useDuplicatePaymentMethodNotices = () => {
+	const duplicatedPaymentMethodIds = asDuplicatePaymentMethodNotices(
+		useGetDuplicatedPaymentMethodIds()
+	);
+	const [
+		dismissedDuplicatePaymentMethodNotices,
+		setDismissedDuplicatePaymentMethodNotices,
+	] = useDismissedDuplicatePaymentMethodNotices() as [
+		DuplicatePaymentMethodNotices,
+		typeof updateDismissedDuplicatePaymentMethodNotices
+	];
+
+	const onDismissDuplicateNotice = (
+		notices: Record< string, string[] >
+	) => {
+		setDismissedDuplicatePaymentMethodNotices( notices );
+		saveOption(
+			'wcpay_duplicate_payment_method_notices_dismissed',
+			notices
+		);
+	};
+
+	return {
+		duplicatedPaymentMethodIds,
+		dismissedDuplicatePaymentMethodNotices,
+		onDismissDuplicateNotice,
+	};
+};
+
 const PaymentMethodsSettingsSection = () => {
 	const settings = asSettingsRecord( useGetSettings() );
 	const availablePaymentMethodIds = asStringArray(
@@ -920,27 +956,22 @@ const PaymentMethodsSettingsSection = () => {
 	);
 	const statuses = asSettingsRecord( useGetPaymentMethodStatuses() );
 	const accountFees = asAccountFees( useGetAccountFees() );
-	const duplicatedPaymentMethodIds = asDuplicatePaymentMethodNotices(
-		useGetDuplicatedPaymentMethodIds()
-	);
-	const pmPromotions = asPmPromotions( settings.pm_promotions );
-	const [
+	const {
+		duplicatedPaymentMethodIds,
 		dismissedDuplicatePaymentMethodNotices,
-		setDismissedDuplicatePaymentMethodNotices,
-	] = useDismissedDuplicatePaymentMethodNotices() as [
-		DuplicatePaymentMethodNotices,
-		typeof updateDismissedDuplicatePaymentMethodNotices
-	];
+		onDismissDuplicateNotice,
+	} = useDuplicatePaymentMethodNotices();
+	const pmPromotions = asPmPromotions( settings.pm_promotions );
 	const standardPaymentMethodIds = availablePaymentMethodIds.filter(
 		( methodId ) => ! BNPL_METHOD_IDS.includes( methodId )
 	);
 	const [ enabledMethodIds ] =
 		useEnabledPaymentMethodIds() as StringArraySetting;
-	const [ , addPaymentMethod ] = getSelectedPaymentMethodSetting() as [
+	const [ , addPaymentMethod ] = usePaymentMethodSelection() as [
 		string[],
 		( id: string ) => void
 	];
-	const [ , removePaymentMethod ] = getUnselectedPaymentMethodSetting() as [
+	const [ , removePaymentMethod ] = usePaymentMethodDeselection() as [
 		string[],
 		( id: string ) => void
 	];
@@ -951,15 +982,6 @@ const PaymentMethodsSettingsSection = () => {
 		settings.is_multi_currency_enabled,
 		true
 	);
-	const onDismissDuplicateNotice = (
-		notices: Record< string, string[] >
-	) => {
-		setDismissedDuplicatePaymentMethodNotices( notices );
-		saveOption(
-			'wcpay_duplicate_payment_method_notices_dismissed',
-			notices
-		);
-	};
 
 	return (
 		<SettingsSection
@@ -1022,27 +1044,22 @@ const BuyNowPayLaterSettingsSection = () => {
 	);
 	const statuses = asSettingsRecord( useGetPaymentMethodStatuses() );
 	const accountFees = asAccountFees( useGetAccountFees() );
-	const duplicatedPaymentMethodIds = asDuplicatePaymentMethodNotices(
-		useGetDuplicatedPaymentMethodIds()
-	);
-	const pmPromotions = asPmPromotions( settings.pm_promotions );
-	const [
+	const {
+		duplicatedPaymentMethodIds,
 		dismissedDuplicatePaymentMethodNotices,
-		setDismissedDuplicatePaymentMethodNotices,
-	] = useDismissedDuplicatePaymentMethodNotices() as [
-		DuplicatePaymentMethodNotices,
-		typeof updateDismissedDuplicatePaymentMethodNotices
-	];
+		onDismissDuplicateNotice,
+	} = useDuplicatePaymentMethodNotices();
+	const pmPromotions = asPmPromotions( settings.pm_promotions );
 	const availableBuyNowPayLaterMethodIds = availablePaymentMethodIds.filter(
 		( methodId ) => BNPL_METHOD_IDS.includes( methodId )
 	);
 	const [ enabledMethodIds ] =
 		useEnabledPaymentMethodIds() as StringArraySetting;
-	const [ , addPaymentMethod ] = getSelectedPaymentMethodSetting() as [
+	const [ , addPaymentMethod ] = usePaymentMethodSelection() as [
 		string[],
 		( id: string ) => void
 	];
-	const [ , removePaymentMethod ] = getUnselectedPaymentMethodSetting() as [
+	const [ , removePaymentMethod ] = usePaymentMethodDeselection() as [
 		string[],
 		( id: string ) => void
 	];
@@ -1053,15 +1070,6 @@ const BuyNowPayLaterSettingsSection = () => {
 		settings.is_multi_currency_enabled,
 		true
 	);
-	const onDismissDuplicateNotice = (
-		notices: Record< string, string[] >
-	) => {
-		setDismissedDuplicatePaymentMethodNotices( notices );
-		saveOption(
-			'wcpay_duplicate_payment_method_notices_dismissed',
-			notices
-		);
-	};
 
 	return availableBuyNowPayLaterMethodIds.length === 0 ? null : (
 		<SettingsSection
@@ -1129,16 +1137,11 @@ const ExpressCheckoutSettingsSection = () => {
 		useGetAvailablePaymentMethodIds()
 	);
 	const statuses = asSettingsRecord( useGetPaymentMethodStatuses() );
-	const duplicatedPaymentMethodIds = asDuplicatePaymentMethodNotices(
-		useGetDuplicatedPaymentMethodIds()
-	);
-	const [
+	const {
+		duplicatedPaymentMethodIds,
 		dismissedDuplicatePaymentMethodNotices,
-		setDismissedDuplicatePaymentMethodNotices,
-	] = useDismissedDuplicatePaymentMethodNotices() as [
-		DuplicatePaymentMethodNotices,
-		typeof updateDismissedDuplicatePaymentMethodNotices
-	];
+		onDismissDuplicateNotice,
+	} = useDuplicatePaymentMethodNotices();
 	const isLinkAvailable =
 		enabledMethodIds.includes( 'card' ) &&
 		availablePaymentMethodIds.includes( 'link' );
@@ -1155,16 +1158,6 @@ const ExpressCheckoutSettingsSection = () => {
 		useWooPayShowIncompatibilityNotice()
 	);
 	let wooPayNotice = '';
-
-	const onDismissDuplicateNotice = (
-		notices: Record< string, string[] >
-	) => {
-		setDismissedDuplicatePaymentMethodNotices( notices );
-		saveOption(
-			'wcpay_duplicate_payment_method_notices_dismissed',
-			notices
-		);
-	};
 
 	if ( isLinkEnabled ) {
 		wooPayNotice = __(
