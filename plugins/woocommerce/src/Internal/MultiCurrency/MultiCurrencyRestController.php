@@ -195,6 +195,7 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 
 		update_option( self::OPTION_PREFIX . '_enabled_currencies', $enabled_codes );
 		$this->remove_removed_currency_settings( $previous_enabled_codes, $enabled_codes );
+		$this->get_state_builder()->reset();
 
 		return $this->get_store_currencies();
 	}
@@ -237,6 +238,8 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 		} catch ( InvalidCurrencyException | InvalidCurrencyRateException $exception ) {
 			return $this->get_error_response( $exception );
 		}
+
+		$this->get_state_builder()->reset();
 
 		return $this->get_single_currency_settings( $request );
 	}

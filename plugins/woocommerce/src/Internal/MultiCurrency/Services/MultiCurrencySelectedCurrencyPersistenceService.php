@@ -57,6 +57,7 @@ class MultiCurrencySelectedCurrencyPersistenceService {
 			return false;
 		}
 
+		$this->state_builder->reset();
 		$this->recalculate_cart_or_schedule();
 
 		return true;

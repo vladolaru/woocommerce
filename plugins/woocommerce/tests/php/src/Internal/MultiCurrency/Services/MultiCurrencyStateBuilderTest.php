@@ -322,6 +322,55 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should return the same memoized state instance on repeated calls.
+	 */
+	public function test_memoizes_state_across_repeated_calls(): void {
+		$cache   = $this->create_counting_cache();
+		$builder = $this->create_builder( null, $cache );
+
+		$first  = $builder->build();
+		$second = $builder->build();
+
+		$this->assertSame( $first, $second );
+		$this->assertSame( 1, $cache->get_call_count );
+	}
+
+	/**
+	 * @testdox Should rebuild the state after reset is called.
+	 */
+	public function test_reset_rebuilds_state(): void {
+		$cache   = $this->create_counting_cache();
+		$builder = $this->create_builder( null, $cache );
+
+		$first = $builder->build();
+		$builder->reset();
+		$second = $builder->build();
+
+		$this->assertNotSame( $first, $second );
+		$this->assertSame( 2, $cache->get_call_count );
+	}
+
+	/**
+	 * @testdox Should reflect a changed enabled-currencies option after reset.
+	 */
+	public function test_reset_reflects_updated_enabled_currencies(): void {
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_gbp', '0.8' );
+		$builder = $this->create_builder();
+
+		$this->assertSame( array( 'USD', 'GBP' ), array_keys( $builder->build()->get_enabled_currencies() ) );
+
+		update_option( 'wcpay_multi_currency_enabled_currencies', array() );
+
+		$this->assertSame( array( 'USD', 'GBP' ), array_keys( $builder->build()->get_enabled_currencies() ) );
+
+		$builder->reset();
+
+		$this->assertSame( array( 'USD' ), array_keys( $builder->build()->get_enabled_currencies() ) );
+	}
+
+	/**
 	 * Delete options touched by these tests.
 	 */
 	private function delete_options(): void {
@@ -334,14 +383,70 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 	 * Create the state builder.
 	 *
 	 * @param CurrencyRateProviderRegistry|null $registry Rate provider registry.
+	 * @param MultiCurrencyCacheInterface|null  $cache    Multi-currency cache.
 	 * @return MultiCurrencyStateBuilder
 	 */
-	private function create_builder( ?CurrencyRateProviderRegistry $registry = null ): MultiCurrencyStateBuilder {
+	private function create_builder( ?CurrencyRateProviderRegistry $registry = null, ?MultiCurrencyCacheInterface $cache = null ): MultiCurrencyStateBuilder {
 		return new MultiCurrencyStateBuilder(
 			$this->create_localization(),
 			new MultiCurrencyRateService( $registry ?? new CurrencyRateProviderRegistry() ),
-			new MultiCurrencyDatabaseCache()
+			$cache ?? new MultiCurrencyDatabaseCache()
 		);
+	}
+
+	/**
+	 * Create a cache double that counts get() calls.
+	 *
+	 * @return MultiCurrencyCacheInterface
+	 */
+	private function create_counting_cache(): MultiCurrencyCacheInterface {
+		return new class() implements MultiCurrencyCacheInterface {
+			/**
+			 * Number of get() calls.
+			 *
+			 * @var int
+			 */
+			public int $get_call_count = 0;
+
+			/**
+			 * Get a value from cache.
+			 *
+			 * @param string $key   Cache key.
+			 * @param bool   $force Whether to return cached data without checking expiry.
+			 * @return mixed
+			 */
+			public function get( string $key, bool $force = false ) {
+				unset( $key, $force );
+				++$this->get_call_count;
+
+				return null;
+			}
+
+			/**
+			 * Get a value from cache or regenerate and store it.
+			 *
+			 * @param string   $key           Cache key.
+			 * @param callable $generator     Regenerates missing data.
+			 * @param callable $validate_data Validates cached data.
+			 * @param bool     $force_refresh Whether to force regeneration.
+			 * @param bool     $refreshed     Set true when cache is refreshed successfully.
+			 * @return mixed|null
+			 */
+			public function get_or_add( string $key, callable $generator, callable $validate_data, bool $force_refresh = false, bool &$refreshed = false ) {
+				unset( $key, $generator, $validate_data, $force_refresh, $refreshed );
+
+				return null;
+			}
+
+			/**
+			 * Delete a cache value.
+			 *
+			 * @param string $key Cache key.
+			 */
+			public function delete( string $key ): void {
+				unset( $key );
+			}
+		};
 	}
 
 	/**

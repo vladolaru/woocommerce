@@ -49,6 +49,13 @@ class MultiCurrencyStateBuilder {
 	private MultiCurrencyCacheInterface $cache;
 
 	/**
+	 * Memoized per-request state snapshot.
+	 *
+	 * @var MultiCurrencyState|null
+	 */
+	private ?MultiCurrencyState $cached_state = null;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param MultiCurrencyLocalizationInterface $localization_service Localization service.
@@ -68,9 +75,19 @@ class MultiCurrencyStateBuilder {
 	/**
 	 * Build a multi-currency state snapshot.
 	 *
+	 * The result is memoized for the lifetime of this builder instance because the
+	 * state is read-stable within a normal request and the price filters invoke
+	 * build() dozens of times per page. Call reset() after mutating any underlying
+	 * multi-currency option, the selected currency, or related state so the next
+	 * build() reflects the change.
+	 *
 	 * @return MultiCurrencyState
 	 */
 	public function build(): MultiCurrencyState {
+		if ( null !== $this->cached_state ) {
+			return $this->cached_state;
+		}
+
 		$default_code  = strtoupper( (string) get_option( 'woocommerce_currency', 'USD' ) );
 		$default       = new MultiCurrencyCurrency( $this->localization_service, $default_code, 1.0, true );
 		$available     = array_merge(
@@ -116,7 +133,22 @@ class MultiCurrencyStateBuilder {
 			? $enabled[ $selected_code ]
 			: $default;
 
-		return new MultiCurrencyState( $available, $enabled, $default, $selected, $this->get_customer_currencies() );
+		$this->cached_state = new MultiCurrencyState( $available, $enabled, $default, $selected, $this->get_customer_currencies() );
+
+		return $this->cached_state;
+	}
+
+	/**
+	 * Discard the memoized state so the next build() reflects fresh underlying data.
+	 *
+	 * Call this after any in-request mutation that changes the state build()
+	 * assembles: enabled or single-currency option writes, and selected-currency
+	 * persistence.
+	 *
+	 * @return void
+	 */
+	public function reset(): void {
+		$this->cached_state = null;
 	}
 
 	/**
