@@ -273,7 +273,11 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 		try {
 			$this->api_client->send_store_setup( $this->get_store_setup_details() );
 		} catch ( Throwable $exception ) {
-			$this->log_exception( 'Failed to sync native WooPayments store setup state.', $exception );
+			$this->log_exception(
+				'Failed to sync native WooPayments store setup state.',
+				$exception,
+				array( 'action' => self::STORE_SETUP_SYNC_ACTION )
+			);
 		}
 	}
 
@@ -295,7 +299,11 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 		try {
 			$this->api_client->update_compatibility_data( $this->get_compatibility_data() );
 		} catch ( Throwable $exception ) {
-			$this->log_exception( 'Failed to sync native WooPayments compatibility data.', $exception );
+			$this->log_exception(
+				'Failed to sync native WooPayments compatibility data.',
+				$exception,
+				array( 'action' => self::UPDATE_COMPATIBILITY_DATA_ACTION )
+			);
 		}
 	}
 
@@ -334,7 +342,11 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 		try {
 			$this->delete_instant_deposit_note();
 		} catch ( Throwable $exception ) {
-			$this->log_exception( 'Failed to delete native WooPayments Instant Deposit eligibility note.', $exception );
+			$this->log_exception(
+				'Failed to delete native WooPayments Instant Deposit eligibility note.',
+				$exception,
+				array( 'action' => self::INSTANT_DEPOSIT_REMINDER_ACTION )
+			);
 		}
 
 		$this->handle_wcpay_instant_deposits_inbox_note( $this->account_service->get_cached_account_data() );
@@ -387,12 +399,17 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 			return;
 		}
 
-		if ( get_option( self::POST_KYC_EMAILS_SCHEDULED_OPTION ) ) {
+		$kyc_date = (int) $value;
+		if ( ! $kyc_date ) {
 			return;
 		}
 
-		$kyc_date = (int) $value;
-		if ( ! $kyc_date ) {
+		// Atomically claim the scheduling gate. add_option() performs an INSERT that
+		// returns false when the row already exists, so only the first of two
+		// concurrent account-refresh handlers proceeds to schedule the email stages.
+		// This avoids the time-of-check/time-of-use race a get_option()/update_option()
+		// pair would leave open and the duplicate merchant emails it could send.
+		if ( ! add_option( self::POST_KYC_EMAILS_SCHEDULED_OPTION, '1', '', false ) ) {
 			return;
 		}
 
@@ -409,8 +426,6 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 				max( $send_at, $now + MINUTE_IN_SECONDS )
 			);
 		}
-
-		update_option( self::POST_KYC_EMAILS_SCHEDULED_OPTION, '1', false );
 	}
 
 	/**
@@ -532,7 +547,15 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 						)
 					);
 				} catch ( Throwable $exception ) {
-					$this->log_exception( 'Failed to update native WooPayments saved payment method.', $exception );
+					$this->log_exception(
+						'Failed to update native WooPayments saved payment method.',
+						$exception,
+						array(
+							'action'         => self::UPDATE_SAVED_PAYMENT_METHOD_ACTION,
+							'order_id'       => $order->get_id(),
+							'payment_method' => $payment_method,
+						)
+					);
 				}
 			}
 		);
@@ -559,7 +582,15 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 				try {
 					$events = $this->api_client->get_timeline( $intent_id );
 				} catch ( Throwable $exception ) {
-					$this->log_exception( 'Failed to read native WooPayments intent timeline.', $exception );
+					$this->log_exception(
+						'Failed to read native WooPayments intent timeline.',
+						$exception,
+						array(
+							'action'    => self::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
+							'order_id'  => $order->get_id(),
+							'intent_id' => $intent_id,
+						)
+					);
 					return;
 				}
 
@@ -1142,17 +1173,19 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	/**
 	 * Log an operational queue exception without fataling the request.
 	 *
-	 * @param string    $message   Log message.
-	 * @param Throwable $exception Exception thrown.
+	 * @param string              $message   Log message.
+	 * @param Throwable           $exception Exception thrown.
+	 * @param array<string,mixed> $context   Optional correlation context (e.g. order_id, intent_id, action)
+	 *                                       merged into the log entry alongside the source.
 	 */
-	private function log_exception( string $message, Throwable $exception ): void {
+	private function log_exception( string $message, Throwable $exception, array $context = array() ): void {
 		if ( ! function_exists( 'wc_get_logger' ) ) {
 			return;
 		}
 
 		wc_get_logger()->error(
 			$message . ' ' . $exception->getMessage(),
-			array( 'source' => 'woopayments' )
+			array_merge( $context, array( 'source' => 'woopayments' ) )
 		);
 	}
 }

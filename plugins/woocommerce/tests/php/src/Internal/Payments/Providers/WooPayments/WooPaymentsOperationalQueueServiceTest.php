@@ -283,6 +283,37 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Fee-breakdown job failures log order and intent correlation context.
+	 */
+	public function test_add_fee_breakdown_failure_logs_order_and_intent_context(): void {
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->save();
+
+		$api_client = $this->create_api_client( array( 'get_timeline' ) );
+		$api_client->method( 'get_timeline' )->willThrowException( new \RuntimeException( 'timeline boom' ) );
+
+		$fake_logger = $this->create_fake_logger();
+		add_filter(
+			'woocommerce_logging_class',
+			function () use ( $fake_logger ) {
+				return $fake_logger;
+			}
+		);
+
+		$this->create_service( new StaticNativeRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client )->handle_wcpay_add_fee_breakdown_to_order_notes( $order->get_id(), 'pi_123', false );
+
+		remove_all_filters( 'woocommerce_logging_class' );
+
+		$this->assertCount( 1, $fake_logger->error_calls, 'A single error should be logged when the timeline read fails.' );
+		$context = $fake_logger->error_calls[0]['context'];
+		$this->assertSame( 'woopayments', $context['source'] );
+		$this->assertSame( $order->get_id(), $context['order_id'] );
+		$this->assertSame( 'pi_123', $context['intent_id'] );
+		$this->assertSame( 'wcpay_add_fee_breakdown_to_order_notes', $context['action'] );
+	}
+
+	/**
 	 * @testdox Instant deposit eligibility refresh creates the preserved inbox note and reminder.
 	 */
 	public function test_instant_deposit_eligibility_refresh_creates_note_and_reminder(): void {
@@ -359,6 +390,44 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame(
 			array( 'wcpay_post_kyc_activation_email_send', 'wcpay_post_kyc_activation_email_send', 'wcpay_post_kyc_activation_email_send' ),
 			array_column( $scheduler->scheduled_jobs, 'hook' )
+		);
+	}
+
+	/**
+	 * @testdox Post-KYC completion does not re-schedule activation emails when the scheduled marker already exists.
+	 */
+	public function test_post_kyc_completion_does_not_reschedule_when_marker_already_exists(): void {
+		$scheduler = new RecordingActionSchedulerService();
+		$service   = $this->create_service( new StaticNativeRuntimeArbiter( true ), $scheduler );
+
+		// Simulate a concurrent account-refresh handler that already won the scheduling gate.
+		update_option( 'wcpay_post_kyc_activation_emails_scheduled', '1', false );
+
+		$service->handle_add_option_wcpay_kyc_completion_date( 'wcpay_kyc_completion_date', time() );
+
+		$this->assertSame( array(), $scheduler->scheduled_jobs, 'No activation email stages should be scheduled when the gate marker already exists.' );
+	}
+
+	/**
+	 * @testdox Post-KYC completion uses an atomic insert so a concurrent loser schedules nothing.
+	 */
+	public function test_post_kyc_completion_atomic_gate_blocks_concurrent_loser(): void {
+		$scheduler = new RecordingActionSchedulerService();
+		$service   = $this->create_service( new StaticNativeRuntimeArbiter( true ), $scheduler );
+
+		// Persist the gate row to mirror a concurrent caller that already inserted it,
+		// while hiding it from get_option() to recreate the TOCTOU read window.
+		update_option( 'wcpay_post_kyc_activation_emails_scheduled', '1', false );
+		add_filter( 'option_wcpay_post_kyc_activation_emails_scheduled', '__return_empty_string' );
+
+		$service->handle_add_option_wcpay_kyc_completion_date( 'wcpay_kyc_completion_date', time() );
+
+		remove_filter( 'option_wcpay_post_kyc_activation_emails_scheduled', '__return_empty_string' );
+
+		$this->assertSame(
+			array(),
+			$scheduler->scheduled_jobs,
+			'A concurrent loser must schedule nothing once the gate row exists, even when the cached read misses it.'
 		);
 	}
 
@@ -606,6 +675,66 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		$account_service->method( 'has_test_account' )->willReturn( $test_account );
 
 		return $account_service;
+	}
+
+	/**
+	 * Create a fake logger that records error calls with their context.
+	 *
+	 * Implements WC_Logger_Interface so it can be injected through the
+	 * woocommerce_logging_class filter.
+	 *
+	 * @return object Fake logger that tracks error calls.
+	 */
+	private function create_fake_logger(): object {
+		// phpcs:disable Squiz.Commenting, Squiz.Classes.ClassFileName.NoMatch
+		return new class() implements \WC_Logger_Interface {
+			public array $error_calls = array();
+
+			public function add( $handle, $message, $level = \WC_Log_Levels::NOTICE ) {
+				unset( $handle, $message, $level ); // Avoid parameter not used PHPCS errors.
+				return true;
+			}
+
+			public function log( $level, $message, $context = array() ) {
+				unset( $level, $message, $context ); // Avoid parameter not used PHPCS errors.
+			}
+
+			public function emergency( $message, $context = array() ) {
+				unset( $message, $context ); // Avoid parameter not used PHPCS errors.
+			}
+
+			public function alert( $message, $context = array() ) {
+				unset( $message, $context ); // Avoid parameter not used PHPCS errors.
+			}
+
+			public function critical( $message, $context = array() ) {
+				unset( $message, $context ); // Avoid parameter not used PHPCS errors.
+			}
+
+			public function notice( $message, $context = array() ) {
+				unset( $message, $context ); // Avoid parameter not used PHPCS errors.
+			}
+
+			public function debug( $message, $context = array() ) {
+				unset( $message, $context ); // Avoid parameter not used PHPCS errors.
+			}
+
+			public function info( $message, $context = array() ) {
+				unset( $message, $context ); // Avoid parameter not used PHPCS errors.
+			}
+
+			public function warning( $message, $context = array() ) {
+				unset( $message, $context ); // Avoid parameter not used PHPCS errors.
+			}
+
+			public function error( $message, $context = array() ) {
+				$this->error_calls[] = array(
+					'message' => $message,
+					'context' => $context,
+				);
+			}
+		};
+		// phpcs:enable Squiz.Commenting, Squiz.Classes.ClassFileName.NoMatch
 	}
 
 	/**
