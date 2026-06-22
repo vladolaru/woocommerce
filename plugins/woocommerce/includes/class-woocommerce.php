@@ -421,6 +421,30 @@ final class WooCommerce {
 		$container->get( Automattic\WooCommerce\Internal\Admin\Settings\PaymentsController::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsController::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNavigationController::class )->register();
+
+		/*
+		 * Native WooPayments + Multi-Currency controllers.
+		 *
+		 * Every controller below (the native payments runtime, the WooPayments REST controllers, and
+		 * the Multi-Currency stack) is wired UNCONDITIONALLY here. None of them is gated at this call
+		 * site. Instead, each one self-guards at runtime inside its own register() method:
+		 *  - native payments controllers consult NativePaymentsRuntimeArbiter::should_native_register();
+		 *  - multi-currency controllers consult MultiCurrencyRuntimeArbiter::should_core_register(),
+		 *    which delegates to the payments arbiter (core multi-currency owns the pipeline only when
+		 *    the native payments runtime owns the site).
+		 * A registration therefore becomes a no-op whenever its runtime does not own the site.
+		 *
+		 * Single kill-switch for incident response: the `woocommerce_native_payments_enabled` filter
+		 * (NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED). Returning `false` from it forces the
+		 * native runtime dormant for the whole request, regardless of the registrations below:
+		 * should_native_register() then returns false everywhere, and because the multi-currency
+		 * arbiter delegates to the payments arbiter, should_core_register() goes false too — so the
+		 * entire cluster registers nothing. It defaults to false today and is the one place to flip
+		 * to disable native payments in an incident (no need to touch this registration list). Note
+		 * the standalone WooPayments plugin already wins whenever it is active, independent of this
+		 * filter; the filter only governs the native runtime. See NativePaymentsRuntimeArbiter for
+		 * the full ownership rules.
+		 */
 		$container->get( Automattic\WooCommerce\Internal\Payments\Shadow\NativePaymentsShadowMode::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\MultiCurrency\Shadow\MultiCurrencyShadowMode::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyProviderBootstrap::class )->register();

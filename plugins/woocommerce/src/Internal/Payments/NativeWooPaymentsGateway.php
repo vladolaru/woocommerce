@@ -28,6 +28,16 @@ use WP_Error;
 /**
  * Native WooPayments payment gateway shell.
  *
+ * Hook-name parity: a handful of the filters/actions this gateway fires intentionally keep the
+ * standalone WooPayments **plugin's** hook names (e.g. the `wcpay_` prefix or the plugin's
+ * double-prefixed `woocommerce_woocommerce_payments_*` action names) instead of the
+ * `woocommerce_native_*` convention used elsewhere in the native runtime. This is deliberate, not
+ * an oversight: extensions in the ecosystem hook those plugin-named hooks, and reusing the exact
+ * names preserves their behavior once a site switches from the plugin to the native runtime.
+ * Do NOT "normalize" these names to the native prefix — renaming them silently breaks extension
+ * compatibility. Each such hook is annotated at its call site; native-only hooks use the
+ * `woocommerce_native_*` prefix.
+ *
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
@@ -239,6 +249,11 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 				/**
 				 * Filters the redirect URL after adding a WooPayments payment method.
 				 *
+				 * This intentionally uses the standalone WooPayments plugin's `wcpay_` hook name
+				 * (not the native `woocommerce_native_*` prefix) for parity: extensions that hooked
+				 * the plugin's filter keep working once a site switches to the native runtime.
+				 * Do not rename it — see the class doc block for the hook-name parity rationale.
+				 *
 				 * @since 11.0.0
 				 * @param string $url Redirect URL.
 				 */
@@ -323,6 +338,11 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		try {
 			/**
 			 * Fires when a native WooPayments payment requires customer authentication.
+			 *
+			 * This intentionally keeps the standalone WooPayments plugin's action name
+			 * (`woocommerce_woocommerce_payments_*`) rather than the native `woocommerce_native_*`
+			 * prefix, for parity: extensions hooked to the plugin's action keep working on the
+			 * native runtime. Do not rename it — see the class doc block for the rationale.
 			 *
 			 * @param WC_Order $renewal_order     The renewal order that requires authentication.
 			 * @param string   $intent_id         The provider payment intent ID.
