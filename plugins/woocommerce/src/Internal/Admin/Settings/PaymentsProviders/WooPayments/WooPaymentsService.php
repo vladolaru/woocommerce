@@ -3476,7 +3476,7 @@ class WooPaymentsService {
 	 * @return void
 	 */
 	private function set_native_onboarding_test_mode( bool $test_mode ): void {
-		$this->proxy->call_function( 'update_option', 'wcpay_onboarding_test_mode', $test_mode ? 'yes' : 'no', true );
+		$this->proxy->call_function( 'update_option', 'wcpay_onboarding_test_mode', $test_mode ? 'yes' : 'no', false );
 	}
 
 	/**
@@ -3490,6 +3490,7 @@ class WooPaymentsService {
 		$settings              = is_array( $settings ) ? $settings : array();
 		$settings['test_mode'] = $test_mode ? 'yes' : 'no';
 
+		// Keep the gateway settings autoloaded: the gateway reads them on every front-end request via WC_Payment_Gateway::init_settings().
 		$this->proxy->call_function( 'update_option', 'woocommerce_woocommerce_payments_settings', $settings );
 	}
 
@@ -3526,8 +3527,9 @@ class WooPaymentsService {
 			$settings['upe_enabled_payment_method_ids'] = array_values( array_unique( $enabled_payment_methods ) );
 		}
 
+		// Keep the gateway settings autoloaded: the gateway reads them on every front-end request via WC_Payment_Gateway::init_settings().
 		$this->proxy->call_function( 'update_option', 'woocommerce_woocommerce_payments_settings', $settings );
-		$this->proxy->call_function( 'update_option', '_wcpay_onboarding_stripe_connected', array( 'is_existing_stripe_account' => true ) );
+		$this->proxy->call_function( 'update_option', '_wcpay_onboarding_stripe_connected', array( 'is_existing_stripe_account' => true ), false );
 	}
 
 	/**

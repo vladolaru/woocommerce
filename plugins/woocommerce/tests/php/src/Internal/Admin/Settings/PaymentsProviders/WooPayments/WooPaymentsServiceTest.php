@@ -12389,6 +12389,57 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should not autoload the onboarding test-mode option when persisting it.
+	 */
+	public function test_set_native_onboarding_test_mode_does_not_autoload_option(): void {
+		delete_option( 'wcpay_onboarding_test_mode' );
+
+		$this->invoke_private_method( 'set_native_onboarding_test_mode', array( true ) );
+
+		$this->assertSame( 'yes', get_option( 'wcpay_onboarding_test_mode' ) );
+		$this->assertOptionNotAutoloaded( 'wcpay_onboarding_test_mode' );
+	}
+
+	/**
+	 * @testdox Should not autoload the Stripe-connected onboarding marker when persisting it.
+	 */
+	public function test_update_native_gateway_settings_after_test_account_init_does_not_autoload_stripe_connected_marker(): void {
+		delete_option( '_wcpay_onboarding_stripe_connected' );
+
+		$this->invoke_private_method(
+			'update_native_gateway_settings_after_test_account_init',
+			array( array( 'card_payments' => true ), array( 'is_live' => false ) )
+		);
+
+		$this->assertIsArray( get_option( '_wcpay_onboarding_stripe_connected' ) );
+		$this->assertOptionNotAutoloaded( '_wcpay_onboarding_stripe_connected' );
+	}
+
+	/**
+	 * Assert that a WordPress option is not flagged for autoload.
+	 *
+	 * Reads the raw autoload column to stay robust across WordPress versions:
+	 * pre-6.6 stores 'no' while 6.6+ stores 'off'/'auto-off' for non-autoloaded options.
+	 *
+	 * @param string $option_name The option name to inspect.
+	 * @return void
+	 */
+	private function assertOptionNotAutoloaded( string $option_name ): void {
+		global $wpdb;
+
+		$autoload = $wpdb->get_var(
+			$wpdb->prepare( "SELECT autoload FROM {$wpdb->options} WHERE option_name = %s", $option_name )
+		);
+
+		$this->assertNotNull( $autoload, sprintf( 'Option %s was not persisted.', $option_name ) );
+		$this->assertNotContains(
+			$autoload,
+			array( 'yes', 'on', 'auto', 'auto-on' ),
+			sprintf( 'Option %s should not be autoloaded, got autoload value "%s".', $option_name, $autoload )
+		);
+	}
+
+	/**
 	 * Helper method to invoke private methods for testing.
 	 *
 	 * @param string $method_name The name of the private method.

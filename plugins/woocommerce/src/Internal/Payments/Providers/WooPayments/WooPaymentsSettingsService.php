@@ -202,9 +202,9 @@ class WooPaymentsSettingsService {
 	/**
 	 * Payment method promotions service.
 	 *
-	 * @var WooPaymentsPmPromotionsService|null
+	 * @var WooPaymentsPmPromotionsService
 	 */
-	private ?WooPaymentsPmPromotionsService $pm_promotions_service = null;
+	private WooPaymentsPmPromotionsService $pm_promotions_service;
 
 	/**
 	 * Whether fraud protection settings were refreshed for this service instance.
@@ -220,14 +220,14 @@ class WooPaymentsSettingsService {
 	 *
 	 * @param WooPaymentsAccountService            $account_service        Native WooPayments account service.
 	 * @param WooPaymentsApiClient                 $api_client             Native WooPayments API client.
+	 * @param WooPaymentsPmPromotionsService       $pm_promotions_service  PM promotions service.
 	 * @param WooPaymentsWooPaySessionService|null $woopay_session_service Optional WooPay session service.
-	 * @param WooPaymentsPmPromotionsService|null  $pm_promotions_service  Optional PM promotions service.
 	 */
-	final public function init( WooPaymentsAccountService $account_service, WooPaymentsApiClient $api_client, ?WooPaymentsWooPaySessionService $woopay_session_service = null, ?WooPaymentsPmPromotionsService $pm_promotions_service = null ): void {
+	final public function init( WooPaymentsAccountService $account_service, WooPaymentsApiClient $api_client, WooPaymentsPmPromotionsService $pm_promotions_service, ?WooPaymentsWooPaySessionService $woopay_session_service = null ): void {
 		$this->account_service        = $account_service;
 		$this->api_client             = $api_client;
-		$this->woopay_session_service = $woopay_session_service;
 		$this->pm_promotions_service  = $pm_promotions_service;
+		$this->woopay_session_service = $woopay_session_service;
 	}
 
 	/**
@@ -492,24 +492,6 @@ class WooPaymentsSettingsService {
 	 * @return WooPaymentsPmPromotionsService
 	 */
 	private function get_pm_promotions_service(): WooPaymentsPmPromotionsService {
-		if ( $this->pm_promotions_service instanceof WooPaymentsPmPromotionsService ) {
-			return $this->pm_promotions_service;
-		}
-
-		try {
-			$service = function_exists( 'wc_get_container' ) ? wc_get_container()->get( WooPaymentsPmPromotionsService::class ) : null;
-		} catch ( Throwable $e ) {
-			$service = new WooPaymentsPmPromotionsService();
-			$service->init( $this->api_client, $this->account_service );
-		}
-
-		if ( ! $service instanceof WooPaymentsPmPromotionsService ) {
-			$service = new WooPaymentsPmPromotionsService();
-			$service->init( $this->api_client, $this->account_service );
-		}
-
-		$this->pm_promotions_service = $service;
-
 		return $this->pm_promotions_service;
 	}
 
