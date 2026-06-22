@@ -674,6 +674,56 @@ class WooPaymentsRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should not register native WooPayments settings routes when no runtime arbiter is wired (fail closed).
+	 */
+	public function test_native_settings_routes_are_not_registered_without_runtime_arbiter(): void {
+		global $wp_rest_server;
+
+		$wp_rest_server = new WP_REST_Server();
+		$this->server   = $wp_rest_server;
+
+		$sut = new WooPaymentsRestController();
+		$sut->init( $this->mock_payments_service, $this->mock_woopayments_service, $this->mock_settings_service );
+		$sut->register_routes( true );
+
+		$routes = $this->server->get_routes();
+
+		$this->assertArrayNotHasKey( '/wc/v3/payments/settings', $routes );
+		$this->assertArrayNotHasKey( '/wc/v3/payments/pm-promotions', $routes );
+		$this->assertArrayNotHasKey( '/wc/v3/payments/file', $routes );
+		$this->assertArrayHasKey( self::ENDPOINT . '/onboarding', $routes );
+	}
+
+	/**
+	 * @testdox Should register native WooPayments settings routes when the runtime arbiter owns the site.
+	 */
+	public function test_native_settings_routes_are_registered_when_native_runtime_owns_site(): void {
+		global $wp_rest_server;
+
+		$wp_rest_server = new WP_REST_Server();
+		$this->server   = $wp_rest_server;
+
+		$runtime_arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'should_native_register' ) )
+			->getMock();
+		$runtime_arbiter
+			->method( 'should_native_register' )
+			->willReturn( true );
+
+		$sut = new WooPaymentsRestController();
+		$sut->init( $this->mock_payments_service, $this->mock_woopayments_service, $this->mock_settings_service, $runtime_arbiter );
+		$sut->register_routes( true );
+
+		$routes = $this->server->get_routes();
+
+		$this->assertArrayHasKey( '/wc/v3/payments/settings', $routes );
+		$this->assertArrayHasKey( '/wc/v3/payments/pm-promotions', $routes );
+		$this->assertArrayHasKey( '/wc/v3/payments/file', $routes );
+		$this->assertArrayHasKey( self::ENDPOINT . '/onboarding', $routes );
+	}
+
+	/**
 	 * @testdox Should update only allowlisted native WooPayments settings options.
 	 */
 	public function test_update_native_settings_option_by_manager(): void {
@@ -904,6 +954,114 @@ class WooPaymentsRestControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'woocommerce_rest_cannot_view', $response->get_data()['code'] );
 
 		remove_filter( 'user_has_cap', $filter_callback );
+	}
+
+	/**
+	 * @testdox Should re-evaluate file classification on a cache miss before serving to unauthorized callers.
+	 */
+	public function test_get_native_public_settings_file_rechecks_classification_on_cache_miss(): void {
+		// phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
+		$filter_callback = static fn( $caps ) => array(
+			'manage_woocommerce' => false,
+			'install_plugins'    => false,
+		);
+		add_filter( 'user_has_cap', $filter_callback );
+
+		// Ensure the classification cache misses so the handler must re-fetch the fresh purpose.
+		delete_transient( 'woocommerce_native_woopayments_file_purpose_file_reclassified_0' );
+
+		// The provider has reclassified this file from public to private since it was last served.
+		$this->mock_settings_service
+			->expects( $this->once() )
+			->method( 'get_file' )
+			->with( 'file_reclassified', false )
+			->willReturn(
+				array(
+					'id'      => 'file_reclassified',
+					'purpose' => 'dispute_evidence',
+				)
+			);
+		$this->mock_settings_service
+			->expects( $this->never() )
+			->method( 'get_file_contents' );
+
+		$request  = new WP_REST_Request( 'GET', '/wc/v3/payments/file/file_reclassified' );
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( rest_authorization_required_code(), $response->get_status() );
+		$this->assertSame( 'woocommerce_rest_cannot_view', $response->get_data()['code'] );
+
+		remove_filter( 'user_has_cap', $filter_callback );
+	}
+
+	/**
+	 * @testdox Should cache the file classification with a short TTL so reclassifications propagate quickly.
+	 */
+	public function test_get_native_public_settings_file_caches_classification_with_short_ttl(): void {
+		$reflection = new \ReflectionClassConstant( WooPaymentsRestController::class, 'FILE_PURPOSE_CACHE_TTL' );
+
+		$this->assertSame( 5 * MINUTE_IN_SECONDS, $reflection->getValue() );
+		$this->assertLessThan( DAY_IN_SECONDS, $reflection->getValue() );
+	}
+
+	/**
+	 * @testdox Should register the public file REST serve filter at most once across repeated dispatches.
+	 */
+	public function test_get_native_public_settings_file_registers_serve_filter_once(): void {
+		$this->mock_settings_service
+			->method( 'get_file' )
+			->with( 'file_test_logo', false )
+			->willReturn(
+				array(
+					'id'      => 'file_test_logo',
+					'purpose' => 'business_logo',
+				)
+			);
+		$this->mock_settings_service
+			->method( 'get_file_contents' )
+			->with( 'file_test_logo', false )
+			->willReturn(
+				array(
+					'content_type' => 'image/png',
+					'file_content' => 'TE9HTw==',
+				)
+			);
+
+		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/file/file_test_logo' );
+		$this->server->dispatch( $request );
+		$this->server->dispatch( $request );
+
+		$callback = array( $this->sut, 'serve_public_file_response' );
+		$this->assertNotFalse( has_filter( 'rest_pre_serve_request', $callback ) );
+		$this->assertSame( 1, $this->count_filter_callbacks( 'rest_pre_serve_request', $callback ) );
+
+		remove_filter( 'rest_pre_serve_request', $callback );
+	}
+
+	/**
+	 * Count how many times a specific callback is registered on a hook.
+	 *
+	 * @param string $hook     The hook name.
+	 * @param mixed  $callback The callback to count.
+	 * @return int
+	 */
+	private function count_filter_callbacks( string $hook, $callback ): int {
+		global $wp_filter;
+
+		if ( ! isset( $wp_filter[ $hook ] ) ) {
+			return 0;
+		}
+
+		$count = 0;
+		foreach ( $wp_filter[ $hook ]->callbacks as $callbacks ) {
+			foreach ( $callbacks as $registered ) {
+				if ( $registered['function'] === $callback ) {
+					++$count;
+				}
+			}
+		}
+
+		return $count;
 	}
 
 	/**

@@ -38,6 +38,15 @@ class WooPaymentsRestController extends RestApiControllerBase {
 	private const FILE_PURPOSE_CACHE_PREFIX = 'woocommerce_native_woopayments_file_purpose_';
 
 	/**
+	 * Lifetime, in seconds, of a cached provider file purpose.
+	 *
+	 * The cache only avoids re-fetching the file classification on repeated requests. It is intentionally short so a
+	 * provider-side reclassification (e.g. a file flipped from public to private) propagates quickly instead of letting
+	 * a stale "public" classification keep serving the file to unauthenticated callers.
+	 */
+	private const FILE_PURPOSE_CACHE_TTL = 5 * MINUTE_IN_SECONDS;
+
+	/**
 	 * The root namespace for the JSON REST API endpoints.
 	 *
 	 * @var string
@@ -741,7 +750,7 @@ class WooPaymentsRestController extends RestApiControllerBase {
 	 * @return bool
 	 */
 	private function should_register_native_settings_routes(): bool {
-		return null === $this->runtime_arbiter || $this->runtime_arbiter->should_native_register();
+		return null !== $this->runtime_arbiter && $this->runtime_arbiter->should_native_register();
 	}
 
 	/**
@@ -1485,7 +1494,7 @@ class WooPaymentsRestController extends RestApiControllerBase {
 
 			$purpose = isset( $file['purpose'] ) && is_scalar( $file['purpose'] ) ? (string) $file['purpose'] : '';
 			if ( '' !== $purpose ) {
-				set_transient( $this->get_file_purpose_cache_key( $file_id, $as_account ), $purpose, DAY_IN_SECONDS );
+				set_transient( $this->get_file_purpose_cache_key( $file_id, $as_account ), $purpose, self::FILE_PURPOSE_CACHE_TTL );
 			}
 		}
 
@@ -1518,20 +1527,10 @@ class WooPaymentsRestController extends RestApiControllerBase {
 			);
 		}
 
-		add_filter(
-			'rest_pre_serve_request',
-			static function ( bool $served, WP_HTTP_Response $response ): bool {
-				$content_disposition = $response->get_headers()['Content-Disposition'] ?? '';
-				if ( 'inline' !== $content_disposition ) {
-					return $served;
-				}
-
-				echo $response->get_data(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- File bytes are intentionally streamed as the response body.
-				return true;
-			},
-			10,
-			2
-		);
+		$serve_callback = array( $this, 'serve_public_file_response' );
+		if ( false === has_filter( 'rest_pre_serve_request', $serve_callback ) ) {
+			add_filter( 'rest_pre_serve_request', $serve_callback, 10, 2 );
+		}
 
 		$content_type = isset( $contents['content_type'] ) && is_scalar( $contents['content_type'] ) ? (string) $contents['content_type'] : 'application/octet-stream';
 
@@ -1543,6 +1542,27 @@ class WooPaymentsRestController extends RestApiControllerBase {
 				'Content-Disposition' => 'inline',
 			)
 		);
+	}
+
+	/**
+	 * Stream a public provider file as the raw REST response body.
+	 *
+	 * Registered on `rest_pre_serve_request` by the public file route so the inline file bytes are emitted directly
+	 * instead of being JSON-encoded. It is a named method so the route can register it idempotently (at most once per
+	 * request) and remove it, rather than stacking a fresh anonymous closure on every dispatch.
+	 *
+	 * @param bool             $served   Whether the request has already been served.
+	 * @param WP_HTTP_Response $response The response to serve.
+	 * @return bool
+	 */
+	public function serve_public_file_response( bool $served, WP_HTTP_Response $response ): bool {
+		$content_disposition = $response->get_headers()['Content-Disposition'] ?? '';
+		if ( 'inline' !== $content_disposition ) {
+			return $served;
+		}
+
+		echo $response->get_data(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- File bytes are intentionally streamed as the response body.
+		return true;
 	}
 
 	/**
