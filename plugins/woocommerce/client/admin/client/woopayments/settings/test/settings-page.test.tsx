@@ -554,10 +554,10 @@ describe( 'WooPaymentsSettingsPage', () => {
 	} );
 
 	afterEach( () => {
-		// Belt-and-suspenders: also clear the module-scoped TourKit capture here
-		// so a test that throws mid-render cannot leak stale configs into the
-		// next test (beforeEach alone would not run before assertions on a
-		// partially-rendered prior test).
+		// Redundant safety net: beforeEach already guarantees a clean slate
+		// before each test. Clearing here too releases the captured configs
+		// promptly and keeps the module-scoped array from holding references
+		// between tests.
 		mockTourKitConfigs.length = 0;
 	} );
 
@@ -4293,6 +4293,10 @@ describe( 'WooPaymentsSettingsPage', () => {
 		} );
 
 		expect( subscriptionsToggle ).toBeDisabled();
+		// Intentionally fireEvent, not userEvent: userEvent.click refuses to
+		// dispatch on a disabled control, so it cannot express "a raw click on a
+		// disabled toggle is inert". fireEvent bypasses the disabled guard and
+		// lets us prove the handler stays unfired. Do not convert this to userEvent.
 		fireEvent.click( subscriptionsToggle );
 
 		expect( setSubscriptionsEnabled ).not.toHaveBeenCalled();
