@@ -8,7 +8,13 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 /**
- * Immutable multi-currency state snapshot for native shadow calculations.
+ * Multi-currency state snapshot for native shadow calculations.
+ *
+ * Read-only by contract: MultiCurrencyStateBuilder::build() memoizes a single
+ * instance per request and hands it to every caller. Callers MUST NOT mutate this
+ * state or the MultiCurrencyCurrency objects it holds (the setters on those objects
+ * exist only for the builder's own assembly). Mutating a returned currency corrupts
+ * the shared snapshot for every other consumer in the request.
  *
  * @since 11.0.0
  * @internal Transitional internal component for the native multi-currency runtime.
@@ -76,6 +82,9 @@ class MultiCurrencyState {
 	/**
 	 * Get available currencies.
 	 *
+	 * The MultiCurrencyCurrency objects are shared with the request-memoized state;
+	 * callers MUST NOT mutate them (doing so corrupts the snapshot for every consumer).
+	 *
 	 * @return array<string,MultiCurrencyCurrency>
 	 */
 	public function get_available_currencies(): array {
@@ -84,6 +93,9 @@ class MultiCurrencyState {
 
 	/**
 	 * Get enabled currencies.
+	 *
+	 * The MultiCurrencyCurrency objects are shared with the request-memoized state;
+	 * callers MUST NOT mutate them (doing so corrupts the snapshot for every consumer).
 	 *
 	 * @return array<string,MultiCurrencyCurrency>
 	 */

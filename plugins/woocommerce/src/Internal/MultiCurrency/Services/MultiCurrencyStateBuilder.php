@@ -81,6 +81,15 @@ class MultiCurrencyStateBuilder {
 	 * multi-currency option, the selected currency, or related state so the next
 	 * build() reflects the change.
 	 *
+	 * The returned MultiCurrencyState is a shared, request-memoized instance handed
+	 * to every caller in the request. Treat it as read-only: callers MUST NOT mutate
+	 * the returned state or the MultiCurrencyCurrency objects it exposes (e.g. via
+	 * set_rate(), set_charm(), set_rounding(), or set_last_updated()). Mutating a
+	 * returned currency corrupts the shared snapshot for every other consumer in the
+	 * request. To change underlying data, write the option and call reset() instead.
+	 *
+	 * @since 11.0.0
+	 *
 	 * @return MultiCurrencyState
 	 */
 	public function build(): MultiCurrencyState {

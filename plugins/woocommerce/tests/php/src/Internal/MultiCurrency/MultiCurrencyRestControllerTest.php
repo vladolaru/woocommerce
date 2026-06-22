@@ -8,8 +8,11 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRestController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
+use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistry;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDatabaseCache;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use WC_Unit_Test_Case;
@@ -48,6 +51,8 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 		'wcpay_multi_currency_enable_auto_currency',
 		'wcpay_multi_currency_enable_storefront_switcher',
 		'wcpay_multi_currency_rendering_mode',
+		'wcpay_multi_currency_stored_customer_currencies',
+		'wcpay_multi_currency_cached_currencies',
 	);
 
 	/**
@@ -180,6 +185,44 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 		$this->assertFalse( get_option( 'wcpay_multi_currency_exchange_rate_gbp' ) );
 		$this->assertFalse( get_option( 'wcpay_multi_currency_price_rounding_gbp' ) );
 		$this->assertFalse( get_option( 'wcpay_multi_currency_price_charm_gbp' ) );
+	}
+
+	/**
+	 * @testdox Should reflect the updated enabled set through a real builder, proving reset() invalidates the memo.
+	 */
+	public function test_update_enabled_currencies_invalidates_real_builder_memo(): void {
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR', 'GBP' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.91' );
+		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_gbp', '0.78' );
+
+		$builder = $this->create_real_state_builder();
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $builder );
+
+		$this->assertSame(
+			array( 'USD', 'EUR', 'GBP' ),
+			array_keys( $builder->build()->get_enabled_currencies() ),
+			'The real builder should start with both enabled currencies.'
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/multi-currency/update-enabled-currencies' );
+		$request->set_param( 'enabled', array( 'USD', 'EUR' ) );
+
+		$response = $sut->update_enabled_currencies( $request );
+		$data     = $response->get_data();
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame(
+			array( 'USD', 'EUR' ),
+			array_keys( $data['enabled'] ),
+			'The response must reflect the new enabled set, which only happens if reset() invalidated the memoized state built during validation.'
+		);
+		$this->assertSame(
+			array( 'USD', 'EUR' ),
+			array_keys( $builder->build()->get_enabled_currencies() ),
+			'A subsequent build() must also reflect the new enabled set.'
+		);
 	}
 
 	/**
@@ -390,6 +433,23 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 				return $this->state;
 			}
 		};
+	}
+
+	/**
+	 * Create a real state builder backed by genuine collaborators.
+	 *
+	 * Unlike create_state_builder(), this returns a production MultiCurrencyStateBuilder
+	 * whose build() reads the real enabled-currencies option and memoizes the result, so
+	 * the controller's reset() call site is exercised end-to-end.
+	 *
+	 * @return MultiCurrencyStateBuilder
+	 */
+	private function create_real_state_builder(): MultiCurrencyStateBuilder {
+		return new MultiCurrencyStateBuilder(
+			$this->create_localization_service(),
+			new MultiCurrencyRateService( new CurrencyRateProviderRegistry() ),
+			new MultiCurrencyDatabaseCache()
+		);
 	}
 
 	/**
