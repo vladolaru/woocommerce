@@ -145,7 +145,8 @@ class PaymentProcessingService {
 			return true;
 		}
 
-		$idempotency_key = $this->idempotency->derive_key( $order, $provider->get_id(), 'refund', $amount, (string) $order->get_currency(), $reason );
+		$refund_instance = $this->resolve_refund_instance_id( $order, $amount, $reason );
+		$idempotency_key = $this->idempotency->derive_key( $order, $provider->get_id(), 'refund', $amount, (string) $order->get_currency(), $reason, $refund_instance );
 		if ( ! $this->order_payment_store->claim_order_payment_lock( $order, $idempotency_key ) ) {
 			return new WP_Error( 'native_payment_refund_locked', __( 'A refund is already in progress for this order.', 'woocommerce' ) );
 		}
@@ -173,6 +174,27 @@ class PaymentProcessingService {
 		$error_message = isset( $data['error_message'] ) ? (string) $data['error_message'] : __( 'The refund failed.', 'woocommerce' );
 
 		return new WP_Error( $error_code, $error_message );
+	}
+
+	/**
+	 * Resolve the ID of the specific WooCommerce refund this operation is processing.
+	 *
+	 * The local `WC_Order_Refund` row is created and saved before the gateway refund call,
+	 * so it is already present here. Using its ID as a per-instance discriminator in the
+	 * idempotency key ensures two distinct refunds of the same amount and reason never
+	 * share a key, which would otherwise let the provider replay the first refund and drop
+	 * the second. Returns null when no matching refund can be located, leaving the key
+	 * unchanged for that edge case.
+	 *
+	 * @param WC_Order $order  Parent order.
+	 * @param float    $amount Refund amount.
+	 * @param string   $reason Refund reason.
+	 * @return string|null
+	 */
+	private function resolve_refund_instance_id( WC_Order $order, float $amount, string $reason ): ?string {
+		$matched_refund = $this->find_matching_refund( $order, $amount, $reason, array() );
+
+		return $matched_refund instanceof WC_Order_Refund ? (string) $matched_refund->get_id() : null;
 	}
 
 	/**

@@ -255,6 +255,49 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Two equal-amount partial refunds must reach the provider with distinct idempotency keys.
+	 */
+	public function test_two_equal_amount_partial_refunds_use_distinct_idempotency_keys(): void {
+		$order = $this->create_woopayments_order( '10.00' );
+
+		$first_refund = wc_create_refund(
+			array(
+				'order_id'       => $order->get_id(),
+				'amount'         => 2.50,
+				'reason'         => 'Adjustment',
+				'refund_payment' => false,
+			)
+		);
+		$this->assertInstanceOf( WC_Order_Refund::class, $first_refund );
+
+		$provider     = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED ) );
+		$first_result = $this->sut->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 2.50, 'Adjustment' ), $provider );
+		$first_key    = $provider->last_idempotency_key;
+
+		$second_refund = wc_create_refund(
+			array(
+				'order_id'       => $order->get_id(),
+				'amount'         => 2.50,
+				'reason'         => 'Adjustment',
+				'refund_payment' => false,
+			)
+		);
+		$this->assertInstanceOf( WC_Order_Refund::class, $second_refund );
+
+		$second_result = $this->sut->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 2.50, 'Adjustment' ), $provider );
+		$second_key    = $provider->last_idempotency_key;
+
+		$this->assertTrue( $first_result );
+		$this->assertTrue( $second_result );
+		$this->assertSame( 2, $provider->refund_calls, 'Both refunds must reach the provider.' );
+		$this->assertNotSame(
+			$first_key,
+			$second_key,
+			'Two distinct refunds of the same amount and reason must use different idempotency keys so the provider does not replay the first refund.'
+		);
+	}
+
+	/**
 	 * @testdox Should persist provider refund metadata on the matching WC refund.
 	 */
 	public function test_process_refund_persists_provider_refund_metadata(): void {
