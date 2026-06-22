@@ -36,7 +36,10 @@ class WooPaymentsActionSchedulerService {
 			return;
 		}
 
-		as_schedule_single_action( $timestamp ?? time(), $hook, $args, self::GROUP_ID );
+		// The has_pending_action() pre-check is racy on its own: two concurrent Action Scheduler
+		// workers can both pass it and both enqueue the same hook/args. Passing $unique = true makes
+		// Action Scheduler reject a duplicate at the database level, which is the real concurrency guard.
+		as_schedule_single_action( $timestamp ?? time(), $hook, $args, self::GROUP_ID, true );
 	}
 
 	/**

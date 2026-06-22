@@ -64,6 +64,30 @@ class WooPaymentsActionSchedulerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Scheduling passes the unique flag so concurrent workers cannot enqueue duplicates.
+	 */
+	public function test_schedule_job_passes_unique_flag(): void {
+		$captured_unique = null;
+		$filter          = function ( $pre, $timestamp, $hook, $args, $group, $priority, $unique ) use ( &$captured_unique ) {
+			// Avoid parameter not used PHPCS errors.
+			unset( $pre, $timestamp, $hook, $args, $group, $priority );
+			$captured_unique = $unique;
+
+			// Short-circuit the real Action Scheduler insert with a fake action ID.
+			return 1;
+		};
+
+		add_filter( 'pre_as_schedule_single_action', $filter, 10, 7 );
+		try {
+			$this->sut->schedule_job( $this->hook, array( 'event_id' => 'evt_unique' ) );
+		} finally {
+			remove_filter( 'pre_as_schedule_single_action', $filter, 10 );
+		}
+
+		$this->assertTrue( $captured_unique, 'schedule_job() must pass $unique = true to as_schedule_single_action().' );
+	}
+
+	/**
 	 * @testdox Scheduling keeps distinct args as distinct actions.
 	 */
 	public function test_schedule_job_keeps_distinct_args_as_distinct_actions(): void {

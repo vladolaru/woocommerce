@@ -32,6 +32,20 @@ class WooPaymentsEventIngestor {
 	const FILTER_LIVE_MODE = 'woocommerce_native_payments_woopayments_live_mode';
 
 	/**
+	 * Transient prefix for the per-event "already processed" idempotency marker.
+	 *
+	 * @var string
+	 */
+	private const PROCESSED_EVENT_TRANSIENT_PREFIX = 'wcpay_processed_event_';
+
+	/**
+	 * TTL for the per-event "already processed" idempotency marker, in seconds.
+	 *
+	 * @var int
+	 */
+	private const PROCESSED_EVENT_TRANSIENT_TTL = HOUR_IN_SECONDS;
+
+	/**
 	 * Known WooPayments event types whose side effects still block native cutover.
 	 *
 	 * @var string[]
@@ -144,45 +158,36 @@ class WooPaymentsEventIngestor {
 	 *
 	 * @internal
 	 *
-	 * @param OrderPaymentLifecycleService        $lifecycle_service     Order lifecycle service.
-	 * @param LegacyProxy                         $legacy_proxy          Legacy proxy.
-	 * @param WooPaymentsLegacyRuntime            $legacy_runtime        WooPayments legacy runtime.
-	 * @param WooPaymentsApiClient                $api_client            Native WooPayments API client.
-	 * @param WooPaymentsOrderDataService|null    $order_data_service    WooPayments order data service.
-	 * @param WooPaymentsDisputeCacheService|null $dispute_cache_service Dispute cache service.
-	 * @param WooPaymentsAccountService|null      $account_service       Account service.
-	 * @param WooPaymentsTokenService|null        $token_service         Token service.
-	 * @param WooPaymentsRemoteNoteService|null   $remote_note_service   Remote note service.
+	 * @param OrderPaymentLifecycleService        $lifecycle_service          Order lifecycle service.
+	 * @param LegacyProxy                         $legacy_proxy               Legacy proxy.
+	 * @param WooPaymentsLegacyRuntime            $legacy_runtime             WooPayments legacy runtime.
+	 * @param WooPaymentsApiClient                $api_client                 Native WooPayments API client.
+	 * @param WooPaymentsDisputeEventHandler      $dispute_event_handler      Dispute event handler.
+	 * @param WooPaymentsRefundEventHandler       $refund_event_handler       Refund event handler.
+	 * @param WooPaymentsAccountEventHandler      $account_event_handler      Account event handler.
+	 * @param WooPaymentsNotificationEventHandler $notification_event_handler Notification event handler.
+	 * @param WooPaymentsOrderDataService|null    $order_data_service         WooPayments order data service.
 	 */
-	final public function init( OrderPaymentLifecycleService $lifecycle_service, LegacyProxy $legacy_proxy, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, ?WooPaymentsOrderDataService $order_data_service = null, ?WooPaymentsDisputeCacheService $dispute_cache_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsRemoteNoteService $remote_note_service = null ): void {
-		$this->lifecycle_service  = $lifecycle_service;
-		$this->legacy_proxy       = $legacy_proxy;
-		$this->legacy_runtime     = $legacy_runtime;
-		$this->api_client         = $api_client;
-		$this->order_data_service = $order_data_service;
-
-		$this->dispute_event_handler = new WooPaymentsDisputeEventHandler();
-		$this->dispute_event_handler->init(
-			$legacy_runtime,
-			$api_client,
-			$dispute_cache_service ?? wc_get_container()->get( WooPaymentsDisputeCacheService::class )
-		);
-
-		$this->refund_event_handler = new WooPaymentsRefundEventHandler();
-		$this->refund_event_handler->init( $legacy_runtime, wc_get_container()->get( OrderPaymentStore::class ) );
-
-		$this->account_event_handler = new WooPaymentsAccountEventHandler();
-		$this->account_event_handler->init(
-			$account_service ?? wc_get_container()->get( WooPaymentsAccountService::class ),
-			$token_service ?? wc_get_container()->get( WooPaymentsTokenService::class )
-		);
-
-		$this->notification_event_handler = new WooPaymentsNotificationEventHandler();
-		$this->notification_event_handler->init( $remote_note_service ?? wc_get_container()->get( WooPaymentsRemoteNoteService::class ) );
+	final public function init( OrderPaymentLifecycleService $lifecycle_service, LegacyProxy $legacy_proxy, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, WooPaymentsDisputeEventHandler $dispute_event_handler, WooPaymentsRefundEventHandler $refund_event_handler, WooPaymentsAccountEventHandler $account_event_handler, WooPaymentsNotificationEventHandler $notification_event_handler, ?WooPaymentsOrderDataService $order_data_service = null ): void {
+		$this->lifecycle_service          = $lifecycle_service;
+		$this->legacy_proxy               = $legacy_proxy;
+		$this->legacy_runtime             = $legacy_runtime;
+		$this->api_client                 = $api_client;
+		$this->dispute_event_handler      = $dispute_event_handler;
+		$this->refund_event_handler       = $refund_event_handler;
+		$this->account_event_handler      = $account_event_handler;
+		$this->notification_event_handler = $notification_event_handler;
+		$this->order_data_service         = $order_data_service;
 	}
 
 	/**
 	 * Process a WooPayments webhook event.
+	 *
+	 * Events carrying an ID are processed at most once within the marker TTL: the same event can be
+	 * delivered repeatedly (Action Scheduler retries, provider re-delivery, the failed-event replay
+	 * queue), and re-applying it would duplicate money-affecting side effects such as order-state
+	 * transitions, refund metadata, and dispute updates. The "processed" marker is written only after
+	 * the event is handled successfully, so an event that throws is left unmarked and can be retried.
 	 *
 	 * @since 11.0.0
 	 *
@@ -190,6 +195,26 @@ class WooPaymentsEventIngestor {
 	 * @throws InvalidArgumentException When the event shape is invalid.
 	 */
 	public function process( array $event ): void {
+		$event_id = $this->get_event_id( $event );
+
+		if ( '' !== $event_id && $this->is_event_already_processed( $event_id ) ) {
+			return;
+		}
+
+		$this->dispatch( $event );
+
+		if ( '' !== $event_id ) {
+			$this->mark_event_processed( $event_id );
+		}
+	}
+
+	/**
+	 * Dispatch a WooPayments webhook event to the matching handler.
+	 *
+	 * @param array<string,mixed> $event Event payload.
+	 * @throws InvalidArgumentException When the event shape is invalid.
+	 */
+	private function dispatch( array $event ): void {
 		$event_type = $event['type'] ?? null;
 		if ( ! is_string( $event_type ) || '' === $event_type ) {
 			throw new InvalidArgumentException( 'WooPayments webhook event is missing a type.' );
@@ -247,6 +272,47 @@ class WooPaymentsEventIngestor {
 
 		$this->lifecycle_service->apply( $order, $lifecycle_event );
 		$this->run_delivery_hook( 'woocommerce_payments_after_webhook_delivery', $event_type, $event );
+	}
+
+	/**
+	 * Get the provider event ID from an event payload.
+	 *
+	 * @param array<string,mixed> $event Event payload.
+	 * @return string Event ID, or an empty string when the event has no usable ID.
+	 */
+	private function get_event_id( array $event ): string {
+		$event_id = $event['id'] ?? null;
+
+		return is_scalar( $event_id ) ? (string) $event_id : '';
+	}
+
+	/**
+	 * Tell whether an event ID was already processed within the marker TTL.
+	 *
+	 * @param string $event_id Event ID.
+	 * @return bool
+	 */
+	private function is_event_already_processed( string $event_id ): bool {
+		return false !== $this->legacy_proxy->call_function( 'get_transient', $this->get_processed_event_transient_name( $event_id ) );
+	}
+
+	/**
+	 * Record that an event ID was processed so later re-deliveries are skipped.
+	 *
+	 * @param string $event_id Event ID.
+	 */
+	private function mark_event_processed( string $event_id ): void {
+		$this->legacy_proxy->call_function( 'set_transient', $this->get_processed_event_transient_name( $event_id ), 1, self::PROCESSED_EVENT_TRANSIENT_TTL );
+	}
+
+	/**
+	 * Get the idempotency-marker transient name for an event ID.
+	 *
+	 * @param string $event_id Event ID.
+	 * @return string
+	 */
+	private function get_processed_event_transient_name( string $event_id ): string {
+		return self::PROCESSED_EVENT_TRANSIENT_PREFIX . md5( $event_id );
 	}
 
 	/**

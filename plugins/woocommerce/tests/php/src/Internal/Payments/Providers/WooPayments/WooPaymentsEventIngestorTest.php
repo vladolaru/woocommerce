@@ -7,9 +7,14 @@ use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeCacheService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsNotificationEventHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRemoteNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Admin\Notes\Note;
@@ -66,6 +71,9 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_woopayments_nox_profile' );
 		delete_option( 'woocommerce_woopayments_nox_onboarding_locked' );
 		delete_option( 'wcpay_account_deletion_pending_id' );
+		foreach ( array( 'evt_dedup', 'evt_retry', 'evt_dispute_lost_1', 'evt_dispute_lost_2' ) as $event_id ) {
+			delete_transient( 'wcpay_processed_event_' . md5( $event_id ) );
+		}
 		parent::tearDown();
 	}
 
@@ -277,8 +285,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			}
 		};
 
-		$sut = new WooPaymentsEventIngestor();
-		$sut->init(
+		$sut = $this->create_ingestor(
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
 			new LegacyProxy(),
 			new WooPaymentsLegacyRuntime(),
@@ -400,8 +407,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			}
 		};
 
-		$sut = new WooPaymentsEventIngestor();
-		$sut->init(
+		$sut = $this->create_ingestor(
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
 			new LegacyProxy(),
 			new WooPaymentsLegacyRuntime(),
@@ -728,8 +734,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_charge_id', 'ch_123' );
 		$order->save();
 
-		$sut = new WooPaymentsEventIngestor();
-		$sut->init(
+		$sut = $this->create_ingestor(
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
 			new LegacyProxy(),
 			new WooPaymentsLegacyRuntime(),
@@ -755,8 +760,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$order->save();
 		$this->seed_dispute_cache_options();
 
-		$sut = new WooPaymentsEventIngestor();
-		$sut->init(
+		$sut = $this->create_ingestor(
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
 			new LegacyProxy(),
 			new WooPaymentsLegacyRuntime(),
@@ -777,8 +781,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_charge_id', 'ch_123' );
 		$order->save();
 
-		$sut = new WooPaymentsEventIngestor();
-		$sut->init(
+		$sut = $this->create_ingestor(
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
 			new LegacyProxy(),
 			new WooPaymentsLegacyRuntime(),
@@ -790,8 +793,15 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$sut->process( $this->create_dispute_event( 'charge.dispute.closed', 'lost' ) );
-		$sut->process( $this->create_dispute_event( 'charge.dispute.closed', 'lost' ) );
+		// Distinct event IDs so the ingestor-level dedup does not short-circuit the second delivery:
+		// this exercises the dispute handler's own replay safety, not the ingestor idempotency marker.
+		$first_event        = $this->create_dispute_event( 'charge.dispute.closed', 'lost' );
+		$second_event       = $this->create_dispute_event( 'charge.dispute.closed', 'lost' );
+		$first_event['id']  = 'evt_dispute_lost_1';
+		$second_event['id'] = 'evt_dispute_lost_2';
+
+		$sut->process( $first_event );
+		$sut->process( $second_event );
 
 		$order   = wc_get_order( $order->get_id() );
 		$refunds = $order instanceof WC_Order ? $order->get_refunds() : array();
@@ -816,8 +826,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			throw new Exception( 'Refund creation blocked.' );
 		};
 
-		$sut = new WooPaymentsEventIngestor();
-		$sut->init(
+		$sut = $this->create_ingestor(
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
 			new LegacyProxy(),
 			new WooPaymentsLegacyRuntime(),
@@ -1010,8 +1019,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$runtime = new WooPaymentsLegacyRuntime();
 		$runtime->init( new LegacyRuntimeProxy( true, null, null, null, $logger ) );
 
-		$sut = new WooPaymentsEventIngestor();
-		$sut->init(
+		$sut = $this->create_ingestor(
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
 			wc_get_container()->get( LegacyProxy::class ),
 			$runtime,
@@ -1742,6 +1750,9 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			)
 		);
 
+		// Distinct event IDs so the ingestor-level dedup does not short-circuit the redelivery:
+		// this exercises the refund handler's own reconciliation path, not the ingestor marker.
+		$event['id'] = 'evt_refund_updated_reconcile_1';
 		$this->sut->process( $event );
 
 		$order = wc_get_order( $order->get_id() );
@@ -1750,6 +1761,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$order->set_status( 'refunded' );
 		$order->save();
 
+		$event['id'] = 'evt_refund_updated_reconcile_2';
 		$this->sut->process( $event );
 
 		$order = wc_get_order( $order->get_id() );
@@ -2035,8 +2047,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$runtime = new WooPaymentsLegacyRuntime();
 		$runtime->init( new LegacyRuntimeProxy( true, null, null, null, $logger ) );
 
-		$sut = new WooPaymentsEventIngestor();
-		$sut->init(
+		$sut = $this->create_ingestor(
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
 			$legacy_proxy,
 			$runtime,
@@ -2128,6 +2139,71 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox An event with the same ID is processed at most once within the marker TTL.
+	 */
+	public function test_process_deduplicates_events_with_the_same_id(): void {
+		$handler = $this->create_recording_notification_handler();
+		$sut     = $this->create_ingestor_with_notification_handler( $handler );
+		$event   = $this->create_notification_event( 'evt_dedup', 'dedup-note-' . wp_generate_uuid4() );
+
+		$sut->process( $event );
+		$sut->process( $event );
+
+		$this->assertCount( 1, $handler->processed_events, 'The same event ID must be handled only once.' );
+	}
+
+	/**
+	 * @testdox An event without an ID is processed on every delivery.
+	 */
+	public function test_process_does_not_deduplicate_events_without_an_id(): void {
+		$handler = $this->create_recording_notification_handler();
+		$sut     = $this->create_ingestor_with_notification_handler( $handler );
+		$event   = $this->create_notification_event( '', 'no-id-note-' . wp_generate_uuid4() );
+		unset( $event['id'] );
+
+		$sut->process( $event );
+		$sut->process( $event );
+
+		$this->assertCount( 2, $handler->processed_events, 'Events without an ID must not be deduplicated.' );
+	}
+
+	/**
+	 * @testdox An event that throws is not marked processed and can be retried.
+	 */
+	public function test_process_does_not_mark_throwing_events_as_processed(): void {
+		$handler = $this->create_recording_notification_handler( true );
+		$sut     = $this->create_ingestor_with_notification_handler( $handler );
+		$event   = $this->create_notification_event( 'evt_retry', 'retry-note-' . wp_generate_uuid4() );
+
+		$first_threw = false;
+		try {
+			$sut->process( $event );
+		} catch ( RuntimeException $exception ) {
+			$first_threw = true;
+		}
+
+		$handler->should_throw = false;
+		$sut->process( $event );
+
+		$this->assertTrue( $first_threw, 'The first delivery should surface the handler failure.' );
+		$this->assertCount( 2, $handler->processed_events, 'A failed event must be re-dispatched on the next delivery.' );
+	}
+
+	/**
+	 * @testdox The container resolves the ingestor with its event handlers injected.
+	 */
+	public function test_container_injects_event_handlers(): void {
+		$sut = wc_get_container()->get( WooPaymentsEventIngestor::class );
+
+		$reflection = new \ReflectionObject( $sut );
+		foreach ( array( 'dispute_event_handler', 'refund_event_handler', 'account_event_handler', 'notification_event_handler' ) as $property_name ) {
+			$property = $reflection->getProperty( $property_name );
+			$property->setAccessible( true );
+			$this->assertNotNull( $property->getValue( $sut ), "Handler {$property_name} should be injected by the container." );
+		}
+	}
+
+	/**
 	 * Create a WooPayments order for ingestor tests.
 	 *
 	 * @return WC_Order
@@ -2154,17 +2230,161 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$runtime = new WooPaymentsLegacyRuntime();
 		$runtime->init( new LegacyRuntimeProxy( true ) );
 
+		$account_event_handler = new WooPaymentsAccountEventHandler();
+		$account_event_handler->init( $account_service, $token_service );
+
 		$sut = new WooPaymentsEventIngestor();
 		$sut->init(
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
 			new LegacyProxy(),
 			$runtime,
 			new class() extends WooPaymentsApiClient {},
-			null,
-			null,
-			$account_service,
-			$token_service,
-			new WooPaymentsRemoteNoteService()
+			$this->create_dispute_event_handler( $runtime, new class() extends WooPaymentsApiClient {} ),
+			wc_get_container()->get( WooPaymentsRefundEventHandler::class ),
+			$account_event_handler,
+			$this->create_notification_event_handler()
+		);
+
+		return $sut;
+	}
+
+	/**
+	 * Build a dispute event handler wired to the supplied runtime and API client.
+	 *
+	 * @param WooPaymentsLegacyRuntime $runtime    WooPayments legacy runtime.
+	 * @param WooPaymentsApiClient     $api_client Native WooPayments API client.
+	 * @return WooPaymentsDisputeEventHandler
+	 */
+	private function create_dispute_event_handler( WooPaymentsLegacyRuntime $runtime, WooPaymentsApiClient $api_client ): WooPaymentsDisputeEventHandler {
+		$handler = new WooPaymentsDisputeEventHandler();
+		$handler->init( $runtime, $api_client, wc_get_container()->get( WooPaymentsDisputeCacheService::class ) );
+
+		return $handler;
+	}
+
+	/**
+	 * Build a notification event handler backed by a real remote note service.
+	 *
+	 * @return WooPaymentsNotificationEventHandler
+	 */
+	private function create_notification_event_handler(): WooPaymentsNotificationEventHandler {
+		$handler = new WooPaymentsNotificationEventHandler();
+		$handler->init( new WooPaymentsRemoteNoteService() );
+
+		return $handler;
+	}
+
+	/**
+	 * Build a notification event handler that records each processed event.
+	 *
+	 * @param bool $should_throw Whether the handler should throw on process.
+	 * @return WooPaymentsNotificationEventHandler
+	 */
+	private function create_recording_notification_handler( bool $should_throw = false ): WooPaymentsNotificationEventHandler {
+		$handler = new class() extends WooPaymentsNotificationEventHandler {
+			/**
+			 * Recorded processed events.
+			 *
+			 * @var array<int,array<string,mixed>>
+			 */
+			public array $processed_events = array();
+
+			/**
+			 * Whether the handler should throw on process.
+			 *
+			 * @var bool
+			 */
+			public bool $should_throw = false;
+
+			/**
+			 * Record and optionally fail a notification event.
+			 *
+			 * @param array<string,mixed> $event Event payload.
+			 * @return void
+			 * @throws RuntimeException When configured to fail.
+			 */
+			public function process( array $event ): void {
+				$this->processed_events[] = $event;
+				if ( $this->should_throw ) {
+					throw new RuntimeException( 'Recorded handler failure.' );
+				}
+			}
+		};
+
+		$handler->should_throw = $should_throw;
+
+		return $handler;
+	}
+
+	/**
+	 * Build an ingestor with a specific notification event handler injected.
+	 *
+	 * @param WooPaymentsNotificationEventHandler $notification_event_handler Notification handler.
+	 * @return WooPaymentsEventIngestor
+	 */
+	private function create_ingestor_with_notification_handler( WooPaymentsNotificationEventHandler $notification_event_handler ): WooPaymentsEventIngestor {
+		// Match the test-mode notification events (livemode === false) so they are not skipped as a mode mismatch.
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+
+		$runtime = new WooPaymentsLegacyRuntime();
+		$runtime->init( new LegacyRuntimeProxy( true ) );
+
+		$sut = new WooPaymentsEventIngestor();
+		$sut->init(
+			wc_get_container()->get( OrderPaymentLifecycleService::class ),
+			new LegacyProxy(),
+			$runtime,
+			new class() extends WooPaymentsApiClient {},
+			$this->create_dispute_event_handler( $runtime, new class() extends WooPaymentsApiClient {} ),
+			wc_get_container()->get( WooPaymentsRefundEventHandler::class ),
+			wc_get_container()->get( WooPaymentsAccountEventHandler::class ),
+			$notification_event_handler
+		);
+
+		return $sut;
+	}
+
+	/**
+	 * Create a wcpay.notification-shaped event.
+	 *
+	 * @param string $event_id Event ID.
+	 * @param string $note_slug Remote note slug.
+	 * @return array<string,mixed>
+	 */
+	private function create_notification_event( string $event_id, string $note_slug ): array {
+		return array(
+			'id'       => $event_id,
+			'type'     => 'wcpay.notification',
+			'livemode' => false,
+			'data'     => array(
+				'name'    => $note_slug,
+				'title'   => 'Remote note',
+				'content' => 'Remote note content.',
+			),
+		);
+	}
+
+	/**
+	 * Build an ingestor from the core collaborators, wiring its event handlers from the container
+	 * and the supplied runtime and API client.
+	 *
+	 * @param OrderPaymentLifecycleService $lifecycle_service Order lifecycle service.
+	 * @param LegacyProxy                  $legacy_proxy      Legacy proxy.
+	 * @param WooPaymentsLegacyRuntime     $legacy_runtime    WooPayments legacy runtime.
+	 * @param WooPaymentsApiClient         $api_client        Native WooPayments API client.
+	 * @return WooPaymentsEventIngestor
+	 */
+	private function create_ingestor( OrderPaymentLifecycleService $lifecycle_service, LegacyProxy $legacy_proxy, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client ): WooPaymentsEventIngestor {
+		$sut = new WooPaymentsEventIngestor();
+		$sut->init(
+			$lifecycle_service,
+			$legacy_proxy,
+			$legacy_runtime,
+			$api_client,
+			$this->create_dispute_event_handler( $legacy_runtime, $api_client ),
+			wc_get_container()->get( WooPaymentsRefundEventHandler::class ),
+			wc_get_container()->get( WooPaymentsAccountEventHandler::class ),
+			$this->create_notification_event_handler()
 		);
 
 		return $sut;
