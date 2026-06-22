@@ -280,6 +280,36 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should not autoload the onboarding test-mode option when enabling it on the dev-mode cache path.
+	 */
+	public function test_dev_mode_cache_path_does_not_autoload_onboarding_test_mode_option(): void {
+		// Arrange the dev-mode branch of is_valid_cached_account(): dev mode on, the
+		// option absent (so it would be re-created via add_option's autoload default),
+		// and a non-live cached account so the guarded write fires.
+		delete_option( 'wcpay_onboarding_test_mode' );
+		add_filter( 'wcpay_dev_mode', '__return_true' );
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data' => array(
+					'account_id'        => 'acct_123',
+					'is_live'           => false,
+					'payments_enabled'  => true,
+					'details_submitted' => true,
+				),
+			)
+		);
+
+		$sut = $this->create_service();
+		$sut->disable_refresh();
+
+		$sut->get_cached_account_data();
+
+		$this->assertSame( 'yes', get_option( 'wcpay_onboarding_test_mode' ) );
+		$this->assertOptionNotAutoloaded( 'wcpay_onboarding_test_mode' );
+	}
+
+	/**
 	 * @testdox Should expose rejected and under-review account state from the preserved account cache.
 	 */
 	public function test_exposes_rejected_and_under_review_account_state_from_account_cache(): void {
@@ -1302,6 +1332,30 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 			'wcpay_test_authorization_summary_cache',
 			'wcpay_connect_incentive',
 			'wcpay_tracking_info_cache',
+		);
+	}
+
+	/**
+	 * Assert that a WordPress option is not flagged for autoload.
+	 *
+	 * Reads the raw autoload column to stay robust across WordPress versions:
+	 * pre-6.6 stores 'no' while 6.6+ stores 'off'/'auto-off' for non-autoloaded options.
+	 *
+	 * @param string $option_name The option name to inspect.
+	 * @return void
+	 */
+	private function assertOptionNotAutoloaded( string $option_name ): void {
+		global $wpdb;
+
+		$autoload = $wpdb->get_var(
+			$wpdb->prepare( "SELECT autoload FROM {$wpdb->options} WHERE option_name = %s", $option_name )
+		);
+
+		$this->assertNotNull( $autoload, sprintf( 'Option %s was not persisted.', $option_name ) );
+		$this->assertNotContains(
+			$autoload,
+			array( 'yes', 'on', 'auto', 'auto-on' ),
+			sprintf( 'Option %s should not be autoloaded, got autoload value "%s".', $option_name, $autoload )
 		);
 	}
 }

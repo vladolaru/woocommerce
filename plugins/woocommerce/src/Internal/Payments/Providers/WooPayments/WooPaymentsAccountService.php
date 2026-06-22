@@ -416,7 +416,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 
 		$this->legacy_proxy->call_function( 'update_option', self::SETTINGS_OPTION, $settings );
 		$this->legacy_proxy->call_function( 'update_option', self::ONBOARDING_STRIPE_CONNECTED_OPTION, array() );
-		$this->legacy_proxy->call_function( 'update_option', self::ONBOARDING_TEST_MODE_OPTION, 'no' );
+		$this->legacy_proxy->call_function( 'update_option', self::ONBOARDING_TEST_MODE_OPTION, 'no', false );
 		$this->legacy_proxy->call_function( 'delete_option', self::ONBOARDING_CONNECTION_SUCCESS_MODAL_OPTION );
 		$this->legacy_proxy->call_function( 'delete_transient', self::ONBOARDING_STATE_TRANSIENT );
 		$this->legacy_proxy->call_function( 'delete_option', self::EMBEDDED_KYC_IN_PROGRESS_OPTION );
@@ -1105,7 +1105,8 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 
 		if ( ! $this->is_onboarding_test_mode_enabled() && $this->is_dev_mode_enabled() ) {
 			try {
-				$this->legacy_proxy->call_function( 'update_option', self::ONBOARDING_TEST_MODE_OPTION, 'yes' );
+				// Keep this option non-autoloaded: it is read only when test mode is evaluated, not on every request.
+				$this->legacy_proxy->call_function( 'update_option', self::ONBOARDING_TEST_MODE_OPTION, 'yes', false );
 				$this->legacy_proxy->call_function( 'wp_cache_delete', self::ONBOARDING_TEST_MODE_OPTION, 'options' );
 			} catch ( \Throwable $e ) {
 				return $this->is_test_mode_onboarding_enabled();
