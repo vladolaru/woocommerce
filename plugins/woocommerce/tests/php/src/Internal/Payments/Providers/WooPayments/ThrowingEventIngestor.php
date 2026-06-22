@@ -34,7 +34,8 @@ class ThrowingEventIngestor extends WooPaymentsEventIngestor {
 	 * @throws Throwable Always.
 	 */
 	public function process( array $event ): void {
-		unset( $event ); // Avoid parameter not used PHPCS errors.
+		// Avoid parameter not used PHPCS errors.
+		unset( $event );
 		throw $this->exception;
 	}
 }
