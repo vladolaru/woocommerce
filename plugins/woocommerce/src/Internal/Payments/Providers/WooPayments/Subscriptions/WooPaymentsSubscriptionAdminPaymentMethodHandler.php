@@ -111,6 +111,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	 * @param array<string,mixed> $payment_meta       Payment metadata.
 	 * @param mixed               $subscription       Subscription object.
 	 * @return void
+	 * @throws \InvalidArgumentException When the subscription or the selected saved payment method is invalid.
 	 */
 	public function validate_subscription_payment_meta( string $payment_gateway_id, array $payment_meta, $subscription ): void {
 		if ( OrderPaymentStore::GATEWAY_ID !== $payment_gateway_id ) {
@@ -118,17 +119,17 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 		}
 
 		if ( ! $subscription instanceof WC_Order ) {
-			throw new \InvalidArgumentException( __( 'A valid WooPayments subscription was not provided.', 'woocommerce' ) );
+			throw new \InvalidArgumentException( esc_html__( 'A valid WooPayments subscription was not provided.', 'woocommerce' ) );
 		}
 
 		$token_id = $this->get_submitted_token_id_from_payment_meta( $payment_meta );
 		if ( '' === $token_id ) {
-			throw new \InvalidArgumentException( __( 'A valid WooPayments saved payment method must be selected for this subscription.', 'woocommerce' ) );
+			throw new \InvalidArgumentException( esc_html__( 'A valid WooPayments saved payment method must be selected for this subscription.', 'woocommerce' ) );
 		}
 
 		$token = WC_Payment_Tokens::get( absint( $token_id ) );
 		if ( ! $this->is_valid_subscription_token( $token, $subscription ) ) {
-			throw new \InvalidArgumentException( __( 'A valid WooPayments saved payment method must be selected for this subscription.', 'woocommerce' ) );
+			throw new \InvalidArgumentException( esc_html__( 'A valid WooPayments saved payment method must be selected for this subscription.', 'woocommerce' ) );
 		}
 	}
 
@@ -628,7 +629,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	 * @return array<int,array<string,mixed>>
 	 */
 	private function get_user_formatted_tokens_array( int $user_id ): array {
-		$tokens = WC_Payment_Tokens::get_customer_tokens( $user_id, OrderPaymentStore::GATEWAY_ID );
+		$tokens           = WC_Payment_Tokens::get_customer_tokens( $user_id, OrderPaymentStore::GATEWAY_ID );
 		$formatted_tokens = array();
 
 		foreach ( $tokens as $token ) {

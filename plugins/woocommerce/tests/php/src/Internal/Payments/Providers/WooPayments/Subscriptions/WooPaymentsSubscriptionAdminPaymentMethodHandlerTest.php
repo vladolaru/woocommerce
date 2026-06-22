@@ -258,7 +258,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 	public function test_update_payment_method_for_subscriptions_allows_saved_tokens(): void {
 		$subscription = $this->create_subscription_order( self::factory()->user->create() );
 		$_POST        = array(
-			'_wcsnonce' => wp_create_nonce( 'wcs_change_payment_method' ),
+			'_wcsnonce'             => wp_create_nonce( 'wcs_change_payment_method' ),
 			'change_payment_method' => (string) $subscription->get_id(),
 			'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' => '123',
 		);
@@ -274,7 +274,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 	public function test_update_payment_method_for_subscriptions_stops_new_payment_methods(): void {
 		$subscription = $this->create_subscription_order( self::factory()->user->create() );
 		$_POST        = array(
-			'_wcsnonce' => wp_create_nonce( 'wcs_change_payment_method' ),
+			'_wcsnonce'             => wp_create_nonce( 'wcs_change_payment_method' ),
 			'change_payment_method' => (string) $subscription->get_id(),
 			'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' => 'new',
 		);
