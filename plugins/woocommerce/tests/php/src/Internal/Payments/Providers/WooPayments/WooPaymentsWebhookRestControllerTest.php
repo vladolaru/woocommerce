@@ -76,6 +76,38 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The webhook route permission callback rejects requests without manage_woocommerce.
+	 */
+	public function test_permission_callback_rejects_unauthenticated_requests(): void {
+		wp_set_current_user( 0 );
+
+		$permission_callback = $this->get_registered_permission_callback();
+
+		$this->assertFalse(
+			(bool) call_user_func( $permission_callback, $this->create_post_request( array( 'type' => 'customer.created' ) ) ),
+			'Unauthenticated requests must be rejected because real platform delivery uses the authenticated reliability pull path, not this direct route.'
+		);
+	}
+
+	/**
+	 * @testdox The webhook route permission callback allows manage_woocommerce administrators.
+	 */
+	public function test_permission_callback_allows_manage_woocommerce_admins(): void {
+		$admin_id = $this->factory->user->create( array( 'role' => 'administrator' ) );
+		wp_set_current_user( $admin_id );
+
+		$permission_callback = $this->get_registered_permission_callback();
+
+		$this->assertTrue(
+			(bool) call_user_func( $permission_callback, $this->create_post_request( array( 'type' => 'customer.created' ) ) ),
+			'Administrators with manage_woocommerce must pass the gate.'
+		);
+
+		wp_set_current_user( 0 );
+		wp_delete_user( $admin_id );
+	}
+
+	/**
 	 * @testdox Successful webhook processing returns the WooPayments success envelope.
 	 */
 	public function test_success_response_matches_woopayments_envelope(): void {
@@ -197,6 +229,29 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 
 		$this->assertSame( 500, $response->get_status() );
 		$this->assertSame( array( 'result' => 'error' ), $response->get_data() );
+	}
+
+	/**
+	 * Register the webhook route and return its actual permission callback.
+	 *
+	 * Reads the callback off the live route registration so the assertion exercises the
+	 * gate the controller really wires up rather than a re-declared copy.
+	 *
+	 * @return callable
+	 */
+	private function get_registered_permission_callback(): callable {
+		$this->sut->register_routes();
+
+		$routes = $this->server->get_routes();
+		$this->assertArrayHasKey( '/wc/v3/payments/webhook', $routes );
+
+		foreach ( $routes['/wc/v3/payments/webhook'] as $handler ) {
+			if ( isset( $handler['permission_callback'] ) && is_callable( $handler['permission_callback'] ) ) {
+				return $handler['permission_callback'];
+			}
+		}
+
+		$this->fail( 'Route does not expose a callable permission callback.' );
 	}
 
 	/**

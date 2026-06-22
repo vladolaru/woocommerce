@@ -74,6 +74,18 @@ class WooPaymentsWebhookRestController implements RegisterHooksInterface {
 
 	/**
 	 * Register the WooPayments-compatible webhook route.
+	 *
+	 * Auth model: this route is intentionally gated on `manage_woocommerce` and is NOT a public,
+	 * unauthenticated delivery endpoint. It mirrors the WooPayments plugin's webhook controller,
+	 * which gates the same `wc/v3/payments/webhook` route on `current_user_can( 'manage_woocommerce' )`
+	 * (see WC_REST_Payments_Webhook_Controller / WC_Payments_REST_Controller::check_permission()).
+	 *
+	 * Authoritative ingestion path: native platform event ingestion flows through
+	 * {@see WooPaymentsWebhookReliabilityService}, the authenticated pull path that fetches
+	 * failed/missed events from the platform via the API client and replays them through the
+	 * ingestor on Action Scheduler jobs. There is no shared webhook signing secret available to
+	 * the store, so this route cannot (and must not) verify a signature; loosening the capability
+	 * gate would turn it into an unverified event-injection surface. Keep the gate as-is.
 	 */
 	public function register_routes(): void {
 		register_rest_route(
@@ -82,6 +94,9 @@ class WooPaymentsWebhookRestController implements RegisterHooksInterface {
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
 				'callback'            => array( $this, 'handle_webhook' ),
+				// Intentionally gated on `manage_woocommerce` (parity with the WooPayments plugin).
+				// Real platform events arrive via the authenticated WooPaymentsWebhookReliabilityService
+				// pull path; do not loosen this gate. See the method doc-block for the full rationale.
 				'permission_callback' => function () {
 					return current_user_can( 'manage_woocommerce' );
 				},
@@ -91,6 +106,11 @@ class WooPaymentsWebhookRestController implements RegisterHooksInterface {
 
 	/**
 	 * Handle a webhook delivery.
+	 *
+	 * Reached only after the `manage_woocommerce` permission gate in {@see self::register_routes()}.
+	 * The payload is not signature-verified because no shared signing secret exists for this route;
+	 * the capability gate is the trust boundary, and the authenticated pull path
+	 * ({@see WooPaymentsWebhookReliabilityService}) remains the authoritative ingestion route.
 	 *
 	 * @param WP_REST_Request $request REST request.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request

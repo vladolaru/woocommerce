@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Document and regression-guard the native WooPayments webhook route auth model: the direct route stays manage_woocommerce-gated while authenticated reliability pulls remain the authoritative ingestion path.
