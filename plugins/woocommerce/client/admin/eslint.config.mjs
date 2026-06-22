@@ -61,4 +61,68 @@ export default [
 			'react/react-in-jsx-scope': 'off',
 		},
 	},
+	// Keep optional WooPayments settings surfaces in their own lazy-loaded chunks.
+	{
+		files: [ 'client/woopayments/settings/settings-page.tsx' ],
+		rules: {
+			'no-restricted-imports': [
+				'error',
+				{
+					paths: [
+						{
+							name: '../admin/documents/vat-modal',
+							message:
+								'Load the VAT details modal lazily via lazy( () => import( ... ) ) so it stays in its own chunk; a static import bundles it into the main settings chunk.',
+						},
+					],
+				},
+			],
+		},
+	},
+	{
+		files: [ 'client/woopayments/settings/fraud-protection/index.tsx' ],
+		rules: {
+			'no-restricted-imports': [
+				'error',
+				{
+					paths: [
+						{
+							name: './tour',
+							message:
+								'Load the fraud protection tour lazily via lazy( () => import( ... ) ) so it stays in its own chunk; a static import bundles it into the main settings chunk.',
+						},
+					],
+				},
+			],
+		},
+	},
+	{
+		files: [
+			'client/woopayments/settings/express-checkout/express-checkout-settings.tsx',
+		],
+		rules: {
+			'no-restricted-imports': [
+				'error',
+				{
+					paths: [
+						{
+							name: './woopay-settings',
+							message:
+								'Load the WooPay settings lazily via lazy( () => import( ... ) ) so it stays in its own chunk; a static import bundles it into the main settings chunk.',
+						},
+						{
+							name: './payment-request-settings',
+							message:
+								'Load the payment request settings lazily via lazy( () => import( ... ) ) so it stays in its own chunk; a static import bundles it into the main settings chunk.',
+						},
+						{
+							name: './amazon-pay-settings',
+							message:
+								'Load the Amazon Pay settings lazily via lazy( () => import( ... ) ) so it stays in its own chunk; a static import bundles it into the main settings chunk.',
+						},
+					],
+				},
+			],
+		},
+	},
 ];
