@@ -62,9 +62,13 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->assertSame( self::EXPECTED_USER_AGENT, $http_client->last_headers['User-Agent'] );
 		$this->assertSame( 'idem_test', $http_client->last_headers['Idempotency-Key'] );
 		$this->assertArrayHasKey( 'X-Request-Initiated', $http_client->last_headers );
-		$this->assertStringNotContainsString( 'idempotency_key', (string) $http_client->last_body );
-		$this->assertStringContainsString( '"charge":"ch_test"', (string) $http_client->last_body );
-		$this->assertStringContainsString( '"filtered":"yes"', (string) $http_client->last_body );
+
+		$body = json_decode( (string) $http_client->last_body, true );
+		$this->assertIsArray( $body );
+		$this->assertArrayNotHasKey( 'idempotency_key', $body );
+		$this->assertSame( 'ch_test', $body['charge'] );
+		$this->assertArrayHasKey( 'metadata', $body );
+		$this->assertSame( 'yes', $body['metadata']['filtered'] );
 	}
 
 	/**
@@ -98,7 +102,10 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->assertSame( self::EXPECTED_USER_AGENT, $http_client->last_headers['User-Agent'] );
 		$this->assertNotEmpty( $http_client->last_headers['Idempotency-Key'] ?? '' );
 		$this->assertNotEmpty( $http_client->last_headers['X-Request-Initiated'] ?? '' );
-		$this->assertStringNotContainsString( 'idempotency_key', (string) $http_client->last_body );
+
+		$body = json_decode( (string) $http_client->last_body, true );
+		$this->assertIsArray( $body );
+		$this->assertArrayNotHasKey( 'idempotency_key', $body );
 	}
 
 	/**
@@ -293,7 +300,9 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$this->assertStringContainsString( '"test_mode":true', (string) $http_client->last_body );
+		$body = json_decode( (string) $http_client->last_body, true );
+		$this->assertIsArray( $body );
+		$this->assertTrue( $body['test_mode'] );
 	}
 
 	/**
@@ -401,7 +410,10 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->assertSame( '/sites/123/wcpay/accounts/embedded/session', $http_client->last_path );
 		$this->assertSame( 'POST', $http_client->last_method );
 		$this->assertTrue( $http_client->last_use_user_token, 'Embedded account sessions must use the connection-owner user token.' );
-		$this->assertStringContainsString( '"test_mode":false', (string) $http_client->last_body );
+
+		$body = json_decode( (string) $http_client->last_body, true );
+		$this->assertIsArray( $body );
+		$this->assertFalse( $body['test_mode'] );
 	}
 
 	/**
@@ -429,7 +441,10 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'cus_test', $customer_id );
 		$this->assertSame( '/sites/123/wcpay/customers', $http_client->last_path );
 		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertStringContainsString( '"name":"Ada Lovelace"', (string) $http_client->last_body );
+
+		$body = json_decode( (string) $http_client->last_body, true );
+		$this->assertIsArray( $body );
+		$this->assertSame( 'Ada Lovelace', $body['name'] );
 	}
 
 	/**
@@ -456,7 +471,10 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( '/sites/123/wcpay/customers/cus_test', $http_client->last_path );
 		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertStringContainsString( '"email":"ada@example.com"', (string) $http_client->last_body );
+
+		$body = json_decode( (string) $http_client->last_body, true );
+		$this->assertIsArray( $body );
+		$this->assertSame( 'ada@example.com', $body['email'] );
 	}
 
 	/**
@@ -499,10 +517,15 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->assertSame( '/sites/123/wcpay/intentions', $http_client->last_path );
 		$this->assertSame( 'POST', $http_client->last_method );
 		$this->assertSame( 'idem_charge', $http_client->last_headers['Idempotency-Key'] );
+
+		// Intentional wire-serialization check: the boolean confirm flag must be coerced to the string "true" on the wire for server compatibility.
 		$this->assertStringContainsString( '"confirm":"true"', (string) $http_client->last_body );
-		$this->assertStringContainsString( '"payment_method":"pm_test"', (string) $http_client->last_body );
-		$this->assertStringContainsString( '"payment_method_types":["card"]', (string) $http_client->last_body );
-		$this->assertStringNotContainsString( 'idempotency_key', (string) $http_client->last_body );
+
+		$body = json_decode( (string) $http_client->last_body, true );
+		$this->assertIsArray( $body );
+		$this->assertSame( 'pm_test', $body['payment_method'] );
+		$this->assertSame( array( 'card' ), $body['payment_method_types'] );
+		$this->assertArrayNotHasKey( 'idempotency_key', $body );
 	}
 
 	/**
@@ -539,8 +562,13 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->assertSame( '/sites/123/wcpay/setup_intents', $http_client->last_path );
 		$this->assertSame( 'POST', $http_client->last_method );
 		$this->assertSame( 'idem_setup', $http_client->last_headers['Idempotency-Key'] );
+
+		// Intentional wire-serialization check: the boolean confirm flag must be coerced to the string "true" on the wire for server compatibility.
 		$this->assertStringContainsString( '"confirm":"true"', (string) $http_client->last_body );
-		$this->assertStringContainsString( '"payment_method":"pm_test"', (string) $http_client->last_body );
+
+		$body = json_decode( (string) $http_client->last_body, true );
+		$this->assertIsArray( $body );
+		$this->assertSame( 'pm_test', $body['payment_method'] );
 	}
 
 	/**
@@ -577,8 +605,13 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->assertSame( '/sites/123/wcpay/setup_intents', $http_client->last_path );
 		$this->assertSame( 'POST', $http_client->last_method );
 		$this->assertSame( 'idem_setup_unconfirmed', $http_client->last_headers['Idempotency-Key'] );
+
+		// Intentional wire-serialization check: the boolean confirm flag must be coerced to the string "false" on the wire for server compatibility.
 		$this->assertStringContainsString( '"confirm":"false"', (string) $http_client->last_body );
-		$this->assertStringContainsString( '"payment_method_types":["card"]', (string) $http_client->last_body );
+
+		$body = json_decode( (string) $http_client->last_body, true );
+		$this->assertIsArray( $body );
+		$this->assertSame( array( 'card' ), $body['payment_method_types'] );
 	}
 
 	/**
@@ -1666,38 +1699,46 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should retrieve reader and location resources through preserved GET endpoints.
+	 * @testdox Should retrieve terminal readers through the preserved GET endpoint.
 	 */
-	public function test_terminal_reader_and_location_read_methods_use_preserved_get_endpoints(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'data' => array(),
-				)
-			),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ) );
+	public function test_get_terminal_readers_uses_preserved_get_endpoint(): void {
+		list( $sut, $http_client ) = $this->make_sut( true, array( 'data' => array() ) );
 
 		$sut->get_terminal_readers();
 
 		$this->assertSame( '/sites/123/wcpay/terminal/readers?test_mode=1', $http_client->last_path );
 		$this->assertSame( 'GET', $http_client->last_method );
+	}
+
+	/**
+	 * @testdox Should retrieve terminal locations through the preserved GET endpoint.
+	 */
+	public function test_get_terminal_locations_uses_preserved_get_endpoint(): void {
+		list( $sut, $http_client ) = $this->make_sut( true, array( 'data' => array() ) );
 
 		$sut->get_terminal_locations();
 
 		$this->assertSame( '/sites/123/wcpay/terminal/locations?test_mode=1', $http_client->last_path );
 		$this->assertSame( 'GET', $http_client->last_method );
+	}
+
+	/**
+	 * @testdox Should retrieve a single terminal location through the preserved GET endpoint.
+	 */
+	public function test_get_terminal_location_uses_preserved_get_endpoint(): void {
+		list( $sut, $http_client ) = $this->make_sut( true, array( 'data' => array() ) );
 
 		$sut->get_terminal_location( 'tml_test' );
 
 		$this->assertSame( '/sites/123/wcpay/terminal/locations/tml_test?test_mode=1', $http_client->last_path );
 		$this->assertSame( 'GET', $http_client->last_method );
+	}
+
+	/**
+	 * @testdox Should retrieve the readers charge summary through the preserved GET endpoint with query names.
+	 */
+	public function test_get_readers_charge_summary_uses_preserved_get_endpoint(): void {
+		list( $sut, $http_client ) = $this->make_sut( true, array( 'data' => array() ) );
 
 		$sut->get_readers_charge_summary( '2026-06-17', 'txn_test' );
 
@@ -1706,6 +1747,13 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( 'charge_date=2026-06-17', $http_client->last_path );
 		$this->assertStringContainsString( 'transaction_id=txn_test', $http_client->last_path );
 		$this->assertSame( 'GET', $http_client->last_method );
+	}
+
+	/**
+	 * @testdox Should retrieve a single transaction through the preserved GET endpoint.
+	 */
+	public function test_get_transaction_uses_preserved_get_endpoint(): void {
+		list( $sut, $http_client ) = $this->make_sut( true, array( 'data' => array() ) );
 
 		$sut->get_transaction( 'txn_test' );
 
@@ -1796,29 +1844,34 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should retrieve payout overviews and lists through preserved deposits endpoints.
+	 * @testdox Should retrieve the payouts overview through the preserved deposits endpoint.
 	 */
-	public function test_deposits_read_methods_use_preserved_endpoints_and_query_names(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'data'        => array(),
-					'total_count' => 0,
-				)
-			),
+	public function test_get_deposits_overview_uses_preserved_endpoint(): void {
+		list( $sut, $http_client ) = $this->make_sut(
+			true,
+			array(
+				'data'        => array(),
+				'total_count' => 0,
+			)
 		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ) );
 
 		$sut->get_deposits_overview();
 
 		$this->assertSame( '/sites/123/wcpay/deposits/overview-all?test_mode=1', $http_client->last_path );
 		$this->assertSame( 'GET', $http_client->last_method );
+	}
+
+	/**
+	 * @testdox Should retrieve the payouts list through the preserved deposits endpoint with query names.
+	 */
+	public function test_get_deposits_uses_preserved_endpoint_and_query_names(): void {
+		list( $sut, $http_client ) = $this->make_sut(
+			true,
+			array(
+				'data'        => array(),
+				'total_count' => 0,
+			)
+		);
 
 		$sut->get_deposits(
 			array(
@@ -1840,6 +1893,19 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( 'store_currency_is=usd', $http_client->last_path );
 		$this->assertStringContainsString( 'status_is=paid', $http_client->last_path );
 		$this->assertSame( 'GET', $http_client->last_method );
+	}
+
+	/**
+	 * @testdox Should retrieve the payouts summary through the preserved deposits endpoint with query names.
+	 */
+	public function test_get_deposits_summary_uses_preserved_endpoint_and_query_names(): void {
+		list( $sut, $http_client ) = $this->make_sut(
+			true,
+			array(
+				'data'        => array(),
+				'total_count' => 0,
+			)
+		);
 
 		$sut->get_deposits_summary(
 			array(
@@ -1886,23 +1952,10 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve deposits export and manual payout endpoints.
+	 * @testdox Should preserve the deposits export endpoint and body fields.
 	 */
-	public function test_deposits_export_and_manual_payout_methods_use_preserved_endpoints(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'exported_deposits' => 42,
-				)
-			),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ) );
+	public function test_get_deposits_export_uses_preserved_endpoint(): void {
+		list( $sut, $http_client ) = $this->make_sut( true, array( 'exported_deposits' => 42 ) );
 
 		$sut->get_deposits_export(
 			array(
@@ -1912,26 +1965,44 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			'merchant@example.com',
 			'en_US'
 		);
+		$export_body = json_decode( (string) $http_client->last_body, true );
 
 		$this->assertSame( '/sites/123/wcpay/deposits/download', $http_client->last_path );
 		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertStringContainsString( '"test_mode":true', (string) $http_client->last_body );
-		$this->assertStringContainsString( '"status_is":"paid"', (string) $http_client->last_body );
-		$this->assertStringContainsString( '"store_currency_is":"usd"', (string) $http_client->last_body );
-		$this->assertStringContainsString( '"user_email":"merchant@example.com"', (string) $http_client->last_body );
-		$this->assertStringContainsString( '"locale":"en_US"', (string) $http_client->last_body );
+		$this->assertIsArray( $export_body );
+		$this->assertTrue( $export_body['test_mode'] );
+		$this->assertSame( 'paid', $export_body['status_is'] );
+		$this->assertSame( 'usd', $export_body['store_currency_is'] );
+		$this->assertSame( 'merchant@example.com', $export_body['user_email'] );
+		$this->assertSame( 'en_US', $export_body['locale'] );
+	}
+
+	/**
+	 * @testdox Should preserve the payouts export URL endpoint.
+	 */
+	public function test_get_payouts_export_url_uses_preserved_endpoint(): void {
+		list( $sut, $http_client ) = $this->make_sut( true, array( 'exported_deposits' => 42 ) );
 
 		$sut->get_payouts_export_url( 'poexp_test' );
 
 		$this->assertSame( '/sites/123/wcpay/deposits/download/poexp_test?test_mode=1', $http_client->last_path );
 		$this->assertSame( 'GET', $http_client->last_method );
+	}
+
+	/**
+	 * @testdox Should preserve the manual payout endpoint and body fields.
+	 */
+	public function test_manual_deposit_uses_preserved_endpoint(): void {
+		list( $sut, $http_client ) = $this->make_sut( true, array( 'exported_deposits' => 42 ) );
 
 		$sut->manual_deposit( 'instant', 'usd' );
+		$deposit_body = json_decode( (string) $http_client->last_body, true );
 
 		$this->assertSame( '/sites/123/wcpay/deposits', $http_client->last_path );
 		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertStringContainsString( '"type":"instant"', (string) $http_client->last_body );
-		$this->assertStringContainsString( '"currency":"usd"', (string) $http_client->last_body );
+		$this->assertIsArray( $deposit_body );
+		$this->assertSame( 'instant', $deposit_body['type'] );
+		$this->assertSame( 'usd', $deposit_body['currency'] );
 	}
 
 	/**
@@ -2320,24 +2391,16 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve transactions list, summary, search, detail, and export endpoints.
+	 * @testdox Should preserve the transactions list endpoint and query names.
 	 */
-	public function test_transactions_admin_methods_use_preserved_endpoints(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'data'        => array(),
-					'total_count' => 0,
-				)
-			),
+	public function test_get_transactions_uses_preserved_endpoint(): void {
+		list( $sut, $http_client ) = $this->make_sut(
+			true,
+			array(
+				'data'        => array(),
+				'total_count' => 0,
+			)
 		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ) );
 
 		$sut->get_transactions(
 			array(
@@ -2353,6 +2416,19 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( 'pagesize=25', $http_client->last_path );
 		$this->assertStringContainsString( 'deposit_id=po_test', $http_client->last_path );
 		$this->assertSame( 'GET', $http_client->last_method );
+	}
+
+	/**
+	 * @testdox Should preserve the transactions summary endpoint and query names.
+	 */
+	public function test_get_transactions_summary_uses_preserved_endpoint(): void {
+		list( $sut, $http_client ) = $this->make_sut(
+			true,
+			array(
+				'data'        => array(),
+				'total_count' => 0,
+			)
+		);
 
 		$sut->get_transactions_summary( array( 'store_currency_is' => 'usd' ), 'po_test' );
 
@@ -2360,8 +2436,14 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( 'store_currency_is=usd', $http_client->last_path );
 		$this->assertStringContainsString( 'deposit_id=po_test', $http_client->last_path );
 		$this->assertSame( 'GET', $http_client->last_method );
+	}
 
-		$http_client->response['body'] = wp_json_encode(
+	/**
+	 * @testdox Should preserve the transactions search autocomplete endpoint.
+	 */
+	public function test_get_transactions_search_autocomplete_uses_preserved_endpoint(): void {
+		list( $sut, $http_client ) = $this->make_sut(
+			true,
 			array(
 				array(
 					'customer_name'  => 'Ada Lovelace',
@@ -2375,6 +2457,19 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->assertStringStartsWith( '/sites/123/wcpay/transactions/search?', $http_client->last_path );
 		$this->assertStringContainsString( 'search_term=Ada', $http_client->last_path );
 		$this->assertSame( 'GET', $http_client->last_method );
+	}
+
+	/**
+	 * @testdox Should preserve the fraud outcomes endpoint and move status into the path.
+	 */
+	public function test_get_fraud_outcomes_uses_preserved_endpoint(): void {
+		list( $sut, $http_client ) = $this->make_sut(
+			true,
+			array(
+				'data'        => array(),
+				'total_count' => 0,
+			)
+		);
 
 		$sut->get_fraud_outcomes(
 			array(
@@ -2387,20 +2482,61 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( 'search_term=Ada', $http_client->last_path );
 		$this->assertStringNotContainsString( 'status=review', $http_client->last_path );
 		$this->assertSame( 'GET', $http_client->last_method );
+	}
+
+	/**
+	 * @testdox Should preserve the single-transaction detail endpoint in admin context.
+	 */
+	public function test_get_transaction_admin_uses_preserved_endpoint(): void {
+		list( $sut, $http_client ) = $this->make_sut(
+			true,
+			array(
+				'data'        => array(),
+				'total_count' => 0,
+			)
+		);
 
 		$sut->get_transaction( 'txn_test' );
 
 		$this->assertSame( '/sites/123/wcpay/transactions/txn_test?test_mode=1', $http_client->last_path );
 		$this->assertSame( 'GET', $http_client->last_method );
+	}
+
+	/**
+	 * @testdox Should preserve the transactions export endpoint and body fields.
+	 */
+	public function test_get_transactions_export_uses_preserved_endpoint(): void {
+		list( $sut, $http_client ) = $this->make_sut(
+			true,
+			array(
+				'data'        => array(),
+				'total_count' => 0,
+			)
+		);
 
 		$sut->get_transactions_export( array( 'type_is' => 'charge' ), 'merchant@example.com', 'po_test', 'en_US' );
+		$export_body = json_decode( (string) $http_client->last_body, true );
 
 		$this->assertSame( '/sites/123/wcpay/transactions/download', $http_client->last_path );
 		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertStringContainsString( '"type_is":"charge"', (string) $http_client->last_body );
-		$this->assertStringContainsString( '"user_email":"merchant@example.com"', (string) $http_client->last_body );
-		$this->assertStringContainsString( '"deposit_id":"po_test"', (string) $http_client->last_body );
-		$this->assertStringContainsString( '"locale":"en_US"', (string) $http_client->last_body );
+		$this->assertIsArray( $export_body );
+		$this->assertSame( 'charge', $export_body['type_is'] );
+		$this->assertSame( 'merchant@example.com', $export_body['user_email'] );
+		$this->assertSame( 'po_test', $export_body['deposit_id'] );
+		$this->assertSame( 'en_US', $export_body['locale'] );
+	}
+
+	/**
+	 * @testdox Should preserve the transactions export URL endpoint.
+	 */
+	public function test_get_transactions_export_url_uses_preserved_endpoint(): void {
+		list( $sut, $http_client ) = $this->make_sut(
+			true,
+			array(
+				'data'        => array(),
+				'total_count' => 0,
+			)
+		);
 
 		$sut->get_transactions_export_url( 'txexp-test.01==' );
 
@@ -2409,24 +2545,25 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve disputes list, summary, detail, update, close, and export endpoints.
+	 * Build a fresh API client and fake transport for disputes admin endpoint tests.
+	 *
+	 * @return array{0: WooPaymentsApiClient, 1: FakeWooPaymentsHttpClient}
 	 */
-	public function test_disputes_admin_methods_use_preserved_endpoints(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'id'     => 'dp_test',
-					'reason' => 'fraudulent',
-				)
-			),
+	private function make_disputes_sut(): array {
+		return $this->make_sut(
+			false,
+			array(
+				'id'     => 'dp_test',
+				'reason' => 'fraudulent',
+			)
 		);
+	}
 
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+	/**
+	 * @testdox Should preserve the disputes list endpoint and query names.
+	 */
+	public function test_get_disputes_uses_preserved_endpoint(): void {
+		list( $sut, $http_client ) = $this->make_disputes_sut();
 
 		$sut->get_disputes( array( 'status_is' => 'needs_response' ) );
 
@@ -2434,38 +2571,86 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( 'test_mode=0', $http_client->last_path );
 		$this->assertStringContainsString( 'status_is=needs_response', $http_client->last_path );
 		$this->assertSame( 'GET', $http_client->last_method );
+	}
+
+	/**
+	 * @testdox Should preserve the disputes summary endpoint and query names.
+	 */
+	public function test_get_disputes_summary_uses_preserved_endpoint(): void {
+		list( $sut, $http_client ) = $this->make_disputes_sut();
 
 		$sut->get_disputes_summary( array( 'currency_is' => 'usd' ) );
 
 		$this->assertStringStartsWith( '/sites/123/wcpay/disputes/summary?', $http_client->last_path );
 		$this->assertStringContainsString( '0%5Bcurrency_is%5D=usd', $http_client->last_path );
 		$this->assertSame( 'GET', $http_client->last_method );
+	}
+
+	/**
+	 * @testdox Should preserve the single-dispute detail endpoint.
+	 */
+	public function test_get_dispute_uses_preserved_endpoint(): void {
+		list( $sut, $http_client ) = $this->make_disputes_sut();
 
 		$sut->get_dispute( 'dp_test' );
 
 		$this->assertSame( '/sites/123/wcpay/disputes/dp_test?test_mode=0', $http_client->last_path );
 		$this->assertSame( 'GET', $http_client->last_method );
+	}
+
+	/**
+	 * @testdox Should preserve the dispute update endpoint and body fields.
+	 */
+	public function test_update_dispute_uses_preserved_endpoint(): void {
+		list( $sut, $http_client ) = $this->make_disputes_sut();
 
 		$sut->update_dispute( 'dp_test', array( 'customer_name' => 'Ada' ), true, array( 'order_id' => 123 ) );
+		$update_body = json_decode( (string) $http_client->last_body, true );
 
 		$this->assertSame( '/sites/123/wcpay/disputes/dp_test', $http_client->last_path );
 		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertStringContainsString( '"customer_name":"Ada"', (string) $http_client->last_body );
-		$this->assertStringContainsString( '"submit":true', (string) $http_client->last_body );
-		$this->assertStringContainsString( '"order_id":123', (string) $http_client->last_body );
+		$this->assertIsArray( $update_body );
+		$this->assertArrayHasKey( 'evidence', $update_body );
+		$this->assertSame( 'Ada', $update_body['evidence']['customer_name'] );
+		$this->assertTrue( $update_body['submit'] );
+		$this->assertArrayHasKey( 'metadata', $update_body );
+		$this->assertSame( 123, $update_body['metadata']['order_id'] );
+	}
+
+	/**
+	 * @testdox Should preserve the dispute close endpoint.
+	 */
+	public function test_close_dispute_uses_preserved_endpoint(): void {
+		list( $sut, $http_client ) = $this->make_disputes_sut();
 
 		$sut->close_dispute( 'dp_test' );
 
 		$this->assertSame( '/sites/123/wcpay/disputes/dp_test/close', $http_client->last_path );
 		$this->assertSame( 'POST', $http_client->last_method );
+	}
+
+	/**
+	 * @testdox Should preserve the disputes export endpoint and body fields.
+	 */
+	public function test_get_disputes_export_uses_preserved_endpoint(): void {
+		list( $sut, $http_client ) = $this->make_disputes_sut();
 
 		$sut->get_disputes_export( array( 'status_is' => 'needs_response' ), 'merchant@example.com', 'en_US' );
+		$export_body = json_decode( (string) $http_client->last_body, true );
 
 		$this->assertSame( '/sites/123/wcpay/disputes/download', $http_client->last_path );
 		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertStringContainsString( '"status_is":"needs_response"', (string) $http_client->last_body );
-		$this->assertStringContainsString( '"user_email":"merchant@example.com"', (string) $http_client->last_body );
-		$this->assertStringContainsString( '"locale":"en_US"', (string) $http_client->last_body );
+		$this->assertIsArray( $export_body );
+		$this->assertSame( 'needs_response', $export_body['status_is'] );
+		$this->assertSame( 'merchant@example.com', $export_body['user_email'] );
+		$this->assertSame( 'en_US', $export_body['locale'] );
+	}
+
+	/**
+	 * @testdox Should preserve the disputes export URL endpoint.
+	 */
+	public function test_get_disputes_export_url_uses_preserved_endpoint(): void {
+		list( $sut, $http_client ) = $this->make_disputes_sut();
 
 		$sut->get_disputes_export_url( 'dpexp-test.01==' );
 
@@ -3000,9 +3185,12 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'success' => true ), $result );
 		$this->assertSame( '/sites/123/wcpay/vat', $http_client->last_path );
 		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertStringContainsString( '"vat_number":"RO123456"', (string) $http_client->last_body );
-		$this->assertStringContainsString( '"name":"ACME SRL"', (string) $http_client->last_body );
-		$this->assertStringContainsString( '"address":"1 Market Street"', (string) $http_client->last_body );
+
+		$body = json_decode( (string) $http_client->last_body, true );
+		$this->assertIsArray( $body );
+		$this->assertSame( 'RO123456', $body['vat_number'] );
+		$this->assertSame( 'ACME SRL', $body['name'] );
+		$this->assertSame( '1 Market Street', $body['address'] );
 	}
 
 	/**
@@ -3120,5 +3308,30 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$account_service->method( 'is_test_mode_onboarding_enabled' )->willReturn( $test_mode_onboarding ?? $test_mode );
 
 		return $account_service;
+	}
+
+	/**
+	 * Build an initialized API client backed by a fresh fake HTTP client.
+	 *
+	 * Each endpoint scenario gets its own fake so that one failing endpoint
+	 * cannot mask the request recorded by a later endpoint.
+	 *
+	 * @param bool  $test_mode     Whether WooPayments should run in test mode.
+	 * @param mixed $response_body Decoded body the fake transport should return.
+	 * @return array{0: WooPaymentsApiClient, 1: FakeWooPaymentsHttpClient}
+	 */
+	private function make_sut( bool $test_mode, $response_body = array() ): array {
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id  = 123;
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode( $response_body ),
+		);
+
+		$sut = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( $test_mode ) );
+
+		return array( $sut, $http_client );
 	}
 }
