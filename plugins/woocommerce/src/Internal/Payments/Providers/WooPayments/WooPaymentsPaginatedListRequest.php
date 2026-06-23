@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use WP_REST_Request;
 
 /**
@@ -257,5 +258,29 @@ abstract class WooPaymentsPaginatedListRequest {
 	 */
 	public function set_param( string $key, $value ): void {
 		$this->params[ $key ] = $value;
+	}
+
+	/**
+	 * Execute the request against the platform and return the decoded result.
+	 *
+	 * Backward-compatibility shim: the standalone WooPayments plugin's request objects expose
+	 * send(), and extensions hooking the preserved wcpay_list_transactions_request /
+	 * wcpay_get_reporting_balance_summary_request (and sibling list) filters may call
+	 * $request->send() on the filtered object. The native object preserves that contract by
+	 * delegating to the API client. Do not remove without a _deprecated_function() cycle.
+	 *
+	 * @since 11.0.0
+	 * @return array<string,mixed>
+	 */
+	public function send(): array {
+		$api_client = wc_get_container()->get( WooPaymentsApiClient::class );
+
+		return $api_client->request_list(
+			$this->get_params(),
+			$this->get_api(),
+			$this->get_method(),
+			$this->is_site_specific(),
+			$this->should_use_user_token()
+		);
 	}
 }

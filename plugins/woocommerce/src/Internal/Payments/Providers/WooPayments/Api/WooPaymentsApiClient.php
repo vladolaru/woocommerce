@@ -1928,6 +1928,29 @@ class WooPaymentsApiClient {
 	}
 
 	/**
+	 * Execute a preserved list request against the platform and return the decoded body.
+	 *
+	 * Backward-compatibility entrypoint for WooPaymentsPaginatedListRequest::send(): the
+	 * standalone WooPayments plugin's request objects expose send(), and extensions hooking
+	 * the preserved wcpay_list_*_request / wcpay_get_reporting_balance_summary_request filters
+	 * may call $request->send() on the filtered object. The private transport stays internal,
+	 * so the native request object delegates here.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @param array<int|string,mixed> $params         Request params.
+	 * @param string                  $api            API path.
+	 * @param string                  $method         HTTP method.
+	 * @param bool                    $is_site_scoped Whether to include the WPCOM site ID in the API path.
+	 * @param bool                    $use_user_token Whether to sign with the connection-owner user token.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	public function request_list( array $params, string $api, string $method = 'GET', bool $is_site_scoped = true, bool $use_user_token = false ): array {
+		return $this->request( $params, $api, $method, $is_site_scoped, $use_user_token );
+	}
+
+	/**
 	 * Send a request after applying a legacy WooPayments request-object filter.
 	 *
 	 * @param array<int|string,mixed> $params Request params.
