@@ -391,6 +391,34 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Refund-instance resolution must run while the order payment lock is held.
+	 */
+	public function test_refund_instance_resolution_runs_under_the_order_lock(): void {
+		$order = $this->create_woopayments_order( '10.00' );
+
+		$refund = wc_create_refund(
+			array(
+				'order_id'       => $order->get_id(),
+				'amount'         => 2.50,
+				'reason'         => 'Adjustment',
+				'refund_payment' => false,
+			)
+		);
+		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
+
+		$sut = $this->build_lock_observing_sut();
+
+		$provider = new RecordingProvider( $this->successful_refund_outcome( 're_locked' ) );
+		$result   = $sut->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 2.50, 'Adjustment' ), $provider );
+
+		$this->assertTrue( $result );
+		$this->assertTrue(
+			$sut->lock_held_during_resolution,
+			'Refund-instance resolution must happen under the order payment lock so concurrent equal refunds serialize and each resolves a distinct instance.'
+		);
+	}
+
+	/**
 	 * @testdox Refund resolution must skip an already-processed equal refund even when it sorts after the fresh one.
 	 */
 	public function test_refund_resolution_prefers_unprocessed_refund_over_linked_one(): void {
@@ -915,6 +943,61 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$lifecycle->init( $this->store );
 
 		return $lifecycle;
+	}
+
+	/**
+	 * Build a PaymentProcessingService that records whether the order payment lock is held during refund resolution.
+	 *
+	 * @return PaymentProcessingService
+	 */
+	private function build_lock_observing_sut(): PaymentProcessingService {
+		$store               = $this->store;
+		$sut                 = new class() extends PaymentProcessingService {
+			/**
+			 * Whether the order payment lock was held when refund-instance resolution ran.
+			 *
+			 * @var bool
+			 */
+			public bool $lock_held_during_resolution = false;
+
+			/**
+			 * Order payment store used to observe the lock.
+			 *
+			 * @var OrderPaymentStore
+			 */
+			public OrderPaymentStore $observed_store;
+
+			/**
+			 * Record whether the order payment lock is held when refund-instance resolution runs.
+			 *
+			 * @param WC_Order $order  Parent order.
+			 * @param float    $amount Refund amount.
+			 * @param string   $reason Refund reason.
+			 * @return string|null
+			 */
+			protected function resolve_refund_instance_id( WC_Order $order, float $amount, string $reason ): ?string {
+				// A held order lock rejects a fresh claim from any other operation, so a failed probe
+				// claim proves resolution is running under the lock regardless of the value it was
+				// claimed with. Release the probe again if it unexpectedly succeeds so the spy never
+				// perturbs the order lock state the real refund relies on.
+				$probe_claimed                     = $this->observed_store->claim_order_payment_lock( $order, 'probe' );
+				$this->lock_held_during_resolution = ! $probe_claimed;
+				if ( $probe_claimed ) {
+					$this->observed_store->unlock_order_payment( $order );
+				}
+
+				return parent::resolve_refund_instance_id( $order, $amount, $reason );
+			}
+		};
+		$sut->observed_store = $store;
+		$sut->init(
+			$store,
+			wc_get_container()->get( OrderPaymentLifecycleService::class ),
+			$this->idempotency,
+			wc_get_container()->get( PaymentExceptionPolicy::class )
+		);
+
+		return $sut;
 	}
 
 	/**

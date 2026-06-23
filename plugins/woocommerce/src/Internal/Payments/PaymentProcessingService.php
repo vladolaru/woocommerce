@@ -210,13 +210,21 @@ class PaymentProcessingService {
 			return true;
 		}
 
-		$refund_instance = $this->resolve_refund_instance_id( $order, $amount, $reason );
-		$idempotency_key = $this->idempotency->derive_key( $order, $provider->get_id(), 'refund', $amount, (string) $order->get_currency(), $reason, $refund_instance );
-		if ( ! $this->order_payment_store->claim_order_payment_lock( $order, $idempotency_key ) ) {
+		// Claim the order lock before resolving the refund instance, keyed on a stable refund-scope
+		// token rather than the per-instance idempotency key. Two concurrent equal-amount, equal-reason
+		// refunds would otherwise resolve the same fresh refund row, derive the same idempotency key,
+		// and the provider would replay the first refund and drop the second. Serializing resolution
+		// under the lock lets each refund link its row before the next one resolves, so distinct
+		// refunds resolve to distinct instances.
+		$refund_scope_key = $this->idempotency->derive_key( $order, $provider->get_id(), 'refund-scope', $amount, (string) $order->get_currency(), $reason );
+		if ( ! $this->order_payment_store->claim_order_payment_lock( $order, $refund_scope_key ) ) {
 			return new WP_Error( 'native_payment_refund_locked', __( 'A refund is already in progress for this order.', 'woocommerce' ) );
 		}
 
 		try {
+			$refund_instance = $this->resolve_refund_instance_id( $order, $amount, $reason );
+			$idempotency_key = $this->idempotency->derive_key( $order, $provider->get_id(), 'refund', $amount, (string) $order->get_currency(), $reason, $refund_instance );
+
 			try {
 				$outcome = $provider->refund( $context, $idempotency_key );
 			} catch ( Throwable $exception ) {
@@ -283,7 +291,7 @@ class PaymentProcessingService {
 	 * @param string   $reason Refund reason.
 	 * @return string|null
 	 */
-	private function resolve_refund_instance_id( WC_Order $order, float $amount, string $reason ): ?string {
+	protected function resolve_refund_instance_id( WC_Order $order, float $amount, string $reason ): ?string {
 		$matched_refund = $this->find_matching_refund( $order, $amount, $reason, array( self::PROCESSED_REFUND_LINK_META_KEY ) );
 
 		return $matched_refund instanceof WC_Order_Refund ? (string) $matched_refund->get_id() : null;
