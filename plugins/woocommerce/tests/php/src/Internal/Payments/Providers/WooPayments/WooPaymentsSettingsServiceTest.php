@@ -1167,6 +1167,27 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should sanitize the WooPay custom message with wp_kses_post before storing it.
+	 */
+	public function test_update_settings_sanitizes_woopay_custom_message_with_kses(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array() );
+
+		$result = $this->sut->update_settings(
+			array(
+				'woopay_custom_message' => 'Pay <strong>faster</strong><script>alert(1)</script> with [terms_of_service_link].',
+			)
+		);
+
+		$stored = get_option( 'woocommerce_woocommerce_payments_settings' );
+
+		$this->assertIsArray( $result );
+		$this->assertIsArray( $stored );
+		$this->assertStringNotContainsString( '<script>', $stored['platform_checkout_custom_message'], 'Disallowed <script> markup should be stripped.' );
+		$this->assertStringContainsString( '<strong>faster</strong>', $stored['platform_checkout_custom_message'], 'Allowed inline markup should be preserved.' );
+		$this->assertStringContainsString( '[terms]', $stored['platform_checkout_custom_message'], 'Shortcode swaps should run before kses sanitization.' );
+	}
+
+	/**
 	 * @testdox Should keep cached account fraud flags in sync after saving advanced fraud settings.
 	 */
 	public function test_update_settings_patches_cached_advanced_fraud_flags_after_ruleset_save(): void {

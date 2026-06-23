@@ -557,7 +557,7 @@ class WooPaymentsSettingsService {
 			$custom_message                               = is_scalar( $params['woopay_custom_message'] ) ? (string) $params['woopay_custom_message'] : '';
 			$custom_message                               = str_replace( '[terms_of_service_link]', '[terms]', $custom_message );
 			$custom_message                               = str_replace( '[privacy_policy_link]', '[privacy_policy]', $custom_message );
-			$settings['platform_checkout_custom_message'] = $custom_message;
+			$settings['platform_checkout_custom_message'] = wp_kses_post( $custom_message );
 		}
 
 		if ( array_key_exists( 'enabled_payment_method_ids', $params ) ) {
@@ -619,6 +619,7 @@ class WooPaymentsSettingsService {
 			$settings[ $request_key ] = $this->sanitize_account_setting_value( $params[ $request_key ], $type );
 		}
 
+		// Persist every setting in a single batched write; concurrent admin saves are last-writer-wins by design (a deliberate improvement over the client's per-field writes).
 		update_option( self::SETTINGS_OPTION, $settings );
 		/**
 		 * Fires after native WooPayments settings are updated so operational mirrors can sync setup state.
