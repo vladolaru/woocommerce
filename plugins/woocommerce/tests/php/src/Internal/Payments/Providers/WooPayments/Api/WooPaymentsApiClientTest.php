@@ -1844,6 +1844,48 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should accept hyphenated route identifiers when interpolating resource paths.
+	 */
+	public function test_get_charge_accepts_hyphenated_route_identifier(): void {
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id  = 123;
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode( array( 'id' => 'ch_abc-123' ) ),
+		);
+
+		$sut = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( false ) );
+
+		$result = $sut->get_charge( 'ch_abc-123' );
+
+		$this->assertSame( '/sites/123/wcpay/charges/ch_abc-123?test_mode=0', $http_client->last_path );
+		$this->assertSame( 'GET', $http_client->last_method );
+		$this->assertSame( 'ch_abc-123', $result['id'] );
+	}
+
+	/**
+	 * @testdox Should reject empty route identifiers before path interpolation.
+	 */
+	public function test_get_charge_rejects_empty_route_identifier(): void {
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id  = 123;
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode( array() ),
+		);
+
+		$sut = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( false ) );
+
+		$this->expectException( WooPaymentsApiException::class );
+
+		$sut->get_charge( '' );
+	}
+
+	/**
 	 * @testdox Should retrieve the payouts overview through the preserved deposits endpoint.
 	 */
 	public function test_get_deposits_overview_uses_preserved_endpoint(): void {
@@ -3145,9 +3187,9 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not double-encode already encoded VAT route parameters.
+	 * @testdox Should URL-encode unsafe characters in the VAT route parameter exactly once.
 	 */
-	public function test_validate_vat_does_not_double_encode_route_parameter(): void {
+	public function test_validate_vat_encodes_route_parameter(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
 		$http_client->blog_id  = 123;
 		$http_client->response = array(
@@ -3159,10 +3201,13 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$sut = new WooPaymentsApiClient();
 		$sut->init( $http_client, $this->create_account_service( false ) );
 
-		$result = $sut->validate_vat( 'CHE%20123' );
+		// The REST controller hands validate_vat() a decoded value, so a space or
+		// slash must be encoded exactly once before path interpolation.
+		$result = $sut->validate_vat( 'CHE 123/4' );
 
 		$this->assertSame( array( 'is_valid' => true ), $result );
-		$this->assertSame( '/sites/123/wcpay/vat/CHE%20123?test_mode=0', $http_client->last_path );
+		$this->assertSame( '/sites/123/wcpay/vat/CHE%20123%2F4?test_mode=0', $http_client->last_path );
+		$this->assertStringNotContainsString( 'CHE 123', $http_client->last_path );
 		$this->assertStringNotContainsString( '%2520', $http_client->last_path );
 	}
 

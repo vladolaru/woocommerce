@@ -35,9 +35,9 @@ class WooPaymentsApiClient {
 	private const REQUEST_RETRIES_LIMIT = 3;
 
 	/**
-	 * Backoff between transport retries, in microseconds.
+	 * Base backoff between transport retries, in microseconds (250 ms).
 	 */
-	private const REQUEST_RETRIES_BACKOFF_MICROSECONDS = 250;
+	private const REQUEST_RETRIES_BACKOFF_MICROSECONDS = 250000;
 
 	/**
 	 * WooPayments V1 client capability version advertised to WPCOM.
@@ -1282,7 +1282,7 @@ class WooPaymentsApiClient {
 	public function validate_vat( string $vat_number ): array {
 		return $this->request_with_legacy_filter(
 			array(),
-			self::VAT_API . '/' . $vat_number,
+			self::VAT_API . '/' . rawurlencode( $vat_number ),
 			'GET',
 			'wcpay_validate_vat_request'
 		);
@@ -1727,7 +1727,7 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the route parameter is invalid.
 	 */
 	private function validate_route_resource_id( string $id ): void {
-		if ( ! preg_match( '/^\w+$/', $id ) ) {
+		if ( '' === $id || ! preg_match( '/^[\w-]+$/', $id ) ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
 			throw new WooPaymentsApiException( __( 'Route param validation failed.', 'woocommerce' ), 'wcpay_route_validation_failure', 400 );
 		}
@@ -1891,7 +1891,8 @@ class WooPaymentsApiClient {
 				break;
 			}
 
-			usleep( self::REQUEST_RETRIES_BACKOFF_MICROSECONDS * ( 2 ** $retries ) );
+			$backoff_microseconds = self::REQUEST_RETRIES_BACKOFF_MICROSECONDS * ( 2 ** $retries );
+			usleep( $backoff_microseconds + wp_rand( 0, (int) ( $backoff_microseconds / 4 ) ) );
 			++$retries;
 		}
 
