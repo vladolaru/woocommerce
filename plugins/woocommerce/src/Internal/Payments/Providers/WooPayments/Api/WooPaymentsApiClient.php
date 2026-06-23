@@ -135,9 +135,6 @@ class WooPaymentsApiClient {
 	private const TRANSACTIONS_API = 'transactions';
 
 	/**
-	 * WooPayments reporting API path.
-	 */
-	/**
 	 * WooPayments authorizations API path.
 	 */
 	private const AUTHORIZATIONS_API = 'authorizations';
