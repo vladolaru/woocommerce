@@ -1132,6 +1132,41 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should sanitize persisted account setting fields by their field type.
+	 */
+	public function test_update_settings_sanitizes_account_setting_fields_by_type(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array() );
+
+		$result = $this->sut->update_settings(
+			array(
+				'account_business_name'            => '  Native <script>alert(1)</script> Store  ',
+				'account_statement_descriptor'     => "NATIVE\tSTORE<b></b>",
+				'account_business_support_phone'   => '+1 555 0123<script></script>',
+				'account_business_url'             => 'javascript:alert(document.cookie)',
+				'account_business_support_email'   => 'support<>@example.test',
+				'account_communications_email'     => 'not a valid email',
+				'account_branding_primary_color'   => '#123ABC',
+				'account_branding_secondary_color' => '#eeeeee onload=alert(1)',
+				'account_business_support_address' => array( 'city' => 'San <script>alert(1)</script> Francisco' ),
+			)
+		);
+
+		$stored = get_option( 'woocommerce_woocommerce_payments_settings' );
+
+		$this->assertIsArray( $result );
+		$this->assertIsArray( $stored );
+		$this->assertSame( 'Native Store', $stored['account_business_name'], 'Text fields should be passed through sanitize_text_field().' );
+		$this->assertSame( 'NATIVE STORE', $stored['account_statement_descriptor'], 'Descriptors should be passed through sanitize_text_field().' );
+		$this->assertSame( '+1 555 0123', $stored['account_business_support_phone'], 'Phone is a text field and should be sanitized.' );
+		$this->assertSame( '', $stored['account_business_url'], 'A javascript: URL should be stripped by esc_url_raw().' );
+		$this->assertSame( 'support@example.test', $stored['account_business_support_email'], 'Email fields should be passed through sanitize_email().' );
+		$this->assertSame( '', $stored['account_communications_email'], 'An invalid email should be reduced to an empty string.' );
+		$this->assertSame( '#123ABC', $stored['account_branding_primary_color'], 'A valid hex color should be passed through sanitize_hex_color().' );
+		$this->assertSame( '', $stored['account_branding_secondary_color'], 'A malformed hex color should fall back to an empty string.' );
+		$this->assertSame( array( 'city' => 'San Francisco' ), $stored['account_business_support_address'], 'Support address members should be sanitized while preserving the array shape.' );
+	}
+
+	/**
 	 * @testdox Should keep cached account fraud flags in sync after saving advanced fraud settings.
 	 */
 	public function test_update_settings_patches_cached_advanced_fraud_flags_after_ruleset_save(): void {
