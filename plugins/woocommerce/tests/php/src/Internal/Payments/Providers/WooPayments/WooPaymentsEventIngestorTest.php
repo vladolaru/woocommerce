@@ -71,8 +71,9 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_woopayments_nox_profile' );
 		delete_option( 'woocommerce_woopayments_nox_onboarding_locked' );
 		delete_option( 'wcpay_account_deletion_pending_id' );
-		foreach ( array( 'evt_dedup', 'evt_retry', 'evt_dispute_lost_1', 'evt_dispute_lost_2' ) as $event_id ) {
+		foreach ( array( 'evt_dedup', 'evt_retry', 'evt_dispute_lost_1', 'evt_dispute_lost_2', 'evt_claimed', 'evt_claim_release' ) as $event_id ) {
 			delete_transient( 'wcpay_processed_event_' . md5( $event_id ) );
+			wp_cache_delete( 'wcpay_claimed_event_' . md5( $event_id ), 'woopayments_events' );
 		}
 		parent::tearDown();
 	}
@@ -2187,6 +2188,42 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		$this->assertTrue( $first_threw, 'The first delivery should surface the handler failure.' );
 		$this->assertCount( 2, $handler->processed_events, 'A failed event must be re-dispatched on the next delivery.' );
+	}
+
+	/**
+	 * @testdox A concurrent delivery whose in-flight claim is already held does not dispatch again before the durable mark.
+	 */
+	public function test_process_skips_event_with_an_already_held_in_flight_claim(): void {
+		$handler = $this->create_recording_notification_handler();
+		$sut     = $this->create_ingestor_with_notification_handler( $handler );
+		$event   = $this->create_notification_event( 'evt_claimed', 'claimed-note-' . wp_generate_uuid4() );
+
+		// Simulate a concurrent in-flight delivery that has claimed the event but not yet written the durable marker.
+		wp_cache_add( 'wcpay_claimed_event_' . md5( 'evt_claimed' ), 1, 'woopayments_events', HOUR_IN_SECONDS );
+
+		$sut->process( $event );
+
+		$this->assertCount( 0, $handler->processed_events, 'A delivery losing the atomic claim race must not dispatch.' );
+	}
+
+	/**
+	 * @testdox A delivery that throws releases its in-flight claim so a retry can re-claim it.
+	 */
+	public function test_process_releases_the_in_flight_claim_when_dispatch_throws(): void {
+		$handler = $this->create_recording_notification_handler( true );
+		$sut     = $this->create_ingestor_with_notification_handler( $handler );
+		$event   = $this->create_notification_event( 'evt_claim_release', 'claim-release-note-' . wp_generate_uuid4() );
+
+		try {
+			$sut->process( $event );
+		} catch ( RuntimeException $exception ) {
+			$this->assertSame( 'Recorded handler failure.', $exception->getMessage() );
+		}
+
+		$this->assertFalse(
+			wp_cache_get( 'wcpay_claimed_event_' . md5( 'evt_claim_release' ), 'woopayments_events' ),
+			'A thrown dispatch must release its in-flight claim so the event can be retried.'
+		);
 	}
 
 	/**

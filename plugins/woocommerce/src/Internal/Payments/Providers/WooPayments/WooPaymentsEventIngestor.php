@@ -39,6 +39,20 @@ class WooPaymentsEventIngestor {
 	private const PROCESSED_EVENT_TRANSIENT_PREFIX = 'wcpay_processed_event_';
 
 	/**
+	 * Object-cache key prefix for the per-event atomic in-flight processing claim.
+	 *
+	 * @var string
+	 */
+	private const CLAIMED_EVENT_CACHE_PREFIX = 'wcpay_claimed_event_';
+
+	/**
+	 * Object-cache group for the per-event atomic in-flight processing claim.
+	 *
+	 * @var string
+	 */
+	private const CLAIMED_EVENT_CACHE_GROUP = 'woopayments_events';
+
+	/**
 	 * TTL for the per-event "already processed" idempotency marker, in seconds.
 	 *
 	 * @var int
@@ -186,26 +200,78 @@ class WooPaymentsEventIngestor {
 	 * Events carrying an ID are processed at most once within the marker TTL: the same event can be
 	 * delivered repeatedly (Action Scheduler retries, provider re-delivery, the failed-event replay
 	 * queue), and re-applying it would duplicate money-affecting side effects such as order-state
-	 * transitions, refund metadata, and dispute updates. The "processed" marker is written only after
-	 * the event is handled successfully, so an event that throws is left unmarked and can be retried.
+	 * transitions, refund metadata, and dispute updates.
+	 *
+	 * Concurrency is guarded in two layers. An atomic in-flight claim ({@see self::claim_event()}) blocks
+	 * a second delivery that races the first before it can write the durable marker, closing the check-then-act
+	 * window that previously spanned the whole dispatch. The durable "processed" transient is still written only
+	 * after the event is handled successfully, so an event that throws is left unmarked (and its in-flight claim
+	 * released) and can be retried. The durable transient also keeps deduplication working cross-request and
+	 * after object-cache eviction.
 	 *
 	 * @since 11.0.0
 	 *
 	 * @param array<string,mixed> $event Event payload.
-	 * @throws InvalidArgumentException When the event shape is invalid.
+	 * @throws Throwable When dispatching the event fails (including an InvalidArgumentException for an invalid event shape); the in-flight claim is released first so the event can be retried.
 	 */
 	public function process( array $event ): void {
 		$event_id = $this->get_event_id( $event );
 
-		if ( '' !== $event_id && $this->is_event_already_processed( $event_id ) ) {
+		if ( '' !== $event_id && ! $this->claim_event( $event_id ) ) {
 			return;
 		}
 
-		$this->dispatch( $event );
+		try {
+			$this->dispatch( $event );
+		} catch ( Throwable $exception ) {
+			if ( '' !== $event_id ) {
+				$this->release_event_claim( $event_id );
+			}
+			throw $exception;
+		}
 
 		if ( '' !== $event_id ) {
 			$this->mark_event_processed( $event_id );
 		}
+	}
+
+	/**
+	 * Atomically claim an event for in-flight processing.
+	 *
+	 * Returns false when the event was already durably processed, or when a concurrent delivery already
+	 * holds the in-flight claim. On a persistent object cache (Redis, Memcached) wp_cache_add() is atomic,
+	 * so only one of two simultaneous re-deliveries wins the claim. Without a persistent object cache the
+	 * claim is request-local and never blocks a concurrent request, but that does not regress below the
+	 * prior behaviour: the durable transient marker still bounds duplicates exactly as it did before.
+	 *
+	 * @param string $event_id Event ID.
+	 * @return bool True when the caller won the claim and should process the event.
+	 */
+	private function claim_event( string $event_id ): bool {
+		if ( $this->is_event_already_processed( $event_id ) ) {
+			return false;
+		}
+
+		return (bool) $this->legacy_proxy->call_function( 'wp_cache_add', $this->event_claim_key( $event_id ), 1, self::CLAIMED_EVENT_CACHE_GROUP, self::PROCESSED_EVENT_TRANSIENT_TTL );
+	}
+
+	/**
+	 * Release a held in-flight processing claim so the event can be retried.
+	 *
+	 * @param string $event_id Event ID.
+	 */
+	private function release_event_claim( string $event_id ): void {
+		$this->legacy_proxy->call_function( 'wp_cache_delete', $this->event_claim_key( $event_id ), self::CLAIMED_EVENT_CACHE_GROUP );
+	}
+
+	/**
+	 * Get the object-cache key for an event's in-flight processing claim.
+	 *
+	 * @param string $event_id Event ID.
+	 * @return string
+	 */
+	private function event_claim_key( string $event_id ): string {
+		return self::CLAIMED_EVENT_CACHE_PREFIX . md5( $event_id );
 	}
 
 	/**
