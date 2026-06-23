@@ -37,13 +37,6 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Tear down test fixtures.
-	 */
-	public function tearDown(): void {
-		parent::tearDown();
-	}
-
-	/**
 	 * Invoke a private method on the System Under Test.
 	 *
 	 * @param string       $method Method name.
