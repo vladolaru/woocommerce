@@ -995,7 +995,7 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the request fails.
 	 */
 	public function get_disputes_summary( array $filters = array() ): array {
-		return $this->request( array( '0' => $filters ), self::DISPUTES_API . '/summary', 'GET' );
+		return $this->request( $filters, self::DISPUTES_API . '/summary', 'GET' );
 	}
 
 	/**

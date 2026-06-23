@@ -2582,7 +2582,8 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$sut->get_disputes_summary( array( 'currency_is' => 'usd' ) );
 
 		$this->assertStringStartsWith( '/sites/123/wcpay/disputes/summary?', $http_client->last_path );
-		$this->assertStringContainsString( '0%5Bcurrency_is%5D=usd', $http_client->last_path );
+		$this->assertStringContainsString( 'currency_is=usd', $http_client->last_path );
+		$this->assertStringNotContainsString( '0%5Bcurrency_is%5D', $http_client->last_path );
 		$this->assertSame( 'GET', $http_client->last_method );
 	}
 
