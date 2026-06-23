@@ -252,7 +252,7 @@ class WooPaymentsDisputeEventHandler {
 			/* translators: %1: the dispute message, %2: the dispute details URL */
 			__( '%1$s. See <a href="%2$s">dispute overview</a> for more details.', 'woocommerce' ),
 			$message,
-			$this->get_dispute_url( $charge_id, $balance_transaction_id )
+			esc_url( $this->get_dispute_url( $charge_id, $balance_transaction_id ) )
 		);
 
 		if ( $this->order_note_exists( $order, $note ) ) {
@@ -439,9 +439,9 @@ class WooPaymentsDisputeEventHandler {
 				/* translators: %1: the disputed amount and currency; %2: the dispute reason; %3 the deadline date for responding to the inquiry; %4 dispute details URL */
 				__( 'A payment inquiry has been raised for %1$s with reason "%2$s". <a href="%4$s" target="_blank" rel="noopener noreferrer">Response due by %3$s</a>.', 'woocommerce' ),
 				$amount,
-				$reason,
-				$due_by,
-				$this->get_dispute_url( $charge_id, $balance_transaction_id )
+				esc_html( $reason ),
+				esc_html( $due_by ),
+				esc_url( $this->get_dispute_url( $charge_id, $balance_transaction_id ) )
 			);
 		}
 
@@ -449,9 +449,9 @@ class WooPaymentsDisputeEventHandler {
 			/* translators: %1: the disputed amount and currency; %2: the dispute reason; %3 the deadline date for responding to dispute; %4 dispute details URL */
 			__( 'Payment has been disputed for %1$s with reason "%2$s". <a href="%4$s" target="_blank" rel="noopener noreferrer">Response due by %3$s</a>.', 'woocommerce' ),
 			$amount,
-			$reason,
-			$due_by,
-			$this->get_dispute_url( $charge_id, $balance_transaction_id )
+			esc_html( $reason ),
+			esc_html( $due_by ),
+			esc_url( $this->get_dispute_url( $charge_id, $balance_transaction_id ) )
 		);
 	}
 
@@ -469,16 +469,16 @@ class WooPaymentsDisputeEventHandler {
 			return sprintf(
 				/* translators: %1: the dispute status; %2: dispute details URL */
 				__( 'Payment inquiry has been closed with status %1$s. See <a href="%2$s" target="_blank" rel="noopener noreferrer">payment status</a> for more details.', 'woocommerce' ),
-				$status,
-				$this->get_dispute_url( $charge_id, $balance_transaction_id )
+				esc_html( $status ),
+				esc_url( $this->get_dispute_url( $charge_id, $balance_transaction_id ) )
 			);
 		}
 
 		return sprintf(
 			/* translators: %1: the dispute status; %2: dispute details URL */
 			__( 'Dispute has been closed with status %1$s. See <a href="%2$s" target="_blank" rel="noopener noreferrer">dispute overview</a> for more details.', 'woocommerce' ),
-			$status,
-			$this->get_dispute_url( $charge_id, $balance_transaction_id )
+			esc_html( $status ),
+			esc_url( $this->get_dispute_url( $charge_id, $balance_transaction_id ) )
 		);
 	}
 

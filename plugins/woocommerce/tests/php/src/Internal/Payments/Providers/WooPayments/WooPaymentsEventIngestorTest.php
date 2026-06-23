@@ -2768,10 +2768,12 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * @return string
 	 */
 	private function get_expected_dispute_url( string $charge_id ): string {
-		return Utils::wc_payments_legacy_admin_url(
-			'/payments/transactions/details',
-			array(
-				'id' => $charge_id,
+		return esc_url(
+			Utils::wc_payments_legacy_admin_url(
+				'/payments/transactions/details',
+				array(
+					'id' => $charge_id,
+				)
 			)
 		);
 	}
