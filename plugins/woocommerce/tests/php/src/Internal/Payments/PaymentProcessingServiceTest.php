@@ -4,12 +4,16 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
 use Automattic\WooCommerce\Internal\Payments\CapabilityManifest;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
+use Automattic\WooCommerce\Internal\Payments\PaymentExceptionPolicy;
+use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationIdempotency;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\ProviderContract;
+use RuntimeException;
 use WC_Order;
 use WC_Order_Refund;
 use WC_Unit_Test_Case;
@@ -151,6 +155,90 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pm_requires_action', $order->get_meta( '_payment_method_id', true ) );
 		$this->assertSame( 'cus_requires_action', $order->get_meta( '_stripe_customer_id', true ) );
 		$this->assertSame( 'ch_requires_action', $order->get_meta( '_charge_id', true ) );
+	}
+
+	/**
+	 * @testdox A successful charge whose lifecycle application throws must stay successful, persist the payment reference, and log.
+	 */
+	public function test_process_checkout_outcome_keeps_order_reconcilable_when_apply_throws(): void {
+		$order   = $this->create_woopayments_order( '10.00' );
+		$outcome = new PaymentOutcome(
+			PaymentOutcome::STATUS_COMPLETED,
+			'pi_post_charge',
+			'',
+			'pm_post_charge',
+			'cus_post_charge'
+		);
+
+		$sut         = $this->build_sut_with_lifecycle( $this->create_throwing_lifecycle_service() );
+		$provider    = new RecordingProvider( $outcome );
+		$fake_logger = $this->create_fake_logger();
+		add_filter(
+			'woocommerce_logging_class',
+			function () use ( $fake_logger ) {
+				return $fake_logger;
+			}
+		);
+
+		$result = $sut->process_checkout_outcome( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_post_charge' ), $provider );
+
+		remove_all_filters( 'woocommerce_logging_class' );
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( $outcome, $result, 'A post-charge apply failure must not downgrade a successful outcome.' );
+		$this->assertTrue( $result->is_successful(), 'A successful charge must remain successful even when lifecycle application fails.' );
+		$this->assertSame( 'pi_post_charge', $order->get_transaction_id(), 'The provider payment reference must be persisted so the charge stays reconcilable.' );
+
+		$this->assertCount( 1, $fake_logger->error_calls, 'A post-charge apply failure must be logged at error level.' );
+		$context = $fake_logger->error_calls[0]['context'];
+		$this->assertSame( 'native-payments', $context['source'] );
+		$this->assertSame( $order->get_id(), $context['order_id'] );
+		$this->assertSame( 'pi_post_charge', $context['payment_reference'] );
+	}
+
+	/**
+	 * @testdox A failed charge whose lifecycle application throws must rethrow rather than swallow the failure.
+	 */
+	public function test_process_checkout_outcome_rethrows_when_apply_throws_for_failed_outcome(): void {
+		$order   = $this->create_woopayments_order( '10.00' );
+		$outcome = new PaymentOutcome(
+			PaymentOutcome::STATUS_FAILED,
+			'',
+			'',
+			'',
+			'',
+			array( 'error_message' => 'Declined.' )
+		);
+
+		$sut      = $this->build_sut_with_lifecycle( $this->create_throwing_lifecycle_service() );
+		$provider = new RecordingProvider( $outcome );
+
+		$this->expectException( RuntimeException::class );
+
+		$sut->process_checkout_outcome( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_failed' ), $provider );
+	}
+
+	/**
+	 * @testdox A post-charge apply failure must not overwrite a transaction reference the order already carries.
+	 */
+	public function test_process_checkout_outcome_does_not_overwrite_existing_transaction_reference(): void {
+		$order = $this->create_woopayments_order( '10.00' );
+		$order->set_transaction_id( 'pi_existing_reference' );
+		$order->save();
+
+		$outcome = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_post_charge', '', 'pm_post_charge' );
+
+		$sut      = $this->build_sut_with_lifecycle( $this->create_throwing_lifecycle_service() );
+		$provider = new RecordingProvider( $outcome );
+
+		$result = $sut->process_checkout_outcome( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_post_charge' ), $provider );
+		$order  = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertTrue( $result->is_successful() );
+		$this->assertSame( 'pi_existing_reference', $order->get_transaction_id(), 'An existing transaction reference must be preserved.' );
 	}
 
 	/**
@@ -784,5 +872,105 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		}
 
 		$this->fail( "Missing order note containing: {$expected}" );
+	}
+
+	/**
+	 * Build a PaymentProcessingService wired to a specific lifecycle service.
+	 *
+	 * @param OrderPaymentLifecycleService $lifecycle_service Lifecycle service to inject.
+	 * @return PaymentProcessingService
+	 */
+	private function build_sut_with_lifecycle( OrderPaymentLifecycleService $lifecycle_service ): PaymentProcessingService {
+		$sut = new PaymentProcessingService();
+		$sut->init(
+			$this->store,
+			$lifecycle_service,
+			$this->idempotency,
+			wc_get_container()->get( PaymentExceptionPolicy::class )
+		);
+
+		return $sut;
+	}
+
+	/**
+	 * Create a lifecycle service that always throws when applying an outcome.
+	 *
+	 * @return OrderPaymentLifecycleService
+	 */
+	private function create_throwing_lifecycle_service(): OrderPaymentLifecycleService {
+		$lifecycle = new class() extends OrderPaymentLifecycleService {
+			/**
+			 * Always throw to simulate a lifecycle application failure after a successful charge.
+			 *
+			 * @param WC_Order              $order Order object.
+			 * @param PaymentLifecycleEvent $event Lifecycle event.
+			 * @throws RuntimeException Always, to drive the post-charge failure path.
+			 */
+			public function apply_unlocked( WC_Order $order, PaymentLifecycleEvent $event ): void {
+				// Avoid parameter not used PHPCS errors.
+				unset( $order, $event );
+				throw new RuntimeException( 'Simulated lifecycle failure after a successful charge.' );
+			}
+		};
+		$lifecycle->init( $this->store );
+
+		return $lifecycle;
+	}
+
+	/**
+	 * Create a fake WC logger that records error calls, injected via the woocommerce_logging_class filter.
+	 *
+	 * @return object Fake logger that tracks error calls.
+	 */
+	private function create_fake_logger(): object {
+		// phpcs:disable Squiz.Commenting, Squiz.Classes.ClassFileName.NoMatch
+		return new class() implements \WC_Logger_Interface {
+			public array $error_calls = array();
+
+			public function add( $handle, $message, $level = \WC_Log_Levels::NOTICE ) {
+				unset( $handle, $message, $level ); // Avoid parameter not used PHPCS errors.
+				return true;
+			}
+
+			public function log( $level, $message, $context = array() ) {
+				unset( $level, $message, $context ); // Avoid parameter not used PHPCS errors.
+			}
+
+			public function emergency( $message, $context = array() ) {
+				unset( $message, $context ); // Avoid parameter not used PHPCS errors.
+			}
+
+			public function alert( $message, $context = array() ) {
+				unset( $message, $context ); // Avoid parameter not used PHPCS errors.
+			}
+
+			public function critical( $message, $context = array() ) {
+				unset( $message, $context ); // Avoid parameter not used PHPCS errors.
+			}
+
+			public function notice( $message, $context = array() ) {
+				unset( $message, $context ); // Avoid parameter not used PHPCS errors.
+			}
+
+			public function debug( $message, $context = array() ) {
+				unset( $message, $context ); // Avoid parameter not used PHPCS errors.
+			}
+
+			public function info( $message, $context = array() ) {
+				unset( $message, $context ); // Avoid parameter not used PHPCS errors.
+			}
+
+			public function warning( $message, $context = array() ) {
+				unset( $message, $context ); // Avoid parameter not used PHPCS errors.
+			}
+
+			public function error( $message, $context = array() ) {
+				$this->error_calls[] = array(
+					'message' => $message,
+					'context' => $context,
+				);
+			}
+		};
+		// phpcs:enable Squiz.Commenting, Squiz.Classes.ClassFileName.NoMatch
 	}
 }

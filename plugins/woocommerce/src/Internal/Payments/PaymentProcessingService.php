@@ -93,6 +93,7 @@ class PaymentProcessingService {
 	 * @param PaymentContext   $context  Payment context.
 	 * @param ProviderContract $provider Provider.
 	 * @return PaymentOutcome
+	 * @throws Throwable When applying the lifecycle outcome fails for an unsuccessful charge.
 	 */
 	public function process_checkout_outcome( PaymentContext $context, ProviderContract $provider ): PaymentOutcome {
 		$order           = $context->get_order();
@@ -118,12 +119,76 @@ class PaymentProcessingService {
 				? new PaymentOutcome( PaymentOutcome::STATUS_NO_EXTERNAL_PAYMENT )
 				: $this->charge_provider( $context, $provider, $idempotency_key );
 
-			$this->apply_checkout_outcome( $order, $outcome );
+			try {
+				$this->apply_checkout_outcome( $order, $outcome );
+			} catch ( Throwable $apply_exception ) {
+				if ( ! $outcome->is_successful() ) {
+					throw $apply_exception;
+				}
+
+				// The charge already moved money. Downgrading the outcome to FAILED would risk a
+				// re-charge on retry, so keep the success and make the order reconcilable instead:
+				// persist the provider payment reference and log the failure for follow-up.
+				$this->persist_payment_reference( $order, $outcome );
+				$this->log_post_charge_apply_failure( $order, $outcome, $apply_exception );
+			}
 
 			return $outcome;
 		} finally {
 			$this->order_payment_store->unlock_order_payment( $order );
 		}
+	}
+
+	/**
+	 * Persist the provider payment reference onto the order so a successful charge stays reconcilable.
+	 *
+	 * Called when lifecycle application fails after the provider has already moved money. The order is
+	 * reloaded to avoid clobbering concurrent writes, and the transaction ID is only set when the order
+	 * does not already carry one, so an existing reference is never overwritten.
+	 *
+	 * @param WC_Order       $order   Order object.
+	 * @param PaymentOutcome $outcome Successful provider outcome.
+	 */
+	private function persist_payment_reference( WC_Order $order, PaymentOutcome $outcome ): void {
+		$payment_reference = $outcome->get_provider_payment_id();
+		if ( '' === $payment_reference ) {
+			return;
+		}
+
+		$reloaded_order = wc_get_order( $order->get_id() );
+		if ( ! $reloaded_order instanceof WC_Order ) {
+			return;
+		}
+
+		if ( '' !== (string) $reloaded_order->get_transaction_id() ) {
+			return;
+		}
+
+		$reloaded_order->set_transaction_id( $payment_reference );
+		$reloaded_order->save();
+	}
+
+	/**
+	 * Log a post-charge lifecycle application failure so a money-moving charge is never silently dropped.
+	 *
+	 * @param WC_Order       $order     Order object.
+	 * @param PaymentOutcome $outcome   Successful provider outcome.
+	 * @param Throwable      $exception Lifecycle application exception.
+	 */
+	private function log_post_charge_apply_failure( WC_Order $order, PaymentOutcome $outcome, Throwable $exception ): void {
+		if ( ! function_exists( 'wc_get_logger' ) ) {
+			return;
+		}
+
+		wc_get_logger()->error(
+			'Native payment charge succeeded but applying the order lifecycle outcome failed; the order has been left reconcilable via its payment reference.',
+			array(
+				'source'            => 'native-payments',
+				'order_id'          => $order->get_id(),
+				'payment_reference' => $outcome->get_provider_payment_id(),
+				'error'             => $exception->getMessage(),
+			)
+		);
 	}
 
 	/**
