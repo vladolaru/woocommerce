@@ -277,6 +277,33 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should strip script tags from filter-injected card testing instructions in the Blocks payload.
+	 */
+	public function test_get_blocks_payment_method_data_sanitizes_filtered_testing_instructions(): void {
+		$legacy_runtime  = $this->create_legacy_runtime_for_bridge();
+		$account_service = $this->create_account_service_for_bridge( true );
+		$legacy_runtime->method( 'get_gateway_prepared_customer_data' )->willReturn( array() );
+		$legacy_runtime->method( 'can_handle_checkout_bridge_callbacks' )->willReturn( true );
+
+		$bridge = new WooPaymentsCheckoutBridge();
+		$bridge->init( $legacy_runtime, $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+
+		add_filter(
+			'wcpay_payment_fields_js_config',
+			static function ( array $config ): array {
+				$config['paymentMethodsConfig']['card']['testingInstructions'] = '<script>alert(1)</script><strong>ok</strong>';
+				return $config;
+			}
+		);
+
+		$data                 = $bridge->get_blocks_payment_method_data();
+		$testing_instructions = $data['paymentMethodsConfig']['card']['testingInstructions'];
+
+		$this->assertStringNotContainsString( '<script>', $testing_instructions );
+		$this->assertStringContainsString( '<strong>ok</strong>', $testing_instructions );
+	}
+
+	/**
 	 * @testdox Should expose native bridge nonces independently from the removed legacy callback bridge.
 	 */
 	public function test_get_payment_fields_js_config_exposes_native_bridge_nonces_when_checkout_surface_is_available(): void {

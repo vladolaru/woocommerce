@@ -340,6 +340,16 @@ class WooPaymentsCheckoutBridge {
 	 */
 	public function get_blocks_payment_method_data(): array {
 		$data = $this->get_payment_fields_js_config();
+
+		// Sanitize the shopper-facing testing instructions after the wcpay_payment_fields_js_config
+		// filter has run. The Blocks checkout script renders this value via dangerouslySetInnerHTML,
+		// so escaping it here (server-side, post-filter) prevents third-party filter mutations from
+		// shipping raw HTML - such as <script> tags - to the browser.
+		if ( isset( $data['paymentMethodsConfig']['card']['testingInstructions'] )
+			&& is_string( $data['paymentMethodsConfig']['card']['testingInstructions'] ) ) {
+			$data['paymentMethodsConfig']['card']['testingInstructions'] = wp_kses_post( $data['paymentMethodsConfig']['card']['testingInstructions'] );
+		}
+
 		if ( ! empty( $data['isWooPayEnabled'] ) ) {
 			$data = array_merge(
 				$data,
