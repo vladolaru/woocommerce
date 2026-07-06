@@ -358,6 +358,73 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Order-status callback should reject requests without a valid nonce before mutating the order.
+	 * @dataProvider provider_update_order_status_invalid_nonce
+	 *
+	 * @param array<string,mixed> $nonce_overrides Request overrides carrying the missing or invalid nonce.
+	 */
+	public function test_update_order_status_rejects_request_without_valid_nonce( array $nonce_overrides ): void {
+		$order = $this->create_woopayments_order( '0.00' );
+		$order->update_meta_data( '_intent_id', 'seti_native' );
+		$order->save();
+
+		$api_client = new class() extends WooPaymentsApiClient {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- This test double must fail if the transport is called.
+			/**
+			 * Retrieve a SetupIntent.
+			 *
+			 * @param string $setup_intent_id SetupIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_setup_intention( string $setup_intent_id ): array {
+				unset( $setup_intent_id );
+				throw new \RuntimeException( 'A request without a valid nonce must not reach the transport.' );
+			}
+			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
+		};
+		$sut        = $this->create_controller( $api_client );
+
+		$response = $sut->get_update_order_status_response(
+			array_merge(
+				array(
+					'order_id'  => $order->get_id(),
+					'intent_id' => 'seti_native',
+				),
+				$nonce_overrides
+			)
+		);
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertArrayHasKey( 'error', $response );
+		$this->assertArrayNotHasKey( 'return_url', $response );
+		$this->assertSame( 403, $response['status_code'] );
+		$this->assertNotSame( 'completed', $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_intention_status', true ), 'A request without a valid nonce must not mutate the order.' );
+	}
+
+	/**
+	 * Data provider for order-status callbacks that omit or corrupt the AJAX nonce.
+	 *
+	 * @return array<string,array{0:array<string,mixed>}>
+	 */
+	public function provider_update_order_status_invalid_nonce(): array {
+		return array(
+			'missing nonce' => array( array() ),
+			'invalid nonce' => array( array( '_ajax_nonce' => 'not-a-valid-nonce' ) ),
+		);
+	}
+
+	/**
 	 * @testdox Order-status callback should reject an authenticated user acting on another customer's order.
 	 */
 	public function test_update_order_status_rejects_cross_customer_order_access(): void {
