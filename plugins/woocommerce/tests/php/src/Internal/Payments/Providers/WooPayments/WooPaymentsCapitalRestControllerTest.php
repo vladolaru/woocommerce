@@ -54,6 +54,7 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 		remove_filter( 'wp_doing_ajax', '__return_true' );
 		remove_all_filters( 'allowed_redirect_hosts' );
 		remove_all_filters( 'wp_redirect' );
+		remove_all_filters( 'woocommerce_logging_class' );
 		unset( $_GET['wcpay-loan-offer'] );
 		parent::tearDown();
 	}
@@ -312,6 +313,31 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Loan offer route logs the Capital link failure while still redirecting to the overview error notice.
+	 */
+	public function test_loan_offer_route_logs_capital_link_failures(): void {
+		$logger = $this->create_recording_logger();
+		add_filter(
+			'woocommerce_logging_class',
+			static function () use ( $logger ): object {
+				return $logger;
+			}
+		);
+		$this->api_client->exception = new WooPaymentsApiException( 'Capital unavailable.', 'capital_unavailable', 503 );
+		$this->sut->register_routes();
+
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/capital/loan_offer' ) );
+		$location = rawurldecode( (string) ( $response->get_headers()['Location'] ?? '' ) );
+
+		$this->assertSame( 302, $response->get_status() );
+		$this->assertStringContainsString( 'wcpay-loan-offer-error=1', $location );
+		$this->assertCount( 1, $logger->entries );
+		$this->assertSame( 'error', $logger->entries[0]['level'] );
+		$this->assertStringContainsString( 'Capital unavailable.', $logger->entries[0]['message'] );
+		$this->assertSame( 'woopayments-capital', $logger->entries[0]['context']['source'] );
+	}
+
+	/**
 	 * Add the Stripe redirect host for redirect tests.
 	 *
 	 * @param string[] $hosts Allowed hosts.
@@ -522,6 +548,142 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 				if ( null !== $this->exception ) {
 					throw $this->exception;
 				}
+			}
+		};
+	}
+
+	/**
+	 * Create a recording logger test double.
+	 *
+	 * @return object
+	 */
+	private function create_recording_logger(): object {
+		return new class() implements \WC_Logger_Interface {
+			/**
+			 * Logged entries.
+			 *
+			 * @var array<int,array{level:string,message:string,context:array<string,mixed>}>
+			 */
+			public array $entries = array();
+
+			/**
+			 * Add a log entry.
+			 *
+			 * @param string $handle  File handle.
+			 * @param string $message Log message.
+			 * @param string $level   Log level.
+			 * @return bool
+			 */
+			public function add( $handle, $message, $level = \WC_Log_Levels::NOTICE ) {
+				$this->record( $level, $message, array( 'source' => $handle ) );
+
+				return true;
+			}
+
+			/**
+			 * Add a log entry.
+			 *
+			 * @param string              $level   Log level.
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			public function log( $level, $message, $context = array() ) {
+				$this->record( $level, $message, $context );
+			}
+
+			/**
+			 * Record an emergency log entry.
+			 *
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			public function emergency( $message, $context = array() ) {
+				$this->record( 'emergency', $message, $context );
+			}
+
+			/**
+			 * Record an alert log entry.
+			 *
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			public function alert( $message, $context = array() ) {
+				$this->record( 'alert', $message, $context );
+			}
+
+			/**
+			 * Record a critical log entry.
+			 *
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			public function critical( $message, $context = array() ) {
+				$this->record( 'critical', $message, $context );
+			}
+
+			/**
+			 * Record an error log entry.
+			 *
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			public function error( $message, $context = array() ) {
+				$this->record( 'error', $message, $context );
+			}
+
+			/**
+			 * Record a warning log entry.
+			 *
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			public function warning( $message, $context = array() ) {
+				$this->record( 'warning', $message, $context );
+			}
+
+			/**
+			 * Record a notice log entry.
+			 *
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			public function notice( $message, $context = array() ) {
+				$this->record( 'notice', $message, $context );
+			}
+
+			/**
+			 * Record an info log entry.
+			 *
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			public function info( $message, $context = array() ) {
+				$this->record( 'info', $message, $context );
+			}
+
+			/**
+			 * Record a debug log entry.
+			 *
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			public function debug( $message, $context = array() ) {
+				$this->record( 'debug', $message, $context );
+			}
+
+			/**
+			 * Record a log entry.
+			 *
+			 * @param string              $level   Log level.
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			private function record( string $level, string $message, array $context ): void {
+				$this->entries[] = array(
+					'level'   => $level,
+					'message' => $message,
+					'context' => $context,
+				);
 			}
 		};
 	}
