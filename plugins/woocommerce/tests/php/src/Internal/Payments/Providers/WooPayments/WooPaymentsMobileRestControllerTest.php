@@ -152,6 +152,72 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Terminal intent creation sanitizes user-supplied metadata before forwarding it to the provider API.
+	 */
+	public function test_create_terminal_intent_sanitizes_metadata_before_forwarding(): void {
+		$order = $this->create_order( 12.34, 'USD' );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/create_terminal_intent' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param(
+			'metadata',
+			array(
+				'Bad Key<script>' => '<script>alert(1)</script>Legit Value',
+				'channel'         => 'mobile',
+				'nested'          => array( 'ignored' => true ),
+			)
+		);
+
+		$response = $this->sut->create_terminal_intent( $request );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$metadata = $this->api_client->last_terminal_intent_payload['metadata'];
+
+		// The dirty key is sanitize_key'd and its value is sanitize_text_field'd.
+		$this->assertArrayNotHasKey( 'Bad Key<script>', $metadata );
+		$this->assertArrayHasKey( 'badkeyscript', $metadata );
+		$this->assertSame( 'Legit Value', $metadata['badkeyscript'] );
+
+		// Clean scalar entries are preserved.
+		$this->assertSame( 'mobile', $metadata['channel'] );
+
+		// Non-scalar entries are dropped.
+		$this->assertArrayNotHasKey( 'nested', $metadata );
+
+		// Internal order metadata is still appended.
+		$this->assertSame( (string) $order->get_id(), $metadata['order_id'] );
+		$this->assertSame( $order->get_order_number(), $metadata['order_number'] );
+	}
+
+	/**
+	 * @testdox Reader registration sanitizes user-supplied metadata before forwarding it to the provider API.
+	 */
+	public function test_register_reader_sanitizes_metadata_before_forwarding(): void {
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/readers' );
+		$request->set_param( 'location', 'tml_store' );
+		$request->set_param( 'registration_code', 'puppies-plug-could' );
+		$request->set_param(
+			'metadata',
+			array(
+				'Bad Key<script>' => '<script>alert(1)</script>Legit Value',
+				'nested'          => array( 'ignored' => true ),
+			)
+		);
+
+		$this->api_client->terminal_reader_response = array( 'id' => 'tmr_registered' );
+
+		$response = $this->sut->register_reader( $request );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$metadata = $this->api_client->last_registered_reader['metadata'];
+
+		$this->assertArrayNotHasKey( 'Bad Key<script>', $metadata );
+		$this->assertArrayHasKey( 'badkeyscript', $metadata );
+		$this->assertSame( 'Legit Value', $metadata['badkeyscript'] );
+		$this->assertArrayNotHasKey( 'nested', $metadata );
+	}
+
+	/**
 	 * @testdox Terminal intent creation rejects invalid payment method payloads like the reference mobile route.
 	 */
 	public function test_create_terminal_intent_rejects_invalid_payment_method_payload(): void {

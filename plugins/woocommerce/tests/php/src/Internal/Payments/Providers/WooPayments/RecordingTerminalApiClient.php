@@ -32,6 +32,20 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 	public array $prepared_terminal_payments = array();
 
 	/**
+	 * Terminal reader registration response.
+	 *
+	 * @var array<string,mixed>
+	 */
+	public array $terminal_reader_response = array();
+
+	/**
+	 * Last registered terminal reader payload.
+	 *
+	 * @var array<string,mixed>
+	 */
+	public array $last_registered_reader = array();
+
+	/**
 	 * Terminal readers response.
 	 *
 	 * @var array<string,mixed>
@@ -180,6 +194,26 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 	 */
 	public function get_terminal_readers(): array {
 		return $this->terminal_readers_response;
+	}
+
+	/**
+	 * Register a terminal reader.
+	 *
+	 * @param string                   $location          Location ID.
+	 * @param string                   $registration_code Registration code.
+	 * @param string|null              $label             Reader label.
+	 * @param array<string,mixed>|null $metadata          Reader metadata.
+	 * @return array<string,mixed>
+	 */
+	public function register_terminal_reader( string $location, string $registration_code, ?string $label = null, ?array $metadata = null ): array {
+		$this->last_registered_reader = array(
+			'location'          => $location,
+			'registration_code' => $registration_code,
+			'label'             => $label,
+			'metadata'          => $metadata,
+		);
+
+		return $this->terminal_reader_response;
 	}
 
 	/**
