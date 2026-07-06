@@ -56,6 +56,20 @@ class MultiCurrencyStateBuilder {
 	private ?MultiCurrencyState $cached_state = null;
 
 	/**
+	 * Per-build memo of manual-rate flags keyed by currency code.
+	 *
+	 * @var array<string,bool>
+	 */
+	private array $uses_manual_rate_cache = array();
+
+	/**
+	 * Per-build memo of resolved exchange rates keyed by currency code.
+	 *
+	 * @var array<string,float|null>
+	 */
+	private array $rate_cache = array();
+
+	/**
 	 * Constructor.
 	 *
 	 * @param MultiCurrencyLocalizationInterface $localization_service Localization service.
@@ -97,6 +111,9 @@ class MultiCurrencyStateBuilder {
 			return $this->cached_state;
 		}
 
+		$this->uses_manual_rate_cache = array();
+		$this->rate_cache             = array();
+
 		$default_code  = strtoupper( (string) get_option( 'woocommerce_currency', 'USD' ) );
 		$default       = new MultiCurrencyCurrency( $this->localization_service, $default_code, 1.0, true );
 		$available     = array_merge(
@@ -112,7 +129,7 @@ class MultiCurrencyStateBuilder {
 			}
 
 			if ( ! isset( $available[ $currency_code ] ) && $this->uses_manual_rate( $currency_code ) ) {
-				$rate = $this->rate_service->get_rate( $default_code, $currency_code );
+				$rate = $this->resolve_rate( $default_code, $currency_code );
 				if ( null !== $rate ) {
 					$available[ $currency_code ] = new MultiCurrencyCurrency( $this->localization_service, $currency_code, $rate );
 				}
@@ -172,7 +189,7 @@ class MultiCurrencyStateBuilder {
 		$rate          = $available_currency->get_rate();
 
 		if ( $this->uses_manual_rate( $currency_code ) ) {
-			$rate = $this->rate_service->get_rate( $default_code, $currency_code ) ?? $rate;
+			$rate = $this->resolve_rate( $default_code, $currency_code ) ?? $rate;
 		}
 
 		if ( 0 >= $rate ) {
@@ -337,7 +354,31 @@ class MultiCurrencyStateBuilder {
 	 * @return bool
 	 */
 	private function uses_manual_rate( string $currency_code ): bool {
-		return 'manual' === get_option( self::OPTION_PREFIX . '_exchange_rate_' . strtolower( $currency_code ), 'automatic' );
+		if ( ! array_key_exists( $currency_code, $this->uses_manual_rate_cache ) ) {
+			$this->uses_manual_rate_cache[ $currency_code ] = 'manual' === get_option( self::OPTION_PREFIX . '_exchange_rate_' . strtolower( $currency_code ), 'automatic' );
+		}
+
+		return $this->uses_manual_rate_cache[ $currency_code ];
+	}
+
+	/**
+	 * Resolve a currency's exchange rate once per build.
+	 *
+	 * The build() method resolves each manual currency's rate in two passes (populating
+	 * available currencies, then cloning the enabled ones); memoizing avoids re-reading the
+	 * same per-currency rate options on the second pass. Only manual currencies reach this
+	 * helper, so the resolved value is stable within a single build.
+	 *
+	 * @param string $default_code  Default currency code.
+	 * @param string $currency_code Target currency code.
+	 * @return float|null
+	 */
+	private function resolve_rate( string $default_code, string $currency_code ): ?float {
+		if ( ! array_key_exists( $currency_code, $this->rate_cache ) ) {
+			$this->rate_cache[ $currency_code ] = $this->rate_service->get_rate( $default_code, $currency_code );
+		}
+
+		return $this->rate_cache[ $currency_code ];
 	}
 
 	/**

@@ -111,6 +111,50 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should not re-read per-currency rate options across build loops.
+	 */
+	public function test_does_not_reread_per_currency_rate_options_across_build_loops(): void {
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_gbp', '0.8' );
+
+		$exchange_rate_reads = 0;
+		$manual_rate_reads   = 0;
+		add_filter(
+			'option_wcpay_multi_currency_exchange_rate_gbp',
+			static function ( $value ) use ( &$exchange_rate_reads ) {
+				++$exchange_rate_reads;
+
+				return $value;
+			}
+		);
+		add_filter(
+			'option_wcpay_multi_currency_manual_rate_gbp',
+			static function ( $value ) use ( &$manual_rate_reads ) {
+				++$manual_rate_reads;
+
+				return $value;
+			}
+		);
+
+		$this->create_builder()->build();
+
+		remove_all_filters( 'option_wcpay_multi_currency_exchange_rate_gbp' );
+		remove_all_filters( 'option_wcpay_multi_currency_manual_rate_gbp' );
+
+		$this->assertSame(
+			1,
+			$manual_rate_reads,
+			'A manual currency should resolve its rate once, not once per build loop.'
+		);
+		$this->assertLessThanOrEqual(
+			2,
+			$exchange_rate_reads,
+			'The manual-rate flag and rate resolution should not both re-read the exchange-rate option per loop.'
+		);
+	}
+
+	/**
 	 * @testdox Should refresh automatic currencies from the available provider.
 	 */
 	public function test_refreshes_automatic_currencies_from_available_provider(): void {
