@@ -37,6 +37,26 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 		'woocommerce_get_formatted_subscription_total',
 		'wc_price',
 		'option_woocommerce_subscriptions_multiple_purchase',
+		'woocommerce_cart_loaded_from_session',
+		'woocommerce_cart_updated',
+		'woocommerce_cart_emptied',
+		'woocommerce_add_to_cart',
+		'woocommerce_cart_item_removed',
+		'woocommerce_cart_item_restored',
+	);
+
+	/**
+	 * Cart-lifecycle hooks that must invalidate the subscription cart-type cache.
+	 *
+	 * @var string[]
+	 */
+	private array $cache_invalidation_hooks = array(
+		'woocommerce_cart_loaded_from_session',
+		'woocommerce_cart_updated',
+		'woocommerce_cart_emptied',
+		'woocommerce_add_to_cart',
+		'woocommerce_cart_item_removed',
+		'woocommerce_cart_item_restored',
 	);
 
 	/**
@@ -81,6 +101,10 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 		$this->assertSame( 50, has_filter( 'woocommerce_get_formatted_subscription_total', array( $sut, 'maybe_clear_current_my_account_subscription' ) ) );
 		$this->assertSame( 50, has_filter( 'wc_price', array( $sut, 'maybe_get_explicit_format_for_subscription_total' ) ) );
 		$this->assertSame( 50, has_filter( 'option_woocommerce_subscriptions_multiple_purchase', array( $sut, 'maybe_disable_mixed_cart' ) ) );
+
+		foreach ( $this->cache_invalidation_hooks as $hook ) {
+			$this->assertSame( 10, has_action( $hook, array( $sut, 'clear_subscription_type_cache' ) ), $hook );
+		}
 	}
 
 	/**
@@ -419,6 +443,75 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	}
 
 	/**
+	 * @testdox Should cache the cart subscription-type lookup per request until the cart changes.
+	 */
+	public function test_caches_cart_subscription_type_until_invalidated(): void {
+		$sut = new class() extends MultiCurrencySubscriptionsCompatibilityController {
+			/**
+			 * Number of times the underlying cart/session resolver ran.
+			 *
+			 * @var int
+			 */
+			public int $resolve_calls = 0;
+
+			/**
+			 * Value the resolver returns on its next invocation.
+			 *
+			 * @var array<string,mixed>|null
+			 */
+			public ?array $next_value = null;
+
+			/**
+			 * Invoke the cached public lookup under test.
+			 *
+			 * @param string $type Subscription cart type.
+			 * @return array<string,mixed>|null
+			 */
+			public function lookup( string $type ): ?array {
+				return $this->get_subscription_type_from_cart( $type );
+			}
+
+			/**
+			 * Spy resolver standing in for the real cart/session traversal.
+			 *
+			 * @param string $type Subscription cart type.
+			 * @return array<string,mixed>|null
+			 */
+			protected function resolve_subscription_type_from_cart( string $type ): ?array {
+				unset( $type );
+				++$this->resolve_calls;
+
+				return $this->next_value;
+			}
+		};
+
+		$renewal         = array( 'subscription_renewal' => array( 'subscription_id' => 1 ) );
+		$sut->next_value = $renewal;
+
+		// First lookup resolves once and caches the value.
+		$this->assertSame( $renewal, $sut->lookup( 'renewal' ) );
+		$this->assertSame( 1, $sut->resolve_calls );
+
+		// Repeated lookups return the cached value without re-traversing the cart.
+		$this->assertSame( $renewal, $sut->lookup( 'renewal' ) );
+		$this->assertSame( 1, $sut->resolve_calls );
+
+		// A null result is cached too, so an early "no subscription" answer is not recomputed.
+		$sut->next_value = null;
+		$this->assertNull( $sut->lookup( 'switch' ) );
+		$this->assertNull( $sut->lookup( 'switch' ) );
+		$this->assertSame( 2, $sut->resolve_calls );
+
+		// Invalidation forces a recompute that reflects the new cart state (transparency).
+		$updated_renewal = array( 'subscription_renewal' => array( 'subscription_id' => 2 ) );
+		$sut->next_value = $updated_renewal;
+		$sut->clear_subscription_type_cache();
+
+		$this->assertSame( $updated_renewal, $sut->lookup( 'renewal' ) );
+		$this->assertSame( 3, $sut->resolve_calls );
+	}
+
+	/**
 	 * @testdox Should disable mixed purchases for switch cart items.
 	 */
 	public function test_disables_mixed_purchase_for_switch_cart_items(): void {
@@ -462,6 +555,10 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 		$this->assertFalse( has_filter( 'woocommerce_get_formatted_subscription_total', array( $sut, 'maybe_clear_current_my_account_subscription' ) ) );
 		$this->assertFalse( has_filter( 'wc_price', array( $sut, 'maybe_get_explicit_format_for_subscription_total' ) ) );
 		$this->assertFalse( has_filter( 'option_woocommerce_subscriptions_multiple_purchase', array( $sut, 'maybe_disable_mixed_cart' ) ) );
+
+		foreach ( $this->cache_invalidation_hooks as $hook ) {
+			$this->assertFalse( has_action( $hook, array( $sut, 'clear_subscription_type_cache' ) ), $hook );
+		}
 	}
 
 	/**

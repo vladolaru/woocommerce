@@ -25,6 +25,21 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 
 	private const SUBSCRIPTION_TYPES = array( 'renewal', 'resubscribe', 'switch' );
 
+	/**
+	 * Cart-lifecycle hooks that invalidate the per-request subscription cart-type cache.
+	 *
+	 * Covers loading the cart from session (so an early null lookup is not served after the
+	 * cart populates), whole-cart recalculation/emptying, and individual item add/remove/restore.
+	 */
+	private const SUBSCRIPTION_TYPE_CACHE_INVALIDATION_HOOKS = array(
+		'woocommerce_cart_loaded_from_session',
+		'woocommerce_cart_updated',
+		'woocommerce_cart_emptied',
+		'woocommerce_add_to_cart',
+		'woocommerce_cart_item_removed',
+		'woocommerce_cart_item_restored',
+	);
+
 	private const PRODUCT_PRICE_CALCULATION_CALLS = array(
 		'WC_Cart_Totals->calculate_item_totals',
 		'WC_Cart->get_product_subtotal',
@@ -127,6 +142,17 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	private bool $running_override_selected_currency_filters = false;
 
 	/**
+	 * Per-request cache of subscription cart items keyed by cart type.
+	 *
+	 * Depends only on cart/session state, which is stable within a request until the
+	 * cart mutates. Invalidated by the cart-lifecycle hooks registered in
+	 * register_subscription_filters().
+	 *
+	 * @var array<string,array<string,mixed>|null>
+	 */
+	private array $subscription_type_cache = array();
+
+	/**
 	 * State builder factory.
 	 *
 	 * @var MultiCurrencyStateBuilderFactory
@@ -226,6 +252,25 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 				(int) $filter['priority'],
 				(int) $filter['accepted_args']
 			);
+		}
+
+		$this->register_subscription_type_cache_invalidation();
+	}
+
+	/**
+	 * Register the cart-lifecycle hooks that invalidate the subscription cart-type cache.
+	 *
+	 * These fire whenever the cart membership can change within a request, so the cache is
+	 * only ever served while the cart is stable. Over-invalidation is safe: the next lookup
+	 * simply recomputes from the current cart/session state.
+	 *
+	 * @internal
+	 */
+	private function register_subscription_type_cache_invalidation(): void {
+		$callback = array( $this, 'clear_subscription_type_cache' );
+
+		foreach ( self::SUBSCRIPTION_TYPE_CACHE_INVALIDATION_HOOKS as $hook ) {
+			$this->add_action_once( $hook, $callback );
 		}
 	}
 
@@ -496,10 +541,43 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	/**
 	 * Get a subscription cart item for a specific Subscriptions cart type.
 	 *
+	 * Cached per request: the lookup only reads cart/session state, which is stable until the
+	 * cart mutates, and the invalidation hooks registered in register_subscription_filters()
+	 * clear the cache on every cart change. This keeps the hot price/cart path from traversing
+	 * the whole cart and session on every filter invocation.
+	 *
 	 * @param string $type Subscription cart type.
 	 * @return array<string,mixed>|null
 	 */
 	protected function get_subscription_type_from_cart( string $type ): ?array {
+		if ( array_key_exists( $type, $this->subscription_type_cache ) ) {
+			return $this->subscription_type_cache[ $type ];
+		}
+
+		$this->subscription_type_cache[ $type ] = $this->resolve_subscription_type_from_cart( $type );
+
+		return $this->subscription_type_cache[ $type ];
+	}
+
+	/**
+	 * Clear the per-request subscription cart-type cache.
+	 *
+	 * Registered against the cart-lifecycle hooks so a cart change is always reflected by the
+	 * next lookup. Public so the hook system can invoke it.
+	 *
+	 * @internal
+	 */
+	public function clear_subscription_type_cache(): void {
+		$this->subscription_type_cache = array();
+	}
+
+	/**
+	 * Resolve a subscription cart item for a specific Subscriptions cart type from cart/session.
+	 *
+	 * @param string $type Subscription cart type.
+	 * @return array<string,mixed>|null
+	 */
+	protected function resolve_subscription_type_from_cart( string $type ): ?array {
 		if ( ! in_array( $type, self::SUBSCRIPTION_TYPES, true ) || ! function_exists( 'WC' ) ) {
 			return null;
 		}
