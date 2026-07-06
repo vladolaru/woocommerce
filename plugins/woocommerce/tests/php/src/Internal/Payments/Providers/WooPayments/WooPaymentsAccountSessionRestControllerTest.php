@@ -47,6 +47,7 @@ class WooPaymentsAccountSessionRestControllerTest extends WC_REST_Unit_Test_Case
 	 */
 	public function tearDown(): void {
 		remove_action( 'rest_api_init', array( $this->sut, 'register_routes' ) );
+		remove_all_filters( 'woocommerce_logging_class' );
 		parent::tearDown();
 	}
 
@@ -124,6 +125,31 @@ class WooPaymentsAccountSessionRestControllerTest extends WC_REST_Unit_Test_Case
 	}
 
 	/**
+	 * @testdox Account session route logs the failure instead of silently discarding it, keeping the sanitized 500.
+	 */
+	public function test_route_logs_error_when_service_throws(): void {
+		$this->service->exception = new \RuntimeException( 'secret platform failure: sk_test_123' );
+		$logger                   = $this->create_recording_logger();
+		add_filter(
+			'woocommerce_logging_class',
+			static function () use ( $logger ): object {
+				return $logger;
+			}
+		);
+		$this->sut->register_routes();
+
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/accounts/session' ) );
+
+		$this->assertSame( 500, $response->get_status() );
+		$this->assertSame( 'woocommerce_woopayments_account_session_error', $response->as_error()->get_error_code() );
+
+		$this->assertCount( 1, $logger->entries );
+		$this->assertSame( 'error', $logger->entries[0]['level'] );
+		$this->assertSame( 'woopayments-account-session', $logger->entries[0]['context']['source'] );
+		$this->assertStringContainsString( 'secret platform failure', $logger->entries[0]['message'] );
+	}
+
+	/**
 	 * Create a native account-session REST controller.
 	 *
 	 * @param bool $native_register Whether native should own route registration.
@@ -185,6 +211,145 @@ class WooPaymentsAccountSessionRestControllerTest extends WC_REST_Unit_Test_Case
 				}
 
 				return $this->response;
+			}
+		};
+	}
+
+	/**
+	 * Create a recording logger test double.
+	 *
+	 * Implements WC_Logger_Interface so it can be injected through the
+	 * woocommerce_logging_class filter.
+	 *
+	 * @return object
+	 */
+	private function create_recording_logger(): object {
+		return new class() implements \WC_Logger_Interface {
+			/**
+			 * Logged entries.
+			 *
+			 * @var array<int,array{level:string,message:string,context:array<string,mixed>}>
+			 */
+			public array $entries = array();
+
+			/**
+			 * Add a log entry.
+			 *
+			 * @param string $handle  File handle.
+			 * @param string $message Log message.
+			 * @param string $level   Log level.
+			 * @return bool
+			 */
+			public function add( $handle, $message, $level = \WC_Log_Levels::NOTICE ) {
+				$this->record( $level, $message, array( 'source' => $handle ) );
+
+				return true;
+			}
+
+			/**
+			 * Add a log entry.
+			 *
+			 * @param string              $level   Log level.
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			public function log( $level, $message, $context = array() ) {
+				$this->record( $level, $message, $context );
+			}
+
+			/**
+			 * Record an emergency log entry.
+			 *
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			public function emergency( $message, $context = array() ) {
+				$this->record( 'emergency', $message, $context );
+			}
+
+			/**
+			 * Record an alert log entry.
+			 *
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			public function alert( $message, $context = array() ) {
+				$this->record( 'alert', $message, $context );
+			}
+
+			/**
+			 * Record a critical log entry.
+			 *
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			public function critical( $message, $context = array() ) {
+				$this->record( 'critical', $message, $context );
+			}
+
+			/**
+			 * Record an error log entry.
+			 *
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			public function error( $message, $context = array() ) {
+				$this->record( 'error', $message, $context );
+			}
+
+			/**
+			 * Record a warning log entry.
+			 *
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			public function warning( $message, $context = array() ) {
+				$this->record( 'warning', $message, $context );
+			}
+
+			/**
+			 * Record a notice log entry.
+			 *
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			public function notice( $message, $context = array() ) {
+				$this->record( 'notice', $message, $context );
+			}
+
+			/**
+			 * Record an info log entry.
+			 *
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			public function info( $message, $context = array() ) {
+				$this->record( 'info', $message, $context );
+			}
+
+			/**
+			 * Record a debug log entry.
+			 *
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			public function debug( $message, $context = array() ) {
+				$this->record( 'debug', $message, $context );
+			}
+
+			/**
+			 * Record a log entry.
+			 *
+			 * @param string              $level   Log level.
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			private function record( string $level, string $message, array $context ): void {
+				$this->entries[] = array(
+					'level'   => $level,
+					'message' => $message,
+					'context' => $context,
+				);
 			}
 		};
 	}

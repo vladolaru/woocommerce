@@ -69,6 +69,10 @@ class WooPaymentsAccountSessionRestController implements RegisterHooksInterface 
 	 * Register WooPayments-compatible account-session routes.
 	 */
 	public function register_routes(): void {
+		// NOTE: Registered as READABLE (GET) deliberately for backward compatibility
+		// with the WooPayments client and mobile app, which call this endpoint as GET.
+		// Do not change to CREATABLE/POST without a coordinated client + mobile migration.
+		// See review finding 3eece18f.
 		register_rest_route( self::NAMESPACE, '/payments/accounts/session', $this->get_readable_route( 'create_embedded_account_session' ) );
 	}
 
@@ -94,7 +98,10 @@ class WooPaymentsAccountSessionRestController implements RegisterHooksInterface 
 		try {
 			return new WP_REST_Response( $this->session_service->create_session() );
 		} catch ( Throwable $exception ) {
-			unset( $exception );
+			wc_get_logger()->error(
+				'Failed to create embedded account session: ' . $exception->getMessage(),
+				array( 'source' => 'woopayments-account-session' )
+			);
 
 			return new WP_Error(
 				'woocommerce_woopayments_account_session_error',
