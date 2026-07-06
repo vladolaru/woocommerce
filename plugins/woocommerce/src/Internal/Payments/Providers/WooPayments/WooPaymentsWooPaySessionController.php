@@ -160,6 +160,11 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 				200
 			);
 		} catch ( Throwable $exception ) {
+			wc_get_logger()->error(
+				'Unable to assemble WooPay session data: ' . $exception->getMessage(),
+				array( 'source' => 'woopayments-woopay-session' )
+			);
+
 			return new WP_Error( 'wcpay_server_error', __( 'Unable to get WooPay session data.', 'woocommerce' ), array( 'status' => 400 ) );
 		}
 	}

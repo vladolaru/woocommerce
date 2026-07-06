@@ -284,6 +284,53 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should log and return an error when WooPay session assembly throws.
+	 */
+	public function test_get_session_logs_and_returns_error_when_assembly_throws(): void {
+		$service                 = new ThrowingWooPaySessionService();
+		$service->woopay_enabled = true;
+		$this->sut               = $this->create_controller( true, true, $service );
+
+		$logged = array();
+		add_filter(
+			'woocommerce_logger_log_message',
+			static function ( $message, $level, $context ) use ( &$logged ) {
+				$logged[] = array(
+					'message' => $message,
+					'level'   => $level,
+					'context' => $context,
+				);
+
+				return $message;
+			},
+			10,
+			3
+		);
+
+		$request = new WP_REST_Request( 'GET', '/payments/woopay/session' );
+		$request->set_param( 'email', 'shopper@example.com' );
+
+		$result = $this->sut->get_session( $request );
+
+		remove_all_filters( 'woocommerce_logger_log_message' );
+
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertSame( 'wcpay_server_error', $result->get_error_code() );
+
+		$matching = array_filter(
+			$logged,
+			static function ( $entry ) {
+				return 'error' === $entry['level']
+					&& isset( $entry['context']['source'] )
+					&& 'woopayments-woopay-session' === $entry['context']['source']
+					&& false !== strpos( (string) $entry['message'], 'kaboom' );
+			}
+		);
+
+		$this->assertNotEmpty( $matching, 'Expected a logged error for the swallowed WooPay session exception.' );
+	}
+
+	/**
 	 * @testdox Should return session data for signed WooPay requests.
 	 */
 	public function test_rest_session_route_returns_session_data_for_signed_woopay_request(): void {
