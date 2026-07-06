@@ -112,25 +112,30 @@ class MultiCurrencyAnalyticsSqlProjectionService {
 	 * @return string[]
 	 */
 	public function project_where_clauses( array $clauses, array $currency_args, bool $is_hpos_enabled ): array {
+		global $wpdb;
+
 		$currency_field = $is_hpos_enabled
 			? 'wcpay_multicurrency_order_currency.currency'
 			: 'wcpay_multicurrency_currency_meta.meta_value';
 
 		$currency_is = $this->sanitize_currency_list( $currency_args['currency_is'] ?? array() );
 		if ( array() !== $currency_is ) {
-			$currency_is_sql = sprintf( "'%s'", implode( "', '", array_map( 'esc_sql', $currency_is ) ) );
-			$clauses[]       = "AND {$currency_field} IN ({$currency_is_sql})";
+			$placeholders = implode( ', ', array_fill( 0, count( $currency_is ), '%s' ) );
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- $currency_field is a hardcoded column identifier and $placeholders is a %s list bound to $currency_is.
+			$clauses[] = $wpdb->prepare( "AND {$currency_field} IN ({$placeholders})", $currency_is );
 		}
 
 		$currency_is_not = $this->sanitize_currency_list( $currency_args['currency_is_not'] ?? array() );
 		if ( array() !== $currency_is_not ) {
-			$currency_is_not_sql = sprintf( "'%s'", implode( "', '", array_map( 'esc_sql', $currency_is_not ) ) );
-			$clauses[]           = "AND {$currency_field} NOT IN ({$currency_is_not_sql})";
+			$placeholders = implode( ', ', array_fill( 0, count( $currency_is_not ), '%s' ) );
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- $currency_field is a hardcoded column identifier and $placeholders is a %s list bound to $currency_is_not.
+			$clauses[] = $wpdb->prepare( "AND {$currency_field} NOT IN ({$placeholders})", $currency_is_not );
 		}
 
 		$currency = isset( $currency_args['currency'] ) ? sanitize_text_field( wp_unslash( (string) $currency_args['currency'] ) ) : '';
 		if ( '' !== $currency ) {
-			$clauses[] = "AND {$currency_field} = '" . esc_sql( $currency ) . "'";
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $currency_field is a hardcoded column identifier; the value is bound through a %s placeholder.
+			$clauses[] = $wpdb->prepare( "AND {$currency_field} = %s", $currency );
 		}
 
 		return $clauses;

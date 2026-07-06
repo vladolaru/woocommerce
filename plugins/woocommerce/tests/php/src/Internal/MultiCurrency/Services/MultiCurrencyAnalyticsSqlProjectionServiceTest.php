@@ -166,6 +166,29 @@ class MultiCurrencyAnalyticsSqlProjectionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should escape currency values in prepared where clauses.
+	 */
+	public function test_escapes_currency_values_in_where_clauses(): void {
+		$sut = new MultiCurrencyAnalyticsSqlProjectionService();
+
+		$result = $sut->project_where_clauses(
+			array(),
+			array(
+				'currency_is' => array( "GBP' OR '1'='1" ),
+				'currency'    => "EUR' OR '1'='1",
+			),
+			false
+		);
+
+		$this->assertCount( 2, $result, 'Both an IN-list and a single-currency clause should be produced.' );
+
+		foreach ( $result as $clause ) {
+			$this->assertStringStartsWith( 'AND wcpay_multicurrency_currency_meta.meta_value', $clause );
+			$this->assertStringNotContainsString( "OR '1'='1'", $clause, 'The injected quote must be escaped so it cannot break out of the string literal.' );
+		}
+	}
+
+	/**
 	 * @testdox Should project selected currency order select clauses.
 	 */
 	public function test_projects_selected_currency_order_select_clauses(): void {
