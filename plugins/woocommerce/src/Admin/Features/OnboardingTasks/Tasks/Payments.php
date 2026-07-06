@@ -169,6 +169,33 @@ class Payments extends Task {
 	}
 
 	/**
+	 * Get the task badge.
+	 *
+	 * Backward compatibility: the standalone WooPayments onboarding task (removed when
+	 * WooPayments merged into core) fired this documented public filter. It is re-fired
+	 * here so extensions (e.g. WooPayments' own incentives service) that hook it keep
+	 * working. Deprecated: prefer the native payments incentive surface.
+	 *
+	 * @return string
+	 */
+	public function get_badge() {
+		/**
+		 * Filter WooPayments onboarding task badge.
+		 *
+		 * @deprecated 11.0.0 The WooPayments onboarding task moved into core.
+		 * @since 8.2.0
+		 * @param string $badge Badge content.
+		 */
+		return (string) apply_filters_deprecated(
+			'woocommerce_admin_woopayments_onboarding_task_badge',
+			array( '' ),
+			'11.0.0',
+			'',
+			'The WooPayments onboarding task moved into core.'
+		);
+	}
+
+	/**
 	 * Additional data to be passed to the front-end JS logic.
 	 *
 	 * Primarily used to inform the behavior of the Payments task in the LYS context.
@@ -176,7 +203,7 @@ class Payments extends Task {
 	 * @return array
 	 */
 	public function get_additional_data() {
-		return array(
+		$native = array(
 			'wooPaymentsIsActive'                   => $this->is_woopayments_active(),
 			'wooPaymentsIsInstalled'                => $this->is_woopayments_installed(),
 			'wooPaymentsSettingsCountryIsSupported' => $this->is_woopayments_supported_country( $this->get_payments_settings_country() ),
@@ -186,6 +213,28 @@ class Payments extends Task {
 			'wooPaymentsHasOtherProvidersNeedSetup' => $this->has_providers_needing_setup_other_than_woopayments(),
 			'wooPaymentsHasOnlineGatewaysEnabled'   => $this->has_online_gateways(),
 		);
+
+		/**
+		 * Filter WooPayments onboarding task additional data.
+		 *
+		 * @deprecated 11.0.0 The WooPayments onboarding task moved into core.
+		 * @since 9.4.0
+		 * @param ?array $additional_data The task additional data.
+		 */
+		$deprecated = apply_filters_deprecated(
+			'woocommerce_admin_woopayments_onboarding_task_additional_data',
+			array( null ),
+			'11.0.0',
+			'',
+			'The WooPayments onboarding task moved into core.'
+		);
+
+		if ( is_array( $deprecated ) ) {
+			// Native values take precedence; the deprecated filter may only add keys.
+			return array_merge( $deprecated, $native );
+		}
+
+		return $native;
 	}
 
 	/**
