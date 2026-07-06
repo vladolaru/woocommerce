@@ -560,16 +560,13 @@ describe( 'WooPayments Settings Payments routes', () => {
 			'true'
 		);
 		expect(
-			await screen.findByText(
-				'No Capital loans found.',
-				{
-					selector: '.woocommerce-woopayments-capital__empty',
-				},
-				{
-					timeout: 3000,
-				}
-			)
+			await screen.findByText( 'No Capital loans found.', undefined, {
+				timeout: 3000,
+			} )
 		).toBeInTheDocument();
+		expect( screen.getByRole( 'status' ) ).toHaveTextContent(
+			'No Capital loans found.'
+		);
 	} );
 
 	it( 'renders the native settings page from the legacy WooPayments settings shell', () => {
