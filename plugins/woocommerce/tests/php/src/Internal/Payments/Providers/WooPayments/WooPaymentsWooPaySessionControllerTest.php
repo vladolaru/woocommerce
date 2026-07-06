@@ -3,9 +3,11 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\Jetpack\Connection\Rest_Authentication;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionService;
+use ReflectionClass;
 use WC_REST_Unit_Test_Case;
 use WPAjaxDieContinueException;
 use WP_Error;
@@ -40,6 +42,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 			remove_filter( 'wcpay_metadata_from_order', array( $this->sut, 'maybe_add_woopay_user_metadata' ) );
 		}
 
+		$this->reset_real_blog_token_signed();
 		delete_option( 'woocommerce_checkout_page_id' );
 		wc_clear_notices();
 		remove_all_filters( 'wcpay_woopay_is_signed_with_blog_token' );
@@ -219,12 +222,65 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$unsigned->set_param( 'email', 'shopper@example.com' );
 		$this->assertSame( rest_authorization_required_code(), $this->server->dispatch( $unsigned )->get_status() );
 
-		add_filter( 'wcpay_woopay_is_signed_with_blog_token', '__return_true' );
+		$this->force_real_blog_token_signed();
 		$signed = new WP_REST_Request( 'GET', '/payments/woopay/session' );
 		$signed->set_header( 'User-Agent', 'WooPay' );
 		$signed->set_param( 'email', 'shopper@example.com' );
 
 		$this->assertSame( 200, $this->server->dispatch( $signed )->get_status() );
+	}
+
+	/**
+	 * @testdox The signed-request filter is strengthen-only and cannot grant access to an unsigned request.
+	 */
+	public function test_check_permission_filter_cannot_grant_access_to_unsigned_request(): void {
+		$this->sut = $this->create_controller( true, true );
+
+		// Real blog-token check is false in tests; a filter returning true must not grant access.
+		add_filter( 'wcpay_woopay_is_signed_with_blog_token', '__return_true' );
+
+		$request = new WP_REST_Request( 'GET', '/payments/woopay/session' );
+		$request->set_header( 'User-Agent', 'WooPay' );
+		$request->set_param( 'email', 'shopper@example.com' );
+
+		$result = $this->sut->check_permission( $request );
+
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertSame( 'woocommerce_rest_cannot_view', $result->get_error_code() );
+	}
+
+	/**
+	 * @testdox A signed request is allowed when no filter restricts it.
+	 */
+	public function test_check_permission_allows_signed_request_without_filter(): void {
+		$this->sut = $this->create_controller( true, true );
+		$this->force_real_blog_token_signed();
+
+		$request = new WP_REST_Request( 'GET', '/payments/woopay/session' );
+		$request->set_header( 'User-Agent', 'WooPay' );
+		$request->set_param( 'email', 'shopper@example.com' );
+
+		$this->assertTrue( $this->sut->check_permission( $request ) );
+	}
+
+	/**
+	 * @testdox The signed-request filter can still restrict access to a signed request.
+	 */
+	public function test_check_permission_filter_can_restrict_signed_request(): void {
+		$this->sut = $this->create_controller( true, true );
+		$this->force_real_blog_token_signed();
+
+		// The real check is true, but a filter returning false must still deny access.
+		add_filter( 'wcpay_woopay_is_signed_with_blog_token', '__return_false' );
+
+		$request = new WP_REST_Request( 'GET', '/payments/woopay/session' );
+		$request->set_header( 'User-Agent', 'WooPay' );
+		$request->set_param( 'email', 'shopper@example.com' );
+
+		$result = $this->sut->check_permission( $request );
+
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertSame( 'woocommerce_rest_cannot_view', $result->get_error_code() );
 	}
 
 	/**
@@ -234,7 +290,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$service   = new RecordingWooPaySessionService();
 		$this->sut = $this->create_controller( true, true, $service );
 		$this->sut->register_routes();
-		add_filter( 'wcpay_woopay_is_signed_with_blog_token', '__return_true' );
+		$this->force_real_blog_token_signed();
 
 		$request = new WP_REST_Request( 'GET', '/payments/woopay/session' );
 		$request->set_header( 'User-Agent', 'WooPay' );
@@ -391,6 +447,53 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$controller->init( $arbiter, $service );
 
 		return $controller;
+	}
+
+	/**
+	 * Force the Jetpack blog-token signed check to report true.
+	 *
+	 * The native controller's authoritative check calls
+	 * Rest_Authentication::is_signed_with_blog_token(), which reads a private
+	 * singleton state that is false in tests. This drives that state to a signed
+	 * blog-token result so the strengthen-only filter logic can be exercised.
+	 */
+	private function force_real_blog_token_signed(): void {
+		if ( ! class_exists( Rest_Authentication::class ) ) {
+			$this->markTestSkipped( 'Jetpack Rest_Authentication is unavailable.' );
+		}
+
+		$instance   = Rest_Authentication::init();
+		$reflection = new ReflectionClass( Rest_Authentication::class );
+
+		$status = $reflection->getProperty( 'rest_authentication_status' );
+		$status->setAccessible( true );
+		$status->setValue( $instance, true );
+
+		$type = $reflection->getProperty( 'rest_authentication_type' );
+		$type->setAccessible( true );
+		$type->setValue( $instance, 'blog' );
+
+		$this->assertTrue( Rest_Authentication::is_signed_with_blog_token() );
+	}
+
+	/**
+	 * Reset the Jetpack blog-token signed check state forced during a test.
+	 */
+	private function reset_real_blog_token_signed(): void {
+		if ( ! class_exists( Rest_Authentication::class ) ) {
+			return;
+		}
+
+		$instance   = Rest_Authentication::init();
+		$reflection = new ReflectionClass( Rest_Authentication::class );
+
+		$status = $reflection->getProperty( 'rest_authentication_status' );
+		$status->setAccessible( true );
+		$status->setValue( $instance, null );
+
+		$type = $reflection->getProperty( 'rest_authentication_type' );
+		$type->setAccessible( true );
+		$type->setValue( $instance, null );
 	}
 
 	/**

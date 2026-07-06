@@ -127,12 +127,17 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 		/**
 		 * Filters whether a WooPay session request is signed with the connected blog token.
 		 *
+		 * Strengthen-only: the real blog-token check is authoritative. This filter can
+		 * further restrict access but can never grant it when the request is unsigned.
+		 *
 		 * @param bool            $signed  Whether the request is signed.
 		 * @param WP_REST_Request $request REST request.
 		 *
 		 * @since 11.0.0
 		 */
-		if ( ! (bool) apply_filters( 'wcpay_woopay_is_signed_with_blog_token', $signed, $request ) ) {
+		$signed = $signed && (bool) apply_filters( 'wcpay_woopay_is_signed_with_blog_token', $signed, $request );
+
+		if ( ! $signed ) {
 			return new WP_Error( 'woocommerce_rest_cannot_view', __( 'Sorry, you cannot list resources.', 'woocommerce' ), array( 'status' => rest_authorization_required_code() ) );
 		}
 
