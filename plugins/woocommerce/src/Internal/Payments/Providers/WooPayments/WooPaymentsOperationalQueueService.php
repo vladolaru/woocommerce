@@ -501,14 +501,15 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 			return;
 		}
 
-		// Only record the referrer event when accompanied by a valid nonce, to prevent
-		// CSRF-polluted analytics. Absent/invalid nonce: skip recording silently (never
-		// block the page or any redirect).
-		$nonce = isset( $_GET['_wpnonce'] ) ? sanitize_text_field( wp_unslash( $_GET['_wpnonce'] ) ) : '';
-		if ( '' === $nonce || ! wp_verify_nonce( $nonce, 'wcpay-referrer' ) ) {
-			return;
-		}
-
+		// Note: this handler intentionally does not verify a nonce. It fires from a
+		// post-KYC activation email CTA that merchants may open days after it is sent,
+		// so a short-lived nonce would be expired for most legitimate clicks. The CSRF
+		// exposure is limited and acceptable: the handler is gated on the
+		// `manage_woocommerce` capability, only records a single telemetry event whose
+		// `stage` must be in the POST_KYC_STAGE_DAYS allowlist, and performs a safe
+		// same-page redirect via wp_safe_redirect( remove_query_arg( ... ) ). The worst
+		// a forged request can do is record one allowlisted-stage analytics event.
+		// See review finding 7522b93d.
 		$stage = isset( $_GET['wcpay_referrer_stage'] ) ? (int) $_GET['wcpay_referrer_stage'] : 0;
 		// phpcs:enable WordPress.Security.NonceVerification.Recommended
 

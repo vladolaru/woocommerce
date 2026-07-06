@@ -97,16 +97,16 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Referrer CTA handler records the event and redirects when the request carries a valid nonce.
+	 * @testdox Referrer CTA handler records the event and redirects for an allowlisted stage without requiring a nonce.
 	 */
-	public function test_referrer_cta_records_event_with_valid_nonce(): void {
+	public function test_referrer_cta_records_event_with_allowlisted_stage(): void {
 		$service  = $this->create_service( new StaticNativeRuntimeArbiter( true ) );
 		$admin_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
 		wp_set_current_user( $admin_id );
 
+		// The email CTA link carries no nonce; the handler must still record the click.
 		$_GET['wcpay_referrer']       = 'post_kyc_email';
 		$_GET['wcpay_referrer_stage'] = '7';
-		$_GET['_wpnonce']             = wp_create_nonce( 'wcpay-referrer' );
 
 		$redirected = false;
 		add_filter(
@@ -125,20 +125,20 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 			unset( $e );
 		}
 
-		$this->assertTrue( $redirected, 'A valid nonce should let the handler record the event and redirect.' );
+		$this->assertTrue( $redirected, 'An allowlisted stage should record the event and redirect without a nonce.' );
 	}
 
 	/**
-	 * @testdox Referrer CTA handler skips recording and never redirects when the nonce is missing or invalid.
+	 * @testdox Referrer CTA handler skips recording and never redirects when the stage is not allowlisted.
 	 */
-	public function test_referrer_cta_skips_recording_without_valid_nonce(): void {
+	public function test_referrer_cta_skips_recording_with_non_allowlisted_stage(): void {
 		$service  = $this->create_service( new StaticNativeRuntimeArbiter( true ) );
 		$admin_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
 		wp_set_current_user( $admin_id );
 
-		$_GET['wcpay_referrer']       = 'post_kyc_email';
-		$_GET['wcpay_referrer_stage'] = '7';
-		$_GET['_wpnonce']             = 'not-a-valid-nonce';
+		$_GET['wcpay_referrer'] = 'post_kyc_email';
+		// Stage 3 is not in POST_KYC_STAGE_DAYS.
+		$_GET['wcpay_referrer_stage'] = '3';
 
 		$redirected = false;
 		add_filter(
@@ -157,7 +157,38 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 			unset( $e );
 		}
 
-		$this->assertFalse( $redirected, 'An invalid nonce must not record analytics or trigger a redirect.' );
+		$this->assertFalse( $redirected, 'A non-allowlisted stage must not record analytics or trigger a redirect.' );
+	}
+
+	/**
+	 * @testdox Referrer CTA handler skips recording and never redirects without the manage_woocommerce capability.
+	 */
+	public function test_referrer_cta_skips_recording_without_manage_woocommerce(): void {
+		$service     = $this->create_service( new StaticNativeRuntimeArbiter( true ) );
+		$customer_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		wp_set_current_user( $customer_id );
+
+		$_GET['wcpay_referrer']       = 'post_kyc_email';
+		$_GET['wcpay_referrer_stage'] = '7';
+
+		$redirected = false;
+		add_filter(
+			'wp_redirect',
+			function ( $location ) use ( &$redirected ) {
+				unset( $location );
+				$redirected = true;
+				// Guard the test run: a redirect here would otherwise reach the handler's exit.
+				throw new \Exception( 'unexpected redirect' );
+			}
+		);
+
+		try {
+			$service->handle_wcpay_post_kyc_activation_email_cta();
+		} catch ( \Exception $e ) {
+			unset( $e );
+		}
+
+		$this->assertFalse( $redirected, 'A user without manage_woocommerce must not record analytics or trigger a redirect.' );
 	}
 
 	/**

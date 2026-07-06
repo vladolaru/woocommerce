@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Require a valid nonce before recording native WooPayments referrer tracking events to prevent CSRF-polluted analytics.
