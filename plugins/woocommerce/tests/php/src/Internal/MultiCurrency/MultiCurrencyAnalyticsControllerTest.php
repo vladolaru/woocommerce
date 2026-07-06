@@ -36,6 +36,7 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 		'woocommerce_analytics_clauses_where_orders_stats_interval',
 		'woocommerce_analytics_clauses_select_orders_subquery',
 		'woocommerce_analytics_clauses_select_orders_stats_total',
+		'woocommerce_new_order',
 		'wcpay_multi_currency_disable_filter_select_clauses',
 		'wcpay_multi_currency_filter_select_clauses',
 	);
@@ -47,6 +48,8 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 		foreach ( $this->hooks as $hook ) {
 			remove_all_filters( $hook );
 		}
+
+		delete_transient( 'wc_mc_has_orders' );
 
 		parent::tearDown();
 	}
@@ -297,6 +300,61 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should register SQL hooks from the cached multi-currency orders transient without querying.
+	 */
+	public function test_registers_sql_hooks_from_cached_multi_currency_orders_transient(): void {
+		set_transient( 'wc_mc_has_orders', '1', HOUR_IN_SECONDS );
+		$sut = $this->create_controller_without_orders_resolver( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+
+		$sut->register();
+
+		$this->assertSame(
+			20,
+			has_filter( 'woocommerce_analytics_clauses_select', array( $sut, 'handle_woocommerce_analytics_clauses_select' ) ),
+			'A cached positive transient should drive SQL hook registration without scanning order meta.'
+		);
+	}
+
+	/**
+	 * @testdox Should cache the resolved multi-currency orders flag in a transient.
+	 */
+	public function test_caches_multi_currency_orders_result_in_transient(): void {
+		delete_transient( 'wc_mc_has_orders' );
+		$sut = $this->create_controller_without_orders_resolver( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+
+		$sut->register();
+
+		$this->assertSame(
+			'0',
+			get_transient( 'wc_mc_has_orders' ),
+			'Resolving the existence query should write the result to the transient for subsequent requests.'
+		);
+	}
+
+	/**
+	 * @testdox Should invalidate the cached multi-currency orders flag when a new order is created.
+	 */
+	public function test_new_order_invalidates_multi_currency_orders_cache(): void {
+		set_transient( 'wc_mc_has_orders', '1', HOUR_IN_SECONDS );
+		$sut = $this->create_controller_without_orders_resolver( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+
+		$sut->register();
+
+		$this->assertSame(
+			10,
+			has_filter( 'woocommerce_new_order', array( $sut, 'invalidate_has_multi_currency_orders_cache' ) ),
+			'The controller should listen for new orders to invalidate its cached existence flag.'
+		);
+
+		$sut->invalidate_has_multi_currency_orders_cache();
+
+		$this->assertFalse(
+			get_transient( 'wc_mc_has_orders' ),
+			'Creating an order should clear the cached multi-currency orders flag.'
+		);
+	}
+
+	/**
 	 * Create an analytics controller.
 	 *
 	 * @param string $owner                     Runtime owner.
@@ -314,6 +372,30 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 			$controller->set_rest_request_resolver( static fn(): bool => false );
 		}
 		$controller->set_multi_currency_orders_resolver( static fn(): bool => false );
+		$controller->set_hpos_resolver( static fn(): bool => false );
+		$controller->set_default_currency_resolver( static fn(): string => 'USD' );
+		$controller->set_request_args_resolver( static fn(): array => array() );
+
+		return $controller;
+	}
+
+	/**
+	 * Create an analytics controller that resolves multi-currency orders through the cached query.
+	 *
+	 * The multi-currency orders resolver seam is intentionally left unset so the transient-backed
+	 * existence check is exercised.
+	 *
+	 * @param string $owner Runtime owner.
+	 * @return MultiCurrencyAnalyticsController
+	 */
+	private function create_controller_without_orders_resolver( string $owner ): MultiCurrencyAnalyticsController {
+		$controller = new MultiCurrencyAnalyticsController();
+		$controller->init(
+			$this->create_arbiter( $owner ),
+			wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class )
+		);
+		$controller->set_dev_mode_resolver( static fn(): bool => false );
+		$controller->set_rest_request_resolver( static fn(): bool => true );
 		$controller->set_hpos_resolver( static fn(): bool => false );
 		$controller->set_default_currency_resolver( static fn(): string => 'USD' );
 		$controller->set_request_args_resolver( static fn(): array => array() );
