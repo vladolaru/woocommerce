@@ -132,6 +132,45 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Losing the lock while the ID is still unstored still creates and must not release the lock owner's key.
+	 */
+	public function test_get_or_create_customer_id_creates_on_fall_through_without_releasing_others_lock(): void {
+		$user_id    = $this->factory->user->create( array( 'user_login' => 'fall-through' ) );
+		$order      = $this->create_checkout_order( $user_id );
+		$api_client = $this->create_customer_api_client( array( 'cus_fallthrough' ) );
+
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_test_mode_enabled' ) )
+			->getMock();
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( false );
+
+		$sut = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->onlyMethods( array( 'get_customer_id_by_user_id' ) )
+			->getMock();
+		$sut->init( $api_client, $account_service );
+
+		// Both the fast-path read and the re-read after losing the lock miss: the
+		// lock holder has not persisted the ID yet, so this request must create.
+		$sut->method( 'get_customer_id_by_user_id' )->willReturn( null );
+
+		// Simulate another concurrent request already holding the creation lock.
+		wp_cache_add( 'wcpay_customer_create_' . $user_id, 1, 'woopayments', 10 );
+
+		$result = $sut->get_or_create_customer_id_for_order( $order );
+
+		// No regression: the customer is still created and persisted.
+		$this->assertSame( 'cus_fallthrough', $result );
+		$this->assertCount( 1, $api_client->created_customers );
+
+		// Ownership: this request never acquired the lock, so it must not have
+		// deleted the lock owner's key on the way out.
+		$this->assertNotFalse( wp_cache_get( 'wcpay_customer_create_' . $user_id, 'woopayments' ) );
+
+		wp_cache_delete( 'wcpay_customer_create_' . $user_id, 'woopayments' );
+	}
+
+	/**
 	 * @testdox Recreating a missing customer should replace the persisted customer ID.
 	 */
 	public function test_recreate_customer_replaces_a_missing_customer_id_and_updates_storage(): void {

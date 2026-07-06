@@ -184,17 +184,19 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 		$lock_key = null === $user_id ? '' : 'wcpay_customer_create_' . $user_id;
 
 		// wp_cache_add() both acquires the lock and reports contention: it
-		// returns false when another request already holds the key.
-		$lock_held_by_other = '' !== $lock_key && ! wp_cache_add( $lock_key, 1, 'woopayments', 10 );
+		// returns false when another request already holds the key, so a true
+		// result means this request is the one that owns the lock.
+		$acquired_lock = '' !== $lock_key && wp_cache_add( $lock_key, 1, 'woopayments', 10 );
 
-		if ( $lock_held_by_other ) {
+		if ( '' !== $lock_key && ! $acquired_lock ) {
 			$customer_id = $this->get_customer_id_by_user_id( $user_id );
 			if ( null !== $customer_id ) {
 				// The winning request already created and persisted the customer.
 				return $this->update_customer_for_order( $customer_id, $order );
 			}
 			// The lock holder has not persisted yet (or there is no persistent
-			// object cache); create anyway to avoid regressing below today.
+			// object cache); create anyway to avoid regressing below today. We
+			// do not own the lock, so we must not release it on the way out.
 		}
 
 		try {
@@ -203,7 +205,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 
 			return $customer_id;
 		} finally {
-			if ( '' !== $lock_key ) {
+			if ( $acquired_lock ) {
 				wp_cache_delete( $lock_key, 'woopayments' );
 			}
 		}
