@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use DateTime;
 use DateTimeZone;
+use Exception;
 use WP_REST_Request;
 
 /**
@@ -169,8 +170,14 @@ class WooPaymentsTransactionsListRequest extends WooPaymentsPaginatedListRequest
 		$blog_time = new DateTime( $transaction_date );
 		$blog_time->setTimezone( new DateTimeZone( wp_timezone_string() ) );
 
+		try {
+			$user_time_zone = new DateTimeZone( $user_timezone );
+		} catch ( Exception $exception ) {
+			$user_time_zone = new DateTimeZone( 'UTC' );
+		}
+
 		$local_time = new DateTime( $transaction_date );
-		$local_time->setTimezone( new DateTimeZone( $user_timezone ) );
+		$local_time->setTimezone( $user_time_zone );
 
 		$time_difference = ( strtotime( $local_time->format( 'Y-m-d H:i:s' ) ) - strtotime( $blog_time->format( 'Y-m-d H:i:s' ) ) ) / 60;
 		$formatted_date  = new DateTime( $transaction_date );
