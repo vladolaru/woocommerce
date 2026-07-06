@@ -548,7 +548,9 @@ const FeeDetails = ( {
 					feeDescription
 				) }
 				aria-expanded={ isTooltipOpen }
-				aria-controls={ tooltipId }
+				// Only reference the tooltip while it is mounted; otherwise
+				// aria-controls points at a non-existent element.
+				aria-controls={ isTooltipOpen ? tooltipId : undefined }
 				aria-describedby={ isTooltipOpen ? tooltipId : undefined }
 				onClick={ () => setIsTooltipOpen( true ) }
 				onFocus={ () => setIsTooltipOpen( true ) }
@@ -748,7 +750,9 @@ const PmPromotionBadge = ( {
 				aria-label={ label }
 				aria-haspopup="dialog"
 				aria-expanded={ isTooltipOpen }
-				aria-controls={ tooltipId }
+				// Only reference the dialog while it is mounted; otherwise
+				// aria-controls points at a non-existent element.
+				aria-controls={ isTooltipOpen ? tooltipId : undefined }
 				onClick={ () => setIsTooltipOpen( true ) }
 				onFocus={ handleTriggerFocus }
 				onKeyDown={ handleEscape }

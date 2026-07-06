@@ -1171,8 +1171,16 @@ describe( 'WooPaymentsSettingsPage', () => {
 				'first $1,000.00 of total payment volume or through'
 			)
 		);
+		// While collapsed the tooltip is unmounted, so the trigger must not
+		// reference it with a dangling aria-controls IDREF.
+		expect( cardFeeButton ).not.toHaveAttribute( 'aria-controls' );
 
 		await userEvent.click( cardFeeButton );
+		// Once expanded, aria-controls points at the mounted tooltip.
+		expect( cardFeeButton ).toHaveAttribute(
+			'aria-controls',
+			screen.getByRole( 'tooltip' ).id
+		);
 		expect(
 			screen.getAllByText( 'Base fee' ).length
 		).toBeGreaterThanOrEqual( 1 );
@@ -1188,6 +1196,8 @@ describe( 'WooPaymentsSettingsPage', () => {
 
 		await userEvent.keyboard( '{Escape}' );
 		expect( cardFeeButton ).toHaveAttribute( 'aria-expanded', 'false' );
+		// Collapsing unmounts the tooltip, so the IDREF is dropped again.
+		expect( cardFeeButton ).not.toHaveAttribute( 'aria-controls' );
 	} );
 
 	it( 'renders badge payment method promotions on matching payment method rows', async () => {
@@ -1271,12 +1281,17 @@ describe( 'WooPaymentsSettingsPage', () => {
 		expect(
 			screen.queryByText( 'Activate Affirm' )
 		).not.toBeInTheDocument();
+		// While collapsed the dialog is unmounted, so the trigger must not
+		// reference it with a dangling aria-controls IDREF.
+		expect( badge ).not.toHaveAttribute( 'aria-controls' );
 
 		await userEvent.click( badge );
 
 		const detailsDialog = screen.getByRole( 'dialog', {
 			name: 'Limited offer promotion details',
 		} );
+		// Once expanded, aria-controls points at the mounted dialog.
+		expect( badge ).toHaveAttribute( 'aria-controls', detailsDialog.id );
 		expect(
 			within( detailsDialog ).getByText(
 				'Lower fees are available for Klarna.'
