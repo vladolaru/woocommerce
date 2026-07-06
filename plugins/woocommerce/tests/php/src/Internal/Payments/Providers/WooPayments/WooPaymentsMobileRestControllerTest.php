@@ -269,6 +269,28 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Order-scoped terminal routes match numeric order IDs and reject non-numeric ones.
+	 */
+	public function test_order_scoped_terminal_routes_reject_non_numeric_order_id(): void {
+		$this->sut->register_routes();
+
+		$order = $this->create_order( 12.34, 'USD' );
+
+		// A valid numeric order ID still routes to the handler.
+		$numeric_response = $this->server->dispatch(
+			new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/create_terminal_intent' )
+		);
+		$this->assertSame( 200, $numeric_response->get_status() );
+
+		// A non-numeric order ID that would match \w+ no longer matches the numeric route.
+		$non_numeric_response = $this->server->dispatch(
+			new WP_REST_Request( 'POST', '/wc/v3/payments/orders/notnumeric/create_terminal_intent' )
+		);
+		$this->assertSame( 404, $non_numeric_response->get_status() );
+		$this->assertSame( 'rest_no_route', $non_numeric_response->get_data()['code'] );
+	}
+
+	/**
 	 * @testdox Terminal preparation rejects invalid intent IDs before forwarding to WPCOM.
 	 */
 	public function test_prepare_terminal_payment_rejects_invalid_intent_id(): void {
@@ -863,9 +885,9 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	private function get_expected_routes(): array {
 		return array(
 			'/wc/v3/payments/connection_tokens'        => array( WP_REST_Server::CREATABLE ),
-			'/wc/v3/payments/orders/(?P<order_id>\\w+)/capture_terminal_payment' => array( WP_REST_Server::CREATABLE ),
-			'/wc/v3/payments/orders/(?P<order_id>\\w+)/prepare_terminal_payment' => array( WP_REST_Server::CREATABLE ),
-			'/wc/v3/payments/orders/(?P<order_id>\\w+)/create_terminal_intent' => array( WP_REST_Server::CREATABLE ),
+			'/wc/v3/payments/orders/(?P<order_id>\\d+)/capture_terminal_payment' => array( WP_REST_Server::CREATABLE ),
+			'/wc/v3/payments/orders/(?P<order_id>\\d+)/prepare_terminal_payment' => array( WP_REST_Server::CREATABLE ),
+			'/wc/v3/payments/orders/(?P<order_id>\\d+)/create_terminal_intent' => array( WP_REST_Server::CREATABLE ),
 			'/wc/v3/payments/orders/(?P<order_id>\\d+)/create_customer' => array( WP_REST_Server::CREATABLE ),
 			'/wc/v3/payments/readers'                  => array( WP_REST_Server::READABLE, WP_REST_Server::CREATABLE ),
 			'/wc/v3/payments/readers/charges/(?P<transaction_id>\\w+)' => array( WP_REST_Server::READABLE ),

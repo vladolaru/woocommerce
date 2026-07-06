@@ -122,7 +122,7 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 
 		register_rest_route(
 			self::NAMESPACE,
-			'/payments/orders/(?P<order_id>\w+)/capture_terminal_payment',
+			'/payments/orders/(?P<order_id>\d+)/capture_terminal_payment',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
 				'callback'            => array( $this, 'capture_terminal_payment' ),
@@ -132,7 +132,7 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 
 		register_rest_route(
 			self::NAMESPACE,
-			'/payments/orders/(?P<order_id>\w+)/prepare_terminal_payment',
+			'/payments/orders/(?P<order_id>\d+)/prepare_terminal_payment',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
 				'callback'            => array( $this, 'prepare_terminal_payment' ),
@@ -142,7 +142,7 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 
 		register_rest_route(
 			self::NAMESPACE,
-			'/payments/orders/(?P<order_id>\w+)/create_terminal_intent',
+			'/payments/orders/(?P<order_id>\d+)/create_terminal_intent',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
 				'callback'            => array( $this, 'create_terminal_intent' ),
