@@ -1,7 +1,13 @@
 /**
  * External dependencies
  */
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+	act,
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
@@ -243,12 +249,12 @@ describe( 'WooPaymentsDocumentsPage', () => {
 	it( 'maps DataViews search to the preserved Documents match query', async () => {
 		renderDocumentsPage();
 
-		userEvent.type(
-			await screen.findByRole( 'searchbox', {
-				name: 'Search documents',
-			} ),
-			'invoice'
-		);
+		const searchbox = await screen.findByRole( 'searchbox', {
+			name: 'Search documents',
+		} );
+		await act( async () => {
+			await userEvent.type( searchbox, 'invoice' );
+		} );
 
 		await waitFor( () =>
 			expect( mockGetDocuments ).toHaveBeenLastCalledWith(
@@ -284,7 +290,7 @@ describe( 'WooPaymentsDocumentsPage', () => {
 	it( 'downloads VAT invoices immediately when VAT details were submitted', async () => {
 		renderDocumentsPage();
 
-		userEvent.click(
+		await userEvent.click(
 			await screen.findByRole( 'button', {
 				name: 'Download Tax Invoice vat_invoice_123',
 			} )
@@ -311,7 +317,7 @@ describe( 'WooPaymentsDocumentsPage', () => {
 
 		renderDocumentsPage();
 
-		userEvent.click(
+		await userEvent.click(
 			await screen.findByRole( 'button', {
 				name: 'Download Tax Invoice vat_invoice_123',
 			} )
@@ -324,14 +330,21 @@ describe( 'WooPaymentsDocumentsPage', () => {
 		).toBeInTheDocument();
 		expect( openSpy ).not.toHaveBeenCalled();
 
-		userEvent.click(
+		await userEvent.click(
 			screen.getByRole( 'checkbox', {
 				name: 'I have a valid VAT Number',
 			} )
 		);
-		userEvent.clear( screen.getByLabelText( 'VAT Number' ) );
-		userEvent.type( screen.getByLabelText( 'VAT Number' ), 'DE123456789' );
-		userEvent.click( screen.getByRole( 'button', { name: 'Continue' } ) );
+		await userEvent.clear( screen.getByLabelText( 'VAT Number' ) );
+		await userEvent.type(
+			screen.getByLabelText( 'VAT Number' ),
+			'DE123456789'
+		);
+		await act( async () => {
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Continue' } )
+			);
+		} );
 
 		expect( mockValidateVat ).toHaveBeenCalledWith( 'DE123456789' );
 		const businessName = await screen.findByLabelText( 'Business name' );
@@ -341,7 +354,11 @@ describe( 'WooPaymentsDocumentsPage', () => {
 			'1 Market Street'
 		);
 
-		userEvent.click( screen.getByRole( 'button', { name: 'Confirm' } ) );
+		await act( async () => {
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Confirm' } )
+			);
+		} );
 
 		await waitFor( () =>
 			expect( mockSaveVat ).toHaveBeenCalledWith( {
@@ -368,12 +385,16 @@ describe( 'WooPaymentsDocumentsPage', () => {
 
 		renderDocumentsPage();
 
-		userEvent.click(
+		await userEvent.click(
 			await screen.findByRole( 'button', {
 				name: 'Download Tax Invoice vat_invoice_123',
 			} )
 		);
-		userEvent.click( screen.getByRole( 'button', { name: 'Continue' } ) );
+		await act( async () => {
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Continue' } )
+			);
+		} );
 
 		expect( mockValidateVat ).not.toHaveBeenCalled();
 		const businessName = await screen.findByLabelText( 'Business name' );
@@ -388,7 +409,11 @@ describe( 'WooPaymentsDocumentsPage', () => {
 			target: { value: '1 Market Street' },
 		} );
 		expect( confirmButton ).not.toHaveAttribute( 'aria-disabled', 'true' );
-		userEvent.click( screen.getByRole( 'button', { name: 'Confirm' } ) );
+		await act( async () => {
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Confirm' } )
+			);
+		} );
 
 		await waitFor( () =>
 			expect( mockSaveVat ).toHaveBeenCalledWith( {
@@ -421,22 +446,35 @@ describe( 'WooPaymentsDocumentsPage', () => {
 
 		renderDocumentsPage();
 
-		userEvent.click(
+		await userEvent.click(
 			await screen.findByRole( 'button', {
 				name: 'Download Tax Invoice vat_invoice_123',
 			} )
 		);
-		userEvent.click(
+		await userEvent.click(
 			await screen.findByRole( 'checkbox', {
 				name: 'I have a valid VAT Number',
 			} )
 		);
-		userEvent.type( screen.getByLabelText( 'VAT Number' ), 'DE123456789' );
-		userEvent.click( screen.getByRole( 'button', { name: 'Continue' } ) );
+		await userEvent.type(
+			screen.getByLabelText( 'VAT Number' ),
+			'DE123456789'
+		);
+		await act( async () => {
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Continue' } )
+			);
+		} );
 		await screen.findByLabelText( 'Business name' );
 
-		userEvent.click( screen.getByRole( 'button', { name: 'Confirm' } ) );
-		userEvent.click( screen.getByRole( 'button', { name: 'Cancel' } ) );
+		await act( async () => {
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Confirm' } )
+			);
+		} );
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Cancel' } )
+		);
 		resolveSave( {
 			vat_number: 'DE123456789',
 			name: 'Ada Bakery',
@@ -465,7 +503,7 @@ describe( 'WooPaymentsDocumentsPage', () => {
 
 		renderDocumentsPage();
 
-		userEvent.click(
+		await userEvent.click(
 			await screen.findByRole( 'button', {
 				name: 'Download Tax Invoice vat_invoice_123',
 			} )
