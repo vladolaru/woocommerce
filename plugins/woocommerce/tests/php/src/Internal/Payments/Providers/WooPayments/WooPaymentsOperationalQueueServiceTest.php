@@ -50,6 +50,8 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		if ( function_exists( 'as_unschedule_all_actions' ) ) {
 			as_unschedule_all_actions( WooPaymentsOperationalQueueService::STORE_SETUP_SYNC_ACTION, null, WooPaymentsActionSchedulerService::GROUP_ID );
 		}
+		unset( $_GET['wcpay_referrer'], $_GET['wcpay_referrer_stage'], $_GET['_wpnonce'] );
+		remove_all_filters( 'wp_redirect' );
 		parent::tearDown();
 	}
 
@@ -92,6 +94,70 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		$this->assertFalse( has_action( 'wcpay_instant_deposit_reminder', array( $service, 'handle_wcpay_instant_deposit_reminder' ) ) );
 		$this->assertFalse( has_action( 'wcpay_post_kyc_activation_email_send', array( $service, 'handle_wcpay_post_kyc_activation_email_send' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_email_classes', array( $service, 'add_post_kyc_activation_email' ) ) );
+	}
+
+	/**
+	 * @testdox Referrer CTA handler records the event and redirects when the request carries a valid nonce.
+	 */
+	public function test_referrer_cta_records_event_with_valid_nonce(): void {
+		$service  = $this->create_service( new StaticNativeRuntimeArbiter( true ) );
+		$admin_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
+		wp_set_current_user( $admin_id );
+
+		$_GET['wcpay_referrer']       = 'post_kyc_email';
+		$_GET['wcpay_referrer_stage'] = '7';
+		$_GET['_wpnonce']             = wp_create_nonce( 'wcpay-referrer' );
+
+		$redirected = false;
+		add_filter(
+			'wp_redirect',
+			function ( $location ) use ( &$redirected ) {
+				$redirected = true;
+				// Stand in for the handler's exit so the test run is not terminated.
+				throw new \Exception( esc_html( (string) $location ) );
+			}
+		);
+
+		try {
+			$service->handle_wcpay_post_kyc_activation_email_cta();
+		} catch ( \Exception $e ) {
+			// The redirect exception is the expected end of the happy path.
+			unset( $e );
+		}
+
+		$this->assertTrue( $redirected, 'A valid nonce should let the handler record the event and redirect.' );
+	}
+
+	/**
+	 * @testdox Referrer CTA handler skips recording and never redirects when the nonce is missing or invalid.
+	 */
+	public function test_referrer_cta_skips_recording_without_valid_nonce(): void {
+		$service  = $this->create_service( new StaticNativeRuntimeArbiter( true ) );
+		$admin_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
+		wp_set_current_user( $admin_id );
+
+		$_GET['wcpay_referrer']       = 'post_kyc_email';
+		$_GET['wcpay_referrer_stage'] = '7';
+		$_GET['_wpnonce']             = 'not-a-valid-nonce';
+
+		$redirected = false;
+		add_filter(
+			'wp_redirect',
+			function ( $location ) use ( &$redirected ) {
+				unset( $location );
+				$redirected = true;
+				// Guard the test run: a redirect here would otherwise reach the handler's exit.
+				throw new \Exception( 'unexpected redirect' );
+			}
+		);
+
+		try {
+			$service->handle_wcpay_post_kyc_activation_email_cta();
+		} catch ( \Exception $e ) {
+			unset( $e );
+		}
+
+		$this->assertFalse( $redirected, 'An invalid nonce must not record analytics or trigger a redirect.' );
 	}
 
 	/**
