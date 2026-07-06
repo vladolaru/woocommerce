@@ -535,16 +535,26 @@ describe( 'WooPayments payout details admin surface', () => {
 
 		expect( writeText ).toHaveBeenCalledTimes( 2 );
 		expect( writeText ).toHaveBeenCalledWith( 'REF123' );
+		// The copy result is announced through exactly one channel: speak().
+		// speak() re-announces even the identical message on the second click,
+		// which a deduped aria-live region would not.
 		expect( mockSpeak ).toHaveBeenCalledTimes( 2 );
 		expect( mockSpeak ).toHaveBeenCalledWith(
 			'Bank reference ID copied.',
 			'polite'
 		);
+		// The shared status live region must not duplicate the announcement.
 		await waitFor( () =>
 			expect( screen.getByRole( 'status' ) ).toHaveTextContent(
-				'Bank reference ID copied.'
+				'Payout details loaded.'
 			)
 		);
+		expect( screen.getByRole( 'status' ) ).not.toHaveTextContent(
+			'Bank reference ID copied.'
+		);
+		expect(
+			screen.queryByText( 'Bank reference ID copied.' )
+		).not.toBeInTheDocument();
 	} );
 
 	it( 'links to all transactions for a normal payout', async () => {

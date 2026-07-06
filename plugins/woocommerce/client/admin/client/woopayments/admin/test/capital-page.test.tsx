@@ -266,16 +266,19 @@ describe( 'WooPaymentsCapitalPage', () => {
 		}
 	} );
 
-	it( 'announces empty Capital loan results', async () => {
+	it( 'announces empty Capital loan results exactly once', async () => {
 		mockCapitalApi( { summary: {}, loans: [] } );
 
 		render( <WooPaymentsCapitalPage /> );
 
 		expect(
-			await screen.findByText( 'No Capital loans found.', {
-				selector: '.woocommerce-woopayments-capital__empty',
-			} )
+			await screen.findByText( 'No Capital loans found.' )
 		).toBeInTheDocument();
+		// The empty-state message is rendered once, in the polite status
+		// region, so screen readers announce it a single time.
+		expect( screen.getAllByText( 'No Capital loans found.' ) ).toHaveLength(
+			1
+		);
 		expect( screen.getByRole( 'status' ) ).toHaveTextContent(
 			'No Capital loans found.'
 		);

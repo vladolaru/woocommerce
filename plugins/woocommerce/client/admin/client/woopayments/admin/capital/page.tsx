@@ -365,11 +365,6 @@ export const WooPaymentsCapitalPage = () => {
 				>
 					{ statusMessage }
 				</p>
-				{ ! isLoading && ! errorMessage && loans.length === 0 && (
-					<p className="woocommerce-woopayments-capital__empty">
-						{ __( 'No Capital loans found.', 'woocommerce' ) }
-					</p>
-				) }
 			</section>
 			{ summary.details && ! errorMessage && (
 				<ActiveLoanSummary summary={ summary } loans={ loans } />

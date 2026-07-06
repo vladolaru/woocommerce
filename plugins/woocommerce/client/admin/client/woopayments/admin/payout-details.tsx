@@ -133,9 +133,6 @@ export const WooPaymentsPayoutDetailsPage = () => {
 	>( [] );
 	const [ isLoading, setIsLoading ] = useState( true );
 	const [ errorMessage, setErrorMessage ] = useState< string | null >( null );
-	const [ copyStatusMessage, setCopyStatusMessage ] = useState<
-		string | null
-	>( null );
 	const [ transactionsView, setTransactionsView ] =
 		useState< WooPaymentsMoneyMovementDataView >(
 			getDefaultPayoutTransactionsView
@@ -206,7 +203,6 @@ export const WooPaymentsPayoutDetailsPage = () => {
 			}
 
 			setIsLoading( true );
-			setCopyStatusMessage( null );
 
 			try {
 				const nextPayout = await getWooPaymentsDeposit( payoutId );
@@ -263,19 +259,18 @@ export const WooPaymentsPayoutDetailsPage = () => {
 			}
 
 			await navigator.clipboard.writeText( payout.bank_reference_key );
-			const successMessage = __(
-				'Bank reference ID copied.',
-				'woocommerce'
-			);
-			setCopyStatusMessage( successMessage );
-			speak( successMessage, 'polite' );
+			// Announce through a single channel: the imperative speak() call.
+			// The shared status live region below is reserved for the
+			// load/loaded/error lifecycle to avoid a duplicate announcement.
+			speak( __( 'Bank reference ID copied.', 'woocommerce' ), 'polite' );
 		} catch ( error ) {
-			const copyErrorMessage = __(
-				'Unable to copy bank reference ID to clipboard.',
-				'woocommerce'
+			speak(
+				__(
+					'Unable to copy bank reference ID to clipboard.',
+					'woocommerce'
+				),
+				'polite'
 			);
-			setCopyStatusMessage( copyErrorMessage );
-			speak( copyErrorMessage, 'polite' );
 		}
 	};
 
@@ -286,8 +281,6 @@ export const WooPaymentsPayoutDetailsPage = () => {
 		liveStatusMessage = errorMessage;
 	} else if ( isLoading ) {
 		liveStatusMessage = loadingMessage;
-	} else if ( copyStatusMessage ) {
-		liveStatusMessage = copyStatusMessage;
 	}
 
 	const summaryCurrency = payout
