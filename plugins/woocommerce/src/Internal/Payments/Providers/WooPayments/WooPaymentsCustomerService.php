@@ -173,10 +173,40 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 			return $this->update_customer_for_order( $customer_id, $order );
 		}
 
-		$customer_id = $this->api_client->create_customer( $this->map_customer_data( $order ) );
-		$this->persist_customer_id( $user_id, $customer_id );
+		// Guard against concurrent checkouts creating duplicate remote customers
+		// for the same logged-in user. On stores with a persistent object cache
+		// the advisory lock is shared across requests, so only the request that
+		// acquires it creates while the losers re-read the persisted ID. Guests
+		// keep their ID in the request-local session and are unaffected, so they
+		// skip the lock. Without a persistent object cache the lock is
+		// request-local and every request falls through to create, exactly as
+		// before -- never worse than today.
+		$lock_key = null === $user_id ? '' : 'wcpay_customer_create_' . $user_id;
 
-		return $customer_id;
+		// wp_cache_add() both acquires the lock and reports contention: it
+		// returns false when another request already holds the key.
+		$lock_held_by_other = '' !== $lock_key && ! wp_cache_add( $lock_key, 1, 'woopayments', 10 );
+
+		if ( $lock_held_by_other ) {
+			$customer_id = $this->get_customer_id_by_user_id( $user_id );
+			if ( null !== $customer_id ) {
+				// The winning request already created and persisted the customer.
+				return $this->update_customer_for_order( $customer_id, $order );
+			}
+			// The lock holder has not persisted yet (or there is no persistent
+			// object cache); create anyway to avoid regressing below today.
+		}
+
+		try {
+			$customer_id = $this->api_client->create_customer( $this->map_customer_data( $order ) );
+			$this->persist_customer_id( $user_id, $customer_id );
+
+			return $customer_id;
+		} finally {
+			if ( '' !== $lock_key ) {
+				wp_cache_delete( $lock_key, 'woopayments' );
+			}
+		}
 	}
 
 	/**

@@ -78,6 +78,60 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Without lock contention and no stored ID, the customer is created once and persisted.
+	 */
+	public function test_get_or_create_customer_id_creates_once_without_lock_contention(): void {
+		$user_id    = $this->factory->user->create( array( 'user_login' => 'first-checkout' ) );
+		$order      = $this->create_checkout_order( $user_id );
+		$api_client = $this->create_customer_api_client( array( 'cus_created' ) );
+
+		$sut = $this->create_sut( false, $api_client );
+
+		$result = $sut->get_or_create_customer_id_for_order( $order );
+
+		$this->assertSame( 'cus_created', $result );
+		$this->assertCount( 1, $api_client->created_customers );
+		$this->assertSame( 'cus_created', get_user_option( '_wcpay_customer_id_live', $user_id ) );
+		// The advisory lock is released once creation completes.
+		$this->assertFalse( wp_cache_get( 'wcpay_customer_create_' . $user_id, 'woopayments' ) );
+	}
+
+	/**
+	 * @testdox Losing the creation lock should reuse the concurrently created customer instead of creating a duplicate.
+	 */
+	public function test_get_or_create_customer_id_reuses_customer_created_by_concurrent_request(): void {
+		$user_id    = $this->factory->user->create( array( 'user_login' => 'concurrent' ) );
+		$order      = $this->create_checkout_order( $user_id );
+		$api_client = $this->create_customer_api_client( array( 'cus_should_not_be_created' ) );
+
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_test_mode_enabled' ) )
+			->getMock();
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( false );
+
+		$sut = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->onlyMethods( array( 'get_customer_id_by_user_id' ) )
+			->getMock();
+		$sut->init( $api_client, $account_service );
+
+		// The fast-path read misses; the re-read after losing the lock finds the
+		// ID that the winning concurrent request just persisted.
+		$sut->method( 'get_customer_id_by_user_id' )
+			->willReturnOnConsecutiveCalls( null, 'cus_existing' );
+
+		// Simulate another concurrent request already holding the creation lock.
+		wp_cache_add( 'wcpay_customer_create_' . $user_id, 1, 'woopayments', 10 );
+
+		$result = $sut->get_or_create_customer_id_for_order( $order );
+
+		$this->assertSame( 'cus_existing', $result );
+		$this->assertSame( array(), $api_client->created_customers );
+
+		wp_cache_delete( 'wcpay_customer_create_' . $user_id, 'woopayments' );
+	}
+
+	/**
 	 * @testdox Recreating a missing customer should replace the persisted customer ID.
 	 */
 	public function test_recreate_customer_replaces_a_missing_customer_id_and_updates_storage(): void {
@@ -219,6 +273,13 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 			public array $updated_customers = array();
 
 			/**
+			 * Created customer payloads.
+			 *
+			 * @var array<int,array<string,mixed>>
+			 */
+			public array $created_customers = array();
+
+			/**
 			 * Constructor.
 			 *
 			 * @param string[] $customer_ids Customer IDs to return.
@@ -234,7 +295,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 			 * @return string
 			 */
 			public function create_customer( array $customer_data ): string {
-				unset( $customer_data );
+				$this->created_customers[] = $customer_data;
 
 				return (string) array_shift( $this->customer_ids );
 			}

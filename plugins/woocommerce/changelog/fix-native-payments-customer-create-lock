@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Guard native WooPayments Stripe customer creation with a per-user lock to avoid duplicate customers under concurrent checkout.
