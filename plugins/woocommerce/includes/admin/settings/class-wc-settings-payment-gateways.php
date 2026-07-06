@@ -36,7 +36,12 @@ class WC_Settings_Payment_Gateways extends WC_Settings_Page {
 	/**
 	 * Cheque payments section name.
 	 */
-	const CHEQUE_SECTION_NAME      = 'cheque';
+	const CHEQUE_SECTION_NAME = 'cheque';
+	/**
+	 * The section name for the WooPayments settings.
+	 *
+	 * @since 11.0.0
+	 */
 	const WOOPAYMENTS_SECTION_NAME = 'woocommerce_payments';
 
 	/**
