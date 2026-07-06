@@ -7,6 +7,7 @@ import {
 	act,
 	fireEvent,
 	render,
+	renderHook,
 	screen,
 	waitFor,
 	within,
@@ -4311,5 +4312,58 @@ describe( 'WooPaymentsSettingsPage', () => {
 		fireEvent.click( subscriptionsToggle );
 
 		expect( setSubscriptionsEnabled ).not.toHaveBeenCalled();
+	} );
+
+	// The rendering tests above rely on a blanket `jest.mock( '../data/hooks' )`
+	// that replaces every settings hook with a bare `jest.fn()`. That keeps the
+	// render fast and deterministic, but on its own it lets a real contract
+	// change slip through: a hook can be added, removed, renamed, or have its
+	// return shape reworked and the stubbed tests keep passing against the stale
+	// stubs. Every hook in that module reads or writes the settings data store
+	// (see data/hooks.ts), so none can be safely un-mocked in the render tests
+	// without standing up the store. These two contract tests close that gap by
+	// checking the stub surface and the most load-bearing hook against the real
+	// module and a real store.
+	describe( 'data hook contracts', () => {
+		it( 'stubs exactly the real settings hooks module surface', () => {
+			const stubbedDataHooks = jest.requireMock( '../data/hooks' );
+			const realDataHooks = jest.requireActual( '../data/hooks' );
+
+			// If a hook is added, removed, or renamed in data/hooks.ts, the
+			// blanket stub above goes out of sync and this fails, forcing the
+			// mock to be updated instead of silently masking the drift.
+			expect( Object.keys( stubbedDataHooks ).sort() ).toEqual(
+				Object.keys( realDataHooks ).sort()
+			);
+		} );
+
+		it( 'exposes the documented useSettings contract against the real store', async () => {
+			// Exercise the real hook (not the stub) against the real data store,
+			// so a change to useSettings' return shape or to the store selectors
+			// it depends on (isSavingSettings/isDirty/getSettings/resolution)
+			// surfaces here rather than hiding behind the stub the render tests
+			// consume.
+			const { useSettings } = jest.requireActual( '../data/hooks' );
+
+			const { result, unmount } = renderHook( () => useSettings() );
+
+			expect( result.current ).toEqual(
+				expect.objectContaining( {
+					isLoading: expect.any( Boolean ),
+					isSaving: expect.any( Boolean ),
+					isDirty: expect.any( Boolean ),
+					saveSettings: expect.any( Function ),
+				} )
+			);
+			// getSettings resolves against the mocked settings endpoint, so the
+			// hook starts loading while resolution is pending.
+			expect( result.current.isLoading ).toBe( true );
+
+			await waitFor( () =>
+				expect( result.current.isLoading ).toBe( false )
+			);
+
+			unmount();
+		} );
 	} );
 } );
