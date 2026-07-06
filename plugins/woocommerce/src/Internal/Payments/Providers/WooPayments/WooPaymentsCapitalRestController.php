@@ -207,7 +207,8 @@ class WooPaymentsCapitalRestController implements RegisterHooksInterface {
 	private function api_exception_to_wp_error( WooPaymentsApiException $exception ): WP_Error {
 		return new WP_Error(
 			'' !== $exception->get_error_code() ? $exception->get_error_code() : 'wcpay_api_error',
-			$exception->getMessage()
+			$exception->getMessage(),
+			array( 'status' => $exception->get_http_code() > 0 ? $exception->get_http_code() : 500 )
 		);
 	}
 

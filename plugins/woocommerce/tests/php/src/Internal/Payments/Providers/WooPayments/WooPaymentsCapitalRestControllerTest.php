@@ -300,16 +300,32 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox API exceptions preserve the legacy Capital REST error envelope.
+	 * @testdox API exceptions preserve the Capital REST error envelope and include the upstream HTTP status.
 	 */
-	public function test_api_exceptions_preserve_legacy_error_envelope(): void {
+	public function test_api_exceptions_preserve_error_envelope_with_status(): void {
 		$this->api_client->exception = new WooPaymentsApiException( 'Capital unavailable.', 'capital_unavailable', 503 );
 
 		$response = $this->sut->get_active_loan_summary( new WP_REST_Request( 'GET', '/wc/v3/payments/capital/active_loan_summary' ) );
 
 		$this->assertSame( 'capital_unavailable', $response->get_error_code() );
 		$this->assertSame( 'Capital unavailable.', $response->get_error_message() );
-		$this->assertNull( $response->get_error_data() );
+
+		$error_data = $response->get_error_data();
+		$this->assertArrayHasKey( 'status', $error_data );
+		$this->assertSame( 503, $error_data['status'] );
+	}
+
+	/**
+	 * @testdox API exceptions without an upstream HTTP status fall back to a 500 server error status.
+	 */
+	public function test_api_exceptions_without_http_code_default_to_server_error_status(): void {
+		$this->api_client->exception = new WooPaymentsApiException( 'Capital unavailable.', 'capital_unavailable' );
+
+		$response = $this->sut->get_loans( new WP_REST_Request( 'GET', '/wc/v3/payments/capital/loans' ) );
+
+		$error_data = $response->get_error_data();
+		$this->assertArrayHasKey( 'status', $error_data );
+		$this->assertSame( 500, $error_data['status'] );
 	}
 
 	/**
