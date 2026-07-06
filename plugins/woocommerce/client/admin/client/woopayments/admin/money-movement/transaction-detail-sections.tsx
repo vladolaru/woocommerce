@@ -40,7 +40,11 @@ const DetailRow = ( { label, value }: { label: string; value: ReactNode } ) => (
 );
 
 const Dash = () => (
-	<span aria-label={ __( 'Unavailable', 'woocommerce' ) }>-</span>
+	// role="img" gives the aria-label an element that assistive technology
+	// reliably announces; a bare inline <span> label is often skipped.
+	<span role="img" aria-label={ __( 'Unavailable', 'woocommerce' ) }>
+		-
+	</span>
 );
 
 const LinkedValue = ( {

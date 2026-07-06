@@ -1449,6 +1449,62 @@ describe( 'WooPayments money movement pages', () => {
 		expect( mockGetTransaction ).not.toHaveBeenCalled();
 	} );
 
+	it( 'exposes the unavailable placeholder through an announceable role', async () => {
+		// A card charge missing its number, expiry, owner and origin renders
+		// the Dash placeholder in several rows.
+		mockGetPaymentIntent.mockResolvedValue( {
+			id: 'pi_missing',
+			status: 'succeeded',
+			amount: 5000,
+			currency: 'usd',
+			created: 1781712000,
+			charge: {
+				id: 'ch_missing',
+				balance_transaction: {
+					id: 'txn_missing',
+					fee: 0,
+					net: 5000,
+					currency: 'usd',
+				},
+				type: 'charge',
+				amount: 5000,
+				currency: 'usd',
+				created: 1781712000,
+				payment_method_details: {
+					type: 'card',
+					card: {
+						brand: 'visa',
+					},
+				},
+			},
+		} );
+		mockGetTimeline.mockResolvedValue( { data: [] } );
+
+		render(
+			<MemoryRouter
+				initialEntries={ [
+					'/woopayments/transactions/details?id=pi_missing&transaction_id=txn_missing',
+				] }
+			>
+				<WooPaymentsTransactionDetailsPage />
+			</MemoryRouter>
+		);
+
+		const paymentMethod = (
+			await screen.findByRole( 'heading', { name: 'Payment method' } )
+		 ).closest( 'section' ) as HTMLElement;
+
+		// The placeholder is discoverable by role with an accessible name,
+		// which a bare aria-labelled <span> would not expose.
+		const placeholders = within( paymentMethod ).getAllByRole( 'img', {
+			name: 'Unavailable',
+		} );
+		expect( placeholders.length ).toBeGreaterThan( 0 );
+		placeholders.forEach( ( placeholder ) => {
+			expect( placeholder ).toHaveAccessibleName( 'Unavailable' );
+		} );
+	} );
+
 	it( 'derives in-person sales channels from card-present payment methods and merged intent metadata', async () => {
 		mockGetPaymentIntent.mockResolvedValue( {
 			id: 'pi_card_present',
