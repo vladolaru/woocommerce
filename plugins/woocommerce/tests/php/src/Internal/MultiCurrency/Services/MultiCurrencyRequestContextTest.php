@@ -28,8 +28,8 @@ class MultiCurrencyRequestContextTest extends WC_Unit_Test_Case {
 	/**
 	 * Set up test fixtures.
 	 */
-	public function setUp(): void {
-		parent::setUp();
+	public function set_up(): void {
+		parent::set_up();
 
 		$this->original_request = $_REQUEST; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		$this->original_server  = $_SERVER;
@@ -38,11 +38,11 @@ class MultiCurrencyRequestContextTest extends WC_Unit_Test_Case {
 	/**
 	 * Tear down test fixtures.
 	 */
-	public function tearDown(): void {
+	public function tear_down(): void {
 		$_REQUEST = $this->original_request;
 		$_SERVER  = $this->original_server;
 
-		parent::tearDown();
+		parent::tear_down();
 	}
 
 	/**

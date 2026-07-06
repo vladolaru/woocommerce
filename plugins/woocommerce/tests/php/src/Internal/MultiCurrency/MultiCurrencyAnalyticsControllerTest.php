@@ -44,14 +44,14 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Tear down test fixtures.
 	 */
-	public function tearDown(): void {
+	public function tear_down(): void {
 		foreach ( $this->hooks as $hook ) {
 			remove_all_filters( $hook );
 		}
 
 		delete_transient( 'wc_mc_has_orders' );
 
-		parent::tearDown();
+		parent::tear_down();
 	}
 
 	/**

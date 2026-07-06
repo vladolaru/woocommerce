@@ -52,22 +52,22 @@ class MultiCurrencyProductAddOnsCompatibilityControllerTest extends WC_Unit_Test
 	/**
 	 * Set up test fixtures.
 	 */
-	public function setUp(): void {
-		parent::setUp();
+	public function set_up(): void {
+		parent::set_up();
 		$this->original_post = $_POST; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Captures POST fixture state for restoration.
 	}
 
 	/**
 	 * Tear down test fixtures.
 	 */
-	public function tearDown(): void {
+	public function tear_down(): void {
 		foreach ( $this->hooks as $hook ) {
 			remove_all_filters( $hook );
 		}
 
 		$_POST = $this->original_post; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Restores POST fixture state.
 
-		parent::tearDown();
+		parent::tear_down();
 	}
 
 	/**

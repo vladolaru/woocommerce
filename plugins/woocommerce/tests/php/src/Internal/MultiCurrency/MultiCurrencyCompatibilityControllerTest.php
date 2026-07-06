@@ -39,14 +39,14 @@ class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Tear down test fixtures.
 	 */
-	public function tearDown(): void {
+	public function tear_down(): void {
 		foreach ( $this->hooks as $hook ) {
 			remove_all_filters( $hook );
 		}
 
 		unset( $_GET['pay_for_order'] );
 
-		parent::tearDown();
+		parent::tear_down();
 	}
 
 	/**

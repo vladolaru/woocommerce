@@ -47,22 +47,22 @@ class MultiCurrencyNameYourPriceCompatibilityControllerTest extends WC_Unit_Test
 	/**
 	 * Set up test fixtures.
 	 */
-	public function setUp(): void {
-		parent::setUp();
+	public function set_up(): void {
+		parent::set_up();
 		$this->original_request = $_REQUEST; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Captures request fixture state for restoration.
 	}
 
 	/**
 	 * Tear down test fixtures.
 	 */
-	public function tearDown(): void {
+	public function tear_down(): void {
 		foreach ( $this->hooks as $hook ) {
 			remove_all_filters( $hook );
 		}
 
 		$_REQUEST = $this->original_request; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Restores request fixture state.
 
-		parent::tearDown();
+		parent::tear_down();
 	}
 
 	/**

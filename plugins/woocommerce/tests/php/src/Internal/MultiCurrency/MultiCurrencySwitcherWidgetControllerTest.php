@@ -28,7 +28,7 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Tear down test fixtures.
 	 */
-	public function tearDown(): void {
+	public function tear_down(): void {
 		foreach ( $this->hooks as $hook ) {
 			remove_all_filters( $hook );
 		}
@@ -37,7 +37,7 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 
 		unset( $_GET['currency'], $_GET['s'] );
 
-		parent::tearDown();
+		parent::tear_down();
 	}
 
 	/**

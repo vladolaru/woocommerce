@@ -39,8 +39,8 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Set up test fixtures.
 	 */
-	public function setUp(): void {
-		parent::setUp();
+	public function set_up(): void {
+		parent::set_up();
 
 		$this->original_session = WC()->session;
 	}
@@ -48,7 +48,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Tear down test fixtures.
 	 */
-	public function tearDown(): void {
+	public function tear_down(): void {
 		foreach ( $this->hooks as $hook ) {
 			remove_all_filters( $hook );
 		}
@@ -66,7 +66,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 		delete_option( '_wcpay_feature_mc_cache_optimized' );
 		WC()->session = $this->original_session;
 
-		parent::tearDown();
+		parent::tear_down();
 	}
 
 	/**
