@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutBridge;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressPaymentMethodTypes;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPlatformPaymentMethodContext;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
@@ -134,6 +135,13 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	private WooPaymentsTokenService $token_service;
 
 	/**
+	 * WooPayments customer service.
+	 *
+	 * @var WooPaymentsCustomerService
+	 */
+	private WooPaymentsCustomerService $customer_service;
+
+	/**
 	 * Constructor.
 	 */
 	public function __construct() {
@@ -173,14 +181,15 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 *
 	 * @internal
 	 *
-	 * @param PaymentProcessingService       $processing_service Payment processing service.
-	 * @param WooPaymentsProvider            $provider           WooPayments provider.
-	 * @param WooPaymentsCheckoutBridge|null $checkout_bridge    Optional checkout bridge.
-	 * @param WooPaymentsApiClient|null      $api_client         Optional API client.
-	 * @param WooPaymentsAccountService|null $account_service    Optional account service.
-	 * @param WooPaymentsTokenService|null   $token_service      Optional token service.
+	 * @param PaymentProcessingService        $processing_service Payment processing service.
+	 * @param WooPaymentsProvider             $provider           WooPayments provider.
+	 * @param WooPaymentsCheckoutBridge|null  $checkout_bridge    Optional checkout bridge.
+	 * @param WooPaymentsApiClient|null       $api_client         Optional API client.
+	 * @param WooPaymentsAccountService|null  $account_service    Optional account service.
+	 * @param WooPaymentsTokenService|null    $token_service      Optional token service.
+	 * @param WooPaymentsCustomerService|null $customer_service   Optional customer service.
 	 */
-	final public function init( PaymentProcessingService $processing_service, WooPaymentsProvider $provider, ?WooPaymentsCheckoutBridge $checkout_bridge = null, ?WooPaymentsApiClient $api_client = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsTokenService $token_service = null ): void {
+	final public function init( PaymentProcessingService $processing_service, WooPaymentsProvider $provider, ?WooPaymentsCheckoutBridge $checkout_bridge = null, ?WooPaymentsApiClient $api_client = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsCustomerService $customer_service = null ): void {
 		$this->processing_service = $processing_service;
 		$this->provider           = $provider;
 
@@ -198,6 +207,10 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 		if ( null !== $token_service ) {
 			$this->token_service = $token_service;
+		}
+
+		if ( null !== $customer_service ) {
+			$this->customer_service = $customer_service;
 		}
 	}
 
@@ -231,6 +244,16 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			$setup_intent = $this->get_api_client()->get_setup_intention( $setup_intent_id );
 			$status       = isset( $setup_intent['status'] ) ? (string) $setup_intent['status'] : '';
 			if ( 'succeeded' !== $status ) {
+				return $this->add_payment_method_error( __( 'Failed to add the provided payment method. Please try again later.', 'woocommerce' ) );
+			}
+
+			// Reject SetupIntents owned by a different WooPayments customer to prevent attaching another
+			// user's payment method. This is a no-op when either customer ID is unknown (e.g. the server
+			// already scopes the intent, or the user has no WooPayments customer yet), so we only reject
+			// on a real mismatch between two known IDs.
+			$intent_customer = $this->get_setup_intent_customer_id( $setup_intent );
+			$user_customer   = (string) $this->get_customer_service()->get_customer_id_by_user_id( $user_id );
+			if ( '' !== $intent_customer && '' !== $user_customer && $intent_customer !== $user_customer ) {
 				return $this->add_payment_method_error( __( 'Failed to add the provided payment method. Please try again later.', 'woocommerce' ) );
 			}
 
@@ -965,6 +988,19 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
+	 * Get the native WooPayments customer service.
+	 *
+	 * @return WooPaymentsCustomerService
+	 */
+	private function get_customer_service(): WooPaymentsCustomerService {
+		if ( ! isset( $this->customer_service ) ) {
+			$this->customer_service = wc_get_container()->get( WooPaymentsCustomerService::class );
+		}
+
+		return $this->customer_service;
+	}
+
+	/**
 	 * Complete WC Subscriptions bookkeeping after a successful customer payment-method change.
 	 *
 	 * @param WC_Order             $order  Subscription order.
@@ -1175,6 +1211,24 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 		if ( isset( $setup_intent['payment_method'] ) && is_array( $setup_intent['payment_method'] ) && isset( $setup_intent['payment_method']['id'] ) ) {
 			return (string) $setup_intent['payment_method']['id'];
+		}
+
+		return '';
+	}
+
+	/**
+	 * Get the WooPayments customer ID from a SetupIntent response.
+	 *
+	 * @param array<string,mixed> $setup_intent SetupIntent response.
+	 * @return string
+	 */
+	private function get_setup_intent_customer_id( array $setup_intent ): string {
+		if ( isset( $setup_intent['customer'] ) && is_string( $setup_intent['customer'] ) ) {
+			return $setup_intent['customer'];
+		}
+
+		if ( isset( $setup_intent['customer'] ) && is_array( $setup_intent['customer'] ) && isset( $setup_intent['customer']['id'] ) ) {
+			return (string) $setup_intent['customer']['id'];
 		}
 
 		return '';

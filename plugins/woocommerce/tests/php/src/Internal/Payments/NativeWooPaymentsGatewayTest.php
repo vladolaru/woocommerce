@@ -12,6 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\ProviderContract;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutBridge;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressPaymentMethodTypes;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
@@ -703,6 +704,109 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'success', $result['result'] );
 		$this->assertSame( wc_get_endpoint_url( 'payment-methods' ), $result['redirect'] );
+	}
+
+	/**
+	 * @testdox Should save setup-intent payment methods when the intent customer matches the current user.
+	 */
+	public function test_add_payment_method_saves_setup_intent_when_customer_matches(): void {
+		$user_id = self::factory()->user->create();
+		wp_set_current_user( $user_id );
+		$_POST['wcpay-setup-intent'] = 'seti_native';
+
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_setup_intention' ) )
+			->getMock();
+		$api_client
+			->expects( $this->once() )
+			->method( 'get_setup_intention' )
+			->with( 'seti_native' )
+			->willReturn(
+				array(
+					'id'             => 'seti_native',
+					'status'         => 'succeeded',
+					'customer'       => 'cus_me',
+					'payment_method' => 'pm_added',
+				)
+			);
+
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_customer_id_by_user_id' ) )
+			->getMock();
+		$customer_service
+			->method( 'get_customer_id_by_user_id' )
+			->with( $user_id )
+			->willReturn( 'cus_me' );
+
+		$token_service = $this->getMockBuilder( WooPaymentsTokenService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_card_token_for_user' ) )
+			->getMock();
+		$token_service
+			->expects( $this->once() )
+			->method( 'get_or_create_card_token_for_user' )
+			->with( 'pm_added', $user_id )
+			->willReturn( $this->create_card_token( $user_id, 'pm_added' ) );
+
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client, null, $token_service, $customer_service );
+
+		$result = $gateway->add_payment_method();
+
+		$this->assertSame( 'success', $result['result'] );
+		$this->assertSame( wc_get_endpoint_url( 'payment-methods' ), $result['redirect'] );
+	}
+
+	/**
+	 * @testdox Should reject setup intents whose customer belongs to another user and not create a token.
+	 */
+	public function test_add_payment_method_rejects_setup_intent_owned_by_another_customer(): void {
+		$user_id = self::factory()->user->create();
+		wp_set_current_user( $user_id );
+		$_POST['wcpay-setup-intent'] = 'seti_native';
+
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_setup_intention' ) )
+			->getMock();
+		$api_client
+			->expects( $this->once() )
+			->method( 'get_setup_intention' )
+			->with( 'seti_native' )
+			->willReturn(
+				array(
+					'id'             => 'seti_native',
+					'status'         => 'succeeded',
+					'customer'       => 'cus_other',
+					'payment_method' => 'pm_added',
+				)
+			);
+
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_customer_id_by_user_id' ) )
+			->getMock();
+		$customer_service
+			->method( 'get_customer_id_by_user_id' )
+			->with( $user_id )
+			->willReturn( 'cus_me' );
+
+		$token_service = $this->getMockBuilder( WooPaymentsTokenService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_card_token_for_user' ) )
+			->getMock();
+		$token_service
+			->expects( $this->never() )
+			->method( 'get_or_create_card_token_for_user' );
+
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client, null, $token_service, $customer_service );
+
+		$result = $gateway->add_payment_method();
+
+		$this->assertSame( array( 'result' => 'error' ), $result );
 	}
 
 	/**
