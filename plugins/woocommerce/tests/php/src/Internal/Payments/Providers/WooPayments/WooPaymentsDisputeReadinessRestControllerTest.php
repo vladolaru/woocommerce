@@ -316,7 +316,7 @@ class WooPaymentsDisputeReadinessRestControllerTest extends WC_REST_Unit_Test_Ca
 	private function assertRouteHasMethod( array $handlers, string $method ): void {
 		foreach ( $handlers as $handler ) {
 			if ( isset( $handler['methods'][ $method ] ) && $handler['methods'][ $method ] ) {
-				$this->assertTrue( true );
+				$this->assertNotEmpty( $handler['methods'][ $method ], "Route handler should enable the {$method} method." );
 				return;
 			}
 		}

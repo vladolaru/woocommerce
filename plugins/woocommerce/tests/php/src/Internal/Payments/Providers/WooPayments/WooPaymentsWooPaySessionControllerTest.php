@@ -740,7 +740,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	private function assertRouteHasMethod( array $route_handlers, string $method ): void {
 		foreach ( $route_handlers as $handler ) {
 			if ( isset( $handler['methods'][ $method ] ) ) {
-				$this->assertTrue( true );
+				$this->assertArrayHasKey( $method, $handler['methods'], "Route handler should register the {$method} method." );
 				return;
 			}
 		}
