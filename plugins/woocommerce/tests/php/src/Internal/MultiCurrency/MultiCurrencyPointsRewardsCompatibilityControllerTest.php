@@ -131,6 +131,52 @@ class MultiCurrencyPointsRewardsCompatibilityControllerTest extends WC_Unit_Test
 	}
 
 	/**
+	 * @testdox Should preserve backtrace matching semantics against a real call stack.
+	 */
+	public function test_is_call_in_backtrace_preserves_semantics_against_real_stack(): void {
+		$sut = new class() extends MultiCurrencyPointsRewardsCompatibilityController {
+			/**
+			 * Expose the real is_call_in_backtrace() against the live stack.
+			 *
+			 * @param string[] $calls Expected call strings.
+			 * @return bool
+			 */
+			public function matches_current_backtrace( array $calls ): bool {
+				return $this->is_call_in_backtrace( $calls );
+			}
+		};
+
+		$fixture = new class() {
+			/**
+			 * Ask the controller whether an instance-method call is on the stack.
+			 *
+			 * @param object $controller Controller exposing matches_current_backtrace().
+			 * @return bool
+			 */
+			public function matches_instance_method_call( object $controller ): bool {
+				return $controller->matches_current_backtrace( array( self::class . '->matches_instance_method_call' ) );
+			}
+
+			/**
+			 * Ask the controller whether a static-method call is on the stack.
+			 *
+			 * @param object $controller Controller exposing matches_current_backtrace().
+			 * @return bool
+			 */
+			public static function matches_static_method_call( object $controller ): bool {
+				return $controller->matches_current_backtrace( array( self::class . '::matches_static_method_call' ) );
+			}
+		};
+
+		// A stack that includes the expected call returns true for both instance and static frames.
+		$this->assertTrue( $fixture->matches_instance_method_call( $sut ) );
+		$this->assertTrue( $fixture::matches_static_method_call( $sut ) );
+
+		// A stack that does not include the expected call returns false.
+		$this->assertFalse( $sut->matches_current_backtrace( array( 'Nonexistent_Class->nonexistent_method' ) ) );
+	}
+
+	/**
 	 * Assert Points and Rewards hooks are not registered for a controller.
 	 *
 	 * @param MultiCurrencyPointsRewardsCompatibilityController $sut The controller.

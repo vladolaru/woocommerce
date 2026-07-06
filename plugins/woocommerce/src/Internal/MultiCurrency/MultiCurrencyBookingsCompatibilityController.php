@@ -293,10 +293,21 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 	 * @return bool
 	 */
 	protected function is_call_in_backtrace( array $calls ): bool {
-		$backtrace = wp_debug_backtrace_summary( null, 0, false ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_wp_debug_backtrace_summary -- WooPayments-compatible compatibility guard.
+		$expected_lookup = array_fill_keys( $calls, true );
 
-		foreach ( $calls as $call ) {
-			if ( in_array( $call, $backtrace, true ) ) {
+		// Cheaper equivalent of wp_debug_backtrace_summary( null, 0, false ) + in_array():
+		// DEBUG_BACKTRACE_IGNORE_ARGS skips capturing argument values, and the loop early-returns
+		// on the first matching frame instead of formatting the whole stack into a summary array.
+		foreach ( debug_backtrace( DEBUG_BACKTRACE_IGNORE_ARGS ) as $frame ) { // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_debug_backtrace -- Compatibility guard on the price/cart hot path.
+			if ( empty( $frame['function'] ) ) {
+				continue;
+			}
+
+			$call = isset( $frame['class'] )
+				? (string) $frame['class'] . (string) ( $frame['type'] ?? '::' ) . (string) $frame['function']
+				: (string) $frame['function'];
+
+			if ( isset( $expected_lookup[ $call ] ) ) {
 				return true;
 			}
 		}
