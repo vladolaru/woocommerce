@@ -120,7 +120,7 @@ class PaymentProcessingService {
 				: $this->charge_provider( $context, $provider, $idempotency_key );
 
 			try {
-				$this->apply_checkout_outcome( $order, $outcome );
+				$this->apply_checkout_outcome( $order, $outcome, $provider );
 			} catch ( Throwable $apply_exception ) {
 				if ( ! $outcome->is_successful() ) {
 					throw $apply_exception;
@@ -222,7 +222,7 @@ class PaymentProcessingService {
 		}
 
 		try {
-			$refund_instance = $this->resolve_refund_instance_id( $order, $amount, $reason );
+			$refund_instance = $this->resolve_provider_refund_instance_id( $order, $amount, $reason, $provider );
 			$idempotency_key = $this->idempotency->derive_key( $order, $provider->get_id(), 'refund', $amount, (string) $order->get_currency(), $reason, $refund_instance );
 
 			try {
@@ -292,7 +292,38 @@ class PaymentProcessingService {
 	 * @return string|null
 	 */
 	protected function resolve_refund_instance_id( WC_Order $order, float $amount, string $reason ): ?string {
-		$matched_refund = $this->find_matching_refund( $order, $amount, $reason, array( self::PROCESSED_REFUND_LINK_META_KEY ) );
+		return $this->resolve_refund_instance_id_with_meta_key( $order, $amount, $reason, self::PROCESSED_REFUND_LINK_META_KEY );
+	}
+
+	/**
+	 * Resolve the refund instance for a provider operation.
+	 *
+	 * @param WC_Order         $order    Parent order.
+	 * @param float            $amount   Refund amount.
+	 * @param string           $reason   Refund reason.
+	 * @param ProviderContract $provider Provider.
+	 * @return string|null
+	 */
+	private function resolve_provider_refund_instance_id( WC_Order $order, float $amount, string $reason, ProviderContract $provider ): ?string {
+		$processed_refund_link_meta_key = $provider->get_persistence_profile()->get_processed_refund_link_meta_key();
+		if ( self::PROCESSED_REFUND_LINK_META_KEY === $processed_refund_link_meta_key ) {
+			return $this->resolve_refund_instance_id( $order, $amount, $reason );
+		}
+
+		return $this->resolve_refund_instance_id_with_meta_key( $order, $amount, $reason, $processed_refund_link_meta_key );
+	}
+
+	/**
+	 * Resolve the refund instance using the supplied processed-refund link meta key.
+	 *
+	 * @param WC_Order $order                          Parent order.
+	 * @param float    $amount                         Refund amount.
+	 * @param string   $reason                         Refund reason.
+	 * @param string   $processed_refund_link_meta_key Provider refund link meta key.
+	 * @return string|null
+	 */
+	private function resolve_refund_instance_id_with_meta_key( WC_Order $order, float $amount, string $reason, string $processed_refund_link_meta_key ): ?string {
+		$matched_refund = $this->find_matching_refund( $order, $amount, $reason, array( $processed_refund_link_meta_key ) );
 
 		return $matched_refund instanceof WC_Order_Refund ? (string) $matched_refund->get_id() : null;
 	}
@@ -540,7 +571,7 @@ class PaymentProcessingService {
 				$outcome = $this->exception_policy->to_failed_outcome( $exception );
 			}
 
-			$this->apply_order_operation_outcome( $order, $outcome, $operation );
+			$this->apply_order_operation_outcome( $order, $outcome, $operation, $provider );
 
 			return $outcome;
 		} finally {
@@ -551,15 +582,14 @@ class PaymentProcessingService {
 	/**
 	 * Apply a provider order-operation outcome to the order lifecycle.
 	 *
-	 * @param WC_Order       $order     Order object.
-	 * @param PaymentOutcome $outcome   Provider outcome.
-	 * @param string         $operation Operation name.
+	 * @param WC_Order         $order     Order object.
+	 * @param PaymentOutcome   $outcome   Provider outcome.
+	 * @param string           $operation Operation name.
+	 * @param ProviderContract $provider  Provider.
 	 */
-	private function apply_order_operation_outcome( WC_Order $order, PaymentOutcome $outcome, string $operation ): void {
+	private function apply_order_operation_outcome( WC_Order $order, PaymentOutcome $outcome, string $operation, ProviderContract $provider ): void {
 		if ( 'capture' === $operation && PaymentOutcome::STATUS_FAILED === $outcome->get_status() ) {
-			$meta                      = $this->get_lifecycle_meta( $outcome );
-			$meta['_intention_status'] = 'requires_capture';
-			ksort( $meta );
+			$meta = $provider->get_persistence_profile()->get_capture_failure_outcome_meta( $outcome );
 
 			$this->lifecycle_service->apply_unlocked(
 				$order,
@@ -574,22 +604,23 @@ class PaymentProcessingService {
 			return;
 		}
 
-		$this->apply_checkout_outcome( $order, $outcome );
+		$this->apply_checkout_outcome( $order, $outcome, $provider );
 	}
 
 	/**
 	 * Apply a provider checkout outcome to the order lifecycle.
 	 *
-	 * @param WC_Order       $order   Order object.
-	 * @param PaymentOutcome $outcome Provider outcome.
+	 * @param WC_Order         $order    Order object.
+	 * @param PaymentOutcome   $outcome  Provider outcome.
+	 * @param ProviderContract $provider Provider.
 	 */
-	private function apply_checkout_outcome( WC_Order $order, PaymentOutcome $outcome ): void {
+	private function apply_checkout_outcome( WC_Order $order, PaymentOutcome $outcome, ProviderContract $provider ): void {
 		$this->lifecycle_service->apply_unlocked(
 			$order,
 			new PaymentLifecycleEvent(
 				$this->get_lifecycle_status( $outcome ),
 				$this->get_lifecycle_payment_reference( $outcome ),
-				$this->get_lifecycle_meta( $outcome ),
+				$this->get_lifecycle_meta( $outcome, $provider ),
 				array(),
 				$this->get_lifecycle_note( $outcome )
 			)
@@ -629,64 +660,12 @@ class PaymentProcessingService {
 	/**
 	 * Build lifecycle meta from a provider outcome.
 	 *
-	 * @param PaymentOutcome $outcome Provider outcome.
+	 * @param PaymentOutcome   $outcome  Provider outcome.
+	 * @param ProviderContract $provider Provider.
 	 * @return array<string,string>
 	 */
-	private function get_lifecycle_meta( PaymentOutcome $outcome ): array {
-		$data = $outcome->get_data();
-		$meta = isset( $data['meta'] ) && is_array( $data['meta'] ) ? $data['meta'] : array();
-
-		if ( '' !== $outcome->get_provider_payment_id() ) {
-			$meta['_intent_id'] = $outcome->get_provider_payment_id();
-		}
-
-		if ( '' !== $outcome->get_payment_method_id() ) {
-			$meta['_payment_method_id'] = $outcome->get_payment_method_id();
-		}
-
-		if ( '' !== $outcome->get_customer_id() ) {
-			$meta['_stripe_customer_id'] = $outcome->get_customer_id();
-		}
-
-		if ( ! isset( $meta['_intention_status'] ) ) {
-			$meta['_intention_status'] = $this->get_default_intention_status( $outcome );
-		}
-
-		ksort( $meta );
-
-		return array_map( 'strval', $meta );
-	}
-
-	/**
-	 * Get a default WooPayments-compatible intention status for an outcome.
-	 *
-	 * @param PaymentOutcome $outcome Provider outcome.
-	 * @return string
-	 */
-	private function get_default_intention_status( PaymentOutcome $outcome ): string {
-		switch ( $outcome->get_status() ) {
-			case PaymentOutcome::STATUS_COMPLETED:
-			case PaymentOutcome::STATUS_NO_EXTERNAL_PAYMENT:
-				return 'succeeded';
-
-			case PaymentOutcome::STATUS_AUTHORIZED:
-				return 'requires_capture';
-
-			case PaymentOutcome::STATUS_PENDING_ASYNC:
-				return 'processing';
-
-			case PaymentOutcome::STATUS_REQUIRES_REDIRECT:
-			case PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION:
-				return 'requires_action';
-
-			case PaymentOutcome::STATUS_FAILED:
-				return 'requires_payment_method';
-
-			case PaymentOutcome::STATUS_CANCELED:
-				return 'canceled';
-		}
-
-		return '';
+	private function get_lifecycle_meta( PaymentOutcome $outcome, ProviderContract $provider ): array {
+		return $provider->get_persistence_profile()->get_outcome_meta( $outcome );
 	}
 
 	/**

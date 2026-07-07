@@ -152,6 +152,34 @@ class WooPaymentsPersistenceProfileTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should keep failed captures in the WooPayments requires-capture state.
+	 */
+	public function test_capture_failure_meta_keeps_requires_capture_status(): void {
+		$outcome = new PaymentOutcome(
+			PaymentOutcome::STATUS_FAILED,
+			'pi_123',
+			'',
+			'',
+			'',
+			array(
+				'meta' => array(
+					'_charge_id'        => 'ch_123',
+					'_intention_status' => 'requires_payment_method',
+				),
+			)
+		);
+
+		$this->assertSame(
+			array(
+				'_charge_id'        => 'ch_123',
+				'_intent_id'        => 'pi_123',
+				'_intention_status' => 'requires_capture',
+			),
+			$this->sut->get_capture_failure_outcome_meta( $outcome )
+		);
+	}
+
+	/**
 	 * Data provider for neutral outcome status mappings.
 	 *
 	 * @return array<string,array{string,string}>

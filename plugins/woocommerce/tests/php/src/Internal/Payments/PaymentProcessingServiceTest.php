@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOperationIdempotency;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\ProviderContract;
+use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceProfile;
 use RuntimeException;
 use WC_Order;
 use WC_Order_Refund;
@@ -155,6 +156,154 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pm_requires_action', $order->get_meta( '_payment_method_id', true ) );
 		$this->assertSame( 'cus_requires_action', $order->get_meta( '_stripe_customer_id', true ) );
 		$this->assertSame( 'ch_requires_action', $order->get_meta( '_charge_id', true ) );
+	}
+
+	/**
+	 * @testdox Should persist checkout outcome metadata from the provider profile.
+	 */
+	public function test_process_checkout_outcome_uses_provider_profile_meta(): void {
+		$order    = $this->create_woopayments_order( '12.00' );
+		$outcome  = new PaymentOutcome(
+			PaymentOutcome::STATUS_COMPLETED,
+			'remote_payment_123',
+			'',
+			'remote_method_123',
+			'remote_customer_123'
+		);
+		$provider = new class( $outcome ) extends RecordingProvider {
+
+			/**
+			 * Get the provider/gateway ID.
+			 *
+			 * @return string
+			 */
+			public function get_id(): string {
+				return 'offline_redirect_provider';
+			}
+
+			/**
+			 * Get the provider persistence profile.
+			 *
+			 * @return ProviderPersistenceProfile
+			 */
+			public function get_persistence_profile(): ProviderPersistenceProfile {
+				return new class() implements ProviderPersistenceProfile {
+
+					/**
+					 * Get the provider gateway ID.
+					 *
+					 * @return string
+					 */
+					public function get_gateway_id(): string {
+						return 'offline_redirect_provider';
+					}
+
+					/**
+					 * Get the provider gateway ID prefix.
+					 *
+					 * @return string
+					 */
+					public function get_gateway_id_prefix(): string {
+						return 'offline_redirect_provider_';
+					}
+
+					/**
+					 * Get the order payment lock key.
+					 *
+					 * @param WC_Order $order Order object.
+					 * @return string
+					 */
+					public function get_order_lock_key( WC_Order $order ): string {
+						return 'offline_provider_processing_' . $order->get_id();
+					}
+
+					/**
+					 * Get the lock sentinel value.
+					 *
+					 * @return string
+					 */
+					public function get_lock_sentinel(): string {
+						return '-1';
+					}
+
+					/**
+					 * Get the lock time-to-live in seconds.
+					 *
+					 * @return int
+					 */
+					public function get_lock_ttl_seconds(): int {
+						return 300;
+					}
+
+					/**
+					 * Get the processed refund link meta key.
+					 *
+					 * @return string
+					 */
+					public function get_processed_refund_link_meta_key(): string {
+						return '_offline_provider_refund_id';
+					}
+
+					/**
+					 * Get preserved order/refund meta keys.
+					 *
+					 * @return string[]
+					 */
+					public function get_preserved_payment_meta_keys(): array {
+						return array( '_offline_intent_id', '_offline_method_id', '_offline_customer_id', '_offline_status' );
+					}
+
+					/**
+					 * Map a neutral outcome to provider order meta.
+					 *
+					 * @param PaymentOutcome $outcome Provider outcome.
+					 * @return array<string,string>
+					 */
+					public function get_outcome_meta( PaymentOutcome $outcome ): array {
+						return array(
+							'_offline_customer_id' => $outcome->get_customer_id(),
+							'_offline_intent_id'   => $outcome->get_provider_payment_id(),
+							'_offline_method_id'   => $outcome->get_payment_method_id(),
+							'_offline_status'      => 'offline-' . $outcome->get_status(),
+						);
+					}
+
+					/**
+					 * Map a failed capture outcome to provider order meta.
+					 *
+					 * @param PaymentOutcome $outcome Provider outcome.
+					 * @return array<string,string>
+					 */
+					public function get_capture_failure_outcome_meta( PaymentOutcome $outcome ): array {
+						return array(
+							'_offline_status' => 'offline-capture-failed',
+						);
+					}
+
+					/**
+					 * Tell whether a provider-written duplicate order note should be skipped.
+					 *
+					 * @param WC_Order              $order Order object.
+					 * @param PaymentLifecycleEvent $event Lifecycle event.
+					 * @param string                $note  Note content.
+					 * @return bool
+					 */
+					public function should_skip_note( WC_Order $order, PaymentLifecycleEvent $event, string $note ): bool {
+						return false;
+					}
+				};
+			}
+		};
+
+		$this->sut->process_checkout_outcome( PaymentContext::for_checkout( $order, 'offline_redirect_provider', 'remote_method_123' ), $provider );
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'remote_payment_123', $order->get_meta( '_offline_intent_id', true ) );
+		$this->assertSame( 'remote_method_123', $order->get_meta( '_offline_method_id', true ) );
+		$this->assertSame( 'remote_customer_123', $order->get_meta( '_offline_customer_id', true ) );
+		$this->assertSame( 'offline-completed', $order->get_meta( '_offline_status', true ) );
+		$this->assertSame( '', $order->get_meta( '_intent_id', true ), 'WooPayments intent meta must not be written for providers with their own profile vocabulary.' );
 	}
 
 	/**
@@ -593,7 +742,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$linked_refund->update_meta_data( '_provider_refund_id', 're_existing' );
 		$linked_refund->save_meta_data();
 
-		$provider = new RecordingProvider(
+		$provider = new class(
 			new PaymentOutcome(
 				PaymentOutcome::STATUS_COMPLETED,
 				're_native',
@@ -606,7 +755,25 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 					),
 				)
 			)
-		);
+		) extends RecordingProvider {
+			/**
+			 * Get the provider persistence profile.
+			 *
+			 * @return ProviderPersistenceProfile
+			 */
+			public function get_persistence_profile(): ProviderPersistenceProfile {
+				return new class( $this->get_id() ) extends RecordingProviderPersistenceProfile {
+					/**
+					 * Get the processed refund link meta key.
+					 *
+					 * @return string
+					 */
+					public function get_processed_refund_link_meta_key(): string {
+						return '_provider_refund_id';
+					}
+				};
+			}
+		};
 
 		$result          = $this->sut->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 2.50, 'Adjustment' ), $provider );
 		$unlinked_refund = wc_get_order( $unlinked_refund->get_id() );
@@ -615,6 +782,10 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $result );
 		$this->assertInstanceOf( WC_Order_Refund::class, $unlinked_refund );
 		$this->assertInstanceOf( WC_Order_Refund::class, $linked_refund );
+		$this->assertSame(
+			$this->idempotency->derive_key( $order, OrderPaymentStore::GATEWAY_ID, 'refund', 2.50, 'USD', 'Adjustment', (string) $unlinked_refund->get_id() ),
+			$provider->last_idempotency_key
+		);
 		$this->assertSame( 're_native', $unlinked_refund->get_meta( '_provider_refund_id', true ) );
 		$this->assertSame( 're_existing', $linked_refund->get_meta( '_provider_refund_id', true ) );
 	}

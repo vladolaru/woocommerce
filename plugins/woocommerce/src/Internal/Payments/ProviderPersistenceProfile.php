@@ -92,6 +92,16 @@ interface ProviderPersistenceProfile {
 	public function get_outcome_meta( PaymentOutcome $outcome ): array;
 
 	/**
+	 * Map a failed capture outcome to provider order meta.
+	 *
+	 * @param PaymentOutcome $outcome Provider outcome.
+	 * @return array<string,string>
+	 *
+	 * @since 11.0.0
+	 */
+	public function get_capture_failure_outcome_meta( PaymentOutcome $outcome ): array;
+
+	/**
 	 * Tell whether a provider-written duplicate order note should be skipped.
 	 *
 	 * @param WC_Order              $order Order object.

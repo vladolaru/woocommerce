@@ -219,6 +219,22 @@ class WooPaymentsPersistenceProfile implements ProviderPersistenceProfile {
 	}
 
 	/**
+	 * Map a failed capture outcome to WooPayments order meta.
+	 *
+	 * @param PaymentOutcome $outcome Provider outcome.
+	 * @return array<string,string>
+	 *
+	 * @since 11.0.0
+	 */
+	public function get_capture_failure_outcome_meta( PaymentOutcome $outcome ): array {
+		$meta                      = $this->get_outcome_meta( $outcome );
+		$meta['_intention_status'] = 'requires_capture';
+		ksort( $meta );
+
+		return array_map( 'strval', $meta );
+	}
+
+	/**
 	 * Tell whether a provider-written duplicate order note should be skipped.
 	 *
 	 * @param WC_Order              $order Order object.

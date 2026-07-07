@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
 use WC_Order;
 use WC_Order_Refund;
 use WC_Abstract_Order;
@@ -22,12 +23,16 @@ class OrderPaymentStore {
 	/**
 	 * Preserved WooPayments gateway ID.
 	 *
+	 * @deprecated 11.0.0 Use the provider persistence profile.
+	 *
 	 * @var string
 	 */
 	const GATEWAY_ID = 'woocommerce_payments';
 
 	/**
 	 * Preserved WooPayments split-UPE gateway ID prefix.
+	 *
+	 * @deprecated 11.0.0 Use the provider persistence profile.
 	 *
 	 * @var string
 	 */
@@ -36,12 +41,16 @@ class OrderPaymentStore {
 	/**
 	 * WooPayments-compatible order processing lock transient prefix.
 	 *
+	 * @deprecated 11.0.0 Use the provider persistence profile.
+	 *
 	 * @var string
 	 */
 	const LOCK_TRANSIENT_PREFIX = 'wcpay_processing_intent_';
 
 	/**
 	 * WooPayments-compatible sentinel used when the order is locked without a payment reference.
+	 *
+	 * @deprecated 11.0.0 Use the provider persistence profile.
 	 *
 	 * @var string
 	 */
@@ -50,48 +59,29 @@ class OrderPaymentStore {
 	/**
 	 * WooPayments lock time-to-live, in seconds.
 	 *
+	 * @deprecated 11.0.0 Use the provider persistence profile.
+	 *
 	 * @var int
 	 */
 	const LOCK_TTL_SECONDS = 300;
 
 	/**
-	 * WooPayments Bucket-E order/refund meta keys that native code must preserve.
+	 * Default WooPayments persistence profile.
 	 *
-	 * @var string[]
+	 * @var ProviderPersistenceProfile|null
 	 */
-	private const PAYMENT_META_KEYS = array(
-		'_intent_id',
-		'_payment_method_id',
-		'_charge_id',
-		'_intention_status',
-		'_charge_risk_level',
-		'_stripe_customer_id',
-		'_wcpay_fraud_meta_box_type',
-		'_wcpay_fraud_outcome_status',
-		'_wcpay_intent_currency',
-		'_wcpay_refund_id',
-		'_wcpay_refund_transaction_id',
-		'_wcpay_refund_status',
-		'_wcpay_transaction_fee',
-		'_wcpay_mode',
-		'_wcpay_payment_transaction_id',
-		'_wcpay_multibanco_entity',
-		'_wcpay_multibanco_reference',
-		'_wcpay_multibanco_expiry',
-		'_wcpay_multibanco_url',
-		'_wcpay_payment_method_details',
-		'_wcpay_ipp_channel',
-		'_wcpay_net',
-		'_stripe_mandate_id',
-		'_wcpay_express_checkout_payment_method',
-		'_wcpay_multi_currency_stripe_exchange_rate',
-		'_wcpay_multi_currency_order_exchange_rate',
-		'_wcpay_multi_currency_order_default_currency',
-		'_wcpay_fraud_outcome_manual_entry',
-		'is_woopay',
-		'last4',
-		'_card_brand',
-	);
+	private ?ProviderPersistenceProfile $persistence_profile = null;
+
+	/**
+	 * Initialize the class instance.
+	 *
+	 * @internal
+	 *
+	 * @param WooPaymentsPersistenceProfile $persistence_profile Default WooPayments persistence profile.
+	 */
+	final public function init( WooPaymentsPersistenceProfile $persistence_profile ): void {
+		$this->persistence_profile = $persistence_profile;
+	}
 
 	/**
 	 * Get the preserved WooPayments order/refund payment meta keys.
@@ -101,7 +91,7 @@ class OrderPaymentStore {
 	 * @return string[]
 	 */
 	public static function get_payment_meta_keys(): array {
-		return self::PAYMENT_META_KEYS;
+		return ( new WooPaymentsPersistenceProfile() )->get_preserved_payment_meta_keys();
 	}
 
 	/**
@@ -143,7 +133,8 @@ class OrderPaymentStore {
 	public function is_order_payment_locked( WC_Order $order, ?string $payment_reference = null ): bool {
 		$processing = get_transient( $this->get_order_payment_lock_key( $order ) );
 
-		return self::LOCK_SENTINEL === $processing || ( null !== $payment_reference && $processing === $payment_reference );
+		return $this->get_persistence_profile()->get_lock_sentinel() === $processing
+			|| ( null !== $payment_reference && $processing === $payment_reference );
 	}
 
 	/**
@@ -159,8 +150,9 @@ class OrderPaymentStore {
 	 * @return bool True when the lock was claimed.
 	 */
 	public function claim_order_payment_lock( WC_Order $order, ?string $payment_reference = null ): bool {
-		$lock_key = $this->get_order_payment_lock_key( $order );
-		$value    = empty( $payment_reference ) ? self::LOCK_SENTINEL : $payment_reference;
+		$profile  = $this->get_persistence_profile();
+		$lock_key = $profile->get_order_lock_key( $order );
+		$value    = empty( $payment_reference ) ? $profile->get_lock_sentinel() : $payment_reference;
 
 		if ( false !== get_transient( $lock_key ) ) {
 			return false;
@@ -170,12 +162,12 @@ class OrderPaymentStore {
 			( function_exists( 'wp_using_ext_object_cache' ) && wp_using_ext_object_cache() )
 			|| ( function_exists( 'wp_installing' ) && wp_installing() )
 		) {
-			return wp_cache_add( $lock_key, $value, 'transient', self::LOCK_TTL_SECONDS );
+			return wp_cache_add( $lock_key, $value, 'transient', $profile->get_lock_ttl_seconds() );
 		}
 
 		$timeout_option = '_transient_timeout_' . $lock_key;
 		$value_option   = '_transient_' . $lock_key;
-		$expiration     = time() + self::LOCK_TTL_SECONDS;
+		$expiration     = time() + $profile->get_lock_ttl_seconds();
 
 		$timeout_added = add_option( $timeout_option, $expiration, '', false );
 		$value_added   = add_option( $value_option, $value, '', false );
@@ -204,10 +196,12 @@ class OrderPaymentStore {
 	 * @param string|null $payment_reference Payment reference being processed.
 	 */
 	public function lock_order_payment( WC_Order $order, ?string $payment_reference = null ): void {
+		$profile = $this->get_persistence_profile();
+
 		set_transient(
-			$this->get_order_payment_lock_key( $order ),
-			empty( $payment_reference ) ? self::LOCK_SENTINEL : $payment_reference,
-			self::LOCK_TTL_SECONDS
+			$profile->get_order_lock_key( $order ),
+			empty( $payment_reference ) ? $profile->get_lock_sentinel() : $payment_reference,
+			$profile->get_lock_ttl_seconds()
 		);
 	}
 
@@ -230,7 +224,7 @@ class OrderPaymentStore {
 	 */
 	private function read_payment_meta( WC_Abstract_Order $order ): array {
 		$payment_meta = array();
-		$allowed_keys = array_fill_keys( self::PAYMENT_META_KEYS, true );
+		$allowed_keys = array_fill_keys( $this->get_persistence_profile()->get_preserved_payment_meta_keys(), true );
 
 		foreach ( $order->get_meta_data() as $meta ) {
 			$meta_data = $meta->get_data();
@@ -303,6 +297,19 @@ class OrderPaymentStore {
 	 * @return string Transient key.
 	 */
 	private function get_order_payment_lock_key( WC_Order $order ): string {
-		return self::LOCK_TRANSIENT_PREFIX . $order->get_id();
+		return $this->get_persistence_profile()->get_order_lock_key( $order );
+	}
+
+	/**
+	 * Get the default persistence profile.
+	 *
+	 * @return ProviderPersistenceProfile
+	 */
+	private function get_persistence_profile(): ProviderPersistenceProfile {
+		if ( null === $this->persistence_profile ) {
+			$this->persistence_profile = new WooPaymentsPersistenceProfile();
+		}
+
+		return $this->persistence_profile;
 	}
 }
