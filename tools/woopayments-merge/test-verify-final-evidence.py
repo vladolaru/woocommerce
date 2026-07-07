@@ -42,6 +42,13 @@ def test_full_evidence_plan_lists_final_gates() -> None:
     assert "token-continuity-gate.sh" in result.stdout
     assert "a5f-cutover-rehearsal.py" in result.stdout
     assert "a5g-multisite-runtime-gate.py" in result.stdout
+    assert "dispute-e2e-gate.sh" in result.stdout
+    assert "payout-evidence-gate.sh" in result.stdout
+    assert "converted-currency-gate.sh" in result.stdout
+    assert "bundle-size-gate.sh capture" in result.stdout
+    assert "bundle-size-gate.sh compare" in result.stdout
+    assert "perf-surface-gate.sh capture" in result.stdout
+    assert "perf-surface-gate.sh compare" in result.stdout
     assert "woopayments-critical-flows/test-inventory.py" in result.stdout
 
 
