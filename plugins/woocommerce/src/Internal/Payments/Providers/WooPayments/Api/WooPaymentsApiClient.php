@@ -460,6 +460,29 @@ class WooPaymentsApiClient {
 	}
 
 	/**
+	 * Retrieve WooPayments payment methods for a customer.
+	 *
+	 * @param string $customer_id Customer ID.
+	 * @param string $type        Payment method type.
+	 * @param int    $limit       Result limit.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the customer ID is invalid.
+	 */
+	public function get_payment_methods( string $customer_id, string $type, int $limit = 100 ): array {
+		$this->validate_route_customer_id( $customer_id );
+
+		return $this->request(
+			array(
+				'customer' => $customer_id,
+				'type'     => $type,
+				'limit'    => $limit,
+			),
+			self::PAYMENT_METHODS_API,
+			'GET'
+		);
+	}
+
+	/**
 	 * Retrieve WooPayments currency conversion rates.
 	 *
 	 * @param string                  $currency_from Source currency code.
@@ -1814,6 +1837,19 @@ class WooPaymentsApiClient {
 	 */
 	private function validate_route_resource_id( string $id ): void {
 		if ( '' === $id || ! preg_match( '/^[\w-]+$/', $id ) ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
+			throw new WooPaymentsApiException( __( 'Route param validation failed.', 'woocommerce' ), 'wcpay_route_validation_failure', 400 );
+		}
+	}
+
+	/**
+	 * Validate a WooPayments customer ID before using it as a route parameter.
+	 *
+	 * @param string $id Customer ID.
+	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 */
+	private function validate_route_customer_id( string $id ): void {
+		if ( '' === $id || ! preg_match( '/^\w+$/', $id ) ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
 			throw new WooPaymentsApiException( __( 'Route param validation failed.', 'woocommerce' ), 'wcpay_route_validation_failure', 400 );
 		}

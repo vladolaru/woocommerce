@@ -292,6 +292,32 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Get WooPayments payment methods for a customer.
+	 *
+	 * @param string $customer_id WooPayments customer ID.
+	 * @param string $type        Payment method type.
+	 * @return array<int,array<string,mixed>>
+	 * @throws WooPaymentsApiException When the API request fails for reasons other than a missing customer.
+	 */
+	public function get_payment_methods_for_customer( string $customer_id, string $type = 'card' ): array {
+		if ( '' === $customer_id ) {
+			return array();
+		}
+
+		try {
+			$response = $this->api_client->get_payment_methods( $customer_id, $type );
+		} catch ( WooPaymentsApiException $exception ) {
+			if ( 'resource_missing' === $exception->get_error_code() ) {
+				return array();
+			}
+
+			throw $exception;
+		}
+
+		return isset( $response['data'] ) && is_array( $response['data'] ) ? $response['data'] : array();
+	}
+
+	/**
 	 * Map WooCommerce order data to the WooPayments customer payload.
 	 *
 	 * @param WC_Order $order Order being charged.

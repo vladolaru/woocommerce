@@ -692,6 +692,62 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should retrieve customer payment methods through the native transport payment methods list endpoint.
+	 */
+	public function test_get_payment_methods_reads_customer_payment_methods_endpoint(): void {
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id  = 123;
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode(
+				array(
+					'data' => array(
+						array(
+							'id'   => 'pm_card',
+							'type' => 'card',
+						),
+					),
+				)
+			),
+		);
+
+		$sut = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( true ) );
+
+		$result = $sut->get_payment_methods( 'cus_test', 'card' );
+
+		$this->assertSame( 'pm_card', $result['data'][0]['id'] );
+		$this->assertSame( 'GET', $http_client->last_method );
+		$this->assertNull( $http_client->last_body );
+
+		$this->assertStringStartsWith( '/sites/123/wcpay/payment_methods?', $http_client->last_path );
+		$query = array();
+		wp_parse_str( (string) wp_parse_url( $http_client->last_path, PHP_URL_QUERY ), $query );
+
+		$this->assertSame( 'cus_test', $query['customer'] );
+		$this->assertSame( 'card', $query['type'] );
+		$this->assertSame( '100', $query['limit'] );
+		$this->assertSame( '1', $query['test_mode'] );
+	}
+
+	/**
+	 * @testdox Should reject invalid customer IDs before interpolating customer payment method requests.
+	 */
+	public function test_get_payment_methods_rejects_invalid_customer_id(): void {
+		$sut = new WooPaymentsApiClient();
+		$sut->init( new FakeWooPaymentsHttpClient(), $this->create_account_service( false ) );
+
+		try {
+			$sut->get_payment_methods( 'cus-test', 'card' );
+			$this->fail( 'Expected invalid customer IDs to be rejected.' );
+		} catch ( WooPaymentsApiException $exception ) {
+			$this->assertSame( 'wcpay_route_validation_failure', $exception->get_error_code() );
+			$this->assertSame( 400, $exception->get_http_code() );
+		}
+	}
+
+	/**
 	 * @testdox Should preserve the Apple Pay payment-method domain registration endpoint and body shape.
 	 */
 	public function test_register_apple_pay_domain_uses_preserved_endpoint(): void {

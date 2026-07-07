@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use WC_Order;
@@ -201,6 +202,76 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should retrieve payment methods for a customer through the API client.
+	 */
+	public function test_get_payment_methods_for_customer_delegates_to_api_client(): void {
+		$api_client                          = $this->create_customer_api_client( array() );
+		$api_client->payment_methods_by_type = array(
+			'card' => array(
+				array(
+					'id'   => 'pm_card',
+					'type' => 'card',
+				),
+			),
+		);
+		$sut                                 = $this->create_sut( false, $api_client );
+		$result                              = $sut->get_payment_methods_for_customer( 'cus_test', 'card' );
+
+		$this->assertSame( 'pm_card', $result[0]['id'] );
+		$this->assertSame(
+			array(
+				array(
+					'customer_id' => 'cus_test',
+					'type'        => 'card',
+					'limit'       => 100,
+				),
+			),
+			$api_client->payment_methods_requests
+		);
+	}
+
+	/**
+	 * @testdox Should return no payment methods for an empty customer ID.
+	 */
+	public function test_get_payment_methods_for_customer_returns_empty_for_missing_customer(): void {
+		$api_client = $this->create_customer_api_client( array() );
+		$sut        = $this->create_sut( false, $api_client );
+
+		$result = $sut->get_payment_methods_for_customer( '', 'card' );
+
+		$this->assertSame( array(), $result );
+		$this->assertSame( array(), $api_client->payment_methods_requests );
+	}
+
+	/**
+	 * @testdox Should return no payment methods when the remote customer is missing.
+	 */
+	public function test_get_payment_methods_for_customer_returns_empty_for_missing_remote_customer(): void {
+		$api_client                            = $this->create_customer_api_client( array() );
+		$api_client->payment_methods_exception = new WooPaymentsApiException( 'Missing customer.', 'resource_missing', 404 );
+		$sut                                   = $this->create_sut( false, $api_client );
+
+		$result = $sut->get_payment_methods_for_customer( 'cus_missing', 'card' );
+
+		$this->assertSame( array(), $result );
+		$this->assertSame( 'cus_missing', $api_client->payment_methods_requests[0]['customer_id'] );
+	}
+
+	/**
+	 * @testdox Should rethrow payment method API errors other than missing remote customers.
+	 */
+	public function test_get_payment_methods_for_customer_rethrows_unhandled_api_errors(): void {
+		$api_client                            = $this->create_customer_api_client( array() );
+		$api_client->payment_methods_exception = new WooPaymentsApiException( 'Forbidden.', 'wcpay_forbidden', 403 );
+		$sut                                   = $this->create_sut( false, $api_client );
+
+		$this->expectException( WooPaymentsApiException::class );
+		$this->expectExceptionMessage( 'Forbidden.' );
+
+		$sut->get_payment_methods_for_customer( 'cus_test', 'card' );
+	}
+
+	/**
 	 * @testdox Registering hooks should add the WooPayments customer-data eraser to the GDPR registry.
 	 */
 	public function test_register_adds_personal_data_eraser(): void {
@@ -319,6 +390,27 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 			public array $created_customers = array();
 
 			/**
+			 * Payment methods keyed by type.
+			 *
+			 * @var array<string,array<int,array<string,mixed>>>
+			 */
+			public array $payment_methods_by_type = array();
+
+			/**
+			 * Payment method list requests.
+			 *
+			 * @var array<int,array{customer_id:string,type:string,limit:int}>
+			 */
+			public array $payment_methods_requests = array();
+
+			/**
+			 * Optional exception thrown by payment method list requests.
+			 *
+			 * @var WooPaymentsApiException|null
+			 */
+			public ?WooPaymentsApiException $payment_methods_exception = null;
+
+			/**
 			 * Constructor.
 			 *
 			 * @param string[] $customer_ids Customer IDs to return.
@@ -349,6 +441,31 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 				$this->updated_customers[] = array(
 					'customer_id'   => $customer_id,
 					'customer_data' => $customer_data,
+				);
+			}
+
+			/**
+			 * Retrieve customer payment methods.
+			 *
+			 * @param string $customer_id Customer ID.
+			 * @param string $type        Payment method type.
+			 * @param int    $limit       Result limit.
+			 * @return array<string,mixed>
+			 * @throws WooPaymentsApiException When configured.
+			 */
+			public function get_payment_methods( string $customer_id, string $type, int $limit = 100 ): array {
+				$this->payment_methods_requests[] = array(
+					'customer_id' => $customer_id,
+					'type'        => $type,
+					'limit'       => $limit,
+				);
+
+				if ( null !== $this->payment_methods_exception ) {
+					throw $this->payment_methods_exception;
+				}
+
+				return array(
+					'data' => $this->payment_methods_by_type[ $type ] ?? array(),
 				);
 			}
 		};
