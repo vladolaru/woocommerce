@@ -68,6 +68,7 @@ class MultiCurrencyRuntimeRegistryTest extends WC_Unit_Test_Case {
 				'name_your_price_compatibility',
 				'product_addons_compatibility',
 				'subscriptions_compatibility',
+				'explicit_prices',
 				'async_prices',
 				'storefront',
 				'settings',
@@ -424,6 +425,28 @@ class MultiCurrencyRuntimeRegistryTest extends WC_Unit_Test_Case {
 			array_column( $hook_groups['product_addons_compatibility']['filters'], 'hook' )
 		);
 		$this->assertSame( array(), $hook_groups['product_addons_compatibility']['actions'] );
+	}
+
+	/**
+	 * @testdox Should preserve the WooPayments explicit price hook surface.
+	 */
+	public function test_explicit_price_manifest_contains_preserved_hooks(): void {
+		$hook_groups = MultiCurrencyRuntimeRegistry::get_core_hook_groups();
+
+		$this->assertSame(
+			array(
+				'woocommerce_cart_total',
+				'woocommerce_get_formatted_order_total',
+			),
+			array_column( $hook_groups['explicit_prices']['filters'], 'hook' )
+		);
+		$this->assertSame(
+			array(
+				'woocommerce_admin_order_totals_after_tax',
+				'woocommerce_admin_order_totals_after_total',
+			),
+			array_column( $hook_groups['explicit_prices']['actions'], 'hook' )
+		);
 	}
 
 	/**
