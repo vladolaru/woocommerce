@@ -28,6 +28,13 @@ class RecordingPaymentProcessingService extends PaymentProcessingService {
 	public ?PaymentContext $last_refund_context = null;
 
 	/**
+	 * Number of checkout processing attempts.
+	 *
+	 * @var int
+	 */
+	public int $checkout_attempt_count = 0;
+
+	/**
 	 * Checkout outcome returned by the recording service.
 	 *
 	 * @var PaymentOutcome
@@ -50,6 +57,7 @@ class RecordingPaymentProcessingService extends PaymentProcessingService {
 	 */
 	public function process_checkout( PaymentContext $context, ProviderContract $provider ): array {
 		$this->last_checkout_context = $context;
+		++$this->checkout_attempt_count;
 
 		return array(
 			'result'   => 'success',
@@ -66,6 +74,7 @@ class RecordingPaymentProcessingService extends PaymentProcessingService {
 	 */
 	public function process_checkout_outcome( PaymentContext $context, ProviderContract $provider ): PaymentOutcome {
 		$this->last_checkout_context = $context;
+		++$this->checkout_attempt_count;
 
 		return $this->checkout_outcome;
 	}

@@ -1252,6 +1252,58 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should keep completed same-cart checkouts available for duplicate replay redirects.
+	 */
+	public function test_process_payment_redirects_same_cart_replay_after_completed_outcome(): void {
+		$customer_id = self::factory()->user->create();
+		$cart_hash   = 'same-cart-hash';
+		$session     = $this->create_session();
+		$service     = new RecordingPaymentProcessingService();
+		$gateway     = new NativeWooPaymentsGateway();
+		$gateway->init(
+			$service,
+			new WooPaymentsProvider(),
+			null,
+			null,
+			null,
+			null,
+			null,
+			$this->create_fraud_prevention_service( false, $session ),
+			new WooPaymentsFailedTransactionRateLimiter( $session ),
+			$this->create_duplicate_payment_prevention_service( $session )
+		);
+
+		$first_order = $this->create_order();
+		$first_order->set_cart_hash( $cart_hash );
+		$first_order->set_customer_id( $customer_id );
+		$first_order->save();
+
+		$_POST['wcpay-payment-method'] = 'pm_card_visa';
+		$first_result                  = $gateway->process_payment( $first_order->get_id() );
+		$first_order->update_status( 'processing' );
+		$first_order->save();
+
+		$second_order = $this->create_order();
+		$second_order->set_cart_hash( $cart_hash );
+		$second_order->set_customer_id( $customer_id );
+		$second_order->update_status( 'pending' );
+		$second_order->save();
+
+		$second_result = $gateway->process_payment( $second_order->get_id() );
+
+		$this->assertSame( 'success', $first_result['result'] );
+		$this->assertSame( 'success', $second_result['result'] );
+		$this->assertSame( 1, $service->checkout_attempt_count );
+		$this->assertStringContainsString( (string) $first_order->get_id(), $second_result['redirect'] );
+		$this->assertStringContainsString( 'wcpay_paid_for_previous_order=yes', $second_result['redirect'] );
+		$this->assertNull( $session->get( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER ) );
+
+		$deleted_order = wc_get_order( $second_order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $deleted_order );
+		$this->assertSame( 'trash', $deleted_order->get_status() );
+	}
+
+	/**
 	 * @testdox Should redirect an order with an already successful attached PaymentIntent before charging again.
 	 */
 	public function test_process_payment_redirects_successful_attached_intent_before_processing(): void {

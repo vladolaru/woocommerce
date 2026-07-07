@@ -858,9 +858,6 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		);
 		$outcome = $this->get_processing_service()->process_checkout_outcome( $context, $this->get_provider() );
 		$this->maybe_bump_failed_transaction_rate_limiter( $outcome );
-		if ( PaymentOutcome::STATUS_COMPLETED === $outcome->get_status() ) {
-			$this->get_duplicate_payment_prevention_service()->remove_session_processing_order( $order->get_id() );
-		}
 
 		$result = self::format_checkout_result( $context, $order, $outcome );
 
