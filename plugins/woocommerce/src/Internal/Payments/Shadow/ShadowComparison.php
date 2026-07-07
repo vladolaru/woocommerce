@@ -16,11 +16,20 @@ namespace Automattic\WooCommerce\Internal\Payments\Shadow;
 class ShadowComparison {
 
 	/**
-	 * A1 comparison type: baseline read/store projection, not independent native processing.
+	 * Comparison type: independent native projection from provider intent data.
 	 *
 	 * @var string
 	 */
-	const COMPARISON_TYPE_A1_PROJECTION_BASELINE = 'a1_projection_baseline';
+	const COMPARISON_TYPE_NATIVE_PROJECTION = 'native_projection';
+
+	/**
+	 * Deprecated A1 comparison type alias.
+	 *
+	 * @deprecated 11.0.0 Use COMPARISON_TYPE_NATIVE_PROJECTION.
+	 *
+	 * @var string
+	 */
+	const COMPARISON_TYPE_A1_PROJECTION_BASELINE = self::COMPARISON_TYPE_NATIVE_PROJECTION;
 
 	/**
 	 * Trigger name.
@@ -146,8 +155,8 @@ class ShadowComparison {
 		return array(
 			'trigger'                        => $this->trigger,
 			'order_id'                       => $this->order_id,
-			'comparison_type'                => self::COMPARISON_TYPE_A1_PROJECTION_BASELINE,
-			'independent_native_computation' => false,
+			'comparison_type'                => self::COMPARISON_TYPE_NATIVE_PROJECTION,
+			'independent_native_computation' => true,
 			'actual'                         => $this->actual,
 			'native_computed'                => $this->native_computed,
 			'diff'                           => $this->diff,
@@ -168,8 +177,8 @@ class ShadowComparison {
 		$payload = array(
 			'trigger'                        => $this->trigger,
 			'order_id'                       => $this->order_id,
-			'comparison_type'                => self::COMPARISON_TYPE_A1_PROJECTION_BASELINE,
-			'independent_native_computation' => false,
+			'comparison_type'                => self::COMPARISON_TYPE_NATIVE_PROJECTION,
+			'independent_native_computation' => true,
 			'has_diff'                       => ! empty( $this->diff ),
 			'diff'                           => $this->diff,
 			'actual_hash'                    => $this->hash_surface( $this->actual ),
