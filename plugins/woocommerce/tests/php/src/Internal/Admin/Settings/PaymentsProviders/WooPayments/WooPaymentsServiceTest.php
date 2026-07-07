@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PaymentGateway;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -639,6 +640,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			->onlyMethods(
 				array(
 					'is_onboarding_runtime_available',
+					'is_native_onboarding_available',
 					'get_payment_gateway',
 					'has_account',
 					'has_valid_account',
@@ -653,6 +655,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			->getMock();
 
 		$adapter->method( 'is_onboarding_runtime_available' )->willReturn( true );
+		$adapter->method( 'is_native_onboarding_available' )->willReturn( true );
 		$adapter->method( 'get_payment_gateway' )->willReturn( new FakePaymentGateway() );
 		$adapter->method( 'has_account' )->willReturn( false );
 		$adapter->method( 'has_valid_account' )->willReturn( false );
@@ -823,6 +826,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			->onlyMethods(
 				array(
 					'is_onboarding_runtime_available',
+					'is_native_onboarding_available',
 					'get_payment_gateway',
 					'has_account',
 					'has_valid_account',
@@ -837,6 +841,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			->getMock();
 
 		$adapter->method( 'is_onboarding_runtime_available' )->willReturn( true );
+		$adapter->method( 'is_native_onboarding_available' )->willReturn( true );
 		$adapter->method( 'get_payment_gateway' )->willReturn( new FakePaymentGateway() );
 		$adapter->method( 'has_account' )->willReturn( false );
 		$adapter->method( 'has_valid_account' )->willReturn( false );
@@ -1012,6 +1017,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			->onlyMethods(
 				array(
 					'is_onboarding_runtime_available',
+					'is_native_onboarding_available',
 					'get_payment_gateway',
 					'has_account',
 					'has_valid_account',
@@ -1024,6 +1030,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			->getMock();
 
 		$adapter->method( 'is_onboarding_runtime_available' )->willReturn( true );
+		$adapter->method( 'is_native_onboarding_available' )->willReturn( true );
 		$adapter->method( 'get_payment_gateway' )->willReturn( new FakePaymentGateway() );
 		$adapter->method( 'has_account' )->willReturn( false );
 		$adapter->method( 'has_valid_account' )->willReturn( false );
@@ -1093,6 +1100,149 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Onboarding actions use the legacy endpoint when native onboarding is unavailable.
+	 */
+	public function test_onboarding_test_account_init_uses_legacy_endpoint_when_native_onboarding_is_unavailable(): void {
+		$native_call_count = 0;
+		$legacy_endpoint   = null;
+		$api_client        = new class( $native_call_count ) extends WooPaymentsApiClient {
+			/**
+			 * Native initialize call count.
+			 *
+			 * @var int
+			 */
+			private int $native_call_count;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param int $native_call_count Native initialize call count.
+			 */
+			public function __construct( int &$native_call_count ) {
+				$this->native_call_count = &$native_call_count;
+			}
+
+			/**
+			 * Tell whether the fake client is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Count unexpected native onboarding init calls.
+			 *
+			 * @param bool        $live_account   Whether the account is live.
+			 * @param string      $return_url     Return URL for the onboarding flow.
+			 * @param array       $site_data      Site data.
+			 * @param array       $user_data      User data.
+			 * @param array       $account_data   Account data.
+			 * @param array       $actioned_notes Actioned notes.
+			 * @param string|null $referral_code  Referral code.
+			 * @return array
+			 */
+			public function initialize_onboarding( bool $live_account, string $return_url, array $site_data = array(), array $user_data = array(), array $account_data = array(), array $actioned_notes = array(), ?string $referral_code = null ): array {
+				unset( $live_account, $return_url, $site_data, $user_data, $account_data, $actioned_notes, $referral_code );
+				++$this->native_call_count;
+
+				return array(
+					'success' => true,
+					'url'     => false,
+				);
+			}
+		};
+		$adapter           = $this->getMockBuilder( WooPaymentsOnboardingAdapter::class )
+			->disableOriginalConstructor()
+			->onlyMethods(
+				array(
+					'is_onboarding_runtime_available',
+					'is_native_onboarding_available',
+					'get_payment_gateway',
+					'has_account',
+					'has_valid_account',
+					'has_working_account',
+					'has_test_account',
+					'has_sandbox_account',
+					'has_live_account',
+				)
+			)
+			->getMock();
+
+		$adapter->method( 'is_onboarding_runtime_available' )->willReturn( true );
+		$adapter->method( 'is_native_onboarding_available' )->willReturn( false );
+		$adapter->method( 'get_payment_gateway' )->willReturn( new FakePaymentGateway() );
+		$adapter->method( 'has_account' )->willReturn( false );
+		$adapter->method( 'has_valid_account' )->willReturn( false );
+		$adapter->method( 'has_working_account' )->willReturn( false );
+		$adapter->method( 'has_test_account' )->willReturn( false );
+		$adapter->method( 'has_sandbox_account' )->willReturn( false );
+		$adapter->method( 'has_live_account' )->willReturn( false );
+
+		$this->mock_wpcom_connection_manager->method( 'is_connected' )->willReturn( true );
+		$this->mock_wpcom_connection_manager->method( 'has_connected_owner' )->willReturn( true );
+		update_option(
+			WooPaymentsService::NOX_PROFILE_OPTION_KEY,
+			array(
+				'onboarding' => array(
+					'US' => array(
+						'steps' => array(
+							WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => array(
+								'data' => array(
+									'payment_methods' => array(
+										'card' => true,
+									),
+								),
+							),
+						),
+					),
+				),
+			)
+		);
+		$this->mockable_proxy->register_function_mocks(
+			array(
+				'class_exists' => function ( $class_to_check ) {
+					if ( $this->is_woopayments_class( $class_to_check ) ) {
+						return false;
+					}
+
+					return false;
+				},
+			)
+		);
+		$this->mockable_proxy->register_static_mocks(
+			array(
+				Utils::class => array(
+					'rest_endpoint_post_request' => function ( string $endpoint ) use ( &$legacy_endpoint ) {
+						$legacy_endpoint = $endpoint;
+
+						return array(
+							'success' => true,
+						);
+					},
+				),
+			)
+		);
+
+		$this->sut = new WooPaymentsService();
+		$this->sut->init(
+			$this->mock_providers,
+			$this->mockable_proxy,
+			$adapter,
+			$this->create_legacy_runtime(),
+			$api_client,
+			$this->create_native_account_service()
+		);
+
+		$result = $this->sut->onboarding_test_account_init( 'US' );
+
+		$this->assertSame( array( 'success' => true ), $result );
+		$this->assertSame( 0, $native_call_count );
+		$this->assertSame( '/wc/v3/payments/onboarding/test_drive_account/init', $legacy_endpoint );
+	}
+
+	/**
 	 * Test native onboarding reset immediately clears stale account readiness.
 	 *
 	 * @return void
@@ -1144,6 +1294,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			->onlyMethods(
 				array(
 					'is_onboarding_runtime_available',
+					'is_native_onboarding_available',
 					'get_payment_gateway',
 					'has_account',
 					'has_valid_account',
@@ -1156,6 +1307,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			->getMock();
 
 		$adapter->method( 'is_onboarding_runtime_available' )->willReturn( true );
+		$adapter->method( 'is_native_onboarding_available' )->willReturn( true );
 		$adapter->method( 'get_payment_gateway' )->willReturn( new FakePaymentGateway() );
 		$adapter->method( 'has_account' )->willReturn( true );
 		$adapter->method( 'has_valid_account' )->willReturn( true );
@@ -1232,7 +1384,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$adapter         = new WooPaymentsOnboardingAdapter();
 		$account_service = new WooPaymentsAccountService();
 		$account_service->init( $this->mockable_proxy );
-		$adapter->init( $this->create_legacy_runtime(), $provider, new NativeWooPaymentsGateway(), $account_service );
+		$adapter->init( $this->create_legacy_runtime(), $provider, new NativeWooPaymentsGateway(), $account_service, wc_get_container()->get( NativePaymentsRuntimeArbiter::class ) );
 
 		return $adapter;
 	}

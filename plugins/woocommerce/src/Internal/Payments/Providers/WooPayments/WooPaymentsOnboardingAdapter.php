@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PaymentGateway;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativeWooPaymentsGateway;
 use Throwable;
 use WC_Payment_Gateway;
@@ -53,20 +54,29 @@ class WooPaymentsOnboardingAdapter {
 	private WooPaymentsAccountService $account_service;
 
 	/**
+	 * Runtime ownership arbiter.
+	 *
+	 * @var NativePaymentsRuntimeArbiter
+	 */
+	private NativePaymentsRuntimeArbiter $arbiter;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsLegacyRuntime  $legacy_runtime  WooPayments legacy runtime.
-	 * @param WooPaymentsProvider       $provider        WooPayments provider.
-	 * @param NativeWooPaymentsGateway  $native_gateway  Native WooPayments gateway.
-	 * @param WooPaymentsAccountService $account_service Native WooPayments account service.
+	 * @param WooPaymentsLegacyRuntime     $legacy_runtime  WooPayments legacy runtime.
+	 * @param WooPaymentsProvider          $provider        WooPayments provider.
+	 * @param NativeWooPaymentsGateway     $native_gateway  Native WooPayments gateway.
+	 * @param WooPaymentsAccountService    $account_service Native WooPayments account service.
+	 * @param NativePaymentsRuntimeArbiter $arbiter         Runtime ownership arbiter.
 	 */
-	final public function init( WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsProvider $provider, NativeWooPaymentsGateway $native_gateway, WooPaymentsAccountService $account_service ): void {
+	final public function init( WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsProvider $provider, NativeWooPaymentsGateway $native_gateway, WooPaymentsAccountService $account_service, NativePaymentsRuntimeArbiter $arbiter ): void {
 		$this->legacy_runtime  = $legacy_runtime;
 		$this->provider        = $provider;
 		$this->native_gateway  = $native_gateway;
 		$this->account_service = $account_service;
+		$this->arbiter         = $arbiter;
 	}
 
 	/**
@@ -106,6 +116,10 @@ class WooPaymentsOnboardingAdapter {
 	 * @return bool
 	 */
 	public function is_native_onboarding_available(): bool {
+		if ( ! $this->arbiter->should_native_register() ) {
+			return false;
+		}
+
 		try {
 			return $this->get_provider()->can_manage_onboarding();
 		} catch ( Throwable $e ) {

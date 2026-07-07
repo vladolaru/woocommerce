@@ -1937,6 +1937,8 @@ class WooPaymentsService {
 		// The internal WooPayments endpoint must run after this lock is cleared because it may
 		// trigger account deletion webhooks that also touch the shared NOX lock option.
 		$this->set_onboarding_lock();
+		$had_test_account    = false;
+		$had_sandbox_account = false;
 
 		try {
 			$had_test_account    = $this->has_test_account();
@@ -3711,7 +3713,7 @@ class WooPaymentsService {
 	 * @return bool
 	 */
 	private function should_use_native_onboarding_action_api(): bool {
-		return $this->can_use_native_api_client() && ! $this->legacy_runtime->is_loaded();
+		return $this->can_use_native_api_client() && ! $this->legacy_runtime->is_loaded() && $this->get_onboarding_adapter()->is_native_onboarding_available();
 	}
 
 	/**

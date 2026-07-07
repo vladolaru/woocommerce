@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PaymentGateway;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
@@ -120,7 +121,7 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 		$legacy_runtime->init( $this->legacy_proxy );
 
 		$this->adapter = new WooPaymentsOnboardingAdapter();
-		$this->adapter->init( $legacy_runtime, $this->provider, $this->native_gateway, $this->native_account_service );
+		$this->adapter->init( $legacy_runtime, $this->provider, $this->native_gateway, $this->native_account_service, wc_get_container()->get( NativePaymentsRuntimeArbiter::class ) );
 	}
 
 	/**
@@ -130,6 +131,7 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_account_data' );
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		delete_option( 'wcpay_onboarding_test_mode' );
+		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
 		$this->legacy_proxy->reset();
 
 		parent::tearDown();
@@ -158,10 +160,27 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 				'class_exists' => fn() => false,
 			)
 		);
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
 		$this->provider->method( 'can_manage_onboarding' )->willReturn( true );
 		$this->provider->method( 'can_process_payments' )->willReturn( true );
 
 		self::assertTrue( $this->adapter->is_onboarding_runtime_available() );
+	}
+
+	/**
+	 * @testdox Native onboarding is unavailable when the plugin is absent and the native runtime is disabled.
+	 */
+	public function test_runtime_unavailable_when_plugin_absent_and_native_runtime_disabled(): void {
+		$this->legacy_proxy->register_function_mocks(
+			array(
+				'class_exists' => fn() => false,
+			)
+		);
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_false' );
+		$this->provider->method( 'can_manage_onboarding' )->willReturn( true );
+		$this->provider->method( 'can_process_payments' )->willReturn( true );
+
+		self::assertFalse( $this->adapter->is_onboarding_runtime_available() );
 	}
 
 	/**
@@ -173,6 +192,7 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 				'class_exists' => fn() => false,
 			)
 		);
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
 		$this->provider->method( 'can_manage_onboarding' )->willReturn( true );
 		$this->provider->method( 'can_process_payments' )->willReturn( false );
 
@@ -280,6 +300,7 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 				'class_exists' => fn() => false,
 			)
 		);
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
 		$this->provider->method( 'can_process_payments' )->willReturn( true );
 		$this->provider->method( 'can_manage_onboarding' )->willReturn( true );
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
@@ -314,7 +335,7 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 		$legacy_runtime       = new WooPaymentsLegacyRuntime();
 		$legacy_runtime->init( $legacy_runtime_proxy );
 		$adapter = new WooPaymentsOnboardingAdapter();
-		$adapter->init( $legacy_runtime, $this->provider, $this->native_gateway, $this->native_account_service );
+		$adapter->init( $legacy_runtime, $this->provider, $this->native_gateway, $this->native_account_service, wc_get_container()->get( NativePaymentsRuntimeArbiter::class ) );
 
 		$this->provider->method( 'can_process_payments' )->willReturn( true );
 
@@ -344,7 +365,7 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 		);
 
 		$adapter = new WooPaymentsOnboardingAdapter();
-		$adapter->init( $runtime, $this->provider, new NativeWooPaymentsGateway(), $this->native_account_service );
+		$adapter->init( $runtime, $this->provider, new NativeWooPaymentsGateway(), $this->native_account_service, wc_get_container()->get( NativePaymentsRuntimeArbiter::class ) );
 
 		$this->provider->method( 'can_process_payments' )->willReturn( false );
 		$this->account_service
@@ -376,7 +397,7 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads local plugin source for provider-boundary regression coverage.
 		$source = (string) file_get_contents( WC()->plugin_path() . '/src/Internal/Payments/Providers/WooPayments/WooPaymentsOnboardingAdapter.php' );
 
-		foreach ( array( 'NativeWooPaymentsGateway', 'WooPaymentsAccountService', 'WooPaymentsLegacyRuntime', 'WooPaymentsProvider' ) as $dependency ) {
+		foreach ( array( 'NativePaymentsRuntimeArbiter', 'NativeWooPaymentsGateway', 'WooPaymentsAccountService', 'WooPaymentsLegacyRuntime', 'WooPaymentsProvider' ) as $dependency ) {
 			$this->assertDoesNotMatchRegularExpression(
 				'/wc_get_container\(\)\s*->get\(\s*' . $dependency . '::class\s*\)/',
 				$source,
