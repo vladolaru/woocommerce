@@ -21,6 +21,13 @@ use WC_Order_Refund;
 class WooPaymentsRefundEventHandler {
 
 	/**
+	 * Prefix for refund order-note structural dedupe markers.
+	 *
+	 * @var string
+	 */
+	private const REFUND_NOTE_MARKER_PREFIX = '_wc_native_woopayments_refund_note_';
+
+	/**
 	 * Stripe zero-decimal currencies.
 	 *
 	 * @var string[]
@@ -261,9 +268,7 @@ class WooPaymentsRefundEventHandler {
 	 */
 	private function add_note_and_metadata_for_created_refund( WC_Order $order, WC_Order_Refund $wc_refund, string $refund_id, string $balance_txn_id, bool $is_pending ): void {
 		$note = $this->get_created_refund_note( $order, $wc_refund, $refund_id, $is_pending );
-		if ( ! $this->order_note_exists( $order, $note ) ) {
-			$order->add_order_note( $note );
-		}
+		$this->add_refund_order_note_once( $order, $note, $refund_id, $is_pending ? 'created_pending' : 'created_successful' );
 
 		$order->update_meta_data( '_wcpay_refund_status', $is_pending ? 'pending' : 'successful' );
 		$wc_refund->update_meta_data( '_wcpay_refund_id', $refund_id );
@@ -308,10 +313,10 @@ class WooPaymentsRefundEventHandler {
 		}
 
 		if ( ! $is_cancelled && 'insufficient_funds' === $failure_reason ) {
-			$this->add_order_note_once( $order, $this->get_insufficient_balance_refund_note( $order, $amount ) );
+			$this->add_refund_order_note_once( $order, $this->get_insufficient_balance_refund_note( $order, $amount ), $refund_id, 'failed' );
 		} else {
 			$note = $this->get_failed_refund_note( $order, $refund_id, $amount, $currency, $is_cancelled, $failure_reason );
-			$this->add_order_note_once( $order, $note );
+			$this->add_refund_order_note_once( $order, $note, $refund_id, $is_cancelled ? 'canceled' : 'failed' );
 		}
 
 		if ( 'refunded' === $order->get_status() ) {
@@ -641,15 +646,38 @@ class WooPaymentsRefundEventHandler {
 	}
 
 	/**
-	 * Add an order note only when the exact note is not already present.
+	 * Add a refund order note only when the refund/note-type marker is not already present.
 	 *
-	 * @param WC_Order $order Order object.
-	 * @param string   $note  Note content.
+	 * @param WC_Order $order     Order object.
+	 * @param string   $note      Note content.
+	 * @param string   $refund_id Provider refund ID.
+	 * @param string   $note_type Stable note type.
 	 */
-	private function add_order_note_once( WC_Order $order, string $note ): void {
-		if ( ! $this->order_note_exists( $order, $note ) ) {
-			$order->add_order_note( $note );
+	private function add_refund_order_note_once( WC_Order $order, string $note, string $refund_id, string $note_type ): void {
+		$marker_key = $this->get_refund_note_marker_key( $refund_id, $note_type );
+
+		if ( 'yes' === $order->get_meta( $marker_key, true ) ) {
+			return;
 		}
+
+		if ( $this->order_note_exists( $order, $note ) ) {
+			$order->update_meta_data( $marker_key, 'yes' );
+			return;
+		}
+
+		$order->update_meta_data( $marker_key, 'yes' );
+		$order->add_order_note( $note );
+	}
+
+	/**
+	 * Get the structural dedupe marker key for a refund note.
+	 *
+	 * @param string $refund_id Provider refund ID.
+	 * @param string $note_type Stable note type.
+	 * @return string
+	 */
+	private function get_refund_note_marker_key( string $refund_id, string $note_type ): string {
+		return self::REFUND_NOTE_MARKER_PREFIX . md5( $refund_id . '|' . $note_type );
 	}
 
 	/**

@@ -1985,6 +1985,39 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox charge.refund.updated de-duplicates failed-refund notes structurally across locales.
+	 */
+	public function test_charge_refund_updated_failed_dedupes_notes_across_locale_renderings(): void {
+		$order = $this->create_refundable_woopayments_order( '10.00' );
+		$event = $this->create_refund_updated_event(
+			array(
+				'status'         => 'failed',
+				'failure_reason' => 'lost_or_stolen_card',
+			)
+		);
+
+		$event['id'] = 'evt_refund_updated_locale_dedupe_1';
+		$this->sut->process( $event );
+
+		$this->install_woocommerce_test_translations(
+			array(
+				'A refund of %1$s was <strong>%2$s</strong> using %3$s (<code>%4$s</code>)%5$s' => 'Eine Rueckerstattung von %1$s war <strong>%2$s</strong> mit %3$s (<code>%4$s</code>)%5$s',
+				'unsuccessful' => 'nicht erfolgreich',
+				'The card used for the original payment has been reported lost or stolen.' => 'Die fuer die urspruengliche Zahlung verwendete Karte wurde als verloren oder gestohlen gemeldet.',
+			)
+		);
+
+		$event['id'] = 'evt_refund_updated_locale_dedupe_2';
+		$this->sut->process( $event );
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertOrderHasNoteContaining( $order, array( 'A refund of', 'unsuccessful', 'lost or stolen' ) );
+		$this->assertOrderLacksNoteContaining( $order, array( 'Eine Rueckerstattung', 'nicht erfolgreich' ) );
+	}
+
+	/**
 	 * @testdox charge.refund.updated fails closed when the order payment lock is already held.
 	 */
 	public function test_charge_refund_updated_fails_closed_when_order_payment_is_locked(): void {
