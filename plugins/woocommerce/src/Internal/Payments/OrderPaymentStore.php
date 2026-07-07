@@ -27,7 +27,7 @@ class OrderPaymentStore {
 	 *
 	 * @var string
 	 */
-	const GATEWAY_ID = 'woocommerce_payments';
+	const GATEWAY_ID = WooPaymentsPersistenceProfile::GATEWAY_ID;
 
 	/**
 	 * Preserved WooPayments split-UPE gateway ID prefix.
@@ -36,7 +36,7 @@ class OrderPaymentStore {
 	 *
 	 * @var string
 	 */
-	const GATEWAY_ID_PREFIX = 'woocommerce_payments_';
+	const GATEWAY_ID_PREFIX = WooPaymentsPersistenceProfile::GATEWAY_ID_PREFIX;
 
 	/**
 	 * WooPayments-compatible order processing lock transient prefix.
@@ -45,7 +45,7 @@ class OrderPaymentStore {
 	 *
 	 * @var string
 	 */
-	const LOCK_TRANSIENT_PREFIX = 'wcpay_processing_intent_';
+	const LOCK_TRANSIENT_PREFIX = WooPaymentsPersistenceProfile::LOCK_TRANSIENT_PREFIX;
 
 	/**
 	 * WooPayments-compatible sentinel used when the order is locked without a payment reference.
@@ -54,7 +54,7 @@ class OrderPaymentStore {
 	 *
 	 * @var string
 	 */
-	const LOCK_SENTINEL = '-1';
+	const LOCK_SENTINEL = WooPaymentsPersistenceProfile::LOCK_SENTINEL;
 
 	/**
 	 * WooPayments lock time-to-live, in seconds.
@@ -63,7 +63,7 @@ class OrderPaymentStore {
 	 *
 	 * @var int
 	 */
-	const LOCK_TTL_SECONDS = 300;
+	const LOCK_TTL_SECONDS = WooPaymentsPersistenceProfile::LOCK_TTL_SECONDS;
 
 	/**
 	 * Default WooPayments persistence profile.

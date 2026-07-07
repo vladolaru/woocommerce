@@ -25,42 +25,42 @@ class WooPaymentsPersistenceProfile implements ProviderPersistenceProfile {
 	 *
 	 * @var string
 	 */
-	private const GATEWAY_ID = 'woocommerce_payments';
+	public const GATEWAY_ID = 'woocommerce_payments';
 
 	/**
 	 * Preserved WooPayments split-UPE gateway ID prefix.
 	 *
 	 * @var string
 	 */
-	private const GATEWAY_ID_PREFIX = 'woocommerce_payments_';
+	public const GATEWAY_ID_PREFIX = 'woocommerce_payments_';
 
 	/**
 	 * WooPayments-compatible order processing lock transient prefix.
 	 *
 	 * @var string
 	 */
-	private const LOCK_TRANSIENT_PREFIX = 'wcpay_processing_intent_';
+	public const LOCK_TRANSIENT_PREFIX = 'wcpay_processing_intent_';
 
 	/**
 	 * WooPayments-compatible sentinel used when the order is locked without a payment reference.
 	 *
 	 * @var string
 	 */
-	private const LOCK_SENTINEL = '-1';
+	public const LOCK_SENTINEL = '-1';
 
 	/**
 	 * WooPayments lock time-to-live, in seconds.
 	 *
 	 * @var int
 	 */
-	private const LOCK_TTL_SECONDS = 300;
+	public const LOCK_TTL_SECONDS = 300;
 
 	/**
 	 * Provider refund-link meta key written onto a `WC_Order_Refund` once it has been processed.
 	 *
 	 * @var string
 	 */
-	private const PROCESSED_REFUND_LINK_META_KEY = '_wcpay_refund_id';
+	public const PROCESSED_REFUND_LINK_META_KEY = '_wcpay_refund_id';
 
 	/**
 	 * WooPayments Bucket-E order/refund meta keys that native code must preserve.

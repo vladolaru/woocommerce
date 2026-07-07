@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
 use Throwable;
 use WC_Order;
 use WC_Order_Refund;
@@ -264,7 +265,7 @@ class PaymentProcessingService {
 	 *
 	 * @var string
 	 */
-	private const PROCESSED_REFUND_LINK_META_KEY = '_wcpay_refund_id';
+	private const PROCESSED_REFUND_LINK_META_KEY = WooPaymentsPersistenceProfile::PROCESSED_REFUND_LINK_META_KEY;
 
 	/**
 	 * Resolve the ID of the specific WooCommerce refund this operation is processing.
