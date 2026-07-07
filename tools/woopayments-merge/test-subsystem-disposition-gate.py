@@ -68,7 +68,7 @@ def test_gate_fails_when_extension_file_is_not_matched_by_manifest_row() -> None
         assert "includes/missing.php" in result.stdout
 
 
-def test_gate_accepts_exact_glob_and_signed_dropped_rows() -> None:
+def test_gate_accepts_exact_rows_and_signed_dropped_rows() -> None:
     with tempfile.TemporaryDirectory(prefix="subsystem-disposition-gate-test-") as tmp:
         root = Path(tmp)
         extension_root = root / "extension"
@@ -82,8 +82,8 @@ def test_gate_accepts_exact_glob_and_signed_dropped_rows() -> None:
             "\n".join(
                 [
                     "| Ported file | `includes/ported.php` | `PORTED` | native owner | unit test |  |  |  |",
-                    "| Superseded source tree | `src/**/*.php` | `SUPERSEDED` | native owner | unit test |  |  |  |",
-                    "| Dropped survey | `includes/dropped/*.php` | `DROPPED` | none | product decision | Payments lead | 2026-07-07 | Plugin deactivation survey is obsolete after cutover. |",
+                    "| Superseded source file | `src/Internal/Thing.php` | `SUPERSEDED` | native owner | unit test |  |  |  |",
+                    "| Dropped survey | `includes/dropped/survey.php` | `DROPPED` | none | product decision | Payments lead | 2026-07-07 | Plugin deactivation survey is obsolete after cutover. |",
                 ]
             )
             + "\n",
@@ -94,6 +94,25 @@ def test_gate_accepts_exact_glob_and_signed_dropped_rows() -> None:
         assert result.returncode == 0, result.stdout + result.stderr
         assert "RESULT: PASS" in result.stdout
         assert "3 extension files covered" in result.stdout
+
+
+def test_gate_rejects_wildcard_manifest_source_patterns() -> None:
+    with tempfile.TemporaryDirectory(prefix="subsystem-disposition-gate-test-") as tmp:
+        root = Path(tmp)
+        extension_root = root / "extension"
+        manifest = root / "manifest.md"
+
+        touch(extension_root / "includes/admin/controller.php")
+        write_manifest(
+            manifest,
+            "| Admin tree | `includes/admin/**/*.php` | `PORTED` | native owner | unit test |  |  |  |\n",
+        )
+
+        result = run_gate(extension_root, manifest)
+
+        assert result.returncode == 1
+        assert "non-exact manifest source patterns" in result.stdout
+        assert "includes/admin/**/*.php" in result.stdout
 
 
 def test_gate_rejects_dropped_rows_without_signoff_fields() -> None:

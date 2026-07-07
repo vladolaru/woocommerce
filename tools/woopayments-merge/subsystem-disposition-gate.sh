@@ -3,8 +3,8 @@
 # Static inventory gate for the WooPayments extension subsystem disposition manifest.
 #
 # The gate enumerates extension PHP files under includes/ and src/, then verifies that every
-# file is matched by at least one manifest row. DROPPED rows must carry explicit sign-off,
-# date, and reason fields.
+# file has an exact manifest source path. DROPPED rows must carry explicit sign-off, date,
+# and reason fields.
 
 set -euo pipefail
 
@@ -53,7 +53,7 @@ from __future__ import annotations
 import re
 import sys
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 
 VALID_DISPOSITIONS = {"PORTED", "SUPERSEDED", "DROPPED"}
@@ -175,20 +175,17 @@ def enumerate_extension_files(extension_root: Path) -> list[str]:
 
 
 def matches(pattern: str, relative_path: str) -> bool:
-    if pattern == relative_path:
-        return True
+    return pattern == relative_path
 
-    if pattern.endswith("/**/*.php"):
-        prefix = pattern[: -len("/**/*.php")]
-        return relative_path.startswith(prefix + "/") and relative_path.endswith(".php")
 
-    if "*" in pattern or "?" in pattern or "[" in pattern:
-        return PurePosixPath(relative_path).match(pattern)
+def is_exact_php_source_path(pattern: str) -> bool:
+    if not pattern.endswith(".php"):
+        return False
 
-    if pattern.endswith("/"):
-        return relative_path.startswith(pattern)
+    if not pattern.startswith(("includes/", "src/")):
+        return False
 
-    return False
+    return not any(character in pattern for character in ("*", "?", "[", "]"))
 
 
 def main() -> int:
@@ -213,6 +210,12 @@ def main() -> int:
         row
         for row in rows
         if row.disposition == "DROPPED" and (not row.signed_off_by or not row.sign_off_date or not row.reason)
+    ]
+    non_exact_patterns = [
+        (row, pattern)
+        for row in rows
+        for pattern in row.patterns
+        if not is_exact_php_source_path(pattern)
     ]
 
     print("WooPayments subsystem disposition gate")
@@ -249,7 +252,15 @@ def main() -> int:
         for row in invalid_rows:
             print(f"  - {row.subsystem}: {row.disposition}")
 
-    if unmatched or dropped_without_signoff or stale_patterns or invalid_rows:
+    if non_exact_patterns:
+        print()
+        print(f"non-exact manifest source patterns ({len(non_exact_patterns)}):")
+        for row, pattern in non_exact_patterns[:200]:
+            print(f"  - {row.subsystem}: {pattern}")
+        if len(non_exact_patterns) > 200:
+            print(f"  ... {len(non_exact_patterns) - 200} more")
+
+    if unmatched or dropped_without_signoff or stale_patterns or invalid_rows or non_exact_patterns:
         print()
         print("RESULT: FAIL")
         return 1
