@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Throwable;
 use WP_Error;
 use WP_REST_Request;
@@ -56,17 +57,6 @@ class WooPaymentsSettingsService {
 		'wechat_pay',
 		'affirm',
 		'afterpay_clearpay',
-	);
-
-	/**
-	 * Payment methods the staged native WooPayments gateway can charge today.
-	 *
-	 * Keep this deliberately narrow until the native gateway ports each additional
-	 * payment method's checkout confirmation and request-shaping behavior.
-	 */
-	private const NATIVELY_CHARGEABLE_PAYMENT_METHOD_IDS = array(
-		'card',
-		'link',
 	);
 
 	private const MANUAL_CAPTURE_PAYMENT_METHOD_IDS = array(
@@ -282,7 +272,7 @@ class WooPaymentsSettingsService {
 	 * @return string[]
 	 */
 	public static function get_natively_chargeable_payment_method_ids(): array {
-		return self::NATIVELY_CHARGEABLE_PAYMENT_METHOD_IDS;
+		return ( new WooPaymentsPaymentMethodRegistry() )->get_natively_chargeable_ids();
 	}
 
 	/**
