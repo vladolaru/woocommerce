@@ -127,6 +127,9 @@ gate "drift gate (BC + tracks)" bash "$SELF_DIR/bc-drift-gate.sh"
 gate "subsystem disposition inventory" bash "$SELF_DIR/subsystem-disposition-gate.sh"
 gate "hook-shape parity" bash "$SELF_DIR/hook-shape-parity.sh" --ref "$REF_WP" --target "$TARGET_WP"
 gate "REST route parity" bash "$SELF_DIR/rest-route-parity.sh" --ref "$REF_WP" --target "$TARGET_WP"
+if [ "$MODE" = "cross" ]; then
+	gate "i18n notes" bash "$SELF_DIR/i18n-notes-gate.sh" --target "$TARGET_WP"
+fi
 
 # 2. Drive a fixture flow on the reference store and collect order ids.
 echo "  driving a charge fixture on the reference store..."
