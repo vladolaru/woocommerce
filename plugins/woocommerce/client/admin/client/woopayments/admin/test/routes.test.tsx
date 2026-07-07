@@ -410,6 +410,51 @@ describe( 'WooPayments Settings Payments routes', () => {
 		}
 	);
 
+	it( 'renders an overview fallback link for denied protected routes when overview is allowed', () => {
+		setAdminRouteAvailability( {
+			'/woopayments/payouts': false,
+			'/woopayments/overview': true,
+		} );
+
+		render( getRouteElement( '/woopayments/payouts' ) );
+
+		expect( screen.getByRole( 'status' ) ).toHaveTextContent(
+			unavailableMessage
+		);
+		expect( screen.getByRole( 'status' ) ).toHaveTextContent(
+			'Your current account status does not allow access to this page.'
+		);
+		expect(
+			screen.getByRole( 'link', {
+				name: 'Go to WooPayments overview',
+			} )
+		).toHaveAttribute(
+			'href',
+			'http://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Foverview'
+		);
+	} );
+
+	it( 'renders a settings fallback link for denied protected routes when overview is unavailable', () => {
+		setAdminRouteAvailability( {
+			'/woopayments/payouts': false,
+			'/woopayments/overview': false,
+		} );
+
+		render( getRouteElement( '/woopayments/payouts' ) );
+
+		expect( screen.getByRole( 'status' ) ).toHaveTextContent(
+			unavailableMessage
+		);
+		expect(
+			screen.getByRole( 'link', {
+				name: 'Go to WooPayments settings',
+			} )
+		).toHaveAttribute(
+			'href',
+			'http://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings'
+		);
+	} );
+
 	it.each( [
 		[ 'settings', '/woopayments/settings', 'Settings route loaded' ],
 		[

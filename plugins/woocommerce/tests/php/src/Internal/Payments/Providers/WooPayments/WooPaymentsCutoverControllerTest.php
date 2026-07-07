@@ -362,6 +362,27 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Disable action deactivates WooPayments when the plugin folder was renamed.
+	 */
+	public function test_disable_action_deactivates_renamed_woopayments_plugin_file(): void {
+		$renamed_plugin_file = 'renamed-woocommerce-payments/woocommerce-payments.php';
+
+		$this->fake_plugin_active( true, false, $renamed_plugin_file );
+		$this->fake_current_user_caps( true );
+		$this->enable_ready_cutover();
+
+		$result = $this->sut->disable_woopayments_plugin();
+
+		$this->assertTrue( $result, 'The disable action should report success after the renamed plugin is deactivated.' );
+		$this->assertSame(
+			array( $renamed_plugin_file, false, false ),
+			$this->deactivate_plugin_calls[0],
+			'Cutover should deactivate the actual active WooPayments plugin file, not only the canonical folder path.'
+		);
+		$this->assertFalse( $this->plugin_active, 'The renamed plugin active signal should be removed after deactivation.' );
+	}
+
+	/**
 	 * @testdox Disable action asks native to adopt canceled-authorization fee remediation before deactivation.
 	 */
 	public function test_disable_action_schedules_fee_remediation_before_deactivation(): void {
@@ -1194,14 +1215,15 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Control the WooPayments plugin active signals.
 	 *
-	 * @param bool $site_active    Whether the plugin is active for this site.
-	 * @param bool $network_active Whether the plugin is active network-wide.
+	 * @param bool        $site_active    Whether the plugin is active for this site.
+	 * @param bool        $network_active Whether the plugin is active network-wide.
+	 * @param string|null $plugin_file    Plugin file path for nonstandard installs.
 	 */
-	private function fake_plugin_active( bool $site_active = true, bool $network_active = false ): void {
+	private function fake_plugin_active( bool $site_active = true, bool $network_active = false, ?string $plugin_file = null ): void {
 		$this->plugin_active         = $site_active;
 		$this->plugin_network_active = $network_active;
 		$this->plugin_class_loaded   = $site_active || $network_active;
-		$entry                       = NativePaymentsRuntimeArbiter::PLUGIN_FILE;
+		$entry                       = $plugin_file ?? NativePaymentsRuntimeArbiter::PLUGIN_FILE;
 
 		$this->register_legacy_proxy_function_mocks(
 			array(
@@ -1217,15 +1239,26 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 					}
 					return get_site_option( $name, $default_value );
 				},
+				'get_plugins'        => function () use ( $entry ) {
+					return array(
+						$entry => array(
+							'Name' => 'WooPayments',
+						),
+					);
+				},
 				'class_exists'       => function ( $class_name, $autoload = true ) {
 					if ( 'WC_Payments' === ltrim( (string) $class_name, '\\' ) ) {
 						return $this->plugin_class_loaded;
 					}
 					return class_exists( $class_name, $autoload );
 				},
-				'deactivate_plugins' => function ( $plugin, $silent = false, $network_wide = null ) {
+				'deactivate_plugins' => function ( $plugin, $silent = false, $network_wide = null ) use ( $entry ) {
 					$network_wide                    = (bool) $network_wide;
 					$this->deactivate_plugin_calls[] = array( (string) $plugin, (bool) $silent, $network_wide );
+
+					if ( $entry !== (string) $plugin ) {
+						return;
+					}
 
 					if ( $network_wide ) {
 						$this->plugin_network_active = false;

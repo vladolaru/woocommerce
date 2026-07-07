@@ -268,7 +268,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	 */
 	public function get_legacy_payment_path_redirect_url( array $request ): string {
 		if ( 'wc-admin' !== $this->get_request_scalar( $request, 'page' ) ) {
-			return '';
+			return $this->get_legacy_payment_method_section_redirect_url( $request );
 		}
 
 		$legacy_path = sanitize_text_field( rawurldecode( $this->get_raw_request_scalar( $request, 'path' ) ) );
@@ -283,7 +283,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 		}
 
 		if ( true !== ( $route_availability['allowedRoutes'][ $target_path ] ?? false ) ) {
-			return '';
+			$target_path = $this->get_fallback_redirect_path( $route_availability );
 		}
 
 		$query    = array();
@@ -320,6 +320,49 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Get the native redirect URL for unknown legacy WooPayments gateway sections.
+	 *
+	 * @param array<string,mixed> $request Query request.
+	 * @return string
+	 */
+	private function get_legacy_payment_method_section_redirect_url( array $request ): string {
+		if ( 'wc-settings' !== $this->get_request_scalar( $request, 'page' ) || 'checkout' !== $this->get_request_scalar( $request, 'tab' ) ) {
+			return '';
+		}
+
+		$section = $this->get_request_scalar( $request, 'section' );
+		if ( ! str_starts_with( $section, 'woocommerce_payments_' ) ) {
+			return '';
+		}
+
+		if ( $this->is_registered_payment_gateway_section( $section ) ) {
+			return '';
+		}
+
+		return Utils::wc_payments_settings_url( self::PATH_SETTINGS );
+	}
+
+	/**
+	 * Tell whether a legacy gateway section still maps to a registered gateway.
+	 *
+	 * @param string $section Gateway section ID.
+	 * @return bool
+	 */
+	private function is_registered_payment_gateway_section( string $section ): bool {
+		if ( ! function_exists( 'WC' ) || ! WC()->payment_gateways() ) {
+			return false;
+		}
+
+		try {
+			$gateways = WC()->payment_gateways()->payment_gateways();
+		} catch ( \Throwable $e ) {
+			return false;
+		}
+
+		return is_array( $gateways ) && isset( $gateways[ $section ] );
+	}
+
+	/**
 	 * Tell whether a legacy route is part of the setup/onboarding flow.
 	 *
 	 * @param string $legacy_path Legacy WooPayments WC Admin route path.
@@ -348,6 +391,20 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 			return self::PATH_ONBOARDING;
 		}
 
+		if ( true === ( $route_availability['allowedRoutes'][ self::PATH_OVERVIEW ] ?? false ) ) {
+			return self::PATH_OVERVIEW;
+		}
+
+		return self::PATH_SETTINGS;
+	}
+
+	/**
+	 * Resolve denied legacy redirects to the best available native fallback.
+	 *
+	 * @param array{gatewayEnabled:bool,accountState:string,allowedRoutes:array<string,bool>} $route_availability Route availability.
+	 * @return string
+	 */
+	private function get_fallback_redirect_path( array $route_availability ): string {
 		if ( true === ( $route_availability['allowedRoutes'][ self::PATH_OVERVIEW ] ?? false ) ) {
 			return self::PATH_OVERVIEW;
 		}

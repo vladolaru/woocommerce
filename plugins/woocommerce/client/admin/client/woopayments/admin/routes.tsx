@@ -8,6 +8,7 @@ import { __, sprintf } from '@wordpress/i18n';
  * Internal dependencies
  */
 import { registerSettingsPaymentsProviderRoute } from '~/settings-payments/provider-routes';
+import { getSettingsPaymentsProviderRouteUrl } from './utils';
 
 const WooPaymentsSettingsChunk = lazy(
 	() =>
@@ -151,13 +152,23 @@ const getReportsAreaFeatureFlag = () => {
 	return typeof legacyFlag === 'boolean' ? legacyFlag : true;
 };
 
-const isRouteAvailable = ( routePath: string ) => {
+const getAdminRouteAvailability = () => {
 	const settings = globalThis as WooPaymentsRouteWindow;
-	const allowedRoutes =
-		settings.wcSettings?.admin?.woopaymentsSettings?.adminRouteAvailability
-			?.allowedRoutes;
 
-	return allowedRoutes?.[ routePath ] === true;
+	return settings.wcSettings?.admin?.woopaymentsSettings
+		?.adminRouteAvailability;
+};
+
+const getAllowedRoutes = () => getAdminRouteAvailability()?.allowedRoutes;
+
+const isRouteAvailable = ( routePath: string ) => {
+	return getAllowedRoutes()?.[ routePath ] === true;
+};
+
+const getFallbackRoutePath = () => {
+	return getAllowedRoutes()?.[ '/woopayments/overview' ] === true
+		? '/woopayments/overview'
+		: '/woopayments/settings';
 };
 
 const LoadingFallback = () => (
@@ -170,11 +181,33 @@ const LoadingFallback = () => (
 	</div>
 );
 
-const WooPaymentsAdminAreaUnavailable = () => (
-	<div role="status" aria-live="polite">
-		{ __( 'This WooPayments admin area is unavailable.', 'woocommerce' ) }
-	</div>
-);
+const WooPaymentsAdminAreaUnavailable = () => {
+	const fallbackPath = getFallbackRoutePath();
+	const fallbackLabel =
+		fallbackPath === '/woopayments/overview'
+			? __( 'Go to WooPayments overview', 'woocommerce' )
+			: __( 'Go to WooPayments settings', 'woocommerce' );
+
+	return (
+		<div role="status" aria-live="polite">
+			<p>
+				{ __(
+					'This WooPayments admin area is unavailable.',
+					'woocommerce'
+				) }
+			</p>
+			<p>
+				{ __(
+					'Your current account status does not allow access to this page.',
+					'woocommerce'
+				) }
+			</p>
+			<a href={ getSettingsPaymentsProviderRouteUrl( fallbackPath ) }>
+				{ fallbackLabel }
+			</a>
+		</div>
+	);
+};
 
 const WooPaymentsReportsUnavailable = () => (
 	<div role="status" aria-live="polite">

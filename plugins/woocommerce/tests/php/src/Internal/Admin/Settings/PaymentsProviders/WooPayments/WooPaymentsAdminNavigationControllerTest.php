@@ -565,9 +565,9 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not map legacy WooPayments WC Admin Documents URLs when Documents are not eligible.
+	 * @testdox Should map legacy WooPayments WC Admin Documents URLs to overview when Documents are not eligible.
 	 */
-	public function test_does_not_map_legacy_payment_documents_url_when_documents_are_disabled(): void {
+	public function test_maps_legacy_payment_documents_url_to_overview_when_documents_are_disabled(): void {
 		$sut = $this->create_controller(
 			true,
 			array(
@@ -575,15 +575,15 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$this->assertSame(
-			'',
-			$sut->get_legacy_payment_path_redirect_url(
-				array(
-					'page' => 'wc-admin',
-					'path' => '%2Fpayments%2Fdocuments',
-				)
+		$url = $sut->get_legacy_payment_path_redirect_url(
+			array(
+				'page' => 'wc-admin',
+				'path' => '%2Fpayments%2Fdocuments',
 			)
 		);
+		parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
+
+		$this->assertSame( '/woopayments/overview', $query['path'] );
 	}
 
 	/**
@@ -618,9 +618,9 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not map legacy WooPayments WC Admin Reports URLs when Reports are disabled.
+	 * @testdox Should map legacy WooPayments WC Admin Reports URLs to overview when Reports are disabled.
 	 */
-	public function test_does_not_map_legacy_payment_reports_url_when_reports_are_disabled(): void {
+	public function test_maps_legacy_payment_reports_url_to_overview_when_reports_are_disabled(): void {
 		$sut = $this->create_controller(
 			true,
 			array(
@@ -628,21 +628,21 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$this->assertSame(
-			'',
-			$sut->get_legacy_payment_path_redirect_url(
-				array(
-					'page' => 'wc-admin',
-					'path' => '%2Fpayments%2Freports',
-				)
+		$url = $sut->get_legacy_payment_path_redirect_url(
+			array(
+				'page' => 'wc-admin',
+				'path' => '%2Fpayments%2Freports',
 			)
 		);
+		parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
+
+		$this->assertSame( '/woopayments/overview', $query['path'] );
 	}
 
 	/**
-	 * @testdox Should not map legacy full-access WooPayments WC Admin URLs for restricted accounts.
+	 * @testdox Should map legacy full-access WooPayments WC Admin URLs to overview for restricted accounts.
 	 */
-	public function test_does_not_map_legacy_full_access_urls_for_restricted_accounts(): void {
+	public function test_maps_legacy_full_access_urls_to_overview_for_restricted_accounts(): void {
 		$sut = $this->create_controller(
 			true,
 			array(
@@ -650,15 +650,82 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$this->assertSame(
-			'',
-			$sut->get_legacy_payment_path_redirect_url(
-				array(
-					'page' => 'wc-admin',
-					'path' => '%2Fpayments%2Fdeposits',
-				)
+		$url = $sut->get_legacy_payment_path_redirect_url(
+			array(
+				'page' => 'wc-admin',
+				'path' => '%2Fpayments%2Fdeposits',
 			)
 		);
+		parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
+
+		$this->assertSame( '/woopayments/overview', $query['path'] );
+	}
+
+	/**
+	 * @testdox Should map denied legacy WooPayments URLs to the overview fallback when overview is allowed.
+	 */
+	public function test_maps_denied_legacy_payment_url_to_overview_fallback_when_available(): void {
+		$sut = $this->create_controller(
+			true,
+			array(
+				'is_account_under_review' => true,
+			)
+		);
+
+		$url = $sut->get_legacy_payment_path_redirect_url(
+			array(
+				'page' => 'wc-admin',
+				'path' => '%2Fpayments%2Fpayouts',
+			)
+		);
+		parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
+
+		$this->assertStringContainsString( 'admin.php?page=wc-settings&tab=checkout', $url );
+		$this->assertSame( '/woopayments/overview', $query['path'] );
+	}
+
+	/**
+	 * @testdox Should map denied legacy WooPayments URLs to settings when overview is unavailable.
+	 */
+	public function test_maps_denied_legacy_payment_url_to_settings_fallback_when_overview_is_unavailable(): void {
+		$sut = $this->create_controller(
+			true,
+			array(
+				'has_account'                            => false,
+				'has_valid_account_for_admin_navigation' => false,
+				'is_details_submitted'                   => false,
+			)
+		);
+
+		$url = $sut->get_legacy_payment_path_redirect_url(
+			array(
+				'page' => 'wc-admin',
+				'path' => '%2Fpayments%2Ftransactions',
+			)
+		);
+		parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
+
+		$this->assertStringContainsString( 'admin.php?page=wc-settings&tab=checkout', $url );
+		$this->assertSame( '/woopayments/settings', $query['path'] );
+	}
+
+	/**
+	 * @testdox Should map unknown legacy WooPayments method sections to native settings.
+	 */
+	public function test_maps_unknown_legacy_woopayments_method_section_to_native_settings(): void {
+		$sut = $this->create_controller( true );
+
+		$url = $sut->get_legacy_payment_path_redirect_url(
+			array(
+				'page'    => 'wc-settings',
+				'tab'     => 'checkout',
+				'section' => 'woocommerce_payments_sofort',
+			)
+		);
+		parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
+
+		$this->assertStringContainsString( 'admin.php?page=wc-settings&tab=checkout', $url );
+		$this->assertSame( '/woopayments/settings', $query['path'] );
 	}
 
 	/**
@@ -686,9 +753,9 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not map legacy WooPayments WC Admin Card Readers URLs when Card Readers are unavailable.
+	 * @testdox Should map legacy WooPayments WC Admin Card Readers URLs to overview when Card Readers are unavailable.
 	 */
-	public function test_does_not_map_legacy_payment_card_readers_url_when_card_readers_are_unavailable(): void {
+	public function test_maps_legacy_payment_card_readers_url_to_overview_when_card_readers_are_unavailable(): void {
 		$sut = $this->create_controller(
 			true,
 			array(
@@ -697,15 +764,15 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$this->assertSame(
-			'',
-			$sut->get_legacy_payment_path_redirect_url(
-				array(
-					'page' => 'wc-admin',
-					'path' => '%2Fpayments%2Fcard-readers',
-				)
+		$url = $sut->get_legacy_payment_path_redirect_url(
+			array(
+				'page' => 'wc-admin',
+				'path' => '%2Fpayments%2Fcard-readers',
 			)
 		);
+		parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
+
+		$this->assertSame( '/woopayments/overview', $query['path'] );
 	}
 
 	/**
@@ -732,9 +799,9 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not map legacy WooPayments WC Admin Capital URLs when Capital is unavailable.
+	 * @testdox Should map legacy WooPayments WC Admin Capital URLs to overview when Capital is unavailable.
 	 */
-	public function test_does_not_map_legacy_payment_capital_url_when_capital_is_unavailable(): void {
+	public function test_maps_legacy_payment_capital_url_to_overview_when_capital_is_unavailable(): void {
 		$sut = $this->create_controller(
 			true,
 			array(
@@ -742,15 +809,15 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$this->assertSame(
-			'',
-			$sut->get_legacy_payment_path_redirect_url(
-				array(
-					'page' => 'wc-admin',
-					'path' => '%2Fpayments%2Floans',
-				)
+		$url = $sut->get_legacy_payment_path_redirect_url(
+			array(
+				'page' => 'wc-admin',
+				'path' => '%2Fpayments%2Floans',
 			)
 		);
+		parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
+
+		$this->assertSame( '/woopayments/overview', $query['path'] );
 	}
 
 	/**

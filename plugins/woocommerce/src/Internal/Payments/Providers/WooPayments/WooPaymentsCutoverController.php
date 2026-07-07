@@ -373,9 +373,18 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 			return false;
 		}
 
+		$plugin_file = $this->get_active_woopayments_plugin_file();
+		if ( '' === $plugin_file ) {
+			wc_get_logger()->error(
+				'WooPayments could not be deactivated because the active plugin file could not be resolved.',
+				array( 'source' => 'woocommerce-woopayments-cutover' )
+			);
+			return false;
+		}
+
 		$this->legacy_proxy->call_function(
 			'deactivate_plugins',
-			NativePaymentsRuntimeArbiter::PLUGIN_FILE,
+			$plugin_file,
 			false,
 			$this->is_woopayments_network_active()
 		);
@@ -803,7 +812,13 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	private function is_woopayments_network_active(): bool {
 		$network_active = (array) $this->legacy_proxy->call_function( 'get_site_option', 'active_sitewide_plugins', array() );
 
-		return isset( $network_active[ NativePaymentsRuntimeArbiter::PLUGIN_FILE ] );
+		foreach ( array_keys( $network_active ) as $plugin_file ) {
+			if ( is_string( $plugin_file ) && $this->is_woopayments_plugin_file( $plugin_file ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**
@@ -814,7 +829,63 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	private function is_woopayments_site_active(): bool {
 		$active_plugins = (array) $this->legacy_proxy->call_function( 'get_option', 'active_plugins', array() );
 
-		return in_array( NativePaymentsRuntimeArbiter::PLUGIN_FILE, $active_plugins, true );
+		foreach ( $active_plugins as $plugin_file ) {
+			if ( is_string( $plugin_file ) && $this->is_woopayments_plugin_file( $plugin_file ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Resolve the active WooPayments plugin file.
+	 *
+	 * @return string Active WooPayments plugin file, or an empty string when unresolved.
+	 */
+	private function get_active_woopayments_plugin_file(): string {
+		$active_plugins = (array) $this->legacy_proxy->call_function( 'get_option', 'active_plugins', array() );
+		foreach ( $active_plugins as $plugin_file ) {
+			if ( is_string( $plugin_file ) && $this->is_woopayments_plugin_file( $plugin_file ) ) {
+				return $plugin_file;
+			}
+		}
+
+		$network_active = (array) $this->legacy_proxy->call_function( 'get_site_option', 'active_sitewide_plugins', array() );
+		foreach ( array_keys( $network_active ) as $plugin_file ) {
+			if ( is_string( $plugin_file ) && $this->is_woopayments_plugin_file( $plugin_file ) ) {
+				return $plugin_file;
+			}
+		}
+
+		return '';
+	}
+
+	/**
+	 * Tell whether a plugin file is the WooPayments main plugin file.
+	 *
+	 * @param string $plugin_file Plugin file path.
+	 * @return bool
+	 */
+	private function is_woopayments_plugin_file( string $plugin_file ): bool {
+		if ( NativePaymentsRuntimeArbiter::PLUGIN_FILE === $plugin_file ) {
+			return true;
+		}
+
+		if ( ! function_exists( 'get_plugins' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/plugin.php';
+		}
+
+		$plugins = $this->legacy_proxy->call_function( 'get_plugins' );
+		if ( ! is_array( $plugins ) || ! isset( $plugins[ $plugin_file ] ) || ! is_array( $plugins[ $plugin_file ] ) ) {
+			return false;
+		}
+
+		$plugin_data = $plugins[ $plugin_file ];
+		$name        = isset( $plugin_data['Name'] ) && is_scalar( $plugin_data['Name'] ) ? (string) $plugin_data['Name'] : '';
+		$text_domain = isset( $plugin_data['TextDomain'] ) && is_scalar( $plugin_data['TextDomain'] ) ? (string) $plugin_data['TextDomain'] : '';
+
+		return 'WooPayments' === $name || 'woocommerce-payments' === $text_domain;
 	}
 
 	/**
