@@ -699,7 +699,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
 			array(
-				'upe_enabled_payment_method_ids' => array( 'card', 'eps' ),
+				'upe_enabled_payment_method_ids' => array( 'card', 'future_lpm' ),
 			)
 		);
 
@@ -728,6 +728,13 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 					'klarna',
 					'affirm',
 					'afterpay_clearpay',
+					'eps',
+					'p24',
+					'multibanco',
+					'au_becs_debit',
+					'grabpay',
+					'wechat_pay',
+					'alipay',
 				),
 			)
 		);
@@ -746,7 +753,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
 			array(
-				'upe_enabled_payment_method_ids' => array( 'card', 'eps' ),
+				'upe_enabled_payment_method_ids' => array( 'card', 'future_lpm' ),
 			)
 		);
 		add_filter( WooPaymentsCutoverController::FILTER_PREFLIGHT_FAILURES, '__return_empty_array' );

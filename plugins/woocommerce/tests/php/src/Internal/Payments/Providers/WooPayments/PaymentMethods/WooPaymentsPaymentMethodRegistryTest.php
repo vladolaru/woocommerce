@@ -184,6 +184,13 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 				'klarna',
 				'affirm',
 				'afterpay_clearpay',
+				'eps',
+				'p24',
+				'multibanco',
+				'au_becs_debit',
+				'grabpay',
+				'wechat_pay',
+				'alipay',
 			),
 			$this->registry->get_natively_chargeable_ids()
 		);

@@ -513,6 +513,13 @@ const setHookDefaults = () => {
 		'klarna',
 		'affirm',
 		'afterpay_clearpay',
+		'eps',
+		'p24',
+		'multibanco',
+		'au_becs_debit',
+		'grabpay',
+		'wechat_pay',
+		'alipay',
 	] );
 	mockUseGetPaymentMethodStatuses.mockReturnValue( {
 		card_payments: { status: 'active' },
@@ -1052,7 +1059,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 		).toBeDisabled();
 	} );
 
-	it( 'disables payment methods that cannot be charged by native WooPayments yet', () => {
+	it( 'keeps Wave 2 payment methods interactive when they can be charged by native WooPayments', async () => {
 		const addPaymentMethod = jest.fn();
 		mockUseGetAvailablePaymentMethodIds.mockReturnValue( [
 			'card',
@@ -1071,6 +1078,19 @@ describe( 'WooPaymentsSettingsPage', () => {
 		mockUseGetNativelyChargeablePaymentMethodIds.mockReturnValue( [
 			'card',
 			'link',
+			'sepa_debit',
+			'ideal',
+			'bancontact',
+			'klarna',
+			'affirm',
+			'afterpay_clearpay',
+			'eps',
+			'p24',
+			'multibanco',
+			'au_becs_debit',
+			'grabpay',
+			'wechat_pay',
+			'alipay',
 		] );
 
 		render( <WooPaymentsSettingsPage /> );
@@ -1085,17 +1105,17 @@ describe( 'WooPaymentsSettingsPage', () => {
 			}
 		);
 
-		expect( epsCheckbox ).toBeDisabled();
+		expect( epsCheckbox ).toBeEnabled();
 		expect( epsCheckbox ).not.toBeChecked();
 		expect(
-			within( paymentMethodsGroup ).getByText(
+			within( paymentMethodsGroup ).queryByText(
 				'Not yet available in the built-in WooPayments - keep the WooPayments extension active to offer this method.'
 			)
-		).toBeInTheDocument();
+		).not.toBeInTheDocument();
 
-		fireEvent.click( epsCheckbox );
+		await userEvent.click( epsCheckbox );
 
-		expect( addPaymentMethod ).not.toHaveBeenCalled();
+		expect( addPaymentMethod ).toHaveBeenCalledWith( 'eps' );
 	} );
 
 	it( 'hides Link by Stripe when card payments are not enabled', () => {
