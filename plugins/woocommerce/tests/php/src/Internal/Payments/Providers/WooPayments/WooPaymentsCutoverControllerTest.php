@@ -10,6 +10,8 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeAccountAdapter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeApiClientAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsLegacySubscriptionsGuard;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverController;
@@ -52,11 +54,46 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	private WooPaymentsPlatformConnectionService $platform_connection_service;
 
 	/**
+	 * Native rate account boundary mock.
+	 *
+	 * @var WooPaymentsNativeAccountAdapter&\PHPUnit\Framework\MockObject\MockObject
+	 */
+	private WooPaymentsNativeAccountAdapter $native_rate_account;
+
+	/**
+	 * Native rate API client boundary mock.
+	 *
+	 * @var WooPaymentsNativeApiClientAdapter&\PHPUnit\Framework\MockObject\MockObject
+	 */
+	private WooPaymentsNativeApiClientAdapter $native_rate_api_client;
+
+	/**
 	 * Whether the native provider can process payments.
 	 *
 	 * @var bool
 	 */
 	private bool $native_provider_ready = false;
+
+	/**
+	 * Whether the native rate account is connected.
+	 *
+	 * @var bool
+	 */
+	private bool $native_rate_account_connected = true;
+
+	/**
+	 * Whether the native rate account is rejected.
+	 *
+	 * @var bool
+	 */
+	private bool $native_rate_account_rejected = false;
+
+	/**
+	 * Whether the native rate API client is connected.
+	 *
+	 * @var bool
+	 */
+	private bool $native_rate_api_client_connected = false;
 
 	/**
 	 * Whether canceled-authorization fee remediation can be scheduled during cutover.
@@ -209,6 +246,38 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 				}
 			);
 
+		$this->native_rate_account = $this->getMockBuilder( WooPaymentsNativeAccountAdapter::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_provider_connected', 'is_account_rejected' ) )
+			->getMock();
+		$this->native_rate_account
+			->method( 'is_provider_connected' )
+			->willReturnCallback(
+				function ( bool $on_error = false ): bool {
+					unset( $on_error );
+					return $this->native_rate_account_connected;
+				}
+			);
+		$this->native_rate_account
+			->method( 'is_account_rejected' )
+			->willReturnCallback(
+				function (): bool {
+					return $this->native_rate_account_rejected;
+				}
+			);
+
+		$this->native_rate_api_client = $this->getMockBuilder( WooPaymentsNativeApiClientAdapter::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_server_connected' ) )
+			->getMock();
+		$this->native_rate_api_client
+			->method( 'is_server_connected' )
+			->willReturnCallback(
+				function (): bool {
+					return $this->native_rate_api_client_connected;
+				}
+			);
+
 		$this->sut = $this->create_cutover_controller();
 	}
 
@@ -219,6 +288,9 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		unset( $_GET[ WooPaymentsCutoverController::QUERY_ACTION ], $_GET[ WooPaymentsCutoverController::NONCE_NAME ], $_GET[ WooPaymentsCutoverController::QUERY_STATUS ] );
 		delete_transient( 'woocommerce_woopayments_native_cutover_status' );
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
+		delete_option( '_wcpay_feature_customer_multi_currency' );
+		delete_option( 'wcpay_multi_currency_enabled_currencies' );
+		delete_option( 'wcpay_multi_currency_exchange_rate_gbp' );
 
 		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
 		remove_all_filters( WooPaymentsCutoverController::FILTER_NATIVE_TRANSPORT_READY );
@@ -764,6 +836,62 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Cutover preflight blocks when automatic multi-currency rates have no provider.
+	 */
+	public function test_preflight_blocks_when_multi_currency_automatic_rates_have_no_provider(): void {
+		$this->fake_plugin_active();
+		$this->fake_current_user_caps( true );
+		$this->enable_ready_cutover();
+		$this->enable_multi_currency_with_rate_type( 'automatic' );
+
+		$this->assertContains( 'multi_currency_rates_unavailable', $this->sut->get_preflight_failures() );
+		$this->assertFalse( $this->sut->should_show_soft_cutover_notice() );
+		$this->assertFalse( $this->sut->disable_woopayments_plugin() );
+	}
+
+	/**
+	 * @testdox Cutover preflight allows manual multi-currency rates without a provider.
+	 */
+	public function test_preflight_allows_manual_multi_currency_rates_without_provider(): void {
+		$this->fake_plugin_active();
+		$this->fake_current_user_caps( true );
+		$this->enable_ready_cutover();
+		$this->enable_multi_currency_with_rate_type( 'manual' );
+
+		$this->assertNotContains( 'multi_currency_rates_unavailable', $this->sut->get_preflight_failures() );
+		$this->assertTrue( $this->sut->should_show_soft_cutover_notice() );
+	}
+
+	/**
+	 * @testdox Cutover preflight allows automatic multi-currency rates when a provider is available.
+	 */
+	public function test_preflight_allows_multi_currency_automatic_rates_with_available_provider(): void {
+		$this->fake_plugin_active();
+		$this->fake_current_user_caps( true );
+		$this->enable_ready_cutover();
+		$this->enable_multi_currency_with_rate_type( 'automatic' );
+		$this->enable_available_native_rate_transport();
+
+		$this->assertNotContains( 'multi_currency_rates_unavailable', $this->sut->get_preflight_failures() );
+		$this->assertTrue( $this->sut->should_show_soft_cutover_notice() );
+	}
+
+	/**
+	 * @testdox Cutover preflight filters cannot remove multi-currency rate-provider blockers.
+	 */
+	public function test_preflight_filter_cannot_remove_multi_currency_rate_provider_blocker(): void {
+		$this->fake_plugin_active();
+		$this->fake_current_user_caps( true );
+		$this->enable_ready_cutover();
+		$this->enable_multi_currency_with_rate_type( 'automatic' );
+		add_filter( WooPaymentsCutoverController::FILTER_PREFLIGHT_FAILURES, '__return_empty_array' );
+
+		$this->assertContains( 'multi_currency_rates_unavailable', $this->sut->get_preflight_failures() );
+		$this->assertFalse( $this->sut->should_show_soft_cutover_notice() );
+		$this->assertFalse( $this->sut->disable_woopayments_plugin() );
+	}
+
+	/**
 	 * @testdox Cutover preflight blocks while native admin surfaces are unavailable.
 	 */
 	public function test_preflight_blocks_when_native_admin_surfaces_are_unavailable(): void {
@@ -1012,7 +1140,9 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			$this->provider,
 			new WooPaymentsLegacySubscriptionsGuard(),
 			$this->fee_remediation_service,
-			$this->platform_connection_service
+			$this->platform_connection_service,
+			$this->native_rate_account,
+			$this->native_rate_api_client
 		);
 
 		return $controller;
@@ -1039,6 +1169,26 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		add_filter( WooPaymentsCutoverController::FILTER_PROVIDER_EVENT_TYPES_PENDING_CUTOVER, '__return_empty_array' );
 		add_filter( WooPaymentsCutoverController::FILTER_OPERATIONAL_QUEUE_HOOKS_PENDING_CUTOVER, '__return_empty_array' );
 		$this->native_provider_ready = true;
+	}
+
+	/**
+	 * Enable multi-currency with a single GBP rate type.
+	 *
+	 * @param string $rate_type Exchange rate type.
+	 */
+	private function enable_multi_currency_with_rate_type( string $rate_type ): void {
+		update_option( '_wcpay_feature_customer_multi_currency', '1' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_gbp', $rate_type );
+	}
+
+	/**
+	 * Make the native rate transport available.
+	 */
+	private function enable_available_native_rate_transport(): void {
+		$this->native_rate_account_connected    = true;
+		$this->native_rate_account_rejected     = false;
+		$this->native_rate_api_client_connected = true;
 	}
 
 	/**

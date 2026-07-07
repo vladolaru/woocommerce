@@ -15,11 +15,14 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
  */
 class MultiCurrencyAdminNoticeProjectionService {
 
-	private const NOTICE_KEY_CURRENCY_CHANGED = 'currency_changed';
-	private const NOTICE_OPTION_NAME          = 'wcpay_multi_currency_show_store_currency_changed_notice';
-	private const NOTICE_OPTION_HIDDEN_VALUE  = 'no';
-	private const HIDE_NOTICE_QUERY_ARG       = 'wcpay-multi-currency-hide-notice';
-	private const NONCE_QUERY_ARG             = '_wcpay_multi_currency_notice_nonce';
+	private const NOTICE_KEY_CURRENCY_CHANGED                = 'currency_changed';
+	private const NOTICE_KEY_RATE_PROVIDER_UNAVAILABLE       = 'rate_provider_unavailable';
+	private const NOTICE_OPTION_NAME                         = 'wcpay_multi_currency_show_store_currency_changed_notice';
+	private const RATE_PROVIDER_UNAVAILABLE_DISMISSED_OPTION = 'wcpay_multi_currency_rate_provider_unavailable_notice_dismissed';
+	private const NOTICE_OPTION_HIDDEN_VALUE                 = 'no';
+	private const RATE_PROVIDER_UNAVAILABLE_HIDDEN_VALUE     = 'yes';
+	private const HIDE_NOTICE_QUERY_ARG                      = 'wcpay-multi-currency-hide-notice';
+	private const NONCE_QUERY_ARG                            = '_wcpay_multi_currency_notice_nonce';
 
 	/**
 	 * Project admin notice hook metadata.
@@ -142,16 +145,25 @@ class MultiCurrencyAdminNoticeProjectionService {
 			return self::get_noop_hide_intent( 'forbidden' );
 		}
 
-		if ( self::NOTICE_KEY_CURRENCY_CHANGED !== $notice_key ) {
-			return self::get_noop_hide_intent( 'unsupported_notice' );
+		if ( self::NOTICE_KEY_CURRENCY_CHANGED === $notice_key ) {
+			return array(
+				'should_hide'  => true,
+				'option_name'  => self::NOTICE_OPTION_NAME,
+				'option_value' => self::NOTICE_OPTION_HIDDEN_VALUE,
+				'error'        => null,
+			);
 		}
 
-		return array(
-			'should_hide'  => true,
-			'option_name'  => self::NOTICE_OPTION_NAME,
-			'option_value' => self::NOTICE_OPTION_HIDDEN_VALUE,
-			'error'        => null,
-		);
+		if ( self::NOTICE_KEY_RATE_PROVIDER_UNAVAILABLE === $notice_key ) {
+			return array(
+				'should_hide'  => true,
+				'option_name'  => self::RATE_PROVIDER_UNAVAILABLE_DISMISSED_OPTION,
+				'option_value' => self::RATE_PROVIDER_UNAVAILABLE_HIDDEN_VALUE,
+				'error'        => null,
+			);
+		}
+
+		return self::get_noop_hide_intent( 'unsupported_notice' );
 	}
 
 	/**

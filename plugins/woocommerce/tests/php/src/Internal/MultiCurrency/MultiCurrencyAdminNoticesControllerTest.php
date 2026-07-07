@@ -3,8 +3,13 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAdminNoticesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
+use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistrarInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistry;
+use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use WC_Unit_Test_Case;
 
 /**
@@ -12,15 +17,17 @@ use WC_Unit_Test_Case;
  */
 class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 
-	private const NOTICE_OPTION   = 'wcpay_multi_currency_show_store_currency_changed_notice';
-	private const NOTICE_QUERY    = 'wcpay-multi-currency-hide-notice';
-	private const NONCE_QUERY     = '_wcpay_multi_currency_notice_nonce';
-	private const NONCE_ACTION    = 'wcpay_multi_currency_hide_notices_nonce';
-	private const ADMIN_NOTICES   = 'admin_notices';
-	private const WP_LOADED       = 'wp_loaded';
-	private const NOTICE_MESSAGE  = 'The store currency was recently changed. The following currencies are set to manual rates and may need updates: Canadian dollar, Euro';
-	private const FORBIDDEN_ERROR = 'Sorry, you are not allowed to do that.';
-	private const NONCE_ERROR     = 'Action failed. Please refresh the page and retry.';
+	private const NOTICE_OPTION                = 'wcpay_multi_currency_show_store_currency_changed_notice';
+	private const NOTICE_QUERY                 = 'wcpay-multi-currency-hide-notice';
+	private const NONCE_QUERY                  = '_wcpay_multi_currency_notice_nonce';
+	private const NONCE_ACTION                 = 'wcpay_multi_currency_hide_notices_nonce';
+	private const ADMIN_NOTICES                = 'admin_notices';
+	private const WP_LOADED                    = 'wp_loaded';
+	private const NOTICE_MESSAGE               = 'The store currency was recently changed. The following currencies are set to manual rates and may need updates: Canadian dollar, Euro';
+	private const RATE_NOTICE_KEY              = 'rate_provider_unavailable';
+	private const RATE_NOTICE_DISMISSED_OPTION = 'wcpay_multi_currency_rate_provider_unavailable_notice_dismissed';
+	private const FORBIDDEN_ERROR              = 'Sorry, you are not allowed to do that.';
+	private const NONCE_ERROR                  = 'Action failed. Please refresh the page and retry.';
 
 	/**
 	 * Tear down test fixtures.
@@ -29,6 +36,11 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 		remove_all_filters( self::ADMIN_NOTICES );
 		remove_all_filters( self::WP_LOADED );
 		delete_option( self::NOTICE_OPTION );
+		delete_option( self::RATE_NOTICE_DISMISSED_OPTION );
+		delete_option( '_wcpay_feature_customer_multi_currency' );
+		delete_option( 'wcpay_multi_currency_enabled_currencies' );
+		delete_option( 'wcpay_multi_currency_exchange_rate_gbp' );
+		delete_option( MultiCurrencyCacheInterface::CURRENCIES_KEY );
 		unset( $_GET[ self::NOTICE_QUERY ], $_GET[ self::NONCE_QUERY ] );
 		wp_set_current_user( 0 );
 
@@ -78,6 +90,74 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( self::NOTICE_QUERY . '=currency_changed', $markup );
 		$this->assertStringContainsString( self::NONCE_QUERY, $markup );
 		$this->assertStringContainsString( 'class="woocommerce-message-close notice-dismiss"', $markup );
+	}
+
+	/**
+	 * @testdox Should render the rate-provider unavailable notice for automatic currencies without a provider.
+	 */
+	public function test_renders_rate_provider_unavailable_notice_for_automatic_currencies_without_provider(): void {
+		$this->set_current_user_can_manage_woocommerce();
+		$this->enable_multi_currency_with_rate_type( 'automatic' );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+
+		ob_start();
+		$sut->handle_admin_notices();
+		$markup = ob_get_clean();
+
+		$this->assertIsString( $markup );
+		$this->assertStringContainsString( 'class="notice notice-warning"', $markup );
+		$this->assertStringContainsString( 'Automatic exchange rates are currently unavailable;', $markup );
+		$this->assertStringContainsString( 'Manual rates keep working.', $markup );
+		$this->assertStringContainsString( self::NOTICE_QUERY . '=' . self::RATE_NOTICE_KEY, $markup );
+		$this->assertStringContainsString( self::NONCE_QUERY, $markup );
+	}
+
+	/**
+	 * @testdox Should not render the rate-provider unavailable notice for manual currencies.
+	 */
+	public function test_does_not_render_rate_provider_unavailable_notice_for_manual_currencies(): void {
+		$this->set_current_user_can_manage_woocommerce();
+		$this->enable_multi_currency_with_rate_type( 'manual' );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+
+		ob_start();
+		$sut->handle_admin_notices();
+		$markup = ob_get_clean();
+
+		$this->assertIsString( $markup );
+		$this->assertStringNotContainsString( 'Automatic exchange rates are currently unavailable;', $markup );
+	}
+
+	/**
+	 * @testdox Should not render the rate-provider unavailable notice when a provider is available.
+	 */
+	public function test_does_not_render_rate_provider_unavailable_notice_when_provider_is_available(): void {
+		$this->set_current_user_can_manage_woocommerce();
+		$this->enable_multi_currency_with_rate_type( 'automatic' );
+		$provider_registry_factory = new CurrencyRateProviderRegistryFactory();
+		$this->register_available_rate_provider( $provider_registry_factory );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $provider_registry_factory );
+
+		ob_start();
+		$sut->handle_admin_notices();
+		$markup = ob_get_clean();
+
+		$this->assertIsString( $markup );
+		$this->assertStringNotContainsString( 'Automatic exchange rates are currently unavailable;', $markup );
+	}
+
+	/**
+	 * @testdox Should hide the rate-provider unavailable notice for a valid dismissal request.
+	 */
+	public function test_hides_rate_provider_unavailable_notice_for_valid_dismissal_request(): void {
+		$this->set_current_user_can_manage_woocommerce();
+		$_GET[ self::NOTICE_QUERY ] = self::RATE_NOTICE_KEY;
+		$_GET[ self::NONCE_QUERY ]  = wp_create_nonce( self::NONCE_ACTION );
+		$sut                        = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+
+		$sut->handle_wp_loaded();
+
+		$this->assertSame( 'yes', get_option( self::RATE_NOTICE_DISMISSED_OPTION ) );
 	}
 
 	/**
@@ -153,14 +233,105 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create an admin notices controller.
 	 *
-	 * @param string $owner Runtime owner.
+	 * @param string                                   $owner                     Runtime owner.
+	 * @param CurrencyRateProviderRegistryFactory|null $provider_registry_factory Rate provider registry factory.
 	 * @return MultiCurrencyAdminNoticesController
 	 */
-	private function create_controller( string $owner ): MultiCurrencyAdminNoticesController {
+	private function create_controller( string $owner, ?CurrencyRateProviderRegistryFactory $provider_registry_factory = null ): MultiCurrencyAdminNoticesController {
 		$controller = new MultiCurrencyAdminNoticesController();
-		$controller->init( $this->create_arbiter( $owner ) );
+		$controller->init( $this->create_arbiter( $owner ), $provider_registry_factory ?? new CurrencyRateProviderRegistryFactory() );
 
 		return $controller;
+	}
+
+	/**
+	 * Enable multi-currency with one GBP rate type and preserved cache timestamp.
+	 *
+	 * @param string $rate_type Exchange rate type.
+	 */
+	private function enable_multi_currency_with_rate_type( string $rate_type ): void {
+		update_option( '_wcpay_feature_customer_multi_currency', '1' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_gbp', $rate_type );
+		update_option(
+			MultiCurrencyCacheInterface::CURRENCIES_KEY,
+			array(
+				'data'               => array(
+					'currencies' => array(
+						'gbp' => 0.82,
+					),
+					'updated'    => 123456,
+				),
+				'fetched'            => time(),
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			),
+			false
+		);
+	}
+
+	/**
+	 * Register an available automatic-rate provider.
+	 *
+	 * @param CurrencyRateProviderRegistryFactory $provider_registry_factory Rate provider registry factory.
+	 */
+	private function register_available_rate_provider( CurrencyRateProviderRegistryFactory $provider_registry_factory ): void {
+		$provider_registry_factory->set_provider_registrars(
+			array(
+				new class() implements CurrencyRateProviderRegistrarInterface {
+					/**
+					 * Register an available rate provider.
+					 *
+					 * @param CurrencyRateProviderRegistry $registry Rate provider registry.
+					 */
+					public function register( CurrencyRateProviderRegistry $registry ): void {
+						$registry->register(
+							new class() implements CurrencyRateProvider {
+								/**
+								 * Get the provider identifier.
+								 *
+								 * @return string
+								 */
+								public function get_id(): string {
+									return 'test';
+								}
+
+								/**
+								 * Tell whether automatic rates are currently available.
+								 *
+								 * @return bool
+								 */
+								public function is_available(): bool {
+									return true;
+								}
+
+								/**
+								 * Get supported currencies.
+								 *
+								 * @return string[]
+								 */
+								public function get_supported_currencies(): array {
+									return array( 'GBP' );
+								}
+
+								/**
+								 * Get currency rates.
+								 *
+								 * @param string        $currency_from Currency to convert from.
+								 * @param string[]|null $currencies_to Currencies to convert into, or null for all supported.
+								 * @return array<string,mixed>
+								 */
+								public function get_currency_rates( string $currency_from, ?array $currencies_to = null ): array {
+									unset( $currency_from, $currencies_to );
+
+									return array( 'gbp' => 0.82 );
+								}
+							}
+						);
+					}
+				},
+			)
+		);
 	}
 
 	/**

@@ -8,11 +8,14 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProvider
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistrarInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\MultiCurrencyProviderAccountResolver;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsCurrencyRateProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsCurrencyRateProviderRegistrar;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsLegacyAccountAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsLegacyApiClientAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyProviderBootstrap;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeAccountAdapter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeApiClientAdapter;
 use WC_Unit_Test_Case;
 
 /**
@@ -208,14 +211,41 @@ class CurrencyRateProviderRegistryFactoryTest extends WC_Unit_Test_Case {
 		$container          = wc_get_container();
 		$account_adapter    = $container->get( WooPaymentsLegacyAccountAdapter::class );
 		$api_client_adapter = $container->get( WooPaymentsLegacyApiClientAdapter::class );
+		$arbiter            = new class() extends NativePaymentsRuntimeArbiter {
+			/**
+			 * Tell whether native code may register.
+			 *
+			 * @return bool
+			 */
+			public function should_native_register(): bool {
+				return false;
+			}
+
+			/**
+			 * Tell whether the plugin owns runtime.
+			 *
+			 * @return bool
+			 */
+			public function is_plugin_runtime_active(): bool {
+				return true;
+			}
+		};
 
 		$registrar = new WooPaymentsCurrencyRateProviderRegistrar();
-		$registrar->init( $account_adapter, $api_client_adapter );
 
 		$sut = new CurrencyRateProviderRegistryFactory();
 
 		$bootstrap = new WooPaymentsMultiCurrencyProviderBootstrap();
-		$bootstrap->init( new MultiCurrencyProviderAccountResolver(), $account_adapter, $sut, $registrar );
+		$bootstrap->init(
+			new MultiCurrencyProviderAccountResolver(),
+			$arbiter,
+			$account_adapter,
+			$api_client_adapter,
+			new WooPaymentsNativeAccountAdapter(),
+			new WooPaymentsNativeApiClientAdapter(),
+			$sut,
+			$registrar
+		);
 		$bootstrap->register();
 
 		return $sut;

@@ -9,6 +9,8 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeAccountAdapter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeApiClientAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsLegacySubscriptionsGuard;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -194,6 +196,20 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	private WooPaymentsPlatformConnectionService $platform_connection_service;
 
 	/**
+	 * Native rate account boundary.
+	 *
+	 * @var WooPaymentsNativeAccountAdapter
+	 */
+	private WooPaymentsNativeAccountAdapter $native_rate_account;
+
+	/**
+	 * Native rate API client boundary.
+	 *
+	 * @var WooPaymentsNativeApiClientAdapter
+	 */
+	private WooPaymentsNativeApiClientAdapter $native_rate_api_client;
+
+	/**
 	 * Request-local cutover preflight failures.
 	 *
 	 * @var array<int,string>|null
@@ -211,6 +227,8 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @param WooPaymentsLegacySubscriptionsGuard|null                   $legacy_subscriptions_guard Legacy subscription data guard.
 	 * @param WooPaymentsCanceledAuthorizationFeeRemediationService|null $fee_remediation_service    Canceled-authorization fee remediation queue owner.
 	 * @param WooPaymentsPlatformConnectionService|null                  $platform_connection_service Platform connection readiness service.
+	 * @param WooPaymentsNativeAccountAdapter|null                       $native_rate_account         Native rate account boundary.
+	 * @param WooPaymentsNativeApiClientAdapter|null                     $native_rate_api_client      Native rate API client boundary.
 	 */
 	final public function init(
 		NativePaymentsRuntimeArbiter $arbiter,
@@ -218,7 +236,9 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 		WooPaymentsProvider $provider,
 		?WooPaymentsLegacySubscriptionsGuard $legacy_subscriptions_guard = null,
 		?WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service = null,
-		?WooPaymentsPlatformConnectionService $platform_connection_service = null
+		?WooPaymentsPlatformConnectionService $platform_connection_service = null,
+		?WooPaymentsNativeAccountAdapter $native_rate_account = null,
+		?WooPaymentsNativeApiClientAdapter $native_rate_api_client = null
 	): void {
 		$this->arbiter                     = $arbiter;
 		$this->legacy_proxy                = $legacy_proxy;
@@ -226,6 +246,8 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 		$this->legacy_subscriptions_guard  = $legacy_subscriptions_guard ?? wc_get_container()->get( WooPaymentsLegacySubscriptionsGuard::class );
 		$this->fee_remediation_service     = $fee_remediation_service ?? wc_get_container()->get( WooPaymentsCanceledAuthorizationFeeRemediationService::class );
 		$this->platform_connection_service = $platform_connection_service ?? wc_get_container()->get( WooPaymentsPlatformConnectionService::class );
+		$this->native_rate_account         = $native_rate_account ?? wc_get_container()->get( WooPaymentsNativeAccountAdapter::class );
+		$this->native_rate_api_client      = $native_rate_api_client ?? wc_get_container()->get( WooPaymentsNativeApiClientAdapter::class );
 	}
 
 	/**
@@ -425,6 +447,11 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 			$protected_failures[] = 'unsupported_payment_methods_enabled';
 		}
 
+		if ( $this->has_unavailable_multi_currency_rate_provider() ) {
+			$failures[]           = 'multi_currency_rates_unavailable';
+			$protected_failures[] = 'multi_currency_rates_unavailable';
+		}
+
 		/**
 		 * Filters whether native WooPayments merchant admin surfaces are ready after deactivation.
 		 *
@@ -490,6 +517,61 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 
 		foreach ( $this->get_enabled_legacy_payment_method_ids() as $payment_method_id ) {
 			if ( ! in_array( $payment_method_id, $natively_chargeable_payment_method_ids, true ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Tell whether cutover would leave automatic multi-currency rates without a provider.
+	 *
+	 * @return bool
+	 */
+	private function has_unavailable_multi_currency_rate_provider(): bool {
+		if ( ! $this->has_automatic_multi_currency_rate_currencies() ) {
+			return false;
+		}
+
+		try {
+			return ! (
+				$this->native_rate_api_client->is_server_connected()
+				&& $this->native_rate_account->is_provider_connected()
+				&& ! $this->native_rate_account->is_account_rejected()
+			);
+		} catch ( \Throwable $e ) {
+			return true;
+		}
+	}
+
+	/**
+	 * Tell whether enabled multi-currency includes any automatic-rate non-default currency.
+	 *
+	 * @return bool
+	 */
+	private function has_automatic_multi_currency_rate_currencies(): bool {
+		if ( '1' !== (string) get_option( '_wcpay_feature_customer_multi_currency', '1' ) ) {
+			return false;
+		}
+
+		$enabled_currencies = get_option( 'wcpay_multi_currency_enabled_currencies', array() );
+		if ( ! is_array( $enabled_currencies ) || array() === $enabled_currencies ) {
+			return false;
+		}
+
+		$store_currency = strtoupper( (string) get_option( 'woocommerce_currency', 'USD' ) );
+		foreach ( $enabled_currencies as $currency_code ) {
+			if ( ! is_scalar( $currency_code ) ) {
+				continue;
+			}
+
+			$currency_code = strtoupper( trim( (string) $currency_code ) );
+			if ( '' === $currency_code || $store_currency === $currency_code ) {
+				continue;
+			}
+
+			if ( 'manual' !== (string) get_option( 'wcpay_multi_currency_exchange_rate_' . strtolower( $currency_code ), 'automatic' ) ) {
 				return true;
 			}
 		}
