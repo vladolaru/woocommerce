@@ -246,6 +246,10 @@ run_full_evidence_gates() {
 	mkdir -p "$FULL_EVIDENCE_OUT_DIR"
 	gate "final evidence self-check verifier" bash "$SELF_DIR/verify.sh" --self-check "$REF_WP"
 	gate "final evidence tracks verifier" bash "$SELF_DIR/verify.sh" --ref "$REF_WP" --target "$TARGET_WP" --with-tracks
+	gate "final evidence REST route parity" bash "$SELF_DIR/rest-route-parity.sh" --ref "$REF_WP" --target "$TARGET_WP"
+	gate "final evidence hook-shape parity" bash "$SELF_DIR/hook-shape-parity.sh" --ref "$REF_WP" --target "$TARGET_WP"
+	gate "final evidence subsystem disposition" bash "$SELF_DIR/subsystem-disposition-gate.sh"
+	gate "final evidence i18n notes" bash "$SELF_DIR/i18n-notes-gate.sh" --target "$TARGET_WP"
 	gate "critical flows inventory" python3 "$REPO_ROOT/tools/woopayments-critical-flows/test-inventory.py"
 	gate "critical flows full run" bash "$REPO_ROOT/tools/woopayments-critical-flows/run.sh" --store both --layer all
 	gate "subscriptions renewal preflight" bash "$SELF_DIR/subscriptions-renewal-gate.sh" preflight --ref "$REF_WP" --target "$TARGET_WP" --out-dir "$FULL_EVIDENCE_OUT_DIR/subscriptions-renewal"

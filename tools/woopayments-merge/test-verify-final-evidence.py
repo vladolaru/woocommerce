@@ -215,6 +215,10 @@ printf 'critical-run|%s\n' "$*" >> "$INVOCATIONS_LOG"
         assert "tracks-parity.sh|diff" in invocation_log
         assert "critical-run|--store both --layer all" in invocation_log
         assert invocation_log.count("flow-drive.sh|charge") >= 5
+        assert invocation_log.count("rest-route-parity.sh|") >= 4
+        assert invocation_log.count("hook-shape-parity.sh|") >= 4
+        assert invocation_log.count("subsystem-disposition-gate.sh|") >= 4
+        assert invocation_log.count("i18n-notes-gate.sh|") >= 3
 
 
 def test_full_evidence_flag_is_documented_in_usage() -> None:
