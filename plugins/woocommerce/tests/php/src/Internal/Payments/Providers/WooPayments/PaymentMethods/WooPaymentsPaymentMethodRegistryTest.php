@@ -174,7 +174,19 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 	 * @testdox Registry exposes the staged native-chargeable set.
 	 */
 	public function test_registry_exposes_staged_natively_chargeable_ids(): void {
-		$this->assertSame( array( 'card', 'link' ), $this->registry->get_natively_chargeable_ids() );
+		$this->assertSame(
+			array(
+				'card',
+				'link',
+				'sepa_debit',
+				'ideal',
+				'bancontact',
+				'klarna',
+				'affirm',
+				'afterpay_clearpay',
+			),
+			$this->registry->get_natively_chargeable_ids()
+		);
 	}
 
 	/**

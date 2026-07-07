@@ -699,7 +699,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
 			array(
-				'upe_enabled_payment_method_ids' => array( 'card', 'klarna' ),
+				'upe_enabled_payment_method_ids' => array( 'card', 'eps' ),
 			)
 		);
 
@@ -719,7 +719,16 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
 			array(
-				'upe_enabled_payment_method_ids' => array( 'card', 'link' ),
+				'upe_enabled_payment_method_ids' => array(
+					'card',
+					'link',
+					'sepa_debit',
+					'ideal',
+					'bancontact',
+					'klarna',
+					'affirm',
+					'afterpay_clearpay',
+				),
 			)
 		);
 
@@ -737,7 +746,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
 			array(
-				'upe_enabled_payment_method_ids' => array( 'card', 'ideal' ),
+				'upe_enabled_payment_method_ids' => array( 'card', 'eps' ),
 			)
 		);
 		add_filter( WooPaymentsCutoverController::FILTER_PREFLIGHT_FAILURES, '__return_empty_array' );

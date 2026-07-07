@@ -32,6 +32,12 @@ class WooPaymentsPaymentMethodRegistry {
 	private const NATIVELY_CHARGEABLE_PAYMENT_METHOD_IDS = array(
 		'card',
 		'link',
+		'sepa_debit',
+		'ideal',
+		'bancontact',
+		'klarna',
+		'affirm',
+		'afterpay_clearpay',
 	);
 
 	/**

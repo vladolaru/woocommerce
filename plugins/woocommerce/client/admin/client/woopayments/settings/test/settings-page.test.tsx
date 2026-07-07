@@ -507,6 +507,12 @@ const setHookDefaults = () => {
 	mockUseGetNativelyChargeablePaymentMethodIds.mockReturnValue( [
 		'card',
 		'link',
+		'sepa_debit',
+		'ideal',
+		'bancontact',
+		'klarna',
+		'affirm',
+		'afterpay_clearpay',
 	] );
 	mockUseGetPaymentMethodStatuses.mockReturnValue( {
 		card_payments: { status: 'active' },
@@ -1050,13 +1056,11 @@ describe( 'WooPaymentsSettingsPage', () => {
 		const addPaymentMethod = jest.fn();
 		mockUseGetAvailablePaymentMethodIds.mockReturnValue( [
 			'card',
-			'ideal',
-			'klarna',
+			'eps',
 		] );
 		mockUseGetPaymentMethodStatuses.mockReturnValue( {
 			card_payments: { status: 'active' },
-			ideal_payments: { status: 'active' },
-			klarna_payments: { status: 'active' },
+			eps_payments: { status: 'active' },
 		} );
 		mockUseEnabledPaymentMethodIds.mockReturnValue( [ [ 'card' ], noop ] );
 		mockUseSelectedPaymentMethod.mockReturnValue( [
@@ -1074,22 +1078,22 @@ describe( 'WooPaymentsSettingsPage', () => {
 		const paymentMethodsGroup = screen.getByRole( 'group', {
 			name: 'Payment methods',
 		} );
-		const idealCheckbox = within( paymentMethodsGroup ).getByRole(
+		const epsCheckbox = within( paymentMethodsGroup ).getByRole(
 			'checkbox',
 			{
-				name: 'iDEAL | Wero',
+				name: 'EPS',
 			}
 		);
 
-		expect( idealCheckbox ).toBeDisabled();
-		expect( idealCheckbox ).not.toBeChecked();
+		expect( epsCheckbox ).toBeDisabled();
+		expect( epsCheckbox ).not.toBeChecked();
 		expect(
 			within( paymentMethodsGroup ).getByText(
 				'Not yet available in the built-in WooPayments - keep the WooPayments extension active to offer this method.'
 			)
 		).toBeInTheDocument();
 
-		fireEvent.click( idealCheckbox );
+		fireEvent.click( epsCheckbox );
 
 		expect( addPaymentMethod ).not.toHaveBeenCalled();
 	} );

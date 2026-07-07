@@ -264,7 +264,19 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertSame( array( 'card', 'link' ), $settings['enabled_payment_method_ids'] );
-		$this->assertSame( array( 'card', 'link' ), $settings['natively_chargeable_payment_method_ids'] );
+		$this->assertSame(
+			array(
+				'card',
+				'link',
+				'sepa_debit',
+				'ideal',
+				'bancontact',
+				'klarna',
+				'affirm',
+				'afterpay_clearpay',
+			),
+			$settings['natively_chargeable_payment_method_ids']
+		);
 		$this->assertContains( 'card', $settings['available_payment_method_ids'] );
 		$this->assertContains( 'affirm', $settings['available_payment_method_ids'] );
 		$this->assertContains( 'ideal', $settings['available_payment_method_ids'] );
