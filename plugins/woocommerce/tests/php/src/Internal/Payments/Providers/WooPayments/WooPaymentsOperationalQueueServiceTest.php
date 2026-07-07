@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIppReceiptEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
@@ -46,6 +47,12 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		$this->delete_instant_deposit_note();
 		remove_filter( 'woocommerce_email_classes', '__return_empty_array', 20 );
 		remove_filter( 'pre_wp_mail', '__return_true' );
+		remove_all_actions( 'woocommerce_payments_email_ipp_receipt_store_details' );
+		remove_all_actions( 'woocommerce_payments_email_ipp_receipt_compliance_details' );
+		remove_all_actions( 'woocommerce_payments_email_ipp_receipt_notification' );
+		remove_all_filters( 'woocommerce_email_preview_dummy_order' );
+		remove_all_filters( 'woocommerce_email_preview_dummy_address' );
+		remove_all_filters( 'woocommerce_email_preview_placeholders' );
 		$this->reset_mailer_emails();
 		if ( function_exists( 'as_unschedule_all_actions' ) ) {
 			as_unschedule_all_actions( WooPaymentsOperationalQueueService::STORE_SETUP_SYNC_ACTION, null, WooPaymentsActionSchedulerService::GROUP_ID );
@@ -77,6 +84,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 10, has_action( 'wcpay_post_kyc_activation_email_send', array( $service, 'handle_wcpay_post_kyc_activation_email_send' ) ) );
 		$this->assertSame( 10, has_action( 'admin_init', array( $service, 'handle_wcpay_post_kyc_activation_email_cta' ) ) );
 		$this->assertSame( 10, has_filter( 'woocommerce_email_classes', array( $service, 'add_post_kyc_activation_email' ) ) );
+		$this->assertSame( 10, has_filter( 'woocommerce_email_classes', array( $service, 'add_ipp_receipt_email' ) ) );
 	}
 
 	/**
@@ -94,6 +102,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		$this->assertFalse( has_action( 'wcpay_instant_deposit_reminder', array( $service, 'handle_wcpay_instant_deposit_reminder' ) ) );
 		$this->assertFalse( has_action( 'wcpay_post_kyc_activation_email_send', array( $service, 'handle_wcpay_post_kyc_activation_email_send' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_email_classes', array( $service, 'add_post_kyc_activation_email' ) ) );
+		$this->assertFalse( has_filter( 'woocommerce_email_classes', array( $service, 'add_ipp_receipt_email' ) ) );
 	}
 
 	/**
@@ -604,6 +613,23 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox IPP receipt email registration preserves the WooPayments email settings key and template paths.
+	 */
+	public function test_ipp_receipt_email_registration_preserves_settings_key_and_template_paths(): void {
+		$this->assertTrue( class_exists( WooPaymentsIppReceiptEmail::class ), 'Native IPP receipt email class should exist before it can be registered.' );
+		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ) );
+		$this->assertTrue( method_exists( $service, 'add_ipp_receipt_email' ), 'Operational queue service should register the native IPP receipt email.' );
+		$emails = $service->add_ipp_receipt_email( array() );
+
+		$this->assertArrayHasKey( 'WC_Payments_Email_IPP_Receipt', $emails );
+		$this->assertInstanceOf( WooPaymentsIppReceiptEmail::class, $emails['WC_Payments_Email_IPP_Receipt'] );
+		$this->assertSame( 'new_receipt', $emails['WC_Payments_Email_IPP_Receipt']->id );
+		$this->assertSame( 'woocommerce_woocommerce_payments_new_receipt_settings', $emails['WC_Payments_Email_IPP_Receipt']->get_option_key() );
+		$this->assertSame( 'emails/customer-ipp-receipt.php', $emails['WC_Payments_Email_IPP_Receipt']->template_html );
+		$this->assertSame( 'emails/plain/customer-ipp-receipt.php', $emails['WC_Payments_Email_IPP_Receipt']->template_plain );
+	}
+
+	/**
 	 * @testdox Post-KYC activation email jobs mark the stage only after successful delivery.
 	 */
 	public function test_post_kyc_activation_email_job_marks_stage_after_successful_delivery(): void {
@@ -920,6 +946,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		remove_action( 'after_switch_theme', array( $service, 'schedule_compatibility_data_update' ) );
 		remove_action( 'action_scheduler_ensure_recurring_actions', array( $service, 'schedule_recurring_actions' ) );
 		remove_filter( 'woocommerce_email_classes', array( $service, 'add_post_kyc_activation_email' ) );
+		remove_filter( 'woocommerce_email_classes', array( $service, 'add_ipp_receipt_email' ) );
 	}
 
 	/**

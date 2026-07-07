@@ -12,6 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeCacheService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEventIngestor;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIppReceiptEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsNotificationEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundEventHandler;
@@ -47,6 +48,13 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	private string $last_refund_charge_id = 'ch_123';
 
 	/**
+	 * Email class filters registered by receipt tests.
+	 *
+	 * @var callable[]
+	 */
+	private array $email_class_filters = array();
+
+	/**
 	 * Set up test fixtures.
 	 */
 	public function setUp(): void {
@@ -62,6 +70,11 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		remove_all_filters( WooPaymentsEventIngestor::FILTER_LIVE_MODE );
 		remove_all_actions( 'woocommerce_payments_before_webhook_delivery' );
 		remove_all_actions( 'woocommerce_payments_after_webhook_delivery' );
+		foreach ( $this->email_class_filters as $filter ) {
+			remove_filter( 'woocommerce_email_classes', $filter );
+		}
+		$this->email_class_filters = array();
+		$this->reset_mailer_emails();
 		$this->delete_dispute_cache_options();
 		delete_option( 'wcpay_account_data' );
 		delete_option( 'wcpay_multi_currency_enabled_currencies' );
@@ -100,6 +113,113 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( '1.23', $order->get_meta( '_wcpay_transaction_fee', true ) );
 		$this->assertSame( '11.11', $order->get_meta( '_wcpay_net', true ) );
 		$this->assertSame( 'mobile_pos', $order->get_meta( '_wcpay_ipp_channel', true ) );
+	}
+
+	/**
+	 * @testdox payment_intent.succeeded sends an IPP receipt email for card-present charges.
+	 */
+	public function test_payment_intent_succeeded_sends_ipp_receipt_email_for_card_present_charge(): void {
+		$this->assertTrue( class_exists( WooPaymentsIppReceiptEmail::class ), 'Native IPP receipt email class should exist before webhook dispatch can send it.' );
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'account_business_name'            => 'Reader Store',
+				'account_business_support_address' => array(
+					'line1'       => '123 Sample Street',
+					'line2'       => 'Suite 100',
+					'city'        => 'San Francisco',
+					'state'       => 'CA',
+					'postal_code' => '94107',
+					'country'     => 'US',
+				),
+				'account_business_support_phone'   => '+1 555 0100',
+				'account_business_support_email'   => 'support@example.test',
+				'test_mode'                        => 'yes',
+			)
+		);
+		$order = $this->create_woopayments_order();
+		$order->set_billing_email( 'ada@example.test' );
+		$order->save();
+		$email = $this->create_recording_ipp_receipt_email();
+		$this->register_ipp_receipt_email( $email );
+
+		$this->sut->process(
+			$this->create_payment_intent_event(
+				'payment_intent.succeeded',
+				$order,
+				array(
+					'metadata' => array(
+						'ipp_channel' => 'mobile_store_management',
+					),
+					'charges'  => array(
+						'data' => array(
+							$this->create_card_present_charge(),
+						),
+					),
+				)
+			)
+		);
+
+		$this->assertCount( 1, $email->triggered, 'A card-present successful payment should trigger one receipt email.' );
+		$this->assertSame( $order->get_id(), $email->triggered[0]['order']->get_id() );
+		$this->assertSame(
+			array(
+				'business_name' => 'Reader Store',
+				'support_info'  => array(
+					'address' => array(
+						'line1'       => '123 Sample Street',
+						'line2'       => 'Suite 100',
+						'city'        => 'San Francisco',
+						'state'       => 'CA',
+						'postal_code' => '94107',
+						'country'     => 'US',
+					),
+					'phone'   => '+1 555 0100',
+					'email'   => 'support@example.test',
+				),
+			),
+			$email->triggered[0]['merchant_settings'],
+			'Receipt merchant settings should come from preserved WooPayments gateway settings.'
+		);
+		$this->assertSame( 'ch_card_present', $email->triggered[0]['charge']['id'] );
+		$this->assertSame( 'card_present', $email->triggered[0]['charge']['payment_method_details']['type'] );
+	}
+
+	/**
+	 * @testdox payment_intent.succeeded does not send an IPP receipt email for non-card-present charges.
+	 */
+	public function test_payment_intent_succeeded_does_not_send_ipp_receipt_email_for_non_card_present_charge(): void {
+		$this->assertTrue( class_exists( WooPaymentsIppReceiptEmail::class ), 'Native IPP receipt email class should exist before webhook dispatch can send it.' );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$order = $this->create_woopayments_order();
+		$email = $this->create_recording_ipp_receipt_email();
+		$this->register_ipp_receipt_email( $email );
+
+		$this->sut->process(
+			$this->create_payment_intent_event(
+				'payment_intent.succeeded',
+				$order,
+				array(
+					'charges' => array(
+						'data' => array(
+							array(
+								'id'                     => 'ch_card',
+								'payment_method'         => 'pm_123',
+								'application_fee_amount' => 123,
+								'payment_method_details' => array(
+									'type' => 'card',
+									'card' => array(
+										'mandate' => 'mandate_123',
+									),
+								),
+							),
+						),
+					),
+				)
+			)
+		);
+
+		$this->assertCount( 0, $email->triggered, 'Only card-present payments should trigger IPP receipt emails.' );
 	}
 
 	/**
@@ -2865,5 +2985,93 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			),
 			$event_overrides
 		);
+	}
+
+	/**
+	 * Create a card-present charge fixture.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function create_card_present_charge(): array {
+		return array(
+			'id'                     => 'ch_card_present',
+			'payment_method'         => 'pm_123',
+			'application_fee_amount' => 123,
+			'amount_captured'        => 1234,
+			'currency'               => 'usd',
+			'payment_method_details' => array(
+				'type'         => 'card_present',
+				'card_present' => array(
+					'brand'   => 'visa',
+					'last4'   => '4242',
+					'receipt' => array(
+						'application_preferred_name' => 'Visa Credit',
+						'dedicated_file_name'        => 'A0000000031010',
+						'account_type'               => 'credit',
+					),
+				),
+				'card'         => array(
+					'mandate' => 'mandate_123',
+				),
+			),
+		);
+	}
+
+	/**
+	 * Create a receipt email test double.
+	 *
+	 * @return object
+	 */
+	private function create_recording_ipp_receipt_email(): object {
+		return new class() extends WooPaymentsIppReceiptEmail {
+			/**
+			 * Triggered receipt email payloads.
+			 *
+			 * @var array<int,array{order:WC_Order,merchant_settings:array<string,mixed>,charge:array<string,mixed>}>
+			 */
+			public array $triggered = array();
+
+			/**
+			 * Record the receipt email payload.
+			 *
+			 * @param WC_Order            $order             Order object.
+			 * @param array<string,mixed> $merchant_settings Merchant settings.
+			 * @param array<string,mixed> $charge            Charge payload.
+			 */
+			public function trigger( WC_Order $order, array $merchant_settings, array $charge ): void {
+				$this->triggered[] = array(
+					'order'             => $order,
+					'merchant_settings' => $merchant_settings,
+					'charge'            => $charge,
+				);
+			}
+		};
+	}
+
+	/**
+	 * Register a receipt email test double in the WooCommerce mailer.
+	 *
+	 * @param object $email Email object.
+	 */
+	private function register_ipp_receipt_email( object $email ): void {
+		$filter = static function ( array $emails ) use ( $email ): array {
+			$emails[ WooPaymentsIppReceiptEmail::EMAIL_CLASS_KEY ] = $email;
+			return $emails;
+		};
+
+		$this->email_class_filters[] = $filter;
+		add_filter( 'woocommerce_email_classes', $filter );
+		if ( function_exists( 'WC' ) && WC()->mailer() ) {
+			WC()->mailer()->emails[ WooPaymentsIppReceiptEmail::EMAIL_CLASS_KEY ] = $email;
+		}
+	}
+
+	/**
+	 * Rebuild WooCommerce's cached email registry under the currently registered filters.
+	 */
+	private function reset_mailer_emails(): void {
+		if ( function_exists( 'WC' ) && WC()->mailer() ) {
+			WC()->mailer()->emails = array();
+		}
 	}
 }

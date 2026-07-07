@@ -168,6 +168,13 @@ class WooPaymentsEventIngestor {
 	private ?WooPaymentsOrderDataService $order_data_service = null;
 
 	/**
+	 * WooPayments account service.
+	 *
+	 * @var WooPaymentsAccountService|null
+	 */
+	private ?WooPaymentsAccountService $account_service = null;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -181,8 +188,9 @@ class WooPaymentsEventIngestor {
 	 * @param WooPaymentsAccountEventHandler      $account_event_handler      Account event handler.
 	 * @param WooPaymentsNotificationEventHandler $notification_event_handler Notification event handler.
 	 * @param WooPaymentsOrderDataService|null    $order_data_service         WooPayments order data service.
+	 * @param WooPaymentsAccountService|null      $account_service            WooPayments account service.
 	 */
-	final public function init( OrderPaymentLifecycleService $lifecycle_service, LegacyProxy $legacy_proxy, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, WooPaymentsDisputeEventHandler $dispute_event_handler, WooPaymentsRefundEventHandler $refund_event_handler, WooPaymentsAccountEventHandler $account_event_handler, WooPaymentsNotificationEventHandler $notification_event_handler, ?WooPaymentsOrderDataService $order_data_service = null ): void {
+	final public function init( OrderPaymentLifecycleService $lifecycle_service, LegacyProxy $legacy_proxy, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, WooPaymentsDisputeEventHandler $dispute_event_handler, WooPaymentsRefundEventHandler $refund_event_handler, WooPaymentsAccountEventHandler $account_event_handler, WooPaymentsNotificationEventHandler $notification_event_handler, ?WooPaymentsOrderDataService $order_data_service = null, ?WooPaymentsAccountService $account_service = null ): void {
 		$this->lifecycle_service          = $lifecycle_service;
 		$this->legacy_proxy               = $legacy_proxy;
 		$this->legacy_runtime             = $legacy_runtime;
@@ -192,6 +200,7 @@ class WooPaymentsEventIngestor {
 		$this->account_event_handler      = $account_event_handler;
 		$this->notification_event_handler = $notification_event_handler;
 		$this->order_data_service         = $order_data_service;
+		$this->account_service            = $account_service;
 	}
 
 	/**
@@ -337,6 +346,7 @@ class WooPaymentsEventIngestor {
 		}
 
 		$this->lifecycle_service->apply( $order, $lifecycle_event );
+		$this->maybe_send_ipp_receipt_email( $order, $event_type, $event_object );
 		$this->run_delivery_hook( 'woocommerce_payments_after_webhook_delivery', $event_type, $event );
 	}
 
@@ -850,6 +860,104 @@ class WooPaymentsEventIngestor {
 		}
 
 		return $this->order_data_service;
+	}
+
+	/**
+	 * Send the IPP customer receipt email for card-present successful payments.
+	 *
+	 * @param WC_Order            $order        Order object.
+	 * @param string              $event_type   Event type.
+	 * @param array<string,mixed> $event_object PaymentIntent object.
+	 * @return void
+	 */
+	private function maybe_send_ipp_receipt_email( WC_Order $order, string $event_type, array $event_object ): void {
+		if ( 'payment_intent.succeeded' !== $event_type ) {
+			return;
+		}
+
+		$charge = $this->get_first_charge_from_intent( $event_object );
+		if ( ! $this->is_ipp_receipt_charge( $charge ) ) {
+			return;
+		}
+
+		$email = $this->get_ipp_receipt_email();
+		if ( ! $email instanceof WooPaymentsIppReceiptEmail ) {
+			return;
+		}
+
+		$email->trigger( $order, $this->get_ipp_receipt_merchant_settings(), $charge );
+	}
+
+	/**
+	 * Get the first charge from a PaymentIntent object.
+	 *
+	 * @param array<string,mixed> $event_object PaymentIntent object.
+	 * @return array<string,mixed>
+	 */
+	private function get_first_charge_from_intent( array $event_object ): array {
+		$charge = $event_object['charges']['data'][0] ?? array();
+
+		return is_array( $charge ) ? $charge : array();
+	}
+
+	/**
+	 * Tell whether a charge should send an IPP receipt email.
+	 *
+	 * @param array<string,mixed> $charge Charge payload.
+	 * @return bool
+	 */
+	private function is_ipp_receipt_charge( array $charge ): bool {
+		$type = $charge['payment_method_details']['type'] ?? '';
+
+		return in_array( $type, array( 'card_present', 'interac_present' ), true );
+	}
+
+	/**
+	 * Get the IPP receipt email from the WooCommerce mailer.
+	 *
+	 * @return WooPaymentsIppReceiptEmail|null
+	 */
+	private function get_ipp_receipt_email(): ?WooPaymentsIppReceiptEmail {
+		if ( ! function_exists( 'WC' ) || ! WC()->mailer() ) {
+			return null;
+		}
+
+		$emails = WC()->mailer()->get_emails();
+		$email  = $emails[ WooPaymentsIppReceiptEmail::EMAIL_CLASS_KEY ] ?? null;
+
+		return $email instanceof WooPaymentsIppReceiptEmail ? $email : null;
+	}
+
+	/**
+	 * Get merchant settings used by the IPP receipt email.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_ipp_receipt_merchant_settings(): array {
+		$account_service = $this->get_account_service();
+		$support_address = $account_service->get_gateway_setting( 'account_business_support_address', array() );
+
+		return array(
+			'business_name' => (string) $account_service->get_gateway_setting( 'account_business_name', get_bloginfo( 'name' ) ),
+			'support_info'  => array(
+				'address' => is_array( $support_address ) ? $support_address : array(),
+				'phone'   => (string) $account_service->get_gateway_setting( 'account_business_support_phone', '' ),
+				'email'   => (string) $account_service->get_gateway_setting( 'account_business_support_email', get_option( 'admin_email', '' ) ),
+			),
+		);
+	}
+
+	/**
+	 * Get the WooPayments account service.
+	 *
+	 * @return WooPaymentsAccountService
+	 */
+	private function get_account_service(): WooPaymentsAccountService {
+		if ( null === $this->account_service ) {
+			$this->account_service = wc_get_container()->get( WooPaymentsAccountService::class );
+		}
+
+		return $this->account_service;
 	}
 
 	/**

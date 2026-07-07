@@ -232,6 +232,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 		add_action( self::POST_KYC_ACTIVATION_EMAIL_SEND_ACTION, array( $this, 'handle_wcpay_post_kyc_activation_email_send' ), 10, 1 );
 		add_action( 'admin_init', array( $this, 'handle_wcpay_post_kyc_activation_email_cta' ) );
 		add_filter( 'woocommerce_email_classes', array( $this, 'add_post_kyc_activation_email' ), 10, 1 );
+		add_filter( 'woocommerce_email_classes', array( $this, 'add_ipp_receipt_email' ), 10, 1 );
 		add_action( 'after_switch_theme', array( $this, 'schedule_compatibility_data_update' ) );
 		add_action( 'action_scheduler_ensure_recurring_actions', array( $this, 'schedule_recurring_actions' ) );
 	}
@@ -482,6 +483,23 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	 */
 	public function add_post_kyc_activation_email( array $email_classes ): array {
 		$email_classes[ self::POST_KYC_ACTIVATION_EMAIL_CLASS_KEY ] = new WooPaymentsPostKycActivationEmail();
+
+		return $email_classes;
+	}
+
+	/**
+	 * Register the IPP receipt email class.
+	 *
+	 * @internal
+	 *
+	 * @param array<string,mixed> $email_classes WooCommerce email classes.
+	 * @return array<string,mixed>
+	 */
+	public function add_ipp_receipt_email( array $email_classes ): array {
+		$email = new WooPaymentsIppReceiptEmail();
+		$email->init_hooks();
+
+		$email_classes[ WooPaymentsIppReceiptEmail::EMAIL_CLASS_KEY ] = $email;
 
 		return $email_classes;
 	}
