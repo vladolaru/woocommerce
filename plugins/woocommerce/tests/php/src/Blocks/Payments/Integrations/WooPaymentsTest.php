@@ -6,6 +6,8 @@ namespace Automattic\WooCommerce\Tests\Blocks\Payments\Integrations;
 use Automattic\WooCommerce\Blocks\Assets\Api as AssetApi;
 use Automattic\WooCommerce\Blocks\Payments\Integrations\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutBridge;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
@@ -403,7 +405,96 @@ class WooPaymentsTest extends WP_UnitTestCase {
 
 		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $bridge, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service() );
 
-		$this->assertSame( array( 'title' => 'WooPayments' ), $integration->get_payment_method_data() );
+		$this->assertSame(
+			array(
+				'title'     => 'WooPayments',
+				'gatewayId' => 'woocommerce_payments',
+			),
+			$integration->get_payment_method_data()
+		);
+	}
+
+	/**
+	 * @testdox Should publish one Blocks integration instance for each native WooPayments gateway.
+	 */
+	public function test_get_payment_method_integrations_publishes_one_instance_per_native_gateway(): void {
+		$asset_api = $this->getMockBuilder( AssetApi::class )
+			->disableOriginalConstructor()
+			->getMock();
+		$bridge    = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'should_expose_checkout_surface' ) )
+			->getMock();
+		$bridge->method( 'should_expose_checkout_surface' )->willReturn( true );
+
+		$payment_method_registry = new WooPaymentsPaymentMethodRegistry();
+		$card_gateway            = new NativeWooPaymentsGateway( $payment_method_registry->get( 'card' ) );
+		$klarna_gateway          = new NativeWooPaymentsGateway( $payment_method_registry->get( 'klarna' ) );
+		$provider                = $this->getMockBuilder( WooPaymentsProvider::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'can_process_payments', 'get_payment_gateways' ) )
+			->getMock();
+		$provider->method( 'can_process_payments' )->willReturn( true );
+		$provider->method( 'get_payment_gateways' )->willReturn( array( $card_gateway, $klarna_gateway ) );
+
+		$integration  = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $bridge, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service() );
+		$integrations = $integration->get_payment_method_integrations();
+
+		$this->assertSame(
+			array(
+				'woocommerce_payments',
+				'woocommerce_payments_klarna',
+			),
+			array_map(
+				static fn( WooPayments $payment_method ): string => $payment_method->get_name(),
+				$integrations
+			)
+		);
+		$this->assertSame( array( 'wc-payment-method-woopayments' ), $integrations[0]->get_payment_method_script_handles() );
+		$this->assertSame( array( 'wc-payment-method-woopayments' ), $integrations[1]->get_payment_method_script_handles() );
+	}
+
+	/**
+	 * @testdox Should expose Blocks payment method data for the current native WooPayments gateway definition.
+	 */
+	public function test_get_payment_method_data_uses_current_gateway_definition(): void {
+		$payment_method_registry = new WooPaymentsPaymentMethodRegistry();
+		$klarna_gateway          = new NativeWooPaymentsGateway( $payment_method_registry->get( 'klarna' ) );
+		$asset_api               = $this->getMockBuilder( AssetApi::class )
+			->disableOriginalConstructor()
+			->getMock();
+		$bridge                  = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_blocks_payment_method_data', 'should_expose_checkout_surface' ) )
+			->getMock();
+		$bridge->method( 'should_expose_checkout_surface' )->willReturn( true );
+		$bridge
+			->expects( $this->once() )
+			->method( 'get_blocks_payment_method_data' )
+			->with( $klarna_gateway->get_payment_method_definition() )
+			->willReturn(
+				array(
+					'gatewayId'          => 'woocommerce_payments_klarna',
+					'title'              => 'Klarna',
+					'paymentMethodTypes' => array( 'klarna' ),
+				)
+			);
+		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'can_process_payments' ) )
+			->getMock();
+		$provider->method( 'can_process_payments' )->willReturn( true );
+
+		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $bridge, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service(), $klarna_gateway );
+
+		$this->assertSame(
+			array(
+				'gatewayId'          => 'woocommerce_payments_klarna',
+				'title'              => 'Klarna',
+				'paymentMethodTypes' => array( 'klarna' ),
+			),
+			$integration->get_payment_method_data()
+		);
 	}
 
 	/**
@@ -437,6 +528,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$this->assertSame(
 			array(
 				'title'                 => 'WooPayments',
+				'gatewayId'             => 'woocommerce_payments',
 				'expressCheckoutParams' => array(
 					'enabled_methods' => array( 'payment_request' ),
 					'button_context'  => 'checkout',

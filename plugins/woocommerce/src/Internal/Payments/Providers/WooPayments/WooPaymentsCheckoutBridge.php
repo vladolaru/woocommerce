@@ -45,6 +45,20 @@ class WooPaymentsCheckoutBridge {
 		'subscription_payment_method_change_admin',
 	);
 
+	/**
+	 * Native payment method capability for saved/reusable payment credentials.
+	 */
+	private const PAYMENT_METHOD_CAPABILITY_TOKENIZATION = 'tokenization';
+
+	/**
+	 * Native payment method capability for buy-now-pay-later methods.
+	 */
+	private const PAYMENT_METHOD_CAPABILITY_BUY_NOW_PAY_LATER = 'buy_now_pay_later';
+
+	/**
+	 * Native payment method capability for express checkout methods.
+	 */
+	private const PAYMENT_METHOD_CAPABILITY_EXPRESS_CHECKOUT = 'express_checkout';
 
 	/**
 	 * Core-owned classic checkout script handle.
@@ -263,7 +277,8 @@ class WooPaymentsCheckoutBridge {
 			'gatewayId'                     => $this->get_gateway_id_for_payment_method_definition( $payment_method_definition ),
 			'ajaxUrl'                       => admin_url( 'admin-ajax.php' ),
 			'wcAjaxUrl'                     => \WC_AJAX::get_endpoint( '%%endpoint%%' ),
-			'paymentMethodsConfig'          => $this->get_payment_methods_config( $saved_cards_enabled ),
+			'paymentMethodsConfig'          => $this->get_payment_methods_config( $saved_cards_enabled, $payment_method_definition ),
+			'paymentMethodTypes'            => $this->get_payment_method_types_for_definition( $payment_method_definition ),
 			'testMode'                      => $this->get_account_service()->is_test_mode_enabled(),
 			'enabledBillingFields'          => $this->get_enabled_billing_fields(),
 			'currency'                      => get_woocommerce_currency(),
@@ -369,10 +384,11 @@ class WooPaymentsCheckoutBridge {
 	/**
 	 * Get Blocks payment method data.
 	 *
+	 * @param WooPaymentsPaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
 	 * @return array<string,mixed>
 	 */
-	public function get_blocks_payment_method_data(): array {
-		$data = $this->get_payment_fields_js_config();
+	public function get_blocks_payment_method_data( ?WooPaymentsPaymentMethodDefinition $payment_method_definition = null ): array {
+		$data = $this->get_payment_fields_js_config( $payment_method_definition );
 
 		// Sanitize the shopper-facing testing instructions after the wcpay_payment_fields_js_config
 		// filter has run. The Blocks checkout script renders this value via dangerouslySetInnerHTML,
@@ -393,8 +409,8 @@ class WooPaymentsCheckoutBridge {
 		return array_merge(
 			$data,
 			array(
-				'title'       => __( 'Card', 'woocommerce' ),
-				'description' => __( 'Pay securely using WooPayments.', 'woocommerce' ),
+				'title'       => $this->get_blocks_payment_method_title( $payment_method_definition ),
+				'description' => $this->get_blocks_payment_method_description( $payment_method_definition ),
 				'supports'    => $this->get_blocks_supports(),
 			)
 		);
@@ -517,10 +533,28 @@ class WooPaymentsCheckoutBridge {
 	/**
 	 * Get the card-only payment method config for this slice.
 	 *
-	 * @param bool $saved_cards_enabled Whether saved cards are enabled.
+	 * @param bool                                    $saved_cards_enabled       Whether saved cards are enabled.
+	 * @param WooPaymentsPaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
 	 * @return array<string,array<string,mixed>>
 	 */
-	private function get_payment_methods_config( bool $saved_cards_enabled ): array {
+	private function get_payment_methods_config( bool $saved_cards_enabled, ?WooPaymentsPaymentMethodDefinition $payment_method_definition = null ): array {
+		if ( null !== $payment_method_definition && 'card' !== $payment_method_definition->get_id() ) {
+			$is_reusable = $this->payment_method_definition_supports( $payment_method_definition, self::PAYMENT_METHOD_CAPABILITY_TOKENIZATION );
+
+			return array(
+				$payment_method_definition->get_id() => array(
+					'id'                => $payment_method_definition->get_id(),
+					'title'             => $payment_method_definition->get_title( $this->get_account_country() ),
+					'label'             => $payment_method_definition->get_title( $this->get_account_country() ),
+					'isReusable'        => $is_reusable,
+					'isBnpl'            => $this->payment_method_definition_supports( $payment_method_definition, self::PAYMENT_METHOD_CAPABILITY_BUY_NOW_PAY_LATER ),
+					'isExpressCheckout' => $this->payment_method_definition_supports( $payment_method_definition, self::PAYMENT_METHOD_CAPABILITY_EXPRESS_CHECKOUT ),
+					'showSaveOption'    => $is_reusable && $this->should_show_card_save_option( $saved_cards_enabled ),
+					'supports'          => $this->get_blocks_supports(),
+				),
+			);
+		}
+
 		$enabled_method_ids = $this->get_legacy_runtime()->get_gateway_upe_enabled_payment_method_ids();
 		if ( ! empty( $enabled_method_ids ) && ! in_array( 'card', $enabled_method_ids, true ) ) {
 			return array();
@@ -556,6 +590,59 @@ class WooPaymentsCheckoutBridge {
 		}
 
 		return array_values( array_unique( $supports ) );
+	}
+
+	/**
+	 * Get the Stripe payment method types for a payment method definition.
+	 *
+	 * @param WooPaymentsPaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
+	 * @return string[]
+	 */
+	private function get_payment_method_types_for_definition( ?WooPaymentsPaymentMethodDefinition $payment_method_definition = null ): array {
+		if ( null === $payment_method_definition ) {
+			return array( 'card' );
+		}
+
+		return array( $payment_method_definition->get_stripe_payment_method_type() );
+	}
+
+	/**
+	 * Get the Blocks payment method title.
+	 *
+	 * @param WooPaymentsPaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
+	 * @return string
+	 */
+	private function get_blocks_payment_method_title( ?WooPaymentsPaymentMethodDefinition $payment_method_definition = null ): string {
+		if ( null === $payment_method_definition || 'card' === $payment_method_definition->get_id() ) {
+			return __( 'Card', 'woocommerce' );
+		}
+
+		return $payment_method_definition->get_title( $this->get_account_country() );
+	}
+
+	/**
+	 * Get the Blocks payment method description.
+	 *
+	 * @param WooPaymentsPaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
+	 * @return string
+	 */
+	private function get_blocks_payment_method_description( ?WooPaymentsPaymentMethodDefinition $payment_method_definition = null ): string {
+		if ( null === $payment_method_definition || 'card' === $payment_method_definition->get_id() ) {
+			return __( 'Pay securely using WooPayments.', 'woocommerce' );
+		}
+
+		return $payment_method_definition->get_description( $this->get_account_country() );
+	}
+
+	/**
+	 * Tell whether a payment method definition supports a capability.
+	 *
+	 * @param WooPaymentsPaymentMethodDefinition $payment_method_definition Payment method definition.
+	 * @param string                             $capability                Capability name.
+	 * @return bool
+	 */
+	private function payment_method_definition_supports( WooPaymentsPaymentMethodDefinition $payment_method_definition, string $capability ): bool {
+		return in_array( $capability, $payment_method_definition->get_capabilities(), true );
 	}
 
 	/**

@@ -140,9 +140,11 @@ class Api {
 		$payment_method_registry->register(
 			Package::container()->get( CashOnDelivery::class )
 		);
-		$payment_method_registry->register(
-			Package::container()->get( WooPayments::class )
-		);
+
+		$woopayments = Package::container()->get( WooPayments::class );
+		foreach ( $woopayments->get_payment_method_integrations() as $woopayments_integration ) {
+			$payment_method_registry->register( $woopayments_integration );
+		}
 	}
 
 	/**

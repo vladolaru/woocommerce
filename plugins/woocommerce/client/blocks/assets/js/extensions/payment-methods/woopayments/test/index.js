@@ -23,8 +23,8 @@ jest.mock( '@woocommerce/blocks-registry', () => ( {
 	registerExpressPaymentMethod: jest.fn(),
 } ) );
 
-jest.mock( '@woocommerce/settings', () => ( {
-	getPaymentMethodData: jest.fn( () => ( {
+jest.mock( '@woocommerce/settings', () => {
+	const paymentMethodData = {
 		title: 'WooPayments',
 		supports: [ 'products', 'subscriptions', 'multiple_subscriptions' ],
 		gatewayId: 'woocommerce_payments',
@@ -112,8 +112,17 @@ jest.mock( '@woocommerce/settings', () => ( {
 		},
 		usesLegacyOrderStatusBridge: false,
 		ajaxUrl: 'https://example.test/wp-admin/admin-ajax.php',
-	} ) ),
-} ) );
+	};
+
+	return {
+		getPaymentMethodData: jest.fn( () => paymentMethodData ),
+		getSetting: jest.fn( ( setting, defaultValue ) =>
+			setting === 'paymentMethodData'
+				? { woocommerce_payments: paymentMethodData }
+				: defaultValue
+		),
+	};
+} );
 
 jest.mock( '@wordpress/data', () => ( {
 	useSelect: jest.fn(),

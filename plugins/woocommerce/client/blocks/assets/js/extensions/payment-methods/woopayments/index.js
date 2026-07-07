@@ -2,7 +2,7 @@
  * External dependencies
  */
 import { registerPaymentMethod } from '@woocommerce/blocks-registry';
-import { getPaymentMethodData } from '@woocommerce/settings';
+import { getPaymentMethodData, getSetting } from '@woocommerce/settings';
 import { decodeEntities } from '@wordpress/html-entities';
 import { __ } from '@wordpress/i18n';
 import { createRoot, useEffect, useRef, useState } from '@wordpress/element';
@@ -18,36 +18,77 @@ import {
 import { recordWooPaymentsUserEvent } from './tracks';
 
 const PAYMENT_METHOD_NAME = 'woocommerce_payments';
-const settings = getPaymentMethodData( PAYMENT_METHOD_NAME, {} );
-const cardConfig = settings?.paymentMethodsConfig?.card || {};
+const defaultSettings = getPaymentMethodData( PAYMENT_METHOD_NAME, {} );
 const defaultLabel = __( 'Card', 'woocommerce' );
-const label =
-	decodeEntities(
-		cardConfig?.title || cardConfig?.label || settings?.title || ''
-	) || defaultLabel;
-const isTestMode = Boolean( settings?.testMode );
-const testingInstructions =
-	cardConfig?.testingInstructions || settings?.testingInstructions || '';
-const cardBrandIcons = Array.isArray( cardConfig?.cardBrandIcons )
-	? cardConfig.cardBrandIcons
-	: [];
 const testModeBadgeLabel = __( 'Test Mode', 'woocommerce' );
-const ariaLabel = isTestMode ? `${ label } ${ testModeBadgeLabel }` : label;
 const saveUserRoots = new WeakMap();
 const copyTestNumberSuccessDuration = 2000;
 
-const getFraudPreventionToken = () =>
-	window.wcpayFraudPreventionToken ?? settings?.fraudPreventionToken ?? '';
+const getPrimaryPaymentMethodConfig = ( paymentSettings = defaultSettings ) => {
+	const paymentMethodsConfig = paymentSettings?.paymentMethodsConfig || {};
+	const paymentMethodId =
+		paymentSettings?.paymentMethodId ||
+		Object.keys( paymentMethodsConfig )[ 0 ] ||
+		'card';
 
-const TestModeBadge = () => {
-	if ( ! isTestMode ) {
+	return (
+		paymentMethodsConfig[ paymentMethodId ] ||
+		paymentMethodsConfig.card ||
+		{}
+	);
+};
+
+const getPaymentMethodLabel = ( paymentSettings = defaultSettings ) => {
+	const paymentMethodConfig =
+		getPrimaryPaymentMethodConfig( paymentSettings );
+
+	return (
+		decodeEntities(
+			paymentMethodConfig?.title ||
+				paymentMethodConfig?.label ||
+				paymentSettings?.title ||
+				''
+		) || defaultLabel
+	);
+};
+
+const getTestingInstructions = ( paymentSettings = defaultSettings ) =>
+	getPrimaryPaymentMethodConfig( paymentSettings )?.testingInstructions ||
+	paymentSettings?.testingInstructions ||
+	'';
+
+const getCardBrandIcons = ( paymentSettings = defaultSettings ) => {
+	const paymentMethodConfig =
+		getPrimaryPaymentMethodConfig( paymentSettings );
+
+	return Array.isArray( paymentMethodConfig?.cardBrandIcons )
+		? paymentMethodConfig.cardBrandIcons
+		: [];
+};
+
+const getAriaLabel = ( paymentSettings = defaultSettings ) => {
+	const label = getPaymentMethodLabel( paymentSettings );
+
+	return paymentSettings?.testMode
+		? `${ label } ${ testModeBadgeLabel }`
+		: label;
+};
+
+const getFraudPreventionToken = ( paymentSettings = defaultSettings ) =>
+	window.wcpayFraudPreventionToken ??
+	paymentSettings?.fraudPreventionToken ??
+	'';
+
+const TestModeBadge = ( { paymentSettings } ) => {
+	if ( ! paymentSettings?.testMode ) {
 		return null;
 	}
 
 	return <span className="test-mode badge">{ testModeBadgeLabel }</span>;
 };
 
-const CardBrandIcons = () => {
+const CardBrandIcons = ( { paymentSettings } ) => {
+	const cardBrandIcons = getCardBrandIcons( paymentSettings );
 	const [ isPopoverOpen, setIsPopoverOpen ] = useState( false );
 
 	if ( ! cardBrandIcons.length ) {
@@ -127,10 +168,10 @@ const CardBrandIcons = () => {
 	);
 };
 
-const PaymentMethodIcon = () => (
+const PaymentMethodIcon = ( { paymentSettings } ) => (
 	<>
-		<TestModeBadge />
-		<CardBrandIcons />
+		<TestModeBadge paymentSettings={ paymentSettings } />
+		<CardBrandIcons paymentSettings={ paymentSettings } />
 	</>
 );
 
@@ -205,10 +246,11 @@ const isChangingPaymentMethodForSubscription = () => {
 const updateOrderStatusAfterConfirmation = async (
 	confirmation,
 	intentId,
-	shouldSavePaymentMethod = false
+	shouldSavePaymentMethod = false,
+	paymentSettings = defaultSettings
 ) => {
 	if (
-		! settings.ajaxUrl ||
+		! paymentSettings.ajaxUrl ||
 		! confirmation?.orderId ||
 		! confirmation?.nonce ||
 		! intentId ||
@@ -231,7 +273,7 @@ const updateOrderStatusAfterConfirmation = async (
 		isChangingPaymentMethodForSubscription() ? 'true' : 'false'
 	);
 
-	const response = await window.fetch( settings.ajaxUrl, {
+	const response = await window.fetch( paymentSettings.ajaxUrl, {
 		method: 'POST',
 		credentials: 'same-origin',
 		headers: {
@@ -256,7 +298,8 @@ const handleConfirmationResponse = async (
 	response,
 	emitResponse,
 	shouldSavePaymentMethod,
-	getStripeClient
+	getStripeClient,
+	paymentSettings = defaultSettings
 ) => {
 	const confirmation = parseConfirmationRedirect( response );
 	if ( ! confirmation ) {
@@ -310,38 +353,47 @@ const handleConfirmationResponse = async (
 	const redirectUrl = await updateOrderStatusAfterConfirmation(
 		confirmation,
 		intentId,
-		shouldSavePaymentMethod
+		shouldSavePaymentMethod,
+		paymentSettings
 	);
 
 	return getSuccessResponse( emitResponse, {}, redirectUrl );
 };
 
-const shouldUsePlatformStripeForCard = () =>
+const shouldUsePlatformStripeForCard = ( paymentSettings = defaultSettings ) =>
 	Boolean(
-		cardConfig?.forceNetworkSavedCards ?? settings.forceNetworkSavedCards
+		getPrimaryPaymentMethodConfig( paymentSettings )
+			?.forceNetworkSavedCards ?? paymentSettings.forceNetworkSavedCards
 	);
 
-const createStripe = ( forceAccountRequest = false ) => {
-	if ( ! settings.publishableKey || ! window.Stripe ) {
+const createStripe = (
+	paymentSettings = defaultSettings,
+	forceAccountRequest = false
+) => {
+	if ( ! paymentSettings.publishableKey || ! window.Stripe ) {
 		return null;
 	}
 
 	const stripeOptions = {
-		locale: settings.locale || 'auto',
+		locale: paymentSettings.locale || 'auto',
 	};
 
 	if (
-		settings.accountId &&
-		( forceAccountRequest || ! shouldUsePlatformStripeForCard() )
+		paymentSettings.accountId &&
+		( forceAccountRequest ||
+			! shouldUsePlatformStripeForCard( paymentSettings ) )
 	) {
-		stripeOptions.stripeAccount = settings.accountId;
+		stripeOptions.stripeAccount = paymentSettings.accountId;
 	}
 
-	return window.Stripe( settings.publishableKey, stripeOptions );
+	return window.Stripe( paymentSettings.publishableKey, stripeOptions );
 };
 
-const getReusablePaymentMethodTerms = ( value ) => {
-	return Object.entries( settings.paymentMethodsConfig || {} ).reduce(
+const getReusablePaymentMethodTerms = (
+	paymentSettings = defaultSettings,
+	value
+) => {
+	return Object.entries( paymentSettings.paymentMethodsConfig || {} ).reduce(
 		( terms, [ paymentMethodId, paymentMethodConfig ] ) => {
 			if (
 				paymentMethodId !== 'link' &&
@@ -356,27 +408,35 @@ const getReusablePaymentMethodTerms = ( value ) => {
 	);
 };
 
-const isLinkEnabled = () =>
+const isLinkEnabled = ( paymentSettings = defaultSettings ) =>
 	Boolean(
-		settings.paymentMethodsConfig?.link !== undefined &&
-			settings.paymentMethodsConfig?.card !== undefined
+		paymentSettings.paymentMethodsConfig?.link !== undefined &&
+			paymentSettings.paymentMethodsConfig?.card !== undefined
 	);
 
-const getStripePaymentMethodTypes = () =>
-	isLinkEnabled() ? [ 'card', 'link' ] : [ 'card' ];
+const getStripePaymentMethodTypes = ( paymentSettings = defaultSettings ) => {
+	if (
+		Array.isArray( paymentSettings.paymentMethodTypes ) &&
+		paymentSettings.paymentMethodTypes.length
+	) {
+		return paymentSettings.paymentMethodTypes;
+	}
 
-const getStripeElementsOptions = () => {
-	const amount = Number( settings.cartTotal || 0 );
+	return isLinkEnabled( paymentSettings ) ? [ 'card', 'link' ] : [ 'card' ];
+};
+
+const getStripeElementsOptions = ( paymentSettings = defaultSettings ) => {
+	const amount = Number( paymentSettings.cartTotal || 0 );
 	const options = {
 		mode: amount > 0 && Number.isFinite( amount ) ? 'payment' : 'setup',
 		loader: 'never',
-		currency: ( settings.currency || 'usd' ).toLowerCase(),
+		currency: ( paymentSettings.currency || 'usd' ).toLowerCase(),
 		paymentMethodCreation: 'manual',
-		paymentMethodTypes: getStripePaymentMethodTypes(),
+		paymentMethodTypes: getStripePaymentMethodTypes( paymentSettings ),
 	};
 
 	const appearance = getBlocksCheckoutAppearance(
-		settings.stylesCacheVersion
+		paymentSettings.stylesCacheVersion
 	);
 	if ( appearance ) {
 		options.appearance = appearance;
@@ -394,7 +454,10 @@ const getStripeElementsOptions = () => {
 	return options;
 };
 
-const getStripePaymentElementOptions = ( shouldSavePayment = false ) => ( {
+const getStripePaymentElementOptions = (
+	paymentSettings = defaultSettings,
+	shouldSavePayment = false
+) => ( {
 	fields: {
 		billingDetails: {
 			name: 'never',
@@ -413,10 +476,11 @@ const getStripePaymentElementOptions = ( shouldSavePayment = false ) => ( {
 	wallets: {
 		applePay: 'never',
 		googlePay: 'never',
-		link: isLinkEnabled() ? 'auto' : 'never',
+		link: isLinkEnabled( paymentSettings ) ? 'auto' : 'never',
 	},
 	terms: getReusablePaymentMethodTerms(
-		shouldSavePayment || settings.cartContainsSubscription
+		paymentSettings,
+		shouldSavePayment || paymentSettings.cartContainsSubscription
 			? 'always'
 			: 'never'
 	),
@@ -427,8 +491,8 @@ const getFieldValue = ( selector ) => {
 	return field ? field.value : '';
 };
 
-const buildWooPayAjaxUrl = ( endpoint ) => {
-	return ( settings.wcAjaxUrl || '/?wc-ajax=%%endpoint%%' ).replace(
+const buildWooPayAjaxUrl = ( paymentSettings = defaultSettings, endpoint ) => {
+	return ( paymentSettings.wcAjaxUrl || '/?wc-ajax=%%endpoint%%' ).replace(
 		'%%endpoint%%',
 		`wcpay_${ endpoint }`
 	);
@@ -443,77 +507,94 @@ const getWooPayInitialPhone = () =>
 	getFieldValue( '#shipping-phone' ) ||
 	'';
 
-const shouldRenderWooPaySaveUser = () => {
+const shouldRenderWooPaySaveUser = ( paymentSettings = defaultSettings ) => {
 	return Boolean(
-		settings.isWooPayEnabled &&
-			settings.forceNetworkSavedCards &&
-			settings.woopaySessionNonce
+		paymentSettings.isWooPayEnabled &&
+			paymentSettings.forceNetworkSavedCards &&
+			paymentSettings.woopaySessionNonce
 	);
 };
 
-const persistWooPaySaveUser = async ( isSavingUser, phone ) => {
-	if ( ! settings.woopaySessionNonce || ! window.fetch ) {
+const persistWooPaySaveUser = async (
+	paymentSettings = defaultSettings,
+	isSavingUser,
+	phone
+) => {
+	if ( ! paymentSettings.woopaySessionNonce || ! window.fetch ) {
 		return;
 	}
 
 	const body = new window.URLSearchParams();
-	body.append( '_wpnonce', settings.woopaySessionNonce );
+	body.append( '_wpnonce', paymentSettings.woopaySessionNonce );
 	body.append( 'save_user_in_woopay', isSavingUser ? 'true' : 'false' );
 	body.append( 'woopay_source_url', window.location.href );
 	body.append( 'woopay_is_blocks', 'true' );
 	body.append( 'woopay_viewport', getWooPayViewport() );
 	body.append( 'woopay_user_phone_field[full]', phone || '' );
 
-	await window.fetch( buildWooPayAjaxUrl( 'set_woopay_phone_number' ), {
-		method: 'POST',
-		credentials: 'same-origin',
-		headers: {
-			'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-		},
-		body,
-	} );
+	await window.fetch(
+		buildWooPayAjaxUrl( paymentSettings, 'set_woopay_phone_number' ),
+		{
+			method: 'POST',
+			credentials: 'same-origin',
+			headers: {
+				'Content-Type':
+					'application/x-www-form-urlencoded; charset=UTF-8',
+			},
+			body,
+		}
+	);
 };
 
-const WooPaySaveUserSection = () => {
+const WooPaySaveUserSection = ( { paymentSettings } ) => {
 	const initialIsSavingUser = useRef(
-		Boolean( settings.PRE_CHECK_SAVE_MY_INFO )
+		Boolean( paymentSettings.PRE_CHECK_SAVE_MY_INFO )
 	);
 	const [ isSavingUser, setIsSavingUser ] = useState(
 		initialIsSavingUser.current
 	);
 	const [ phone, setPhone ] = useState( getWooPayInitialPhone );
 	const saveUserLabel =
-		settings.woopaySaveUserLabel ||
+		paymentSettings.woopaySaveUserLabel ||
 		__(
 			'Securely save my information for 1-click checkout',
 			'woocommerce'
 		);
 	const phoneLabel =
-		settings.woopayPhoneLabel || __( 'Mobile phone number', 'woocommerce' );
+		paymentSettings.woopayPhoneLabel ||
+		__( 'Mobile phone number', 'woocommerce' );
 
 	useEffect( () => {
 		recordWooPaymentsUserEvent(
-			settings,
+			paymentSettings,
 			'checkout_woopay_save_my_info_offered'
 		);
 		if ( initialIsSavingUser.current ) {
 			recordWooPaymentsUserEvent(
-				settings,
+				paymentSettings,
 				'checkout_save_my_info_click',
 				{ status: 'checked' }
 			);
 		}
-	}, [] );
+	}, [ paymentSettings ] );
 
 	const updateSaveUser = ( checked, nextPhone = phone ) => {
 		setIsSavingUser( checked );
 		if ( ! checked ) {
 			setPhone( '' );
 		}
-		recordWooPaymentsUserEvent( settings, 'checkout_save_my_info_click', {
-			status: checked ? 'checked' : 'unchecked',
-		} );
-		persistWooPaySaveUser( checked, checked ? nextPhone : '' );
+		recordWooPaymentsUserEvent(
+			paymentSettings,
+			'checkout_save_my_info_click',
+			{
+				status: checked ? 'checked' : 'unchecked',
+			}
+		);
+		persistWooPaySaveUser(
+			paymentSettings,
+			checked,
+			checked ? nextPhone : ''
+		);
 	};
 
 	return (
@@ -588,7 +669,11 @@ const WooPaySaveUserSection = () => {
 								setPhone( event.target.value )
 							}
 							onBlur={ () =>
-								persistWooPaySaveUser( true, phone )
+								persistWooPaySaveUser(
+									paymentSettings,
+									true,
+									phone
+								)
 							}
 						/>
 					</div>
@@ -598,8 +683,8 @@ const WooPaySaveUserSection = () => {
 	);
 };
 
-const renderWooPaySaveUserSection = () => {
-	if ( ! shouldRenderWooPaySaveUser() ) {
+const renderWooPaySaveUserSection = ( paymentSettings = defaultSettings ) => {
+	if ( ! shouldRenderWooPaySaveUser( paymentSettings ) ) {
 		return;
 	}
 
@@ -626,7 +711,11 @@ const renderWooPaySaveUserSection = () => {
 		saveUserRoots.set( container, createRoot( container ) );
 	}
 
-	saveUserRoots.get( container ).render( <WooPaySaveUserSection /> );
+	saveUserRoots
+		.get( container )
+		.render(
+			<WooPaySaveUserSection paymentSettings={ paymentSettings } />
+		);
 };
 
 const getBillingDetails = () => {
@@ -649,7 +738,11 @@ const getBillingDetails = () => {
 	};
 };
 
-const SavedTokenHandler = ( { eventRegistration, emitResponse } ) => {
+const SavedTokenHandler = ( {
+	eventRegistration,
+	emitResponse,
+	paymentSettings = defaultSettings,
+} ) => {
 	const { onPaymentSetup, onCheckoutSuccess } = eventRegistration || {};
 	const accountStripe = useRef( null );
 	const emitResponseRef = useRef( emitResponse );
@@ -668,12 +761,13 @@ const SavedTokenHandler = ( { eventRegistration, emitResponse } ) => {
 		const unsubscribe = onPaymentSetup( () => {
 			return getSuccessResponse( emitResponseRef.current, {
 				...paymentMethodData,
-				'wcpay-fraud-prevention-token': getFraudPreventionToken(),
+				'wcpay-fraud-prevention-token':
+					getFraudPreventionToken( paymentSettings ),
 			} );
 		} );
 
 		return typeof unsubscribe === 'function' ? unsubscribe : undefined;
-	}, [ onPaymentSetup, paymentMethodData ] );
+	}, [ onPaymentSetup, paymentMethodData, paymentSettings ] );
 
 	useEffect( () => {
 		if ( ! onCheckoutSuccess ) {
@@ -687,15 +781,17 @@ const SavedTokenHandler = ( { eventRegistration, emitResponse } ) => {
 				false,
 				() => {
 					accountStripe.current =
-						accountStripe.current || createStripe( true );
+						accountStripe.current ||
+						createStripe( paymentSettings, true );
 
 					return accountStripe.current;
-				}
+				},
+				paymentSettings
 			)
 		);
 
 		return typeof unsubscribe === 'function' ? unsubscribe : undefined;
-	}, [ onCheckoutSuccess ] );
+	}, [ onCheckoutSuccess, paymentSettings ] );
 
 	return null;
 };
@@ -704,6 +800,7 @@ const WooPaymentsContent = ( {
 	eventRegistration,
 	emitResponse,
 	shouldSavePayment,
+	paymentSettings = defaultSettings,
 } ) => {
 	const { onPaymentSetup, onCheckoutSuccess } = eventRegistration || {};
 	const elementContainer = useRef( null );
@@ -764,29 +861,32 @@ const WooPaymentsContent = ( {
 		if (
 			paymentElement.current ||
 			! elementContainer.current ||
-			! settings.isCoreNativeCheckoutAvailable
+			! paymentSettings.isCoreNativeCheckoutAvailable
 		) {
 			return;
 		}
 
-		stripe.current = createStripe();
+		stripe.current = createStripe( paymentSettings );
 		if ( ! stripe.current ) {
 			return;
 		}
 
 		elements.current = stripe.current.elements(
-			getStripeElementsOptions()
+			getStripeElementsOptions( paymentSettings )
 		);
 		paymentElement.current = elements.current.create(
 			'payment',
-			getStripePaymentElementOptions( Boolean( shouldSavePayment ) )
+			getStripePaymentElementOptions(
+				paymentSettings,
+				Boolean( shouldSavePayment )
+			)
 		);
 		paymentElement.current.mount( elementContainer.current );
-	}, [ shouldSavePayment ] );
+	}, [ paymentSettings, shouldSavePayment ] );
 
 	useEffect( () => {
-		renderWooPaySaveUserSection();
-	}, [] );
+		renderWooPaySaveUserSection( paymentSettings );
+	}, [ paymentSettings ] );
 
 	useEffect( () => {
 		if ( ! onPaymentSetup ) {
@@ -795,7 +895,7 @@ const WooPaymentsContent = ( {
 
 		const unsubscribe = onPaymentSetup( async () => {
 			recordWooPaymentsUserEvent(
-				settings,
+				paymentSettings,
 				'checkout_place_order_button_click'
 			);
 
@@ -805,8 +905,11 @@ const WooPaymentsContent = ( {
 				'wcpay-payment-method-error-message': '',
 				'wcpay-fingerprint': '',
 				'wcpay-is-platform-payment-method':
-					shouldUsePlatformStripeForCard() ? 'true' : 'false',
-				'wcpay-fraud-prevention-token': getFraudPreventionToken(),
+					shouldUsePlatformStripeForCard( paymentSettings )
+						? 'true'
+						: 'false',
+				'wcpay-fraud-prevention-token':
+					getFraudPreventionToken( paymentSettings ),
 			};
 
 			if ( stripe.current && elements.current ) {
@@ -876,7 +979,7 @@ const WooPaymentsContent = ( {
 		} );
 
 		return typeof unsubscribe === 'function' ? unsubscribe : undefined;
-	}, [ onPaymentSetup ] );
+	}, [ onPaymentSetup, paymentSettings ] );
 
 	useEffect( () => {
 		if ( ! onCheckoutSuccess ) {
@@ -890,23 +993,26 @@ const WooPaymentsContent = ( {
 				Boolean( shouldSavePaymentRef.current ),
 				() => {
 					accountStripe.current =
-						accountStripe.current || createStripe( true );
+						accountStripe.current ||
+						createStripe( paymentSettings, true );
 
 					return accountStripe.current;
-				}
+				},
+				paymentSettings
 			)
 		);
 
 		return typeof unsubscribe === 'function' ? unsubscribe : undefined;
-	}, [ onCheckoutSuccess ] );
+	}, [ onCheckoutSuccess, paymentSettings ] );
 
 	return (
 		<>
-			{ isTestMode && testingInstructions ? (
+			{ paymentSettings.testMode &&
+			getTestingInstructions( paymentSettings ) ? (
 				<p
 					className="wcpay-core-test-mode-instructions"
 					dangerouslySetInnerHTML={ {
-						__html: testingInstructions,
+						__html: getTestingInstructions( paymentSettings ),
 					} }
 				/>
 			) : null }
@@ -922,29 +1028,66 @@ const WooPaymentsContent = ( {
 
 const Label = ( props ) => {
 	const { PaymentMethodLabel } = props.components;
-	return <PaymentMethodLabel text={ label } icon={ <PaymentMethodIcon /> } />;
+	const paymentSettings = props.paymentSettings || defaultSettings;
+
+	return (
+		<PaymentMethodLabel
+			text={ getPaymentMethodLabel( paymentSettings ) }
+			icon={ <PaymentMethodIcon paymentSettings={ paymentSettings } /> }
+		/>
+	);
 };
 
-export const getWooPaymentsPaymentMethod = () => ( {
-	name: PAYMENT_METHOD_NAME,
-	label: <Label />,
-	content: <WooPaymentsContent />,
-	edit: <WooPaymentsContent />,
-	savedTokenComponent: <SavedTokenHandler />,
-	canMakePayment: () => Boolean( settings.isCoreNativeCheckoutAvailable ),
-	ariaLabel,
-	supports: {
-		features: settings?.supports ?? [],
-		showSavedCards: settings?.isSavedCardsEnabled ?? false,
-		showSaveOption: cardConfig?.showSaveOption ?? false,
-	},
-} );
+const isWooPaymentsGatewayId = ( paymentMethodId ) =>
+	paymentMethodId === PAYMENT_METHOD_NAME ||
+	paymentMethodId.startsWith( `${ PAYMENT_METHOD_NAME }_` );
+
+const getWooPaymentsGatewayIds = () => {
+	const paymentMethodData = getSetting( 'paymentMethodData', {} );
+	const gatewayIds = Object.keys( paymentMethodData ).filter(
+		isWooPaymentsGatewayId
+	);
+
+	return gatewayIds.length ? gatewayIds : [ PAYMENT_METHOD_NAME ];
+};
+
+export const getWooPaymentsPaymentMethod = (
+	paymentSettings = defaultSettings
+) => {
+	const paymentMethodConfig =
+		getPrimaryPaymentMethodConfig( paymentSettings );
+	const paymentMethodName = paymentSettings.gatewayId || PAYMENT_METHOD_NAME;
+
+	return {
+		name: paymentMethodName,
+		label: <Label paymentSettings={ paymentSettings } />,
+		content: <WooPaymentsContent paymentSettings={ paymentSettings } />,
+		edit: <WooPaymentsContent paymentSettings={ paymentSettings } />,
+		savedTokenComponent: (
+			<SavedTokenHandler paymentSettings={ paymentSettings } />
+		),
+		canMakePayment: () =>
+			Boolean( paymentSettings.isCoreNativeCheckoutAvailable ),
+		ariaLabel: getAriaLabel( paymentSettings ),
+		supports: {
+			features: paymentSettings?.supports ?? [],
+			showSavedCards: paymentSettings?.isSavedCardsEnabled ?? false,
+			showSaveOption: paymentMethodConfig?.showSaveOption ?? false,
+		},
+	};
+};
 
 const registerWooPayments = () => {
-	const paymentMethod = getWooPaymentsPaymentMethod();
-	registerPaymentMethod( paymentMethod );
+	const paymentMethods = getWooPaymentsGatewayIds()
+		.map( ( paymentMethodId ) =>
+			getPaymentMethodData( paymentMethodId, null )
+		)
+		.filter( Boolean )
+		.map( getWooPaymentsPaymentMethod );
 
-	return paymentMethod;
+	paymentMethods.forEach( registerPaymentMethod );
+
+	return paymentMethods[ 0 ] || getWooPaymentsPaymentMethod();
 };
 
 registerWooPayments();

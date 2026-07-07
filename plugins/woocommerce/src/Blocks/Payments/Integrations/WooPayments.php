@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Blocks\Payments\Integrations;
 use Automattic\WooCommerce\Blocks\Assets\Api;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutBridge;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
@@ -98,6 +99,13 @@ final class WooPayments extends AbstractPaymentMethodType {
 	private WooPaymentsExpressCheckoutService $express_checkout_service;
 
 	/**
+	 * Native WooPayments gateway for this Blocks payment method instance.
+	 *
+	 * @var NativeWooPaymentsGateway|null
+	 */
+	private ?NativeWooPaymentsGateway $payment_gateway;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param Api                               $asset_api                 Asset API.
@@ -106,14 +114,17 @@ final class WooPayments extends AbstractPaymentMethodType {
 	 * @param WooPaymentsProvider               $provider                  Native WooPayments provider.
 	 * @param WooPaymentsWooPaySessionService   $woopay_session_service    WooPay session service.
 	 * @param WooPaymentsExpressCheckoutService $express_checkout_service  Express checkout service.
+	 * @param NativeWooPaymentsGateway|null     $payment_gateway           Optional payment gateway instance.
 	 */
-	public function __construct( Api $asset_api, NativePaymentsRuntimeArbiter $arbiter, WooPaymentsCheckoutBridge $checkout_bridge, WooPaymentsProvider $provider, WooPaymentsWooPaySessionService $woopay_session_service, WooPaymentsExpressCheckoutService $express_checkout_service ) {
+	public function __construct( Api $asset_api, NativePaymentsRuntimeArbiter $arbiter, WooPaymentsCheckoutBridge $checkout_bridge, WooPaymentsProvider $provider, WooPaymentsWooPaySessionService $woopay_session_service, WooPaymentsExpressCheckoutService $express_checkout_service, ?NativeWooPaymentsGateway $payment_gateway = null ) {
 		$this->asset_api                = $asset_api;
 		$this->arbiter                  = $arbiter;
 		$this->checkout_bridge          = $checkout_bridge;
 		$this->provider                 = $provider;
 		$this->woopay_session_service   = $woopay_session_service;
 		$this->express_checkout_service = $express_checkout_service;
+		$this->payment_gateway          = $payment_gateway;
+		$this->name                     = null === $payment_gateway ? OrderPaymentStore::GATEWAY_ID : $payment_gateway->id;
 	}
 
 	/**
@@ -155,7 +166,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 		$this->maybe_enqueue_blocks_payment_style( self::PAYMENT_METHOD_SCRIPT_HANDLE );
 
 		$handles = array( self::PAYMENT_METHOD_SCRIPT_HANDLE );
-		if ( $this->should_enqueue_woopay_assets() ) {
+		if ( $this->is_base_gateway_integration() && $this->should_enqueue_woopay_assets() ) {
 			$this->asset_api->register_script(
 				self::WOOPAY_SCRIPT_HANDLE,
 				'assets/client/blocks/wc-payment-method-woopayments-woopay.js',
@@ -172,7 +183,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 			$handles[] = self::WOOPAY_SCRIPT_HANDLE;
 		}
 
-		if ( $this->should_enqueue_express_checkout_assets() ) {
+		if ( $this->is_base_gateway_integration() && $this->should_enqueue_express_checkout_assets() ) {
 			$this->asset_api->register_script(
 				self::EXPRESS_CHECKOUT_SCRIPT_HANDLE,
 				'assets/client/blocks/wc-payment-method-woopayments-express-checkout.js',
@@ -198,13 +209,49 @@ final class WooPayments extends AbstractPaymentMethodType {
 	 * @return array<string,mixed>
 	 */
 	public function get_payment_method_data() {
-		$data = $this->checkout_bridge->get_blocks_payment_method_data();
+		$data       = $this->checkout_bridge->get_blocks_payment_method_data( $this->payment_gateway ? $this->payment_gateway->get_payment_method_definition() : null );
+		$gateway_id = null === $this->payment_gateway ? OrderPaymentStore::GATEWAY_ID : $this->payment_gateway->id;
+		$data       = array_merge(
+			$data,
+			array(
+				'gatewayId' => $gateway_id,
+			)
+		);
 
-		if ( $this->should_enqueue_express_checkout_assets() ) {
+		if ( $this->is_base_gateway_integration() && $this->should_enqueue_express_checkout_assets() ) {
 			$data['expressCheckoutParams'] = $this->express_checkout_service->get_express_checkout_params( $this->get_express_checkout_context() );
 		}
 
 		return $data;
+	}
+
+	/**
+	 * Get the Blocks payment method instances for native WooPayments gateways.
+	 *
+	 * @return WooPayments[]
+	 */
+	public function get_payment_method_integrations(): array {
+		if ( null !== $this->payment_gateway ) {
+			return array( $this );
+		}
+
+		$gateways = $this->provider->get_payment_gateways();
+		if ( empty( $gateways ) ) {
+			return array( $this );
+		}
+
+		return array_map(
+			fn( NativeWooPaymentsGateway $gateway ): WooPayments => new self(
+				$this->asset_api,
+				$this->arbiter,
+				$this->checkout_bridge,
+				$this->provider,
+				$this->woopay_session_service,
+				$this->express_checkout_service,
+				$gateway
+			),
+			$gateways
+		);
 	}
 
 	/**
@@ -217,6 +264,15 @@ final class WooPayments extends AbstractPaymentMethodType {
 
 		// phpcs:ignore WordPress.WP.EnqueuedResourceParameters.MissingVersion
 		wp_register_script( self::STRIPE_SCRIPT_HANDLE, self::STRIPE_SCRIPT_URL, array(), null, true );
+	}
+
+	/**
+	 * Tell whether this integration represents the base WooPayments card gateway.
+	 *
+	 * @return bool
+	 */
+	private function is_base_gateway_integration(): bool {
+		return OrderPaymentStore::GATEWAY_ID === $this->name;
 	}
 
 	/**
