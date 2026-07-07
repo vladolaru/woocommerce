@@ -1,7 +1,6 @@
 <?php
 
-declare( strict_types = 1 );
-
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTosRestController;
 use Automattic\WooCommerce\Internal\Utilities\LegacyRestApiStub;
 
 /**
@@ -312,6 +311,20 @@ class WooCommerce_Test extends \WC_Unit_Test_Case {
 		$this->assertTrue(
 			function_exists( 'wc_set_notices' ),
 			'New post editor load action should load frontend includes such as wc-notice-functions.php.'
+		);
+	}
+
+	/**
+	 * Test that native WooPayments ToS routes are wired by WooCommerce.
+	 */
+	public function test_native_woopayments_tos_rest_controller_is_registered(): void {
+		$source = file_get_contents( WC_ABSPATH . 'includes/class-woocommerce.php' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+
+		$this->assertIsString( $source );
+		$this->assertStringContainsString(
+			'$container->get( ' . WooPaymentsTosRestController::class . '::class )->register();',
+			$source,
+			'The native WooPayments ToS controller should be part of the main WooCommerce registration list.'
 		);
 	}
 }

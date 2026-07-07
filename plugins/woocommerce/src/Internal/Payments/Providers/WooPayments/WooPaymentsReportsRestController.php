@@ -76,13 +76,6 @@ class WooPaymentsReportsRestController implements RegisterHooksInterface {
 	private WooPaymentsApiClient $api_client;
 
 	/**
-	 * WooPayments account service.
-	 *
-	 * @var WooPaymentsAccountService
-	 */
-	private WooPaymentsAccountService $account_service;
-
-	/**
 	 * WooPayments local order context service.
 	 *
 	 * @var WooPaymentsMoneyMovementOrderService
@@ -105,17 +98,17 @@ class WooPaymentsReportsRestController implements RegisterHooksInterface {
 		WooPaymentsAccountService $account_service,
 		WooPaymentsMoneyMovementOrderService $order_service
 	): void {
-		$this->arbiter         = $arbiter;
-		$this->api_client      = $api_client;
-		$this->account_service = $account_service;
-		$this->order_service   = $order_service;
+		$this->arbiter       = $arbiter;
+		$this->api_client    = $api_client;
+		$this->order_service = $order_service;
+		unset( $account_service );
 	}
 
 	/**
 	 * Register REST hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_native_register() || ! $this->account_service->is_reports_enabled() ) {
+		if ( ! $this->arbiter->should_native_register() ) {
 			return;
 		}
 

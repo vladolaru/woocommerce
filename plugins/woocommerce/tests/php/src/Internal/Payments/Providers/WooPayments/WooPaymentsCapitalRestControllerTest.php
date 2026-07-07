@@ -67,14 +67,7 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
 		do_action( 'rest_api_init' );
 
-		$routes = $this->server->get_routes();
-
-		$this->assertArrayHasKey( '/wc/v3/payments/capital/active_loan_summary', $routes );
-		$this->assertArrayHasKey( '/wc/v3/payments/capital/loans', $routes );
-		$this->assertArrayHasKey( '/wc/v3/payments/capital/loan_offer', $routes );
-		$this->assertRouteHasMethod( $routes['/wc/v3/payments/capital/active_loan_summary'], WP_REST_Server::READABLE );
-		$this->assertRouteHasMethod( $routes['/wc/v3/payments/capital/loans'], WP_REST_Server::READABLE );
-		$this->assertRouteHasMethod( $routes['/wc/v3/payments/capital/loan_offer'], WP_REST_Server::READABLE );
+		$this->assertCapitalRoutesRegistered();
 		$this->assertNotFalse( has_action( 'admin_init', array( $this->sut, 'redirect_loan_offer_request' ) ) );
 	}
 
@@ -90,27 +83,31 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Capital routes are not registered when Capital is not eligible.
+	 * @testdox Capital route shells are registered when Capital is not eligible.
 	 */
-	public function test_registers_no_routes_when_capital_is_not_eligible(): void {
+	public function test_registers_routes_when_capital_is_not_eligible(): void {
 		$this->sut = $this->create_controller( true, false );
 		$this->sut->register();
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		do_action( 'rest_api_init' );
 
-		$this->assertFalse( has_action( 'rest_api_init', array( $this->sut, 'register_routes' ) ) );
+		$this->assertCapitalRoutesRegistered();
 		$this->assertFalse( has_action( 'admin_init', array( $this->sut, 'redirect_loan_offer_request' ) ) );
 	}
 
 	/**
-	 * @testdox Capital routes are not registered when the account lacks full admin access.
+	 * @testdox Capital route shells are registered when the account lacks full admin access.
 	 * @dataProvider provider_capital_admin_unavailable_account_states
 	 *
 	 * @param array<string,bool> $account_state Account state overrides.
 	 */
-	public function test_registers_no_routes_when_account_lacks_full_admin_access( array $account_state ): void {
+	public function test_registers_routes_when_account_lacks_full_admin_access( array $account_state ): void {
 		$this->sut = $this->create_controller( true, true, $account_state );
 		$this->sut->register();
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		do_action( 'rest_api_init' );
 
-		$this->assertFalse( has_action( 'rest_api_init', array( $this->sut, 'register_routes' ) ) );
+		$this->assertCapitalRoutesRegistered();
 		$this->assertFalse( has_action( 'admin_init', array( $this->sut, 'redirect_loan_offer_request' ) ) );
 	}
 
@@ -718,5 +715,19 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 		}
 
 		$this->fail( 'Route does not accept method ' . $method . '.' );
+	}
+
+	/**
+	 * Assert Capital REST routes are registered.
+	 */
+	private function assertCapitalRoutesRegistered(): void {
+		$routes = $this->server->get_routes();
+
+		$this->assertArrayHasKey( '/wc/v3/payments/capital/active_loan_summary', $routes );
+		$this->assertArrayHasKey( '/wc/v3/payments/capital/loans', $routes );
+		$this->assertArrayHasKey( '/wc/v3/payments/capital/loan_offer', $routes );
+		$this->assertRouteHasMethod( $routes['/wc/v3/payments/capital/active_loan_summary'], WP_REST_Server::READABLE );
+		$this->assertRouteHasMethod( $routes['/wc/v3/payments/capital/loans'], WP_REST_Server::READABLE );
+		$this->assertRouteHasMethod( $routes['/wc/v3/payments/capital/loan_offer'], WP_REST_Server::READABLE );
 	}
 }

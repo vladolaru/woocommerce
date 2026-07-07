@@ -68,7 +68,7 @@ class WooPaymentsCapitalRestController implements RegisterHooksInterface {
 	 * Register REST hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_native_register() || ! $this->can_access_capital_admin_area() ) {
+		if ( ! $this->arbiter->should_native_register() ) {
 			return;
 		}
 
@@ -76,7 +76,7 @@ class WooPaymentsCapitalRestController implements RegisterHooksInterface {
 			add_action( 'rest_api_init', array( $this, 'register_routes' ) );
 		}
 
-		if ( false === has_action( 'admin_init', array( $this, 'redirect_loan_offer_request' ) ) ) {
+		if ( $this->can_access_capital_admin_area() && false === has_action( 'admin_init', array( $this, 'redirect_loan_offer_request' ) ) ) {
 			add_action( 'admin_init', array( $this, 'redirect_loan_offer_request' ) );
 		}
 	}

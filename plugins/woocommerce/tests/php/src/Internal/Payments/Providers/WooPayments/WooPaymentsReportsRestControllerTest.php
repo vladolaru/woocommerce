@@ -57,30 +57,31 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Reports routes are registered only when native owns runtime and Reports are enabled.
+	 * @testdox Reports routes are registered when native owns runtime.
 	 */
-	public function test_registers_routes_when_native_owns_runtime_and_reports_are_enabled(): void {
+	public function test_registers_routes_when_native_owns_runtime(): void {
 		$controller = $this->create_controller( true, true );
 		$controller->register();
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
 		do_action( 'rest_api_init' );
 
-		$routes = $this->server->get_routes();
-
-		foreach ( $this->get_expected_routes() as $route => $methods ) {
-			$this->assertArrayHasKey( $route, $routes );
-			foreach ( $methods as $method ) {
-				$this->assertRouteHasMethod( $routes[ $route ], $method );
-			}
-		}
+		$this->assertExpectedRoutesRegistered();
 
 		$controller = $this->create_controller( false, true );
 		$controller->register();
 		$this->assertFalse( has_action( 'rest_api_init', array( $controller, 'register_routes' ) ) );
+	}
 
+	/**
+	 * @testdox Reports route shells are registered before the account Reports area is available.
+	 */
+	public function test_registers_routes_when_reports_area_is_unavailable(): void {
 		$controller = $this->create_controller( true, false );
 		$controller->register();
-		$this->assertFalse( has_action( 'rest_api_init', array( $controller, 'register_routes' ) ) );
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		do_action( 'rest_api_init' );
+
+		$this->assertExpectedRoutesRegistered();
 	}
 
 	/**
@@ -616,6 +617,20 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 		}
 
 		$this->fail( 'Route does not accept method ' . $method . '.' );
+	}
+
+	/**
+	 * Assert all expected report routes are registered.
+	 */
+	private function assertExpectedRoutesRegistered(): void {
+		$routes = $this->server->get_routes();
+
+		foreach ( $this->get_expected_routes() as $route => $methods ) {
+			$this->assertArrayHasKey( $route, $routes );
+			foreach ( $methods as $method ) {
+				$this->assertRouteHasMethod( $routes[ $route ], $method );
+			}
+		}
 	}
 
 	/**
