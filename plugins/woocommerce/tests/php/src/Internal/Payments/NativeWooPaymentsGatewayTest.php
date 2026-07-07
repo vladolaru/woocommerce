@@ -36,7 +36,9 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		remove_all_actions( 'woocommerce_scheduled_subscription_payment_' . OrderPaymentStore::GATEWAY_ID );
+		remove_all_actions( 'woocommerce_scheduled_subscription_payment_woocommerce_payments_amazon_pay' );
 		remove_all_actions( 'woocommerce_subscription_failing_payment_method_updated_' . OrderPaymentStore::GATEWAY_ID );
+		remove_all_actions( 'woocommerce_subscription_failing_payment_method_updated_woocommerce_payments_amazon_pay' );
 		remove_all_filters( 'woocommerce_subscription_payment_meta' );
 		remove_all_actions( 'woocommerce_subscription_validate_payment_meta' );
 		remove_all_actions( 'wcs_save_other_payment_meta' );
@@ -261,7 +263,9 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		};
 
 		$this->assertSame( 10, has_action( 'woocommerce_scheduled_subscription_payment_' . OrderPaymentStore::GATEWAY_ID, array( $gateway, 'scheduled_subscription_payment' ) ) );
+		$this->assertSame( 10, has_action( 'woocommerce_scheduled_subscription_payment_woocommerce_payments_amazon_pay', array( $gateway, 'scheduled_subscription_payment' ) ) );
 		$this->assertSame( 10, has_action( 'woocommerce_subscription_failing_payment_method_updated_' . OrderPaymentStore::GATEWAY_ID, array( $gateway, 'update_failing_payment_method' ) ) );
+		$this->assertSame( 10, has_action( 'woocommerce_subscription_failing_payment_method_updated_woocommerce_payments_amazon_pay', array( $gateway, 'update_failing_payment_method' ) ) );
 		$this->assertSame( 10, has_filter( 'woocommerce_subscription_payment_meta', array( WooPaymentsSubscriptionAdminPaymentMethodHandler::instance(), 'add_subscription_payment_meta' ) ) );
 		$this->assertSame( 10, has_action( 'woocommerce_subscription_validate_payment_meta', array( WooPaymentsSubscriptionAdminPaymentMethodHandler::instance(), 'validate_subscription_payment_meta' ) ) );
 		$this->assertSame( 10, has_action( 'wcs_save_other_payment_meta', array( WooPaymentsSubscriptionAdminPaymentMethodHandler::instance(), 'save_meta_in_order_tokens' ) ) );
@@ -278,7 +282,44 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( 10, has_action( 'wp_ajax_wcpay_get_user_payment_tokens', array( WooPaymentsSubscriptionAdminPaymentMethodHandler::instance(), 'ajax_get_user_payment_tokens' ) ) );
 
 		remove_action( 'woocommerce_scheduled_subscription_payment_' . OrderPaymentStore::GATEWAY_ID, array( $gateway, 'scheduled_subscription_payment' ) );
+		remove_action( 'woocommerce_scheduled_subscription_payment_woocommerce_payments_amazon_pay', array( $gateway, 'scheduled_subscription_payment' ) );
 		remove_action( 'woocommerce_subscription_failing_payment_method_updated_' . OrderPaymentStore::GATEWAY_ID, array( $gateway, 'update_failing_payment_method' ) );
+		remove_action( 'woocommerce_subscription_failing_payment_method_updated_woocommerce_payments_amazon_pay', array( $gateway, 'update_failing_payment_method' ) );
+	}
+
+	/**
+	 * @testdox Should process Amazon Pay scheduled subscription renewals through the native gateway handler.
+	 */
+	public function test_amazon_pay_scheduled_subscription_payment_hook_reaches_gateway_handler(): void {
+		$user_id = self::factory()->user->create();
+		$order   = $this->create_order();
+		$order->set_customer_id( $user_id );
+		$order->add_payment_token( $this->create_card_token( $user_id, 'pm_amazon_renewal' ) );
+		$order->save();
+
+		$service = new RecordingPaymentProcessingService();
+		$gateway = new class() extends NativeWooPaymentsGateway {
+			/**
+			 * Tell whether subscriptions support is available.
+			 *
+			 * @return bool
+			 */
+			public function is_subscriptions_enabled(): bool {
+				return true;
+			}
+		};
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		/**
+		 * Fires a scheduled WooPayments Amazon Pay subscription renewal payment.
+		 *
+		 * @since 11.0.0
+		 */
+		do_action( 'woocommerce_scheduled_subscription_payment_woocommerce_payments_amazon_pay', 12.0, wc_get_order( $order->get_id() ) );
+
+		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertSame( $order->get_id(), $service->last_checkout_context->get_order_id() );
+		$this->assertSame( array( 'scheduled_subscription_payment' => true ), $service->last_checkout_context->get_provider_data() );
 	}
 
 	/**

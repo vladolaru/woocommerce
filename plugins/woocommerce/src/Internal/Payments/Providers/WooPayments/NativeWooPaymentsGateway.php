@@ -1384,22 +1384,36 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return;
 		}
 
-		$scheduled_hook = 'woocommerce_scheduled_subscription_payment_' . $this->id;
-		$failing_hook   = 'woocommerce_subscription_failing_payment_method_updated_' . $this->id;
-
 		if ( false === has_filter( 'woocommerce_email_classes', array( self::class, 'add_subscription_emails' ) ) ) {
 			add_filter( 'woocommerce_email_classes', array( self::class, 'add_subscription_emails' ), 20 );
 		}
 
-		if ( false === has_action( $scheduled_hook, array( $this, 'scheduled_subscription_payment' ) ) ) {
-			add_action( $scheduled_hook, array( $this, 'scheduled_subscription_payment' ), 10, 2 );
-		}
+		foreach ( $this->get_reusable_subscription_gateway_ids() as $gateway_id ) {
+			$scheduled_hook = 'woocommerce_scheduled_subscription_payment_' . $gateway_id;
+			$failing_hook   = 'woocommerce_subscription_failing_payment_method_updated_' . $gateway_id;
 
-		if ( false === has_action( $failing_hook, array( $this, 'update_failing_payment_method' ) ) ) {
-			add_action( $failing_hook, array( $this, 'update_failing_payment_method' ), 10, 2 );
+			if ( false === has_action( $scheduled_hook, array( $this, 'scheduled_subscription_payment' ) ) ) {
+				add_action( $scheduled_hook, array( $this, 'scheduled_subscription_payment' ), 10, 2 );
+			}
+
+			if ( false === has_action( $failing_hook, array( $this, 'update_failing_payment_method' ) ) ) {
+				add_action( $failing_hook, array( $this, 'update_failing_payment_method' ), 10, 2 );
+			}
 		}
 
 		WooPaymentsSubscriptionAdminPaymentMethodHandler::instance()->register_hooks();
+	}
+
+	/**
+	 * Get reusable WooPayments gateway IDs that can process automatic subscription renewals.
+	 *
+	 * @return array<int,string>
+	 */
+	private function get_reusable_subscription_gateway_ids(): array {
+		return array(
+			$this->id,
+			WooPaymentsPersistenceProfile::GATEWAY_ID_PREFIX . 'amazon_pay',
+		);
 	}
 
 	/**
