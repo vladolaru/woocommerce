@@ -3405,6 +3405,84 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should retrieve currency rates through the preserved currency rates endpoint.
+	 */
+	public function test_get_currency_rates_uses_preserved_endpoint_and_query_names(): void {
+		list( $sut, $http_client ) = $this->make_sut(
+			false,
+			array(
+				'eur' => 0.92,
+				'gbp' => 0.79,
+			)
+		);
+
+		$result = $sut->get_currency_rates( 'usd', array( 'eur', 'gbp' ) );
+
+		$this->assertSame(
+			array(
+				'eur' => 0.92,
+				'gbp' => 0.79,
+			),
+			$result
+		);
+		$this->assertSame( 'GET', $http_client->last_method );
+		$this->assertSame( '/sites/123/wcpay/currency/rates', strtok( $http_client->last_path, '?' ) );
+		$this->assertArrayNotHasKey( 'Idempotency-Key', $http_client->last_headers );
+
+		$query = array();
+		parse_str( (string) wp_parse_url( $http_client->last_path, PHP_URL_QUERY ), $query );
+
+		$this->assertSame( '0', $query['test_mode'] );
+		$this->assertSame( 'usd', $query['currency_from'] );
+		$this->assertSame( array( 'eur', 'gbp' ), $query['currencies_to'] );
+	}
+
+	/**
+	 * @testdox Should omit target currencies when requesting all supported rates.
+	 */
+	public function test_get_currency_rates_omits_target_currencies_when_none_requested(): void {
+		list( $sut, $http_client ) = $this->make_sut(
+			true,
+			array(
+				'eur' => 0.92,
+			)
+		);
+
+		$result = $sut->get_currency_rates( 'usd' );
+
+		$this->assertSame( array( 'eur' => 0.92 ), $result );
+
+		$query = array();
+		parse_str( (string) wp_parse_url( $http_client->last_path, PHP_URL_QUERY ), $query );
+
+		$this->assertSame( '/sites/123/wcpay/currency/rates', strtok( $http_client->last_path, '?' ) );
+		$this->assertSame( '1', $query['test_mode'] );
+		$this->assertSame( 'usd', $query['currency_from'] );
+		$this->assertArrayNotHasKey( 'currencies_to', $query );
+	}
+
+	/**
+	 * @testdox Should reject missing currency_from before transport.
+	 */
+	public function test_get_currency_rates_rejects_missing_currency_from_before_transport(): void {
+		$http_client          = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id = 123;
+
+		$sut = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( false ) );
+
+		try {
+			$sut->get_currency_rates( '' );
+			$this->fail( 'Missing currency_from should throw before transport.' );
+		} catch ( WooPaymentsApiException $exception ) {
+			$this->assertSame( 'wcpay_mandatory_currency_from_missing', $exception->get_error_code() );
+			$this->assertSame( 400, $exception->get_http_code() );
+		}
+
+		$this->assertSame( '', $http_client->last_path );
+	}
+
+	/**
 	 * Create a WooPayments account service mock.
 	 *
 	 * @param bool      $test_mode            Whether WooPayments should run in test mode.

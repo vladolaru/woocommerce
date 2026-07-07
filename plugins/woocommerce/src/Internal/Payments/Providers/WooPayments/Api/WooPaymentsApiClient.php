@@ -175,6 +175,11 @@ class WooPaymentsApiClient {
 	private const VAT_API = 'vat';
 
 	/**
+	 * WooPayments currency API path.
+	 */
+	private const CURRENCY_API = 'currency';
+
+	/**
 	 * WooPayments Capital API path.
 	 */
 	private const CAPITAL_API = 'capital';
@@ -452,6 +457,33 @@ class WooPaymentsApiClient {
 	 */
 	public function get_payment_method( string $payment_method_id ): array {
 		return $this->request( array(), self::PAYMENT_METHODS_API . '/' . rawurlencode( $payment_method_id ), 'GET' );
+	}
+
+	/**
+	 * Retrieve WooPayments currency conversion rates.
+	 *
+	 * @param string                  $currency_from Source currency code.
+	 * @param array<int, string>|null $currencies_to Optional target currency codes.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the source currency is missing.
+	 *
+	 * @since 11.0.0
+	 */
+	public function get_currency_rates( string $currency_from, ?array $currencies_to = null ): array {
+		if ( empty( $currency_from ) ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
+			throw new WooPaymentsApiException( __( 'Currency From parameter is required', 'woocommerce' ), 'wcpay_mandatory_currency_from_missing', 400 );
+		}
+
+		$params = array(
+			'currency_from' => $currency_from,
+		);
+
+		if ( null !== $currencies_to ) {
+			$params['currencies_to'] = $currencies_to;
+		}
+
+		return $this->request( $params, self::CURRENCY_API . '/rates', 'GET' );
 	}
 
 	/**
