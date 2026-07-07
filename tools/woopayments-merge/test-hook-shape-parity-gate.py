@@ -19,15 +19,50 @@ TARGET_WP = "docker exec -i target-cli-1 wp --allow-root --user=1"
 
 
 REQUIRED_HOOKS = [
-    "wcpay_metadata_from_order",
-    "wcpay_payment_fields_js_config",
+    "wcpay_api_request_headers",
+    "wcpay_api_request_params",
+    "wcpay_api_request_response",
     "wcpay_list_transactions_request",
     "wcpay_list_disputes_request",
     "wcpay_list_deposits_request",
     "wcpay_list_authorizations_request",
+    "wcpay_metadata_from_order",
+    "wcpay_payment_fields_js_config",
+    "wcpay_payment_request_is_product_supported",
+    "wcpay_payment_request_product_data",
+    "wcpay_payment_request_supported_types",
+    "wcpay_payment_request_total_label",
+    "wcpay_test_mode",
+    "wcpay_dev_mode",
+    "wcpay_test_mode_onboarding",
+    "wcpay_database_cache_ttl",
+    "wcpay_get_add_payment_method_redirect_url",
+    "wcpay_terminal_payment_completed_order_status",
+    "wcpay_create_customer_disallowed_order_statuses",
+    "wcpay_shopper_tracking_enabled",
+    "wcpay_tracks_event_properties",
+    "wcpay_woopay_is_signed_with_blog_token",
+    "wc_payments_get_onboarding_data_args",
+    "woocommerce_payments_account_refreshed",
     "woocommerce_payments_before_webhook_delivery",
     "woocommerce_payments_after_webhook_delivery",
-    "wcpay_woopay_is_signed_with_blog_token",
+    "woocommerce_woocommerce_payments_payment_requires_action",
+    "wcpay_multi_currency_override_selected_currency",
+    "wcpay_multi_currency_should_return_store_currency",
+    "wcpay_multi_currency_should_convert_product_price",
+    "wcpay_multi_currency_should_convert_coupon_amount",
+    "wcpay_multi_currency_should_disable_currency_switching",
+    "wcpay_multi_currency_should_hide_widgets",
+    "wcpay_multi_currency_async_price_type",
+    "wcpay_multi_currency_disable_filter_select_clauses",
+    "wcpay_multi_currency_filter_select_clauses",
+    "wcpay_multi_currency_disable_filter_join_clauses",
+    "wcpay_multi_currency_filter_join_clauses",
+    "wcpay_multi_currency_disable_filter_where_clauses",
+    "wcpay_multi_currency_filter_where_clauses",
+    "wcpay_multi_currency_disable_filter_select_orders_clauses",
+    "wcpay_multi_currency_filter_select_orders_clauses",
+    "wcpay_{currency}_format",
 ]
 
 
@@ -60,6 +95,22 @@ def write_snapshot(path: Path, *, role: str, hooks: dict[str, dict]) -> None:
 
 
 def base_hooks() -> dict[str, dict]:
+    array_arg = {"type": "array", "keys": [], "values": {}}
+    bool_arg = {"type": "bool"}
+    int_arg = {"type": "int"}
+    string_arg = {"type": "string"}
+    product_arg = {
+        "type": "object",
+        "class": "WC_Product_Simple",
+        "legacy_classes": ["WC_Product_Simple"],
+        "methods": ["get_type"],
+    }
+    coupon_arg = {
+        "type": "object",
+        "class": "WC_Coupon",
+        "legacy_classes": ["WC_Coupon"],
+        "methods": [],
+    }
     request_arg = {
         "type": "object",
         "class": "WCPay\\Core\\Server\\Request\\List_Transactions",
@@ -87,10 +138,24 @@ def base_hooks() -> dict[str, dict]:
         {"type": "string"},
         {"type": "array", "keys": ["data", "id", "type"], "values": {}},
     ]
+    currency_format_arg = {
+        "type": "array",
+        "keys": ["currency_pos", "decimal_sep", "num_decimals", "thousand_sep"],
+        "values": {},
+    }
+    payment_requires_action_args = [
+        order_arg,
+        string_arg,
+        string_arg,
+        string_arg,
+        string_arg,
+        string_arg,
+    ]
 
     hooks: dict[str, dict] = {
-        "wcpay_metadata_from_order": {"args": [metadata_arg, order_arg, payment_type_arg]},
-        "wcpay_payment_fields_js_config": {"args": [config_arg]},
+        "wcpay_api_request_headers": {"args": [array_arg]},
+        "wcpay_api_request_params": {"args": [array_arg, string_arg, string_arg]},
+        "wcpay_api_request_response": {"args": [array_arg, string_arg, string_arg, string_arg]},
         "wcpay_list_transactions_request": {"args": [request_arg]},
         "wcpay_list_disputes_request": {
             "args": [
@@ -119,9 +184,43 @@ def base_hooks() -> dict[str, dict]:
                 }
             ]
         },
+        "wcpay_metadata_from_order": {"args": [metadata_arg, order_arg, payment_type_arg]},
+        "wcpay_payment_fields_js_config": {"args": [config_arg]},
+        "wcpay_payment_request_is_product_supported": {"args": [bool_arg, product_arg]},
+        "wcpay_payment_request_product_data": {"args": [array_arg, product_arg]},
+        "wcpay_payment_request_supported_types": {"args": [array_arg]},
+        "wcpay_payment_request_total_label": {"args": [string_arg]},
+        "wcpay_test_mode": {"args": [bool_arg]},
+        "wcpay_dev_mode": {"args": [bool_arg]},
+        "wcpay_test_mode_onboarding": {"args": [bool_arg]},
+        "wcpay_database_cache_ttl": {"args": [int_arg, string_arg, array_arg]},
+        "wcpay_get_add_payment_method_redirect_url": {"args": [string_arg]},
+        "wcpay_terminal_payment_completed_order_status": {"args": [string_arg]},
+        "wcpay_create_customer_disallowed_order_statuses": {"args": [array_arg]},
+        "wcpay_shopper_tracking_enabled": {"args": [bool_arg]},
+        "wcpay_tracks_event_properties": {"args": [array_arg, string_arg]},
+        "wcpay_woopay_is_signed_with_blog_token": {"args": [bool_arg]},
+        "wc_payments_get_onboarding_data_args": {"args": [array_arg]},
+        "woocommerce_payments_account_refreshed": {"args": [array_arg]},
         "woocommerce_payments_before_webhook_delivery": {"args": webhook_args},
         "woocommerce_payments_after_webhook_delivery": {"args": webhook_args},
-        "wcpay_woopay_is_signed_with_blog_token": {"args": [{"type": "bool"}]},
+        "woocommerce_woocommerce_payments_payment_requires_action": {"args": payment_requires_action_args},
+        "wcpay_multi_currency_override_selected_currency": {"args": [bool_arg]},
+        "wcpay_multi_currency_should_return_store_currency": {"args": [bool_arg]},
+        "wcpay_multi_currency_should_convert_product_price": {"args": [bool_arg, product_arg]},
+        "wcpay_multi_currency_should_convert_coupon_amount": {"args": [bool_arg, coupon_arg]},
+        "wcpay_multi_currency_should_disable_currency_switching": {"args": [bool_arg]},
+        "wcpay_multi_currency_should_hide_widgets": {"args": [bool_arg]},
+        "wcpay_multi_currency_async_price_type": {"args": [string_arg, string_arg, array_arg]},
+        "wcpay_multi_currency_disable_filter_select_clauses": {"args": [bool_arg]},
+        "wcpay_multi_currency_filter_select_clauses": {"args": [array_arg]},
+        "wcpay_multi_currency_disable_filter_join_clauses": {"args": [bool_arg]},
+        "wcpay_multi_currency_filter_join_clauses": {"args": [array_arg]},
+        "wcpay_multi_currency_disable_filter_where_clauses": {"args": [bool_arg]},
+        "wcpay_multi_currency_filter_where_clauses": {"args": [array_arg]},
+        "wcpay_multi_currency_disable_filter_select_orders_clauses": {"args": [bool_arg]},
+        "wcpay_multi_currency_filter_select_orders_clauses": {"args": [array_arg]},
+        "wcpay_{currency}_format": {"args": [currency_format_arg, string_arg]},
     }
 
     assert sorted(hooks) == sorted(REQUIRED_HOOKS)
@@ -246,6 +345,22 @@ def test_php_driver_exports_inventory_without_wordpress() -> None:
     assert payload["schema"] == "woopayments_hook_shape_inventory.v1"
     assert payload["required_hooks"] == REQUIRED_HOOKS
     assert "wcpay_metadata_from_order" in payload["preserved_hooks"]
+
+
+def test_php_driver_requires_every_preserved_hook() -> None:
+    result = subprocess.run(
+        ["php", str(DRIVER), "--inventory"],
+        cwd=REPO,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["required_hooks"] == payload["preserved_hooks"]
 
 
 def test_verify_runs_hook_shape_gate() -> None:

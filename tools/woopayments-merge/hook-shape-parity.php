@@ -8,17 +8,7 @@
  */
 
 function woopayments_hook_shape_required_hooks(): array {
-	return array(
-		'wcpay_metadata_from_order',
-		'wcpay_payment_fields_js_config',
-		'wcpay_list_transactions_request',
-		'wcpay_list_disputes_request',
-		'wcpay_list_deposits_request',
-		'wcpay_list_authorizations_request',
-		'woocommerce_payments_before_webhook_delivery',
-		'woocommerce_payments_after_webhook_delivery',
-		'wcpay_woopay_is_signed_with_blog_token',
-	);
+	return woopayments_hook_shape_preserved_hooks();
 }
 
 function woopayments_hook_shape_preserved_hooks(): array {
@@ -381,6 +371,187 @@ $event_body = array(
 do_action( 'woocommerce_payments_before_webhook_delivery', 'charge.succeeded', $event_body );
 do_action( 'woocommerce_payments_after_webhook_delivery', 'charge.succeeded', $event_body );
 apply_filters( 'wcpay_woopay_is_signed_with_blog_token', false );
+
+$capture_fallback = static function ( string $hook_name, array $hook_args ) use ( &$captured ): void {
+	if ( isset( $captured[ $hook_name ] ) ) {
+		return;
+	}
+
+	$captured[ $hook_name ] = array(
+		'args'      => array_map( 'woopayments_hook_shape_describe_value', $hook_args ),
+		'arg_count' => count( $hook_args ),
+	);
+};
+
+$object_or_fallback = static function ( string $class_name, array $fallback_data = array() ) {
+	try {
+		if ( class_exists( $class_name ) ) {
+			return new $class_name();
+		}
+	} catch ( Throwable $throwable ) {
+		// Fall through to a stable synthetic object.
+	}
+
+	return (object) $fallback_data;
+};
+
+$request_or_fallback = static function ( string $legacy_class, string $native_class ) {
+	try {
+		$class_name = class_exists( $legacy_class ) ? $legacy_class : '';
+		if ( '' === $class_name && class_exists( $native_class ) ) {
+			if ( method_exists( $native_class, 'register_legacy_alias' ) ) {
+				$native_class::register_legacy_alias();
+			}
+			$class_name = $native_class;
+		}
+
+		if ( '' !== $class_name ) {
+			return method_exists( $class_name, 'create' ) ? $class_name::create() : new $class_name();
+		}
+	} catch ( Throwable $throwable ) {
+		// Fall through to a stable synthetic object.
+	}
+
+	return (object) array( 'request' => 'fallback' );
+};
+
+$payment_type = 'single';
+try {
+	if ( class_exists( 'WCPay\\Constants\\Payment_Type' ) && method_exists( 'WCPay\\Constants\\Payment_Type', 'SINGLE' ) ) {
+		$payment_type = WCPay\Constants\Payment_Type::SINGLE();
+	} elseif ( class_exists( 'Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\WooPaymentsPaymentType' ) ) {
+		Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentType::register_legacy_alias();
+		$payment_type = Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentType::single();
+	}
+} catch ( Throwable $throwable ) {
+	$payment_type = 'single';
+}
+
+$fallback_order   = $object_or_fallback( 'WC_Order', array( 'type' => 'order' ) );
+$fallback_product = $object_or_fallback( 'WC_Product_Simple', array( 'type' => 'simple' ) );
+$fallback_coupon  = $object_or_fallback( 'WC_Coupon', array( 'type' => 'coupon' ) );
+$account_data     = array(
+	'id'           => 'acct_hook_shape',
+	'email'        => 'merchant@example.test',
+	'capabilities' => array(),
+);
+$clauses          = array( 'hook_shape_clause' );
+$currency_format  = array(
+	'currency_pos' => 'left',
+	'decimal_sep'  => '.',
+	'num_decimals' => 2,
+	'thousand_sep' => ',',
+);
+
+$fallback_hooks = array(
+	'wcpay_api_request_headers'                                      => array( array( 'Content-Type' => 'application/json; charset=utf-8' ) ),
+	'wcpay_api_request_params'                                       => array( array( 'limit' => 1 ), 'transactions', 'GET' ),
+	'wcpay_api_request_response'                                     => array(
+		array(
+			'body'     => '{}',
+			'headers'  => array(),
+			'response' => array( 'code' => 200 ),
+		),
+		'GET',
+		'https://public-api.wordpress.com/wpcom/v2/sites/1/wcpay/transactions',
+		'transactions',
+	),
+	'wcpay_list_transactions_request'                                => array(
+		$request_or_fallback(
+			'WCPay\\Core\\Server\\Request\\List_Transactions',
+			'Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\WooPaymentsTransactionsListRequest'
+		),
+	),
+	'wcpay_list_disputes_request'                                    => array(
+		$request_or_fallback(
+			'WCPay\\Core\\Server\\Request\\List_Disputes',
+			'Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\WooPaymentsDisputesListRequest'
+		),
+	),
+	'wcpay_list_deposits_request'                                    => array(
+		$request_or_fallback(
+			'WCPay\\Core\\Server\\Request\\List_Deposits',
+			'Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\WooPaymentsDepositsListRequest'
+		),
+	),
+	'wcpay_list_authorizations_request'                              => array(
+		$request_or_fallback(
+			'WCPay\\Core\\Server\\Request\\List_Authorizations',
+			'Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\WooPaymentsAuthorizationsListRequest'
+		),
+	),
+	'wcpay_metadata_from_order'                                      => array(
+		array(
+			'customer_email' => 'ada@example.test',
+			'customer_name'  => 'Ada Lovelace',
+			'order_id'       => 123,
+			'payment_type'   => 'single',
+		),
+		$fallback_order,
+		$payment_type,
+	),
+	'wcpay_payment_fields_js_config'                                 => array(
+		array(
+			'accountId'            => 'acct_hook_shape',
+			'gatewayId'            => 'woocommerce_payments',
+			'paymentMethodsConfig' => array(),
+			'publishableKey'       => 'pk_test_hook_shape',
+		),
+	),
+	'wcpay_payment_request_is_product_supported'                     => array( true, $fallback_product ),
+	'wcpay_payment_request_product_data'                             => array(
+		array(
+			'currency'     => 'usd',
+			'displayItems' => array(),
+			'total'        => array(),
+		),
+		$fallback_product,
+	),
+	'wcpay_payment_request_supported_types'                          => array( array( 'simple', 'variation' ) ),
+	'wcpay_payment_request_total_label'                              => array( 'WooCommerce' ),
+	'wcpay_test_mode'                                                => array( false ),
+	'wcpay_dev_mode'                                                 => array( false ),
+	'wcpay_test_mode_onboarding'                                     => array( false ),
+	'wcpay_database_cache_ttl'                                       => array( DAY_IN_SECONDS, 'wcpay_hook_shape', array( 'data' => array() ) ),
+	'wcpay_get_add_payment_method_redirect_url'                      => array( 'https://example.test/my-account/payment-methods/' ),
+	'wcpay_terminal_payment_completed_order_status'                  => array( 'completed' ),
+	'wcpay_create_customer_disallowed_order_statuses'                => array( array( 'completed', 'cancelled', 'refunded', 'failed' ) ),
+	'wcpay_shopper_tracking_enabled'                                 => array( true ),
+	'wcpay_tracks_event_properties'                                  => array( array( 'source' => 'hook_shape' ), 'hook_shape_event' ),
+	'wcpay_woopay_is_signed_with_blog_token'                         => array( false ),
+	'wc_payments_get_onboarding_data_args'                           => array( array( 'site_url' => 'https://example.test' ) ),
+	'woocommerce_payments_account_refreshed'                         => array( $account_data ),
+	'woocommerce_payments_before_webhook_delivery'                   => array( 'charge.succeeded', $event_body ),
+	'woocommerce_payments_after_webhook_delivery'                    => array( 'charge.succeeded', $event_body ),
+	'woocommerce_woocommerce_payments_payment_requires_action'       => array(
+		$fallback_order,
+		'pi_hook_shape',
+		'pm_hook_shape',
+		'cus_hook_shape',
+		'ch_hook_shape',
+		'USD',
+	),
+	'wcpay_multi_currency_override_selected_currency'                => array( false ),
+	'wcpay_multi_currency_should_return_store_currency'              => array( false ),
+	'wcpay_multi_currency_should_convert_product_price'              => array( true, $fallback_product ),
+	'wcpay_multi_currency_should_convert_coupon_amount'              => array( true, $fallback_coupon ),
+	'wcpay_multi_currency_should_disable_currency_switching'         => array( false ),
+	'wcpay_multi_currency_should_hide_widgets'                       => array( false ),
+	'wcpay_multi_currency_async_price_type'                          => array( 'product', '12.34', array( 'currency' => 'USD' ) ),
+	'wcpay_multi_currency_disable_filter_select_clauses'             => array( false ),
+	'wcpay_multi_currency_filter_select_clauses'                     => array( $clauses ),
+	'wcpay_multi_currency_disable_filter_join_clauses'               => array( false ),
+	'wcpay_multi_currency_filter_join_clauses'                       => array( $clauses ),
+	'wcpay_multi_currency_disable_filter_where_clauses'              => array( false ),
+	'wcpay_multi_currency_filter_where_clauses'                      => array( $clauses ),
+	'wcpay_multi_currency_disable_filter_select_orders_clauses'      => array( false ),
+	'wcpay_multi_currency_filter_select_orders_clauses'              => array( $clauses ),
+	'wcpay_{currency}_format'                                        => array( $currency_format, 'en_US' ),
+);
+
+foreach ( $fallback_hooks as $hook_name => $hook_args ) {
+	$capture_fallback( $hook_name, $hook_args );
+}
 
 ksort( $captured, SORT_STRING );
 

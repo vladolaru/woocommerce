@@ -65,21 +65,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 required_hooks_json() {
-	python3 - <<'PY'
-import json
-
-print(json.dumps([
-    "wcpay_metadata_from_order",
-    "wcpay_payment_fields_js_config",
-    "wcpay_list_transactions_request",
-    "wcpay_list_disputes_request",
-    "wcpay_list_deposits_request",
-    "wcpay_list_authorizations_request",
-    "woocommerce_payments_before_webhook_delivery",
-    "woocommerce_payments_after_webhook_delivery",
-    "wcpay_woopay_is_signed_with_blog_token",
-]))
-PY
+	php "$DRIVER" --inventory | python3 -c 'import json, sys; print(json.dumps(json.load(sys.stdin)["required_hooks"]))'
 }
 
 print_plan() {
@@ -108,6 +94,15 @@ if [ "$PRINT_PLAN" -eq 1 ]; then
 	if [ -z "$REF_WP" ] || [ -z "$TARGET_WP" ]; then
 		usage_error "--ref and --target are required with --print-plan."
 	fi
+	if [ ! -f "$DRIVER" ]; then
+		blocked "capture driver is missing: $DRIVER"
+	fi
+	if ! command -v python3 >/dev/null 2>&1; then
+		blocked "python3 is required."
+	fi
+	if ! command -v php >/dev/null 2>&1; then
+		blocked "php is required."
+	fi
 	print_plan
 	exit 0
 fi
@@ -133,6 +128,9 @@ if [ ! -f "$DRIVER" ]; then
 fi
 if ! command -v python3 >/dev/null 2>&1; then
 	blocked "python3 is required."
+fi
+if ! command -v php >/dev/null 2>&1; then
+	blocked "php is required."
 fi
 
 mkdir -p "$OUT_DIR"
