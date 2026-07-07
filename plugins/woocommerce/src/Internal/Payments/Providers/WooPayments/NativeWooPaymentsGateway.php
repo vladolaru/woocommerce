@@ -146,6 +146,13 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	private WooPaymentsFraudPreventionService $fraud_prevention_service;
 
 	/**
+	 * WooPayments failed-transaction rate limiter.
+	 *
+	 * @var WooPaymentsFailedTransactionRateLimiter
+	 */
+	private WooPaymentsFailedTransactionRateLimiter $failed_transaction_rate_limiter;
+
+	/**
 	 * Constructor.
 	 */
 	public function __construct() {
@@ -185,14 +192,15 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 *
 	 * @internal
 	 *
-	 * @param PaymentProcessingService               $processing_service        Payment processing service.
-	 * @param WooPaymentsProvider                    $provider                  WooPayments provider.
-	 * @param WooPaymentsCheckoutBridge|null         $checkout_bridge           Optional checkout bridge.
-	 * @param WooPaymentsApiClient|null              $api_client                Optional API client.
-	 * @param WooPaymentsAccountService|null         $account_service           Optional account service.
-	 * @param WooPaymentsTokenService|null           $token_service             Optional token service.
-	 * @param WooPaymentsCustomerService|null        $customer_service          Optional customer service.
-	 * @param WooPaymentsFraudPreventionService|null $fraud_prevention_service Optional fraud-prevention service.
+	 * @param PaymentProcessingService                     $processing_service        Payment processing service.
+	 * @param WooPaymentsProvider                          $provider                  WooPayments provider.
+	 * @param WooPaymentsCheckoutBridge|null               $checkout_bridge           Optional checkout bridge.
+	 * @param WooPaymentsApiClient|null                    $api_client                Optional API client.
+	 * @param WooPaymentsAccountService|null               $account_service           Optional account service.
+	 * @param WooPaymentsTokenService|null                 $token_service             Optional token service.
+	 * @param WooPaymentsCustomerService|null              $customer_service          Optional customer service.
+	 * @param WooPaymentsFraudPreventionService|null       $fraud_prevention_service  Optional fraud-prevention service.
+	 * @param WooPaymentsFailedTransactionRateLimiter|null $failed_transaction_rate_limiter Optional failed-transaction rate limiter.
 	 */
 	final public function init(
 		PaymentProcessingService $processing_service,
@@ -202,7 +210,8 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		?WooPaymentsAccountService $account_service = null,
 		?WooPaymentsTokenService $token_service = null,
 		?WooPaymentsCustomerService $customer_service = null,
-		?WooPaymentsFraudPreventionService $fraud_prevention_service = null
+		?WooPaymentsFraudPreventionService $fraud_prevention_service = null,
+		?WooPaymentsFailedTransactionRateLimiter $failed_transaction_rate_limiter = null
 	): void {
 		$this->processing_service = $processing_service;
 		$this->provider           = $provider;
@@ -229,6 +238,10 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 		if ( null !== $fraud_prevention_service ) {
 			$this->fraud_prevention_service = $fraud_prevention_service;
+		}
+
+		if ( null !== $failed_transaction_rate_limiter ) {
+			$this->failed_transaction_rate_limiter = $failed_transaction_rate_limiter;
 		}
 	}
 
@@ -790,16 +803,28 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			);
 		}
 
-		$result = $this->get_processing_service()->process_checkout(
-			PaymentContext::for_checkout(
-				$order,
-				$this->id,
-				$this->get_request_payment_method_id(),
-				$this->get_checkout_payment_data(),
-				$this->get_checkout_provider_data()
-			),
-			$this->get_provider()
+		$failed_transaction_rate_limiter_error = $this->get_failed_transaction_rate_limiter_error_message();
+		if ( '' !== $failed_transaction_rate_limiter_error ) {
+			wc_add_notice( $failed_transaction_rate_limiter_error, 'error', array( 'icon' => 'error' ) );
+
+			return array(
+				'result'         => 'fail',
+				'redirect'       => '',
+				'payment_method' => '',
+			);
+		}
+
+		$context = PaymentContext::for_checkout(
+			$order,
+			$this->id,
+			$this->get_request_payment_method_id(),
+			$this->get_checkout_payment_data(),
+			$this->get_checkout_provider_data()
 		);
+		$outcome = $this->get_processing_service()->process_checkout_outcome( $context, $this->get_provider() );
+		$this->maybe_bump_failed_transaction_rate_limiter( $outcome );
+
+		$result = self::format_checkout_result( $context, $order, $outcome );
 
 		$this->maybe_handle_subscription_change_payment_success( $order, $result );
 
@@ -1052,6 +1077,19 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
+	 * Get the WooPayments failed-transaction rate limiter.
+	 *
+	 * @return WooPaymentsFailedTransactionRateLimiter
+	 */
+	private function get_failed_transaction_rate_limiter(): WooPaymentsFailedTransactionRateLimiter {
+		if ( ! isset( $this->failed_transaction_rate_limiter ) ) {
+			$this->failed_transaction_rate_limiter = wc_get_container()->get( WooPaymentsFailedTransactionRateLimiter::class );
+		}
+
+		return $this->failed_transaction_rate_limiter;
+	}
+
+	/**
 	 * Get a fraud-prevention error message for the current request.
 	 *
 	 * @param bool $is_checkout Whether the request is a checkout payment request.
@@ -1090,6 +1128,83 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		return $is_checkout
 			? __( "We're not able to process this payment. Please refresh the page and try again.", 'woocommerce' )
 			: __( "We're not able to add this payment method. Please refresh the page and try again.", 'woocommerce' );
+	}
+
+	/**
+	 * Get a failed-transaction rate-limiter error message for the current request.
+	 *
+	 * @return string
+	 */
+	private function get_failed_transaction_rate_limiter_error_message(): string {
+		$rate_limiter = $this->get_failed_transaction_rate_limiter();
+		if ( ! $rate_limiter->has_session() || ! $rate_limiter->is_limited() ) {
+			return '';
+		}
+
+		return __( 'Your payment was not processed.', 'woocommerce' );
+	}
+
+	/**
+	 * Bump the failed-transaction rate limiter when the provider returned a card-decline failure.
+	 *
+	 * @param PaymentOutcome $outcome Provider payment outcome.
+	 * @return void
+	 */
+	private function maybe_bump_failed_transaction_rate_limiter( PaymentOutcome $outcome ): void {
+		if ( PaymentOutcome::STATUS_FAILED !== $outcome->get_status() ) {
+			return;
+		}
+
+		$data       = $outcome->get_data();
+		$error_code = isset( $data[ PaymentOutcome::DATA_ERROR_CODE ] ) && is_scalar( $data[ PaymentOutcome::DATA_ERROR_CODE ] )
+			? (string) $data[ PaymentOutcome::DATA_ERROR_CODE ]
+			: '';
+
+		if ( ! self::should_bump_failed_transaction_rate_limiter( $error_code ) ) {
+			return;
+		}
+
+		$this->get_failed_transaction_rate_limiter()->bump();
+	}
+
+	/**
+	 * Tell whether the provider error code should count toward the failed-transaction limiter.
+	 *
+	 * @param string $error_code Provider error code.
+	 * @return bool
+	 */
+	private static function should_bump_failed_transaction_rate_limiter( string $error_code ): bool {
+		return in_array( $error_code, array( 'card_declined', 'incorrect_number', 'incorrect_cvc' ), true );
+	}
+
+	/**
+	 * Format a WooCommerce checkout result from an outcome.
+	 *
+	 * @param PaymentContext $context Payment context.
+	 * @param WC_Order       $order   Order object.
+	 * @param PaymentOutcome $outcome Provider outcome.
+	 * @return array<string,string>
+	 */
+	private static function format_checkout_result( PaymentContext $context, WC_Order $order, PaymentOutcome $outcome ): array {
+		if ( PaymentOutcome::STATUS_FAILED === $outcome->get_status() ) {
+			return array(
+				'result'         => 'fail',
+				'redirect'       => '',
+				'payment_method' => '',
+			);
+		}
+
+		$payment_method_id = '' !== $outcome->get_payment_method_id() ? $outcome->get_payment_method_id() : $context->get_payment_method_id();
+		$data              = $outcome->get_data();
+		$redirect          = array_key_exists( PaymentOutcome::DATA_CHECKOUT_REDIRECT, $data )
+			? (string) $data[ PaymentOutcome::DATA_CHECKOUT_REDIRECT ]
+			: ( '' !== $outcome->get_redirect_url() ? $outcome->get_redirect_url() : $order->get_checkout_order_received_url() );
+
+		return array(
+			'result'         => 'success',
+			'redirect'       => $redirect,
+			'payment_method' => $payment_method_id,
+		);
 	}
 
 	/**

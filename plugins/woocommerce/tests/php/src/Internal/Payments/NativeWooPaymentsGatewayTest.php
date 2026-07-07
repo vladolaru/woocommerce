@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutBridge;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressPaymentMethodTypes;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFailedTransactionRateLimiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
@@ -1019,6 +1020,141 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'success', $result['result'] );
 		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
 		$this->assertSame( 'valid-token', $session->get( WooPaymentsFraudPreventionService::TOKEN_NAME ) );
+	}
+
+	/**
+	 * @testdox Should reject checkout before creating a payment context when the failed-transaction limiter is active.
+	 */
+	public function test_process_payment_rejects_checkout_when_failed_transaction_rate_limiter_is_active(): void {
+		wc_clear_notices();
+		$order   = $this->create_order();
+		$service = new RecordingPaymentProcessingService();
+		$session = $this->create_session();
+		$session->set( WooPaymentsFailedTransactionRateLimiter::SESSION_KEY, array_fill( 0, 5, time() ) );
+
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init(
+			$service,
+			new WooPaymentsProvider(),
+			null,
+			null,
+			null,
+			null,
+			null,
+			$this->create_fraud_prevention_service( false, $session ),
+			new WooPaymentsFailedTransactionRateLimiter( $session )
+		);
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$this->assertSame(
+			array(
+				'result'         => 'fail',
+				'redirect'       => '',
+				'payment_method' => '',
+			),
+			$result
+		);
+		$this->assertNull( $service->last_checkout_context );
+		$this->assertSame(
+			'Your payment was not processed.',
+			wc_get_notices( 'error' )[0]['notice'] ?? ''
+		);
+	}
+
+	/**
+	 * @testdox Should bump the failed-transaction limiter for extension-matching decline error codes.
+	 *
+	 * @dataProvider failed_transaction_limited_error_codes
+	 *
+	 * @param string $error_code Provider error code.
+	 */
+	public function test_process_payment_bumps_failed_transaction_rate_limiter_for_decline_error_codes( string $error_code ): void {
+		$order   = $this->create_order();
+		$service = new RecordingPaymentProcessingService();
+		$session = $this->create_session();
+
+		$service->checkout_outcome = new PaymentOutcome(
+			PaymentOutcome::STATUS_FAILED,
+			'',
+			'',
+			'',
+			'',
+			array(
+				PaymentOutcome::DATA_ERROR_CODE    => $error_code,
+				PaymentOutcome::DATA_ERROR_MESSAGE => 'Declined.',
+			)
+		);
+
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init(
+			$service,
+			new WooPaymentsProvider(),
+			null,
+			null,
+			null,
+			null,
+			null,
+			$this->create_fraud_prevention_service( false, $session ),
+			new WooPaymentsFailedTransactionRateLimiter( $session )
+		);
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$this->assertSame( 'fail', $result['result'] );
+		$this->assertCount( 1, $session->get( WooPaymentsFailedTransactionRateLimiter::SESSION_KEY, array() ) );
+	}
+
+	/**
+	 * @testdox Should not bump the failed-transaction limiter for non-card-decline failures.
+	 */
+	public function test_process_payment_does_not_bump_failed_transaction_rate_limiter_for_other_errors(): void {
+		$order   = $this->create_order();
+		$service = new RecordingPaymentProcessingService();
+		$session = $this->create_session();
+
+		$service->checkout_outcome = new PaymentOutcome(
+			PaymentOutcome::STATUS_FAILED,
+			'',
+			'',
+			'',
+			'',
+			array(
+				PaymentOutcome::DATA_ERROR_CODE    => 'processing_error',
+				PaymentOutcome::DATA_ERROR_MESSAGE => 'Temporary provider error.',
+			)
+		);
+
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init(
+			$service,
+			new WooPaymentsProvider(),
+			null,
+			null,
+			null,
+			null,
+			null,
+			$this->create_fraud_prevention_service( false, $session ),
+			new WooPaymentsFailedTransactionRateLimiter( $session )
+		);
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$this->assertSame( 'fail', $result['result'] );
+		$this->assertSame( array(), $session->get( WooPaymentsFailedTransactionRateLimiter::SESSION_KEY, array() ) );
+	}
+
+	/**
+	 * Failed transaction error codes that match standalone WooPayments rate-limiter behavior.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public function failed_transaction_limited_error_codes(): array {
+		return array(
+			'card declined'    => array( 'card_declined' ),
+			'incorrect number' => array( 'incorrect_number' ),
+			'incorrect cvc'    => array( 'incorrect_cvc' ),
+		);
 	}
 
 	/**
