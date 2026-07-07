@@ -68,11 +68,11 @@ class NativePaymentsGatewayRegistry implements RegisterHooksInterface {
 			return $gateways;
 		}
 
-		if ( in_array( NativeWooPaymentsGateway::class, $gateways, true ) ) {
+		if ( in_array( Providers\WooPayments\NativeWooPaymentsGateway::class, $gateways, true ) ) {
 			return $gateways;
 		}
 
-		$gateways[] = NativeWooPaymentsGateway::class;
+		$gateways[] = Providers\WooPayments\NativeWooPaymentsGateway::class;
 
 		return $gateways;
 	}

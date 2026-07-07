@@ -11,7 +11,6 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PaymentGate
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\NativeWooPaymentsGateway;
 use Throwable;
 use WC_Payment_Gateway;
 
