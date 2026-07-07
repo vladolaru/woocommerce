@@ -153,6 +153,13 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	private WooPaymentsFailedTransactionRateLimiter $failed_transaction_rate_limiter;
 
 	/**
+	 * WooPayments duplicate-payment prevention service.
+	 *
+	 * @var WooPaymentsDuplicatePaymentPreventionService
+	 */
+	private WooPaymentsDuplicatePaymentPreventionService $duplicate_payment_prevention_service;
+
+	/**
 	 * Constructor.
 	 */
 	public function __construct() {
@@ -192,15 +199,16 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 *
 	 * @internal
 	 *
-	 * @param PaymentProcessingService                     $processing_service        Payment processing service.
-	 * @param WooPaymentsProvider                          $provider                  WooPayments provider.
-	 * @param WooPaymentsCheckoutBridge|null               $checkout_bridge           Optional checkout bridge.
-	 * @param WooPaymentsApiClient|null                    $api_client                Optional API client.
-	 * @param WooPaymentsAccountService|null               $account_service           Optional account service.
-	 * @param WooPaymentsTokenService|null                 $token_service             Optional token service.
-	 * @param WooPaymentsCustomerService|null              $customer_service          Optional customer service.
-	 * @param WooPaymentsFraudPreventionService|null       $fraud_prevention_service  Optional fraud-prevention service.
-	 * @param WooPaymentsFailedTransactionRateLimiter|null $failed_transaction_rate_limiter Optional failed-transaction rate limiter.
+	 * @param PaymentProcessingService                          $processing_service        Payment processing service.
+	 * @param WooPaymentsProvider                               $provider                  WooPayments provider.
+	 * @param WooPaymentsCheckoutBridge|null                    $checkout_bridge           Optional checkout bridge.
+	 * @param WooPaymentsApiClient|null                         $api_client                Optional API client.
+	 * @param WooPaymentsAccountService|null                    $account_service           Optional account service.
+	 * @param WooPaymentsTokenService|null                      $token_service             Optional token service.
+	 * @param WooPaymentsCustomerService|null                   $customer_service          Optional customer service.
+	 * @param WooPaymentsFraudPreventionService|null            $fraud_prevention_service  Optional fraud-prevention service.
+	 * @param WooPaymentsFailedTransactionRateLimiter|null      $failed_transaction_rate_limiter Optional failed-transaction rate limiter.
+	 * @param WooPaymentsDuplicatePaymentPreventionService|null $duplicate_payment_prevention_service Optional duplicate-payment prevention service.
 	 */
 	final public function init(
 		PaymentProcessingService $processing_service,
@@ -211,7 +219,8 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		?WooPaymentsTokenService $token_service = null,
 		?WooPaymentsCustomerService $customer_service = null,
 		?WooPaymentsFraudPreventionService $fraud_prevention_service = null,
-		?WooPaymentsFailedTransactionRateLimiter $failed_transaction_rate_limiter = null
+		?WooPaymentsFailedTransactionRateLimiter $failed_transaction_rate_limiter = null,
+		?WooPaymentsDuplicatePaymentPreventionService $duplicate_payment_prevention_service = null
 	): void {
 		$this->processing_service = $processing_service;
 		$this->provider           = $provider;
@@ -242,6 +251,10 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 		if ( null !== $failed_transaction_rate_limiter ) {
 			$this->failed_transaction_rate_limiter = $failed_transaction_rate_limiter;
+		}
+
+		if ( null !== $duplicate_payment_prevention_service ) {
+			$this->duplicate_payment_prevention_service = $duplicate_payment_prevention_service;
 		}
 	}
 
@@ -814,6 +827,28 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			);
 		}
 
+		$duplicate_order_result = $this->get_duplicate_payment_prevention_service()->check_against_session_processing_order( $order, $this );
+		if ( is_array( $duplicate_order_result ) ) {
+			return $duplicate_order_result;
+		}
+
+		$this->get_duplicate_payment_prevention_service()->maybe_update_session_processing_order( (int) $order_id );
+
+		$existing_intent_result = $this->get_duplicate_payment_prevention_service()->check_payment_intent_attached_to_order_succeeded( $order, $this );
+		if ( is_wp_error( $existing_intent_result ) ) {
+			wc_add_notice( $existing_intent_result->get_error_message(), 'error', array( 'icon' => 'error' ) );
+
+			return array(
+				'result'         => 'fail',
+				'redirect'       => '',
+				'payment_method' => '',
+			);
+		}
+
+		if ( is_array( $existing_intent_result ) ) {
+			return $existing_intent_result;
+		}
+
 		$context = PaymentContext::for_checkout(
 			$order,
 			$this->id,
@@ -823,6 +858,9 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		);
 		$outcome = $this->get_processing_service()->process_checkout_outcome( $context, $this->get_provider() );
 		$this->maybe_bump_failed_transaction_rate_limiter( $outcome );
+		if ( PaymentOutcome::STATUS_COMPLETED === $outcome->get_status() ) {
+			$this->get_duplicate_payment_prevention_service()->remove_session_processing_order( $order->get_id() );
+		}
 
 		$result = self::format_checkout_result( $context, $order, $outcome );
 
@@ -1087,6 +1125,19 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		return $this->failed_transaction_rate_limiter;
+	}
+
+	/**
+	 * Get the WooPayments duplicate-payment prevention service.
+	 *
+	 * @return WooPaymentsDuplicatePaymentPreventionService
+	 */
+	private function get_duplicate_payment_prevention_service(): WooPaymentsDuplicatePaymentPreventionService {
+		if ( ! isset( $this->duplicate_payment_prevention_service ) ) {
+			$this->duplicate_payment_prevention_service = wc_get_container()->get( WooPaymentsDuplicatePaymentPreventionService::class );
+		}
+
+		return $this->duplicate_payment_prevention_service;
 	}
 
 	/**

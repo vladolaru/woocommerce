@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
 use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
@@ -13,9 +14,11 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutBridge;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressPaymentMethodTypes;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFailedTransactionRateLimiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
@@ -1158,6 +1161,102 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should redirect duplicate checkout attempts to a paid matching session order before charging.
+	 */
+	public function test_process_payment_redirects_duplicate_checkout_to_paid_session_order_before_processing(): void {
+		$customer_id = self::factory()->user->create();
+		$cart_hash   = 'same-cart-hash';
+		$session     = $this->create_session();
+		$service     = new RecordingPaymentProcessingService();
+
+		$paid_order = $this->create_order();
+		$paid_order->set_cart_hash( $cart_hash );
+		$paid_order->set_customer_id( $customer_id );
+		$paid_order->update_status( 'completed' );
+		$paid_order->save();
+
+		$current_order = $this->create_order();
+		$current_order->set_cart_hash( $cart_hash );
+		$current_order->set_customer_id( $customer_id );
+		$current_order->update_status( 'pending' );
+		$current_order->save();
+
+		$session->set( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $paid_order->get_id() );
+
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init(
+			$service,
+			new WooPaymentsProvider(),
+			null,
+			null,
+			null,
+			null,
+			null,
+			$this->create_fraud_prevention_service( false, $session ),
+			new WooPaymentsFailedTransactionRateLimiter( $session ),
+			$this->create_duplicate_payment_prevention_service( $session )
+		);
+
+		$result = $gateway->process_payment( $current_order->get_id() );
+
+		$this->assertSame( 'success', $result['result'] );
+		$this->assertStringContainsString( (string) $paid_order->get_id(), $result['redirect'] );
+		$this->assertStringContainsString( 'wcpay_paid_for_previous_order=yes', $result['redirect'] );
+		$this->assertNull( $service->last_checkout_context );
+		$this->assertNull( $session->get( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER ) );
+
+		$deleted_order = wc_get_order( $current_order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $deleted_order );
+		$this->assertSame( 'trash', $deleted_order->get_status() );
+	}
+
+	/**
+	 * @testdox Should redirect an order with an already successful attached PaymentIntent before charging again.
+	 */
+	public function test_process_payment_redirects_successful_attached_intent_before_processing(): void {
+		$order   = $this->create_order();
+		$session = $this->create_session();
+		$service = new RecordingPaymentProcessingService();
+		$order->update_meta_data( '_intent_id', 'pi_existing' );
+		$order->save();
+		$session->set( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $order->get_id() );
+
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_payment_intention' ) )
+			->getMock();
+		$api_client
+			->expects( $this->once() )
+			->method( 'get_payment_intention' )
+			->with( 'pi_existing' )
+			->willReturn( $this->create_intent_response( $order, 'succeeded', 1200 ) );
+
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init(
+			$service,
+			new WooPaymentsProvider(),
+			null,
+			null,
+			null,
+			null,
+			null,
+			$this->create_fraud_prevention_service( false, $session ),
+			new WooPaymentsFailedTransactionRateLimiter( $session ),
+			$this->create_duplicate_payment_prevention_service( $session, $api_client )
+		);
+
+		$result = $gateway->process_payment( $order->get_id() );
+		$order  = wc_get_order( $order->get_id() );
+
+		$this->assertSame( 'success', $result['result'] );
+		$this->assertStringContainsString( 'wcpay_previous_successful_intent=yes', $result['redirect'] );
+		$this->assertNull( $service->last_checkout_context );
+		$this->assertNull( $session->get( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER ) );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertContains( $order->get_status(), wc_get_is_paid_statuses() );
+	}
+
+	/**
 	 * @testdox Should hand successful subscription payment-method changes back to WC Subscriptions.
 	 */
 	public function test_process_payment_updates_subscription_payment_method_after_successful_new_method_change(): void {
@@ -1525,6 +1624,53 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$service->init( $account_service );
 
 		return $service;
+	}
+
+	/**
+	 * Create a duplicate-payment prevention service.
+	 *
+	 * @param \WC_Session               $session    WooCommerce session test double.
+	 * @param WooPaymentsApiClient|null $api_client Optional API client.
+	 * @return WooPaymentsDuplicatePaymentPreventionService
+	 */
+	private function create_duplicate_payment_prevention_service( \WC_Session $session, ?WooPaymentsApiClient $api_client = null ): WooPaymentsDuplicatePaymentPreventionService {
+		$service = new WooPaymentsDuplicatePaymentPreventionService( $session );
+		$service->init(
+			$api_client ?? $this->createStub( WooPaymentsApiClient::class ),
+			wc_get_container()->get( OrderPaymentLifecycleService::class ),
+			new WooPaymentsOrderDataService()
+		);
+
+		return $service;
+	}
+
+	/**
+	 * Create a PaymentIntent response.
+	 *
+	 * @param WC_Order $order  Order.
+	 * @param string   $status Intent status.
+	 * @param int      $amount Intent amount in minor units.
+	 * @return array<string,mixed>
+	 */
+	private function create_intent_response( WC_Order $order, string $status, int $amount ): array {
+		return array(
+			'id'       => 'pi_existing',
+			'status'   => $status,
+			'amount'   => $amount,
+			'currency' => strtolower( $order->get_currency() ),
+			'customer' => 'cus_existing',
+			'metadata' => array(
+				'order_id' => (string) $order->get_id(),
+			),
+			'charges'  => array(
+				'data' => array(
+					array(
+						'id'             => 'ch_existing',
+						'payment_method' => 'pm_existing',
+					),
+				),
+			),
+		);
 	}
 
 	/**
