@@ -926,6 +926,36 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox charge.dispute.updated de-duplicates update notes structurally across locales.
+	 */
+	public function test_dispute_updated_dedupes_notes_across_locale_renderings(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( 'processing' );
+		$order->update_meta_data( '_charge_id', 'ch_123' );
+		$order->save();
+		$event = $this->create_dispute_event( 'charge.dispute.updated', 'needs_response' );
+
+		$event['id'] = 'evt_dispute_updated_locale_dedupe_1';
+		$this->sut->process( $event );
+
+		$this->install_woocommerce_test_translations(
+			array(
+				'Payment dispute has been updated' => 'Zahlungsdisput wurde aktualisiert',
+				'%1$s. See <a href="%2$s">dispute overview</a> for more details.' => '%1$s. Weitere Details in der <a href="%2$s">Disputuebersicht</a>.',
+			)
+		);
+
+		$event['id'] = 'evt_dispute_updated_locale_dedupe_2';
+		$this->sut->process( $event );
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertOrderHasNoteContaining( $order, array( 'Payment dispute has been updated', 'dispute overview' ) );
+		$this->assertOrderLacksNoteContaining( $order, array( 'Zahlungsdisput wurde aktualisiert', 'Disputuebersicht' ) );
+	}
+
+	/**
 	 * Provide dispute update events.
 	 *
 	 * @return array<string,array{0:string,1:string}>

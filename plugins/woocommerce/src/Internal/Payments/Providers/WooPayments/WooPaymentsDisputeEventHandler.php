@@ -24,6 +24,13 @@ use WC_Order_Refund;
 class WooPaymentsDisputeEventHandler {
 
 	/**
+	 * Prefix for dispute order-note structural dedupe markers.
+	 *
+	 * @var string
+	 */
+	private const DISPUTE_NOTE_MARKER_PREFIX = '_wc_native_woopayments_dispute_note_';
+
+	/**
 	 * Stripe zero-decimal currencies.
 	 *
 	 * @var string[]
@@ -129,7 +136,7 @@ class WooPaymentsDisputeEventHandler {
 			return;
 		}
 
-		if ( $this->process_dispute_updated( $order, $event_type, $charge_id, $balance_transaction_id ) ) {
+		if ( $this->process_dispute_updated( $order, $event_object, $event_type, $charge_id, $balance_transaction_id ) ) {
 			$this->dispute_cache_service->delete_dispute_caches();
 		}
 	}
@@ -171,6 +178,7 @@ class WooPaymentsDisputeEventHandler {
 	 */
 	private function process_dispute_created( WC_Order $order, array $event_object, string $charge_id, string $balance_transaction_id ): void {
 		$evidence   = $this->get_required_array( $event_object, 'evidence_details' );
+		$dispute_id = $this->get_required_string( $event_object, 'id' );
 		$status     = $this->get_required_string( $event_object, 'status' );
 		$is_inquiry = 0 === strpos( $status, 'warning_' );
 		$note       = $this->get_dispute_created_note(
@@ -181,12 +189,14 @@ class WooPaymentsDisputeEventHandler {
 			$is_inquiry,
 			$balance_transaction_id
 		);
+		$note_type  = $is_inquiry ? 'created_inquiry' : 'created_dispute';
 
-		if ( $this->order_note_exists( $order, $note ) ) {
+		if ( $this->dispute_order_note_exists( $order, $note, $dispute_id, $status, $note_type ) ) {
 			return;
 		}
 
 		$order->update_status( 'on-hold' );
+		$this->mark_dispute_order_note( $order, $dispute_id, $status, $note_type );
 		$order->add_order_note( $note );
 	}
 
@@ -203,8 +213,9 @@ class WooPaymentsDisputeEventHandler {
 		$dispute_id = $this->get_required_string( $event_object, 'id' );
 		$is_inquiry = 0 === strpos( $status, 'warning_' );
 		$note       = $this->get_dispute_closed_note( $charge_id, $status, $is_inquiry, $balance_transaction_id );
+		$note_type  = $is_inquiry ? 'closed_inquiry' : 'closed_dispute';
 
-		if ( $this->order_note_exists( $order, $note ) ) {
+		if ( $this->dispute_order_note_exists( $order, $note, $dispute_id, $status, $note_type ) ) {
 			return;
 		}
 
@@ -224,28 +235,36 @@ class WooPaymentsDisputeEventHandler {
 			remove_filter( 'woocommerce_email_enabled_customer_completed_renewal_order', '__return_false' );
 		}
 
+		$this->mark_dispute_order_note( $order, $dispute_id, $status, $note_type );
 		$order->add_order_note( $note );
 	}
 
 	/**
 	 * Process a dispute update event.
 	 *
-	 * @param WC_Order $order      Order object.
-	 * @param string   $event_type Event type.
-	 * @param string   $charge_id              Charge ID.
-	 * @param string   $balance_transaction_id Balance transaction ID.
+	 * @param WC_Order            $order                  Order object.
+	 * @param array<string,mixed> $event_object           Dispute object.
+	 * @param string              $event_type             Event type.
+	 * @param string              $charge_id              Charge ID.
+	 * @param string              $balance_transaction_id Balance transaction ID.
 	 * @return bool True when a new update note was applied.
 	 */
-	private function process_dispute_updated( WC_Order $order, string $event_type, string $charge_id, string $balance_transaction_id ): bool {
+	private function process_dispute_updated( WC_Order $order, array $event_object, string $event_type, string $charge_id, string $balance_transaction_id ): bool {
+		$dispute_id = $this->get_required_string( $event_object, 'id' );
+		$status     = $this->get_required_string( $event_object, 'status' );
+
 		switch ( $event_type ) {
 			case 'charge.dispute.funds_withdrawn':
-				$message = __( 'Payment dispute and fees have been deducted from your next payout', 'woocommerce' );
+				$message   = __( 'Payment dispute and fees have been deducted from your next payout', 'woocommerce' );
+				$note_type = 'funds_withdrawn';
 				break;
 			case 'charge.dispute.funds_reinstated':
-				$message = __( 'Payment dispute funds have been reinstated', 'woocommerce' );
+				$message   = __( 'Payment dispute funds have been reinstated', 'woocommerce' );
+				$note_type = 'funds_reinstated';
 				break;
 			default:
-				$message = __( 'Payment dispute has been updated', 'woocommerce' );
+				$message   = __( 'Payment dispute has been updated', 'woocommerce' );
+				$note_type = 'updated';
 		}
 
 		$note = sprintf(
@@ -255,12 +274,7 @@ class WooPaymentsDisputeEventHandler {
 			esc_url( $this->get_dispute_url( $charge_id, $balance_transaction_id ) )
 		);
 
-		if ( $this->order_note_exists( $order, $note ) ) {
-			return false;
-		}
-
-		$order->add_order_note( $note );
-		return true;
+		return $this->add_dispute_order_note_once( $order, $note, $dispute_id, $status, $note_type );
 	}
 
 	/**
@@ -620,6 +634,76 @@ class WooPaymentsDisputeEventHandler {
 		}
 
 		return false;
+	}
+
+	/**
+	 * Tell whether a dispute order note was already written.
+	 *
+	 * @param WC_Order $order        Order object.
+	 * @param string   $note         Note content.
+	 * @param string   $dispute_id   Provider dispute ID.
+	 * @param string   $event_status Provider dispute status.
+	 * @param string   $note_type    Stable note type.
+	 * @return bool
+	 */
+	private function dispute_order_note_exists( WC_Order $order, string $note, string $dispute_id, string $event_status, string $note_type ): bool {
+		$marker_key = $this->get_dispute_note_marker_key( $dispute_id, $event_status, $note_type );
+
+		if ( 'yes' === $order->get_meta( $marker_key, true ) ) {
+			return true;
+		}
+
+		if ( $this->order_note_exists( $order, $note ) ) {
+			$this->mark_dispute_order_note( $order, $dispute_id, $event_status, $note_type );
+			return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * Add a dispute order note only when its structural marker is not already present.
+	 *
+	 * @param WC_Order $order        Order object.
+	 * @param string   $note         Note content.
+	 * @param string   $dispute_id   Provider dispute ID.
+	 * @param string   $event_status Provider dispute status.
+	 * @param string   $note_type    Stable note type.
+	 * @return bool True when the note was added.
+	 */
+	private function add_dispute_order_note_once( WC_Order $order, string $note, string $dispute_id, string $event_status, string $note_type ): bool {
+		if ( $this->dispute_order_note_exists( $order, $note, $dispute_id, $event_status, $note_type ) ) {
+			return false;
+		}
+
+		$this->mark_dispute_order_note( $order, $dispute_id, $event_status, $note_type );
+		$order->add_order_note( $note );
+		return true;
+	}
+
+	/**
+	 * Persist the structural marker for a dispute order note.
+	 *
+	 * @param WC_Order $order        Order object.
+	 * @param string   $dispute_id   Provider dispute ID.
+	 * @param string   $event_status Provider dispute status.
+	 * @param string   $note_type    Stable note type.
+	 */
+	private function mark_dispute_order_note( WC_Order $order, string $dispute_id, string $event_status, string $note_type ): void {
+		$order->update_meta_data( $this->get_dispute_note_marker_key( $dispute_id, $event_status, $note_type ), 'yes' );
+		$order->save_meta_data();
+	}
+
+	/**
+	 * Get the structural dedupe marker key for a dispute note.
+	 *
+	 * @param string $dispute_id   Provider dispute ID.
+	 * @param string $event_status Provider dispute status.
+	 * @param string $note_type    Stable note type.
+	 * @return string
+	 */
+	private function get_dispute_note_marker_key( string $dispute_id, string $event_status, string $note_type ): string {
+		return self::DISPUTE_NOTE_MARKER_PREFIX . md5( $dispute_id . '|' . $event_status . '|' . $note_type );
 	}
 
 	/**
