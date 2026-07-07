@@ -470,6 +470,13 @@ echo
 echo "Summary: ${#PASS[@]} passed, ${#FAILED[@]} failed, ${#BLOCKED[@]} blocked."
 if [ "${#FAILED[@]}" -ne 0 ]; then echo "RESULT: FAIL (regressions present)."; exit 1; fi
 if [ "${#BLOCKED[@]}" -ne 0 ]; then echo "RESULT: INCOMPLETE (preconditions unmet - not a regression)."; exit 3; fi
+if [ "$FULL_EVIDENCE" -eq 1 ]; then
+	echo "RESULT: PASS - full-evidence gates passed for the local parity/readiness surfaces."
+	echo "  NOTE: this is local enablement evidence. It does not claim production canary error"
+	echo "  rates, production WPCOM readiness, live-data safety at production scale, release"
+	echo "  sequencing, or the default/mandatory flips."
+	exit 0
+fi
 echo "RESULT: PASS - the deterministic gates pass on the captured surfaces (Tier A/B)."
 echo "  NOTE: this is NOT full merge verification. Financial reconciliation now checks the widened"
 echo "  money matrix for the supplied orders, but full refund/dispute/payout/multi-currency coverage"

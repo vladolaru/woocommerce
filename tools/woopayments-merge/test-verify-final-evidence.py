@@ -224,6 +224,9 @@ printf 'critical-run|%s\n' "$*" >> "$INVOCATIONS_LOG"
         )
 
         assert result.returncode == 0, result.stdout + result.stderr
+        final_summary = result.stdout.rsplit("\nSummary:", maxsplit=1)[-1]
+        assert "RESULT: PASS - full-evidence gates passed" in final_summary
+        assert "this is NOT full merge verification" not in final_summary
 
         invocation_log = invocations.read_text(encoding="utf-8")
         assert "tracks-parity.sh|reset" in invocation_log
