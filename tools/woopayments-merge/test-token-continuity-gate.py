@@ -14,6 +14,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 SCRIPT = REPO / "tools/woopayments-merge/token-continuity-gate.sh"
 TARGET_WP = "docker exec -i target-cli-1 wp --allow-root --user=1"
+BROWSER_DRIVER = REPO / "tools/woopayments-merge/token-continuity.playwriter.mjs"
 
 
 def run_gate(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -309,6 +310,18 @@ def test_gate_requires_save_token_browser_semantic_evidence() -> None:
         assert rollup["status"] == "fail"
 
 
+def test_real_browser_driver_is_not_the_incomplete_capture_stub() -> None:
+    source = BROWSER_DRIVER.read_text(encoding="utf-8")
+
+    assert "Submit-capable SEPA token-continuity browser flow is not implemented yet" not in source
+    assert "status: 'incomplete'" not in source
+    assert "async function runSaveSepaTokenPhase" in source
+    assert "async function runRenderPaymentMethodsPhase" in source
+    assert "selected_gateway_id:" in source
+    assert "payment_method_id:" in source
+    assert "token_visible:" in source
+
+
 def main() -> None:
     tests = [
         test_usage_requires_target_customer_and_subscription,
@@ -316,6 +329,7 @@ def main() -> None:
         test_full_gate_invokes_browser_cutover_token_list_and_renewal_checks,
         test_gate_fails_when_native_token_list_omits_saved_token,
         test_gate_requires_save_token_browser_semantic_evidence,
+        test_real_browser_driver_is_not_the_incomplete_capture_stub,
     ]
     for test in tests:
         test()
