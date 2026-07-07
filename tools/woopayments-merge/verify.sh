@@ -125,6 +125,7 @@ echo
 # 1. BC + Tracks static drift gate (source-level; independent of stores).
 gate "drift gate (BC + tracks)" bash "$SELF_DIR/bc-drift-gate.sh"
 gate "subsystem disposition inventory" bash "$SELF_DIR/subsystem-disposition-gate.sh"
+gate "hook-shape parity" bash "$SELF_DIR/hook-shape-parity.sh" --ref "$REF_WP" --target "$TARGET_WP"
 
 # 2. Drive a fixture flow on the reference store and collect order ids.
 echo "  driving a charge fixture on the reference store..."

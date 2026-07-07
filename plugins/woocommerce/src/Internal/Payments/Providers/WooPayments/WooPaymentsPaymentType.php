@@ -13,7 +13,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
  * @since 11.0.0
  * @internal Transitional compatibility object for WooPayments metadata filters.
  */
-class WooPaymentsPaymentType {
+class WooPaymentsPaymentType implements \JsonSerializable {
 
 	/**
 	 * Single payment type.
@@ -37,6 +37,13 @@ class WooPaymentsPaymentType {
 	private string $value;
 
 	/**
+	 * Static object cache.
+	 *
+	 * @var array<string,self>
+	 */
+	private static array $instances = array();
+
+	/**
 	 * Constructor.
 	 *
 	 * @param string $value Payment type value.
@@ -51,7 +58,7 @@ class WooPaymentsPaymentType {
 	 * @return self
 	 */
 	public static function single(): self {
-		return new self( self::SINGLE );
+		return self::from_value( self::SINGLE );
 	}
 
 	/**
@@ -60,17 +67,17 @@ class WooPaymentsPaymentType {
 	 * @return self
 	 */
 	public static function recurring(): self {
-		return new self( self::RECURRING );
+		return self::from_value( self::RECURRING );
 	}
 
 	/**
 	 * Compare payment types.
 	 *
-	 * @param self $other Payment type to compare.
+	 * @param mixed $other Payment type to compare.
 	 * @return bool
 	 */
-	public function equals( self $other ): bool {
-		return $this->value === $other->value;
+	public function equals( $other = null ): bool {
+		return $this === $other;
 	}
 
 	/**
@@ -80,5 +87,48 @@ class WooPaymentsPaymentType {
 	 */
 	public function __toString(): string {
 		return $this->value;
+	}
+
+	/**
+	 * Get the enum value.
+	 *
+	 * @return string
+	 */
+	public function get_value(): string {
+		return $this->value;
+	}
+
+	/**
+	 * Specify the value serialized to JSON.
+	 *
+	 * @return string
+	 */
+	#[\ReturnTypeWillChange]
+	public function jsonSerialize() {
+		return $this->__toString();
+	}
+
+	/**
+	 * Register the legacy WooPayments payment type class name when the extension is absent.
+	 */
+	public static function register_legacy_alias(): void {
+		if ( ! class_exists( 'WCPay\\Constants\\Payment_Type' ) ) {
+			class_alias( self::class, 'WCPay\\Constants\\Payment_Type' );
+		}
+	}
+
+	/**
+	 * Get a cached payment type instance.
+	 *
+	 * @param string $value Payment type value.
+	 * @return self
+	 */
+	private static function from_value( string $value ): self {
+		$value = self::RECURRING === $value ? self::RECURRING : self::SINGLE;
+		if ( ! isset( self::$instances[ $value ] ) ) {
+			self::$instances[ $value ] = new self( $value );
+		}
+
+		return self::$instances[ $value ];
 	}
 }

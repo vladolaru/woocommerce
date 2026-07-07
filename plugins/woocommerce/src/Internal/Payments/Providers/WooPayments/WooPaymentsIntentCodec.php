@@ -132,6 +132,8 @@ class WooPaymentsIntentCodec {
 	 * @return array<string,mixed>
 	 */
 	public static function metadata_from_order( WC_Order $order, string $payment_type = 'single', string $subscription_payment = 'no' ): array {
+		WooPaymentsPaymentType::register_legacy_alias();
+
 		$payment_type         = 'recurring' === $payment_type ? WooPaymentsPaymentType::recurring() : WooPaymentsPaymentType::single();
 		$subscription_payment = in_array( $subscription_payment, array( 'initial', 'renewal' ), true ) ? $subscription_payment : 'no';
 		$metadata             = array(

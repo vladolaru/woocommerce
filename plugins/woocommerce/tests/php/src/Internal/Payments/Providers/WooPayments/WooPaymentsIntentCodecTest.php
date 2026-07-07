@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentType;
 use WC_Order;
 use WC_Unit_Test_Case;
 
@@ -35,6 +36,35 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	public function tearDown(): void {
 		update_option( 'woocommerce_currency', $this->original_currency );
 		parent::tearDown();
+	}
+
+	/**
+	 * @testdox Should pass a legacy-compatible payment type object to the metadata filter.
+	 */
+	public function test_metadata_from_order_passes_legacy_compatible_payment_type_object_to_filter(): void {
+		$order            = $this->create_woopayments_order( '25.00' );
+		$captured_payment = null;
+
+		add_filter(
+			'wcpay_metadata_from_order',
+			static function ( array $metadata, WC_Order $filtered_order, $payment_type ) use ( &$captured_payment, $order ): array {
+				if ( $order->get_id() === $filtered_order->get_id() ) {
+					$captured_payment = $payment_type;
+				}
+
+				return $metadata;
+			},
+			10,
+			3
+		);
+
+		WooPaymentsIntentCodec::metadata_from_order( $order, 'recurring', 'renewal' );
+
+		$this->assertIsObject( $captured_payment );
+		$this->assertTrue( is_a( $captured_payment, 'WCPay\\Constants\\Payment_Type' ), 'Payment type should satisfy the legacy WooPayments class name.' );
+		$this->assertSame( 'recurring', (string) $captured_payment );
+		$this->assertSame( 'recurring', $captured_payment->get_value() );
+		$this->assertTrue( $captured_payment->equals( WooPaymentsPaymentType::recurring() ) );
 	}
 
 	/**
