@@ -34,11 +34,11 @@ ensure_product() { # <store> <sku> <create args...>
 fixture_products() { # <store>
   local s="$1"
   echo "[$s] ensure products: simple-\$20 (SKU cf-simple), simple-\$50 (cf-affirm), variable (cf-var), subscription (cf-sub), free-trial-sub (cf-trial)"
-  ensure_product "$s" cf-simple --name="CF Simple" --sku=cf-simple --type=simple --regular_price=20 --status=publish
-  ensure_product "$s" cf-affirm --name="CF Affirm" --sku=cf-affirm --type=simple --regular_price=50 --status=publish
-  ensure_product "$s" cf-var --name="CF Variable" --sku=cf-var --type=variable --status=publish
-  ensure_product "$s" cf-sub --name="CF Subscription" --sku=cf-sub --type=subscription --regular_price=20 --subscription_period=month --subscription_period_interval=1 --status=publish
-  ensure_product "$s" cf-trial --name="CF Trial Subscription" --sku=cf-trial --type=subscription --regular_price=20 --subscription_period=month --subscription_period_interval=1 --subscription_trial_length=14 --subscription_trial_period=day --status=publish
+  ensure_product "$s" cf-simple --name="CF Simple" --sku=cf-simple --type=simple --regular_price=20 --status=publish || return 1
+  ensure_product "$s" cf-affirm --name="CF Affirm" --sku=cf-affirm --type=simple --regular_price=50 --status=publish || return 1
+  ensure_product "$s" cf-var --name="CF Variable" --sku=cf-var --type=variable --status=publish || return 1
+  ensure_product "$s" cf-sub --name="CF Subscription" --sku=cf-sub --type=subscription --regular_price=20 --subscription_period=month --subscription_period_interval=1 --status=publish || return 1
+  ensure_product "$s" cf-trial --name="CF Trial Subscription" --sku=cf-trial --type=subscription --regular_price=20 --subscription_period=month --subscription_period_interval=1 --subscription_trial_length=14 --subscription_trial_period=day --status=publish || return 1
 }
 
 # --- settings toggles -----------------------------------------------------
@@ -154,14 +154,122 @@ PY
 }
 
 # --- coupons + shipping ---------------------------------------------------
-fixture_coupons() { local s="$1"; echo "[$s] ensure coupons: cf-signup cf-oneoff cf-recurring"; }
-fixture_shipping() { local s="$1"; echo "[$s] ensure zone w/ flat-rate \$20 + free-shipping"; }
+ensure_coupon() { # <store> <code> <create args...>
+  local s="$1" code="$2" existing
+  shift 2
+
+  if ! existing="$(wp_store "$s" --user=1 wc shop_coupon list "--code=$code" --field=id 2>/dev/null | head -1)"; then
+    echo "[$s] FAIL coupon lookup failed: $code"
+    return 1
+  fi
+
+  if [ -n "$existing" ]; then
+    echo "[$s] coupon exists: $code (#$existing)"
+    return 0
+  fi
+
+  if ! wp_store "$s" --user=1 wc shop_coupon create "--code=$code" "$@" >/dev/null; then
+    echo "[$s] FAIL coupon create failed: $code"
+    return 1
+  fi
+
+  echo "[$s] coupon created: $code"
+}
+
+fixture_coupons() { # <store>
+  local s="$1"
+  echo "[$s] ensure coupons: cf-signup cf-oneoff cf-recurring"
+  ensure_coupon "$s" cf-signup --amount=5 --discount_type=sign_up_fee --description="Critical flow signup-fee discount" || return 1
+  ensure_coupon "$s" cf-oneoff --amount=5 --discount_type=fixed_cart --description="Critical flow one-off discount" || return 1
+  ensure_coupon "$s" cf-recurring --amount=5 --discount_type=recurring_fee --description="Critical flow recurring discount" || return 1
+}
+
+fixture_shipping() { # <store>
+  local s="$1" script
+  echo "[$s] ensure zone w/ flat-rate \$20 + free-shipping"
+  script="$(cat <<'PHP'
+$zone = new WC_Shipping_Zone( 0 );
+
+$ensure_method = static function ( WC_Shipping_Zone $zone, string $method_id, array $settings, int $order ): int {
+	$instance_id = 0;
+	foreach ( $zone->get_shipping_methods( false, 'admin' ) as $method ) {
+		if ( isset( $method->id ) && $method_id === $method->id ) {
+			$instance_id = absint( $method->instance_id );
+			break;
+		}
+	}
+
+	if ( ! $instance_id ) {
+		$instance_id = absint( $zone->add_shipping_method( $method_id ) );
+		if ( ! $instance_id ) {
+			WP_CLI::error( "Could not create {$method_id} shipping method." );
+		}
+	}
+
+	$method = WC_Shipping_Zones::get_shipping_method( $instance_id );
+	if ( ! $method ) {
+		WP_CLI::error( "Could not load {$method_id} shipping method instance {$instance_id}." );
+	}
+
+	$method->init_instance_settings();
+	$instance_settings = array_merge( $method->instance_settings, $settings );
+	update_option(
+		$method->get_instance_option_key(),
+		apply_filters( 'woocommerce_shipping_' . $method->id . '_instance_settings_values', $instance_settings, $method ),
+		'yes'
+	);
+
+	global $wpdb;
+	$wpdb->update(
+		$wpdb->prefix . 'woocommerce_shipping_zone_methods',
+		array(
+			'is_enabled'   => 1,
+			'method_order' => $order,
+		),
+		array( 'instance_id' => $instance_id ),
+		array( '%d', '%d' ),
+		array( '%d' )
+	);
+
+	return $instance_id;
+};
+
+$flat_rate_id = $ensure_method(
+	$zone,
+	'flat_rate',
+	array(
+		'title' => 'Flat rate shipping',
+		'cost'  => '20',
+	),
+	1
+);
+$free_shipping_id = $ensure_method(
+	$zone,
+	'free_shipping',
+	array(
+		'title'    => 'Free shipping',
+		'requires' => '',
+	),
+	2
+);
+WC_Cache_Helper::get_transient_version( 'shipping', true );
+WP_CLI::line( wp_json_encode( array( 'flat_rate' => $flat_rate_id, 'free_shipping' => $free_shipping_id ) ) );
+PHP
+)"
+  if ! wp_store "$s" --user=1 eval "$script" >/dev/null; then
+    echo "[$s] FAIL shipping fixture setup failed"
+    return 1
+  fi
+  echo "[$s] shipping fixture updated"
+}
 
 # Full setup for a store.
 fixture_all() { # <store>
   local s="$1"
-  fixture_products "$s"; fixture_settings "$s" capture=automatic saved_cards=yes
-  fixture_coupons "$s"; fixture_shipping "$s"
+  fixture_products "$s" || return 1
+  fixture_settings "$s" capture=automatic saved_cards=yes || return 1
+  fixture_coupons "$s" || return 1
+  fixture_shipping "$s" || return 1
   echo "[$s] base fixtures ready"
 }
 
