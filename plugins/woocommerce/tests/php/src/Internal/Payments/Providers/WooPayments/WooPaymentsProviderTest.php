@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Internal\Payments\CapabilityManifest;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceProfile;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
@@ -56,6 +57,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	public function test_provider_publishes_money_moving_operations_for_native_processing(): void {
 		foreach (
 			array(
+				'get_payment_gateways',
 				'charge',
 				'capture',
 				'cancel',
@@ -64,6 +66,17 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 		) {
 			$this->assertTrue( method_exists( $this->sut, $method ), "{$method} must be exposed through ProviderContract for A3." );
 		}
+	}
+
+	/**
+	 * @testdox Provider should publish the native WooPayments gateway instance for registration.
+	 */
+	public function test_provider_publishes_native_gateway_instance_for_registration(): void {
+		$gateways = $this->sut->get_payment_gateways();
+
+		$this->assertCount( 1, $gateways );
+		$this->assertInstanceOf( NativeWooPaymentsGateway::class, $gateways[0] );
+		$this->assertSame( $gateways[0], $this->sut->get_payment_gateways()[0], 'Provider should return the container-managed gateway singleton.' );
 	}
 
 	/**

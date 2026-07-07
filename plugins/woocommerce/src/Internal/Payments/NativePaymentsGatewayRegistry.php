@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments;
 
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use WC_Payment_Gateway;
 
 /**
  * Registers native payments gateways when the native runtime owns the site.
@@ -58,7 +59,7 @@ class NativePaymentsGatewayRegistry implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Add the native WooPayments gateway class.
+	 * Add the native WooPayments gateway instances.
 	 *
 	 * @param array<int|string,mixed> $gateways Registered gateway classes or instances.
 	 * @return array<int|string,mixed>
@@ -68,12 +69,41 @@ class NativePaymentsGatewayRegistry implements RegisterHooksInterface {
 			return $gateways;
 		}
 
-		if ( in_array( Providers\WooPayments\NativeWooPaymentsGateway::class, $gateways, true ) ) {
-			return $gateways;
+		foreach ( $this->provider->get_payment_gateways() as $gateway ) {
+			if ( ! $gateway instanceof WC_Payment_Gateway || $this->has_gateway( $gateways, $gateway ) ) {
+				continue;
+			}
+
+			$gateways[] = $gateway;
 		}
 
-		$gateways[] = Providers\WooPayments\NativeWooPaymentsGateway::class;
-
 		return $gateways;
+	}
+
+	/**
+	 * Tell whether a gateway has already been registered.
+	 *
+	 * @param array<int|string,mixed> $gateways Registered gateway classes or instances.
+	 * @param WC_Payment_Gateway      $provider_gateway Provider gateway instance.
+	 * @return bool
+	 */
+	private function has_gateway( array $gateways, WC_Payment_Gateway $provider_gateway ): bool {
+		$provider_gateway_class = get_class( $provider_gateway );
+
+		foreach ( $gateways as $gateway ) {
+			if ( $gateway === $provider_gateway ) {
+				return true;
+			}
+
+			if ( is_string( $gateway ) && $gateway === $provider_gateway_class ) {
+				return true;
+			}
+
+			if ( $gateway instanceof WC_Payment_Gateway && $gateway->id === $provider_gateway->id ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 }

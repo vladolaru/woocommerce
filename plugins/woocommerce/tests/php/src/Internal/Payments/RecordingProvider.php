@@ -103,6 +103,15 @@ class RecordingProvider implements ProviderContract {
 	}
 
 	/**
+	 * Get payment gateway instances registered by the provider.
+	 *
+	 * @return array<int,\WC_Payment_Gateway>
+	 */
+	public function get_payment_gateways(): array {
+		return array();
+	}
+
+	/**
 	 * Charge an order through the provider.
 	 *
 	 * @param PaymentContext $context         Payment context.

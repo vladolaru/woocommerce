@@ -105,6 +105,17 @@ class WooPaymentsProvider implements ProviderContract {
 	}
 
 	/**
+	 * Get payment gateway instances registered by WooPayments.
+	 *
+	 * @return array<int,NativeWooPaymentsGateway>
+	 *
+	 * @since 11.0.0
+	 */
+	public function get_payment_gateways(): array {
+		return array( wc_get_container()->get( NativeWooPaymentsGateway::class ) );
+	}
+
+	/**
 	 * Tell whether WooPayments can currently process native money operations.
 	 *
 	 * @return bool

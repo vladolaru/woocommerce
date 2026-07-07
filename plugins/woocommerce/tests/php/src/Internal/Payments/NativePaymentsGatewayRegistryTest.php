@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsGatewayRegistry;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
+use WC_Payment_Gateway;
 use WC_Unit_Test_Case;
 
 /**
@@ -36,8 +36,9 @@ class NativePaymentsGatewayRegistryTest extends WC_Unit_Test_Case {
 	 * @testdox Should not add the native gateway when the provider cannot process payments.
 	 */
 	public function test_does_not_add_gateway_when_provider_cannot_process_payments(): void {
-		$sut = new NativePaymentsGatewayRegistry();
-		$sut->init( new StaticNativeRuntimeArbiter( true ), new StaticWooPaymentsProvider( false ) );
+		$gateway = $this->create_gateway( 'woocommerce_payments' );
+		$sut     = new NativePaymentsGatewayRegistry();
+		$sut->init( new StaticNativeRuntimeArbiter( true ), new StaticWooPaymentsProvider( false, array( $gateway ) ) );
 
 		$sut->register();
 
@@ -49,7 +50,8 @@ class NativePaymentsGatewayRegistryTest extends WC_Unit_Test_Case {
 	 * @testdox Should defer provider readiness until the payment gateways filter runs.
 	 */
 	public function test_defers_provider_readiness_until_payment_gateways_filter_runs(): void {
-		$provider = new class() extends StaticWooPaymentsProvider {
+		$gateway  = $this->create_gateway( 'woocommerce_payments' );
+		$provider = new class( array( $gateway ) ) extends StaticWooPaymentsProvider {
 			/**
 			 * Number of provider readiness checks.
 			 *
@@ -66,8 +68,12 @@ class NativePaymentsGatewayRegistryTest extends WC_Unit_Test_Case {
 
 			/**
 			 * Constructor.
+			 *
+			 * @param array<int,WC_Payment_Gateway> $payment_gateways Payment gateways published by the provider.
 			 */
-			public function __construct() {}
+			public function __construct( array $payment_gateways ) {
+				parent::__construct( false, $payment_gateways );
+			}
 
 			/**
 			 * Set current provider readiness.
@@ -98,7 +104,7 @@ class NativePaymentsGatewayRegistryTest extends WC_Unit_Test_Case {
 
 		$provider->set_can_process_payments( true );
 
-		$this->assertContains( NativeWooPaymentsGateway::class, $this->apply_payment_gateways_filter() );
+		$this->assertSame( array( $gateway ), $this->apply_payment_gateways_filter() );
 		$this->assertSame( 1, $provider->can_process_payments_calls );
 	}
 
@@ -106,14 +112,15 @@ class NativePaymentsGatewayRegistryTest extends WC_Unit_Test_Case {
 	 * @testdox Should register the native gateway when native runtime owns the site.
 	 */
 	public function test_registers_when_native_runtime_owns_site(): void {
-		$sut = new NativePaymentsGatewayRegistry();
-		$sut->init( new StaticNativeRuntimeArbiter( true ), new StaticWooPaymentsProvider( true ) );
+		$gateway = $this->create_gateway( 'woocommerce_payments' );
+		$sut     = new NativePaymentsGatewayRegistry();
+		$sut->init( new StaticNativeRuntimeArbiter( true ), new StaticWooPaymentsProvider( true, array( $gateway ) ) );
 
 		$sut->register();
 
 		$this->assertSame( 10, has_filter( 'woocommerce_payment_gateways', array( $sut, 'register_gateway' ) ) );
 
-		$this->assertContains( NativeWooPaymentsGateway::class, $this->apply_payment_gateways_filter() );
+		$this->assertSame( array( $gateway ), $this->apply_payment_gateways_filter() );
 	}
 
 	/**
@@ -134,14 +141,48 @@ class NativePaymentsGatewayRegistryTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not duplicate the native gateway class.
+	 * @testdox Should register all provider-supplied gateway instances.
 	 */
-	public function test_register_gateway_does_not_duplicate_gateway_class(): void {
-		$sut = new NativePaymentsGatewayRegistry();
-		$sut->init( new StaticNativeRuntimeArbiter( true ), new StaticWooPaymentsProvider( true ) );
+	public function test_register_gateway_adds_provider_supplied_gateway_instances(): void {
+		$primary_gateway   = $this->create_gateway( 'woocommerce_payments' );
+		$secondary_gateway = $this->create_gateway( 'woocommerce_payments_link' );
+		$sut               = new NativePaymentsGatewayRegistry();
+		$sut->init( new StaticNativeRuntimeArbiter( true ), new StaticWooPaymentsProvider( true, array( $primary_gateway, $secondary_gateway ) ) );
 
-		$gateways = $sut->register_gateway( array( NativeWooPaymentsGateway::class ) );
+		$gateways = $sut->register_gateway( array( 'WC_Gateway_BACS' ) );
 
-		$this->assertSame( array( NativeWooPaymentsGateway::class ), $gateways );
+		$this->assertSame( array( 'WC_Gateway_BACS', $primary_gateway, $secondary_gateway ), $gateways );
+	}
+
+	/**
+	 * @testdox Should not duplicate provider-supplied gateway instances.
+	 */
+	public function test_register_gateway_does_not_duplicate_gateway_instance(): void {
+		$gateway = $this->create_gateway( 'woocommerce_payments' );
+		$sut     = new NativePaymentsGatewayRegistry();
+		$sut->init( new StaticNativeRuntimeArbiter( true ), new StaticWooPaymentsProvider( true, array( $gateway ) ) );
+
+		$gateways = $sut->register_gateway( array( $gateway ) );
+
+		$this->assertSame( array( $gateway ), $gateways );
+	}
+
+	/**
+	 * Create a test payment gateway instance.
+	 *
+	 * @param string $id Gateway ID.
+	 * @return WC_Payment_Gateway
+	 */
+	private function create_gateway( string $id ): WC_Payment_Gateway {
+		return new class( $id ) extends WC_Payment_Gateway {
+			/**
+			 * Constructor.
+			 *
+			 * @param string $id Gateway ID.
+			 */
+			public function __construct( string $id ) {
+				$this->id = $id;
+			}
+		};
 	}
 }
