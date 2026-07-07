@@ -164,6 +164,12 @@ WooPayments final-evidence plan
 mode=$MODE
 out_dir=$FULL_EVIDENCE_OUT_DIR
 
+bash $SELF_DIR/verify.sh --self-check "$REF_WP"
+bash $SELF_DIR/verify.sh --ref "$REF_WP" --target "$TARGET_WP" --with-tracks
+bash $SELF_DIR/rest-route-parity.sh --ref "$REF_WP" --target "$TARGET_WP"
+bash $SELF_DIR/hook-shape-parity.sh --ref "$REF_WP" --target "$TARGET_WP"
+bash $SELF_DIR/subsystem-disposition-gate.sh
+bash $SELF_DIR/i18n-notes-gate.sh --target "$TARGET_WP"
 bash $SELF_DIR/lpm-checkout-gate.sh --methods $LPM_FULL_METHODS --ref "$REF_WP" --target "$TARGET_WP" --playwriter-session "${PLAYWRITER_SESSION:-<required>}" --out-dir "$FULL_EVIDENCE_OUT_DIR/lpm-all-methods"
 bash $SELF_DIR/plugin-active-settings-gate.sh --target "$TARGET_WP" --target-url "$TARGET_URL" --playwriter-session "${PLAYWRITER_SESSION:-<required>}" --out-dir "$FULL_EVIDENCE_OUT_DIR/plugin-active-settings"
 bash $SELF_DIR/mc-rates-gate.sh --ref "$REF_WP" --target "$TARGET_WP" --currency-from USD --currencies-to GBP,EUR --out-dir "$FULL_EVIDENCE_OUT_DIR/mc-rates"
@@ -182,6 +188,7 @@ bash $SELF_DIR/perf-surface-gate.sh capture --wp "$REF_WP" --out "$FULL_EVIDENCE
 bash $SELF_DIR/perf-surface-gate.sh capture --wp "$TARGET_WP" --out "$FULL_EVIDENCE_OUT_DIR/perf-surface/target.json"
 bash $SELF_DIR/perf-surface-gate.sh compare --ref "$FULL_EVIDENCE_OUT_DIR/perf-surface/reference.json" --target "$FULL_EVIDENCE_OUT_DIR/perf-surface/target.json"
 python3 $REPO_ROOT/tools/woopayments-critical-flows/test-inventory.py
+bash $REPO_ROOT/tools/woopayments-critical-flows/run.sh --store both --layer all
 PLAN
 }
 
@@ -238,6 +245,7 @@ run_full_evidence_gates() {
 
 	mkdir -p "$FULL_EVIDENCE_OUT_DIR"
 	gate "critical flows inventory" python3 "$REPO_ROOT/tools/woopayments-critical-flows/test-inventory.py"
+	gate "critical flows full run" bash "$REPO_ROOT/tools/woopayments-critical-flows/run.sh" --store both --layer all
 	gate "subscriptions renewal preflight" bash "$SELF_DIR/subscriptions-renewal-gate.sh" preflight --ref "$REF_WP" --target "$TARGET_WP" --out-dir "$FULL_EVIDENCE_OUT_DIR/subscriptions-renewal"
 	gate "plugin-active settings screen" bash "$SELF_DIR/plugin-active-settings-gate.sh" --target "$TARGET_WP" --target-url "$TARGET_URL" --playwriter-session "$PLAYWRITER_SESSION" --out-dir "$FULL_EVIDENCE_OUT_DIR/plugin-active-settings"
 	gate "LPM all-method checkout" bash "$SELF_DIR/lpm-checkout-gate.sh" --methods "$LPM_FULL_METHODS" --ref "$REF_WP" --target "$TARGET_WP" --playwriter-session "$PLAYWRITER_SESSION" --out-dir "$FULL_EVIDENCE_OUT_DIR/lpm-all-methods"
