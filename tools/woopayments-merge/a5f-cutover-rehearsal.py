@@ -353,9 +353,13 @@ class Rehearsal:
         timeout_seconds: int = 180,
         allow_failure: bool = False,
         expected_failure_message: str | None = None,
+        env: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         self.progress(phase_id)
         started = utc_now()
+        command_env = None
+        if env is not None:
+            command_env = {**os.environ, **env}
         try:
             completed = subprocess.run(
                 command,
@@ -365,6 +369,7 @@ class Rehearsal:
                 timeout=timeout_seconds,
                 cwd=str(self.repo),
                 check=False,
+                env=command_env,
             )
         except subprocess.TimeoutExpired as exc:
             result = {
@@ -483,11 +488,18 @@ class Rehearsal:
 
         previous_mtime = source_evidence.stat().st_mtime_ns if source_evidence.exists() else None
         command_error: Exception | None = None
+        browser_env = {
+            "A5_GATE_TARGET_URL": self.target_url,
+            "A5_GATE_PLUGINS_URL": f"{self.target_url}/wp-admin/plugins.php",
+            "A5_GATE_DATA_DIR": str(source_evidence.parent),
+            "A5_GATE_EVIDENCE_PATH": str(source_evidence),
+        }
         try:
             self.run_command(
                 phase_id,
                 command + ["-s", str(self.args.playwriter_session), "-f", str(script), "--timeout", "300000"],
                 timeout_seconds=360,
+                env=browser_env,
             )
         except Exception as exc:
             command_error = exc

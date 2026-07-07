@@ -216,6 +216,28 @@ def test_playwriter_gate_copies_failed_source_evidence():
             source_evidence.unlink(missing_ok=True)
 
 
+def test_playwriter_gate_passes_portable_browser_environment():
+    module = load_module()
+    with tempfile.TemporaryDirectory(prefix="a5f-rehearsal-test-") as out_dir:
+        out_path = Path(out_dir)
+        source_evidence = out_path / "a5e-env-gate.json"
+        rehearsal = module.Rehearsal(make_args(out_dir))
+        captured_env = {}
+
+        def pass_command(*args, **kwargs):
+            captured_env.update(kwargs["env"])
+            source_evidence.write_text('{"status":"pass","updated":true}\n', encoding="utf-8")
+            return {"status": "pass"}
+
+        rehearsal.run_command = pass_command
+        rehearsal.run_playwriter_gate("env-gate", MODULE_PATH, source_evidence)
+
+    assert captured_env["A5_GATE_TARGET_URL"] == "http://store8889.localhost:8889"
+    assert captured_env["A5_GATE_PLUGINS_URL"] == "http://store8889.localhost:8889/wp-admin/plugins.php"
+    assert captured_env["A5_GATE_DATA_DIR"] == str(source_evidence.parent)
+    assert captured_env["A5_GATE_EVIDENCE_PATH"] == str(source_evidence)
+
+
 def test_browser_gates_use_isolated_pages_and_close_them():
     scripts = [
         REPO / "tools/woopayments-merge/a5-cutover-browser-gate.playwriter.mjs",
@@ -230,6 +252,21 @@ def test_browser_gates_use_isolated_pages_and_close_them():
         assert "context.pages().find" not in source
 
 
+def test_browser_gates_are_portable_and_env_driven():
+    scripts = [
+        REPO / "tools/woopayments-merge/a5-cutover-browser-gate.playwriter.mjs",
+        REPO / "tools/woopayments-merge/a5-mandatory-browser-gate.playwriter.mjs",
+        REPO / "tools/woopayments-merge/a5-blocked-mandatory-browser-gate.playwriter.mjs",
+    ]
+
+    for script in scripts:
+        source = script.read_text(encoding="utf-8")
+        assert "/Users/vladolaru/" not in source
+        assert "A5_GATE_PLUGINS_URL" in source
+        assert "A5_GATE_DATA_DIR" in source
+        assert "A5_GATE_EVIDENCE_PATH" in source
+
+
 def main() -> None:
     tests = [
         test_validate_local_wp_command_rejects_shell_and_remote_transports,
@@ -241,7 +278,9 @@ def main() -> None:
         test_expected_failure_command_records_pass_phase,
         test_orchestrator_uses_browser_for_blocked_mandatory_gate,
         test_playwriter_gate_copies_failed_source_evidence,
+        test_playwriter_gate_passes_portable_browser_environment,
         test_browser_gates_use_isolated_pages_and_close_them,
+        test_browser_gates_are_portable_and_env_driven,
     ]
     for test in tests:
         test()
