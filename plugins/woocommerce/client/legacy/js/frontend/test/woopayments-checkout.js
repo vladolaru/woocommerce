@@ -255,6 +255,7 @@ describe( 'WooPayments checkout', () => {
 			),
 		};
 		window.Stripe = jest.fn( () => stripeMock );
+		require( '../utils/woopayments-appearance' );
 	} );
 
 	afterEach( () => {
@@ -266,6 +267,7 @@ describe( 'WooPayments checkout', () => {
 		delete window.$;
 		delete window.wcpay_core_checkout_config;
 		delete window.wcpay_core_checkout_config_woocommerce_payments_klarna;
+		delete window.wcpayAppearance;
 		delete window.Stripe;
 		delete window.navigator.clipboard;
 		window.fetch = originalFetch;

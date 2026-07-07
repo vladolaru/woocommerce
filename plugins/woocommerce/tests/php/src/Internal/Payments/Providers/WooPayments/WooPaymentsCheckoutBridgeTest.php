@@ -25,6 +25,8 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'wcpay_payment_fields_js_config' );
 		wp_dequeue_script( 'wc-woopayments-checkout' );
 		wp_deregister_script( 'wc-woopayments-checkout' );
+		wp_dequeue_script( 'wc-woopayments-appearance' );
+		wp_deregister_script( 'wc-woopayments-appearance' );
 		wp_dequeue_style( 'wc-woopayments-checkout' );
 		wp_deregister_style( 'wc-woopayments-checkout' );
 		wp_dequeue_script( 'wcpay-fraud-prevention-token' );
@@ -257,6 +259,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			'/assets/js/frontend/woopayments-checkout',
 			wp_scripts()->registered['wc-woopayments-checkout']->src
 		);
+		$this->assertContains( 'wc-woopayments-appearance', wp_scripts()->registered['wc-woopayments-checkout']->deps );
 		$this->assertTrue( wp_style_is( 'wc-woopayments-checkout', 'enqueued' ) );
 		$this->assertStringContainsString(
 			'/assets/css/woopayments-checkout.css',

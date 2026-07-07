@@ -66,6 +66,11 @@ class WooPaymentsCheckoutBridge {
 	private const CLASSIC_SCRIPT_HANDLE = 'wc-woopayments-checkout';
 
 	/**
+	 * Core-owned classic checkout appearance helper script handle.
+	 */
+	private const CLASSIC_APPEARANCE_SCRIPT_HANDLE = 'wc-woopayments-appearance';
+
+	/**
 	 * Core-owned classic checkout style handle.
 	 */
 	private const CLASSIC_STYLE_HANDLE = 'wc-woopayments-checkout';
@@ -432,11 +437,21 @@ class WooPaymentsCheckoutBridge {
 
 		$suffix = Constants::is_true( 'SCRIPT_DEBUG' ) ? '' : '.min';
 
+		if ( ! wp_script_is( self::CLASSIC_APPEARANCE_SCRIPT_HANDLE, 'registered' ) ) {
+			wp_register_script(
+				self::CLASSIC_APPEARANCE_SCRIPT_HANDLE,
+				WC()->plugin_url() . '/assets/js/frontend/utils/woopayments-appearance' . $suffix . '.js',
+				array(),
+				WC_VERSION,
+				true
+			);
+		}
+
 		if ( ! wp_script_is( self::CLASSIC_SCRIPT_HANDLE, 'registered' ) ) {
 			wp_register_script(
 				self::CLASSIC_SCRIPT_HANDLE,
 				WC()->plugin_url() . '/assets/js/frontend/woopayments-checkout' . $suffix . '.js',
-				array( 'jquery', 'wc-checkout', self::STRIPE_SCRIPT_HANDLE ),
+				array( 'jquery', 'wc-checkout', self::STRIPE_SCRIPT_HANDLE, self::CLASSIC_APPEARANCE_SCRIPT_HANDLE ),
 				WC_VERSION,
 				true
 			);
