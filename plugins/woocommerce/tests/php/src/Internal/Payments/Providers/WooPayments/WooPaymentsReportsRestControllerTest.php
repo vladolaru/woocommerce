@@ -382,6 +382,149 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Transaction report routes proxy transaction rows with customer context.
+	 */
+	public function test_transaction_report_routes_proxy_transaction_rows(): void {
+		$this->create_controller( true, true )->register_routes();
+		$this->api_client->response = array(
+			'data' => array(
+				array(
+					'transaction_id'    => 'txn_123',
+					'date'              => '2026-06-19T10:00:00Z',
+					'payment_intent_id' => 'pi_123',
+					'channel'           => 'woocommerce',
+					'source'            => 'card',
+					'type'              => 'refund',
+					'customer_currency' => 'usd',
+					'amount'            => -1000,
+					'exchange_rate'     => 1,
+					'currency'          => 'usd',
+					'fees'              => -30,
+					'customer_name'     => 'Ada Lovelace',
+					'customer_email'    => 'ada@example.com',
+					'customer_country'  => 'US',
+					'net'               => -970,
+					'order_id'          => 123,
+					'risk_level'        => 'normal',
+					'available_on'      => '2026-06-21T00:00:00Z',
+					'deposit_id'        => 'po_123',
+					'deposit_status'    => 'paid',
+				),
+			),
+		);
+
+		$list_request = new WP_REST_Request( 'GET', '/wc/v3/payments/reports/transactions' );
+		$list_request->set_query_params(
+			array(
+				'per_page'            => '50',
+				'type'                => 'refund',
+				'order_id'            => '123',
+				'customer_email'      => 'ada@example.com',
+				'payment_method_type' => 'card',
+			)
+		);
+		$list_response = $this->server->dispatch( $list_request );
+
+		$this->assertSame( 200, $list_response->get_status() );
+		$this->assertSame( 'get_transactions', $this->api_client->last_call['method'] );
+		$this->assertSame( 50, $this->api_client->last_call['query']['pagesize'] );
+		$this->assertSame( 'refund', $this->api_client->last_call['query']['type_is'] );
+		$this->assertSame( '123', $this->api_client->last_call['query']['order_id_is'] );
+		$this->assertSame( 'ada@example.com', $this->api_client->last_call['query']['customer_email_is'] );
+		$this->assertSame( 'card', $this->api_client->last_call['query']['source_is'] );
+		$this->assertSame( 'txn_123', $list_response->get_data()[0]['transaction_id'] );
+		$this->assertSame(
+			array(
+				'name'    => 'Ada Lovelace',
+				'email'   => 'ada@example.com',
+				'country' => 'US',
+			),
+			$list_response->get_data()[0]['customer']
+		);
+
+		$detail_response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/reports/transactions/txn_123' ) );
+
+		$this->assertSame( 200, $detail_response->get_status() );
+		$this->assertSame( 'txn_123', $this->api_client->last_call['query']['transaction_id_is'] );
+		$this->assertSame( 1, $this->api_client->last_call['query']['pagesize'] );
+		$this->assertSame( 'date', $this->api_client->last_call['query']['sort'] );
+		$this->assertSame( 'txn_123', $detail_response->get_data()['transaction_id'] );
+
+		$this->api_client->response = array( 'data' => array() );
+		$empty_response             = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/reports/transactions/txn_missing' ) );
+
+		$this->assertSame( 200, $empty_response->get_status() );
+		$this->assertSame( array(), $empty_response->get_data() );
+	}
+
+	/**
+	 * @testdox Authorization report routes proxy authorization rows and detail lookup.
+	 */
+	public function test_authorization_report_routes_proxy_authorization_rows(): void {
+		$this->create_controller( true, true )->register_routes();
+		$this->api_client->response = array(
+			'data' => array(
+				array(
+					'charge_id'         => 'ch_auth',
+					'created'           => '2026-06-19T10:00:00Z',
+					'payment_intent_id' => 'pi_auth',
+					'channel'           => 'woocommerce',
+					'source'            => 'card',
+					'currency'          => 'usd',
+					'amount'            => 2000,
+					'amount_captured'   => 0,
+					'fees'              => 59,
+					'customer_name'     => 'Ada Lovelace',
+					'customer_email'    => 'ada@example.com',
+					'customer_country'  => 'US',
+					'net'               => 1941,
+					'order_id'          => 456,
+					'risk_level'        => 'normal',
+				),
+			),
+		);
+
+		$list_request = new WP_REST_Request( 'GET', '/wc/v3/payments/reports/authorizations' );
+		$list_request->set_query_params(
+			array(
+				'per_page'            => '10',
+				'match'               => 'all',
+				'order_id'            => '456',
+				'customer_email'      => 'ada@example.com',
+				'payment_method_type' => 'card',
+				'date_between'        => array( '2026-06-01T00:00:00Z', '2026-06-19T23:59:59Z' ),
+				'user_timezone'       => '+03:00',
+			)
+		);
+		$list_response = $this->server->dispatch( $list_request );
+
+		$this->assertSame( 200, $list_response->get_status() );
+		$this->assertSame( 'get_authorizations', $this->api_client->last_call['method'] );
+		$this->assertSame( 10, $this->api_client->last_call['query']['pagesize'] );
+		$this->assertSame( 'all', $this->api_client->last_call['query']['match'] );
+		$this->assertSame( '456', $this->api_client->last_call['query']['order_id_is'] );
+		$this->assertSame( 'ada@example.com', $this->api_client->last_call['query']['customer_email_is'] );
+		$this->assertSame( 'card', $this->api_client->last_call['query']['source_is'] );
+		$this->assertSame( strtotime( '2026-06-01 03:00:00' ), $this->api_client->last_call['query']['from_date'] );
+		$this->assertSame( strtotime( '2026-06-20 02:59:59' ), $this->api_client->last_call['query']['to_date'] );
+		$this->assertSame( 'ch_auth', $list_response->get_data()[0]['authorization_id'] );
+		$this->assertSame( array( 'type' => 'card' ), $list_response->get_data()[0]['payment_method'] );
+
+		$detail_response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/reports/authorizations/ch_auth' ) );
+
+		$this->assertSame( 200, $detail_response->get_status() );
+		$this->assertSame( 'ch_auth', $this->api_client->last_call['query']['charge_id_is'] );
+		$this->assertSame( 1, $this->api_client->last_call['query']['pagesize'] );
+		$this->assertSame( 'ch_auth', $detail_response->get_data()['authorization_id'] );
+
+		$this->api_client->response = array( 'data' => array() );
+		$empty_response             = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/reports/authorizations/ch_missing' ) );
+
+		$this->assertSame( 200, $empty_response->get_status() );
+		$this->assertSame( array(), $empty_response->get_data() );
+	}
+
+	/**
 	 * @testdox Reports routes preserve platform exception status codes.
 	 */
 	public function test_reports_routes_preserve_platform_exception_status(): void {
@@ -482,11 +625,15 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	private function get_expected_routes(): array {
 		return array(
-			'/wc/v3/payments/reports/balance'       => array( WP_REST_Server::READABLE ),
-			'/wc/v3/payments/reports/fees'          => array( WP_REST_Server::READABLE ),
-			'/wc/v3/payments/reports/fees/summary'  => array( WP_REST_Server::READABLE ),
-			'/wc/v3/payments/reports/fees/download' => array( WP_REST_Server::CREATABLE ),
+			'/wc/v3/payments/reports/balance'        => array( WP_REST_Server::READABLE ),
+			'/wc/v3/payments/reports/fees'           => array( WP_REST_Server::READABLE ),
+			'/wc/v3/payments/reports/fees/summary'   => array( WP_REST_Server::READABLE ),
+			'/wc/v3/payments/reports/fees/download'  => array( WP_REST_Server::CREATABLE ),
 			'/wc/v3/payments/reports/fees/download/(?P<export_id>[^/\\\\%]+)' => array( WP_REST_Server::READABLE ),
+			'/wc/v3/payments/reports/transactions'   => array( WP_REST_Server::READABLE ),
+			'/wc/v3/payments/reports/transactions/(?P<id>\\w+)' => array( WP_REST_Server::READABLE ),
+			'/wc/v3/payments/reports/authorizations' => array( WP_REST_Server::READABLE ),
+			'/wc/v3/payments/reports/authorizations/(?P<id>\\w+)' => array( WP_REST_Server::READABLE ),
 		);
 	}
 }

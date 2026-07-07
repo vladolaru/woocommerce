@@ -133,6 +133,10 @@ class WooPaymentsReportsRestController implements RegisterHooksInterface {
 		register_rest_route( self::NAMESPACE, '/payments/reports/fees/summary', $this->get_readable_route( 'get_fees_summary' ) );
 		register_rest_route( self::NAMESPACE, '/payments/reports/fees/download', $this->get_creatable_route( 'get_fees_export' ) );
 		register_rest_route( self::NAMESPACE, '/payments/reports/fees/download/(?P<export_id>[^/\\\\%]+)', $this->get_readable_route( 'get_export_url' ) );
+		register_rest_route( self::NAMESPACE, '/payments/reports/transactions', $this->get_readable_route( 'get_report_transactions' ) );
+		register_rest_route( self::NAMESPACE, '/payments/reports/transactions/(?P<id>\w+)', $this->get_readable_route( 'get_report_transaction' ) );
+		register_rest_route( self::NAMESPACE, '/payments/reports/authorizations', $this->get_readable_route( 'get_report_authorizations' ) );
+		register_rest_route( self::NAMESPACE, '/payments/reports/authorizations/(?P<id>\w+)', $this->get_readable_route( 'get_report_authorization' ) );
 	}
 
 	/**
@@ -249,6 +253,97 @@ class WooPaymentsReportsRestController implements RegisterHooksInterface {
 	public function get_export_url( WP_REST_Request $request ) {
 		try {
 			return new WP_REST_Response( $this->api_client->get_transactions_export_url( (string) $request->get_param( 'export_id' ) ) );
+		} catch ( WooPaymentsApiException $exception ) {
+			return $this->api_exception_to_wp_error( $exception );
+		}
+	}
+
+	/**
+	 * Get Transaction report rows.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function get_report_transactions( WP_REST_Request $request ) {
+		try {
+			return new WP_REST_Response(
+				$this->prepare_report_transaction_rows(
+					$this->extract_response_rows( $this->api_client->get_transactions( $this->get_report_transactions_list_params( $request ) ) )
+				)
+			);
+		} catch ( WooPaymentsApiException $exception ) {
+			return $this->api_exception_to_wp_error( $exception );
+		}
+	}
+
+	/**
+	 * Get one Transaction report row.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function get_report_transaction( WP_REST_Request $request ) {
+		try {
+			$rows = $this->prepare_report_transaction_rows(
+				$this->extract_response_rows(
+					$this->api_client->get_transactions(
+						array(
+							'transaction_id_is' => (string) $request->get_param( 'id' ),
+							'sort'              => 'date',
+							'pagesize'          => 1,
+						)
+					)
+				)
+			);
+
+			return new WP_REST_Response( $rows[0] ?? array() );
+		} catch ( WooPaymentsApiException $exception ) {
+			return $this->api_exception_to_wp_error( $exception );
+		}
+	}
+
+	/**
+	 * Get Authorization report rows.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function get_report_authorizations( WP_REST_Request $request ) {
+		try {
+			return new WP_REST_Response(
+				$this->prepare_report_authorization_rows(
+					$this->extract_response_rows( $this->api_client->get_authorizations( $this->get_report_authorizations_list_params( $request ) ) )
+				)
+			);
+		} catch ( WooPaymentsApiException $exception ) {
+			return $this->api_exception_to_wp_error( $exception );
+		}
+	}
+
+	/**
+	 * Get one Authorization report row.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function get_report_authorization( WP_REST_Request $request ) {
+		try {
+			$rows = $this->prepare_report_authorization_rows(
+				$this->extract_response_rows(
+					$this->api_client->get_authorizations(
+						array(
+							'charge_id_is' => (string) $request->get_param( 'id' ),
+							'pagesize'     => 1,
+						)
+					)
+				)
+			);
+
+			return new WP_REST_Response( $rows[0] ?? array() );
 		} catch ( WooPaymentsApiException $exception ) {
 			return $this->api_exception_to_wp_error( $exception );
 		}
@@ -407,6 +502,96 @@ class WooPaymentsReportsRestController implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Get Transaction report list params.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return array<string,mixed>
+	 */
+	private function get_report_transactions_list_params( WP_REST_Request $request ): array {
+		$user_timezone = $this->get_optional_string_param( $request, 'user_timezone' );
+
+		$params = array(
+			'page'              => max( 1, (int) ( $request->get_param( 'page' ) ?? 1 ) ),
+			'pagesize'          => max( 1, (int) ( $request->get_param( 'per_page' ) ?? 25 ) ),
+			'sort'              => $this->get_scalar_param( $request, 'sort', 'date' ),
+			'direction'         => $this->get_scalar_param( $request, 'direction', 'desc' ),
+			'limit'             => 100,
+			'type_is'           => $this->get_optional_string_param( $request, 'type' ),
+			'order_id_is'       => $this->get_optional_string_param( $request, 'order_id' ),
+			'customer_email_is' => $this->get_optional_string_param( $request, 'customer_email' ),
+			'source_is'         => $this->get_optional_string_param( $request, 'payment_method_type' ),
+			'deposit_id'        => $this->get_optional_string_param( $request, 'deposit_id' ),
+			'date_before'       => $this->format_transaction_date_by_timezone( $this->get_optional_string_param( $request, 'date_before' ), $user_timezone ),
+			'date_after'        => $this->format_transaction_date_by_timezone( $this->get_optional_string_param( $request, 'date_after' ), $user_timezone ),
+			'date_between'      => $this->normalize_date_filters_by_timezone(
+				$this->normalize_string_list( $request->get_param( 'date_between' ) ),
+				$user_timezone
+			),
+			'match'             => $this->get_optional_string_param( $request, 'match' ),
+			'user_timezone'     => $user_timezone,
+		);
+
+		return $this->order_service->map_transaction_search_params( $this->filter_empty_params( $params ) );
+	}
+
+	/**
+	 * Get Authorization report list params.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return array<string,mixed>
+	 */
+	private function get_report_authorizations_list_params( WP_REST_Request $request ): array {
+		$user_timezone = $this->get_optional_string_param( $request, 'user_timezone' );
+		$date_between  = $this->normalize_date_filters_by_timezone(
+			$this->normalize_string_list( $request->get_param( 'date_between' ) ),
+			$user_timezone
+		);
+
+		$params = array(
+			'page'              => max( 1, (int) ( $request->get_param( 'page' ) ?? 1 ) ),
+			'pagesize'          => max( 1, (int) ( $request->get_param( 'per_page' ) ?? 25 ) ),
+			'sort'              => $this->get_scalar_param( $request, 'sort', 'created' ),
+			'direction'         => $this->get_scalar_param( $request, 'direction', 'desc' ),
+			'limit'             => 100,
+			'match'             => $this->get_optional_string_param( $request, 'match' ),
+			'order_id_is'       => $this->get_optional_string_param( $request, 'order_id' ),
+			'customer_email_is' => $this->get_optional_string_param( $request, 'customer_email' ),
+			'source_is'         => $this->get_optional_string_param( $request, 'payment_method_type' ),
+		);
+
+		if ( is_array( $date_between ) && isset( $date_between[0], $date_between[1] ) ) {
+			$params['from_date'] = $this->get_report_authorization_timestamp( $date_between[0] );
+			$params['to_date']   = $this->get_report_authorization_timestamp( $date_between[1] );
+		}
+
+		$date_before = $this->format_transaction_date_by_timezone( $this->get_optional_string_param( $request, 'date_before' ), $user_timezone );
+		if ( null !== $date_before ) {
+			$params['from_date'] = $this->get_report_authorization_timestamp( $date_before );
+		}
+
+		$date_after = $this->format_transaction_date_by_timezone( $this->get_optional_string_param( $request, 'date_after' ), $user_timezone );
+		if ( null !== $date_after ) {
+			$params['to_date'] = $this->get_report_authorization_timestamp( $date_after );
+		}
+
+		return $this->filter_empty_params( $params );
+	}
+
+	/**
+	 * Get a report authorization timestamp from a formatted date.
+	 *
+	 * @param string $date Date.
+	 * @return int|null
+	 */
+	private function get_report_authorization_timestamp( string $date ): ?int {
+		$timestamp = strtotime( $date );
+
+		return false === $timestamp ? null : $timestamp;
+	}
+
+	/**
 	 * Normalize date filters to match the user's timezone offset.
 	 *
 	 * @param string[]|null $dates         Date filters.
@@ -488,6 +673,93 @@ class WooPaymentsReportsRestController implements RegisterHooksInterface {
 				'deposit_date'         => $row['available_on'] ?? null,
 				'deposit_id'           => $row['deposit_id'] ?? null,
 				'deposit_status'       => $row['deposit_status'] ?? null,
+			);
+		}
+
+		return $prepared;
+	}
+
+	/**
+	 * Extract rows from a platform list response.
+	 *
+	 * @param array<string|int,mixed> $response Platform response.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function extract_response_rows( array $response ): array {
+		$rows = isset( $response['data'] ) && is_array( $response['data'] ) ? $response['data'] : $response;
+
+		return array_values( array_filter( $rows, 'is_array' ) );
+	}
+
+	/**
+	 * Prepare Transaction report rows for REST output.
+	 *
+	 * @param array<int,array<string,mixed>> $rows Rows.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function prepare_report_transaction_rows( array $rows ): array {
+		$prepared = array();
+		foreach ( $rows as $row ) {
+			$prepared[] = array(
+				'transaction_id'       => $row['transaction_id'] ?? '',
+				'date'                 => $row['date'] ?? '',
+				'payment_id'           => $row['payment_intent_id'] ?? '',
+				'channel'              => $row['channel'] ?? '',
+				'payment_method'       => array(
+					'type' => $row['source'] ?? '',
+				),
+				'type'                 => $row['type'] ?? '',
+				'transaction_currency' => $row['customer_currency'] ?? '',
+				'amount'               => $row['amount'] ?? 0,
+				'exchange_rate'        => $row['exchange_rate'] ?? null,
+				'deposit_currency'     => $row['currency'] ?? '',
+				'fees'                 => $row['fees'] ?? 0,
+				'customer'             => array(
+					'name'    => $row['customer_name'] ?? '',
+					'email'   => $row['customer_email'] ?? '',
+					'country' => $row['customer_country'] ?? '',
+				),
+				'net_amount'           => $row['net'] ?? 0,
+				'order_id'             => $row['order_id'] ?? null,
+				'risk_level'           => $row['risk_level'] ?? null,
+				'deposit_date'         => $row['available_on'] ?? null,
+				'deposit_id'           => $row['deposit_id'] ?? null,
+				'deposit_status'       => $row['deposit_status'] ?? null,
+			);
+		}
+
+		return $prepared;
+	}
+
+	/**
+	 * Prepare Authorization report rows for REST output.
+	 *
+	 * @param array<int,array<string,mixed>> $rows Rows.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function prepare_report_authorization_rows( array $rows ): array {
+		$prepared = array();
+		foreach ( $rows as $row ) {
+			$prepared[] = array(
+				'authorization_id' => $row['charge_id'] ?? '',
+				'date'             => $row['created'] ?? '',
+				'payment_id'       => $row['payment_intent_id'] ?? '',
+				'channel'          => $row['channel'] ?? '',
+				'payment_method'   => array(
+					'type' => $row['source'] ?? '',
+				),
+				'currency'         => $row['currency'] ?? '',
+				'amount'           => $row['amount'] ?? 0,
+				'amount_captured'  => $row['amount_captured'] ?? 0,
+				'fees'             => $row['fees'] ?? 0,
+				'customer'         => array(
+					'name'    => $row['customer_name'] ?? '',
+					'email'   => $row['customer_email'] ?? '',
+					'country' => $row['customer_country'] ?? '',
+				),
+				'net_amount'       => $row['net'] ?? 0,
+				'order_id'         => $row['order_id'] ?? null,
+				'risk_level'       => $row['risk_level'] ?? null,
 			);
 		}
 
