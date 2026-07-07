@@ -88,6 +88,13 @@ class PaymentOutcome {
 	public const DATA_NOTE = 'note';
 
 	/**
+	 * Additional data key: stable order note type.
+	 *
+	 * @var string
+	 */
+	public const DATA_NOTE_TYPE = 'note_type';
+
+	/**
 	 * Additional data key: refund meta updates.
 	 *
 	 * @var string

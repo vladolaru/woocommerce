@@ -106,7 +106,7 @@ class OrderPaymentLifecycleService {
 		$this->apply_meta_changes( $order, $event );
 
 		$note            = $event->get_note();
-		$should_add_note = null !== $note && '' !== $note && ! $this->should_skip_lifecycle_note( $order, $event, $note ) && ! $this->has_note_marker( $order, $event, $note );
+		$should_add_note = null !== $note && '' !== $note && ! $this->has_note_marker( $order, $event, $note ) && ! $this->should_skip_lifecycle_note( $order, $event, $note );
 		if ( $should_add_note ) {
 			$order->update_meta_data( $this->get_note_marker_key( $event, $note ), 'yes' );
 		}
@@ -196,25 +196,27 @@ class OrderPaymentLifecycleService {
 	 */
 	private function should_skip_lifecycle_note( WC_Order $order, PaymentLifecycleEvent $event, string $note ): bool {
 		$payment_reference = (string) $event->get_payment_reference();
+		$note_type         = $event->get_note_type();
 
-		if ( 0 === strpos( $note, '<strong>Fee details:</strong>' ) && $this->has_fee_details_note( $order ) ) {
+		if ( null !== $note_type && $this->has_rendered_note( $order, $note ) ) {
 			return true;
 		}
 
 		return PaymentLifecycleEvent::STATUS_COMPLETED === $event->get_status()
-			&& 'Payment complete.' === $note
+			&& PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_COMPLETE === $note_type
 			&& '' !== $payment_reference
 			&& $payment_reference === (string) $order->get_transaction_id()
 			&& $order->has_status( array( 'processing', 'completed' ) );
 	}
 
 	/**
-	 * Tell whether the order already has a fee-details order note.
+	 * Tell whether the order already has the rendered note content.
 	 *
 	 * @param WC_Order $order Order object.
+	 * @param string   $note  Note content.
 	 * @return bool
 	 */
-	private function has_fee_details_note( WC_Order $order ): bool {
+	private function has_rendered_note( WC_Order $order, string $note ): bool {
 		$notes = wc_get_order_notes(
 			array(
 				'order_id' => $order->get_id(),
@@ -222,8 +224,8 @@ class OrderPaymentLifecycleService {
 			)
 		);
 
-		foreach ( $notes as $note ) {
-			if ( 0 === strpos( (string) $note->content, '<strong>Fee details:</strong>' ) ) {
+		foreach ( $notes as $order_note ) {
+			if ( $note === (string) $order_note->content ) {
 				return true;
 			}
 		}
@@ -239,6 +241,8 @@ class OrderPaymentLifecycleService {
 	 * @return string
 	 */
 	private function get_note_marker_key( PaymentLifecycleEvent $event, string $note ): string {
-		return '_wc_native_payments_note_' . md5( (string) $event->get_payment_reference() . '|' . $event->get_status() . '|' . $note );
+		$note_key = $event->get_note_type() ?? $note;
+
+		return '_wc_native_payments_note_' . md5( (string) $event->get_payment_reference() . '|' . $event->get_status() . '|' . $note_key );
 	}
 }

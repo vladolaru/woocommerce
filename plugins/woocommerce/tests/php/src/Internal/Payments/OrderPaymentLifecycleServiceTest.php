@@ -32,12 +32,29 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	private $order_payment_store;
 
 	/**
+	 * Test-only gettext replacements.
+	 *
+	 * @var array<string,string>
+	 */
+	private array $gettext_replacements = array();
+
+	/**
 	 * Set up test fixtures.
 	 */
 	public function setUp(): void {
 		parent::setUp();
 		$this->sut                 = wc_get_container()->get( OrderPaymentLifecycleService::class );
 		$this->order_payment_store = wc_get_container()->get( OrderPaymentStore::class );
+	}
+
+	/**
+	 * Tear down test fixtures.
+	 */
+	public function tearDown(): void {
+		remove_filter( 'gettext', array( $this, 'translate_woocommerce_test_string' ), 10 );
+		restore_current_locale();
+		$this->gettext_replacements = array();
+		parent::tearDown();
 	}
 
 	/**
@@ -92,7 +109,8 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 					'_wcpay_transaction_fee' => '1.23',
 				),
 				array(),
-				'Payment complete.'
+				'Payment complete.',
+				'payment_complete'
 			)
 		);
 
@@ -260,6 +278,148 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Current-locale payment-complete notes written by the extension are not duplicated by native replays.
+	 */
+	public function test_current_locale_payment_complete_note_from_extension_is_not_duplicated(): void {
+		$this->install_woocommerce_test_translations(
+			array(
+				'Payment complete.' => 'Zahlung abgeschlossen.',
+			)
+		);
+		switch_to_locale( 'de_DE' );
+
+		$order = $this->create_woopayments_order();
+		$order->set_transaction_id( 'pi_123' );
+		$order->set_status( 'processing' );
+		$order->save();
+		$order->add_order_note( __( 'Payment complete.', 'woocommerce' ) );
+
+		$this->sut->apply_unlocked(
+			$order,
+			new PaymentLifecycleEvent(
+				PaymentLifecycleEvent::STATUS_COMPLETED,
+				'pi_123',
+				array( '_intent_id' => 'pi_123' ),
+				array(),
+				__( 'Payment complete.', 'woocommerce' ),
+				'payment_complete'
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Zahlung abgeschlossen.' ) );
+	}
+
+	/**
+	 * @testdox English payment-complete notes written by the extension are not duplicated by native replays.
+	 */
+	public function test_english_payment_complete_note_from_extension_is_not_duplicated(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_transaction_id( 'pi_123' );
+		$order->set_status( 'processing' );
+		$order->save();
+		$order->add_order_note( __( 'Payment complete.', 'woocommerce' ) );
+
+		$this->sut->apply_unlocked(
+			$order,
+			new PaymentLifecycleEvent(
+				PaymentLifecycleEvent::STATUS_COMPLETED,
+				'pi_123',
+				array( '_intent_id' => 'pi_123' ),
+				array(),
+				__( 'Payment complete.', 'woocommerce' ),
+				'payment_complete'
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Payment complete.' ) );
+	}
+
+	/**
+	 * @testdox Native lifecycle markers use stable note type instead of rendered note content.
+	 */
+	public function test_lifecycle_marker_uses_note_type_instead_of_rendered_note_content(): void {
+		$order = $this->create_woopayments_order();
+
+		$this->sut->apply_unlocked(
+			$order,
+			new PaymentLifecycleEvent(
+				PaymentLifecycleEvent::STATUS_STARTED,
+				'pi_started',
+				array( '_intent_id' => 'pi_started' ),
+				array(),
+				'Payment started.',
+				'payment_started'
+			)
+		);
+
+		$order               = wc_get_order( $order->get_id() );
+		$expected_marker_key = '_wc_native_payments_note_' . md5( 'pi_started|started|payment_started' );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'yes', $order->get_meta( $expected_marker_key, true ) );
+
+		$this->sut->apply_unlocked(
+			$order,
+			new PaymentLifecycleEvent(
+				PaymentLifecycleEvent::STATUS_STARTED,
+				'pi_started',
+				array( '_intent_id' => 'pi_started' ),
+				array(),
+				'Zahlung gestartet.',
+				'payment_started'
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Payment started.' ) );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Zahlung gestartet.' ) );
+	}
+
+	/**
+	 * @testdox Different lifecycle note types with the same reference are each written once.
+	 */
+	public function test_different_lifecycle_note_types_are_each_written_once(): void {
+		$order = $this->create_woopayments_order();
+
+		$this->sut->apply_unlocked(
+			$order,
+			new PaymentLifecycleEvent(
+				PaymentLifecycleEvent::STATUS_STARTED,
+				'pi_started',
+				array( '_intent_id' => 'pi_started' ),
+				array(),
+				'Payment started.',
+				'payment_started'
+			)
+		);
+		$this->sut->apply_unlocked(
+			wc_get_order( $order->get_id() ),
+			new PaymentLifecycleEvent(
+				PaymentLifecycleEvent::STATUS_STARTED,
+				'pi_started',
+				array( '_intent_id' => 'pi_started' ),
+				array(),
+				'Payment follow-up.',
+				'payment_followup'
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Payment started.' ) );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Payment follow-up.' ) );
+	}
+
+	/**
 	 * @testdox Locked orders are not mutated for the same payment reference.
 	 */
 	public function test_locked_order_is_not_mutated_for_same_reference(): void {
@@ -418,5 +578,31 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		}
 
 		return $count;
+	}
+
+	/**
+	 * Install test-only WooCommerce translations.
+	 *
+	 * @param array<string,string> $replacements Source text to translated text.
+	 */
+	private function install_woocommerce_test_translations( array $replacements ): void {
+		$this->gettext_replacements = $replacements;
+		add_filter( 'gettext', array( $this, 'translate_woocommerce_test_string' ), 10, 3 );
+	}
+
+	/**
+	 * Translate a WooCommerce string for tests.
+	 *
+	 * @param string $translation Translated text.
+	 * @param string $text        Source text.
+	 * @param string $domain      Text domain.
+	 * @return string
+	 */
+	public function translate_woocommerce_test_string( string $translation, string $text, string $domain ): string {
+		if ( 'woocommerce' !== $domain ) {
+			return $translation;
+		}
+
+		return $this->gettext_replacements[ $text ] ?? $translation;
 	}
 }

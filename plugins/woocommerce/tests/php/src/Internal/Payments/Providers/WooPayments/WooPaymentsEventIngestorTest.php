@@ -55,6 +55,13 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	private array $email_class_filters = array();
 
 	/**
+	 * Test-only gettext replacements.
+	 *
+	 * @var array<string,string>
+	 */
+	private array $gettext_replacements = array();
+
+	/**
 	 * Set up test fixtures.
 	 */
 	public function setUp(): void {
@@ -73,7 +80,10 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		foreach ( $this->email_class_filters as $filter ) {
 			remove_filter( 'woocommerce_email_classes', $filter );
 		}
-		$this->email_class_filters = array();
+		remove_filter( 'gettext', array( $this, 'translate_woocommerce_test_string' ), 10 );
+		restore_current_locale();
+		$this->email_class_filters  = array();
+		$this->gettext_replacements = array();
 		$this->reset_mailer_emails();
 		$this->delete_dispute_cache_options();
 		delete_option( 'wcpay_account_data' );
@@ -113,6 +123,20 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( '1.23', $order->get_meta( '_wcpay_transaction_fee', true ) );
 		$this->assertSame( '11.11', $order->get_meta( '_wcpay_net', true ) );
 		$this->assertSame( 'mobile_pos', $order->get_meta( '_wcpay_ipp_channel', true ) );
+	}
+
+	/**
+	 * @testdox payment_intent.succeeded records the structural payment-complete note marker.
+	 */
+	public function test_payment_intent_succeeded_records_structural_payment_complete_note_marker(): void {
+		$order = $this->create_woopayments_order();
+
+		$this->sut->process( $this->create_payment_intent_event( 'payment_intent.succeeded', $order ) );
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'yes', $order->get_meta( '_wc_native_payments_note_' . md5( 'pi_123|completed|payment_complete' ), true ) );
 	}
 
 	/**
@@ -639,6 +663,41 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox payment_intent.payment_failed adds the current-locale translated failure note.
+	 */
+	public function test_payment_intent_failed_adds_translated_failure_note(): void {
+		$this->install_woocommerce_test_translations(
+			array(
+				'Payment failed.' => 'Zahlung fehlgeschlagen.',
+			)
+		);
+		switch_to_locale( 'de_DE' );
+
+		$order = $this->create_woopayments_order();
+
+		$this->sut->process(
+			$this->create_payment_intent_event(
+				'payment_intent.payment_failed',
+				$order,
+				array(
+					'status'             => 'requires_payment_method',
+					'last_payment_error' => array(
+						'payment_method' => array(
+							'id'   => 'pm_123',
+							'type' => 'card',
+						),
+					),
+				)
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertOrderHasNote( $order, 'Zahlung fehlgeschlagen.' );
+	}
+
+	/**
 	 * @testdox payment_intent.payment_failed ignores non-actionable payment methods.
 	 */
 	public function test_payment_intent_failed_ignores_non_actionable_payment_methods(): void {
@@ -719,6 +778,39 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'failed', $order->get_status() );
 		$this->assertSame( 'ch_expired', $order->get_meta( '_charge_id', true ) );
+	}
+
+	/**
+	 * @testdox charge.expired adds the current-locale translated authorization-expired note.
+	 */
+	public function test_charge_expired_adds_translated_authorization_expired_note(): void {
+		$this->install_woocommerce_test_translations(
+			array(
+				'Payment authorization expired.' => 'Zahlungsautorisierung abgelaufen.',
+			)
+		);
+		switch_to_locale( 'de_DE' );
+
+		$order = $this->create_woopayments_order();
+		$order->update_meta_data( '_charge_id', 'ch_expired' );
+		$order->save();
+
+		$this->sut->process(
+			array(
+				'id'   => 'evt_expired',
+				'type' => 'charge.expired',
+				'data' => array(
+					'object' => array(
+						'id' => 'ch_expired',
+					),
+				),
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertOrderHasNote( $order, 'Zahlungsautorisierung abgelaufen.' );
 	}
 
 	/**
@@ -2661,6 +2753,32 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertGreaterThan( 0, $count, "Missing order note: {$expected}" );
+	}
+
+	/**
+	 * Install test-only WooCommerce translations.
+	 *
+	 * @param array<string,string> $replacements Source text to translated text.
+	 */
+	private function install_woocommerce_test_translations( array $replacements ): void {
+		$this->gettext_replacements = $replacements;
+		add_filter( 'gettext', array( $this, 'translate_woocommerce_test_string' ), 10, 3 );
+	}
+
+	/**
+	 * Translate a WooCommerce string for tests.
+	 *
+	 * @param string $translation Translated text.
+	 * @param string $text        Source text.
+	 * @param string $domain      Text domain.
+	 * @return string
+	 */
+	public function translate_woocommerce_test_string( string $translation, string $text, string $domain ): string {
+		if ( 'woocommerce' !== $domain ) {
+			return $translation;
+		}
+
+		return $this->gettext_replacements[ $text ] ?? $translation;
 	}
 
 	/**

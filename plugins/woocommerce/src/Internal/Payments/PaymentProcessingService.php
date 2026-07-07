@@ -610,7 +610,8 @@ class PaymentProcessingService {
 					$this->get_lifecycle_payment_reference( $outcome ),
 					$meta,
 					array(),
-					$this->get_lifecycle_note( $outcome )
+					$this->get_lifecycle_note( $outcome ),
+					$this->get_lifecycle_note_type( $outcome )
 				)
 			);
 			return;
@@ -634,7 +635,8 @@ class PaymentProcessingService {
 				$this->get_lifecycle_payment_reference( $outcome ),
 				$this->get_lifecycle_meta( $outcome, $provider ),
 				array(),
-				$this->get_lifecycle_note( $outcome )
+				$this->get_lifecycle_note( $outcome ),
+				$this->get_lifecycle_note_type( $outcome )
 			)
 		);
 	}
@@ -705,6 +707,26 @@ class PaymentProcessingService {
 			&& '' !== $data[ PaymentOutcome::DATA_NOTE ]
 		) {
 			return $data[ PaymentOutcome::DATA_NOTE ];
+		}
+
+		return null;
+	}
+
+	/**
+	 * Get the stable order note type from an outcome.
+	 *
+	 * @param PaymentOutcome $outcome Provider outcome.
+	 * @return string|null
+	 */
+	private function get_lifecycle_note_type( PaymentOutcome $outcome ): ?string {
+		$data = $outcome->get_data();
+
+		if (
+			isset( $data[ PaymentOutcome::DATA_NOTE_TYPE ] )
+			&& is_string( $data[ PaymentOutcome::DATA_NOTE_TYPE ] )
+			&& '' !== $data[ PaymentOutcome::DATA_NOTE_TYPE ]
+		) {
+			return $data[ PaymentOutcome::DATA_NOTE_TYPE ];
 		}
 
 		return null;

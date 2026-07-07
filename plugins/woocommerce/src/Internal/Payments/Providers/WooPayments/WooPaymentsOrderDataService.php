@@ -288,29 +288,66 @@ class WooPaymentsOrderDataService {
 		$fee_rate     = $this->format_fee_rate_text( $fee_breakdown_v1['totals']['fee']['rate'] ?? null, $fee_currency );
 		if ( is_array( $fx ) ) {
 			$lines[] = sprintf(
-				'Fee (%1$s): %2$s',
+				/* translators: %1$s: fee rate, %2$s: fee amount. */
+				__( 'Fee (%1$s): %2$s', 'woocommerce' ),
 				'' !== $fee_rate ? $fee_rate : '3.9% + ' . $this->format_currency_minor_amount( 30, $fee_currency ),
 				$this->format_explicit_currency_amount( $fee_amount, $fee_currency )
 			);
 			$indent  = str_repeat( '&nbsp;', 4 );
-			$lines[] = $indent . 'Base fee: 2.9% + ' . $this->format_currency_minor_amount( 30, $fee_currency );
-			$lines[] = $indent . 'Currency conversion fee: 1%';
+			$lines[] = $indent . sprintf(
+				/* translators: %s: fee rate. */
+				__( 'Base fee: %1$s', 'woocommerce' ),
+				'2.9% + ' . $this->format_currency_minor_amount( 30, $fee_currency )
+			);
+			$lines[] = $indent . sprintf(
+				/* translators: %s: fee rate. */
+				__( 'Currency conversion fee: %1$s', 'woocommerce' ),
+				'1%'
+			);
 		} elseif ( '' !== $fee_rate ) {
-			$lines[] = sprintf( 'Fee (%1$s): %2$s', $fee_rate, $this->format_explicit_currency_amount( $fee_amount, $fee_currency ) );
+			$lines[] = sprintf(
+				/* translators: %1$s: fee rate, %2$s: fee amount. */
+				__( 'Fee (%1$s): %2$s', 'woocommerce' ),
+				$fee_rate,
+				$this->format_explicit_currency_amount( $fee_amount, $fee_currency )
+			);
 		} else {
-			$lines[] = sprintf( 'Fee: %s', $this->format_explicit_currency_amount( $fee_amount, $fee_currency ) );
+			$lines[] = sprintf(
+				/* translators: %s: fee amount. */
+				__( 'Fee: %1$s', 'woocommerce' ),
+				$this->format_explicit_currency_amount( $fee_amount, $fee_currency )
+			);
 		}
 
 		$net_amount   = isset( $fee_breakdown_v1['totals']['capture_net']['amount'] ) ? (int) $fee_breakdown_v1['totals']['capture_net']['amount'] : (int) $fee_breakdown_v1['totals']['net']['amount'];
 		$net_currency = (string) ( $fee_breakdown_v1['totals']['capture_net']['currency'] ?? $fee_breakdown_v1['totals']['net']['currency'] );
-		$lines[]      = sprintf( 'Net payout: %s', $this->format_explicit_currency_amount( $net_amount, $net_currency ) );
+		$lines[]      = sprintf(
+			/* translators: %s: net payout amount. */
+			__( 'Net payout: %1$s', 'woocommerce' ),
+			$this->format_explicit_currency_amount( $net_amount, $net_currency )
+		);
 
 		$html = '';
 		foreach ( $lines as $line ) {
 			$html .= '<p>' . $line . '</p>' . PHP_EOL;
 		}
 
-		return '<strong>Fee details:</strong><div class="captured-event-details">' . PHP_EOL . $html . '</div>';
+		return $this->get_fee_details_note_title() . '<div class="captured-event-details">' . PHP_EOL . $html . '</div>';
+	}
+
+	/**
+	 * Get the translated fee-details note title.
+	 *
+	 * @return string
+	 */
+	private function get_fee_details_note_title(): string {
+		return $this->interpolated_note_text(
+			// phpcs:ignore WordPress.WP.I18n.NoHtmlWrappedStrings
+			__( '<strong>Fee details:</strong>', 'woocommerce' ),
+			array(
+				'strong' => '<strong>',
+			)
+		);
 	}
 
 	/**
@@ -518,5 +555,26 @@ class WooPaymentsOrderDataService {
 		}
 
 		return false;
+	}
+
+	/**
+	 * Replace simple interpolation tags with stored note HTML.
+	 *
+	 * @param string               $text        Note text.
+	 * @param array<string,string> $element_map Element replacements.
+	 * @return string
+	 */
+	private function interpolated_note_text( string $text, array $element_map ): string {
+		foreach ( $element_map as $tag => $opening_tag ) {
+			$closing_tag = '</' . $tag . '>';
+			if ( preg_match( '/^<(\w+)/', $opening_tag, $matches ) ) {
+				$closing_tag = '</' . $matches[1] . '>';
+			}
+
+			$text = str_replace( '<' . $tag . '>', $opening_tag, $text );
+			$text = str_replace( '</' . $tag . '>', $closing_tag, $text );
+		}
+
+		return $text;
 	}
 }

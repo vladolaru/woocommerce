@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
+use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use WC_Order;
@@ -225,13 +226,14 @@ class WooPaymentsIntentCodec {
 		}
 
 		if ( 'succeeded' === $status && 'pi' === $intent_type ) {
-			$outcome_data[ PaymentOutcome::DATA_NOTE ] = WooPaymentsOrderEffects::payment_success_note(
+			$outcome_data[ PaymentOutcome::DATA_NOTE ]      = WooPaymentsOrderEffects::payment_success_note(
 				$order,
 				$intent_id,
 				$charge_id,
 				$balance_transaction_id,
 				$account_mode
 			);
+			$outcome_data[ PaymentOutcome::DATA_NOTE_TYPE ] = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS;
 		}
 
 		switch ( $status ) {
@@ -401,12 +403,13 @@ class WooPaymentsIntentCodec {
 			$charge_id              = isset( $charge['id'] ) ? (string) $charge['id'] : '';
 			$balance_transaction_id = WooPaymentsOrderEffects::balance_transaction_id( $charge['balance_transaction'] ?? null );
 
-			$data[ PaymentOutcome::DATA_NOTE ] = WooPaymentsOrderEffects::capture_success_note(
+			$data[ PaymentOutcome::DATA_NOTE ]      = WooPaymentsOrderEffects::capture_success_note(
 				$context->get_order(),
 				$intent_id,
 				$charge_id,
 				$balance_transaction_id
 			);
+			$data[ PaymentOutcome::DATA_NOTE_TYPE ] = PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS;
 
 			return new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, $intent_id, '', '', '', $data );
 		}
@@ -431,6 +434,7 @@ class WooPaymentsIntentCodec {
 					self::failed_capture_charge_id( $result, $context->get_order() ),
 					$message
 				),
+				PaymentOutcome::DATA_NOTE_TYPE     => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_FAILED,
 			)
 		);
 	}
@@ -583,13 +587,14 @@ class WooPaymentsIntentCodec {
 		);
 
 		if ( 'capture' === $operation && $order instanceof WC_Order ) {
-			$data[ PaymentOutcome::DATA_META ] = WooPaymentsOrderEffects::failed_capture_meta();
-			$data[ PaymentOutcome::DATA_NOTE ] = WooPaymentsOrderEffects::capture_failed_note(
+			$data[ PaymentOutcome::DATA_META ]      = WooPaymentsOrderEffects::failed_capture_meta();
+			$data[ PaymentOutcome::DATA_NOTE ]      = WooPaymentsOrderEffects::capture_failed_note(
 				$order,
 				$provider_payment_id,
 				(string) $order->get_meta( '_charge_id', true ),
 				$exception->getMessage()
 			);
+			$data[ PaymentOutcome::DATA_NOTE_TYPE ] = PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_FAILED;
 		}
 
 		return new PaymentOutcome(

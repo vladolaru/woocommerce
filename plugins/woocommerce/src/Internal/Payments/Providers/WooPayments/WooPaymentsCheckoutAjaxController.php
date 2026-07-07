@@ -403,7 +403,8 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 			'' === $intent_id ? null : $intent_id,
 			$meta,
 			array(),
-			$this->get_lifecycle_note_from_intent( $intent, $order, $intent_id, $charge )
+			$this->get_lifecycle_note_from_intent( $intent, $order, $intent_id, $charge ),
+			$this->get_lifecycle_note_type_from_intent( $intent, $intent_id )
 		);
 	}
 
@@ -426,6 +427,22 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 		$balance_transaction_id = $this->get_balance_transaction_id( $charge['balance_transaction'] ?? null );
 
 		return $this->get_payment_success_note( $order, $intent_id, $charge_id, $balance_transaction_id );
+	}
+
+	/**
+	 * Get the lifecycle note type for a native intent response.
+	 *
+	 * @param array<string,mixed> $intent    Native intent response.
+	 * @param string              $intent_id Payment intent ID.
+	 * @return string|null
+	 */
+	private function get_lifecycle_note_type_from_intent( array $intent, string $intent_id ): ?string {
+		$status = isset( $intent['status'] ) ? (string) $intent['status'] : '';
+		if ( 'succeeded' !== $status || 0 !== strpos( $intent_id, 'pi_' ) ) {
+			return null;
+		}
+
+		return PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS;
 	}
 
 	/**

@@ -27,6 +27,13 @@ class WooPaymentsOrderDataServiceTest extends WC_Unit_Test_Case {
 	private string $original_currency;
 
 	/**
+	 * Test-only gettext replacements.
+	 *
+	 * @var array<string,string>
+	 */
+	private array $gettext_replacements = array();
+
+	/**
 	 * Set up test fixtures.
 	 */
 	public function setUp(): void {
@@ -39,7 +46,9 @@ class WooPaymentsOrderDataServiceTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
+		remove_filter( 'gettext', array( $this, 'translate_woocommerce_test_string' ), 10 );
 		update_option( 'woocommerce_currency', $this->original_currency );
+		$this->gettext_replacements = array();
 		parent::tearDown();
 	}
 
@@ -138,6 +147,29 @@ class WooPaymentsOrderDataServiceTest extends WC_Unit_Test_Case {
 			. '</div>',
 			$this->sut->get_fee_breakdown_note_from_timeline_event( $this->get_non_fx_captured_timeline_event() )
 		);
+	}
+
+	/**
+	 * @testdox Fee-breakdown notes use WooCommerce translations for merchant-facing labels.
+	 */
+	public function test_get_fee_breakdown_note_uses_woocommerce_translations_for_labels(): void {
+		$this->install_woocommerce_test_translations(
+			array(
+				'<strong>Fee details:</strong>' => '<strong>Gebuehrendetails:</strong>',
+				'Fee (%1$s): %2$s'              => 'Gebuehr (%1$s): %2$s',
+				'Base fee: %1$s'                => 'Grundgebuehr: %1$s',
+				'Currency conversion fee: %1$s' => 'Waehrungsumrechnungsgebuehr: %1$s',
+				'Net payout: %1$s'              => 'Nettoauszahlung: %1$s',
+			)
+		);
+
+		$note = $this->sut->get_fee_breakdown_note_from_intent( $this->get_intent_with_fee_breakdown() );
+
+		$this->assertStringContainsString( '<strong>Gebuehrendetails:</strong>', $note );
+		$this->assertStringContainsString( '<p>Gebuehr (3.9% + $0.30): $2.93 USD</p>', $note );
+		$this->assertStringContainsString( '<p>&nbsp;&nbsp;&nbsp;&nbsp;Grundgebuehr: 2.9% + $0.30</p>', $note );
+		$this->assertStringContainsString( '<p>&nbsp;&nbsp;&nbsp;&nbsp;Waehrungsumrechnungsgebuehr: 1%</p>', $note );
+		$this->assertStringContainsString( '<p>Nettoauszahlung: $64.22 USD</p>', $note );
 	}
 
 	/**
@@ -398,5 +430,31 @@ class WooPaymentsOrderDataServiceTest extends WC_Unit_Test_Case {
 		$order->save();
 
 		return $order;
+	}
+
+	/**
+	 * Install test-only WooCommerce translations.
+	 *
+	 * @param array<string,string> $replacements Source text to translated text.
+	 */
+	private function install_woocommerce_test_translations( array $replacements ): void {
+		$this->gettext_replacements = $replacements;
+		add_filter( 'gettext', array( $this, 'translate_woocommerce_test_string' ), 10, 3 );
+	}
+
+	/**
+	 * Translate a WooCommerce string for tests.
+	 *
+	 * @param string $translation Translated text.
+	 * @param string $text        Source text.
+	 * @param string $domain      Text domain.
+	 * @return string
+	 */
+	public function translate_woocommerce_test_string( string $translation, string $text, string $domain ): string {
+		if ( 'woocommerce' !== $domain ) {
+			return $translation;
+		}
+
+		return $this->gettext_replacements[ $text ] ?? $translation;
 	}
 }

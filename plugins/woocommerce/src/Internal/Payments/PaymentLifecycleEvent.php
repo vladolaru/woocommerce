@@ -60,6 +60,55 @@ class PaymentLifecycleEvent {
 	const STATUS_STARTED = 'started';
 
 	/**
+	 * Note type: generic payment completion.
+	 *
+	 * @var string
+	 */
+	const NOTE_TYPE_PAYMENT_COMPLETE = 'payment_complete';
+
+	/**
+	 * Note type: payment success details.
+	 *
+	 * @var string
+	 */
+	const NOTE_TYPE_PAYMENT_SUCCESS = 'payment_success';
+
+	/**
+	 * Note type: payment failure.
+	 *
+	 * @var string
+	 */
+	const NOTE_TYPE_PAYMENT_FAILED = 'payment_failed';
+
+	/**
+	 * Note type: fee details.
+	 *
+	 * @var string
+	 */
+	const NOTE_TYPE_FEE_DETAILS = 'fee_details';
+
+	/**
+	 * Note type: capture success.
+	 *
+	 * @var string
+	 */
+	const NOTE_TYPE_CAPTURE_SUCCESS = 'capture_success';
+
+	/**
+	 * Note type: capture failure.
+	 *
+	 * @var string
+	 */
+	const NOTE_TYPE_CAPTURE_FAILED = 'capture_failed';
+
+	/**
+	 * Note type: capture authorization expired.
+	 *
+	 * @var string
+	 */
+	const NOTE_TYPE_CAPTURE_EXPIRED = 'capture_expired';
+
+	/**
 	 * Lifecycle status.
 	 *
 	 * @var string
@@ -95,6 +144,13 @@ class PaymentLifecycleEvent {
 	private ?string $note;
 
 	/**
+	 * Stable order note type for structural dedupe.
+	 *
+	 * @var string|null
+	 */
+	private ?string $note_type;
+
+	/**
 	 * Constructor.
 	 *
 	 * @since 11.0.0
@@ -104,9 +160,10 @@ class PaymentLifecycleEvent {
 	 * @param array<string,mixed> $meta_to_update    Order meta to update.
 	 * @param array<int,string>   $meta_to_delete    Order meta keys to delete.
 	 * @param string|null         $note              Order note to add.
+	 * @param string|null         $note_type         Stable note type.
 	 * @throws InvalidArgumentException When an unknown status is supplied.
 	 */
-	public function __construct( string $status, ?string $payment_reference = null, array $meta_to_update = array(), array $meta_to_delete = array(), ?string $note = null ) {
+	public function __construct( string $status, ?string $payment_reference = null, array $meta_to_update = array(), array $meta_to_delete = array(), ?string $note = null, ?string $note_type = null ) {
 		if ( ! in_array( $status, $this->get_allowed_statuses(), true ) ) {
 			throw new InvalidArgumentException( esc_html( sprintf( 'Unknown payment lifecycle status: %s', $status ) ) );
 		}
@@ -116,6 +173,7 @@ class PaymentLifecycleEvent {
 		$this->meta_to_update    = $this->normalize_meta_to_update( $meta_to_update );
 		$this->meta_to_delete    = array_values( array_map( 'strval', $meta_to_delete ) );
 		$this->note              = $note;
+		$this->note_type         = null === $note_type || '' === $note_type ? null : $note_type;
 	}
 
 	/**
@@ -161,6 +219,15 @@ class PaymentLifecycleEvent {
 	 */
 	public function get_note(): ?string {
 		return $this->note;
+	}
+
+	/**
+	 * Get the stable order note type.
+	 *
+	 * @return string|null
+	 */
+	public function get_note_type(): ?string {
+		return $this->note_type;
 	}
 
 	/**

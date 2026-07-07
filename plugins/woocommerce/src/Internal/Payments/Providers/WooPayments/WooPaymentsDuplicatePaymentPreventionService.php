@@ -275,12 +275,15 @@ class WooPaymentsDuplicatePaymentPreventionService {
 	 * @return void
 	 */
 	private function apply_attached_intent_lifecycle( array $intent, WC_Order $order ): void {
-		$outcome = WooPaymentsIntentCodec::outcome_from_intention( $intent, $order );
-		$data    = $outcome->get_data();
-		$note    = isset( $data[ PaymentOutcome::DATA_NOTE ] ) && is_string( $data[ PaymentOutcome::DATA_NOTE ] ) && '' !== $data[ PaymentOutcome::DATA_NOTE ]
+		$outcome   = WooPaymentsIntentCodec::outcome_from_intention( $intent, $order );
+		$data      = $outcome->get_data();
+		$note      = isset( $data[ PaymentOutcome::DATA_NOTE ] ) && is_string( $data[ PaymentOutcome::DATA_NOTE ] ) && '' !== $data[ PaymentOutcome::DATA_NOTE ]
 			? $data[ PaymentOutcome::DATA_NOTE ]
 			: null;
-		$profile = new WooPaymentsPersistenceProfile();
+		$note_type = isset( $data[ PaymentOutcome::DATA_NOTE_TYPE ] ) && is_string( $data[ PaymentOutcome::DATA_NOTE_TYPE ] ) && '' !== $data[ PaymentOutcome::DATA_NOTE_TYPE ]
+			? $data[ PaymentOutcome::DATA_NOTE_TYPE ]
+			: null;
+		$profile   = new WooPaymentsPersistenceProfile();
 
 		$this->get_lifecycle_service()->apply(
 			$order,
@@ -289,7 +292,8 @@ class WooPaymentsDuplicatePaymentPreventionService {
 				'' !== $outcome->get_provider_payment_id() ? $outcome->get_provider_payment_id() : null,
 				$profile->get_outcome_meta( $outcome ),
 				array(),
-				$note
+				$note,
+				$note_type
 			)
 		);
 	}

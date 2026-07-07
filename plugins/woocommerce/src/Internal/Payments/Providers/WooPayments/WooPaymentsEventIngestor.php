@@ -525,6 +525,8 @@ class WooPaymentsEventIngestor {
 	private function build_lifecycle_event( string $event_type, array $event_object ): ?PaymentLifecycleEvent {
 		switch ( $event_type ) {
 			case 'payment_intent.succeeded':
+				$completed_note = $this->get_completed_payment_note_data_from_intent( $event_object );
+
 				return new PaymentLifecycleEvent(
 					PaymentLifecycleEvent::STATUS_COMPLETED,
 					$this->get_object_id( $event_object ),
@@ -542,7 +544,8 @@ class WooPaymentsEventIngestor {
 						)
 					),
 					array(),
-					$this->get_completed_payment_note_from_intent( $event_object )
+					$completed_note['note'],
+					$completed_note['type']
 				);
 
 			case 'payment_intent.payment_failed':
@@ -560,7 +563,8 @@ class WooPaymentsEventIngestor {
 						)
 					),
 					array(),
-					'Payment failed.'
+					__( 'Payment failed.', 'woocommerce' ),
+					PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_FAILED
 				);
 
 			case 'payment_intent.canceled':
@@ -577,7 +581,8 @@ class WooPaymentsEventIngestor {
 						)
 					),
 					array(),
-					'Payment authorization expired.'
+					__( 'Payment authorization expired.', 'woocommerce' ),
+					PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_EXPIRED
 				);
 		}
 
@@ -668,12 +673,12 @@ class WooPaymentsEventIngestor {
 	}
 
 	/**
-	 * Get the completed-payment note from a PaymentIntent object.
+	 * Get the completed-payment note and note type from a PaymentIntent object.
 	 *
 	 * @param array<string,mixed> $event_object PaymentIntent object.
-	 * @return string
+	 * @return array{note:string,type:string}
 	 */
-	private function get_completed_payment_note_from_intent( array $event_object ): string {
+	private function get_completed_payment_note_data_from_intent( array $event_object ): array {
 		$fee_breakdown_note = $this->get_order_data_service()->get_fee_breakdown_note_from_intent( $event_object );
 		if ( '' === $fee_breakdown_note || $this->get_order_data_service()->intent_needs_fee_breakdown_refresh( $event_object ) ) {
 			$fresh_fee_breakdown_note = $this->get_fresh_fee_breakdown_note( $event_object );
@@ -682,7 +687,17 @@ class WooPaymentsEventIngestor {
 			}
 		}
 
-		return '' !== $fee_breakdown_note ? $fee_breakdown_note : 'Payment complete.';
+		if ( '' !== $fee_breakdown_note ) {
+			return array(
+				'note' => $fee_breakdown_note,
+				'type' => PaymentLifecycleEvent::NOTE_TYPE_FEE_DETAILS,
+			);
+		}
+
+		return array(
+			'note' => __( 'Payment complete.', 'woocommerce' ),
+			'type' => PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_COMPLETE,
+		);
 	}
 
 	/**

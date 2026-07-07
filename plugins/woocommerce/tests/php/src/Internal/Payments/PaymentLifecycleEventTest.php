@@ -41,6 +41,25 @@ class PaymentLifecycleEventTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Completed events expose their stable note type.
+	 */
+	public function test_completed_event_exposes_note_type(): void {
+		$event = new PaymentLifecycleEvent(
+			PaymentLifecycleEvent::STATUS_COMPLETED,
+			'pi_123',
+			array(),
+			array(),
+			'Payment complete.',
+			'payment_complete'
+		);
+
+		$this->assertTrue( method_exists( $event, 'get_note_type' ), 'Lifecycle events should expose a stable note type for structural dedupe.' );
+		if ( method_exists( $event, 'get_note_type' ) ) {
+			$this->assertSame( 'payment_complete', $event->get_note_type() );
+		}
+	}
+
+	/**
 	 * @testdox Meta deletes are normalized to string keys.
 	 */
 	public function test_meta_deletes_are_normalized_to_string_keys(): void {
