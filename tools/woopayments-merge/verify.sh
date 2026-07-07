@@ -10,8 +10,8 @@
 #   verify.sh --ref "<WP>" --target "<WP>"      # A1+: cross-store parity (reference plugin vs target native)
 #
 # Flags:
-#   --with-tracks    also run the Tracks-parity gate (installs the capture drop-in + enables
-#                    tracking on the store(s), then restores). Off by default since it mutates state.
+#   --with-tracks    also run the sink-based Tracks parity gate around the deterministic charge
+#                    flow. Off by default since it clears the shared local wpcom-local Tracks sink.
 #   --full-evidence  also run final readiness gates that need broader fixtures/browser evidence.
 #   --print-full-evidence-plan
 #                    print the final readiness gate plan and exit without running stores.
@@ -30,6 +30,9 @@ TARGET_WP=""
 WITH_TRACKS=0
 FULL_EVIDENCE=0
 PRINT_FULL_EVIDENCE_PLAN=0
+TRACKS_REF_STORE_ID="${TRACKS_REF_STORE_ID:-}"
+TRACKS_TARGET_STORE_ID="${TRACKS_TARGET_STORE_ID:-}"
+TRACKS_OUT_DIR="${TRACKS_OUT_DIR:-${TMPDIR:?TMPDIR is required for Tracks evidence}/woopayments-tracks-parity}"
 PLAYWRITER_SESSION="${PLAYWRITER_SESSION:-}"
 TOKEN_CONTINUITY_CUSTOMER_ID="${TOKEN_CONTINUITY_CUSTOMER_ID:-}"
 TOKEN_CONTINUITY_SUBSCRIPTION_ID="${TOKEN_CONTINUITY_SUBSCRIPTION_ID:-}"
@@ -44,7 +47,9 @@ usage() {
 usage: verify.sh (--self-check WP | --ref WP --target WP) [--with-tracks] [--full-evidence] [options]
 
 Options:
-  --with-tracks                 Include the Tracks parity placeholder gate.
+  --with-tracks                 Include sink-based Tracks parity for the deterministic charge flow.
+  --tracks-ref-store-id ID      Filter reference Tracks capture to this woocommerce_store_id.
+  --tracks-target-store-id ID   Filter target Tracks capture to this woocommerce_store_id.
   --full-evidence               Run final readiness gates beyond the base deterministic loop.
   --print-full-evidence-plan    Print the final readiness gate plan and exit.
   --playwriter-session ID       Playwriter session for browser-dependent final gates.
@@ -60,6 +65,8 @@ while [ "$#" -gt 0 ]; do
 		--ref) MODE="cross"; REF_WP="$2"; shift 2 ;;
 		--target) TARGET_WP="$2"; shift 2 ;;
 		--with-tracks) WITH_TRACKS=1; shift ;;
+		--tracks-ref-store-id) TRACKS_REF_STORE_ID="${2:-}"; shift 2 ;;
+		--tracks-target-store-id) TRACKS_TARGET_STORE_ID="${2:-}"; shift 2 ;;
 		--full-evidence) FULL_EVIDENCE=1; shift ;;
 		--print-full-evidence-plan) FULL_EVIDENCE=1; PRINT_FULL_EVIDENCE_PLAN=1; shift ;;
 		--playwriter-session) PLAYWRITER_SESSION="${2:-}"; shift 2 ;;
@@ -102,6 +109,53 @@ gate() { # $1 label ; $2.. command
 		record "$label" FAIL
 		printf '      log: %s\n' "$out_file"
 	fi
+}
+
+TRACKS_REF_FILE="$TRACKS_OUT_DIR/reference-tracks.txt"
+TRACKS_TARGET_FILE="$TRACKS_OUT_DIR/target-tracks.txt"
+TRACKS_BLOCK_REASON=""
+
+tracks_block() {
+	if [ -z "$TRACKS_BLOCK_REASON" ]; then
+		TRACKS_BLOCK_REASON="$1"
+	fi
+}
+
+tracks_reset() {
+	local role="$1" raw rc
+	raw="$(bash "$SELF_DIR/tracks-parity.sh" reset 2>&1)"
+	rc=$?
+	if [ "$rc" -ne 0 ]; then
+		tracks_block "$role Tracks sink reset failed: $raw"
+		return 1
+	fi
+	printf '  tracks sink reset before %s capture\n' "$role"
+	return 0
+}
+
+tracks_normalize() {
+	local role="$1" store_id="$2" out_file="$3" raw rc
+	local normalize_args=()
+
+	if [ -n "$store_id" ]; then
+		normalize_args+=(--store "$store_id")
+	fi
+
+	raw="$(bash "$SELF_DIR/tracks-parity.sh" normalize "${normalize_args[@]}" 2>"$out_file.stderr")"
+	rc=$?
+	if [ "$rc" -ne 0 ]; then
+		tracks_block "$role Tracks normalization failed: $(cat "$out_file.stderr" 2>/dev/null)"
+		return 1
+	fi
+
+	printf '%s\n' "$raw" > "$out_file"
+	if [ ! -s "$out_file" ]; then
+		tracks_block "$role Tracks normalization produced no events; ensure usage tracking, wpcom-local-helper, and the Tracks sink are active"
+		return 1
+	fi
+
+	printf '  captured %s normalized Tracks event(s) for %s\n' "$(wc -l < "$out_file" | tr -d ' ')" "$role"
+	return 0
 }
 
 print_full_evidence_plan() {
@@ -275,6 +329,19 @@ PHP
 echo "WooPayments-merge verification loop - mode: $MODE"
 echo
 
+TRACKS_CAPTURE_READY=0
+if [ "$WITH_TRACKS" -eq 1 ]; then
+	if [ "$MODE" != "cross" ]; then
+		tracks_block "--with-tracks requires cross-store mode with --ref and --target"
+	else
+		mkdir -p "$TRACKS_OUT_DIR"
+		rm -f "$TRACKS_REF_FILE" "$TRACKS_TARGET_FILE" "$TRACKS_REF_FILE.stderr" "$TRACKS_TARGET_FILE.stderr"
+		if tracks_reset "reference"; then
+			TRACKS_CAPTURE_READY=1
+		fi
+	fi
+fi
+
 # 1. BC + Tracks static drift gate (source-level; independent of stores).
 gate "drift gate (BC + tracks)" bash "$SELF_DIR/bc-drift-gate.sh"
 gate "subsystem disposition inventory" bash "$SELF_DIR/subsystem-disposition-gate.sh"
@@ -296,15 +363,24 @@ if [ -z "$IDS" ]; then
 else
 	record "flow-drive (charge) -> orders: $IDS" PASS
 fi
+if [ "$TRACKS_CAPTURE_READY" -eq 1 ]; then
+	tracks_normalize "reference" "$TRACKS_REF_STORE_ID" "$TRACKS_REF_FILE" || TRACKS_CAPTURE_READY=0
+fi
 
 TARGET_IDS="$IDS"
 if [ "$MODE" = "cross" ]; then
+	if [ "$TRACKS_CAPTURE_READY" -eq 1 ]; then
+		tracks_reset "target" || TRACKS_CAPTURE_READY=0
+	fi
 	echo "  driving a charge fixture on the target store..."
 	TARGET_IDS="$(WP="$TARGET_WP" bash "$SELF_DIR/flow-drive.sh" "${FLOW_ARGS[@]}" --native 2>/dev/null | sed -n 's/.*"order_id":\([0-9]*\).*/\1/p' | tr '\n' ' ')"
 	if [ -z "$TARGET_IDS" ]; then
 		record "target flow-drive (charge)" FAIL
 	else
 		record "target flow-drive (charge) -> orders: $TARGET_IDS" PASS
+	fi
+	if [ "$TRACKS_CAPTURE_READY" -eq 1 ]; then
+		tracks_normalize "target" "$TRACKS_TARGET_STORE_ID" "$TRACKS_TARGET_FILE" || TRACKS_CAPTURE_READY=0
 	fi
 fi
 
@@ -343,10 +419,17 @@ if [ -n "$IDS" ]; then
 	fi
 fi
 
-# 6. Tracks-parity (opt-in; mutates store state, so it sets up + tears down).
+# 6. Tracks-parity (opt-in; clears the shared wpcom-local sink between store captures).
 if [ "$WITH_TRACKS" -eq 1 ]; then
-	echo "  (tracks gate: install drop-in + enable tracking on the store(s), drive, diff, restore - see HARNESS.md)"
-	record "tracks parity (run via HARNESS.md recipe)" BLOCKED
+	if [ -n "$TRACKS_BLOCK_REASON" ]; then
+		record "tracks parity" BLOCKED
+		printf '      %s\n' "$TRACKS_BLOCK_REASON"
+	elif [ ! -s "$TRACKS_REF_FILE" ] || [ ! -s "$TRACKS_TARGET_FILE" ]; then
+		record "tracks parity" BLOCKED
+		printf '      missing normalized Tracks captures in %s\n' "$TRACKS_OUT_DIR"
+	else
+		gate "tracks parity" bash "$SELF_DIR/tracks-parity.sh" diff "$TRACKS_REF_FILE" "$TRACKS_TARGET_FILE"
+	fi
 fi
 
 if [ "$FULL_EVIDENCE" -eq 1 ]; then

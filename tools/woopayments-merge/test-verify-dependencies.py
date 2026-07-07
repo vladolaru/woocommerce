@@ -24,6 +24,8 @@ VERIFY_DEPENDENCIES = (
     "tools/woopayments-merge/perf-baseline.sh",
     "tools/woopayments-merge/perf-baseline.php",
     "tools/woopayments-merge/perf-baseline.json",
+    "tools/woopayments-merge/tracks-parity.sh",
+    "tools/woopayments-merge/tracks-normalize.py",
 )
 
 
