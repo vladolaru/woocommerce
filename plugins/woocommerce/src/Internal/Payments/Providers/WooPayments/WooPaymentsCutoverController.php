@@ -418,6 +418,12 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 
 		$platform_connection_failures = $this->platform_connection_service->get_cutover_preflight_failures();
 		$failures                     = array_merge( $failures, $platform_connection_failures );
+		$protected_failures           = $platform_connection_failures;
+
+		if ( $this->has_unsupported_enabled_payment_methods() ) {
+			$failures[]           = 'unsupported_payment_methods_enabled';
+			$protected_failures[] = 'unsupported_payment_methods_enabled';
+		}
 
 		/**
 		 * Filters whether native WooPayments merchant admin surfaces are ready after deactivation.
@@ -456,7 +462,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 
 		$failures = is_array( $failures ) ? array_values( array_map( 'strval', $failures ) ) : array( 'preflight_filter_invalid' );
 
-		foreach ( $platform_connection_failures as $failure ) {
+		foreach ( $protected_failures as $failure ) {
 			$failure = (string) $failure;
 			if ( '' !== $failure && ! in_array( $failure, $failures, true ) ) {
 				$failures[] = $failure;
@@ -472,6 +478,52 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 
 		$this->preflight_memo = $failures;
 		return $this->preflight_memo;
+	}
+
+	/**
+	 * Determine whether legacy settings enable methods native WooPayments cannot charge yet.
+	 *
+	 * @return bool
+	 */
+	private function has_unsupported_enabled_payment_methods(): bool {
+		$natively_chargeable_payment_method_ids = WooPaymentsSettingsService::get_natively_chargeable_payment_method_ids();
+
+		foreach ( $this->get_enabled_legacy_payment_method_ids() as $payment_method_id ) {
+			if ( ! in_array( $payment_method_id, $natively_chargeable_payment_method_ids, true ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Get enabled payment method IDs from the standalone WooPayments settings option.
+	 *
+	 * @return string[]
+	 */
+	private function get_enabled_legacy_payment_method_ids(): array {
+		$settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION, array() );
+		if ( ! is_array( $settings ) ) {
+			return array();
+		}
+
+		$payment_method_ids = $settings['upe_enabled_payment_method_ids'] ?? array( 'card' );
+		if ( ! is_array( $payment_method_ids ) ) {
+			return array();
+		}
+
+		return array_values(
+			array_unique(
+				array_filter(
+					array_map(
+						static fn( $payment_method_id ): string => is_scalar( $payment_method_id ) ? (string) $payment_method_id : '',
+						$payment_method_ids
+					),
+					static fn( string $payment_method_id ): bool => '' !== $payment_method_id
+				)
+			)
+		);
 	}
 
 	/**

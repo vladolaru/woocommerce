@@ -184,6 +184,7 @@ const mockUseCompletedWaitingPeriod = jest.fn();
 const mockUseDepositStatus = jest.fn();
 const mockUseDepositRestrictions = jest.fn();
 const mockUseGetAvailablePaymentMethodIds = jest.fn();
+const mockUseGetNativelyChargeablePaymentMethodIds = jest.fn();
 const mockUseGetPaymentMethodStatuses = jest.fn();
 const mockUseGetDuplicatedPaymentMethodIds = jest.fn();
 const mockUseGetAccountFees = jest.fn();
@@ -248,6 +249,8 @@ jest.mock( '../data/hooks', () => ( {
 	useDepositRestrictions: () => mockUseDepositRestrictions(),
 	useGetAvailablePaymentMethodIds: () =>
 		mockUseGetAvailablePaymentMethodIds(),
+	useGetNativelyChargeablePaymentMethodIds: () =>
+		mockUseGetNativelyChargeablePaymentMethodIds(),
 	useGetPaymentMethodStatuses: () => mockUseGetPaymentMethodStatuses(),
 	useGetDuplicatedPaymentMethodIds: () =>
 		mockUseGetDuplicatedPaymentMethodIds(),
@@ -500,6 +503,10 @@ const setHookDefaults = () => {
 		'amazon_pay',
 		'apple_pay',
 		'google_pay',
+	] );
+	mockUseGetNativelyChargeablePaymentMethodIds.mockReturnValue( [
+		'card',
+		'link',
 	] );
 	mockUseGetPaymentMethodStatuses.mockReturnValue( {
 		card_payments: { status: 'active' },
@@ -1039,6 +1046,54 @@ describe( 'WooPaymentsSettingsPage', () => {
 		).toBeDisabled();
 	} );
 
+	it( 'disables payment methods that cannot be charged by native WooPayments yet', () => {
+		const addPaymentMethod = jest.fn();
+		mockUseGetAvailablePaymentMethodIds.mockReturnValue( [
+			'card',
+			'ideal',
+			'klarna',
+		] );
+		mockUseGetPaymentMethodStatuses.mockReturnValue( {
+			card_payments: { status: 'active' },
+			ideal_payments: { status: 'active' },
+			klarna_payments: { status: 'active' },
+		} );
+		mockUseEnabledPaymentMethodIds.mockReturnValue( [ [ 'card' ], noop ] );
+		mockUseSelectedPaymentMethod.mockReturnValue( [
+			[ 'card' ],
+			addPaymentMethod,
+		] );
+		mockUseUnselectedPaymentMethod.mockReturnValue( [ [ 'card' ], noop ] );
+		mockUseGetNativelyChargeablePaymentMethodIds.mockReturnValue( [
+			'card',
+			'link',
+		] );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const paymentMethodsGroup = screen.getByRole( 'group', {
+			name: 'Payment methods',
+		} );
+		const idealCheckbox = within( paymentMethodsGroup ).getByRole(
+			'checkbox',
+			{
+				name: 'iDEAL | Wero',
+			}
+		);
+
+		expect( idealCheckbox ).toBeDisabled();
+		expect( idealCheckbox ).not.toBeChecked();
+		expect(
+			within( paymentMethodsGroup ).getByText(
+				'Not yet available in the built-in WooPayments - keep the WooPayments extension active to offer this method.'
+			)
+		).toBeInTheDocument();
+
+		fireEvent.click( idealCheckbox );
+
+		expect( addPaymentMethod ).not.toHaveBeenCalled();
+	} );
+
 	it( 'hides Link by Stripe when card payments are not enabled', () => {
 		mockUseEnabledPaymentMethodIds.mockReturnValue( [
 			[ 'amazon_pay', 'affirm' ],
@@ -1493,6 +1548,54 @@ describe( 'WooPaymentsSettingsPage', () => {
 		);
 	} );
 
+	it( 'disables express checkout methods that cannot be charged by native WooPayments yet', () => {
+		const setIsPaymentRequestEnabled = jest.fn();
+		const setIsAmazonPayEnabled = jest.fn();
+		mockUsePaymentRequestEnabledSettings.mockReturnValue( [
+			false,
+			setIsPaymentRequestEnabled,
+		] );
+		mockUseAmazonPayEnabledSettings.mockReturnValue( [
+			false,
+			setIsAmazonPayEnabled,
+		] );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const expressCheckoutsSection =
+			getSettingsSectionByName( 'Express checkouts' );
+		const paymentRequestCheckbox = within(
+			expressCheckoutsSection
+		).getByRole( 'checkbox', {
+			name: 'Apple Pay / Google Pay',
+		} );
+		const amazonPayCheckbox = within( expressCheckoutsSection ).getByRole(
+			'checkbox',
+			{
+				name: 'Amazon Pay',
+			}
+		);
+
+		expect( paymentRequestCheckbox ).toBeDisabled();
+		expect( amazonPayCheckbox ).toBeDisabled();
+		expect(
+			within( expressCheckoutsSection ).getByRole( 'checkbox', {
+				name: 'Link by Stripe',
+			} )
+		).toBeEnabled();
+		expect(
+			within( expressCheckoutsSection ).getAllByText(
+				'Not yet available in the built-in WooPayments - keep the WooPayments extension active to offer this method.'
+			)
+		).toHaveLength( 2 );
+
+		fireEvent.click( paymentRequestCheckbox );
+		fireEvent.click( amazonPayCheckbox );
+
+		expect( setIsPaymentRequestEnabled ).not.toHaveBeenCalled();
+		expect( setIsAmazonPayEnabled ).not.toHaveBeenCalled();
+	} );
+
 	it( 'hides the WooPay express checkout row when the WooPay feature flag is disabled', async () => {
 		const setIsLinkEnabled = jest.fn();
 
@@ -1717,6 +1820,11 @@ describe( 'WooPaymentsSettingsPage', () => {
 	} );
 
 	it( 'uses payment method status to disable Amazon Pay in the express checkout overview', () => {
+		mockUseGetNativelyChargeablePaymentMethodIds.mockReturnValue( [
+			'card',
+			'link',
+			'amazon_pay',
+		] );
 		mockUseGetPaymentMethodStatuses.mockReturnValue( {
 			card_payments: { status: 'active', requirements: [] },
 			link_payments: { status: 'active', requirements: [] },
@@ -1753,6 +1861,11 @@ describe( 'WooPaymentsSettingsPage', () => {
 	} );
 
 	it( 'renders Amazon Pay rejected status as an error notice in the express checkout overview', () => {
+		mockUseGetNativelyChargeablePaymentMethodIds.mockReturnValue( [
+			'card',
+			'link',
+			'amazon_pay',
+		] );
 		mockUseGetPaymentMethodStatuses.mockReturnValue( {
 			card_payments: { status: 'active', requirements: [] },
 			link_payments: { status: 'active', requirements: [] },
@@ -1783,6 +1896,12 @@ describe( 'WooPaymentsSettingsPage', () => {
 
 	it( 'renders and dismisses duplicate notices for Apple Pay and Google Pay express buttons', async () => {
 		const updateDismissedDuplicateNotices = jest.fn();
+		mockUseGetNativelyChargeablePaymentMethodIds.mockReturnValue( [
+			'card',
+			'link',
+			'apple_pay',
+			'google_pay',
+		] );
 		mockUseGetDuplicatedPaymentMethodIds.mockReturnValue( {
 			apple_pay_google_pay: [
 				'woocommerce_payments',

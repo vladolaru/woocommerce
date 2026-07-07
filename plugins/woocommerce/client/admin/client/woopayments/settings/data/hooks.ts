@@ -227,6 +227,11 @@ export const useGetAvailablePaymentMethodIds = () =>
 		select( STORE_NAME ).getAvailablePaymentMethodIds()
 	);
 
+export const useGetNativelyChargeablePaymentMethodIds = () =>
+	useRegisteredSelect( ( select ) =>
+		select( STORE_NAME ).getNativelyChargeablePaymentMethodIds()
+	);
+
 export const useGetPaymentMethodStatuses = () =>
 	useRegisteredSelect( ( select ) =>
 		select( STORE_NAME ).getPaymentMethodStatuses()

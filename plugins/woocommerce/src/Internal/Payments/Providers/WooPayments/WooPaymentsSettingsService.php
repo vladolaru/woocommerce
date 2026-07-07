@@ -22,7 +22,7 @@ use WP_REST_Request;
  */
 class WooPaymentsSettingsService {
 
-	private const SETTINGS_OPTION = 'woocommerce_woocommerce_payments_settings';
+	public const SETTINGS_OPTION = 'woocommerce_woocommerce_payments_settings';
 
 	private const MULTI_CURRENCY_FLAG_OPTION = '_wcpay_feature_customer_multi_currency';
 
@@ -56,6 +56,17 @@ class WooPaymentsSettingsService {
 		'wechat_pay',
 		'affirm',
 		'afterpay_clearpay',
+	);
+
+	/**
+	 * Payment methods the staged native WooPayments gateway can charge today.
+	 *
+	 * Keep this deliberately narrow until the native gateway ports each additional
+	 * payment method's checkout confirmation and request-shaping behavior.
+	 */
+	private const NATIVELY_CHARGEABLE_PAYMENT_METHOD_IDS = array(
+		'card',
+		'link',
 	);
 
 	private const MANUAL_CAPTURE_PAYMENT_METHOD_IDS = array(
@@ -266,6 +277,15 @@ class WooPaymentsSettingsService {
 	}
 
 	/**
+	 * Get payment method IDs the native WooPayments gateway can charge today.
+	 *
+	 * @return string[]
+	 */
+	public static function get_natively_chargeable_payment_method_ids(): array {
+		return self::NATIVELY_CHARGEABLE_PAYMENT_METHOD_IDS;
+	}
+
+	/**
 	 * Get express checkout method IDs accepted by the settings REST contract.
 	 *
 	 * @return string[]
@@ -291,6 +311,7 @@ class WooPaymentsSettingsService {
 		return array(
 			'enabled_payment_method_ids'                 => $enabled_payment_method_ids,
 			'available_payment_method_ids'               => $available_payment_method_ids,
+			'natively_chargeable_payment_method_ids'     => self::get_natively_chargeable_payment_method_ids(),
 			'payment_method_statuses'                    => $this->get_payment_method_statuses(),
 			'duplicated_payment_method_ids'              => $this->get_duplicated_payment_method_ids(),
 			'dismissed_duplicate_payment_method_notices' => $this->get_dismissed_duplicate_payment_method_notices(),

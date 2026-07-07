@@ -41,6 +41,7 @@ import { FraudProtectionSettings } from './fraud-protection';
 import {
 	DuplicatePaymentMethodNotice,
 	getPaymentMethodAvailability,
+	getNativelyUnsupportedPaymentMethodAvailability,
 	WooPaymentsPaymentMethodsList,
 } from './payment-methods-list';
 import { PayoutBankAccount } from './payout-bank-account';
@@ -78,6 +79,7 @@ import {
 	useGetAccountFees,
 	useGetAvailablePaymentMethodIds,
 	useGetDuplicatedPaymentMethodIds,
+	useGetNativelyChargeablePaymentMethodIds,
 	useGetPaymentMethodStatuses,
 	useGetSavingError,
 	useGetSettings,
@@ -972,6 +974,9 @@ const PaymentMethodsSettingsSection = () => {
 		( methodId ) =>
 			! STANDARD_PAYMENT_METHOD_EXCLUDED_IDS.includes( methodId )
 	);
+	const nativelyChargeablePaymentMethodIds = asStringArray(
+		useGetNativelyChargeablePaymentMethodIds()
+	);
 	const statuses = asSettingsRecord( useGetPaymentMethodStatuses() );
 	const accountFees = asAccountFees( useGetAccountFees() );
 	const {
@@ -1030,6 +1035,9 @@ const PaymentMethodsSettingsSection = () => {
 				<WooPaymentsPaymentMethodsList
 					methodIds={ standardPaymentMethodIds }
 					enabledMethodIds={ enabledMethodIds }
+					nativelyChargeableMethodIds={
+						nativelyChargeablePaymentMethodIds
+					}
 					statuses={
 						statuses as Record<
 							string,
@@ -1059,6 +1067,9 @@ const BuyNowPayLaterSettingsSection = () => {
 	const settings = asSettingsRecord( useGetSettings() );
 	const availablePaymentMethodIds = asStringArray(
 		useGetAvailablePaymentMethodIds()
+	);
+	const nativelyChargeablePaymentMethodIds = asStringArray(
+		useGetNativelyChargeablePaymentMethodIds()
 	);
 	const statuses = asSettingsRecord( useGetPaymentMethodStatuses() );
 	const accountFees = asAccountFees( useGetAccountFees() );
@@ -1111,6 +1122,9 @@ const BuyNowPayLaterSettingsSection = () => {
 				<WooPaymentsPaymentMethodsList
 					methodIds={ availableBuyNowPayLaterMethodIds }
 					enabledMethodIds={ enabledMethodIds }
+					nativelyChargeableMethodIds={
+						nativelyChargeablePaymentMethodIds
+					}
 					statuses={
 						statuses as Record<
 							string,
@@ -1154,6 +1168,9 @@ const ExpressCheckoutSettingsSection = () => {
 	const availablePaymentMethodIds = asStringArray(
 		useGetAvailablePaymentMethodIds()
 	);
+	const nativelyChargeablePaymentMethodIds = asStringArray(
+		useGetNativelyChargeablePaymentMethodIds()
+	);
 	const statuses = asSettingsRecord( useGetPaymentMethodStatuses() );
 	const {
 		duplicatedPaymentMethodIds,
@@ -1165,12 +1182,31 @@ const ExpressCheckoutSettingsSection = () => {
 		availablePaymentMethodIds.includes( 'link' );
 	const isAmazonPayAvailable =
 		isAmazonPayExpressCheckoutAvailable( settings );
+	const isNativelyChargeable = ( paymentMethodIds: string[] ) =>
+		nativelyChargeablePaymentMethodIds.length === 0 ||
+		paymentMethodIds.every( ( paymentMethodId ) =>
+			nativelyChargeablePaymentMethodIds.includes( paymentMethodId )
+		);
+	const unsupportedPaymentMethodAvailability =
+		getNativelyUnsupportedPaymentMethodAvailability();
+	const paymentRequestAvailability = isNativelyChargeable( [
+		'apple_pay',
+		'google_pay',
+	] )
+		? null
+		: unsupportedPaymentMethodAvailability;
+	const linkAvailability = isNativelyChargeable( [ 'link' ] )
+		? null
+		: unsupportedPaymentMethodAvailability;
 	const amazonPayAvailability = getPaymentMethodAvailability(
 		AMAZON_PAY_DEFINITION,
 		asSettingsRecord(
 			statuses[ AMAZON_PAY_DEFINITION.stripeKey ]
 		) as PaymentMethodStatus,
-		false
+		false,
+		{
+			nativelyChargeableMethodIds: nativelyChargeablePaymentMethodIds,
+		}
 	);
 	const showWooPayIncompatibilityNotice = Boolean(
 		useWooPayShowIncompatibilityNotice()
@@ -1185,6 +1221,15 @@ const ExpressCheckoutSettingsSection = () => {
 	} else if ( showWooPayIncompatibilityNotice ) {
 		wooPayNotice = __(
 			'One or more of your extensions are incompatible with WooPay.',
+			'woocommerce'
+		);
+	}
+	const isWooPayBlockingLink =
+		isWooPayExpressCheckoutAvailableForStore && isWooPayEnabled;
+	let linkNotice = linkAvailability?.notice || '';
+	if ( ! linkNotice && isWooPayBlockingLink ) {
+		linkNotice = __(
+			'To enable Link by Stripe, you must first disable WooPay.',
 			'woocommerce'
 		);
 	}
@@ -1236,7 +1281,7 @@ const ExpressCheckoutSettingsSection = () => {
 		id: 'payment_request',
 		title: __( 'Apple Pay / Google Pay', 'woocommerce' ),
 		checked: isPaymentRequestEnabled,
-		disabled: false,
+		disabled: ! ( paymentRequestAvailability?.isActionable ?? true ),
 		onChange: setIsPaymentRequestEnabled,
 		description: isPaymentRequestEnabled
 			? __(
@@ -1263,7 +1308,8 @@ const ExpressCheckoutSettingsSection = () => {
 						),
 					}
 			  ),
-		notice: '',
+		notice: paymentRequestAvailability?.notice || '',
+		noticeStatus: paymentRequestAvailability?.noticeStatus,
 		duplicatePaymentMethodId: 'apple_pay_google_pay',
 	} );
 
@@ -1273,7 +1319,8 @@ const ExpressCheckoutSettingsSection = () => {
 			title: __( 'Link by Stripe', 'woocommerce' ),
 			checked: isLinkEnabled,
 			disabled:
-				isWooPayExpressCheckoutAvailableForStore && isWooPayEnabled,
+				! ( linkAvailability?.isActionable ?? true ) ||
+				isWooPayBlockingLink,
 			onChange: setIsLinkEnabled,
 			description: isLinkEnabled
 				? __(
@@ -1294,13 +1341,8 @@ const ExpressCheckoutSettingsSection = () => {
 							),
 						}
 				  ),
-			notice:
-				isWooPayExpressCheckoutAvailableForStore && isWooPayEnabled
-					? __(
-							'To enable Link by Stripe, you must first disable WooPay.',
-							'woocommerce'
-					  )
-					: '',
+			notice: linkNotice,
+			noticeStatus: linkAvailability?.noticeStatus,
 			action: (
 				<Button
 					variant="secondary"

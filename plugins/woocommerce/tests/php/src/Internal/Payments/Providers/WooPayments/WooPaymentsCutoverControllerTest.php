@@ -218,6 +218,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	public function tearDown(): void {
 		unset( $_GET[ WooPaymentsCutoverController::QUERY_ACTION ], $_GET[ WooPaymentsCutoverController::NONCE_NAME ], $_GET[ WooPaymentsCutoverController::QUERY_STATUS ] );
 		delete_transient( 'woocommerce_woopayments_native_cutover_status' );
+		delete_option( 'woocommerce_woocommerce_payments_settings' );
 
 		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
 		remove_all_filters( WooPaymentsCutoverController::FILTER_NATIVE_TRANSPORT_READY );
@@ -684,6 +685,64 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		add_filter( WooPaymentsCutoverController::FILTER_PREFLIGHT_FAILURES, '__return_empty_array' );
 
 		$this->assertContains( 'wpcom_blog_id_unavailable', $this->sut->get_preflight_failures() );
+		$this->assertFalse( $this->sut->should_show_soft_cutover_notice() );
+		$this->assertFalse( $this->sut->disable_woopayments_plugin() );
+	}
+
+	/**
+	 * @testdox Cutover preflight blocks while unsupported payment methods are enabled in legacy settings.
+	 */
+	public function test_preflight_blocks_when_unsupported_payment_methods_are_enabled(): void {
+		$this->fake_plugin_active();
+		$this->fake_current_user_caps( true );
+		$this->enable_ready_cutover();
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'upe_enabled_payment_method_ids' => array( 'card', 'klarna' ),
+			)
+		);
+
+		$this->assertContains( 'unsupported_payment_methods_enabled', $this->sut->get_preflight_failures() );
+		$this->assertFalse( $this->sut->should_show_soft_cutover_notice() );
+		$this->assertFalse( $this->sut->disable_woopayments_plugin() );
+		$this->assertSame( array(), $this->deactivate_plugin_calls, 'The plugin must stay active while any enabled method cannot be charged natively.' );
+	}
+
+	/**
+	 * @testdox Cutover preflight allows the currently natively chargeable payment methods.
+	 */
+	public function test_preflight_allows_currently_natively_chargeable_payment_methods(): void {
+		$this->fake_plugin_active();
+		$this->fake_current_user_caps( true );
+		$this->enable_ready_cutover();
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'upe_enabled_payment_method_ids' => array( 'card', 'link' ),
+			)
+		);
+
+		$this->assertNotContains( 'unsupported_payment_methods_enabled', $this->sut->get_preflight_failures() );
+		$this->assertTrue( $this->sut->should_show_soft_cutover_notice() );
+	}
+
+	/**
+	 * @testdox Cutover preflight filters cannot remove unsupported payment method blockers.
+	 */
+	public function test_preflight_filter_cannot_remove_unsupported_payment_method_blocker(): void {
+		$this->fake_plugin_active();
+		$this->fake_current_user_caps( true );
+		$this->enable_ready_cutover();
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'upe_enabled_payment_method_ids' => array( 'card', 'ideal' ),
+			)
+		);
+		add_filter( WooPaymentsCutoverController::FILTER_PREFLIGHT_FAILURES, '__return_empty_array' );
+
+		$this->assertContains( 'unsupported_payment_methods_enabled', $this->sut->get_preflight_failures() );
 		$this->assertFalse( $this->sut->should_show_soft_cutover_notice() );
 		$this->assertFalse( $this->sut->disable_woopayments_plugin() );
 	}
