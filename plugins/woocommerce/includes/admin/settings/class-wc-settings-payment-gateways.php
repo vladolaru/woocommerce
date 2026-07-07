@@ -9,6 +9,7 @@ declare( strict_types = 1 );
 
 use Automattic\WooCommerce\Admin\Settings\SettingsSectionRegistry;
 use Automattic\WooCommerce\Internal\Admin\Loader;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -196,13 +197,17 @@ class WC_Settings_Payment_Gateways extends WC_Settings_Page {
 			self::OFFLINE_SECTION_NAME,
 		);
 
+		$native_owns_payments_runtime = wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->should_native_register();
+
 		// These sections are optional and can be modified by plugins or themes.
 		$optional_reactified_sections = array(
 			self::COD_SECTION_NAME,
 			self::BACS_SECTION_NAME,
 			self::CHEQUE_SECTION_NAME,
-			self::WOOPAYMENTS_SECTION_NAME,
 		);
+		if ( $native_owns_payments_runtime ) {
+			$optional_reactified_sections[] = self::WOOPAYMENTS_SECTION_NAME;
+		}
 
 		/**
 		 * Modify the optional set of payments settings sections to be rendered using React.
@@ -223,6 +228,9 @@ class WC_Settings_Payment_Gateways extends WC_Settings_Page {
 		} else {
 			// Enforce a list format and string-only values for section identifiers.
 			$optional_reactified_sections = array_values( array_filter( $optional_reactified_sections, 'is_string' ) );
+		}
+		if ( ! $native_owns_payments_runtime ) {
+			$optional_reactified_sections = array_values( array_diff( $optional_reactified_sections, array( self::WOOPAYMENTS_SECTION_NAME ) ) );
 		}
 
 		$this->reactified_sections_memo = array_unique( array_merge( $reactified_sections, $optional_reactified_sections ) );
