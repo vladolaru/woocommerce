@@ -115,6 +115,11 @@ class WooPaymentsApiClient {
 	private const TRACKING_API = 'tracking';
 
 	/**
+	 * WooPayments address autocomplete token API path.
+	 */
+	private const ADDRESS_AUTOCOMPLETE_TOKEN_API = 'address-autocomplete-token';
+
+	/**
 	 * WooPayments failed webhook events API path.
 	 */
 	private const WEBHOOK_FETCH_API = 'webhook/failed_events';
@@ -666,6 +671,15 @@ class WooPaymentsApiClient {
 	 */
 	public function create_terminal_connection_token(): array {
 		return $this->request( array(), self::TERMINAL_CONNECTION_TOKENS_API, 'POST' );
+	}
+
+	/**
+	 * Create an address autocomplete token.
+	 *
+	 * @return array<string,mixed>
+	 */
+	public function get_address_autocomplete_token(): array {
+		return $this->request( array(), self::ADDRESS_AUTOCOMPLETE_TOKEN_API, 'POST' );
 	}
 
 	/**

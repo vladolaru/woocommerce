@@ -1767,6 +1767,37 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should create address autocomplete tokens through the preserved WPCOM endpoint.
+	 */
+	public function test_get_address_autocomplete_token_posts_to_address_autocomplete_endpoint(): void {
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id  = 123;
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode(
+				array(
+					'token' => 'address.jwt.token',
+				)
+			),
+		);
+
+		$sut = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( false ) );
+
+		$this->assertTrue( method_exists( $sut, 'get_address_autocomplete_token' ), 'WooPaymentsApiClient should expose get_address_autocomplete_token().' );
+
+		$result = $sut->get_address_autocomplete_token();
+		$body   = json_decode( (string) $http_client->last_body, true );
+
+		$this->assertSame( '/sites/123/wcpay/address-autocomplete-token', $http_client->last_path );
+		$this->assertSame( 'POST', $http_client->last_method );
+		$this->assertSame( 'address.jwt.token', $result['token'] );
+		$this->assertIsArray( $body );
+		$this->assertFalse( $body['test_mode'] );
+	}
+
+	/**
 	 * @testdox Should create terminal intents through the native intentions endpoint.
 	 */
 	public function test_create_terminal_payment_intention_posts_terminal_payment_payload(): void {
