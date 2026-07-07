@@ -19,13 +19,27 @@ EVIDENCE_DIR="${EVIDENCE_DIR:-$REPO_ROOT/tools/woopayments-critical-flows/eviden
 
 # Reference store container (current WooPayments extension), :8082.
 REF_CONTAINER="${REF_CONTAINER:-wcpay_wp_default}"
+REF_WP_COMMAND="${REF_WP_COMMAND:-}"
 # Target store: wp-env wrapper from the WC dir, :8889.
 TARGET_WPENV_CWD="${TARGET_WPENV_CWD:-wp-content/plugins/woocommerce}"
+TARGET_WP_COMMAND="${TARGET_WP_COMMAND:-}"
 
 # wp_target <wp-cli args...> : run WP-CLI against the native target store.
-wp_target() { ( cd "$WC_DIR" && pnpm wp-env run --env-cwd="$TARGET_WPENV_CWD" cli wp "$@" ); }
+wp_target() {
+  if [ -n "$TARGET_WP_COMMAND" ]; then
+    "$TARGET_WP_COMMAND" "$@"
+    return $?
+  fi
+  ( cd "$WC_DIR" && pnpm wp-env run --env-cwd="$TARGET_WPENV_CWD" cli wp "$@" )
+}
 # wp_ref <wp-cli args...> : run WP-CLI against the reference store.
-wp_ref() { docker exec -u www-data "$REF_CONTAINER" wp "$@"; }
+wp_ref() {
+  if [ -n "$REF_WP_COMMAND" ]; then
+    "$REF_WP_COMMAND" "$@"
+    return $?
+  fi
+  docker exec -u www-data "$REF_CONTAINER" wp "$@"
+}
 
 # wp_store <ref|target> <args...> : dispatch by store name.
 wp_store() { local s="$1"; shift; case "$s" in ref) wp_ref "$@";; target) wp_target "$@";; *) echo "unknown store: $s" >&2; return 2;; esac; }
