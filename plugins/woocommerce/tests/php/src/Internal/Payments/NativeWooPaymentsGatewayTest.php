@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutBridge;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressPaymentMethodTypes;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
@@ -55,6 +56,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		unset( $_POST['wcpay-is-platform-payment-method'] );
 		unset( $_POST['wcpay-express-payment-method-types'] );
 		unset( $_POST['wcpay-express-checkout-context'] );
+		unset( $_POST['wcpay-fraud-prevention-token'] );
 		unset( $_POST['is-woopay-preflight-check'] );
 		unset( $_POST['_wcsnonce'] );
 		unset( $_POST['change_payment_method'] );
@@ -63,6 +65,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		if ( class_exists( 'WC_Subscriptions_Change_Payment_Gateway', false ) && method_exists( 'WC_Subscriptions_Change_Payment_Gateway', 'reset' ) ) {
 			\WC_Subscriptions_Change_Payment_Gateway::reset();
 		}
+		wc_clear_notices();
 		wp_set_current_user( 0 );
 		parent::tearDown();
 	}
@@ -810,6 +813,51 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should reject add-payment-method requests with invalid fraud-prevention tokens before reading the setup intent.
+	 */
+	public function test_add_payment_method_rejects_invalid_fraud_prevention_token_when_enabled(): void {
+		wc_clear_notices();
+		$user_id = self::factory()->user->create();
+		wp_set_current_user( $user_id );
+		$_POST['wcpay-setup-intent'] = 'seti_native';
+
+		$_POST[ WooPaymentsFraudPreventionService::TOKEN_NAME ] = 'tampered-token';
+
+		$session = $this->create_session();
+		$session->set( WooPaymentsFraudPreventionService::TOKEN_NAME, 'valid-token' );
+
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_setup_intention' ) )
+			->getMock();
+		$api_client
+			->expects( $this->never() )
+			->method( 'get_setup_intention' );
+
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init(
+			new RecordingPaymentProcessingService(),
+			new WooPaymentsProvider(),
+			null,
+			$api_client,
+			null,
+			null,
+			null,
+			$this->create_fraud_prevention_service( true, $session )
+		);
+
+		$result = $gateway->add_payment_method();
+
+		$this->assertSame( array( 'result' => 'error' ), $result );
+		$this->assertSame( 16, strlen( (string) $session->get( WooPaymentsFraudPreventionService::TOKEN_NAME ) ) );
+		$this->assertNotSame( 'valid-token', $session->get( WooPaymentsFraudPreventionService::TOKEN_NAME ) );
+		$this->assertSame(
+			"We're not able to add this payment method. Please refresh the page and try again.",
+			wc_get_notices( 'error' )[0]['notice'] ?? ''
+		);
+	}
+
+	/**
 	 * @testdox Should not translate gateway labels during construction before init.
 	 */
 	public function test_constructor_does_not_translate_gateway_labels_before_init(): void {
@@ -900,6 +948,77 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( $order->get_id(), $service->last_checkout_context->get_order_id() );
 		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $service->last_checkout_context->get_gateway_id() );
 		$this->assertFalse( $service->last_checkout_context->get_provider_data()['is_platform_payment_method'] );
+	}
+
+	/**
+	 * @testdox Should reject checkout requests with invalid fraud-prevention tokens before creating a payment context.
+	 */
+	public function test_process_payment_rejects_invalid_fraud_prevention_token_when_enabled(): void {
+		wc_clear_notices();
+		$order   = $this->create_order();
+		$service = new RecordingPaymentProcessingService();
+		$session = $this->create_session();
+		$session->set( WooPaymentsFraudPreventionService::TOKEN_NAME, 'valid-token' );
+		$_POST[ WooPaymentsFraudPreventionService::TOKEN_NAME ] = 'tampered-token';
+
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init(
+			$service,
+			new WooPaymentsProvider(),
+			null,
+			null,
+			null,
+			null,
+			null,
+			$this->create_fraud_prevention_service( true, $session )
+		);
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$this->assertSame(
+			array(
+				'result'         => 'fail',
+				'redirect'       => '',
+				'payment_method' => '',
+			),
+			$result
+		);
+		$this->assertNull( $service->last_checkout_context );
+		$this->assertSame( 16, strlen( (string) $session->get( WooPaymentsFraudPreventionService::TOKEN_NAME ) ) );
+		$this->assertNotSame( 'valid-token', $session->get( WooPaymentsFraudPreventionService::TOKEN_NAME ) );
+		$this->assertSame(
+			"We're not able to process this payment. Please refresh the page and try again.",
+			wc_get_notices( 'error' )[0]['notice'] ?? ''
+		);
+	}
+
+	/**
+	 * @testdox Should skip checkout fraud-prevention token checks when card-testing protection is not enabled.
+	 */
+	public function test_process_payment_skips_fraud_prevention_token_check_when_disabled(): void {
+		$order   = $this->create_order();
+		$service = new RecordingPaymentProcessingService();
+		$session = $this->create_session();
+		$session->set( WooPaymentsFraudPreventionService::TOKEN_NAME, 'valid-token' );
+		$_POST[ WooPaymentsFraudPreventionService::TOKEN_NAME ] = 'tampered-token';
+
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init(
+			$service,
+			new WooPaymentsProvider(),
+			null,
+			null,
+			null,
+			null,
+			null,
+			$this->create_fraud_prevention_service( false, $session )
+		);
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$this->assertSame( 'success', $result['result'] );
+		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertSame( 'valid-token', $session->get( WooPaymentsFraudPreventionService::TOKEN_NAME ) );
 	}
 
 	/**
@@ -1248,6 +1367,77 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$token->save();
 
 		return $token;
+	}
+
+	/**
+	 * Create a fraud-prevention service with controlled account eligibility.
+	 *
+	 * @param bool        $eligible Whether card-testing protection is eligible.
+	 * @param \WC_Session $session  WooCommerce session test double.
+	 * @return WooPaymentsFraudPreventionService
+	 */
+	private function create_fraud_prevention_service( bool $eligible, \WC_Session $session ): WooPaymentsFraudPreventionService {
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_cached_account_data' ) )
+			->getMock();
+		$account_service
+			->method( 'get_cached_account_data' )
+			->willReturn( array( 'card_testing_protection_eligible' => $eligible ) );
+
+		$service = new WooPaymentsFraudPreventionService( $session );
+		$service->init( $account_service );
+
+		return $service;
+	}
+
+	/**
+	 * Create a WooCommerce session test double.
+	 *
+	 * @return \WC_Session
+	 */
+	private function create_session(): \WC_Session {
+		return new class() extends \WC_Session {
+			/**
+			 * Session data.
+			 *
+			 * @var array<string,mixed>
+			 */
+			protected $_data = array(); // phpcs:ignore PSR2.Classes.PropertyDeclaration.Underscore
+
+			/**
+			 * Get a session value.
+			 *
+			 * @param string $key           Session key.
+			 * @param mixed  $default_value Default value.
+			 * @return mixed
+			 */
+			public function get( $key, $default_value = null ) {
+				return $this->_data[ $key ] ?? $default_value;
+			}
+
+			/**
+			 * Set a session value.
+			 *
+			 * @param string $key   Session key.
+			 * @param mixed  $value Session value.
+			 */
+			public function set( $key, $value ) {
+				if ( null === $value ) {
+					unset( $this->_data[ $key ] );
+					return;
+				}
+
+				$this->_data[ $key ] = $value;
+			}
+
+			/**
+			 * Set the customer session cookie.
+			 *
+			 * @param bool $set Whether to set the cookie.
+			 */
+			public function set_customer_session_cookie( bool $set ): void {}
+		};
 	}
 
 	/**

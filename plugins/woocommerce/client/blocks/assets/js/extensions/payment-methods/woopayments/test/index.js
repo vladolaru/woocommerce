@@ -140,6 +140,7 @@ describe( 'wc-payment-method-woopayments', () => {
 		jest.restoreAllMocks();
 		delete window.Stripe;
 		delete window.navigator.clipboard;
+		delete window.wcpayFraudPreventionToken;
 		window.fetch = originalFetch;
 		document.body.innerHTML = '';
 		window.history.pushState( {}, '', '/' );
@@ -148,6 +149,7 @@ describe( 'wc-payment-method-woopayments', () => {
 	} );
 
 	it( 'submits wcpay-payment-method metadata for a new card method', async () => {
+		window.wcpayFraudPreventionToken = 'fraud-token-123';
 		const registration = registerWooPayments();
 		let setupResult;
 		const onPaymentSetup = jest.fn( ( callback ) => {
@@ -189,6 +191,7 @@ describe( 'wc-payment-method-woopayments', () => {
 					'wcpay-payment-method-error-message': '',
 					'wcpay-fingerprint': '',
 					'wcpay-is-platform-payment-method': 'true',
+					'wcpay-fraud-prevention-token': 'fraud-token-123',
 				},
 			},
 		} );
@@ -329,7 +332,6 @@ describe( 'wc-payment-method-woopayments', () => {
 			},
 		} );
 		expect( createPaymentMethod ).not.toHaveBeenCalled();
-		delete window.wcpayFraudPreventionToken;
 	} );
 
 	it( 'shows the test mode badge in the payment method label', () => {

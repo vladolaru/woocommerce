@@ -785,6 +785,14 @@
 		field.value = value || '';
 	}
 
+	function getFraudPreventionToken() {
+		return (
+			config.fraudPreventionToken ||
+			window.wcpayFraudPreventionToken ||
+			''
+		);
+	}
+
 	function appendPaymentFields( form, paymentMethod, error ) {
 		var fingerprint =
 			paymentMethod && paymentMethod.card
@@ -807,6 +815,11 @@
 			error && error.message ? error.message : ''
 		);
 		ensureHiddenField( form, 'wcpay-fingerprint', fingerprint || '' );
+		ensureHiddenField(
+			form,
+			'wcpay-fraud-prevention-token',
+			getFraudPreventionToken()
+		);
 	}
 
 	function getSetupIntentData( response ) {
@@ -1310,6 +1323,11 @@
 					formElement,
 					'wcpay-setup-intent',
 					setupIntent.id
+				);
+				ensureFormHiddenField(
+					formElement,
+					'wcpay-fraud-prevention-token',
+					getFraudPreventionToken()
 				);
 				setError( '' );
 				submitAddPaymentMethodForm( formElement );

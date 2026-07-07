@@ -139,6 +139,13 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	private WooPaymentsCustomerService $customer_service;
 
 	/**
+	 * WooPayments fraud-prevention service.
+	 *
+	 * @var WooPaymentsFraudPreventionService
+	 */
+	private WooPaymentsFraudPreventionService $fraud_prevention_service;
+
+	/**
 	 * Constructor.
 	 */
 	public function __construct() {
@@ -178,15 +185,25 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 *
 	 * @internal
 	 *
-	 * @param PaymentProcessingService        $processing_service Payment processing service.
-	 * @param WooPaymentsProvider             $provider           WooPayments provider.
-	 * @param WooPaymentsCheckoutBridge|null  $checkout_bridge    Optional checkout bridge.
-	 * @param WooPaymentsApiClient|null       $api_client         Optional API client.
-	 * @param WooPaymentsAccountService|null  $account_service    Optional account service.
-	 * @param WooPaymentsTokenService|null    $token_service      Optional token service.
-	 * @param WooPaymentsCustomerService|null $customer_service   Optional customer service.
+	 * @param PaymentProcessingService               $processing_service        Payment processing service.
+	 * @param WooPaymentsProvider                    $provider                  WooPayments provider.
+	 * @param WooPaymentsCheckoutBridge|null         $checkout_bridge           Optional checkout bridge.
+	 * @param WooPaymentsApiClient|null              $api_client                Optional API client.
+	 * @param WooPaymentsAccountService|null         $account_service           Optional account service.
+	 * @param WooPaymentsTokenService|null           $token_service             Optional token service.
+	 * @param WooPaymentsCustomerService|null        $customer_service          Optional customer service.
+	 * @param WooPaymentsFraudPreventionService|null $fraud_prevention_service Optional fraud-prevention service.
 	 */
-	final public function init( PaymentProcessingService $processing_service, WooPaymentsProvider $provider, ?WooPaymentsCheckoutBridge $checkout_bridge = null, ?WooPaymentsApiClient $api_client = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsCustomerService $customer_service = null ): void {
+	final public function init(
+		PaymentProcessingService $processing_service,
+		WooPaymentsProvider $provider,
+		?WooPaymentsCheckoutBridge $checkout_bridge = null,
+		?WooPaymentsApiClient $api_client = null,
+		?WooPaymentsAccountService $account_service = null,
+		?WooPaymentsTokenService $token_service = null,
+		?WooPaymentsCustomerService $customer_service = null,
+		?WooPaymentsFraudPreventionService $fraud_prevention_service = null
+	): void {
 		$this->processing_service = $processing_service;
 		$this->provider           = $provider;
 
@@ -208,6 +225,10 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 		if ( null !== $customer_service ) {
 			$this->customer_service = $customer_service;
+		}
+
+		if ( null !== $fraud_prevention_service ) {
+			$this->fraud_prevention_service = $fraud_prevention_service;
 		}
 	}
 
@@ -236,6 +257,11 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			$user_id = get_current_user_id();
 			if ( 0 >= $user_id ) {
 				return $this->add_payment_method_error( __( "We're not able to add this payment method. Please log in and try again.", 'woocommerce' ) );
+			}
+
+			$fraud_prevention_error = $this->get_fraud_prevention_error_message( false );
+			if ( '' !== $fraud_prevention_error ) {
+				return $this->add_payment_method_error( $fraud_prevention_error );
 			}
 
 			$setup_intent = $this->get_api_client()->get_setup_intention( $setup_intent_id );
@@ -753,6 +779,17 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			);
 		}
 
+		$fraud_prevention_error = $this->get_fraud_prevention_error_message( true );
+		if ( '' !== $fraud_prevention_error ) {
+			wc_add_notice( $fraud_prevention_error, 'error', array( 'icon' => 'error' ) );
+
+			return array(
+				'result'         => 'fail',
+				'redirect'       => '',
+				'payment_method' => '',
+			);
+		}
+
 		$result = $this->get_processing_service()->process_checkout(
 			PaymentContext::for_checkout(
 				$order,
@@ -999,6 +1036,60 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		return $this->customer_service;
+	}
+
+	/**
+	 * Get the WooPayments fraud-prevention service.
+	 *
+	 * @return WooPaymentsFraudPreventionService
+	 */
+	private function get_fraud_prevention_service(): WooPaymentsFraudPreventionService {
+		if ( ! isset( $this->fraud_prevention_service ) ) {
+			$this->fraud_prevention_service = wc_get_container()->get( WooPaymentsFraudPreventionService::class );
+		}
+
+		return $this->fraud_prevention_service;
+	}
+
+	/**
+	 * Get a fraud-prevention error message for the current request.
+	 *
+	 * @param bool $is_checkout Whether the request is a checkout payment request.
+	 * @return string
+	 */
+	private function get_fraud_prevention_error_message( bool $is_checkout ): string {
+		if ( $is_checkout ) {
+			/**
+			 * Identifies WooPay Store API requests handled by the standalone WooPayments integration.
+			 *
+			 * This intentionally uses the standalone WooPayments plugin's `wcpay_` hook name
+			 * (not the native `woocommerce_native_*` prefix) for parity: WooPay Store API flows
+			 * already provide their own fraud-prevention checks in the extension runtime.
+			 *
+			 * @since 11.0.0
+			 * @param bool $is_woopay_store_api_request Whether the request is a WooPay Store API request.
+			 */
+			$is_woopay_store_api_request = (bool) apply_filters( 'wcpay_is_woopay_store_api_request', false );
+
+			if ( $is_woopay_store_api_request ) {
+				return '';
+			}
+		}
+
+		$fraud_prevention_service = $this->get_fraud_prevention_service();
+		if ( ! $fraud_prevention_service->has_session() || ! $fraud_prevention_service->is_enabled() ) {
+			return '';
+		}
+
+		if ( $fraud_prevention_service->verify_token( $this->sanitize_post_string( WooPaymentsFraudPreventionService::TOKEN_NAME ) ) ) {
+			return '';
+		}
+
+		$fraud_prevention_service->regenerate_token();
+
+		return $is_checkout
+			? __( "We're not able to process this payment. Please refresh the page and try again.", 'woocommerce' )
+			: __( "We're not able to add this payment method. Please refresh the page and try again.", 'woocommerce' );
 	}
 
 	/**

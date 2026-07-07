@@ -36,6 +36,9 @@ const ariaLabel = isTestMode ? `${ label } ${ testModeBadgeLabel }` : label;
 const saveUserRoots = new WeakMap();
 const copyTestNumberSuccessDuration = 2000;
 
+const getFraudPreventionToken = () =>
+	window.wcpayFraudPreventionToken ?? settings?.fraudPreventionToken ?? '';
+
 const TestModeBadge = () => {
 	if ( ! isTestMode ) {
 		return null;
@@ -663,11 +666,9 @@ const SavedTokenHandler = ( { eventRegistration, emitResponse } ) => {
 		}
 
 		const unsubscribe = onPaymentSetup( () => {
-			const fraudPreventionToken = window.wcpayFraudPreventionToken;
-
 			return getSuccessResponse( emitResponseRef.current, {
 				...paymentMethodData,
-				'wcpay-fraud-prevention-token': fraudPreventionToken ?? '',
+				'wcpay-fraud-prevention-token': getFraudPreventionToken(),
 			} );
 		} );
 
@@ -805,6 +806,7 @@ const WooPaymentsContent = ( {
 				'wcpay-fingerprint': '',
 				'wcpay-is-platform-payment-method':
 					shouldUsePlatformStripeForCard() ? 'true' : 'false',
+				'wcpay-fraud-prevention-token': getFraudPreventionToken(),
 			};
 
 			if ( stripe.current && elements.current ) {

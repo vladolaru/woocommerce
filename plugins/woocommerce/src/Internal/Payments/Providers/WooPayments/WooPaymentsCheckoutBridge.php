@@ -200,22 +200,41 @@ class WooPaymentsCheckoutBridge {
 	private WooPaymentsFrontendTrackingController $frontend_tracking_controller;
 
 	/**
+	 * Fraud-prevention service.
+	 *
+	 * @var WooPaymentsFraudPreventionService
+	 */
+	private WooPaymentsFraudPreventionService $fraud_prevention_service;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsLegacyRuntime              $legacy_runtime               WooPayments legacy runtime.
-	 * @param WooPaymentsAccountService             $account_service              WooPayments account service.
-	 * @param WooPaymentsWooPaySessionService       $woopay_session_service       WooPay session service.
-	 * @param WooPaymentsFrontendStylesService      $frontend_styles_service      Shared frontend styles service.
-	 * @param WooPaymentsFrontendTrackingController $frontend_tracking_controller Frontend tracking controller.
+	 * @param WooPaymentsLegacyRuntime               $legacy_runtime               WooPayments legacy runtime.
+	 * @param WooPaymentsAccountService              $account_service              WooPayments account service.
+	 * @param WooPaymentsWooPaySessionService        $woopay_session_service       WooPay session service.
+	 * @param WooPaymentsFrontendStylesService       $frontend_styles_service      Shared frontend styles service.
+	 * @param WooPaymentsFrontendTrackingController  $frontend_tracking_controller Frontend tracking controller.
+	 * @param WooPaymentsFraudPreventionService|null $fraud_prevention_service   Optional fraud-prevention service.
 	 */
-	final public function init( WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsAccountService $account_service, WooPaymentsWooPaySessionService $woopay_session_service, WooPaymentsFrontendStylesService $frontend_styles_service, WooPaymentsFrontendTrackingController $frontend_tracking_controller ): void {
+	final public function init(
+		WooPaymentsLegacyRuntime $legacy_runtime,
+		WooPaymentsAccountService $account_service,
+		WooPaymentsWooPaySessionService $woopay_session_service,
+		WooPaymentsFrontendStylesService $frontend_styles_service,
+		WooPaymentsFrontendTrackingController $frontend_tracking_controller,
+		?WooPaymentsFraudPreventionService $fraud_prevention_service = null
+	): void {
 		$this->legacy_runtime               = $legacy_runtime;
 		$this->account_service              = $account_service;
 		$this->woopay_session_service       = $woopay_session_service;
 		$this->frontend_styles_service      = $frontend_styles_service;
 		$this->frontend_tracking_controller = $frontend_tracking_controller;
+
+		if ( null !== $fraud_prevention_service ) {
+			$this->fraud_prevention_service = $fraud_prevention_service;
+		}
 	}
 
 	/**
@@ -263,6 +282,7 @@ class WooPaymentsCheckoutBridge {
 			'isWooPayEnabled'               => false,
 			'isShopperTrackingEnabled'      => $this->get_frontend_tracking_controller()->is_shopper_tracking_enabled(),
 			'confirmationErrorMessage'      => __( 'There was a problem confirming your payment.', 'woocommerce' ),
+			'fraudPreventionToken'          => $this->get_fraud_prevention_token(),
 		);
 
 		if ( $this->should_expose_checkout_surface() ) {
@@ -305,6 +325,16 @@ class WooPaymentsCheckoutBridge {
 		wp_localize_script( self::CLASSIC_SCRIPT_HANDLE, 'wcpay_core_checkout_config', $config );
 		wp_enqueue_style( self::CLASSIC_STYLE_HANDLE );
 		wp_enqueue_script( self::CLASSIC_SCRIPT_HANDLE );
+
+		if ( '' !== $config['fraudPreventionToken'] ) {
+			wp_register_script( WooPaymentsFraudPreventionService::TOKEN_NAME, false, array(), WC_VERSION, true );
+			wp_enqueue_script( WooPaymentsFraudPreventionService::TOKEN_NAME );
+			wp_add_inline_script(
+				WooPaymentsFraudPreventionService::TOKEN_NAME,
+				"window.wcpayFraudPreventionToken = '" . esc_js( (string) $config['fraudPreventionToken'] ) . "';",
+				'after'
+			);
+		}
 
 		if ( $this->should_expose_checkout_surface() ) {
 			wp_enqueue_script( self::STRIPE_SCRIPT_HANDLE );
@@ -438,6 +468,33 @@ class WooPaymentsCheckoutBridge {
 		}
 
 		return $this->woopay_session_service;
+	}
+
+	/**
+	 * Get the WooPayments fraud-prevention service.
+	 *
+	 * @return WooPaymentsFraudPreventionService
+	 */
+	private function get_fraud_prevention_service(): WooPaymentsFraudPreventionService {
+		if ( ! isset( $this->fraud_prevention_service ) ) {
+			$this->fraud_prevention_service = wc_get_container()->get( WooPaymentsFraudPreventionService::class );
+		}
+
+		return $this->fraud_prevention_service;
+	}
+
+	/**
+	 * Get the fraud-prevention token exposed to checkout clients.
+	 *
+	 * @return string
+	 */
+	private function get_fraud_prevention_token(): string {
+		$fraud_prevention_service = $this->get_fraud_prevention_service();
+		if ( ! $fraud_prevention_service->has_session() || ! $fraud_prevention_service->is_enabled() ) {
+			return '';
+		}
+
+		return $fraud_prevention_service->get_token();
 	}
 
 	/**

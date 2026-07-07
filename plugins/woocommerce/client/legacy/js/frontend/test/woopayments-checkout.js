@@ -32,6 +32,7 @@ describe( 'WooPayments checkout', () => {
 	}
 
 	function createJQueryMock() {
+		const checkoutFormFields = {};
 		const defaultResult = {
 			length: 0,
 			filter: jest.fn( () => defaultResult ),
@@ -57,8 +58,23 @@ describe( 'WooPayments checkout', () => {
 				return bodyResult;
 			} ),
 		};
+		const checkoutFormResult = {
+			length: 1,
+			filter: jest.fn( () => checkoutFormResult ),
+			find: jest.fn( ( selector ) => {
+				const match = selector.match( /input\[name="([^"]+)"\]/ );
+				const name = match ? match[ 1 ] : null;
+				return name && checkoutFormFields[ name ]
+					? checkoutFormFields[ name ]
+					: defaultResult;
+			} ),
+			on: jest.fn( () => checkoutFormResult ),
+			appendTo: jest.fn( () => checkoutFormResult ),
+			trigger: jest.fn( () => checkoutFormResult ),
+			val: jest.fn(),
+		};
 
-		const jQueryMock = jest.fn( ( selectorOrCallback ) => {
+		const jQueryMock = jest.fn( ( selectorOrCallback, attributes = {} ) => {
 			if ( typeof selectorOrCallback === 'function' ) {
 				selectorOrCallback();
 				return defaultResult;
@@ -66,6 +82,36 @@ describe( 'WooPayments checkout', () => {
 
 			if ( selectorOrCallback === document.body ) {
 				return bodyResult;
+			}
+
+			if ( selectorOrCallback === 'form.checkout' ) {
+				return checkoutFormResult;
+			}
+
+			if (
+				selectorOrCallback === '<input />' &&
+				typeof attributes.name === 'string'
+			) {
+				const field = {
+					length: 1,
+					appendTo: jest.fn( () => {
+						checkoutFormFields[ attributes.name ] = field;
+						return field;
+					} ),
+					filter: jest.fn( () => field ),
+					find: jest.fn( () => defaultResult ),
+					on: jest.fn( () => field ),
+					trigger: jest.fn( () => field ),
+					val: jest.fn( ( value ) => {
+						if ( value !== undefined ) {
+							field.value = value;
+						}
+						return field.value;
+					} ),
+					value: '',
+				};
+
+				return field;
 			}
 
 			if (
@@ -78,6 +124,7 @@ describe( 'WooPayments checkout', () => {
 
 			return defaultResult;
 		} );
+		jQueryMock.checkoutFormFields = checkoutFormFields;
 		jQueryMock.post = jest.fn( () => ( {
 			done: jest.fn( ( callback ) => {
 				callback( { status_code: 200 } );
@@ -526,6 +573,23 @@ describe( 'WooPayments checkout', () => {
 		);
 	} );
 
+	test( 'adds the fraud-prevention token before submitting a new-card classic checkout', async () => {
+		window.wcpay_core_checkout_config.fraudPreventionToken =
+			'fraud-token-123';
+		require( '../woopayments-checkout' );
+
+		expect(
+			bodyEventHandlers.checkout_place_order_woocommerce_payments()
+		).toBe( false );
+
+		await flushPromises();
+
+		expect(
+			global.jQuery.checkoutFormFields[ 'wcpay-fraud-prevention-token' ]
+				.value
+		).toBe( 'fraud-token-123' );
+	} );
+
 	test( 'submits classic checkout without creating a payment method when a saved token is selected', async () => {
 		document.body.innerHTML =
 			'<form class="checkout">' +
@@ -544,6 +608,32 @@ describe( 'WooPayments checkout', () => {
 
 		await flushPromises();
 
+		expect( submitElements ).not.toHaveBeenCalled();
+		expect( stripeMock.createPaymentMethod ).not.toHaveBeenCalled();
+	} );
+
+	test( 'adds the fraud-prevention token before submitting a saved-card classic checkout', async () => {
+		window.wcpay_core_checkout_config.fraudPreventionToken =
+			'fraud-token-123';
+		document.body.innerHTML =
+			'<form class="checkout">' +
+			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
+			'<input id="wc-woocommerce_payments-payment-token-new" ' +
+			'name="wc-woocommerce_payments-payment-token" type="radio" value="new" />' +
+			'<input id="wc-woocommerce_payments-payment-token-12" ' +
+			'name="wc-woocommerce_payments-payment-token" type="radio" value="12" checked />' +
+			'<div id="wcpay-core-payment-element"></div>' +
+			'</form>';
+		require( '../woopayments-checkout' );
+
+		expect(
+			bodyEventHandlers.checkout_place_order_woocommerce_payments()
+		).toBe( true );
+
+		expect(
+			global.jQuery.checkoutFormFields[ 'wcpay-fraud-prevention-token' ]
+				.value
+		).toBe( 'fraud-token-123' );
 		expect( submitElements ).not.toHaveBeenCalled();
 		expect( stripeMock.createPaymentMethod ).not.toHaveBeenCalled();
 	} );
@@ -820,6 +910,8 @@ describe( 'WooPayments checkout', () => {
 		window.wcpay_core_checkout_config.cartTotal = '0';
 		window.wcpay_core_checkout_config.createSetupIntentNonce =
 			'setup_nonce';
+		window.wcpay_core_checkout_config.fraudPreventionToken =
+			'fraud-token-123';
 		global.jQuery.post.mockReturnValueOnce( {
 			done: jest.fn( ( callback ) => {
 				callback( {
@@ -862,6 +954,11 @@ describe( 'WooPayments checkout', () => {
 		expect( stripeMock.confirmSetup ).not.toHaveBeenCalled();
 		expect( setupIntentField ).not.toBeNull();
 		expect( setupIntentField.value ).toBe( 'seti_native' );
+		expect(
+			addPaymentMethodForm.querySelector(
+				'input[name="wcpay-fraud-prevention-token"]'
+			).value
+		).toBe( 'fraud-token-123' );
 		expect( addPaymentMethodForm.submit ).toHaveBeenCalled();
 	} );
 

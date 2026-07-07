@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCh
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionService;
 use WC_Unit_Test_Case;
@@ -21,6 +22,8 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		remove_all_filters( 'wcpay_payment_fields_js_config' );
+		wp_dequeue_script( 'wcpay-fraud-prevention-token' );
+		wp_deregister_script( 'wcpay-fraud-prevention-token' );
 		wp_set_current_user( 0 );
 		parent::tearDown();
 	}
@@ -326,6 +329,69 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should expose the fraud-prevention token in card checkout config and Blocks payment method data.
+	 */
+	public function test_get_payment_fields_js_config_includes_fraud_prevention_token_when_enabled(): void {
+		$session = $this->create_session();
+		$session->set( WooPaymentsFraudPreventionService::TOKEN_NAME, 'fraud-token-123' );
+
+		$legacy_runtime  = $this->create_legacy_runtime_for_bridge();
+		$account_service = $this->create_account_service_for_bridge( true );
+		$legacy_runtime->method( 'get_gateway_prepared_customer_data' )->willReturn( array() );
+		$legacy_runtime->method( 'can_handle_checkout_bridge_callbacks' )->willReturn( true );
+
+		$bridge = new WooPaymentsCheckoutBridge();
+		$bridge->init(
+			$legacy_runtime,
+			$account_service,
+			$this->create_woopay_session_service_for_bridge( true ),
+			$this->create_frontend_styles_service_for_bridge(),
+			$this->create_frontend_tracking_controller_for_bridge(),
+			$this->create_fraud_prevention_service( true, $session )
+		);
+
+		$config = $bridge->get_payment_fields_js_config();
+		$data   = $bridge->get_blocks_payment_method_data();
+
+		$this->assertSame( 'fraud-token-123', $config['fraudPreventionToken'] );
+		$this->assertSame( 'fraud-token-123', $data['fraudPreventionToken'] );
+	}
+
+	/**
+	 * @testdox Should publish the fraud-prevention token on window when rendering classic payment fields.
+	 */
+	public function test_payment_fields_publish_fraud_prevention_token_inline_script_when_enabled(): void {
+		$session = $this->create_session();
+		$session->set( WooPaymentsFraudPreventionService::TOKEN_NAME, 'fraud-token-123' );
+
+		$legacy_runtime  = $this->create_legacy_runtime_for_bridge();
+		$account_service = $this->create_account_service_for_bridge( true );
+		$legacy_runtime->method( 'get_gateway_prepared_customer_data' )->willReturn( array() );
+		$legacy_runtime->method( 'can_handle_checkout_bridge_callbacks' )->willReturn( true );
+
+		$bridge = new WooPaymentsCheckoutBridge();
+		$bridge->init(
+			$legacy_runtime,
+			$account_service,
+			$this->create_woopay_session_service_for_bridge( true ),
+			$this->create_frontend_styles_service_for_bridge(),
+			$this->create_frontend_tracking_controller_for_bridge(),
+			$this->create_fraud_prevention_service( true, $session )
+		);
+
+		ob_start();
+		$bridge->render_payment_fields();
+		ob_get_clean();
+
+		$this->assertTrue( wp_script_is( WooPaymentsFraudPreventionService::TOKEN_NAME, 'enqueued' ) );
+		$inline_scripts = wp_scripts()->registered[ WooPaymentsFraudPreventionService::TOKEN_NAME ]->extra['after'] ?? array();
+		$this->assertStringContainsString(
+			"window.wcpayFraudPreventionToken = 'fraud-token-123';",
+			implode( "\n", $inline_scripts )
+		);
+	}
+
+	/**
 	 * @testdox Should hide checkout surface controls when the Core-owned account readiness fails.
 	 */
 	public function test_get_payment_fields_js_config_hides_native_controls_when_account_is_not_ready(): void {
@@ -442,6 +508,77 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			->willReturn( true );
 
 		return $account_service;
+	}
+
+	/**
+	 * Create a fraud-prevention service with controlled account eligibility.
+	 *
+	 * @param bool        $eligible Whether card-testing protection is eligible.
+	 * @param \WC_Session $session  WooCommerce session test double.
+	 * @return WooPaymentsFraudPreventionService
+	 */
+	private function create_fraud_prevention_service( bool $eligible, \WC_Session $session ): WooPaymentsFraudPreventionService {
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_cached_account_data' ) )
+			->getMock();
+		$account_service
+			->method( 'get_cached_account_data' )
+			->willReturn( array( 'card_testing_protection_eligible' => $eligible ) );
+
+		$service = new WooPaymentsFraudPreventionService( $session );
+		$service->init( $account_service );
+
+		return $service;
+	}
+
+	/**
+	 * Create a WooCommerce session test double.
+	 *
+	 * @return \WC_Session
+	 */
+	private function create_session(): \WC_Session {
+		return new class() extends \WC_Session {
+			/**
+			 * Session data.
+			 *
+			 * @var array<string,mixed>
+			 */
+			protected $_data = array(); // phpcs:ignore PSR2.Classes.PropertyDeclaration.Underscore
+
+			/**
+			 * Get a session value.
+			 *
+			 * @param string $key           Session key.
+			 * @param mixed  $default_value Default value.
+			 * @return mixed
+			 */
+			public function get( $key, $default_value = null ) {
+				return $this->_data[ $key ] ?? $default_value;
+			}
+
+			/**
+			 * Set a session value.
+			 *
+			 * @param string $key   Session key.
+			 * @param mixed  $value Session value.
+			 */
+			public function set( $key, $value ) {
+				if ( null === $value ) {
+					unset( $this->_data[ $key ] );
+					return;
+				}
+
+				$this->_data[ $key ] = $value;
+			}
+
+			/**
+			 * Set the customer session cookie.
+			 *
+			 * @param bool $set Whether to set the cookie.
+			 */
+			public function set_customer_session_cookie( bool $set ): void {}
+		};
 	}
 
 	/**
