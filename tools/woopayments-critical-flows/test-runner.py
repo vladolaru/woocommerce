@@ -12,6 +12,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 RUNNER = REPO / "tools/woopayments-critical-flows/run.sh"
+COMMON = REPO / "tools/woopayments-critical-flows/lib/common.sh"
 
 
 def run_runner(*args: str, evidence_dir: Path) -> subprocess.CompletedProcess[str]:
@@ -60,9 +61,32 @@ def test_unwired_deterministic_flow_blocks_and_writes_rollup() -> None:
         ]
 
 
+def test_unwired_log_clean_assertion_blocks() -> None:
+    script = f"""
+source {COMMON}
+wp_store() {{ echo ok; }}
+assert_log_clean target
+"""
+
+    result = subprocess.run(
+        ["bash", "-c", script],
+        cwd=REPO,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert result.returncode == 3
+    assert "BLOCKED" in result.stdout
+    assert "debug.log scan" in result.stdout
+
+
 def main() -> None:
     test_unwired_deterministic_flow_blocks_and_writes_rollup()
+    test_unwired_log_clean_assertion_blocks()
     print("PASS test_unwired_deterministic_flow_blocks_and_writes_rollup")
+    print("PASS test_unwired_log_clean_assertion_blocks")
 
 
 if __name__ == "__main__":

@@ -48,10 +48,10 @@ assert_meta_present() { # <store> <order_id> <meta_key>  (Bucket-E key must exis
 }
 
 assert_log_clean() { # <store>  (no PHP notice/warning/fatal/deprecation since marker)
-  local s out
+  local s
   s="$1"
-  out="$(wp_store "$s" eval 'echo "ok";' 2>&1)"   # placeholder; wire to debug.log scan per env
-  echo "INFO log-clean check for $s is a stub — wire to the store's debug.log scan"
+  echo "BLOCKED log-clean check for $s: debug.log scan is not wired for this local store"
+  return 3
 }
 
 # ref_vs_target_diff <metric-name> <ref-value> <target-value>
