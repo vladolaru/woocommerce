@@ -19,6 +19,13 @@ use WC_Unit_Test_Case;
 class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 
 	/**
+	 * Expected option key for the native failed-webhook fetch timestamp.
+	 *
+	 * @var string
+	 */
+	private const EXPECTED_LAST_FETCH_OPTION = 'woocommerce_native_woopayments_last_webhook_fetch';
+
+	/**
 	 * The System Under Test.
 	 *
 	 * @var WooPaymentsWebhookReliabilityService
@@ -46,6 +53,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		foreach ( array( 'evt_1', 'evt_process', 'evt_backlog_1', 'evt_backlog_2', 'evt_backlog_3', 'evt_backlog_4', 'evt_backlog_5' ) as $event_id ) {
 			delete_transient( WooPaymentsFailedEventStore::TRANSIENT_PREFIX . md5( $event_id ) );
 		}
+		delete_option( self::EXPECTED_LAST_FETCH_OPTION );
 		parent::tearDown();
 	}
 
@@ -136,6 +144,29 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 			),
 			$scheduler->scheduled_jobs
 		);
+	}
+
+	/**
+	 * @testdox Fetching failed events records the last fetch timestamp for supportability.
+	 */
+	public function test_fetch_events_records_last_fetch_timestamp(): void {
+		$this->assertTrue( defined( WooPaymentsWebhookReliabilityService::class . '::LAST_FETCH_OPTION_KEY' ), 'Webhook reliability should expose its last-fetch option key.' );
+		$this->assertSame( self::EXPECTED_LAST_FETCH_OPTION, constant( WooPaymentsWebhookReliabilityService::class . '::LAST_FETCH_OPTION_KEY' ) );
+
+		$service = $this->create_service(
+			new RecordingActionSchedulerService(),
+			wc_get_container()->get( WooPaymentsFailedEventStore::class ),
+			new StaticFailedEventsProvider(),
+			new RecordingEventIngestor()
+		);
+
+		$before = time();
+		$service->fetch_events_and_schedule_processing_jobs();
+		$after = time();
+
+		$last_fetch = (int) get_option( self::EXPECTED_LAST_FETCH_OPTION, 0 );
+		$this->assertGreaterThanOrEqual( $before, $last_fetch );
+		$this->assertLessThanOrEqual( $after, $last_fetch );
 	}
 
 	/**

@@ -421,6 +421,8 @@ final class WooCommerce {
 		$container->get( Automattic\WooCommerce\Internal\Admin\Settings\PaymentsController::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsController::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNavigationController::class )->register();
+		$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStatusReport::class )->register();
+		$container->get( Automattic\WooCommerce\Internal\Payments\NativePaymentsCliCommand::class )->register();
 
 		/*
 		 * Native WooPayments + Multi-Currency controllers.

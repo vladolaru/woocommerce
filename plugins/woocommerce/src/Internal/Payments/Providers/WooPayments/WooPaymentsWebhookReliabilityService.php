@@ -40,6 +40,13 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	const WEBHOOK_PROCESS_EVENT_ACTION = 'wcpay_webhook_process_event';
 
 	/**
+	 * Option key for the last failed-webhook fetch timestamp.
+	 *
+	 * @var string
+	 */
+	const LAST_FETCH_OPTION_KEY = 'woocommerce_native_woopayments_last_webhook_fetch';
+
+	/**
 	 * Runtime owner arbiter.
 	 *
 	 * @var NativePaymentsRuntimeArbiter
@@ -130,6 +137,7 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	 */
 	public function fetch_events_and_schedule_processing_jobs(): void {
 		$response = $this->failed_events_provider->get_failed_webhook_events();
+		update_option( self::LAST_FETCH_OPTION_KEY, time(), false );
 
 		foreach ( $response['data'] as $event ) {
 			if ( empty( $event['id'] ) || ! is_string( $event['id'] ) ) {

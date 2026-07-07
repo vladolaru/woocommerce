@@ -90,6 +90,11 @@ class NativePaymentsRuntimeArbiter {
 	 * the cutover release) only when it is ready to own the site. Even when enabled, the plugin still
 	 * wins while it is active.
 	 *
+	 * Early native registrations resolve this filter while WooCommerce is being loaded. To affect all
+	 * native registrations in a request, set the filter from a mu-plugin or earlier bootstrap code.
+	 * Filters added from ordinary plugins may run too late for services registered during WooCommerce
+	 * inclusion.
+	 *
 	 * @var string
 	 */
 	const FILTER_NATIVE_ENABLED = 'woocommerce_native_payments_enabled';
@@ -177,6 +182,10 @@ class NativePaymentsRuntimeArbiter {
 	public function is_native_runtime_enabled(): bool {
 		/**
 		 * Filters whether the core-native payments runtime is enabled for this site.
+		 *
+		 * This value is resolved during WooCommerce loading for early native registrations. Use a
+		 * mu-plugin or earlier bootstrap when the filter must control the whole native payments
+		 * registration cluster for the request.
 		 *
 		 * @since 11.0.0
 		 *
