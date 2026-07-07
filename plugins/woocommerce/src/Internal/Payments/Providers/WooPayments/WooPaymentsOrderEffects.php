@@ -182,7 +182,7 @@ class WooPaymentsOrderEffects {
 		}
 
 		try {
-			$token = $token_service->get_or_create_card_token_for_user( $payment_method_id, $order->get_user_id() );
+			$token = $token_service->get_or_create_token_for_user( $payment_method_id, $order->get_user_id() );
 			if ( null !== $token ) {
 				$token_service->attach_token_to_order( $order, $token );
 				$token_service->sync_related_subscriptions_payment_token( $order, $token, $payment_method_id, $customer_id );

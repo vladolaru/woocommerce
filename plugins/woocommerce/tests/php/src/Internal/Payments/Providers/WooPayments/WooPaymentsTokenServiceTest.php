@@ -9,6 +9,10 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsAmazonPayToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
 use RuntimeException;
@@ -44,6 +48,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_pm_customer_2' );
 		delete_option( 'not_wcpay_pm_customer' );
 		remove_all_filters( 'pre_option_wcpay_pm_customer_1' );
+		remove_all_filters( 'woocommerce_payment_token_class' );
 		parent::tearDown();
 	}
 
@@ -184,6 +189,93 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$this->assertNull( $sut->get_or_create_card_token_for_user( 'pm_incomplete', $user_id ), 'Incomplete card details should not create invalid WooCommerce tokens.' );
 		$this->assertNull( $sut->get_or_create_card_token_for_user( '', $user_id ), 'Empty payment method IDs should not create tokens.' );
 		$this->assertNull( $sut->get_or_create_card_token_for_user( 'pm_incomplete', 0 ), 'Guest customers cannot receive saved card tokens.' );
+	}
+
+	/**
+	 * @testdox Should create reusable non-card tokens from WooPayments payment method details.
+	 *
+	 * @dataProvider reusable_non_card_token_data
+	 *
+	 * @param string              $payment_method_id    Provider payment method ID.
+	 * @param array<string,mixed> $payment_method       Payment method details.
+	 * @param string              $expected_class       Expected token class.
+	 * @param string              $expected_gateway_id  Expected WooPayments gateway ID.
+	 * @param string              $expected_token_type  Expected token type.
+	 * @param string              $metadata_getter      Token metadata getter.
+	 * @param string              $expected_meta_value  Expected metadata value.
+	 */
+	public function test_creates_reusable_non_card_tokens_from_payment_method_details( string $payment_method_id, array $payment_method, string $expected_class, string $expected_gateway_id, string $expected_token_type, string $metadata_getter, string $expected_meta_value ): void {
+		$user_id = $this->factory()->user->create();
+		$sut     = $this->create_service(
+			array(
+				$payment_method_id => $payment_method,
+			)
+		);
+
+		$token = $sut->get_or_create_token_for_user( $payment_method_id, $user_id );
+
+		$this->assertInstanceOf( $expected_class, $token );
+		$this->assertGreaterThan( 0, $token->get_id(), 'Created reusable tokens should be persisted.' );
+		$this->assertSame( $expected_gateway_id, $token->get_gateway_id() );
+		$this->assertSame( $expected_token_type, $token->get_type() );
+		$this->assertSame( $user_id, $token->get_user_id() );
+		$this->assertSame( $payment_method_id, $token->get_token() );
+		$this->assertSame( $expected_meta_value, $token->{$metadata_getter}() );
+	}
+
+	/**
+	 * Data provider for reusable non-card token creation.
+	 *
+	 * @return array<string,array{string,array<string,mixed>,string,string,string,string,string}>
+	 */
+	public function reusable_non_card_token_data(): array {
+		return array(
+			'SEPA token'       => array(
+				'pm_sepa',
+				array(
+					'id'         => 'pm_sepa',
+					'type'       => 'sepa_debit',
+					'sepa_debit' => array(
+						'last4' => '6789',
+					),
+				),
+				WooPaymentsSepaToken::class,
+				'woocommerce_payments_sepa_debit',
+				'wcpay_sepa',
+				'get_last4',
+				'6789',
+			),
+			'Link token'       => array(
+				'pm_link',
+				array(
+					'id'   => 'pm_link',
+					'type' => 'link',
+					'link' => array(
+						'email' => 'buyer@example.com',
+					),
+				),
+				WooPaymentsLinkToken::class,
+				OrderPaymentStore::GATEWAY_ID,
+				'wcpay_link',
+				'get_email',
+				'buyer@example.com',
+			),
+			'Amazon Pay token' => array(
+				'pm_amazon',
+				array(
+					'id'              => 'pm_amazon',
+					'type'            => 'amazon_pay',
+					'billing_details' => array(
+						'email' => 'buyer@example.com',
+					),
+				),
+				WooPaymentsAmazonPayToken::class,
+				'woocommerce_payments_amazon_pay',
+				'wcpay_amazon_pay',
+				'get_email',
+				'***uyer@example.com',
+			),
+		);
 	}
 
 	/**
@@ -391,23 +483,69 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should keep only locally supported WooPayments card tokens in native token lists.
+	 * @testdox Should keep only locally supported WooPayments tokens in native token lists.
 	 */
-	public function test_keeps_only_supported_native_card_tokens_in_customer_token_lists(): void {
-		$user_id      = $this->factory()->user->create();
-		$card_token   = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_card' );
-		$bank_token   = $this->create_echeck_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_bank' );
+	public function test_keeps_only_supported_native_tokens_in_customer_token_lists(): void {
+		$user_id    = $this->factory()->user->create();
+		$card_token = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_card' );
+		$link_token = new WooPaymentsLinkToken();
+		$bank_token = $this->create_echeck_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_bank' );
+		$sepa_token = new WooPaymentsSepaToken();
+
+		$link_token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$link_token->set_user_id( $user_id );
+		$link_token->set_token( 'pm_link' );
+		$link_token->set_email( 'buyer@example.com' );
+		$link_token->save();
+
+		$sepa_token->set_gateway_id( 'woocommerce_payments_sepa_debit' );
+		$sepa_token->set_user_id( $user_id );
+		$sepa_token->set_token( 'pm_sepa' );
+		$sepa_token->set_last4( '6789' );
+		$sepa_token->save();
+
 		$input_tokens = array(
 			$card_token->get_id() => $card_token,
+			$link_token->get_id() => $link_token,
 			$bank_token->get_id() => $bank_token,
+		);
+		$sepa_tokens  = array(
+			$sepa_token->get_id() => $sepa_token,
 		);
 		$this->create_service();
 
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered customer-token filter.
 		$result = apply_filters( 'woocommerce_get_customer_payment_tokens', $input_tokens, $user_id, OrderPaymentStore::GATEWAY_ID );
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered customer-token filter.
+		$sepa_result = apply_filters( 'woocommerce_get_customer_payment_tokens', $sepa_tokens, $user_id, 'woocommerce_payments_sepa_debit' );
 
 		$this->assertArrayHasKey( $card_token->get_id(), $result, 'Native WooPayments card tokens should remain available.' );
+		$this->assertArrayHasKey( $link_token->get_id(), $result, 'Native WooPayments Link tokens should remain available under the base gateway.' );
 		$this->assertArrayNotHasKey( $bank_token->get_id(), $result, 'Native WooPayments should not expose unsupported non-card tokens.' );
+		$this->assertArrayHasKey( $sepa_token->get_id(), $sepa_result, 'Native WooPayments SEPA tokens should remain available under the SEPA gateway.' );
+	}
+
+	/**
+	 * @testdox Should resolve reusable non-card WooPayments tokens attached to renewal orders.
+	 */
+	public function test_resolves_payment_method_id_from_order_attached_reusable_non_card_token(): void {
+		$user_id = $this->factory()->user->create();
+		$token   = new WooPaymentsSepaToken();
+		$order   = wc_create_order();
+		$sut     = $this->create_service();
+
+		$this->register_token_class_map();
+
+		$token->set_gateway_id( 'woocommerce_payments_sepa_debit' );
+		$token->set_user_id( $user_id );
+		$token->set_token( 'pm_sepa_saved' );
+		$token->set_last4( '6789' );
+		$token->save();
+
+		$order->add_payment_token( $token );
+		$order->save();
+
+		$this->assertSame( 'pm_sepa_saved', $sut->resolve_payment_method_id_from_order_token_id( (string) $token->get_id(), $order ) );
 	}
 
 	/**
@@ -537,6 +675,15 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$this->created_services[] = $sut;
 
 		return $sut;
+	}
+
+	/**
+	 * Register the native WooPayments token class map for token-loading tests.
+	 */
+	private function register_token_class_map(): void {
+		$controller = new WooPaymentsTokenClassMapController();
+		$controller->init( new StaticNativeRuntimeArbiter( true ) );
+		$controller->register();
 	}
 
 	/**

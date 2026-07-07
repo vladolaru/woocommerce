@@ -403,6 +403,7 @@ class WooPaymentsProviderGatewayAdapter {
 	 * @throws WooPaymentsApiException When the provider request fails.
 	 */
 	private function charge_via_native_transport( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
+		$context            = $this->with_saved_payment_token_method_type( $context );
 		$order              = $context->get_order();
 		$payment_credential = WooPaymentsOrderEffects::payment_credential_from_context( $context, $this->get_token_service() );
 
@@ -445,6 +446,40 @@ class WooPaymentsProviderGatewayAdapter {
 	}
 
 	/**
+	 * Add saved-token payment method type to provider data when one can be resolved.
+	 *
+	 * @param PaymentContext $context Payment context.
+	 * @return PaymentContext
+	 */
+	private function with_saved_payment_token_method_type( PaymentContext $context ): PaymentContext {
+		$payment_data  = $context->get_payment_data();
+		$payment_token = isset( $payment_data['payment_token'] ) ? (string) $payment_data['payment_token'] : '';
+		if ( '' === $payment_token || 'new' === $payment_token ) {
+			return $context;
+		}
+
+		$provider_data       = $context->get_provider_data();
+		$payment_method_type = ! empty( $provider_data['scheduled_subscription_payment'] )
+			? $this->get_token_service()->resolve_payment_method_type_from_order_token_id( $payment_token, $context->get_order() )
+			: $this->get_token_service()->resolve_payment_method_type_from_token_id( $payment_token, $context->get_order()->get_user_id() );
+
+		if ( '' === $payment_method_type ) {
+			return $context;
+		}
+
+		$provider_data[ WooPaymentsIntentCodec::PROVIDER_DATA_SAVED_PAYMENT_METHOD_TYPE ] = $payment_method_type;
+
+		return new PaymentContext(
+			$context->get_order(),
+			$context->get_gateway_id(),
+			$context->get_payment_method_id(),
+			$context->get_payment_data(),
+			$provider_data,
+			$context->get_amount()
+		);
+	}
+
+	/**
 	 * Create or confirm a zero-amount setup intent through the native WooPayments transport.
 	 *
 	 * @param PaymentContext $context         Payment context.
@@ -453,6 +488,7 @@ class WooPaymentsProviderGatewayAdapter {
 	 * @throws WooPaymentsApiException When the provider request fails.
 	 */
 	private function setup_intent_via_native_transport( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
+		$context            = $this->with_saved_payment_token_method_type( $context );
 		$order              = $context->get_order();
 		$payment_credential = WooPaymentsOrderEffects::payment_credential_from_context( $context, $this->get_token_service() );
 

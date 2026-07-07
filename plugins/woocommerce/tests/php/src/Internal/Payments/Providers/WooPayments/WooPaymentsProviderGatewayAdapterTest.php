@@ -15,7 +15,9 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentType;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
 use WC_Order;
@@ -49,6 +51,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	public function tearDown(): void {
 		remove_all_filters( 'woocommerce_native_woopayments_is_recurring_payment' );
 		remove_all_filters( 'woocommerce_native_woopayments_related_subscriptions_for_order' );
+		remove_all_filters( 'woocommerce_payment_token_class' );
 		remove_all_filters( 'wcpay_metadata_from_order' );
 		delete_option( 'woocommerce_tax_based_on' );
 		delete_option( 'woocommerce_calc_taxes' );
@@ -1527,6 +1530,96 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Scheduled subscription charges should derive payment method types from saved SEPA tokens.
+	 */
+	public function test_scheduled_subscription_charge_uses_saved_sepa_token_payment_method_type(): void {
+		$user_id          = $this->factory()->user->create();
+		$order            = $this->create_woopayments_order();
+		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
+		$saved_token      = $this->create_sepa_token( $user_id, 'pm_sepa_saved' );
+		$api_client       = new class() extends WooPaymentsApiClient {
+			/**
+			 * Last request data.
+			 *
+			 * @var array<string,mixed>
+			 */
+			public array $last_request_data = array();
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Create and confirm a payment intention.
+			 *
+			 * @param array<string,mixed> $request_data Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
+				if ( 'pm_sepa_saved' !== $request_data['payment_method'] || 'key_sepa_renewal' !== $idempotency_key ) {
+					throw new \RuntimeException( 'SEPA saved token was not resolved before the native renewal request.' );
+				}
+
+				$this->last_request_data = $request_data;
+
+				return array(
+					'id'             => 'pi_sepa_renewal',
+					'status'         => 'succeeded',
+					'customer'       => 'cus_native',
+					'payment_method' => 'pm_sepa_saved',
+					'currency'       => 'eur',
+					'charges'        => array(
+						'total_count' => 0,
+						'data'        => array(),
+					),
+				);
+			}
+		};
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+
+		$this->register_token_class_map();
+
+		$order->set_customer_id( $user_id );
+		$order->set_currency( 'EUR' );
+		$order->add_payment_token( $saved_token );
+		$order->save();
+
+		$customer_service->expects( $this->once() )
+			->method( 'get_or_create_customer_id_for_order' )
+			->willReturn( 'cus_native' );
+
+		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service );
+		$outcome = $sut->charge(
+			PaymentContext::for_checkout(
+				$order,
+				'woocommerce_payments_sepa_debit',
+				'',
+				array(
+					'payment_token'       => (string) $saved_token->get_id(),
+					'save_payment_method' => false,
+				),
+				array(
+					'scheduled_subscription_payment' => true,
+				)
+			),
+			'key_sepa_renewal'
+		);
+
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		$this->assertSame( array( 'sepa_debit' ), $api_client->last_request_data['payment_method_types'] );
+		$this->assertTrue( $api_client->last_request_data['off_session'] );
+	}
+
+	/**
 	 * @testdox Charge should save and attach requested card tokens before returning a successful native outcome.
 	 */
 	public function test_charge_saves_and_attaches_requested_card_token(): void {
@@ -2708,6 +2801,33 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$token->save();
 
 		return $token;
+	}
+
+	/**
+	 * Create a persisted WooPayments SEPA token.
+	 *
+	 * @param int    $user_id           User ID.
+	 * @param string $payment_method_id Provider payment method ID.
+	 * @return WooPaymentsSepaToken
+	 */
+	private function create_sepa_token( int $user_id, string $payment_method_id ): WooPaymentsSepaToken {
+		$token = new WooPaymentsSepaToken();
+		$token->set_gateway_id( 'woocommerce_payments_sepa_debit' );
+		$token->set_user_id( $user_id );
+		$token->set_token( $payment_method_id );
+		$token->set_last4( '6789' );
+		$token->save();
+
+		return $token;
+	}
+
+	/**
+	 * Register the native WooPayments token class map for token-loading tests.
+	 */
+	private function register_token_class_map(): void {
+		$controller = new WooPaymentsTokenClassMapController();
+		$controller->init( new StaticNativeRuntimeArbiter( true ) );
+		$controller->register();
 	}
 
 	/**

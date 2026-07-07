@@ -22,6 +22,13 @@ use WP_Error;
 class WooPaymentsIntentCodec {
 
 	/**
+	 * Provider-data key for saved-token Stripe payment method type.
+	 *
+	 * @var string
+	 */
+	public const PROVIDER_DATA_SAVED_PAYMENT_METHOD_TYPE = 'saved_payment_method_type';
+
+	/**
 	 * Build the native WooPayments charge request payload.
 	 *
 	 * @since 11.0.0
@@ -731,6 +738,14 @@ class WooPaymentsIntentCodec {
 	 * @return array<int,string>
 	 */
 	private static function payment_method_types_for_request( array $provider_data, string $currency, WooPaymentsAccountService $account_service ): array {
+		$saved_payment_method_type = isset( $provider_data[ self::PROVIDER_DATA_SAVED_PAYMENT_METHOD_TYPE ] ) && is_scalar( $provider_data[ self::PROVIDER_DATA_SAVED_PAYMENT_METHOD_TYPE ] )
+			? (string) $provider_data[ self::PROVIDER_DATA_SAVED_PAYMENT_METHOD_TYPE ]
+			: '';
+
+		if ( '' !== $saved_payment_method_type ) {
+			return array( $saved_payment_method_type );
+		}
+
 		$submitted_types = $provider_data[ WooPaymentsExpressPaymentMethodTypes::PROVIDER_DATA_KEY ] ?? array();
 		$context         = isset( $provider_data[ WooPaymentsExpressPaymentMethodTypes::PROVIDER_CONTEXT_KEY ] ) && is_scalar( $provider_data[ WooPaymentsExpressPaymentMethodTypes::PROVIDER_CONTEXT_KEY ] )
 			? (string) $provider_data[ WooPaymentsExpressPaymentMethodTypes::PROVIDER_CONTEXT_KEY ]

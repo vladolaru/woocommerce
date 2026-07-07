@@ -10,6 +10,9 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsAmazonPayToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
 use RuntimeException;
 use Throwable;
 use WC_Order;
@@ -33,6 +36,30 @@ class WooPaymentsTokenService {
 	private const CACHED_PAYMENT_METHODS_META_KEY = '_wcpay_payment_methods';
 
 	private const CACHE_CLEAR_BATCH_SIZE = 500;
+
+	private const PAYMENT_METHOD_TYPE_CARD = 'card';
+
+	private const PAYMENT_METHOD_TYPE_CARD_PRESENT = 'card_present';
+
+	private const PAYMENT_METHOD_TYPE_SEPA = 'sepa_debit';
+
+	private const PAYMENT_METHOD_TYPE_LINK = 'link';
+
+	private const PAYMENT_METHOD_TYPE_AMAZON_PAY = 'amazon_pay';
+
+	private const GATEWAY_IDS_BY_PAYMENT_METHOD_TYPE = array(
+		self::PAYMENT_METHOD_TYPE_CARD         => OrderPaymentStore::GATEWAY_ID,
+		self::PAYMENT_METHOD_TYPE_CARD_PRESENT => OrderPaymentStore::GATEWAY_ID,
+		self::PAYMENT_METHOD_TYPE_LINK         => OrderPaymentStore::GATEWAY_ID,
+		self::PAYMENT_METHOD_TYPE_SEPA         => OrderPaymentStore::GATEWAY_ID_PREFIX . 'sepa_debit',
+		self::PAYMENT_METHOD_TYPE_AMAZON_PAY   => OrderPaymentStore::GATEWAY_ID_PREFIX . 'amazon_pay',
+	);
+
+	private const PAYMENT_METHOD_TYPES_BY_TOKEN_TYPE = array(
+		WooPaymentsSepaToken::TYPE      => self::PAYMENT_METHOD_TYPE_SEPA,
+		WooPaymentsLinkToken::TYPE      => self::PAYMENT_METHOD_TYPE_LINK,
+		WooPaymentsAmazonPayToken::TYPE => self::PAYMENT_METHOD_TYPE_AMAZON_PAY,
+	);
 
 	/**
 	 * Payment method details service.
@@ -188,9 +215,6 @@ class WooPaymentsTokenService {
 	/**
 	 * Handle the woocommerce_get_customer_payment_tokens filter.
 	 *
-	 * Native WooPayments only persists reusable card tokens today, so it should not expose
-	 * unsupported non-card tokens under the native WooPayments gateway ID.
-	 *
 	 * @internal
 	 *
 	 * @param array<int|string,mixed> $tokens     Customer payment tokens.
@@ -199,12 +223,16 @@ class WooPaymentsTokenService {
 	 * @return array<int|string,mixed>
 	 */
 	public function handle_woocommerce_get_customer_payment_tokens( array $tokens, $user_id, string $gateway_id ): array {
-		if ( 0 >= absint( $user_id ) || ( '' !== $gateway_id && OrderPaymentStore::GATEWAY_ID !== $gateway_id ) ) {
+		if ( 0 >= absint( $user_id ) || ( '' !== $gateway_id && ! $this->is_native_woopayments_gateway_id( $gateway_id ) ) ) {
 			return $tokens;
 		}
 
 		foreach ( $tokens as $token_key => $token ) {
-			if ( $token instanceof WC_Payment_Token && OrderPaymentStore::GATEWAY_ID === $token->get_gateway_id() && ! $token instanceof WC_Payment_Token_CC ) {
+			if (
+				$token instanceof WC_Payment_Token
+				&& $this->is_native_woopayments_gateway_id( $token->get_gateway_id() )
+				&& ! $this->is_supported_native_woopayments_token( $token )
+			) {
 				unset( $tokens[ $token_key ] );
 			}
 		}
@@ -288,7 +316,7 @@ class WooPaymentsTokenService {
 		}
 
 		$token = WC_Payment_Tokens::get( $token_id_int );
-		if ( ! $token instanceof WC_Payment_Token || OrderPaymentStore::GATEWAY_ID !== $token->get_gateway_id() ) {
+		if ( ! $token instanceof WC_Payment_Token || ! $this->is_supported_native_woopayments_token( $token ) ) {
 			return '';
 		}
 
@@ -314,11 +342,70 @@ class WooPaymentsTokenService {
 			return null;
 		}
 
-		if ( OrderPaymentStore::GATEWAY_ID !== $token->get_gateway_id() || $user_id !== $token->get_user_id() ) {
+		if ( ! $this->is_supported_native_woopayments_token( $token ) || $user_id !== $token->get_user_id() ) {
 			return null;
 		}
 
 		return $token;
+	}
+
+	/**
+	 * Resolve a WooCommerce payment token ID to the Stripe payment method type.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @param string $token_id WooCommerce payment token ID.
+	 * @param int    $user_id  Expected token owner user ID.
+	 * @return string Stripe payment method type, or empty string when invalid.
+	 */
+	public function resolve_payment_method_type_from_token_id( string $token_id, int $user_id ): string {
+		$token = $this->get_valid_token_from_token_id( $token_id, $user_id );
+
+		return $token instanceof WC_Payment_Token ? $this->get_payment_method_type_for_token( $token ) : '';
+	}
+
+	/**
+	 * Resolve an order-attached WooCommerce payment token ID to the Stripe payment method type.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @param string   $token_id WooCommerce payment token ID.
+	 * @param WC_Order $order    Order that must contain the token.
+	 * @return string Stripe payment method type, or empty string when invalid.
+	 */
+	public function resolve_payment_method_type_from_order_token_id( string $token_id, WC_Order $order ): string {
+		$token_id_int = absint( $token_id );
+		if ( 0 >= $token_id_int || ! in_array( $token_id_int, array_map( 'absint', $order->get_payment_tokens() ), true ) ) {
+			return '';
+		}
+
+		$token = WC_Payment_Tokens::get( $token_id_int );
+
+		return $token instanceof WC_Payment_Token && $this->is_supported_native_woopayments_token( $token )
+			? $this->get_payment_method_type_for_token( $token )
+			: '';
+	}
+
+	/**
+	 * Get the Stripe payment method type for a native WooPayments token.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @param WC_Payment_Token $token Payment token.
+	 * @return string Stripe payment method type, or empty string when unsupported.
+	 */
+	public function get_payment_method_type_for_token( WC_Payment_Token $token ): string {
+		if ( ! $this->is_supported_native_woopayments_token( $token ) ) {
+			return '';
+		}
+
+		if ( $token instanceof WC_Payment_Token_CC && OrderPaymentStore::GATEWAY_ID === $token->get_gateway_id() ) {
+			return self::PAYMENT_METHOD_TYPE_CARD;
+		}
+
+		$token_type = (string) $token->get_type();
+
+		return self::PAYMENT_METHOD_TYPES_BY_TOKEN_TYPE[ $token_type ] ?? '';
 	}
 
 	/**
@@ -331,28 +418,78 @@ class WooPaymentsTokenService {
 	 * @return WC_Payment_Token_CC|null Saved card token, or null when details are unavailable.
 	 */
 	public function get_or_create_card_token_for_user( string $payment_method_id, int $user_id ): ?WC_Payment_Token_CC {
+		$token = $this->get_or_create_token_for_user( $payment_method_id, $user_id );
+
+		return $token instanceof WC_Payment_Token_CC ? $token : null;
+	}
+
+	/**
+	 * Get or create a saved token for a WooPayments reusable payment method.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @param string $payment_method_id Provider payment method ID.
+	 * @param int    $user_id           User ID.
+	 * @return WC_Payment_Token|null Saved token, or null when details are unavailable.
+	 */
+	public function get_or_create_token_for_user( string $payment_method_id, int $user_id ): ?WC_Payment_Token {
 		if ( 0 >= $user_id || '' === trim( $payment_method_id ) ) {
 			return null;
 		}
 
-		$existing_token = $this->get_existing_card_token_for_user( $payment_method_id, $user_id );
-		if ( $existing_token instanceof WC_Payment_Token_CC ) {
-			return $existing_token;
+		$existing_native_token = $this->get_existing_native_token_for_user( $payment_method_id, $user_id );
+		if ( $existing_native_token instanceof WC_Payment_Token ) {
+			return $existing_native_token;
 		}
 
 		$payment_method = $this->payment_method_details_service->get_payment_method_details( $payment_method_id );
-		$card_details   = $this->get_card_details( $payment_method );
-		if ( empty( $card_details ) ) {
+		$method_type    = isset( $payment_method['type'] ) ? (string) $payment_method['type'] : '';
+		$gateway_id     = self::GATEWAY_IDS_BY_PAYMENT_METHOD_TYPE[ $method_type ] ?? '';
+		if ( '' === $gateway_id ) {
 			return null;
 		}
 
 		$provider_token = isset( $payment_method['id'] ) && '' !== (string) $payment_method['id']
 			? (string) $payment_method['id']
 			: $payment_method_id;
-		$card_type      = $this->get_card_type( $card_details );
-		$last4          = isset( $card_details['last4'] ) ? (string) $card_details['last4'] : '';
-		$expiry_month   = isset( $card_details['exp_month'] ) ? (string) $card_details['exp_month'] : '';
-		$expiry_year    = isset( $card_details['exp_year'] ) ? (string) $card_details['exp_year'] : '';
+		$existing_token = $this->get_existing_token_for_user( $provider_token, $user_id, $gateway_id );
+		if ( $existing_token instanceof WC_Payment_Token ) {
+			return $existing_token;
+		}
+
+		switch ( $method_type ) {
+			case self::PAYMENT_METHOD_TYPE_CARD:
+			case self::PAYMENT_METHOD_TYPE_CARD_PRESENT:
+				return $this->create_card_token_for_user( $provider_token, $user_id, $payment_method );
+			case self::PAYMENT_METHOD_TYPE_SEPA:
+				return $this->create_sepa_token_for_user( $provider_token, $user_id, $payment_method );
+			case self::PAYMENT_METHOD_TYPE_LINK:
+				return $this->create_link_token_for_user( $provider_token, $user_id, $payment_method );
+			case self::PAYMENT_METHOD_TYPE_AMAZON_PAY:
+				return $this->create_amazon_pay_token_for_user( $provider_token, $user_id, $payment_method );
+		}
+
+		return null;
+	}
+
+	/**
+	 * Create a saved card token for a user.
+	 *
+	 * @param string              $provider_token Provider payment method ID.
+	 * @param int                 $user_id        User ID.
+	 * @param array<string,mixed> $payment_method Payment method details.
+	 * @return WC_Payment_Token_CC|null
+	 */
+	private function create_card_token_for_user( string $provider_token, int $user_id, array $payment_method ): ?WC_Payment_Token_CC {
+		$card_details = $this->get_card_details( $payment_method );
+		if ( empty( $card_details ) ) {
+			return null;
+		}
+
+		$card_type    = $this->get_card_type( $card_details );
+		$last4        = isset( $card_details['last4'] ) ? (string) $card_details['last4'] : '';
+		$expiry_month = isset( $card_details['exp_month'] ) ? (string) $card_details['exp_month'] : '';
+		$expiry_year  = isset( $card_details['exp_year'] ) ? (string) $card_details['exp_year'] : '';
 
 		if ( '' === $card_type || '' === $last4 || '' === $expiry_month || '' === $expiry_year ) {
 			return null;
@@ -372,6 +509,79 @@ class WooPaymentsTokenService {
 			$token->add_meta_data( '_wcpay_wallet_type', $wallet_type, true );
 		}
 
+		$token->save();
+
+		return $token;
+	}
+
+	/**
+	 * Create a saved SEPA token for a user.
+	 *
+	 * @param string              $provider_token Provider payment method ID.
+	 * @param int                 $user_id        User ID.
+	 * @param array<string,mixed> $payment_method Payment method details.
+	 * @return WooPaymentsSepaToken|null
+	 */
+	private function create_sepa_token_for_user( string $provider_token, int $user_id, array $payment_method ): ?WooPaymentsSepaToken {
+		$sepa_details = isset( $payment_method['sepa_debit'] ) && is_array( $payment_method['sepa_debit'] ) ? $payment_method['sepa_debit'] : array();
+		$last4        = isset( $sepa_details['last4'] ) ? (string) $sepa_details['last4'] : '';
+		if ( '' === $last4 ) {
+			return null;
+		}
+
+		$token = new WooPaymentsSepaToken();
+		$token->set_gateway_id( self::GATEWAY_IDS_BY_PAYMENT_METHOD_TYPE[ self::PAYMENT_METHOD_TYPE_SEPA ] );
+		$token->set_user_id( $user_id );
+		$token->set_token( $provider_token );
+		$token->set_last4( $last4 );
+		$token->save();
+
+		return $token;
+	}
+
+	/**
+	 * Create a saved Link token for a user.
+	 *
+	 * @param string              $provider_token Provider payment method ID.
+	 * @param int                 $user_id        User ID.
+	 * @param array<string,mixed> $payment_method Payment method details.
+	 * @return WooPaymentsLinkToken|null
+	 */
+	private function create_link_token_for_user( string $provider_token, int $user_id, array $payment_method ): ?WooPaymentsLinkToken {
+		$link_details = isset( $payment_method['link'] ) && is_array( $payment_method['link'] ) ? $payment_method['link'] : array();
+		$email        = isset( $link_details['email'] ) ? (string) $link_details['email'] : '';
+		if ( '' === $email ) {
+			return null;
+		}
+
+		$token = new WooPaymentsLinkToken();
+		$token->set_gateway_id( self::GATEWAY_IDS_BY_PAYMENT_METHOD_TYPE[ self::PAYMENT_METHOD_TYPE_LINK ] );
+		$token->set_user_id( $user_id );
+		$token->set_token( $provider_token );
+		$token->set_email( $email );
+		$token->save();
+
+		return $token;
+	}
+
+	/**
+	 * Create a saved Amazon Pay token for a user.
+	 *
+	 * @param string              $provider_token Provider payment method ID.
+	 * @param int                 $user_id        User ID.
+	 * @param array<string,mixed> $payment_method Payment method details.
+	 * @return WooPaymentsAmazonPayToken
+	 */
+	private function create_amazon_pay_token_for_user( string $provider_token, int $user_id, array $payment_method ): WooPaymentsAmazonPayToken {
+		$billing_details = isset( $payment_method['billing_details'] ) && is_array( $payment_method['billing_details'] ) ? $payment_method['billing_details'] : array();
+		$email           = isset( $billing_details['email'] ) ? (string) $billing_details['email'] : '';
+		$token           = new WooPaymentsAmazonPayToken();
+		$token->set_gateway_id( self::GATEWAY_IDS_BY_PAYMENT_METHOD_TYPE[ self::PAYMENT_METHOD_TYPE_AMAZON_PAY ] );
+		$token->set_user_id( $user_id );
+		$token->set_token( $provider_token );
+		if ( '' !== $email ) {
+			$token->set_email( $email );
+		}
 		$token->save();
 
 		return $token;
@@ -465,6 +675,40 @@ class WooPaymentsTokenService {
 	 */
 	private function is_native_woopayments_card_token( $token ): bool {
 		return $token instanceof WC_Payment_Token_CC && OrderPaymentStore::GATEWAY_ID === $token->get_gateway_id();
+	}
+
+	/**
+	 * Check if a token is a locally supported native WooPayments reusable token.
+	 *
+	 * @param mixed $token Payment token candidate.
+	 * @return bool
+	 */
+	private function is_supported_native_woopayments_token( $token ): bool {
+		if ( ! $token instanceof WC_Payment_Token ) {
+			return false;
+		}
+
+		if ( $this->is_native_woopayments_card_token( $token ) ) {
+			return true;
+		}
+
+		if ( ! $this->is_native_woopayments_gateway_id( $token->get_gateway_id() ) ) {
+			return false;
+		}
+
+		return $token instanceof WooPaymentsSepaToken
+			|| $token instanceof WooPaymentsLinkToken
+			|| $token instanceof WooPaymentsAmazonPayToken;
+	}
+
+	/**
+	 * Check if a gateway ID belongs to native WooPayments reusable tokens.
+	 *
+	 * @param string $gateway_id Gateway ID.
+	 * @return bool
+	 */
+	private function is_native_woopayments_gateway_id( string $gateway_id ): bool {
+		return in_array( $gateway_id, array_unique( array_values( self::GATEWAY_IDS_BY_PAYMENT_METHOD_TYPE ) ), true );
 	}
 
 	/**
@@ -615,16 +859,35 @@ class WooPaymentsTokenService {
 	}
 
 	/**
-	 * Get an existing card token for a provider payment method ID.
+	 * Get an existing token for a provider payment method ID.
 	 *
 	 * @param string $payment_method_id Provider payment method ID.
 	 * @param int    $user_id           User ID.
-	 * @return WC_Payment_Token_CC|null
+	 * @return WC_Payment_Token|null
 	 */
-	private function get_existing_card_token_for_user( string $payment_method_id, int $user_id ): ?WC_Payment_Token_CC {
-		$tokens = WC_Payment_Tokens::get_customer_tokens( $user_id, OrderPaymentStore::GATEWAY_ID );
+	private function get_existing_native_token_for_user( string $payment_method_id, int $user_id ): ?WC_Payment_Token {
+		foreach ( array_unique( array_values( self::GATEWAY_IDS_BY_PAYMENT_METHOD_TYPE ) ) as $gateway_id ) {
+			$token = $this->get_existing_token_for_user( $payment_method_id, $user_id, $gateway_id );
+			if ( $token instanceof WC_Payment_Token ) {
+				return $token;
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Get an existing token for a provider payment method ID and gateway.
+	 *
+	 * @param string $payment_method_id Provider payment method ID.
+	 * @param int    $user_id           User ID.
+	 * @param string $gateway_id        Gateway ID.
+	 * @return WC_Payment_Token|null
+	 */
+	private function get_existing_token_for_user( string $payment_method_id, int $user_id, string $gateway_id ): ?WC_Payment_Token {
+		$tokens = WC_Payment_Tokens::get_customer_tokens( $user_id, $gateway_id );
 		foreach ( $tokens as $token ) {
-			if ( $token instanceof WC_Payment_Token_CC && $payment_method_id === (string) $token->get_token() ) {
+			if ( $token instanceof WC_Payment_Token && $this->is_supported_native_woopayments_token( $token ) && $payment_method_id === (string) $token->get_token() ) {
 				return $token;
 			}
 		}
