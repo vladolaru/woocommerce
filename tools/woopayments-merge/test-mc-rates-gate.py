@@ -202,11 +202,11 @@ def test_gate_fails_before_rate_mutation_when_target_native_runtime_is_not_owner
             str(out_dir),
         )
 
-        assert result.returncode == 1
-        assert "target native payments owner is not native: none" in result.stderr
+        assert result.returncode == 3
+        assert "BLOCKED: target native payments owner is not native: none" in result.stderr
 
         rollup = json.loads((out_dir / "mc-rates-gate.json").read_text(encoding="utf-8"))
-        assert rollup["status"] == "fail"
+        assert rollup["status"] == "blocked"
         assert "target native payments owner is not native: none" in rollup["failures"]
 
 

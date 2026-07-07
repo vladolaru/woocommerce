@@ -304,11 +304,11 @@ PHP
 )"
 
 if ! assert_target_native_owner; then
-	write_rollup "fail" "" "" "$failures_file"
+	write_rollup "blocked" "" "" "$failures_file"
 	while IFS= read -r failure; do
-		printf 'FAIL: %s\n' "$failure" >&2
+		printf 'BLOCKED: %s\n' "$failure" >&2
 	done < "$failures_file"
-	exit 1
+	exit 3
 fi
 
 progress "configure reference automatic rates"
