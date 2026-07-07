@@ -36,6 +36,7 @@ TOKEN_CONTINUITY_SUBSCRIPTION_ID="${TOKEN_CONTINUITY_SUBSCRIPTION_ID:-}"
 FULL_EVIDENCE_OUT_DIR="${FULL_EVIDENCE_OUT_DIR:-${TMPDIR:-$SELF_DIR/.tmp}/woopayments-final-evidence}"
 TARGET_URL="${TARGET_URL:-http://store8889.localhost:8889}"
 LPM_FULL_METHODS="sepa_debit,ideal,bancontact,klarna,affirm,afterpay_clearpay,eps,p24,multibanco,au_becs_debit,grabpay,wechat_pay,alipay"
+WCPAY_REPO="${WCPAY_REPO:-$REPO_ROOT/../woocommerce-payments}"
 
 usage() {
 	cat >&2 <<'USAGE'
@@ -113,6 +114,7 @@ bash $SELF_DIR/mc-rates-gate.sh --ref "$REF_WP" --target "$TARGET_WP" --currency
 bash $SELF_DIR/subscriptions-renewal-gate.sh preflight --ref "$REF_WP" --target "$TARGET_WP" --out-dir "$FULL_EVIDENCE_OUT_DIR/subscriptions-renewal"
 bash $SELF_DIR/token-continuity-gate.sh --target "$TARGET_WP" --customer-id "${TOKEN_CONTINUITY_CUSTOMER_ID:-<required>}" --subscription-id "${TOKEN_CONTINUITY_SUBSCRIPTION_ID:-<required>}" --playwriter-session "${PLAYWRITER_SESSION:-<required>}" --out-dir "$FULL_EVIDENCE_OUT_DIR/token-continuity"
 python3 $SELF_DIR/a5f-cutover-rehearsal.py --target-wp "$TARGET_WP" --target-url "$TARGET_URL" --store-dir "$REPO_ROOT" --playwriter-session "${PLAYWRITER_SESSION:-<required>}" --out-dir "$FULL_EVIDENCE_OUT_DIR/a5f-cutover"
+python3 $SELF_DIR/a5g-multisite-runtime-gate.py --repo "$REPO_ROOT" --wcpay-repo "$WCPAY_REPO" --out-dir "$FULL_EVIDENCE_OUT_DIR/a5g-multisite-runtime"
 python3 $REPO_ROOT/tools/woopayments-critical-flows/test-inventory.py
 PLAN
 }
@@ -141,6 +143,13 @@ run_full_evidence_gates() {
 		printf '      pass --playwriter-session to run a5f-cutover-rehearsal.py\n'
 	else
 		gate "A5f cutover rehearsal" python3 "$SELF_DIR/a5f-cutover-rehearsal.py" --target-wp "$TARGET_WP" --target-url "$TARGET_URL" --store-dir "$REPO_ROOT" --playwriter-session "$PLAYWRITER_SESSION" --out-dir "$FULL_EVIDENCE_OUT_DIR/a5f-cutover"
+	fi
+
+	if [ ! -f "$WCPAY_REPO/woocommerce-payments.php" ]; then
+		record "A5g multisite runtime" BLOCKED
+		printf '      set WCPAY_REPO to a local WooPayments plugin checkout before running a5g-multisite-runtime-gate.py\n'
+	else
+		gate "A5g multisite runtime" python3 "$SELF_DIR/a5g-multisite-runtime-gate.py" --repo "$REPO_ROOT" --wcpay-repo "$WCPAY_REPO" --out-dir "$FULL_EVIDENCE_OUT_DIR/a5g-multisite-runtime"
 	fi
 }
 

@@ -41,6 +41,7 @@ def test_full_evidence_plan_lists_final_gates() -> None:
     assert "subscriptions-renewal-gate.sh preflight" in result.stdout
     assert "token-continuity-gate.sh" in result.stdout
     assert "a5f-cutover-rehearsal.py" in result.stdout
+    assert "a5g-multisite-runtime-gate.py" in result.stdout
     assert "woopayments-critical-flows/test-inventory.py" in result.stdout
 
 
