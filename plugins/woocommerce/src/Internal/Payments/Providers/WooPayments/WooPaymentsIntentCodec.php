@@ -168,22 +168,24 @@ class WooPaymentsIntentCodec {
 	 * @return PaymentOutcome
 	 */
 	public static function outcome_from_intention( array $intention, WC_Order $order, array $args = array() ): PaymentOutcome {
-		$intent_type        = isset( $args['intent_type'] ) ? (string) $args['intent_type'] : 'pi';
-		$status             = isset( $intention['status'] ) ? (string) $intention['status'] : '';
-		$intent_id          = isset( $intention['id'] ) ? (string) $intention['id'] : '';
-		$client_secret      = isset( $intention['client_secret'] ) ? (string) $intention['client_secret'] : '';
-		$payment_credential = isset( $args['payment_credential'] ) ? (string) $args['payment_credential'] : '';
-		$payment_method_id  = self::result_payment_method_id( $intention );
-		$fallback_customer  = isset( $args['fallback_customer_id'] ) ? (string) $args['fallback_customer_id'] : '';
-		$customer_id        = isset( $intention['customer'] ) ? (string) $intention['customer'] : $fallback_customer;
-		$account_mode       = isset( $args['account_mode'] ) ? (string) $args['account_mode'] : 'live';
-		$confirmation_token = isset( $args['confirmation_token'] ) ? (string) $args['confirmation_token'] : '';
-		$charge             = WooPaymentsOrderEffects::latest_charge( $intention );
-		$charge_id          = isset( $charge['id'] ) ? (string) $charge['id'] : '';
-		$meta               = array(
+		$intent_type             = isset( $args['intent_type'] ) ? (string) $args['intent_type'] : 'pi';
+		$status                  = isset( $intention['status'] ) ? (string) $intention['status'] : '';
+		$intent_id               = isset( $intention['id'] ) ? (string) $intention['id'] : '';
+		$client_secret           = isset( $intention['client_secret'] ) ? (string) $intention['client_secret'] : '';
+		$payment_credential      = isset( $args['payment_credential'] ) ? (string) $args['payment_credential'] : '';
+		$payment_method_id       = self::result_payment_method_id( $intention );
+		$fallback_customer       = isset( $args['fallback_customer_id'] ) ? (string) $args['fallback_customer_id'] : '';
+		$customer_id             = isset( $intention['customer'] ) ? (string) $intention['customer'] : $fallback_customer;
+		$account_mode            = isset( $args['account_mode'] ) ? (string) $args['account_mode'] : 'live';
+		$confirmation_token      = isset( $args['confirmation_token'] ) ? (string) $args['confirmation_token'] : '';
+		$charge                  = WooPaymentsOrderEffects::latest_charge( $intention );
+		$charge_id               = isset( $charge['id'] ) ? (string) $charge['id'] : '';
+		$multibanco_voucher_meta = WooPaymentsOrderEffects::multibanco_voucher_meta( $intention );
+		$meta                    = array(
 			'_wcpay_intent_currency' => 'si' === $intent_type ? (string) $order->get_currency() : ( isset( $intention['currency'] ) ? (string) $intention['currency'] : (string) $order->get_currency() ),
 			'_wcpay_mode'            => $account_mode,
 		);
+		$meta                    = array_merge( $meta, $multibanco_voucher_meta );
 
 		if ( '' === $payment_method_id && isset( $charge['payment_method'] ) ) {
 			$payment_method_id = (string) $charge['payment_method'];
@@ -237,6 +239,34 @@ class WooPaymentsIntentCodec {
 
 			case 'requires_action':
 			case 'requires_confirmation':
+				$next_action_redirect = self::next_action_redirect_url( $intention );
+				if ( '' !== $next_action_redirect ) {
+					$outcome_data[ PaymentOutcome::DATA_CHECKOUT_REDIRECT ] = $next_action_redirect;
+
+					return new PaymentOutcome(
+						PaymentOutcome::STATUS_REQUIRES_REDIRECT,
+						$intent_id,
+						$next_action_redirect,
+						$payment_method_id,
+						$customer_id,
+						$outcome_data
+					);
+				}
+
+				if ( ! empty( $multibanco_voucher_meta ) ) {
+					$checkout_redirect                                      = $order->get_checkout_order_received_url();
+					$outcome_data[ PaymentOutcome::DATA_CHECKOUT_REDIRECT ] = $checkout_redirect;
+
+					return new PaymentOutcome(
+						PaymentOutcome::STATUS_REQUIRES_REDIRECT,
+						$intent_id,
+						$checkout_redirect,
+						$payment_method_id,
+						$customer_id,
+						$outcome_data
+					);
+				}
+
 				return new PaymentOutcome(
 					PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION,
 					$intent_id,
@@ -672,6 +702,24 @@ class WooPaymentsIntentCodec {
 	 */
 	private static function is_order_received_redirect( WC_Order $order, string $redirect ): bool {
 		return '' !== $redirect && $redirect === $order->get_checkout_order_received_url();
+	}
+
+	/**
+	 * Get the provider redirect URL from an intent next action.
+	 *
+	 * @param array<string,mixed> $intention Native intent response.
+	 * @return string
+	 */
+	private static function next_action_redirect_url( array $intention ): string {
+		$next_action = isset( $intention['next_action'] ) && is_array( $intention['next_action'] ) ? $intention['next_action'] : array();
+		if ( 'redirect_to_url' !== (string) ( $next_action['type'] ?? '' ) ) {
+			return '';
+		}
+
+		$redirect_to_url = isset( $next_action['redirect_to_url'] ) && is_array( $next_action['redirect_to_url'] ) ? $next_action['redirect_to_url'] : array();
+		$url             = $redirect_to_url['url'] ?? '';
+
+		return is_scalar( $url ) ? esc_url_raw( (string) $url ) : '';
 	}
 
 	/**

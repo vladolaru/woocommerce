@@ -242,6 +242,75 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Order-status callback should preserve non-card payment method titles.
+	 */
+	public function test_update_order_status_preserves_non_card_payment_method_title(): void {
+		$order = $this->create_woopayments_order( '50.00' );
+		$order->update_meta_data( '_intent_id', 'pi_klarna' );
+		$order->save();
+
+		$api_client = new class() extends WooPaymentsApiClient {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Retrieve a PaymentIntent.
+			 *
+			 * @param string $intent_id PaymentIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_payment_intention( string $intent_id ): array {
+				if ( 'pi_klarna' !== $intent_id ) {
+					throw new \RuntimeException( 'Unexpected payment intent ID.' );
+				}
+
+				return array(
+					'id'             => 'pi_klarna',
+					'status'         => 'succeeded',
+					'currency'       => 'usd',
+					'amount'         => 5000,
+					'customer'       => 'cus_native',
+					'payment_method' => 'pm_klarna',
+					'charges'        => array(
+						'total_count' => 1,
+						'data'        => array(
+							array(
+								'id'                     => 'ch_klarna',
+								'payment_method'         => 'pm_klarna',
+								'payment_method_details' => array(
+									'type'   => 'klarna',
+									'klarna' => array(),
+								),
+							),
+						),
+					),
+				);
+			}
+		};
+		$sut        = $this->create_controller( $api_client );
+
+		$response = $sut->get_update_order_status_response(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => 'pi_klarna',
+			)
+		);
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertSame( 'Klarna', $order->get_payment_method_title() );
+		$this->assertStringContainsString( '"type":"klarna"', (string) $order->get_meta( '_wcpay_payment_method_details', true ) );
+	}
+
+	/**
 	 * @testdox Order-status callback should persist settlement exchange-rate meta for converted-currency native charges.
 	 */
 	public function test_update_order_status_persists_settlement_exchange_rate_meta_for_converted_currency_charge(): void {

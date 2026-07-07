@@ -140,6 +140,20 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should format non-card payment method titles.
+	 */
+	public function test_payment_method_title_formats_non_card_details(): void {
+		$title = WooPaymentsOrderEffects::payment_method_title(
+			array(
+				'type'   => 'klarna',
+				'klarna' => array(),
+			)
+		);
+
+		$this->assertSame( 'Klarna', $title );
+	}
+
+	/**
 	 * @testdox Should build capture success notes.
 	 */
 	public function test_capture_success_note_includes_transaction_details(): void {

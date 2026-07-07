@@ -123,6 +123,92 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should map redirect next actions to redirect outcomes.
+	 */
+	public function test_outcome_from_intention_maps_redirect_next_action_to_redirect_outcome(): void {
+		$order        = $this->create_woopayments_order( '25.00' );
+		$redirect_url = 'https://hooks.stripe.com/redirect/authenticate/src_ideal';
+		$result       = array(
+			'id'             => 'pi_ideal',
+			'status'         => 'requires_action',
+			'client_secret'  => 'secret_ideal',
+			'payment_method' => array(
+				'id'   => 'pm_ideal',
+				'type' => 'ideal',
+			),
+			'customer'       => 'cus_ideal',
+			'currency'       => 'eur',
+			'next_action'    => array(
+				'type'            => 'redirect_to_url',
+				'redirect_to_url' => array(
+					'url' => $redirect_url,
+				),
+			),
+		);
+
+		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+			$result,
+			$order,
+			array(
+				'payment_credential'   => 'pm_request',
+				'fallback_customer_id' => 'cus_fallback',
+				'account_mode'         => 'live',
+			)
+		);
+
+		$this->assertSame( PaymentOutcome::STATUS_REQUIRES_REDIRECT, $outcome->get_status() );
+		$this->assertSame( 'pi_ideal', $outcome->get_provider_payment_id() );
+		$this->assertSame( 'pm_ideal', $outcome->get_payment_method_id() );
+		$this->assertSame( $redirect_url, $outcome->get_redirect_url() );
+		$this->assertSame( $redirect_url, $outcome->get_data()[ PaymentOutcome::DATA_CHECKOUT_REDIRECT ] );
+	}
+
+	/**
+	 * @testdox Should preserve Multibanco voucher details on redirect outcomes.
+	 */
+	public function test_outcome_from_intention_preserves_multibanco_voucher_details(): void {
+		$order  = $this->create_woopayments_order( '25.00' );
+		$result = array(
+			'id'             => 'pi_multibanco',
+			'status'         => 'requires_action',
+			'client_secret'  => 'secret_multibanco',
+			'payment_method' => array(
+				'id'   => 'pm_multibanco',
+				'type' => 'multibanco',
+			),
+			'customer'       => 'cus_multibanco',
+			'currency'       => 'eur',
+			'next_action'    => array(
+				'type'                       => 'multibanco_display_details',
+				'multibanco_display_details' => array(
+					'reference'          => '123 456 789',
+					'entity'             => '12345',
+					'hosted_voucher_url' => 'https://pay.stripe.com/multibanco/voucher',
+					'expires_at'         => 1893456000,
+				),
+			),
+		);
+
+		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+			$result,
+			$order,
+			array(
+				'payment_credential'   => 'pm_request',
+				'fallback_customer_id' => 'cus_fallback',
+				'account_mode'         => 'live',
+			)
+		);
+		$meta    = $outcome->get_data()[ PaymentOutcome::DATA_META ];
+
+		$this->assertSame( PaymentOutcome::STATUS_REQUIRES_REDIRECT, $outcome->get_status() );
+		$this->assertSame( $order->get_checkout_order_received_url(), $outcome->get_redirect_url() );
+		$this->assertSame( '123 456 789', $meta['_wcpay_multibanco_reference'] );
+		$this->assertSame( '12345', $meta['_wcpay_multibanco_entity'] );
+		$this->assertSame( 'https://pay.stripe.com/multibanco/voucher', $meta['_wcpay_multibanco_url'] );
+		$this->assertSame( '1893456000', $meta['_wcpay_multibanco_expiry'] );
+	}
+
+	/**
 	 * @testdox Should use the latest charge payment method before confirmation-token credential fallback.
 	 */
 	public function test_outcome_from_intention_uses_charge_payment_method_before_confirmation_token_fallback(): void {

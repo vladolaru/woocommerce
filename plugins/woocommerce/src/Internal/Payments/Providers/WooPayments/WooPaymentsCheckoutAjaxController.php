@@ -483,54 +483,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	 * @return string
 	 */
 	private function get_payment_method_title( array $payment_method_details ): string {
-		$wallet_type = $payment_method_details['card']['wallet']['type'] ?? null;
-
-		switch ( $wallet_type ) {
-			case 'link':
-				return __( 'Link', 'woocommerce' );
-
-			case 'apple_pay':
-				return __( 'Apple Pay', 'woocommerce' );
-
-			case 'google_pay':
-				return __( 'Google Pay', 'woocommerce' );
-		}
-
-		if ( 'card' === ( $payment_method_details['type'] ?? '' ) && isset( $payment_method_details['card'] ) && is_array( $payment_method_details['card'] ) ) {
-			return $this->get_card_payment_method_title( $payment_method_details['card'] );
-		}
-
-		return __( 'Credit / Debit Cards', 'woocommerce' );
-	}
-
-	/**
-	 * Get the human-readable card payment method title from charge details.
-	 *
-	 * @param array<string,mixed> $card_details Card details from the charge.
-	 * @return string
-	 */
-	private function get_card_payment_method_title( array $card_details ): string {
-		$funding_types = array(
-			'credit'  => __( 'credit', 'woocommerce' ),
-			'debit'   => __( 'debit', 'woocommerce' ),
-			'prepaid' => __( 'prepaid', 'woocommerce' ),
-			'unknown' => __( 'unknown', 'woocommerce' ),
-		);
-
-		$networks     = isset( $card_details['networks'] ) && is_array( $card_details['networks'] ) ? $card_details['networks'] : array();
-		$available    = isset( $networks['available'] ) && is_array( $networks['available'] ) ? $networks['available'] : array();
-		$card_network = $card_details['display_brand'] ?? $card_details['network'] ?? $networks['preferred'] ?? $available[0] ?? 'card';
-		$card_network = str_replace( '_', ' ', (string) $card_network );
-		$funding      = isset( $card_details['funding'] ) && isset( $funding_types[ (string) $card_details['funding'] ] )
-			? $funding_types[ (string) $card_details['funding'] ]
-			: $funding_types['unknown'];
-
-		return sprintf(
-			/* translators: %1$s: card brand, %2$s: card funding type. */
-			__( '%1$s %2$s card', 'woocommerce' ),
-			ucwords( $card_network ),
-			$funding
-		);
+		return WooPaymentsOrderEffects::payment_method_title( $payment_method_details );
 	}
 
 	/**

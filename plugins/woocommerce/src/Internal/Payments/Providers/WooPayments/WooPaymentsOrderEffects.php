@@ -422,6 +422,7 @@ class WooPaymentsOrderEffects {
 	 */
 	public static function payment_method_title( array $payment_method_details ): string {
 		$wallet_type = $payment_method_details['card']['wallet']['type'] ?? null;
+		$type        = isset( $payment_method_details['type'] ) && is_scalar( $payment_method_details['type'] ) ? (string) $payment_method_details['type'] : '';
 
 		switch ( $wallet_type ) {
 			case 'link':
@@ -434,11 +435,45 @@ class WooPaymentsOrderEffects {
 				return __( 'Google Pay', 'woocommerce' );
 		}
 
-		if ( 'card' === ( $payment_method_details['type'] ?? '' ) && isset( $payment_method_details['card'] ) && is_array( $payment_method_details['card'] ) ) {
+		if ( 'card' === $type && isset( $payment_method_details['card'] ) && is_array( $payment_method_details['card'] ) ) {
 			return self::card_payment_method_title( $payment_method_details['card'] );
 		}
 
+		$non_card_title = self::non_card_payment_method_title( $type );
+		if ( '' !== $non_card_title ) {
+			return $non_card_title;
+		}
+
 		return __( 'Credit / Debit Cards', 'woocommerce' );
+	}
+
+	/**
+	 * Get legacy-compatible Multibanco voucher order meta from an intent.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @param array<string,mixed> $intent Native PaymentIntent response.
+	 * @return array<string,string>
+	 */
+	public static function multibanco_voucher_meta( array $intent ): array {
+		$next_action = isset( $intent['next_action'] ) && is_array( $intent['next_action'] ) ? $intent['next_action'] : array();
+		if ( 'multibanco_display_details' !== (string) ( $next_action['type'] ?? '' ) ) {
+			return array();
+		}
+
+		$details = isset( $next_action['multibanco_display_details'] ) && is_array( $next_action['multibanco_display_details'] )
+			? $next_action['multibanco_display_details']
+			: array();
+
+		return self::scalar_meta_from_keys(
+			$details,
+			array(
+				'reference'          => '_wcpay_multibanco_reference',
+				'entity'             => '_wcpay_multibanco_entity',
+				'hosted_voucher_url' => '_wcpay_multibanco_url',
+				'expires_at'         => '_wcpay_multibanco_expiry',
+			)
+		);
 	}
 
 	/**
@@ -768,6 +803,55 @@ class WooPaymentsOrderEffects {
 			ucwords( $card_network ),
 			$funding
 		);
+	}
+
+	/**
+	 * Get a legacy-compatible non-card payment method title.
+	 *
+	 * @param string $type Stripe payment method details type.
+	 * @return string
+	 */
+	private static function non_card_payment_method_title( string $type ): string {
+		$titles = array(
+			'affirm'            => __( 'Affirm', 'woocommerce' ),
+			'afterpay_clearpay' => __( 'Afterpay', 'woocommerce' ),
+			'alipay'            => __( 'Alipay', 'woocommerce' ),
+			'amazon_pay'        => __( 'Amazon Pay', 'woocommerce' ),
+			'au_becs_debit'     => __( 'BECS Direct Debit', 'woocommerce' ),
+			'bancontact'        => __( 'Bancontact', 'woocommerce' ),
+			'eps'               => __( 'EPS', 'woocommerce' ),
+			'grabpay'           => __( 'GrabPay', 'woocommerce' ),
+			'ideal'             => __( 'iDEAL', 'woocommerce' ),
+			'klarna'            => __( 'Klarna', 'woocommerce' ),
+			'link'              => __( 'Link', 'woocommerce' ),
+			'multibanco'        => __( 'Multibanco', 'woocommerce' ),
+			'p24'               => __( 'Przelewy24', 'woocommerce' ),
+			'sepa_debit'        => __( 'SEPA Direct Debit', 'woocommerce' ),
+			'wechat_pay'        => __( 'WeChat Pay', 'woocommerce' ),
+		);
+
+		return $titles[ $type ] ?? '';
+	}
+
+	/**
+	 * Map scalar payload values to order meta keys.
+	 *
+	 * @param array<string,mixed>  $payload Payload values.
+	 * @param array<string,string> $key_map Source-to-meta key map.
+	 * @return array<string,string>
+	 */
+	private static function scalar_meta_from_keys( array $payload, array $key_map ): array {
+		$meta = array();
+
+		foreach ( $key_map as $source_key => $meta_key ) {
+			if ( ! isset( $payload[ $source_key ] ) || ! is_scalar( $payload[ $source_key ] ) ) {
+				continue;
+			}
+
+			$meta[ $meta_key ] = (string) $payload[ $source_key ];
+		}
+
+		return $meta;
 	}
 
 	/**
