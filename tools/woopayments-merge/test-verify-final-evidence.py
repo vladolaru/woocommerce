@@ -11,6 +11,7 @@ REPO = Path(__file__).resolve().parents[2]
 SCRIPT = REPO / "tools/woopayments-merge/verify.sh"
 REF_WP = "docker exec -i wcpay_wp_default wp --allow-root"
 TARGET_WP = "docker exec -i target-cli-1 wp --allow-root --user=1"
+ALL_LPM_METHODS = "sepa_debit,ideal,bancontact,klarna,affirm,afterpay_clearpay,eps,p24,multibanco,au_becs_debit,grabpay,wechat_pay,alipay"
 
 
 def run_verify(*args: str) -> subprocess.CompletedProcess[str]:
@@ -35,7 +36,7 @@ def test_full_evidence_plan_lists_final_gates() -> None:
 
     assert result.returncode == 0, result.stderr
     assert "lpm-checkout-gate.sh" in result.stdout
-    assert "sepa_debit,ideal,bancontact,klarna,affirm,afterpay_clearpay" in result.stdout
+    assert ALL_LPM_METHODS in result.stdout
     assert "mc-rates-gate.sh" in result.stdout
     assert "subscriptions-renewal-gate.sh preflight" in result.stdout
     assert "token-continuity-gate.sh" in result.stdout
