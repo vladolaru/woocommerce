@@ -12,6 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressPaymentMethodTypes;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentType;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
@@ -1465,9 +1466,13 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
 			->getMock();
-		$metadata_filter        = static function ( array $metadata, WC_Order $filtered_order, string $payment_type ) use ( &$metadata_payment_types, $order ): array {
+		$metadata_filter        = static function ( array $metadata, WC_Order $filtered_order, $payment_type ) use ( &$metadata_payment_types, $order ): array {
 			if ( $order->get_id() === $filtered_order->get_id() ) {
-				$metadata_payment_types[] = $payment_type;
+				$metadata_payment_types[] = array(
+					'string_value'     => (string) $payment_type,
+					'equals_recurring' => $payment_type->equals( WooPaymentsPaymentType::recurring() ),
+					'equals_single'    => $payment_type->equals( WooPaymentsPaymentType::single() ),
+				);
 			}
 
 			return $metadata;
@@ -1507,7 +1512,16 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'recurring', $api_client->last_request_data['metadata']['payment_type'] );
 		$this->assertSame( 'renewal', $api_client->last_request_data['metadata']['subscription_payment'] );
 		$this->assertSame( 'regular_subscription', $api_client->last_request_data['metadata']['payment_context'] );
-		$this->assertSame( array( 'recurring' ), $metadata_payment_types );
+		$this->assertSame(
+			array(
+				array(
+					'string_value'     => 'recurring',
+					'equals_recurring' => true,
+					'equals_single'    => false,
+				),
+			),
+			$metadata_payment_types
+		);
 		$this->assertArrayNotHasKey( 'setup_future_usage', $api_client->last_request_data );
 	}
 

@@ -600,7 +600,7 @@ class WooPaymentsProviderGatewayAdapter {
 	 * @return array<string,mixed>
 	 */
 	private function build_order_metadata( WC_Order $order, string $payment_type = 'single', string $subscription_payment = 'no' ): array {
-		$payment_type         = 'recurring' === $payment_type ? 'recurring' : 'single';
+		$payment_type         = 'recurring' === $payment_type ? WooPaymentsPaymentType::recurring() : WooPaymentsPaymentType::single();
 		$subscription_payment = in_array( $subscription_payment, array( 'initial', 'renewal' ), true ) ? $subscription_payment : 'no';
 		$metadata             = array(
 			'customer_name'        => trim( sanitize_text_field( $order->get_billing_first_name() ) . ' ' . sanitize_text_field( $order->get_billing_last_name() ) ),
@@ -609,7 +609,7 @@ class WooPaymentsProviderGatewayAdapter {
 			'order_id'             => $order->get_id(),
 			'order_number'         => $order->get_order_number(),
 			'order_key'            => $order->get_order_key(),
-			'payment_type'         => $payment_type,
+			'payment_type'         => (string) $payment_type,
 			'checkout_type'        => $order->get_created_via(),
 			'client_version'       => defined( 'WC_VERSION' ) ? WC_VERSION : '',
 			'subscription_payment' => $subscription_payment,
@@ -626,7 +626,7 @@ class WooPaymentsProviderGatewayAdapter {
 		 *
 		 * @param array<string,mixed> $metadata Metadata being sent to WooPayments.
 		 * @param WC_Order            $order    Order object.
-		 * @param string              $payment_type Payment type slug.
+		 * @param WooPaymentsPaymentType $payment_type Payment type.
 		 */
 		$metadata = apply_filters( 'wcpay_metadata_from_order', $metadata, $order, $payment_type );
 
