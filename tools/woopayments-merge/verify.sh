@@ -12,6 +12,9 @@
 # Flags:
 #   --with-tracks    also run the Tracks-parity gate (installs the capture drop-in + enables
 #                    tracking on the store(s), then restores). Off by default since it mutates state.
+#   --full-evidence  also run final readiness gates that need broader fixtures/browser evidence.
+#   --print-full-evidence-plan
+#                    print the final readiness gate plan and exit without running stores.
 #
 # Exit: 0 only if every gate PASSED. Any FAIL or BLOCKED -> non-zero (so a CI loop stops).
 # PRECONDITIONS (see HARNESS.md): connected test account, event listener running, valid host
@@ -19,22 +22,53 @@
 
 set -uo pipefail
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SELF_DIR/../.." && pwd)"
 
 MODE=""
 REF_WP=""
 TARGET_WP=""
 WITH_TRACKS=0
+FULL_EVIDENCE=0
+PRINT_FULL_EVIDENCE_PLAN=0
+PLAYWRITER_SESSION="${PLAYWRITER_SESSION:-}"
+TOKEN_CONTINUITY_CUSTOMER_ID="${TOKEN_CONTINUITY_CUSTOMER_ID:-}"
+TOKEN_CONTINUITY_SUBSCRIPTION_ID="${TOKEN_CONTINUITY_SUBSCRIPTION_ID:-}"
+FULL_EVIDENCE_OUT_DIR="${FULL_EVIDENCE_OUT_DIR:-${TMPDIR:-$SELF_DIR/.tmp}/woopayments-final-evidence}"
+TARGET_URL="${TARGET_URL:-http://store8889.localhost:8889}"
+LPM_WAVE1_METHODS="sepa_debit,ideal,bancontact,klarna,affirm,afterpay_clearpay"
+
+usage() {
+	cat >&2 <<'USAGE'
+usage: verify.sh (--self-check WP | --ref WP --target WP) [--with-tracks] [--full-evidence] [options]
+
+Options:
+  --with-tracks                 Include the Tracks parity placeholder gate.
+  --full-evidence               Run final readiness gates beyond the base deterministic loop.
+  --print-full-evidence-plan    Print the final readiness gate plan and exit.
+  --playwriter-session ID       Playwriter session for browser-dependent final gates.
+  --token-customer-id ID        Customer fixture ID for token-continuity evidence.
+  --token-subscription-id ID    Subscription fixture ID for token-continuity evidence.
+  --full-evidence-out-dir DIR   Evidence output directory for final gates.
+USAGE
+}
+
 while [ "$#" -gt 0 ]; do
 	case "$1" in
 		--self-check) MODE="self"; REF_WP="$2"; TARGET_WP="$2"; shift 2 ;;
 		--ref) MODE="cross"; REF_WP="$2"; shift 2 ;;
 		--target) TARGET_WP="$2"; shift 2 ;;
 		--with-tracks) WITH_TRACKS=1; shift ;;
-		*) echo "Unknown arg: $1" >&2; exit 2 ;;
+		--full-evidence) FULL_EVIDENCE=1; shift ;;
+		--print-full-evidence-plan) FULL_EVIDENCE=1; PRINT_FULL_EVIDENCE_PLAN=1; shift ;;
+		--playwriter-session) PLAYWRITER_SESSION="${2:-}"; shift 2 ;;
+		--token-customer-id) TOKEN_CONTINUITY_CUSTOMER_ID="${2:-}"; shift 2 ;;
+		--token-subscription-id) TOKEN_CONTINUITY_SUBSCRIPTION_ID="${2:-}"; shift 2 ;;
+		--full-evidence-out-dir) FULL_EVIDENCE_OUT_DIR="${2:-}"; shift 2 ;;
+		*) echo "Unknown arg: $1" >&2; usage; exit 2 ;;
 	esac
 done
 if [ -z "$MODE" ] || [ -z "$REF_WP" ] || [ -z "$TARGET_WP" ]; then
-	echo "usage: verify.sh (--self-check WP | --ref WP --target WP) [--with-tracks]" >&2
+	usage
 	exit 2
 fi
 
@@ -67,6 +101,53 @@ gate() { # $1 label ; $2.. command
 		printf '      log: %s\n' "$out_file"
 	fi
 }
+
+print_full_evidence_plan() {
+	cat <<PLAN
+WooPayments final-evidence plan
+mode=$MODE
+out_dir=$FULL_EVIDENCE_OUT_DIR
+
+bash $SELF_DIR/lpm-checkout-gate.sh --methods $LPM_WAVE1_METHODS --ref "$REF_WP" --target "$TARGET_WP" --playwriter-session "${PLAYWRITER_SESSION:-<required>}" --out-dir "$FULL_EVIDENCE_OUT_DIR/lpm-wave-1"
+bash $SELF_DIR/mc-rates-gate.sh --ref "$REF_WP" --target "$TARGET_WP" --currency-from USD --currencies-to GBP,EUR --out-dir "$FULL_EVIDENCE_OUT_DIR/mc-rates"
+bash $SELF_DIR/subscriptions-renewal-gate.sh preflight --ref "$REF_WP" --target "$TARGET_WP" --out-dir "$FULL_EVIDENCE_OUT_DIR/subscriptions-renewal"
+bash $SELF_DIR/token-continuity-gate.sh --target "$TARGET_WP" --customer-id "${TOKEN_CONTINUITY_CUSTOMER_ID:-<required>}" --subscription-id "${TOKEN_CONTINUITY_SUBSCRIPTION_ID:-<required>}" --playwriter-session "${PLAYWRITER_SESSION:-<required>}" --out-dir "$FULL_EVIDENCE_OUT_DIR/token-continuity"
+python3 $SELF_DIR/a5f-cutover-rehearsal.py --target-wp "$TARGET_WP" --target-url "$TARGET_URL" --store-dir "$REPO_ROOT" --playwriter-session "${PLAYWRITER_SESSION:-<required>}" --out-dir "$FULL_EVIDENCE_OUT_DIR/a5f-cutover"
+python3 $REPO_ROOT/tools/woopayments-critical-flows/test-inventory.py
+PLAN
+}
+
+run_full_evidence_gates() {
+	if [ "$MODE" != "cross" ]; then
+		record "full-evidence gates require --ref/--target" BLOCKED
+		return
+	fi
+
+	mkdir -p "$FULL_EVIDENCE_OUT_DIR"
+	gate "critical flows inventory" python3 "$REPO_ROOT/tools/woopayments-critical-flows/test-inventory.py"
+	gate "subscriptions renewal preflight" bash "$SELF_DIR/subscriptions-renewal-gate.sh" preflight --ref "$REF_WP" --target "$TARGET_WP" --out-dir "$FULL_EVIDENCE_OUT_DIR/subscriptions-renewal"
+	gate "LPM wave-1 checkout" bash "$SELF_DIR/lpm-checkout-gate.sh" --methods "$LPM_WAVE1_METHODS" --ref "$REF_WP" --target "$TARGET_WP" --playwriter-session "$PLAYWRITER_SESSION" --out-dir "$FULL_EVIDENCE_OUT_DIR/lpm-wave-1"
+	gate "multi-currency rates refresh" bash "$SELF_DIR/mc-rates-gate.sh" --ref "$REF_WP" --target "$TARGET_WP" --currency-from USD --currencies-to GBP,EUR --out-dir "$FULL_EVIDENCE_OUT_DIR/mc-rates"
+
+	if [ -z "$TOKEN_CONTINUITY_CUSTOMER_ID" ] || [ -z "$TOKEN_CONTINUITY_SUBSCRIPTION_ID" ]; then
+		record "token continuity cutover" BLOCKED
+		printf '      pass --token-customer-id and --token-subscription-id to run token-continuity-gate.sh\n'
+	else
+		gate "token continuity cutover" bash "$SELF_DIR/token-continuity-gate.sh" --target "$TARGET_WP" --customer-id "$TOKEN_CONTINUITY_CUSTOMER_ID" --subscription-id "$TOKEN_CONTINUITY_SUBSCRIPTION_ID" --playwriter-session "$PLAYWRITER_SESSION" --out-dir "$FULL_EVIDENCE_OUT_DIR/token-continuity"
+	fi
+
+	if [ -z "$PLAYWRITER_SESSION" ]; then
+		record "A5f cutover rehearsal" BLOCKED
+		printf '      pass --playwriter-session to run a5f-cutover-rehearsal.py\n'
+	else
+		gate "A5f cutover rehearsal" python3 "$SELF_DIR/a5f-cutover-rehearsal.py" --target-wp "$TARGET_WP" --target-url "$TARGET_URL" --store-dir "$REPO_ROOT" --playwriter-session "$PLAYWRITER_SESSION" --out-dir "$FULL_EVIDENCE_OUT_DIR/a5f-cutover"
+	fi
+}
+
+if [ "$PRINT_FULL_EVIDENCE_PLAN" -eq 1 ]; then
+	print_full_evidence_plan
+	exit 0
+fi
 
 wait_for_financial_metadata() { # $1 WP ; $2.. order ids
 	local wp="$1"; shift
@@ -194,6 +275,10 @@ fi
 if [ "$WITH_TRACKS" -eq 1 ]; then
 	echo "  (tracks gate: install drop-in + enable tracking on the store(s), drive, diff, restore - see HARNESS.md)"
 	record "tracks parity (run via HARNESS.md recipe)" BLOCKED
+fi
+
+if [ "$FULL_EVIDENCE" -eq 1 ]; then
+	run_full_evidence_gates
 fi
 
 echo
