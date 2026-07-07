@@ -112,17 +112,17 @@ class WooPaymentsPersistenceProfileTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$this->assertSame(
-			array(
-				'_charge_id'           => 'ch_123',
-				'_intent_id'           => 'pi_123',
-				'_intention_status'    => 'requires_capture',
-				'_payment_method_id'   => 'pm_123',
-				'_stripe_customer_id'  => 'cus_123',
-				'_wcpay_net'           => '970.7',
-			),
-			$this->sut->get_outcome_meta( $outcome )
-		);
+			$this->assertSame(
+				array(
+					'_charge_id'          => 'ch_123',
+					'_intent_id'          => 'pi_123',
+					'_intention_status'   => 'requires_capture',
+					'_payment_method_id'  => 'pm_123',
+					'_stripe_customer_id' => 'cus_123',
+					'_wcpay_net'          => '970.7',
+				),
+				$this->sut->get_outcome_meta( $outcome )
+			);
 	}
 
 	/**
