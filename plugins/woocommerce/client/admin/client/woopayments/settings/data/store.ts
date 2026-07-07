@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { combineReducers, createReduxStore, register } from '@wordpress/data';
+import { combineReducers, createReduxStore } from '@wordpress/data';
 import { controls } from '@wordpress/data-controls';
 
 /**
@@ -22,5 +22,3 @@ export const store = createReduxStore( STORE_NAME, {
 	resolvers,
 	controls,
 } );
-
-register( store );

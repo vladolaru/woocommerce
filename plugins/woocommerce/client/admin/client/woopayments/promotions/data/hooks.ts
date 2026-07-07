@@ -6,9 +6,11 @@ import { useDispatch, useSelect } from '@wordpress/data';
 /**
  * Internal dependencies
  */
-import { STORE_NAME } from './store';
+import { registerWooPaymentsPmPromotionsStore, STORE_NAME } from './register';
 
 export const usePmPromotions = () => {
+	registerWooPaymentsPmPromotionsStore();
+
 	const pmPromotions = useSelect( ( select ) =>
 		select( STORE_NAME ).getPmPromotions()
 	);
@@ -29,6 +31,8 @@ export const usePmPromotions = () => {
 };
 
 export const usePmPromotionActions = () => {
+	registerWooPaymentsPmPromotionsStore();
+
 	const { activatePmPromotion, dismissPmPromotion } =
 		useDispatch( STORE_NAME );
 

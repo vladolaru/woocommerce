@@ -62,11 +62,12 @@ describe( 'WooPayments settings data store', () => {
 		 ).wcpaySettings;
 	} );
 
-	it( 'registers the public settings store name used by WooPayments settings components', async () => {
+	it( 'exports the public settings store name used by WooPayments settings components', async () => {
 		const { STORE_NAME, store } = await import( '../data/store' );
 
 		expect( STORE_NAME ).toBe( 'wc/payments/settings' );
 		expect( store.name ).toBe( 'wc/payments/settings' );
+		expect( mockRegister ).not.toHaveBeenCalled();
 	} );
 
 	it( 'resolves settings from the preserved WooPayments settings endpoint', async () => {

@@ -96,9 +96,9 @@ import {
 	useWooPayShowIncompatibilityNotice,
 	useWCPaySubscriptions,
 } from './data/hooks';
+import { registerWooPaymentsSettingsStore } from './data/register';
 import { getWooPaymentsAccountSettings } from './api';
 import type { WooPaymentsVatDetails } from '../admin/documents/types';
-import './data/store';
 import './settings-page-only.scss';
 import './style.scss';
 
@@ -2398,6 +2398,7 @@ const SaveSettingsSection = ( { disabled }: { disabled?: boolean } ) => {
 };
 
 export const WooPaymentsSettingsPage = () => {
+	registerWooPaymentsSettingsStore();
 	getWooPaymentsSettingsBootstrap();
 
 	const { isLoading, isSaving } = useSettings();

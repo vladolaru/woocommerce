@@ -16,7 +16,9 @@ jest.mock( '@woocommerce/tracks', () => ( {
 	recordEvent: jest.fn(),
 } ) );
 
-jest.mock( '../data/store', () => ( {} ) );
+jest.mock( '../data/register', () => ( {
+	registerWooPaymentsPmPromotionsStore: jest.fn(),
+} ) );
 
 jest.mock( '../data/hooks', () => ( {
 	usePmPromotions: jest.fn(),

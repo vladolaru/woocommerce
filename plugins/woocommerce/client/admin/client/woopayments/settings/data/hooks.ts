@@ -2,15 +2,29 @@
  * External dependencies
  */
 import { useDispatch, useSelect } from '@wordpress/data';
+import type { MapSelect } from '@wordpress/data/build-types/types';
 
 /**
  * Internal dependencies
  */
-import { STORE_NAME } from './store';
+import { registerWooPaymentsSettingsStore, STORE_NAME } from './register';
+
+const useRegisteredDispatch = () => {
+	registerWooPaymentsSettingsStore();
+
+	return useDispatch( STORE_NAME );
+};
+
+const useRegisteredSelect = ( mapSelect: MapSelect, deps?: unknown[] ) => {
+	registerWooPaymentsSettingsStore();
+
+	// eslint-disable-next-line react-hooks/exhaustive-deps -- This wrapper preserves useSelect's caller-provided dependency contract.
+	return useSelect( mapSelect, deps );
+};
 
 const makeSettingHook = ( selectorName: string, actionName: string ) => () => {
-	const actions = useDispatch( STORE_NAME );
-	const value = useSelect( ( select ) =>
+	const actions = useRegisteredDispatch();
+	const value = useRegisteredSelect( ( select ) =>
 		select( STORE_NAME )[ selectorName ]()
 	);
 
@@ -136,13 +150,13 @@ export const useAccountCommunicationsEmail = makeSettingHook(
 );
 
 export const useAccountDomesticCurrency = () =>
-	useSelect( ( select ) =>
+	useRegisteredSelect( ( select ) =>
 		select( STORE_NAME ).getAccountDomesticCurrency()
 	);
 
 export const useSelectedPaymentMethod = () => {
-	const { updateSelectedPaymentMethod } = useDispatch( STORE_NAME );
-	const enabledPaymentMethodIds = useSelect( ( select ) =>
+	const { updateSelectedPaymentMethod } = useRegisteredDispatch();
+	const enabledPaymentMethodIds = useRegisteredSelect( ( select ) =>
 		select( STORE_NAME ).getEnabledPaymentMethodIds()
 	);
 
@@ -150,8 +164,8 @@ export const useSelectedPaymentMethod = () => {
 };
 
 export const useUnselectedPaymentMethod = () => {
-	const { updateUnselectedPaymentMethod } = useDispatch( STORE_NAME );
-	const enabledPaymentMethodIds = useSelect( ( select ) =>
+	const { updateUnselectedPaymentMethod } = useRegisteredDispatch();
+	const enabledPaymentMethodIds = useRegisteredSelect( ( select ) =>
 		select( STORE_NAME ).getEnabledPaymentMethodIds()
 	);
 
@@ -159,20 +173,23 @@ export const useUnselectedPaymentMethod = () => {
 };
 
 export const useTestModeOnboarding = () =>
-	useSelect(
+	useRegisteredSelect(
 		( select ) => select( STORE_NAME ).getIsTestModeOnboarding(),
 		[]
 	);
 
 export const useDevMode = () =>
-	useSelect( ( select ) => select( STORE_NAME ).getIsDevModeEnabled(), [] );
+	useRegisteredSelect(
+		( select ) => select( STORE_NAME ).getIsDevModeEnabled(),
+		[]
+	);
 
 export const useWCPaySubscriptions = () => {
-	const { updateIsWCPaySubscriptionsEnabled } = useDispatch( STORE_NAME );
-	const isWCPaySubscriptionsEnabled = useSelect( ( select ) =>
+	const { updateIsWCPaySubscriptionsEnabled } = useRegisteredDispatch();
+	const isWCPaySubscriptionsEnabled = useRegisteredSelect( ( select ) =>
 		select( STORE_NAME ).getIsWCPaySubscriptionsEnabled()
 	);
-	const isWCPaySubscriptionsEligible = useSelect( ( select ) =>
+	const isWCPaySubscriptionsEligible = useRegisteredSelect( ( select ) =>
 		select( STORE_NAME ).getIsWCPaySubscriptionsEligible()
 	);
 
@@ -184,34 +201,46 @@ export const useWCPaySubscriptions = () => {
 };
 
 export const useDepositDelayDays = () =>
-	useSelect( ( select ) => select( STORE_NAME ).getDepositDelayDays(), [] );
+	useRegisteredSelect(
+		( select ) => select( STORE_NAME ).getDepositDelayDays(),
+		[]
+	);
 
 export const useCompletedWaitingPeriod = () =>
-	useSelect( ( select ) => select( STORE_NAME ).getCompletedWaitingPeriod() );
+	useRegisteredSelect( ( select ) =>
+		select( STORE_NAME ).getCompletedWaitingPeriod()
+	);
 
 export const useDepositStatus = () =>
-	useSelect( ( select ) => select( STORE_NAME ).getDepositStatus(), [] );
+	useRegisteredSelect(
+		( select ) => select( STORE_NAME ).getDepositStatus(),
+		[]
+	);
 
 export const useDepositRestrictions = () =>
-	useSelect( ( select ) => select( STORE_NAME ).getDepositRestrictions() );
+	useRegisteredSelect( ( select ) =>
+		select( STORE_NAME ).getDepositRestrictions()
+	);
 
 export const useGetAvailablePaymentMethodIds = () =>
-	useSelect( ( select ) =>
+	useRegisteredSelect( ( select ) =>
 		select( STORE_NAME ).getAvailablePaymentMethodIds()
 	);
 
 export const useGetPaymentMethodStatuses = () =>
-	useSelect( ( select ) => select( STORE_NAME ).getPaymentMethodStatuses() );
+	useRegisteredSelect( ( select ) =>
+		select( STORE_NAME ).getPaymentMethodStatuses()
+	);
 
 export const useGetDuplicatedPaymentMethodIds = () =>
-	useSelect( ( select ) =>
+	useRegisteredSelect( ( select ) =>
 		select( STORE_NAME ).getDuplicatedPaymentMethodIds()
 	);
 
 export const useDismissedDuplicatePaymentMethodNotices = () => {
 	const { updateDismissedDuplicatePaymentMethodNotices } =
-		useDispatch( STORE_NAME );
-	const dismissedNotices = useSelect( ( select ) =>
+		useRegisteredDispatch();
+	const dismissedNotices = useRegisteredSelect( ( select ) =>
 		select( STORE_NAME ).getDismissedDuplicatePaymentMethodNotices()
 	);
 
@@ -219,18 +248,20 @@ export const useDismissedDuplicatePaymentMethodNotices = () => {
 };
 
 export const useGetAccountFees = () =>
-	useSelect( ( select ) => select( STORE_NAME ).getAccountFees() );
+	useRegisteredSelect( ( select ) => select( STORE_NAME ).getAccountFees() );
 
 export const useGetSettings = () =>
-	useSelect( ( select ) => select( STORE_NAME ).getSettings() );
+	useRegisteredSelect( ( select ) => select( STORE_NAME ).getSettings() );
 
 export const useSettings = () => {
-	const { saveSettings } = useDispatch( STORE_NAME );
-	const isSaving = useSelect( ( select ) =>
+	const { saveSettings } = useRegisteredDispatch();
+	const isSaving = useRegisteredSelect( ( select ) =>
 		select( STORE_NAME ).isSavingSettings()
 	);
-	const isDirty = useSelect( ( select ) => select( STORE_NAME ).isDirty() );
-	const isLoading = useSelect( ( select ) => {
+	const isDirty = useRegisteredSelect( ( select ) =>
+		select( STORE_NAME ).isDirty()
+	);
+	const isLoading = useRegisteredSelect( ( select ) => {
 		select( STORE_NAME ).getSettings();
 		const isResolving = select( STORE_NAME ).isResolving( 'getSettings' );
 		const hasFinishedResolving =
@@ -253,15 +284,15 @@ const makeExpressCheckoutLocationHook = ( methodId: string ) => () => {
 		updateExpressCheckoutProductMethods,
 		updateExpressCheckoutCartMethods,
 		updateExpressCheckoutCheckoutMethods,
-	} = useDispatch( STORE_NAME );
+	} = useRegisteredDispatch();
 
-	const productMethods = useSelect( ( select ) =>
+	const productMethods = useRegisteredSelect( ( select ) =>
 		select( STORE_NAME ).getExpressCheckoutProductMethods()
 	);
-	const cartMethods = useSelect( ( select ) =>
+	const cartMethods = useRegisteredSelect( ( select ) =>
 		select( STORE_NAME ).getExpressCheckoutCartMethods()
 	);
-	const checkoutMethods = useSelect( ( select ) =>
+	const checkoutMethods = useRegisteredSelect( ( select ) =>
 		select( STORE_NAME ).getExpressCheckoutCheckoutMethods()
 	);
 
@@ -306,8 +337,8 @@ export const useAmazonPayLocations =
 	makeExpressCheckoutLocationHook( 'amazon_pay' );
 
 const usePaymentMethodEnabled = ( methodId: string ) => {
-	const { updateEnabledPaymentMethodIds } = useDispatch( STORE_NAME );
-	const enabledPaymentMethodIds = useSelect( ( select ) =>
+	const { updateEnabledPaymentMethodIds } = useRegisteredDispatch();
+	const enabledPaymentMethodIds = useRegisteredSelect( ( select ) =>
 		select( STORE_NAME ).getEnabledPaymentMethodIds()
 	);
 	const isEnabled = enabledPaymentMethodIds.includes( methodId );
@@ -352,9 +383,12 @@ export const useLinkEnabledSettings = ( isWooPayBlockingLink?: boolean ) => {
 };
 
 export const useWooPayShowIncompatibilityNotice = () =>
-	useSelect( ( select ) =>
+	useRegisteredSelect( ( select ) =>
 		select( STORE_NAME ).getShowWooPayIncompatibilityNotice()
 	);
 
 export const useGetSavingError = () =>
-	useSelect( ( select ) => select( STORE_NAME ).getSavingError(), [] );
+	useRegisteredSelect(
+		( select ) => select( STORE_NAME ).getSavingError(),
+		[]
+	);

@@ -10,7 +10,7 @@ import { recordEvent } from '@woocommerce/tracks';
 /**
  * Internal dependencies
  */
-import './data/store';
+import { registerWooPaymentsPmPromotionsStore } from './data/register';
 import { usePmPromotionActions, usePmPromotions } from './data/hooks';
 import type { PmPromotion } from './types';
 import './style.scss';
@@ -113,6 +113,8 @@ const focusRestoreTarget = ( target: HTMLElement ) => {
 };
 
 export const SpotlightPromotion = () => {
+	registerWooPaymentsPmPromotionsStore();
+
 	const { pmPromotions, isLoading } = usePmPromotions();
 	const { activatePmPromotion, dismissPmPromotion } = usePmPromotionActions();
 	const spotlightRef = useRef< HTMLDivElement >( null );

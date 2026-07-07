@@ -40,12 +40,12 @@ describe( 'WooPayments PM promotions data store', () => {
 		( dispatch as jest.Mock ).mockClear();
 	} );
 
-	it( 'registers the PM promotions store name used by WooPayments components', async () => {
+	it( 'exports the PM promotions store name used by WooPayments components', async () => {
 		const { STORE_NAME, store } = await import( '../store' );
 
 		expect( STORE_NAME ).toBe( 'wc/payments/pmPromotions' );
 		expect( store.name ).toBe( 'wc/payments/pmPromotions' );
-		expect( mockRegister ).toHaveBeenCalledWith( store );
+		expect( mockRegister ).not.toHaveBeenCalled();
 	} );
 
 	it( 'returns a flat PM promotions array from state', async () => {
