@@ -26,6 +26,38 @@ def run_gate(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def write_executable(path: Path, source: str) -> None:
+    path.write_text(source, encoding="utf-8")
+    path.chmod(0o755)
+
+
+def make_fake_wp(path: Path, invocations_path: Path, *, native_owner: str = "none") -> None:
+    write_executable(
+        path,
+        f"""#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> {json.dumps(str(invocations_path))}
+if [ "$1" = "wc-native-payments" ] && [ "$2" = "status" ]; then
+\tprintf 'Owner: %s\\n' {json.dumps(native_owner)}
+\tprintf 'Native enabled: %s\\n' "$([ {json.dumps(native_owner)} = native ] && printf yes || printf no)"
+\texit 0
+fi
+if [ "$1" = "eval" ]; then
+\tprintf 'en_US\\n'
+\texit 0
+fi
+if [ "$1" = "language" ] && [ "$2" = "core" ] && [ "$3" = "install" ]; then
+\texit 0
+fi
+if [ "$1" = "site" ] && [ "$2" = "switch-language" ]; then
+\texit 0
+fi
+printf 'unexpected fake wp args: %s\\n' "$*" >&2
+exit 1
+""",
+    )
+
+
 def write_state(path: Path, *, locale: str = "de_DE", orders: list[dict] | None = None) -> None:
     if orders is None:
         orders = localized_orders()
@@ -168,6 +200,28 @@ def test_gate_fails_when_locale_was_not_switched() -> None:
 
         assert result.returncode == 1
         assert "captured locale en_US does not match expected de_DE" in result.stderr
+
+
+def test_live_gate_blocks_before_language_switch_when_target_is_not_native_owned() -> None:
+    with tempfile.TemporaryDirectory(prefix="i18n-notes-gate-test-") as tmp:
+        tmp_path = Path(tmp)
+        fake_wp = tmp_path / "target-wp"
+        invocations_path = tmp_path / "wp-invocations.txt"
+
+        make_fake_wp(fake_wp, invocations_path, native_owner="none")
+
+        result = run_gate(
+            "--target",
+            str(fake_wp),
+            "--out-dir",
+            str(tmp_path / "evidence"),
+        )
+
+        assert result.returncode == 3
+        assert "target native payments owner is not native: none" in result.stderr
+
+        invocations = invocations_path.read_text(encoding="utf-8").splitlines()
+        assert invocations == ["wc-native-payments status"]
 
 
 def test_verify_runs_i18n_notes_gate_for_cross_store_mode() -> None:

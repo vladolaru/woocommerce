@@ -206,6 +206,23 @@ restore_language() {
 	$TARGET_WP site switch-language "$restore_locale" >/dev/null 2>&1 || true
 }
 
+assert_target_native_owner() {
+	local raw rc owner
+
+	# shellcheck disable=SC2086
+	raw="$($TARGET_WP wc-native-payments status 2>&1)"
+	rc=$?
+	if [ "$rc" -ne 0 ]; then
+		printf '%s\n' "$raw" | tail -20 >&2
+		blocked "could not read target native payments status."
+	fi
+
+	owner="$(printf '%s\n' "$raw" | awk -F': ' '/^Owner:/ { print $2; exit }' | tr -d '\r')"
+	if [ "$owner" != "native" ]; then
+		blocked "target native payments owner is not native: ${owner:-unknown}"
+	fi
+}
+
 switch_language() {
 	local raw rc
 
@@ -456,6 +473,7 @@ if [ -z "$STATE" ]; then
 		blocked "flow driver is missing or not executable: $FLOW_DRIVE"
 	fi
 
+	assert_target_native_owner
 	switch_language
 
 	charge_flow="$OUT_DIR/charge-flow.json"
