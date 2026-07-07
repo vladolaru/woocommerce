@@ -85,6 +85,11 @@ class WooPaymentsApiClient {
 	private const PAYMENT_METHODS_API = 'payment_methods';
 
 	/**
+	 * WooPayments payment method domain registration API path.
+	 */
+	private const DOMAIN_REGISTRATION_API = 'payment_method_domains';
+
+	/**
 	 * WooPayments timeline API path.
 	 */
 	private const TIMELINE_API = 'timeline';
@@ -385,6 +390,23 @@ class WooPaymentsApiClient {
 	 */
 	public function get_setup_intention( string $setup_intent_id ): array {
 		return $this->request( array(), 'setup_intents/' . rawurlencode( $setup_intent_id ), 'GET' );
+	}
+
+	/**
+	 * Register an Apple Pay payment method domain.
+	 *
+	 * @param string $domain_name Domain name to register.
+	 * @return array<string,mixed>
+	 */
+	public function register_apple_pay_domain( string $domain_name ): array {
+		return $this->request(
+			array(
+				'domain_name' => $domain_name,
+				'enabled'     => 'true',
+			),
+			self::DOMAIN_REGISTRATION_API,
+			'POST'
+		);
 	}
 
 	/**

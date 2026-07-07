@@ -649,6 +649,30 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should preserve the Apple Pay payment-method domain registration endpoint and body shape.
+	 */
+	public function test_register_apple_pay_domain_uses_preserved_endpoint(): void {
+		list( $sut, $http_client ) = $this->make_sut(
+			true,
+			array(
+				'id'        => 'domain_123',
+				'apple_pay' => array( 'status' => 'active' ),
+			)
+		);
+
+		$result = $sut->register_apple_pay_domain( 'example.test' );
+		$body   = json_decode( (string) $http_client->last_body, true );
+
+		$this->assertSame( 'domain_123', $result['id'] );
+		$this->assertSame( '/sites/123/wcpay/payment_method_domains', $http_client->last_path );
+		$this->assertSame( 'POST', $http_client->last_method );
+		$this->assertIsArray( $body );
+		$this->assertSame( 'example.test', $body['domain_name'] );
+		$this->assertSame( 'true', $body['enabled'] );
+		$this->assertTrue( $body['test_mode'] );
+	}
+
+	/**
 	 * @testdox Should track order payloads through the native transport tracking endpoint.
 	 */
 	public function test_track_order_posts_to_tracking_order_endpoint(): void {
