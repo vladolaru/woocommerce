@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import subprocess
+import tempfile
 from pathlib import Path
 
 
@@ -23,6 +24,11 @@ def run_verify(*args: str) -> subprocess.CompletedProcess[str]:
         stderr=subprocess.PIPE,
         check=False,
     )
+
+
+def write_executable(path: Path, source: str) -> None:
+    path.write_text(source, encoding="utf-8")
+    path.chmod(0o755)
 
 
 def test_full_evidence_plan_lists_final_gates() -> None:
@@ -59,6 +65,156 @@ def test_full_evidence_plan_lists_final_gates() -> None:
     assert "perf-surface-gate.sh compare" in result.stdout
     assert "woopayments-critical-flows/test-inventory.py" in result.stdout
     assert "woopayments-critical-flows/run.sh --store both --layer all" in result.stdout
+
+
+def test_full_evidence_executes_nested_self_check_and_tracks_verifier() -> None:
+    with tempfile.TemporaryDirectory(prefix="verify-final-evidence-") as tmp:
+        repo = Path(tmp) / "repo"
+        merge_dir = repo / "tools" / "woopayments-merge"
+        critical_dir = repo / "tools" / "woopayments-critical-flows"
+        wcpay_repo = Path(tmp) / "woocommerce-payments"
+        merge_dir.mkdir(parents=True)
+        critical_dir.mkdir(parents=True)
+        wcpay_repo.mkdir()
+
+        invocations = Path(tmp) / "invocations.log"
+        fake_wp = Path(tmp) / "fake-wp"
+        fake_tmp = Path(tmp) / "tmp"
+        fake_tmp.mkdir()
+
+        verify_copy = merge_dir / "verify.sh"
+        verify_copy.write_text(SCRIPT.read_text(encoding="utf-8"), encoding="utf-8")
+        verify_copy.chmod(0o755)
+        (merge_dir / "a4aq-bundle-budget.json").write_text("{}\n", encoding="utf-8")
+        (wcpay_repo / "woocommerce-payments.php").write_text("<?php\n", encoding="utf-8")
+
+        fake_gate = """#!/usr/bin/env bash
+set -eu
+name="$(basename "$0")"
+printf '%s|%s\n' "$name" "$*" >> "$INVOCATIONS_LOG"
+out=""
+previous=""
+for arg in "$@"; do
+	if [ "$previous" = "--out" ]; then
+		out="$arg"
+		previous=""
+		continue
+	fi
+	previous="$arg"
+done
+if [ -n "$out" ]; then
+	mkdir -p "$(dirname "$out")"
+	printf '{}\n' > "$out"
+fi
+if [ "$name" = "flow-drive.sh" ]; then
+	printf '{"order_id":123}\n'
+fi
+if [ "$name" = "tracks-parity.sh" ] && [ "${1:-}" = "normalize" ]; then
+	printf '{"event":"checkout"}\n'
+fi
+exit 0
+"""
+        for script_name in (
+            "bc-drift-gate.sh",
+            "subsystem-disposition-gate.sh",
+            "hook-shape-parity.sh",
+            "rest-route-parity.sh",
+            "i18n-notes-gate.sh",
+            "flow-drive.sh",
+            "parity-diff.sh",
+            "perf-baseline.sh",
+            "financial-reconcile.sh",
+            "tracks-parity.sh",
+            "subscriptions-renewal-gate.sh",
+            "plugin-active-settings-gate.sh",
+            "lpm-checkout-gate.sh",
+            "mc-rates-gate.sh",
+            "token-continuity-gate.sh",
+            "dispute-e2e-gate.sh",
+            "payout-evidence-gate.sh",
+            "converted-currency-gate.sh",
+            "bundle-size-gate.sh",
+            "perf-surface-gate.sh",
+        ):
+            write_executable(merge_dir / script_name, fake_gate)
+        fake_python_gate = """#!/usr/bin/env python3
+import os
+import sys
+from pathlib import Path
+
+Path(os.environ["INVOCATIONS_LOG"]).open("a", encoding="utf-8").write(
+    Path(sys.argv[0]).name + "|" + " ".join(sys.argv[1:]) + "\\n"
+)
+"""
+        for script_name in (
+            "a5f-cutover-rehearsal.py",
+            "a5g-multisite-runtime-gate.py",
+        ):
+            write_executable(merge_dir / script_name, fake_python_gate)
+
+        write_executable(
+            fake_wp,
+            """#!/usr/bin/env bash
+set -eu
+printf 'wp|%s\n' "$*" >> "$INVOCATIONS_LOG"
+if [ "${1:-}" = "eval-file" ]; then
+	printf 'ready\n'
+else
+	printf '{}\n'
+fi
+""",
+        )
+        write_executable(
+            critical_dir / "test-inventory.py",
+            """#!/usr/bin/env python3
+import os
+from pathlib import Path
+Path(os.environ["INVOCATIONS_LOG"]).open("a", encoding="utf-8").write("critical-inventory|\\n")
+""",
+        )
+        write_executable(
+            critical_dir / "run.sh",
+            """#!/usr/bin/env bash
+set -eu
+printf 'critical-run|%s\n' "$*" >> "$INVOCATIONS_LOG"
+""",
+        )
+
+        result = subprocess.run(
+            [
+                "bash",
+                str(verify_copy),
+                "--ref",
+                str(fake_wp),
+                "--target",
+                str(fake_wp),
+                "--full-evidence",
+                "--playwriter-session",
+                "session-1",
+                "--token-customer-id",
+                "cus_test",
+                "--token-subscription-id",
+                "sub_test",
+            ],
+            cwd=repo,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env={
+                "INVOCATIONS_LOG": str(invocations),
+                "TMPDIR": str(fake_tmp),
+                "WCPAY_REPO": str(wcpay_repo),
+            },
+            check=False,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+
+        invocation_log = invocations.read_text(encoding="utf-8")
+        assert "tracks-parity.sh|reset" in invocation_log
+        assert "tracks-parity.sh|diff" in invocation_log
+        assert "critical-run|--store both --layer all" in invocation_log
+        assert invocation_log.count("flow-drive.sh|charge") >= 5
 
 
 def test_full_evidence_flag_is_documented_in_usage() -> None:

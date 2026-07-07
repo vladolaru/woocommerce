@@ -135,13 +135,13 @@ tracks_reset() {
 
 tracks_normalize() {
 	local role="$1" store_id="$2" out_file="$3" raw rc
-	local normalize_args=()
 
 	if [ -n "$store_id" ]; then
-		normalize_args+=(--store "$store_id")
+		raw="$(bash "$SELF_DIR/tracks-parity.sh" normalize --store "$store_id" 2>"$out_file.stderr")"
+	else
+		raw="$(bash "$SELF_DIR/tracks-parity.sh" normalize 2>"$out_file.stderr")"
 	fi
 
-	raw="$(bash "$SELF_DIR/tracks-parity.sh" normalize "${normalize_args[@]}" 2>"$out_file.stderr")"
 	rc=$?
 	if [ "$rc" -ne 0 ]; then
 		tracks_block "$role Tracks normalization failed: $(cat "$out_file.stderr" 2>/dev/null)"
@@ -244,6 +244,8 @@ run_full_evidence_gates() {
 	fi
 
 	mkdir -p "$FULL_EVIDENCE_OUT_DIR"
+	gate "final evidence self-check verifier" bash "$SELF_DIR/verify.sh" --self-check "$REF_WP"
+	gate "final evidence tracks verifier" bash "$SELF_DIR/verify.sh" --ref "$REF_WP" --target "$TARGET_WP" --with-tracks
 	gate "critical flows inventory" python3 "$REPO_ROOT/tools/woopayments-critical-flows/test-inventory.py"
 	gate "critical flows full run" bash "$REPO_ROOT/tools/woopayments-critical-flows/run.sh" --store both --layer all
 	gate "subscriptions renewal preflight" bash "$SELF_DIR/subscriptions-renewal-gate.sh" preflight --ref "$REF_WP" --target "$TARGET_WP" --out-dir "$FULL_EVIDENCE_OUT_DIR/subscriptions-renewal"
