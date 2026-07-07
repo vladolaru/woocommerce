@@ -105,6 +105,11 @@ class WooPaymentsApiClient {
 	private const COMPATIBILITY_API = 'compatibility';
 
 	/**
+	 * WooPay compatibility API path.
+	 */
+	private const WOOPAY_COMPATIBILITY_API = 'woopay/compatibility';
+
+	/**
 	 * WooPayments tracking API path.
 	 */
 	private const TRACKING_API = 'tracking';
@@ -616,6 +621,15 @@ class WooPaymentsApiClient {
 			self::COMPATIBILITY_API,
 			'POST'
 		);
+	}
+
+	/**
+	 * Retrieve WooPay extension compatibility data.
+	 *
+	 * @return array<string,mixed>
+	 */
+	public function get_woopay_compatibility(): array {
+		return $this->request( array(), self::WOOPAY_COMPATIBILITY_API, 'GET' );
 	}
 
 	/**

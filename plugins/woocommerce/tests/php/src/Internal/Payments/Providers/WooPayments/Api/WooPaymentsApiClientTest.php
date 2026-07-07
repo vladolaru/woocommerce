@@ -968,6 +968,39 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should retrieve WooPay compatibility data through the native transport.
+	 */
+	public function test_get_woopay_compatibility_reads_woopay_compatibility_endpoint(): void {
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id  = 123;
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode(
+				array(
+					'incompatible_extensions' => array( 'bad-extension' ),
+					'adapted_extensions'      => array( 'woocommerce-points-and-rewards' ),
+					'available_countries'     => array( 'US', 'BR' ),
+				)
+			),
+		);
+
+		$sut = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( false ) );
+
+		$this->assertTrue( method_exists( $sut, 'get_woopay_compatibility' ), 'WooPaymentsApiClient should expose get_woopay_compatibility().' );
+
+		$result = $sut->get_woopay_compatibility();
+
+		$this->assertSame( array( 'bad-extension' ), $result['incompatible_extensions'] );
+		$this->assertSame( array( 'woocommerce-points-and-rewards' ), $result['adapted_extensions'] );
+		$this->assertSame( array( 'US', 'BR' ), $result['available_countries'] );
+		$this->assertSame( '/sites/123/wcpay/woopay/compatibility?test_mode=0', $http_client->last_path );
+		$this->assertSame( 'GET', $http_client->last_method );
+		$this->assertFalse( $http_client->last_use_user_token );
+	}
+
+	/**
 	 * @testdox Should retrieve recommended payment methods through the public recommendations endpoint.
 	 */
 	public function test_get_recommended_payment_methods_reads_public_recommendations_endpoint(): void {
