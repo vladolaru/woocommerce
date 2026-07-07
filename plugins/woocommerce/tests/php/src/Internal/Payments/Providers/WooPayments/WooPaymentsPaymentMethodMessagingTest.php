@@ -1,0 +1,281 @@
+<?php
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
+
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodMessaging;
+use WC_Product;
+use WC_Unit_Test_Case;
+
+/**
+ * Tests for the WooPaymentsPaymentMethodMessaging class.
+ */
+class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
+
+	private const SCRIPT_HANDLE = 'wc-woopayments-payment-method-messaging';
+
+	/**
+	 * Registered messaging controllers to clean up.
+	 *
+	 * @var WooPaymentsPaymentMethodMessaging[]
+	 */
+	private array $registered_controllers = array();
+
+	/**
+	 * Tear down test fixtures.
+	 */
+	public function tearDown(): void {
+		foreach ( $this->registered_controllers as $controller ) {
+			foreach ( $this->get_expected_hooks() as $hook => $method ) {
+				remove_action( $hook, array( $controller, $method ) );
+			}
+		}
+
+		wp_dequeue_script( self::SCRIPT_HANDLE );
+		wp_deregister_script( self::SCRIPT_HANDLE );
+		wp_deregister_script( 'stripe' );
+		delete_option( 'woocommerce_default_country' );
+		delete_option( 'woocommerce_currency' );
+		remove_all_filters( 'woocommerce_is_product' );
+		remove_all_filters( 'woocommerce_is_cart' );
+		unset( $GLOBALS['product'] );
+		wp_reset_postdata();
+
+		parent::tearDown();
+	}
+
+	/**
+	 * @testdox Should register BNPL messaging hooks only when native owns runtime and active BNPL methods exist.
+	 */
+	public function test_registers_bnpl_messaging_hooks_only_when_native_owns_runtime_and_active_bnpl_methods_exist(): void {
+		$plugin_owned = $this->create_controller( false, true, array( 'affirm' ), array( 'affirm_payments' => 'active' ) );
+		$plugin_owned->register();
+		$this->assert_hooks_not_registered( $plugin_owned );
+
+		$gateway_disabled = $this->create_controller( true, false, array( 'affirm' ), array( 'affirm_payments' => 'active' ) );
+		$gateway_disabled->register();
+		$this->assert_hooks_not_registered( $gateway_disabled );
+
+		$inactive_bnpl = $this->create_controller( true, true, array( 'card', 'affirm' ), array( 'affirm_payments' => 'inactive' ) );
+		$inactive_bnpl->register();
+		$this->assert_hooks_not_registered( $inactive_bnpl );
+
+		$active_bnpl = $this->create_controller( true, true, array( 'card', 'affirm', 'ideal' ), array( 'affirm_payments' => 'active' ) );
+		$active_bnpl->register();
+		$this->registered_controllers[] = $active_bnpl;
+
+		$this->assertSame( 10, has_action( 'woocommerce_single_product_summary', array( $active_bnpl, 'render_site_messaging' ) ) );
+		$this->assertSame( 5, has_action( 'woocommerce_proceed_to_checkout', array( $active_bnpl, 'render_site_messaging' ) ) );
+		$this->assertSame( 10, has_action( 'woocommerce_blocks_enqueue_cart_block_scripts_after', array( $active_bnpl, 'render_site_messaging' ) ) );
+		$this->assertSame( 10, has_action( 'wc_ajax_wcpay_get_cart_total', array( $active_bnpl, 'handle_get_cart_total' ) ) );
+		$this->assertSame( 10, has_action( 'wc_ajax_wcpay_check_bnpl_availability', array( $active_bnpl, 'handle_check_bnpl_availability' ) ) );
+	}
+
+	/**
+	 * @testdox Should localize active BNPL messaging config and render the product-page container.
+	 */
+	public function test_localizes_active_bnpl_messaging_config_and_renders_product_container(): void {
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		update_option( 'woocommerce_currency', 'USD' );
+		$product = \WC_Helper_Product::create_simple_product(
+			true,
+			array(
+				'regular_price' => '50.00',
+				'price'         => '50.00',
+			)
+		);
+		$this->set_current_product( $product );
+
+		$controller = $this->create_controller(
+			true,
+			true,
+			array( 'card', 'affirm', 'afterpay_clearpay', 'klarna', 'ideal' ),
+			array(
+				'affirm_payments'            => 'active',
+				'afterpay_clearpay_payments' => 'inactive',
+				'klarna_payments'            => 'active',
+				'ideal_payments'             => 'active',
+			)
+		);
+
+		ob_start();
+		$controller->render_site_messaging();
+		$output = (string) ob_get_clean();
+
+		$this->assertSame( '<div id="payment-method-message"></div>', $output );
+		$this->assertTrue( wp_script_is( self::SCRIPT_HANDLE, 'enqueued' ) );
+		$script_data = $this->get_localized_script_data();
+
+		$this->assertSame( 'base_product', $script_data['productId'] );
+		$this->assertSame( array( 'affirm', 'klarna' ), $script_data['paymentMethods'] );
+		$this->assertSame(
+			array(
+				'base_product' => array(
+					'amount'   => 5000,
+					'currency' => 'USD',
+				),
+			),
+			$script_data['productVariations']
+		);
+		$this->assertSame( 'US', $script_data['country'] );
+		$this->assertSame( 'en', $script_data['locale'] );
+		$this->assertSame( 'acct_test', $script_data['accountId'] );
+		$this->assertSame( 'pk_test_123', $script_data['publishableKey'] );
+		$this->assertSame( 'USD', $script_data['currencyCode'] );
+		$this->assertFalse( (bool) $script_data['isCart'] );
+		$this->assertFalse( (bool) $script_data['isCartBlock'] );
+		$this->assertSame( 0, (int) $script_data['cartTotal'] );
+		$this->assertNotEmpty( $script_data['nonce']['get_cart_total'] );
+		$this->assertNotEmpty( $script_data['nonce']['is_bnpl_available'] );
+		$this->assertStringContainsString( '%%endpoint%%', $script_data['wcAjaxUrl'] );
+		$this->assertTrue( (bool) $script_data['shouldInitializePMME'] );
+		$this->assertTrue( (bool) $script_data['shouldShowPMME'] );
+	}
+
+	/**
+	 * @testdox Should report BNPL availability from native amount limits.
+	 */
+	public function test_reports_bnpl_availability_from_native_amount_limits(): void {
+		$controller = $this->create_controller( true, true, array( 'affirm' ), array( 'affirm_payments' => 'active' ) );
+
+		$this->assertSame(
+			array(
+				'success' => true,
+				'data'    => array( 'is_available' => true ),
+			),
+			$controller->get_bnpl_availability_response(
+				array(
+					'price'    => 5000,
+					'currency' => 'USD',
+					'country'  => 'US',
+				)
+			)
+		);
+
+		$this->assertSame(
+			array(
+				'success' => true,
+				'data'    => array( 'is_available' => false ),
+			),
+			$controller->get_bnpl_availability_response(
+				array(
+					'price'    => 50,
+					'currency' => 'USD',
+					'country'  => 'US',
+				)
+			)
+		);
+	}
+
+	/**
+	 * Create a BNPL messaging controller.
+	 *
+	 * @param bool                 $native_register        Whether native should own runtime.
+	 * @param bool                 $gateway_enabled        Whether the gateway setting is enabled.
+	 * @param array<int,string>    $enabled_payment_methods Enabled payment method IDs.
+	 * @param array<string,string> $capabilities           Capability statuses keyed by Stripe capability ID.
+	 * @return WooPaymentsPaymentMethodMessaging
+	 */
+	private function create_controller(
+		bool $native_register,
+		bool $gateway_enabled,
+		array $enabled_payment_methods,
+		array $capabilities
+	): WooPaymentsPaymentMethodMessaging {
+		$arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'should_native_register' ) )
+			->getMock();
+		$arbiter->method( 'should_native_register' )->willReturn( $native_register );
+
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'can_process_payments', 'is_gateway_enabled', 'get_account_id', 'get_publishable_key', 'get_cached_account_data', 'get_gateway_setting' ) )
+			->getMock();
+		$account_service->method( 'can_process_payments' )->willReturn( $gateway_enabled );
+		$account_service->method( 'is_gateway_enabled' )->willReturn( $gateway_enabled );
+		$account_service->method( 'get_account_id' )->willReturn( 'acct_test' );
+		$account_service->method( 'get_publishable_key' )->willReturn( 'pk_test_123' );
+		$account_service->method( 'get_cached_account_data' )->willReturn(
+			array(
+				'country'      => 'US',
+				'capabilities' => $capabilities,
+			)
+		);
+		$account_service->method( 'get_gateway_setting' )->willReturnCallback(
+			static function ( string $key, $fallback = null ) use ( $enabled_payment_methods ) {
+				return 'upe_enabled_payment_method_ids' === $key ? $enabled_payment_methods : $fallback;
+			}
+		);
+
+		$controller = new WooPaymentsPaymentMethodMessaging();
+		$controller->init( $arbiter, $account_service, new WooPaymentsPaymentMethodRegistry(), new WooPaymentsOrderDataService() );
+
+		return $controller;
+	}
+
+	/**
+	 * Assert that none of the expected hooks were registered.
+	 *
+	 * @param WooPaymentsPaymentMethodMessaging $controller Messaging controller.
+	 */
+	private function assert_hooks_not_registered( WooPaymentsPaymentMethodMessaging $controller ): void {
+		foreach ( $this->get_expected_hooks() as $hook => $method ) {
+			$this->assertFalse( has_action( $hook, array( $controller, $method ) ), "{$hook} should not be registered." );
+		}
+	}
+
+	/**
+	 * Get expected hooks and callback methods.
+	 *
+	 * @return array<string,string>
+	 */
+	private function get_expected_hooks(): array {
+		return array(
+			'woocommerce_single_product_summary'    => 'render_site_messaging',
+			'woocommerce_proceed_to_checkout'       => 'render_site_messaging',
+			'woocommerce_blocks_enqueue_cart_block_scripts_after' => 'render_site_messaging',
+			'wc_ajax_wcpay_get_cart_total'          => 'handle_get_cart_total',
+			'wc_ajax_wcpay_check_bnpl_availability' => 'handle_check_bnpl_availability',
+		);
+	}
+
+	/**
+	 * Set the current queried product.
+	 *
+	 * @param WC_Product $product Product object.
+	 */
+	private function set_current_product( WC_Product $product ): void {
+		global $post;
+
+		$post               = get_post( $product->get_id() ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
+		$GLOBALS['product'] = $product;
+		$this->go_to( get_permalink( $product->get_id() ) );
+		setup_postdata( $post );
+		add_filter( 'woocommerce_is_product', '__return_true' );
+	}
+
+	/**
+	 * Get localized BNPL messaging script data.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_localized_script_data(): array {
+		$script_data_string = wp_scripts()->get_data( self::SCRIPT_HANDLE, 'data' );
+		$this->assertIsString( $script_data_string );
+
+		$start_pos = strpos( $script_data_string, '{' );
+		$end_pos   = strrpos( $script_data_string, '}' );
+		$this->assertIsInt( $start_pos );
+		$this->assertIsInt( $end_pos );
+
+		$script_data = json_decode( substr( $script_data_string, $start_pos, ( $end_pos - $start_pos ) + 1 ), true );
+		$this->assertIsArray( $script_data );
+
+		return $script_data;
+	}
+}
