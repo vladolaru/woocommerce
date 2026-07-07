@@ -65,6 +65,11 @@ def test_full_evidence_plan_lists_final_gates() -> None:
     assert "perf-surface-gate.sh compare" in result.stdout
     assert "woopayments-critical-flows/test-inventory.py" in result.stdout
     assert "woopayments-critical-flows/run.sh --store both --layer all" in result.stdout
+    assert "pnpm --filter=@woocommerce/plugin-woocommerce test:php:env" in result.stdout
+    assert "pnpm --filter=@woocommerce/admin-library test:js" in result.stdout
+    assert "pnpm --filter=@woocommerce/admin-library ts:check" in result.stdout
+    assert "pnpm --filter=@woocommerce/plugin-woocommerce lint:changes:branch" in result.stdout
+    assert "pnpm --filter=@woocommerce/plugin-woocommerce phpstan" in result.stdout
 
 
 def test_full_evidence_executes_nested_self_check_and_tracks_verifier() -> None:
@@ -79,7 +84,9 @@ def test_full_evidence_executes_nested_self_check_and_tracks_verifier() -> None:
 
         invocations = Path(tmp) / "invocations.log"
         fake_wp = Path(tmp) / "fake-wp"
+        fake_bin = Path(tmp) / "bin"
         fake_tmp = Path(tmp) / "tmp"
+        fake_bin.mkdir()
         fake_tmp.mkdir()
 
         verify_copy = merge_dir / "verify.sh"
@@ -165,6 +172,13 @@ fi
 """,
         )
         write_executable(
+            fake_bin / "pnpm",
+            """#!/usr/bin/env bash
+set -eu
+printf 'pnpm|%s\n' "$*" >> "$INVOCATIONS_LOG"
+""",
+        )
+        write_executable(
             critical_dir / "test-inventory.py",
             """#!/usr/bin/env python3
 import os
@@ -204,6 +218,7 @@ printf 'critical-run|%s\n' "$*" >> "$INVOCATIONS_LOG"
                 "INVOCATIONS_LOG": str(invocations),
                 "TMPDIR": str(fake_tmp),
                 "WCPAY_REPO": str(wcpay_repo),
+                "PATH": str(fake_bin) + ":" + "/bin:/usr/bin:/usr/local/bin",
             },
             check=False,
         )
@@ -219,6 +234,11 @@ printf 'critical-run|%s\n' "$*" >> "$INVOCATIONS_LOG"
         assert invocation_log.count("hook-shape-parity.sh|") >= 4
         assert invocation_log.count("subsystem-disposition-gate.sh|") >= 4
         assert invocation_log.count("i18n-notes-gate.sh|") >= 3
+        assert "pnpm|--filter=@woocommerce/plugin-woocommerce test:php:env" in invocation_log
+        assert "pnpm|--filter=@woocommerce/admin-library test:js" in invocation_log
+        assert "pnpm|--filter=@woocommerce/admin-library ts:check" in invocation_log
+        assert "pnpm|--filter=@woocommerce/plugin-woocommerce lint:changes:branch" in invocation_log
+        assert "pnpm|--filter=@woocommerce/plugin-woocommerce phpstan" in invocation_log
 
 
 def test_full_evidence_flag_is_documented_in_usage() -> None:

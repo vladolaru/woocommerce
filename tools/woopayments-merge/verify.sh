@@ -189,7 +189,20 @@ bash $SELF_DIR/perf-surface-gate.sh capture --wp "$TARGET_WP" --out "$FULL_EVIDE
 bash $SELF_DIR/perf-surface-gate.sh compare --ref "$FULL_EVIDENCE_OUT_DIR/perf-surface/reference.json" --target "$FULL_EVIDENCE_OUT_DIR/perf-surface/target.json"
 python3 $REPO_ROOT/tools/woopayments-critical-flows/test-inventory.py
 bash $REPO_ROOT/tools/woopayments-critical-flows/run.sh --store both --layer all
+pnpm --filter=@woocommerce/plugin-woocommerce test:php:env
+pnpm --filter=@woocommerce/admin-library test:js
+pnpm --filter=@woocommerce/admin-library ts:check
+pnpm --filter=@woocommerce/plugin-woocommerce lint:changes:branch
+pnpm --filter=@woocommerce/plugin-woocommerce phpstan
 PLAN
+}
+
+run_quality_evidence() {
+	gate "full WooCommerce PHP suite" pnpm --filter=@woocommerce/plugin-woocommerce test:php:env
+	gate "full admin Jest suite" pnpm --filter=@woocommerce/admin-library test:js
+	gate "admin TypeScript check" pnpm --filter=@woocommerce/admin-library ts:check
+	gate "branch lint" pnpm --filter=@woocommerce/plugin-woocommerce lint:changes:branch
+	gate "PHPStan" pnpm --filter=@woocommerce/plugin-woocommerce phpstan
 }
 
 run_bundle_size_evidence() {
@@ -284,6 +297,7 @@ run_full_evidence_gates() {
 	gate "converted-currency charge reconciliation" bash "$SELF_DIR/converted-currency-gate.sh" --ref "$REF_WP" --target "$TARGET_WP" --currency GBP
 	run_bundle_size_evidence
 	run_perf_surface_evidence
+	run_quality_evidence
 }
 
 if [ "$PRINT_FULL_EVIDENCE_PLAN" -eq 1 ]; then
