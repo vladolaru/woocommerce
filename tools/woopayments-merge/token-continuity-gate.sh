@@ -280,11 +280,12 @@ validate_browser_evidence() {
 	local evidence_path="$2"
 	local expected_token_id="${3:-}"
 
-	python3 - "$phase" "$METHOD" "$GATEWAY_ID" "$STRIPE_PAYMENT_METHOD_TYPE" "$TOKEN_TYPE" "$CUSTOMER_ID" "$expected_token_id" "$evidence_path" <<'PY'
+	python3 - "$phase" "$TARGET_BASE_URL" "$METHOD" "$GATEWAY_ID" "$STRIPE_PAYMENT_METHOD_TYPE" "$TOKEN_TYPE" "$CUSTOMER_ID" "$expected_token_id" "$evidence_path" <<'PY'
 import json
 import sys
+from urllib.parse import urlparse
 
-phase, method, gateway_id, stripe_type, token_type, customer_id, expected_token_id, evidence_path = sys.argv[1:]
+phase, base_url, method, gateway_id, stripe_type, token_type, customer_id, expected_token_id, evidence_path = sys.argv[1:]
 errors = []
 try:
     with open(evidence_path, encoding="utf-8") as stream:
@@ -294,6 +295,7 @@ except Exception as exc:
 
 expected_values = {
     "phase": phase,
+    "base_url": base_url,
     "method": method,
     "gateway_id": gateway_id,
     "stripe_payment_method_type": stripe_type,
@@ -307,11 +309,45 @@ for key, expected in expected_values.items():
 if payload.get("status") != "pass":
     errors.append(f"status is not pass: {payload.get('status')!r}")
 
+url = payload.get("url")
+if url in (None, "", 0):
+    errors.append("missing url")
+else:
+    parsed = urlparse(str(url))
+    host = parsed.hostname or ""
+    normalized_base = base_url.rstrip("/")
+    expected_url = f"{normalized_base}/checkout/?token-continuity-gate=save-sepa"
+    if phase == "render_payment_methods":
+        expected_url = (
+            f"{normalized_base}/my-account/payment-methods/?token-continuity-gate=render-sepa"
+            f"&token_id={expected_token_id}"
+        )
+    if parsed.scheme not in {"http", "https"}:
+        errors.append(f"url must be http(s), got {url!r}")
+    if host not in {"localhost", "127.0.0.1"} and not host.endswith(".localhost"):
+        errors.append(f"url must stay local, got {url!r}")
+    if str(url) != expected_url:
+        errors.append(f"url mismatch: expected {expected_url!r}, got {url!r}")
+
 token_id = payload.get("token_id")
 if not isinstance(token_id, int) or token_id <= 0:
     errors.append("missing token_id")
 elif expected_token_id and token_id != int(expected_token_id):
     errors.append(f"token_id mismatch: expected {expected_token_id}, got {token_id}")
+
+if phase == "save_sepa_token":
+    selected_gateway_id = payload.get("selected_gateway_id")
+    payment_method_id = payload.get("payment_method_id")
+    if selected_gateway_id in (None, "", 0):
+        errors.append("missing selected_gateway_id")
+    elif selected_gateway_id != gateway_id:
+        errors.append(
+            f"selected_gateway_id mismatch: expected {gateway_id!r}, got {selected_gateway_id!r}"
+        )
+    if payment_method_id in (None, "", 0):
+        errors.append("missing payment_method_id")
+    elif not str(payment_method_id).startswith("pm_"):
+        errors.append("payment_method_id must be a Stripe PaymentMethod id")
 
 if phase == "render_payment_methods" and payload.get("token_visible") is not True:
     errors.append("token_visible is not true")

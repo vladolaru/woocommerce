@@ -74,7 +74,8 @@ exit 1
     )
 
 
-def make_fake_playwriter(path: Path) -> None:
+def make_fake_playwriter(path: Path, *, omit_save_semantics: bool = False) -> None:
+    omit_save_semantics_literal = "True" if omit_save_semantics else "False"
     write_executable(
         path,
         """#!/usr/bin/env python3
@@ -84,11 +85,22 @@ import pathlib
 import sys
 
 phase = os.environ["TOKEN_CONTINUITY_GATE_PHASE"]
+base_url = os.environ["TOKEN_CONTINUITY_GATE_BASE_URL"]
+omit_save_semantics = __OMIT_SAVE_SEMANTICS__
+
+if phase == "save_sepa_token":
+    url = base_url + "/checkout/?token-continuity-gate=save-sepa"
+elif phase == "render_payment_methods":
+    url = base_url + "/my-account/payment-methods/?token-continuity-gate=render-sepa&token_id=" + os.environ["TOKEN_CONTINUITY_GATE_TOKEN_ID"]
+else:
+    raise SystemExit(f"unexpected phase: {phase}")
+
 payload = {
     "schema": "woopayments_token_continuity_browser_evidence.v1",
     "status": "pass",
     "phase": phase,
-    "base_url": os.environ["TOKEN_CONTINUITY_GATE_BASE_URL"],
+    "base_url": base_url,
+    "url": "" if omit_save_semantics and phase == "save_sepa_token" else url,
     "method": os.environ["TOKEN_CONTINUITY_GATE_METHOD"],
     "gateway_id": os.environ["TOKEN_CONTINUITY_GATE_GATEWAY_ID"],
     "stripe_payment_method_type": os.environ["TOKEN_CONTINUITY_GATE_STRIPE_PAYMENT_METHOD_TYPE"],
@@ -99,15 +111,14 @@ payload = {
 if phase == "save_sepa_token":
     payload.update({
         "token_id": 4242,
-        "payment_method_id": "pm_unit_sepa",
+        "selected_gateway_id": "" if omit_save_semantics else os.environ["TOKEN_CONTINUITY_GATE_GATEWAY_ID"],
+        "payment_method_id": "" if omit_save_semantics else "pm_unit_sepa",
     })
 elif phase == "render_payment_methods":
     payload.update({
         "token_id": int(os.environ["TOKEN_CONTINUITY_GATE_TOKEN_ID"]),
         "token_visible": True,
     })
-else:
-    raise SystemExit(f"unexpected phase: {phase}")
 
 evidence_path = pathlib.Path(os.environ["TOKEN_CONTINUITY_GATE_EVIDENCE_PATH"])
 evidence_path.parent.mkdir(parents=True, exist_ok=True)
@@ -116,7 +127,7 @@ evidence_path.write_text(json.dumps(payload, sort_keys=True) + "\\n", encoding="
 invocation_path = pathlib.Path(os.environ["FAKE_PLAYWRITER_INVOCATIONS"])
 with invocation_path.open("a", encoding="utf-8") as stream:
     stream.write(json.dumps({"argv": sys.argv[1:], "env": payload}, sort_keys=True) + "\\n")
-""",
+""".replace("__OMIT_SAVE_SEMANTICS__", omit_save_semantics_literal),
     )
 
 
@@ -259,12 +270,52 @@ def test_gate_fails_when_native_token_list_omits_saved_token() -> None:
         assert any("saved token 4242" in failure for failure in rollup["failures"])
 
 
+def test_gate_requires_save_token_browser_semantic_evidence() -> None:
+    with tempfile.TemporaryDirectory(prefix="token-continuity-gate-test-") as tmp:
+        tmp_path = Path(tmp)
+        target_wp = tmp_path / "target-wp"
+        fake_playwriter = tmp_path / "fake-playwriter"
+        out_dir = tmp_path / "evidence"
+
+        make_fake_wp(target_wp, "http://store8889.localhost:8889")
+        make_fake_playwriter(fake_playwriter, omit_save_semantics=True)
+
+        env = {
+            **os.environ,
+            "PLAYWRITER_BIN": str(fake_playwriter),
+            "FAKE_WP_INVOCATIONS": str(tmp_path / "wp-invocations.txt"),
+            "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter-invocations.jsonl"),
+        }
+
+        result = run_gate(
+            "--target",
+            str(target_wp),
+            "--customer-id",
+            "7",
+            "--subscription-id",
+            "77",
+            "--playwriter-session",
+            "unit",
+            "--out-dir",
+            str(out_dir),
+            env=env,
+        )
+
+        assert result.returncode == 1
+        assert "save_sepa_token: missing url" in result.stderr
+        assert "save_sepa_token: missing selected_gateway_id" in result.stderr
+        assert "save_sepa_token: missing payment_method_id" in result.stderr
+        rollup = json.loads((out_dir / "token-continuity-gate.json").read_text(encoding="utf-8"))
+        assert rollup["status"] == "fail"
+
+
 def main() -> None:
     tests = [
         test_usage_requires_target_customer_and_subscription,
         test_print_plan_describes_sepa_cutover_evidence,
         test_full_gate_invokes_browser_cutover_token_list_and_renewal_checks,
         test_gate_fails_when_native_token_list_omits_saved_token,
+        test_gate_requires_save_token_browser_semantic_evidence,
     ]
     for test in tests:
         test()
