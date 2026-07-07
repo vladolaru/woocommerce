@@ -17,6 +17,7 @@ use WC_Unit_Test_Case;
 class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 
 	private const SCRIPT_HANDLE = 'wc-woopayments-payment-method-messaging';
+	private const STYLE_HANDLE  = 'wc-woopayments-payment-method-messaging';
 
 	/**
 	 * Registered messaging controllers to clean up.
@@ -37,6 +38,9 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 
 		wp_dequeue_script( self::SCRIPT_HANDLE );
 		wp_deregister_script( self::SCRIPT_HANDLE );
+		wp_dequeue_style( self::STYLE_HANDLE );
+		wp_deregister_style( self::STYLE_HANDLE );
+		wp_deregister_script( 'wc-woopayments-appearance' );
 		wp_deregister_script( 'stripe' );
 		delete_option( 'woocommerce_default_country' );
 		delete_option( 'woocommerce_currency' );
@@ -108,6 +112,16 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( '<div id="payment-method-message"></div>', $output );
 		$this->assertTrue( wp_script_is( self::SCRIPT_HANDLE, 'enqueued' ) );
+		$this->assertStringContainsString(
+			'/assets/js/frontend/woopayments-payment-method-messaging',
+			wp_scripts()->registered[ self::SCRIPT_HANDLE ]->src
+		);
+		$this->assertContains( 'wc-woopayments-appearance', wp_scripts()->registered[ self::SCRIPT_HANDLE ]->deps );
+		$this->assertTrue( wp_style_is( self::STYLE_HANDLE, 'enqueued' ) );
+		$this->assertStringContainsString(
+			'/assets/css/woopayments-payment-method-messaging.css',
+			wp_styles()->registered[ self::STYLE_HANDLE ]->src
+		);
 		$script_data = $this->get_localized_script_data();
 
 		$this->assertSame( 'base_product', $script_data['productId'] );

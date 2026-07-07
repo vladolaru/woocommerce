@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\Jetpack\Constants;
 use WC_AJAX;
 use WC_Product;
 
@@ -27,6 +28,10 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	private const STRIPE_SCRIPT_HANDLE = 'stripe';
 
 	private const STRIPE_SCRIPT_URL = 'https://js.stripe.com/v3/';
+
+	private const APPEARANCE_SCRIPT_HANDLE = 'wc-woopayments-appearance';
+
+	private const STYLE_HANDLE = 'wc-woopayments-payment-method-messaging';
 
 	private const BNPL_CAPABILITY = 'buy_now_pay_later';
 
@@ -201,6 +206,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 		);
 
 		wp_enqueue_script( self::SCRIPT_HANDLE );
+		wp_enqueue_style( self::STYLE_HANDLE );
 	}
 
 	/**
@@ -260,14 +266,36 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 			wp_register_script( self::STRIPE_SCRIPT_HANDLE, self::STRIPE_SCRIPT_URL, array(), null, true );
 		}
 
+		$suffix = Constants::is_true( 'SCRIPT_DEBUG' ) ? '' : '.min';
+
+		if ( ! wp_script_is( self::APPEARANCE_SCRIPT_HANDLE, 'registered' ) ) {
+			wp_register_script(
+				self::APPEARANCE_SCRIPT_HANDLE,
+				WC()->plugin_url() . '/assets/js/frontend/utils/woopayments-appearance' . $suffix . '.js',
+				array(),
+				WC_VERSION,
+				true
+			);
+		}
+
 		if ( ! wp_script_is( self::SCRIPT_HANDLE, 'registered' ) ) {
 			wp_register_script(
 				self::SCRIPT_HANDLE,
-				false,
-				array( self::STRIPE_SCRIPT_HANDLE ),
-				defined( 'WC_VERSION' ) ? WC_VERSION : '',
+				WC()->plugin_url() . '/assets/js/frontend/woopayments-payment-method-messaging' . $suffix . '.js',
+				array( 'jquery', self::STRIPE_SCRIPT_HANDLE, self::APPEARANCE_SCRIPT_HANDLE ),
+				WC_VERSION,
 				true
 			);
+		}
+
+		if ( ! wp_style_is( self::STYLE_HANDLE, 'registered' ) ) {
+			wp_register_style(
+				self::STYLE_HANDLE,
+				WC()->plugin_url() . '/assets/css/woopayments-payment-method-messaging.css',
+				array(),
+				WC_VERSION
+			);
+			wp_style_add_data( self::STYLE_HANDLE, 'rtl', 'replace' );
 		}
 	}
 
