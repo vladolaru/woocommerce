@@ -1061,6 +1061,25 @@ class WooPaymentsApiClient {
 	}
 
 	/**
+	 * Get the latest fraud outcome for a given payment intent ID.
+	 *
+	 * @param string $id Payment intent ID.
+	 * @return array<string|int,mixed>
+	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 */
+	public function get_latest_fraud_outcome( string $id ): array {
+		$this->validate_route_word_id( $id );
+
+		$response = $this->request( array(), self::FRAUD_OUTCOMES_API . '/order_id/' . $id, 'GET' );
+
+		if ( isset( $response[0] ) && is_array( $response[0] ) ) {
+			return $response[0];
+		}
+
+		return $response;
+	}
+
+	/**
 	 * Get the latest fraud ruleset config for the connected account.
 	 *
 	 * @return array<string,mixed>
@@ -1837,6 +1856,19 @@ class WooPaymentsApiClient {
 	 */
 	private function validate_route_resource_id( string $id ): void {
 		if ( '' === $id || ! preg_match( '/^[\w-]+$/', $id ) ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
+			throw new WooPaymentsApiException( __( 'Route param validation failed.', 'woocommerce' ), 'wcpay_route_validation_failure', 400 );
+		}
+	}
+
+	/**
+	 * Validate a WooPayments word-only route resource ID before path interpolation.
+	 *
+	 * @param string $id Resource ID.
+	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 */
+	private function validate_route_word_id( string $id ): void {
+		if ( '' === $id || ! preg_match( '/^\w+$/', $id ) ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
 			throw new WooPaymentsApiException( __( 'Route param validation failed.', 'woocommerce' ), 'wcpay_route_validation_failure', 400 );
 		}

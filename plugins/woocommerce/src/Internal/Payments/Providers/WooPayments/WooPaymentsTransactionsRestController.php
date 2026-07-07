@@ -137,6 +137,7 @@ class WooPaymentsTransactionsRestController implements RegisterHooksInterface {
 		register_rest_route( self::NAMESPACE, '/payments/transactions/fraud-outcomes/summary', $this->get_readable_route( 'get_fraud_outcome_transactions_summary' ) );
 		register_rest_route( self::NAMESPACE, '/payments/transactions/fraud-outcomes/search', $this->get_readable_route( 'get_fraud_outcome_transactions_search_autocomplete' ) );
 		register_rest_route( self::NAMESPACE, '/payments/transactions/fraud-outcomes/download', $this->get_readable_route( 'get_fraud_outcome_transactions_export' ) );
+		register_rest_route( self::NAMESPACE, '/payments/fraud_outcomes/(?P<id>\w+)/latest', $this->get_readable_route( 'get_latest_fraud_outcome' ) );
 
 		register_rest_route( self::NAMESPACE, '/payments/transactions/(?P<transaction_id>\w+)', $this->get_readable_route( 'get_transaction' ) );
 	}
@@ -299,6 +300,21 @@ class WooPaymentsTransactionsRestController implements RegisterHooksInterface {
 					),
 				)
 			);
+		} catch ( WooPaymentsApiException $exception ) {
+			return $this->api_exception_to_wp_error( $exception );
+		}
+	}
+
+	/**
+	 * Get the latest fraud outcome for a payment intent ID.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function get_latest_fraud_outcome( WP_REST_Request $request ) {
+		try {
+			return new WP_REST_Response( $this->api_client->get_latest_fraud_outcome( (string) $request->get_param( 'id' ) ) );
 		} catch ( WooPaymentsApiException $exception ) {
 			return $this->api_exception_to_wp_error( $exception );
 		}

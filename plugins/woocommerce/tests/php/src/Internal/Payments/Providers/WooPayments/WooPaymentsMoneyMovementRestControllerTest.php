@@ -93,6 +93,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		$this->assertArrayHasKey( '/wc/v3/payments/transactions', $routes );
 		$this->assertArrayHasKey( '/wc/v3/payments/transactions/summary', $routes );
 		$this->assertArrayHasKey( '/wc/v3/payments/transactions/search', $routes );
+		$this->assertArrayHasKey( '/wc/v3/payments/fraud_outcomes/(?P<id>\\w+)/latest', $routes );
 		$this->assertArrayHasKey( '/wc/v3/payments/transactions/(?P<transaction_id>\\w+)', $routes );
 
 		$controller = $this->create_transactions_controller( false );
@@ -983,6 +984,38 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 
 		$this->assertSame( rest_authorization_required_code(), $response->get_status() );
 		$this->assertSame( array(), $this->api_client->last_call );
+	}
+
+	/**
+	 * @testdox Latest fraud outcome route requires manage_woocommerce before API calls.
+	 */
+	public function test_latest_fraud_outcome_route_requires_manage_woocommerce(): void {
+		$this->create_transactions_controller( true )->register_routes();
+		wp_set_current_user( 0 );
+
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/fraud_outcomes/pi_test/latest' ) );
+
+		$this->assertSame( rest_authorization_required_code(), $response->get_status() );
+		$this->assertSame( array(), $this->api_client->last_call );
+	}
+
+	/**
+	 * @testdox Latest fraud outcome route delegates to the preserved API-client method.
+	 */
+	public function test_latest_fraud_outcome_route_delegates_to_api_client(): void {
+		$this->api_client->response = array(
+			'id'                => 'fo_latest',
+			'payment_intent_id' => 'pi_test',
+			'outcome'           => 'review',
+		);
+		$this->create_transactions_controller( true )->register_routes();
+
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/fraud_outcomes/pi_test/latest' ) );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( 'get_latest_fraud_outcome', $this->api_client->last_call['method'] );
+		$this->assertSame( 'pi_test', $this->api_client->last_call['id'] );
+		$this->assertSame( $this->api_client->response, $response->get_data() );
 	}
 
 	/**

@@ -198,6 +198,18 @@ class RecordingMoneyMovementApiClient extends WooPaymentsApiClient {
 	}
 
 	/**
+	 * Get the latest fraud outcome.
+	 *
+	 * @param string $id Payment intent ID.
+	 * @return array<string,mixed>
+	 */
+	public function get_latest_fraud_outcome( string $id ): array {
+		$this->record( 'get_latest_fraud_outcome', array( 'id' => $id ) );
+
+		return $this->response;
+	}
+
+	/**
 	 * Export transactions.
 	 *
 	 * @param array<string,mixed> $filters Filters.

@@ -2650,6 +2650,50 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should preserve the latest fraud outcome endpoint and unwrap the first response item.
+	 */
+	public function test_get_latest_fraud_outcome_uses_preserved_endpoint(): void {
+		list( $sut, $http_client ) = $this->make_sut(
+			true,
+			array(
+				array(
+					'id'      => 'fo_latest',
+					'outcome' => 'review',
+				),
+				array(
+					'id'      => 'fo_previous',
+					'outcome' => 'allow',
+				),
+			)
+		);
+
+		$response = $sut->get_latest_fraud_outcome( 'pi_test' );
+
+		$this->assertSame( '/sites/123/wcpay/fraud_outcomes/order_id/pi_test?test_mode=1', $http_client->last_path );
+		$this->assertSame( 'GET', $http_client->last_method );
+		$this->assertSame(
+			array(
+				'id'      => 'fo_latest',
+				'outcome' => 'review',
+			),
+			$response
+		);
+	}
+
+	/**
+	 * @testdox Should preserve empty latest fraud outcome responses.
+	 */
+	public function test_get_latest_fraud_outcome_preserves_empty_response(): void {
+		list( $sut, $http_client ) = $this->make_sut( true, array() );
+
+		$response = $sut->get_latest_fraud_outcome( 'pi_test' );
+
+		$this->assertSame( '/sites/123/wcpay/fraud_outcomes/order_id/pi_test?test_mode=1', $http_client->last_path );
+		$this->assertSame( 'GET', $http_client->last_method );
+		$this->assertSame( array(), $response );
+	}
+
+	/**
 	 * @testdox Should preserve the single-transaction detail endpoint in admin context.
 	 */
 	public function test_get_transaction_admin_uses_preserved_endpoint(): void {
@@ -2862,6 +2906,26 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->expectException( WooPaymentsApiException::class );
 
 		$sut->get_fraud_outcomes( array( 'status' => 'invalid' ) );
+	}
+
+	/**
+	 * @testdox Should reject unsafe latest fraud outcome identifiers.
+	 */
+	public function test_get_latest_fraud_outcome_rejects_invalid_route_identifier(): void {
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id  = 123;
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode( array() ),
+		);
+
+		$sut = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( false ) );
+
+		$this->expectException( WooPaymentsApiException::class );
+
+		$sut->get_latest_fraud_outcome( 'pi-test' );
 	}
 
 	/**
