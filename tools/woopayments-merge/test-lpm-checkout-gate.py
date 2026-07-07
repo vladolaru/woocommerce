@@ -12,6 +12,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 SCRIPT = REPO / "tools/woopayments-merge/lpm-checkout-gate.sh"
+BROWSER_DRIVER = REPO / "tools/woopayments-merge/lpm-checkout.playwriter.mjs"
 REF_WP = "docker exec -i wcpay_wp_default wp --allow-root"
 TARGET_WP = "docker exec -i target-cli-1 wp --allow-root --user=1"
 
@@ -373,6 +374,20 @@ def test_gate_rejects_base_card_gateway_fallback_evidence() -> None:
         assert rollup["status"] == "fail"
 
 
+def test_real_browser_driver_is_not_the_incomplete_capture_stub() -> None:
+    source = BROWSER_DRIVER.read_text(encoding="utf-8")
+
+    assert "Submit-capable LPM checkout flow is not implemented yet" not in source
+    assert "status: 'incomplete'" not in source
+    assert "async function selectPaymentMethod" in source
+    assert "async function submitCheckout" in source
+    assert "async function approveExternalAuthorization" in source
+    assert "async function extractOrderEvidence" in source
+    assert "selected_gateway_id:" in source
+    assert "order_payment_method:" in source
+    assert "used_base_card_gateway:" in source
+
+
 def main() -> None:
     tests = [
         test_usage_requires_methods_ref_and_target,
@@ -383,6 +398,7 @@ def main() -> None:
         test_gate_fails_when_driver_evidence_omits_required_order_fields,
         test_gate_requires_semantic_lpm_checkout_evidence,
         test_gate_rejects_base_card_gateway_fallback_evidence,
+        test_real_browser_driver_is_not_the_incomplete_capture_stub,
     ]
     for test in tests:
         test()
