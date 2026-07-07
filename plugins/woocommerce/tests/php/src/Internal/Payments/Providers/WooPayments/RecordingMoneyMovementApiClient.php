@@ -157,6 +157,25 @@ class RecordingMoneyMovementApiClient extends WooPaymentsApiClient {
 	}
 
 	/**
+	 * Create and confirm a payment intent.
+	 *
+	 * @param array<string,mixed> $request_data    Intent request data.
+	 * @param string              $idempotency_key Idempotency key.
+	 * @return array<string,mixed>
+	 */
+	public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
+		$this->record(
+			'create_and_confirm_payment_intention',
+			array(
+				'request_data'    => $request_data,
+				'idempotency_key' => $idempotency_key,
+			)
+		);
+
+		return $this->response;
+	}
+
+	/**
 	 * Get timeline events.
 	 *
 	 * @param string $id Payment intent ID or order ID.

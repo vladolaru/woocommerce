@@ -172,6 +172,30 @@ class WooPaymentsMoneyMovementOrderService {
 	}
 
 	/**
+	 * Build a WooPayments-compatible create-and-confirm intent request from a WooCommerce order.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @param WC_Order $order          Order.
+	 * @param string   $customer_id    WooPayments customer ID.
+	 * @param string   $payment_method Payment method ID.
+	 * @param bool     $manual_capture Whether manual capture is enabled.
+	 * @return array<string,mixed>
+	 */
+	public function build_create_payment_intent_request_from_order( WC_Order $order, string $customer_id, string $payment_method, bool $manual_capture ): array {
+		return array(
+			'amount'               => $this->order_data_service->prepare_amount( (float) $order->get_total(), (string) $order->get_currency() ),
+			'capture_method'       => $manual_capture ? 'manual' : 'automatic',
+			'currency'             => strtolower( (string) $order->get_currency() ),
+			'customer'             => $customer_id,
+			'metadata'             => WooPaymentsIntentCodec::metadata_from_order( $order ),
+			'payment_method'       => $payment_method,
+			'payment_method_types' => array( 'card' ),
+			'off_session'          => true,
+		);
+	}
+
+	/**
 	 * Add order context to a payment intent detail response and its embedded charges.
 	 *
 	 * @param array<string,mixed> $intent Platform payment intent.

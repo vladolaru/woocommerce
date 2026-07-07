@@ -101,6 +101,7 @@ class WooPaymentsPaymentDetailsRestController implements RegisterHooksInterface 
 	public function register_routes(): void {
 		register_rest_route( self::NAMESPACE, '/payments/charges/(?P<charge_id>\w+)', $this->get_readable_route( 'get_charge' ) );
 		register_rest_route( self::NAMESPACE, '/payments/charges/order/(?P<order_id>\w+)', $this->get_readable_route( 'generate_charge_from_order' ) );
+		register_rest_route( self::NAMESPACE, '/payments/payment_intents', $this->get_creatable_route( 'create_payment_intent' ) );
 		register_rest_route( self::NAMESPACE, '/payments/payment_intents/(?P<payment_intent_id>\w+)', $this->get_readable_route( 'get_payment_intent' ) );
 		register_rest_route( self::NAMESPACE, '/payments/timeline/(?P<intention_id>\w+)', $this->get_readable_route( 'get_timeline' ) );
 		register_rest_route( self::NAMESPACE, '/payments/refund', $this->get_creatable_route( 'process_refund' ) );
@@ -166,6 +167,42 @@ class WooPaymentsPaymentDetailsRestController implements RegisterHooksInterface 
 			return new WP_REST_Response(
 				$this->order_service->enrich_payment_intent_response(
 					$this->api_client->get_payment_intention( (string) $request->get_param( 'payment_intent_id' ) )
+				)
+			);
+		} catch ( WooPaymentsApiException $exception ) {
+			return $this->api_exception_to_wp_error( $exception );
+		}
+	}
+
+	/**
+	 * Create and confirm a payment intent from an order.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function create_payment_intent( WP_REST_Request $request ) {
+		$order = wc_get_order( absint( $request->get_param( 'order_id' ) ) );
+		if ( ! $order instanceof WC_Order ) {
+			return new WP_Error(
+				'wcpay_server_error',
+				__( 'Order not found', 'woocommerce' ),
+				array( 'status' => 500 )
+			);
+		}
+
+		try {
+			return new WP_REST_Response(
+				$this->order_service->enrich_payment_intent_response(
+					$this->api_client->create_and_confirm_payment_intention(
+						$this->order_service->build_create_payment_intent_request_from_order(
+							$order,
+							(string) $request->get_param( 'customer' ),
+							(string) $request->get_param( 'payment_method' ),
+							$this->is_manual_capture_enabled()
+						),
+						'payment_intent_order_' . $order->get_id()
+					)
 				)
 			);
 		} catch ( WooPaymentsApiException $exception ) {
@@ -459,6 +496,17 @@ class WooPaymentsPaymentDetailsRestController implements RegisterHooksInterface 
 			'callback'            => array( $this, $callback ),
 			'permission_callback' => array( $this, 'check_permission' ),
 		);
+	}
+
+	/**
+	 * Tell whether manual capture is enabled for WooPayments.
+	 *
+	 * @return bool
+	 */
+	private function is_manual_capture_enabled(): bool {
+		$settings = get_option( 'woocommerce_woocommerce_payments_settings', array() );
+
+		return is_array( $settings ) && 'yes' === (string) ( $settings['manual_capture'] ?? 'no' );
 	}
 
 	/**

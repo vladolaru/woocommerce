@@ -66,6 +66,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		remove_all_filters( 'wcpay_get_fraud_outcome_transactions_search_autocomplete_request' );
 		remove_all_filters( 'wcpay_get_fraud_outcome_transactions_export_request' );
 		remove_all_filters( 'woocommerce_logging_class' );
+		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		delete_option( 'wcpay_dispute_status_counts_cache' );
 		delete_option( 'wcpay_test_dispute_status_counts_cache' );
 		delete_option( 'wcpay_active_dispute_cache' );
@@ -432,6 +433,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		$routes = $this->server->get_routes();
 		$this->assertArrayHasKey( '/wc/v3/payments/charges/(?P<charge_id>\\w+)', $routes );
 		$this->assertArrayHasKey( '/wc/v3/payments/charges/order/(?P<order_id>\\w+)', $routes );
+		$this->assertArrayHasKey( '/wc/v3/payments/payment_intents', $routes );
 		$this->assertArrayHasKey( '/wc/v3/payments/payment_intents/(?P<payment_intent_id>\\w+)', $routes );
 		$this->assertArrayHasKey( '/wc/v3/payments/timeline/(?P<intention_id>\\w+)', $routes );
 		$this->assertArrayHasKey( '/wc/v3/payments/refund', $routes );
@@ -564,6 +566,95 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		$this->assertSame( 'txn_test', $data['charges']['data'][0]['balance_transaction']['id'] );
 		$this->assertSame( $order->get_id(), $data['order']['id'] );
 		$this->assertSame( $order->get_id(), $data['charges']['data'][0]['order']['id'] );
+	}
+
+	/**
+	 * @testdox Payment detail create-intent route requires manage_woocommerce.
+	 */
+	public function test_payment_detail_create_intent_route_requires_manage_woocommerce(): void {
+		$order = $this->create_order_for_generated_charge();
+		$this->create_payment_details_controller( true )->register_routes();
+		wp_set_current_user( 0 );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/payment_intents' );
+		$request->set_body_params(
+			array(
+				'order_id'       => $order->get_id(),
+				'customer'       => 'cus_test',
+				'payment_method' => 'pm_test',
+			)
+		);
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( rest_authorization_required_code(), $response->get_status() );
+		$this->assertSame( array(), $this->api_client->last_call );
+	}
+
+	/**
+	 * @testdox Payment detail create-intent route creates an off-session card intent from the order.
+	 */
+	public function test_payment_detail_create_intent_route_creates_order_intent(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'manual_capture' => 'yes' ) );
+		$order = $this->create_order_for_generated_charge();
+
+		$this->api_client->response = array(
+			'id'      => 'pi_created',
+			'amount'  => 1234,
+			'charges' => array( 'data' => array() ),
+		);
+		$this->create_payment_details_controller( true )->register_routes();
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/payment_intents' );
+		$request->set_body_params(
+			array(
+				'order_id'       => $order->get_id(),
+				'customer'       => 'cus_test',
+				'payment_method' => 'pm_test',
+			)
+		);
+		$response = $this->server->dispatch( $request );
+		$data     = $response->get_data();
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( 'pi_created', $data['id'] );
+		$this->assertSame( 'create_and_confirm_payment_intention', $this->api_client->last_call['method'] );
+		$this->assertSame( 'payment_intent_order_' . $order->get_id(), $this->api_client->last_call['idempotency_key'] );
+
+		$request_data = $this->api_client->last_call['request_data'];
+		$this->assertSame( 1234, $request_data['amount'] );
+		$this->assertSame( 'usd', $request_data['currency'] );
+		$this->assertSame( 'cus_test', $request_data['customer'] );
+		$this->assertSame( 'pm_test', $request_data['payment_method'] );
+		$this->assertSame( array( 'card' ), $request_data['payment_method_types'] );
+		$this->assertTrue( $request_data['off_session'] );
+		$this->assertSame( 'manual', $request_data['capture_method'] );
+		$this->assertSame( $order->get_id(), $request_data['metadata']['order_id'] );
+		$this->assertSame( $order->get_order_number(), $request_data['metadata']['order_number'] );
+		$this->assertSame( 'single', (string) $request_data['metadata']['payment_type'] );
+		$this->assertSame( 'no', $request_data['metadata']['subscription_payment'] );
+	}
+
+	/**
+	 * @testdox Payment detail create-intent route preserves the plugin-compatible missing-order error shape.
+	 */
+	public function test_payment_detail_create_intent_route_rejects_missing_order(): void {
+		$this->create_payment_details_controller( true )->register_routes();
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/payment_intents' );
+		$request->set_body_params(
+			array(
+				'order_id'       => 999999,
+				'customer'       => 'cus_test',
+				'payment_method' => 'pm_test',
+			)
+		);
+		$response = $this->server->dispatch( $request );
+		$data     = $response->get_data();
+
+		$this->assertSame( 500, $response->get_status() );
+		$this->assertSame( 'wcpay_server_error', $data['code'] );
+		$this->assertSame( 'Order not found', $data['message'] );
+		$this->assertSame( array(), $this->api_client->last_call );
 	}
 
 	/**
