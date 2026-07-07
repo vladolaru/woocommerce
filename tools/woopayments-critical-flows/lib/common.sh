@@ -62,10 +62,112 @@ assert_meta_present() { # <store> <order_id> <meta_key>  (Bucket-E key must exis
 }
 
 assert_log_clean() { # <store>  (no PHP notice/warning/fatal/deprecation since marker)
-  local s
+  local s raw rc
   s="$1"
-  echo "BLOCKED log-clean check for $s: debug.log scan is not wired for this local store"
-  return 3
+  raw="$(wp_store "$s" eval '
+$paths = array();
+if ( defined( "WP_DEBUG_LOG" ) && is_string( WP_DEBUG_LOG ) && "" !== WP_DEBUG_LOG && "1" !== WP_DEBUG_LOG ) {
+	$paths[] = WP_DEBUG_LOG;
+}
+if ( defined( "WP_CONTENT_DIR" ) ) {
+	$paths[] = WP_CONTENT_DIR . "/debug.log";
+}
+$paths    = array_values( array_unique( array_filter( $paths ) ) );
+$readable = array();
+$matches  = array();
+
+foreach ( $paths as $path ) {
+	if ( ! is_string( $path ) || "" === $path || ! is_readable( $path ) ) {
+		continue;
+	}
+
+	$readable[] = $path;
+	$lines      = @file( $path, FILE_IGNORE_NEW_LINES );
+	if ( false === $lines ) {
+		continue;
+	}
+
+	foreach ( $lines as $line_number => $line ) {
+		if ( preg_match( "/\\b(PHP )?(Fatal error|Parse error|Warning|Notice|Deprecated|Strict Standards)\\b/i", $line ) ) {
+			$matches[] = basename( $path ) . ":" . ( $line_number + 1 ) . ": " . trim( $line );
+			if ( count( $matches ) >= 20 ) {
+				break 2;
+			}
+		}
+	}
+}
+
+if ( empty( $readable ) ) {
+	WP_CLI::line(
+		wp_json_encode(
+			array(
+				"status" => "blocked",
+				"reason" => "no readable debug.log path",
+				"paths"  => $paths,
+			)
+		)
+	);
+	return;
+}
+
+WP_CLI::line(
+	wp_json_encode(
+		array(
+			"status"  => empty( $matches ) ? "pass" : "fail",
+			"paths"   => $readable,
+			"matches" => $matches,
+		)
+	)
+);
+' 2>&1)"
+  rc=$?
+
+  if [ "$rc" -ne 0 ]; then
+    echo "BLOCKED log-clean check for $s: debug.log scan command failed"
+    printf '%s\n' "$raw" | tail -20
+    return 3
+  fi
+
+  LOG_SCAN_RAW="$raw" python3 - "$s" <<'PY'
+import json
+import os
+import sys
+
+store = sys.argv[1]
+raw = os.environ.get("LOG_SCAN_RAW", "")
+start = raw.find("{")
+if start < 0:
+    print(f"BLOCKED log-clean check for {store}: debug.log scan emitted no JSON")
+    if raw.strip():
+        print(raw.strip())
+    sys.exit(3)
+
+try:
+    payload, _ = json.JSONDecoder().raw_decode(raw[start:])
+except json.JSONDecodeError as error:
+    print(f"BLOCKED log-clean check for {store}: debug.log scan JSON could not be parsed: {error}")
+    print(raw.strip())
+    sys.exit(3)
+
+status = payload.get("status")
+paths = payload.get("paths") or []
+matches = payload.get("matches") or []
+path_note = ", ".join(paths) if paths else "no paths"
+
+if status == "pass":
+    print(f"PASS log-clean {store}: scanned {path_note}")
+    sys.exit(0)
+
+if status == "fail":
+    print(f"FAIL log-clean {store}: PHP log entries found in {path_note}")
+    for match in matches[:10]:
+        print(f"  {match}")
+    sys.exit(1)
+
+reason = payload.get("reason") or "debug.log scan did not pass"
+print(f"BLOCKED log-clean check for {store}: {reason}; paths={path_note}")
+sys.exit(3)
+PY
 }
 
 # ref_vs_target_diff <metric-name> <ref-value> <target-value>

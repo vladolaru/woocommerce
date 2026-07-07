@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import subprocess
 import tempfile
 from pathlib import Path
@@ -36,7 +37,7 @@ def run_runner(
     )
 
 
-def test_card_checkout_flow_uses_exerciser_before_log_clean_block() -> None:
+def test_card_checkout_flow_passes_with_clean_exercised_order() -> None:
     with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
         evidence_dir = Path(tmp)
         flow_driver = evidence_dir / "fake-flow-drive.sh"
@@ -61,6 +62,10 @@ if [ "$1" = "post" ] && [ "$2" = "meta" ] && [ "$3" = "get" ]; then
     _charge_id) printf '%s\\n' "ch_fake"; exit 0 ;;
   esac
 fi
+if [ "$1" = "eval" ]; then
+  printf '%s\\n' '{"status":"pass","paths":["/tmp/fake-debug.log"],"matches":[]}'
+  exit 0
+fi
 printf 'unexpected fake wp call: %s\\n' "$*" >&2
 exit 2
 """,
@@ -80,24 +85,26 @@ exit 2
             },
         )
 
-        assert result.returncode == 3
+        assert result.returncode == 0
         assert "SC-01-card-checkout" in result.stdout
         assert "captured order_id=123" in result.stdout
         assert "EXERCISER NOT WIRED" not in result.stdout
-        assert "debug.log scan is not wired" in result.stdout
+        assert "PASS log-clean target" in result.stdout
+        assert "deterministic verdict: PASS" in result.stdout
 
         rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
         assert rollup["schema"] == "woopayments_critical_flows_rollup.v1"
-        assert rollup["status"] == "blocked"
-        assert rollup["summary"]["blocked"] == 1
+        assert rollup["status"] == "pass"
+        assert rollup["summary"]["passed"] == 1
+        assert rollup["summary"]["blocked"] == 0
         assert rollup["summary"]["failed"] == 0
         assert rollup["results"] == [
             {
                 "flow": "SC-01-card-checkout",
                 "layer": "deterministic",
                 "store": "target",
-                "status": "BLOCKED",
-                "exit_code": 3,
+                "status": "PASS",
+                "exit_code": 0,
             }
         ]
 
@@ -148,34 +155,73 @@ exit 1
         ]
 
 
-def test_unwired_log_clean_assertion_blocks() -> None:
-    script = f"""
-source {COMMON}
-wp_store() {{ echo ok; }}
+def run_log_clean_assertion(fake_wp_source: str) -> subprocess.CompletedProcess[str]:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-clean-") as tmp:
+        fake_wp = Path(tmp) / "fake-wp.sh"
+        write_executable(fake_wp, fake_wp_source)
+        script = f"""
+source {shlex.quote(str(COMMON))}
+TARGET_WP_COMMAND={shlex.quote(str(fake_wp))}
 assert_log_clean target
 """
 
-    result = subprocess.run(
-        ["bash", "-c", script],
-        cwd=REPO,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
+        return subprocess.run(
+            ["bash", "-c", script],
+            cwd=REPO,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+
+def test_log_clean_assertion_passes_when_scan_is_clean() -> None:
+    result = run_log_clean_assertion(
+        """#!/usr/bin/env bash
+printf '%s\\n' '{"status":"pass","paths":["/tmp/fake-debug.log"],"matches":[]}'
+"""
+    )
+
+    assert result.returncode == 0
+    assert "PASS log-clean target" in result.stdout
+
+
+def test_log_clean_assertion_fails_when_php_errors_are_found() -> None:
+    result = run_log_clean_assertion(
+        """#!/usr/bin/env bash
+printf '%s\\n' '{"status":"fail","paths":["/tmp/fake-debug.log"],"matches":["PHP Warning: fake warning"]}'
+"""
+    )
+
+    assert result.returncode == 1
+    assert "FAIL log-clean target" in result.stdout
+    assert "PHP Warning: fake warning" in result.stdout
+
+
+def test_log_clean_assertion_blocks_when_scan_cannot_run() -> None:
+    result = run_log_clean_assertion(
+        """#!/usr/bin/env bash
+printf '%s\\n' "wp unavailable" >&2
+exit 2
+"""
     )
 
     assert result.returncode == 3
-    assert "BLOCKED" in result.stdout
-    assert "debug.log scan" in result.stdout
+    assert "BLOCKED log-clean check for target" in result.stdout
+    assert "wp unavailable" in result.stdout
 
 
 def main() -> None:
-    test_card_checkout_flow_uses_exerciser_before_log_clean_block()
+    test_card_checkout_flow_passes_with_clean_exercised_order()
     test_card_checkout_flow_blocks_when_exerciser_fails()
-    test_unwired_log_clean_assertion_blocks()
-    print("PASS test_card_checkout_flow_uses_exerciser_before_log_clean_block")
+    test_log_clean_assertion_passes_when_scan_is_clean()
+    test_log_clean_assertion_fails_when_php_errors_are_found()
+    test_log_clean_assertion_blocks_when_scan_cannot_run()
+    print("PASS test_card_checkout_flow_passes_with_clean_exercised_order")
     print("PASS test_card_checkout_flow_blocks_when_exerciser_fails")
-    print("PASS test_unwired_log_clean_assertion_blocks")
+    print("PASS test_log_clean_assertion_passes_when_scan_is_clean")
+    print("PASS test_log_clean_assertion_fails_when_php_errors_are_found")
+    print("PASS test_log_clean_assertion_blocks_when_scan_cannot_run")
 
 
 if __name__ == "__main__":
