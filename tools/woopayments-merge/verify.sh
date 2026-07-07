@@ -34,6 +34,8 @@ TRACKS_REF_STORE_ID="${TRACKS_REF_STORE_ID:-}"
 TRACKS_TARGET_STORE_ID="${TRACKS_TARGET_STORE_ID:-}"
 TRACKS_OUT_DIR="${TRACKS_OUT_DIR:-${TMPDIR:?TMPDIR is required for Tracks evidence}/woopayments-tracks-parity}"
 PLAYWRITER_SESSION="${PLAYWRITER_SESSION:-}"
+SUBSCRIPTIONS_REF_SUBSCRIPTION_ID="${SUBSCRIPTIONS_REF_SUBSCRIPTION_ID:-}"
+SUBSCRIPTIONS_TARGET_SUBSCRIPTION_ID="${SUBSCRIPTIONS_TARGET_SUBSCRIPTION_ID:-}"
 TOKEN_CONTINUITY_CUSTOMER_ID="${TOKEN_CONTINUITY_CUSTOMER_ID:-}"
 TOKEN_CONTINUITY_SUBSCRIPTION_ID="${TOKEN_CONTINUITY_SUBSCRIPTION_ID:-}"
 FULL_EVIDENCE_OUT_DIR="${FULL_EVIDENCE_OUT_DIR:-${TMPDIR:-$SELF_DIR/.tmp}/woopayments-final-evidence}"
@@ -53,6 +55,8 @@ Options:
   --full-evidence               Run final readiness gates beyond the base deterministic loop.
   --print-full-evidence-plan    Print the final readiness gate plan and exit.
   --playwriter-session ID       Playwriter session for browser-dependent final gates.
+  --ref-subscription-id ID      Browser-created reference subscription for renewal compare.
+  --target-subscription-id ID   Browser-created target subscription for renewal compare.
   --token-customer-id ID        Customer fixture ID for token-continuity evidence.
   --token-subscription-id ID    Subscription fixture ID for token-continuity evidence.
   --full-evidence-out-dir DIR   Evidence output directory for final gates.
@@ -70,6 +74,8 @@ while [ "$#" -gt 0 ]; do
 		--full-evidence) FULL_EVIDENCE=1; shift ;;
 		--print-full-evidence-plan) FULL_EVIDENCE=1; PRINT_FULL_EVIDENCE_PLAN=1; shift ;;
 		--playwriter-session) PLAYWRITER_SESSION="${2:-}"; shift 2 ;;
+		--ref-subscription-id) SUBSCRIPTIONS_REF_SUBSCRIPTION_ID="${2:-}"; shift 2 ;;
+		--target-subscription-id) SUBSCRIPTIONS_TARGET_SUBSCRIPTION_ID="${2:-}"; shift 2 ;;
 		--token-customer-id) TOKEN_CONTINUITY_CUSTOMER_ID="${2:-}"; shift 2 ;;
 		--token-subscription-id) TOKEN_CONTINUITY_SUBSCRIPTION_ID="${2:-}"; shift 2 ;;
 		--full-evidence-out-dir) FULL_EVIDENCE_OUT_DIR="${2:-}"; shift 2 ;;
@@ -173,7 +179,7 @@ bash $SELF_DIR/i18n-notes-gate.sh --target "$TARGET_WP"
 bash $SELF_DIR/lpm-checkout-gate.sh --methods $LPM_FULL_METHODS --ref "$REF_WP" --target "$TARGET_WP" --playwriter-session "${PLAYWRITER_SESSION:-<required>}" --out-dir "$FULL_EVIDENCE_OUT_DIR/lpm-all-methods"
 bash $SELF_DIR/plugin-active-settings-gate.sh --target "$TARGET_WP" --target-url "$TARGET_URL" --playwriter-session "${PLAYWRITER_SESSION:-<required>}" --out-dir "$FULL_EVIDENCE_OUT_DIR/plugin-active-settings"
 bash $SELF_DIR/mc-rates-gate.sh --ref "$REF_WP" --target "$TARGET_WP" --currency-from USD --currencies-to GBP,EUR --out-dir "$FULL_EVIDENCE_OUT_DIR/mc-rates"
-bash $SELF_DIR/subscriptions-renewal-gate.sh preflight --ref "$REF_WP" --target "$TARGET_WP" --out-dir "$FULL_EVIDENCE_OUT_DIR/subscriptions-renewal"
+bash $SELF_DIR/subscriptions-renewal-gate.sh compare --ref "$REF_WP" --target "$TARGET_WP" --ref-subscription-id "${SUBSCRIPTIONS_REF_SUBSCRIPTION_ID:-<required>}" --target-subscription-id "${SUBSCRIPTIONS_TARGET_SUBSCRIPTION_ID:-<required>}"
 bash $SELF_DIR/token-continuity-gate.sh --target "$TARGET_WP" --customer-id "${TOKEN_CONTINUITY_CUSTOMER_ID:-<required>}" --subscription-id "${TOKEN_CONTINUITY_SUBSCRIPTION_ID:-<required>}" --playwriter-session "${PLAYWRITER_SESSION:-<required>}" --out-dir "$FULL_EVIDENCE_OUT_DIR/token-continuity"
 python3 $SELF_DIR/a5f-cutover-rehearsal.py --target-wp "$TARGET_WP" --target-url "$TARGET_URL" --store-dir "$REPO_ROOT" --playwriter-session "${PLAYWRITER_SESSION:-<required>}" --out-dir "$FULL_EVIDENCE_OUT_DIR/a5f-cutover"
 python3 $SELF_DIR/a5g-multisite-runtime-gate.py --repo "$REPO_ROOT" --wcpay-repo "$WCPAY_REPO" --out-dir "$FULL_EVIDENCE_OUT_DIR/a5g-multisite-runtime"
@@ -265,7 +271,12 @@ run_full_evidence_gates() {
 	gate "final evidence i18n notes" bash "$SELF_DIR/i18n-notes-gate.sh" --target "$TARGET_WP"
 	gate "critical flows inventory" python3 "$REPO_ROOT/tools/woopayments-critical-flows/test-inventory.py"
 	gate "critical flows full run" bash "$REPO_ROOT/tools/woopayments-critical-flows/run.sh" --store both --layer all
-	gate "subscriptions renewal preflight" bash "$SELF_DIR/subscriptions-renewal-gate.sh" preflight --ref "$REF_WP" --target "$TARGET_WP" --out-dir "$FULL_EVIDENCE_OUT_DIR/subscriptions-renewal"
+	if [ -z "$SUBSCRIPTIONS_REF_SUBSCRIPTION_ID" ] || [ -z "$SUBSCRIPTIONS_TARGET_SUBSCRIPTION_ID" ]; then
+		record "subscriptions renewal compare" BLOCKED
+		printf '      pass --ref-subscription-id and --target-subscription-id to run subscriptions-renewal-gate.sh compare\n'
+	else
+		gate "subscriptions renewal compare" bash "$SELF_DIR/subscriptions-renewal-gate.sh" compare --ref "$REF_WP" --target "$TARGET_WP" --ref-subscription-id "$SUBSCRIPTIONS_REF_SUBSCRIPTION_ID" --target-subscription-id "$SUBSCRIPTIONS_TARGET_SUBSCRIPTION_ID"
+	fi
 	gate "plugin-active settings screen" bash "$SELF_DIR/plugin-active-settings-gate.sh" --target "$TARGET_WP" --target-url "$TARGET_URL" --playwriter-session "$PLAYWRITER_SESSION" --out-dir "$FULL_EVIDENCE_OUT_DIR/plugin-active-settings"
 	gate "LPM all-method checkout" bash "$SELF_DIR/lpm-checkout-gate.sh" --methods "$LPM_FULL_METHODS" --ref "$REF_WP" --target "$TARGET_WP" --playwriter-session "$PLAYWRITER_SESSION" --out-dir "$FULL_EVIDENCE_OUT_DIR/lpm-all-methods"
 	gate "multi-currency rates refresh" bash "$SELF_DIR/mc-rates-gate.sh" --ref "$REF_WP" --target "$TARGET_WP" --currency-from USD --currencies-to GBP,EUR --out-dir "$FULL_EVIDENCE_OUT_DIR/mc-rates"

@@ -52,7 +52,10 @@ def test_full_evidence_plan_lists_final_gates() -> None:
     assert "rest-route-parity.sh" in result.stdout
     assert "hook-shape-parity.sh" in result.stdout
     assert "subsystem-disposition-gate.sh" in result.stdout
-    assert "subscriptions-renewal-gate.sh preflight" in result.stdout
+    assert "subscriptions-renewal-gate.sh compare" in result.stdout
+    assert "--ref-subscription-id" in result.stdout
+    assert "--target-subscription-id" in result.stdout
+    assert "subscriptions-renewal-gate.sh preflight" not in result.stdout
     assert "token-continuity-gate.sh" in result.stdout
     assert "a5f-cutover-rehearsal.py" in result.stdout
     assert "a5g-multisite-runtime-gate.py" in result.stdout
@@ -205,6 +208,10 @@ printf 'critical-run|%s\n' "$*" >> "$INVOCATIONS_LOG"
                 "--full-evidence",
                 "--playwriter-session",
                 "session-1",
+                "--ref-subscription-id",
+                "101",
+                "--target-subscription-id",
+                "202",
                 "--token-customer-id",
                 "cus_test",
                 "--token-subscription-id",
@@ -237,6 +244,9 @@ printf 'critical-run|%s\n' "$*" >> "$INVOCATIONS_LOG"
         assert invocation_log.count("hook-shape-parity.sh|") >= 4
         assert invocation_log.count("subsystem-disposition-gate.sh|") >= 4
         assert invocation_log.count("i18n-notes-gate.sh|") >= 3
+        assert "subscriptions-renewal-gate.sh|compare" in invocation_log
+        assert "--ref-subscription-id 101" in invocation_log
+        assert "--target-subscription-id 202" in invocation_log
         assert "pnpm|--filter=@woocommerce/plugin-woocommerce test:php:env" in invocation_log
         assert "pnpm|--filter=@woocommerce/admin-library test:js" in invocation_log
         assert "pnpm|--filter=@woocommerce/admin-library ts:check" in invocation_log
@@ -255,6 +265,7 @@ def test_full_evidence_flag_is_documented_in_usage() -> None:
 def main() -> None:
     tests = [
         test_full_evidence_plan_lists_final_gates,
+        test_full_evidence_executes_nested_self_check_and_tracks_verifier,
         test_full_evidence_flag_is_documented_in_usage,
     ]
     for test in tests:
