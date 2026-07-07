@@ -13,7 +13,7 @@ echo "[SC-01/$S] exercise: create+pay a card order with 4242 via Store API / RES
 #   (b) playwright-cli script that fills the card iframe on the shortcode checkout and places the order.
 # Capture the resulting order id.
 ORDER_ID="${ORDER_ID:-}"   # TODO set from the exerciser output
-if [ -z "$ORDER_ID" ]; then echo "[SC-01/$S] EXERCISER NOT WIRED — fill in (a) or (b)"; exit 0; fi
+if [ -z "$ORDER_ID" ]; then echo "[SC-01/$S] BLOCKED: EXERCISER NOT WIRED - fill in (a) or (b)"; exit 3; fi
 
 # State assertions (Bucket-E + status) — the deterministic verdict.
 rc=0
