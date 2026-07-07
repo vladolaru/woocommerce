@@ -25,6 +25,8 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 
 	private const SCRIPT_HANDLE = 'wc-woopayments-payment-method-messaging';
 
+	private const CART_BLOCK_SCRIPT_HANDLE = 'wc-woopayments-cart-block-payment-method-messaging';
+
 	private const STRIPE_SCRIPT_HANDLE = 'stripe';
 
 	private const STRIPE_SCRIPT_URL = 'https://js.stripe.com/v3/';
@@ -32,6 +34,8 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	private const APPEARANCE_SCRIPT_HANDLE = 'wc-woopayments-appearance';
 
 	private const STYLE_HANDLE = 'wc-woopayments-payment-method-messaging';
+
+	private const CART_BLOCK_STYLE_HANDLE = 'wc-woopayments-cart-block-payment-method-messaging';
 
 	private const BNPL_CAPABILITY = 'buy_now_pay_later';
 
@@ -197,16 +201,19 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	 * @param bool $is_cart_block Whether the current surface is the cart block.
 	 */
 	private function enqueue_site_messaging_config( bool $is_cart_block ): void {
-		$this->register_site_messaging_assets();
+		$this->register_site_messaging_assets( $is_cart_block );
+
+		$script_handle = $is_cart_block ? self::CART_BLOCK_SCRIPT_HANDLE : self::SCRIPT_HANDLE;
+		$style_handle  = $is_cart_block ? self::CART_BLOCK_STYLE_HANDLE : self::STYLE_HANDLE;
 
 		wp_localize_script(
-			self::SCRIPT_HANDLE,
+			$script_handle,
 			'wcpayStripeSiteMessaging',
 			$this->get_site_messaging_config( $is_cart_block )
 		);
 
-		wp_enqueue_script( self::SCRIPT_HANDLE );
-		wp_enqueue_style( self::STYLE_HANDLE );
+		wp_enqueue_script( $script_handle );
+		wp_enqueue_style( $style_handle );
 	}
 
 	/**
@@ -259,11 +266,18 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 
 	/**
 	 * Register the script handles required for BNPL messaging config.
+	 *
+	 * @param bool $is_cart_block Whether the current surface is the cart block.
 	 */
-	private function register_site_messaging_assets(): void {
+	private function register_site_messaging_assets( bool $is_cart_block ): void {
 		if ( ! wp_script_is( self::STRIPE_SCRIPT_HANDLE, 'registered' ) ) {
 			// phpcs:ignore WordPress.WP.EnqueuedResourceParameters.MissingVersion
 			wp_register_script( self::STRIPE_SCRIPT_HANDLE, self::STRIPE_SCRIPT_URL, array(), null, true );
+		}
+
+		if ( $is_cart_block ) {
+			$this->register_cart_block_assets();
+			return;
 		}
 
 		$suffix = Constants::is_true( 'SCRIPT_DEBUG' ) ? '' : '.min';
@@ -296,6 +310,39 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 				WC_VERSION
 			);
 			wp_style_add_data( self::STYLE_HANDLE, 'rtl', 'replace' );
+		}
+	}
+
+	/**
+	 * Register the Blocks cart BNPL messaging slotfill assets.
+	 */
+	private function register_cart_block_assets(): void {
+		if ( ! wp_script_is( self::CART_BLOCK_SCRIPT_HANDLE, 'registered' ) ) {
+			wp_register_script(
+				self::CART_BLOCK_SCRIPT_HANDLE,
+				WC()->plugin_url() . '/assets/client/blocks/wc-woopayments-cart-block-payment-method-messaging.js',
+				array(
+					self::STRIPE_SCRIPT_HANDLE,
+					'react-jsx-runtime',
+					'wc-blocks-checkout',
+					'wp-data',
+					'wp-element',
+					'wp-plugins',
+					'wp-polyfill',
+				),
+				WC_VERSION,
+				true
+			);
+		}
+
+		if ( ! wp_style_is( self::CART_BLOCK_STYLE_HANDLE, 'registered' ) ) {
+			wp_register_style(
+				self::CART_BLOCK_STYLE_HANDLE,
+				WC()->plugin_url() . '/assets/client/blocks/wc-woopayments-cart-block-payment-method-messaging.css',
+				array(),
+				WC_VERSION
+			);
+			wp_style_add_data( self::CART_BLOCK_STYLE_HANDLE, 'rtl', 'replace' );
 		}
 	}
 

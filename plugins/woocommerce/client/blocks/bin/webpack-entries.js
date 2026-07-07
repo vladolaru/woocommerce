@@ -358,6 +358,8 @@ const entries = {
 			'./assets/js/extensions/payment-methods/woopayments/woopay/style.scss',
 		'wc-payment-method-woopayments-express-checkout':
 			'./assets/js/extensions/payment-methods/woopayments/express-checkout/style.scss',
+		'wc-woopayments-cart-block-payment-method-messaging':
+			'./assets/js/extensions/payment-methods/woopayments/cart-bnpl/style.scss',
 
 		...blockStylingEntries,
 	},
@@ -411,6 +413,8 @@ const entries = {
 			'./assets/js/extensions/google-analytics/index.ts',
 		'wc-shipping-method-pickup-location':
 			'./assets/js/extensions/shipping-methods/pickup-location/index.js',
+		'wc-woopayments-cart-block-payment-method-messaging':
+			'./assets/js/extensions/payment-methods/woopayments/cart-bnpl/index.js',
 	},
 	cartAndCheckoutFrontend: {
 		...cartAndCheckoutFrontendEntries,

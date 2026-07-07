@@ -16,8 +16,10 @@ use WC_Unit_Test_Case;
  */
 class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 
-	private const SCRIPT_HANDLE = 'wc-woopayments-payment-method-messaging';
-	private const STYLE_HANDLE  = 'wc-woopayments-payment-method-messaging';
+	private const SCRIPT_HANDLE            = 'wc-woopayments-payment-method-messaging';
+	private const STYLE_HANDLE             = 'wc-woopayments-payment-method-messaging';
+	private const CART_BLOCK_SCRIPT_HANDLE = 'wc-woopayments-cart-block-payment-method-messaging';
+	private const CART_BLOCK_STYLE_HANDLE  = 'wc-woopayments-cart-block-payment-method-messaging';
 
 	/**
 	 * Registered messaging controllers to clean up.
@@ -40,6 +42,10 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 		wp_deregister_script( self::SCRIPT_HANDLE );
 		wp_dequeue_style( self::STYLE_HANDLE );
 		wp_deregister_style( self::STYLE_HANDLE );
+		wp_dequeue_script( self::CART_BLOCK_SCRIPT_HANDLE );
+		wp_deregister_script( self::CART_BLOCK_SCRIPT_HANDLE );
+		wp_dequeue_style( self::CART_BLOCK_STYLE_HANDLE );
+		wp_deregister_style( self::CART_BLOCK_STYLE_HANDLE );
 		wp_deregister_script( 'wc-woopayments-appearance' );
 		wp_deregister_script( 'stripe' );
 		delete_option( 'woocommerce_default_country' );
@@ -148,6 +154,44 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( '%%endpoint%%', $script_data['wcAjaxUrl'] );
 		$this->assertTrue( (bool) $script_data['shouldInitializePMME'] );
 		$this->assertTrue( (bool) $script_data['shouldShowPMME'] );
+	}
+
+	/**
+	 * @testdox Should enqueue the Blocks cart BNPL plugin on the cart-block surface.
+	 */
+	public function test_enqueues_blocks_cart_bnpl_plugin_on_cart_block_surface(): void {
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		update_option( 'woocommerce_currency', 'USD' );
+
+		$controller = $this->create_controller( true, true, array( 'affirm' ), array( 'affirm_payments' => 'active' ) );
+		$controller->register();
+		$this->registered_controllers[] = $controller;
+
+		ob_start();
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test trigger for the existing cart-block enqueue hook.
+		do_action( 'woocommerce_blocks_enqueue_cart_block_scripts_after' );
+		$output = (string) ob_get_clean();
+
+		$this->assertSame( '', $output, 'Cart block PMME should render through the Blocks slotfill rather than classic placeholder markup.' );
+		$this->assertFalse( wp_script_is( self::SCRIPT_HANDLE, 'enqueued' ), 'Classic PMME script should not be enqueued for the cart block.' );
+		$this->assertTrue( wp_script_is( self::CART_BLOCK_SCRIPT_HANDLE, 'enqueued' ) );
+		$this->assertStringContainsString(
+			'/assets/client/blocks/wc-woopayments-cart-block-payment-method-messaging.js',
+			wp_scripts()->registered[ self::CART_BLOCK_SCRIPT_HANDLE ]->src
+		);
+		$this->assertContains( 'stripe', wp_scripts()->registered[ self::CART_BLOCK_SCRIPT_HANDLE ]->deps );
+		$this->assertContains( 'wc-blocks-checkout', wp_scripts()->registered[ self::CART_BLOCK_SCRIPT_HANDLE ]->deps );
+		$this->assertTrue( wp_style_is( self::CART_BLOCK_STYLE_HANDLE, 'enqueued' ) );
+		$this->assertStringContainsString(
+			'/assets/client/blocks/wc-woopayments-cart-block-payment-method-messaging.css',
+			wp_styles()->registered[ self::CART_BLOCK_STYLE_HANDLE ]->src
+		);
+
+		$script_data = $this->get_localized_script_data( self::CART_BLOCK_SCRIPT_HANDLE );
+
+		$this->assertSame( array( 'affirm' ), $script_data['paymentMethods'] );
+		$this->assertTrue( (bool) $script_data['isCartBlock'] );
+		$this->assertTrue( (bool) $script_data['shouldInitializePMME'] );
 	}
 
 	/**
@@ -276,10 +320,11 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 	/**
 	 * Get localized BNPL messaging script data.
 	 *
+	 * @param string $script_handle Script handle.
 	 * @return array<string,mixed>
 	 */
-	private function get_localized_script_data(): array {
-		$script_data_string = wp_scripts()->get_data( self::SCRIPT_HANDLE, 'data' );
+	private function get_localized_script_data( string $script_handle = self::SCRIPT_HANDLE ): array {
+		$script_data_string = wp_scripts()->get_data( $script_handle, 'data' );
 		$this->assertIsString( $script_data_string );
 
 		$start_pos = strpos( $script_data_string, '{' );
