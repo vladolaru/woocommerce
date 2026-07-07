@@ -37,6 +37,7 @@ def test_full_evidence_plan_lists_final_gates() -> None:
     assert result.returncode == 0, result.stderr
     assert "lpm-checkout-gate.sh" in result.stdout
     assert ALL_LPM_METHODS in result.stdout
+    assert "plugin-active-settings-gate.sh" in result.stdout
     assert "mc-rates-gate.sh" in result.stdout
     assert "subscriptions-renewal-gate.sh preflight" in result.stdout
     assert "token-continuity-gate.sh" in result.stdout

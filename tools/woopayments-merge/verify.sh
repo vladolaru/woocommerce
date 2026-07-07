@@ -165,6 +165,7 @@ mode=$MODE
 out_dir=$FULL_EVIDENCE_OUT_DIR
 
 bash $SELF_DIR/lpm-checkout-gate.sh --methods $LPM_FULL_METHODS --ref "$REF_WP" --target "$TARGET_WP" --playwriter-session "${PLAYWRITER_SESSION:-<required>}" --out-dir "$FULL_EVIDENCE_OUT_DIR/lpm-all-methods"
+bash $SELF_DIR/plugin-active-settings-gate.sh --target "$TARGET_WP" --target-url "$TARGET_URL" --playwriter-session "${PLAYWRITER_SESSION:-<required>}" --out-dir "$FULL_EVIDENCE_OUT_DIR/plugin-active-settings"
 bash $SELF_DIR/mc-rates-gate.sh --ref "$REF_WP" --target "$TARGET_WP" --currency-from USD --currencies-to GBP,EUR --out-dir "$FULL_EVIDENCE_OUT_DIR/mc-rates"
 bash $SELF_DIR/subscriptions-renewal-gate.sh preflight --ref "$REF_WP" --target "$TARGET_WP" --out-dir "$FULL_EVIDENCE_OUT_DIR/subscriptions-renewal"
 bash $SELF_DIR/token-continuity-gate.sh --target "$TARGET_WP" --customer-id "${TOKEN_CONTINUITY_CUSTOMER_ID:-<required>}" --subscription-id "${TOKEN_CONTINUITY_SUBSCRIPTION_ID:-<required>}" --playwriter-session "${PLAYWRITER_SESSION:-<required>}" --out-dir "$FULL_EVIDENCE_OUT_DIR/token-continuity"
@@ -238,6 +239,7 @@ run_full_evidence_gates() {
 	mkdir -p "$FULL_EVIDENCE_OUT_DIR"
 	gate "critical flows inventory" python3 "$REPO_ROOT/tools/woopayments-critical-flows/test-inventory.py"
 	gate "subscriptions renewal preflight" bash "$SELF_DIR/subscriptions-renewal-gate.sh" preflight --ref "$REF_WP" --target "$TARGET_WP" --out-dir "$FULL_EVIDENCE_OUT_DIR/subscriptions-renewal"
+	gate "plugin-active settings screen" bash "$SELF_DIR/plugin-active-settings-gate.sh" --target "$TARGET_WP" --target-url "$TARGET_URL" --playwriter-session "$PLAYWRITER_SESSION" --out-dir "$FULL_EVIDENCE_OUT_DIR/plugin-active-settings"
 	gate "LPM all-method checkout" bash "$SELF_DIR/lpm-checkout-gate.sh" --methods "$LPM_FULL_METHODS" --ref "$REF_WP" --target "$TARGET_WP" --playwriter-session "$PLAYWRITER_SESSION" --out-dir "$FULL_EVIDENCE_OUT_DIR/lpm-all-methods"
 	gate "multi-currency rates refresh" bash "$SELF_DIR/mc-rates-gate.sh" --ref "$REF_WP" --target "$TARGET_WP" --currency-from USD --currencies-to GBP,EUR --out-dir "$FULL_EVIDENCE_OUT_DIR/mc-rates"
 
