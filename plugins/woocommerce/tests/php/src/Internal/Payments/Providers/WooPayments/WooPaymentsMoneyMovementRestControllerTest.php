@@ -430,6 +430,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 
 		$routes = $this->server->get_routes();
 		$this->assertArrayHasKey( '/wc/v3/payments/charges/(?P<charge_id>\\w+)', $routes );
+		$this->assertArrayHasKey( '/wc/v3/payments/charges/order/(?P<order_id>\\w+)', $routes );
 		$this->assertArrayHasKey( '/wc/v3/payments/payment_intents/(?P<payment_intent_id>\\w+)', $routes );
 		$this->assertArrayHasKey( '/wc/v3/payments/timeline/(?P<intention_id>\\w+)', $routes );
 		$this->assertArrayHasKey( '/wc/v3/payments/refund', $routes );
@@ -461,6 +462,76 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		$this->assertSame( 'ch_test', $this->api_client->last_call['charge_id'] );
 		$this->assertSame( 'txn_test', $data['balance_transaction']['id'] );
 		$this->assertSame( $order->get_id(), $data['order']['id'] );
+	}
+
+	/**
+	 * @testdox Payment detail charge-from-order route requires manage_woocommerce.
+	 */
+	public function test_payment_detail_charge_from_order_route_requires_manage_woocommerce(): void {
+		$order = $this->create_order_for_generated_charge();
+		$this->create_payment_details_controller( true )->register_routes();
+		wp_set_current_user( 0 );
+
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/charges/order/' . $order->get_id() ) );
+
+		$this->assertSame( rest_authorization_required_code(), $response->get_status() );
+		$this->assertSame( array(), $this->api_client->last_call );
+	}
+
+	/**
+	 * @testdox Payment detail charge-from-order route returns a local charge-like object.
+	 */
+	public function test_payment_detail_charge_from_order_route_generates_charge_from_order(): void {
+		$order = $this->create_order_for_generated_charge();
+		$this->create_payment_details_controller( true )->register_routes();
+
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/charges/order/' . $order->get_id() ) );
+		$data     = $response->get_data();
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( array(), $this->api_client->last_call );
+		$this->assertSame( $order->get_id(), $data['id'] );
+		$this->assertSame( 1234, $data['amount'] );
+		$this->assertSame( 0, $data['amount_captured'] );
+		$this->assertSame( 0, $data['amount_refunded'] );
+		$this->assertSame( 0, $data['application_fee_amount'] );
+		$this->assertSame( 'USD', $data['currency'] );
+		$this->assertSame( 'USD', $data['balance_transaction']['currency'] );
+		$this->assertSame( 1234, $data['balance_transaction']['amount'] );
+		$this->assertSame( 0, $data['balance_transaction']['fee'] );
+		$this->assertSame( 'pi_order', $data['payment_intent'] );
+		$this->assertSame( 'requires_capture', $data['status'] );
+		$this->assertFalse( $data['disputed'] );
+		$this->assertFalse( $data['outcome'] );
+		$this->assertFalse( $data['paid'] );
+		$this->assertFalse( $data['refunded'] );
+		$this->assertNull( $data['paydown'] );
+		$this->assertNull( $data['refunds'] );
+		$this->assertSame( 'card', $data['payment_method_details']['type'] );
+		$this->assertSame( 'US', $data['payment_method_details']['card']['country'] );
+		$this->assertSame( array(), $data['payment_method_details']['card']['checks'] );
+		$this->assertSame( '', $data['payment_method_details']['card']['network'] );
+		$this->assertSame( 'ada@example.com', $data['billing_details']['email'] );
+		$this->assertSame( '1 Main Street', $data['billing_details']['address']['line1'] );
+		$this->assertStringContainsString( '1 Main Street', $data['billing_details']['formatted_address'] );
+		$this->assertSame( $order->get_id(), $data['order']['id'] );
+		$this->assertSame( 'Ada Lovelace', $data['order']['customer_name'] );
+		$this->assertSame( $order->get_date_created()->getTimestamp(), $data['created'] );
+	}
+
+	/**
+	 * @testdox Payment detail charge-from-order route returns the plugin-compatible missing-order error.
+	 */
+	public function test_payment_detail_charge_from_order_route_rejects_missing_order(): void {
+		$this->create_payment_details_controller( true )->register_routes();
+
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/charges/order/999999' ) );
+		$data     = $response->get_data();
+
+		$this->assertSame( 404, $response->get_status() );
+		$this->assertSame( 'wcpay_missing_order', $data['code'] );
+		$this->assertSame( 'Order not found', $data['message'] );
+		$this->assertSame( array(), $this->api_client->last_call );
 	}
 
 	/**
@@ -1556,6 +1627,34 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		$order->set_customer_ip_address( '127.0.0.1' );
 		$order->update_meta_data( '_charge_id', $charge_id );
 		$order->update_meta_data( '_intent_id', $intent_id );
+		$order->save();
+
+		return $order;
+	}
+
+	/**
+	 * Create an order for charge-from-order route tests.
+	 *
+	 * @return WC_Order
+	 */
+	private function create_order_for_generated_charge(): WC_Order {
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+
+		$order->set_total( '12.34' );
+		$order->set_currency( 'USD' );
+		$order->set_billing_first_name( 'Ada' );
+		$order->set_billing_last_name( 'Lovelace' );
+		$order->set_billing_email( 'ada@example.com' );
+		$order->set_billing_phone( '+15555550100' );
+		$order->set_billing_address_1( '1 Main Street' );
+		$order->set_billing_city( 'San Francisco' );
+		$order->set_billing_state( 'CA' );
+		$order->set_billing_postcode( '94107' );
+		$order->set_billing_country( 'US' );
+		$order->set_customer_ip_address( '127.0.0.1' );
+		$order->update_meta_data( '_intent_id', 'pi_order' );
+		$order->update_meta_data( '_intent_status', 'requires_capture' );
 		$order->save();
 
 		return $order;

@@ -100,6 +100,7 @@ class WooPaymentsPaymentDetailsRestController implements RegisterHooksInterface 
 	 */
 	public function register_routes(): void {
 		register_rest_route( self::NAMESPACE, '/payments/charges/(?P<charge_id>\w+)', $this->get_readable_route( 'get_charge' ) );
+		register_rest_route( self::NAMESPACE, '/payments/charges/order/(?P<order_id>\w+)', $this->get_readable_route( 'generate_charge_from_order' ) );
 		register_rest_route( self::NAMESPACE, '/payments/payment_intents/(?P<payment_intent_id>\w+)', $this->get_readable_route( 'get_payment_intent' ) );
 		register_rest_route( self::NAMESPACE, '/payments/timeline/(?P<intention_id>\w+)', $this->get_readable_route( 'get_timeline' ) );
 		register_rest_route( self::NAMESPACE, '/payments/refund', $this->get_creatable_route( 'process_refund' ) );
@@ -131,6 +132,26 @@ class WooPaymentsPaymentDetailsRestController implements RegisterHooksInterface 
 		} catch ( WooPaymentsApiException $exception ) {
 			return $this->api_exception_to_wp_error( $exception );
 		}
+	}
+
+	/**
+	 * Generate a charge-like object from a WooCommerce order.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function generate_charge_from_order( WP_REST_Request $request ) {
+		$order = wc_get_order( absint( $request->get_param( 'order_id' ) ) );
+		if ( ! $order instanceof WC_Order ) {
+			return new WP_Error(
+				'wcpay_missing_order',
+				__( 'Order not found', 'woocommerce' ),
+				array( 'status' => 404 )
+			);
+		}
+
+		return new WP_REST_Response( $this->order_service->build_charge_response_from_order( $order ) );
 	}
 
 	/**

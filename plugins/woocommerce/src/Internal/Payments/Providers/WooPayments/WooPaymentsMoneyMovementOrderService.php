@@ -121,6 +121,57 @@ class WooPaymentsMoneyMovementOrderService {
 	}
 
 	/**
+	 * Build a WooPayments-compatible charge-like response from a WooCommerce order.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @param WC_Order $order Order.
+	 * @return array<string,mixed>
+	 */
+	public function build_charge_response_from_order( WC_Order $order ): array {
+		$currency      = $order->get_currency();
+		$amount        = $this->order_data_service->prepare_amount( (float) $order->get_total(), $currency );
+		$date_created  = $order->get_date_created();
+		$intent_id     = (string) $order->get_meta( '_intent_id', true );
+		$intent_status = (string) $order->get_meta( '_intent_status', true );
+
+		$charge = array(
+			'id'                     => $order->get_id(),
+			'amount'                 => $amount,
+			'amount_captured'        => 0,
+			'amount_refunded'        => 0,
+			'application_fee_amount' => 0,
+			'balance_transaction'    => array(
+				'currency' => $currency,
+				'amount'   => $amount,
+				'fee'      => 0,
+			),
+			'billing_details'        => $this->order_data_service->get_billing_data_from_order( $order ),
+			'created'                => $date_created ? $date_created->getTimestamp() : null,
+			'currency'               => $currency,
+			'disputed'               => false,
+			'outcome'                => false,
+			'order'                  => $this->build_detail_order_info( $order ),
+			'paid'                   => false,
+			'paydown'                => null,
+			'payment_intent'         => '' !== $intent_id ? $intent_id : null,
+			'payment_method_details' => array(
+				'card' => array(
+					'country' => $order->get_billing_country(),
+					'checks'  => array(),
+					'network' => '',
+				),
+				'type' => 'card',
+			),
+			'refunded'               => false,
+			'refunds'                => null,
+			'status'                 => '' !== $intent_status ? $intent_status : $order->get_status(),
+		);
+
+		return $this->add_formatted_address_to_charge( $charge );
+	}
+
+	/**
 	 * Add order context to a payment intent detail response and its embedded charges.
 	 *
 	 * @param array<string,mixed> $intent Platform payment intent.
