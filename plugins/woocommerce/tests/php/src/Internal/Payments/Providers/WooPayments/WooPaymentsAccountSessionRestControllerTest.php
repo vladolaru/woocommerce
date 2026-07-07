@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountSessionRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEmbeddedAccountSessionService;
 use WC_REST_Unit_Test_Case;
@@ -31,13 +32,21 @@ class WooPaymentsAccountSessionRestControllerTest extends WC_REST_Unit_Test_Case
 	private WooPaymentsEmbeddedAccountSessionService $service;
 
 	/**
+	 * Recording account service.
+	 *
+	 * @var WooPaymentsAccountService
+	 */
+	private WooPaymentsAccountService $account_service;
+
+	/**
 	 * Set up test fixtures.
 	 */
 	public function setUp(): void {
 		parent::setUp();
 
-		$this->service = $this->create_service();
-		$this->sut     = $this->create_controller( true );
+		$this->service         = $this->create_service();
+		$this->account_service = $this->create_account_service();
+		$this->sut             = $this->create_controller( true );
 
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
 	}
@@ -61,6 +70,8 @@ class WooPaymentsAccountSessionRestControllerTest extends WC_REST_Unit_Test_Case
 
 		$routes = $this->server->get_routes();
 
+		$this->assertArrayHasKey( '/wc/v3/payments/accounts', $routes );
+		$this->assertRouteHasMethod( $routes['/wc/v3/payments/accounts'], WP_REST_Server::READABLE );
 		$this->assertArrayHasKey( '/wc/v3/payments/accounts/session', $routes );
 		$this->assertRouteHasMethod( $routes['/wc/v3/payments/accounts/session'], WP_REST_Server::READABLE );
 	}
@@ -86,6 +97,92 @@ class WooPaymentsAccountSessionRestControllerTest extends WC_REST_Unit_Test_Case
 
 		$this->assertSame( rest_authorization_required_code(), $response->get_status() );
 		$this->assertSame( '', $this->service->last_call );
+	}
+
+	/**
+	 * @testdox Accounts route requires manage_woocommerce before reading account data.
+	 */
+	public function test_accounts_route_requires_manage_woocommerce(): void {
+		$this->sut->register_routes();
+		wp_set_current_user( 0 );
+
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/accounts' ) );
+
+		$this->assertSame( rest_authorization_required_code(), $response->get_status() );
+		$this->assertSame( '', $this->account_service->last_call );
+	}
+
+	/**
+	 * @testdox Accounts route returns cached account data with plugin-compatible flags.
+	 */
+	public function test_accounts_route_returns_cached_account_payload(): void {
+		$this->account_service->account_data = array(
+			'account_id'            => 'acct_native',
+			'card_present_eligible' => true,
+			'country'               => 'NL',
+			'status'                => 'complete',
+			'store_currencies'      => array(
+				'default'   => 'eur',
+				'supported' => array( 'eur', 'usd' ),
+			),
+		);
+		$this->account_service->test_mode    = true;
+		$this->sut->register_routes();
+
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/accounts' ) );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( 'get_cached_account_data', $this->account_service->last_call );
+		$this->assertSame(
+			array(
+				'account_id'            => 'acct_native',
+				'card_present_eligible' => false,
+				'country'               => 'NL',
+				'status'                => 'complete',
+				'store_currencies'      => array(
+					'default'   => 'eur',
+					'supported' => array( 'eur', 'usd' ),
+				),
+				'test_mode'             => true,
+				'test_mode_onboarding'  => false,
+			),
+			$response->get_data()
+		);
+	}
+
+	/**
+	 * @testdox Accounts route returns the plugin fallback shape when no account data exists.
+	 */
+	public function test_accounts_route_returns_no_account_fallback_payload(): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		$this->account_service->account_data = array();
+		$this->sut->register_routes();
+
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/accounts' ) );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame(
+			array(
+				'card_present_eligible'    => false,
+				'country'                  => 'US',
+				'current_deadline'         => null,
+				'has_overdue_requirements' => false,
+				'has_pending_requirements' => false,
+				'statement_descriptor'     => '',
+				'status'                   => 'NOACCOUNT',
+				'store_currencies'         => array(
+					'default'   => 'USD',
+					'supported' => array( 'USD' ),
+				),
+				'customer_currencies'      => array(
+					'supported' => array( 'USD' ),
+				),
+				'test_mode'                => false,
+				'test_mode_onboarding'     => false,
+			),
+			$response->get_data()
+		);
 	}
 
 	/**
@@ -163,9 +260,79 @@ class WooPaymentsAccountSessionRestControllerTest extends WC_REST_Unit_Test_Case
 		$arbiter->method( 'should_native_register' )->willReturn( $native_register );
 
 		$controller = new WooPaymentsAccountSessionRestController();
-		$controller->init( $arbiter, $this->service );
+		$controller->init( $arbiter, $this->service, $this->account_service );
 
 		return $controller;
+	}
+
+	/**
+	 * Create a recording account service.
+	 *
+	 * @return WooPaymentsAccountService
+	 */
+	private function create_account_service(): WooPaymentsAccountService {
+		return new class() extends WooPaymentsAccountService {
+
+			/**
+			 * Last called method.
+			 *
+			 * @var string
+			 */
+			public string $last_call = '';
+
+			/**
+			 * Cached account data.
+			 *
+			 * @var array<string,mixed>
+			 */
+			public array $account_data = array();
+
+			/**
+			 * Whether WooPayments is in test mode.
+			 *
+			 * @var bool
+			 */
+			public bool $test_mode = false;
+
+			/**
+			 * Whether WooPayments is using test-mode onboarding.
+			 *
+			 * @var bool
+			 */
+			public bool $test_mode_onboarding = false;
+
+			/**
+			 * Get cached account data.
+			 *
+			 * @param bool $force_refresh Whether to force refresh.
+			 * @return array<string,mixed>
+			 */
+			public function get_cached_account_data( bool $force_refresh = false ): array {
+				unset( $force_refresh );
+
+				$this->last_call = __FUNCTION__;
+
+				return $this->account_data;
+			}
+
+			/**
+			 * Tell whether WooPayments is in test mode.
+			 *
+			 * @return bool
+			 */
+			public function is_test_mode_enabled(): bool {
+				return $this->test_mode;
+			}
+
+			/**
+			 * Tell whether WooPayments is using test-mode onboarding.
+			 *
+			 * @return bool
+			 */
+			public function is_test_mode_onboarding_enabled(): bool {
+				return $this->test_mode_onboarding;
+			}
+		};
 	}
 
 	/**

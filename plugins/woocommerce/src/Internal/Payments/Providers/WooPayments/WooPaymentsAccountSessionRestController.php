@@ -40,16 +40,25 @@ class WooPaymentsAccountSessionRestController implements RegisterHooksInterface 
 	private WooPaymentsEmbeddedAccountSessionService $session_service;
 
 	/**
+	 * WooPayments account service.
+	 *
+	 * @var WooPaymentsAccountService
+	 */
+	private WooPaymentsAccountService $account_service;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
 	 * @param NativePaymentsRuntimeArbiter             $arbiter         Runtime owner arbiter.
 	 * @param WooPaymentsEmbeddedAccountSessionService $session_service Embedded account session service.
+	 * @param WooPaymentsAccountService                $account_service WooPayments account service.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsEmbeddedAccountSessionService $session_service ): void {
+	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsEmbeddedAccountSessionService $session_service, WooPaymentsAccountService $account_service ): void {
 		$this->arbiter         = $arbiter;
 		$this->session_service = $session_service;
+		$this->account_service = $account_service;
 	}
 
 	/**
@@ -69,6 +78,8 @@ class WooPaymentsAccountSessionRestController implements RegisterHooksInterface 
 	 * Register WooPayments-compatible account-session routes.
 	 */
 	public function register_routes(): void {
+		register_rest_route( self::NAMESPACE, '/payments/accounts', $this->get_readable_route( 'get_account_data' ) );
+
 		// NOTE: Registered as READABLE (GET) deliberately for backward compatibility
 		// with the WooPayments client and mobile app, which call this endpoint as GET.
 		// Do not change to CREATABLE/POST without a coordinated client + mobile migration.
@@ -83,6 +94,44 @@ class WooPaymentsAccountSessionRestController implements RegisterHooksInterface 
 	 */
 	public function check_permission(): bool {
 		return current_user_can( 'manage_woocommerce' );
+	}
+
+	/**
+	 * Get WooPayments account data.
+	 *
+	 * @return WP_REST_Response
+	 */
+	public function get_account_data(): WP_REST_Response {
+		$account = $this->account_service->get_cached_account_data();
+		if ( array() === $account ) {
+			$default_currency = get_woocommerce_currency();
+			$account          = array(
+				'card_present_eligible'    => false,
+				'country'                  => WC()->countries->get_base_country(),
+				'current_deadline'         => null,
+				'has_overdue_requirements' => false,
+				'has_pending_requirements' => false,
+				'statement_descriptor'     => '',
+				'status'                   => 'NOACCOUNT',
+				'store_currencies'         => array(
+					'default'   => $default_currency,
+					'supported' => array(
+						$default_currency,
+					),
+				),
+				'customer_currencies'      => array(
+					'supported' => array(
+						$default_currency,
+					),
+				),
+			);
+		}
+
+		$account['card_present_eligible'] = false;
+		$account['test_mode']             = $this->account_service->is_test_mode_enabled();
+		$account['test_mode_onboarding']  = $this->account_service->is_test_mode_onboarding_enabled();
+
+		return rest_ensure_response( $account );
 	}
 
 	/**
