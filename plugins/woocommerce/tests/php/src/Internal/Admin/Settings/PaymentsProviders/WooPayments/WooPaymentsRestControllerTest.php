@@ -719,6 +719,10 @@ class WooPaymentsRestControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertArrayHasKey( '/wc/v3/payments/settings', $routes );
 		$this->assertArrayHasKey( '/wc/v3/payments/pm-promotions', $routes );
+		$this->assertArrayHasKey( '/wc/v3/payments/pm-promotions/(?P<id>[^/]+)/activate', $routes );
+		$this->assertArrayHasKey( '/wc/v3/payments/pm-promotions/(?P<id>[^/]+)/dismiss', $routes );
+		$this->assertArrayNotHasKey( '/wc/v3/payments/pm-promotions/(?P<promotion_id>[^/]+)/activate', $routes );
+		$this->assertArrayNotHasKey( '/wc/v3/payments/pm-promotions/(?P<promotion_id>[^/]+)/dismiss', $routes );
 		$this->assertArrayHasKey( '/wc/v3/payments/file', $routes );
 		$this->assertArrayHasKey( self::ENDPOINT . '/onboarding', $routes );
 	}

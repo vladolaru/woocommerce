@@ -662,7 +662,7 @@ class WooPaymentsRestController extends RestApiControllerBase {
 
 		register_rest_route(
 			'wc/v3',
-			'/payments/pm-promotions/(?P<promotion_id>[^/]+)/activate',
+			'/payments/pm-promotions/(?P<id>[^/]+)/activate',
 			array(
 				array(
 					'methods'             => \WP_REST_Server::CREATABLE,
@@ -676,7 +676,7 @@ class WooPaymentsRestController extends RestApiControllerBase {
 
 		register_rest_route(
 			'wc/v3',
-			'/payments/pm-promotions/(?P<promotion_id>[^/]+)/dismiss',
+			'/payments/pm-promotions/(?P<id>[^/]+)/dismiss',
 			array(
 				array(
 					'methods'             => \WP_REST_Server::CREATABLE,
@@ -920,7 +920,7 @@ class WooPaymentsRestController extends RestApiControllerBase {
 	 */
 	private function get_pm_promotion_route_args(): array {
 		return array(
-			'promotion_id' => array(
+			'id' => array(
 				'required'          => true,
 				'type'              => 'string',
 				'validate_callback' => fn( $value ) => $this->validate_pm_promotion_id( $value ),
@@ -1400,7 +1400,7 @@ class WooPaymentsRestController extends RestApiControllerBase {
 	protected function activate_native_pm_promotion( WP_REST_Request $request ): WP_REST_Response {
 		return rest_ensure_response(
 			array(
-				'success' => $this->get_pm_promotions_service()->activate_promotion( (string) $request->get_param( 'promotion_id' ) ),
+				'success' => $this->get_pm_promotions_service()->activate_promotion( (string) $request->get_param( 'id' ) ),
 			)
 		);
 	}
@@ -1415,7 +1415,7 @@ class WooPaymentsRestController extends RestApiControllerBase {
 	protected function dismiss_native_pm_promotion( WP_REST_Request $request ): WP_REST_Response {
 		return rest_ensure_response(
 			array(
-				'success' => $this->get_pm_promotions_service()->dismiss_promotion( (string) $request->get_param( 'promotion_id' ) ),
+				'success' => $this->get_pm_promotions_service()->dismiss_promotion( (string) $request->get_param( 'id' ) ),
 			)
 		);
 	}
