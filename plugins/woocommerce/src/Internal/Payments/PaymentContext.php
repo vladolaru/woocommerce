@@ -39,6 +39,13 @@ class PaymentContext {
 	private string $payment_method_id;
 
 	/**
+	 * Operation amount.
+	 *
+	 * @var float|null
+	 */
+	private ?float $amount;
+
+	/**
 	 * Generic payment-operation data.
 	 *
 	 * @var array<string,mixed>
@@ -60,13 +67,15 @@ class PaymentContext {
 	 * @param string              $payment_method_id Payment method ID.
 	 * @param array<string,mixed> $payment_data      Generic payment-operation data.
 	 * @param array<string,mixed> $provider_data     Provider-scoped data.
+	 * @param float|null          $amount            Operation amount.
 	 */
-	public function __construct( WC_Order $order, string $gateway_id, string $payment_method_id = '', array $payment_data = array(), array $provider_data = array() ) {
+	public function __construct( WC_Order $order, string $gateway_id, string $payment_method_id = '', array $payment_data = array(), array $provider_data = array(), ?float $amount = null ) {
 		$this->order             = $order;
 		$this->gateway_id        = $gateway_id;
 		$this->payment_method_id = $payment_method_id;
 		$this->payment_data      = $payment_data;
 		$this->provider_data     = $provider_data;
+		$this->amount            = $amount;
 	}
 
 	/**
@@ -102,20 +111,27 @@ class PaymentContext {
 				'amount' => $amount,
 				'reason' => $reason,
 			),
-			$provider_data
+			$provider_data,
+			$amount
 		);
 	}
 
 	/**
 	 * Create a capture payment context.
 	 *
-	 * @param WC_Order            $order         Order being captured.
-	 * @param string              $gateway_id    Gateway ID.
-	 * @param array<string,mixed> $provider_data Provider-scoped data.
+	 * @param WC_Order                           $order         Order being captured.
+	 * @param string                             $gateway_id    Gateway ID.
+	 * @param float|int|array<string,mixed>|null $amount        Capture amount, legacy provider data, or null.
+	 * @param array<string,mixed>                $provider_data Provider-scoped data.
 	 * @return self
 	 */
-	public static function for_capture( WC_Order $order, string $gateway_id, array $provider_data = array() ): self {
-		return new self( $order, $gateway_id, '', array(), $provider_data );
+	public static function for_capture( WC_Order $order, string $gateway_id, $amount = null, array $provider_data = array() ): self {
+		if ( is_array( $amount ) ) {
+			$provider_data = $amount;
+			$amount        = null;
+		}
+
+		return new self( $order, $gateway_id, '', array(), $provider_data, null === $amount ? null : (float) $amount );
 	}
 
 	/**
@@ -164,6 +180,15 @@ class PaymentContext {
 	 */
 	public function get_payment_method_id(): string {
 		return $this->payment_method_id;
+	}
+
+	/**
+	 * Get the operation amount.
+	 *
+	 * @return float|null
+	 */
+	public function get_amount(): ?float {
+		return $this->amount;
 	}
 
 	/**

@@ -34,6 +34,7 @@ class PaymentContextTest extends WC_Unit_Test_Case {
 		$this->assertSame( $order->get_id(), $context->get_order_id() );
 		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $context->get_gateway_id() );
 		$this->assertSame( 'card', $context->get_payment_method_id() );
+		$this->assertNull( $context->get_amount() );
 		$this->assertSame( array( 'capture' => true ), $context->get_payment_data() );
 		$this->assertSame( array( 'stripe_customer_id' => 'cus_123' ), $context->get_provider_data() );
 	}
@@ -78,6 +79,7 @@ class PaymentContextTest extends WC_Unit_Test_Case {
 			),
 			$context->get_payment_data()
 		);
+		$this->assertSame( 7.25, $context->get_amount() );
 	}
 
 	/**
@@ -89,6 +91,7 @@ class PaymentContextTest extends WC_Unit_Test_Case {
 		$capture = PaymentContext::for_capture(
 			$order,
 			OrderPaymentStore::GATEWAY_ID,
+			4.25,
 			array(
 				'include_level3' => true,
 			)
@@ -101,7 +104,20 @@ class PaymentContextTest extends WC_Unit_Test_Case {
 			)
 		);
 
+		$this->assertSame( 4.25, $capture->get_amount() );
 		$this->assertSame( array( 'include_level3' => true ), $capture->get_provider_data() );
+		$this->assertNull( $cancel->get_amount() );
 		$this->assertSame( array( 'source' => 'order_action' ), $cancel->get_provider_data() );
+
+		$legacy_capture = PaymentContext::for_capture(
+			$order,
+			OrderPaymentStore::GATEWAY_ID,
+			array(
+				'include_level3' => true,
+			)
+		);
+
+		$this->assertNull( $legacy_capture->get_amount() );
+		$this->assertSame( array( 'include_level3' => true ), $legacy_capture->get_provider_data() );
 	}
 }

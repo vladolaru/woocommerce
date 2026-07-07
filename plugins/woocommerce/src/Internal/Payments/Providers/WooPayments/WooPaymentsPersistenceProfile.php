@@ -191,8 +191,8 @@ class WooPaymentsPersistenceProfile implements ProviderPersistenceProfile {
 		$data = $outcome->get_data();
 		$meta = array();
 
-		if ( isset( $data['meta'] ) && is_array( $data['meta'] ) ) {
-			foreach ( $data['meta'] as $key => $value ) {
+		if ( isset( $data[ PaymentOutcome::DATA_META ] ) && is_array( $data[ PaymentOutcome::DATA_META ] ) ) {
+			foreach ( $data[ PaymentOutcome::DATA_META ] as $key => $value ) {
 				$meta[ (string) $key ] = $value;
 			}
 		}

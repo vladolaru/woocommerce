@@ -837,6 +837,36 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Capture idempotency should include the context amount when present.
+	 */
+	public function test_capture_idempotency_uses_context_amount(): void {
+		$order = $this->create_woopayments_order( '10.00' );
+
+		$first_provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_capture_first' ) );
+		$this->sut->capture( PaymentContext::for_capture( $order, OrderPaymentStore::GATEWAY_ID, 4.00 ), $first_provider );
+		$first_key = $first_provider->last_idempotency_key;
+
+		$second_provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_capture_second' ) );
+		$this->sut->capture( PaymentContext::for_capture( $order, OrderPaymentStore::GATEWAY_ID, 5.00 ), $second_provider );
+		$second_key = $second_provider->last_idempotency_key;
+
+		$retry_provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_capture_retry' ) );
+		$this->sut->capture( PaymentContext::for_capture( $order, OrderPaymentStore::GATEWAY_ID, 4.00 ), $retry_provider );
+		$retry_key = $retry_provider->last_idempotency_key;
+
+		$this->assertSame(
+			$this->idempotency->derive_key( $order, OrderPaymentStore::GATEWAY_ID, 'capture', 4.00, 'USD' ),
+			$first_key
+		);
+		$this->assertSame(
+			$this->idempotency->derive_key( $order, OrderPaymentStore::GATEWAY_ID, 'capture', 5.00, 'USD' ),
+			$second_key
+		);
+		$this->assertNotSame( $first_key, $second_key );
+		$this->assertSame( $first_key, $retry_key );
+	}
+
+	/**
 	 * @testdox Failed captures should leave authorized orders on hold.
 	 */
 	public function test_capture_failure_preserves_authorized_order_status(): void {

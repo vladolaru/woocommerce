@@ -109,7 +109,7 @@ class PaymentProcessingService {
 				'',
 				'',
 				array(
-					'error_message' => __( 'A payment operation is already in progress for this order.', 'woocommerce' ),
+					PaymentOutcome::DATA_ERROR_MESSAGE => __( 'A payment operation is already in progress for this order.', 'woocommerce' ),
 				)
 			);
 		}
@@ -243,8 +243,12 @@ class PaymentProcessingService {
 		}
 
 		$data          = $outcome->get_data();
-		$error_code    = isset( $data['error_code'] ) && '' !== (string) $data['error_code'] ? (string) $data['error_code'] : 'native_payment_refund_failed';
-		$error_message = isset( $data['error_message'] ) ? (string) $data['error_message'] : __( 'The refund failed.', 'woocommerce' );
+		$error_code    = isset( $data[ PaymentOutcome::DATA_ERROR_CODE ] ) && '' !== (string) $data[ PaymentOutcome::DATA_ERROR_CODE ]
+			? (string) $data[ PaymentOutcome::DATA_ERROR_CODE ]
+			: 'native_payment_refund_failed';
+		$error_message = isset( $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] )
+			? (string) $data[ PaymentOutcome::DATA_ERROR_MESSAGE ]
+			: __( 'The refund failed.', 'woocommerce' );
 
 		return new WP_Error( $error_code, $error_message );
 	}
@@ -338,9 +342,15 @@ class PaymentProcessingService {
 	 */
 	private function apply_refund_outcome( WC_Order $order, PaymentOutcome $outcome, float $amount, string $reason ): void {
 		$data        = $outcome->get_data();
-		$refund_meta = isset( $data['refund_meta'] ) && is_array( $data['refund_meta'] ) ? $data['refund_meta'] : array();
-		$order_meta  = isset( $data['order_meta'] ) && is_array( $data['order_meta'] ) ? $data['order_meta'] : array();
-		$refund_note = isset( $data['refund_note'] ) && is_string( $data['refund_note'] ) ? $data['refund_note'] : '';
+		$refund_meta = isset( $data[ PaymentOutcome::DATA_REFUND_META ] ) && is_array( $data[ PaymentOutcome::DATA_REFUND_META ] )
+			? $data[ PaymentOutcome::DATA_REFUND_META ]
+			: array();
+		$order_meta  = isset( $data[ PaymentOutcome::DATA_ORDER_META ] ) && is_array( $data[ PaymentOutcome::DATA_ORDER_META ] )
+			? $data[ PaymentOutcome::DATA_ORDER_META ]
+			: array();
+		$refund_note = isset( $data[ PaymentOutcome::DATA_REFUND_NOTE ] ) && is_string( $data[ PaymentOutcome::DATA_REFUND_NOTE ] )
+			? $data[ PaymentOutcome::DATA_REFUND_NOTE ]
+			: '';
 
 		if ( empty( $refund_meta ) && empty( $order_meta ) && '' === $refund_note ) {
 			return;
@@ -549,7 +559,8 @@ class PaymentProcessingService {
 	 */
 	private function run_provider_order_operation( PaymentContext $context, ProviderContract $provider, string $operation ): PaymentOutcome {
 		$order           = $context->get_order();
-		$idempotency_key = $this->idempotency->derive_key( $order, $provider->get_id(), $operation, (float) $order->get_total(), (string) $order->get_currency() );
+		$amount          = $context->get_amount() ?? (float) $order->get_total();
+		$idempotency_key = $this->idempotency->derive_key( $order, $provider->get_id(), $operation, $amount, (string) $order->get_currency() );
 
 		if ( ! $this->order_payment_store->claim_order_payment_lock( $order, $idempotency_key ) ) {
 			return new PaymentOutcome(
@@ -558,7 +569,7 @@ class PaymentProcessingService {
 				'',
 				'',
 				'',
-				array( 'error_message' => __( 'A payment operation is already in progress for this order.', 'woocommerce' ) )
+				array( PaymentOutcome::DATA_ERROR_MESSAGE => __( 'A payment operation is already in progress for this order.', 'woocommerce' ) )
 			);
 		}
 
@@ -687,8 +698,12 @@ class PaymentProcessingService {
 	private function get_lifecycle_note( PaymentOutcome $outcome ): ?string {
 		$data = $outcome->get_data();
 
-		if ( isset( $data['note'] ) && is_string( $data['note'] ) && '' !== $data['note'] ) {
-			return $data['note'];
+		if (
+			isset( $data[ PaymentOutcome::DATA_NOTE ] )
+			&& is_string( $data[ PaymentOutcome::DATA_NOTE ] )
+			&& '' !== $data[ PaymentOutcome::DATA_NOTE ]
+		) {
+			return $data[ PaymentOutcome::DATA_NOTE ];
 		}
 
 		return null;
@@ -713,8 +728,8 @@ class PaymentProcessingService {
 
 		$payment_method_id = '' !== $outcome->get_payment_method_id() ? $outcome->get_payment_method_id() : $context->get_payment_method_id();
 		$data              = $outcome->get_data();
-		$redirect          = array_key_exists( 'checkout_redirect', $data )
-			? (string) $data['checkout_redirect']
+		$redirect          = array_key_exists( PaymentOutcome::DATA_CHECKOUT_REDIRECT, $data )
+			? (string) $data[ PaymentOutcome::DATA_CHECKOUT_REDIRECT ]
 			: ( '' !== $outcome->get_redirect_url() ? $outcome->get_redirect_url() : $order->get_checkout_order_received_url() );
 
 		return array(

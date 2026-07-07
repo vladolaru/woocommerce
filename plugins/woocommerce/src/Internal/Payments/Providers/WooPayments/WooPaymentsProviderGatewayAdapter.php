@@ -202,8 +202,8 @@ class WooPaymentsProviderGatewayAdapter {
 				'',
 				'',
 				array(
-					'error_code'    => $result->get_error_code(),
-					'error_message' => $result->get_error_message(),
+					PaymentOutcome::DATA_ERROR_CODE    => $result->get_error_code(),
+					PaymentOutcome::DATA_ERROR_MESSAGE => $result->get_error_message(),
 				)
 			);
 		}
@@ -214,7 +214,7 @@ class WooPaymentsProviderGatewayAdapter {
 			'',
 			'',
 			'',
-			array( 'error_code' => 'legacy_refund_failed' )
+			array( PaymentOutcome::DATA_ERROR_CODE => 'legacy_refund_failed' )
 		);
 	}
 
@@ -232,12 +232,16 @@ class WooPaymentsProviderGatewayAdapter {
 		if ( $this->get_api_client()->is_available() ) {
 			$intent_id = $this->get_order_intent_id( $order );
 			if ( '' !== $intent_id ) {
+				$capture_amount = $context->get_amount() ?? (float) $order->get_total();
+
 				try {
 					$result = $this->get_api_client()->capture_intention(
 						$intent_id,
-						$this->prepare_amount( (float) $order->get_total(), (string) $order->get_currency() ),
+						$this->prepare_amount( $capture_amount, (string) $order->get_currency() ),
 						array()
 					);
+
+					$this->maybe_add_capture_fee_breakdown_note( $order, $result );
 
 					return $this->normalize_capture_result( $result, $context );
 				} catch ( WooPaymentsApiException $exception ) {
@@ -421,7 +425,7 @@ class WooPaymentsProviderGatewayAdapter {
 				'',
 				'',
 				'',
-				array( 'error_code' => 'wcpay_missing_payment_credential' )
+				array( PaymentOutcome::DATA_ERROR_CODE => 'wcpay_missing_payment_credential' )
 			);
 		}
 
@@ -464,7 +468,7 @@ class WooPaymentsProviderGatewayAdapter {
 				'',
 				'',
 				'',
-				array( 'error_code' => 'wcpay_missing_payment_credential' )
+				array( PaymentOutcome::DATA_ERROR_CODE => 'wcpay_missing_payment_credential' )
 			);
 		}
 
@@ -712,13 +716,18 @@ class WooPaymentsProviderGatewayAdapter {
 			}
 		}
 
-		$outcome_data = array( 'meta' => $meta );
+		$outcome_data = array( PaymentOutcome::DATA_META => $meta );
 		if ( '' !== $charge_id ) {
 			$outcome_data['charge_id'] = $charge_id;
 		}
 
 		if ( 'succeeded' === $status ) {
-			$outcome_data['note'] = $this->get_payment_success_note( $context->get_order(), $intent_id, $charge_id, $balance_transaction_id );
+			$outcome_data[ PaymentOutcome::DATA_NOTE ] = $this->get_payment_success_note(
+				$context->get_order(),
+				$intent_id,
+				$charge_id,
+				$balance_transaction_id
+			);
 		}
 
 		switch ( $status ) {
@@ -746,9 +755,9 @@ class WooPaymentsProviderGatewayAdapter {
 				return new PaymentOutcome( PaymentOutcome::STATUS_CANCELED, $intent_id, '', $payment_method_id, $customer_id, $outcome_data );
 		}
 
-		$error                         = is_array( $result['last_payment_error'] ?? null ) ? $result['last_payment_error'] : array();
-		$outcome_data['error_code']    = isset( $error['code'] ) ? (string) $error['code'] : 'wcpay_native_charge_failed';
-		$outcome_data['error_message'] = isset( $error['message'] ) ? (string) $error['message'] : '';
+		$error = is_array( $result['last_payment_error'] ?? null ) ? $result['last_payment_error'] : array();
+		$outcome_data[ PaymentOutcome::DATA_ERROR_CODE ]    = isset( $error['code'] ) ? (string) $error['code'] : 'wcpay_native_charge_failed';
+		$outcome_data[ PaymentOutcome::DATA_ERROR_MESSAGE ] = isset( $error['message'] ) ? (string) $error['message'] : '';
 
 		return new PaymentOutcome(
 			PaymentOutcome::STATUS_FAILED,
@@ -797,7 +806,14 @@ class WooPaymentsProviderGatewayAdapter {
 
 		switch ( $status ) {
 			case 'succeeded':
-				return new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, $setup_intent_id, '', $payment_method_id, $customer_id, array( 'meta' => $meta ) );
+				return new PaymentOutcome(
+					PaymentOutcome::STATUS_COMPLETED,
+					$setup_intent_id,
+					'',
+					$payment_method_id,
+					$customer_id,
+					array( PaymentOutcome::DATA_META => $meta )
+				);
 
 			case 'requires_action':
 			case 'requires_confirmation':
@@ -807,14 +823,28 @@ class WooPaymentsProviderGatewayAdapter {
 					$this->build_confirmation_redirect( $context->get_order(), $client_secret, 'si', $confirmation_token ),
 					$payment_method_id,
 					$customer_id,
-					array( 'meta' => $meta )
+					array( PaymentOutcome::DATA_META => $meta )
 				);
 
 			case 'processing':
-				return new PaymentOutcome( PaymentOutcome::STATUS_PENDING_ASYNC, $setup_intent_id, '', $payment_method_id, $customer_id, array( 'meta' => $meta ) );
+				return new PaymentOutcome(
+					PaymentOutcome::STATUS_PENDING_ASYNC,
+					$setup_intent_id,
+					'',
+					$payment_method_id,
+					$customer_id,
+					array( PaymentOutcome::DATA_META => $meta )
+				);
 
 			case 'canceled':
-				return new PaymentOutcome( PaymentOutcome::STATUS_CANCELED, $setup_intent_id, '', $payment_method_id, $customer_id, array( 'meta' => $meta ) );
+				return new PaymentOutcome(
+					PaymentOutcome::STATUS_CANCELED,
+					$setup_intent_id,
+					'',
+					$payment_method_id,
+					$customer_id,
+					array( PaymentOutcome::DATA_META => $meta )
+				);
 		}
 
 		$error = is_array( $result['last_setup_error'] ?? null ) ? $result['last_setup_error'] : array();
@@ -826,9 +856,9 @@ class WooPaymentsProviderGatewayAdapter {
 			$payment_method_id,
 			$customer_id,
 			array(
-				'meta'          => $meta,
-				'error_code'    => isset( $error['code'] ) ? (string) $error['code'] : 'wcpay_native_setup_intent_failed',
-				'error_message' => isset( $error['message'] ) ? (string) $error['message'] : '',
+				PaymentOutcome::DATA_META          => $meta,
+				PaymentOutcome::DATA_ERROR_CODE    => isset( $error['code'] ) ? (string) $error['code'] : 'wcpay_native_setup_intent_failed',
+				PaymentOutcome::DATA_ERROR_MESSAGE => isset( $error['message'] ) ? (string) $error['message'] : '',
 			)
 		);
 	}
@@ -1014,8 +1044,11 @@ class WooPaymentsProviderGatewayAdapter {
 			'',
 			'',
 			array(
-				'error_code'    => 'wcpay_recurring_token_save_failed',
-				'error_message' => __( 'Unable to save payment method for subscription. Please try again or use a different payment method.', 'woocommerce' ),
+				PaymentOutcome::DATA_ERROR_CODE    => 'wcpay_recurring_token_save_failed',
+				PaymentOutcome::DATA_ERROR_MESSAGE => __(
+					'Unable to save payment method for subscription. Please try again or use a different payment method.',
+					'woocommerce'
+				),
 			)
 		);
 	}
@@ -1384,6 +1417,36 @@ class WooPaymentsProviderGatewayAdapter {
 	}
 
 	/**
+	 * Get a WooPayments-compatible capture success order note.
+	 *
+	 * @param WC_Order $order                  Order object.
+	 * @param string   $intent_id              Payment intent ID.
+	 * @param string   $charge_id              Charge ID.
+	 * @param string   $balance_transaction_id Balance transaction ID.
+	 * @return string
+	 */
+	private function get_capture_success_note( WC_Order $order, string $intent_id, string $charge_id, string $balance_transaction_id = '' ): string {
+		$formatted_amount = wc_price( (float) $order->get_total(), array( 'currency' => $order->get_currency() ) ) . ' ' . $order->get_currency();
+		$transaction_id   = '' !== $intent_id ? $intent_id : $charge_id;
+		$transaction_url  = $this->get_transaction_url( $intent_id, $charge_id, $balance_transaction_id );
+
+		return sprintf(
+			$this->get_interpolated_note_text(
+				/* translators: %1$s: captured amount, %2$s: WooPayments, %3$s: transaction ID, %4$s: transaction URL. */
+				__( 'A payment of %1$s was <strong>successfully captured</strong> using %2$s (<a>%3$s</a>).', 'woocommerce' ),
+				array(
+					'strong' => '<strong>',
+					'a'      => '' !== $transaction_url ? '<a href="%4$s" target="_blank" rel="noopener noreferrer">' : '<code>',
+				)
+			),
+			$formatted_amount,
+			'WooPayments',
+			$transaction_id,
+			$transaction_url
+		);
+	}
+
+	/**
 	 * Get a WooPayments-compatible capture failure order note.
 	 *
 	 * @param WC_Order $order     Order object.
@@ -1499,7 +1562,7 @@ class WooPaymentsProviderGatewayAdapter {
 				'',
 				'',
 				'',
-				array( 'error_code' => 'legacy_process_payment_empty_response' )
+				array( PaymentOutcome::DATA_ERROR_CODE => 'legacy_process_payment_empty_response' )
 			);
 		}
 
@@ -1510,7 +1573,7 @@ class WooPaymentsProviderGatewayAdapter {
 				'',
 				'',
 				'',
-				array( 'error_code' => 'legacy_process_payment_failed' )
+				array( PaymentOutcome::DATA_ERROR_CODE => 'legacy_process_payment_failed' )
 			);
 		}
 
@@ -1528,7 +1591,7 @@ class WooPaymentsProviderGatewayAdapter {
 		}
 
 		if ( array_key_exists( 'redirect', $result ) ) {
-			$data['checkout_redirect'] = $redirect;
+			$data[ PaymentOutcome::DATA_CHECKOUT_REDIRECT ] = $redirect;
 		}
 
 		if ( str_starts_with( $redirect, '#wcpay-confirm-' ) ) {
@@ -1584,6 +1647,21 @@ class WooPaymentsProviderGatewayAdapter {
 	}
 
 	/**
+	 * Add fee details for a successful native capture response.
+	 *
+	 * @param WC_Order            $order  Order being captured.
+	 * @param array<string,mixed> $result Native capture result.
+	 */
+	private function maybe_add_capture_fee_breakdown_note( WC_Order $order, array $result ): void {
+		$status = isset( $result['status'] ) ? (string) $result['status'] : '';
+		if ( 'succeeded' !== $status ) {
+			return;
+		}
+
+		$this->get_order_data_service()->add_fee_breakdown_note_from_intent( $order, $result, false );
+	}
+
+	/**
 	 * Normalize a capture result.
 	 *
 	 * @param array<string,mixed> $result  Legacy or native capture result.
@@ -1597,8 +1675,18 @@ class WooPaymentsProviderGatewayAdapter {
 		$message    = isset( $result['message'] ) ? (string) $result['message'] : '';
 
 		if ( 'succeeded' === $status ) {
-			$meta = $this->get_completed_capture_order_meta( $result, $context->get_order() );
-			$data = empty( $meta ) ? array() : array( 'meta' => $meta );
+			$meta                   = $this->get_completed_capture_order_meta( $result, $context->get_order() );
+			$data                   = empty( $meta ) ? array() : array( PaymentOutcome::DATA_META => $meta );
+			$charge                 = $this->get_latest_charge( $result );
+			$charge_id              = isset( $charge['id'] ) ? (string) $charge['id'] : '';
+			$balance_transaction_id = $this->get_balance_transaction_id( $charge['balance_transaction'] ?? null );
+
+			$data[ PaymentOutcome::DATA_NOTE ] = $this->get_capture_success_note(
+				$context->get_order(),
+				$intent_id,
+				$charge_id,
+				$balance_transaction_id
+			);
 
 			return new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, $intent_id, '', '', '', $data );
 		}
@@ -1614,10 +1702,10 @@ class WooPaymentsProviderGatewayAdapter {
 			'',
 			'',
 			array(
-				'error_code'    => $error_code,
-				'error_message' => $message,
-				'meta'          => $this->get_failed_capture_order_meta(),
-				'note'          => $this->get_capture_failed_note(
+				PaymentOutcome::DATA_ERROR_CODE    => $error_code,
+				PaymentOutcome::DATA_ERROR_MESSAGE => $message,
+				PaymentOutcome::DATA_META          => $this->get_failed_capture_order_meta(),
+				PaymentOutcome::DATA_NOTE          => $this->get_capture_failed_note(
 					$context->get_order(),
 					$intent_id,
 					$this->get_failed_capture_charge_id( $result, $context->get_order() ),
@@ -1672,23 +1760,23 @@ class WooPaymentsProviderGatewayAdapter {
 				'',
 				'',
 				array(
-					'error_code'    => '' !== $failure_reason ? $failure_reason : $provider_status,
-					'error_message' => $error_message,
-					'refund_status' => $provider_status,
+					PaymentOutcome::DATA_ERROR_CODE    => '' !== $failure_reason ? $failure_reason : $provider_status,
+					PaymentOutcome::DATA_ERROR_MESSAGE => $error_message,
+					'refund_status'                    => $provider_status,
 				)
 			);
 		}
 
 		$data = array(
-			'order_meta'    => array( '_wcpay_refund_status' => $refund_status ),
-			'refund_meta'   => array( '_wcpay_refund_id' => $refund_id ),
-			'refund_note'   => $this->get_refund_note( $context, $refund_id, 'pending' === $refund_status ),
-			'refund_status' => $refund_status,
+			PaymentOutcome::DATA_ORDER_META  => array( '_wcpay_refund_status' => $refund_status ),
+			PaymentOutcome::DATA_REFUND_META => array( '_wcpay_refund_id' => $refund_id ),
+			PaymentOutcome::DATA_REFUND_NOTE => $this->get_refund_note( $context, $refund_id, 'pending' === $refund_status ),
+			'refund_status'                  => $refund_status,
 		);
 
 		if ( '' !== $balance_transaction_id ) {
-			$data['refund_meta']['_wcpay_refund_transaction_id'] = $balance_transaction_id;
-			$data['refund_balance_transaction_id']               = $balance_transaction_id;
+			$data[ PaymentOutcome::DATA_REFUND_META ]['_wcpay_refund_transaction_id'] = $balance_transaction_id;
+			$data['refund_balance_transaction_id']                                    = $balance_transaction_id;
 		}
 
 		return new PaymentOutcome(
@@ -1787,8 +1875,8 @@ class WooPaymentsProviderGatewayAdapter {
 			'',
 			'',
 			array(
-				'error_code'    => 'legacy_cancel_authorization_failed',
-				'error_message' => $message,
+				PaymentOutcome::DATA_ERROR_CODE    => 'legacy_cancel_authorization_failed',
+				PaymentOutcome::DATA_ERROR_MESSAGE => $message,
 			)
 		);
 	}
@@ -1818,8 +1906,8 @@ class WooPaymentsProviderGatewayAdapter {
 			'',
 			'',
 			array(
-				'error_code' => 'wcpay_gateway_unavailable',
-				'operation'  => $operation,
+				PaymentOutcome::DATA_ERROR_CODE => 'wcpay_gateway_unavailable',
+				'operation'                     => $operation,
 			)
 		);
 	}
@@ -1835,16 +1923,19 @@ class WooPaymentsProviderGatewayAdapter {
 	private function failed_transport_outcome( string $operation, WooPaymentsApiException $exception, ?PaymentContext $context = null ): PaymentOutcome {
 		$provider_payment_id = '';
 		$data                = array(
-			'error_code'    => '' !== $exception->get_error_code() ? $exception->get_error_code() : 'wcpay_native_transport_failed',
-			'error_message' => $exception->getMessage(),
-			'operation'     => $operation,
+			PaymentOutcome::DATA_ERROR_CODE    => '' !== $exception->get_error_code()
+				? $exception->get_error_code()
+				: 'wcpay_native_transport_failed',
+			PaymentOutcome::DATA_ERROR_MESSAGE => $exception->getMessage(),
+			'operation'                        => $operation,
 		);
 
 		if ( 'capture' === $operation && null !== $context ) {
 			$order               = $context->get_order();
 			$provider_payment_id = $this->get_order_intent_id( $order );
-			$data['meta']        = $this->get_failed_capture_order_meta();
-			$data['note']        = $this->get_capture_failed_note(
+
+			$data[ PaymentOutcome::DATA_META ] = $this->get_failed_capture_order_meta();
+			$data[ PaymentOutcome::DATA_NOTE ] = $this->get_capture_failed_note(
 				$order,
 				$provider_payment_id,
 				(string) $order->get_meta( '_charge_id', true ),

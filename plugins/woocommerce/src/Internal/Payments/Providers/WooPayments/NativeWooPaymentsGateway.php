@@ -352,8 +352,12 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		$data      = $outcome->get_data();
-		$meta      = isset( $data['meta'] ) && is_array( $data['meta'] ) ? $data['meta'] : array();
-		$charge_id = isset( $data['charge_id'] ) ? (string) $data['charge_id'] : ( isset( $meta['_charge_id'] ) ? (string) $meta['_charge_id'] : '' );
+		$meta      = isset( $data[ PaymentOutcome::DATA_META ] ) && is_array( $data[ PaymentOutcome::DATA_META ] )
+			? $data[ PaymentOutcome::DATA_META ]
+			: array();
+		$charge_id = isset( $data['charge_id'] )
+			? (string) $data['charge_id']
+			: ( isset( $meta['_charge_id'] ) ? (string) $meta['_charge_id'] : '' );
 
 		try {
 			/**

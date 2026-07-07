@@ -12,6 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressPaymentMethodTypes;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentType;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapter;
@@ -2175,6 +2176,118 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Capture should send the context amount to the native transport.
+	 */
+	public function test_capture_sends_context_amount_to_native_transport(): void {
+		$order      = $this->create_woopayments_order( '10.00' );
+		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ), true );
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_available', 'capture_intention' ) )
+			->getMock();
+
+		$order->set_transaction_id( 'pi_capture_partial' );
+		$order->save();
+
+		$api_client->expects( $this->once() )
+			->method( 'is_available' )
+			->willReturn( true );
+		$api_client->expects( $this->once() )
+			->method( 'capture_intention' )
+			->with( 'pi_capture_partial', 425, array() )
+			->willReturn(
+				array(
+					'id'     => 'pi_capture_partial',
+					'status' => 'succeeded',
+				)
+			);
+
+		$sut     = $this->create_adapter( $gateway, $api_client );
+		$outcome = $sut->capture( PaymentContext::for_capture( $order, OrderPaymentStore::GATEWAY_ID, 4.25 ), 'key_capture' );
+
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		$this->assertSame( '', $gateway->last_idempotency_key );
+	}
+
+	/**
+	 * @testdox Capture should add WooPayments-compatible success and fee-detail notes.
+	 */
+	public function test_capture_adds_success_and_fee_detail_notes_for_native_capture(): void {
+		$order      = $this->create_woopayments_order( '50.00' );
+		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ), true );
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_available', 'capture_intention' ) )
+			->getMock();
+
+		$order->set_transaction_id( 'pi_capture_notes' );
+		$order->save();
+
+		$api_client->expects( $this->once() )
+			->method( 'is_available' )
+			->willReturn( true );
+		$api_client->expects( $this->once() )
+			->method( 'capture_intention' )
+			->with( 'pi_capture_notes', 5000, array() )
+			->willReturn(
+				array(
+					'id'       => 'pi_capture_notes',
+					'status'   => 'succeeded',
+					'currency' => 'usd',
+					'charges'  => array(
+						'total_count' => 1,
+						'data'        => array(
+							array(
+								'id'                  => 'ch_capture_notes',
+								'currency'            => 'usd',
+								'balance_transaction' => array(
+									'id' => 'txn_capture_notes',
+								),
+								'fee_breakdown_v1'    => array(
+									'totals' => array(
+										'fee' => array(
+											'amount'   => 175,
+											'currency' => 'usd',
+											'rate'     => array(
+												'percentage' => 2.9,
+												'fixed' => 30,
+											),
+										),
+										'net' => array(
+											'amount'   => 4825,
+											'currency' => 'usd',
+										),
+									),
+								),
+							),
+						),
+					),
+				)
+			);
+
+		$sut     = $this->create_adapter( $gateway, $api_client, null, null, null, new WooPaymentsOrderDataService() );
+		$outcome = $sut->capture( PaymentContext::for_capture( $order, OrderPaymentStore::GATEWAY_ID ), 'key_capture' );
+
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		$this->assertStringContainsString( 'successfully captured', $outcome->get_data()[ PaymentOutcome::DATA_NOTE ] );
+		$this->assertStringContainsString( 'WooPayments', $outcome->get_data()[ PaymentOutcome::DATA_NOTE ] );
+
+		$notes = wc_get_order_notes(
+			array(
+				'order_id' => $order->get_id(),
+				'type'     => 'any',
+			)
+		);
+
+		$this->assertNotEmpty(
+			array_filter(
+				$notes,
+				static fn( object $note ): bool => 0 === strpos( (string) $note->content, '<strong>Fee details:</strong>' )
+			)
+		);
+	}
+
+	/**
 	 * @testdox Capture should preserve authorized payment metadata on native capture failures.
 	 */
 	public function test_capture_preserves_authorized_meta_for_native_failure(): void {
@@ -2461,14 +2574,15 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	/**
 	 * Create adapter with a fake legacy gateway.
 	 *
-	 * @param RecordingLegacyGateway|null     $gateway Legacy gateway.
-	 * @param WooPaymentsApiClient|null       $api_client Native API client.
-	 * @param WooPaymentsCustomerService|null $customer_service WooPayments customer service.
-	 * @param WooPaymentsTokenService|null    $token_service WooPayments token service.
-	 * @param WooPaymentsAccountService|null  $account_service WooPayments account service.
+	 * @param RecordingLegacyGateway|null      $gateway Legacy gateway.
+	 * @param WooPaymentsApiClient|null        $api_client Native API client.
+	 * @param WooPaymentsCustomerService|null  $customer_service WooPayments customer service.
+	 * @param WooPaymentsTokenService|null     $token_service WooPayments token service.
+	 * @param WooPaymentsAccountService|null   $account_service WooPayments account service.
+	 * @param WooPaymentsOrderDataService|null $order_data_service WooPayments order data service.
 	 * @return WooPaymentsProviderGatewayAdapter
 	 */
-	private function create_adapter( ?RecordingLegacyGateway $gateway, ?WooPaymentsApiClient $api_client = null, ?WooPaymentsCustomerService $customer_service = null, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsAccountService $account_service = null ): WooPaymentsProviderGatewayAdapter {
+	private function create_adapter( ?RecordingLegacyGateway $gateway, ?WooPaymentsApiClient $api_client = null, ?WooPaymentsCustomerService $customer_service = null, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsOrderDataService $order_data_service = null ): WooPaymentsProviderGatewayAdapter {
 		$legacy_runtime = new WooPaymentsLegacyRuntime();
 		$legacy_runtime->init( new LegacyProxyWithGateway( $gateway ) );
 		$api_client = $api_client ?? $this->getMockBuilder( WooPaymentsApiClient::class )
@@ -2485,7 +2599,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$account_service  = $account_service ?? $this->create_account_service( false );
 
 		$sut = new WooPaymentsProviderGatewayAdapter();
-		$sut->init( $legacy_runtime, $api_client, $customer_service, $token_service, $account_service );
+		$sut->init( $legacy_runtime, $api_client, $customer_service, $token_service, $account_service, $order_data_service );
 
 		return $sut;
 	}

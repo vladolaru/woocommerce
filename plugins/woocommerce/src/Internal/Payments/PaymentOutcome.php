@@ -74,6 +74,62 @@ class PaymentOutcome {
 	const STATUS_NO_EXTERNAL_PAYMENT = 'no_external_payment';
 
 	/**
+	 * Additional data key: order/refund meta updates.
+	 *
+	 * @var string
+	 */
+	public const DATA_META = 'meta';
+
+	/**
+	 * Additional data key: order note.
+	 *
+	 * @var string
+	 */
+	public const DATA_NOTE = 'note';
+
+	/**
+	 * Additional data key: refund meta updates.
+	 *
+	 * @var string
+	 */
+	public const DATA_REFUND_META = 'refund_meta';
+
+	/**
+	 * Additional data key: parent order meta updates for a refund.
+	 *
+	 * @var string
+	 */
+	public const DATA_ORDER_META = 'order_meta';
+
+	/**
+	 * Additional data key: refund order note.
+	 *
+	 * @var string
+	 */
+	public const DATA_REFUND_NOTE = 'refund_note';
+
+	/**
+	 * Additional data key: provider error code.
+	 *
+	 * @var string
+	 */
+	public const DATA_ERROR_CODE = 'error_code';
+
+	/**
+	 * Additional data key: provider error message.
+	 *
+	 * @var string
+	 */
+	public const DATA_ERROR_MESSAGE = 'error_message';
+
+	/**
+	 * Additional data key: checkout redirect URL override.
+	 *
+	 * @var string
+	 */
+	public const DATA_CHECKOUT_REDIRECT = 'checkout_redirect';
+
+	/**
 	 * Outcome status.
 	 *
 	 * @var string
