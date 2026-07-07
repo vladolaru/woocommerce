@@ -9,6 +9,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionService;
 use WC_Unit_Test_Case;
 
@@ -22,6 +23,10 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		remove_all_filters( 'wcpay_payment_fields_js_config' );
+		wp_dequeue_script( 'wc-woopayments-checkout' );
+		wp_deregister_script( 'wc-woopayments-checkout' );
+		wp_dequeue_style( 'wc-woopayments-checkout' );
+		wp_deregister_style( 'wc-woopayments-checkout' );
 		wp_dequeue_script( 'wcpay-fraud-prevention-token' );
 		wp_deregister_script( 'wcpay-fraud-prevention-token' );
 		wp_set_current_user( 0 );
@@ -257,6 +262,32 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			'/assets/css/woopayments-checkout.css',
 			wp_styles()->registered['wc-woopayments-checkout']->src
 		);
+	}
+
+	/**
+	 * @testdox Should localize split gateway classic config under a gateway-specific object name.
+	 */
+	public function test_payment_fields_localizes_split_gateway_config_under_gateway_specific_object_name(): void {
+		$legacy_runtime  = $this->create_legacy_runtime_for_bridge();
+		$account_service = $this->create_account_service_for_bridge( true );
+		$legacy_runtime->method( 'get_gateway_prepared_customer_data' )->willReturn( array() );
+		$legacy_runtime->method( 'can_handle_checkout_bridge_callbacks' )->willReturn( true );
+
+		$bridge = new WooPaymentsCheckoutBridge();
+		$bridge->init( $legacy_runtime, $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+
+		$payment_method_registry = new WooPaymentsPaymentMethodRegistry();
+
+		ob_start();
+		$bridge->render_payment_fields( $payment_method_registry->get( 'klarna' ) );
+		ob_get_clean();
+
+		$script_data = (string) wp_scripts()->get_data( 'wc-woopayments-checkout', 'data' );
+
+		$this->assertStringContainsString( 'var wcpay_core_checkout_config_woocommerce_payments_klarna = ', $script_data );
+		$this->assertStringContainsString( '"gatewayId":"woocommerce_payments_klarna"', $script_data );
+		$this->assertStringContainsString( '"paymentMethodTypes":["klarna"]', $script_data );
+		$this->assertStringNotContainsString( 'var wcpay_core_checkout_config = ', $script_data );
 	}
 
 	/**

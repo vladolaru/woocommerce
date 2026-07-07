@@ -265,6 +265,7 @@ describe( 'WooPayments checkout', () => {
 		delete window.jQuery;
 		delete window.$;
 		delete window.wcpay_core_checkout_config;
+		delete window.wcpay_core_checkout_config_woocommerce_payments_klarna;
 		delete window.Stripe;
 		delete window.navigator.clipboard;
 		window.fetch = originalFetch;
@@ -295,6 +296,36 @@ describe( 'WooPayments checkout', () => {
 			mode: 'payment',
 			paymentMethodCreation: 'manual',
 			paymentMethodTypes: [ 'card', 'link' ],
+		} );
+	} );
+
+	test( 'uses keyed split gateway config for classic Stripe Elements', () => {
+		document.body.innerHTML =
+			'<form class="checkout">' +
+			'<input type="radio" name="payment_method" value="woocommerce_payments_klarna" checked />' +
+			'<div id="wcpay-core-payment-element"></div>' +
+			'<button id="place_order" type="button">Place order</button>' +
+			'</form>';
+		window.wcpay_core_checkout_config = {
+			...window.wcpay_core_checkout_config,
+			gatewayId: 'woocommerce_payments',
+			paymentMethodTypes: [ 'card' ],
+		};
+		window.wcpay_core_checkout_config_woocommerce_payments_klarna = {
+			...window.wcpay_core_checkout_config,
+			gatewayId: 'woocommerce_payments_klarna',
+			paymentMethodTypes: [ 'klarna' ],
+			paymentMethodsConfig: {
+				klarna: {
+					isReusable: false,
+				},
+			},
+		};
+
+		require( '../woopayments-checkout' );
+
+		expect( stripeElementsOptions ).toMatchObject( {
+			paymentMethodTypes: [ 'klarna' ],
 		} );
 	} );
 

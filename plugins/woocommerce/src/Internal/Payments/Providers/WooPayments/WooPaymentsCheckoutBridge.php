@@ -340,7 +340,10 @@ class WooPaymentsCheckoutBridge {
 		}
 
 		$this->register_classic_assets();
-		wp_localize_script( self::CLASSIC_SCRIPT_HANDLE, 'wcpay_core_checkout_config', $config );
+		wp_localize_script( self::CLASSIC_SCRIPT_HANDLE, $this->get_classic_script_config_object_name( (string) $config['gatewayId'] ), $config );
+		if ( OrderPaymentStore::GATEWAY_ID === $config['gatewayId'] ) {
+			wp_localize_script( self::CLASSIC_SCRIPT_HANDLE, 'wcpay_core_checkout_config', $config );
+		}
 		wp_enqueue_style( self::CLASSIC_STYLE_HANDLE );
 		wp_enqueue_script( self::CLASSIC_SCRIPT_HANDLE );
 
@@ -528,6 +531,18 @@ class WooPaymentsCheckoutBridge {
 		}
 
 		return OrderPaymentStore::GATEWAY_ID . '_' . $payment_method_definition->get_id();
+	}
+
+	/**
+	 * Get the classic checkout config object name for a gateway.
+	 *
+	 * @param string $gateway_id Gateway ID.
+	 * @return string
+	 */
+	private function get_classic_script_config_object_name( string $gateway_id ): string {
+		$config_suffix = preg_replace( '/[^A-Za-z0-9_]/', '_', $gateway_id );
+
+		return 'wcpay_core_checkout_config_' . $config_suffix;
 	}
 
 	/**

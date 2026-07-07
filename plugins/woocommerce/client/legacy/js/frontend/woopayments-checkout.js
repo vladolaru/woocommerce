@@ -2,11 +2,15 @@
 ( function ( $, window, document ) {
 	'use strict';
 
-	var config = window.wcpay_core_checkout_config || {};
-	var gatewayId = config.gatewayId || 'woocommerce_payments';
+	var defaultGatewayId = 'woocommerce_payments';
+	var configObjectPrefix = 'wcpay_core_checkout_config_';
+	var baseConfig = window.wcpay_core_checkout_config || {};
+	var config = baseConfig;
+	var gatewayId = config.gatewayId || defaultGatewayId;
 	var stripe = null;
 	var elements = null;
 	var paymentElement = null;
+	var paymentElementGatewayId = null;
 	var paymentElementContainer = null;
 		var isSubmittingWithPaymentMethod = false;
 		var isSubmittingWithSetupIntent = false;
@@ -73,9 +77,84 @@
 	];
 	var copyTestNumberSuccessDuration = 2000;
 
-	function isSelectedGateway() {
+	function getGatewayConfigObjectName( paymentGatewayId ) {
 		return (
-			$( 'input[name="payment_method"]:checked' ).val() === gatewayId ||
+			configObjectPrefix +
+			String( paymentGatewayId || '' ).replace( /[^A-Za-z0-9_]/g, '_' )
+		);
+	}
+
+	function getConfigForGateway( paymentGatewayId ) {
+		var keyedConfig =
+			window[ getGatewayConfigObjectName( paymentGatewayId ) ];
+
+		if ( keyedConfig && typeof keyedConfig === 'object' ) {
+			return keyedConfig;
+		}
+
+		if ( ( baseConfig.gatewayId || defaultGatewayId ) === paymentGatewayId ) {
+			return baseConfig;
+		}
+
+		return null;
+	}
+
+	function getSelectedGatewayId() {
+		var selected = document.querySelector(
+			'input[name="payment_method"]:checked'
+		);
+
+		return selected ? selected.value : '';
+	}
+
+	function setCurrentGatewayConfig( paymentGatewayId ) {
+		var nextGatewayId =
+			paymentGatewayId || getSelectedGatewayId() || gatewayId;
+		var nextConfig = getConfigForGateway( nextGatewayId ) || baseConfig;
+
+		config = nextConfig;
+		gatewayId = nextConfig.gatewayId || nextGatewayId || defaultGatewayId;
+	}
+
+	function getKnownGatewayIds() {
+		var gatewayIds = {};
+
+		if ( baseConfig.gatewayId || window.wcpay_core_checkout_config ) {
+			gatewayIds[ baseConfig.gatewayId || defaultGatewayId ] = true;
+		}
+
+		Object.keys( window ).forEach( function ( key ) {
+			var gatewayConfig;
+
+			if ( key.indexOf( configObjectPrefix ) !== 0 ) {
+				return;
+			}
+
+			gatewayConfig = window[ key ];
+			if ( gatewayConfig && gatewayConfig.gatewayId ) {
+				gatewayIds[ gatewayConfig.gatewayId ] = true;
+			}
+		} );
+
+		Array.prototype.slice
+			.call( document.querySelectorAll( 'input[name="payment_method"]' ) )
+			.forEach( function ( input ) {
+				if ( getConfigForGateway( input.value ) ) {
+					gatewayIds[ input.value ] = true;
+				}
+			} );
+
+		return Object.keys( gatewayIds );
+	}
+
+	function isSelectedGateway() {
+		var selectedGatewayId = getSelectedGatewayId();
+
+		if ( selectedGatewayId ) {
+			return selectedGatewayId === gatewayId;
+		}
+
+		return (
 			$( 'input[name="payment_method"]' ).filter(
 				'[value="' + gatewayId + '"]'
 			).length === 1
@@ -394,6 +473,13 @@
 	}
 
 	function getStripePaymentMethodTypes() {
+		if (
+			Array.isArray( config.paymentMethodTypes ) &&
+			config.paymentMethodTypes.length
+		) {
+			return config.paymentMethodTypes;
+		}
+
 		return isLinkEnabled() ? [ 'card', 'link' ] : [ 'card' ];
 	}
 
@@ -1225,6 +1311,7 @@
 
 	function initializeStripeElement() {
 		var container = document.getElementById( 'wcpay-core-payment-element' );
+		setCurrentGatewayConfig();
 		hydrateCardBrandIcons();
 		if (
 			! container ||
@@ -1233,6 +1320,17 @@
 			! window.Stripe
 		) {
 			return;
+		}
+
+		if ( paymentElement && paymentElementGatewayId !== gatewayId ) {
+			if ( paymentElement.unmount ) {
+				paymentElement.unmount();
+			}
+			stripe = null;
+			elements = null;
+			paymentElement = null;
+			paymentElementContainer = null;
+			paymentElementGatewayId = null;
 		}
 
 		if ( paymentElement ) {
@@ -1257,6 +1355,7 @@
 		);
 		paymentElement.mount( container );
 		paymentElementContainer = container;
+		paymentElementGatewayId = gatewayId;
 	}
 
 	function createPaymentMethodAndSubmit() {
@@ -1345,7 +1444,13 @@
 			'input[name="payment_method"]:checked'
 		);
 
-		if ( ! selectedGateway || selectedGateway.value !== gatewayId ) {
+		if ( ! selectedGateway ) {
+			return true;
+		}
+
+		setCurrentGatewayConfig( selectedGateway.value );
+
+		if ( selectedGateway.value !== gatewayId ) {
 			return true;
 		}
 
@@ -1423,6 +1528,8 @@
 		var confirmation = parseConfirmationHash( window.location.hash || '' );
 		var intentId;
 		var confirmationPromise;
+
+		setCurrentGatewayConfig();
 
 		if ( ! confirmation || ! config.publishableKey || ! window.Stripe ) {
 			return;
@@ -1515,21 +1622,28 @@
 		initializeStripeElement();
 	} );
 
-	$( document.body ).on( 'checkout_place_order_' + gatewayId, function () {
-		if ( ! isSelectedGateway() ) {
-			return true;
-		}
+	getKnownGatewayIds().forEach( function ( paymentGatewayId ) {
+		$( document.body ).on(
+			'checkout_place_order_' + paymentGatewayId,
+			function () {
+				setCurrentGatewayConfig( paymentGatewayId );
 
-		if ( isSubmittingWithPaymentMethod ) {
-			isSubmittingWithPaymentMethod = false;
-			return true;
-		}
+				if ( ! isSelectedGateway() ) {
+					return true;
+				}
 
-		if ( isUsingSavedPaymentMethod() ) {
-			appendPaymentFields( $( 'form.checkout' ), null, null );
-			return true;
-		}
+				if ( isSubmittingWithPaymentMethod ) {
+					isSubmittingWithPaymentMethod = false;
+					return true;
+				}
 
-		return createPaymentMethodAndSubmit();
+				if ( isUsingSavedPaymentMethod() ) {
+					appendPaymentFields( $( 'form.checkout' ), null, null );
+					return true;
+				}
+
+				return createPaymentMethodAndSubmit();
+			}
+		);
 	} );
 } )( jQuery, window, document );
