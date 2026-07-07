@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\CapabilityManifest;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceProfile;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapter;
@@ -37,6 +38,16 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	public function test_provider_identity_preserves_woopayments_gateway_id(): void {
 		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $this->sut->get_id() );
 		$this->assertInstanceOf( CapabilityManifest::class, $this->sut->get_capability_manifest() );
+	}
+
+	/**
+	 * @testdox Provider identity exposes the WooPayments persistence profile.
+	 */
+	public function test_provider_identity_exposes_woopayments_persistence_profile(): void {
+		$profile = $this->sut->get_persistence_profile();
+
+		$this->assertInstanceOf( ProviderPersistenceProfile::class, $profile );
+		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $profile->get_gateway_id() );
 	}
 
 	/**

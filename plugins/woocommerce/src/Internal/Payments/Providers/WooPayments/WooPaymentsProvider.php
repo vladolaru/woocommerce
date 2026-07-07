@@ -8,11 +8,11 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\CapabilityManifest;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\ProviderContract;
+use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceProfile;
 
 /**
  * First-party WooPayments provider skeleton for the native payments runtime.
@@ -66,7 +66,7 @@ class WooPaymentsProvider implements ProviderContract {
 	 * @return string
 	 */
 	public function get_id(): string {
-		return OrderPaymentStore::GATEWAY_ID;
+		return $this->get_persistence_profile()->get_gateway_id();
 	}
 
 	/**
@@ -91,6 +91,17 @@ class WooPaymentsProvider implements ProviderContract {
 				CapabilityManifest::CAPABILITY_ZERO_AMOUNT_SETUP,
 			)
 		);
+	}
+
+	/**
+	 * Get the provider persistence profile.
+	 *
+	 * @return ProviderPersistenceProfile
+	 *
+	 * @since 11.0.0
+	 */
+	public function get_persistence_profile(): ProviderPersistenceProfile {
+		return new WooPaymentsPersistenceProfile();
 	}
 
 	/**

@@ -32,6 +32,15 @@ interface ProviderContract {
 	public function get_capability_manifest(): CapabilityManifest;
 
 	/**
+	 * Get the provider persistence profile.
+	 *
+	 * @return ProviderPersistenceProfile
+	 *
+	 * @since 11.0.0
+	 */
+	public function get_persistence_profile(): ProviderPersistenceProfile;
+
+	/**
 	 * Charge an order through the provider.
 	 *
 	 * @param PaymentContext $context         Payment context.
