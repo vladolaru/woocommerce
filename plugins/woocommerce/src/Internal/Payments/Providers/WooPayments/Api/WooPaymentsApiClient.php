@@ -346,9 +346,10 @@ class WooPaymentsApiClient {
 			throw new WooPaymentsApiException( __( 'A WooPayments setup intent requires exactly one payment credential.', 'woocommerce' ), 'wcpay_invalid_payment_credential', 400 );
 		}
 
-		$request_data['confirm']              = 'true';
-		$request_data['payment_method_types'] = $request_data['payment_method_types'] ?? array( 'card' );
-		$request_data['idempotency_key']      = $idempotency_key;
+		$this->validate_setup_intent_payment_method_types( $request_data );
+
+		$request_data['confirm']         = 'true';
+		$request_data['idempotency_key'] = $idempotency_key;
 
 		return $this->request( $request_data, 'setup_intents', 'POST' );
 	}
@@ -362,14 +363,48 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the request fails.
 	 */
 	public function create_setup_intention( array $request_data, string $idempotency_key = '' ): array {
-		$request_data['confirm']              = 'false';
-		$request_data['payment_method_types'] = $request_data['payment_method_types'] ?? array( 'card' );
+		$this->validate_setup_intent_payment_method_types( $request_data );
+
+		$request_data['confirm'] = 'false';
 
 		if ( '' !== $idempotency_key ) {
 			$request_data['idempotency_key'] = $idempotency_key;
 		}
 
 		return $this->request( $request_data, 'setup_intents', 'POST' );
+	}
+
+	/**
+	 * Validate that a SetupIntent payload declares explicit payment method types.
+	 *
+	 * @param array<string,mixed> $request_data SetupIntent payload.
+	 * @return void
+	 * @throws WooPaymentsApiException When payment method types are missing or invalid.
+	 */
+	private function validate_setup_intent_payment_method_types( array $request_data ): void {
+		$payment_method_types = $request_data['payment_method_types'] ?? null;
+
+		if ( ! is_array( $payment_method_types ) || empty( $payment_method_types ) ) {
+			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
+			throw new WooPaymentsApiException(
+				__( 'A WooPayments setup intent requires at least one payment method type.', 'woocommerce' ),
+				'wcpay_missing_payment_method_types',
+				400
+			);
+			// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+		}
+
+		foreach ( $payment_method_types as $payment_method_type ) {
+			if ( ! is_string( $payment_method_type ) || '' === trim( $payment_method_type ) ) {
+				// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
+				throw new WooPaymentsApiException(
+					__( 'A WooPayments setup intent requires valid payment method types.', 'woocommerce' ),
+					'wcpay_invalid_payment_method_types',
+					400
+				);
+				// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+			}
+		}
 	}
 
 	/**

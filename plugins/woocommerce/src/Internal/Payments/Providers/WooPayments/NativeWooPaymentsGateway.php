@@ -13,6 +13,8 @@ use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsFailedAuthenticationRetryEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsFailedRenewalAuthenticationEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
@@ -47,14 +49,14 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	private const METHOD_TITLE = 'WooPayments';
 
 	/**
-	 * Untranslated shopper-facing card title.
-	 */
-	private const CHECKOUT_TITLE = 'Card';
-
-	/**
 	 * Untranslated gateway description.
 	 */
 	private const METHOD_DESCRIPTION = 'Accept payments with WooPayments.';
+
+	/**
+	 * Native payment method capability for saved/reusable payment credentials.
+	 */
+	private const PAYMENT_METHOD_CAPABILITY_TOKENIZATION = 'tokenization';
 
 	/**
 	 * Shopper-facing card brand icons.
@@ -160,18 +162,31 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	private WooPaymentsDuplicatePaymentPreventionService $duplicate_payment_prevention_service;
 
 	/**
-	 * Constructor.
+	 * WooPayments payment method definition backing this gateway instance.
+	 *
+	 * @var WooPaymentsPaymentMethodDefinition
 	 */
-	public function __construct() {
-		$this->id                 = OrderPaymentStore::GATEWAY_ID;
-		$this->title              = self::CHECKOUT_TITLE;
-		$this->method_title       = self::METHOD_TITLE;
+	private WooPaymentsPaymentMethodDefinition $payment_method_definition;
+
+	/**
+	 * Constructor.
+	 *
+	 * @param WooPaymentsPaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
+	 */
+	public function __construct( ?WooPaymentsPaymentMethodDefinition $payment_method_definition = null ) {
+		$this->payment_method_definition = $payment_method_definition ?? $this->get_default_payment_method_definition();
+		$payment_method_id               = $this->payment_method_definition->get_id();
+
+		$this->id                 = 'card' === $payment_method_id ? OrderPaymentStore::GATEWAY_ID : OrderPaymentStore::GATEWAY_ID . '_' . $payment_method_id;
+		$this->title              = $this->payment_method_definition->get_title();
+		$this->method_title       = $this->get_untranslated_method_title();
 		$this->method_description = self::METHOD_DESCRIPTION;
 		$this->has_fields         = true;
-		$this->supports           = array(
-			'products',
-			'refunds',
-		);
+		$this->supports           = array( PaymentGatewayFeature::PRODUCTS );
+
+		if ( $this->payment_method_supports( PaymentGatewayFeature::REFUNDS ) ) {
+			$this->supports[] = PaymentGatewayFeature::REFUNDS;
+		}
 
 		$this->init_settings();
 		$this->init_supported_features();
@@ -189,8 +204,8 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @internal
 	 */
 	public function handle_init(): void {
-		$this->title              = __( 'Card', 'woocommerce' );
-		$this->method_title       = __( 'WooPayments', 'woocommerce' );
+		$this->title              = $this->get_translated_payment_method_title();
+		$this->method_title       = $this->get_translated_method_title();
 		$this->method_description = __( 'Accept payments with WooPayments.', 'woocommerce' );
 	}
 
@@ -259,12 +274,30 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
+	 * Get the payment method definition backing this gateway.
+	 *
+	 * @return WooPaymentsPaymentMethodDefinition
+	 */
+	public function get_payment_method_definition(): WooPaymentsPaymentMethodDefinition {
+		return $this->payment_method_definition;
+	}
+
+	/**
+	 * Get the native WooPayments payment method ID.
+	 *
+	 * @return string
+	 */
+	public function get_payment_method_id(): string {
+		return $this->payment_method_definition->get_id();
+	}
+
+	/**
 	 * Render the native WooPayments payment form.
 	 *
 	 * @return void
 	 */
 	public function form() {
-		$this->get_checkout_bridge()->render_payment_fields();
+		$this->get_checkout_bridge()->render_payment_fields( $this->payment_method_definition );
 	}
 
 	/**
@@ -627,6 +660,11 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return bool
 	 */
 	public function is_saved_cards_enabled(): bool {
+		$settings = get_option( 'woocommerce_' . OrderPaymentStore::GATEWAY_ID . '_settings', array() );
+		if ( is_array( $settings ) && array_key_exists( 'saved_cards', $settings ) ) {
+			return 'yes' === $settings['saved_cards'];
+		}
+
 		return 'yes' === $this->get_option( 'saved_cards' );
 	}
 
@@ -1008,6 +1046,75 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
+	 * Get the default card payment method definition.
+	 *
+	 * @return WooPaymentsPaymentMethodDefinition
+	 * @throws \RuntimeException When the registry does not contain the card definition.
+	 */
+	private function get_default_payment_method_definition(): WooPaymentsPaymentMethodDefinition {
+		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'card' );
+
+		if ( null === $definition ) {
+			throw new \RuntimeException( 'The native WooPayments card payment method definition is missing.' );
+		}
+
+		return $definition;
+	}
+
+	/**
+	 * Get the untranslated gateway method title.
+	 *
+	 * @return string
+	 */
+	private function get_untranslated_method_title(): string {
+		if ( 'card' === $this->get_payment_method_id() ) {
+			return self::METHOD_TITLE;
+		}
+
+		return sprintf( 'WooPayments (%s)', $this->payment_method_definition->get_title() );
+	}
+
+	/**
+	 * Get the translated shopper-facing payment method title.
+	 *
+	 * @return string
+	 */
+	private function get_translated_payment_method_title(): string {
+		if ( 'card' === $this->get_payment_method_id() ) {
+			return __( 'Card', 'woocommerce' );
+		}
+
+		return $this->payment_method_definition->get_title();
+	}
+
+	/**
+	 * Get the translated gateway method title.
+	 *
+	 * @return string
+	 */
+	private function get_translated_method_title(): string {
+		if ( 'card' === $this->get_payment_method_id() ) {
+			return __( 'WooPayments', 'woocommerce' );
+		}
+
+		return sprintf(
+			/* translators: %s: WooPayments payment method title. */
+			__( 'WooPayments (%s)', 'woocommerce' ),
+			$this->get_translated_payment_method_title()
+		);
+	}
+
+	/**
+	 * Tell whether this gateway's payment method definition supports a capability.
+	 *
+	 * @param string $capability Payment method capability.
+	 * @return bool
+	 */
+	private function payment_method_supports( string $capability ): bool {
+		return in_array( $capability, $this->payment_method_definition->get_capabilities(), true );
+	}
+
+	/**
 	 * Get the payment processing service.
 	 *
 	 * @return PaymentProcessingService
@@ -1362,7 +1469,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			);
 		}
 
-		if ( $this->is_saved_cards_enabled() ) {
+		if ( $this->is_saved_cards_enabled() && $this->payment_method_supports( self::PAYMENT_METHOD_CAPABILITY_TOKENIZATION ) ) {
 			$this->supports[] = PaymentGatewayFeature::TOKENIZATION;
 			$this->supports[] = PaymentGatewayFeature::ADD_PAYMENT_METHOD;
 		}

@@ -551,9 +551,10 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 		$result = $sut->create_and_confirm_setup_intention(
 			array(
-				'customer'       => 'cus_test',
-				'metadata'       => array( 'order_id' => '123' ),
-				'payment_method' => 'pm_test',
+				'customer'             => 'cus_test',
+				'metadata'             => array( 'order_id' => '123' ),
+				'payment_method'       => 'pm_test',
+				'payment_method_types' => array( 'sepa_debit' ),
 			),
 			'idem_setup'
 		);
@@ -569,6 +570,28 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$body = json_decode( (string) $http_client->last_body, true );
 		$this->assertIsArray( $body );
 		$this->assertSame( 'pm_test', $body['payment_method'] );
+		$this->assertSame( array( 'sepa_debit' ), $body['payment_method_types'] );
+	}
+
+	/**
+	 * @testdox Should require explicit payment method types when confirming native WooPayments SetupIntents.
+	 */
+	public function test_create_and_confirm_setup_intention_requires_explicit_payment_method_types(): void {
+		$sut = new WooPaymentsApiClient();
+		$sut->init( new FakeWooPaymentsHttpClient(), $this->create_account_service( false ) );
+
+		try {
+			$sut->create_and_confirm_setup_intention(
+				array(
+					'customer'       => 'cus_test',
+					'payment_method' => 'pm_test',
+				),
+				'idem_setup'
+			);
+			$this->fail( 'Expected missing payment method types to be rejected.' );
+		} catch ( WooPaymentsApiException $exception ) {
+			$this->assertSame( 400, $exception->get_http_code() );
+		}
 	}
 
 	/**
@@ -612,6 +635,26 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$body = json_decode( (string) $http_client->last_body, true );
 		$this->assertIsArray( $body );
 		$this->assertSame( array( 'card' ), $body['payment_method_types'] );
+	}
+
+	/**
+	 * @testdox Should require explicit payment method types when creating native WooPayments SetupIntents.
+	 */
+	public function test_create_setup_intention_requires_explicit_payment_method_types(): void {
+		$sut = new WooPaymentsApiClient();
+		$sut->init( new FakeWooPaymentsHttpClient(), $this->create_account_service( false ) );
+
+		try {
+			$sut->create_setup_intention(
+				array(
+					'customer' => 'cus_test',
+				),
+				'idem_setup_unconfirmed'
+			);
+			$this->fail( 'Expected missing payment method types to be rejected.' );
+		} catch ( WooPaymentsApiException $exception ) {
+			$this->assertSame( 400, $exception->get_http_code() );
+		}
 	}
 
 	/**

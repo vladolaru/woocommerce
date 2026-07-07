@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
 
 /**
  * Owns the transitional Core checkout surface for the WooPayments card gateway.
@@ -249,16 +250,17 @@ class WooPaymentsCheckoutBridge {
 	/**
 	 * Get the classic checkout JS config.
 	 *
+	 * @param WooPaymentsPaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
 	 * @return array<string,mixed>
 	 */
-	public function get_payment_fields_js_config(): array {
+	public function get_payment_fields_js_config( ?WooPaymentsPaymentMethodDefinition $payment_method_definition = null ): array {
 		$force_network_saved_cards = $this->should_force_network_saved_cards();
 		$saved_cards_enabled       = $this->is_saved_cards_enabled();
 		$config                    = array(
 			'publishableKey'                => $this->get_account_service()->get_publishable_key(),
 			'accountId'                     => $this->get_account_service()->get_account_id(),
 			'locale'                        => $this->get_stripe_locale(),
-			'gatewayId'                     => OrderPaymentStore::GATEWAY_ID,
+			'gatewayId'                     => $this->get_gateway_id_for_payment_method_definition( $payment_method_definition ),
 			'ajaxUrl'                       => admin_url( 'admin-ajax.php' ),
 			'wcAjaxUrl'                     => \WC_AJAX::get_endpoint( '%%endpoint%%' ),
 			'paymentMethodsConfig'          => $this->get_payment_methods_config( $saved_cards_enabled ),
@@ -311,10 +313,11 @@ class WooPaymentsCheckoutBridge {
 	/**
 	 * Render the classic checkout payment fields.
 	 *
+	 * @param WooPaymentsPaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
 	 * @return void
 	 */
-	public function render_payment_fields(): void {
-		$config      = $this->get_payment_fields_js_config();
+	public function render_payment_fields( ?WooPaymentsPaymentMethodDefinition $payment_method_definition = null ): void {
+		$config      = $this->get_payment_fields_js_config( $payment_method_definition );
 		$json_config = wp_json_encode( $config );
 
 		if ( ! is_string( $json_config ) ) {
@@ -495,6 +498,20 @@ class WooPaymentsCheckoutBridge {
 		}
 
 		return $fraud_prevention_service->get_token();
+	}
+
+	/**
+	 * Get the WooPayments gateway ID for a payment method definition.
+	 *
+	 * @param WooPaymentsPaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
+	 * @return string
+	 */
+	private function get_gateway_id_for_payment_method_definition( ?WooPaymentsPaymentMethodDefinition $payment_method_definition = null ): string {
+		if ( null === $payment_method_definition || 'card' === $payment_method_definition->get_id() ) {
+			return OrderPaymentStore::GATEWAY_ID;
+		}
+
+		return OrderPaymentStore::GATEWAY_ID . '_' . $payment_method_definition->get_id();
 	}
 
 	/**

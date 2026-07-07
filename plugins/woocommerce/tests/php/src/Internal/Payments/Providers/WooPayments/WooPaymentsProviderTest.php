@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
 use Automattic\WooCommerce\Internal\Payments\CapabilityManifest;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceProfile;
@@ -31,6 +32,15 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	public function setUp(): void {
 		parent::setUp();
 		$this->sut = wc_get_container()->get( WooPaymentsProvider::class );
+	}
+
+	/**
+	 * Tear down test fixtures.
+	 */
+	public function tearDown(): void {
+		delete_option( 'woocommerce_woocommerce_payments_settings' );
+
+		parent::tearDown();
 	}
 
 	/**
@@ -69,14 +79,83 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Provider should publish the native WooPayments gateway instance for registration.
+	 * @testdox Provider should publish native WooPayments gateway instances for active payment method definitions.
 	 */
-	public function test_provider_publishes_native_gateway_instance_for_registration(): void {
-		$gateways = $this->sut->get_payment_gateways();
+	public function test_provider_publishes_native_gateway_instances_for_active_payment_method_definitions(): void {
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'saved_cards' => 'yes',
+			)
+		);
 
-		$this->assertCount( 1, $gateways );
-		$this->assertInstanceOf( NativeWooPaymentsGateway::class, $gateways[0] );
-		$this->assertSame( $gateways[0], $this->sut->get_payment_gateways()[0], 'Provider should return the container-managed gateway singleton.' );
+		$provider = $this->create_provider_with_capabilities(
+			array(
+				'card_payments'       => 'active',
+				'link_payments'       => 'active',
+				'klarna_payments'     => 'active',
+				'sepa_debit_payments' => 'active',
+				'affirm_payments'     => 'unrequested',
+			)
+		);
+		$gateways = $provider->get_payment_gateways();
+
+		$this->assertSame(
+			array(
+				OrderPaymentStore::GATEWAY_ID,
+				OrderPaymentStore::GATEWAY_ID . '_link',
+				OrderPaymentStore::GATEWAY_ID . '_klarna',
+				OrderPaymentStore::GATEWAY_ID . '_sepa_debit',
+			),
+			array_map(
+				static fn( NativeWooPaymentsGateway $gateway ): string => $gateway->id,
+				$gateways
+			)
+		);
+
+		$klarna_gateway = $provider->get_gateway_for_method( 'klarna' );
+		$link_gateway   = $provider->get_gateway_for_method( 'link' );
+
+		$this->assertInstanceOf( NativeWooPaymentsGateway::class, $klarna_gateway );
+		$this->assertInstanceOf( NativeWooPaymentsGateway::class, $link_gateway );
+		$this->assertNull( $provider->get_gateway_for_method( 'affirm' ) );
+		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $provider->get_gateway_for_method( 'card' )->id );
+		$this->assertSame( 'Klarna', $klarna_gateway->get_title() );
+		$this->assertSame( 'WooPayments (Klarna)', $klarna_gateway->method_title );
+		$this->assertFalse( $klarna_gateway->supports( PaymentGatewayFeature::TOKENIZATION ) );
+		$this->assertTrue( $link_gateway->supports( PaymentGatewayFeature::TOKENIZATION ) );
+		$this->assertSame( $gateways, $provider->get_payment_gateways(), 'Provider should cache split gateway instances for the request.' );
+	}
+
+	/**
+	 * Create a WooPayments provider with account capability fixture data.
+	 *
+	 * @param array<string,string> $capabilities Account capability status map.
+	 * @return WooPaymentsProvider
+	 */
+	private function create_provider_with_capabilities( array $capabilities ): WooPaymentsProvider {
+		$gateway_adapter = $this->getMockBuilder( WooPaymentsProviderGatewayAdapter::class )
+			->disableOriginalConstructor()
+			->getMock();
+		$api_client      = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->getMock();
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_cached_account_data' ) )
+			->getMock();
+		$account_service
+			->method( 'get_cached_account_data' )
+			->willReturn(
+				array(
+					'capabilities' => $capabilities,
+				)
+			);
+
+		$provider = new WooPaymentsProvider();
+		$provider->init( $gateway_adapter, $api_client, $account_service );
+
+		return $provider;
 	}
 
 	/**

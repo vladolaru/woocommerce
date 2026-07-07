@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
 use WC_Order;
@@ -96,17 +97,25 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	private ?WooPaymentsOrderDataService $order_data_service = null;
 
 	/**
+	 * WooPayments payment method definition registry.
+	 *
+	 * @var WooPaymentsPaymentMethodRegistry
+	 */
+	private WooPaymentsPaymentMethodRegistry $payment_method_registry;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter     $arbiter            Runtime owner arbiter.
-	 * @param WooPaymentsApiClient             $api_client         Native WooPayments API client.
-	 * @param WooPaymentsCustomerService       $customer_service   WooPayments customer service.
-	 * @param OrderPaymentLifecycleService     $lifecycle_service  Order lifecycle service.
-	 * @param WooPaymentsTokenService          $token_service      WooPayments token service.
-	 * @param WooPaymentsAccountService        $account_service    WooPayments account service.
-	 * @param WooPaymentsOrderDataService|null $order_data_service WooPayments order data service.
+	 * @param NativePaymentsRuntimeArbiter          $arbiter                 Runtime owner arbiter.
+	 * @param WooPaymentsApiClient                  $api_client              Native WooPayments API client.
+	 * @param WooPaymentsCustomerService            $customer_service        WooPayments customer service.
+	 * @param OrderPaymentLifecycleService          $lifecycle_service       Order lifecycle service.
+	 * @param WooPaymentsTokenService               $token_service           WooPayments token service.
+	 * @param WooPaymentsAccountService             $account_service         WooPayments account service.
+	 * @param WooPaymentsOrderDataService|null      $order_data_service      WooPayments order data service.
+	 * @param WooPaymentsPaymentMethodRegistry|null $payment_method_registry Optional payment method registry.
 	 */
 	final public function init(
 		NativePaymentsRuntimeArbiter $arbiter,
@@ -115,15 +124,17 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 		OrderPaymentLifecycleService $lifecycle_service,
 		WooPaymentsTokenService $token_service,
 		WooPaymentsAccountService $account_service,
-		?WooPaymentsOrderDataService $order_data_service = null
+		?WooPaymentsOrderDataService $order_data_service = null,
+		?WooPaymentsPaymentMethodRegistry $payment_method_registry = null
 	): void {
-		$this->arbiter            = $arbiter;
-		$this->api_client         = $api_client;
-		$this->customer_service   = $customer_service;
-		$this->lifecycle_service  = $lifecycle_service;
-		$this->token_service      = $token_service;
-		$this->account_service    = $account_service;
-		$this->order_data_service = $order_data_service;
+		$this->arbiter                 = $arbiter;
+		$this->api_client              = $api_client;
+		$this->customer_service        = $customer_service;
+		$this->lifecycle_service       = $lifecycle_service;
+		$this->token_service           = $token_service;
+		$this->account_service         = $account_service;
+		$this->order_data_service      = $order_data_service;
+		$this->payment_method_registry = $payment_method_registry ?? new WooPaymentsPaymentMethodRegistry();
 	}
 
 	/**
@@ -283,7 +294,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 				array(
 					'customer'             => $this->customer_service->get_or_create_customer_id_for_user( $user_id ),
 					'payment_method'       => $payment_method_id,
-					'payment_method_types' => array( 'card' ),
+					'payment_method_types' => array( $this->get_setup_intent_payment_method_type( $request ) ),
 				),
 				'add_payment_method_' . $user_id . '_' . md5( $payment_method_id )
 			);
@@ -1056,6 +1067,40 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 		unset( $response['status_code'] );
 
 		return $status_code;
+	}
+
+	/**
+	 * Get the Stripe SetupIntent payment method type for a request.
+	 *
+	 * @param array<string,mixed> $request Request data.
+	 * @return string
+	 */
+	private function get_setup_intent_payment_method_type( array $request ): string {
+		$payment_method_id = $this->get_payment_method_id_from_request_gateway( $request );
+		$definition        = $this->payment_method_registry->get( $payment_method_id );
+
+		return null === $definition ? 'card' : $definition->get_stripe_payment_method_type();
+	}
+
+	/**
+	 * Get the native payment method ID from a submitted gateway ID.
+	 *
+	 * @param array<string,mixed> $request Request data.
+	 * @return string
+	 */
+	private function get_payment_method_id_from_request_gateway( array $request ): string {
+		$gateway_id = strtolower( $this->get_request_string( $request, 'payment_method' ) );
+
+		if ( '' === $gateway_id || OrderPaymentStore::GATEWAY_ID === $gateway_id ) {
+			return 'card';
+		}
+
+		$gateway_prefix = OrderPaymentStore::GATEWAY_ID . '_';
+		if ( str_starts_with( $gateway_id, $gateway_prefix ) ) {
+			return (string) substr( $gateway_id, strlen( $gateway_prefix ) );
+		}
+
+		return $gateway_id;
 	}
 
 	/**

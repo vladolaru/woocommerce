@@ -1136,6 +1136,72 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Setup-intent callback should derive payment method types from the submitted WooPayments gateway ID.
+	 */
+	public function test_create_setup_intent_derives_payment_method_type_from_submitted_gateway_id(): void {
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+
+		$api_client = new class() extends WooPaymentsApiClient {
+			/**
+			 * Last request data.
+			 *
+			 * @var array<string,mixed>
+			 */
+			public array $last_request_data = array();
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Create and confirm a SetupIntent.
+			 *
+			 * @param array<string,mixed> $request_data Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_setup_intention( array $request_data, string $idempotency_key ): array {
+				unset( $idempotency_key );
+
+				$this->last_request_data = $request_data;
+
+				return array(
+					'id'            => 'seti_sepa',
+					'status'        => 'succeeded',
+					'client_secret' => 'seti_sepa_secret_abc',
+				);
+			}
+		};
+
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_user' ) )
+			->getMock();
+		$customer_service->expects( $this->once() )
+			->method( 'get_or_create_customer_id_for_user' )
+			->with( $user_id )
+			->willReturn( 'cus_user' );
+
+		$sut = $this->create_controller( $api_client, $customer_service );
+
+		$sut->get_create_setup_intent_response(
+			array(
+				'_ajax_nonce'          => wp_create_nonce( 'wcpay_create_setup_intent_nonce' ),
+				'payment_method'       => OrderPaymentStore::GATEWAY_ID . '_sepa_debit',
+				'wcpay-payment-method' => 'pm_sepa_debit',
+			)
+		);
+
+		$this->assertSame( array( 'sepa_debit' ), $api_client->last_request_data['payment_method_types'] );
+	}
+
+	/**
 	 * Create a checkout AJAX controller.
 	 *
 	 * @param WooPaymentsApiClient            $api_client       API client.
