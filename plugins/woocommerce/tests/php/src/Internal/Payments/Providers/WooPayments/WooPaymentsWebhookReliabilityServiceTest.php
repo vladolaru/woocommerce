@@ -3,6 +3,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use ActionScheduler;
+use ActionScheduler_Store;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEventIngestor;
@@ -30,6 +32,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		parent::setUp();
 		$this->sut = wc_get_container()->get( WooPaymentsWebhookReliabilityService::class );
 		$this->remove_reliability_hooks();
+		$this->unschedule_reliability_actions();
 	}
 
 	/**
@@ -37,10 +40,12 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		$this->remove_reliability_hooks();
+		$this->unschedule_reliability_actions();
 		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
 		$this->reset_legacy_proxy_mocks();
-		delete_transient( 'wcpay_failed_event_' . md5( 'evt_1' ) );
-		delete_transient( 'wcpay_failed_event_' . md5( 'evt_process' ) );
+		foreach ( array( 'evt_1', 'evt_process', 'evt_backlog_1', 'evt_backlog_2', 'evt_backlog_3', 'evt_backlog_4', 'evt_backlog_5' ) as $event_id ) {
+			delete_transient( WooPaymentsFailedEventStore::TRANSIENT_PREFIX . md5( $event_id ) );
+		}
 		parent::tearDown();
 	}
 
@@ -130,6 +135,53 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 				),
 			),
 			$scheduler->scheduled_jobs
+		);
+	}
+
+	/**
+	 * @testdox Fetching failed events with the production scheduler queues every distinct event.
+	 */
+	public function test_fetch_events_schedules_each_distinct_event_with_production_scheduler(): void {
+		$store   = wc_get_container()->get( WooPaymentsFailedEventStore::class );
+		$events  = array_map(
+			static function ( int $index ): array {
+				return array(
+					'id'   => 'evt_backlog_' . $index,
+					'type' => 'payment_intent.succeeded',
+				);
+			},
+			range( 1, 5 )
+		);
+		$service = $this->create_service(
+			wc_get_container()->get( WooPaymentsActionSchedulerService::class ),
+			$store,
+			new StaticFailedEventsProvider(
+				array(
+					'data'     => $events,
+					'has_more' => false,
+				)
+			),
+			new RecordingEventIngestor()
+		);
+
+		$service->fetch_events_and_schedule_processing_jobs();
+
+		foreach ( $events as $event ) {
+			$this->assertSame( $event, $store->get_event( $event['id'] ) );
+			$this->assertSame(
+				1,
+				$this->count_pending_reliability_actions(
+					WooPaymentsWebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION,
+					array( 'event_id' => $event['id'] )
+				),
+				'Each failed event should receive its own processing action.'
+			);
+		}
+
+		$this->assertSame(
+			5,
+			$this->count_pending_reliability_actions( WooPaymentsWebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION ),
+			'The webhook backlog should schedule one processing action per distinct event.'
 		);
 	}
 
@@ -266,6 +318,58 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		remove_action( 'woocommerce_payments_account_refreshed', array( $this->sut, 'maybe_schedule_fetch_events' ) );
 		remove_action( 'wcpay_webhook_fetch_events', array( $this->sut, 'fetch_events_and_schedule_processing_jobs' ) );
 		remove_action( 'wcpay_webhook_process_event', array( $this->sut, 'process_event' ) );
+	}
+
+	/**
+	 * Count pending webhook reliability actions.
+	 *
+	 * @param string                  $hook Hook name.
+	 * @param array<int|string,mixed> $args Action args.
+	 * @return int
+	 */
+	private function count_pending_reliability_actions( string $hook, array $args = array() ): int {
+		$query_args = array(
+			'hook'   => $hook,
+			'group'  => WooPaymentsActionSchedulerService::GROUP_ID,
+			'status' => ActionScheduler_Store::STATUS_PENDING,
+		);
+
+		if ( array() !== $args ) {
+			$query_args['args'] = $args;
+		}
+
+		return count( as_get_scheduled_actions( $query_args ) );
+	}
+
+	/**
+	 * Remove scheduled webhook reliability actions.
+	 */
+	private function unschedule_reliability_actions(): void {
+		if ( ! function_exists( 'as_get_scheduled_actions' ) ) {
+			return;
+		}
+
+		foreach (
+			array(
+				WooPaymentsWebhookReliabilityService::WEBHOOK_FETCH_EVENTS_ACTION,
+				WooPaymentsWebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION,
+			) as $hook
+		) {
+			foreach ( array( ActionScheduler_Store::STATUS_PENDING, ActionScheduler_Store::STATUS_RUNNING ) as $status ) {
+				$action_ids = as_get_scheduled_actions(
+					array(
+						'hook'   => $hook,
+						'group'  => WooPaymentsActionSchedulerService::GROUP_ID,
+						'status' => $status,
+					),
+					'ids'
+				);
+
+				foreach ( $action_ids as $action_id ) {
+					ActionScheduler::store()->cancel_action( (int) $action_id );
+				}
+			}
+		}
 	}
 
 	/**

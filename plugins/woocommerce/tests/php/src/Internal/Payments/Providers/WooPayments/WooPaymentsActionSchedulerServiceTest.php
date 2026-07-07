@@ -3,8 +3,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use ActionScheduler_Store;
 use ActionScheduler;
+use ActionScheduler_Store;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use WC_Unit_Test_Case;
 
@@ -64,9 +64,9 @@ class WooPaymentsActionSchedulerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Scheduling passes the unique flag so concurrent workers cannot enqueue duplicates.
+	 * @testdox Scheduling does not pass the hook-unique flag so per-event args stay schedulable.
 	 */
-	public function test_schedule_job_passes_unique_flag(): void {
+	public function test_schedule_job_does_not_pass_unique_flag(): void {
 		$captured_unique = null;
 		$filter          = function ( $pre, $timestamp, $hook, $args, $group, $priority, $unique ) use ( &$captured_unique ) {
 			// Avoid parameter not used PHPCS errors.
@@ -84,7 +84,7 @@ class WooPaymentsActionSchedulerServiceTest extends WC_Unit_Test_Case {
 			remove_filter( 'pre_as_schedule_single_action', $filter, 10 );
 		}
 
-		$this->assertTrue( $captured_unique, 'schedule_job() must pass $unique = true to as_schedule_single_action().' );
+		$this->assertFalse( $captured_unique, 'schedule_job() must not pass Action Scheduler hook-level uniqueness; the pending pre-check already dedupes by hook, args, and group.' );
 	}
 
 	/**
@@ -138,8 +138,23 @@ class WooPaymentsActionSchedulerServiceTest extends WC_Unit_Test_Case {
 	 * Remove test actions from Action Scheduler.
 	 */
 	private function unschedule_test_actions(): void {
-		if ( function_exists( 'as_unschedule_all_actions' ) ) {
-			as_unschedule_all_actions( $this->hook, null, 'woocommerce_payments' );
+		if ( ! function_exists( 'as_get_scheduled_actions' ) ) {
+			return;
+		}
+
+		foreach ( array( ActionScheduler_Store::STATUS_PENDING, ActionScheduler_Store::STATUS_RUNNING ) as $status ) {
+			$action_ids = as_get_scheduled_actions(
+				array(
+					'hook'   => $this->hook,
+					'group'  => 'woocommerce_payments',
+					'status' => $status,
+				),
+				'ids'
+			);
+
+			foreach ( $action_ids as $action_id ) {
+				ActionScheduler::store()->cancel_action( (int) $action_id );
+			}
 		}
 	}
 }
