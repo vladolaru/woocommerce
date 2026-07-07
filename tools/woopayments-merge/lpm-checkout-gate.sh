@@ -308,15 +308,17 @@ record_failure() {
 validate_driver_evidence() {
 	local role="$1"
 	local method="$2"
-	local gateway_id="$3"
-	local stripe_type="$4"
-	local evidence_path="$5"
+	local base_url="$3"
+	local gateway_id="$4"
+	local stripe_type="$5"
+	local evidence_path="$6"
 
-	python3 - "$role" "$method" "$gateway_id" "$stripe_type" "$evidence_path" <<'PY'
+	python3 - "$role" "$method" "$base_url" "$gateway_id" "$stripe_type" "$evidence_path" <<'PY'
 import json
 import sys
+from urllib.parse import urlparse
 
-role, method, gateway_id, stripe_type, evidence_path = sys.argv[1:]
+role, method, base_url, gateway_id, stripe_type, evidence_path = sys.argv[1:]
 errors = []
 try:
     with open(evidence_path, encoding="utf-8") as stream:
@@ -327,6 +329,7 @@ except Exception as exc:
 expected_values = {
     "role": role,
     "method": method,
+    "base_url": base_url,
     "gateway_id": gateway_id,
     "stripe_payment_method_type": stripe_type,
 }
@@ -338,6 +341,44 @@ if payload.get("status") != "pass":
     errors.append(f"status is not pass: {payload.get('status')!r}")
 if payload.get("order_id") in (None, "", 0):
     errors.append("missing order_id")
+
+for key in ("selected_gateway_id", "order_payment_method", "order_received_url", "payment_intent_id"):
+    if payload.get(key) in (None, "", 0):
+        errors.append(f"missing {key}")
+
+if payload.get("selected_gateway_id") not in (None, "", 0) and payload.get("selected_gateway_id") != gateway_id:
+    errors.append(
+        f"selected_gateway_id mismatch: expected {gateway_id!r}, got {payload.get('selected_gateway_id')!r}"
+    )
+
+if payload.get("order_payment_method") not in (None, "", 0) and payload.get("order_payment_method") != gateway_id:
+    errors.append(
+        f"order_payment_method mismatch: expected {gateway_id!r}, got {payload.get('order_payment_method')!r}"
+    )
+
+if payload.get("used_base_card_gateway") is not False:
+    errors.append("used_base_card_gateway must be false")
+
+order_received_url = payload.get("order_received_url")
+if order_received_url not in (None, "", 0):
+    parsed = urlparse(str(order_received_url))
+    host = parsed.hostname or ""
+    normalized_base = base_url.rstrip("/")
+    if parsed.scheme not in {"http", "https"}:
+        errors.append(f"order_received_url must be http(s), got {order_received_url!r}")
+    if host not in {"localhost", "127.0.0.1"} and not host.endswith(".localhost"):
+        errors.append(f"order_received_url must stay local, got {order_received_url!r}")
+    if not str(order_received_url).startswith(f"{normalized_base}/checkout/order-received/"):
+        errors.append(
+            "order_received_url must use the expected store checkout order-received URL"
+        )
+    order_id = payload.get("order_id")
+    if order_id not in (None, "", 0) and f"/order-received/{order_id}" not in str(order_received_url):
+        errors.append("order_received_url does not include order_id")
+
+payment_intent_id = payload.get("payment_intent_id")
+if payment_intent_id not in (None, "", 0) and not str(payment_intent_id).startswith("pi_"):
+    errors.append("payment_intent_id must be a Stripe PaymentIntent id")
 
 for error in errors:
     print(error)
@@ -417,7 +458,7 @@ run_driver_for_store() {
 		return
 	fi
 
-	if ! validation_output="$(validate_driver_evidence "$role" "$method" "$gateway_id" "$stripe_type" "$evidence_path" 2>&1)"; then
+	if ! validation_output="$(validate_driver_evidence "$role" "$method" "$base_url" "$gateway_id" "$stripe_type" "$evidence_path" 2>&1)"; then
 		while IFS= read -r line; do
 			if [ -n "$line" ]; then
 				record_failure "$role/$method: $line"

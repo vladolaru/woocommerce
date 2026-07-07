@@ -135,8 +135,28 @@ exit 1
     )
 
 
-def make_fake_playwriter(path: Path, *, omit_order_id: bool = False) -> None:
+def make_fake_playwriter(
+    path: Path,
+    *,
+    omit_order_id: bool = False,
+    omit_semantic_fields: bool = False,
+    use_base_card_gateway: bool = False,
+) -> None:
     order_id_expr = "None" if omit_order_id else "1001"
+    selected_gateway_expr = "None" if omit_semantic_fields else 'os.environ["LPM_GATE_GATEWAY_ID"]'
+    order_payment_method_expr = (
+        '"woocommerce_payments"' if use_base_card_gateway else selected_gateway_expr
+    )
+    order_received_url_expr = (
+        '""'
+        if omit_semantic_fields
+        else 'os.environ["LPM_GATE_BASE_URL"] + "/checkout/order-received/1001/"'
+    )
+    payment_intent_expr = (
+        '""'
+        if omit_semantic_fields
+        else '"pi_unit_" + os.environ["LPM_GATE_METHOD"]'
+    )
     write_executable(
         path,
         f"""#!/usr/bin/env python3
@@ -155,8 +175,11 @@ payload = {{
     "gateway_id": os.environ["LPM_GATE_GATEWAY_ID"],
     "stripe_payment_method_type": os.environ["LPM_GATE_STRIPE_PAYMENT_METHOD_TYPE"],
     "order_id": {order_id_expr},
-    "order_received_url": os.environ["LPM_GATE_BASE_URL"] + "/checkout/order-received/1001/",
-    "payment_intent_id": "pi_unit_" + os.environ["LPM_GATE_METHOD"],
+    "selected_gateway_id": {selected_gateway_expr},
+    "order_payment_method": {order_payment_method_expr},
+    "order_received_url": {order_received_url_expr},
+    "payment_intent_id": {payment_intent_expr},
+    "used_base_card_gateway": {str(use_base_card_gateway)},
     "failures": [],
 }}
 
@@ -226,6 +249,9 @@ def test_full_gate_invokes_playwriter_driver_for_each_store_and_validates_eviden
         assert all(item["gateway_id"] == "woocommerce_payments_ideal" for item in rollup["results"])
         assert all(item["stripe_payment_method_type"] == "ideal" for item in rollup["results"])
         assert all(item["order_id"] == 1001 for item in rollup["results"])
+        assert all(item["selected_gateway_id"] == "woocommerce_payments_ideal" for item in rollup["results"])
+        assert all(item["order_payment_method"] == "woocommerce_payments_ideal" for item in rollup["results"])
+        assert all(item["payment_intent_id"].startswith("pi_unit_") for item in rollup["results"])
 
 
 def test_gate_fails_when_driver_evidence_omits_required_order_fields() -> None:
@@ -267,6 +293,86 @@ def test_gate_fails_when_driver_evidence_omits_required_order_fields() -> None:
         assert any("missing order_id" in failure for failure in rollup["failures"])
 
 
+def test_gate_requires_semantic_lpm_checkout_evidence() -> None:
+    with tempfile.TemporaryDirectory(prefix="lpm-gate-test-") as tmp:
+        tmp_path = Path(tmp)
+        ref_wp = tmp_path / "ref-wp"
+        target_wp = tmp_path / "target-wp"
+        fake_playwriter = tmp_path / "fake-playwriter"
+        out_dir = tmp_path / "evidence"
+
+        make_fake_wp(ref_wp, "http://localhost:8082")
+        make_fake_wp(target_wp, "http://store8889.localhost:8889")
+        make_fake_playwriter(fake_playwriter, omit_semantic_fields=True)
+
+        env = {
+            **os.environ,
+            "PLAYWRITER_BIN": str(fake_playwriter),
+            "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter-invocations.jsonl"),
+        }
+
+        result = run_gate(
+            "--methods",
+            "ideal",
+            "--ref",
+            str(ref_wp),
+            "--target",
+            str(target_wp),
+            "--playwriter-session",
+            "unit",
+            "--out-dir",
+            str(out_dir),
+            env=env,
+        )
+
+        assert result.returncode == 1
+        assert "missing selected_gateway_id" in result.stderr
+        assert "missing order_payment_method" in result.stderr
+        assert "missing order_received_url" in result.stderr
+        assert "missing payment_intent_id" in result.stderr
+        rollup = json.loads((out_dir / "lpm-checkout-gate.json").read_text(encoding="utf-8"))
+        assert rollup["status"] == "fail"
+
+
+def test_gate_rejects_base_card_gateway_fallback_evidence() -> None:
+    with tempfile.TemporaryDirectory(prefix="lpm-gate-test-") as tmp:
+        tmp_path = Path(tmp)
+        ref_wp = tmp_path / "ref-wp"
+        target_wp = tmp_path / "target-wp"
+        fake_playwriter = tmp_path / "fake-playwriter"
+        out_dir = tmp_path / "evidence"
+
+        make_fake_wp(ref_wp, "http://localhost:8082")
+        make_fake_wp(target_wp, "http://store8889.localhost:8889")
+        make_fake_playwriter(fake_playwriter, use_base_card_gateway=True)
+
+        env = {
+            **os.environ,
+            "PLAYWRITER_BIN": str(fake_playwriter),
+            "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter-invocations.jsonl"),
+        }
+
+        result = run_gate(
+            "--methods",
+            "ideal",
+            "--ref",
+            str(ref_wp),
+            "--target",
+            str(target_wp),
+            "--playwriter-session",
+            "unit",
+            "--out-dir",
+            str(out_dir),
+            env=env,
+        )
+
+        assert result.returncode == 1
+        assert "order_payment_method mismatch" in result.stderr
+        assert "used_base_card_gateway must be false" in result.stderr
+        rollup = json.loads((out_dir / "lpm-checkout-gate.json").read_text(encoding="utf-8"))
+        assert rollup["status"] == "fail"
+
+
 def main() -> None:
     tests = [
         test_usage_requires_methods_ref_and_target,
@@ -275,6 +381,8 @@ def main() -> None:
         test_print_plan_describes_wave_2_methods,
         test_full_gate_invokes_playwriter_driver_for_each_store_and_validates_evidence,
         test_gate_fails_when_driver_evidence_omits_required_order_fields,
+        test_gate_requires_semantic_lpm_checkout_evidence,
+        test_gate_rejects_base_card_gateway_fallback_evidence,
     ]
     for test in tests:
         test()
