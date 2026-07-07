@@ -66,6 +66,27 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	private bool $fee_remediation_schedulable = true;
 
 	/**
+	 * Number of times the native provider readiness was checked.
+	 *
+	 * @var int
+	 */
+	private int $native_provider_readiness_calls = 0;
+
+	/**
+	 * Number of times the fee remediation preflight was checked.
+	 *
+	 * @var int
+	 */
+	private int $fee_remediation_preflight_calls = 0;
+
+	/**
+	 * Number of times the platform connection preflight was checked.
+	 *
+	 * @var int
+	 */
+	private int $platform_connection_preflight_calls = 0;
+
+	/**
 	 * Whether canceled-authorization fee remediation scheduling succeeds after deactivation.
 	 *
 	 * @var string
@@ -147,7 +168,12 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			->getMock();
 		$this->provider
 			->method( 'can_process_payments' )
-			->willReturnCallback( fn() => $this->native_provider_ready );
+			->willReturnCallback(
+				function (): bool {
+					++$this->native_provider_readiness_calls;
+					return $this->native_provider_ready;
+				}
+			);
 
 		$this->fee_remediation_service = $this->getMockBuilder( WooPaymentsCanceledAuthorizationFeeRemediationService::class )
 			->disableOriginalConstructor()
@@ -155,7 +181,12 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			->getMock();
 		$this->fee_remediation_service
 			->method( 'can_schedule_cutover_remediation' )
-			->willReturnCallback( fn() => $this->fee_remediation_schedulable );
+			->willReturnCallback(
+				function (): bool {
+					++$this->fee_remediation_preflight_calls;
+					return $this->fee_remediation_schedulable;
+				}
+			);
 		$this->fee_remediation_service
 			->method( 'ensure_scheduled' )
 			->willReturnCallback(
@@ -171,7 +202,12 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			->getMock();
 		$this->platform_connection_service
 			->method( 'get_cutover_preflight_failures' )
-			->willReturnCallback( fn() => $this->platform_connection_failures );
+			->willReturnCallback(
+				function (): array {
+					++$this->platform_connection_preflight_calls;
+					return $this->platform_connection_failures;
+				}
+			);
 
 		$this->sut = $this->create_cutover_controller();
 	}
@@ -532,6 +568,81 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			$this->deactivate_plugin_calls[0],
 			'Network-active WooPayments must be deactivated with the network-wide flag.'
 		);
+	}
+
+	/**
+	 * @testdox Cutover preflight short-circuits expensive checks while native runtime is disabled.
+	 */
+	public function test_preflight_short_circuits_when_native_runtime_is_disabled(): void {
+		$provider_event_filter_calls    = 0;
+		$operational_queue_filter_calls = 0;
+		$preflight_filter_calls         = 0;
+		add_filter(
+			WooPaymentsCutoverController::FILTER_PROVIDER_EVENT_TYPES_PENDING_CUTOVER,
+			static function () use ( &$provider_event_filter_calls ): array {
+				++$provider_event_filter_calls;
+				return array( 'example.event' );
+			}
+		);
+		add_filter(
+			WooPaymentsCutoverController::FILTER_OPERATIONAL_QUEUE_HOOKS_PENDING_CUTOVER,
+			static function () use ( &$operational_queue_filter_calls ): array {
+				++$operational_queue_filter_calls;
+				return array( 'example_hook' );
+			}
+		);
+		add_filter(
+			WooPaymentsCutoverController::FILTER_PREFLIGHT_FAILURES,
+			static function () use ( &$preflight_filter_calls ): array {
+				++$preflight_filter_calls;
+				return array();
+			}
+		);
+
+		$failures = $this->sut->get_preflight_failures();
+
+		$this->assertSame( array( 'native_runtime_disabled' ), $failures, 'Disabled native runtime should be the only preflight result.' );
+		$this->assertSame( 0, $this->native_provider_readiness_calls, 'Native transport readiness should not be checked while native runtime is disabled.' );
+		$this->assertSame( 0, $this->platform_connection_preflight_calls, 'Platform connection preflight should not run while native runtime is disabled.' );
+		$this->assertSame( 0, $provider_event_filter_calls, 'Provider event disposition scans should not run while native runtime is disabled.' );
+		$this->assertSame( 0, $operational_queue_filter_calls, 'Operational queue disposition scans should not run while native runtime is disabled.' );
+		$this->assertSame( 0, $this->fee_remediation_preflight_calls, 'Financial migration preflight should not run while native runtime is disabled.' );
+		$this->assertSame( 0, $preflight_filter_calls, 'The preflight failure filter should not run when native runtime is disabled.' );
+	}
+
+	/**
+	 * @testdox Cutover preflight memoizes expensive checks for the current request.
+	 */
+	public function test_preflight_memoizes_expensive_checks_within_request(): void {
+		$provider_event_filter_calls    = 0;
+		$operational_queue_filter_calls = 0;
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsCutoverController::FILTER_NATIVE_ADMIN_SURFACES_READY, '__return_true' );
+		add_filter(
+			WooPaymentsCutoverController::FILTER_PROVIDER_EVENT_TYPES_PENDING_CUTOVER,
+			static function () use ( &$provider_event_filter_calls ): array {
+				++$provider_event_filter_calls;
+				return array();
+			}
+		);
+		add_filter(
+			WooPaymentsCutoverController::FILTER_OPERATIONAL_QUEUE_HOOKS_PENDING_CUTOVER,
+			static function () use ( &$operational_queue_filter_calls ): array {
+				++$operational_queue_filter_calls;
+				return array();
+			}
+		);
+		$this->native_provider_ready = true;
+
+		$first_failures  = $this->sut->get_preflight_failures();
+		$second_failures = $this->sut->get_preflight_failures();
+
+		$this->assertSame( $first_failures, $second_failures, 'Repeated preflight checks in one request should reuse the first result.' );
+		$this->assertSame( 1, $this->native_provider_readiness_calls, 'Native transport readiness should be checked once per request.' );
+		$this->assertSame( 1, $this->platform_connection_preflight_calls, 'Platform connection preflight should be checked once per request.' );
+		$this->assertSame( 1, $provider_event_filter_calls, 'Provider event disposition scans should run once per request.' );
+		$this->assertSame( 1, $operational_queue_filter_calls, 'Operational queue disposition scans should run once per request.' );
+		$this->assertSame( 1, $this->fee_remediation_preflight_calls, 'Financial migration preflight should run once per request.' );
 	}
 
 	/**

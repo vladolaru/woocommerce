@@ -194,6 +194,13 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	private WooPaymentsPlatformConnectionService $platform_connection_service;
 
 	/**
+	 * Request-local cutover preflight failures.
+	 *
+	 * @var array<int,string>|null
+	 */
+	private ?array $preflight_memo = null;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -387,11 +394,16 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @return array<int,string> Failure codes.
 	 */
 	public function get_preflight_failures(): array {
-		$failures = array();
+		if ( null !== $this->preflight_memo ) {
+			return $this->preflight_memo;
+		}
 
 		if ( ! $this->arbiter->is_native_runtime_enabled() ) {
-			$failures[] = 'native_runtime_disabled';
+			$this->preflight_memo = array( 'native_runtime_disabled' );
+			return $this->preflight_memo;
 		}
+
+		$failures = array();
 
 		/**
 		 * Filters whether the native WooPayments transport is ready for cutover.
@@ -433,6 +445,9 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 		/**
 		 * Filters WooPayments native cutover preflight failures.
 		 *
+		 * This filter runs only after the native runtime is enabled. When native runtime is disabled,
+		 * preflight returns `native_runtime_disabled` before running platform, queue, or filter checks.
+		 *
 		 * @param array<int,string> $failures Failure codes.
 		 *
 		 * @since 11.0.0
@@ -455,7 +470,8 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 			$failures[] = 'legacy_stripe_billing_subscriptions_present';
 		}
 
-		return $failures;
+		$this->preflight_memo = $failures;
+		return $this->preflight_memo;
 	}
 
 	/**
