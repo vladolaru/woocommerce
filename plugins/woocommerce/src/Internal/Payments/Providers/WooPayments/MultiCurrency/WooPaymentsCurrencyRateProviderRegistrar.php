@@ -7,6 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyAccountInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyApiClientInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistrarInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistry;
 
@@ -21,26 +23,38 @@ class WooPaymentsCurrencyRateProviderRegistrar implements CurrencyRateProviderRe
 	/**
 	 * WooPayments account adapter.
 	 *
-	 * @var WooPaymentsLegacyAccountAdapter
+	 * @var MultiCurrencyAccountInterface
 	 */
-	private WooPaymentsLegacyAccountAdapter $account_adapter;
+	private MultiCurrencyAccountInterface $account_adapter;
 
 	/**
 	 * WooPayments API client adapter.
 	 *
-	 * @var WooPaymentsLegacyApiClientAdapter
+	 * @var MultiCurrencyApiClientInterface
 	 */
-	private WooPaymentsLegacyApiClientAdapter $api_client_adapter;
+	private MultiCurrencyApiClientInterface $api_client_adapter;
 
 	/**
 	 * Initialize the registrar.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsLegacyAccountAdapter   $account_adapter    WooPayments account adapter.
-	 * @param WooPaymentsLegacyApiClientAdapter $api_client_adapter WooPayments API client adapter.
+	 * @param WooPaymentsLegacyAccountAdapter   $account_adapter    Legacy WooPayments account adapter.
+	 * @param WooPaymentsLegacyApiClientAdapter $api_client_adapter Legacy WooPayments API client adapter.
 	 */
 	final public function init( WooPaymentsLegacyAccountAdapter $account_adapter, WooPaymentsLegacyApiClientAdapter $api_client_adapter ): void {
+		$this->set_adapters( $account_adapter, $api_client_adapter );
+	}
+
+	/**
+	 * Set the adapter pair selected by runtime ownership.
+	 *
+	 * @internal
+	 *
+	 * @param MultiCurrencyAccountInterface   $account_adapter    WooPayments account adapter.
+	 * @param MultiCurrencyApiClientInterface $api_client_adapter WooPayments API client adapter.
+	 */
+	public function set_adapters( MultiCurrencyAccountInterface $account_adapter, MultiCurrencyApiClientInterface $api_client_adapter ): void {
 		$this->account_adapter    = $account_adapter;
 		$this->api_client_adapter = $api_client_adapter;
 	}
