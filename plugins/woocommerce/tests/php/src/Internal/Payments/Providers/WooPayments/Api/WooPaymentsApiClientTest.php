@@ -1349,6 +1349,36 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should add account ToS agreements through the user-token accounts endpoint.
+	 */
+	public function test_add_account_tos_agreement_posts_to_accounts_endpoint(): void {
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id  = 123;
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode( array( 'success' => true ) ),
+		);
+
+		$sut = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( false ) );
+
+		$this->assertTrue( method_exists( $sut, 'add_account_tos_agreement' ), 'WooPaymentsApiClient should expose add_account_tos_agreement().' );
+
+		$result = $sut->add_account_tos_agreement( 'settings-popup', 'merchant_admin' );
+		$body   = json_decode( (string) $http_client->last_body, true );
+
+		$this->assertTrue( $result['success'] );
+		$this->assertSame( '/sites/123/wcpay/accounts/tos_agreements', $http_client->last_path );
+		$this->assertSame( 'POST', $http_client->last_method );
+		$this->assertIsArray( $body );
+		$this->assertSame( 'settings-popup', $body['source'] );
+		$this->assertSame( 'merchant_admin', $body['user_name'] );
+		$this->assertFalse( $body['test_mode'] );
+		$this->assertTrue( $http_client->last_use_user_token );
+	}
+
+	/**
 	 * @testdox Should request account capabilities through the user-token native endpoint.
 	 */
 	public function test_request_capability_posts_to_capabilities_endpoint(): void {

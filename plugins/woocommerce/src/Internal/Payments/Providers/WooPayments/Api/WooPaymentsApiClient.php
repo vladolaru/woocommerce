@@ -1711,6 +1711,26 @@ class WooPaymentsApiClient {
 	}
 
 	/**
+	 * Add an account Terms of Service agreement.
+	 *
+	 * @param string $source    Source that collected the agreement.
+	 * @param string $user_name Current WordPress user login.
+	 * @return array<string,mixed>
+	 */
+	public function add_account_tos_agreement( string $source, string $user_name ): array {
+		return $this->request(
+			array(
+				'source'    => $source,
+				'user_name' => $user_name,
+			),
+			self::ACCOUNTS_API . '/tos_agreements',
+			'POST',
+			true,
+			true
+		);
+	}
+
+	/**
 	 * Request or unrequest a connected account capability.
 	 *
 	 * @param string $capability_id Capability ID.
