@@ -65,7 +65,14 @@ def write_executable(path: Path, source: str) -> None:
     path.chmod(0o755)
 
 
-def make_fake_wp(path: Path, *, role: str, provider: str = "woopayments", rate: str = "0.80") -> None:
+def make_fake_wp(
+    path: Path,
+    *,
+    role: str,
+    provider: str = "woopayments",
+    rate: str = "0.80",
+    native_owner: str = "native",
+) -> None:
     write_executable(
         path,
         f"""#!/usr/bin/env python3
@@ -76,6 +83,12 @@ args = " ".join(sys.argv[1:])
 role = {json.dumps(role)}
 provider = {json.dumps(provider)}
 rate = {json.dumps(rate)}
+native_owner = {json.dumps(native_owner)}
+
+if args == "wc-native-payments status":
+    print("Owner: " + native_owner)
+    print("Native enabled: " + ("yes" if native_owner == "native" else "no"))
+    raise SystemExit(0)
 
 if "mc_rates_configure" in args:
     print(json.dumps({{"role": role, "configured": True, "currency_from": "USD", "currencies_to": ["GBP"]}}))
@@ -166,12 +179,44 @@ def test_gate_fails_when_target_provider_is_unavailable() -> None:
         assert "target provider is not woopayments" in rollup["failures"]
 
 
+def test_gate_fails_before_rate_mutation_when_target_native_runtime_is_not_owner() -> None:
+    with tempfile.TemporaryDirectory(prefix="mc-rates-gate-test-") as tmp:
+        tmp_path = Path(tmp)
+        ref_wp = tmp_path / "ref-wp"
+        target_wp = tmp_path / "target-wp"
+        out_dir = tmp_path / "evidence"
+
+        make_fake_wp(ref_wp, role="reference")
+        make_fake_wp(target_wp, role="target", native_owner="none")
+
+        result = run_gate(
+            "--ref",
+            str(ref_wp),
+            "--target",
+            str(target_wp),
+            "--currency-from",
+            "USD",
+            "--currencies-to",
+            "GBP",
+            "--out-dir",
+            str(out_dir),
+        )
+
+        assert result.returncode == 1
+        assert "target native payments owner is not native: none" in result.stderr
+
+        rollup = json.loads((out_dir / "mc-rates-gate.json").read_text(encoding="utf-8"))
+        assert rollup["status"] == "fail"
+        assert "target native payments owner is not native: none" in rollup["failures"]
+
+
 def main() -> None:
     tests = [
         test_usage_requires_ref_and_target,
         test_print_plan_describes_rate_probe,
         test_full_gate_compares_reference_and_target_rates,
         test_gate_fails_when_target_provider_is_unavailable,
+        test_gate_fails_before_rate_mutation_when_target_native_runtime_is_not_owner,
     ]
     for test in tests:
         test()

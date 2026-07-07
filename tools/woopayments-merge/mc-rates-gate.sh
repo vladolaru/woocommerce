@@ -123,6 +123,8 @@ if [ "$PRINT_PLAN" -eq 1 ]; then
 fi
 
 mkdir -p "$OUT_DIR"
+failures_file="$OUT_DIR/mc-rates-failures.txt"
+: > "$failures_file"
 
 last_json_line() {
 	grep -E '^\{' | tail -1
@@ -190,6 +192,24 @@ payload = {
 path.parent.mkdir(parents=True, exist_ok=True)
 path.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
 PY
+}
+
+assert_target_native_owner() {
+	local raw
+	local owner
+
+	# Intentionally split the WP runner string, matching this harness's WP="docker exec ..." convention.
+	# shellcheck disable=SC2086
+	if ! raw="$($TARGET_WP wc-native-payments status 2>&1)"; then
+		printf '%s\n' "target native payments status probe failed: $raw" >> "$failures_file"
+		return 1
+	fi
+
+	owner="$(printf '%s\n' "$raw" | awk -F': ' '/^Owner:/ { print $2; exit }' | tr -d '\r')"
+	if [ "$owner" != "native" ]; then
+		printf '%s\n' "target native payments owner is not native: ${owner:-unknown}" >> "$failures_file"
+		return 1
+	fi
 }
 
 CURRENCIES_TO_PHP="$(php_array_literal)"
@@ -283,6 +303,14 @@ WP_CLI::line( wp_json_encode( array(
 PHP
 )"
 
+if ! assert_target_native_owner; then
+	write_rollup "fail" "" "" "$failures_file"
+	while IFS= read -r failure; do
+		printf 'FAIL: %s\n' "$failure" >&2
+	done < "$failures_file"
+	exit 1
+fi
+
 progress "configure reference automatic rates"
 if ! wp_eval_json "$REF_WP" "reference" "$configure_php" >/dev/null; then
 	exit 1
@@ -304,7 +332,6 @@ fi
 reference_json="$(wp_eval_json "$REF_WP" "reference" "$inspect_php")" || exit 1
 target_json="$(wp_eval_json "$TARGET_WP" "target" "$inspect_php")" || exit 1
 
-failures_file="$OUT_DIR/mc-rates-failures.txt"
 python3 - "$reference_json" "$target_json" > "$failures_file" <<'PY'
 import json
 import math
