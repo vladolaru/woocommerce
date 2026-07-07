@@ -247,6 +247,8 @@ printf 'critical-run|%s\n' "$*" >> "$INVOCATIONS_LOG"
         assert "subscriptions-renewal-gate.sh|compare" in invocation_log
         assert "--ref-subscription-id 101" in invocation_log
         assert "--target-subscription-id 202" in invocation_log
+        assert "--out-dir " in invocation_log
+        assert "/subscriptions-renewal" in invocation_log
         assert "pnpm|--filter=@woocommerce/plugin-woocommerce test:php:env" in invocation_log
         assert "pnpm|--filter=@woocommerce/admin-library test:js" in invocation_log
         assert "pnpm|--filter=@woocommerce/admin-library ts:check" in invocation_log

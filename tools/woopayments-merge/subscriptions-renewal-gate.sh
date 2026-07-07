@@ -40,16 +40,20 @@ REF_WP=""
 TARGET_WP=""
 REF_SUBSCRIPTION_ID=""
 TARGET_SUBSCRIPTION_ID=""
+OUT_DIR=""
 
 usage() {
 	cat >&2 <<'USAGE'
 usage:
   subscriptions-renewal-gate.sh preflight --ref "<ref wp>" --target "<target wp>"
-  subscriptions-renewal-gate.sh compare --ref "<ref wp>" --target "<target wp>" --ref-subscription-id <id> --target-subscription-id <id>
+  subscriptions-renewal-gate.sh compare --ref "<ref wp>" --target "<target wp>" --ref-subscription-id <id> --target-subscription-id <id> [--out-dir <path>]
 
 The compare mode requires explicit browser-created subscription IDs. This
 scaffold does not seed subscriptions through CLI because that would bypass the
 real checkout tokenization and email path this gate is meant to verify.
+
+Options:
+  --out-dir <path>  Preserve preflight, drive, normalized, and rollup evidence.
 USAGE
 }
 
@@ -63,6 +67,8 @@ while [ "$#" -gt 0 ]; do
 		--ref-subscription-id) REF_SUBSCRIPTION_ID="${2:-}"; shift 2 ;;
 		--target-subscription-id=*) TARGET_SUBSCRIPTION_ID="${1#--target-subscription-id=}"; shift ;;
 		--target-subscription-id) TARGET_SUBSCRIPTION_ID="${2:-}"; shift 2 ;;
+		--out-dir=*) OUT_DIR="${1#--out-dir=}"; shift ;;
+		--out-dir) OUT_DIR="${2:-}"; shift 2 ;;
 		--help|-h) usage; exit 0 ;;
 		*) echo "Unknown argument: $1" >&2; usage; exit 2 ;;
 	esac
@@ -151,16 +157,72 @@ normalize_file() {
 }
 
 tmp_root="${TMPDIR:-}"
-if [ -z "$tmp_root" ]; then
+if [ -z "$OUT_DIR" ] && [ -z "$tmp_root" ]; then
 	echo "FAIL: TMPDIR is not set; refusing to write temp files outside the configured temp directory." >&2
 	exit 2
 fi
-mkdir -p "$tmp_root"
-work_dir="$(mktemp -d "$tmp_root/woopayments-subscriptions-renewal.XXXXXX")"
-trap 'rm -rf "$work_dir"' EXIT
+cleanup_work_dir=0
+if [ -n "$OUT_DIR" ]; then
+	work_dir="$OUT_DIR"
+	mkdir -p "$work_dir" || {
+		echo "FAIL: could not create evidence output directory: $work_dir" >&2
+		exit 2
+	}
+else
+	mkdir -p "$tmp_root"
+	work_dir="$(mktemp -d "$tmp_root/woopayments-subscriptions-renewal.XXXXXX")"
+	cleanup_work_dir=1
+fi
+if [ "$cleanup_work_dir" -eq 1 ]; then
+	trap 'rm -rf "$work_dir"' EXIT
+fi
 
 ref_preflight="$work_dir/ref-preflight.json"
 target_preflight="$work_dir/target-preflight.json"
+rollup_json="$work_dir/subscriptions-renewal-gate.json"
+
+write_rollup() {
+	local status="$1"
+	local normalized_diff_matched="${2:-false}"
+
+	php -r '
+		$rollup_path = $argv[1];
+		$status = $argv[2];
+		$mode = $argv[3];
+		$ref_subscription_id = $argv[4];
+		$target_subscription_id = $argv[5];
+		$normalized_diff_matched = "true" === $argv[12];
+		$load = static function ( $path ) {
+			if ( "" === $path || ! file_exists( $path ) ) {
+				return null;
+			}
+			$payload = json_decode( file_get_contents( $path ), true );
+			return is_array( $payload ) ? $payload : null;
+		};
+		$to_id = static function ( $value ) {
+			return ctype_digit( (string) $value ) ? (int) $value : null;
+		};
+		$payload = array(
+			"schema" => "woopayments_subscriptions_renewal_gate_rollup.v1",
+			"status" => $status,
+			"mode" => $mode,
+			"ref_subscription_id" => $to_id( $ref_subscription_id ),
+			"target_subscription_id" => $to_id( $target_subscription_id ),
+			"normalized_diff_matched" => $normalized_diff_matched,
+			"reference" => array(
+				"preflight" => $load( $argv[6] ),
+				"drive" => $load( $argv[8] ),
+				"normalized" => $load( $argv[10] ),
+			),
+			"target" => array(
+				"preflight" => $load( $argv[7] ),
+				"drive" => $load( $argv[9] ),
+				"normalized" => $load( $argv[11] ),
+			),
+		);
+		file_put_contents( $rollup_path, json_encode( $payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) . PHP_EOL );
+	' "$rollup_json" "$status" "$MODE" "$REF_SUBSCRIPTION_ID" "$TARGET_SUBSCRIPTION_ID" "$ref_preflight" "$target_preflight" "${ref_drive:-}" "${target_drive:-}" "${ref_norm:-}" "${target_norm:-}" "$normalized_diff_matched"
+}
 
 echo "Bucket-C WC Subscriptions renewal gate"
 echo "  mode: $MODE"
@@ -169,11 +231,13 @@ echo
 echo "Preflight: reference"
 if ! run_eval "$REF_WP" "ref preflight" "$ref_preflight" preflight ref; then
 	print_errors "$ref_preflight"
+	write_rollup fail false
 	exit 1
 fi
 if ! json_success "$ref_preflight"; then
 	echo "FAIL: reference preflight did not pass." >&2
 	print_errors "$ref_preflight"
+	write_rollup fail false
 	exit 1
 fi
 echo "  ok"
@@ -181,11 +245,13 @@ echo "  ok"
 echo "Preflight: target"
 if ! run_eval "$TARGET_WP" "target preflight" "$target_preflight" preflight target; then
 	print_errors "$target_preflight"
+	write_rollup fail false
 	exit 1
 fi
 if ! json_success "$target_preflight"; then
 	echo "FAIL: target preflight did not pass." >&2
 	print_errors "$target_preflight"
+	write_rollup fail false
 	exit 1
 fi
 echo "  ok"
@@ -193,6 +259,7 @@ echo "  ok"
 if [ "$MODE" = "preflight" ]; then
 	echo
 	echo "PASS: WC Subscriptions renewal preflight passed on reference and target."
+	write_rollup pass false
 	exit 0
 fi
 
@@ -211,11 +278,13 @@ echo
 echo "Drive renewal: reference subscription $REF_SUBSCRIPTION_ID"
 if ! run_eval "$REF_WP" "ref drive" "$ref_drive" drive "$REF_SUBSCRIPTION_ID"; then
 	print_errors "$ref_drive"
+	write_rollup fail false
 	exit 1
 fi
 if ! json_success "$ref_drive"; then
 	echo "FAIL: reference renewal drive did not pass." >&2
 	print_errors "$ref_drive"
+	write_rollup fail false
 	exit 1
 fi
 echo "  ok"
@@ -223,11 +292,13 @@ echo "  ok"
 echo "Drive renewal: target subscription $TARGET_SUBSCRIPTION_ID"
 if ! run_eval "$TARGET_WP" "target drive" "$target_drive" drive "$TARGET_SUBSCRIPTION_ID"; then
 	print_errors "$target_drive"
+	write_rollup fail false
 	exit 1
 fi
 if ! json_success "$target_drive"; then
 	echo "FAIL: target renewal drive did not pass." >&2
 	print_errors "$target_drive"
+	write_rollup fail false
 	exit 1
 fi
 echo "  ok"
@@ -240,8 +311,10 @@ echo "Compare normalized renewal facts"
 if ! diff -u "$ref_norm" "$target_norm"; then
 	echo "FAIL: normalized WC Subscriptions renewal facts differ." >&2
 	echo "      Raw facts retained until process exit under $work_dir" >&2
+	write_rollup fail false
 	exit 1
 fi
 
+write_rollup pass true
 echo "PASS: WC Subscriptions renewal facts match reference."
 exit 0

@@ -196,6 +196,52 @@ def test_compare_normalizes_reference_and_target_renewal_facts() -> None:
         assert "eval-file - drive 202" in wp_log
 
 
+def test_compare_writes_durable_evidence_to_out_dir() -> None:
+    with tempfile.TemporaryDirectory(prefix="subscriptions-renewal-gate-test-") as tmp:
+        tmp_path = Path(tmp)
+        ref_wp = tmp_path / "ref-wp"
+        target_wp = tmp_path / "target-wp"
+        out_dir = tmp_path / "evidence"
+
+        make_fake_wp(ref_wp, role="ref")
+        make_fake_wp(target_wp, role="target")
+
+        result = run_gate(
+            "compare",
+            "--ref",
+            str(ref_wp),
+            "--target",
+            str(target_wp),
+            "--ref-subscription-id",
+            "101",
+            "--target-subscription-id",
+            "202",
+            "--out-dir",
+            str(out_dir),
+            env={**os.environ, "FAKE_WP_INVOCATIONS": str(tmp_path / "wp-invocations.txt")},
+        )
+
+        assert result.returncode == 0, result.stderr
+        expected_files = {
+            "ref-preflight.json",
+            "target-preflight.json",
+            "ref-drive.json",
+            "target-drive.json",
+            "ref-normalized.json",
+            "target-normalized.json",
+            "subscriptions-renewal-gate.json",
+        }
+        assert expected_files == {path.name for path in out_dir.iterdir()}
+
+        rollup = json.loads((out_dir / "subscriptions-renewal-gate.json").read_text(encoding="utf-8"))
+        assert rollup["schema"] == "woopayments_subscriptions_renewal_gate_rollup.v1"
+        assert rollup["status"] == "pass"
+        assert rollup["mode"] == "compare"
+        assert rollup["ref_subscription_id"] == 101
+        assert rollup["target_subscription_id"] == 202
+        assert rollup["normalized_diff_matched"] is True
+
+
 def test_compare_fails_when_normalized_renewal_facts_differ() -> None:
     with tempfile.TemporaryDirectory(prefix="subscriptions-renewal-gate-test-") as tmp:
         tmp_path = Path(tmp)
