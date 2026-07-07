@@ -155,6 +155,65 @@ exit 1
         ]
 
 
+def test_agent_layer_queued_specs_are_blocked_until_executed() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
+        evidence_dir = Path(tmp)
+
+        result = run_runner(
+            "--store",
+            "target",
+            "--layer",
+            "agent",
+            "--flow",
+            "SC-14",
+            evidence_dir=evidence_dir,
+        )
+
+        assert result.returncode == 3
+        assert "queued 1 agent-driven flow specs" in result.stdout
+        assert "[BLOCKED] SC-14-lpm-wave-1-checkout on target" in result.stdout
+
+        rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
+        assert rollup["schema"] == "woopayments_critical_flows_rollup.v1"
+        assert rollup["status"] == "blocked"
+        assert rollup["summary"]["queued_agent_specs"] == 1
+        assert rollup["summary"]["blocked"] == 1
+        assert rollup["summary"]["failed"] == 0
+        assert rollup["results"] == [
+            {
+                "flow": "SC-14-lpm-wave-1-checkout",
+                "layer": "agent",
+                "store": "target",
+                "status": "BLOCKED",
+                "exit_code": 3,
+            }
+        ]
+
+
+def test_full_layer_blocks_when_agent_specs_are_only_queued() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
+        evidence_dir = Path(tmp)
+
+        result = run_runner(
+            "--store",
+            "target",
+            "--layer",
+            "all",
+            "--flow",
+            "SC-14",
+            evidence_dir=evidence_dir,
+        )
+
+        assert result.returncode == 3
+        assert "Layer D: running deterministic flow scripts" in result.stdout
+        assert "queued 1 agent-driven flow specs" in result.stdout
+
+        rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
+        assert rollup["status"] == "blocked"
+        assert rollup["summary"]["queued_agent_specs"] == 1
+        assert rollup["summary"]["blocked"] == 1
+
+
 def run_log_clean_assertion(fake_wp_source: str) -> subprocess.CompletedProcess[str]:
     with tempfile.TemporaryDirectory(prefix="critical-flows-log-clean-") as tmp:
         fake_wp = Path(tmp) / "fake-wp.sh"
@@ -214,11 +273,15 @@ exit 2
 def main() -> None:
     test_card_checkout_flow_passes_with_clean_exercised_order()
     test_card_checkout_flow_blocks_when_exerciser_fails()
+    test_agent_layer_queued_specs_are_blocked_until_executed()
+    test_full_layer_blocks_when_agent_specs_are_only_queued()
     test_log_clean_assertion_passes_when_scan_is_clean()
     test_log_clean_assertion_fails_when_php_errors_are_found()
     test_log_clean_assertion_blocks_when_scan_cannot_run()
     print("PASS test_card_checkout_flow_passes_with_clean_exercised_order")
     print("PASS test_card_checkout_flow_blocks_when_exerciser_fails")
+    print("PASS test_agent_layer_queued_specs_are_blocked_until_executed")
+    print("PASS test_full_layer_blocks_when_agent_specs_are_only_queued")
     print("PASS test_log_clean_assertion_passes_when_scan_is_clean")
     print("PASS test_log_clean_assertion_fails_when_php_errors_are_found")
     print("PASS test_log_clean_assertion_blocks_when_scan_cannot_run")

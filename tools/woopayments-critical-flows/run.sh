@@ -134,6 +134,10 @@ if [ "$LAYER" != "deterministic" ]; then
     base="$(basename "$f" .md)"
     [ -n "$ONLY_FLOW" ] && [[ "$base" != "$ONLY_FLOW"* ]] && continue
     echo "$f" >> "$AGENT_QUEUE"
+    for s in $(stores); do
+      printf '  [%-7s] %s on %s (agent spec queued)\n' "BLOCKED" "$base" "$s"
+      record_result "$base" agent "$s" BLOCKED 3
+    done
   done
   QUEUED_AGENT_COUNT="$(wc -l < "$AGENT_QUEUE" | tr -d ' ')"
   echo "  queued $QUEUED_AGENT_COUNT agent-driven flow specs -> $AGENT_QUEUE"
