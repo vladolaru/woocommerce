@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Connection\Client as Jetpack_Connection_Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayBlocksDataExtractor;
 use Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils;
 use WP_Error;
 use WP_REST_Request;
@@ -51,18 +52,27 @@ class WooPaymentsWooPaySessionService {
 	private WooPaymentsFrontendTrackingController $frontend_tracking_controller;
 
 	/**
+	 * WooPay blocks data extractor.
+	 *
+	 * @var WooPaymentsWooPayBlocksDataExtractor|null
+	 */
+	private ?WooPaymentsWooPayBlocksDataExtractor $blocks_data_extractor = null;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsAccountService             $account_service              WooPayments account service.
-	 * @param WooPaymentsFrontendStylesService      $frontend_styles_service      Shared frontend styles service.
-	 * @param WooPaymentsFrontendTrackingController $frontend_tracking_controller Frontend tracking controller.
+	 * @param WooPaymentsAccountService                 $account_service              WooPayments account service.
+	 * @param WooPaymentsFrontendStylesService          $frontend_styles_service      Shared frontend styles service.
+	 * @param WooPaymentsFrontendTrackingController     $frontend_tracking_controller Frontend tracking controller.
+	 * @param WooPaymentsWooPayBlocksDataExtractor|null $blocks_data_extractor        WooPay blocks data extractor.
 	 */
-	final public function init( WooPaymentsAccountService $account_service, WooPaymentsFrontendStylesService $frontend_styles_service, WooPaymentsFrontendTrackingController $frontend_tracking_controller ): void {
+	final public function init( WooPaymentsAccountService $account_service, WooPaymentsFrontendStylesService $frontend_styles_service, WooPaymentsFrontendTrackingController $frontend_tracking_controller, ?WooPaymentsWooPayBlocksDataExtractor $blocks_data_extractor = null ): void {
 		$this->account_service              = $account_service;
 		$this->frontend_styles_service      = $frontend_styles_service;
 		$this->frontend_tracking_controller = $frontend_tracking_controller;
+		$this->blocks_data_extractor        = $blocks_data_extractor;
 	}
 
 	/**
@@ -1125,6 +1135,8 @@ class WooPaymentsWooPaySessionService {
 		$manual_capture = 'yes' === $this->get_account_service()->get_gateway_setting( 'manual_capture', 'no' );
 		$order          = $order_id ? wc_get_order( $order_id ) : false;
 		$checkout_url   = function_exists( 'wc_get_checkout_url' ) ? wc_get_checkout_url() : home_url( '/' );
+		$custom_message = (string) $this->get_account_service()->get_gateway_setting( 'platform_checkout_custom_message', '' );
+		$blocks_data    = $this->get_blocks_data_extractor();
 		if ( $order instanceof \WC_Order ) {
 			$checkout_url = $order->get_checkout_payment_url();
 		}
@@ -1137,7 +1149,7 @@ class WooPaymentsWooPaySessionService {
 		return array(
 			'store_name'                     => get_bloginfo( 'name' ),
 			'store_logo'                     => $store_logo,
-			'custom_message'                 => (string) $this->get_account_service()->get_gateway_setting( 'platform_checkout_custom_message', '' ),
+			'custom_message'                 => $custom_message,
 			'blog_id'                        => $this->get_store_blog_id(),
 			'blog_url'                       => get_site_url(),
 			'blog_checkout_url'              => $checkout_url,
@@ -1151,10 +1163,27 @@ class WooPaymentsWooPaySessionService {
 			'woocommerce_tax_display_cart'   => get_option( 'woocommerce_tax_display_cart' ),
 			'ship_to_billing_address_only'   => function_exists( 'wc_ship_to_billing_address_only' ) && wc_ship_to_billing_address_only(),
 			'return_url'                     => $order instanceof \WC_Order ? $checkout_url : ( function_exists( 'wc_get_cart_url' ) ? wc_get_cart_url() : home_url( '/' ) ),
-			'blocks_data'                    => array(),
-			'checkout_schema_namespaces'     => array(),
-			'optional_fields_status'         => array(),
+			'blocks_data'                    => $blocks_data->get_data(),
+			'checkout_schema_namespaces'     => $blocks_data->get_checkout_schema_namespaces(),
+			'optional_fields_status'         => $blocks_data->get_optional_fields_status( $custom_message ),
 		);
+	}
+
+	/**
+	 * Get the WooPay blocks data extractor.
+	 *
+	 * @return WooPaymentsWooPayBlocksDataExtractor
+	 */
+	private function get_blocks_data_extractor(): WooPaymentsWooPayBlocksDataExtractor {
+		if ( ! $this->blocks_data_extractor instanceof WooPaymentsWooPayBlocksDataExtractor ) {
+			$blocks_data_extractor = wc_get_container()->get( WooPaymentsWooPayBlocksDataExtractor::class );
+
+			$this->blocks_data_extractor = $blocks_data_extractor instanceof WooPaymentsWooPayBlocksDataExtractor
+				? $blocks_data_extractor
+				: new WooPaymentsWooPayBlocksDataExtractor();
+		}
+
+		return $this->blocks_data_extractor;
 	}
 
 	/**

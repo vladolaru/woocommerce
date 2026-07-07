@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionService;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\FakeWooPayMailchimpBlocksIntegration;
 use WC_Unit_Test_Case;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -738,6 +739,29 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Init session request includes checkout block extension data and optional field status.
+	 */
+	public function test_init_session_request_includes_blocks_data_and_optional_fields_status(): void {
+		$this->register_fake_mailchimp_blocks_integration();
+		delete_option( 'woocommerce_checkout_page_id' );
+
+		$sut     = $this->create_service();
+		$request = $sut->get_init_session_request( 'shopper@example.com' );
+
+		$this->assertArrayHasKey( 'mailchimp-newsletter_data', $request['store_data']['blocks_data'] );
+		$this->assertSame(
+			array(
+				'enabled' => true,
+				'source'  => 'fake-mailchimp',
+			),
+			$request['store_data']['blocks_data']['mailchimp-newsletter_data']
+		);
+		$this->assertArrayHasKey( 'company', $request['store_data']['optional_fields_status'] );
+		$this->assertSame( 'required', $request['store_data']['optional_fields_status']['phone'] );
+		$this->assertIsArray( $request['store_data']['checkout_schema_namespaces'] );
+	}
+
+	/**
 	 * Create the System Under Test.
 	 *
 	 * @param array<string,mixed> $settings     Gateway settings.
@@ -792,6 +816,15 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$sut->init( $account_service, new WooPaymentsFrontendStylesService(), $tracking_controller );
 
 		return $sut;
+	}
+
+	/**
+	 * Register fake Mailchimp blocks integration class.
+	 */
+	private function register_fake_mailchimp_blocks_integration(): void {
+		if ( ! class_exists( '\Mailchimp_Woocommerce_Newsletter_Blocks_Integration', false ) ) {
+			class_alias( FakeWooPayMailchimpBlocksIntegration::class, 'Mailchimp_Woocommerce_Newsletter_Blocks_Integration' );
+		}
 	}
 
 	/**
