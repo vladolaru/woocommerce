@@ -42,7 +42,6 @@ FULL_EVIDENCE_OUT_DIR="${FULL_EVIDENCE_OUT_DIR:-${TMPDIR:-$SELF_DIR/.tmp}/woopay
 TARGET_URL="${TARGET_URL:-http://store8889.localhost:8889}"
 LPM_FULL_METHODS="sepa_debit,ideal,bancontact,klarna,affirm,afterpay_clearpay,eps,p24,multibanco,au_becs_debit,grabpay,wechat_pay,alipay"
 WCPAY_REPO="${WCPAY_REPO:-$REPO_ROOT/../woocommerce-payments}"
-BUNDLE_BUDGET="${BUNDLE_BUDGET:-$SELF_DIR/a4aq-bundle-budget.json}"
 
 usage() {
 	cat >&2 <<'USAGE'
@@ -187,12 +186,7 @@ bash $SELF_DIR/dispute-e2e-gate.sh --ref "$REF_WP" --target "$TARGET_WP"
 bash $SELF_DIR/payout-evidence-gate.sh --wp "$REF_WP" --label reference
 bash $SELF_DIR/payout-evidence-gate.sh --wp "$TARGET_WP" --label target --native
 bash $SELF_DIR/converted-currency-gate.sh --ref "$REF_WP" --target "$TARGET_WP" --currency GBP
-bash $SELF_DIR/bundle-size-gate.sh capture --repo "$WCPAY_REPO" --out "$FULL_EVIDENCE_OUT_DIR/bundle-size/reference.json" --profile wcpay-plugin
-bash $SELF_DIR/bundle-size-gate.sh capture --repo "$REPO_ROOT" --out "$FULL_EVIDENCE_OUT_DIR/bundle-size/target.json" --profile wc-core
-bash $SELF_DIR/bundle-size-gate.sh compare --ref "$FULL_EVIDENCE_OUT_DIR/bundle-size/reference.json" --target "$FULL_EVIDENCE_OUT_DIR/bundle-size/target.json" --budget "$BUNDLE_BUDGET"
-bash $SELF_DIR/perf-surface-gate.sh capture --wp "$REF_WP" --out "$FULL_EVIDENCE_OUT_DIR/perf-surface/reference.json"
-bash $SELF_DIR/perf-surface-gate.sh capture --wp "$TARGET_WP" --out "$FULL_EVIDENCE_OUT_DIR/perf-surface/target.json"
-bash $SELF_DIR/perf-surface-gate.sh compare --ref "$FULL_EVIDENCE_OUT_DIR/perf-surface/reference.json" --target "$FULL_EVIDENCE_OUT_DIR/perf-surface/target.json"
+python3 $SELF_DIR/a4aq-accumulated-gate.py --repo "$REPO_ROOT" --plugin-repo "$WCPAY_REPO" --ref-wp "$REF_WP" --target-wp "$TARGET_WP" --playwriter-session "${PLAYWRITER_SESSION:-<required>}" --out-dir "$FULL_EVIDENCE_OUT_DIR/a4aq-accumulated"
 python3 $REPO_ROOT/tools/woopayments-critical-flows/test-inventory.py
 bash $REPO_ROOT/tools/woopayments-critical-flows/run.sh --store both --layer all
 pnpm --filter=@woocommerce/plugin-woocommerce test:php:env
@@ -211,48 +205,15 @@ run_quality_evidence() {
 	gate "PHPStan" pnpm --filter=@woocommerce/plugin-woocommerce phpstan
 }
 
-run_bundle_size_evidence() {
-	local bundle_dir reference_json target_json
-	bundle_dir="$FULL_EVIDENCE_OUT_DIR/bundle-size"
-	reference_json="$bundle_dir/reference.json"
-	target_json="$bundle_dir/target.json"
-	mkdir -p "$bundle_dir"
-
-	if [ ! -f "$WCPAY_REPO/woocommerce-payments.php" ]; then
-		record "bundle size capture (reference)" BLOCKED
-		printf '      set WCPAY_REPO to a local WooPayments plugin checkout before running bundle-size-gate.sh\n'
+run_a4aq_accumulated_evidence() {
+	if [ -z "$PLAYWRITER_SESSION" ]; then
+		record "A4aq accumulated admin/checkout/perf evidence" BLOCKED
+		printf '      pass --playwriter-session to run a4aq-accumulated-gate.py\n'
+	elif [ ! -f "$WCPAY_REPO/woocommerce-payments.php" ]; then
+		record "A4aq accumulated admin/checkout/perf evidence" BLOCKED
+		printf '      set WCPAY_REPO to a local WooPayments plugin checkout before running a4aq-accumulated-gate.py\n'
 	else
-		gate "bundle size capture (reference)" bash "$SELF_DIR/bundle-size-gate.sh" capture --repo "$WCPAY_REPO" --out "$reference_json" --profile wcpay-plugin
-	fi
-
-	gate "bundle size capture (target)" bash "$SELF_DIR/bundle-size-gate.sh" capture --repo "$REPO_ROOT" --out "$target_json" --profile wc-core
-
-	if [ ! -s "$reference_json" ] || [ ! -s "$target_json" ]; then
-		record "bundle size compare" BLOCKED
-		printf '      bundle capture JSON is missing; run both bundle-size-gate.sh capture commands before compare\n'
-	elif [ -f "$BUNDLE_BUDGET" ]; then
-		gate "bundle size compare" bash "$SELF_DIR/bundle-size-gate.sh" compare --ref "$reference_json" --target "$target_json" --budget "$BUNDLE_BUDGET"
-	else
-		record "bundle size compare" BLOCKED
-		printf '      bundle budget missing: %s\n' "$BUNDLE_BUDGET"
-	fi
-}
-
-run_perf_surface_evidence() {
-	local perf_dir reference_json target_json
-	perf_dir="$FULL_EVIDENCE_OUT_DIR/perf-surface"
-	reference_json="$perf_dir/reference.json"
-	target_json="$perf_dir/target.json"
-	mkdir -p "$perf_dir"
-
-	gate "perf surface capture (reference)" bash "$SELF_DIR/perf-surface-gate.sh" capture --wp "$REF_WP" --out "$reference_json"
-	gate "perf surface capture (target)" bash "$SELF_DIR/perf-surface-gate.sh" capture --wp "$TARGET_WP" --out "$target_json"
-
-	if [ ! -s "$reference_json" ] || [ ! -s "$target_json" ]; then
-		record "perf surface compare" BLOCKED
-		printf '      perf capture JSON is missing; run both perf-surface-gate.sh capture commands before compare\n'
-	else
-		gate "perf surface compare" bash "$SELF_DIR/perf-surface-gate.sh" compare --ref "$reference_json" --target "$target_json"
+		gate "A4aq accumulated admin/checkout/perf evidence" python3 "$SELF_DIR/a4aq-accumulated-gate.py" --repo "$REPO_ROOT" --plugin-repo "$WCPAY_REPO" --ref-wp "$REF_WP" --target-wp "$TARGET_WP" --playwriter-session "$PLAYWRITER_SESSION" --out-dir "$FULL_EVIDENCE_OUT_DIR/a4aq-accumulated"
 	fi
 }
 
@@ -306,8 +267,7 @@ run_full_evidence_gates() {
 	gate "payout evidence (reference)" bash "$SELF_DIR/payout-evidence-gate.sh" --wp "$REF_WP" --label reference
 	gate "payout evidence (target)" bash "$SELF_DIR/payout-evidence-gate.sh" --wp "$TARGET_WP" --label target --native
 	gate "converted-currency charge reconciliation" bash "$SELF_DIR/converted-currency-gate.sh" --ref "$REF_WP" --target "$TARGET_WP" --currency GBP
-	run_bundle_size_evidence
-	run_perf_surface_evidence
+	run_a4aq_accumulated_evidence
 	run_quality_evidence
 }
 

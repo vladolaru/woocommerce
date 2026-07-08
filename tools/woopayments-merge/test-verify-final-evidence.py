@@ -62,10 +62,11 @@ def test_full_evidence_plan_lists_final_gates() -> None:
     assert "dispute-e2e-gate.sh" in result.stdout
     assert "payout-evidence-gate.sh" in result.stdout
     assert "converted-currency-gate.sh" in result.stdout
-    assert "bundle-size-gate.sh capture" in result.stdout
-    assert "bundle-size-gate.sh compare" in result.stdout
-    assert "perf-surface-gate.sh capture" in result.stdout
-    assert "perf-surface-gate.sh compare" in result.stdout
+    assert "a4aq-accumulated-gate.py" in result.stdout
+    assert "--plugin-repo" in result.stdout
+    assert "/a4aq-accumulated" in result.stdout
+    assert "bundle-size-gate.sh capture" not in result.stdout
+    assert "perf-surface-gate.sh capture --wp" not in result.stdout
     assert "woopayments-critical-flows/test-inventory.py" in result.stdout
     assert "woopayments-critical-flows/run.sh --store both --layer all" in result.stdout
     assert "pnpm --filter=@woocommerce/plugin-woocommerce test:php:env" in result.stdout
@@ -159,6 +160,7 @@ Path(os.environ["INVOCATIONS_LOG"]).open("a", encoding="utf-8").write(
         for script_name in (
             "a5f-cutover-rehearsal.py",
             "a5g-multisite-runtime-gate.py",
+            "a4aq-accumulated-gate.py",
         ):
             write_executable(merge_dir / script_name, fake_python_gate)
 
@@ -249,6 +251,10 @@ printf 'critical-run|%s\n' "$*" >> "$INVOCATIONS_LOG"
         assert "--target-subscription-id 202" in invocation_log
         assert "--out-dir " in invocation_log
         assert "/subscriptions-renewal" in invocation_log
+        assert "a4aq-accumulated-gate.py|" in invocation_log
+        assert "--plugin-repo " in invocation_log
+        assert "/a4aq-accumulated" in invocation_log
+        assert "perf-surface-gate.sh|capture --wp" not in invocation_log
         assert "pnpm|--filter=@woocommerce/plugin-woocommerce test:php:env" in invocation_log
         assert "pnpm|--filter=@woocommerce/admin-library test:js" in invocation_log
         assert "pnpm|--filter=@woocommerce/admin-library ts:check" in invocation_log
