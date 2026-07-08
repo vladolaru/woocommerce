@@ -86,10 +86,20 @@ def test_required_flow_specs_exist_and_name_fail_closed_gates() -> None:
             assert token in text, f"{flow_id} spec does not mention {token}"
 
 
+def test_readme_documents_agent_result_ingestion_contract() -> None:
+    text = README.read_text(encoding="utf-8")
+
+    assert "--agent-results-dir" in text
+    assert "agent-results" in text
+    assert "<flow>.json" in text
+    assert "parity_verdict" in text
+
+
 def main() -> None:
     tests = [
         test_readme_lists_native_merge_required_flows,
         test_required_flow_specs_exist_and_name_fail_closed_gates,
+        test_readme_documents_agent_result_ingestion_contract,
     ]
     for test in tests:
         test()

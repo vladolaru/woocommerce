@@ -26,7 +26,9 @@ A subagent drives a real browser and **judges** functional + UX parity against t
 - dynamic/interactive UI deterministic scripts handle poorly: SCA/3DS modals, Stripe-hosted redirect pages (Bancontact/iDEAL/P24/Klarna/Affirm/Afterpay), WooPay, Payment Request sheets;
 - **UX/visual judgment** a script can't make: "is the saved-card radio discoverable and does selecting it actually work", "did the test-mode badge/notice render", "is this a cosmetic difference or a broken affordance";
 - multi-step admin journeys where selector churn makes scripts brittle.
-- Verdict: structured (rubric below) + evidence (screenshots, observations). See `agent-specs/_template.md`.
+- Verdict: structured JSON (rubric below) + evidence (screenshots, observations). See `agent-specs/_template.md`.
+
+Completed Layer-A evidence is ingested by `run.sh` from `--agent-results-dir` (default: `evidence/agent-results`). Write one JSON file per Markdown flow, named `<flow>.json`, using the template's shape: `{flow, store_results, parity_verdict, regression_note}`. The runner records the per-store verdicts, preserves the result file path in `rollup.json`, and enforces `parity_verdict` on the target store because it is the target-vs-reference conclusion. Missing, malformed, wrong-flow, missing-store, blocked, or failing results remain fail-closed and keep the spec queued.
 
 ### Overlap policy
 
@@ -53,7 +55,7 @@ Boundary: end-state wrong → functional fail; end-state right but required inte
 ```text
 tools/woopayments-critical-flows/
   README.md            # this spec + the matrix (authoritative)
-  run.sh               # orchestrator: D suite -> dispatch A flows -> verdict rollup
+  run.sh               # orchestrator: D suite -> ingest/queue A flows -> verdict rollup
   lib/
     common.sh          # store selection (:8082 ref / :8889 target), WP-CLI wrappers, assertions
   setup/
@@ -66,6 +68,7 @@ tools/woopayments-critical-flows/
   agent-specs/
     _template.md       # structured prompt template for Layer-A flow verification (rubric + evidence schema)
   evidence/            # run output (per flow, per store) — git-excluded
+    agent-results/     # optional completed Layer-A JSON files named <flow>.json
 ```
 
 ## The matrix
@@ -222,6 +225,7 @@ Already FAIL on native per the certification; must flip to PASS (verified both s
 ./run.sh --store both --layer all            # full suite, both stores, both layers
 ./run.sh --store target --flow SC-04         # one flow on native
 ./run.sh --layer deterministic               # CI-able subset
+./run.sh --layer agent --agent-results-dir evidence/agent-results
 ```
 
 A flow passes only with reference+target evidence on file for each assigned layer. Output under `evidence/`.
