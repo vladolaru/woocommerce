@@ -1572,7 +1572,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 		);
 	} );
 
-	it( 'disables express checkout methods that cannot be charged by native WooPayments yet', () => {
+	it( 'disables express checkout methods that cannot be charged by native WooPayments yet', async () => {
 		const setIsPaymentRequestEnabled = jest.fn();
 		const setIsAmazonPayEnabled = jest.fn();
 		mockUsePaymentRequestEnabledSettings.mockReturnValue( [
@@ -1583,6 +1583,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 			false,
 			setIsAmazonPayEnabled,
 		] );
+		mockUseWooPayEnabledSettings.mockReturnValue( [ false, noop ] );
 
 		render( <WooPaymentsSettingsPage /> );
 
@@ -1613,8 +1614,8 @@ describe( 'WooPaymentsSettingsPage', () => {
 			)
 		).toHaveLength( 2 );
 
-		fireEvent.click( paymentRequestCheckbox );
-		fireEvent.click( amazonPayCheckbox );
+		await userEvent.click( paymentRequestCheckbox );
+		await userEvent.click( amazonPayCheckbox );
 
 		expect( setIsPaymentRequestEnabled ).not.toHaveBeenCalled();
 		expect( setIsAmazonPayEnabled ).not.toHaveBeenCalled();
@@ -2416,6 +2417,10 @@ describe( 'WooPaymentsSettingsPage', () => {
 			card_payments: { status: 'active', requirements: [] },
 			jcb_payments: { status: 'active', requirements: [] },
 		} );
+		mockUseGetNativelyChargeablePaymentMethodIds.mockReturnValue( [
+			'card',
+			'jcb',
+		] );
 
 		render( <WooPaymentsSettingsPage /> );
 
