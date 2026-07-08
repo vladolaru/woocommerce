@@ -39,6 +39,7 @@ SUBSCRIPTIONS_TARGET_SUBSCRIPTION_ID="${SUBSCRIPTIONS_TARGET_SUBSCRIPTION_ID:-}"
 TOKEN_CONTINUITY_CUSTOMER_ID="${TOKEN_CONTINUITY_CUSTOMER_ID:-}"
 TOKEN_CONTINUITY_SUBSCRIPTION_ID="${TOKEN_CONTINUITY_SUBSCRIPTION_ID:-}"
 FULL_EVIDENCE_OUT_DIR="${FULL_EVIDENCE_OUT_DIR:-${TMPDIR:-$SELF_DIR/.tmp}/woopayments-final-evidence}"
+CRITICAL_FLOWS_AGENT_RESULTS_DIR="${CRITICAL_FLOWS_AGENT_RESULTS_DIR:-}"
 TARGET_URL="${TARGET_URL:-http://store8889.localhost:8889}"
 LPM_FULL_METHODS="sepa_debit,ideal,bancontact,klarna,affirm,afterpay_clearpay,eps,p24,multibanco,au_becs_debit,grabpay,wechat_pay,alipay"
 WCPAY_REPO="${WCPAY_REPO:-$REPO_ROOT/../woocommerce-payments}"
@@ -59,6 +60,8 @@ Options:
   --token-customer-id ID        Customer fixture ID for token-continuity evidence.
   --token-subscription-id ID    Subscription fixture ID for token-continuity evidence.
   --full-evidence-out-dir DIR   Evidence output directory for final gates.
+  --critical-flows-agent-results-dir DIR
+                                Completed Layer-A JSON results for critical flows.
 USAGE
 }
 
@@ -78,6 +81,7 @@ while [ "$#" -gt 0 ]; do
 		--token-customer-id) TOKEN_CONTINUITY_CUSTOMER_ID="${2:-}"; shift 2 ;;
 		--token-subscription-id) TOKEN_CONTINUITY_SUBSCRIPTION_ID="${2:-}"; shift 2 ;;
 		--full-evidence-out-dir) FULL_EVIDENCE_OUT_DIR="${2:-}"; shift 2 ;;
+		--critical-flows-agent-results-dir) CRITICAL_FLOWS_AGENT_RESULTS_DIR="${2:-}"; shift 2 ;;
 		*) echo "Unknown arg: $1" >&2; usage; exit 2 ;;
 	esac
 done
@@ -85,6 +89,9 @@ if [ -z "$MODE" ] || [ -z "$REF_WP" ] || [ -z "$TARGET_WP" ]; then
 	usage
 	exit 2
 fi
+
+CRITICAL_FLOWS_EVIDENCE_DIR="$FULL_EVIDENCE_OUT_DIR/critical-flows"
+CRITICAL_FLOWS_AGENT_RESULTS_DIR="${CRITICAL_FLOWS_AGENT_RESULTS_DIR:-$FULL_EVIDENCE_OUT_DIR/critical-flows-agent-results}"
 
 PASS=(); FAILED=(); BLOCKED=()
 record() { # $1 gate, $2 status(PASS|FAIL|BLOCKED)
@@ -188,7 +195,7 @@ bash $SELF_DIR/payout-evidence-gate.sh --wp "$TARGET_WP" --label target --native
 bash $SELF_DIR/converted-currency-gate.sh --ref "$REF_WP" --target "$TARGET_WP" --currency GBP
 python3 $SELF_DIR/a4aq-accumulated-gate.py --repo "$REPO_ROOT" --plugin-repo "$WCPAY_REPO" --ref-wp "$REF_WP" --target-wp "$TARGET_WP" --playwriter-session "${PLAYWRITER_SESSION:-<required>}" --out-dir "$FULL_EVIDENCE_OUT_DIR/a4aq-accumulated"
 python3 $REPO_ROOT/tools/woopayments-critical-flows/test-inventory.py
-bash $REPO_ROOT/tools/woopayments-critical-flows/run.sh --store both --layer all
+EVIDENCE_DIR="$CRITICAL_FLOWS_EVIDENCE_DIR" bash $REPO_ROOT/tools/woopayments-critical-flows/run.sh --store both --layer all --agent-results-dir "$CRITICAL_FLOWS_AGENT_RESULTS_DIR"
 pnpm --filter=@woocommerce/plugin-woocommerce test:php:env
 pnpm --filter=@woocommerce/admin-library test:js
 pnpm --filter=@woocommerce/admin-library ts:check
@@ -231,7 +238,7 @@ run_full_evidence_gates() {
 	gate "final evidence subsystem disposition" bash "$SELF_DIR/subsystem-disposition-gate.sh"
 	gate "final evidence i18n notes" bash "$SELF_DIR/i18n-notes-gate.sh" --target "$TARGET_WP"
 	gate "critical flows inventory" python3 "$REPO_ROOT/tools/woopayments-critical-flows/test-inventory.py"
-	gate "critical flows full run" bash "$REPO_ROOT/tools/woopayments-critical-flows/run.sh" --store both --layer all
+	gate "critical flows full run" env EVIDENCE_DIR="$CRITICAL_FLOWS_EVIDENCE_DIR" bash "$REPO_ROOT/tools/woopayments-critical-flows/run.sh" --store both --layer all --agent-results-dir "$CRITICAL_FLOWS_AGENT_RESULTS_DIR"
 	if [ -z "$SUBSCRIPTIONS_REF_SUBSCRIPTION_ID" ] || [ -z "$SUBSCRIPTIONS_TARGET_SUBSCRIPTION_ID" ]; then
 		record "subscriptions renewal compare" BLOCKED
 		printf '      pass --ref-subscription-id and --target-subscription-id to run subscriptions-renewal-gate.sh compare\n'

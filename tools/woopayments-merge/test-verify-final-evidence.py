@@ -69,6 +69,10 @@ def test_full_evidence_plan_lists_final_gates() -> None:
     assert "perf-surface-gate.sh capture --wp" not in result.stdout
     assert "woopayments-critical-flows/test-inventory.py" in result.stdout
     assert "woopayments-critical-flows/run.sh --store both --layer all" in result.stdout
+    assert "EVIDENCE_DIR=" in result.stdout
+    assert "/critical-flows" in result.stdout
+    assert "--agent-results-dir" in result.stdout
+    assert "/critical-flows-agent-results" in result.stdout
     assert "pnpm --filter=@woocommerce/plugin-woocommerce test:php:env" in result.stdout
     assert "pnpm --filter=@woocommerce/admin-library test:js" in result.stdout
     assert "pnpm --filter=@woocommerce/admin-library ts:check" in result.stdout
@@ -195,7 +199,7 @@ Path(os.environ["INVOCATIONS_LOG"]).open("a", encoding="utf-8").write("critical-
             critical_dir / "run.sh",
             """#!/usr/bin/env bash
 set -eu
-printf 'critical-run|%s\n' "$*" >> "$INVOCATIONS_LOG"
+printf 'critical-run|EVIDENCE_DIR=%s|%s\n' "${EVIDENCE_DIR:-}" "$*" >> "$INVOCATIONS_LOG"
 """,
         )
 
@@ -240,7 +244,9 @@ printf 'critical-run|%s\n' "$*" >> "$INVOCATIONS_LOG"
         invocation_log = invocations.read_text(encoding="utf-8")
         assert "tracks-parity.sh|reset" in invocation_log
         assert "tracks-parity.sh|diff" in invocation_log
-        assert "critical-run|--store both --layer all" in invocation_log
+        assert "critical-run|EVIDENCE_DIR=" in invocation_log
+        assert "/critical-flows|--store both --layer all --agent-results-dir " in invocation_log
+        assert "/critical-flows-agent-results" in invocation_log
         assert invocation_log.count("flow-drive.sh|charge") >= 5
         assert invocation_log.count("rest-route-parity.sh|") >= 4
         assert invocation_log.count("hook-shape-parity.sh|") >= 4
@@ -268,6 +274,7 @@ def test_full_evidence_flag_is_documented_in_usage() -> None:
     assert result.returncode == 2
     assert "--full-evidence" in result.stderr
     assert "--print-full-evidence-plan" in result.stderr
+    assert "--critical-flows-agent-results-dir" in result.stderr
 
 
 def main() -> None:
