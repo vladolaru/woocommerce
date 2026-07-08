@@ -29,6 +29,17 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 	private array $registered_controllers = array();
 
 	/**
+	 * Set up test fixtures.
+	 */
+	public function setUp(): void {
+		parent::setUp();
+		$this->reset_frontend_surface_state();
+		update_option( 'woocommerce_calc_taxes', 'no' );
+		update_option( 'woocommerce_prices_include_tax', 'no' );
+		update_option( 'woocommerce_tax_display_shop', 'excl' );
+	}
+
+	/**
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
@@ -50,10 +61,10 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 		wp_deregister_script( 'stripe' );
 		delete_option( 'woocommerce_default_country' );
 		delete_option( 'woocommerce_currency' );
-		remove_all_filters( 'woocommerce_is_product' );
-		remove_all_filters( 'woocommerce_is_cart' );
-		unset( $GLOBALS['product'] );
-		wp_reset_postdata();
+		delete_option( 'woocommerce_calc_taxes' );
+		delete_option( 'woocommerce_prices_include_tax' );
+		delete_option( 'woocommerce_tax_display_shop' );
+		$this->reset_frontend_surface_state();
 
 		parent::tearDown();
 	}
@@ -308,6 +319,7 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 	 * @param WC_Product $product Product object.
 	 */
 	private function set_current_product( WC_Product $product ): void {
+		$this->reset_frontend_surface_state();
 		global $post;
 
 		$post               = get_post( $product->get_id() ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
@@ -315,6 +327,36 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 		$this->go_to( get_permalink( $product->get_id() ) );
 		setup_postdata( $post );
 		add_filter( 'woocommerce_is_product', '__return_true' );
+	}
+
+	/**
+	 * Reset shopper-surface globals that earlier broad-suite tests may leave behind.
+	 */
+	private function reset_frontend_surface_state(): void {
+		remove_all_filters( 'woocommerce_is_checkout' );
+		remove_all_filters( 'woocommerce_is_cart' );
+		remove_all_filters( 'woocommerce_is_product' );
+		delete_option( 'woocommerce_checkout_page_id' );
+		delete_option( 'woocommerce_cart_page_id' );
+		$this->reset_cart_checkout_page_cache();
+		unset( $GLOBALS['post'], $GLOBALS['product'] );
+		wp_reset_postdata();
+		$this->go_to( home_url( '/' ) );
+	}
+
+	/**
+	 * Reset cached cart/checkout page checks between simulated requests.
+	 */
+	private function reset_cart_checkout_page_cache(): void {
+		if ( ! class_exists( \Automattic\WooCommerce\Blocks\Utils\CartCheckoutUtils::class ) ) {
+			return;
+		}
+
+		foreach ( array( 'is_cart_page', 'is_checkout_page' ) as $property_name ) {
+			$property = new \ReflectionProperty( \Automattic\WooCommerce\Blocks\Utils\CartCheckoutUtils::class, $property_name );
+			$property->setAccessible( true );
+			$property->setValue( null, null );
+		}
 	}
 
 	/**

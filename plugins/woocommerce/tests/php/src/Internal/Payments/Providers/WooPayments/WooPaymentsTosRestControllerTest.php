@@ -277,9 +277,10 @@ class WooPaymentsTosRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 }
 
-/**
- * Recording ToS API client.
- */
+	// phpcs:disable Generic.Files.OneObjectStructurePerFile.MultipleFound, Squiz.Classes.ClassFileName.NoMatch, SlevomatCodingStandard.Files.TypeNameMatchesFileName.NoMatchBetweenTypeNameAndFileName -- Test doubles live next to the tests they support.
+	/**
+	 * Recording ToS API client.
+	 */
 class RecordingTosApiClient extends WooPaymentsApiClient {
 
 	/**
@@ -351,3 +352,4 @@ class RecordingTosAccountService extends WooPaymentsAccountService {
 		return array( 'refreshed' => true );
 	}
 }
+	// phpcs:enable Generic.Files.OneObjectStructurePerFile.MultipleFound, Squiz.Classes.ClassFileName.NoMatch, SlevomatCodingStandard.Files.TypeNameMatchesFileName.NoMatchBetweenTypeNameAndFileName

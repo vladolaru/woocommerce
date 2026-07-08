@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceProjectionService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use RuntimeException;
@@ -402,7 +403,11 @@ class WooPaymentsDisputeEventHandler {
 			)
 		);
 
-		return $this->should_output_explicit_dispute_currency( $currency ) ? $price . ' ' . strtoupper( $currency ) : $price;
+		return MultiCurrencyExplicitPriceProjectionService::get_explicit_price_with_currency(
+			$price,
+			strtoupper( $currency ),
+			$this->should_output_explicit_dispute_currency( $currency )
+		);
 	}
 
 	/**
@@ -412,7 +417,19 @@ class WooPaymentsDisputeEventHandler {
 	 * @return bool
 	 */
 	private function should_output_explicit_dispute_currency( string $currency ): bool {
-		return '' !== $currency && strtoupper( $currency ) !== strtoupper( get_woocommerce_currency() );
+		if ( '' !== $currency && strtoupper( $currency ) !== strtoupper( get_woocommerce_currency() ) ) {
+			return true;
+		}
+
+		$store_currency     = strtoupper( (string) get_option( 'woocommerce_currency', 'USD' ) );
+		$enabled_currencies = get_option( 'wcpay_multi_currency_enabled_currencies', array() );
+		$enabled_currencies = is_array( $enabled_currencies ) ? $enabled_currencies : array();
+		$enabled_currencies = array_map(
+			static fn( $currency_code ) => strtoupper( (string) $currency_code ),
+			$enabled_currencies
+		);
+
+		return count( array_unique( array_merge( array( $store_currency ), $enabled_currencies ) ) ) > 1;
 	}
 
 	/**

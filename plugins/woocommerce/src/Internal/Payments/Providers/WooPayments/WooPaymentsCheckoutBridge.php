@@ -275,49 +275,75 @@ class WooPaymentsCheckoutBridge {
 	public function get_payment_fields_js_config( ?WooPaymentsPaymentMethodDefinition $payment_method_definition = null ): array {
 		$force_network_saved_cards = $this->should_force_network_saved_cards();
 		$saved_cards_enabled       = $this->is_saved_cards_enabled();
-		$config                    = array(
-			'publishableKey'                => $this->get_account_service()->get_publishable_key(),
-			'accountId'                     => $this->get_account_service()->get_account_id(),
-			'locale'                        => $this->get_stripe_locale(),
-			'gatewayId'                     => $this->get_gateway_id_for_payment_method_definition( $payment_method_definition ),
-			'ajaxUrl'                       => admin_url( 'admin-ajax.php' ),
-			'wcAjaxUrl'                     => \WC_AJAX::get_endpoint( '%%endpoint%%' ),
-			'paymentMethodsConfig'          => $this->get_payment_methods_config( $saved_cards_enabled, $payment_method_definition ),
-			'paymentMethodTypes'            => $this->get_payment_method_types_for_definition( $payment_method_definition ),
-			'testMode'                      => $this->get_account_service()->is_test_mode_enabled(),
-			'enabledBillingFields'          => $this->get_enabled_billing_fields(),
-			'currency'                      => get_woocommerce_currency(),
-			'cartTotal'                     => $this->get_cart_total(),
-			'storeCountry'                  => $this->get_account_country(),
-			'cartContainsSubscription'      => $this->cart_contains_subscription(),
-			'stylesCacheVersion'            => $this->get_frontend_styles_service()->get_styles_cache_version(),
-			'forceNetworkSavedCards'        => $force_network_saved_cards,
-			'isSavedCardsEnabled'           => $saved_cards_enabled,
-			'customerData'                  => $this->get_legacy_runtime()->get_gateway_prepared_customer_data(),
-			'usesLegacySetupIntentBridge'   => false,
-			'usesLegacyOrderStatusBridge'   => false,
-			'usesNativeSetupIntentBridge'   => true,
-			'usesNativeOrderStatusBridge'   => true,
-			'isCheckout'                    => function_exists( 'is_checkout' ) && is_checkout(),
-			'isCoreNativeCheckoutBridge'    => true,
-			'isCoreNativeCheckoutAvailable' => $this->should_expose_checkout_surface(),
-			'isWooPayEnabled'               => false,
-			'isShopperTrackingEnabled'      => $this->get_frontend_tracking_controller()->is_shopper_tracking_enabled(),
-			'confirmationErrorMessage'      => __( 'There was a problem confirming your payment.', 'woocommerce' ),
-			'fraudPreventionToken'          => $this->get_fraud_prevention_token(),
+		/**
+		 * Filters the account ID used for payment intent confirmation.
+		 *
+		 * @since 11.0.0
+		 *
+		 * @param string $account_id The account ID for intent confirmation.
+		 */
+		$account_id_for_intent_confirmation = (string) apply_filters( 'wc_payments_account_id_for_intent_confirmation', '' );
+		$config                             = array(
+			'publishableKey'                           => $this->get_account_service()->get_publishable_key(),
+			'accountId'                                => $this->get_account_service()->get_account_id(),
+			'locale'                                   => $this->get_stripe_locale(),
+			'gatewayId'                                => $this->get_gateway_id_for_payment_method_definition( $payment_method_definition ),
+			'ajaxUrl'                                  => admin_url( 'admin-ajax.php' ),
+			'wcAjaxUrl'                                => \WC_AJAX::get_endpoint( '%%endpoint%%' ),
+			'paymentMethodsConfig'                     => $this->get_payment_methods_config( $saved_cards_enabled, $payment_method_definition ),
+			'paymentMethodTypes'                       => $this->get_payment_method_types_for_definition( $payment_method_definition ),
+			'testMode'                                 => $this->get_account_service()->is_test_mode_enabled(),
+			'enabledBillingFields'                     => $this->get_enabled_billing_fields(),
+			'currency'                                 => get_woocommerce_currency(),
+			'cartTotal'                                => $this->get_cart_total(),
+			'storeCountry'                             => $this->get_account_country(),
+			'cartContainsSubscription'                 => $this->cart_contains_subscription(),
+			'stylesCacheVersion'                       => $this->get_frontend_styles_service()->get_styles_cache_version(),
+			'forceNetworkSavedCards'                   => $force_network_saved_cards,
+			'isSavedCardsEnabled'                      => $saved_cards_enabled,
+			'customerData'                             => $this->get_legacy_runtime()->get_gateway_prepared_customer_data(),
+			'genericErrorMessage'                      => __(
+				'There was a problem processing the payment. Please check your email inbox and refresh the page to try again.',
+				'woocommerce'
+			),
+			'fraudServices'                            => $this->get_fraud_services_config(),
+			'features'                                 => $this->get_blocks_supports(),
+			'usesLegacySetupIntentBridge'              => false,
+			'usesLegacyOrderStatusBridge'              => false,
+			'usesNativeSetupIntentBridge'              => true,
+			'usesNativeOrderStatusBridge'              => true,
+			'isCheckout'                               => function_exists( 'is_checkout' ) && is_checkout(),
+			'isPreview'                                => function_exists( 'is_preview' ) && is_preview(),
+			'isShortcodeCheckout'                      => $this->is_shortcode_checkout(),
+			'isCoreNativeCheckoutBridge'               => true,
+			'isCoreNativeCheckoutAvailable'            => $this->should_expose_checkout_surface(),
+			'isWooPayEnabled'                          => false,
+			'isWoopayExpressCheckoutEnabled'           => false,
+			'isWoopayFirstPartyAuthEnabled'            => false,
+			'isWooPayEmailInputEnabled'                => false,
+			'isWooPayDirectCheckoutEnabled'            => false,
+			'isWooPayGlobalThemeSupportEnabled'        => false,
+			'isShopperTrackingEnabled'                 => $this->get_frontend_tracking_controller()->is_shopper_tracking_enabled(),
+			'platformTrackerNonce'                     => wp_create_nonce( 'platform_tracks_nonce' ),
+			'woopayHost'                               => $this->get_woopay_session_service()->get_woopay_url(),
+			'accountIdForIntentConfirmation'           => $account_id_for_intent_confirmation,
+			'wcpayVersionNumber'                       => defined( 'WC_VERSION' ) ? WC_VERSION : '',
+			'icon'                                     => '',
+			'isExpressCheckoutInPaymentMethodsEnabled' => $this->is_truthy_gateway_setting(
+				'express_checkout_in_payment_methods'
+			),
+			'confirmationErrorMessage'                 => __( 'There was a problem confirming your payment.', 'woocommerce' ),
+			'fraudPreventionToken'                     => $this->get_fraud_prevention_token(),
 		);
 
 		if ( $this->should_expose_checkout_surface() ) {
 			$config['createSetupIntentNonce'] = wp_create_nonce( 'wcpay_create_setup_intent_nonce' );
 			$config['updateOrderStatusNonce'] = wp_create_nonce( 'wcpay_update_order_status_nonce' );
-
-			if ( $this->get_woopay_session_service()->is_woopay_enabled() ) {
-				$config                           = array_merge(
-					$config,
-					$this->get_woopay_session_service()->get_woopay_frontend_config( 'checkout' )
-				);
-				$config['forceNetworkSavedCards'] = $force_network_saved_cards;
-			}
+			$config                           = array_merge(
+				$config,
+				$this->get_woopay_session_service()->get_woopay_frontend_config( 'checkout' )
+			);
+			$config['forceNetworkSavedCards'] = $force_network_saved_cards;
 		}
 
 		/**
@@ -620,6 +646,55 @@ class WooPaymentsCheckoutBridge {
 		}
 
 		return array_values( array_unique( $supports ) );
+	}
+
+	/**
+	 * Get WooPayments fraud services config exposed to checkout scripts.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_fraud_services_config(): array {
+		/**
+		 * Filters native WooPayments fraud services config.
+		 *
+		 * This mirrors the standalone plugin's checkout config shape while
+		 * native fraud settings are absorbed into Core.
+		 *
+		 * @since 11.0.0
+		 *
+		 * @param array<string,mixed> $config Fraud services config.
+		 */
+		$config = apply_filters( WooPaymentsOrderTrackingService::FILTER_FRAUD_SERVICES_CONFIG, array() );
+
+		return is_array( $config ) ? $config : array();
+	}
+
+	/**
+	 * Tell whether the current request is the shortcode checkout.
+	 *
+	 * @return bool
+	 */
+	private function is_shortcode_checkout(): bool {
+		if ( ! function_exists( 'is_checkout' ) || ! is_checkout() ) {
+			return false;
+		}
+
+		$post_id = function_exists( 'get_queried_object_id' ) ? get_queried_object_id() : 0;
+		$post    = $post_id ? get_post( $post_id ) : null;
+
+		if ( ! $post instanceof \WP_Post ) {
+			$post = get_queried_object();
+		}
+
+		if ( ! $post instanceof \WP_Post ) {
+			$post = get_post();
+		}
+
+		if ( ! $post instanceof \WP_Post ) {
+			return false;
+		}
+
+		return has_shortcode( $post->post_content, 'woocommerce_checkout' );
 	}
 
 	/**

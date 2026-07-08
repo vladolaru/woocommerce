@@ -72,9 +72,10 @@ class WooPaymentsNativeAccountAdapterTest extends WC_Unit_Test_Case {
 	}
 }
 
-/**
- * Recording native account-service test double.
- */
+	// phpcs:disable Generic.Files.OneObjectStructurePerFile.MultipleFound, Squiz.Classes.ClassFileName.NoMatch, SlevomatCodingStandard.Files.TypeNameMatchesFileName.NoMatchBetweenTypeNameAndFileName -- Test doubles live next to the tests they support.
+	/**
+	 * Recording native account-service test double.
+	 */
 class RecordingNativeAccountService extends WooPaymentsAccountService {
 
 	/**
@@ -149,9 +150,9 @@ class RecordingNativeAccountService extends WooPaymentsAccountService {
 	}
 }
 
-/**
- * Throwing native account-service test double.
- */
+	/**
+	 * Throwing native account-service test double.
+	 */
 class ThrowingNativeAccountService extends WooPaymentsAccountService {
 
 	/**
@@ -172,6 +173,7 @@ class ThrowingNativeAccountService extends WooPaymentsAccountService {
 		throw new \RuntimeException( 'Account failed' );
 	}
 
+	// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- This test double always throws.
 	/**
 	 * Throw when reading cached account data.
 	 *
@@ -184,4 +186,6 @@ class ThrowingNativeAccountService extends WooPaymentsAccountService {
 
 		throw new \RuntimeException( 'Account failed' );
 	}
+	// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
 }
+	// phpcs:enable Generic.Files.OneObjectStructurePerFile.MultipleFound, Squiz.Classes.ClassFileName.NoMatch, SlevomatCodingStandard.Files.TypeNameMatchesFileName.NoMatchBetweenTypeNameAndFileName

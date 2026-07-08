@@ -165,7 +165,7 @@ class WooPaymentsWooPayBlocksDataExtractor {
 		$below_place_order_button_text = '';
 
 		if ( null !== $terms_block ) {
-			$terms_block_attrs              = $this->get_block_attrs( $terms_block );
+			$terms_block_attrs             = $this->get_block_attrs( $terms_block );
 			$show_terms_checkbox           = ! empty( $terms_block_attrs['checkbox'] );
 			$below_place_order_button_text = $this->get_blocks_terms_and_conditions_text( $terms_block, $show_terms_checkbox );
 		}
@@ -208,7 +208,11 @@ class WooPaymentsWooPayBlocksDataExtractor {
 			return null;
 		}
 
-		/** @phpstan-var class-string $class_name */
+		/**
+		 * Integration class name.
+		 *
+		 * @phpstan-var class-string $class_name
+		 */
 		$integration = new $class_name();
 
 		return $integration instanceof IntegrationInterface ? $integration : null;
@@ -269,18 +273,18 @@ class WooPaymentsWooPayBlocksDataExtractor {
 			return array();
 		}
 
-		$container                 = call_user_func( $container_factory );
-		$subscription              = is_object( $container ) && is_callable( array( $container, 'get' ) )
+		$container           = call_user_func( $container_factory );
+		$subscription        = is_object( $container ) && is_callable( array( $container, 'get' ) )
 			? call_user_func( array( $container, 'get' ), $subscription_class )
 			: null;
-		$settings_controller       = call_user_func( $settings_factory );
-		$default_text              = is_object( $settings_controller ) && is_callable( array( $settings_controller, 'get' ) )
+		$settings_controller = call_user_func( $settings_factory );
+		$default_text        = is_object( $settings_controller ) && is_callable( array( $settings_controller, 'get' ) )
 			? call_user_func( array( $settings_controller, 'get' ), 'woocommerce.optin_on_checkout.message', '' )
 			: '';
-		$optin_enabled             = is_object( $settings_controller ) && is_callable( array( $settings_controller, 'get' ) )
+		$optin_enabled       = is_object( $settings_controller ) && is_callable( array( $settings_controller, 'get' ) )
 			? call_user_func( array( $settings_controller, 'get' ), 'woocommerce.optin_on_checkout.enabled', false )
 			: false;
-		$settings                  = array(
+		$settings            = array(
 			'defaultText'   => is_scalar( $default_text ) ? (string) $default_text : '',
 			'optinEnabled'  => (bool) $optin_enabled,
 			'defaultStatus' => false,
@@ -301,14 +305,14 @@ class WooPaymentsWooPayBlocksDataExtractor {
 	/**
 	 * Get a checkout field status option as a string.
 	 *
-	 * @param string $option_name Option name.
-	 * @param string $default     Default status.
+	 * @param string $option_name    Option name.
+	 * @param string $default_status Default status.
 	 * @return string
 	 */
-	private function get_checkout_field_status_option( string $option_name, string $default ): string {
-		$status = get_option( $option_name, $default );
+	private function get_checkout_field_status_option( string $option_name, string $default_status ): string {
+		$status = get_option( $option_name, $default_status );
 
-		return is_string( $status ) ? $status : $default;
+		return is_string( $status ) ? $status : $default_status;
 	}
 
 	/**
@@ -399,8 +403,12 @@ class WooPaymentsWooPayBlocksDataExtractor {
 	 * @return array<string,mixed>|null
 	 */
 	private function get_checkout_block(): ?array {
-		$checkout_page_id = get_option( 'woocommerce_checkout_page_id' );
-		$checkout_page    = get_post( $checkout_page_id );
+		$checkout_page_id = absint( get_option( 'woocommerce_checkout_page_id' ) );
+		if ( ! $checkout_page_id ) {
+			return null;
+		}
+
+		$checkout_page = get_post( $checkout_page_id );
 		if ( ! $checkout_page instanceof WP_Post ) {
 			return null;
 		}
@@ -427,7 +435,7 @@ class WooPaymentsWooPayBlocksDataExtractor {
 		}
 
 		foreach ( $current_block['innerBlocks'] as $inner_block ) {
-			if ( is_array( $inner_block ) && $inner_block_name === ( $inner_block['blockName'] ?? null ) ) {
+			if ( is_array( $inner_block ) && ( $inner_block['blockName'] ?? null ) === $inner_block_name ) {
 				return $inner_block;
 			}
 		}

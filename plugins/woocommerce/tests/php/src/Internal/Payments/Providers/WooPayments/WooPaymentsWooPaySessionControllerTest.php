@@ -28,6 +28,14 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	private $sut;
 
 	/**
+	 * Set up test fixtures.
+	 */
+	public function setUp(): void {
+		parent::setUp();
+		$this->reset_frontend_surface_state();
+	}
+
+	/**
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
@@ -43,10 +51,13 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		}
 
 		$this->reset_real_blog_token_signed();
+		$this->reset_frontend_surface_state();
 		delete_option( 'woocommerce_checkout_page_id' );
+		delete_option( 'woocommerce_cart_page_id' );
 		wc_clear_notices();
 		remove_all_filters( 'wcpay_woopay_is_signed_with_blog_token' );
 		remove_all_filters( 'woocommerce_is_checkout' );
+		remove_all_filters( 'woocommerce_is_cart' );
 		remove_all_filters( 'woocommerce_is_product' );
 		remove_all_filters( 'wp_die_ajax_handler' );
 		remove_all_filters( 'wp_doing_ajax' );
@@ -715,9 +726,8 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * Set the current request to a product page.
 	 */
 	private function set_current_product(): void {
-		remove_all_filters( 'woocommerce_is_checkout' );
-		remove_all_filters( 'woocommerce_is_cart' );
-		remove_all_filters( 'woocommerce_is_product' );
+		$this->reset_frontend_surface_state();
+		delete_option( 'woocommerce_cart_page_id' );
 
 		$product = \WC_Helper_Product::create_simple_product( true );
 		$this->go_to( get_permalink( $product->get_id() ) );
@@ -729,9 +739,8 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * Set the current request to a classic checkout shortcode page.
 	 */
 	private function set_checkout_shortcode_page(): void {
-		remove_all_filters( 'woocommerce_is_checkout' );
-		remove_all_filters( 'woocommerce_is_cart' );
-		remove_all_filters( 'woocommerce_is_product' );
+		$this->reset_frontend_surface_state();
+		delete_option( 'woocommerce_cart_page_id' );
 
 		update_option( 'woocommerce_checkout_page_id', $this->set_current_page_with_content( '[woocommerce_checkout]' ) );
 	}
@@ -757,6 +766,36 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		setup_postdata( $post );
 
 		return $page_id;
+	}
+
+	/**
+	 * Reset shopper-surface globals that earlier broad-suite tests may leave behind.
+	 */
+	private function reset_frontend_surface_state(): void {
+		remove_all_filters( 'woocommerce_is_checkout' );
+		remove_all_filters( 'woocommerce_is_cart' );
+		remove_all_filters( 'woocommerce_is_product' );
+		delete_option( 'woocommerce_checkout_page_id' );
+		delete_option( 'woocommerce_cart_page_id' );
+		$this->reset_cart_checkout_page_cache();
+		unset( $GLOBALS['post'], $GLOBALS['product'] );
+		wp_reset_postdata();
+		$this->go_to( home_url( '/' ) );
+	}
+
+	/**
+	 * Reset cached cart/checkout page checks between simulated requests.
+	 */
+	private function reset_cart_checkout_page_cache(): void {
+		if ( ! class_exists( \Automattic\WooCommerce\Blocks\Utils\CartCheckoutUtils::class ) ) {
+			return;
+		}
+
+		foreach ( array( 'is_cart_page', 'is_checkout_page' ) as $property_name ) {
+			$property = new \ReflectionProperty( \Automattic\WooCommerce\Blocks\Utils\CartCheckoutUtils::class, $property_name );
+			$property->setAccessible( true );
+			$property->setValue( null, null );
+		}
 	}
 
 	/**

@@ -72,9 +72,9 @@ class MultiCurrencyExplicitPriceControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should format explicit prices only when additional currencies are enabled.
 	 */
 	public function test_formats_explicit_prices_only_when_additional_currencies_are_enabled(): void {
-		$multi_currency = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, true );
+		$multi_currency  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, true );
 		$single_currency = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, false );
-		$order          = $this->createMock( \WC_Order::class );
+		$order           = $this->createMock( \WC_Order::class );
 		$order->method( 'get_currency' )->willReturn( 'BRL' );
 
 		$this->assertSame( 'R$ 5,90 BRL', $multi_currency->get_explicit_price( 'R$ 5,90', $order ) );

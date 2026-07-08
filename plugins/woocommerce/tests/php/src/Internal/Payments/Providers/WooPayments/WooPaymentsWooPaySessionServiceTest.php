@@ -30,6 +30,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	public function setUp(): void {
 		parent::setUp();
 		$this->original_session = WC()->session;
+		$this->reset_frontend_surface_state();
 	}
 
 	/**
@@ -55,8 +56,39 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'pre_http_request' );
 		remove_all_filters( 'rest_pre_dispatch' );
 		remove_all_filters( 'woocommerce_store_api_disable_nonce_check' );
+		$this->reset_frontend_surface_state();
 		wp_set_current_user( 0 );
 		parent::tearDown();
+	}
+
+	/**
+	 * Reset shopper-surface globals that earlier broad-suite tests may leave behind.
+	 */
+	private function reset_frontend_surface_state(): void {
+		remove_all_filters( 'woocommerce_is_checkout' );
+		remove_all_filters( 'woocommerce_is_cart' );
+		remove_all_filters( 'woocommerce_is_product' );
+		delete_option( 'woocommerce_checkout_page_id' );
+		delete_option( 'woocommerce_cart_page_id' );
+		$this->reset_cart_checkout_page_cache();
+		unset( $GLOBALS['post'], $GLOBALS['product'] );
+		wp_reset_postdata();
+		$this->go_to( home_url( '/' ) );
+	}
+
+	/**
+	 * Reset cached cart/checkout page checks between simulated requests.
+	 */
+	private function reset_cart_checkout_page_cache(): void {
+		if ( ! class_exists( \Automattic\WooCommerce\Blocks\Utils\CartCheckoutUtils::class ) ) {
+			return;
+		}
+
+		foreach ( array( 'is_cart_page', 'is_checkout_page' ) as $property_name ) {
+			$property = new \ReflectionProperty( \Automattic\WooCommerce\Blocks\Utils\CartCheckoutUtils::class, $property_name );
+			$property->setAccessible( true );
+			$property->setValue( null, null );
+		}
 	}
 
 	/**

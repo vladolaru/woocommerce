@@ -19,9 +19,18 @@ use WC_Unit_Test_Case;
 class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 
 	/**
+	 * Set up test fixtures.
+	 */
+	public function setUp(): void {
+		parent::setUp();
+		$this->reset_frontend_surface_state();
+	}
+
+	/**
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
+		$this->reset_frontend_surface_state();
 		remove_all_filters( 'wcpay_payment_fields_js_config' );
 		wp_dequeue_script( 'wc-woopayments-checkout' );
 		wp_deregister_script( 'wc-woopayments-checkout' );
@@ -33,6 +42,36 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		wp_deregister_script( 'wcpay-fraud-prevention-token' );
 		wp_set_current_user( 0 );
 		parent::tearDown();
+	}
+
+	/**
+	 * Reset shopper-surface globals that earlier broad-suite tests may leave behind.
+	 */
+	private function reset_frontend_surface_state(): void {
+		remove_all_filters( 'woocommerce_is_checkout' );
+		remove_all_filters( 'woocommerce_is_cart' );
+		remove_all_filters( 'woocommerce_is_product' );
+		delete_option( 'woocommerce_checkout_page_id' );
+		delete_option( 'woocommerce_cart_page_id' );
+		$this->reset_cart_checkout_page_cache();
+		unset( $GLOBALS['post'], $GLOBALS['product'] );
+		wp_reset_postdata();
+		$this->go_to( home_url( '/' ) );
+	}
+
+	/**
+	 * Reset cached cart/checkout page checks between simulated requests.
+	 */
+	private function reset_cart_checkout_page_cache(): void {
+		if ( ! class_exists( \Automattic\WooCommerce\Blocks\Utils\CartCheckoutUtils::class ) ) {
+			return;
+		}
+
+		foreach ( array( 'is_cart_page', 'is_checkout_page' ) as $property_name ) {
+			$property = new \ReflectionProperty( \Automattic\WooCommerce\Blocks\Utils\CartCheckoutUtils::class, $property_name );
+			$property->setAccessible( true );
+			$property->setValue( null, null );
+		}
 	}
 
 	/**
@@ -93,8 +132,17 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$this->assertArrayHasKey( 'woopaySessionNonce', $config );
 		$this->assertArrayHasKey( 'woopaySignatureNonce', $config );
 		$this->assertSame( array( 'encrypted' => 'minimum' ), $config['woopayMinimumSessionData'] );
+		$this->assertSame( 'There was a problem processing the payment. Please check your email inbox and refresh the page to try again.', $config['genericErrorMessage'] );
+		$this->assertSame( array(), $config['fraudServices'] );
+		$this->assertContains( 'products', $config['features'] );
+		$this->assertFalse( $config['isPreview'] );
+		$this->assertFalse( $config['isShortcodeCheckout'] );
+		$this->assertSame( '', $config['accountIdForIntentConfirmation'] );
+		$this->assertSame( '', $config['icon'] );
+		$this->assertFalse( $config['isExpressCheckoutInPaymentMethodsEnabled'] );
 		$this->assertTrue( $config['isWooPayEnabled'] );
 		$this->assertTrue( $config['isWoopayExpressCheckoutEnabled'] );
+		$this->assertTrue( $config['isWoopayFirstPartyAuthEnabled'] );
 		$this->assertTrue( $config['isWooPayEmailInputEnabled'] );
 		$this->assertFalse( $config['isWooPayDirectCheckoutEnabled'] );
 		$this->assertFalse( $config['isWooPayGlobalThemeSupportEnabled'] );
@@ -451,9 +499,9 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should omit encrypted WooPay payloads when WooPay is disabled.
+	 * @testdox Should preserve WooPay config shape when WooPay is disabled.
 	 */
-	public function test_get_payment_fields_js_config_omits_encrypted_woopay_payload_when_woopay_is_disabled(): void {
+	public function test_get_payment_fields_js_config_preserves_woopay_config_shape_when_woopay_is_disabled(): void {
 		$legacy_runtime  = $this->create_legacy_runtime_for_bridge();
 		$account_service = $this->create_account_service_for_bridge( true );
 		$legacy_runtime->method( 'get_gateway_prepared_customer_data' )->willReturn( array() );
@@ -465,11 +513,25 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 
 		$this->assertArrayHasKey( 'createSetupIntentNonce', $config );
 		$this->assertArrayHasKey( 'updateOrderStatusNonce', $config );
-		$this->assertArrayNotHasKey( 'initWooPayNonce', $config );
-		$this->assertArrayNotHasKey( 'woopaySessionNonce', $config );
-		$this->assertArrayNotHasKey( 'woopaySignatureNonce', $config );
-		$this->assertArrayNotHasKey( 'woopayMinimumSessionData', $config );
+		$this->assertArrayHasKey( 'initWooPayNonce', $config );
+		$this->assertArrayHasKey( 'woopaySessionNonce', $config );
+		$this->assertArrayHasKey( 'woopaySignatureNonce', $config );
+		$this->assertSame( '12345', $config['woopayMerchantId'] );
+		$this->assertSame( array(), $config['woopayMinimumSessionData'] );
+		$this->assertSame( 'There was a problem processing the payment. Please check your email inbox and refresh the page to try again.', $config['genericErrorMessage'] );
+		$this->assertSame( array(), $config['fraudServices'] );
+		$this->assertContains( 'products', $config['features'] );
+		$this->assertFalse( $config['isPreview'] );
+		$this->assertFalse( $config['isShortcodeCheckout'] );
+		$this->assertSame( '', $config['accountIdForIntentConfirmation'] );
+		$this->assertSame( '', $config['icon'] );
+		$this->assertFalse( $config['isExpressCheckoutInPaymentMethodsEnabled'] );
 		$this->assertFalse( $config['isWooPayEnabled'] );
+		$this->assertFalse( $config['isWoopayExpressCheckoutEnabled'] );
+		$this->assertFalse( $config['isWoopayFirstPartyAuthEnabled'] );
+		$this->assertFalse( $config['isWooPayEmailInputEnabled'] );
+		$this->assertFalse( $config['isWooPayDirectCheckoutEnabled'] );
+		$this->assertFalse( $config['isWooPayGlobalThemeSupportEnabled'] );
 	}
 
 	/**
@@ -630,9 +692,10 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$service->method( 'is_woopay_enabled' )->willReturn( $enabled );
 		$service->method( 'get_woopay_frontend_config' )->willReturn(
 			array(
-				'isWooPayEnabled'                   => true,
-				'isWoopayExpressCheckoutEnabled'    => true,
-				'isWooPayEmailInputEnabled'         => true,
+				'isWooPayEnabled'                   => $enabled,
+				'isWoopayExpressCheckoutEnabled'    => $enabled,
+				'isWoopayFirstPartyAuthEnabled'     => $enabled,
+				'isWooPayEmailInputEnabled'         => $enabled,
 				'isWooPayDirectCheckoutEnabled'     => false,
 				'isWooPayGlobalThemeSupportEnabled' => false,
 				'forceNetworkSavedCards'            => false,
@@ -643,7 +706,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 				'initWooPayNonce'                   => 'init-woopay-nonce',
 				'woopaySessionNonce'                => 'woopay-session-nonce',
 				'woopaySignatureNonce'              => 'woopay-signature-nonce',
-				'woopayMinimumSessionData'          => array( 'encrypted' => 'minimum' ),
+				'woopayMinimumSessionData'          => $enabled ? array( 'encrypted' => 'minimum' ) : array(),
 				'woopayButton'                      => array(
 					'type'    => 'default',
 					'theme'   => 'dark',

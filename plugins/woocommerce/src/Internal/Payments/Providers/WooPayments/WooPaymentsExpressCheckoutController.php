@@ -317,12 +317,16 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 			return 'pay_for_order';
 		}
 
-		if ( function_exists( 'is_cart' ) && is_cart() ) {
-			return 'cart';
-		}
-
 		if ( $this->is_product_surface() ) {
 			return 'product';
+		}
+
+		if ( $this->is_checkout_surface() ) {
+			return 'checkout';
+		}
+
+		if ( function_exists( 'is_cart' ) && is_cart() ) {
+			return 'cart';
 		}
 
 		return 'checkout';

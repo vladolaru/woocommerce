@@ -65,14 +65,14 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param int $order_id The order ID.
+	 * @param int|WC_Order $order_or_id The order or order ID.
 	 */
-	public function maybe_render_multibanco_payment_instructions( int $order_id ): void {
+	public function maybe_render_multibanco_payment_instructions( $order_or_id ): void {
 		if ( is_order_received_page() && 'woocommerce_order_details_before_order_table' === current_filter() ) {
 			return;
 		}
 
-		$order = wc_get_order( $order_id );
+		$order = $order_or_id instanceof WC_Order ? $order_or_id : wc_get_order( $order_or_id );
 		if (
 			! $order instanceof WC_Order
 			|| OrderPaymentStore::GATEWAY_ID_PREFIX . 'multibanco' !== $order->get_payment_method()

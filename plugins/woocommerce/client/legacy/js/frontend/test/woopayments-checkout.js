@@ -4,6 +4,7 @@
 
 describe( 'WooPayments checkout', () => {
 	let bodyEventHandlers;
+	let checkoutFormEventHandlers;
 	let elementsMock;
 	let mountPaymentElement;
 	let paymentElementOptions;
@@ -68,7 +69,12 @@ describe( 'WooPayments checkout', () => {
 					? checkoutFormFields[ name ]
 					: defaultResult;
 			} ),
-			on: jest.fn( () => checkoutFormResult ),
+			on: jest.fn( ( event, handler ) => {
+				event.split( ' ' ).forEach( ( eventName ) => {
+					checkoutFormEventHandlers[ eventName ] = handler;
+				} );
+				return checkoutFormResult;
+			} ),
 			appendTo: jest.fn( () => checkoutFormResult ),
 			trigger: jest.fn( () => checkoutFormResult ),
 			val: jest.fn(),
@@ -140,6 +146,7 @@ describe( 'WooPayments checkout', () => {
 	beforeEach( () => {
 		jest.resetModules();
 		bodyEventHandlers = {};
+		checkoutFormEventHandlers = {};
 		submitElements = jest.fn( () => Promise.resolve( {} ) );
 		mountPaymentElement = jest.fn();
 		paymentElementOptions = null;
@@ -308,27 +315,82 @@ describe( 'WooPayments checkout', () => {
 			'<div id="wcpay-core-payment-element"></div>' +
 			'<button id="place_order" type="button">Place order</button>' +
 			'</form>';
-		window.wcpay_core_checkout_config = {
-			...window.wcpay_core_checkout_config,
-			gatewayId: 'woocommerce_payments',
-			paymentMethodTypes: [ 'card' ],
-		};
-		window.wcpay_core_checkout_config_woocommerce_payments_klarna = {
-			...window.wcpay_core_checkout_config,
-			gatewayId: 'woocommerce_payments_klarna',
-			paymentMethodTypes: [ 'klarna' ],
-			paymentMethodsConfig: {
-				klarna: {
-					isReusable: false,
-				},
-			},
-		};
+			window.wcpay_core_checkout_config = Object.assign(
+				{},
+				window.wcpay_core_checkout_config,
+				{
+					gatewayId: 'woocommerce_payments',
+					paymentMethodTypes: [ 'card' ],
+				}
+			);
+			window.wcpay_core_checkout_config_woocommerce_payments_klarna =
+				Object.assign( {}, window.wcpay_core_checkout_config, {
+					gatewayId: 'woocommerce_payments_klarna',
+					paymentMethodTypes: [ 'klarna' ],
+					paymentMethodsConfig: {
+						klarna: {
+							isReusable: false,
+						},
+					},
+				} );
 
 		require( '../woopayments-checkout' );
 
 		expect( stripeElementsOptions ).toMatchObject( {
 			paymentMethodTypes: [ 'klarna' ],
 		} );
+	} );
+
+	test( 'mounts split gateway Stripe Elements into the selected gateway container', () => {
+		document.body.innerHTML =
+			'<form class="checkout">' +
+			'<ul class="payment_methods">' +
+			'<li class="wc_payment_method payment_method_woocommerce_payments">' +
+			'<input id="payment_method_woocommerce_payments" type="radio" name="payment_method" value="woocommerce_payments" />' +
+			'<div class="payment_box payment_method_woocommerce_payments">' +
+			'<div id="wcpay-core-payment-element" data-gateway-marker="card"></div>' +
+			'</div>' +
+			'</li>' +
+			'<li class="wc_payment_method payment_method_woocommerce_payments_sepa_debit">' +
+			'<input id="payment_method_woocommerce_payments_sepa_debit" type="radio" ' +
+			'name="payment_method" value="woocommerce_payments_sepa_debit" checked />' +
+			'<div class="payment_box payment_method_woocommerce_payments_sepa_debit">' +
+			'<div id="wcpay-core-payment-element" data-gateway-marker="sepa"></div>' +
+			'</div>' +
+			'</li>' +
+			'</ul>' +
+			'<button id="place_order" type="button">Place order</button>' +
+			'</form>';
+		window.wcpay_core_checkout_config = Object.assign(
+			{},
+			window.wcpay_core_checkout_config,
+			{
+				gatewayId: 'woocommerce_payments',
+				paymentMethodTypes: [ 'card' ],
+			}
+		);
+		window.wcpay_core_checkout_config_woocommerce_payments_sepa_debit =
+			Object.assign( {}, window.wcpay_core_checkout_config, {
+				gatewayId: 'woocommerce_payments_sepa_debit',
+				paymentMethodTypes: [ 'sepa_debit' ],
+				paymentMethodsConfig: {
+					sepa_debit: {
+						isReusable: false,
+					},
+				},
+			} );
+
+		const selectedContainer = document
+			.getElementById( 'payment_method_woocommerce_payments_sepa_debit' )
+			.closest( 'li' )
+			.querySelector( '#wcpay-core-payment-element' );
+
+		require( '../woopayments-checkout' );
+
+		expect( stripeElementsOptions ).toMatchObject( {
+			paymentMethodTypes: [ 'sepa_debit' ],
+		} );
+		expect( mountPaymentElement ).toHaveBeenCalledWith( selectedContainer );
 	} );
 
 	test( 'initializes classic Stripe Elements with cached appearance and font rules', () => {
@@ -592,7 +654,7 @@ describe( 'WooPayments checkout', () => {
 		require( '../woopayments-checkout' );
 
 		expect(
-			bodyEventHandlers.checkout_place_order_woocommerce_payments()
+			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
 		).toBe( false );
 
 		await flushPromises();
@@ -606,13 +668,107 @@ describe( 'WooPayments checkout', () => {
 		);
 	} );
 
+	test( 'intercepts the WooCommerce form checkout event before creating a payment method', async () => {
+		require( '../woopayments-checkout' );
+
+		expect(
+			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments
+		).toBeDefined();
+		expect(
+			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
+		).toBe( false );
+
+		await flushPromises();
+
+		expect( stripeMock.createPaymentMethod ).toHaveBeenCalledWith( {
+			elements: elementsMock,
+		} );
+		expect(
+			global.jQuery.checkoutFormFields[ 'wcpay-payment-method' ].value
+		).toBe( 'pm_native' );
+	} );
+
+	test( 'passes checkout billing details when creating a payment method', async () => {
+		document
+			.querySelector( 'form.checkout' )
+			.insertAdjacentHTML(
+				'afterbegin',
+				'<input id="billing_first_name" value="Saved" />' +
+					'<input id="billing_last_name" value="Target" />' +
+					'<input id="billing_email" value="sc04-target@example.test" />' +
+					'<input id="billing_phone" value="4155551234" />' +
+					'<input id="billing_city" value="San Francisco" />' +
+					'<input id="billing_country" value="US" />' +
+					'<input id="billing_address_1" value="123 Main St" />' +
+					'<input id="billing_address_2" value="Suite 4" />' +
+					'<input id="billing_postcode" value=" 94103 " />' +
+					'<input id="billing_state" value="CA" />'
+			);
+		require( '../woopayments-checkout' );
+
+		expect(
+			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
+		).toBe( false );
+
+		await flushPromises();
+
+		expect( stripeMock.createPaymentMethod ).toHaveBeenCalledWith( {
+			elements: elementsMock,
+			params: {
+				billing_details: {
+					name: 'Saved Target',
+					email: 'sc04-target@example.test',
+					phone: '4155551234',
+					address: {
+						city: 'San Francisco',
+						country: 'US',
+						line1: '123 Main St',
+						line2: 'Suite 4',
+						postal_code: '94103',
+						state: 'CA',
+					},
+				},
+			},
+		} );
+	} );
+
+	test( 'passes empty billing state when checkout has no state value', async () => {
+		document
+			.querySelector( 'form.checkout' )
+			.insertAdjacentHTML(
+				'afterbegin',
+				'<input id="billing_first_name" value="Lpm" />' +
+					'<input id="billing_last_name" value="Checkout" />' +
+					'<input id="billing_email" value="lpm-sepa@example.test" />' +
+					'<input id="billing_phone" value="+15555550123" />' +
+					'<input id="billing_city" value="Amsterdam" />' +
+					'<input id="billing_country" value="NL" />' +
+					'<input id="billing_address_1" value="Damrak 1" />' +
+					'<input id="billing_address_2" value="" />' +
+					'<input id="billing_postcode" value="1012LG" />' +
+					'<input id="billing_state" value="" />'
+			);
+		require( '../woopayments-checkout' );
+
+		expect(
+			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
+		).toBe( false );
+
+		await flushPromises();
+
+		expect(
+			stripeMock.createPaymentMethod.mock.calls[ 0 ][ 0 ].params
+				.billing_details.address.state
+		).toBe( '' );
+	} );
+
 	test( 'adds the fraud-prevention token before submitting a new-card classic checkout', async () => {
 		window.wcpay_core_checkout_config.fraudPreventionToken =
 			'fraud-token-123';
 		require( '../woopayments-checkout' );
 
 		expect(
-			bodyEventHandlers.checkout_place_order_woocommerce_payments()
+			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
 		).toBe( false );
 
 		await flushPromises();
@@ -636,7 +792,7 @@ describe( 'WooPayments checkout', () => {
 		require( '../woopayments-checkout' );
 
 		expect(
-			bodyEventHandlers.checkout_place_order_woocommerce_payments()
+			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
 		).toBe( true );
 
 		await flushPromises();
@@ -660,7 +816,7 @@ describe( 'WooPayments checkout', () => {
 		require( '../woopayments-checkout' );
 
 		expect(
-			bodyEventHandlers.checkout_place_order_woocommerce_payments()
+			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
 		).toBe( true );
 
 		expect(

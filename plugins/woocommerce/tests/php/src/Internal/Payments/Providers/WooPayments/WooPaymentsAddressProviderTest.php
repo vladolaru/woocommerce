@@ -48,6 +48,7 @@ class WooPaymentsAddressProviderTest extends WC_Unit_Test_Case {
 		$native_provider = $this->create_provider( true, true, true, false, false );
 		$native_provider->register();
 
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test assertion for registered address-provider callbacks.
 		$providers = apply_filters( 'woocommerce_address_providers', array() );
 
 		$this->assertSame( 10, has_filter( 'woocommerce_address_providers', array( $native_provider, 'add_address_provider' ) ) );
@@ -71,6 +72,7 @@ class WooPaymentsAddressProviderTest extends WC_Unit_Test_Case {
 		$provider = $this->create_provider( true, $gateway_enabled, true, $account_rejected, $account_under_review );
 		$provider->register();
 
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test assertion for registered address-provider callbacks.
 		$this->assertSame( array(), apply_filters( 'woocommerce_address_providers', array() ), $message );
 	}
 

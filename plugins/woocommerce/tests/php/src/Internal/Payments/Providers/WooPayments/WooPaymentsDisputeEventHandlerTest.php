@@ -120,4 +120,27 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 
 		$this->assertStringContainsString( $amount, $note, 'The pre-formatted price HTML must be preserved without double-escaping.' );
 	}
+
+	/**
+	 * @testdox Should include an explicit currency code in dispute amounts when multiple currencies are enabled.
+	 */
+	public function test_formatted_dispute_amount_includes_currency_code_when_multiple_currencies_are_enabled(): void {
+		$previous_store_currency     = get_option( 'woocommerce_currency' );
+		$previous_enabled_currencies = get_option( 'wcpay_multi_currency_enabled_currencies' );
+
+		try {
+			update_option( 'woocommerce_currency', 'USD' );
+			update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP', 'EUR' ) );
+
+			$order = wc_create_order();
+			$order->set_currency( 'USD' );
+
+			$amount = $this->invoke_private( 'get_formatted_dispute_amount', array( $order, 5000 ) );
+
+			$this->assertStringContainsString( '$50.00 USD', wp_strip_all_tags( html_entity_decode( $amount ) ), 'Dispute amounts should match the extension explicit-currency note format.' );
+		} finally {
+			update_option( 'woocommerce_currency', $previous_store_currency );
+			update_option( 'wcpay_multi_currency_enabled_currencies', $previous_enabled_currencies );
+		}
+	}
 }

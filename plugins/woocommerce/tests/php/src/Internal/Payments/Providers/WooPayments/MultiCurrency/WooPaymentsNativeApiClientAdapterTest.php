@@ -38,9 +38,10 @@ class WooPaymentsNativeApiClientAdapterTest extends WC_Unit_Test_Case {
 	}
 }
 
-/**
- * Recording native API-client test double.
- */
+	// phpcs:disable Generic.Files.OneObjectStructurePerFile.MultipleFound, Squiz.Classes.ClassFileName.NoMatch, SlevomatCodingStandard.Files.TypeNameMatchesFileName.NoMatchBetweenTypeNameAndFileName -- Test doubles live next to the tests they support.
+	/**
+	 * Recording native API-client test double.
+	 */
 class RecordingNativeApiClient extends WooPaymentsApiClient {
 
 	/**
@@ -106,9 +107,9 @@ class RecordingNativeApiClient extends WooPaymentsApiClient {
 	}
 }
 
-/**
- * Throwing native API-client test double.
- */
+	/**
+	 * Throwing native API-client test double.
+	 */
 class ThrowingNativeApiClient extends WooPaymentsApiClient {
 
 	/**
@@ -120,6 +121,7 @@ class ThrowingNativeApiClient extends WooPaymentsApiClient {
 		throw new \RuntimeException( 'API failed' );
 	}
 
+	// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- This test double always throws.
 	/**
 	 * Throw when fetching rates.
 	 *
@@ -133,4 +135,6 @@ class ThrowingNativeApiClient extends WooPaymentsApiClient {
 
 		throw new \RuntimeException( 'API failed' );
 	}
+	// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
 }
+	// phpcs:enable Generic.Files.OneObjectStructurePerFile.MultipleFound, Squiz.Classes.ClassFileName.NoMatch, SlevomatCodingStandard.Files.TypeNameMatchesFileName.NoMatchBetweenTypeNameAndFileName

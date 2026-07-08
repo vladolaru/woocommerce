@@ -740,10 +740,10 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			return 'product';
 		}
 
-		if ( function_exists( 'is_cart' ) && is_cart() ) {
-			return 'cart';
+		if ( function_exists( 'is_checkout' ) && is_checkout() ) {
+			return 'checkout';
 		}
 
-		return 'checkout';
+		return function_exists( 'is_cart' ) && is_cart() ? 'cart' : 'checkout';
 	}
 }

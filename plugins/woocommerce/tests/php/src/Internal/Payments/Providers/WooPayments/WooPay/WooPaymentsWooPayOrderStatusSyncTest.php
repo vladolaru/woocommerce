@@ -83,8 +83,8 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 
 		$this->with_plugin_topic_filters(
 			function (): void {
-				$webhook                 = $this->create_plugin_created_webhook( 'https://pay.woo.com/wp-json/platform-checkout/v1/merchant-notification' );
-				$this->webhook_ids[]     = $webhook->get_id();
+				$webhook             = $this->create_plugin_created_webhook( 'https://pay.woo.com/wp-json/platform-checkout/v1/merchant-notification' );
+				$this->webhook_ids[] = $webhook->get_id();
 				$this->assertSame( 'order.status_changed', $webhook->get_topic() );
 				$this->assertNotSame( 0, $webhook->get_id() );
 			}
@@ -98,7 +98,7 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		$this->assertTrue( wc_is_webhook_valid_topic( 'order.status_changed' ) );
 		$this->assertContains(
 			'wcpay_webhook_platform_checkout_order_status_changed',
-			WC_Webhook::get_default_topic_hooks()[ 'order.status_changed' ]
+			WC_Webhook::get_default_topic_hooks()['order.status_changed']
 		);
 
 		$webhook = new WC_Webhook( $this->webhook_ids[0] );
@@ -146,7 +146,7 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		$sync = $this->create_sync( true );
 		$sync->register();
 
-		$woopay_webhook             = $this->create_plugin_created_webhook( 'https://pay.woo.com/wp-json/platform-checkout/v1/merchant-notification' );
+		$woopay_webhook            = $this->create_plugin_created_webhook( 'https://pay.woo.com/wp-json/platform-checkout/v1/merchant-notification' );
 		$this->webhook_ids[]       = $woopay_webhook->get_id();
 		$non_woopay_webhook        = $this->create_plugin_created_webhook( 'https://example.com/webhook' );
 		$this->webhook_ids[]       = $non_woopay_webhook->get_id();

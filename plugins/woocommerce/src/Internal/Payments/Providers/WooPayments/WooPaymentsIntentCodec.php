@@ -7,10 +7,12 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use WC_Order;
 use WP_Error;
 
@@ -56,7 +58,7 @@ class WooPaymentsIntentCodec {
 			'currency'             => strtolower( (string) $order->get_currency() ),
 			'customer'             => $customer_id,
 			'metadata'             => self::metadata_from_order( $order, $payment_type, $subscription_payment ),
-			'payment_method_types' => self::payment_method_types_for_request( $provider_data, (string) $order->get_currency(), $account_service ),
+			'payment_method_types' => self::payment_method_types_for_request( $context, (string) $order->get_currency(), $account_service ),
 		);
 
 		if ( self::is_confirmation_token( $payment_credential ) ) {
@@ -111,7 +113,7 @@ class WooPaymentsIntentCodec {
 		$request_data         = array(
 			'customer'             => $customer_id,
 			'metadata'             => self::metadata_from_order( $context->get_order(), $payment_type, $subscription_payment ),
-			'payment_method_types' => self::payment_method_types_for_request( $context->get_provider_data(), (string) $context->get_order()->get_currency(), $account_service ),
+			'payment_method_types' => self::payment_method_types_for_request( $context, (string) $context->get_order()->get_currency(), $account_service ),
 		);
 
 		if ( ! self::is_confirmation_token( $payment_credential ) ) {
@@ -739,12 +741,13 @@ class WooPaymentsIntentCodec {
 	/**
 	 * Get Stripe payment method types for a native WooPayments request.
 	 *
-	 * @param array<string,mixed>       $provider_data   WooPayments provider data.
+	 * @param PaymentContext            $context         Payment context.
 	 * @param string                    $currency        Order currency.
 	 * @param WooPaymentsAccountService $account_service WooPayments account service.
 	 * @return array<int,string>
 	 */
-	private static function payment_method_types_for_request( array $provider_data, string $currency, WooPaymentsAccountService $account_service ): array {
+	private static function payment_method_types_for_request( PaymentContext $context, string $currency, WooPaymentsAccountService $account_service ): array {
+		$provider_data             = $context->get_provider_data();
 		$saved_payment_method_type = isset( $provider_data[ self::PROVIDER_DATA_SAVED_PAYMENT_METHOD_TYPE ] ) && is_scalar( $provider_data[ self::PROVIDER_DATA_SAVED_PAYMENT_METHOD_TYPE ] )
 			? (string) $provider_data[ self::PROVIDER_DATA_SAVED_PAYMENT_METHOD_TYPE ]
 			: '';
@@ -753,14 +756,36 @@ class WooPaymentsIntentCodec {
 			return array( $saved_payment_method_type );
 		}
 
+		$split_gateway_payment_method_type = self::payment_method_type_from_gateway_id( $context->get_gateway_id() );
+		if ( '' !== $split_gateway_payment_method_type ) {
+			return array( $split_gateway_payment_method_type );
+		}
+
 		$submitted_types = $provider_data[ WooPaymentsExpressPaymentMethodTypes::PROVIDER_DATA_KEY ] ?? array();
-		$context         = isset( $provider_data[ WooPaymentsExpressPaymentMethodTypes::PROVIDER_CONTEXT_KEY ] ) && is_scalar( $provider_data[ WooPaymentsExpressPaymentMethodTypes::PROVIDER_CONTEXT_KEY ] )
+		$express_context = isset( $provider_data[ WooPaymentsExpressPaymentMethodTypes::PROVIDER_CONTEXT_KEY ] ) && is_scalar( $provider_data[ WooPaymentsExpressPaymentMethodTypes::PROVIDER_CONTEXT_KEY ] )
 			? (string) $provider_data[ WooPaymentsExpressPaymentMethodTypes::PROVIDER_CONTEXT_KEY ]
 			: 'checkout';
-		$allowed_types   = WooPaymentsExpressPaymentMethodTypes::get_allowed_payment_method_types_for_account( $account_service, $context, $currency );
+		$allowed_types   = WooPaymentsExpressPaymentMethodTypes::get_allowed_payment_method_types_for_account( $account_service, $express_context, $currency );
 		$validated_types = WooPaymentsExpressPaymentMethodTypes::validate_submitted_payment_method_types( $submitted_types, $allowed_types );
 
 		return empty( $validated_types ) ? array( WooPaymentsExpressPaymentMethodTypes::STRIPE_TYPE_CARD ) : $validated_types;
+	}
+
+	/**
+	 * Get the Stripe payment method type represented by a split WooPayments gateway ID.
+	 *
+	 * @param string $gateway_id Gateway ID.
+	 * @return string
+	 */
+	private static function payment_method_type_from_gateway_id( string $gateway_id ): string {
+		if ( 0 !== strpos( $gateway_id, OrderPaymentStore::GATEWAY_ID_PREFIX ) ) {
+			return '';
+		}
+
+		$payment_method_id = substr( $gateway_id, strlen( OrderPaymentStore::GATEWAY_ID_PREFIX ) );
+		$definition        = ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method_id );
+
+		return null === $definition ? '' : $definition->get_stripe_payment_method_type();
 	}
 
 	/**

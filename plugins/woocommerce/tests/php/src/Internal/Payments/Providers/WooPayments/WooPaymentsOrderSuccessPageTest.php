@@ -74,6 +74,22 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should render Multibanco instructions when the hook passes an order object.
+	 */
+	public function test_renders_multibanco_voucher_instructions_when_hook_passes_order_object(): void {
+		$page  = $this->create_page( true );
+		$order = $this->create_multibanco_order();
+
+		$output = $this->render_multibanco_instructions_from_hook_payload( $page, $order );
+
+		$this->assertStringContainsString(
+			'wc-payment-gateway-multibanco-instructions-container',
+			$output,
+			'Order details hooks pass a WC_Order object and should not fatal.'
+		);
+	}
+
+	/**
 	 * @testdox Should not render Multibanco instructions for non-Multibanco orders.
 	 */
 	public function test_does_not_render_multibanco_instructions_for_non_multibanco_orders(): void {
@@ -139,6 +155,19 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	private function render_multibanco_instructions( WooPaymentsOrderSuccessPage $page, WC_Order $order ): string {
 		ob_start();
 		$page->maybe_render_multibanco_payment_instructions( $order->get_id() );
+		return (string) ob_get_clean();
+	}
+
+	/**
+	 * Render Multibanco instructions for a hook payload.
+	 *
+	 * @param WooPaymentsOrderSuccessPage $page  Order-success page controller.
+	 * @param WC_Order                    $order Order passed by the hook.
+	 * @return string
+	 */
+	private function render_multibanco_instructions_from_hook_payload( WooPaymentsOrderSuccessPage $page, WC_Order $order ): string {
+		ob_start();
+		$page->maybe_render_multibanco_payment_instructions( $order );
 		return (string) ob_get_clean();
 	}
 }

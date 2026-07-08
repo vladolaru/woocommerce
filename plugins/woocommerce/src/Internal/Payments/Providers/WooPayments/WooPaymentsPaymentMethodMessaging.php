@@ -228,6 +228,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 		$country            = $this->get_customer_or_store_country();
 		$product_variations = array();
 		$product_price      = 0;
+		$is_product_surface = $product instanceof WC_Product || ( function_exists( 'is_product' ) && is_product() );
 
 		if ( $product instanceof WC_Product ) {
 			$product_variations = $this->get_product_variations( $product, $currency_code );
@@ -245,7 +246,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 			'publishableKey'       => $this->account_service->get_publishable_key(),
 			'paymentMethods'       => array_values( $payment_methods ),
 			'currencyCode'         => $currency_code,
-			'isCart'               => (bool) ( function_exists( 'is_cart' ) && is_cart() ),
+			'isCart'               => (bool) ( ! $is_product_surface && function_exists( 'is_cart' ) && is_cart() ),
 			'isCartBlock'          => $is_cart_block,
 			'cartTotal'            => $this->get_cart_total(),
 			'nonce'                => array(

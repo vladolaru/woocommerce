@@ -13,10 +13,10 @@
 	var paymentElement = null;
 	var paymentElementGatewayId = null;
 	var paymentElementContainer = null;
-		var isSubmittingWithPaymentMethod = false;
-		var isSubmittingWithSetupIntent = false;
-		var cardBrandIconsHydratedLabel = null;
-		var cardBrandIconsHydrationCleanup = null;
+	var isSubmittingWithPaymentMethod = false;
+	var isSubmittingWithSetupIntent = false;
+	var cardBrandIconsHydratedLabel = null;
+	var cardBrandIconsHydrationCleanup = null;
 	var classicCheckoutAppearanceLocation = 'classic_checkout';
 	var classicInputStyleProps = [
 		'backgroundColor',
@@ -67,6 +67,18 @@
 		'#order_review',
 		'form.checkout',
 		'body',
+	];
+	var checkoutBillingFieldIds = [
+		'billing_first_name',
+		'billing_last_name',
+		'billing_email',
+		'billing_phone',
+		'billing_city',
+		'billing_country',
+		'billing_address_1',
+		'billing_address_2',
+		'billing_postcode',
+		'billing_state',
 	];
 	var copyTestNumberSuccessDuration = 2000;
 
@@ -152,6 +164,24 @@
 				'[value="' + gatewayId + '"]'
 			).length === 1
 		);
+	}
+
+	function getPaymentMethodInput( paymentGatewayId ) {
+		return Array.prototype.slice
+			.call( document.querySelectorAll( 'input[name="payment_method"]' ) )
+			.find( function ( input ) {
+				return input.value === paymentGatewayId;
+			} );
+	}
+
+	function getGatewayPaymentContainer( paymentGatewayId ) {
+		var input = getPaymentMethodInput( paymentGatewayId );
+		var gatewayElement = input && input.closest ? input.closest( 'li' ) : null;
+		var container =
+			gatewayElement &&
+			gatewayElement.querySelector( '#wcpay-core-payment-element' );
+
+		return container || document.getElementById( 'wcpay-core-payment-element' );
 	}
 
 	function setError( message ) {
@@ -291,6 +321,41 @@
 		);
 
 		return !! newPaymentTokenInput && ! newPaymentTokenInput.checked;
+	}
+
+	function getInputValue( id ) {
+		var input = document.getElementById( id );
+		return input && typeof input.value === 'string' ? input.value : '';
+	}
+
+	function hasCheckoutBillingFields() {
+		return checkoutBillingFieldIds.some( function ( id ) {
+			return !! document.getElementById( id );
+		} );
+	}
+
+	function getCheckoutBillingDetails() {
+		var firstName = getInputValue( 'billing_first_name' );
+		var lastName = getInputValue( 'billing_last_name' );
+		var postalCode = getInputValue( 'billing_postcode' ).trim();
+
+		if ( ! hasCheckoutBillingFields() ) {
+			return null;
+		}
+
+		return {
+			name: ( firstName + ' ' + lastName ).trim(),
+			email: getInputValue( 'billing_email' ),
+			phone: getInputValue( 'billing_phone' ),
+			address: {
+				city: getInputValue( 'billing_city' ),
+				country: getInputValue( 'billing_country' ),
+				line1: getInputValue( 'billing_address_1' ),
+				line2: getInputValue( 'billing_address_2' ),
+				postal_code: postalCode,
+				state: getInputValue( 'billing_state' ),
+			},
+		};
 	}
 
 	function getStripePaymentElementOptions() {
@@ -1011,15 +1076,24 @@
 
 	function createPaymentMethod() {
 		return submitElements().then( function () {
-			return stripe.createPaymentMethod( {
+			var billingDetails = getCheckoutBillingDetails();
+			var request = {
 				elements: elements,
-			} );
+			};
+
+			if ( billingDetails ) {
+				request.params = {
+					billing_details: billingDetails,
+				};
+			}
+
+			return stripe.createPaymentMethod( request );
 		} );
 	}
 
 	function initializeStripeElement() {
-		var container = document.getElementById( 'wcpay-core-payment-element' );
 		setCurrentGatewayConfig();
+		var container = getGatewayPaymentContainer( gatewayId );
 		hydrateCardBrandIcons();
 		if (
 			! container ||
@@ -1331,7 +1405,7 @@
 	} );
 
 	getKnownGatewayIds().forEach( function ( paymentGatewayId ) {
-		$( document.body ).on(
+		$( 'form.checkout' ).on(
 			'checkout_place_order_' + paymentGatewayId,
 			function () {
 				setCurrentGatewayConfig( paymentGatewayId );

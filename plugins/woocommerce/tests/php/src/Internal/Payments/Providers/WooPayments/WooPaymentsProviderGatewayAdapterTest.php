@@ -1073,6 +1073,78 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Charge should derive split gateway payment method types from the selected gateway ID.
+	 */
+	public function test_charge_derives_split_gateway_payment_method_type_from_gateway_id(): void {
+		$order = $this->create_woopayments_order( '50.00' );
+		$order->set_currency( 'EUR' );
+		$order->save();
+
+		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
+		$api_client       = new class() extends WooPaymentsApiClient {
+			/**
+			 * Last request data.
+			 *
+			 * @var array<string,mixed>
+			 */
+			public array $last_request_data = array();
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Create and confirm a payment intention.
+			 *
+			 * @param array<string,mixed> $request_data Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
+				unset( $idempotency_key );
+				$this->last_request_data = $request_data;
+
+				return array(
+					'id'             => 'pi_sepa',
+					'status'         => 'succeeded',
+					'client_secret'  => 'secret_sepa',
+					'customer'       => 'cus_native',
+					'payment_method' => 'pm_sepa',
+					'currency'       => 'eur',
+					'charges'        => array(
+						'total_count' => 0,
+						'data'        => array(),
+					),
+				);
+			}
+		};
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+		$customer_service->expects( $this->once() )
+			->method( 'get_or_create_customer_id_for_order' )
+			->willReturn( 'cus_native' );
+
+		$sut = $this->create_adapter( $gateway, $api_client, $customer_service );
+		$sut->charge(
+			PaymentContext::for_checkout(
+				$order,
+				OrderPaymentStore::GATEWAY_ID_PREFIX . 'sepa_debit',
+				'pm_sepa'
+			),
+			'key_charge'
+		);
+
+		$this->assertSame( array( 'sepa_debit' ), $api_client->last_request_data['payment_method_types'] );
+	}
+
+	/**
 	 * @testdox Charge should validate express checkout method types against the order currency.
 	 */
 	public function test_charge_validates_express_payment_method_types_against_order_currency(): void {

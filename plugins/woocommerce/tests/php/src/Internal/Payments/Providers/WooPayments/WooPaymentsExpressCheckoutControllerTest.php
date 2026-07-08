@@ -21,6 +21,14 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	private $sut;
 
 	/**
+	 * Set up test fixtures.
+	 */
+	public function setUp(): void {
+		parent::setUp();
+		$this->reset_frontend_surface_state();
+	}
+
+	/**
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
@@ -31,7 +39,9 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 			remove_filter( 'wcpay_tracks_event_properties', array( $this->sut, 'add_tracking_event_properties' ) );
 		}
 
+		$this->reset_frontend_surface_state();
 		delete_option( 'woocommerce_checkout_page_id' );
+		delete_option( 'woocommerce_cart_page_id' );
 		remove_all_filters( 'woocommerce_is_checkout' );
 		remove_all_filters( 'woocommerce_is_cart' );
 		remove_all_filters( 'woocommerce_is_product' );
@@ -340,9 +350,8 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	 * Set the current request to a classic checkout shortcode page.
 	 */
 	private function set_checkout_shortcode_page(): void {
-		remove_all_filters( 'woocommerce_is_checkout' );
-		remove_all_filters( 'woocommerce_is_cart' );
-		remove_all_filters( 'woocommerce_is_product' );
+		$this->reset_frontend_surface_state();
+		delete_option( 'woocommerce_cart_page_id' );
 
 		update_option( 'woocommerce_checkout_page_id', $this->set_current_page_with_content( '[woocommerce_checkout]' ) );
 	}
@@ -351,9 +360,8 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	 * Set the current request to a product page.
 	 */
 	private function set_current_product(): void {
-		remove_all_filters( 'woocommerce_is_checkout' );
-		remove_all_filters( 'woocommerce_is_cart' );
-		remove_all_filters( 'woocommerce_is_product' );
+		$this->reset_frontend_surface_state();
+		delete_option( 'woocommerce_cart_page_id' );
 
 		$product = \WC_Helper_Product::create_simple_product( true );
 		global $post;
@@ -362,6 +370,37 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 		$this->go_to( get_permalink( $product->get_id() ) );
 		setup_postdata( $post );
 		add_filter( 'woocommerce_is_product', '__return_true' );
+	}
+
+	/**
+	 * Reset shopper-surface globals that earlier broad-suite tests may leave behind.
+	 */
+	private function reset_frontend_surface_state(): void {
+		remove_all_filters( 'woocommerce_is_checkout' );
+		remove_all_filters( 'woocommerce_is_cart' );
+		remove_all_filters( 'woocommerce_is_product' );
+		delete_option( 'woocommerce_checkout_page_id' );
+		delete_option( 'woocommerce_cart_page_id' );
+		$this->reset_cart_checkout_page_cache();
+		unset( $GLOBALS['post'], $GLOBALS['product'] );
+		wp_reset_postdata();
+		$this->set_order_pay_query_var( 0 );
+		$this->go_to( home_url( '/' ) );
+	}
+
+	/**
+	 * Reset cached cart/checkout page checks between simulated requests.
+	 */
+	private function reset_cart_checkout_page_cache(): void {
+		if ( ! class_exists( \Automattic\WooCommerce\Blocks\Utils\CartCheckoutUtils::class ) ) {
+			return;
+		}
+
+		foreach ( array( 'is_cart_page', 'is_checkout_page' ) as $property_name ) {
+			$property = new \ReflectionProperty( \Automattic\WooCommerce\Blocks\Utils\CartCheckoutUtils::class, $property_name );
+			$property->setAccessible( true );
+			$property->setValue( null, null );
+		}
 	}
 
 	/**

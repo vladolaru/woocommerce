@@ -100,7 +100,7 @@ class WooPaymentsCustomersRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Customer payment methods route fans out over enabled payment method types and returns plugin-compatible items.
 	 */
 	public function test_route_returns_payment_methods_for_enabled_types(): void {
-		$this->account_service->gateway_settings = array(
+		$this->account_service->gateway_settings         = array(
 			'upe_enabled_payment_method_ids' => array( 'card', 'sepa_debit', 'link' ),
 		);
 		$this->customer_service->payment_methods_by_type = array(
@@ -252,7 +252,7 @@ class WooPaymentsCustomersRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->account_service->gateway_settings = array(
 			'upe_enabled_payment_method_ids' => array( 'card' ),
 		);
-		$this->customer_service->exception = new WooPaymentsApiException( 'Forbidden <b>secret</b>.', 'wcpay_forbidden', 403 );
+		$this->customer_service->exception       = new WooPaymentsApiException( 'Forbidden <b>secret</b>.', 'wcpay_forbidden', 403 );
 		$this->sut->register_routes();
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/customers/cus_test/payment_methods' ) );

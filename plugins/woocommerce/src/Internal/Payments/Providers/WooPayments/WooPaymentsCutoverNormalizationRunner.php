@@ -506,17 +506,18 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 		global $wpdb;
 
 		$deleted_transient = delete_transient( 'wcpay_bnpl_april15_successful_purchases_count' );
-		$deleted_meta      = $wpdb->delete(
-			$wpdb->usermeta,
-			array(
-				'meta_key' => '_wcpay_bnpl_april15_viewed',
-			),
-			array(
-				'%s',
-			)
-		);
+			$deleted_meta  = $wpdb->delete(
+				$wpdb->usermeta,
+				array(
+					// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- Intentional cleanup of a known legacy WooPayments user meta key.
+					'meta_key' => '_wcpay_bnpl_april15_viewed',
+				),
+				array(
+					'%s',
+				)
+			);
 
-		return $deleted_transient || false !== $deleted_meta && $deleted_meta > 0;
+			return $deleted_transient || ( false !== $deleted_meta && $deleted_meta > 0 );
 	}
 
 	/**
