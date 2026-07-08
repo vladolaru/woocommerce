@@ -37,6 +37,40 @@ def run_runner(
     )
 
 
+def write_agent_result(
+    results_dir: Path,
+    flow: str,
+    store: str,
+    verdict: str,
+) -> Path:
+    results_dir.mkdir(parents=True, exist_ok=True)
+    path = results_dir / f"{flow}.json"
+    path.write_text(
+        json.dumps(
+            {
+                "flow": flow,
+                "store_results": [
+                    {
+                        "store": store,
+                        "verdict": verdict,
+                        "end_state": "order paid",
+                        "ux_observations": ["expected controls were usable"],
+                        "visual_diffs": [],
+                        "evidence_paths": [f"evidence/{flow}/{store}.png"],
+                    }
+                ],
+                "parity_verdict": verdict,
+                "regression_note": "",
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
 def test_card_checkout_flow_passes_with_clean_exercised_order() -> None:
     with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
         evidence_dir = Path(tmp)
@@ -214,6 +248,128 @@ def test_full_layer_blocks_when_agent_specs_are_only_queued() -> None:
         assert rollup["summary"]["blocked"] == 1
 
 
+def test_agent_layer_accepts_completed_agent_result() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
+        evidence_dir = Path(tmp)
+        agent_results_dir = evidence_dir / "agent-results"
+        result_path = write_agent_result(
+            agent_results_dir,
+            "SC-14-lpm-wave-1-checkout",
+            "target",
+            "PASS",
+        )
+
+        result = run_runner(
+            "--store",
+            "target",
+            "--layer",
+            "agent",
+            "--flow",
+            "SC-14",
+            evidence_dir=evidence_dir,
+            extra_env={"AGENT_RESULTS_DIR": str(agent_results_dir)},
+        )
+
+        assert result.returncode == 0
+        assert "agent result accepted" in result.stdout
+        assert "queued 0 agent-driven flow specs" in result.stdout
+
+        rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
+        assert rollup["status"] == "pass"
+        assert rollup["summary"]["passed"] == 1
+        assert rollup["summary"]["failed"] == 0
+        assert rollup["summary"]["blocked"] == 0
+        assert rollup["summary"]["queued_agent_specs"] == 0
+        assert rollup["results"] == [
+            {
+                "flow": "SC-14-lpm-wave-1-checkout",
+                "layer": "agent",
+                "store": "target",
+                "status": "PASS",
+                "exit_code": 0,
+                "agent_verdict": "PASS",
+                "evidence_path": str(result_path),
+            }
+        ]
+
+
+def test_agent_layer_fails_on_functional_agent_result() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
+        evidence_dir = Path(tmp)
+        agent_results_dir = evidence_dir / "agent-results"
+        result_path = write_agent_result(
+            agent_results_dir,
+            "SC-14-lpm-wave-1-checkout",
+            "target",
+            "FAIL - functional",
+        )
+
+        result = run_runner(
+            "--store",
+            "target",
+            "--layer",
+            "agent",
+            "--flow",
+            "SC-14",
+            evidence_dir=evidence_dir,
+            extra_env={"AGENT_RESULTS_DIR": str(agent_results_dir)},
+        )
+
+        assert result.returncode == 1
+        assert "agent verdict: FAIL - functional" in result.stdout
+
+        rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
+        assert rollup["status"] == "fail"
+        assert rollup["summary"]["passed"] == 0
+        assert rollup["summary"]["failed"] == 1
+        assert rollup["summary"]["blocked"] == 0
+        assert rollup["summary"]["queued_agent_specs"] == 0
+        assert rollup["results"] == [
+            {
+                "flow": "SC-14-lpm-wave-1-checkout",
+                "layer": "agent",
+                "store": "target",
+                "status": "FAIL",
+                "exit_code": 1,
+                "agent_verdict": "FAIL - functional",
+                "evidence_path": str(result_path),
+            }
+        ]
+
+
+def test_agent_layer_blocks_when_result_lacks_requested_store() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
+        evidence_dir = Path(tmp)
+        agent_results_dir = evidence_dir / "agent-results"
+        write_agent_result(
+            agent_results_dir,
+            "SC-14-lpm-wave-1-checkout",
+            "ref",
+            "PASS",
+        )
+
+        result = run_runner(
+            "--store",
+            "target",
+            "--layer",
+            "agent",
+            "--flow",
+            "SC-14",
+            evidence_dir=evidence_dir,
+            extra_env={"AGENT_RESULTS_DIR": str(agent_results_dir)},
+        )
+
+        assert result.returncode == 3
+        assert "queued 1 agent-driven flow specs" in result.stdout
+        assert "missing agent result for target" in result.stdout
+
+        rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
+        assert rollup["status"] == "blocked"
+        assert rollup["summary"]["queued_agent_specs"] == 1
+        assert rollup["summary"]["blocked"] == 1
+        assert rollup["summary"]["failed"] == 0
+
+
 def run_log_clean_assertion(fake_wp_source: str) -> subprocess.CompletedProcess[str]:
     with tempfile.TemporaryDirectory(prefix="critical-flows-log-clean-") as tmp:
         fake_wp = Path(tmp) / "fake-wp.sh"
@@ -275,6 +431,9 @@ def main() -> None:
     test_card_checkout_flow_blocks_when_exerciser_fails()
     test_agent_layer_queued_specs_are_blocked_until_executed()
     test_full_layer_blocks_when_agent_specs_are_only_queued()
+    test_agent_layer_accepts_completed_agent_result()
+    test_agent_layer_fails_on_functional_agent_result()
+    test_agent_layer_blocks_when_result_lacks_requested_store()
     test_log_clean_assertion_passes_when_scan_is_clean()
     test_log_clean_assertion_fails_when_php_errors_are_found()
     test_log_clean_assertion_blocks_when_scan_cannot_run()
@@ -282,6 +441,9 @@ def main() -> None:
     print("PASS test_card_checkout_flow_blocks_when_exerciser_fails")
     print("PASS test_agent_layer_queued_specs_are_blocked_until_executed")
     print("PASS test_full_layer_blocks_when_agent_specs_are_only_queued")
+    print("PASS test_agent_layer_accepts_completed_agent_result")
+    print("PASS test_agent_layer_fails_on_functional_agent_result")
+    print("PASS test_agent_layer_blocks_when_result_lacks_requested_store")
     print("PASS test_log_clean_assertion_passes_when_scan_is_clean")
     print("PASS test_log_clean_assertion_fails_when_php_errors_are_found")
     print("PASS test_log_clean_assertion_blocks_when_scan_cannot_run")

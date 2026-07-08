@@ -7,19 +7,22 @@
 #   ./run.sh --store both --layer all                # everything
 #   ./run.sh --store target --flow SC-04             # one flow, native only
 #   ./run.sh --layer deterministic                   # CI-able subset (Layer D scripts only)
+#   ./run.sh --layer agent --agent-results-dir path  # ingest completed Layer A JSON evidence
 #
-# Layer A flows are NOT executed by this script directly — they emit a dispatch manifest
-# (evidence/agent-queue.json) that the supervisor/workflow consumes to drive browser agents
-# using agent-specs/_template.md against both stores. This keeps the deterministic suite
-# self-contained and CI-able while routing the judgment-heavy flows to agents.
+# Layer A flows are NOT executed by this script directly. The runner ingests completed
+# JSON evidence from browser agents, and queues missing/incomplete specs in
+# evidence/agent-queue.txt for a supervisor/workflow to drive with agent-specs/_template.md.
+# This keeps the deterministic suite self-contained and CI-able while routing the
+# judgment-heavy flows to agents.
 
 set -uo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$DIR/lib/common.sh"
 
-STORE="both" LAYER="all" ONLY_FLOW=""
+STORE="both" LAYER="all" ONLY_FLOW="" AGENT_RESULTS_DIR="${AGENT_RESULTS_DIR:-}"
 while [ $# -gt 0 ]; do case "$1" in
   --store) STORE="$2"; shift 2;; --layer) LAYER="$2"; shift 2;; --flow) ONLY_FLOW="$2"; shift 2;;
+  --agent-results-dir) AGENT_RESULTS_DIR="$2"; shift 2;;
   *) echo "unknown arg: $1" >&2; exit 2;; esac; done
 
 case "$STORE" in both|ref|target) ;; *) echo "unknown store: $STORE" >&2; exit 2;; esac
@@ -27,6 +30,7 @@ case "$LAYER" in all|deterministic|agent) ;; *) echo "unknown layer: $LAYER" >&2
 
 stores() { case "$STORE" in both) echo "ref target";; ref|target) echo "$STORE";; esac; }
 
+AGENT_RESULTS_DIR="${AGENT_RESULTS_DIR:-$EVIDENCE_DIR/agent-results}"
 RESULTS_JSONL="$EVIDENCE_DIR/rollup-results.jsonl"
 ROLLUP_JSON="$EVIDENCE_DIR/rollup.json"
 AGENT_QUEUE="$EVIDENCE_DIR/agent-queue.txt"
@@ -39,13 +43,14 @@ QUEUED_AGENT_COUNT=0
 
 record_result() {
   local flow="$1" layer="$2" store="$3" status="$4" exit_code="$5"
+  local agent_verdict="${6:-}" evidence_path="${7:-}"
 
-  python3 - "$RESULTS_JSONL" "$flow" "$layer" "$store" "$status" "$exit_code" <<'PY'
+  python3 - "$RESULTS_JSONL" "$flow" "$layer" "$store" "$status" "$exit_code" "$agent_verdict" "$evidence_path" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-path, flow, layer, store, status, exit_code = sys.argv[1:]
+path, flow, layer, store, status, exit_code, agent_verdict, evidence_path = sys.argv[1:]
 payload = {
     "flow": flow,
     "layer": layer,
@@ -53,6 +58,10 @@ payload = {
     "status": status,
     "exit_code": int(exit_code),
 }
+if agent_verdict:
+    payload["agent_verdict"] = agent_verdict
+if evidence_path:
+    payload["evidence_path"] = evidence_path
 with Path(path).open("a", encoding="utf-8") as stream:
     stream.write(json.dumps(payload, sort_keys=True) + "\n")
 PY
@@ -62,6 +71,64 @@ PY
     FAIL) FAIL_COUNT=$((FAIL_COUNT + 1)) ;;
     BLOCKED) BLOCKED_COUNT=$((BLOCKED_COUNT + 1)) ;;
   esac
+}
+
+agent_result_verdict() {
+  local flow="$1" store="$2" result_file="$3"
+
+  python3 - "$flow" "$store" "$result_file" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+flow, store, result_file = sys.argv[1:]
+
+
+def clean(value):
+    return " ".join(str(value).split())
+
+
+def emit(status, exit_code, verdict, reason):
+    print("\t".join([status, str(exit_code), clean(verdict), clean(reason)]))
+
+
+try:
+    payload = json.loads(Path(result_file).read_text(encoding="utf-8"))
+except Exception as exc:
+    emit("BLOCKED", 3, "BLOCKED", f"invalid agent result JSON: {exc}")
+    raise SystemExit(0)
+
+payload_flow = payload.get("flow")
+if payload_flow and payload_flow != flow:
+    emit("BLOCKED", 3, "BLOCKED", f"agent result flow mismatch: expected {flow}, got {payload_flow}")
+    raise SystemExit(0)
+
+store_results = payload.get("store_results")
+if not isinstance(store_results, list):
+    emit("BLOCKED", 3, "BLOCKED", "agent result missing store_results list")
+    raise SystemExit(0)
+
+store_result = None
+for candidate in store_results:
+    if isinstance(candidate, dict) and candidate.get("store") == store:
+        store_result = candidate
+        break
+
+if store_result is None:
+    emit("BLOCKED", 3, "BLOCKED", f"missing agent result for {store}")
+    raise SystemExit(0)
+
+verdict = clean(store_result.get("verdict", ""))
+normalized = verdict.upper().replace("—", "-")
+if normalized.startswith("PASS"):
+    emit("PASS", 0, verdict, f"agent result accepted: {verdict}")
+elif normalized.startswith("FAIL"):
+    emit("FAIL", 1, verdict, f"agent verdict: {verdict}")
+elif normalized.startswith("BLOCKED"):
+    emit("BLOCKED", 3, verdict, f"agent verdict: {verdict}")
+else:
+    emit("BLOCKED", 3, verdict or "BLOCKED", f"unknown agent verdict: {verdict or '<missing>'}")
+PY
 }
 
 write_rollup() {
@@ -127,21 +194,40 @@ if [ "$LAYER" != "agent" ]; then
 fi
 
 if [ "$LAYER" != "deterministic" ]; then
-  echo "Layer A: building agent dispatch manifest (flows/*.md)"
+  echo "Layer A: ingesting agent results from $AGENT_RESULTS_DIR or building dispatch manifest (flows/*.md)"
   : > "$AGENT_QUEUE"
   for f in "$DIR"/flows/*.md; do
     [ -e "$f" ] || continue
     base="$(basename "$f" .md)"
     [ -n "$ONLY_FLOW" ] && [[ "$base" != "$ONLY_FLOW"* ]] && continue
-    echo "$f" >> "$AGENT_QUEUE"
+    result_file="$AGENT_RESULTS_DIR/$base.json"
+    spec_queued=0
     for s in $(stores); do
-      printf '  [%-7s] %s on %s (agent spec queued)\n' "BLOCKED" "$base" "$s"
-      record_result "$base" agent "$s" BLOCKED 3
+      if [ -f "$result_file" ]; then
+        IFS=$'\t' read -r status rc agent_verdict reason < <(agent_result_verdict "$base" "$s" "$result_file")
+        if [ "$status" = "PASS" ] || [ "$status" = "FAIL" ]; then
+          printf '  [%-7s] %s on %s (%s)\n' "$status" "$base" "$s" "$reason"
+          record_result "$base" agent "$s" "$status" "$rc" "$agent_verdict" "$result_file"
+        else
+          printf '  [%-7s] %s on %s (%s)\n' "BLOCKED" "$base" "$s" "$reason"
+          record_result "$base" agent "$s" BLOCKED 3
+          spec_queued=1
+        fi
+      else
+        printf '  [%-7s] %s on %s (agent spec queued)\n' "BLOCKED" "$base" "$s"
+        record_result "$base" agent "$s" BLOCKED 3
+        spec_queued=1
+      fi
     done
+    if [ "$spec_queued" -eq 1 ]; then
+      echo "$f" >> "$AGENT_QUEUE"
+    fi
   done
   QUEUED_AGENT_COUNT="$(wc -l < "$AGENT_QUEUE" | tr -d ' ')"
   echo "  queued $QUEUED_AGENT_COUNT agent-driven flow specs -> $AGENT_QUEUE"
-  echo "  drive these with agent-specs/_template.md against both stores (manually or via a workflow)."
+  if [ "$QUEUED_AGENT_COUNT" -ne 0 ]; then
+    echo "  drive these with agent-specs/_template.md against both stores (manually or via a workflow)."
+  fi
 fi
 
 write_rollup
