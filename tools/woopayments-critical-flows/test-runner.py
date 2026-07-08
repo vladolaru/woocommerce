@@ -364,6 +364,52 @@ def test_agent_layer_fails_on_functional_agent_result() -> None:
         ]
 
 
+def test_agent_layer_preserves_blocked_agent_result_evidence() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
+        evidence_dir = Path(tmp)
+        agent_results_dir = evidence_dir / "agent-results"
+        result_path = write_agent_result(
+            agent_results_dir,
+            "SC-14-lpm-wave-1-checkout",
+            "target",
+            "BLOCKED - redirect provider unavailable",
+        )
+
+        result = run_runner(
+            "--store",
+            "target",
+            "--layer",
+            "agent",
+            "--flow",
+            "SC-14",
+            evidence_dir=evidence_dir,
+            extra_env={"AGENT_RESULTS_DIR": str(agent_results_dir)},
+        )
+
+        assert result.returncode == 3
+        assert "agent verdict: BLOCKED - redirect provider unavailable" in result.stdout
+        assert "unknown agent verdict" not in result.stdout
+        assert "queued 1 agent-driven flow specs" in result.stdout
+
+        rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
+        assert rollup["status"] == "blocked"
+        assert rollup["summary"]["passed"] == 0
+        assert rollup["summary"]["failed"] == 0
+        assert rollup["summary"]["blocked"] == 1
+        assert rollup["summary"]["queued_agent_specs"] == 1
+        assert rollup["results"] == [
+            {
+                "flow": "SC-14-lpm-wave-1-checkout",
+                "layer": "agent",
+                "store": "target",
+                "status": "BLOCKED",
+                "exit_code": 3,
+                "agent_verdict": "BLOCKED - redirect provider unavailable",
+                "evidence_path": str(result_path),
+            }
+        ]
+
+
 def test_agent_layer_fails_target_when_parity_verdict_fails() -> None:
     with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
         evidence_dir = Path(tmp)
@@ -535,6 +581,7 @@ def main() -> None:
     test_runner_creates_missing_evidence_directory()
     test_agent_layer_accepts_completed_agent_result()
     test_agent_layer_fails_on_functional_agent_result()
+    test_agent_layer_preserves_blocked_agent_result_evidence()
     test_agent_layer_fails_target_when_parity_verdict_fails()
     test_agent_layer_blocks_when_result_lacks_requested_store()
     test_log_clean_assertion_passes_when_scan_is_clean()
@@ -547,6 +594,7 @@ def main() -> None:
     print("PASS test_runner_creates_missing_evidence_directory")
     print("PASS test_agent_layer_accepts_completed_agent_result")
     print("PASS test_agent_layer_fails_on_functional_agent_result")
+    print("PASS test_agent_layer_preserves_blocked_agent_result_evidence")
     print("PASS test_agent_layer_fails_target_when_parity_verdict_fails")
     print("PASS test_agent_layer_blocks_when_result_lacks_requested_store")
     print("PASS test_log_clean_assertion_passes_when_scan_is_clean")

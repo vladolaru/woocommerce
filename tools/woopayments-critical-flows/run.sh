@@ -134,7 +134,10 @@ status, exit_code = classify_verdict(verdict)
 if status == "FAIL":
     emit("FAIL", 1, verdict, f"agent verdict: {verdict}")
 elif status == "BLOCKED":
-    emit("BLOCKED", 3, verdict or "BLOCKED", f"unknown agent verdict: {verdict or '<missing>'}")
+    if verdict:
+        emit("BLOCKED", 3, verdict, f"agent verdict: {verdict}")
+    else:
+        emit("BLOCKED", 3, "BLOCKED", "unknown agent verdict: <missing>")
 elif store == "target":
     parity_verdict = clean(payload.get("parity_verdict", ""))
     parity_status, parity_exit_code = classify_verdict(parity_verdict)
@@ -228,7 +231,7 @@ if [ "$LAYER" != "deterministic" ]; then
           record_result "$base" agent "$s" "$status" "$rc" "$agent_verdict" "$result_file"
         else
           printf '  [%-7s] %s on %s (%s)\n' "BLOCKED" "$base" "$s" "$reason"
-          record_result "$base" agent "$s" BLOCKED 3
+          record_result "$base" agent "$s" BLOCKED 3 "$agent_verdict" "$result_file"
           spec_queued=1
         fi
       else
