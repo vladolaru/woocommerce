@@ -248,6 +248,26 @@ def test_full_layer_blocks_when_agent_specs_are_only_queued() -> None:
         assert rollup["summary"]["blocked"] == 1
 
 
+def test_runner_creates_missing_evidence_directory() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
+        evidence_dir = Path(tmp) / "nested" / "evidence"
+
+        result = run_runner(
+            "--store",
+            "target",
+            "--layer",
+            "agent",
+            "--flow",
+            "SC-14",
+            evidence_dir=evidence_dir,
+        )
+
+        assert result.returncode == 3
+        assert "queued 1 agent-driven flow specs" in result.stdout
+        assert (evidence_dir / "rollup.json").exists()
+        assert (evidence_dir / "agent-queue.txt").exists()
+
+
 def test_agent_layer_accepts_completed_agent_result() -> None:
     with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
         evidence_dir = Path(tmp)
@@ -431,6 +451,7 @@ def main() -> None:
     test_card_checkout_flow_blocks_when_exerciser_fails()
     test_agent_layer_queued_specs_are_blocked_until_executed()
     test_full_layer_blocks_when_agent_specs_are_only_queued()
+    test_runner_creates_missing_evidence_directory()
     test_agent_layer_accepts_completed_agent_result()
     test_agent_layer_fails_on_functional_agent_result()
     test_agent_layer_blocks_when_result_lacks_requested_store()
@@ -441,6 +462,7 @@ def main() -> None:
     print("PASS test_card_checkout_flow_blocks_when_exerciser_fails")
     print("PASS test_agent_layer_queued_specs_are_blocked_until_executed")
     print("PASS test_full_layer_blocks_when_agent_specs_are_only_queued")
+    print("PASS test_runner_creates_missing_evidence_directory")
     print("PASS test_agent_layer_accepts_completed_agent_result")
     print("PASS test_agent_layer_fails_on_functional_agent_result")
     print("PASS test_agent_layer_blocks_when_result_lacks_requested_store")
