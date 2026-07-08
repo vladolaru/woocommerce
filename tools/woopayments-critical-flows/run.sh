@@ -92,6 +92,17 @@ def emit(status, exit_code, verdict, reason):
     print("\t".join([status, str(exit_code), clean(verdict), clean(reason)]))
 
 
+def classify_verdict(verdict):
+    normalized = clean(verdict).upper().replace("—", "-")
+    if normalized.startswith("PASS"):
+        return "PASS", 0
+    if normalized.startswith("FAIL"):
+        return "FAIL", 1
+    if normalized.startswith("BLOCKED"):
+        return "BLOCKED", 3
+    return "BLOCKED", 3
+
+
 try:
     payload = json.loads(Path(result_file).read_text(encoding="utf-8"))
 except Exception as exc:
@@ -119,15 +130,22 @@ if store_result is None:
     raise SystemExit(0)
 
 verdict = clean(store_result.get("verdict", ""))
-normalized = verdict.upper().replace("—", "-")
-if normalized.startswith("PASS"):
-    emit("PASS", 0, verdict, f"agent result accepted: {verdict}")
-elif normalized.startswith("FAIL"):
+status, exit_code = classify_verdict(verdict)
+if status == "FAIL":
     emit("FAIL", 1, verdict, f"agent verdict: {verdict}")
-elif normalized.startswith("BLOCKED"):
-    emit("BLOCKED", 3, verdict, f"agent verdict: {verdict}")
-else:
+elif status == "BLOCKED":
     emit("BLOCKED", 3, verdict or "BLOCKED", f"unknown agent verdict: {verdict or '<missing>'}")
+elif store == "target":
+    parity_verdict = clean(payload.get("parity_verdict", ""))
+    parity_status, parity_exit_code = classify_verdict(parity_verdict)
+    if parity_status == "PASS":
+        emit("PASS", 0, verdict, f"agent result accepted: {verdict}")
+    elif parity_status == "FAIL":
+        emit("FAIL", 1, parity_verdict, f"agent parity verdict: {parity_verdict}")
+    else:
+        emit("BLOCKED", parity_exit_code, parity_verdict or "BLOCKED", f"unknown agent parity verdict: {parity_verdict or '<missing>'}")
+else:
+    emit("PASS", exit_code, verdict, f"agent result accepted: {verdict}")
 PY
 }
 

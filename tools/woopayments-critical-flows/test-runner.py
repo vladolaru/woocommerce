@@ -71,6 +71,13 @@ def write_agent_result(
     return path
 
 
+def write_agent_result_payload(results_dir: Path, flow: str, payload: dict) -> Path:
+    results_dir.mkdir(parents=True, exist_ok=True)
+    path = results_dir / f"{flow}.json"
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return path
+
+
 def test_card_checkout_flow_passes_with_clean_exercised_order() -> None:
     with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
         evidence_dir = Path(tmp)
@@ -357,6 +364,80 @@ def test_agent_layer_fails_on_functional_agent_result() -> None:
         ]
 
 
+def test_agent_layer_fails_target_when_parity_verdict_fails() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
+        evidence_dir = Path(tmp)
+        agent_results_dir = evidence_dir / "agent-results"
+        result_path = write_agent_result_payload(
+            agent_results_dir,
+            "SC-14-lpm-wave-1-checkout",
+            {
+                "flow": "SC-14-lpm-wave-1-checkout",
+                "store_results": [
+                    {
+                        "store": "ref",
+                        "verdict": "PASS",
+                        "end_state": "order paid",
+                        "ux_observations": [],
+                        "visual_diffs": [],
+                        "evidence_paths": ["evidence/SC-14-lpm-wave-1-checkout/ref.png"],
+                    },
+                    {
+                        "store": "target",
+                        "verdict": "PASS",
+                        "end_state": "order paid",
+                        "ux_observations": ["target missing the reference affordance"],
+                        "visual_diffs": [],
+                        "evidence_paths": ["evidence/SC-14-lpm-wave-1-checkout/target.png"],
+                    },
+                ],
+                "parity_verdict": "FAIL - UX",
+                "regression_note": "Target payment method is completable but not discoverable.",
+            },
+        )
+
+        result = run_runner(
+            "--store",
+            "both",
+            "--layer",
+            "agent",
+            "--flow",
+            "SC-14",
+            evidence_dir=evidence_dir,
+            extra_env={"AGENT_RESULTS_DIR": str(agent_results_dir)},
+        )
+
+        assert result.returncode == 1
+        assert "agent parity verdict: FAIL - UX" in result.stdout
+
+        rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
+        assert rollup["status"] == "fail"
+        assert rollup["summary"]["passed"] == 1
+        assert rollup["summary"]["failed"] == 1
+        assert rollup["summary"]["blocked"] == 0
+        assert rollup["summary"]["queued_agent_specs"] == 0
+        assert rollup["results"] == [
+            {
+                "flow": "SC-14-lpm-wave-1-checkout",
+                "layer": "agent",
+                "store": "ref",
+                "status": "PASS",
+                "exit_code": 0,
+                "agent_verdict": "PASS",
+                "evidence_path": str(result_path),
+            },
+            {
+                "flow": "SC-14-lpm-wave-1-checkout",
+                "layer": "agent",
+                "store": "target",
+                "status": "FAIL",
+                "exit_code": 1,
+                "agent_verdict": "FAIL - UX",
+                "evidence_path": str(result_path),
+            },
+        ]
+
+
 def test_agent_layer_blocks_when_result_lacks_requested_store() -> None:
     with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
         evidence_dir = Path(tmp)
@@ -454,6 +535,7 @@ def main() -> None:
     test_runner_creates_missing_evidence_directory()
     test_agent_layer_accepts_completed_agent_result()
     test_agent_layer_fails_on_functional_agent_result()
+    test_agent_layer_fails_target_when_parity_verdict_fails()
     test_agent_layer_blocks_when_result_lacks_requested_store()
     test_log_clean_assertion_passes_when_scan_is_clean()
     test_log_clean_assertion_fails_when_php_errors_are_found()
@@ -465,6 +547,7 @@ def main() -> None:
     print("PASS test_runner_creates_missing_evidence_directory")
     print("PASS test_agent_layer_accepts_completed_agent_result")
     print("PASS test_agent_layer_fails_on_functional_agent_result")
+    print("PASS test_agent_layer_fails_target_when_parity_verdict_fails")
     print("PASS test_agent_layer_blocks_when_result_lacks_requested_store")
     print("PASS test_log_clean_assertion_passes_when_scan_is_clean")
     print("PASS test_log_clean_assertion_fails_when_php_errors_are_found")
