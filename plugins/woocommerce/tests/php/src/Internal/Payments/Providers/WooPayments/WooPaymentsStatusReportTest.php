@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStatusReport;
@@ -86,6 +87,22 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $data['multi_currency']['enabled'] );
 		$this->assertSame( 'woopayments', $data['multi_currency']['rate_provider'] );
 		$this->assertSame( 1700000000, $data['last_webhook_fetch'] );
+	}
+
+	/**
+	 * @testdox Status data reports the WooPayments rate provider as unavailable when the registry has no available provider.
+	 */
+	public function test_status_data_reports_rate_provider_unavailable_from_registry_state(): void {
+		$this->fake_plugin( false );
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		$this->seed_connected_store();
+		wc_get_container()->get( CurrencyRateProviderRegistryFactory::class )->set_provider_registrars( array() );
+
+		$data = $this->get_sut()->get_status_data();
+
+		$this->assertTrue( $data['multi_currency']['enabled'] );
+		$this->assertTrue( $data['account_connected'] );
+		$this->assertFalse( $data['multi_currency']['rate_provider_available'], 'Connected account state alone must not make the rate provider look available.' );
 	}
 
 	/**

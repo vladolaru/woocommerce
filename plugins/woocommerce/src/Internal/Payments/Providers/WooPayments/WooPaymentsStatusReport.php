@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsCurrencyRateProvider;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -61,6 +62,13 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	private WooPaymentsCutoverController $cutover_controller;
 
 	/**
+	 * Rate provider registry factory.
+	 *
+	 * @var CurrencyRateProviderRegistryFactory
+	 */
+	private CurrencyRateProviderRegistryFactory $provider_registry_factory;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -70,19 +78,22 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 * @param WooPaymentsFrontendStylesService                      $frontend_styles_service Frontend styles service.
 	 * @param WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service Fee remediation service.
 	 * @param WooPaymentsCutoverController                          $cutover_controller      Cutover controller.
+	 * @param CurrencyRateProviderRegistryFactory                   $provider_registry_factory Rate provider registry factory.
 	 */
 	final public function init(
 		NativePaymentsRuntimeArbiter $arbiter,
 		WooPaymentsAccountService $account_service,
 		WooPaymentsFrontendStylesService $frontend_styles_service,
 		WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service,
-		WooPaymentsCutoverController $cutover_controller
+		WooPaymentsCutoverController $cutover_controller,
+		CurrencyRateProviderRegistryFactory $provider_registry_factory
 	): void {
-		$this->arbiter                 = $arbiter;
-		$this->account_service         = $account_service;
-		$this->frontend_styles_service = $frontend_styles_service;
-		$this->fee_remediation_service = $fee_remediation_service;
-		$this->cutover_controller      = $cutover_controller;
+		$this->arbiter                   = $arbiter;
+		$this->account_service           = $account_service;
+		$this->frontend_styles_service   = $frontend_styles_service;
+		$this->fee_remediation_service   = $fee_remediation_service;
+		$this->cutover_controller        = $cutover_controller;
+		$this->provider_registry_factory = $provider_registry_factory;
 	}
 
 	/**
@@ -135,7 +146,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 			'multi_currency'          => array(
 				'enabled'                 => $multi_currency_enabled,
 				'rate_provider'           => WooPaymentsCurrencyRateProvider::PROVIDER_ID,
-				'rate_provider_available' => $multi_currency_enabled && $account_connected && ! $this->account_service->is_account_rejected(),
+				'rate_provider_available' => $multi_currency_enabled && $this->is_rate_provider_available( WooPaymentsCurrencyRateProvider::PROVIDER_ID ),
 			),
 			'last_webhook_fetch'      => (int) get_option( WooPaymentsWebhookReliabilityService::LAST_FETCH_OPTION_KEY, 0 ),
 		);
@@ -493,6 +504,22 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 			return $this->sanitize_string_list( $this->cutover_controller->get_preflight_failures() );
 		} catch ( Throwable $exception ) {
 			return array( 'preflight_unavailable' );
+		}
+	}
+
+	/**
+	 * Tell whether the named rate provider is available in the active registry.
+	 *
+	 * @param string $provider_id Rate provider ID.
+	 * @return bool
+	 */
+	private function is_rate_provider_available( string $provider_id ): bool {
+		try {
+			$provider = $this->provider_registry_factory->create()->get_provider( $provider_id );
+
+			return null !== $provider && $provider->is_available();
+		} catch ( Throwable $exception ) {
+			return false;
 		}
 	}
 

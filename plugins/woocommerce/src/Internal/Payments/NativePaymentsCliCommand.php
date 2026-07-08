@@ -78,6 +78,9 @@ class NativePaymentsCliCommand implements RegisterHooksInterface {
 		$preflight_failures = is_array( $data['preflight_failures'] ) ? array_values( array_map( 'strval', $data['preflight_failures'] ) ) : array();
 		$woopay_locations   = is_array( $data['woopay']['enabled_locations'] ) ? array_values( array_map( 'strval', $data['woopay']['enabled_locations'] ) ) : array();
 		$payment_methods    = is_array( $data['enabled_payment_methods'] ) ? array_values( array_map( 'strval', $data['enabled_payment_methods'] ) ) : array();
+		$multi_currency     = is_array( $data['multi_currency'] ) ? $data['multi_currency'] : array();
+		$rate_provider      = isset( $multi_currency['rate_provider'] ) ? (string) $multi_currency['rate_provider'] : '-';
+		$rate_available     = ! empty( $multi_currency['rate_provider_available'] ) ? 'available' : 'unavailable';
 
 		return array(
 			'Owner: ' . (string) $data['runtime_owner'],
@@ -100,7 +103,7 @@ class NativePaymentsCliCommand implements RegisterHooksInterface {
 			'Test mode: ' . ( (bool) $data['test_mode'] ? 'yes' : 'no' ),
 			'Enabled payment methods: ' . ( empty( $payment_methods ) ? '-' : implode( ', ', $payment_methods ) ),
 			'WooPay: ' . ( (bool) $data['woopay']['enabled'] ? 'enabled' : 'disabled' ) . ' (' . ( empty( $woopay_locations ) ? 'no locations enabled' : implode( ', ', $woopay_locations ) ) . ')',
-			'Multi-currency: ' . ( (bool) $data['multi_currency']['enabled'] ? 'enabled' : 'disabled' ) . ' (rate provider: ' . (string) $data['multi_currency']['rate_provider'] . ')',
+			'Multi-currency: ' . ( ! empty( $multi_currency['enabled'] ) ? 'enabled' : 'disabled' ) . ' (rate provider: ' . $rate_provider . ', ' . $rate_available . ')',
 			'Last webhook fetch: ' . ( (int) $data['last_webhook_fetch'] > 0 ? (string) $data['last_webhook_fetch'] : 'never' ),
 			'Note: ' . (string) $data['native_enabled_note'],
 		);

@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsCliCommand;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -54,6 +55,21 @@ class NativePaymentsCliCommandTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( 'Filter: woocommerce_native_payments_enabled (source: filter)', $text );
 		$this->assertStringContainsString( 'Preflight failures:', $text );
 		$this->assertStringContainsString( 'Account: acct_native_test (connected)', $text );
+	}
+
+	/**
+	 * @testdox Status lines report whether the WooPayments rate provider is available.
+	 */
+	public function test_status_lines_report_rate_provider_availability(): void {
+		$this->fake_plugin( false );
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		$this->seed_connected_store();
+		wc_get_container()->get( CurrencyRateProviderRegistryFactory::class )->set_provider_registrars( array() );
+
+		$lines = wc_get_container()->get( NativePaymentsCliCommand::class )->get_status_lines();
+		$text  = implode( "\n", $lines );
+
+		$this->assertStringContainsString( 'Multi-currency: enabled (rate provider: woopayments, unavailable)', $text );
 	}
 
 	/**
