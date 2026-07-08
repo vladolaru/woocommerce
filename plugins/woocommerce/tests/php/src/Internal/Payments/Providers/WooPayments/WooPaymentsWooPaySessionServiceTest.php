@@ -70,6 +70,9 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'woocommerce_is_product' );
 		delete_option( 'woocommerce_checkout_page_id' );
 		delete_option( 'woocommerce_cart_page_id' );
+		delete_option( 'woocommerce_checkout_company_field' );
+		delete_option( 'woocommerce_checkout_address_2_field' );
+		delete_option( 'woocommerce_checkout_phone_field' );
 		$this->reset_cart_checkout_page_cache();
 		unset( $GLOBALS['post'], $GLOBALS['product'] );
 		wp_reset_postdata();
