@@ -196,7 +196,23 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			),
 		);
 
-		$sut = new WooPaymentsApiClient();
+		$sut = new class() extends WooPaymentsApiClient {
+			/**
+			 * Recorded retry backoffs.
+			 *
+			 * @var array<int, int>
+			 */
+			public array $retry_backoffs = array();
+
+			/**
+			 * Record retry backoffs without sleeping in the unit test.
+			 *
+			 * @param int $backoff_microseconds Base retry backoff in microseconds.
+			 */
+			protected function sleep_before_retry( int $backoff_microseconds ): void {
+				$this->retry_backoffs[] = $backoff_microseconds;
+			}
+		};
 		$sut->init( $http_client, $this->create_account_service( false ) );
 
 		try {
@@ -213,6 +229,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 4, $http_client->request_count, 'The retry budget is three retries after the initial attempt.' );
 		$this->assertSame( $http_client->requests[0]['headers']['Idempotency-Key'], $http_client->requests[3]['headers']['Idempotency-Key'] );
+		$this->assertSame( array( 250000, 500000, 1000000 ), $sut->retry_backoffs );
 	}
 
 	/**

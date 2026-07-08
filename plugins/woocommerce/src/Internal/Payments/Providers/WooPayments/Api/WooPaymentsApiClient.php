@@ -2094,7 +2094,7 @@ class WooPaymentsApiClient {
 			}
 
 			$backoff_microseconds = self::REQUEST_RETRIES_BACKOFF_MICROSECONDS * ( 2 ** $retries );
-			usleep( $backoff_microseconds + wp_rand( 0, (int) ( $backoff_microseconds / 4 ) ) );
+			$this->sleep_before_retry( $backoff_microseconds );
 			++$retries;
 		}
 
@@ -2285,6 +2285,17 @@ class WooPaymentsApiClient {
 			$response_code
 		);
 		// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	}
+
+	/**
+	 * Sleep before retrying a transient transport failure.
+	 *
+	 * @param int $backoff_microseconds Base retry backoff in microseconds.
+	 *
+	 * @since 11.0.0
+	 */
+	protected function sleep_before_retry( int $backoff_microseconds ): void {
+		usleep( $backoff_microseconds + wp_rand( 0, (int) ( $backoff_microseconds / 4 ) ) );
 	}
 
 	/**
