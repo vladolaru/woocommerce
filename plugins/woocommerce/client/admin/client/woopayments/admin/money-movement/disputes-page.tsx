@@ -285,7 +285,7 @@ export const WooPaymentsDisputesPage = () => {
 			setIsExporting( false );
 		}
 	};
-	let liveStatusMessage = __( 'Disputes loaded.', 'woocommerce' );
+	let liveStatusMessage: string = __( 'Disputes loaded.', 'woocommerce' );
 
 	if ( errorMessage ) {
 		liveStatusMessage = errorMessage;

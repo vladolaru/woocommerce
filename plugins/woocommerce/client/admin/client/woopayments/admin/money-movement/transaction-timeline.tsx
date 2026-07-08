@@ -2,7 +2,7 @@
  * External dependencies
  */
 import type { ReactNode } from 'react';
-import { __, sprintf } from '@wordpress/i18n';
+import { __, sprintf, TranslatableText } from '@wordpress/i18n';
 
 /**
  * Internal dependencies
@@ -158,7 +158,7 @@ const getCapturedBody = ( event: WooPaymentsTimelineEvent ) => {
 };
 
 const createAmountMessage = (
-	template: string,
+	template: TranslatableText< `${ string }%s${ string }` >,
 	event: WooPaymentsTimelineEvent,
 	...amountKeys: string[]
 ) => {

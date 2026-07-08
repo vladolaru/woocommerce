@@ -703,8 +703,14 @@ export const WooPaymentsTransactionDetailsPage = () => {
 		};
 	}, [ isCardReaderFeeRoute, loadTransaction ] );
 
-	const loadingMessage = __( 'Loading transaction details…', 'woocommerce' );
-	let liveStatusMessage = __( 'Transaction details loaded.', 'woocommerce' );
+	const loadingMessage: string = __(
+		'Loading transaction details…',
+		'woocommerce'
+	);
+	let liveStatusMessage: string = __(
+		'Transaction details loaded.',
+		'woocommerce'
+	);
 
 	if ( errorMessage ) {
 		liveStatusMessage = errorMessage;
@@ -955,7 +961,7 @@ export const WooPaymentsTransactionDetailsPage = () => {
 							'Payment for order #%s captured successfully.',
 							'woocommerce'
 						),
-						orderId
+						String( orderId )
 					)
 				);
 			} else {
@@ -981,7 +987,7 @@ export const WooPaymentsTransactionDetailsPage = () => {
 							'Payment for order #%s canceled successfully.',
 							'woocommerce'
 						),
-						orderId
+						String( orderId )
 					)
 				);
 			}
@@ -994,7 +1000,7 @@ export const WooPaymentsTransactionDetailsPage = () => {
 						'woocommerce'
 					),
 					action,
-					orderId,
+					String( orderId ),
 					getErrorMessage(
 						error,
 						__(
@@ -1123,7 +1129,7 @@ export const WooPaymentsTransactionDetailsPage = () => {
 													'Blocking transaction for order #%s',
 													'woocommerce'
 												),
-												orderId
+												String( orderId )
 										  )
 										: undefined
 								}
@@ -1151,7 +1157,7 @@ export const WooPaymentsTransactionDetailsPage = () => {
 													'Approving transaction for order #%s',
 													'woocommerce'
 												),
-												orderId
+												String( orderId )
 										  )
 										: undefined
 								}
@@ -1207,7 +1213,7 @@ export const WooPaymentsTransactionDetailsPage = () => {
 														'Capturing authorization for order #%s',
 														'woocommerce'
 													),
-													orderId
+													String( orderId )
 											  )
 											: sprintf(
 													/* translators: %s: order ID. */
@@ -1215,7 +1221,7 @@ export const WooPaymentsTransactionDetailsPage = () => {
 														'Capture authorization for order #%s',
 														'woocommerce'
 													),
-													orderId
+													String( orderId )
 											  )
 									}
 								>

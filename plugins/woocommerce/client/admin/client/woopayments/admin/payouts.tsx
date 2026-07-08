@@ -258,7 +258,10 @@ export const WooPaymentsPayouts = () => {
 			setIsExporting( false );
 		}
 	};
-	let liveStatusMessage = __( 'Payout history loaded.', 'woocommerce' );
+	let liveStatusMessage: string = __(
+		'Payout history loaded.',
+		'woocommerce'
+	);
 
 	if ( errorMessage ) {
 		liveStatusMessage = errorMessage;

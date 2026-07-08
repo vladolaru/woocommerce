@@ -54,6 +54,10 @@ export const Suggestion = ( {
 		};
 	}
 
+	const setupButtonText: string = isInstalled
+		? __( 'Finish setup', 'woocommerce' )
+		: __( 'Get started', 'woocommerce' );
+
 	return (
 		<div className="woocommerce-wcpay-suggestion">
 			<WCPayBanner>
@@ -68,11 +72,7 @@ export const Suggestion = ( {
 							isRecommended={ true }
 							isInstalled={ isInstalled }
 							hasPlugins={ false }
-							setupButtonText={
-								isInstalled
-									? __( 'Finish setup', 'woocommerce' )
-									: __( 'Get started', 'woocommerce' )
-							}
+							setupButtonText={ setupButtonText }
 							onSetupCallback={ onSetupCallback }
 						/>
 					}

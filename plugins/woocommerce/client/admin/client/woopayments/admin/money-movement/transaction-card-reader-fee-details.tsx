@@ -168,10 +168,16 @@ export const WooPaymentsCardReaderFeeDetails = ( {
 		};
 	}, [ transactionId ] );
 
-	const loadingMessage = __( 'Loading reader details…', 'woocommerce' );
-	const errorMessage = __( 'Readers details not loaded', 'woocommerce' );
-	const emptyMessage = __( 'No reader details found.', 'woocommerce' );
-	let liveMessage = __( 'Reader details loaded.', 'woocommerce' );
+	const loadingMessage: string = __(
+		'Loading reader details…',
+		'woocommerce'
+	);
+	const errorMessage: string = __(
+		'Readers details not loaded',
+		'woocommerce'
+	);
+	const emptyMessage: string = __( 'No reader details found.', 'woocommerce' );
+	let liveMessage: string = __( 'Reader details loaded.', 'woocommerce' );
 
 	if ( hasError ) {
 		liveMessage = errorDetail

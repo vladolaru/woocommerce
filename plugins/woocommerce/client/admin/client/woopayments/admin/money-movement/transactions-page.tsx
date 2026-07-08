@@ -476,7 +476,7 @@ export const WooPaymentsTransactionsPage = () => {
 							'Payment for order #%s captured successfully.',
 							'woocommerce'
 						),
-						orderId
+						String( orderId )
 					)
 				);
 			} else {
@@ -493,7 +493,7 @@ export const WooPaymentsTransactionsPage = () => {
 							'Payment for order #%s canceled successfully.',
 							'woocommerce'
 						),
-						orderId
+						String( orderId )
 					)
 				);
 			}
@@ -507,7 +507,7 @@ export const WooPaymentsTransactionsPage = () => {
 						'woocommerce'
 					),
 					action,
-					orderId,
+					String( orderId ),
 					getErrorMessage(
 						error,
 						__(
@@ -654,13 +654,13 @@ export const WooPaymentsTransactionsPage = () => {
 	];
 
 	const rows = isUncaptured ? authorizations : transactions;
-	let liveStatusMessage = isUncaptured
+	let liveStatusMessage: string = isUncaptured
 		? __( 'Uncaptured transactions loaded.', 'woocommerce' )
 		: __( 'Transactions loaded.', 'woocommerce' );
-	const loadingMessage = isUncaptured
+	const loadingMessage: string = isUncaptured
 		? __( 'Loading uncaptured transactions…', 'woocommerce' )
 		: __( 'Loading transactions…', 'woocommerce' );
-	const emptyMessage = isUncaptured
+	const emptyMessage: string = isUncaptured
 		? __( 'No uncaptured transactions found.', 'woocommerce' )
 		: __( 'No transactions found.', 'woocommerce' );
 

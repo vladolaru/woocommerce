@@ -274,8 +274,14 @@ export const WooPaymentsPayoutDetailsPage = () => {
 		}
 	};
 
-	const loadingMessage = __( 'Loading payout details…', 'woocommerce' );
-	let liveStatusMessage = __( 'Payout details loaded.', 'woocommerce' );
+	const loadingMessage: string = __(
+		'Loading payout details…',
+		'woocommerce'
+	);
+	let liveStatusMessage: string = __(
+		'Payout details loaded.',
+		'woocommerce'
+	);
 
 	if ( errorMessage ) {
 		liveStatusMessage = errorMessage;

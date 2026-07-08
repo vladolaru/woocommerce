@@ -243,7 +243,7 @@ export function CurrencySettingsModal( {
 										'woocommerce'
 									),
 									defaultCurrency.code,
-									currency.rate,
+									String( currency.rate ),
 									currency.code
 								),
 							},

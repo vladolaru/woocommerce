@@ -177,7 +177,7 @@ const buildUpdateBusinessDetailsTask = ( {
 			  );
 	}
 
-	let actionLabel = __( 'Update', 'woocommerce' );
+	let actionLabel: string = __( 'Update', 'woocommerce' );
 	if ( hasMultipleMessages ) {
 		actionLabel = __( 'More details', 'woocommerce' );
 	} else if ( completed ) {
