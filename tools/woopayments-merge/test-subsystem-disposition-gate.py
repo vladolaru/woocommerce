@@ -94,6 +94,8 @@ def test_gate_accepts_exact_rows_and_signed_dropped_rows() -> None:
         assert result.returncode == 0, result.stdout + result.stderr
         assert "RESULT: PASS" in result.stdout
         assert "3 extension files covered" in result.stdout
+        assert "disposition counts: PORTED=1 SUPERSEDED=1 DROPPED=1" in result.stdout
+        assert "signed DROPPED rows: 1" in result.stdout
 
 
 def test_gate_rejects_wildcard_manifest_source_patterns() -> None:

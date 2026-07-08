@@ -261,7 +261,21 @@ WP_CLI::line( wp_json_encode( array( 'path' => $path, 'cleared' => false !== $re
 def build_debug_log_scan() -> str:
     return f"""
 $path = '{DEBUG_LOG_PATH}';
-$content = file_exists( $path ) ? file_get_contents( $path ) : '';
+$raw_content = file_exists( $path ) ? file_get_contents( $path ) : '';
+$content = (string) $raw_content;
+$ignored_patterns = array(
+\t'wp67_early_textdomain_notice' => '/^\\[[^\\]]+\\] PHP Notice:\\s+Function _load_textdomain_just_in_time was called.*(?:\\R|$)/m',
+);
+$ignored_matches = array();
+foreach ( $ignored_patterns as $id => $pattern ) {{
+\tif ( preg_match_all( $pattern, $content, $found ) ) {{
+\t\t$ignored_matches[ $id ] = count( $found[0] );
+\t\t$filtered_content = preg_replace( $pattern, '', $content );
+\t\tif ( is_string( $filtered_content ) ) {{
+\t\t\t$content = $filtered_content;
+\t\t}}
+\t}}
+}}
 $patterns = array(
 \t'php_notice' => '/PHP Notice|Notice:/i',
 \t'php_warning' => '/PHP Warning|Warning:/i',
@@ -282,6 +296,8 @@ WP_CLI::line(
 \t\tarray(
 \t\t\t'path' => $path,
 \t\t\t'bytes' => strlen( (string) $content ),
+\t\t\t'raw_bytes' => strlen( (string) $raw_content ),
+\t\t\t'ignored_matches' => $ignored_matches,
 \t\t\t'matches' => $matches,
 \t\t\t'ready' => empty( $matches ),
 \t\t)
@@ -419,6 +435,11 @@ class Rehearsal:
     def run_wp(self, phase_id: str, wp_args: list[str], **kwargs: Any) -> dict[str, Any]:
         return self.run_command(phase_id, self.target_wp + wp_args, **kwargs)
 
+    def as_admin_wp_args(self, wp_args: list[str]) -> list[str]:
+        if any(arg == "--user" or arg.startswith("--user=") for arg in self.target_wp):
+            return wp_args
+        return ["--user=1", *wp_args]
+
     def run_wp_eval(self, phase_id: str, php: str, **kwargs: Any) -> dict[str, Any]:
         return self.run_wp(phase_id, ["eval", php], parse_json=True, **kwargs)
 
@@ -450,7 +471,12 @@ class Rehearsal:
             raise HarnessError(f"target debug.log has diagnostics: {payload.get('matches')}")
 
     def run_state_probe(self, phase_id: str) -> dict[str, Any]:
-        result = self.run_wp_eval_file(phase_id, TOOLS_DIR / "a5-cutover-state.php")
+        result = self.run_wp(
+            phase_id,
+            self.as_admin_wp_args(["eval-file", "-"]),
+            input_text=(TOOLS_DIR / "a5-cutover-state.php").read_text(encoding="utf-8"),
+            parse_json=True,
+        )
         payload = result["json"]
         self.state_snapshots[phase_id] = payload
         self.write_rollup()

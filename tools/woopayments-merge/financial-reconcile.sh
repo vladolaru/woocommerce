@@ -192,6 +192,37 @@ $find_meta_like = function( array $needles ) use ( $all_meta ): string {
 	return '';
 };
 
+$find_provider_id_meta_like = function( array $needles, array $prefixes ) use ( $all_meta ): string {
+	$prefixes = array_map(
+		static function( $prefix ): string {
+			return strtolower( (string) $prefix ) . '_';
+		},
+		$prefixes
+	);
+
+	foreach ( $all_meta as $key => $value ) {
+		$value = (string) $value;
+		if ( '' === $value ) {
+			continue;
+		}
+
+		foreach ( $needles as $needle ) {
+			if ( false === stripos( $key, $needle ) ) {
+				continue;
+			}
+
+			$value_lower = strtolower( $value );
+			foreach ( $prefixes as $prefix ) {
+				if ( str_starts_with( $value_lower, $prefix ) ) {
+					return $value;
+				}
+			}
+		}
+	}
+
+	return '';
+};
+
 $charge_id = $order->get_meta( '_charge_id' );
 if ( '' === $charge_id && str_starts_with( (string) $order->get_transaction_id(), 'ch_' ) ) {
 	$charge_id = $order->get_transaction_id();
@@ -263,7 +294,7 @@ WP_CLI::line(
 			),
 			'refunds'                  => $refunds,
 			'notes'                    => $notes,
-			'dispute_id'               => $find_meta_like( array( 'dispute' ) ),
+			'dispute_id'               => $find_provider_id_meta_like( array( 'dispute' ), array( 'du', 'dp' ) ),
 			'payout_id'                => $find_meta_like( array( 'payout' ) ),
 			'meta'                     => $all_meta,
 		)

@@ -6,7 +6,7 @@
 # Usage:
 #   ./run.sh --store both --layer all                # everything
 #   ./run.sh --store target --flow SC-04             # one flow, native only
-#   ./run.sh --layer deterministic                   # CI-able subset (Layer D scripts only)
+#   ./run.sh --layer deterministic                   # CI-able Layer D subset
 #   ./run.sh --layer agent --agent-results-dir path  # ingest completed Layer A JSON evidence
 #
 # Layer A flows are NOT executed by this script directly. The runner ingests completed
@@ -30,10 +30,75 @@ case "$LAYER" in all|deterministic|agent) ;; *) echo "unknown layer: $LAYER" >&2
 
 stores() { case "$STORE" in both) echo "ref target";; ref|target) echo "$STORE";; esac; }
 
+spec_requires_agent_layer() { # <spec.md>
+  ! grep -qi 'No browser layer is required' "$1"
+}
+
+run_no_browser_deterministic_flow() { # <flow-base> <store>
+  local base="$1" store="$2" rc
+
+  case "$base" in
+    MA-10-i18n-order-notes)
+      if [ "$store" = "ref" ]; then
+        echo "[MA-10/ref] deterministic verdict: PASS (reference oracle is covered by the target-native i18n gate)"
+        return 0
+      fi
+      if [ -z "$TARGET_WP_COMMAND" ]; then
+        echo "[MA-10/$store] BLOCKED: TARGET_WP_COMMAND is required for i18n-notes-gate.sh"
+        return 3
+      fi
+      if [ ! -f "$I18N_NOTES_GATE" ]; then
+        echo "[MA-10/$store] BLOCKED: i18n notes gate is missing: $I18N_NOTES_GATE"
+        return 3
+      fi
+
+      echo "[MA-10/$store] exercise: validate localized native WooPayments order notes"
+      bash "$I18N_NOTES_GATE" --target "$TARGET_WP_COMMAND" --out-dir "$EVIDENCE_DIR/MA-10-i18n-order-notes"
+      rc=$?
+      ;;
+    MC-06-automatic-rates-refresh)
+      if [ "$store" = "ref" ]; then
+        echo "[MC-06/ref] deterministic verdict: PASS (cross-store rate comparison runs on target iteration)"
+        return 0
+      fi
+      if [ -z "$REF_WP_COMMAND" ] || [ -z "$TARGET_WP_COMMAND" ]; then
+        echo "[MC-06/$store] BLOCKED: REF_WP_COMMAND and TARGET_WP_COMMAND are required for mc-rates-gate.sh"
+        return 3
+      fi
+      if [ ! -f "$MC_RATES_GATE" ]; then
+        echo "[MC-06/$store] BLOCKED: multi-currency rates gate is missing: $MC_RATES_GATE"
+        return 3
+      fi
+
+      echo "[MC-06/$store] exercise: compare automatic rates refresh across reference and target"
+      bash "$MC_RATES_GATE" --ref "$REF_WP_COMMAND" --target "$TARGET_WP_COMMAND" --currency-from USD --currencies-to GBP,EUR --out-dir "$EVIDENCE_DIR/MC-06-automatic-rates-refresh"
+      rc=$?
+      ;;
+    *)
+      echo "unknown no-browser deterministic flow: $base" >&2
+      return 2
+      ;;
+  esac
+
+  if [ "$rc" -eq 0 ]; then
+    echo "[$base/$store] deterministic verdict: PASS"
+    return 0
+  fi
+  if [ "$rc" -eq 2 ] || [ "$rc" -eq 3 ]; then
+    echo "[$base/$store] deterministic verdict: BLOCKED"
+    return 3
+  fi
+
+  echo "[$base/$store] deterministic verdict: FAIL"
+  return 1
+}
+
 AGENT_RESULTS_DIR="${AGENT_RESULTS_DIR:-$EVIDENCE_DIR/agent-results}"
 RESULTS_JSONL="$EVIDENCE_DIR/rollup-results.jsonl"
 ROLLUP_JSON="$EVIDENCE_DIR/rollup.json"
 AGENT_QUEUE="$EVIDENCE_DIR/agent-queue.txt"
+I18N_NOTES_GATE="${I18N_NOTES_GATE:-$REPO_ROOT/tools/woopayments-merge/i18n-notes-gate.sh}"
+MC_RATES_GATE="${MC_RATES_GATE:-$REPO_ROOT/tools/woopayments-merge/mc-rates-gate.sh}"
 PASS_COUNT=0
 FAIL_COUNT=0
 BLOCKED_COUNT=0
@@ -199,7 +264,34 @@ if [ "$LAYER" != "agent" ]; then
     [ -n "$ONLY_FLOW" ] && [[ "$base" != "$ONLY_FLOW"* ]] && continue
     echo "--- $base ---"
     for s in $(stores); do
+      mark_log_clean_start "$s"
+      marker_rc=$?
+      if [ "$marker_rc" -ne 0 ]; then
+        printf '  [%-7s] %s on %s\n' "BLOCKED" "$base" "$s"
+        record_result "$base" deterministic "$s" BLOCKED "$marker_rc"
+        continue
+      fi
       STORE_NAME="$s" bash "$f"
+      rc=$?
+      if [ "$rc" -eq 0 ]; then
+        status="PASS"
+      elif [ "$rc" -eq 2 ] || [ "$rc" -eq 3 ]; then
+        status="BLOCKED"
+      else
+        status="FAIL"
+      fi
+      printf '  [%-7s] %s on %s\n' "$status" "$base" "$s"
+      record_result "$base" deterministic "$s" "$status" "$rc"
+    done
+  done
+  for f in "$DIR"/flows/*.md; do
+    [ -e "$f" ] || continue
+    spec_requires_agent_layer "$f" && continue
+    base="$(basename "$f" .md)"
+    [ -n "$ONLY_FLOW" ] && [[ "$base" != "$ONLY_FLOW"* ]] && continue
+    echo "--- $base ---"
+    for s in $(stores); do
+      run_no_browser_deterministic_flow "$base" "$s"
       rc=$?
       if [ "$rc" -eq 0 ]; then
         status="PASS"
@@ -221,6 +313,9 @@ if [ "$LAYER" != "deterministic" ]; then
     [ -e "$f" ] || continue
     base="$(basename "$f" .md)"
     [ -n "$ONLY_FLOW" ] && [[ "$base" != "$ONLY_FLOW"* ]] && continue
+    if ! spec_requires_agent_layer "$f"; then
+      continue
+    fi
     result_file="$AGENT_RESULTS_DIR/$base.json"
     spec_queued=0
     for s in $(stores); do

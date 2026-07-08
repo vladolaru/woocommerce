@@ -72,6 +72,8 @@ def make_fake_wp(
     provider: str = "woopayments",
     rate: str = "0.80",
     native_owner: str = "native",
+    cache_errored: bool = False,
+    reference_transact_error: str = "transact_authentication_failure",
 ) -> None:
     write_executable(
         path,
@@ -84,6 +86,8 @@ role = {json.dumps(role)}
 provider = {json.dumps(provider)}
 rate = {json.dumps(rate)}
 native_owner = {json.dumps(native_owner)}
+cache_errored = {cache_errored!r}
+reference_transact_error = {json.dumps(reference_transact_error)}
 
 if args == "wc-native-payments status":
     print("Owner: " + native_owner)
@@ -99,6 +103,19 @@ if "mc_rates_build_state" in args:
     raise SystemExit(0)
 
 if "mc_rates_inspect_rates" in args:
+    if cache_errored:
+        print(json.dumps({{
+            "role": role,
+            "provider": provider,
+            "cache_option": "wcpay_multi_currency_cached_currencies",
+            "updated": None,
+            "rates": {{}},
+            "missing": ["GBP"],
+            "cache_errored": True,
+            "consecutive_errors": 1,
+        }}))
+        raise SystemExit(0)
+
     print(json.dumps({{
         "role": role,
         "provider": provider,
@@ -106,6 +123,24 @@ if "mc_rates_inspect_rates" in args:
         "updated": "2026-07-07T20:28:00+03:00",
         "rates": {{"GBP": rate}},
         "missing": [],
+        "cache_errored": False,
+        "consecutive_errors": 0,
+    }}))
+    raise SystemExit(0)
+
+if "mc_rates_probe_reference_client" in args:
+    print(json.dumps({{
+        "server_connected": True,
+        "transact_method": {{
+            "ok": reference_transact_error == "",
+            "error_code": reference_transact_error,
+            "error_class": "WCPay\\\\Exceptions\\\\API_Exception" if reference_transact_error else "",
+            "rates": {{}} if reference_transact_error else {{"GBP": rate}},
+        }},
+        "wcpay_route_control": {{
+            "ok": True,
+            "rates": {{"GBP": rate}},
+        }},
     }}))
     raise SystemExit(0)
 
@@ -179,6 +214,72 @@ def test_gate_fails_when_target_provider_is_unavailable() -> None:
         assert "target provider is not woopayments" in rollup["failures"]
 
 
+def test_gate_blocks_when_reference_rate_oracle_is_unavailable_but_target_rates_exist() -> None:
+    with tempfile.TemporaryDirectory(prefix="mc-rates-gate-test-") as tmp:
+        tmp_path = Path(tmp)
+        ref_wp = tmp_path / "ref-wp"
+        target_wp = tmp_path / "target-wp"
+        out_dir = tmp_path / "evidence"
+
+        make_fake_wp(ref_wp, role="reference", cache_errored=True)
+        make_fake_wp(target_wp, role="target")
+
+        result = run_gate(
+            "--ref",
+            str(ref_wp),
+            "--target",
+            str(target_wp),
+            "--currency-from",
+            "USD",
+            "--currencies-to",
+            "GBP",
+            "--out-dir",
+            str(out_dir),
+        )
+
+        assert result.returncode == 3
+        assert "BLOCKED: reference rate oracle unavailable" in result.stderr
+
+        rollup = json.loads((out_dir / "mc-rates-gate.json").read_text(encoding="utf-8"))
+        assert rollup["status"] == "blocked"
+        assert "reference rate oracle unavailable" in rollup["failures"]
+        assert rollup["target"]["rates"] == {"GBP": "0.80"}
+
+
+def test_blocked_reference_oracle_rollup_records_safe_transport_diagnostics() -> None:
+    with tempfile.TemporaryDirectory(prefix="mc-rates-gate-test-") as tmp:
+        tmp_path = Path(tmp)
+        ref_wp = tmp_path / "ref-wp"
+        target_wp = tmp_path / "target-wp"
+        out_dir = tmp_path / "evidence"
+
+        make_fake_wp(ref_wp, role="reference", cache_errored=True)
+        make_fake_wp(target_wp, role="target")
+
+        result = run_gate(
+            "--ref",
+            str(ref_wp),
+            "--target",
+            str(target_wp),
+            "--currency-from",
+            "USD",
+            "--currencies-to",
+            "GBP",
+            "--out-dir",
+            str(out_dir),
+        )
+
+        assert result.returncode == 3
+
+        rollup = json.loads((out_dir / "mc-rates-gate.json").read_text(encoding="utf-8"))
+        diagnostics = rollup["diagnostics"]["reference_client"]
+        assert diagnostics["server_connected"] is True
+        assert diagnostics["transact_method"]["ok"] is False
+        assert diagnostics["transact_method"]["error_code"] == "transact_authentication_failure"
+        assert diagnostics["wcpay_route_control"]["ok"] is True
+        assert diagnostics["wcpay_route_control"]["rates"] == {"GBP": "0.80"}
+
+
 def test_gate_fails_before_rate_mutation_when_target_native_runtime_is_not_owner() -> None:
     with tempfile.TemporaryDirectory(prefix="mc-rates-gate-test-") as tmp:
         tmp_path = Path(tmp)
@@ -216,6 +317,8 @@ def main() -> None:
         test_print_plan_describes_rate_probe,
         test_full_gate_compares_reference_and_target_rates,
         test_gate_fails_when_target_provider_is_unavailable,
+        test_gate_blocks_when_reference_rate_oracle_is_unavailable_but_target_rates_exist,
+        test_blocked_reference_oracle_rollup_records_safe_transport_diagnostics,
         test_gate_fails_before_rate_mutation_when_target_native_runtime_is_not_owner,
     ]
     for test in tests:

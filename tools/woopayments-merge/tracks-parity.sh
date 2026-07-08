@@ -38,7 +38,15 @@ sink_path() {
 
 case "$CMD" in
 	reset)
-		$WLOCAL tracks clear 2>&1 | grep -qiE "cleared|success" && echo "tracks sink cleared" || { echo "FAIL: could not clear the sink (is wpcom-local healthy?)" >&2; exit 2; }
+		raw="$($WLOCAL tracks clear 2>&1)"
+		rc=$?
+		if [ "$rc" -eq 0 ]; then
+			echo "tracks sink cleared"
+		else
+			echo "FAIL: could not clear the sink (is wpcom-local healthy?)" >&2
+			printf '%s\n' "$raw" >&2
+			exit 2
+		fi
 		;;
 	normalize)
 		shift  # drop "normalize"; remaining args (e.g. --store <id>) pass to the normalizer

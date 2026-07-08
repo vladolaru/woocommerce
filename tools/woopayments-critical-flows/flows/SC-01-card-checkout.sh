@@ -36,16 +36,20 @@ sys.exit(1)
 }
 
 run_charge_exerciser() {
-  local native_flag=()
-
   if [ "$S" = "target" ]; then
-    native_flag=(--native)
+    native_flag="--native"
+  else
+    native_flag=""
   fi
 
   export REPO_ROOT WC_DIR REF_CONTAINER TARGET_WPENV_CWD REF_WP_COMMAND TARGET_WP_COMMAND
-  export -f wp_ref wp_target
+  export -f run_wp_command_string wp_ref wp_target
 
-  WP="wp_$S" bash "$FLOW_DRIVER" charge --deterministic "${native_flag[@]}" --sku "$SKU" --quantity "$QUANTITY" --type success
+  if [ -n "$native_flag" ]; then
+    WP="wp_$S" bash "$FLOW_DRIVER" charge --deterministic "$native_flag" --sku "$SKU" --quantity "$QUANTITY" --type success
+  else
+    WP="wp_$S" bash "$FLOW_DRIVER" charge --deterministic --sku "$SKU" --quantity "$QUANTITY" --type success
+  fi
 }
 
 record_assertion() {
@@ -90,8 +94,8 @@ echo "[SC-01/$S] captured order_id=$ORDER_ID"
 failed=0
 blocked=0
 record_assertion assert_order_status "$S" "$ORDER_ID" "processing"
-record_assertion assert_meta_present "$S" "$ORDER_ID" "_intent_id"
-record_assertion assert_meta_present "$S" "$ORDER_ID" "_charge_id"
+record_assertion assert_order_meta_present "$S" "$ORDER_ID" "_intent_id"
+record_assertion assert_order_meta_present "$S" "$ORDER_ID" "_charge_id"
 record_assertion assert_log_clean "$S"
 
 if [ "$failed" -ne 0 ]; then

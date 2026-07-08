@@ -8,15 +8,26 @@
  * @package WooCommerce\Tools\WooPaymentsMerge
  */
 
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendCurrenciesController;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendPricesController;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
 
 $sku            = $args[0] ?? 'test-lab-beaker-001';
 $quantity       = isset( $args[1] ) ? max( 1, (int) $args[1] ) : 2;
 $payment_method = $args[2] ?? 'pm_card_visa';
 $manual_capture = isset( $args[3] ) && ! in_array( strtolower( (string) $args[3] ), array( '', '0', 'false', 'no' ), true );
 $currency       = strtoupper( trim( (string) ( $args[4] ?? '' ) ) );
+$store_currency = strtoupper( (string) get_option( 'woocommerce_currency' ) );
+
+if ( '' === $currency ) {
+	add_filter( 'wcpay_multi_currency_should_return_store_currency', '__return_true' );
+	add_filter( 'wcpay_multi_currency_should_convert_product_price', '__return_false' );
+}
 
 $arbiter = wc_get_container()->get( NativePaymentsRuntimeArbiter::class );
 if ( NativePaymentsRuntimeArbiter::OWNER_NATIVE !== $arbiter->get_runtime_owner() ) {
@@ -44,15 +55,45 @@ $currency_user_id          = get_current_user_id();
 $restore_currency_meta     = false;
 $previous_currency_exists  = $currency_user_id ? metadata_exists( 'user', $currency_user_id, 'wcpay_currency' ) : false;
 $previous_currency_meta    = $previous_currency_exists ? get_user_meta( $currency_user_id, 'wcpay_currency', true ) : '';
+$selected_currency         = '';
+$frontend_prices_controller = null;
+
 if ( '' !== $currency ) {
-	if ( ! class_exists( MultiCurrencyRuntimeServiceFactory::class ) ) {
+	if (
+		! class_exists( MultiCurrencyRuntimeServiceFactory::class ) ||
+		! class_exists( MultiCurrencyProjectionServiceFactory::class ) ||
+		! class_exists( MultiCurrencyFrontendCurrenciesController::class ) ||
+		! class_exists( MultiCurrencyFrontendPricesController::class )
+	) {
 		WP_CLI::error( 'Native multi-currency runtime is not loaded.' );
 	}
+
+	$frontend_request_context = new class() extends MultiCurrencyRequestContext {
+		/**
+		 * Force frontend hook registration for this deterministic WP-CLI probe.
+		 *
+		 * @return bool
+		 */
+		public function should_register_frontend_hooks(): bool {
+			return true;
+		}
+	};
 
 	$service = wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class )->create_selected_currency_persistence_service();
 	if ( ! $service->update_selected_currency( $currency, true ) ) {
 		WP_CLI::error( "Native multi-currency could not select {$currency}." );
 	}
+
+	$projection_service_factory      = wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class );
+	$frontend_currencies_controller = wc_get_container()->get( MultiCurrencyFrontendCurrenciesController::class );
+	$frontend_currencies_controller->set_request_context( $frontend_request_context );
+	$frontend_currencies_controller->set_frontend_projection_service( $projection_service_factory->create_frontend_projection_service() );
+	$frontend_currencies_controller->register();
+
+	$frontend_prices_controller = wc_get_container()->get( MultiCurrencyFrontendPricesController::class );
+	$frontend_prices_controller->set_request_context( $frontend_request_context );
+	$frontend_prices_controller->set_price_projection_service( $projection_service_factory->create_price_projection_service() );
+	$frontend_prices_controller->register();
 
 	$selected_currency = strtoupper( get_woocommerce_currency() );
 	if ( $selected_currency !== $currency ) {
@@ -65,7 +106,16 @@ if ( '' !== $currency ) {
 	$restore_currency_meta = true;
 }
 
+if ( WC()->session instanceof WC_Session ) {
+	WC()->session->set( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, null );
+}
+
 $order = wc_create_order();
+if ( '' !== $currency ) {
+	$order->set_currency( $selected_currency );
+} else {
+	$order->set_currency( $store_currency );
+}
 $order->add_product( $product, $quantity );
 $order->set_created_via( 'harness-native-charge' );
 $order->set_billing_first_name( 'Harness' );
@@ -79,6 +129,15 @@ $order->set_billing_country( 'US' );
 $order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
 $order->calculate_totals();
 $order->save();
+
+if ( '' !== $currency && $frontend_prices_controller instanceof MultiCurrencyFrontendPricesController ) {
+	$frontend_prices_controller->add_order_meta( $order->get_id(), $order );
+} elseif ( '' === $currency ) {
+	$order->delete_meta_data( '_wcpay_multi_currency_order_exchange_rate' );
+	$order->delete_meta_data( '_wcpay_multi_currency_order_default_currency' );
+	$order->delete_meta_data( '_wcpay_multi_currency_stripe_exchange_rate' );
+	$order->save_meta_data();
+}
 
 $_POST['wcpay-payment-method'] = $payment_method;
 

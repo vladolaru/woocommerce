@@ -14,6 +14,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 RUNNER = REPO / "tools/woopayments-critical-flows/run.sh"
 COMMON = REPO / "tools/woopayments-critical-flows/lib/common.sh"
+FLOW_DRIVE = REPO / "tools/woopayments-merge/flow-drive.sh"
 
 
 def write_executable(path: Path, source: str) -> None:
@@ -98,12 +99,17 @@ if [ "$1" = "wc" ] && [ "$2" = "shop_order" ] && [ "$3" = "get" ]; then
   exit 0
 fi
 if [ "$1" = "post" ] && [ "$2" = "meta" ] && [ "$3" = "get" ]; then
-  case "$5" in
-    _intent_id) printf '%s\\n' "pi_fake"; exit 0 ;;
-    _charge_id) printf '%s\\n' "ch_fake"; exit 0 ;;
-  esac
+  exit 0
 fi
 if [ "$1" = "eval" ]; then
+  if [[ "$2" == *"wc_get_order"* && "$2" == *"_intent_id"* ]]; then
+    printf '%s\\n' "pi_fake"
+    exit 0
+  fi
+  if [[ "$2" == *"wc_get_order"* && "$2" == *"_charge_id"* ]]; then
+    printf '%s\\n' "ch_fake"
+    exit 0
+  fi
   printf '%s\\n' '{"status":"pass","paths":["/tmp/fake-debug.log"],"matches":[]}'
   exit 0
 fi
@@ -148,6 +154,199 @@ exit 2
                 "exit_code": 0,
             }
         ]
+
+
+def test_card_checkout_flow_passes_on_reference_with_empty_native_flags() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
+        evidence_dir = Path(tmp)
+        flow_driver = evidence_dir / "fake-flow-drive.sh"
+        fake_wp = evidence_dir / "fake-wp.sh"
+
+        write_executable(
+            flow_driver,
+            """#!/usr/bin/env bash
+printf '%s\\n' '{"op":"charge","order_id":456,"charge_id":"ch_ref","intent_id":"pi_ref"}'
+""",
+        )
+        write_executable(
+            fake_wp,
+            """#!/usr/bin/env bash
+if [ "$1" = "wc" ] && [ "$2" = "shop_order" ] && [ "$3" = "get" ]; then
+  printf '%s\\n' "processing"
+  exit 0
+fi
+if [ "$1" = "post" ] && [ "$2" = "meta" ] && [ "$3" = "get" ]; then
+  exit 0
+fi
+if [ "$1" = "eval" ]; then
+  if [[ "$2" == *"wc_get_order"* && "$2" == *"_intent_id"* ]]; then
+    printf '%s\\n' "pi_ref"
+    exit 0
+  fi
+  if [[ "$2" == *"wc_get_order"* && "$2" == *"_charge_id"* ]]; then
+    printf '%s\\n' "ch_ref"
+    exit 0
+  fi
+  printf '%s\\n' '{"status":"pass","paths":["/tmp/fake-debug.log"],"matches":[]}'
+  exit 0
+fi
+printf 'unexpected fake wp call: %s\\n' "$*" >&2
+exit 2
+""",
+        )
+
+        result = run_runner(
+            "--store",
+            "ref",
+            "--layer",
+            "deterministic",
+            "--flow",
+            "SC-01",
+            evidence_dir=evidence_dir,
+            extra_env={
+                "SC01_FLOW_DRIVER": str(flow_driver),
+                "REF_WP_COMMAND": str(fake_wp),
+            },
+        )
+
+        assert result.returncode == 0
+        assert "captured order_id=456" in result.stdout
+        assert "native_flag[@]: unbound variable" not in result.stdout
+
+
+def test_flow_drive_parses_wp_env_json_before_success_footer() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
+        fake_wp = Path(tmp) / "fake-wp.sh"
+        write_executable(
+            fake_wp,
+            """#!/usr/bin/env bash
+cat <<'OUT'
+ℹ Starting 'wp eval-file - test-lab-beaker-001 2 pm_card_visa 0 ' on the cli container.
+{"order_id":137,"charge_id":"ch_fake","intent_id":"pi_fake","status":"processing"}
+✔ Ran `wp eval-file - test-lab-beaker-001 2 pm_card_visa 0 ` in 'cli'. (in 7s 723ms)
+OUT
+""",
+        )
+
+        result = subprocess.run(
+            [
+                "bash",
+                str(FLOW_DRIVE),
+                "charge",
+                "--deterministic",
+                "--native",
+                "--sku",
+                "test-lab-beaker-001",
+                "--quantity",
+                "2",
+                "--type",
+                "success",
+            ],
+            cwd=REPO,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env={**os.environ, "WP": str(fake_wp)},
+            check=False,
+        )
+
+        assert result.returncode == 0
+        payload = json.loads(result.stdout)
+        assert payload["op"] == "charge"
+        assert payload["order_id"] == 137
+        assert payload["charge_id"] == "ch_fake"
+
+
+def test_common_wp_wrappers_accept_command_strings_with_args() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-command-string-") as tmp:
+        fake_wp = Path(tmp) / "fake-wp.sh"
+        write_executable(
+            fake_wp,
+            """#!/usr/bin/env bash
+printf '%s\\n' "$*"
+""",
+        )
+        script = f"""
+source {shlex.quote(str(COMMON))}
+REF_WP_COMMAND={shlex.quote(str(fake_wp) + " --runner-flag")}
+wp_ref option get home
+"""
+
+        result = subprocess.run(
+            ["bash", "-c", script],
+            cwd=REPO,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        assert result.returncode == 0
+        assert result.stdout.strip() == "--runner-flag option get home"
+
+
+def test_card_checkout_flow_exports_command_string_helper_to_flow_driver() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
+        evidence_dir = Path(tmp)
+        flow_driver = evidence_dir / "fake-flow-drive.sh"
+        fake_wp = evidence_dir / "fake-wp.sh"
+
+        write_executable(
+            flow_driver,
+            """#!/usr/bin/env bash
+set -e
+"$WP" option get home >/dev/null
+printf '%s\\n' '{"op":"charge","order_id":789,"charge_id":"ch_export","intent_id":"pi_export"}'
+""",
+        )
+        write_executable(
+            fake_wp,
+            """#!/usr/bin/env bash
+if [ "$1" = "--runner-flag" ] && [ "$2" = "option" ]; then
+  printf '%s\\n' "http://example.test"
+  exit 0
+fi
+if [ "$1" = "--runner-flag" ] && [ "$2" = "wc" ] && [ "$3" = "shop_order" ]; then
+  printf '%s\\n' "processing"
+  exit 0
+fi
+if [ "$1" = "--runner-flag" ] && [ "$2" = "post" ] && [ "$3" = "meta" ]; then
+  exit 0
+fi
+if [ "$1" = "--runner-flag" ] && [ "$2" = "eval" ]; then
+  if [[ "$3" == *"wc_get_order"* && "$3" == *"_intent_id"* ]]; then
+    printf '%s\\n' "pi_export"
+    exit 0
+  fi
+  if [[ "$3" == *"wc_get_order"* && "$3" == *"_charge_id"* ]]; then
+    printf '%s\\n' "ch_export"
+    exit 0
+  fi
+  printf '%s\\n' '{"status":"pass","paths":["/tmp/fake-debug.log"],"matches":[]}'
+  exit 0
+fi
+printf 'unexpected fake wp call: %s\\n' "$*" >&2
+exit 2
+""",
+        )
+
+        result = run_runner(
+            "--store",
+            "ref",
+            "--layer",
+            "deterministic",
+            "--flow",
+            "SC-01",
+            evidence_dir=evidence_dir,
+            extra_env={
+                "SC01_FLOW_DRIVER": str(flow_driver),
+                "REF_WP_COMMAND": f"{fake_wp} --runner-flag",
+            },
+        )
+
+        assert result.returncode == 0
+        assert "captured order_id=789" in result.stdout
+        assert "run_wp_command_string: command not found" not in result.stdout
 
 
 def test_card_checkout_flow_blocks_when_exerciser_fails() -> None:
@@ -227,6 +426,81 @@ def test_agent_layer_queued_specs_are_blocked_until_executed() -> None:
                 "store": "target",
                 "status": "BLOCKED",
                 "exit_code": 3,
+            }
+        ]
+
+
+def test_agent_layer_skips_specs_that_require_no_browser_layer() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
+        evidence_dir = Path(tmp)
+
+        result = run_runner(
+            "--store",
+            "target",
+            "--layer",
+            "agent",
+            "--flow",
+            "MA-10",
+            evidence_dir=evidence_dir,
+        )
+
+        assert result.returncode == 0
+        assert "MA-10-i18n-order-notes on target" not in result.stdout
+        assert "queued 0 agent-driven flow specs" in result.stdout
+
+        rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
+        assert rollup["status"] == "pass"
+        assert rollup["summary"]["passed"] == 0
+        assert rollup["summary"]["failed"] == 0
+        assert rollup["summary"]["blocked"] == 0
+        assert rollup["summary"]["queued_agent_specs"] == 0
+        assert rollup["results"] == []
+
+
+def test_deterministic_layer_runs_no_browser_specs_through_gate() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
+        evidence_dir = Path(tmp)
+        fake_gate = evidence_dir / "fake-i18n-gate.sh"
+        calls = evidence_dir / "i18n-gate-calls.log"
+
+        write_executable(
+            fake_gate,
+            """#!/usr/bin/env bash
+printf '%s\\n' "$*" >> "$FAKE_I18N_GATE_CALLS"
+exit 0
+""",
+        )
+
+        result = run_runner(
+            "--store",
+            "target",
+            "--layer",
+            "deterministic",
+            "--flow",
+            "MA-10",
+            evidence_dir=evidence_dir,
+            extra_env={
+                "I18N_NOTES_GATE": str(fake_gate),
+                "TARGET_WP_COMMAND": "fake-target-wp --flag",
+                "FAKE_I18N_GATE_CALLS": str(calls),
+            },
+        )
+
+        assert result.returncode == 0
+        assert "MA-10-i18n-order-notes" in result.stdout
+        assert "deterministic verdict: PASS" in result.stdout
+        assert "--target fake-target-wp --flag" in calls.read_text(encoding="utf-8")
+
+        rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
+        assert rollup["status"] == "pass"
+        assert rollup["summary"]["passed"] == 1
+        assert rollup["results"] == [
+            {
+                "flow": "MA-10-i18n-order-notes",
+                "layer": "deterministic",
+                "store": "target",
+                "status": "PASS",
+                "exit_code": 0,
             }
         ]
 
@@ -571,6 +845,119 @@ exit 2
     assert result.returncode == 3
     assert "BLOCKED log-clean check for target" in result.stdout
     assert "wp unavailable" in result.stdout
+
+
+def test_deterministic_runner_records_log_marker_before_scanning_logs() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
+        evidence_dir = Path(tmp)
+        flow_driver = evidence_dir / "fake-flow-drive.sh"
+        fake_wp = evidence_dir / "fake-wp.sh"
+        call_log = evidence_dir / "fake-wp-calls.log"
+        marker_file = evidence_dir / "marker-created"
+
+        write_executable(
+            flow_driver,
+            """#!/usr/bin/env bash
+printf '%s\\n' '{"op":"charge","order_id":321,"charge_id":"ch_marker","intent_id":"pi_marker"}'
+""",
+        )
+        write_executable(
+            fake_wp,
+            """#!/usr/bin/env bash
+if [ "$1" = "wc" ] && [ "$2" = "shop_order" ] && [ "$3" = "get" ]; then
+  printf '%s\\n' "processing"
+  exit 0
+fi
+if [ "$1" = "post" ] && [ "$2" = "meta" ] && [ "$3" = "get" ]; then
+  case "$5" in
+    _intent_id) printf '%s\\n' "pi_marker"; exit 0 ;;
+    _charge_id) printf '%s\\n' "ch_marker"; exit 0 ;;
+  esac
+fi
+if [ "$1" = "eval" ]; then
+  printf '%s\\n' "---CALL---" "$2" >> "$FAKE_WP_CALL_LOG"
+  if [[ "$2" == *"update_option"*"woopayments_critical_flows_debug_log_marker"* ]]; then
+    touch "$FAKE_MARKER_FILE"
+    printf '%s\\n' '{"status":"pass","paths":["/tmp/fake-debug.log"],"markers":{"/tmp/fake-debug.log":5}}'
+    exit 0
+  fi
+  if [[ "$2" == *"wc_get_order"* && "$2" == *"_intent_id"* ]]; then
+    printf '%s\\n' "pi_marker"
+    exit 0
+  fi
+  if [[ "$2" == *"wc_get_order"* && "$2" == *"_charge_id"* ]]; then
+    printf '%s\\n' "ch_marker"
+    exit 0
+  fi
+  if [[ "$2" == *"debug.log"* ]]; then
+    if [ -f "$FAKE_MARKER_FILE" ]; then
+      printf '%s\\n' '{"status":"pass","paths":["/tmp/fake-debug.log"],"matches":[]}'
+    else
+      printf '%s\\n' '{"status":"fail","paths":["/tmp/fake-debug.log"],"matches":["debug.log:1: PHP Warning: stale warning"]}'
+    fi
+    exit 0
+  fi
+fi
+printf 'unexpected fake wp call: %s\\n' "$*" >&2
+exit 2
+""",
+        )
+
+        result = run_runner(
+            "--store",
+            "target",
+            "--layer",
+            "deterministic",
+            "--flow",
+            "SC-01",
+            evidence_dir=evidence_dir,
+            extra_env={
+                "SC01_FLOW_DRIVER": str(flow_driver),
+                "TARGET_WP_COMMAND": str(fake_wp),
+                "FAKE_WP_CALL_LOG": str(call_log),
+                "FAKE_MARKER_FILE": str(marker_file),
+            },
+        )
+
+        assert result.returncode == 0
+        assert "deterministic verdict: PASS" in result.stdout
+        calls = [
+            chunk.strip()
+            for chunk in call_log.read_text(encoding="utf-8").split("---CALL---")
+            if chunk.strip()
+        ]
+        marker_call = next(
+            index
+            for index, call in enumerate(calls)
+            if "woopayments_critical_flows_debug_log_marker" in call
+            and "update_option" in call
+        )
+        scan_call = next(
+            index
+            for index, call in enumerate(calls)
+            if "matches" in call and "debug.log" in call
+        )
+        assert marker_call < scan_call
+
+
+def test_log_clean_parser_skips_wrapper_braces_before_payload() -> None:
+    result = run_log_clean_assertion(
+        """#!/usr/bin/env bash
+printf '%s\\n' "ℹ Starting wp eval { not json"
+printf '%s\\n' '{"status":"pass","paths":["/tmp/fake-debug.log"],"matches":[]}'
+printf '%s\\n' "✔ Ran wp eval"
+"""
+    )
+
+    assert result.returncode == 0
+    assert "PASS log-clean target" in result.stdout
+
+
+def test_log_clean_scan_ignores_known_wp67_textdomain_notice() -> None:
+    source = COMMON.read_text(encoding="utf-8")
+
+    assert "_load_textdomain_just_in_time" in source
+    assert "ignored_matches" in source
 
 
 def main() -> None:

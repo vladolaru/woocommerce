@@ -20,6 +20,8 @@ POLL_TRIES="${I18N_NOTES_POLL_TRIES:-60}"
 POLL_SLEEP_SECONDS="${I18N_NOTES_POLL_SLEEP_SECONDS:-1}"
 ORIGINAL_WPLANG=""
 LANGUAGE_SWITCHED=0
+TRANSLATION_PROBE_INSTALLED=0
+TRANSLATION_PROBE_PLUGIN="woopayments-i18n-notes-gate-translations.php"
 
 usage() {
 	cat >&2 <<'USAGE'
@@ -79,6 +81,10 @@ print(
             "locale": locale,
             "flow_driver": flow_drive,
             "required_flows": ["charge", "refund", "dispute"],
+            "translation_probe": {
+                "plugin": "woopayments-i18n-notes-gate-translations.php",
+                "purpose": "installs deterministic WooCommerce gettext replacements for native payment note strings during live probes",
+            },
             "english_sentinels": [
                 "Payment complete.",
                 "Payment failed.",
@@ -189,6 +195,18 @@ PY
 restore_language() {
 	local restore_locale
 
+	if [ "$TRANSLATION_PROBE_INSTALLED" -eq 1 ]; then
+		# Intentionally split the WP runner string, matching this harness's WP="docker exec ..." convention.
+		# shellcheck disable=SC2086
+		$TARGET_WP eval-file - <<PHP >/dev/null 2>&1 || true
+<?php
+\$plugin = WPMU_PLUGIN_DIR . '/' . '$TRANSLATION_PROBE_PLUGIN';
+if ( file_exists( \$plugin ) ) {
+	unlink( \$plugin );
+}
+PHP
+	fi
+
 	if [ "$LANGUAGE_SWITCHED" -ne 1 ]; then
 		return
 	fi
@@ -227,13 +245,13 @@ switch_language() {
 	local raw rc
 
 	# shellcheck disable=SC2086
-	raw="$($TARGET_WP eval 'echo (string) get_option( "WPLANG", "" );' 2>&1)"
+	raw="$($TARGET_WP eval 'echo "WPLANG:" . (string) get_option( "WPLANG", "" ) . PHP_EOL;' 2>&1)"
 	rc=$?
 	if [ "$rc" -ne 0 ]; then
 		printf '%s\n' "$raw" | tail -20 >&2
 		blocked "could not read original site language."
 	fi
-	ORIGINAL_WPLANG="$(printf '%s' "$raw" | tail -1)"
+	ORIGINAL_WPLANG="$(printf '%s\n' "$raw" | grep -oE 'WPLANG:[A-Za-z_]*' | tail -1 | cut -d: -f2-)"
 
 	printf 'i18n notes gate: switching target site language to %s...\n' "$LOCALE" >&2
 	# shellcheck disable=SC2086
@@ -254,6 +272,79 @@ switch_language() {
 
 	LANGUAGE_SWITCHED=1
 	trap restore_language EXIT
+}
+
+install_translation_probe() {
+	local raw rc
+
+	# Intentionally split the WP runner string, matching this harness's WP="docker exec ..." convention.
+	# shellcheck disable=SC2086
+	raw="$($TARGET_WP eval-file - <<PHP 2>&1
+<?php
+\$plugin = WPMU_PLUGIN_DIR . '/' . '$TRANSLATION_PROBE_PLUGIN';
+if ( ! is_dir( WPMU_PLUGIN_DIR ) && ! wp_mkdir_p( WPMU_PLUGIN_DIR ) ) {
+	WP_CLI::error( 'Could not create mu-plugins directory.' );
+}
+
+\$source = <<<'MU_PLUGIN'
+<?php
+/**
+ * Temporary gettext replacements for the native WooPayments i18n notes gate.
+ */
+
+add_filter(
+	'gettext',
+	static function ( \$translation, \$text, \$domain ) {
+		if ( 'woocommerce' !== \$domain ) {
+			return \$translation;
+		}
+
+		\$map = array(
+			'<strong>Fee details:</strong>' => '<strong>Gebuehrendetails:</strong>',
+			'Fee (%1\$s): %2\$s' => 'Gebuehr (%1\$s): %2\$s',
+			'Fee: %1\$s' => 'Gebuehr: %1\$s',
+			'Base fee: %1\$s' => 'Grundgebuehr: %1\$s',
+			'Currency conversion fee: %1\$s' => 'Waehrungsumrechnungsgebuehr: %1\$s',
+			'Net payout: %1\$s' => 'Nettoauszahlung: %1\$s',
+			'Refunded order' => 'Rueckerstattete Bestellung',
+			'A refund of %1\$s %4\$s using %2\$s (%3\$s).' => 'Eine Rueckerstattung von %1\$s %4\$s mit %2\$s (%3\$s).',
+			'A refund of %1\$s %5\$s using %2\$s. Reason: %3\$s. (%4\$s)' => 'Eine Rueckerstattung von %1\$s %5\$s mit %2\$s. Grund: %3\$s. (%4\$s)',
+			'A refund of %1\$s was <strong>%2\$s</strong> using %3\$s (<code>%4\$s</code>)%5\$s' => 'Eine Rueckerstattung von %1\$s war <strong>%2\$s</strong> mit %3\$s (<code>%4\$s</code>)%5\$s',
+			'was successfully processed' => 'wurde erfolgreich verarbeitet',
+			'is pending' => 'ist ausstehend',
+			'cancelled' => 'abgebrochen',
+			'unsuccessful' => 'nicht erfolgreich',
+			'Payment dispute and fees have been deducted from your next payout' => 'Zahlungsdisput und Gebuehren wurden von Ihrer naechsten Auszahlung abgezogen',
+			'Payment dispute funds have been reinstated' => 'Zahlungsdisputmittel wurden wiederhergestellt',
+			'Payment dispute has been updated' => 'Zahlungsdisput wurde aktualisiert',
+			'%1\$s. See <a href="%2\$s">dispute overview</a> for more details.' => '%1\$s. Weitere Details in der <a href="%2\$s">Disputuebersicht</a>.',
+			'A payment inquiry has been raised for %1\$s with reason "%2\$s". <a href="%4\$s" target="_blank" rel="noopener noreferrer">Response due by %3\$s</a>.' => 'Eine Zahlungsanfrage ueber %1\$s wurde mit Grund "%2\$s" erstellt. <a href="%4\$s" target="_blank" rel="noopener noreferrer">Antwort faellig bis %3\$s</a>.',
+			'Payment has been disputed for %1\$s with reason "%2\$s". <a href="%4\$s" target="_blank" rel="noopener noreferrer">Response due by %3\$s</a>.' => 'Zahlung ueber %1\$s wurde mit Grund "%2\$s" angefochten. <a href="%4\$s" target="_blank" rel="noopener noreferrer">Antwort faellig bis %3\$s</a>.',
+			'Payment inquiry has been closed with status %1\$s. See <a href="%2\$s" target="_blank" rel="noopener noreferrer">payment status</a> for more details.' => 'Zahlungsanfrage wurde mit Status %1\$s geschlossen. Weitere Details im <a href="%2\$s" target="_blank" rel="noopener noreferrer">Zahlungsstatus</a>.',
+			'Dispute has been closed with status %1\$s. See <a href="%2\$s" target="_blank" rel="noopener noreferrer">dispute overview</a> for more details.' => 'Disput wurde mit Status %1\$s geschlossen. Weitere Details in der <a href="%2\$s" target="_blank" rel="noopener noreferrer">Disputuebersicht</a>.',
+		);
+
+		return \$map[ \$text ] ?? \$translation;
+	},
+	10,
+	3
+);
+MU_PLUGIN;
+
+if ( false === file_put_contents( \$plugin, \$source ) ) {
+	WP_CLI::error( 'Could not write i18n notes gate translation probe.' );
+}
+
+WP_CLI::line( \$plugin );
+PHP
+)"
+	rc=$?
+	if [ "$rc" -ne 0 ]; then
+		printf '%s\n' "$raw" | tail -20 >&2
+		blocked "could not install i18n translation probe."
+	fi
+
+	TRANSLATION_PROBE_INSTALLED=1
 }
 
 drive_flow() {
@@ -475,6 +566,7 @@ if [ -z "$STATE" ]; then
 
 	assert_target_native_owner
 	switch_language
+	install_translation_probe
 
 	charge_flow="$OUT_DIR/charge-flow.json"
 	refund_flow="$OUT_DIR/refund-flow.json"
@@ -489,7 +581,7 @@ if [ -z "$STATE" ]; then
 
 	drive_flow "refund" "$refund_flow" refund --deterministic --order-id "$charge_order_id" --type=partial
 
-	drive_flow "dispute" "$dispute_flow" dispute --deterministic --native
+	drive_flow "dispute" "$dispute_flow" dispute --deterministic --native --quantity=3
 	dispute_order_id="$(json_file_field "$dispute_flow" order_id)"
 	case "$dispute_order_id" in
 		''|*[!0-9]*) blocked "dispute flow did not emit a valid order id." ;;

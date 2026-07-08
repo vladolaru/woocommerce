@@ -217,12 +217,28 @@ def main() -> int:
         for pattern in row.patterns
         if not is_exact_php_source_path(pattern)
     ]
+    disposition_counts = {
+        disposition: sum(1 for row in rows if row.disposition == disposition)
+        for disposition in sorted(VALID_DISPOSITIONS)
+    }
+    signed_dropped_rows = [
+        row
+        for row in rows
+        if row.disposition == "DROPPED" and row.signed_off_by and row.sign_off_date and row.reason
+    ]
 
     print("WooPayments subsystem disposition gate")
     print(f"  extension root: {extension_root}")
     print(f"  manifest: {manifest}")
     print(f"  manifest rows: {len(rows)}")
     print(f"  extension files: {len(extension_files)}")
+    print(
+        "  disposition counts: "
+        f"PORTED={disposition_counts['PORTED']} "
+        f"SUPERSEDED={disposition_counts['SUPERSEDED']} "
+        f"DROPPED={disposition_counts['DROPPED']}"
+    )
+    print(f"  signed DROPPED rows: {len(signed_dropped_rows)}")
 
     if unmatched:
         print()

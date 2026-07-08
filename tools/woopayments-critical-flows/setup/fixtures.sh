@@ -31,14 +31,71 @@ ensure_product() { # <store> <sku> <create args...>
   echo "[$s] product created: $sku"
 }
 
+php_literal() { # <value>
+  php -r 'echo var_export($argv[1], true);' "$1"
+}
+
+ensure_subscription_product() { # <store> <sku> <name> <price> <trial_length> <trial_period>
+  local s="$1" sku="$2" name="$3" price="$4" trial_length="$5" trial_period="$6" existing script
+
+  if ! existing="$(wp_store "$s" --user=1 wc product list "--sku=$sku" --field=id 2>/dev/null | head -1)"; then
+    echo "[$s] FAIL product lookup failed: $sku"
+    return 1
+  fi
+
+  if [ -n "$existing" ]; then
+    echo "[$s] product exists: $sku (#$existing)"
+    return 0
+  fi
+
+  script="$(cat <<PHP
+if ( ! class_exists( 'WC_Product_Subscription' ) ) {
+	WP_CLI::error( 'WC_Product_Subscription is unavailable.' );
+}
+
+\$sku          = $(php_literal "$sku");
+\$name         = $(php_literal "$name");
+\$price        = $(php_literal "$price");
+\$trial_length = $(php_literal "$trial_length");
+\$trial_period = $(php_literal "$trial_period");
+
+\$product = new WC_Product_Subscription();
+\$product->set_name( \$name );
+\$product->set_sku( \$sku );
+\$product->set_status( 'publish' );
+\$product->set_catalog_visibility( 'visible' );
+\$product->set_virtual( true );
+\$product->set_regular_price( \$price );
+\$product->set_price( \$price );
+\$product_id = \$product->save();
+
+update_post_meta( \$product_id, '_subscription_price', \$price );
+update_post_meta( \$product_id, '_subscription_period', 'month' );
+update_post_meta( \$product_id, '_subscription_period_interval', '1' );
+update_post_meta( \$product_id, '_subscription_sign_up_fee', '0' );
+update_post_meta( \$product_id, '_subscription_trial_length', \$trial_length );
+update_post_meta( \$product_id, '_subscription_trial_period', \$trial_period );
+
+WP_CLI::line( wp_json_encode( array( 'id' => \$product_id, 'sku' => \$sku ) ) );
+PHP
+)"
+
+  if ! wp_store "$s" --user=1 eval "$script" >/dev/null; then
+    echo "[$s] FAIL subscription product create failed: $sku"
+    return 1
+  fi
+
+  echo "[$s] product created: $sku"
+}
+
 fixture_products() { # <store>
   local s="$1"
   echo "[$s] ensure products: simple-\$20 (SKU cf-simple), simple-\$50 (cf-affirm), variable (cf-var), subscription (cf-sub), free-trial-sub (cf-trial)"
   ensure_product "$s" cf-simple --name="CF Simple" --sku=cf-simple --type=simple --regular_price=20 --status=publish || return 1
   ensure_product "$s" cf-affirm --name="CF Affirm" --sku=cf-affirm --type=simple --regular_price=50 --status=publish || return 1
   ensure_product "$s" cf-var --name="CF Variable" --sku=cf-var --type=variable --status=publish || return 1
-  ensure_product "$s" cf-sub --name="CF Subscription" --sku=cf-sub --type=subscription --regular_price=20 --subscription_period=month --subscription_period_interval=1 --status=publish || return 1
-  ensure_product "$s" cf-trial --name="CF Trial Subscription" --sku=cf-trial --type=subscription --regular_price=20 --subscription_period=month --subscription_period_interval=1 --subscription_trial_length=14 --subscription_trial_period=day --status=publish || return 1
+  ensure_subscription_product "$s" cf-sub "CF Subscription" 20 0 day || return 1
+  ensure_subscription_product "$s" cf-trial "CF Trial Subscription" 20 14 day || return 1
 }
 
 # --- settings toggles -----------------------------------------------------
@@ -85,6 +142,15 @@ for arg in sys.argv[2:]:
         settings["platform_checkout"] = yes_no(value)
     else:
         raise SystemExit(f"unknown WooPayments fixture setting: {key}")
+
+settings["enabled"] = "yes"
+settings["test_mode"] = "yes"
+methods = settings.get("upe_enabled_payment_method_ids")
+if not isinstance(methods, list):
+    methods = []
+if "card" not in methods:
+    methods.append("card")
+settings["upe_enabled_payment_method_ids"] = methods
 
 print(json.dumps(settings, sort_keys=True, separators=(",", ":")))
 PY

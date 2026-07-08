@@ -8,19 +8,23 @@ const fs = require( 'node:fs' );
 const path = require( 'node:path' );
 
 const env = typeof process !== 'undefined' && process.env ? process.env : {};
+const stateConfig =
+	typeof state !== 'undefined' && state.pluginActiveSettingsConfig && 'object' === typeof state.pluginActiveSettingsConfig
+		? state.pluginActiveSettingsConfig
+		: {};
 
-function requiredEnv( name ) {
-	const value = env[ name ];
+function requiredConfig( envName, stateName ) {
+	const value = env[ envName ] || stateConfig[ stateName ];
 	if ( ! value ) {
-		throw new Error( `Missing required environment variable ${ name }` );
+		throw new Error( `Missing required browser gate config ${ envName }` );
 	}
 	return value;
 }
 
-const targetUrl = requiredEnv( 'PLUGIN_SETTINGS_TARGET_URL' ).replace( /\/+$/, '' );
-const settingsUrl = requiredEnv( 'PLUGIN_SETTINGS_SETTINGS_URL' );
-const evidencePath = requiredEnv( 'PLUGIN_SETTINGS_EVIDENCE_PATH' );
-const dataDir = env.PLUGIN_SETTINGS_DATA_DIR || path.dirname( evidencePath );
+const targetUrl = requiredConfig( 'PLUGIN_SETTINGS_TARGET_URL', 'targetUrl' ).replace( /\/+$/, '' );
+const settingsUrl = requiredConfig( 'PLUGIN_SETTINGS_SETTINGS_URL', 'settingsUrl' );
+const evidencePath = requiredConfig( 'PLUGIN_SETTINGS_EVIDENCE_PATH', 'evidencePath' );
+const dataDir = env.PLUGIN_SETTINGS_DATA_DIR || stateConfig.dataDir || path.dirname( evidencePath );
 const startedAt = new Date().toISOString();
 
 function assertLocalUrl( label, value ) {

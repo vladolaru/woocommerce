@@ -127,7 +127,7 @@ raw = sys.stdin.read()
 start = raw.find("{")
 if start < 0:
     sys.exit(2)
-payload = json.loads(raw[start:])
+payload, _ = json.JSONDecoder().raw_decode(raw[start:])
 try:
     order_id = int(payload.get("order_id") or 0)
 except (TypeError, ValueError):
@@ -178,7 +178,7 @@ try:
     start = raw.find("{")
     if start < 0:
         sys.exit(2)
-    payload = json.loads(raw[start:])
+    payload, _ = json.JSONDecoder().raw_decode(raw[start:])
 except json.JSONDecodeError:
     sys.exit(2)
 

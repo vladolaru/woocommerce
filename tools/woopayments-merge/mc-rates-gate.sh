@@ -164,8 +164,9 @@ write_rollup() {
 	local reference_json="$2"
 	local target_json="$3"
 	local failures_file="${4:-}"
+	local diagnostics_json="${5:-}"
 
-	python3 - "$OUT_DIR/mc-rates-gate.json" "$status" "$reference_json" "$target_json" "$failures_file" <<'PY'
+	python3 - "$OUT_DIR/mc-rates-gate.json" "$status" "$reference_json" "$target_json" "$failures_file" "$diagnostics_json" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -173,6 +174,7 @@ from pathlib import Path
 path = Path(sys.argv[1])
 status = sys.argv[2]
 failures_file = sys.argv[5]
+diagnostics_raw = sys.argv[6]
 
 def decode(raw):
     if not raw:
@@ -189,6 +191,9 @@ payload = {
     "target": decode(sys.argv[4]),
     "failures": Path(failures_file).read_text(encoding="utf-8").splitlines() if failures_file else [],
 }
+diagnostics = decode(diagnostics_raw)
+if diagnostics:
+    payload["diagnostics"] = diagnostics
 path.parent.mkdir(parents=True, exist_ok=True)
 path.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
 PY
@@ -274,6 +279,9 @@ if ( class_exists( '\Automattic\WooCommerce\Internal\MultiCurrency\Services\Mult
 	\$provider_id = 'woopayments';
 }
 \$raw_cache = get_option( 'wcpay_multi_currency_cached_currencies', array() );
+\$cache_errored = is_array( \$raw_cache ) && ! empty( \$raw_cache['errored'] );
+\$consecutive_errors = is_array( \$raw_cache ) && isset( \$raw_cache['consecutive_errors'] ) ? (int) \$raw_cache['consecutive_errors'] : 0;
+\$fetched = is_array( \$raw_cache ) && isset( \$raw_cache['fetched'] ) ? \$raw_cache['fetched'] : null;
 \$data = is_array( \$raw_cache ) && isset( \$raw_cache['data'] ) && is_array( \$raw_cache['data'] )
 	? \$raw_cache['data']
 	: \$raw_cache;
@@ -299,7 +307,98 @@ WP_CLI::line( wp_json_encode( array(
 	'updated' => \$updated,
 	'rates' => \$rates,
 	'missing' => \$missing,
+	'cache_errored' => \$cache_errored,
+	'consecutive_errors' => \$consecutive_errors,
+	'fetched' => \$fetched,
 ) ) );
+PHP
+)"
+
+reference_client_probe_php="$(cat <<PHP
+/* mc_rates_probe_reference_client */
+\$currency_from = strtolower( '$CURRENCY_FROM' );
+\$currencies_to = $CURRENCIES_TO_PHP;
+\$pick_requested_rates = static function ( \$rates ) use ( \$currencies_to ) {
+	\$picked = array();
+	if ( ! is_array( \$rates ) ) {
+		return \$picked;
+	}
+	foreach ( \$currencies_to as \$currency_code ) {
+		\$currency_code = strtoupper( (string) \$currency_code );
+		\$rate = \$rates[ \$currency_code ] ?? \$rates[ strtolower( \$currency_code ) ] ?? null;
+		if ( is_numeric( \$rate ) ) {
+			\$picked[ \$currency_code ] = (string) \$rate;
+		}
+	}
+	return \$picked;
+};
+\$exception_payload = static function ( Throwable \$e ) {
+	return array(
+		'ok' => false,
+		'error_class' => get_class( \$e ),
+		'error_code' => method_exists( \$e, 'get_error_code' ) ? (string) \$e->get_error_code() : (string) \$e->getCode(),
+		'error_message' => substr( \$e->getMessage(), 0, 160 ),
+	);
+};
+\$out = array(
+	'server_connected' => null,
+	'transact_method' => array(
+		'ok' => false,
+		'error_code' => 'not_run',
+	),
+	'wcpay_route_control' => array(
+		'ok' => false,
+		'error_code' => 'not_run',
+	),
+);
+if ( ! class_exists( 'WC_Payments' ) ) {
+	\$out['transact_method'] = array(
+		'ok' => false,
+		'error_code' => 'wc_payments_unavailable',
+	);
+	\$out['wcpay_route_control'] = \$out['transact_method'];
+	WP_CLI::line( wp_json_encode( \$out ) );
+	return;
+}
+\$client = WC_Payments::get_payments_api_client();
+try {
+	\$out['server_connected'] = method_exists( \$client, 'is_server_connected' ) ? (bool) \$client->is_server_connected() : null;
+} catch ( Throwable \$e ) {
+	\$out['server_connected'] = false;
+}
+try {
+	\$rates = \$client->get_currency_rates( \$currency_from, \$currencies_to );
+	\$out['transact_method'] = array(
+		'ok' => true,
+		'rates' => \$pick_requested_rates( \$rates ),
+	);
+} catch ( Throwable \$e ) {
+	\$out['transact_method'] = \$exception_payload( \$e );
+}
+try {
+	\$method = new ReflectionMethod( \$client, 'request' );
+	\$method->setAccessible( true );
+	\$rates = \$method->invoke(
+		\$client,
+		array(
+			'currency_from' => \$currency_from,
+			'currencies_to' => \$currencies_to,
+		),
+		WC_Payments_API_Client::CURRENCY_API . '/rates',
+		WC_Payments_API_Client::GET,
+		true,
+		false,
+		false,
+		false
+	);
+	\$out['wcpay_route_control'] = array(
+		'ok' => true,
+		'rates' => \$pick_requested_rates( \$rates ),
+	);
+} catch ( Throwable \$e ) {
+	\$out['wcpay_route_control'] = \$exception_payload( \$e );
+}
+WP_CLI::line( wp_json_encode( \$out ) );
 PHP
 )"
 
@@ -331,53 +430,102 @@ fi
 
 reference_json="$(wp_eval_json "$REF_WP" "reference" "$inspect_php")" || exit 1
 target_json="$(wp_eval_json "$TARGET_WP" "target" "$inspect_php")" || exit 1
+if ! reference_client_json="$(wp_eval_json "$REF_WP" "reference client diagnostics" "$reference_client_probe_php")"; then
+	reference_client_json='{"probe_failed":true}'
+fi
+diagnostics_json="$(python3 - "$reference_client_json" <<'PY'
+import json
+import sys
 
-python3 - "$reference_json" "$target_json" > "$failures_file" <<'PY'
+try:
+    reference_client = json.loads(sys.argv[1])
+except Exception:
+    reference_client = {"raw": sys.argv[1]}
+
+print(json.dumps({"reference_client": reference_client}, sort_keys=True))
+PY
+)"
+
+comparison_status="$(python3 - "$reference_json" "$target_json" "$failures_file" <<'PY'
 import json
 import math
 import sys
+from pathlib import Path
 
 reference = json.loads(sys.argv[1])
 target = json.loads(sys.argv[2])
-failures = []
+failures_file = Path(sys.argv[3])
+target_failures = []
+reference_failures = []
+rate_failures = []
 
 if target.get("provider") != "woopayments":
-    failures.append("target provider is not woopayments")
+    target_failures.append("target provider is not woopayments")
 
 for role, payload in (("reference", reference), ("target", target)):
     missing = payload.get("missing") or []
     if missing:
-        failures.append(f"{role} cache is missing rates for {','.join(missing)}")
+        if role == "target":
+            target_failures.append(f"{role} cache is missing rates for {','.join(missing)}")
+        else:
+            reference_failures.append(f"{role} cache is missing rates for {','.join(missing)}")
     if not payload.get("updated"):
-        failures.append(f"{role} cache has no updated timestamp")
+        if role == "target":
+            target_failures.append(f"{role} cache has no updated timestamp")
+        else:
+            reference_failures.append(f"{role} cache has no updated timestamp")
 
 reference_rates = reference.get("rates") or {}
 target_rates = target.get("rates") or {}
 for currency, reference_rate in sorted(reference_rates.items()):
     if currency not in target_rates:
-        failures.append(f"target cache is missing {currency}")
+        rate_failures.append(f"target cache is missing {currency}")
         continue
     try:
         ref_value = float(reference_rate)
         target_value = float(target_rates[currency])
     except Exception:
-        failures.append(f"non-numeric rate for {currency}")
+        rate_failures.append(f"non-numeric rate for {currency}")
         continue
     if not math.isclose(ref_value, target_value, rel_tol=0.000001, abs_tol=0.000001):
-        failures.append(f"rate mismatch for {currency}: reference={reference_rate} target={target_rates[currency]}")
+        rate_failures.append(f"rate mismatch for {currency}: reference={reference_rate} target={target_rates[currency]}")
 
-for failure in failures:
-    print(failure)
+reference_oracle_unavailable = bool(reference_failures) and bool(reference.get("cache_errored"))
+
+if target_failures or rate_failures:
+    status = "fail"
+    failures = target_failures + reference_failures + rate_failures
+elif reference_oracle_unavailable:
+    status = "blocked"
+    failures = ["reference rate oracle unavailable"] + reference_failures
+elif reference_failures:
+    status = "fail"
+    failures = reference_failures
+else:
+    status = "pass"
+    failures = []
+
+failures_file.write_text("\n".join(failures) + ("\n" if failures else ""), encoding="utf-8")
+print(status)
 PY
+)"
 
 failure_count="$(grep -c . "$failures_file" 2>/dev/null || true)"
 if [ "$failure_count" -gt 0 ]; then
-	write_rollup "fail" "$reference_json" "$target_json" "$failures_file"
+	if [ "$comparison_status" = "blocked" ]; then
+		write_rollup "blocked" "$reference_json" "$target_json" "$failures_file" "$diagnostics_json"
+		while IFS= read -r failure; do
+			printf 'BLOCKED: %s\n' "$failure" >&2
+		done < "$failures_file"
+		exit 3
+	fi
+
+	write_rollup "fail" "$reference_json" "$target_json" "$failures_file" "$diagnostics_json"
 	while IFS= read -r failure; do
 		printf 'FAIL: %s\n' "$failure" >&2
 	done < "$failures_file"
 	exit 1
 fi
 
-write_rollup "pass" "$reference_json" "$target_json"
+write_rollup "pass" "$reference_json" "$target_json" "" "$diagnostics_json"
 printf 'PASS: native multi-currency rate transport matched reference rates.\n'

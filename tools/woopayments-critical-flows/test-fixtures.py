@@ -94,12 +94,18 @@ fi
         assert result.returncode == 0
         calls = read_calls(evidence_dir)
         create_calls = [call for call in calls if call[0:4] == ["--user=1", "wc", "product", "create"]]
-        assert len(create_calls) == 4
+        eval_calls = [call for call in calls if call[0:2] == ["--user=1", "eval"]]
+        assert len(create_calls) == 2
+        assert len(eval_calls) == 2
         assert not any("--sku=cf-simple" in call for call in create_calls)
         assert any("--sku=cf-affirm" in call and "--regular_price=50" in call for call in create_calls)
         assert any("--sku=cf-var" in call and "--type=variable" in call for call in create_calls)
-        assert any("--sku=cf-sub" in call and "--type=subscription" in call for call in create_calls)
-        assert any("--sku=cf-trial" in call and "--subscription_trial_length=14" in call for call in create_calls)
+        assert not any("--sku=cf-sub" in call for call in create_calls)
+        assert not any("--sku=cf-trial" in call for call in create_calls)
+        assert any("WC_Product_Subscription" in call[2] and "'cf-sub'" in call[2] for call in eval_calls)
+        assert any("WC_Product_Subscription" in call[2] and "'cf-trial'" in call[2] for call in eval_calls)
+        assert any("$trial_length = '14';" in call[2] for call in eval_calls)
+        assert any("'_subscription_trial_length', $trial_length" in call[2] for call in eval_calls)
 
 
 def test_fixture_products_fails_closed_when_create_fails() -> None:
@@ -169,7 +175,7 @@ def test_fixture_settings_merge_named_woopayments_toggles() -> None:
             fake_wp_source=logging_fake_wp(
                 """
 if [ "$1" = "option" ] && [ "$2" = "get" ] && [ "$3" = "woocommerce_woocommerce_payments_settings" ]; then
-  printf '%s\\n' '{"enabled":"yes","manual_capture":"yes","saved_cards":"no","platform_checkout":"yes"}'
+  printf '%s\\n' '{"enabled":"no","manual_capture":"yes","saved_cards":"no","platform_checkout":"yes","test_mode":"no","upe_enabled_payment_method_ids":[]}'
   exit 0
 fi
 if [ "$1" = "option" ] && [ "$2" = "update" ] && [ "$3" = "woocommerce_woocommerce_payments_settings" ]; then
@@ -193,6 +199,8 @@ fi
         assert payload["manual_capture"] == "no"
         assert payload["saved_cards"] == "yes"
         assert payload["platform_checkout"] == "no"
+        assert payload["test_mode"] == "yes"
+        assert payload["upe_enabled_payment_method_ids"] == ["card"]
         assert update_calls[0][4] == "--format=json"
 
 

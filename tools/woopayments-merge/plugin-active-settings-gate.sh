@@ -17,6 +17,9 @@ PLAYWRITER_SESSION="${PLAYWRITER_SESSION:-}"
 OUT_DIR="${TMPDIR:-$SELF_DIR/.tmp}/plugin-active-settings-gate"
 PRINT_PLAN=0
 PREFLIGHT_ONLY=0
+STAGE_PLUGIN_ACTIVE_FIXTURE=0
+RESTORE_PLUGIN_ACTIVE_FIXTURE=0
+STAGE_FIXTURE_JSON=""
 
 usage() {
 	cat >&2 <<'USAGE'
@@ -28,6 +31,9 @@ Options:
   --target-url <url>           Target store browser base URL.
   --playwriter-session <id>    Existing Playwriter session id. Defaults to PLAYWRITER_SESSION.
   --out-dir <path>             Evidence output directory.
+  --stage-plugin-active-fixture
+                                Temporarily disable native mu-plugin toggles,
+                                activate WooPayments, and restore afterward.
   --preflight-only             Validate arguments, dependencies, and plugin-active state, then exit.
   --print-plan                 Print the normalized gate plan as JSON, then exit.
   -h, --help                   Show this help.
@@ -64,6 +70,7 @@ while [ "$#" -gt 0 ]; do
 		--playwriter-session) PLAYWRITER_SESSION="${2:-}"; shift 2 ;;
 		--out-dir=*) OUT_DIR="${1#--out-dir=}"; shift ;;
 		--out-dir) OUT_DIR="${2:-}"; shift 2 ;;
+		--stage-plugin-active-fixture) STAGE_PLUGIN_ACTIVE_FIXTURE=1; shift ;;
 		--preflight-only) PREFLIGHT_ONLY=1; shift ;;
 		--print-plan) PRINT_PLAN=1; shift ;;
 		--help|-h) usage; exit 0 ;;
@@ -135,6 +142,192 @@ assert_plugin_active() {
 
 record_failure() {
 	printf '%s\n' "$*" >> "$FAILURES_FILE"
+}
+
+json_success() {
+	python3 - "$1" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    payload = json.load(stream)
+raise SystemExit(0 if isinstance(payload, dict) and payload.get("success") else 1)
+PY
+}
+
+json_errors() {
+	python3 - "$1" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as stream:
+        payload = json.load(stream)
+except Exception:
+    raise SystemExit(0)
+for error in payload.get("errors", []):
+    print(f"  - {error}", file=sys.stderr)
+PY
+}
+
+extract_json_line() {
+	grep -E '^\{' | tail -1
+}
+
+stage_plugin_active_fixture() {
+	local raw rc json
+
+	progress "staging plugin-active fixture"
+	# Intentionally split the WP runner string, matching the harness convention.
+	# shellcheck disable=SC2086
+	raw="$($TARGET_WP eval-file - stage-plugin-active <<'PHP' 2>&1
+<?php
+$errors      = array();
+$plugin_file = 'woocommerce-payments/woocommerce-payments.php';
+
+if ( ! function_exists( 'is_plugin_active' ) ) {
+	require_once ABSPATH . 'wp-admin/includes/plugin.php';
+}
+
+$was_plugin_active = is_plugin_active( $plugin_file );
+$disabled          = array();
+$mu_dir            = defined( 'WPMU_PLUGIN_DIR' ) ? WPMU_PLUGIN_DIR : WP_CONTENT_DIR . '/mu-plugins';
+
+if ( is_dir( $mu_dir ) ) {
+	foreach ( glob( trailingslashit( $mu_dir ) . '*.php' ) ?: array() as $path ) {
+		$contents = @file_get_contents( $path );
+		if ( false === $contents || false === strpos( $contents, 'woocommerce_native_payments_enabled' ) ) {
+			continue;
+		}
+
+		$disabled_path = $path . '.disabled-by-woopayments-merge';
+		if ( file_exists( $disabled_path ) ) {
+			$disabled[] = array(
+				'path'          => $path,
+				'disabled_path' => $disabled_path,
+			);
+			continue;
+		}
+
+		if ( ! @rename( $path, $disabled_path ) ) {
+			$errors[] = 'Could not disable native payments mu-plugin: ' . $path;
+			continue;
+		}
+
+		$disabled[] = array(
+			'path'          => $path,
+			'disabled_path' => $disabled_path,
+		);
+	}
+}
+
+if ( ! $was_plugin_active ) {
+	$result = activate_plugin( $plugin_file, '', false, true );
+	if ( is_wp_error( $result ) ) {
+		$errors[] = 'Could not activate WooPayments plugin: ' . $result->get_error_message();
+	}
+}
+
+echo wp_json_encode(
+	array(
+		'success'             => empty( $errors ) && is_plugin_active( $plugin_file ),
+		'mode'                => 'stage-plugin-active',
+		'errors'              => $errors,
+		'was_plugin_active'   => $was_plugin_active,
+		'wcpay_plugin_active' => is_plugin_active( $plugin_file ),
+		'disabled_mu_plugins' => $disabled,
+	),
+	JSON_UNESCAPED_SLASHES
+) . "\n";
+PHP
+)"
+	rc=$?
+	json="$(printf '%s\n' "$raw" | extract_json_line)"
+
+	if [ "$rc" -ne 0 ] || [ -z "$json" ]; then
+		blocked "could not stage plugin-active fixture: $raw"
+	fi
+
+	printf '%s\n' "$json" > "$STAGE_FIXTURE_JSON"
+	RESTORE_PLUGIN_ACTIVE_FIXTURE=1
+
+	if ! json_success "$STAGE_FIXTURE_JSON"; then
+		json_errors "$STAGE_FIXTURE_JSON"
+		blocked "could not stage plugin-active fixture; see $STAGE_FIXTURE_JSON"
+	fi
+}
+
+restore_plugin_active_fixture() {
+	local payload_b64 raw rc
+
+	if [ "$RESTORE_PLUGIN_ACTIVE_FIXTURE" -ne 1 ] || [ -z "$STAGE_FIXTURE_JSON" ] || [ ! -f "$STAGE_FIXTURE_JSON" ]; then
+		return
+	fi
+
+	progress "restoring plugin-active fixture"
+	payload_b64="$(python3 - "$STAGE_FIXTURE_JSON" <<'PY'
+import base64
+import sys
+from pathlib import Path
+
+print(base64.b64encode(Path(sys.argv[1]).read_bytes()).decode("ascii"))
+PY
+)"
+
+	# Intentionally split the WP runner string, matching the harness convention.
+	# shellcheck disable=SC2086
+	raw="$($TARGET_WP eval-file - restore-plugin-active "$payload_b64" <<'PHP' 2>&1
+<?php
+$payload_b64 = isset( $args[1] ) ? (string) $args[1] : '';
+$payload     = json_decode( base64_decode( $payload_b64 ), true );
+$errors      = array();
+$plugin_file = 'woocommerce-payments/woocommerce-payments.php';
+
+if ( ! function_exists( 'is_plugin_active' ) ) {
+	require_once ABSPATH . 'wp-admin/includes/plugin.php';
+}
+
+if ( ! is_array( $payload ) ) {
+	$payload = array();
+	$errors[] = 'Restore payload was invalid.';
+}
+
+foreach ( array_reverse( $payload['disabled_mu_plugins'] ?? array() ) as $entry ) {
+	$path          = isset( $entry['path'] ) ? (string) $entry['path'] : '';
+	$disabled_path = isset( $entry['disabled_path'] ) ? (string) $entry['disabled_path'] : '';
+	if ( '' === $path || '' === $disabled_path || ! file_exists( $disabled_path ) ) {
+		continue;
+	}
+	if ( file_exists( $path ) ) {
+		$errors[] = 'Native payments mu-plugin restore target already exists: ' . $path;
+		continue;
+	}
+	if ( ! @rename( $disabled_path, $path ) ) {
+		$errors[] = 'Could not restore native payments mu-plugin: ' . $path;
+	}
+}
+
+if ( empty( $payload['was_plugin_active'] ) && is_plugin_active( $plugin_file ) ) {
+	deactivate_plugins( $plugin_file, true );
+}
+
+echo wp_json_encode(
+	array(
+		'success'             => empty( $errors ),
+		'mode'                => 'restore-plugin-active',
+		'errors'              => $errors,
+		'wcpay_plugin_active' => is_plugin_active( $plugin_file ),
+	),
+	JSON_UNESCAPED_SLASHES
+) . "\n";
+PHP
+)"
+	rc=$?
+	RESTORE_PLUGIN_ACTIVE_FIXTURE=0
+
+	if [ "$rc" -ne 0 ]; then
+		printf 'Plugin-active settings gate: restore warning: %s\n' "$raw" >&2
+	fi
 }
 
 validate_driver_evidence() {
@@ -225,15 +418,46 @@ run_browser_gate() {
 	local log_path="$OUT_DIR/plugin-active-settings.playwriter.log"
 	local exit_code
 	local validation_output
+	local browser_config_js
 
 	rm -f "$evidence_path"
 	progress "driving settings page at $SETTINGS_URL"
+
+	browser_config_js="$(
+		python3 - "$TARGET_URL" "$SETTINGS_URL" "$evidence_path" "$OUT_DIR" <<'PY'
+import json
+import sys
+
+target_url, settings_url, evidence_path, data_dir = sys.argv[1:]
+print(
+    "state.pluginActiveSettingsConfig = "
+    + json.dumps(
+        {
+            "targetUrl": target_url,
+            "settingsUrl": settings_url,
+            "evidencePath": evidence_path,
+            "dataDir": data_dir,
+        },
+        sort_keys=True,
+    )
+    + ";"
+)
+PY
+	)"
+
+	"${PLAYWRITER_CMD[@]}" -s "$PLAYWRITER_SESSION" -e "$browser_config_js" --timeout "30000" >"$log_path" 2>&1
+	exit_code=$?
+	if [ "$exit_code" -ne 0 ]; then
+		record_failure "Playwriter config seed exited $exit_code; see $log_path"
+		write_rollup "$evidence_path"
+		return
+	fi
 
 	PLUGIN_SETTINGS_TARGET_URL="$TARGET_URL" \
 	PLUGIN_SETTINGS_SETTINGS_URL="$SETTINGS_URL" \
 	PLUGIN_SETTINGS_EVIDENCE_PATH="$evidence_path" \
 	PLUGIN_SETTINGS_DATA_DIR="$OUT_DIR" \
-	"${PLAYWRITER_CMD[@]}" -s "$PLAYWRITER_SESSION" -f "$BROWSER_DRIVER" --timeout "180000" >"$log_path" 2>&1
+	"${PLAYWRITER_CMD[@]}" -s "$PLAYWRITER_SESSION" -f "$BROWSER_DRIVER" --timeout "180000" >>"$log_path" 2>&1
 	exit_code=$?
 
 	if [ "$exit_code" -ne 0 ]; then
@@ -287,7 +511,14 @@ fi
 mkdir -p "$OUT_DIR" || blocked "could not create evidence output directory: $OUT_DIR"
 OUT_DIR="$(cd "$OUT_DIR" && pwd)"
 FAILURES_FILE="$OUT_DIR/plugin-active-settings-failures.txt"
+STAGE_FIXTURE_JSON="$OUT_DIR/plugin-active-settings-stage.json"
 : > "$FAILURES_FILE"
+
+trap restore_plugin_active_fixture EXIT
+
+if [ "$STAGE_PLUGIN_ACTIVE_FIXTURE" -eq 1 ]; then
+	stage_plugin_active_fixture
+fi
 
 assert_plugin_active
 

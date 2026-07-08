@@ -34,16 +34,47 @@ def write_executable(path: Path, source: str) -> None:
     path.chmod(0o755)
 
 
-def make_fake_wp(path: Path, *, active: bool = True, home_url: str = TARGET_URL) -> None:
+def make_fake_wp(path: Path, *, active: bool = True, home_url: str = TARGET_URL, stageable: bool = False) -> None:
     active_exit = 0 if active else 1
+    initial_state = "active" if active else "inactive"
+    stageable_literal = "1" if stageable else "0"
     write_executable(
         path,
         f"""#!/usr/bin/env bash
+set -euo pipefail
+if [ -n "${{FAKE_WP_INVOCATIONS:-}}" ]; then
+\tprintf '%s\\n' "$*" >> "$FAKE_WP_INVOCATIONS"
+fi
+stageable={stageable_literal}
+state_file="${{FAKE_WP_STATE:-}}"
+current_active() {{
+\tif [ "$stageable" = "1" ] && [ -n "$state_file" ]; then
+\t\tif [ ! -f "$state_file" ]; then
+\t\t\tprintf '%s\\n' {json.dumps(initial_state)} > "$state_file"
+\t\tfi
+\t\t[ "$(cat "$state_file")" = "active" ]
+\t\treturn
+\tfi
+\treturn {active_exit}
+}}
 if [ "$1" = "plugin" ] && [ "$2" = "is-active" ] && [ "$3" = "woocommerce-payments" ]; then
-\texit {active_exit}
+\tcurrent_active
+\texit $?
 fi
 if [ "$1" = "option" ] && [ "$2" = "get" ] && [ "$3" = "home" ]; then
 \tprintf '%s\\n' {json.dumps(home_url)}
+\texit 0
+fi
+if [ "$stageable" = "1" ] && [ "$1" = "eval-file" ] && [ "$2" = "-" ] && [ "${{3:-}}" = "stage-plugin-active" ]; then
+\tcat >/dev/null
+\tprintf 'active\\n' > "$state_file"
+\tprintf '{{"success":true,"mode":"stage-plugin-active","was_plugin_active":false,"disabled_mu_plugins":[{{"path":"/wp-content/mu-plugins/native-payments-enable.php","disabled_path":"/wp-content/mu-plugins/native-payments-enable.php.disabled-by-woopayments-merge"}}],"errors":[]}}\\n'
+\texit 0
+fi
+if [ "$stageable" = "1" ] && [ "$1" = "eval-file" ] && [ "$2" = "-" ] && [ "${{3:-}}" = "restore-plugin-active" ]; then
+\tcat >/dev/null
+\tprintf 'inactive\\n' > "$state_file"
+\tprintf '{{"success":true,"mode":"restore-plugin-active","errors":[]}}\\n'
 \texit 0
 fi
 printf 'unexpected fake wp args: %s\\n' "$*" >&2
@@ -66,6 +97,20 @@ import os
 import pathlib
 import sys
 
+invocation_path = pathlib.Path(os.environ["FAKE_PLAYWRITER_INVOCATIONS"])
+with invocation_path.open("a", encoding="utf-8") as stream:
+    stream.write(json.dumps({{
+        "argv": sys.argv[1:],
+        "env": {{
+            "target_url": os.environ.get("PLUGIN_SETTINGS_TARGET_URL", ""),
+            "settings_url": os.environ.get("PLUGIN_SETTINGS_SETTINGS_URL", ""),
+            "evidence_path": os.environ.get("PLUGIN_SETTINGS_EVIDENCE_PATH", ""),
+        }},
+    }}, sort_keys=True) + "\\n")
+
+if "-e" in sys.argv:
+    sys.exit(0)
+
 payload = {{
     "schema": "woopayments_plugin_active_settings_browser_evidence.v1",
     "status": "pass",
@@ -83,17 +128,6 @@ payload = {{
 evidence_path = pathlib.Path(os.environ["PLUGIN_SETTINGS_EVIDENCE_PATH"])
 evidence_path.parent.mkdir(parents=True, exist_ok=True)
 evidence_path.write_text(json.dumps(payload, sort_keys=True) + "\\n", encoding="utf-8")
-
-invocation_path = pathlib.Path(os.environ["FAKE_PLAYWRITER_INVOCATIONS"])
-with invocation_path.open("a", encoding="utf-8") as stream:
-    stream.write(json.dumps({{
-        "argv": sys.argv[1:],
-        "env": {{
-            "target_url": os.environ["PLUGIN_SETTINGS_TARGET_URL"],
-            "settings_url": os.environ["PLUGIN_SETTINGS_SETTINGS_URL"],
-            "evidence_path": os.environ["PLUGIN_SETTINGS_EVIDENCE_PATH"],
-        }},
-    }}, sort_keys=True) + "\\n")
 """,
     )
 
@@ -167,18 +201,68 @@ def test_full_gate_invokes_playwriter_driver_and_validates_evidence() -> None:
             for line in invocations_path.read_text(encoding="utf-8").splitlines()
             if line
         ]
-        assert len(invocations) == 1
-        assert "-s" in invocations[0]["argv"]
-        assert "unit" in invocations[0]["argv"]
-        assert str(REPO / "tools/woopayments-merge/plugin-active-settings.playwriter.mjs") in invocations[0]["argv"]
-        assert invocations[0]["env"]["target_url"] == TARGET_URL
-        assert invocations[0]["env"]["settings_url"] == SETTINGS_URL
+        assert len(invocations) == 2
+        assert "-e" in invocations[0]["argv"]
+        assert "state.pluginActiveSettingsConfig" in " ".join(invocations[0]["argv"])
+        assert TARGET_URL in " ".join(invocations[0]["argv"])
+        assert SETTINGS_URL in " ".join(invocations[0]["argv"])
+        assert "-s" in invocations[1]["argv"]
+        assert "unit" in invocations[1]["argv"]
+        assert str(REPO / "tools/woopayments-merge/plugin-active-settings.playwriter.mjs") in invocations[1]["argv"]
+        assert invocations[1]["env"]["target_url"] == TARGET_URL
+        assert invocations[1]["env"]["settings_url"] == SETTINGS_URL
 
         rollup = json.loads((out_dir / "plugin-active-settings-gate.json").read_text(encoding="utf-8"))
         assert rollup["schema"] == "woopayments_plugin_active_settings_gate_rollup.v1"
         assert rollup["status"] == "pass"
         assert rollup["evidence"]["settings_screen_present"] is True
         assert rollup["evidence"]["duplicate_store_errors"] == []
+
+
+def test_full_gate_can_stage_and_restore_plugin_active_fixture() -> None:
+    with tempfile.TemporaryDirectory(prefix="plugin-settings-gate-test-") as tmp:
+        tmp_path = Path(tmp)
+        fake_wp = tmp_path / "target-wp"
+        fake_playwriter = tmp_path / "fake-playwriter"
+        invocations_path = tmp_path / "playwriter-invocations.jsonl"
+        wp_invocations = tmp_path / "wp-invocations.txt"
+        wp_state = tmp_path / "wp-state.txt"
+        out_dir = tmp_path / "evidence"
+
+        make_fake_wp(fake_wp, active=False, stageable=True)
+        make_fake_playwriter(fake_playwriter)
+
+        env = {
+            **os.environ,
+            "PLAYWRITER_BIN": str(fake_playwriter),
+            "FAKE_PLAYWRITER_INVOCATIONS": str(invocations_path),
+            "FAKE_WP_INVOCATIONS": str(wp_invocations),
+            "FAKE_WP_STATE": str(wp_state),
+        }
+
+        result = run_gate(
+            "--target",
+            str(fake_wp),
+            "--target-url",
+            TARGET_URL,
+            "--playwriter-session",
+            "unit",
+            "--stage-plugin-active-fixture",
+            "--out-dir",
+            str(out_dir),
+            env=env,
+        )
+
+        assert result.returncode == 0, result.stderr
+        wp_log = wp_invocations.read_text(encoding="utf-8")
+        assert "eval-file - stage-plugin-active" in wp_log
+        assert "plugin is-active woocommerce-payments" in wp_log
+        assert "eval-file - restore-plugin-active" in wp_log
+        assert wp_state.read_text(encoding="utf-8").strip() == "inactive"
+
+        rollup = json.loads((out_dir / "plugin-active-settings-gate.json").read_text(encoding="utf-8"))
+        assert rollup["status"] == "pass"
+        assert rollup["evidence"]["settings_screen_present"] is True
 
 
 def test_gate_blocks_when_woopayments_plugin_is_not_active() -> None:
@@ -250,6 +334,7 @@ def main() -> None:
         test_usage_requires_target_and_target_url,
         test_print_plan_describes_settings_regression_gate,
         test_full_gate_invokes_playwriter_driver_and_validates_evidence,
+        test_full_gate_can_stage_and_restore_plugin_active_fixture,
         test_gate_blocks_when_woopayments_plugin_is_not_active,
         test_gate_fails_duplicate_settings_store_evidence,
     ]

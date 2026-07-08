@@ -34,6 +34,17 @@ def make_args(out_dir: str):
     )
 
 
+def make_args_without_user(out_dir: str):
+    return SimpleNamespace(
+        target_wp="docker exec -i target-cli-1 wp --allow-root",
+        target_url="http://store8889.localhost:8889",
+        store_dir=str(REPO),
+        playwriter_session="unit",
+        out_dir=out_dir,
+        skip_wpcom_readiness=False,
+    )
+
+
 def assert_raises(fn, expected: str):
     try:
         fn()
@@ -137,6 +148,30 @@ def test_rollup_records_required_store_profiles():
     assert payload["required_store_profiles"] == module.required_store_profiles()
 
 
+def test_state_probe_runs_as_admin_when_target_wp_omits_user():
+    module = load_module()
+
+    with tempfile.TemporaryDirectory(prefix="a5f-rehearsal-test-") as out_dir:
+        rehearsal = module.Rehearsal(make_args_without_user(out_dir))
+        captured = {}
+
+        def fake_run_wp(phase_id, wp_args, **kwargs):
+            captured["phase_id"] = phase_id
+            captured["wp_args"] = wp_args
+            captured["kwargs"] = kwargs
+            return {"json": {"ready": True}}
+
+        rehearsal.run_wp = fake_run_wp
+        state = rehearsal.run_state_probe("default-off-plugin-state")
+
+    assert state == {"ready": True}
+    assert captured["phase_id"] == "default-off-plugin-state"
+    assert captured["wp_args"][:2] == ["--user=1", "eval-file"]
+    assert captured["wp_args"][-1] == "-"
+    assert captured["kwargs"]["parse_json"] is True
+    assert "WooPayments native cutover state probe" in captured["kwargs"]["input_text"]
+
+
 def test_parse_json_prefers_top_level_probe_payload():
     module = load_module()
 
@@ -158,6 +193,17 @@ def test_parse_json_prefers_top_level_probe_payload():
 
     assert payload["ready"] is True
     assert payload["captured_requests"][0]["body"]["statement_descriptor"] == "A5 LOCAL PROBE"
+
+
+def test_debug_log_scan_ignores_known_wpcli_textdomain_notices():
+    module = load_module()
+
+    source = module.build_debug_log_scan()
+
+    assert "_load_textdomain_just_in_time" in source
+    assert "ignored_matches" in source
+    assert "wp67_early_textdomain_notice" in source
+    assert "PHP Notice|Notice:" in source
 
 
 def test_expected_failure_command_records_pass_phase():
@@ -274,7 +320,9 @@ def main() -> None:
         test_rollup_is_written_after_failed_phase,
         test_required_store_profiles_cover_lpm_mc_and_sepa_token_fixtures,
         test_rollup_records_required_store_profiles,
+        test_state_probe_runs_as_admin_when_target_wp_omits_user,
         test_parse_json_prefers_top_level_probe_payload,
+        test_debug_log_scan_ignores_known_wpcli_textdomain_notices,
         test_expected_failure_command_records_pass_phase,
         test_orchestrator_uses_browser_for_blocked_mandatory_gate,
         test_playwriter_gate_copies_failed_source_evidence,

@@ -22,6 +22,9 @@ VER_RE = re.compile(r'^\d+\.\d+(\.\d+)+([.-][0-9A-Za-z.]+)?$')  # 3+ part dotted
 ENVELOPE = {
     'blog_id', 'blog_tz', 'user_lang', 'device_type', 'anonid', 'url', 'referrer',
     '_via', '_ts', '_rt', '_dl', '_dr', '_lg', '_en', '_ui', '_ut', '_tz', '_aua',
+    # Global WooCommerce context, not part of the WooPayments/native telemetry contract. These
+    # vary across store config, current user, and duplicate capture surfaces for the same event.
+    'coming_soon', 'role',
 }
 
 

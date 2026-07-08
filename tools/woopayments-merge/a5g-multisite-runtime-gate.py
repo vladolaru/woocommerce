@@ -539,7 +539,7 @@ class MultisiteRuntimeGate:
                 cleanup_failed = True
                 cleanup_error = str(exc)
         elif self.work_dir is not None and self.wp_env_started:
-            result = self.run_wp_env("destroy-disposable-wp-env", ["destroy"], timeout_seconds=600, allow_failure=True)
+            result = self.run_wp_env("destroy-disposable-wp-env", ["destroy"], input_text="y\n", timeout_seconds=600, allow_failure=True)
             cleanup_failed = result.get("status") == "fail"
             cleanup_error = str(result.get("error") or "wp-env cleanup failed")
         if self.work_dir is not None:

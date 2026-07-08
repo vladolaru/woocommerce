@@ -9,27 +9,34 @@ const fs = require( 'node:fs' );
 const path = require( 'node:path' );
 
 const env = typeof process !== 'undefined' && process.env ? process.env : {};
+const stateConfig =
+	typeof state !== 'undefined' && state.lpmCheckoutConfig && 'object' === typeof state.lpmCheckoutConfig
+		? state.lpmCheckoutConfig
+		: {};
 
-function requiredEnv( name ) {
-	const value = env[ name ];
+function requiredConfig( envName, stateName ) {
+	const value = env[ envName ] || stateConfig[ stateName ];
 	if ( ! value ) {
-		throw new Error( `Missing required environment variable ${ name }` );
+		throw new Error( `Missing required browser gate config ${ envName }` );
 	}
 	return value;
 }
 
-const role = requiredEnv( 'LPM_GATE_ROLE' );
-const method = requiredEnv( 'LPM_GATE_METHOD' );
-const surface = requiredEnv( 'LPM_GATE_SURFACE' );
-const baseUrl = requiredEnv( 'LPM_GATE_BASE_URL' ).replace( /\/+$/, '' );
-const currency = requiredEnv( 'LPM_GATE_CURRENCY' );
-const country = requiredEnv( 'LPM_GATE_COUNTRY' );
-const gatewayId = requiredEnv( 'LPM_GATE_GATEWAY_ID' );
-const stripePaymentMethodType = requiredEnv( 'LPM_GATE_STRIPE_PAYMENT_METHOD_TYPE' );
-const methodFamily = requiredEnv( 'LPM_GATE_METHOD_FAMILY' );
-const evidencePath = requiredEnv( 'LPM_GATE_EVIDENCE_PATH' );
+const role = requiredConfig( 'LPM_GATE_ROLE', 'role' );
+const method = requiredConfig( 'LPM_GATE_METHOD', 'method' );
+const surface = requiredConfig( 'LPM_GATE_SURFACE', 'surface' );
+const baseUrl = requiredConfig( 'LPM_GATE_BASE_URL', 'baseUrl' ).replace( /\/+$/, '' );
+const currency = requiredConfig( 'LPM_GATE_CURRENCY', 'currency' );
+const country = requiredConfig( 'LPM_GATE_COUNTRY', 'country' );
+const gatewayId = requiredConfig( 'LPM_GATE_GATEWAY_ID', 'gatewayId' );
+const stripePaymentMethodType = requiredConfig( 'LPM_GATE_STRIPE_PAYMENT_METHOD_TYPE', 'stripePaymentMethodType' );
+const methodFamily = requiredConfig( 'LPM_GATE_METHOD_FAMILY', 'methodFamily' );
+const productId = requiredConfig( 'LPM_GATE_PRODUCT_ID', 'productId' );
+const checkoutPageId = requiredConfig( 'LPM_GATE_CHECKOUT_PAGE_ID', 'checkoutPageId' );
+const evidencePath = requiredConfig( 'LPM_GATE_EVIDENCE_PATH', 'evidencePath' );
 const startedAt = new Date().toISOString();
-const checkoutUrl = `${ baseUrl }/checkout/?lpm-gate-method=${ encodeURIComponent( method ) }&lpm-gate-surface=${ encodeURIComponent( surface ) }`;
+const addToCartUrl = `${ baseUrl }/?add-to-cart=${ encodeURIComponent( productId ) }&quantity=1&lpm-gate-method=${ encodeURIComponent( method ) }&lpm-gate-surface=${ encodeURIComponent( surface ) }`;
+const checkoutUrl = `${ baseUrl }/?page_id=${ encodeURIComponent( checkoutPageId ) }&lpm-gate-method=${ encodeURIComponent( method ) }&lpm-gate-surface=${ encodeURIComponent( surface ) }`;
 
 const methodLabels = {
 	affirm: [ 'Affirm' ],
@@ -138,6 +145,8 @@ function writeEvidence( payload ) {
 				gateway_id: gatewayId,
 				stripe_payment_method_type: stripePaymentMethodType,
 				method_family: methodFamily,
+				product_id: productId,
+				checkout_page_id: checkoutPageId,
 				order_id: null,
 				selected_gateway_id: null,
 				order_payment_method: null,
@@ -181,7 +190,17 @@ function isFatalConsoleError( log ) {
 
 function intentIdsFromText( text ) {
 	const matches = String( text || '' ).match( /\bpi_[A-Za-z0-9_]+\b/g ) || [];
-	return [ ...new Set( matches ) ];
+	return [
+		...new Set(
+			matches
+				.map( ( candidate ) => candidate.split( '_secret_' )[ 0 ] )
+				.filter(
+					( candidate ) =>
+						/^pi_[A-Za-z0-9_]{8,}$/.test( candidate ) &&
+						! /^pi_client_secret\b/.test( candidate )
+				)
+		),
+	];
 }
 
 async function countLocator( page, selector ) {
@@ -276,6 +295,9 @@ async function selectFirstNonEmptyOption( locator ) {
 async function capturePageEvidence( page, extra = {} ) {
 	let logs = [];
 	let snapshotText = '';
+	let gatewayHtmlSample = '';
+	let frameDiagnostics = [];
+	let stripeRuntime = {};
 	const screenshotPath = evidencePath.replace( /\.json$/, '.png' );
 	const gatewaySelectors = [
 		`input[name="payment_method"][value="${ gatewayId }"]`,
@@ -286,6 +308,11 @@ async function capturePageEvidence( page, extra = {} ) {
 		`.wcpay-upe-form[data-payment-method-type="${ stripePaymentMethodType }"]`,
 		`.wcpay-upe-element[data-payment-method-type="${ stripePaymentMethodType }"]`,
 		'#place_order',
+	];
+	const gatewayContainerSelectors = [
+		`.payment_method_${ gatewayId }`,
+		`.wcpay-upe-form[data-payment-method-type="${ stripePaymentMethodType }"]`,
+		`.wcpay-upe-element[data-payment-method-type="${ stripePaymentMethodType }"]`,
 	];
 
 	try {
@@ -306,6 +333,49 @@ async function capturePageEvidence( page, extra = {} ) {
 		// Screenshot evidence is useful but should not hide the primary page state.
 	}
 
+	for ( const selector of gatewayContainerSelectors ) {
+		try {
+			const locator = page.locator( selector ).first();
+			if ( ( await locator.count() ) > 0 ) {
+				gatewayHtmlSample = ( await locator.evaluate( ( element ) => element.outerHTML ) ).slice( 0, 5000 );
+				break;
+			}
+		} catch ( error ) {
+			// Keep collecting other evidence.
+		}
+	}
+
+	frameDiagnostics = await Promise.all(
+		page.frames().map( async ( frame ) => ( {
+			url: typeof frame.url === 'function' ? frame.url() : '',
+			input_count: await frame.locator( 'input' ).count().catch( () => 0 ),
+			visible_input_count: await frame.locator( 'input:visible' ).count().catch( () => 0 ),
+			iframe_count: await frame.locator( 'iframe' ).count().catch( () => 0 ),
+		} ) )
+	).catch( () => [] );
+
+	stripeRuntime = await page.evaluate( () => {
+		const selected = document.querySelector( 'input[name="payment_method"]:checked' );
+		const selectedContainer = selected && selected.closest ? selected.closest( 'li' ) : null;
+		const scriptSrcs = Array.from( document.scripts || [] ).map( ( script ) => script.src || '' );
+		return {
+			has_stripe: typeof window.Stripe === 'function',
+			stripe_script_count: scriptSrcs.filter( ( src ) => /js\.stripe\.com/i.test( src ) ).length,
+			woopayments_checkout_script_srcs: scriptSrcs
+				.filter( ( src ) => /woopayments-checkout/i.test( src ) )
+				.slice( 0, 5 ),
+			core_checkout_form_count: document.querySelectorAll( '.wcpay-core-checkout-form' ).length,
+			core_payment_element_count: document.querySelectorAll( '.wcpay-core-payment-element, #wcpay-core-payment-element' ).length,
+			selected_gateway_id: selected ? selected.value || selected.getAttribute( 'value' ) || '' : '',
+			selected_gateway_payment_element_count: selectedContainer
+				? selectedContainer.querySelectorAll( '.wcpay-core-payment-element, #wcpay-core-payment-element' ).length
+				: 0,
+			selected_gateway_iframe_count: selectedContainer ? selectedContainer.querySelectorAll( 'iframe' ).length : 0,
+		};
+	} ).catch( ( error ) => ( {
+		error: error?.message || String( error ),
+	} ) );
+
 	return {
 		final_url: page.url(),
 		title: await page.title().catch( () => '' ),
@@ -316,6 +386,9 @@ async function capturePageEvidence( page, extra = {} ) {
 			} ) )
 		),
 		snapshot: snapshotText,
+		gateway_html_sample: gatewayHtmlSample,
+		frame_diagnostics: frameDiagnostics,
+		stripe_runtime: stripeRuntime,
 		logs,
 		fatal_console_errors: logs.filter( isFatalConsoleError ),
 		screenshot_path: screenshotPath,
@@ -348,6 +421,25 @@ async function installResponseCapture( page, intentIds, failedResponses ) {
 	return handler;
 }
 
+function installRequestFailureCapture( page, failedRequests ) {
+	const handler = ( request ) => {
+		const url = request.url();
+		if ( /favicon\.ico/i.test( url ) ) {
+			return;
+		}
+
+		const failure = typeof request.failure === 'function' ? request.failure() : null;
+		failedRequests.push( {
+			method: typeof request.method === 'function' ? request.method() : '',
+			url,
+			failure: failure?.errorText || '',
+		} );
+	};
+
+	page.on( 'requestfailed', handler );
+	return handler;
+}
+
 async function readHiddenIntentIds( page ) {
 	return page.evaluate( () =>
 		Array.from(
@@ -367,10 +459,40 @@ async function readCheckedPaymentMethod( page ) {
 	} ).catch( () => '' );
 }
 
+function sameOrigin( currentUrl, targetUrl ) {
+	try {
+		return new URL( currentUrl ).origin === new URL( targetUrl ).origin;
+	} catch ( error ) {
+		return false;
+	}
+}
+
+async function gotoLocalPage( page, url, options = {} ) {
+	const timeout = options.timeout || 45000;
+	try {
+		await page.goto( url, { waitUntil: 'domcontentloaded', timeout } );
+		return { timed_out: false, final_url: page.url() };
+	} catch ( error ) {
+		const finalUrl = page.url();
+		if ( ! finalUrl || finalUrl === 'about:blank' || ! sameOrigin( finalUrl, url ) ) {
+			throw error;
+		}
+		const readyState = await page.evaluate( () => document.readyState ).catch( () => '' );
+		return {
+			timed_out: true,
+			final_url: finalUrl,
+			ready_state: readyState,
+			message: error?.message || String( error ),
+		};
+	}
+}
+
 async function navigateToCheckout( page ) {
 	await page.goto( 'about:blank', { waitUntil: 'domcontentloaded', timeout: 10000 } );
 	await getLatestLogs( { page, sinceLastCall: true } ).catch( () => [] );
-	await page.goto( checkoutUrl, { waitUntil: 'domcontentloaded', timeout: 45000 } );
+	await gotoLocalPage( page, addToCartUrl );
+	await waitForPageLoad( { page, timeout: 20000, minWait: 1000 } );
+	await gotoLocalPage( page, checkoutUrl );
 	await waitForPageLoad( { page, timeout: 20000, minWait: 1000 } );
 }
 
@@ -426,9 +548,27 @@ async function selectPaymentMethod( page ) {
 async function fillDebitPaymentElement( page ) {
 	const fillAttempts = [];
 	for ( const frame of page.frames() ) {
+		const frameUrl = typeof frame.url === 'function' ? frame.url() : '';
+		const isStripeFrame = /stripe|js\.stripe\.com|hooks\.stripe\.com/i.test( frameUrl );
 		const visibleInputs = await frame.locator( 'input' ).all().catch( () => [] );
 		for ( const input of visibleInputs ) {
 			if ( ! ( await input.isVisible().catch( () => false ) ) ) {
+				continue;
+			}
+			const inputType = await input.getAttribute( 'type' ).catch( () => '' );
+			if ( /^(checkbox|radio|hidden|submit|button|reset)$/i.test( inputType || '' ) ) {
+				continue;
+			}
+			const isSelectedGatewayInput = await input.evaluate(
+				( element, currentGatewayId ) =>
+					Boolean(
+						element.closest( `.payment_method_${ currentGatewayId }` ) ||
+							element.closest( `[data-gateway-id="${ currentGatewayId }"]` ) ||
+							element.closest( `[data-payment-method-id="${ currentGatewayId }"]` )
+					),
+				gatewayId
+			).catch( () => false );
+			if ( ! isStripeFrame && ! isSelectedGatewayInput ) {
 				continue;
 			}
 			const fieldText = await input.evaluate( ( element ) =>
@@ -444,7 +584,7 @@ async function fillDebitPaymentElement( page ) {
 			).catch( () => '' );
 
 			let value = '';
-			if ( /iban|sepa/i.test( fieldText ) || method === 'sepa_debit' ) {
+			if ( /iban|sepa/i.test( fieldText ) || ( method === 'sepa_debit' && isStripeFrame ) ) {
 				value = env.LPM_GATE_TEST_IBAN || 'AT611904300234573201';
 			} else if ( /bsb|routing/i.test( fieldText ) ) {
 				value = '000000';
@@ -469,22 +609,72 @@ async function fillDebitPaymentElement( page ) {
 	return fillAttempts;
 }
 
-async function fillPaymentElement( page ) {
+async function waitForPaymentElementReady( page ) {
+	const selectors = [
+		`.payment_method_${ gatewayId } iframe`,
+		`.wcpay-upe-form[data-payment-method-type="${ stripePaymentMethodType }"] iframe`,
+		`.wcpay-upe-element[data-payment-method-type="${ stripePaymentMethodType }"] iframe`,
+	];
+	const startedAtMs = Date.now();
+
+	while ( Date.now() - startedAtMs < 20000 ) {
+		for ( const selector of selectors ) {
+			const count = await countLocator( page, selector );
+			if ( count > 0 ) {
+				await page.waitForTimeout( 1000 );
+				return {
+					ready: true,
+					selector,
+					count,
+				};
+			}
+		}
+		await page.waitForTimeout( 500 );
+	}
+
+	return {
+		ready: false,
+		selector: null,
+		count: 0,
+	};
+}
+
+async function selectPaymentElementOptions( page ) {
 	const selectedOptions = [];
 	for ( const frame of page.frames() ) {
+		const frameUrl = typeof frame.url === 'function' ? frame.url() : '';
+		const isStripeFrame = /stripe|js\.stripe\.com|hooks\.stripe\.com/i.test( frameUrl );
 		const selects = await frame.locator( 'select' ).all().catch( () => [] );
 		for ( const select of selects ) {
 			if ( await select.isVisible().catch( () => false ) ) {
+				const isSelectedGatewaySelect = await select.evaluate(
+					( element, currentGatewayId ) =>
+						Boolean(
+							element.closest( `.payment_method_${ currentGatewayId }` ) ||
+								element.closest( `[data-gateway-id="${ currentGatewayId }"]` ) ||
+								element.closest( `[data-payment-method-id="${ currentGatewayId }"]` )
+						),
+					gatewayId
+				).catch( () => false );
+				if ( ! isStripeFrame && ! isSelectedGatewaySelect ) {
+					continue;
+				}
 				if ( await selectFirstNonEmptyOption( select ) ) {
 					selectedOptions.push( await select.getAttribute( 'name' ).catch( () => 'select' ) );
 				}
 			}
 		}
 	}
+	return selectedOptions;
+}
 
+async function fillPaymentElement( page ) {
+	const paymentElement = await waitForPaymentElementReady( page );
+	const selectedOptions = await selectPaymentElementOptions( page );
 	const debitFields = await fillDebitPaymentElement( page );
 	return {
 		selected_options: selectedOptions,
+		payment_element: paymentElement,
 		debit_fields: debitFields,
 	};
 }
@@ -562,7 +752,13 @@ async function extractOrderEvidence( page, intentIds ) {
 		const bodyText = ( document.body?.innerText || document.body?.textContent || '' ).replace( /\s+/g, ' ' ).trim();
 		const url = window.location.href;
 		const orderMatch = url.match( /\/order-received\/(\d+)\// );
-		const intentMatches = bodyText.match( /\bpi_[A-Za-z0-9_]+\b/g ) || [];
+		const intentMatches = ( bodyText.match( /\bpi_[A-Za-z0-9_]+\b/g ) || [] )
+			.map( ( candidate ) => candidate.split( '_secret_' )[ 0 ] )
+			.filter(
+				( candidate ) =>
+					/^pi_[A-Za-z0-9_]{8,}$/.test( candidate ) &&
+					! /^pi_client_secret\b/.test( candidate )
+			);
 		return {
 			url,
 			order_id: orderMatch ? Number.parseInt( orderMatch[ 1 ], 10 ) : null,
@@ -584,7 +780,7 @@ async function extractOrderEvidence( page, intentIds ) {
 	};
 }
 
-async function runCheckoutFlow( page ) {
+async function runCheckoutFlow( page, failedRequests ) {
 	const intentIds = new Set();
 	const failedResponses = [];
 	const responseHandler = await installResponseCapture( page, intentIds, failedResponses );
@@ -622,6 +818,7 @@ async function runCheckoutFlow( page ) {
 			authorization_attempts: authorizationAttempts,
 			observed_payment_intent_ids: [ ...intentIds ],
 			failed_responses: failedResponses,
+			failed_requests: failedRequests,
 		} );
 		const payload = {
 			status: failures.length === 0 ? 'pass' : 'fail',
@@ -648,15 +845,18 @@ assertLocalBase( baseUrl );
 writeEvidence( { status: 'running' } );
 
 let gatePage = null;
+let requestFailureHandler = null;
+const failedRequests = [];
 
 try {
 	gatePage = await context.newPage();
+	requestFailureHandler = installRequestFailureCapture( gatePage, failedRequests );
 	if ( typeof state !== 'undefined' ) {
 		state.lpmCheckoutPage = gatePage;
 	}
 
 	await gatePage.setViewportSize( { width: 1280, height: 900 } );
-	await runCheckoutFlow( gatePage );
+	await runCheckoutFlow( gatePage, failedRequests );
 
 	console.log( JSON.stringify( { evidencePath, pass: true, role, method }, null, 2 ) );
 } catch ( error ) {
@@ -664,7 +864,7 @@ try {
 		? JSON.parse( fs.readFileSync( evidencePath, 'utf8' ) )
 		: {};
 	const pageEvidence = gatePage
-		? await capturePageEvidence( gatePage ).catch( ( captureError ) => ( {
+		? await capturePageEvidence( gatePage, { failed_requests: failedRequests } ).catch( ( captureError ) => ( {
 				capture_error: safeError( captureError ),
 		} ) )
 		: null;
@@ -679,6 +879,9 @@ try {
 	throw error;
 } finally {
 	if ( gatePage ) {
+		if ( requestFailureHandler ) {
+			gatePage.off( 'requestfailed', requestFailureHandler );
+		}
 		try {
 			await gatePage.close();
 		} catch ( error ) {

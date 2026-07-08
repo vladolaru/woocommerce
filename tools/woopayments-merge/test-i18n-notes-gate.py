@@ -12,6 +12,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 SCRIPT = REPO / "tools/woopayments-merge/i18n-notes-gate.sh"
 VERIFY = REPO / "tools/woopayments-merge/verify.sh"
+NATIVE_CHARGE_DRIVER = REPO / "tools/woopayments-merge/flow-drive-native-charge.php"
 TARGET_WP = "docker exec -i target-cli-1 wp --allow-root --user=1"
 
 
@@ -124,6 +125,7 @@ def test_print_plan_describes_live_i18n_probe() -> None:
     assert payload["target_wp"] == TARGET_WP
     assert payload["locale"] == "de_DE"
     assert payload["required_flows"] == ["charge", "refund", "dispute"]
+    assert payload["translation_probe"]["plugin"] == "woopayments-i18n-notes-gate-translations.php"
     assert "Payment complete." in payload["english_sentinels"]
 
 
@@ -228,3 +230,31 @@ def test_verify_runs_i18n_notes_gate_for_cross_store_mode() -> None:
     verify_source = VERIFY.read_text(encoding="utf-8")
 
     assert "i18n-notes-gate.sh" in verify_source
+
+
+def test_live_dispute_probe_uses_distinct_quantity_to_avoid_duplicate_session_guard() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+
+    assert 'drive_flow "dispute" "$dispute_flow" dispute --deterministic --native --quantity=3' in source
+
+
+def test_live_gate_installs_controlled_gettext_probe_for_new_payment_note_strings() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+
+    assert "install_translation_probe" in source
+    assert "'Fee (%1\\$s): %2\\$s' => 'Gebuehr (%1\\$s): %2\\$s'" in source
+    assert "'Payment dispute has been updated' => 'Zahlungsdisput wurde aktualisiert'" in source
+
+
+def test_live_gate_reads_original_locale_with_a_notice_safe_marker() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+
+    assert "WPLANG:" in source
+    assert "grep -oE 'WPLANG:[A-Za-z_]*'" in source
+
+
+def test_native_charge_driver_clears_processing_order_marker_between_harness_flows() -> None:
+    source = NATIVE_CHARGE_DRIVER.read_text(encoding="utf-8")
+
+    assert "WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER" in source
+    assert "WC()->session->set" in source
