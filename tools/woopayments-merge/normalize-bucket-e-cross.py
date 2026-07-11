@@ -18,20 +18,34 @@ from typing import Any
 
 
 ID_PATTERNS = (
-    (re.compile(r"\b(ch|pi|seti|pm|cus|acct|evt|req|po|src|tok|txn)_[A-Za-z0-9_]+\b"), r"\1_<id>"),
+    (re.compile(r"\b(ch|py|pi|seti|pm|cus|acct|evt|req|re|po|src|tok|txn)_[A-Za-z0-9_]+\b"), r"\1_<id>"),
+    (re.compile(r"\btest_[0-9]{8,}\b"), "test_<id>"),
     (re.compile(r"\bwc_order_[A-Za-z0-9]+\b"), "wc_order_<id>"),
     (re.compile(r"\b[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}\b", re.IGNORECASE), "<uuid>"),
 )
 
 VOLATILE_JSON_KEYS = {
     "authorization_code",
+    "capture_before",
+    "fingerprint",
+    "mandate",
     "network_transaction_id",
+    "order_id",
+    "transaction_id",
 }
 
-IGNORED_META_KEYS = {
-    "_wcpay_raw_payment_method_details",  # Core-owned PaymentInfo cache, not a WooPayments compatibility surface.
+RECURSIVELY_IGNORED_META_KEYS = {
     "_wcpay_test_lab",  # Reference-store harness provenance.
     "_wcpay_test_lab_account",  # Reference-store harness provenance.
+}
+
+IGNORED_META_KEYS = RECURSIVELY_IGNORED_META_KEYS | {
+    "_wcpay_raw_payment_method_details",  # Core-owned PaymentInfo cache, not a WooPayments compatibility surface.
+}
+
+VOLATILE_META_KEYS = {
+    "_wcpay_multibanco_expiry",
+    "_wcpay_multibanco_url",
 }
 
 ADMIN_URL_PATTERN = re.compile(r"https?://[^\"< ]+/wp-admin/admin\.php")
@@ -67,6 +81,7 @@ def normalize(value: Any) -> Any:
         return {
             key: "<volatile>" if key in VOLATILE_JSON_KEYS else normalize(inner)
             for key, inner in sorted(value.items())
+            if key not in RECURSIVELY_IGNORED_META_KEYS
         }
     if isinstance(value, list):
         return [normalize(inner) for inner in value]
@@ -79,7 +94,7 @@ def normalize_record(record: dict[str, Any], index: int) -> dict[str, Any]:
     normalized = normalize(record)
     if isinstance(normalized.get("meta"), dict):
         normalized["meta"] = {
-            key: value
+            key: ["<volatile>"] if key in VOLATILE_META_KEYS else value
             for key, value in normalized["meta"].items()
             if key not in IGNORED_META_KEYS
         }

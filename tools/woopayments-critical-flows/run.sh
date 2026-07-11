@@ -19,19 +19,37 @@ set -uo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$DIR/lib/common.sh"
 
-STORE="both" LAYER="all" ONLY_FLOW="" AGENT_RESULTS_DIR="${AGENT_RESULTS_DIR:-}"
+STORE="both" LAYER="all" ONLY_FLOW="" AGENT_RESULTS_DIR="${AGENT_RESULTS_DIR:-}" EVIDENCE_CONTEXT_FILE="${EVIDENCE_CONTEXT_FILE:-}" REF_URL="" TARGET_URL=""
 while [ $# -gt 0 ]; do case "$1" in
   --store) STORE="$2"; shift 2;; --layer) LAYER="$2"; shift 2;; --flow) ONLY_FLOW="$2"; shift 2;;
   --agent-results-dir) AGENT_RESULTS_DIR="$2"; shift 2;;
+  --context-file) EVIDENCE_CONTEXT_FILE="$2"; shift 2;;
+  --ref-url) REF_URL="${2:-}"; shift 2;;
+  --target-url) TARGET_URL="${2:-}"; shift 2;;
   *) echo "unknown arg: $1" >&2; exit 2;; esac; done
 
 case "$STORE" in both|ref|target) ;; *) echo "unknown store: $STORE" >&2; exit 2;; esac
 case "$LAYER" in all|deterministic|agent) ;; *) echo "unknown layer: $LAYER" >&2; exit 2;; esac
 
+if [ "$LAYER" != "agent" ] && [ "$STORE" != "ref" ] && { [ -z "$ONLY_FLOW" ] || [[ "MC-06-automatic-rates-refresh" == "$ONLY_FLOW"* ]]; }; then
+  if [ -z "$REF_URL" ] || [ -z "$TARGET_URL" ]; then
+    echo "BLOCKED: explicit --ref-url and --target-url are required when MC-06 can run." >&2
+    exit 3
+  fi
+fi
+
 stores() { case "$STORE" in both) echo "ref target";; ref|target) echo "$STORE";; esac; }
 
 spec_requires_agent_layer() { # <spec.md>
   ! grep -qi 'No browser layer is required' "$1"
+}
+
+agent_oracle_mode() { # <spec.md>
+  if grep -qiE 'Agent oracle mode:[[:space:]]*target-only' "$1"; then
+    echo "target-only"
+  else
+    echo "comparable"
+  fi
 }
 
 run_no_browser_deterministic_flow() { # <flow-base> <store>
@@ -71,7 +89,7 @@ run_no_browser_deterministic_flow() { # <flow-base> <store>
       fi
 
       echo "[MC-06/$store] exercise: compare automatic rates refresh across reference and target"
-      bash "$MC_RATES_GATE" --ref "$REF_WP_COMMAND" --target "$TARGET_WP_COMMAND" --currency-from USD --currencies-to GBP,EUR --out-dir "$EVIDENCE_DIR/MC-06-automatic-rates-refresh"
+      bash "$MC_RATES_GATE" --ref "$REF_WP_COMMAND" --target "$TARGET_WP_COMMAND" --ref-url "$REF_URL" --target-url "$TARGET_URL" --currency-from USD --currencies-to GBP,EUR --out-dir "$EVIDENCE_DIR/MC-06-automatic-rates-refresh"
       rc=$?
       ;;
     *)
@@ -139,22 +157,25 @@ PY
 }
 
 agent_result_verdict() {
-  local flow="$1" store="$2" result_file="$3"
+  local flow="$1" store="$2" result_file="$3" expected_oracle_mode="$4"
 
-  python3 - "$flow" "$store" "$result_file" <<'PY'
+  python3 - "$flow" "$store" "$result_file" "$EVIDENCE_CONTEXT_FILE" "$DIR" "$expected_oracle_mode" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-flow, store, result_file = sys.argv[1:]
+flow, store, result_file, context_file, module_dir, expected_oracle_mode = sys.argv[1:]
+sys.path.insert(0, module_dir)
+
+from evidence_context import EvidenceContextError, validate_context, validate_imported_result
 
 
 def clean(value):
     return " ".join(str(value).split())
 
 
-def emit(status, exit_code, verdict, reason):
-    print("\t".join([status, str(exit_code), clean(verdict), clean(reason)]))
+def emit(status, exit_code, verdict, reason, queue_required=True):
+    print("\t".join([status, str(exit_code), clean(verdict), clean(reason), "1" if queue_required else "0"]))
 
 
 def classify_verdict(verdict):
@@ -174,9 +195,32 @@ except Exception as exc:
     emit("BLOCKED", 3, "BLOCKED", f"invalid agent result JSON: {exc}")
     raise SystemExit(0)
 
+try:
+    if not context_file:
+        raise EvidenceContextError("evidence_context_missing", "current critical-flow context was not supplied")
+    context = json.loads(Path(context_file).read_text(encoding="utf-8"))
+    validate_context(context)
+    validate_imported_result(payload, context, flow, store)
+except EvidenceContextError as exc:
+    emit("BLOCKED", 3, "BLOCKED", f"{exc.code}: {exc}")
+    raise SystemExit(0)
+except Exception as exc:
+    emit("BLOCKED", 3, "BLOCKED", f"evidence_context_invalid: {exc}")
+    raise SystemExit(0)
+
 payload_flow = payload.get("flow")
 if payload_flow and payload_flow != flow:
     emit("BLOCKED", 3, "BLOCKED", f"agent result flow mismatch: expected {flow}, got {payload_flow}")
+    raise SystemExit(0)
+
+oracle_mode = clean(payload.get("oracle_mode", "comparable")).lower()
+if oracle_mode != expected_oracle_mode:
+    emit(
+        "BLOCKED",
+        3,
+        "BLOCKED",
+        f"agent oracle mode mismatch: expected {expected_oracle_mode}, got {oracle_mode or '<missing>'}",
+    )
     raise SystemExit(0)
 
 store_results = payload.get("store_results")
@@ -196,6 +240,41 @@ if store_result is None:
 
 verdict = clean(store_result.get("verdict", ""))
 status, exit_code = classify_verdict(verdict)
+
+if expected_oracle_mode == "target-only":
+    reference_result = next(
+        (
+            candidate
+            for candidate in store_results
+            if isinstance(candidate, dict) and candidate.get("store") == "ref"
+        ),
+        None,
+    )
+    reference_status, _ = classify_verdict(
+        clean(reference_result.get("verdict", "")) if reference_result else ""
+    )
+    parity_verdict = clean(payload.get("parity_verdict", ""))
+    parity_status, _ = classify_verdict(parity_verdict)
+
+    if reference_status != "BLOCKED" or parity_status != "BLOCKED":
+        emit(
+            "BLOCKED",
+            3,
+            "BLOCKED",
+            "target-only evidence must keep the reference and parity verdicts blocked/not comparable",
+        )
+    elif status == "FAIL":
+        emit("FAIL", 1, verdict, f"target-only agent verdict: {verdict}", False)
+    elif store == "ref" and status == "BLOCKED":
+        emit("BLOCKED", 3, verdict or "BLOCKED", "target-only reference is intentionally not comparable", False)
+    elif store == "target" and status == "PASS":
+        emit("PASS", 0, verdict, f"target-only agent result accepted: {verdict}; parity not comparable", False)
+    elif status == "BLOCKED":
+        emit("BLOCKED", 3, verdict or "BLOCKED", f"target-only agent verdict: {verdict or '<missing>'}")
+    else:
+        emit("BLOCKED", 3, verdict or "BLOCKED", "invalid target-only store verdict")
+    raise SystemExit(0)
+
 if status == "FAIL":
     emit("FAIL", 1, verdict, f"agent verdict: {verdict}")
 elif status == "BLOCKED":
@@ -218,12 +297,12 @@ PY
 }
 
 write_rollup() {
-  python3 - "$ROLLUP_JSON" "$RESULTS_JSONL" "$STORE" "$LAYER" "$ONLY_FLOW" "$PASS_COUNT" "$FAIL_COUNT" "$BLOCKED_COUNT" "$QUEUED_AGENT_COUNT" "$AGENT_QUEUE" <<'PY'
+  python3 - "$ROLLUP_JSON" "$RESULTS_JSONL" "$STORE" "$LAYER" "$ONLY_FLOW" "$PASS_COUNT" "$FAIL_COUNT" "$BLOCKED_COUNT" "$QUEUED_AGENT_COUNT" "$AGENT_QUEUE" "$EVIDENCE_CONTEXT_FILE" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-rollup_path, results_jsonl, store, layer, only_flow, passed, failed, blocked, queued_agent, agent_queue = sys.argv[1:]
+rollup_path, results_jsonl, store, layer, only_flow, passed, failed, blocked, queued_agent, agent_queue, context_file = sys.argv[1:]
 results = []
 results_path = Path(results_jsonl)
 if results_path.exists():
@@ -250,6 +329,13 @@ payload = {
 }
 if int(queued_agent):
     payload["agent_queue"] = agent_queue
+if context_file and Path(context_file).is_file():
+    try:
+        context = json.loads(Path(context_file).read_text(encoding="utf-8"))
+        payload["context_sha256"] = context.get("context_sha256")
+        payload["aggregate_run_id"] = context.get("aggregate_run_id")
+    except Exception:
+        pass
 Path(rollup_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 PY
 }
@@ -316,18 +402,21 @@ if [ "$LAYER" != "deterministic" ]; then
     if ! spec_requires_agent_layer "$f"; then
       continue
     fi
+    oracle_mode="$(agent_oracle_mode "$f")"
     result_file="$AGENT_RESULTS_DIR/$base.json"
     spec_queued=0
     for s in $(stores); do
       if [ -f "$result_file" ]; then
-        IFS=$'\t' read -r status rc agent_verdict reason < <(agent_result_verdict "$base" "$s" "$result_file")
+        IFS=$'\t' read -r status rc agent_verdict reason queue_required < <(agent_result_verdict "$base" "$s" "$result_file" "$oracle_mode")
         if [ "$status" = "PASS" ] || [ "$status" = "FAIL" ]; then
           printf '  [%-7s] %s on %s (%s)\n' "$status" "$base" "$s" "$reason"
           record_result "$base" agent "$s" "$status" "$rc" "$agent_verdict" "$result_file"
         else
           printf '  [%-7s] %s on %s (%s)\n' "BLOCKED" "$base" "$s" "$reason"
           record_result "$base" agent "$s" BLOCKED 3 "$agent_verdict" "$result_file"
-          spec_queued=1
+          if [ "$queue_required" != "0" ]; then
+            spec_queued=1
+          fi
         fi
       else
         printf '  [%-7s] %s on %s (agent spec queued)\n' "BLOCKED" "$base" "$s"
@@ -342,7 +431,7 @@ if [ "$LAYER" != "deterministic" ]; then
   QUEUED_AGENT_COUNT="$(wc -l < "$AGENT_QUEUE" | tr -d ' ')"
   echo "  queued $QUEUED_AGENT_COUNT agent-driven flow specs -> $AGENT_QUEUE"
   if [ "$QUEUED_AGENT_COUNT" -ne 0 ]; then
-    echo "  drive these with agent-specs/_template.md against both stores (manually or via a workflow)."
+    echo "  drive these with agent-specs/_template.md, respecting each flow spec's oracle mode (manually or via a workflow)."
   fi
 fi
 

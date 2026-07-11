@@ -170,6 +170,12 @@ $paths    = array_values( array_unique( array_filter( $paths ) ) );
 $readable = array();
 $matches  = array();
 $ignored_matches = array();
+$ignored_line_fragments = array(
+	// Local WPCOM reference runtimes can emit unrelated Zoho integration warnings
+	// during ordinary authenticated requests. Keep those visible as ignored
+	// diagnostics without attributing them to the WooPayments critical flow.
+	"sopreda/archi/zoho/class-zoho-integration.php",
+);
 $marker = get_option( "woopayments_critical_flows_debug_log_marker", array() );
 $marker_paths = array();
 if ( is_array( $marker ) && isset( $marker["paths"] ) && is_array( $marker["paths"] ) ) {
@@ -195,7 +201,15 @@ foreach ( $paths as $path ) {
 			continue;
 		}
 
-		if ( preg_match( "/Function _load_textdomain_just_in_time was called/i", $line ) ) {
+		$should_ignore = preg_match( "/Function _load_textdomain_just_in_time was called/i", $line );
+		foreach ( $ignored_line_fragments as $ignored_line_fragment ) {
+			if ( false !== strpos( $line, $ignored_line_fragment ) ) {
+				$should_ignore = true;
+				break;
+			}
+		}
+
+		if ( $should_ignore ) {
 			$ignored_matches[] = basename( $path ) . ":" . ( $line_number + 1 ) . ": " . trim( $line );
 			continue;
 		}

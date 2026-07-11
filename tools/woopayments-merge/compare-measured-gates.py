@@ -158,6 +158,14 @@ def metric(entry: dict[str, Any], name: str, default: int | float = 0) -> int | 
     return value if isinstance(value, (int, float)) else default
 
 
+def optional_metric(entry: dict[str, Any], name: str) -> int | float | None:
+    metrics = entry.get("metrics", {})
+    if not isinstance(metrics, dict):
+        return None
+    value = metrics.get(name)
+    return value if isinstance(value, (int, float)) else None
+
+
 def has_rest_route_snapshot(entry: dict[str, Any]) -> bool:
     return metric(entry, "route_count") > 0 and metric(entry, "payment_route_count") > 0
 
@@ -168,6 +176,26 @@ def tolerant_limit(field: str, ref_value: int | float) -> int | float:
     if field == "median_ms":
         return max(ref_value + TIMING_ABSOLUTE_BUDGET_MS, ref_value * TIMING_RELATIVE_BUDGET)
     return ref_value
+
+
+def query_group_notes(name: str, label: str, entry: dict[str, Any]) -> list[str]:
+    metrics = entry.get("metrics", {})
+    groups = metrics.get("top_query_groups") if isinstance(metrics, dict) else []
+    if not isinstance(groups, list) or not groups:
+        return [f"note  {name}: {label} top query groups not captured"]
+
+    notes = [f"note  {name}: {label} top query groups"]
+    for group in groups[:5]:
+        if not isinstance(group, dict):
+            continue
+        count = group.get("count", "?")
+        sql = str(group.get("sql", "<unknown sql>"))
+        callers = group.get("top_callers", [])
+        caller_suffix = ""
+        if isinstance(callers, list) and callers:
+            caller_suffix = f" callers={', '.join(str(caller) for caller in callers[:3])}"
+        notes.append(f"note  {name}:   {count}x {sql}{caller_suffix}")
+    return notes
 
 
 def compare_perf_probe_metrics(
@@ -200,11 +228,49 @@ def compare_perf_probe_metrics(
         limit = tolerant_limit(field, rv)
         if tv > limit:
             failures.append(f"{name}: {field} {rv} -> {tv} exceeds limit {limit:g}")
+            if field == "queries":
+                infos.extend(query_group_notes(name, "target", target_entry))
+                infos.extend(query_group_notes(name, "ref", ref_entry))
         else:
             if limit != rv:
                 infos.append(f"ok    {name}: {field} {rv} -> {tv} (limit {limit:g})")
             else:
                 infos.append(f"ok    {name}: {field} {rv} -> {tv}")
+
+
+def compare_money_timing(
+    name: str,
+    ref_entry: dict[str, Any],
+    target_entry: dict[str, Any],
+    failures: list[str],
+    infos: list[str],
+) -> None:
+    if ref_entry.get("status") != "measured" or target_entry.get("status") != "measured":
+        return
+
+    ref_samples = int(metric(ref_entry, "timing_sample_count", 1))
+    target_samples = int(metric(target_entry, "timing_sample_count", 1))
+    if ref_samples >= 3 and target_samples >= 3:
+        rv = metric(ref_entry, "median_ms")
+        tv = metric(target_entry, "median_ms")
+        limit = tolerant_limit("median_ms", rv)
+        if tv > limit:
+            failures.append(f"{name}: median_ms {rv} -> {tv} exceeds limit {limit:g}")
+        else:
+            infos.append(f"ok    {name}: median_ms {rv} -> {tv} (limit {limit:g}; {ref_samples}/{target_samples} samples)")
+        return
+
+    ref_elapsed = optional_metric(ref_entry, "elapsed_ms")
+    target_elapsed = optional_metric(target_entry, "elapsed_ms")
+    if ref_elapsed is None:
+        ref_elapsed = optional_metric(ref_entry, "median_ms")
+    if target_elapsed is None:
+        target_elapsed = optional_metric(target_entry, "median_ms")
+    if ref_elapsed is not None and target_elapsed is not None:
+        infos.append(
+            f"note  {name}: elapsed_ms {ref_elapsed} -> {target_elapsed} "
+            "(single invocation; diagnostic only)"
+        )
 
 
 def compare_perf(args: argparse.Namespace) -> int:
@@ -215,7 +281,8 @@ def compare_perf(args: argparse.Namespace) -> int:
 
     print(
         "NOTE: perf timings are coarse local smoke signals with expected variance; "
-        "this gate is intended to catch large deltas, query growth, and missing coverage, not to prove exact latency."
+        "this gate catches query/request growth, repeated-probe timing deltas, and missing coverage, "
+        "not exact one-shot money-path latency."
     )
 
     failures: list[str] = []
@@ -223,15 +290,18 @@ def compare_perf(args: argparse.Namespace) -> int:
     infos: list[str] = []
 
     for name in ("process_payment", "refund", "capture"):
+        ref_entry = probe(ref, name)
+        target_entry = probe(target, name)
         compare_perf_probe_metrics(
             name,
-            probe(ref, name),
-            probe(target, name),
-            ("queries", "external_requests", "median_ms"),
+            ref_entry,
+            target_entry,
+            ("queries", "external_requests"),
             failures,
             incomplete,
             infos,
         )
+        compare_money_timing(name, ref_entry, target_entry, failures, infos)
 
     gateway_ref = probe(ref, "gateway_registration")
     gateway_target = probe(target, "gateway_registration")
@@ -301,7 +371,7 @@ def compare_perf(args: argparse.Namespace) -> int:
                 "ok    rest_boot: payment_route_count "
                 f"{metric(rest_ref, 'payment_route_count')} -> {metric(rest_target, 'payment_route_count')}"
             )
-        for field in ("external_requests", "controller_instantiation_count"):
+        for field in ("queries", "external_requests", "controller_instantiation_count"):
             rv = metric(rest_ref, field)
             tv = metric(rest_target, field)
             if tv > rv:
@@ -309,13 +379,30 @@ def compare_perf(args: argparse.Namespace) -> int:
             else:
                 infos.append(f"ok    rest_boot: {field} {rv} -> {tv}")
         if route_registration_measured:
-            rv = metric(rest_ref, "median_ms")
-            tv = metric(rest_target, "median_ms")
-            limit = tolerant_limit("median_ms", rv)
-            if tv > limit:
-                failures.append(f"rest_boot: median_ms {rv} -> {tv} exceeds large-delta smoke limit {limit:g}")
-            else:
-                infos.append(f"ok    rest_boot: median_ms {rv} -> {tv} (large-delta smoke limit {limit:g})")
+            timing_valid = True
+            for label, metrics in (("ref", rest_ref_metrics), ("target", rest_target_metrics)):
+                problems = []
+                if not isinstance(metrics, dict):
+                    problems.append("metrics missing")
+                else:
+                    if metrics.get("measurement_mode") != "single_invocation_rest_api_init":
+                        problems.append(f"measurement_mode={metrics.get('measurement_mode')!r}")
+                    if metrics.get("timing_sample_count") != 1:
+                        problems.append(f"timing_sample_count={metrics.get('timing_sample_count')!r}")
+                    if "median_ms" in metrics:
+                        problems.append("single sample is mislabeled median_ms")
+                    if not isinstance(metrics.get("elapsed_ms"), (int, float)):
+                        problems.append("elapsed_ms is not numeric")
+                if problems:
+                    incomplete.append(f"rest_boot: invalid {label} one-shot timing ({', '.join(problems)})")
+                    timing_valid = False
+
+            if timing_valid:
+                infos.append(
+                    "note  rest_boot: elapsed_ms "
+                    f"{metric(rest_ref, 'elapsed_ms')} -> {metric(rest_target, 'elapsed_ms')} "
+                    "(single invocation; diagnostic only)"
+                )
     else:
         incomplete.append("rest_boot: missing measured ref or target probe")
 

@@ -120,6 +120,7 @@ if [ "$DETERMINISTIC" -eq 1 ]; then
 
 	emitted="$(printf '%s\n' "$json" | python3 -c '
 import json
+import re
 import sys
 
 op = sys.argv[1]
@@ -134,11 +135,25 @@ except (TypeError, ValueError):
     order_id = 0
 if order_id <= 0:
     sys.exit(3)
+if op in {"charge", "dispute"}:
+    status = str(payload.get("status") or "")
+    intent_id = str(payload.get("intent_id") or "")
+    charge_id = str(payload.get("charge_id") or "")
+    if (
+        status == "trash"
+        or re.fullmatch(r"pi_[A-Za-z0-9_]+", intent_id) is None
+        or re.fullmatch(r"(?:ch|py)_[A-Za-z0-9_]+", charge_id) is None
+    ):
+        sys.exit(4)
 payload["op"] = op
 print(json.dumps(payload, separators=(",", ":")))
 ' "$OP")"
 	if [ -z "$emitted" ]; then
-		echo "FLOW-DRIVE FAIL ($OP): deterministic operation emitted no order_id." >&2
+		if [ "$OP" = "charge" ] || [ "$OP" = "dispute" ]; then
+			echo "FLOW-DRIVE FAIL ($OP): deterministic operation did not emit a valid provider-backed order." >&2
+		else
+			echo "FLOW-DRIVE FAIL ($OP): deterministic operation emitted no order_id." >&2
+		fi
 		printf '%s\n' "$json" >&2
 		exit 1
 	fi

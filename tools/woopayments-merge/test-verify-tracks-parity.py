@@ -7,9 +7,12 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from tools.woopayments_test_runner import adapt_wp_runner_arguments
+
 
 REPO = Path(__file__).resolve().parents[2]
 SCRIPT = REPO / "tools/woopayments-merge/verify.sh"
+LOCAL_RUNNER_SAFETY = REPO / "tools/woopayments-merge/local-runner-safety.sh"
 
 
 def run_verify(*args: str) -> subprocess.CompletedProcess[str]:
@@ -36,6 +39,10 @@ def prepare_fake_verify_repo(tmp: Path) -> tuple[Path, Path, Path, Path]:
     verify_copy = merge_dir / "verify.sh"
     verify_copy.write_text(SCRIPT.read_text(encoding="utf-8"), encoding="utf-8")
     verify_copy.chmod(0o755)
+    (merge_dir / "local-runner-safety.sh").write_text(
+        LOCAL_RUNNER_SAFETY.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
 
     fake_gate = """#!/usr/bin/env bash
 set -eu
@@ -77,6 +84,7 @@ fi
         "flow-drive.sh",
         "parity-diff.sh",
         "perf-baseline.sh",
+        "perf-surface-gate.sh",
         "financial-reconcile.sh",
         "tracks-parity.sh",
     ):
@@ -88,7 +96,13 @@ role="{role}"
 printf 'wp-%s|%s\n' "$role" "$*" >> "$INVOCATIONS_LOG"
 if [ "${{1:-}}" = "eval-file" ]; then
 	body="$(cat)"
-	if printf '%s' "$body" | grep -q "HELPER_OPTION:"; then
+	if printf '%s' "$body" | grep -q "WCPAY_RUNTIME_IDENTITY"; then
+		if [ "$role" = "reference" ]; then
+			printf 'WCPAY_RUNTIME_IDENTITY:{{"runtime_owner":"plugin","site_url":"http://localhost:8082"}}\n'
+		else
+			printf 'WCPAY_RUNTIME_IDENTITY:{{"runtime_owner":"native","site_url":"http://store8889.localhost:8889"}}\n'
+		fi
+	elif printf '%s' "$body" | grep -q "HELPER_OPTION:"; then
 		if [ "$role" = "reference" ]; then
 			printf 'HELPER_OPTION:enabled:MQ==\n'
 			if [ "${{TRACKS_REFERENCE_EMPTY_HELPER_ENDPOINT:-0}}" = "1" ]; then
@@ -126,8 +140,10 @@ else
 	printf '{{}}\n'
 fi
 """
-    ref_wp = tmp / "fake-ref-wp"
-    target_wp = tmp / "fake-target-wp"
+    ref_wp = tmp / "reference" / "wp"
+    target_wp = tmp / "target" / "wp"
+    ref_wp.parent.mkdir()
+    target_wp.parent.mkdir()
     write_executable(ref_wp, fake_wp_template.format(role="reference"))
     write_executable(target_wp, fake_wp_template.format(role="target"))
 
@@ -148,6 +164,27 @@ exit 1
     )
 
     return verify_copy, ref_wp, target_wp, fake_wpcom_local
+
+
+def run_fake_verify(
+    verify_copy: Path,
+    ref_wp: Path,
+    target_wp: Path,
+    env: dict[str, str],
+) -> subprocess.CompletedProcess[str]:
+    args, process_env = adapt_wp_runner_arguments(
+        ["--ref", str(ref_wp), "--target", str(target_wp), "--with-tracks"],
+        env,
+    )
+    return subprocess.run(
+        ["bash", str(verify_copy), *args],
+        cwd=verify_copy.parents[2],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=process_env,
+        check=False,
+    )
 
 
 def test_tracks_flags_are_documented_without_placeholder_language() -> None:
@@ -186,21 +223,11 @@ def test_with_tracks_stages_usage_tracking_and_restores_it() -> None:
             encoding="utf-8",
         )
 
-        result = subprocess.run(
-            [
-                "bash",
-                str(verify_copy),
-                "--ref",
-                str(ref_wp),
-                "--target",
-                str(target_wp),
-                "--with-tracks",
-            ],
-            cwd=tmp / "repo",
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env={
+        result = run_fake_verify(
+            verify_copy,
+            ref_wp,
+            target_wp,
+            {
                 "INVOCATIONS_LOG": str(invocations),
                 "TRACKS_NORMALIZE_COUNT_FILE": str(normalize_count),
                 "TMPDIR": str(fake_tmp),
@@ -208,7 +235,6 @@ def test_with_tracks_stages_usage_tracking_and_restores_it() -> None:
                 "WPCOM_LOCAL_HOME": str(fake_wpcom_home),
                 "PATH": "/bin:/usr/bin:/usr/local/bin",
             },
-            check=False,
         )
 
         assert result.returncode == 0, result.stdout + result.stderr
@@ -238,21 +264,11 @@ def test_with_tracks_blocks_empty_target_capture_without_diff() -> None:
             encoding="utf-8",
         )
 
-        result = subprocess.run(
-            [
-                "bash",
-                str(verify_copy),
-                "--ref",
-                str(ref_wp),
-                "--target",
-                str(target_wp),
-                "--with-tracks",
-            ],
-            cwd=tmp / "repo",
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env={
+        result = run_fake_verify(
+            verify_copy,
+            ref_wp,
+            target_wp,
+            {
                 "INVOCATIONS_LOG": str(invocations),
                 "TRACKS_NORMALIZE_COUNT_FILE": str(normalize_count),
                 "TRACKS_EMPTY_TARGET": "1",
@@ -261,7 +277,6 @@ def test_with_tracks_blocks_empty_target_capture_without_diff() -> None:
                 "WPCOM_LOCAL_HOME": str(fake_wpcom_home),
                 "PATH": "/bin:/usr/bin:/usr/local/bin",
             },
-            check=False,
         )
 
         assert result.returncode == 3, result.stdout + result.stderr
@@ -285,21 +300,11 @@ def test_with_tracks_restores_existing_empty_helper_options() -> None:
             encoding="utf-8",
         )
 
-        result = subprocess.run(
-            [
-                "bash",
-                str(verify_copy),
-                "--ref",
-                str(ref_wp),
-                "--target",
-                str(target_wp),
-                "--with-tracks",
-            ],
-            cwd=tmp / "repo",
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env={
+        result = run_fake_verify(
+            verify_copy,
+            ref_wp,
+            target_wp,
+            {
                 "INVOCATIONS_LOG": str(invocations),
                 "TRACKS_NORMALIZE_COUNT_FILE": str(normalize_count),
                 "TRACKS_REFERENCE_EMPTY_HELPER_ENDPOINT": "1",
@@ -308,7 +313,6 @@ def test_with_tracks_restores_existing_empty_helper_options() -> None:
                 "WPCOM_LOCAL_HOME": str(fake_wpcom_home),
                 "PATH": "/bin:/usr/bin:/usr/local/bin",
             },
-            check=False,
         )
 
         assert result.returncode == 0, result.stdout + result.stderr

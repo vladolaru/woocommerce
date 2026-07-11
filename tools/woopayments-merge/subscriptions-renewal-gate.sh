@@ -40,20 +40,28 @@ REF_WP=""
 TARGET_WP=""
 REF_SUBSCRIPTION_ID=""
 TARGET_SUBSCRIPTION_ID=""
+PAYMENT_FAMILY="card"
+EXPECTED_GATEWAY_ID="woocommerce_payments"
+EXPECTED_TOKEN_TYPE="CC"
+REF_TOKEN_ID="0"
+TARGET_TOKEN_ID="0"
 OUT_DIR=""
 
 usage() {
 	cat >&2 <<'USAGE'
 usage:
-  subscriptions-renewal-gate.sh preflight --ref "<ref wp>" --target "<target wp>"
-  subscriptions-renewal-gate.sh compare --ref "<ref wp>" --target "<target wp>" --ref-subscription-id <id> --target-subscription-id <id> [--out-dir <path>]
+  subscriptions-renewal-gate.sh preflight --ref "<ref wp>" --target "<target wp>" [--payment-family card|sepa]
+  subscriptions-renewal-gate.sh compare --ref "<ref wp>" --target "<target wp>" --ref-subscription-id <id> --target-subscription-id <id> [--payment-family card|sepa] [--ref-token-id <id> --target-token-id <id>] [--out-dir <path>]
 
 The compare mode requires explicit browser-created subscription IDs. This
 scaffold does not seed subscriptions through CLI because that would bypass the
 real checkout tokenization and email path this gate is meant to verify.
 
 Options:
-  --out-dir <path>  Preserve preflight, drive, normalized, and rollup evidence.
+  --payment-family <family>  Select the card (default) or SEPA renewal policy.
+  --ref-token-id <id>        Exact reference saved-token ID. Required for SEPA compare.
+  --target-token-id <id>     Exact target saved-token ID. Required for SEPA compare.
+  --out-dir <path>           Preserve preflight, drive, normalized, and rollup evidence.
 USAGE
 }
 
@@ -67,6 +75,12 @@ while [ "$#" -gt 0 ]; do
 		--ref-subscription-id) REF_SUBSCRIPTION_ID="${2:-}"; shift 2 ;;
 		--target-subscription-id=*) TARGET_SUBSCRIPTION_ID="${1#--target-subscription-id=}"; shift ;;
 		--target-subscription-id) TARGET_SUBSCRIPTION_ID="${2:-}"; shift 2 ;;
+		--payment-family=*) PAYMENT_FAMILY="${1#--payment-family=}"; shift ;;
+		--payment-family) PAYMENT_FAMILY="${2:-}"; shift 2 ;;
+		--ref-token-id=*) REF_TOKEN_ID="${1#--ref-token-id=}"; shift ;;
+		--ref-token-id) REF_TOKEN_ID="${2:-}"; shift 2 ;;
+		--target-token-id=*) TARGET_TOKEN_ID="${1#--target-token-id=}"; shift ;;
+		--target-token-id) TARGET_TOKEN_ID="${2:-}"; shift 2 ;;
 		--out-dir=*) OUT_DIR="${1#--out-dir=}"; shift ;;
 		--out-dir) OUT_DIR="${2:-}"; shift 2 ;;
 		--help|-h) usage; exit 0 ;;
@@ -89,6 +103,21 @@ if [ -z "$REF_WP" ] || [ -z "$TARGET_WP" ]; then
 	exit 2
 fi
 
+case "$PAYMENT_FAMILY" in
+	card)
+		EXPECTED_GATEWAY_ID="woocommerce_payments"
+		EXPECTED_TOKEN_TYPE="CC"
+		;;
+	sepa)
+		EXPECTED_GATEWAY_ID="woocommerce_payments_sepa_debit"
+		EXPECTED_TOKEN_TYPE="wcpay_sepa"
+		;;
+	*)
+		echo "FAIL: --payment-family must be card or sepa." >&2
+		exit 2
+		;;
+esac
+
 if [ "$MODE" = "compare" ]; then
 	if [ -z "$REF_SUBSCRIPTION_ID" ] || [ -z "$TARGET_SUBSCRIPTION_ID" ]; then
 		echo "FAIL: browser-created subscription IDs are required for compare mode." >&2
@@ -102,6 +131,18 @@ if [ "$MODE" = "compare" ]; then
 			exit 2
 			;;
 	esac
+
+	case "$REF_TOKEN_ID:$TARGET_TOKEN_ID" in
+		*[!0-9:]*|:*|*:)
+			echo "FAIL: token IDs must be positive integers when provided." >&2
+			exit 2
+			;;
+	esac
+
+	if [ "$PAYMENT_FAMILY" = "sepa" ] && { [ "$REF_TOKEN_ID" -le 0 ] || [ "$TARGET_TOKEN_ID" -le 0 ]; }; then
+		echo "FAIL: SEPA compare requires --ref-token-id and --target-token-id." >&2
+		exit 2
+	fi
 fi
 
 run_eval() {
@@ -192,6 +233,9 @@ write_rollup() {
 		$ref_subscription_id = $argv[4];
 		$target_subscription_id = $argv[5];
 		$normalized_diff_matched = "true" === $argv[12];
+		$payment_family = $argv[13];
+		$expected_gateway_id = $argv[14];
+		$expected_token_type = $argv[15];
 		$load = static function ( $path ) {
 			if ( "" === $path || ! file_exists( $path ) ) {
 				return null;
@@ -208,6 +252,11 @@ write_rollup() {
 			"mode" => $mode,
 			"ref_subscription_id" => $to_id( $ref_subscription_id ),
 			"target_subscription_id" => $to_id( $target_subscription_id ),
+			"payment_family" => $payment_family,
+			"expected_gateway_id" => $expected_gateway_id,
+			"expected_token_type" => $expected_token_type,
+			"ref_expected_token_id" => $to_id( $argv[16] ),
+			"target_expected_token_id" => $to_id( $argv[17] ),
 			"normalized_diff_matched" => $normalized_diff_matched,
 			"reference" => array(
 				"preflight" => $load( $argv[6] ),
@@ -221,15 +270,16 @@ write_rollup() {
 			),
 		);
 		file_put_contents( $rollup_path, json_encode( $payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) . PHP_EOL );
-	' "$rollup_json" "$status" "$MODE" "$REF_SUBSCRIPTION_ID" "$TARGET_SUBSCRIPTION_ID" "$ref_preflight" "$target_preflight" "${ref_drive:-}" "${target_drive:-}" "${ref_norm:-}" "${target_norm:-}" "$normalized_diff_matched"
+	' "$rollup_json" "$status" "$MODE" "$REF_SUBSCRIPTION_ID" "$TARGET_SUBSCRIPTION_ID" "$ref_preflight" "$target_preflight" "${ref_drive:-}" "${target_drive:-}" "${ref_norm:-}" "${target_norm:-}" "$normalized_diff_matched" "$PAYMENT_FAMILY" "$EXPECTED_GATEWAY_ID" "$EXPECTED_TOKEN_TYPE" "$REF_TOKEN_ID" "$TARGET_TOKEN_ID"
 }
 
 echo "Bucket-C WC Subscriptions renewal gate"
 echo "  mode: $MODE"
+echo "  payment family: $PAYMENT_FAMILY ($EXPECTED_GATEWAY_ID / $EXPECTED_TOKEN_TYPE)"
 echo
 
 echo "Preflight: reference"
-if ! run_eval "$REF_WP" "ref preflight" "$ref_preflight" preflight ref; then
+if ! run_eval "$REF_WP" "ref preflight" "$ref_preflight" preflight ref "$EXPECTED_GATEWAY_ID" "$EXPECTED_TOKEN_TYPE" "$PAYMENT_FAMILY"; then
 	print_errors "$ref_preflight"
 	write_rollup fail false
 	exit 1
@@ -243,7 +293,7 @@ fi
 echo "  ok"
 
 echo "Preflight: target"
-if ! run_eval "$TARGET_WP" "target preflight" "$target_preflight" preflight target; then
+if ! run_eval "$TARGET_WP" "target preflight" "$target_preflight" preflight target "$EXPECTED_GATEWAY_ID" "$EXPECTED_TOKEN_TYPE" "$PAYMENT_FAMILY"; then
 	print_errors "$target_preflight"
 	write_rollup fail false
 	exit 1
@@ -276,7 +326,7 @@ target_norm="$work_dir/target-normalized.json"
 
 echo
 echo "Drive renewal: reference subscription $REF_SUBSCRIPTION_ID"
-if ! run_eval "$REF_WP" "ref drive" "$ref_drive" drive "$REF_SUBSCRIPTION_ID"; then
+if ! run_eval "$REF_WP" "ref drive" "$ref_drive" drive "$REF_SUBSCRIPTION_ID" "$EXPECTED_GATEWAY_ID" "$REF_TOKEN_ID" "$EXPECTED_TOKEN_TYPE" "$PAYMENT_FAMILY"; then
 	print_errors "$ref_drive"
 	write_rollup fail false
 	exit 1
@@ -290,7 +340,7 @@ fi
 echo "  ok"
 
 echo "Drive renewal: target subscription $TARGET_SUBSCRIPTION_ID"
-if ! run_eval "$TARGET_WP" "target drive" "$target_drive" drive "$TARGET_SUBSCRIPTION_ID"; then
+if ! run_eval "$TARGET_WP" "target drive" "$target_drive" drive "$TARGET_SUBSCRIPTION_ID" "$EXPECTED_GATEWAY_ID" "$TARGET_TOKEN_ID" "$EXPECTED_TOKEN_TYPE" "$PAYMENT_FAMILY"; then
 	print_errors "$target_drive"
 	write_rollup fail false
 	exit 1

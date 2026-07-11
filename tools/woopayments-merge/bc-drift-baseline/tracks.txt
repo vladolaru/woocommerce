@@ -47,10 +47,6 @@ client/onboarding/tracking.ts: recordEvent( 'wcpay_onboarding_flow_started', {
 client/onboarding/tracking.ts: recordEvent( 'wcpay_onboarding_flow_step_completed', {
 client/onboarding/tracking.ts: recordEvent( 'wcpay_onboarding_kyc_exit', {
 client/onboarding/tracking.ts: recordEvent( event, {
-client/overview/dispute-readiness/index.tsx: recordEvent( 'wcpay_dispute_readiness_card_dismissed', {
-client/overview/dispute-readiness/index.tsx: recordEvent( 'wcpay_dispute_readiness_overview_viewed', {
-client/overview/dispute-readiness/index.tsx: recordEvent( 'wcpay_dispute_readiness_signal_cta_clicked', {
-client/overview/dispute-readiness/index.tsx: recordEvent( 'wcpay_dispute_readiness_statement_descriptor_confirmed', {
 client/overview/inbox-notifications/index.js: recordEvent( 'wcpay_inbox_action_click', {
 client/overview/inbox-notifications/index.js: recordEvent( 'wcpay_inbox_action_dismissed', {
 client/overview/inbox-notifications/index.js: recordEvent( 'wcpay_inbox_note_view', {
@@ -63,42 +59,11 @@ client/overview/task-list/tasks/reconnect-task.tsx: recordEvent( 'wcpay_overview
 client/overview/task-list/tasks/update-business-details-task.tsx: recordEvent( 'wcpay_account_details_link_clicked', {
 client/payment-details/dispute-details/dispute-awaiting-response-details.tsx: recordEvent(
 client/payment-details/dispute-details/dispute-resolution-footer.tsx: recordEvent(
-client/payment-details/dispute-outcome/tracks.ts: recordEvent( 'wcpay_dispute_outcome_action_clicked', {
-client/payment-details/dispute-outcome/tracks.ts: recordEvent( 'wcpay_dispute_outcome_recommendations_section_viewed', {
-client/payment-details/dispute-outcome/tracks.ts: recordEvent( 'wcpay_dispute_outcome_viewed', {
 client/payment-details/index.tsx: recordEvent( 'wcpay_fraud_protection_order_details_link_clicked', {
 client/payment-details/summary/index.tsx: recordEvent(
-client/payment-details/summary/refund-modal/index.tsx: recordEvent(
 client/payment-details/summary/refund-modal/index.tsx: recordEvent( 'payments_transactions_details_refund_full', {
-client/payment-details/summary/refund-modal/index.tsx: recordEvent( 'wcpay_dispute_inquiry_refund_click', {
 client/promotions/spotlight/index.tsx: recordEvent(
 client/promotions/spotlight/index.tsx: recordEvent( 'wcpay_payment_method_promotion_link_click', {
-client/reports/balance/actions.tsx: recordEvent(
-client/reports/balance/actions.tsx: recordEvent( 'wcpay_reports_balance_export_click', payload );
-client/reports/balance/actions.tsx: recordEvent( 'wcpay_reports_balance_export_error', {
-client/reports/balance/actions.tsx: recordEvent( 'wcpay_reports_balance_export_success', payload );
-client/reports/balance/index.tsx: recordEvent( 'wcpay_reports_balance_date_filter_change', {
-client/reports/balance/index.tsx: recordEvent( 'wcpay_reports_balance_load_error', {
-client/reports/balance/index.tsx: recordEvent( 'wcpay_reports_balance_load_success', {
-client/reports/balance/index.tsx: recordEvent( 'wcpay_reports_balance_reload_click', {
-client/reports/feedback-survey/tracks.ts: recordEvent( 'wcpay_reports_feedback_cancel', {
-client/reports/feedback-survey/tracks.ts: recordEvent( 'wcpay_reports_feedback_dismiss', {
-client/reports/feedback-survey/tracks.ts: recordEvent( 'wcpay_reports_feedback_submit', {
-client/reports/feedback-survey/tracks.ts: recordEvent( 'wcpay_reports_feedback_submit_error', {
-client/reports/feedback-survey/tracks.ts: recordEvent( 'wcpay_reports_feedback_thumbs_down', {
-client/reports/feedback-survey/tracks.ts: recordEvent( 'wcpay_reports_feedback_thumbs_up', {
-client/reports/feedback-survey/tracks.ts: recordEvent( 'wcpay_reports_feedback_view', {
-client/reports/fees-export-button.tsx: recordEvent( 'wcpay_csv_export_click', {
-client/reports/fees-export-button.tsx: recordEvent( 'wcpay_reports_fees_export_error', {
-client/reports/fees-export-button.tsx: recordEvent( 'wcpay_reports_fees_export_success', {
-client/reports/fees/index.tsx: recordEvent( 'wcpay_reports_fees_load_error', {
-client/reports/fees/index.tsx: recordEvent( 'wcpay_reports_fees_load_success', {
-client/reports/fees/index.tsx: recordEvent( 'wcpay_reports_fees_reload_click', {
-client/reports/fees/use-fees-view.ts: recordEvent( 'wcpay_reports_fees_date_filter_change', {
-client/reports/fees/use-fees-view.ts: recordEvent( 'wcpay_reports_fees_filter_change', {
-client/reports/fees/use-fees-view.ts: recordEvent( 'wcpay_reports_fees_search', {
-client/reports/index.tsx: recordEvent( 'page_view', {
-client/reports/index.tsx: recordEvent( 'wcpay_reports_tab_change', {
 client/review-prompt/index.tsx: recordEvent( eventName, { ...baseProperties, ...additionalProperties } );
 client/settings/deposits/index.js: recordEvent(
 client/settings/express-checkout-settings/file-upload.tsx: recordEvent( 'wcpay_merchant_settings_file_upload_started', {

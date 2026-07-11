@@ -8,6 +8,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 README = ROOT / "README.md"
+AGENT_RESULT_BUILDER = ROOT / "build-agent-results.py"
+AGENT_TEMPLATE = ROOT / "agent-specs" / "_template.md"
+RUNNER = ROOT / "run.sh"
+SS10_FLOW = ROOT / "flows" / "SS-10-sepa-token-renewal-cutover.md"
 
 REQUIRED_NATIVE_MERGE_FLOWS = {
     "SC-14": {
@@ -29,6 +33,7 @@ REQUIRED_NATIVE_MERGE_FLOWS = {
         "tokens": [
             "token-continuity-gate.sh",
             "subscriptions-renewal-gate.sh",
+            "provider_setup_intent",
             "woocommerce_payments_sepa_debit",
             "wcpay_sepa",
         ],
@@ -93,6 +98,50 @@ def test_readme_documents_agent_result_ingestion_contract() -> None:
     assert "agent-results" in text
     assert "<flow>.json" in text
     assert "parity_verdict" in text
+    assert "build-agent-results.py" in text
+    assert "BLOCKED" in text
+
+
+def test_agent_result_builder_exists_and_exposes_required_final_evidence_inputs() -> None:
+    assert AGENT_RESULT_BUILDER.exists(), "build-agent-results.py is required for final-evidence Layer-A synthesis"
+
+    text = AGENT_RESULT_BUILDER.read_text(encoding="utf-8")
+    for token in (
+        "--copy-agent-result",
+        "--require-agent-flow",
+        "--require-ms07",
+        "--ms07-reference-browser",
+        "--ms07-reference-state",
+        "--ms07-target-browser",
+        "--ms07-target-state",
+        "--plugin-active-reference-gate",
+        "--lpm-gate",
+        "--token-continuity-gate",
+    ):
+        assert token in text, f"build-agent-results.py does not expose {token}"
+
+
+def test_ss10_is_documented_as_target_only_and_not_cross_store_parity() -> None:
+    readme = README.read_text(encoding="utf-8").lower()
+    flow = SS10_FLOW.read_text(encoding="utf-8").lower()
+
+    assert "ss-10" in readme
+    assert "target-only" in readme
+    assert "not comparable" in readme
+    assert "target-only" in flow
+    assert "does not claim cross-store parity" in flow
+
+
+def test_agent_dispatch_contract_supports_target_only_flows() -> None:
+    template = AGENT_TEMPLATE.read_text(encoding="utf-8").lower()
+    runner = RUNNER.read_text(encoding="utf-8").lower()
+    flow = SS10_FLOW.read_text(encoding="utf-8").lower()
+
+    assert "{{oracle_mode}}" in template
+    assert "target-only" in template
+    assert "reference" in template and "not comparable" in template
+    assert "each flow spec's oracle mode" in runner
+    assert "agent oracle mode: target-only" in flow
 
 
 def main() -> None:
@@ -100,6 +149,9 @@ def main() -> None:
         test_readme_lists_native_merge_required_flows,
         test_required_flow_specs_exist_and_name_fail_closed_gates,
         test_readme_documents_agent_result_ingestion_contract,
+        test_agent_result_builder_exists_and_exposes_required_final_evidence_inputs,
+        test_ss10_is_documented_as_target_only_and_not_cross_store_parity,
+        test_agent_dispatch_contract_supports_target_only_flows,
     ]
     for test in tests:
         test()

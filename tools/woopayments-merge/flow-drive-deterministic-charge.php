@@ -162,7 +162,10 @@ if ( empty( $result['order_id'] ) ) {
 
 $order = wc_get_order( (int) $result['order_id'] );
 $result['manual_capture']   = $manual_capture ? 'yes' : 'no';
+$result['charge_id']        = $order instanceof WC_Order ? (string) $order->get_meta( '_charge_id', true ) : '';
+$result['intent_id']        = $order instanceof WC_Order ? (string) $order->get_meta( '_intent_id', true ) : '';
 $result['intention_status'] = $order instanceof WC_Order ? (string) $order->get_meta( '_intention_status', true ) : '';
+$result['status']           = $order instanceof WC_Order ? (string) $order->get_status() : '';
 $result['currency_requested']     = $currency;
 $result['order_currency']         = $order instanceof WC_Order ? (string) $order->get_currency() : '';
 $result['order_exchange_rate']    = $order instanceof WC_Order ? (string) $order->get_meta( '_wcpay_multi_currency_order_exchange_rate', true ) : '';

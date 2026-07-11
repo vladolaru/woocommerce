@@ -59,7 +59,14 @@ exit 1
     )
 
 
-def write_state(path: Path, *, locale: str = "de_DE", orders: list[dict] | None = None) -> None:
+def write_state(
+    path: Path,
+    *,
+    locale: str = "de_DE",
+    orders: list[dict] | None = None,
+    translation_source: str = "catalog",
+    catalog_translated: bool = True,
+) -> None:
     if orders is None:
         orders = localized_orders()
 
@@ -68,6 +75,30 @@ def write_state(path: Path, *, locale: str = "de_DE", orders: list[dict] | None 
             {
                 "schema": "woopayments_i18n_notes_capture.v1",
                 "locale": locale,
+                "translation_source": translation_source,
+                "catalog_evidence": {
+                    "schema": "woopayments_i18n_catalog_evidence.v1",
+                    "locale": locale,
+                    "textdomain": "woocommerce",
+                    "textdomain_loaded": True,
+                    "messages": {
+                        "charge": {
+                            "message_id": "<strong>Fee details:</strong>",
+                            "translation": "<strong>Gebuehrendetails:</strong>" if catalog_translated else "<strong>Fee details:</strong>",
+                            "translated": catalog_translated,
+                        },
+                        "refund": {
+                            "message_id": "A refund of %1$s %4$s using %2$s (%3$s).",
+                            "translation": "Eine Rueckerstattung von %1$s %4$s mit %2$s (%3$s)." if catalog_translated else "A refund of %1$s %4$s using %2$s (%3$s).",
+                            "translated": catalog_translated,
+                        },
+                        "dispute": {
+                            "message_id": "Payment dispute has been updated",
+                            "translation": "Zahlungsdisput wurde aktualisiert" if catalog_translated else "Payment dispute has been updated",
+                            "translated": catalog_translated,
+                        },
+                    },
+                },
                 "orders": orders,
             },
             sort_keys=True,
@@ -192,6 +223,51 @@ def test_gate_fails_when_required_flow_has_no_notes() -> None:
         assert "missing required flow notes: dispute" in result.stderr
 
 
+def test_gate_fails_when_flows_only_contain_unrelated_localized_notes() -> None:
+    with tempfile.TemporaryDirectory(prefix="i18n-notes-gate-test-") as tmp:
+        state = Path(tmp) / "state.json"
+        write_state(
+            state,
+            orders=[
+                {"flow": flow, "order_id": index, "notes": ["Allgemeine Bestellnotiz."]}
+                for index, flow in enumerate(("charge", "refund", "dispute"), start=1)
+            ],
+        )
+
+        result = run_gate("--state", str(state))
+
+        assert result.returncode == 1
+        assert "missing flow-specific localized note" in result.stderr
+
+
+def test_gate_blocks_when_release_catalog_lacks_required_message_ids() -> None:
+    with tempfile.TemporaryDirectory(prefix="i18n-notes-gate-test-") as tmp:
+        tmp_path = Path(tmp)
+        state = tmp_path / "state.json"
+        out_dir = tmp_path / "evidence"
+        write_state(state, catalog_translated=False)
+
+        result = run_gate("--state", str(state), "--out-dir", str(out_dir))
+
+        assert result.returncode == 3
+        assert "catalog translation unavailable" in result.stderr
+        rollup = json.loads((out_dir / "i18n-notes-gate.json").read_text(encoding="utf-8"))
+        assert rollup["status"] == "blocked"
+        assert rollup["implementation_status"] == "pass"
+        assert rollup["catalog_status"] == "blocked"
+
+
+def test_deterministic_probe_requires_exact_per_flow_markers() -> None:
+    with tempfile.TemporaryDirectory(prefix="i18n-notes-gate-test-") as tmp:
+        state = Path(tmp) / "state.json"
+        write_state(state, translation_source="deterministic_gettext_probe")
+
+        result = run_gate("--state", str(state))
+
+        assert result.returncode == 1
+        assert "missing deterministic gettext marker" in result.stderr
+
+
 def test_gate_fails_when_locale_was_not_switched() -> None:
     with tempfile.TemporaryDirectory(prefix="i18n-notes-gate-test-") as tmp:
         tmp_path = Path(tmp)
@@ -242,8 +318,9 @@ def test_live_gate_installs_controlled_gettext_probe_for_new_payment_note_string
     source = SCRIPT.read_text(encoding="utf-8")
 
     assert "install_translation_probe" in source
+    assert "capture_catalog_evidence" in source
     assert "'Fee (%1\\$s): %2\\$s' => 'Gebuehr (%1\\$s): %2\\$s'" in source
-    assert "'Payment dispute has been updated' => 'Zahlungsdisput wurde aktualisiert'" in source
+    assert "'Payment dispute has been updated' => '[wcpay-i18n:dispute] Zahlungsdisput wurde aktualisiert'" in source
 
 
 def test_live_gate_reads_original_locale_with_a_notice_safe_marker() -> None:

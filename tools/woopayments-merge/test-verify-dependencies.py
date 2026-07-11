@@ -18,6 +18,7 @@ VERIFY_DEPENDENCIES = (
     "tools/woopayments-merge/bc-drift-baseline/persisted_data.txt",
     "tools/woopayments-merge/bc-drift-baseline/php_api.txt",
     "tools/woopayments-merge/bc-drift-baseline/scheduler.txt",
+    "tools/woopayments-merge/bc-drift-baseline/source-provenance.txt",
     "tools/woopayments-merge/bc-drift-baseline/tracks.txt",
     "tools/woopayments-merge/parity-diff.sh",
     "tools/woopayments-merge/dump-bucket-e-surface.sh",
@@ -27,10 +28,49 @@ VERIFY_DEPENDENCIES = (
     "tools/woopayments-merge/perf-baseline.php",
     "tools/woopayments-merge/perf-baseline.json",
     "tools/woopayments-merge/financial-reconcile.sh",
+    "tools/woopayments-merge/local-runner-safety.sh",
+    "tools/woopayments-merge/local_runner_safety.py",
+    "tools/woopayments-merge/lpm_evidence.py",
     "tools/woopayments-merge/tracks-parity.sh",
     "tools/woopayments-merge/tracks-normalize.py",
     "tools/woopayments-merge/plugin-active-settings-gate.sh",
     "tools/woopayments-merge/plugin-active-settings.playwriter.mjs",
+)
+
+FINAL_EVIDENCE_DEPENDENCIES = VERIFY_DEPENDENCIES + (
+    "tools/woopayments-critical-flows/build-agent-results.py",
+    "tools/woopayments-critical-flows/evidence_context.py",
+    "tools/woopayments-merge/a4-account-scenario.php",
+    "tools/woopayments-merge/a4-admin-browser-gate.playwriter.mjs",
+    "tools/woopayments-merge/a4-admin-surface-gate.py",
+    "tools/woopayments-merge/a4-checkout-browser-gate.playwriter.mjs",
+    "tools/woopayments-merge/a4-checkout-fixture-state.php",
+    "tools/woopayments-merge/a4-perf-fixture-inspect.php",
+    "tools/woopayments-merge/a4aq-accumulated-gate.py",
+    "tools/woopayments-merge/flow-drive.sh",
+    "tools/woopayments-merge/flow-drive-capture.php",
+    "tools/woopayments-merge/flow-drive-deterministic-charge.php",
+    "tools/woopayments-merge/flow-drive-native-charge.php",
+    "tools/woopayments-merge/flow-drive-refund.php",
+    "tools/woopayments-merge/flow-drive-unpaid-order.php",
+    "tools/woopayments-merge/money-path-parity-gate.sh",
+    "tools/woopayments-merge/money-path-parity-preflight.php",
+    "tools/woopayments-merge/perf-fixtures-gate.py",
+    "tools/woopayments-merge/perf_fixtures.py",
+    "tools/woopayments-merge/playwright-script-runner.mjs",
+    "tools/woopayments-merge/sc04-saved-card-gate.py",
+    "tools/woopayments-merge/sc04-saved-card.playwriter.mjs",
+)
+
+FINAL_EVIDENCE_TEST_DEPENDENCIES = (
+    "tools/woopayments-critical-flows/test-agent-results.py",
+    "tools/woopayments-critical-flows/test-evidence-context.py",
+    "tools/woopayments-merge/test-a4ar-harness-regressions.py",
+    "tools/woopayments-merge/test-a4au-admin-surface-regressions.py",
+    "tools/woopayments-merge/test-money-path-parity-gate.py",
+    "tools/woopayments-merge/test-local-runner-safety.py",
+    "tools/woopayments-merge/test-sc04-saved-card-gate.py",
+    "tools/woopayments-merge/tests/a4-admin-surface-fixtures.sh",
 )
 
 
@@ -49,6 +89,18 @@ def is_tracked(path: str) -> bool:
 
 def test_verify_base_dependencies_are_tracked() -> None:
     missing = [path for path in VERIFY_DEPENDENCIES if not is_tracked(path)]
+
+    assert missing == []
+
+
+def test_final_evidence_runtime_dependencies_are_tracked() -> None:
+    missing = [path for path in FINAL_EVIDENCE_DEPENDENCIES if not is_tracked(path)]
+
+    assert missing == []
+
+
+def test_final_evidence_regression_dependencies_are_tracked() -> None:
+    missing = [path for path in FINAL_EVIDENCE_TEST_DEPENDENCIES if not is_tracked(path)]
 
     assert missing == []
 

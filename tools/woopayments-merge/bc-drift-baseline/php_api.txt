@@ -5,7 +5,6 @@ includes/admin/class-wc-rest-payments-orders-controller.php: $subscription->set_
 includes/admin/tracks/tracks-loader.php: function record_tracker_events() {
 includes/class-database-cache.php: class Database_Cache implements MultiCurrencyCacheInterface {
 includes/class-wc-payment-gateway-wcpay.php: $customer_tokens = WC_Payment_Tokens::get_customer_tokens( $order->get_user_id(), self::GATEWAY_ID );
-includes/class-wc-payment-gateway-wcpay.php: $gateway_ids      = [ self::GATEWAY_ID ];
 includes/class-wc-payment-gateway-wcpay.php: $split_upe_gateway_prefix = self::GATEWAY_ID . '_';
 includes/class-wc-payment-gateway-wcpay.php: $this->id           = static::GATEWAY_ID;
 includes/class-wc-payment-gateway-wcpay.php: $this->id = self::GATEWAY_ID . '_' . $this->stripe_id;
@@ -16,7 +15,6 @@ includes/class-wc-payment-gateway-wcpay.php: ? self::GATEWAY_ID
 includes/class-wc-payment-gateway-wcpay.php: const GATEWAY_ID = 'woocommerce_payments';
 includes/class-wc-payment-gateway-wcpay.php: if ( ! empty( $_POST[ 'wc-' . static::GATEWAY_ID . '-new-payment-method' ] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
 includes/class-wc-payment-gateway-wcpay.php: if ( $order->get_payment_method() !== self::GATEWAY_ID || empty( $this->order_service->get_payment_method_id_for_order( $order ) ) ) {
-includes/class-wc-payment-gateway-wcpay.php: if ( is_string( $order_gateway_id ) && 0 === strpos( $order_gateway_id, self::GATEWAY_ID ) ) {
 includes/class-wc-payment-gateway-wcpay.php: if ( self::GATEWAY_ID !== $payment_method ) {
 includes/class-wc-payment-gateway-wcpay.php: if ( self::GATEWAY_ID === $this->id ) {
 includes/class-wc-payment-gateway-wcpay.php: if ( strpos( $theorder->get_payment_method(), self::GATEWAY_ID ) !== 0 ) {
@@ -38,7 +36,6 @@ includes/class-wc-payments-order-service.php: const HAS_LIVE_SALE_OPTION = 'wcpa
 includes/class-wc-payments-order-service.php: const INTENTION_STATUS_META_KEY = '_intention_status';
 includes/class-wc-payments-order-service.php: const INTENT_ID_META_KEY = '_intent_id';
 includes/class-wc-payments-order-service.php: const IPP_CHANNEL_META_KEY = '_wcpay_ipp_channel';
-includes/class-wc-payments-order-service.php: const PAID_INTENT_ID_SESSION_KEY = 'wcpay_paid_intent_id';
 includes/class-wc-payments-order-service.php: const PAYMENT_METHOD_DETAILS_META_KEY = '_wcpay_payment_method_details';
 includes/class-wc-payments-order-service.php: const PAYMENT_METHOD_ID_META_KEY = '_payment_method_id';
 includes/class-wc-payments-order-service.php: const WCPAY_FRAUD_META_BOX_TYPE_META_KEY = '_wcpay_fraud_meta_box_type';
@@ -84,7 +81,7 @@ includes/class-wc-payments.php: public static function enqueue_assets_script() {
 includes/class-wc-payments.php: public static function enqueue_cart_scripts() {
 includes/class-wc-payments.php: public static function enqueue_dev_runtime_scripts() {
 includes/class-wc-payments.php: public static function enqueue_woopay_common_config_script() {
-includes/class-wc-payments.php: public static function filter_woocommerce_form_field_woopay_email( $field, $key, $args, $_unused_value ) {
+includes/class-wc-payments.php: public static function filter_woocommerce_form_field_woopay_email( $field, $key, $args, $value ) {
 includes/class-wc-payments.php: public static function fit_card_brand_icon_for_printable_order_receipt( string $css, $order ): string {
 includes/class-wc-payments.php: public static function get_account_service() {
 includes/class-wc-payments.php: public static function get_action_scheduler_service() {
@@ -129,7 +126,6 @@ includes/class-wc-payments.php: public static function order_woopayments_gateway
 includes/class-wc-payments.php: public static function possibly_add_note_source_where_clause( $where_clauses, $args ) {
 includes/class-wc-payments.php: public static function possibly_add_source_to_notes_query( $args, $request ) {
 includes/class-wc-payments.php: public static function register_checkout_gateway( $payment_method_registry ) {
-includes/class-wc-payments.php: public static function register_express_checkout_store_api_extension() {
 includes/class-wc-payments.php: public static function register_gateway( $gateways ) {
 includes/class-wc-payments.php: public static function register_script_with_dependencies( string $handler, string $script, array $dependencies = [] ) {
 includes/class-wc-payments.php: public static function remove_deprecated_notes() {

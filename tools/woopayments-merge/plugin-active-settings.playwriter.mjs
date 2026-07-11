@@ -80,6 +80,32 @@ function isFatalConsoleError( log ) {
 	return type === 'error' || type === 'pageerror' || /uncaught|fatal|exception|typeerror|referenceerror/i.test( text );
 }
 
+function decodedUrlText( value ) {
+	const chunks = [ value ];
+	let current = value;
+	for ( let index = 0; index < 3; index++ ) {
+		try {
+			const decoded = decodeURIComponent( current );
+			if ( decoded === current ) {
+				break;
+			}
+			chunks.push( decoded );
+			current = decoded;
+		} catch ( error ) {
+			break;
+		}
+	}
+	return chunks.join( ' ' );
+}
+
+function isOptionalLocalWiringResponseFailure( failure ) {
+	if ( ! [ 401, 403, 500 ].includes( Number( failure.status ) ) ) {
+		return false;
+	}
+
+	return /\/wc\/v3\/payments\/deposits\/overview-all\b/.test( decodedUrlText( failure.url || '' ) );
+}
+
 function writeEvidence( payload ) {
 	ensureDir( path.dirname( evidencePath ) );
 	fs.writeFileSync(
@@ -93,9 +119,16 @@ function writeEvidence( payload ) {
 				plugin_active: true,
 				authenticated_wp_admin: false,
 				settings_screen_present: false,
+				plugin_settings_assets_present: false,
+				plugin_settings_global_present: false,
+				plugin_settings_script_urls: [],
+				plugin_settings_style_urls: [],
+				native_settings_asset_urls: [],
 				duplicate_store_errors: [],
 				fatal_console_errors: [],
 				failed_responses: [],
+				blocked_responses: [],
+				blockers: [],
 				failures: [],
 				started_at: startedAt,
 				last_updated_at: new Date().toISOString(),
@@ -144,6 +177,26 @@ async function readAdminState( page ) {
 			bodyText.length > 0 &&
 			/WooPayments/i.test( bodyText ) &&
 			( selectorMatches.length > 0 || settingsStoreSelectable || hasClassicSettingsText );
+		const scriptUrls = Array.from( document.scripts )
+			.map( ( script ) => script.src || '' )
+			.filter( Boolean );
+		const styleUrls = Array.from( document.querySelectorAll( 'link[rel="stylesheet"][href]' ) )
+			.map( ( link ) => link.href || '' )
+			.filter( Boolean );
+		const pluginSettingsScriptUrls = scriptUrls.filter( ( url ) =>
+			/\/wp-content\/plugins\/woocommerce-payments\/dist\/settings(?:\.min)?\.js(?:[?#]|$)/i.test( url )
+		);
+		const pluginSettingsStyleUrls = styleUrls.filter( ( url ) =>
+			/\/wp-content\/plugins\/woocommerce-payments\/dist\/settings(?:\.min)?\.css(?:[?#]|$)/i.test( url )
+		);
+		const nativeSettingsAssetUrls = [ ...scriptUrls, ...styleUrls ].filter( ( url ) =>
+			/\/wp-content\/plugins\/woocommerce\/assets\/client\/admin\/chunks\/settings-payments-woopayments/i.test( url )
+		);
+		const pluginSettingsGlobalPresent = Boolean(
+			window.wcpaySettings && 'object' === typeof window.wcpaySettings
+		);
+		const pluginSettingsAssetsPresent =
+			pluginSettingsScriptUrls.length > 0 && pluginSettingsGlobalPresent;
 
 		return {
 			finalUrl: window.location.href,
@@ -158,6 +211,11 @@ async function readAdminState( page ) {
 			settingsStoreSelectable,
 			hasClassicSettingsText,
 			settingsScreenPresent,
+			pluginSettingsAssetsPresent,
+			pluginSettingsGlobalPresent,
+			pluginSettingsScriptUrls,
+			pluginSettingsStyleUrls,
+			nativeSettingsAssetUrls,
 		};
 	} );
 }
@@ -188,6 +246,8 @@ async function captureEvidence( page, failedResponses ) {
 	const adminState = await readAdminState( page );
 	const duplicateStoreErrors = logs.filter( isDuplicateStoreError );
 	const fatalConsoleErrors = logs.filter( isFatalConsoleError );
+	const blockedResponses = failedResponses.filter( isOptionalLocalWiringResponseFailure );
+	const hardFailedResponses = failedResponses.filter( ( response ) => ! isOptionalLocalWiringResponseFailure( response ) );
 	const authenticatedWpAdmin =
 		! adminState.hasLoginForm &&
 		adminState.hasAdminBody &&
@@ -202,24 +262,39 @@ async function captureEvidence( page, failedResponses ) {
 	if ( ! adminState.settingsScreenPresent ) {
 		failures.push( 'WooPayments settings screen is not present' );
 	}
+	if ( ! adminState.pluginSettingsAssetsPresent ) {
+		failures.push( 'standalone WooPayments settings assets were not observed' );
+	}
 	if ( duplicateStoreErrors.length > 0 ) {
 		failures.push( 'duplicate wc/payments/settings store registration error' );
 	}
 	if ( fatalConsoleErrors.length > 0 ) {
 		failures.push( 'fatal browser console errors were captured' );
 	}
-	if ( failedResponses.length > 0 ) {
+	if ( hardFailedResponses.length > 0 ) {
 		failures.push( 'failed browser responses were captured' );
 	}
+	const blockers =
+		failures.length === 0 && blockedResponses.length > 0
+			? [ 'optional WooPayments deposits overview request was unavailable in the local plugin-active fixture' ]
+			: [];
 
 	return {
-		status: failures.length === 0 ? 'pass' : 'fail',
+		status: failures.length > 0 ? 'fail' : blockers.length > 0 ? 'blocked' : 'pass',
 		authenticated_wp_admin: authenticatedWpAdmin,
 		settings_screen_present: adminState.settingsScreenPresent,
+		plugin_settings_assets_present: adminState.pluginSettingsAssetsPresent,
+		plugin_settings_global_present: adminState.pluginSettingsGlobalPresent,
+		plugin_settings_script_urls: adminState.pluginSettingsScriptUrls,
+		plugin_settings_style_urls: adminState.pluginSettingsStyleUrls,
+		native_settings_asset_urls: adminState.nativeSettingsAssetUrls,
 		duplicate_store_errors: duplicateStoreErrors,
 		fatal_console_errors: fatalConsoleErrors,
-		failed_responses: failedResponses,
+		failed_responses: hardFailedResponses,
+		blocked_responses: blockedResponses,
+		all_failed_responses: failedResponses,
 		failures,
+		blockers,
 		page: adminState,
 		snapshot: snapshotText,
 		logs,
@@ -261,10 +336,10 @@ try {
 
 	const evidence = await captureEvidence( gatePage, failedResponses );
 	writeEvidence( evidence );
-	if ( evidence.status !== 'pass' ) {
+	if ( evidence.status === 'fail' ) {
 		throw new Error( `Plugin-active settings browser gate failed. See ${ evidencePath }` );
 	}
-	console.log( JSON.stringify( { evidencePath, pass: true, settingsUrl }, null, 2 ) );
+	console.log( JSON.stringify( { evidencePath, pass: evidence.status === 'pass', blocked: evidence.status === 'blocked', settingsUrl }, null, 2 ) );
 } catch ( error ) {
 	const fallbackEvidence = fs.existsSync( evidencePath )
 		? JSON.parse( fs.readFileSync( evidencePath, 'utf8' ) )

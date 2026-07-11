@@ -9,11 +9,22 @@
 set -uo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOCAL_RUNNER_SAFETY="$SELF_DIR/local-runner-safety.sh"
+if [ ! -f "$LOCAL_RUNNER_SAFETY" ]; then
+	printf 'FAIL: local runner safety library is missing: %s\n' "$LOCAL_RUNNER_SAFETY" >&2
+	exit 2
+fi
+# shellcheck source=tools/woopayments-merge/local-runner-safety.sh
+source "$LOCAL_RUNNER_SAFETY"
 BROWSER_DRIVER="$SELF_DIR/plugin-active-settings.playwriter.mjs"
 
 TARGET_WP=""
 TARGET_URL="${TARGET_URL:-}"
 PLAYWRITER_SESSION="${PLAYWRITER_SESSION:-}"
+BROWSER_RUNNER="${BROWSER_RUNNER:-playwriter}"
+PLAYWRIGHT_SCRIPT_RUNNER_BIN="${PLAYWRIGHT_SCRIPT_RUNNER_BIN:-$SELF_DIR/playwright-script-runner.mjs}"
+WP_ADMIN_USER="${WP_ADMIN_USER:-admin}"
+WP_ADMIN_PASSWORD="${WP_ADMIN_PASSWORD:-password}"
 OUT_DIR="${TMPDIR:-$SELF_DIR/.tmp}/plugin-active-settings-gate"
 PRINT_PLAN=0
 PREFLIGHT_ONLY=0
@@ -29,6 +40,7 @@ usage:
 Options:
   --target "<wp>"              Target store WP-CLI command.
   --target-url <url>           Target store browser base URL.
+  --browser-runner <runner>    Browser runner: playwriter or playwright. Defaults to BROWSER_RUNNER or playwriter.
   --playwriter-session <id>    Existing Playwriter session id. Defaults to PLAYWRITER_SESSION.
   --out-dir <path>             Evidence output directory.
   --stage-plugin-active-fixture
@@ -40,8 +52,9 @@ Options:
 
 The gate requires the WooPayments plugin to be active on the target store. It
 then opens the real wp-admin WooPayments settings URL and rejects blank screens,
-login redirects, failed responses, and duplicate wc/payments/settings store
-registration errors.
+login redirects, hard failed responses, and duplicate wc/payments/settings store
+registration errors. Known local optional-response preconditions are reported
+as blocked evidence, not product failures.
 USAGE
 }
 
@@ -66,6 +79,8 @@ while [ "$#" -gt 0 ]; do
 		--target) TARGET_WP="${2:-}"; shift 2 ;;
 		--target-url=*) TARGET_URL="${1#--target-url=}"; shift ;;
 		--target-url) TARGET_URL="${2:-}"; shift 2 ;;
+		--browser-runner=*) BROWSER_RUNNER="${1#--browser-runner=}"; shift ;;
+		--browser-runner) BROWSER_RUNNER="${2:-}"; shift 2 ;;
 		--playwriter-session=*) PLAYWRITER_SESSION="${1#--playwriter-session=}"; shift ;;
 		--playwriter-session) PLAYWRITER_SESSION="${2:-}"; shift 2 ;;
 		--out-dir=*) OUT_DIR="${1#--out-dir=}"; shift ;;
@@ -81,6 +96,17 @@ done
 if [ -z "$TARGET_WP" ] || [ -z "$TARGET_URL" ]; then
 	usage_error "--target and --target-url are required."
 fi
+if ! runner_error="$(woopayments_validate_local_wp_runner "$TARGET_WP")"; then
+	usage_error "unsafe target WP runner: $runner_error"
+fi
+if ! runner_error="$(woopayments_validate_approved_docker_runner "$TARGET_WP" target)"; then
+	usage_error "unapproved target WP runner: $runner_error"
+fi
+
+case "$BROWSER_RUNNER" in
+	playwriter|playwright) ;;
+	*) usage_error "unsupported browser runner: $BROWSER_RUNNER" ;;
+esac
 
 TARGET_URL="${TARGET_URL%/}"
 SETTINGS_URL="$TARGET_URL/wp-admin/admin.php?page=wc-settings&tab=checkout&section=woocommerce_payments"
@@ -121,6 +147,7 @@ print(
                 "woocommerce-payments plugin is active before browser run",
                 "authenticated wp-admin settings page renders",
                 "WooPayments settings screen is present",
+                "standalone WooPayments settings script and localized global are present",
                 "no duplicate wc/payments/settings store registration error",
             ],
         },
@@ -142,6 +169,10 @@ assert_plugin_active() {
 
 record_failure() {
 	printf '%s\n' "$*" >> "$FAILURES_FILE"
+}
+
+record_blocker() {
+	printf '%s\n' "$*" >> "$BLOCKERS_FILE"
 }
 
 json_success() {
@@ -354,14 +385,28 @@ for key, expected in expected_values.items():
     if payload.get(key) != expected:
         errors.append(f"{key} mismatch: expected {expected!r}, got {payload.get(key)!r}")
 
-if payload.get("status") != "pass":
-    errors.append(f"status is not pass: {payload.get('status')!r}")
+status = payload.get("status")
+if status not in {"pass", "fail", "blocked"}:
+    errors.append(f"status is not pass/fail/blocked: {status!r}")
+elif status == "fail":
+    errors.append("browser evidence reported failure status")
 if payload.get("plugin_active") is not True:
     errors.append("plugin_active is not true")
 if payload.get("authenticated_wp_admin") is not True:
     errors.append("authenticated wp-admin settings page did not render")
 if payload.get("settings_screen_present") is not True:
     errors.append("WooPayments settings screen is not present")
+script_urls = payload.get("plugin_settings_script_urls")
+has_plugin_settings_script = isinstance(script_urls, list) and any(
+    isinstance(url, str)
+    and "/wp-content/plugins/woocommerce-payments/dist/settings" in url
+    and ".js" in url
+    for url in script_urls
+)
+if payload.get("plugin_settings_assets_present") is not True or not has_plugin_settings_script:
+    errors.append("standalone WooPayments settings assets were not observed")
+if payload.get("plugin_settings_global_present") is not True:
+    errors.append("standalone WooPayments settings global was not observed")
 if payload.get("duplicate_store_errors"):
     errors.append("duplicate wc/payments/settings store registration error")
 if payload.get("fatal_console_errors"):
@@ -371,11 +416,22 @@ if payload.get("failed_responses"):
 for failure in payload.get("failures", []):
     errors.append(f"browser failure: {failure}")
 
+blockers = [str(blocker) for blocker in payload.get("blockers", []) if str(blocker).strip()]
+if status == "blocked" and not blockers:
+    errors.append("blocked browser evidence did not include blocker details")
+elif status == "pass" and blockers:
+    errors.append("passing browser evidence included blocker details")
+
 for error in errors:
     print(error)
 
 if errors:
     raise SystemExit(1)
+
+if status == "blocked":
+    for blocker in blockers:
+        print(blocker)
+    raise SystemExit(3)
 PY
 }
 
@@ -383,12 +439,12 @@ write_rollup() {
 	local rollup_path="$OUT_DIR/plugin-active-settings-gate.json"
 	local evidence_path="$1"
 
-	python3 - "$rollup_path" "$TARGET_URL" "$SETTINGS_URL" "$evidence_path" "$FAILURES_FILE" <<'PY'
+	python3 - "$rollup_path" "$TARGET_URL" "$SETTINGS_URL" "$evidence_path" "$FAILURES_FILE" "$BLOCKERS_FILE" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-rollup_path, target_url, settings_url, evidence_path, failures_file = sys.argv[1:]
+rollup_path, target_url, settings_url, evidence_path, failures_file, blockers_file = sys.argv[1:]
 
 def load_json(path):
     candidate = Path(path)
@@ -401,13 +457,28 @@ failures = []
 if failures_path.exists():
     failures = [line for line in failures_path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
+blockers_path = Path(blockers_file)
+blockers = []
+if blockers_path.exists():
+    blockers = [line for line in blockers_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+evidence = load_json(evidence_path)
+evidence_status = evidence.get("status") if isinstance(evidence, dict) else None
+if evidence_status == "fail" and not failures:
+    failures.append("browser evidence reported failure status")
+elif evidence_status not in {"pass", "blocked", "fail"} and not failures:
+    failures.append("browser evidence status is missing or invalid")
+elif evidence_status == "blocked" and not blockers and not failures:
+    failures.append("blocked browser evidence did not include blocker details")
+
 payload = {
     "schema": "woopayments_plugin_active_settings_gate_rollup.v1",
-    "status": "fail" if failures else "pass",
+    "status": "fail" if failures else "blocked" if blockers else "pass",
     "target_url": target_url,
     "settings_url": settings_url,
-    "evidence": load_json(evidence_path),
+    "evidence": evidence,
     "failures": failures,
+    "blockers": blockers,
 }
 Path(rollup_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 PY
@@ -418,6 +489,7 @@ run_browser_gate() {
 	local log_path="$OUT_DIR/plugin-active-settings.playwriter.log"
 	local exit_code
 	local validation_output
+	local validation_code
 	local browser_config_js
 
 	rm -f "$evidence_path"
@@ -445,23 +517,33 @@ print(
 PY
 	)"
 
-	"${PLAYWRITER_CMD[@]}" -s "$PLAYWRITER_SESSION" -e "$browser_config_js" --timeout "30000" >"$log_path" 2>&1
-	exit_code=$?
-	if [ "$exit_code" -ne 0 ]; then
-		record_failure "Playwriter config seed exited $exit_code; see $log_path"
-		write_rollup "$evidence_path"
-		return
+	if [ "$BROWSER_RUNNER" = "playwriter" ]; then
+		"${PLAYWRITER_CMD[@]}" -s "$PLAYWRITER_SESSION" -e "$browser_config_js" --timeout "30000" >"$log_path" 2>&1
+		exit_code=$?
+		if [ "$exit_code" -ne 0 ]; then
+			record_failure "Playwriter config seed exited $exit_code; see $log_path"
+			write_rollup "$evidence_path"
+			return
+		fi
+
+		PLUGIN_SETTINGS_TARGET_URL="$TARGET_URL" \
+		PLUGIN_SETTINGS_SETTINGS_URL="$SETTINGS_URL" \
+		PLUGIN_SETTINGS_EVIDENCE_PATH="$evidence_path" \
+		PLUGIN_SETTINGS_DATA_DIR="$OUT_DIR" \
+		"${PLAYWRITER_CMD[@]}" -s "$PLAYWRITER_SESSION" -f "$BROWSER_DRIVER" --timeout "180000" >>"$log_path" 2>&1
+	else
+		PLUGIN_SETTINGS_TARGET_URL="$TARGET_URL" \
+		PLUGIN_SETTINGS_SETTINGS_URL="$SETTINGS_URL" \
+		PLUGIN_SETTINGS_EVIDENCE_PATH="$evidence_path" \
+		PLUGIN_SETTINGS_DATA_DIR="$OUT_DIR" \
+		WP_ADMIN_USER="$WP_ADMIN_USER" \
+		WP_ADMIN_PASSWORD="$WP_ADMIN_PASSWORD" \
+		"${PLAYWRIGHT_RUNNER_CMD[@]}" "$BROWSER_DRIVER" --timeout "180000" >"$log_path" 2>&1
 	fi
-
-	PLUGIN_SETTINGS_TARGET_URL="$TARGET_URL" \
-	PLUGIN_SETTINGS_SETTINGS_URL="$SETTINGS_URL" \
-	PLUGIN_SETTINGS_EVIDENCE_PATH="$evidence_path" \
-	PLUGIN_SETTINGS_DATA_DIR="$OUT_DIR" \
-	"${PLAYWRITER_CMD[@]}" -s "$PLAYWRITER_SESSION" -f "$BROWSER_DRIVER" --timeout "180000" >>"$log_path" 2>&1
 	exit_code=$?
 
 	if [ "$exit_code" -ne 0 ]; then
-		record_failure "Playwriter exited $exit_code; see $log_path"
+		record_failure "$BROWSER_RUNNER exited $exit_code; see $log_path"
 	fi
 	if [ ! -f "$evidence_path" ]; then
 		record_failure "missing browser evidence $evidence_path"
@@ -469,7 +551,15 @@ PY
 		return
 	fi
 
-	if ! validation_output="$(validate_driver_evidence "$evidence_path" 2>&1)"; then
+	validation_output="$(validate_driver_evidence "$evidence_path" 2>&1)"
+	validation_code=$?
+	if [ "$validation_code" -eq 3 ]; then
+		while IFS= read -r line; do
+			if [ -n "$line" ]; then
+				record_blocker "$line"
+			fi
+		done <<< "$validation_output"
+	elif [ "$validation_code" -ne 0 ]; then
 		while IFS= read -r line; do
 			if [ -n "$line" ]; then
 				record_failure "$line"
@@ -497,22 +587,29 @@ if [ ! -f "$BROWSER_DRIVER" ]; then
 	blocked "browser driver is missing: $BROWSER_DRIVER"
 fi
 
-if [ -n "${PLAYWRITER_BIN:-}" ]; then
-	# shellcheck disable=SC2206
-	PLAYWRITER_CMD=( $PLAYWRITER_BIN )
-elif command -v playwriter >/dev/null 2>&1; then
-	PLAYWRITER_CMD=( playwriter )
-elif command -v npx >/dev/null 2>&1; then
-	PLAYWRITER_CMD=( npx --yes playwriter@latest )
+if [ "$BROWSER_RUNNER" = "playwriter" ]; then
+	if [ -n "${PLAYWRITER_BIN:-}" ]; then
+		# shellcheck disable=SC2206
+		PLAYWRITER_CMD=( $PLAYWRITER_BIN )
+	elif command -v playwriter >/dev/null 2>&1; then
+		PLAYWRITER_CMD=( playwriter )
+	elif command -v npx >/dev/null 2>&1; then
+		PLAYWRITER_CMD=( npx --yes playwriter@latest )
+	else
+		blocked "Playwriter is required. Install playwriter or provide PLAYWRITER_BIN."
+	fi
 else
-	blocked "Playwriter is required. Install playwriter or provide PLAYWRITER_BIN."
+	# shellcheck disable=SC2206
+	PLAYWRIGHT_RUNNER_CMD=( $PLAYWRIGHT_SCRIPT_RUNNER_BIN )
 fi
 
 mkdir -p "$OUT_DIR" || blocked "could not create evidence output directory: $OUT_DIR"
 OUT_DIR="$(cd "$OUT_DIR" && pwd)"
 FAILURES_FILE="$OUT_DIR/plugin-active-settings-failures.txt"
+BLOCKERS_FILE="$OUT_DIR/plugin-active-settings-blockers.txt"
 STAGE_FIXTURE_JSON="$OUT_DIR/plugin-active-settings-stage.json"
 : > "$FAILURES_FILE"
+: > "$BLOCKERS_FILE"
 
 trap restore_plugin_active_fixture EXIT
 
@@ -527,7 +624,7 @@ if [ "$PREFLIGHT_ONLY" -eq 1 ]; then
 	exit 0
 fi
 
-if [ -z "$PLAYWRITER_SESSION" ]; then
+if [ "$BROWSER_RUNNER" = "playwriter" ] && [ -z "$PLAYWRITER_SESSION" ]; then
 	blocked "pass --playwriter-session or set PLAYWRITER_SESSION before running plugin-active settings browser flow."
 fi
 
@@ -540,6 +637,15 @@ if [ -s "$FAILURES_FILE" ]; then
 		fi
 	done < "$FAILURES_FILE"
 	exit 1
+fi
+
+if [ -s "$BLOCKERS_FILE" ]; then
+	while IFS= read -r blocker_message; do
+		if [ -n "$blocker_message" ]; then
+			printf 'BLOCKED: %s\n' "$blocker_message" >&2
+		fi
+	done < "$BLOCKERS_FILE"
+	exit 3
 fi
 
 progress "wrote passing browser evidence rollup: $OUT_DIR/plugin-active-settings-gate.json"

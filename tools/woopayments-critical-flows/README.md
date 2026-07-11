@@ -4,7 +4,7 @@ Supervisor-owned verification suite for the native WooPayments-in-core merge. **
 
 ## Mandate
 
-Every critical flow the WooPayments **extension** supports must pass on native WooPayments-in-core, **functionally and from a UX perspective**, even where visual UI changed. Flow set = the WooPayments [Critical flows](https://github.com/Automattic/woocommerce-payments/wiki/Critical-flows) wiki table (validated on every extension release); procedures = the [Testing instructions](https://github.com/Automattic/woocommerce-payments/wiki/Testing-instructions-for-critical-flows). A flow that passes on the reference store but fails/degrades on native is a release-blocking regression.
+Every critical flow the WooPayments **extension** supports must pass on native WooPayments-in-core, **functionally and from a UX perspective**, even where visual UI changed. Flow set = the WooPayments [Critical flows](https://github.com/Automattic/woocommerce-payments/wiki/Critical-flows) wiki table (validated on every extension release); procedures = the [Testing instructions](https://github.com/Automattic/woocommerce-payments/wiki/Testing-instructions-for-critical-flows). A flow that passes on the reference store but fails/degrades on native is a release-blocking regression. Explicit native-continuity flows without a WooPayments 10.8 reference equivalent are target-only and must remain parity-blocked/not comparable rather than manufacturing a reference result.
 
 ## Hybrid architecture — two deliberately-overlapping layers
 
@@ -28,7 +28,11 @@ A subagent drives a real browser and **judges** functional + UX parity against t
 - multi-step admin journeys where selector churn makes scripts brittle.
 - Verdict: structured JSON (rubric below) + evidence (screenshots, observations). See `agent-specs/_template.md`.
 
-Completed Layer-A evidence is ingested by `run.sh` from `--agent-results-dir` (default: `evidence/agent-results`). Write one JSON file per Markdown flow, named `<flow>.json`, using the template's shape: `{flow, store_results, parity_verdict, regression_note}`. The runner records the per-store verdicts, preserves the result file path in `rollup.json`, and enforces `parity_verdict` on the target store because it is the target-vs-reference conclusion. Missing, malformed, wrong-flow, missing-store, blocked, or failing results remain fail-closed and keep the spec queued.
+Completed Layer-A evidence is ingested by `run.sh` from `--agent-results-dir` (default: `evidence/agent-results`). Write one JSON file per Markdown flow, named `<flow>.json`, using the template's shape: `{flow, oracle_mode, store_results, parity_verdict, regression_note}`. For comparable flows, the runner records per-store verdicts and enforces `parity_verdict` on the target. For target-only flows, it requires the spec and artifact to agree on `oracle_mode: target-only`, preserves the intentional reference/parity `BLOCKED` result, and records a complete target result independently without requeueing it. Missing, malformed, wrong-flow, missing-store, blocked target, or failing evidence remains fail-closed; incomplete evidence keeps the spec queued.
+
+`build-agent-results.py` can generate those JSON files from authoritative gate rollups and browser/state artifacts that already drove evidence, such as SC-04 saved-card checkout, plugin-active settings, MS-07 admin subscription payment-method changes, LPM checkout, and token continuity. For SC-04, `verify.sh` first creates the immutable aggregate context and then runs `sc04-saved-card-gate.py`. The gate uses short-lived WordPress customer auth sessions and isolated Playwright contexts to exercise normal saved-card checkout plus saved-token SCA on both Classic and Blocks, destroys each auth session, and captures one browser artifact and one authoritative WP-CLI state artifact per store. The browser artifacts prove saved-token discovery/selection, no forced new-card fields, completed 3DS challenges, local order-received outcomes, and expected amount/currency. The state artifacts bind those order IDs to the same customer and provider-backed tokens, current source and store/account context, successful WooPayments order status, matching amounts/currencies, and intent/charge metadata. The adapter then validates and stamps those raw artifacts under the same aggregate run.
+
+The adapter can also validate and copy a completed Layer-A v2 JSON whose capture already matches the active context. Legacy, stale, or mismatched copied evidence remains non-gating `BLOCKED`; missing required raw evidence also produces an explicit `BLOCKED` result. The adapter never converts incomplete evidence into a pass.
 
 ### Overlap policy
 
@@ -36,7 +40,9 @@ For money-moving and high-risk-UX flows, run BOTH: Layer D asserts the money/sta
 
 ### Dual-store oracle
 
-Both layers run on **reference `:8082`** (current WC + WooPayments extension — golden) and **target `:8889`** (native). Reference is the source of truth; target must reproduce its functional outcome + UX affordances. Same fixtures both sides.
+Comparable flows run on **reference `:8082`** (current WC + WooPayments extension — golden) and **target `:8889`** (native). Reference is the source of truth; target must reproduce its functional outcome + UX affordances. Same fixtures both sides.
+
+**Target-only exception:** SS-10 proves additive SEPA-token continuity after cutover on the native target. WooPayments 10.8 has no equivalent split-SEPA scheduled-renewal callback, so its target result may pass while its cross-store parity verdict remains `BLOCKED`/not comparable. Account-country, business-type, and capability restrictions are recorded as environment/manual-testing prerequisites, not patched into Core behavior.
 
 ## Verdict rubric (encodes "visual may change, function/UX may not")
 
@@ -73,7 +79,7 @@ tools/woopayments-critical-flows/
 
 ## The matrix
 
-Legend — **Layers:** `D` deterministic, `A` agent-driven, `D+A` both (overlap). **Status:** `PENDING` · `KNOWN-FAIL (Bn)` · `BLOCKED (reason)`.
+Legend — **Layers:** `D` deterministic, `A` agent-driven, `D+A` both (overlap). **Status:** `PENDING` · `KNOWN-FAIL (Bn)` · `BLOCKED (reason)` · `TARGET-ONLY (parity not comparable)`.
 
 ### Shopper — Checkout
 
@@ -117,7 +123,7 @@ Legend — **Layers:** `D` deterministic, `A` agent-driven, `D+A` both (overlap)
 | SS-07 | Coupon (signup/one-off/recurring) | D | Discount per type across renewals | Discount at checkout + schedule | PENDING |
 | SS-08 | Free-trial subscription | D+A | Trial set; $0 initial; first renewal charges | Trial messaging; initial total | PENDING |
 | SS-09 | Multiple subscriptions one purchase | D | All created | Per-sub schedules | PENDING |
-| SS-10 | SEPA-token renewal after cutover | D+A | Plugin-created SEPA token remains visible and renews under native | My Account token row and renewal feedback remain discoverable | PENDING |
+| SS-10 | SEPA-token renewal after cutover | D+A | Plugin-created SEPA token remains visible and renews under native | My Account token row and renewal feedback remain discoverable | TARGET-ONLY (parity not comparable) |
 
 ### Merchant — Subscriptions (admin)
 

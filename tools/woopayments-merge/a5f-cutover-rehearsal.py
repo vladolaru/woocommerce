@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import base64
-import copy
 import json
 import os
 import pathlib
@@ -17,6 +16,11 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
+from local_runner_safety import (
+    LocalRunnerError,
+    validate_local_wp_command as validate_approved_local_wp_command,
+)
+
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 TOOLS_DIR = REPO / "tools/woopayments-merge"
@@ -26,124 +30,24 @@ PLUGIN_SLUG = "woocommerce-payments"
 MANDATORY_HELPER_FILE = "a5f-mandatory-cutover.php"
 BLOCKER_HELPER_FILE = "a5f-preflight-blocker.php"
 DEBUG_LOG_PATH = "/var/www/html/wp-content/debug.log"
-LPM_WAVE_1_METHODS = [
-    "sepa_debit",
-    "ideal",
-    "bancontact",
-    "klarna",
-    "affirm",
-    "afterpay_clearpay",
-]
-LPM_WAVE_1_FIXTURES = {
-    "sepa_debit": {
-        "currency": "EUR",
-        "country": "NL",
-        "gateway_id": "woocommerce_payments_sepa_debit",
-        "stripe_payment_method_type": "sepa_debit",
-        "family": "debit",
-    },
-    "ideal": {
-        "currency": "EUR",
-        "country": "NL",
-        "gateway_id": "woocommerce_payments_ideal",
-        "stripe_payment_method_type": "ideal",
-        "family": "redirect",
-    },
-    "bancontact": {
-        "currency": "EUR",
-        "country": "BE",
-        "gateway_id": "woocommerce_payments_bancontact",
-        "stripe_payment_method_type": "bancontact",
-        "family": "redirect",
-    },
-    "klarna": {
-        "currency": "EUR",
-        "country": "NL",
-        "gateway_id": "woocommerce_payments_klarna",
-        "stripe_payment_method_type": "klarna",
-        "family": "bnpl",
-    },
-    "affirm": {
-        "currency": "USD",
-        "country": "US",
-        "gateway_id": "woocommerce_payments_affirm",
-        "stripe_payment_method_type": "affirm",
-        "family": "bnpl",
-    },
-    "afterpay_clearpay": {
-        "currency": "USD",
-        "country": "US",
-        "gateway_id": "woocommerce_payments_afterpay_clearpay",
-        "stripe_payment_method_type": "afterpay_clearpay",
-        "family": "bnpl",
-    },
+EVIDENCE_SCOPE = {
+    "owned_by_a5f": [
+        "runtime_ownership_transitions",
+        "soft_cutover",
+        "mandatory_cutover",
+        "plugin_activation_guard",
+        "local_transport_continuity",
+    ],
+    "orchestrated_by_final_evidence": [
+        "lpm-checkout-gate.sh",
+        "mc-rates-gate.sh",
+        "token-continuity-gate.sh",
+    ],
 }
-REQUIRED_STORE_PROFILES = [
-    {
-        "id": "lpm-wave-1-checkout",
-        "label": "LPM-enabled checkout store",
-        "gate": "lpm-checkout-gate.sh",
-        "gate_plan_schema": "woopayments_lpm_checkout_gate_plan.v1",
-        "evidence_rollup": "lpm-checkout-gate.json",
-        "surface": "classic",
-        "methods": LPM_WAVE_1_METHODS,
-        "fixtures": LPM_WAVE_1_FIXTURES,
-    },
-    {
-        "id": "multi-currency-rates",
-        "label": "MC-enabled store",
-        "gate": "mc-rates-gate.sh",
-        "gate_plan_schema": "woopayments_mc_rates_gate_plan.v1",
-        "evidence_rollup": "mc-rates-gate.json",
-        "currency_from": "USD",
-        "currencies_to": ["GBP", "EUR"],
-    },
-    {
-        "id": "sepa-token-continuity",
-        "label": "SEPA-token store",
-        "gate": "token-continuity-gate.sh",
-        "gate_plan_schema": "woopayments_token_continuity_gate_plan.v1",
-        "evidence_rollup": "token-continuity-gate.json",
-        "method": "sepa_debit",
-        "gateway_id": "woocommerce_payments_sepa_debit",
-        "stripe_payment_method_type": "sepa_debit",
-        "token_type": "wcpay_sepa",
-        "required_fixture_inputs": ["customer_id", "subscription_id"],
-        "checks": [
-            "plugin_checkout_saves_sepa_token",
-            "native_cutover_cli_lists_token",
-            "native_my_account_renders_token",
-            "native_sepa_subscription_renewal_succeeds",
-        ],
-    },
-]
-REQUIRED_STORE_PROFILE_IDS = {profile["id"] for profile in REQUIRED_STORE_PROFILES}
 
 
 class HarnessError(RuntimeError):
     """Raised for fail-closed harness errors."""
-
-
-def required_store_profiles() -> list[dict[str, Any]]:
-    return copy.deepcopy(REQUIRED_STORE_PROFILES)
-
-
-def validate_required_store_profiles(profiles: list[dict[str, Any]]) -> None:
-    ids = {str(profile.get("id", "")) for profile in profiles}
-    if ids != REQUIRED_STORE_PROFILE_IDS:
-        missing = sorted(REQUIRED_STORE_PROFILE_IDS - ids)
-        extra = sorted(ids - REQUIRED_STORE_PROFILE_IDS)
-        raise HarnessError(f"required store profiles are incomplete: missing={missing}, extra={extra}")
-
-    for profile in profiles:
-        profile_id = str(profile["id"])
-        gate = str(profile.get("gate", ""))
-        if not gate or "/" in gate:
-            raise HarnessError(f"{profile_id} has an invalid gate file: {gate!r}")
-        if not (TOOLS_DIR / gate).is_file():
-            raise HarnessError(f"{profile_id} gate file is missing: {gate}")
-        if not profile.get("gate_plan_schema"):
-            raise HarnessError(f"{profile_id} is missing gate_plan_schema")
 
 
 def utc_now() -> str:
@@ -160,24 +64,10 @@ def write_json(path: pathlib.Path, payload: dict[str, Any]) -> None:
 
 
 def validate_local_wp_command(command: str) -> list[str]:
-    if any(token in command for token in (";", "&&", "||", "`", "$(", "\n", "\r")):
-        raise HarnessError("Refusing unsafe or remote target WP command.")
-
-    parts = shlex.split(command)
-    if not parts:
-        raise HarnessError("Refusing unsafe or remote target WP command.")
-
-    lowered = [part.lower() for part in parts]
-    if any(part.startswith("--http") for part in lowered):
-        raise HarnessError("Refusing unsafe or remote target WP command.")
-
-    if any(part in {"ssh", "wpcom", "wpcom-local"} for part in lowered):
-        raise HarnessError("Refusing unsafe or remote target WP command.")
-
-    if lowered[:2] != ["docker", "exec"] or "wp" not in lowered:
-        raise HarnessError("Refusing unsafe or remote target WP command.")
-
-    return parts
+    try:
+        return validate_approved_local_wp_command("target-wp", command)
+    except LocalRunnerError as exc:
+        raise HarnessError(f"Refusing unsafe or remote target WP command: {exc}") from exc
 
 
 def parse_json_from_output(output: str) -> dict[str, Any]:
@@ -321,8 +211,6 @@ class Rehearsal:
         self.browser_evidence_paths: list[str] = []
         self.failures: list[dict[str, str]] = []
         self.log_window = {"started_at": utc_now(), "debug_log": DEBUG_LOG_PATH}
-        self.required_store_profiles = required_store_profiles()
-        validate_required_store_profiles(self.required_store_profiles)
         self.status = "running"
         self.write_rollup()
 
@@ -339,7 +227,7 @@ class Rehearsal:
             "phase_results": self.phase_results,
             "state_snapshots": self.state_snapshots,
             "browser_evidence_paths": self.browser_evidence_paths,
-            "required_store_profiles": self.required_store_profiles,
+            "evidence_scope": EVIDENCE_SCOPE,
             "log_window": self.log_window,
             "failures": self.failures,
             "pass": self.status == "pass" and not self.failures and all(result.get("status") == "pass" for result in self.phase_results),
@@ -504,13 +392,25 @@ class Rehearsal:
         return copied
 
     def run_playwriter_gate(self, phase_id: str, script: pathlib.Path, source_evidence: pathlib.Path) -> None:
-        playwriter = os.environ.get("PLAYWRITER_BIN")
-        if playwriter:
-            command = shlex.split(playwriter)
-        elif shutil.which("playwriter"):
-            command = ["playwriter"]
+        browser_runner = getattr(self.args, "browser_runner", os.environ.get("BROWSER_RUNNER", "playwriter"))
+        if browser_runner not in {"playwriter", "playwright"}:
+            raise HarnessError(f"unsupported browser runner: {browser_runner}")
+
+        if browser_runner == "playwriter":
+            if not str(self.args.playwriter_session):
+                raise HarnessError("pass --playwriter-session or set PLAYWRITER_SESSION before running Playwriter browser gates")
+            playwriter = os.environ.get("PLAYWRITER_BIN")
+            if playwriter:
+                command = shlex.split(playwriter)
+            elif shutil.which("playwriter"):
+                command = ["playwriter"]
+            else:
+                command = ["npx", "--yes", "playwriter@latest"]
+            runner_args = command + ["-s", str(self.args.playwriter_session), "-f", str(script), "--timeout", "300000"]
         else:
-            command = ["npx", "--yes", "playwriter@latest"]
+            runner = os.environ.get("PLAYWRIGHT_SCRIPT_RUNNER_BIN") or str(TOOLS_DIR / "playwright-script-runner.mjs")
+            command = shlex.split(runner)
+            runner_args = command + [str(script), "--timeout", "300000"]
 
         previous_mtime = source_evidence.stat().st_mtime_ns if source_evidence.exists() else None
         command_error: Exception | None = None
@@ -519,11 +419,13 @@ class Rehearsal:
             "A5_GATE_PLUGINS_URL": f"{self.target_url}/wp-admin/plugins.php",
             "A5_GATE_DATA_DIR": str(source_evidence.parent),
             "A5_GATE_EVIDENCE_PATH": str(source_evidence),
+            "WP_ADMIN_USER": os.environ.get("WP_ADMIN_USER", "admin"),
+            "WP_ADMIN_PASSWORD": os.environ.get("WP_ADMIN_PASSWORD", "password"),
         }
         try:
             self.run_command(
                 phase_id,
-                command + ["-s", str(self.args.playwriter_session), "-f", str(script), "--timeout", "300000"],
+                runner_args,
                 timeout_seconds=360,
                 env=browser_env,
             )
@@ -736,7 +638,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--target-wp", required=True, help="Local target WP-CLI command.")
     parser.add_argument("--target-url", default="http://store8889.localhost:8889")
     parser.add_argument("--store-dir", default=str(REPO))
-    parser.add_argument("--playwriter-session", required=True)
+    parser.add_argument("--browser-runner", choices=("playwriter", "playwright"), default=os.environ.get("BROWSER_RUNNER", "playwriter"))
+    parser.add_argument("--playwriter-session", default=os.environ.get("PLAYWRITER_SESSION", ""))
     parser.add_argument("--out-dir", default=str(DEFAULT_OUT_DIR))
     parser.add_argument("--skip-wpcom-readiness", action="store_true")
     return parser.parse_args(argv)

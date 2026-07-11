@@ -13,6 +13,7 @@ REPO_ROOT="$(cd "$SELF_DIR/../.." && pwd)"
 DEFAULT_EXTENSION_ROOT="$(cd "$REPO_ROOT/.." && pwd)/woocommerce-payments"
 
 EXTENSION_ROOT="${WCPAY_EXTENSION_ROOT:-$DEFAULT_EXTENSION_ROOT}"
+EXTENSION_REF="${WCPAY_EXTENSION_REF:-10.8.0}"
 MANIFEST="$SELF_DIR/subsystem-disposition.md"
 
 while [ "$#" -gt 0 ]; do
@@ -25,32 +26,48 @@ while [ "$#" -gt 0 ]; do
 			MANIFEST="$2"
 			shift 2
 			;;
+		--extension-ref)
+			EXTENSION_REF="$2"
+			shift 2
+			;;
 		-h|--help)
-			echo "usage: subsystem-disposition-gate.sh [--extension-root PATH] [--manifest PATH]" >&2
+			echo "usage: subsystem-disposition-gate.sh [--extension-root PATH] [--extension-ref 10.8.0|worktree] [--manifest PATH]" >&2
 			exit 2
 			;;
 		*)
 			echo "Unknown arg: $1" >&2
-			echo "usage: subsystem-disposition-gate.sh [--extension-root PATH] [--manifest PATH]" >&2
+			echo "usage: subsystem-disposition-gate.sh [--extension-root PATH] [--extension-ref 10.8.0|worktree] [--manifest PATH]" >&2
 			exit 2
 			;;
 	esac
 done
-
-if [ ! -d "$EXTENSION_ROOT/includes" ] && [ ! -d "$EXTENSION_ROOT/src" ]; then
-	echo "Extension root does not contain includes/ or src/: $EXTENSION_ROOT" >&2
-	exit 2
-fi
 
 if [ ! -f "$MANIFEST" ]; then
 	echo "Manifest not found: $MANIFEST" >&2
 	exit 2
 fi
 
-python3 - "$EXTENSION_ROOT" "$MANIFEST" <<'PY'
+ORACLE_COMMIT=""
+if [ "$EXTENSION_REF" = "worktree" ]; then
+	if [ ! -d "$EXTENSION_ROOT/includes" ] && [ ! -d "$EXTENSION_ROOT/src" ]; then
+		echo "Extension root does not contain includes/ or src/: $EXTENSION_ROOT" >&2
+		exit 2
+	fi
+elif [ "$EXTENSION_REF" = "10.8.0" ]; then
+	if ! ORACLE_COMMIT="$(git -C "$EXTENSION_ROOT" rev-parse --verify 'refs/tags/10.8.0^{commit}' 2>/dev/null)" || [ -z "$ORACLE_COMMIT" ]; then
+		echo "Extension root does not contain the required 10.8.0 tag: $EXTENSION_ROOT" >&2
+		exit 2
+	fi
+else
+	echo "Unsupported extension ref: $EXTENSION_REF (expected 10.8.0 or worktree)" >&2
+	exit 2
+fi
+
+python3 - "$EXTENSION_ROOT" "$MANIFEST" "$EXTENSION_REF" "$ORACLE_COMMIT" <<'PY'
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -160,7 +177,34 @@ def read_manifest_rows(manifest: Path) -> tuple[list[ManifestRow], list[InvalidM
     return rows, invalid_rows
 
 
-def enumerate_extension_files(extension_root: Path) -> list[str]:
+def enumerate_extension_files(extension_root: Path, extension_ref: str, oracle_commit: str) -> list[str]:
+    if extension_ref != "worktree":
+        result = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(extension_root),
+                "ls-tree",
+                "-r",
+                "--name-only",
+                oracle_commit,
+                "--",
+                "includes",
+                "src",
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"could not enumerate WooPayments {extension_ref}: {result.stderr.strip()}")
+        return sorted(
+            path
+            for path in result.stdout.splitlines()
+            if path.endswith(".php") and path.startswith(("includes/", "src/"))
+        )
+
     files: list[str] = []
 
     for directory in ("includes", "src"):
@@ -191,8 +235,10 @@ def is_exact_php_source_path(pattern: str) -> bool:
 def main() -> int:
     extension_root = Path(sys.argv[1]).resolve()
     manifest = Path(sys.argv[2]).resolve()
+    extension_ref = sys.argv[3]
+    oracle_commit = sys.argv[4]
 
-    extension_files = enumerate_extension_files(extension_root)
+    extension_files = enumerate_extension_files(extension_root, extension_ref, oracle_commit)
     rows, invalid_rows = read_manifest_rows(manifest)
 
     unmatched = [
@@ -229,6 +275,9 @@ def main() -> int:
 
     print("WooPayments subsystem disposition gate")
     print(f"  extension root: {extension_root}")
+    print(f"  extension ref: {extension_ref}")
+    if oracle_commit:
+        print(f"  oracle commit: {oracle_commit}")
     print(f"  manifest: {manifest}")
     print(f"  manifest rows: {len(rows)}")
     print(f"  extension files: {len(extension_files)}")

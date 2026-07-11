@@ -21,9 +21,10 @@ usage() {
 usage:
   payout-evidence-gate.sh --wp "<wp>" [--label reference] [--native]
 
-The gate drives an instant-balance charge, creates a Test Lab payout when
-available, reads the payout through Stripe CLI, and attempts raw-source
-membership lookup. Manual test-mode payouts may block membership lookup.
+The gate drives an instant-balance charge, creates a Test Lab payout from the
+available balance when possible, reads the payout through Stripe CLI, and
+attempts raw-source membership lookup. Manual test-mode payouts may block
+membership lookup.
 USAGE
 }
 
@@ -219,7 +220,7 @@ echo
 echo "Create Test Lab payout"
 # Intentionally split the WP runner string, matching the rest of this harness's WP="docker exec ..." convention.
 # shellcheck disable=SC2086
-payout_raw="$($WP_CMD wcpay-dev test-lab payouts --count=1 --amount=1 --format=json 2>&1)"
+payout_raw="$($WP_CMD wcpay-dev test-lab payouts --count=1 --format=json 2>&1)"
 payout_rc=$?
 if [ "$payout_rc" -ne 0 ]; then
 	echo "BLOCKED ($LABEL): Test Lab payout command is unavailable or unsupported in this runtime." >&2

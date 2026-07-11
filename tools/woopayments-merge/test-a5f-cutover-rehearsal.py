@@ -4,14 +4,22 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 
 REPO = Path(__file__).resolve().parents[2]
 MODULE_PATH = REPO / "tools/woopayments-merge/a5f-cutover-rehearsal.py"
+
+
+@pytest.fixture(autouse=True)
+def approve_target_container(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("WOOPAYMENTS_APPROVED_TARGET_CONTAINER", "target-cli-1")
 
 
 def load_module():
@@ -19,7 +27,11 @@ def load_module():
     spec = importlib.util.spec_from_file_location("a5f_cutover_rehearsal", MODULE_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec and spec.loader
-    spec.loader.exec_module(module)
+    sys.path.insert(0, str(MODULE_PATH.parent))
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.path.pop(0)
     return module
 
 
@@ -83,6 +95,19 @@ def test_validate_local_wp_command_accepts_local_docker_wp():
     ]
 
 
+def test_validate_local_wp_command_rejects_unapproved_standalone_target():
+    module = load_module()
+    previous = os.environ.pop("WOOPAYMENTS_APPROVED_TARGET_CONTAINER", None)
+    try:
+        assert_raises(
+            lambda: module.validate_local_wp_command("docker exec -i arbitrary-cli-1 wp --allow-root --user=1"),
+            "approved target container",
+        )
+    finally:
+        if previous is not None:
+            os.environ["WOOPAYMENTS_APPROVED_TARGET_CONTAINER"] = previous
+
+
 def test_rollup_is_written_after_failed_phase():
     module = load_module()
     with tempfile.TemporaryDirectory(prefix="a5f-rehearsal-test-") as out_dir:
@@ -98,54 +123,26 @@ def test_rollup_is_written_after_failed_phase():
     assert payload["failures"] == [{"phase": "soft-cutover", "message": "missing notice"}]
 
 
-def test_required_store_profiles_cover_lpm_mc_and_sepa_token_fixtures():
-    module = load_module()
-
-    profiles = {profile["id"]: profile for profile in module.required_store_profiles()}
-
-    assert set(profiles) == {
-        "lpm-wave-1-checkout",
-        "multi-currency-rates",
-        "sepa-token-continuity",
-    }
-
-    lpm = profiles["lpm-wave-1-checkout"]
-    assert lpm["gate"] == "lpm-checkout-gate.sh"
-    assert lpm["gate_plan_schema"] == "woopayments_lpm_checkout_gate_plan.v1"
-    assert lpm["methods"] == [
-        "sepa_debit",
-        "ideal",
-        "bancontact",
-        "klarna",
-        "affirm",
-        "afterpay_clearpay",
-    ]
-    assert lpm["fixtures"]["sepa_debit"]["gateway_id"] == "woocommerce_payments_sepa_debit"
-    assert lpm["fixtures"]["affirm"]["currency"] == "USD"
-
-    multi_currency = profiles["multi-currency-rates"]
-    assert multi_currency["gate"] == "mc-rates-gate.sh"
-    assert multi_currency["gate_plan_schema"] == "woopayments_mc_rates_gate_plan.v1"
-    assert multi_currency["currency_from"] == "USD"
-    assert multi_currency["currencies_to"] == ["GBP", "EUR"]
-
-    token = profiles["sepa-token-continuity"]
-    assert token["gate"] == "token-continuity-gate.sh"
-    assert token["gate_plan_schema"] == "woopayments_token_continuity_gate_plan.v1"
-    assert token["method"] == "sepa_debit"
-    assert token["gateway_id"] == "woocommerce_payments_sepa_debit"
-    assert token["token_type"] == "wcpay_sepa"
-    assert token["required_fixture_inputs"] == ["customer_id", "subscription_id"]
-
-
-def test_rollup_records_required_store_profiles():
+def test_rollup_declares_cutover_scope_without_claiming_external_profile_execution():
     module = load_module()
 
     with tempfile.TemporaryDirectory(prefix="a5f-rehearsal-test-") as out_dir:
         module.Rehearsal(make_args(out_dir))
         payload = module.read_json(Path(out_dir) / "a5f-cutover-rehearsal.json")
 
-    assert payload["required_store_profiles"] == module.required_store_profiles()
+    assert "required_store_profiles" not in payload
+    assert payload["evidence_scope"]["owned_by_a5f"] == [
+        "runtime_ownership_transitions",
+        "soft_cutover",
+        "mandatory_cutover",
+        "plugin_activation_guard",
+        "local_transport_continuity",
+    ]
+    assert payload["evidence_scope"]["orchestrated_by_final_evidence"] == [
+        "lpm-checkout-gate.sh",
+        "mc-rates-gate.sh",
+        "token-continuity-gate.sh",
+    ]
 
 
 def test_state_probe_runs_as_admin_when_target_wp_omits_user():
@@ -284,6 +281,43 @@ def test_playwriter_gate_passes_portable_browser_environment():
     assert captured_env["A5_GATE_EVIDENCE_PATH"] == str(source_evidence)
 
 
+def test_browser_gate_can_use_playwright_runner_without_playwriter_session():
+    module = load_module()
+    with tempfile.TemporaryDirectory(prefix="a5f-rehearsal-test-") as out_dir:
+        out_path = Path(out_dir)
+        source_evidence = out_path / "a5e-playwright-gate.json"
+        args = make_args(out_dir)
+        args.playwriter_session = ""
+        rehearsal = module.Rehearsal(args)
+        captured_command = []
+        old_browser_runner = os.environ.get("BROWSER_RUNNER")
+        old_playwright_bin = os.environ.get("PLAYWRIGHT_SCRIPT_RUNNER_BIN")
+
+        def pass_command(*args, **kwargs):
+            captured_command.extend(args[1])
+            source_evidence.write_text('{"status":"pass","updated":true}\n', encoding="utf-8")
+            return {"status": "pass"}
+
+        try:
+            os.environ["BROWSER_RUNNER"] = "playwright"
+            os.environ["PLAYWRIGHT_SCRIPT_RUNNER_BIN"] = "/fake/playwright-script-runner.mjs"
+            rehearsal.run_command = pass_command
+            rehearsal.run_playwriter_gate("playwright-gate", MODULE_PATH, source_evidence)
+        finally:
+            if old_browser_runner is None:
+                os.environ.pop("BROWSER_RUNNER", None)
+            else:
+                os.environ["BROWSER_RUNNER"] = old_browser_runner
+            if old_playwright_bin is None:
+                os.environ.pop("PLAYWRIGHT_SCRIPT_RUNNER_BIN", None)
+            else:
+                os.environ["PLAYWRIGHT_SCRIPT_RUNNER_BIN"] = old_playwright_bin
+
+    assert captured_command[0] == "/fake/playwright-script-runner.mjs"
+    assert str(MODULE_PATH) in captured_command
+    assert "-s" not in captured_command
+
+
 def test_browser_gates_use_isolated_pages_and_close_them():
     scripts = [
         REPO / "tools/woopayments-merge/a5-cutover-browser-gate.playwriter.mjs",
@@ -313,13 +347,27 @@ def test_browser_gates_are_portable_and_env_driven():
         assert "A5_GATE_EVIDENCE_PATH" in source
 
 
+def test_cutover_screenshot_capture_is_non_fatal_evidence():
+    scripts = [
+        REPO / "tools/woopayments-merge/a5-cutover-browser-gate.playwriter.mjs",
+        REPO / "tools/woopayments-merge/a5-mandatory-browser-gate.playwriter.mjs",
+    ]
+
+    for script in scripts:
+        source = script.read_text(encoding="utf-8")
+        assert "const screenshotFailures = [];" in source
+        assert "timeout: 10000" in source
+        assert "screenshotFailures.push" in source
+        assert "screenshotFailures," in source
+
+
 def main() -> None:
     tests = [
         test_validate_local_wp_command_rejects_shell_and_remote_transports,
         test_validate_local_wp_command_accepts_local_docker_wp,
+        test_validate_local_wp_command_rejects_unapproved_standalone_target,
         test_rollup_is_written_after_failed_phase,
-        test_required_store_profiles_cover_lpm_mc_and_sepa_token_fixtures,
-        test_rollup_records_required_store_profiles,
+        test_rollup_declares_cutover_scope_without_claiming_external_profile_execution,
         test_state_probe_runs_as_admin_when_target_wp_omits_user,
         test_parse_json_prefers_top_level_probe_payload,
         test_debug_log_scan_ignores_known_wpcli_textdomain_notices,
@@ -329,10 +377,19 @@ def main() -> None:
         test_playwriter_gate_passes_portable_browser_environment,
         test_browser_gates_use_isolated_pages_and_close_them,
         test_browser_gates_are_portable_and_env_driven,
+        test_cutover_screenshot_capture_is_non_fatal_evidence,
     ]
-    for test in tests:
-        test()
-        print(f"PASS {test.__name__}")
+    previous = os.environ.get("WOOPAYMENTS_APPROVED_TARGET_CONTAINER")
+    os.environ["WOOPAYMENTS_APPROVED_TARGET_CONTAINER"] = "target-cli-1"
+    try:
+        for test in tests:
+            test()
+            print(f"PASS {test.__name__}")
+    finally:
+        if previous is None:
+            os.environ.pop("WOOPAYMENTS_APPROVED_TARGET_CONTAINER", None)
+        else:
+            os.environ["WOOPAYMENTS_APPROVED_TARGET_CONTAINER"] = previous
 
 
 if __name__ == "__main__":

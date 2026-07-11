@@ -11,9 +11,16 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 SCRIPT = REPO / "tools/woopayments-merge/rest-route-parity.sh"
+EXCEPTIONS = REPO / "tools/woopayments-merge/rest-route-exceptions.txt"
 VERIFY = REPO / "tools/woopayments-merge/verify.sh"
 REF_WP = "docker exec -i wcpay_wp_default wp --allow-root"
 TARGET_WP = "docker exec -i target-cli-1 wp --allow-root --user=1"
+
+
+def test_committed_exceptions_match_the_pinned_10_8_route_oracle() -> None:
+    source = EXCEPTIONS.read_text(encoding="utf-8")
+
+    assert "/wc/v3/payments/survey/reports-feedback" not in source
 
 
 def run_gate(*args: str) -> subprocess.CompletedProcess[str]:
@@ -27,11 +34,23 @@ def run_gate(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def write_routes(path: Path, routes: list[dict[str, str]]) -> None:
+def write_routes(
+    path: Path,
+    routes: list[dict[str, str]],
+    *,
+    role: str | None = None,
+    runtime_owner: str | None = None,
+    site_url: str | None = None,
+) -> None:
+    resolved_role = role or ("target" if path.name.startswith("target") else "reference")
     path.write_text(
         json.dumps(
             {
                 "schema": "woopayments_rest_route_capture.v1",
+                "role": resolved_role,
+                "runtime_owner": runtime_owner
+                or ("native" if resolved_role == "target" else "plugin"),
+                "site_url": site_url or f"http://{resolved_role}.localhost",
                 "routes": routes,
             },
             sort_keys=True,
@@ -114,6 +133,85 @@ def test_gate_passes_matching_snapshots() -> None:
         rollup = json.loads((out_dir / "rest-route-parity.json").read_text(encoding="utf-8"))
         assert rollup["status"] == "pass"
         assert rollup["failures"] == []
+
+
+def test_gate_blocks_cross_store_snapshots_with_wrong_runtime_owner() -> None:
+    with tempfile.TemporaryDirectory(prefix="rest-route-parity-test-") as tmp:
+        tmp_path = Path(tmp)
+        ref_state = tmp_path / "ref-routes.json"
+        target_state = tmp_path / "target-routes.json"
+        exceptions = tmp_path / "exceptions.txt"
+
+        write_routes(ref_state, base_routes())
+        write_routes(target_state, base_routes(), runtime_owner="plugin")
+        write_exceptions(exceptions)
+
+        result = run_gate(
+            "--ref-state",
+            str(ref_state),
+            "--target-state",
+            str(target_state),
+            "--exceptions",
+            str(exceptions),
+        )
+
+        assert result.returncode == 3
+        assert "target runtime owner must be native" in result.stderr
+
+
+def test_gate_blocks_cross_store_snapshots_from_the_same_site() -> None:
+    with tempfile.TemporaryDirectory(prefix="rest-route-parity-test-") as tmp:
+        tmp_path = Path(tmp)
+        ref_state = tmp_path / "ref-routes.json"
+        target_state = tmp_path / "target-routes.json"
+        exceptions = tmp_path / "exceptions.txt"
+        shared_url = "http://same-store.localhost"
+
+        write_routes(ref_state, base_routes(), site_url=shared_url)
+        write_routes(target_state, base_routes(), site_url=shared_url)
+        write_exceptions(exceptions)
+
+        result = run_gate(
+            "--ref-state",
+            str(ref_state),
+            "--target-state",
+            str(target_state),
+            "--exceptions",
+            str(exceptions),
+        )
+
+        assert result.returncode == 3
+        assert "distinct local sites" in result.stderr
+
+
+def test_gate_supports_explicit_plugin_self_check_snapshots() -> None:
+    with tempfile.TemporaryDirectory(prefix="rest-route-parity-test-") as tmp:
+        tmp_path = Path(tmp)
+        ref_state = tmp_path / "ref-routes.json"
+        target_state = tmp_path / "target-routes.json"
+        exceptions = tmp_path / "exceptions.txt"
+        shared_url = "http://reference.localhost"
+
+        write_routes(ref_state, base_routes(), site_url=shared_url)
+        write_routes(
+            target_state,
+            base_routes(),
+            runtime_owner="plugin",
+            site_url=shared_url,
+        )
+        write_exceptions(exceptions)
+
+        result = run_gate(
+            "--ref-state",
+            str(ref_state),
+            "--target-state",
+            str(target_state),
+            "--exceptions",
+            str(exceptions),
+            "--self-check",
+        )
+
+        assert result.returncode == 0, result.stderr
 
 
 def test_gate_fails_when_reference_route_is_missing_on_target() -> None:

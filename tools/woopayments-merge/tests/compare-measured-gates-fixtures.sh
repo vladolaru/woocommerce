@@ -52,6 +52,25 @@ def money_probe(status, queries):
         },
     }
 
+route_registration_status = "preinitialized" if rest_controller_status == "preinitialized" else "measured"
+rest_metrics = {
+    "queries": 0,
+    "external_requests": 0,
+    "controller_instantiation_count": int(rest_controller_count),
+    "controller_instantiation_status": rest_controller_status,
+    "route_registration_status": route_registration_status,
+    "route_count": 2,
+    "payment_route_count": 1,
+}
+if route_registration_status == "measured":
+    rest_metrics.update(
+        {
+            "elapsed_ms": 1.0,
+            "timing_sample_count": 1,
+            "measurement_mode": "single_invocation_rest_api_init",
+        }
+    )
+
 capture = {
     "schema": "woopayments_measured_gate.v1",
     "mode": "perf",
@@ -68,13 +87,7 @@ capture = {
         },
         "rest_boot": {
             "status": "measured",
-            "metrics": {
-                "external_requests": 0,
-                "controller_instantiation_count": int(rest_controller_count),
-                "controller_instantiation_status": rest_controller_status,
-                "route_registration_status": "preinitialized" if rest_controller_status == "preinitialized" else "measured",
-                "median_ms": 1.0,
-            },
+            "metrics": rest_metrics,
         },
         "autoload_options": {
             "status": "measured",

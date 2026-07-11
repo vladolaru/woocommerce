@@ -22,6 +22,7 @@ ORIGINAL_WPLANG=""
 LANGUAGE_SWITCHED=0
 TRANSLATION_PROBE_INSTALLED=0
 TRANSLATION_PROBE_PLUGIN="woopayments-i18n-notes-gate-translations.php"
+CATALOG_EVIDENCE=""
 
 usage() {
 	cat >&2 <<'USAGE'
@@ -83,8 +84,9 @@ print(
             "required_flows": ["charge", "refund", "dispute"],
             "translation_probe": {
                 "plugin": "woopayments-i18n-notes-gate-translations.php",
-                "purpose": "installs deterministic WooCommerce gettext replacements for native payment note strings during live probes",
+                "purpose": "proves exact WooCommerce message IDs and text domain usage with deterministic per-flow markers",
             },
+            "catalog_probe": "records actual release language-pack coverage before the deterministic probe is installed",
             "english_sentinels": [
                 "Payment complete.",
                 "Payment failed.",
@@ -183,11 +185,17 @@ import sys
 with open(sys.argv[1], encoding="utf-8") as stream:
     data = json.load(stream)
 
-flows = {
-    str(order.get("flow", ""))
-    for order in data.get("orders", [])
-    if any(str(note).strip() for note in order.get("notes", []))
+markers = {
+    "charge": "[wcpay-i18n:charge]",
+    "refund": "[wcpay-i18n:refund]",
+    "dispute": "[wcpay-i18n:dispute]",
 }
+flows = set()
+for order in data.get("orders", []):
+    flow = str(order.get("flow", ""))
+    marker = markers.get(flow, "")
+    if marker and any(marker in str(note) for note in order.get("notes", [])):
+        flows.add(flow)
 sys.exit(0 if {"charge", "refund", "dispute"} <= flows else 1)
 PY
 }
@@ -274,6 +282,73 @@ switch_language() {
 	trap restore_language EXIT
 }
 
+capture_catalog_evidence() {
+	local out_file="$1"
+	local raw rc json
+
+	# Intentionally split the WP runner string, matching this harness's WP="docker exec ..." convention.
+	# shellcheck disable=SC2086
+	raw="$($TARGET_WP eval-file - <<'PHP' 2>&1
+<?php
+$messages = array(
+	'charge'  => '<strong>Fee details:</strong>',
+	'refund'  => 'A refund of %1$s %4$s using %2$s (%3$s).',
+	'dispute' => 'Payment dispute has been updated',
+);
+$translated_messages = array();
+
+foreach ( $messages as $flow => $message_id ) {
+	$translation = translate( $message_id, 'woocommerce' );
+	$translated_messages[ $flow ] = array(
+		'message_id'  => $message_id,
+		'translation' => $translation,
+		'translated'  => $translation !== $message_id,
+	);
+}
+
+WP_CLI::line(
+	wp_json_encode(
+		array(
+			'schema'            => 'woopayments_i18n_catalog_evidence.v1',
+			'locale'            => get_locale(),
+			'textdomain'        => 'woocommerce',
+			'textdomain_loaded' => is_textdomain_loaded( 'woocommerce' ),
+			'messages'          => $translated_messages,
+		),
+		JSON_UNESCAPED_SLASHES
+	)
+);
+PHP
+)"
+	rc=$?
+	json="$(printf '%s\n' "$raw" | json_from_text)"
+
+	if [ "$rc" -ne 0 ] || [ -z "$json" ]; then
+		printf '%s\n' "$raw" | tail -20 >&2
+		blocked "could not capture WooCommerce catalog evidence."
+	fi
+
+	printf '%s\n' "$json" > "$out_file"
+}
+
+attach_translation_evidence() {
+	local state_file="$1"
+	local catalog_file="$2"
+
+	python3 - "$state_file" "$catalog_file" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+state_path = Path(sys.argv[1])
+catalog_path = Path(sys.argv[2])
+state = json.loads(state_path.read_text(encoding="utf-8"))
+state["translation_source"] = "deterministic_gettext_probe"
+state["catalog_evidence"] = json.loads(catalog_path.read_text(encoding="utf-8"))
+state_path.write_text(json.dumps(state, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+PY
+}
+
 install_translation_probe() {
 	local raw rc
 
@@ -300,28 +375,29 @@ add_filter(
 		}
 
 		\$map = array(
-			'<strong>Fee details:</strong>' => '<strong>Gebuehrendetails:</strong>',
+			'Payment complete.' => '[wcpay-i18n:charge] Zahlung abgeschlossen.',
+			'<strong>Fee details:</strong>' => '<strong>[wcpay-i18n:charge] Gebuehrendetails:</strong>',
 			'Fee (%1\$s): %2\$s' => 'Gebuehr (%1\$s): %2\$s',
 			'Fee: %1\$s' => 'Gebuehr: %1\$s',
 			'Base fee: %1\$s' => 'Grundgebuehr: %1\$s',
 			'Currency conversion fee: %1\$s' => 'Waehrungsumrechnungsgebuehr: %1\$s',
 			'Net payout: %1\$s' => 'Nettoauszahlung: %1\$s',
-			'Refunded order' => 'Rueckerstattete Bestellung',
-			'A refund of %1\$s %4\$s using %2\$s (%3\$s).' => 'Eine Rueckerstattung von %1\$s %4\$s mit %2\$s (%3\$s).',
-			'A refund of %1\$s %5\$s using %2\$s. Reason: %3\$s. (%4\$s)' => 'Eine Rueckerstattung von %1\$s %5\$s mit %2\$s. Grund: %3\$s. (%4\$s)',
-			'A refund of %1\$s was <strong>%2\$s</strong> using %3\$s (<code>%4\$s</code>)%5\$s' => 'Eine Rueckerstattung von %1\$s war <strong>%2\$s</strong> mit %3\$s (<code>%4\$s</code>)%5\$s',
+			'Refunded order' => '[wcpay-i18n:refund] Rueckerstattete Bestellung',
+			'A refund of %1\$s %4\$s using %2\$s (%3\$s).' => '[wcpay-i18n:refund] Eine Rueckerstattung von %1\$s %4\$s mit %2\$s (%3\$s).',
+			'A refund of %1\$s %5\$s using %2\$s. Reason: %3\$s. (%4\$s)' => '[wcpay-i18n:refund] Eine Rueckerstattung von %1\$s %5\$s mit %2\$s. Grund: %3\$s. (%4\$s)',
+			'A refund of %1\$s was <strong>%2\$s</strong> using %3\$s (<code>%4\$s</code>)%5\$s' => '[wcpay-i18n:refund] Eine Rueckerstattung von %1\$s war <strong>%2\$s</strong> mit %3\$s (<code>%4\$s</code>)%5\$s',
 			'was successfully processed' => 'wurde erfolgreich verarbeitet',
 			'is pending' => 'ist ausstehend',
 			'cancelled' => 'abgebrochen',
 			'unsuccessful' => 'nicht erfolgreich',
-			'Payment dispute and fees have been deducted from your next payout' => 'Zahlungsdisput und Gebuehren wurden von Ihrer naechsten Auszahlung abgezogen',
-			'Payment dispute funds have been reinstated' => 'Zahlungsdisputmittel wurden wiederhergestellt',
-			'Payment dispute has been updated' => 'Zahlungsdisput wurde aktualisiert',
+			'Payment dispute and fees have been deducted from your next payout' => '[wcpay-i18n:dispute] Zahlungsdisput und Gebuehren wurden von Ihrer naechsten Auszahlung abgezogen',
+			'Payment dispute funds have been reinstated' => '[wcpay-i18n:dispute] Zahlungsdisputmittel wurden wiederhergestellt',
+			'Payment dispute has been updated' => '[wcpay-i18n:dispute] Zahlungsdisput wurde aktualisiert',
 			'%1\$s. See <a href="%2\$s">dispute overview</a> for more details.' => '%1\$s. Weitere Details in der <a href="%2\$s">Disputuebersicht</a>.',
-			'A payment inquiry has been raised for %1\$s with reason "%2\$s". <a href="%4\$s" target="_blank" rel="noopener noreferrer">Response due by %3\$s</a>.' => 'Eine Zahlungsanfrage ueber %1\$s wurde mit Grund "%2\$s" erstellt. <a href="%4\$s" target="_blank" rel="noopener noreferrer">Antwort faellig bis %3\$s</a>.',
-			'Payment has been disputed for %1\$s with reason "%2\$s". <a href="%4\$s" target="_blank" rel="noopener noreferrer">Response due by %3\$s</a>.' => 'Zahlung ueber %1\$s wurde mit Grund "%2\$s" angefochten. <a href="%4\$s" target="_blank" rel="noopener noreferrer">Antwort faellig bis %3\$s</a>.',
-			'Payment inquiry has been closed with status %1\$s. See <a href="%2\$s" target="_blank" rel="noopener noreferrer">payment status</a> for more details.' => 'Zahlungsanfrage wurde mit Status %1\$s geschlossen. Weitere Details im <a href="%2\$s" target="_blank" rel="noopener noreferrer">Zahlungsstatus</a>.',
-			'Dispute has been closed with status %1\$s. See <a href="%2\$s" target="_blank" rel="noopener noreferrer">dispute overview</a> for more details.' => 'Disput wurde mit Status %1\$s geschlossen. Weitere Details in der <a href="%2\$s" target="_blank" rel="noopener noreferrer">Disputuebersicht</a>.',
+			'A payment inquiry has been raised for %1\$s with reason "%2\$s". <a href="%4\$s" target="_blank" rel="noopener noreferrer">Response due by %3\$s</a>.' => '[wcpay-i18n:dispute] Eine Zahlungsanfrage ueber %1\$s wurde mit Grund "%2\$s" erstellt. <a href="%4\$s" target="_blank" rel="noopener noreferrer">Antwort faellig bis %3\$s</a>.',
+			'Payment has been disputed for %1\$s with reason "%2\$s". <a href="%4\$s" target="_blank" rel="noopener noreferrer">Response due by %3\$s</a>.' => '[wcpay-i18n:dispute] Zahlung ueber %1\$s wurde mit Grund "%2\$s" angefochten. <a href="%4\$s" target="_blank" rel="noopener noreferrer">Antwort faellig bis %3\$s</a>.',
+			'Payment inquiry has been closed with status %1\$s. See <a href="%2\$s" target="_blank" rel="noopener noreferrer">payment status</a> for more details.' => '[wcpay-i18n:dispute] Zahlungsanfrage wurde mit Status %1\$s geschlossen. Weitere Details im <a href="%2\$s" target="_blank" rel="noopener noreferrer">Zahlungsstatus</a>.',
+			'Dispute has been closed with status %1\$s. See <a href="%2\$s" target="_blank" rel="noopener noreferrer">dispute overview</a> for more details.' => '[wcpay-i18n:dispute] Disput wurde mit Status %1\$s geschlossen. Weitere Details in der <a href="%2\$s" target="_blank" rel="noopener noreferrer">Disputuebersicht</a>.',
 		);
 
 		return \$map[ \$text ] ?? \$translation;
@@ -465,6 +541,21 @@ from pathlib import Path
 
 
 REQUIRED_FLOWS = ["charge", "refund", "dispute"]
+FLOW_LOCALIZED_PATTERNS = {
+    "charge": [r"Gebuehrendetails", r"Zahlung abgeschlossen"],
+    "refund": [r"Rueckerstattung"],
+    "dispute": [r"Zahlungsanfrage", r"Zahlungsdisput", r"Zahlungsstreitigkeit", r"Disput"],
+}
+FLOW_PROBE_MARKERS = {
+    "charge": "[wcpay-i18n:charge]",
+    "refund": "[wcpay-i18n:refund]",
+    "dispute": "[wcpay-i18n:dispute]",
+}
+CATALOG_MESSAGE_IDS = {
+    "charge": "<strong>Fee details:</strong>",
+    "refund": "A refund of %1$s %4$s using %2$s (%3$s).",
+    "dispute": "Payment dispute has been updated",
+}
 ENGLISH_SENTINELS = [
     "Payment complete.",
     "Payment failed.",
@@ -497,6 +588,7 @@ with state_path.open(encoding="utf-8") as stream:
     state = json.load(stream)
 
 failures: list[str] = []
+blockers: list[str] = []
 
 if state.get("schema") != "woopayments_i18n_notes_capture.v1":
     failures.append(f"unexpected state schema: {state.get('schema')}")
@@ -511,6 +603,7 @@ if not isinstance(orders, list):
     failures.append("state orders must be a list")
 
 flows_with_notes: set[str] = set()
+notes_by_flow: dict[str, list[str]] = {flow: [] for flow in REQUIRED_FLOWS}
 for order in orders:
     if not isinstance(order, dict):
         continue
@@ -520,6 +613,8 @@ for order in orders:
     notes = [normalize_note(note) for note in order.get("notes", []) if normalize_note(note)]
     if notes:
         flows_with_notes.add(flow)
+        if flow in notes_by_flow:
+            notes_by_flow[flow].extend(notes)
 
     seen: dict[str, int] = {}
     for note in notes:
@@ -538,10 +633,53 @@ missing_flows = [flow for flow in REQUIRED_FLOWS if flow not in flows_with_notes
 if missing_flows:
     failures.append(f"missing required flow notes: {', '.join(missing_flows)}")
 
+translation_source = str(state.get("translation_source", ""))
+if translation_source not in {"catalog", "deterministic_gettext_probe"}:
+    failures.append(f"unexpected translation source: {translation_source or 'missing'}")
+else:
+    for flow in REQUIRED_FLOWS:
+        if flow not in flows_with_notes:
+            continue
+        flow_notes = "\n".join(notes_by_flow[flow])
+        if translation_source == "deterministic_gettext_probe":
+            marker = FLOW_PROBE_MARKERS[flow]
+            if marker not in flow_notes:
+                failures.append(f"missing deterministic gettext marker for {flow}: {marker}")
+            continue
+
+        if not any(re.search(pattern, flow_notes, flags=re.IGNORECASE) for pattern in FLOW_LOCALIZED_PATTERNS[flow]):
+            failures.append(f"missing flow-specific localized note: {flow}")
+
+catalog = state.get("catalog_evidence")
+if not isinstance(catalog, dict):
+    blockers.append("catalog translation unavailable: missing catalog evidence")
+else:
+    if catalog.get("schema") != "woopayments_i18n_catalog_evidence.v1":
+        blockers.append("catalog translation unavailable: unexpected catalog evidence schema")
+    if catalog.get("locale") != expected_locale:
+        blockers.append(
+            f"catalog translation unavailable: locale {catalog.get('locale')} does not match {expected_locale}"
+        )
+    if catalog.get("textdomain") != "woocommerce" or catalog.get("textdomain_loaded") is not True:
+        blockers.append("catalog translation unavailable: WooCommerce text domain was not loaded")
+
+    catalog_messages = catalog.get("messages")
+    if not isinstance(catalog_messages, dict):
+        catalog_messages = {}
+    for flow, message_id in CATALOG_MESSAGE_IDS.items():
+        message = catalog_messages.get(flow)
+        if not isinstance(message, dict) or message.get("message_id") != message_id:
+            blockers.append(f"catalog translation unavailable: missing exact {flow} message ID")
+        elif message.get("translated") is not True:
+            blockers.append(f"catalog translation unavailable: {flow} message remains English")
+
 rollup = {
     "schema": "woopayments_i18n_notes_gate_result.v1",
-    "status": "fail" if failures else "pass",
+    "status": "fail" if failures else "blocked" if blockers else "pass",
+    "implementation_status": "fail" if failures else "pass",
+    "catalog_status": "blocked" if blockers else "pass",
     "failures": failures,
+    "blockers": blockers,
     "expected_locale": expected_locale,
     "required_flows": REQUIRED_FLOWS,
     "english_sentinels": ENGLISH_SENTINELS,
@@ -555,6 +693,11 @@ if failures:
         print(failure, file=sys.stderr)
     sys.exit(1)
 
+if blockers:
+    for blocker in blockers:
+        print(blocker, file=sys.stderr)
+    sys.exit(3)
+
 print("PASS: native WooPayments order notes are localized and deduplicated.")
 PY
 }
@@ -566,6 +709,8 @@ if [ -z "$STATE" ]; then
 
 	assert_target_native_owner
 	switch_language
+	CATALOG_EVIDENCE="$OUT_DIR/i18n-catalog-evidence.json"
+	capture_catalog_evidence "$CATALOG_EVIDENCE"
 	install_translation_probe
 
 	charge_flow="$OUT_DIR/charge-flow.json"
@@ -588,6 +733,7 @@ if [ -z "$STATE" ]; then
 	esac
 
 	poll_notes "$STATE" "charge:$charge_order_id" "refund:$charge_order_id" "dispute:$dispute_order_id"
+	attach_translation_evidence "$STATE" "$CATALOG_EVIDENCE"
 fi
 
 validate_state "$STATE"

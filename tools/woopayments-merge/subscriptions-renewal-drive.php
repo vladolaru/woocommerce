@@ -18,9 +18,38 @@ if ( 'normalize' === $mode ) {
 	exit( 0 );
 }
 
+if ( 'evaluate-success' === $mode ) {
+	$context = woopayments_merge_subscriptions_read_json_file( $tool_args[1] ?? '' );
+	if ( isset( $context['__errors'] ) ) {
+		woopayments_merge_subscriptions_emit(
+			array(
+				'success' => false,
+				'mode'    => 'evaluate-success',
+				'errors'  => $context['__errors'],
+			)
+		);
+		exit( 2 );
+	}
+
+	$evaluation = woopayments_merge_subscriptions_evaluate_renewal_success_context( $context );
+	$payload    = array_merge(
+		array(
+			'success' => empty( $evaluation['success_checks_failed'] ),
+			'mode'    => 'evaluate-success',
+			'errors'  => empty( $evaluation['success_checks_failed'] ) ? array() : $evaluation['success_checks_failed'],
+		),
+		$evaluation
+	);
+	woopayments_merge_subscriptions_emit( $payload );
+	exit( empty( $payload['success'] ) ? 1 : 0 );
+}
+
 if ( 'preflight' === $mode ) {
-	$role = $tool_args[1] ?? '';
-	woopayments_merge_subscriptions_emit( woopayments_merge_subscriptions_preflight( $role ) );
+	$role                = $tool_args[1] ?? '';
+	$expected_gateway_id = isset( $tool_args[2] ) && '' !== (string) $tool_args[2] ? (string) $tool_args[2] : 'woocommerce_payments';
+	$expected_token_type = isset( $tool_args[3] ) && '' !== (string) $tool_args[3] ? (string) $tool_args[3] : woopayments_merge_subscriptions_token_type_for_gateway( $expected_gateway_id );
+	$payment_family      = isset( $tool_args[4] ) && '' !== (string) $tool_args[4] ? (string) $tool_args[4] : woopayments_merge_subscriptions_family_for_gateway( $expected_gateway_id );
+	woopayments_merge_subscriptions_emit( woopayments_merge_subscriptions_preflight( $role, $expected_gateway_id, $expected_token_type, $payment_family ) );
 	exit( 0 );
 }
 
@@ -28,7 +57,9 @@ if ( 'drive' === $mode ) {
 	$subscription_id     = isset( $tool_args[1] ) ? (int) $tool_args[1] : 0;
 	$expected_gateway_id = isset( $tool_args[2] ) && '' !== (string) $tool_args[2] ? (string) $tool_args[2] : 'woocommerce_payments';
 	$expected_token_id   = isset( $tool_args[3] ) ? (int) $tool_args[3] : 0;
-	$facts               = woopayments_merge_subscriptions_drive_renewal( $subscription_id, $expected_gateway_id, $expected_token_id );
+	$expected_token_type = isset( $tool_args[4] ) && '' !== (string) $tool_args[4] ? (string) $tool_args[4] : woopayments_merge_subscriptions_token_type_for_gateway( $expected_gateway_id );
+	$payment_family      = isset( $tool_args[5] ) && '' !== (string) $tool_args[5] ? (string) $tool_args[5] : woopayments_merge_subscriptions_family_for_gateway( $expected_gateway_id );
+	$facts               = woopayments_merge_subscriptions_drive_renewal( $subscription_id, $expected_gateway_id, $expected_token_id, $expected_token_type, $payment_family );
 	woopayments_merge_subscriptions_emit( $facts );
 	if ( empty( $facts['success'] ) ) {
 		exit( 1 );
@@ -40,7 +71,7 @@ woopayments_merge_subscriptions_emit(
 	array(
 		'success' => false,
 		'mode'    => $mode,
-		'errors'  => array( 'Unknown mode. Use preflight, drive, or normalize.' ),
+		'errors'  => array( 'Unknown mode. Use preflight, drive, normalize, or evaluate-success.' ),
 	)
 );
 exit( 2 );
@@ -51,20 +82,49 @@ exit( 2 );
  * @param array $payload Payload.
  */
 function woopayments_merge_subscriptions_emit( array $payload ): void {
-	echo wp_json_encode( $payload, JSON_UNESCAPED_SLASHES ) . "\n";
+	$json = function_exists( 'wp_json_encode' ) ? wp_json_encode( $payload, JSON_UNESCAPED_SLASHES ) : json_encode( $payload, JSON_UNESCAPED_SLASHES );
+	echo $json . "\n";
+}
+
+/**
+ * Read a JSON object from disk for local PHP-only modes.
+ *
+ * @param string $path JSON path.
+ * @return array
+ */
+function woopayments_merge_subscriptions_read_json_file( string $path ): array {
+	if ( '' === $path || ! is_readable( $path ) ) {
+		return array( '__errors' => array( 'Cannot read JSON context file.' ) );
+	}
+
+	$payload = json_decode( (string) file_get_contents( $path ), true );
+	if ( ! is_array( $payload ) ) {
+		return array( '__errors' => array( 'Invalid JSON context file.' ) );
+	}
+
+	return $payload;
 }
 
 /**
  * Run store-level preflight checks.
  *
- * @param string $role Store role: ref or target.
+ * @param string $role                Store role: ref or target.
+ * @param string $expected_gateway_id Expected renewal gateway ID.
+ * @param string $expected_token_type Expected saved-token type.
+ * @param string $payment_family      Renewal policy family.
  * @return array
  */
-function woopayments_merge_subscriptions_preflight( string $role ): array {
+function woopayments_merge_subscriptions_preflight( string $role, string $expected_gateway_id = 'woocommerce_payments', string $expected_token_type = 'CC', string $payment_family = 'card' ): array {
 	$errors = array();
+	$policy = woopayments_merge_subscriptions_payment_family_policy( $payment_family );
 
 	if ( ! in_array( $role, array( 'ref', 'target' ), true ) ) {
 		$errors[] = 'Preflight role must be ref or target.';
+	}
+	if ( null === $policy ) {
+		$errors[] = 'Payment family must be card or sepa.';
+	} elseif ( $expected_gateway_id !== $policy['gateway_id'] || $expected_token_type !== $policy['token_type'] ) {
+		$errors[] = 'Expected gateway/token values do not match the selected payment family policy.';
 	}
 
 	if ( ! function_exists( 'is_plugin_active' ) ) {
@@ -74,7 +134,7 @@ function woopayments_merge_subscriptions_preflight( string $role ): array {
 	$subscriptions_active = class_exists( 'WC_Subscriptions' ) || function_exists( 'wcs_get_subscription' );
 	$wcpay_plugin_active  = function_exists( 'is_plugin_active' ) && is_plugin_active( 'woocommerce-payments/woocommerce-payments.php' );
 	$subs_plugin_active   = function_exists( 'is_plugin_active' ) && is_plugin_active( 'woocommerce-subscriptions/woocommerce-subscriptions.php' );
-	$gateway              = woopayments_merge_subscriptions_get_gateway();
+	$gateway              = woopayments_merge_subscriptions_get_gateway( $expected_gateway_id );
 	$gateway_class        = is_object( $gateway ) ? get_class( $gateway ) : '';
 	$gateway_id           = is_object( $gateway ) && isset( $gateway->id ) ? (string) $gateway->id : '';
 	$required_supports    = array(
@@ -110,8 +170,8 @@ function woopayments_merge_subscriptions_preflight( string $role ): array {
 		$errors[] = 'Gateway is missing regular WC Subscriptions amount/date change supports.';
 	}
 
-	$scheduled_hook = 'woocommerce_scheduled_subscription_payment_woocommerce_payments';
-	$failing_hook   = 'woocommerce_subscription_failing_payment_method_updated_woocommerce_payments';
+	$scheduled_hook = 'woocommerce_scheduled_subscription_payment_' . $expected_gateway_id;
+	$failing_hook   = 'woocommerce_subscription_failing_payment_method_updated_' . $expected_gateway_id;
 	$requires_action_hook = 'woocommerce_woocommerce_payments_payment_requires_action';
 	$email_facts    = woopayments_merge_subscriptions_email_class_facts();
 	$hooks          = array(
@@ -123,8 +183,8 @@ function woopayments_merge_subscriptions_preflight( string $role ): array {
 	if ( ! $subscriptions_active ) {
 		$errors[] = 'WC Subscriptions is not active or loaded.';
 	}
-	if ( ! is_object( $gateway ) || 'woocommerce_payments' !== $gateway_id ) {
-		$errors[] = 'WooPayments gateway woocommerce_payments is not registered.';
+	if ( ! is_object( $gateway ) || $expected_gateway_id !== $gateway_id ) {
+		$errors[] = "WooPayments gateway {$expected_gateway_id} is not registered.";
 	}
 	if ( empty( $hooks[ $scheduled_hook ]['registered'] ) ) {
 		$errors[] = "{$scheduled_hook} has no registered callback.";
@@ -168,6 +228,9 @@ function woopayments_merge_subscriptions_preflight( string $role ): array {
 		'woopayments_plugin_active'   => $wcpay_plugin_active,
 		'gateway_id'             => $gateway_id,
 		'gateway_class'          => $gateway_class,
+		'payment_family'         => $payment_family,
+		'expected_gateway_id'    => $expected_gateway_id,
+		'expected_token_type'    => $expected_token_type,
 		'gateway_supports'       => $supports,
 		'hooks'                  => $hooks,
 		'emails'                 => $email_facts,
@@ -180,22 +243,34 @@ function woopayments_merge_subscriptions_preflight( string $role ): array {
  * @param int    $subscription_id Subscription ID.
  * @param string $expected_gateway_id Expected renewal gateway ID.
  * @param int    $expected_token_id Expected saved token ID.
+ * @param string $expected_token_type Expected saved-token type.
+ * @param string $payment_family Renewal policy family.
  * @return array
  */
-function woopayments_merge_subscriptions_drive_renewal( int $subscription_id, string $expected_gateway_id = 'woocommerce_payments', int $expected_token_id = 0 ): array {
+function woopayments_merge_subscriptions_drive_renewal( int $subscription_id, string $expected_gateway_id = 'woocommerce_payments', int $expected_token_id = 0, string $expected_token_type = 'CC', string $payment_family = 'card' ): array {
 	$errors = array();
 	$emails = array();
+	$policy = woopayments_merge_subscriptions_payment_family_policy( $payment_family );
+
+	if ( null === $policy ) {
+		$errors[] = 'Payment family must be card or sepa.';
+	} elseif ( $expected_gateway_id !== $policy['gateway_id'] || $expected_token_type !== $policy['token_type'] ) {
+		$errors[] = 'Expected gateway/token values do not match the selected payment family policy.';
+	}
 
 	if ( $subscription_id <= 0 ) {
-		return woopayments_merge_subscriptions_base_drive_facts( $subscription_id, null, null, array( 'A positive subscription ID is required.' ), $emails, $expected_gateway_id, $expected_token_id );
+		$errors[] = 'A positive subscription ID is required.';
+		return woopayments_merge_subscriptions_base_drive_facts( $subscription_id, null, null, $errors, $emails, $expected_gateway_id, $expected_token_id, $expected_token_type, $payment_family );
 	}
 	if ( ! function_exists( 'wcs_get_subscription' ) || ! class_exists( 'WC_Subscriptions_Manager' ) || ! class_exists( 'WC_Subscriptions_Payment_Gateways' ) ) {
-		return woopayments_merge_subscriptions_base_drive_facts( $subscription_id, null, null, array( 'WC Subscriptions renewal classes/functions are unavailable.' ), $emails, $expected_gateway_id, $expected_token_id );
+		$errors[] = 'WC Subscriptions renewal classes/functions are unavailable.';
+		return woopayments_merge_subscriptions_base_drive_facts( $subscription_id, null, null, $errors, $emails, $expected_gateway_id, $expected_token_id, $expected_token_type, $payment_family );
 	}
 
 	$subscription = wcs_get_subscription( $subscription_id );
 	if ( ! $subscription instanceof WC_Subscription ) {
-		return woopayments_merge_subscriptions_base_drive_facts( $subscription_id, null, null, array( 'Subscription could not be loaded.' ), $emails, $expected_gateway_id, $expected_token_id );
+		$errors[] = 'Subscription could not be loaded.';
+		return woopayments_merge_subscriptions_base_drive_facts( $subscription_id, null, null, $errors, $emails, $expected_gateway_id, $expected_token_id, $expected_token_type, $payment_family );
 	}
 
 	if ( $expected_gateway_id !== $subscription->get_payment_method() ) {
@@ -266,7 +341,7 @@ function woopayments_merge_subscriptions_drive_renewal( int $subscription_id, st
 	}
 
 	$subscription = wcs_get_subscription( $subscription_id );
-	$facts        = woopayments_merge_subscriptions_base_drive_facts( $subscription_id, $subscription, $renewal_order, $errors, $emails, $expected_gateway_id, $expected_token_id );
+	$facts        = woopayments_merge_subscriptions_base_drive_facts( $subscription_id, $subscription, $renewal_order, $errors, $emails, $expected_gateway_id, $expected_token_id, $expected_token_type, $payment_family );
 
 	if ( ! empty( $facts['success_checks_failed'] ) ) {
 		$facts['errors'] = array_values( array_merge( $facts['errors'], $facts['success_checks_failed'] ) );
@@ -286,18 +361,24 @@ function woopayments_merge_subscriptions_drive_renewal( int $subscription_id, st
  * @param array                $emails Captured email facts.
  * @param string               $expected_gateway_id Expected renewal gateway ID.
  * @param int                  $expected_token_id Expected saved token ID.
+ * @param string               $expected_token_type Expected saved-token type.
+ * @param string               $payment_family Renewal policy family.
  * @return array
  */
-function woopayments_merge_subscriptions_base_drive_facts( int $subscription_id, $subscription, $renewal_order, array $errors, array $emails, string $expected_gateway_id = 'woocommerce_payments', int $expected_token_id = 0 ): array {
-	$renewal_order_id = $renewal_order instanceof WC_Order ? (int) $renewal_order->get_id() : 0;
-	$belongs          = $renewal_order_id > 0 ? woopayments_merge_subscriptions_renewal_belongs_to_subscription( $renewal_order_id, $subscription_id ) : false;
-	$contains_exists  = function_exists( 'wcs_order_contains_renewal' );
-	$contains         = $contains_exists && $renewal_order_id > 0 ? (bool) wcs_order_contains_renewal( $renewal_order_id ) : false;
-	$payment_meta     = $renewal_order instanceof WC_Order ? woopayments_merge_subscriptions_meta_presence(
+function woopayments_merge_subscriptions_base_drive_facts( int $subscription_id, $subscription, $renewal_order, array $errors, array $emails, string $expected_gateway_id = 'woocommerce_payments', int $expected_token_id = 0, string $expected_token_type = 'CC', string $payment_family = 'card' ): array {
+	$subscription_status = $subscription instanceof WC_Subscription ? $subscription->get_status() : '';
+	$renewal_order_id    = $renewal_order instanceof WC_Order ? (int) $renewal_order->get_id() : 0;
+	$renewal_order_status = $renewal_order instanceof WC_Order ? $renewal_order->get_status() : '';
+	$renewal_intention_status = $renewal_order instanceof WC_Order ? (string) $renewal_order->get_meta( '_intention_status', true ) : '';
+	$belongs             = $renewal_order_id > 0 ? woopayments_merge_subscriptions_renewal_belongs_to_subscription( $renewal_order_id, $subscription_id ) : false;
+	$contains_exists     = function_exists( 'wcs_order_contains_renewal' );
+	$contains            = $contains_exists && $renewal_order_id > 0 ? (bool) wcs_order_contains_renewal( $renewal_order_id ) : false;
+	$payment_meta        = $renewal_order instanceof WC_Order ? woopayments_merge_subscriptions_meta_presence(
 		$renewal_order,
 		array(
 			'_transaction_id',
 			'_intent_id',
+			'_intention_status',
 			'_charge_id',
 			'_payment_method_id',
 			'_stripe_customer_id',
@@ -313,57 +394,53 @@ function woopayments_merge_subscriptions_base_drive_facts( int $subscription_id,
 			'_schedule_next_payment',
 		)
 	) : array();
-	$token_presence   = woopayments_merge_subscriptions_token_presence( $subscription, $renewal_order, $expected_gateway_id );
+	$token_presence   = woopayments_merge_subscriptions_token_presence( $subscription, $renewal_order, $expected_gateway_id, $expected_token_type, $expected_token_id );
 	$customer_meta    = woopayments_merge_subscriptions_customer_meta_presence( $subscription );
-	$failed_checks    = array();
-
-	if ( ! $renewal_order instanceof WC_Order ) {
-		$failed_checks[] = 'No renewal order was captured.';
-	}
-	if ( $renewal_order instanceof WC_Order && ! in_array( $renewal_order->get_status(), array( 'processing', 'completed' ), true ) ) {
-		$failed_checks[] = 'Renewal order is not processing or completed.';
-	}
-	if ( $subscription instanceof WC_Subscription && 'active' !== $subscription->get_status() ) {
-		$failed_checks[] = 'Subscription is not active after renewal.';
-	}
-	if ( $renewal_order instanceof WC_Order && $expected_gateway_id !== $renewal_order->get_payment_method() ) {
-		$failed_checks[] = "Renewal order payment method is not {$expected_gateway_id}.";
-	}
-	if ( $expected_token_id > 0 && ! in_array( $expected_token_id, $token_presence['all_token_ids'], true ) ) {
-		$failed_checks[] = "Expected token {$expected_token_id} was not present on the subscription, renewal order, or customer token list.";
-	}
-	if ( ! $belongs ) {
-		$failed_checks[] = 'Renewal order does not belong to the subscription.';
-	}
-	if ( ! $contains_exists || ! $contains ) {
-		$failed_checks[] = 'wcs_order_contains_renewal() is unavailable or returned false.';
-	}
-	if ( empty( $payment_meta['_transaction_id'] ) && empty( $payment_meta['_intent_id'] ) && empty( $payment_meta['_charge_id'] ) && empty( $payment_meta['_wcpay_payment_transaction_id'] ) ) {
-		$failed_checks[] = 'Renewal order has no transaction, intent, or charge meta.';
-	}
-	if ( empty( $payment_meta['_payment_method_id'] ) && empty( $token_presence['renewal_has_tokens'] ) && empty( $token_presence['subscription_has_tokens'] ) ) {
-		$failed_checks[] = 'Renewal lacks payment method id and token evidence.';
-	}
-	if ( empty( $payment_meta['_stripe_customer_id'] ) && empty( $subscription_meta['_stripe_customer_id'] ) && empty( $customer_meta['_wcpay_customer_id_test'] ) && empty( $customer_meta['_wcpay_customer_id_live'] ) && empty( $customer_meta['_wcpay_customer_id'] ) ) {
-		$failed_checks[] = 'Renewal lacks customer meta evidence.';
-	}
-	if ( empty( $emails ) ) {
-		$failed_checks[] = 'No renewal email evidence was captured.';
-	}
+	$evaluation        = woopayments_merge_subscriptions_evaluate_renewal_success_context(
+		array(
+			'subscription_id'              => $subscription_id,
+			'subscription_exists'          => $subscription instanceof WC_Subscription,
+			'subscription_status'          => $subscription_status,
+			'subscription_payment_method'  => $subscription instanceof WC_Subscription ? $subscription->get_payment_method() : '',
+			'renewal_order_id'             => $renewal_order_id,
+			'renewal_order_exists'         => $renewal_order instanceof WC_Order,
+			'renewal_order_status'         => $renewal_order_status,
+			'renewal_order_payment_method' => $renewal_order instanceof WC_Order ? $renewal_order->get_payment_method() : '',
+			'expected_renewal_gateway_id'  => $expected_gateway_id,
+			'expected_token_id'            => $expected_token_id,
+			'expected_token_type'          => $expected_token_type,
+			'payment_family'               => $payment_family,
+			'renewal_belongs_to_subscription' => $belongs,
+			'wcs_order_contains_renewal_exists' => $contains_exists,
+			'wcs_order_contains_renewal'   => $contains,
+			'renewal_intention_status'     => $renewal_intention_status,
+			'payment_meta_presence'        => $payment_meta,
+			'subscription_meta_presence'   => $subscription_meta,
+			'token_presence'               => $token_presence,
+			'customer_meta_presence'       => $customer_meta,
+			'emails'                       => $emails,
+		)
+	);
 
 	return array(
 		'success'                      => false,
 		'mode'                         => 'drive',
 		'errors'                       => array_values( $errors ),
-		'success_checks_failed'        => array_values( $failed_checks ),
+		'success_checks_failed'        => array_values( $evaluation['success_checks_failed'] ),
 		'subscription_id'              => $subscription_id,
-		'subscription_status'          => $subscription instanceof WC_Subscription ? $subscription->get_status() : '',
+		'subscription_status'          => $subscription_status,
 		'subscription_payment_method'  => $subscription instanceof WC_Subscription ? $subscription->get_payment_method() : '',
 		'renewal_order_id'             => $renewal_order_id,
-		'renewal_order_status'         => $renewal_order instanceof WC_Order ? $renewal_order->get_status() : '',
+		'renewal_order_status'         => $renewal_order_status,
 		'renewal_order_payment_method' => $renewal_order instanceof WC_Order ? $renewal_order->get_payment_method() : '',
 		'expected_renewal_gateway_id'  => $expected_gateway_id,
 		'expected_token_id'            => $expected_token_id,
+		'expected_token_type'          => $expected_token_type,
+		'payment_family'               => $payment_family,
+		'renewal_processing_model'     => $evaluation['renewal_processing_model'],
+		'renewal_requires_email_evidence' => $evaluation['renewal_requires_email_evidence'],
+		'async_payment_processing_accepted' => $evaluation['async_payment_processing_accepted'],
+		'renewal_intention_status'     => $renewal_intention_status,
 		'renewal_belongs_to_subscription' => $belongs,
 		'wcs_order_contains_renewal_exists' => $contains_exists,
 		'wcs_order_contains_renewal'   => $contains,
@@ -376,16 +453,198 @@ function woopayments_merge_subscriptions_base_drive_facts( int $subscription_id,
 }
 
 /**
- * Get the WooPayments gateway.
+ * Evaluate whether the captured renewal facts satisfy this gateway's renewal policy.
  *
+ * @param array $context Renewal facts.
+ * @return array
+ */
+function woopayments_merge_subscriptions_evaluate_renewal_success_context( array $context ): array {
+	$expected_gateway_id = (string) ( $context['expected_renewal_gateway_id'] ?? $context['expected_gateway_id'] ?? 'woocommerce_payments' );
+	$expected_token_id   = (int) ( $context['expected_token_id'] ?? 0 );
+	$payment_family      = (string) ( $context['payment_family'] ?? woopayments_merge_subscriptions_family_for_gateway( $expected_gateway_id ) );
+	$expected_token_type = (string) ( $context['expected_token_type'] ?? woopayments_merge_subscriptions_token_type_for_gateway( $expected_gateway_id ) );
+	$family_policy       = woopayments_merge_subscriptions_payment_family_policy( $payment_family );
+	$policy              = woopayments_merge_subscriptions_renewal_success_policy( $expected_gateway_id );
+	$payment_meta        = isset( $context['payment_meta_presence'] ) && is_array( $context['payment_meta_presence'] ) ? $context['payment_meta_presence'] : array();
+	$subscription_meta   = isset( $context['subscription_meta_presence'] ) && is_array( $context['subscription_meta_presence'] ) ? $context['subscription_meta_presence'] : array();
+	$token_presence      = isset( $context['token_presence'] ) && is_array( $context['token_presence'] ) ? $context['token_presence'] : array();
+	$customer_meta       = isset( $context['customer_meta_presence'] ) && is_array( $context['customer_meta_presence'] ) ? $context['customer_meta_presence'] : array();
+	$emails              = isset( $context['emails'] ) && is_array( $context['emails'] ) ? $context['emails'] : array();
+	$renewal_order_id    = (int) ( $context['renewal_order_id'] ?? 0 );
+	$subscription_id     = (int) ( $context['subscription_id'] ?? 0 );
+	$renewal_order_exists = array_key_exists( 'renewal_order_exists', $context ) ? (bool) $context['renewal_order_exists'] : $renewal_order_id > 0;
+	$subscription_exists = array_key_exists( 'subscription_exists', $context ) ? (bool) $context['subscription_exists'] : $subscription_id > 0;
+	$renewal_order_status = (string) ( $context['renewal_order_status'] ?? '' );
+	$subscription_status = (string) ( $context['subscription_status'] ?? '' );
+	$renewal_order_payment_method = (string) ( $context['renewal_order_payment_method'] ?? '' );
+	$renewal_intention_status = (string) ( $context['renewal_intention_status'] ?? '' );
+	$failed_checks      = array();
+
+	if ( null === $family_policy ) {
+		$failed_checks[] = 'Payment family must be card or sepa.';
+	} elseif ( $expected_gateway_id !== $family_policy['gateway_id'] || $expected_token_type !== $family_policy['token_type'] ) {
+		$failed_checks[] = 'Expected gateway/token values do not match the selected payment family policy.';
+	}
+
+	if ( ! $renewal_order_exists ) {
+		$failed_checks[] = 'No renewal order was captured.';
+	} elseif ( ! in_array( $renewal_order_status, $policy['renewal_order_statuses'], true ) ) {
+		$failed_checks[] = woopayments_merge_subscriptions_policy_order_status_failure_message( $policy );
+	}
+
+	if ( $subscription_exists && ! in_array( $subscription_status, $policy['subscription_statuses'], true ) ) {
+		$failed_checks[] = woopayments_merge_subscriptions_policy_subscription_status_failure_message( $policy );
+	}
+
+	if ( $renewal_order_exists && $expected_gateway_id !== $renewal_order_payment_method ) {
+		$failed_checks[] = "Renewal order payment method is not {$expected_gateway_id}.";
+	}
+
+	if ( empty( $token_presence['matching_expected_token'] ) ) {
+		$failed_checks[] = "No {$expected_token_type} token for {$expected_gateway_id} was present on the subscription, renewal order, or customer token list.";
+	} elseif ( $expected_token_id > 0 && empty( $token_presence['expected_token_id_matches_policy'] ) ) {
+		$failed_checks[] = "Expected token {$expected_token_id} did not match the {$expected_token_type} / {$expected_gateway_id} policy.";
+	}
+	if ( empty( $context['renewal_belongs_to_subscription'] ) ) {
+		$failed_checks[] = 'Renewal order does not belong to the subscription.';
+	}
+	if ( empty( $context['wcs_order_contains_renewal_exists'] ) || empty( $context['wcs_order_contains_renewal'] ) ) {
+		$failed_checks[] = 'wcs_order_contains_renewal() is unavailable or returned false.';
+	}
+	if ( empty( $payment_meta['_transaction_id'] ) && empty( $payment_meta['_intent_id'] ) && empty( $payment_meta['_charge_id'] ) && empty( $payment_meta['_wcpay_payment_transaction_id'] ) ) {
+		$failed_checks[] = 'Renewal order has no transaction, intent, or charge meta.';
+	}
+	if ( empty( $payment_meta['_payment_method_id'] ) && empty( $token_presence['renewal_has_tokens'] ) && empty( $token_presence['subscription_has_tokens'] ) ) {
+		$failed_checks[] = 'Renewal lacks payment method id and token evidence.';
+	}
+	if ( empty( $payment_meta['_stripe_customer_id'] ) && empty( $subscription_meta['_stripe_customer_id'] ) && empty( $customer_meta['_wcpay_customer_id_test'] ) && empty( $customer_meta['_wcpay_customer_id_live'] ) && empty( $customer_meta['_wcpay_customer_id'] ) ) {
+		$failed_checks[] = 'Renewal lacks customer meta evidence.';
+	}
+	if ( ! empty( $policy['intention_statuses'] ) && ! in_array( $renewal_intention_status, $policy['intention_statuses'], true ) ) {
+		$failed_checks[] = 'Asynchronous renewal intent is not processing or succeeded.';
+	}
+	if ( ! empty( $policy['requires_email_evidence'] ) && empty( $emails ) ) {
+		$failed_checks[] = 'No renewal email evidence was captured.';
+	}
+
+	return array(
+		'success_checks_failed'        => array_values( $failed_checks ),
+		'renewal_processing_model'     => $policy['model'],
+		'renewal_requires_email_evidence' => (bool) $policy['requires_email_evidence'],
+		'async_payment_processing_accepted' => 'asynchronous_processing' === $policy['model'] && empty( $failed_checks ),
+		'payment_family'                 => $payment_family,
+		'expected_token_type'            => $expected_token_type,
+	);
+}
+
+/**
+ * Get the stable gateway/token contract for a renewal family.
+ *
+ * @param string $payment_family Renewal policy family.
+ * @return array{gateway_id:string,token_type:string}|null
+ */
+function woopayments_merge_subscriptions_payment_family_policy( string $payment_family ): ?array {
+	if ( 'card' === $payment_family ) {
+		return array(
+			'gateway_id' => 'woocommerce_payments',
+			'token_type' => 'CC',
+		);
+	}
+
+	if ( 'sepa' === $payment_family ) {
+		return array(
+			'gateway_id' => 'woocommerce_payments_sepa_debit',
+			'token_type' => 'wcpay_sepa',
+		);
+	}
+
+	return null;
+}
+
+/**
+ * Derive the renewal family from a gateway ID for legacy direct-driver callers.
+ *
+ * @param string $gateway_id Expected renewal gateway ID.
+ * @return string
+ */
+function woopayments_merge_subscriptions_family_for_gateway( string $gateway_id ): string {
+	return 'woocommerce_payments_sepa_debit' === $gateway_id ? 'sepa' : 'card';
+}
+
+/**
+ * Derive the saved-token type from a gateway ID for legacy direct-driver callers.
+ *
+ * @param string $gateway_id Expected renewal gateway ID.
+ * @return string
+ */
+function woopayments_merge_subscriptions_token_type_for_gateway( string $gateway_id ): string {
+	return 'sepa' === woopayments_merge_subscriptions_family_for_gateway( $gateway_id ) ? 'wcpay_sepa' : 'CC';
+}
+
+/**
+ * Get the renewal success policy for a payment method family.
+ *
+ * @param string $expected_gateway_id Expected gateway ID.
+ * @return array
+ */
+function woopayments_merge_subscriptions_renewal_success_policy( string $expected_gateway_id ): array {
+	if ( 'woocommerce_payments_sepa_debit' === $expected_gateway_id ) {
+		return array(
+			'model'                    => 'asynchronous_processing',
+			'renewal_order_statuses'   => array( 'pending', 'on-hold', 'processing', 'completed' ),
+			'subscription_statuses'    => array( 'on-hold', 'active' ),
+			'intention_statuses'       => array( 'processing', 'succeeded' ),
+			'requires_email_evidence'  => false,
+		);
+	}
+
+	return array(
+		'model'                    => 'synchronous_capture',
+		'renewal_order_statuses'   => array( 'processing', 'completed' ),
+		'subscription_statuses'    => array( 'active' ),
+		'intention_statuses'       => array(),
+		'requires_email_evidence'  => true,
+	);
+}
+
+/**
+ * Get the order-status failure message for a renewal success policy.
+ *
+ * @param array $policy Renewal success policy.
+ * @return string
+ */
+function woopayments_merge_subscriptions_policy_order_status_failure_message( array $policy ): string {
+	if ( 'asynchronous_processing' === ( $policy['model'] ?? '' ) ) {
+		return 'Asynchronous renewal order is not pending, on-hold, processing, or completed.';
+	}
+	return 'Renewal order is not processing or completed.';
+}
+
+/**
+ * Get the subscription-status failure message for a renewal success policy.
+ *
+ * @param array $policy Renewal success policy.
+ * @return string
+ */
+function woopayments_merge_subscriptions_policy_subscription_status_failure_message( array $policy ): string {
+	if ( 'asynchronous_processing' === ( $policy['model'] ?? '' ) ) {
+		return 'Asynchronous subscription is not active or on-hold after renewal.';
+	}
+	return 'Subscription is not active after renewal.';
+}
+
+/**
+ * Get the selected WooPayments gateway.
+ *
+ * @param string $gateway_id Expected gateway ID.
  * @return object|null
  */
-function woopayments_merge_subscriptions_get_gateway() {
+function woopayments_merge_subscriptions_get_gateway( string $gateway_id = 'woocommerce_payments' ) {
 	if ( ! function_exists( 'WC' ) || ! WC() || ! WC()->payment_gateways() ) {
 		return null;
 	}
 	$gateways = WC()->payment_gateways()->payment_gateways();
-	return $gateways['woocommerce_payments'] ?? null;
+	return $gateways[ $gateway_id ] ?? null;
 }
 
 /**
@@ -565,9 +824,11 @@ function woopayments_merge_subscriptions_meta_presence( WC_Order $order, array $
  * @param WC_Subscription|null $subscription Subscription.
  * @param WC_Order|null        $renewal_order Renewal order.
  * @param string               $expected_gateway_id Expected gateway ID.
+ * @param string               $expected_token_type Expected saved-token type.
+ * @param int                  $expected_token_id Exact saved-token ID, or zero.
  * @return array
  */
-function woopayments_merge_subscriptions_token_presence( $subscription, $renewal_order, string $expected_gateway_id = 'woocommerce_payments' ): array {
+function woopayments_merge_subscriptions_token_presence( $subscription, $renewal_order, string $expected_gateway_id = 'woocommerce_payments', string $expected_token_type = 'CC', int $expected_token_id = 0 ): array {
 	$subscription_tokens = $subscription instanceof WC_Subscription && method_exists( $subscription, 'get_payment_tokens' ) ? $subscription->get_payment_tokens() : array();
 	$renewal_tokens      = $renewal_order instanceof WC_Order && method_exists( $renewal_order, 'get_payment_tokens' ) ? $renewal_order->get_payment_tokens() : array();
 	$user_id             = $subscription instanceof WC_Subscription ? (int) $subscription->get_user_id() : 0;
@@ -581,16 +842,47 @@ function woopayments_merge_subscriptions_token_presence( $subscription, $renewal
 		(array) $customer_tokens
 	);
 	$all_token_ids       = array_values( array_unique( array_filter( array_merge( $subscription_ids, $renewal_ids, $customer_ids ) ) ) );
+	$token_facts         = array();
+	$matching_token_ids  = array();
+
+	if ( class_exists( 'WC_Payment_Tokens' ) ) {
+		foreach ( $all_token_ids as $token_id ) {
+			$token = WC_Payment_Tokens::get( $token_id );
+			if ( ! is_object( $token ) ) {
+				continue;
+			}
+
+			$token_type = method_exists( $token, 'get_type' ) ? (string) $token->get_type() : '';
+			$gateway_id = method_exists( $token, 'get_gateway_id' ) ? (string) $token->get_gateway_id() : '';
+			$matches    = $expected_token_type === $token_type && $expected_gateway_id === $gateway_id;
+			if ( $matches ) {
+				$matching_token_ids[] = (int) $token_id;
+			}
+
+			$token_facts[] = array(
+				'id'         => (int) $token_id,
+				'type'       => $token_type,
+				'gateway_id' => $gateway_id,
+				'class'      => get_class( $token ),
+				'matches'    => $matches,
+			);
+		}
+	}
 
 	return array(
 		'subscription_has_tokens' => ! empty( $subscription_tokens ),
 		'renewal_has_tokens'      => ! empty( $renewal_tokens ),
 		'customer_has_tokens'     => ! empty( $customer_tokens ),
 		'customer_gateway_id'     => $expected_gateway_id,
+		'expected_token_type'     => $expected_token_type,
+		'matching_expected_token' => ! empty( $matching_token_ids ),
+		'expected_token_id_matches_policy' => $expected_token_id <= 0 || in_array( $expected_token_id, $matching_token_ids, true ),
 		'subscription_token_ids'  => $subscription_ids,
 		'renewal_token_ids'       => $renewal_ids,
 		'customer_token_ids'      => array_values( array_filter( $customer_ids ) ),
 		'all_token_ids'           => $all_token_ids,
+		'matching_token_ids'      => $matching_token_ids,
+		'tokens'                  => $token_facts,
 	);
 }
 
@@ -685,7 +977,13 @@ function woopayments_merge_subscriptions_normalize_file( string $path ): void {
 		'subscription_payment_method'     => (string) ( $payload['subscription_payment_method'] ?? '' ),
 		'renewal_order_status'            => (string) ( $payload['renewal_order_status'] ?? '' ),
 		'renewal_order_payment_method'    => (string) ( $payload['renewal_order_payment_method'] ?? '' ),
+		'payment_family'                  => (string) ( $payload['payment_family'] ?? 'card' ),
 		'expected_renewal_gateway_id'     => (string) ( $payload['expected_renewal_gateway_id'] ?? 'woocommerce_payments' ),
+		'expected_token_type'             => (string) ( $payload['expected_token_type'] ?? 'CC' ),
+		'renewal_processing_model'        => (string) ( $payload['renewal_processing_model'] ?? 'synchronous_capture' ),
+		'renewal_requires_email_evidence' => (bool) ( $payload['renewal_requires_email_evidence'] ?? true ),
+		'async_payment_processing_accepted' => (bool) ( $payload['async_payment_processing_accepted'] ?? false ),
+		'renewal_intention_status'        => (string) ( $payload['renewal_intention_status'] ?? '' ),
 		'renewal_belongs_to_subscription' => (bool) ( $payload['renewal_belongs_to_subscription'] ?? false ),
 		'wcs_order_contains_renewal_exists' => (bool) ( $payload['wcs_order_contains_renewal_exists'] ?? false ),
 		'wcs_order_contains_renewal'      => (bool) ( $payload['wcs_order_contains_renewal'] ?? false ),
@@ -720,6 +1018,9 @@ function woopayments_merge_subscriptions_normalize_token_presence( $token_presen
 		'renewal_has_tokens'      => (bool) ( $token_presence['renewal_has_tokens'] ?? false ),
 		'customer_has_tokens'     => (bool) ( $token_presence['customer_has_tokens'] ?? false ),
 		'customer_gateway_id'     => (string) ( $token_presence['customer_gateway_id'] ?? 'woocommerce_payments' ),
+		'expected_token_type'     => (string) ( $token_presence['expected_token_type'] ?? 'CC' ),
+		'matching_expected_token' => (bool) ( $token_presence['matching_expected_token'] ?? false ),
+		'expected_token_id_matches_policy' => (bool) ( $token_presence['expected_token_id_matches_policy'] ?? false ),
 	);
 }
 

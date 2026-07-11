@@ -10,6 +10,13 @@ set -uo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPARE="$SELF_DIR/compare-measured-gates.py"
+LOCAL_RUNNER_SAFETY="$SELF_DIR/local-runner-safety.sh"
+if [ ! -f "$LOCAL_RUNNER_SAFETY" ]; then
+	echo "ERROR: local runner safety library is missing: $LOCAL_RUNNER_SAFETY" >&2
+	exit 2
+fi
+# shellcheck source=tools/woopayments-merge/local-runner-safety.sh
+source "$LOCAL_RUNNER_SAFETY"
 
 usage() {
 	cat >&2 <<'EOF'
@@ -25,36 +32,257 @@ EOF
 
 validate_local_wp_cmd() {
 	cmd="$1"
+	local error
+	if ! error="$(woopayments_validate_local_wp_runner "$cmd")"; then
+		echo "ERROR: refusing unsafe WP-CLI command: $error" >&2
+		exit 2
+	fi
+	if ! error="$(woopayments_validate_approved_docker_runner "$cmd")"; then
+		echo "ERROR: perf capture --wp must use an approved local Docker WP-CLI command: $error" >&2
+		exit 2
+	fi
 	case "$cmd" in
 		*wpcom.com*|*wordpress.com*|*a8c.com*|*--ssh*|*--http*|*$'\n'*|*$'\r'*|*";"*|*"&"*|*"|"*|*"<"*|*">"*|*"\`"*|*'$('*)
 			echo "ERROR: refusing non-local or shell-expanded WP-CLI command: $cmd" >&2
 			exit 2
 			;;
 	esac
-	case "$cmd" in
-		"docker exec -i wcpay_wp_default wp "*)
-			return 0
-			;;
-		"docker exec -i "*"-cli-1 wp "*)
-			case "$cmd" in
-				*wpcom*)
-					echo "ERROR: refusing wpcom-local CLI container for perf gate: $cmd" >&2
-					exit 2
-					;;
-			esac
-			return 0
-			;;
-	esac
-	echo "ERROR: perf capture --wp must use an approved local Docker WP-CLI command" >&2
-	exit 2
 }
 
 mode="${1:-}"
 [ -n "$mode" ] || usage
 shift
 
+write_gateway_initialization_probe() {
+	local probe_file="$1"
+	cat > "$probe_file" <<'PHP'
+<?php
+$probe_token = (string) getenv( 'WPMERGE_PERF_GATEWAY_INIT_TOKEN' );
+if (
+	'' === $probe_token ||
+	! preg_match( '/^woopayments-perf-gateway-init-([a-f0-9]{32})\.php$/', basename( __FILE__ ), $probe_filename ) ||
+	! hash_equals( $probe_filename[1], $probe_token )
+) {
+	return;
+}
+
+global $wpdb;
+
+if ( ! defined( 'SAVEQUERIES' ) ) {
+	define( 'SAVEQUERIES', true );
+}
+
+$probe_result_key = 'woopayments_perf_gateway_initialization_probe';
+$incomplete_probe = function ( string $reason, string $measurement_mode, bool $preinitialized ) use ( $probe_result_key ): void {
+	$GLOBALS[ $probe_result_key ] = array(
+		'status'  => 'incomplete',
+		'reason'  => $reason,
+		'metrics' => array(
+			'queries'                 => 0,
+			'external_requests'       => 0,
+			'timing_sample_count'     => 0,
+			'measurement_mode'        => $measurement_mode,
+			'gateway_preinitialized'  => $preinitialized,
+			'lifecycle_start_hook'    => 'woocommerce_payment_gateways',
+			'lifecycle_end_hook'      => 'wc_payment_gateways_initialized',
+			'caller_backtrace'        => array(),
+			'top_query_groups'        => array(),
+		),
+	);
+};
+
+if ( did_action( 'wc_payment_gateways_initialized' ) > 0 ) {
+	$incomplete_probe(
+		'WooCommerce payment gateways were already initialized before the MU bootstrap probe loaded.',
+		'too_late_gateway_initialization_observer',
+		true
+	);
+	return;
+}
+
+$normalize_query_sql = function ( string $query ): string {
+	$sql = preg_replace( "/'[^']*'/", "'?'", $query );
+	$sql = is_string( $sql ) ? preg_replace( '/"[^"]*"/', '"?"', $sql ) : $query;
+	$sql = is_string( $sql ) ? preg_replace( '/\b\d+\b/', '?', $sql ) : $query;
+	$sql = is_string( $sql ) ? preg_replace( '/\s+/', ' ', trim( $sql ) ) : $query;
+
+	return is_string( $sql ) ? $sql : $query;
+};
+
+$summarize_query_caller = function ( string $caller ): string {
+	$frames = array_values(
+		array_filter(
+			array_map( 'trim', explode( ', ', $caller ) ),
+			function ( string $frame ): bool {
+				return '' !== $frame;
+			}
+		)
+	);
+	$summary = array_slice( $frames, 0, 10 );
+	if ( count( $frames ) > count( $summary ) ) {
+		$summary[] = '...';
+	}
+
+	return implode( ' -> ', $summary );
+};
+
+$summarize_query_groups = function ( int $start, int $end ) use ( &$wpdb, $normalize_query_sql, $summarize_query_caller ): array {
+	if ( ! is_array( $wpdb->queries ) || $end <= $start ) {
+		return array();
+	}
+
+	$groups = array();
+	foreach ( array_slice( $wpdb->queries, $start, $end - $start ) as $entry ) {
+		$query = is_array( $entry ) ? (string) ( $entry[0] ?? '' ) : (string) $entry;
+		if ( '' === $query ) {
+			continue;
+		}
+
+		$sql = $normalize_query_sql( $query );
+		if ( ! isset( $groups[ $sql ] ) ) {
+			$groups[ $sql ] = array(
+				'count'   => 0,
+				'sql'     => $sql,
+				'callers' => array(),
+			);
+		}
+
+		++$groups[ $sql ]['count'];
+		$caller = is_array( $entry ) ? $summarize_query_caller( (string) ( $entry[2] ?? '' ) ) : '';
+		if ( '' !== $caller ) {
+			$groups[ $sql ]['callers'][ $caller ] = ( $groups[ $sql ]['callers'][ $caller ] ?? 0 ) + 1;
+		}
+	}
+
+	usort(
+		$groups,
+		function ( array $a, array $b ): int {
+			if ( $a['count'] === $b['count'] ) {
+				return strcmp( $a['sql'], $b['sql'] );
+			}
+			return $b['count'] <=> $a['count'];
+		}
+	);
+
+	return array_map(
+		function ( array $group ): array {
+			arsort( $group['callers'] );
+			return array(
+				'count'       => $group['count'],
+				'sql'         => $group['sql'],
+				'top_callers' => array_keys( array_slice( $group['callers'], 0, 3, true ) ),
+			);
+		},
+		array_slice( $groups, 0, 10 )
+	);
+};
+
+$state = array(
+	'started'           => false,
+	'finished'          => false,
+	'query_start'       => 0,
+	'external_requests' => 0,
+	'start_time'        => 0.0,
+	'caller_backtrace'  => array(),
+);
+
+add_filter(
+	'pre_http_request',
+	function ( $preempt, $parsed_args, $url ) use ( &$state ) {
+		unset( $parsed_args );
+		if ( ! $state['started'] || $state['finished'] ) {
+			return $preempt;
+		}
+
+		++$state['external_requests'];
+		return new WP_Error(
+			'woopayments_gateway_initialization_probe_blocked_http',
+			'External HTTP blocked by gateway initialization probe.',
+			array( 'url' => $url )
+		);
+	},
+	PHP_INT_MIN,
+	3
+);
+
+add_filter(
+	'woocommerce_payment_gateways',
+	function ( $gateways ) use ( &$state, &$wpdb ) {
+		if ( $state['started'] ) {
+			return $gateways;
+		}
+
+		$state['started']     = true;
+		$state['query_start'] = is_array( $wpdb->queries ) ? count( $wpdb->queries ) : 0;
+		$state['start_time']  = microtime( true );
+		$backtrace            = debug_backtrace( DEBUG_BACKTRACE_IGNORE_ARGS, 12 );
+		$state['caller_backtrace'] = array_map(
+			function ( array $frame ): string {
+				$class = isset( $frame['class'] ) ? (string) $frame['class'] . (string) ( $frame['type'] ?? '' ) : '';
+				return $class . (string) ( $frame['function'] ?? '<unknown>' );
+			},
+			array_slice( $backtrace, 0, 12 )
+		);
+
+		return $gateways;
+	},
+	PHP_INT_MIN,
+	1
+);
+
+add_action(
+	'wc_payment_gateways_initialized',
+	function ( $gateway_registry ) use ( &$state, &$wpdb, $incomplete_probe, $probe_result_key, $summarize_query_groups ): void {
+		if ( ! $state['started'] ) {
+			$incomplete_probe(
+				'The gateway initialization completion hook fired before the observer saw woocommerce_payment_gateways.',
+				'missing_gateway_initialization_start',
+				true
+			);
+			return;
+		}
+		if ( $state['finished'] ) {
+			return;
+		}
+
+		$state['finished'] = true;
+		$query_end         = is_array( $wpdb->queries ) ? count( $wpdb->queries ) : 0;
+		$gateways          = is_object( $gateway_registry ) && is_callable( array( $gateway_registry, 'payment_gateways' ) )
+			? $gateway_registry->payment_gateways()
+			: array();
+		$gateway_ids       = array();
+		foreach ( is_array( $gateways ) ? $gateways : array() as $gateway ) {
+			if ( is_object( $gateway ) && isset( $gateway->id ) ) {
+				$gateway_ids[] = (string) $gateway->id;
+			}
+		}
+
+		$GLOBALS[ $probe_result_key ] = array(
+			'status'  => 'measured',
+			'metrics' => array(
+				'queries'                 => max( 0, $query_end - $state['query_start'] ),
+				'external_requests'       => $state['external_requests'],
+				'elapsed_ms'              => round( ( microtime( true ) - $state['start_time'] ) * 1000.0, 2 ),
+				'timing_sample_count'     => 1,
+				'measurement_mode'        => 'gateway_initialization_lifecycle',
+				'gateway_preinitialized'  => false,
+				'gateway_count'           => count( $gateway_ids ),
+				'gateway_ids'             => $gateway_ids,
+				'lifecycle_start_hook'    => 'woocommerce_payment_gateways',
+				'lifecycle_end_hook'      => 'wc_payment_gateways_initialized',
+				'caller_backtrace'        => $state['caller_backtrace'],
+				'top_query_groups'        => $summarize_query_groups( $state['query_start'], $query_end ),
+			),
+		);
+	},
+	PHP_INT_MAX,
+	1
+);
+PHP
+}
+
 write_probe() {
-	probe_file="$1"
+	local probe_file="$1"
 	cat > "$probe_file" <<'PHP'
 <?php
 global $wpdb, $wp_filter;
@@ -89,6 +317,99 @@ $count_hook_callbacks = function ( string $hook ) use ( &$wp_filter ): int {
 	return $count;
 };
 
+$normalize_query_sql = function ( string $query ): string {
+	$sql = preg_replace( "/'[^']*'/", "'?'", $query );
+	$sql = is_string( $sql ) ? preg_replace( '/"[^"]*"/', '"?"', $sql ) : $query;
+	$sql = is_string( $sql ) ? preg_replace( '/\b\d+\b/', '?', $sql ) : $query;
+	$sql = is_string( $sql ) ? preg_replace( '/\s+/', ' ', trim( $sql ) ) : $query;
+
+	return is_string( $sql ) ? $sql : $query;
+};
+
+$summarize_query_caller = function ( string $caller ): string {
+	if ( '' === $caller ) {
+		return '';
+	}
+
+	$frames = array_values(
+		array_filter(
+			array_map( 'trim', explode( ', ', $caller ) ),
+			function ( string $frame ): bool {
+				return '' !== $frame;
+			}
+		)
+	);
+	if ( empty( $frames ) ) {
+		return '';
+	}
+
+	$start_index = 0;
+	foreach ( $frames as $index => $frame ) {
+		if ( str_contains( $frame, 'EvalFile_Command::{closure}' ) ) {
+			$start_index = $index + 1;
+		}
+	}
+
+	$operation_frames = array_slice( $frames, $start_index );
+	$summary_frames   = array_slice( $operation_frames, 0, 10 );
+	if ( count( $operation_frames ) > count( $summary_frames ) ) {
+		$summary_frames[] = '...';
+	}
+
+	return implode( ' -> ', $summary_frames );
+};
+
+$summarize_query_groups = function ( int $start, int $end ) use ( &$wpdb, $normalize_query_sql, $summarize_query_caller ): array {
+	if ( ! is_array( $wpdb->queries ) || $end <= $start ) {
+		return array();
+	}
+
+	$groups = array();
+	foreach ( array_slice( $wpdb->queries, $start, $end - $start ) as $entry ) {
+		$query = is_array( $entry ) ? (string) ( $entry[0] ?? '' ) : (string) $entry;
+		if ( '' === $query ) {
+			continue;
+		}
+
+		$sql = $normalize_query_sql( $query );
+		if ( ! isset( $groups[ $sql ] ) ) {
+			$groups[ $sql ] = array(
+				'count'   => 0,
+				'sql'     => $sql,
+				'callers' => array(),
+			);
+		}
+
+		++$groups[ $sql ]['count'];
+		$caller = is_array( $entry ) ? $summarize_query_caller( (string) ( $entry[2] ?? '' ) ) : '';
+		if ( '' !== $caller ) {
+			$groups[ $sql ]['callers'][ $caller ] = ( $groups[ $sql ]['callers'][ $caller ] ?? 0 ) + 1;
+		}
+	}
+
+	usort(
+		$groups,
+		function ( array $a, array $b ): int {
+			if ( $a['count'] === $b['count'] ) {
+				return strcmp( $a['sql'], $b['sql'] );
+			}
+			return $b['count'] <=> $a['count'];
+		}
+	);
+
+	return array_map(
+		function ( array $group ): array {
+			arsort( $group['callers'] );
+			return array(
+				'count'       => $group['count'],
+				'sql'         => $group['sql'],
+				'top_callers' => array_keys( array_slice( $group['callers'], 0, 3, true ) ),
+			);
+		},
+		array_slice( $groups, 0, 10 )
+	);
+};
+
 $measure = function ( callable $op, int $iterations = 5 ) use ( &$wpdb, &$external_requests ): array {
 	$op();
 	$q_before    = is_array( $wpdb->queries ) ? count( $wpdb->queries ) : 0;
@@ -99,20 +420,22 @@ $measure = function ( callable $op, int $iterations = 5 ) use ( &$wpdb, &$extern
 
 	$times = array();
 	for ( $i = 0; $i < $iterations; $i++ ) {
-		$start   = microtime( true );
+		$start = microtime( true );
 		$op();
 		$times[] = ( microtime( true ) - $start ) * 1000.0;
 	}
 	sort( $times );
 
 	return array(
-		'queries'           => max( 0, $q_after - $q_before ),
-		'external_requests' => max( 0, $http_after - $http_before ),
-		'median_ms'         => round( $times[ (int) floor( count( $times ) / 2 ) ], 2 ),
+		'queries'             => max( 0, $q_after - $q_before ),
+		'external_requests'   => max( 0, $http_after - $http_before ),
+		'median_ms'           => round( $times[ (int) floor( count( $times ) / 2 ) ], 2 ),
+		'timing_sample_count' => count( $times ),
+		'measurement_mode'    => 'warmed_repeated',
 	);
 };
 
-$measure_once = function ( callable $op ) use ( &$wpdb, &$external_requests ): array {
+$measure_once = function ( callable $op ) use ( &$wpdb, &$external_requests, $summarize_query_groups ): array {
 	$q_before    = is_array( $wpdb->queries ) ? count( $wpdb->queries ) : 0;
 	$http_before = $external_requests;
 	$start       = microtime( true );
@@ -125,9 +448,10 @@ $measure_once = function ( callable $op ) use ( &$wpdb, &$external_requests ): a
 		$thrown = $throwable;
 	}
 
-	$elapsed_ms = ( microtime( true ) - $start ) * 1000.0;
-	$q_after    = is_array( $wpdb->queries ) ? count( $wpdb->queries ) : 0;
-	$http_after = $external_requests;
+	$elapsed_ms  = ( microtime( true ) - $start ) * 1000.0;
+	$q_after     = is_array( $wpdb->queries ) ? count( $wpdb->queries ) : 0;
+	$http_after  = $external_requests;
+	$query_delta = max( 0, $q_after - $q_before );
 
 	$result_kind = gettype( $result );
 	$result_code = '';
@@ -147,12 +471,14 @@ $measure_once = function ( callable $op ) use ( &$wpdb, &$external_requests ): a
 	}
 
 	return array(
-		'queries'           => max( 0, $q_after - $q_before ),
-		'external_requests' => max( 0, $http_after - $http_before ),
-		'median_ms'         => round( $elapsed_ms, 2 ),
-		'result_kind'       => $result_kind,
-		'result_code'       => $result_code,
-		'threw'             => null !== $thrown,
+		'queries'             => $query_delta,
+		'external_requests'   => max( 0, $http_after - $http_before ),
+		'elapsed_ms'          => round( $elapsed_ms, 2 ),
+		'timing_sample_count' => 1,
+		'result_kind'         => $result_kind,
+		'result_code'         => $result_code,
+		'threw'               => null !== $thrown,
+		'top_query_groups'    => $query_delta > 0 ? $summarize_query_groups( $q_before, $q_after ) : array(),
 	);
 };
 
@@ -326,8 +652,8 @@ $measure_capture = function () use ( $capture_order_id, $gateway_id, $get_gatewa
 		return $incomplete( 'WooPayments gateway is not available.' );
 	}
 
-	$native_gateway_class = '\Automattic\WooCommerce\Internal\Payments\NativeWooPaymentsGateway';
-	$is_native_gateway   = class_exists( $native_gateway_class ) && $gateway instanceof $native_gateway_class;
+	$native_gateway_class = '\Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway';
+	$is_native_gateway    = class_exists( $native_gateway_class ) && $gateway instanceof $native_gateway_class;
 	if ( ! $is_native_gateway && ! is_callable( array( $gateway, 'capture_charge' ) ) ) {
 		return $incomplete( 'WooPayments gateway capture path is not available.' );
 	}
@@ -367,13 +693,28 @@ $measure_capture = function () use ( $capture_order_id, $gateway_id, $get_gatewa
 	);
 };
 
-$progress( 'measuring gateway registration' );
+$progress( 'measuring warmed gateway registration' );
 $gateway_measure = $measure(
 	function () {
 		WC()->payment_gateways()->payment_gateways();
 	}
 );
-$gateways = WC()->payment_gateways()->payment_gateways();
+$gateways        = WC()->payment_gateways()->payment_gateways();
+$gateway_initialization_probe = $GLOBALS['woopayments_perf_gateway_initialization_probe'] ?? array(
+	'status'  => 'incomplete',
+	'reason'  => 'The MU bootstrap observer did not see a complete gateway initialization lifecycle.',
+	'metrics' => array(
+		'queries'                => 0,
+		'external_requests'      => 0,
+		'timing_sample_count'    => 0,
+		'measurement_mode'       => 'gateway_initialization_not_observed',
+		'gateway_preinitialized' => true,
+		'lifecycle_start_hook'   => 'woocommerce_payment_gateways',
+		'lifecycle_end_hook'     => 'wc_payment_gateways_initialized',
+		'caller_backtrace'       => array(),
+		'top_query_groups'       => array(),
+	),
+);
 $gateway_ids = array();
 foreach ( $gateways as $gateway ) {
 	if ( is_object( $gateway ) && isset( $gateway->id ) ) {
@@ -426,10 +767,10 @@ $route_registration_message = '';
 if ( $rest_preinitialized ) {
 	$server = rest_get_server();
 	$rest_measure = array(
-		'queries'           => 0,
-		'external_requests' => 0,
-		'median_ms'         => 0,
-		'measurement_mode'  => 'preinitialized_snapshot_only',
+		'queries'             => 0,
+		'external_requests'   => 0,
+		'timing_sample_count' => 0,
+		'measurement_mode'    => 'preinitialized_snapshot_only',
 	);
 	$route_registration_status  = 'preinitialized';
 	$route_registration_message = 'REST API was initialized before the perf probe, so route registration timing is not isolated.';
@@ -441,10 +782,11 @@ if ( $rest_preinitialized ) {
 		}
 	);
 	$rest_measure = array(
-		'queries'           => $rest_measure_raw['queries'],
-		'external_requests' => $rest_measure_raw['external_requests'],
-		'median_ms'         => $rest_measure_raw['median_ms'],
-		'measurement_mode'  => 'single_invocation_rest_api_init',
+		'queries'             => $rest_measure_raw['queries'],
+		'external_requests'   => $rest_measure_raw['external_requests'],
+		'elapsed_ms'          => $rest_measure_raw['elapsed_ms'],
+		'timing_sample_count' => $rest_measure_raw['timing_sample_count'],
+		'measurement_mode'    => 'single_invocation_rest_api_init',
 	);
 	$server       = rest_get_server();
 }
@@ -488,7 +830,9 @@ $result = array(
 	'wc_version'   => defined( 'WC_VERSION' ) ? WC_VERSION : 'unknown',
 	'has_wcpay'    => class_exists( 'WC_Payments' ),
 	'probes'       => array(
-		'gateway_registration' => array(
+		'gateway_initialization'   => $gateway_initialization_probe,
+		'gateway_first_resolution' => $gateway_initialization_probe,
+		'gateway_registration'     => array(
 			'status'  => 'measured',
 			'metrics' => array_merge(
 				$gateway_measure,
@@ -498,18 +842,17 @@ $result = array(
 					'duplicate_gateway_ids'  => $duplicate_gateway_ids,
 					'action_callback_count'  => array_sum( $gateway_hook_counts ),
 					'action_callback_counts' => $gateway_hook_counts,
-					'measurement_mode'       => 'warmed_in_process',
 				)
 			),
 		),
-		'autoload_options'     => array(
+		'autoload_options'         => array(
 			'status'  => 'measured',
 			'metrics' => array(
 				'autoload_bytes' => $autoload_bytes,
 				'option_count'    => is_array( $autoload_rows ) ? count( $autoload_rows ) : 0,
 			),
 		),
-		'wcpay_account_data'   => array(
+		'wcpay_account_data'       => array(
 			'status'  => 'measured',
 			'metrics' => array(
 				'exists'     => null !== $account_autoload,
@@ -517,7 +860,7 @@ $result = array(
 				'autoloaded' => in_array( $account_autoload, array( 'yes', 'on', 'auto-on' ), true ),
 			),
 		),
-		'rest_boot'            => array_filter(
+		'rest_boot'                => array_filter(
 			array(
 				'status'  => 'measured',
 				'metrics' => array_merge(
@@ -537,14 +880,122 @@ $result = array(
 				return '' !== $value;
 			}
 		),
-		'process_payment'      => $process_payment_probe,
-		'refund'               => $refund_probe,
-		'capture'              => $capture_probe,
+		'process_payment'          => $process_payment_probe,
+		'refund'                   => $refund_probe,
+		'capture'                  => $capture_probe,
 	),
 );
 
-WP_CLI::line( wp_json_encode( $result, JSON_PRETTY_PRINT ) );
+$result_json = wp_json_encode( $result, JSON_PRETTY_PRINT | JSON_INVALID_UTF8_SUBSTITUTE );
+if ( false === $result_json ) {
+	WP_CLI::error( 'WP-CLI perf probe JSON serialization failed.' );
+}
+WP_CLI::line( $result_json );
 PHP
+}
+
+compare_gateway_initialization() {
+	python3 - "$1" "$2" <<'PY'
+import json
+import sys
+
+reference = json.load(open(sys.argv[1], encoding="utf-8"))
+target = json.load(open(sys.argv[2], encoding="utf-8"))
+incomplete = []
+
+
+def gateway_initialization(capture, label):
+    probes = capture.get("probes")
+    entry = probes.get("gateway_initialization") if isinstance(probes, dict) else None
+    legacy_entry = probes.get("gateway_first_resolution") if isinstance(probes, dict) else None
+    using_legacy_entry = not isinstance(entry, dict) and isinstance(legacy_entry, dict)
+    if using_legacy_entry:
+        entry = legacy_entry
+    if not isinstance(entry, dict):
+        incomplete.append(f"{label}: gateway_initialization is missing")
+        return None
+    if entry.get("status") != "measured":
+        incomplete.append(
+            f"{label}: gateway_initialization is {entry.get('status', 'invalid')} "
+            f"({entry.get('reason', 'no reason recorded')})"
+        )
+        return None
+
+    metrics = entry.get("metrics")
+    if not isinstance(metrics, dict):
+        incomplete.append(f"{label}: gateway_initialization metrics are missing")
+        return None
+
+    problems = []
+    expected_mode = "first_in_process_gateway_resolution" if using_legacy_entry else "gateway_initialization_lifecycle"
+    if metrics.get("measurement_mode") != expected_mode:
+        problems.append(f"measurement_mode={metrics.get('measurement_mode')!r}")
+    if metrics.get("gateway_preinitialized") is not False:
+        problems.append("gateway_preinitialized is not false")
+    if metrics.get("timing_sample_count") != 1:
+        problems.append(f"timing_sample_count={metrics.get('timing_sample_count')!r}")
+    if "median_ms" in metrics:
+        problems.append("single sample is mislabeled median_ms")
+    for field in ("queries", "external_requests", "elapsed_ms"):
+        if not isinstance(metrics.get(field), (int, float)):
+            problems.append(f"{field} is not numeric")
+    if not using_legacy_entry:
+        if metrics.get("lifecycle_start_hook") != "woocommerce_payment_gateways":
+            problems.append(f"lifecycle_start_hook={metrics.get('lifecycle_start_hook')!r}")
+        if metrics.get("lifecycle_end_hook") != "wc_payment_gateways_initialized":
+            problems.append(f"lifecycle_end_hook={metrics.get('lifecycle_end_hook')!r}")
+        backtrace = metrics.get("caller_backtrace")
+        if not isinstance(backtrace, list) or len(backtrace) > 12:
+            problems.append("caller_backtrace is missing or unbounded")
+    if problems:
+        incomplete.append(f"{label}: invalid gateway_initialization ({', '.join(problems)})")
+        return None
+    return metrics
+
+
+def print_query_groups(label, metrics):
+    groups = metrics.get("top_query_groups", [])
+    print(f"note  gateway_initialization: {label} top query groups")
+    if not isinstance(groups, list) or not groups:
+        print("note  gateway_initialization:   not captured")
+        return
+    for group in groups[:5]:
+        if not isinstance(group, dict):
+            continue
+        callers = group.get("top_callers", [])
+        suffix = f" callers={', '.join(map(str, callers[:3]))}" if isinstance(callers, list) and callers else ""
+        print(f"note  gateway_initialization:   {group.get('count', '?')}x {group.get('sql', '<unknown sql>')}{suffix}")
+
+
+ref_initialization = gateway_initialization(reference, "ref")
+target_initialization = gateway_initialization(target, "target")
+if incomplete:
+    for message in incomplete:
+        print(f"INCOMPLETE gateway_initialization: {message}")
+    print("RESULT: INCOMPLETE gateway initialization evidence")
+    sys.exit(3)
+
+failures = []
+for field in ("queries", "external_requests"):
+    before = ref_initialization[field]
+    after = target_initialization[field]
+    if after > before:
+        print(f"REGRESS gateway_initialization: {field} {before:g} -> {after:g} (gateway-initialization count fail)")
+        failures.append(field)
+        if field == "queries":
+            print_query_groups("target", target_initialization)
+            print_query_groups("ref", ref_initialization)
+    else:
+        print(f"ok    gateway_initialization: {field} {before:g} -> {after:g}")
+
+print(
+    f"note  gateway_initialization: elapsed_ms {ref_initialization['elapsed_ms']:g} -> "
+    f"{target_initialization['elapsed_ms']:g} (single gateway-initialization sample; diagnostic only)"
+)
+if failures:
+    print("RESULT: FAIL gateway initialization count gate")
+    sys.exit(1)
+PY
 }
 
 case "$mode" in
@@ -587,11 +1038,95 @@ case "$mode" in
 		case "$capture_order_id" in
 			""|*[!0-9]*) [ -z "$capture_order_id" ] || usage ;;
 		esac
+		runner_details="$(woopayments_docker_runner_details "$wp_cmd")" || {
+			echo "ERROR: approved Docker WP runner could not be parsed" >&2
+			exit 2
+		}
+		IFS=$'\t' read -r docker_bin docker_container <<< "$runner_details"
+		read -r -a wp_runner_parts <<< "$wp_cmd"
+		if [ -z "$docker_bin" ] || [ -z "$docker_container" ] || \
+			[ "${wp_runner_parts[0]:-}" != "$docker_bin" ] || \
+			[ "${wp_runner_parts[1]:-}" != "exec" ] || \
+			[ "${wp_runner_parts[2]:-}" != "-i" ] || \
+			[ "${wp_runner_parts[3]:-}" != "$docker_container" ] || \
+			[ "${wp_runner_parts[4]:-}" != "wp" ]; then
+			echo "ERROR: approved Docker WP runner did not resolve to the exact parsed container" >&2
+			exit 2
+		fi
+
 		tmpdir="${TMPDIR:?TMPDIR is required for temporary files}"
 		mkdir -p "$tmpdir" "$(dirname "$out")"
 		probe_file="$(mktemp "$tmpdir/woopayments-perf-surface.XXXXXX")"
-		trap 'rm -f "$probe_file"' EXIT
+		mu_probe_file="$(mktemp "$tmpdir/woopayments-perf-gateway-init.XXXXXX")"
+		probe_token="$(python3 -c 'import secrets; print(secrets.token_hex(16))')" || {
+			echo "ERROR: failed to generate gateway initialization probe token" >&2
+			rm -f "$probe_file" "$mu_probe_file"
+			exit 2
+		}
+		mu_probe_container_path=""
+		mu_probe_created=0
+
+		cleanup_capture() {
+			capture_status=$?
+			cleanup_status=0
+			trap - EXIT HUP INT TERM
+			if [ "$mu_probe_created" -eq 1 ] && [ -n "$mu_probe_container_path" ]; then
+				if ! "$docker_bin" exec -i "$docker_container" rm -f -- "$mu_probe_container_path" >/dev/null 2>&1; then
+					echo "ERROR: failed to remove temporary MU probe: $mu_probe_container_path" >&2
+					cleanup_status=2
+				fi
+			fi
+			rm -f "$probe_file" "$mu_probe_file"
+			if [ "$capture_status" -eq 0 ] && [ "$cleanup_status" -ne 0 ]; then
+				capture_status="$cleanup_status"
+			fi
+			exit "$capture_status"
+		}
+		trap cleanup_capture EXIT
+		trap 'exit 129' HUP
+		trap 'exit 130' INT
+		trap 'exit 143' TERM
+
 		write_probe "$probe_file"
+		write_gateway_initialization_probe "$mu_probe_file"
+		if ! mu_dir_output="$("${wp_runner_parts[@]}" eval 'WP_CLI::line( "WPMERGE_PERF_MU_PLUGIN_DIR:" . WPMU_PLUGIN_DIR );' 2>&1)"; then
+			echo "ERROR: failed to resolve the approved container MU plugin directory" >&2
+			exit 2
+		fi
+		mu_plugin_dir="$(printf '%s\n' "$mu_dir_output" | sed -n 's/^WPMERGE_PERF_MU_PLUGIN_DIR://p' | tail -1)"
+		case "$mu_plugin_dir" in
+			/*) ;;
+			*)
+				echo "ERROR: approved container returned an invalid MU plugin directory" >&2
+				exit 2
+				;;
+		esac
+		case "/$mu_plugin_dir/" in
+			*"/../"*|*"/./"*)
+				echo "ERROR: approved container returned an unsafe MU plugin directory" >&2
+				exit 2
+				;;
+		esac
+		if ! "$docker_bin" exec -i "$docker_container" test -d "$mu_plugin_dir"; then
+			echo "ERROR: MU plugin directory is unavailable in approved container: $mu_plugin_dir" >&2
+			exit 2
+		fi
+		mu_probe_container_path="${mu_plugin_dir%/}/woopayments-perf-gateway-init-${probe_token}.php"
+		if ! "$docker_bin" exec -i "$docker_container" test ! -e "$mu_probe_container_path"; then
+			echo "ERROR: refusing to overwrite temporary MU probe path: $mu_probe_container_path" >&2
+			exit 2
+		fi
+		mu_probe_created=1
+		if ! "$docker_bin" exec -i "$docker_container" tee "$mu_probe_container_path" < "$mu_probe_file" >/dev/null; then
+			echo "ERROR: failed to install temporary MU probe in approved container" >&2
+			exit 2
+		fi
+		activated_wp_runner=(
+			"$docker_bin" exec -i
+			-e "WPMERGE_PERF_GATEWAY_INIT_TOKEN=$probe_token"
+			"$docker_container"
+			"${wp_runner_parts[@]:4}"
+		)
 		echo "[perf-surface-gate] starting capture via WP-CLI" >&2
 		if [ -n "$process_order_id" ]; then
 			echo "[perf-surface-gate] process_payment fixture: order #$process_order_id" >&2
@@ -608,7 +1143,7 @@ case "$mode" in
 		else
 			echo "[perf-surface-gate] capture fixture: not supplied" >&2
 		fi
-		if ! bash -c "$wp_cmd eval-file - '$process_order_id' '$refund_order_id' '$capture_order_id' '$payment_method' '$refund_amount' < '$probe_file'" > "$out"; then
+		if ! "${activated_wp_runner[@]}" eval-file - "$process_order_id" "$refund_order_id" "$capture_order_id" "$payment_method" "$refund_amount" < "$probe_file" > "$out"; then
 			echo "ERROR: WP-CLI perf probe failed" >&2
 			exit 2
 		fi
@@ -632,6 +1167,9 @@ case "$mode" in
 			esac
 		done
 		[ -n "$ref" ] && [ -n "$target" ] || usage
+		compare_gateway_initialization "$ref" "$target"
+		gateway_initialization_rc=$?
+		[ "$gateway_initialization_rc" -eq 0 ] || exit "$gateway_initialization_rc"
 		python3 "$COMPARE" perf --ref "$ref" --target "$target"
 		;;
 	*)

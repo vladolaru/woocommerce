@@ -9,6 +9,7 @@
 set -uo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOCAL_RUNNER_SAFETY="$SELF_DIR/local-runner-safety.sh"
 
 REF_WP=""
 TARGET_WP=""
@@ -17,6 +18,7 @@ TARGET_STATE=""
 EXCEPTIONS="$SELF_DIR/rest-route-exceptions.txt"
 OUT_DIR="${TMPDIR:-$SELF_DIR/.tmp}/rest-route-parity"
 PRINT_PLAN=0
+SELF_CHECK=0
 ROUTE_PREFIX="/wc/v3/payments/"
 
 usage() {
@@ -32,6 +34,7 @@ Options:
   --target-state <file>     Pre-captured target JSON route snapshot.
   --exceptions <file>       Tab-separated route exception manifest.
   --out-dir <path>          Evidence output directory.
+  --self-check              Compare the plugin-owned reference store with itself.
   --print-plan              Print the live route probe plan as JSON, then exit.
   -h, --help                Show this help.
 USAGE
@@ -62,18 +65,35 @@ while [ "$#" -gt 0 ]; do
 		--exceptions) EXCEPTIONS="${2:-}"; shift 2 ;;
 		--out-dir=*) OUT_DIR="${1#--out-dir=}"; shift ;;
 		--out-dir) OUT_DIR="${2:-}"; shift 2 ;;
+		--self-check) SELF_CHECK=1; shift ;;
 		--print-plan) PRINT_PLAN=1; shift ;;
 		--help|-h) usage; exit 0 ;;
 		*) usage_error "unknown argument: $1" ;;
 	esac
 done
 
+if [ ! -f "$LOCAL_RUNNER_SAFETY" ]; then
+	blocked "local runner safety library is missing: $LOCAL_RUNNER_SAFETY"
+fi
+# shellcheck source=./local-runner-safety.sh
+source "$LOCAL_RUNNER_SAFETY"
+
+validate_wp_runner() {
+	local role="$1"
+	local runner="$2"
+	local reason
+
+	if ! reason="$(woopayments_validate_local_wp_runner "$runner" 2>&1)"; then
+		usage_error "unsafe --$role WP runner: ${reason:-runner validation failed}"
+	fi
+}
+
 print_plan() {
-	python3 - "$REF_WP" "$TARGET_WP" "$OUT_DIR" "$EXCEPTIONS" "$ROUTE_PREFIX" <<'PY'
+	python3 - "$REF_WP" "$TARGET_WP" "$OUT_DIR" "$EXCEPTIONS" "$ROUTE_PREFIX" "$SELF_CHECK" <<'PY'
 import json
 import sys
 
-ref_wp, target_wp, out_dir, exceptions, route_prefix = sys.argv[1:]
+ref_wp, target_wp, out_dir, exceptions, route_prefix, self_check = sys.argv[1:]
 print(
     json.dumps(
         {
@@ -83,6 +103,7 @@ print(
             "out_dir": out_dir,
             "exceptions": exceptions,
             "route_prefix": route_prefix,
+            "self_check": self_check == "1",
         },
         sort_keys=True,
     )
@@ -94,6 +115,8 @@ if [ "$PRINT_PLAN" -eq 1 ]; then
 	if [ -z "$REF_WP" ] || [ -z "$TARGET_WP" ]; then
 		usage_error "--ref and --target are required with --print-plan."
 	fi
+	validate_wp_runner "ref" "$REF_WP"
+	validate_wp_runner "target" "$TARGET_WP"
 	print_plan
 	exit 0
 fi
@@ -112,6 +135,8 @@ else
 	if [ -z "$REF_WP" ] || [ -z "$TARGET_WP" ]; then
 		usage_error "provide --ref/--target or --ref-state/--target-state."
 	fi
+	validate_wp_runner "ref" "$REF_WP"
+	validate_wp_runner "target" "$TARGET_WP"
 fi
 
 if [ ! -f "$EXCEPTIONS" ]; then
@@ -147,6 +172,21 @@ if ( ! function_exists( 'rest_get_server' ) ) {
 $server = rest_get_server();
 $routes = $server->get_routes();
 $captured = array();
+$runtime_owner = 'unknown';
+
+if ( function_exists( 'wc_get_container' ) && class_exists( 'Automattic\\WooCommerce\\Internal\\Payments\\NativePaymentsRuntimeArbiter' ) ) {
+	try {
+		$arbiter = wc_get_container()->get( 'Automattic\\WooCommerce\\Internal\\Payments\\NativePaymentsRuntimeArbiter' );
+		if ( is_object( $arbiter ) && method_exists( $arbiter, 'get_runtime_owner' ) ) {
+			$runtime_owner = (string) $arbiter->get_runtime_owner();
+		}
+	} catch ( Throwable $throwable ) {
+		unset( $throwable );
+	}
+}
+if ( 'unknown' === $runtime_owner && class_exists( 'WC_Payments' ) ) {
+	$runtime_owner = 'plugin';
+}
 
 foreach ( $routes as $route => $handlers ) {
 	if ( '/wc/v3/payments' !== $route && 0 !== strpos( $route, '/wc/v3/payments/' ) ) {
@@ -195,9 +235,11 @@ usort(
 
 echo json_encode(
 	array(
-		'schema' => 'woopayments_rest_route_capture.v1',
-		'role'   => $role,
-		'routes' => $captured,
+		'schema'        => 'woopayments_rest_route_capture.v1',
+		'role'          => $role,
+		'runtime_owner' => $runtime_owner,
+		'site_url'      => function_exists( 'home_url' ) ? home_url( '/' ) : '',
+		'routes'        => $captured,
 	)
 );
 echo "\n";
@@ -221,14 +263,16 @@ if [ -z "$REF_STATE" ]; then
 	capture_state "target" "$TARGET_WP" "$TARGET_STATE"
 fi
 
-python3 - "$REF_STATE" "$TARGET_STATE" "$EXCEPTIONS" "$OUT_DIR/rest-route-parity.json" <<'PY'
+python3 - "$REF_STATE" "$TARGET_STATE" "$EXCEPTIONS" "$OUT_DIR/rest-route-parity.json" "$SELF_CHECK" <<'PY'
 from __future__ import annotations
 
 import json
+import ipaddress
 import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlparse, urlunparse
 
 
 VALID_DISPOSITIONS = {"SUPERSEDED", "DROPPED"}
@@ -291,6 +335,22 @@ def load_routes(payload: dict) -> set[RouteKey]:
     return routes
 
 
+def normalize_local_site_url(value: object) -> str | None:
+    parsed = urlparse(str(value))
+    host = (parsed.hostname or "").lower()
+    local_host = host in {"localhost", "host.docker.internal", "gateway.docker.internal"} or host.endswith(
+        ".localhost"
+    )
+    if not local_host:
+        try:
+            local_host = ipaddress.ip_address(host).is_loopback
+        except ValueError:
+            local_host = False
+    if parsed.scheme not in {"http", "https"} or not local_host or parsed.username or parsed.password:
+        return None
+    return urlunparse((parsed.scheme.lower(), parsed.netloc.lower(), parsed.path.rstrip("/"), "", "", ""))
+
+
 def parse_exceptions(path: Path) -> tuple[dict[RouteKey, ExceptionRow], list[str]]:
     exceptions: dict[RouteKey, ExceptionRow] = {}
     failures: list[str] = []
@@ -332,6 +392,7 @@ def write_rollup(
     *,
     status: str,
     failures: list[str],
+    blocked: list[str],
     exceptions_applied: list[str],
     reference: dict,
     target: dict,
@@ -344,6 +405,7 @@ def write_rollup(
                 "schema": "woopayments_rest_route_gate_result.v1",
                 "status": status,
                 "failures": failures,
+                "blocked": blocked,
                 "exceptions_applied": exceptions_applied,
                 "reference": reference,
                 "target": target,
@@ -361,6 +423,7 @@ ref_path = Path(sys.argv[1])
 target_path = Path(sys.argv[2])
 exceptions_path = Path(sys.argv[3])
 rollup_path = Path(sys.argv[4])
+self_check = sys.argv[5] == "1"
 
 reference = load_json(ref_path)
 target = load_json(target_path)
@@ -368,6 +431,43 @@ ref_routes = load_routes(reference)
 target_routes = load_routes(target)
 exceptions, failures = parse_exceptions(exceptions_path)
 exceptions_applied: list[str] = []
+blocked: list[str] = []
+
+expected_owners = {"reference": "plugin", "target": "plugin" if self_check else "native"}
+site_urls: dict[str, str] = {}
+for expected_role, payload in (("reference", reference), ("target", target)):
+    if payload.get("role") != expected_role:
+        blocked.append(f"{expected_role} snapshot role must be {expected_role}")
+    expected_owner = expected_owners[expected_role]
+    if payload.get("runtime_owner") != expected_owner:
+        blocked.append(f"{expected_role} runtime owner must be {expected_owner}")
+    normalized_site = normalize_local_site_url(payload.get("site_url"))
+    if normalized_site is None:
+        blocked.append(f"{expected_role} snapshot must identify a local site URL")
+    else:
+        site_urls[expected_role] = normalized_site
+
+if len(site_urls) == 2:
+    same_site = site_urls["reference"] == site_urls["target"]
+    if self_check and not same_site:
+        blocked.append("self-check snapshots must identify the same local site")
+    if not self_check and same_site:
+        blocked.append("cross-store snapshots must identify distinct local sites")
+
+if blocked:
+    write_rollup(
+        rollup_path,
+        status="blocked",
+        failures=[],
+        blocked=blocked,
+        exceptions_applied=[],
+        reference=reference,
+        target=target,
+        exception_rows=[],
+    )
+    for reason in blocked:
+        print(f"BLOCKED: {reason}", file=sys.stderr)
+    sys.exit(3)
 
 for key in sorted(exceptions, key=lambda route: route.label()):
     if key not in ref_routes:
@@ -389,6 +489,7 @@ if failures:
         rollup_path,
         status="fail",
         failures=failures,
+        blocked=[],
         exceptions_applied=exceptions_applied,
         reference=reference,
         target=target,
@@ -402,6 +503,7 @@ write_rollup(
     rollup_path,
     status="pass",
     failures=[],
+    blocked=[],
     exceptions_applied=exceptions_applied,
     reference=reference,
     target=target,

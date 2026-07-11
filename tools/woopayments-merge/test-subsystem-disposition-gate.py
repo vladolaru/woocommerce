@@ -13,7 +13,12 @@ SCRIPT = REPO / "tools/woopayments-merge/subsystem-disposition-gate.sh"
 VERIFY = REPO / "tools/woopayments-merge/verify.sh"
 
 
-def run_gate(extension_root: Path, manifest: Path) -> subprocess.CompletedProcess[str]:
+def run_gate(
+    extension_root: Path,
+    manifest: Path,
+    *,
+    extension_ref: str = "worktree",
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [
             "bash",
@@ -22,6 +27,8 @@ def run_gate(extension_root: Path, manifest: Path) -> subprocess.CompletedProces
             str(extension_root),
             "--manifest",
             str(manifest),
+            "--extension-ref",
+            extension_ref,
         ],
         cwd=REPO,
         text=True,
@@ -96,6 +103,47 @@ def test_gate_accepts_exact_rows_and_signed_dropped_rows() -> None:
         assert "3 extension files covered" in result.stdout
         assert "disposition counts: PORTED=1 SUPERSEDED=1 DROPPED=1" in result.stdout
         assert "signed DROPPED rows: 1" in result.stdout
+
+
+def test_gate_reads_the_versioned_oracle_tree_without_changing_the_worktree() -> None:
+    with tempfile.TemporaryDirectory(prefix="subsystem-disposition-gate-test-") as tmp:
+        root = Path(tmp)
+        extension_root = root / "extension"
+        manifest = root / "manifest.md"
+        versioned_file = extension_root / "includes/deprecated.php"
+
+        extension_root.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=extension_root, check=True)
+        touch(versioned_file)
+        subprocess.run(["git", "add", "."], cwd=extension_root, check=True)
+        subprocess.run(
+            [
+                "git",
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.test",
+                "commit",
+                "-qm",
+                "oracle",
+            ],
+            cwd=extension_root,
+            check=True,
+        )
+        subprocess.run(["git", "tag", "10.8.0"], cwd=extension_root, check=True)
+        versioned_file.unlink()
+        write_manifest(
+            manifest,
+            "| Deprecated file | `includes/deprecated.php` | `SUPERSEDED` | deprecation cleanup | unit test |  |  |  |\n",
+        )
+
+        versioned_result = run_gate(extension_root, manifest, extension_ref="10.8.0")
+        worktree_result = run_gate(extension_root, manifest)
+
+        assert versioned_result.returncode == 0, versioned_result.stdout + versioned_result.stderr
+        assert "extension ref: 10.8.0" in versioned_result.stdout
+        assert worktree_result.returncode == 1
+        assert "manifest source patterns matching no extension files" in worktree_result.stdout
 
 
 def test_gate_rejects_wildcard_manifest_source_patterns() -> None:

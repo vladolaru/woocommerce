@@ -2,14 +2,15 @@
 #
 # Preserved WooPayments hook-shape parity gate.
 #
-# Captures selected high-traffic preserved hook argument shapes on the reference
-# WooPayments plugin store and native target store, then diffs type/class/array-key
-# shape. It can also compare pre-captured JSON snapshots for focused regression tests.
+# Captures every required preserved hook argument shape on the reference WooPayments
+# plugin store and native target store, then diffs type/class/array-key shape. It can
+# also compare pre-captured JSON snapshots for focused regression tests.
 
 set -uo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DRIVER="$SELF_DIR/hook-shape-parity.php"
+LOCAL_RUNNER_SAFETY="$SELF_DIR/local-runner-safety.sh"
 
 REF_WP=""
 TARGET_WP=""
@@ -17,6 +18,7 @@ REF_STATE=""
 TARGET_STATE=""
 OUT_DIR="${TMPDIR:-$SELF_DIR/.tmp}/hook-shape-parity"
 PRINT_PLAN=0
+SELF_CHECK=0
 
 usage() {
 	cat >&2 <<'USAGE'
@@ -30,6 +32,7 @@ Options:
   --ref-state <file>        Pre-captured reference JSON snapshot.
   --target-state <file>     Pre-captured target JSON snapshot.
   --out-dir <path>          Evidence output directory.
+  --self-check              Compare the plugin-owned reference store with itself.
   --print-plan              Print the normalized hook probe plan as JSON, then exit.
   -h, --help                Show this help.
 USAGE
@@ -46,6 +49,16 @@ blocked() {
 	exit 3
 }
 
+validate_wp_runner() {
+	local role="$1"
+	local runner="$2"
+	local reason
+
+	if ! reason="$(woopayments_validate_local_wp_runner "$runner" 2>&1)"; then
+		usage_error "unsafe --$role WP runner: ${reason:-runner validation failed}"
+	fi
+}
+
 while [ "$#" -gt 0 ]; do
 	case "$1" in
 		--ref=*) REF_WP="${1#--ref=}"; shift ;;
@@ -58,22 +71,39 @@ while [ "$#" -gt 0 ]; do
 		--target-state) TARGET_STATE="${2:-}"; shift 2 ;;
 		--out-dir=*) OUT_DIR="${1#--out-dir=}"; shift ;;
 		--out-dir) OUT_DIR="${2:-}"; shift 2 ;;
+		--self-check) SELF_CHECK=1; shift ;;
 		--print-plan) PRINT_PLAN=1; shift ;;
 		--help|-h) usage; exit 0 ;;
 		*) usage_error "unknown argument: $1" ;;
 	esac
 done
 
+if [ ! -f "$DRIVER" ]; then
+	blocked "capture driver is missing: $DRIVER"
+fi
+if [ ! -f "$LOCAL_RUNNER_SAFETY" ]; then
+	blocked "local runner safety library is missing: $LOCAL_RUNNER_SAFETY"
+fi
+if ! command -v python3 >/dev/null 2>&1; then
+	blocked "python3 is required."
+fi
+if ! command -v php >/dev/null 2>&1; then
+	blocked "php is required."
+fi
+
+# shellcheck source=./local-runner-safety.sh
+source "$LOCAL_RUNNER_SAFETY"
+
 required_hooks_json() {
 	php "$DRIVER" --inventory | python3 -c 'import json, sys; print(json.dumps(json.load(sys.stdin)["required_hooks"]))'
 }
 
 print_plan() {
-	python3 - "$REF_WP" "$TARGET_WP" "$OUT_DIR" "$DRIVER" "$(required_hooks_json)" <<'PY'
+	python3 - "$REF_WP" "$TARGET_WP" "$OUT_DIR" "$DRIVER" "$(required_hooks_json)" "$SELF_CHECK" <<'PY'
 import json
 import sys
 
-ref_wp, target_wp, out_dir, driver, required_hooks_raw = sys.argv[1:]
+ref_wp, target_wp, out_dir, driver, required_hooks_raw, self_check = sys.argv[1:]
 print(
     json.dumps(
         {
@@ -83,6 +113,7 @@ print(
             "out_dir": out_dir,
             "capture_driver": driver,
             "required_hooks": json.loads(required_hooks_raw),
+            "self_check": self_check == "1",
         },
         sort_keys=True,
     )
@@ -94,15 +125,8 @@ if [ "$PRINT_PLAN" -eq 1 ]; then
 	if [ -z "$REF_WP" ] || [ -z "$TARGET_WP" ]; then
 		usage_error "--ref and --target are required with --print-plan."
 	fi
-	if [ ! -f "$DRIVER" ]; then
-		blocked "capture driver is missing: $DRIVER"
-	fi
-	if ! command -v python3 >/dev/null 2>&1; then
-		blocked "python3 is required."
-	fi
-	if ! command -v php >/dev/null 2>&1; then
-		blocked "php is required."
-	fi
+	validate_wp_runner "ref" "$REF_WP"
+	validate_wp_runner "target" "$TARGET_WP"
 	print_plan
 	exit 0
 fi
@@ -121,16 +145,8 @@ else
 	if [ -z "$REF_WP" ] || [ -z "$TARGET_WP" ]; then
 		usage_error "provide --ref/--target or --ref-state/--target-state."
 	fi
-fi
-
-if [ ! -f "$DRIVER" ]; then
-	blocked "capture driver is missing: $DRIVER"
-fi
-if ! command -v python3 >/dev/null 2>&1; then
-	blocked "python3 is required."
-fi
-if ! command -v php >/dev/null 2>&1; then
-	blocked "php is required."
+	validate_wp_runner "ref" "$REF_WP"
+	validate_wp_runner "target" "$TARGET_WP"
 fi
 
 mkdir -p "$OUT_DIR"
@@ -167,20 +183,39 @@ if [ -z "$REF_STATE" ]; then
 	capture_state "target" "$TARGET_WP" "$TARGET_STATE"
 fi
 
-python3 - "$REF_STATE" "$TARGET_STATE" "$OUT_DIR/hook-shape-parity.json" "$(required_hooks_json)" <<'PY'
+python3 - "$REF_STATE" "$TARGET_STATE" "$OUT_DIR/hook-shape-parity.json" "$(required_hooks_json)" "$SELF_CHECK" <<'PY'
+import ipaddress
 import json
 import sys
 from pathlib import Path
+from urllib.parse import urlparse, urlunparse
 
 ref_path = Path(sys.argv[1])
 target_path = Path(sys.argv[2])
 rollup_path = Path(sys.argv[3])
 required_hooks = json.loads(sys.argv[4])
+self_check = sys.argv[5] == "1"
 
 
 def load(path):
     with path.open(encoding="utf-8") as stream:
         return json.load(stream)
+
+
+def normalize_local_site_url(value):
+    parsed = urlparse(str(value))
+    host = (parsed.hostname or "").lower()
+    local_host = host in {"localhost", "host.docker.internal", "gateway.docker.internal"} or host.endswith(
+        ".localhost"
+    )
+    if not local_host:
+        try:
+            local_host = ipaddress.ip_address(host).is_loopback
+        except ValueError:
+            local_host = False
+    if parsed.scheme not in {"http", "https"} or not local_host or parsed.username or parsed.password:
+        return None
+    return urlunparse((parsed.scheme.lower(), parsed.netloc.lower(), parsed.path.rstrip("/"), "", "", ""))
 
 
 def shape_summary(shape):
@@ -204,32 +239,43 @@ def class_sets(shape):
     return classes
 
 
-def compare_arg(hook, index, ref_arg, target_arg, failures):
-    label = f"{hook} arg[{index}]"
-    ref_type = ref_arg.get("type")
-    target_type = target_arg.get("type")
+def compare_shape(label, ref_shape, target_shape, failures):
+    ref_type = ref_shape.get("type")
+    target_type = target_shape.get("type")
     if ref_type != target_type:
-        failures.append(f"{label}: reference {shape_summary(ref_arg)} target {shape_summary(target_arg)}")
+        failures.append(f"{label}: reference {shape_summary(ref_shape)} target {shape_summary(target_shape)}")
         return
 
     if ref_type == "array":
-        ref_keys = ref_arg.get("keys", [])
-        target_keys = target_arg.get("keys", [])
+        ref_keys = ref_shape.get("keys", [])
+        target_keys = target_shape.get("keys", [])
         missing_keys = sorted(set(ref_keys) - set(target_keys))
         if missing_keys:
             failures.append(f"{label}: target array missing reference keys {missing_keys}")
+
+        ref_values = ref_shape.get("values") if isinstance(ref_shape.get("values"), dict) else {}
+        target_values = target_shape.get("values") if isinstance(target_shape.get("values"), dict) else {}
+        for key, ref_value in ref_values.items():
+            if key not in target_values:
+                continue
+            if isinstance(ref_value, dict) and isinstance(target_values[key], dict):
+                compare_shape(f"{label}.{key}", ref_value, target_values[key], failures)
         return
 
     if ref_type == "object":
-        if not (class_sets(ref_arg) & class_sets(target_arg)):
-            failures.append(f"{label}: reference {shape_summary(ref_arg)} target {shape_summary(target_arg)}")
+        if not (class_sets(ref_shape) & class_sets(target_shape)):
+            failures.append(f"{label}: reference {shape_summary(ref_shape)} target {shape_summary(target_shape)}")
             return
 
-        ref_methods = set(ref_arg.get("methods", []))
-        target_methods = set(target_arg.get("methods", []))
+        ref_methods = set(ref_shape.get("methods", []))
+        target_methods = set(target_shape.get("methods", []))
         missing_methods = sorted(ref_methods - target_methods)
         if missing_methods:
             failures.append(f"{label}: target object missing methods {missing_methods}")
+
+
+def compare_arg(hook, index, ref_arg, target_arg, failures):
+    compare_shape(f"{hook} arg[{index}]", ref_arg, target_arg, failures)
 
 
 reference = load(ref_path)
@@ -239,13 +285,47 @@ target_hooks = target.get("hooks", {})
 failures = []
 blocked = []
 
+for expected_role, payload in (("reference", reference), ("target", target)):
+    observed_role = payload.get("role")
+    if observed_role != expected_role:
+        failures.append(
+            f"{expected_role} snapshot role must be {expected_role}, got {observed_role!r}"
+        )
+
+expected_owners = {"reference": "plugin", "target": "plugin" if self_check else "native"}
+site_urls = {}
+for role, payload in (("reference", reference), ("target", target)):
+    expected_owner = expected_owners[role]
+    if payload.get("runtime_owner") != expected_owner:
+        blocked.append(f"{role} runtime owner must be {expected_owner}")
+    normalized_site = normalize_local_site_url(payload.get("site_url"))
+    if normalized_site is None:
+        blocked.append(f"{role} snapshot must identify a local site URL")
+    else:
+        site_urls[role] = normalized_site
+
+if len(site_urls) == 2:
+    same_site = site_urls["reference"] == site_urls["target"]
+    if self_check and not same_site:
+        blocked.append("self-check snapshots must identify the same local site")
+    if not self_check and same_site:
+        blocked.append("cross-store snapshots must identify distinct local sites")
+
 for role, payload in (("reference", reference), ("target", target)):
     preconditions = payload.get("preconditions")
-    if isinstance(preconditions, dict) and preconditions.get("ready") is False:
+    if not isinstance(preconditions, dict):
+        blocked.append(f"{role} capture preconditions are missing")
+    elif preconditions.get("ready") is not True:
         reasons = preconditions.get("reasons") or ["unknown"]
         blocked.append(f"{role} capture preconditions unmet: {', '.join(str(reason) for reason in reasons)}")
 
-if blocked:
+capture_errors = []
+for role, payload in (("reference", reference), ("target", target)):
+    for error in payload.get("errors", []):
+        capture_errors.append(f"{role} capture error: {error}")
+blocked.extend(capture_errors)
+
+if capture_errors or (blocked and not failures):
     rollup = {
         "schema": "woopayments_hook_shape_gate_result.v1",
         "status": "blocked",
@@ -269,6 +349,15 @@ for hook in required_hooks:
         failures.append(f"target missing required hook: {hook}")
         continue
 
+    if reference_hooks[hook].get("observed") is not True:
+        failures.append(f"reference required hook was not observed: {hook}")
+    if target_hooks[hook].get("observed") is not True:
+        failures.append(f"target required hook was not observed: {hook}")
+    if reference_hooks[hook].get("capture") != "surrounding_path":
+        failures.append(f"reference required hook did not use its surrounding product path: {hook}")
+    if target_hooks[hook].get("capture") != "surrounding_path":
+        failures.append(f"target required hook did not use its surrounding product path: {hook}")
+
     ref_args = reference_hooks[hook].get("args", [])
     target_args = target_hooks[hook].get("args", [])
     if len(ref_args) != len(target_args):
@@ -277,10 +366,6 @@ for hook in required_hooks:
 
     for index, (ref_arg, target_arg) in enumerate(zip(ref_args, target_args)):
         compare_arg(hook, index, ref_arg, target_arg, failures)
-
-for role, payload in (("reference", reference), ("target", target)):
-    for error in payload.get("errors", []):
-        failures.append(f"{role} capture error: {error}")
 
 status = "fail" if failures else "pass"
 rollup = {

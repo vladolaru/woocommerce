@@ -71,9 +71,21 @@ foreach ( $args as $order_id_arg ) {
 
 	$refunds = array();
 	foreach ( $order->get_refunds() as $refund ) {
+		$refund_meta = array();
+		foreach ( $refund->get_meta_data() as $meta_item ) {
+			$data = $meta_item->get_data();
+			$key  = (string) $data['key'];
+			if ( preg_match( $key_pattern, $key ) ) {
+				$value                 = $data['value'];
+				$refund_meta[ $key ][] = is_scalar( $value ) ? (string) $value : wp_json_encode( $value );
+			}
+		}
+		ksort( $refund_meta );
+
 		$refunds[] = array(
 			'amount'   => (string) $refund->get_amount(),
 			'currency' => (string) $refund->get_currency(),
+			'meta'     => $refund_meta,
 			'reason'   => (string) $refund->get_reason(),
 		);
 	}

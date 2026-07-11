@@ -28,7 +28,9 @@ set -uo pipefail
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SELF_DIR/../.." && pwd)"
 WCPAY_SRC="${WCPAY_SRC:-$REPO_ROOT/../woocommerce-payments}"
+WCPAY_SOURCE_REF="${WCPAY_SOURCE_REF:-10.8.0}"
 BASELINE_DIR="$SELF_DIR/bc-drift-baseline"
+PROVENANCE_FILE="$BASELINE_DIR/source-provenance.txt"
 
 MODE="check"
 if [ "${1:-}" = "--update" ]; then
@@ -42,6 +44,53 @@ if [ ! -d "$WCPAY_SRC/includes" ]; then
 	echo "ERROR: WooPayments source not found at: $WCPAY_SRC" >&2
 	echo "       Set WCPAY_SRC to the woocommerce-payments checkout." >&2
 	exit 2
+fi
+
+resolve_source_commit() {
+	local source_commit head_commit dirty_paths
+
+	if [ "$WCPAY_SOURCE_REF" = "worktree" ]; then
+		source_commit="$(git -C "$WCPAY_SRC" rev-parse --verify 'HEAD^{commit}' 2>/dev/null)" || {
+			echo "ERROR: WooPayments source is not a Git worktree: $WCPAY_SRC" >&2
+			return 1
+		}
+		printf '%s\n' "$source_commit"
+		return 0
+	fi
+
+	source_commit="$(git -C "$WCPAY_SRC" rev-parse --verify "refs/tags/$WCPAY_SOURCE_REF^{commit}" 2>/dev/null)" || {
+		echo "ERROR: WooPayments source does not contain required ref $WCPAY_SOURCE_REF: $WCPAY_SRC" >&2
+		return 1
+	}
+	head_commit="$(git -C "$WCPAY_SRC" rev-parse --verify 'HEAD^{commit}' 2>/dev/null)" || return 1
+	if [ "$head_commit" != "$source_commit" ]; then
+		echo "ERROR: WooPayments source must be checked out at WooPayments ref $WCPAY_SOURCE_REF ($source_commit); HEAD is $head_commit" >&2
+		return 1
+	fi
+
+	dirty_paths="$(git -C "$WCPAY_SRC" status --porcelain --untracked-files=all -- includes src client woocommerce-payments.php 2>/dev/null)" || return 1
+	if [ -n "$dirty_paths" ]; then
+		echo "ERROR: WooPayments source must be clean at ref $WCPAY_SOURCE_REF before BC extraction" >&2
+		return 1
+	fi
+
+	printf '%s\n' "$source_commit"
+}
+
+SOURCE_COMMIT="$(resolve_source_commit)" || exit 2
+SOURCE_PROVENANCE="$(printf 'source_ref=%s\nsource_commit=%s\n' "$WCPAY_SOURCE_REF" "$SOURCE_COMMIT")"
+
+if [ "$MODE" = "update" ]; then
+	mkdir -p "$BASELINE_DIR"
+	printf '%s\n' "$SOURCE_PROVENANCE" > "$PROVENANCE_FILE"
+elif [ ! -f "$PROVENANCE_FILE" ]; then
+	echo "FAIL: BC baseline source provenance is missing: $PROVENANCE_FILE" >&2
+	echo "      regenerate only from the intended immutable WooPayments source with --update" >&2
+	exit 1
+elif [ "$(cat "$PROVENANCE_FILE")" != "$SOURCE_PROVENANCE" ]; then
+	echo "FAIL: BC baseline source provenance does not match the requested WooPayments source" >&2
+	echo "      expected: $WCPAY_SOURCE_REF @ $SOURCE_COMMIT" >&2
+	exit 1
 fi
 
 INC="$WCPAY_SRC/includes"
@@ -134,6 +183,7 @@ CATEGORIES="scheduler php_api persisted_data endpoints hooks_filters tracks"
 
 echo "BC-manifest drift gate"
 echo "  source:   $WCPAY_SRC"
+echo "  ref:      $WCPAY_SOURCE_REF @ $SOURCE_COMMIT"
 echo "  baseline: $BASELINE_DIR"
 echo "  mode:     $MODE"
 echo

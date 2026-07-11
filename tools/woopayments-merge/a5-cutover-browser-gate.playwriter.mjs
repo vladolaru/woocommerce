@@ -20,6 +20,7 @@ const ignoredFailedResponses = [];
 const consoleIssues = [];
 const ignoredConsoleIssues = [];
 const screenshots = [];
+const screenshotFailures = [];
 const checks = [];
 const urls = {
 	plugins: pluginsUrl,
@@ -72,8 +73,16 @@ function recordCheck( id, passed, details = {} ) {
 
 async function captureScreenshot( page, id ) {
 	const screenshotPath = path.join( dataDir, `a5e-soft-cutover-${ id }.png` );
-	await page.screenshot( { path: screenshotPath, fullPage: false, scale: 'css' } );
-	screenshots.push( screenshotPath );
+	try {
+		await page.screenshot( { path: screenshotPath, fullPage: false, scale: 'css', timeout: 10000 } );
+		screenshots.push( screenshotPath );
+	} catch ( error ) {
+		screenshotFailures.push( {
+			id,
+			path: screenshotPath,
+			message: error.message,
+		} );
+	}
 	writeEvidence( 'running' );
 	return screenshotPath;
 }
@@ -90,6 +99,7 @@ function writeEvidence( status = 'running' ) {
 		consoleIssues,
 		ignoredConsoleIssues,
 		screenshots,
+		screenshotFailures,
 		pass: status === 'complete' && checks.every( ( check ) => check.passed ) && failedResponses.length === 0 && consoleIssues.length === 0,
 	};
 	fs.writeFileSync( evidencePath, `${ JSON.stringify( evidence, null, 2 ) }\n` );

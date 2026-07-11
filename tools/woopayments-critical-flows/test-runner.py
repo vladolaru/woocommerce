@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import shlex
@@ -15,6 +16,47 @@ REPO = Path(__file__).resolve().parents[2]
 RUNNER = REPO / "tools/woopayments-critical-flows/run.sh"
 COMMON = REPO / "tools/woopayments-critical-flows/lib/common.sh"
 FLOW_DRIVE = REPO / "tools/woopayments-merge/flow-drive.sh"
+CONTEXT_MODULE_PATH = REPO / "tools/woopayments-critical-flows/evidence_context.py"
+
+
+def load_context_module():
+    spec = importlib.util.spec_from_file_location("critical_flow_evidence_context", CONTEXT_MODULE_PATH)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+CONTEXT_MODULE = load_context_module()
+
+
+def ensure_context(evidence_dir: Path) -> tuple[Path, dict]:
+    path = evidence_dir / "critical-flow-context.json"
+    if path.exists():
+        return path, json.loads(path.read_text(encoding="utf-8"))
+    context = CONTEXT_MODULE.build_context(
+        aggregate_run_id="runner-test",
+        source={"head_sha": "a" * 40, "worktree_sha256": "sha256:" + "b" * 64},
+        stores={
+            "ref": {
+                "store_fingerprint": "sha256:" + "c" * 64,
+                "runtime_owner": "plugin",
+                "account_state_sha256": "sha256:" + "d" * 64,
+            },
+            "target": {
+                "store_fingerprint": "sha256:" + "e" * 64,
+                "runtime_owner": "native",
+                "account_state_sha256": "sha256:" + "f" * 64,
+            },
+        },
+        fixtures={
+            "ref": {"subscription_id": "1283"},
+            "target": {"subscription_id": "874"},
+        },
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(context, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return path, context
 
 
 def write_executable(path: Path, source: str) -> None:
@@ -26,9 +68,14 @@ def run_runner(
     *args: str,
     evidence_dir: Path,
     extra_env: dict[str, str] | None = None,
+    with_context: bool = True,
 ) -> subprocess.CompletedProcess[str]:
+    runner_args = [*args]
+    if with_context and "--layer" in args and args[args.index("--layer") + 1] != "deterministic":
+        context_path, _ = ensure_context(evidence_dir)
+        runner_args.extend(("--context-file", str(context_path)))
     return subprocess.run(
-        ["bash", str(RUNNER), *args],
+        ["bash", str(RUNNER), *runner_args],
         cwd=REPO,
         text=True,
         stdout=subprocess.PIPE,
@@ -46,27 +93,34 @@ def write_agent_result(
 ) -> Path:
     results_dir.mkdir(parents=True, exist_ok=True)
     path = results_dir / f"{flow}.json"
-    path.write_text(
-        json.dumps(
+    _, context = ensure_context(results_dir.parent)
+    evidence_dir = results_dir.parent / "artifacts" / flow
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+    store_results = []
+    for result_store in ("ref", "target"):
+        artifact = evidence_dir / f"{result_store}.png"
+        artifact.write_bytes(f"{flow}:{result_store}".encode("utf-8"))
+        store_results.append(
             {
-                "flow": flow,
-                "store_results": [
-                    {
-                        "store": store,
-                        "verdict": verdict,
-                        "end_state": "order paid",
-                        "ux_observations": ["expected controls were usable"],
-                        "visual_diffs": [],
-                        "evidence_paths": [f"evidence/{flow}/{store}.png"],
-                    }
-                ],
-                "parity_verdict": verdict,
-                "regression_note": "",
-            },
-            indent=2,
-            sort_keys=True,
+                "store": result_store,
+                "verdict": verdict,
+                "end_state": "order paid",
+                "ux_observations": ["expected controls were usable"],
+                "visual_diffs": [],
+                "evidence_paths": [str(artifact)],
+            }
         )
-        + "\n",
+    payload = CONTEXT_MODULE.stamp_generated_result(
+        {
+            "flow": flow,
+            "store_results": store_results,
+            "parity_verdict": verdict,
+            "regression_note": "",
+        },
+        context,
+    )
+    path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     return path
@@ -75,7 +129,12 @@ def write_agent_result(
 def write_agent_result_payload(results_dir: Path, flow: str, payload: dict) -> Path:
     results_dir.mkdir(parents=True, exist_ok=True)
     path = results_dir / f"{flow}.json"
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    _, context = ensure_context(results_dir.parent)
+    for store_result in payload.get("store_results", []):
+        if isinstance(store_result, dict):
+            store_result["evidence_paths"] = []
+    stamped = CONTEXT_MODULE.stamp_generated_result(payload, context)
+    path.write_text(json.dumps(stamped, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return path
 
 
@@ -505,6 +564,106 @@ exit 0
         ]
 
 
+def test_mc06_forwards_explicit_store_urls_to_rates_gate() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
+        evidence_dir = Path(tmp)
+        fake_gate = evidence_dir / "fake-mc-rates-gate.sh"
+        calls = evidence_dir / "mc-rates-gate-args.log"
+        ref_url = "http://reference.localhost:8082"
+        target_url = "http://target.localhost:8889"
+
+        write_executable(
+            fake_gate,
+            """#!/usr/bin/env bash
+printf '%s\\n' "$@" > "$FAKE_MC_RATES_GATE_CALLS"
+exit 0
+""",
+        )
+
+        result = run_runner(
+            "--store",
+            "target",
+            "--layer",
+            "deterministic",
+            "--flow",
+            "MC-06",
+            "--ref-url",
+            ref_url,
+            "--target-url",
+            target_url,
+            evidence_dir=evidence_dir,
+            extra_env={
+                "MC_RATES_GATE": str(fake_gate),
+                "REF_WP_COMMAND": "fake-ref-wp --flag",
+                "TARGET_WP_COMMAND": "fake-target-wp --flag",
+                "FAKE_MC_RATES_GATE_CALLS": str(calls),
+            },
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert calls.read_text(encoding="utf-8").splitlines() == [
+            "--ref",
+            "fake-ref-wp --flag",
+            "--target",
+            "fake-target-wp --flag",
+            "--ref-url",
+            ref_url,
+            "--target-url",
+            target_url,
+            "--currency-from",
+            "USD",
+            "--currencies-to",
+            "GBP,EUR",
+            "--out-dir",
+            str(evidence_dir / "MC-06-automatic-rates-refresh"),
+        ]
+
+
+def test_mc06_blocks_before_rates_gate_when_an_explicit_url_is_missing() -> None:
+    cases = (
+        (("--target-url", "http://target.localhost:8889"), "--ref-url"),
+        (("--ref-url", "http://reference.localhost:8082"), "--target-url"),
+    )
+
+    for provided_args, missing_flag in cases:
+        with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
+            evidence_dir = Path(tmp)
+            fake_gate = evidence_dir / "fake-mc-rates-gate.sh"
+            calls = evidence_dir / "mc-rates-gate-invoked"
+
+            write_executable(
+                fake_gate,
+                """#!/usr/bin/env bash
+touch "$FAKE_MC_RATES_GATE_CALLS"
+exit 0
+""",
+            )
+
+            result = run_runner(
+                "--store",
+                "target",
+                "--layer",
+                "deterministic",
+                "--flow",
+                "MC-06",
+                *provided_args,
+                evidence_dir=evidence_dir,
+                extra_env={
+                    "MC_RATES_GATE": str(fake_gate),
+                    "REF_WP_COMMAND": "fake-ref-wp",
+                    "TARGET_WP_COMMAND": "fake-target-wp",
+                    "REF_URL": "http://ambient-reference.invalid",
+                    "TARGET_URL": "http://ambient-target.invalid",
+                    "FAKE_MC_RATES_GATE_CALLS": str(calls),
+                },
+            )
+
+            assert result.returncode == 3, result.stdout + result.stderr
+            assert "BLOCKED" in result.stderr
+            assert missing_flag in result.stderr
+            assert not calls.exists()
+
+
 def test_full_layer_blocks_when_agent_specs_are_only_queued() -> None:
     with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
         evidence_dir = Path(tmp)
@@ -592,6 +751,135 @@ def test_agent_layer_accepts_completed_agent_result() -> None:
                 "evidence_path": str(result_path),
             }
         ]
+
+
+def test_agent_layer_preserves_target_only_pass_without_requeueing() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
+        evidence_dir = Path(tmp)
+        agent_results_dir = evidence_dir / "agent-results"
+        result_path = write_agent_result_payload(
+            agent_results_dir,
+            "SS-10-sepa-token-renewal-cutover",
+            {
+                "flow": "SS-10-sepa-token-renewal-cutover",
+                "oracle_mode": "target-only",
+                "store_results": [
+                    {
+                        "store": "ref",
+                        "verdict": "BLOCKED",
+                        "end_state": "not run - no WooPayments 10.8 reference equivalent",
+                        "ux_observations": [],
+                        "visual_diffs": [],
+                    },
+                    {
+                        "store": "target",
+                        "verdict": "PASS",
+                        "end_state": "SEPA token remained visible and renewed",
+                        "ux_observations": ["The saved token remained discoverable."],
+                        "visual_diffs": [],
+                    },
+                ],
+                "parity_verdict": "BLOCKED",
+                "regression_note": "Target-only continuity passed; parity is not comparable.",
+            },
+        )
+
+        result = run_runner(
+            "--store",
+            "both",
+            "--layer",
+            "agent",
+            "--flow",
+            "SS-10",
+            evidence_dir=evidence_dir,
+            extra_env={"AGENT_RESULTS_DIR": str(agent_results_dir)},
+        )
+
+        assert result.returncode == 3
+        assert "queued 0 agent-driven flow specs" in result.stdout
+
+        rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
+        assert rollup["summary"] == {
+            "passed": 1,
+            "failed": 0,
+            "blocked": 1,
+            "queued_agent_specs": 0,
+        }
+        assert rollup["results"] == [
+            {
+                "flow": "SS-10-sepa-token-renewal-cutover",
+                "layer": "agent",
+                "store": "ref",
+                "status": "BLOCKED",
+                "exit_code": 3,
+                "agent_verdict": "BLOCKED",
+                "evidence_path": str(result_path),
+            },
+            {
+                "flow": "SS-10-sepa-token-renewal-cutover",
+                "layer": "agent",
+                "store": "target",
+                "status": "PASS",
+                "exit_code": 0,
+                "agent_verdict": "PASS",
+                "evidence_path": str(result_path),
+            },
+        ]
+
+
+def test_agent_layer_requeues_invalid_target_only_contracts() -> None:
+    cases = {
+        "wrong oracle mode": ("comparable", "BLOCKED"),
+        "fabricated parity pass": ("target-only", "PASS"),
+    }
+
+    for case, (oracle_mode, parity_verdict) in cases.items():
+        with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
+            evidence_dir = Path(tmp)
+            agent_results_dir = evidence_dir / "agent-results"
+            write_agent_result_payload(
+                agent_results_dir,
+                "SS-10-sepa-token-renewal-cutover",
+                {
+                    "flow": "SS-10-sepa-token-renewal-cutover",
+                    "oracle_mode": oracle_mode,
+                    "store_results": [
+                        {
+                            "store": "ref",
+                            "verdict": "BLOCKED",
+                            "end_state": "not run - no reference equivalent",
+                            "ux_observations": [],
+                            "visual_diffs": [],
+                        },
+                        {
+                            "store": "target",
+                            "verdict": "PASS",
+                            "end_state": "SEPA continuity passed",
+                            "ux_observations": [],
+                            "visual_diffs": [],
+                        },
+                    ],
+                    "parity_verdict": parity_verdict,
+                    "regression_note": case,
+                },
+            )
+
+            result = run_runner(
+                "--store",
+                "target",
+                "--layer",
+                "agent",
+                "--flow",
+                "SS-10",
+                evidence_dir=evidence_dir,
+                extra_env={"AGENT_RESULTS_DIR": str(agent_results_dir)},
+            )
+
+            assert result.returncode == 3, case
+            assert "queued 1 agent-driven flow specs" in result.stdout, case
+            rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
+            assert rollup["summary"]["blocked"] == 1, case
+            assert rollup["summary"]["passed"] == 0, case
 
 
 def test_agent_layer_fails_on_functional_agent_result() -> None:
@@ -762,11 +1050,15 @@ def test_agent_layer_blocks_when_result_lacks_requested_store() -> None:
     with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
         evidence_dir = Path(tmp)
         agent_results_dir = evidence_dir / "agent-results"
-        write_agent_result(
+        write_agent_result_payload(
             agent_results_dir,
             "SC-14-lpm-wave-1-checkout",
-            "ref",
-            "PASS",
+            {
+                "flow": "SC-14-lpm-wave-1-checkout",
+                "store_results": [{"store": "ref", "verdict": "PASS", "evidence_paths": []}],
+                "parity_verdict": "PASS",
+                "regression_note": "missing target",
+            },
         )
 
         result = run_runner(
@@ -782,13 +1074,61 @@ def test_agent_layer_blocks_when_result_lacks_requested_store() -> None:
 
         assert result.returncode == 3
         assert "queued 1 agent-driven flow specs" in result.stdout
-        assert "missing agent result for target" in result.stdout
+        assert "evidence_store_set_mismatch" in result.stdout
 
         rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
         assert rollup["status"] == "blocked"
         assert rollup["summary"]["queued_agent_specs"] == 1
         assert rollup["summary"]["blocked"] == 1
         assert rollup["summary"]["failed"] == 0
+
+
+def test_agent_layer_blocks_result_when_context_is_not_supplied() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
+        evidence_dir = Path(tmp)
+        agent_results_dir = evidence_dir / "agent-results"
+        write_agent_result(agent_results_dir, "SC-14-lpm-wave-1-checkout", "target", "PASS")
+
+        result = run_runner(
+            "--store",
+            "target",
+            "--layer",
+            "agent",
+            "--flow",
+            "SC-14",
+            evidence_dir=evidence_dir,
+            extra_env={"AGENT_RESULTS_DIR": str(agent_results_dir)},
+            with_context=False,
+        )
+
+        assert result.returncode == 3
+        assert "evidence_context_missing" in result.stdout
+        assert "queued 1 agent-driven flow specs" in result.stdout
+
+
+def test_agent_layer_blocks_result_when_hashed_artifact_changes() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
+        evidence_dir = Path(tmp)
+        agent_results_dir = evidence_dir / "agent-results"
+        result_path = write_agent_result(agent_results_dir, "SC-14-lpm-wave-1-checkout", "target", "PASS")
+        payload = json.loads(result_path.read_text(encoding="utf-8"))
+        artifact_path = Path(payload["store_results"][0]["evidence"][0]["path"])
+        artifact_path.write_bytes(b"changed after synthesis")
+
+        result = run_runner(
+            "--store",
+            "target",
+            "--layer",
+            "agent",
+            "--flow",
+            "SC-14",
+            evidence_dir=evidence_dir,
+            extra_env={"AGENT_RESULTS_DIR": str(agent_results_dir)},
+        )
+
+        assert result.returncode == 3
+        assert "evidence_artifact_mismatch" in result.stdout
+        assert "queued 1 agent-driven flow specs" in result.stdout
 
 
 def run_log_clean_assertion(fake_wp_source: str) -> subprocess.CompletedProcess[str]:
@@ -960,9 +1300,18 @@ def test_log_clean_scan_ignores_known_wp67_textdomain_notice() -> None:
     assert "ignored_matches" in source
 
 
+def test_log_clean_scan_ignores_known_reference_wpcom_zoho_noise() -> None:
+    source = COMMON.read_text(encoding="utf-8")
+
+    assert "sopreda/archi/zoho/class-zoho-integration.php" in source
+    assert "ignored_matches" in source
+
+
 def main() -> None:
     test_card_checkout_flow_passes_with_clean_exercised_order()
     test_card_checkout_flow_blocks_when_exerciser_fails()
+    test_mc06_forwards_explicit_store_urls_to_rates_gate()
+    test_mc06_blocks_before_rates_gate_when_an_explicit_url_is_missing()
     test_agent_layer_queued_specs_are_blocked_until_executed()
     test_full_layer_blocks_when_agent_specs_are_only_queued()
     test_runner_creates_missing_evidence_directory()
@@ -974,8 +1323,11 @@ def main() -> None:
     test_log_clean_assertion_passes_when_scan_is_clean()
     test_log_clean_assertion_fails_when_php_errors_are_found()
     test_log_clean_assertion_blocks_when_scan_cannot_run()
+    test_log_clean_scan_ignores_known_reference_wpcom_zoho_noise()
     print("PASS test_card_checkout_flow_passes_with_clean_exercised_order")
     print("PASS test_card_checkout_flow_blocks_when_exerciser_fails")
+    print("PASS test_mc06_forwards_explicit_store_urls_to_rates_gate")
+    print("PASS test_mc06_blocks_before_rates_gate_when_an_explicit_url_is_missing")
     print("PASS test_agent_layer_queued_specs_are_blocked_until_executed")
     print("PASS test_full_layer_blocks_when_agent_specs_are_only_queued")
     print("PASS test_runner_creates_missing_evidence_directory")
@@ -987,6 +1339,7 @@ def main() -> None:
     print("PASS test_log_clean_assertion_passes_when_scan_is_clean")
     print("PASS test_log_clean_assertion_fails_when_php_errors_are_found")
     print("PASS test_log_clean_assertion_blocks_when_scan_cannot_run")
+    print("PASS test_log_clean_scan_ignores_known_reference_wpcom_zoho_noise")
 
 
 if __name__ == "__main__":

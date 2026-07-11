@@ -9,10 +9,12 @@ import os
 import pathlib
 import shlex
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from datetime import datetime, timezone
 from typing import Any
 
@@ -73,9 +75,41 @@ def parse_json_from_output(output: str) -> dict[str, Any]:
     return candidates[-1]
 
 
+def is_tcp_port_available(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind(("127.0.0.1", port))
+        except OSError:
+            return False
+    return True
+
+
+def resolve_port_pair(start_port: int, *, max_attempts: int = 50) -> int:
+    port = start_port
+    for _ in range(max_attempts):
+        if is_tcp_port_available(port) and is_tcp_port_available(port + 1):
+            return port
+        port += 2
+    raise GateError(f"Could not find a free wp-env port pair starting at {start_port}.")
+
+
+def make_docker_reference_safe_temp_dir(prefix: str, root: pathlib.Path) -> pathlib.Path:
+    for _ in range(50):
+        path = root / f"{prefix}{uuid.uuid4().hex[:12]}"
+        try:
+            path.mkdir(mode=0o700)
+            return path
+        except FileExistsError:
+            continue
+    raise GateError(f"Could not create a unique temp directory under {root}.")
+
+
 class MultisiteRuntimeGate:
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
+        if args.runtime_mode == "disposable":
+            self.args.port = resolve_port_pair(int(args.port))
         self.repo = pathlib.Path(args.repo).resolve()
         self.wcpay_repo = pathlib.Path(args.wcpay_repo).resolve()
         self.existing_wp_env_dir = pathlib.Path(args.existing_wp_env_dir).resolve() if args.existing_wp_env_dir else self.repo / "plugins/woocommerce"
@@ -442,7 +476,7 @@ class MultisiteRuntimeGate:
             return
 
         tmp_root = pathlib.Path(os.environ.get("TMPDIR") or tempfile.gettempdir()).resolve()
-        self.work_dir = pathlib.Path(tempfile.mkdtemp(prefix="a5g-wp-env-", dir=str(tmp_root)))
+        self.work_dir = make_docker_reference_safe_temp_dir("a5g-wp-env-", tmp_root)
         config = {
             "core": "https://wordpress.org/wordpress-latest.zip",
             "phpVersion": "8.1",

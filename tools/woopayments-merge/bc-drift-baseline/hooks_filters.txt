@@ -1,18 +1,16 @@
-includes/admin/class-wc-payments-admin.php: $variant = apply_filters( 'wcpay_review_prompt_experiment_variant', $experiment->get_variant() );
 includes/admin/class-wc-payments-admin.php: return apply_filters( 'wcpay_js_settings', $this->wcpay_js_settings );
 includes/admin/class-wc-payments-admin.php: return apply_filters( 'wcpay_plugins_page_js_settings', $plugins_page_settings );
 includes/admin/class-wc-rest-woopay-session-controller.php: return apply_filters( 'wcpay_woopay_is_signed_with_blog_token', Rest_Authentication::is_signed_with_blog_token() );
 includes/class-database-cache.php: return apply_filters( 'wcpay_database_cache_ttl', $ttl, $key, $cache_contents );
-includes/class-wc-payment-gateway-wcpay.php: $available_methods = apply_filters( 'wcpay_upe_available_payment_methods', $available_methods );
-includes/class-wc-payment-gateway-wcpay.php: $redirect_url = apply_filters( 'wcpay_get_add_payment_method_redirect_url', wc_get_endpoint_url( 'payment-methods' ) );
-includes/class-wc-payment-gateway-wcpay.php: $suffix = apply_filters( 'wcpay_payment_request_payment_method_title_suffix', 'WooPayments' );
+includes/class-wc-payment-gateway-wcpay.php: $suffix         = apply_filters( 'wcpay_payment_request_payment_method_title_suffix', 'WooPayments' );
+includes/class-wc-payment-gateway-wcpay.php: 'redirect' => apply_filters( 'wcpay_get_add_payment_method_redirect_url', wc_get_endpoint_url( 'payment-methods' ) ),
+includes/class-wc-payment-gateway-wcpay.php: <?php echo esc_html( apply_filters( 'wc_payments_save_to_account_text', __( 'Save payment information to my account for future purchases.', 'woocommerce-payments' ) ) ); ?>
 includes/class-wc-payment-gateway-wcpay.php: do_action( 'wc_payments_add_upe_payment_fields' );
 includes/class-wc-payment-gateway-wcpay.php: do_action( 'wc_payments_set_gateway', $this->get_selected_stripe_payment_type_id() );
 includes/class-wc-payment-gateway-wcpay.php: do_action( 'wcpay_update_payment_result_on_error', $e, $order );
 includes/class-wc-payment-gateway-wcpay.php: do_action( 'woocommerce_payments_changed_subscription_payment_method', $order, $payment_token );
 includes/class-wc-payment-gateway-wcpay.php: do_action( 'woocommerce_payments_order_failed', $order, $e );
 includes/class-wc-payment-gateway-wcpay.php: do_action( 'woocommerce_payments_save_user_in_woopay' );
-includes/class-wc-payment-gateway-wcpay.php: echo esc_html( apply_filters( 'wc_payments_save_to_account_text', __( 'Save payment information to my account for future purchases.', 'woocommerce-payments' ) ) );
 includes/class-wc-payment-gateway-wcpay.php: if ( WC()->session && ! apply_filters( 'wcpay_is_woopay_store_api_request', false ) ) {
 includes/class-wc-payment-gateway-wcpay.php: if ( apply_filters( 'wcpay_confirm_without_payment_intent', ! $payment_needed && ! $save_payment_method_to_store ) ) {
 includes/class-wc-payments-account.php: do_action( 'woocommerce_payments_account_refreshed', $account );
@@ -39,7 +37,7 @@ includes/class-wc-payments.php: $api_client_class = apply_filters( 'wc_payments_
 includes/class-wc-payments.php: $http_class = apply_filters( 'wc_payments_http', null );
 includes/class-wc-payments.php: $request = apply_filters( 'wcpay_create_request', null, $class_name, $id );
 includes/class-wc-payments.php: return apply_filters( 'wcpay_force_network_saved_cards', false );
-includes/class-woopay-tracker.php: $frontend_tracks = apply_filters( 'wcpay_frontend_tracks', [] );
+includes/class-woopay-tracker.php: $frontent_tracks = apply_filters( 'wcpay_frontend_tracks', [] );
 includes/class-woopay-tracker.php: $properties = apply_filters( 'wcpay_tracks_event_properties', $properties, $event_name );
 includes/class-woopay-tracker.php: if ( ! apply_filters( 'wcpay_shopper_tracking_enabled', 'no' !== get_option( 'woocommerce_allow_tracking', '' ) ) ) {
 includes/core/class-mode.php: $this->dev_mode = (bool) apply_filters( 'wcpay_dev_mode', $dev_mode );
@@ -59,9 +57,7 @@ includes/core/server/request/class-get-account.php: protected $hook = 'wcpay_get
 includes/core/server/request/class-get-charge.php: protected $hook = 'wcpay_get_charge_request';
 includes/core/server/request/class-get-intention.php: protected $hook = 'wcpay_get_intent_request';
 includes/core/server/request/class-get-pm-promotions.php: protected $hook = 'wcpay_get_pm_promotions_request';
-includes/core/server/request/class-get-reporting-balance-summary.php: protected $hook = 'wcpay_get_reporting_balance_summary_request';
 includes/core/server/request/class-get-setup-intention.php: protected $hook = 'wcpay_get_setup_intent_request';
-includes/core/server/request/class-get-transactions-summary.php: protected $hook = 'wcpay_get_transactions_summary_request';
 includes/core/server/request/class-list-authorizations.php: protected $hook = 'wcpay_list_authorizations_request';
 includes/core/server/request/class-list-charge-refunds.php: protected $hook = 'wcpay_list_charge_refunds_request';
 includes/core/server/request/class-list-deposits.php: protected $hook = 'wcpay_list_deposits_request';
@@ -81,14 +77,12 @@ includes/express-checkout/class-wc-payments-express-checkout-button-helper.php: 
 includes/express-checkout/class-wc-payments-express-checkout-button-helper.php: return apply_filters( 'wcpay_payment_request_product_data', $data, $product );
 includes/express-checkout/class-wc-payments-express-checkout-button-helper.php: return str_replace( "'", '', $statement_descriptor ) . apply_filters( 'wcpay_payment_request_total_label_suffix', ' (via WooCommerce)' );
 includes/multi-currency/AsyncPriceRenderer.php: $price_type = apply_filters( 'wcpay_multi_currency_async_price_type', 'product', $price, $args );
-includes/multi-currency/CachingEnvironment.php: return (bool) apply_filters( 'wcpay_multi_currency_page_caching_active', $is_active );
 includes/subscriptions/class-wc-payments-subscription-service.php: return apply_filters( 'wcpay_subscriptions_prepare_subscription_data', $data );
 includes/wc-payment-api/class-wc-payments-api-client.php: $headers        = apply_filters( 'wcpay_api_request_headers', $headers );
 includes/wc-payment-api/class-wc-payments-api-client.php: $params = apply_filters( 'wcpay_api_request_params', $params, $api, $method );
 includes/wc-payment-api/class-wc-payments-api-client.php: $response      = apply_filters( 'wcpay_api_request_response', $response, $method, $url, $api );
 includes/woopay/class-woopay-session.php: return apply_filters( 'wcpay_woopay_is_signed_with_blog_token', Rest_Authentication::is_signed_with_blog_token() );
-includes/woopay/class-woopay-utilities.php: $use_store_blog_token = apply_filters( 'wcpay_woopay_use_blog_token', false );
 includes/woopay/class-woopay-utilities.php: return apply_filters( 'wcpay_is_woopay_email_input_enabled', true );
-src/Internal/Abilities/AbilitiesRegistrar.php: if ( false === apply_filters( 'woocommerce_payments_abilities_enabled', false ) ) {
+includes/woopay/class-woopay-utilities.php: } elseif ( apply_filters( 'wcpay_woopay_use_blog_token', false ) ) {
 src/Internal/Service/Level3Service.php: $level3_data = apply_filters( 'wcpay_payment_request_level3_data', $level3_data, $order );
 src/Internal/Service/OrderService.php: return $this->hooks_proxy->apply_filters( 'wcpay_metadata_from_order', $metadata, $order, $payment_type );
