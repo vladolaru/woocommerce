@@ -61,7 +61,7 @@ class WooPaymentsHtmlUtils {
 				$last_mapped = true;
 			} else {
 				$string_queue[ count( $string_queue ) - 1 ] .= $matched;
-				$last_mapped = false;
+				$last_mapped                                 = false;
 			}
 		}
 
