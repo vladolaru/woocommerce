@@ -66,7 +66,7 @@ class WooPaymentsAddressProvider extends AbstractAutomatticAddressProvider imple
 	 */
 	public function __construct() {
 		$this->id   = 'woocommerce_payments';
-		$this->name = __( 'WooCommerce Payments', 'woocommerce' );
+		$this->name = 'WooCommerce Payments';
 	}
 
 	/**
@@ -116,6 +116,7 @@ class WooPaymentsAddressProvider extends AbstractAutomatticAddressProvider imple
 			return $providers;
 		}
 
+		$this->name = __( 'WooCommerce Payments', 'woocommerce' );
 		$this->initialize_provider_hooks();
 		$providers[] = $this;
 

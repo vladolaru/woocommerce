@@ -59,6 +59,37 @@ class WooPaymentsAddressProviderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should defer translating the provider name until the provider is added.
+	 */
+	public function test_defers_provider_name_translation_until_the_provider_is_added(): void {
+		$translation_calls  = 0;
+		$translation_filter = static function ( string $translation, string $text ) use ( &$translation_calls ): string {
+			if ( 'WooCommerce Payments' === $text ) {
+				++$translation_calls;
+				return 'Localized WooCommerce Payments';
+			}
+
+			return $translation;
+		};
+
+		add_filter( 'gettext_woocommerce', $translation_filter, 10, 2 );
+		try {
+			$provider = $this->create_provider( true, true, true, false, false );
+
+			$this->assertSame( 0, $translation_calls, 'Constructing eager DI services must not load translations before init.' );
+
+			$provider->register();
+			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test assertion for registered address-provider callbacks.
+			$providers = apply_filters( 'woocommerce_address_providers', array() );
+
+			$this->assertSame( 1, $translation_calls );
+			$this->assertSame( 'Localized WooCommerce Payments', $providers[0]->name );
+		} finally {
+			remove_filter( 'gettext_woocommerce', $translation_filter, 10 );
+		}
+	}
+
+	/**
 	 * @testdox Should not add the address provider when the gateway is disabled or the account is restricted.
 	 *
 	 * @dataProvider ineligible_account_provider
