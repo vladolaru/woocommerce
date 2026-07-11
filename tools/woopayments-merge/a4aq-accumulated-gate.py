@@ -31,6 +31,7 @@ from local_runner_safety import validate_local_wp_command as validate_shared_loc
 EXIT_FAIL = 1
 EXIT_USAGE = 2
 EXIT_INCOMPLETE = 3
+EXIT_CLEANUP = 70
 EXIT_TIMEOUT = 124
 SCHEMA = "woopayments_a4aq_accumulated_gate.v1"
 WP_EVAL_TIMEOUT_SECONDS = 180
@@ -88,6 +89,7 @@ class GateSignal(BaseException):
     def __init__(self, signum: int):
         super().__init__(f"received signal {signum}")
         self.signum = signum
+        self.cleanup_errors: list[str] = []
 
 
 def now() -> str:
@@ -142,6 +144,7 @@ class Gate:
         self.started_at = now()
         self.checks: list[dict[str, Any]] = []
         self.failures: list[str] = []
+        self.cleanup_failures: list[str] = []
         self.incomplete: list[str] = []
         self.limitations: list[str] = []
         self.log_baselines: dict[str, dict[str, Any]] = {}
@@ -166,6 +169,7 @@ class Gate:
             },
             "checks": self.checks,
             "failures": self.failures,
+            "cleanup_failures": self.cleanup_failures,
             "incomplete": self.incomplete,
             "limitations": self.limitations,
         }
@@ -667,6 +671,17 @@ class Gate:
         self.checks.append(entry)
         self.write_evidence()
 
+        signal_error: GateSignal | None = None
+
+        def record_cleanup_failure(reason: str) -> None:
+            entry["status"] = "fail"
+            entry["exit_code"] = EXIT_CLEANUP
+            entry.setdefault("failures", []).append(reason)
+            self.failures.append(reason)
+            self.cleanup_failures.append(reason)
+            if signal_error is not None:
+                signal_error.cleanup_errors.append(reason)
+
         try:
             for store, wp_cmd in (("target", self.target_wp),):
                 snapshot_result = self.snapshot_optional_admin_scenario(f"{store}-wp", wp_cmd)
@@ -759,8 +774,8 @@ class Gate:
                 entry["status"] = "pass"
                 self.validate_browser_evidence(check_id, evidence_path, entry)
                 self.validate_optional_admin_coverage(evidence_path, entry)
-        except GateSignal:
-            raise
+        except GateSignal as exc:
+            signal_error = exc
         except Exception as exc:
             entry["status"] = "incomplete" if entry["status"] != "fail" else entry["status"]
             reason = f"{check_id}: {exc}"
@@ -771,7 +786,28 @@ class Gate:
                 snapshot = snapshots.get(store)
                 if not snapshot:
                     continue
-                restore_result = self.restore_optional_admin_scenario(f"{store}-wp", wp_cmd, snapshot)
+                try:
+                    restore_result = self.restore_optional_admin_scenario(f"{store}-wp", wp_cmd, snapshot)
+                except GateSignal as exc:
+                    if signal_error is None:
+                        signal_error = exc
+                    summary["restores"][store] = {
+                        "exit_code": EXIT_CLEANUP,
+                        "stderr_tail": f"interrupted by signal {exc.signum}",
+                    }
+                    record_cleanup_failure(
+                        f"{check_id}: interrupted while restoring {store} account cache"
+                    )
+                    continue
+                except Exception as exc:
+                    summary["restores"][store] = {
+                        "exit_code": EXIT_CLEANUP,
+                        "stderr_tail": str(exc),
+                    }
+                    record_cleanup_failure(
+                        f"{check_id}: failed to restore {store} account cache: {exc}"
+                    )
+                    continue
                 payload = restore_result.get("payload")
                 summary["restores"][store] = redact_snapshot_payload(payload) if isinstance(payload, dict) else {
                     "exit_code": restore_result["exit_code"],
@@ -779,10 +815,8 @@ class Gate:
                     "stderr_tail": restore_result["stderr_tail"],
                 }
                 if restore_result["exit_code"] != 0:
-                    entry["status"] = "fail"
                     reason = f"{check_id}: failed to restore {store} account cache"
-                    entry.setdefault("failures", []).append(reason)
-                    self.failures.append(reason)
+                    record_cleanup_failure(reason)
                 else:
                     try:
                         self.validate_optional_admin_restore(
@@ -791,24 +825,40 @@ class Gate:
                             payload if isinstance(payload, dict) else {},
                         )
                     except RuntimeError as exc:
-                        entry["status"] = "fail"
                         reason = f"{check_id}: {exc}"
-                        entry.setdefault("failures", []).append(reason)
-                        self.failures.append(reason)
+                        record_cleanup_failure(reason)
 
-            state_reset_result = self.reset_browser_selection_state()
-            summary["selection_state_reset"] = state_reset_result
-            if state_reset_result["exit_code"] != 0:
-                entry["status"] = "fail"
+            try:
+                state_reset_result = self.reset_browser_selection_state()
+            except GateSignal as exc:
+                if signal_error is None:
+                    signal_error = exc
+                summary["selection_state_reset"] = {
+                    "exit_code": EXIT_CLEANUP,
+                    "stderr_tail": f"interrupted by signal {exc.signum}",
+                }
                 reason = f"{check_id}: failed to reset Playwriter selection state"
-                entry.setdefault("failures", []).append(reason)
-                self.failures.append(reason)
+                record_cleanup_failure(reason)
+            except Exception as exc:
+                summary["selection_state_reset"] = {
+                    "exit_code": EXIT_CLEANUP,
+                    "stderr_tail": str(exc),
+                }
+                reason = f"{check_id}: failed to reset Playwriter selection state: {exc}"
+                record_cleanup_failure(reason)
+            else:
+                summary["selection_state_reset"] = state_reset_result
+                if state_reset_result["exit_code"] != 0:
+                    reason = f"{check_id}: failed to reset Playwriter selection state"
+                    record_cleanup_failure(reason)
 
             entry["completed_at"] = now()
             if entry["status"] == "running":
                 entry["status"] = "pass"
-            self.write_evidence()
+            self.write_evidence("fail" if self.cleanup_failures else "running")
             self.progress(index, total, check_id, "end", status=entry["status"], exit_code=entry["exit_code"])
+            if signal_error is not None:
+                raise signal_error
 
     def run_all(self) -> int:
         checks = self.build_checks()
@@ -889,6 +939,21 @@ class Gate:
                 index += 1
                 self.progress(index, total, "admin-browser-optional-account", "start", evidence_path=str(self.admin_browser_evidence_path(f"{self.gate_slug}-optional-admin")))
                 self.run_optional_admin_browser_scenario(index, total)
+                if self.cleanup_failures:
+                    self.write_evidence("fail")
+                    print(
+                        json.dumps(
+                            {
+                                "evidence_path": str(self.evidence_path),
+                                "status": "fail",
+                                "failures": len(self.failures),
+                                "cleanup_failures": len(self.cleanup_failures),
+                                "incomplete": len(self.incomplete),
+                            },
+                            sort_keys=True,
+                        )
+                    )
+                    return EXIT_CLEANUP
 
         self.progress(total, total, "log-scan", "start")
         log_status = self.scan_logs()
@@ -896,7 +961,10 @@ class Gate:
 
         status = "pass"
         exit_code = 0
-        if self.failures:
+        if self.cleanup_failures:
+            status = "fail"
+            exit_code = EXIT_CLEANUP
+        elif self.failures:
             status = "fail"
             exit_code = EXIT_FAIL
         elif self.incomplete:
@@ -1509,6 +1577,12 @@ def main() -> int:
     try:
         return run_gate_main()
     except GateSignal as exc:
+        if exc.cleanup_errors:
+            print(
+                f"INTERRUPTED: {exc}; cleanup blockers: {'; '.join(exc.cleanup_errors)}",
+                file=sys.stderr,
+            )
+            return EXIT_CLEANUP
         print(f"INTERRUPTED: {exc}; armed cleanup completed before exit.", file=sys.stderr)
         return 128 + exc.signum
     finally:

@@ -644,7 +644,7 @@ def test_snapshot_restore_and_refresh_mismatches_fail_closed() -> None:
             run_gate(root, restore_mismatch_role="target")
         )
 
-        assert result.returncode == 3
+        assert result.returncode == 70
         assert_state(ref_state, ref_original)
         assert json.loads(target_state.read_text(encoding="utf-8")) != target_original
         evidence = json.loads(
@@ -657,11 +657,12 @@ def test_snapshot_restore_and_refresh_mismatches_fail_closed() -> None:
 
 
 def test_hup_int_and_term_restore_armed_state() -> None:
-    for handled_signal, expected_code, pause_marker in (
-        (signal.SIGHUP, 129, "woopayments_mc_state_build"),
-        (signal.SIGINT, 130, "woopayments_mc_state_build"),
-        (signal.SIGTERM, 143, "woopayments_mc_state_build"),
-        (signal.SIGTERM, 143, "woopayments_mc_state_restore"),
+    for handled_signal, expected_code, pause_marker, restore_mismatch in (
+        (signal.SIGHUP, 129, "woopayments_mc_state_build", False),
+        (signal.SIGINT, 130, "woopayments_mc_state_build", False),
+        (signal.SIGTERM, 143, "woopayments_mc_state_build", False),
+        (signal.SIGTERM, 143, "woopayments_mc_state_restore", False),
+        (signal.SIGTERM, 70, "woopayments_mc_state_restore", True),
     ):
         with tempfile.TemporaryDirectory(prefix="converted-currency-gate-signal-") as tmp:
             root = Path(tmp)
@@ -684,6 +685,7 @@ def test_hup_int_and_term_restore_armed_state() -> None:
                 role="target",
                 call_log=call_log,
                 state_path=target_state,
+                restore_mismatch=restore_mismatch,
                 pause_marker=pause_marker,
                 pause_ready=pause_ready,
             )
@@ -722,7 +724,10 @@ def test_hup_int_and_term_restore_armed_state() -> None:
 
             assert process.returncode == expected_code, (stdout, stderr)
             assert_state(ref_state, ref_original)
-            assert_state(target_state, target_original)
+            if restore_mismatch:
+                assert json.loads(target_state.read_text(encoding="utf-8")) != target_original
+            else:
+                assert_state(target_state, target_original)
             calls = read_calls(call_log)
             restore_roles = [
                 call["role"]
@@ -738,7 +743,7 @@ def test_hup_int_and_term_restore_armed_state() -> None:
             )
             assert evidence["trigger"] == "signal"
             assert evidence["option_restore"]["reference"]["verified"] is True
-            assert evidence["option_restore"]["target"]["verified"] is True
+            assert evidence["option_restore"]["target"]["verified"] is not restore_mismatch
 
 
 def main() -> None:

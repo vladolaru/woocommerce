@@ -52,6 +52,7 @@ FINALIZATION_RUNNING=0
 FINALIZATION_STATUS="pass"
 FINAL_RESULT_WRITTEN=0
 PENDING_SIGNAL_EXIT_CODE=0
+FINAL_EXIT_CODE=0
 
 usage() {
 	cat >&2 <<'USAGE'
@@ -411,6 +412,27 @@ finalize_harness_state() {
 	[ "$FINALIZATION_STATUS" = "pass" ]
 }
 
+resolve_finalization_outcome() {
+	local requested_exit_code="$1"
+	FINAL_EXIT_CODE="$requested_exit_code"
+
+	if [ "$PENDING_SIGNAL_EXIT_CODE" -ne 0 ]; then
+		GATE_STATUS="blocked"
+		GATE_MESSAGE="gate interrupted during option restoration"
+		GATE_TRIGGER="signal"
+		FINAL_EXIT_CODE="$PENDING_SIGNAL_EXIT_CODE"
+	fi
+	if [ "$FINALIZATION_STATUS" != "pass" ]; then
+		GATE_STATUS="blocked"
+		if [ "$PENDING_SIGNAL_EXIT_CODE" -ne 0 ]; then
+			GATE_MESSAGE="gate interrupted during option restoration; exact option restoration was not verified"
+		else
+			GATE_MESSAGE="$GATE_MESSAGE; exact option restoration was not verified"
+		fi
+		FINAL_EXIT_CODE=70
+	fi
+}
+
 handle_signal() {
 	local exit_code="$1"
 	if [ "$FINALIZATION_RUNNING" -eq 1 ]; then
@@ -425,33 +447,23 @@ handle_signal() {
 	trap '' HUP INT TERM
 	GATE_STATUS="blocked"
 	GATE_MESSAGE="gate interrupted; option restoration was attempted"
-	if ! finalize_harness_state signal; then
-		GATE_MESSAGE="$GATE_MESSAGE; exact option restoration was not verified"
-	fi
+	finalize_harness_state signal || true
+	resolve_finalization_outcome "$exit_code"
 	write_result_evidence >/dev/null 2>&1 || true
-	exit "$exit_code"
+	exit "$FINAL_EXIT_CODE"
 }
 
 handle_exit() {
 	local exit_code="$1"
 	trap - EXIT
 	if [ "$FINALIZATION_DONE" -ne 1 ]; then
-		if ! finalize_harness_state exit; then
-			GATE_STATUS="blocked"
-			GATE_MESSAGE="$GATE_MESSAGE; exact option restoration was not verified"
-			[ "$exit_code" -eq 0 ] && exit_code=3
-		fi
+		finalize_harness_state exit || true
 	fi
-	if [ "$PENDING_SIGNAL_EXIT_CODE" -ne 0 ]; then
-		GATE_STATUS="blocked"
-		GATE_MESSAGE="gate interrupted during option restoration"
-		GATE_TRIGGER="signal"
-		exit_code="$PENDING_SIGNAL_EXIT_CODE"
-	fi
+	resolve_finalization_outcome "$exit_code"
 	write_result_evidence >/dev/null 2>&1 || {
-		[ "$exit_code" -eq 0 ] && exit_code=3
+		[ "$FINAL_EXIT_CODE" -eq 0 ] && FINAL_EXIT_CODE=3
 	}
-	exit "$exit_code"
+	exit "$FINAL_EXIT_CODE"
 }
 
 # Traps are installed before either store can be mutated. Restore flags are armed
@@ -468,20 +480,12 @@ finish_gate() {
 
 	GATE_STATUS="$status"
 	GATE_MESSAGE="$message"
-	if ! finalize_harness_state normal; then
-		GATE_STATUS="blocked"
-		GATE_MESSAGE="$message; exact option restoration was not verified"
-		exit_code=3
-	fi
-	if [ "$PENDING_SIGNAL_EXIT_CODE" -ne 0 ]; then
-		GATE_STATUS="blocked"
-		GATE_MESSAGE="gate interrupted during option restoration"
-		GATE_TRIGGER="signal"
-		exit_code="$PENDING_SIGNAL_EXIT_CODE"
-	fi
+	finalize_harness_state normal || true
+	resolve_finalization_outcome "$exit_code"
 	if ! write_result_evidence; then
 		printf 'BLOCKED: converted-currency evidence could not be written.\n' >&2
-		exit 3
+		[ "$FINAL_EXIT_CODE" -ne 70 ] && FINAL_EXIT_CODE=3
+		exit "$FINAL_EXIT_CODE"
 	fi
 
 	case "$GATE_STATUS" in
@@ -493,7 +497,7 @@ finish_gate() {
 		blocked) printf 'BLOCKED: %s\n' "$GATE_MESSAGE" >&2 ;;
 		*) printf 'FAIL: %s\n' "$GATE_MESSAGE" >&2 ;;
 	esac
-	exit "$exit_code"
+	exit "$FINAL_EXIT_CODE"
 }
 
 assert_target_native_owner() {

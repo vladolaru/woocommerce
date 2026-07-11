@@ -6,6 +6,7 @@ from __future__ import annotations
 import importlib.util
 import hashlib
 import os
+import signal
 import subprocess
 import sys
 import tempfile
@@ -328,7 +329,17 @@ def test_cleanup_attempts_every_runtime_restore_after_one_failure():
 
         rehearsal.remove_mu_helper = remove
         rehearsal.deactivate_plugin = deactivate
-        rehearsal.cleanup_runtime_state()
+        rehearsal.run_state_probe = lambda phase_id: {
+            "runtime_owner": "native",
+            "native_runtime_enabled": True,
+            "plugin_runtime_active": False,
+            "should_native_register": True,
+            "soft_notice": False,
+            "ready": True,
+            "preflight_failures": [],
+            "failures": [],
+        }
+        cleanup_ok = rehearsal.cleanup_runtime_state()
 
     assert calls == [
         ("remove", module.BLOCKER_HELPER_FILE),
@@ -336,6 +347,128 @@ def test_cleanup_attempts_every_runtime_restore_after_one_failure():
         ("deactivate", True),
     ]
     assert any(failure["phase"] == "cleanup-synthetic-preflight-blocker" for failure in rehearsal.failures)
+    assert cleanup_ok is False
+
+
+def test_cleanup_fails_when_plugin_deactivation_or_owner_verification_fails():
+    module = load_module()
+    with tempfile.TemporaryDirectory(prefix="a5f-rehearsal-test-") as out_dir:
+        rehearsal = module.Rehearsal(make_args(out_dir))
+        rehearsal.plugin_restore_required = True
+        rehearsal.remove_mu_helper = lambda phase_id, helper_name: None
+        rehearsal.deactivate_plugin = lambda phase_id, allow_failure=False: {
+            "status": "fail",
+            "exit_code": 1,
+        }
+        rehearsal.run_state_probe = lambda phase_id: {
+            "runtime_owner": "plugin",
+            "plugin_runtime_active": True,
+            "should_native_register": False,
+            "soft_notice": True,
+            "ready": False,
+            "preflight_failures": [],
+            "failures": [],
+        }
+
+        cleanup_ok = rehearsal.cleanup_runtime_state()
+
+    assert cleanup_ok is False
+    assert any(
+        failure["phase"] == "cleanup-restore-native-ownership"
+        for failure in rehearsal.failures
+    )
+    assert any(
+        failure["phase"] == "cleanup-verify-native-ownership"
+        for failure in rehearsal.failures
+    )
+
+
+def test_cleanup_defers_signal_during_failure_recording_and_finishes_all_actions():
+    module = load_module()
+    with tempfile.TemporaryDirectory(prefix="a5f-rehearsal-test-") as out_dir:
+        rehearsal = module.Rehearsal(make_args(out_dir))
+        rehearsal.plugin_restore_required = True
+        calls = []
+
+        def remove(phase_id, helper_name):
+            calls.append(("remove", helper_name))
+            if helper_name == module.BLOCKER_HELPER_FILE:
+                raise module.HarnessError("forced helper cleanup failure")
+
+        original_record_failure = rehearsal.record_failure
+
+        def record_failure(phase, message):
+            original_record_failure(phase, message)
+            if phase == "cleanup-synthetic-preflight-blocker":
+                assert rehearsal.defer_cleanup_signal(signal.SIGTERM) is True
+
+        rehearsal.remove_mu_helper = remove
+        rehearsal.record_failure = record_failure
+        rehearsal.deactivate_plugin = lambda phase_id, allow_failure=False: calls.append(
+            ("deactivate", allow_failure)
+        ) or {"status": "pass", "exit_code": 0}
+        rehearsal.run_state_probe = lambda phase_id: calls.append(("probe", phase_id)) or {
+            "runtime_owner": "native",
+            "native_runtime_enabled": True,
+            "plugin_runtime_active": False,
+            "should_native_register": True,
+            "soft_notice": False,
+            "ready": True,
+            "preflight_failures": [],
+            "failures": [],
+        }
+
+        cleanup_ok = rehearsal.cleanup_runtime_state()
+
+    assert cleanup_ok is False
+    assert calls == [
+        ("remove", module.BLOCKER_HELPER_FILE),
+        ("remove", module.MANDATORY_HELPER_FILE),
+        ("deactivate", True),
+        ("probe", "cleanup-verify-native-ownership"),
+    ]
+    assert rehearsal.cleanup_failed is True
+    assert any(failure["phase"] == "cleanup-signal" for failure in rehearsal.failures)
+
+
+def test_main_maps_cleanup_failure_to_safety_exit(monkeypatch, tmp_path: Path):
+    module = load_module()
+
+    def fail_cleanup(self):
+        raise module.HarnessCleanupError("runtime restoration was not verified")
+
+    monkeypatch.setattr(module.Rehearsal, "run", fail_cleanup)
+
+    result = module.main(
+        [
+            "--target-wp",
+            "docker exec -i target-cli-1 wp --allow-root --user=1",
+            "--out-dir",
+            str(tmp_path),
+            "--skip-wpcom-readiness",
+        ]
+    )
+
+    assert result == 70
+
+
+def test_run_escalates_unverified_runtime_restoration(tmp_path: Path):
+    module = load_module()
+    rehearsal = module.Rehearsal(make_args(str(tmp_path)))
+    cleanup_calls = []
+
+    def fail_initial_phase():
+        raise module.HarnessError("initial phase failed")
+
+    rehearsal.mark_debug_log = fail_initial_phase
+    rehearsal.cleanup_runtime_state = lambda: cleanup_calls.append(True) or False
+
+    with pytest.raises(module.HarnessCleanupError) as exc_info:
+        rehearsal.run()
+
+    assert cleanup_calls == [True]
+    assert isinstance(exc_info.value.__cause__, module.HarnessError)
+    assert str(exc_info.value.__cause__) == "initial phase failed"
 
 
 def test_main_installs_signal_handlers_for_cleanup(monkeypatch, tmp_path: Path):

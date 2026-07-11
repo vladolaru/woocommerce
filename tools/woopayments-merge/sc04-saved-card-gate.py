@@ -21,6 +21,7 @@ from urllib.parse import urlsplit, urlunsplit
 SELF_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SELF_DIR.parents[1]
 CRITICAL_FLOWS_DIR = REPO_ROOT / "tools" / "woopayments-critical-flows"
+EXIT_CLEANUP = 70
 sys.path.insert(0, str(CRITICAL_FLOWS_DIR))
 
 from evidence_context import (  # noqa: E402
@@ -295,6 +296,16 @@ class GateBlocked(RuntimeError):
 
 class GateFailure(RuntimeError):
     """The exercised browser or state behavior failed."""
+
+
+class GateCleanupError(RuntimeError):
+    """The gate could not verify exact restoration of harness-owned state."""
+
+    def __init__(self, cleanup_errors: list[str], primary_error: BaseException | None = None):
+        self.cleanup_errors = cleanup_errors
+        self.primary_error = primary_error
+        primary_detail = f"primary error: {primary_error}; " if primary_error is not None else ""
+        super().__init__(f"{primary_detail}cleanup blockers: {'; '.join(cleanup_errors)}")
 
 
 class GateSignal(BaseException):
@@ -604,6 +615,12 @@ def run_store(
             )
             if token_cleanup.get("success") is not True:
                 cleanup_errors.append(f"could not restore {role} saved-card token baseline")
+        except GateSignal as exc:
+            if not isinstance(primary_error, GateSignal):
+                primary_error = exc
+            cleanup_errors.append(
+                f"token cleanup for {role} was interrupted by signal {exc.signum}"
+            )
         except Exception as exc:
             cleanup_errors.append(f"could not restore {role} saved-card token baseline: {exc}")
 
@@ -617,19 +634,20 @@ def run_store(
             )
             if session_cleanup.get("success") is not True:
                 cleanup_errors.append(f"could not destroy {role} short-lived customer auth session")
+        except GateSignal as exc:
+            if not isinstance(primary_error, GateSignal):
+                primary_error = exc
+            cleanup_errors.append(
+                f"session cleanup for {role} was interrupted by signal {exc.signum}"
+            )
         except Exception as exc:
             cleanup_errors.append(f"could not destroy {role} short-lived customer auth session: {exc}")
 
         if cleanup_errors:
-            cleanup_detail = "; ".join(cleanup_errors)
             if isinstance(primary_error, GateSignal):
                 primary_error.cleanup_errors.extend(cleanup_errors)
-            elif isinstance(primary_error, GateFailure):
-                primary_error = GateFailure(f"{primary_error}; cleanup blockers: {cleanup_detail}")
-            elif primary_error is not None:
-                primary_error = GateBlocked(f"{primary_error}; cleanup blockers: {cleanup_detail}")
             else:
-                primary_error = GateBlocked(cleanup_detail)
+                primary_error = GateCleanupError(cleanup_errors, primary_error)
 
     if primary_error is not None:
         raise primary_error
@@ -716,6 +734,7 @@ def run_gate_main() -> int:
     results = []
     failures = []
     blockers = []
+    cleanup_failures = []
     for role, wp, url, subscription_id in (
         ("ref", args.ref_wp, ref_url, args.ref_subscription_id),
         ("target", args.target_wp, target_url, args.target_subscription_id),
@@ -737,20 +756,45 @@ def run_gate_main() -> int:
         except GateFailure as exc:
             failures.append(f"{role}: {exc}")
             results.append({"store": role, "status": "fail", "errors": [str(exc)]})
+        except GateCleanupError as exc:
+            role_cleanup_failures = [f"{role}: {error}" for error in exc.cleanup_errors]
+            role_primary_error = f"{role}: {exc.primary_error}" if exc.primary_error is not None else ""
+            if isinstance(exc.primary_error, GateFailure):
+                failures.append(role_primary_error)
+            elif exc.primary_error is not None:
+                blockers.append(role_primary_error)
+            cleanup_failures.extend(role_cleanup_failures)
+            results.append(
+                {
+                    "store": role,
+                    "status": "fail",
+                    "errors": [*([role_primary_error] if role_primary_error else []), *role_cleanup_failures],
+                }
+            )
+            break
         except (GateBlocked, EvidenceContextError, OSError, subprocess.SubprocessError) as exc:
             blockers.append(f"{role}: {exc}")
             results.append({"store": role, "status": "blocked", "errors": [str(exc)]})
 
     rollup = {
         "schema": "woopayments_sc04_saved_card_gate.v1",
-        "status": "fail" if failures else "blocked" if blockers else "pass",
+        "status": "fail" if failures or cleanup_failures else "blocked" if blockers else "pass",
         "context_binding": context_binding(context),
         "results": results,
-        "errors": [*failures, *blockers],
+        "errors": [*failures, *blockers, *cleanup_failures],
         "failures": failures,
         "blockers": blockers,
+        "cleanup_failures": cleanup_failures,
     }
     write_json(out_dir / "sc04-saved-card-gate.json", rollup)
+    if cleanup_failures:
+        for error in failures:
+            print(f"FAIL: {error}", file=sys.stderr)
+        for error in blockers:
+            print(f"BLOCKED: {error}", file=sys.stderr)
+        for error in cleanup_failures:
+            print(f"CLEANUP FAILED: {error}", file=sys.stderr)
+        return EXIT_CLEANUP
     if failures:
         for error in failures:
             print(f"FAIL: {error}", file=sys.stderr)
@@ -777,12 +821,16 @@ def main() -> int:
 
     try:
         return run_gate_main()
+    except GateCleanupError as exc:
+        print(f"CLEANUP FAILED: {exc}", file=sys.stderr)
+        return EXIT_CLEANUP
     except GateSignal as exc:
         if exc.cleanup_errors:
             print(
                 f"INTERRUPTED: {exc}; cleanup blockers: {'; '.join(exc.cleanup_errors)}",
                 file=sys.stderr,
             )
+            return EXIT_CLEANUP
         else:
             print(f"INTERRUPTED: {exc}; armed cleanup completed before exit.", file=sys.stderr)
         return 128 + exc.signum

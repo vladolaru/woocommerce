@@ -424,7 +424,9 @@ def test_optional_admin_snapshot_is_armed_before_apply(module):
     assert snapshot_call in scenario
     assert apply_call in scenario
     assert scenario.index(snapshot_call) < scenario.index(apply_call)
-    assert "except GateSignal:\n            raise" in scenario
+    assert "except GateSignal as exc:" in scenario
+    assert "signal_error = exc" in scenario
+    assert "if signal_error is not None:\n                raise signal_error" in scenario
 
 
 def test_main_installs_and_restores_cleanup_signal_handlers(module, monkeypatch):
@@ -462,6 +464,136 @@ def test_main_installs_and_restores_cleanup_signal_handlers(module, monkeypatch)
         f"old-{signal.SIGHUP}",
         f"old-{signal.SIGINT}",
         f"old-{signal.SIGTERM}",
+    ]
+
+
+def test_main_maps_signal_cleanup_failure_to_safety_exit(module, monkeypatch):
+    def raise_signal_with_cleanup_failure():
+        error = module.GateSignal(signal.SIGTERM)
+        error.cleanup_errors.append("failed to restore target account cache")
+        raise error
+
+    monkeypatch.setattr(module, "run_gate_main", raise_signal_with_cleanup_failure)
+    monkeypatch.setattr(module.signal, "getsignal", lambda signum: f"old-{signum}")
+    monkeypatch.setattr(module.signal, "signal", lambda signum, handler: None)
+
+    assert module.main() == 70
+
+
+def test_recorded_cleanup_failure_takes_precedence_over_gate_failure(module):
+    gate = make_gate(module)
+    gate.build_checks = lambda: []
+    gate.scan_logs = lambda: "pass"
+    gate.failures.append("ordinary gate failure")
+    gate.cleanup_failures = ["failed to restore target account cache"]
+
+    assert gate.run_all() == 70
+
+
+def test_cleanup_failure_stops_before_later_internal_checks(module):
+    gate = make_gate(module)
+    gate.args.skip_perf_fixtures = False
+    started = []
+    gate.build_checks = lambda: [
+        ("admin-browser", "admin", ["admin"], None, None),
+        ("checkout-browser", "checkout", ["checkout"], None, None),
+        ("perf-reference", "perf", ["perf"], None, None),
+    ]
+
+    def run_check(check_id, category, command, env):
+        started.append(check_id)
+        return {
+            "id": check_id,
+            "status": "pass",
+            "exit_code": 0,
+            "failures": [],
+            "incomplete_reasons": [],
+        }
+
+    def fail_cleanup(index, total):
+        reason = "admin-browser-optional-account: failed to restore target account cache"
+        gate.failures.append(reason)
+        gate.cleanup_failures.append(reason)
+
+    gate.run = run_check
+    gate.run_optional_admin_browser_scenario = fail_cleanup
+    gate.set_checkout_browser_route_state = lambda: {"exit_code": 0, "routes": {}}
+    gate.create_perf_fixtures = lambda index, total: started.append("perf-fixtures")
+    gate.scan_logs = lambda: started.append("log-scan") or "pass"
+
+    assert gate.run_all() == 70
+    assert started == ["admin-browser"]
+
+
+def test_optional_admin_signal_carries_restore_failure(module, monkeypatch):
+    gate = make_gate(module)
+    gate.browser_runner = "playwright"
+    gate.snapshot_optional_admin_scenario = lambda label, wp: {
+        "payload": {"snapshot": "exact-snapshot"}
+    }
+    gate.apply_optional_admin_scenario = lambda label, wp, snapshot: {
+        "payload": {"before": {}}
+    }
+    gate.restore_optional_admin_scenario = lambda label, wp, snapshot: {
+        "exit_code": 1,
+        "payload": None,
+        "stdout_tail": "",
+        "stderr_tail": "forced restore failure",
+    }
+    gate.reset_browser_selection_state = lambda: {
+        "exit_code": 0,
+        "stdout_tail": "",
+        "stderr_tail": "",
+    }
+    gate.browser_command = lambda script, timeout: ["fake-browser"]
+    gate.browser_state_env = lambda state, **kwargs: {}
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *args, **kwargs: (_ for _ in ()).throw(module.GateSignal(signal.SIGTERM)),
+    )
+
+    with pytest.raises(module.GateSignal) as exc_info:
+        gate.run_optional_admin_browser_scenario(1, 1)
+
+    assert exc_info.value.cleanup_errors == [
+        "admin-browser-optional-account: failed to restore target account cache"
+    ]
+    assert gate.cleanup_failures == exc_info.value.cleanup_errors
+
+
+def test_signal_during_optional_admin_restore_still_resets_state(module, monkeypatch):
+    gate = make_gate(module)
+    gate.browser_runner = "playwright"
+    reset_calls = []
+    gate.snapshot_optional_admin_scenario = lambda label, wp: {
+        "payload": {"snapshot": "exact-snapshot"}
+    }
+    gate.apply_optional_admin_scenario = lambda label, wp, snapshot: {
+        "payload": {"before": {}}
+    }
+    gate.restore_optional_admin_scenario = lambda label, wp, snapshot: (
+        (_ for _ in ()).throw(module.GateSignal(signal.SIGTERM))
+    )
+    gate.reset_browser_selection_state = lambda: reset_calls.append(True) or {
+        "exit_code": 0,
+        "stdout_tail": "",
+        "stderr_tail": "",
+    }
+    gate.browser_command = lambda script, timeout: ["fake-browser"]
+    gate.browser_state_env = lambda state, **kwargs: {}
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 1, "", "browser failed"),
+    )
+
+    with pytest.raises(module.GateSignal) as exc_info:
+        gate.run_optional_admin_browser_scenario(1, 1)
+
+    assert reset_calls == [True]
+    assert exc_info.value.cleanup_errors == [
+        "admin-browser-optional-account: interrupted while restoring target account cache"
     ]
 
 

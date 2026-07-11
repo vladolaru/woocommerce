@@ -657,10 +657,13 @@ def test_session_cleanup_failure_makes_gate_non_passing() -> None:
             },
         )
 
-        assert result.returncode == 3
+        assert result.returncode == 70
         assert "could not destroy" in result.stderr
         rollup = json.loads((out_dir / "sc04-saved-card-gate.json").read_text(encoding="utf-8"))
-        assert rollup["status"] == "blocked"
+        assert rollup["status"] == "fail"
+        assert rollup["cleanup_failures"] == [
+            "ref: could not destroy ref short-lived customer auth session"
+        ]
 
 
 def test_signal_during_browser_flow_still_restores_tokens_and_session(
@@ -729,6 +732,140 @@ def test_signal_during_browser_flow_still_restores_tokens_and_session(
     assert not issubclass(GATE_MODULE.GateSignal, Exception)
 
 
+def test_signal_during_token_cleanup_still_attempts_session_cleanup(
+    monkeypatch, tmp_path: Path
+) -> None:
+    cleanup_calls: list[str] = []
+
+    def fake_wp_eval(_wp, _role, code, *_args):
+        if code == GATE_MODULE.FIXTURE_PROBE_PHP:
+            return {
+                "success": True,
+                "subscription_id": 1283,
+                "customer_id": 17,
+                "normal_token_id": 37,
+                "existing_sca_token_id": 0,
+                "baseline_token_ids": [37],
+                "product_id": 688,
+                "classic_url": "http://localhost/classic/",
+                "blocks_url": "http://localhost/blocks/",
+                "errors": [],
+            }
+        if code == GATE_MODULE.AUTH_SESSION_CREATE_PHP:
+            return {
+                "success": True,
+                "auth_cookie": {"name": "wordpress_logged_in_test", "value": "secret"},
+            }
+        if code == GATE_MODULE.TOKEN_CLEANUP_PHP:
+            cleanup_calls.append("tokens")
+            raise GATE_MODULE.GateSignal(signal.SIGTERM)
+        if code == GATE_MODULE.SESSION_DESTROY_PHP:
+            cleanup_calls.append("session")
+            return {"success": True}
+        raise AssertionError("unexpected WP probe")
+
+    monkeypatch.setattr(GATE_MODULE, "run_wp_eval", fake_wp_eval)
+    monkeypatch.setattr(
+        GATE_MODULE,
+        "run_browser",
+        lambda **_kwargs: (_ for _ in ()).throw(GATE_MODULE.GateFailure("browser failed")),
+    )
+
+    try:
+        GATE_MODULE.run_store(
+            repo=REPO,
+            context={
+                "aggregate_run_id": "cleanup-signal-test",
+                "context_sha256": "sha256:test",
+                "fixtures": {"ref": {"subscription_id": "1283"}},
+            },
+            role="ref",
+            wp=REF_WP,
+            base_url="http://localhost:8082",
+            subscription_id="1283",
+            out_dir=tmp_path,
+            browser_runner=tmp_path / "runner",
+            browser_driver=tmp_path / "driver",
+        )
+    except GATE_MODULE.GateSignal as exc:
+        signal_error = exc
+    else:
+        raise AssertionError("the cleanup signal must abort the store flow")
+
+    assert cleanup_calls == ["tokens", "session"]
+    assert signal_error.cleanup_errors == [
+        "token cleanup for ref was interrupted by signal 15"
+    ]
+
+
+def test_cleanup_error_preserves_primary_gate_failure() -> None:
+    primary_error = GATE_MODULE.GateFailure("browser failed")
+    cleanup_error = GATE_MODULE.GateCleanupError(
+        ["could not restore ref saved-card token baseline"],
+        primary_error,
+    )
+
+    assert cleanup_error.primary_error is primary_error
+    assert str(primary_error) in str(cleanup_error)
+    assert cleanup_error.cleanup_errors == [
+        "could not restore ref saved-card token baseline"
+    ]
+
+
+def test_primary_failure_remains_visible_when_cleanup_also_fails() -> None:
+    with tempfile.TemporaryDirectory(prefix="sc04-saved-card-gate-") as tmp:
+        tmp_path = Path(tmp)
+        fake_bin = tmp_path / "bin"
+        fake_bin.mkdir()
+        context_path = tmp_path / "context.json"
+        write_context(context_path)
+        make_fake_docker(fake_bin / "docker")
+        fake_browser = tmp_path / "fake-browser-runner"
+        make_fake_browser_runner(fake_browser)
+        out_dir = tmp_path / "evidence"
+
+        result = run_gate(
+            "--repo",
+            str(REPO),
+            "--context-file",
+            str(context_path),
+            "--ref-wp",
+            REF_WP,
+            "--target-wp",
+            TARGET_WP,
+            "--ref-url",
+            "http://localhost:8082",
+            "--target-url",
+            "http://store8889.localhost:8889",
+            "--ref-subscription-id",
+            "1283",
+            "--target-subscription-id",
+            "874",
+            "--out-dir",
+            str(out_dir),
+            env={
+                **os.environ,
+                "PATH": str(fake_bin) + os.pathsep + os.environ.get("PATH", ""),
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_browser),
+                "SC04_WP_LOG": str(tmp_path / "wp.log"),
+                "SC04_BROWSER_LOG": str(tmp_path / "browser.log"),
+                "SC04_FAKE_NESTED_ORDER_FAILURE": "1",
+                "SC04_FAKE_TOKEN_CLEANUP_FAILURE": "1",
+            },
+        )
+
+        assert result.returncode == 70
+        assert "FAIL: ref: ref SC-04 order/token state assertions failed" in result.stderr
+        assert "CLEANUP FAILED: ref: could not restore ref saved-card token baseline" in result.stderr
+        rollup = json.loads((out_dir / "sc04-saved-card-gate.json").read_text(encoding="utf-8"))
+        assert rollup["failures"] == [
+            "ref: ref SC-04 order/token state assertions failed: ['classic order state: order is unavailable']"
+        ]
+        assert rollup["cleanup_failures"] == [
+            "ref: could not restore ref saved-card token baseline"
+        ]
+
+
 def test_main_installs_and_restores_cleanup_signal_handlers(monkeypatch) -> None:
     registrations = []
     monkeypatch.setattr(GATE_MODULE, "run_gate_main", lambda: 0)
@@ -751,6 +888,19 @@ def test_main_installs_and_restores_cleanup_signal_handlers(monkeypatch) -> None
         f"old-{signal.SIGINT}",
         f"old-{signal.SIGTERM}",
     ]
+
+
+def test_main_maps_signal_cleanup_failure_to_safety_exit(monkeypatch) -> None:
+    def raise_signal_with_cleanup_failure():
+        error = GATE_MODULE.GateSignal(signal.SIGTERM)
+        error.cleanup_errors.append("could not restore ref saved-card token baseline")
+        raise error
+
+    monkeypatch.setattr(GATE_MODULE, "run_gate_main", raise_signal_with_cleanup_failure)
+    monkeypatch.setattr(GATE_MODULE.signal, "getsignal", lambda signum: f"old-{signum}")
+    monkeypatch.setattr(GATE_MODULE.signal, "signal", lambda signum, handler: None)
+
+    assert GATE_MODULE.main() == 70
 
 
 if __name__ == "__main__":

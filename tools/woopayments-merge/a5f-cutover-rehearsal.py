@@ -54,6 +54,10 @@ class HarnessError(RuntimeError):
     """Raised for fail-closed harness errors."""
 
 
+class HarnessCleanupError(HarnessError):
+    """Raised when the harness cannot verify exact runtime restoration."""
+
+
 class HarnessSignal(HarnessError):
     """Raised when a process signal requests bounded harness cleanup."""
 
@@ -345,6 +349,9 @@ class Rehearsal:
         self.pending_mu_helpers: dict[str, dict[str, Any]] = {}
         self.owned_mu_helpers: dict[str, dict[str, Any]] = {}
         self.plugin_restore_required = False
+        self.cleanup_in_progress = False
+        self.cleanup_failed = False
+        self.cleanup_signals: list[int] = []
         self.debug_log_marker: dict[str, Any] | None = None
         self.log_window = {"started_at": utc_now(), "debug_log": DEBUG_LOG_PATH}
         self.status = "running"
@@ -365,6 +372,11 @@ class Rehearsal:
             "browser_evidence_paths": self.browser_evidence_paths,
             "evidence_scope": EVIDENCE_SCOPE,
             "log_window": self.log_window,
+            "cleanup": {
+                "in_progress": self.cleanup_in_progress,
+                "failed": self.cleanup_failed,
+                "deferred_signals": self.cleanup_signals,
+            },
             "failures": self.failures,
             "pass": self.status == "pass" and not self.failures and all(result.get("status") == "pass" for result in self.phase_results),
         }
@@ -528,30 +540,92 @@ class Rehearsal:
         self.owned_mu_helpers.pop(helper_name, None)
         self.pending_mu_helpers.pop(helper_name, None)
 
-    def cleanup_runtime_state(self) -> None:
-        cleanup_actions = (
-            (
-                "cleanup-synthetic-preflight-blocker",
-                lambda: self.remove_mu_helper("cleanup-synthetic-preflight-blocker", BLOCKER_HELPER_FILE),
-            ),
-            (
-                "cleanup-mandatory-helper",
-                lambda: self.remove_mu_helper("cleanup-mandatory-helper", MANDATORY_HELPER_FILE),
-            ),
-            (
-                "cleanup-restore-native-ownership",
-                lambda: (
-                    self.deactivate_plugin("cleanup-restore-native-ownership", allow_failure=True)
-                    if self.plugin_restore_required
-                    else None
+    def defer_cleanup_signal(self, signum: int) -> bool:
+        if not self.cleanup_in_progress and not self.cleanup_failed:
+            return False
+        self.cleanup_signals.append(signum)
+        self.cleanup_failed = True
+        return True
+
+    def begin_cleanup(self) -> None:
+        if self.cleanup_in_progress:
+            return
+        self.cleanup_in_progress = True
+        self.cleanup_failed = False
+        self.cleanup_signals = []
+
+    def cleanup_runtime_state(self) -> bool:
+        self.begin_cleanup()
+        cleanup_succeeded = not self.cleanup_failed
+
+        def deactivate_plugin_for_cleanup() -> None:
+            if not self.plugin_restore_required:
+                return
+            result = self.deactivate_plugin("cleanup-restore-native-ownership", allow_failure=True)
+            if result.get("status") != "pass":
+                raise HarnessError(
+                    "WooPayments plugin deactivation failed with "
+                    f"exit {result.get('exit_code')}"
+                )
+
+        try:
+            cleanup_actions = (
+                (
+                    "cleanup-synthetic-preflight-blocker",
+                    lambda: self.remove_mu_helper("cleanup-synthetic-preflight-blocker", BLOCKER_HELPER_FILE),
                 ),
-            ),
-        )
-        for phase_id, action in cleanup_actions:
+                (
+                    "cleanup-mandatory-helper",
+                    lambda: self.remove_mu_helper("cleanup-mandatory-helper", MANDATORY_HELPER_FILE),
+                ),
+                (
+                    "cleanup-restore-native-ownership",
+                    deactivate_plugin_for_cleanup,
+                ),
+            )
+            for phase_id, action in cleanup_actions:
+                try:
+                    action()
+                except Exception as cleanup_exc:
+                    cleanup_succeeded = False
+                    self.record_failure(phase_id, str(cleanup_exc))
+
             try:
-                action()
+                restored = self.run_state_probe("cleanup-verify-native-ownership")
+                self.assert_state(
+                    "cleanup-verify-native-ownership",
+                    restored,
+                    {
+                        "runtime_owner": "native",
+                        "native_runtime_enabled": True,
+                        "plugin_runtime_active": False,
+                        "should_native_register": True,
+                        "soft_notice": False,
+                        "ready": True,
+                    },
+                )
+                self.assert_preflight_empty("cleanup-verify-native-ownership", restored)
             except Exception as cleanup_exc:
-                self.record_failure(phase_id, str(cleanup_exc))
+                cleanup_succeeded = False
+                self.record_failure("cleanup-verify-native-ownership", str(cleanup_exc))
+
+            if self.cleanup_signals:
+                cleanup_succeeded = False
+                signal_list = ", ".join(str(signum) for signum in self.cleanup_signals)
+                self.record_failure(
+                    "cleanup-signal",
+                    f"deferred signal(s) during runtime restoration: {signal_list}",
+                )
+
+            if cleanup_succeeded:
+                self.plugin_restore_required = False
+            self.cleanup_failed = self.cleanup_failed or not cleanup_succeeded
+            return not self.cleanup_failed
+        except Exception:
+            self.cleanup_failed = True
+            raise
+        finally:
+            self.cleanup_in_progress = False
 
     def mark_debug_log(self) -> None:
         result = self.run_wp_eval("mark-target-debug-log", build_debug_log_marker())
@@ -839,9 +913,23 @@ class Rehearsal:
             self.write_rollup()
             self.progress(f"A5f cutover rehearsal passed: {self.rollup_path}")
         except Exception as exc:
-            self.record_failure("a5f", str(exc))
-            self.cleanup_runtime_state()
+            self.begin_cleanup()
+            failure_record_error: Exception | None = None
+            try:
+                self.record_failure("a5f", str(exc))
+            except Exception as record_exc:
+                self.cleanup_failed = True
+                failure_record_error = record_exc
+            try:
+                cleanup_succeeded = self.cleanup_runtime_state()
+            except Exception as cleanup_exc:
+                self.cleanup_failed = True
+                raise HarnessCleanupError("runtime restoration did not complete") from cleanup_exc
             self.write_rollup()
+            if failure_record_error is not None:
+                raise HarnessCleanupError("runtime failure evidence could not be recorded") from failure_record_error
+            if not cleanup_succeeded or self.cleanup_failed:
+                raise HarnessCleanupError("runtime restoration was not verified") from exc
             raise
 
 
@@ -864,18 +952,23 @@ def main(argv: list[str] | None = None) -> int:
     previous_handlers = {signum: signal.getsignal(signum) for signum in handled_signals}
 
     def handle_signal(signum: int, _frame: Any) -> None:
+        if rehearsal.defer_cleanup_signal(signum):
+            return
         raise HarnessSignal(signum)
 
     for signum in handled_signals:
         signal.signal(signum, handle_signal)
     try:
         rehearsal.run()
+    except HarnessCleanupError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr, flush=True)
+        return 70
     except HarnessSignal as exc:
         print(f"ERROR: {exc}", file=sys.stderr, flush=True)
         return 128 + exc.signum
     except Exception as exc:
         print(f"ERROR: {exc}", file=sys.stderr, flush=True)
-        return 1
+        return 70 if rehearsal.cleanup_failed else 1
     finally:
         for signum, previous_handler in previous_handlers.items():
             signal.signal(signum, previous_handler)
