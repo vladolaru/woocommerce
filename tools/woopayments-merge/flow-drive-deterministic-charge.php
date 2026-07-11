@@ -15,6 +15,14 @@ $quantity = isset( $args[1] ) ? max( 1, (int) $args[1] ) : 2;
 $type     = $args[2] ?? 'success';
 $manual_capture = isset( $args[3] ) && ! in_array( strtolower( (string) $args[3] ), array( '', '0', 'false', 'no' ), true );
 $currency = strtoupper( trim( (string) ( $args[4] ?? '' ) ) );
+$run_token = trim( (string) ( $args[5] ?? '' ) );
+
+if ( '' !== $run_token && ! preg_match( '/^wcpay-verify-[a-f0-9]{32}$/', $run_token ) ) {
+	WP_CLI::error( 'Invalid verifier run token.' );
+}
+if ( '' === $run_token ) {
+	$run_token = 'harness-deterministic-charge';
+}
 
 if ( ! class_exists( '\WCPayDev\TestLab\Operations\Environment' ) || ! class_exists( '\WCPayDev\TestLab\Operations\Checkout_Simulator' ) ) {
 	WP_CLI::error( 'WooPayments Dev Tools Test Lab classes are not loaded.' );
@@ -43,11 +51,17 @@ if ( ! $product ) {
 	WP_CLI::error( "Could not load Test Lab product SKU {$sku}." );
 }
 
-if ( 'test-lab-beaker-001' === $sku ) {
-	$product->set_regular_price( '25.00' );
-	$product->set_sale_price( '' );
-	$product->set_price( '25.00' );
-	$product->save();
+$normalize_fixture_price = 'test-lab-beaker-001' === $sku;
+$fixed_fixture_price     = static function ( $price, $candidate ) use ( $product_id ) {
+	return $candidate instanceof WC_Product && $product_id === $candidate->get_id() ? '25.00' : $price;
+};
+$empty_fixture_sale_price = static function ( $price, $candidate ) use ( $product_id ) {
+	return $candidate instanceof WC_Product && $product_id === $candidate->get_id() ? '' : $price;
+};
+if ( $normalize_fixture_price ) {
+	add_filter( 'woocommerce_product_get_price', $fixed_fixture_price, 10, 2 );
+	add_filter( 'woocommerce_product_get_regular_price', $fixed_fixture_price, 10, 2 );
+	add_filter( 'woocommerce_product_get_sale_price', $empty_fixture_sale_price, 10, 2 );
 }
 
 $customer_id = 0;
@@ -126,6 +140,18 @@ if ( $manual_capture ) {
 	}
 }
 
+$session                   = WC()->session;
+$session_key               = \WCPay\Duplicate_Payment_Prevention_Service::SESSION_KEY_PROCESSING_ORDER;
+$session_data              = $session instanceof WC_Session && method_exists( $session, 'get_session_data' ) ? $session->get_session_data() : array();
+$processing_order_existed  = array_key_exists( $session_key, $session_data );
+$previous_processing_order = $processing_order_existed ? maybe_unserialize( $session_data[ $session_key ] ) : null;
+if ( $session instanceof WC_Session ) {
+	$session->set( $session_key, null );
+	if ( method_exists( $session, 'save_data' ) ) {
+		$session->save_data();
+	}
+}
+
 try {
 	$simulator = new \WCPayDev\TestLab\Operations\Checkout_Simulator( $environment );
 	$result = $simulator->simulate(
@@ -135,10 +161,17 @@ try {
 			'customer_id'    => $customer_id,
 			'quantity'       => $quantity,
 			'operation'      => 'charges',
-			'protocol'       => 'harness-deterministic-charge',
+			'protocol'       => $run_token,
 		)
 	);
 } finally {
+	if ( $session instanceof WC_Session ) {
+		$session->set( $session_key, $processing_order_existed ? $previous_processing_order : null );
+		if ( method_exists( $session, 'save_data' ) ) {
+			$session->save_data();
+		}
+	}
+
 	if ( $manual_capture ) {
 		if ( $original_settings === $missing_settings ) {
 			delete_option( $settings_option );
@@ -153,6 +186,12 @@ try {
 		} else {
 			delete_user_meta( $customer_id, 'wcpay_currency' );
 		}
+	}
+
+	if ( $normalize_fixture_price ) {
+		remove_filter( 'woocommerce_product_get_price', $fixed_fixture_price, 10 );
+		remove_filter( 'woocommerce_product_get_regular_price', $fixed_fixture_price, 10 );
+		remove_filter( 'woocommerce_product_get_sale_price', $empty_fixture_sale_price, 10 );
 	}
 }
 

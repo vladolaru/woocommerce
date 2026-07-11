@@ -42,7 +42,7 @@ function woopayments_hook_shape_probe_manifest(): array {
 		'wcpay_list_disputes_request' => $probe( 'list_disputes', 'List_Disputes::send', 'WooPaymentsDisputesRestController::get_disputes' ),
 		'wcpay_list_deposits_request' => $probe( 'list_deposits', 'List_Deposits::send', 'WooPaymentsDepositsRestController::get_deposits' ),
 		'wcpay_list_authorizations_request' => $probe( 'list_authorizations', 'List_Authorizations::send', 'WooPaymentsAuthorizationsRestController::get_authorizations' ),
-		'wcpay_metadata_from_order' => $probe( 'order_metadata', 'OrderService::get_payment_metadata', 'WooPaymentsIntentCodec::metadata_from_order' ),
+		'wcpay_metadata_from_order' => $probe( 'order_metadata', 'OrderService::get_payment_metadata', 'WooPaymentsIntentRequestBuilder::metadata_from_order' ),
 		'wcpay_payment_fields_js_config' => $probe( 'checkout_config', 'WC_Payments_Checkout::get_payment_fields_js_config', 'WooPaymentsCheckoutBridge::get_payment_fields_js_config' ),
 		'wc_payments_thank_you_page_bnpl_payment_method_logo_url' => $probe( 'order_success_logos', 'WC_Payments_Order_Success_Page::show_lpm_payment_method_name', 'WooPaymentsOrderSuccessPage::render_definition_title' ),
 		'wc_payments_thank_you_page_lpm_payment_method_logo_url' => $probe( 'order_success_logos', 'WC_Payments_Order_Success_Page::show_lpm_payment_method_name', 'WooPaymentsOrderSuccessPage::render_definition_title' ),
@@ -1760,7 +1760,7 @@ $run_product_probe_group(
 			}
 
 			if ( class_exists( 'Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\WooPaymentsIntentCodec' ) ) {
-				Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec::metadata_from_order( $order, 'single', 'no' );
+				Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder::metadata_from_order( $order, 'single', 'no' );
 			}
 		} finally {
 			$order->delete( true );

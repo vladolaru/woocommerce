@@ -41,17 +41,19 @@ def write_routes(
     role: str | None = None,
     runtime_owner: str | None = None,
     site_url: str | None = None,
+    mobile_api: dict[str, object] | None = None,
 ) -> None:
     resolved_role = role or ("target" if path.name.startswith("target") else "reference")
     path.write_text(
         json.dumps(
             {
-                "schema": "woopayments_rest_route_capture.v1",
+                "schema": "woopayments_rest_route_capture.v2",
                 "role": resolved_role,
                 "runtime_owner": runtime_owner
                 or ("native" if resolved_role == "target" else "plugin"),
                 "site_url": site_url or f"http://{resolved_role}.localhost",
                 "routes": routes,
+                "mobile_api": mobile_api or mobile_api_shapes(),
             },
             sort_keys=True,
             indent=2,
@@ -82,6 +84,36 @@ def base_routes() -> list[dict[str, str]]:
     ]
 
 
+def mobile_api_shapes() -> dict[str, object]:
+    return {
+        "accounts": {
+            "method": "GET",
+            "route": "/wc/v3/payments/accounts",
+            "status": 200,
+            "shape": {
+                "type": "object",
+                "fields": {
+                    "account_id": {"type": "string"},
+                    "status": {"type": "string"},
+                },
+            },
+        },
+        "connection_tokens": {
+            "method": "POST",
+            "route": "/wc/v3/payments/connection_tokens",
+            "status": 200,
+            "shape": {
+                "type": "object",
+                "fields": {
+                    "object": {"type": "string"},
+                    "secret": {"type": "string"},
+                    "test_mode": {"type": "boolean"},
+                },
+            },
+        },
+    }
+
+
 def test_usage_requires_ref_target_or_snapshot_files() -> None:
     result = run_gate()
 
@@ -101,6 +133,10 @@ def test_print_plan_describes_live_route_probe() -> None:
     assert payload["ref_wp"] == REF_WP
     assert payload["target_wp"] == TARGET_WP
     assert payload["route_prefix"] == "/wc/v3/payments/"
+    assert payload["mobile_api_requests"] == [
+        "GET /wc/v3/payments/accounts",
+        "POST /wc/v3/payments/connection_tokens",
+    ]
 
 
 def test_gate_passes_matching_snapshots() -> None:
@@ -128,11 +164,101 @@ def test_gate_passes_matching_snapshots() -> None:
         )
 
         assert result.returncode == 0, result.stderr
-        assert "PASS: native WooPayments REST routes cover the reference route table." in result.stdout
+        assert (
+            "PASS: native WooPayments REST routes and mobile API shapes match the reference runtime."
+            in result.stdout
+        )
 
         rollup = json.loads((out_dir / "rest-route-parity.json").read_text(encoding="utf-8"))
         assert rollup["status"] == "pass"
         assert rollup["failures"] == []
+        assert rollup["mobile_api"]["status"] == "pass"
+
+
+def test_gate_fails_when_mobile_accounts_response_shape_differs() -> None:
+    with tempfile.TemporaryDirectory(prefix="rest-route-parity-test-") as tmp:
+        tmp_path = Path(tmp)
+        ref_state = tmp_path / "ref-routes.json"
+        target_state = tmp_path / "target-routes.json"
+        exceptions = tmp_path / "exceptions.txt"
+        target_mobile = mobile_api_shapes()
+        accounts = target_mobile["accounts"]
+        assert isinstance(accounts, dict)
+        accounts["shape"] = {
+            "type": "object",
+            "fields": {"account_id": {"type": "string"}},
+        }
+
+        write_routes(ref_state, base_routes())
+        write_routes(target_state, base_routes(), mobile_api=target_mobile)
+        write_exceptions(exceptions)
+
+        result = run_gate(
+            "--ref-state",
+            str(ref_state),
+            "--target-state",
+            str(target_state),
+            "--exceptions",
+            str(exceptions),
+        )
+
+        assert result.returncode == 1
+        assert "mobile API response shape mismatch: accounts" in result.stderr
+
+
+def test_gate_fails_when_mobile_connection_token_probe_is_not_successful() -> None:
+    with tempfile.TemporaryDirectory(prefix="rest-route-parity-test-") as tmp:
+        tmp_path = Path(tmp)
+        ref_state = tmp_path / "ref-routes.json"
+        target_state = tmp_path / "target-routes.json"
+        exceptions = tmp_path / "exceptions.txt"
+        target_mobile = mobile_api_shapes()
+        connection_tokens = target_mobile["connection_tokens"]
+        assert isinstance(connection_tokens, dict)
+        connection_tokens["status"] = 500
+
+        write_routes(ref_state, base_routes())
+        write_routes(target_state, base_routes(), mobile_api=target_mobile)
+        write_exceptions(exceptions)
+
+        result = run_gate(
+            "--ref-state",
+            str(ref_state),
+            "--target-state",
+            str(target_state),
+            "--exceptions",
+            str(exceptions),
+        )
+
+        assert result.returncode == 1
+        assert "target mobile API probe failed: connection_tokens returned HTTP 500" in result.stderr
+
+
+def test_gate_blocks_snapshots_without_the_mobile_api_contract() -> None:
+    with tempfile.TemporaryDirectory(prefix="rest-route-parity-test-") as tmp:
+        tmp_path = Path(tmp)
+        ref_state = tmp_path / "ref-routes.json"
+        target_state = tmp_path / "target-routes.json"
+        exceptions = tmp_path / "exceptions.txt"
+
+        write_routes(ref_state, base_routes())
+        write_routes(target_state, base_routes())
+        reference = json.loads(ref_state.read_text(encoding="utf-8"))
+        del reference["mobile_api"]
+        ref_state.write_text(json.dumps(reference), encoding="utf-8")
+        write_exceptions(exceptions)
+
+        result = run_gate(
+            "--ref-state",
+            str(ref_state),
+            "--target-state",
+            str(target_state),
+            "--exceptions",
+            str(exceptions),
+        )
+
+        assert result.returncode == 3
+        assert "reference snapshot is missing the mobile API smoke contract" in result.stderr
 
 
 def test_gate_blocks_cross_store_snapshots_with_wrong_runtime_owner() -> None:

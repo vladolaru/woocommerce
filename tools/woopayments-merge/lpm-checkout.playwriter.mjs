@@ -1791,7 +1791,12 @@ async function extractOrderEvidence( page, intentIds ) {
 				( candidate ) =>
 					/^pi_[A-Za-z0-9_]{8,}$/.test( candidate ) &&
 					! /^pi_client_secret\b/.test( candidate )
-		);
+			);
+		const multibancoContainer = document.querySelector( '#wc-payment-gateway-multibanco-instructions-container' );
+		const multibancoValues = multibancoContainer
+			? Array.from( multibancoContainer.querySelectorAll( '.payment-box-row .payment-box-value[data-copy-value]' ) )
+				.map( ( element ) => element.getAttribute( 'data-copy-value' ) || '' )
+			: [];
 		return {
 			url,
 			order_id: orderIdFromUrl( url ),
@@ -1800,6 +1805,14 @@ async function extractOrderEvidence( page, intentIds ) {
 			intent_ids: Array.from( new Set( intentMatches ) ),
 			has_order_received_heading: /order received|thank you|order details|payment instructions/i.test( bodyText ),
 			has_payment_method_text: /payment method|paid with|multibanco|klarna|affirm|afterpay|bancontact|ideal|wechat|alipay|grabpay|sepa|becs/i.test( bodyText ),
+			multibanco_voucher: {
+				rendered: Boolean( multibancoContainer ),
+				visible: Boolean( multibancoContainer && multibancoContainer.getClientRects().length > 0 ),
+				entity: multibancoValues[ 0 ] || '',
+				reference: multibancoValues[ 1 ] || '',
+				amount: multibancoValues[ 2 ] || '',
+				share_link_present: Boolean( multibancoContainer?.querySelector( '.copy-link-btn[data-copy-value]' ) ),
+			},
 		};
 	} );
 
@@ -1856,6 +1869,19 @@ async function runCheckoutFlow( page, failedRequests ) {
 		if ( failedResponses.length > 0 ) {
 			failures.push( 'failed browser responses were captured during checkout' );
 		}
+		if (
+			method === 'multibanco' &&
+			(
+				! orderEvidence.multibanco_voucher.rendered ||
+				! orderEvidence.multibanco_voucher.visible ||
+				! orderEvidence.multibanco_voucher.entity ||
+				! orderEvidence.multibanco_voucher.reference ||
+				! orderEvidence.multibanco_voucher.amount ||
+				! orderEvidence.multibanco_voucher.share_link_present
+			)
+		) {
+			failures.push( 'Multibanco voucher rendering is incomplete' );
+		}
 
 		const pageEvidence = await capturePageEvidence( page, {
 			order: orderEvidence,
@@ -1875,6 +1901,7 @@ async function runCheckoutFlow( page, failedRequests ) {
 			order_payment_method: selectedGatewayId,
 			order_received_url: reachedOrderReceived ? orderEvidence.url : null,
 			payment_intent_id: orderEvidence.payment_intent_id,
+			multibanco_voucher: method === 'multibanco' ? orderEvidence.multibanco_voucher : null,
 			used_base_card_gateway: selectedGatewayId === 'woocommerce_payments',
 			failures,
 			page: pageEvidence,

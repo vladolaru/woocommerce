@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 import os
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -192,15 +194,182 @@ def test_parse_json_prefers_top_level_probe_payload():
     assert payload["captured_requests"][0]["body"]["statement_descriptor"] == "A5 LOCAL PROBE"
 
 
-def test_debug_log_scan_ignores_known_wpcli_textdomain_notices():
+def test_debug_log_scan_uses_append_only_marker_and_ignores_known_wpcli_textdomain_notices():
     module = load_module()
 
-    source = module.build_debug_log_scan()
+    marker_source = module.build_debug_log_marker()
+    scan_source = module.build_debug_log_scan(
+        {
+            "exists": True,
+            "device": 11,
+            "inode": 22,
+            "offset": 33,
+        }
+    )
 
-    assert "_load_textdomain_just_in_time" in source
-    assert "ignored_matches" in source
-    assert "wp67_early_textdomain_notice" in source
-    assert "PHP Notice|Notice:" in source
+    assert "file_put_contents( $path, '' )" not in marker_source
+    assert "filesize( $path )" in marker_source
+    assert "fileinode( $path )" in marker_source
+    assert "fseek( $stream, 33 )" in scan_source
+    assert "debug_log_changed_since_marker" in scan_source
+    assert "_load_textdomain_just_in_time" in scan_source
+    assert "ignored_matches" in scan_source
+    assert "wp67_early_textdomain_notice" in scan_source
+    assert "PHP Notice|Notice:" in scan_source
+
+
+def test_rehearsal_marks_debug_log_without_clearing_it():
+    module = load_module()
+    with tempfile.TemporaryDirectory(prefix="a5f-rehearsal-test-") as out_dir:
+        rehearsal = module.Rehearsal(make_args(out_dir))
+        captured = {}
+
+        def fake_run_wp_eval(phase_id, php, **kwargs):
+            captured["phase_id"] = phase_id
+            captured["php"] = php
+            return {
+                "json": {
+                    "path": module.DEBUG_LOG_PATH,
+                    "exists": True,
+                    "device": 11,
+                    "inode": 22,
+                    "offset": 33,
+                }
+            }
+
+        rehearsal.run_wp_eval = fake_run_wp_eval
+        rehearsal.mark_debug_log()
+
+    assert captured["phase_id"] == "mark-target-debug-log"
+    assert "file_put_contents( $path, '' )" not in captured["php"]
+    assert rehearsal.debug_log_marker["offset"] == 33
+    assert rehearsal.log_window["start_offset"] == 33
+
+
+def test_mu_helper_lifecycle_refuses_overwrite_and_verifies_owned_hash():
+    module = load_module()
+    contents = "<?php // owned helper\n"
+    ownership_token = "0123456789abcdef0123456789abcdef"
+    owned_contents = module.add_helper_ownership_marker(contents, ownership_token)
+    expected_hash = hashlib.sha256(owned_contents.encode()).hexdigest()
+
+    writer = module.build_php_writer("owned.php", contents, ownership_token)
+    remover = module.build_php_remover(
+        "owned.php", expected_hash, ownership_token, allow_partial=False
+    )
+
+    assert "helper_path_already_exists:owned.php" in writer
+    assert "fopen( $path, 'x' )" in writer
+    assert expected_hash in writer
+    assert ownership_token in writer
+    assert "hash_equals" in remover
+    assert "helper_ownership_mismatch:owned.php" in remover
+
+
+def test_preexisting_same_content_helper_is_preserved_byte_for_byte(tmp_path: Path):
+    module = load_module()
+    contents = "<?php // existing helper\n"
+    token = "fedcba9876543210fedcba9876543210"
+    owned_contents = module.add_helper_ownership_marker(contents, token)
+    expected_hash = hashlib.sha256(owned_contents.encode()).hexdigest()
+    helper = tmp_path / "owned.php"
+    helper.write_text(contents, encoding="utf-8")
+    wrapper = r"""
+define( 'WPMU_PLUGIN_DIR', $argv[1] );
+function wp_mkdir_p( $path ) { return mkdir( $path, 0777, true ); }
+function wp_json_encode( $value ) { return json_encode( $value ); }
+class WP_CLI {
+	public static function error( $message ) { fwrite( STDERR, $message . PHP_EOL ); exit( 1 ); }
+	public static function line( $message ) { echo $message . PHP_EOL; }
+}
+eval( stream_get_contents( STDIN ) );
+"""
+
+    writer_result = subprocess.run(
+        ["php", "-r", wrapper, str(tmp_path)],
+        input=module.build_php_writer("owned.php", contents, token),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert writer_result.returncode == 1
+    assert helper.read_bytes() == contents.encode()
+
+    remover_result = subprocess.run(
+        ["php", "-r", wrapper, str(tmp_path)],
+        input=module.build_php_remover(
+            "owned.php", expected_hash, token, allow_partial=True
+        ),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert remover_result.returncode == 1
+    assert helper.read_bytes() == contents.encode()
+
+
+def test_cleanup_attempts_every_runtime_restore_after_one_failure():
+    module = load_module()
+    with tempfile.TemporaryDirectory(prefix="a5f-rehearsal-test-") as out_dir:
+        rehearsal = module.Rehearsal(make_args(out_dir))
+        rehearsal.plugin_restore_required = True
+        calls = []
+
+        def remove(phase_id, helper_name):
+            calls.append(("remove", helper_name))
+            if helper_name == module.BLOCKER_HELPER_FILE:
+                raise module.HarnessError("first cleanup failed")
+
+        def deactivate(phase_id, allow_failure=False):
+            calls.append(("deactivate", allow_failure))
+            return {"status": "pass"}
+
+        rehearsal.remove_mu_helper = remove
+        rehearsal.deactivate_plugin = deactivate
+        rehearsal.cleanup_runtime_state()
+
+    assert calls == [
+        ("remove", module.BLOCKER_HELPER_FILE),
+        ("remove", module.MANDATORY_HELPER_FILE),
+        ("deactivate", True),
+    ]
+    assert any(failure["phase"] == "cleanup-synthetic-preflight-blocker" for failure in rehearsal.failures)
+
+
+def test_main_installs_signal_handlers_for_cleanup(monkeypatch, tmp_path: Path):
+    module = load_module()
+    registered = []
+
+    monkeypatch.setattr(module.signal, "getsignal", lambda signum: f"old-{signum}")
+    monkeypatch.setattr(
+        module.signal,
+        "signal",
+        lambda signum, handler: registered.append((signum, handler)),
+    )
+    monkeypatch.setattr(module.Rehearsal, "run", lambda self: None)
+
+    result = module.main(
+        [
+            "--target-wp",
+            "docker exec -i target-cli-1 wp --allow-root --user=1",
+            "--out-dir",
+            str(tmp_path),
+            "--skip-wpcom-readiness",
+        ]
+    )
+
+    assert result == 0
+    installed = registered[:3]
+    restored = registered[3:]
+    assert [item[0] for item in installed] == [module.signal.SIGHUP, module.signal.SIGINT, module.signal.SIGTERM]
+    assert all(callable(item[1]) for item in installed)
+    assert [item[1] for item in restored] == [
+        f"old-{module.signal.SIGHUP}",
+        f"old-{module.signal.SIGINT}",
+        f"old-{module.signal.SIGTERM}",
+    ]
 
 
 def test_expected_failure_command_records_pass_phase():
@@ -370,7 +539,10 @@ def main() -> None:
         test_rollup_declares_cutover_scope_without_claiming_external_profile_execution,
         test_state_probe_runs_as_admin_when_target_wp_omits_user,
         test_parse_json_prefers_top_level_probe_payload,
-        test_debug_log_scan_ignores_known_wpcli_textdomain_notices,
+        test_debug_log_scan_uses_append_only_marker_and_ignores_known_wpcli_textdomain_notices,
+        test_rehearsal_marks_debug_log_without_clearing_it,
+        test_mu_helper_lifecycle_refuses_overwrite_and_verifies_owned_hash,
+        test_cleanup_attempts_every_runtime_restore_after_one_failure,
         test_expected_failure_command_records_pass_phase,
         test_orchestrator_uses_browser_for_blocked_mandatory_gate,
         test_playwriter_gate_copies_failed_source_evidence,

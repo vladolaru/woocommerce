@@ -1069,6 +1069,13 @@ def test_php_driver_requires_every_preserved_hook() -> None:
     assert payload["required_hooks"] == payload["preserved_hooks"]
 
 
+def test_metadata_probe_calls_the_current_request_builder_owner() -> None:
+    source = DRIVER.read_text(encoding="utf-8")
+
+    assert "WooPaymentsIntentRequestBuilder::metadata_from_order" in source
+    assert "WooPaymentsIntentCodec::metadata_from_order" not in source
+
+
 def test_php_driver_inventory_is_derived_from_probe_manifest() -> None:
     result = subprocess.run(
         ["php", str(DRIVER), "--inventory"],

@@ -11,7 +11,7 @@
 #
 # Flags:
 #   --with-tracks    also run the sink-based Tracks parity gate around the deterministic charge
-#                    flow. Off by default since it clears the shared local wpcom-local Tracks sink.
+#                    flow. Append-only capture markers preserve unrelated sink events.
 #   --full-evidence  run the accumulated final evidence plan with nested self-check,
 #                    tracks verifier, and broader fixture/browser readiness gates.
 #   --print-full-evidence-plan
@@ -35,6 +35,7 @@ if ! cd "$REPO_ROOT"; then
 	exit 2
 fi
 LOCAL_RUNNER_SAFETY="$SELF_DIR/local-runner-safety.sh"
+OWNED_ORDER_CLEANUP="$SELF_DIR/verify-owned-order-cleanup.php"
 if [ ! -f "$LOCAL_RUNNER_SAFETY" ]; then
 	printf 'FAIL: local runner safety library is missing: %s\n' "$LOCAL_RUNNER_SAFETY" >&2
 	exit 2
@@ -83,6 +84,11 @@ FULL_EVIDENCE_QUALITY_GATE_CLEANUP_TIMEOUT_SECONDS="${FULL_EVIDENCE_QUALITY_GATE
 FINAL_TRACKS_OUT_DIR="${FINAL_TRACKS_OUT_DIR:-}"
 CRITICAL_FLOWS_AGENT_RESULTS_DIR="${CRITICAL_FLOWS_AGENT_RESULTS_DIR:-}"
 CRITICAL_FLOW_AGENT_RESULT_PATHS=()
+OWNED_REF_ORDER_IDS=()
+OWNED_TARGET_ORDER_IDS=()
+VERIFY_CLEANUP_RAN=0
+VERIFY_RUN_TOKEN="${VERIFY_RUN_TOKEN:-}"
+VERIFY_CLEANUP_TIMEOUT_SECONDS="${VERIFY_CLEANUP_TIMEOUT_SECONDS:-30}"
 MS07_REFERENCE_BROWSER="${MS07_REFERENCE_BROWSER:-}"
 MS07_REFERENCE_STATE="${MS07_REFERENCE_STATE:-}"
 MS07_TARGET_BROWSER="${MS07_TARGET_BROWSER:-}"
@@ -300,6 +306,8 @@ fi
 
 PASS=(); FAILED=(); BLOCKED=(); ACKNOWLEDGED=()
 LAST_GATE_RC=0
+MUTATION_SAFETY_STOP=0
+MUTATION_SAFETY_STOP_SOURCE=""
 record() { # $1 gate, $2 status(PASS|FAIL|BLOCKED)
 	case "$2" in
 		PASS) PASS+=("$1") ;;
@@ -320,120 +328,21 @@ gate_log_slug() {
 	printf '%s' "$slug"
 }
 
-run_command_with_timeout() { # $1 timeout seconds ; $2.. command
+run_command_with_timeout() { # $1 timeout seconds ; [--stdin-file path] ; command
 	local timeout_seconds="$1"; shift
-
-	python3 - "$timeout_seconds" "$@" <<'PY'
-import os
-import selectors
-import signal
-import subprocess
-import sys
-import time
-
-try:
-	timeout = float(sys.argv[1])
-except ValueError:
-	print(f"Invalid gate timeout seconds: {sys.argv[1]}", file=sys.stderr)
-	raise SystemExit(2)
-
-command = sys.argv[2:]
-if not command:
-	print("Missing command for timed gate.", file=sys.stderr)
-	raise SystemExit(2)
-
-if timeout <= 0:
-	raise SystemExit(subprocess.run(command).returncode)
-
-process = subprocess.Popen(
-	command,
-	stdout=subprocess.PIPE,
-	stderr=subprocess.STDOUT,
-	bufsize=0,
-	start_new_session=True,
-)
-assert process.stdout is not None
-
-selector = selectors.DefaultSelector()
-selector.register(process.stdout.fileno(), selectors.EVENT_READ)
-deadline = time.monotonic() + timeout
-last_output_byte = None
-
-
-def emit_chunk(chunk):
-	global last_output_byte
-
-	if not chunk:
-		return
-
-	last_output_byte = chunk[-1]
-	sys.stdout.buffer.write(chunk)
-	sys.stdout.buffer.flush()
-
-
-def ensure_output_line_boundary():
-	global last_output_byte
-
-	if last_output_byte is not None and last_output_byte != ord("\n"):
-		sys.stdout.write("\n")
-		sys.stdout.flush()
-		last_output_byte = ord("\n")
-
-
-def drain_output(wait_seconds):
-	while True:
-		events = selector.select(timeout=wait_seconds)
-		if not events:
-			return
-
-		for key, _ in events:
-			chunk = os.read(key.fd, 65536)
-			if not chunk:
-				try:
-					selector.unregister(key.fd)
-				except (KeyError, ValueError):
-					pass
-				return
-			emit_chunk(chunk)
-
-		wait_seconds = 0
-
-try:
-	while True:
-		drain_output(0.1)
-
-		rc = process.poll()
-		if rc is not None:
-			drain_output(0)
-			raise SystemExit(rc)
-
-		if time.monotonic() >= deadline:
-			ensure_output_line_boundary()
-			print(f"TIMEOUT: command exceeded {timeout:g}s; terminating process group.", flush=True)
-			try:
-				os.killpg(process.pid, signal.SIGTERM)
-			except ProcessLookupError:
-				pass
-			try:
-				process.wait(timeout=5)
-			except subprocess.TimeoutExpired:
-				print("TIMEOUT: command did not exit after SIGTERM; sending SIGKILL.", flush=True)
-				try:
-					os.killpg(process.pid, signal.SIGKILL)
-				except ProcessLookupError:
-					pass
-				process.wait(timeout=5)
-			drain_output(0)
-			raise SystemExit(124)
-finally:
-	selector.close()
-PY
+	python3 "$SELF_DIR/run-command-with-timeout.py" --timeout "$timeout_seconds" "$@"
 }
 
 # Run a gate command; classify by exit code (0 PASS, 2/3/124 BLOCKED-preconditions/timeouts, else FAIL).
 gate() { # $1 label ; $2.. command
 	local label="$1"; shift
 	local rc out_base out_file tmp_base slug timeout_seconds
+	if [ "$MUTATION_SAFETY_STOP" -eq 1 ]; then
+		LAST_GATE_RC=70
+		record "$label" BLOCKED
+		printf '      safety stop: cleanup failed in %s; this gate was not started\n' "$MUTATION_SAFETY_STOP_SOURCE"
+		return 70
+	fi
 	timeout_seconds="${GATE_TIMEOUT_SECONDS:-}"
 	tmp_base="${GATE_LOG_DIR:-${TMPDIR:-$SELF_DIR/.tmp}}"
 	mkdir -p "$tmp_base"
@@ -467,6 +376,11 @@ gate() { # $1 label ; $2.. command
 		record "$label" FAIL
 		printf '      log: %s\n' "$out_file"
 	fi
+	if [ "$rc" -eq 70 ]; then
+		MUTATION_SAFETY_STOP=1
+		MUTATION_SAFETY_STOP_SOURCE="$label"
+		printf '      safety stop armed: cleanup failed in %s; no later gate command will start\n' "$label"
+	fi
 	return "$rc"
 }
 
@@ -479,8 +393,20 @@ gate_with_admin_credentials() { # $1 label ; $2 user ; $3 password ; $4.. comman
 	gate "$label" "$@"
 }
 
+stop_before_unwrapped_store_flows_on_cleanup_failure() {
+	if [ "$MUTATION_SAFETY_STOP" -ne 1 ]; then
+		return 0
+	fi
+
+	record "remaining deterministic store flows after cleanup failure" BLOCKED
+	printf '      safety stop: cleanup failed in %s; no deterministic store flow was started\n' "$MUTATION_SAFETY_STOP_SOURCE"
+	exit 70
+}
+
 TRACKS_REF_FILE="$TRACKS_OUT_DIR/reference-tracks.txt"
 TRACKS_TARGET_FILE="$TRACKS_OUT_DIR/target-tracks.txt"
+TRACKS_REF_MARKER="$TRACKS_OUT_DIR/reference-tracks.marker.json"
+TRACKS_TARGET_MARKER="$TRACKS_OUT_DIR/target-tracks.marker.json"
 TRACKS_BLOCK_REASON=""
 TRACKS_REF_TRACKING_ORIGINAL=""
 TRACKS_TARGET_TRACKING_ORIGINAL=""
@@ -507,15 +433,15 @@ tracks_block() {
 	fi
 }
 
-tracks_reset() {
-	local role="$1" raw rc
-	raw="$(bash "$SELF_DIR/tracks-parity.sh" reset 2>&1)"
+tracks_mark() {
+	local role="$1" marker_path="$2" raw rc
+	raw="$(bash "$SELF_DIR/tracks-parity.sh" mark "$marker_path" 2>&1)"
 	rc=$?
 	if [ "$rc" -ne 0 ]; then
-		tracks_block "$role Tracks sink reset failed: $raw"
+		tracks_block "$role Tracks capture marker failed: $raw"
 		return 1
 	fi
-	printf '  tracks sink reset before %s capture\n' "$role"
+	printf '  marked append-only Tracks capture for %s\n' "$role"
 	return 0
 }
 
@@ -524,7 +450,7 @@ tracks_get_tracking_option() {
 
 	# Intentionally split the WP runner string, matching this harness's WP="docker exec ..." convention.
 	# shellcheck disable=SC2086
-	raw="$($wp_cmd eval-file - <<'PHP' 2>&1
+	raw="$($wp_cmd eval-file - --skip-plugins --skip-themes <<'PHP' 2>&1
 <?php
 $value = get_option( 'woocommerce_allow_tracking', null );
 echo 'TRACKING:' . ( null === $value ? '__MISSING__' : (string) $value ) . PHP_EOL;
@@ -548,7 +474,7 @@ tracks_set_tracking_option() {
 
 	# Intentionally split the WP runner string, matching this harness's WP="docker exec ..." convention.
 	# shellcheck disable=SC2086
-	raw="$($wp_cmd eval-file - "$value" <<'PHP' 2>&1
+	raw="$($wp_cmd eval-file - "$value" --skip-plugins --skip-themes <<'PHP' 2>&1
 <?php
 $value = isset( $args[0] ) ? (string) $args[0] : '';
 if ( '__MISSING__' === $value ) {
@@ -646,7 +572,7 @@ tracks_snapshot_helper_config() {
 
 	# Intentionally split the WP runner string, matching this harness's WP="docker exec ..." convention.
 	# shellcheck disable=SC2086
-	raw="$($wp_cmd eval-file - <<'PHP' 2>&1
+	raw="$($wp_cmd eval-file - --skip-plugins --skip-themes <<'PHP' 2>&1
 <?php
 $options = array(
 	'enabled'         => 'wpcom_local_helper_tracks_enabled',
@@ -741,7 +667,7 @@ tracks_restore_helper_config_for_role() {
 
 	# Intentionally split the WP runner string, matching this harness's WP="docker exec ..." convention.
 	# shellcheck disable=SC2086
-	raw="$($wp_cmd eval-file - "${args[@]}" <<'PHP' 2>&1
+	raw="$($wp_cmd eval-file - "${args[@]}" --skip-plugins --skip-themes <<'PHP' 2>&1
 <?php
 $options = array(
 	'wpcom_local_helper_tracks_enabled',
@@ -817,13 +743,90 @@ tracks_restore_tracking() {
 	return "$had_error"
 }
 
+cleanup_owned_orders() { # $1 role ; $2 WP ; $3 run token ; $4.. exact order ids
+	local role="$1" wp_cmd="$2" run_token="$3"
+	shift 3
+	local ids=( "$@" )
+	local raw rc line
+
+	if [ ! -f "$OWNED_ORDER_CLEANUP" ]; then
+		printf '  cleanup helper is missing: %s\n' "$OWNED_ORDER_CLEANUP" >&2
+		return 1
+	fi
+	if ! [[ "$run_token" =~ ^wcpay-verify-[a-f0-9]{32}$ ]]; then
+		printf '  cleanup refused invalid %s verifier run token\n' "$role" >&2
+		return 1
+	fi
+
+	if [ "${#ids[@]}" -gt 0 ]; then
+		for id in "${ids[@]}"; do
+			if ! [[ "$id" =~ ^[1-9][0-9]*$ ]]; then
+				printf '  cleanup refused invalid %s order id: %s\n' "$role" "$id" >&2
+				return 1
+			fi
+		done
+	fi
+
+	# Intentionally split the validated local WP runner string, matching the harness convention.
+	# shellcheck disable=SC2086
+	if [ "${#ids[@]}" -gt 0 ]; then
+		raw="$(run_command_with_timeout "$VERIFY_CLEANUP_TIMEOUT_SECONDS" --stdin-file "$OWNED_ORDER_CLEANUP" $wp_cmd eval-file - "$run_token" "${ids[@]}" 2>&1)"
+	else
+		raw="$(run_command_with_timeout "$VERIFY_CLEANUP_TIMEOUT_SECONDS" --stdin-file "$OWNED_ORDER_CLEANUP" $wp_cmd eval-file - "$run_token" 2>&1)"
+	fi
+	rc=$?
+	line="$(printf '%s\n' "$raw" | grep -oE 'WCPAY_VERIFY_OWNED_ORDER_CLEANUP:.*' | tail -1)"
+	if [ "$rc" -ne 0 ] || [ -z "$line" ] || ! printf '%s\n' "$line" | grep -Fq '"success":true'; then
+		printf '  cleanup failed for %s verifier-owned order(s), rc=%s, ids=%s\n' "$role" "$rc" "${ids[*]:-none}" >&2
+		if [ -n "$line" ]; then
+			printf '  cleanup result: %s\n' "$line" >&2
+		else
+			printf '%s\n' "$raw" | tail -5 | sed 's/^/  cleanup output: /' >&2
+		fi
+		return 1
+	fi
+
+	printf '  cleaned %s verifier-owned order run %s (emitted ids: %s)\n' "$role" "$run_token" "${ids[*]:-none}"
+	return 0
+}
+
+cleanup_verify_state() {
+	local status=$?
+	local cleanup_failed=0
+
+	trap - EXIT HUP INT TERM
+	if [ "$VERIFY_CLEANUP_RAN" -eq 1 ]; then
+		exit "$status"
+	fi
+	VERIFY_CLEANUP_RAN=1
+
+	tracks_restore_tracking || cleanup_failed=1
+	if [ "${#OWNED_REF_ORDER_IDS[@]}" -gt 0 ]; then
+		cleanup_owned_orders reference "$REF_WP" "$VERIFY_RUN_TOKEN" "${OWNED_REF_ORDER_IDS[@]}" || cleanup_failed=1
+	else
+		cleanup_owned_orders reference "$REF_WP" "$VERIFY_RUN_TOKEN" || cleanup_failed=1
+	fi
+	if [ "$MODE" = "cross" ]; then
+		if [ "${#OWNED_TARGET_ORDER_IDS[@]}" -gt 0 ]; then
+			cleanup_owned_orders target "$TARGET_WP" "$VERIFY_RUN_TOKEN" "${OWNED_TARGET_ORDER_IDS[@]}" || cleanup_failed=1
+		else
+			cleanup_owned_orders target "$TARGET_WP" "$VERIFY_RUN_TOKEN" || cleanup_failed=1
+		fi
+	fi
+
+	if [ "$cleanup_failed" -ne 0 ]; then
+		status=70
+	fi
+	exit "$status"
+}
+
 tracks_normalize() {
-	local role="$1" store_id="$2" out_file="$3" raw rc
+	local role="$1" store_id="$2" out_file="$3" marker_path="$4" raw rc
 
 	if [ -n "$store_id" ]; then
-		raw="$(bash "$SELF_DIR/tracks-parity.sh" normalize --store "$store_id" 2>"$out_file.stderr")"
+		raw="$(bash "$SELF_DIR/tracks-parity.sh" normalize --mark "$marker_path" --store "$store_id" 2>"$out_file.stderr")"
 	else
-		raw="$(bash "$SELF_DIR/tracks-parity.sh" normalize 2>"$out_file.stderr")"
+		raw="$(bash "$SELF_DIR/tracks-parity.sh" normalize --mark "$marker_path" 2>"$out_file.stderr")"
 	fi
 
 	rc=$?
@@ -1078,8 +1081,8 @@ bash $SELF_DIR/subsystem-disposition-gate.sh
 bash $SELF_DIR/i18n-notes-gate.sh --target "$TARGET_WP"
 bash $SELF_DIR/money-path-parity-gate.sh --ref "$REF_WP" --target "$TARGET_WP" --out-dir "$FULL_EVIDENCE_OUT_DIR/money-path-parity"
 bash $SELF_DIR/subscriptions-renewal-gate.sh compare --ref "$REF_WP" --target "$TARGET_WP" --ref-subscription-id "${SUBSCRIPTIONS_REF_SUBSCRIPTION_ID:-<required>}" --target-subscription-id "${SUBSCRIPTIONS_TARGET_SUBSCRIPTION_ID:-<required>}" --out-dir "$FULL_EVIDENCE_OUT_DIR/subscriptions-renewal"
-bash $SELF_DIR/plugin-active-settings-gate.sh --target "$REF_WP" --target-url "$REF_URL" --browser-runner "$BROWSER_RUNNER"$(full_evidence_admin_browser_session_args_for_plan) --out-dir "$FULL_EVIDENCE_OUT_DIR/plugin-active-settings-reference"
-bash $SELF_DIR/plugin-active-settings-gate.sh --target "$TARGET_WP" --target-url "$TARGET_URL" --browser-runner "$BROWSER_RUNNER"$(full_evidence_admin_browser_session_args_for_plan) --stage-plugin-active-fixture --out-dir "$FULL_EVIDENCE_OUT_DIR/plugin-active-settings"
+bash $SELF_DIR/plugin-active-settings-gate.sh --target "$REF_WP" --target-url "$REF_URL" --runner-role reference --browser-runner "$BROWSER_RUNNER"$(full_evidence_admin_browser_session_args_for_plan) --out-dir "$FULL_EVIDENCE_OUT_DIR/plugin-active-settings-reference"
+bash $SELF_DIR/plugin-active-settings-gate.sh --target "$TARGET_WP" --target-url "$TARGET_URL" --runner-role target --browser-runner "$BROWSER_RUNNER"$(full_evidence_admin_browser_session_args_for_plan) --stage-plugin-active-fixture --out-dir "$FULL_EVIDENCE_OUT_DIR/plugin-active-settings"
 bash $SELF_DIR/lpm-checkout-gate.sh --methods $LPM_FULL_METHODS --ref "$REF_WP" --target "$TARGET_WP" --ref-url "$REF_URL" --target-url "$TARGET_URL" --browser-runner "$BROWSER_RUNNER"$(full_evidence_checkout_browser_session_args_for_plan) --out-dir "$FULL_EVIDENCE_OUT_DIR/lpm-all-methods"
 bash $SELF_DIR/mc-rates-gate.sh --ref "$REF_WP" --target "$TARGET_WP" --ref-url "$REF_URL" --target-url "$TARGET_URL" --currency-from USD --currencies-to GBP,EUR --out-dir "$FULL_EVIDENCE_OUT_DIR/mc-rates"
 bash $SELF_DIR/token-continuity-gate.sh --target "$TARGET_WP" --customer-id "${TOKEN_CONTINUITY_CUSTOMER_ID:-<required>}"$(full_evidence_token_continuity_source_args_for_plan) --browser-runner "$BROWSER_RUNNER"$(full_evidence_checkout_browser_session_args_for_plan) --stage-sepa-fixture --out-dir "$FULL_EVIDENCE_OUT_DIR/token-continuity"
@@ -1088,7 +1091,7 @@ python3 $SELF_DIR/a5g-multisite-runtime-gate.py --repo "$REPO_ROOT" --wcpay-repo
 bash $SELF_DIR/dispute-e2e-gate.sh --ref "$REF_WP" --target "$TARGET_WP"
 bash $SELF_DIR/payout-evidence-gate.sh --wp "$REF_WP" --label reference
 bash $SELF_DIR/payout-evidence-gate.sh --wp "$TARGET_WP" --label target --native
-bash $SELF_DIR/converted-currency-gate.sh --ref "$REF_WP" --target "$TARGET_WP" --currency GBP
+bash $SELF_DIR/converted-currency-gate.sh --ref "$REF_WP" --target "$TARGET_WP" --currency GBP --out-dir "$FULL_EVIDENCE_OUT_DIR/converted-currency"
 bash $SELF_DIR/bundle-size-gate.sh capture --repo "$WCPAY_REPO" --profile wcpay-plugin --out "$FULL_EVIDENCE_OUT_DIR/bundle-reference.json"
 bash $SELF_DIR/bundle-size-gate.sh capture --repo "$REPO_ROOT" --profile wc-core --out "$FULL_EVIDENCE_OUT_DIR/bundle-target.json"
 bash $SELF_DIR/bundle-size-gate.sh compare --ref "$FULL_EVIDENCE_OUT_DIR/bundle-reference.json" --target "$FULL_EVIDENCE_OUT_DIR/bundle-target.json" --budget "$SELF_DIR/a4aq-bundle-budget.json"
@@ -1105,7 +1108,6 @@ python3 $SELF_DIR/sc04-saved-card-gate.py --repo "$REPO_ROOT" --context-file "$C
 python3 $REPO_ROOT/tools/woopayments-critical-flows/build-agent-results.py --context-file "$CRITICAL_FLOW_CONTEXT_FILE" --out-dir "$CRITICAL_FLOWS_AGENT_RESULTS_DIR"$(critical_flow_agent_result_copy_args_for_plan)$(critical_flow_sc04_args_for_plan)$(critical_flow_ms07_args_for_plan) --plugin-active-reference-gate "$FULL_EVIDENCE_OUT_DIR/plugin-active-settings-reference/plugin-active-settings-gate.json" --plugin-active-target-gate "$FULL_EVIDENCE_OUT_DIR/plugin-active-settings/plugin-active-settings-gate.json" --lpm-gate "$FULL_EVIDENCE_OUT_DIR/lpm-all-methods/lpm-checkout-gate.json" --token-continuity-gate "$FULL_EVIDENCE_OUT_DIR/token-continuity/token-continuity-gate.json"
 EVIDENCE_DIR="$CRITICAL_FLOWS_EVIDENCE_DIR" REF_WP_COMMAND="$REF_WP" TARGET_WP_COMMAND="$TARGET_WP" bash $REPO_ROOT/tools/woopayments-critical-flows/run.sh --store both --layer all --ref-url "$REF_URL" --target-url "$TARGET_URL" --agent-results-dir "$CRITICAL_FLOWS_AGENT_RESULTS_DIR" --context-file "$CRITICAL_FLOW_CONTEXT_FILE"
 pnpm --filter=@woocommerce/plugin-woocommerce wp-env run tests-cli -- sh -lc '! pgrep -f "vendor/bin/phpuni[t]" >/dev/null'
-pnpm --filter=@woocommerce/plugin-woocommerce wp-env run tests-cli -- wp db query 'DELETE FROM wp_actionscheduler_logs; DELETE FROM wp_actionscheduler_actions; DELETE FROM wp_actionscheduler_claims;' --allow-root
 pnpm --filter=@woocommerce/plugin-woocommerce test:php:env -- --filter WooPayments
 pnpm --filter=@woocommerce/admin-library test:js
 pnpm --filter=@woocommerce/admin-library ts:check
@@ -1118,14 +1120,11 @@ run_quality_evidence() {
 	if phpunit_tests_are_running; then
 		record "WooPayments PHP suite" BLOCKED
 		printf '      another PHPUnit process is already running in the shared wp-env tests container; wait for it to finish and rerun this gate\n'
-	elif cleanup_phpunit_action_scheduler_state; then
+	else
 		run_quality_gate "WooPayments PHP suite" pnpm --filter=@woocommerce/plugin-woocommerce test:php:env -- --filter WooPayments
 		if [ "${LAST_GATE_RC:-0}" -eq 124 ]; then
 			cleanup_timed_out_phpunit
 		fi
-	else
-		record "WooPayments PHP suite preflight cleanup" BLOCKED
-		printf '      could not clear stale Action Scheduler rows from the local wp-env tests DB\n'
 	fi
 	run_quality_gate "full admin Jest suite" pnpm --filter=@woocommerce/admin-library test:js
 	run_quality_gate "admin TypeScript check" pnpm --filter=@woocommerce/admin-library ts:check
@@ -1140,11 +1139,6 @@ run_quality_gate() {
 
 phpunit_tests_are_running() {
 	run_command_with_timeout "$FULL_EVIDENCE_QUALITY_GATE_CLEANUP_TIMEOUT_SECONDS" pnpm --filter=@woocommerce/plugin-woocommerce wp-env run tests-cli -- sh -lc 'pgrep -f "vendor/bin/phpuni[t]" >/dev/null' >/dev/null 2>&1
-}
-
-cleanup_phpunit_action_scheduler_state() {
-	printf '      cleanup: clearing Action Scheduler rows from the idle wp-env tests DB\n'
-	run_command_with_timeout "$FULL_EVIDENCE_QUALITY_GATE_CLEANUP_TIMEOUT_SECONDS" pnpm --filter=@woocommerce/plugin-woocommerce wp-env run tests-cli -- wp db query 'DELETE FROM wp_actionscheduler_logs; DELETE FROM wp_actionscheduler_actions; DELETE FROM wp_actionscheduler_claims;' --allow-root >/dev/null 2>&1
 }
 
 cleanup_timed_out_phpunit() {
@@ -1322,10 +1316,20 @@ run_full_evidence_gates() {
 
 	mkdir -p "$FULL_EVIDENCE_OUT_DIR"
 	gate "final evidence self-check verifier" bash "$SELF_DIR/verify.sh" "${self_scope_args[@]}"
+	if [ "$LAST_GATE_RC" -eq 70 ]; then
+		record "remaining full-evidence mutation gates after self-check cleanup failure" BLOCKED
+		printf '      safety stop: self-check cleanup failed; no further store-mutating gates were started\n'
+		return
+	fi
 	if [ "${#tracks_store_args[@]}" -eq 0 ]; then
 		gate "final evidence tracks verifier" env TRACKS_OUT_DIR="$FINAL_TRACKS_OUT_DIR" bash "$SELF_DIR/verify.sh" "${cross_scope_args[@]}" --with-tracks
 	else
 		gate "final evidence tracks verifier" env TRACKS_OUT_DIR="$FINAL_TRACKS_OUT_DIR" bash "$SELF_DIR/verify.sh" "${cross_scope_args[@]}" --with-tracks "${tracks_store_args[@]}"
+	fi
+	if [ "$LAST_GATE_RC" -eq 70 ]; then
+		record "remaining full-evidence mutation gates after Tracks cleanup failure" BLOCKED
+		printf '      safety stop: Tracks cleanup failed; no further store-mutating gates were started\n'
+		return
 	fi
 	gate "final evidence REST route parity" bash "$SELF_DIR/rest-route-parity.sh" --ref "$REF_WP" --target "$TARGET_WP"
 	gate "final evidence hook-shape parity" bash "$SELF_DIR/hook-shape-parity.sh" --ref "$REF_WP" --target "$TARGET_WP"
@@ -1343,11 +1347,11 @@ run_full_evidence_gates() {
 		record_playwriter_block "plugin-active settings screen (target)" "plugin-active-settings-gate.sh" "--playwriter-session"
 	else
 		if [ "$BROWSER_RUNNER" = "playwriter" ]; then
-			gate_with_admin_credentials "plugin-active settings screen (reference)" "$REF_WP_ADMIN_USER" "$REF_WP_ADMIN_PASSWORD" bash "$SELF_DIR/plugin-active-settings-gate.sh" --target "$REF_WP" --target-url "$REF_URL" --browser-runner "$BROWSER_RUNNER" --playwriter-session "$PLAYWRITER_SESSION" --out-dir "$FULL_EVIDENCE_OUT_DIR/plugin-active-settings-reference"
-			gate_with_admin_credentials "plugin-active settings screen (target)" "$TARGET_WP_ADMIN_USER" "$TARGET_WP_ADMIN_PASSWORD" bash "$SELF_DIR/plugin-active-settings-gate.sh" --target "$TARGET_WP" --target-url "$TARGET_URL" --browser-runner "$BROWSER_RUNNER" --playwriter-session "$PLAYWRITER_SESSION" --stage-plugin-active-fixture --out-dir "$FULL_EVIDENCE_OUT_DIR/plugin-active-settings"
+			gate_with_admin_credentials "plugin-active settings screen (reference)" "$REF_WP_ADMIN_USER" "$REF_WP_ADMIN_PASSWORD" bash "$SELF_DIR/plugin-active-settings-gate.sh" --target "$REF_WP" --target-url "$REF_URL" --runner-role reference --browser-runner "$BROWSER_RUNNER" --playwriter-session "$PLAYWRITER_SESSION" --out-dir "$FULL_EVIDENCE_OUT_DIR/plugin-active-settings-reference"
+			gate_with_admin_credentials "plugin-active settings screen (target)" "$TARGET_WP_ADMIN_USER" "$TARGET_WP_ADMIN_PASSWORD" bash "$SELF_DIR/plugin-active-settings-gate.sh" --target "$TARGET_WP" --target-url "$TARGET_URL" --runner-role target --browser-runner "$BROWSER_RUNNER" --playwriter-session "$PLAYWRITER_SESSION" --stage-plugin-active-fixture --out-dir "$FULL_EVIDENCE_OUT_DIR/plugin-active-settings"
 		else
-			gate_with_admin_credentials "plugin-active settings screen (reference)" "$REF_WP_ADMIN_USER" "$REF_WP_ADMIN_PASSWORD" bash "$SELF_DIR/plugin-active-settings-gate.sh" --target "$REF_WP" --target-url "$REF_URL" --browser-runner "$BROWSER_RUNNER" --out-dir "$FULL_EVIDENCE_OUT_DIR/plugin-active-settings-reference"
-			gate_with_admin_credentials "plugin-active settings screen (target)" "$TARGET_WP_ADMIN_USER" "$TARGET_WP_ADMIN_PASSWORD" bash "$SELF_DIR/plugin-active-settings-gate.sh" --target "$TARGET_WP" --target-url "$TARGET_URL" --browser-runner "$BROWSER_RUNNER" --stage-plugin-active-fixture --out-dir "$FULL_EVIDENCE_OUT_DIR/plugin-active-settings"
+			gate_with_admin_credentials "plugin-active settings screen (reference)" "$REF_WP_ADMIN_USER" "$REF_WP_ADMIN_PASSWORD" bash "$SELF_DIR/plugin-active-settings-gate.sh" --target "$REF_WP" --target-url "$REF_URL" --runner-role reference --browser-runner "$BROWSER_RUNNER" --out-dir "$FULL_EVIDENCE_OUT_DIR/plugin-active-settings-reference"
+			gate_with_admin_credentials "plugin-active settings screen (target)" "$TARGET_WP_ADMIN_USER" "$TARGET_WP_ADMIN_PASSWORD" bash "$SELF_DIR/plugin-active-settings-gate.sh" --target "$TARGET_WP" --target-url "$TARGET_URL" --runner-role target --browser-runner "$BROWSER_RUNNER" --stage-plugin-active-fixture --out-dir "$FULL_EVIDENCE_OUT_DIR/plugin-active-settings"
 		fi
 	fi
 	if [ "$BROWSER_RUNNER" = "playwriter" ] && [ -z "$PLAYWRITER_CHECKOUT_SESSION" ]; then
@@ -1412,7 +1416,7 @@ run_full_evidence_gates() {
 	gate "provider-created dispute e2e" bash "$SELF_DIR/dispute-e2e-gate.sh" --ref "$REF_WP" --target "$TARGET_WP"
 	gate "payout evidence (reference)" bash "$SELF_DIR/payout-evidence-gate.sh" --wp "$REF_WP" --label reference
 	gate "payout evidence (target)" bash "$SELF_DIR/payout-evidence-gate.sh" --wp "$TARGET_WP" --label target --native
-	gate "converted-currency charge reconciliation" bash "$SELF_DIR/converted-currency-gate.sh" --ref "$REF_WP" --target "$TARGET_WP" --currency GBP
+	gate "converted-currency charge reconciliation" bash "$SELF_DIR/converted-currency-gate.sh" --ref "$REF_WP" --target "$TARGET_WP" --currency GBP --out-dir "$FULL_EVIDENCE_OUT_DIR/converted-currency"
 	run_bundle_size_evidence
 	run_perf_surface_evidence
 	run_a4aq_accumulated_evidence
@@ -1447,526 +1451,7 @@ acknowledge_manual_evidence_limitations() {
 
 	mkdir -p "${GATE_LOG_DIR:-${TMPDIR:-$SELF_DIR/.tmp}}"
 	classification_file="$(mktemp "${GATE_LOG_DIR:-${TMPDIR:-$SELF_DIR/.tmp}}/woopayments-manual-evidence-limitations.XXXXXX")"
-	if ! python3 - "$FULL_EVIDENCE_OUT_DIR" "$FULL_EVIDENCE_OUT_DIR/manual-evidence-limitations.json" "$LPM_FULL_METHODS" "$REPO_ROOT" "${BLOCKED[@]}" > "$classification_file" <<'PY'; then
-from __future__ import annotations
-
-import json
-import sys
-from collections import Counter
-from pathlib import Path
-from typing import Any
-
-
-out_dir = Path(sys.argv[1])
-summary_path = Path(sys.argv[2])
-expected_lpm_methods = tuple(method.strip() for method in sys.argv[3].split(",") if method.strip())
-repo_root = Path(sys.argv[4])
-labels = sys.argv[5:]
-sys.path.insert(0, str(repo_root / "tools" / "woopayments-merge"))
-from lpm_evidence import (  # noqa: E402
-    MANUAL_BLOCKER_CODE,
-    MANUAL_METHOD_CONTRACTS,
-    context_from_payload,
-    validate_manual_completion,
-    validate_manual_pair,
-)
-
-accepted_lpm_profiles = {
-    "p24": {"country": "PL", "capability": "p24_payments", "provisionable": True},
-    "au_becs_debit": {"country": "AU", "capability": "au_becs_debit_payments", "provisionable": False},
-    "grabpay": {"country": "SG", "capability": "grabpay_payments", "provisionable": False},
-}
-accepted_capability_statuses = {"missing", "unrequested", "pending", "inactive", "restricted", "rejected"}
-accepted_critical_flows = {
-    "SC-14-lpm-wave-1-checkout",
-    "SS-10-sepa-token-renewal-cutover",
-}
-
-
-def read_json(path: Path) -> dict[str, Any] | None:
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-    return value if isinstance(value, dict) else None
-
-
-def has_failures(payload: dict[str, Any]) -> bool:
-    failures = payload.get("failures")
-    return isinstance(failures, list) and bool(failures)
-
-
-def has_empty_failure_list(payload: dict[str, Any]) -> bool:
-    failures = payload.get("failures")
-    return isinstance(failures, list) and not failures
-
-
-def resolve_lpm_artifact(value: Any, expected: Path) -> Path | None:
-    if not isinstance(value, str) or not value:
-        return None
-
-    path = Path(value)
-    if not path.is_absolute():
-        path = out_dir / "lpm-all-methods" / path
-
-    try:
-        return path if path.resolve() == expected.resolve() else None
-    except OSError:
-        return None
-
-
-def valid_sepa_capability_blocker(detail: dict[str, Any]) -> bool:
-    role = detail.get("role")
-    expected = out_dir / "lpm-all-methods" / "lpm-fixtures" / f"{role}-sepa_debit-stage.json"
-    path = resolve_lpm_artifact(detail.get("artifact"), expected)
-    payload = read_json(path) if path else None
-    if not payload:
-        return False
-
-    previous = payload.get("previous") if isinstance(payload.get("previous"), dict) else {}
-    capability_key = "sepa_debit_payments"
-    capability_status = str(previous.get("capability_status") or "missing").lower()
-    errors = payload.get("errors") if isinstance(payload.get("errors"), list) else []
-    capabilities = (
-        previous.get("account_cache", {}).get("data", {}).get("capabilities", {})
-        if isinstance(previous.get("account_cache"), dict)
-        else {}
-    )
-
-    return (
-        payload.get("success") is False
-        and payload.get("mode") == "stage-lpm-fixture"
-        and payload.get("method") == "sepa_debit"
-        and previous.get("capability_key") == capability_key
-        and capability_status in accepted_capability_statuses
-        and (
-            capability_status == "missing"
-            or (isinstance(capabilities, dict) and str(capabilities.get(capability_key) or "").lower() == capability_status)
-        )
-        and any(
-            isinstance(error, str)
-            and "connected WooPayments account capability" in error
-            and capability_key in error
-            for error in errors
-        )
-    )
-
-
-def valid_account_profile_blocker(detail: dict[str, Any]) -> bool:
-    role = detail.get("role")
-    method = detail.get("method")
-    rule = accepted_lpm_profiles.get(str(method))
-    if not rule:
-        return False
-
-    expected = out_dir / "lpm-all-methods" / f"{role}-{method}-account-profile.json"
-    path = resolve_lpm_artifact(detail.get("artifact"), expected)
-    payload = read_json(path) if path else None
-    if not payload:
-        return False
-
-    profile = payload.get("profile") if isinstance(payload.get("profile"), dict) else {}
-    checks = payload.get("checks") if isinstance(payload.get("checks"), dict) else {}
-    country_check = checks.get("country") if isinstance(checks.get("country"), dict) else {}
-    capability_check = checks.get(rule["capability"]) if isinstance(checks.get(rule["capability"]), dict) else {}
-    capability_status = str(
-        capability_check.get("status") or capability_check.get("capability_status") or ""
-    ).lower()
-    has_exact_account_blocker = (
-        country_check.get("status") == "wrong_country"
-        or capability_status in accepted_capability_statuses
-    )
-
-    return (
-        payload.get("success") is True
-        and payload.get("ready") is False
-        and payload.get("status") == "blocked"
-        and profile.get("id") == method
-        and profile.get("country") == rule["country"]
-        and profile.get("test_lab_provisionable") is rule["provisionable"]
-        and has_exact_account_blocker
-    )
-
-
-def valid_manual_completion_blocker(
-    detail: dict[str, Any], result: dict[str, Any], surface: str
-) -> bool:
-    role = str(detail.get("role") or "")
-    method = str(detail.get("method") or "")
-    if method not in MANUAL_METHOD_CONTRACTS:
-        return False
-
-    expected = out_dir / "lpm-all-methods" / f"{role}-{method}-{surface}.json"
-    path = resolve_lpm_artifact(detail.get("artifact"), expected)
-    artifact = read_json(path) if path else None
-    if not artifact or artifact != result:
-        return False
-
-    context = context_from_payload(artifact)
-    return (
-        detail.get("code") == MANUAL_BLOCKER_CODE
-        and detail.get("provenance") == artifact.get("manual_completion")
-        and context.role == role
-        and context.method == method
-        and not validate_manual_completion(artifact, context)
-    )
-
-
-def accept_lpm_all_methods() -> str | None:
-    payload = read_json(out_dir / "lpm-all-methods" / "lpm-checkout-gate.json")
-    if (
-        not payload
-        or payload.get("schema") != "woopayments_lpm_checkout_gate_rollup.v1"
-        or payload.get("status") not in {"blocked", "incomplete"}
-        or not has_empty_failure_list(payload)
-        or len(expected_lpm_methods) != len(set(expected_lpm_methods))
-    ):
-        return None
-
-    cleanup_restore = payload.get("cleanup_restore")
-    cleanup_artifact = read_json(out_dir / "lpm-all-methods" / "lpm-cleanup-restore.json")
-    if (
-        not isinstance(cleanup_restore, dict)
-        or cleanup_restore.get("schema") != "woopayments_lpm_cleanup_restore.v1"
-        or cleanup_restore.get("status") != "pass"
-        or cleanup_artifact != cleanup_restore
-    ):
-        return None
-
-    expected_identities = {
-        (role, method)
-        for role in ("reference", "target")
-        for method in expected_lpm_methods
-    }
-    results = payload.get("results")
-    if not isinstance(results, list):
-        return None
-
-    result_identities = set()
-    passing_result_identities = set()
-    manual_result_identities = set()
-    results_by_identity: dict[tuple[Any, Any], dict[str, Any]] = {}
-    for result in results:
-        if not isinstance(result, dict) or not has_empty_failure_list(result):
-            return None
-        identity = (result.get("role"), result.get("method"))
-        if (
-            identity not in expected_identities
-            or identity in result_identities
-        ):
-            return None
-        result_identities.add(identity)
-        results_by_identity[identity] = result
-        if result.get("status") == "pass":
-            passing_result_identities.add(identity)
-        elif (
-            result.get("status") == "blocked"
-            and result.get("blocker_code") == MANUAL_BLOCKER_CODE
-            and result.get("method") in MANUAL_METHOD_CONTRACTS
-        ):
-            manual_result_identities.add(identity)
-        else:
-            return None
-
-    blockers = payload.get("blockers")
-    if not isinstance(blockers, list) or not blockers:
-        return None
-
-    blocker_details = payload.get("blocker_details")
-    if not isinstance(blocker_details, list) or len(blocker_details) != len(blockers):
-        return None
-    if Counter(blockers) != Counter(
-        detail.get("message") for detail in blocker_details if isinstance(detail, dict)
-    ):
-        return None
-
-    blocker_identities = set()
-    account_blocker_identities = set()
-    manual_blocker_identities = set()
-    surface = str(payload.get("surface") or "")
-    if surface not in {"classic", "blocks"}:
-        return None
-    for detail in blocker_details:
-        if not isinstance(detail, dict):
-            return None
-        role = detail.get("role")
-        method = detail.get("method")
-        identity = (role, method)
-        if identity not in expected_identities or identity in blocker_identities:
-            return None
-        blocker_identities.add(identity)
-
-        code = detail.get("code")
-        if code == "account_capability_unavailable" and method == "sepa_debit":
-            if not valid_sepa_capability_blocker(detail):
-                return None
-            account_blocker_identities.add(identity)
-        elif code == "account_profile_ineligible" and method in accepted_lpm_profiles:
-            if not valid_account_profile_blocker(detail):
-                return None
-            account_blocker_identities.add(identity)
-        elif code == MANUAL_BLOCKER_CODE and method in MANUAL_METHOD_CONTRACTS:
-            result = results_by_identity.get(identity)
-            if not result or not valid_manual_completion_blocker(detail, result, surface):
-                return None
-            manual_blocker_identities.add(identity)
-        else:
-            return None
-
-    if account_blocker_identities & result_identities:
-        return None
-    if manual_blocker_identities != manual_result_identities:
-        return None
-    if passing_result_identities & blocker_identities:
-        return None
-    if passing_result_identities | account_blocker_identities | manual_blocker_identities != expected_identities:
-        return None
-
-    for method in MANUAL_METHOD_CONTRACTS:
-        method_identities = {
-            ("reference", method),
-            ("target", method),
-        }
-        classified_identities = manual_blocker_identities & method_identities
-        if classified_identities and classified_identities != method_identities:
-            return None
-        if classified_identities:
-            if validate_manual_pair(
-                results_by_identity[("reference", method)],
-                results_by_identity[("target", method)],
-                method,
-            ):
-                return None
-
-    return "LPM blockers are limited to validated payment-method account/profile prerequisites and symmetric customer authorization that requires manual completion."
-
-
-def accept_token_continuity() -> str | None:
-    rollup_path = out_dir / "token-continuity" / "token-continuity-gate.json"
-    if rollup_path.exists():
-        return None
-
-    stage = read_json(out_dir / "token-continuity" / "sepa-fixture-stage.json")
-    if not stage or stage.get("success") is not False or stage.get("method") != "sepa_debit":
-        return None
-
-    previous = stage.get("previous") if isinstance(stage.get("previous"), dict) else {}
-    capability_key = "sepa_debit_payments"
-    capability_status = str(previous.get("capability_status") or "missing").lower()
-    capabilities = (
-        previous.get("account_cache", {}).get("data", {}).get("capabilities", {})
-        if isinstance(previous.get("account_cache"), dict)
-        else {}
-    )
-    errors = stage.get("errors")
-    if not isinstance(errors, list):
-        return None
-    if (
-        stage.get("mode") != "stage-lpm-fixture"
-        or previous.get("capability_key") != capability_key
-        or capability_status not in accepted_capability_statuses
-        or (
-            capability_status != "missing"
-            and (
-                not isinstance(capabilities, dict)
-                or str(capabilities.get(capability_key) or "").lower() != capability_status
-            )
-        )
-        or not any(
-            isinstance(error, str)
-            and "connected WooPayments account capability" in error
-            and capability_key in error
-            for error in errors
-        )
-    ):
-        return None
-
-    return "Token continuity is blocked only by the accepted SEPA fixture/account prerequisite."
-
-
-def valid_target_only_token_continuity_pass() -> bool:
-    payload = read_json(out_dir / "token-continuity" / "token-continuity-gate.json")
-    if (
-        not payload
-        or payload.get("schema") != "woopayments_token_continuity_gate_rollup.v1"
-        or payload.get("status") != "pass"
-        or payload.get("failures") != []
-        or payload.get("blockers") != []
-    ):
-        return False
-
-    token_id = payload.get("token_id")
-    source = payload.get("source_token") if isinstance(payload.get("source_token"), dict) else {}
-    native = (
-        payload.get("native_token_loader")
-        if isinstance(payload.get("native_token_loader"), dict)
-        else {}
-    )
-    render = (
-        payload.get("render_payment_methods")
-        if isinstance(payload.get("render_payment_methods"), dict)
-        else {}
-    )
-    render_page = render.get("page") if isinstance(render.get("page"), dict) else {}
-    methods = (
-        render_page.get("payment_methods")
-        if isinstance(render_page.get("payment_methods"), dict)
-        else {}
-    )
-    renewal = payload.get("renewal") if isinstance(payload.get("renewal"), dict) else {}
-
-    return (
-        payload.get("source_flow") == "provider_setup_intent"
-        and isinstance(token_id, int)
-        and token_id > 0
-        and source.get("success") is True
-        and source.get("source_payment_method_customer_ready") is True
-        and str(source.get("payment_method_id") or "").startswith("pm_")
-        and native.get("success") is True
-        and native.get("token_id") == token_id
-        and native.get("gateway_id") == "woocommerce_payments_sepa_debit"
-        and native.get("token_type") == "wcpay_sepa"
-        and str(native.get("token_class") or "").endswith("WooPaymentsSepaToken")
-        and render.get("status") == "pass"
-        and render.get("token_id") == token_id
-        and render.get("token_visible") is True
-        and methods.get("token_visible") is True
-        and renewal.get("success") is True
-        and renewal.get("renewal_processing_model") == "asynchronous_processing"
-        and renewal.get("success_checks_failed") == []
-        and isinstance(renewal.get("renewal_order_id"), int)
-        and renewal.get("renewal_order_id", 0) > 0
-    )
-
-
-def accept_critical_flows() -> str | None:
-    payload = read_json(out_dir / "critical-flows" / "rollup.json")
-    context = read_json(out_dir / "critical-flow-context.json")
-    flow_dir = repo_root / "tools" / "woopayments-critical-flows" / "flows"
-    flow_paths = sorted(flow_dir.glob("*.sh")) + sorted(flow_dir.glob("*.md"))
-    expected_flows = {path.stem for path in flow_paths}
-    if (
-        not payload
-        or not context
-        or payload.get("schema") != "woopayments_critical_flows_rollup.v1"
-        or payload.get("status") != "blocked"
-        or not expected_flows
-        or len(expected_flows) != len(flow_paths)
-        or not accepted_critical_flows <= expected_flows
-    ):
-        return None
-    if payload.get("context_sha256") != context.get("context_sha256"):
-        return None
-    if payload.get("aggregate_run_id") != context.get("aggregate_run_id"):
-        return None
-
-    summary = payload.get("summary")
-    if not isinstance(summary, dict):
-        return None
-
-    results = payload.get("results")
-    if not isinstance(results, list):
-        return None
-
-    expected_identities = {
-        (flow, store)
-        for flow in expected_flows
-        for store in ("ref", "target")
-    }
-    seen_identities = set()
-    status_counts: Counter[str] = Counter()
-    flow_statuses: dict[str, dict[str, str]] = {}
-    for result in results:
-        if not isinstance(result, dict):
-            return None
-        status = str(result.get("status") or "").upper()
-        flow = str(result.get("flow") or "")
-        store = str(result.get("store") or "")
-        identity = (flow, store)
-        if identity not in expected_identities or identity in seen_identities:
-            return None
-        if status not in {"PASS", "BLOCKED"}:
-            return None
-        seen_identities.add(identity)
-        status_counts[status] += 1
-        if flow not in accepted_critical_flows:
-            if status != "PASS":
-                return None
-            continue
-        if store in flow_statuses.setdefault(flow, {}):
-            return None
-        flow_statuses[flow][store] = status
-
-    if seen_identities != expected_identities:
-        return None
-    if (
-        summary.get("passed") != status_counts["PASS"]
-        or summary.get("failed") != 0
-        or summary.get("blocked") != status_counts["BLOCKED"]
-    ):
-        return None
-
-    sc14 = flow_statuses.get("SC-14-lpm-wave-1-checkout")
-    if sc14 != {"ref": "BLOCKED", "target": "BLOCKED"} or accept_lpm_all_methods() is None:
-        return None
-
-    ss10 = flow_statuses.get("SS-10-sepa-token-renewal-cutover")
-    if ss10 == {"ref": "BLOCKED", "target": "BLOCKED"}:
-        if accept_token_continuity() is None:
-            return None
-    elif ss10 == {"ref": "BLOCKED", "target": "PASS"}:
-        if not valid_target_only_token_continuity_pass():
-            return None
-    else:
-        return None
-
-    return "Critical-flow blockers are inherited only from accepted LPM/SEPA manual evidence rows."
-
-
-def classify(label: str) -> str | None:
-    if label == "LPM all-method checkout":
-        return accept_lpm_all_methods()
-    if label == "token continuity cutover":
-        return accept_token_continuity()
-    if label == "critical flows full run":
-        return accept_critical_flows()
-    return None
-
-
-def shell_field(value: str) -> str:
-    return value.replace("\t", " ").replace("\n", " ")
-
-
-accepted: list[dict[str, str]] = []
-blocked: list[dict[str, str]] = []
-for blocked_label in labels:
-    accepted_reason = classify(blocked_label)
-    entry = {
-        "label": blocked_label,
-        "reason": accepted_reason or "No accepted manual-evidence classification matched.",
-    }
-    if accepted_reason:
-        accepted.append(entry)
-        print(f"ACCEPTED\t{shell_field(blocked_label)}\t{shell_field(accepted_reason)}")
-    else:
-        blocked.append(entry)
-        print(f"BLOCKED\t{shell_field(blocked_label)}\t{shell_field(entry['reason'])}")
-
-summary_path.parent.mkdir(parents=True, exist_ok=True)
-summary_path.write_text(
-    json.dumps(
-        {
-            "schema": "woopayments_manual_evidence_limitations.v1",
-            "accepted": accepted,
-            "blocked": blocked,
-        },
-        indent=2,
-        sort_keys=True,
-    )
-    + "\n",
-    encoding="utf-8",
-)
-PY
+	if ! python3 "$SELF_DIR/manual-evidence-classifier.py" "$FULL_EVIDENCE_OUT_DIR" "$FULL_EVIDENCE_OUT_DIR/manual-evidence-limitations.json" "$LPM_FULL_METHODS" "$REPO_ROOT" "${BLOCKED[@]}" > "$classification_file"; then
 		rm -f "$classification_file"
 		return
 	fi
@@ -1999,6 +1484,17 @@ fi
 if [ "$VALIDATE_SCOPE_ONLY" -eq 1 ]; then
 	printf 'Execution scope validated: %s reference and %s target.\n' "$REF_URL" "$TARGET_URL"
 	exit 0
+fi
+if [ ! -r "$OWNED_ORDER_CLEANUP" ]; then
+	printf 'FAIL: verifier cleanup helper is missing or unreadable: %s\n' "$OWNED_ORDER_CLEANUP" >&2
+	exit 2
+fi
+if [ -z "$VERIFY_RUN_TOKEN" ]; then
+	VERIFY_RUN_TOKEN="wcpay-verify-$(python3 -c 'import secrets; print(secrets.token_hex(16))')"
+fi
+if ! [[ "$VERIFY_RUN_TOKEN" =~ ^wcpay-verify-[a-f0-9]{32}$ ]]; then
+	printf 'FAIL: VERIFY_RUN_TOKEN must be a wcpay-verify token with 32 lowercase hexadecimal characters.\n' >&2
+	exit 2
 fi
 
 wait_for_financial_metadata() { # $1 WP ; $2.. order ids
@@ -2091,14 +1587,17 @@ if [ "$FULL_EVIDENCE" -eq 1 ]; then
 fi
 
 TRACKS_CAPTURE_READY=0
+trap cleanup_verify_state EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 if [ "$WITH_TRACKS" -eq 1 ]; then
 	if [ "$MODE" != "cross" ]; then
 		tracks_block "--with-tracks requires cross-store mode with --ref and --target"
 	else
-		trap tracks_restore_tracking EXIT
 		mkdir -p "$TRACKS_OUT_DIR"
-		rm -f "$TRACKS_REF_FILE" "$TRACKS_TARGET_FILE" "$TRACKS_REF_FILE.stderr" "$TRACKS_TARGET_FILE.stderr"
-		if tracks_get_local_sink_config && tracks_prepare_helper_config "reference" "$REF_WP" && tracks_prepare_helper_config "target" "$TARGET_WP" && tracks_prepare_tracking "reference" "$REF_WP" && tracks_prepare_tracking "target" "$TARGET_WP" && tracks_reset "reference"; then
+		rm -f "$TRACKS_REF_FILE" "$TRACKS_TARGET_FILE" "$TRACKS_REF_FILE.stderr" "$TRACKS_TARGET_FILE.stderr" "$TRACKS_REF_MARKER" "$TRACKS_TARGET_MARKER"
+		if tracks_get_local_sink_config && tracks_prepare_helper_config "reference" "$REF_WP" && tracks_prepare_helper_config "target" "$TARGET_WP" && tracks_prepare_tracking "reference" "$REF_WP" && tracks_prepare_tracking "target" "$TARGET_WP" && tracks_mark "reference" "$TRACKS_REF_MARKER"; then
 			TRACKS_CAPTURE_READY=1
 		fi
 	fi
@@ -2117,37 +1616,39 @@ fi
 if [ "$MODE" = "cross" ]; then
 	gate "i18n notes" bash "$SELF_DIR/i18n-notes-gate.sh" --target "$TARGET_WP"
 fi
+stop_before_unwrapped_store_flows_on_cleanup_failure
 
 # 2. Drive a fixture flow on the reference store and collect order ids.
 echo "  driving a charge fixture on the reference store..."
-FLOW_ARGS=(charge --count=1 --type=success)
-if [ "$MODE" = "cross" ]; then
-	FLOW_ARGS=(charge --deterministic --sku=test-lab-beaker-001 --quantity=2 --type=success)
-fi
+FLOW_ARGS=(charge --deterministic --sku=test-lab-beaker-001 --quantity=2 --type=success --run-token "$VERIFY_RUN_TOKEN")
 IDS="$(WP="$REF_WP" bash "$SELF_DIR/flow-drive.sh" "${FLOW_ARGS[@]}" 2>/dev/null | sed -n 's/.*"order_id":\([0-9]*\).*/\1/p' | tr '\n' ' ')"
 if [ -z "$IDS" ]; then
 	record "flow-drive (charge)" FAIL
 else
+	# shellcheck disable=SC2206
+	OWNED_REF_ORDER_IDS+=( $IDS )
 	record "flow-drive (charge) -> orders: $IDS" PASS
 fi
 if [ "$TRACKS_CAPTURE_READY" -eq 1 ]; then
-	tracks_normalize "reference" "$TRACKS_REF_STORE_ID" "$TRACKS_REF_FILE" || TRACKS_CAPTURE_READY=0
+	tracks_normalize "reference" "$TRACKS_REF_STORE_ID" "$TRACKS_REF_FILE" "$TRACKS_REF_MARKER" || TRACKS_CAPTURE_READY=0
 fi
 
 TARGET_IDS="$IDS"
 if [ "$MODE" = "cross" ]; then
 	if [ "$TRACKS_CAPTURE_READY" -eq 1 ]; then
-		tracks_reset "target" || TRACKS_CAPTURE_READY=0
+		tracks_mark "target" "$TRACKS_TARGET_MARKER" || TRACKS_CAPTURE_READY=0
 	fi
 	echo "  driving a charge fixture on the target store..."
 	TARGET_IDS="$(WP="$TARGET_WP" bash "$SELF_DIR/flow-drive.sh" "${FLOW_ARGS[@]}" --native 2>/dev/null | sed -n 's/.*"order_id":\([0-9]*\).*/\1/p' | tr '\n' ' ')"
 	if [ -z "$TARGET_IDS" ]; then
 		record "target flow-drive (charge)" FAIL
 	else
+		# shellcheck disable=SC2206
+		OWNED_TARGET_ORDER_IDS+=( $TARGET_IDS )
 		record "target flow-drive (charge) -> orders: $TARGET_IDS" PASS
 	fi
 	if [ "$TRACKS_CAPTURE_READY" -eq 1 ]; then
-		tracks_normalize "target" "$TRACKS_TARGET_STORE_ID" "$TRACKS_TARGET_FILE" || TRACKS_CAPTURE_READY=0
+		tracks_normalize "target" "$TRACKS_TARGET_STORE_ID" "$TRACKS_TARGET_FILE" "$TRACKS_TARGET_MARKER" || TRACKS_CAPTURE_READY=0
 	fi
 fi
 
@@ -2168,7 +1669,7 @@ perf_smoke_ref="$perf_smoke_dir/reference.json"
 perf_smoke_target="$perf_smoke_dir/target.json"
 if gate "perf smoke capture (reference)" bash "$SELF_DIR/perf-surface-gate.sh" capture --wp "$REF_WP" --out "$perf_smoke_ref"; then
 	if gate "perf smoke capture (target)" bash "$SELF_DIR/perf-surface-gate.sh" capture --wp "$TARGET_WP" --out "$perf_smoke_target"; then
-		gate "perf smoke (gateway query-count)" bash "$SELF_DIR/perf-surface-gate.sh" compare --ref "$perf_smoke_ref" --target "$perf_smoke_target"
+		gate "perf smoke (gateway query-count)" bash "$SELF_DIR/perf-surface-gate.sh" compare --ref "$perf_smoke_ref" --target "$perf_smoke_target" --gateway-initialization-only
 	fi
 fi
 rm -rf "$perf_smoke_dir"
@@ -2194,7 +1695,7 @@ if [ -n "$IDS" ]; then
 	fi
 fi
 
-# 6. Tracks-parity (opt-in; clears the shared wpcom-local sink between store captures).
+# 6. Tracks parity (opt-in; append-only markers isolate each store capture without clearing the sink).
 if [ "$WITH_TRACKS" -eq 1 ]; then
 	if [ -n "$TRACKS_BLOCK_REASON" ]; then
 		record "tracks parity" BLOCKED

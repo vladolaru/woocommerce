@@ -10,6 +10,7 @@ import json
 import os
 import re
 import secrets
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -296,6 +297,15 @@ class GateFailure(RuntimeError):
     """The exercised browser or state behavior failed."""
 
 
+class GateSignal(BaseException):
+    """A process signal requested an abort after armed cleanup runs."""
+
+    def __init__(self, signum: int):
+        super().__init__(f"received signal {signum}")
+        self.signum = signum
+        self.cleanup_errors: list[str] = []
+
+
 def load_json(path: Path) -> dict[str, Any]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
@@ -514,7 +524,7 @@ def run_store(
     encoded_session_token = base64.b64encode(session_token.encode()).decode()
     encoded_token_baseline = base64.b64encode(json.dumps(baseline_token_ids).encode()).decode()
     result: dict[str, Any] | None = None
-    primary_error: Exception | None = None
+    primary_error: BaseException | None = None
 
     try:
         auth_session = run_wp_eval(
@@ -578,6 +588,8 @@ def run_store(
             "log": str(log_path),
             "errors": [],
         }
+    except GateSignal as exc:
+        primary_error = exc
     except Exception as exc:
         primary_error = exc
     finally:
@@ -610,7 +622,9 @@ def run_store(
 
         if cleanup_errors:
             cleanup_detail = "; ".join(cleanup_errors)
-            if isinstance(primary_error, GateFailure):
+            if isinstance(primary_error, GateSignal):
+                primary_error.cleanup_errors.extend(cleanup_errors)
+            elif isinstance(primary_error, GateFailure):
                 primary_error = GateFailure(f"{primary_error}; cleanup blockers: {cleanup_detail}")
             elif primary_error is not None:
                 primary_error = GateBlocked(f"{primary_error}; cleanup blockers: {cleanup_detail}")
@@ -669,7 +683,7 @@ def print_plan(args: argparse.Namespace) -> None:
     )
 
 
-def main() -> int:
+def run_gate_main() -> int:
     args = parse_args()
     if args.print_plan:
         print_plan(args)
@@ -747,6 +761,34 @@ def main() -> int:
         return 3
     print(f"SC-04 gate: wrote passing evidence to {out_dir}")
     return 0
+
+
+def main() -> int:
+    handled_signals = (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)
+    previous_handlers = {signum: signal.getsignal(signum) for signum in handled_signals}
+
+    def handle_signal(signum, _frame) -> None:
+        for handled_signal in handled_signals:
+            signal.signal(handled_signal, signal.SIG_IGN)
+        raise GateSignal(signum)
+
+    for signum in handled_signals:
+        signal.signal(signum, handle_signal)
+
+    try:
+        return run_gate_main()
+    except GateSignal as exc:
+        if exc.cleanup_errors:
+            print(
+                f"INTERRUPTED: {exc}; cleanup blockers: {'; '.join(exc.cleanup_errors)}",
+                file=sys.stderr,
+            )
+        else:
+            print(f"INTERRUPTED: {exc}; armed cleanup completed before exit.", file=sys.stderr)
+        return 128 + exc.signum
+    finally:
+        for signum, previous_handler in previous_handlers.items():
+            signal.signal(signum, previous_handler)
 
 
 if __name__ == "__main__":

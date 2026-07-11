@@ -22,7 +22,12 @@ $quantity       = isset( $args[1] ) ? max( 1, (int) $args[1] ) : 2;
 $payment_method = $args[2] ?? 'pm_card_visa';
 $manual_capture = isset( $args[3] ) && ! in_array( strtolower( (string) $args[3] ), array( '', '0', 'false', 'no' ), true );
 $currency       = strtoupper( trim( (string) ( $args[4] ?? '' ) ) );
+$run_token      = trim( (string) ( $args[5] ?? '' ) );
 $store_currency = strtoupper( (string) get_option( 'woocommerce_currency' ) );
+
+if ( '' !== $run_token && ! preg_match( '/^wcpay-verify-[a-f0-9]{32}$/', $run_token ) ) {
+	WP_CLI::error( 'Invalid verifier run token.' );
+}
 
 if ( '' === $currency ) {
 	add_filter( 'wcpay_multi_currency_should_return_store_currency', '__return_true' );
@@ -44,11 +49,17 @@ if ( ! $product ) {
 	WP_CLI::error( "Could not load product SKU {$sku}." );
 }
 
-if ( 'test-lab-beaker-001' === $sku ) {
-	$product->set_regular_price( '25.00' );
-	$product->set_sale_price( '' );
-	$product->set_price( '25.00' );
-	$product->save();
+$normalize_fixture_price = 'test-lab-beaker-001' === $sku;
+$fixed_fixture_price     = static function ( $price, $candidate ) use ( $product_id ) {
+	return $candidate instanceof WC_Product && $product_id === $candidate->get_id() ? '25.00' : $price;
+};
+$empty_fixture_sale_price = static function ( $price, $candidate ) use ( $product_id ) {
+	return $candidate instanceof WC_Product && $product_id === $candidate->get_id() ? '' : $price;
+};
+if ( $normalize_fixture_price ) {
+	add_filter( 'woocommerce_product_get_price', $fixed_fixture_price, 10, 2 );
+	add_filter( 'woocommerce_product_get_regular_price', $fixed_fixture_price, 10, 2 );
+	add_filter( 'woocommerce_product_get_sale_price', $empty_fixture_sale_price, 10, 2 );
 }
 
 $currency_user_id          = get_current_user_id();
@@ -106,10 +117,6 @@ if ( '' !== $currency ) {
 	$restore_currency_meta = true;
 }
 
-if ( WC()->session instanceof WC_Session ) {
-	WC()->session->set( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, null );
-}
-
 $order = wc_create_order();
 if ( '' !== $currency ) {
 	$order->set_currency( $selected_currency );
@@ -127,6 +134,7 @@ $order->set_billing_state( 'CA' );
 $order->set_billing_postcode( '94103' );
 $order->set_billing_country( 'US' );
 $order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+$order->update_meta_data( '_wcpay_verify_run_token', $run_token );
 $order->calculate_totals();
 $order->save();
 
@@ -158,9 +166,28 @@ if ( $manual_capture ) {
 	update_option( $settings_option, $settings, false );
 }
 
+$session                   = WC()->session;
+$session_key               = WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER;
+$session_data              = $session instanceof WC_Session && method_exists( $session, 'get_session_data' ) ? $session->get_session_data() : array();
+$processing_order_existed  = array_key_exists( $session_key, $session_data );
+$previous_processing_order = $processing_order_existed ? maybe_unserialize( $session_data[ $session_key ] ) : null;
+if ( $session instanceof WC_Session ) {
+	$session->set( $session_key, null );
+	if ( method_exists( $session, 'save_data' ) ) {
+		$session->save_data();
+	}
+}
+
 try {
 	$result = $gateway->process_payment( $order->get_id() );
 } finally {
+	if ( $session instanceof WC_Session ) {
+		$session->set( $session_key, $processing_order_existed ? $previous_processing_order : null );
+		if ( method_exists( $session, 'save_data' ) ) {
+			$session->save_data();
+		}
+	}
+
 	if ( $manual_capture ) {
 		if ( $original_settings === $missing_settings ) {
 			delete_option( $settings_option );
@@ -175,6 +202,12 @@ try {
 		} else {
 			delete_user_meta( $currency_user_id, 'wcpay_currency' );
 		}
+	}
+
+	if ( $normalize_fixture_price ) {
+		remove_filter( 'woocommerce_product_get_price', $fixed_fixture_price, 10 );
+		remove_filter( 'woocommerce_product_get_regular_price', $fixed_fixture_price, 10 );
+		remove_filter( 'woocommerce_product_get_sale_price', $empty_fixture_sale_price, 10 );
 	}
 }
 

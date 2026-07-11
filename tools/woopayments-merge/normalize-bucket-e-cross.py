@@ -41,6 +41,7 @@ RECURSIVELY_IGNORED_META_KEYS = {
 
 IGNORED_META_KEYS = RECURSIVELY_IGNORED_META_KEYS | {
     "_wcpay_raw_payment_method_details",  # Core-owned PaymentInfo cache, not a WooPayments compatibility surface.
+    "_wcpay_verify_run_token",  # Aggregate-verifier ownership marker, never product state.
 }
 
 VOLATILE_META_KEYS = {

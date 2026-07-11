@@ -15,6 +15,7 @@ import json
 import os
 import re
 import shlex
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -79,6 +80,14 @@ CHECKOUT_ROUTE_KEYS = (
     "referenceClassicAddPaymentMethod",
     "referenceProductExpress",
 )
+
+
+class GateSignal(BaseException):
+    """A process signal requested an abort after armed cleanup runs."""
+
+    def __init__(self, signum: int):
+        super().__init__(f"received signal {signum}")
+        self.signum = signum
 
 
 def now() -> str:
@@ -388,12 +397,24 @@ class Gate:
             "payload": payload,
         }
 
-    def apply_optional_admin_scenario(self, label: str, wp_cmd: str) -> dict[str, Any]:
+    def snapshot_optional_admin_scenario(self, label: str, wp_cmd: str) -> dict[str, Any]:
         result = self.run_wp_eval_file(
             label,
             wp_cmd,
             self.scripts_dir / "a4-account-scenario.php",
-            ["apply-optional-admin"],
+            ["snapshot"],
+        )
+        payload = result.get("payload")
+        if result["exit_code"] != 0 or not isinstance(payload, dict) or not payload.get("snapshot"):
+            raise RuntimeError(f"{label} optional-admin snapshot failed: {result['stderr_tail'] or result['stdout_tail']}")
+        return result
+
+    def apply_optional_admin_scenario(self, label: str, wp_cmd: str, snapshot: str) -> dict[str, Any]:
+        result = self.run_wp_eval_file(
+            label,
+            wp_cmd,
+            self.scripts_dir / "a4-account-scenario.php",
+            ["apply-optional-admin", snapshot],
         )
         if result["exit_code"] != 0:
             raise RuntimeError(f"{label} optional-admin scenario failed: {result['stderr_tail'] or result['stdout_tail']}")
@@ -648,9 +669,15 @@ class Gate:
 
         try:
             for store, wp_cmd in (("target", self.target_wp),):
-                apply_result = self.apply_optional_admin_scenario(f"{store}-wp", wp_cmd)
+                snapshot_result = self.snapshot_optional_admin_scenario(f"{store}-wp", wp_cmd)
+                snapshot_payload = snapshot_result["payload"]
+                snapshots[store] = str(snapshot_payload["snapshot"])
+                apply_result = self.apply_optional_admin_scenario(
+                    f"{store}-wp",
+                    wp_cmd,
+                    snapshots[store],
+                )
                 payload = apply_result["payload"]
-                snapshots[store] = str(payload["snapshot"])
                 summary["applies"][store] = redact_snapshot_payload(payload)
 
             optional_state = {
@@ -732,6 +759,8 @@ class Gate:
                 entry["status"] = "pass"
                 self.validate_browser_evidence(check_id, evidence_path, entry)
                 self.validate_optional_admin_coverage(evidence_path, entry)
+        except GateSignal:
+            raise
         except Exception as exc:
             entry["status"] = "incomplete" if entry["status"] != "fail" else entry["status"]
             reason = f"{check_id}: {exc}"
@@ -1452,7 +1481,7 @@ def matching_lines(text: str, pattern: re.Pattern[str]) -> list[str]:
     return [line for line in text.splitlines() if pattern.search(line)]
 
 
-def main() -> int:
+def run_gate_main() -> int:
     args = parse_args()
     gate = Gate(args)
     try:
@@ -1463,6 +1492,28 @@ def main() -> int:
         print(f"ERROR: preflight failed: {exc}", file=sys.stderr)
         return EXIT_USAGE
     return gate.run_all()
+
+
+def main() -> int:
+    handled_signals = (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)
+    previous_handlers = {signum: signal.getsignal(signum) for signum in handled_signals}
+
+    def handle_signal(signum, _frame) -> None:
+        for handled_signal in handled_signals:
+            signal.signal(handled_signal, signal.SIG_IGN)
+        raise GateSignal(signum)
+
+    for signum in handled_signals:
+        signal.signal(signum, handle_signal)
+
+    try:
+        return run_gate_main()
+    except GateSignal as exc:
+        print(f"INTERRUPTED: {exc}; armed cleanup completed before exit.", file=sys.stderr)
+        return 128 + exc.signum
+    finally:
+        for signum, previous_handler in previous_handlers.items():
+            signal.signal(signum, previous_handler)
 
 
 if __name__ == "__main__":

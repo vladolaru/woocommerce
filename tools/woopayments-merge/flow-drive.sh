@@ -36,6 +36,7 @@ ORDER_ID=""
 TYPE="success"
 MANUAL_CAPTURE=0
 CURRENCY=""
+RUN_TOKEN=""
 PASSTHRU=()
 
 while [ "$#" -gt 0 ]; do
@@ -51,11 +52,18 @@ while [ "$#" -gt 0 ]; do
 		--manual-capture) MANUAL_CAPTURE=1; shift ;;
 		--currency=*) CURRENCY="${1#--currency=}"; shift ;;
 		--currency) CURRENCY="$2"; shift 2 ;;
+		--run-token=*) RUN_TOKEN="${1#--run-token=}"; shift ;;
+		--run-token) RUN_TOKEN="$2"; shift 2 ;;
 		--type=*) TYPE="${1#--type=}"; PASSTHRU+=("$1"); shift ;;
 		--type) TYPE="$2"; PASSTHRU+=("$1" "$2"); shift 2 ;;
 		*) PASSTHRU+=("$1"); shift ;;
 	esac
 done
+
+if [ -n "$RUN_TOKEN" ] && ! [[ "$RUN_TOKEN" =~ ^wcpay-verify-[a-f0-9]{32}$ ]]; then
+	echo "FLOW-DRIVE FAIL: invalid verifier run token." >&2
+	exit 2
+fi
 
 if [ -z "$OP" ]; then
 	echo "usage: WP='<wp runner>' flow-drive.sh <charge|refund|capture|dispute|payout> [--count=N] [--type=...]" >&2
@@ -83,15 +91,15 @@ if [ "$DETERMINISTIC" -eq 1 ]; then
 				dispute) PAYMENT_METHOD="pm_card_createDispute" ;;
 				*) PAYMENT_METHOD="$TYPE" ;;
 			esac
-				raw="$($WP eval-file - "$SKU" "$QUANTITY" "$PAYMENT_METHOD" "$MANUAL_CAPTURE" "$CURRENCY" < "$SELF_DIR/flow-drive-native-charge.php" 2>&1)"
+				raw="$($WP eval-file - "$SKU" "$QUANTITY" "$PAYMENT_METHOD" "$MANUAL_CAPTURE" "$CURRENCY" "$RUN_TOKEN" < "$SELF_DIR/flow-drive-native-charge.php" 2>&1)"
 			else
-				raw="$($WP eval-file - "$SKU" "$QUANTITY" "$TYPE" "$MANUAL_CAPTURE" "$CURRENCY" < "$SELF_DIR/flow-drive-deterministic-charge.php" 2>&1)"
+				raw="$($WP eval-file - "$SKU" "$QUANTITY" "$TYPE" "$MANUAL_CAPTURE" "$CURRENCY" "$RUN_TOKEN" < "$SELF_DIR/flow-drive-deterministic-charge.php" 2>&1)"
 			fi
 		elif [ "$OP" = "dispute" ]; then
 			if [ "$NATIVE" -eq 1 ]; then
-				raw="$($WP eval-file - "$SKU" "$QUANTITY" "pm_card_createDispute" "$MANUAL_CAPTURE" "$CURRENCY" < "$SELF_DIR/flow-drive-native-charge.php" 2>&1)"
+				raw="$($WP eval-file - "$SKU" "$QUANTITY" "pm_card_createDispute" "$MANUAL_CAPTURE" "$CURRENCY" "$RUN_TOKEN" < "$SELF_DIR/flow-drive-native-charge.php" 2>&1)"
 			else
-				raw="$($WP eval-file - "$SKU" "$QUANTITY" "dispute" "$MANUAL_CAPTURE" "$CURRENCY" < "$SELF_DIR/flow-drive-deterministic-charge.php" 2>&1)"
+				raw="$($WP eval-file - "$SKU" "$QUANTITY" "dispute" "$MANUAL_CAPTURE" "$CURRENCY" "$RUN_TOKEN" < "$SELF_DIR/flow-drive-deterministic-charge.php" 2>&1)"
 			fi
 	elif [ "$OP" = "refund" ]; then
 		if [ -z "$ORDER_ID" ]; then

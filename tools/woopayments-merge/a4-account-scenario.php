@@ -231,6 +231,15 @@ if ( 'restore' === $mode ) {
 	return;
 }
 
+if ( '' === $snapshot ) {
+	WP_CLI::error( 'The optional-admin scenario requires a pre-mutation snapshot.' );
+}
+
+$apply_state = a4_account_scenario_decode_snapshot( $snapshot );
+if ( $before_state !== $apply_state ) {
+	WP_CLI::error( 'Account-cache state changed after snapshot; refusing optional-admin mutation.' );
+}
+
 if ( ! is_array( $before_cache ) || ! isset( $before_cache['data'] ) || ! is_array( $before_cache['data'] ) ) {
 	WP_CLI::error( 'Cannot apply optional-admin scenario without a cached WooPayments account payload.' );
 }

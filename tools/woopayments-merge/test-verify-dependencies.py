@@ -31,10 +31,13 @@ VERIFY_DEPENDENCIES = (
     "tools/woopayments-merge/local-runner-safety.sh",
     "tools/woopayments-merge/local_runner_safety.py",
     "tools/woopayments-merge/lpm_evidence.py",
+    "tools/woopayments-merge/manual-evidence-classifier.py",
     "tools/woopayments-merge/tracks-parity.sh",
     "tools/woopayments-merge/tracks-normalize.py",
     "tools/woopayments-merge/plugin-active-settings-gate.sh",
     "tools/woopayments-merge/plugin-active-settings.playwriter.mjs",
+    "tools/woopayments-merge/run-command-with-timeout.py",
+    "tools/woopayments-merge/verify-owned-order-cleanup.php",
 )
 
 FINAL_EVIDENCE_DEPENDENCIES = VERIFY_DEPENDENCIES + (
@@ -55,6 +58,7 @@ FINAL_EVIDENCE_DEPENDENCIES = VERIFY_DEPENDENCIES + (
     "tools/woopayments-merge/flow-drive-unpaid-order.php",
     "tools/woopayments-merge/money-path-parity-gate.sh",
     "tools/woopayments-merge/money-path-parity-preflight.php",
+    "tools/woopayments-merge/multi-currency-runtime-state.sh",
     "tools/woopayments-merge/perf-fixtures-gate.py",
     "tools/woopayments-merge/perf_fixtures.py",
     "tools/woopayments-merge/playwright-script-runner.mjs",
@@ -68,8 +72,11 @@ FINAL_EVIDENCE_TEST_DEPENDENCIES = (
     "tools/woopayments-merge/test-a4ar-harness-regressions.py",
     "tools/woopayments-merge/test-a4au-admin-surface-regressions.py",
     "tools/woopayments-merge/test-money-path-parity-gate.py",
+    "tools/woopayments-merge/test-converted-currency-gate.py",
+    "tools/woopayments-merge/test-flow-drive.py",
     "tools/woopayments-merge/test-local-runner-safety.py",
     "tools/woopayments-merge/test-sc04-saved-card-gate.py",
+    "tools/woopayments-merge/test-verify-owned-order-cleanup.py",
     "tools/woopayments-merge/tests/a4-admin-surface-fixtures.sh",
 )
 
@@ -145,6 +152,8 @@ def test_native_charge_driver_forces_store_currency_when_no_currency_is_requeste
 
 def main() -> None:
     test_verify_base_dependencies_are_tracked()
+    test_final_evidence_runtime_dependencies_are_tracked()
+    test_final_evidence_regression_dependencies_are_tracked()
     test_financial_reconcile_dispute_id_extractor_requires_provider_id_shape()
     test_native_charge_driver_projects_multicurrency_orders_in_cli_context()
     test_native_charge_driver_forces_store_currency_when_no_currency_is_requested()

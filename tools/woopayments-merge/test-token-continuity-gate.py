@@ -200,8 +200,12 @@ def make_fake_wp(
     omit_token: bool = False,
     payment_token_command_available: bool = True,
     restore_failure: bool = False,
+    restore_semantic_failure: bool = False,
     sepa_stage_failure: bool = False,
+    sepa_stage_failure_without_json: bool = False,
     sepa_restore_failure: bool = False,
+    sepa_restore_semantic_failure: bool = False,
+    cutover_failure_without_json: bool = False,
     subscription_product_id: int = 116,
     token_id: int = 4242,
 ) -> None:
@@ -261,7 +265,14 @@ if [ "$1" = "wc" ] && [ "$2" = "product" ] && [ "$3" = "list" ]; then
 fi
     if [ "$1" = "eval-file" ] && [ "$2" = "-" ]; then
 	    mode="${{3:-}}"
+	    if [ "$mode" = "snapshot-lpm-fixture" ]; then
+	        printf '{{"success":true,"mode":"snapshot-lpm-fixture","method":"sepa_debit","currency":"EUR","country":"NL","errors":[],"previous":{{"settings_exists":false,"account_cache_exists":true,"currency_exists":true,"currency":"USD","country_exists":true,"country":"US:CA"}}}}\n'
+	        exit 0
+	    fi
 	    if [ "$mode" = "stage-lpm-fixture" ]; then
+	        if [ {str(sepa_stage_failure_without_json).lower()} = "true" ]; then
+	            exit 1
+	        fi
 	        if [ {str(sepa_stage_failure).lower()} = "true" ]; then
 	            printf '{{"success":false,"mode":"stage-lpm-fixture","method":"sepa_debit","currency":"EUR","country":"NL","errors":["simulated post-write stage verification failure"],"previous":{{"settings_exists":false,"account_cache_exists":true,"currency_exists":true,"currency":"USD","country_exists":true,"country":"US:CA"}}}}\\n'
 	            exit 0
@@ -270,6 +281,10 @@ fi
         exit 0
     fi
     if [ "$mode" = "restore-lpm-fixture" ]; then
+        if [ {str(sepa_restore_semantic_failure).lower()} = "true" ]; then
+            printf '{{"success":false,"mode":"restore-lpm-fixture","errors":["simulated semantic SEPA fixture restore failure"]}}\n'
+            exit 0
+        fi
         if [ {str(sepa_restore_failure).lower()} = "true" ]; then
             printf '{{"success":false,"mode":"restore-lpm-fixture","errors":["simulated SEPA fixture restore failure"]}}\\n'
             exit 1
@@ -278,12 +293,19 @@ fi
         exit 0
     fi
     if [ "$mode" = "restore" ]; then
+        if [ {str(restore_semantic_failure).lower()} = "true" ]; then
+            printf '{{"success":false,"mode":"restore","errors":["simulated semantic plugin-state restore failure"]}}\n'
+            exit 0
+        fi
         if [ {str(restore_failure).lower()} = "true" ]; then
             printf '{{"success":false,"mode":"restore","errors":["simulated plugin-state restore failure"]}}\\n'
             exit 1
         fi
         printf '{{"success":true,"mode":"restore","errors":[]}}\\n'
         exit 0
+    fi
+    if [ "$mode" = "cutover-native" ] && [ {str(cutover_failure_without_json).lower()} = "true" ]; then
+        exit 1
     fi
     if [ "$mode" = "preflight-plugin" ] || [ "$mode" = "cutover-native" ]; then
         printf '{{"success":true,"mode":"%s","errors":[]}}\\n' "$mode"
@@ -767,12 +789,90 @@ def test_gate_fails_and_rolls_up_plugin_state_restore_failure() -> None:
             },
         )
 
-        assert result.returncode == 1
+        assert result.returncode == 70
         assert "plugin-state restore failed" in result.stderr
         rollup = json.loads((out_dir / "token-continuity-gate.json").read_text(encoding="utf-8"))
         assert rollup["status"] == "fail"
         assert rollup["restore"]["success"] is False
         assert any("plugin-state restore failed" in failure for failure in rollup["failures"])
+
+
+def test_exit_zero_negative_plugin_restore_stays_armed_for_cleanup_retry() -> None:
+    with tempfile.TemporaryDirectory(prefix="token-continuity-gate-test-") as tmp:
+        tmp_path = Path(tmp)
+        target_wp = tmp_path / "target-wp"
+        fake_playwriter = tmp_path / "fake-playwriter"
+        wp_invocations = tmp_path / "wp-invocations.txt"
+        out_dir = tmp_path / "evidence"
+
+        make_fake_wp(
+            target_wp,
+            "http://store8889.localhost:8889",
+            restore_semantic_failure=True,
+        )
+        make_fake_playwriter(fake_playwriter)
+
+        result = run_gate(
+            "--target",
+            str(target_wp),
+            "--customer-id",
+            "7",
+            "--subscription-id",
+            "77",
+            "--playwriter-session",
+            "unit",
+            "--out-dir",
+            str(out_dir),
+            env={
+                **os.environ,
+                "PLAYWRITER_BIN": str(fake_playwriter),
+                "FAKE_WP_INVOCATIONS": str(wp_invocations),
+                "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter-invocations.jsonl"),
+            },
+        )
+
+        assert result.returncode == 70
+        assert wp_invocations.read_text(encoding="utf-8").count("eval-file - restore") == 2
+
+
+def test_cutover_failure_without_json_still_restores_plugin_state() -> None:
+    with tempfile.TemporaryDirectory(prefix="token-continuity-cutover-cleanup-") as tmp:
+        tmp_path = Path(tmp)
+        target_wp = tmp_path / "target-wp"
+        fake_playwriter = tmp_path / "fake-playwriter"
+        wp_invocations = tmp_path / "wp-invocations.txt"
+        out_dir = tmp_path / "evidence"
+
+        make_fake_wp(
+            target_wp,
+            "http://store8889.localhost:8889",
+            cutover_failure_without_json=True,
+        )
+        make_fake_playwriter(fake_playwriter)
+
+        result = run_gate(
+            "--target",
+            str(target_wp),
+            "--customer-id",
+            "7",
+            "--subscription-id",
+            "77",
+            "--playwriter-session",
+            "unit",
+            "--out-dir",
+            str(out_dir),
+            env={
+                **os.environ,
+                "PLAYWRITER_BIN": str(fake_playwriter),
+                "FAKE_WP_INVOCATIONS": str(wp_invocations),
+                "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter-invocations.jsonl"),
+            },
+        )
+
+        assert result.returncode == 1
+        wp_log = wp_invocations.read_text(encoding="utf-8")
+        assert "eval-file - cutover-native 4242" in wp_log
+        assert "eval-file - restore" in wp_log
 
 
 def test_full_gate_validates_browser_token_against_reusable_customer_payment_method() -> None:
@@ -1276,11 +1376,92 @@ def test_gate_fails_and_rolls_up_sepa_fixture_restore_failure() -> None:
             },
         )
 
-        assert result.returncode == 1
+        assert result.returncode == 70
         assert "SEPA fixture restore failed" in result.stderr
         rollup = json.loads((out_dir / "token-continuity-gate.json").read_text(encoding="utf-8"))
         assert rollup["status"] == "fail"
         assert rollup["sepa_fixture_restore"]["success"] is False
+
+
+def test_exit_zero_negative_sepa_restore_stays_armed_for_cleanup_retry() -> None:
+    with tempfile.TemporaryDirectory(prefix="token-continuity-gate-test-") as tmp:
+        tmp_path = Path(tmp)
+        target_wp = tmp_path / "target-wp"
+        fake_playwriter = tmp_path / "fake-playwriter"
+        wp_invocations = tmp_path / "wp-invocations.txt"
+        out_dir = tmp_path / "evidence"
+
+        make_fake_wp(
+            target_wp,
+            "http://store8889.localhost:8889",
+            sepa_restore_semantic_failure=True,
+        )
+        make_fake_playwriter(fake_playwriter)
+
+        result = run_gate(
+            "--target",
+            str(target_wp),
+            "--customer-id",
+            "7",
+            "--subscription-id",
+            "77",
+            "--playwriter-session",
+            "unit",
+            "--stage-sepa-fixture",
+            "--out-dir",
+            str(out_dir),
+            env={
+                **os.environ,
+                "PLAYWRITER_BIN": str(fake_playwriter),
+                "FAKE_WP_INVOCATIONS": str(wp_invocations),
+                "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter-invocations.jsonl"),
+            },
+        )
+
+        assert result.returncode == 70
+        assert wp_invocations.read_text(encoding="utf-8").count("eval-file - restore-lpm-fixture") == 2
+
+
+def test_sepa_stage_failure_without_json_restores_prearmed_snapshot() -> None:
+    with tempfile.TemporaryDirectory(prefix="token-continuity-sepa-snapshot-") as tmp:
+        tmp_path = Path(tmp)
+        target_wp = tmp_path / "target-wp"
+        fake_playwriter = tmp_path / "fake-playwriter"
+        wp_invocations = tmp_path / "wp-invocations.txt"
+        out_dir = tmp_path / "evidence"
+
+        make_fake_wp(
+            target_wp,
+            "http://store8889.localhost:8889",
+            sepa_stage_failure_without_json=True,
+        )
+        make_fake_playwriter(fake_playwriter)
+
+        result = run_gate(
+            "--target",
+            str(target_wp),
+            "--customer-id",
+            "7",
+            "--subscription-id",
+            "77",
+            "--playwriter-session",
+            "unit",
+            "--stage-sepa-fixture",
+            "--out-dir",
+            str(out_dir),
+            env={
+                **os.environ,
+                "PLAYWRITER_BIN": str(fake_playwriter),
+                "FAKE_WP_INVOCATIONS": str(wp_invocations),
+                "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter-invocations.jsonl"),
+            },
+        )
+
+        assert result.returncode == 3
+        wp_log = wp_invocations.read_text(encoding="utf-8")
+        assert "eval-file - snapshot-lpm-fixture" in wp_log
+        assert "eval-file - stage-lpm-fixture" in wp_log
+        assert "eval-file - restore-lpm-fixture" in wp_log
 
 
 def test_real_sepa_fixture_driver_blocks_missing_or_pending_method_capability() -> None:

@@ -2156,6 +2156,19 @@ if payload.get("order_payment_method") not in (None, "", 0) and payload.get("ord
 if payload.get("used_base_card_gateway") is not False:
     errors.append("used_base_card_gateway must be false")
 
+if method == "multibanco":
+    voucher = payload.get("multibanco_voucher")
+    if not isinstance(voucher, dict):
+        errors.append("missing Multibanco voucher rendering")
+    else:
+        if voucher.get("rendered") is not True or voucher.get("visible") is not True:
+            errors.append("missing Multibanco voucher rendering")
+        for key in ("entity", "reference", "amount"):
+            if not isinstance(voucher.get(key), str) or not voucher.get(key):
+                errors.append(f"Multibanco voucher rendering missing {key}")
+        if voucher.get("share_link_present") is not True:
+            errors.append("Multibanco voucher rendering missing share link")
+
 order_received_url = payload.get("order_received_url")
 if order_received_url not in (None, "", 0):
     parsed = urlparse(str(order_received_url))
@@ -2356,6 +2369,36 @@ run_bucket_e_parity_for_method() {
 	if [ "$rc" -ne 0 ]; then
 		record_failure "$method: Bucket-E parity failed; see $log_path"
 	fi
+}
+
+validate_multibanco_voucher_pair() {
+	local method="$1"
+	local ref_evidence_path="$2"
+	local target_evidence_path="$3"
+
+	if [ "$method" != "multibanco" ]; then
+		return 0
+	fi
+
+	python3 - "$ref_evidence_path" "$target_evidence_path" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+reference = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+target = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+reference_voucher = reference.get("multibanco_voucher")
+target_voucher = target.get("multibanco_voucher")
+if not isinstance(reference_voucher, dict) or not isinstance(target_voucher, dict):
+    raise SystemExit("both stores must provide Multibanco voucher rendering evidence")
+
+for key in ("entity", "reference", "amount"):
+    if reference_voucher.get(key) != target_voucher.get(key):
+        raise SystemExit(
+            f"Multibanco voucher {key} mismatch: "
+            f"reference={reference_voucher.get(key)!r}, target={target_voucher.get(key)!r}"
+        )
+PY
 }
 
 write_rollup() {
@@ -2711,6 +2754,11 @@ for raw_method in "${METHODS[@]}"; do
 	fi
 	run_driver_for_store reference "$REF_BASE_URL" "$method_id" "$currency" "$country" "$gateway_id" "$stripe_type" "$method_family" "$automation_disposition" "$REF_PRODUCT_ID" "$REF_CHECKOUT_PAGE_ID"
 	run_driver_for_store target "$TARGET_BASE_URL" "$method_id" "$currency" "$country" "$gateway_id" "$stripe_type" "$method_family" "$automation_disposition" "$TARGET_PRODUCT_ID" "$TARGET_CHECKOUT_PAGE_ID"
+	voucher_pair_output="$(validate_multibanco_voucher_pair "$method_id" "$OUT_DIR/reference-${method_id}-${SURFACE}.json" "$OUT_DIR/target-${method_id}-${SURFACE}.json" 2>&1)"
+	voucher_pair_rc=$?
+	if [ "$voucher_pair_rc" -ne 0 ]; then
+		record_failure "$method_id: Multibanco voucher rendering does not match across stores: $voucher_pair_output"
+	fi
 	manual_pair_output="$(validate_manual_completion_pair "$method_id" "$automation_disposition" 2>&1)"
 	manual_pair_rc=$?
 	if [ "$manual_pair_rc" -ne 0 ]; then

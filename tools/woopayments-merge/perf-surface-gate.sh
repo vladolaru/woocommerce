@@ -22,7 +22,7 @@ usage() {
 	cat >&2 <<'EOF'
 usage:
   perf-surface-gate.sh capture --wp <wp command> --out <json> [--process-order-id <id>] [--refund-order-id <id>] [--capture-order-id <id>] [--payment-method <pm>] [--refund-amount <amount>]
-  perf-surface-gate.sh compare --ref <json> --target <json>
+  perf-surface-gate.sh compare --ref <json> --target <json> [--gateway-initialization-only]
 
 Example:
   perf-surface-gate.sh capture --wp "docker exec -i wcpay_wp_default wp --allow-root" --out ref.json
@@ -1156,12 +1156,15 @@ case "$mode" in
 	compare)
 		ref=""
 		target=""
+		gateway_initialization_only=0
 		while [ "$#" -gt 0 ]; do
 			case "$1" in
 				--ref)
 					ref="${2:-}"; shift 2 ;;
 				--target)
 					target="${2:-}"; shift 2 ;;
+				--gateway-initialization-only)
+					gateway_initialization_only=1; shift ;;
 				*)
 					usage ;;
 			esac
@@ -1170,6 +1173,9 @@ case "$mode" in
 		compare_gateway_initialization "$ref" "$target"
 		gateway_initialization_rc=$?
 		[ "$gateway_initialization_rc" -eq 0 ] || exit "$gateway_initialization_rc"
+		if [ "$gateway_initialization_only" -eq 1 ]; then
+			exit 0
+		fi
 		python3 "$COMPARE" perf --ref "$ref" --target "$target"
 		;;
 	*)

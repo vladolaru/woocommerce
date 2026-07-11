@@ -5,9 +5,12 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import re
 import shlex
+import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -16,6 +19,9 @@ from types import SimpleNamespace
 REPO = Path(__file__).resolve().parents[2]
 SCRIPT = REPO / "tools/woopayments-merge/verify.sh"
 LOCAL_RUNNER_SAFETY = REPO / "tools/woopayments-merge/local-runner-safety.sh"
+OWNED_ORDER_CLEANUP = REPO / "tools/woopayments-merge/verify-owned-order-cleanup.php"
+TIMEOUT_RUNNER = REPO / "tools/woopayments-merge/run-command-with-timeout.py"
+MANUAL_EVIDENCE_CLASSIFIER = REPO / "tools/woopayments-merge/manual-evidence-classifier.py"
 LPM_EVIDENCE = REPO / "tools/woopayments-merge/lpm_evidence.py"
 A5G_SCRIPT = REPO / "tools/woopayments-merge/a5g-multisite-runtime-gate.py"
 COMPARE_SCRIPT = REPO / "tools/woopayments-merge/compare-measured-gates.py"
@@ -44,6 +50,7 @@ def test_narrow_perf_smoke_uses_the_bootstrap_probe_for_both_roles() -> None:
     assert 'perf-surface-gate.sh" capture --wp "$REF_WP"' in source
     assert 'perf-surface-gate.sh" capture --wp "$TARGET_WP"' in source
     assert 'perf-surface-gate.sh" compare --ref' in source
+    assert '--gateway-initialization-only' in source
     assert 'perf-baseline.sh" check' not in source
 
 
@@ -93,11 +100,32 @@ def write_verify_fixture(merge_dir: Path) -> Path:
         LOCAL_RUNNER_SAFETY.read_text(encoding="utf-8"),
         encoding="utf-8",
     )
+    (merge_dir / "verify-owned-order-cleanup.php").write_text(
+        OWNED_ORDER_CLEANUP.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    (merge_dir / "run-command-with-timeout.py").write_text(
+        TIMEOUT_RUNNER.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    (merge_dir / "manual-evidence-classifier.py").write_text(
+        MANUAL_EVIDENCE_CLASSIFIER.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
     (merge_dir / "lpm_evidence.py").write_text(
         LPM_EVIDENCE.read_text(encoding="utf-8"),
         encoding="utf-8",
     )
     return verify_copy
+
+
+def test_manual_evidence_classifier_is_a_standalone_verifier_dependency() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    classifier = MANUAL_EVIDENCE_CLASSIFIER.read_text(encoding="utf-8")
+
+    assert 'python3 "$SELF_DIR/manual-evidence-classifier.py"' in source
+    assert "def accept_lpm_all_methods()" not in source
+    assert "def accept_lpm_all_methods()" in classifier
 
 
 def write_runtime_identity_wp(path: Path, *, owner: str, site_url: str) -> None:
@@ -130,6 +158,14 @@ if [ "${{1:-}}" = "eval-file" ]; then
     body="$(cat)"
     if printf '%s' "$body" | grep -q 'WCPAY_RUNTIME_IDENTITY'; then
         printf '%s\n' 'WCPAY_RUNTIME_IDENTITY:{{"runtime_owner":"{owner}","site_url":"{site_url}"}}'
+        exit 0
+    fi
+    if printf '%s' "$body" | grep -q 'WCPAY_VERIFY_OWNED_ORDER_CLEANUP'; then
+        if [ "${{CLEANUP_FAIL_OWNER:-}}" = "{owner}" ]; then
+            printf '%s\n' 'WCPAY_VERIFY_OWNED_ORDER_CLEANUP:{{"success":false,"results":[{{"status":"delete_failed"}}]}}'
+            exit 1
+        fi
+        printf '%s\n' 'WCPAY_VERIFY_OWNED_ORDER_CLEANUP:{{"success":true}}'
         exit 0
     fi
     printf '%s' "$body" | {delegate_command} "$@"
@@ -575,6 +611,7 @@ def test_full_evidence_plan_lists_final_gates() -> None:
     assert "dispute-e2e-gate.sh" in result.stdout
     assert "payout-evidence-gate.sh" in result.stdout
     assert "converted-currency-gate.sh" in result.stdout
+    assert f'{final_evidence_out}/converted-currency' in result.stdout
     assert "a4aq-accumulated-gate.py" in result.stdout
     assert "--plugin-repo" in result.stdout
     assert "/a4aq-accumulated" in result.stdout
@@ -620,7 +657,7 @@ def test_full_evidence_plan_lists_final_gates() -> None:
     assert "<required-ms07-target-browser>" in result.stdout
     assert "<required-ms07-target-state>" in result.stdout
     assert "wp-env run tests-cli" in result.stdout
-    assert "DELETE FROM wp_actionscheduler_actions" in result.stdout
+    assert "DELETE FROM wp_actionscheduler_actions" not in result.stdout
     assert "pnpm --filter=@woocommerce/plugin-woocommerce test:php:env -- --filter WooPayments" in result.stdout
     assert "pnpm --filter=@woocommerce/admin-library test:js" in result.stdout
     assert "pnpm --filter=@woocommerce/admin-library ts:check" in result.stdout
@@ -1342,76 +1379,83 @@ exit 3
         assert "RESULT: PASS WITH ACKNOWLEDGED MANUAL EVIDENCE LIMITATIONS" in result.stdout
         assert (full_evidence_dir / "manual-evidence-limitations.json").is_file()
 
-        truncated_lpm_args = result.args.copy()
-        truncated_lpm_dir = tmp_path / "final-evidence-truncated-lpm"
-        truncated_lpm_args[truncated_lpm_args.index("--full-evidence-out-dir") + 1] = str(
-            truncated_lpm_dir
-        )
-        truncated_lpm = subprocess.run(
-            truncated_lpm_args,
-            cwd=repo,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env={**run_env, "FAKE_LPM_TRUNCATE": "1"},
-            check=False,
+        default_labels = (
+            "LPM all-method checkout",
+            "token continuity cutover",
+            "critical flows full run",
         )
 
-        assert truncated_lpm.returncode == 3
-        assert "2 blocked, 1 acknowledged manual" in truncated_lpm.stdout
-        truncated_lpm_summary = json.loads(
-            (truncated_lpm_dir / "manual-evidence-limitations.json").read_text(encoding="utf-8")
-        )
-        assert [entry["label"] for entry in truncated_lpm_summary["blocked"]] == [
+        def copy_evidence(suffix: str) -> Path:
+            destination = tmp_path / f"final-evidence-{suffix}"
+            shutil.copytree(full_evidence_dir, destination)
+            lpm_rollup_path = destination / "lpm-all-methods" / "lpm-checkout-gate.json"
+            lpm_rollup = json.loads(lpm_rollup_path.read_text(encoding="utf-8"))
+            for detail in lpm_rollup["blocker_details"]:
+                artifact = Path(str(detail.get("artifact") or ""))
+                if artifact.is_absolute() and artifact.is_relative_to(full_evidence_dir):
+                    detail["artifact"] = str(destination / artifact.relative_to(full_evidence_dir))
+            write_payload(lpm_rollup_path, lpm_rollup)
+            return destination
+
+        def write_payload(path: Path, payload: dict) -> None:
+            path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+
+        def classify(evidence_dir: Path, labels=default_labels) -> dict:
+            summary_path = evidence_dir / "manual-evidence-limitations.json"
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(merge_dir / "manual-evidence-classifier.py"),
+                    str(evidence_dir),
+                    str(summary_path),
+                    ALL_LPM_METHODS,
+                    str(repo),
+                    *labels,
+                ],
+                cwd=repo,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            assert completed.returncode == 0, completed.stdout + completed.stderr
+            return json.loads(summary_path.read_text(encoding="utf-8"))
+
+        def labels_for(summary: dict, classification: str) -> list[str]:
+            return [entry["label"] for entry in summary[classification]]
+
+        truncated_lpm_dir = copy_evidence("truncated-lpm")
+        truncated_lpm_path = truncated_lpm_dir / "lpm-all-methods" / "lpm-checkout-gate.json"
+        truncated_lpm_payload = json.loads(truncated_lpm_path.read_text(encoding="utf-8"))
+        truncated_lpm_payload["results"].pop()
+        write_payload(truncated_lpm_path, truncated_lpm_payload)
+        truncated_lpm_summary = classify(truncated_lpm_dir)
+        assert labels_for(truncated_lpm_summary, "blocked") == [
             "LPM all-method checkout",
             "critical flows full run",
         ]
+        assert labels_for(truncated_lpm_summary, "accepted") == [
+            "token continuity cutover"
+        ]
 
-        truncated_critical_args = result.args.copy()
-        truncated_critical_dir = tmp_path / "final-evidence-truncated-critical"
-        truncated_critical_args[
-            truncated_critical_args.index("--full-evidence-out-dir") + 1
-        ] = str(truncated_critical_dir)
-        truncated_critical = subprocess.run(
-            truncated_critical_args,
-            cwd=repo,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env={**run_env, "FAKE_CRITICAL_TRUNCATE": "1"},
-            check=False,
+        truncated_critical_dir = copy_evidence("truncated-critical")
+        truncated_critical_path = truncated_critical_dir / "critical-flows" / "rollup.json"
+        truncated_critical_payload = json.loads(
+            truncated_critical_path.read_text(encoding="utf-8")
         )
-
-        assert truncated_critical.returncode == 3
-        assert "1 blocked, 2 acknowledged manual" in truncated_critical.stdout
-        truncated_critical_summary = json.loads(
-            (truncated_critical_dir / "manual-evidence-limitations.json").read_text(
-                encoding="utf-8"
-            )
-        )
-        assert [entry["label"] for entry in truncated_critical_summary["blocked"]] == [
+        truncated_critical_payload["results"].pop()
+        write_payload(truncated_critical_path, truncated_critical_payload)
+        truncated_critical_summary = classify(truncated_critical_dir)
+        assert labels_for(truncated_critical_summary, "blocked") == [
             "critical flows full run"
         ]
 
-        rejected_args = result.args.copy()
-        rejected_dir = tmp_path / "final-evidence-rejected-lpm"
-        rejected_args[rejected_args.index("--full-evidence-out-dir") + 1] = str(rejected_dir)
-        rejected_result = subprocess.run(
-            rejected_args,
-            cwd=repo,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env={**run_env, "FAKE_LPM_BLOCKER_CODE": "fixture_stage_execution_failed"},
-            check=False,
-        )
-
-        assert rejected_result.returncode != 0
-        assert "2 blocked, 1 acknowledged manual" in rejected_result.stdout
-        assert "LPM all-method checkout" in rejected_result.stdout
-        rejected_summary = json.loads(
-            (rejected_dir / "manual-evidence-limitations.json").read_text(encoding="utf-8")
-        )
+        rejected_dir = copy_evidence("rejected-lpm")
+        rejected_path = rejected_dir / "lpm-all-methods" / "lpm-checkout-gate.json"
+        rejected_payload = json.loads(rejected_path.read_text(encoding="utf-8"))
+        rejected_payload["blocker_details"][0]["code"] = "fixture_stage_execution_failed"
+        write_payload(rejected_path, rejected_payload)
+        rejected_summary = classify(rejected_dir)
         assert rejected_summary["blocked"] == [
             {
                 "label": "LPM all-method checkout",
@@ -1423,56 +1467,77 @@ exit 3
             },
         ]
 
-        for suffix, environment_flag in (
-            ("manual-http-failure", "FAKE_LPM_MANUAL_HTTP_FAILURE"),
-            ("manual-asymmetry", "FAKE_LPM_MANUAL_ASYMMETRIC"),
-        ):
-            invalid_manual_args = result.args.copy()
-            invalid_manual_dir = tmp_path / f"final-evidence-{suffix}"
-            invalid_manual_args[
-                invalid_manual_args.index("--full-evidence-out-dir") + 1
-            ] = str(invalid_manual_dir)
-            invalid_manual = subprocess.run(
-                invalid_manual_args,
-                cwd=repo,
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                env={**run_env, environment_flag: "1"},
-                check=False,
+        invalid_http_dir = copy_evidence("manual-http-failure")
+        invalid_http_rollup_path = (
+            invalid_http_dir / "lpm-all-methods" / "lpm-checkout-gate.json"
+        )
+        invalid_http_rollup = json.loads(
+            invalid_http_rollup_path.read_text(encoding="utf-8")
+        )
+        invalid_http_result = next(
+            item
+            for item in invalid_http_rollup["results"]
+            if item["role"] == "target" and item["method"] == "klarna"
+        )
+        failed_response = {
+            "status": 500,
+            "url": "http://store8889.localhost:8889/?wc-ajax=checkout",
+        }
+        invalid_http_result["page"]["failed_responses"] = [failed_response]
+        invalid_http_artifact_path = (
+            invalid_http_dir / "lpm-all-methods" / "target-klarna-classic.json"
+        )
+        invalid_http_artifact = json.loads(
+            invalid_http_artifact_path.read_text(encoding="utf-8")
+        )
+        invalid_http_artifact["page"]["failed_responses"] = [failed_response]
+        write_payload(invalid_http_rollup_path, invalid_http_rollup)
+        write_payload(invalid_http_artifact_path, invalid_http_artifact)
+        invalid_http_summary = classify(invalid_http_dir)
+        assert labels_for(invalid_http_summary, "blocked") == [
+            "LPM all-method checkout",
+            "critical flows full run",
+        ]
+
+        asymmetric_dir = copy_evidence("manual-asymmetry")
+        asymmetric_path = asymmetric_dir / "lpm-all-methods" / "lpm-checkout-gate.json"
+        asymmetric_payload = json.loads(asymmetric_path.read_text(encoding="utf-8"))
+        asymmetric_payload["results"] = [
+            (
+                {"status": "pass", "method": "klarna", "role": "target", "failures": []}
+                if result_item.get("role") == "target"
+                and result_item.get("method") == "klarna"
+                else result_item
             )
-
-            assert invalid_manual.returncode == 3
-            assert "2 blocked, 1 acknowledged manual" in invalid_manual.stdout
-            invalid_manual_summary = json.loads(
-                (invalid_manual_dir / "manual-evidence-limitations.json").read_text(
-                    encoding="utf-8"
-                )
-            )
-            assert [
-                entry["label"] for entry in invalid_manual_summary["blocked"]
-            ] == ["LPM all-method checkout", "critical flows full run"]
-
-        rejected_token_args = result.args.copy()
-        rejected_token_dir = tmp_path / "final-evidence-rejected-token"
-        rejected_token_args[rejected_token_args.index("--full-evidence-out-dir") + 1] = str(
-            rejected_token_dir
+            for result_item in asymmetric_payload["results"]
+        ]
+        removed_detail = next(
+            detail
+            for detail in asymmetric_payload["blocker_details"]
+            if detail.get("role") == "target" and detail.get("method") == "klarna"
         )
-        rejected_token = subprocess.run(
-            rejected_token_args,
-            cwd=repo,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env={**run_env, "FAKE_TOKEN_BLOCKER_MODE": "unrelated_rollup"},
-            check=False,
-        )
+        asymmetric_payload["blocker_details"].remove(removed_detail)
+        asymmetric_payload["blockers"].remove(removed_detail["message"])
+        write_payload(asymmetric_path, asymmetric_payload)
+        asymmetric_summary = classify(asymmetric_dir)
+        assert labels_for(asymmetric_summary, "blocked") == [
+            "LPM all-method checkout",
+            "critical flows full run",
+        ]
 
-        assert rejected_token.returncode == 3
-        assert "2 blocked, 1 acknowledged manual" in rejected_token.stdout
-        rejected_token_summary = json.loads(
-            (rejected_token_dir / "manual-evidence-limitations.json").read_text(encoding="utf-8")
+        rejected_token_dir = copy_evidence("rejected-token")
+        rejected_token_path = (
+            rejected_token_dir / "token-continuity" / "token-continuity-gate.json"
         )
+        write_payload(
+            rejected_token_path,
+            {
+                "status": "blocked",
+                "failures": [],
+                "blockers": ["SEPA browser runner exited before My Account evidence"],
+            },
+        )
+        rejected_token_summary = classify(rejected_token_dir)
         assert rejected_token_summary["blocked"] == [
             {
                 "label": "token continuity cutover",
@@ -1484,167 +1549,154 @@ exit 3
             },
         ]
 
-        empty_rollup_args = result.args.copy()
-        empty_rollup_dir = tmp_path / "final-evidence-empty-token-rollup"
-        empty_rollup_args[empty_rollup_args.index("--full-evidence-out-dir") + 1] = str(
+        empty_rollup_dir = copy_evidence("empty-token-rollup")
+        write_payload(
             empty_rollup_dir
+            / "token-continuity"
+            / "token-continuity-gate.json",
+            {},
         )
-        empty_rollup = subprocess.run(
-            empty_rollup_args,
-            cwd=repo,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env={**run_env, "FAKE_TOKEN_BLOCKER_MODE": "empty_rollup"},
-            check=False,
-        )
-
-        assert empty_rollup.returncode == 3
-        assert "2 blocked, 1 acknowledged manual" in empty_rollup.stdout
-        empty_rollup_summary = json.loads(
-            (empty_rollup_dir / "manual-evidence-limitations.json").read_text(encoding="utf-8")
-        )
-        assert [entry["label"] for entry in empty_rollup_summary["blocked"]] == [
+        empty_rollup_summary = classify(empty_rollup_dir)
+        assert labels_for(empty_rollup_summary, "blocked") == [
             "token continuity cutover",
             "critical flows full run",
         ]
 
-        target_only_args = result.args.copy()
-        target_only_dir = tmp_path / "final-evidence-target-only-token-pass"
-        target_only_args[target_only_args.index("--full-evidence-out-dir") + 1] = str(
-            target_only_dir
-        )
-        target_only = subprocess.run(
-            target_only_args,
-            cwd=repo,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env={**run_env, "FAKE_TOKEN_BLOCKER_MODE": "target_only_pass"},
-            check=False,
-        )
+        valid_target_token = {
+            "schema": "woopayments_token_continuity_gate_rollup.v1",
+            "status": "pass",
+            "failures": [],
+            "blockers": [],
+            "source_flow": "provider_setup_intent",
+            "token_id": 13,
+            "source_token": {
+                "success": True,
+                "payment_method_id": "pm_unit",
+                "source_payment_method_customer_ready": True,
+            },
+            "native_token_loader": {
+                "success": True,
+                "token_id": 13,
+                "gateway_id": "woocommerce_payments_sepa_debit",
+                "token_type": "wcpay_sepa",
+                "token_class": "WooPaymentsSepaToken",
+            },
+            "render_payment_methods": {
+                "status": "pass",
+                "token_id": 13,
+                "token_visible": True,
+                "page": {"payment_methods": {"token_visible": True}},
+            },
+            "renewal": {
+                "success": True,
+                "renewal_order_id": 261,
+                "renewal_processing_model": "asynchronous_processing",
+                "success_checks_failed": [],
+            },
+        }
 
-        assert target_only.returncode == 0, target_only.stdout + target_only.stderr
-        assert "0 blocked, 2 acknowledged manual" in target_only.stdout
-        target_only_summary = json.loads(
-            (target_only_dir / "manual-evidence-limitations.json").read_text(encoding="utf-8")
-        )
-        assert any(
-            entry["label"] == "critical flows full run"
-            for entry in target_only_summary["accepted"]
-        )
-
-        malformed_token_args = result.args.copy()
-        malformed_token_dir = tmp_path / "final-evidence-malformed-target-only-token-pass"
-        malformed_token_args[
-            malformed_token_args.index("--full-evidence-out-dir") + 1
-        ] = str(malformed_token_dir)
-        malformed_token = subprocess.run(
-            malformed_token_args,
-            cwd=repo,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env={**run_env, "FAKE_TOKEN_BLOCKER_MODE": "malformed_target_only_pass"},
-            check=False,
-        )
-
-        assert malformed_token.returncode == 3
-        assert "1 blocked, 1 acknowledged manual" in malformed_token.stdout
-        malformed_token_summary = json.loads(
-            (malformed_token_dir / "manual-evidence-limitations.json").read_text(
-                encoding="utf-8"
+        def stage_target_only_token_pass(evidence_dir: Path, payload: dict) -> None:
+            write_payload(
+                evidence_dir
+                / "token-continuity"
+                / "token-continuity-gate.json",
+                payload,
             )
+            critical_path = evidence_dir / "critical-flows" / "rollup.json"
+            critical_payload = json.loads(critical_path.read_text(encoding="utf-8"))
+            target_result = next(
+                item
+                for item in critical_payload["results"]
+                if item["flow"] == "SS-10-sepa-token-renewal-cutover"
+                and item["store"] == "target"
+            )
+            target_result["status"] = "PASS"
+            critical_payload["summary"]["passed"] += 1
+            critical_payload["summary"]["blocked"] -= 1
+            write_payload(critical_path, critical_payload)
+
+        target_only_dir = copy_evidence("target-only-token-pass")
+        stage_target_only_token_pass(target_only_dir, valid_target_token)
+        target_only_summary = classify(
+            target_only_dir,
+            ("LPM all-method checkout", "critical flows full run"),
         )
-        assert [entry["label"] for entry in malformed_token_summary["blocked"]] == [
+        assert labels_for(target_only_summary, "blocked") == []
+        assert labels_for(target_only_summary, "accepted") == [
+            "LPM all-method checkout",
             "critical flows full run",
         ]
-        assert all(
-            entry["label"] != "critical flows full run"
-            for entry in malformed_token_summary["accepted"]
-        )
 
-        payout_blocked_args = result.args.copy()
-        payout_blocked_dir = tmp_path / "final-evidence-payout-blocked"
-        payout_blocked_args[payout_blocked_args.index("--full-evidence-out-dir") + 1] = str(
-            payout_blocked_dir
+        malformed_token_dir = copy_evidence("malformed-target-only-token-pass")
+        malformed_target_token = dict(valid_target_token)
+        malformed_target_token["schema"] = "woopayments_token_continuity_gate_rollup.invalid"
+        malformed_target_token.pop("failures")
+        malformed_target_token["blockers"] = ""
+        stage_target_only_token_pass(malformed_token_dir, malformed_target_token)
+        malformed_token_summary = classify(
+            malformed_token_dir,
+            ("LPM all-method checkout", "critical flows full run"),
         )
-        payout_blocked = subprocess.run(
-            payout_blocked_args,
-            cwd=repo,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env={**run_env, "FAKE_PAYOUT_BLOCKED": "1"},
-            check=False,
-        )
+        assert labels_for(malformed_token_summary, "blocked") == [
+            "critical flows full run"
+        ]
+        assert labels_for(malformed_token_summary, "accepted") == [
+            "LPM all-method checkout"
+        ]
 
-        assert payout_blocked.returncode == 3
-        assert "2 blocked, 3 acknowledged manual" in payout_blocked.stdout
-        payout_summary = json.loads(
-            (payout_blocked_dir / "manual-evidence-limitations.json").read_text(encoding="utf-8")
+        payout_blocked_dir = copy_evidence("payout-blocked")
+        payout_summary = classify(
+            payout_blocked_dir,
+            (
+                *default_labels,
+                "payout evidence (reference)",
+                "payout evidence (target)",
+            ),
         )
-        assert [entry["label"] for entry in payout_summary["blocked"]] == [
+        assert labels_for(payout_summary, "blocked") == [
             "payout evidence (reference)",
             "payout evidence (target)",
         ]
 
-        a4aq_blocked_args = result.args.copy()
-        a4aq_blocked_dir = tmp_path / "final-evidence-a4aq-blocked"
-        a4aq_blocked_args[a4aq_blocked_args.index("--full-evidence-out-dir") + 1] = str(
-            a4aq_blocked_dir
+        a4aq_blocked_dir = copy_evidence("a4aq-blocked")
+        a4aq_summary = classify(
+            a4aq_blocked_dir,
+            (*default_labels, "A4aq accumulated admin/checkout/perf evidence"),
         )
-        a4aq_blocked = subprocess.run(
-            a4aq_blocked_args,
-            cwd=repo,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env={**run_env, "FAKE_A4AQ_BLOCKED": "1"},
-            check=False,
-        )
-
-        assert a4aq_blocked.returncode == 3
-        assert "1 blocked, 3 acknowledged manual" in a4aq_blocked.stdout
-        a4aq_summary = json.loads(
-            (a4aq_blocked_dir / "manual-evidence-limitations.json").read_text(encoding="utf-8")
-        )
-        assert [entry["label"] for entry in a4aq_summary["blocked"]] == [
+        assert labels_for(a4aq_summary, "blocked") == [
             "A4aq accumulated admin/checkout/perf evidence"
         ]
 
-        missing_context_args = result.args.copy()
-        missing_context_dir = tmp_path / "final-evidence-missing-critical-context"
-        missing_context_args[missing_context_args.index("--full-evidence-out-dir") + 1] = str(missing_context_dir)
-        missing_context = subprocess.run(
-            missing_context_args,
-            cwd=repo,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env={**run_env, "FAKE_CRITICAL_CONTEXT_MISSING": "1"},
-            check=False,
+        missing_context_dir = copy_evidence("missing-critical-context")
+        missing_context_path = missing_context_dir / "critical-flows" / "rollup.json"
+        missing_context_payload = json.loads(
+            missing_context_path.read_text(encoding="utf-8")
         )
-        assert missing_context.returncode == 3
-        assert "critical flows full run" in missing_context.stdout
-        assert "RESULT: INCOMPLETE" in missing_context.stdout
-
+        missing_context_payload.pop("context_sha256")
+        missing_context_payload.pop("aggregate_run_id")
+        write_payload(missing_context_path, missing_context_payload)
+        missing_context_summary = classify(missing_context_dir)
+        assert labels_for(missing_context_summary, "blocked") == [
+            "critical flows full run"
+        ]
 
 def test_manual_lpm_acknowledgement_requires_structured_account_blocker_codes() -> None:
-    source = SCRIPT.read_text(encoding="utf-8")
+    verify_source = SCRIPT.read_text(encoding="utf-8")
+    classifier_source = MANUAL_EVIDENCE_CLASSIFIER.read_text(encoding="utf-8")
 
-    assert 'payload.get("blocker_details")' in source
-    assert '"account_capability_unavailable"' in source
-    assert '"account_profile_ineligible"' in source
-    assert "MANUAL_BLOCKER_CODE" in source
+    assert 'python3 "$SELF_DIR/manual-evidence-classifier.py"' in verify_source
+    assert 'payload.get("blocker_details")' in classifier_source
+    assert '"account_capability_unavailable"' in classifier_source
+    assert '"account_profile_ineligible"' in classifier_source
+    assert "MANUAL_BLOCKER_CODE" in classifier_source
     assert 'MANUAL_BLOCKER_CODE = "manual_payment_authorization_required"' in LPM_EVIDENCE.read_text(
         encoding="utf-8"
     )
-    assert "validate_manual_completion" in source
-    assert "validate_manual_pair" in source
-    assert "any(method in blocker for method in accepted_lpm_methods)" not in source
-    assert 'payload.get("context_sha256") != context.get("context_sha256")' in source
-    assert 'payload.get("aggregate_run_id") != context.get("aggregate_run_id")' in source
+    assert "validate_manual_completion" in classifier_source
+    assert "validate_manual_pair" in classifier_source
+    assert "any(method in blocker for method in accepted_lpm_methods)" not in classifier_source
+    assert 'payload.get("context_sha256") != context.get("context_sha256")' in classifier_source
+    assert 'payload.get("aggregate_run_id") != context.get("aggregate_run_id")' in classifier_source
 
 
 def test_perf_surface_gate_emits_sanitized_money_query_groups() -> None:
@@ -2052,9 +2104,11 @@ if "--out-dir" in sys.argv:
         invocation_log = invocations.read_text(encoding="utf-8")
         ref_runner = runner_args[runner_args.index("--ref") + 1]
         target_runner = runner_args[runner_args.index("--target") + 1]
-        assert "tracks-parity.sh|reset" in invocation_log
-        assert "tracks-parity.sh|normalize --store ref-store" in invocation_log
-        assert "tracks-parity.sh|normalize --store target-store" in invocation_log
+        assert "tracks-parity.sh|reset" not in invocation_log
+        assert "tracks-parity.sh|mark " in invocation_log
+        assert "tracks-parity.sh|normalize --mark " in invocation_log
+        assert "--store ref-store" in invocation_log
+        assert "--store target-store" in invocation_log
         assert (
             "tracks-parity.sh|diff "
             f"{full_evidence_dir}/tracks-parity/reference-tracks.txt "
@@ -2128,6 +2182,14 @@ if "--out-dir" in sys.argv:
         assert "--target-subscription-id 202" in invocation_log
         assert "plugin-active-settings-gate.sh|--target " in invocation_log
         assert "plugin-active-settings-gate.sh|--target " in invocation_log and "--browser-runner playwright" in invocation_log
+        plugin_active_invocations = [
+            line
+            for line in invocation_log.splitlines()
+            if line.startswith("plugin-active-settings-gate.sh|")
+        ]
+        assert len(plugin_active_invocations) == 2
+        assert any("--runner-role reference" in line for line in plugin_active_invocations)
+        assert any("--runner-role target" in line for line in plugin_active_invocations)
         assert "lpm-checkout-gate.sh|--methods" in invocation_log and "--browser-runner playwright" in invocation_log
         assert "--stage-plugin-active-fixture" in invocation_log
         assert "--stage-sepa-fixture" in invocation_log
@@ -2170,10 +2232,9 @@ if "--out-dir" in sys.argv:
         assert invocation_log.index("build-agent-results.py|") < invocation_log.index("critical-run|")
         assert 'pgrep -f "vendor/bin/phpuni[t]"' in invocation_log
         assert "pkill -f \"vendor/bin/phpuni[t]\"" not in invocation_log
-        assert "DELETE FROM wp_actionscheduler_actions" in invocation_log
-        assert invocation_log.index("critical-run|") < invocation_log.index("DELETE FROM wp_actionscheduler_actions")
-        assert invocation_log.index('pgrep -f "vendor/bin/phpuni[t]"') < invocation_log.index("DELETE FROM wp_actionscheduler_actions")
-        assert invocation_log.index("DELETE FROM wp_actionscheduler_actions") < invocation_log.index("pnpm|--filter=@woocommerce/plugin-woocommerce test:php:env -- --filter WooPayments")
+        assert "DELETE FROM wp_actionscheduler_actions" not in invocation_log
+        assert invocation_log.index("critical-run|") < invocation_log.index('pgrep -f "vendor/bin/phpuni[t]"')
+        assert invocation_log.index('pgrep -f "vendor/bin/phpuni[t]"') < invocation_log.index("pnpm|--filter=@woocommerce/plugin-woocommerce test:php:env -- --filter WooPayments")
         assert_occurs_in_order(
             invocation_log,
             [
@@ -2201,7 +2262,6 @@ if "--out-dir" in sys.argv:
                 "critical-fixtures|",
                 "build-agent-results.py|",
                 "critical-run|",
-                "DELETE FROM wp_actionscheduler_actions",
                 "pnpm|--filter=@woocommerce/plugin-woocommerce test:php:env -- --filter WooPayments",
                 "pnpm|--filter=@woocommerce/admin-library test:js",
                 "pnpm|--filter=@woocommerce/admin-library ts:check",
@@ -2235,6 +2295,141 @@ if "--out-dir" in sys.argv:
         assert "full-evidence output directory is not empty" in repeated.stdout
         assert invocations.read_text(encoding="utf-8") == ""
 
+
+def test_full_evidence_stops_after_nested_cleanup_failure() -> None:
+    with tempfile.TemporaryDirectory(prefix="verify-cleanup-safety-stop-") as tmp_name:
+        tmp = Path(tmp_name)
+        repo = tmp / "repo"
+        merge_dir = repo / "tools" / "woopayments-merge"
+        merge_dir.mkdir(parents=True)
+        verify_copy = write_verify_fixture(merge_dir)
+        invocations = tmp / "invocations.log"
+        fake_bin = tmp / "bin"
+        fake_bin.mkdir()
+        fake_tmp = tmp / "tmp"
+        fake_tmp.mkdir()
+
+        fake_gate = """#!/usr/bin/env bash
+set -eu
+name="$(basename "$0")"
+printf '%s|%s\n' "$name" "$*" >> "$INVOCATIONS_LOG"
+if [ "$name" = "flow-drive.sh" ]; then
+    printf '{"order_id":123}\n'
+fi
+"""
+        for script_name in (
+            "bc-drift-gate.sh",
+            "subsystem-disposition-gate.sh",
+            "hook-shape-parity.sh",
+            "rest-route-parity.sh",
+            "flow-drive.sh",
+            "parity-diff.sh",
+            "perf-surface-gate.sh",
+            "financial-reconcile.sh",
+        ):
+            write_executable(merge_dir / script_name, fake_gate)
+
+        delegate = fake_bin / "wp"
+        write_executable(
+            delegate,
+            """#!/usr/bin/env bash
+set -eu
+printf 'wp|%s\n' "$*" >> "$INVOCATIONS_LOG"
+if [ "${1:-}" = "eval-file" ]; then
+    cat >/dev/null
+    printf 'ready\n'
+else
+    printf '{}\n'
+fi
+""",
+        )
+        ref_wp = fake_bin / "reference" / "wp"
+        target_wp = fake_bin / "target" / "wp"
+        write_runtime_identity_wp_wrapper(
+            ref_wp,
+            delegate=delegate,
+            owner="plugin",
+            site_url="http://localhost:8082",
+        )
+        write_runtime_identity_wp_wrapper(
+            target_wp,
+            delegate=delegate,
+            owner="native",
+            site_url="http://store8889.localhost:8889",
+        )
+        runner_args = write_approved_docker_fixture(
+            fake_bin,
+            ref_wp=ref_wp,
+            target_wp=target_wp,
+        )
+
+        result = subprocess.run(
+            [
+                "bash",
+                str(verify_copy),
+                *runner_args,
+                "--full-evidence",
+                "--full-evidence-out-dir",
+                str(tmp / "evidence"),
+            ],
+            cwd=repo,
+            env={
+                "CLEANUP_FAIL_OWNER": "plugin",
+                "INVOCATIONS_LOG": str(invocations),
+                "TMPDIR": str(fake_tmp),
+                "PATH": str(fake_bin) + ":/bin:/usr/bin:/usr/local/bin",
+            },
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        assert result.returncode == 1, result.stdout + result.stderr
+        assert "safety stop: self-check cleanup failed" in result.stdout
+        invocation_log = invocations.read_text(encoding="utf-8")
+        assert invocation_log.count("flow-drive.sh|") == 1
+        assert "tracks-parity.sh|" not in invocation_log
+        assert "money-path-parity-gate.sh|" not in invocation_log
+        assert "plugin-active-settings-gate.sh|" not in invocation_log
+
+
+def test_cleanup_exit_70_circuit_breaker_skips_every_later_gate(tmp_path: Path) -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    gate_runtime = source[
+        source.index("PASS=(); FAILED=(); BLOCKED=(); ACKNOWLEDGED=()") : source.index(
+            "gate_with_admin_credentials()"
+        )
+    ]
+    marker = tmp_path / "later-gate-started"
+    probe = tmp_path / "probe.sh"
+    probe.write_text(
+        f"""#!/usr/bin/env bash
+set -uo pipefail
+SELF_DIR={shlex.quote(str(SCRIPT.parent))}
+{gate_runtime}
+gate "plugin-active settings screen (target)" bash -c 'exit 70'
+gate "token continuity cutover" bash -c {shlex.quote(f'printf started > {marker}')}
+exit 0
+""",
+        encoding="utf-8",
+    )
+    probe.chmod(0o755)
+
+    result = subprocess.run(
+        [str(probe)],
+        cwd=REPO,
+        env={**os.environ, "TMPDIR": str(tmp_path)},
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "safety stop armed: cleanup failed in plugin-active settings screen (target)" in result.stdout
+    assert "token continuity cutover" in result.stdout
+    assert not marker.exists()
 
 def test_full_evidence_blocks_browser_gates_without_playwriter_session() -> None:
     with tempfile.TemporaryDirectory(prefix="verify-final-evidence-no-browser-") as tmp:
@@ -2797,11 +2992,10 @@ if "--out-dir" in sys.argv:
         assert "RESULT: INCOMPLETE" in result.stdout
         invocation_log = invocations.read_text(encoding="utf-8")
         assert 'pgrep -f "vendor/bin/phpuni[t]"' in invocation_log
-        assert "DELETE FROM wp_actionscheduler_actions" in invocation_log
+        assert "DELETE FROM wp_actionscheduler_actions" not in invocation_log
         assert "pnpm|--filter=@woocommerce/plugin-woocommerce test:php:env -- --filter WooPayments" in invocation_log
         assert "pkill -f \"vendor/bin/phpuni[t]\"" in invocation_log
-        assert invocation_log.index('pgrep -f "vendor/bin/phpuni[t]"') < invocation_log.index("DELETE FROM wp_actionscheduler_actions")
-        assert invocation_log.index("DELETE FROM wp_actionscheduler_actions") < invocation_log.index("pnpm|--filter=@woocommerce/plugin-woocommerce test:php:env -- --filter WooPayments")
+        assert invocation_log.index('pgrep -f "vendor/bin/phpuni[t]"') < invocation_log.index("pnpm|--filter=@woocommerce/plugin-woocommerce test:php:env -- --filter WooPayments")
         assert invocation_log.index("pnpm|--filter=@woocommerce/plugin-woocommerce test:php:env -- --filter WooPayments") < invocation_log.rindex("pkill -f \"vendor/bin/phpuni[t]\"")
         assert "pnpm|--filter=@woocommerce/admin-library test:js" in invocation_log
 
@@ -2840,6 +3034,82 @@ def test_full_evidence_flag_is_documented_in_usage() -> None:
     assert "--ms07-reference-browser" in result.stderr
 
 
+def test_timeout_runner_streams_an_explicit_stdin_file(tmp_path: Path) -> None:
+    stdin_file = tmp_path / "input.txt"
+    stdin_file.write_text("bounded cleanup input\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(TIMEOUT_RUNNER),
+            "--timeout",
+            "2",
+            "--stdin-file",
+            str(stdin_file),
+            "--",
+            "sh",
+            "-c",
+            "cat",
+        ],
+        cwd=REPO,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout == "bounded cleanup input\n"
+
+
+def test_timeout_runner_terminates_the_started_process_group() -> None:
+    result = subprocess.run(
+        [
+            "python3",
+            str(TIMEOUT_RUNNER),
+            "--timeout",
+            "0.1",
+            "--",
+            "sh",
+            "-c",
+            "sleep 5",
+        ],
+        cwd=REPO,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        timeout=3,
+    )
+
+    assert result.returncode == 124, result.stdout + result.stderr
+    assert "TIMEOUT: command exceeded 0.1s; terminating process group." in result.stdout
+
+
+def test_timeout_runner_does_not_block_on_a_descendant_holding_stdout() -> None:
+    result = subprocess.run(
+        [
+            "python3",
+            str(TIMEOUT_RUNNER),
+            "--timeout",
+            "0.1",
+            "--",
+            "python3",
+            "-c",
+            "import subprocess; subprocess.Popen(['sleep', '5'])",
+        ],
+        cwd=REPO,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        timeout=2,
+    )
+
+    assert result.returncode == 124, result.stdout + result.stderr
+    assert "TIMEOUT: command exceeded 0.1s; terminating process group." in result.stdout
+
+
 def test_a5g_disposable_cleanup_answers_wp_env_destroy_prompt(monkeypatch, tmp_path: Path) -> None:
     module = load_a5g_gate_module()
     work_dir = tmp_path / "a5g-wp-env"
@@ -2875,6 +3145,50 @@ def test_a5g_disposable_cleanup_answers_wp_env_destroy_prompt(monkeypatch, tmp_p
     assert calls[0][2]["input_text"] == "y\n"
     assert not work_dir.exists()
     assert gate.work_dir is None
+
+
+def test_a5g_main_installs_signal_handlers_for_disposable_cleanup(monkeypatch, tmp_path: Path) -> None:
+    module = load_a5g_gate_module()
+    registered = []
+
+    class FakeGate:
+        def __init__(self, args):
+            self.args = args
+
+        def run(self):
+            return None
+
+    monkeypatch.setattr(module, "MultisiteRuntimeGate", FakeGate)
+    monkeypatch.setattr(module.signal, "getsignal", lambda signum: f"old-{signum}")
+    monkeypatch.setattr(
+        module.signal,
+        "signal",
+        lambda signum, handler: registered.append((signum, handler)),
+    )
+
+    result = module.main(
+        [
+            "--repo",
+            str(tmp_path / "repo"),
+            "--wcpay-repo",
+            str(tmp_path / "woocommerce-payments"),
+            "--out-dir",
+            str(tmp_path / "out"),
+        ]
+    )
+
+    assert result == 0
+    assert [item[0] for item in registered[:3]] == [
+        module.signal.SIGHUP,
+        module.signal.SIGINT,
+        module.signal.SIGTERM,
+    ]
+    assert all(callable(item[1]) for item in registered[:3])
+    assert [item[1] for item in registered[3:]] == [
+        f"old-{module.signal.SIGHUP}",
+        f"old-{module.signal.SIGINT}",
+        f"old-{module.signal.SIGTERM}",
+    ]
 
 
 def test_a5g_disposable_chooses_free_port_pair(monkeypatch, tmp_path: Path) -> None:

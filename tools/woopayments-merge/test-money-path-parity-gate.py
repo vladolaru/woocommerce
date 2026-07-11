@@ -611,3 +611,37 @@ def test_cross_store_normalizer_recursively_ignores_only_test_lab_metadata() -> 
         "_wc_native_woopayments_refund_note_deadbeef"
     ] = [654]
     assert normalize(reference) != normalize(native_refund_note_marker)
+
+
+def test_cross_store_normalizer_ignores_verifier_order_ownership_metadata() -> None:
+    def normalize(record: dict) -> str:
+        result = subprocess.run(
+            ["python3", str(NORMALIZER)],
+            cwd=REPO,
+            text=True,
+            input=json.dumps(record) + "\n",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        return result.stdout
+
+    reference = {
+        "order_id": 101,
+        "meta": {"_intent_id": ["pi_reference123"]},
+    }
+    target = {
+        "order_id": 202,
+        "meta": {
+            "_intent_id": ["pi_target456"],
+            "_wcpay_verify_run_token": [
+                "wcpay-verify-0123456789abcdef0123456789abcdef"
+            ],
+        },
+    }
+
+    assert normalize(reference) == normalize(target)
+
+    target["meta"]["_intention_status"] = ["succeeded"]
+    assert normalize(reference) != normalize(target)

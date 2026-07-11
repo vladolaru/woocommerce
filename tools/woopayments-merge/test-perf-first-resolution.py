@@ -525,13 +525,22 @@ def run_baseline_check(tmp_path: Path, reference: dict, target: dict) -> subproc
     )
 
 
-def run_surface_compare(tmp_path: Path, reference: dict, target: dict) -> subprocess.CompletedProcess[str]:
+def run_surface_compare(
+    tmp_path: Path,
+    reference: dict,
+    target: dict,
+    *,
+    gateway_initialization_only: bool = False,
+) -> subprocess.CompletedProcess[str]:
     ref_path = tmp_path / "ref.json"
     target_path = tmp_path / "target.json"
     ref_path.write_text(json.dumps(reference), encoding="utf-8")
     target_path.write_text(json.dumps(target), encoding="utf-8")
+    args = ["bash", str(SURFACE_GATE), "compare", "--ref", str(ref_path), "--target", str(target_path)]
+    if gateway_initialization_only:
+        args.append("--gateway-initialization-only")
     return subprocess.run(
-        ["bash", str(SURFACE_GATE), "compare", "--ref", str(ref_path), "--target", str(target_path)],
+        args,
         cwd=REPO,
         text=True,
         stdout=subprocess.PIPE,
@@ -807,6 +816,27 @@ def test_surface_compare_accepts_legacy_first_resolution_schema(tmp_path):
         capture["probes"]["gateway_first_resolution"] = first_resolution_probe()
 
     result = run_surface_compare(tmp_path, reference, target)
+
+    assert result.returncode == 0, result.stdout
+    assert "ok    gateway_initialization: queries 1 -> 1" in result.stdout
+
+
+def test_gateway_initialization_only_compare_does_not_require_money_fixtures(tmp_path):
+    reference = surface_capture()
+    target = surface_capture()
+    for capture in (reference, target):
+        for name in ("process_payment", "refund", "capture"):
+            capture["probes"][name] = {
+                "status": "requires_fixture",
+                "reason": f"{name} fixture omitted",
+            }
+
+    result = run_surface_compare(
+        tmp_path,
+        reference,
+        target,
+        gateway_initialization_only=True,
+    )
 
     assert result.returncode == 0, result.stdout
     assert "ok    gateway_initialization: queries 1 -> 1" in result.stdout

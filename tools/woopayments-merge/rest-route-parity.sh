@@ -5,6 +5,7 @@
 # Captures the reference WooPayments /wc/v3/payments REST route table and checks
 # that the target native runtime registers the same methods/routes unless a row in
 # rest-route-exceptions.txt explicitly signs off a superseded or dropped surface.
+# It also compares redacted response shapes for the mobile IPP bootstrap routes.
 
 set -uo pipefail
 
@@ -103,6 +104,10 @@ print(
             "out_dir": out_dir,
             "exceptions": exceptions,
             "route_prefix": route_prefix,
+            "mobile_api_requests": [
+                "GET /wc/v3/payments/accounts",
+                "POST /wc/v3/payments/connection_tokens",
+            ],
             "self_check": self_check == "1",
         },
         sort_keys=True,
@@ -172,6 +177,7 @@ if ( ! function_exists( 'rest_get_server' ) ) {
 $server = rest_get_server();
 $routes = $server->get_routes();
 $captured = array();
+$mobile_api = array();
 $runtime_owner = 'unknown';
 
 if ( function_exists( 'wc_get_container' ) && class_exists( 'Automattic\\WooCommerce\\Internal\\Payments\\NativePaymentsRuntimeArbiter' ) ) {
@@ -233,13 +239,77 @@ usort(
 	}
 );
 
+$shape_of = static function ( $value ) use ( &$shape_of ) {
+	if ( is_array( $value ) ) {
+		$is_list = empty( $value ) || array_keys( $value ) === range( 0, count( $value ) - 1 );
+		if ( $is_list ) {
+			$item_shapes = array();
+			foreach ( $value as $item ) {
+				$item_shape = $shape_of( $item );
+				$item_shapes[wp_json_encode( $item_shape )] = $item_shape;
+			}
+			ksort( $item_shapes );
+
+			return array(
+				'type'        => 'array',
+				'item_shapes' => array_values( $item_shapes ),
+			);
+		}
+
+		$fields = array();
+		foreach ( $value as $key => $item ) {
+			$fields[(string) $key] = $shape_of( $item );
+		}
+		ksort( $fields );
+
+		return array(
+			'type'   => 'object',
+			'fields' => $fields,
+		);
+	}
+
+	if ( is_object( $value ) ) {
+		return $shape_of( get_object_vars( $value ) );
+	}
+
+	$type = gettype( $value );
+	if ( 'double' === $type ) {
+		$type = 'number';
+	} elseif ( 'NULL' === $type ) {
+		$type = 'null';
+	}
+
+	return array( 'type' => $type );
+};
+
+if ( function_exists( 'wp_set_current_user' ) ) {
+	wp_set_current_user( 1 );
+}
+
+$mobile_requests = array(
+	'accounts'          => array( 'GET', '/wc/v3/payments/accounts' ),
+	'connection_tokens' => array( 'POST', '/wc/v3/payments/connection_tokens' ),
+);
+
+foreach ( $mobile_requests as $name => $request_spec ) {
+	$request  = new WP_REST_Request( $request_spec[0], $request_spec[1] );
+	$response = rest_do_request( $request );
+	$mobile_api[$name] = array(
+		'method' => $request_spec[0],
+		'route'  => $request_spec[1],
+		'status' => $response->get_status(),
+		'shape'  => $shape_of( $response->get_data() ),
+	);
+}
+
 echo json_encode(
 	array(
-		'schema'        => 'woopayments_rest_route_capture.v1',
+		'schema'        => 'woopayments_rest_route_capture.v2',
 		'role'          => $role,
 		'runtime_owner' => $runtime_owner,
 		'site_url'      => function_exists( 'home_url' ) ? home_url( '/' ) : '',
 		'routes'        => $captured,
+		'mobile_api'    => $mobile_api,
 	)
 );
 echo "\n";
@@ -397,6 +467,7 @@ def write_rollup(
     reference: dict,
     target: dict,
     exception_rows: list[str],
+    mobile_api: dict,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -410,6 +481,7 @@ def write_rollup(
                 "reference": reference,
                 "target": target,
                 "exceptions": exception_rows,
+                "mobile_api": mobile_api,
             },
             sort_keys=True,
             indent=2,
@@ -432,6 +504,7 @@ target_routes = load_routes(target)
 exceptions, failures = parse_exceptions(exceptions_path)
 exceptions_applied: list[str] = []
 blocked: list[str] = []
+mobile_api_result: dict[str, object] = {"status": "pending", "endpoints": {}}
 
 expected_owners = {"reference": "plugin", "target": "plugin" if self_check else "native"}
 site_urls: dict[str, str] = {}
@@ -446,6 +519,9 @@ for expected_role, payload in (("reference", reference), ("target", target)):
         blocked.append(f"{expected_role} snapshot must identify a local site URL")
     else:
         site_urls[expected_role] = normalized_site
+
+    if not isinstance(payload.get("mobile_api"), dict):
+        blocked.append(f"{expected_role} snapshot is missing the mobile API smoke contract")
 
 if len(site_urls) == 2:
     same_site = site_urls["reference"] == site_urls["target"]
@@ -464,10 +540,66 @@ if blocked:
         reference=reference,
         target=target,
         exception_rows=[],
+        mobile_api={"status": "blocked", "endpoints": {}},
     )
     for reason in blocked:
         print(f"BLOCKED: {reason}", file=sys.stderr)
     sys.exit(3)
+
+required_mobile_endpoints = {
+    "accounts": ("GET", "/wc/v3/payments/accounts"),
+    "connection_tokens": ("POST", "/wc/v3/payments/connection_tokens"),
+}
+
+
+def field_type(shape: object, *path: str) -> str | None:
+    current = shape
+    for key in path:
+        if not isinstance(current, dict) or current.get("type") != "object":
+            return None
+        fields = current.get("fields")
+        if not isinstance(fields, dict):
+            return None
+        current = fields.get(key)
+    if not isinstance(current, dict):
+        return None
+    value = current.get("type")
+    return value if isinstance(value, str) else None
+
+
+for endpoint, (expected_method, expected_route) in required_mobile_endpoints.items():
+    endpoint_result: dict[str, object] = {}
+    mobile_api_result["endpoints"][endpoint] = endpoint_result
+    captures: dict[str, dict] = {}
+
+    for role, payload in (("reference", reference), ("target", target)):
+        capture = payload["mobile_api"].get(endpoint)
+        if not isinstance(capture, dict):
+            failures.append(f"{role} mobile API probe missing endpoint: {endpoint}")
+            continue
+        captures[role] = capture
+        endpoint_result[role] = capture
+
+        if capture.get("method") != expected_method or normalize_route(capture.get("route", "")) != expected_route:
+            failures.append(f"{role} mobile API probe has the wrong request contract: {endpoint}")
+
+        status = capture.get("status")
+        if not isinstance(status, int) or status < 200 or status >= 300:
+            failures.append(f"{role} mobile API probe failed: {endpoint} returned HTTP {status}")
+
+        shape = capture.get("shape")
+        if not isinstance(shape, dict):
+            failures.append(f"{role} mobile API probe has no response shape: {endpoint}")
+        elif endpoint == "accounts":
+            if field_type(shape, "account_id") != "string" or field_type(shape, "status") != "string":
+                failures.append(f"{role} mobile accounts response does not describe a connected account")
+        elif field_type(shape, "secret") != "string":
+            failures.append(f"{role} connection token response does not contain a string secret")
+
+    if len(captures) == 2 and captures["reference"].get("shape") != captures["target"].get("shape"):
+        failures.append(f"mobile API response shape mismatch: {endpoint}")
+
+mobile_api_result["status"] = "fail" if failures else "pass"
 
 for key in sorted(exceptions, key=lambda route: route.label()):
     if key not in ref_routes:
@@ -494,6 +626,7 @@ if failures:
         reference=reference,
         target=target,
         exception_rows=exception_rows,
+        mobile_api=mobile_api_result,
     )
     for failure in failures:
         print(failure, file=sys.stderr)
@@ -508,6 +641,7 @@ write_rollup(
     reference=reference,
     target=target,
     exception_rows=exception_rows,
+    mobile_api=mobile_api_result,
 )
-print("PASS: native WooPayments REST routes cover the reference route table.")
+print("PASS: native WooPayments REST routes and mobile API shapes match the reference runtime.")
 PY

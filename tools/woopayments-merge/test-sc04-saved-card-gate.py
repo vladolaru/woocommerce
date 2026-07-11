@@ -6,6 +6,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import signal
 import subprocess
 import tempfile
 from pathlib import Path
@@ -660,6 +661,96 @@ def test_session_cleanup_failure_makes_gate_non_passing() -> None:
         assert "could not destroy" in result.stderr
         rollup = json.loads((out_dir / "sc04-saved-card-gate.json").read_text(encoding="utf-8"))
         assert rollup["status"] == "blocked"
+
+
+def test_signal_during_browser_flow_still_restores_tokens_and_session(
+    monkeypatch, tmp_path: Path
+) -> None:
+    cleanup_calls: list[str] = []
+
+    def fake_wp_eval(_wp, _role, code, *_args):
+        if code == GATE_MODULE.FIXTURE_PROBE_PHP:
+            return {
+                "success": True,
+                "subscription_id": 1283,
+                "customer_id": 17,
+                "normal_token_id": 37,
+                "existing_sca_token_id": 0,
+                "baseline_token_ids": [37],
+                "product_id": 688,
+                "classic_url": "http://localhost/classic/",
+                "blocks_url": "http://localhost/blocks/",
+                "errors": [],
+            }
+        if code == GATE_MODULE.AUTH_SESSION_CREATE_PHP:
+            return {
+                "success": True,
+                "auth_cookie": {"name": "wordpress_logged_in_test", "value": "secret"},
+            }
+        if code == GATE_MODULE.TOKEN_CLEANUP_PHP:
+            cleanup_calls.append("tokens")
+            return {"success": False}
+        if code == GATE_MODULE.SESSION_DESTROY_PHP:
+            cleanup_calls.append("session")
+            return {"success": True}
+        raise AssertionError("unexpected WP probe")
+
+    monkeypatch.setattr(GATE_MODULE, "run_wp_eval", fake_wp_eval)
+    monkeypatch.setattr(
+        GATE_MODULE,
+        "run_browser",
+        lambda **_kwargs: (_ for _ in ()).throw(GATE_MODULE.GateSignal(signal.SIGTERM)),
+    )
+
+    try:
+        GATE_MODULE.run_store(
+            repo=REPO,
+            context={
+                "aggregate_run_id": "signal-test",
+                "context_sha256": "sha256:test",
+                "fixtures": {"ref": {"subscription_id": "1283"}},
+            },
+            role="ref",
+            wp=REF_WP,
+            base_url="http://localhost:8082",
+            subscription_id="1283",
+            out_dir=tmp_path,
+            browser_runner=tmp_path / "runner",
+            browser_driver=tmp_path / "driver",
+        )
+    except GATE_MODULE.GateSignal as exc:
+        assert exc.signum == signal.SIGTERM
+        assert exc.cleanup_errors == ["could not restore ref saved-card token baseline"]
+    else:
+        raise AssertionError("the signal must abort the store flow")
+
+    assert cleanup_calls == ["tokens", "session"]
+    assert issubclass(GATE_MODULE.GateSignal, BaseException)
+    assert not issubclass(GATE_MODULE.GateSignal, Exception)
+
+
+def test_main_installs_and_restores_cleanup_signal_handlers(monkeypatch) -> None:
+    registrations = []
+    monkeypatch.setattr(GATE_MODULE, "run_gate_main", lambda: 0)
+    monkeypatch.setattr(GATE_MODULE.signal, "getsignal", lambda signum: f"old-{signum}")
+    monkeypatch.setattr(
+        GATE_MODULE.signal,
+        "signal",
+        lambda signum, handler: registrations.append((signum, handler)),
+    )
+
+    assert GATE_MODULE.main() == 0
+    assert [item[0] for item in registrations[:3]] == [
+        signal.SIGHUP,
+        signal.SIGINT,
+        signal.SIGTERM,
+    ]
+    assert all(callable(item[1]) for item in registrations[:3])
+    assert [item[1] for item in registrations[3:]] == [
+        f"old-{signal.SIGHUP}",
+        f"old-{signal.SIGINT}",
+        f"old-{signal.SIGTERM}",
+    ]
 
 
 if __name__ == "__main__":

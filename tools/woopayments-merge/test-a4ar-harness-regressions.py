@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import signal
 import subprocess
 import sys
 import tempfile
@@ -408,6 +409,60 @@ def test_restore_flags_must_match_apply_before(module):
         lambda: gate.validate_optional_admin_restore("target", apply_payload, restore_payload),
         "restore flags do not match",
     )
+
+
+def test_optional_admin_snapshot_is_armed_before_apply(module):
+    source = MODULE_PATH.read_text(encoding="utf-8")
+    scenario = source[
+        source.index("    def run_optional_admin_browser_scenario") : source.index(
+            "    def run_all"
+        )
+    ]
+
+    snapshot_call = "self.snapshot_optional_admin_scenario"
+    apply_call = "self.apply_optional_admin_scenario"
+    assert snapshot_call in scenario
+    assert apply_call in scenario
+    assert scenario.index(snapshot_call) < scenario.index(apply_call)
+    assert "except GateSignal:\n            raise" in scenario
+
+
+def test_main_installs_and_restores_cleanup_signal_handlers(module, monkeypatch):
+    registrations = []
+    assert issubclass(module.GateSignal, BaseException)
+    assert not issubclass(module.GateSignal, Exception)
+
+    class FakeGate:
+        def __init__(self, _args):
+            pass
+
+        def preflight(self):
+            return None
+
+        def run_all(self):
+            return 0
+
+    monkeypatch.setattr(module, "parse_args", lambda: SimpleNamespace())
+    monkeypatch.setattr(module, "Gate", FakeGate)
+    monkeypatch.setattr(module.signal, "getsignal", lambda signum: f"old-{signum}")
+    monkeypatch.setattr(
+        module.signal,
+        "signal",
+        lambda signum, handler: registrations.append((signum, handler)),
+    )
+
+    assert module.main() == 0
+    assert [item[0] for item in registrations[:3]] == [
+        signal.SIGHUP,
+        signal.SIGINT,
+        signal.SIGTERM,
+    ]
+    assert all(callable(item[1]) for item in registrations[:3])
+    assert [item[1] for item in registrations[3:]] == [
+        f"old-{signal.SIGHUP}",
+        f"old-{signal.SIGINT}",
+        f"old-{signal.SIGTERM}",
+    ]
 
 
 def test_perf_refund_fixture_requires_provider_ids(module):
@@ -823,7 +878,31 @@ include $script;
             )
 
         snapshot = json.loads(run_scenario("snapshot").stdout)["snapshot"]
-        run_scenario("apply-optional-admin")
+        drifted_store = json.loads(store_path.read_text(encoding="utf-8"))
+        drifted_store["wcpay_account_data"]["value"]["data"]["status"] = "changed-after-snapshot"
+        store_path.write_text(json.dumps(drifted_store), encoding="utf-8")
+        stale_apply = subprocess.run(
+            [
+                "php",
+                str(wrapper_path),
+                str(store_path),
+                str(script),
+                "apply-optional-admin",
+                snapshot,
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert stale_apply.returncode == 1
+        assert "changed after snapshot" in stale_apply.stderr
+        unchanged_store = json.loads(store_path.read_text(encoding="utf-8"))
+        assert unchanged_store["wcpay_account_data"]["value"]["data"]["status"] == "changed-after-snapshot"
+        assert unchanged_store["_wcpay_feature_reports_area"]["value"] == "0"
+
+        run_scenario("restore", snapshot)
+        snapshot = json.loads(run_scenario("snapshot").stdout)["snapshot"]
+        run_scenario("apply-optional-admin", snapshot)
         applied_store = json.loads(store_path.read_text(encoding="utf-8"))
         assert applied_store["_wcpay_feature_reports_area"]["value"] == "1"
         run_scenario("restore", snapshot)

@@ -18,9 +18,15 @@ LOCALE="de_DE"
 PRINT_PLAN=0
 POLL_TRIES="${I18N_NOTES_POLL_TRIES:-60}"
 POLL_SLEEP_SECONDS="${I18N_NOTES_POLL_SLEEP_SECONDS:-1}"
+WP_CLI_MEMORY_LIMIT="${I18N_NOTES_WP_CLI_MEMORY_LIMIT:-256M}"
+TARGET_WP_RUNTIME=""
 ORIGINAL_WPLANG=""
-LANGUAGE_SWITCHED=0
-TRANSLATION_PROBE_INSTALLED=0
+LANGUAGE_CLEANUP_ARMED=0
+LANGUAGE_SNAPSHOT_JSON=""
+LANGUAGE_RESTORE_JSON=""
+PROBE_CLEANUP_ARMED=0
+I18N_PROBE_TOKEN=""
+PROBE_RESTORE_JSON=""
 TRANSLATION_PROBE_PLUGIN="woopayments-i18n-notes-gate-translations.php"
 CATALOG_EVIDENCE=""
 
@@ -68,11 +74,11 @@ while [ "$#" -gt 0 ]; do
 done
 
 print_plan() {
-	python3 - "$TARGET_WP" "$OUT_DIR" "$LOCALE" "$FLOW_DRIVE" <<'PY'
+	python3 - "$TARGET_WP" "$OUT_DIR" "$LOCALE" "$FLOW_DRIVE" "$WP_CLI_MEMORY_LIMIT" <<'PY'
 import json
 import sys
 
-target_wp, out_dir, locale, flow_drive = sys.argv[1:]
+target_wp, out_dir, locale, flow_drive, wp_cli_memory_limit = sys.argv[1:]
 print(
     json.dumps(
         {
@@ -81,6 +87,7 @@ print(
             "out_dir": out_dir,
             "locale": locale,
             "flow_driver": flow_drive,
+            "wp_cli_memory_limit": wp_cli_memory_limit,
             "required_flows": ["charge", "refund", "dispute"],
             "translation_probe": {
                 "plugin": "woopayments-i18n-notes-gate-translations.php",
@@ -104,6 +111,7 @@ print(
                 "dispute overview",
                 "Payment has been disputed",
                 "Payment inquiry has been raised",
+                "A test payment",
             ],
         },
         sort_keys=True,
@@ -111,6 +119,10 @@ print(
 )
 PY
 }
+
+if ! [[ "$WP_CLI_MEMORY_LIMIT" =~ ^[1-9][0-9]*[MmGg]$ ]]; then
+	usage_error "I18N_NOTES_WP_CLI_MEMORY_LIMIT must be a positive M/G PHP memory limit."
+fi
 
 if [ "$PRINT_PLAN" -eq 1 ]; then
 	if [ -z "$TARGET_WP" ]; then
@@ -128,6 +140,7 @@ else
 	if [ -z "$TARGET_WP" ]; then
 		usage_error "provide --target or --state."
 	fi
+	TARGET_WP_RUNTIME="$TARGET_WP --exec=ini_set(\"memory_limit\",\"$WP_CLI_MEMORY_LIMIT\");"
 fi
 
 if ! command -v python3 >/dev/null 2>&1; then
@@ -141,6 +154,9 @@ case "$POLL_TRIES:$POLL_SLEEP_SECONDS" in
 esac
 
 mkdir -p "$OUT_DIR"
+LANGUAGE_SNAPSHOT_JSON="$OUT_DIR/i18n-language-snapshot.json"
+LANGUAGE_RESTORE_JSON="$OUT_DIR/i18n-language-restore.json"
+PROBE_RESTORE_JSON="$OUT_DIR/i18n-probe-cleanup.json"
 
 json_from_text() {
 	python3 -c '
@@ -200,43 +216,156 @@ sys.exit(0 if {"charge", "refund", "dispute"} <= flows else 1)
 PY
 }
 
-restore_language() {
-	local restore_locale
+snapshot_language_state() {
+	local raw rc json
 
-	if [ "$TRANSLATION_PROBE_INSTALLED" -eq 1 ]; then
-		# Intentionally split the WP runner string, matching this harness's WP="docker exec ..." convention.
-		# shellcheck disable=SC2086
-		$TARGET_WP eval-file - <<PHP >/dev/null 2>&1 || true
-<?php
-\$plugin = WPMU_PLUGIN_DIR . '/' . '$TRANSLATION_PROBE_PLUGIN';
-if ( file_exists( \$plugin ) ) {
-	unlink( \$plugin );
-}
-PHP
-	fi
-
-	if [ "$LANGUAGE_SWITCHED" -ne 1 ]; then
-		return
-	fi
-
-	restore_locale="$ORIGINAL_WPLANG"
-	if [ -z "$restore_locale" ]; then
-		restore_locale="en_US"
-	fi
-
-	printf 'i18n notes gate: restoring site language to %s...\n' "$restore_locale" >&2
 	# Intentionally split the WP runner string, matching this harness's WP="docker exec ..." convention.
 	# shellcheck disable=SC2086
-	$TARGET_WP language core install "$restore_locale" >/dev/null 2>&1 || true
+	raw="$($TARGET_WP_RUNTIME eval-file - <<'PHP' 2>&1
+<?php
+global $wpdb;
+
+$missing  = new stdClass();
+$value    = get_option( 'WPLANG', $missing );
+$exists   = $missing !== $value;
+$autoload = null;
+if ( $exists ) {
+	$autoload = $wpdb->get_var( $wpdb->prepare( "SELECT autoload FROM {$wpdb->options} WHERE option_name = %s", 'WPLANG' ) );
+}
+
+WP_CLI::line( 'WPLANG:' . ( $exists && is_scalar( $value ) ? (string) $value : '' ) );
+WP_CLI::line(
+	wp_json_encode(
+		array(
+			'schema'   => 'woopayments_i18n_language_snapshot.v1',
+			'success'  => true,
+			'exists'   => $exists,
+			'value'    => $exists ? $value : null,
+			'autoload' => null === $autoload ? null : (string) $autoload,
+		)
+	)
+);
+PHP
+)"
+	rc=$?
+	json="$(printf '%s\n' "$raw" | json_from_text)"
+	ORIGINAL_WPLANG="$(printf '%s\n' "$raw" | grep -oE 'WPLANG:[A-Za-z_]*' | tail -1 | cut -d: -f2-)"
+	if [ "$rc" -ne 0 ] || [ -z "$json" ]; then
+		printf '%s\n' "$raw" | tail -20 >&2
+		blocked "could not snapshot original site language."
+	fi
+	printf '%s\n' "$json" > "$LANGUAGE_SNAPSHOT_JSON"
+}
+
+restore_language_state() {
+	local payload_b64 raw rc json
+
+	if [ "$LANGUAGE_CLEANUP_ARMED" -ne 1 ]; then
+		return 0
+	fi
+	if [ ! -s "$LANGUAGE_SNAPSHOT_JSON" ]; then
+		printf 'i18n notes gate: language cleanup snapshot is missing.\n' >&2
+		return 1
+	fi
+
+	payload_b64="$(python3 - "$LANGUAGE_SNAPSHOT_JSON" <<'PY'
+import base64
+import sys
+from pathlib import Path
+
+print(base64.b64encode(Path(sys.argv[1]).read_bytes()).decode("ascii"))
+PY
+)"
+	if [ -z "$payload_b64" ]; then
+		printf 'i18n notes gate: could not encode language cleanup snapshot.\n' >&2
+		return 1
+	fi
+
+	# Intentionally split the WP runner string, matching this harness's WP="docker exec ..." convention.
 	# shellcheck disable=SC2086
-	$TARGET_WP site switch-language "$restore_locale" >/dev/null 2>&1 || true
+	raw="$($TARGET_WP_RUNTIME eval-file - "$payload_b64" --skip-plugins --skip-themes <<'PHP' 2>&1
+<?php
+global $wpdb;
+
+$decoded  = base64_decode( (string) ( $args[0] ?? '' ), true );
+$snapshot = false === $decoded ? null : json_decode( $decoded, true );
+$errors   = array();
+
+if (
+	! is_array( $snapshot ) ||
+	'woopayments_i18n_language_snapshot.v1' !== ( $snapshot['schema'] ?? '' ) ||
+	true !== ( $snapshot['success'] ?? false ) ||
+	! array_key_exists( 'exists', $snapshot ) ||
+	! is_bool( $snapshot['exists'] ) ||
+	! array_key_exists( 'value', $snapshot ) ||
+	! array_key_exists( 'autoload', $snapshot )
+) {
+	$errors[] = 'Language snapshot payload is invalid.';
+} elseif ( $snapshot['exists'] ) {
+	update_option( 'WPLANG', $snapshot['value'] );
+	if ( null !== $snapshot['autoload'] ) {
+		$wpdb->update(
+			$wpdb->options,
+			array( 'autoload' => (string) $snapshot['autoload'] ),
+			array( 'option_name' => 'WPLANG' )
+		);
+		wp_cache_delete( 'alloptions', 'options' );
+	}
+} else {
+	delete_option( 'WPLANG' );
+}
+wp_cache_delete( 'WPLANG', 'options' );
+
+if ( empty( $errors ) ) {
+	$missing        = new stdClass();
+	$restored_value = get_option( 'WPLANG', $missing );
+	$restored_exists = $missing !== $restored_value;
+	$restored_autoload = null;
+	if ( $restored_exists ) {
+		$restored_autoload = $wpdb->get_var( $wpdb->prepare( "SELECT autoload FROM {$wpdb->options} WHERE option_name = %s", 'WPLANG' ) );
+	}
+	if (
+		$restored_exists !== $snapshot['exists'] ||
+		( $restored_exists && $restored_value !== $snapshot['value'] ) ||
+		( null === $restored_autoload ? null : (string) $restored_autoload ) !== $snapshot['autoload']
+	) {
+		$errors[] = 'Language option restore verification failed.';
+	}
+}
+
+WP_CLI::line(
+	wp_json_encode(
+		array(
+			'schema'                  => 'woopayments_i18n_language_restore.v1',
+			'success'                 => empty( $errors ),
+			'restored_snapshot_exact' => empty( $errors ),
+			'errors'                  => $errors,
+		)
+	)
+);
+PHP
+)"
+	rc=$?
+	json="$(printf '%s\n' "$raw" | json_from_text)"
+	if [ "$rc" -ne 0 ] || [ -z "$json" ]; then
+		printf 'i18n notes gate: language restore command failed: %s\n' "$raw" >&2
+		return 1
+	fi
+	printf '%s\n' "$json" > "$LANGUAGE_RESTORE_JSON"
+	if [ "$(json_file_field "$LANGUAGE_RESTORE_JSON" success)" != "true" ] || [ "$(json_file_field "$LANGUAGE_RESTORE_JSON" restored_snapshot_exact)" != "true" ]; then
+		printf 'i18n notes gate: exact language restore was not verified; see %s.\n' "$LANGUAGE_RESTORE_JSON" >&2
+		return 1
+	fi
+
+	LANGUAGE_CLEANUP_ARMED=0
+	return 0
 }
 
 assert_target_native_owner() {
 	local raw rc owner
 
 	# shellcheck disable=SC2086
-	raw="$($TARGET_WP wc-native-payments status 2>&1)"
+	raw="$($TARGET_WP_RUNTIME wc-native-payments status 2>&1)"
 	rc=$?
 	if [ "$rc" -ne 0 ]; then
 		printf '%s\n' "$raw" | tail -20 >&2
@@ -252,18 +381,12 @@ assert_target_native_owner() {
 switch_language() {
 	local raw rc
 
-	# shellcheck disable=SC2086
-	raw="$($TARGET_WP eval 'echo "WPLANG:" . (string) get_option( "WPLANG", "" ) . PHP_EOL;' 2>&1)"
-	rc=$?
-	if [ "$rc" -ne 0 ]; then
-		printf '%s\n' "$raw" | tail -20 >&2
-		blocked "could not read original site language."
-	fi
-	ORIGINAL_WPLANG="$(printf '%s\n' "$raw" | grep -oE 'WPLANG:[A-Za-z_]*' | tail -1 | cut -d: -f2-)"
+	snapshot_language_state
+	LANGUAGE_CLEANUP_ARMED=1
 
 	printf 'i18n notes gate: switching target site language to %s...\n' "$LOCALE" >&2
 	# shellcheck disable=SC2086
-	raw="$($TARGET_WP language core install "$LOCALE" 2>&1)"
+	raw="$($TARGET_WP_RUNTIME language core install "$LOCALE" 2>&1)"
 	rc=$?
 	if [ "$rc" -ne 0 ]; then
 		printf '%s\n' "$raw" | tail -20 >&2
@@ -271,15 +394,13 @@ switch_language() {
 	fi
 
 	# shellcheck disable=SC2086
-	raw="$($TARGET_WP site switch-language "$LOCALE" 2>&1)"
+	raw="$($TARGET_WP_RUNTIME site switch-language "$LOCALE" 2>&1)"
 	rc=$?
 	if [ "$rc" -ne 0 ]; then
 		printf '%s\n' "$raw" | tail -20 >&2
 		blocked "could not switch site language to $LOCALE."
 	fi
 
-	LANGUAGE_SWITCHED=1
-	trap restore_language EXIT
 }
 
 capture_catalog_evidence() {
@@ -288,7 +409,7 @@ capture_catalog_evidence() {
 
 	# Intentionally split the WP runner string, matching this harness's WP="docker exec ..." convention.
 	# shellcheck disable=SC2086
-	raw="$($TARGET_WP eval-file - <<'PHP' 2>&1
+	raw="$($TARGET_WP_RUNTIME eval-file - <<'PHP' 2>&1
 <?php
 $messages = array(
 	'charge'  => '<strong>Fee details:</strong>',
@@ -349,14 +470,108 @@ state_path.write_text(json.dumps(state, sort_keys=True, indent=2) + "\n", encodi
 PY
 }
 
+assert_translation_probe_path_available() {
+	local raw rc json
+
+	# shellcheck disable=SC2086
+	raw="$($TARGET_WP_RUNTIME eval-file - <<PHP 2>&1
+<?php
+\$plugin = WPMU_PLUGIN_DIR . '/' . '$TRANSLATION_PROBE_PLUGIN';
+WP_CLI::line(
+	wp_json_encode(
+		array(
+			'success' => ! file_exists( \$plugin ) && ! is_link( \$plugin ),
+			'path'    => \$plugin,
+			'errors'  => file_exists( \$plugin ) || is_link( \$plugin ) ? array( 'Translation probe path already exists.' ) : array(),
+		)
+	)
+);
+PHP
+)"
+	rc=$?
+	json="$(printf '%s\n' "$raw" | json_from_text)"
+	if [ "$rc" -ne 0 ] || [ -z "$json" ] || [ "$(printf '%s\n' "$json" | python3 -c 'import json,sys; print("true" if json.load(sys.stdin).get("success") is True else "false")')" != "true" ]; then
+		printf '%s\n' "$raw" | tail -20 >&2
+		blocked "translation probe path is not available."
+	fi
+}
+
+restore_translation_probe() {
+	local raw rc json
+
+	if [ "$PROBE_CLEANUP_ARMED" -ne 1 ]; then
+		return 0
+	fi
+
+	# shellcheck disable=SC2086
+	raw="$($TARGET_WP_RUNTIME eval-file - "$I18N_PROBE_TOKEN" --skip-plugins --skip-themes <<PHP 2>&1
+<?php
+\$token  = (string) ( \$args[0] ?? '' );
+\$plugin = WPMU_PLUGIN_DIR . '/' . '$TRANSLATION_PROBE_PLUGIN';
+\$errors = array();
+
+if ( 1 !== preg_match( '/^[a-f0-9]{32}$/D', \$token ) ) {
+	\$errors[] = 'Translation probe cleanup token is invalid.';
+} elseif ( file_exists( \$plugin ) || is_link( \$plugin ) ) {
+	\$contents = @file_get_contents( \$plugin );
+	\$marker   = 'woopayments-i18n-probe:' . \$token;
+	if ( false === \$contents || false === strpos( \$contents, \$marker ) ) {
+		\$errors[] = 'translation probe ownership mismatch';
+	} elseif ( ! @unlink( \$plugin ) ) {
+		\$errors[] = 'Could not remove owned translation probe.';
+	}
+}
+
+if ( empty( \$errors ) && ( file_exists( \$plugin ) || is_link( \$plugin ) ) ) {
+	\$errors[] = 'Owned translation probe still exists after cleanup.';
+}
+
+WP_CLI::line(
+	wp_json_encode(
+		array(
+			'schema'  => 'woopayments_i18n_probe_cleanup.v1',
+			'success' => empty( \$errors ),
+			'errors'  => \$errors,
+		)
+	)
+);
+PHP
+)"
+	rc=$?
+	json="$(printf '%s\n' "$raw" | json_from_text)"
+	if [ "$rc" -ne 0 ] || [ -z "$json" ]; then
+		printf 'i18n notes gate: translation probe cleanup command failed: %s\n' "$raw" >&2
+		return 1
+	fi
+	printf '%s\n' "$json" > "$PROBE_RESTORE_JSON"
+	if [ "$(json_file_field "$PROBE_RESTORE_JSON" success)" != "true" ]; then
+		printf 'i18n notes gate: translation probe cleanup failed; see %s.\n' "$PROBE_RESTORE_JSON" >&2
+		return 1
+	fi
+
+	PROBE_CLEANUP_ARMED=0
+	return 0
+}
+
 install_translation_probe() {
-	local raw rc
+	local raw rc json
+
+	assert_translation_probe_path_available
+	I18N_PROBE_TOKEN="$(python3 -c 'import secrets; print(secrets.token_hex(16))')"
+	if ! [[ "$I18N_PROBE_TOKEN" =~ ^[a-f0-9]{32}$ ]]; then
+		blocked "could not generate translation probe ownership token."
+	fi
+	PROBE_CLEANUP_ARMED=1
 
 	# Intentionally split the WP runner string, matching this harness's WP="docker exec ..." convention.
 	# shellcheck disable=SC2086
-	raw="$($TARGET_WP eval-file - <<PHP 2>&1
+	raw="$($TARGET_WP_RUNTIME eval-file - "$I18N_PROBE_TOKEN" <<PHP 2>&1
 <?php
+\$token  = (string) ( \$args[0] ?? '' );
 \$plugin = WPMU_PLUGIN_DIR . '/' . '$TRANSLATION_PROBE_PLUGIN';
+if ( 1 !== preg_match( '/^[a-f0-9]{32}$/D', \$token ) ) {
+	WP_CLI::error( 'Invalid i18n translation probe token.' );
+}
 if ( ! is_dir( WPMU_PLUGIN_DIR ) && ! wp_mkdir_p( WPMU_PLUGIN_DIR ) ) {
 	WP_CLI::error( 'Could not create mu-plugins directory.' );
 }
@@ -407,20 +622,59 @@ add_filter(
 );
 MU_PLUGIN;
 
-if ( false === file_put_contents( \$plugin, \$source ) ) {
+\$source = "<?php\n// woopayments-i18n-probe:{\$token}\n" . substr( \$source, 6 );
+\$handle = @fopen( \$plugin, 'x' );
+if ( false === \$handle ) {
+	WP_CLI::error( 'Could not exclusively create i18n notes gate translation probe.' );
+}
+\$written = fwrite( \$handle, \$source );
+if ( false === \$written || strlen( \$source ) !== \$written || ! fflush( \$handle ) ) {
+	fclose( \$handle );
 	WP_CLI::error( 'Could not write i18n notes gate translation probe.' );
 }
+fclose( \$handle );
 
-WP_CLI::line( \$plugin );
+WP_CLI::line(
+	wp_json_encode(
+		array(
+			'schema'  => 'woopayments_i18n_probe_install.v1',
+			'success' => true,
+			'path'    => \$plugin,
+			'sha256'  => hash( 'sha256', \$source ),
+		)
+	)
+);
 PHP
 )"
 	rc=$?
-	if [ "$rc" -ne 0 ]; then
+	json="$(printf '%s\n' "$raw" | json_from_text)"
+	if [ "$rc" -ne 0 ] || [ -z "$json" ]; then
 		printf '%s\n' "$raw" | tail -20 >&2
 		blocked "could not install i18n translation probe."
 	fi
+}
 
-	TRANSLATION_PROBE_INSTALLED=1
+handle_exit() {
+	local exit_code=$?
+	local cleanup_failed=0
+
+	trap - EXIT
+	trap '' HUP INT TERM
+	if ! restore_translation_probe; then
+		cleanup_failed=1
+	fi
+	if ! restore_language_state; then
+		cleanup_failed=1
+	fi
+	if [ "$cleanup_failed" -ne 0 ]; then
+		printf 'FAIL: i18n notes gate cleanup failed; refusing to report the gate result.\n' >&2
+		exit 70
+	fi
+	exit "$exit_code"
+}
+
+handle_signal() {
+	exit "$1"
 }
 
 drive_flow() {
@@ -431,7 +685,7 @@ drive_flow() {
 	local raw rc json
 
 	printf 'i18n notes gate: driving %s flow...\n' "$flow" >&2
-	raw="$(WP="$TARGET_WP" bash "$FLOW_DRIVE" "$@" 2>&1)"
+	raw="$(WP="$TARGET_WP_RUNTIME" bash "$FLOW_DRIVE" "$@" 2>&1)"
 	rc=$?
 	json="$(printf '%s\n' "$raw" | json_from_text)"
 
@@ -451,7 +705,7 @@ capture_notes() {
 	local raw rc json
 
 	# shellcheck disable=SC2086
-	raw="$($TARGET_WP eval-file - "$@" <<'PHP' 2>&1
+	raw="$($TARGET_WP_RUNTIME eval-file - "$@" <<'PHP' 2>&1
 <?php
 $orders = array();
 
@@ -573,6 +827,7 @@ ENGLISH_SENTINELS = [
     "dispute overview",
     "Payment has been disputed",
     "Payment inquiry has been raised",
+    "A test payment",
 ]
 
 
@@ -701,6 +956,11 @@ if blockers:
 print("PASS: native WooPayments order notes are localized and deduplicated.")
 PY
 }
+
+trap handle_exit EXIT
+trap 'handle_signal 129' HUP
+trap 'handle_signal 130' INT
+trap 'handle_signal 143' TERM
 
 if [ -z "$STATE" ]; then
 	if [ ! -x "$FLOW_DRIVE" ]; then

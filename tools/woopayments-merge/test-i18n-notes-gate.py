@@ -12,7 +12,6 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 SCRIPT = REPO / "tools/woopayments-merge/i18n-notes-gate.sh"
 VERIFY = REPO / "tools/woopayments-merge/verify.sh"
-NATIVE_CHARGE_DRIVER = REPO / "tools/woopayments-merge/flow-drive-native-charge.php"
 TARGET_WP = "docker exec -i target-cli-1 wp --allow-root --user=1"
 
 
@@ -37,6 +36,9 @@ def make_fake_wp(path: Path, invocations_path: Path, *, native_owner: str = "non
         path,
         f"""#!/usr/bin/env bash
 set -euo pipefail
+if [[ "${{1:-}}" == --exec=* ]]; then
+	shift
+fi
 printf '%s\\n' "$*" >> {json.dumps(str(invocations_path))}
 if [ "$1" = "wc-native-payments" ] && [ "$2" = "status" ]; then
 \tprintf 'Owner: %s\\n' {json.dumps(native_owner)}
@@ -155,9 +157,11 @@ def test_print_plan_describes_live_i18n_probe() -> None:
     assert payload["schema"] == "woopayments_i18n_notes_gate_plan.v1"
     assert payload["target_wp"] == TARGET_WP
     assert payload["locale"] == "de_DE"
+    assert payload["wp_cli_memory_limit"] == "256M"
     assert payload["required_flows"] == ["charge", "refund", "dispute"]
     assert payload["translation_probe"]["plugin"] == "woopayments-i18n-notes-gate-translations.php"
     assert "Payment complete." in payload["english_sentinels"]
+    assert "A test payment" in payload["english_sentinels"]
 
 
 def test_gate_passes_localized_snapshot() -> None:
@@ -330,8 +334,23 @@ def test_live_gate_reads_original_locale_with_a_notice_safe_marker() -> None:
     assert "grep -oE 'WPLANG:[A-Za-z_]*'" in source
 
 
-def test_native_charge_driver_clears_processing_order_marker_between_harness_flows() -> None:
-    source = NATIVE_CHARGE_DRIVER.read_text(encoding="utf-8")
+def test_live_gate_restores_the_exact_language_option_snapshot() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
 
-    assert "WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER" in source
-    assert "WC()->session->set" in source
+    assert "snapshot_language_state" in source
+    assert "restore_language_state" in source
+    assert "restored_snapshot_exact" in source
+    assert '$TARGET_WP_RUNTIME eval-file - "$payload_b64" --skip-plugins --skip-themes' in source
+    assert 'restore_locale="en_US"' not in source
+
+
+def test_live_gate_owns_translation_probe_and_fails_closed_on_cleanup() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+
+    assert "I18N_PROBE_TOKEN" in source
+    assert "fopen( \\$plugin, 'x' )" in source
+    assert "translation probe ownership mismatch" in source
+    assert "trap 'handle_signal 129' HUP" in source
+    assert "trap 'handle_signal 130' INT" in source
+    assert "trap 'handle_signal 143' TERM" in source
+    assert "exit 70" in source

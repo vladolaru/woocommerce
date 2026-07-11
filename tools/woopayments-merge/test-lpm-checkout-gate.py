@@ -1049,6 +1049,8 @@ def make_fake_playwriter(
     fatal_console_errors: tuple[dict[str, object], ...] = (),
     exit_code: int = 0,
     provider_observation: dict | None = None,
+    omit_target_multibanco_voucher: bool = False,
+    mismatch_target_multibanco_voucher: bool = False,
 ) -> None:
     order_id_expr = "None" if omit_order_id else "1001"
     selected_gateway_expr = "None" if omit_semantic_fields else 'os.environ["LPM_GATE_GATEWAY_ID"]'
@@ -1149,6 +1151,23 @@ payload = {{
 stale_provider_observation = {provider_observation_expr}
 if stale_provider_observation is not None:
     payload["provider_observation"] = stale_provider_observation
+if os.environ["LPM_GATE_METHOD"] == "multibanco" and not (
+    {omit_target_multibanco_voucher!r}
+    and os.environ["LPM_GATE_ROLE"] == "target"
+):
+    payload["multibanco_voucher"] = {{
+        "rendered": True,
+        "visible": True,
+        "entity": "12345",
+        "reference": "123 456 789",
+        "amount": "EUR 50.00",
+        "share_link_present": True,
+    }}
+    if (
+        {mismatch_target_multibanco_voucher!r}
+        and os.environ["LPM_GATE_ROLE"] == "target"
+    ):
+        payload["multibanco_voucher"]["reference"] = "987 654 321"
 
 evidence_path = pathlib.Path(os.environ["LPM_GATE_EVIDENCE_PATH"])
 evidence_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1736,6 +1755,88 @@ def test_gate_rejects_conflicting_browser_and_persisted_payment_intent_ids() -> 
             "browser": "pi_unit_ideal",
             "persisted": "pi_wp_1001",
         }
+
+
+def test_gate_rejects_multibanco_without_target_voucher_rendering() -> None:
+    with tempfile.TemporaryDirectory(prefix="lpm-gate-multibanco-voucher-") as tmp:
+        tmp_path = Path(tmp)
+        ref_wp = tmp_path / "reference" / "wp"
+        target_wp = tmp_path / "target" / "wp"
+        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_parity = tmp_path / "fake-parity-diff"
+        playwriter_invocations = tmp_path / "playwriter-invocations.jsonl"
+        parity_invocations = tmp_path / "parity-invocations.jsonl"
+        out_dir = tmp_path / "evidence"
+
+        make_fake_wp(ref_wp, REF_URL, enrich_order_evidence=True)
+        make_fake_wp(target_wp, TARGET_URL, enrich_order_evidence=True)
+        make_fake_playwriter(
+            fake_playwriter,
+            omit_target_multibanco_voucher=True,
+        )
+        make_fake_parity_diff(fake_parity, parity_invocations)
+
+        result = run_gate(
+            "--methods",
+            "multibanco",
+            "--ref",
+            str(ref_wp),
+            "--target",
+            str(target_wp),
+            "--playwriter-session",
+            "unit",
+            "--out-dir",
+            str(out_dir),
+            env={
+                "PLAYWRITER_BIN": str(fake_playwriter),
+                "FAKE_PLAYWRITER_INVOCATIONS": str(playwriter_invocations),
+                "LPM_PARITY_DIFF_BIN": str(fake_parity),
+            },
+        )
+
+        assert result.returncode == 1
+        assert "target/multibanco: missing Multibanco voucher rendering" in result.stderr
+
+
+def test_gate_rejects_multibanco_voucher_mismatch_between_stores() -> None:
+    with tempfile.TemporaryDirectory(prefix="lpm-gate-multibanco-mismatch-") as tmp:
+        tmp_path = Path(tmp)
+        ref_wp = tmp_path / "reference" / "wp"
+        target_wp = tmp_path / "target" / "wp"
+        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_parity = tmp_path / "fake-parity-diff"
+        playwriter_invocations = tmp_path / "playwriter-invocations.jsonl"
+        parity_invocations = tmp_path / "parity-invocations.jsonl"
+        out_dir = tmp_path / "evidence"
+
+        make_fake_wp(ref_wp, REF_URL, enrich_order_evidence=True)
+        make_fake_wp(target_wp, TARGET_URL, enrich_order_evidence=True)
+        make_fake_playwriter(
+            fake_playwriter,
+            mismatch_target_multibanco_voucher=True,
+        )
+        make_fake_parity_diff(fake_parity, parity_invocations)
+
+        result = run_gate(
+            "--methods",
+            "multibanco",
+            "--ref",
+            str(ref_wp),
+            "--target",
+            str(target_wp),
+            "--playwriter-session",
+            "unit",
+            "--out-dir",
+            str(out_dir),
+            env={
+                "PLAYWRITER_BIN": str(fake_playwriter),
+                "FAKE_PLAYWRITER_INVOCATIONS": str(playwriter_invocations),
+                "LPM_PARITY_DIFF_BIN": str(fake_parity),
+            },
+        )
+
+        assert result.returncode == 1
+        assert "Multibanco voucher reference mismatch" in result.stderr
 
 
 def test_gate_rejects_provider_observation_outside_test_mode() -> None:

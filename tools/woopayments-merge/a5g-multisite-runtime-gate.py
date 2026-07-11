@@ -9,6 +9,7 @@ import os
 import pathlib
 import shlex
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -28,6 +29,14 @@ PLUGIN_FILE = "woocommerce-payments/woocommerce-payments.php"
 
 class GateError(RuntimeError):
     """Raised for fail-closed gate errors."""
+
+
+class GateSignal(GateError):
+    """Raised when a signal requests disposable-environment cleanup."""
+
+    def __init__(self, signum: int) -> None:
+        self.signum = signum
+        super().__init__(f"received signal {signum}")
 
 
 def utc_now() -> str:
@@ -628,11 +637,25 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv or sys.argv[1:])
     gate = MultisiteRuntimeGate(args)
+    handled_signals = (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)
+    previous_handlers = {signum: signal.getsignal(signum) for signum in handled_signals}
+
+    def handle_signal(signum: int, _frame: Any) -> None:
+        raise GateSignal(signum)
+
+    for signum in handled_signals:
+        signal.signal(signum, handle_signal)
     try:
         gate.run()
+    except GateSignal as exc:
+        print(f"ERROR: {exc}", file=sys.stderr, flush=True)
+        return 128 + exc.signum
     except Exception as exc:
         print(f"ERROR: {exc}", file=sys.stderr, flush=True)
         return 1
+    finally:
+        for signum, previous_handler in previous_handlers.items():
+            signal.signal(signum, previous_handler)
     return 0
 
 

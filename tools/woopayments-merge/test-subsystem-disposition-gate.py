@@ -11,6 +11,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 SCRIPT = REPO / "tools/woopayments-merge/subsystem-disposition-gate.sh"
 VERIFY = REPO / "tools/woopayments-merge/verify.sh"
+MANIFEST = REPO / "tools/woopayments-merge/subsystem-disposition.md"
 
 
 def run_gate(
@@ -232,3 +233,25 @@ def test_verify_runs_subsystem_disposition_gate() -> None:
     verify_source = VERIFY.read_text(encoding="utf-8")
 
     assert "subsystem-disposition-gate.sh" in verify_source
+
+
+def test_plan_specific_payment_method_dispositions_are_pinned() -> None:
+    manifest = MANIFEST.read_text(encoding="utf-8")
+    rows = {
+        cells[1].strip(" `"): cells
+        for line in manifest.splitlines()
+        if line.startswith("|")
+        for cells in ([cell.strip() for cell in line.split("|")[1:-1]],)
+        if len(cells) == 8
+    }
+
+    apple_pay = rows["includes/class-wc-payments-apple-pay-registration.php"]
+    giropay = rows["includes/payment-methods/Configs/Definitions/GiropayDefinition.php"]
+    sofort = rows["includes/payment-methods/Configs/Definitions/SofortDefinition.php"]
+
+    assert apple_pay[2] == "`PORTED`"
+    for row in (giropay, sofort):
+        assert row[2] == "`DROPPED`"
+        assert row[5] == "Native WooPayments plan D13"
+        assert row[6]
+        assert "deprecated" in row[7].lower()

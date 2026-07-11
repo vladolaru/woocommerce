@@ -20,6 +20,7 @@ BROWSER_DRIVER="$SELF_DIR/plugin-active-settings.playwriter.mjs"
 
 TARGET_WP=""
 TARGET_URL="${TARGET_URL:-}"
+RUNNER_ROLE="${RUNNER_ROLE:-target}"
 PLAYWRITER_SESSION="${PLAYWRITER_SESSION:-}"
 BROWSER_RUNNER="${BROWSER_RUNNER:-playwriter}"
 PLAYWRIGHT_SCRIPT_RUNNER_BIN="${PLAYWRIGHT_SCRIPT_RUNNER_BIN:-$SELF_DIR/playwright-script-runner.mjs}"
@@ -29,8 +30,10 @@ OUT_DIR="${TMPDIR:-$SELF_DIR/.tmp}/plugin-active-settings-gate"
 PRINT_PLAN=0
 PREFLIGHT_ONLY=0
 STAGE_PLUGIN_ACTIVE_FIXTURE=0
-RESTORE_PLUGIN_ACTIVE_FIXTURE=0
+CLEANUP_ARMED=0
+SNAPSHOT_FIXTURE_JSON=""
 STAGE_FIXTURE_JSON=""
+RESTORE_FIXTURE_JSON=""
 
 usage() {
 	cat >&2 <<'USAGE'
@@ -40,6 +43,7 @@ usage:
 Options:
   --target "<wp>"              Target store WP-CLI command.
   --target-url <url>           Target store browser base URL.
+  --runner-role <role>         Approved aggregate runner role: reference or target. Default: target.
   --browser-runner <runner>    Browser runner: playwriter or playwright. Defaults to BROWSER_RUNNER or playwriter.
   --playwriter-session <id>    Existing Playwriter session id. Defaults to PLAYWRITER_SESSION.
   --out-dir <path>             Evidence output directory.
@@ -79,6 +83,8 @@ while [ "$#" -gt 0 ]; do
 		--target) TARGET_WP="${2:-}"; shift 2 ;;
 		--target-url=*) TARGET_URL="${1#--target-url=}"; shift ;;
 		--target-url) TARGET_URL="${2:-}"; shift 2 ;;
+		--runner-role=*) RUNNER_ROLE="${1#--runner-role=}"; shift ;;
+		--runner-role) RUNNER_ROLE="${2:-}"; shift 2 ;;
 		--browser-runner=*) BROWSER_RUNNER="${1#--browser-runner=}"; shift ;;
 		--browser-runner) BROWSER_RUNNER="${2:-}"; shift 2 ;;
 		--playwriter-session=*) PLAYWRITER_SESSION="${1#--playwriter-session=}"; shift ;;
@@ -99,8 +105,12 @@ fi
 if ! runner_error="$(woopayments_validate_local_wp_runner "$TARGET_WP")"; then
 	usage_error "unsafe target WP runner: $runner_error"
 fi
-if ! runner_error="$(woopayments_validate_approved_docker_runner "$TARGET_WP" target)"; then
-	usage_error "unapproved target WP runner: $runner_error"
+case "$RUNNER_ROLE" in
+	reference|target) ;;
+	*) usage_error "--runner-role must be reference or target." ;;
+esac
+if ! runner_error="$(woopayments_validate_approved_docker_runner "$TARGET_WP" "$RUNNER_ROLE")"; then
+	usage_error "unapproved $RUNNER_ROLE WP runner: $runner_error"
 fi
 
 case "$BROWSER_RUNNER" in
@@ -130,11 +140,11 @@ PY
 }
 
 print_plan() {
-	python3 - "$TARGET_WP" "$TARGET_URL" "$SETTINGS_URL" "$BROWSER_DRIVER" <<'PY'
+	python3 - "$TARGET_WP" "$TARGET_URL" "$SETTINGS_URL" "$BROWSER_DRIVER" "$RUNNER_ROLE" <<'PY'
 import json
 import sys
 
-target_wp, target_url, settings_url, browser_driver = sys.argv[1:]
+target_wp, target_url, settings_url, browser_driver, runner_role = sys.argv[1:]
 print(
     json.dumps(
         {
@@ -143,6 +153,7 @@ print(
             "target_url": target_url,
             "settings_url": settings_url,
             "browser_driver": browser_driver,
+            "runner_role": runner_role,
             "checks": [
                 "woocommerce-payments plugin is active before browser run",
                 "authenticated wp-admin settings page renders",
@@ -205,68 +216,56 @@ extract_json_line() {
 	grep -E '^\{' | tail -1
 }
 
-stage_plugin_active_fixture() {
+snapshot_plugin_active_fixture() {
 	local raw rc json
 
-	progress "staging plugin-active fixture"
+	progress "snapshotting plugin-active fixture"
 	# Intentionally split the WP runner string, matching the harness convention.
 	# shellcheck disable=SC2086
-	raw="$($TARGET_WP eval-file - stage-plugin-active <<'PHP' 2>&1
+	raw="$($TARGET_WP eval-file - snapshot-plugin-active <<'PHP' 2>&1
 <?php
 $errors      = array();
 $plugin_file = 'woocommerce-payments/woocommerce-payments.php';
+$candidates  = array();
+$mu_dir      = defined( 'WPMU_PLUGIN_DIR' ) ? WPMU_PLUGIN_DIR : WP_CONTENT_DIR . '/mu-plugins';
 
 if ( ! function_exists( 'is_plugin_active' ) ) {
 	require_once ABSPATH . 'wp-admin/includes/plugin.php';
 }
 
-$was_plugin_active = is_plugin_active( $plugin_file );
-$disabled          = array();
-$mu_dir            = defined( 'WPMU_PLUGIN_DIR' ) ? WPMU_PLUGIN_DIR : WP_CONTENT_DIR . '/mu-plugins';
-
 if ( is_dir( $mu_dir ) ) {
-	foreach ( glob( trailingslashit( $mu_dir ) . '*.php' ) ?: array() as $path ) {
+	$paths = glob( trailingslashit( $mu_dir ) . '*.php' ) ?: array();
+	sort( $paths, SORT_STRING );
+	foreach ( $paths as $path ) {
 		$contents = @file_get_contents( $path );
-		if ( false === $contents || false === strpos( $contents, 'woocommerce_native_payments_enabled' ) ) {
+		if ( false === $contents ) {
+			$errors[] = 'Could not inspect mu-plugin before staging: ' . $path;
+			continue;
+		}
+		if ( false === strpos( $contents, 'woocommerce_native_payments_enabled' ) ) {
 			continue;
 		}
 
 		$disabled_path = $path . '.disabled-by-woopayments-merge';
-		if ( file_exists( $disabled_path ) ) {
-			$disabled[] = array(
-				'path'          => $path,
-				'disabled_path' => $disabled_path,
-			);
-			continue;
-		}
-
-		if ( ! @rename( $path, $disabled_path ) ) {
-			$errors[] = 'Could not disable native payments mu-plugin: ' . $path;
-			continue;
-		}
-
-		$disabled[] = array(
+		$candidates[]  = array(
 			'path'          => $path,
 			'disabled_path' => $disabled_path,
+			'sha256'        => hash( 'sha256', $contents ),
 		);
-	}
-}
-
-if ( ! $was_plugin_active ) {
-	$result = activate_plugin( $plugin_file, '', false, true );
-	if ( is_wp_error( $result ) ) {
-		$errors[] = 'Could not activate WooPayments plugin: ' . $result->get_error_message();
+		if ( file_exists( $disabled_path ) || is_link( $disabled_path ) ) {
+			$errors[] = 'Native payments mu-plugin destination already exists: ' . $disabled_path;
+		}
 	}
 }
 
 echo wp_json_encode(
 	array(
-		'success'             => empty( $errors ) && is_plugin_active( $plugin_file ),
-		'mode'                => 'stage-plugin-active',
-		'errors'              => $errors,
-		'was_plugin_active'   => $was_plugin_active,
-		'wcpay_plugin_active' => is_plugin_active( $plugin_file ),
-		'disabled_mu_plugins' => $disabled,
+		'schema'               => 'woopayments_plugin_active_fixture_snapshot.v1',
+		'success'              => empty( $errors ),
+		'mode'                 => 'snapshot-plugin-active',
+		'errors'               => $errors,
+		'was_plugin_active'    => is_plugin_active( $plugin_file ),
+		'candidate_mu_plugins' => $candidates,
 	),
 	JSON_UNESCAPED_SLASHES
 ) . "\n";
@@ -276,27 +275,21 @@ PHP
 	json="$(printf '%s\n' "$raw" | extract_json_line)"
 
 	if [ "$rc" -ne 0 ] || [ -z "$json" ]; then
-		blocked "could not stage plugin-active fixture: $raw"
+		blocked "could not snapshot plugin-active fixture: $raw"
 	fi
 
-	printf '%s\n' "$json" > "$STAGE_FIXTURE_JSON"
-	RESTORE_PLUGIN_ACTIVE_FIXTURE=1
-
-	if ! json_success "$STAGE_FIXTURE_JSON"; then
-		json_errors "$STAGE_FIXTURE_JSON"
-		blocked "could not stage plugin-active fixture; see $STAGE_FIXTURE_JSON"
+	printf '%s\n' "$json" > "$SNAPSHOT_FIXTURE_JSON"
+	if ! json_success "$SNAPSHOT_FIXTURE_JSON"; then
+		json_errors "$SNAPSHOT_FIXTURE_JSON"
+		blocked "could not snapshot plugin-active fixture; see $SNAPSHOT_FIXTURE_JSON"
 	fi
 }
 
-restore_plugin_active_fixture() {
-	local payload_b64 raw rc
+mutate_plugin_active_fixture() {
+	local payload_b64 raw rc json
 
-	if [ "$RESTORE_PLUGIN_ACTIVE_FIXTURE" -ne 1 ] || [ -z "$STAGE_FIXTURE_JSON" ] || [ ! -f "$STAGE_FIXTURE_JSON" ]; then
-		return
-	fi
-
-	progress "restoring plugin-active fixture"
-	payload_b64="$(python3 - "$STAGE_FIXTURE_JSON" <<'PY'
+	progress "mutating plugin-active fixture"
+	payload_b64="$(python3 - "$SNAPSHOT_FIXTURE_JSON" <<'PY'
 import base64
 import sys
 from pathlib import Path
@@ -304,48 +297,117 @@ from pathlib import Path
 print(base64.b64encode(Path(sys.argv[1]).read_bytes()).decode("ascii"))
 PY
 )"
+	if [ -z "$payload_b64" ]; then
+		blocked "could not encode plugin-active fixture snapshot: $SNAPSHOT_FIXTURE_JSON"
+	fi
 
 	# Intentionally split the WP runner string, matching the harness convention.
 	# shellcheck disable=SC2086
-	raw="$($TARGET_WP eval-file - restore-plugin-active "$payload_b64" <<'PHP' 2>&1
+	raw="$($TARGET_WP eval-file - mutate-plugin-active "$payload_b64" <<'PHP' 2>&1
 <?php
 $payload_b64 = isset( $args[1] ) ? (string) $args[1] : '';
-$payload     = json_decode( base64_decode( $payload_b64 ), true );
+$decoded     = base64_decode( $payload_b64, true );
+$payload     = false === $decoded ? null : json_decode( $decoded, true );
 $errors      = array();
+$entries     = array();
 $plugin_file = 'woocommerce-payments/woocommerce-payments.php';
+$mu_dir      = untrailingslashit( wp_normalize_path( defined( 'WPMU_PLUGIN_DIR' ) ? WPMU_PLUGIN_DIR : WP_CONTENT_DIR . '/mu-plugins' ) );
 
 if ( ! function_exists( 'is_plugin_active' ) ) {
 	require_once ABSPATH . 'wp-admin/includes/plugin.php';
 }
 
-if ( ! is_array( $payload ) ) {
-	$payload = array();
-	$errors[] = 'Restore payload was invalid.';
+if (
+	! is_array( $payload ) ||
+	'woopayments_plugin_active_fixture_snapshot.v1' !== ( $payload['schema'] ?? '' ) ||
+	'snapshot-plugin-active' !== ( $payload['mode'] ?? '' ) ||
+	! array_key_exists( 'was_plugin_active', $payload ) ||
+	! is_bool( $payload['was_plugin_active'] ) ||
+	! isset( $payload['candidate_mu_plugins'] ) ||
+	! is_array( $payload['candidate_mu_plugins'] )
+) {
+	$errors[] = 'Mutation snapshot payload was invalid.';
+} else {
+	$entries = $payload['candidate_mu_plugins'];
 }
 
-foreach ( array_reverse( $payload['disabled_mu_plugins'] ?? array() ) as $entry ) {
-	$path          = isset( $entry['path'] ) ? (string) $entry['path'] : '';
-	$disabled_path = isset( $entry['disabled_path'] ) ? (string) $entry['disabled_path'] : '';
-	if ( '' === $path || '' === $disabled_path || ! file_exists( $disabled_path ) ) {
+$seen_paths = array();
+foreach ( $entries as $entry ) {
+	$path          = is_array( $entry ) && isset( $entry['path'] ) ? (string) $entry['path'] : '';
+	$disabled_path = is_array( $entry ) && isset( $entry['disabled_path'] ) ? (string) $entry['disabled_path'] : '';
+	$expected_hash = is_array( $entry ) && isset( $entry['sha256'] ) ? (string) $entry['sha256'] : '';
+	$normalized_path = wp_normalize_path( $path );
+	$normalized_disabled_path = wp_normalize_path( $disabled_path );
+	if (
+		'' === $path ||
+		$path . '.disabled-by-woopayments-merge' !== $disabled_path ||
+		dirname( $normalized_path ) !== $mu_dir ||
+		dirname( $normalized_disabled_path ) !== $mu_dir ||
+		'.php' !== substr( $normalized_path, -4 ) ||
+		1 !== preg_match( '/^[a-f0-9]{64}$/D', $expected_hash ) ||
+		isset( $seen_paths[ $path ] ) ||
+		isset( $seen_paths[ $disabled_path ] )
+	) {
+		$errors[] = 'Mutation snapshot contained an invalid mu-plugin entry.';
 		continue;
 	}
-	if ( file_exists( $path ) ) {
-		$errors[] = 'Native payments mu-plugin restore target already exists: ' . $path;
+	$seen_paths[ $path ]          = true;
+	$seen_paths[ $disabled_path ] = true;
+
+	if ( ! file_exists( $path ) && ! is_link( $path ) ) {
+		$errors[] = 'Native payments mu-plugin disappeared before mutation: ' . $path;
 		continue;
 	}
-	if ( ! @rename( $disabled_path, $path ) ) {
-		$errors[] = 'Could not restore native payments mu-plugin: ' . $path;
+	if ( file_exists( $disabled_path ) || is_link( $disabled_path ) ) {
+		$errors[] = 'Native payments mu-plugin destination already exists: ' . $disabled_path;
+		continue;
+	}
+	$actual_hash = @hash_file( 'sha256', $path );
+	if ( false === $actual_hash || ! hash_equals( $expected_hash, $actual_hash ) ) {
+		$errors[] = 'Native payments mu-plugin changed after snapshot: ' . $path;
 	}
 }
 
-if ( empty( $payload['was_plugin_active'] ) && is_plugin_active( $plugin_file ) ) {
-	deactivate_plugins( $plugin_file, true );
+if ( empty( $errors ) ) {
+	foreach ( $entries as $entry ) {
+		$path          = (string) $entry['path'];
+		$disabled_path = (string) $entry['disabled_path'];
+		$expected_hash = (string) $entry['sha256'];
+		if ( file_exists( $disabled_path ) || is_link( $disabled_path ) ) {
+			$errors[] = 'Native payments mu-plugin destination already exists: ' . $disabled_path;
+			break;
+		}
+		if ( ! @rename( $path, $disabled_path ) ) {
+			$errors[] = 'Could not disable native payments mu-plugin: ' . $path;
+			break;
+		}
+		$actual_hash = @hash_file( 'sha256', $disabled_path );
+		if (
+			file_exists( $path ) ||
+			is_link( $path ) ||
+			false === $actual_hash ||
+			! hash_equals( $expected_hash, $actual_hash )
+		) {
+			$errors[] = 'Could not verify disabled native payments mu-plugin: ' . $disabled_path;
+			break;
+		}
+	}
+}
+
+if ( empty( $errors ) && ! is_plugin_active( $plugin_file ) ) {
+	$result = activate_plugin( $plugin_file, '', false, true );
+	if ( is_wp_error( $result ) ) {
+		$errors[] = 'Could not activate WooPayments plugin: ' . $result->get_error_message();
+	}
+}
+if ( ! is_plugin_active( $plugin_file ) ) {
+	$errors[] = 'WooPayments plugin is not active after mutation.';
 }
 
 echo wp_json_encode(
 	array(
 		'success'             => empty( $errors ),
-		'mode'                => 'restore-plugin-active',
+		'mode'                => 'mutate-plugin-active',
 		'errors'              => $errors,
 		'wcpay_plugin_active' => is_plugin_active( $plugin_file ),
 	),
@@ -354,11 +416,206 @@ echo wp_json_encode(
 PHP
 )"
 	rc=$?
-	RESTORE_PLUGIN_ACTIVE_FIXTURE=0
+	json="$(printf '%s\n' "$raw" | extract_json_line)"
 
-	if [ "$rc" -ne 0 ]; then
-		printf 'Plugin-active settings gate: restore warning: %s\n' "$raw" >&2
+	if [ "$rc" -ne 0 ] || [ -z "$json" ]; then
+		blocked "could not mutate plugin-active fixture: $raw"
 	fi
+
+	printf '%s\n' "$json" > "$STAGE_FIXTURE_JSON"
+	if ! json_success "$STAGE_FIXTURE_JSON"; then
+		json_errors "$STAGE_FIXTURE_JSON"
+		blocked "could not mutate plugin-active fixture; see $STAGE_FIXTURE_JSON"
+	fi
+}
+
+stage_plugin_active_fixture() {
+	snapshot_plugin_active_fixture
+	CLEANUP_ARMED=1
+	mutate_plugin_active_fixture
+}
+
+restore_plugin_active_fixture() {
+	local payload_b64 raw rc json
+
+	if [ "$CLEANUP_ARMED" -ne 1 ]; then
+		return 0
+	fi
+	if [ -z "$SNAPSHOT_FIXTURE_JSON" ] || [ ! -f "$SNAPSHOT_FIXTURE_JSON" ]; then
+		printf 'Plugin-active settings gate: cleanup failed: fixture snapshot is unavailable.\n' >&2
+		return 1
+	fi
+
+	progress "restoring plugin-active fixture"
+	payload_b64="$(python3 - "$SNAPSHOT_FIXTURE_JSON" <<'PY'
+import base64
+import sys
+from pathlib import Path
+
+print(base64.b64encode(Path(sys.argv[1]).read_bytes()).decode("ascii"))
+PY
+)"
+	if [ -z "$payload_b64" ]; then
+		printf 'Plugin-active settings gate: cleanup failed: could not encode fixture snapshot.\n' >&2
+		return 1
+	fi
+
+	# Intentionally split the WP runner string, matching the harness convention.
+	# shellcheck disable=SC2086
+	raw="$($TARGET_WP eval-file - restore-plugin-active "$payload_b64" <<'PHP' 2>&1
+<?php
+$payload_b64 = isset( $args[1] ) ? (string) $args[1] : '';
+$decoded     = base64_decode( $payload_b64, true );
+$payload     = false === $decoded ? null : json_decode( $decoded, true );
+$errors      = array();
+$entries     = array();
+$plugin_file = 'woocommerce-payments/woocommerce-payments.php';
+$mu_dir      = untrailingslashit( wp_normalize_path( defined( 'WPMU_PLUGIN_DIR' ) ? WPMU_PLUGIN_DIR : WP_CONTENT_DIR . '/mu-plugins' ) );
+$was_active  = null;
+
+if ( ! function_exists( 'is_plugin_active' ) ) {
+	require_once ABSPATH . 'wp-admin/includes/plugin.php';
+}
+
+if (
+	! is_array( $payload ) ||
+	'woopayments_plugin_active_fixture_snapshot.v1' !== ( $payload['schema'] ?? '' ) ||
+	'snapshot-plugin-active' !== ( $payload['mode'] ?? '' ) ||
+	! array_key_exists( 'was_plugin_active', $payload ) ||
+	! is_bool( $payload['was_plugin_active'] ) ||
+	! isset( $payload['candidate_mu_plugins'] ) ||
+	! is_array( $payload['candidate_mu_plugins'] )
+) {
+	$errors[] = 'Restore snapshot payload was invalid.';
+} else {
+	$entries    = $payload['candidate_mu_plugins'];
+	$was_active = $payload['was_plugin_active'];
+}
+
+$seen_paths = array();
+foreach ( $entries as $entry ) {
+	$path          = is_array( $entry ) && isset( $entry['path'] ) ? (string) $entry['path'] : '';
+	$disabled_path = is_array( $entry ) && isset( $entry['disabled_path'] ) ? (string) $entry['disabled_path'] : '';
+	$expected_hash = is_array( $entry ) && isset( $entry['sha256'] ) ? (string) $entry['sha256'] : '';
+	$normalized_path = wp_normalize_path( $path );
+	$normalized_disabled_path = wp_normalize_path( $disabled_path );
+	if (
+		'' === $path ||
+		$path . '.disabled-by-woopayments-merge' !== $disabled_path ||
+		dirname( $normalized_path ) !== $mu_dir ||
+		dirname( $normalized_disabled_path ) !== $mu_dir ||
+		'.php' !== substr( $normalized_path, -4 ) ||
+		1 !== preg_match( '/^[a-f0-9]{64}$/D', $expected_hash ) ||
+		isset( $seen_paths[ $path ] ) ||
+		isset( $seen_paths[ $disabled_path ] )
+	) {
+		$errors[] = 'Restore snapshot contained an invalid mu-plugin entry.';
+		continue;
+	}
+	$seen_paths[ $path ]          = true;
+	$seen_paths[ $disabled_path ] = true;
+
+	$path_exists     = file_exists( $path ) || is_link( $path );
+	$disabled_exists = file_exists( $disabled_path ) || is_link( $disabled_path );
+	if ( $path_exists && $disabled_exists ) {
+		$errors[] = 'Both native payments mu-plugin paths exist during restore: ' . $path;
+		continue;
+	}
+	if ( ! $path_exists && ! $disabled_exists ) {
+		$errors[] = 'Native payments mu-plugin is missing from both paths: ' . $path;
+		continue;
+	}
+
+	$current_path = $path_exists ? $path : $disabled_path;
+	$actual_hash  = @hash_file( 'sha256', $current_path );
+	if ( false === $actual_hash || ! hash_equals( $expected_hash, $actual_hash ) ) {
+		$errors[] = 'Native payments mu-plugin hash mismatch during restore: ' . $current_path;
+		continue;
+	}
+	if ( ! $path_exists ) {
+		if ( file_exists( $path ) || is_link( $path ) || ! @rename( $disabled_path, $path ) ) {
+			$errors[] = 'Could not restore native payments mu-plugin: ' . $path;
+		}
+	}
+}
+
+if ( true === $was_active && ! is_plugin_active( $plugin_file ) ) {
+	$result = activate_plugin( $plugin_file, '', false, true );
+	if ( is_wp_error( $result ) ) {
+		$errors[] = 'Could not reactivate WooPayments plugin: ' . $result->get_error_message();
+	}
+} elseif ( false === $was_active && is_plugin_active( $plugin_file ) ) {
+	deactivate_plugins( $plugin_file, true );
+}
+
+foreach ( $entries as $entry ) {
+	if ( ! is_array( $entry ) || ! isset( $entry['path'], $entry['disabled_path'], $entry['sha256'] ) ) {
+		continue;
+	}
+	$path          = (string) $entry['path'];
+	$disabled_path = (string) $entry['disabled_path'];
+	$expected_hash = (string) $entry['sha256'];
+	if ( ! file_exists( $path ) && ! is_link( $path ) ) {
+		$errors[] = 'Native payments mu-plugin was not restored: ' . $path;
+		continue;
+	}
+	$actual_hash = @hash_file( 'sha256', $path );
+	if ( false === $actual_hash || ! hash_equals( $expected_hash, $actual_hash ) ) {
+		$errors[] = 'Native payments mu-plugin final hash mismatch: ' . $path;
+	}
+	if ( file_exists( $disabled_path ) || is_link( $disabled_path ) ) {
+		$errors[] = 'Disabled native payments mu-plugin path remains: ' . $disabled_path;
+	}
+}
+
+if ( is_bool( $was_active ) && $was_active !== is_plugin_active( $plugin_file ) ) {
+	$errors[] = 'WooPayments plugin activation state was not restored.';
+}
+
+echo wp_json_encode(
+	array(
+		'success'             => empty( $errors ),
+		'mode'                => 'restore-plugin-active',
+		'errors'              => array_values( array_unique( $errors ) ),
+		'wcpay_plugin_active' => is_plugin_active( $plugin_file ),
+	),
+	JSON_UNESCAPED_SLASHES
+) . "\n";
+PHP
+)"
+	rc=$?
+	json="$(printf '%s\n' "$raw" | extract_json_line)"
+
+	if [ "$rc" -ne 0 ] || [ -z "$json" ]; then
+		printf 'Plugin-active settings gate: cleanup failed: restore command did not return success: %s\n' "$raw" >&2
+		return 1
+	fi
+
+	printf '%s\n' "$json" > "$RESTORE_FIXTURE_JSON"
+	if ! json_success "$RESTORE_FIXTURE_JSON"; then
+		json_errors "$RESTORE_FIXTURE_JSON"
+		printf 'Plugin-active settings gate: cleanup failed: restore verification failed; see %s\n' "$RESTORE_FIXTURE_JSON" >&2
+		return 1
+	fi
+
+	CLEANUP_ARMED=0
+	return 0
+}
+
+handle_exit() {
+	local exit_code=$?
+
+	trap - EXIT
+	trap '' HUP INT TERM
+	if ! restore_plugin_active_fixture; then
+		printf 'FAIL: plugin-active fixture cleanup failed; refusing to report the gate result.\n' >&2
+		exit 70
+	fi
+	exit "$exit_code"
+}
+
+handle_signal() {
+	exit "$1"
 }
 
 validate_driver_evidence() {
@@ -439,12 +696,12 @@ write_rollup() {
 	local rollup_path="$OUT_DIR/plugin-active-settings-gate.json"
 	local evidence_path="$1"
 
-	python3 - "$rollup_path" "$TARGET_URL" "$SETTINGS_URL" "$evidence_path" "$FAILURES_FILE" "$BLOCKERS_FILE" <<'PY'
+	python3 - "$rollup_path" "$TARGET_URL" "$SETTINGS_URL" "$evidence_path" "$FAILURES_FILE" "$BLOCKERS_FILE" "$RUNNER_ROLE" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-rollup_path, target_url, settings_url, evidence_path, failures_file, blockers_file = sys.argv[1:]
+rollup_path, target_url, settings_url, evidence_path, failures_file, blockers_file, runner_role = sys.argv[1:]
 
 def load_json(path):
     candidate = Path(path)
@@ -476,6 +733,7 @@ payload = {
     "status": "fail" if failures else "blocked" if blockers else "pass",
     "target_url": target_url,
     "settings_url": settings_url,
+    "runner_role": runner_role,
     "evidence": evidence,
     "failures": failures,
     "blockers": blockers,
@@ -607,11 +865,16 @@ mkdir -p "$OUT_DIR" || blocked "could not create evidence output directory: $OUT
 OUT_DIR="$(cd "$OUT_DIR" && pwd)"
 FAILURES_FILE="$OUT_DIR/plugin-active-settings-failures.txt"
 BLOCKERS_FILE="$OUT_DIR/plugin-active-settings-blockers.txt"
+SNAPSHOT_FIXTURE_JSON="$OUT_DIR/plugin-active-settings-snapshot.json"
 STAGE_FIXTURE_JSON="$OUT_DIR/plugin-active-settings-stage.json"
+RESTORE_FIXTURE_JSON="$OUT_DIR/plugin-active-settings-restore.json"
 : > "$FAILURES_FILE"
 : > "$BLOCKERS_FILE"
 
-trap restore_plugin_active_fixture EXIT
+trap handle_exit EXIT
+trap 'handle_signal 129' HUP
+trap 'handle_signal 130' INT
+trap 'handle_signal 143' TERM
 
 if [ "$STAGE_PLUGIN_ACTIVE_FIXTURE" -eq 1 ]; then
 	stage_plugin_active_fixture

@@ -510,12 +510,12 @@ write_rollup() {
 	local token_id="${1:-0}"
 	local renewal_path="${2:-}"
 
-	python3 - "$rollup_path" "$CUSTOMER_ID" "$SUBSCRIPTION_ID" "$SUBSCRIPTION_SOURCE" "$SOURCE_FLOW" "$SUBSCRIPTION_PRODUCT_ID" "$CHECKOUT_PRODUCT_ID" "$RENEWAL_PRODUCT_ID" "$token_id" "$SAVE_EVIDENCE" "$SOURCE_TOKEN_JSON" "$RENDER_EVIDENCE" "$renewal_path" "$SUBSCRIPTION_FIXTURE_JSON" "$NATIVE_TOKEN_JSON" "$RESTORE_JSON" "$SEPA_FIXTURE_RESTORE_JSON" "$FAILURES_FILE" "$BLOCKERS_FILE" <<'PY'
+	python3 - "$rollup_path" "$CUSTOMER_ID" "$SUBSCRIPTION_ID" "$SUBSCRIPTION_SOURCE" "$SOURCE_FLOW" "$SUBSCRIPTION_PRODUCT_ID" "$CHECKOUT_PRODUCT_ID" "$RENEWAL_PRODUCT_ID" "$token_id" "$SAVE_EVIDENCE" "$SOURCE_TOKEN_JSON" "$RENDER_EVIDENCE" "$renewal_path" "$SUBSCRIPTION_FIXTURE_JSON" "$NATIVE_TOKEN_JSON" "$RESTORE_JSON" "$SEPA_FIXTURE_SNAPSHOT_JSON" "$SEPA_FIXTURE_JSON" "$SEPA_FIXTURE_RESTORE_JSON" "$FAILURES_FILE" "$BLOCKERS_FILE" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-rollup_path, customer_id, subscription_id, subscription_source, source_flow, subscription_product_id, checkout_product_id, renewal_product_id, token_id, save_path, source_token_path, render_path, renewal_path, subscription_fixture_path, native_token_path, restore_path, sepa_fixture_restore_path, failures_file, blockers_file = sys.argv[1:]
+rollup_path, customer_id, subscription_id, subscription_source, source_flow, subscription_product_id, checkout_product_id, renewal_product_id, token_id, save_path, source_token_path, render_path, renewal_path, subscription_fixture_path, native_token_path, restore_path, sepa_fixture_snapshot_path, sepa_fixture_stage_path, sepa_fixture_restore_path, failures_file, blockers_file = sys.argv[1:]
 
 def load_json(path):
     if not path:
@@ -553,6 +553,8 @@ payload = {
 	    "native_token_loader": load_json(native_token_path),
 	    "renewal": load_json(renewal_path),
     "restore": load_json(restore_path),
+    "sepa_fixture_snapshot": load_json(sepa_fixture_snapshot_path),
+    "sepa_fixture_stage": load_json(sepa_fixture_stage_path),
     "sepa_fixture_restore": load_json(sepa_fixture_restore_path),
     "failures": failures,
     "blockers": blockers,
@@ -658,7 +660,6 @@ restore_if_needed() {
 	fi
 
 	progress "restoring WooPayments plugin state"
-	RESTORE_NEEDED=0
 	if ! run_eval_file "$STATE_DRIVER" "restore" "$RESTORE_JSON" restore; then
 		print_errors "$RESTORE_JSON"
 		record_failure "plugin-state restore failed"
@@ -669,6 +670,7 @@ restore_if_needed() {
 		record_failure "plugin-state restore failed"
 		return 1
 	fi
+	RESTORE_NEEDED=0
 
 	return 0
 }
@@ -686,6 +688,14 @@ PY
 	)"
 
 	progress "staging local SEPA checkout fixture"
+	if ! run_eval_file "$PAYMENT_METHOD_FIXTURE_STATE" "snapshot-sepa-fixture" "$SEPA_FIXTURE_SNAPSHOT_JSON" snapshot-lpm-fixture "$payload_b64"; then
+		print_errors "$SEPA_FIXTURE_SNAPSHOT_JSON"
+		return 1
+	fi
+	if ! json_success "$SEPA_FIXTURE_SNAPSHOT_JSON"; then
+		print_errors "$SEPA_FIXTURE_SNAPSHOT_JSON"
+		return 1
+	fi
 	RESTORE_SEPA_FIXTURE_NEEDED=1
 	if ! run_eval_file "$PAYMENT_METHOD_FIXTURE_STATE" "stage-sepa-fixture" "$SEPA_FIXTURE_JSON" stage-lpm-fixture "$payload_b64"; then
 		print_errors "$SEPA_FIXTURE_JSON"
@@ -701,14 +711,13 @@ PY
 restore_sepa_fixture_if_needed() {
 	local payload_b64
 
-	if [ "$RESTORE_SEPA_FIXTURE_NEEDED" -ne 1 ] || [ ! -f "$SEPA_FIXTURE_JSON" ]; then
+	if [ "$RESTORE_SEPA_FIXTURE_NEEDED" -ne 1 ] || [ ! -f "$SEPA_FIXTURE_SNAPSHOT_JSON" ]; then
 		return
 	fi
 
 	progress "restoring local SEPA checkout fixture"
-	RESTORE_SEPA_FIXTURE_NEEDED=0
 	payload_b64="$(
-		python3 - "$SEPA_FIXTURE_JSON" <<'PY'
+		python3 - "$SEPA_FIXTURE_SNAPSHOT_JSON" <<'PY'
 import base64
 import sys
 from pathlib import Path
@@ -727,6 +736,7 @@ PY
 		record_failure "SEPA fixture restore failed"
 		return 1
 	fi
+	RESTORE_SEPA_FIXTURE_NEEDED=0
 
 	return 0
 }
@@ -735,13 +745,13 @@ cleanup_if_needed() {
 	local original_exit_code=$?
 	local cleanup_failed=0
 
-	trap - EXIT
+	trap - EXIT HUP INT TERM
 	restore_if_needed || cleanup_failed=1
 	restore_sepa_fixture_if_needed || cleanup_failed=1
 
 	if [ "$cleanup_failed" -eq 1 ]; then
 		write_rollup "${TOKEN_ID:-0}" "${RENEWAL_JSON:-}" >/dev/null 2>&1 || true
-		exit 1
+		exit 70
 	fi
 
 	exit "$original_exit_code"
@@ -1017,6 +1027,7 @@ RESTORE_JSON="$OUT_DIR/restore.json"
 SUBSCRIPTION_LOOKUP_JSON="$OUT_DIR/subscription-from-order.json"
 SUBSCRIPTION_FIXTURE_JSON="$OUT_DIR/provision-renewal-subscription.json"
 SEPA_FIXTURE_JSON="$OUT_DIR/sepa-fixture-stage.json"
+SEPA_FIXTURE_SNAPSHOT_JSON="$OUT_DIR/sepa-fixture-snapshot.json"
 SEPA_FIXTURE_RESTORE_JSON="$OUT_DIR/sepa-fixture-restore.json"
 RENEWAL_JSON="$OUT_DIR/renewal.json"
 NATIVE_TOKEN_JSON="$OUT_DIR/native-token.json"
@@ -1024,6 +1035,9 @@ NATIVE_TOKEN_JSON="$OUT_DIR/native-token.json"
 : > "$BLOCKERS_FILE"
 
 trap cleanup_if_needed EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 if [ "$STAGE_SEPA_FIXTURE" -eq 1 ]; then
 	if ! stage_sepa_fixture; then
@@ -1075,10 +1089,11 @@ elif [ "$SUBSCRIPTION_SOURCE" = "provisioned_renewal_fixture" ]; then
 	fi
 fi
 
-if run_state_checked cutover-native "$CUTOVER_JSON" "$TOKEN_ID"; then
-	RESTORE_NEEDED=1
-else
+RESTORE_NEEDED=1
+if ! run_state_checked cutover-native "$CUTOVER_JSON" "$TOKEN_ID"; then
 	record_failure "cutover-native state check failed"
+	write_rollup "$TOKEN_ID" "$RENEWAL_JSON"
+	exit 1
 fi
 
 assert_native_token_list_contains "$TOKEN_ID"
