@@ -3654,9 +3654,20 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should retrieve currency rates through the preserved currency rates endpoint.
+	 * @testdox Should retrieve currency rates through the Transact API endpoint.
 	 */
-	public function test_get_currency_rates_uses_preserved_endpoint_and_query_names(): void {
+	public function test_get_currency_rates_uses_transact_endpoint(): void {
+		list( $sut, $http_client ) = $this->make_sut( false );
+
+		$sut->get_currency_rates( 'usd' );
+
+		$this->assertSame( '/sites/123/transact/currency/rates', strtok( $http_client->last_path, '?' ) );
+	}
+
+	/**
+	 * @testdox Should preserve currency rates response and request semantics.
+	 */
+	public function test_get_currency_rates_preserves_response_and_request_semantics(): void {
 		list( $sut, $http_client ) = $this->make_sut(
 			false,
 			array(
@@ -3675,7 +3686,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			$result
 		);
 		$this->assertSame( 'GET', $http_client->last_method );
-		$this->assertSame( '/sites/123/wcpay/currency/rates', strtok( $http_client->last_path, '?' ) );
 		$this->assertArrayNotHasKey( 'Idempotency-Key', $http_client->last_headers );
 
 		$query = array();
@@ -3704,7 +3714,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$query = array();
 		parse_str( (string) wp_parse_url( $http_client->last_path, PHP_URL_QUERY ), $query );
 
-		$this->assertSame( '/sites/123/wcpay/currency/rates', strtok( $http_client->last_path, '?' ) );
 		$this->assertSame( '1', $query['test_mode'] );
 		$this->assertSame( 'usd', $query['currency_from'] );
 		$this->assertArrayNotHasKey( 'currencies_to', $query );

@@ -75,6 +75,11 @@ class WooPaymentsApiClient {
 	private const ENDPOINT_REST_BASE = 'wcpay';
 
 	/**
+	 * WooPayments V2 API root.
+	 */
+	private const V2_ENDPOINT_REST_BASE = 'transact';
+
+	/**
 	 * WooPayments recommended payment methods API path.
 	 */
 	private const RECOMMENDED_PAYMENT_METHODS = 'payment_methods/recommended';
@@ -529,7 +534,7 @@ class WooPaymentsApiClient {
 			$params['currencies_to'] = $currencies_to;
 		}
 
-		return $this->request( $params, self::CURRENCY_API . '/rates', 'GET' );
+		return $this->request( $params, self::CURRENCY_API . '/rates', 'GET', true, false, true, true, false, true );
 	}
 
 	/**
@@ -2011,10 +2016,11 @@ class WooPaymentsApiClient {
 	 * @param bool                    $blocking      Whether to block for the transport response.
 	 * @param bool                    $include_test_mode_param Whether to add test mode to request params.
 	 * @param bool                    $return_raw_response Whether to return the raw transport response.
+	 * @param bool                    $use_v2_api Whether to use the Transact API root.
 	 * @return array<string,mixed>
 	 * @throws WooPaymentsApiException When the request fails.
 	 */
-	private function request( array $params, string $api, string $method, bool $is_site_scoped = true, bool $use_user_token = false, bool $blocking = true, bool $include_test_mode_param = true, bool $return_raw_response = false ): array {
+	private function request( array $params, string $api, string $method, bool $is_site_scoped = true, bool $use_user_token = false, bool $blocking = true, bool $include_test_mode_param = true, bool $return_raw_response = false, bool $use_v2_api = false ): array {
 		if ( ! $this->is_available() ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
 			throw new WooPaymentsApiException( __( 'Site is not connected to WordPress.com.', 'woocommerce' ), 'wcpay_wpcom_not_connected', 409 );
@@ -2062,13 +2068,14 @@ class WooPaymentsApiClient {
 		 *
 		 * @param array<string,string> $headers Request headers.
 		 */
-		$headers    = apply_filters( 'wcpay_api_request_headers', $headers );
-		$site_id    = $this->http_client->get_blog_id();
-		$path       = $is_site_scoped
-			? sprintf( '/sites/%d/wcpay/%s', (int) $site_id, $api )
-			: sprintf( '/wcpay/%s', $api );
-		$body       = null;
-		$filter_url = $this->get_filter_request_url( $api, $is_site_scoped );
+		$headers            = apply_filters( 'wcpay_api_request_headers', $headers );
+		$site_id            = $this->http_client->get_blog_id();
+		$endpoint_rest_base = $use_v2_api ? self::V2_ENDPOINT_REST_BASE : self::ENDPOINT_REST_BASE;
+		$path               = $is_site_scoped
+			? sprintf( '/sites/%d/%s/%s', (int) $site_id, $endpoint_rest_base, $api )
+			: sprintf( '/%s/%s', $endpoint_rest_base, $api );
+		$body               = null;
+		$filter_url         = $this->get_filter_request_url( $api, $is_site_scoped, $use_v2_api );
 
 		if ( 'GET' === $method ) {
 			$query_string = http_build_query( $params );
@@ -2268,15 +2275,18 @@ class WooPaymentsApiClient {
 	 *
 	 * @param string $api            WooPayments API path.
 	 * @param bool   $is_site_scoped Whether the request is site-scoped.
+	 * @param bool   $use_v2_api     Whether to use the Transact API root.
 	 * @return string
 	 */
-	private function get_filter_request_url( string $api, bool $is_site_scoped ): string {
+	private function get_filter_request_url( string $api, bool $is_site_scoped, bool $use_v2_api ): string {
 		$url = self::WPCOM_ENDPOINT_BASE;
 		if ( $is_site_scoped ) {
 			$url .= '/sites/%s';
 		}
 
-		return $url . '/' . self::ENDPOINT_REST_BASE . '/' . ltrim( $api, '/' );
+		$endpoint_rest_base = $use_v2_api ? self::V2_ENDPOINT_REST_BASE : self::ENDPOINT_REST_BASE;
+
+		return $url . '/' . $endpoint_rest_base . '/' . ltrim( $api, '/' );
 	}
 
 	/**
