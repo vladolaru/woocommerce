@@ -812,6 +812,9 @@ importers:
       '@woocommerce/experimental':
         specifier: workspace:*
         version: link:../experimental
+      '@wordpress/api-fetch':
+        specifier: catalog:wp-min
+        version: 7.33.1
       '@wordpress/components':
         specifier: catalog:wp-min
         version: 30.6.5(@emotion/is-prop-valid@1.4.0)(@types/react@18.3.28)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -821,6 +824,9 @@ importers:
       '@wordpress/data':
         specifier: ^10.19.0
         version: 10.44.0(@types/react@18.3.28)(react@18.3.1)
+      '@wordpress/data-controls':
+        specifier: catalog:wp-min
+        version: 4.33.1(react@18.3.1)
       '@wordpress/element':
         specifier: catalog:wp-min
         version: 6.33.1
