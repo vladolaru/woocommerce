@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentMappingContext;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffects;
@@ -290,10 +291,11 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 		}
 
 		$plan    = WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false );
-		$outcome = WooPaymentsIntentCodec::outcome_from_intention( $intent, $order, $this->get_projection_context( $order, $intent, $order_mode ) )
+		$outcome = WooPaymentsIntentCodec::outcome_from_intention( $intent, $this->get_mapping_context( $order, $intent ) )
 			->with_effect_plan( $plan );
+		$meta    = $this->get_projected_intent_meta( $order, $intent, $order_mode );
 
-		return $this->project_surface_from_outcome( $order, $intent, $outcome );
+		return $this->project_surface_from_outcome( $order, $intent, $outcome, $meta );
 	}
 
 	/**
@@ -351,48 +353,64 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Build mapping context for the native WooPayments intent codec.
+	 * Build explicit mapping context for the native WooPayments intent codec.
+	 *
+	 * @param WC_Order            $order  Order object.
+	 * @param array<string,mixed> $intent Provider intent response.
+	 * @return WooPaymentsIntentMappingContext
+	 */
+	private function get_mapping_context( WC_Order $order, array $intent ): WooPaymentsIntentMappingContext {
+		return WooPaymentsIntentMappingContext::for_native(
+			$order->get_id(),
+			$order->get_checkout_order_received_url(),
+			(string) $order->get_meta( '_payment_method_id', true ),
+			(string) $order->get_meta( '_stripe_customer_id', true ),
+			'',
+			'pi',
+			esc_url_raw( WooPaymentsIntentCodec::raw_next_action_redirect_url( $intent ) )
+		);
+	}
+
+	/**
+	 * Project deterministic PaymentIntent metadata from explicit runtime facts.
 	 *
 	 * @param WC_Order            $order      Order object.
 	 * @param array<string,mixed> $intent     Provider intent response.
 	 * @param string              $order_mode Preserved order mode.
-	 * @return array<string,mixed>
+	 * @return array<string,string>
 	 */
-	private function get_projection_context( WC_Order $order, array $intent, string $order_mode ): array {
-		$args = array(
-			'account_mode'         => $order_mode,
-			'payment_credential'   => (string) $order->get_meta( '_payment_method_id', true ),
-			'fallback_customer_id' => (string) $order->get_meta( '_stripe_customer_id', true ),
+	private function get_projected_intent_meta( WC_Order $order, array $intent, string $order_mode ): array {
+		$status          = (string) ( $intent['status'] ?? '' );
+		$charge          = WooPaymentsOrderEffects::latest_charge( $intent );
+		$settlement_meta = ! empty( $charge ) && in_array( $status, array( 'processing', 'requires_capture', 'succeeded' ), true )
+			? $this->order_data_service->get_settlement_exchange_rate_order_meta(
+				$order,
+				$charge,
+				$this->account_service->get_account_default_currency()
+			)
+			: array();
+
+		return WooPaymentsOrderEffects::payment_intent_meta(
+			$intent,
+			(string) $order->get_currency(),
+			$order_mode,
+			$settlement_meta
 		);
-
-		if ( 'succeeded' === (string) ( $intent['status'] ?? '' ) ) {
-			$charge = WooPaymentsOrderEffects::latest_charge( $intent );
-			if ( ! empty( $charge ) ) {
-				$args['completed_meta'] = WooPaymentsOrderEffects::completed_charge_meta(
-					$intent,
-					$charge,
-					$order,
-					$this->account_service->get_account_default_currency(),
-					$this->order_data_service
-				);
-			}
-		}
-
-		return $args;
 	}
 
 	/**
 	 * Project an order payment surface from a native provider outcome.
 	 *
-	 * @param WC_Order            $order   Order object.
-	 * @param array<string,mixed> $intent  Provider intent response.
-	 * @param PaymentOutcome      $outcome Native provider outcome.
+	 * @param WC_Order             $order   Order object.
+	 * @param array<string,mixed>  $intent  Provider intent response.
+	 * @param PaymentOutcome       $outcome Native provider outcome.
+	 * @param array<string,string> $effect_meta Deterministic provider effect metadata.
 	 * @return array<string,mixed>
 	 */
-	private function project_surface_from_outcome( WC_Order $order, array $intent, PaymentOutcome $outcome ): array {
-		$display_effects = $this->get_projected_display_effects( $order, $outcome );
+	private function project_surface_from_outcome( WC_Order $order, array $intent, PaymentOutcome $outcome, array $effect_meta ): array {
+		$display_effects = $this->get_projected_display_effects( $outcome );
 		$payment_method  = (string) $order->get_payment_method();
-		$meta            = $this->persistence_profile->get_outcome_meta( $outcome );
+		$meta            = array_merge( $this->persistence_profile->get_outcome_meta( $outcome ), $effect_meta );
 		if ( ! empty( $display_effects ) ) {
 			$meta = array_merge( $meta, $display_effects['meta'] );
 			if ( '' !== $display_effects['payment_method_id'] ) {
@@ -423,21 +441,16 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	/**
 	 * Project display effects from the in-memory PaymentIntent plan without invoking its writer.
 	 *
-	 * @param WC_Order       $order   Order being projected.
 	 * @param PaymentOutcome $outcome Native provider outcome.
-	 * @return array{meta:array<string,string>,payment_method_id:string,payment_method_title:string}|array{}
+	 * @return array{meta:array<string,string>,payment_method_id:string,payment_method_type:string,payment_method_details:array<string,mixed>,express_checkout_type:string}|array{}
 	 */
-	private function get_projected_display_effects( WC_Order $order, PaymentOutcome $outcome ): array {
+	private function get_projected_display_effects( PaymentOutcome $outcome ): array {
 		$plan = $outcome->get_effect_plan();
 		if ( ! $plan instanceof WooPaymentsOrderEffectPlan || WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT !== $plan->get_type() ) {
 			return array();
 		}
 
-		return WooPaymentsOrderEffects::compose_payment_method_display_details(
-			$plan->get_provider_result(),
-			$this->account_service->get_account_country(),
-			(string) $order->get_billing_country()
-		);
+		return WooPaymentsOrderEffects::compose_payment_method_display_details( $plan->get_provider_result() );
 	}
 
 	/**

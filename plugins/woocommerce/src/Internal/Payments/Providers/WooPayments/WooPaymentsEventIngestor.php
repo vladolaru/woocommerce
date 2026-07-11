@@ -159,6 +159,13 @@ class WooPaymentsEventIngestor {
 	private ?WooPaymentsOrderEffectApplier $order_effect_applier = null;
 
 	/**
+	 * WooPayments order note service.
+	 *
+	 * @var WooPaymentsOrderNoteService|null
+	 */
+	private ?WooPaymentsOrderNoteService $order_note_service = null;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -174,8 +181,9 @@ class WooPaymentsEventIngestor {
 	 * @param WooPaymentsOrderDataService|null    $order_data_service         WooPayments order data service.
 	 * @param WooPaymentsAccountService|null      $account_service            WooPayments account service.
 	 * @param WooPaymentsOrderEffectApplier|null  $order_effect_applier       Optional order effect applier.
+	 * @param WooPaymentsOrderNoteService|null    $order_note_service         Optional order note service.
 	 */
-	final public function init( OrderPaymentLifecycleService $lifecycle_service, LegacyProxy $legacy_proxy, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, WooPaymentsDisputeEventHandler $dispute_event_handler, WooPaymentsRefundEventHandler $refund_event_handler, WooPaymentsAccountEventHandler $account_event_handler, WooPaymentsNotificationEventHandler $notification_event_handler, ?WooPaymentsOrderDataService $order_data_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsOrderEffectApplier $order_effect_applier = null ): void {
+	final public function init( OrderPaymentLifecycleService $lifecycle_service, LegacyProxy $legacy_proxy, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, WooPaymentsDisputeEventHandler $dispute_event_handler, WooPaymentsRefundEventHandler $refund_event_handler, WooPaymentsAccountEventHandler $account_event_handler, WooPaymentsNotificationEventHandler $notification_event_handler, ?WooPaymentsOrderDataService $order_data_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsOrderEffectApplier $order_effect_applier = null, ?WooPaymentsOrderNoteService $order_note_service = null ): void {
 		$this->lifecycle_service          = $lifecycle_service;
 		$this->legacy_proxy               = $legacy_proxy;
 		$this->legacy_runtime             = $legacy_runtime;
@@ -187,6 +195,7 @@ class WooPaymentsEventIngestor {
 		$this->order_data_service         = $order_data_service;
 		$this->account_service            = $account_service;
 		$this->order_effect_applier       = $order_effect_applier;
+		$this->order_note_service         = $order_note_service;
 	}
 
 	/**
@@ -607,17 +616,24 @@ class WooPaymentsEventIngestor {
 					)
 				);
 				if ( ! empty( $charge ) ) {
-					$meta = array_merge(
+					$settlement_meta = $this->get_order_data_service()->get_settlement_exchange_rate_order_meta(
+						$order,
+						$charge,
+						$this->get_account_service()->get_account_default_currency()
+					);
+					$meta            = array_merge(
 						$meta,
 						WooPaymentsOrderEffects::completed_charge_meta(
 							$event_object,
 							$charge,
-							$order,
-							$this->get_account_service()->get_account_default_currency(),
-							$this->get_order_data_service(),
+							$settlement_meta,
 							false
 						),
-						WooPaymentsOrderEffects::completed_charge_payment_method_backfill_meta( $charge, $order )
+						WooPaymentsOrderEffects::completed_charge_payment_method_backfill_meta(
+							$charge,
+							$this->order_has_placeholder_payment_method_details( $order ),
+							(string) $order->get_meta( '_wcpay_payment_transaction_id', true )
+						)
 					);
 				}
 
@@ -765,15 +781,42 @@ class WooPaymentsEventIngestor {
 		$charge = $this->get_first_charge_from_intent( $event_object );
 
 		return array(
-			'note' => WooPaymentsOrderEffects::payment_success_note(
+			'note' => $this->get_order_note_service()->format_payment_success_note(
 				$order,
 				$this->get_object_id( $event_object ),
 				$this->get_charge_id_from_intent( $event_object ),
-				WooPaymentsOrderEffects::balance_transaction_id( $charge['balance_transaction'] ?? null ),
-				$this->get_account_service()->get_mode()
+				WooPaymentsOrderEffects::balance_transaction_id( $charge['balance_transaction'] ?? null )
 			),
 			'type' => PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS,
 		);
+	}
+
+	/**
+	 * Tell whether payment method details are still an empty placeholder.
+	 *
+	 * @param WC_Order $order Order object.
+	 * @return bool
+	 */
+	private function order_has_placeholder_payment_method_details( WC_Order $order ): bool {
+		$details = $order->get_meta( '_wcpay_payment_method_details', true );
+		if ( '' === $details || null === $details || array() === $details ) {
+			return true;
+		}
+
+		return is_string( $details ) && array() === json_decode( $details, true );
+	}
+
+	/**
+	 * Get the WooPayments order note service.
+	 *
+	 * @return WooPaymentsOrderNoteService
+	 */
+	private function get_order_note_service(): WooPaymentsOrderNoteService {
+		if ( null === $this->order_note_service ) {
+			$this->order_note_service = wc_get_container()->get( WooPaymentsOrderNoteService::class );
+		}
+
+		return $this->order_note_service;
 	}
 
 	/**

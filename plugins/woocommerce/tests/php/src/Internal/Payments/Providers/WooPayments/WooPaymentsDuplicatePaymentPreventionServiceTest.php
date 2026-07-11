@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use WC_Order;
 use WC_Payment_Gateway;
@@ -197,6 +198,43 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertContains( $order->get_status(), wc_get_is_paid_statuses() );
 		$this->assertSame( 'pi_existing', $order->get_transaction_id() );
+		$this->assertSame( 'ch_existing', $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( 'pm_existing', $order->get_meta( '_payment_method_id', true ) );
+		$this->assertStringContainsString(
+			'successfully charged',
+			implode( ' ', array_map( static fn( object $note ): string => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) ) )
+		);
+	}
+
+	/**
+	 * @testdox Attached intent recovery does not persist effects when lifecycle ownership is unavailable.
+	 */
+	public function test_attached_intent_does_not_persist_effects_before_lifecycle_application(): void {
+		$order = $this->create_order( 'hash', 'pending' );
+		$order->set_payment_method_title( 'Card' );
+		$order->update_meta_data( '_intent_id', 'pi_existing' );
+		$order->save();
+
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_payment_intention' ) )
+			->getMock();
+		$api_client->method( 'get_payment_intention' )
+			->willReturn( $this->create_intent_response( $order, 'succeeded', 1200 ) );
+		$lifecycle_service = $this->getMockBuilder( OrderPaymentLifecycleService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'apply' ) )
+			->getMock();
+		$lifecycle_service->expects( $this->once() )->method( 'apply' );
+
+		$result   = $this->create_service( $this->create_session(), $api_client, $lifecycle_service )
+			->check_payment_intent_attached_to_order_succeeded( $order, $this->create_gateway() );
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertIsArray( $result );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'Card', $reloaded->get_payment_method_title() );
+		$this->assertSame( '', $reloaded->get_meta( '_charge_id', true ) );
 	}
 
 	/**
@@ -323,16 +361,19 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	/**
 	 * Create a duplicate-payment prevention service.
 	 *
-	 * @param \WC_Session|null          $session    Optional WooCommerce session.
-	 * @param WooPaymentsApiClient|null $api_client Optional API client.
+	 * @param \WC_Session|null                  $session    Optional WooCommerce session.
+	 * @param WooPaymentsApiClient|null         $api_client Optional API client.
+	 * @param OrderPaymentLifecycleService|null $lifecycle_service Optional lifecycle service.
 	 * @return WooPaymentsDuplicatePaymentPreventionService
 	 */
-	private function create_service( ?\WC_Session $session = null, ?WooPaymentsApiClient $api_client = null ): WooPaymentsDuplicatePaymentPreventionService {
+	private function create_service( ?\WC_Session $session = null, ?WooPaymentsApiClient $api_client = null, ?OrderPaymentLifecycleService $lifecycle_service = null ): WooPaymentsDuplicatePaymentPreventionService {
 		$service = new WooPaymentsDuplicatePaymentPreventionService( $session ?? $this->create_session() );
 		$service->init(
 			$api_client ?? $this->createStub( WooPaymentsApiClient::class ),
-			wc_get_container()->get( OrderPaymentLifecycleService::class ),
-			new WooPaymentsOrderDataService()
+			$lifecycle_service ?? wc_get_container()->get( OrderPaymentLifecycleService::class ),
+			new WooPaymentsOrderDataService(),
+			null,
+			wc_get_container()->get( WooPaymentsOrderEffectApplier::class )
 		);
 
 		return $service;

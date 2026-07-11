@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
+use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
@@ -77,6 +78,13 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	private ?NativePaymentsRuntimeArbiter $arbiter = null;
 
 	/**
+	 * WooPayments order effect applier.
+	 *
+	 * @var WooPaymentsOrderEffectApplier|null
+	 */
+	private ?WooPaymentsOrderEffectApplier $order_effect_applier = null;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param \WC_Session|null $session Optional WooCommerce session.
@@ -90,16 +98,24 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient              $api_client         Native WooPayments API client.
-	 * @param OrderPaymentLifecycleService      $lifecycle_service Native order payment lifecycle service.
-	 * @param WooPaymentsOrderDataService       $order_data_service WooPayments order data service.
-	 * @param NativePaymentsRuntimeArbiter|null $arbiter            Optional runtime owner arbiter.
+	 * @param WooPaymentsApiClient               $api_client         Native WooPayments API client.
+	 * @param OrderPaymentLifecycleService       $lifecycle_service Native order payment lifecycle service.
+	 * @param WooPaymentsOrderDataService        $order_data_service WooPayments order data service.
+	 * @param NativePaymentsRuntimeArbiter|null  $arbiter            Optional runtime owner arbiter.
+	 * @param WooPaymentsOrderEffectApplier|null $order_effect_applier Optional order effect applier.
 	 */
-	final public function init( WooPaymentsApiClient $api_client, OrderPaymentLifecycleService $lifecycle_service, WooPaymentsOrderDataService $order_data_service, ?NativePaymentsRuntimeArbiter $arbiter = null ): void {
-		$this->api_client         = $api_client;
-		$this->lifecycle_service  = $lifecycle_service;
-		$this->order_data_service = $order_data_service;
-		$this->arbiter            = $arbiter;
+	final public function init(
+		WooPaymentsApiClient $api_client,
+		OrderPaymentLifecycleService $lifecycle_service,
+		WooPaymentsOrderDataService $order_data_service,
+		?NativePaymentsRuntimeArbiter $arbiter = null,
+		?WooPaymentsOrderEffectApplier $order_effect_applier = null
+	): void {
+		$this->api_client           = $api_client;
+		$this->lifecycle_service    = $lifecycle_service;
+		$this->order_data_service   = $order_data_service;
+		$this->arbiter              = $arbiter;
+		$this->order_effect_applier = $order_effect_applier;
 	}
 
 	/**
@@ -310,7 +326,25 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	 * @return void
 	 */
 	private function apply_attached_intent_lifecycle( array $intent, WC_Order $order ): void {
-		$outcome   = WooPaymentsIntentCodec::outcome_from_intention( $intent, $order );
+		$provider_redirect_url = esc_url_raw( WooPaymentsIntentCodec::raw_next_action_redirect_url( $intent ) );
+		$outcome               = WooPaymentsIntentCodec::outcome_from_intention(
+			$intent,
+			WooPaymentsIntentMappingContext::for_native(
+				$order->get_id(),
+				$order->get_checkout_order_received_url(),
+				(string) $order->get_meta( '_payment_method_id', true ),
+				(string) $order->get_meta( '_stripe_customer_id', true ),
+				'',
+				'pi',
+				$provider_redirect_url
+			)
+		);
+		$outcome               = $this->get_order_effect_applier()->enrich_outcome_for_lifecycle(
+			PaymentContext::for_checkout( $order, (string) $order->get_payment_method(), $outcome->get_payment_method_id() ),
+			$outcome,
+			WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false )
+		);
+
 		$data      = $outcome->get_data();
 		$note      = isset( $data[ PaymentOutcome::DATA_NOTE ] ) && is_string( $data[ PaymentOutcome::DATA_NOTE ] ) && '' !== $data[ PaymentOutcome::DATA_NOTE ]
 			? $data[ PaymentOutcome::DATA_NOTE ]
@@ -332,6 +366,19 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 			),
 			$profile
 		);
+	}
+
+	/**
+	 * Get the WooPayments order effect applier.
+	 *
+	 * @return WooPaymentsOrderEffectApplier
+	 */
+	private function get_order_effect_applier(): WooPaymentsOrderEffectApplier {
+		if ( null === $this->order_effect_applier ) {
+			$this->order_effect_applier = wc_get_container()->get( WooPaymentsOrderEffectApplier::class );
+		}
+
+		return $this->order_effect_applier;
 	}
 
 	/**

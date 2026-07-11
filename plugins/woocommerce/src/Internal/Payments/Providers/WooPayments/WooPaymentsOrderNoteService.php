@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceProjectionService;
 use WC_Order;
 
@@ -24,6 +25,184 @@ class WooPaymentsOrderNoteService {
 	 * @var string
 	 */
 	private const NOTE_IDENTITY_META_KEY = '_wc_woopayments_note_identity';
+
+	/**
+	 * Build a WooPayments-compatible payment-success note.
+	 *
+	 * @param WC_Order $order                  Order object.
+	 * @param string   $intent_id              Payment intent ID.
+	 * @param string   $charge_id              Charge ID.
+	 * @param string   $balance_transaction_id Balance transaction ID.
+	 * @return string
+	 */
+	public function format_payment_success_note( WC_Order $order, string $intent_id, string $charge_id, string $balance_transaction_id = '' ): string {
+		$transaction_id  = '' !== $intent_id ? $intent_id : $charge_id;
+		$transaction_url = $this->transaction_url( $intent_id, $charge_id, $balance_transaction_id );
+
+		return sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
+				/* translators: %1$s: charged amount, %2$s: WooPayments, %3$s: transaction ID, %4$s: transaction URL. */
+				__( 'A payment of %1$s was <strong>successfully charged</strong> using %2$s (<a>%3$s</a>).', 'woocommerce' ),
+				array(
+					'strong' => '<strong>',
+					'a'      => '' !== $transaction_url ? '<a href="%4$s" target="_blank" rel="noopener noreferrer">' : '<code>',
+				)
+			),
+			$this->format_order_amount( $order ),
+			'WooPayments',
+			$transaction_id,
+			$transaction_url
+		);
+	}
+
+	/**
+	 * Build a WooPayments-compatible payment-authorization note.
+	 *
+	 * @param WC_Order $order     Order object.
+	 * @param string   $intent_id Payment intent ID.
+	 * @param string   $charge_id Charge ID.
+	 * @return string
+	 */
+	public function format_payment_authorized_note( WC_Order $order, string $intent_id, string $charge_id ): string {
+		$transaction_id  = '' !== $intent_id ? $intent_id : $charge_id;
+		$transaction_url = $this->transaction_url( $intent_id, $charge_id );
+
+		return sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
+				/* translators: %1$s: authorized amount, %2$s: WooPayments, %3$s: transaction ID, %4$s: transaction URL. */
+				__( 'A payment of %1$s was <strong>authorized</strong> using %2$s (<a>%3$s</a>).', 'woocommerce' ),
+				array(
+					'strong' => '<strong>',
+					'a'      => '' !== $transaction_url ? '<a href="%4$s" target="_blank" rel="noopener noreferrer">' : '<code>',
+				)
+			),
+			$this->format_order_amount( $order ),
+			'WooPayments',
+			$transaction_id,
+			$transaction_url
+		);
+	}
+
+	/**
+	 * Build a WooPayments-compatible payment-started note.
+	 *
+	 * @param WC_Order $order     Order object.
+	 * @param string   $intent_id Payment intent ID.
+	 * @return string
+	 */
+	public function format_payment_started_note( WC_Order $order, string $intent_id ): string {
+		return sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
+				/* translators: %1$s: started amount, %2$s: WooPayments, %3$s: payment intent ID. */
+				__( 'A payment of %1$s was <strong>started</strong> using %2$s (<code>%3$s</code>).', 'woocommerce' ),
+				array(
+					'strong' => '<strong>',
+					'code'   => '<code>',
+				)
+			),
+			$this->format_order_amount( $order ),
+			'WooPayments',
+			$intent_id
+		);
+	}
+
+	/**
+	 * Build a WooPayments-compatible capture-success note.
+	 *
+	 * @param WC_Order $order                  Order object.
+	 * @param string   $intent_id              Payment intent ID.
+	 * @param string   $charge_id              Charge ID.
+	 * @param string   $balance_transaction_id Balance transaction ID.
+	 * @return string
+	 */
+	public function format_capture_success_note( WC_Order $order, string $intent_id, string $charge_id, string $balance_transaction_id = '' ): string {
+		$transaction_id  = '' !== $intent_id ? $intent_id : $charge_id;
+		$transaction_url = $this->transaction_url( $intent_id, $charge_id, $balance_transaction_id );
+
+		return sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
+				/* translators: %1$s: captured amount, %2$s: WooPayments, %3$s: transaction ID, %4$s: transaction URL. */
+				__( 'A payment of %1$s was <strong>successfully captured</strong> using %2$s (<a>%3$s</a>).', 'woocommerce' ),
+				array(
+					'strong' => '<strong>',
+					'a'      => '' !== $transaction_url ? '<a href="%4$s" target="_blank" rel="noopener noreferrer">' : '<code>',
+				)
+			),
+			$this->format_order_amount( $order ),
+			'WooPayments',
+			$transaction_id,
+			$transaction_url
+		);
+	}
+
+	/**
+	 * Build a WooPayments-compatible capture-failure note.
+	 *
+	 * @param WC_Order $order     Order object.
+	 * @param string   $intent_id Payment intent ID.
+	 * @param string   $charge_id Charge ID.
+	 * @param string   $message   Failure message.
+	 * @return string
+	 */
+	public function format_capture_failed_note( WC_Order $order, string $intent_id, string $charge_id, string $message ): string {
+		$transaction_id  = '' !== $intent_id ? $intent_id : $charge_id;
+		$transaction_url = $this->transaction_url( $intent_id, $charge_id, (string) $order->get_meta( '_wcpay_payment_transaction_id', true ) );
+		$note            = sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
+				/* translators: %1$s: authorized amount, %2$s: WooPayments, %3$s: transaction ID, %4$s: transaction URL. */
+				__( 'A capture of %1$s <strong>failed</strong> to complete using %2$s (<a>%3$s</a>).', 'woocommerce' ),
+				array(
+					'strong' => '<strong>',
+					'a'      => '' !== $transaction_url ? '<a href="%4$s" target="_blank" rel="noopener noreferrer">' : '<code>',
+				)
+			),
+			$this->format_order_amount( $order ),
+			'WooPayments',
+			$transaction_id,
+			$transaction_url
+		);
+
+		return '' === $message ? $note : $note . ' ' . $message;
+	}
+
+	/**
+	 * Build a localized provider refund failure message.
+	 *
+	 * @param string $provider_status Provider refund status.
+	 * @param string $failure_reason  Provider failure reason.
+	 * @return string
+	 */
+	public function format_refund_failure_message( string $provider_status, string $failure_reason ): string {
+		return sprintf(
+			/* translators: %1$s: refund status, %2$s: failure reason. */
+			__( 'The refund returned status "%1$s". Reason: %2$s', 'woocommerce' ),
+			$provider_status,
+			'' !== $failure_reason ? $failure_reason : __( 'No reason provided.', 'woocommerce' )
+		);
+	}
+
+	/**
+	 * Get the WooPayments transaction details URL.
+	 *
+	 * @param string $intent_id              Payment intent ID.
+	 * @param string $charge_id              Charge ID.
+	 * @param string $balance_transaction_id Balance transaction ID.
+	 * @return string
+	 */
+	public function transaction_url( string $intent_id, string $charge_id, string $balance_transaction_id = '' ): string {
+		if ( '' === $intent_id && '' === $charge_id && '' === $balance_transaction_id ) {
+			return '';
+		}
+
+		if ( false !== strpos( $intent_id, 'seti_' ) ) {
+			return '';
+		}
+
+		return Utils::wc_payments_legacy_admin_url(
+			'/payments/transactions/details',
+			array( 'id' => '' !== $intent_id ? $intent_id : $charge_id )
+		);
+	}
 
 	/**
 	 * Build a WooPayments-compatible created-refund note.
@@ -142,6 +321,16 @@ class WooPaymentsOrderNoteService {
 			strtoupper( $order->get_currency() ),
 			$this->should_output_native_explicit_price()
 		);
+	}
+
+	/**
+	 * Format an order total using the canonical WooPayments note shape.
+	 *
+	 * @param WC_Order $order Order object.
+	 * @return string
+	 */
+	private function format_order_amount( WC_Order $order ): string {
+		return wc_price( (float) $order->get_total(), array( 'currency' => $order->get_currency() ) ) . ' ' . $order->get_currency();
 	}
 
 	/**

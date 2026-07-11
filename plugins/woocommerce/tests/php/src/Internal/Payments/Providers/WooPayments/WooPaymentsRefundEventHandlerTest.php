@@ -4,8 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
-use Automattic\WooCommerce\Internal\Payments\PaymentContext;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffects;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundEventHandler;
 use WC_Order;
 use WC_Order_Refund;
@@ -45,9 +44,12 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 			$refund->save_meta_data();
 			$order->update_meta_data( '_wcpay_refund_status', 'successful' );
 			$order->add_order_note(
-				WooPaymentsOrderEffects::refund_note(
-					PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 4.00, 'Requested by customer' ),
+				wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_created_refund_note(
+					$order,
+					4.00,
+					(string) $order->get_currency(),
 					're_123',
+					'Requested by customer',
 					false
 				)
 			);

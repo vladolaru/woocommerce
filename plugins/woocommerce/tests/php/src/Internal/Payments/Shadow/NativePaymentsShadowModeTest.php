@@ -47,6 +47,8 @@ class NativePaymentsShadowModeTest extends WC_Unit_Test_Case {
 		remove_all_filters( NativePaymentsShadowMode::FILTER_LOG_FULL_SURFACES );
 		remove_all_filters( NativePaymentsShadowMode::FILTER_ALLOW_LIVE_READS );
 		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
+		remove_all_filters( 'nonce_user_logged_out' );
+		remove_all_filters( 'wcpay_payment_request_payment_method_title_suffix' );
 		$this->reset_legacy_proxy_mocks();
 		parent::tearDown();
 	}
@@ -201,6 +203,24 @@ class NativePaymentsShadowModeTest extends WC_Unit_Test_Case {
 	 * @testdox Shadow projection composes plan display metadata without applying order effects.
 	 */
 	public function test_shadow_projection_uses_plan_display_metadata_without_writes(): void {
+		$nonce_filter_calls = 0;
+		$title_filter_calls = 0;
+		add_filter(
+			'nonce_user_logged_out',
+			static function ( int $user_id ) use ( &$nonce_filter_calls ): int {
+				++$nonce_filter_calls;
+
+				return $user_id;
+			}
+		);
+		add_filter(
+			'wcpay_payment_request_payment_method_title_suffix',
+			static function ( string $suffix ) use ( &$title_filter_calls ): string {
+				++$title_filter_calls;
+
+				return $suffix;
+			}
+		);
 		$logger = new class() {
 			/**
 			 * Record a debug log entry.
@@ -220,7 +240,9 @@ class NativePaymentsShadowModeTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$order  = $this->create_projected_woopayments_order( 'requires_action', 'pending' );
+		$order = $this->create_projected_woopayments_order( 'requires_action', 'pending' );
+		$order->update_meta_data( '_wcpay_express_checkout_payment_method', 'apple_pay' );
+		$order->save();
 		$intent = $this->create_payment_intent_response( 'requires_action' );
 		$intent['charges']['data'][0]['payment_method_details'] = array(
 			'type' => 'card',
@@ -243,11 +265,56 @@ class NativePaymentsShadowModeTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'visa', $comparison->get_native_computed()['meta']['_card_brand'] );
 		$this->assertStringContainsString( '"last4":"4242"', $comparison->get_native_computed()['meta']['_wcpay_payment_method_details'] );
 		$this->assertArrayHasKey( 'meta.last4', $comparison->get_diff() );
+		$this->assertArrayHasKey( 'meta._wcpay_express_checkout_payment_method', $comparison->get_diff() );
 		$this->assertInstanceOf( WC_Order::class, $reloaded );
 		$this->assertSame( '', $reloaded->get_meta( 'last4', true ) );
 		$this->assertSame( '', $reloaded->get_meta( '_wcpay_payment_method_details', true ) );
 		$this->assertEmpty( $reloaded->get_payment_tokens() );
 		$this->assertCount( count( $notes_before ), $notes_after );
+		$this->assertSame( 0, $nonce_filter_calls, 'Shadow projection should not create customer-action nonces.' );
+		$this->assertSame( 0, $title_filter_calls, 'Shadow projection should not render express titles.' );
+	}
+
+	/**
+	 * @testdox Shadow projection derives matching express identity from provider wallet facts.
+	 */
+	public function test_shadow_projection_derives_express_identity_from_provider_facts(): void {
+		$logger = new class() {
+			/**
+			 * Record a debug log entry.
+			 *
+			 * @param string $message Log message.
+			 * @param array  $context Log context.
+			 */
+			public function debug( string $message, array $context = array() ): void {
+				unset( $message, $context );
+			}
+		};
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'wc_get_logger' => static function () use ( $logger ) {
+					return $logger;
+				},
+			)
+		);
+
+		$order = $this->create_projected_woopayments_order( 'requires_action', 'pending' );
+		$order->update_meta_data( '_wcpay_express_checkout_payment_method', 'apple_pay' );
+		$order->save();
+		$intent = $this->create_payment_intent_response( 'requires_action' );
+		$intent['charges']['data'][0]['payment_method_details'] = array(
+			'type' => 'card',
+			'card' => array(
+				'wallet' => array( 'type' => 'apple_pay' ),
+			),
+		);
+
+		$comparison = $this->create_shadow_mode( $this->create_recording_api_client( $intent ) )
+			->record_shadow_for_order( wc_get_order( $order->get_id() ), 'unit_test' );
+
+		$this->assertInstanceOf( ShadowComparison::class, $comparison );
+		$this->assertSame( 'apple_pay', $comparison->get_native_computed()['meta']['_wcpay_express_checkout_payment_method'] );
+		$this->assertArrayNotHasKey( 'meta._wcpay_express_checkout_payment_method', $comparison->get_diff() );
 	}
 
 	/**
@@ -744,7 +811,8 @@ class NativePaymentsShadowModeTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_charge_id', 'ch_shadow' );
 		$order->update_meta_data( '_stripe_customer_id', 'cus_shadow' );
 		$order->update_meta_data( '_intention_status', $intention_status );
-		$order->update_meta_data( '_wcpay_intent_currency', 'usd' );
+		$order->update_meta_data( '_wcpay_fraud_meta_box_type', 'not_card' );
+		$order->update_meta_data( '_wcpay_intent_currency', 'USD' );
 		$order->update_meta_data( '_wcpay_mode', 'test' );
 		$order->update_meta_data( '_wcpay_payment_transaction_id', 'txn_shadow' );
 		$order->save();

@@ -11,12 +11,14 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressPaymentMethodTypes;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentType;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
@@ -397,19 +399,9 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( '', $order->get_payment_method_title() );
 		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
 		$this->assertSame( WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT, $outcome->get_effect_plan()->get_type() );
-		$this->assertArrayHasKey( 'note', $outcome->get_data() );
-		$this->assertStringContainsString( 'A payment of', $outcome->get_data()['note'] );
-		$this->assertStringContainsString( 'USD was <strong>successfully charged</strong> using WooPayments', $outcome->get_data()['note'] );
-		$this->assertStringContainsString( 'pi_native', $outcome->get_data()['note'] );
-		$this->assertStringContainsString( 'page=wc-admin', $outcome->get_data()['note'] );
-		$this->assertStringContainsString( 'id=pi_native', $outcome->get_data()['note'] );
-		$this->assertStringNotContainsString( '/woopayments/transactions/details', $outcome->get_data()['note'] );
-		$this->assertStringNotContainsString( 'transaction_id=txn_native', $outcome->get_data()['note'] );
-		$outcome_meta = $outcome->get_data()['meta'];
-		$this->assertArrayNotHasKey( '_wcpay_transaction_fee', $outcome_meta );
-		$this->assertArrayNotHasKey( '_wcpay_net', $outcome_meta );
-		$this->assertArrayNotHasKey( '_wcpay_fraud_outcome_status', $outcome_meta );
-		$this->assertArrayNotHasKey( '_wcpay_fraud_meta_box_type', $outcome_meta );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_META, $outcome->get_data() );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE, $outcome->get_data() );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE_TYPE, $outcome->get_data() );
 		$this->assertSame( 175, $outcome->get_effect_plan()->get_provider_result()['charges']['data'][0]['fee_breakdown_v1']['totals']['fee']['amount'] );
 		$this->assertOrderDoesNotHaveNoteStartingWith( $order, '<strong>Fee details:</strong>' );
 	}
@@ -514,7 +506,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$outcome = $sut->charge( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_request' ), 'key_charge' );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
-		$this->assertArrayNotHasKey( '_wcpay_multi_currency_stripe_exchange_rate', $outcome->get_data()['meta'] );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_META, $outcome->get_data() );
 		$this->assertSame( 1.33127, $outcome->get_effect_plan()->get_provider_result()['charges']['data'][0]['balance_transaction']['exchange_rate'] );
 	}
 
@@ -750,9 +742,9 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Charge should use the Core-owned account service for native outcome mode metadata.
+	 * @testdox Native charge decoding defers account mode metadata to effect application.
 	 */
-	public function test_charge_uses_account_service_mode_for_native_outcome_meta(): void {
+	public function test_native_charge_defers_account_mode_to_effect_application(): void {
 		$order            = $this->create_woopayments_order();
 		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$api_client       = new class() extends WooPaymentsApiClient {
@@ -802,7 +794,8 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$outcome = $sut->charge( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_request' ), 'key_charge' );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
-		$this->assertSame( 'test', $outcome->get_data()['meta']['_wcpay_mode'] );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_META, $outcome->get_data() );
+		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
 	}
 
 	/**
@@ -1243,6 +1236,88 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $query_args['wc_payment_method'] ?? '' );
 		$this->assertSame( 1, wp_verify_nonce( $query_args['_wpnonce'] ?? '', 'wcpay_process_redirect_order_nonce' ) );
+	}
+
+	/**
+	 * @testdox Native redirect mapping sanitizes a provider URL exactly once at the runtime boundary.
+	 */
+	public function test_charge_sanitizes_provider_redirect_exactly_once(): void {
+		$order        = $this->create_woopayments_order( '50.00' );
+		$provider_url = 'https://pm-redirects.stripe.com/authorize/acct_test/pa_single';
+		$filter_calls = 0;
+		$clean_url    = static function ( string $sanitized_url, string $original_url ) use ( &$filter_calls, $provider_url ): string {
+			if ( $provider_url !== $original_url ) {
+				return $sanitized_url;
+			}
+
+			++$filter_calls;
+
+			return 1 === $filter_calls ? 'https://rewritten.example/authorize' : '';
+		};
+		add_filter( 'clean_url', $clean_url, 10, 2 );
+
+		$api_client       = new class( $provider_url ) extends WooPaymentsApiClient {
+			/**
+			 * Provider redirect URL.
+			 *
+			 * @var string
+			 */
+			private string $provider_url;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param string $provider_url Provider redirect URL.
+			 */
+			public function __construct( string $provider_url ) {
+				$this->provider_url = $provider_url;
+			}
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Return a provider redirect response.
+			 *
+			 * @param array<string,mixed> $request_data    Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
+				unset( $request_data, $idempotency_key );
+
+				return array(
+					'id'          => 'pi_redirect_once',
+					'status'      => 'requires_action',
+					'next_action' => array(
+						'type'            => 'redirect_to_url',
+						'redirect_to_url' => array( 'url' => $this->provider_url ),
+					),
+				);
+			}
+		};
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_native' );
+
+		try {
+			$outcome = $this->create_adapter( new RecordingLegacyGateway(), $api_client, $customer_service )
+				->charge( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_card' ), 'key_charge' );
+		} finally {
+			remove_filter( 'clean_url', $clean_url, 10 );
+		}
+
+		$this->assertSame( 1, $filter_calls );
+		$this->assertSame( PaymentOutcome::STATUS_REQUIRES_REDIRECT, $outcome->get_status() );
+		$this->assertSame( 'https://rewritten.example/authorize', $outcome->get_redirect_url() );
 	}
 
 	/**
@@ -2102,6 +2177,9 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION, $outcome->get_status() );
 		$this->assertSame( 'ch_native', $outcome->get_data()['charge_id'] ?? null );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_META, $outcome->get_data() );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE, $outcome->get_data() );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE_TYPE, $outcome->get_data() );
 		$this->assertStringStartsWith( '#wcpay-confirm-pi:' . $order->get_id() . ':secret_action:', $outcome->get_redirect_url() );
 		$this->assertSame( '', $order->get_meta( 'last4', true ) );
 		$this->assertSame( '', $order->get_meta( '_card_brand', true ) );
@@ -2444,23 +2522,10 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$container             = wc_get_container();
-		$original_note_service = $container->get( WooPaymentsOrderNoteService::class );
-		$throwing_note_service = $this->getMockBuilder( WooPaymentsOrderNoteService::class )
-			->onlyMethods( array( 'format_created_refund_note' ) )
-			->getMock();
-		$throwing_note_service->method( 'format_created_refund_note' )
-			->willThrowException( new \RuntimeException( 'Local refund note formatting failed.' ) );
-		$container->replace( WooPaymentsOrderNoteService::class, $throwing_note_service );
-
-		try {
-			$outcome = $this->create_adapter( $gateway, $api_client )->refund(
-				PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 3.50, 'Adjustment' ),
-				'key_refund_effect_boundary'
-			);
-		} finally {
-			$container->replace( WooPaymentsOrderNoteService::class, $original_note_service );
-		}
+		$outcome = $this->create_adapter( $gateway, $api_client )->refund(
+			PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 3.50, 'Adjustment' ),
+			'key_refund_effect_boundary'
+		);
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
 		$this->assertSame( 're_effect_boundary', $outcome->get_provider_payment_id() );
@@ -2505,10 +2570,10 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( 're_failed', $outcome->get_provider_payment_id() );
 		$this->assertSame( 'failed', $outcome->get_data()['refund_status'] );
 		$this->assertSame( 'lost_or_stolen_card', $outcome->get_data()['error_code'] );
-		$this->assertStringContainsString( 'failed', $outcome->get_data()['error_message'] );
-		$this->assertStringContainsString( 'lost_or_stolen_card', $outcome->get_data()['error_message'] );
+		$this->assertSame( 'lost_or_stolen_card', $outcome->get_data()['error_message'] );
 		$this->assertArrayNotHasKey( 'refund_meta', $outcome->get_data() );
 		$this->assertArrayNotHasKey( 'order_meta', $outcome->get_data() );
+		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
 		$this->assertNull( $gateway->refund_amount );
 	}
 
@@ -2668,8 +2733,9 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$outcome = $sut->capture( PaymentContext::for_capture( $order, OrderPaymentStore::GATEWAY_ID ), 'key_capture' );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
-		$this->assertStringContainsString( 'successfully captured', $outcome->get_data()[ PaymentOutcome::DATA_NOTE ] );
-		$this->assertStringContainsString( 'WooPayments', $outcome->get_data()[ PaymentOutcome::DATA_NOTE ] );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_META, $outcome->get_data() );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE, $outcome->get_data() );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE_TYPE, $outcome->get_data() );
 		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
 		$this->assertSame( WooPaymentsOrderEffectPlan::TYPE_CAPTURE, $outcome->get_effect_plan()->get_type() );
 		$this->assertSame( 'ch_capture_notes', $outcome->get_effect_plan()->get_provider_result()['charges']['data'][0]['id'] );
@@ -2729,11 +2795,11 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$this->assertSame( 'pi_capture', $outcome->get_provider_payment_id() );
-		$this->assertSame( 'requires_capture', $data['meta']['_intention_status'] );
-		$this->assertStringContainsString( 'A capture of', $data['note'] );
-		$this->assertStringContainsString( 'failed', $data['note'] );
-		$this->assertStringContainsString( 'WooPayments', $data['note'] );
-		$this->assertStringContainsString( 'The authorization could not be captured.', $data['note'] );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_META, $data );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE, $data );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE_TYPE, $data );
+		$this->assertSame( 'The authorization could not be captured.', $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
+		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
 		$this->assertSame( '', $gateway->last_idempotency_key );
 	}
 
@@ -2990,14 +3056,25 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		if ( $api_client instanceof \PHPUnit\Framework\MockObject\MockObject ) {
 			$api_client->method( 'is_available' )->willReturn( false );
 		}
-		$customer_service = $customer_service ?? $this->getMockBuilder( WooPaymentsCustomerService::class )
+		$customer_service   = $customer_service ?? $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->disableOriginalConstructor()
 			->getMock();
-		$token_service    = $token_service ?? $this->create_token_service();
-		$account_service  = $account_service ?? $this->create_account_service( false );
+		$token_service      = $token_service ?? $this->create_token_service();
+		$account_service    = $account_service ?? $this->create_account_service( false );
+		$order_data_service = $order_data_service ?? new WooPaymentsOrderDataService();
+		$request_builder    = new WooPaymentsIntentRequestBuilder();
+		$request_builder->init( $account_service, $order_data_service, $token_service, new WooPaymentsPaymentMethodRegistry() );
 
 		$sut = new WooPaymentsProviderGatewayAdapter();
-		$sut->init( $legacy_runtime, $api_client, $customer_service, $token_service, $account_service, $order_data_service );
+		$sut->init(
+			$legacy_runtime,
+			$api_client,
+			$customer_service,
+			$request_builder,
+			$account_service,
+			$order_data_service,
+			wc_get_container()->get( WooPaymentsOrderNoteService::class )
+		);
 
 		return $sut;
 	}

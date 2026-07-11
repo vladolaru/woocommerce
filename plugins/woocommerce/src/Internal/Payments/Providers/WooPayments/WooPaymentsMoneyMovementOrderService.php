@@ -188,7 +188,7 @@ class WooPaymentsMoneyMovementOrderService {
 			'capture_method'       => $manual_capture ? 'manual' : 'automatic',
 			'currency'             => strtolower( (string) $order->get_currency() ),
 			'customer'             => $customer_id,
-			'metadata'             => WooPaymentsIntentCodec::metadata_from_order( $order ),
+			'metadata'             => WooPaymentsIntentRequestBuilder::metadata_from_order( $order ),
 			'payment_method'       => $payment_method,
 			'payment_method_types' => array( 'card' ),
 			'off_session'          => true,

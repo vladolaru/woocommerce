@@ -3,11 +3,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentType;
-use WC_Order;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentMappingContext;
 use WC_Unit_Test_Case;
 
 /**
@@ -16,425 +14,219 @@ use WC_Unit_Test_Case;
 class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 
 	/**
-	 * Original store currency.
-	 *
-	 * @var string
+	 * @testdox Confirmation redirects use the explicitly supplied nonce.
 	 */
-	private string $original_currency;
-
-	/**
-	 * Set up test fixtures.
-	 */
-	public function setUp(): void {
-		parent::setUp();
-		$this->original_currency = (string) get_option( 'woocommerce_currency', 'USD' );
-		update_option( 'woocommerce_currency', 'USD' );
-	}
-
-	/**
-	 * Tear down test fixtures.
-	 */
-	public function tearDown(): void {
-		update_option( 'woocommerce_currency', $this->original_currency );
-		parent::tearDown();
-	}
-
-	/**
-	 * @testdox Should pass a legacy-compatible payment type object to the metadata filter.
-	 */
-	public function test_metadata_from_order_passes_legacy_compatible_payment_type_object_to_filter(): void {
-		$order            = $this->create_woopayments_order( '25.00' );
-		$captured_payment = null;
-
-		add_filter(
-			'wcpay_metadata_from_order',
-			static function ( array $metadata, WC_Order $filtered_order, $payment_type ) use ( &$captured_payment, $order ): array {
-				if ( $order->get_id() === $filtered_order->get_id() ) {
-					$captured_payment = $payment_type;
-				}
-
-				return $metadata;
-			},
-			10,
-			3
+	public function test_confirmation_redirect_uses_explicit_nonce(): void {
+		$this->assertSame(
+			'#wcpay-confirm-si:42:seti_secret:explicit_nonce:ctoken_123',
+			WooPaymentsIntentCodec::confirmation_redirect_for( 42, 'seti_secret', 'explicit_nonce', 'si', 'ctoken_123' )
 		);
-
-		$metadata = WooPaymentsIntentCodec::metadata_from_order( $order, 'recurring', 'renewal' );
-
-		$this->assertIsObject( $captured_payment );
-		$this->assertTrue( is_a( $captured_payment, 'WCPay\\Constants\\Payment_Type' ), 'Payment type should satisfy the legacy WooPayments class name.' );
-		$this->assertSame( 'recurring', (string) $captured_payment );
-		$this->assertSame( 'recurring', $captured_payment->get_value() );
-		$this->assertTrue( $captured_payment->equals( WooPaymentsPaymentType::recurring() ) );
-		$this->assertSame( $captured_payment, $metadata['payment_type'], 'Metadata should preserve the same legacy-compatible payment type object.' );
 	}
 
 	/**
-	 * @testdox Should map a succeeded native payment intent to a completed outcome.
+	 * @testdox Native intent decoding contains no order-effect data.
 	 */
-	public function test_outcome_from_intention_maps_succeeded_payment_intent_to_completed_outcome(): void {
-		$order  = $this->create_woopayments_order( '50.00' );
-		$result = array(
-			'id'             => 'pi_native',
-			'status'         => 'succeeded',
-			'client_secret'  => 'secret_native',
-			'customer'       => 'cus_native',
-			'payment_method' => 'pm_native',
-			'currency'       => 'usd',
-			'charges'        => array(
-				'data' => array(
-					array(
-						'id'                  => 'ch_native',
-						'payment_method'      => 'pm_native',
-						'balance_transaction' => array( 'id' => 'txn_native' ),
-						'outcome'             => array( 'risk_level' => 'normal' ),
+	public function test_outcome_from_intention_contains_no_order_effect_data(): void {
+		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+			array(
+				'id'             => 'pi_neutral',
+				'status'         => 'succeeded',
+				'customer'       => 'cus_neutral',
+				'payment_method' => 'pm_neutral',
+				'currency'       => 'usd',
+				'charges'        => array(
+					'data' => array(
+						array(
+							'id'                  => 'ch_neutral',
+							'balance_transaction' => array( 'id' => 'txn_neutral' ),
+						),
 					),
 				),
 			),
-		);
-
-		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
-			$result,
-			$order,
-			array(
-				'payment_credential'   => 'pm_request',
-				'fallback_customer_id' => 'cus_fallback',
-				'account_mode'         => 'test',
-				'completed_meta'       => array(
-					'_wcpay_transaction_fee' => '1.75',
-					'_wcpay_net'             => '48.25',
-				),
-			)
-		);
-		$data    = $outcome->get_data();
-		$meta    = $data[ PaymentOutcome::DATA_META ];
-
-		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
-		$this->assertSame( 'pi_native', $outcome->get_provider_payment_id() );
-		$this->assertSame( 'pm_native', $outcome->get_payment_method_id() );
-		$this->assertSame( 'cus_native', $outcome->get_customer_id() );
-		$this->assertSame( 'USD', $meta['_wcpay_intent_currency'] );
-		$this->assertSame( 'test', $meta['_wcpay_mode'] );
-		$this->assertSame( 'ch_native', $meta['_charge_id'] );
-		$this->assertSame( 'txn_native', $meta['_wcpay_payment_transaction_id'] );
-		$this->assertSame( 'normal', $meta['_charge_risk_level'] );
-		$this->assertSame( '1.75', $meta['_wcpay_transaction_fee'] );
-		$this->assertSame( '48.25', $meta['_wcpay_net'] );
-		$this->assertStringContainsString( 'successfully charged', $data[ PaymentOutcome::DATA_NOTE ] );
-		$this->assertStringContainsString( 'pi_native', $data[ PaymentOutcome::DATA_NOTE ] );
-	}
-
-	/**
-	 * @testdox Should map asynchronous WooPayments debit intents to authorized outcomes.
-	 */
-	public function test_outcome_from_intention_maps_processing_payment_intent_to_authorized_outcome(): void {
-		$order  = $this->create_woopayments_order( '65.00' );
-		$result = array(
-			'id'             => 'pi_sepa',
-			'status'         => 'processing',
-			'customer'       => 'cus_sepa',
-			'payment_method' => 'pm_sepa',
-			'currency'       => 'eur',
-			'charges'        => array(
-				'data' => array(
-					array(
-						'id'                  => 'py_sepa',
-						'payment_method'      => 'pm_sepa',
-						'balance_transaction' => array( 'id' => 'txn_sepa' ),
-					),
-				),
-			),
-		);
-
-		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
-			$result,
-			$order,
-			array(
-				'account_mode' => 'test',
-			)
-		);
-		$data    = $outcome->get_data();
-		$meta    = $data[ PaymentOutcome::DATA_META ];
-
-		$this->assertSame( PaymentOutcome::STATUS_AUTHORIZED, $outcome->get_status() );
-		$this->assertSame( 'processing', $meta['_intention_status'] );
-		$this->assertStringContainsString( 'authorized</strong> using WooPayments', $data[ PaymentOutcome::DATA_NOTE ] );
-		$this->assertSame( PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_AUTHORIZED, $data[ PaymentOutcome::DATA_NOTE_TYPE ] );
-	}
-
-	/**
-	 * @testdox Should build lifecycle events from WooPayments intent outcomes.
-	 */
-	public function test_lifecycle_event_from_intention_preserves_processing_authorization_status(): void {
-		$order  = $this->create_woopayments_order( '65.00' );
-		$result = array(
-			'id'             => 'pi_sepa',
-			'status'         => 'processing',
-			'customer'       => 'cus_sepa',
-			'payment_method' => 'pm_sepa',
-			'currency'       => 'eur',
-			'charges'        => array(
-				'data' => array(
-					array(
-						'id'             => 'py_sepa',
-						'payment_method' => 'pm_sepa',
-					),
-				),
-			),
-		);
-
-		$event = WooPaymentsIntentCodec::lifecycle_event_from_intention(
-			$result,
-			$order,
-			array(
-				'account_mode' => 'test',
-			)
-		);
-
-		$this->assertSame( PaymentLifecycleEvent::STATUS_AUTHORIZED, $event->get_status() );
-		$this->assertSame( 'pi_sepa', $event->get_payment_reference() );
-		$this->assertSame( 'processing', $event->get_meta_to_update()['_intention_status'] );
-		$this->assertSame( '', $event->get_meta_to_update()['_wcpay_payment_transaction_id'] );
-		$this->assertSame( PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_AUTHORIZED, $event->get_note_type() );
-	}
-
-	/**
-	 * @testdox Should build WooPayments confirmation hashes for customer-action intents.
-	 */
-	public function test_outcome_from_intention_builds_confirmation_redirect_for_customer_action(): void {
-		$order  = $this->create_woopayments_order( '25.00' );
-		$result = array(
-			'id'                   => 'pi_action',
-			'status'               => 'requires_action',
-			'client_secret'        => 'secret_action',
-			'payment_method'       => 'pm_action',
-			'payment_method_types' => array( 'wechat_pay' ),
-			'customer'             => 'cus_action',
-			'currency'             => 'usd',
-		);
-
-		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
-			$result,
-			$order,
-			array(
-				'payment_credential'   => 'pm_request',
-				'fallback_customer_id' => 'cus_fallback',
-				'account_mode'         => 'live',
-			)
+			WooPaymentsIntentMappingContext::for_native( 42, 'https://example.test/order-received/42' )
 		);
 
 		$data = $outcome->get_data();
-		$meta = $data[ PaymentOutcome::DATA_META ];
-
-		$this->assertSame( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION, $outcome->get_status() );
-		$this->assertSame( 'pi_action', $outcome->get_provider_payment_id() );
-		$this->assertSame( 'pm_action', $outcome->get_payment_method_id() );
-		$this->assertStringStartsWith( '#wcpay-confirm-pi:' . $order->get_id() . ':secret_action:', $outcome->get_redirect_url() );
-		$this->assertSame( 'requires_action', $meta['_intention_status'] );
-		$this->assertSame( 'USD', $meta['_wcpay_intent_currency'] );
-		$this->assertArrayNotHasKey( '_wcpay_payment_method_details', $meta );
-		$this->assertSame( '', $meta['_wcpay_payment_transaction_id'] );
-		$this->assertSame( 'not_card', $meta['_wcpay_fraud_meta_box_type'] );
-		$this->assertStringContainsString( 'started', $data[ PaymentOutcome::DATA_NOTE ] );
-		$this->assertStringContainsString( 'pi_action', $data[ PaymentOutcome::DATA_NOTE ] );
-		$this->assertSame( PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_STARTED, $data[ PaymentOutcome::DATA_NOTE_TYPE ] );
-	}
-
-	/**
-	 * @testdox Should map redirect next actions to redirect outcomes for every redirect and BNPL method family.
-	 *
-	 * @dataProvider redirect_payment_method_provider
-	 *
-	 * @param string $payment_method_type Stripe payment method type.
-	 */
-	public function test_outcome_from_intention_maps_redirect_next_action_to_redirect_outcome( string $payment_method_type ): void {
-		$order        = $this->create_woopayments_order( '25.00' );
-		$redirect_url = 'https://hooks.stripe.com/redirect/authenticate/src_' . $payment_method_type;
-		$result       = array(
-			'id'             => 'pi_' . $payment_method_type,
-			'status'         => 'requires_action',
-			'client_secret'  => 'secret_' . $payment_method_type,
-			'payment_method' => array(
-				'id'   => 'pm_' . $payment_method_type,
-				'type' => $payment_method_type,
-			),
-			'customer'       => 'cus_' . $payment_method_type,
-			'currency'       => 'eur',
-			'next_action'    => array(
-				'type'            => 'redirect_to_url',
-				'redirect_to_url' => array(
-					'url' => $redirect_url,
-				),
-			),
-		);
-
-		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
-			$result,
-			$order,
-			array(
-				'payment_credential'   => 'pm_request',
-				'fallback_customer_id' => 'cus_fallback',
-				'account_mode'         => 'live',
-			)
-		);
-
-		$this->assertSame( PaymentOutcome::STATUS_REQUIRES_REDIRECT, $outcome->get_status() );
-		$this->assertSame( 'pi_' . $payment_method_type, $outcome->get_provider_payment_id() );
-		$this->assertSame( 'pm_' . $payment_method_type, $outcome->get_payment_method_id() );
-		$this->assertSame( $redirect_url, $outcome->get_redirect_url() );
-		$this->assertSame( $redirect_url, $outcome->get_data()[ PaymentOutcome::DATA_CHECKOUT_REDIRECT ] );
-		$this->assertStringContainsString( 'started', $outcome->get_data()[ PaymentOutcome::DATA_NOTE ] );
-		$this->assertStringContainsString( 'pi_' . $payment_method_type, $outcome->get_data()[ PaymentOutcome::DATA_NOTE ] );
-		$this->assertSame( PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_STARTED, $outcome->get_data()[ PaymentOutcome::DATA_NOTE_TYPE ] );
-	}
-
-	/**
-	 * Redirect and BNPL payment method families handled by the extension's shared next-action branch.
-	 *
-	 * @return array<string,array{0:string}>
-	 */
-	public function redirect_payment_method_provider(): array {
-		return array(
-			'iDEAL'             => array( 'ideal' ),
-			'Bancontact'        => array( 'bancontact' ),
-			'EPS'               => array( 'eps' ),
-			'Przelewy24'        => array( 'p24' ),
-			'Multibanco'        => array( 'multibanco' ),
-			'GrabPay'           => array( 'grabpay' ),
-			'WeChat Pay'        => array( 'wechat_pay' ),
-			'Alipay'            => array( 'alipay' ),
-			'Klarna'            => array( 'klarna' ),
-			'Affirm'            => array( 'affirm' ),
-			'Afterpay/Clearpay' => array( 'afterpay_clearpay' ),
-		);
-	}
-
-	/**
-	 * @testdox Should preserve Multibanco voucher details on redirect outcomes.
-	 */
-	public function test_outcome_from_intention_preserves_multibanco_voucher_details(): void {
-		$order  = $this->create_woopayments_order( '25.00' );
-		$result = array(
-			'id'             => 'pi_multibanco',
-			'status'         => 'requires_action',
-			'client_secret'  => 'secret_multibanco',
-			'payment_method' => array(
-				'id'   => 'pm_multibanco',
-				'type' => 'multibanco',
-			),
-			'customer'       => 'cus_multibanco',
-			'currency'       => 'eur',
-			'next_action'    => array(
-				'type'                       => 'multibanco_display_details',
-				'multibanco_display_details' => array(
-					'reference'          => '123 456 789',
-					'entity'             => '12345',
-					'hosted_voucher_url' => 'https://pay.stripe.com/multibanco/voucher',
-					'expires_at'         => 1893456000,
-				),
-			),
-		);
-
-		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
-			$result,
-			$order,
-			array(
-				'payment_credential'   => 'pm_request',
-				'fallback_customer_id' => 'cus_fallback',
-				'account_mode'         => 'live',
-			)
-		);
-		$meta    = $outcome->get_data()[ PaymentOutcome::DATA_META ];
-
-		$this->assertSame( PaymentOutcome::STATUS_AUTHORIZED, $outcome->get_status() );
-		$this->assertSame( $order->get_checkout_order_received_url(), $outcome->get_redirect_url() );
-		$this->assertSame( $order->get_checkout_order_received_url(), $outcome->get_data()[ PaymentOutcome::DATA_CHECKOUT_REDIRECT ] );
-		$this->assertSame( 'requires_action', $meta['_intention_status'] );
-		$this->assertSame( 'USD', $meta['_wcpay_intent_currency'] );
-		$this->assertArrayNotHasKey( '_wcpay_payment_method_details', $meta );
-		$this->assertSame( '', $meta['_wcpay_payment_transaction_id'] );
-		$this->assertSame( 'not_card', $meta['_wcpay_fraud_meta_box_type'] );
-		$this->assertSame( '123 456 789', $meta['_wcpay_multibanco_reference'] );
-		$this->assertSame( '12345', $meta['_wcpay_multibanco_entity'] );
-		$this->assertSame( 'https://pay.stripe.com/multibanco/voucher', $meta['_wcpay_multibanco_url'] );
-		$this->assertSame( '1893456000', $meta['_wcpay_multibanco_expiry'] );
-		$this->assertStringContainsString( 'started', $outcome->get_data()[ PaymentOutcome::DATA_NOTE ] );
-		$this->assertSame( PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_STARTED, $outcome->get_data()[ PaymentOutcome::DATA_NOTE_TYPE ] );
-	}
-
-	/**
-	 * @testdox Should use the latest charge payment method before confirmation-token credential fallback.
-	 */
-	public function test_outcome_from_intention_uses_charge_payment_method_before_confirmation_token_fallback(): void {
-		$order  = $this->create_woopayments_order( '25.00' );
-		$result = array(
-			'id'            => 'pi_charge_pm',
-			'status'        => 'succeeded',
-			'client_secret' => 'secret_charge_pm',
-			'customer'      => 'cus_charge_pm',
-			'currency'      => 'usd',
-			'charges'       => array(
-				'data' => array(
-					array(
-						'id'                  => 'ch_charge_pm',
-						'payment_method'      => 'pm_from_charge',
-						'balance_transaction' => array( 'id' => 'txn_charge_pm' ),
-					),
-				),
-			),
-		);
-
-		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
-			$result,
-			$order,
-			array(
-				'payment_credential'   => 'ctoken_submitted',
-				'fallback_customer_id' => 'cus_fallback',
-				'account_mode'         => 'live',
-			)
-		);
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		$this->assertSame( 'pi_neutral', $outcome->get_provider_payment_id() );
+		$this->assertSame( 'pm_neutral', $outcome->get_payment_method_id() );
+		$this->assertSame( 'cus_neutral', $outcome->get_customer_id() );
+		$this->assertSame( 'ch_neutral', $data['charge_id'] );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_META, $data );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE, $data );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE_TYPE, $data );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_ORDER_META, $data );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_REFUND_META, $data );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_REFUND_NOTE, $data );
+	}
+
+	/**
+	 * @testdox Asynchronous debit intents map to authorized outcomes without local effects.
+	 */
+	public function test_outcome_from_intention_maps_processing_intent_to_authorized_outcome(): void {
+		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+			array(
+				'id'             => 'pi_sepa',
+				'status'         => 'processing',
+				'customer'       => 'cus_sepa',
+				'payment_method' => 'pm_sepa',
+			),
+			WooPaymentsIntentMappingContext::for_native( 42, 'https://example.test/order-received/42' )
+		);
+
+		$this->assertSame( PaymentOutcome::STATUS_AUTHORIZED, $outcome->get_status() );
+		$this->assertSame( array(), $outcome->get_data() );
+	}
+
+	/**
+	 * @testdox Customer-action intents use the prebuilt boundary redirect.
+	 */
+	public function test_outcome_from_intention_uses_supplied_customer_action_redirect(): void {
+		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+			array(
+				'id'                   => 'pi_action',
+				'status'               => 'requires_action',
+				'client_secret'        => 'secret_action',
+				'payment_method'       => 'pm_action',
+				'payment_method_types' => array( 'wechat_pay' ),
+			),
+			WooPaymentsIntentMappingContext::for_native(
+				42,
+				'https://example.test/order-received/42',
+				'pm_request',
+				'cus_fallback',
+				'#wcpay-confirm-pi:42:secret_action:explicit_nonce'
+			)
+		);
+
+		$this->assertSame( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION, $outcome->get_status() );
+		$this->assertSame( '#wcpay-confirm-pi:42:secret_action:explicit_nonce', $outcome->get_redirect_url() );
+		$this->assertSame( 'cus_fallback', $outcome->get_customer_id() );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_META, $outcome->get_data() );
+	}
+
+	/**
+	 * @testdox Redirect next actions map to provider redirect outcomes.
+	 */
+	public function test_outcome_from_intention_maps_provider_redirect(): void {
+		$clean_url_calls = 0;
+		$clean_url       = static function ( string $url ) use ( &$clean_url_calls ): string {
+			unset( $url );
+			++$clean_url_calls;
+
+			return 'https://filtered.example/should-not-run';
+		};
+		add_filter( 'clean_url', $clean_url );
+
+		try {
+			$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+				array(
+					'id'          => 'pi_ideal',
+					'status'      => 'requires_action',
+					'next_action' => array(
+						'type'            => 'redirect_to_url',
+						'redirect_to_url' => array( 'url' => 'https://hooks.stripe.com/redirect/ideal' ),
+					),
+				),
+				WooPaymentsIntentMappingContext::for_native(
+					42,
+					'https://example.test/order-received/42',
+					'',
+					'',
+					'',
+					'pi',
+					'https://sanitized.example/redirect/ideal'
+				),
+			);
+		} finally {
+			remove_filter( 'clean_url', $clean_url );
+		}
+
+		$this->assertSame( PaymentOutcome::STATUS_REQUIRES_REDIRECT, $outcome->get_status() );
+		$this->assertSame( 'https://sanitized.example/redirect/ideal', $outcome->get_redirect_url() );
+		$this->assertSame( 'https://sanitized.example/redirect/ideal', $outcome->get_data()[ PaymentOutcome::DATA_CHECKOUT_REDIRECT ] );
+		$this->assertSame( 0, $clean_url_calls, 'The pure codec must not dispatch URL filters.' );
+	}
+
+	/**
+	 * @testdox Multibanco voucher intents use the explicitly supplied order-received URL.
+	 */
+	public function test_outcome_from_intention_uses_supplied_order_received_url_for_multibanco(): void {
+		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+			array(
+				'id'          => 'pi_multibanco',
+				'status'      => 'requires_action',
+				'next_action' => array(
+					'type'                       => 'multibanco_display_details',
+					'multibanco_display_details' => array( 'reference' => '123 456 789' ),
+				),
+			),
+			WooPaymentsIntentMappingContext::for_native( 42, 'https://example.test/order-received/42' )
+		);
+
+		$this->assertSame( PaymentOutcome::STATUS_AUTHORIZED, $outcome->get_status() );
+		$this->assertSame( 'https://example.test/order-received/42', $outcome->get_redirect_url() );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_META, $outcome->get_data() );
+	}
+
+	/**
+	 * @testdox The latest charge payment method precedes submitted credential fallback.
+	 */
+	public function test_outcome_from_intention_uses_charge_payment_method_before_credential_fallback(): void {
+		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+			array(
+				'id'      => 'pi_charge_pm',
+				'status'  => 'succeeded',
+				'charges' => array(
+					'data' => array( array( 'payment_method' => 'pm_from_charge' ) ),
+				),
+			),
+			WooPaymentsIntentMappingContext::for_native( 42, '', 'ctoken_submitted' )
+		);
+
 		$this->assertSame( 'pm_from_charge', $outcome->get_payment_method_id() );
 	}
 
 	/**
-	 * @testdox Should map legacy manual-capture results from persisted order intent meta.
+	 * @testdox Legacy mapping uses the supplied snapshot without reloading an order.
 	 */
-	public function test_outcome_from_legacy_result_maps_manual_capture_meta_to_authorized_outcome(): void {
-		$order = $this->create_woopayments_order( '10.00' );
-		$order->update_meta_data( '_intent_id', 'pi_manual' );
-		$order->update_meta_data( '_payment_method_id', 'pm_manual' );
-		$order->update_meta_data( '_intention_status', 'requires_capture' );
-		$order->save();
-
+	public function test_legacy_result_uses_supplied_snapshot_without_reloading_order(): void {
 		$outcome = WooPaymentsIntentCodec::outcome_from_legacy_result(
 			array(
 				'result'   => 'success',
-				'redirect' => $order->get_checkout_order_received_url(),
+				'redirect' => 'https://example.test/order-received/42',
 			),
-			$order
+			WooPaymentsIntentMappingContext::for_legacy(
+				42,
+				'https://example.test/order-received/42',
+				10.0,
+				'pi_manual',
+				'pm_manual',
+				'requires_capture'
+			)
 		);
 
 		$this->assertSame( PaymentOutcome::STATUS_AUTHORIZED, $outcome->get_status() );
 		$this->assertSame( 'pi_manual', $outcome->get_provider_payment_id() );
 		$this->assertSame( 'pm_manual', $outcome->get_payment_method_id() );
-		$this->assertSame( $order->get_checkout_order_received_url(), $outcome->get_data()[ PaymentOutcome::DATA_CHECKOUT_REDIRECT ] );
 	}
 
 	/**
-	 * Create a WooPayments order for codec tests.
-	 *
-	 * @param string $total Order total.
-	 * @return WC_Order
+	 * @testdox Failed refund mapping preserves raw provider error facts.
 	 */
-	private function create_woopayments_order( string $total ): WC_Order {
-		$order = wc_create_order();
-		$order->set_payment_method( 'woocommerce_payments' );
-		$order->set_currency( 'USD' );
-		$order->set_total( $total );
-		$order->save();
+	public function test_failed_refund_mapping_preserves_raw_error_facts(): void {
+		$outcome = WooPaymentsIntentCodec::outcome_from_refund_result(
+			array(
+				'id'             => 're_failed',
+				'status'         => 'failed',
+				'failure_reason' => 'lost_or_stolen_card',
+			)
+		);
 
-		return $order;
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( 're_failed', $outcome->get_provider_payment_id() );
+		$this->assertSame( 'lost_or_stolen_card', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] );
+		$this->assertSame( 'lost_or_stolen_card', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
 	}
 }

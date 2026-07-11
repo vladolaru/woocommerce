@@ -6,11 +6,13 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
@@ -29,7 +31,73 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		remove_all_filters( 'woocommerce_native_woopayments_related_subscriptions_for_order' );
+		remove_all_filters( 'wcpay_payment_request_payment_method_title_suffix' );
 		parent::tearDown();
+	}
+
+	/**
+	 * @testdox Lifecycle enrichment composes PaymentIntent data without persisting order effects.
+	 */
+	public function test_lifecycle_enrichment_does_not_persist_payment_intent_effects(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_payment_method_title( 'Card' );
+		$order->save();
+		$result  = array(
+			'id'       => 'pi_read_only',
+			'status'   => 'succeeded',
+			'currency' => 'usd',
+			'charges'  => array(
+				'data' => array(
+					array(
+						'id'                     => 'ch_read_only',
+						'payment_method_details' => array( 'type' => 'card' ),
+					),
+				),
+			),
+		);
+		$outcome = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_read_only', '', 'pm_read_only' );
+		$plan    = WooPaymentsOrderEffectPlan::for_payment_intent( $result, false );
+
+		$enriched = $this->create_applier()->enrich_outcome_for_lifecycle(
+			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_read_only' ),
+			$outcome,
+			$plan
+		);
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertArrayHasKey( PaymentOutcome::DATA_META, $enriched->get_data() );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'Card', $reloaded->get_payment_method_title() );
+		$this->assertSame( '', $reloaded->get_meta( '_charge_id', true ) );
+	}
+
+	/**
+	 * @testdox Lifecycle enrichment carries SetupIntent metadata without persisting it directly.
+	 */
+	public function test_lifecycle_enrichment_carries_setup_meta_without_persisting_it(): void {
+		$order   = $this->create_woopayments_order( '0.00' );
+		$outcome = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'seti_read_only', '', 'pm_read_only', 'cus_read_only' );
+		$plan    = WooPaymentsOrderEffectPlan::for_setup_intent(
+			array( 'id' => 'seti_read_only' ),
+			false,
+			array(
+				'_wcpay_intent_currency' => 'USD',
+				'_wcpay_mode'            => 'test',
+			)
+		);
+
+		$enriched = $this->create_applier()->enrich_outcome_for_lifecycle(
+			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_read_only' ),
+			$outcome,
+			$plan
+		);
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertSame( 'test', $enriched->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_mode'] );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( '', $reloaded->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( '', $reloaded->get_meta( '_stripe_customer_id', true ) );
+		$this->assertSame( '', $reloaded->get_meta( '_wcpay_mode', true ) );
 	}
 
 	/**
@@ -142,11 +210,51 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A neutral PaymentIntent outcome is enriched before lifecycle persistence.
+	 */
+	public function test_neutral_payment_intent_outcome_is_enriched_before_lifecycle(): void {
+		$order   = $this->create_woopayments_order( '25.00' );
+		$result  = array(
+			'id'       => 'pi_neutral',
+			'status'   => 'succeeded',
+			'currency' => 'usd',
+			'charges'  => array(
+				'data' => array(
+					array(
+						'id'                  => 'ch_neutral',
+						'currency'            => 'usd',
+						'amount'              => 2500,
+						'balance_transaction' => array( 'id' => 'txn_neutral' ),
+					),
+				),
+			),
+		);
+		$outcome = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_neutral', '', 'pm_neutral', 'cus_neutral' );
+		$plan    = WooPaymentsOrderEffectPlan::for_payment_intent( $result, false );
+
+		$applied = $this->create_applier()->apply(
+			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_neutral' ),
+			$outcome,
+			$plan
+		);
+		$data    = $applied->get_data();
+		$meta    = $data[ PaymentOutcome::DATA_META ];
+
+		$this->assertSame( 'USD', $meta['_wcpay_intent_currency'] );
+		$this->assertSame( 'live', $meta['_wcpay_mode'] );
+		$this->assertSame( 'ch_neutral', $meta['_charge_id'] );
+		$this->assertSame( 'txn_neutral', $meta['_wcpay_payment_transaction_id'] );
+		$this->assertStringContainsString( 'successfully charged', $data[ PaymentOutcome::DATA_NOTE ] );
+		$this->assertSame( 'payment_success', $data[ PaymentOutcome::DATA_NOTE_TYPE ] );
+	}
+
+	/**
 	 * @testdox Final payment identity is propagated to subscriptions created from the parent order.
 	 */
 	public function test_final_payment_method_display_details_propagate_to_related_subscriptions(): void {
-		$order        = $this->create_woopayments_order();
-		$subscription = $this->create_woopayments_order();
+		$title_filter_calls = 0;
+		$order              = $this->create_woopayments_order();
+		$subscription       = $this->create_woopayments_order();
 		$order->set_payment_method_title( 'Card' );
 		$order->save();
 		$subscription->set_payment_method_title( 'Card' );
@@ -159,6 +267,14 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			},
 			10,
 			2
+		);
+		add_filter(
+			'wcpay_payment_request_payment_method_title_suffix',
+			static function ( string $suffix ) use ( &$title_filter_calls ): string {
+				++$title_filter_calls;
+
+				return $suffix;
+			}
 		);
 
 		$result = array(
@@ -189,6 +305,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $subscription );
 		$this->assertSame( OrderPaymentStore::GATEWAY_ID_PREFIX . 'amazon_pay', $order->get_payment_method() );
 		$this->assertSame( 'Amazon Pay (WooPayments)', $order->get_payment_method_title() );
+		$this->assertSame( 1, $title_filter_calls, 'The suffix filter should run once when the display title is applied.' );
 		$this->assertSame( $order->get_payment_method(), $subscription->get_payment_method() );
 		$this->assertSame( $order->get_payment_method_title(), $subscription->get_payment_method_title() );
 	}
@@ -407,9 +524,9 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Critical recurring token effects complete before fallible display effects run.
+	 * @testdox Critical recurring token effects complete before fallible note rendering runs.
 	 */
-	public function test_recurring_token_effects_run_before_display_effects(): void {
+	public function test_recurring_token_effects_run_before_note_rendering(): void {
 		$user_id = $this->factory()->user->create();
 		$order   = $this->create_woopayments_order();
 		$order->set_customer_id( $user_id );
@@ -447,16 +564,15 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 					$sequence[] = 'sync';
 				}
 			);
-		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_account_country' ) )
+		$note_service = $this->getMockBuilder( WooPaymentsOrderNoteService::class )
+			->onlyMethods( array( 'format_payment_success_note' ) )
 			->getMock();
-		$account_service->expects( $this->once() )
-			->method( 'get_account_country' )
+		$note_service->expects( $this->once() )
+			->method( 'format_payment_success_note' )
 			->willReturnCallback(
 				static function () use ( &$sequence ): string {
-					$sequence[] = 'display';
-					throw new RuntimeException( 'Display lookup failed.' );
+					$sequence[] = 'render';
+					throw new RuntimeException( 'Note rendering failed.' );
 				}
 			);
 		$outcome = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_ordered', '', 'pm_ordered', 'cus_ordered' );
@@ -470,17 +586,17 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		);
 
 		try {
-			$this->create_applier( $token_service, null, $account_service )->apply(
+			$this->create_applier( $token_service, null, null, null, $note_service )->apply(
 				PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_ordered' ),
 				$outcome,
 				$plan
 			);
-			$this->fail( 'Expected display composition to throw.' );
+			$this->fail( 'Expected note rendering to throw.' );
 		} catch ( RuntimeException $exception ) {
-			$this->assertSame( 'Display lookup failed.', $exception->getMessage() );
+			$this->assertSame( 'Note rendering failed.', $exception->getMessage() );
 		}
 
-		$this->assertSame( array( 'token', 'attach', 'sync', 'display' ), $sequence );
+		$this->assertSame( array( 'token', 'attach', 'sync', 'render' ), $sequence );
 	}
 
 	/**
@@ -666,15 +782,49 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Refund effects use the injected note service after retaining provider identity.
+	 */
+	public function test_refund_uses_injected_note_service_and_retains_provider_identity_when_rendering_throws(): void {
+		$order        = $this->create_woopayments_order();
+		$result       = array(
+			'id'     => 're_retained',
+			'status' => 'succeeded',
+		);
+		$outcome      = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 're_retained', '', '', '', array( 'refund_status' => 'successful' ) );
+		$plan         = WooPaymentsOrderEffectPlan::for_refund( $result );
+		$note_service = $this->getMockBuilder( WooPaymentsOrderNoteService::class )
+			->onlyMethods( array( 'format_created_refund_note' ) )
+			->getMock();
+		$note_service->expects( $this->once() )
+			->method( 'format_created_refund_note' )
+			->willThrowException( new RuntimeException( 'Local refund note formatting failed.' ) );
+
+		$this->expectException( RuntimeException::class );
+		$this->expectExceptionMessage( 'Local refund note formatting failed.' );
+
+		try {
+			$this->create_applier( null, null, null, null, $note_service )->apply(
+				PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 2.50, 'Adjustment' ),
+				$outcome->with_effect_plan( $plan ),
+				$plan
+			);
+		} finally {
+			$this->assertSame( 're_retained', $outcome->get_provider_payment_id() );
+			$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		}
+	}
+
+	/**
 	 * Create an effect applier with focused dependencies.
 	 *
 	 * @param WooPaymentsTokenService|null     $token_service      Token service.
 	 * @param WooPaymentsOrderDataService|null $order_data_service Order data service.
 	 * @param WooPaymentsAccountService|null   $account_service    Account service.
 	 * @param WooPaymentsLegacyRuntime|null    $legacy_runtime     Legacy runtime.
+	 * @param WooPaymentsOrderNoteService|null $note_service       Order note service.
 	 * @return WooPaymentsOrderEffectApplier
 	 */
-	private function create_applier( ?WooPaymentsTokenService $token_service = null, ?WooPaymentsOrderDataService $order_data_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsLegacyRuntime $legacy_runtime = null ): WooPaymentsOrderEffectApplier {
+	private function create_applier( ?WooPaymentsTokenService $token_service = null, ?WooPaymentsOrderDataService $order_data_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsLegacyRuntime $legacy_runtime = null, ?WooPaymentsOrderNoteService $note_service = null ): WooPaymentsOrderEffectApplier {
 		$token_service      = $token_service ?? $this->getMockBuilder( WooPaymentsTokenService::class )
 			->disableOriginalConstructor()
 			->getMock();
@@ -699,7 +849,14 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		}
 
 		$applier = new WooPaymentsOrderEffectApplier();
-		$applier->init( $token_service, $order_data_service, $account_service, $legacy_runtime );
+		$applier->init(
+			$token_service,
+			$order_data_service,
+			$account_service,
+			$legacy_runtime,
+			$note_service ?? new WooPaymentsOrderNoteService(),
+			new WooPaymentsPaymentMethodRegistry()
+		);
 
 		return $applier;
 	}

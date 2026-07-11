@@ -7,9 +7,14 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAjaxController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
@@ -138,6 +143,120 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'cus_native', $order->get_meta( '_stripe_customer_id', true ) );
 		$this->assert_order_has_no_note_containing( $order, 'A payment of' );
 		$this->assert_order_has_no_note_containing( $order, 'A test payment of' );
+	}
+
+	/**
+	 * @testdox Failed intent lifecycle construction does not persist a generic title before lifecycle ownership.
+	 */
+	public function test_failed_intent_does_not_persist_effects_before_lifecycle_application(): void {
+		$order = $this->create_woopayments_order( '50.00' );
+		$order->set_payment_method_title( 'Card' );
+		$order->update_meta_data( '_intent_id', 'pi_failed' );
+		$order->save();
+
+		$api_client        = new class() extends WooPaymentsApiClient {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Return a failed PaymentIntent.
+			 *
+			 * @param string $intent_id Intent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_payment_intention( string $intent_id ): array {
+				return array(
+					'id'                 => $intent_id,
+					'status'             => 'requires_payment_method',
+					'last_payment_error' => array( 'code' => 'card_declined' ),
+				);
+			}
+		};
+		$lifecycle_service = $this->getMockBuilder( OrderPaymentLifecycleService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'apply' ) )
+			->getMock();
+		$lifecycle_service->expects( $this->once() )
+			->method( 'apply' )
+			->willThrowException( new \RuntimeException( 'Lifecycle unavailable.' ) );
+
+		$response = $this->create_controller( $api_client, null, null, null, $lifecycle_service )
+			->get_update_order_status_response(
+				array(
+					'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+					'order_id'    => $order->get_id(),
+					'intent_id'   => 'pi_failed',
+				)
+			);
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertSame( 500, $response['status_code'] );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'Card', $reloaded->get_payment_method_title() );
+	}
+
+	/**
+	 * @testdox SetupIntent lifecycle construction leaves setup metadata to the lifecycle owner.
+	 */
+	public function test_setup_intent_does_not_persist_meta_before_lifecycle_application(): void {
+		$order = $this->create_woopayments_order( '0.00' );
+		$order->update_meta_data( '_intent_id', 'seti_read_only' );
+		$order->save();
+
+		$api_client        = new class() extends WooPaymentsApiClient {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Return a completed SetupIntent.
+			 *
+			 * @param string $intent_id Intent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_setup_intention( string $intent_id ): array {
+				return array(
+					'id'             => $intent_id,
+					'status'         => 'succeeded',
+					'customer'       => 'cus_read_only',
+					'payment_method' => 'pm_read_only',
+				);
+			}
+		};
+		$lifecycle_service = $this->getMockBuilder( OrderPaymentLifecycleService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'apply' ) )
+			->getMock();
+		$lifecycle_service->expects( $this->once() )
+			->method( 'apply' )
+			->willThrowException( new \RuntimeException( 'Lifecycle unavailable.' ) );
+
+		$response = $this->create_controller( $api_client, null, null, null, $lifecycle_service )
+			->get_update_order_status_response(
+				array(
+					'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+					'order_id'    => $order->get_id(),
+					'intent_id'   => 'seti_read_only',
+				)
+			);
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertSame( 500, $response['status_code'] );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( '', $reloaded->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( '', $reloaded->get_meta( '_stripe_customer_id', true ) );
+		$this->assertSame( '', $reloaded->get_meta( '_wcpay_mode', true ) );
 	}
 
 	/**
@@ -1429,13 +1548,14 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a checkout AJAX controller.
 	 *
-	 * @param WooPaymentsApiClient            $api_client       API client.
-	 * @param WooPaymentsCustomerService|null $customer_service Customer service.
-	 * @param WooPaymentsTokenService|null    $token_service    Token service.
-	 * @param WooPaymentsAccountService|null  $account_service  Account service.
+	 * @param WooPaymentsApiClient              $api_client       API client.
+	 * @param WooPaymentsCustomerService|null   $customer_service Customer service.
+	 * @param WooPaymentsTokenService|null      $token_service    Token service.
+	 * @param WooPaymentsAccountService|null    $account_service  Account service.
+	 * @param OrderPaymentLifecycleService|null $lifecycle_service Lifecycle service.
 	 * @return WooPaymentsCheckoutAjaxController
 	 */
-	private function create_controller( WooPaymentsApiClient $api_client, ?WooPaymentsCustomerService $customer_service = null, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsAccountService $account_service = null ): WooPaymentsCheckoutAjaxController {
+	private function create_controller( WooPaymentsApiClient $api_client, ?WooPaymentsCustomerService $customer_service = null, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsAccountService $account_service = null, ?OrderPaymentLifecycleService $lifecycle_service = null ): WooPaymentsCheckoutAjaxController {
 		$arbiter = $this->createMock( NativePaymentsRuntimeArbiter::class );
 		$arbiter->method( 'should_native_register' )->willReturn( true );
 
@@ -1450,15 +1570,29 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		if ( null === $account_service ) {
 			$account_service = $this->create_account_service( false );
 		}
+		$order_data_service = new WooPaymentsOrderDataService();
+		$registry           = new WooPaymentsPaymentMethodRegistry();
+		$effect_applier     = new WooPaymentsOrderEffectApplier();
+		$effect_applier->init(
+			$token_service,
+			$order_data_service,
+			$account_service,
+			wc_get_container()->get( WooPaymentsLegacyRuntime::class ),
+			new WooPaymentsOrderNoteService(),
+			$registry
+		);
 
 		$sut = new WooPaymentsCheckoutAjaxController();
 		$sut->init(
 			$arbiter,
 			$api_client,
 			$customer_service,
-			wc_get_container()->get( OrderPaymentLifecycleService::class ),
+			$lifecycle_service ?? wc_get_container()->get( OrderPaymentLifecycleService::class ),
 			$token_service,
-			$account_service
+			$account_service,
+			$order_data_service,
+			$registry,
+			$effect_applier
 		);
 
 		return $sut;
