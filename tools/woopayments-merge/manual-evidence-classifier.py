@@ -30,10 +30,6 @@ accepted_lpm_profiles = {
     "grabpay": {"country": "SG", "capability": "grabpay_payments", "provisionable": False},
 }
 accepted_capability_statuses = {"missing", "unrequested", "pending", "inactive", "restricted", "rejected"}
-accepted_critical_flows = {
-    "SC-14-lpm-wave-1-checkout",
-    "SS-10-sepa-token-renewal-cutover",
-}
 
 
 def read_json(path: Path) -> dict[str, Any] | None:
@@ -337,152 +333,11 @@ def accept_token_continuity() -> str | None:
     return "Token continuity is blocked only by the accepted SEPA fixture/account prerequisite."
 
 
-def valid_target_only_token_continuity_pass() -> bool:
-    payload = read_json(out_dir / "token-continuity" / "token-continuity-gate.json")
-    if (
-        not payload
-        or payload.get("schema") != "woopayments_token_continuity_gate_rollup.v1"
-        or payload.get("status") != "pass"
-        or payload.get("failures") != []
-        or payload.get("blockers") != []
-    ):
-        return False
-
-    token_id = payload.get("token_id")
-    source = payload.get("source_token") if isinstance(payload.get("source_token"), dict) else {}
-    native = (
-        payload.get("native_token_loader")
-        if isinstance(payload.get("native_token_loader"), dict)
-        else {}
-    )
-    render = (
-        payload.get("render_payment_methods")
-        if isinstance(payload.get("render_payment_methods"), dict)
-        else {}
-    )
-    render_page = render.get("page") if isinstance(render.get("page"), dict) else {}
-    methods = (
-        render_page.get("payment_methods")
-        if isinstance(render_page.get("payment_methods"), dict)
-        else {}
-    )
-    renewal = payload.get("renewal") if isinstance(payload.get("renewal"), dict) else {}
-
-    return (
-        payload.get("source_flow") == "provider_setup_intent"
-        and isinstance(token_id, int)
-        and token_id > 0
-        and source.get("success") is True
-        and source.get("source_payment_method_customer_ready") is True
-        and str(source.get("payment_method_id") or "").startswith("pm_")
-        and native.get("success") is True
-        and native.get("token_id") == token_id
-        and native.get("gateway_id") == "woocommerce_payments_sepa_debit"
-        and native.get("token_type") == "wcpay_sepa"
-        and str(native.get("token_class") or "").endswith("WooPaymentsSepaToken")
-        and render.get("status") == "pass"
-        and render.get("token_id") == token_id
-        and render.get("token_visible") is True
-        and methods.get("token_visible") is True
-        and renewal.get("success") is True
-        and renewal.get("renewal_processing_model") == "asynchronous_processing"
-        and renewal.get("success_checks_failed") == []
-        and isinstance(renewal.get("renewal_order_id"), int)
-        and renewal.get("renewal_order_id", 0) > 0
-    )
-
-
-def accept_critical_flows() -> str | None:
-    payload = read_json(out_dir / "critical-flows" / "rollup.json")
-    context = read_json(out_dir / "critical-flow-context.json")
-    flow_dir = repo_root / "tools" / "woopayments-critical-flows" / "flows"
-    flow_paths = sorted(flow_dir.glob("*.sh")) + sorted(flow_dir.glob("*.md"))
-    expected_flows = {path.stem for path in flow_paths}
-    if (
-        not payload
-        or not context
-        or payload.get("schema") != "woopayments_critical_flows_rollup.v1"
-        or payload.get("status") != "blocked"
-        or not expected_flows
-        or len(expected_flows) != len(flow_paths)
-        or not accepted_critical_flows <= expected_flows
-    ):
-        return None
-    if payload.get("context_sha256") != context.get("context_sha256"):
-        return None
-    if payload.get("aggregate_run_id") != context.get("aggregate_run_id"):
-        return None
-
-    summary = payload.get("summary")
-    if not isinstance(summary, dict):
-        return None
-
-    results = payload.get("results")
-    if not isinstance(results, list):
-        return None
-
-    expected_identities = {
-        (flow, store)
-        for flow in expected_flows
-        for store in ("ref", "target")
-    }
-    seen_identities = set()
-    status_counts: Counter[str] = Counter()
-    flow_statuses: dict[str, dict[str, str]] = {}
-    for result in results:
-        if not isinstance(result, dict):
-            return None
-        status = str(result.get("status") or "").upper()
-        flow = str(result.get("flow") or "")
-        store = str(result.get("store") or "")
-        identity = (flow, store)
-        if identity not in expected_identities or identity in seen_identities:
-            return None
-        if status not in {"PASS", "BLOCKED"}:
-            return None
-        seen_identities.add(identity)
-        status_counts[status] += 1
-        if flow not in accepted_critical_flows:
-            if status != "PASS":
-                return None
-            continue
-        if store in flow_statuses.setdefault(flow, {}):
-            return None
-        flow_statuses[flow][store] = status
-
-    if seen_identities != expected_identities:
-        return None
-    if (
-        summary.get("passed") != status_counts["PASS"]
-        or summary.get("failed") != 0
-        or summary.get("blocked") != status_counts["BLOCKED"]
-    ):
-        return None
-
-    sc14 = flow_statuses.get("SC-14-lpm-wave-1-checkout")
-    if sc14 != {"ref": "BLOCKED", "target": "BLOCKED"} or accept_lpm_all_methods() is None:
-        return None
-
-    ss10 = flow_statuses.get("SS-10-sepa-token-renewal-cutover")
-    if ss10 == {"ref": "BLOCKED", "target": "BLOCKED"}:
-        if accept_token_continuity() is None:
-            return None
-    elif ss10 == {"ref": "BLOCKED", "target": "PASS"}:
-        if not valid_target_only_token_continuity_pass():
-            return None
-    else:
-        return None
-
-    return "Critical-flow blockers are inherited only from accepted LPM/SEPA manual evidence rows."
-
-
 def classify(label: str) -> str | None:
     if label == "LPM all-method checkout":
         return accept_lpm_all_methods()
     if label == "token continuity cutover":
         return accept_token_continuity()
-    if label == "critical flows full run":
-        return accept_critical_flows()
     return None
 
 

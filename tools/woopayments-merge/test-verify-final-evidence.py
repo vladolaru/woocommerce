@@ -1369,14 +1369,13 @@ exit 3
             check=False,
         )
 
-        assert result.returncode == 0, result.stdout + result.stderr
+        assert result.returncode == 3, result.stdout + result.stderr
         assert "Summary:" in result.stdout
-        assert "0 blocked, 3 acknowledged manual" in result.stdout
+        assert "1 blocked, 2 acknowledged manual" in result.stdout
         assert "Acknowledged manual evidence limitations:" in result.stdout
         assert "LPM all-method checkout:" in result.stdout
         assert "token continuity cutover:" in result.stdout
-        assert "critical flows full run:" in result.stdout
-        assert "RESULT: PASS WITH ACKNOWLEDGED MANUAL EVIDENCE LIMITATIONS" in result.stdout
+        assert "RESULT: INCOMPLETE" in result.stdout
         assert (full_evidence_dir / "manual-evidence-limitations.json").is_file()
 
         default_labels = (
@@ -1621,10 +1620,11 @@ exit 3
             target_only_dir,
             ("LPM all-method checkout", "critical flows full run"),
         )
-        assert labels_for(target_only_summary, "blocked") == []
+        assert labels_for(target_only_summary, "blocked") == [
+            "critical flows full run"
+        ]
         assert labels_for(target_only_summary, "accepted") == [
-            "LPM all-method checkout",
-            "critical flows full run",
+            "LPM all-method checkout"
         ]
 
         malformed_token_dir = copy_evidence("malformed-target-only-token-pass")
@@ -1654,6 +1654,7 @@ exit 3
             ),
         )
         assert labels_for(payout_summary, "blocked") == [
+            "critical flows full run",
             "payout evidence (reference)",
             "payout evidence (target)",
         ]
@@ -1664,6 +1665,7 @@ exit 3
             (*default_labels, "A4aq accumulated admin/checkout/perf evidence"),
         )
         assert labels_for(a4aq_summary, "blocked") == [
+            "critical flows full run",
             "A4aq accumulated admin/checkout/perf evidence"
         ]
 
@@ -1695,8 +1697,8 @@ def test_manual_lpm_acknowledgement_requires_structured_account_blocker_codes() 
     assert "validate_manual_completion" in classifier_source
     assert "validate_manual_pair" in classifier_source
     assert "any(method in blocker for method in accepted_lpm_methods)" not in classifier_source
-    assert 'payload.get("context_sha256") != context.get("context_sha256")' in classifier_source
-    assert 'payload.get("aggregate_run_id") != context.get("aggregate_run_id")' in classifier_source
+    assert '"critical flows full run"' not in classifier_source
+    assert "accept_critical_flows" not in classifier_source
 
 
 def test_perf_surface_gate_emits_sanitized_money_query_groups() -> None:
@@ -2394,42 +2396,49 @@ fi
         assert "plugin-active-settings-gate.sh|" not in invocation_log
 
 
-def test_cleanup_exit_70_circuit_breaker_skips_every_later_gate(tmp_path: Path) -> None:
+def test_cleanup_exit_70_skips_every_later_gate(tmp_path: Path) -> None:
     source = SCRIPT.read_text(encoding="utf-8")
     gate_runtime = source[
         source.index("PASS=(); FAILED=(); BLOCKED=(); ACKNOWLEDGED=()") : source.index(
             "gate_with_admin_credentials()"
         )
     ]
-    marker = tmp_path / "later-gate-started"
-    probe = tmp_path / "probe.sh"
-    probe.write_text(
-        f"""#!/usr/bin/env bash
+    for index, (cleanup_label, later_label) in enumerate(
+        (
+            ("converted-currency charge reconciliation", "bundle size capture (reference)"),
+            ("A4aq accumulated admin/checkout/perf evidence", "critical flows inventory"),
+            ("SC-04 context-bound saved-card browser evidence", "critical flows agent result synthesis"),
+        )
+    ):
+        marker = tmp_path / f"later-gate-started-{index}"
+        probe = tmp_path / f"probe-{index}.sh"
+        probe.write_text(
+            f"""#!/usr/bin/env bash
 set -uo pipefail
 SELF_DIR={shlex.quote(str(SCRIPT.parent))}
 {gate_runtime}
-gate "plugin-active settings screen (target)" bash -c 'exit 70'
-gate "token continuity cutover" bash -c {shlex.quote(f'printf started > {marker}')}
+gate {shlex.quote(cleanup_label)} bash -c 'exit 70'
+gate {shlex.quote(later_label)} bash -c {shlex.quote(f'printf started > {marker}')}
 exit 0
 """,
-        encoding="utf-8",
-    )
-    probe.chmod(0o755)
+            encoding="utf-8",
+        )
+        probe.chmod(0o755)
 
-    result = subprocess.run(
-        [str(probe)],
-        cwd=REPO,
-        env={**os.environ, "TMPDIR": str(tmp_path)},
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
+        result = subprocess.run(
+            [str(probe)],
+            cwd=REPO,
+            env={**os.environ, "TMPDIR": str(tmp_path)},
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
 
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert "safety stop armed: cleanup failed in plugin-active settings screen (target)" in result.stdout
-    assert "token continuity cutover" in result.stdout
-    assert not marker.exists()
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert f"safety stop armed: cleanup failed in {cleanup_label}" in result.stdout
+        assert later_label in result.stdout
+        assert not marker.exists()
 
 def test_full_evidence_blocks_browser_gates_without_playwriter_session() -> None:
     with tempfile.TemporaryDirectory(prefix="verify-final-evidence-no-browser-") as tmp:
