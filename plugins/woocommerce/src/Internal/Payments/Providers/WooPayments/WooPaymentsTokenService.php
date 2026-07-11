@@ -250,6 +250,29 @@ class WooPaymentsTokenService {
 	 * @return array<string,mixed>
 	 */
 	public function handle_woocommerce_payment_methods_list_item( array $item, $payment_token ): array {
+		if ( $this->is_supported_native_woopayments_token( $payment_token ) ) {
+			if ( $payment_token instanceof WooPaymentsSepaToken ) {
+				$item['method']['last4'] = $payment_token->get_last4();
+				$item['method']['brand'] = esc_html__( 'SEPA IBAN', 'woocommerce' );
+
+				return $item;
+			}
+
+			if ( $payment_token instanceof WooPaymentsLinkToken ) {
+				$item['method']['last4'] = $payment_token->get_redacted_email();
+				$item['method']['brand'] = esc_html__( 'Stripe Link email', 'woocommerce' );
+
+				return $item;
+			}
+
+			if ( $payment_token instanceof WooPaymentsAmazonPayToken ) {
+				$item['method']['last4'] = $payment_token->get_email();
+				$item['method']['brand'] = esc_html__( 'Amazon Pay', 'woocommerce' );
+
+				return $item;
+			}
+		}
+
 		if ( ! $this->is_native_woopayments_card_token( $payment_token ) ) {
 			return $item;
 		}

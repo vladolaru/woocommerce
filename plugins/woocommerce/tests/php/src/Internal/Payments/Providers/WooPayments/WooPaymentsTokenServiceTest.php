@@ -573,6 +573,84 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should format native WooPayments non-card tokens in saved payment method lists.
+	 * @dataProvider non_card_saved_payment_method_list_item_data
+	 *
+	 * @param string                           $payment_method_id Provider payment method ID.
+	 * @param array<string,mixed>              $payment_method    Provider payment method details.
+	 * @param array{brand:string,last4:string} $expected_method   Expected saved payment method fields.
+	 */
+	public function test_formats_non_card_tokens_in_saved_payment_method_lists( string $payment_method_id, array $payment_method, array $expected_method ): void {
+		$user_id = $this->factory()->user->create();
+		$sut     = $this->create_service(
+			array(
+				$payment_method_id => $payment_method,
+			)
+		);
+		$token   = $sut->get_or_create_token_for_user( $payment_method_id, $user_id );
+
+		$this->assertNotNull( $token, 'The payment method fixture should create a supported native WooPayments token.' );
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered saved-method list filter.
+		$result = apply_filters( 'woocommerce_payment_methods_list_item', array( 'method' => array() ), $token );
+
+		$this->assertSame( $expected_method['brand'], $result['method']['brand'] );
+		$this->assertSame( $expected_method['last4'], $result['method']['last4'] );
+	}
+
+	/**
+	 * Data provider for non-card saved payment method list items.
+	 *
+	 * @return array<string,array{string,array<string,mixed>,array{brand:string,last4:string}}>
+	 */
+	public function non_card_saved_payment_method_list_item_data(): array {
+		return array(
+			'SEPA token'       => array(
+				'pm_sepa',
+				array(
+					'id'         => 'pm_sepa',
+					'type'       => 'sepa_debit',
+					'sepa_debit' => array(
+						'last4' => '6789',
+					),
+				),
+				array(
+					'brand' => 'SEPA IBAN',
+					'last4' => '6789',
+				),
+			),
+			'Link token'       => array(
+				'pm_link',
+				array(
+					'id'   => 'pm_link',
+					'type' => 'link',
+					'link' => array(
+						'email' => 'buyer@example.com',
+					),
+				),
+				array(
+					'brand' => 'Stripe Link email',
+					'last4' => '***uyer@example.com',
+				),
+			),
+			'Amazon Pay token' => array(
+				'pm_amazon',
+				array(
+					'id'              => 'pm_amazon',
+					'type'            => 'amazon_pay',
+					'billing_details' => array(
+						'email' => 'buyer@example.com',
+					),
+				),
+				array(
+					'brand' => 'Amazon Pay',
+					'last4' => '***uyer@example.com',
+				),
+			),
+		);
+	}
+
+	/**
 	 * @testdox Should preserve last-attached active-token ordering on an order.
 	 */
 	public function test_attaches_token_to_order(): void {
