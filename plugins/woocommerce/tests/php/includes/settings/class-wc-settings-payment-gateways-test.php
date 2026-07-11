@@ -207,6 +207,30 @@ class WC_Settings_Payment_Gateways_Test extends WC_Settings_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should emit WooPayments gateway notices inside the native React settings section.
+	 */
+	public function test_woopayments_section_outputs_gateway_admin_notices() {
+		global $current_section;
+		$current_section = WC_Settings_Payment_Gateways::WOOPAYMENTS_SECTION_NAME;
+		$this->set_runtime_owner( NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+		$notice_callback = static function () {
+			echo '<div id="native-woopayments-notice">Notice</div>';
+		};
+		add_action( 'woocommerce_woocommerce_payments_admin_notices', $notice_callback );
+
+		try {
+			$sut = new WC_Settings_Payment_Gateways();
+			ob_start();
+			$sut->output();
+			$output = ob_get_clean();
+
+			$this->assertStringContainsString( 'id="native-woopayments-notice"', $output );
+		} finally {
+			remove_action( 'woocommerce_woocommerce_payments_admin_notices', $notice_callback );
+		}
+	}
+
+	/**
 	 * @testdox Should preserve classic WooPayments settings field extensions.
 	 */
 	public function test_woopayments_section_preserves_classic_settings_field_extensions() {

@@ -21,13 +21,6 @@ use WC_Order_Refund;
 class WooPaymentsRefundEventHandler {
 
 	/**
-	 * Prefix for refund order-note structural dedupe markers.
-	 *
-	 * @var string
-	 */
-	private const REFUND_NOTE_MARKER_PREFIX = '_wc_native_woopayments_refund_note_';
-
-	/**
 	 * Stripe zero-decimal currencies.
 	 *
 	 * @var string[]
@@ -72,16 +65,25 @@ class WooPaymentsRefundEventHandler {
 	private OrderPaymentStore $order_payment_store;
 
 	/**
+	 * WooPayments persistence profile.
+	 *
+	 * @var WooPaymentsPersistenceProfile
+	 */
+	private WooPaymentsPersistenceProfile $persistence_profile;
+
+	/**
 	 * Initialize the handler.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsLegacyRuntime $legacy_runtime      WooPayments legacy runtime.
-	 * @param OrderPaymentStore        $order_payment_store Order payment store.
+	 * @param WooPaymentsLegacyRuntime      $legacy_runtime      WooPayments legacy runtime.
+	 * @param OrderPaymentStore             $order_payment_store Order payment store.
+	 * @param WooPaymentsPersistenceProfile $persistence_profile WooPayments persistence profile.
 	 */
-	final public function init( WooPaymentsLegacyRuntime $legacy_runtime, OrderPaymentStore $order_payment_store ): void {
+	final public function init( WooPaymentsLegacyRuntime $legacy_runtime, OrderPaymentStore $order_payment_store, WooPaymentsPersistenceProfile $persistence_profile ): void {
 		$this->legacy_runtime      = $legacy_runtime;
 		$this->order_payment_store = $order_payment_store;
+		$this->persistence_profile = $persistence_profile;
 	}
 
 	/**
@@ -169,7 +171,7 @@ class WooPaymentsRefundEventHandler {
 
 			$this->add_note_and_metadata_for_created_refund( $order, $wc_refund, $refund_id, $balance_txn_id, $is_pending_refund );
 		} finally {
-			$this->order_payment_store->unlock_order_payment( $order );
+			$this->order_payment_store->unlock_order_payment( $order, $this->persistence_profile );
 		}
 	}
 
@@ -195,7 +197,7 @@ class WooPaymentsRefundEventHandler {
 				try {
 					$this->handle_failed_refund( $order, $refund_id, $amount, $currency, $wc_refund, false, $this->get_optional_string( $refund, 'failure_reason' ) );
 				} finally {
-					$this->order_payment_store->unlock_order_payment( $order );
+					$this->order_payment_store->unlock_order_payment( $order, $this->persistence_profile );
 				}
 				return;
 			case 'canceled':
@@ -204,7 +206,7 @@ class WooPaymentsRefundEventHandler {
 				try {
 					$this->handle_failed_refund( $order, $refund_id, $amount, $currency, $wc_refund, true );
 				} finally {
-					$this->order_payment_store->unlock_order_payment( $order );
+					$this->order_payment_store->unlock_order_payment( $order, $this->persistence_profile );
 				}
 				return;
 			case 'succeeded':
@@ -213,7 +215,7 @@ class WooPaymentsRefundEventHandler {
 					try {
 						$this->add_note_and_metadata_for_created_refund( $order, $wc_refund, $refund_id, $balance_txn_id, false );
 					} finally {
-						$this->order_payment_store->unlock_order_payment( $order );
+						$this->order_payment_store->unlock_order_payment( $order, $this->persistence_profile );
 					}
 				}
 				return;
@@ -337,38 +339,14 @@ class WooPaymentsRefundEventHandler {
 	 * @return string
 	 */
 	private function get_created_refund_note( WC_Order $order, WC_Order_Refund $wc_refund, string $refund_id, bool $is_pending ): string {
-		$formatted_amount = $this->format_refund_amount( (float) $wc_refund->get_amount(), $wc_refund->get_currency(), $order );
-		$status_text      = $is_pending
-			? sprintf(
-				'<a href="https://woocommerce.com/document/woopayments/managing-money/#pending-refunds" target="_blank" rel="noopener noreferrer">%s</a>',
-				esc_html__( 'is pending', 'woocommerce' )
-			)
-			: esc_html__( 'was successfully processed', 'woocommerce' );
-		$refund_id_markup = '<code>' . esc_html( $refund_id ) . '</code>';
-		$refund_reason    = $wc_refund->get_reason();
-
-		if ( '' === $refund_reason ) {
-			$note = sprintf(
-				/* translators: %1$s: refund amount, %2$s: WooPayments, %3$s: provider refund ID, %4$s: refund status. */
-				__( 'A refund of %1$s %4$s using %2$s (%3$s).', 'woocommerce' ),
-				$formatted_amount,
-				'WooPayments',
-				$refund_id_markup,
-				$status_text
-			);
-		} else {
-			$note = sprintf(
-				/* translators: %1$s: refund amount, %2$s: WooPayments, %3$s: refund reason, %4$s: provider refund ID, %5$s: refund status. */
-				__( 'A refund of %1$s %5$s using %2$s. Reason: %3$s. (%4$s)', 'woocommerce' ),
-				$formatted_amount,
-				'WooPayments',
-				esc_html( $refund_reason ),
-				$refund_id_markup,
-				$status_text
-			);
-		}
-
-		return wp_kses_post( $note );
+		return wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_created_refund_note(
+			$order,
+			(float) $wc_refund->get_amount(),
+			$wc_refund->get_currency(),
+			$refund_id,
+			$wc_refund->get_reason(),
+			$is_pending
+		);
 	}
 
 	/**
@@ -616,37 +594,13 @@ class WooPaymentsRefundEventHandler {
 	 */
 	private function claim_refund_lock( WC_Order $order, string $refund_id ): void {
 		$reference = 'refund_webhook_' . $refund_id;
-		if ( ! $this->order_payment_store->claim_order_payment_lock( $order, $reference ) ) {
+		if ( ! $this->order_payment_store->claim_order_payment_lock( $order, $this->persistence_profile, $reference ) ) {
 			throw new RuntimeException( esc_html( sprintf( 'Could not claim WooPayments refund webhook lock for order %1$d and refund %2$s.', $order->get_id(), $refund_id ) ) );
 		}
 	}
 
 	/**
-	 * Tell whether an order already has a note.
-	 *
-	 * @param WC_Order $order Order object.
-	 * @param string   $note  Note content.
-	 * @return bool
-	 */
-	private function order_note_exists( WC_Order $order, string $note ): bool {
-		$notes = wc_get_order_notes(
-			array(
-				'order_id' => $order->get_id(),
-				'type'     => 'any',
-			)
-		);
-
-		foreach ( $notes as $order_note ) {
-			if ( $note === $order_note->content ) {
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	/**
-	 * Add a refund order note only when the refund/note-type marker is not already present.
+	 * Add a refund order note only when its private identity is not already present.
 	 *
 	 * @param WC_Order $order     Order object.
 	 * @param string   $note      Note content.
@@ -654,30 +608,11 @@ class WooPaymentsRefundEventHandler {
 	 * @param string   $note_type Stable note type.
 	 */
 	private function add_refund_order_note_once( WC_Order $order, string $note, string $refund_id, string $note_type ): void {
-		$marker_key = $this->get_refund_note_marker_key( $refund_id, $note_type );
-
-		if ( 'yes' === $order->get_meta( $marker_key, true ) ) {
-			return;
-		}
-
-		if ( $this->order_note_exists( $order, $note ) ) {
-			$order->update_meta_data( $marker_key, 'yes' );
-			return;
-		}
-
-		$order->update_meta_data( $marker_key, 'yes' );
-		$order->add_order_note( $note );
-	}
-
-	/**
-	 * Get the structural dedupe marker key for a refund note.
-	 *
-	 * @param string $refund_id Provider refund ID.
-	 * @param string $note_type Stable note type.
-	 * @return string
-	 */
-	private function get_refund_note_marker_key( string $refund_id, string $note_type ): string {
-		return self::REFUND_NOTE_MARKER_PREFIX . md5( $refund_id . '|' . $note_type );
+		wc_get_container()->get( WooPaymentsOrderNoteService::class )->add_note_once(
+			$order,
+			$note,
+			'refund:' . $refund_id . ':' . $note_type
+		);
 	}
 
 	/**

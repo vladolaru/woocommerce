@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use WC_Order;
 use WC_Payment_Token;
 use WC_Payment_Tokens;
@@ -38,13 +39,29 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	private static ?self $instance = null;
 
 	/**
+	 * WooPayments token service.
+	 *
+	 * @var WooPaymentsTokenService
+	 */
+	private WooPaymentsTokenService $token_service;
+
+	/**
+	 * Initialize the handler.
+	 *
+	 * @param WooPaymentsTokenService $token_service WooPayments token service.
+	 */
+	public function __construct( WooPaymentsTokenService $token_service ) {
+		$this->token_service = $token_service;
+	}
+
+	/**
 	 * Get the shared handler instance.
 	 *
 	 * @return self
 	 */
 	public static function instance(): self {
 		if ( null === self::$instance ) {
-			self::$instance = new self();
+			self::$instance = new self( wc_get_container()->get( WooPaymentsTokenService::class ) );
 		}
 
 		return self::$instance;
@@ -86,18 +103,20 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 			return $payment_meta;
 		}
 
-		$payment_meta[ OrderPaymentStore::GATEWAY_ID ] = $this->get_payment_meta( $subscription );
-		add_action(
-			sprintf(
-				'woocommerce_subscription_payment_meta_input_%s_%s_%s',
-				OrderPaymentStore::GATEWAY_ID,
-				self::PAYMENT_METHOD_META_TABLE,
-				self::PAYMENT_METHOD_META_KEY
-			),
-			array( $this, 'render_custom_payment_meta_input' ),
-			10,
-			3
-		);
+		foreach ( WooPaymentsSubscriptionMethodPolicy::get_reusable_gateway_ids() as $gateway_id ) {
+			$payment_meta[ $gateway_id ] = $this->get_payment_meta( $subscription );
+			add_action(
+				sprintf(
+					'woocommerce_subscription_payment_meta_input_%s_%s_%s',
+					$gateway_id,
+					self::PAYMENT_METHOD_META_TABLE,
+					self::PAYMENT_METHOD_META_KEY
+				),
+				array( $this, 'render_custom_payment_meta_input' ),
+				10,
+				3
+			);
+		}
 
 		return $payment_meta;
 	}
@@ -114,7 +133,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	 * @throws \InvalidArgumentException When the subscription or the selected saved payment method is invalid.
 	 */
 	public function validate_subscription_payment_meta( string $payment_gateway_id, array $payment_meta, $subscription ): void {
-		if ( OrderPaymentStore::GATEWAY_ID !== $payment_gateway_id ) {
+		if ( ! WooPaymentsSubscriptionMethodPolicy::is_reusable_gateway_id( $payment_gateway_id ) ) {
 			return;
 		}
 
@@ -176,8 +195,8 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 			! is_array( $payment_meta ) ||
 			! $order instanceof WC_Order ||
 			! $subscription instanceof WC_Order ||
-			OrderPaymentStore::GATEWAY_ID !== $order->get_payment_method() ||
-			OrderPaymentStore::GATEWAY_ID !== $subscription->get_payment_method()
+			! WooPaymentsSubscriptionMethodPolicy::is_reusable_gateway_id( $order->get_payment_method() ) ||
+			! WooPaymentsSubscriptionMethodPolicy::is_reusable_gateway_id( $subscription->get_payment_method() )
 		) {
 			return $payment_meta;
 		}
@@ -282,11 +301,12 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	 * @return bool
 	 */
 	public function update_subscription_token( bool $updated, $subscription, WC_Payment_Token $new_token ): bool {
-		if ( OrderPaymentStore::GATEWAY_ID !== $new_token->get_gateway_id() || ! $subscription instanceof WC_Order ) {
+		$token_gateway_id = $new_token->get_gateway_id();
+		if ( ! WooPaymentsSubscriptionMethodPolicy::is_reusable_gateway_id( $token_gateway_id ) || ! $subscription instanceof WC_Order ) {
 			return $updated;
 		}
 
-		$subscription->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$subscription->set_payment_method( $token_gateway_id );
 		$this->apply_token_to_subscription( $subscription, $new_token );
 
 		return true;
@@ -330,7 +350,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	 * @return string
 	 */
 	public function get_specific_old_payment_method_title( string $old_payment_method_title, string $old_payment_method, $subscription ): string {
-		if ( ! $this->is_native_woopayments_gateway_id( $old_payment_method ) || ! $subscription instanceof WC_Order ) {
+		if ( ! WooPaymentsSubscriptionMethodPolicy::is_reusable_gateway_id( $old_payment_method ) || ! $subscription instanceof WC_Order ) {
 			return $old_payment_method_title;
 		}
 
@@ -355,7 +375,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	 * @return string
 	 */
 	public function get_specific_new_payment_method_title( string $new_payment_method_title, string $new_payment_method, $subscription ): string {
-		if ( ! $this->is_native_woopayments_gateway_id( $new_payment_method ) || ! $subscription instanceof WC_Order ) {
+		if ( ! WooPaymentsSubscriptionMethodPolicy::is_reusable_gateway_id( $new_payment_method ) || ! $subscription instanceof WC_Order ) {
 			return $new_payment_method_title;
 		}
 
@@ -376,12 +396,17 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 			wp_send_json_error( array( 'message' => __( 'You do not have permission to perform this action.', 'woocommerce' ) ), 403 );
 		}
 
-		$user_id = isset( $_POST['user_id'] ) ? absint( $_POST['user_id'] ) : 0; // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		$user_id    = isset( $_POST['user_id'] ) ? absint( $_POST['user_id'] ) : 0; // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		$gateway_id = isset( $_POST['gateway_id'] ) ? sanitize_text_field( wp_unslash( $_POST['gateway_id'] ) ) : OrderPaymentStore::GATEWAY_ID; // phpcs:ignore WordPress.Security.NonceVerification.Missing
 		if ( 0 >= $user_id || ! get_user_by( 'id', $user_id ) ) {
 			wp_send_json_success( array( 'tokens' => array() ) );
 		}
 
-		wp_send_json_success( array( 'tokens' => $this->get_user_formatted_tokens_array( $user_id ) ) );
+		if ( ! WooPaymentsSubscriptionMethodPolicy::is_reusable_gateway_id( $gateway_id ) ) {
+			$gateway_id = OrderPaymentStore::GATEWAY_ID;
+		}
+
+		wp_send_json_success( array( 'tokens' => $this->get_user_formatted_tokens_array( $user_id, $gateway_id ) ) );
 	}
 
 	/**
@@ -397,10 +422,11 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	public function render_custom_payment_meta_input( $subscription, string $field_id, string $field_value ): void {
 		$field_value = ctype_digit( $field_value ) ? absint( $field_value ) : 0;
 		$user_id     = $subscription instanceof WC_Order ? $subscription->get_user_id() : 0;
+		$gateway_id  = $this->get_gateway_id_from_payment_meta_field( $field_id );
 		$options     = array();
 		$selected    = 0;
 		$disabled    = false;
-		$tokens      = 0 < $user_id ? $this->get_user_formatted_tokens_array( $user_id ) : array();
+		$tokens      = 0 < $user_id ? $this->get_user_formatted_tokens_array( $user_id, $gateway_id ) : array();
 
 		foreach ( $tokens as $token ) {
 			$token_id             = (int) $token['tokenId'];
@@ -421,7 +447,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 			'tokens'                => $tokens,
 			'ajaxUrl'               => admin_url( 'admin-ajax.php' ),
 			'nonce'                 => wp_create_nonce( 'wcpay-subscription-edit' ),
-			'gatewayId'             => OrderPaymentStore::GATEWAY_ID,
+			'gatewayId'             => $gateway_id,
 			'noPaymentMethodsLabel' => __( 'No payment methods found for customer', 'woocommerce' ),
 		);
 		$selector_data = wp_json_encode( $prepared_data );
@@ -440,6 +466,20 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 			</select>
 		</span>
 		<?php
+	}
+
+	/**
+	 * Get the reusable gateway ID represented by a WCS payment-meta field ID.
+	 *
+	 * @param string $field_id Field ID.
+	 * @return string
+	 */
+	private function get_gateway_id_from_payment_meta_field( string $field_id ): string {
+		if ( preg_match( '/\[([^\]]+)\]/', $field_id, $matches ) && WooPaymentsSubscriptionMethodPolicy::is_reusable_gateway_id( $matches[1] ) ) {
+			return $matches[1];
+		}
+
+		return OrderPaymentStore::GATEWAY_ID;
 	}
 
 	/**
@@ -471,7 +511,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 		$token_ids = array_map( 'absint', $order->get_payment_tokens() );
 		foreach ( array_reverse( $token_ids ) as $token_id ) {
 			$token = WC_Payment_Tokens::get( $token_id );
-			if ( $token instanceof WC_Payment_Token && OrderPaymentStore::GATEWAY_ID === $token->get_gateway_id() ) {
+			if ( $token instanceof WC_Payment_Token && WooPaymentsSubscriptionMethodPolicy::is_reusable_gateway_id( $token->get_gateway_id() ) ) {
 				return $token;
 			}
 		}
@@ -500,7 +540,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	 */
 	private function is_valid_subscription_token( $token, WC_Order $subscription ): bool {
 		return $token instanceof WC_Payment_Token
-			&& OrderPaymentStore::GATEWAY_ID === $token->get_gateway_id()
+			&& WooPaymentsSubscriptionMethodPolicy::is_reusable_gateway_id( $token->get_gateway_id() )
 			&& (int) $subscription->get_user_id() === (int) $token->get_user_id();
 	}
 
@@ -511,17 +551,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	 * @return bool
 	 */
 	private function should_handle_subscription( $subscription ): bool {
-		return $subscription instanceof WC_Order && $this->is_native_woopayments_gateway_id( $subscription->get_payment_method() );
-	}
-
-	/**
-	 * Tell whether a gateway ID belongs to native WooPayments.
-	 *
-	 * @param string $gateway_id Gateway ID.
-	 * @return bool
-	 */
-	private function is_native_woopayments_gateway_id( string $gateway_id ): bool {
-		return OrderPaymentStore::GATEWAY_ID === $gateway_id || 0 === strpos( $gateway_id, OrderPaymentStore::GATEWAY_ID_PREFIX );
+		return $subscription instanceof WC_Order && WooPaymentsSubscriptionMethodPolicy::is_reusable_gateway_id( $subscription->get_payment_method() );
 	}
 
 	/**
@@ -573,7 +603,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	 * @return string
 	 */
 	private function get_payment_method_title_from_token( $token, string $fallback ): string {
-		if ( ! $token instanceof WC_Payment_Token || ! $this->is_native_woopayments_gateway_id( $token->get_gateway_id() ) ) {
+		if ( ! $token instanceof WC_Payment_Token || ! WooPaymentsSubscriptionMethodPolicy::is_reusable_gateway_id( $token->get_gateway_id() ) ) {
 			return $fallback;
 		}
 
@@ -588,10 +618,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	 * @return void
 	 */
 	private function apply_token_to_subscription( WC_Order $subscription, WC_Payment_Token $token ): void {
-		$token_ids = array_map( 'absint', $subscription->get_payment_tokens() );
-		if ( ! in_array( $token->get_id(), $token_ids, true ) ) {
-			$subscription->add_payment_token( $token );
-		}
+		$this->token_service->attach_token_to_order( $subscription, $token );
 
 		$subscription->update_meta_data( '_payment_method_id', (string) $token->get_token() );
 
@@ -625,11 +652,12 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	/**
 	 * Get formatted native WooPayments tokens for the admin selector.
 	 *
-	 * @param int $user_id User ID.
+	 * @param int    $user_id    User ID.
+	 * @param string $gateway_id Reusable WooPayments gateway ID.
 	 * @return array<int,array<string,mixed>>
 	 */
-	private function get_user_formatted_tokens_array( int $user_id ): array {
-		$tokens           = WC_Payment_Tokens::get_customer_tokens( $user_id, OrderPaymentStore::GATEWAY_ID );
+	private function get_user_formatted_tokens_array( int $user_id, string $gateway_id ): array {
+		$tokens           = WC_Payment_Tokens::get_customer_tokens( $user_id, $gateway_id );
 		$formatted_tokens = array();
 
 		foreach ( $tokens as $token ) {

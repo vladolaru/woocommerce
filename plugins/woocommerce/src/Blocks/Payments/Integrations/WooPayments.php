@@ -140,7 +140,8 @@ final class WooPayments extends AbstractPaymentMethodType {
 	public function is_active() {
 		return $this->arbiter->should_native_register() &&
 			$this->provider->can_process_payments() &&
-			$this->checkout_bridge->should_expose_checkout_surface();
+			$this->checkout_bridge->should_expose_checkout_surface() &&
+			( null === $this->payment_gateway || $this->payment_gateway->is_available() );
 	}
 
 	/**

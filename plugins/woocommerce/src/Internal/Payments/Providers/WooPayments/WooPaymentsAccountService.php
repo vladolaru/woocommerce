@@ -21,6 +21,60 @@ use RuntimeException;
  */
 class WooPaymentsAccountService implements RegisterHooksInterface {
 
+	/**
+	 * Countries where WooPayments platform accounts are supported, in extension order.
+	 *
+	 * @var string[]
+	 */
+	private const SUPPORTED_COUNTRY_CODES = array(
+		'AE',
+		'AT',
+		'AU',
+		'BE',
+		'BG',
+		'CA',
+		'CH',
+		'CY',
+		'CZ',
+		'DE',
+		'DK',
+		'EE',
+		'FI',
+		'ES',
+		'FR',
+		'HR',
+		'JP',
+		'LU',
+		'GB',
+		'GR',
+		'HK',
+		'HU',
+		'IE',
+		'IT',
+		'LT',
+		'LV',
+		'MT',
+		'NL',
+		'NO',
+		'NZ',
+		'PL',
+		'PT',
+		'RO',
+		'SE',
+		'SI',
+		'SK',
+		'SG',
+		'US',
+		'PR',
+	);
+
+	/**
+	 * Filters the native WooPayments fraud-services config.
+	 *
+	 * @var string
+	 */
+	public const FILTER_FRAUD_SERVICES_CONFIG = 'woocommerce_woopayments_native_fraud_services_config';
+
 	private const ACCOUNT_OPTION = 'wcpay_account_data';
 
 	private const SETTINGS_OPTION = 'woocommerce_woocommerce_payments_settings';
@@ -95,6 +149,13 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	private LegacyProxy $legacy_proxy;
 
 	/**
+	 * Split gateway settings repository.
+	 *
+	 * @var WooPaymentsGatewaySettingsSynchronizer|null
+	 */
+	private ?WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer = null;
+
+	/**
 	 * In-request account cache contents.
 	 *
 	 * @var array<string,mixed>|false
@@ -120,10 +181,12 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param LegacyProxy $legacy_proxy Legacy proxy.
+	 * @param LegacyProxy                                 $legacy_proxy                  Legacy proxy.
+	 * @param WooPaymentsGatewaySettingsSynchronizer|null $gateway_settings_synchronizer Optional split settings repository.
 	 */
-	final public function init( LegacyProxy $legacy_proxy ): void {
-		$this->legacy_proxy = $legacy_proxy;
+	final public function init( LegacyProxy $legacy_proxy, ?WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer = null ): void {
+		$this->legacy_proxy                  = $legacy_proxy;
+		$this->gateway_settings_synchronizer = $gateway_settings_synchronizer;
 	}
 
 	/**
@@ -891,6 +954,48 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Get countries where WooPayments platform accounts are supported.
+	 *
+	 * @return array<string,string> Country labels keyed by ISO country code.
+	 */
+	public function get_supported_countries(): array {
+		$all_countries       = WC()->countries->get_countries();
+		$supported_countries = array();
+
+		foreach ( self::SUPPORTED_COUNTRY_CODES as $country_code ) {
+			if ( isset( $all_countries[ $country_code ] ) && is_string( $all_countries[ $country_code ] ) ) {
+				$supported_countries[ $country_code ] = $all_countries[ $country_code ];
+			}
+		}
+
+		return $supported_countries;
+	}
+
+	/**
+	 * Get fraud-services config from the preserved account payload.
+	 *
+	 * @since 11.0.0
+	 * @return array<string,mixed>
+	 */
+	public function get_fraud_services_config(): array {
+		$account_data = $this->get_cached_account_data();
+		$config       = isset( $account_data['fraud_services'] ) && is_array( $account_data['fraud_services'] )
+			? $account_data['fraud_services']
+			: array();
+
+		/**
+		 * Filters native WooPayments fraud-services config.
+		 *
+		 * @since 11.0.0
+		 *
+		 * @param array<string,mixed> $config Fraud-services config.
+		 */
+		$config = apply_filters( self::FILTER_FRAUD_SERVICES_CONFIG, $config );
+
+		return is_array( $config ) ? $config : array();
+	}
+
+	/**
 	 * Tell whether WooPayments is in test mode.
 	 *
 	 * @return bool
@@ -943,6 +1048,43 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 */
 	public function is_gateway_enabled(): bool {
 		return 'yes' === (string) $this->get_gateway_setting( 'enabled', 'no' );
+	}
+
+	/**
+	 * Tell whether Apple Pay or Google Pay is enabled in split gateway settings.
+	 *
+	 * @return bool
+	 */
+	public function is_payment_request_enabled(): bool {
+		if ( null === $this->gateway_settings_synchronizer ) {
+			$this->gateway_settings_synchronizer = wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class );
+		}
+
+		return $this->gateway_settings_synchronizer->is_payment_request_enabled( $this->get_gateway_settings() );
+	}
+
+	/**
+	 * Tell whether one split payment-request gateway is enabled.
+	 *
+	 * @param string $method_id Apple Pay or Google Pay method ID.
+	 * @return bool
+	 */
+	public function is_payment_request_method_enabled( string $method_id ): bool {
+		if ( null === $this->gateway_settings_synchronizer ) {
+			$this->gateway_settings_synchronizer = wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class );
+		}
+
+		return $this->gateway_settings_synchronizer->is_payment_request_method_enabled( $method_id );
+	}
+
+	/**
+	 * Tell whether WooPayments onboarding was disabled by the platform.
+	 *
+	 * @since 11.0.0
+	 * @return bool
+	 */
+	public function is_onboarding_disabled(): bool {
+		return (bool) $this->legacy_proxy->call_function( 'get_transient', self::ONBOARDING_DISABLED_TRANSIENT );
 	}
 
 	/**

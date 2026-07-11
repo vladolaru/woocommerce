@@ -11,9 +11,12 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAjaxController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
 use WC_Order;
+use WC_Payment_Token;
 use WC_Payment_Token_CC;
 use WC_Payment_Tokens;
 use WC_Unit_Test_Case;
@@ -47,6 +50,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		remove_all_actions( 'wp_ajax_create_setup_intent' );
 		remove_all_filters( 'woocommerce_native_woopayments_is_recurring_payment' );
 		remove_all_filters( 'woocommerce_native_woopayments_related_subscriptions_for_order' );
+		remove_all_filters( 'woocommerce_payment_token_class' );
 		if ( class_exists( 'WC_Subscriptions_Change_Payment_Gateway', false ) && method_exists( 'WC_Subscriptions_Change_Payment_Gateway', 'reset' ) ) {
 			\WC_Subscriptions_Change_Payment_Gateway::reset();
 		}
@@ -226,14 +230,14 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'test', $order->get_meta( '_wcpay_mode', true ) );
 		$this->assertSame( '1.75', $order->get_meta( '_wcpay_transaction_fee', true ) );
 		$this->assertSame( '48.25', $order->get_meta( '_wcpay_net', true ) );
-		$this->assertSame( 'allow', $order->get_meta( '_wcpay_fraud_outcome_status', true ) );
-		$this->assertSame( 'allow', $order->get_meta( '_wcpay_fraud_meta_box_type', true ) );
+		$this->assertFalse( $order->meta_exists( '_wcpay_fraud_outcome_status' ) );
+		$this->assertFalse( $order->meta_exists( '_wcpay_fraud_meta_box_type' ) );
 		$this->assertSame( 'Visa credit card', $order->get_payment_method_title() );
 		$this->assertSame( '4242', $order->get_meta( 'last4', true ) );
 		$this->assertSame( 'visa', $order->get_meta( '_card_brand', true ) );
 		$this->assertStringContainsString( '"last4":"4242"', (string) $order->get_meta( '_wcpay_payment_method_details', true ) );
-		$this->assert_order_has_note_containing( $order, 'A test payment of' );
-		$this->assert_order_has_note_containing( $order, 'was processed using WooPayments in <strong>test mode</strong>' );
+		$this->assert_order_has_note_containing( $order, 'A payment of' );
+		$this->assert_order_has_note_containing( $order, 'was <strong>successfully charged</strong> using WooPayments' );
 		$this->assert_order_has_note_containing( $order, 'pi_native' );
 		$this->assert_order_has_note_containing( $order, 'page=wc-admin' );
 		$this->assert_order_has_note_containing( $order, 'id=pi_native' );
@@ -308,6 +312,8 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 200, $response['status_code'] );
 		$this->assertSame( 'Klarna', $order->get_payment_method_title() );
 		$this->assertStringContainsString( '"type":"klarna"', (string) $order->get_meta( '_wcpay_payment_method_details', true ) );
+		$this->assertFalse( $order->meta_exists( '_wcpay_fraud_outcome_status' ) );
+		$this->assertSame( 'not_card', $order->get_meta( '_wcpay_fraud_meta_box_type', true ) );
 	}
 
 	/**
@@ -718,6 +724,73 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Order-status callback should preserve the payment-started surface for customer-action intents.
+	 */
+	public function test_update_order_status_preserves_payment_started_surface_for_customer_action_intent(): void {
+		$order = $this->create_woopayments_order( '65.00' );
+		$order->update_meta_data( '_intent_id', 'pi_requires_action' );
+		$order->save();
+
+		$api_client = new class() extends WooPaymentsApiClient {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Retrieve a PaymentIntent.
+			 *
+			 * @param string $intent_id PaymentIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_payment_intention( string $intent_id ): array {
+				if ( 'pi_requires_action' !== $intent_id ) {
+					throw new \RuntimeException( 'Unexpected payment intent ID.' );
+				}
+
+				return array(
+					'id'                   => 'pi_requires_action',
+					'status'               => 'requires_action',
+					'currency'             => 'usd',
+					'customer'             => 'cus_native',
+					'payment_method'       => 'pm_native',
+					'payment_method_types' => array( 'wechat_pay' ),
+				);
+			}
+		};
+		$sut        = $this->create_controller( $api_client, null, null, $this->create_account_service( true ) );
+		$response   = $sut->get_update_order_status_response(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => 'pi_requires_action',
+			)
+		);
+		$order      = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertArrayHasKey( 'error', $response );
+		$this->assertSame( 409, $response['status_code'] );
+		$this->assertSame( 'pending', $order->get_status() );
+		$this->assertSame( 'pi_requires_action', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'requires_action', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( 'pm_native', $order->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( 'cus_native', $order->get_meta( '_stripe_customer_id', true ) );
+		$this->assertSame( 'USD', $order->get_meta( '_wcpay_intent_currency', true ) );
+		$this->assertSame( 'test', $order->get_meta( '_wcpay_mode', true ) );
+		$this->assertFalse( $order->meta_exists( '_wcpay_payment_method_details' ) );
+		$this->assertSame( '', $order->get_meta( '_wcpay_payment_transaction_id', true ) );
+		$this->assertSame( 'not_card', $order->get_meta( '_wcpay_fraud_meta_box_type', true ) );
+		$this->assert_order_has_note_containing( $order, 'A payment of' );
+		$this->assert_order_has_note_containing( $order, 'was <strong>started</strong> using WooPayments' );
+		$this->assert_order_has_note_containing( $order, 'pi_requires_action' );
+	}
+
+	/**
 	 * @testdox Order-status callback should reject non-authorized intent statuses after syncing the order.
 	 */
 	public function test_update_order_status_rejects_non_authorized_intent_status(): void {
@@ -862,6 +935,85 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertNotSame( 'completed', $status_at_token_attach, 'The token must be attached before the lifecycle service completes the order.' );
 		$this->assertInstanceOf( WC_Payment_Token_CC::class, $token );
 		$this->assertSame( 'pm_native', $token->get_token() );
+		$this->assertContains( $token->get_id(), $order->get_payment_tokens() );
+	}
+
+	/**
+	 * @testdox Order-status callback should save requested non-card tokens through type-aware creation.
+	 */
+	public function test_update_order_status_saves_requested_non_card_token(): void {
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+
+		$order = $this->create_woopayments_order( '10.00' );
+		$order->set_customer_id( $user_id );
+		$order->set_currency( 'EUR' );
+		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID . '_sepa_debit' );
+		$order->update_meta_data( '_intent_id', 'pi_sepa' );
+		$order->save();
+
+		$api_client      = new class() extends WooPaymentsApiClient {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Retrieve a PaymentIntent.
+			 *
+			 * @param string $intent_id PaymentIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_payment_intention( string $intent_id ): array {
+				if ( 'pi_sepa' !== $intent_id ) {
+					throw new \RuntimeException( 'Unexpected payment intent ID.' );
+				}
+
+				return array(
+					'id'             => 'pi_sepa',
+					'status'         => 'succeeded',
+					'currency'       => 'eur',
+					'customer'       => 'cus_native',
+					'payment_method' => 'pm_sepa',
+				);
+			}
+		};
+		$token_service   = $this->create_token_service(
+			array(
+				'pm_sepa' => array(
+					'id'         => 'pm_sepa',
+					'type'       => 'sepa_debit',
+					'sepa_debit' => array(
+						'last4' => '6789',
+					),
+				),
+			)
+		);
+		$sut             = $this->create_controller( $api_client, null, $token_service );
+		$token_class_map = new WooPaymentsTokenClassMapController();
+		$token_class_map->init( new StaticNativeRuntimeArbiter( true ) );
+		$token_class_map->register();
+
+		$response = $sut->get_update_order_status_response(
+			array(
+				'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+				'order_id'                   => $order->get_id(),
+				'intent_id'                  => 'pi_sepa',
+				'should_save_payment_method' => 'true',
+			)
+		);
+		$order    = wc_get_order( $order->get_id() );
+		$tokens   = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, OrderPaymentStore::GATEWAY_ID . '_sepa_debit' ) );
+		$token    = $tokens[0] ?? null;
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertInstanceOf( WooPaymentsSepaToken::class, $token );
+		$this->assertSame( 'pm_sepa', $token->get_token() );
 		$this->assertContains( $token->get_id(), $order->get_payment_tokens() );
 	}
 
@@ -1105,9 +1257,9 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			 *
 			 * @param string $payment_method_id Provider payment method ID.
 			 * @param int    $user_id           User ID.
-			 * @return WC_Payment_Token_CC|null
+			 * @return WC_Payment_Token|null
 			 */
-			public function get_or_create_card_token_for_user( string $payment_method_id, int $user_id ): ?WC_Payment_Token_CC {
+			public function get_or_create_token_for_user( string $payment_method_id, int $user_id ): ?WC_Payment_Token {
 				unset( $payment_method_id, $user_id );
 
 				throw new \RuntimeException( 'Token save failed.' );
@@ -1201,6 +1353,10 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				'client_secret' => 'seti_user_secret_abc',
 			),
 			$response['data']
+		);
+		$this->assertFalse(
+			\WC_Rate_Limiter::retried_too_soon( 'add_payment_method_' . $user_id ),
+			'The AJAX setup phase must leave the WooCommerce form-handler rate limit available.'
 		);
 	}
 
@@ -1318,12 +1474,13 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	private function create_account_service( bool $test_mode, string $account_default_currency = 'usd' ): WooPaymentsAccountService {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_mode', 'is_test_mode_enabled', 'get_account_default_currency' ) )
+			->onlyMethods( array( 'get_mode', 'is_test_mode_enabled', 'get_account_default_currency', 'get_account_country' ) )
 			->getMock();
 
 		$account_service->method( 'get_mode' )->willReturn( $test_mode ? 'test' : 'live' );
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( $test_mode );
 		$account_service->method( 'get_account_default_currency' )->willReturn( $account_default_currency );
+		$account_service->method( 'get_account_country' )->willReturn( 'US' );
 
 		return $account_service;
 	}

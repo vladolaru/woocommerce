@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Services;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySelectedCurrencyPersistenceService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyProviderBootstrap;
 use WC_Unit_Test_Case;
@@ -86,6 +87,29 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Resetting one factory-built state invalidates every request-local projection snapshot.
+	 */
+	public function test_factory_built_states_share_invalidation(): void {
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_gbp', '0.80' );
+
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+
+		$factory             = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class );
+		$frontend_builder    = $factory->create();
+		$persistence_builder = $factory->create();
+		$persistence         = new MultiCurrencySelectedCurrencyPersistenceService( $persistence_builder );
+
+		$this->assertSame( 'USD', $frontend_builder->build()->get_selected_currency()->get_code() );
+		$this->assertTrue( $persistence->update_selected_currency( 'GBP' ) );
+		$this->assertSame( 'GBP', $frontend_builder->build()->get_selected_currency()->get_code() );
+
+		wp_set_current_user( 0 );
+	}
+
+	/**
 	 * Delete options touched by these tests.
 	 */
 	private function delete_options(): void {
@@ -94,6 +118,7 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 				'wcpay_multi_currency_enabled_currencies',
 				'wcpay_multi_currency_exchange_rate_gbp',
 				'wcpay_multi_currency_exchange_rate_eur',
+				'wcpay_multi_currency_manual_rate_gbp',
 				MultiCurrencyCacheInterface::CURRENCIES_KEY,
 			) as $option_key
 		) {

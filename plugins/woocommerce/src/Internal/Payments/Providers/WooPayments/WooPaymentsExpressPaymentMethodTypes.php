@@ -56,11 +56,6 @@ class WooPaymentsExpressPaymentMethodTypes {
 	public const PROVIDER_CONTEXT_KEY = 'express_checkout_context';
 
 	/**
-	 * Amazon Pay feature flag option.
-	 */
-	private const AMAZON_PAY_FEATURE_FLAG_NAME = '_wcpay_feature_amazon_pay';
-
-	/**
 	 * Get allowed Stripe payment method types for the enabled express methods in a context.
 	 *
 	 * @param WooPaymentsAccountService $account_service WooPayments account service.
@@ -237,12 +232,8 @@ class WooPaymentsExpressPaymentMethodTypes {
 	private static function can_use_amazon_pay( WooPaymentsAccountService $account_service, string $context, string $currency = '' ): bool {
 		$context = self::normalize_context( $context );
 
-		if ( '1' !== (string) get_option( self::AMAZON_PAY_FEATURE_FLAG_NAME, '1' ) ) {
-			return false;
-		}
-
 		$account_data = $account_service->get_cached_account_data();
-		if ( ! empty( $account_data['ece_confirmation_tokens_disabled'] ) ) {
+		if ( ! WooPaymentsFeaturePolicy::is_amazon_pay_enabled( $account_service ) ) {
 			return false;
 		}
 

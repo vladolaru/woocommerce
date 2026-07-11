@@ -37,6 +37,22 @@ interface WooPaymentsPaymentMethodDefinition {
 	public function get_stripe_id(): string;
 
 	/**
+	 * Get the account capability key that controls payment method availability.
+	 *
+	 * @return string
+	 */
+	public function get_account_capability_key(): string;
+
+	/**
+	 * Tell whether this definition should publish a WooCommerce payment gateway.
+	 *
+	 * Internal method definitions may still have a gateway instance for processing and settings.
+	 *
+	 * @return bool
+	 */
+	public function should_publish_gateway(): bool;
+
+	/**
 	 * Get the Stripe PaymentMethod type.
 	 *
 	 * @return string

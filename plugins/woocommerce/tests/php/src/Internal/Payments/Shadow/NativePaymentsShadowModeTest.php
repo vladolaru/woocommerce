@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Shadow;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceProfile;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
@@ -197,6 +198,59 @@ class NativePaymentsShadowModeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Shadow projection composes plan display metadata without applying order effects.
+	 */
+	public function test_shadow_projection_uses_plan_display_metadata_without_writes(): void {
+		$logger = new class() {
+			/**
+			 * Record a debug log entry.
+			 *
+			 * @param string $message Log message.
+			 * @param array  $context Log context.
+			 */
+			public function debug( string $message, array $context = array() ): void {
+				unset( $message, $context );
+			}
+		};
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'wc_get_logger' => static function () use ( $logger ) {
+					return $logger;
+				},
+			)
+		);
+
+		$order  = $this->create_projected_woopayments_order( 'requires_action', 'pending' );
+		$intent = $this->create_payment_intent_response( 'requires_action' );
+		$intent['charges']['data'][0]['payment_method_details'] = array(
+			'type' => 'card',
+			'card' => array(
+				'brand'         => 'visa',
+				'display_brand' => 'visa',
+				'funding'       => 'credit',
+				'last4'         => '4242',
+			),
+		);
+		$notes_before = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+
+		$comparison  = $this->create_shadow_mode( $this->create_recording_api_client( $intent ) )
+			->record_shadow_for_order( wc_get_order( $order->get_id() ), 'unit_test' );
+		$reloaded    = wc_get_order( $order->get_id() );
+		$notes_after = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+
+		$this->assertInstanceOf( ShadowComparison::class, $comparison );
+		$this->assertSame( '4242', $comparison->get_native_computed()['meta']['last4'] );
+		$this->assertSame( 'visa', $comparison->get_native_computed()['meta']['_card_brand'] );
+		$this->assertStringContainsString( '"last4":"4242"', $comparison->get_native_computed()['meta']['_wcpay_payment_method_details'] );
+		$this->assertArrayHasKey( 'meta.last4', $comparison->get_diff() );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( '', $reloaded->get_meta( 'last4', true ) );
+		$this->assertSame( '', $reloaded->get_meta( '_wcpay_payment_method_details', true ) );
+		$this->assertEmpty( $reloaded->get_payment_tokens() );
+		$this->assertCount( count( $notes_before ), $notes_after );
+	}
+
+	/**
 	 * @testdox Full shadow surfaces are logged only when the diagnostic filter is enabled.
 	 */
 	public function test_full_shadow_surfaces_are_logged_only_when_diagnostic_filter_is_enabled(): void {
@@ -325,13 +379,14 @@ class NativePaymentsShadowModeTest extends WC_Unit_Test_Case {
 			/**
 			 * Read a stable, HPOS-safe projection of an order's payment surface.
 			 *
-			 * @param \WC_Order $order Order to project.
+			 * @param \WC_Order                  $order               Order to project.
+			 * @param ProviderPersistenceProfile $persistence_profile Provider persistence profile.
 			 * @return array<string,mixed>
 			 */
-			public function read_payment_surface( \WC_Order $order ): array {
+			public function read_payment_surface( \WC_Order $order, ProviderPersistenceProfile $persistence_profile ): array {
 				++$this->reads;
 
-				return parent::read_payment_surface( $order );
+				return parent::read_payment_surface( $order, $persistence_profile );
 			}
 		};
 
@@ -381,6 +436,124 @@ class NativePaymentsShadowModeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Refund shadow projections derive charge financial meta independently from provider data.
+	 */
+	public function test_refund_shadow_projection_preserves_plugin_persisted_charge_financial_meta(): void {
+		$logger = new class() {
+			/**
+			 * Record a debug log entry.
+			 *
+			 * @param string $message Log message.
+			 * @param array  $context Log context.
+			 */
+			public function debug( string $message, array $context = array() ): void {}
+		};
+
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'wc_get_logger' => function () use ( $logger ) {
+					return $logger;
+				},
+			)
+		);
+
+		$order = $this->create_projected_woopayments_order( 'succeeded', 'processing' );
+		$order->update_meta_data( '_wcpay_transaction_fee', '1.75' );
+		$order->update_meta_data( '_wcpay_net', '48.25' );
+		$order->save();
+
+		$intent = $this->create_payment_intent_response( 'succeeded' );
+		$intent['charges']['data'][0]['fee_breakdown_v1'] = array(
+			'totals' => array(
+				'fee' => array(
+					'amount'   => 175,
+					'currency' => 'usd',
+				),
+				'net' => array(
+					'amount'   => 2325,
+					'currency' => 'usd',
+				),
+			),
+		);
+
+		$api_client = $this->create_recording_api_client( $intent );
+		$sut        = $this->create_shadow_mode( $api_client );
+
+		$comparison = $sut->record_shadow_for_order( wc_get_order( $order->get_id() ), 'woocommerce_order_refunded' );
+
+		$this->assertInstanceOf( ShadowComparison::class, $comparison );
+		$this->assertArrayNotHasKey( 'meta._wcpay_transaction_fee', $comparison->get_diff() );
+		$this->assertArrayHasKey( 'meta._wcpay_net', $comparison->get_diff() );
+		$this->assertSame( '23.25', $comparison->get_diff()['meta._wcpay_net']['expected'] );
+		$this->assertSame( '48.25', $comparison->get_diff()['meta._wcpay_net']['actual'] );
+		$this->assertSame( '1.75', $comparison->get_native_computed()['meta']['_wcpay_transaction_fee'] );
+		$this->assertSame( '23.25', $comparison->get_native_computed()['meta']['_wcpay_net'] );
+	}
+
+	/**
+	 * @testdox Shadow projection reports persisted outcome meta that provider data does not produce.
+	 */
+	public function test_native_projection_does_not_inherit_unprojected_actual_meta(): void {
+		$logger = new class() {
+			/**
+			 * Record a debug log entry.
+			 *
+			 * @param string $message Log message.
+			 * @param array  $context Log context.
+			 */
+			public function debug( string $message, array $context = array() ): void {}
+		};
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'wc_get_logger' => static function () use ( $logger ) {
+					return $logger;
+				},
+			)
+		);
+
+		$order = $this->create_projected_woopayments_order( 'requires_capture', 'on-hold' );
+		$order->update_meta_data( '_wcpay_fraud_outcome_status', 'allow' );
+		$order->save();
+		$sut = $this->create_shadow_mode( $this->create_recording_api_client( $this->create_payment_intent_response( 'requires_capture' ) ) );
+
+		$comparison = $sut->record_shadow_for_order( wc_get_order( $order->get_id() ), 'unit_test' );
+
+		$this->assertInstanceOf( ShadowComparison::class, $comparison );
+		$this->assertArrayHasKey( 'meta._wcpay_fraud_outcome_status', $comparison->get_diff() );
+		$this->assertNull( $comparison->get_diff()['meta._wcpay_fraud_outcome_status']['expected'] );
+		$this->assertSame( 'allow', $comparison->get_diff()['meta._wcpay_fraud_outcome_status']['actual'] );
+	}
+
+	/**
+	 * @testdox Shadow projection reads a historical test order from test mode after the store switches to live mode.
+	 */
+	public function test_native_projection_uses_preserved_order_mode_for_provider_read(): void {
+		$logger = new class() {
+			/**
+			 * Record a debug log entry.
+			 *
+			 * @param string $message Log message.
+			 * @param array  $context Log context.
+			 */
+			public function debug( string $message, array $context = array() ): void {}
+		};
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'wc_get_logger' => static function () use ( $logger ) {
+					return $logger;
+				},
+			)
+		);
+
+		$order      = $this->create_projected_woopayments_order( 'requires_capture', 'on-hold' );
+		$api_client = $this->create_recording_api_client( $this->create_payment_intent_response( 'requires_capture' ) );
+		$sut        = $this->create_shadow_mode( $api_client, null, false );
+
+		$this->assertInstanceOf( ShadowComparison::class, $sut->record_shadow_for_order( wc_get_order( $order->get_id() ), 'unit_test' ) );
+		$this->assertSame( array( true ), $api_client->test_modes );
+	}
+
+	/**
 	 * @testdox Shadow projection skips live provider reads unless explicitly opted in.
 	 */
 	public function test_native_projection_skips_live_provider_reads_unless_explicitly_enabled(): void {
@@ -414,7 +587,9 @@ class NativePaymentsShadowModeTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$order      = $this->create_projected_woopayments_order( 'requires_capture', 'on-hold' );
+		$order = $this->create_projected_woopayments_order( 'requires_capture', 'on-hold' );
+		$order->update_meta_data( '_wcpay_mode', 'live' );
+		$order->save();
 		$api_client = $this->create_recording_api_client( $this->create_payment_intent_response( 'succeeded' ) );
 		$sut        = $this->create_shadow_mode( $api_client, null, false );
 
@@ -465,12 +640,13 @@ class NativePaymentsShadowModeTest extends WC_Unit_Test_Case {
 	private function create_account_service( bool $test_mode ): WooPaymentsAccountService {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_test_mode_enabled', 'get_mode', 'get_account_default_currency' ) )
+			->onlyMethods( array( 'is_test_mode_enabled', 'get_mode', 'get_account_default_currency', 'get_account_country' ) )
 			->getMock();
 
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( $test_mode );
 		$account_service->method( 'get_mode' )->willReturn( $test_mode ? 'test' : 'live' );
 		$account_service->method( 'get_account_default_currency' )->willReturn( 'usd' );
+		$account_service->method( 'get_account_country' )->willReturn( 'US' );
 
 		return $account_service;
 	}
@@ -489,6 +665,13 @@ class NativePaymentsShadowModeTest extends WC_Unit_Test_Case {
 			 * @var int
 			 */
 			public int $reads = 0;
+
+			/**
+			 * Explicit test modes used for historical intent reads.
+			 *
+			 * @var bool[]
+			 */
+			public array $test_modes = array();
 
 			/**
 			 * PaymentIntent response.
@@ -525,6 +708,19 @@ class NativePaymentsShadowModeTest extends WC_Unit_Test_Case {
 				++$this->reads;
 
 				return $this->intent_response;
+			}
+
+			/**
+			 * Retrieve a WooPayments PaymentIntent in an explicit account mode.
+			 *
+			 * @param string $intent_id Intent ID.
+			 * @param bool   $test_mode Whether to read test-mode data.
+			 * @return array<string,mixed>
+			 */
+			public function get_payment_intention_for_mode( string $intent_id, bool $test_mode ): array {
+				$this->test_modes[] = $test_mode;
+
+				return $this->get_payment_intention( $intent_id );
 			}
 		};
 	}

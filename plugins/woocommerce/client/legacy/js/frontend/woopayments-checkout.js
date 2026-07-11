@@ -17,6 +17,7 @@
 	var isSubmittingWithSetupIntent = false;
 	var cardBrandIconsHydratedLabel = null;
 	var cardBrandIconsHydrationCleanup = null;
+	var expressButtonStates = {};
 	var classicCheckoutAppearanceLocation = 'classic_checkout';
 	var classicInputStyleProps = [
 		'backgroundColor',
@@ -92,13 +93,69 @@
 	function getConfigForGateway( paymentGatewayId ) {
 		var keyedConfig =
 			window[ getGatewayConfigObjectName( paymentGatewayId ) ];
+		var paymentMethodEntry;
+		var paymentMethodsConfig;
 
 		if ( keyedConfig && typeof keyedConfig === 'object' ) {
 			return keyedConfig;
 		}
 
-		if ( ( baseConfig.gatewayId || defaultGatewayId ) === paymentGatewayId ) {
+		if (
+			( baseConfig.gatewayId || defaultGatewayId ) === paymentGatewayId
+		) {
 			return baseConfig;
+		}
+
+		paymentMethodEntry = getPaymentMethodEntryForGateway(
+			baseConfig,
+			paymentGatewayId
+		);
+		if ( paymentMethodEntry ) {
+			paymentMethodsConfig = {};
+			paymentMethodsConfig[ paymentMethodEntry.id ] =
+				paymentMethodEntry.config;
+
+			return Object.assign( {}, baseConfig, {
+				gatewayId: paymentGatewayId,
+				paymentMethodId: paymentMethodEntry.id,
+				paymentMethodsConfig: paymentMethodsConfig,
+				paymentListWalletsConfig: {},
+				paymentMethodTypes: [ 'card' ],
+			} );
+		}
+
+		return null;
+	}
+
+	function getGatewayPaymentMethodConfigs( gatewayConfig ) {
+		return Object.assign(
+			{},
+			gatewayConfig.paymentMethodsConfig || {},
+			gatewayConfig.paymentListWalletsConfig || {}
+		);
+	}
+
+	function getPaymentMethodEntryForGateway(
+		gatewayConfig,
+		paymentGatewayId
+	) {
+		var paymentMethodsConfig =
+			getGatewayPaymentMethodConfigs( gatewayConfig );
+		var paymentMethodIds = Object.keys( paymentMethodsConfig );
+		var paymentMethodId;
+		var index;
+
+		for ( index = 0; index < paymentMethodIds.length; index++ ) {
+			paymentMethodId = paymentMethodIds[ index ];
+			if (
+				paymentMethodsConfig[ paymentMethodId ].gatewayId ===
+				paymentGatewayId
+			) {
+				return {
+					id: paymentMethodId,
+					config: paymentMethodsConfig[ paymentMethodId ],
+				};
+			}
 		}
 
 		return null;
@@ -112,6 +169,29 @@
 		return selected ? selected.value : '';
 	}
 
+	function getActivePaymentForm() {
+		var customButtonApi =
+			window.wc && window.wc.customPlaceOrderButton;
+		var form;
+		var formElement;
+
+		if (
+			customButtonApi &&
+			typeof customButtonApi.__getForm === 'function'
+		) {
+			form = customButtonApi.__getForm();
+			if ( form && form.length ) {
+				return form;
+			}
+		}
+
+		formElement = document.querySelector(
+			'form.checkout, form#order_review'
+		);
+
+		return formElement ? $( formElement ) : $( 'form.checkout' );
+	}
+
 	function setCurrentGatewayConfig( paymentGatewayId ) {
 		var nextGatewayId =
 			paymentGatewayId || getSelectedGatewayId() || gatewayId;
@@ -123,10 +203,23 @@
 
 	function getKnownGatewayIds() {
 		var gatewayIds = {};
+		var paymentMethodConfigs =
+			getGatewayPaymentMethodConfigs( baseConfig );
 
 		if ( baseConfig.gatewayId || window.wcpay_core_checkout_config ) {
 			gatewayIds[ baseConfig.gatewayId || defaultGatewayId ] = true;
 		}
+
+		Object.keys( paymentMethodConfigs ).forEach(
+			function ( paymentMethodId ) {
+				var paymentMethodConfig =
+					paymentMethodConfigs[ paymentMethodId ];
+
+				if ( paymentMethodConfig.gatewayId ) {
+					gatewayIds[ paymentMethodConfig.gatewayId ] = true;
+				}
+			}
+		);
 
 		Object.keys( window ).forEach( function ( key ) {
 			var gatewayConfig;
@@ -174,14 +267,153 @@
 			} );
 	}
 
+	function selectFallbackPaymentMethod( excludedGatewayId ) {
+		var inputs = Array.prototype.slice.call(
+			document.querySelectorAll( 'input[name="payment_method"]' )
+		);
+		var cardInput = getPaymentMethodInput( defaultGatewayId );
+		var candidates = cardInput
+			? [ cardInput ].concat(
+					inputs.filter( function ( input ) {
+						return input !== cardInput;
+					} )
+			  )
+			: inputs;
+		var fallback = candidates.find( function ( input ) {
+			var listItem = input.closest ? input.closest( 'li' ) : null;
+
+			return (
+				input.value !== excludedGatewayId &&
+				! input.disabled &&
+				( ! listItem || listItem.style.display !== 'none' )
+			);
+		} );
+
+		if ( fallback ) {
+			fallback.click();
+		}
+	}
+
 	function getGatewayPaymentContainer( paymentGatewayId ) {
 		var input = getPaymentMethodInput( paymentGatewayId );
-		var gatewayElement = input && input.closest ? input.closest( 'li' ) : null;
+		var gatewayElement =
+			input && input.closest ? input.closest( 'li' ) : null;
 		var container =
 			gatewayElement &&
 			gatewayElement.querySelector( '#wcpay-core-payment-element' );
 
-		return container || document.getElementById( 'wcpay-core-payment-element' );
+		return (
+			container || document.getElementById( 'wcpay-core-payment-element' )
+		);
+	}
+
+	function getPaymentMethodConfigForGateway( paymentGatewayId ) {
+		var gatewayConfig = getConfigForGateway( paymentGatewayId ) || {};
+		var paymentMethodsConfig = gatewayConfig.paymentMethodsConfig || {};
+		var paymentMethodEntry = getPaymentMethodEntryForGateway(
+			gatewayConfig,
+			paymentGatewayId
+		);
+		var paymentMethodId = gatewayConfig.paymentMethodId;
+
+		if ( ! paymentMethodId && paymentMethodEntry ) {
+			paymentMethodId = paymentMethodEntry.id;
+		}
+		paymentMethodId =
+			paymentMethodId || Object.keys( paymentMethodsConfig )[ 0 ] || 'card';
+
+		return (
+			paymentMethodsConfig[ paymentMethodId ] ||
+			paymentMethodsConfig.card ||
+			{}
+		);
+	}
+
+	function getPaymentMethodIdForGateway( paymentGatewayId ) {
+		var gatewayConfig = getConfigForGateway( paymentGatewayId ) || {};
+		var paymentMethodEntry = getPaymentMethodEntryForGateway(
+			gatewayConfig,
+			paymentGatewayId
+		);
+
+		return (
+			gatewayConfig.paymentMethodId ||
+			( paymentMethodEntry && paymentMethodEntry.id ) ||
+			Object.keys( gatewayConfig.paymentMethodsConfig || {} )[ 0 ] ||
+			''
+		);
+	}
+
+	function getExpressWalletType( paymentGatewayId ) {
+		var paymentMethodId = getPaymentMethodIdForGateway( paymentGatewayId );
+		var paymentMethodConfig =
+			getPaymentMethodConfigForGateway( paymentGatewayId );
+
+		if ( ! paymentMethodConfig.isExpressCheckout ) {
+			return '';
+		}
+
+		if ( paymentMethodId === 'apple_pay' ) {
+			return 'applePay';
+		}
+
+		if ( paymentMethodId === 'google_pay' ) {
+			return 'googlePay';
+		}
+
+		return '';
+	}
+
+	function isPaymentListWalletGateway( paymentGatewayId ) {
+		return !! getExpressWalletType( paymentGatewayId );
+	}
+
+	function getCheckoutBillingCountry() {
+		var input = document.querySelector( '[name="billing_country"]' );
+		var customerData =
+			baseConfig.customerData || window.wcpayCustomerData || {};
+
+		return (
+			( input && input.value ) ||
+			customerData.billing_country ||
+			customerData.billingCountry ||
+			''
+		);
+	}
+
+	function togglePaymentMethodsForBillingCountry() {
+		var billingCountry = getCheckoutBillingCountry();
+		var selectedGatewayId = getSelectedGatewayId();
+
+		getKnownGatewayIds().forEach( function ( paymentGatewayId ) {
+			var input = getPaymentMethodInput( paymentGatewayId );
+			var listItem =
+				input && input.closest ? input.closest( 'li' ) : null;
+			var methodConfig =
+				getPaymentMethodConfigForGateway( paymentGatewayId );
+			var countries = Array.isArray( methodConfig.countries )
+				? methodConfig.countries
+				: [];
+			var isAvailable =
+				countries.length === 0 || countries.includes( billingCountry );
+
+			if ( ! listItem ) {
+				return;
+			}
+
+			if ( isAvailable ) {
+				listItem.style.removeProperty( 'display' );
+				return;
+			}
+
+			listItem.style.display = 'none';
+			if (
+				paymentGatewayId === selectedGatewayId &&
+				paymentGatewayId !== defaultGatewayId
+			) {
+				selectFallbackPaymentMethod( paymentGatewayId );
+			}
+		} );
 	}
 
 	function setError( message ) {
@@ -206,7 +438,8 @@
 		}
 
 		button = event.target.closest( '.js-woopayments-copy-test-number' );
-		testNumber = button && button.textContent ? button.textContent.trim() : '';
+		testNumber =
+			button && button.textContent ? button.textContent.trim() : '';
 
 		if ( ! button || ! testNumber ) {
 			return;
@@ -235,7 +468,8 @@
 
 	function recordUserEvent( eventName, eventProperties ) {
 		var ajaxUrl = config.ajaxUrl || config.ajax_url;
-		var nonce = config.platformTrackerNonce || config.platform_tracker_nonce;
+		var nonce =
+			config.platformTrackerNonce || config.platform_tracker_nonce;
 		var body;
 
 		if (
@@ -254,13 +488,18 @@
 		body.append( 'tracksNonce', nonce );
 		body.append( 'action', 'platform_tracks' );
 		body.append( 'tracksEventName', eventName );
-		body.append( 'tracksEventProp', JSON.stringify( eventProperties || {} ) );
+		body.append(
+			'tracksEventProp',
+			JSON.stringify( eventProperties || {} )
+		);
 
-		window.fetch( ajaxUrl, {
-			method: 'POST',
-			credentials: 'same-origin',
-			body: body,
-		} ).catch( function () {} );
+		window
+			.fetch( ajaxUrl, {
+				method: 'POST',
+				credentials: 'same-origin',
+				body: body,
+			} )
+			.catch( function () {} );
 	}
 
 	function isLinkEnabled() {
@@ -290,15 +529,18 @@
 			terms,
 			paymentMethodId
 		) {
-			if (
-				paymentMethodId !== 'link' &&
-				paymentMethodsConfig[ paymentMethodId ].isReusable
+				if (
+					paymentMethodId !== 'link' &&
+					! paymentMethodsConfig[ paymentMethodId ]
+						.isExpressCheckout &&
+					paymentMethodsConfig[ paymentMethodId ].isReusable
 			) {
 				terms[ paymentMethodId ] = value;
 			}
 
 			return terms;
-		}, {} );
+		},
+		{} );
 	}
 
 	function isAddPaymentMethodForm() {
@@ -334,13 +576,39 @@
 		} );
 	}
 
+	function getPreparedCustomerBillingDetails() {
+		var customerData =
+			baseConfig.customerData || window.wcpayCustomerData || {};
+		var country =
+			customerData.billing_country || customerData.billingCountry || '';
+		var address = customerData.address
+			? Object.assign( {}, customerData.address )
+			: country
+			? { country: country }
+			: {};
+
+		if (
+			! customerData.name &&
+			! customerData.email &&
+			Object.keys( address ).length === 0
+		) {
+			return null;
+		}
+
+		return {
+			name: customerData.name || undefined,
+			email: customerData.email,
+			address: address,
+		};
+	}
+
 	function getCheckoutBillingDetails() {
 		var firstName = getInputValue( 'billing_first_name' );
 		var lastName = getInputValue( 'billing_last_name' );
 		var postalCode = getInputValue( 'billing_postcode' ).trim();
 
 		if ( ! hasCheckoutBillingFields() ) {
-			return null;
+			return getPreparedCustomerBillingDetails();
 		}
 
 		return {
@@ -359,22 +627,7 @@
 	}
 
 	function getStripePaymentElementOptions() {
-		return {
-			fields: {
-				billingDetails: {
-					name: 'never',
-					email: 'never',
-					phone: 'never',
-					address: {
-						country: 'never',
-						line1: 'never',
-						line2: 'never',
-						city: 'never',
-						state: 'never',
-						postalCode: 'never',
-					},
-				},
-			},
+		var options = {
 			wallets: {
 				applePay: 'never',
 				googlePay: 'never',
@@ -389,6 +642,234 @@
 					: 'never'
 			),
 		};
+
+		if (
+			baseConfig.isCheckout &&
+			! baseConfig.isOrderPay &&
+			! baseConfig.isChangingPayment
+		) {
+			options.fields = {
+				billingDetails: {
+					name: 'never',
+					email: 'never',
+					phone: 'never',
+					address: {
+						country: 'never',
+						line1: 'never',
+						line2: 'never',
+						city: 'never',
+						state: 'never',
+						postalCode: 'never',
+					},
+				},
+			};
+		}
+
+		var preparedBillingDetails = getPreparedCustomerBillingDetails();
+		if ( preparedBillingDetails ) {
+			options.defaultValues = {
+				billingDetails: preparedBillingDetails,
+			};
+		}
+
+		return options;
+	}
+
+	function setPaymentListWalletAvailability( paymentGatewayId, isAvailable ) {
+		var input = getPaymentMethodInput( paymentGatewayId );
+		var listItem = input && input.closest ? input.closest( 'li' ) : null;
+
+		if ( ! listItem ) {
+			return;
+		}
+
+		if ( isAvailable ) {
+			listItem.style.removeProperty( 'display' );
+			return;
+		}
+
+		listItem.style.display = 'none';
+		if ( input.checked ) {
+			selectFallbackPaymentMethod( paymentGatewayId );
+		}
+	}
+
+	function getExpressCheckoutElementOptions( walletType ) {
+		var options = {
+			buttonType: {
+				applePay: 'plain',
+				googlePay: 'plain',
+			},
+			paymentMethods: {
+				applePay: 'never',
+				googlePay: 'never',
+				link: 'never',
+				paypal: 'never',
+				amazonPay: 'never',
+				klarna: 'never',
+			},
+		};
+
+		options.paymentMethods[ walletType ] = 'always';
+
+		return options;
+	}
+
+	function resetExpressButtonState( state ) {
+		if ( state.element && state.element.unmount ) {
+			state.element.unmount();
+		}
+
+		state.element = null;
+		state.elements = null;
+		state.stripe = null;
+	}
+
+	function registerPaymentListWallet( paymentGatewayId ) {
+		var customButtonApi =
+			window.wc && window.wc.customPlaceOrderButton;
+		var walletType = getExpressWalletType( paymentGatewayId );
+		var state;
+
+		if (
+			! walletType ||
+			! customButtonApi ||
+			typeof customButtonApi.register !== 'function' ||
+			expressButtonStates[ paymentGatewayId ]
+		) {
+			return;
+		}
+
+		state = {
+			element: null,
+			elements: null,
+			stripe: null,
+		};
+		expressButtonStates[ paymentGatewayId ] = state;
+
+		customButtonApi.register( paymentGatewayId, {
+			render: function ( container, checkoutApi ) {
+				var gatewayConfig =
+					getConfigForGateway( paymentGatewayId ) || {};
+				var amount = Number( gatewayConfig.cartTotal || 0 );
+				var currency = ( gatewayConfig.currency || '' ).toLowerCase();
+
+				resetExpressButtonState( state );
+				if (
+					! container ||
+					! window.Stripe ||
+					! gatewayConfig.publishableKey ||
+					! isFinite( amount ) ||
+					amount <= 0 ||
+					! currency
+				) {
+					setPaymentListWalletAvailability( paymentGatewayId, false );
+					return;
+				}
+
+				try {
+					state.stripe = window.Stripe( gatewayConfig.publishableKey, {
+						locale: gatewayConfig.locale || 'auto',
+						stripeAccount: gatewayConfig.accountId || undefined,
+					} );
+					state.elements = state.stripe.elements( {
+						mode: 'payment',
+						amount: amount,
+						currency: currency,
+						paymentMethodCreation: 'manual',
+						paymentMethodTypes: [ 'card' ],
+					} );
+					state.element = state.elements.create(
+						'expressCheckout',
+						getExpressCheckoutElementOptions( walletType )
+					);
+
+					state.element.on( 'ready', function ( event ) {
+						var availablePaymentMethods =
+							( event && event.availablePaymentMethods ) || {};
+
+						setPaymentListWalletAvailability(
+							paymentGatewayId,
+							!! availablePaymentMethods[ walletType ]
+						);
+					} );
+					state.element.on( 'click', function ( event ) {
+						return Promise.resolve( checkoutApi.validate() ).then(
+							function ( validationResult ) {
+								if (
+									validationResult &&
+									validationResult.hasError
+								) {
+									return;
+								}
+
+								event.resolve( {
+									emailRequired: true,
+									phoneNumberRequired: false,
+									shippingAddressRequired: false,
+								} );
+							}
+						);
+					} );
+					state.element.on( 'confirm', function () {
+						return Promise.resolve( state.elements.submit() )
+							.then( function ( result ) {
+								if ( result && result.error ) {
+									return Promise.reject( result.error );
+								}
+
+								return state.stripe.createPaymentMethod( {
+									elements: state.elements,
+								} );
+							} )
+							.then( function ( result ) {
+								if ( result && result.error ) {
+									return Promise.reject( result.error );
+								}
+
+								setCurrentGatewayConfig( paymentGatewayId );
+								appendPaymentFields(
+									getActivePaymentForm(),
+									result && result.paymentMethod,
+									null
+								);
+								setError( '' );
+								checkoutApi.submit();
+							} )
+							.catch( function ( error ) {
+								setError(
+									error && error.message ? error.message : ''
+								);
+							} );
+					} );
+					state.element.on( 'loaderror', function () {
+						setPaymentListWalletAvailability(
+							paymentGatewayId,
+							false
+						);
+					} );
+					state.element.mount( container );
+				} catch ( error ) {
+					resetExpressButtonState( state );
+					setPaymentListWalletAvailability( paymentGatewayId, false );
+				}
+			},
+			cleanup: function () {
+				resetExpressButtonState( state );
+			},
+		} );
+	}
+
+	function registerPaymentListWallets() {
+		if ( ! baseConfig.isExpressCheckoutInPaymentMethodsEnabled ) {
+			return;
+		}
+
+		getKnownGatewayIds().forEach( function ( paymentGatewayId ) {
+			if ( isPaymentListWalletGateway( paymentGatewayId ) ) {
+				registerPaymentListWallet( paymentGatewayId );
+			}
+		} );
 	}
 
 	function updatePaymentElementTerms( event ) {
@@ -443,7 +924,9 @@
 	}
 
 	function queryFirst( selectors ) {
-		var selectorList = Array.isArray( selectors ) ? selectors : [ selectors ];
+		var selectorList = Array.isArray( selectors )
+			? selectors
+			: [ selectors ];
 		var index;
 		var element;
 
@@ -478,7 +961,8 @@
 				return output;
 			}
 
-			value = appearanceUtils.normalizeAppearanceValueForStripe( rawValue );
+			value =
+				appearanceUtils.normalizeAppearanceValueForStripe( rawValue );
 			if ( value ) {
 				output[ property ] = value;
 			}
@@ -501,7 +985,9 @@
 			color = window.getComputedStyle( element ).backgroundColor;
 			parsedColor = appearanceUtils.parseColor( color );
 			if ( color && parsedColor && parsedColor.a >= 0.5 ) {
-				return appearanceUtils.normalizeAppearanceValueForStripe( color );
+				return appearanceUtils.normalizeAppearanceValueForStripe(
+					color
+				);
 			}
 		}
 
@@ -527,7 +1013,10 @@
 		] );
 		var backgroundColor = getBackgroundColor();
 		var inputRules = getElementStyles( input, classicInputStyleProps );
-		var labelRules = getElementStyles( label || input, classicTextStyleProps );
+		var labelRules = getElementStyles(
+			label || input,
+			classicTextStyleProps
+		);
 		var textRules = getElementStyles(
 			text || label || input,
 			classicTextStyleProps
@@ -584,6 +1073,10 @@
 		var appearance;
 
 		if ( cachedAppearance ) {
+			appearanceUtils.maybePersistWooPayAppearance(
+				cachedAppearance,
+				config
+			);
 			return cachedAppearance;
 		}
 
@@ -602,8 +1095,11 @@
 				version,
 				appearance
 			);
-			window.dispatchEvent( new window.Event( 'wcpay-appearance-cached' ) );
+			window.dispatchEvent(
+				new window.Event( 'wcpay-appearance-cached' )
+			);
 		}
+		appearanceUtils.maybePersistWooPayAppearance( appearance, config );
 
 		return appearance;
 	}
@@ -738,7 +1234,9 @@
 						.catch( reject );
 				} )
 				.fail( function () {
-					reject( new Error( config.confirmationErrorMessage || '' ) );
+					reject(
+						new Error( config.confirmationErrorMessage || '' )
+					);
 				} );
 		} );
 	}
@@ -875,8 +1373,7 @@
 			config.cardBrandPopoverLabel || 'Supported credit card brands'
 		);
 		popover.setAttribute( 'aria-describedby', popover.id + '-description' );
-		popover.style.gridTemplateColumns =
-			'repeat(' + itemsPerRow + ', 38px)';
+		popover.style.gridTemplateColumns = 'repeat(' + itemsPerRow + ', 38px)';
 		popover.style.width =
 			itemsPerRow * 38 + ( itemsPerRow - 1 ) * 8 + 16 + 'px';
 
@@ -946,7 +1443,8 @@
 			);
 			logos.setAttribute(
 				'aria-label',
-				config.cardBrandLogosLabel || 'Show all supported credit card brands'
+				config.cardBrandLogosLabel ||
+					'Show all supported credit card brands'
 			);
 			logos.setAttribute(
 				'aria-expanded',
@@ -1091,10 +1589,26 @@
 		} );
 	}
 
+	function resetStripePaymentElement() {
+		if ( paymentElement && paymentElement.unmount ) {
+			paymentElement.unmount();
+		}
+
+		stripe = null;
+		elements = null;
+		paymentElement = null;
+		paymentElementContainer = null;
+		paymentElementGatewayId = null;
+	}
+
 	function initializeStripeElement() {
 		setCurrentGatewayConfig();
 		var container = getGatewayPaymentContainer( gatewayId );
 		hydrateCardBrandIcons();
+		if ( isPaymentListWalletGateway( gatewayId ) ) {
+			resetStripePaymentElement();
+			return;
+		}
 		if (
 			! container ||
 			! config.isCoreNativeCheckoutAvailable ||
@@ -1105,14 +1619,7 @@
 		}
 
 		if ( paymentElement && paymentElementGatewayId !== gatewayId ) {
-			if ( paymentElement.unmount ) {
-				paymentElement.unmount();
-			}
-			stripe = null;
-			elements = null;
-			paymentElement = null;
-			paymentElementContainer = null;
-			paymentElementGatewayId = null;
+			resetStripePaymentElement();
 		}
 
 		if ( paymentElement ) {
@@ -1140,9 +1647,7 @@
 		paymentElementGatewayId = gatewayId;
 	}
 
-	function createPaymentMethodAndSubmit() {
-		var form = $( 'form.checkout' );
-
+	function createPaymentMethodAndSubmit( form ) {
 		if ( ! stripe || ! elements ) {
 			appendPaymentFields( form, null, null );
 			return true;
@@ -1173,6 +1678,30 @@
 			} );
 
 		return false;
+	}
+
+	function handleGatewaySubmission( paymentGatewayId, form ) {
+		setCurrentGatewayConfig( paymentGatewayId );
+
+		if ( ! isSelectedGateway() ) {
+			return true;
+		}
+
+		if ( isPaymentListWalletGateway( paymentGatewayId ) ) {
+			return true;
+		}
+
+		if ( isSubmittingWithPaymentMethod ) {
+			isSubmittingWithPaymentMethod = false;
+			return true;
+		}
+
+		if ( isUsingSavedPaymentMethod() ) {
+			appendPaymentFields( form, null, null );
+			return true;
+		}
+
+		return createPaymentMethodAndSubmit( form );
 	}
 
 	function submitAddPaymentMethodForm( formElement ) {
@@ -1278,8 +1807,9 @@
 		}
 
 		return (
-			$( 'form.checkout, form#order_review, form#add_payment_method' )
-				.find( 'input[name="change_payment_method"]' ).length > 0
+			$(
+				'form.checkout, form#order_review, form#add_payment_method'
+			).find( 'input[name="change_payment_method"]' ).length > 0
 		);
 	}
 
@@ -1366,7 +1896,10 @@
 							? JSON.parse( response )
 							: response;
 
-					if ( resultResponse.error && resultResponse.error.message ) {
+					if (
+						resultResponse.error &&
+						resultResponse.error.message
+					) {
 						setError( resultResponse.error.message );
 						return;
 					}
@@ -1382,6 +1915,8 @@
 	}
 
 	$( function () {
+		registerPaymentListWallets();
+		togglePaymentMethodsForBillingCountry();
 		initializeStripeElement();
 		confirmRedirectIfPresent();
 		document.addEventListener( 'click', copyTestNumber );
@@ -1395,12 +1930,20 @@
 	} );
 
 	$( window ).on( 'hashchange', function () {
-		if ( ( window.location.hash || '' ).indexOf( '#wcpay-confirm-' ) === 0 ) {
+		if (
+			( window.location.hash || '' ).indexOf( '#wcpay-confirm-' ) === 0
+		) {
 			confirmRedirectIfPresent();
 		}
 	} );
 
 	$( document.body ).on( 'updated_checkout', function () {
+		togglePaymentMethodsForBillingCountry();
+		initializeStripeElement();
+	} );
+
+	$( document.body ).on( 'payment_method_selected', function () {
+		togglePaymentMethodsForBillingCountry();
 		initializeStripeElement();
 	} );
 
@@ -1408,24 +1951,21 @@
 		$( 'form.checkout' ).on(
 			'checkout_place_order_' + paymentGatewayId,
 			function () {
-				setCurrentGatewayConfig( paymentGatewayId );
-
-				if ( ! isSelectedGateway() ) {
-					return true;
-				}
-
-				if ( isSubmittingWithPaymentMethod ) {
-					isSubmittingWithPaymentMethod = false;
-					return true;
-				}
-
-				if ( isUsingSavedPaymentMethod() ) {
-					appendPaymentFields( $( 'form.checkout' ), null, null );
-					return true;
-				}
-
-				return createPaymentMethodAndSubmit();
+				return handleGatewaySubmission(
+					paymentGatewayId,
+					$( 'form.checkout' )
+				);
 			}
 		);
+	} );
+
+	$( 'form#order_review' ).on( 'submit', function () {
+		var paymentGatewayId = getSelectedGatewayId();
+
+		if ( getKnownGatewayIds().indexOf( paymentGatewayId ) === -1 ) {
+			return true;
+		}
+
+		return handleGatewaySubmission( paymentGatewayId, $( this ) );
 	} );
 } )( jQuery, window, document );

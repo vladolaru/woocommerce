@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Connection\Client as Jetpack_Connection_Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAdaptedExtensions;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayBlocksDataExtractor;
 use Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils;
 use WP_Error;
@@ -59,6 +60,13 @@ class WooPaymentsWooPaySessionService {
 	private ?WooPaymentsWooPayBlocksDataExtractor $blocks_data_extractor = null;
 
 	/**
+	 * WooPay adapted extensions registry.
+	 *
+	 * @var WooPaymentsWooPayAdaptedExtensions|null
+	 */
+	private ?WooPaymentsWooPayAdaptedExtensions $adapted_extensions = null;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -67,12 +75,14 @@ class WooPaymentsWooPaySessionService {
 	 * @param WooPaymentsFrontendStylesService          $frontend_styles_service      Shared frontend styles service.
 	 * @param WooPaymentsFrontendTrackingController     $frontend_tracking_controller Frontend tracking controller.
 	 * @param WooPaymentsWooPayBlocksDataExtractor|null $blocks_data_extractor        WooPay blocks data extractor.
+	 * @param WooPaymentsWooPayAdaptedExtensions|null   $adapted_extensions           WooPay adapted extensions registry.
 	 */
-	final public function init( WooPaymentsAccountService $account_service, WooPaymentsFrontendStylesService $frontend_styles_service, WooPaymentsFrontendTrackingController $frontend_tracking_controller, ?WooPaymentsWooPayBlocksDataExtractor $blocks_data_extractor = null ): void {
+	final public function init( WooPaymentsAccountService $account_service, WooPaymentsFrontendStylesService $frontend_styles_service, WooPaymentsFrontendTrackingController $frontend_tracking_controller, ?WooPaymentsWooPayBlocksDataExtractor $blocks_data_extractor = null, ?WooPaymentsWooPayAdaptedExtensions $adapted_extensions = null ): void {
 		$this->account_service              = $account_service;
 		$this->frontend_styles_service      = $frontend_styles_service;
 		$this->frontend_tracking_controller = $frontend_tracking_controller;
 		$this->blocks_data_extractor        = $blocks_data_extractor;
+		$this->adapted_extensions           = $adapted_extensions;
 	}
 
 	/**
@@ -218,14 +228,15 @@ class WooPaymentsWooPaySessionService {
 		array $font_rules = array()
 	): array {
 		$is_pay_for_order = null !== $order_id;
+		$email            = $email ?? '';
 
-		return array(
+		$request = array(
 			'wcpay_version'        => defined( 'WC_VERSION' ) ? WC_VERSION : '',
 			'user_id'              => get_current_user_id(),
 			'customer_id'          => 0,
 			'session_nonce'        => $this->create_woopay_nonce( get_current_user_id() ),
 			'store_api_token'      => $this->get_store_api_token(),
-			'email'                => $email ?? '',
+			'email'                => $email,
 			'store_data'           => $this->get_store_data( $order_id ),
 			'user_session'         => $user_session,
 			'preloaded_requests'   => $is_pay_for_order
@@ -243,6 +254,29 @@ class WooPaymentsWooPaySessionService {
 			'appearance'           => null === $appearance ? $this->get_woopay_appearance() : $this->sanitize_array_recursive( $appearance ),
 			'font_rules'           => array() === $font_rules ? $this->get_woopay_font_rules() : $this->sanitize_woopay_font_rules( $font_rules ),
 		);
+
+		$adapted_extensions        = $this->get_adapted_extensions();
+		$request['extension_data'] = $adapted_extensions->get_extension_data();
+		if ( '' === $email ) {
+			return $request;
+		}
+
+		$customer = WC()->customer;
+		if ( is_object( $customer ) && is_callable( array( $customer, 'set_billing_email' ) ) && is_callable( array( $customer, 'save' ) ) ) {
+			$customer->set_billing_email( $email );
+			$customer->save();
+		}
+
+		$adapted_extensions->register_integrations();
+		$request['adapted_extensions'] = $adapted_extensions->get_adapted_extensions_data( $email );
+		if ( ! is_user_logged_in() && array() !== $request['adapted_extensions'] ) {
+			$registered_user = get_user_by( 'email', $email );
+			if ( $registered_user instanceof \WP_User ) {
+				$request['email_verified_session_nonce'] = $this->create_woopay_nonce( $registered_user->ID );
+			}
+		}
+
+		return $request;
 	}
 
 	/**
@@ -1184,6 +1218,19 @@ class WooPaymentsWooPaySessionService {
 		}
 
 		return $this->blocks_data_extractor;
+	}
+
+	/**
+	 * Get the WooPay adapted extensions registry.
+	 *
+	 * @return WooPaymentsWooPayAdaptedExtensions
+	 */
+	private function get_adapted_extensions(): WooPaymentsWooPayAdaptedExtensions {
+		if ( ! $this->adapted_extensions instanceof WooPaymentsWooPayAdaptedExtensions ) {
+			$this->adapted_extensions = new WooPaymentsWooPayAdaptedExtensions();
+		}
+
+		return $this->adapted_extensions;
 	}
 
 	/**

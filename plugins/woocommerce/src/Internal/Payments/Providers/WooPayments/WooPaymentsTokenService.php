@@ -601,6 +601,11 @@ class WooPaymentsTokenService {
 			return false;
 		}
 
+		$active_token = $this->get_active_token_for_order( $order );
+		if ( $active_token instanceof WC_Payment_Token && $token->get_id() === $active_token->get_id() ) {
+			return true;
+		}
+
 		$result = $order->add_payment_token( $token );
 		if ( false === $result ) {
 			return false;
@@ -609,6 +614,27 @@ class WooPaymentsTokenService {
 		$order->save();
 
 		return true;
+	}
+
+	/**
+	 * Get the last attached payment token, which WooPayments treats as active.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @param WC_Order $order Order or subscription object.
+	 * @return WC_Payment_Token|null
+	 */
+	public function get_active_token_for_order( WC_Order $order ): ?WC_Payment_Token {
+		$token_ids = $order->get_payment_tokens();
+		$token_id  = end( $token_ids );
+
+		if ( false === $token_id ) {
+			return null;
+		}
+
+		$token = WC_Payment_Tokens::get( absint( $token_id ) );
+
+		return $token instanceof WC_Payment_Token ? $token : null;
 	}
 
 	/**
@@ -841,8 +867,8 @@ class WooPaymentsTokenService {
 				continue;
 			}
 
-			$subscription_token_ids = array_map( 'absint', $subscription->get_payment_tokens() );
-			if ( ! in_array( $token->get_id(), $subscription_token_ids, true ) ) {
+			$active_token = $this->get_active_token_for_order( $subscription );
+			if ( ! $active_token instanceof WC_Payment_Token || $token->get_id() !== $active_token->get_id() ) {
 				$subscription->add_payment_token( $token );
 			}
 
@@ -901,7 +927,7 @@ class WooPaymentsTokenService {
 	 * @param WC_Order $order Parent order.
 	 * @return array<int,mixed>
 	 */
-	private function get_related_subscriptions_for_order( WC_Order $order ): array {
+	public function get_related_subscriptions_for_order( WC_Order $order ): array {
 		$subscriptions = array();
 		if ( function_exists( 'wcs_get_subscriptions_for_order' ) ) {
 			$subscriptions = wcs_get_subscriptions_for_order( $order->get_id() );

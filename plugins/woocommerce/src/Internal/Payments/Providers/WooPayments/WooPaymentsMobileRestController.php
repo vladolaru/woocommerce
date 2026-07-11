@@ -1450,7 +1450,7 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 				'amount_captured'     => isset( $charge['amount_captured'] ) ? $this->interpret_minor_amount( (int) $charge['amount_captured'], (string) ( $charge['currency'] ?? $intent['currency'] ?? $order->get_currency() ) ) : $this->interpret_minor_amount( (int) ( $intent['amount'] ?? 0 ), (string) ( $intent['currency'] ?? $order->get_currency() ) ),
 				'brand'               => isset( $card_present['brand'] ) ? (string) $card_present['brand'] : '',
 				'last4'               => isset( $card_present['last4'] ) ? (string) $card_present['last4'] : '',
-				'payment_method_name' => $this->get_terminal_card_display_name( $card_present ),
+				'payment_method_name' => WooPaymentsTerminalCardFormatter::get_terminal_card_display_name( $card_present ),
 				'receipt'             => array(
 					'application_preferred_name' => (string) ( $receipt['application_preferred_name'] ?? '' ),
 					'dedicated_file_name'        => (string) ( $receipt['dedicated_file_name'] ?? '' ),
@@ -1663,18 +1663,6 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 		}
 
 		return wc_price( $price, array( 'currency' => $currency ) );
-	}
-
-	/**
-	 * Get the terminal card display name.
-	 *
-	 * @param array<string,mixed> $card_present Card-present details.
-	 * @return string
-	 */
-	private function get_terminal_card_display_name( array $card_present ): string {
-		$brand = isset( $card_present['brand'] ) ? (string) $card_present['brand'] : '';
-
-		return '' === $brand ? __( 'Card', 'woocommerce' ) : ucfirst( $brand );
 	}
 
 	/**

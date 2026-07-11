@@ -74,11 +74,25 @@ class PaymentLifecycleEvent {
 	const NOTE_TYPE_PAYMENT_SUCCESS = 'payment_success';
 
 	/**
+	 * Note type: payment authorization.
+	 *
+	 * @var string
+	 */
+	const NOTE_TYPE_PAYMENT_AUTHORIZED = 'payment_authorized';
+
+	/**
 	 * Note type: payment failure.
 	 *
 	 * @var string
 	 */
 	const NOTE_TYPE_PAYMENT_FAILED = 'payment_failed';
+
+	/**
+	 * Note type: payment started.
+	 *
+	 * @var string
+	 */
+	const NOTE_TYPE_PAYMENT_STARTED = 'payment_started';
 
 	/**
 	 * Note type: fee details.

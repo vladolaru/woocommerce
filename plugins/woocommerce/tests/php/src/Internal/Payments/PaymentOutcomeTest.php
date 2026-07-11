@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
+use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectPlan;
 use InvalidArgumentException;
 use WC_Unit_Test_Case;
 
@@ -45,6 +46,29 @@ class PaymentOutcomeTest extends WC_Unit_Test_Case {
 		$this->assertTrue( ( new PaymentOutcome( PaymentOutcome::STATUS_NO_EXTERNAL_PAYMENT ) )->is_successful() );
 		$this->assertFalse( ( new PaymentOutcome( PaymentOutcome::STATUS_FAILED ) )->is_successful() );
 		$this->assertFalse( ( new PaymentOutcome( PaymentOutcome::STATUS_CANCELED ) )->is_successful() );
+	}
+
+	/**
+	 * @testdox Provider effect plans stay in memory without changing serialized outcome data.
+	 */
+	public function test_provider_effect_plan_is_not_serialized_as_outcome_data(): void {
+		$outcome = new PaymentOutcome(
+			PaymentOutcome::STATUS_COMPLETED,
+			'pi_effect_plan',
+			'',
+			'pm_effect_plan',
+			'cus_effect_plan',
+			array( 'meta' => array( '_charge_id' => 'ch_effect_plan' ) )
+		);
+		$plan    = new class() implements ProviderOperationEffectPlan {
+		};
+
+		$planned_outcome = $outcome->with_effect_plan( $plan );
+
+		$this->assertNotSame( $outcome, $planned_outcome );
+		$this->assertNull( $outcome->get_effect_plan() );
+		$this->assertSame( $plan, $planned_outcome->get_effect_plan() );
+		$this->assertSame( $outcome->to_array(), $planned_outcome->to_array() );
 	}
 
 	/**

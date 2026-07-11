@@ -31,21 +31,20 @@ defined( 'ABSPATH' ) || exit;
  * - class-erase-bnpl-announcement-meta.php: PORT. Deletes stale April 2024 BNPL
  *   announcement transient and user meta.
  * - class-erase-deprecated-flags-and-options.php: PORT. Deletes stale feature flags.
- * - class-gateway-settings-sync.php: OBSOLETE. Extension split-gateway object sync
- *   has no native equivalent; native reads the single gateway settings option.
+ * - class-gateway-settings-sync.php: PORT. Canonical settings are projected to
+ *   every existing or enabled split gateway through the shared synchronizer.
  * - class-link-woopay-mutual-exclusion-handler.php: PORT. Removes Link when WooPay
  *   is enabled, including native express-checkout location arrays.
  * - class-manual-capture-payment-method-settings-update.php: PORT WITH NATIVE
  *   ADJUSTMENT. Uses native's current manual-capture-safe method list.
  * - class-migrate-express-checkout-locations.php: PORT. Converts old method-centric
  *   express-checkout location arrays to current location-centric arrays.
- * - class-migrate-payment-request-to-express-checkout-enabled.php: PORT WITH NATIVE
- *   ADJUSTMENT. Writes split Apple Pay / Google Pay settings but preserves
- *   `payment_request` because native still reads it.
+ * - class-migrate-payment-request-to-express-checkout-enabled.php: PORT. Writes
+ *   split Apple Pay / Google Pay settings and removes the obsolete card switch.
  * - class-multi-currency-cache-autodetect-existing-install.php: PORT. Marks existing
  *   installs as already auto-detected so cutover does not change rendering mode.
- * - class-payment-method-deprecation-settings-update.php: OBSOLETE. Historical
- *   giropay/sofort deprecation does not match native's current supported IDs.
+ * - class-payment-method-deprecation-settings-update.php: PORT. Deprecated
+ *   giropay/sofort IDs are removed and any existing split gateways are disabled.
  * - class-update-service-data-from-server.php: OBSOLETE. Live account refreshes
  *   belong to native account services, not first-request option normalization.
  * - class-wc-payments-remediate-canceled-auth-fees.php: OBSOLETE. Already ported as
@@ -62,7 +61,7 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 
 	private const NORMALIZED_OPTION = 'woocommerce_native_woopayments_cutover_normalization_version';
 
-	private const NORMALIZATION_VERSION = '1';
+	private const NORMALIZATION_VERSION = '2';
 
 	private const LOCATIONS = array( 'product', 'cart', 'checkout' );
 
@@ -127,14 +126,23 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 	private NativePaymentsRuntimeArbiter $arbiter;
 
 	/**
+	 * Canonical-to-split gateway settings synchronizer.
+	 *
+	 * @var WooPaymentsGatewaySettingsSynchronizer|null
+	 */
+	private ?WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer = null;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter $arbiter Runtime owner arbiter.
+	 * @param NativePaymentsRuntimeArbiter                $arbiter Runtime owner arbiter.
+	 * @param WooPaymentsGatewaySettingsSynchronizer|null $gateway_settings_synchronizer Optional gateway settings synchronizer.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter ): void {
-		$this->arbiter = $arbiter;
+	final public function init( NativePaymentsRuntimeArbiter $arbiter, ?WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer = null ): void {
+		$this->arbiter                       = $arbiter;
+		$this->gateway_settings_synchronizer = $gateway_settings_synchronizer;
 	}
 
 	/**
@@ -172,7 +180,7 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 		$previous_version = $this->get_previous_version();
 		$settings         = $this->get_gateway_settings();
 
-		if ( $this->migrate_payment_request_split_settings( $settings, $previous_version ) ) {
+		if ( $this->should_migrate_payment_request_split_settings( $settings, $previous_version ) ) {
 			$changes[] = 'payment_request_split_settings';
 		}
 
@@ -200,7 +208,22 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 			$changes[] = 'link_woopay_mutual_exclusion';
 		}
 
-		update_option( self::SETTINGS_OPTION, $settings );
+		$projection = $this->get_gateway_settings_synchronizer()->persist( $settings );
+		if ( ! $projection['persisted'] ) {
+			$this->log_persistence_failure( $projection['failed_option_names'] );
+
+			return array(
+				'ran'     => false,
+				'changes' => array( 'settings_persistence_failed' ),
+			);
+		}
+		$settings = $projection['settings'];
+		if ( ! empty( $projection['removed_deprecated_method_ids'] ) ) {
+			$changes[] = 'deprecated_payment_methods';
+		}
+		if ( ! empty( $projection['updated_split_options'] ) ) {
+			$changes[] = 'split_gateway_settings';
+		}
 
 		if ( $this->delete_appearance_transients() ) {
 			$changes[] = 'appearance_transients';
@@ -255,24 +278,27 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Write split Apple Pay / Google Pay settings while preserving native's card flag.
+	 * Tell whether the shared settings synchronizer should consume the legacy payment-request setting.
 	 *
 	 * @param array<string,mixed> $settings         Gateway settings.
 	 * @param string              $previous_version Previous WooPayments plugin version.
 	 * @return bool
 	 */
-	private function migrate_payment_request_split_settings( array $settings, string $previous_version ): bool {
-		if ( ! $this->is_upgrade_from_before( $previous_version, '10.4.0' ) || ! array_key_exists( 'payment_request', $settings ) ) {
-			return false;
+	private function should_migrate_payment_request_split_settings( array $settings, string $previous_version ): bool {
+		return $this->is_upgrade_from_before( $previous_version, '10.4.0' ) && array_key_exists( 'payment_request', $settings );
+	}
+
+	/**
+	 * Get the canonical-to-split gateway settings synchronizer.
+	 *
+	 * @return WooPaymentsGatewaySettingsSynchronizer
+	 */
+	private function get_gateway_settings_synchronizer(): WooPaymentsGatewaySettingsSynchronizer {
+		if ( null === $this->gateway_settings_synchronizer ) {
+			$this->gateway_settings_synchronizer = wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class );
 		}
 
-		$enabled = 'yes' === (string) ( $settings['payment_request'] ?? 'no' ) ? 'yes' : 'no';
-		$value   = array( 'enabled' => $enabled );
-
-		$apple_updated  = update_option( 'woocommerce_woocommerce_payments_apple_pay_settings', $value, true );
-		$google_updated = update_option( 'woocommerce_woocommerce_payments_google_pay_settings', $value, true );
-
-		return $apple_updated || $google_updated;
+		return $this->gateway_settings_synchronizer;
 	}
 
 	/**
@@ -619,6 +645,18 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 	private function log_summary( array $changes ): void {
 		wc_get_logger()->info(
 			'Native WooPayments cutover normalization completed: ' . implode( ', ', $changes ),
+			array( 'source' => 'woocommerce-native-payments' )
+		);
+	}
+
+	/**
+	 * Log failed settings writes without marking cutover complete.
+	 *
+	 * @param string[] $failed_option_names Failed option names.
+	 */
+	private function log_persistence_failure( array $failed_option_names ): void {
+		wc_get_logger()->error(
+			'Native WooPayments cutover normalization could not persist settings: ' . implode( ', ', $failed_option_names ),
 			array( 'source' => 'woocommerce-native-payments' )
 		);
 	}

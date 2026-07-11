@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodMessaging;
 use WC_Product;
@@ -163,6 +164,7 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 		$this->assertNotEmpty( $script_data['nonce']['get_cart_total'] );
 		$this->assertNotEmpty( $script_data['nonce']['is_bnpl_available'] );
 		$this->assertStringContainsString( '%%endpoint%%', $script_data['wcAjaxUrl'] );
+		$this->assertSame( 'shared-styles-token', $script_data['stylesCacheVersion'] );
 		$this->assertTrue( (bool) $script_data['shouldInitializePMME'] );
 		$this->assertTrue( (bool) $script_data['shouldShowPMME'] );
 	}
@@ -281,8 +283,13 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 			}
 		);
 
+		$frontend_styles_service = $this->getMockBuilder( WooPaymentsFrontendStylesService::class )
+			->onlyMethods( array( 'get_styles_cache_version' ) )
+			->getMock();
+		$frontend_styles_service->method( 'get_styles_cache_version' )->willReturn( 'shared-styles-token' );
+
 		$controller = new WooPaymentsPaymentMethodMessaging();
-		$controller->init( $arbiter, $account_service, new WooPaymentsPaymentMethodRegistry(), new WooPaymentsOrderDataService() );
+		$controller->init( $arbiter, $account_service, new WooPaymentsPaymentMethodRegistry(), new WooPaymentsOrderDataService(), $frontend_styles_service );
 
 		return $controller;
 	}

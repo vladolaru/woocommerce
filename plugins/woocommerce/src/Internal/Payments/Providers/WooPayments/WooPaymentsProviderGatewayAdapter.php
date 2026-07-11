@@ -169,7 +169,7 @@ class WooPaymentsProviderGatewayAdapter {
 						$idempotency_key
 					);
 
-					return WooPaymentsIntentCodec::outcome_from_refund_result( $result, $context );
+					return $this->outcome_from_native_refund_transport_result( $result, $context );
 				} catch ( WooPaymentsApiException $exception ) {
 					return $this->failed_transport_outcome( 'refund', $exception );
 				}
@@ -195,6 +195,38 @@ class WooPaymentsProviderGatewayAdapter {
 	}
 
 	/**
+	 * Normalize a native refund transport response before applying local order effects.
+	 *
+	 * @param array<string,mixed> $result  Native refund response.
+	 * @param PaymentContext      $context Payment context.
+	 * @return PaymentOutcome
+	 */
+	private function outcome_from_native_refund_transport_result( array $result, PaymentContext $context ): PaymentOutcome {
+		$provider_status = isset( $result['status'] ) ? (string) $result['status'] : '';
+		if ( ! in_array( $provider_status, array( '', 'pending', 'succeeded' ), true ) ) {
+			return WooPaymentsIntentCodec::outcome_from_refund_result( $result, $context );
+		}
+
+		$refund_status          = 'pending' === $provider_status ? 'pending' : 'successful';
+		$balance_transaction_id = WooPaymentsOrderEffects::balance_transaction_id( $result['balance_transaction'] ?? null );
+		$data                   = array( 'refund_status' => $refund_status );
+		if ( '' !== $balance_transaction_id ) {
+			$data['refund_balance_transaction_id'] = $balance_transaction_id;
+		}
+
+		$outcome = new PaymentOutcome(
+			PaymentOutcome::STATUS_COMPLETED,
+			isset( $result['id'] ) ? (string) $result['id'] : '',
+			'',
+			'',
+			'',
+			$data
+		);
+
+		return $outcome->with_effect_plan( WooPaymentsOrderEffectPlan::for_refund( $result ) );
+	}
+
+	/**
 	 * Capture an authorized payment through the active WooPayments gateway.
 	 *
 	 * @since 11.0.0
@@ -217,15 +249,9 @@ class WooPaymentsProviderGatewayAdapter {
 						array()
 					);
 
-					WooPaymentsOrderEffects::maybe_add_capture_fee_breakdown_note( $order, $result, $this->get_order_data_service() );
+					$outcome = WooPaymentsIntentCodec::outcome_from_native_capture_result( $result, $context );
 
-					return WooPaymentsIntentCodec::outcome_from_capture_result(
-						$result,
-						$context,
-						$this->get_account_service()->get_mode(),
-						$this->get_account_service()->get_account_default_currency(),
-						$this->get_order_data_service()
-					);
+					return $outcome->with_effect_plan( WooPaymentsOrderEffectPlan::for_capture( $result ) );
 				} catch ( WooPaymentsApiException $exception ) {
 					return $this->failed_transport_outcome( 'capture', $exception, $context );
 				}
@@ -405,7 +431,8 @@ class WooPaymentsProviderGatewayAdapter {
 	private function charge_via_native_transport( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
 		$context            = $this->with_saved_payment_token_method_type( $context );
 		$order              = $context->get_order();
-		$payment_credential = WooPaymentsOrderEffects::payment_credential_from_context( $context, $this->get_token_service() );
+		$payment_credential = $this->payment_credential_from_context( $context );
+		$is_recurring       = $this->is_recurring_payment( $order );
 
 		if ( '' === $payment_credential ) {
 			return new PaymentOutcome(
@@ -423,10 +450,11 @@ class WooPaymentsProviderGatewayAdapter {
 			$context,
 			$payment_credential,
 			$customer_id,
-			$this->is_recurring_payment( $order ),
+			$is_recurring,
 			$this->get_account_service(),
 			$this->get_order_data_service()
 		);
+		$account_mode = $this->get_account_service()->get_mode();
 
 		try {
 			$result = $this->get_api_client()->create_and_confirm_payment_intention( $request_data, $idempotency_key );
@@ -440,9 +468,9 @@ class WooPaymentsProviderGatewayAdapter {
 			$result                   = $this->get_api_client()->create_and_confirm_payment_intention( $request_data, $idempotency_key );
 		}
 
-		WooPaymentsOrderEffects::apply_payment_method_display_details( $order, $result );
+		$outcome = $this->normalize_native_charge_result( $result, $context, $payment_credential, $customer_id, $account_mode );
 
-		return $this->normalize_native_charge_result( $result, $context, $customer_id );
+		return $outcome->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $result, $is_recurring ) );
 	}
 
 	/**
@@ -490,7 +518,8 @@ class WooPaymentsProviderGatewayAdapter {
 	private function setup_intent_via_native_transport( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
 		$context            = $this->with_saved_payment_token_method_type( $context );
 		$order              = $context->get_order();
-		$payment_credential = WooPaymentsOrderEffects::payment_credential_from_context( $context, $this->get_token_service() );
+		$payment_credential = $this->payment_credential_from_context( $context );
+		$is_recurring       = $this->is_recurring_payment( $order );
 
 		if ( '' === $payment_credential ) {
 			return new PaymentOutcome(
@@ -508,9 +537,10 @@ class WooPaymentsProviderGatewayAdapter {
 			$context,
 			$payment_credential,
 			$customer_id,
-			$this->is_recurring_payment( $order ),
+			$is_recurring,
 			$this->get_account_service()
 		);
+		$account_mode = $this->get_account_service()->get_mode();
 
 		try {
 			$result = WooPaymentsIntentCodec::is_confirmation_token( $payment_credential )
@@ -528,58 +558,37 @@ class WooPaymentsProviderGatewayAdapter {
 				: $this->get_api_client()->create_and_confirm_setup_intention( $request_data, $idempotency_key );
 		}
 
-		return $this->normalize_native_setup_intent_result( $result, $context, $customer_id );
+		$outcome = $this->normalize_native_setup_intent_result( $result, $context, $payment_credential, $customer_id, $account_mode );
+		$plan    = WooPaymentsOrderEffectPlan::for_setup_intent(
+			$result,
+			$is_recurring,
+			array(
+				'_wcpay_intent_currency' => (string) $order->get_currency(),
+				'_wcpay_mode'            => $account_mode,
+			)
+		);
+
+		return $outcome->with_effect_plan( $plan );
 	}
 
 	/**
 	 * Normalize a native PaymentIntent response to a neutral payment outcome.
 	 *
-	 * @param array<string,mixed> $result              Native PaymentIntent response.
-	 * @param PaymentContext      $context             Payment context.
+	 * @param array<string,mixed> $result               Native PaymentIntent response.
+	 * @param PaymentContext      $context              Payment context.
+	 * @param string              $payment_credential   Credential resolved before transport.
 	 * @param string              $fallback_customer_id Customer ID used in the request.
+	 * @param string              $account_mode         Account mode resolved before transport.
 	 * @return PaymentOutcome
 	 */
-	private function normalize_native_charge_result( array $result, PaymentContext $context, string $fallback_customer_id ): PaymentOutcome {
-		$status            = isset( $result['status'] ) ? (string) $result['status'] : '';
-		$charge            = WooPaymentsOrderEffects::latest_charge( $result );
-		$payment_method_id = WooPaymentsIntentCodec::result_payment_method_id( $result );
-		if ( '' === $payment_method_id && isset( $charge['payment_method'] ) ) {
-			$payment_method_id = (string) $charge['payment_method'];
-		}
-		if ( '' === $payment_method_id ) {
-			$payment_method_id = WooPaymentsOrderEffects::payment_credential_from_context( $context, $this->get_token_service() );
-		}
-		$customer_id = isset( $result['customer'] ) ? (string) $result['customer'] : $fallback_customer_id;
-
-		if ( WooPaymentsIntentCodec::is_authorized_native_intent_status( $status ) ) {
-			WooPaymentsOrderEffects::maybe_attach_saved_payment_token_to_order( $context, $payment_method_id, $customer_id, $this->get_token_service() );
-			$token_save_failure = WooPaymentsOrderEffects::maybe_save_new_card_token_to_order(
-				$context,
-				$payment_method_id,
-				$customer_id,
-				$this->get_token_service(),
-				$this->is_recurring_payment( $context->get_order() ),
-				$this->legacy_runtime->get_logger()
-			);
-			if ( null !== $token_save_failure ) {
-				return $token_save_failure;
-			}
-		}
-
+	private function normalize_native_charge_result( array $result, PaymentContext $context, string $payment_credential, string $fallback_customer_id, string $account_mode ): PaymentOutcome {
 		return WooPaymentsIntentCodec::outcome_from_intention(
 			$result,
 			$context->get_order(),
 			array(
-				'payment_credential'   => WooPaymentsOrderEffects::payment_credential_from_context( $context, $this->get_token_service() ),
+				'payment_credential'   => $payment_credential,
 				'fallback_customer_id' => $fallback_customer_id,
-				'account_mode'         => $this->get_account_service()->get_mode(),
-				'completed_meta'       => 'succeeded' === $status ? WooPaymentsOrderEffects::completed_charge_meta(
-					$result,
-					$charge,
-					$context->get_order(),
-					$this->get_account_service()->get_account_default_currency(),
-					$this->get_order_data_service()
-				) : array(),
+				'account_mode'         => $account_mode,
 			)
 		);
 	}
@@ -587,43 +596,15 @@ class WooPaymentsProviderGatewayAdapter {
 	/**
 	 * Normalize a native SetupIntent response to a neutral payment outcome.
 	 *
-	 * @param array<string,mixed> $result              Native SetupIntent response.
-	 * @param PaymentContext      $context             Payment context.
+	 * @param array<string,mixed> $result               Native SetupIntent response.
+	 * @param PaymentContext      $context              Payment context.
+	 * @param string              $payment_credential   Credential resolved before transport.
 	 * @param string              $fallback_customer_id Customer ID used in the request.
+	 * @param string              $account_mode         Account mode resolved before transport.
 	 * @return PaymentOutcome
 	 */
-	private function normalize_native_setup_intent_result( array $result, PaymentContext $context, string $fallback_customer_id ): PaymentOutcome {
-		$status             = isset( $result['status'] ) ? (string) $result['status'] : '';
-		$setup_intent_id    = isset( $result['id'] ) ? (string) $result['id'] : '';
-		$payment_method_id  = WooPaymentsIntentCodec::result_payment_method_id( $result );
-		$customer_id        = isset( $result['customer'] ) ? (string) $result['customer'] : $fallback_customer_id;
-		$payment_credential = WooPaymentsOrderEffects::payment_credential_from_context( $context, $this->get_token_service() );
+	private function normalize_native_setup_intent_result( array $result, PaymentContext $context, string $payment_credential, string $fallback_customer_id, string $account_mode ): PaymentOutcome {
 		$confirmation_token = WooPaymentsIntentCodec::is_confirmation_token( $payment_credential ) ? $payment_credential : '';
-		$meta               = array(
-			'_wcpay_intent_currency' => (string) $context->get_order()->get_currency(),
-			'_wcpay_mode'            => $this->get_account_service()->get_mode(),
-		);
-
-		if ( '' === $payment_method_id && ! WooPaymentsIntentCodec::is_confirmation_token( $payment_credential ) ) {
-			$payment_method_id = $payment_credential;
-		}
-
-		if ( 'succeeded' === $status ) {
-			WooPaymentsOrderEffects::maybe_attach_saved_payment_token_to_order( $context, $payment_method_id, $customer_id, $this->get_token_service() );
-			$token_save_failure = WooPaymentsOrderEffects::maybe_save_new_card_token_to_order(
-				$context,
-				$payment_method_id,
-				$customer_id,
-				$this->get_token_service(),
-				$this->is_recurring_payment( $context->get_order() ),
-				$this->legacy_runtime->get_logger()
-			);
-			if ( null !== $token_save_failure ) {
-				return $token_save_failure;
-			}
-		}
-
-		WooPaymentsOrderEffects::persist_setup_intent_details( $context->get_order(), $setup_intent_id, $payment_method_id, $customer_id, $meta );
 
 		return WooPaymentsIntentCodec::outcome_from_intention(
 			$result,
@@ -632,10 +613,31 @@ class WooPaymentsProviderGatewayAdapter {
 				'intent_type'          => 'si',
 				'payment_credential'   => $payment_credential,
 				'fallback_customer_id' => $fallback_customer_id,
-				'account_mode'         => $this->get_account_service()->get_mode(),
+				'account_mode'         => $account_mode,
 				'confirmation_token'   => $confirmation_token,
 			)
 		);
+	}
+
+	/**
+	 * Get the submitted payment method or resolve the selected saved token.
+	 *
+	 * @param PaymentContext $context Payment context.
+	 * @return string
+	 */
+	private function payment_credential_from_context( PaymentContext $context ): string {
+		$payment_data  = $context->get_payment_data();
+		$payment_token = isset( $payment_data['payment_token'] ) ? (string) $payment_data['payment_token'] : '';
+
+		if ( '' !== $payment_token && 'new' !== $payment_token ) {
+			if ( ! empty( $context->get_provider_data()['scheduled_subscription_payment'] ) ) {
+				return $this->get_token_service()->resolve_payment_method_id_from_order_token_id( $payment_token, $context->get_order() );
+			}
+
+			return $this->get_token_service()->resolve_payment_method_id_from_token_id( $payment_token, $context->get_order()->get_user_id() );
+		}
+
+		return $context->get_payment_method_id();
 	}
 
 	/**

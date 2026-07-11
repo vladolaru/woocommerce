@@ -375,7 +375,7 @@ class Utils {
 			array_merge(
 				array(
 					'page' => 'wc-admin',
-					'path' => rawurlencode( $path ),
+					'path' => $path,
 				),
 				$query
 			),

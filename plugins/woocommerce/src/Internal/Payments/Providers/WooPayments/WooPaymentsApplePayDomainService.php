@@ -22,19 +22,13 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 
 	private const SETTINGS_OPTION = 'woocommerce_woocommerce_payments_settings';
 
+	private const APPLE_PAY_SETTINGS_OPTION = 'woocommerce_woocommerce_payments_apple_pay_settings';
+
 	private const ERROR_OPTION = 'wcpay_apple_pay_domain_error';
 
 	private const RETRY_ACTION = 'wcpay_register_apple_pay_domain';
 
 	private const RETRY_DELAY_SECONDS = HOUR_IN_SECONDS;
-
-	private const EXPRESS_METHOD_PAYMENT_REQUEST = 'payment_request';
-
-	private const EXPRESS_LOCATION_SETTING_KEYS = array(
-		'express_checkout_product_methods',
-		'express_checkout_cart_methods',
-		'express_checkout_checkout_methods',
-	);
 
 	/**
 	 * Runtime owner arbiter.
@@ -97,6 +91,8 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 		add_action( 'admin_init', array( $this, 'verify_domain_on_domain_name_change' ) );
 		add_action( 'admin_notices', array( $this, 'display_error_notice' ) );
 		add_action( 'woocommerce_woocommerce_payments_admin_notices', array( $this, 'display_error_notice' ) );
+		add_action( 'add_option_' . self::APPLE_PAY_SETTINGS_OPTION, array( $this, 'verify_domain_on_new_apple_pay_settings' ), 10, 2 );
+		add_action( 'update_option_' . self::APPLE_PAY_SETTINGS_OPTION, array( $this, 'verify_domain_on_updated_apple_pay_settings' ), 10, 2 );
 		add_action( 'add_option_' . self::SETTINGS_OPTION, array( $this, 'verify_domain_on_new_gateway_settings' ), 10, 2 );
 		add_action( 'update_option_' . self::SETTINGS_OPTION, array( $this, 'verify_domain_on_updated_gateway_settings' ), 10, 2 );
 		add_action( 'update_option_home', array( $this, 'verify_domain_on_site_url_change' ), 10, 2 );
@@ -113,6 +109,31 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	public function verify_domain_on_new_gateway_settings( string $_option, $settings ): void {
 		if ( is_array( $settings ) ) {
 			$this->verify_domain_if_configured( $settings );
+		}
+	}
+
+	/**
+	 * Verify the Apple Pay domain after split Apple Pay settings are first stored.
+	 *
+	 * @param string              $_option  Option name.
+	 * @param array<string,mixed> $settings New Apple Pay settings.
+	 */
+	public function verify_domain_on_new_apple_pay_settings( string $_option, $settings ): void {
+		$this->verify_domain_on_updated_apple_pay_settings( array(), $settings );
+	}
+
+	/**
+	 * Verify the Apple Pay domain when the split Apple Pay gateway becomes enabled.
+	 *
+	 * @param array<string,mixed> $previous_settings Previous Apple Pay settings.
+	 * @param array<string,mixed> $settings          New Apple Pay settings.
+	 */
+	public function verify_domain_on_updated_apple_pay_settings( $previous_settings, $settings ): void {
+		$previous_settings = is_array( $previous_settings ) ? $previous_settings : array();
+		$settings          = is_array( $settings ) ? $settings : array();
+
+		if ( ! $this->is_truthy( $previous_settings['enabled'] ?? 'no' ) && $this->is_truthy( $settings['enabled'] ?? 'no' ) ) {
+			$this->verify_domain_if_configured();
 		}
 	}
 
@@ -314,57 +335,8 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_apple_pay_configured( array $settings ): bool {
-		return $this->is_truthy( $settings['enabled'] ?? 'no' ) && $this->is_payment_request_enabled( $settings );
-	}
-
-	/**
-	 * Tell whether payment-request express checkout is enabled in settings.
-	 *
-	 * @param array<string,mixed> $settings Gateway settings.
-	 * @return bool
-	 */
-	private function is_payment_request_enabled( array $settings ): bool {
-		$has_location_settings = false;
-
-		foreach ( self::EXPRESS_LOCATION_SETTING_KEYS as $key ) {
-			if ( ! array_key_exists( $key, $settings ) || ! is_array( $settings[ $key ] ) ) {
-				continue;
-			}
-
-			$has_location_settings = true;
-			if ( in_array( self::EXPRESS_METHOD_PAYMENT_REQUEST, $this->normalize_method_list( $settings[ $key ] ), true ) ) {
-				return true;
-			}
-		}
-
-		if ( $has_location_settings ) {
-			return false;
-		}
-
-		return $this->is_truthy( $settings[ self::EXPRESS_METHOD_PAYMENT_REQUEST ] ?? 'no' );
-	}
-
-	/**
-	 * Normalize express checkout method IDs.
-	 *
-	 * @param array<int,mixed> $methods Method IDs.
-	 * @return array<int,string>
-	 */
-	private function normalize_method_list( array $methods ): array {
-		$normalized = array();
-
-		foreach ( $methods as $method ) {
-			if ( ! is_scalar( $method ) ) {
-				continue;
-			}
-
-			$method = sanitize_key( (string) $method );
-			if ( '' !== $method ) {
-				$normalized[] = $method;
-			}
-		}
-
-		return array_values( array_unique( $normalized ) );
+		return $this->is_truthy( $settings['enabled'] ?? 'no' )
+			&& $this->account_service->is_payment_request_method_enabled( 'apple_pay' );
 	}
 
 	/**

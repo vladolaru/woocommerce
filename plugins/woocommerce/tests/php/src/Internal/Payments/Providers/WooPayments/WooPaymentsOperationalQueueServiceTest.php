@@ -788,7 +788,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	private function create_account_service( array $account_data = array(), bool $test_mode = true, bool $can_process_payments = true, bool $test_account = false ): WooPaymentsAccountService {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_test_mode_enabled', 'is_test_mode_onboarding_enabled', 'get_cached_account_data', 'can_process_payments', 'has_test_account' ) )
+			->onlyMethods( array( 'is_test_mode_enabled', 'is_test_mode_onboarding_enabled', 'get_cached_account_data', 'can_process_payments', 'has_test_account', 'is_payment_request_enabled' ) )
 			->getMock();
 
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( $test_mode );
@@ -796,6 +796,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		$account_service->method( 'get_cached_account_data' )->willReturn( $account_data );
 		$account_service->method( 'can_process_payments' )->willReturn( $can_process_payments );
 		$account_service->method( 'has_test_account' )->willReturn( $test_account );
+		$account_service->method( 'is_payment_request_enabled' )->willReturn( true );
 
 		return $account_service;
 	}
@@ -869,9 +870,42 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		return array(
 			'type'             => 'captured',
 			'fee_breakdown_v1' => array(
+				'rows'    => array(
+					array(
+						'key'      => 'base',
+						'kind'     => 'fee',
+						'amount'   => 293,
+						'currency' => 'usd',
+						'rate'     => array(
+							'percentage'     => 0.029,
+							'fixed'          => 30,
+							'fixed_currency' => 'usd',
+						),
+					),
+					array(
+						'key'      => 'additional.fx',
+						'kind'     => 'fee',
+						'amount'   => 0,
+						'currency' => 'usd',
+						'rate'     => array(
+							'percentage'     => 0.01,
+							'fixed'          => 0,
+							'fixed_currency' => 'usd',
+						),
+					),
+				),
 				'totals'  => array(
 					'fee'         => array(
 						'amount'   => 293,
+						'currency' => 'usd',
+						'rate'     => array(
+							'percentage'     => 0.039,
+							'fixed'          => 30,
+							'fixed_currency' => 'usd',
+						),
+					),
+					'tax'         => array(
+						'amount'   => 0,
 						'currency' => 'usd',
 					),
 					'net'         => array(

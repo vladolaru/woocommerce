@@ -463,7 +463,8 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 			'payment_method_details' => array(
 				'card_present' => array(
 					'brand'   => 'visa',
-					'last4'   => '4242',
+					'network' => 'eftpos_au',
+					'last4'   => '0978',
 					'receipt' => array(
 						'application_preferred_name' => 'visa credit',
 						'dedicated_file_name'        => 'a0000000031010',
@@ -486,7 +487,8 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertStringContainsString( '+1 555 0200 generated@example.com', $html );
 		$this->assertStringContainsString( 'Order ' . $order->get_id(), $html );
 		$this->assertStringContainsString( 'AMOUNT PAID', $html );
-		$this->assertStringContainsString( 'Visa - 4242', $html );
+		$this->assertStringContainsString( 'eftpos - 0978', $html );
+		$this->assertStringNotContainsString( 'Visa - 0978', $html );
 		$this->assertStringContainsString( 'Visa credit', $html );
 		$this->assertStringContainsString( 'A0000000031010', $html );
 		$this->assertStringContainsString( 'Credit', $html );

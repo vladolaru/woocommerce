@@ -105,6 +105,7 @@ class WooPaymentsAccountSessionRestController implements RegisterHooksInterface 
 		$account = $this->account_service->get_cached_account_data();
 		if ( array() === $account ) {
 			$default_currency = get_woocommerce_currency();
+			$status           = $this->account_service->is_onboarding_disabled() ? 'ONBOARDING_DISABLED' : 'NOACCOUNT';
 			$account          = array(
 				'card_present_eligible'    => false,
 				'country'                  => WC()->countries->get_base_country(),
@@ -112,7 +113,7 @@ class WooPaymentsAccountSessionRestController implements RegisterHooksInterface 
 				'has_overdue_requirements' => false,
 				'has_pending_requirements' => false,
 				'statement_descriptor'     => '',
-				'status'                   => 'NOACCOUNT',
+				'status'                   => $status,
 				'store_currencies'         => array(
 					'default'   => $default_currency,
 					'supported' => array(

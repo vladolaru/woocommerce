@@ -97,7 +97,7 @@ class WooPaymentsLegacyAccountAdapter implements MultiCurrencyAccountInterface {
 	/**
 	 * Get account-supported customer currencies.
 	 *
-	 * @return string[]
+	 * @return array<string,string>
 	 */
 	public function get_account_customer_supported_currencies(): array {
 		return $this->call_legacy_array_method( 'get_account_customer_supported_currencies' );

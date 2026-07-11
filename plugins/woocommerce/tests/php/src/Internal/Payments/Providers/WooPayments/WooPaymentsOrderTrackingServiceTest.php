@@ -515,10 +515,22 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	private function create_account_service( bool $test_mode ): WooPaymentsAccountService {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_test_mode_enabled' ) )
+			->onlyMethods( array( 'get_fraud_services_config', 'is_test_mode_enabled' ) )
 			->getMock();
 
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( $test_mode );
+		$account_service
+			->method( 'get_fraud_services_config' )
+			->willReturnCallback(
+				static function (): array {
+					/**
+					 * Filters the fraud-services fixture returned by this account-service mock.
+					 *
+					 * @since 11.0.0
+					 */
+					return (array) apply_filters( WooPaymentsAccountService::FILTER_FRAUD_SERVICES_CONFIG, array() );
+				}
+			);
 
 		return $account_service;
 	}

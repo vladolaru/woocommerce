@@ -10,11 +10,14 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\CapabilityManifest;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
+use Automattic\WooCommerce\Internal\Payments\PaymentGatewayProviderContract;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\ProviderContract;
+use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectApplier;
+use Automattic\WooCommerce\Internal\Payments\ProviderPostLifecycleEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceProfile;
 
 /**
@@ -25,7 +28,7 @@ use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceProfile;
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class WooPaymentsProvider implements ProviderContract {
+class WooPaymentsProvider implements ProviderContract, PaymentGatewayProviderContract, ProviderOperationEffectApplier, ProviderPostLifecycleEffectApplier {
 
 	/**
 	 * WooPayments gateway adapter.
@@ -63,6 +66,13 @@ class WooPaymentsProvider implements ProviderContract {
 	private ?array $payment_gateways = null;
 
 	/**
+	 * WooPayments order effect applier.
+	 *
+	 * @var WooPaymentsOrderEffectApplier|null
+	 */
+	private ?WooPaymentsOrderEffectApplier $order_effect_applier = null;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -71,17 +81,20 @@ class WooPaymentsProvider implements ProviderContract {
 	 * @param WooPaymentsApiClient                  $api_client              Native WooPayments API client.
 	 * @param WooPaymentsAccountService             $account_service         WooPayments account service.
 	 * @param WooPaymentsPaymentMethodRegistry|null $payment_method_registry Optional payment method registry.
+	 * @param WooPaymentsOrderEffectApplier|null    $order_effect_applier    Optional order effect applier.
 	 */
 	final public function init(
 		WooPaymentsProviderGatewayAdapter $gateway_adapter,
 		WooPaymentsApiClient $api_client,
 		WooPaymentsAccountService $account_service,
-		?WooPaymentsPaymentMethodRegistry $payment_method_registry = null
+		?WooPaymentsPaymentMethodRegistry $payment_method_registry = null,
+		?WooPaymentsOrderEffectApplier $order_effect_applier = null
 	): void {
 		$this->gateway_adapter         = $gateway_adapter;
 		$this->api_client              = $api_client;
 		$this->account_service         = $account_service;
 		$this->payment_method_registry = $payment_method_registry ?? new WooPaymentsPaymentMethodRegistry();
+		$this->order_effect_applier    = $order_effect_applier;
 		$this->payment_gateways        = null;
 	}
 
@@ -137,7 +150,12 @@ class WooPaymentsProvider implements ProviderContract {
 	 * @since 11.0.0
 	 */
 	public function get_payment_gateways(): array {
-		return array_values( $this->get_payment_gateway_map() );
+		return array_values(
+			array_filter(
+				$this->get_payment_gateway_map(),
+				static fn( NativeWooPaymentsGateway $gateway ): bool => $gateway->get_payment_method_definition()->should_publish_gateway()
+			)
+		);
 	}
 
 	/**
@@ -220,12 +238,62 @@ class WooPaymentsProvider implements ProviderContract {
 	}
 
 	/**
+	 * Apply a request-scoped WooPayments effect plan.
+	 *
+	 * @param PaymentContext $context   Payment context.
+	 * @param PaymentOutcome $outcome   Provider outcome.
+	 * @param string         $operation Operation name.
+	 * @return PaymentOutcome
+	 */
+	public function apply_operation_effects( PaymentContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome {
+		unset( $operation );
+
+		$plan = $outcome->get_effect_plan();
+		if ( ! $plan instanceof WooPaymentsOrderEffectPlan ) {
+			return $outcome;
+		}
+
+		return $this->get_order_effect_applier()->apply( $context, $outcome, $plan );
+	}
+
+	/**
+	 * Apply WooPayments display details after the generic payment lifecycle.
+	 *
+	 * @param PaymentContext $context   Payment context.
+	 * @param PaymentOutcome $outcome   Applied provider outcome.
+	 * @param string         $operation Operation name.
+	 */
+	public function apply_post_lifecycle_effects( PaymentContext $context, PaymentOutcome $outcome, string $operation ): void {
+		unset( $operation );
+
+		$plan = $outcome->get_effect_plan();
+		if ( ! $plan instanceof WooPaymentsOrderEffectPlan || WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT !== $plan->get_type() ) {
+			return;
+		}
+
+		$this->get_order_effect_applier()->apply_payment_method_display_details( $context->get_order(), $plan->get_provider_result() );
+	}
+
+	/**
 	 * Get the WooPayments gateway adapter.
 	 *
 	 * @return WooPaymentsProviderGatewayAdapter
 	 */
 	private function get_gateway_adapter(): WooPaymentsProviderGatewayAdapter {
 		return $this->gateway_adapter;
+	}
+
+	/**
+	 * Get the WooPayments order effect applier.
+	 *
+	 * @return WooPaymentsOrderEffectApplier
+	 */
+	private function get_order_effect_applier(): WooPaymentsOrderEffectApplier {
+		if ( null === $this->order_effect_applier ) {
+			$this->order_effect_applier = wc_get_container()->get( WooPaymentsOrderEffectApplier::class );
+		}
+
+		return $this->order_effect_applier;
 	}
 
 	/**
@@ -247,11 +315,10 @@ class WooPaymentsProvider implements ProviderContract {
 	 * @return array<string,NativeWooPaymentsGateway>
 	 */
 	private function build_payment_gateway_map(): array {
-		$capabilities = $this->get_account_capabilities();
-		$gateways     = array();
+		$gateways = array();
 
 		foreach ( $this->payment_method_registry->get_all() as $definition ) {
-			if ( ! $this->should_publish_gateway_for_definition( $definition, $capabilities ) ) {
+			if ( 'amazon_pay' === $definition->get_id() && ! WooPaymentsFeaturePolicy::is_amazon_pay_enabled( $this->account_service ) ) {
 				continue;
 			}
 
@@ -261,34 +328,6 @@ class WooPaymentsProvider implements ProviderContract {
 		}
 
 		return $gateways;
-	}
-
-	/**
-	 * Tell whether a payment method definition should publish a gateway instance.
-	 *
-	 * @param WooPaymentsPaymentMethodDefinition $definition Payment method definition.
-	 * @param array<string,mixed>                $capabilities Account capability status map.
-	 * @return bool
-	 */
-	private function should_publish_gateway_for_definition( WooPaymentsPaymentMethodDefinition $definition, array $capabilities ): bool {
-		if ( 'card' === $definition->get_id() ) {
-			return true;
-		}
-
-		$status = $capabilities[ $definition->get_stripe_id() ] ?? '';
-
-		return 'active' === $status;
-	}
-
-	/**
-	 * Get cached WooPayments account capabilities.
-	 *
-	 * @return array<string,mixed>
-	 */
-	private function get_account_capabilities(): array {
-		$account_data = $this->account_service->get_cached_account_data();
-
-		return is_array( $account_data['capabilities'] ?? null ) ? $account_data['capabilities'] : array();
 	}
 
 	/**

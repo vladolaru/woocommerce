@@ -8,8 +8,11 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 
 /**
  * Owns the transitional Core checkout surface for the WooPayments card gateway.
@@ -17,7 +20,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class WooPaymentsCheckoutBridge {
+class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	/**
 	 * WooPayments checkout base support features exposed to Checkout Blocks.
 	 *
@@ -64,11 +67,6 @@ class WooPaymentsCheckoutBridge {
 	 * Core-owned classic checkout script handle.
 	 */
 	private const CLASSIC_SCRIPT_HANDLE = 'wc-woopayments-checkout';
-
-	/**
-	 * Core-owned classic checkout appearance helper script handle.
-	 */
-	private const CLASSIC_APPEARANCE_SCRIPT_HANDLE = 'wc-woopayments-appearance';
 
 	/**
 	 * Core-owned classic checkout style handle.
@@ -199,6 +197,13 @@ class WooPaymentsCheckoutBridge {
 	private WooPaymentsAccountService $account_service;
 
 	/**
+	 * Native WooPayments customer service.
+	 *
+	 * @var WooPaymentsCustomerService
+	 */
+	private WooPaymentsCustomerService $customer_service;
+
+	/**
 	 * WooPay session service.
 	 *
 	 * @var WooPaymentsWooPaySessionService
@@ -227,6 +232,27 @@ class WooPaymentsCheckoutBridge {
 	private WooPaymentsFraudPreventionService $fraud_prevention_service;
 
 	/**
+	 * WooPayments payment method definition registry.
+	 *
+	 * @var WooPaymentsPaymentMethodRegistry|null
+	 */
+	private ?WooPaymentsPaymentMethodRegistry $payment_method_registry = null;
+
+	/**
+	 * Runtime owner arbiter.
+	 *
+	 * @var NativePaymentsRuntimeArbiter|null
+	 */
+	private ?NativePaymentsRuntimeArbiter $arbiter = null;
+
+	/**
+	 * Whether the aggregate classic checkout config has been localized.
+	 *
+	 * @var bool
+	 */
+	private bool $base_classic_config_localized = false;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -236,7 +262,10 @@ class WooPaymentsCheckoutBridge {
 	 * @param WooPaymentsWooPaySessionService        $woopay_session_service       WooPay session service.
 	 * @param WooPaymentsFrontendStylesService       $frontend_styles_service      Shared frontend styles service.
 	 * @param WooPaymentsFrontendTrackingController  $frontend_tracking_controller Frontend tracking controller.
-	 * @param WooPaymentsFraudPreventionService|null $fraud_prevention_service   Optional fraud-prevention service.
+	 * @param WooPaymentsFraudPreventionService|null $fraud_prevention_service  Optional fraud-prevention service.
+	 * @param WooPaymentsPaymentMethodRegistry|null  $payment_method_registry   Optional payment method registry.
+	 * @param WooPaymentsCustomerService|null        $customer_service          Optional native customer service.
+	 * @param NativePaymentsRuntimeArbiter|null      $arbiter                   Optional runtime owner arbiter.
 	 */
 	final public function init(
 		WooPaymentsLegacyRuntime $legacy_runtime,
@@ -244,7 +273,10 @@ class WooPaymentsCheckoutBridge {
 		WooPaymentsWooPaySessionService $woopay_session_service,
 		WooPaymentsFrontendStylesService $frontend_styles_service,
 		WooPaymentsFrontendTrackingController $frontend_tracking_controller,
-		?WooPaymentsFraudPreventionService $fraud_prevention_service = null
+		?WooPaymentsFraudPreventionService $fraud_prevention_service = null,
+		?WooPaymentsPaymentMethodRegistry $payment_method_registry = null,
+		?WooPaymentsCustomerService $customer_service = null,
+		?NativePaymentsRuntimeArbiter $arbiter = null
 	): void {
 		$this->legacy_runtime               = $legacy_runtime;
 		$this->account_service              = $account_service;
@@ -255,6 +287,43 @@ class WooPaymentsCheckoutBridge {
 		if ( null !== $fraud_prevention_service ) {
 			$this->fraud_prevention_service = $fraud_prevention_service;
 		}
+		if ( null !== $customer_service ) {
+			$this->customer_service = $customer_service;
+		}
+
+		$this->payment_method_registry = $payment_method_registry;
+		$this->arbiter                 = $arbiter;
+	}
+
+	/**
+	 * Register classic checkout bootstrap hooks.
+	 *
+	 * @internal
+	 */
+	public function register() {
+		if ( ! $this->get_runtime_arbiter()->should_native_register() ) {
+			return;
+		}
+
+		if ( false === has_action( 'woocommerce_after_checkout_form', array( $this, 'handle_woocommerce_after_checkout_form' ) ) ) {
+			add_action( 'woocommerce_after_checkout_form', array( $this, 'handle_woocommerce_after_checkout_form' ) );
+		}
+		if ( false === has_action( 'woocommerce_pay_order_before_payment', array( $this, 'handle_woocommerce_after_checkout_form' ) ) ) {
+			add_action( 'woocommerce_pay_order_before_payment', array( $this, 'handle_woocommerce_after_checkout_form' ) );
+		}
+	}
+
+	/**
+	 * Ensure classic checkout and order-pay assets exist when no WooPayments fields rendered.
+	 *
+	 * @internal
+	 */
+	public function handle_woocommerce_after_checkout_form(): void {
+		if ( $this->base_classic_config_localized ) {
+			return;
+		}
+
+		$this->enqueue_classic_checkout_assets( $this->get_payment_fields_js_config() );
 	}
 
 	/**
@@ -275,6 +344,13 @@ class WooPaymentsCheckoutBridge {
 	public function get_payment_fields_js_config( ?WooPaymentsPaymentMethodDefinition $payment_method_definition = null ): array {
 		$force_network_saved_cards = $this->should_force_network_saved_cards();
 		$saved_cards_enabled       = $this->is_saved_cards_enabled();
+		$payment_context           = $this->get_payment_context();
+		$payment_methods_config    = $this->get_payment_methods_config( $saved_cards_enabled, $payment_method_definition, $payment_context['currency'] );
+		$payment_list_wallets      = $this->get_payment_list_wallets_config( $saved_cards_enabled, $payment_method_definition, $payment_context['currency'] );
+		$customer_data             = $this->get_customer_service()->get_prepared_customer_data();
+		if ( '' !== $payment_context['billing_country'] ) {
+			$customer_data['billing_country'] = $payment_context['billing_country'];
+		}
 		/**
 		 * Filters the account ID used for payment intent confirmation.
 		 *
@@ -290,18 +366,19 @@ class WooPaymentsCheckoutBridge {
 			'gatewayId'                                => $this->get_gateway_id_for_payment_method_definition( $payment_method_definition ),
 			'ajaxUrl'                                  => admin_url( 'admin-ajax.php' ),
 			'wcAjaxUrl'                                => \WC_AJAX::get_endpoint( '%%endpoint%%' ),
-			'paymentMethodsConfig'                     => $this->get_payment_methods_config( $saved_cards_enabled, $payment_method_definition ),
-			'paymentMethodTypes'                       => $this->get_payment_method_types_for_definition( $payment_method_definition ),
+			'paymentMethodsConfig'                     => $payment_methods_config,
+			'paymentListWalletsConfig'                 => $payment_list_wallets,
+			'paymentMethodTypes'                       => $this->get_payment_method_types_for_definition( $payment_method_definition, $payment_methods_config ),
 			'testMode'                                 => $this->get_account_service()->is_test_mode_enabled(),
 			'enabledBillingFields'                     => $this->get_enabled_billing_fields(),
-			'currency'                                 => get_woocommerce_currency(),
-			'cartTotal'                                => $this->get_cart_total(),
+			'currency'                                 => $payment_context['currency'],
+			'cartTotal'                                => $payment_context['total'],
 			'storeCountry'                             => $this->get_account_country(),
 			'cartContainsSubscription'                 => $this->cart_contains_subscription(),
 			'stylesCacheVersion'                       => $this->get_frontend_styles_service()->get_styles_cache_version(),
 			'forceNetworkSavedCards'                   => $force_network_saved_cards,
 			'isSavedCardsEnabled'                      => $saved_cards_enabled,
-			'customerData'                             => $this->get_legacy_runtime()->get_gateway_prepared_customer_data(),
+			'customerData'                             => $customer_data,
 			'genericErrorMessage'                      => __(
 				'There was a problem processing the payment. Please check your email inbox and refresh the page to try again.',
 				'woocommerce'
@@ -329,12 +406,14 @@ class WooPaymentsCheckoutBridge {
 			'accountIdForIntentConfirmation'           => $account_id_for_intent_confirmation,
 			'wcpayVersionNumber'                       => defined( 'WC_VERSION' ) ? WC_VERSION : '',
 			'icon'                                     => '',
-			'isExpressCheckoutInPaymentMethodsEnabled' => $this->is_truthy_gateway_setting(
-				'express_checkout_in_payment_methods'
-			),
+			'isExpressCheckoutInPaymentMethodsEnabled' => $this->is_express_checkout_in_payment_methods_enabled(),
 			'confirmationErrorMessage'                 => __( 'There was a problem confirming your payment.', 'woocommerce' ),
 			'fraudPreventionToken'                     => $this->get_fraud_prevention_token(),
 		);
+		if ( 0 < $payment_context['order_id'] ) {
+			$config['isOrderPay'] = true;
+			$config['orderId']    = $payment_context['order_id'];
+		}
 
 		if ( $this->should_expose_checkout_surface() ) {
 			$config['createSetupIntentNonce'] = wp_create_nonce( 'wcpay_create_setup_intent_nonce' );
@@ -370,27 +449,7 @@ class WooPaymentsCheckoutBridge {
 			$json_config = '{}';
 		}
 
-		$this->register_classic_assets();
-		wp_localize_script( self::CLASSIC_SCRIPT_HANDLE, $this->get_classic_script_config_object_name( (string) $config['gatewayId'] ), $config );
-		if ( OrderPaymentStore::GATEWAY_ID === $config['gatewayId'] ) {
-			wp_localize_script( self::CLASSIC_SCRIPT_HANDLE, 'wcpay_core_checkout_config', $config );
-		}
-		wp_enqueue_style( self::CLASSIC_STYLE_HANDLE );
-		wp_enqueue_script( self::CLASSIC_SCRIPT_HANDLE );
-
-		if ( '' !== $config['fraudPreventionToken'] ) {
-			wp_register_script( WooPaymentsFraudPreventionService::TOKEN_NAME, false, array(), WC_VERSION, true );
-			wp_enqueue_script( WooPaymentsFraudPreventionService::TOKEN_NAME );
-			wp_add_inline_script(
-				WooPaymentsFraudPreventionService::TOKEN_NAME,
-				"window.wcpayFraudPreventionToken = '" . esc_js( (string) $config['fraudPreventionToken'] ) . "';",
-				'after'
-			);
-		}
-
-		if ( $this->should_expose_checkout_surface() ) {
-			wp_enqueue_script( self::STRIPE_SCRIPT_HANDLE );
-		}
+		$this->enqueue_classic_checkout_assets( $config );
 
 		echo '<div id="wcpay-core-checkout-form" class="wcpay-core-checkout-form" data-wcpay-config="' . esc_attr( $json_config ) . '">';
 
@@ -451,6 +510,49 @@ class WooPaymentsCheckoutBridge {
 	}
 
 	/**
+	 * Localize and enqueue the shared classic checkout assets.
+	 *
+	 * @param array<string,mixed> $config Checkout configuration.
+	 */
+	private function enqueue_classic_checkout_assets( array $config ): void {
+		$this->register_classic_assets();
+		wp_localize_script( self::CLASSIC_SCRIPT_HANDLE, $this->get_classic_script_config_object_name( (string) $config['gatewayId'] ), $config );
+		if ( OrderPaymentStore::GATEWAY_ID === $config['gatewayId'] ) {
+			wp_localize_script( self::CLASSIC_SCRIPT_HANDLE, 'wcpay_core_checkout_config', $config );
+			$this->base_classic_config_localized = true;
+		}
+		wp_enqueue_style( self::CLASSIC_STYLE_HANDLE );
+		wp_enqueue_script( self::CLASSIC_SCRIPT_HANDLE );
+
+		if ( '' !== $config['fraudPreventionToken'] ) {
+			wp_register_script( WooPaymentsFraudPreventionService::TOKEN_NAME, false, array(), WC_VERSION, true );
+			wp_enqueue_script( WooPaymentsFraudPreventionService::TOKEN_NAME );
+			wp_add_inline_script(
+				WooPaymentsFraudPreventionService::TOKEN_NAME,
+				"window.wcpayFraudPreventionToken = '" . esc_js( (string) $config['fraudPreventionToken'] ) . "';",
+				'after'
+			);
+		}
+
+		if ( $this->should_expose_checkout_surface() ) {
+			wp_enqueue_script( self::STRIPE_SCRIPT_HANDLE );
+		}
+	}
+
+	/**
+	 * Get the runtime owner arbiter.
+	 *
+	 * @return NativePaymentsRuntimeArbiter
+	 */
+	private function get_runtime_arbiter(): NativePaymentsRuntimeArbiter {
+		if ( ! $this->arbiter instanceof NativePaymentsRuntimeArbiter ) {
+			$this->arbiter = wc_get_container()->get( NativePaymentsRuntimeArbiter::class );
+		}
+
+		return $this->arbiter;
+	}
+
+	/**
 	 * Register the classic checkout assets.
 	 *
 	 * @return void
@@ -463,21 +565,13 @@ class WooPaymentsCheckoutBridge {
 
 		$suffix = Constants::is_true( 'SCRIPT_DEBUG' ) ? '' : '.min';
 
-		if ( ! wp_script_is( self::CLASSIC_APPEARANCE_SCRIPT_HANDLE, 'registered' ) ) {
-			wp_register_script(
-				self::CLASSIC_APPEARANCE_SCRIPT_HANDLE,
-				WC()->plugin_url() . '/assets/js/frontend/utils/woopayments-appearance' . $suffix . '.js',
-				array(),
-				WC_VERSION,
-				true
-			);
-		}
+		WooPaymentsFrontendAssets::register_appearance_script();
 
 		if ( ! wp_script_is( self::CLASSIC_SCRIPT_HANDLE, 'registered' ) ) {
 			wp_register_script(
 				self::CLASSIC_SCRIPT_HANDLE,
 				WC()->plugin_url() . '/assets/js/frontend/woopayments-checkout' . $suffix . '.js',
-				array( 'jquery', 'wc-checkout', self::STRIPE_SCRIPT_HANDLE, self::CLASSIC_APPEARANCE_SCRIPT_HANDLE ),
+				array( 'jquery', 'wc-checkout', self::STRIPE_SCRIPT_HANDLE, WooPaymentsFrontendAssets::APPEARANCE_SCRIPT_HANDLE ),
 				WC_VERSION,
 				true
 			);
@@ -518,6 +612,19 @@ class WooPaymentsCheckoutBridge {
 		}
 
 		return $this->account_service;
+	}
+
+	/**
+	 * Get the native WooPayments customer service.
+	 *
+	 * @return WooPaymentsCustomerService
+	 */
+	private function get_customer_service(): WooPaymentsCustomerService {
+		if ( ! isset( $this->customer_service ) ) {
+			$this->customer_service = wc_get_container()->get( WooPaymentsCustomerService::class );
+		}
+
+		return $this->customer_service;
 	}
 
 	/**
@@ -587,38 +694,29 @@ class WooPaymentsCheckoutBridge {
 	}
 
 	/**
-	 * Get the card-only payment method config for this slice.
+	 * Get payment method config for one split gateway or the shared card surface.
 	 *
 	 * @param bool                                    $saved_cards_enabled       Whether saved cards are enabled.
-	 * @param WooPaymentsPaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
+	 * @param WooPaymentsPaymentMethodDefinition|null $payment_method_definition Payment method definition.
+	 * @param string                                  $currency                  Checkout or order-pay currency.
 	 * @return array<string,array<string,mixed>>
 	 */
-	private function get_payment_methods_config( bool $saved_cards_enabled, ?WooPaymentsPaymentMethodDefinition $payment_method_definition = null ): array {
+	private function get_payment_methods_config( bool $saved_cards_enabled, ?WooPaymentsPaymentMethodDefinition $payment_method_definition, string $currency ): array {
 		if ( null !== $payment_method_definition && 'card' !== $payment_method_definition->get_id() ) {
-			$is_reusable = $this->payment_method_definition_supports( $payment_method_definition, self::PAYMENT_METHOD_CAPABILITY_TOKENIZATION );
-
 			return array(
-				$payment_method_definition->get_id() => array(
-					'id'                => $payment_method_definition->get_id(),
-					'title'             => $payment_method_definition->get_title( $this->get_account_country() ),
-					'label'             => $payment_method_definition->get_title( $this->get_account_country() ),
-					'isReusable'        => $is_reusable,
-					'isBnpl'            => $this->payment_method_definition_supports( $payment_method_definition, self::PAYMENT_METHOD_CAPABILITY_BUY_NOW_PAY_LATER ),
-					'isExpressCheckout' => $this->payment_method_definition_supports( $payment_method_definition, self::PAYMENT_METHOD_CAPABILITY_EXPRESS_CHECKOUT ),
-					'showSaveOption'    => $is_reusable && $this->should_show_card_save_option( $saved_cards_enabled ),
-					'supports'          => $this->get_blocks_supports(),
-				),
+				$payment_method_definition->get_id() => $this->get_payment_method_config( $payment_method_definition, $saved_cards_enabled ),
 			);
 		}
 
-		$enabled_method_ids = $this->get_legacy_runtime()->get_gateway_upe_enabled_payment_method_ids();
+		$enabled_method_ids = $this->get_enabled_payment_method_ids();
 		if ( ! empty( $enabled_method_ids ) && ! in_array( 'card', $enabled_method_ids, true ) ) {
 			return array();
 		}
 
-		return array(
+		$config = array(
 			'card' => array(
 				'id'                     => 'card',
+				'gatewayId'              => OrderPaymentStore::GATEWAY_ID,
 				'title'                  => __( 'Card', 'woocommerce' ),
 				'label'                  => __( 'Card', 'woocommerce' ),
 				'isReusable'             => true,
@@ -629,8 +727,197 @@ class WooPaymentsCheckoutBridge {
 				'showSaveOption'         => $this->should_show_card_save_option( $saved_cards_enabled ),
 				'supports'               => $this->get_blocks_supports(),
 				'testingInstructions'    => $this->get_card_testing_instructions(),
+				'countries'              => array(),
 			),
 		);
+
+		if ( $this->should_fold_link_into_card( $enabled_method_ids, $currency ) ) {
+			$link_definition = $this->get_payment_method_registry()->get( 'link' );
+			if ( null !== $link_definition ) {
+				$config['link'] = $this->get_payment_method_config( $link_definition, $saved_cards_enabled );
+			}
+		}
+
+		return $config;
+	}
+
+	/**
+	 * Get custom-button wallet config for express methods placed in the payment-method list.
+	 *
+	 * @param bool                                    $saved_cards_enabled       Whether saved cards are enabled.
+	 * @param WooPaymentsPaymentMethodDefinition|null $payment_method_definition Payment method definition.
+	 * @param string                                  $currency                  Checkout or order-pay currency.
+	 * @return array<string,array<string,mixed>>
+	 */
+	private function get_payment_list_wallets_config( bool $saved_cards_enabled, ?WooPaymentsPaymentMethodDefinition $payment_method_definition, string $currency ): array {
+		if (
+			( null !== $payment_method_definition && 'card' !== $payment_method_definition->get_id() )
+			|| ! $this->is_express_checkout_in_payment_methods_enabled()
+		) {
+			return array();
+		}
+
+		$config = array();
+		foreach ( array( 'apple_pay', 'google_pay' ) as $payment_method_id ) {
+			$definition = $this->get_payment_method_registry()->get( $payment_method_id );
+			if (
+				null === $definition
+				|| ! $this->get_account_service()->is_payment_request_method_enabled( $payment_method_id )
+				|| ! $this->is_payment_method_capability_active( $definition )
+				|| ! $definition->is_available_for( $currency, $this->get_account_country() )
+			) {
+				continue;
+			}
+
+			$config[ $payment_method_id ] = $this->get_payment_method_config( $definition, $saved_cards_enabled );
+		}
+
+		return $config;
+	}
+
+	/**
+	 * Build shopper configuration for one payment method definition.
+	 *
+	 * @param WooPaymentsPaymentMethodDefinition $definition          Payment method definition.
+	 * @param bool                               $saved_cards_enabled Whether saved cards are enabled.
+	 * @return array<string,mixed>
+	 */
+	private function get_payment_method_config( WooPaymentsPaymentMethodDefinition $definition, bool $saved_cards_enabled ): array {
+		$is_reusable     = $this->payment_method_definition_supports( $definition, self::PAYMENT_METHOD_CAPABILITY_TOKENIZATION );
+		$account_country = $this->get_account_country();
+
+		return array(
+			'id'                => $definition->get_id(),
+			'gatewayId'         => $this->get_gateway_id_for_payment_method_definition( $definition ),
+			'title'             => $definition->get_title( $account_country ),
+			'label'             => $definition->get_title( $account_country ),
+			'isReusable'        => $is_reusable,
+			'isBnpl'            => $this->payment_method_definition_supports( $definition, self::PAYMENT_METHOD_CAPABILITY_BUY_NOW_PAY_LATER ),
+			'isExpressCheckout' => $this->payment_method_definition_supports( $definition, self::PAYMENT_METHOD_CAPABILITY_EXPRESS_CHECKOUT ),
+			'showSaveOption'    => $is_reusable && $this->should_show_card_save_option( $saved_cards_enabled ),
+			'supports'          => $this->get_blocks_supports(),
+			'countries'         => $definition->get_supported_countries( $account_country ),
+		);
+	}
+
+	/**
+	 * Tell whether one definition's account capability is active.
+	 *
+	 * @param WooPaymentsPaymentMethodDefinition $definition Payment method definition.
+	 * @return bool
+	 */
+	private function is_payment_method_capability_active( WooPaymentsPaymentMethodDefinition $definition ): bool {
+		$account_data = $this->get_account_service()->get_cached_account_data();
+		$capabilities = is_array( $account_data['capabilities'] ?? null ) ? $account_data['capabilities'] : array();
+
+		return 'active' === ( $capabilities[ $definition->get_account_capability_key() ] ?? null );
+	}
+
+	/**
+	 * Tell whether express checkout methods belong in the payment-method list.
+	 *
+	 * @return bool
+	 */
+	private function is_express_checkout_in_payment_methods_enabled(): bool {
+		return WooPaymentsSettingsService::is_dynamic_checkout_place_order_button_enabled()
+			&& $this->is_truthy_gateway_setting( 'express_checkout_in_payment_methods' );
+	}
+
+	/**
+	 * Get canonical WooPayments enabled payment method IDs.
+	 *
+	 * @return string[]
+	 */
+	private function get_enabled_payment_method_ids(): array {
+		$method_ids = $this->get_account_service()->get_gateway_setting( 'upe_enabled_payment_method_ids', null );
+		if ( ! is_array( $method_ids ) ) {
+			$method_ids = $this->get_legacy_runtime()->get_gateway_upe_enabled_payment_method_ids();
+		}
+
+		$normalized = array();
+		foreach ( $method_ids as $method_id ) {
+			if ( ! is_scalar( $method_id ) ) {
+				continue;
+			}
+
+			$method_id = sanitize_key( (string) $method_id );
+			if ( '' !== $method_id && ! in_array( $method_id, $normalized, true ) ) {
+				$normalized[] = $method_id;
+			}
+		}
+
+		return $normalized;
+	}
+
+	/**
+	 * Tell whether Link should be folded into the card Payment Element.
+	 *
+	 * @param string[] $enabled_method_ids Canonical enabled payment method IDs.
+	 * @param string   $currency           Checkout or order-pay currency.
+	 * @return bool
+	 */
+	private function should_fold_link_into_card( array $enabled_method_ids, string $currency ): bool {
+		if ( ! in_array( 'card', $enabled_method_ids, true ) || ! in_array( 'link', $enabled_method_ids, true ) ) {
+			return false;
+		}
+
+		$link_definition = $this->get_payment_method_registry()->get( 'link' );
+		if ( null === $link_definition || ! $link_definition->is_available_for( $currency, $this->get_account_country() ) ) {
+			return false;
+		}
+
+		$account_data = $this->get_account_service()->get_cached_account_data();
+		$capabilities = is_array( $account_data['capabilities'] ?? null ) ? $account_data['capabilities'] : array();
+		$fees         = is_array( $account_data['fees'] ?? null ) ? $account_data['fees'] : array();
+
+		return 'active' === ( $capabilities['link_payments'] ?? null ) && array_key_exists( 'link', $fees );
+	}
+
+	/**
+	 * Resolve the current checkout or authorized order-pay context.
+	 *
+	 * @return array{currency:string,total:int,order_id:int,billing_country:string}
+	 */
+	private function get_payment_context(): array {
+		$order_id = absint( get_query_var( 'order-pay' ) );
+		if ( 0 < $order_id ) {
+			$order = wc_get_order( $order_id );
+			if ( $order instanceof \WC_Order && current_user_can( 'pay_for_order', $order->get_id() ) ) {
+				$currency = '' !== $order->get_currency() ? strtoupper( $order->get_currency() ) : strtoupper( get_woocommerce_currency() );
+
+				return array(
+					'currency'        => $currency,
+					'total'           => $this->prepare_amount( (float) $order->get_total(), $currency ),
+					'order_id'        => $order->get_id(),
+					'billing_country' => strtoupper( $order->get_billing_country() ),
+				);
+			}
+		}
+
+		$currency = strtoupper( get_woocommerce_currency() );
+		$total    = function_exists( 'WC' ) && WC() && WC()->cart instanceof \WC_Cart
+			? (float) WC()->cart->get_total( '' )
+			: 0.0;
+
+		return array(
+			'currency'        => $currency,
+			'total'           => $this->prepare_amount( $total, $currency ),
+			'order_id'        => 0,
+			'billing_country' => '',
+		);
+	}
+
+	/**
+	 * Convert a display amount to the provider minor-unit convention.
+	 *
+	 * @param float  $amount   Display amount.
+	 * @param string $currency Currency code.
+	 * @return int
+	 */
+	private function prepare_amount( float $amount, string $currency ): int {
+		$minor_unit = WooPaymentsCurrencyUtils::get_stripe_minor_unit_for_currency( $currency );
+
+		return (int) round( $amount * ( 10 ** $minor_unit ) );
 	}
 
 	/**
@@ -654,19 +941,7 @@ class WooPaymentsCheckoutBridge {
 	 * @return array<string,mixed>
 	 */
 	private function get_fraud_services_config(): array {
-		/**
-		 * Filters native WooPayments fraud services config.
-		 *
-		 * This mirrors the standalone plugin's checkout config shape while
-		 * native fraud settings are absorbed into Core.
-		 *
-		 * @since 11.0.0
-		 *
-		 * @param array<string,mixed> $config Fraud services config.
-		 */
-		$config = apply_filters( WooPaymentsOrderTrackingService::FILTER_FRAUD_SERVICES_CONFIG, array() );
-
-		return is_array( $config ) ? $config : array();
+		return $this->get_account_service()->get_fraud_services_config();
 	}
 
 	/**
@@ -701,14 +976,28 @@ class WooPaymentsCheckoutBridge {
 	 * Get the Stripe payment method types for a payment method definition.
 	 *
 	 * @param WooPaymentsPaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
+	 * @param array<string,array<string,mixed>>       $payment_methods_config    Payment method configuration.
 	 * @return string[]
 	 */
-	private function get_payment_method_types_for_definition( ?WooPaymentsPaymentMethodDefinition $payment_method_definition = null ): array {
-		if ( null === $payment_method_definition ) {
-			return array( 'card' );
+	private function get_payment_method_types_for_definition( ?WooPaymentsPaymentMethodDefinition $payment_method_definition, array $payment_methods_config ): array {
+		if ( null === $payment_method_definition || 'card' === $payment_method_definition->get_id() ) {
+			return isset( $payment_methods_config['link'] ) ? array( 'card', 'link' ) : array( 'card' );
 		}
 
 		return array( $payment_method_definition->get_stripe_payment_method_type() );
+	}
+
+	/**
+	 * Get the payment method definition registry.
+	 *
+	 * @return WooPaymentsPaymentMethodRegistry
+	 */
+	private function get_payment_method_registry(): WooPaymentsPaymentMethodRegistry {
+		if ( null === $this->payment_method_registry ) {
+			$this->payment_method_registry = new WooPaymentsPaymentMethodRegistry();
+		}
+
+		return $this->payment_method_registry;
 	}
 
 	/**
@@ -964,22 +1253,6 @@ class WooPaymentsCheckoutBridge {
 		}
 
 		return $enabled_fields;
-	}
-
-	/**
-	 * Get cart total in the current WooCommerce minor unit convention.
-	 *
-	 * @return int
-	 */
-	private function get_cart_total(): int {
-		if ( ! function_exists( 'WC' ) || ! WC() || ! WC()->cart ) {
-			return 0;
-		}
-
-		$total    = (float) WC()->cart->get_total( '' );
-		$decimals = function_exists( 'wc_get_price_decimals' ) ? wc_get_price_decimals() : 2;
-
-		return (int) round( $total * ( 10 ** $decimals ) );
 	}
 
 	/**

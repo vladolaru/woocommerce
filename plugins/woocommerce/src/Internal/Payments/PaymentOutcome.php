@@ -179,6 +179,13 @@ class PaymentOutcome {
 	private array $data;
 
 	/**
+	 * Request-scoped provider effect plan.
+	 *
+	 * @var ProviderOperationEffectPlan|null
+	 */
+	private ?ProviderOperationEffectPlan $effect_plan = null;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param string              $status              Outcome status.
@@ -289,6 +296,30 @@ class PaymentOutcome {
 	 */
 	public function get_data(): array {
 		return $this->data;
+	}
+
+	/**
+	 * Return a copy carrying a request-scoped provider effect plan.
+	 *
+	 * The plan is intentionally excluded from outcome data and serialization.
+	 *
+	 * @param ProviderOperationEffectPlan $effect_plan Provider effect plan.
+	 * @return self
+	 */
+	public function with_effect_plan( ProviderOperationEffectPlan $effect_plan ): self {
+		$outcome              = clone $this;
+		$outcome->effect_plan = $effect_plan;
+
+		return $outcome;
+	}
+
+	/**
+	 * Get the request-scoped provider effect plan.
+	 *
+	 * @return ProviderOperationEffectPlan|null
+	 */
+	public function get_effect_plan(): ?ProviderOperationEffectPlan {
+		return $this->effect_plan;
 	}
 
 	/**

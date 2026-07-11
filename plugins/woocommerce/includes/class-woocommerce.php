@@ -448,6 +448,8 @@ final class WooCommerce {
 		 * the full ownership rules.
 		 */
 		$container->get( Automattic\WooCommerce\Internal\Payments\Shadow\NativePaymentsShadowMode::class )->register();
+		$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService::class )->register();
+		$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutBridge::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\MultiCurrency\Shadow\MultiCurrencyShadowMode::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyProviderBootstrap::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyStoreCurrencyLifecycleController::class )->register();
@@ -477,11 +479,14 @@ final class WooCommerce {
 		$container->get( Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAdminNoticesController::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAdminNoteController::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverNormalizationRunner::class )->register();
-		$container->get( Automattic\WooCommerce\Internal\Payments\NativePaymentsGatewayRegistry::class )->register();
+		$native_payments_gateway_registry = $container->get( Automattic\WooCommerce\Internal\Payments\NativePaymentsGatewayRegistry::class );
+		$native_payments_gateway_registry->register_provider( $container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider::class ) );
+		$native_payments_gateway_registry->register();
 		$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAddressProvider::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderFraudMetaBox::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService::class )->register();
+		$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAjaxController::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenizedCartSessionController::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionController::class )->register();

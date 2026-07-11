@@ -65,6 +65,26 @@ class WooPaymentsStaticPaymentMethodDefinition implements WooPaymentsPaymentMeth
 	}
 
 	/**
+	 * Get the account capability key that controls payment method availability.
+	 *
+	 * @return string
+	 */
+	public function get_account_capability_key(): string {
+		return $this->get_config_string( 'account_capability_key', $this->get_stripe_id() );
+	}
+
+	/**
+	 * Tell whether this definition should publish a WooCommerce payment gateway.
+	 *
+	 * @return bool
+	 */
+	public function should_publish_gateway(): bool {
+		$value = $this->config['publish_gateway'] ?? true;
+
+		return is_bool( $value ) ? $value : true;
+	}
+
+	/**
 	 * Get the Stripe PaymentMethod type.
 	 *
 	 * @return string

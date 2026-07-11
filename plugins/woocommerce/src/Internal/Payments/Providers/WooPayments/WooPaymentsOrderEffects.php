@@ -8,9 +8,10 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
-use Throwable;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use WC_Order;
 
 /**
@@ -22,180 +23,84 @@ use WC_Order;
 class WooPaymentsOrderEffects {
 
 	/**
-	 * Apply payment-method details to the order before completion or customer action.
+	 * Compose payment-method metadata, gateway ID, and title without mutating an order.
 	 *
 	 * @since 11.0.0
 	 *
-	 * @param WC_Order            $order  Order being charged.
-	 * @param array<string,mixed> $result Native PaymentIntent response.
+	 * @param array<string,mixed> $result          Native PaymentIntent response.
+	 * @param string              $account_country Connected account country.
+	 * @param string              $billing_country Order billing country fallback.
+	 * @param string              $express_checkout_type Existing order express-checkout identity.
+	 * @return array{meta:array<string,string>,payment_method_id:string,payment_method_title:string}|array{}
 	 */
-	public static function apply_payment_method_display_details( WC_Order $order, array $result ): void {
+	public static function compose_payment_method_display_details( array $result, string $account_country = '', string $billing_country = '', string $express_checkout_type = '' ): array {
 		$charge                 = self::latest_charge( $result );
 		$payment_method_details = is_array( $charge['payment_method_details'] ?? null ) ? $charge['payment_method_details'] : array();
-		$wallet_type            = $payment_method_details['card']['wallet']['type'] ?? null;
+		$payment_method_type    = isset( $payment_method_details['type'] ) && is_scalar( $payment_method_details['type'] )
+			? sanitize_key( (string) $payment_method_details['type'] )
+			: self::intent_payment_method_type( $result );
+		$wallet_type            = isset( $payment_method_details['card']['wallet']['type'] ) && is_scalar( $payment_method_details['card']['wallet']['type'] )
+			? sanitize_key( (string) $payment_method_details['card']['wallet']['type'] )
+			: '';
+		if ( '' === $wallet_type && 'amazon_pay' === $payment_method_type ) {
+			$wallet_type = 'amazon_pay';
+		}
+		$express_checkout_type = sanitize_key( $express_checkout_type );
+		if ( '' === $express_checkout_type ) {
+			$express_checkout_type = $wallet_type;
+		}
 
+		if ( '' === $payment_method_type && '' === $express_checkout_type ) {
+			return array();
+		}
+
+		$meta            = array();
+		$display_country = strtoupper( trim( '' !== $account_country ? $account_country : $billing_country ) );
 		if ( ! empty( $payment_method_details ) ) {
-			$encoded_payment_method_details = wp_json_encode( $payment_method_details );
-			if ( false !== $encoded_payment_method_details ) {
-				$order->update_meta_data( '_wcpay_payment_method_details', $encoded_payment_method_details );
+			$encoded_details = wp_json_encode( self::payment_method_details_for_order_meta( $payment_method_details ) );
+			if ( false !== $encoded_details ) {
+				$meta['_wcpay_payment_method_details'] = $encoded_details;
 			}
 		}
 
 		if ( 'link' !== $wallet_type && isset( $payment_method_details['card']['last4'] ) ) {
-			$order->update_meta_data( 'last4', (string) $payment_method_details['card']['last4'] );
+			$meta['last4'] = (string) $payment_method_details['card']['last4'];
 			if ( isset( $payment_method_details['card']['brand'] ) ) {
-				$order->update_meta_data( '_card_brand', (string) $payment_method_details['card']['brand'] );
+				$meta['_card_brand'] = (string) $payment_method_details['card']['brand'];
+			}
+		}
+		if ( 'amazon_pay' === $payment_method_type && isset( $payment_method_details['amazon_pay']['funding']['card'] ) && is_array( $payment_method_details['amazon_pay']['funding']['card'] ) ) {
+			$funding_card = $payment_method_details['amazon_pay']['funding']['card'];
+			if ( isset( $funding_card['last4'] ) && is_scalar( $funding_card['last4'] ) ) {
+				$meta['last4'] = (string) $funding_card['last4'];
+			}
+			if ( isset( $funding_card['brand'] ) && is_scalar( $funding_card['brand'] ) ) {
+				$meta['_card_brand'] = strtolower( (string) $funding_card['brand'] );
 			}
 		}
 
-		if ( is_string( $wallet_type ) && '' !== $wallet_type ) {
-			$order->update_meta_data( '_wcpay_express_checkout_payment_method', $wallet_type );
+		if ( '' !== $express_checkout_type ) {
+			$meta['_wcpay_express_checkout_payment_method'] = $express_checkout_type;
 		}
 
-		$order->set_payment_method_title( self::payment_method_title( $payment_method_details ) );
-		$order->save();
-	}
+		$effective_type = '' !== $express_checkout_type ? $express_checkout_type : $payment_method_type;
+		$title          = '' !== $express_checkout_type
+			? self::express_checkout_payment_method_title( $express_checkout_type, $display_country )
+			: self::payment_method_title(
+				empty( $payment_method_details )
+					? array(
+						'type'               => $payment_method_type,
+						$payment_method_type => array(),
+					)
+					: $payment_method_details,
+				$display_country
+			);
 
-	/**
-	 * Persist setup-intent details needed by the post-authentication AJAX callback.
-	 *
-	 * @since 11.0.0
-	 *
-	 * @param WC_Order             $order             Order being charged.
-	 * @param string               $setup_intent_id   SetupIntent ID.
-	 * @param string               $payment_method_id Payment method ID.
-	 * @param string               $customer_id       Customer ID.
-	 * @param array<string,string> $meta              SetupIntent meta.
-	 */
-	public static function persist_setup_intent_details( WC_Order $order, string $setup_intent_id, string $payment_method_id, string $customer_id, array $meta ): void {
-		if ( '' !== $setup_intent_id ) {
-			$order->set_transaction_id( $setup_intent_id );
-			$order->update_meta_data( '_intent_id', $setup_intent_id );
-		}
-
-		if ( '' !== $payment_method_id ) {
-			$order->update_meta_data( '_payment_method_id', $payment_method_id );
-		}
-
-		if ( '' !== $customer_id ) {
-			$order->update_meta_data( '_stripe_customer_id', $customer_id );
-		}
-
-		foreach ( $meta as $key => $value ) {
-			$order->update_meta_data( $key, $value );
-		}
-
-		$order->save();
-	}
-
-	/**
-	 * Add fee details for a successful native capture response.
-	 *
-	 * @since 11.0.0
-	 *
-	 * @param WC_Order                    $order              Order being captured.
-	 * @param array<string,mixed>         $result             Native capture result.
-	 * @param WooPaymentsOrderDataService $order_data_service WooPayments order data service.
-	 */
-	public static function maybe_add_capture_fee_breakdown_note( WC_Order $order, array $result, WooPaymentsOrderDataService $order_data_service ): void {
-		$status = isset( $result['status'] ) ? (string) $result['status'] : '';
-		if ( 'succeeded' !== $status ) {
-			return;
-		}
-
-		$order_data_service->add_fee_breakdown_note_from_intent( $order, $result, false );
-	}
-
-	/**
-	 * Get the submitted payment method or saved payment token.
-	 *
-	 * @since 11.0.0
-	 *
-	 * @param PaymentContext          $context       Payment context.
-	 * @param WooPaymentsTokenService $token_service WooPayments token service.
-	 * @return string
-	 */
-	public static function payment_credential_from_context( PaymentContext $context, WooPaymentsTokenService $token_service ): string {
-		$payment_data  = $context->get_payment_data();
-		$payment_token = isset( $payment_data['payment_token'] ) ? (string) $payment_data['payment_token'] : '';
-
-		if ( '' !== $payment_token && 'new' !== $payment_token ) {
-			if ( ! empty( $context->get_provider_data()['scheduled_subscription_payment'] ) ) {
-				return $token_service->resolve_payment_method_id_from_order_token_id( $payment_token, $context->get_order() );
-			}
-
-			return $token_service->resolve_payment_method_id_from_token_id( $payment_token, $context->get_order()->get_user_id() );
-		}
-
-		return $context->get_payment_method_id();
-	}
-
-	/**
-	 * Attach an existing saved token to the order.
-	 *
-	 * @since 11.0.0
-	 *
-	 * @param PaymentContext          $context           Payment context.
-	 * @param string                  $payment_method_id Provider payment method ID.
-	 * @param string                  $customer_id       WooPayments customer ID.
-	 * @param WooPaymentsTokenService $token_service     WooPayments token service.
-	 */
-	public static function maybe_attach_saved_payment_token_to_order( PaymentContext $context, string $payment_method_id, string $customer_id, WooPaymentsTokenService $token_service ): void {
-		$payment_data = $context->get_payment_data();
-		if ( ! self::is_using_saved_payment_token( $payment_data ) ) {
-			return;
-		}
-
-		$payment_token_id = isset( $payment_data['payment_token'] ) ? (string) $payment_data['payment_token'] : '';
-		$token            = $token_service->get_valid_token_from_token_id( $payment_token_id, $context->get_order()->get_user_id() );
-		if ( null === $token ) {
-			return;
-		}
-
-		$order = $context->get_order();
-		$token_service->attach_token_to_order( $order, $token );
-		$token_service->sync_related_subscriptions_payment_token( $order, $token, $payment_method_id, $customer_id );
-	}
-
-	/**
-	 * Save a newly used card to the customer and attach it to the order.
-	 *
-	 * @since 11.0.0
-	 *
-	 * @param PaymentContext          $context           Payment context.
-	 * @param string                  $payment_method_id Provider payment method ID.
-	 * @param string                  $customer_id       WooPayments customer ID.
-	 * @param WooPaymentsTokenService $token_service     WooPayments token service.
-	 * @param bool                    $is_recurring      Whether the order requires saved-token persistence.
-	 * @param object|null             $logger            WooPayments logger.
-	 * @return PaymentOutcome|null
-	 */
-	public static function maybe_save_new_card_token_to_order( PaymentContext $context, string $payment_method_id, string $customer_id, WooPaymentsTokenService $token_service, bool $is_recurring, ?object $logger = null ): ?PaymentOutcome {
-		$payment_data = $context->get_payment_data();
-		$order        = $context->get_order();
-		if ( self::is_using_saved_payment_token( $payment_data ) || ( empty( $payment_data['save_payment_method'] ) && ! $is_recurring ) ) {
-			return null;
-		}
-
-		if ( '' === $payment_method_id || 0 >= $order->get_user_id() ) {
-			return $is_recurring ? self::recurring_token_save_failed_outcome() : null;
-		}
-
-		try {
-			$token = $token_service->get_or_create_token_for_user( $payment_method_id, $order->get_user_id() );
-			if ( null !== $token ) {
-				$token_service->attach_token_to_order( $order, $token );
-				$token_service->sync_related_subscriptions_payment_token( $order, $token, $payment_method_id, $customer_id );
-
-				return null;
-			}
-		} catch ( Throwable $exception ) {
-			self::log_token_save_error( $logger, $payment_method_id, $exception );
-
-			return $is_recurring ? self::recurring_token_save_failed_outcome() : null;
-		}
-
-		return $is_recurring ? self::recurring_token_save_failed_outcome() : null;
+		return array(
+			'meta'                 => $meta,
+			'payment_method_id'    => self::payment_method_gateway_id( $effective_type ),
+			'payment_method_title' => $title,
+		);
 	}
 
 	/**
@@ -243,9 +148,10 @@ class WooPaymentsOrderEffects {
 	 * @param WC_Order                    $order                    Order being charged.
 	 * @param string                      $account_default_currency WooPayments account default currency.
 	 * @param WooPaymentsOrderDataService $order_data_service       WooPayments order data service.
+	 * @param bool                        $include_payment_transaction_id Whether to include the charge balance transaction ID.
 	 * @return array<string,string>
 	 */
-	public static function completed_charge_meta( array $intent, array $charge, WC_Order $order, string $account_default_currency, WooPaymentsOrderDataService $order_data_service ): array {
+	public static function completed_charge_meta( array $intent, array $charge, WC_Order $order, string $account_default_currency, WooPaymentsOrderDataService $order_data_service, bool $include_payment_transaction_id = true ): array {
 		$meta = array();
 
 		$transaction_fee = self::transaction_fee_from_charge( $intent, $charge );
@@ -258,6 +164,36 @@ class WooPaymentsOrderEffects {
 			$meta['_wcpay_net'] = $net;
 		}
 
+		$balance_transaction_id = self::balance_transaction_id( $charge['balance_transaction'] ?? null );
+		if ( $include_payment_transaction_id && '' !== $balance_transaction_id ) {
+			$meta['_wcpay_payment_transaction_id'] = $balance_transaction_id;
+		}
+
+		return array_merge(
+			$meta,
+			self::authorized_charge_meta( $intent, $charge, $order, $account_default_currency, $order_data_service )
+		);
+	}
+
+	/**
+	 * Get charge metadata that is valid before a payment has been captured.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @param array<string,mixed>         $intent                   Native PaymentIntent response.
+	 * @param array<string,mixed>         $charge                   Native Charge response.
+	 * @param WC_Order                    $order                    Order being authorized.
+	 * @param string                      $account_default_currency WooPayments account default currency.
+	 * @param WooPaymentsOrderDataService $order_data_service       WooPayments order data service.
+	 * @return array<string,string>
+	 */
+	public static function authorized_charge_meta( array $intent, array $charge, WC_Order $order, string $account_default_currency, WooPaymentsOrderDataService $order_data_service ): array {
+		$meta = array();
+
+		if ( isset( $charge['outcome']['risk_level'] ) ) {
+			$meta['_charge_risk_level'] = (string) $charge['outcome']['risk_level'];
+		}
+
 		$meta = array_merge(
 			$meta,
 			$order_data_service->get_settlement_exchange_rate_order_meta(
@@ -268,6 +204,59 @@ class WooPaymentsOrderEffects {
 		);
 
 		return array_merge( $meta, self::fraud_outcome_meta( $intent, $charge ) );
+	}
+
+	/**
+	 * Get payment-method backfill meta from a completed charge.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @param array<string,mixed> $charge Native Charge response.
+	 * @param WC_Order            $order  Order being charged.
+	 * @return array<string,string>
+	 */
+	public static function completed_charge_payment_method_backfill_meta( array $charge, WC_Order $order ): array {
+		if ( ! self::order_has_placeholder_payment_method_details( $order ) ) {
+			return array();
+		}
+
+		$meta                   = array();
+		$balance_transaction_id = self::balance_transaction_id( $charge['balance_transaction'] ?? null );
+		if ( '' === (string) $order->get_meta( '_wcpay_payment_transaction_id', true ) && '' !== $balance_transaction_id ) {
+			$meta['_wcpay_payment_transaction_id'] = $balance_transaction_id;
+		}
+
+		$payment_method_details = isset( $charge['payment_method_details'] ) && is_array( $charge['payment_method_details'] )
+			? $charge['payment_method_details']
+			: array();
+		if ( ! empty( $payment_method_details ) ) {
+			$encoded_payment_method_details = wp_json_encode( self::payment_method_details_for_order_meta( $payment_method_details ) );
+			if ( false !== $encoded_payment_method_details ) {
+				$meta['_wcpay_payment_method_details'] = $encoded_payment_method_details;
+			}
+		}
+
+		return $meta;
+	}
+
+	/**
+	 * Get legacy-compatible order meta for a started PaymentIntent.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @param array<string,mixed> $intent Native PaymentIntent response.
+	 * @param WC_Order            $order  Order being charged.
+	 * @return array<string,string>
+	 */
+	public static function started_payment_meta( array $intent, WC_Order $order ): array {
+		$status = isset( $intent['status'] ) ? (string) $intent['status'] : 'requires_action';
+
+		return array(
+			'_intention_status'             => $status,
+			'_wcpay_intent_currency'        => (string) $order->get_currency(),
+			'_wcpay_payment_transaction_id' => '',
+			'_wcpay_fraud_meta_box_type'    => self::is_card_intent( $intent ) ? 'payment_started' : 'not_card',
+		);
 	}
 
 	/**
@@ -298,14 +287,9 @@ class WooPaymentsOrderEffects {
 			$meta['_charge_id'] = $charge_id;
 		}
 
-		$balance_transaction_id = self::balance_transaction_id( $charge['balance_transaction'] ?? null );
-		if ( '' !== $balance_transaction_id ) {
-			$meta['_wcpay_payment_transaction_id'] = $balance_transaction_id;
-		}
-
 		return array_merge(
 			$meta,
-			self::completed_charge_meta( $intent, $charge, $order, $account_default_currency, $order_data_service )
+			self::completed_charge_meta( $intent, $charge, $order, $account_default_currency, $order_data_service, false )
 		);
 	}
 
@@ -323,7 +307,7 @@ class WooPaymentsOrderEffects {
 	}
 
 	/**
-	 * Get WooPayments fraud-outcome order meta from provider metadata.
+	 * Get WooPayments fraud-outcome order meta for a completed charge.
 	 *
 	 * @since 11.0.0
 	 *
@@ -334,19 +318,16 @@ class WooPaymentsOrderEffects {
 	public static function fraud_outcome_meta( array $intent, array $charge ): array {
 		$metadata      = isset( $intent['metadata'] ) && is_array( $intent['metadata'] ) ? $intent['metadata'] : array();
 		$fraud_outcome = isset( $metadata['fraud_outcome'] ) ? (string) $metadata['fraud_outcome'] : '';
+		$is_card       = self::is_card_charge( $charge );
 
-		if ( '' === $fraud_outcome && self::is_card_charge( $charge ) ) {
-			$fraud_outcome = 'allow';
+		if ( in_array( $fraud_outcome, array( 'allow', 'block', 'review' ), true ) ) {
+			return array(
+				'_wcpay_fraud_outcome_status' => $fraud_outcome,
+				'_wcpay_fraud_meta_box_type'  => $is_card ? 'allow' : 'not_card',
+			);
 		}
 
-		if ( ! in_array( $fraud_outcome, array( 'allow', 'block', 'review' ), true ) ) {
-			return array();
-		}
-
-		return array(
-			'_wcpay_fraud_outcome_status' => $fraud_outcome,
-			'_wcpay_fraud_meta_box_type'  => 'allow',
-		);
+		return $is_card ? array() : array( '_wcpay_fraud_meta_box_type' => 'not_card' );
 	}
 
 	/**
@@ -418,9 +399,10 @@ class WooPaymentsOrderEffects {
 	 * @since 11.0.0
 	 *
 	 * @param array<string,mixed> $payment_method_details Payment method details from the charge.
+	 * @param string              $account_country         Connected account country.
 	 * @return string
 	 */
-	public static function payment_method_title( array $payment_method_details ): string {
+	public static function payment_method_title( array $payment_method_details, string $account_country = '' ): string {
 		$wallet_type = $payment_method_details['card']['wallet']['type'] ?? null;
 		$type        = isset( $payment_method_details['type'] ) && is_scalar( $payment_method_details['type'] ) ? (string) $payment_method_details['type'] : '';
 
@@ -439,12 +421,56 @@ class WooPaymentsOrderEffects {
 			return self::card_payment_method_title( $payment_method_details['card'] );
 		}
 
+		$registered_title = self::registered_payment_method_title( $type, $payment_method_details, $account_country );
+		if ( '' !== $registered_title ) {
+			return $registered_title;
+		}
+
 		$non_card_title = self::non_card_payment_method_title( $type );
 		if ( '' !== $non_card_title ) {
 			return $non_card_title;
 		}
 
 		return __( 'Credit / Debit Cards', 'woocommerce' );
+	}
+
+	/**
+	 * Normalize payment method details before storing them in WooPayments order meta.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @param array<string,mixed> $payment_method_details Payment method details from the charge.
+	 * @return array<string,mixed>
+	 */
+	public static function payment_method_details_for_order_meta( array $payment_method_details ): array {
+		if ( isset( $payment_method_details['sepa_debit'] ) && is_array( $payment_method_details['sepa_debit'] ) ) {
+			unset( $payment_method_details['sepa_debit']['expected_debit_date'] );
+		}
+
+		return $payment_method_details;
+	}
+
+	/**
+	 * Tell whether the order still has an empty payment-method details placeholder.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @param WC_Order $order Order being charged.
+	 * @return bool
+	 */
+	private static function order_has_placeholder_payment_method_details( WC_Order $order ): bool {
+		$payment_method_details = $order->get_meta( '_wcpay_payment_method_details', true );
+		if ( '' === $payment_method_details || null === $payment_method_details || array() === $payment_method_details ) {
+			return true;
+		}
+
+		if ( ! is_string( $payment_method_details ) ) {
+			return false;
+		}
+
+		$decoded_payment_method_details = json_decode( $payment_method_details, true );
+
+		return array() === $decoded_payment_method_details;
 	}
 
 	/**
@@ -489,28 +515,14 @@ class WooPaymentsOrderEffects {
 	 * @return string
 	 */
 	public static function payment_success_note( WC_Order $order, string $intent_id, string $charge_id, string $balance_transaction_id = '', string $account_mode = 'live' ): string {
+		unset( $account_mode );
+
 		$formatted_amount = wc_price( (float) $order->get_total(), array( 'currency' => $order->get_currency() ) ) . ' ' . $order->get_currency();
 		$transaction_id   = '' !== $intent_id ? $intent_id : $charge_id;
 		$transaction_url  = self::transaction_url( $intent_id, $charge_id, $balance_transaction_id );
 
-		if ( 'test' === $account_mode ) {
-			return sprintf(
-				self::interpolated_note_text(
-					/* translators: %1$s: charged amount, %2$s: WooPayments, %3$s: transaction ID. */
-					__( 'A test payment of %1$s was processed using %2$s in <strong>test mode</strong> (<a>%3$s</a>). No real funds were collected.', 'woocommerce' ),
-					array(
-						'strong' => '<strong>',
-						'a'      => '' !== $transaction_url ? '<a href="' . $transaction_url . '" target="_blank" rel="noopener noreferrer">' : '<code>',
-					)
-				),
-				$formatted_amount,
-				'WooPayments',
-				$transaction_id
-			);
-		}
-
 		return sprintf(
-			self::interpolated_note_text(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
 				/* translators: %1$s: charged amount, %2$s: WooPayments, %3$s: transaction ID, %4$s: transaction URL. */
 				__( 'A payment of %1$s was <strong>successfully charged</strong> using %2$s (<a>%3$s</a>).', 'woocommerce' ),
 				array(
@@ -522,6 +534,64 @@ class WooPaymentsOrderEffects {
 			'WooPayments',
 			$transaction_id,
 			$transaction_url
+		);
+	}
+
+	/**
+	 * Get a WooPayments-compatible payment authorization order note.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @param WC_Order $order     Order object.
+	 * @param string   $intent_id Payment intent ID.
+	 * @param string   $charge_id Charge ID.
+	 * @return string
+	 */
+	public static function payment_authorized_note( WC_Order $order, string $intent_id, string $charge_id ): string {
+		$formatted_amount = wc_price( (float) $order->get_total(), array( 'currency' => $order->get_currency() ) ) . ' ' . $order->get_currency();
+		$transaction_id   = '' !== $intent_id ? $intent_id : $charge_id;
+		$transaction_url  = self::transaction_url( $intent_id, $charge_id );
+
+		return sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
+				/* translators: %1$s: authorized amount, %2$s: WooPayments, %3$s: transaction ID, %4$s: transaction URL. */
+				__( 'A payment of %1$s was <strong>authorized</strong> using %2$s (<a>%3$s</a>).', 'woocommerce' ),
+				array(
+					'strong' => '<strong>',
+					'a'      => '' !== $transaction_url ? '<a href="%4$s" target="_blank" rel="noopener noreferrer">' : '<code>',
+				)
+			),
+			$formatted_amount,
+			'WooPayments',
+			$transaction_id,
+			$transaction_url
+		);
+	}
+
+	/**
+	 * Get a WooPayments-compatible payment-started order note.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @param WC_Order $order     Order object.
+	 * @param string   $intent_id Payment intent ID.
+	 * @return string
+	 */
+	public static function payment_started_note( WC_Order $order, string $intent_id ): string {
+		$formatted_amount = wc_price( (float) $order->get_total(), array( 'currency' => $order->get_currency() ) ) . ' ' . $order->get_currency();
+
+		return sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
+				/* translators: %1$s: started amount, %2$s: WooPayments, %3$s: payment intent ID. */
+				__( 'A payment of %1$s was <strong>started</strong> using %2$s (<code>%3$s</code>).', 'woocommerce' ),
+				array(
+					'strong' => '<strong>',
+					'code'   => '<code>',
+				)
+			),
+			$formatted_amount,
+			'WooPayments',
+			$intent_id
 		);
 	}
 
@@ -542,7 +612,7 @@ class WooPaymentsOrderEffects {
 		$transaction_url  = self::transaction_url( $intent_id, $charge_id, $balance_transaction_id );
 
 		return sprintf(
-			self::interpolated_note_text(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
 				/* translators: %1$s: captured amount, %2$s: WooPayments, %3$s: transaction ID, %4$s: transaction URL. */
 				__( 'A payment of %1$s was <strong>successfully captured</strong> using %2$s (<a>%3$s</a>).', 'woocommerce' ),
 				array(
@@ -573,7 +643,7 @@ class WooPaymentsOrderEffects {
 		$transaction_id   = '' !== $intent_id ? $intent_id : $charge_id;
 		$transaction_url  = self::transaction_url( $intent_id, $charge_id, (string) $order->get_meta( '_wcpay_payment_transaction_id', true ) );
 		$note             = sprintf(
-			self::interpolated_note_text(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
 				/* translators: %1$s: authorized amount, %2$s: WooPayments, %3$s: transaction ID, %4$s: transaction URL. */
 				__( 'A capture of %1$s <strong>failed</strong> to complete using %2$s (<a>%3$s</a>).', 'woocommerce' ),
 				array(
@@ -605,41 +675,44 @@ class WooPaymentsOrderEffects {
 	 * @return string
 	 */
 	public static function refund_note( PaymentContext $context, string $refund_id, bool $is_pending ): string {
-		$order            = $context->get_order();
-		$payment_data     = $context->get_payment_data();
-		$refund_amount    = isset( $payment_data['amount'] ) ? (float) $payment_data['amount'] : 0.0;
-		$refund_reason    = isset( $payment_data['reason'] ) ? (string) $payment_data['reason'] : '';
-		$formatted_amount = wc_price( $refund_amount, array( 'currency' => $order->get_currency() ) );
-		$status_text      = $is_pending
-			? sprintf(
-				'<a href="https://woocommerce.com/document/woopayments/managing-money/#pending-refunds" target="_blank" rel="noopener noreferrer">%s</a>',
-				esc_html__( 'is pending', 'woocommerce' )
-			)
-			: esc_html__( 'was successfully processed', 'woocommerce' );
-		$refund_id_markup = '<code>' . esc_html( $refund_id ) . '</code>';
+		$order        = $context->get_order();
+		$payment_data = $context->get_payment_data();
 
-		if ( '' === $refund_reason ) {
-			$note = sprintf(
-				/* translators: %1$s: refund amount, %2$s: WooPayments, %3$s: provider refund ID, %4$s: refund status. */
-				__( 'A refund of %1$s %4$s using %2$s (%3$s).', 'woocommerce' ),
-				$formatted_amount,
-				'WooPayments',
-				$refund_id_markup,
-				$status_text
-			);
-		} else {
-			$note = sprintf(
-				/* translators: %1$s: refund amount, %2$s: WooPayments, %3$s: refund reason, %4$s: provider refund ID, %5$s: refund status. */
-				__( 'A refund of %1$s %5$s using %2$s. Reason: %3$s. (%4$s)', 'woocommerce' ),
-				$formatted_amount,
-				'WooPayments',
-				esc_html( $refund_reason ),
-				$refund_id_markup,
-				$status_text
-			);
+		return wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_created_refund_note(
+			$order,
+			isset( $payment_data['amount'] ) ? (float) $payment_data['amount'] : 0.0,
+			$order->get_currency(),
+			$refund_id,
+			isset( $payment_data['reason'] ) ? (string) $payment_data['reason'] : '',
+			$is_pending
+		);
+	}
+
+	/**
+	 * Compose WooPayments-compatible local effects for a successful provider refund.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @param PaymentContext      $context Payment context.
+	 * @param array<string,mixed> $result  Provider refund response.
+	 * @return array<string,mixed>
+	 */
+	public static function compose_refund_effect_data( PaymentContext $context, array $result ): array {
+		$refund_id              = isset( $result['id'] ) ? (string) $result['id'] : '';
+		$provider_status        = isset( $result['status'] ) ? (string) $result['status'] : '';
+		$refund_status          = 'pending' === $provider_status ? 'pending' : 'successful';
+		$balance_transaction_id = self::balance_transaction_id( $result['balance_transaction'] ?? null );
+		$refund_meta            = array( '_wcpay_refund_id' => $refund_id );
+
+		if ( '' !== $balance_transaction_id ) {
+			$refund_meta['_wcpay_refund_transaction_id'] = $balance_transaction_id;
 		}
 
-		return wp_kses_post( $note );
+		return array(
+			PaymentOutcome::DATA_ORDER_META  => array( '_wcpay_refund_status' => $refund_status ),
+			PaymentOutcome::DATA_REFUND_META => $refund_meta,
+			PaymentOutcome::DATA_REFUND_NOTE => self::refund_note( $context, $refund_id, 'pending' === $refund_status ),
+		);
 	}
 
 	/**
@@ -704,64 +777,6 @@ class WooPaymentsOrderEffects {
 	}
 
 	/**
-	 * Tell whether payment data represents an existing saved WooCommerce token.
-	 *
-	 * @param array<string,mixed> $payment_data Payment data.
-	 * @return bool
-	 */
-	private static function is_using_saved_payment_token( array $payment_data ): bool {
-		$payment_token = isset( $payment_data['payment_token'] ) ? (string) $payment_data['payment_token'] : '';
-
-		return '' !== $payment_token && 'new' !== $payment_token;
-	}
-
-	/**
-	 * Build the recurring token-save failure outcome.
-	 *
-	 * @return PaymentOutcome
-	 */
-	private static function recurring_token_save_failed_outcome(): PaymentOutcome {
-		return new PaymentOutcome(
-			PaymentOutcome::STATUS_FAILED,
-			'',
-			'',
-			'',
-			'',
-			array(
-				PaymentOutcome::DATA_ERROR_CODE    => 'wcpay_recurring_token_save_failed',
-				PaymentOutcome::DATA_ERROR_MESSAGE => __(
-					'Unable to save payment method for subscription. Please try again or use a different payment method.',
-					'woocommerce'
-				),
-			)
-		);
-	}
-
-	/**
-	 * Log a non-fatal token save error.
-	 *
-	 * @param object|null $logger            WooPayments logger.
-	 * @param string      $payment_method_id Provider payment method ID.
-	 * @param Throwable   $exception         Token save exception.
-	 */
-	private static function log_token_save_error( ?object $logger, string $payment_method_id, Throwable $exception ): void {
-		if ( ! is_object( $logger ) || ! is_callable( array( $logger, 'error' ) ) ) {
-			return;
-		}
-
-		$logger->error(
-			sprintf(
-				'Error saving WooPayments payment method %s: %s',
-				$payment_method_id,
-				$exception->getMessage()
-			),
-			array(
-				'source' => 'payment-info',
-			)
-		);
-	}
-
-	/**
 	 * Tell whether a native charge was made with a card payment method.
 	 *
 	 * @param array<string,mixed> $charge Native Charge response.
@@ -773,6 +788,39 @@ class WooPaymentsOrderEffects {
 			: array();
 
 		return 'card' === (string) ( $payment_method_details['type'] ?? '' );
+	}
+
+	/**
+	 * Tell whether a native intent was started with a card payment method.
+	 *
+	 * @param array<string,mixed> $intent Native PaymentIntent response.
+	 * @return bool
+	 */
+	private static function is_card_intent( array $intent ): bool {
+		$charge = self::latest_charge( $intent );
+		if ( ! empty( $charge ) && self::is_card_charge( $charge ) ) {
+			return true;
+		}
+
+		$payment_method = isset( $intent['payment_method'] ) && is_array( $intent['payment_method'] )
+			? $intent['payment_method']
+			: array();
+		if ( 'card' === (string) ( $payment_method['type'] ?? '' ) ) {
+			return true;
+		}
+
+		$payment_method_types = isset( $intent['payment_method_types'] ) && is_array( $intent['payment_method_types'] )
+			? array_map( 'strval', $intent['payment_method_types'] )
+			: array();
+		if ( in_array( 'card', $payment_method_types, true ) ) {
+			return true;
+		}
+
+		$payment_method_options = isset( $intent['payment_method_options'] ) && is_array( $intent['payment_method_options'] )
+			? $intent['payment_method_options']
+			: array();
+
+		return array_key_exists( 'card', $payment_method_options );
 	}
 
 	/**
@@ -834,6 +882,105 @@ class WooPaymentsOrderEffects {
 	}
 
 	/**
+	 * Get the WooPayments gateway ID that should own an order with these charge details.
+	 *
+	 * @param string $payment_method_type Effective provider payment-method type.
+	 * @return string
+	 */
+	private static function payment_method_gateway_id( string $payment_method_type ): string {
+		if ( in_array( $payment_method_type, array( 'card', 'link', 'apple_pay', 'google_pay' ), true ) ) {
+			return OrderPaymentStore::GATEWAY_ID;
+		}
+
+		if ( '' === $payment_method_type ) {
+			return '';
+		}
+
+		return OrderPaymentStore::GATEWAY_ID_PREFIX . $payment_method_type;
+	}
+
+	/**
+	 * Get the provider payment-method type represented by an intent without charge details.
+	 *
+	 * @param array<string,mixed> $intent Provider intent response.
+	 * @return string
+	 */
+	private static function intent_payment_method_type( array $intent ): string {
+		$payment_method_options = isset( $intent['payment_method_options'] ) && is_array( $intent['payment_method_options'] )
+			? array_keys( $intent['payment_method_options'] )
+			: array();
+		if ( ! empty( $payment_method_options ) ) {
+			return sanitize_key( (string) $payment_method_options[0] );
+		}
+
+		$payment_method_types = isset( $intent['payment_method_types'] ) && is_array( $intent['payment_method_types'] )
+			? array_values( $intent['payment_method_types'] )
+			: array();
+
+		return ! empty( $payment_method_types ) && is_scalar( $payment_method_types[0] )
+			? sanitize_key( (string) $payment_method_types[0] )
+			: '';
+	}
+
+	/**
+	 * Get the stored express-checkout title, including the legacy WooPayments suffix.
+	 *
+	 * @param string $express_checkout_type Express-checkout payment-method type.
+	 * @param string $account_country       Connected account country.
+	 * @return string
+	 */
+	private static function express_checkout_payment_method_title( string $express_checkout_type, string $account_country ): string {
+		$title = self::registered_payment_method_title(
+			$express_checkout_type,
+			array(
+				'type'                 => $express_checkout_type,
+				$express_checkout_type => array(),
+			),
+			$account_country
+		);
+		if ( '' === $title ) {
+			$title = self::non_card_payment_method_title( $express_checkout_type );
+		}
+		if ( '' === $title ) {
+			$title = __( 'Payment Request', 'woocommerce' );
+		}
+
+		/**
+		 * Filters the WooPayments suffix included in stored express-checkout titles.
+		 *
+		 * @since 11.0.0
+		 *
+		 * @param string $suffix Express-checkout payment-method title suffix.
+		 */
+		$suffix = (string) apply_filters( 'wcpay_payment_request_payment_method_title_suffix', 'WooPayments' );
+
+		return '' === $suffix ? $title : $title . ' (' . $suffix . ')';
+	}
+
+	/**
+	 * Get a payment-method title from the native registry definitions.
+	 *
+	 * @param string              $type                   Stripe payment method details type.
+	 * @param array<string,mixed> $payment_method_details Payment method details from the charge.
+	 * @param string              $account_country        Connected account country.
+	 * @return string
+	 */
+	private static function registered_payment_method_title( string $type, array $payment_method_details, string $account_country ): string {
+		if ( '' === $type ) {
+			return '';
+		}
+
+		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( $type );
+		if ( null === $definition ) {
+			return '';
+		}
+
+		$dynamic_title = $definition->get_title_from_charge_details( $account_country, $payment_method_details );
+
+		return null !== $dynamic_title ? $dynamic_title : $definition->get_title( $account_country );
+	}
+
+	/**
 	 * Map scalar payload values to order meta keys.
 	 *
 	 * @param array<string,mixed>  $payload Payload values.
@@ -852,26 +999,5 @@ class WooPaymentsOrderEffects {
 		}
 
 		return $meta;
-	}
-
-	/**
-	 * Replace simple interpolation tags with stored note HTML.
-	 *
-	 * @param string               $text        Note text.
-	 * @param array<string,string> $element_map Element replacements.
-	 * @return string
-	 */
-	private static function interpolated_note_text( string $text, array $element_map ): string {
-		foreach ( $element_map as $tag => $opening_tag ) {
-			$closing_tag = '</' . $tag . '>';
-			if ( preg_match( '/^<(\w+)/', $opening_tag, $matches ) ) {
-				$closing_tag = '</' . $matches[1] . '>';
-			}
-
-			$text = str_replace( '<' . $tag . '>', $opening_tag, $text );
-			$text = str_replace( '</' . $tag . '>', $closing_tag, $text );
-		}
-
-		return $text;
 	}
 }

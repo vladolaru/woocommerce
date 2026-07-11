@@ -18,6 +18,8 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 	 */
 	private const SETTINGS_OPTION = 'woocommerce_woocommerce_payments_settings';
 
+	private const APPLE_PAY_SETTINGS_OPTION = 'woocommerce_woocommerce_payments_apple_pay_settings';
+
 	/**
 	 * Option name for stored Apple Pay domain registration errors.
 	 */
@@ -72,6 +74,7 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		delete_option( self::SETTINGS_OPTION );
+		delete_option( self::APPLE_PAY_SETTINGS_OPTION );
 		delete_option( self::ERROR_OPTION );
 
 		if ( null !== $this->service ) {
@@ -82,6 +85,8 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 			remove_action( 'update_option_siteurl', array( $this->service, 'verify_domain_on_site_url_change' ) );
 			remove_action( 'update_option_' . self::SETTINGS_OPTION, array( $this->service, 'verify_domain_on_updated_gateway_settings' ) );
 			remove_action( 'add_option_' . self::SETTINGS_OPTION, array( $this->service, 'verify_domain_on_new_gateway_settings' ) );
+			remove_action( 'update_option_' . self::APPLE_PAY_SETTINGS_OPTION, array( $this->service, 'verify_domain_on_updated_apple_pay_settings' ) );
+			remove_action( 'add_option_' . self::APPLE_PAY_SETTINGS_OPTION, array( $this->service, 'verify_domain_on_new_apple_pay_settings' ) );
 			remove_action( self::RETRY_ACTION, array( $this->service, 'handle_domain_registration_retry' ) );
 		}
 
@@ -89,26 +94,15 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register Apple Pay domain when payment-request express checkout becomes enabled.
+	 * @testdox Should register Apple Pay domain when the split Apple Pay gateway becomes enabled.
 	 */
 	public function test_verify_domain_on_express_checkout_enable_registers_domain(): void {
 		$this->service = $this->create_service();
-		$this->set_gateway_settings(
-			array(
-				'enabled'                           => 'yes',
-				'express_checkout_checkout_methods' => array( 'payment_request' ),
-			)
-		);
+		$this->set_gateway_settings( array( 'enabled' => 'yes' ) );
 
-		$this->service->verify_domain_on_updated_gateway_settings(
-			array(
-				'enabled'                           => 'yes',
-				'express_checkout_checkout_methods' => array(),
-			),
-			array(
-				'enabled'                           => 'yes',
-				'express_checkout_checkout_methods' => array( 'payment_request' ),
-			)
+		$this->service->verify_domain_on_updated_apple_pay_settings(
+			array( 'enabled' => 'no' ),
+			array( 'enabled' => 'yes' )
 		);
 
 		$this->assertSame( array( $this->expected_domain ), $this->api_client->registered_domains );
@@ -235,10 +229,17 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'has_live_account', 'get_mode' ) )
+			->onlyMethods( array( 'has_live_account', 'get_mode', 'is_payment_request_method_enabled' ) )
 			->getMock();
 		$account_service->method( 'has_live_account' )->willReturn( $live_account );
 		$account_service->method( 'get_mode' )->willReturn( 'live' );
+		$account_service->method( 'is_payment_request_method_enabled' )->willReturnCallback(
+			static function ( string $method_id ): bool {
+				$settings = get_option( self::APPLE_PAY_SETTINGS_OPTION, array() );
+
+				return 'apple_pay' === $method_id && is_array( $settings ) && 'yes' === ( $settings['enabled'] ?? 'no' );
+			}
+		);
 
 		$service = new WooPaymentsApplePayDomainService();
 		$service->init( $arbiter, $this->api_client, $account_service, $this->scheduler );
@@ -253,5 +254,6 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 	 */
 	private function set_gateway_settings( array $settings ): void {
 		update_option( self::SETTINGS_OPTION, $settings );
+		update_option( self::APPLE_PAY_SETTINGS_OPTION, array( 'enabled' => 'yes' ) );
 	}
 }

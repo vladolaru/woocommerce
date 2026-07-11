@@ -3,6 +3,7 @@
 	'use strict';
 
 	var cacheKeyPrefix = 'wcpay_appearance_';
+	var wooPayAppearancePersistAttempted = false;
 	var fontRuleDomains = [
 		'fonts.googleapis.com',
 		'fonts.gstatic.com',
@@ -307,16 +308,81 @@
 			.filter( Boolean );
 	}
 
+	function appendNestedFormData( formData, value, prefix ) {
+		Object.keys( value || {} ).forEach( function ( key ) {
+			var nestedValue = value[ key ];
+			var fieldName = prefix + '[' + key + ']';
+
+			if ( nestedValue === null || nestedValue === undefined ) {
+				return;
+			}
+
+			if ( typeof nestedValue === 'object' ) {
+				appendNestedFormData( formData, nestedValue, fieldName );
+				return;
+			}
+
+			formData.append( fieldName, nestedValue );
+		} );
+	}
+
+	function maybePersistWooPayAppearance( appearance, config ) {
+		var endpoint;
+		var body;
+		var request;
+
+		if (
+			wooPayAppearancePersistAttempted ||
+			! isAppearanceValid( appearance ) ||
+			! config ||
+			! config.isWooPayGlobalThemeSupportEnabled ||
+			! config.woopaySessionNonce ||
+			! config.wcAjaxUrl ||
+			typeof root.FormData !== 'function' ||
+			typeof root.fetch !== 'function'
+		) {
+			return false;
+		}
+
+		wooPayAppearancePersistAttempted = true;
+		endpoint = String( config.wcAjaxUrl ).replace(
+			'%%endpoint%%',
+			'wcpay_shopper_set_woopay_appearance'
+		);
+		body = new root.FormData();
+		body.append( '_ajax_nonce', config.woopaySessionNonce );
+		appendNestedFormData( body, appearance, 'appearance' );
+		body.append( 'font_rules', JSON.stringify( getFontRulesFromPage() ) );
+
+		try {
+			request = root.fetch( endpoint, {
+				method: 'POST',
+				body: body,
+				credentials: 'same-origin',
+			} );
+			if ( request && typeof request.catch === 'function' ) {
+				request.catch( function () {} );
+			}
+		} catch ( error ) {
+			return false;
+		}
+
+		return true;
+	}
+
 	root.wcpayAppearance = {
+		compositeAgainstWhite: compositeAgainstWhite,
 		containsAlphaColor: containsAlphaColor,
 		dispatchAppearanceEvent: dispatchAppearanceEvent,
 		getCachedAppearance: getCachedAppearance,
 		getFontRulesFromPage: getFontRulesFromPage,
 		isAppearanceValid: isAppearanceValid,
+		maybePersistWooPayAppearance: maybePersistWooPayAppearance,
 		normalizeAppearanceForStripe: normalizeAppearanceForStripe,
 		normalizeAppearanceValueForStripe: normalizeAppearanceValueForStripe,
 		parseColor: parseColor,
 		setCachedAppearance: setCachedAppearance,
+		toRgbString: toRgbString,
 	};
 
 	if ( typeof module === 'object' && module.exports ) {

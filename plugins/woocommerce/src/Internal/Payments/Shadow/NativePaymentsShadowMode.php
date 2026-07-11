@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffects;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -243,8 +244,8 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 		}
 
 		$start           = microtime( true );
-		$actual          = $this->order_payment_store->read_payment_surface( $order );
-		$native_computed = $this->compute_native_projection( $order, $actual );
+		$actual          = $this->order_payment_store->read_payment_surface( $order, $this->persistence_profile );
+		$native_computed = $this->compute_native_projection( $order );
 		if ( null === $native_computed ) {
 			return null;
 		}
@@ -262,25 +263,24 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	 * Compute the independent native projection from provider intent data.
 	 *
 	 * Shadow mode is read-only: the fetched intent is passed through the same pure WooPayments codec
-	 * and persistence profile used by native checkout, then overlaid onto the already-read payment
-	 * surface without saving the order.
+	 * and persistence profile used by native checkout to build an independent expected surface.
 	 *
-	 * @param WC_Order            $order          Order object.
-	 * @param array<string,mixed> $actual_surface Already-read persisted payment surface.
+	 * @param WC_Order $order Order object.
 	 * @return array<string,mixed>|null Native projection, or null when projection is intentionally skipped.
 	 */
-	private function compute_native_projection( WC_Order $order, array $actual_surface ): ?array {
-		$intent_id = $this->get_projection_intent_id( $order, $actual_surface );
+	private function compute_native_projection( WC_Order $order ): ?array {
+		$intent_id = $this->get_projection_intent_id( $order );
 		if ( '' === $intent_id || 0 !== strpos( $intent_id, 'pi_' ) ) {
 			return null;
 		}
 
-		if ( ! $this->should_read_provider_intent( $order ) || ! $this->api_client->is_available() ) {
+		$order_mode = $this->get_order_mode( $order );
+		if ( ! $this->should_read_provider_intent( $order, $order_mode ) || ! $this->api_client->is_available() ) {
 			return null;
 		}
 
 		try {
-			$intent = $this->api_client->get_payment_intention( $intent_id );
+			$intent = $this->api_client->get_payment_intention_for_mode( $intent_id, 'test' === $order_mode );
 		} catch ( Throwable $exception ) {
 			return null;
 		}
@@ -289,33 +289,32 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 			return null;
 		}
 
-		$outcome = WooPaymentsIntentCodec::outcome_from_intention( $intent, $order, $this->get_projection_context( $order, $intent, $actual_surface ) );
+		$plan    = WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false );
+		$outcome = WooPaymentsIntentCodec::outcome_from_intention( $intent, $order, $this->get_projection_context( $order, $intent, $order_mode ) )
+			->with_effect_plan( $plan );
 
-		return $this->project_surface_from_outcome( $order, $actual_surface, $outcome );
+		return $this->project_surface_from_outcome( $order, $intent, $outcome );
 	}
 
 	/**
 	 * Get the PaymentIntent ID to project.
 	 *
-	 * @param WC_Order            $order          Order object.
-	 * @param array<string,mixed> $actual_surface Already-read persisted payment surface.
+	 * @param WC_Order $order Order object.
 	 * @return string
 	 */
-	private function get_projection_intent_id( WC_Order $order, array $actual_surface ): string {
-		$actual_meta = isset( $actual_surface['meta'] ) && is_array( $actual_surface['meta'] ) ? $actual_surface['meta'] : array();
-		$intent_id   = isset( $actual_meta['_intent_id'] ) ? (string) $actual_meta['_intent_id'] : '';
-
-		return '' !== $intent_id ? $intent_id : (string) $order->get_meta( '_intent_id', true );
+	private function get_projection_intent_id( WC_Order $order ): string {
+		return (string) $order->get_meta( '_intent_id', true );
 	}
 
 	/**
 	 * Tell whether the provider intent may be read for this shadow comparison.
 	 *
-	 * @param WC_Order $order Order object.
+	 * @param WC_Order $order      Order object.
+	 * @param string   $order_mode Preserved order mode.
 	 * @return bool
 	 */
-	private function should_read_provider_intent( WC_Order $order ): bool {
-		if ( $this->account_service->is_test_mode_enabled() ) {
+	private function should_read_provider_intent( WC_Order $order, string $order_mode ): bool {
+		if ( 'test' === $order_mode ) {
 			return true;
 		}
 
@@ -334,19 +333,36 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Get the provider mode preserved on an order.
+	 *
+	 * @param WC_Order $order Order object.
+	 * @return string `test` or `live`.
+	 */
+	private function get_order_mode( WC_Order $order ): string {
+		$mode = strtolower( trim( (string) $order->get_meta( '_wcpay_mode', true ) ) );
+		if ( 'test' === $mode ) {
+			return 'test';
+		}
+		if ( in_array( $mode, array( 'live', 'prod' ), true ) ) {
+			return 'live';
+		}
+
+		return $this->account_service->get_mode();
+	}
+
+	/**
 	 * Build mapping context for the native WooPayments intent codec.
 	 *
-	 * @param WC_Order            $order          Order object.
-	 * @param array<string,mixed> $intent         Provider intent response.
-	 * @param array<string,mixed> $actual_surface Already-read persisted payment surface.
+	 * @param WC_Order            $order      Order object.
+	 * @param array<string,mixed> $intent     Provider intent response.
+	 * @param string              $order_mode Preserved order mode.
 	 * @return array<string,mixed>
 	 */
-	private function get_projection_context( WC_Order $order, array $intent, array $actual_surface ): array {
-		$actual_meta = isset( $actual_surface['meta'] ) && is_array( $actual_surface['meta'] ) ? $actual_surface['meta'] : array();
-		$args        = array(
-			'account_mode'         => $this->account_service->get_mode(),
-			'payment_credential'   => isset( $actual_meta['_payment_method_id'] ) ? (string) $actual_meta['_payment_method_id'] : '',
-			'fallback_customer_id' => isset( $actual_meta['_stripe_customer_id'] ) ? (string) $actual_meta['_stripe_customer_id'] : '',
+	private function get_projection_context( WC_Order $order, array $intent, string $order_mode ): array {
+		$args = array(
+			'account_mode'         => $order_mode,
+			'payment_credential'   => (string) $order->get_meta( '_payment_method_id', true ),
+			'fallback_customer_id' => (string) $order->get_meta( '_stripe_customer_id', true ),
 		);
 
 		if ( 'succeeded' === (string) ( $intent['status'] ?? '' ) ) {
@@ -368,58 +384,129 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	/**
 	 * Project an order payment surface from a native provider outcome.
 	 *
-	 * @param WC_Order            $order          Order object.
-	 * @param array<string,mixed> $actual_surface Already-read persisted payment surface.
-	 * @param PaymentOutcome      $outcome        Native provider outcome.
+	 * @param WC_Order            $order   Order object.
+	 * @param array<string,mixed> $intent  Provider intent response.
+	 * @param PaymentOutcome      $outcome Native provider outcome.
 	 * @return array<string,mixed>
 	 */
-	private function project_surface_from_outcome( WC_Order $order, array $actual_surface, PaymentOutcome $outcome ): array {
-		$surface           = $actual_surface;
-		$surface['status'] = $this->get_projected_order_status( $order, $outcome, $actual_surface );
+	private function project_surface_from_outcome( WC_Order $order, array $intent, PaymentOutcome $outcome ): array {
+		$display_effects = $this->get_projected_display_effects( $order, $outcome );
+		$payment_method  = (string) $order->get_payment_method();
+		$meta            = $this->persistence_profile->get_outcome_meta( $outcome );
+		if ( ! empty( $display_effects ) ) {
+			$meta = array_merge( $meta, $display_effects['meta'] );
+			if ( '' !== $display_effects['payment_method_id'] ) {
+				$payment_method = $display_effects['payment_method_id'];
+			}
+		}
+
+		$surface = array(
+			'order_id'       => (int) $order->get_id(),
+			'status'         => $this->get_projected_order_status( $order, $outcome ),
+			'payment_method' => $payment_method,
+			'transaction_id' => '',
+			'currency'       => (string) $order->get_currency(),
+			'total'          => (string) $order->get_total(),
+			'meta'           => $meta,
+			'refunds'        => $this->project_refund_surfaces( $order, $intent ),
+		);
 
 		if ( '' !== $outcome->get_provider_payment_id() && in_array( $outcome->get_status(), array( PaymentOutcome::STATUS_COMPLETED, PaymentOutcome::STATUS_AUTHORIZED ), true ) ) {
 			$surface['transaction_id'] = $outcome->get_provider_payment_id();
 		}
 
-		$actual_meta     = isset( $actual_surface['meta'] ) && is_array( $actual_surface['meta'] ) ? $actual_surface['meta'] : array();
-		$surface['meta'] = $this->merge_projected_meta( $actual_meta, $this->persistence_profile->get_outcome_meta( $outcome ) );
+		ksort( $surface['meta'] );
 
 		return $surface;
 	}
 
 	/**
-	 * Merge native-projected meta into the already-read surface meta.
+	 * Project display effects from the in-memory PaymentIntent plan without invoking its writer.
 	 *
-	 * @param array<string,mixed>  $actual_meta     Actual persisted meta.
-	 * @param array<string,string> $projected_meta Native-projected meta.
-	 * @return array<string,string>
+	 * @param WC_Order       $order   Order being projected.
+	 * @param PaymentOutcome $outcome Native provider outcome.
+	 * @return array{meta:array<string,string>,payment_method_id:string,payment_method_title:string}|array{}
 	 */
-	private function merge_projected_meta( array $actual_meta, array $projected_meta ): array {
-		$merged = array();
-
-		foreach ( $actual_meta as $key => $value ) {
-			$merged[ (string) $key ] = is_scalar( $value ) || null === $value ? (string) $value : '';
+	private function get_projected_display_effects( WC_Order $order, PaymentOutcome $outcome ): array {
+		$plan = $outcome->get_effect_plan();
+		if ( ! $plan instanceof WooPaymentsOrderEffectPlan || WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT !== $plan->get_type() ) {
+			return array();
 		}
 
-		foreach ( $projected_meta as $key => $value ) {
-			$merged[ (string) $key ] = (string) $value;
+		return WooPaymentsOrderEffects::compose_payment_method_display_details(
+			$plan->get_provider_result(),
+			$this->account_service->get_account_country(),
+			(string) $order->get_billing_country()
+		);
+	}
+
+	/**
+	 * Project WooCommerce refund identities with provider-owned refund metadata.
+	 *
+	 * @param WC_Order            $order  Order object.
+	 * @param array<string,mixed> $intent Provider intent response.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function project_refund_surfaces( WC_Order $order, array $intent ): array {
+		$charge            = WooPaymentsOrderEffects::latest_charge( $intent );
+		$refund_collection = isset( $charge['refunds'] ) && is_array( $charge['refunds'] ) ? $charge['refunds'] : array();
+		$provider_refunds  = isset( $refund_collection['data'] ) && is_array( $refund_collection['data'] ) ? $refund_collection['data'] : array();
+		$refunds_by_id     = array();
+
+		foreach ( $provider_refunds as $provider_refund ) {
+			if ( is_array( $provider_refund ) && isset( $provider_refund['id'] ) ) {
+				$refunds_by_id[ (string) $provider_refund['id'] ] = $provider_refund;
+			}
 		}
 
-		ksort( $merged );
+		$projected  = array();
+		$wc_refunds = array_values( $order->get_refunds() );
 
-		return $merged;
+		foreach ( $wc_refunds as $refund ) {
+			$provider_refund_id = (string) $refund->get_meta( '_wcpay_refund_id', true );
+			$provider_refund    = $refunds_by_id[ $provider_refund_id ] ?? null;
+			if ( ! is_array( $provider_refund ) && 1 === count( $wc_refunds ) && 1 === count( $provider_refunds ) ) {
+				$provider_refund = reset( $provider_refunds );
+			}
+
+			$meta = array();
+			if ( is_array( $provider_refund ) && isset( $provider_refund['id'] ) ) {
+				$meta['_wcpay_refund_id'] = (string) $provider_refund['id'];
+				$balance_transaction_id   = WooPaymentsOrderEffects::balance_transaction_id( $provider_refund['balance_transaction'] ?? null );
+				if ( '' !== $balance_transaction_id ) {
+					$meta['_wcpay_refund_transaction_id'] = $balance_transaction_id;
+				}
+			}
+
+			ksort( $meta );
+			$projected[] = array(
+				'refund_id' => (int) $refund->get_id(),
+				'amount'    => (string) $refund->get_amount(),
+				'currency'  => (string) $refund->get_currency(),
+				'reason'    => (string) $refund->get_reason(),
+				'meta'      => $meta,
+			);
+		}
+
+		usort(
+			$projected,
+			static function ( array $left, array $right ): int {
+				return $left['refund_id'] <=> $right['refund_id'];
+			}
+		);
+
+		return $projected;
 	}
 
 	/**
 	 * Get the projected WooCommerce order status for a native outcome.
 	 *
-	 * @param WC_Order            $order          Order object.
-	 * @param PaymentOutcome      $outcome        Native provider outcome.
-	 * @param array<string,mixed> $actual_surface Already-read persisted payment surface.
+	 * @param WC_Order       $order   Order object.
+	 * @param PaymentOutcome $outcome Native provider outcome.
 	 * @return string
 	 */
-	private function get_projected_order_status( WC_Order $order, PaymentOutcome $outcome, array $actual_surface ): string {
-		$current_status = isset( $actual_surface['status'] ) ? (string) $actual_surface['status'] : (string) $order->get_status();
+	private function get_projected_order_status( WC_Order $order, PaymentOutcome $outcome ): string {
+		$current_status = (string) $order->get_status();
 
 		switch ( $outcome->get_status() ) {
 			case PaymentOutcome::STATUS_COMPLETED:

@@ -19,6 +19,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEx
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFailedTransactionRateLimiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
@@ -35,6 +37,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
+		remove_all_actions( 'woocommerce_checkout_subscription_created' );
 		remove_all_actions( 'woocommerce_scheduled_subscription_payment_' . OrderPaymentStore::GATEWAY_ID );
 		remove_all_actions( 'woocommerce_scheduled_subscription_payment_woocommerce_payments_amazon_pay' );
 		remove_all_actions( 'woocommerce_subscription_failing_payment_method_updated_' . OrderPaymentStore::GATEWAY_ID );
@@ -55,6 +58,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		remove_all_actions( 'wp_ajax_wcpay_get_user_payment_tokens' );
 		remove_all_actions( 'woocommerce_woocommerce_payments_payment_requires_action' );
 		remove_all_filters( 'woocommerce_native_woopayments_subscriptions_for_renewal_order' );
+		$subscription_handlers = new \ReflectionProperty( NativeWooPaymentsGateway::class, 'has_attached_subscription_handlers' );
+		$subscription_handlers->setValue( null, false );
 		remove_all_filters( 'woocommerce_email_classes' );
 		remove_all_filters( 'wcs_get_retry_rule_raw' );
 		unset( $_POST['wcpay-setup-intent'] );
@@ -99,6 +104,422 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				$this->assertNotContains( 'subscriptions', $gateway->supports );
 			}
 		);
+	}
+
+	/**
+	 * @testdox Should hide a split gateway when its definition does not support the checkout currency.
+	 */
+	public function test_split_gateway_availability_follows_payment_method_definition(): void {
+		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'bancontact' );
+		$this->assertNotNull( $definition );
+
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
+			->getMock();
+		$account_service->method( 'get_cached_account_data' )->willReturn(
+			array(
+				'country'      => 'BE',
+				'capabilities' => array( 'bancontact_payments' => 'active' ),
+			)
+		);
+		$account_service->method( 'is_gateway_enabled' )->willReturn( true );
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+
+		$settings_filter = static function (): array {
+			return array( 'enabled' => 'yes' );
+		};
+		$currency        = 'USD';
+		$currency_filter = static function () use ( &$currency ): string {
+			return $currency;
+		};
+		add_filter( 'pre_option_woocommerce_woocommerce_payments_bancontact_settings', $settings_filter );
+		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
+
+		try {
+			$gateway = new NativeWooPaymentsGateway( $definition );
+			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $account_service );
+
+			$this->assertFalse( $gateway->is_available() );
+
+			$currency = 'EUR';
+
+			$this->assertTrue( $gateway->is_available() );
+		} finally {
+			remove_filter( 'pre_option_woocommerce_woocommerce_payments_bancontact_settings', $settings_filter );
+			remove_filter( 'pre_option_woocommerce_currency', $currency_filter );
+		}
+	}
+
+	/**
+	 * @testdox Should hide a split gateway when its gateway setting is disabled.
+	 */
+	public function test_split_gateway_availability_requires_enabled_setting(): void {
+		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'bancontact' );
+		$this->assertNotNull( $definition );
+
+		$settings_filter = static function (): array {
+			return array( 'enabled' => 'no' );
+		};
+		$currency_filter = static function (): string {
+			return 'EUR';
+		};
+		add_filter( 'pre_option_woocommerce_woocommerce_payments_bancontact_settings', $settings_filter );
+		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
+
+		try {
+			$gateway = new NativeWooPaymentsGateway( $definition );
+			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $this->create_account_service_for_country( 'BE', 'bancontact_payments' ) );
+
+			$this->assertFalse( $gateway->is_available() );
+		} finally {
+			remove_filter( 'pre_option_woocommerce_woocommerce_payments_bancontact_settings', $settings_filter );
+			remove_filter( 'pre_option_woocommerce_currency', $currency_filter );
+		}
+	}
+
+	/**
+	 * @testdox Should hide split gateways when the canonical WooPayments gateway is disabled.
+	 */
+	public function test_split_gateway_availability_requires_master_gateway(): void {
+		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'bancontact' );
+		$this->assertNotNull( $definition );
+
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
+			->getMock();
+		$account_service->method( 'get_cached_account_data' )->willReturn(
+			array(
+				'country'      => 'BE',
+				'capabilities' => array( 'bancontact_payments' => 'active' ),
+			)
+		);
+		$account_service->method( 'is_gateway_enabled' )->willReturn( false );
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+		$settings_filter = static function (): array {
+			return array( 'enabled' => 'yes' );
+		};
+		$currency_filter = static function (): string {
+			return 'EUR';
+		};
+		add_filter( 'pre_option_woocommerce_woocommerce_payments_bancontact_settings', $settings_filter );
+		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
+
+		try {
+			$gateway = new NativeWooPaymentsGateway( $definition );
+			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $account_service );
+
+			$this->assertFalse( $gateway->is_available() );
+		} finally {
+			remove_filter( 'pre_option_woocommerce_woocommerce_payments_bancontact_settings', $settings_filter );
+			remove_filter( 'pre_option_woocommerce_currency', $currency_filter );
+		}
+	}
+
+	/**
+	 * @testdox Should apply provider readiness and explicit account capability state at availability time.
+	 */
+	public function test_gateway_availability_requires_provider_and_capability_readiness(): void {
+		$account_data    = array(
+			'country'      => 'US',
+			'capabilities' => array( 'card_payments' => 'restricted' ),
+		);
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
+			->getMock();
+		$account_service->method( 'get_cached_account_data' )->willReturnCallback(
+			static function () use ( &$account_data ): array {
+				return $account_data;
+			}
+		);
+		$account_service->method( 'is_gateway_enabled' )->willReturn( true );
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+
+		$provider_ready = true;
+		$provider       = $this->getMockBuilder( WooPaymentsProvider::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'can_process_payments' ) )
+			->getMock();
+		$provider->method( 'can_process_payments' )->willReturnCallback(
+			static function () use ( &$provider_ready ): bool {
+				return $provider_ready;
+			}
+		);
+
+		$this->with_gateway_settings(
+			array( 'enabled' => 'yes' ),
+			function () use ( &$account_data, &$provider_ready, $account_service, $provider ): void {
+				$gateway = new NativeWooPaymentsGateway();
+				$gateway->init( new RecordingPaymentProcessingService(), $provider, null, null, $account_service );
+
+				$this->assertFalse( $gateway->is_available(), 'An explicit restricted card capability must remain unavailable.' );
+
+				$account_data['capabilities']['card_payments'] = 'active';
+				$provider_ready                                = false;
+				$this->assertFalse( $gateway->is_available(), 'An unavailable provider transport/account must remain unavailable.' );
+
+				$provider_ready = true;
+				$this->assertTrue( $gateway->is_available() );
+			}
+		);
+	}
+
+	/**
+	 * @testdox Should hide an internal payment method that is not placed as a checkout gateway.
+	 */
+	public function test_gateway_availability_requires_checkout_gateway_placement(): void {
+		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'link' );
+		$this->assertNotNull( $definition );
+
+		$settings_filter = static function (): array {
+			return array( 'enabled' => 'yes' );
+		};
+		$currency_filter = static function (): string {
+			return 'USD';
+		};
+		add_filter( 'pre_option_woocommerce_woocommerce_payments_link_settings', $settings_filter );
+		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
+
+		try {
+			$gateway = new NativeWooPaymentsGateway( $definition );
+			$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, null, $this->create_account_service_for_country( 'US' ) );
+
+			$this->assertFalse( $gateway->is_available() );
+		} finally {
+			remove_filter( 'pre_option_woocommerce_woocommerce_payments_link_settings', $settings_filter );
+			remove_filter( 'pre_option_woocommerce_currency', $currency_filter );
+		}
+	}
+
+	/**
+	 * @testdox Should only place express gateways in the payment-method list when both placement controls are enabled.
+	 */
+	public function test_express_gateway_availability_requires_payment_method_list_placement(): void {
+		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'apple_pay' );
+		$this->assertNotNull( $definition );
+
+		$canonical_settings = array( 'express_checkout_in_payment_methods' => 'no' );
+		$feature_flag       = '1';
+		$account_service    = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_cached_account_data', 'get_gateway_setting', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
+			->getMock();
+		$account_service->method( 'get_cached_account_data' )->willReturn(
+			array(
+				'country'      => 'US',
+				'capabilities' => array( 'card_payments' => 'active' ),
+			)
+		);
+		$account_service->method( 'is_gateway_enabled' )->willReturn( true );
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+		$account_service->method( 'get_gateway_setting' )->willReturnCallback(
+			static function ( string $key, $fallback = null ) use ( &$canonical_settings ) {
+				return $canonical_settings[ $key ] ?? $fallback;
+			}
+		);
+		$split_settings  = static function (): array {
+			return array( 'enabled' => 'yes' );
+		};
+		$feature_filter  = static function () use ( &$feature_flag ): string {
+			return $feature_flag;
+		};
+		$currency_filter = static function (): string {
+			return 'USD';
+		};
+
+		add_filter( 'pre_option_woocommerce_woocommerce_payments_apple_pay_settings', $split_settings );
+		add_filter( 'pre_option__wcpay_feature_dynamic_checkout_place_order_button', $feature_filter );
+		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
+
+		try {
+			$gateway = new NativeWooPaymentsGateway( $definition );
+			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $account_service );
+
+			$this->assertFalse( $gateway->is_available(), 'The gateway setting must enable payment-method-list placement.' );
+
+			$canonical_settings['express_checkout_in_payment_methods'] = 'yes';
+			$feature_flag = '0';
+			$this->assertFalse( $gateway->is_available(), 'The dynamic checkout feature flag must also be enabled.' );
+
+			$feature_flag = '1';
+			$this->assertTrue( $gateway->is_available(), 'Both placement controls should expose the express gateway.' );
+		} finally {
+			remove_filter( 'pre_option_woocommerce_woocommerce_payments_apple_pay_settings', $split_settings );
+			remove_filter( 'pre_option__wcpay_feature_dynamic_checkout_place_order_button', $feature_filter );
+			remove_filter( 'pre_option_woocommerce_currency', $currency_filter );
+		}
+	}
+
+	/**
+	 * @testdox Should apply definition amount limits to split gateway availability.
+	 */
+	public function test_split_gateway_availability_respects_definition_amount_limits(): void {
+		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'affirm' );
+		$this->assertNotNull( $definition );
+
+		$settings_filter = static function (): array {
+			return array( 'enabled' => 'yes' );
+		};
+		$currency_filter = static function (): string {
+			return 'USD';
+		};
+		$previous_cart   = WC()->cart;
+		WC()->cart       = new \WC_Cart();
+		add_filter( 'pre_option_woocommerce_woocommerce_payments_affirm_settings', $settings_filter );
+		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
+
+		try {
+			$gateway = new NativeWooPaymentsGateway( $definition );
+			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $this->create_account_service_for_country( 'US', 'affirm_payments' ) );
+
+			WC()->cart->set_total( '34.99' );
+			$this->assertFalse( $gateway->is_available(), 'Amounts below the definition minimum should be unavailable.' );
+
+			WC()->cart->set_total( '35.00' );
+			$this->assertTrue( $gateway->is_available(), 'The definition minimum should be available.' );
+
+			WC()->cart->set_total( '30000.00' );
+			$this->assertTrue( $gateway->is_available(), 'The definition maximum should be available.' );
+
+			WC()->cart->set_total( '30000.01' );
+			$this->assertFalse( $gateway->is_available(), 'Amounts above the definition maximum should be unavailable.' );
+		} finally {
+			remove_filter( 'pre_option_woocommerce_woocommerce_payments_affirm_settings', $settings_filter );
+			remove_filter( 'pre_option_woocommerce_currency', $currency_filter );
+			WC()->cart = $previous_cart;
+		}
+	}
+
+	/**
+	 * @testdox Live checkout requires HTTPS while test mode remains available over HTTP.
+	 */
+	public function test_gateway_availability_requires_https_only_in_live_mode(): void {
+		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'bancontact' );
+		$this->assertNotNull( $definition );
+
+		$is_test_mode    = false;
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
+			->getMock();
+		$account_service->method( 'get_cached_account_data' )->willReturn(
+			array(
+				'country'      => 'BE',
+				'capabilities' => array( 'bancontact_payments' => 'active' ),
+			)
+		);
+		$account_service->method( 'is_gateway_enabled' )->willReturn( true );
+		$account_service->method( 'is_test_mode_enabled' )->willReturnCallback(
+			static function () use ( &$is_test_mode ): bool {
+				return $is_test_mode;
+			}
+		);
+
+		$settings_filter = static function (): array {
+			return array( 'enabled' => 'yes' );
+		};
+		$currency_filter = static function (): string {
+			return 'EUR';
+		};
+		$ssl_checkout    = 'no';
+		$ssl_filter      = static function () use ( &$ssl_checkout ): string {
+			return $ssl_checkout;
+		};
+		add_filter( 'pre_option_woocommerce_woocommerce_payments_bancontact_settings', $settings_filter );
+		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
+		add_filter( 'pre_option_woocommerce_force_ssl_checkout', $ssl_filter );
+
+		try {
+			$gateway = new NativeWooPaymentsGateway( $definition );
+			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $account_service );
+
+			$this->assertFalse( $gateway->is_available() );
+
+			$ssl_checkout = 'yes';
+			$this->assertTrue( $gateway->is_available() );
+
+			$ssl_checkout = 'no';
+			$is_test_mode = true;
+			$this->assertTrue( $gateway->is_available() );
+		} finally {
+			remove_filter( 'pre_option_woocommerce_woocommerce_payments_bancontact_settings', $settings_filter );
+			remove_filter( 'pre_option_woocommerce_currency', $currency_filter );
+			remove_filter( 'pre_option_woocommerce_force_ssl_checkout', $ssl_filter );
+		}
+	}
+
+	/**
+	 * @testdox BNPL order-pay availability requires a usable address and Affirm shopper name.
+	 */
+	public function test_bnpl_order_pay_availability_validates_address_and_affirm_name(): void {
+		$registry            = new WooPaymentsPaymentMethodRegistry();
+		$affirm_definition   = $registry->get( 'affirm' );
+		$afterpay_definition = $registry->get( 'afterpay_clearpay' );
+		$this->assertNotNull( $affirm_definition );
+		$this->assertNotNull( $afterpay_definition );
+
+		$order = wc_create_order();
+		$order->set_currency( 'USD' );
+		$order->set_total( '100.00' );
+		$order->save();
+		set_query_var( 'order-pay', $order->get_id() );
+
+		$settings_filter = static function (): array {
+			return array( 'enabled' => 'yes' );
+		};
+		$currency_filter = static function (): string {
+			return 'USD';
+		};
+		add_filter( 'pre_option_woocommerce_woocommerce_payments_affirm_settings', $settings_filter );
+		add_filter( 'pre_option_woocommerce_woocommerce_payments_afterpay_clearpay_settings', $settings_filter );
+		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
+
+		try {
+			$affirm = new NativeWooPaymentsGateway( $affirm_definition );
+			$affirm->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $this->create_account_service_for_country( 'US', 'affirm_payments' ) );
+			$this->assertFalse( $affirm->is_available() );
+
+			$order->set_billing_country( 'US' );
+			$order->set_billing_state( 'CA' );
+			$order->set_billing_city( 'San Francisco' );
+			$order->set_billing_postcode( '94107' );
+			$order->set_billing_address_1( '123 Market St' );
+			$order->save();
+			$this->assertFalse( $affirm->is_available() );
+
+			$order->set_billing_first_name( 'Test' );
+			$order->set_billing_last_name( 'Shopper' );
+			$order->save();
+			$this->assertTrue( $affirm->is_available() );
+
+			$order->set_shipping_first_name( 'Shipping' );
+			$order->set_shipping_last_name( 'Shopper' );
+			$order->set_shipping_country( 'AE' );
+			$order->set_shipping_city( 'Dubai' );
+			$order->set_shipping_address_1( '1 Test Street' );
+			$order->set_shipping_state( '' );
+			$order->set_shipping_postcode( '' );
+			$order->set_billing_country( '' );
+			$order->save();
+			$this->assertTrue( $affirm->is_available() );
+
+			$order->set_billing_first_name( '' );
+			$order->set_billing_last_name( '' );
+			$order->set_shipping_first_name( '' );
+			$order->set_shipping_last_name( '' );
+			$order->save();
+			$afterpay = new NativeWooPaymentsGateway( $afterpay_definition );
+			$afterpay->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $this->create_account_service_for_country( 'US', 'afterpay_clearpay_payments' ) );
+			$this->assertTrue( $afterpay->is_available() );
+		} finally {
+			set_query_var( 'order-pay', 0 );
+			remove_filter( 'pre_option_woocommerce_woocommerce_payments_affirm_settings', $settings_filter );
+			remove_filter( 'pre_option_woocommerce_woocommerce_payments_afterpay_clearpay_settings', $settings_filter );
+			remove_filter( 'pre_option_woocommerce_currency', $currency_filter );
+			$order->delete( true );
+		}
 	}
 
 	/**
@@ -262,6 +683,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			}
 		};
 
+		$this->assertSame( 10, has_action( 'woocommerce_checkout_subscription_created', array( $gateway, 'maybe_force_subscription_to_manual' ) ) );
 		$this->assertSame( 10, has_action( 'woocommerce_scheduled_subscription_payment_' . OrderPaymentStore::GATEWAY_ID, array( $gateway, 'scheduled_subscription_payment' ) ) );
 		$this->assertSame( 10, has_action( 'woocommerce_scheduled_subscription_payment_woocommerce_payments_amazon_pay', array( $gateway, 'scheduled_subscription_payment' ) ) );
 		$this->assertSame( 10, has_action( 'woocommerce_subscription_failing_payment_method_updated_' . OrderPaymentStore::GATEWAY_ID, array( $gateway, 'update_failing_payment_method' ) ) );
@@ -285,6 +707,135 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		remove_action( 'woocommerce_scheduled_subscription_payment_woocommerce_payments_amazon_pay', array( $gateway, 'scheduled_subscription_payment' ) );
 		remove_action( 'woocommerce_subscription_failing_payment_method_updated_' . OrderPaymentStore::GATEWAY_ID, array( $gateway, 'update_failing_payment_method' ) );
 		remove_action( 'woocommerce_subscription_failing_payment_method_updated_woocommerce_payments_amazon_pay', array( $gateway, 'update_failing_payment_method' ) );
+	}
+
+	/**
+	 * @testdox Split gateways advertise subscription support without owning shared renewal hooks.
+	 */
+	public function test_split_gateway_subscription_support_is_independent_from_hook_ownership(): void {
+		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'bancontact' );
+		$this->assertNotNull( $definition );
+
+		$gateway = new class( $definition ) extends NativeWooPaymentsGateway {
+			/**
+			 * Tell whether subscriptions support is available.
+			 *
+			 * @return bool
+			 */
+			public function is_subscriptions_enabled(): bool {
+				return true;
+			}
+		};
+
+		$this->assertContains( 'subscriptions', $gateway->supports );
+		$this->assertFalse( has_action( 'woocommerce_checkout_subscription_created', array( $gateway, 'maybe_force_subscription_to_manual' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_scheduled_subscription_payment_' . $gateway->id, array( $gateway, 'scheduled_subscription_payment' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_scheduled_subscription_payment_woocommerce_payments_amazon_pay', array( $gateway, 'scheduled_subscription_payment' ) ) );
+	}
+
+	/**
+	 * @testdox Subscription checkout eligibility follows reusability and manual renewal policy.
+	 */
+	public function test_subscription_checkout_eligibility_is_independent_from_hook_ownership(): void {
+		$registry              = new WooPaymentsPaymentMethodRegistry();
+		$bancontact_definition = $registry->get( 'bancontact' );
+		$amazon_definition     = $registry->get( 'amazon_pay' );
+		$this->assertNotNull( $bancontact_definition );
+		$this->assertNotNull( $amazon_definition );
+
+		$method = new \ReflectionMethod( NativeWooPaymentsGateway::class, 'is_available_for_subscription_context' );
+
+		$this->assertTrue( $method->invoke( new NativeWooPaymentsGateway( $bancontact_definition ), false, false ) );
+		$this->assertFalse( $method->invoke( new NativeWooPaymentsGateway( $bancontact_definition ), true, false ) );
+		$this->assertTrue( $method->invoke( new NativeWooPaymentsGateway( $bancontact_definition ), true, true ) );
+		$this->assertTrue( $method->invoke( new NativeWooPaymentsGateway( $amazon_definition ), true, false ) );
+	}
+
+	/**
+	 * @testdox Should preserve a non-reusable method while forcing its subscription to manual renewal.
+	 */
+	public function test_maybe_force_subscription_to_manual_preserves_non_reusable_method(): void {
+		$subscription = new class() extends WC_Order {
+			/**
+			 * Whether manual renewal is required.
+			 *
+			 * @var bool
+			 */
+			private bool $requires_manual_renewal = false;
+
+			/**
+			 * Set whether manual renewal is required.
+			 *
+			 * @param bool $requires_manual_renewal Whether manual renewal is required.
+			 */
+			public function set_requires_manual_renewal( $requires_manual_renewal ): void {
+				$this->requires_manual_renewal = (bool) $requires_manual_renewal;
+			}
+
+			/**
+			 * Tell whether manual renewal is required.
+			 *
+			 * @return bool
+			 */
+			public function is_manual(): bool {
+				return $this->requires_manual_renewal;
+			}
+		};
+		$gateway_id   = OrderPaymentStore::GATEWAY_ID_PREFIX . 'bancontact';
+		$subscription->set_payment_method( $gateway_id );
+		$subscription->save();
+
+		$gateway = new NativeWooPaymentsGateway();
+		if ( ! method_exists( $gateway, 'maybe_force_subscription_to_manual' ) ) {
+			$this->fail( 'The subscription creation policy callback does not exist.' );
+		}
+		$gateway->maybe_force_subscription_to_manual( $subscription );
+
+		$this->assertTrue( $subscription->is_manual() );
+		$this->assertSame( $gateway_id, $subscription->get_payment_method() );
+		$this->assertSame( $gateway_id, $subscription->get_meta( '_wcpay_original_payment_method_id', true ) );
+	}
+
+	/**
+	 * @testdox Should attach base subscription renewal handlers once across gateway instances.
+	 */
+	public function test_subscription_handler_registration_is_idempotent_across_gateway_instances(): void {
+		new class() extends NativeWooPaymentsGateway {
+			/**
+			 * Tell whether subscriptions support is available.
+			 *
+			 * @return bool
+			 */
+			public function is_subscriptions_enabled(): bool {
+				return true;
+			}
+		};
+		new class() extends NativeWooPaymentsGateway {
+			/**
+			 * Tell whether subscriptions support is available.
+			 *
+			 * @return bool
+			 */
+			public function is_subscriptions_enabled(): bool {
+				return true;
+			}
+		};
+
+		global $wp_filter;
+
+		foreach ( array( OrderPaymentStore::GATEWAY_ID, 'woocommerce_payments_amazon_pay' ) as $gateway_id ) {
+			$callbacks = $wp_filter[ 'woocommerce_scheduled_subscription_payment_' . $gateway_id ]->callbacks[10] ?? array();
+			$matches   = array_filter(
+				$callbacks,
+				static function ( array $callback ): bool {
+					return is_array( $callback['function'] ?? null )
+						&& $callback['function'][0] instanceof NativeWooPaymentsGateway
+						&& 'scheduled_subscription_payment' === ( $callback['function'][1] ?? null );
+				}
+			);
+
+			$this->assertCount( 1, $matches, 'Expected one base gateway renewal callback for ' . $gateway_id . '.' );
+		}
 	}
 
 	/**
@@ -452,12 +1003,14 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$user_id = self::factory()->user->create();
 		$order   = $this->create_order();
 		$order->set_customer_id( $user_id );
-		$order->add_payment_token( $this->create_card_token( $user_id, 'pm_renewal' ) );
+		$order->add_payment_token( $this->create_card_token( $user_id, 'pm_old_renewal' ) );
+		$active_token = $this->create_card_token( $user_id, 'pm_renewal' );
+		$order->add_payment_token( $active_token );
 		$order->save();
 
 		$service = new RecordingPaymentProcessingService();
 		$gateway = new NativeWooPaymentsGateway();
-		$gateway->init( $service, new WooPaymentsProvider() );
+		$gateway->init( $service, new WooPaymentsProvider(), null, null, null, new WooPaymentsTokenService() );
 
 		$gateway->scheduled_subscription_payment( 12.0, wc_get_order( $order->get_id() ) );
 
@@ -465,7 +1018,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( $order->get_id(), $service->last_checkout_context->get_order_id() );
 		$this->assertSame(
 			array(
-				'payment_token'       => (string) $order->get_payment_tokens()[0],
+				'payment_token'       => (string) $active_token->get_id(),
 				'save_payment_method' => false,
 			),
 			$service->last_checkout_context->get_payment_data()
@@ -712,6 +1265,35 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should reappend a previously used renewal token so it becomes active on the failing subscription.
+	 */
+	public function test_update_failing_payment_method_reappends_previously_used_renewal_token(): void {
+		$user_id      = self::factory()->user->create();
+		$subscription = $this->create_order();
+		$renewal      = $this->create_order();
+		$token_a      = $this->create_card_token( $user_id, 'pm_a' );
+		$token_b      = $this->create_card_token( $user_id, 'pm_b' );
+
+		$subscription->set_customer_id( $user_id );
+		$subscription->add_payment_token( $token_a );
+		$subscription->add_payment_token( $token_b );
+		$subscription->save();
+		$renewal->set_customer_id( $user_id );
+		$renewal->add_payment_token( $token_a );
+		$renewal->save();
+
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->update_failing_payment_method( wc_get_order( $subscription->get_id() ), wc_get_order( $renewal->get_id() ) );
+
+		$subscription = wc_get_order( $subscription->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $subscription );
+		$this->assertSame(
+			array( $token_a->get_id(), $token_b->get_id(), $token_a->get_id() ),
+			array_values( array_map( 'absint', $subscription->get_payment_tokens() ) )
+		);
+	}
+
+	/**
 	 * @testdox Should save setup-intent payment methods from the account add-payment-method form.
 	 */
 	public function test_add_payment_method_saves_successful_setup_intent_token(): void {
@@ -737,15 +1319,67 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$token_service = $this->getMockBuilder( WooPaymentsTokenService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_or_create_card_token_for_user' ) )
+			->onlyMethods( array( 'get_or_create_token_for_user' ) )
 			->getMock();
 		$token_service
 			->expects( $this->once() )
-			->method( 'get_or_create_card_token_for_user' )
+			->method( 'get_or_create_token_for_user' )
 			->with( 'pm_added', $user_id )
 			->willReturn( $this->create_card_token( $user_id, 'pm_added' ) );
 
 		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client, null, $token_service );
+
+		$result = $gateway->add_payment_method();
+
+		$this->assertSame( 'success', $result['result'] );
+		$this->assertSame( wc_get_endpoint_url( 'payment-methods' ), $result['redirect'] );
+	}
+
+	/**
+	 * @testdox Should save a non-card setup-intent payment method from My Account.
+	 */
+	public function test_add_payment_method_uses_type_aware_token_creation(): void {
+		$user_id = self::factory()->user->create();
+		wp_set_current_user( $user_id );
+		$_POST['wcpay-setup-intent'] = 'seti_sepa';
+
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_setup_intention' ) )
+			->getMock();
+		$api_client
+			->expects( $this->once() )
+			->method( 'get_setup_intention' )
+			->with( 'seti_sepa' )
+			->willReturn(
+				array(
+					'id'             => 'seti_sepa',
+					'status'         => 'succeeded',
+					'payment_method' => 'pm_sepa',
+				)
+			);
+
+		$token = new WooPaymentsSepaToken();
+		$token->set_gateway_id( OrderPaymentStore::GATEWAY_ID . '_sepa_debit' );
+		$token->set_user_id( $user_id );
+		$token->set_token( 'pm_sepa' );
+		$token->set_last4( '3000' );
+
+		$token_service = $this->getMockBuilder( WooPaymentsTokenService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_token_for_user' ) )
+			->getMock();
+		$token_service
+			->expects( $this->once() )
+			->method( 'get_or_create_token_for_user' )
+			->with( 'pm_sepa', $user_id )
+			->willReturn( $token );
+
+		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'sepa_debit' );
+		$this->assertNotNull( $definition );
+
+		$gateway = new NativeWooPaymentsGateway( $definition );
 		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client, null, $token_service );
 
 		$result = $gateway->add_payment_method();
@@ -790,11 +1424,11 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$token_service = $this->getMockBuilder( WooPaymentsTokenService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_or_create_card_token_for_user' ) )
+			->onlyMethods( array( 'get_or_create_token_for_user' ) )
 			->getMock();
 		$token_service
 			->expects( $this->once() )
-			->method( 'get_or_create_card_token_for_user' )
+			->method( 'get_or_create_token_for_user' )
 			->with( 'pm_added', $user_id )
 			->willReturn( $this->create_card_token( $user_id, 'pm_added' ) );
 
@@ -843,11 +1477,11 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$token_service = $this->getMockBuilder( WooPaymentsTokenService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_or_create_card_token_for_user' ) )
+			->onlyMethods( array( 'get_or_create_token_for_user' ) )
 			->getMock();
 		$token_service
 			->expects( $this->never() )
-			->method( 'get_or_create_card_token_for_user' );
+			->method( 'get_or_create_token_for_user' );
 
 		$gateway = new NativeWooPaymentsGateway();
 		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client, null, $token_service, $customer_service );
@@ -1661,6 +2295,46 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'card', $second_result[0]['id'] );
 
 		delete_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods' );
+	}
+
+	/**
+	 * Create an account service test double for a merchant country.
+	 *
+	 * @param string $country        Merchant account country.
+	 * @param string $capability_key Active payment method capability key.
+	 * @param bool   $test_mode      Whether the account is in test mode.
+	 * @return WooPaymentsAccountService
+	 */
+	private function create_account_service_for_country( string $country, string $capability_key = 'card_payments', bool $test_mode = true ): WooPaymentsAccountService {
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
+			->getMock();
+		$account_service->method( 'get_cached_account_data' )->willReturn(
+			array(
+				'country'      => $country,
+				'capabilities' => array( $capability_key => 'active' ),
+			)
+		);
+		$account_service->method( 'is_gateway_enabled' )->willReturn( true );
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( $test_mode );
+
+		return $account_service;
+	}
+
+	/**
+	 * Create a processing-ready WooPayments provider test double.
+	 *
+	 * @return WooPaymentsProvider
+	 */
+	private function create_processing_ready_provider(): WooPaymentsProvider {
+		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'can_process_payments' ) )
+			->getMock();
+		$provider->method( 'can_process_payments' )->willReturn( true );
+
+		return $provider;
 	}
 
 	/**

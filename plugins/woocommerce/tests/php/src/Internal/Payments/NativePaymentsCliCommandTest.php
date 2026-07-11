@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsCliCommand;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsCliAdapter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStatusReport;
@@ -70,6 +71,41 @@ class NativePaymentsCliCommandTest extends WC_Unit_Test_Case {
 		$text  = implode( "\n", $lines );
 
 		$this->assertStringContainsString( 'Multi-currency: enabled (rate provider: woopayments, unavailable)', $text );
+	}
+
+	/**
+	 * @testdox Registration exposes an ownership-independent command whose status dispatch writes every line.
+	 */
+	public function test_register_and_status_dispatch_use_the_cli_adapter(): void {
+		$registered_name    = '';
+		$registered_command = null;
+		$written_lines      = array();
+		$adapter            = $this->getMockBuilder( NativePaymentsCliAdapter::class )
+			->onlyMethods( array( 'is_available', 'add_command', 'line' ) )
+			->getMock();
+		$adapter->expects( $this->once() )->method( 'is_available' )->willReturn( true );
+		$adapter->expects( $this->once() )
+			->method( 'add_command' )
+			->willReturnCallback(
+				static function ( string $name, object $command ) use ( &$registered_name, &$registered_command ): void {
+					$registered_name    = $name;
+					$registered_command = $command;
+				}
+			);
+		$adapter->method( 'line' )->willReturnCallback(
+			static function ( string $line ) use ( &$written_lines ): void {
+				$written_lines[] = $line;
+			}
+		);
+
+		$command = new NativePaymentsCliCommand();
+		$command->init( wc_get_container()->get( WooPaymentsStatusReport::class ), $adapter );
+		$command->register();
+
+		$this->assertSame( 'wc-native-payments', $registered_name );
+		$this->assertSame( $command, $registered_command );
+		$registered_command->status();
+		$this->assertSame( $command->get_status_lines(), $written_lines );
 	}
 
 	/**

@@ -150,6 +150,23 @@ class WooPaymentsOrderDataServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Fee-breakdown notes render typed non-card fee rows from captured events.
+	 */
+	public function test_get_fee_breakdown_note_from_timeline_event_renders_non_card_fee_rows(): void {
+		$this->assertSame(
+			'<strong>Fee details:</strong><div class="captured-event-details">' . PHP_EOL
+			. '<p>1.00 EUR → 1.13956 USD: $74.07 USD</p>' . PHP_EOL
+			. '<p>Fee (2.5% + $0.80): $2.66 USD</p>' . PHP_EOL
+			. '<p>&nbsp;&nbsp;&nbsp;&nbsp;Base fee: $0.80</p>' . PHP_EOL
+			. '<p>&nbsp;&nbsp;&nbsp;&nbsp;International card fee: 1.5%</p>' . PHP_EOL
+			. '<p>&nbsp;&nbsp;&nbsp;&nbsp;Currency conversion fee: 1%</p>' . PHP_EOL
+			. '<p>Net payout: $71.41 USD</p>' . PHP_EOL
+			. '</div>',
+			$this->sut->get_fee_breakdown_note_from_timeline_event( $this->get_ideal_captured_timeline_event() )
+		);
+	}
+
+	/**
 	 * @testdox Fee-breakdown notes use WooCommerce translations for merchant-facing labels.
 	 */
 	public function test_get_fee_breakdown_note_uses_woocommerce_translations_for_labels(): void {
@@ -157,8 +174,8 @@ class WooPaymentsOrderDataServiceTest extends WC_Unit_Test_Case {
 			array(
 				'<strong>Fee details:</strong>' => '<strong>Gebuehrendetails:</strong>',
 				'Fee (%1$s): %2$s'              => 'Gebuehr (%1$s): %2$s',
-				'Base fee: %1$s'                => 'Grundgebuehr: %1$s',
-				'Currency conversion fee: %1$s' => 'Waehrungsumrechnungsgebuehr: %1$s',
+				'Base fee'                      => 'Grundgebuehr',
+				'Currency conversion fee'       => 'Waehrungsumrechnungsgebuehr',
 				'Net payout: %1$s'              => 'Nettoauszahlung: %1$s',
 			)
 		);
@@ -178,8 +195,26 @@ class WooPaymentsOrderDataServiceTest extends WC_Unit_Test_Case {
 	public function test_intent_needs_fee_breakdown_refresh_for_non_fx_envelope_without_rate(): void {
 		$intent = $this->get_intent_with_non_fx_fee_breakdown();
 		unset( $intent['charges']['data'][0]['fee_breakdown_v1']['totals']['fee']['rate'] );
+		unset( $intent['charges']['data'][0]['fee_breakdown_v1']['rows'][0]['rate'] );
 
 		$this->assertTrue( $this->sut->intent_needs_fee_breakdown_refresh( $intent ) );
+	}
+
+	/**
+	 * @testdox PaymentIntent fee-breakdown refresh is not required when rows provide the fee rate.
+	 */
+	public function test_intent_does_not_need_fee_breakdown_refresh_when_rows_provide_the_rate(): void {
+		$intent = $this->get_intent_with_non_fx_fee_breakdown();
+		unset( $intent['charges']['data'][0]['fee_breakdown_v1']['totals']['fee']['rate'] );
+
+		$this->assertFalse( $this->sut->intent_needs_fee_breakdown_refresh( $intent ) );
+	}
+
+	/**
+	 * @testdox PaymentIntent fee-breakdown refresh is required for an FX envelope without renderable rates.
+	 */
+	public function test_intent_needs_fee_breakdown_refresh_for_fx_envelope_without_renderable_rates(): void {
+		$this->assertTrue( $this->sut->intent_needs_fee_breakdown_refresh( $this->get_intent_with_stale_fx_fee_breakdown() ) );
 	}
 
 	/**
@@ -206,6 +241,38 @@ class WooPaymentsOrderDataServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$this->assertCount( 1, $matching_notes );
+	}
+
+	/**
+	 * @testdox Fee-breakdown note idempotence uses note-local charge identity without order metadata.
+	 */
+	public function test_add_fee_breakdown_note_uses_note_local_charge_identity(): void {
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->save();
+
+		$event = $this->get_captured_timeline_event();
+		$this->assertTrue( $this->sut->add_fee_breakdown_note_from_timeline_event( $order, $event ) );
+
+		$translate = static function ( string $translation, string $text, string $domain ): string {
+			unset( $text );
+
+			return 'woocommerce' === $domain ? 'Translated ' . $translation : $translation;
+		};
+		add_filter( 'gettext', $translate, 10, 3 );
+
+		try {
+			$this->assertFalse( $this->sut->add_fee_breakdown_note_from_timeline_event( $order, $event ) );
+		} finally {
+			remove_filter( 'gettext', $translate, 10 );
+		}
+
+		$fee_notes = array_filter(
+			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+			static fn( $note ): bool => str_contains( $note->content, 'captured-event-details' )
+		);
+		$this->assertCount( 1, $fee_notes );
+		$this->assertSame( '', $order->get_meta( '_wcpay_fee_breakdown_note_ids', true ) );
 	}
 
 	/**
@@ -307,6 +374,55 @@ class WooPaymentsOrderDataServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Get a PaymentIntent envelope with stale FX fee breakdown data.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_intent_with_stale_fx_fee_breakdown(): array {
+		return array(
+			'id'      => 'pi_123',
+			'charges' => array(
+				'data' => array(
+					array(
+						'id'               => 'ch_123',
+						'fee_breakdown_v1' => array(
+							'rows'    => array(
+								array(
+									'key'      => 'base',
+									'kind'     => 'fee',
+									'amount'   => 266,
+									'currency' => 'usd',
+									'rate'     => null,
+								),
+							),
+							'totals'  => array(
+								'fee' => array(
+									'amount'   => 266,
+									'currency' => 'usd',
+									'rate'     => null,
+								),
+								'net' => array(
+									'amount'   => 7141,
+									'currency' => 'usd',
+								),
+							),
+							'fx'      => array(
+								'from_currency' => 'eur',
+								'to_currency'   => 'usd',
+								'from_amount'   => 6500,
+								'to_amount'     => 7407,
+							),
+							'sources' => array(
+								'balance_transaction_exchange_rate' => 1.13956,
+							),
+						),
+					),
+				),
+			),
+		);
+	}
+
+	/**
 	 * Get a captured timeline event with a fee breakdown.
 	 *
 	 * @return array<string,mixed>
@@ -375,9 +491,42 @@ class WooPaymentsOrderDataServiceTest extends WC_Unit_Test_Case {
 		return array(
 			'id'               => 'ch_123',
 			'fee_breakdown_v1' => array(
+				'rows'    => array(
+					array(
+						'key'      => 'base',
+						'kind'     => 'fee',
+						'amount'   => $fee_amount,
+						'currency' => 'usd',
+						'rate'     => array(
+							'percentage'     => 0.029,
+							'fixed'          => 30,
+							'fixed_currency' => 'usd',
+						),
+					),
+					array(
+						'key'      => 'additional.fx',
+						'kind'     => 'fee',
+						'amount'   => 0,
+						'currency' => 'usd',
+						'rate'     => array(
+							'percentage'     => 0.01,
+							'fixed'          => 0,
+							'fixed_currency' => 'usd',
+						),
+					),
+				),
 				'totals'  => array(
 					'fee'         => array(
 						'amount'   => $fee_amount,
+						'currency' => 'usd',
+						'rate'     => array(
+							'percentage'     => 0.039,
+							'fixed'          => 30,
+							'fixed_currency' => 'usd',
+						),
+					),
+					'tax'         => array(
+						'amount'   => 0,
 						'currency' => 'usd',
 					),
 					'net'         => array(
@@ -397,6 +546,86 @@ class WooPaymentsOrderDataServiceTest extends WC_Unit_Test_Case {
 				),
 				'sources' => array(
 					'balance_transaction_exchange_rate' => 1.3428,
+				),
+			),
+		);
+	}
+
+	/**
+	 * Get an iDEAL captured timeline event with a fee breakdown.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_ideal_captured_timeline_event(): array {
+		return array(
+			'type'             => 'captured',
+			'fee_breakdown_v1' => array(
+				'rows'    => array(
+					array(
+						'key'      => 'base',
+						'kind'     => 'fee',
+						'amount'   => 233,
+						'currency' => 'usd',
+						'rate'     => array(
+							'percentage'     => 0,
+							'fixed'          => 80,
+							'fixed_currency' => 'usd',
+						),
+					),
+					array(
+						'key'      => 'additional.international',
+						'kind'     => 'fee',
+						'amount'   => 0,
+						'currency' => 'usd',
+						'rate'     => array(
+							'percentage'     => 0.015,
+							'fixed'          => 0,
+							'fixed_currency' => 'usd',
+						),
+					),
+					array(
+						'key'      => 'additional.fx',
+						'kind'     => 'fee',
+						'amount'   => 0,
+						'currency' => 'usd',
+						'rate'     => array(
+							'percentage'     => 0.01,
+							'fixed'          => 0,
+							'fixed_currency' => 'usd',
+						),
+					),
+				),
+				'totals'  => array(
+					'fee'         => array(
+						'amount'   => 266,
+						'currency' => 'usd',
+						'rate'     => array(
+							'percentage'     => 0.025,
+							'fixed'          => 80,
+							'fixed_currency' => 'usd',
+						),
+					),
+					'tax'         => array(
+						'amount'   => 0,
+						'currency' => 'usd',
+					),
+					'net'         => array(
+						'amount'   => 7141,
+						'currency' => 'usd',
+					),
+					'capture_net' => array(
+						'amount'   => 7141,
+						'currency' => 'usd',
+					),
+				),
+				'fx'      => array(
+					'from_currency' => 'eur',
+					'to_currency'   => 'usd',
+					'from_amount'   => 6500,
+					'to_amount'     => 7407,
+				),
+				'sources' => array(
+					'balance_transaction_exchange_rate' => 1.13956,
 				),
 			),
 		);

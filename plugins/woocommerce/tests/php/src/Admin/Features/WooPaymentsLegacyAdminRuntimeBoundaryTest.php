@@ -9,6 +9,11 @@ use WC_Unit_Test_Case;
  * Tests legacy admin WooPayments runtime boundaries.
  */
 class WooPaymentsLegacyAdminRuntimeBoundaryTest extends WC_Unit_Test_Case {
+	/** @var array<string,string[]> */
+	private static array $source_files_by_query = array();
+
+	/** @var array<string,string> */
+	private static array $source_by_path = array();
 
 	/**
 	 * @testdox Legacy admin sources should route WooPayments runtime access through WooPaymentsLegacyRuntime.
@@ -40,8 +45,7 @@ class WooPaymentsLegacyAdminRuntimeBoundaryTest extends WC_Unit_Test_Case {
 		);
 
 		foreach ( $assertions as $relative_path => $forbidden_strings ) {
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading local source for boundary assertion.
-			$source = (string) file_get_contents( WC()->plugin_path() . '/' . $relative_path );
+			$source = $this->read_source_file( WC()->plugin_path() . '/' . $relative_path );
 
 			foreach ( $forbidden_strings as $forbidden_string ) {
 				$this->assertStringNotContainsString(
@@ -80,8 +84,7 @@ class WooPaymentsLegacyAdminRuntimeBoundaryTest extends WC_Unit_Test_Case {
 		);
 
 		foreach ( $source_files as $source_file ) {
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading local source for removal assertion.
-			$source = (string) file_get_contents( $source_file );
+				$source = $this->read_source_file( $source_file );
 
 			foreach ( $forbidden_strings as $forbidden_string ) {
 				$this->assertStringNotContainsString( $forbidden_string, $source, "{$source_file} should not retain deprecated WooPayments welcome-page symbol {$forbidden_string}." );
@@ -114,8 +117,7 @@ class WooPaymentsLegacyAdminRuntimeBoundaryTest extends WC_Unit_Test_Case {
 		);
 
 		foreach ( $production_php_files as $source_file ) {
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading local source for removal assertion.
-			$source = (string) file_get_contents( $source_file );
+			$source = $this->read_source_file( $source_file );
 
 			foreach ( $forbidden_php_strings as $forbidden_string ) {
 				$this->assertStringNotContainsString( $forbidden_string, $source, "{$source_file} should not retain deprecated WooPayments onboarding symbol {$forbidden_string}." );
@@ -132,8 +134,7 @@ class WooPaymentsLegacyAdminRuntimeBoundaryTest extends WC_Unit_Test_Case {
 		);
 
 		foreach ( $production_client_files as $source_file ) {
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading local source for removal assertion.
-			$source = (string) file_get_contents( $source_file );
+			$source = $this->read_source_file( $source_file );
 
 			foreach ( $forbidden_client_strings as $forbidden_string ) {
 				$this->assertStringNotContainsString( $forbidden_string, $source, "{$source_file} should not retain deprecated WooPayments onboarding client symbol {$forbidden_string}." );
@@ -177,8 +178,7 @@ class WooPaymentsLegacyAdminRuntimeBoundaryTest extends WC_Unit_Test_Case {
 		);
 
 		foreach ( $production_php_files as $source_file ) {
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading local source for removal assertion.
-			$source = (string) file_get_contents( $source_file );
+			$source = $this->read_source_file( $source_file );
 
 			foreach ( $forbidden_php_strings as $forbidden_string ) {
 				$this->assertStringNotContainsString( $forbidden_string, $source, "{$source_file} should not retain deprecated WooPayments promotion symbol {$forbidden_string}." );
@@ -199,8 +199,7 @@ class WooPaymentsLegacyAdminRuntimeBoundaryTest extends WC_Unit_Test_Case {
 		);
 
 		foreach ( $production_client_files as $source_file ) {
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading local source for removal assertion.
-			$source = (string) file_get_contents( $source_file );
+			$source = $this->read_source_file( $source_file );
 
 			foreach ( $forbidden_client_strings as $forbidden_string ) {
 				$this->assertStringNotContainsString( $forbidden_string, $source, "{$source_file} should not retain deprecated WooPayments promotion client symbol {$forbidden_string}." );
@@ -222,8 +221,7 @@ class WooPaymentsLegacyAdminRuntimeBoundaryTest extends WC_Unit_Test_Case {
 		);
 
 		foreach ( $old_name_source_files as $source_file ) {
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading local source for boundary assertion.
-			$source = (string) file_get_contents( WC()->plugin_path() . '/' . $source_file );
+			$source = $this->read_source_file( WC()->plugin_path() . '/' . $source_file );
 
 			$this->assertStringNotContainsString(
 				'settings-payments-woocommerce-payments',
@@ -251,6 +249,12 @@ class WooPaymentsLegacyAdminRuntimeBoundaryTest extends WC_Unit_Test_Case {
 	 * @return string[]
 	 */
 	private function get_source_files( string $directory, array $extensions ): array {
+		sort( $extensions );
+		$cache_key = $directory . '|' . implode( ',', $extensions );
+		if ( isset( self::$source_files_by_query[ $cache_key ] ) ) {
+			return self::$source_files_by_query[ $cache_key ];
+		}
+
 		$files = array();
 
 		foreach ( new \RecursiveIteratorIterator( new \RecursiveDirectoryIterator( $directory ) ) as $file ) {
@@ -265,6 +269,23 @@ class WooPaymentsLegacyAdminRuntimeBoundaryTest extends WC_Unit_Test_Case {
 			$files[] = $file->getPathname();
 		}
 
-		return $files;
+		self::$source_files_by_query[ $cache_key ] = $files;
+
+		return self::$source_files_by_query[ $cache_key ];
+	}
+
+	/**
+	 * Read and cache an immutable production source file for boundary assertions.
+	 *
+	 * @param string $path Source file path.
+	 * @return string
+	 */
+	private function read_source_file( string $path ): string {
+		if ( ! array_key_exists( $path, self::$source_by_path ) ) {
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading immutable local source for boundary assertions.
+			self::$source_by_path[ $path ] = (string) file_get_contents( $path );
+		}
+
+		return self::$source_by_path[ $path ];
 	}
 }

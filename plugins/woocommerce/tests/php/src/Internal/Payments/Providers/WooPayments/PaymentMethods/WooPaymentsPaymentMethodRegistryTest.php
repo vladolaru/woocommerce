@@ -107,6 +107,32 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Definitions keep account capability ownership separate from public gateway publication.
+	 */
+	public function test_definitions_expose_gateway_publication_and_account_capability_ownership(): void {
+		$link       = $this->registry->get( 'link' );
+		$apple_pay  = $this->registry->get( 'apple_pay' );
+		$google_pay = $this->registry->get( 'google_pay' );
+		$klarna     = $this->registry->get( 'klarna' );
+
+		$this->assertNotNull( $link );
+		$this->assertFalse( $link->should_publish_gateway() );
+		$this->assertSame( 'link_payments', $link->get_account_capability_key() );
+
+		$this->assertNotNull( $apple_pay );
+		$this->assertTrue( $apple_pay->should_publish_gateway() );
+		$this->assertSame( 'card_payments', $apple_pay->get_account_capability_key() );
+
+		$this->assertNotNull( $google_pay );
+		$this->assertTrue( $google_pay->should_publish_gateway() );
+		$this->assertSame( 'card_payments', $google_pay->get_account_capability_key() );
+
+		$this->assertNotNull( $klarna );
+		$this->assertTrue( $klarna->should_publish_gateway() );
+		$this->assertSame( $klarna->get_stripe_id(), $klarna->get_account_capability_key() );
+	}
+
+	/**
 	 * @testdox Country-specific definition values preserve extension behavior.
 	 */
 	public function test_country_specific_definition_values_preserve_extension_behavior(): void {
@@ -152,6 +178,27 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 		$this->assertNotNull( $wechat_pay );
 		$this->assertSame( array( 'EUR' ), $wechat_pay->get_supported_currencies( 'NL' ) );
 		$this->assertSame( array( 'NONE_SUPPORTED' ), $wechat_pay->get_supported_currencies( 'BR' ) );
+	}
+
+	/**
+	 * @testdox Every registry-projected icon is published with the WooCommerce plugin.
+	 */
+	public function test_registry_icon_assets_exist(): void {
+		foreach ( $this->registry->get_all() as $definition ) {
+			$countries = array_merge( array( null ), $definition->get_supported_countries() );
+			foreach ( $countries as $country ) {
+				$asset_paths = array(
+					$definition->get_icon_asset_path( $country ),
+					$definition->get_dark_icon_asset_path( $country ),
+					$definition->get_settings_icon_asset_path( $country ),
+				);
+
+				foreach ( array_unique( $asset_paths ) as $asset_path ) {
+					$this->assertNotSame( '', $asset_path, $definition->get_id() . ' must publish a non-empty icon path.' );
+					$this->assertFileExists( WC_ABSPATH . $asset_path, $definition->get_id() . ' references a missing icon: ' . $asset_path );
+				}
+			}
+		}
 	}
 
 	/**

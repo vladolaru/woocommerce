@@ -345,6 +345,7 @@ class WooPaymentsPaymentMethodRegistry {
 			),
 			array(
 				'id'                         => 'link',
+				'publish_gateway'            => false,
 				'keywords'                   => array( 'link', 'stripe link' ),
 				'stripe_id'                  => 'link_payments',
 				'stripe_payment_method_type' => 'link',
@@ -521,6 +522,7 @@ class WooPaymentsPaymentMethodRegistry {
 			),
 			array(
 				'id'                         => 'apple_pay',
+				'account_capability_key'     => 'card_payments',
 				'keywords'                   => array( 'apple_pay', 'applepay' ),
 				'stripe_id'                  => 'apple_pay_payments',
 				'stripe_payment_method_type' => 'card',
@@ -539,6 +541,7 @@ class WooPaymentsPaymentMethodRegistry {
 			),
 			array(
 				'id'                         => 'google_pay',
+				'account_capability_key'     => 'card_payments',
 				'keywords'                   => array( 'google_pay', 'googlepay', 'gpay' ),
 				'stripe_id'                  => 'google_pay_payments',
 				'stripe_payment_method_type' => 'card',

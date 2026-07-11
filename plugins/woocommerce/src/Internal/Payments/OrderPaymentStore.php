@@ -66,32 +66,15 @@ class OrderPaymentStore {
 	const LOCK_TTL_SECONDS = WooPaymentsPersistenceProfile::LOCK_TTL_SECONDS;
 
 	/**
-	 * Default WooPayments persistence profile.
-	 *
-	 * @var ProviderPersistenceProfile|null
-	 */
-	private ?ProviderPersistenceProfile $persistence_profile = null;
-
-	/**
-	 * Initialize the class instance.
-	 *
-	 * @internal
-	 *
-	 * @param WooPaymentsPersistenceProfile $persistence_profile Default WooPayments persistence profile.
-	 */
-	final public function init( WooPaymentsPersistenceProfile $persistence_profile ): void {
-		$this->persistence_profile = $persistence_profile;
-	}
-
-	/**
-	 * Get the preserved WooPayments order/refund payment meta keys.
+	 * Get the preserved provider order/refund payment meta keys.
 	 *
 	 * @since 11.0.0
 	 *
+	 * @param ProviderPersistenceProfile $persistence_profile Provider persistence profile.
 	 * @return string[]
 	 */
-	public static function get_payment_meta_keys(): array {
-		return ( new WooPaymentsPersistenceProfile() )->get_preserved_payment_meta_keys();
+	public static function get_payment_meta_keys( ProviderPersistenceProfile $persistence_profile ): array {
+		return $persistence_profile->get_preserved_payment_meta_keys();
 	}
 
 	/**
@@ -102,10 +85,11 @@ class OrderPaymentStore {
 	 *
 	 * @since 11.0.0
 	 *
-	 * @param WC_Order $order Order to project.
+	 * @param WC_Order                   $order               Order to project.
+	 * @param ProviderPersistenceProfile $persistence_profile Provider persistence profile.
 	 * @return array<string,mixed>
 	 */
-	public function read_payment_surface( WC_Order $order ): array {
+	public function read_payment_surface( WC_Order $order, ProviderPersistenceProfile $persistence_profile ): array {
 		return array(
 			'order_id'       => (int) $order->get_id(),
 			'status'         => (string) $order->get_status(),
@@ -113,8 +97,8 @@ class OrderPaymentStore {
 			'transaction_id' => (string) $order->get_transaction_id(),
 			'currency'       => (string) $order->get_currency(),
 			'total'          => (string) $order->get_total(),
-			'meta'           => $this->read_payment_meta( $order ),
-			'refunds'        => $this->read_refund_surfaces( $order ),
+			'meta'           => $this->read_payment_meta( $order, $persistence_profile ),
+			'refunds'        => $this->read_refund_surfaces( $order, $persistence_profile ),
 		);
 	}
 
@@ -126,14 +110,15 @@ class OrderPaymentStore {
 	 *
 	 * @since 11.0.0
 	 *
-	 * @param WC_Order    $order             Order being checked.
-	 * @param string|null $payment_reference Payment reference currently being processed.
+	 * @param WC_Order                   $order               Order being checked.
+	 * @param ProviderPersistenceProfile $persistence_profile Provider persistence profile.
+	 * @param string|null                $payment_reference   Payment reference currently being processed.
 	 * @return bool True when processing is locked.
 	 */
-	public function is_order_payment_locked( WC_Order $order, ?string $payment_reference = null ): bool {
-		$processing = get_transient( $this->get_order_payment_lock_key( $order ) );
+	public function is_order_payment_locked( WC_Order $order, ProviderPersistenceProfile $persistence_profile, ?string $payment_reference = null ): bool {
+		$processing = get_transient( $persistence_profile->get_order_lock_key( $order ) );
 
-		return $this->get_persistence_profile()->get_lock_sentinel() === $processing
+		return $persistence_profile->get_lock_sentinel() === $processing
 			|| ( null !== $payment_reference && $processing === $payment_reference );
 	}
 
@@ -145,14 +130,14 @@ class OrderPaymentStore {
 	 *
 	 * @since 11.0.0
 	 *
-	 * @param WC_Order    $order             Order being locked.
-	 * @param string|null $payment_reference Payment reference being processed.
+	 * @param WC_Order                   $order               Order being locked.
+	 * @param ProviderPersistenceProfile $persistence_profile Provider persistence profile.
+	 * @param string|null                $payment_reference   Payment reference being processed.
 	 * @return bool True when the lock was claimed.
 	 */
-	public function claim_order_payment_lock( WC_Order $order, ?string $payment_reference = null ): bool {
-		$profile  = $this->get_persistence_profile();
-		$lock_key = $profile->get_order_lock_key( $order );
-		$value    = empty( $payment_reference ) ? $profile->get_lock_sentinel() : $payment_reference;
+	public function claim_order_payment_lock( WC_Order $order, ProviderPersistenceProfile $persistence_profile, ?string $payment_reference = null ): bool {
+		$lock_key = $persistence_profile->get_order_lock_key( $order );
+		$value    = empty( $payment_reference ) ? $persistence_profile->get_lock_sentinel() : $payment_reference;
 
 		if ( false !== get_transient( $lock_key ) ) {
 			return false;
@@ -162,12 +147,12 @@ class OrderPaymentStore {
 			( function_exists( 'wp_using_ext_object_cache' ) && wp_using_ext_object_cache() )
 			|| ( function_exists( 'wp_installing' ) && wp_installing() )
 		) {
-			return wp_cache_add( $lock_key, $value, 'transient', $profile->get_lock_ttl_seconds() );
+			return wp_cache_add( $lock_key, $value, 'transient', $persistence_profile->get_lock_ttl_seconds() );
 		}
 
 		$timeout_option = '_transient_timeout_' . $lock_key;
 		$value_option   = '_transient_' . $lock_key;
-		$expiration     = time() + $profile->get_lock_ttl_seconds();
+		$expiration     = time() + $persistence_profile->get_lock_ttl_seconds();
 
 		$timeout_added = add_option( $timeout_option, $expiration, '', false );
 		$value_added   = add_option( $value_option, $value, '', false );
@@ -192,16 +177,15 @@ class OrderPaymentStore {
 	 *
 	 * @since 11.0.0
 	 *
-	 * @param WC_Order    $order             Order being locked.
-	 * @param string|null $payment_reference Payment reference being processed.
+	 * @param WC_Order                   $order               Order being locked.
+	 * @param ProviderPersistenceProfile $persistence_profile Provider persistence profile.
+	 * @param string|null                $payment_reference   Payment reference being processed.
 	 */
-	public function lock_order_payment( WC_Order $order, ?string $payment_reference = null ): void {
-		$profile = $this->get_persistence_profile();
-
+	public function lock_order_payment( WC_Order $order, ProviderPersistenceProfile $persistence_profile, ?string $payment_reference = null ): void {
 		set_transient(
-			$profile->get_order_lock_key( $order ),
-			empty( $payment_reference ) ? $profile->get_lock_sentinel() : $payment_reference,
-			$profile->get_lock_ttl_seconds()
+			$persistence_profile->get_order_lock_key( $order ),
+			empty( $payment_reference ) ? $persistence_profile->get_lock_sentinel() : $payment_reference,
+			$persistence_profile->get_lock_ttl_seconds()
 		);
 	}
 
@@ -210,21 +194,23 @@ class OrderPaymentStore {
 	 *
 	 * @since 11.0.0
 	 *
-	 * @param WC_Order $order Order being unlocked.
+	 * @param WC_Order                   $order               Order being unlocked.
+	 * @param ProviderPersistenceProfile $persistence_profile Provider persistence profile.
 	 */
-	public function unlock_order_payment( WC_Order $order ): void {
-		delete_transient( $this->get_order_payment_lock_key( $order ) );
+	public function unlock_order_payment( WC_Order $order, ProviderPersistenceProfile $persistence_profile ): void {
+		delete_transient( $persistence_profile->get_order_lock_key( $order ) );
 	}
 
 	/**
 	 * Read preserved payment meta from an order or refund object.
 	 *
-	 * @param WC_Abstract_Order $order Order or refund object.
+	 * @param WC_Abstract_Order          $order               Order or refund object.
+	 * @param ProviderPersistenceProfile $persistence_profile Provider persistence profile.
 	 * @return array<string,string>
 	 */
-	private function read_payment_meta( WC_Abstract_Order $order ): array {
+	private function read_payment_meta( WC_Abstract_Order $order, ProviderPersistenceProfile $persistence_profile ): array {
 		$payment_meta = array();
-		$allowed_keys = array_fill_keys( $this->get_persistence_profile()->get_preserved_payment_meta_keys(), true );
+		$allowed_keys = array_fill_keys( $persistence_profile->get_preserved_payment_meta_keys(), true );
 
 		foreach ( $order->get_meta_data() as $meta ) {
 			$meta_data = $meta->get_data();
@@ -245,10 +231,11 @@ class OrderPaymentStore {
 	/**
 	 * Read stable refund projections for an order.
 	 *
-	 * @param WC_Order $order Order object.
+	 * @param WC_Order                   $order               Order object.
+	 * @param ProviderPersistenceProfile $persistence_profile Provider persistence profile.
 	 * @return array<int,array<string,mixed>>
 	 */
-	private function read_refund_surfaces( WC_Order $order ): array {
+	private function read_refund_surfaces( WC_Order $order, ProviderPersistenceProfile $persistence_profile ): array {
 		$refunds = array();
 
 		foreach ( $order->get_refunds() as $refund ) {
@@ -261,7 +248,7 @@ class OrderPaymentStore {
 				'amount'    => (string) $refund->get_amount(),
 				'currency'  => (string) $refund->get_currency(),
 				'reason'    => (string) $refund->get_reason(),
-				'meta'      => $this->read_payment_meta( $refund ),
+				'meta'      => $this->read_payment_meta( $refund, $persistence_profile ),
 			);
 		}
 
@@ -288,28 +275,5 @@ class OrderPaymentStore {
 
 		$encoded = wp_json_encode( $value );
 		return false === $encoded ? '' : $encoded;
-	}
-
-	/**
-	 * Get the WooPayments-compatible transient key for an order lock.
-	 *
-	 * @param WC_Order $order Order object.
-	 * @return string Transient key.
-	 */
-	private function get_order_payment_lock_key( WC_Order $order ): string {
-		return $this->get_persistence_profile()->get_order_lock_key( $order );
-	}
-
-	/**
-	 * Get the default persistence profile.
-	 *
-	 * @return ProviderPersistenceProfile
-	 */
-	private function get_persistence_profile(): ProviderPersistenceProfile {
-		if ( null === $this->persistence_profile ) {
-			$this->persistence_profile = new WooPaymentsPersistenceProfile();
-		}
-
-		return $this->persistence_profile;
 	}
 }

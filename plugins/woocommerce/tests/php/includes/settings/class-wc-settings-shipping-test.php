@@ -69,26 +69,67 @@ class WC_Settings_Shipping_Test extends WC_Settings_Unit_Test_Case {
 		$sut->method( 'get_shipping_methods' )->willReturn( $methods );
 		$sut->method( 'wc_is_installing' )->willReturn( false );
 
-		$previous_fulfillments_enabled = get_option( 'woocommerce_feature_fulfillments_enabled', null );
-		update_option( 'woocommerce_feature_fulfillments_enabled', 'no' );
+		$this->with_fulfillments_feature_flag(
+			'no',
+			function () use ( $sut ) {
+				$sections = $sut->get_sections();
+
+				$expected = array(
+					''            => 'Shipping zones',
+					'options'     => 'Shipping settings',
+					'classes'     => 'Classes',
+					'method_1_id' => 'Method_1_id',
+					'method_2_id' => 'method_2_title',
+				);
+				$this->assertEquals( $expected, $sections );
+			}
+		);
+	}
+
+	/**
+	 * @testDox 'get_sections' includes the fulfillment providers section when fulfillments are enabled.
+	 */
+	public function test_get_sections_includes_fulfillment_providers_section_when_fulfillments_are_enabled() {
+		$sut = $this->getMockBuilder( WC_Settings_Shipping::class )
+					->setMethods( array( 'get_shipping_methods', 'wc_is_installing' ) )
+					->getMock();
+
+		$sut->method( 'get_shipping_methods' )->willReturn( array() );
+		$sut->method( 'wc_is_installing' )->willReturn( false );
+
+		$this->with_fulfillments_feature_flag(
+			'yes',
+			function () use ( $sut ) {
+				$sections = $sut->get_sections();
+
+				$expected = array(
+					''                      => 'Shipping zones',
+					'options'               => 'Shipping settings',
+					'classes'               => 'Classes',
+					'fulfillment-providers' => 'Shipping providers',
+				);
+				$this->assertEquals( $expected, $sections );
+			}
+		);
+	}
+
+	/**
+	 * Run a callback with the fulfillments feature flag forced to a specific value.
+	 *
+	 * @param string   $value    Option value to return for the feature flag.
+	 * @param callable $callback Callback to execute.
+	 */
+	private function with_fulfillments_feature_flag( $value, $callback ) {
+		$filter = function () use ( $value ) {
+			return $value;
+		};
+
+		add_filter( 'pre_option_woocommerce_feature_fulfillments_enabled', $filter );
 
 		try {
-			$sections = $sut->get_sections();
-
-			$expected = array(
-				''            => 'Shipping zones',
-				'options'     => 'Shipping settings',
-				'classes'     => 'Classes',
-				'method_1_id' => 'Method_1_id',
-				'method_2_id' => 'method_2_title',
-			);
-			$this->assertEquals( $expected, $sections );
+			$callback();
 		} finally {
-			if ( null === $previous_fulfillments_enabled ) {
-				delete_option( 'woocommerce_feature_fulfillments_enabled' );
-			} else {
-				update_option( 'woocommerce_feature_fulfillments_enabled', $previous_fulfillments_enabled );
-			}
+			remove_filter( 'pre_option_woocommerce_feature_fulfillments_enabled', $filter );
 		}
 	}
 

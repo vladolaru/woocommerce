@@ -28,6 +28,42 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should prepare the logged-in customer's billing details for the add-payment-method form.
+	 */
+	public function test_get_prepared_customer_data_uses_logged_in_customer_on_add_payment_method_page(): void {
+		$user_id = $this->factory->user->create(
+			array(
+				'first_name' => 'Ada',
+				'last_name'  => 'Lovelace',
+				'user_email' => 'ada@example.com',
+			)
+		);
+		update_user_meta( $user_id, 'billing_email', 'billing@example.com' );
+		update_user_meta( $user_id, 'billing_country', 'RO' );
+		wp_set_current_user( $user_id );
+
+		$my_account_page_id = $this->factory->post->create(
+			array(
+				'post_type'   => 'page',
+				'post_status' => 'publish',
+			)
+		);
+		update_option( 'woocommerce_myaccount_page_id', $my_account_page_id );
+		$this->go_to( get_permalink( $my_account_page_id ) );
+		$GLOBALS['wp']->query_vars['add-payment-method'] = '';
+
+		$sut = $this->create_sut( false, $this->create_customer_api_client( array() ) );
+		$this->assertTrue( method_exists( $sut, 'get_prepared_customer_data' ), 'The native customer service should own prepared checkout customer data.' );
+
+		$data = $sut->get_prepared_customer_data();
+
+		$this->assertSame( 'Ada Lovelace', $data['name'] );
+		$this->assertSame( 'billing@example.com', $data['email'] );
+		$this->assertSame( 'RO', $data['billing_country'] );
+		$this->assertNull( $data['address'] );
+	}
+
+	/**
 	 * @testdox Logged-in shoppers should use mode-aware user storage for WooPayments customer IDs.
 	 */
 	public function test_get_or_create_customer_id_uses_mode_aware_user_storage_for_logged_in_customers(): void {

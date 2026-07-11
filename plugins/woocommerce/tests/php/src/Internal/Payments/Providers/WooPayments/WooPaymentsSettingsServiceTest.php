@@ -86,6 +86,9 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_fraud_protection_welcome_tour_dismissed' );
 		delete_option( 'wcpay_frt_review_feature_active' );
 		delete_option( 'current_protection_level' );
+		delete_option( 'woocommerce_woocommerce_payments_ideal_settings' );
+		delete_option( 'woocommerce_woocommerce_payments_apple_pay_settings' );
+		delete_option( 'woocommerce_woocommerce_payments_google_pay_settings' );
 		delete_transient( 'wcpay_fraud_protection_settings' );
 		foreach ( $this->get_mutated_woocommerce_options() as $option_name ) {
 			if ( array_key_exists( $option_name, $this->original_woocommerce_options ) && null !== $this->original_woocommerce_options[ $option_name ] ) {
@@ -111,6 +114,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should return the native WooPayments settings contract without Stripe Billing fields.
 	 */
 	public function test_get_settings_returns_reference_shaped_contract_without_stripe_billing_fields(): void {
+		update_option( 'woocommerce_woocommerce_payments_google_pay_settings', array( 'enabled' => 'yes' ) );
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
 			array(
@@ -119,7 +123,6 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 				'test_mode'                              => 'yes',
 				'enable_logging'                         => 'yes',
 				'saved_cards'                            => 'no',
-				'payment_request'                        => 'yes',
 				'express_checkout_in_payment_methods'    => 'yes',
 				'payment_request_button_size'            => 'large',
 				'payment_request_button_type'            => 'buy',
@@ -305,6 +308,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 				'woopayExpressCheckout'                    => true,
 				'isDynamicCheckoutPlaceOrderButtonEnabled' => true,
 				'amazonPay'                                => true,
+				'isEceUsingConfirmationTokens'             => true,
 			),
 			$settings['feature_flags']
 		);
@@ -376,7 +380,9 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
 			array(
-				'platform_checkout' => 'yes',
+				'platform_checkout'              => 'yes',
+				'upe_available_payment_methods'  => array( 'card', 'amazon_pay' ),
+				'upe_enabled_payment_method_ids' => array( 'card', 'amazon_pay' ),
 			)
 		);
 		update_option(
@@ -395,15 +401,36 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$settings = $this->sut->get_settings();
 
 		$this->assertTrue( $settings['is_woopay_enabled'], 'The saved WooPay setting should remain independent of express feature flags.' );
+		$this->assertNotContains( 'amazon_pay', $settings['available_payment_method_ids'] );
+		$this->assertNotContains( 'amazon_pay', $settings['enabled_payment_method_ids'] );
 		$this->assertSame(
 			array(
 				'woopay'                                   => true,
 				'woopayExpressCheckout'                    => false,
 				'isDynamicCheckoutPlaceOrderButtonEnabled' => false,
 				'amazonPay'                                => false,
+				'isEceUsingConfirmationTokens'             => true,
 			),
 			$settings['feature_flags']
 		);
+	}
+
+	/**
+	 * @testdox Should derive WooPayments Subscriptions eligibility from Stripe Billing product metadata.
+	 */
+	public function test_get_settings_detects_stripe_billing_subscription_product(): void {
+		$product_id = self::factory()->post->create(
+			array(
+				'post_type'   => 'product',
+				'post_status' => 'publish',
+			)
+		);
+		wp_set_object_terms( $product_id, 'subscription', 'product_type' );
+		update_post_meta( $product_id, '_wcpay_product_hash', 'product_hash' );
+
+		$settings = $this->sut->get_settings();
+
+		$this->assertTrue( $settings['is_wcpay_subscriptions_eligible'] );
 	}
 
 	/**
@@ -438,6 +465,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 				'woopayExpressCheckout'                    => true,
 				'isDynamicCheckoutPlaceOrderButtonEnabled' => true,
 				'amazonPay'                                => true,
+				'isEceUsingConfirmationTokens'             => true,
 			),
 			$settings['feature_flags']
 		);
@@ -612,9 +640,9 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose Apple Pay and Google Pay duplicate clusters when native payment request uses its default enabled state.
+	 * @testdox Should omit wallet duplicate clusters until a split wallet gateway is enabled.
 	 */
-	public function test_get_settings_exposes_apple_pay_google_pay_duplicate_cluster_when_payment_request_setting_is_missing(): void {
+	public function test_get_settings_omits_apple_pay_google_pay_duplicate_cluster_when_split_settings_are_missing(): void {
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		$this->mock_payment_gateways(
 			array(
@@ -625,17 +653,10 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 
 		$settings = $this->sut->get_settings();
 
-		$this->assertArrayHasKey(
+		$this->assertArrayNotHasKey(
 			'apple_pay_google_pay',
 			$settings['duplicated_payment_method_ids'],
-			'Native payment request support defaults to enabled for unconfigured stores.'
-		);
-		$this->assertEqualsCanonicalizing(
-			array(
-				'woocommerce_payments',
-				'legacy_googlepay_gateway',
-			),
-			$settings['duplicated_payment_method_ids']['apple_pay_google_pay']
+			'Unconfigured split wallet gateways are disabled.'
 		);
 	}
 
@@ -937,7 +958,9 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'yes', $stored['test_mode'] );
 		$this->assertSame( 'yes', $stored['enable_logging'] );
 		$this->assertSame( 'yes', $stored['saved_cards'] );
-		$this->assertSame( 'no', $stored['payment_request'] );
+		$this->assertArrayNotHasKey( 'payment_request', $stored );
+		$this->assertSame( 'no', get_option( 'woocommerce_woocommerce_payments_apple_pay_settings' )['enabled'] );
+		$this->assertSame( 'no', get_option( 'woocommerce_woocommerce_payments_google_pay_settings' )['enabled'] );
 		$this->assertSame( 'yes', $stored['express_checkout_in_payment_methods'] );
 		$this->assertSame( 'medium', $stored['payment_request_button_size'] );
 		$this->assertSame( 'default', $stored['payment_request_button_type'] );
@@ -956,6 +979,33 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( '1', get_option( '_wcpay_feature_stripe_billing' ), 'Native settings must not mutate the Stripe Billing flag.' );
 		$this->assertSame( $stored['upe_enabled_payment_method_ids'], $result['enabled_payment_method_ids'] );
 		$this->assertSame( $store_setup_sync_count + 1, did_action( 'wcpay_store_setup_sync' ) );
+	}
+
+	/**
+	 * @testdox Should return an error and skip post-save synchronization when gateway settings do not persist.
+	 */
+	public function test_update_settings_returns_error_when_gateway_settings_do_not_persist(): void {
+		$option_name       = 'woocommerce_woocommerce_payments_settings';
+		$original_settings = array(
+			'enabled'                        => 'no',
+			'upe_enabled_payment_method_ids' => array( 'card' ),
+		);
+		update_option( $option_name, $original_settings );
+		$store_setup_sync_count = did_action( 'wcpay_store_setup_sync' );
+		$reject_update          = static fn( $value, $old_value ) => $old_value;
+		add_filter( 'pre_update_option_' . $option_name, $reject_update, 10, 2 );
+
+		try {
+			$result = $this->sut->update_settings( array( 'is_wcpay_enabled' => true ) );
+		} finally {
+			remove_filter( 'pre_update_option_' . $option_name, $reject_update, 10 );
+		}
+
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertSame( 'woocommerce_woopayments_settings_persistence_failed', $result->get_error_code() );
+		$this->assertSame( 500, $result->get_error_data()['status'] );
+		$this->assertSame( $original_settings, get_option( $option_name ) );
+		$this->assertSame( $store_setup_sync_count, did_action( 'wcpay_store_setup_sync' ) );
 	}
 
 	/**
@@ -1675,6 +1725,99 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should request missing payment method capabilities when enabling methods.
+	 */
+	public function test_update_settings_requests_missing_payment_method_capabilities(): void {
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'upe_enabled_payment_method_ids' => array( 'card' ),
+			)
+		);
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'    => array(
+					'account_id'   => 'acct_native_test',
+					'is_live'      => true,
+					'capabilities' => array(
+						'card_payments' => 'active',
+					),
+					'fees'         => array(
+						'card'    => array(),
+						'grabpay' => array(),
+					),
+				),
+				'fetched' => time(),
+				'errored' => false,
+			)
+		);
+
+		$result = $this->sut->update_settings(
+			array(
+				'enabled_payment_method_ids' => array( 'card', 'grabpay' ),
+			)
+		);
+
+		$this->assertIsArray( $result );
+		$this->assertSame(
+			array(
+				array(
+					'capability_id' => 'grabpay_payments',
+					'requested'     => true,
+				),
+			),
+			$this->api_client->capability_requests
+		);
+	}
+
+	/**
+	 * @testdox Should request missing payment method capabilities before filtering by fee-backed availability.
+	 */
+	public function test_update_settings_requests_missing_capabilities_without_fee_rows(): void {
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'upe_enabled_payment_method_ids' => array( 'card' ),
+			)
+		);
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'    => array(
+					'account_id'   => 'acct_native_test',
+					'is_live'      => true,
+					'capabilities' => array(
+						'card_payments' => 'active',
+					),
+					'fees'         => array(
+						'card' => array(),
+					),
+				),
+				'fetched' => time(),
+				'errored' => false,
+			)
+		);
+
+		$result = $this->sut->update_settings(
+			array(
+				'enabled_payment_method_ids' => array( 'card', 'grabpay' ),
+			)
+		);
+
+		$this->assertIsArray( $result );
+		$this->assertSame(
+			array(
+				array(
+					'capability_id' => 'grabpay_payments',
+					'requested'     => true,
+				),
+			),
+			$this->api_client->capability_requests
+		);
+	}
+
+	/**
 	 * @testdox Should activate visible promotions before enabling newly selected payment methods.
 	 */
 	public function test_update_settings_activates_visible_promotions_before_enabling_methods(): void {
@@ -1783,6 +1926,62 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 				),
 			),
 			$this->api_client->capability_requests
+		);
+	}
+
+	/**
+	 * @testdox Should keep split gateway availability aligned with canonical enabled methods.
+	 */
+	public function test_update_settings_projects_enabled_methods_to_split_gateways(): void {
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array( 'upe_enabled_payment_method_ids' => array( 'card' ) )
+		);
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'    => array(
+					'account_id'   => 'acct_native_test',
+					'is_live'      => true,
+					'capabilities' => array(
+						'card_payments'  => 'active',
+						'ideal_payments' => 'active',
+					),
+					'fees'         => array(
+						'card'  => array(),
+						'ideal' => array(),
+					),
+				),
+				'fetched' => time(),
+				'errored' => false,
+			)
+		);
+
+		$enable_result = $this->sut->update_settings(
+			array( 'enabled_payment_method_ids' => array( 'card', 'ideal' ) )
+		);
+
+		$this->assertIsArray( $enable_result );
+		$this->assertSame( array( 'card', 'ideal' ), $enable_result['enabled_payment_method_ids'] );
+		$this->assertSame(
+			array(
+				'enabled'                        => 'yes',
+				'upe_enabled_payment_method_ids' => array( 'card', 'ideal' ),
+			),
+			get_option( 'woocommerce_woocommerce_payments_ideal_settings' )
+		);
+
+		$disable_result = $this->sut->update_settings(
+			array( 'enabled_payment_method_ids' => array( 'card' ) )
+		);
+
+		$this->assertIsArray( $disable_result );
+		$this->assertSame(
+			array(
+				'enabled'                        => 'no',
+				'upe_enabled_payment_method_ids' => array( 'card' ),
+			),
+			get_option( 'woocommerce_woocommerce_payments_ideal_settings' )
 		);
 	}
 

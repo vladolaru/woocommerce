@@ -168,7 +168,13 @@ class WooPaymentsOrderDataService {
 	 * @return bool True when a note was added.
 	 */
 	public function add_fee_breakdown_note_from_intent( WC_Order $order, array $intent, bool $use_first_charge = true ): bool {
-		return $this->add_fee_breakdown_note( $order, $this->get_fee_breakdown_note_from_intent( $intent, $use_first_charge ) );
+		$charge = $this->get_charge( $intent, $use_first_charge );
+
+		return $this->add_fee_breakdown_note(
+			$order,
+			$this->get_fee_breakdown_note_from_charge_like_data( $charge ),
+			$this->get_fee_breakdown_note_marker( $charge )
+		);
 	}
 
 	/**
@@ -181,7 +187,11 @@ class WooPaymentsOrderDataService {
 	 * @return bool True when a note was added.
 	 */
 	public function add_fee_breakdown_note_from_timeline_event( WC_Order $order, array $event ): bool {
-		return $this->add_fee_breakdown_note( $order, $this->get_fee_breakdown_note_from_timeline_event( $event ) );
+		return $this->add_fee_breakdown_note(
+			$order,
+			$this->get_fee_breakdown_note_from_timeline_event( $event ),
+			$this->get_fee_breakdown_note_marker( $event )
+		);
 	}
 
 	/**
@@ -240,18 +250,15 @@ class WooPaymentsOrderDataService {
 	/**
 	 * Add a fee-breakdown note if it is not already present.
 	 *
-	 * @param WC_Order $order Order being updated.
-	 * @param string   $note  Note content.
+	 * @param WC_Order $order  Order being updated.
+	 * @param string   $note   Note content.
+	 * @param string   $marker Stable provider event marker.
 	 * @return bool True when a note was added.
 	 */
-	private function add_fee_breakdown_note( WC_Order $order, string $note ): bool {
-		if ( '' === $note || $this->order_has_note( $order, $note ) ) {
-			return false;
-		}
+	public function add_fee_breakdown_note( WC_Order $order, string $note, string $marker = '' ): bool {
+		$identity = '' === $marker ? '' : 'fee:' . $marker;
 
-		$order->add_order_note( $note );
-
-		return true;
+		return wc_get_container()->get( WooPaymentsOrderNoteService::class )->add_note_once( $order, $note, $identity );
 	}
 
 	/**
@@ -285,26 +292,8 @@ class WooPaymentsOrderDataService {
 
 		$fee_amount   = (int) $fee_breakdown_v1['totals']['fee']['amount'];
 		$fee_currency = (string) $fee_breakdown_v1['totals']['fee']['currency'];
-		$fee_rate     = $this->format_fee_rate_text( $fee_breakdown_v1['totals']['fee']['rate'] ?? null, $fee_currency );
-		if ( is_array( $fx ) ) {
-			$lines[] = sprintf(
-				/* translators: %1$s: fee rate, %2$s: fee amount. */
-				__( 'Fee (%1$s): %2$s', 'woocommerce' ),
-				'' !== $fee_rate ? $fee_rate : '3.9% + ' . $this->format_currency_minor_amount( 30, $fee_currency ),
-				$this->format_explicit_currency_amount( $fee_amount, $fee_currency )
-			);
-			$indent  = str_repeat( '&nbsp;', 4 );
-			$lines[] = $indent . sprintf(
-				/* translators: %s: fee rate. */
-				__( 'Base fee: %1$s', 'woocommerce' ),
-				'2.9% + ' . $this->format_currency_minor_amount( 30, $fee_currency )
-			);
-			$lines[] = $indent . sprintf(
-				/* translators: %s: fee rate. */
-				__( 'Currency conversion fee: %1$s', 'woocommerce' ),
-				'1%'
-			);
-		} elseif ( '' !== $fee_rate ) {
+		$fee_rate     = $this->get_fee_breakdown_rate_text( $fee_breakdown_v1, $fee_currency );
+		if ( '' !== $fee_rate ) {
 			$lines[] = sprintf(
 				/* translators: %1$s: fee rate, %2$s: fee amount. */
 				__( 'Fee (%1$s): %2$s', 'woocommerce' ),
@@ -318,6 +307,7 @@ class WooPaymentsOrderDataService {
 				$this->format_explicit_currency_amount( $fee_amount, $fee_currency )
 			);
 		}
+		$this->append_fee_row_breakdown_lines( $lines, $fee_breakdown_v1, $fee_currency );
 
 		$net_amount   = isset( $fee_breakdown_v1['totals']['capture_net']['amount'] ) ? (int) $fee_breakdown_v1['totals']['capture_net']['amount'] : (int) $fee_breakdown_v1['totals']['net']['amount'];
 		$net_currency = (string) ( $fee_breakdown_v1['totals']['capture_net']['currency'] ?? $fee_breakdown_v1['totals']['net']['currency'] );
@@ -341,7 +331,7 @@ class WooPaymentsOrderDataService {
 	 * @return string
 	 */
 	private function get_fee_details_note_title(): string {
-		return $this->interpolated_note_text(
+		return WooPaymentsHtmlUtils::escape_interpolated_html(
 			// phpcs:ignore WordPress.WP.I18n.NoHtmlWrappedStrings
 			__( '<strong>Fee details:</strong>', 'woocommerce' ),
 			array(
@@ -386,7 +376,7 @@ class WooPaymentsOrderDataService {
 	 * @return bool
 	 */
 	private function fee_breakdown_has_rate( array $fee_breakdown ): bool {
-		return '' !== $this->format_fee_rate_text( $fee_breakdown['totals']['fee']['rate'] ?? null, (string) ( $fee_breakdown['totals']['fee']['currency'] ?? '' ) );
+		return '' !== $this->get_fee_breakdown_rate_text( $fee_breakdown, (string) ( $fee_breakdown['totals']['fee']['currency'] ?? '' ) );
 	}
 
 	/**
@@ -406,7 +396,163 @@ class WooPaymentsOrderDataService {
 			return false;
 		}
 
-		return ! is_array( $fee_breakdown_v1['fx'] ?? null );
+		return true;
+	}
+
+	/**
+	 * Get the fee rate text for the totals row, deriving it from typed rows when needed.
+	 *
+	 * @param array<string,mixed> $fee_breakdown Fee breakdown envelope.
+	 * @param string              $currency      Fallback currency code.
+	 * @return string
+	 */
+	private function get_fee_breakdown_rate_text( array $fee_breakdown, string $currency ): string {
+		$total_rate_text = $this->format_fee_rate_text( $fee_breakdown['totals']['fee']['rate'] ?? null, $currency );
+		if ( '' !== $total_rate_text ) {
+			return $total_rate_text;
+		}
+
+		return $this->derive_fee_rate_text_from_rows( $fee_breakdown, $currency );
+	}
+
+	/**
+	 * Derive an aggregate fee rate from the server-provided row breakdown.
+	 *
+	 * @param array<string,mixed> $fee_breakdown Fee breakdown envelope.
+	 * @param string              $currency      Fallback currency code.
+	 * @return string
+	 */
+	private function derive_fee_rate_text_from_rows( array $fee_breakdown, string $currency ): string {
+		$fee_rows = $this->get_fee_rows( $fee_breakdown );
+		if ( empty( $fee_rows ) ) {
+			return '';
+		}
+
+		$percentage     = 0.0;
+		$fixed_minor    = 0;
+		$fixed_currency = '';
+
+		foreach ( $fee_rows as $row ) {
+			$rate = $row['rate'] ?? null;
+			if ( ! is_array( $rate ) || ! empty( $rate['capped'] ) ) {
+				return '';
+			}
+
+			$percentage += isset( $rate['percentage'] ) && is_numeric( $rate['percentage'] ) ? (float) $rate['percentage'] : 0.0;
+			$row_fixed   = isset( $rate['fixed'] ) && is_numeric( $rate['fixed'] ) ? (int) $rate['fixed'] : 0;
+			if ( 0 === $row_fixed ) {
+				continue;
+			}
+
+			$row_fixed_currency = (string) ( $rate['fixed_currency'] ?? $row['currency'] ?? $currency );
+			if ( '' === $row_fixed_currency ) {
+				return '';
+			}
+
+			if ( '' === $fixed_currency ) {
+				$fixed_currency = $row_fixed_currency;
+			} elseif ( $fixed_currency !== $row_fixed_currency ) {
+				return '';
+			}
+
+			$fixed_minor += $row_fixed;
+		}
+
+		return $this->format_fee_rate_text(
+			array(
+				'percentage'     => $percentage,
+				'fixed'          => $fixed_minor,
+				'fixed_currency' => '' !== $fixed_currency ? $fixed_currency : $currency,
+			),
+			$currency
+		);
+	}
+
+	/**
+	 * Append per-row fee breakdown lines when the rows add detail beyond the totals line.
+	 *
+	 * @param array<int,string>   $lines         Note lines.
+	 * @param array<string,mixed> $fee_breakdown Fee breakdown envelope.
+	 * @param string              $currency      Fallback currency code.
+	 */
+	private function append_fee_row_breakdown_lines( array &$lines, array $fee_breakdown, string $currency ): void {
+		$fee_rows = $this->get_fee_rows( $fee_breakdown );
+		if ( count( $fee_rows ) <= 1 ) {
+			return;
+		}
+
+		$indent = str_repeat( '&nbsp;', 4 );
+		foreach ( $fee_rows as $row ) {
+			$label         = $this->get_fee_row_label( $row );
+			$row_currency  = (string) ( $row['rate']['fixed_currency'] ?? $row['currency'] ?? $currency );
+			$row_rate_text = $this->format_fee_rate_text( $row['rate'] ?? null, $row_currency );
+			$lines[]       = $indent . ( '' !== $row_rate_text ? sprintf( '%1$s: %2$s', esc_html( $label ), esc_html( $row_rate_text ) ) : esc_html( $label ) );
+		}
+	}
+
+	/**
+	 * Get non-tax fee rows from a fee breakdown envelope.
+	 *
+	 * @param array<string,mixed> $fee_breakdown Fee breakdown envelope.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function get_fee_rows( array $fee_breakdown ): array {
+		$rows = $fee_breakdown['rows'] ?? array();
+		if ( ! is_array( $rows ) ) {
+			return array();
+		}
+
+		$fee_rows = array();
+		foreach ( $rows as $row ) {
+			if ( ! is_array( $row ) || 'tax' === ( $row['kind'] ?? '' ) ) {
+				continue;
+			}
+			$fee_rows[] = $row;
+		}
+
+		return $fee_rows;
+	}
+
+	/**
+	 * Get a merchant-facing label for a fee row.
+	 *
+	 * @param array<string,mixed> $row Fee breakdown row.
+	 * @return string
+	 */
+	private function get_fee_row_label( array $row ): string {
+		if ( ! empty( $row['label'] ) ) {
+			return (string) $row['label'];
+		}
+
+		switch ( (string) ( $row['key'] ?? '' ) ) {
+			case 'base':
+				return __( 'Base fee', 'woocommerce' );
+			case 'additional.international':
+				return __( 'International card fee', 'woocommerce' );
+			case 'additional.fx':
+				return __( 'Currency conversion fee', 'woocommerce' );
+			case 'additional.wcpay-subscription':
+				return __( 'Subscription transaction fee', 'woocommerce' );
+			case 'additional.device':
+				return __( 'Device fee', 'woocommerce' );
+			case 'tax_on_fee':
+				return __( 'Tax on fee', 'woocommerce' );
+			case 'dispute_fee':
+				return __( 'Dispute fee', 'woocommerce' );
+			case 'dispute_fee_refund':
+				return __( 'Dispute fee refund', 'woocommerce' );
+			case 'refund_fee':
+				return __( 'Refund fee', 'woocommerce' );
+			case 'financing_paydown':
+				return __( 'Loan paydown', 'woocommerce' );
+		}
+
+		$key = (string) ( $row['key'] ?? '' );
+		if ( 0 === strpos( $key, 'discount.' ) ) {
+			return __( 'Discount', 'woocommerce' );
+		}
+
+		return $key;
 	}
 
 	/**
@@ -534,47 +680,22 @@ class WooPaymentsOrderDataService {
 	}
 
 	/**
-	 * Tell whether an order already has an exact order note.
+	 * Get a stable fee-breakdown marker from charge-shaped data.
 	 *
-	 * @param WC_Order $order Order object.
-	 * @param string   $note  Note content.
-	 * @return bool
-	 */
-	private function order_has_note( WC_Order $order, string $note ): bool {
-		$notes = wc_get_order_notes(
-			array(
-				'order_id' => $order->get_id(),
-				'type'     => 'any',
-			)
-		);
-
-		foreach ( $notes as $order_note ) {
-			if ( $note === $order_note->content ) {
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	/**
-	 * Replace simple interpolation tags with stored note HTML.
-	 *
-	 * @param string               $text        Note text.
-	 * @param array<string,string> $element_map Element replacements.
+	 * @param array<string,mixed> $charge Charge or captured-event data.
 	 * @return string
 	 */
-	private function interpolated_note_text( string $text, array $element_map ): string {
-		foreach ( $element_map as $tag => $opening_tag ) {
-			$closing_tag = '</' . $tag . '>';
-			if ( preg_match( '/^<(\w+)/', $opening_tag, $matches ) ) {
-				$closing_tag = '</' . $matches[1] . '>';
-			}
-
-			$text = str_replace( '<' . $tag . '>', $opening_tag, $text );
-			$text = str_replace( '</' . $tag . '>', $closing_tag, $text );
+	private function get_fee_breakdown_note_marker( array $charge ): string {
+		$charge_id = isset( $charge['id'] ) && is_scalar( $charge['id'] ) ? trim( (string) $charge['id'] ) : '';
+		if ( '' !== $charge_id ) {
+			return 'charge:' . $charge_id;
 		}
 
-		return $text;
+		$balance_transaction = $charge['balance_transaction'] ?? null;
+		$transaction_id      = is_array( $balance_transaction ) && isset( $balance_transaction['id'] )
+			? trim( (string) $balance_transaction['id'] )
+			: ( is_scalar( $balance_transaction ) ? trim( (string) $balance_transaction ) : '' );
+
+		return '' !== $transaction_id ? 'balance_transaction:' . $transaction_id : '';
 	}
 }

@@ -49,6 +49,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		delete_option( 'not_wcpay_pm_customer' );
 		remove_all_filters( 'pre_option_wcpay_pm_customer_1' );
 		remove_all_filters( 'woocommerce_payment_token_class' );
+		remove_all_filters( 'woocommerce_native_woopayments_related_subscriptions_for_order' );
 		parent::tearDown();
 	}
 
@@ -572,20 +573,58 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should attach a persisted token to an order.
+	 * @testdox Should preserve last-attached active-token ordering on an order.
 	 */
 	public function test_attaches_token_to_order(): void {
 		$user_id = $this->factory()->user->create();
-		$token   = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_order' );
+		$token_a = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_order_a' );
+		$token_b = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_order_b' );
 		$order   = wc_create_order();
 		$sut     = $this->create_service();
 
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertTrue( $sut->attach_token_to_order( $order, $token ), 'Persisted tokens should attach to orders.' );
+		$this->assertTrue( $sut->attach_token_to_order( $order, $token_a ), 'The first token should attach.' );
+		$this->assertTrue( $sut->attach_token_to_order( $order, $token_b ), 'A changed token should become active.' );
+		$this->assertTrue( $sut->attach_token_to_order( $order, $token_a ), 'A previously used token should be appended to reactivate it.' );
+		$this->assertTrue( $sut->attach_token_to_order( $order, $token_a ), 'Repeating the active token should be a successful no-op.' );
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertContains( $token->get_id(), $order->get_payment_tokens(), 'The order should store the attached token ID.' );
+		$this->assertSame( array( $token_a->get_id(), $token_b->get_id(), $token_a->get_id() ), array_values( $order->get_payment_tokens() ) );
+		$this->assertSame( $token_a->get_id(), $sut->get_active_token_for_order( $order )->get_id() );
+	}
+
+	/**
+	 * @testdox Should preserve last-attached active-token ordering on related subscriptions.
+	 */
+	public function test_syncs_active_token_order_to_related_subscriptions(): void {
+		$user_id      = $this->factory()->user->create();
+		$token_a      = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_subscription_a' );
+		$token_b      = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_subscription_b' );
+		$order        = wc_create_order();
+		$subscription = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertInstanceOf( WC_Order::class, $subscription );
+		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->save();
+		$subscription->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$subscription->add_payment_token( $token_a );
+		$subscription->save();
+		add_filter(
+			'woocommerce_native_woopayments_related_subscriptions_for_order',
+			static function () use ( $subscription ): array {
+				return array( $subscription );
+			}
+		);
+
+		$sut = $this->create_service();
+		$sut->sync_related_subscriptions_payment_token( $order, $token_b, 'pm_subscription_b', 'cus_subscription' );
+		$sut->sync_related_subscriptions_payment_token( $order, $token_a, 'pm_subscription_a', 'cus_subscription' );
+		$sut->sync_related_subscriptions_payment_token( $order, $token_a, 'pm_subscription_a', 'cus_subscription' );
+
+		$subscription = wc_get_order( $subscription->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $subscription );
+		$this->assertSame( array( $token_a->get_id(), $token_b->get_id(), $token_a->get_id() ), array_values( $subscription->get_payment_tokens() ) );
 	}
 
 	/**

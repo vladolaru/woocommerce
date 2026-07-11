@@ -94,15 +94,16 @@ class PaymentProcessingService {
 	 * @param PaymentContext   $context  Payment context.
 	 * @param ProviderContract $provider Provider.
 	 * @return PaymentOutcome
-	 * @throws Throwable When applying the lifecycle outcome fails for an unsuccessful charge.
+	 * @throws Throwable When applying an unreferenced unsuccessful charge outcome fails.
 	 */
 	public function process_checkout_outcome( PaymentContext $context, ProviderContract $provider ): PaymentOutcome {
 		$order           = $context->get_order();
 		$amount          = (float) $order->get_total();
 		$currency        = (string) $order->get_currency();
 		$idempotency_key = $this->idempotency->derive_key( $order, $provider->get_id(), 'charge', $amount, $currency );
+		$profile         = $provider->get_persistence_profile();
 
-		if ( ! $this->order_payment_store->claim_order_payment_lock( $order, $idempotency_key ) ) {
+		if ( ! $this->order_payment_store->claim_order_payment_lock( $order, $profile, $idempotency_key ) ) {
 			return new PaymentOutcome(
 				PaymentOutcome::STATUS_FAILED,
 				'',
@@ -116,80 +117,116 @@ class PaymentProcessingService {
 		}
 
 		try {
-			$outcome = 0.0 >= $amount && ! $this->should_call_provider_for_zero_total_checkout( $context, $provider )
+			$provider_outcome = 0.0 >= $amount && ! $this->should_call_provider_for_zero_total_checkout( $context, $provider )
 				? new PaymentOutcome( PaymentOutcome::STATUS_NO_EXTERNAL_PAYMENT )
 				: $this->charge_provider( $context, $provider, $idempotency_key );
+			$outcome          = $provider_outcome;
 
 			try {
+				$outcome = $this->apply_provider_operation_effects( $context, $outcome, $provider, 'charge' );
 				$this->apply_checkout_outcome( $order, $outcome, $provider );
+				$this->apply_provider_post_lifecycle_effects( $context, $outcome, $provider, 'charge' );
 			} catch ( Throwable $apply_exception ) {
-				if ( ! $outcome->is_successful() ) {
+				if ( ! $this->is_reconcilable_provider_outcome( $provider_outcome ) ) {
 					throw $apply_exception;
 				}
 
-				// The charge already moved money. Downgrading the outcome to FAILED would risk a
-				// re-charge on retry, so keep the success and make the order reconcilable instead:
-				// persist the provider payment reference and log the failure for follow-up.
-				$this->persist_payment_reference( $order, $outcome );
-				$this->log_post_charge_apply_failure( $order, $outcome, $apply_exception );
+				// The provider already returned a durable result. Downgrading it to an ID-less failure
+				// would risk a duplicate operation on retry, so keep the result reconcilable.
+				$outcome                  = $provider_outcome;
+				$reconciliation_persisted = $this->persist_reconciliation_context( $order, $provider_outcome, $profile );
+				$this->log_post_provider_apply_failure( $order, $provider_outcome, 'charge', $apply_exception, $reconciliation_persisted );
 			}
 
 			return $outcome;
 		} finally {
-			$this->order_payment_store->unlock_order_payment( $order );
+			$this->order_payment_store->unlock_order_payment( $order, $profile );
 		}
 	}
 
 	/**
-	 * Persist the provider payment reference onto the order so a successful charge stays reconcilable.
+	 * Persist provider reconciliation context after local outcome application fails.
 	 *
-	 * Called when lifecycle application fails after the provider has already moved money. The order is
-	 * reloaded to avoid clobbering concurrent writes, and the transaction ID is only set when the order
-	 * does not already carry one, so an existing reference is never overwritten.
+	 * The order is reloaded to avoid clobbering concurrent writes. Provider-profile metadata is needed
+	 * by later confirmation and reconciliation paths, so persisting only the transaction ID is not enough.
+	 * Recovery is deliberately best-effort: no local persistence failure may replace a durable provider
+	 * outcome after transport has completed.
 	 *
-	 * @param WC_Order       $order   Order object.
-	 * @param PaymentOutcome $outcome Successful provider outcome.
+	 * @param WC_Order                   $order   Order object.
+	 * @param PaymentOutcome             $outcome Provider outcome with a durable reference.
+	 * @param ProviderPersistenceProfile $profile Provider persistence vocabulary.
+	 * @return bool Whether the reconciliation context was persisted.
 	 */
-	private function persist_payment_reference( WC_Order $order, PaymentOutcome $outcome ): void {
-		$payment_reference = $outcome->get_provider_payment_id();
-		if ( '' === $payment_reference ) {
-			return;
-		}
+	private function persist_reconciliation_context( WC_Order $order, PaymentOutcome $outcome, ProviderPersistenceProfile $profile ): bool {
+		try {
+			$reloaded_order = wc_get_order( $order->get_id() );
+			if ( ! $reloaded_order instanceof WC_Order ) {
+				return false;
+			}
 
-		$reloaded_order = wc_get_order( $order->get_id() );
-		if ( ! $reloaded_order instanceof WC_Order ) {
-			return;
-		}
+			$payment_reference       = $outcome->get_provider_payment_id();
+			$existing_transaction_id = (string) $reloaded_order->get_transaction_id();
+			if ( '' !== $payment_reference && '' !== $existing_transaction_id && $payment_reference !== $existing_transaction_id ) {
+				return false;
+			}
 
-		if ( '' !== (string) $reloaded_order->get_transaction_id() ) {
-			return;
-		}
+			foreach ( $profile->get_outcome_meta( $outcome ) as $key => $value ) {
+				$reloaded_order->update_meta_data( $key, $value );
+			}
 
-		$reloaded_order->set_transaction_id( $payment_reference );
-		$reloaded_order->save();
+			if ( '' !== $payment_reference && '' === $existing_transaction_id ) {
+				$reloaded_order->set_transaction_id( $payment_reference );
+			}
+
+			$reloaded_order->save();
+			return true;
+		} catch ( Throwable $exception ) {
+			return false;
+		}
 	}
 
 	/**
-	 * Log a post-charge lifecycle application failure so a money-moving charge is never silently dropped.
+	 * Tell whether an outcome must be retained after local application fails.
+	 *
+	 * Successful outcomes may represent money movement even without a reference. Other statuses are
+	 * reconcilable when the provider returned a durable payment ID, including customer-action flows.
+	 *
+	 * @param PaymentOutcome $outcome Provider outcome.
+	 * @return bool
+	 */
+	private function is_reconcilable_provider_outcome( PaymentOutcome $outcome ): bool {
+		return $outcome->is_successful() || '' !== $outcome->get_provider_payment_id();
+	}
+
+	/**
+	 * Log a post-provider application failure so a money-moving operation is never silently dropped.
 	 *
 	 * @param WC_Order       $order     Order object.
-	 * @param PaymentOutcome $outcome   Successful provider outcome.
+	 * @param PaymentOutcome $outcome   Reconcilable provider outcome.
+	 * @param string         $operation Provider operation.
 	 * @param Throwable      $exception Lifecycle application exception.
+	 * @param bool           $reconciliation_persisted Whether reconciliation context was persisted.
 	 */
-	private function log_post_charge_apply_failure( WC_Order $order, PaymentOutcome $outcome, Throwable $exception ): void {
-		if ( ! function_exists( 'wc_get_logger' ) ) {
+	private function log_post_provider_apply_failure( WC_Order $order, PaymentOutcome $outcome, string $operation, Throwable $exception, bool $reconciliation_persisted ): void {
+		try {
+			if ( ! function_exists( 'wc_get_logger' ) ) {
+				return;
+			}
+
+			wc_get_logger()->error(
+				'Native payment provider operation returned a reconcilable outcome but applying local effects failed; best-effort reconciliation persistence was attempted.',
+				array(
+					'source'                   => 'native-payments',
+					'order_id'                 => $order->get_id(),
+					'payment_reference'        => $outcome->get_provider_payment_id(),
+					'operation'                => $operation,
+					'error'                    => $exception->getMessage(),
+					'reconciliation_persisted' => $reconciliation_persisted,
+				)
+			);
+		} catch ( Throwable $logging_exception ) {
 			return;
 		}
-
-		wc_get_logger()->error(
-			'Native payment charge succeeded but applying the order lifecycle outcome failed; the order has been left reconcilable via its payment reference.',
-			array(
-				'source'            => 'native-payments',
-				'order_id'          => $order->get_id(),
-				'payment_reference' => $outcome->get_provider_payment_id(),
-				'error'             => $exception->getMessage(),
-			)
-		);
 	}
 
 	/**
@@ -200,12 +237,14 @@ class PaymentProcessingService {
 	 * @param PaymentContext   $context  Payment context.
 	 * @param ProviderContract $provider Provider.
 	 * @return bool|WP_Error
+	 * @throws Throwable When applying an unreferenced unsuccessful refund outcome fails.
 	 */
 	public function process_refund( PaymentContext $context, ProviderContract $provider ) {
 		$order        = $context->get_order();
 		$payment_data = $context->get_payment_data();
 		$amount       = isset( $payment_data['amount'] ) ? (float) $payment_data['amount'] : 0.0;
 		$reason       = isset( $payment_data['reason'] ) ? (string) $payment_data['reason'] : '';
+		$profile      = $provider->get_persistence_profile();
 
 		if ( '0.00' === sprintf( '%0.2f', $amount ) ) {
 			return true;
@@ -218,7 +257,7 @@ class PaymentProcessingService {
 		// under the lock lets each refund link its row before the next one resolves, so distinct
 		// refunds resolve to distinct instances.
 		$refund_scope_key = $this->idempotency->derive_key( $order, $provider->get_id(), 'refund-scope', $amount, (string) $order->get_currency(), $reason );
-		if ( ! $this->order_payment_store->claim_order_payment_lock( $order, $refund_scope_key ) ) {
+		if ( ! $this->order_payment_store->claim_order_payment_lock( $order, $profile, $refund_scope_key ) ) {
 			return new WP_Error( 'native_payment_refund_locked', __( 'A refund is already in progress for this order.', 'woocommerce' ) );
 		}
 
@@ -227,16 +266,28 @@ class PaymentProcessingService {
 			$idempotency_key = $this->idempotency->derive_key( $order, $provider->get_id(), 'refund', $amount, (string) $order->get_currency(), $reason, $refund_instance );
 
 			try {
-				$outcome = $provider->refund( $context, $idempotency_key );
+				$provider_outcome = $provider->refund( $context, $idempotency_key );
 			} catch ( Throwable $exception ) {
-				$outcome = $this->exception_policy->to_failed_outcome( $exception );
+				$provider_outcome = $this->exception_policy->to_failed_outcome( $exception );
 			}
+			$outcome = $provider_outcome;
 
-			if ( $outcome->is_successful() ) {
-				$this->apply_refund_outcome( $order, $outcome, $amount, $reason );
+			try {
+				$outcome = $this->apply_provider_operation_effects( $context, $outcome, $provider, 'refund' );
+				if ( $outcome->is_successful() ) {
+					$this->apply_refund_outcome( $order, $outcome, $amount, $reason );
+				}
+			} catch ( Throwable $apply_exception ) {
+				if ( ! $this->is_reconcilable_provider_outcome( $provider_outcome ) ) {
+					throw $apply_exception;
+				}
+
+				$outcome                  = $provider_outcome;
+				$reconciliation_persisted = $this->persist_refund_reconciliation_context( $order, $refund_instance, $provider_outcome, $profile );
+				$this->log_post_provider_apply_failure( $order, $provider_outcome, 'refund', $apply_exception, $reconciliation_persisted );
 			}
 		} finally {
-			$this->order_payment_store->unlock_order_payment( $order );
+			$this->order_payment_store->unlock_order_payment( $order, $profile );
 		}
 
 		if ( $outcome->is_successful() ) {
@@ -252,6 +303,45 @@ class PaymentProcessingService {
 			: __( 'The refund failed.', 'woocommerce' );
 
 		return new WP_Error( $error_code, $error_message );
+	}
+
+	/**
+	 * Retain the provider refund identity on the exact local refund after local effects fail.
+	 *
+	 * @param WC_Order                   $order           Parent order.
+	 * @param string|null                $refund_instance Local refund instance ID.
+	 * @param PaymentOutcome             $outcome         Provider refund outcome.
+	 * @param ProviderPersistenceProfile $profile         Provider persistence vocabulary.
+	 * @return bool Whether the refund identity was persisted.
+	 */
+	private function persist_refund_reconciliation_context( WC_Order $order, ?string $refund_instance, PaymentOutcome $outcome, ProviderPersistenceProfile $profile ): bool {
+		$refund_reference = $outcome->get_provider_payment_id();
+		if ( '' === $refund_reference || null === $refund_instance || '' === $refund_instance ) {
+			return false;
+		}
+
+		try {
+			$refund = wc_get_order( (int) $refund_instance );
+			if ( ! $refund instanceof WC_Order_Refund || $order->get_id() !== $refund->get_parent_id() ) {
+				return false;
+			}
+
+			$meta_key = $profile->get_processed_refund_link_meta_key();
+			if ( '' === $meta_key ) {
+				return false;
+			}
+
+			$existing_reference = (string) $refund->get_meta( $meta_key, true );
+			if ( '' !== $existing_reference && $refund_reference !== $existing_reference ) {
+				return false;
+			}
+
+			$refund->update_meta_data( $meta_key, $refund_reference );
+			$refund->save_meta_data();
+			return true;
+		} catch ( Throwable $exception ) {
+			return false;
+		}
 	}
 
 	/**
@@ -557,13 +647,15 @@ class PaymentProcessingService {
 	 * @param ProviderContract $provider  Provider.
 	 * @param string           $operation Operation name.
 	 * @return PaymentOutcome
+	 * @throws Throwable When applying an unreferenced unsuccessful provider outcome fails.
 	 */
 	private function run_provider_order_operation( PaymentContext $context, ProviderContract $provider, string $operation ): PaymentOutcome {
 		$order           = $context->get_order();
 		$amount          = $context->get_amount() ?? (float) $order->get_total();
 		$idempotency_key = $this->idempotency->derive_key( $order, $provider->get_id(), $operation, $amount, (string) $order->get_currency() );
+		$profile         = $provider->get_persistence_profile();
 
-		if ( ! $this->order_payment_store->claim_order_payment_lock( $order, $idempotency_key ) ) {
+		if ( ! $this->order_payment_store->claim_order_payment_lock( $order, $profile, $idempotency_key ) ) {
 			return new PaymentOutcome(
 				PaymentOutcome::STATUS_FAILED,
 				'',
@@ -576,19 +668,65 @@ class PaymentProcessingService {
 
 		try {
 			try {
-				$outcome = 'capture' === $operation
+				$provider_outcome = 'capture' === $operation
 					? $provider->capture( $context, $idempotency_key )
 					: $provider->cancel( $context, $idempotency_key );
 			} catch ( Throwable $exception ) {
-				$outcome = $this->exception_policy->to_failed_outcome( $exception );
+				$provider_outcome = $this->exception_policy->to_failed_outcome( $exception );
 			}
+			$outcome = $provider_outcome;
 
-			$this->apply_order_operation_outcome( $order, $outcome, $operation, $provider );
+			try {
+				$outcome = $this->apply_provider_operation_effects( $context, $outcome, $provider, $operation );
+				$this->apply_order_operation_outcome( $order, $outcome, $operation, $provider );
+				$this->apply_provider_post_lifecycle_effects( $context, $outcome, $provider, $operation );
+			} catch ( Throwable $apply_exception ) {
+				if ( ! $this->is_reconcilable_provider_outcome( $provider_outcome ) ) {
+					throw $apply_exception;
+				}
+
+				$outcome                  = $provider_outcome;
+				$reconciliation_persisted = $this->persist_reconciliation_context( $order, $provider_outcome, $profile );
+				$this->log_post_provider_apply_failure( $order, $provider_outcome, $operation, $apply_exception, $reconciliation_persisted );
+			}
 
 			return $outcome;
 		} finally {
-			$this->order_payment_store->unlock_order_payment( $order );
+			$this->order_payment_store->unlock_order_payment( $order, $profile );
 		}
+	}
+
+	/**
+	 * Apply optional provider-owned effects after transport and before the generic lifecycle.
+	 *
+	 * @param PaymentContext   $context   Payment context.
+	 * @param PaymentOutcome   $outcome   Provider outcome.
+	 * @param ProviderContract $provider  Provider.
+	 * @param string           $operation Operation name.
+	 * @return PaymentOutcome
+	 */
+	private function apply_provider_operation_effects( PaymentContext $context, PaymentOutcome $outcome, ProviderContract $provider, string $operation ): PaymentOutcome {
+		if ( ! $provider instanceof ProviderOperationEffectApplier ) {
+			return $outcome;
+		}
+
+		return $provider->apply_operation_effects( $context, $outcome, $operation );
+	}
+
+	/**
+	 * Apply optional provider-owned effects after the generic lifecycle.
+	 *
+	 * @param PaymentContext   $context   Payment context.
+	 * @param PaymentOutcome   $outcome   Applied provider outcome.
+	 * @param ProviderContract $provider  Provider.
+	 * @param string           $operation Operation name.
+	 */
+	private function apply_provider_post_lifecycle_effects( PaymentContext $context, PaymentOutcome $outcome, ProviderContract $provider, string $operation ): void {
+		if ( ! $provider instanceof ProviderPostLifecycleEffectApplier ) {
+			return;
+		}
+
+		$provider->apply_post_lifecycle_effects( $context, $outcome, $operation );
 	}
 
 	/**
@@ -612,7 +750,8 @@ class PaymentProcessingService {
 					array(),
 					$this->get_lifecycle_note( $outcome ),
 					$this->get_lifecycle_note_type( $outcome )
-				)
+				),
+				$provider->get_persistence_profile()
 			);
 			return;
 		}
@@ -637,7 +776,8 @@ class PaymentProcessingService {
 				array(),
 				$this->get_lifecycle_note( $outcome ),
 				$this->get_lifecycle_note_type( $outcome )
-			)
+			),
+			$provider->get_persistence_profile()
 		);
 	}
 

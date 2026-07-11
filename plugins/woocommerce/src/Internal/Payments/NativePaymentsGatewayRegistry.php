@@ -26,23 +26,32 @@ class NativePaymentsGatewayRegistry implements RegisterHooksInterface {
 	private NativePaymentsRuntimeArbiter $arbiter;
 
 	/**
-	 * WooPayments provider.
+	 * Native payment gateway providers.
 	 *
-	 * @var Providers\WooPayments\WooPaymentsProvider
+	 * @var array<string,PaymentGatewayProviderContract>
 	 */
-	private Providers\WooPayments\WooPaymentsProvider $provider;
+	private array $providers = array();
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter              $arbiter  Runtime owner arbiter.
-	 * @param Providers\WooPayments\WooPaymentsProvider $provider WooPayments provider.
+	 * @param NativePaymentsRuntimeArbiter $arbiter Runtime owner arbiter.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, Providers\WooPayments\WooPaymentsProvider $provider ): void {
-		$this->arbiter  = $arbiter;
-		$this->provider = $provider;
+	final public function init( NativePaymentsRuntimeArbiter $arbiter ): void {
+		$this->arbiter = $arbiter;
+	}
+
+	/**
+	 * Register a provider that publishes native payment gateways.
+	 *
+	 * The composition root owns provider selection so this registry remains provider-neutral.
+	 *
+	 * @param PaymentGatewayProviderContract $provider Payment gateway provider.
+	 */
+	public function register_provider( PaymentGatewayProviderContract $provider ): void {
+		$this->providers[ $provider->get_id() ] = $provider;
 	}
 
 	/**
@@ -59,22 +68,24 @@ class NativePaymentsGatewayRegistry implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Add the native WooPayments gateway instances.
+	 * Add native payment gateway instances.
 	 *
 	 * @param array<int|string,mixed> $gateways Registered gateway classes or instances.
 	 * @return array<int|string,mixed>
 	 */
 	public function register_gateway( array $gateways ): array {
-		if ( ! $this->arbiter->should_native_register() || ! $this->provider->can_process_payments() ) {
+		if ( ! $this->arbiter->should_native_register() ) {
 			return $gateways;
 		}
 
-		foreach ( $this->provider->get_payment_gateways() as $gateway ) {
-			if ( ! $gateway instanceof WC_Payment_Gateway || $this->has_gateway( $gateways, $gateway ) ) {
-				continue;
-			}
+		foreach ( $this->providers as $provider ) {
+			foreach ( $provider->get_payment_gateways() as $gateway ) {
+				if ( ! $gateway instanceof WC_Payment_Gateway || $this->has_gateway( $gateways, $gateway ) ) {
+					continue;
+				}
 
-			$gateways[] = $gateway;
+				$gateways[] = $gateway;
+			}
 		}
 
 		return $gateways;

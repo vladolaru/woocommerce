@@ -281,7 +281,7 @@ class WooPaymentsIppReceiptEmail extends WC_Email {
 			$plain_text ? 'emails/plain/email-ipp-receipt-compliance-details.php' : 'emails/email-ipp-receipt-compliance-details.php',
 			array(
 				'payment_method_details'      => $payment_method_details,
-				'payment_method_display_name' => $this->get_terminal_card_display_name( $payment_method_details ),
+				'payment_method_display_name' => WooPaymentsTerminalCardFormatter::get_terminal_card_display_name( $payment_method_details ),
 				'receipt'                     => isset( $payment_method_details['receipt'] ) && is_array( $payment_method_details['receipt'] ) ? $payment_method_details['receipt'] : array(),
 			)
 		);
@@ -320,17 +320,5 @@ class WooPaymentsIppReceiptEmail extends WC_Email {
 	 */
 	public function get_default_additional_content(): string {
 		return __( 'Thanks for using {site_url}!', 'woocommerce' );
-	}
-
-	/**
-	 * Get the terminal card display name.
-	 *
-	 * @param array<string,mixed> $card_present Card-present details.
-	 * @return string
-	 */
-	private function get_terminal_card_display_name( array $card_present ): string {
-		$brand = isset( $card_present['brand'] ) ? (string) $card_present['brand'] : '';
-
-		return '' === $brand ? __( 'Card', 'woocommerce' ) : ucfirst( $brand );
 	}
 }

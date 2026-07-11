@@ -82,29 +82,6 @@ class WooPaymentsEventIngestor {
 	);
 
 	/**
-	 * Stripe zero-decimal currencies.
-	 *
-	 * @var string[]
-	 */
-	const ZERO_DECIMAL_CURRENCIES = array(
-		'bif',
-		'clp',
-		'djf',
-		'gnf',
-		'jpy',
-		'kmf',
-		'krw',
-		'mga',
-		'pyg',
-		'rwf',
-		'vnd',
-		'vuv',
-		'xaf',
-		'xof',
-		'xpf',
-	);
-
-	/**
 	 * Order lifecycle service.
 	 *
 	 * @var OrderPaymentLifecycleService
@@ -175,6 +152,13 @@ class WooPaymentsEventIngestor {
 	private ?WooPaymentsAccountService $account_service = null;
 
 	/**
+	 * WooPayments order effect applier.
+	 *
+	 * @var WooPaymentsOrderEffectApplier|null
+	 */
+	private ?WooPaymentsOrderEffectApplier $order_effect_applier = null;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -189,8 +173,9 @@ class WooPaymentsEventIngestor {
 	 * @param WooPaymentsNotificationEventHandler $notification_event_handler Notification event handler.
 	 * @param WooPaymentsOrderDataService|null    $order_data_service         WooPayments order data service.
 	 * @param WooPaymentsAccountService|null      $account_service            WooPayments account service.
+	 * @param WooPaymentsOrderEffectApplier|null  $order_effect_applier       Optional order effect applier.
 	 */
-	final public function init( OrderPaymentLifecycleService $lifecycle_service, LegacyProxy $legacy_proxy, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, WooPaymentsDisputeEventHandler $dispute_event_handler, WooPaymentsRefundEventHandler $refund_event_handler, WooPaymentsAccountEventHandler $account_event_handler, WooPaymentsNotificationEventHandler $notification_event_handler, ?WooPaymentsOrderDataService $order_data_service = null, ?WooPaymentsAccountService $account_service = null ): void {
+	final public function init( OrderPaymentLifecycleService $lifecycle_service, LegacyProxy $legacy_proxy, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, WooPaymentsDisputeEventHandler $dispute_event_handler, WooPaymentsRefundEventHandler $refund_event_handler, WooPaymentsAccountEventHandler $account_event_handler, WooPaymentsNotificationEventHandler $notification_event_handler, ?WooPaymentsOrderDataService $order_data_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsOrderEffectApplier $order_effect_applier = null ): void {
 		$this->lifecycle_service          = $lifecycle_service;
 		$this->legacy_proxy               = $legacy_proxy;
 		$this->legacy_runtime             = $legacy_runtime;
@@ -201,6 +186,7 @@ class WooPaymentsEventIngestor {
 		$this->notification_event_handler = $notification_event_handler;
 		$this->order_data_service         = $order_data_service;
 		$this->account_service            = $account_service;
+		$this->order_effect_applier       = $order_effect_applier;
 	}
 
 	/**
@@ -333,8 +319,7 @@ class WooPaymentsEventIngestor {
 			return;
 		}
 
-		$lifecycle_event = $this->build_lifecycle_event( $event_type, $event_object );
-		if ( null === $lifecycle_event ) {
+		if ( ! $this->is_lifecycle_event_type( $event_type ) ) {
 			$this->run_delivery_hook( 'woocommerce_payments_after_webhook_delivery', $event_type, $event );
 			return;
 		}
@@ -345,7 +330,16 @@ class WooPaymentsEventIngestor {
 			return;
 		}
 
-		$this->lifecycle_service->apply( $order, $lifecycle_event );
+		$this->maybe_add_completed_fee_breakdown_note( $order, $event_type, $event_object );
+		$this->maybe_apply_completed_payment_method_display_title( $order, $event_type, $event_object );
+
+		$lifecycle_event = $this->build_lifecycle_event( $event_type, $event_object, $order );
+		if ( null === $lifecycle_event ) {
+			$this->run_delivery_hook( 'woocommerce_payments_after_webhook_delivery', $event_type, $event );
+			return;
+		}
+
+		$this->lifecycle_service->apply( $order, $lifecycle_event, new WooPaymentsPersistenceProfile() );
 		$this->maybe_send_ipp_receipt_email( $order, $event_type, $event_object );
 		$this->run_delivery_hook( 'woocommerce_payments_after_webhook_delivery', $event_type, $event );
 	}
@@ -516,33 +510,121 @@ class WooPaymentsEventIngestor {
 	}
 
 	/**
+	 * Tell whether a WooPayments event type is handled by the neutral lifecycle path.
+	 *
+	 * @param string $event_type Event type.
+	 * @return bool
+	 */
+	private function is_lifecycle_event_type( string $event_type ): bool {
+		return in_array(
+			$event_type,
+			array(
+				'payment_intent.succeeded',
+				'payment_intent.payment_failed',
+				'payment_intent.canceled',
+				'payment_intent.amount_capturable_updated',
+				'charge.expired',
+			),
+			true
+		);
+	}
+
+	/**
+	 * Add completed-payment fee details independently from the payment lifecycle note.
+	 *
+	 * @param WC_Order            $order        Order object.
+	 * @param string              $event_type   Event type.
+	 * @param array<string,mixed> $event_object Provider object.
+	 */
+	private function maybe_add_completed_fee_breakdown_note( WC_Order $order, string $event_type, array $event_object ): void {
+		if ( 'payment_intent.succeeded' !== $event_type ) {
+			return;
+		}
+
+		$charge_id = $this->get_charge_id_from_intent( $event_object );
+		$this->get_order_data_service()->add_fee_breakdown_note(
+			$order,
+			$this->get_completed_fee_breakdown_note_from_intent( $event_object ),
+			'' !== $charge_id ? 'charge:' . $charge_id : ''
+		);
+	}
+
+	/**
+	 * Apply charge-derived display title data before WooCommerce writes completion notes.
+	 *
+	 * @param WC_Order            $order        Order object.
+	 * @param string              $event_type   Event type.
+	 * @param array<string,mixed> $event_object Provider object.
+	 */
+	private function maybe_apply_completed_payment_method_display_title( WC_Order $order, string $event_type, array $event_object ): void {
+		if ( 'payment_intent.succeeded' !== $event_type ) {
+			return;
+		}
+
+		$this->get_order_effect_applier()->apply_payment_method_display_title(
+			$order,
+			$event_object,
+			$this->get_account_service()->get_account_country()
+		);
+	}
+
+	/**
+	 * Get the WooPayments order effect applier.
+	 *
+	 * @return WooPaymentsOrderEffectApplier
+	 */
+	private function get_order_effect_applier(): WooPaymentsOrderEffectApplier {
+		if ( null === $this->order_effect_applier ) {
+			$this->order_effect_applier = wc_get_container()->get( WooPaymentsOrderEffectApplier::class );
+		}
+
+		return $this->order_effect_applier;
+	}
+
+	/**
 	 * Build a neutral lifecycle event for a supported WooPayments webhook type.
 	 *
 	 * @param string              $event_type Event type.
 	 * @param array<string,mixed> $event_object Provider object.
+	 * @param WC_Order            $order Order object.
 	 * @return PaymentLifecycleEvent|null
 	 */
-	private function build_lifecycle_event( string $event_type, array $event_object ): ?PaymentLifecycleEvent {
+	private function build_lifecycle_event( string $event_type, array $event_object, WC_Order $order ): ?PaymentLifecycleEvent {
 		switch ( $event_type ) {
 			case 'payment_intent.succeeded':
-				$completed_note = $this->get_completed_payment_note_data_from_intent( $event_object );
+				$charge         = $this->get_first_charge_from_intent( $event_object );
+				$completed_note = $this->get_completed_payment_note_data_from_intent( $event_object, $order );
+				$meta           = $this->without_empty_values(
+					array(
+						'_intent_id'             => $this->get_object_id( $event_object ),
+						'_charge_id'             => $this->get_charge_id_from_intent( $event_object ),
+						'_payment_method_id'     => $this->get_payment_method_id_from_intent( $event_object ),
+						'_intention_status'      => isset( $event_object['status'] ) ? (string) $event_object['status'] : '',
+						'_wcpay_intent_currency' => isset( $event_object['currency'] ) ? (string) $event_object['currency'] : '',
+						'_stripe_mandate_id'     => $this->get_mandate_id_from_intent( $event_object ),
+						'_wcpay_mode'            => $this->get_account_service()->get_mode(),
+						'_wcpay_ipp_channel'     => $this->get_ipp_channel_from_intent( $event_object ),
+					)
+				);
+				if ( ! empty( $charge ) ) {
+					$meta = array_merge(
+						$meta,
+						WooPaymentsOrderEffects::completed_charge_meta(
+							$event_object,
+							$charge,
+							$order,
+							$this->get_account_service()->get_account_default_currency(),
+							$this->get_order_data_service(),
+							false
+						),
+						WooPaymentsOrderEffects::completed_charge_payment_method_backfill_meta( $charge, $order )
+					);
+				}
 
 				return new PaymentLifecycleEvent(
 					PaymentLifecycleEvent::STATUS_COMPLETED,
 					$this->get_object_id( $event_object ),
-					$this->without_empty_values(
-						array(
-							'_intent_id'             => $this->get_object_id( $event_object ),
-							'_charge_id'             => $this->get_charge_id_from_intent( $event_object ),
-							'_payment_method_id'     => $this->get_payment_method_id_from_intent( $event_object ),
-							'_intention_status'      => isset( $event_object['status'] ) ? (string) $event_object['status'] : '',
-							'_wcpay_intent_currency' => isset( $event_object['currency'] ) ? (string) $event_object['currency'] : '',
-							'_stripe_mandate_id'     => $this->get_mandate_id_from_intent( $event_object ),
-							'_wcpay_transaction_fee' => $this->get_transaction_fee_from_intent( $event_object ),
-							'_wcpay_net'             => $this->get_net_from_intent( $event_object ),
-							'_wcpay_ipp_channel'     => $this->get_ipp_channel_from_intent( $event_object ),
-						)
-					),
+					$meta,
 					array(),
 					$completed_note['note'],
 					$completed_note['type']
@@ -673,12 +755,34 @@ class WooPaymentsEventIngestor {
 	}
 
 	/**
-	 * Get the completed-payment note and note type from a PaymentIntent object.
+	 * Get the completed-payment lifecycle note and note type from a PaymentIntent object.
 	 *
 	 * @param array<string,mixed> $event_object PaymentIntent object.
+	 * @param WC_Order            $order        Order object.
 	 * @return array{note:string,type:string}
 	 */
-	private function get_completed_payment_note_data_from_intent( array $event_object ): array {
+	private function get_completed_payment_note_data_from_intent( array $event_object, WC_Order $order ): array {
+		$charge = $this->get_first_charge_from_intent( $event_object );
+
+		return array(
+			'note' => WooPaymentsOrderEffects::payment_success_note(
+				$order,
+				$this->get_object_id( $event_object ),
+				$this->get_charge_id_from_intent( $event_object ),
+				WooPaymentsOrderEffects::balance_transaction_id( $charge['balance_transaction'] ?? null ),
+				$this->get_account_service()->get_mode()
+			),
+			'type' => PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS,
+		);
+	}
+
+	/**
+	 * Get the best available fee-breakdown note for a completed PaymentIntent object.
+	 *
+	 * @param array<string,mixed> $event_object PaymentIntent object.
+	 * @return string
+	 */
+	private function get_completed_fee_breakdown_note_from_intent( array $event_object ): string {
 		$fee_breakdown_note = $this->get_order_data_service()->get_fee_breakdown_note_from_intent( $event_object );
 		if ( '' === $fee_breakdown_note || $this->get_order_data_service()->intent_needs_fee_breakdown_refresh( $event_object ) ) {
 			$fresh_fee_breakdown_note = $this->get_fresh_fee_breakdown_note( $event_object );
@@ -687,17 +791,7 @@ class WooPaymentsEventIngestor {
 			}
 		}
 
-		if ( '' !== $fee_breakdown_note ) {
-			return array(
-				'note' => $fee_breakdown_note,
-				'type' => PaymentLifecycleEvent::NOTE_TYPE_FEE_DETAILS,
-			);
-		}
-
-		return array(
-			'note' => __( 'Payment complete.', 'woocommerce' ),
-			'type' => PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_COMPLETE,
-		);
+		return $fee_breakdown_note;
 	}
 
 	/**
@@ -793,60 +887,6 @@ class WooPaymentsEventIngestor {
 			'note'          => '',
 			'needs_refresh' => true,
 		);
-	}
-
-	/**
-	 * Get the transaction fee from a PaymentIntent object.
-	 *
-	 * @param array<string,mixed> $event_object PaymentIntent object.
-	 * @return string
-	 */
-	private function get_transaction_fee_from_intent( array $event_object ): string {
-		$fee_breakdown_v1 = $event_object['charges']['data'][0]['fee_breakdown_v1'] ?? null;
-		if ( is_array( $fee_breakdown_v1 ) && isset( $fee_breakdown_v1['totals']['fee']['amount'], $fee_breakdown_v1['totals']['fee']['currency'] ) ) {
-			return (string) $this->interpret_stripe_amount( (int) $fee_breakdown_v1['totals']['fee']['amount'], (string) $fee_breakdown_v1['totals']['fee']['currency'] );
-		}
-
-		$application_fee_amount = $event_object['charges']['data'][0]['application_fee_amount'] ?? null;
-		$currency               = $event_object['currency'] ?? '';
-		if ( ! $application_fee_amount || ! is_string( $currency ) ) {
-			return '';
-		}
-
-		return (string) $this->interpret_stripe_amount( (int) $application_fee_amount, $currency );
-	}
-
-	/**
-	 * Get the net amount from a PaymentIntent object.
-	 *
-	 * @param array<string,mixed> $event_object PaymentIntent object.
-	 * @return string
-	 */
-	private function get_net_from_intent( array $event_object ): string {
-		$fee_breakdown_v1 = $event_object['charges']['data'][0]['fee_breakdown_v1'] ?? null;
-		if ( is_array( $fee_breakdown_v1 ) && isset( $fee_breakdown_v1['totals']['net']['amount'], $fee_breakdown_v1['totals']['net']['currency'] ) ) {
-			return (string) $this->interpret_stripe_amount( (int) $fee_breakdown_v1['totals']['net']['amount'], (string) $fee_breakdown_v1['totals']['net']['currency'] );
-		}
-
-		$transaction_fee = $this->get_transaction_fee_from_intent( $event_object );
-		$charge_amount   = $event_object['amount'] ?? null;
-		$currency        = $event_object['currency'] ?? '';
-		if ( '' === $transaction_fee || null === $charge_amount || ! is_string( $currency ) ) {
-			return '';
-		}
-
-		return (string) ( $this->interpret_stripe_amount( (int) $charge_amount, $currency ) - (float) $transaction_fee );
-	}
-
-	/**
-	 * Interpret a Stripe integer amount for a currency.
-	 *
-	 * @param int    $amount   Stripe integer amount.
-	 * @param string $currency Currency code.
-	 * @return float
-	 */
-	private function interpret_stripe_amount( int $amount, string $currency ): float {
-		return in_array( strtolower( $currency ), self::ZERO_DECIMAL_CURRENCIES, true ) ? (float) $amount : (float) $amount / 100;
 	}
 
 	/**

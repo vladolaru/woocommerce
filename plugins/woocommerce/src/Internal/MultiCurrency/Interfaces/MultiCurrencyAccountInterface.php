@@ -48,7 +48,7 @@ interface MultiCurrencyAccountInterface {
 	/**
 	 * Get provider-supported countries.
 	 *
-	 * @return string[]
+	 * @return array<string,string> Country labels keyed by ISO country code.
 	 */
 	public function get_supported_countries(): array;
 

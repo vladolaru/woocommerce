@@ -323,6 +323,17 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should allow historical intent reads to select an explicit account mode.
+	 */
+	public function test_get_payment_intention_for_mode_overrides_current_account_mode(): void {
+		list( $sut, $http_client ) = $this->make_sut( false, array( 'id' => 'pi_history' ) );
+
+		$sut->get_payment_intention_for_mode( 'pi_history', true );
+
+		$this->assertSame( '/sites/123/wcpay/intentions/pi_history?test_mode=1', $http_client->last_path );
+	}
+
+	/**
 	 * @testdox Should preserve server error codes and messages for failed native transport requests.
 	 */
 	public function test_request_preserves_server_error_codes_and_messages(): void {
@@ -1152,6 +1163,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			array( 'email' => 'merchant@example.com' ),
 			array( 'business_type' => 'individual' ),
 			array( 'wcpay-promo-test' ),
+			false,
 			'ref_test'
 		);
 
@@ -1167,6 +1179,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'merchant@example.com', $body['user_data']['email'] );
 		$this->assertSame( 'individual', $body['account_data']['business_type'] );
 		$this->assertSame( array( 'wcpay-promo-test' ), $body['actioned_notes'] );
+		$this->assertFalse( $body['collect_payout_requirements'] );
 		$this->assertSame( 'ref_test', $body['referral_code'] );
 		$this->assertTrue( $body['test_mode'] );
 		$this->assertTrue( $http_client->last_use_user_token );
@@ -1183,7 +1196,9 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			'headers'  => array( 'content-type' => 'application/json' ),
 			'body'     => wp_json_encode( array( 'url' => false ) ),
 		);
-		$filter                = static function ( array $args ): array {
+		$filtered_args         = array();
+		$filter                = static function ( array $args ) use ( &$filtered_args ): array {
+			$filtered_args                                = $args;
 			$args['compatibility_data']                   = array( 'woocommerce' => '11.0.0' );
 			$args['account_data']['woocommerce_store_id'] = 'store_123';
 			return $args;
@@ -1201,6 +1216,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 				array( 'email' => 'merchant@example.com' ),
 				array( 'business_type' => 'individual' ),
 				array(),
+				true,
 				'ref_test'
 			);
 		} finally {
@@ -1211,6 +1227,8 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 		$this->assertIsArray( $body );
 		$this->assertSame( 'https://example.test/return', $body['return_url'] );
+		$this->assertTrue( $filtered_args['collect_payout_requirements'] );
+		$this->assertTrue( $body['collect_payout_requirements'] );
 		$this->assertSame( array( 'woocommerce' => '11.0.0' ), $body['compatibility_data'] );
 		$this->assertSame( 'store_123', $body['account_data']['woocommerce_store_id'] );
 		$this->assertSame( 'ref_test', $body['referral_code'] );

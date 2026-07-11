@@ -4,7 +4,10 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceProfile;
 use WC_Order_Refund;
+use WC_Order;
 use WC_Unit_Test_Case;
 
 /**
@@ -20,18 +23,26 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 	private $sut;
 
 	/**
+	 * WooPayments persistence profile.
+	 *
+	 * @var WooPaymentsPersistenceProfile
+	 */
+	private WooPaymentsPersistenceProfile $persistence_profile;
+
+	/**
 	 * Set up test fixtures.
 	 */
 	public function setUp(): void {
 		parent::setUp();
-		$this->sut = wc_get_container()->get( OrderPaymentStore::class );
+		$this->sut                 = wc_get_container()->get( OrderPaymentStore::class );
+		$this->persistence_profile = new WooPaymentsPersistenceProfile();
 	}
 
 	/**
 	 * @testdox Payment meta keys preserve the WooPayments Bucket-E persisted surface.
 	 */
 	public function test_payment_meta_keys_preserve_woopayments_bucket_e_surface(): void {
-		$keys = OrderPaymentStore::get_payment_meta_keys();
+		$keys = OrderPaymentStore::get_payment_meta_keys( $this->persistence_profile );
 
 		$this->assertSame( $keys, array_values( array_unique( $keys ) ), 'Payment meta keys must not contain duplicates.' );
 
@@ -97,7 +108,7 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_not_a_payment_key', 'ignore-me' );
 		$order->save();
 
-		$surface = $this->sut->read_payment_surface( $order );
+		$surface = $this->sut->read_payment_surface( $order, $this->persistence_profile );
 
 		$this->assertSame( $order->get_id(), $surface['order_id'] );
 		$this->assertSame( $order->get_status(), $surface['status'] );
@@ -139,7 +150,7 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 		$refund->update_meta_data( '_not_a_payment_key', 'ignore-me' );
 		$refund->save();
 
-		$surface = $this->sut->read_payment_surface( wc_get_order( $order->get_id() ) );
+		$surface = $this->sut->read_payment_surface( wc_get_order( $order->get_id() ), $this->persistence_profile );
 
 		$this->assertCount( 1, $surface['refunds'] );
 		$this->assertSame( $refund->get_id(), $surface['refunds'][0]['refund_id'] );
@@ -153,25 +164,46 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Payment surfaces and locks use the supplied provider persistence profile.
+	 */
+	public function test_payment_surfaces_and_locks_use_supplied_provider_profile(): void {
+		$order = wc_create_order();
+		$order->update_meta_data( '_provider_payment_id', 'provider_payment_123' );
+		$order->update_meta_data( '_intent_id', 'pi_must_not_leak' );
+		$order->save();
+
+		$profile = $this->create_provider_profile();
+		$surface = $this->sut->read_payment_surface( $order, $profile );
+
+		$this->assertSame( array( '_provider_payment_id' => 'provider_payment_123' ), $surface['meta'] );
+		$this->sut->lock_order_payment( $order, $profile );
+		$this->assertSame( 'provider-lock', get_transient( 'provider_payment_lock_' . $order->get_id() ) );
+		$this->assertFalse( get_transient( OrderPaymentStore::LOCK_TRANSIENT_PREFIX . $order->get_id() ) );
+
+		$this->sut->unlock_order_payment( $order, $profile );
+		$this->assertFalse( get_transient( 'provider_payment_lock_' . $order->get_id() ) );
+	}
+
+	/**
 	 * @testdox Order payment locks use the WooPayments-compatible transient shape.
 	 */
 	public function test_order_payment_locks_use_woopayments_compatible_transient_shape(): void {
 		$order = wc_create_order();
 
-		$this->assertFalse( $this->sut->is_order_payment_locked( $order, 'pi_123' ) );
+		$this->assertFalse( $this->sut->is_order_payment_locked( $order, $this->persistence_profile, 'pi_123' ) );
 
-		$this->sut->lock_order_payment( $order, 'pi_123' );
+		$this->sut->lock_order_payment( $order, $this->persistence_profile, 'pi_123' );
 
-		$this->assertTrue( $this->sut->is_order_payment_locked( $order, 'pi_123' ) );
-		$this->assertFalse( $this->sut->is_order_payment_locked( $order, 'pi_other' ) );
+		$this->assertTrue( $this->sut->is_order_payment_locked( $order, $this->persistence_profile, 'pi_123' ) );
+		$this->assertFalse( $this->sut->is_order_payment_locked( $order, $this->persistence_profile, 'pi_other' ) );
 
-		$this->sut->lock_order_payment( $order );
+		$this->sut->lock_order_payment( $order, $this->persistence_profile );
 
-		$this->assertTrue( $this->sut->is_order_payment_locked( $order, 'pi_other' ), 'The sentinel lock must block every payment reference.' );
+		$this->assertTrue( $this->sut->is_order_payment_locked( $order, $this->persistence_profile, 'pi_other' ), 'The sentinel lock must block every payment reference.' );
 
-		$this->sut->unlock_order_payment( $order );
+		$this->sut->unlock_order_payment( $order, $this->persistence_profile );
 
-		$this->assertFalse( $this->sut->is_order_payment_locked( $order, 'pi_123' ) );
+		$this->assertFalse( $this->sut->is_order_payment_locked( $order, $this->persistence_profile, 'pi_123' ) );
 	}
 
 	/**
@@ -180,19 +212,36 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 	public function test_claim_order_payment_lock_blocks_any_active_lock(): void {
 		$order = wc_create_order();
 
-		$this->assertTrue( $this->sut->claim_order_payment_lock( $order, 'native_charge_key' ) );
-		$this->assertFalse( $this->sut->claim_order_payment_lock( $order, 'native_refund_key' ) );
-		$this->assertTrue( $this->sut->is_order_payment_locked( $order, 'native_charge_key' ) );
-		$this->assertFalse( $this->sut->is_order_payment_locked( $order, 'native_refund_key' ) );
+		$this->assertTrue( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'native_charge_key' ) );
+		$this->assertFalse( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'native_refund_key' ) );
+		$this->assertTrue( $this->sut->is_order_payment_locked( $order, $this->persistence_profile, 'native_charge_key' ) );
+		$this->assertFalse( $this->sut->is_order_payment_locked( $order, $this->persistence_profile, 'native_refund_key' ) );
 
-		$this->sut->unlock_order_payment( $order );
+		$this->sut->unlock_order_payment( $order, $this->persistence_profile );
 
-		$this->sut->lock_order_payment( $order, 'pi_legacy' );
-		$this->assertFalse( $this->sut->is_order_payment_locked( $order, 'native_charge_key' ) );
-		$this->assertFalse( $this->sut->claim_order_payment_lock( $order, 'native_charge_key' ) );
+		$this->sut->lock_order_payment( $order, $this->persistence_profile, 'pi_legacy' );
+		$this->assertFalse( $this->sut->is_order_payment_locked( $order, $this->persistence_profile, 'native_charge_key' ) );
+		$this->assertFalse( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'native_charge_key' ) );
 
-		$this->sut->unlock_order_payment( $order );
-		$this->assertTrue( $this->sut->claim_order_payment_lock( $order, 'native_charge_key' ) );
-		$this->sut->unlock_order_payment( $order );
+		$this->sut->unlock_order_payment( $order, $this->persistence_profile );
+		$this->assertTrue( $this->sut->claim_order_payment_lock( $order, $this->persistence_profile, 'native_charge_key' ) );
+		$this->sut->unlock_order_payment( $order, $this->persistence_profile );
+	}
+
+	/**
+	 * Create a non-WooPayments persistence profile.
+	 *
+	 * @return ProviderPersistenceProfile
+	 */
+	private function create_provider_profile(): ProviderPersistenceProfile {
+		$profile = $this->createMock( ProviderPersistenceProfile::class );
+		$profile->method( 'get_order_lock_key' )->willReturnCallback(
+			static fn( WC_Order $order ): string => 'provider_payment_lock_' . $order->get_id()
+		);
+		$profile->method( 'get_lock_sentinel' )->willReturn( 'provider-lock' );
+		$profile->method( 'get_lock_ttl_seconds' )->willReturn( 60 );
+		$profile->method( 'get_preserved_payment_meta_keys' )->willReturn( array( '_provider_payment_id' ) );
+
+		return $profile;
 	}
 }

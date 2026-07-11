@@ -122,6 +122,17 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should preserve the legacy encoded path shape in dispute URLs.
+	 */
+	public function test_dispute_url_preserves_encoded_legacy_path(): void {
+		$url = $this->invoke_private( 'get_dispute_url', array( 'ch_123', 'txn_123' ) );
+
+		$this->assertStringContainsString( 'path=%2Fpayments%2Ftransactions%2Fdetails', $url );
+		$this->assertStringContainsString( 'id=ch_123', $url );
+		$this->assertStringContainsString( 'transaction_id=txn_123', $url );
+	}
+
+	/**
 	 * @testdox Should include an explicit currency code in dispute amounts when multiple currencies are enabled.
 	 */
 	public function test_formatted_dispute_amount_includes_currency_code_when_multiple_currencies_are_enabled(): void {

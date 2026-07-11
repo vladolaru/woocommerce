@@ -8,7 +8,7 @@ import { registerPaymentMethod } from '@woocommerce/blocks-registry';
 /**
  * Internal dependencies
  */
-import registerWooPayments from '../index';
+import registerWooPayments, { getWooPaymentsPaymentMethod } from '../index';
 
 jest.mock( '@woocommerce/blocks-registry', () => ( {
 	registerPaymentMethod: jest.fn(),
@@ -51,6 +51,7 @@ jest.mock( '@woocommerce/settings', () => {
 					title: 'Klarna',
 					isReusable: false,
 					isBnpl: true,
+					countries: [ 'BE' ],
 				},
 			},
 		},
@@ -95,6 +96,83 @@ describe( 'wc-payment-method-woopayments per-method registration', () => {
 				( [ paymentMethod ] ) => paymentMethod.name
 			)
 		).toEqual( [ 'woocommerce_payments', 'woocommerce_payments_klarna' ] );
+	} );
+
+	it( 'hides a split method when the Store API excludes its gateway ID', () => {
+		registerPaymentMethod.mockClear();
+
+		registerWooPayments();
+
+		const klarnaPaymentMethod = registerPaymentMethod.mock.calls
+			.map( ( [ paymentMethod ] ) => paymentMethod )
+			.find(
+				( paymentMethod ) =>
+					paymentMethod.name === 'woocommerce_payments_klarna'
+			);
+
+		expect(
+			klarnaPaymentMethod.canMakePayment( {
+				paymentMethods: [ 'woocommerce_payments' ],
+				billingAddress: { country: 'BE' },
+			} )
+		).toBe( false );
+		expect(
+			klarnaPaymentMethod.canMakePayment( {
+				paymentMethods: [
+					'woocommerce_payments',
+					'woocommerce_payments_klarna',
+				],
+				billingAddress: { country: 'BE' },
+			} )
+		).toBe( true );
+	} );
+
+	it( 'hides a country-restricted method for an unsupported billing country', () => {
+		registerPaymentMethod.mockClear();
+		registerWooPayments();
+
+		const klarnaPaymentMethod = registerPaymentMethod.mock.calls
+			.map( ( [ paymentMethod ] ) => paymentMethod )
+			.find(
+				( paymentMethod ) =>
+					paymentMethod.name === 'woocommerce_payments_klarna'
+			);
+		const paymentMethods = [
+			'woocommerce_payments',
+			'woocommerce_payments_klarna',
+		];
+
+		expect(
+			klarnaPaymentMethod.canMakePayment( {
+				paymentMethods,
+				billingAddress: { country: 'US' },
+			} )
+		).toBe( false );
+		expect(
+			klarnaPaymentMethod.canMakePayment( {
+				paymentMethods,
+				billingAddress: { country: 'BE' },
+			} )
+		).toBe( true );
+	} );
+
+	it( 'keeps a registered method visible in the editor preview', () => {
+		const paymentMethod = getWooPaymentsPaymentMethod( {
+			gatewayId: 'woocommerce_payments_klarna',
+			isCheckout: false,
+			isCoreNativeCheckoutAvailable: true,
+			paymentMethodsConfig: {
+				klarna: {
+					title: 'Klarna',
+				},
+			},
+		} );
+
+		expect(
+			paymentMethod.canMakePayment( {
+				paymentMethods: [ 'cod', 'bacs', 'cheque' ],
+			} )
+		).toBe( true );
 	} );
 
 	it( 'initializes split gateway Elements with the configured Stripe payment method type', async () => {

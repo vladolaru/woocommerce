@@ -28,25 +28,35 @@ class NativePaymentsCliCommand implements RegisterHooksInterface {
 	private WooPaymentsStatusReport $status_report;
 
 	/**
+	 * WP-CLI adapter.
+	 *
+	 * @var NativePaymentsCliAdapter|null
+	 */
+	private ?NativePaymentsCliAdapter $cli_adapter = null;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsStatusReport $status_report Status report service.
+	 * @param WooPaymentsStatusReport       $status_report Status report service.
+	 * @param NativePaymentsCliAdapter|null $cli_adapter Optional WP-CLI adapter.
 	 */
-	final public function init( WooPaymentsStatusReport $status_report ): void {
+	final public function init( WooPaymentsStatusReport $status_report, ?NativePaymentsCliAdapter $cli_adapter = null ): void {
 		$this->status_report = $status_report;
+		$this->cli_adapter   = $cli_adapter;
 	}
 
 	/**
 	 * Register the WP-CLI command when WP-CLI is available.
 	 */
 	public function register(): void {
-		if ( ! defined( 'WP_CLI' ) || ! WP_CLI || ! class_exists( '\WP_CLI' ) ) {
+		$cli_adapter = $this->get_cli_adapter();
+		if ( ! $cli_adapter->is_available() ) {
 			return;
 		}
 
-		\WP_CLI::add_command( 'wc-native-payments', $this );
+		$cli_adapter->add_command( 'wc-native-payments', $this );
 	}
 
 	/**
@@ -115,13 +125,19 @@ class NativePaymentsCliCommand implements RegisterHooksInterface {
 	 * @param string $line Line to output.
 	 */
 	private function line( string $line ): void {
-		if ( ! class_exists( '\WP_CLI' ) ) {
-			return;
+		$this->get_cli_adapter()->line( $line );
+	}
+
+	/**
+	 * Get the WP-CLI adapter.
+	 *
+	 * @return NativePaymentsCliAdapter
+	 */
+	private function get_cli_adapter(): NativePaymentsCliAdapter {
+		if ( null === $this->cli_adapter ) {
+			$this->cli_adapter = new NativePaymentsCliAdapter();
 		}
 
-		$line_callback = array( 'WP_CLI', 'line' );
-		if ( is_callable( $line_callback ) ) {
-			$line_callback( $line );
-		}
+		return $this->cli_adapter;
 	}
 }

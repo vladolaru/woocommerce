@@ -186,6 +186,20 @@ class WooPaymentsAccountSessionRestControllerTest extends WC_REST_Unit_Test_Case
 	}
 
 	/**
+	 * @testdox Accounts route preserves the plugin onboarding-disabled status when no account data exists.
+	 */
+	public function test_accounts_route_returns_onboarding_disabled_fallback_status(): void {
+		$this->account_service->account_data        = array();
+		$this->account_service->onboarding_disabled = true;
+		$this->sut->register_routes();
+
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/accounts' ) );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( 'ONBOARDING_DISABLED', $response->get_data()['status'] );
+	}
+
+	/**
 	 * @testdox Account session route returns the mapped service payload.
 	 */
 	public function test_route_returns_service_payload(): void {
@@ -302,6 +316,13 @@ class WooPaymentsAccountSessionRestControllerTest extends WC_REST_Unit_Test_Case
 			public bool $test_mode_onboarding = false;
 
 			/**
+			 * Whether WooPayments onboarding is disabled.
+			 *
+			 * @var bool
+			 */
+			public bool $onboarding_disabled = false;
+
+			/**
 			 * Get cached account data.
 			 *
 			 * @param bool $force_refresh Whether to force refresh.
@@ -331,6 +352,15 @@ class WooPaymentsAccountSessionRestControllerTest extends WC_REST_Unit_Test_Case
 			 */
 			public function is_test_mode_onboarding_enabled(): bool {
 				return $this->test_mode_onboarding;
+			}
+
+			/**
+			 * Tell whether WooPayments onboarding is disabled.
+			 *
+			 * @return bool
+			 */
+			public function is_onboarding_disabled(): bool {
+				return $this->onboarding_disabled;
 			}
 		};
 	}

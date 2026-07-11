@@ -557,7 +557,7 @@ class WooPaymentsDisputeEventHandler {
 		}
 
 		return Utils::wc_payments_legacy_admin_url(
-			'/payments/transactions/details',
+			rawurlencode( '/payments/transactions/details' ),
 			$params
 		);
 	}

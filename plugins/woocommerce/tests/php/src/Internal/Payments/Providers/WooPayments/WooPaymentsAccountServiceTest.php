@@ -36,6 +36,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		delete_transient( 'wcpay_stripe_onboarding_state' );
 		delete_transient( 'woopay_enabled_by_default' );
 		delete_transient( 'wcpay_onboarding_init_in_progress' );
+		delete_transient( 'wcpay_on_boarding_disabled' );
 		delete_transient( 'wcpay_test_to_live_eligible' );
 		delete_transient( 'wcpay_post_kyc_activation_eligible' );
 		remove_all_filters( 'pre_option_wcpay_account_data' );
@@ -43,6 +44,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'wcpay_dev_mode' );
 		remove_all_filters( 'wcpay_test_mode' );
 		remove_all_filters( 'wcpay_test_mode_onboarding' );
+		remove_all_filters( 'woocommerce_woopayments_native_fraud_services_config' );
 		remove_all_filters( 'allowed_redirect_hosts' );
 		set_current_screen( 'front' );
 		parent::tearDown();
@@ -97,12 +99,56 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should expose filterable fraud-services config from the preserved account payload.
+	 */
+	public function test_exposes_fraud_services_config_from_account_cache(): void {
+		$sut = $this->create_service();
+		$sut->cache_account_data(
+			array(
+				'account_id'     => 'acct_fraud_services',
+				'is_live'        => true,
+				'fraud_services' => array(
+					'stripe' => array(),
+				),
+			)
+		);
+		add_filter(
+			'woocommerce_woopayments_native_fraud_services_config',
+			static function ( array $config ): array {
+				$config['sift'] = array( 'beacon_key' => 'beacon_test' );
+				return $config;
+			}
+		);
+
+		$this->assertSame(
+			array(
+				'stripe' => array(),
+				'sift'   => array( 'beacon_key' => 'beacon_test' ),
+			),
+			$sut->get_fraud_services_config()
+		);
+	}
+
+	/**
 	 * @testdox Should fail closed when the native WooPayments gateway enabled setting is absent.
 	 */
 	public function test_gateway_enabled_state_defaults_to_disabled_when_setting_is_absent(): void {
 		$sut = $this->create_service();
 
 		$this->assertFalse( $sut->is_gateway_enabled() );
+	}
+
+	/**
+	 * @testdox Should expose whether onboarding was disabled by the WooPayments platform.
+	 */
+	public function test_exposes_onboarding_disabled_state_from_transient(): void {
+		$sut = $this->create_service();
+
+		$this->assertFalse( $sut->is_onboarding_disabled() );
+
+		set_transient( 'wcpay_on_boarding_disabled', true, 2 * HOUR_IN_SECONDS );
+
+		$this->assertTrue( $sut->is_onboarding_disabled() );
 	}
 
 	/**

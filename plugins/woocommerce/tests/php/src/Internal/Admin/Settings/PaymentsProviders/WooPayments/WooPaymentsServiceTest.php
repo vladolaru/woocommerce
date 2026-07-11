@@ -988,18 +988,20 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			 * @param array       $user_data      User data.
 			 * @param array       $account_data   Account data.
 			 * @param array       $actioned_notes Actioned notes.
+			 * @param bool        $collect_payout_requirements Whether to collect payout requirements.
 			 * @param string|null $referral_code  Referral code.
 			 * @return array
 			 */
-			public function initialize_onboarding( bool $live_account, string $return_url, array $site_data = array(), array $user_data = array(), array $account_data = array(), array $actioned_notes = array(), ?string $referral_code = null ): array {
+			public function initialize_onboarding( bool $live_account, string $return_url, array $site_data = array(), array $user_data = array(), array $account_data = array(), array $actioned_notes = array(), bool $collect_payout_requirements = false, ?string $referral_code = null ): array {
 				$this->captured_call = array(
-					'live_account'   => $live_account,
-					'return_url'     => $return_url,
-					'site_data'      => $site_data,
-					'user_data'      => $user_data,
-					'account_data'   => $account_data,
-					'actioned_notes' => $actioned_notes,
-					'referral_code'  => $referral_code,
+					'live_account'                => $live_account,
+					'return_url'                  => $return_url,
+					'site_data'                   => $site_data,
+					'user_data'                   => $user_data,
+					'account_data'                => $account_data,
+					'actioned_notes'              => $actioned_notes,
+					'collect_payout_requirements' => $collect_payout_requirements,
+					'referral_code'               => $referral_code,
 				);
 
 				return array(
@@ -1140,11 +1142,12 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			 * @param array       $user_data      User data.
 			 * @param array       $account_data   Account data.
 			 * @param array       $actioned_notes Actioned notes.
+			 * @param bool        $collect_payout_requirements Whether to collect payout requirements.
 			 * @param string|null $referral_code  Referral code.
 			 * @return array
 			 */
-			public function initialize_onboarding( bool $live_account, string $return_url, array $site_data = array(), array $user_data = array(), array $account_data = array(), array $actioned_notes = array(), ?string $referral_code = null ): array {
-				unset( $live_account, $return_url, $site_data, $user_data, $account_data, $actioned_notes, $referral_code );
+			public function initialize_onboarding( bool $live_account, string $return_url, array $site_data = array(), array $user_data = array(), array $account_data = array(), array $actioned_notes = array(), bool $collect_payout_requirements = false, ?string $referral_code = null ): array {
+				unset( $live_account, $return_url, $site_data, $user_data, $account_data, $actioned_notes, $collect_payout_requirements, $referral_code );
 				++$this->native_call_count;
 
 				return array(

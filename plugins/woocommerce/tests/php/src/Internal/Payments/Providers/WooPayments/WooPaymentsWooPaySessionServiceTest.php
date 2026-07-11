@@ -6,8 +6,11 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAdaptedExtensions;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionService;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\FakeWooPayMailchimpBlocksIntegration;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\FakeWooPayPointsRewardsBlocksIntegration;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\FakeWooPayPointsRewardsManager;
 use WC_Unit_Test_Case;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -41,6 +44,9 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		wc_empty_cart();
 		delete_option( 'wcpay_woopay_checkout_appearance' );
 		delete_option( 'wcpay_styles_cache_version' );
+		delete_option( 'woopay_enabled_adapted_extensions' );
+		delete_option( 'wc_points_rewards_redeem_points_ratio' );
+		FakeWooPayPointsRewardsManager::$points = array();
 		remove_theme_mod( 'custom_logo' );
 		if ( class_exists( '\Jetpack_Options' ) ) {
 			\Jetpack_Options::delete_option(
@@ -797,13 +803,58 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Init session request includes adapted extension data and guest email verification nonce.
+	 */
+	public function test_init_session_request_includes_points_and_rewards_adapted_extension_data(): void {
+		if ( ! class_exists( '\WC_Points_Rewards_Manager', false ) ) {
+			class_alias( FakeWooPayPointsRewardsManager::class, 'WC_Points_Rewards_Manager' );
+		}
+
+		$user_id = self::factory()->user->create(
+			array(
+				'user_email' => 'points-shopper@example.com',
+			)
+		);
+		FakeWooPayPointsRewardsManager::$points[ $user_id ] = 250;
+		update_option( 'woopay_enabled_adapted_extensions', array( 'woocommerce-points-and-rewards' ) );
+		update_option( 'wc_points_rewards_redeem_points_ratio', '10:1' );
+
+		$adapted_extensions = new WooPaymentsWooPayAdaptedExtensions();
+		$adapted_extensions->register( new FakeWooPayPointsRewardsBlocksIntegration() );
+
+		$sut     = $this->create_service( array(), array(), $adapted_extensions );
+		$request = $sut->get_init_session_request( 'points-shopper@example.com' );
+
+		$this->assertSame( array(), $request['extension_data'] );
+		$this->assertSame(
+			array(
+				'minimum_points_amount' => 100,
+				'points_ratio'          => array(
+					'points'         => 10.0,
+					'monetary_value' => 1.0,
+				),
+				'should_verify_email'   => true,
+				'points_available'      => 250,
+			),
+			$request['adapted_extensions']['points-and-rewards']
+		);
+
+		$nonce_tick = wp_nonce_tick( 'wc_store_api' );
+		$this->assertSame(
+			substr( wp_hash( $nonce_tick . '|wc_store_api|' . $user_id . '|', 'nonce' ), -12, 10 ),
+			$request['email_verified_session_nonce']
+		);
+	}
+
+	/**
 	 * Create the System Under Test.
 	 *
-	 * @param array<string,mixed> $settings     Gateway settings.
-	 * @param array<string,mixed> $account_data Account data.
+	 * @param array<string,mixed>                     $settings           Gateway settings.
+	 * @param array<string,mixed>                     $account_data       Account data.
+	 * @param WooPaymentsWooPayAdaptedExtensions|null $adapted_extensions Adapted extensions registry.
 	 * @return WooPaymentsWooPaySessionService
 	 */
-	private function create_service( array $settings = array(), array $account_data = array() ): WooPaymentsWooPaySessionService {
+	private function create_service( array $settings = array(), array $account_data = array(), ?WooPaymentsWooPayAdaptedExtensions $adapted_extensions = null ): WooPaymentsWooPaySessionService {
 		$settings     = array_merge(
 			array(
 				'platform_checkout'                    => 'yes',
@@ -848,7 +899,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$tracking_controller->method( 'is_shopper_tracking_enabled' )->willReturn( true );
 
 		$sut = new WooPaymentsWooPaySessionService();
-		$sut->init( $account_service, new WooPaymentsFrontendStylesService(), $tracking_controller );
+		$sut->init( $account_service, new WooPaymentsFrontendStylesService(), $tracking_controller, null, $adapted_extensions );
 
 		return $sut;
 	}

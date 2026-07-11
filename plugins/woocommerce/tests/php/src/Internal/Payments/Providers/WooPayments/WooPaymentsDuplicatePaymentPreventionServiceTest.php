@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
@@ -100,6 +101,50 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	}
 
 	/**
+	 * @testdox Should clear the processing order when WooCommerce completes its payment lifecycle.
+	 */
+	public function test_payment_complete_hook_clears_the_matching_processing_order(): void {
+		$session = $this->create_session();
+		$sut     = $this->create_service( $session );
+		$order   = $this->create_order();
+		$session->set( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $order->get_id() );
+		$enable_native = static fn(): bool => true;
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, $enable_native );
+
+		$this->assertTrue( method_exists( $sut, 'register' ), 'The duplicate-payment service should own its completion hook.' );
+
+		try {
+			$sut->register();
+			$this->assertNotFalse( has_action( 'woocommerce_payment_complete', array( $sut, 'handle_woocommerce_payment_complete' ) ) );
+
+			do_action( 'woocommerce_payment_complete', $order->get_id() ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercise the registered completion callback.
+
+			$this->assertNull( $session->get( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER ) );
+		} finally {
+			remove_action( 'woocommerce_payment_complete', array( $sut, 'handle_woocommerce_payment_complete' ) );
+			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, $enable_native );
+		}
+	}
+
+	/**
+	 * @testdox Should not register session cleanup when native does not own the payments runtime.
+	 */
+	public function test_register_skips_payment_complete_hook_when_native_does_not_own_runtime(): void {
+		$sut            = $this->create_service();
+		$disable_native = static fn(): bool => false;
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, $disable_native );
+
+		try {
+			$sut->register();
+
+			$this->assertFalse( has_action( 'woocommerce_payment_complete', array( $sut, 'handle_woocommerce_payment_complete' ) ) );
+		} finally {
+			remove_action( 'woocommerce_payment_complete', array( $sut, 'handle_woocommerce_payment_complete' ) );
+			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, $disable_native );
+		}
+	}
+
+	/**
 	 * @testdox Should ignore orders without an attached PaymentIntent ID.
 	 */
 	public function test_check_payment_intent_attached_to_order_succeeded_ignores_missing_or_setup_intents(): void {
@@ -152,6 +197,100 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertContains( $order->get_status(), wc_get_is_paid_statuses() );
 		$this->assertSame( 'pi_existing', $order->get_transaction_id() );
+	}
+
+	/**
+	 * @testdox Authorized attached PaymentIntent statuses redirect without creating another charge.
+	 *
+	 * @dataProvider authorized_attached_intent_statuses
+	 *
+	 * @param string $intent_status Provider intent status.
+	 */
+	public function test_check_payment_intent_attached_to_order_succeeded_redirects_for_every_authorized_status( string $intent_status ): void {
+		$order = $this->create_order( 'hash', 'pending' );
+		$order->update_meta_data( '_intent_id', 'pi_existing' );
+		$order->save();
+
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_payment_intention' ) )
+			->getMock();
+		$api_client
+			->expects( $this->once() )
+			->method( 'get_payment_intention' )
+			->with( 'pi_existing' )
+			->willReturn( $this->create_intent_response( $order, $intent_status, 1200 ) );
+
+		$result = $this->create_service( $this->create_session(), $api_client )
+			->check_payment_intent_attached_to_order_succeeded( $order, $this->create_gateway() );
+		$order  = wc_get_order( $order->get_id() );
+
+		$this->assertIsArray( $result );
+		$this->assertSame( 'success', $result['result'] );
+		$this->assertStringContainsString( 'wcpay_previous_successful_intent=yes', $result['redirect'] );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'pi_existing', $order->get_transaction_id() );
+		$this->assertSame( $intent_status, $order->get_meta( '_intention_status', true ) );
+	}
+
+	/**
+	 * Authorized attached intent statuses not already covered by the succeeded-specific test.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public function authorized_attached_intent_statuses(): array {
+		return array(
+			'processing'       => array( 'processing' ),
+			'requires capture' => array( 'requires_capture' ),
+		);
+	}
+
+	/**
+	 * @testdox Non-authorized or wrong-order attached PaymentIntents continue normal processing.
+	 *
+	 * @dataProvider invalid_attached_intent_data
+	 *
+	 * @param string $intent_status       Provider intent status.
+	 * @param bool   $use_current_order_id Whether intent metadata owns the current order.
+	 */
+	public function test_check_payment_intent_attached_to_order_succeeded_rejects_invalid_status_or_order_ownership( string $intent_status, bool $use_current_order_id ): void {
+		$order = $this->create_order( 'hash', 'pending' );
+		$order->update_meta_data( '_intent_id', 'pi_existing' );
+		$order->save();
+		$intent                         = $this->create_intent_response( $order, $intent_status, 1200 );
+		$intent['metadata']['order_id'] = $use_current_order_id ? (string) $order->get_id() : (string) ( $order->get_id() + 1 );
+
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_payment_intention' ) )
+			->getMock();
+		$api_client
+			->expects( $this->once() )
+			->method( 'get_payment_intention' )
+			->with( 'pi_existing' )
+			->willReturn( $intent );
+
+		$result = $this->create_service( $this->create_session(), $api_client )
+			->check_payment_intent_attached_to_order_succeeded( $order, $this->create_gateway() );
+		$order  = wc_get_order( $order->get_id() );
+
+		$this->assertNull( $result );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( '', $order->get_transaction_id() );
+		$this->assertSame( 'pending', $order->get_status() );
+	}
+
+	/**
+	 * Invalid attached intent status and ownership fixtures from the extension contract.
+	 *
+	 * @return array<string,array{0:string,1:bool}>
+	 */
+	public function invalid_attached_intent_data(): array {
+		return array(
+			'requires action for current order' => array( 'requires_action', true ),
+			'requires action for another order' => array( 'requires_action', false ),
+			'succeeded for another order'       => array( 'succeeded', false ),
+		);
 	}
 
 	/**

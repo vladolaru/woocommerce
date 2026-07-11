@@ -113,6 +113,58 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should include a pending shipping display item for physical product express checkout.
+	 */
+	public function test_physical_product_includes_pending_shipping_display_item(): void {
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'woocommerce_calc_taxes', 'no' );
+		$zone               = new \WC_Shipping_Zone( 0 );
+		$shipping_method_id = $zone->add_shipping_method( 'flat_rate' );
+		$product            = \WC_Helper_Product::create_simple_product(
+			true,
+			array(
+				'name'          => 'Shipped Widget',
+				'regular_price' => '12.34',
+				'virtual'       => false,
+				'price'         => '12.34',
+			)
+		);
+		$this->set_current_product( $product );
+
+		try {
+			$product_data = $this->create_service()->get_express_checkout_params( 'product' )['product'];
+		} finally {
+			$zone->delete_shipping_method( $shipping_method_id );
+		}
+
+		$this->assertTrue( $product_data['needs_shipping'] );
+		$this->assertSame(
+			array(
+				array(
+					'label'  => 'Shipped Widget',
+					'amount' => 1234,
+				),
+				array(
+					'label'   => 'Shipping',
+					'amount'  => 0,
+					'pending' => true,
+				),
+			),
+			$product_data['displayItems']
+		);
+		$this->assertSame(
+			array(
+				'id'     => 'pending',
+				'label'  => 'Pending',
+				'detail' => '',
+				'amount' => 0,
+			),
+			$product_data['shippingOptions']
+		);
+	}
+
+	/**
 	 * @testdox Should build product page express checkout params for product_page shortcode pages.
 	 */
 	public function test_builds_product_page_shortcode_express_checkout_params(): void {
@@ -259,7 +311,20 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		$this->assertArrayHasKey( 'tokenized_cart_nonce', $params['nonce'] );
 		$this->assertArrayHasKey( 'tokenized_cart_session_nonce', $params['nonce'] );
 		$this->assertArrayHasKey( 'store_api_nonce', $params['nonce'] );
-		$this->assertArrayHasKey( 'isEceUsingConfirmationTokens', $params['flags'] );
+		$this->assertTrue( $params['flags']['isEceUsingConfirmationTokens'] );
+	}
+
+	/**
+	 * @testdox Express params expose the account confirmation-token policy.
+	 */
+	public function test_express_params_disable_confirmation_tokens_from_account_policy(): void {
+		$params = $this->create_service(
+			array(),
+			true,
+			array( 'ece_confirmation_tokens_disabled' => true )
+		)->get_express_checkout_params( 'checkout' );
+
+		$this->assertFalse( $params['flags']['isEceUsingConfirmationTokens'] );
 	}
 
 	/**
@@ -590,13 +655,14 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_account_id', 'get_publishable_key', 'get_cached_account_data', 'is_test_mode_enabled', 'get_gateway_setting' ) )
+			->onlyMethods( array( 'get_account_id', 'get_publishable_key', 'get_cached_account_data', 'is_test_mode_enabled', 'get_gateway_setting', 'is_payment_request_enabled' ) )
 			->getMock();
 
 		$account_service->method( 'get_account_id' )->willReturn( 'acct_123' );
 		$account_service->method( 'get_publishable_key' )->willReturn( 'pk_test_123' );
 		$account_service->method( 'get_cached_account_data' )->willReturn( $account_data );
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+		$account_service->method( 'is_payment_request_enabled' )->willReturn( 'yes' === ( $settings['payment_request'] ?? 'no' ) );
 		$account_service->method( 'get_gateway_setting' )->willReturnCallback(
 			static fn( string $key, $fallback = null ) => array_key_exists( $key, $settings ) ? $settings[ $key ] : $fallback
 		);

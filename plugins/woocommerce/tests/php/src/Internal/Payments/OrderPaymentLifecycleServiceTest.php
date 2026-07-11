@@ -6,6 +6,8 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceProfile;
 use Automattic\WooCommerce\RestApi\UnitTests\LoggerSpyTrait;
 use WC_Order;
 use WC_Unit_Test_Case;
@@ -32,6 +34,13 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	private $order_payment_store;
 
 	/**
+	 * WooPayments persistence profile.
+	 *
+	 * @var WooPaymentsPersistenceProfile
+	 */
+	private WooPaymentsPersistenceProfile $persistence_profile;
+
+	/**
 	 * Test-only gettext replacements.
 	 *
 	 * @var array<string,string>
@@ -45,6 +54,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		parent::setUp();
 		$this->sut                 = wc_get_container()->get( OrderPaymentLifecycleService::class );
 		$this->order_payment_store = wc_get_container()->get( OrderPaymentStore::class );
+		$this->persistence_profile = new WooPaymentsPersistenceProfile();
 	}
 
 	/**
@@ -63,7 +73,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	public function test_completed_event_marks_order_paid_and_preserves_meta(): void {
 		$order = $this->create_woopayments_order();
 
-		$this->sut->apply(
+		$this->apply_event(
 			$order,
 			new PaymentLifecycleEvent(
 				PaymentLifecycleEvent::STATUS_COMPLETED,
@@ -99,7 +109,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$order->save();
 		$this->assertSame( 'processing', $order->get_status() );
 
-		$this->sut->apply_unlocked(
+		$this->apply_event_unlocked(
 			$order,
 			new PaymentLifecycleEvent(
 				PaymentLifecycleEvent::STATUS_COMPLETED,
@@ -129,7 +139,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	public function test_authorized_event_moves_order_on_hold(): void {
 		$order = $this->create_woopayments_order();
 
-		$this->sut->apply(
+		$this->apply_event(
 			$order,
 			new PaymentLifecycleEvent(
 				PaymentLifecycleEvent::STATUS_AUTHORIZED,
@@ -155,7 +165,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	public function test_failed_event_marks_order_failed_and_unlocks_order(): void {
 		$order = $this->create_woopayments_order();
 
-		$this->sut->apply(
+		$this->apply_event(
 			$order,
 			new PaymentLifecycleEvent(
 				PaymentLifecycleEvent::STATUS_FAILED,
@@ -171,7 +181,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'failed', $order->get_status() );
 		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ) );
-		$this->assertFalse( $this->order_payment_store->is_order_payment_locked( $order, 'pi_failed' ) );
+		$this->assertFalse( $this->order_payment_store->is_order_payment_locked( $order, $this->persistence_profile, 'pi_failed' ) );
 		$this->assertOrderHasNote( $order, 'Payment failed.' );
 	}
 
@@ -184,7 +194,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_wcpay_net', '900' );
 		$order->save();
 
-		$this->sut->apply(
+		$this->apply_event(
 			$order,
 			new PaymentLifecycleEvent(
 				PaymentLifecycleEvent::STATUS_CANCELED,
@@ -211,7 +221,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	public function test_capture_expired_event_marks_order_failed(): void {
 		$order = $this->create_woopayments_order();
 
-		$this->sut->apply(
+		$this->apply_event(
 			$order,
 			new PaymentLifecycleEvent(
 				PaymentLifecycleEvent::STATUS_CAPTURE_EXPIRED,
@@ -236,7 +246,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	public function test_started_event_adds_note_without_status_change(): void {
 		$order = $this->create_woopayments_order();
 
-		$this->sut->apply(
+		$this->apply_event(
 			$order,
 			new PaymentLifecycleEvent(
 				PaymentLifecycleEvent::STATUS_STARTED,
@@ -251,8 +261,44 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'pending', $order->get_status() );
+		$this->assertSame( 'pi_started', $order->get_transaction_id() );
 		$this->assertSame( 'pi_started', $order->get_meta( '_intent_id', true ) );
 		$this->assertOrderHasNote( $order, 'Payment started.' );
+	}
+
+	/**
+	 * @testdox Started events without a status transition are persisted with a single order save.
+	 */
+	public function test_started_event_without_status_transition_uses_single_order_save(): void {
+		$order = $this->getMockBuilder( WC_Order::class )
+			->disableOriginalConstructor()
+			->onlyMethods(
+				array(
+					'get_meta',
+					'get_transaction_id',
+					'save',
+					'save_meta_data',
+					'set_transaction_id',
+					'update_meta_data',
+				)
+			)
+			->getMock();
+
+		$order->method( 'get_transaction_id' )->willReturn( '' );
+		$order->method( 'get_meta' )->willReturn( '' );
+		$order->expects( $this->once() )->method( 'update_meta_data' )->with( '_intent_id', 'pi_started' );
+		$order->expects( $this->once() )->method( 'set_transaction_id' )->with( 'pi_started' );
+		$order->expects( $this->never() )->method( 'save_meta_data' );
+		$order->expects( $this->once() )->method( 'save' );
+
+		$this->apply_event_unlocked(
+			$order,
+			new PaymentLifecycleEvent(
+				PaymentLifecycleEvent::STATUS_STARTED,
+				'pi_started',
+				array( '_intent_id' => 'pi_started' )
+			)
+		);
 	}
 
 	/**
@@ -268,13 +314,43 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 			'Payment started.'
 		);
 
-		$this->sut->apply( $order, $event );
-		$this->sut->apply( wc_get_order( $order->get_id() ), $event );
+		$this->apply_event( $order, $event );
+		$this->apply_event( wc_get_order( $order->get_id() ), $event );
 
 		$order = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Payment started.' ) );
+	}
+
+	/**
+	 * @testdox Provider persistence profiles control lock vocabulary and duplicate-note policy.
+	 */
+	public function test_apply_uses_provider_profile_for_locks_and_note_policy(): void {
+		$order   = $this->create_woopayments_order();
+		$profile = $this->createMock( ProviderPersistenceProfile::class );
+		$profile->method( 'get_order_lock_key' )->willReturn( 'provider_lifecycle_lock_' . $order->get_id() );
+		$profile->method( 'get_lock_sentinel' )->willReturn( 'provider-lock' );
+		$profile->method( 'get_lock_ttl_seconds' )->willReturn( 60 );
+		$profile->method( 'should_skip_note' )->willReturn( true );
+
+		$this->apply_event(
+			$order,
+			new PaymentLifecycleEvent(
+				PaymentLifecycleEvent::STATUS_STARTED,
+				'provider_payment_123',
+				array(),
+				array(),
+				'Provider already wrote this note.'
+			),
+			$profile
+		);
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Provider already wrote this note.' ) );
+		$this->assertFalse( get_transient( 'provider_lifecycle_lock_' . $order->get_id() ) );
 	}
 
 	/**
@@ -294,7 +370,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$order->save();
 		$order->add_order_note( __( 'Payment complete.', 'woocommerce' ) );
 
-		$this->sut->apply_unlocked(
+		$this->apply_event_unlocked(
 			$order,
 			new PaymentLifecycleEvent(
 				PaymentLifecycleEvent::STATUS_COMPLETED,
@@ -322,7 +398,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$order->save();
 		$order->add_order_note( __( 'Payment complete.', 'woocommerce' ) );
 
-		$this->sut->apply_unlocked(
+		$this->apply_event_unlocked(
 			$order,
 			new PaymentLifecycleEvent(
 				PaymentLifecycleEvent::STATUS_COMPLETED,
@@ -346,7 +422,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	public function test_lifecycle_marker_uses_note_type_instead_of_rendered_note_content(): void {
 		$order = $this->create_woopayments_order();
 
-		$this->sut->apply_unlocked(
+		$this->apply_event_unlocked(
 			$order,
 			new PaymentLifecycleEvent(
 				PaymentLifecycleEvent::STATUS_STARTED,
@@ -364,7 +440,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'yes', $order->get_meta( $expected_marker_key, true ) );
 
-		$this->sut->apply_unlocked(
+		$this->apply_event_unlocked(
 			$order,
 			new PaymentLifecycleEvent(
 				PaymentLifecycleEvent::STATUS_STARTED,
@@ -389,7 +465,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	public function test_different_lifecycle_note_types_are_each_written_once(): void {
 		$order = $this->create_woopayments_order();
 
-		$this->sut->apply_unlocked(
+		$this->apply_event_unlocked(
 			$order,
 			new PaymentLifecycleEvent(
 				PaymentLifecycleEvent::STATUS_STARTED,
@@ -400,7 +476,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 				'payment_started'
 			)
 		);
-		$this->sut->apply_unlocked(
+		$this->apply_event_unlocked(
 			wc_get_order( $order->get_id() ),
 			new PaymentLifecycleEvent(
 				PaymentLifecycleEvent::STATUS_STARTED,
@@ -424,9 +500,9 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_locked_order_is_not_mutated_for_same_reference(): void {
 		$order = $this->create_woopayments_order();
-		$this->order_payment_store->lock_order_payment( $order, 'pi_locked' );
+		$this->order_payment_store->lock_order_payment( $order, $this->persistence_profile, 'pi_locked' );
 
-		$this->sut->apply(
+		$this->apply_event(
 			$order,
 			new PaymentLifecycleEvent(
 				PaymentLifecycleEvent::STATUS_COMPLETED,
@@ -443,7 +519,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pending', $order->get_status() );
 		$this->assertSame( '', $order->get_meta( '_intent_id', true ) );
 		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment complete.' ) );
-		$this->order_payment_store->unlock_order_payment( $order );
+		$this->order_payment_store->unlock_order_payment( $order, $this->persistence_profile );
 	}
 
 	/**
@@ -451,9 +527,9 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_locked_order_is_not_mutated_or_unlocked_for_active_operation(): void {
 		$order = $this->create_woopayments_order();
-		$this->assertTrue( $this->order_payment_store->claim_order_payment_lock( $order, 'native_charge_operation' ) );
+		$this->assertTrue( $this->order_payment_store->claim_order_payment_lock( $order, $this->persistence_profile, 'native_charge_operation' ) );
 
-		$this->sut->apply(
+		$this->apply_event(
 			$order,
 			new PaymentLifecycleEvent(
 				PaymentLifecycleEvent::STATUS_COMPLETED,
@@ -470,8 +546,8 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pending', $order->get_status() );
 		$this->assertSame( '', $order->get_meta( '_intent_id', true ) );
 		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment complete.' ) );
-		$this->assertTrue( $this->order_payment_store->is_order_payment_locked( $order, 'native_charge_operation' ) );
-		$this->order_payment_store->unlock_order_payment( $order );
+		$this->assertTrue( $this->order_payment_store->is_order_payment_locked( $order, $this->persistence_profile, 'native_charge_operation' ) );
+		$this->order_payment_store->unlock_order_payment( $order, $this->persistence_profile );
 	}
 
 	/**
@@ -479,9 +555,9 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_skipped_locked_event_is_logged_with_context(): void {
 		$order = $this->create_woopayments_order();
-		$this->assertTrue( $this->order_payment_store->claim_order_payment_lock( $order, 'native_charge_operation' ) );
+		$this->assertTrue( $this->order_payment_store->claim_order_payment_lock( $order, $this->persistence_profile, 'native_charge_operation' ) );
 
-		$this->sut->apply(
+		$this->apply_event(
 			$order,
 			new PaymentLifecycleEvent(
 				PaymentLifecycleEvent::STATUS_COMPLETED,
@@ -504,7 +580,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$this->order_payment_store->unlock_order_payment( $order );
+		$this->order_payment_store->unlock_order_payment( $order, $this->persistence_profile );
 	}
 
 	/**
@@ -513,7 +589,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	public function test_applied_event_does_not_log_skip_warning(): void {
 		$order = $this->create_woopayments_order();
 
-		$this->sut->apply(
+		$this->apply_event(
 			$order,
 			new PaymentLifecycleEvent(
 				PaymentLifecycleEvent::STATUS_COMPLETED,
@@ -529,6 +605,27 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 			static fn( $log ) => 'warning' === $log['level'] && str_contains( $log['message'], 'lock contention' )
 		);
 		$this->assertCount( 0, $warnings, 'A successfully applied lifecycle event must not emit a lock-contention warning.' );
+	}
+
+	/**
+	 * Apply a lifecycle event with the WooPayments profile unless a test supplies another profile.
+	 *
+	 * @param WC_Order                        $order               Order object.
+	 * @param PaymentLifecycleEvent           $event               Lifecycle event.
+	 * @param ProviderPersistenceProfile|null $persistence_profile Optional provider profile.
+	 */
+	private function apply_event( WC_Order $order, PaymentLifecycleEvent $event, ?ProviderPersistenceProfile $persistence_profile = null ): void {
+		$this->sut->apply( $order, $event, $persistence_profile ?? $this->persistence_profile );
+	}
+
+	/**
+	 * Apply an unlocked lifecycle event with the WooPayments profile.
+	 *
+	 * @param WC_Order              $order Order object.
+	 * @param PaymentLifecycleEvent $event Lifecycle event.
+	 */
+	private function apply_event_unlocked( WC_Order $order, PaymentLifecycleEvent $event ): void {
+		$this->sut->apply_unlocked( $order, $event, $this->persistence_profile );
 	}
 
 	/**

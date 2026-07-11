@@ -212,7 +212,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 			),
 			'payment_request'              => array(
 				'label' => __( 'Apple Pay / Google Pay express checkout', 'woocommerce' ),
-				'value' => $this->format_express_checkout_status( $this->is_setting_enabled( 'payment_request', true ), $data['express_checkout']['payment_request'] ),
+				'value' => $this->format_express_checkout_status( $this->account_service->is_payment_request_enabled(), $data['express_checkout']['payment_request'] ),
 			),
 			'multi_currency'               => array(
 				'label' => __( 'Multi-currency', 'woocommerce' ),

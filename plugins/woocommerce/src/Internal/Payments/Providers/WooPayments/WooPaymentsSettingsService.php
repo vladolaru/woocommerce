@@ -33,8 +33,6 @@ class WooPaymentsSettingsService {
 
 	private const DYNAMIC_CHECKOUT_PLACE_ORDER_BUTTON_FLAG_OPTION = '_wcpay_feature_dynamic_checkout_place_order_button';
 
-	private const AMAZON_PAY_FLAG_OPTION = '_wcpay_feature_amazon_pay';
-
 	private const SUPPORTED_PAYMENT_METHOD_IDS = array(
 		'alipay',
 		'amazon_pay',
@@ -43,7 +41,6 @@ class WooPaymentsSettingsService {
 		'bancontact',
 		'card',
 		'eps',
-		'giropay',
 		'google_pay',
 		'grabpay',
 		'ideal',
@@ -53,7 +50,6 @@ class WooPaymentsSettingsService {
 		'multibanco',
 		'p24',
 		'sepa_debit',
-		'sofort',
 		'wechat_pay',
 		'affirm',
 		'afterpay_clearpay',
@@ -82,7 +78,6 @@ class WooPaymentsSettingsService {
 		'bancontact'        => 'bancontact_payments',
 		'card'              => 'card_payments',
 		'eps'               => 'eps_payments',
-		'giropay'           => 'giropay_payments',
 		'google_pay'        => 'card_payments',
 		'grabpay'           => 'grabpay_payments',
 		'ideal'             => 'ideal_payments',
@@ -92,7 +87,6 @@ class WooPaymentsSettingsService {
 		'multibanco'        => 'multibanco_payments',
 		'p24'               => 'p24_payments',
 		'sepa_debit'        => 'sepa_debit_payments',
-		'sofort'            => 'sofort_payments',
 		'wechat_pay'        => 'wechat_pay_payments',
 		'affirm'            => 'affirm_payments',
 		'afterpay_clearpay' => 'afterpay_clearpay_payments',
@@ -105,14 +99,12 @@ class WooPaymentsSettingsService {
 		'au_becs_debit'     => array( 'au_becs', 'becs' ),
 		'bancontact'        => array( 'bancontact' ),
 		'eps'               => array( 'eps' ),
-		'giropay'           => array( 'giropay' ),
 		'grabpay'           => array( 'grabpay' ),
 		'ideal'             => array( 'ideal' ),
 		'klarna'            => array( 'klarna' ),
 		'multibanco'        => array( 'multibanco' ),
 		'p24'               => array( 'p24', 'przelewy24' ),
 		'sepa_debit'        => array( 'sepa' ),
-		'sofort'            => array( 'sofort' ),
 		'wechat_pay'        => array( 'wechat' ),
 		'affirm'            => array( 'affirm' ),
 		'afterpay_clearpay' => array( 'afterpay', 'clearpay' ),
@@ -149,7 +141,6 @@ class WooPaymentsSettingsService {
 		'is_test_mode_enabled'                           => array( 'test_mode', 'bool' ),
 		'is_debug_log_enabled'                           => array( 'enable_logging', 'bool' ),
 		'is_saved_cards_enabled'                         => array( 'saved_cards', 'bool' ),
-		'is_payment_request_enabled'                     => array( 'payment_request', 'bool' ),
 		'is_express_checkout_in_payment_methods_enabled' => array( 'express_checkout_in_payment_methods', 'bool' ),
 		'payment_request_button_size'                    => array( 'payment_request_button_size', 'string' ),
 		'payment_request_button_type'                    => array( 'payment_request_button_type', 'string' ),
@@ -227,6 +218,13 @@ class WooPaymentsSettingsService {
 	private ?WooPaymentsWooPaySessionService $woopay_session_service = null;
 
 	/**
+	 * Canonical-to-split gateway settings synchronizer.
+	 *
+	 * @var WooPaymentsGatewaySettingsSynchronizer|null
+	 */
+	private ?WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer = null;
+
+	/**
 	 * Payment method promotions service.
 	 *
 	 * @var WooPaymentsPmPromotionsService
@@ -245,16 +243,18 @@ class WooPaymentsSettingsService {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsAccountService            $account_service        Native WooPayments account service.
-	 * @param WooPaymentsApiClient                 $api_client             Native WooPayments API client.
-	 * @param WooPaymentsPmPromotionsService       $pm_promotions_service  PM promotions service.
-	 * @param WooPaymentsWooPaySessionService|null $woopay_session_service Optional WooPay session service.
+	 * @param WooPaymentsAccountService                   $account_service        Native WooPayments account service.
+	 * @param WooPaymentsApiClient                        $api_client             Native WooPayments API client.
+	 * @param WooPaymentsPmPromotionsService              $pm_promotions_service  PM promotions service.
+	 * @param WooPaymentsWooPaySessionService|null        $woopay_session_service       Optional WooPay session service.
+	 * @param WooPaymentsGatewaySettingsSynchronizer|null $gateway_settings_synchronizer Optional gateway settings synchronizer.
 	 */
-	final public function init( WooPaymentsAccountService $account_service, WooPaymentsApiClient $api_client, WooPaymentsPmPromotionsService $pm_promotions_service, ?WooPaymentsWooPaySessionService $woopay_session_service = null ): void {
-		$this->account_service        = $account_service;
-		$this->api_client             = $api_client;
-		$this->pm_promotions_service  = $pm_promotions_service;
-		$this->woopay_session_service = $woopay_session_service;
+	final public function init( WooPaymentsAccountService $account_service, WooPaymentsApiClient $api_client, WooPaymentsPmPromotionsService $pm_promotions_service, ?WooPaymentsWooPaySessionService $woopay_session_service = null, ?WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer = null ): void {
+		$this->account_service               = $account_service;
+		$this->api_client                    = $api_client;
+		$this->pm_promotions_service         = $pm_promotions_service;
+		$this->woopay_session_service        = $woopay_session_service;
+		$this->gateway_settings_synchronizer = $gateway_settings_synchronizer;
 	}
 
 	/**
@@ -282,6 +282,17 @@ class WooPaymentsSettingsService {
 	 */
 	public static function get_express_checkout_method_ids(): array {
 		return self::EXPRESS_CHECKOUT_METHOD_IDS;
+	}
+
+	/**
+	 * Tell whether dynamic checkout place-order controls are enabled.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @return bool
+	 */
+	public static function is_dynamic_checkout_place_order_button_enabled(): bool {
+		return '1' === (string) get_option( self::DYNAMIC_CHECKOUT_PLACE_ORDER_BUTTON_FLAG_OPTION, '1' );
 	}
 
 	/**
@@ -332,7 +343,7 @@ class WooPaymentsSettingsService {
 			'account_branding_secondary_color'           => $account_fields['account_branding_secondary_color'],
 			'account_domestic_currency'                  => $account_fields['account_domestic_currency'],
 			'account_communications_email'               => $account_fields['account_communications_email'],
-			'is_payment_request_enabled'                 => $this->is_yes( $settings['payment_request'] ?? 'yes' ),
+			'is_payment_request_enabled'                 => $this->account_service->is_payment_request_enabled(),
 			'is_express_checkout_in_payment_methods_enabled' => $this->is_yes( $settings['express_checkout_in_payment_methods'] ?? 'no' ),
 			'is_express_checkout_in_payment_methods_list_supported' => true,
 			'is_debug_log_enabled'                       => $this->is_yes( $settings['enable_logging'] ?? 'no' ),
@@ -422,8 +433,9 @@ class WooPaymentsSettingsService {
 		return array(
 			'woopay'                                   => $is_woopay_eligible,
 			'woopayExpressCheckout'                    => $this->is_feature_flag_enabled( self::WOOPAY_EXPRESS_CHECKOUT_FLAG_OPTION, true ),
-			'isDynamicCheckoutPlaceOrderButtonEnabled' => $this->is_feature_flag_enabled( self::DYNAMIC_CHECKOUT_PLACE_ORDER_BUTTON_FLAG_OPTION, true ),
-			'amazonPay'                                => $this->is_feature_flag_enabled( self::AMAZON_PAY_FLAG_OPTION, true ),
+			'isDynamicCheckoutPlaceOrderButtonEnabled' => self::is_dynamic_checkout_place_order_button_enabled(),
+			'amazonPay'                                => WooPaymentsFeaturePolicy::is_amazon_pay_enabled( $this->account_service ),
+			'isEceUsingConfirmationTokens'             => WooPaymentsFeaturePolicy::is_ece_confirmation_tokens_enabled( $this->account_service ),
 		);
 	}
 
@@ -542,6 +554,9 @@ class WooPaymentsSettingsService {
 		$settings                     = $this->get_gateway_settings();
 		$available_payment_method_ids = $this->get_available_payment_method_ids( $settings );
 		$was_woopay_enabled           = $this->is_yes( $settings['platform_checkout'] ?? 'no' );
+		$payment_request_enabled      = array_key_exists( 'is_payment_request_enabled', $params )
+			? $this->is_yes( $this->normalize_setting_value( $params['is_payment_request_enabled'], 'bool' ) )
+			: null;
 		$error                        = $this->update_provider_backed_settings( $params, $settings );
 		if ( is_wp_error( $error ) ) {
 			return $error;
@@ -572,23 +587,29 @@ class WooPaymentsSettingsService {
 		}
 
 		if ( array_key_exists( 'enabled_payment_method_ids', $params ) ) {
+			$requested_payment_method_ids = $this->sanitize_payment_method_ids(
+				is_array( $params['enabled_payment_method_ids'] ) ? $params['enabled_payment_method_ids'] : array(),
+				self::SUPPORTED_PAYMENT_METHOD_IDS
+			);
+			if ( $this->is_manual_capture_enabled_after_update( $params, $settings ) ) {
+				$requested_payment_method_ids = $this->filter_manual_capture_payment_method_ids( $requested_payment_method_ids );
+			}
+			$capability_error = $this->request_unrequested_payment_methods( $requested_payment_method_ids );
+			if ( is_wp_error( $capability_error ) ) {
+				return $capability_error;
+			}
+
+			$available_payment_method_ids        = $this->get_available_payment_method_ids( $settings );
 			$previous_enabled_payment_method_ids = $this->sanitize_payment_method_ids(
 				$this->get_array_setting( $settings, 'upe_enabled_payment_method_ids', array( 'card' ) ),
 				$available_payment_method_ids
 			);
 			$enabled_payment_method_ids          = $this->sanitize_payment_method_ids(
-				is_array( $params['enabled_payment_method_ids'] ) ? $params['enabled_payment_method_ids'] : array(),
+				$requested_payment_method_ids,
 				$available_payment_method_ids
 			);
-			if ( $this->is_manual_capture_enabled_after_update( $params, $settings ) ) {
-				$enabled_payment_method_ids = $this->filter_manual_capture_payment_method_ids( $enabled_payment_method_ids );
-			}
 			foreach ( array_diff( $enabled_payment_method_ids, $previous_enabled_payment_method_ids ) as $payment_method_id ) {
 				$this->get_pm_promotions_service()->maybe_activate_promotion_for_payment_method( $payment_method_id );
-			}
-			$capability_error = $this->request_unrequested_payment_methods( $enabled_payment_method_ids );
-			if ( is_wp_error( $capability_error ) ) {
-				return $capability_error;
 			}
 			$settings['upe_enabled_payment_method_ids'] = $enabled_payment_method_ids;
 		}
@@ -630,8 +651,16 @@ class WooPaymentsSettingsService {
 			$settings[ $request_key ] = $this->sanitize_account_setting_value( $params[ $request_key ], $type );
 		}
 
-		// Persist every setting in a single batched write; concurrent admin saves are last-writer-wins by design (a deliberate improvement over the client's per-field writes).
-		update_option( self::SETTINGS_OPTION, $settings );
+		// Persist every setting in one canonical write, then project enabled state to split gateways.
+		$projection = $this->get_gateway_settings_synchronizer()->persist( $settings, $payment_request_enabled );
+		if ( ! $projection['persisted'] ) {
+			return new WP_Error(
+				'woocommerce_woopayments_settings_persistence_failed',
+				esc_html__( 'WooPayments settings could not be saved. Please try again.', 'woocommerce' ),
+				array( 'status' => 500 )
+			);
+		}
+		$settings = $projection['settings'];
 		/**
 		 * Fires after native WooPayments settings are updated so operational mirrors can sync setup state.
 		 *
@@ -733,6 +762,19 @@ class WooPaymentsSettingsService {
 	}
 
 	/**
+	 * Get the canonical-to-split gateway settings synchronizer.
+	 *
+	 * @return WooPaymentsGatewaySettingsSynchronizer
+	 */
+	private function get_gateway_settings_synchronizer(): WooPaymentsGatewaySettingsSynchronizer {
+		if ( null === $this->gateway_settings_synchronizer ) {
+			$this->gateway_settings_synchronizer = wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class );
+		}
+
+		return $this->gateway_settings_synchronizer;
+	}
+
+	/**
 	 * Get payment method IDs available to the connected account.
 	 *
 	 * @param array<string,mixed> $settings Gateway settings.
@@ -741,7 +783,9 @@ class WooPaymentsSettingsService {
 	private function get_available_payment_method_ids( array $settings ): array {
 		$configured_available_ids = $settings['upe_available_payment_methods'] ?? null;
 		if ( is_array( $configured_available_ids ) && ! empty( $configured_available_ids ) ) {
-			return $this->sanitize_payment_method_ids( $configured_available_ids, self::SUPPORTED_PAYMENT_METHOD_IDS );
+			return $this->apply_payment_method_feature_policy(
+				$this->sanitize_payment_method_ids( $configured_available_ids, self::SUPPORTED_PAYMENT_METHOD_IDS )
+			);
 		}
 
 		$account_data = $this->account_service->get_cached_account_data();
@@ -753,12 +797,28 @@ class WooPaymentsSettingsService {
 				$available_ids[] = 'google_pay';
 			}
 
-			return array_values( array_unique( $available_ids ) );
+			return $this->apply_payment_method_feature_policy( array_values( array_unique( $available_ids ) ) );
 		}
 
 		$enabled_ids = $this->get_array_setting( $settings, 'upe_enabled_payment_method_ids', array( 'card' ) );
 
-		return $this->sanitize_payment_method_ids( array_merge( array( 'card' ), $enabled_ids ), self::SUPPORTED_PAYMENT_METHOD_IDS );
+		return $this->apply_payment_method_feature_policy(
+			$this->sanitize_payment_method_ids( array_merge( array( 'card' ), $enabled_ids ), self::SUPPORTED_PAYMENT_METHOD_IDS )
+		);
+	}
+
+	/**
+	 * Remove payment methods whose shared provider feature policy is disabled.
+	 *
+	 * @param string[] $payment_method_ids Payment method IDs.
+	 * @return string[]
+	 */
+	private function apply_payment_method_feature_policy( array $payment_method_ids ): array {
+		if ( ! WooPaymentsFeaturePolicy::is_amazon_pay_enabled( $this->account_service ) ) {
+			$payment_method_ids = array_values( array_diff( $payment_method_ids, array( 'amazon_pay' ) ) );
+		}
+
+		return $payment_method_ids;
 	}
 
 	/**
@@ -817,7 +877,7 @@ class WooPaymentsSettingsService {
 					$duplicate_candidates[ $payment_method_id ][] = $gateway_id;
 				}
 
-				if ( $this->is_payment_request_duplicate_gateway( $gateway, $gateway_id, $settings ) ) {
+				if ( $this->is_payment_request_duplicate_gateway( $gateway, $gateway_id ) ) {
 					$duplicate_candidates[ self::PAYMENT_REQUEST_DUPLICATE_METHOD_ID ][] = $gateway_id;
 				}
 
@@ -976,14 +1036,13 @@ class WooPaymentsSettingsService {
 	/**
 	 * Tell whether a gateway participates in the Apple Pay / Google Pay duplicate cluster.
 	 *
-	 * @param object              $gateway    Payment gateway.
-	 * @param string              $gateway_id Gateway ID.
-	 * @param array<string,mixed> $settings   Gateway settings.
+	 * @param object $gateway    Payment gateway.
+	 * @param string $gateway_id Gateway ID.
 	 * @return bool
 	 */
-	private function is_payment_request_duplicate_gateway( object $gateway, string $gateway_id, array $settings ): bool {
+	private function is_payment_request_duplicate_gateway( object $gateway, string $gateway_id ): bool {
 		if ( OrderPaymentStore::GATEWAY_ID === $gateway_id ) {
-			return $this->is_yes( $settings['payment_request'] ?? 'yes' );
+			return $this->account_service->is_payment_request_enabled();
 		}
 
 		if ( $this->is_woopayments_gateway_id( $gateway_id ) ) {
@@ -1538,7 +1597,7 @@ class WooPaymentsSettingsService {
 		try {
 			foreach ( $payment_method_ids as $payment_method_id ) {
 				$capability_id = self::PAYMENT_METHOD_CAPABILITY_KEY_MAP[ $payment_method_id ] ?? null;
-				if ( null === $capability_id || 'unrequested' !== ( $payment_method_statuses[ $capability_id ]['status'] ?? null ) ) {
+				if ( null === $capability_id || 'unrequested' !== ( $payment_method_statuses[ $capability_id ]['status'] ?? 'unrequested' ) ) {
 					continue;
 				}
 
@@ -1851,7 +1910,50 @@ class WooPaymentsSettingsService {
 	 * @return bool
 	 */
 	private function is_subscriptions_eligible(): bool {
-		return class_exists( 'WC_Subscriptions' ) || class_exists( 'WC_Subscriptions_Core_Plugin' );
+		if ( function_exists( 'wcs_get_subscriptions' ) ) {
+			$subscriptions = wcs_get_subscriptions(
+				array(
+					'subscriptions_per_page' => 1,
+					'subscription_status'    => 'any',
+					'meta_query'             => array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
+						array(
+							'key'     => '_wcpay_subscription_id',
+							'compare' => 'EXISTS',
+						),
+					),
+				)
+			);
+			if ( is_countable( $subscriptions ) && 0 < count( $subscriptions ) ) {
+				return true;
+			}
+		}
+
+		$stripe_billing_query = static function ( $query, $query_vars ) {
+			if ( ! empty( $query_vars['stripe_billing_product'] ) ) {
+				$query['meta_query'][] = array(
+					'key'     => '_wcpay_product_hash',
+					'compare' => 'EXISTS',
+				);
+			}
+
+			return $query;
+		};
+		add_filter( 'woocommerce_product_data_store_cpt_get_products_query', $stripe_billing_query, 10, 2 );
+		try {
+			$products = wc_get_products(
+				array(
+					'limit'                  => 1,
+					'type'                   => array( 'subscription', 'variable-subscription' ),
+					'status'                 => 'publish',
+					'return'                 => 'ids',
+					'stripe_billing_product' => 'true',
+				)
+			);
+		} finally {
+			remove_filter( 'woocommerce_product_data_store_cpt_get_products_query', $stripe_billing_query, 10 );
+		}
+
+		return is_countable( $products ) && 0 < count( $products );
 	}
 
 	/**

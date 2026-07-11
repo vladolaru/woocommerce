@@ -7,10 +7,12 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
 use WC_Order;
 use WC_Payment_Gateway;
@@ -22,7 +24,7 @@ use WP_Error;
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class WooPaymentsDuplicatePaymentPreventionService {
+class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInterface {
 
 	/**
 	 * Session key used by the standalone WooPayments extension for the currently processing order.
@@ -68,6 +70,13 @@ class WooPaymentsDuplicatePaymentPreventionService {
 	private WooPaymentsOrderDataService $order_data_service;
 
 	/**
+	 * Runtime owner arbiter.
+	 *
+	 * @var NativePaymentsRuntimeArbiter|null
+	 */
+	private ?NativePaymentsRuntimeArbiter $arbiter = null;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param \WC_Session|null $session Optional WooCommerce session.
@@ -81,14 +90,40 @@ class WooPaymentsDuplicatePaymentPreventionService {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient         $api_client         Native WooPayments API client.
-	 * @param OrderPaymentLifecycleService $lifecycle_service Native order payment lifecycle service.
-	 * @param WooPaymentsOrderDataService  $order_data_service WooPayments order data service.
+	 * @param WooPaymentsApiClient              $api_client         Native WooPayments API client.
+	 * @param OrderPaymentLifecycleService      $lifecycle_service Native order payment lifecycle service.
+	 * @param WooPaymentsOrderDataService       $order_data_service WooPayments order data service.
+	 * @param NativePaymentsRuntimeArbiter|null $arbiter            Optional runtime owner arbiter.
 	 */
-	final public function init( WooPaymentsApiClient $api_client, OrderPaymentLifecycleService $lifecycle_service, WooPaymentsOrderDataService $order_data_service ): void {
+	final public function init( WooPaymentsApiClient $api_client, OrderPaymentLifecycleService $lifecycle_service, WooPaymentsOrderDataService $order_data_service, ?NativePaymentsRuntimeArbiter $arbiter = null ): void {
 		$this->api_client         = $api_client;
 		$this->lifecycle_service  = $lifecycle_service;
 		$this->order_data_service = $order_data_service;
+		$this->arbiter            = $arbiter;
+	}
+
+	/**
+	 * Register session cleanup after WooCommerce completes a payment.
+	 *
+	 * @internal
+	 */
+	public function register() {
+		if ( ! $this->get_runtime_arbiter()->should_native_register() ) {
+			return;
+		}
+
+		add_action( 'woocommerce_payment_complete', array( $this, 'handle_woocommerce_payment_complete' ) );
+	}
+
+	/**
+	 * Clear a completed order from duplicate-payment session tracking.
+	 *
+	 * @internal
+	 *
+	 * @param int $order_id Completed order ID.
+	 */
+	public function handle_woocommerce_payment_complete( int $order_id ): void {
+		$this->remove_session_processing_order( $order_id );
 	}
 
 	/**
@@ -294,7 +329,8 @@ class WooPaymentsDuplicatePaymentPreventionService {
 				array(),
 				$note,
 				$note_type
-			)
+			),
+			$profile
 		);
 	}
 
@@ -372,6 +408,19 @@ class WooPaymentsDuplicatePaymentPreventionService {
 		$value = $session->get( self::SESSION_KEY_PROCESSING_ORDER );
 
 		return null === $value ? null : absint( $value );
+	}
+
+	/**
+	 * Get the runtime owner arbiter.
+	 *
+	 * @return NativePaymentsRuntimeArbiter
+	 */
+	private function get_runtime_arbiter(): NativePaymentsRuntimeArbiter {
+		if ( ! $this->arbiter instanceof NativePaymentsRuntimeArbiter ) {
+			$this->arbiter = wc_get_container()->get( NativePaymentsRuntimeArbiter::class );
+		}
+
+		return $this->arbiter;
 	}
 
 	/**

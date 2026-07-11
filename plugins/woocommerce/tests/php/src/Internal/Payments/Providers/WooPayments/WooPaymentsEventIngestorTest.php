@@ -17,6 +17,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsNotificationEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRemoteNoteService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Admin\Notes\Notes;
@@ -126,7 +127,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox payment_intent.succeeded records the structural payment-complete note marker.
+	 * @testdox payment_intent.succeeded records the structural payment-success note marker.
 	 */
 	public function test_payment_intent_succeeded_records_structural_payment_complete_note_marker(): void {
 		$order = $this->create_woopayments_order();
@@ -136,7 +137,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$order = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'yes', $order->get_meta( '_wc_native_payments_note_' . md5( 'pi_123|completed|payment_complete' ), true ) );
+		$this->assertSame( 'yes', $order->get_meta( '_wc_native_payments_note_' . md5( 'pi_123|completed|payment_success' ), true ) );
 	}
 
 	/**
@@ -302,10 +303,39 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 									),
 								),
 								'fee_breakdown_v1'       => array(
+									'rows'    => array(
+										array(
+											'key'      => 'base',
+											'kind'     => 'fee',
+											'amount'   => 293,
+											'currency' => 'usd',
+											'rate'     => array(
+												'percentage' => 0.029,
+												'fixed' => 30,
+												'fixed_currency' => 'usd',
+											),
+										),
+										array(
+											'key'      => 'additional.fx',
+											'kind'     => 'fee',
+											'amount'   => 0,
+											'currency' => 'usd',
+											'rate'     => array(
+												'percentage' => 0.01,
+												'fixed' => 0,
+												'fixed_currency' => 'usd',
+											),
+										),
+									),
 									'totals'  => array(
 										'fee'         => array(
 											'amount'   => 293,
 											'currency' => 'usd',
+											'rate'     => array(
+												'percentage' => 0.039,
+												'fixed' => 30,
+												'fixed_currency' => 'usd',
+											),
 										),
 										'tax'         => array(
 											'amount'   => 0,
@@ -357,6 +387,317 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox payment_intent.succeeded preserves checkout-time non-card order details.
+	 */
+	public function test_payment_intent_succeeded_preserves_checkout_time_non_card_order_details(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$order                           = $this->create_woopayments_order();
+		$checkout_payment_method_details = wp_json_encode(
+			array(
+				'sepa_debit' => array(
+					'bank_code'   => '19043',
+					'branch_code' => '',
+					'country'     => 'AT',
+					'fingerprint' => 'checkout_fingerprint',
+					'last4'       => '3201',
+					'mandate'     => 'checkout_mandate',
+				),
+				'type'       => 'sepa_debit',
+			)
+		);
+		$this->assertIsString( $checkout_payment_method_details );
+
+		$product = \WC_Helper_Product::create_simple_product();
+		$product->set_regular_price( '65.00' );
+		$product->set_price( '65.00' );
+		$product->save();
+		$order->add_product(
+			$product,
+			1,
+			array(
+				'subtotal' => 65.00,
+				'total'    => 65.00,
+			)
+		);
+		$order->set_currency( 'EUR' );
+		$order->set_total( '65.00' );
+		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID_PREFIX . 'sepa_debit' );
+		$order->set_payment_method_title( 'SEPA Direct Debit' );
+		$order->update_meta_data( '_wcpay_payment_method_details', $checkout_payment_method_details );
+		$order->update_meta_data( '_wcpay_payment_transaction_id', '' );
+		$order->save();
+
+		$this->sut->process(
+			$this->create_payment_intent_event(
+				'payment_intent.succeeded',
+				$order,
+				array(
+					'currency'       => 'eur',
+					'amount'         => 6500,
+					'payment_method' => 'pm_sepa',
+					'metadata'       => array(
+						'order_id'  => (string) $order->get_id(),
+						'order_key' => $order->get_order_key(),
+					),
+					'charges'        => array(
+						'data' => array(
+							array(
+								'id'                     => 'py_sepa',
+								'payment_method'         => 'pm_sepa',
+								'currency'               => 'eur',
+								'amount'                 => 6500,
+								'application_fee_amount' => 233,
+								'balance_transaction'    => array( 'id' => 'txn_sepa' ),
+								'outcome'                => array( 'risk_level' => 'normal' ),
+								'payment_method_details' => array(
+									'type'       => 'sepa_debit',
+									'sepa_debit' => array(
+										'bank_code'   => '19043',
+										'branch_code' => '',
+										'country'     => 'AT',
+										'expected_debit_date' => '2026-07-09',
+										'fingerprint' => 'webhook_fingerprint',
+										'last4'       => '3201',
+										'mandate'     => 'webhook_mandate',
+									),
+								),
+								'fee_breakdown_v1'       => array(
+									'rows'   => array(
+										array(
+											'key'      => 'base',
+											'kind'     => 'fee',
+											'amount'   => 233,
+											'currency' => 'eur',
+											'rate'     => array(
+												'percentage' => 0,
+												'fixed' => 80,
+												'fixed_currency' => 'eur',
+											),
+										),
+										array(
+											'key'      => 'additional.international',
+											'kind'     => 'fee',
+											'amount'   => 0,
+											'currency' => 'eur',
+											'rate'     => array(
+												'percentage' => 0.015,
+												'fixed' => 0,
+												'fixed_currency' => 'eur',
+											),
+										),
+									),
+									'totals' => array(
+										'fee' => array(
+											'amount'   => 233,
+											'currency' => 'eur',
+											'rate'     => array(
+												'percentage' => 0.015,
+												'fixed' => 80,
+												'fixed_currency' => 'eur',
+											),
+										),
+										'net' => array(
+											'amount'   => 6267,
+											'currency' => 'eur',
+										),
+									),
+								),
+							),
+						),
+					),
+				)
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'processing', $order->get_status() );
+		$this->assertSame( OrderPaymentStore::GATEWAY_ID_PREFIX . 'sepa_debit', $order->get_payment_method() );
+		$this->assertSame( 'SEPA Direct Debit', $order->get_payment_method_title() );
+		$this->assertSame( 'py_sepa', $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( '', $order->get_meta( '_wcpay_payment_transaction_id', true ) );
+		$this->assertSame( 'normal', $order->get_meta( '_charge_risk_level', true ) );
+		$this->assertFalse( $order->meta_exists( '_wcpay_fraud_outcome_status' ) );
+		$this->assertSame( 'not_card', $order->get_meta( '_wcpay_fraud_meta_box_type', true ) );
+		$this->assertSame( '2.33', $order->get_meta( '_wcpay_transaction_fee', true ) );
+		$this->assertSame( '62.67', $order->get_meta( '_wcpay_net', true ) );
+		$this->assertSame( $checkout_payment_method_details, $order->get_meta( '_wcpay_payment_method_details', true ) );
+		$this->assertOrderHasNoteContaining( $order, array( 'A payment of', 'successfully charged', 'WooPayments', 'pi_123' ) );
+		$this->assertOrderHasNote( $order, 'Payment via SEPA Direct Debit (pi_123).' );
+		$this->assertOrderHasNoteContaining( $order, array( '<strong>Fee details:</strong>', 'Net payout' ) );
+	}
+
+	/**
+	 * @testdox payment_intent.succeeded uses charge-derived country titles before completing the order.
+	 */
+	public function test_payment_intent_succeeded_uses_charge_country_title_before_completion_note(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$this->set_woopayments_account_country( 'US' );
+		$order = $this->create_woopayments_order();
+		$order->set_billing_country( 'US' );
+		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID_PREFIX . 'afterpay_clearpay' );
+		$order->set_payment_method_title( 'Afterpay' );
+		$order->update_meta_data(
+			'_wcpay_payment_method_details',
+			wp_json_encode(
+				array(
+					'type'              => 'afterpay_clearpay',
+					'afterpay_clearpay' => array(
+						'order_id'  => 'checkout_afterpay_order',
+						'reference' => null,
+					),
+				)
+			)
+		);
+		$order->save();
+
+		$event = $this->create_payment_intent_event(
+			'payment_intent.succeeded',
+			$order,
+			array(
+				'currency'       => 'usd',
+				'amount'         => 6500,
+				'payment_method' => 'pm_afterpay',
+				'charges'        => array(
+					'data' => array(
+						array(
+							'id'                     => 'py_afterpay',
+							'payment_method'         => 'pm_afterpay',
+							'currency'               => 'usd',
+							'amount'                 => 6500,
+							'application_fee_amount' => 420,
+							'balance_transaction'    => array( 'id' => 'txn_afterpay' ),
+							'outcome'                => array( 'risk_level' => 'normal' ),
+							'payment_method_details' => array(
+								'type'              => 'afterpay_clearpay',
+								'afterpay_clearpay' => array(
+									'order_id'  => 'webhook_afterpay_order',
+									'reference' => null,
+								),
+							),
+							'fee_breakdown_v1'       => array(
+								'totals' => array(
+									'fee' => array(
+										'amount'   => 420,
+										'currency' => 'usd',
+									),
+									'net' => array(
+										'amount'   => 6080,
+										'currency' => 'usd',
+									),
+								),
+							),
+						),
+					),
+				),
+			)
+		);
+		unset( $event['data']['object']['charges']['data'][0]['payment_method_details']['card'] );
+
+		$this->sut->process( $event );
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'Cash App Afterpay', $order->get_payment_method_title() );
+		$this->assertOrderHasNote( $order, 'Payment via Cash App Afterpay (pi_123).' );
+		$this->assertSame(
+			wp_json_encode(
+				array(
+					'type'              => 'afterpay_clearpay',
+					'afterpay_clearpay' => array(
+						'order_id'  => 'checkout_afterpay_order',
+						'reference' => null,
+					),
+				)
+			),
+			$order->get_meta( '_wcpay_payment_method_details', true )
+		);
+	}
+
+	/**
+	 * @testdox payment_intent.succeeded backfills completed non-card details when checkout stored placeholders.
+	 */
+	public function test_payment_intent_succeeded_backfills_completed_non_card_details_when_checkout_stored_placeholders(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$order = $this->create_woopayments_order();
+		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID_PREFIX . 'ideal' );
+		$order->set_payment_method_title( 'iDEAL | Wero' );
+		$order->update_meta_data( '_wcpay_payment_method_details', '[]' );
+		$order->update_meta_data( '_wcpay_payment_transaction_id', '' );
+		$order->save();
+
+		$event = $this->create_payment_intent_event(
+			'payment_intent.succeeded',
+			$order,
+			array(
+				'currency'       => 'eur',
+				'amount'         => 6500,
+				'payment_method' => 'pm_ideal',
+				'charges'        => array(
+					'data' => array(
+						array(
+							'id'                     => 'py_ideal',
+							'payment_method'         => 'pm_ideal',
+							'currency'               => 'eur',
+							'amount'                 => 6500,
+							'application_fee_amount' => 233,
+							'balance_transaction'    => array( 'id' => 'txn_ideal' ),
+							'outcome'                => array( 'risk_level' => 'normal' ),
+							'payment_method_details' => array(
+								'type'  => 'ideal',
+								'ideal' => array(
+									'bank'           => 'rabobank',
+									'bic'            => 'RABONL2U',
+									'iban_last4'     => '5264',
+									'transaction_id' => 'txn_method',
+									'verified_name'  => 'John Smith',
+								),
+							),
+							'fee_breakdown_v1'       => array(
+								'totals' => array(
+									'fee' => array(
+										'amount'   => 233,
+										'currency' => 'eur',
+									),
+									'net' => array(
+										'amount'   => 6267,
+										'currency' => 'eur',
+									),
+								),
+							),
+						),
+					),
+				),
+			)
+		);
+		unset( $event['data']['object']['charges']['data'][0]['payment_method_details']['card'] );
+
+		$this->sut->process( $event );
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'txn_ideal', $order->get_meta( '_wcpay_payment_transaction_id', true ) );
+		$this->assertSame(
+			wp_json_encode(
+				array(
+					'type'  => 'ideal',
+					'ideal' => array(
+						'bank'           => 'rabobank',
+						'bic'            => 'RABONL2U',
+						'iban_last4'     => '5264',
+						'transaction_id' => 'txn_method',
+						'verified_name'  => 'John Smith',
+					),
+				)
+			),
+			$order->get_meta( '_wcpay_payment_method_details', true )
+		);
+	}
+
+	/**
 	 * @testdox payment_intent.succeeded fetches fee-breakdown details when the webhook envelope is stale.
 	 */
 	public function test_payment_intent_succeeded_fetches_fee_breakdown_details_when_webhook_envelope_is_stale(): void {
@@ -399,10 +740,20 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 							array(
 								'id'               => 'ch_123',
 								'fee_breakdown_v1' => array(
+									'rows'    => array(
+										array(
+											'key'      => 'base',
+											'kind'     => 'fee',
+											'amount'   => 293,
+											'currency' => 'usd',
+											'rate'     => null,
+										),
+									),
 									'totals'  => array(
 										'fee'         => array(
 											'amount'   => 293,
 											'currency' => 'usd',
+											'rate'     => null,
 										),
 										'net'         => array(
 											'amount'   => 6421,
@@ -428,6 +779,78 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 					),
 				);
 			}
+
+			/**
+			 * Retrieve a WooPayments timeline.
+			 *
+			 * @param string $id Payment intent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_timeline( string $id ): array {
+				$this->requested_timelines[] = $id;
+
+				return array(
+					'data' => array(
+						array(
+							'type'             => 'captured',
+							'fee_breakdown_v1' => array(
+								'rows'    => array(
+									array(
+										'key'      => 'base',
+										'kind'     => 'fee',
+										'amount'   => 293,
+										'currency' => 'usd',
+										'rate'     => array(
+											'percentage' => 0.029,
+											'fixed'      => 30,
+											'fixed_currency' => 'usd',
+										),
+									),
+									array(
+										'key'      => 'additional.fx',
+										'kind'     => 'fee',
+										'amount'   => 0,
+										'currency' => 'usd',
+										'rate'     => array(
+											'percentage' => 0.01,
+											'fixed'      => 0,
+											'fixed_currency' => 'usd',
+										),
+									),
+								),
+								'totals'  => array(
+									'fee'         => array(
+										'amount'   => 293,
+										'currency' => 'usd',
+										'rate'     => array(
+											'percentage' => 0.039,
+											'fixed'      => 30,
+											'fixed_currency' => 'usd',
+										),
+									),
+									'net'         => array(
+										'amount'   => 6421,
+										'currency' => 'usd',
+									),
+									'capture_net' => array(
+										'amount'   => 6421,
+										'currency' => 'usd',
+									),
+								),
+								'fx'      => array(
+									'from_currency' => 'gbp',
+									'to_currency'   => 'usd',
+									'from_amount'   => 5000,
+									'to_amount'     => 6714,
+								),
+								'sources' => array(
+									'balance_transaction_exchange_rate' => 1.34274,
+								),
+							),
+						),
+					),
+				);
+			}
 		};
 
 		$sut = $this->create_ingestor(
@@ -443,6 +866,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( array( 'pi_123' ), $api_client->requested_intents );
+		$this->assertSame( array( 'pi_123' ), $api_client->requested_timelines );
 		$this->assertOrderHasNote(
 			$order,
 			'<strong>Fee details:</strong><div class="captured-event-details">' . PHP_EOL
@@ -474,6 +898,13 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			 * @var string[]
 			 */
 			public array $requested_intents = array();
+
+			/**
+			 * Requested timeline IDs.
+			 *
+			 * @var string[]
+			 */
+			public array $requested_timelines = array();
 
 			/**
 			 * Retrieve a WooPayments PaymentIntent.
@@ -1894,9 +2325,10 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * @testdox charge.refunded uses the shared order payment lock.
 	 */
 	public function test_charge_refunded_fails_closed_when_order_payment_is_locked(): void {
-		$order = $this->create_refundable_woopayments_order( '10.00' );
-		$store = wc_get_container()->get( OrderPaymentStore::class );
-		$store->lock_order_payment( $order, 'existing_operation' );
+		$order   = $this->create_refundable_woopayments_order( '10.00' );
+		$store   = wc_get_container()->get( OrderPaymentStore::class );
+		$profile = new WooPaymentsPersistenceProfile();
+		$store->lock_order_payment( $order, $profile, 'existing_operation' );
 
 		try {
 			$this->sut->process( $this->create_charge_refunded_event( $order, 1000, 400, 'succeeded' ) );
@@ -1904,7 +2336,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		} catch ( RuntimeException $exception ) {
 			$this->assertStringContainsString( 'Could not claim WooPayments refund webhook lock', $exception->getMessage() );
 		} finally {
-			$store->unlock_order_payment( $order );
+			$store->unlock_order_payment( $order, $profile );
 		}
 
 		$order = wc_get_order( $order->get_id() );
@@ -2055,8 +2487,9 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$refund = $this->create_local_refund( $order, 4.00, 'Existing refund' );
 		$refund->update_meta_data( '_wcpay_refund_id', 're_123' );
 		$refund->save_meta_data();
-		$store = wc_get_container()->get( OrderPaymentStore::class );
-		$store->lock_order_payment( $order, 'existing_operation' );
+		$store   = wc_get_container()->get( OrderPaymentStore::class );
+		$profile = new WooPaymentsPersistenceProfile();
+		$store->lock_order_payment( $order, $profile, 'existing_operation' );
 
 		try {
 			$this->sut->process(
@@ -2071,7 +2504,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		} catch ( RuntimeException $exception ) {
 			$this->assertStringContainsString( 'Could not claim WooPayments refund webhook lock', $exception->getMessage() );
 		} finally {
-			$store->unlock_order_payment( $order );
+			$store->unlock_order_payment( $order, $profile );
 		}
 
 		$order = wc_get_order( $order->get_id() );
@@ -3106,14 +3539,14 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * @return string
 	 */
 	private function get_expected_dispute_url( string $charge_id ): string {
-		return esc_url(
-			Utils::wc_payments_legacy_admin_url(
-				'/payments/transactions/details',
-				array(
-					'id' => $charge_id,
+			return esc_url(
+				Utils::wc_payments_legacy_admin_url(
+					rawurlencode( '/payments/transactions/details' ),
+					array(
+						'id' => $charge_id,
+					)
 				)
-			)
-		);
+			);
 	}
 
 	/**

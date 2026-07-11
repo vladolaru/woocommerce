@@ -125,7 +125,7 @@ class WooPaymentsExpressCheckoutService {
 				'locale'         => $this->get_stripe_locale(),
 			),
 			'flags'                       => array(
-				'isEceUsingConfirmationTokens' => true,
+				'isEceUsingConfirmationTokens' => WooPaymentsFeaturePolicy::is_ece_confirmation_tokens_enabled( $this->account_service ),
 			),
 		);
 
@@ -210,7 +210,7 @@ class WooPaymentsExpressCheckoutService {
 	 * @return bool
 	 */
 	private function is_payment_request_enabled(): bool {
-		return $this->is_truthy_gateway_setting( WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_PAYMENT_REQUEST );
+		return $this->account_service->is_payment_request_enabled();
 	}
 
 	/**
@@ -454,6 +454,11 @@ class WooPaymentsExpressCheckoutService {
 		);
 
 		if ( $data['needs_shipping'] ) {
+			$data['displayItems'][]  = array(
+				'label'   => __( 'Shipping', 'woocommerce' ),
+				'amount'  => 0,
+				'pending' => true,
+			);
 			$data['shippingOptions'] = array(
 				'id'     => 'pending',
 				'label'  => __( 'Pending', 'woocommerce' ),

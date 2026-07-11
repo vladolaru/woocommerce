@@ -1,11 +1,30 @@
-const CACHE_KEY_PREFIX = 'wcpay_appearance_';
-const FONT_RULE_DOMAINS = [
-	'fonts.googleapis.com',
-	'fonts.gstatic.com',
-	'use.typekit.net',
-	'fonts.bunny.net',
-	'fonts.wp.com',
-];
+import appearanceUtils from '../../../../../../legacy/js/frontend/utils/woopayments-appearance';
+
+const {
+	compositeAgainstWhite,
+	containsAlphaColor,
+	dispatchAppearanceEvent,
+	getCachedAppearance,
+	getFontRulesFromPage,
+	isAppearanceValid,
+	maybePersistWooPayAppearance,
+	normalizeAppearanceForStripe,
+	normalizeAppearanceValueForStripe,
+	parseColor,
+	setCachedAppearance,
+	toRgbString,
+} = appearanceUtils;
+
+export {
+	dispatchAppearanceEvent,
+	getCachedAppearance,
+	getFontRulesFromPage,
+	isAppearanceValid,
+	maybePersistWooPayAppearance,
+	normalizeAppearanceForStripe,
+	normalizeAppearanceValueForStripe,
+	setCachedAppearance,
+};
 
 const paddingColorProps = [
 	'color',
@@ -157,9 +176,30 @@ const appearanceSelectors = {
 			'.wp-block-woocommerce-checkout-order-summary-block',
 		],
 	},
+	bnplCartBlock: {
+		appendTarget: '.wc-block-cart .wc-block-components-quantity-selector',
+		upeThemeInputSelector:
+			'.wc-block-cart .wc-block-components-quantity-selector .wc-block-components-quantity-selector__input',
+		upeThemeLabelSelector: '.wc-block-components-text-input',
+		upeThemeTextSelectors: [ '.wc-block-components-text-input' ],
+		rowElement: 'div',
+		validClasses: [ 'wc-block-components-text-input' ],
+		invalidClasses: [ 'wc-block-components-text-input', 'has-error' ],
+		backgroundSelectors: [
+			'.wc-block-components-bnpl-wrapper',
+			'.wc-block-components-order-meta',
+			'.wc-block-components-totals-wrapper',
+			'.wp-block-woocommerce-cart-order-summary-block',
+			'.wp-block-woocommerce-cart-totals-block',
+			'.wp-block-woocommerce-cart .wc-block-cart',
+			'.wp-block-woocommerce-cart',
+			'body',
+		],
+		headingSelectors: [ 'h1', 'h2', 'h3', 'h4', 'h5', 'h6' ],
+		buttonSelectors: [ '.wc-block-cart__submit-button' ],
+		containerSelectors: [ '.wp-block-woocommerce-cart-line-items-block' ],
+	},
 };
-
-const getCacheKey = ( location ) => CACHE_KEY_PREFIX + location;
 
 const queryOne = ( selector, scope ) => {
 	try {
@@ -175,9 +215,13 @@ const hasAnyMatch = ( selectors, scope ) =>
 	);
 
 const getSelectors = ( elementsLocation, scope ) => {
+	const locationSelectors =
+		elementsLocation === 'bnpl_cart_block'
+			? appearanceSelectors.bnplCartBlock
+			: appearanceSelectors.blocksCheckout;
 	const selectors = {
 		...appearanceSelectors.default,
-		...appearanceSelectors.blocksCheckout,
+		...locationSelectors,
 	};
 
 	if ( elementsLocation !== 'blocks_checkout' ) {
@@ -311,199 +355,8 @@ const hiddenElementsForUPE = {
 const toDashed = ( str ) =>
 	str.replace( /[A-Z]/g, ( match ) => `-${ match.toLowerCase() }` );
 
-const parseNumber = ( value ) => {
-	const number = Number.parseFloat( value );
-	return Number.isNaN( number ) ? null : number;
-};
-
-const parseRgbChannel = ( value ) => {
-	const number = parseNumber( value );
-	if ( number === null ) {
-		return null;
-	}
-
-	return value.trim().endsWith( '%' ) ? ( number / 100 ) * 255 : number;
-};
-
-const parseSrgbChannel = ( value ) => {
-	const number = parseNumber( value );
-	if ( number === null ) {
-		return null;
-	}
-
-	return value.trim().endsWith( '%' ) ? ( number / 100 ) * 255 : number * 255;
-};
-
-const parseAlpha = ( value ) => {
-	if ( value === undefined ) {
-		return 1;
-	}
-
-	const number = parseNumber( value );
-	if ( number === null ) {
-		return 1;
-	}
-
-	const alpha = value.trim().endsWith( '%' ) ? number / 100 : number;
-	return Math.max( 0, Math.min( 1, alpha ) );
-};
-
-const buildParsedColor = ( channels, alpha = 1 ) => ( {
-	r: channels[ 0 ],
-	g: channels[ 1 ],
-	b: channels[ 2 ],
-	a: alpha,
-} );
-
-const parseColor = ( color ) => {
-	const value = String( color || '' ).trim();
-	const rgbMatch = value.match(
-		/^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*(0?(\.\d+)?|1?(\.0+)?))?\s*\)$/i
-	);
-
-	if ( rgbMatch ) {
-		return buildParsedColor(
-			rgbMatch.slice( 1, 4 ).map( ( channel ) => Number( channel ) ),
-			parseAlpha( rgbMatch[ 4 ] )
-		);
-	}
-
-	const modernRgbMatch = value.match(
-		/^rgba?\(\s*([+-]?\d*\.?\d+%?)\s+([+-]?\d*\.?\d+%?)\s+([+-]?\d*\.?\d+%?)(?:\s*\/\s*([+-]?\d*\.?\d+%?))?\s*\)$/i
-	);
-
-	if ( modernRgbMatch ) {
-		return buildParsedColor(
-			modernRgbMatch
-				.slice( 1, 4 )
-				.map( parseRgbChannel )
-				.filter( ( channel ) => channel !== null ),
-			parseAlpha( modernRgbMatch[ 4 ] )
-		);
-	}
-
-	const srgbMatch = value.match(
-		/^color\(\s*srgb\s+([+-]?\d*\.?\d+%?)\s+([+-]?\d*\.?\d+%?)\s+([+-]?\d*\.?\d+%?)(?:\s*\/\s*([+-]?\d*\.?\d+%?))?\s*\)$/i
-	);
-
-	if ( srgbMatch ) {
-		return buildParsedColor(
-			srgbMatch
-				.slice( 1, 4 )
-				.map( parseSrgbChannel )
-				.filter( ( channel ) => channel !== null ),
-			parseAlpha( srgbMatch[ 4 ] )
-		);
-	}
-
-	const hexMatch = value.match( /^#([0-9a-f]{3}|[0-9a-f]{6})$/i );
-	if ( hexMatch ) {
-		const hex =
-			hexMatch[ 1 ].length === 3
-				? hexMatch[ 1 ].replace(
-						/./g,
-						( character ) => character + character
-				  )
-				: hexMatch[ 1 ];
-
-		return {
-			r: parseInt( hex.slice( 0, 2 ), 16 ),
-			g: parseInt( hex.slice( 2, 4 ), 16 ),
-			b: parseInt( hex.slice( 4, 6 ), 16 ),
-			a: 1,
-		};
-	}
-
-	return null;
-};
-
-const toRgbString = ( color ) =>
-	`rgb(${ Math.round( color.r ) }, ${ Math.round( color.g ) }, ${ Math.round(
-		color.b
-	) })`;
-
 const getBrightness = ( color ) =>
 	( color.r * 299 + color.g * 587 + color.b * 114 ) / 1000;
-
-const compositeAgainstWhite = ( color ) => ( {
-	r: Math.round( color.r * color.a + 255 * ( 1 - color.a ) ),
-	g: Math.round( color.g * color.a + 255 * ( 1 - color.a ) ),
-	b: Math.round( color.b * color.a + 255 * ( 1 - color.a ) ),
-	a: 1,
-} );
-
-const normalizeParsedColorForStripe = ( color ) =>
-	toRgbString( color.a < 1 ? compositeAgainstWhite( color ) : color );
-
-const colorFunctionPatterns = [
-	/color\(\s*srgb\s+[+-]?\d*\.?\d+%?\s+[+-]?\d*\.?\d+%?\s+[+-]?\d*\.?\d+%?(?:\s*\/\s*[+-]?\d*\.?\d+%?)?\s*\)/gi,
-	/rgba?\(\s*[+-]?\d*\.?\d+%?\s+[+-]?\d*\.?\d+%?\s+[+-]?\d*\.?\d+%?(?:\s*\/\s*[+-]?\d*\.?\d+%?)?\s*\)/gi,
-	/rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}(?:\s*,\s*(?:0?(\.\d+)?|1?(\.0+)?))?\s*\)/gi,
-];
-
-const containsAlphaColor = ( value ) => {
-	if ( typeof value !== 'string' ) {
-		return false;
-	}
-
-	return colorFunctionPatterns.some( ( pattern ) => {
-		pattern.lastIndex = 0;
-		let match = pattern.exec( value );
-
-		while ( match ) {
-			if ( parseColor( match[ 0 ] )?.a < 1 ) {
-				return true;
-			}
-
-			match = pattern.exec( value );
-		}
-
-		return false;
-	} );
-};
-
-export const normalizeAppearanceValueForStripe = ( value ) => {
-	if ( typeof value !== 'string' ) {
-		return value;
-	}
-
-	return value
-		.replace(
-			/color\(\s*srgb\s+[+-]?\d*\.?\d+%?\s+[+-]?\d*\.?\d+%?\s+[+-]?\d*\.?\d+%?(?:\s*\/\s*[+-]?\d*\.?\d+%?)?\s*\)/gi,
-			( color ) => {
-				const parsedColor = parseColor( color );
-				return parsedColor
-					? normalizeParsedColorForStripe( parsedColor )
-					: color;
-			}
-		)
-		.replace(
-			/rgba?\(\s*[+-]?\d*\.?\d+%?\s+[+-]?\d*\.?\d+%?\s+[+-]?\d*\.?\d+%?(?:\s*\/\s*[+-]?\d*\.?\d+%?)?\s*\)/gi,
-			( color ) => {
-				const parsedColor = parseColor( color );
-				return parsedColor
-					? normalizeParsedColorForStripe( parsedColor )
-					: color;
-			}
-		);
-};
-
-export const normalizeAppearanceForStripe = ( value ) => {
-	if ( Array.isArray( value ) ) {
-		return value.map( normalizeAppearanceForStripe );
-	}
-
-	if ( value && typeof value === 'object' ) {
-		return Object.fromEntries(
-			Object.entries( value ).map( ( [ key, nestedValue ] ) => [
-				key,
-				normalizeAppearanceForStripe( nestedValue ),
-			] )
-		);
-	}
-
-	return normalizeAppearanceValueForStripe( value );
-};
 
 const isColorLight = ( color ) => {
 	const parsedColor = parseColor( color );
@@ -711,27 +564,6 @@ export const getFieldStyles = (
 	return filteredStyles;
 };
 
-export const getFontRulesFromPage = ( scope = document ) => {
-	return Array.from( scope.styleSheets )
-		.map( ( sheet ) => {
-			if ( ! sheet.href ) {
-				return null;
-			}
-
-			try {
-				const url = new URL( sheet.href );
-				if ( ! FONT_RULE_DOMAINS.includes( url.hostname ) ) {
-					return null;
-				}
-			} catch {
-				return null;
-			}
-
-			return { cssSrc: sheet.href };
-		} )
-		.filter( Boolean );
-};
-
 const handleAppearanceForFloatingLabel = (
 	appearance,
 	floatingLabelStyles
@@ -925,52 +757,17 @@ export const getAppearance = (
 	return appearance;
 };
 
-export const getCachedAppearance = ( location, version ) => {
-	try {
-		const raw = localStorage.getItem( getCacheKey( location ) );
-		if ( ! raw ) {
-			return null;
-		}
-		const cached = JSON.parse( raw );
-		if ( cached?.version === version ) {
-			return normalizeAppearanceForStripe( cached.appearance );
-		}
-	} catch {}
-
-	return null;
-};
-
-export const setCachedAppearance = ( location, version, appearance ) => {
-	try {
-		localStorage.setItem(
-			getCacheKey( location ),
-			JSON.stringify( { version, appearance } )
-		);
-	} catch {}
-};
-
-export const dispatchAppearanceEvent = ( appearance, elementsLocation ) => {
-	document.dispatchEvent(
-		new CustomEvent( 'wcpay_elements_appearance', {
-			detail: { appearance, elementsLocation },
-		} )
-	);
-};
-
-export const isAppearanceValid = ( appearance ) => {
-	const inputRules = appearance?.rules?.[ '.Input' ];
-	return Boolean( inputRules && Object.keys( inputRules ).length );
-};
-
 export const getBlocksCheckoutAppearance = (
 	stylesCacheVersion,
-	scope = document
+	scope = document,
+	paymentSettings = {}
 ) => {
 	const cachedAppearance = getCachedAppearance(
 		'blocks_checkout',
 		stylesCacheVersion
 	);
 	if ( cachedAppearance ) {
+		maybePersistWooPayAppearance( cachedAppearance, paymentSettings );
 		return cachedAppearance;
 	}
 
@@ -987,6 +784,7 @@ export const getBlocksCheckoutAppearance = (
 		);
 		window.dispatchEvent( new Event( 'wcpay-appearance-cached' ) );
 	}
+	maybePersistWooPayAppearance( appearance, paymentSettings );
 
 	return appearance;
 };

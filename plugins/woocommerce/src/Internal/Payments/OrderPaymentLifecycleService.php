@@ -40,15 +40,16 @@ class OrderPaymentLifecycleService {
 	 *
 	 * @since 11.0.0
 	 *
-	 * @param WC_Order              $order Order object.
-	 * @param PaymentLifecycleEvent $event Lifecycle event.
+	 * @param WC_Order                   $order               Order object.
+	 * @param PaymentLifecycleEvent      $event               Lifecycle event.
+	 * @param ProviderPersistenceProfile $persistence_profile Provider persistence profile.
 	 */
-	public function apply( WC_Order $order, PaymentLifecycleEvent $event ): void {
+	public function apply( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceProfile $persistence_profile ): void {
 		$payment_reference = $event->get_payment_reference();
 		$locked_by_service = false;
 
 		if ( null !== $payment_reference ) {
-			if ( ! $this->order_payment_store->claim_order_payment_lock( $order, $payment_reference ) ) {
+			if ( ! $this->order_payment_store->claim_order_payment_lock( $order, $persistence_profile, $payment_reference ) ) {
 				$this->log_skipped_locked_event( $order, $event, $payment_reference );
 				return;
 			}
@@ -57,10 +58,10 @@ class OrderPaymentLifecycleService {
 		}
 
 		try {
-			$this->apply_unlocked( $order, $event );
+			$this->apply_unlocked( $order, $event, $persistence_profile );
 		} finally {
 			if ( $locked_by_service ) {
-				$this->order_payment_store->unlock_order_payment( $order );
+				$this->order_payment_store->unlock_order_payment( $order, $persistence_profile );
 			}
 		}
 	}
@@ -99,19 +100,22 @@ class OrderPaymentLifecycleService {
 	 *
 	 * @since 11.0.0
 	 *
-	 * @param WC_Order              $order Order object.
-	 * @param PaymentLifecycleEvent $event Lifecycle event.
+	 * @param WC_Order                   $order               Order object.
+	 * @param PaymentLifecycleEvent      $event               Lifecycle event.
+	 * @param ProviderPersistenceProfile $persistence_profile Provider persistence profile.
 	 */
-	public function apply_unlocked( WC_Order $order, PaymentLifecycleEvent $event ): void {
+	public function apply_unlocked( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceProfile $persistence_profile ): void {
 		$this->apply_meta_changes( $order, $event );
 
 		$note            = $event->get_note();
-		$should_add_note = null !== $note && '' !== $note && ! $this->has_note_marker( $order, $event, $note ) && ! $this->should_skip_lifecycle_note( $order, $event, $note );
+		$should_add_note = null !== $note && '' !== $note && ! $this->has_note_marker( $order, $event, $note ) && ! $this->should_skip_lifecycle_note( $order, $event, $note, $persistence_profile );
 		if ( $should_add_note ) {
 			$order->update_meta_data( $this->get_note_marker_key( $event, $note ), 'yes' );
 		}
 
-		$order->save_meta_data();
+		if ( $this->should_save_meta_before_status_transition( $event ) ) {
+			$order->save_meta_data();
+		}
 
 		$status_transition_saved_order = $this->apply_status_transition( $order, $event );
 		if ( ! $status_transition_saved_order ) {
@@ -137,6 +141,26 @@ class OrderPaymentLifecycleService {
 		foreach ( $event->get_meta_to_delete() as $key ) {
 			$order->delete_meta_data( $key );
 		}
+	}
+
+	/**
+	 * Tell whether lifecycle metadata needs to be saved before status-transition hooks run.
+	 *
+	 * @param PaymentLifecycleEvent $event Lifecycle event.
+	 * @return bool
+	 */
+	private function should_save_meta_before_status_transition( PaymentLifecycleEvent $event ): bool {
+		return in_array(
+			$event->get_status(),
+			array(
+				PaymentLifecycleEvent::STATUS_COMPLETED,
+				PaymentLifecycleEvent::STATUS_AUTHORIZED,
+				PaymentLifecycleEvent::STATUS_FAILED,
+				PaymentLifecycleEvent::STATUS_CAPTURE_EXPIRED,
+				PaymentLifecycleEvent::STATUS_CANCELED,
+			),
+			true
+		);
 	}
 
 	/**
@@ -168,6 +192,9 @@ class OrderPaymentLifecycleService {
 				return true;
 
 			case PaymentLifecycleEvent::STATUS_STARTED:
+				if ( null !== $event->get_payment_reference() && '' !== (string) $event->get_payment_reference() && '' === (string) $order->get_transaction_id() ) {
+					$order->set_transaction_id( (string) $event->get_payment_reference() );
+				}
 				return false;
 		}
 
@@ -189,12 +216,17 @@ class OrderPaymentLifecycleService {
 	/**
 	 * Tell whether a lifecycle note should be skipped for an already-applied event.
 	 *
-	 * @param WC_Order              $order Order object.
-	 * @param PaymentLifecycleEvent $event Lifecycle event.
-	 * @param string                $note  Note content.
+	 * @param WC_Order                   $order               Order object.
+	 * @param PaymentLifecycleEvent      $event               Lifecycle event.
+	 * @param string                     $note                Note content.
+	 * @param ProviderPersistenceProfile $persistence_profile Provider persistence profile.
 	 * @return bool
 	 */
-	private function should_skip_lifecycle_note( WC_Order $order, PaymentLifecycleEvent $event, string $note ): bool {
+	private function should_skip_lifecycle_note( WC_Order $order, PaymentLifecycleEvent $event, string $note, ProviderPersistenceProfile $persistence_profile ): bool {
+		if ( $persistence_profile->should_skip_note( $order, $event, $note ) ) {
+			return true;
+		}
+
 		$payment_reference = (string) $event->get_payment_reference();
 		$note_type         = $event->get_note_type();
 
@@ -203,7 +235,7 @@ class OrderPaymentLifecycleService {
 		}
 
 		return PaymentLifecycleEvent::STATUS_COMPLETED === $event->get_status()
-			&& PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_COMPLETE === $note_type
+			&& in_array( $note_type, array( PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_COMPLETE, PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS ), true )
 			&& '' !== $payment_reference
 			&& $payment_reference === (string) $order->get_transaction_id()
 			&& $order->has_status( array( 'processing', 'completed' ) );

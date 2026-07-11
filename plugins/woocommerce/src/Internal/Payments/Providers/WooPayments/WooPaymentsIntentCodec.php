@@ -32,6 +32,13 @@ class WooPaymentsIntentCodec {
 	public const PROVIDER_DATA_SAVED_PAYMENT_METHOD_TYPE = 'saved_payment_method_type';
 
 	/**
+	 * WooPayments v1 client capability version represented by the native provider.
+	 *
+	 * @var string
+	 */
+	private const WCPAY_V1_CLIENT_CAPABILITY_VERSION = '10.8.0';
+
+	/**
 	 * Build the native WooPayments charge request payload.
 	 *
 	 * @since 11.0.0
@@ -52,13 +59,14 @@ class WooPaymentsIntentCodec {
 		$is_recurring         = $is_renewal || $is_recurring;
 		$payment_type         = $is_recurring ? 'recurring' : 'single';
 		$subscription_payment = $is_renewal ? 'renewal' : ( $is_recurring ? 'initial' : 'no' );
+		$payment_method_types = self::payment_method_types_for_request( $context, (string) $order->get_currency(), $account_service );
 		$request_data         = array(
 			'amount'               => $order_data_service->prepare_amount( (float) $order->get_total(), (string) $order->get_currency() ),
 			'capture_method'       => ! $is_renewal && 'yes' === $account_service->get_gateway_setting( 'manual_capture', 'no' ) ? 'manual' : 'automatic',
 			'currency'             => strtolower( (string) $order->get_currency() ),
 			'customer'             => $customer_id,
 			'metadata'             => self::metadata_from_order( $order, $payment_type, $subscription_payment ),
-			'payment_method_types' => self::payment_method_types_for_request( $context, (string) $order->get_currency(), $account_service ),
+			'payment_method_types' => $payment_method_types,
 		);
 
 		if ( self::is_confirmation_token( $payment_credential ) ) {
@@ -81,6 +89,14 @@ class WooPaymentsIntentCodec {
 
 		if ( ! $is_renewal && ( ! empty( $payment_data['save_payment_method'] ) || $is_recurring ) ) {
 			$request_data['setup_future_usage'] = 'off_session';
+		}
+
+		if ( self::is_mandate_data_required( $payment_method_types ) ) {
+			$request_data['mandate_data'] = self::mandate_data();
+		}
+
+		if ( self::is_redirect_return_url_required( $payment_method_types ) ) {
+			$request_data['return_url'] = self::redirect_return_url( $order );
 		}
 
 		if ( self::is_using_saved_payment_token( $payment_data ) && ! preg_match( '/^(card_|src_)/', $payment_credential ) ) {
@@ -145,7 +161,7 @@ class WooPaymentsIntentCodec {
 			'order_id'             => $order->get_id(),
 			'order_number'         => $order->get_order_number(),
 			'order_key'            => $order->get_order_key(),
-			'payment_type'         => (string) $payment_type,
+			'payment_type'         => $payment_type,
 			'checkout_type'        => $order->get_created_via(),
 			'client_version'       => defined( 'WC_VERSION' ) ? WC_VERSION : '',
 			'subscription_payment' => $subscription_payment,
@@ -194,7 +210,7 @@ class WooPaymentsIntentCodec {
 		$charge_id               = isset( $charge['id'] ) ? (string) $charge['id'] : '';
 		$multibanco_voucher_meta = WooPaymentsOrderEffects::multibanco_voucher_meta( $intention );
 		$meta                    = array(
-			'_wcpay_intent_currency' => 'si' === $intent_type ? (string) $order->get_currency() : ( isset( $intention['currency'] ) ? (string) $intention['currency'] : (string) $order->get_currency() ),
+			'_wcpay_intent_currency' => strtoupper( 'si' === $intent_type ? (string) $order->get_currency() : ( isset( $intention['currency'] ) ? (string) $intention['currency'] : (string) $order->get_currency() ) ),
 			'_wcpay_mode'            => $account_mode,
 		);
 		$meta                    = array_merge( $meta, $multibanco_voucher_meta );
@@ -212,7 +228,7 @@ class WooPaymentsIntentCodec {
 		}
 
 		$balance_transaction_id = WooPaymentsOrderEffects::balance_transaction_id( $charge['balance_transaction'] ?? null );
-		if ( '' !== $balance_transaction_id ) {
+		if ( 'pi' === $intent_type ) {
 			$meta['_wcpay_payment_transaction_id'] = $balance_transaction_id;
 		}
 
@@ -245,13 +261,26 @@ class WooPaymentsIntentCodec {
 				return new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, $intent_id, '', $payment_method_id, $customer_id, $outcome_data );
 
 			case 'requires_capture':
-				return new PaymentOutcome( PaymentOutcome::STATUS_AUTHORIZED, $intent_id, '', $payment_method_id, $customer_id, $outcome_data );
-
 			case 'processing':
-				return new PaymentOutcome( PaymentOutcome::STATUS_PENDING_ASYNC, $intent_id, '', $payment_method_id, $customer_id, $outcome_data );
+				$outcome_data[ PaymentOutcome::DATA_META ]['_intention_status'] = $status;
+				if ( 'pi' === $intent_type && '' !== $intent_id ) {
+					$outcome_data[ PaymentOutcome::DATA_NOTE ]      = WooPaymentsOrderEffects::payment_authorized_note( $order, $intent_id, $charge_id );
+					$outcome_data[ PaymentOutcome::DATA_NOTE_TYPE ] = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_AUTHORIZED;
+				}
+
+				return new PaymentOutcome( PaymentOutcome::STATUS_AUTHORIZED, $intent_id, '', $payment_method_id, $customer_id, $outcome_data );
 
 			case 'requires_action':
 			case 'requires_confirmation':
+				if ( 'pi' === $intent_type ) {
+					$meta                                      = array_merge( $meta, WooPaymentsOrderEffects::started_payment_meta( $intention, $order ) );
+					$outcome_data[ PaymentOutcome::DATA_META ] = $meta;
+					if ( '' !== $intent_id ) {
+						$outcome_data[ PaymentOutcome::DATA_NOTE ]      = WooPaymentsOrderEffects::payment_started_note( $order, $intent_id );
+						$outcome_data[ PaymentOutcome::DATA_NOTE_TYPE ] = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_STARTED;
+					}
+				}
+
 				$next_action_redirect = self::next_action_redirect_url( $intention );
 				if ( '' !== $next_action_redirect ) {
 					$outcome_data[ PaymentOutcome::DATA_CHECKOUT_REDIRECT ] = $next_action_redirect;
@@ -269,9 +298,10 @@ class WooPaymentsIntentCodec {
 				if ( ! empty( $multibanco_voucher_meta ) ) {
 					$checkout_redirect                                      = $order->get_checkout_order_received_url();
 					$outcome_data[ PaymentOutcome::DATA_CHECKOUT_REDIRECT ] = $checkout_redirect;
+					$outcome_data[ PaymentOutcome::DATA_META ]              = $meta;
 
 					return new PaymentOutcome(
-						PaymentOutcome::STATUS_REQUIRES_REDIRECT,
+						PaymentOutcome::STATUS_AUTHORIZED,
 						$intent_id,
 						$checkout_redirect,
 						$payment_method_id,
@@ -307,6 +337,63 @@ class WooPaymentsIntentCodec {
 			$customer_id,
 			$outcome_data
 		);
+	}
+
+	/**
+	 * Build a WooPayments lifecycle event from a native intent response.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @param array<string,mixed> $intention Native intent response.
+	 * @param WC_Order            $order     Order being updated.
+	 * @param array<string,mixed> $args      Mapping context.
+	 * @return PaymentLifecycleEvent
+	 */
+	public static function lifecycle_event_from_intention( array $intention, WC_Order $order, array $args = array() ): PaymentLifecycleEvent {
+		$outcome = self::outcome_from_intention( $intention, $order, $args );
+		$data    = $outcome->get_data();
+		$note    = isset( $data[ PaymentOutcome::DATA_NOTE ] ) && is_string( $data[ PaymentOutcome::DATA_NOTE ] )
+			? $data[ PaymentOutcome::DATA_NOTE ]
+			: null;
+
+		return new PaymentLifecycleEvent(
+			self::lifecycle_status_from_outcome( $outcome ),
+			'' === $outcome->get_provider_payment_id() ? null : $outcome->get_provider_payment_id(),
+			( new WooPaymentsPersistenceProfile() )->get_outcome_meta( $outcome ),
+			array(),
+			'' === $note ? null : $note,
+			isset( $data[ PaymentOutcome::DATA_NOTE_TYPE ] ) && is_string( $data[ PaymentOutcome::DATA_NOTE_TYPE ] ) ? $data[ PaymentOutcome::DATA_NOTE_TYPE ] : null
+		);
+	}
+
+	/**
+	 * Map a neutral outcome status to a lifecycle status.
+	 *
+	 * @param PaymentOutcome $outcome Provider outcome.
+	 * @return string
+	 */
+	private static function lifecycle_status_from_outcome( PaymentOutcome $outcome ): string {
+		switch ( $outcome->get_status() ) {
+			case PaymentOutcome::STATUS_COMPLETED:
+			case PaymentOutcome::STATUS_NO_EXTERNAL_PAYMENT:
+				return PaymentLifecycleEvent::STATUS_COMPLETED;
+
+			case PaymentOutcome::STATUS_AUTHORIZED:
+				return PaymentLifecycleEvent::STATUS_AUTHORIZED;
+
+			case PaymentOutcome::STATUS_FAILED:
+				return PaymentLifecycleEvent::STATUS_FAILED;
+
+			case PaymentOutcome::STATUS_CANCELED:
+				return PaymentLifecycleEvent::STATUS_CANCELED;
+
+			case PaymentOutcome::STATUS_PENDING_ASYNC:
+			case PaymentOutcome::STATUS_REQUIRES_REDIRECT:
+			case PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION:
+				return PaymentLifecycleEvent::STATUS_STARTED;
+		}
+
+		return PaymentLifecycleEvent::STATUS_FAILED;
 	}
 
 	/**
@@ -395,13 +482,42 @@ class WooPaymentsIntentCodec {
 	 * @return PaymentOutcome
 	 */
 	public static function outcome_from_capture_result( array $result, PaymentContext $context, string $account_mode, string $account_default_currency, WooPaymentsOrderDataService $order_data_service ): PaymentOutcome {
+		$status = isset( $result['status'] ) ? (string) $result['status'] : 'failed';
+		$meta   = 'succeeded' === $status
+			? WooPaymentsOrderEffects::completed_capture_meta( $result, $context->get_order(), $account_mode, $account_default_currency, $order_data_service )
+			: array();
+
+		return self::outcome_from_capture_result_with_meta( $result, $context, $meta );
+	}
+
+	/**
+	 * Normalize a native capture response before fallible local enrichment.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @param array<string,mixed> $result  Native capture response.
+	 * @param PaymentContext      $context Payment context.
+	 * @return PaymentOutcome
+	 */
+	public static function outcome_from_native_capture_result( array $result, PaymentContext $context ): PaymentOutcome {
+		return self::outcome_from_capture_result_with_meta( $result, $context, array() );
+	}
+
+	/**
+	 * Normalize capture status and notes with already-composed metadata.
+	 *
+	 * @param array<string,mixed>  $result  Provider capture response.
+	 * @param PaymentContext       $context Payment context.
+	 * @param array<string,string> $meta    Completed capture metadata.
+	 * @return PaymentOutcome
+	 */
+	private static function outcome_from_capture_result_with_meta( array $result, PaymentContext $context, array $meta ): PaymentOutcome {
 		$status     = isset( $result['status'] ) ? (string) $result['status'] : 'failed';
 		$intent_id  = isset( $result['id'] ) ? (string) $result['id'] : '';
 		$error_code = isset( $result['error_code'] ) ? (string) $result['error_code'] : '';
 		$message    = isset( $result['message'] ) ? (string) $result['message'] : '';
 
 		if ( 'succeeded' === $status ) {
-			$meta                   = WooPaymentsOrderEffects::completed_capture_meta( $result, $context->get_order(), $account_mode, $account_default_currency, $order_data_service );
 			$data                   = empty( $meta ) ? array() : array( PaymentOutcome::DATA_META => $meta );
 			$charge                 = WooPaymentsOrderEffects::latest_charge( $result );
 			$charge_id              = isset( $charge['id'] ) ? (string) $charge['id'] : '';
@@ -786,6 +902,73 @@ class WooPaymentsIntentCodec {
 		$definition        = ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method_id );
 
 		return null === $definition ? '' : $definition->get_stripe_payment_method_type();
+	}
+
+	/**
+	 * Tell whether the selected Stripe method requires customer mandate acceptance data.
+	 *
+	 * @param array<int,string> $payment_method_types Stripe payment method types.
+	 * @return bool
+	 */
+	private static function is_mandate_data_required( array $payment_method_types ): bool {
+		return in_array( 'sepa_debit', $payment_method_types, true ) || in_array( 'link', $payment_method_types, true );
+	}
+
+	/**
+	 * Tell whether the selected Stripe method needs a post-authentication return URL.
+	 *
+	 * @param array<int,string> $payment_method_types Stripe payment method types.
+	 * @return bool
+	 */
+	private static function is_redirect_return_url_required( array $payment_method_types ): bool {
+		return in_array( 'amazon_pay', $payment_method_types, true )
+			|| ( 1 === count( $payment_method_types ) && WooPaymentsExpressPaymentMethodTypes::STRIPE_TYPE_CARD !== ( $payment_method_types[0] ?? '' ) );
+	}
+
+	/**
+	 * Build the order return URL used by redirect-based WooPayments methods.
+	 *
+	 * @param WC_Order $order Order being processed.
+	 * @return string
+	 */
+	private static function redirect_return_url( WC_Order $order ): string {
+		return wp_sanitize_redirect(
+			esc_url_raw(
+				add_query_arg(
+					array(
+						'wc_payment_method' => OrderPaymentStore::GATEWAY_ID,
+						'_wpnonce'          => wp_create_nonce( 'wcpay_process_redirect_order_nonce' ),
+					),
+					$order->get_checkout_order_received_url()
+				)
+			)
+		);
+	}
+
+	/**
+	 * Get Stripe mandate acceptance data for deferred server-side confirmation.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private static function mandate_data(): array {
+		return array(
+			'customer_acceptance' => array(
+				'type'   => 'online',
+				'online' => array(
+					'ip_address' => \WC_Geolocation::get_ip_address(),
+					'user_agent' => self::mandate_user_agent(),
+				),
+			),
+		);
+	}
+
+	/**
+	 * Build the WooPayments mandate user-agent string.
+	 *
+	 * @return string
+	 */
+	private static function mandate_user_agent(): string {
+		return 'WooCommerce Payments/' . self::WCPAY_V1_CLIENT_CAPABILITY_VERSION . '; ' . get_bloginfo( 'url' );
 	}
 
 	/**

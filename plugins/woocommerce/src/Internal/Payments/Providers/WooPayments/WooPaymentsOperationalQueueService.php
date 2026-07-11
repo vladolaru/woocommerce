@@ -840,7 +840,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 			'manual_capture_enabled'                      => $this->is_setting_enabled( $settings, 'manual_capture' ),
 			'debug_log_enabled'                           => $this->is_setting_enabled( $settings, 'enable_logging' ),
 			'payment_request'                             => array(
-				'enabled'              => ! empty( $payment_request_locations ),
+				'enabled'              => $this->account_service->is_payment_request_enabled(),
 				'enabled_locations'    => $payment_request_locations,
 				'button_type'          => $settings['payment_request_button_type'] ?? '',
 				'button_size'          => $settings['payment_request_button_size'] ?? '',

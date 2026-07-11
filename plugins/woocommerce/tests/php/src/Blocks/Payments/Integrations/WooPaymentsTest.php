@@ -104,6 +104,35 @@ class WooPaymentsTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * @testdox Should require method-level gateway availability before a split Blocks method activates.
+	 */
+	public function test_is_active_requires_split_gateway_availability(): void {
+		$asset_api = $this->getMockBuilder( AssetApi::class )
+			->disableOriginalConstructor()
+			->getMock();
+		$bridge    = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'should_expose_checkout_surface' ) )
+			->getMock();
+		$bridge->method( 'should_expose_checkout_surface' )->willReturn( true );
+		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'can_process_payments' ) )
+			->getMock();
+		$provider->method( 'can_process_payments' )->willReturn( true );
+		$gateway     = $this->getMockBuilder( NativeWooPaymentsGateway::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_available' ) )
+			->getMock();
+		$gateway->id = 'woocommerce_payments_klarna';
+		$gateway->expects( $this->once() )->method( 'is_available' )->willReturn( false );
+
+		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $bridge, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service(), $gateway );
+
+		$this->assertFalse( $integration->is_active() );
+	}
+
+	/**
 	 * @testdox Should register a core-owned Blocks asset handle for WooPayments.
 	 */
 	public function test_get_payment_method_script_handles_registers_core_owned_woopayments_blocks_script(): void {

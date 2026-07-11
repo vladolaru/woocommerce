@@ -90,6 +90,51 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Get customer billing data for order-pay and add-payment-method surfaces.
+	 *
+	 * @return array{name:string,email:string,billing_country:string,address:array<string,string>|null}|array{}
+	 */
+	public function get_prepared_customer_data(): array {
+		$order_id = absint( get_query_var( 'order-pay' ) );
+		if ( 0 < $order_id ) {
+			$order = wc_get_order( $order_id );
+			if ( $order instanceof WC_Order && current_user_can( 'pay_for_order', $order->get_id() ) ) {
+				return array(
+					'name'            => trim( $order->get_billing_first_name() . ' ' . $order->get_billing_last_name() ),
+					'email'           => $order->get_billing_email(),
+					'billing_country' => $order->get_billing_country(),
+					'address'         => array(
+						'city'        => $order->get_billing_city(),
+						'country'     => $order->get_billing_country(),
+						'line1'       => $order->get_billing_address_1(),
+						'line2'       => $order->get_billing_address_2(),
+						'postal_code' => $order->get_billing_postcode(),
+						'state'       => $order->get_billing_state(),
+					),
+				);
+			}
+		}
+
+		if ( ! function_exists( 'is_add_payment_method_page' ) || ! is_add_payment_method_page() ) {
+			return array();
+		}
+
+		$user = wp_get_current_user();
+		if ( 0 >= $user->ID ) {
+			return array();
+		}
+
+		$billing_email = (string) get_user_meta( $user->ID, 'billing_email', true );
+
+		return array(
+			'name'            => trim( $user->user_firstname . ' ' . $user->user_lastname ),
+			'email'           => '' !== $billing_email ? $billing_email : $user->user_email,
+			'billing_country' => (string) get_user_meta( $user->ID, 'billing_country', true ),
+			'address'         => null,
+		);
+	}
+
+	/**
 	 * Filter callback that adds this service's eraser to WP's GDPR registry.
 	 *
 	 * @internal

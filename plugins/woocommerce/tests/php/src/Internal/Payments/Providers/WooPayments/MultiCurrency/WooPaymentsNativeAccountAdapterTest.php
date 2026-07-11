@@ -31,7 +31,11 @@ class WooPaymentsNativeAccountAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( $account_data, $sut->get_cached_account_data( true ), 'The adapter should expose cached account data.' );
 		$this->assertTrue( $account_service->forced_refresh, 'The adapter should forward forced refresh requests.' );
 		$this->assertSame( array( 'GBP', 'EUR' ), $sut->get_account_customer_supported_currencies(), 'The adapter should read the preserved customer currency field.' );
-		$this->assertSame( array(), $sut->get_supported_countries(), 'Native should fail closed until it owns a supported-countries source.' );
+		$supported_countries = $sut->get_supported_countries();
+		$this->assertSame( 'United States (US)', $supported_countries['US'] );
+		$this->assertSame( 'Poland', $supported_countries['PL'] );
+		$this->assertSame( 'Romania', $supported_countries['RO'] );
+		$this->assertArrayNotHasKey( 'BR', $supported_countries );
 		$this->assertStringContainsString( '/woopayments/onboarding', rawurldecode( $sut->get_provider_onboarding_page_url() ) );
 	}
 
@@ -161,6 +165,15 @@ class ThrowingNativeAccountService extends WooPaymentsAccountService {
 	 * @throws \RuntimeException Always thrown.
 	 */
 	public function has_account(): bool {
+		throw new \RuntimeException( 'Account failed' );
+	}
+
+	/**
+	 * Throw when reading supported countries.
+	 *
+	 * @throws \RuntimeException Always thrown.
+	 */
+	public function get_supported_countries(): array {
 		throw new \RuntimeException( 'Account failed' );
 	}
 

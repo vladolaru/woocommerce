@@ -294,6 +294,14 @@ class WC_Settings_Payment_Gateways extends WC_Settings_Page {
 	private function render_react_section( string $section ) {
 		global $hide_save_button;
 		$hide_save_button = true;
+		if ( self::WOOPAYMENTS_SECTION_NAME === $section ) {
+			/**
+			 * Fires WooPayments notices inside its React settings section.
+			 *
+			 * @since 11.0.0
+			 */
+			do_action( 'woocommerce_woocommerce_payments_admin_notices' );
+		}
 		echo '<div id="experimental_wc_settings_payments_' . esc_attr( $section ) . '"></div>';
 	}
 

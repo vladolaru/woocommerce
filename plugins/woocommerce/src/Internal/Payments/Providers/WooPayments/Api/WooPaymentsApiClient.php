@@ -433,6 +433,19 @@ class WooPaymentsApiClient {
 	}
 
 	/**
+	 * Retrieve a WooPayments PaymentIntent in an explicit account mode.
+	 *
+	 * Historical order readers use this instead of inheriting the store's current mode.
+	 *
+	 * @param string $intent_id Intent ID.
+	 * @param bool   $test_mode Whether to read test-mode data.
+	 * @return array<string,mixed>
+	 */
+	public function get_payment_intention_for_mode( string $intent_id, bool $test_mode ): array {
+		return $this->request( array( 'test_mode' => $test_mode ), 'intentions/' . rawurlencode( $intent_id ), 'GET' );
+	}
+
+	/**
 	 * Retrieve a WooPayments SetupIntent.
 	 *
 	 * @param string $setup_intent_id SetupIntent ID.
@@ -1627,18 +1640,29 @@ class WooPaymentsApiClient {
 	 * @param array<string,mixed> $user_data      User payload.
 	 * @param array<string,mixed> $account_data   Account payload.
 	 * @param string[]            $actioned_notes Actioned note names.
+	 * @param bool                $collect_payout_requirements Whether to collect payout requirements during onboarding.
 	 * @param string|null         $referral_code  Referral code.
 	 * @return array<string,mixed>
 	 */
-	public function initialize_onboarding( bool $live_account, string $return_url, array $site_data = array(), array $user_data = array(), array $account_data = array(), array $actioned_notes = array(), ?string $referral_code = null ): array {
+	public function initialize_onboarding(
+		bool $live_account,
+		string $return_url,
+		array $site_data = array(),
+		array $user_data = array(),
+		array $account_data = array(),
+		array $actioned_notes = array(),
+		bool $collect_payout_requirements = false,
+		?string $referral_code = null
+	): array {
 		$request_args                  = $this->get_filtered_onboarding_request_args(
 			array(
-				'return_url'          => $return_url,
-				'site_data'           => $site_data,
-				'user_data'           => $user_data,
-				'account_data'        => $account_data,
-				'actioned_notes'      => $actioned_notes,
-				'create_live_account' => $live_account,
+				'return_url'                  => $return_url,
+				'site_data'                   => $site_data,
+				'user_data'                   => $user_data,
+				'account_data'                => $account_data,
+				'actioned_notes'              => $actioned_notes,
+				'create_live_account'         => $live_account,
+				'collect_payout_requirements' => $collect_payout_requirements,
 			)
 		);
 		$request_args['referral_code'] = $referral_code;

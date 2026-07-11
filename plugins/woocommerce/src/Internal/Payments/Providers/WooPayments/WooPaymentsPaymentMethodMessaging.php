@@ -31,8 +31,6 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 
 	private const STRIPE_SCRIPT_URL = 'https://js.stripe.com/v3/';
 
-	private const APPEARANCE_SCRIPT_HANDLE = 'wc-woopayments-appearance';
-
 	private const STYLE_HANDLE = 'wc-woopayments-payment-method-messaging';
 
 	private const CART_BLOCK_STYLE_HANDLE = 'wc-woopayments-cart-block-payment-method-messaging';
@@ -68,25 +66,35 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	private WooPaymentsOrderDataService $order_data_service;
 
 	/**
+	 * Shared frontend styles service.
+	 *
+	 * @var WooPaymentsFrontendStylesService|null
+	 */
+	private ?WooPaymentsFrontendStylesService $frontend_styles_service = null;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter     $arbiter                 Runtime owner arbiter.
-	 * @param WooPaymentsAccountService        $account_service         WooPayments account service.
-	 * @param WooPaymentsPaymentMethodRegistry $payment_method_registry WooPayments payment method registry.
-	 * @param WooPaymentsOrderDataService      $order_data_service      WooPayments order data service.
+	 * @param NativePaymentsRuntimeArbiter          $arbiter                 Runtime owner arbiter.
+	 * @param WooPaymentsAccountService             $account_service         WooPayments account service.
+	 * @param WooPaymentsPaymentMethodRegistry      $payment_method_registry WooPayments payment method registry.
+	 * @param WooPaymentsOrderDataService           $order_data_service      WooPayments order data service.
+	 * @param WooPaymentsFrontendStylesService|null $frontend_styles_service Optional shared frontend styles service.
 	 */
 	final public function init(
 		NativePaymentsRuntimeArbiter $arbiter,
 		WooPaymentsAccountService $account_service,
 		WooPaymentsPaymentMethodRegistry $payment_method_registry,
-		WooPaymentsOrderDataService $order_data_service
+		WooPaymentsOrderDataService $order_data_service,
+		?WooPaymentsFrontendStylesService $frontend_styles_service = null
 	): void {
 		$this->arbiter                 = $arbiter;
 		$this->account_service         = $account_service;
 		$this->payment_method_registry = $payment_method_registry;
 		$this->order_data_service      = $order_data_service;
+		$this->frontend_styles_service = $frontend_styles_service;
 	}
 
 	/**
@@ -255,7 +263,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 			),
 			'wcAjaxUrl'            => WC_AJAX::get_endpoint( '%%endpoint%%' ),
 			'shouldInitializePMME' => $this->is_any_bnpl_supporting_country( $payment_methods, $country, $currency_code ),
-			'stylesCacheVersion'   => (string) get_option( 'woocommerce_woopayments_styles_cache_version', '0' ),
+			'stylesCacheVersion'   => $this->get_frontend_styles_service()->get_styles_cache_version(),
 		);
 
 		if ( $product instanceof WC_Product ) {
@@ -283,21 +291,13 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 
 		$suffix = Constants::is_true( 'SCRIPT_DEBUG' ) ? '' : '.min';
 
-		if ( ! wp_script_is( self::APPEARANCE_SCRIPT_HANDLE, 'registered' ) ) {
-			wp_register_script(
-				self::APPEARANCE_SCRIPT_HANDLE,
-				WC()->plugin_url() . '/assets/js/frontend/utils/woopayments-appearance' . $suffix . '.js',
-				array(),
-				WC_VERSION,
-				true
-			);
-		}
+		WooPaymentsFrontendAssets::register_appearance_script();
 
 		if ( ! wp_script_is( self::SCRIPT_HANDLE, 'registered' ) ) {
 			wp_register_script(
 				self::SCRIPT_HANDLE,
 				WC()->plugin_url() . '/assets/js/frontend/woopayments-payment-method-messaging' . $suffix . '.js',
-				array( 'jquery', self::STRIPE_SCRIPT_HANDLE, self::APPEARANCE_SCRIPT_HANDLE ),
+				array( 'jquery', self::STRIPE_SCRIPT_HANDLE, WooPaymentsFrontendAssets::APPEARANCE_SCRIPT_HANDLE ),
 				WC_VERSION,
 				true
 			);
@@ -345,6 +345,19 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 			);
 			wp_style_add_data( self::CART_BLOCK_STYLE_HANDLE, 'rtl', 'replace' );
 		}
+	}
+
+	/**
+	 * Get the shared frontend styles service.
+	 *
+	 * @return WooPaymentsFrontendStylesService
+	 */
+	private function get_frontend_styles_service(): WooPaymentsFrontendStylesService {
+		if ( null === $this->frontend_styles_service ) {
+			$this->frontend_styles_service = wc_get_container()->get( WooPaymentsFrontendStylesService::class );
+		}
+
+		return $this->frontend_styles_service;
 	}
 
 	/**

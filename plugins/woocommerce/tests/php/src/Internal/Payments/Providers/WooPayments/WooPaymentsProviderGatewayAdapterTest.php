@@ -13,6 +13,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressPaymentMethodTypes;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentType;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
@@ -390,32 +392,32 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pm_native', $outcome->get_payment_method_id() );
 		$this->assertSame( 'cus_native', $outcome->get_customer_id() );
 		$this->assertSame( 0, $gateway->processed_order_id );
-		$this->assertSame( '4242', $order->get_meta( 'last4', true ) );
-		$this->assertSame( 'visa', $order->get_meta( '_card_brand', true ) );
-		$this->assertSame( 'Visa credit card', $order->get_payment_method_title() );
+		$this->assertSame( '', $order->get_meta( 'last4', true ) );
+		$this->assertSame( '', $order->get_meta( '_card_brand', true ) );
+		$this->assertSame( '', $order->get_payment_method_title() );
+		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
+		$this->assertSame( WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT, $outcome->get_effect_plan()->get_type() );
 		$this->assertArrayHasKey( 'note', $outcome->get_data() );
-		$this->assertStringContainsString( 'A test payment of', $outcome->get_data()['note'] );
-		$this->assertStringContainsString( 'USD was processed using WooPayments', $outcome->get_data()['note'] );
-		$this->assertStringContainsString( 'was processed using WooPayments in <strong>test mode</strong>', $outcome->get_data()['note'] );
+		$this->assertStringContainsString( 'A payment of', $outcome->get_data()['note'] );
+		$this->assertStringContainsString( 'USD was <strong>successfully charged</strong> using WooPayments', $outcome->get_data()['note'] );
 		$this->assertStringContainsString( 'pi_native', $outcome->get_data()['note'] );
 		$this->assertStringContainsString( 'page=wc-admin', $outcome->get_data()['note'] );
 		$this->assertStringContainsString( 'id=pi_native', $outcome->get_data()['note'] );
 		$this->assertStringNotContainsString( '/woopayments/transactions/details', $outcome->get_data()['note'] );
 		$this->assertStringNotContainsString( 'transaction_id=txn_native', $outcome->get_data()['note'] );
-		$this->assertSame( '1.75', $outcome->get_data()['meta']['_wcpay_transaction_fee'] );
-		$this->assertSame( '48.25', $outcome->get_data()['meta']['_wcpay_net'] );
 		$outcome_meta = $outcome->get_data()['meta'];
-		$this->assertArrayHasKey( '_wcpay_fraud_outcome_status', $outcome_meta );
-		$this->assertArrayHasKey( '_wcpay_fraud_meta_box_type', $outcome_meta );
-		$this->assertSame( 'allow', $outcome_meta['_wcpay_fraud_outcome_status'] );
-		$this->assertSame( 'allow', $outcome_meta['_wcpay_fraud_meta_box_type'] );
+		$this->assertArrayNotHasKey( '_wcpay_transaction_fee', $outcome_meta );
+		$this->assertArrayNotHasKey( '_wcpay_net', $outcome_meta );
+		$this->assertArrayNotHasKey( '_wcpay_fraud_outcome_status', $outcome_meta );
+		$this->assertArrayNotHasKey( '_wcpay_fraud_meta_box_type', $outcome_meta );
+		$this->assertSame( 175, $outcome->get_effect_plan()->get_provider_result()['charges']['data'][0]['fee_breakdown_v1']['totals']['fee']['amount'] );
 		$this->assertOrderDoesNotHaveNoteStartingWith( $order, '<strong>Fee details:</strong>' );
 	}
 
 	/**
-	 * @testdox Charge should include settlement exchange-rate meta for converted-currency native charges.
+	 * @testdox Native charge defers settlement exchange-rate metadata to its effect plan.
 	 */
-	public function test_charge_includes_settlement_exchange_rate_meta_for_converted_currency_native_charge(): void {
+	public function test_native_charge_defers_settlement_exchange_rate_meta_to_effect_plan(): void {
 		update_option( 'woocommerce_currency', 'USD' );
 		$order = $this->create_woopayments_order( '40.00' );
 		$order->set_currency( 'GBP' );
@@ -512,7 +514,8 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$outcome = $sut->charge( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_request' ), 'key_charge' );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
-		$this->assertSame( '1.33127', $outcome->get_data()['meta']['_wcpay_multi_currency_stripe_exchange_rate'] );
+		$this->assertArrayNotHasKey( '_wcpay_multi_currency_stripe_exchange_rate', $outcome->get_data()['meta'] );
+		$this->assertSame( 1.33127, $outcome->get_effect_plan()->get_provider_result()['charges']['data'][0]['balance_transaction']['exchange_rate'] );
 	}
 
 	/**
@@ -1142,6 +1145,104 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		);
 
 		$this->assertSame( array( 'sepa_debit' ), $api_client->last_request_data['payment_method_types'] );
+		$this->assertSame(
+			array(
+				'customer_acceptance' => array(
+					'type'   => 'online',
+					'online' => array(
+						'ip_address' => \WC_Geolocation::get_ip_address(),
+						'user_agent' => 'WooCommerce Payments/10.8.0; ' . get_bloginfo( 'url' ),
+					),
+				),
+			),
+			$api_client->last_request_data['mandate_data'] ?? null
+		);
+	}
+
+	/**
+	 * @testdox Charge should send an order return URL for split redirect gateway methods.
+	 */
+	public function test_charge_sends_return_url_for_split_redirect_gateway_methods(): void {
+		$order = $this->create_woopayments_order( '50.00' );
+		$order->set_currency( 'EUR' );
+		$order->save();
+
+		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
+		$api_client       = new class() extends WooPaymentsApiClient {
+			/**
+			 * Last request data.
+			 *
+			 * @var array<string,mixed>
+			 */
+			public array $last_request_data = array();
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Create and confirm a payment intention.
+			 *
+			 * @param array<string,mixed> $request_data Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
+				unset( $idempotency_key );
+				$this->last_request_data = $request_data;
+
+				return array(
+					'id'             => 'pi_ideal',
+					'status'         => 'requires_action',
+					'client_secret'  => 'secret_ideal',
+					'customer'       => 'cus_native',
+					'payment_method' => 'pm_ideal',
+					'currency'       => 'eur',
+					'next_action'    => array(
+						'type'            => 'redirect_to_url',
+						'redirect_to_url' => array(
+							'url' => 'https://pm-redirects.stripe.com/authorize/acct_test/pa_nonce',
+						),
+					),
+					'charges'        => array(
+						'total_count' => 0,
+						'data'        => array(),
+					),
+				);
+			}
+		};
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+		$customer_service->expects( $this->once() )
+			->method( 'get_or_create_customer_id_for_order' )
+			->willReturn( 'cus_native' );
+
+		$sut = $this->create_adapter( $gateway, $api_client, $customer_service );
+		$sut->charge(
+			PaymentContext::for_checkout(
+				$order,
+				OrderPaymentStore::GATEWAY_ID_PREFIX . 'ideal',
+				'pm_ideal'
+			),
+			'key_charge'
+		);
+
+		$this->assertSame( array( 'ideal' ), $api_client->last_request_data['payment_method_types'] );
+		$this->assertArrayHasKey( 'return_url', $api_client->last_request_data );
+		$this->assertStringStartsWith( $order->get_checkout_order_received_url(), $api_client->last_request_data['return_url'] );
+
+		$query_args = array();
+		parse_str( (string) wp_parse_url( (string) $api_client->last_request_data['return_url'], PHP_URL_QUERY ), $query_args );
+
+		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $query_args['wc_payment_method'] ?? '' );
+		$this->assertSame( 1, wp_verify_nonce( $query_args['_wpnonce'] ?? '', 'wcpay_process_redirect_order_nonce' ) );
 	}
 
 	/**
@@ -1462,12 +1563,13 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$order->set_customer_id( $user_id );
 		$order->add_payment_token( $saved_token );
 		$order->save();
+		$token_service = $this->create_single_resolution_token_service( $saved_token, $user_id, 'pm_saved' );
 
 		$customer_service->expects( $this->once() )
 			->method( 'get_or_create_customer_id_for_order' )
 			->willReturn( 'cus_native' );
 
-		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service );
+		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, $token_service );
 		$outcome = $sut->charge(
 			PaymentContext::for_checkout(
 				$order,
@@ -1585,7 +1687,8 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
 		$this->assertTrue( $api_client->last_request_data['off_session'] );
 		$this->assertSame( 'mandate_native', $api_client->last_request_data['mandate'] );
-		$this->assertSame( 'recurring', $api_client->last_request_data['metadata']['payment_type'] );
+		$this->assertInstanceOf( WooPaymentsPaymentType::class, $api_client->last_request_data['metadata']['payment_type'] );
+		$this->assertSame( 'recurring', (string) $api_client->last_request_data['metadata']['payment_type'] );
 		$this->assertSame( 'renewal', $api_client->last_request_data['metadata']['subscription_payment'] );
 		$this->assertSame( 'regular_subscription', $api_client->last_request_data['metadata']['payment_context'] );
 		$this->assertSame(
@@ -1692,9 +1795,9 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Charge should save and attach requested card tokens before returning a successful native outcome.
+	 * @testdox Native charge should plan requested token persistence without creating tokens during transport.
 	 */
-	public function test_charge_saves_and_attaches_requested_card_token(): void {
+	public function test_native_charge_plans_requested_token_persistence_without_writes(): void {
 		$user_id          = $this->factory()->user->create();
 		$order            = $this->create_woopayments_order();
 		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
@@ -1777,20 +1880,21 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		);
 		$order   = wc_get_order( $order->get_id() );
 		$tokens  = \WC_Payment_Tokens::get_customer_tokens( $user_id, OrderPaymentStore::GATEWAY_ID );
-		$token   = reset( $tokens );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
 		$this->assertSame( 'off_session', $api_client->last_request_data['setup_future_usage'] );
-		$this->assertInstanceOf( WC_Payment_Token_CC::class, $token );
-		$this->assertSame( 'pm_native', $token->get_token() );
-		$this->assertContains( $token->get_id(), $order->get_payment_tokens(), 'Saved cards should be linked to the paid order.' );
+		$this->assertEmpty( $tokens );
+		$this->assertEmpty( $order->get_payment_tokens() );
+		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
+		$this->assertTrue( $outcome->get_effect_plan()->should_apply_token_effects() );
+		$this->assertFalse( $outcome->get_effect_plan()->is_recurring() );
 	}
 
 	/**
-	 * @testdox Charge should fail recurring orders when immediate native token saving fails.
+	 * @testdox Native recurring charge should retain the provider outcome until planned token effects run.
 	 */
-	public function test_charge_fails_recurring_order_when_token_save_fails(): void {
+	public function test_native_recurring_charge_returns_provider_outcome_with_required_token_plan(): void {
 		$user_id          = $this->factory()->user->create();
 		$order            = $this->create_woopayments_order();
 		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
@@ -1869,16 +1973,70 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			'key_charge'
 		);
 
-		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		$this->assertSame( 'pi_native', $outcome->get_provider_payment_id() );
 		$this->assertSame( 'off_session', $api_client->last_request_data['setup_future_usage'] );
-		$this->assertSame( 'wcpay_recurring_token_save_failed', $outcome->get_data()['error_code'] );
+		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
+		$this->assertTrue( $outcome->get_effect_plan()->should_apply_token_effects() );
+		$this->assertTrue( $outcome->get_effect_plan()->is_recurring() );
 		$this->assertSame( 0, $gateway->processed_order_id );
 	}
 
 	/**
-	 * @testdox Charge should set card display meta before returning a customer-action outcome.
+	 * @testdox Native charge returns a referenced plan before settlement enrichment runs.
 	 */
-	public function test_charge_sets_card_display_meta_before_returning_requires_action(): void {
+	public function test_native_charge_returns_referenced_plan_before_settlement_enrichment(): void {
+		$order              = $this->create_woopayments_order();
+		$gateway            = new RecordingLegacyGateway( array( 'result' => 'success' ) );
+		$api_client         = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_available', 'create_and_confirm_payment_intention' ) )
+			->getMock();
+		$customer_service   = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+		$order_data_service = $this->getMockBuilder( WooPaymentsOrderDataService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_settlement_exchange_rate_order_meta' ) )
+			->getMock();
+
+		$api_client->expects( $this->once() )
+			->method( 'is_available' )
+			->willReturn( true );
+		$api_client->expects( $this->once() )
+			->method( 'create_and_confirm_payment_intention' )
+			->willReturn(
+				array(
+					'id'             => 'pi_before_enrichment',
+					'status'         => 'succeeded',
+					'customer'       => 'cus_before_enrichment',
+					'payment_method' => 'pm_before_enrichment',
+					'currency'       => 'usd',
+					'charges'        => array(
+						'data' => array(),
+					),
+				)
+			);
+		$customer_service->expects( $this->once() )
+			->method( 'get_or_create_customer_id_for_order' )
+			->willReturn( 'cus_before_enrichment' );
+		$order_data_service->expects( $this->never() )
+			->method( 'get_settlement_exchange_rate_order_meta' );
+
+		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, null, null, $order_data_service );
+		$outcome = $sut->charge( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_before_enrichment' ), 'key_before_enrichment' );
+
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		$this->assertSame( 'pi_before_enrichment', $outcome->get_provider_payment_id() );
+		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
+		$this->assertSame( WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT, $outcome->get_effect_plan()->get_type() );
+	}
+
+	/**
+	 * @testdox Native charge decoding should plan card display effects without mutating the order.
+	 */
+	public function test_native_charge_returns_display_effect_plan_without_mutating_order(): void {
 		$order            = $this->create_woopayments_order();
 		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$api_client       = new class() extends WooPaymentsApiClient {
@@ -1945,10 +2103,12 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION, $outcome->get_status() );
 		$this->assertSame( 'ch_native', $outcome->get_data()['charge_id'] ?? null );
 		$this->assertStringStartsWith( '#wcpay-confirm-pi:' . $order->get_id() . ':secret_action:', $outcome->get_redirect_url() );
-		$this->assertSame( '4242', $order->get_meta( 'last4', true ) );
-		$this->assertSame( 'visa', $order->get_meta( '_card_brand', true ) );
-		$this->assertNotSame( '', $order->get_meta( '_wcpay_payment_method_details', true ) );
-		$this->assertSame( 'Visa credit card', $order->get_payment_method_title() );
+		$this->assertSame( '', $order->get_meta( 'last4', true ) );
+		$this->assertSame( '', $order->get_meta( '_card_brand', true ) );
+		$this->assertSame( '', $order->get_meta( '_wcpay_payment_method_details', true ) );
+		$this->assertSame( '', $order->get_payment_method_title() );
+		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
+		$this->assertSame( WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT, $outcome->get_effect_plan()->get_type() );
 		$this->assertSame( 0, $gateway->processed_order_id );
 	}
 
@@ -1956,8 +2116,10 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 * @testdox Charge should prefer native SetupIntent transport for zero-total card checkout.
 	 */
 	public function test_charge_prefers_native_setup_intent_for_zero_total_checkout(): void {
+		$user_id          = $this->factory()->user->create();
 		$order            = $this->create_woopayments_order( '0.00' );
 		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
+		$saved_token      = $this->create_card_token( $user_id, 'pm_zero' );
 		$api_client       = new class() extends WooPaymentsApiClient {
 			/**
 			 * Tell whether the transport is available.
@@ -1996,14 +2158,26 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
 			->getMock();
+		$order->set_customer_id( $user_id );
+		$order->add_payment_token( $saved_token );
+		$order->save();
+		$token_service = $this->create_single_resolution_token_service( $saved_token, $user_id, 'pm_zero' );
 
 		$customer_service->expects( $this->once() )
 			->method( 'get_or_create_customer_id_for_order' )
 			->with( $this->isInstanceOf( WC_Order::class ) )
 			->willReturn( 'cus_native' );
 
-		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service );
-		$outcome = $sut->charge( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_zero' ), 'key_setup' );
+		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, $token_service );
+		$outcome = $sut->charge(
+			PaymentContext::for_checkout(
+				$order,
+				OrderPaymentStore::GATEWAY_ID,
+				'',
+				array( 'payment_token' => (string) $saved_token->get_id() )
+			),
+			'key_setup'
+		);
 		$order   = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
@@ -2012,8 +2186,11 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pm_native', $outcome->get_payment_method_id() );
 		$this->assertSame( 'cus_native', $outcome->get_customer_id() );
 		$this->assertSame( 0, $gateway->processed_order_id );
-		$this->assertSame( 'seti_native', $order->get_transaction_id() );
-		$this->assertSame( 'pm_native', $order->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( '', $order->get_transaction_id() );
+		$this->assertSame( '', $order->get_meta( '_payment_method_id', true ) );
+		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
+		$this->assertSame( WooPaymentsOrderEffectPlan::TYPE_SETUP_INTENT, $outcome->get_effect_plan()->get_type() );
+		$this->assertSame( 'live', $outcome->get_effect_plan()->get_setup_meta()['_wcpay_mode'] );
 	}
 
 	/**
@@ -2086,9 +2263,9 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Zero-total recurring charges should copy the saved token and provider metadata to related subscriptions.
+	 * @testdox Zero-total recurring transport should plan token synchronization without mutating subscriptions.
 	 */
-	public function test_zero_total_recurring_charge_copies_saved_token_to_related_subscriptions(): void {
+	public function test_zero_total_recurring_charge_plans_token_sync_without_writes(): void {
 		$user_id          = $this->factory()->user->create();
 		$order            = $this->create_woopayments_order( '0.00' );
 		$subscription     = $this->create_woopayments_order( '10.00' );
@@ -2160,22 +2337,23 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->method( 'get_or_create_customer_id_for_order' )
 			->willReturn( 'cus_native' );
 
-		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, $token_service );
-		$outcome = $sut->charge( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_zero' ), 'key_setup' );
-		$order   = wc_get_order( $order->get_id() );
-		$tokens  = \WC_Payment_Tokens::get_customer_tokens( $user_id, OrderPaymentStore::GATEWAY_ID );
-		$token   = reset( $tokens );
-
+		$sut          = $this->create_adapter( $gateway, $api_client, $customer_service, $token_service );
+		$outcome      = $sut->charge( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_zero' ), 'key_setup' );
+		$order        = wc_get_order( $order->get_id() );
+		$tokens       = \WC_Payment_Tokens::get_customer_tokens( $user_id, OrderPaymentStore::GATEWAY_ID );
 		$subscription = wc_get_order( $subscription->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertInstanceOf( WC_Order::class, $subscription );
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
-		$this->assertInstanceOf( WC_Payment_Token_CC::class, $token );
-		$this->assertContains( $token->get_id(), $order->get_payment_tokens(), 'Saved cards should be linked to the parent order.' );
-		$this->assertContains( $token->get_id(), $subscription->get_payment_tokens(), 'Saved cards should be linked to related subscriptions.' );
-		$this->assertSame( 'pm_native', $subscription->get_meta( '_payment_method_id', true ) );
-		$this->assertSame( 'cus_native', $subscription->get_meta( '_stripe_customer_id', true ) );
+		$this->assertEmpty( $tokens );
+		$this->assertEmpty( $order->get_payment_tokens() );
+		$this->assertEmpty( $subscription->get_payment_tokens() );
+		$this->assertSame( '', $subscription->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( '', $subscription->get_meta( '_stripe_customer_id', true ) );
+		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
+		$this->assertTrue( $outcome->get_effect_plan()->should_apply_token_effects() );
+		$this->assertTrue( $outcome->get_effect_plan()->is_recurring() );
 	}
 
 	/**
@@ -2234,12 +2412,62 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( 're_native', $outcome->get_provider_payment_id() );
 		$this->assertSame( 'pending', $outcome->get_data()['refund_status'] );
 		$this->assertSame( 'txn_refund', $outcome->get_data()['refund_balance_transaction_id'] );
-		$this->assertSame( 'pending', $outcome->get_data()['order_meta']['_wcpay_refund_status'] );
-		$this->assertSame( 're_native', $outcome->get_data()['refund_meta']['_wcpay_refund_id'] );
-		$this->assertSame( 'txn_refund', $outcome->get_data()['refund_meta']['_wcpay_refund_transaction_id'] );
-		$this->assertStringContainsString( 'is pending', $outcome->get_data()['refund_note'] );
-		$this->assertStringContainsString( 're_native', $outcome->get_data()['refund_note'] );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_ORDER_META, $outcome->get_data() );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_REFUND_META, $outcome->get_data() );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_REFUND_NOTE, $outcome->get_data() );
+		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
+		$this->assertSame( WooPaymentsOrderEffectPlan::TYPE_REFUND, $outcome->get_effect_plan()->get_type() );
+		$this->assertSame( 're_native', $outcome->get_effect_plan()->get_provider_result()['id'] );
 		$this->assertNull( $gateway->refund_amount );
+	}
+
+	/**
+	 * @testdox A native refund should retain its provider identity before local note formatting runs.
+	 */
+	public function test_native_refund_retains_provider_identity_before_local_effects(): void {
+		$order      = $this->create_woopayments_order();
+		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ), true );
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_available', 'refund_charge' ) )
+			->getMock();
+
+		$order->update_meta_data( '_charge_id', 'ch_native_effect_boundary' );
+		$order->save();
+
+		$api_client->method( 'is_available' )->willReturn( true );
+		$api_client->method( 'refund_charge' )->willReturn(
+			array(
+				'id'                  => 're_effect_boundary',
+				'status'              => 'succeeded',
+				'balance_transaction' => array( 'id' => 'txn_effect_boundary' ),
+			)
+		);
+
+		$container             = wc_get_container();
+		$original_note_service = $container->get( WooPaymentsOrderNoteService::class );
+		$throwing_note_service = $this->getMockBuilder( WooPaymentsOrderNoteService::class )
+			->onlyMethods( array( 'format_created_refund_note' ) )
+			->getMock();
+		$throwing_note_service->method( 'format_created_refund_note' )
+			->willThrowException( new \RuntimeException( 'Local refund note formatting failed.' ) );
+		$container->replace( WooPaymentsOrderNoteService::class, $throwing_note_service );
+
+		try {
+			$outcome = $this->create_adapter( $gateway, $api_client )->refund(
+				PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 3.50, 'Adjustment' ),
+				'key_refund_effect_boundary'
+			);
+		} finally {
+			$container->replace( WooPaymentsOrderNoteService::class, $original_note_service );
+		}
+
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		$this->assertSame( 're_effect_boundary', $outcome->get_provider_payment_id() );
+		$this->assertSame( 'txn_effect_boundary', $outcome->get_data()['refund_balance_transaction_id'] );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_REFUND_NOTE, $outcome->get_data() );
+		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
+		$this->assertSame( WooPaymentsOrderEffectPlan::TYPE_REFUND, $outcome->get_effect_plan()->get_type() );
 	}
 
 	/**
@@ -2375,14 +2603,18 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Capture should add WooPayments-compatible success and fee-detail notes.
+	 * @testdox Native capture should return fee details as a plan without writing order notes.
 	 */
-	public function test_capture_adds_success_and_fee_detail_notes_for_native_capture(): void {
-		$order      = $this->create_woopayments_order( '50.00' );
-		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ), true );
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+	public function test_native_capture_returns_fee_effect_plan_without_writing_notes(): void {
+		$order              = $this->create_woopayments_order( '50.00' );
+		$gateway            = new RecordingLegacyGateway( array( 'result' => 'success' ), true );
+		$api_client         = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'capture_intention' ) )
+			->getMock();
+		$order_data_service = $this->getMockBuilder( WooPaymentsOrderDataService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_settlement_exchange_rate_order_meta' ) )
 			->getMock();
 
 		$order->set_transaction_id( 'pi_capture_notes' );
@@ -2429,13 +2661,18 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 					),
 				)
 			);
+		$order_data_service->expects( $this->never() )
+			->method( 'get_settlement_exchange_rate_order_meta' );
 
-		$sut     = $this->create_adapter( $gateway, $api_client, null, null, null, new WooPaymentsOrderDataService() );
+		$sut     = $this->create_adapter( $gateway, $api_client, null, null, null, $order_data_service );
 		$outcome = $sut->capture( PaymentContext::for_capture( $order, OrderPaymentStore::GATEWAY_ID ), 'key_capture' );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
 		$this->assertStringContainsString( 'successfully captured', $outcome->get_data()[ PaymentOutcome::DATA_NOTE ] );
 		$this->assertStringContainsString( 'WooPayments', $outcome->get_data()[ PaymentOutcome::DATA_NOTE ] );
+		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
+		$this->assertSame( WooPaymentsOrderEffectPlan::TYPE_CAPTURE, $outcome->get_effect_plan()->get_type() );
+		$this->assertSame( 'ch_capture_notes', $outcome->get_effect_plan()->get_provider_result()['charges']['data'][0]['id'] );
 
 		$notes = wc_get_order_notes(
 			array(
@@ -2444,7 +2681,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$this->assertNotEmpty(
+		$this->assertEmpty(
 			array_filter(
 				$notes,
 				static fn( object $note ): bool => 0 === strpos( (string) $note->content, '<strong>Fee details:</strong>' )
@@ -2501,9 +2738,9 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Capture should include settlement exchange-rate meta for converted-currency native captures.
+	 * @testdox Native capture defers settlement exchange-rate metadata to its effect plan.
 	 */
-	public function test_capture_includes_settlement_exchange_rate_meta_for_converted_currency_native_capture(): void {
+	public function test_native_capture_defers_settlement_exchange_rate_meta_to_effect_plan(): void {
 		update_option( 'woocommerce_currency', 'USD' );
 		$order = $this->create_woopayments_order( '40.00' );
 		$order->set_currency( 'GBP' );
@@ -2572,12 +2809,8 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$outcome = $sut->capture( PaymentContext::for_capture( $order, OrderPaymentStore::GATEWAY_ID ), 'key_capture' );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
-		$this->assertSame( '1.33127', $outcome->get_data()['meta']['_wcpay_multi_currency_stripe_exchange_rate'] );
-		$this->assertSame( '1.56', $outcome->get_data()['meta']['_wcpay_transaction_fee'] );
-		$this->assertSame( '51.7', $outcome->get_data()['meta']['_wcpay_net'] );
-		$this->assertSame( 'ch_capture_converted', $outcome->get_data()['meta']['_charge_id'] );
-		$this->assertSame( 'txn_capture_converted', $outcome->get_data()['meta']['_wcpay_payment_transaction_id'] );
-		$this->assertSame( 'gbp', $outcome->get_data()['meta']['_wcpay_intent_currency'] );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_META, $outcome->get_data() );
+		$this->assertSame( 1.33127, $outcome->get_effect_plan()->get_provider_result()['charges']['data'][0]['balance_transaction']['exchange_rate'] );
 	}
 
 	/**
@@ -2780,7 +3013,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	private function create_account_service( bool $test_mode, array $settings = array(), array $account_data = array() ): WooPaymentsAccountService {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_test_mode_enabled', 'get_mode', 'get_gateway_setting', 'get_cached_account_data', 'get_account_default_currency' ) )
+			->onlyMethods( array( 'is_test_mode_enabled', 'get_mode', 'get_gateway_setting', 'get_cached_account_data', 'get_account_default_currency', 'get_account_country' ) )
 			->getMock();
 
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( $test_mode );
@@ -2809,6 +3042,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		);
 		$store_currencies = is_array( $account_data['store_currencies'] ?? null ) ? $account_data['store_currencies'] : array();
 		$account_service->method( 'get_account_default_currency' )->willReturn( (string) ( $store_currencies['default'] ?? 'usd' ) );
+		$account_service->method( 'get_account_country' )->willReturn( strtoupper( (string) ( $account_data['country'] ?? 'US' ) ) );
 
 		return $account_service;
 	}
@@ -2850,6 +3084,31 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$token_service = new WooPaymentsTokenService();
 		$token_service->init( $details_service, new StaticNativeRuntimeArbiter( true ) );
+
+		return $token_service;
+	}
+
+	/**
+	 * Create a token service that permits one saved-credential resolution before transport.
+	 *
+	 * @param WC_Payment_Token_CC $token             Saved WooCommerce token.
+	 * @param int                 $user_id           Expected token owner.
+	 * @param string              $payment_method_id Provider payment method ID.
+	 * @return WooPaymentsTokenService
+	 */
+	private function create_single_resolution_token_service( WC_Payment_Token_CC $token, int $user_id, string $payment_method_id ): WooPaymentsTokenService {
+		$token_service = $this->getMockBuilder( WooPaymentsTokenService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'resolve_payment_method_type_from_token_id', 'resolve_payment_method_id_from_token_id' ) )
+			->getMock();
+		$token_service->expects( $this->once() )
+			->method( 'resolve_payment_method_type_from_token_id' )
+			->with( (string) $token->get_id(), $user_id )
+			->willReturn( 'card' );
+		$token_service->expects( $this->once() )
+			->method( 'resolve_payment_method_id_from_token_id' )
+			->with( (string) $token->get_id(), $user_id )
+			->willReturn( $payment_method_id );
 
 		return $token_service;
 	}

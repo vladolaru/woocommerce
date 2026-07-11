@@ -70,20 +70,37 @@ class MultiCurrencyStateBuilder {
 	private array $rate_cache = array();
 
 	/**
+	 * Request-local invalidation coordinator.
+	 *
+	 * @var MultiCurrencyStateInvalidator
+	 */
+	private MultiCurrencyStateInvalidator $state_invalidator;
+
+	/**
+	 * Invalidation generation used by the memoized state.
+	 *
+	 * @var int
+	 */
+	private int $cached_state_generation = -1;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param MultiCurrencyLocalizationInterface $localization_service Localization service.
 	 * @param MultiCurrencyRateService           $rate_service         Rate service.
 	 * @param MultiCurrencyCacheInterface        $cache                Multi-currency cache.
+	 * @param MultiCurrencyStateInvalidator|null $state_invalidator    Optional request-local invalidation coordinator.
 	 */
 	public function __construct(
 		MultiCurrencyLocalizationInterface $localization_service,
 		MultiCurrencyRateService $rate_service,
-		MultiCurrencyCacheInterface $cache
+		MultiCurrencyCacheInterface $cache,
+		?MultiCurrencyStateInvalidator $state_invalidator = null
 	) {
 		$this->localization_service = $localization_service;
 		$this->rate_service         = $rate_service;
 		$this->cache                = $cache;
+		$this->state_invalidator    = $state_invalidator ?? new MultiCurrencyStateInvalidator();
 	}
 
 	/**
@@ -107,7 +124,8 @@ class MultiCurrencyStateBuilder {
 	 * @return MultiCurrencyState
 	 */
 	public function build(): MultiCurrencyState {
-		if ( null !== $this->cached_state ) {
+		$current_generation = $this->state_invalidator->get_generation();
+		if ( null !== $this->cached_state && $current_generation === $this->cached_state_generation ) {
 			return $this->cached_state;
 		}
 
@@ -159,7 +177,8 @@ class MultiCurrencyStateBuilder {
 			? $enabled[ $selected_code ]
 			: $default;
 
-		$this->cached_state = new MultiCurrencyState( $available, $enabled, $default, $selected, $this->get_customer_currencies() );
+		$this->cached_state            = new MultiCurrencyState( $available, $enabled, $default, $selected, $this->get_customer_currencies() );
+		$this->cached_state_generation = $current_generation;
 
 		return $this->cached_state;
 	}
@@ -175,6 +194,7 @@ class MultiCurrencyStateBuilder {
 	 */
 	public function reset(): void {
 		$this->cached_state = null;
+		$this->state_invalidator->invalidate();
 	}
 
 	/**

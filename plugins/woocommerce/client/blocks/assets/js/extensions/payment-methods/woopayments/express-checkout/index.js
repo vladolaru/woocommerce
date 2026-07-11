@@ -338,7 +338,9 @@ const addReferenceElementOptions = ( options ) => {
 	}
 
 	const appearance = getBlocksCheckoutAppearance(
-		settings.stylesCacheVersion
+		settings.stylesCacheVersion,
+		document,
+		settings
 	);
 	if ( appearance ) {
 		options.appearance = appearance;

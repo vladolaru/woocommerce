@@ -6,10 +6,16 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
 use Automattic\WooCommerce\Internal\Payments\CapabilityManifest;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\PaymentContext;
+use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
+use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectApplier;
+use Automattic\WooCommerce\Internal\Payments\ProviderPostLifecycleEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceProfile;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use WC_Unit_Test_Case;
@@ -39,6 +45,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
+		delete_option( '_wcpay_feature_amazon_pay' );
 
 		parent::tearDown();
 	}
@@ -79,7 +86,45 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Provider should publish native WooPayments gateway instances for active payment method definitions.
+	 * @testdox Provider exposes and delegates the optional pre- and post-lifecycle effect ports.
+	 */
+	public function test_provider_delegates_woopayments_operation_effects(): void {
+		$order           = wc_create_order();
+		$context         = PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_effects' );
+		$effect_plan     = WooPaymentsOrderEffectPlan::for_payment_intent( array( 'status' => 'succeeded' ), false );
+		$outcome         = ( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_effects' ) )->with_effect_plan( $effect_plan );
+		$gateway_adapter = $this->getMockBuilder( WooPaymentsProviderGatewayAdapter::class )
+			->disableOriginalConstructor()
+			->getMock();
+		$api_client      = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->getMock();
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->getMock();
+		$effect_applier  = $this->getMockBuilder( WooPaymentsOrderEffectApplier::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'apply', 'apply_payment_method_display_details' ) )
+			->getMock();
+		$effect_applier->expects( $this->once() )
+			->method( 'apply' )
+			->with( $context, $outcome, $effect_plan )
+			->willReturn( $outcome );
+		$effect_applier->expects( $this->once() )
+			->method( 'apply_payment_method_display_details' )
+			->with( $order, array( 'status' => 'succeeded' ) );
+
+		$provider = new WooPaymentsProvider();
+		$provider->init( $gateway_adapter, $api_client, $account_service, null, $effect_applier );
+
+		$this->assertInstanceOf( ProviderOperationEffectApplier::class, $provider );
+		$this->assertInstanceOf( ProviderPostLifecycleEffectApplier::class, $provider );
+		$this->assertSame( $outcome, $provider->apply_operation_effects( $context, $outcome, 'charge' ) );
+		$provider->apply_post_lifecycle_effects( $context, $outcome, 'charge' );
+	}
+
+	/**
+	 * @testdox Provider should publish gateway identity independently of transient capability state.
 	 */
 	public function test_provider_publishes_native_gateway_instances_for_active_payment_method_definitions(): void {
 		update_option(
@@ -100,25 +145,24 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 		);
 		$gateways = $provider->get_payment_gateways();
 
-		$this->assertSame(
-			array(
-				OrderPaymentStore::GATEWAY_ID,
-				OrderPaymentStore::GATEWAY_ID . '_link',
-				OrderPaymentStore::GATEWAY_ID . '_klarna',
-				OrderPaymentStore::GATEWAY_ID . '_sepa_debit',
-			),
-			array_map(
-				static fn( NativeWooPaymentsGateway $gateway ): string => $gateway->id,
-				$gateways
-			)
+		$gateway_ids = array_map(
+			static fn( NativeWooPaymentsGateway $gateway ): string => $gateway->id,
+			$gateways
 		);
+		$this->assertContains( OrderPaymentStore::GATEWAY_ID, $gateway_ids );
+		$this->assertContains( OrderPaymentStore::GATEWAY_ID . '_klarna', $gateway_ids );
+		$this->assertContains( OrderPaymentStore::GATEWAY_ID . '_sepa_debit', $gateway_ids );
+		$this->assertContains( OrderPaymentStore::GATEWAY_ID . '_affirm', $gateway_ids );
+		$this->assertContains( OrderPaymentStore::GATEWAY_ID . '_apple_pay', $gateway_ids );
+		$this->assertContains( OrderPaymentStore::GATEWAY_ID . '_google_pay', $gateway_ids );
+		$this->assertNotContains( OrderPaymentStore::GATEWAY_ID . '_link', $gateway_ids );
 
 		$klarna_gateway = $provider->get_gateway_for_method( 'klarna' );
 		$link_gateway   = $provider->get_gateway_for_method( 'link' );
 
 		$this->assertInstanceOf( NativeWooPaymentsGateway::class, $klarna_gateway );
 		$this->assertInstanceOf( NativeWooPaymentsGateway::class, $link_gateway );
-		$this->assertNull( $provider->get_gateway_for_method( 'affirm' ) );
+		$this->assertInstanceOf( NativeWooPaymentsGateway::class, $provider->get_gateway_for_method( 'affirm' ) );
 		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $provider->get_gateway_for_method( 'card' )->id );
 		$this->assertSame( 'Klarna', $klarna_gateway->get_title() );
 		$this->assertSame( 'WooPayments (Klarna)', $klarna_gateway->method_title );
@@ -128,12 +172,61 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Provider should preserve gateway identity independently of transient account capability state.
+	 */
+	public function test_provider_builds_gateways_for_inactive_payment_method_definitions(): void {
+		$provider = $this->create_provider_with_capabilities(
+			array(
+				'card_payments'   => 'restricted',
+				'affirm_payments' => 'unrequested',
+			)
+		);
+
+		$this->assertInstanceOf( NativeWooPaymentsGateway::class, $provider->get_gateway_for_method( 'card' ) );
+		$this->assertInstanceOf( NativeWooPaymentsGateway::class, $provider->get_gateway_for_method( 'affirm' ) );
+		$this->assertContains(
+			OrderPaymentStore::GATEWAY_ID . '_affirm',
+			array_map(
+				static fn( NativeWooPaymentsGateway $gateway ): string => $gateway->id,
+				$provider->get_payment_gateways()
+			)
+		);
+	}
+
+	/**
+	 * @testdox Amazon Pay identity is published only when its shared feature prerequisites are enabled.
+	 */
+	public function test_provider_applies_amazon_pay_feature_policy_when_building_gateways(): void {
+		update_option( '_wcpay_feature_amazon_pay', '1' );
+		$confirmation_tokens_disabled = $this->create_provider_with_capabilities(
+			array( 'amazon_pay_payments' => 'active' ),
+			array( 'ece_confirmation_tokens_disabled' => true )
+		);
+		$this->assertNull( $confirmation_tokens_disabled->get_gateway_for_method( 'amazon_pay' ) );
+
+		update_option( '_wcpay_feature_amazon_pay', '0' );
+		$feature_disabled = $this->create_provider_with_capabilities(
+			array( 'amazon_pay_payments' => 'active' ),
+			array( 'ece_confirmation_tokens_disabled' => false )
+		);
+		$this->assertNull( $feature_disabled->get_gateway_for_method( 'amazon_pay' ) );
+
+		update_option( '_wcpay_feature_amazon_pay', '1' );
+		$enabled = $this->create_provider_with_capabilities(
+			array( 'amazon_pay_payments' => 'active' ),
+			array( 'ece_confirmation_tokens_disabled' => false )
+		);
+		$this->assertInstanceOf( NativeWooPaymentsGateway::class, $enabled->get_gateway_for_method( 'amazon_pay' ) );
+	}
+
+	/**
 	 * Create a WooPayments provider with account capability fixture data.
 	 *
 	 * @param array<string,string> $capabilities Account capability status map.
+	 * @param array<string,mixed>  $account_data Account data overrides.
 	 * @return WooPaymentsProvider
 	 */
-	private function create_provider_with_capabilities( array $capabilities ): WooPaymentsProvider {
+	private function create_provider_with_capabilities( array $capabilities, array $account_data = array() ): WooPaymentsProvider {
 		$gateway_adapter = $this->getMockBuilder( WooPaymentsProviderGatewayAdapter::class )
 			->disableOriginalConstructor()
 			->getMock();
@@ -147,9 +240,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 		$account_service
 			->method( 'get_cached_account_data' )
 			->willReturn(
-				array(
-					'capabilities' => $capabilities,
-				)
+				array_merge( array( 'capabilities' => $capabilities ), $account_data )
 			);
 
 		$provider = new WooPaymentsProvider();

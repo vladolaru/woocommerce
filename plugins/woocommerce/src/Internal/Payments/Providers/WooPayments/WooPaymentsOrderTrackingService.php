@@ -26,7 +26,7 @@ class WooPaymentsOrderTrackingService implements RegisterHooksInterface {
 	 *
 	 * @var string
 	 */
-	const FILTER_FRAUD_SERVICES_CONFIG = 'woocommerce_woopayments_native_fraud_services_config';
+	const FILTER_FRAUD_SERVICES_CONFIG = WooPaymentsAccountService::FILTER_FRAUD_SERVICES_CONFIG;
 
 	/**
 	 * Preserved WooPayments new-order tracking hook.
@@ -326,18 +326,9 @@ class WooPaymentsOrderTrackingService implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_sift_tracking_enabled(): bool {
-		/**
-		 * Filters native WooPayments fraud services config.
-		 *
-		 * This mirrors the standalone plugin's Sift gate while native fraud settings are absorbed into Core.
-		 *
-		 * @since 11.0.0
-		 *
-		 * @param array<string,mixed> $config Fraud services config.
-		 */
-		$config = apply_filters( self::FILTER_FRAUD_SERVICES_CONFIG, array() );
+		$config = $this->account_service->get_fraud_services_config();
 
-		return is_array( $config ) && array_key_exists( 'sift', $config );
+		return array_key_exists( 'sift', $config );
 	}
 
 	/**

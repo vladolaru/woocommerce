@@ -18,11 +18,11 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsFailedAuthenticationRetryEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsFailedRenewalAuthenticationEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use Throwable;
 use WC_Order;
 use WC_Payment_Token;
 use WC_Payment_Gateway_CC;
-use WC_Payment_Tokens;
 use WP_Error;
 
 /**
@@ -59,6 +59,11 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	private const PAYMENT_METHOD_CAPABILITY_TOKENIZATION = 'tokenization';
 
 	/**
+	 * Native payment method capability for express checkout methods.
+	 */
+	private const PAYMENT_METHOD_CAPABILITY_EXPRESS_CHECKOUT = 'express_checkout';
+
+	/**
 	 * Shopper-facing card brand icons.
 	 *
 	 * @var array<string,string>
@@ -90,6 +95,13 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * Recommended payment methods cache TTL.
 	 */
 	private const RECOMMENDED_PAYMENT_METHODS_CACHE_TTL = DAY_IN_SECONDS;
+
+	/**
+	 * Whether the base gateway attached the shared subscription integration hooks for this request.
+	 *
+	 * @var bool
+	 */
+	private static bool $has_attached_subscription_handlers = false;
 
 	/**
 	 * Payment processing service.
@@ -190,6 +202,11 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 		$this->init_settings();
 		$this->init_supported_features();
+
+		if ( $this->payment_method_supports( self::PAYMENT_METHOD_CAPABILITY_EXPRESS_CHECKOUT ) ) {
+			$this->has_custom_place_order_button = true;
+			$this->has_fields                    = false;
+		}
 
 		if ( did_action( 'init' ) ) {
 			$this->handle_init();
@@ -292,6 +309,63 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
+	 * Tell whether this payment method is available for the current checkout context.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @return bool
+	 */
+	public function is_available(): bool {
+		if ( ! parent::is_available() || ! $this->payment_method_definition->should_publish_gateway() ) {
+			return false;
+		}
+		if ( 'card' !== $this->get_payment_method_id() && ! $this->get_account_service()->is_gateway_enabled() ) {
+			return false;
+		}
+		if ( ! $this->get_provider()->can_process_payments() || ! $this->is_account_capability_active() ) {
+			return false;
+		}
+
+		if (
+			$this->payment_method_supports( self::PAYMENT_METHOD_CAPABILITY_EXPRESS_CHECKOUT )
+			&& ! is_admin()
+			&& ! $this->is_express_checkout_in_payment_methods_enabled()
+		) {
+			return false;
+		}
+		if ( $this->needs_https_setup() || ! $this->is_available_for_current_subscription_context() || ! $this->is_bnpl_order_pay_available() ) {
+			return false;
+		}
+
+		$currency        = $this->get_checkout_currency();
+		$account_country = $this->get_account_country();
+
+		return $this->payment_method_definition->is_available_for( $currency, $account_country )
+			&& $this->is_checkout_amount_within_definition_limits( $currency, $account_country );
+	}
+
+	/**
+	 * Tell whether express checkout methods should appear in the payment-method list.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @return bool
+	 */
+	public function is_express_checkout_in_payment_methods_enabled(): bool {
+		return WooPaymentsSettingsService::is_dynamic_checkout_place_order_button_enabled()
+			&& 'yes' === (string) $this->get_account_service()->get_gateway_setting( 'express_checkout_in_payment_methods', 'no' );
+	}
+
+	/**
+	 * Tell whether live checkout requires HTTPS configuration.
+	 *
+	 * @return bool
+	 */
+	public function needs_https_setup(): bool {
+		return ! $this->get_account_service()->is_test_mode_enabled() && ! wc_checkout_is_https();
+	}
+
+	/**
 	 * Render the native WooPayments payment form.
 	 *
 	 * @return void
@@ -344,7 +418,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 				return $this->add_payment_method_error( __( "We're not able to add this payment method. Please try again later.", 'woocommerce' ) );
 			}
 
-			$token = $this->get_token_service()->get_or_create_card_token_for_user( $payment_method_id, $user_id );
+			$token = $this->get_token_service()->get_or_create_token_for_user( $payment_method_id, $user_id );
 			if ( ! $token instanceof WC_Payment_Token ) {
 				return $this->add_payment_method_error( __( "We're not able to add this payment method. Please try again later.", 'woocommerce' ) );
 			}
@@ -647,11 +721,38 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return;
 		}
 
-		$subscription_token_ids = array_map( 'absint', $subscription->get_payment_tokens() );
-		if ( ! in_array( $token->get_id(), $subscription_token_ids, true ) ) {
-			$subscription->add_payment_token( $token );
-			$subscription->save();
+		$this->get_token_service()->attach_token_to_order( $subscription, $token );
+	}
+
+	/**
+	 * Force subscriptions using non-reusable WooPayments methods to manual renewal.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $subscription Subscription object.
+	 * @return void
+	 */
+	public function maybe_force_subscription_to_manual( $subscription ): void {
+		if ( ! $subscription instanceof WC_Order || ! is_callable( array( $subscription, 'set_requires_manual_renewal' ) ) ) {
+			return;
 		}
+
+		$gateway_id = $subscription->get_payment_method();
+		if ( ! WooPaymentsSubscriptionMethodPolicy::is_native_gateway_id( $gateway_id ) || WooPaymentsSubscriptionMethodPolicy::is_reusable_gateway_id( $gateway_id ) ) {
+			return;
+		}
+
+		$payment_method_type = substr( $gateway_id, strlen( OrderPaymentStore::GATEWAY_ID_PREFIX ) );
+		$subscription->update_meta_data( '_wcpay_original_payment_method_id', $gateway_id );
+		$subscription->set_requires_manual_renewal( true );
+		$subscription->save();
+		$subscription->add_order_note(
+			sprintf(
+				/* translators: %s: payment method type. */
+				__( 'Subscription set to manual renewal because %s is a non-reusable payment method.', 'woocommerce' ),
+				$payment_method_type
+			)
+		);
 	}
 
 	/**
@@ -816,6 +917,202 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		return '' !== $country ? $country : 'US';
+	}
+
+	/**
+	 * Tell whether the connected account has this payment method's capability active.
+	 *
+	 * An empty capability map is the pre-onboarding fallback used by WooPayments: card remains
+	 * available, while split methods require an explicit active capability.
+	 *
+	 * @return bool
+	 */
+	private function is_account_capability_active(): bool {
+		$account_data = $this->get_account_service()->get_cached_account_data();
+		$capabilities = is_array( $account_data['capabilities'] ?? null ) ? $account_data['capabilities'] : array();
+
+		if ( array() === $capabilities ) {
+			return 'card' === $this->get_payment_method_id();
+		}
+
+		$capability_key = $this->payment_method_definition->get_account_capability_key();
+
+		return 'active' === ( $capabilities[ $capability_key ] ?? null );
+	}
+
+	/**
+	 * Get the currency for the current checkout or order-pay context.
+	 *
+	 * @return string
+	 */
+	private function get_checkout_currency(): string {
+		$order = $this->get_order_pay_order();
+		if ( $order instanceof WC_Order && '' !== $order->get_currency() ) {
+			return strtoupper( $order->get_currency() );
+		}
+
+		return strtoupper( get_woocommerce_currency() );
+	}
+
+	/**
+	 * Get the current order-pay order.
+	 *
+	 * @return WC_Order|null
+	 */
+	private function get_order_pay_order(): ?WC_Order {
+		$order_id = absint( get_query_var( 'order-pay' ) );
+		if ( 0 === $order_id ) {
+			return null;
+		}
+
+		$order = wc_get_order( $order_id );
+
+		return $order instanceof WC_Order ? $order : null;
+	}
+
+	/**
+	 * Tell whether this method is available in the current subscription context.
+	 *
+	 * @return bool
+	 */
+	private function is_available_for_current_subscription_context(): bool {
+		$is_subscription_context = false;
+		if ( class_exists( 'WC_Subscriptions_Cart' ) && $this->is_subscriptions_enabled() ) {
+			$is_subscription_context = \WC_Subscriptions_Cart::cart_contains_subscription()
+				|| ( function_exists( 'wcs_cart_contains_renewal' ) && (bool) wcs_cart_contains_renewal() );
+		}
+
+		if ( ! $is_subscription_context && isset( $_GET['change_payment_method'] ) && function_exists( 'wcs_is_subscription' ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			$is_subscription_context = (bool) wcs_is_subscription( absint( $_GET['change_payment_method'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		}
+
+		$order = $this->get_order_pay_order();
+		if ( ! $is_subscription_context && $order instanceof WC_Order && function_exists( 'wcs_order_contains_renewal' ) ) {
+			$is_subscription_context = (bool) wcs_order_contains_renewal( $order );
+		}
+
+		$manual_renewals_enabled = function_exists( 'wcs_is_manual_renewal_enabled' ) && (bool) wcs_is_manual_renewal_enabled();
+
+		return $this->is_available_for_subscription_context( $is_subscription_context, $manual_renewals_enabled );
+	}
+
+	/**
+	 * Apply reusable/manual-renewal policy to a subscription context.
+	 *
+	 * @param bool $is_subscription_context Whether checkout is for a subscription.
+	 * @param bool $manual_renewals_enabled Whether manual renewals are enabled.
+	 * @return bool
+	 */
+	private function is_available_for_subscription_context( bool $is_subscription_context, bool $manual_renewals_enabled ): bool {
+		return ! $is_subscription_context
+			|| $manual_renewals_enabled
+			|| WooPaymentsSubscriptionMethodPolicy::is_reusable_gateway_id( $this->id );
+	}
+
+	/**
+	 * Tell whether an order-pay BNPL method has usable shopper address data.
+	 *
+	 * @return bool
+	 */
+	private function is_bnpl_order_pay_available(): bool {
+		$payment_method_id = $this->get_payment_method_id();
+		if ( ! in_array( $payment_method_id, array( 'affirm', 'afterpay_clearpay' ), true ) ) {
+			return true;
+		}
+
+		$order = $this->get_order_pay_order();
+		if ( ! $order instanceof WC_Order ) {
+			return true;
+		}
+
+		$address = $this->get_usable_order_address( $order );
+		if ( null === $address ) {
+			return false;
+		}
+
+		return 'affirm' !== $payment_method_id || '' !== $address['name'];
+	}
+
+	/**
+	 * Get usable shipping data from an order, falling back to billing data.
+	 *
+	 * @param WC_Order $order Order-pay order.
+	 * @return array{name:string,address:array<string,string>}|null
+	 */
+	private function get_usable_order_address( WC_Order $order ): ?array {
+		foreach ( array( 'shipping', 'billing' ) as $address_type ) {
+			$address = $order->get_address( $address_type );
+			if ( ! is_array( $address ) || ! $this->is_order_address_usable( $address ) ) {
+				continue;
+			}
+
+			return array(
+				'name'    => trim( (string) ( $address['first_name'] ?? '' ) . ' ' . (string) ( $address['last_name'] ?? '' ) ),
+				'address' => array_map( 'strval', $address ),
+			);
+		}
+
+		return null;
+	}
+
+	/**
+	 * Validate the address fields WooCommerce requires for a country.
+	 *
+	 * @param array<string,mixed> $address Order address.
+	 * @return bool
+	 */
+	private function is_order_address_usable( array $address ): bool {
+		$country = strtoupper( (string) ( $address['country'] ?? '' ) );
+		if ( '' === $country ) {
+			return false;
+		}
+
+		$country_locale = function_exists( 'WC' ) && WC() && WC()->countries
+			? WC()->countries->get_country_locale()
+			: array();
+		$fields         = array( 'state', 'city', 'postcode', 'address_1' );
+
+		foreach ( $fields as $field ) {
+			$field_config = $country_locale[ $country ][ $field ] ?? array();
+			$is_required  = ! array_key_exists( 'required', $field_config ) || (bool) $field_config['required'];
+			if ( $is_required && '' === trim( (string) ( $address[ $field ] ?? '' ) ) ) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * Tell whether the current checkout total is inside the definition's amount limits.
+	 *
+	 * @param string $currency        Checkout currency.
+	 * @param string $account_country Merchant account country.
+	 * @return bool
+	 */
+	private function is_checkout_amount_within_definition_limits( string $currency, string $account_country ): bool {
+		$limits = $this->payment_method_definition->get_limits_per_currency();
+		if ( ! isset( $limits[ $currency ] ) ) {
+			return true;
+		}
+
+		$total = (float) $this->get_order_total();
+		if ( 0.0 >= $total ) {
+			return true;
+		}
+
+		$range = $limits[ $currency ][ $account_country ] ?? $limits[ $currency ]['default'] ?? null;
+		if ( ! is_array( $range ) ) {
+			return false;
+		}
+
+		$minor_unit = WooPaymentsCurrencyUtils::get_stripe_minor_unit_for_currency( $currency );
+		$amount     = (int) round( $total * ( 10 ** $minor_unit ) );
+		$minimum    = $range['min'] ?? null;
+		$maximum    = $range['max'] ?? null;
+
+		return ( null === $minimum || $amount >= $minimum )
+			&& ( null === $maximum || $amount <= $maximum );
 	}
 
 	/**
@@ -1484,15 +1781,20 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return void
 	 */
 	private function register_subscription_handlers(): void {
-		if ( ! $this->is_subscriptions_enabled() ) {
+		if ( ! $this->owns_subscription_renewal_hooks() || self::$has_attached_subscription_handlers ) {
 			return;
 		}
+		self::$has_attached_subscription_handlers = true;
 
 		if ( false === has_filter( 'woocommerce_email_classes', array( self::class, 'add_subscription_emails' ) ) ) {
 			add_filter( 'woocommerce_email_classes', array( self::class, 'add_subscription_emails' ), 20 );
 		}
 
-		foreach ( $this->get_reusable_subscription_gateway_ids() as $gateway_id ) {
+		if ( false === has_action( 'woocommerce_checkout_subscription_created', array( $this, 'maybe_force_subscription_to_manual' ) ) ) {
+			add_action( 'woocommerce_checkout_subscription_created', array( $this, 'maybe_force_subscription_to_manual' ), 10, 1 );
+		}
+
+		foreach ( WooPaymentsSubscriptionMethodPolicy::get_reusable_gateway_ids() as $gateway_id ) {
 			$scheduled_hook = 'woocommerce_scheduled_subscription_payment_' . $gateway_id;
 			$failing_hook   = 'woocommerce_subscription_failing_payment_method_updated_' . $gateway_id;
 
@@ -1509,15 +1811,15 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
-	 * Get reusable WooPayments gateway IDs that can process automatic subscription renewals.
+	 * Tell whether this gateway owns automatic subscription renewal handling.
 	 *
-	 * @return array<int,string>
+	 * Link credentials remain attached to the base card gateway, and Amazon Pay renewals use a
+	 * preserved compatibility gateway ID handled by the same base gateway instance.
+	 *
+	 * @return bool
 	 */
-	private function get_reusable_subscription_gateway_ids(): array {
-		return array(
-			$this->id,
-			WooPaymentsPersistenceProfile::GATEWAY_ID_PREFIX . 'amazon_pay',
-		);
+	private function owns_subscription_renewal_hooks(): bool {
+		return OrderPaymentStore::GATEWAY_ID === $this->id && $this->is_subscriptions_enabled();
 	}
 
 	/**
@@ -1551,15 +1853,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return WC_Payment_Token|null
 	 */
 	private function get_payment_token_from_order( WC_Order $order ): ?WC_Payment_Token {
-		$token_ids = array_map( 'absint', $order->get_payment_tokens() );
-		foreach ( $token_ids as $token_id ) {
-			$token = WC_Payment_Tokens::get( $token_id );
-			if ( $token instanceof WC_Payment_Token && $this->id === $token->get_gateway_id() ) {
-				return $token;
-			}
-		}
-
-		return null;
+		return $this->get_token_service()->get_active_token_for_order( $order );
 	}
 
 	/**

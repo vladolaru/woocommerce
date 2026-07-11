@@ -105,10 +105,14 @@ class WooPaymentsNativeAccountAdapter implements MultiCurrencyAccountInterface {
 	/**
 	 * Get provider-supported countries.
 	 *
-	 * @return string[]
+	 * @return array<string,string>
 	 */
 	public function get_supported_countries(): array {
-		return array();
+		try {
+			return $this->account_service->get_supported_countries();
+		} catch ( \Throwable $e ) {
+			return array();
+		}
 	}
 
 	/**

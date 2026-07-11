@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
@@ -26,8 +25,6 @@ use WC_Order;
  * @internal Transitional internal component for the native payments runtime.
  */
 class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
-
-	private const CREATE_SETUP_INTENT_RATE_LIMIT_SECONDS = 5;
 
 	private const ZERO_DECIMAL_CURRENCIES = array(
 		'bif',
@@ -104,6 +101,13 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	private WooPaymentsPaymentMethodRegistry $payment_method_registry;
 
 	/**
+	 * WooPayments order effect applier.
+	 *
+	 * @var WooPaymentsOrderEffectApplier|null
+	 */
+	private ?WooPaymentsOrderEffectApplier $order_effect_applier = null;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -116,6 +120,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	 * @param WooPaymentsAccountService             $account_service         WooPayments account service.
 	 * @param WooPaymentsOrderDataService|null      $order_data_service      WooPayments order data service.
 	 * @param WooPaymentsPaymentMethodRegistry|null $payment_method_registry Optional payment method registry.
+	 * @param WooPaymentsOrderEffectApplier|null    $order_effect_applier    Optional order effect applier.
 	 */
 	final public function init(
 		NativePaymentsRuntimeArbiter $arbiter,
@@ -125,7 +130,8 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 		WooPaymentsTokenService $token_service,
 		WooPaymentsAccountService $account_service,
 		?WooPaymentsOrderDataService $order_data_service = null,
-		?WooPaymentsPaymentMethodRegistry $payment_method_registry = null
+		?WooPaymentsPaymentMethodRegistry $payment_method_registry = null,
+		?WooPaymentsOrderEffectApplier $order_effect_applier = null
 	): void {
 		$this->arbiter                 = $arbiter;
 		$this->api_client              = $api_client;
@@ -135,6 +141,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 		$this->account_service         = $account_service;
 		$this->order_data_service      = $order_data_service;
 		$this->payment_method_registry = $payment_method_registry ?? new WooPaymentsPaymentMethodRegistry();
+		$this->order_effect_applier    = $order_effect_applier;
 	}
 
 	/**
@@ -230,7 +237,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 			}
 
 			$event = $this->build_lifecycle_event_from_intent( $intent, $order );
-			$this->lifecycle_service->apply( $order, $event );
+			$this->lifecycle_service->apply( $order, $event, new WooPaymentsPersistenceProfile() );
 
 			if ( ! $this->is_authorized_intent_status( $status ) ) {
 				return $this->error_response( __( "We're not able to process this payment. Please try again later.", 'woocommerce' ), 409 );
@@ -288,8 +295,6 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 		}
 
 		try {
-			\WC_Rate_Limiter::set_rate_limit( $rate_limit_key, self::CREATE_SETUP_INTENT_RATE_LIMIT_SECONDS );
-
 			$result = $this->api_client->create_and_confirm_setup_intention(
 				array(
 					'customer'             => $this->customer_service->get_or_create_customer_id_for_user( $user_id ),
@@ -364,85 +369,17 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 		$status    = isset( $intent['status'] ) ? (string) $intent['status'] : '';
 		$intent_id = isset( $intent['id'] ) ? (string) $intent['id'] : '';
 		$charge    = $this->get_latest_charge( $intent );
-		$meta      = array(
-			'_intent_id'             => $intent_id,
-			'_intention_status'      => $status,
-			'_wcpay_intent_currency' => isset( $intent['currency'] ) ? (string) $intent['currency'] : (string) $order->get_currency(),
-			'_wcpay_mode'            => $this->account_service->get_mode(),
+		$is_setup  = 0.0 >= (float) $order->get_total() || 0 === strpos( $intent_id, 'seti_' );
+
+		return WooPaymentsIntentCodec::lifecycle_event_from_intention(
+			$intent,
+			$order,
+			array(
+				'account_mode'   => $this->account_service->get_mode(),
+				'completed_meta' => 'succeeded' === $status ? $this->get_completed_charge_order_meta( $intent, $charge, $order ) : array(),
+				'intent_type'    => $is_setup ? 'si' : 'pi',
+			)
 		);
-
-		$payment_method_id = $this->get_result_payment_method_id( $intent );
-		if ( '' !== $payment_method_id ) {
-			$meta['_payment_method_id'] = $payment_method_id;
-		}
-
-		$customer_id = $this->get_result_customer_id( $intent );
-		if ( '' !== $customer_id ) {
-			$meta['_stripe_customer_id'] = $customer_id;
-		}
-
-		if ( isset( $charge['id'] ) ) {
-			$meta['_charge_id'] = (string) $charge['id'];
-		}
-
-		$balance_transaction_id = $this->get_balance_transaction_id( $charge['balance_transaction'] ?? null );
-		if ( '' !== $balance_transaction_id ) {
-			$meta['_wcpay_payment_transaction_id'] = $balance_transaction_id;
-		}
-
-		if ( isset( $charge['outcome']['risk_level'] ) ) {
-			$meta['_charge_risk_level'] = (string) $charge['outcome']['risk_level'];
-		}
-
-		if ( 'succeeded' === $status ) {
-			$meta = array_merge( $meta, $this->get_completed_charge_order_meta( $intent, $charge, $order ) );
-		}
-
-		return new PaymentLifecycleEvent(
-			$this->map_intent_status_to_lifecycle_status( $status ),
-			'' === $intent_id ? null : $intent_id,
-			$meta,
-			array(),
-			$this->get_lifecycle_note_from_intent( $intent, $order, $intent_id, $charge ),
-			$this->get_lifecycle_note_type_from_intent( $intent, $intent_id )
-		);
-	}
-
-	/**
-	 * Get the lifecycle note for a native intent response.
-	 *
-	 * @param array<string,mixed> $intent    Native intent response.
-	 * @param WC_Order            $order     Order being updated.
-	 * @param string              $intent_id Payment intent ID.
-	 * @param array<string,mixed> $charge    Latest charge data.
-	 * @return string|null
-	 */
-	private function get_lifecycle_note_from_intent( array $intent, WC_Order $order, string $intent_id, array $charge ): ?string {
-		$status = isset( $intent['status'] ) ? (string) $intent['status'] : '';
-		if ( 'succeeded' !== $status || 0 !== strpos( $intent_id, 'pi_' ) ) {
-			return null;
-		}
-
-		$charge_id              = isset( $charge['id'] ) ? (string) $charge['id'] : '';
-		$balance_transaction_id = $this->get_balance_transaction_id( $charge['balance_transaction'] ?? null );
-
-		return $this->get_payment_success_note( $order, $intent_id, $charge_id, $balance_transaction_id );
-	}
-
-	/**
-	 * Get the lifecycle note type for a native intent response.
-	 *
-	 * @param array<string,mixed> $intent    Native intent response.
-	 * @param string              $intent_id Payment intent ID.
-	 * @return string|null
-	 */
-	private function get_lifecycle_note_type_from_intent( array $intent, string $intent_id ): ?string {
-		$status = isset( $intent['status'] ) ? (string) $intent['status'] : '';
-		if ( 'succeeded' !== $status || 0 !== strpos( $intent_id, 'pi_' ) ) {
-			return null;
-		}
-
-		return PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS;
 	}
 
 	/**
@@ -452,32 +389,20 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	 * @param array<string,mixed> $intent Native intent response.
 	 */
 	private function apply_payment_method_display_details( WC_Order $order, array $intent ): void {
-		$charge                 = $this->get_latest_charge( $intent );
-		$payment_method_details = is_array( $charge['payment_method_details'] ?? null ) ? $charge['payment_method_details'] : array();
-		$wallet_type            = $payment_method_details['card']['wallet']['type'] ?? null;
+		$this->get_order_effect_applier()->apply_payment_method_display_details( $order, $intent, $this->account_service->get_account_country() );
+	}
 
-		if ( empty( $payment_method_details ) ) {
-			return;
+	/**
+	 * Get the WooPayments order effect applier.
+	 *
+	 * @return WooPaymentsOrderEffectApplier
+	 */
+	private function get_order_effect_applier(): WooPaymentsOrderEffectApplier {
+		if ( null === $this->order_effect_applier ) {
+			$this->order_effect_applier = wc_get_container()->get( WooPaymentsOrderEffectApplier::class );
 		}
 
-		$encoded_payment_method_details = wp_json_encode( $payment_method_details );
-		if ( false !== $encoded_payment_method_details ) {
-			$order->update_meta_data( '_wcpay_payment_method_details', $encoded_payment_method_details );
-		}
-
-		if ( 'link' !== $wallet_type && isset( $payment_method_details['card']['last4'] ) ) {
-			$order->update_meta_data( 'last4', (string) $payment_method_details['card']['last4'] );
-			if ( isset( $payment_method_details['card']['brand'] ) ) {
-				$order->update_meta_data( '_card_brand', (string) $payment_method_details['card']['brand'] );
-			}
-		}
-
-		if ( is_string( $wallet_type ) && '' !== $wallet_type ) {
-			$order->update_meta_data( '_wcpay_express_checkout_payment_method', $wallet_type );
-		}
-
-		$order->set_payment_method_title( $this->get_payment_method_title( $payment_method_details ) );
-		$order->save();
+		return $this->order_effect_applier;
 	}
 
 	/**
@@ -491,154 +416,6 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 		}
 
 		return $this->order_data_service;
-	}
-
-	/**
-	 * Get the human-readable payment method title from charge details.
-	 *
-	 * @param array<string,mixed> $payment_method_details Payment method details from the charge.
-	 * @return string
-	 */
-	private function get_payment_method_title( array $payment_method_details ): string {
-		return WooPaymentsOrderEffects::payment_method_title( $payment_method_details );
-	}
-
-	/**
-	 * Get a WooPayments-compatible payment success order note.
-	 *
-	 * @param WC_Order $order     Order object.
-	 * @param string   $intent_id Payment intent ID.
-	 * @param string   $charge_id              Charge ID.
-	 * @param string   $balance_transaction_id Balance transaction ID.
-	 * @return string
-	 */
-	private function get_payment_success_note( WC_Order $order, string $intent_id, string $charge_id, string $balance_transaction_id = '' ): string {
-		$formatted_amount = wc_price( (float) $order->get_total(), array( 'currency' => $order->get_currency() ) ) . ' ' . $order->get_currency();
-		$transaction_id   = '' !== $intent_id ? $intent_id : $charge_id;
-		$transaction_url  = $this->get_transaction_url( $intent_id, $charge_id, $balance_transaction_id );
-
-		if ( 'test' === $this->account_service->get_mode() ) {
-			return sprintf(
-				$this->get_interpolated_note_text(
-					/* translators: %1$s: charged amount, %2$s: WooPayments, %3$s: transaction ID. */
-					__( 'A test payment of %1$s was processed using %2$s in <strong>test mode</strong> (<a>%3$s</a>). No real funds were collected.', 'woocommerce' ),
-					array(
-						'strong' => '<strong>',
-						'a'      => '' !== $transaction_url ? '<a href="' . $transaction_url . '" target="_blank" rel="noopener noreferrer">' : '<code>',
-					)
-				),
-				$formatted_amount,
-				'WooPayments',
-				$transaction_id
-			);
-		}
-
-		return sprintf(
-			$this->get_interpolated_note_text(
-				/* translators: %1$s: charged amount, %2$s: WooPayments, %3$s: transaction ID, %4$s: transaction URL. */
-				__( 'A payment of %1$s was <strong>successfully charged</strong> using %2$s (<a>%3$s</a>).', 'woocommerce' ),
-				array(
-					'strong' => '<strong>',
-					'a'      => '' !== $transaction_url ? '<a href="%4$s" target="_blank" rel="noopener noreferrer">' : '<code>',
-				)
-			),
-			$formatted_amount,
-			'WooPayments',
-			$transaction_id,
-			$transaction_url
-		);
-	}
-
-	/**
-	 * Replace simple interpolation tags with stored note HTML.
-	 *
-	 * @param string               $text        Note text.
-	 * @param array<string,string> $element_map Element replacements.
-	 * @return string
-	 */
-	private function get_interpolated_note_text( string $text, array $element_map ): string {
-		foreach ( $element_map as $tag => $opening_tag ) {
-			$closing_tag = '</' . $tag . '>';
-			if ( preg_match( '/^<(\w+)/', $opening_tag, $matches ) ) {
-				$closing_tag = '</' . $matches[1] . '>';
-			}
-
-			$text = str_replace( '<' . $tag . '>', $opening_tag, $text );
-			$text = str_replace( '</' . $tag . '>', $closing_tag, $text );
-		}
-
-		return $text;
-	}
-
-	/**
-	 * Get the WooPayments transaction details URL.
-	 *
-	 * @param string $intent_id              Payment intent ID.
-	 * @param string $charge_id              Charge ID.
-	 * @param string $balance_transaction_id Balance transaction ID.
-	 * @return string
-	 */
-	private function get_transaction_url( string $intent_id, string $charge_id, string $balance_transaction_id = '' ): string {
-		if ( '' === $intent_id && '' === $charge_id && '' === $balance_transaction_id ) {
-			return '';
-		}
-
-		if ( false !== strpos( $intent_id, 'seti_' ) ) {
-			return '';
-		}
-
-		$params = array(
-			'id' => '' !== $intent_id ? $intent_id : $charge_id,
-		);
-
-		return Utils::wc_payments_legacy_admin_url(
-			'/payments/transactions/details',
-			$params
-		);
-	}
-
-	/**
-	 * Get a balance transaction ID from a provider response field.
-	 *
-	 * @param mixed $balance_transaction Balance transaction response field.
-	 * @return string
-	 */
-	private function get_balance_transaction_id( $balance_transaction ): string {
-		if ( is_string( $balance_transaction ) ) {
-			return $balance_transaction;
-		}
-
-		if ( is_array( $balance_transaction ) && isset( $balance_transaction['id'] ) ) {
-			return (string) $balance_transaction['id'];
-		}
-
-		return '';
-	}
-
-	/**
-	 * Map a provider intent status to a lifecycle status.
-	 *
-	 * @param string $status Provider intent status.
-	 * @return string
-	 */
-	private function map_intent_status_to_lifecycle_status( string $status ): string {
-		switch ( $status ) {
-			case 'succeeded':
-				return PaymentLifecycleEvent::STATUS_COMPLETED;
-
-			case 'requires_capture':
-				return PaymentLifecycleEvent::STATUS_AUTHORIZED;
-
-			case 'processing':
-			case 'requires_action':
-			case 'requires_confirmation':
-				return PaymentLifecycleEvent::STATUS_STARTED;
-
-			case 'canceled':
-				return PaymentLifecycleEvent::STATUS_CANCELED;
-		}
-
-		return PaymentLifecycleEvent::STATUS_FAILED;
 	}
 
 	/**
@@ -660,9 +437,9 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	 * @return array<string,mixed>|null Error response when token saving must block checkout.
 	 */
 	private function maybe_save_payment_method_for_order( WC_Order $order, array $intent, array $request ): ?array {
-		$is_recurring     = $this->is_recurring_payment( $order );
-		$should_save_card = $is_recurring || $this->should_save_payment_method( $request ) || $this->is_subscription_change_payment_request( $request );
-		if ( ! $should_save_card ) {
+		$is_recurring               = $this->is_recurring_payment( $order );
+		$should_save_payment_method = $is_recurring || $this->should_save_payment_method( $request ) || $this->is_subscription_change_payment_request( $request );
+		if ( ! $should_save_payment_method ) {
 			return null;
 		}
 
@@ -673,7 +450,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 		}
 
 		try {
-			$token = $this->token_service->get_or_create_card_token_for_user( $payment_method_id, $user_id );
+			$token = $this->token_service->get_or_create_token_for_user( $payment_method_id, $user_id );
 			if ( $token instanceof \WC_Payment_Token ) {
 				$this->token_service->attach_token_to_order( $order, $token );
 				$this->token_service->sync_related_subscriptions_payment_token( $order, $token, $payment_method_id, $this->get_result_customer_id( $intent ) );
@@ -855,35 +632,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	 * @return array<string,string>
 	 */
 	private function get_fraud_outcome_order_meta( array $intent, array $charge ): array {
-		$metadata      = isset( $intent['metadata'] ) && is_array( $intent['metadata'] ) ? $intent['metadata'] : array();
-		$fraud_outcome = isset( $metadata['fraud_outcome'] ) ? (string) $metadata['fraud_outcome'] : '';
-
-		if ( '' === $fraud_outcome && $this->is_card_charge( $charge ) ) {
-			$fraud_outcome = 'allow';
-		}
-
-		if ( ! in_array( $fraud_outcome, array( 'allow', 'block', 'review' ), true ) ) {
-			return array();
-		}
-
-		return array(
-			'_wcpay_fraud_outcome_status' => $fraud_outcome,
-			'_wcpay_fraud_meta_box_type'  => 'allow',
-		);
-	}
-
-	/**
-	 * Tell whether a native charge was made with a card payment method.
-	 *
-	 * @param array<string,mixed> $charge Native Charge response.
-	 * @return bool
-	 */
-	private function is_card_charge( array $charge ): bool {
-		$payment_method_details = isset( $charge['payment_method_details'] ) && is_array( $charge['payment_method_details'] )
-			? $charge['payment_method_details']
-			: array();
-
-		return 'card' === (string) ( $payment_method_details['type'] ?? '' );
+		return WooPaymentsOrderEffects::fraud_outcome_meta( $intent, $charge );
 	}
 
 	/**

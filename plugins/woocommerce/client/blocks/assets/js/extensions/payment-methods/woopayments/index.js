@@ -436,7 +436,9 @@ const getStripeElementsOptions = ( paymentSettings = defaultSettings ) => {
 	};
 
 	const appearance = getBlocksCheckoutAppearance(
-		paymentSettings.stylesCacheVersion
+		paymentSettings.stylesCacheVersion,
+		document,
+		paymentSettings
 	);
 	if ( appearance ) {
 		options.appearance = appearance;
@@ -1057,6 +1059,9 @@ export const getWooPaymentsPaymentMethod = (
 	const paymentMethodConfig =
 		getPrimaryPaymentMethodConfig( paymentSettings );
 	const paymentMethodName = paymentSettings.gatewayId || PAYMENT_METHOD_NAME;
+	const supportedCountries = Array.isArray( paymentMethodConfig?.countries )
+		? paymentMethodConfig.countries
+		: [];
 
 	return {
 		name: paymentMethodName,
@@ -1066,8 +1071,14 @@ export const getWooPaymentsPaymentMethod = (
 		savedTokenComponent: (
 			<SavedTokenHandler paymentSettings={ paymentSettings } />
 		),
-		canMakePayment: () =>
-			Boolean( paymentSettings.isCoreNativeCheckoutAvailable ),
+		canMakePayment: ( { paymentMethods = [], billingAddress = {} } = {} ) =>
+			Boolean( paymentSettings.isCoreNativeCheckoutAvailable ) &&
+			( paymentSettings.isCheckout === false ||
+				( paymentMethods.includes( paymentMethodName ) &&
+					( supportedCountries.length === 0 ||
+						supportedCountries.includes(
+							billingAddress.country
+						) ) ) ),
 		ariaLabel: getAriaLabel( paymentSettings ),
 		supports: {
 			features: paymentSettings?.supports ?? [],

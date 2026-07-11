@@ -13,6 +13,7 @@ import registerWooPayments from '../index';
 import { recordWooPaymentsUserEvent } from '../tracks';
 import {
 	getAppearance,
+	getBlocksCheckoutAppearance,
 	getFieldStyles,
 	normalizeAppearanceForStripe,
 	normalizeAppearanceValueForStripe,
@@ -1108,6 +1109,74 @@ describe( 'wc-payment-method-woopayments', () => {
 		const appearance = getAppearance( 'blocks_checkout' );
 
 		expect( appearance.variables.fontSizeBase ).toBe( '13px' );
+	} );
+
+	it( 'uses cart-block selectors when extracting BNPL messaging appearance', () => {
+		document.body.innerHTML = `
+			<div class="wp-block-woocommerce-cart">
+				<div class="wc-block-cart">
+					<div class="wc-block-components-quantity-selector">
+						<input class="wc-block-components-quantity-selector__input" />
+					</div>
+				</div>
+				<div class="wc-block-components-text-input">Cart total</div>
+			</div>
+		`;
+		const querySelector = jest.spyOn( document, 'querySelector' );
+
+		getAppearance( 'bnpl_cart_block' );
+
+		expect( querySelector ).toHaveBeenCalledWith(
+			'.wc-block-cart .wc-block-components-quantity-selector .wc-block-components-quantity-selector__input'
+		);
+		expect( querySelector ).not.toHaveBeenCalledWith(
+			'.wc-block-components-text-input #email'
+		);
+	} );
+
+	it( 'persists valid Blocks appearance to the shared WooPay shopper endpoint once', async () => {
+		const appearance = {
+			theme: 'stripe',
+			rules: {
+				'.Input': {
+					fontSize: '16px',
+				},
+			},
+		};
+		window.localStorage.setItem(
+			'wcpay_appearance_blocks_checkout',
+			JSON.stringify( {
+				version: 'styles-v1',
+				appearance,
+			} )
+		);
+		window.fetch = jest.fn().mockResolvedValue( { ok: true } );
+
+		getBlocksCheckoutAppearance( 'styles-v1', document, {
+			isWooPayGlobalThemeSupportEnabled: true,
+			wcAjaxUrl: '/?wc-ajax=%%endpoint%%',
+			woopaySessionNonce: 'session-nonce',
+		} );
+		getBlocksCheckoutAppearance( 'styles-v1', document, {
+			isWooPayGlobalThemeSupportEnabled: true,
+			wcAjaxUrl: '/?wc-ajax=%%endpoint%%',
+			woopaySessionNonce: 'session-nonce',
+		} );
+		await Promise.resolve();
+
+		expect( window.fetch ).toHaveBeenCalledTimes( 1 );
+		expect( window.fetch ).toHaveBeenCalledWith(
+			'/?wc-ajax=wcpay_shopper_set_woopay_appearance',
+			expect.objectContaining( {
+				method: 'POST',
+				credentials: 'same-origin',
+			} )
+		);
+		const body = window.fetch.mock.calls[ 0 ][ 1 ].body;
+		expect( body.get( '_ajax_nonce' ) ).toBe( 'session-nonce' );
+		expect( body.get( 'appearance[rules][.Input][fontSize]' ) ).toBe(
+			'16px'
+		);
 	} );
 
 	it( 'shows reusable card terms when the shopper saves the payment method', async () => {

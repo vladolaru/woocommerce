@@ -5,6 +5,7 @@
 describe( 'WooPayments checkout', () => {
 	let bodyEventHandlers;
 	let checkoutFormEventHandlers;
+	let orderPayFormEventHandlers;
 	let elementsMock;
 	let mountPaymentElement;
 	let paymentElementOptions;
@@ -32,8 +33,63 @@ describe( 'WooPayments checkout', () => {
 			} ) );
 	}
 
+	function preparePaymentListWallets( selectedMethod = 'apple_pay' ) {
+		const registrations = {};
+		document.body.innerHTML =
+			'<form class="checkout">' +
+			'<ul class="payment_methods">' +
+			'<li class="wc_payment_method payment_method_woocommerce_payments">' +
+			'<input type="radio" name="payment_method" value="woocommerce_payments" ' +
+			( selectedMethod === 'card' ? 'checked ' : '' ) +
+			'/>' +
+			'<div id="wcpay-core-payment-element"></div>' +
+			'</li>' +
+			'<li class="wc_payment_method payment_method_woocommerce_payments_apple_pay">' +
+			'<input type="radio" name="payment_method" value="woocommerce_payments_apple_pay" ' +
+			( selectedMethod === 'apple_pay' ? 'checked ' : '' ) +
+			'/>' +
+			'</li>' +
+			'<li class="wc_payment_method payment_method_woocommerce_payments_google_pay">' +
+			'<input type="radio" name="payment_method" value="woocommerce_payments_google_pay" ' +
+			( selectedMethod === 'google_pay' ? 'checked ' : '' ) +
+			'/>' +
+			'</li>' +
+			'</ul>' +
+			'<button id="place_order" type="button">Place order</button>' +
+			'</form>';
+		window.wcpay_core_checkout_config.isExpressCheckoutInPaymentMethodsEnabled =
+			true;
+		window.wcpay_core_checkout_config.paymentMethodTypes = [ 'card' ];
+		window.wcpay_core_checkout_config.paymentListWalletsConfig = {};
+		window.wcpay_core_checkout_config.paymentListWalletsConfig.apple_pay = {
+			gatewayId: 'woocommerce_payments_apple_pay',
+			id: 'apple_pay',
+			isExpressCheckout: true,
+			isReusable: true,
+		};
+		window.wcpay_core_checkout_config.paymentListWalletsConfig.google_pay = {
+			gatewayId: 'woocommerce_payments_google_pay',
+			id: 'google_pay',
+			isExpressCheckout: true,
+			isReusable: true,
+		};
+		window.wc = {
+			customPlaceOrderButton: {
+				__getForm: jest.fn(
+					() => global.jQuery.checkoutFormResult
+				),
+				register: jest.fn( ( gateway, registration ) => {
+					registrations[ gateway ] = registration;
+				} ),
+			},
+		};
+
+		return registrations;
+	}
+
 	function createJQueryMock() {
 		const checkoutFormFields = {};
+		const orderPayFormFields = {};
 		const defaultResult = {
 			length: 0,
 			filter: jest.fn( () => defaultResult ),
@@ -79,6 +135,26 @@ describe( 'WooPayments checkout', () => {
 			trigger: jest.fn( () => checkoutFormResult ),
 			val: jest.fn(),
 		};
+		const orderPayFormResult = {
+			length: 1,
+			filter: jest.fn( () => orderPayFormResult ),
+			find: jest.fn( ( selector ) => {
+				const match = selector.match( /input\[name="([^"]+)"\]/ );
+				const name = match ? match[ 1 ] : null;
+				return name && orderPayFormFields[ name ]
+					? orderPayFormFields[ name ]
+					: defaultResult;
+			} ),
+			on: jest.fn( ( event, handler ) => {
+				event.split( ' ' ).forEach( ( eventName ) => {
+					orderPayFormEventHandlers[ eventName ] = handler;
+				} );
+				return orderPayFormResult;
+			} ),
+			appendTo: jest.fn( () => orderPayFormResult ),
+			trigger: jest.fn( () => orderPayFormResult ),
+			val: jest.fn(),
+		};
 
 		const jQueryMock = jest.fn( ( selectorOrCallback, attributes = {} ) => {
 			if ( typeof selectorOrCallback === 'function' ) {
@@ -94,14 +170,31 @@ describe( 'WooPayments checkout', () => {
 				return checkoutFormResult;
 			}
 
+			if ( selectorOrCallback === 'form#order_review' ) {
+				return orderPayFormResult;
+			}
+
+			if (
+				selectorOrCallback &&
+				selectorOrCallback.tagName === 'FORM'
+			) {
+				return selectorOrCallback.id === 'order_review'
+					? orderPayFormResult
+					: checkoutFormResult;
+			}
+
 			if (
 				selectorOrCallback === '<input />' &&
 				typeof attributes.name === 'string'
 			) {
 				const field = {
 					length: 1,
-					appendTo: jest.fn( () => {
-						checkoutFormFields[ attributes.name ] = field;
+					appendTo: jest.fn( ( form ) => {
+						const fields =
+							form === orderPayFormResult
+								? orderPayFormFields
+								: checkoutFormFields;
+						fields[ attributes.name ] = field;
 						return field;
 					} ),
 					filter: jest.fn( () => field ),
@@ -131,6 +224,9 @@ describe( 'WooPayments checkout', () => {
 			return defaultResult;
 		} );
 		jQueryMock.checkoutFormFields = checkoutFormFields;
+		jQueryMock.orderPayFormFields = orderPayFormFields;
+		jQueryMock.checkoutFormResult = checkoutFormResult;
+		jQueryMock.orderPayFormResult = orderPayFormResult;
 		jQueryMock.post = jest.fn( () => ( {
 			done: jest.fn( ( callback ) => {
 				callback( { status_code: 200 } );
@@ -147,6 +243,7 @@ describe( 'WooPayments checkout', () => {
 		jest.resetModules();
 		bodyEventHandlers = {};
 		checkoutFormEventHandlers = {};
+		orderPayFormEventHandlers = {};
 		submitElements = jest.fn( () => Promise.resolve( {} ) );
 		mountPaymentElement = jest.fn();
 		paymentElementOptions = null;
@@ -172,6 +269,7 @@ describe( 'WooPayments checkout', () => {
 			currency: 'GBP',
 			gatewayId: 'woocommerce_payments',
 			isCoreNativeCheckoutAvailable: true,
+			isCheckout: true,
 			isShopperTrackingEnabled: true,
 			locale: 'en-US',
 			stylesCacheVersion: 'styles-v1',
@@ -274,7 +372,9 @@ describe( 'WooPayments checkout', () => {
 		delete window.$;
 		delete window.wcpay_core_checkout_config;
 		delete window.wcpay_core_checkout_config_woocommerce_payments_klarna;
+		delete window.wcpay_core_checkout_config_woocommerce_payments_ideal;
 		delete window.wcpayAppearance;
+		delete window.wc;
 		delete window.Stripe;
 		delete window.navigator.clipboard;
 		window.fetch = originalFetch;
@@ -289,7 +389,10 @@ describe( 'WooPayments checkout', () => {
 		require( '../woopayments-checkout' );
 
 		document.getElementById( 'place_order' ).dispatchEvent(
-			new window.MouseEvent( 'click', { bubbles: true, cancelable: true } )
+			new window.MouseEvent( 'click', {
+				bubbles: true,
+				cancelable: true,
+			} )
 		);
 
 		expect( getTrackingEvents() ).toEqual( [] );
@@ -315,30 +418,216 @@ describe( 'WooPayments checkout', () => {
 			'<div id="wcpay-core-payment-element"></div>' +
 			'<button id="place_order" type="button">Place order</button>' +
 			'</form>';
-			window.wcpay_core_checkout_config = Object.assign(
-				{},
-				window.wcpay_core_checkout_config,
-				{
-					gatewayId: 'woocommerce_payments',
-					paymentMethodTypes: [ 'card' ],
-				}
-			);
-			window.wcpay_core_checkout_config_woocommerce_payments_klarna =
-				Object.assign( {}, window.wcpay_core_checkout_config, {
-					gatewayId: 'woocommerce_payments_klarna',
-					paymentMethodTypes: [ 'klarna' ],
-					paymentMethodsConfig: {
-						klarna: {
-							isReusable: false,
-						},
+		window.wcpay_core_checkout_config = Object.assign(
+			{},
+			window.wcpay_core_checkout_config,
+			{
+				gatewayId: 'woocommerce_payments',
+				paymentMethodTypes: [ 'card' ],
+			}
+		);
+		window.wcpay_core_checkout_config_woocommerce_payments_klarna =
+			Object.assign( {}, window.wcpay_core_checkout_config, {
+				gatewayId: 'woocommerce_payments_klarna',
+				paymentMethodTypes: [ 'klarna' ],
+				paymentMethodsConfig: {
+					klarna: {
+						isReusable: false,
 					},
-				} );
+				},
+			} );
 
 		require( '../woopayments-checkout' );
 
 		expect( stripeElementsOptions ).toMatchObject( {
 			paymentMethodTypes: [ 'klarna' ],
 		} );
+	} );
+
+	test( 'registers payment-list wallets through the custom place-order button API', () => {
+		preparePaymentListWallets();
+
+		require( '../woopayments-checkout' );
+
+		expect( window.wc.customPlaceOrderButton.register ).toHaveBeenCalledWith(
+			'woocommerce_payments_apple_pay',
+			expect.objectContaining( {
+				cleanup: expect.any( Function ),
+				render: expect.any( Function ),
+			} )
+		);
+		expect( window.wc.customPlaceOrderButton.register ).toHaveBeenCalledWith(
+			'woocommerce_payments_google_pay',
+			expect.objectContaining( {
+				cleanup: expect.any( Function ),
+				render: expect.any( Function ),
+			} )
+		);
+		expect( mountPaymentElement ).not.toHaveBeenCalled();
+	} );
+
+	test( 'keeps custom-button wallets out of the ordinary card Payment Element terms', () => {
+		preparePaymentListWallets( 'card' );
+
+		require( '../woopayments-checkout' );
+
+		expect( paymentElementOptions.terms ).toEqual( {
+			card: 'never',
+		} );
+	} );
+
+	test( 'submits the selected payment-list wallet through its Express Checkout Element', async () => {
+		const registrations = preparePaymentListWallets();
+		const expressHandlers = {};
+		const expressElement = {
+			mount: jest.fn(),
+			on: jest.fn( ( event, handler ) => {
+				expressHandlers[ event ] = handler;
+			} ),
+			unmount: jest.fn(),
+		};
+		const walletElements = {
+			create: jest.fn( () => expressElement ),
+			submit: submitElements,
+		};
+		stripeMock.elements.mockReturnValue( walletElements );
+
+		require( '../woopayments-checkout' );
+
+		const container = document.createElement( 'div' );
+		const checkoutApi = {
+			submit: jest.fn(),
+			validate: jest.fn().mockResolvedValue( { hasError: false } ),
+		};
+		await registrations.woocommerce_payments_apple_pay.render(
+			container,
+			checkoutApi
+		);
+
+		expect( walletElements.create ).toHaveBeenCalledWith(
+			'expressCheckout',
+			expect.objectContaining( {
+				paymentMethods: expect.objectContaining( {
+					applePay: 'always',
+					googlePay: 'never',
+				} ),
+			} )
+		);
+
+		const clickEvent = { resolve: jest.fn() };
+		await expressHandlers.click( clickEvent );
+		expect( checkoutApi.validate ).toHaveBeenCalled();
+		expect( clickEvent.resolve ).toHaveBeenCalled();
+
+		await expressHandlers.confirm();
+		expect( submitElements ).toHaveBeenCalled();
+		expect( stripeMock.createPaymentMethod ).toHaveBeenCalledWith( {
+			elements: walletElements,
+		} );
+		expect(
+			global.jQuery.checkoutFormFields[ 'wcpay-payment-method' ].value
+		).toBe( 'pm_native' );
+		expect( checkoutApi.submit ).toHaveBeenCalled();
+	} );
+
+	test( 'submits payment-list wallet credentials through the active order-pay form', async () => {
+		const registrations = preparePaymentListWallets();
+		const expressHandlers = {};
+		const walletElements = {
+			create: jest.fn( () => ( {
+				mount: jest.fn(),
+				on: jest.fn( ( event, handler ) => {
+					expressHandlers[ event ] = handler;
+				} ),
+				unmount: jest.fn(),
+			} ) ),
+			submit: submitElements,
+		};
+		stripeMock.elements.mockReturnValue( walletElements );
+		document.body.innerHTML =
+			'<form id="order_review">' +
+			'<input type="radio" name="payment_method" value="woocommerce_payments_apple_pay" checked />' +
+			'</form>';
+		window.wcpay_core_checkout_config.isOrderPay = true;
+		window.wc.customPlaceOrderButton.__getForm.mockReturnValue(
+			global.jQuery.orderPayFormResult
+		);
+
+		require( '../woopayments-checkout' );
+
+		await registrations.woocommerce_payments_apple_pay.render(
+			document.createElement( 'div' ),
+			{
+				submit: jest.fn(),
+				validate: jest.fn().mockResolvedValue( { hasError: false } ),
+			}
+		);
+		await expressHandlers.confirm();
+
+		expect(
+			global.jQuery.orderPayFormFields[ 'wcpay-payment-method' ].value
+		).toBe( 'pm_native' );
+		expect(
+			global.jQuery.checkoutFormFields[ 'wcpay-payment-method' ]
+		).toBeUndefined();
+	} );
+
+	test( 'hides a payment-list wallet when its Express Checkout Element cannot initialize', () => {
+		const registrations = preparePaymentListWallets();
+		stripeMock.elements.mockImplementationOnce( () => {
+			throw new Error( 'Express Checkout unavailable' );
+		} );
+
+		require( '../woopayments-checkout' );
+
+		expect( () =>
+			registrations.woocommerce_payments_apple_pay.render(
+				document.createElement( 'div' ),
+				{ submit: jest.fn(), validate: jest.fn() }
+			)
+		).not.toThrow();
+		expect(
+			document
+				.querySelector(
+					'input[value="woocommerce_payments_apple_pay"]'
+				)
+				.closest( 'li' ).style.display
+		).toBe( 'none' );
+		expect(
+			document.querySelector( 'input[value="woocommerce_payments"]' )
+				.checked
+		).toBe( true );
+	} );
+
+	test( 'selects an available split method when a wallet is unavailable and card is disabled', () => {
+		const registrations = preparePaymentListWallets();
+		document.body.innerHTML =
+			'<form class="checkout">' +
+			'<ul class="payment_methods">' +
+			'<li class="wc_payment_method payment_method_woocommerce_payments_apple_pay">' +
+			'<input type="radio" name="payment_method" value="woocommerce_payments_apple_pay" checked />' +
+			'</li>' +
+			'<li class="wc_payment_method payment_method_woocommerce_payments_klarna">' +
+			'<input type="radio" name="payment_method" value="woocommerce_payments_klarna" />' +
+			'</li>' +
+			'</ul>' +
+			'</form>';
+		stripeMock.elements.mockImplementationOnce( () => {
+			throw new Error( 'Express Checkout unavailable' );
+		} );
+
+		require( '../woopayments-checkout' );
+
+		registrations.woocommerce_payments_apple_pay.render(
+			document.createElement( 'div' ),
+			{ submit: jest.fn(), validate: jest.fn() }
+		);
+
+		expect(
+			document.querySelector(
+				'input[value="woocommerce_payments_klarna"]'
+			).checked
+		).toBe( true );
 	} );
 
 	test( 'mounts split gateway Stripe Elements into the selected gateway container', () => {
@@ -393,6 +682,64 @@ describe( 'WooPayments checkout', () => {
 		expect( mountPaymentElement ).toHaveBeenCalledWith( selectedContainer );
 	} );
 
+	test( 'remounts split gateway Stripe Elements when the shopper changes payment method', () => {
+		document.body.innerHTML =
+			'<form class="checkout">' +
+			'<ul class="payment_methods">' +
+			'<li class="wc_payment_method payment_method_woocommerce_payments">' +
+			'<input id="payment_method_woocommerce_payments" type="radio" name="payment_method" value="woocommerce_payments" checked />' +
+			'<div class="payment_box payment_method_woocommerce_payments">' +
+			'<div id="wcpay-core-payment-element" data-gateway-marker="card"></div>' +
+			'</div>' +
+			'</li>' +
+			'<li class="wc_payment_method payment_method_woocommerce_payments_sepa_debit">' +
+			'<input id="payment_method_woocommerce_payments_sepa_debit" type="radio" ' +
+			'name="payment_method" value="woocommerce_payments_sepa_debit" />' +
+			'<div class="payment_box payment_method_woocommerce_payments_sepa_debit">' +
+			'<div id="wcpay-core-payment-element" data-gateway-marker="sepa"></div>' +
+			'</div>' +
+			'</li>' +
+			'</ul>' +
+			'<button id="place_order" type="button">Place order</button>' +
+			'</form>';
+		window.wcpay_core_checkout_config_woocommerce_payments_sepa_debit =
+			Object.assign( {}, window.wcpay_core_checkout_config, {
+				gatewayId: 'woocommerce_payments_sepa_debit',
+				paymentMethodTypes: [ 'sepa_debit' ],
+				paymentMethodsConfig: {
+					sepa_debit: {
+						isReusable: false,
+					},
+				},
+			} );
+		const cardContainer = document
+			.getElementById( 'payment_method_woocommerce_payments' )
+			.closest( 'li' )
+			.querySelector( '#wcpay-core-payment-element' );
+		const selectedContainer = document
+			.getElementById( 'payment_method_woocommerce_payments_sepa_debit' )
+			.closest( 'li' )
+			.querySelector( '#wcpay-core-payment-element' );
+
+		require( '../woopayments-checkout' );
+		document.getElementById(
+			'payment_method_woocommerce_payments'
+		).checked = false;
+		document.getElementById(
+			'payment_method_woocommerce_payments_sepa_debit'
+		).checked = true;
+		mountPaymentElement.mockClear();
+		unmountPaymentElement.mockClear();
+		bodyEventHandlers.payment_method_selected();
+
+		expect( unmountPaymentElement ).toHaveBeenCalledTimes( 1 );
+		expect( stripeElementsOptions ).toMatchObject( {
+			paymentMethodTypes: [ 'sepa_debit' ],
+		} );
+		expect( mountPaymentElement ).toHaveBeenCalledWith( selectedContainer );
+		expect( mountPaymentElement ).not.toHaveBeenCalledWith( cardContainer );
+	} );
+
 	test( 'initializes classic Stripe Elements with cached appearance and font rules', () => {
 		const appearance = {
 			theme: 'stripe',
@@ -443,6 +790,48 @@ describe( 'WooPayments checkout', () => {
 		}
 	} );
 
+	test( 'persists valid classic appearance to the shared WooPay shopper endpoint once', async () => {
+		const appearance = {
+			theme: 'stripe',
+			rules: {
+				'.Input': {
+					fontSize: '16px',
+				},
+			},
+		};
+		window.wcpay_core_checkout_config.isWooPayGlobalThemeSupportEnabled = true;
+		window.wcpay_core_checkout_config.woopaySessionNonce = 'session-nonce';
+		window.wcpay_core_checkout_config.wcAjaxUrl = '/?wc-ajax=%%endpoint%%';
+		window.localStorage.setItem(
+			'wcpay_appearance_classic_checkout',
+			JSON.stringify( {
+				version: 'styles-v1',
+				appearance,
+			} )
+		);
+
+		require( '../woopayments-checkout' );
+		bodyEventHandlers.payment_method_selected();
+		await flushPromises();
+
+		const persistenceRequests = window.fetch.mock.calls.filter(
+			( [ url ] ) =>
+				url === '/?wc-ajax=wcpay_shopper_set_woopay_appearance'
+		);
+		expect( persistenceRequests ).toHaveLength( 1 );
+		expect( persistenceRequests[ 0 ][ 1 ].body.get( '_ajax_nonce' ) ).toBe(
+			'session-nonce'
+		);
+		expect(
+			persistenceRequests[ 0 ][ 1 ].body.get(
+				'appearance[rules][.Input][fontSize]'
+			)
+		).toBe( '16px' );
+		expect( persistenceRequests[ 0 ][ 1 ].body.get( 'font_rules' ) ).toBe(
+			'[]'
+		);
+	} );
+
 	test( 'omits computed alpha color values from generated classic Stripe Elements appearance rules', () => {
 		document.body.innerHTML =
 			'<form class="checkout">' +
@@ -457,14 +846,12 @@ describe( 'WooPayments checkout', () => {
 					if ( element.id === 'billing_first_name' ) {
 						return (
 							{
-								border:
-									'1px solid color(srgb 0.168627 0.176471 0.184314 / 0.8)',
+								border: '1px solid color(srgb 0.168627 0.176471 0.184314 / 0.8)',
 								'border-color':
 									'color(srgb 0.168627 0.176471 0.184314 / 0.8)',
 								'border-style': 'solid',
 								'border-width': '1px',
-								'box-shadow':
-									'rgb(43 45 47 / 0.8) 0px 1px 2px',
+								'box-shadow': 'rgb(43 45 47 / 0.8) 0px 1px 2px',
 								color: 'rgb(43 45 47)',
 								'font-size': '16px',
 							}[ property ] || ''
@@ -484,14 +871,14 @@ describe( 'WooPayments checkout', () => {
 
 		require( '../woopayments-checkout' );
 
-		expect( stripeElementsOptions.appearance.rules[ '.Input' ] ).toMatchObject(
-			{
-				borderStyle: 'solid',
-				borderWidth: '1px',
-				color: 'rgb(43, 45, 47)',
-				fontSize: '16px',
-			}
-		);
+		expect(
+			stripeElementsOptions.appearance.rules[ '.Input' ]
+		).toMatchObject( {
+			borderStyle: 'solid',
+			borderWidth: '1px',
+			color: 'rgb(43, 45, 47)',
+			fontSize: '16px',
+		} );
 		expect(
 			stripeElementsOptions.appearance.rules[ '.Input' ]
 		).not.toHaveProperty( 'border' );
@@ -564,6 +951,14 @@ describe( 'WooPayments checkout', () => {
 			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
 			'<div id="wcpay-core-payment-element"></div>' +
 			'</form>';
+		window.wcpay_core_checkout_config.isCheckout = false;
+		window.wcpay_core_checkout_config.customerData = {
+			name: 'Ada Lovelace',
+			email: 'ada@example.com',
+			address: {
+				country: 'US',
+			},
+		};
 
 		require( '../woopayments-checkout' );
 
@@ -578,6 +973,10 @@ describe( 'WooPayments checkout', () => {
 			wallets: {
 				link: 'never',
 			},
+		} );
+		expect( paymentElementOptions ).not.toHaveProperty( 'fields' );
+		expect( paymentElementOptions.defaultValues ).toEqual( {
+			billingDetails: window.wcpay_core_checkout_config.customerData,
 		} );
 	} );
 
@@ -686,6 +1085,39 @@ describe( 'WooPayments checkout', () => {
 		expect(
 			global.jQuery.checkoutFormFields[ 'wcpay-payment-method' ].value
 		).toBe( 'pm_native' );
+	} );
+
+	test( 'intercepts and resubmits the order-pay form with a created payment method', async () => {
+		document.body.innerHTML =
+			'<form id="order_review">' +
+			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
+			'<div id="wcpay-core-payment-element"></div>' +
+			'</form>';
+		window.wcpay_core_checkout_config.isOrderPay = true;
+
+		require( '../woopayments-checkout' );
+
+		expect( orderPayFormEventHandlers.submit ).toBeDefined();
+		expect(
+			orderPayFormEventHandlers.submit.call(
+				document.getElementById( 'order_review' )
+			)
+		).toBe( false );
+
+		await flushPromises();
+
+		expect( stripeMock.createPaymentMethod ).toHaveBeenCalledWith( {
+			elements: elementsMock,
+		} );
+		expect(
+			global.jQuery.orderPayFormFields[ 'wcpay-payment-method' ].value
+		).toBe( 'pm_native' );
+		expect(
+			global.jQuery.checkoutFormFields[ 'wcpay-payment-method' ]
+		).toBeUndefined();
+		expect( global.jQuery.orderPayFormResult.trigger ).toHaveBeenCalledWith(
+			'submit'
+		);
 	} );
 
 	test( 'passes checkout billing details when creating a payment method', async () => {
@@ -831,7 +1263,10 @@ describe( 'WooPayments checkout', () => {
 		require( '../woopayments-checkout' );
 
 		document.getElementById( 'place_order' ).dispatchEvent(
-			new window.MouseEvent( 'click', { bubbles: true, cancelable: true } )
+			new window.MouseEvent( 'click', {
+				bubbles: true,
+				cancelable: true,
+			} )
 		);
 
 		expect( getTrackingEvents() ).toEqual(
@@ -868,6 +1303,53 @@ describe( 'WooPayments checkout', () => {
 		expect( unmountPaymentElement ).toHaveBeenCalledTimes( 1 );
 		expect( mountPaymentElement ).toHaveBeenCalledWith(
 			replacementContainer
+		);
+	} );
+
+	test( 'toggles country-restricted split gateways when checkout billing country changes', () => {
+		window.wcpay_core_checkout_config.paymentMethodsConfig.card.countries =
+			[];
+		window.wcpay_core_checkout_config_woocommerce_payments_ideal =
+			Object.assign( {}, window.wcpay_core_checkout_config, {
+				gatewayId: 'woocommerce_payments_ideal',
+				paymentMethodId: 'ideal',
+				paymentMethodTypes: [ 'ideal' ],
+				paymentMethodsConfig: {
+					ideal: {
+						countries: [ 'BE' ],
+						isReusable: false,
+					},
+				},
+		} );
+		document.body.innerHTML =
+			'<form class="checkout">' +
+			'<select id="billing_country" name="billing_country">' +
+			'<option value="US" selected>US</option>' +
+			'<option value="BE">BE</option>' +
+			'</select>' +
+			'<ul>' +
+			'<li id="payment-card"><input type="radio" name="payment_method" value="woocommerce_payments" /></li>' +
+			'<li id="payment-ideal"><input type="radio" name="payment_method" value="woocommerce_payments_ideal" checked />' +
+			'<div id="wcpay-core-payment-element"></div></li>' +
+			'</ul>' +
+			'</form>';
+
+		require( '../woopayments-checkout' );
+		bodyEventHandlers.updated_checkout();
+
+		expect( document.getElementById( 'payment-ideal' ).style.display ).toBe(
+			'none'
+		);
+		expect(
+			document.querySelector( 'input[value="woocommerce_payments"]' )
+				.checked
+		).toBe( true );
+
+		document.getElementById( 'billing_country' ).value = 'BE';
+		bodyEventHandlers.updated_checkout();
+
+		expect( document.getElementById( 'payment-ideal' ).style.display ).toBe(
+			''
 		);
 	} );
 
@@ -1003,8 +1485,9 @@ describe( 'WooPayments checkout', () => {
 		);
 		expect( popover.getAttribute( 'tabindex' ) ).toBe( '-1' );
 		expect(
-			document.getElementById( popover.getAttribute( 'aria-describedby' ) )
-				.textContent
+			document.getElementById(
+				popover.getAttribute( 'aria-describedby' )
+			).textContent
 		).toBe( 'JCB, Union Pay' );
 		expect( document.activeElement ).toBe( popover );
 		expect(
@@ -1081,7 +1564,9 @@ describe( 'WooPayments checkout', () => {
 
 		require( '../woopayments-checkout' );
 
-		expect( document.querySelector( '#wcpay-woopay-button button' ) ).toBeNull();
+		expect(
+			document.querySelector( '#wcpay-woopay-button button' )
+		).toBeNull();
 		expect(
 			document.querySelector( '.woopay-express-button.is-placeholder' )
 		).not.toBeNull();
@@ -1101,6 +1586,17 @@ describe( 'WooPayments checkout', () => {
 			'setup_nonce';
 		window.wcpay_core_checkout_config.fraudPreventionToken =
 			'fraud-token-123';
+		window.wcpay_core_checkout_config.customerData = {
+			name: 'Renewal Target',
+			email: 'renewal-target@example.test',
+			address: {
+				line1: '123 Main St',
+				city: 'San Francisco',
+				state: 'CA',
+				postal_code: '94103',
+				country: 'US',
+			},
+		};
 		global.jQuery.post.mockReturnValueOnce( {
 			done: jest.fn( ( callback ) => {
 				callback( {
@@ -1140,6 +1636,12 @@ describe( 'WooPayments checkout', () => {
 		expect( submitElements.mock.invocationCallOrder[ 0 ] ).toBeLessThan(
 			stripeMock.createPaymentMethod.mock.invocationCallOrder[ 0 ]
 		);
+		expect( stripeMock.createPaymentMethod ).toHaveBeenCalledWith( {
+			elements: elementsMock,
+			params: {
+				billing_details: window.wcpay_core_checkout_config.customerData,
+			},
+		} );
 		expect( stripeMock.confirmSetup ).not.toHaveBeenCalled();
 		expect( setupIntentField ).not.toBeNull();
 		expect( setupIntentField.value ).toBe( 'seti_native' );
