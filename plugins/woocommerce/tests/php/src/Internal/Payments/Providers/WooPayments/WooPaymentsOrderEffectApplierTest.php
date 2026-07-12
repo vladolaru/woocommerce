@@ -743,6 +743,88 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Cancellation effects compose the successful authorization note and fee metadata cleanup.
+	 */
+	public function test_cancel_effects_compose_note_and_fee_meta_cleanup(): void {
+		$order = $this->create_woopayments_order();
+		$order->update_meta_data( '_charge_id', 'ch_cancel_effects' );
+		$order->save();
+		$cancel_result = array(
+			'id'     => 'pi_cancel_effects',
+			'status' => 'canceled',
+		);
+		$outcome       = new PaymentOutcome( PaymentOutcome::STATUS_CANCELED, 'pi_cancel_effects' );
+		$plan          = WooPaymentsOrderEffectPlan::for_cancel( $cancel_result );
+
+		$result = $this->create_applier()->apply(
+			PaymentContext::for_cancel( $order, OrderPaymentStore::GATEWAY_ID ),
+			$outcome,
+			$plan
+		);
+
+		$this->assertNotSame( $outcome, $result );
+		$this->assertSame(
+			( new WooPaymentsOrderNoteService() )->format_capture_cancelled_note( 'pi_cancel_effects', 'ch_cancel_effects' ),
+			$result->get_data()[ PaymentOutcome::DATA_NOTE ]
+		);
+		$this->assertSame( 'capture_canceled', $result->get_data()[ PaymentOutcome::DATA_NOTE_TYPE ] );
+		$this->assertSame( array( '_wcpay_transaction_fee', '_wcpay_net' ), $result->get_data()[ PaymentOutcome::DATA_META_TO_DELETE ] );
+	}
+
+	/**
+	 * @testdox Unsuccessful or mismatched cancellation effects preserve fee data and omit success effects.
+	 *
+	 * @dataProvider provide_unsuccessful_cancel_effects
+	 *
+	 * @param string $outcome_status  Neutral outcome status.
+	 * @param string $provider_status Provider cancellation status.
+	 */
+	public function test_unsuccessful_cancel_effects_omit_success_data( string $outcome_status, string $provider_status ): void {
+		$order = $this->create_woopayments_order();
+		$order->update_meta_data( '_wcpay_transaction_fee', '1.25' );
+		$order->update_meta_data( '_wcpay_net', '8.75' );
+		$order->save();
+		$outcome = new PaymentOutcome(
+			$outcome_status,
+			'pi_cancel_guard',
+			'',
+			'',
+			'',
+			array( PaymentOutcome::DATA_ERROR_MESSAGE => 'Cancellation rejected.' )
+		);
+		$plan    = WooPaymentsOrderEffectPlan::for_cancel(
+			array(
+				'id'     => 'pi_cancel_guard',
+				'status' => $provider_status,
+			)
+		);
+
+		$result = $this->create_applier()->apply(
+			PaymentContext::for_cancel( $order, OrderPaymentStore::GATEWAY_ID ),
+			$outcome,
+			$plan
+		);
+
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_META_TO_DELETE, $result->get_data() );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE, $result->get_data() );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE_TYPE, $result->get_data() );
+		$this->assertSame( '1.25', $order->get_meta( '_wcpay_transaction_fee', true ) );
+		$this->assertSame( '8.75', $order->get_meta( '_wcpay_net', true ) );
+	}
+
+	/**
+	 * Provide unsuccessful and mismatched cancellation effect states.
+	 *
+	 * @return array<string,array{string,string}>
+	 */
+	public static function provide_unsuccessful_cancel_effects(): array {
+		return array(
+			'failed outcome and provider result' => array( PaymentOutcome::STATUS_FAILED, 'requires_capture' ),
+			'canceled outcome with mismatched provider result' => array( PaymentOutcome::STATUS_CANCELED, 'requires_capture' ),
+		);
+	}
+
+	/**
 	 * @testdox Refund effects compose WooPayments-compatible metadata and notes after transport.
 	 */
 	public function test_refund_effects_compose_compatibility_data(): void {

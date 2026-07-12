@@ -2934,6 +2934,9 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( PaymentOutcome::STATUS_CANCELED, $outcome->get_status() );
 		$this->assertSame( 'pi_canceled', $outcome->get_provider_payment_id() );
 		$this->assertSame( 'key_cancel', $gateway->last_idempotency_key );
+		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
+		$this->assertSame( WooPaymentsOrderEffectPlan::TYPE_CANCEL, $outcome->get_effect_plan()->get_type() );
+		$this->assertSame( 'pi_canceled', $outcome->get_effect_plan()->get_provider_result()['id'] );
 	}
 
 	/**
@@ -2958,8 +2961,13 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->with( 'pi_cancel' )
 			->willReturn(
 				array(
-					'id'     => 'pi_cancel',
-					'status' => 'canceled',
+					'id'      => 'pi_cancel',
+					'status'  => 'canceled',
+					'charges' => array(
+						'data' => array(
+							array( 'id' => 'ch_cancel' ),
+						),
+					),
 				)
 			);
 
@@ -2967,6 +2975,52 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$outcome = $sut->cancel( PaymentContext::for_cancel( $order, OrderPaymentStore::GATEWAY_ID ), 'key_cancel' );
 
 		$this->assertSame( PaymentOutcome::STATUS_CANCELED, $outcome->get_status() );
+		$this->assertSame( '', $gateway->last_idempotency_key );
+		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
+		$this->assertSame( 'cancel', $outcome->get_effect_plan()->get_type() );
+		$this->assertSame( 'ch_cancel', $outcome->get_effect_plan()->get_provider_result()['charges']['data'][0]['id'] );
+	}
+
+	/**
+	 * @testdox Failed native cancellation results retain diagnostics without success effects.
+	 */
+	public function test_failed_native_cancel_retains_plan_without_success_effect_data(): void {
+		$order      = $this->create_woopayments_order();
+		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ), true );
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_available', 'cancel_intention' ) )
+			->getMock();
+
+		$order->set_transaction_id( 'pi_cancel_failed' );
+		$order->save();
+
+		$api_client->expects( $this->once() )
+			->method( 'is_available' )
+			->willReturn( true );
+		$api_client->expects( $this->once() )
+			->method( 'cancel_intention' )
+			->with( 'pi_cancel_failed' )
+			->willReturn(
+				array(
+					'id'      => 'pi_cancel_failed',
+					'status'  => 'requires_capture',
+					'message' => 'Cancellation rejected.',
+				)
+			);
+
+		$outcome = $this->create_adapter( $gateway, $api_client )->cancel(
+			PaymentContext::for_cancel( $order, OrderPaymentStore::GATEWAY_ID ),
+			'key_cancel_failed'
+		);
+
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( 'Cancellation rejected.', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
+		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
+		$this->assertSame( WooPaymentsOrderEffectPlan::TYPE_CANCEL, $outcome->get_effect_plan()->get_type() );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_META_TO_DELETE, $outcome->get_data() );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE, $outcome->get_data() );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE_TYPE, $outcome->get_data() );
 		$this->assertSame( '', $gateway->last_idempotency_key );
 	}
 

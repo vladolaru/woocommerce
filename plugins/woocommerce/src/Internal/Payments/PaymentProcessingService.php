@@ -775,7 +775,7 @@ class PaymentProcessingService {
 				$this->get_lifecycle_status( $outcome ),
 				$this->get_lifecycle_payment_reference( $outcome ),
 				$this->get_lifecycle_meta( $outcome, $provider ),
-				array(),
+				$this->get_lifecycle_meta_to_delete( $outcome ),
 				$this->get_lifecycle_note( $outcome ),
 				$this->get_lifecycle_note_type( $outcome )
 			),
@@ -822,6 +822,21 @@ class PaymentProcessingService {
 	 */
 	private function get_lifecycle_meta( PaymentOutcome $outcome, ProviderContract $provider ): array {
 		return $provider->get_persistence_profile()->get_outcome_meta( $outcome );
+	}
+
+	/**
+	 * Get order meta keys to delete from an outcome.
+	 *
+	 * @param PaymentOutcome $outcome Provider outcome.
+	 * @return string[]
+	 */
+	private function get_lifecycle_meta_to_delete( PaymentOutcome $outcome ): array {
+		$data = $outcome->get_data();
+		if ( ! isset( $data[ PaymentOutcome::DATA_META_TO_DELETE ] ) || ! is_array( $data[ PaymentOutcome::DATA_META_TO_DELETE ] ) ) {
+			return array();
+		}
+
+		return array_values( array_map( 'strval', $data[ PaymentOutcome::DATA_META_TO_DELETE ] ) );
 	}
 
 	/**

@@ -1316,6 +1316,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$order->set_transaction_id( 'pi_cancel' );
 		$order->update_meta_data( '_intent_id', 'pi_cancel' );
 		$order->update_meta_data( '_intention_status', 'requires_capture' );
+		$order->update_meta_data( '_wcpay_transaction_fee', '0.65' );
+		$order->update_meta_data( '_wcpay_net', '9.35' );
 		$order->save();
 		$order->update_status( 'on-hold' );
 
@@ -1338,6 +1340,10 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 1, $provider->cancel_calls );
 		$this->assertSame( 'on-hold', $order->get_status() );
 		$this->assertSame( 'requires_capture', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( '0.65', $order->get_meta( '_wcpay_transaction_fee', true ) );
+		$this->assertSame( '9.35', $order->get_meta( '_wcpay_net', true ) );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_META_TO_DELETE, $outcome->get_data() );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE_TYPE, $outcome->get_data() );
 		$this->assertOrderHasNoteContaining( $order, 'Cancellation failed note.' );
 	}
 
@@ -1385,8 +1391,24 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should apply canceled provider outcomes to the canceled order lifecycle.
 	 */
 	public function test_cancel_applies_canceled_lifecycle_state(): void {
-		$order    = $this->create_woopayments_order( '12.00' );
-		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_CANCELED, 'pi_canceled' ) );
+		$order = $this->create_woopayments_order( '12.00' );
+		$order->update_meta_data( '_wcpay_transaction_fee', '0.65' );
+		$order->update_meta_data( '_wcpay_net', '11.35' );
+		$order->save();
+		$provider = new RecordingProvider(
+			new PaymentOutcome(
+				PaymentOutcome::STATUS_CANCELED,
+				'pi_canceled',
+				'',
+				'',
+				'',
+				array(
+					PaymentOutcome::DATA_META_TO_DELETE => array( '_wcpay_transaction_fee', '_wcpay_net' ),
+					PaymentOutcome::DATA_NOTE           => 'Authorization cancellation success note.',
+					PaymentOutcome::DATA_NOTE_TYPE      => 'capture_canceled',
+				)
+			)
+		);
 
 		$outcome = $this->sut->cancel( PaymentContext::for_cancel( $order, OrderPaymentStore::GATEWAY_ID ), $provider );
 		$order   = wc_get_order( $order->get_id() );
@@ -1396,6 +1418,9 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'cancelled', $order->get_status() );
 		$this->assertSame( 'canceled', $order->get_meta( '_intention_status', true ) );
 		$this->assertSame( 'pi_canceled', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( '', $order->get_meta( '_wcpay_transaction_fee', true ) );
+		$this->assertSame( '', $order->get_meta( '_wcpay_net', true ) );
+		$this->assertOrderHasNoteContaining( $order, 'Authorization cancellation success note.' );
 	}
 
 	/**

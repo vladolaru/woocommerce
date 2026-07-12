@@ -273,7 +273,10 @@ class WooPaymentsProviderGatewayAdapter {
 			$intent_id = $this->get_order_intent_id( $order );
 			if ( '' !== $intent_id ) {
 				try {
-					return WooPaymentsIntentCodec::outcome_from_cancel_result( $this->api_client->cancel_intention( $intent_id ) );
+					$result  = $this->api_client->cancel_intention( $intent_id );
+					$outcome = WooPaymentsIntentCodec::outcome_from_cancel_result( $result );
+
+					return $outcome->with_effect_plan( WooPaymentsOrderEffectPlan::for_cancel( $result ) );
 				} catch ( WooPaymentsApiException $exception ) {
 					return WooPaymentsIntentCodec::failed_transport_outcome( 'cancel', $exception, $intent_id );
 				}
@@ -292,7 +295,12 @@ class WooPaymentsProviderGatewayAdapter {
 			}
 		);
 
-		return WooPaymentsIntentCodec::outcome_from_cancel_result( is_array( $result ) ? $result : array() );
+		$result  = is_array( $result ) ? $result : array();
+		$outcome = WooPaymentsIntentCodec::outcome_from_cancel_result( $result );
+
+		return PaymentOutcome::STATUS_CANCELED === $outcome->get_status()
+			? $outcome->with_effect_plan( WooPaymentsOrderEffectPlan::for_cancel( $result ) )
+			: $outcome;
 	}
 
 	/**

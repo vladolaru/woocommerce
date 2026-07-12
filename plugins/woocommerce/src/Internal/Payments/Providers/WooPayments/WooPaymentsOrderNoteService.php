@@ -136,6 +136,33 @@ class WooPaymentsOrderNoteService {
 	}
 
 	/**
+	 * Build a WooPayments-compatible authorization-cancellation note.
+	 *
+	 * @param string $intent_id Payment intent ID.
+	 * @param string $charge_id Charge ID.
+	 * @return string
+	 *
+	 * @since 11.0.0
+	 */
+	public function format_capture_cancelled_note( string $intent_id, string $charge_id ): string {
+		$transaction_id  = '' !== $intent_id ? $intent_id : $charge_id;
+		$transaction_url = $this->transaction_url( $intent_id, $charge_id );
+
+		return sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
+				/* translators: %1$s: transaction ID, %2$s: transaction URL. */
+				__( 'Payment authorization was successfully <strong>cancelled</strong> (<a>%1$s</a>).', 'woocommerce' ),
+				array(
+					'strong' => '<strong>',
+					'a'      => '' !== $transaction_url ? '<a href="%2$s" target="_blank" rel="noopener noreferrer">' : '<code>',
+				)
+			),
+			$transaction_id,
+			$transaction_url
+		);
+	}
+
+	/**
 	 * Build a WooPayments-compatible capture-failure note.
 	 *
 	 * @param WC_Order $order     Order object.

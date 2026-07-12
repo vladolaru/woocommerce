@@ -134,6 +134,13 @@ class WooPaymentsOrderEffectApplier {
 				$this->apply_capture_fee_details( $context->get_order(), $plan->get_provider_result() );
 				return $outcome;
 
+			case WooPaymentsOrderEffectPlan::TYPE_CANCEL:
+				return $this->merge_effect_data_into_outcome(
+					$outcome,
+					$this->compose_cancel_effect_data( $context->get_order(), $outcome, $plan->get_provider_result() ),
+					$plan
+				);
+
 			case WooPaymentsOrderEffectPlan::TYPE_REFUND:
 				if ( PaymentOutcome::STATUS_FAILED === $outcome->get_status() ) {
 					$result          = $plan->get_provider_result();
@@ -295,6 +302,30 @@ class WooPaymentsOrderEffectApplier {
 			PaymentOutcome::DATA_META      => WooPaymentsOrderEffects::failed_capture_meta(),
 			PaymentOutcome::DATA_NOTE      => $this->note_service->format_capture_failed_note( $order, $intent_id, $charge_id, $message ),
 			PaymentOutcome::DATA_NOTE_TYPE => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_FAILED,
+		);
+	}
+
+	/**
+	 * Compose authorization cancellation metadata cleanup and note.
+	 *
+	 * @param WC_Order            $order   Order whose authorization is being canceled.
+	 * @param PaymentOutcome      $outcome Provider cancellation outcome.
+	 * @param array<string,mixed> $result  Provider cancellation response.
+	 * @return array<string,mixed>
+	 */
+	private function compose_cancel_effect_data( WC_Order $order, PaymentOutcome $outcome, array $result ): array {
+		if ( PaymentOutcome::STATUS_CANCELED !== $outcome->get_status() || 'canceled' !== (string) ( $result['status'] ?? '' ) ) {
+			return array();
+		}
+
+		$charge    = WooPaymentsOrderEffects::latest_charge( $result );
+		$intent_id = '' !== $outcome->get_provider_payment_id() ? $outcome->get_provider_payment_id() : (string) ( $result['id'] ?? '' );
+		$charge_id = isset( $charge['id'] ) ? (string) $charge['id'] : (string) $order->get_meta( '_charge_id', true );
+
+		return array(
+			PaymentOutcome::DATA_META_TO_DELETE => array( '_wcpay_transaction_fee', '_wcpay_net' ),
+			PaymentOutcome::DATA_NOTE           => $this->note_service->format_capture_cancelled_note( $intent_id, $charge_id ),
+			PaymentOutcome::DATA_NOTE_TYPE      => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_CANCELED,
 		);
 	}
 

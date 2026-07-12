@@ -61,6 +61,22 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Authorization cancellation notes preserve the WooPayments reference copy and transaction link.
+	 */
+	public function test_formats_authorization_cancellation_note(): void {
+		$sut             = new WooPaymentsOrderNoteService();
+		$transaction_url = $sut->transaction_url( 'pi_canceled', 'ch_canceled' );
+
+		$this->assertSame(
+			sprintf(
+				'Payment authorization was successfully <strong>cancelled</strong> (<a href="%1$s" target="_blank" rel="noopener noreferrer">pi_canceled</a>).',
+				$transaction_url
+			),
+			$sut->format_capture_cancelled_note( 'pi_canceled', 'ch_canceled' )
+		);
+	}
+
+	/**
 	 * @testdox Note-local identity deduplicates changed content without writing order metadata.
 	 */
 	public function test_note_local_identity_deduplicates_changed_content_without_order_metadata(): void {

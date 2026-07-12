@@ -81,6 +81,13 @@ class PaymentOutcome {
 	public const DATA_META = 'meta';
 
 	/**
+	 * Additional data key: order meta keys to delete.
+	 *
+	 * @var string
+	 */
+	public const DATA_META_TO_DELETE = 'meta_to_delete';
+
+	/**
 	 * Additional data key: order note.
 	 *
 	 * @var string

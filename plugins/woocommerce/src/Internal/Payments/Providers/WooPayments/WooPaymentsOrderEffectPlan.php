@@ -39,6 +39,13 @@ class WooPaymentsOrderEffectPlan implements ProviderOperationEffectPlan {
 	public const TYPE_CAPTURE = 'capture';
 
 	/**
+	 * Authorization cancellation effect plan.
+	 *
+	 * @var string
+	 */
+	public const TYPE_CANCEL = 'cancel';
+
+	/**
 	 * Refund effect plan.
 	 *
 	 * @var string
@@ -143,6 +150,18 @@ class WooPaymentsOrderEffectPlan implements ProviderOperationEffectPlan {
 	 */
 	public static function for_capture( array $provider_result ): self {
 		return new self( self::TYPE_CAPTURE, $provider_result, false, false );
+	}
+
+	/**
+	 * Build an authorization cancellation effect plan.
+	 *
+	 * @param array<string,mixed> $provider_result Provider cancellation response.
+	 * @return self
+	 *
+	 * @since 11.0.0
+	 */
+	public static function for_cancel( array $provider_result ): self {
+		return new self( self::TYPE_CANCEL, $provider_result, false, false );
 	}
 
 	/**
