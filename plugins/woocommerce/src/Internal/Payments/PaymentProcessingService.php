@@ -738,7 +738,9 @@ class PaymentProcessingService {
 	 * @param ProviderContract $provider  Provider.
 	 */
 	private function apply_order_operation_outcome( WC_Order $order, PaymentOutcome $outcome, string $operation, ProviderContract $provider ): void {
-		if ( 'capture' === $operation && PaymentOutcome::STATUS_FAILED === $outcome->get_status() ) {
+		if ( in_array( $operation, array( 'capture', 'cancel' ), true ) && PaymentOutcome::STATUS_FAILED === $outcome->get_status() ) {
+			// A failed authorization operation leaves the original authorization active, regardless of whether
+			// the attempted operation was capture or cancellation.
 			$meta = $provider->get_persistence_profile()->get_capture_failure_outcome_meta( $outcome );
 
 			$this->lifecycle_service->apply_unlocked(
