@@ -704,7 +704,7 @@ class WooPaymentsEventIngestor {
 				'card',
 				'card_present',
 				'us_bank_account',
-				'bacs_debit',
+				'au_becs_debit',
 				'wechat_pay',
 			),
 			true

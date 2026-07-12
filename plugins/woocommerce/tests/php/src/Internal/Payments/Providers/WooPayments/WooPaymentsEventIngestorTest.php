@@ -1094,6 +1094,34 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox payment_intent.payment_failed marks AU BECS debit orders failed.
+	 */
+	public function test_payment_intent_failed_marks_au_becs_debit_order_failed(): void {
+		$order = $this->create_woopayments_order();
+
+		$this->sut->process(
+			$this->create_payment_intent_event(
+				'payment_intent.payment_failed',
+				$order,
+				array(
+					'status'             => 'requires_payment_method',
+					'last_payment_error' => array(
+						'payment_method' => array(
+							'id'   => 'pm_123',
+							'type' => 'au_becs_debit',
+						),
+					),
+				)
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'failed', $order->get_status() );
+	}
+
+	/**
 	 * @testdox payment_intent.payment_failed adds the current-locale translated failure note.
 	 */
 	public function test_payment_intent_failed_adds_translated_failure_note(): void {
@@ -1144,6 +1172,34 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 						'payment_method' => array(
 							'id'   => 'pm_123',
 							'type' => 'klarna',
+						),
+					),
+				)
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'pending', $order->get_status() );
+	}
+
+	/**
+	 * @testdox payment_intent.payment_failed ignores BACS debit.
+	 */
+	public function test_payment_intent_failed_ignores_bacs_debit(): void {
+		$order = $this->create_woopayments_order();
+
+		$this->sut->process(
+			$this->create_payment_intent_event(
+				'payment_intent.payment_failed',
+				$order,
+				array(
+					'status'             => 'requires_payment_method',
+					'last_payment_error' => array(
+						'payment_method' => array(
+							'id'   => 'pm_123',
+							'type' => 'bacs_debit',
 						),
 					),
 				)
