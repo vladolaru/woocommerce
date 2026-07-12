@@ -105,6 +105,10 @@ class OrderPaymentLifecycleService {
 	 * @param ProviderPersistenceProfile $persistence_profile Provider persistence profile.
 	 */
 	public function apply_unlocked( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceProfile $persistence_profile ): void {
+		if ( $this->should_skip_late_failure_event( $order, $event ) ) {
+			return;
+		}
+
 		$this->apply_meta_changes( $order, $event );
 
 		$note            = $event->get_note();
@@ -196,6 +200,52 @@ class OrderPaymentLifecycleService {
 					$order->set_transaction_id( (string) $event->get_payment_reference() );
 				}
 				return false;
+		}
+
+		return false;
+	}
+
+	/**
+	 * Tell whether a late failure event should be ignored for an already-paid order.
+	 *
+	 * @param WC_Order              $order Order object.
+	 * @param PaymentLifecycleEvent $event Lifecycle event.
+	 * @return bool
+	 */
+	private function should_skip_late_failure_event( WC_Order $order, PaymentLifecycleEvent $event ): bool {
+		if (
+			! in_array(
+				$event->get_status(),
+				array(
+					PaymentLifecycleEvent::STATUS_FAILED,
+					PaymentLifecycleEvent::STATUS_CAPTURE_EXPIRED,
+					PaymentLifecycleEvent::STATUS_CANCELED,
+				),
+				true
+			)
+		) {
+			return false;
+		}
+
+		wp_cache_delete( $order->get_id(), 'posts' );
+
+		$fresh_order = clone $order;
+		/**
+		 * Fresh order data store.
+		 *
+		 * @var \WC_Object_Data_Store_Interface $data_store
+		 */
+		$data_store = $fresh_order->get_data_store();
+		$data_store->read( $fresh_order );
+		/**
+		 * Freshly read order.
+		 *
+		 * @var WC_Order $fresh_order
+		 */
+
+		if ( function_exists( 'wc_get_is_paid_statuses' ) ) {
+			return $order->has_status( wc_get_is_paid_statuses() )
+				|| $fresh_order->has_status( wc_get_is_paid_statuses() );
 		}
 
 		return false;

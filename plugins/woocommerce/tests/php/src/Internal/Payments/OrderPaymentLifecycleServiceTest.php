@@ -241,6 +241,102 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Late failure events do not downgrade paid processing orders.
+	 * @dataProvider paid_order_late_failure_event_provider
+	 *
+	 * @param string $event_status      Lifecycle event status.
+	 * @param string $payment_reference Payment reference.
+	 * @param string $late_intent_status Late provider intent status.
+	 * @param string $note              Lifecycle note.
+	 * @param string $note_type         Lifecycle note type.
+	 */
+	public function test_late_failure_event_does_not_downgrade_paid_processing_order( string $event_status, string $payment_reference, string $late_intent_status, string $note, string $note_type ): void {
+		$order = $this->create_woopayments_order();
+		$order->set_transaction_id( 'pi_paid' );
+		$order->set_status( 'processing' );
+		$order->update_meta_data( '_intention_status', 'succeeded' );
+		$order->update_meta_data( '_wcpay_transaction_fee', '1.23' );
+		$order->update_meta_data( '_wcpay_net', '8.77' );
+		$order->save();
+
+		$this->apply_event(
+			$order,
+			new PaymentLifecycleEvent(
+				$event_status,
+				$payment_reference,
+				array( '_intention_status' => $late_intent_status ),
+				array( '_wcpay_transaction_fee', '_wcpay_net' ),
+				$note,
+				$note_type
+			)
+		);
+
+		$order      = wc_get_order( $order->get_id() );
+		$marker_key = '_wc_native_payments_note_' . md5( "{$payment_reference}|{$event_status}|{$note_type}" );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'processing', $order->get_status(), "{$event_status} must not downgrade a paid order." );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ), "{$event_status} must not overwrite successful lifecycle metadata." );
+		$this->assertSame( '1.23', $order->get_meta( '_wcpay_transaction_fee', true ), "{$event_status} must not delete payment fee metadata." );
+		$this->assertSame( '8.77', $order->get_meta( '_wcpay_net', true ), "{$event_status} must not delete payment net metadata." );
+		$this->assertSame( '', $order->get_meta( $marker_key, true ), "{$event_status} must not persist a lifecycle note marker." );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, $note ), "{$event_status} must not add a late lifecycle note." );
+	}
+
+	/**
+	 * @testdox Late failure events re-read persisted order state before mutating a stale caller instance.
+	 */
+	public function test_late_failure_event_does_not_mutate_stale_order_when_persisted_order_is_paid(): void {
+		$stale_order = $this->create_woopayments_order();
+		$stale_order->update_meta_data( '_intention_status', 'succeeded' );
+		$stale_order->update_meta_data( '_wcpay_transaction_fee', '1.23' );
+		$stale_order->save();
+
+		$paid_order = wc_get_order( $stale_order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $paid_order );
+		$paid_order->set_transaction_id( 'pi_paid' );
+		$paid_order->set_status( 'processing' );
+		$paid_order->save();
+
+		$note      = 'Late payment failure.';
+		$note_type = 'late_payment_failure';
+		$this->apply_event(
+			$stale_order,
+			new PaymentLifecycleEvent(
+				PaymentLifecycleEvent::STATUS_FAILED,
+				'pi_failed_late',
+				array( '_intention_status' => 'requires_payment_method' ),
+				array( '_wcpay_transaction_fee' ),
+				$note,
+				$note_type
+			)
+		);
+
+		$order      = wc_get_order( $stale_order->get_id() );
+		$marker_key = '_wc_native_payments_note_' . md5( 'pi_failed_late|failed|' . $note_type );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'processing', $order->get_status() );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( '1.23', $order->get_meta( '_wcpay_transaction_fee', true ) );
+		$this->assertSame( '', $order->get_meta( $marker_key, true ) );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, $note ) );
+	}
+
+	/**
+	 * Data provider for late failure events received after payment.
+	 *
+	 * @return array<string,array{string,string,string,string,string}>
+	 */
+	public static function paid_order_late_failure_event_provider(): array {
+		return array(
+			'failed'          => array( PaymentLifecycleEvent::STATUS_FAILED, 'pi_failed_late', 'requires_payment_method', 'Late payment failure.', 'late_payment_failure' ),
+			'canceled'        => array( PaymentLifecycleEvent::STATUS_CANCELED, 'pi_canceled_late', 'canceled', 'Late payment cancellation.', 'late_payment_cancellation' ),
+			'capture expired' => array( PaymentLifecycleEvent::STATUS_CAPTURE_EXPIRED, 'ch_expired_late', 'canceled', 'Late payment authorization expiry.', 'late_capture_expiry' ),
+		);
+	}
+
+	/**
 	 * @testdox Started events add a note without changing order status.
 	 */
 	public function test_started_event_adds_note_without_status_change(): void {
