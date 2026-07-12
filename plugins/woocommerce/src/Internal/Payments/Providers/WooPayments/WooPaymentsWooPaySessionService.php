@@ -441,12 +441,12 @@ class WooPaymentsWooPaySessionService {
 		$is_woopay_enabled                 = $this->is_woopay_enabled();
 		$is_country_available              = $this->is_woopay_country_available();
 		$is_global_theme_enabled           = $this->is_woopay_global_theme_support_enabled();
-		$should_show_woopay                = $this->should_show_woopay_button( $context );
+		$should_show_woopay                = $this->is_woopay_gateway_available() && $this->should_show_woopay_button_for_enabled_state( $context, $is_woopay_enabled );
 		$woopay_appearance                 = $is_global_theme_enabled ? $this->get_woopay_appearance() : null;
 		$woopay_font_rules                 = $is_global_theme_enabled ? $this->get_woopay_font_rules() : array();
 		$woopay_session_email              = $this->get_current_shopper_email();
 		$woopay_minimum_session            = $is_woopay_enabled ? $this->get_encrypted_minimum_session_data() : array();
-		$woopay_express_available          = $is_woopay_enabled && $this->is_woopay_express_checkout_enabled_at( $context );
+		$woopay_express_available          = $is_woopay_enabled && $this->is_woopay_express_checkout_configured_at( $context );
 		$woopay_first_party_auth_available = $woopay_express_available && $is_country_available;
 
 		return array(
@@ -567,9 +567,74 @@ class WooPaymentsWooPaySessionService {
 	 * @return bool
 	 */
 	public function should_show_woopay_button( string $context = 'checkout' ): bool {
-		return $this->is_woopay_enabled() &&
-			$this->is_woopay_country_available() &&
-			$this->is_woopay_express_checkout_enabled_at( $context );
+		if ( ! $this->is_woopay_gateway_available() ) {
+			return false;
+		}
+
+		return $this->should_show_woopay_button_for_enabled_state( $context, $this->is_woopay_enabled() );
+	}
+
+	/**
+	 * Tell whether the WooPay button should show for a known global enabled state.
+	 *
+	 * @param string $context            Express checkout context.
+	 * @param bool   $is_woopay_enabled Whether WooPay is globally enabled.
+	 * @return bool
+	 */
+	private function should_show_woopay_button_for_enabled_state( string $context, bool $is_woopay_enabled ): bool {
+		/**
+		 * Allows third parties to programmatically show or hide the WooPay button.
+		 *
+		 * @since 9.5.0
+		 *
+		 * @param bool $is_woopay_enabled Whether WooPay is globally enabled.
+		 */
+		if ( ! apply_filters( 'wcpay_woopay_enabled', $is_woopay_enabled ) ) {
+			return false;
+		}
+
+		$context = sanitize_key( $context );
+		if ( ! in_array( $context, array( 'product', 'cart', 'checkout' ), true ) ) {
+			return false;
+		}
+
+		if (
+			! $this->is_woopay_country_available() ||
+			! $this->is_woopay_express_checkout_configured_at( $context )
+		) {
+			return false;
+		}
+
+		$product = null;
+		if ( 'product' === $context ) {
+			$product = $this->get_current_woopay_product();
+			if (
+				! $this->is_woopay_product_supported( $product ) ||
+				null === $product ||
+				! $product->is_purchasable() ||
+				! $product->is_in_stock()
+			) {
+				return false;
+			}
+		} elseif ( ! $this->has_allowed_woopay_cart_items() ) {
+			return false;
+		}
+
+		if ( ! is_user_logged_in() ) {
+			if ( $product instanceof \WC_Product && $this->is_woopay_subscription_product( $product ) ) {
+				return false;
+			}
+
+			if ( 'product' !== $context && $this->woopay_cart_contains_subscription() ) {
+				return false;
+			}
+
+			if ( ! $this->is_woopay_guest_checkout_enabled() ) {
+				return false;
+			}
+		}
+
+		return true;
 	}
 
 	/**
@@ -775,6 +840,21 @@ class WooPaymentsWooPaySessionService {
 	}
 
 	/**
+	 * Tell whether the base WooPayments gateway is available for checkout.
+	 *
+	 * @return bool
+	 */
+	private function is_woopay_gateway_available(): bool {
+		if ( ! function_exists( 'WC' ) || ! WC() ) {
+			return false;
+		}
+
+		$available_gateways = WC()->payment_gateways()->get_available_payment_gateways();
+
+		return isset( $available_gateways['woocommerce_payments'] );
+	}
+
+	/**
 	 * Tell whether WooPay is available for the connected account country.
 	 *
 	 * @return bool
@@ -801,9 +881,16 @@ class WooPaymentsWooPaySessionService {
 	 * @return bool
 	 */
 	private function is_woopay_express_checkout_enabled_at( string $context ): bool {
-		if ( ! $this->is_woopay_enabled() ) {
-			return false;
-		}
+		return $this->is_woopay_enabled() && $this->is_woopay_express_checkout_configured_at( $context );
+	}
+
+	/**
+	 * Tell whether WooPay express checkout is configured for a context.
+	 *
+	 * @param string $context Express checkout context.
+	 * @return bool
+	 */
+	private function is_woopay_express_checkout_configured_at( string $context ): bool {
 
 		$setting_key = 'express_checkout_' . $this->normalize_button_context( $context ) . '_methods';
 		$methods     = $this->get_account_service()->get_gateway_setting( $setting_key, array() );
@@ -813,6 +900,212 @@ class WooPaymentsWooPaySessionService {
 		}
 
 		return 'yes' === $this->get_account_service()->get_gateway_setting( 'platform_checkout', 'no' );
+	}
+
+	/**
+	 * Get the current product for WooPay product-button eligibility checks.
+	 *
+	 * @return \WC_Product|null
+	 */
+	private function get_current_woopay_product(): ?\WC_Product {
+		$product = $GLOBALS['product'] ?? null;
+		if ( $product instanceof \WC_Product ) {
+			return $product;
+		}
+
+		$product = $this->get_woopay_product_from_shortcode();
+		if ( $product instanceof \WC_Product ) {
+			return $product;
+		}
+
+		$product = function_exists( 'wc_get_product' ) ? wc_get_product() : null;
+
+		return $product instanceof \WC_Product ? $product : null;
+	}
+
+	/**
+	 * Get the product from the current product_page shortcode.
+	 *
+	 * @return \WC_Product|null
+	 */
+	private function get_woopay_product_from_shortcode(): ?\WC_Product {
+		$post = get_post();
+		if ( ! $post instanceof \WP_Post || ! has_shortcode( $post->post_content, 'product_page' ) ) {
+			return null;
+		}
+
+		if ( ! preg_match_all( '/' . get_shortcode_regex( array( 'product_page' ) ) . '/', $post->post_content, $matches, PREG_SET_ORDER ) ) {
+			return null;
+		}
+
+		foreach ( $matches as $shortcode ) {
+			if ( 'product_page' !== $shortcode[2] ) {
+				continue;
+			}
+
+			$atts = shortcode_parse_atts( $shortcode[3] );
+			if ( ! is_array( $atts ) ) {
+				continue;
+			}
+
+			$product_id = isset( $atts['id'] ) ? absint( $atts['id'] ) : 0;
+			if ( ! $product_id && isset( $atts['sku'] ) && is_scalar( $atts['sku'] ) ) {
+				$sku        = wc_clean( wp_unslash( (string) $atts['sku'] ) );
+				$sku        = is_scalar( $sku ) ? (string) $sku : '';
+				$product_id = '' !== $sku ? wc_get_product_id_by_sku( $sku ) : 0;
+			}
+
+			$product = $product_id ? wc_get_product( $product_id ) : null;
+			if ( $product instanceof \WC_Product ) {
+				return $product;
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Tell whether WooPay supports the current product type.
+	 *
+	 * @param \WC_Product|null $product Product being checked.
+	 * @return bool
+	 */
+	private function is_woopay_product_supported( ?\WC_Product $product ): bool {
+		$is_supported = $product instanceof \WC_Product;
+
+		if ( $product instanceof \WC_Product && $product->is_type( 'external' ) ) {
+			$is_supported = false;
+		}
+
+		if ( $this->is_woopay_preorder_product_charged_on_release( $product ) ) {
+			$is_supported = false;
+		}
+
+		if ( $product instanceof \WC_Product && $this->is_woopay_booking_product_requiring_confirmation( $product ) ) {
+			$is_supported = false;
+		}
+
+		/**
+		 * Filters whether the WooPay Express button supports the given product.
+		 *
+		 * @since 5.9.0
+		 *
+		 * @param bool             $is_supported Whether the product is supported.
+		 * @param \WC_Product|null $product      Product being checked.
+		 */
+		return (bool) apply_filters( 'wcpay_woopay_button_is_product_supported', $is_supported, $product );
+	}
+
+	/**
+	 * Tell whether an optional Pre-Orders product is charged upon release.
+	 *
+	 * @param \WC_Product|null $product Product being checked.
+	 * @return bool
+	 *
+	 * @since 11.0.0
+	 */
+	protected function is_woopay_preorder_product_charged_on_release( ?\WC_Product $product ): bool {
+		$is_pre_order_charged_release = array( '\\WC_Pre_Orders_Product', 'product_is_charged_upon_release' );
+
+		return class_exists( '\\WC_Pre_Orders_Product' ) &&
+			is_callable( $is_pre_order_charged_release ) &&
+			(bool) call_user_func( $is_pre_order_charged_release, $product );
+	}
+
+	/**
+	 * Tell whether an optional Bookings product requires confirmation.
+	 *
+	 * @param \WC_Product $product Product being checked.
+	 * @return bool
+	 *
+	 * @since 11.0.0
+	 */
+	protected function is_woopay_booking_product_requiring_confirmation( \WC_Product $product ): bool {
+		$requires_confirmation = array( $product, 'get_requires_confirmation' );
+
+		return is_a( $product, 'WC_Product_Booking' ) &&
+			is_callable( $requires_confirmation ) &&
+			(bool) call_user_func( $requires_confirmation );
+	}
+
+	/**
+	 * Tell whether WooPay supports all items currently in the cart.
+	 *
+	 * @return bool
+	 */
+	private function has_allowed_woopay_cart_items(): bool {
+		$is_supported = true;
+
+		if ( $this->is_woopay_cart_preorder_charged_on_release() ) {
+			$is_supported = false;
+		}
+
+		/**
+		 * Filters whether the WooPay Express button supports all current cart items.
+		 *
+		 * @since 5.7.0
+		 *
+		 * @param bool $is_supported Whether all cart items are supported.
+		 */
+		return (bool) apply_filters( 'wcpay_platform_checkout_button_are_cart_items_supported', $is_supported );
+	}
+
+	/**
+	 * Tell whether the optional Pre-Orders cart contains a product charged upon release.
+	 *
+	 * @return bool
+	 *
+	 * @since 11.0.0
+	 */
+	protected function is_woopay_cart_preorder_charged_on_release(): bool {
+		$cart_contains_pre_order      = array( '\\WC_Pre_Orders_Cart', 'cart_contains_pre_order' );
+		$get_pre_order_product        = array( '\\WC_Pre_Orders_Cart', 'get_pre_order_product' );
+		$is_pre_order_charged_release = array( '\\WC_Pre_Orders_Product', 'product_is_charged_upon_release' );
+
+		return class_exists( '\\WC_Pre_Orders_Cart' ) &&
+			class_exists( '\\WC_Pre_Orders_Product' ) &&
+			is_callable( $cart_contains_pre_order ) &&
+			is_callable( $get_pre_order_product ) &&
+			is_callable( $is_pre_order_charged_release ) &&
+			(bool) call_user_func( $cart_contains_pre_order ) &&
+			(bool) call_user_func(
+				$is_pre_order_charged_release,
+				call_user_func( $get_pre_order_product )
+			);
+	}
+
+	/**
+	 * Tell whether a product is a subscription product.
+	 *
+	 * @param \WC_Product $product Product being checked.
+	 * @return bool
+	 */
+	private function is_woopay_subscription_product( \WC_Product $product ): bool {
+		return in_array( $product->get_type(), array( 'subscription', 'subscription_variation', 'variable-subscription' ), true );
+	}
+
+	/**
+	 * Tell whether the current cart contains a subscription.
+	 *
+	 * @return bool
+	 *
+	 * @since 11.0.0
+	 */
+	protected function woopay_cart_contains_subscription(): bool {
+		$cart_contains_subscription = array( '\\WC_Subscriptions_Cart', 'cart_contains_subscription' );
+
+		return class_exists( '\\WC_Subscriptions_Cart' ) &&
+			is_callable( $cart_contains_subscription ) &&
+			(bool) call_user_func( $cart_contains_subscription );
+	}
+
+	/**
+	 * Tell whether guest checkout is enabled for WooPay.
+	 *
+	 * @return bool
+	 */
+	private function is_woopay_guest_checkout_enabled(): bool {
+		return 'yes' === get_option( 'woocommerce_enable_guest_checkout', 'no' );
 	}
 
 	/**

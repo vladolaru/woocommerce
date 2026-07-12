@@ -5,6 +5,9 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Connection\Rest_Authentication;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionService;
 use ReflectionClass;
@@ -59,6 +62,8 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		remove_all_filters( 'woocommerce_is_checkout' );
 		remove_all_filters( 'woocommerce_is_cart' );
 		remove_all_filters( 'woocommerce_is_product' );
+		remove_all_filters( 'woocommerce_available_payment_gateways' );
+		remove_all_filters( 'wcpay_woopay_enabled' );
 		remove_all_filters( 'wp_die_ajax_handler' );
 		remove_all_filters( 'wp_doing_ajax' );
 		if ( function_exists( 'WC' ) && WC() && WC()->cart ) {
@@ -69,6 +74,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		wp_deregister_script( 'wc-woopayments-woopay' );
 		wp_deregister_style( 'wc-woopayments-woopay' );
 		wp_reset_postdata();
+		delete_option( 'woocommerce_enable_guest_checkout' );
 		$_POST    = array();
 		$_REQUEST = array();
 		parent::tearDown();
@@ -104,6 +110,20 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 			$this->assertNotFalse( has_action( $hook, array( $this->sut, $method ) ), "{$hook} should be registered." );
 		}
 		$this->assertNotFalse( has_filter( 'wcpay_metadata_from_order', array( $this->sut, 'maybe_add_woopay_user_metadata' ) ) );
+	}
+
+	/**
+	 * @testdox Should keep controller registration enabled when the button filter hides WooPay buttons.
+	 */
+	public function test_button_filter_does_not_disable_controller_registration(): void {
+		$service   = $this->create_real_enabled_session_service();
+		$this->sut = $this->create_controller( true, true, $service );
+		add_filter( 'wcpay_woopay_enabled', '__return_false' );
+
+		$this->sut->register();
+
+		$this->assertTrue( $service->is_woopay_enabled() );
+		$this->assertNotFalse( has_action( 'rest_api_init', array( $this->sut, 'register_routes' ) ) );
 	}
 
 	/**
@@ -215,6 +235,52 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 
 		$this->assertStringContainsString( 'id="wcpay-woopay-button"', $output );
 		$this->assertStringNotContainsString( 'wcpay-express-checkout-button-separator', $output );
+	}
+
+	/**
+	 * @testdox Should render product-context WooPay on product_page shortcode pages.
+	 */
+	public function test_display_express_checkout_buttons_supports_product_page_shortcode(): void {
+		$this->sut = $this->create_controller( true, true );
+		$product   = \WC_Helper_Product::create_simple_product( true );
+		$product->set_sku( 'woopay-controller-shortcode' );
+		$product->save();
+		$this->set_current_page_with_content( "[product_page columns='3' class='featured' sku='woopay-controller-shortcode']" );
+
+		ob_start();
+		$this->sut->display_express_checkout_buttons();
+		$output = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'id="wcpay-woopay-button"', $output );
+		$this->assertStringContainsString( 'data-product_page="1"', $output );
+		$this->assertStringNotContainsString( 'wcpay-express-checkout-button-separator', $output );
+	}
+
+	/**
+	 * @testdox Should evaluate the button filter once while rendering with the real session service.
+	 */
+	public function test_display_express_checkout_buttons_applies_button_filter_once(): void {
+		$this->make_base_gateway_available();
+		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
+		$service   = $this->create_real_enabled_session_service();
+		$this->sut = $this->create_controller( true, true, $service );
+		$this->set_checkout_shortcode_page();
+		$enabled_filter_calls = 0;
+		add_filter(
+			'wcpay_woopay_enabled',
+			static function ( bool $enabled ) use ( &$enabled_filter_calls ): bool {
+				++$enabled_filter_calls;
+
+				return $enabled;
+			}
+		);
+
+		ob_start();
+		$this->sut->display_express_checkout_buttons();
+		$output = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'id="wcpay-woopay-button"', $output );
+		$this->assertSame( 1, $enabled_filter_calls );
 	}
 
 	/**
@@ -526,13 +592,92 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 			->getMock();
 		$arbiter->method( 'should_native_register' )->willReturn( $native_register );
 
-		$service                 = $service ?? new RecordingWooPaySessionService();
-		$service->woopay_enabled = $woopay_enabled;
+		$service = $service ?? new RecordingWooPaySessionService();
+		if ( $service instanceof RecordingWooPaySessionService ) {
+			$service->woopay_enabled = $woopay_enabled;
+		}
 
 		$controller = new WooPaymentsWooPaySessionController();
 		$controller->init( $arbiter, $service );
 
 		return $controller;
+	}
+
+	/**
+	 * Create a real enabled session service for controller integration tests.
+	 *
+	 * @return WooPaymentsWooPaySessionService
+	 */
+	private function create_real_enabled_session_service(): WooPaymentsWooPaySessionService {
+		$settings = array(
+			'platform_checkout'                 => 'yes',
+			'express_checkout_product_methods'  => array( 'woopay' ),
+			'express_checkout_cart_methods'     => array( 'woopay' ),
+			'express_checkout_checkout_methods' => array( 'woopay' ),
+		);
+
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_account_id', 'get_publishable_key', 'get_cached_account_data', 'is_test_mode_enabled', 'get_gateway_setting' ) )
+			->getMock();
+		$account_service->method( 'get_account_id' )->willReturn( 'acct_123' );
+		$account_service->method( 'get_publishable_key' )->willReturn( 'pk_test_123' );
+		$account_service->method( 'get_cached_account_data' )->willReturn(
+			array(
+				'country'                    => 'US',
+				'platform_checkout_eligible' => true,
+			)
+		);
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+		$account_service->method( 'get_gateway_setting' )->willReturnCallback(
+			static fn( string $key, $fallback = null ) => array_key_exists( $key, $settings ) ? $settings[ $key ] : $fallback
+		);
+		$tracking_controller = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_shopper_tracking_enabled' ) )
+			->getMock();
+		$tracking_controller->method( 'is_shopper_tracking_enabled' )->willReturn( true );
+
+		$service = new WooPaymentsWooPaySessionService();
+		$service->init( $account_service, new WooPaymentsFrontendStylesService(), $tracking_controller );
+
+		return $service;
+	}
+
+	/**
+	 * Make a base WooPayments gateway available to the session service.
+	 */
+	private function make_base_gateway_available(): void {
+		add_filter(
+			'woocommerce_available_payment_gateways',
+			static function ( array $gateways ): array {
+				$gateway = new class() extends \WC_Payment_Gateway {
+					/**
+					 * Build the available base-gateway fixture.
+					 */
+					public function __construct() {
+						$this->id      = 'woocommerce_payments';
+						$this->enabled = 'yes';
+					}
+
+					/**
+					 * Process a fixture payment.
+					 *
+					 * @param int $order_id Order ID.
+					 * @return array<string,mixed>
+					 */
+					public function process_payment( $order_id ) {
+						unset( $order_id );
+
+						return array();
+					}
+				};
+
+				$gateways['woocommerce_payments'] = $gateway;
+
+				return $gateways;
+			}
+		);
 	}
 
 	/**

@@ -266,15 +266,16 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 		}
 
 		$context = $this->get_current_button_context();
+		$config  = $this->session_service->get_woopay_frontend_config( $context );
 		if (
-			! $this->session_service->should_show_woopay_button( $context ) &&
+			empty( $config['shouldShowWooPayButton'] ) &&
 			! $this->session_service->should_load_woopay_save_user_assets( $context )
 		) {
 			return;
 		}
 
 		$this->register_classic_woopay_assets();
-		wp_localize_script( self::CLASSIC_WOOPAY_SCRIPT_HANDLE, 'wcpay_core_woopay_config', $this->get_classic_woopay_config( $context ) );
+		wp_localize_script( self::CLASSIC_WOOPAY_SCRIPT_HANDLE, 'wcpay_core_woopay_config', $this->get_classic_woopay_config( $config ) );
 		wp_enqueue_style( self::CLASSIC_WOOPAY_STYLE_HANDLE );
 		wp_enqueue_script( self::CLASSIC_WOOPAY_SCRIPT_HANDLE );
 	}
@@ -288,11 +289,11 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 		}
 
 		$context = $this->get_current_button_context();
-		if ( ! $this->session_service->should_show_woopay_button( $context ) ) {
+		$config  = $this->session_service->get_woopay_frontend_config( $context );
+		if ( empty( $config['shouldShowWooPayButton'] ) ) {
 			return;
 		}
 
-		$config   = $this->session_service->get_woopay_frontend_config( $context );
 		$settings = is_array( $config['woopayButton'] ?? null ) ? $config['woopayButton'] : array();
 		$type     = isset( $settings['type'] ) && is_scalar( $settings['type'] ) ? (string) $settings['type'] : 'default';
 		$theme    = isset( $settings['theme'] ) && is_scalar( $settings['theme'] ) ? (string) $settings['theme'] : 'dark';
@@ -677,16 +678,16 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	/**
 	 * Get localized classic WooPay config.
 	 *
-	 * @param string $context WooPay button context.
+	 * @param array<string,mixed> $config WooPay frontend config.
 	 * @return array<string,mixed>
 	 */
-	private function get_classic_woopay_config( string $context ): array {
+	private function get_classic_woopay_config( array $config ): array {
 		return array_merge(
 			array(
 				'wcAjaxUrl'                => \WC_AJAX::get_endpoint( '%%endpoint%%' ),
 				'confirmationErrorMessage' => __( 'There was a problem processing the payment. Please try again.', 'woocommerce' ),
 			),
-			$this->session_service->get_woopay_frontend_config( $context ),
+			$config,
 			$this->session_service->get_save_user_checkout_data()
 		);
 	}
@@ -703,7 +704,8 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 
 		return ( function_exists( 'is_checkout' ) && is_checkout() ) ||
 			( function_exists( 'is_cart' ) && is_cart() ) ||
-			( function_exists( 'is_product' ) && is_product() );
+			( function_exists( 'is_product' ) && is_product() ) ||
+			$this->is_product_page_shortcode_surface();
 	}
 
 	/**
@@ -736,7 +738,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	 * @return string
 	 */
 	private function get_current_button_context(): string {
-		if ( function_exists( 'is_product' ) && is_product() ) {
+		if ( ( function_exists( 'is_product' ) && is_product() ) || $this->is_product_page_shortcode_surface() ) {
 			return 'product';
 		}
 
@@ -745,5 +747,16 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 		}
 
 		return function_exists( 'is_cart' ) && is_cart() ? 'cart' : 'checkout';
+	}
+
+	/**
+	 * Tell whether the current post contains a product_page shortcode.
+	 *
+	 * @return bool
+	 */
+	private function is_product_page_shortcode_surface(): bool {
+		$post = get_post();
+
+		return $post instanceof \WP_Post && has_shortcode( $post->post_content, 'product_page' );
 	}
 }
