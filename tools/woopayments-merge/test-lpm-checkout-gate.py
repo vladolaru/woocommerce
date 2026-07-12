@@ -333,6 +333,39 @@ def test_unknown_method_is_usage_error() -> None:
     assert "unsupported method: bogus" in result.stderr
 
 
+def test_print_plan_reports_action_scheduler_drain_enabled_by_default() -> None:
+    result = run_gate(
+        "--methods",
+        "ideal",
+        "--ref",
+        REF_WP,
+        "--target",
+        TARGET_WP,
+        "--print-plan",
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["action_scheduler_drain_enabled"] is True
+
+
+def test_print_plan_reports_action_scheduler_drain_disabled_when_skipped() -> None:
+    result = run_gate(
+        "--methods",
+        "ideal",
+        "--ref",
+        REF_WP,
+        "--target",
+        TARGET_WP,
+        "--skip-action-scheduler-drain",
+        "--print-plan",
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["action_scheduler_drain_enabled"] is False
+
+
 def test_print_plan_describes_wave_1_methods() -> None:
     result = run_gate(
         "--methods",
@@ -1625,6 +1658,89 @@ def test_gate_rejects_reused_output_directory_before_store_invocation() -> None:
         assert "fresh empty --out-dir" in result.stderr
         assert not invocations_path.exists()
         assert not playwriter_invocations.exists()
+
+
+def run_action_scheduler_drain_gate(
+    tmp_path: Path, *extra_args: str
+) -> tuple[subprocess.CompletedProcess[str], Path, str]:
+    ref_wp = tmp_path / "reference" / "wp"
+    target_wp = tmp_path / "target" / "wp"
+    fake_playwriter = tmp_path / "fake-playwriter"
+    fake_parity = tmp_path / "fake-parity-diff"
+    playwriter_invocations = tmp_path / "playwriter-invocations.jsonl"
+    parity_invocations = tmp_path / "parity-invocations.jsonl"
+    wp_invocations = tmp_path / "wp-invocations.txt"
+    out_dir = tmp_path / "evidence"
+
+    make_fake_wp(ref_wp, REF_URL, enrich_order_evidence=True)
+    make_fake_wp(target_wp, TARGET_URL, enrich_order_evidence=True)
+    make_fake_playwriter(fake_playwriter)
+    make_fake_parity_diff(fake_parity, parity_invocations)
+
+    result = run_gate(
+        "--methods",
+        "ideal",
+        "--ref",
+        str(ref_wp),
+        "--target",
+        str(target_wp),
+        "--playwriter-session",
+        "unit",
+        "--out-dir",
+        str(out_dir),
+        *extra_args,
+        env={
+            "PLAYWRITER_BIN": str(fake_playwriter),
+            "FAKE_PLAYWRITER_INVOCATIONS": str(playwriter_invocations),
+            "FAKE_WP_INVOCATIONS": str(wp_invocations),
+            "LPM_PARITY_DIFF_BIN": str(fake_parity),
+        },
+    )
+    wp_log = (
+        wp_invocations.read_text(encoding="utf-8") if wp_invocations.exists() else ""
+    )
+    return result, out_dir, wp_log
+
+
+def test_full_gate_drains_action_scheduler_by_default() -> None:
+    with tempfile.TemporaryDirectory(prefix="lpm-gate-drain-default-") as tmp:
+        result, out_dir, wp_log = run_action_scheduler_drain_gate(Path(tmp))
+
+        assert result.returncode == 0, result.stderr
+        assert wp_log.count(
+            "action-scheduler run --batch-size=100 --batches=5 --force"
+        ) == 2
+        assert wp_log.count("eval-file - restore-lpm-fixture") == 2
+        assert wp_log.count("eval-file - cleanup-lpm-product") == 2
+        cleanup = json.loads(
+            (out_dir / "lpm-cleanup-restore.json").read_text(encoding="utf-8")
+        )
+        assert cleanup["status"] == "pass"
+        rollup = json.loads(
+            (out_dir / "lpm-checkout-gate.json").read_text(encoding="utf-8")
+        )
+        assert rollup["action_scheduler_drain_enabled"] is True
+
+
+def test_full_gate_can_skip_action_scheduler_drain_without_skipping_cleanup() -> None:
+    with tempfile.TemporaryDirectory(prefix="lpm-gate-drain-disabled-") as tmp:
+        result, out_dir, wp_log = run_action_scheduler_drain_gate(
+            Path(tmp), "--skip-action-scheduler-drain"
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert "action-scheduler run" not in wp_log
+        assert wp_log.count("eval-file - restore-lpm-fixture") == 2
+        assert wp_log.count("eval-file - cleanup-lpm-product") == 2
+        assert "Action Scheduler queue drain intentionally disabled" in result.stderr
+        cleanup = json.loads(
+            (out_dir / "lpm-cleanup-restore.json").read_text(encoding="utf-8")
+        )
+        assert cleanup["status"] == "pass"
+        rollup = json.loads(
+            (out_dir / "lpm-checkout-gate.json").read_text(encoding="utf-8")
+        )
+        assert rollup["action_scheduler_drain_enabled"] is False
 
 
 def test_full_gate_invokes_playwriter_driver_for_each_store_and_validates_evidence() -> None:

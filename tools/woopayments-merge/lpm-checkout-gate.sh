@@ -31,6 +31,7 @@ OUT_DIR="${TMPDIR:-$SELF_DIR/.tmp}/lpm-checkout-gate"
 SURFACE="classic"
 PRINT_PLAN=0
 PREFLIGHT_ONLY=0
+ACTION_SCHEDULER_DRAIN_ENABLED=1
 RESTORE_LPM_FIXTURES=0
 REF_LPM_FIXTURE_RESTORE_REQUIRED=0
 TARGET_LPM_FIXTURE_RESTORE_REQUIRED=0
@@ -63,6 +64,8 @@ Options:
   --out-dir <path>            Evidence output directory.
   --surface classic|blocks    Checkout surface to drive. Default: classic.
   --preflight-only            Validate arguments and local dependencies, then exit.
+  --skip-action-scheduler-drain
+                              Skip reference and target queue drains before Bucket-E parity.
   --print-plan                Print the normalized method fixture plan as JSON, then exit.
   -h, --help                  Show this help.
 
@@ -113,6 +116,7 @@ while [ "$#" -gt 0 ]; do
 		--surface=*) SURFACE="${1#--surface=}"; shift ;;
 		--surface) SURFACE="${2:-}"; shift 2 ;;
 		--preflight-only) PREFLIGHT_ONLY=1; shift ;;
+		--skip-action-scheduler-drain) ACTION_SCHEDULER_DRAIN_ENABLED=0; shift ;;
 		--print-plan) PRINT_PLAN=1; shift ;;
 		--help|-h) usage; exit 0 ;;
 		*) usage_error "unknown argument: $1" ;;
@@ -224,11 +228,11 @@ for raw_method in "${METHODS[@]}"; do
 done
 
 print_plan() {
-	python3 - "$REF_WP" "$TARGET_WP" "$REF_URL" "$TARGET_URL" "$SURFACE" "${METHODS[@]}" <<'PY'
+	python3 - "$REF_WP" "$TARGET_WP" "$REF_URL" "$TARGET_URL" "$SURFACE" "$ACTION_SCHEDULER_DRAIN_ENABLED" "${METHODS[@]}" <<'PY'
 import json
 import sys
 
-ref, target, ref_url, target_url, surface, *methods = sys.argv[1:]
+ref, target, ref_url, target_url, surface, drain_enabled, *methods = sys.argv[1:]
 
 
 def usd_cny_wallet_fixture(gateway_id, stripe_payment_method_type, family):
@@ -335,6 +339,7 @@ print(
             "target_wp": target,
             "ref_url": ref_url,
             "target_url": target_url,
+            "action_scheduler_drain_enabled": drain_enabled == "1",
             "methods": methods,
             "fixtures": {method: fixtures[method] for method in methods},
         },
@@ -2358,8 +2363,12 @@ run_bucket_e_parity_for_method() {
 		return
 	fi
 
-	drain_action_scheduler reference "$REF_WP"
-	drain_action_scheduler target "$TARGET_WP"
+	if [ "$ACTION_SCHEDULER_DRAIN_ENABLED" -eq 1 ]; then
+		drain_action_scheduler reference "$REF_WP"
+		drain_action_scheduler target "$TARGET_WP"
+	else
+		progress "Action Scheduler queue drain intentionally disabled before Bucket-E parity for $method"
+	fi
 	progress "checking Bucket-E parity for $method orders reference=$ref_order_id target=$target_order_id"
 	output="$(
 		"$PARITY_DIFF_BIN" --ref "$REF_WP" --target "$TARGET_WP" --target-ids "$target_order_id" "$ref_order_id" 2>&1
@@ -2404,12 +2413,12 @@ PY
 write_rollup() {
 	local rollup_path="$OUT_DIR/lpm-checkout-gate.json"
 
-	python3 - "$rollup_path" "$SURFACE" "$RESULTS_JSONL" "$FAILURES_FILE" "$BLOCKERS_FILE" "$BLOCKER_DETAILS_JSONL" <<'PY'
+	python3 - "$rollup_path" "$SURFACE" "$ACTION_SCHEDULER_DRAIN_ENABLED" "$RESULTS_JSONL" "$FAILURES_FILE" "$BLOCKERS_FILE" "$BLOCKER_DETAILS_JSONL" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-rollup_path, surface, results_jsonl, failures_file, blockers_file, blocker_details_jsonl = sys.argv[1:]
+rollup_path, surface, drain_enabled, results_jsonl, failures_file, blockers_file, blocker_details_jsonl = sys.argv[1:]
 results = []
 results_path = Path(results_jsonl)
 if results_path.exists():
@@ -2470,6 +2479,7 @@ elif blockers or any(provider_status == "blocked" for provider_status in provide
 payload = {
     "schema": "woopayments_lpm_checkout_gate_rollup.v1",
     "surface": surface,
+    "action_scheduler_drain_enabled": drain_enabled == "1",
     "status": status,
     "results": results,
     "failures": failures,
