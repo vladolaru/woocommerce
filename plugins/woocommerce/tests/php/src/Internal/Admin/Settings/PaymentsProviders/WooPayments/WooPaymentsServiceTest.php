@@ -14,10 +14,14 @@ use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPmPromotionsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Testing\Tools\DependencyManagement\MockableLegacyProxy;
 use Automattic\WooCommerce\Tests\Internal\Admin\Settings\Mocks\FakePaymentGateway;
@@ -79,6 +83,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	protected int $current_time;
 
 	private const TEST_EPOCH = 1234567890;
+
+	private const PENDING_PAYMENT_METHODS_PROJECTION_OPTION = 'woocommerce_woopayments_pending_payment_method_projection';
 
 	/**
 	 * Set up test.
@@ -230,6 +236,16 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			$this->create_unavailable_api_client(),
 			$this->create_native_account_service()
 		);
+	}
+
+	/**
+	 * Tear down test.
+	 */
+	public function tearDown(): void {
+		remove_action( 'woocommerce_payments_account_refreshed', array( $this->sut, 'maybe_project_pending_onboarding_payment_methods' ) );
+		delete_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION );
+
+		parent::tearDown();
 	}
 
 	/**
@@ -752,6 +768,253 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pk_live_native', $cached['data']['live_publishable_key'] );
 		$this->assertTrue( $cached['data']['is_live'] );
 		$this->assertFalse( $cached['data']['details_submitted'] );
+	}
+
+	/**
+	 * @testdox Native KYC finalization enables active payment methods through canonical settings idempotently.
+	 */
+	public function test_finish_native_onboarding_kyc_session_enables_active_payment_methods_idempotently(): void {
+		$fresh_account  = array(
+			'account_id'        => 'acct_finalized_native',
+			'is_live'           => true,
+			'payments_enabled'  => true,
+			'details_submitted' => true,
+			'capabilities'      => array(
+				'card_payments'       => 'active',
+				'ideal_payments'      => 'active',
+				'bancontact_payments' => 'active',
+				'alipay_payments'     => 'active',
+				'eps_payments'        => 'inactive',
+			),
+			'fees'              => array(
+				'card'       => array(),
+				'ideal'      => array(),
+				'bancontact' => array(),
+				'eps'        => array(),
+			),
+		);
+		$fixture        = $this->arrange_native_finalize_projection(
+			array( $fresh_account, $fresh_account ),
+			array(
+				'card'         => true,
+				'ideal'        => true,
+				'bancontact'   => true,
+				'alipay'       => true,
+				'eps'          => true,
+				'apple_google' => true,
+			)
+		);
+		$first_response = $this->sut->finish_onboarding_kyc_session( 'US' );
+		$first_settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION );
+		$this->sut->finish_onboarding_kyc_session( 'US' );
+		$second_settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION );
+
+		$this->assertSame( 10, has_action( 'woocommerce_payments_account_refreshed', array( $this->sut, 'maybe_project_pending_onboarding_payment_methods' ) ) );
+		$this->assertSame(
+			array(
+				'success'           => true,
+				'details_submitted' => true,
+				'account_id'        => 'acct_finalized_native',
+				'mode'              => 'live',
+			),
+			$first_response
+		);
+		$this->assertSame( 2, $fixture['api_client']->account_requests );
+		$this->assertIsArray( $first_settings );
+		$this->assertSame( array( 'card', 'ideal', 'bancontact' ), $first_settings['upe_enabled_payment_method_ids'] );
+		$this->assertNotContains( 'alipay', $first_settings['upe_enabled_payment_method_ids'], 'Selected methods without fee-backed availability stay disabled.' );
+		$this->assertNotContains( 'eps', $first_settings['upe_enabled_payment_method_ids'], 'Selected fee-backed methods without an active capability stay disabled.' );
+		$this->assertNotContains( 'apple_pay', $first_settings['upe_enabled_payment_method_ids'] );
+		$this->assertNotContains( 'google_pay', $first_settings['upe_enabled_payment_method_ids'] );
+		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_ideal_settings' )['enabled'] );
+		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_bancontact_settings' )['enabled'] );
+		$this->assertSame( $first_settings, $second_settings );
+		$this->assertFalse( get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION, false ) );
+	}
+
+	/**
+	 * @testdox Native KYC finalization survives account refresh failure and retries payment-method projection after a later refresh.
+	 */
+	public function test_finish_native_onboarding_kyc_session_defers_payment_method_projection_after_refresh_failure(): void {
+		$fresh_account = $this->get_native_finalize_projection_account();
+		$fixture       = $this->arrange_native_finalize_projection(
+			array(
+				new \RuntimeException( 'Temporary account refresh failure.' ),
+				$fresh_account,
+			),
+			array(
+				'card'  => true,
+				'ideal' => true,
+			)
+		);
+
+		$response = $this->sut->finish_onboarding_kyc_session( 'US' );
+
+		$this->assertSame(
+			array(
+				'success'           => true,
+				'details_submitted' => true,
+				'account_id'        => 'acct_finalized_native',
+				'mode'              => 'live',
+			),
+			$response
+		);
+		$business_verification_statuses = get_option( WooPaymentsService::NOX_PROFILE_OPTION_KEY )['onboarding']['US']['steps'][ WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION ]['statuses'];
+		$this->assertArrayHasKey( WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, $business_verification_statuses );
+		$this->assertArrayNotHasKey( WooPaymentsService::ONBOARDING_STEP_STATUS_FAILED, $business_verification_statuses );
+		$this->assertSame( 'US', get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION ) );
+		$this->assertTrue( $fixture['api_client']->pending_marker_seen, 'The pending marker must exist before the account refresh starts.' );
+		$this->assertOptionNotAutoloaded( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION );
+		$this->assertSame( array( 'card' ), get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
+
+		$fixture['account_service']->refresh_account_data();
+
+		$this->assertSame( array( 'card', 'ideal' ), get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
+		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_ideal_settings' )['enabled'] );
+		$this->assertFalse( get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION, false ) );
+	}
+
+	/**
+	 * @testdox Native KYC finalization projects selected methods directly when the retry marker cannot be persisted.
+	 */
+	public function test_finish_native_onboarding_kyc_session_projects_payment_methods_when_marker_write_fails(): void {
+		$fixture = $this->arrange_native_finalize_projection(
+			array( $this->get_native_finalize_projection_account() ),
+			array(
+				'card'  => true,
+				'ideal' => true,
+			)
+		);
+		$this->mock_native_projection_marker_write_failure();
+
+		$response = $this->sut->finish_onboarding_kyc_session( 'US' );
+
+		$this->assertTrue( $response['success'] );
+		$this->assertFalse( $fixture['api_client']->pending_marker_seen );
+		$this->assertFalse( get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION, false ) );
+		$this->assertSame( array( 'card', 'ideal' ), get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
+		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_ideal_settings' )['enabled'] );
+	}
+
+	/**
+	 * @testdox Native KYC finalization logs fallback projection failure when no retry marker is durable.
+	 */
+	public function test_finish_native_onboarding_kyc_session_logs_projection_failure_without_durable_marker(): void {
+		$settings_service = $this->getMockBuilder( WooPaymentsSettingsService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_settings', 'update_settings' ) )
+			->getMock();
+		$settings_service->method( 'get_settings' )->willReturn( array( 'enabled_payment_method_ids' => array( 'card' ) ) );
+		$settings_service->method( 'update_settings' )->willReturn( new WP_Error( 'temporary_settings_failure', 'Temporary settings failure.' ) );
+		$logger = $this->getMockBuilder( \WC_Logger_Interface::class )->getMock();
+		$logger->expects( $this->once() )
+			->method( 'error' )
+			->with(
+				$this->stringContains( 'could not project selected payment methods' ),
+				array( 'source' => 'woocommerce-woopayments-onboarding' )
+			);
+		$this->arrange_native_finalize_projection(
+			array( $this->get_native_finalize_projection_account() ),
+			array(
+				'card'  => true,
+				'ideal' => true,
+			),
+			$settings_service
+		);
+		$this->mock_native_projection_marker_write_failure( $logger );
+
+		$response = $this->sut->finish_onboarding_kyc_session( 'US' );
+
+		$this->assertTrue( $response['success'] );
+		$this->assertFalse( get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION, false ) );
+	}
+
+	/**
+	 * @testdox Native KYC finalization ignores malformed NOX selections without updating settings.
+	 */
+	public function test_finish_native_onboarding_kyc_session_ignores_malformed_payment_method_selections(): void {
+		$settings_service = $this->getMockBuilder( WooPaymentsSettingsService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_settings', 'update_settings' ) )
+			->getMock();
+		$settings_service->expects( $this->never() )->method( 'get_settings' );
+		$settings_service->expects( $this->never() )->method( 'update_settings' );
+		$this->arrange_native_finalize_projection(
+			array( $this->get_native_finalize_projection_account() ),
+			array(
+				'ideal'      => array( 'malformed' ),
+				'bancontact' => (object) array( 'malformed' => true ),
+			),
+			$settings_service
+		);
+
+		$response = $this->sut->finish_onboarding_kyc_session( 'US' );
+
+		$this->assertTrue( $response['success'] );
+		$this->assertSame( array( 'card' ), get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
+		$this->assertFalse( get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION, false ) );
+	}
+
+	/**
+	 * @testdox A settings failure preserves pending native payment-method projection without breaking refresh callers.
+	 * @dataProvider settings_projection_failure_provider
+	 *
+	 * @param WP_Error|\Throwable $failure Settings update failure.
+	 */
+	public function test_native_payment_method_projection_retries_after_settings_failure( $failure ): void {
+		$settings_service = $this->getMockBuilder( WooPaymentsSettingsService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_settings', 'update_settings' ) )
+			->getMock();
+		$settings_service->method( 'get_settings' )->willReturn( array( 'enabled_payment_method_ids' => array( 'card' ) ) );
+		$update_attempts = 0;
+		$settings_service->expects( $this->exactly( 2 ) )
+			->method( 'update_settings' )
+			->willReturnCallback(
+				static function () use ( $failure, &$update_attempts ) {
+					++$update_attempts;
+					if ( 1 === $update_attempts ) {
+						if ( $failure instanceof \Throwable ) {
+							throw $failure;
+						}
+
+						return $failure;
+					}
+
+					return array( 'enabled_payment_method_ids' => array( 'card', 'ideal' ) );
+				}
+			);
+		$fixture = $this->arrange_native_finalize_projection(
+			array(
+				$this->get_native_finalize_projection_account(),
+				$this->get_native_finalize_projection_account(),
+			),
+			array(
+				'card'  => true,
+				'ideal' => true,
+			),
+			$settings_service
+		);
+
+		$response = $this->sut->finish_onboarding_kyc_session( 'US' );
+		$this->assertTrue( $response['success'] );
+		$this->assertSame( 'US', get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION ) );
+
+		$fixture['account_service']->refresh_account_data();
+
+		$this->assertFalse( get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION, false ) );
+	}
+
+	/**
+	 * Provide settings projection failures.
+	 *
+	 * @return array<string,array{WP_Error|\Throwable}>
+	 */
+	public function settings_projection_failure_provider(): array {
+		return array(
+			'WP_Error'  => array( new WP_Error( 'temporary_settings_failure', 'Temporary settings failure.' ) ),
+			'exception' => array( new \RuntimeException( 'Temporary settings failure.' ) ),
+		);
 	}
 
 	/**
@@ -1388,6 +1651,41 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$account_service = new WooPaymentsAccountService();
 		$account_service->init( $this->mockable_proxy );
 		$adapter->init( $this->create_legacy_runtime(), $provider, new NativeWooPaymentsGateway(), $account_service, wc_get_container()->get( NativePaymentsRuntimeArbiter::class ) );
+
+		return $adapter;
+	}
+
+	/**
+	 * Create an adapter exposing the native finalization path.
+	 *
+	 * @return WooPaymentsOnboardingAdapter|MockObject
+	 */
+	private function create_native_finalize_adapter() {
+		$adapter = $this->getMockBuilder( WooPaymentsOnboardingAdapter::class )
+			->disableOriginalConstructor()
+			->onlyMethods(
+				array(
+					'is_onboarding_runtime_available',
+					'is_native_onboarding_available',
+					'get_payment_gateway',
+					'has_account',
+					'has_valid_account',
+					'has_working_account',
+					'has_test_account',
+					'has_sandbox_account',
+					'has_live_account',
+				)
+			)
+			->getMock();
+		$adapter->method( 'is_onboarding_runtime_available' )->willReturn( true );
+		$adapter->method( 'is_native_onboarding_available' )->willReturn( true );
+		$adapter->method( 'get_payment_gateway' )->willReturn( new FakePaymentGateway() );
+		$adapter->method( 'has_account' )->willReturn( true );
+		$adapter->method( 'has_valid_account' )->willReturn( true );
+		$adapter->method( 'has_working_account' )->willReturn( true );
+		$adapter->method( 'has_test_account' )->willReturn( true );
+		$adapter->method( 'has_sandbox_account' )->willReturn( false );
+		$adapter->method( 'has_live_account' )->willReturn( false );
 
 		return $adapter;
 	}
@@ -12437,6 +12735,266 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Get a fresh account payload for native finalize projection tests.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_native_finalize_projection_account(): array {
+		return array(
+			'account_id'        => 'acct_finalized_native',
+			'is_live'           => true,
+			'payments_enabled'  => true,
+			'details_submitted' => true,
+			'capabilities'      => array(
+				'card_payments'  => 'active',
+				'ideal_payments' => 'active',
+			),
+			'fees'              => array(
+				'card'  => array(),
+				'ideal' => array(),
+			),
+		);
+	}
+
+	/**
+	 * Refuse the native projection marker write and optionally expose a logger.
+	 *
+	 * @param \WC_Logger_Interface|null $logger Optional logger returned by wc_get_logger().
+	 */
+	private function mock_native_projection_marker_write_failure( ?\WC_Logger_Interface $logger = null ): void {
+		$function_mocks = array(
+			'update_option' => static function ( $option_name, $value, $autoload = null ) {
+				if ( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION === $option_name ) {
+					return false;
+				}
+
+				return update_option( $option_name, $value, $autoload );
+			},
+		);
+		if ( null !== $logger ) {
+			$function_mocks['wc_get_logger'] = static function () use ( $logger ) {
+				return $logger;
+			};
+		}
+
+		$this->mockable_proxy->register_function_mocks( $function_mocks );
+	}
+
+	/**
+	 * Arrange the public native finalize path with configurable account refresh results.
+	 *
+	 * @param array<int,array<string,mixed>|\Throwable> $account_responses Account refresh results in request order.
+	 * @param array<string,mixed>                       $selected_methods  Persisted NOX payment-method selections.
+	 * @param WooPaymentsSettingsService|null           $settings_service  Optional settings service override.
+	 * @return array{api_client:WooPaymentsApiClient,account_service:WooPaymentsAccountService,settings_service:WooPaymentsSettingsService}
+	 */
+	private function arrange_native_finalize_projection(
+		array $account_responses,
+		array $selected_methods,
+		?WooPaymentsSettingsService $settings_service = null
+	): array {
+		$api_client      = new class( $account_responses ) extends WooPaymentsApiClient {
+			/**
+			 * Account refresh results in request order.
+			 *
+			 * @var array<int,array<string,mixed>|\Throwable>
+			 */
+			private array $account_responses;
+
+			/**
+			 * Number of account refresh requests.
+			 *
+			 * @var int
+			 */
+			public int $account_requests = 0;
+
+			/**
+			 * Whether the pending projection marker existed before an account request.
+			 *
+			 * @var bool
+			 */
+			public bool $pending_marker_seen = false;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param array<int,array<string,mixed>|\Throwable> $account_responses Account refresh results.
+			 */
+			public function __construct( array $account_responses ) {
+				$this->account_responses = $account_responses;
+			}
+
+			/**
+			 * Tell whether the fake client is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Return the exact provider finalize response shape.
+			 *
+			 * @param string   $locale         User locale.
+			 * @param string   $source         Onboarding source.
+			 * @param string[] $actioned_notes Actioned notes.
+			 * @return array<string,mixed>
+			 */
+			public function finalize_onboarding_embedded_kyc( string $locale, string $source, array $actioned_notes = array() ): array {
+				unset( $locale, $source, $actioned_notes );
+
+				return array(
+					'success'           => true,
+					'details_submitted' => true,
+					'account_id'        => 'acct_finalized_native',
+					'mode'              => 'live',
+				);
+			}
+
+			/**
+			 * Return or throw the next configured account refresh result.
+			 *
+			 * @param string $woocommerce_store_id WooCommerce store ID.
+			 * @return array<string,mixed>
+			 * @throws \Throwable Configured refresh failure.
+			 */
+			public function get_account( string $woocommerce_store_id = '' ): array {
+				unset( $woocommerce_store_id );
+				++$this->account_requests;
+				$this->pending_marker_seen = false !== get_option( 'woocommerce_woopayments_pending_payment_method_projection', false );
+				$response                  = array_shift( $this->account_responses );
+
+				if ( $response instanceof \Throwable ) {
+					throw $response;
+				}
+
+				if ( ! is_array( $response ) ) {
+					throw new \LogicException( 'No account refresh response was configured.' );
+				}
+
+				return $response;
+			}
+
+			/**
+			 * Avoid an unrelated fraud ruleset API request while reading settings.
+			 *
+			 * @return array<string,mixed>
+			 */
+			public function get_latest_fraud_ruleset(): array {
+				return array();
+			}
+		};
+		$account_service = new class( $api_client ) extends WooPaymentsAccountService {
+			/**
+			 * Native API client.
+			 *
+			 * @var WooPaymentsApiClient
+			 */
+			private WooPaymentsApiClient $api_client;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param WooPaymentsApiClient $api_client Native API client.
+			 */
+			public function __construct( WooPaymentsApiClient $api_client ) {
+				$this->api_client = $api_client;
+			}
+
+			/**
+			 * Get the native API client used by account refreshes.
+			 *
+			 * @return WooPaymentsApiClient
+			 */
+			protected function get_api_client(): ?WooPaymentsApiClient {
+				return $this->api_client;
+			}
+		};
+		$account_service->init( $this->mockable_proxy );
+
+		if ( null === $settings_service ) {
+			$pm_promotions = $this->getMockBuilder( WooPaymentsPmPromotionsService::class )
+				->disableOriginalConstructor()
+				->onlyMethods( array( 'maybe_activate_promotion_for_payment_method' ) )
+				->getMock();
+			$pm_promotions->method( 'maybe_activate_promotion_for_payment_method' )->willReturn( false );
+			$settings_service = new WooPaymentsSettingsService();
+			$settings_service->init(
+				$account_service,
+				$api_client,
+				$pm_promotions,
+				null,
+				new WooPaymentsGatewaySettingsSynchronizer( new WooPaymentsPaymentMethodRegistry() )
+			);
+		}
+
+		$adapter = $this->create_native_finalize_adapter();
+
+		$this->mock_wpcom_connection_manager->method( 'is_connected' )->willReturn( true );
+		$this->mock_wpcom_connection_manager->method( 'has_connected_owner' )->willReturn( true );
+		$this->mockable_proxy->register_function_mocks(
+			array(
+				'class_exists' => function ( $class_to_check ) {
+					return ! $this->is_woopayments_class( $class_to_check );
+				},
+			)
+		);
+
+		update_option( WooPaymentsSettingsService::SETTINGS_OPTION, array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) );
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'               => array(
+					'account_id'           => 'acct_finalized_native',
+					'live_publishable_key' => 'pk_live_finalized_native',
+					'is_live'              => true,
+				),
+				'fetched'            => $this->current_time,
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			),
+			'no'
+		);
+		update_option(
+			WooPaymentsService::NOX_PROFILE_OPTION_KEY,
+			array(
+				'onboarding' => array(
+					'US' => array(
+						'steps' => array(
+							WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => array(
+								'data' => array( 'payment_methods' => $selected_methods ),
+							),
+							WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION => array(
+								'statuses' => array(
+									WooPaymentsService::ONBOARDING_STEP_STATUS_STARTED => $this->current_time - 100,
+								),
+							),
+						),
+					),
+				),
+			)
+		);
+
+		remove_action( 'woocommerce_payments_account_refreshed', array( $this->sut, 'maybe_project_pending_onboarding_payment_methods' ) );
+		$this->sut = new WooPaymentsService();
+		$this->sut->init(
+			$this->mock_providers,
+			$this->mockable_proxy,
+			$adapter,
+			$this->create_legacy_runtime(),
+			$api_client,
+			$account_service,
+			$settings_service
+		);
+
+		return array(
+			'api_client'       => $api_client,
+			'account_service'  => $account_service,
+			'settings_service' => $settings_service,
+		);
+	}
+
 	 * Mock a working WPCOM connection.
 	 *
 	 * Required for onboarding step completion that depends on the WPCOM connection step.

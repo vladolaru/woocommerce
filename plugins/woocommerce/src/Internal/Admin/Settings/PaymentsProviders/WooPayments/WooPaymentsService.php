@@ -11,9 +11,11 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Exception;
 use WP_Error;
@@ -101,6 +103,8 @@ class WooPaymentsService {
 
 	const NOX_PROFILE_OPTION_KEY    = 'woocommerce_woopayments_nox_profile';
 	const NOX_ONBOARDING_LOCKED_KEY = 'woocommerce_woopayments_nox_onboarding_locked';
+
+	private const PENDING_PAYMENT_METHODS_PROJECTION_OPTION = 'woocommerce_woopayments_pending_payment_method_projection';
 	/**
 	 * The TTL for the onboarding lock.
 	 * This is to prevent the onboarding from being locked indefinitely in case of uncaught errors.
@@ -180,24 +184,44 @@ class WooPaymentsService {
 	private WooPaymentsAccountService $account_service;
 
 	/**
+	 * Native WooPayments settings service.
+	 *
+	 * @var WooPaymentsSettingsService|null
+	 */
+	private ?WooPaymentsSettingsService $settings_service = null;
+
+	/**
+	 * Location used only while a fresh account refresh is in progress without a durable retry marker.
+	 *
+	 * @var string|null
+	 */
+	private ?string $payment_methods_projection_fallback_location = null;
+
+	/**
 	 * Initialize the class instance.
 	 *
-	 * @param PaymentsProviders            $payment_providers  The PaymentsProviders instance.
-	 * @param LegacyProxy                  $proxy              The LegacyProxy instance.
-	 * @param WooPaymentsOnboardingAdapter $onboarding_adapter The WooPayments onboarding adapter.
-	 * @param WooPaymentsLegacyRuntime     $legacy_runtime     The WooPayments legacy runtime.
-	 * @param WooPaymentsApiClient         $api_client         The native WooPayments API client.
-	 * @param WooPaymentsAccountService    $account_service    The native WooPayments account service.
+	 * @param PaymentsProviders               $payment_providers  The PaymentsProviders instance.
+	 * @param LegacyProxy                     $proxy              The LegacyProxy instance.
+	 * @param WooPaymentsOnboardingAdapter    $onboarding_adapter The WooPayments onboarding adapter.
+	 * @param WooPaymentsLegacyRuntime        $legacy_runtime     The WooPayments legacy runtime.
+	 * @param WooPaymentsApiClient            $api_client         The native WooPayments API client.
+	 * @param WooPaymentsAccountService       $account_service    The native WooPayments account service.
+	 * @param WooPaymentsSettingsService|null $settings_service   Optional native WooPayments settings service.
 	 *
 	 * @internal
 	 */
-	final public function init( PaymentsProviders $payment_providers, LegacyProxy $proxy, WooPaymentsOnboardingAdapter $onboarding_adapter, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service ): void {
+	final public function init( PaymentsProviders $payment_providers, LegacyProxy $proxy, WooPaymentsOnboardingAdapter $onboarding_adapter, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service, ?WooPaymentsSettingsService $settings_service = null ): void {
 		$this->payments_providers = $payment_providers;
 		$this->proxy              = $proxy;
 		$this->onboarding_adapter = $onboarding_adapter;
 		$this->legacy_runtime     = $legacy_runtime;
 		$this->api_client         = $api_client;
 		$this->account_service    = $account_service;
+		$this->settings_service   = $settings_service;
+
+		if ( false === has_action( 'woocommerce_payments_account_refreshed', array( $this, 'maybe_project_pending_onboarding_payment_methods' ) ) ) {
+			add_action( 'woocommerce_payments_account_refreshed', array( $this, 'maybe_project_pending_onboarding_payment_methods' ), 10, 1 );
+		}
 
 		$this->wpcom_connection_manager = $this->proxy->get_instance_of( WPCOM_Connection_Manager::class, 'woocommerce' );
 		$this->provider                 = $this->payments_providers->get_payment_gateway_provider_instance( self::GATEWAY_ID );
@@ -1655,7 +1679,7 @@ class WooPaymentsService {
 
 		try {
 			if ( $this->should_use_native_onboarding_action_api() ) {
-				$response = $this->finalize_native_onboarding_kyc_session( $source );
+				$response = $this->finalize_native_onboarding_kyc_session( $location, $source );
 			} else {
 				// Call the WooPayments API to finalize the KYC session.
 				$response = $this->proxy->call_static(
@@ -3133,10 +3157,11 @@ class WooPaymentsService {
 	/**
 	 * Finalize a native embedded KYC session.
 	 *
-	 * @param string $source Onboarding source.
+	 * @param string $location Merchant country stored in the NOX profile.
+	 * @param string $source   Onboarding source.
 	 * @return array
 	 */
-	private function finalize_native_onboarding_kyc_session( string $source ): array {
+	private function finalize_native_onboarding_kyc_session( string $location, string $source ): array {
 		$response = $this->get_native_api_client()->finalize_onboarding_embedded_kyc(
 			$this->proxy->call_function( 'get_user_locale' ),
 			$source,
@@ -3153,9 +3178,182 @@ class WooPaymentsService {
 			if ( ! $this->sync_native_account_cache_from_response( $response, $is_live, false, true ) ) {
 				$this->get_native_account_service()->clear_cache();
 			}
+
+			if ( ! $this->persist_pending_payment_methods_projection( $location ) ) {
+				$this->payment_methods_projection_fallback_location = $location;
+			}
+			$this->refresh_native_account_after_finalization();
+			$this->payment_methods_projection_fallback_location = null;
 		}
 
 		return $response;
+	}
+
+	/**
+	 * Persist the location of the pending payment-method projection without invalidating finalization.
+	 *
+	 * @param string $location Merchant country stored in the NOX profile.
+	 * @return bool Whether the marker can be read back from persistent option storage.
+	 */
+	private function persist_pending_payment_methods_projection( string $location ): bool {
+		try {
+			$this->proxy->call_function( 'update_option', self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION, $location, false );
+			$this->proxy->call_function( 'wp_cache_delete', self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION, 'options' );
+			$persisted_location = $this->get_pending_payment_methods_projection_location();
+
+			return $location === $persisted_location;
+		} catch ( \Throwable $e ) {
+			return false;
+		}
+	}
+
+	/**
+	 * Read the pending payment-method projection location.
+	 *
+	 * @return string Persisted merchant country, or an empty string when unavailable.
+	 */
+	private function get_pending_payment_methods_projection_location(): string {
+		try {
+			$location = $this->proxy->call_function( 'get_option', self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION, '' );
+
+			return is_string( $location ) ? $location : '';
+		} catch ( \Throwable $e ) {
+			return '';
+		}
+	}
+
+	/**
+	 * Refresh account data after finalization without invalidating the non-replayable success.
+	 */
+	private function refresh_native_account_after_finalization(): void {
+		try {
+			$this->get_native_account_service()->refresh_account_data();
+		} catch ( \Throwable $e ) {
+			return;
+		}
+	}
+
+	/**
+	 * Enable selected NOX payment methods that are active for the refreshed account.
+	 *
+	 * @param string              $location     Merchant country stored in the NOX profile.
+	 * @param array<string,mixed> $account_data Fresh account data.
+	 * @return bool Whether the projection completed or deliberately had nothing to update.
+	 */
+	private function update_native_enabled_payment_methods_from_nox_profile( string $location, array $account_data ): bool {
+		$selected_payment_methods = $this->get_nox_profile_onboarding_step_data_entry(
+			self::ONBOARDING_STEP_PAYMENT_METHODS,
+			$location,
+			'payment_methods',
+			array()
+		);
+		$selected_payment_methods = is_array( $selected_payment_methods ) ? $selected_payment_methods : array();
+		$registry                 = new WooPaymentsPaymentMethodRegistry();
+		$selected_definitions     = array();
+
+		foreach ( $selected_payment_methods as $payment_method_id => $selected ) {
+			if ( ! is_string( $payment_method_id ) || ( ! is_bool( $selected ) && ! is_scalar( $selected ) ) ) {
+				continue;
+			}
+
+			$selected = is_bool( $selected ) ? $selected : (string) $selected;
+			if ( ! wc_string_to_bool( $selected ) ) {
+				continue;
+			}
+
+			$definition = $registry->get( $payment_method_id );
+			if ( null === $definition || $definition->get_account_capability_key() !== $definition->get_stripe_id() ) {
+				continue;
+			}
+
+			$selected_definitions[] = $definition;
+		}
+
+		if ( empty( $selected_definitions ) ) {
+			return true;
+		}
+
+		$capabilities            = is_array( $account_data['capabilities'] ?? null ) ? $account_data['capabilities'] : array();
+		$settings_service        = $this->get_native_settings_service();
+		$settings                = $settings_service->get_settings();
+		$enabled_payment_methods = is_array( $settings['enabled_payment_method_ids'] ?? null )
+			? $settings['enabled_payment_method_ids']
+			: array( 'card' );
+
+		foreach ( $selected_definitions as $definition ) {
+			$capability_key = $definition->get_account_capability_key();
+			if ( 'active' !== ( $capabilities[ $capability_key ] ?? null ) ) {
+				continue;
+			}
+
+			$enabled_payment_methods[] = $definition->get_id();
+		}
+
+		$result = $settings_service->update_settings(
+			array(
+				'enabled_payment_method_ids' => array_values( array_unique( array_map( 'strval', $enabled_payment_methods ) ) ),
+			)
+		);
+
+		return ! is_wp_error( $result );
+	}
+
+	/**
+	 * Retry a pending onboarding payment-method projection after a successful account refresh.
+	 *
+	 * @since 11.0.0
+	 * @param mixed $account_data Refreshed WooPayments account data.
+	 */
+	public function maybe_project_pending_onboarding_payment_methods( $account_data ): void {
+		$has_durable_marker = false;
+		try {
+			$location = $this->payment_methods_projection_fallback_location;
+			if ( null === $location ) {
+				$location           = $this->get_pending_payment_methods_projection_location();
+				$has_durable_marker = '' !== $location;
+			}
+
+			if ( '' === $location || ! is_array( $account_data ) ) {
+				return;
+			}
+
+			if ( ! $this->update_native_enabled_payment_methods_from_nox_profile( $location, $account_data ) ) {
+				if ( ! $has_durable_marker ) {
+					$this->log_payment_methods_projection_fallback_failure();
+				}
+
+				return;
+			}
+
+			if ( $has_durable_marker ) {
+				$this->proxy->call_function( 'delete_option', self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION );
+			}
+		} catch ( \Throwable $e ) {
+			if ( ! $has_durable_marker ) {
+				$this->log_payment_methods_projection_fallback_failure();
+			}
+
+			return;
+		}
+	}
+
+	/**
+	 * Log a projection failure that cannot rely on a durable retry marker.
+	 */
+	private function log_payment_methods_projection_fallback_failure(): void {
+		try {
+			$logger = $this->proxy->call_function( 'wc_get_logger' );
+			if ( ! $logger instanceof \WC_Logger_Interface ) {
+				return;
+			}
+
+			$logger->error(
+				'Native WooPayments could not project selected payment methods after finalization, and no durable retry marker is available.',
+				array( 'source' => 'woocommerce-woopayments-onboarding' )
+			);
+		} catch ( \Throwable $e ) {
+			return;
+		}
 	}
 
 	/**
@@ -3206,6 +3404,19 @@ class WooPaymentsService {
 	 */
 	private function get_native_account_service(): WooPaymentsAccountService {
 		return $this->account_service;
+	}
+
+	/**
+	 * Get the native WooPayments settings service.
+	 *
+	 * @return WooPaymentsSettingsService
+	 */
+	private function get_native_settings_service(): WooPaymentsSettingsService {
+		if ( null === $this->settings_service ) {
+			$this->settings_service = wc_get_container()->get( WooPaymentsSettingsService::class );
+		}
+
+		return $this->settings_service;
 	}
 
 	/**
