@@ -335,6 +335,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		removeAllFilters( 'wcpay.express-checkout.shipping-rates' );
 		removeAllFilters( 'wcpay.express-checkout.shipping-package-id' );
 		delete window.Stripe;
+		delete window.wcpayFraudPreventionToken;
 		window.fetch = originalFetch;
 		document.body.innerHTML = '';
 	} );
@@ -823,6 +824,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 	} );
 
 	it( 'places the Blocks order with a confirmation token through Store API', async () => {
+		window.wcpayFraudPreventionToken = 'fraud-token-123';
 		registerExpressCheckout();
 		const googlePayRegistration = getRegistration(
 			'woocommerce_payments_express_checkout_googlePay'
@@ -872,6 +874,10 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 						{
 							key: 'wcpay-express-checkout-context',
 							value: 'checkout',
+						},
+						{
+							key: 'wcpay-fraud-prevention-token',
+							value: 'fraud-token-123',
 						},
 					] ),
 				} ),
@@ -1409,6 +1415,10 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 				{
 					key: 'wcpay-express-checkout-context',
 					value: 'checkout',
+				},
+				{
+					key: 'wcpay-fraud-prevention-token',
+					value: '',
 				},
 			] )
 		);

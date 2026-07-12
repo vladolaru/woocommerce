@@ -211,6 +211,7 @@ describe( 'WooPayments express checkout', () => {
 		delete window.$;
 		delete window.wp;
 		delete window.Stripe;
+		delete window.wcpayFraudPreventionToken;
 		window.fetch = originalFetch;
 		delete window.wcpayExpressCheckoutParams;
 		document.body.innerHTML = '';
@@ -443,6 +444,7 @@ describe( 'WooPayments express checkout', () => {
 	} );
 
 	test( 'places the classic checkout order with a confirmation token', async () => {
+		window.wcpayFraudPreventionToken = 'fraud-token-123';
 		window.wp.apiFetch
 			.mockResolvedValueOnce( getCartResponse() )
 			.mockResolvedValueOnce( {
@@ -493,6 +495,10 @@ describe( 'WooPayments express checkout', () => {
 							key: 'wcpay-express-checkout-context',
 							value: 'checkout',
 						},
+						{
+							key: 'wcpay-fraud-prevention-token',
+							value: 'fraud-token-123',
+						},
 					] ),
 				} ),
 			} )
@@ -538,6 +544,10 @@ describe( 'WooPayments express checkout', () => {
 						{
 							key: 'wcpay-express-checkout-context',
 							value: 'checkout',
+						},
+						{
+							key: 'wcpay-fraud-prevention-token',
+							value: '',
 						},
 					] ),
 				} ),

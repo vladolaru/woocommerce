@@ -532,6 +532,14 @@
 				key: 'wcpay-express-checkout-context',
 				value: getButtonContext(),
 			},
+			{
+				key: 'wcpay-fraud-prevention-token',
+				value:
+					window.wcpayFraudPreventionToken === null ||
+					window.wcpayFraudPreventionToken === undefined
+						? ''
+						: window.wcpayFraudPreventionToken,
+			},
 		];
 	}
 

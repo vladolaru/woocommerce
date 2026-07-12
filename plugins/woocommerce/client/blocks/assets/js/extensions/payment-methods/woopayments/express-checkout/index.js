@@ -799,6 +799,10 @@ const getPaymentData = ( confirmationTokenId, paymentMethodTypes ) => [
 		key: 'wcpay-express-checkout-context',
 		value: params.button_context || 'checkout',
 	},
+	{
+		key: 'wcpay-fraud-prevention-token',
+		value: window.wcpayFraudPreventionToken ?? '',
+	},
 ];
 
 const getRedirectUrl = ( response ) =>
