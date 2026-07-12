@@ -102,6 +102,7 @@ class WooPaymentsIntentRequestBuilder {
 		$provider_data        = $context->get_provider_data();
 		$is_renewal           = ! empty( $provider_data['scheduled_subscription_payment'] );
 		$is_recurring         = $is_renewal || $is_recurring;
+		$save_payment_method  = ! empty( $payment_data['save_payment_method'] ) || $is_recurring;
 		$payment_type         = $is_recurring ? 'recurring' : 'single';
 		$subscription_payment = $is_renewal ? 'renewal' : ( $is_recurring ? 'initial' : 'no' );
 		$payment_method_types = $this->payment_method_types_for_request( $context, (string) $order->get_currency() );
@@ -132,7 +133,7 @@ class WooPaymentsIntentRequestBuilder {
 			}
 		}
 
-		if ( ! $is_renewal && ( ! empty( $payment_data['save_payment_method'] ) || $is_recurring ) ) {
+		if ( ! $is_renewal && $save_payment_method ) {
 			$request_data['setup_future_usage'] = 'off_session';
 		}
 
@@ -141,7 +142,7 @@ class WooPaymentsIntentRequestBuilder {
 		}
 
 		if ( self::is_redirect_return_url_required( $payment_method_types ) ) {
-			$request_data['return_url'] = self::redirect_return_url( $order );
+			$request_data['return_url'] = self::redirect_return_url( $order, $save_payment_method );
 		}
 
 		if ( self::is_using_saved_payment_token( $payment_data ) && ! preg_match( '/^(card_|src_)/', $payment_credential ) ) {
@@ -378,17 +379,23 @@ class WooPaymentsIntentRequestBuilder {
 	/**
 	 * Build the WooPayments 10.8-compatible redirect return URL.
 	 *
-	 * @param WC_Order $order Order being charged.
+	 * @param WC_Order $order               Order being charged.
+	 * @param bool     $save_payment_method Whether the return should preserve token-save context.
 	 * @return string
 	 */
-	private static function redirect_return_url( WC_Order $order ): string {
+	private static function redirect_return_url( WC_Order $order, bool $save_payment_method ): string {
+		$query_args = array(
+			'wc_payment_method' => OrderPaymentStore::GATEWAY_ID,
+			'_wpnonce'          => wp_create_nonce( 'wcpay_process_redirect_order_nonce' ),
+		);
+		if ( $save_payment_method ) {
+			$query_args['save_payment_method'] = 'yes';
+		}
+
 		return wp_sanitize_redirect(
 			esc_url_raw(
 				add_query_arg(
-					array(
-						'wc_payment_method' => OrderPaymentStore::GATEWAY_ID,
-						'_wpnonce'          => wp_create_nonce( 'wcpay_process_redirect_order_nonce' ),
-					),
+					$query_args,
 					$order->get_checkout_order_received_url()
 				)
 			)

@@ -100,5 +100,69 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $query_args['wc_payment_method'] ?? '' );
 		$this->assertSame( 1, wp_verify_nonce( $query_args['_wpnonce'] ?? '', 'wcpay_process_redirect_order_nonce' ) );
+		$this->assertArrayNotHasKey( 'save_payment_method', $query_args );
+	}
+
+	/**
+	 * @testdox Redirect return URL preserves an explicit payment-method save request.
+	 */
+	public function test_redirect_return_url_preserves_explicit_save_request(): void {
+		$request = $this->build_redirect_request( array( 'save_payment_method' => true ), false );
+
+		$query_args = array();
+		parse_str( (string) wp_parse_url( (string) $request['return_url'], PHP_URL_QUERY ), $query_args );
+
+		$this->assertSame( 'yes', $query_args['save_payment_method'] ?? '' );
+	}
+
+	/**
+	 * @testdox Redirect return URL preserves recurring payment-method save semantics.
+	 */
+	public function test_redirect_return_url_preserves_recurring_save_semantics(): void {
+		$request = $this->build_redirect_request( array(), true );
+
+		$query_args = array();
+		parse_str( (string) wp_parse_url( (string) $request['return_url'], PHP_URL_QUERY ), $query_args );
+
+		$this->assertSame( 'yes', $query_args['save_payment_method'] ?? '' );
+	}
+
+	/**
+	 * Build a redirect-capable charge request.
+	 *
+	 * @param array<string,mixed> $payment_data Payment context data.
+	 * @param bool                $is_recurring Whether recurring semantics are required.
+	 * @return array<string,mixed>
+	 */
+	private function build_redirect_request( array $payment_data, bool $is_recurring ): array {
+		$order = wc_create_order();
+		$order->set_currency( 'EUR' );
+		$order->set_total( '25.00' );
+		$order->save();
+
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_gateway_setting' ) )
+			->getMock();
+		$account_service->method( 'get_gateway_setting' )->willReturn( 'no' );
+		$request_builder = new WooPaymentsIntentRequestBuilder();
+		$request_builder->init(
+			$account_service,
+			new WooPaymentsOrderDataService(),
+			$this->createStub( WooPaymentsTokenService::class ),
+			new WooPaymentsPaymentMethodRegistry()
+		);
+
+		return $request_builder->charge_request_data(
+			PaymentContext::for_checkout(
+				$order,
+				OrderPaymentStore::GATEWAY_ID_PREFIX . 'sepa_debit',
+				'pm_sepa',
+				$payment_data
+			),
+			'pm_sepa',
+			'cus_native',
+			$is_recurring
+		);
 	}
 }

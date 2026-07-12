@@ -233,7 +233,9 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	 * @param WC_Order $order               Order being confirmed.
 	 * @param string   $intent_id           PaymentIntent or SetupIntent ID.
 	 * @param bool     $save_payment_method Whether to persist the payment method.
+	 * @throws WooPaymentsApiException When intent retrieval fails.
 	 * @throws WooPaymentsIntentConfirmationException When the intent cannot be authorized or a required token cannot be saved.
+	 * @throws Throwable When lifecycle, token, or payment-method effects fail.
 	 *
 	 * @since 11.0.0
 	 */
@@ -241,6 +243,23 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 		$intent = 0.0 >= (float) $order->get_total()
 			? $this->api_client->get_setup_intention( $intent_id )
 			: $this->api_client->get_payment_intention( $intent_id );
+
+		$this->confirm_fetched_intent_for_order( $order, $intent, $save_payment_method );
+	}
+
+	// phpcs:disable Squiz.Commenting.FunctionCommentThrowTag.WrongNumber -- The method explicitly throws its domain exception and can propagate downstream Throwables.
+	/**
+	 * Confirm an already-fetched intent and apply its result to an order.
+	 *
+	 * @param WC_Order            $order               Order being confirmed.
+	 * @param array<string,mixed> $intent              PaymentIntent or SetupIntent response.
+	 * @param bool                $save_payment_method Whether to persist the payment method.
+	 * @throws WooPaymentsIntentConfirmationException When the intent cannot be authorized or a required token cannot be saved.
+	 * @throws Throwable When confirmation is rejected or lifecycle, token, or payment-method effects fail.
+	 *
+	 * @since 11.0.0
+	 */
+	public function confirm_fetched_intent_for_order( WC_Order $order, array $intent, bool $save_payment_method ): void {
 		$status = isset( $intent['status'] ) ? (string) $intent['status'] : '';
 
 		if ( $this->is_authorized_intent_status( $status ) ) {
@@ -267,6 +286,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 			throw new WooPaymentsIntentConfirmationException( esc_html__( "We're not able to process this payment. Please try again later.", 'woocommerce' ), 409 );
 		}
 	}
+	// phpcs:enable Squiz.Commenting.FunctionCommentThrowTag.WrongNumber
 
 	/**
 	 * Build the WooPayments-compatible setup-intent creation response.
