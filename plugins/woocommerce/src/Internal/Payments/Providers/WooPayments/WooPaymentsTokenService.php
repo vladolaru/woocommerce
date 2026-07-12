@@ -705,10 +705,12 @@ class WooPaymentsTokenService {
 	/**
 	 * Clear preserved WooPayments cached payment methods for a user.
 	 *
+	 * @internal
+	 *
 	 * @param int $user_id User ID.
 	 * @return void
 	 */
-	private function clear_cached_payment_methods_for_user( int $user_id ): void {
+	public function clear_cached_payment_methods_for_user( int $user_id ): void {
 		if ( 0 >= $user_id ) {
 			return;
 		}

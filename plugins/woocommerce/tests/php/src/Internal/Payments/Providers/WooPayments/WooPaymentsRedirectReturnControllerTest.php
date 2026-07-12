@@ -63,12 +63,20 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	private bool $hpos_cache_option_changed = false;
 
 	/**
+	 * Original My Account page option.
+	 *
+	 * @var mixed
+	 */
+	private $original_myaccount_page_id;
+
+	/**
 	 * Set up test fixtures.
 	 */
 	public function setUp(): void {
 		parent::setUp();
 		$this->original_get               = $_GET; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Test fixture preserves globals for cleanup.
 		$this->original_hpos_cache_option = get_option( CustomOrdersTableController::HPOS_DATASTORE_CACHING_ENABLED_OPTION, null );
+		$this->original_myaccount_page_id = get_option( 'woocommerce_myaccount_page_id', null );
 		$_GET                             = array();
 		WC()->cart->empty_cart();
 		wc_clear_notices();
@@ -84,6 +92,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 
 		global $wp;
 		unset( $wp->query_vars['order-received'] );
+		unset( $wp->query_vars['payment-methods'] );
 		set_query_var( 'order-received', '' );
 		$_GET = $this->original_get;
 		remove_all_filters( 'woocommerce_is_order_received_page' );
@@ -92,6 +101,11 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		WC()->cart->empty_cart();
 		wc_clear_notices();
 		wp_set_current_user( 0 );
+		if ( null === $this->original_myaccount_page_id ) {
+			delete_option( 'woocommerce_myaccount_page_id' );
+		} else {
+			update_option( 'woocommerce_myaccount_page_id', $this->original_myaccount_page_id );
+		}
 		if ( $this->hpos_cache_option_changed ) {
 			if ( null === $this->original_hpos_cache_option ) {
 				delete_option( CustomOrdersTableController::HPOS_DATASTORE_CACHING_ENABLED_OPTION );
@@ -537,14 +551,109 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A successful setup-intent return on the payment-methods page adds a notice and clears the current user's cached methods.
+	 */
+	public function test_handle_wp_maps_successful_account_setup_intent_return(): void {
+		$user_id            = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$api_client         = new RedirectReturnApiClientStub();
+		$confirmation_owner = $this->createMock( WooPaymentsCheckoutAjaxController::class );
+		$confirmation_owner->expects( $this->never() )->method( 'confirm_fetched_intent_for_order' );
+		$token_service = new RedirectReturnTokenServiceStub();
+		$this->sut     = $this->create_controller( true, $confirmation_owner, $api_client, $token_service );
+		wp_set_current_user( $user_id );
+		$this->set_payment_methods_page_context();
+		$_GET = array(
+			'setup_intent'               => 'seti_account',
+			'setup_intent_client_secret' => 'seti_account_secret_example',
+			'redirect_status'            => 'succeeded',
+		);
+
+		$this->sut->handle_wp();
+
+		$success_notices = wc_get_notices( 'success' );
+		$this->assertCount( 1, $success_notices );
+		$this->assertSame( 'Payment method successfully added.', $success_notices[0]['notice'] );
+		$this->assertSame( array( $user_id ), $token_service->cleared_user_ids );
+		$this->assertSame( 0, $api_client->payment_intent_reads );
+		$this->assertSame( 0, $api_client->setup_intent_reads );
+	}
+
+	/**
+	 * @testdox A payment-methods page return without a successful complete SetupIntent is a no-op and never falls through to order processing.
+	 *
+	 * @dataProvider invalid_account_setup_intent_return_provider
+	 *
+	 * @param array<string,string> $setup_return SetupIntent return query values.
+	 */
+	public function test_handle_wp_ignores_invalid_account_setup_intent_return_without_order_processing( array $setup_return ): void {
+		$order                      = $this->create_order();
+		$api_client                 = new RedirectReturnApiClientStub();
+		$api_client->payment_intent = $this->successful_payment_intent( $order, 'pi_account_fallthrough', 'pm_account' );
+		$confirmation_owner         = $this->createMock( WooPaymentsCheckoutAjaxController::class );
+		$confirmation_owner->expects( $this->never() )->method( 'confirm_fetched_intent_for_order' );
+		$token_service = new RedirectReturnTokenServiceStub();
+		$this->sut     = $this->create_controller( true, $confirmation_owner, $api_client, $token_service );
+		$this->set_payment_methods_page_context();
+		$this->set_payment_intent_return_request( $order, 'pi_account_fallthrough' );
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Test fixture extends the redirect query.
+		$_GET = array_merge( $_GET, $setup_return );
+
+		$this->sut->handle_wp();
+
+		$this->assertSame( 0, $api_client->payment_intent_reads );
+		$this->assertSame( 0, $api_client->setup_intent_reads );
+		$this->assertSame( array(), $token_service->cleared_user_ids );
+		$this->assertSame( array(), wc_get_notices( 'success' ) );
+	}
+
+	/**
+	 * Provide incomplete and non-succeeded account SetupIntent returns.
+	 *
+	 * @return array<string,array{setup_return:array<string,string>}>
+	 */
+	public function invalid_account_setup_intent_return_provider(): array {
+		return array(
+			'missing setup intent'        => array(
+				'setup_return' => array(
+					'setup_intent'               => '',
+					'setup_intent_client_secret' => 'seti_account_secret_example',
+					'redirect_status'            => 'succeeded',
+				),
+			),
+			'missing setup client secret' => array(
+				'setup_return' => array(
+					'setup_intent'               => 'seti_account',
+					'setup_intent_client_secret' => '',
+					'redirect_status'            => 'succeeded',
+				),
+			),
+			'missing redirect status'     => array(
+				'setup_return' => array(
+					'setup_intent'               => 'seti_account',
+					'setup_intent_client_secret' => 'seti_account_secret_example',
+					'redirect_status'            => '',
+				),
+			),
+			'non-succeeded status'        => array(
+				'setup_return' => array(
+					'setup_intent'               => 'seti_account',
+					'setup_intent_client_secret' => 'seti_account_secret_example',
+					'redirect_status'            => 'failed',
+				),
+			),
+		);
+	}
+
+	/**
 	 * Create the redirect-return controller.
 	 *
 	 * @param bool                                   $native_owner       Whether native owns runtime.
 	 * @param WooPaymentsCheckoutAjaxController|null $confirmation_owner Shared confirmation owner.
 	 * @param WooPaymentsApiClient|null              $api_client         API client.
+	 * @param WooPaymentsTokenService|null           $token_service      Token service.
 	 * @return WooPaymentsRedirectReturnController
 	 */
-	private function create_controller( bool $native_owner, ?WooPaymentsCheckoutAjaxController $confirmation_owner = null, ?WooPaymentsApiClient $api_client = null ): WooPaymentsRedirectReturnController {
+	private function create_controller( bool $native_owner, ?WooPaymentsCheckoutAjaxController $confirmation_owner = null, ?WooPaymentsApiClient $api_client = null, ?WooPaymentsTokenService $token_service = null ): WooPaymentsRedirectReturnController {
 		$arbiter = $this->createMock( NativePaymentsRuntimeArbiter::class );
 		$arbiter->method( 'should_native_register' )->willReturn( $native_owner );
 
@@ -552,10 +661,30 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$controller->init(
 			$arbiter,
 			$confirmation_owner ?? $this->createMock( WooPaymentsCheckoutAjaxController::class ),
-			$api_client ?? new RedirectReturnApiClientStub()
+			$api_client ?? new RedirectReturnApiClientStub(),
+			$token_service ?? $this->createMock( WooPaymentsTokenService::class )
 		);
 
 		return $controller;
+	}
+
+	/**
+	 * Set My Account payment-methods page context.
+	 */
+	private function set_payment_methods_page_context(): void {
+		$myaccount_page_id = self::factory()->post->create(
+			array(
+				'post_type'   => 'page',
+				'post_status' => 'publish',
+			)
+		);
+		update_option( 'woocommerce_myaccount_page_id', $myaccount_page_id );
+		$this->go_to( get_permalink( $myaccount_page_id ) );
+
+		global $wp;
+		$wp->query_vars['payment-methods'] = '';
+
+		$this->assertTrue( is_payment_methods_page(), 'Test fixture should establish the My Account payment-methods page.' );
 	}
 
 	/**
@@ -867,6 +996,21 @@ class RedirectReturnApiClientStub extends WooPaymentsApiClient {
 		$this->last_setup_intent_id = $setup_intent_id;
 
 		return $this->setup_intent;
+	}
+}
+
+/**
+ * Token service stub that records per-user cache clearing.
+ */
+class RedirectReturnTokenServiceStub extends WooPaymentsTokenService {
+	/** @var array<int,int> */
+	public array $cleared_user_ids = array();
+
+	/**
+	 * @param int $user_id User ID.
+	 */
+	public function clear_cached_payment_methods_for_user( int $user_id ): void {
+		$this->cleared_user_ids[] = $user_id;
 	}
 }
 

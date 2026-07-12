@@ -15,7 +15,7 @@ use Throwable;
 use WC_Order;
 
 /**
- * Confirms native WooPayments redirect returns on the order-received page.
+ * Handles native WooPayments redirect returns.
  *
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
@@ -44,6 +44,13 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	private WooPaymentsApiClient $api_client;
 
 	/**
+	 * Native WooPayments token service.
+	 *
+	 * @var WooPaymentsTokenService
+	 */
+	private WooPaymentsTokenService $token_service;
+
+	/**
 	 * Initialize the controller.
 	 *
 	 * @internal
@@ -51,11 +58,13 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 * @param NativePaymentsRuntimeArbiter      $arbiter            Runtime owner arbiter.
 	 * @param WooPaymentsCheckoutAjaxController $confirmation_owner Shared intent confirmation owner.
 	 * @param WooPaymentsApiClient              $api_client         Native WooPayments API client.
+	 * @param WooPaymentsTokenService           $token_service      Native WooPayments token service.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsCheckoutAjaxController $confirmation_owner, WooPaymentsApiClient $api_client ): void {
+	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsCheckoutAjaxController $confirmation_owner, WooPaymentsApiClient $api_client, WooPaymentsTokenService $token_service ): void {
 		$this->arbiter            = $arbiter;
 		$this->confirmation_owner = $confirmation_owner;
 		$this->api_client         = $api_client;
+		$this->token_service      = $token_service;
 	}
 
 	/**
@@ -72,12 +81,25 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Handle the wp hook for order-received redirect returns.
+	 * Handle the wp hook for redirect returns.
 	 *
 	 * @internal
 	 */
 	public function handle_wp(): void {
-		if ( ! $this->arbiter->should_native_register() || ! is_order_received_page() ) {
+		if ( ! $this->arbiter->should_native_register() ) {
+			return;
+		}
+
+		if ( is_payment_methods_page() ) {
+			if ( $this->is_successful_setup_intent_return() ) {
+				wc_add_notice( __( 'Payment method successfully added.', 'woocommerce' ) );
+				$this->token_service->clear_cached_payment_methods_for_user( get_current_user_id() );
+			}
+
+			return;
+		}
+
+		if ( ! is_order_received_page() ) {
 			return;
 		}
 
@@ -160,6 +182,17 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 				)
 			);
 		}
+	}
+
+	/**
+	 * Tell whether the request is a successful SetupIntent return.
+	 *
+	 * @return bool
+	 */
+	private function is_successful_setup_intent_return(): bool {
+		return '' !== $this->get_query_string( 'setup_intent' )
+			&& '' !== $this->get_query_string( 'setup_intent_client_secret' )
+			&& 'succeeded' === $this->get_query_string( 'redirect_status' );
 	}
 
 	/**
