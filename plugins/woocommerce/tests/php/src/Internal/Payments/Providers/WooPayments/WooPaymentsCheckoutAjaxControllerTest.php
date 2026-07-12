@@ -88,6 +88,49 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Shared intent confirmation should apply the native payment lifecycle directly.
+	 */
+	public function test_confirm_intent_for_order_applies_native_payment_lifecycle(): void {
+		$order = $this->create_woopayments_order( '50.00' );
+
+		$api_client = new class() extends WooPaymentsApiClient {
+			/**
+			 * Retrieve a PaymentIntent.
+			 *
+			 * @param string $intent_id PaymentIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_payment_intention( string $intent_id ): array {
+				return array(
+					'id'             => $intent_id,
+					'status'         => 'succeeded',
+					'currency'       => 'usd',
+					'amount'         => 5000,
+					'customer'       => 'cus_shared',
+					'payment_method' => 'pm_shared',
+					'charges'        => array(
+						'total_count' => 1,
+						'data'        => array(
+							array(
+								'id'             => 'ch_shared',
+								'payment_method' => 'pm_shared',
+							),
+						),
+					),
+				);
+			}
+		};
+		$sut        = $this->create_controller( $api_client );
+
+		$sut->confirm_intent_for_order( $order, 'pi_shared', false );
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'pi_shared', $reloaded->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'pm_shared', $reloaded->get_meta( '_payment_method_id', true ) );
+	}
+
+	/**
 	 * @testdox Order-status callback should complete a zero-total order from the native SetupIntent.
 	 */
 	public function test_update_order_status_completes_zero_total_setup_intent(): void {
@@ -199,6 +242,61 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 500, $response['status_code'] );
 		$this->assertInstanceOf( WC_Order::class, $reloaded );
 		$this->assertSame( 'Card', $reloaded->get_payment_method_title() );
+	}
+
+	/**
+	 * @testdox An unrelated runtime exception with code 409 should retain the generic 500 response.
+	 */
+	public function test_unrelated_runtime_exception_with_409_code_returns_generic_error(): void {
+		$order = $this->create_woopayments_order( '50.00' );
+		$order->update_meta_data( '_intent_id', 'pi_runtime_conflict' );
+		$order->save();
+
+		$api_client        = new class() extends WooPaymentsApiClient {
+			/**
+			 * Tell whether transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Return an authorized PaymentIntent.
+			 *
+			 * @param string $intent_id Intent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_payment_intention( string $intent_id ): array {
+				return array(
+					'id'     => $intent_id,
+					'status' => 'succeeded',
+				);
+			}
+		};
+		$lifecycle_service = $this->getMockBuilder( OrderPaymentLifecycleService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'apply' ) )
+			->getMock();
+		$lifecycle_service->expects( $this->once() )
+			->method( 'apply' )
+			->willThrowException( new \RuntimeException( 'Unrelated lifecycle conflict.', 409 ) );
+
+		$response = $this->create_controller( $api_client, null, null, null, $lifecycle_service )
+			->get_update_order_status_response(
+				array(
+					'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+					'order_id'    => $order->get_id(),
+					'intent_id'   => 'pi_runtime_conflict',
+				)
+			);
+
+		$this->assertSame( 500, $response['status_code'] );
+		$this->assertSame(
+			__( "We're not able to process this payment. Please try again later.", 'woocommerce' ),
+			$response['error']['message']
+		);
 	}
 
 	/**

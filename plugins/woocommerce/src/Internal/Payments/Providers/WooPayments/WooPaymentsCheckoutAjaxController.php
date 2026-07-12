@@ -198,29 +198,13 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 		}
 
 		try {
-			$intent = 0.0 >= (float) $order->get_total()
-				? $this->api_client->get_setup_intention( $intent_id )
-				: $this->api_client->get_payment_intention( $intent_id );
-			$status = isset( $intent['status'] ) ? (string) $intent['status'] : '';
-
-			if ( $this->is_authorized_intent_status( $status ) ) {
-				$token_save_error = $this->maybe_save_payment_method_for_order( $order, $intent, $request );
-				if ( null !== $token_save_error ) {
-					return $token_save_error;
-				}
-			}
-
-			$event = $this->build_lifecycle_event_from_intent( $intent, $order );
-			$this->lifecycle_service->apply( $order, $event, new WooPaymentsPersistenceProfile() );
-			if ( $this->is_authorized_intent_status( $status ) ) {
-				$this->apply_payment_method_display_details( $order, $intent );
-			}
-
-			if ( ! $this->is_authorized_intent_status( $status ) ) {
-				return $this->error_response( __( "We're not able to process this payment. Please try again later.", 'woocommerce' ), 409 );
-			}
-
 			$is_subscription_payment_method_change = $this->is_subscription_change_payment_request( $request );
+			$this->confirm_intent_for_order(
+				$order,
+				$intent_id,
+				$this->should_save_payment_method( $request ) || $is_subscription_payment_method_change
+			);
+
 			if ( $is_subscription_payment_method_change ) {
 				$this->maybe_update_subscription_payment_method( $order );
 			}
@@ -231,6 +215,8 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 			);
 		} catch ( WooPaymentsApiException $exception ) {
 			return $this->error_response( $exception->getMessage(), 502 );
+		} catch ( WooPaymentsIntentConfirmationException $exception ) {
+			return $this->error_response( $exception->getMessage(), $exception->getCode() );
 		} catch ( Throwable $exception ) {
 			wc_get_logger()->error(
 				'Error completing native WooPayments authenticated payment: ' . $exception->getMessage(),
@@ -238,6 +224,47 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 			);
 
 			return $this->error_response( __( "We're not able to process this payment. Please try again later.", 'woocommerce' ), 500 );
+		}
+	}
+
+	/**
+	 * Confirm an intent and apply its result to an order.
+	 *
+	 * @param WC_Order $order               Order being confirmed.
+	 * @param string   $intent_id           PaymentIntent or SetupIntent ID.
+	 * @param bool     $save_payment_method Whether to persist the payment method.
+	 * @throws WooPaymentsIntentConfirmationException When the intent cannot be authorized or a required token cannot be saved.
+	 *
+	 * @since 11.0.0
+	 */
+	public function confirm_intent_for_order( WC_Order $order, string $intent_id, bool $save_payment_method ): void {
+		$intent = 0.0 >= (float) $order->get_total()
+			? $this->api_client->get_setup_intention( $intent_id )
+			: $this->api_client->get_payment_intention( $intent_id );
+		$status = isset( $intent['status'] ) ? (string) $intent['status'] : '';
+
+		if ( $this->is_authorized_intent_status( $status ) ) {
+			$token_save_error = $this->maybe_save_payment_method_for_order(
+				$order,
+				$intent,
+				array( 'should_save_payment_method' => $save_payment_method ? 'true' : 'false' )
+			);
+			if ( null !== $token_save_error ) {
+				throw new WooPaymentsIntentConfirmationException(
+					esc_html( (string) ( $token_save_error['error']['message'] ?? '' ) ),
+					(int) ( $token_save_error['status_code'] ?? 409 )
+				);
+			}
+		}
+
+		$event = $this->build_lifecycle_event_from_intent( $intent, $order );
+		$this->lifecycle_service->apply( $order, $event, new WooPaymentsPersistenceProfile() );
+		if ( $this->is_authorized_intent_status( $status ) ) {
+			$this->apply_payment_method_display_details( $order, $intent );
+		}
+
+		if ( ! $this->is_authorized_intent_status( $status ) ) {
+			throw new WooPaymentsIntentConfirmationException( esc_html__( "We're not able to process this payment. Please try again later.", 'woocommerce' ), 409 );
 		}
 	}
 
