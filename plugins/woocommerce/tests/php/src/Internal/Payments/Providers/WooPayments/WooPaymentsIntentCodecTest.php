@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentMappingContext;
 use WC_Unit_Test_Case;
@@ -186,6 +187,150 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 		);
 
 		$this->assertSame( 'pm_from_charge', $outcome->get_payment_method_id() );
+	}
+
+	/**
+	 * @testdox Failed intent mapping keeps raw diagnostics separate from localized shopper copy.
+	 */
+	public function test_failed_intent_mapping_separates_localized_shopper_message_from_raw_provider_message(): void {
+		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+			array(
+				'id'                 => 'pi_declined',
+				'status'             => 'requires_payment_method',
+				'last_payment_error' => array(
+					'type'         => 'card_error',
+					'code'         => 'card_declined',
+					'decline_code' => 'insufficient_funds',
+					'message'      => 'Provider diagnostic: balance check failed for request req_private.',
+				),
+			),
+			WooPaymentsIntentMappingContext::for_native( 42, 'https://example.test/order-received/42' )
+		);
+
+		$data = $outcome->get_data();
+
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( 'card_declined', $data[ PaymentOutcome::DATA_ERROR_CODE ] );
+		$this->assertSame( 'Provider diagnostic: balance check failed for request req_private.', $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
+		$this->assertSame( 'Error: Your card has insufficient funds.', $data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] );
+	}
+
+	/**
+	 * @testdox Failed intent mapping redacts unknown provider details from shopper copy.
+	 */
+	public function test_failed_intent_mapping_redacts_unknown_provider_message(): void {
+		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+			array(
+				'id'                 => 'pi_unknown_failure',
+				'status'             => 'requires_payment_method',
+				'last_payment_error' => array(
+					'type'    => 'api_error',
+					'code'    => 'provider_internal_failure',
+					'message' => 'Raw provider secret must remain diagnostic only.',
+				),
+			),
+			WooPaymentsIntentMappingContext::for_native( 42, 'https://example.test/order-received/42' )
+		);
+
+		$data = $outcome->get_data();
+
+		$this->assertSame( 'Raw provider secret must remain diagnostic only.', $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
+		$this->assertSame(
+			"We're not able to process this request. Please refresh the page and try again.",
+			$data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ]
+		);
+	}
+
+	/**
+	 * @testdox Failed intent mapping ignores malformed metadata without warnings or diagnostic loss.
+	 */
+	public function test_failed_intent_mapping_ignores_malformed_error_metadata(): void {
+		$warnings      = array();
+		$error_handler = static function ( int $error_level, string $error_message ) use ( &$warnings ): bool {
+			if ( E_WARNING !== $error_level ) {
+				return false;
+			}
+
+			$warnings[] = $error_message;
+
+			return true;
+		};
+		// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_set_error_handler -- Test instrumentation verifies malformed metadata emits no warnings.
+		set_error_handler( $error_handler );
+
+		try {
+			$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+				array(
+					'id'                 => 'pi_malformed_failure',
+					'status'             => 'requires_payment_method',
+					'last_payment_error' => array(
+						'type'         => array( 'card_error' ),
+						'code'         => 'card_declined',
+						'decline_code' => array( 'insufficient_funds' ),
+						'message'      => 'Malformed provider metadata for request req_private.',
+					),
+				),
+				WooPaymentsIntentMappingContext::for_native( 42, 'https://example.test/order-received/42' )
+			);
+		} finally {
+			restore_error_handler();
+		}
+
+		$data = $outcome->get_data();
+
+		$this->assertSame( 'Malformed provider metadata for request req_private.', $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
+		$this->assertSame(
+			"We're not able to process this request. Please refresh the page and try again.",
+			$data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ]
+		);
+		$this->assertSame( array(), $warnings );
+	}
+
+	/**
+	 * @testdox Failed HTTP transport outcomes localize structured card decline details without replacing diagnostics.
+	 */
+	public function test_failed_transport_outcome_localizes_structured_card_decline(): void {
+		$sut = WooPaymentsIntentCodec::failed_transport_outcome(
+			'charge',
+			new WooPaymentsApiException(
+				'Error: Provider diagnostic for request req_private.',
+				'card_declined',
+				402,
+				'card_error',
+				'insufficient_funds'
+			)
+		);
+
+		$data = $sut->get_data();
+
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $sut->get_status() );
+		$this->assertSame( 'card_declined', $data[ PaymentOutcome::DATA_ERROR_CODE ] );
+		$this->assertSame( 'Error: Provider diagnostic for request req_private.', $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
+		$this->assertSame( 'Error: Your card has insufficient funds.', $data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? null );
+		$this->assertSame( 'charge', $data['operation'] );
+	}
+
+	/**
+	 * @testdox Failed non-card transport outcomes use generic shopper copy without replacing diagnostics.
+	 */
+	public function test_failed_transport_outcome_redacts_non_card_error(): void {
+		$sut = WooPaymentsIntentCodec::failed_transport_outcome(
+			'charge',
+			new WooPaymentsApiException(
+				'Error: Private upstream host refused the request.',
+				'provider_internal_failure',
+				500,
+				'api_error'
+			)
+		);
+
+		$data = $sut->get_data();
+
+		$this->assertSame( 'Error: Private upstream host refused the request.', $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
+		$this->assertSame(
+			"We're not able to process this request. Please refresh the page and try again.",
+			$data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? null
+		);
 	}
 
 	/**

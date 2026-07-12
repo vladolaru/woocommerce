@@ -24,6 +24,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
 use WC_Order;
 use WC_Payment_Token_CC;
 use WC_Unit_Test_Case;
@@ -2055,6 +2056,51 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $outcome->get_effect_plan()->should_apply_token_effects() );
 		$this->assertTrue( $outcome->get_effect_plan()->is_recurring() );
 		$this->assertSame( 0, $gateway->processed_order_id );
+	}
+
+	/**
+	 * @testdox Native charge failures expose localized structured card declines separately from raw diagnostics.
+	 */
+	public function test_native_charge_failure_maps_structured_card_decline_to_shopper_message(): void {
+		$order                 = $this->create_woopayments_order( '50.00' );
+		$gateway               = new RecordingLegacyGateway( array( 'result' => 'success' ) );
+		$account_service       = $this->create_account_service( false );
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => 402 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode(
+				array(
+					'error' => array(
+						'type'         => 'card_error',
+						'code'         => 'card_declined',
+						'decline_code' => 'insufficient_funds',
+						'message'      => 'Provider diagnostic for request req_private.',
+					),
+				)
+			),
+		);
+
+		$api_client = new WooPaymentsApiClient();
+		$api_client->init( $http_client, $account_service );
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+
+		$customer_service->expects( $this->once() )
+			->method( 'get_or_create_customer_id_for_order' )
+			->willReturn( 'cus_declined' );
+
+		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, null, $account_service );
+		$outcome = $sut->charge( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_declined' ), 'key_declined' );
+		$data    = $outcome->get_data();
+
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( 'card_declined', $data[ PaymentOutcome::DATA_ERROR_CODE ] );
+		$this->assertSame( 'Error: Provider diagnostic for request req_private.', $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
+		$this->assertSame( 'Error: Your card has insufficient funds.', $data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? null );
+		$this->assertSame( 1, $http_client->request_count );
 	}
 
 	/**

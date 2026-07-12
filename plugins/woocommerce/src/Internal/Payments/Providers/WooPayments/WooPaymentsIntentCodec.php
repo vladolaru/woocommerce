@@ -103,8 +103,12 @@ class WooPaymentsIntentCodec {
 		$error_key = 'si' === $intent_type ? 'last_setup_error' : 'last_payment_error';
 		$error     = is_array( $intention[ $error_key ] ?? null ) ? $intention[ $error_key ] : array();
 
-		$data[ PaymentOutcome::DATA_ERROR_CODE ]    = isset( $error['code'] ) ? (string) $error['code'] : ( 'si' === $intent_type ? 'wcpay_native_setup_intent_failed' : 'wcpay_native_charge_failed' );
+		$error_code                                 = isset( $error['code'] ) ? (string) $error['code'] : ( 'si' === $intent_type ? 'wcpay_native_setup_intent_failed' : 'wcpay_native_charge_failed' );
+		$error_type                                 = isset( $error['type'] ) && is_string( $error['type'] ) ? $error['type'] : '';
+		$decline_code                               = isset( $error['decline_code'] ) && is_string( $error['decline_code'] ) ? $error['decline_code'] : '';
+		$data[ PaymentOutcome::DATA_ERROR_CODE ]    = $error_code;
 		$data[ PaymentOutcome::DATA_ERROR_MESSAGE ] = isset( $error['message'] ) ? (string) $error['message'] : '';
+		$data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] = WooPaymentsErrorMessages::get_shopper_message( $error_type, $error_code, $decline_code );
 
 		return new PaymentOutcome( PaymentOutcome::STATUS_FAILED, $intent_id, '', $payment_method_id, $customer_id, $data );
 	}
@@ -333,6 +337,8 @@ class WooPaymentsIntentCodec {
 	 * @return PaymentOutcome
 	 */
 	public static function failed_transport_outcome( string $operation, WooPaymentsApiException $exception, string $provider_payment_id = '' ): PaymentOutcome {
+		$error_code = '' !== $exception->get_error_code() ? $exception->get_error_code() : 'wcpay_native_transport_failed';
+
 		return new PaymentOutcome(
 			PaymentOutcome::STATUS_FAILED,
 			$provider_payment_id,
@@ -340,9 +346,10 @@ class WooPaymentsIntentCodec {
 			'',
 			'',
 			array(
-				PaymentOutcome::DATA_ERROR_CODE    => '' !== $exception->get_error_code() ? $exception->get_error_code() : 'wcpay_native_transport_failed',
-				PaymentOutcome::DATA_ERROR_MESSAGE => $exception->getMessage(),
-				'operation'                        => $operation,
+				PaymentOutcome::DATA_ERROR_CODE            => $error_code,
+				PaymentOutcome::DATA_ERROR_MESSAGE         => $exception->getMessage(),
+				PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE => WooPaymentsErrorMessages::get_shopper_message( $exception->get_error_type(), $error_code, $exception->get_decline_code() ),
+				'operation'                                => $operation,
 			)
 		);
 	}

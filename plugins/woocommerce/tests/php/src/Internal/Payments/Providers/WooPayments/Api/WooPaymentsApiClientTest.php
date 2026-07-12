@@ -334,9 +334,9 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve server error codes and messages for failed native transport requests.
+	 * @testdox Should preserve structured card error details from failed native transport requests.
 	 */
-	public function test_request_preserves_server_error_codes_and_messages(): void {
+	public function test_request_preserves_structured_card_error_details(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
 		$http_client->blog_id  = 123;
 		$http_client->response = array(
@@ -345,8 +345,10 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			'body'     => wp_json_encode(
 				array(
 					'error' => array(
-						'code'    => 'card_declined',
-						'message' => 'Card declined.',
+						'type'         => 'card_error',
+						'code'         => 'card_declined',
+						'decline_code' => 'insufficient_funds',
+						'message'      => 'Card declined for request req_private.',
 					),
 				)
 			),
@@ -360,8 +362,64 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			$this->fail( 'Expected the native transport request to surface a WooPaymentsApiException.' );
 		} catch ( WooPaymentsApiException $exception ) {
 			$this->assertSame( 'card_declined', $exception->get_error_code() );
-			$this->assertStringContainsString( 'Card declined', $exception->getMessage() );
+			$this->assertSame( 'card_error', $exception->get_error_type() );
+			$this->assertSame( 'insufficient_funds', $exception->get_decline_code() );
+			$this->assertSame( 'Error: Card declined for request req_private.', $exception->getMessage() );
+			$this->assertSame( 402, $exception->get_http_code() );
 		}
+	}
+
+	/**
+	 * @testdox Should ignore malformed structured error metadata without warnings or diagnostic loss.
+	 */
+	public function test_request_ignores_malformed_structured_error_metadata(): void {
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id  = 123;
+		$http_client->response = array(
+			'response' => array( 'code' => 402 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode(
+				array(
+					'error' => array(
+						'type'         => array( 'card_error' ),
+						'code'         => 'card_declined',
+						'decline_code' => array( 'insufficient_funds' ),
+						'message'      => 'Malformed metadata for request req_private.',
+					),
+				)
+			),
+		);
+		$warnings              = array();
+		$error_handler         = static function ( int $error_level, string $error_message ) use ( &$warnings ): bool {
+			if ( E_WARNING !== $error_level ) {
+				return false;
+			}
+
+			$warnings[] = $error_message;
+
+			return true;
+		};
+
+		$sut = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( false ) );
+		// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_set_error_handler -- Test instrumentation verifies malformed metadata emits no warnings.
+		set_error_handler( $error_handler );
+
+		try {
+			try {
+				$sut->refund_charge( 'ch_test', 250, 'requested_by_customer', 'native_transport', 'idem_test' );
+				$this->fail( 'Expected malformed provider metadata to retain the API failure.' );
+			} catch ( WooPaymentsApiException $exception ) {
+				$this->assertSame( 'card_declined', $exception->get_error_code() );
+				$this->assertSame( '', $exception->get_error_type() );
+				$this->assertSame( '', $exception->get_decline_code() );
+				$this->assertSame( 'Error: Malformed metadata for request req_private.', $exception->getMessage() );
+			}
+		} finally {
+			restore_error_handler();
+		}
+
+		$this->assertSame( array(), $warnings );
 	}
 
 	/**

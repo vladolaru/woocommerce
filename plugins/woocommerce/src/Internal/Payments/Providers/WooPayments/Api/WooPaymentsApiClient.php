@@ -2299,10 +2299,14 @@ class WooPaymentsApiClient {
 	private function throw_api_error( array $response_body, int $response_code ): void {
 		$error_code    = 'wcpay_client_error_code_missing';
 		$error_message = __( 'Server error. Please try again.', 'woocommerce' );
+		$error_type    = '';
+		$decline_code  = '';
 
 		if ( isset( $response_body['error'] ) && is_array( $response_body['error'] ) ) {
 			$error_code    = isset( $response_body['error']['code'] ) ? (string) $response_body['error']['code'] : $error_code;
 			$error_message = isset( $response_body['error']['message'] ) ? (string) $response_body['error']['message'] : $error_message;
+			$error_type    = isset( $response_body['error']['type'] ) && is_string( $response_body['error']['type'] ) ? $response_body['error']['type'] : '';
+			$decline_code  = isset( $response_body['error']['decline_code'] ) && is_string( $response_body['error']['decline_code'] ) ? $response_body['error']['decline_code'] : '';
 		} elseif ( isset( $response_body['code'] ) ) {
 			$error_code    = (string) $response_body['code'];
 			$error_message = isset( $response_body['message'] ) ? (string) $response_body['message'] : $error_message;
@@ -2316,7 +2320,9 @@ class WooPaymentsApiClient {
 				$error_message
 			),
 			$error_code,
-			$response_code
+			$response_code,
+			$error_type,
+			$decline_code
 		);
 		// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	}

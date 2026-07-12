@@ -1193,6 +1193,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		);
 		$outcome = $this->get_processing_service()->process_checkout_outcome( $context, $this->get_provider() );
 		$this->maybe_bump_failed_transaction_rate_limiter( $outcome );
+		self::maybe_add_failed_checkout_notice( $outcome );
 
 		$result = self::format_checkout_result( $context, $order, $outcome );
 
@@ -1630,6 +1631,26 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
+	 * Add the safe shopper notice for a failed provider checkout outcome.
+	 *
+	 * @param PaymentOutcome $outcome Provider payment outcome.
+	 * @return void
+	 */
+	private static function maybe_add_failed_checkout_notice( PaymentOutcome $outcome ): void {
+		if ( PaymentOutcome::STATUS_FAILED !== $outcome->get_status() ) {
+			return;
+		}
+
+		$data    = $outcome->get_data();
+		$message = $data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? '';
+		if ( ! is_string( $message ) || '' === trim( $message ) ) {
+			$message = WooPaymentsErrorMessages::get_generic_message();
+		}
+
+		wc_add_notice( $message, 'error', array( 'icon' => 'error' ) );
+	}
+
+	/**
 	 * Format a WooCommerce checkout result from an outcome.
 	 *
 	 * @param PaymentContext $context Payment context.
@@ -1640,7 +1661,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	private static function format_checkout_result( PaymentContext $context, WC_Order $order, PaymentOutcome $outcome ): array {
 		if ( PaymentOutcome::STATUS_FAILED === $outcome->get_status() ) {
 			return array(
-				'result'         => 'fail',
+				'result'         => 'failure',
 				'redirect'       => '',
 				'payment_method' => '',
 			);

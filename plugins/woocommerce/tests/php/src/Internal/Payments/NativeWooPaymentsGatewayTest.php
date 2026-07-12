@@ -24,6 +24,10 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPay
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
+use Automattic\WooCommerce\StoreApi\Exceptions\RouteException;
+use Automattic\WooCommerce\StoreApi\Legacy as StoreApiLegacy;
+use Automattic\WooCommerce\StoreApi\Payments\PaymentContext as StoreApiPaymentContext;
+use Automattic\WooCommerce\StoreApi\Payments\PaymentResult as StoreApiPaymentResult;
 use WC_Order;
 use WC_Payment_Token_CC;
 use WC_Unit_Test_Case;
@@ -1779,7 +1783,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$result = $gateway->process_payment( $order->get_id() );
 
-		$this->assertSame( 'fail', $result['result'] );
+		$this->assertSame( 'failure', $result['result'] );
 		$this->assertCount( 1, $session->get( WooPaymentsFailedTransactionRateLimiter::SESSION_KEY, array() ) );
 	}
 
@@ -1818,8 +1822,160 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$result = $gateway->process_payment( $order->get_id() );
 
-		$this->assertSame( 'fail', $result['result'] );
+		$this->assertSame( 'failure', $result['result'] );
 		$this->assertSame( array(), $session->get( WooPaymentsFailedTransactionRateLimiter::SESSION_KEY, array() ) );
+	}
+
+	/**
+	 * @testdox A failed provider checkout adds exactly one localized shopper notice without exposing raw diagnostics.
+	 */
+	public function test_process_payment_adds_one_localized_notice_for_failed_provider_outcome(): void {
+		wc_clear_notices();
+		$order   = $this->create_order();
+		$service = new RecordingPaymentProcessingService();
+		$session = $this->create_session();
+
+		$service->checkout_outcome = new PaymentOutcome(
+			PaymentOutcome::STATUS_FAILED,
+			'pi_declined',
+			'',
+			'',
+			'',
+			array(
+				PaymentOutcome::DATA_ERROR_CODE            => 'card_declined',
+				PaymentOutcome::DATA_ERROR_MESSAGE         => 'Provider diagnostic for request req_private.',
+				PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE => 'Error: Your card has insufficient funds.',
+			)
+		);
+
+		$sut = new NativeWooPaymentsGateway();
+		$sut->init(
+			$service,
+			new WooPaymentsProvider(),
+			null,
+			null,
+			null,
+			null,
+			null,
+			$this->create_fraud_prevention_service( false, $session ),
+			new WooPaymentsFailedTransactionRateLimiter( $session )
+		);
+
+		$result  = $sut->process_payment( $order->get_id() );
+		$notices = wc_get_notices( 'error' );
+
+		$this->assertSame( 'failure', $result['result'] );
+		$this->assertCount( 1, $notices );
+		$this->assertSame( 'Error: Your card has insufficient funds.', $notices[0]['notice'] );
+		$this->assertStringNotContainsString( 'req_private', $notices[0]['notice'] );
+	}
+
+	/**
+	 * @testdox Failed outcomes without shopper copy add one generic safe notice.
+	 */
+	public function test_process_payment_adds_one_generic_notice_for_failed_transport_outcome(): void {
+		wc_clear_notices();
+		$order   = $this->create_order();
+		$service = new RecordingPaymentProcessingService();
+		$session = $this->create_session();
+
+		$service->checkout_outcome = new PaymentOutcome(
+			PaymentOutcome::STATUS_FAILED,
+			'',
+			'',
+			'',
+			'',
+			array(
+				PaymentOutcome::DATA_ERROR_CODE    => 'wcpay_native_transport_error',
+				PaymentOutcome::DATA_ERROR_MESSAGE => 'Connection refused at private-provider-host:8443.',
+			)
+		);
+
+		$sut = new NativeWooPaymentsGateway();
+		$sut->init(
+			$service,
+			new WooPaymentsProvider(),
+			null,
+			null,
+			null,
+			null,
+			null,
+			$this->create_fraud_prevention_service( false, $session ),
+			new WooPaymentsFailedTransactionRateLimiter( $session )
+		);
+
+		$result  = $sut->process_payment( $order->get_id() );
+		$notices = wc_get_notices( 'error' );
+
+		$this->assertSame( 'failure', $result['result'] );
+		$this->assertCount( 1, $notices );
+		$this->assertSame(
+			"We're not able to process this request. Please refresh the page and try again.",
+			$notices[0]['notice']
+		);
+		$this->assertStringNotContainsString( 'private-provider-host', $notices[0]['notice'] );
+	}
+
+	/**
+	 * @testdox Store API legacy checkout converts a failed native provider notice to one safe route exception.
+	 */
+	public function test_store_api_legacy_checkout_surfaces_failed_provider_shopper_notice(): void {
+		wc_clear_notices();
+		$order   = $this->create_order();
+		$service = new RecordingPaymentProcessingService();
+		$session = $this->create_session();
+
+		$service->checkout_outcome = new PaymentOutcome(
+			PaymentOutcome::STATUS_FAILED,
+			'pi_declined',
+			'',
+			'',
+			'',
+			array(
+				PaymentOutcome::DATA_ERROR_CODE            => 'card_declined',
+				PaymentOutcome::DATA_ERROR_MESSAGE         => 'Provider diagnostic for request req_private.',
+				PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE => 'Error: Your card has insufficient funds.',
+			)
+		);
+
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init(
+			$service,
+			new WooPaymentsProvider(),
+			null,
+			null,
+			null,
+			null,
+			null,
+			$this->create_fraud_prevention_service( false, $session ),
+			new WooPaymentsFailedTransactionRateLimiter( $session )
+		);
+
+		$available_gateway_filter = static function ( array $gateways ) use ( $gateway ): array {
+			$gateways[ $gateway->id ] = $gateway;
+
+			return $gateways;
+		};
+		add_filter( 'woocommerce_available_payment_gateways', $available_gateway_filter );
+
+		$context = new StoreApiPaymentContext();
+		$context->set_order( $order );
+		$context->set_payment_method( $gateway->id );
+		$context->set_payment_data( array() );
+		$result = new StoreApiPaymentResult();
+
+		try {
+			( new StoreApiLegacy() )->process_legacy_payment( $context, $result );
+			$this->fail( 'A failed native provider outcome should surface its shopper notice through the Store API.' );
+		} catch ( RouteException $exception ) {
+			$this->assertSame( 'woocommerce_rest_payment_error', $exception->getErrorCode() );
+			$this->assertSame( 'Error: Your card has insufficient funds.', $exception->getMessage() );
+			$this->assertStringNotContainsString( 'req_private', $exception->getMessage() );
+		} finally {
+			remove_filter( 'woocommerce_available_payment_gateways', $available_gateway_filter );
+		}
+
+		$this->assertSame( 0, wc_notice_count( 'error' ) );
 	}
 
 	/**
@@ -2151,7 +2307,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$this->assertSame(
 			array(
-				'result'         => 'fail',
+				'result'         => 'failure',
 				'redirect'       => '',
 				'payment_method' => '',
 			),

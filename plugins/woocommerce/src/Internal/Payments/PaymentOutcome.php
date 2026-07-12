@@ -137,6 +137,13 @@ class PaymentOutcome {
 	public const DATA_ERROR_MESSAGE = 'error_message';
 
 	/**
+	 * Additional data key: safe shopper-facing error message.
+	 *
+	 * @var string
+	 */
+	public const DATA_SHOPPER_ERROR_MESSAGE = 'shopper_error_message';
+
+	/**
 	 * Additional data key: checkout redirect URL override.
 	 *
 	 * @var string
