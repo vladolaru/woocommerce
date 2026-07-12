@@ -237,19 +237,25 @@ class WooPaymentsOrderEffectApplier {
 		$intent_id   = isset( $result['id'] ) ? (string) $result['id'] : '';
 		$charge_id   = isset( $charge['id'] ) ? (string) $charge['id'] : '';
 		if ( 'succeeded' === $status ) {
-			$effect_data[ PaymentOutcome::DATA_NOTE ]      = $this->note_service->format_payment_success_note(
+			$note_candidates                                      = $this->note_service->format_payment_success_note_candidates(
 				$order,
 				$intent_id,
 				$charge_id,
 				WooPaymentsOrderEffects::balance_transaction_id( $charge['balance_transaction'] ?? null )
 			);
-			$effect_data[ PaymentOutcome::DATA_NOTE_TYPE ] = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS;
+			$effect_data[ PaymentOutcome::DATA_NOTE ]             = $note_candidates[0];
+			$effect_data[ PaymentOutcome::DATA_NOTE_TYPE ]        = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS;
+			$effect_data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] = $note_candidates;
 		} elseif ( in_array( $status, array( 'requires_capture', 'processing' ), true ) && '' !== $intent_id ) {
-			$effect_data[ PaymentOutcome::DATA_NOTE ]      = $this->note_service->format_payment_authorized_note( $order, $intent_id, $charge_id );
-			$effect_data[ PaymentOutcome::DATA_NOTE_TYPE ] = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_AUTHORIZED;
+			$note_candidates                                      = $this->note_service->format_payment_authorized_note_candidates( $order, $intent_id, $charge_id );
+			$effect_data[ PaymentOutcome::DATA_NOTE ]             = $note_candidates[0];
+			$effect_data[ PaymentOutcome::DATA_NOTE_TYPE ]        = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_AUTHORIZED;
+			$effect_data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] = $note_candidates;
 		} elseif ( in_array( $status, array( 'requires_action', 'requires_confirmation' ), true ) && '' !== $intent_id ) {
-			$effect_data[ PaymentOutcome::DATA_NOTE ]      = $this->note_service->format_payment_started_note( $order, $intent_id );
-			$effect_data[ PaymentOutcome::DATA_NOTE_TYPE ] = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_STARTED;
+			$note_candidates                                      = $this->note_service->format_payment_started_note_candidates( $order, $intent_id );
+			$effect_data[ PaymentOutcome::DATA_NOTE ]             = $note_candidates[0];
+			$effect_data[ PaymentOutcome::DATA_NOTE_TYPE ]        = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_STARTED;
+			$effect_data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] = $note_candidates;
 		}
 
 		return $effect_data;
@@ -273,20 +279,23 @@ class WooPaymentsOrderEffectApplier {
 				? array()
 				: $this->order_data_service->get_settlement_exchange_rate_order_meta( $order, $charge, $this->account_service->get_account_default_currency() );
 
+			$note_candidates = $this->note_service->format_capture_success_note_candidates(
+				$order,
+				$intent_id,
+				$charge_id,
+				WooPaymentsOrderEffects::balance_transaction_id( $charge['balance_transaction'] ?? null )
+			);
+
 			return array(
-				PaymentOutcome::DATA_META      => WooPaymentsOrderEffects::completed_capture_meta(
+				PaymentOutcome::DATA_META             => WooPaymentsOrderEffects::completed_capture_meta(
 					$result,
 					(string) $order->get_currency(),
 					$this->account_service->get_mode(),
 					$settlement_meta
 				),
-				PaymentOutcome::DATA_NOTE      => $this->note_service->format_capture_success_note(
-					$order,
-					$intent_id,
-					$charge_id,
-					WooPaymentsOrderEffects::balance_transaction_id( $charge['balance_transaction'] ?? null )
-				),
-				PaymentOutcome::DATA_NOTE_TYPE => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS,
+				PaymentOutcome::DATA_NOTE             => $note_candidates[0],
+				PaymentOutcome::DATA_NOTE_TYPE        => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS,
+				PaymentOutcome::DATA_NOTE_EQUIVALENTS => $note_candidates,
 			);
 		}
 
@@ -298,10 +307,13 @@ class WooPaymentsOrderEffectApplier {
 			? (string) $outcome->get_data()[ PaymentOutcome::DATA_ERROR_MESSAGE ]
 			: (string) ( $result['message'] ?? '' );
 
+		$note_candidates = $this->note_service->format_capture_failed_note_candidates( $order, $intent_id, $charge_id, $message );
+
 		return array(
-			PaymentOutcome::DATA_META      => WooPaymentsOrderEffects::failed_capture_meta(),
-			PaymentOutcome::DATA_NOTE      => $this->note_service->format_capture_failed_note( $order, $intent_id, $charge_id, $message ),
-			PaymentOutcome::DATA_NOTE_TYPE => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_FAILED,
+			PaymentOutcome::DATA_META             => WooPaymentsOrderEffects::failed_capture_meta(),
+			PaymentOutcome::DATA_NOTE             => $note_candidates[0],
+			PaymentOutcome::DATA_NOTE_TYPE        => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_FAILED,
+			PaymentOutcome::DATA_NOTE_EQUIVALENTS => $note_candidates,
 		);
 	}
 
@@ -318,14 +330,16 @@ class WooPaymentsOrderEffectApplier {
 			return array();
 		}
 
-		$charge    = WooPaymentsOrderEffects::latest_charge( $result );
-		$intent_id = '' !== $outcome->get_provider_payment_id() ? $outcome->get_provider_payment_id() : (string) ( $result['id'] ?? '' );
-		$charge_id = isset( $charge['id'] ) ? (string) $charge['id'] : (string) $order->get_meta( '_charge_id', true );
+		$charge          = WooPaymentsOrderEffects::latest_charge( $result );
+		$intent_id       = '' !== $outcome->get_provider_payment_id() ? $outcome->get_provider_payment_id() : (string) ( $result['id'] ?? '' );
+		$charge_id       = isset( $charge['id'] ) ? (string) $charge['id'] : (string) $order->get_meta( '_charge_id', true );
+		$note_candidates = $this->note_service->format_capture_cancelled_note_candidates( $intent_id, $charge_id );
 
 		return array(
-			PaymentOutcome::DATA_META_TO_DELETE => array( '_wcpay_transaction_fee', '_wcpay_net' ),
-			PaymentOutcome::DATA_NOTE           => $this->note_service->format_capture_cancelled_note( $intent_id, $charge_id ),
-			PaymentOutcome::DATA_NOTE_TYPE      => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_CANCELED,
+			PaymentOutcome::DATA_META_TO_DELETE   => array( '_wcpay_transaction_fee', '_wcpay_net' ),
+			PaymentOutcome::DATA_NOTE             => $note_candidates[0],
+			PaymentOutcome::DATA_NOTE_TYPE        => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_CANCELED,
+			PaymentOutcome::DATA_NOTE_EQUIVALENTS => $note_candidates,
 		);
 	}
 
@@ -736,7 +750,7 @@ class WooPaymentsOrderEffectApplier {
 	 */
 	private function recurring_token_save_failed_outcome( PaymentOutcome $outcome ): PaymentOutcome {
 		$data = $outcome->get_data();
-		unset( $data[ PaymentOutcome::DATA_NOTE ], $data[ PaymentOutcome::DATA_NOTE_TYPE ] );
+		unset( $data[ PaymentOutcome::DATA_NOTE ], $data[ PaymentOutcome::DATA_NOTE_TYPE ], $data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] );
 		$data[ PaymentOutcome::DATA_ERROR_CODE ]    = 'wcpay_recurring_token_save_failed';
 		$data[ PaymentOutcome::DATA_ERROR_MESSAGE ] = __(
 			'Unable to save payment method for subscription. Please try again or use a different payment method.',

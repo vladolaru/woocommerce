@@ -16,6 +16,10 @@ use Automattic\WooCommerce\Internal\Payments\ProviderContract;
 use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\ProviderPostLifecycleEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsHtmlUtils;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use RuntimeException;
 use WC_Order;
 use WC_Order_Refund;
@@ -1421,6 +1425,132 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( '', $order->get_meta( '_wcpay_transaction_fee', true ) );
 		$this->assertSame( '', $order->get_meta( '_wcpay_net', true ) );
 		$this->assertOrderHasNoteContaining( $order, 'Authorization cancellation success note.' );
+	}
+
+	/**
+	 * @testdox A German plugin-era cancellation note is not duplicated by the native cancellation lifecycle.
+	 */
+	public function test_cancel_deduplicates_german_plugin_note_through_native_effects(): void {
+		$translation_filter = static function ( string $translation, string $text, string $domain ): string {
+			if ( 'woocommerce-payments' !== $domain ) {
+				return $translation;
+			}
+
+			return 'Payment authorization was successfully <strong>cancelled</strong> (<a>%1$s</a>).' === $text
+				? 'Die Zahlungsautorisierung wurde erfolgreich <strong>storniert</strong> (<a>%1$s</a>).'
+				: $translation;
+		};
+		add_filter( 'gettext', $translation_filter, 10, 3 );
+		switch_to_locale( 'de_DE' );
+
+		try {
+			$order = $this->create_woopayments_order( '12.00' );
+			$order->set_status( 'on-hold' );
+			$order->update_meta_data( '_charge_id', 'ch_canceled_de' );
+			$order->update_meta_data( '_wcpay_transaction_fee', '0.65' );
+			$order->update_meta_data( '_wcpay_net', '11.35' );
+			$order->save();
+			$note_service    = wc_get_container()->get( WooPaymentsOrderNoteService::class );
+			$transaction_url = $note_service->transaction_url( 'pi_canceled_de', 'ch_canceled_de' );
+			$plugin_note     = sprintf(
+				WooPaymentsHtmlUtils::escape_interpolated_html(
+					/* translators: %1$s: transaction ID, %2$s: transaction URL. */
+					__( 'Payment authorization was successfully <strong>cancelled</strong> (<a>%1$s</a>).', 'woocommerce-payments' ), // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- The fixture emulates the legacy plugin catalog.
+					array(
+						'strong' => '<strong>',
+						'a'      => '<a href="%2$s" target="_blank" rel="noopener noreferrer">',
+					)
+				),
+				'pi_canceled_de',
+				$transaction_url
+			);
+			$order->add_order_note( $plugin_note );
+
+			$provider_outcome = new PaymentOutcome( PaymentOutcome::STATUS_CANCELED, 'pi_canceled_de' );
+			$effect_applier   = wc_get_container()->get( WooPaymentsOrderEffectApplier::class );
+			$provider         = new class( $provider_outcome, $effect_applier ) extends RecordingProvider implements ProviderOperationEffectApplier {
+				/**
+				 * WooPayments effect applier.
+				 *
+				 * @var WooPaymentsOrderEffectApplier
+				 */
+				private WooPaymentsOrderEffectApplier $effect_applier;
+
+				/**
+				 * Constructor.
+				 *
+				 * @param PaymentOutcome                $outcome        Provider outcome.
+				 * @param WooPaymentsOrderEffectApplier $effect_applier WooPayments effect applier.
+				 */
+				public function __construct( PaymentOutcome $outcome, WooPaymentsOrderEffectApplier $effect_applier ) {
+					parent::__construct( $outcome );
+					$this->effect_applier = $effect_applier;
+				}
+
+				/**
+				 * Apply the real WooPayments cancellation effect plan.
+				 *
+				 * @param PaymentContext $context   Payment context.
+				 * @param PaymentOutcome $outcome   Provider outcome.
+				 * @param string         $operation Operation name.
+				 * @return PaymentOutcome
+				 */
+				public function apply_operation_effects( PaymentContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome {
+					$this->assert_cancel_operation( $operation );
+
+					return $this->effect_applier->apply(
+						$context,
+						$outcome,
+						WooPaymentsOrderEffectPlan::for_cancel(
+							array(
+								'id'     => 'pi_canceled_de',
+								'status' => 'canceled',
+							)
+						)
+					);
+				}
+
+				/**
+				 * Guard the fixture against use outside cancellation.
+				 *
+				 * @param string $operation Operation name.
+				 */
+				private function assert_cancel_operation( string $operation ): void {
+					if ( 'cancel' !== $operation ) {
+						throw new RuntimeException( 'Unexpected provider operation in cancellation fixture.' );
+					}
+				}
+			};
+
+			$outcome = $this->sut->cancel( PaymentContext::for_cancel( $order, OrderPaymentStore::GATEWAY_ID ), $provider );
+			$order   = wc_get_order( $order->get_id() );
+
+			$this->assertInstanceOf( WC_Order::class, $order );
+			$matching_notes = array_values(
+				array_filter(
+					wc_get_order_notes(
+						array(
+							'order_id' => $order->get_id(),
+							'type'     => 'any',
+						)
+					),
+					static fn( object $note ): bool => str_contains( (string) $note->content, 'pi_canceled_de' )
+				)
+			);
+			$marker_key     = '_wc_native_payments_note_' . md5( 'pi_canceled_de|canceled|capture_canceled' );
+
+			$this->assertSame( PaymentOutcome::STATUS_CANCELED, $outcome->get_status() );
+			$this->assertSame( 'cancelled', $order->get_status() );
+			$this->assertSame( 'canceled', $order->get_meta( '_intention_status', true ) );
+			$this->assertSame( '', $order->get_meta( '_wcpay_transaction_fee', true ) );
+			$this->assertSame( '', $order->get_meta( '_wcpay_net', true ) );
+			$this->assertCount( 1, $matching_notes );
+			$this->assertSame( $plugin_note, $matching_notes[0]->content );
+			$this->assertSame( '', $order->get_meta( $marker_key, true ), 'A plugin-owned note must not acquire a native lifecycle marker.' );
+		} finally {
+			remove_filter( 'gettext', $translation_filter, 10 );
+			restore_current_locale();
+		}
 	}
 
 	/**

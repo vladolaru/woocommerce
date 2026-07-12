@@ -63,12 +63,30 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	private array $gettext_replacements = array();
 
 	/**
+	 * Test-only gettext replacements keyed by text domain and source text.
+	 *
+	 * @var array<string,array<string,string>>
+	 */
+	private array $gettext_domain_replacements = array();
+
+	/**
+	 * Original multi-currency option values restored after each test.
+	 *
+	 * @var array<string,mixed>
+	 */
+	private array $original_multi_currency_options = array();
+
+	/**
 	 * Set up test fixtures.
 	 */
 	public function setUp(): void {
 		parent::setUp();
-		$this->sut                   = wc_get_container()->get( WooPaymentsEventIngestor::class );
-		$this->last_refund_charge_id = 'ch_123';
+		$this->original_multi_currency_options = array(
+			'_wcpay_feature_customer_multi_currency'  => get_option( '_wcpay_feature_customer_multi_currency', null ),
+			'wcpay_multi_currency_enabled_currencies' => get_option( 'wcpay_multi_currency_enabled_currencies', null ),
+		);
+		$this->sut                             = wc_get_container()->get( WooPaymentsEventIngestor::class );
+		$this->last_refund_charge_id           = 'ch_123';
 	}
 
 	/**
@@ -83,12 +101,12 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		}
 		remove_filter( 'gettext', array( $this, 'translate_woocommerce_test_string' ), 10 );
 		restore_current_locale();
-		$this->email_class_filters  = array();
-		$this->gettext_replacements = array();
+		$this->email_class_filters         = array();
+		$this->gettext_replacements        = array();
+		$this->gettext_domain_replacements = array();
 		$this->reset_mailer_emails();
 		$this->delete_dispute_cache_options();
 		delete_option( 'wcpay_account_data' );
-		delete_option( 'wcpay_multi_currency_enabled_currencies' );
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		delete_option( 'wcpay_onboarding_test_mode' );
 		delete_option( '_wcpay_onboarding_stripe_connected' );
@@ -99,6 +117,14 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			delete_transient( 'wcpay_processed_event_' . md5( $event_id ) );
 			wp_cache_delete( 'wcpay_claimed_event_' . md5( $event_id ), 'woopayments_events' );
 		}
+		foreach ( $this->original_multi_currency_options as $option_name => $option_value ) {
+			if ( null === $option_value ) {
+				delete_option( $option_name );
+			} else {
+				update_option( $option_name, $option_value );
+			}
+		}
+		$this->original_multi_currency_options = array();
 		parent::tearDown();
 	}
 
@@ -1127,12 +1153,21 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	public function test_payment_intent_failed_adds_translated_failure_note(): void {
 		$this->install_woocommerce_test_translations(
 			array(
-				'Payment failed.' => 'Zahlung fehlgeschlagen.',
+				'A payment of %1$s <strong>failed</strong> using %2$s (<a>%3$s</a>).' => 'Eine Zahlung von %1$s ist mit %2$s <strong>fehlgeschlagen</strong> (<a>%3$s</a>).',
+				'With the following message: <code>%s</code>'                        => 'Mit der folgenden Meldung: <code>%s</code>',
 			)
 		);
 		switch_to_locale( 'de_DE' );
 
 		$order = $this->create_woopayments_order();
+		$order->update_meta_data( '_payment_method_id', 'pm_123' );
+		$order->save();
+		$note_service  = wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService::class );
+		$expected_note = sprintf(
+			'Eine Zahlung von %1$s ist mit WooPayments <strong>fehlgeschlagen</strong> (<a href="%2$s" target="_blank" rel="noopener noreferrer">pi_123</a>). Mit der folgenden Meldung: <code>Issuer unavailable.</code>',
+			wc_price( 10.00, array( 'currency' => $order->get_currency() ) ) . ' ' . $order->get_currency(),
+			$note_service->transaction_url( 'pi_123', 'ch_123' )
+		);
 
 		$this->sut->process(
 			$this->create_payment_intent_event(
@@ -1141,6 +1176,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 				array(
 					'status'             => 'requires_payment_method',
 					'last_payment_error' => array(
+						'message'        => 'Issuer unavailable.',
 						'payment_method' => array(
 							'id'   => 'pm_123',
 							'type' => 'card',
@@ -1153,7 +1189,129 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$order = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertOrderHasNote( $order, 'Zahlung fehlgeschlagen.' );
+		$this->assertOrderHasNote( $order, $expected_note );
+	}
+
+	/**
+	 * @testdox payment_intent.payment_failed adopts the exact German plugin-catalog note.
+	 */
+	public function test_payment_intent_failed_deduplicates_german_plugin_note(): void {
+		$this->install_test_translations_for_domain(
+			'woocommerce',
+			array(
+				'A payment of %1$s <strong>failed</strong> using %2$s (<a>%3$s</a>).' => 'Core-Zahlung %1$s ist mit %2$s <strong>fehlgeschlagen</strong> (<a>%3$s</a>).',
+				'With the following message: <code>%s</code>'                        => 'Core-Meldung: <code>%s</code>',
+			)
+		);
+		$this->install_test_translations_for_domain(
+			'woocommerce-payments',
+			array(
+				'A payment of %1$s <strong>failed</strong> using %2$s (<a>%3$s</a>).' => 'Plugin-Zahlung %1$s ist mit %2$s <strong>fehlgeschlagen</strong> (<a>%3$s</a>).',
+				'With the following message: <code>%s</code>'                        => 'Plugin-Meldung: <code>%s</code>',
+			)
+		);
+		switch_to_locale( 'de_DE' );
+		update_option( '_wcpay_feature_customer_multi_currency', '0' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+
+		$order = $this->create_woopayments_order();
+		$order->update_meta_data( '_payment_method_id', 'pm_standard_failure' );
+		$order->save();
+		$note_service = wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService::class );
+		$plugin_note  = sprintf(
+			'Plugin-Zahlung %1$s ist mit WooPayments <strong>fehlgeschlagen</strong> (<a href="%2$s" target="_blank" rel="noopener noreferrer">pi_standard_failure</a>). Plugin-Meldung: <code>Issuer unavailable.</code>',
+			wc_price( 10.00, array( 'currency' => $order->get_currency() ) ),
+			$note_service->transaction_url( 'pi_standard_failure', 'ch_standard_failure' )
+		);
+		$order->add_order_note( $plugin_note );
+
+		$this->sut->process(
+			$this->create_payment_intent_event(
+				'payment_intent.payment_failed',
+				$order,
+				array(
+					'id'                 => 'pi_standard_failure',
+					'status'             => 'requires_payment_method',
+					'charges'            => array( 'data' => array( array( 'id' => 'ch_standard_failure' ) ) ),
+					'last_payment_error' => array(
+						'message'        => 'Issuer unavailable.',
+						'payment_method' => array(
+							'id'   => 'pm_standard_failure',
+							'type' => 'card',
+						),
+					),
+				),
+				array( 'id' => 'evt_standard_failure' )
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'failed', $order->get_status() );
+		$this->assertSame( 'pi_standard_failure', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( 1, $this->count_order_notes_matching( $order, $plugin_note ) );
+		$this->assertOrderLacksNoteContaining( $order, array( 'Core-Zahlung' ) );
+		$this->assertSame( '', $order->get_meta( '_wc_native_payments_note_' . md5( 'pi_standard_failure|failed|payment_failed' ), true ) );
+	}
+
+	/**
+	 * @testdox payment_intent.payment_failed adopts the exact German plugin terminal note with a mapped suffix.
+	 */
+	public function test_terminal_payment_intent_failed_deduplicates_german_plugin_note(): void {
+		$this->install_test_translations_for_domain(
+			'woocommerce',
+			array(
+				'A terminal payment of %1$s <strong>failed</strong> using %2$s (<a>%3$s</a>)' => 'Core-Terminalzahlung %1$s ist mit %2$s <strong>fehlgeschlagen</strong> (<a>%3$s</a>)',
+				"The customer's account has insufficient funds to cover this payment."       => 'Core-Konto hat nicht genuegend Guthaben.',
+			)
+		);
+		$this->install_test_translations_for_domain(
+			'woocommerce-payments',
+			array(
+				'A terminal payment of %1$s <strong>failed</strong> using %2$s (<a>%3$s</a>)' => 'Plugin-Terminalzahlung %1$s ist mit %2$s <strong>fehlgeschlagen</strong> (<a>%3$s</a>)',
+				"The customer's account has insufficient funds to cover this payment."       => 'Plugin-Konto hat nicht genuegend Guthaben.',
+			)
+		);
+		switch_to_locale( 'de_DE' );
+
+		$order        = $this->create_woopayments_order();
+		$note_service = wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService::class );
+		$plugin_note  = sprintf(
+			'Plugin-Terminalzahlung %1$s ist mit WooPayments <strong>fehlgeschlagen</strong> (<a href="%2$s" target="_blank" rel="noopener noreferrer">pi_terminal_failure</a>) Plugin-Konto hat nicht genuegend Guthaben.',
+			wc_price( 10.00, array( 'currency' => $order->get_currency() ) ),
+			$note_service->transaction_url( '', 'ch_terminal_failure' )
+		);
+		$order->add_order_note( $plugin_note );
+
+		$this->sut->process(
+			$this->create_payment_intent_event(
+				'payment_intent.payment_failed',
+				$order,
+				array(
+					'id'                 => 'pi_terminal_failure',
+					'status'             => 'requires_payment_method',
+					'charges'            => array( 'data' => array( array( 'id' => 'ch_terminal_failure' ) ) ),
+					'last_payment_error' => array(
+						'code'           => 'insufficient_funds',
+						'payment_method' => array(
+							'id'   => 'pm_terminal_failure',
+							'type' => 'card_present',
+						),
+					),
+				),
+				array( 'id' => 'evt_terminal_failure' )
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'failed', $order->get_status() );
+		$this->assertSame( 'pi_terminal_failure', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( 1, $this->count_order_notes_matching( $order, $plugin_note ) );
+		$this->assertOrderLacksNoteContaining( $order, array( 'Core-Terminalzahlung' ) );
+		$this->assertSame( '', $order->get_meta( '_wc_native_payments_note_' . md5( 'pi_terminal_failure|failed|payment_failed' ), true ) );
 	}
 
 	/**
@@ -1273,14 +1431,20 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	public function test_charge_expired_adds_translated_authorization_expired_note(): void {
 		$this->install_woocommerce_test_translations(
 			array(
-				'Payment authorization expired.' => 'Zahlungsautorisierung abgelaufen.',
+				'Payment authorization has <strong>expired</strong> (<a>%1$s</a>).' => 'Die Zahlungsautorisierung ist <strong>abgelaufen</strong> (<a>%1$s</a>).',
 			)
 		);
 		switch_to_locale( 'de_DE' );
 
 		$order = $this->create_woopayments_order();
 		$order->update_meta_data( '_charge_id', 'ch_expired' );
+		$order->update_meta_data( '_intent_id', 'pi_expired_fallback' );
 		$order->save();
+		$note_service  = wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService::class );
+		$expected_note = sprintf(
+			'Die Zahlungsautorisierung ist <strong>abgelaufen</strong> (<a href="%1$s" target="_blank" rel="noopener noreferrer">pi_expired_fallback</a>).',
+			$note_service->transaction_url( 'pi_expired_fallback', 'ch_expired' )
+		);
 
 		$this->sut->process(
 			array(
@@ -1297,7 +1461,53 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$order = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertOrderHasNote( $order, 'Zahlungsautorisierung abgelaufen.' );
+		$this->assertOrderHasNote( $order, $expected_note );
+	}
+
+	/**
+	 * @testdox charge.expired adopts the exact German plugin-catalog note.
+	 */
+	public function test_charge_expired_deduplicates_german_plugin_note(): void {
+		$this->install_test_translations_for_domain(
+			'woocommerce',
+			array( 'Payment authorization has <strong>expired</strong> (<a>%1$s</a>).' => 'Core-Autorisierung ist <strong>abgelaufen</strong> (<a>%1$s</a>).' )
+		);
+		$this->install_test_translations_for_domain(
+			'woocommerce-payments',
+			array( 'Payment authorization has <strong>expired</strong> (<a>%1$s</a>).' => 'Plugin-Autorisierung ist <strong>abgelaufen</strong> (<a>%1$s</a>).' )
+		);
+		switch_to_locale( 'de_DE' );
+
+		$order = $this->create_woopayments_order();
+		$order->update_meta_data( '_charge_id', 'ch_expired_plugin_note' );
+		$order->save();
+		$note_service = wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService::class );
+		$plugin_note  = sprintf(
+			'Plugin-Autorisierung ist <strong>abgelaufen</strong> (<a href="%1$s" target="_blank" rel="noopener noreferrer">pi_expired_event</a>).',
+			$note_service->transaction_url( 'pi_expired_event', 'ch_expired_plugin_note' )
+		);
+		$order->add_order_note( $plugin_note );
+
+		$this->sut->process(
+			array(
+				'id'   => 'evt_expired_plugin_note',
+				'type' => 'charge.expired',
+				'data' => array(
+					'object' => array(
+						'id'             => 'ch_expired_plugin_note',
+						'payment_intent' => 'pi_expired_event',
+					),
+				),
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'failed', $order->get_status() );
+		$this->assertSame( 'ch_expired_plugin_note', $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( 1, $this->count_order_notes_matching( $order, $plugin_note ) );
+		$this->assertOrderLacksNoteContaining( $order, array( 'Core-Autorisierung' ) );
+		$this->assertSame( '', $order->get_meta( '_wc_native_payments_note_' . md5( 'ch_expired_plugin_note|capture_expired|capture_expired' ), true ) );
 	}
 
 	/**
@@ -3308,12 +3518,48 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Count order notes with exact content.
+	 *
+	 * @param WC_Order $order    Order object.
+	 * @param string   $expected Expected note content.
+	 * @return int
+	 */
+	private function count_order_notes_matching( WC_Order $order, string $expected ): int {
+		$count = 0;
+		$notes = wc_get_order_notes(
+			array(
+				'order_id' => $order->get_id(),
+				'type'     => 'any',
+			)
+		);
+
+		foreach ( $notes as $note ) {
+			if ( $expected === (string) $note->content ) {
+				++$count;
+			}
+		}
+
+		return $count;
+	}
+
+	/**
 	 * Install test-only WooCommerce translations.
 	 *
 	 * @param array<string,string> $replacements Source text to translated text.
 	 */
 	private function install_woocommerce_test_translations( array $replacements ): void {
 		$this->gettext_replacements = $replacements;
+		add_filter( 'gettext', array( $this, 'translate_woocommerce_test_string' ), 10, 3 );
+	}
+
+	/**
+	 * Install test-only translations for one text domain.
+	 *
+	 * @param string               $domain       Text domain.
+	 * @param array<string,string> $replacements Source text to translated text.
+	 */
+	private function install_test_translations_for_domain( string $domain, array $replacements ): void {
+		$this->gettext_domain_replacements[ $domain ] = $replacements;
 		add_filter( 'gettext', array( $this, 'translate_woocommerce_test_string' ), 10, 3 );
 	}
 
@@ -3326,6 +3572,10 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * @return string
 	 */
 	public function translate_woocommerce_test_string( string $translation, string $text, string $domain ): string {
+		if ( isset( $this->gettext_domain_replacements[ $domain ][ $text ] ) ) {
+			return $this->gettext_domain_replacements[ $domain ][ $text ];
+		}
+
 		if ( 'woocommerce' !== $domain ) {
 			return $translation;
 		}

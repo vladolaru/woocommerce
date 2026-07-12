@@ -60,6 +60,26 @@ class PaymentLifecycleEventTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Note equivalents are normalized to unique non-empty strings.
+	 */
+	public function test_note_equivalents_are_normalized(): void {
+		$event = new PaymentLifecycleEvent(
+			PaymentLifecycleEvent::STATUS_COMPLETED,
+			'pi_123',
+			array(),
+			array(),
+			'Core note.',
+			'payment_success',
+			array( 'Plugin note.', '', 'Plugin note.', 123, null, array( 'invalid' ) )
+		);
+
+		$this->assertTrue( method_exists( $event, 'get_note_equivalents' ), 'Lifecycle events should expose normalized exact note equivalents.' );
+		if ( method_exists( $event, 'get_note_equivalents' ) ) {
+			$this->assertSame( array( 'Plugin note.' ), $event->get_note_equivalents() );
+		}
+	}
+
+	/**
 	 * @testdox Meta deletes are normalized to string keys.
 	 */
 	public function test_meta_deletes_are_normalized_to_string_keys(): void {

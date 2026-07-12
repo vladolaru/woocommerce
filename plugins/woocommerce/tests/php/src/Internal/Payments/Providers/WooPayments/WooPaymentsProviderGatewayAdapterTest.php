@@ -2643,6 +2643,35 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
 		$this->assertSame( 'pi_captured', $outcome->get_provider_payment_id() );
 		$this->assertSame( 'key_capture', $gateway->last_idempotency_key );
+		$this->assertContains(
+			$outcome->get_data()[ PaymentOutcome::DATA_NOTE ],
+			$outcome->get_data()[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ]
+		);
+	}
+
+	/**
+	 * @testdox Legacy capture failures carry exact note equivalents with the diagnostic.
+	 */
+	public function test_capture_legacy_failure_carries_note_equivalents(): void {
+		$order   = $this->create_woopayments_order();
+		$gateway = new RecordingLegacyGateway(
+			array( 'result' => 'failure' ),
+			true,
+			array(
+				'status'  => 'requires_capture',
+				'id'      => 'pi_capture_failed',
+				'message' => 'Provider diagnostic.',
+			)
+		);
+		$sut     = $this->create_adapter( $gateway );
+
+		$outcome = $sut->capture( PaymentContext::for_capture( $order, OrderPaymentStore::GATEWAY_ID ), 'key_capture_failed' );
+
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertNotEmpty( $outcome->get_data()[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] );
+		foreach ( $outcome->get_data()[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] as $note_equivalent ) {
+			$this->assertStringEndsWith( ' Provider diagnostic.', $note_equivalent );
+		}
 	}
 
 	/**

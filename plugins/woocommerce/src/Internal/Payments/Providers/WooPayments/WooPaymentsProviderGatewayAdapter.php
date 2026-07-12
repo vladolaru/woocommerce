@@ -489,32 +489,38 @@ class WooPaymentsProviderGatewayAdapter {
 				? array()
 				: $this->order_data_service->get_settlement_exchange_rate_order_meta( $order, $charge, $this->account_service->get_account_default_currency() );
 
+			$note_candidates = $this->note_service->format_capture_success_note_candidates(
+				$order,
+				$intent_id,
+				$charge_id,
+				WooPaymentsOrderEffects::balance_transaction_id( $charge['balance_transaction'] ?? null )
+			);
+
 			return array(
-				PaymentOutcome::DATA_META      => WooPaymentsOrderEffects::completed_capture_meta(
+				PaymentOutcome::DATA_META             => WooPaymentsOrderEffects::completed_capture_meta(
 					$result,
 					(string) $order->get_currency(),
 					$this->account_service->get_mode(),
 					$settlement_meta
 				),
-				PaymentOutcome::DATA_NOTE      => $this->note_service->format_capture_success_note(
-					$order,
-					$intent_id,
-					$charge_id,
-					WooPaymentsOrderEffects::balance_transaction_id( $charge['balance_transaction'] ?? null )
-				),
-				PaymentOutcome::DATA_NOTE_TYPE => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS,
+				PaymentOutcome::DATA_NOTE             => $note_candidates[0],
+				PaymentOutcome::DATA_NOTE_TYPE        => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS,
+				PaymentOutcome::DATA_NOTE_EQUIVALENTS => $note_candidates,
 			);
 		}
 
+		$note_candidates = $this->note_service->format_capture_failed_note_candidates(
+			$order,
+			$intent_id,
+			$charge_id,
+			isset( $result['message'] ) ? (string) $result['message'] : ''
+		);
+
 		return array(
-			PaymentOutcome::DATA_META      => WooPaymentsOrderEffects::failed_capture_meta(),
-			PaymentOutcome::DATA_NOTE      => $this->note_service->format_capture_failed_note(
-				$order,
-				$intent_id,
-				$charge_id,
-				isset( $result['message'] ) ? (string) $result['message'] : ''
-			),
-			PaymentOutcome::DATA_NOTE_TYPE => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_FAILED,
+			PaymentOutcome::DATA_META             => WooPaymentsOrderEffects::failed_capture_meta(),
+			PaymentOutcome::DATA_NOTE             => $note_candidates[0],
+			PaymentOutcome::DATA_NOTE_TYPE        => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_FAILED,
+			PaymentOutcome::DATA_NOTE_EQUIVALENTS => $note_candidates,
 		);
 	}
 

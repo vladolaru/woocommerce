@@ -245,17 +245,7 @@ class WooPaymentsPersistenceProfile implements ProviderPersistenceProfile {
 	 * @since 11.0.0
 	 */
 	public function should_skip_note( WC_Order $order, PaymentLifecycleEvent $event, string $note ): bool {
-		$payment_reference = (string) $event->get_payment_reference();
-
-		if ( 0 === strpos( $note, '<strong>Fee details:</strong>' ) && $this->has_fee_details_note( $order ) ) {
-			return true;
-		}
-
-		return PaymentLifecycleEvent::STATUS_COMPLETED === $event->get_status()
-			&& 'Payment complete.' === $note
-			&& '' !== $payment_reference
-			&& $payment_reference === (string) $order->get_transaction_id()
-			&& $order->has_status( array( 'processing', 'completed' ) );
+		return false;
 	}
 
 	/**
@@ -288,28 +278,5 @@ class WooPaymentsPersistenceProfile implements ProviderPersistenceProfile {
 		}
 
 		return '';
-	}
-
-	/**
-	 * Tell whether the order already has a fee-details order note.
-	 *
-	 * @param WC_Order $order Order object.
-	 * @return bool
-	 */
-	private function has_fee_details_note( WC_Order $order ): bool {
-		$notes = wc_get_order_notes(
-			array(
-				'order_id' => $order->get_id(),
-				'type'     => 'any',
-			)
-		);
-
-		foreach ( $notes as $note ) {
-			if ( 0 === strpos( (string) $note->content, '<strong>Fee details:</strong>' ) ) {
-				return true;
-			}
-		}
-
-		return false;
 	}
 }

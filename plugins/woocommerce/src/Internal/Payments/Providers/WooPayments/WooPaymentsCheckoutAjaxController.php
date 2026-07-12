@@ -421,14 +421,17 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 			$plan
 		);
 
-		$data      = $outcome->get_data();
-		$note      = isset( $data[ PaymentOutcome::DATA_NOTE ] ) && is_string( $data[ PaymentOutcome::DATA_NOTE ] ) && '' !== $data[ PaymentOutcome::DATA_NOTE ]
+		$data             = $outcome->get_data();
+		$note             = isset( $data[ PaymentOutcome::DATA_NOTE ] ) && is_string( $data[ PaymentOutcome::DATA_NOTE ] ) && '' !== $data[ PaymentOutcome::DATA_NOTE ]
 			? $data[ PaymentOutcome::DATA_NOTE ]
 			: null;
-		$note_type = isset( $data[ PaymentOutcome::DATA_NOTE_TYPE ] ) && is_string( $data[ PaymentOutcome::DATA_NOTE_TYPE ] ) && '' !== $data[ PaymentOutcome::DATA_NOTE_TYPE ]
+		$note_type        = isset( $data[ PaymentOutcome::DATA_NOTE_TYPE ] ) && is_string( $data[ PaymentOutcome::DATA_NOTE_TYPE ] ) && '' !== $data[ PaymentOutcome::DATA_NOTE_TYPE ]
 			? $data[ PaymentOutcome::DATA_NOTE_TYPE ]
 			: null;
-		$profile   = new WooPaymentsPersistenceProfile();
+		$note_equivalents = isset( $data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] ) && is_array( $data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] )
+			? $data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ]
+			: array();
+		$profile          = new WooPaymentsPersistenceProfile();
 
 		return new PaymentLifecycleEvent(
 			$this->get_lifecycle_status( $outcome ),
@@ -436,7 +439,8 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 			$profile->get_outcome_meta( $outcome ),
 			array(),
 			$note,
-			$note_type
+			$note_type,
+			$note_equivalents
 		);
 	}
 

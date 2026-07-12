@@ -172,6 +172,13 @@ class PaymentLifecycleEvent {
 	private ?string $note_type;
 
 	/**
+	 * Exact equivalent renderings of the order note.
+	 *
+	 * @var string[]
+	 */
+	private array $note_equivalents;
+
+	/**
 	 * Constructor.
 	 *
 	 * @since 11.0.0
@@ -182,9 +189,10 @@ class PaymentLifecycleEvent {
 	 * @param array<int,string>   $meta_to_delete    Order meta keys to delete.
 	 * @param string|null         $note              Order note to add.
 	 * @param string|null         $note_type         Stable note type.
+	 * @param array<int,mixed>    $note_equivalents  Exact equivalent note renderings.
 	 * @throws InvalidArgumentException When an unknown status is supplied.
 	 */
-	public function __construct( string $status, ?string $payment_reference = null, array $meta_to_update = array(), array $meta_to_delete = array(), ?string $note = null, ?string $note_type = null ) {
+	public function __construct( string $status, ?string $payment_reference = null, array $meta_to_update = array(), array $meta_to_delete = array(), ?string $note = null, ?string $note_type = null, array $note_equivalents = array() ) {
 		if ( ! in_array( $status, $this->get_allowed_statuses(), true ) ) {
 			throw new InvalidArgumentException( esc_html( sprintf( 'Unknown payment lifecycle status: %s', $status ) ) );
 		}
@@ -195,6 +203,7 @@ class PaymentLifecycleEvent {
 		$this->meta_to_delete    = array_values( array_map( 'strval', $meta_to_delete ) );
 		$this->note              = $note;
 		$this->note_type         = null === $note_type || '' === $note_type ? null : $note_type;
+		$this->note_equivalents  = $this->normalize_note_equivalents( $note_equivalents );
 	}
 
 	/**
@@ -252,6 +261,17 @@ class PaymentLifecycleEvent {
 	}
 
 	/**
+	 * Get exact equivalent renderings of the order note.
+	 *
+	 * @return string[]
+	 *
+	 * @since 11.0.0
+	 */
+	public function get_note_equivalents(): array {
+		return $this->note_equivalents;
+	}
+
+	/**
 	 * Get supported lifecycle statuses.
 	 *
 	 * @return string[]
@@ -298,5 +318,25 @@ class PaymentLifecycleEvent {
 
 		$encoded = wp_json_encode( $value );
 		return false === $encoded ? '' : $encoded;
+	}
+
+	/**
+	 * Normalize exact equivalent note renderings.
+	 *
+	 * @param array<int,mixed> $note_equivalents Raw equivalent renderings.
+	 * @return string[]
+	 */
+	private function normalize_note_equivalents( array $note_equivalents ): array {
+		$normalized = array();
+
+		foreach ( $note_equivalents as $note_equivalent ) {
+			if ( ! is_string( $note_equivalent ) || '' === $note_equivalent || in_array( $note_equivalent, $normalized, true ) ) {
+				continue;
+			}
+
+			$normalized[] = $note_equivalent;
+		}
+
+		return $normalized;
 	}
 }

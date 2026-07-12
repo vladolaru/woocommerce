@@ -751,7 +751,8 @@ class PaymentProcessingService {
 					$meta,
 					array(),
 					$this->get_lifecycle_note( $outcome ),
-					$this->get_lifecycle_note_type( $outcome )
+					$this->get_lifecycle_note_type( $outcome ),
+					$this->get_lifecycle_note_equivalents( $outcome )
 				),
 				$provider->get_persistence_profile()
 			);
@@ -777,7 +778,8 @@ class PaymentProcessingService {
 				$this->get_lifecycle_meta( $outcome, $provider ),
 				$this->get_lifecycle_meta_to_delete( $outcome ),
 				$this->get_lifecycle_note( $outcome ),
-				$this->get_lifecycle_note_type( $outcome )
+				$this->get_lifecycle_note_type( $outcome ),
+				$this->get_lifecycle_note_equivalents( $outcome )
 			),
 			$provider->get_persistence_profile()
 		);
@@ -887,6 +889,26 @@ class PaymentProcessingService {
 		}
 
 		return null;
+	}
+
+	/**
+	 * Get exact equivalent order-note renderings from an outcome.
+	 *
+	 * @param PaymentOutcome $outcome Provider outcome.
+	 * @return string[]
+	 */
+	private function get_lifecycle_note_equivalents( PaymentOutcome $outcome ): array {
+		$data = $outcome->get_data();
+		if ( ! isset( $data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] ) || ! is_array( $data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] ) ) {
+			return array();
+		}
+
+		return array_values(
+			array_filter(
+				$data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ],
+				static fn( $note_equivalent ): bool => is_string( $note_equivalent ) && '' !== $note_equivalent
+			)
+		);
 	}
 
 	/**

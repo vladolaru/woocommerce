@@ -269,8 +269,8 @@ class WooPaymentsRefundEventHandler {
 	 * @param bool            $is_pending     Whether the provider refund is pending.
 	 */
 	private function add_note_and_metadata_for_created_refund( WC_Order $order, WC_Order_Refund $wc_refund, string $refund_id, string $balance_txn_id, bool $is_pending ): void {
-		$note = $this->get_created_refund_note( $order, $wc_refund, $refund_id, $is_pending );
-		$this->add_refund_order_note_once( $order, $note, $refund_id, $is_pending ? 'created_pending' : 'created_successful' );
+		$note_candidates = $this->get_created_refund_note_candidates( $order, $wc_refund, $refund_id, $is_pending );
+		$this->add_refund_order_note_once( $order, $note_candidates[0], $refund_id, $is_pending ? 'created_pending' : 'created_successful', $note_candidates );
 
 		$order->update_meta_data( '_wcpay_refund_status', $is_pending ? 'pending' : 'successful' );
 		$wc_refund->update_meta_data( '_wcpay_refund_id', $refund_id );
@@ -330,16 +330,16 @@ class WooPaymentsRefundEventHandler {
 	}
 
 	/**
-	 * Build a WooPayments-compatible created-refund note.
+	 * Build exact Core- and plugin-catalog renderings of a created-refund note.
 	 *
 	 * @param WC_Order        $order      Order object.
 	 * @param WC_Order_Refund $wc_refund  Refund object.
 	 * @param string          $refund_id  Provider refund ID.
 	 * @param bool            $is_pending Whether the provider refund is pending.
-	 * @return string
+	 * @return string[] Exact equivalent renderings, with the native Core rendering first.
 	 */
-	private function get_created_refund_note( WC_Order $order, WC_Order_Refund $wc_refund, string $refund_id, bool $is_pending ): string {
-		return wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_created_refund_note(
+	private function get_created_refund_note_candidates( WC_Order $order, WC_Order_Refund $wc_refund, string $refund_id, bool $is_pending ): array {
+		return wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_created_refund_note_candidates(
 			$order,
 			(float) $wc_refund->get_amount(),
 			$wc_refund->get_currency(),
@@ -606,12 +606,14 @@ class WooPaymentsRefundEventHandler {
 	 * @param string   $note      Note content.
 	 * @param string   $refund_id Provider refund ID.
 	 * @param string   $note_type Stable note type.
+	 * @param string[] $equivalent_notes Exact catalog renderings equivalent to the native note.
 	 */
-	private function add_refund_order_note_once( WC_Order $order, string $note, string $refund_id, string $note_type ): void {
+	private function add_refund_order_note_once( WC_Order $order, string $note, string $refund_id, string $note_type, array $equivalent_notes = array() ): void {
 		wc_get_container()->get( WooPaymentsOrderNoteService::class )->add_note_once(
 			$order,
 			$note,
-			'refund:' . $refund_id . ':' . $note_type
+			'refund:' . $refund_id . ':' . $note_type,
+			$equivalent_notes
 		);
 	}
 

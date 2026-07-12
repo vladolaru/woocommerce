@@ -102,6 +102,13 @@ class PaymentOutcome {
 	public const DATA_NOTE_TYPE = 'note_type';
 
 	/**
+	 * Additional data key: exact equivalent order-note renderings.
+	 *
+	 * @var string
+	 */
+	public const DATA_NOTE_EQUIVALENTS = 'note_equivalents';
+
+	/**
 	 * Additional data key: refund meta updates.
 	 *
 	 * @var string

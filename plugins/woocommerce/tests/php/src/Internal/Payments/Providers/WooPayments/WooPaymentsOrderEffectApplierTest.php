@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
+use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -207,6 +208,36 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'normal', $meta['_charge_risk_level'] );
 		$this->assertArrayNotHasKey( '_wcpay_transaction_fee', $meta );
 		$this->assertArrayNotHasKey( '_wcpay_net', $meta );
+		$this->assertSame( PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_AUTHORIZED, $applied_outcome->get_data()[ PaymentOutcome::DATA_NOTE_TYPE ] );
+		$this->assertContains(
+			$applied_outcome->get_data()[ PaymentOutcome::DATA_NOTE ],
+			$applied_outcome->get_data()[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ]
+		);
+	}
+
+	/**
+	 * @testdox Started PaymentIntent effects carry exact note equivalents.
+	 */
+	public function test_started_payment_intent_effects_carry_note_equivalents(): void {
+		$order   = $this->create_woopayments_order();
+		$outcome = new PaymentOutcome( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION, 'pi_started' );
+		$plan    = WooPaymentsOrderEffectPlan::for_payment_intent(
+			array(
+				'id'       => 'pi_started',
+				'status'   => 'requires_action',
+				'currency' => 'usd',
+			),
+			false
+		);
+
+		$result = $this->create_applier()->apply(
+			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID ),
+			$outcome,
+			$plan
+		);
+
+		$this->assertSame( PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_STARTED, $result->get_data()[ PaymentOutcome::DATA_NOTE_TYPE ] );
+		$this->assertContains( $result->get_data()[ PaymentOutcome::DATA_NOTE ], $result->get_data()[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] );
 	}
 
 	/**
@@ -246,6 +277,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'txn_neutral', $meta['_wcpay_payment_transaction_id'] );
 		$this->assertStringContainsString( 'successfully charged', $data[ PaymentOutcome::DATA_NOTE ] );
 		$this->assertSame( 'payment_success', $data[ PaymentOutcome::DATA_NOTE_TYPE ] );
+		$this->assertContains( $data[ PaymentOutcome::DATA_NOTE ], $data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] );
 	}
 
 	/**
@@ -493,9 +525,10 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			'pm_paid',
 			'cus_paid',
 			array(
-				PaymentOutcome::DATA_META      => array( '_charge_id' => 'ch_paid' ),
-				PaymentOutcome::DATA_NOTE      => 'Successful payment note.',
-				PaymentOutcome::DATA_NOTE_TYPE => 'payment_success',
+				PaymentOutcome::DATA_META             => array( '_charge_id' => 'ch_paid' ),
+				PaymentOutcome::DATA_NOTE             => 'Successful payment note.',
+				PaymentOutcome::DATA_NOTE_TYPE        => 'payment_success',
+				PaymentOutcome::DATA_NOTE_EQUIVALENTS => array( 'Translated successful payment note.' ),
 			)
 		);
 		$plan    = WooPaymentsOrderEffectPlan::for_payment_intent(
@@ -521,6 +554,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'wcpay_recurring_token_save_failed', $result->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] );
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE, $result->get_data() );
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE_TYPE, $result->get_data() );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE_EQUIVALENTS, $result->get_data() );
 	}
 
 	/**
@@ -565,12 +599,12 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 				}
 			);
 		$note_service = $this->getMockBuilder( WooPaymentsOrderNoteService::class )
-			->onlyMethods( array( 'format_payment_success_note' ) )
+			->onlyMethods( array( 'format_payment_success_note_candidates' ) )
 			->getMock();
 		$note_service->expects( $this->once() )
-			->method( 'format_payment_success_note' )
+			->method( 'format_payment_success_note_candidates' )
 			->willReturnCallback(
-				static function () use ( &$sequence ): string {
+				static function () use ( &$sequence ): array {
 					$sequence[] = 'render';
 					throw new RuntimeException( 'Note rendering failed.' );
 				}
@@ -740,6 +774,43 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$this->assertSame( '48.25', $result->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_net'] );
 		$this->assertSame( 'live', $result->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_mode'] );
 		$this->assertSame( '1.33127', $result->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_multi_currency_stripe_exchange_rate'] );
+		$this->assertSame( PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS, $result->get_data()[ PaymentOutcome::DATA_NOTE_TYPE ] );
+		$this->assertContains( $result->get_data()[ PaymentOutcome::DATA_NOTE ], $result->get_data()[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] );
+	}
+
+	/**
+	 * @testdox Failed capture effects carry exact candidates with the structured diagnostic.
+	 */
+	public function test_failed_capture_effects_carry_note_equivalents(): void {
+		$order = $this->create_woopayments_order();
+		$order->update_meta_data( '_charge_id', 'ch_capture_failed' );
+		$order->save();
+		$outcome = new PaymentOutcome(
+			PaymentOutcome::STATUS_FAILED,
+			'pi_capture_failed',
+			'',
+			'',
+			'',
+			array( PaymentOutcome::DATA_ERROR_MESSAGE => 'Provider diagnostic.' )
+		);
+		$plan    = WooPaymentsOrderEffectPlan::for_capture(
+			array(
+				'id'     => 'pi_capture_failed',
+				'status' => 'requires_capture',
+			)
+		);
+
+		$result = $this->create_applier()->apply(
+			PaymentContext::for_capture( $order, OrderPaymentStore::GATEWAY_ID ),
+			$outcome,
+			$plan
+		);
+
+		$this->assertSame( PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_FAILED, $result->get_data()[ PaymentOutcome::DATA_NOTE_TYPE ] );
+		$this->assertNotEmpty( $result->get_data()[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] );
+		foreach ( $result->get_data()[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] as $note_equivalent ) {
+			$this->assertStringEndsWith( ' Provider diagnostic.', $note_equivalent );
+		}
 	}
 
 	/**
@@ -768,6 +839,12 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			$result->get_data()[ PaymentOutcome::DATA_NOTE ]
 		);
 		$this->assertSame( 'capture_canceled', $result->get_data()[ PaymentOutcome::DATA_NOTE_TYPE ] );
+		$this->assertArrayHasKey( PaymentOutcome::DATA_NOTE_EQUIVALENTS, $result->get_data() );
+		$this->assertContains(
+			$result->get_data()[ PaymentOutcome::DATA_NOTE ],
+			$result->get_data()[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ],
+			'The finite candidate set should include the current native rendering.'
+		);
 		$this->assertSame( array( '_wcpay_transaction_fee', '_wcpay_net' ), $result->get_data()[ PaymentOutcome::DATA_META_TO_DELETE ] );
 	}
 

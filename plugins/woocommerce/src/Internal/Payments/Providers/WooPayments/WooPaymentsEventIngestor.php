@@ -643,7 +643,8 @@ class WooPaymentsEventIngestor {
 					$meta,
 					array(),
 					$completed_note['note'],
-					$completed_note['type']
+					$completed_note['type'],
+					$completed_note['equivalents']
 				);
 
 			case 'payment_intent.payment_failed':
@@ -651,18 +652,28 @@ class WooPaymentsEventIngestor {
 					return null;
 				}
 
+				$last_payment_error  = isset( $event_object['last_payment_error'] ) && is_array( $event_object['last_payment_error'] ) ? $event_object['last_payment_error'] : array();
+				$payment_method      = isset( $last_payment_error['payment_method'] ) && is_array( $last_payment_error['payment_method'] ) ? $last_payment_error['payment_method'] : array();
+				$payment_method_type = isset( $payment_method['type'] ) && is_string( $payment_method['type'] ) ? $payment_method['type'] : '';
+				$intent_id           = $this->get_object_id( $event_object );
+				$charge_id           = $this->get_charge_id_from_intent( $event_object );
+				$note_candidates     = 'card_present' === $payment_method_type
+					? $this->get_order_note_service()->format_terminal_payment_failed_note_candidates( $order, $intent_id, $charge_id, $last_payment_error )
+					: $this->get_order_note_service()->format_payment_failed_note_candidates( $order, $intent_id, $charge_id, $last_payment_error );
+
 				return new PaymentLifecycleEvent(
 					PaymentLifecycleEvent::STATUS_FAILED,
-					$this->get_object_id( $event_object ),
+					$intent_id,
 					$this->without_empty_values(
 						array(
-							'_intent_id'        => $this->get_object_id( $event_object ),
+							'_intent_id'        => $intent_id,
 							'_intention_status' => isset( $event_object['status'] ) ? (string) $event_object['status'] : '',
 						)
 					),
 					array(),
-					__( 'Payment failed.', 'woocommerce' ),
-					PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_FAILED
+					$note_candidates[0],
+					PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_FAILED,
+					$note_candidates
 				);
 
 			case 'payment_intent.canceled':
@@ -670,17 +681,24 @@ class WooPaymentsEventIngestor {
 				return null;
 
 			case 'charge.expired':
+				$charge_id       = $this->get_object_id( $event_object );
+				$intent_id       = isset( $event_object['payment_intent'] ) && is_string( $event_object['payment_intent'] )
+					? $event_object['payment_intent']
+					: (string) $order->get_meta( '_intent_id', true );
+				$note_candidates = $this->get_order_note_service()->format_capture_expired_note_candidates( $intent_id, $charge_id );
+
 				return new PaymentLifecycleEvent(
 					PaymentLifecycleEvent::STATUS_CAPTURE_EXPIRED,
-					$this->get_object_id( $event_object ),
+					$charge_id,
 					$this->without_empty_values(
 						array(
-							'_charge_id' => $this->get_object_id( $event_object ),
+							'_charge_id' => $charge_id,
 						)
 					),
 					array(),
-					__( 'Payment authorization expired.', 'woocommerce' ),
-					PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_EXPIRED
+					$note_candidates[0],
+					PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_EXPIRED,
+					$note_candidates
 				);
 		}
 
@@ -696,7 +714,7 @@ class WooPaymentsEventIngestor {
 	private function should_process_payment_failed_event( array $event_object ): bool {
 		$last_payment_error  = $event_object['last_payment_error'] ?? null;
 		$payment_method      = is_array( $last_payment_error ) ? ( $last_payment_error['payment_method'] ?? null ) : null;
-		$payment_method_type = is_array( $payment_method ) && isset( $payment_method['type'] ) ? (string) $payment_method['type'] : '';
+		$payment_method_type = is_array( $payment_method ) && isset( $payment_method['type'] ) && is_string( $payment_method['type'] ) ? $payment_method['type'] : '';
 
 		return in_array(
 			$payment_method_type,
@@ -775,19 +793,21 @@ class WooPaymentsEventIngestor {
 	 *
 	 * @param array<string,mixed> $event_object PaymentIntent object.
 	 * @param WC_Order            $order        Order object.
-	 * @return array{note:string,type:string}
+	 * @return array{note:string,type:string,equivalents:string[]}
 	 */
 	private function get_completed_payment_note_data_from_intent( array $event_object, WC_Order $order ): array {
-		$charge = $this->get_first_charge_from_intent( $event_object );
+		$charge          = $this->get_first_charge_from_intent( $event_object );
+		$note_candidates = $this->get_order_note_service()->format_payment_success_note_candidates(
+			$order,
+			$this->get_object_id( $event_object ),
+			$this->get_charge_id_from_intent( $event_object ),
+			WooPaymentsOrderEffects::balance_transaction_id( $charge['balance_transaction'] ?? null )
+		);
 
 		return array(
-			'note' => $this->get_order_note_service()->format_payment_success_note(
-				$order,
-				$this->get_object_id( $event_object ),
-				$this->get_charge_id_from_intent( $event_object ),
-				WooPaymentsOrderEffects::balance_transaction_id( $charge['balance_transaction'] ?? null )
-			),
-			'type' => PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS,
+			'note'        => $note_candidates[0],
+			'type'        => PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS,
+			'equivalents' => $note_candidates,
 		);
 	}
 

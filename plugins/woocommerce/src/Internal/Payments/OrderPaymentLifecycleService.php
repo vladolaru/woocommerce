@@ -280,7 +280,8 @@ class OrderPaymentLifecycleService {
 		$payment_reference = (string) $event->get_payment_reference();
 		$note_type         = $event->get_note_type();
 
-		if ( null !== $note_type && $this->has_rendered_note( $order, $note ) ) {
+		$note_candidates = array_values( array_unique( array_merge( array( $note ), $event->get_note_equivalents() ) ) );
+		if ( null !== $note_type && $this->has_rendered_note( $order, $note_candidates ) ) {
 			return true;
 		}
 
@@ -294,11 +295,11 @@ class OrderPaymentLifecycleService {
 	/**
 	 * Tell whether the order already has the rendered note content.
 	 *
-	 * @param WC_Order $order Order object.
-	 * @param string   $note  Note content.
+	 * @param WC_Order $order           Order object.
+	 * @param string[] $note_candidates Exact equivalent note renderings.
 	 * @return bool
 	 */
-	private function has_rendered_note( WC_Order $order, string $note ): bool {
+	private function has_rendered_note( WC_Order $order, array $note_candidates ): bool {
 		$notes = wc_get_order_notes(
 			array(
 				'order_id' => $order->get_id(),
@@ -307,7 +308,7 @@ class OrderPaymentLifecycleService {
 		);
 
 		foreach ( $notes as $order_note ) {
-			if ( $note === (string) $order_note->content ) {
+			if ( in_array( (string) $order_note->content, $note_candidates, true ) ) {
 				return true;
 			}
 		}
