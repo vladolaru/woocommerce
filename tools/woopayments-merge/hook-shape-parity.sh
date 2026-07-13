@@ -239,6 +239,39 @@ def class_sets(shape):
     return classes
 
 
+def is_sequential_list_shape(shape):
+    keys = shape.get("keys")
+    if shape.get("type") != "array" or not isinstance(keys, list):
+        return False
+    return set(keys) == {str(index) for index in range(len(keys))}
+
+
+def list_value_shapes(shape):
+    values = shape.get("values")
+    if isinstance(values, list):
+        return values
+    if isinstance(values, dict) and all(str(key).isdigit() for key in values):
+        return [values[key] for key in sorted(values, key=lambda key: int(key))]
+    return []
+
+
+def compare_string_list_shape(label, ref_shape, target_shape, failures):
+    for role, shape in (("reference", ref_shape), ("target", target_shape)):
+        if not is_sequential_list_shape(shape):
+            failures.append(f"{label}: {role} must be a sequential list<string>")
+            continue
+
+        keys = shape.get("keys", [])
+        values = list_value_shapes(shape)
+        if len(values) != min(len(keys), 20):
+            failures.append(f"{label}: {role} list element shapes are incomplete")
+            continue
+
+        for index, value_shape in enumerate(values):
+            if not isinstance(value_shape, dict) or value_shape.get("type") != "string":
+                failures.append(f"{label}.{index}: {role} list element must be string")
+
+
 def compare_shape(label, ref_shape, target_shape, failures):
     ref_type = ref_shape.get("type")
     target_type = target_shape.get("type")
@@ -275,6 +308,9 @@ def compare_shape(label, ref_shape, target_shape, failures):
 
 
 def compare_arg(hook, index, ref_arg, target_arg, failures):
+    if hook == "wcpay_upe_available_payment_methods" and index == 0:
+        compare_string_list_shape(f"{hook} arg[{index}]", ref_arg, target_arg, failures)
+        return
     compare_shape(f"{hook} arg[{index}]", ref_arg, target_arg, failures)
 
 

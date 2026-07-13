@@ -700,6 +700,45 @@ def base_hooks() -> dict[str, dict]:
     return hooks
 
 
+def list_shape(*element_types: str) -> dict[str, object]:
+    return {
+        "type": "array",
+        "keys": [str(index) for index in range(len(element_types))],
+        "values": [{"type": element_type} for element_type in element_types],
+    }
+
+
+def run_upe_payment_method_shape_gate(
+    ref_shape: dict[str, object], target_shape: dict[str, object]
+) -> tuple[subprocess.CompletedProcess[str], dict[str, object]]:
+    with tempfile.TemporaryDirectory(prefix="hook-shape-parity-test-") as tmp:
+        tmp_path = Path(tmp)
+        ref_state = tmp_path / "ref.json"
+        target_state = tmp_path / "target.json"
+        out_dir = tmp_path / "evidence"
+        ref_hooks = base_hooks()
+        target_hooks = base_hooks()
+        ref_hooks["wcpay_upe_available_payment_methods"]["args"][0] = ref_shape
+        target_hooks["wcpay_upe_available_payment_methods"]["args"][0] = target_shape
+
+        write_snapshot(ref_state, role="reference", hooks=ref_hooks)
+        write_snapshot(target_state, role="target", hooks=target_hooks)
+
+        result = run_gate(
+            "--ref-state",
+            str(ref_state),
+            "--target-state",
+            str(target_state),
+            "--out-dir",
+            str(out_dir),
+        )
+        rollup = json.loads(
+            (out_dir / "hook-shape-parity.json").read_text(encoding="utf-8")
+        )
+
+    return result, rollup
+
+
 def test_usage_requires_ref_target_or_snapshot_files() -> None:
     result = run_gate()
 
@@ -759,6 +798,46 @@ def test_gate_passes_matching_snapshot_files() -> None:
         rollup = json.loads((out_dir / "hook-shape-parity.json").read_text(encoding="utf-8"))
         assert rollup["status"] == "pass"
         assert rollup["failures"] == []
+
+
+def test_upe_payment_method_list_allows_catalog_cardinality_drift() -> None:
+    result, rollup = run_upe_payment_method_shape_gate(
+        list_shape(*(["string"] * 20)),
+        list_shape(*(["string"] * 18)),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert rollup["status"] == "pass"
+    assert rollup["failures"] == []
+
+
+def test_upe_payment_method_list_rejects_associative_array() -> None:
+    result, rollup = run_upe_payment_method_shape_gate(
+        list_shape("string", "string"),
+        {
+            "type": "array",
+            "keys": ["bancontact", "card"],
+            "values": {
+                "bancontact": {"type": "string"},
+                "card": {"type": "string"},
+            },
+        },
+    )
+
+    assert result.returncode == 1
+    assert rollup["status"] == "fail"
+    assert "wcpay_upe_available_payment_methods arg[0]" in result.stderr
+
+
+def test_upe_payment_method_list_rejects_non_string_elements() -> None:
+    result, rollup = run_upe_payment_method_shape_gate(
+        list_shape("string", "string"),
+        list_shape("string", "int"),
+    )
+
+    assert result.returncode == 1
+    assert rollup["status"] == "fail"
+    assert "wcpay_upe_available_payment_methods arg[0].1" in result.stderr
 
 
 def test_gate_blocks_capture_errors_without_reporting_target_gaps() -> None:
