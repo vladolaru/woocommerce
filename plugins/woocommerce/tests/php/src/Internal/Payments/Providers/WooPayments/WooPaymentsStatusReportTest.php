@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStatusReport;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWebhookReliabilityService;
 use WC_Unit_Test_Case;
@@ -28,6 +29,15 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	 * @var WooPaymentsStatusReport|null
 	 */
 	private $sut = null;
+
+	/**
+	 * Set up test fixtures.
+	 */
+	public function setUp(): void {
+		parent::setUp();
+
+		$this->reset_cutover_preflight_memo();
+	}
 
 	/**
 	 * Tear down test fixtures.
@@ -141,6 +151,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	 * @testdox WooCommerce debug tools include account, order, styles, and fee-remediation actions.
 	 */
 	public function test_debug_tools_include_support_callbacks(): void {
+		$this->fake_plugin( false );
 		$tools = $this->get_sut()->add_debug_tools( array() );
 
 		foreach (
@@ -153,8 +164,39 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 			) as $tool_id
 		) {
 			$this->assertArrayHasKey( $tool_id, $tools );
+			$this->assertArrayNotHasKey( 'native-' . $tool_id, $tools );
 			$this->assertArrayHasKey( 'callback', $tools[ $tool_id ] );
 			$this->assertIsCallable( $tools[ $tool_id ]['callback'] );
+		}
+	}
+
+	/**
+	 * @testdox Native debug tools use distinct keys while the WooPayments plugin is active.
+	 */
+	public function test_debug_tools_use_native_prefix_without_overwriting_plugin_tools_during_coexistence(): void {
+		$this->fake_plugin( true );
+		$tool_ids     = array(
+			'clear_wcpay_account_cache',
+			'delete_wcpay_test_orders',
+			'clear_wcpay_styles_cache',
+			'remediate_canceled_auth_fees_dry_run',
+			'remediate_canceled_auth_fees',
+		);
+		$plugin_tools = array();
+
+		foreach ( $tool_ids as $tool_id ) {
+			$plugin_tools[ $tool_id ] = array(
+				'name'     => 'Plugin tool',
+				'callback' => '__return_null',
+			);
+		}
+
+		$tools = $this->get_sut()->add_debug_tools( $plugin_tools );
+
+		foreach ( $tool_ids as $tool_id ) {
+			$this->assertSame( $plugin_tools[ $tool_id ], $tools[ $tool_id ] );
+			$this->assertArrayHasKey( 'native-' . $tool_id, $tools );
+			$this->assertIsCallable( $tools[ 'native-' . $tool_id ]['callback'] );
 		}
 	}
 
@@ -232,6 +274,16 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		remove_filter( 'debug_information', array( $sut, 'add_site_health_debug_info' ) );
 		remove_filter( 'site_status_tests', array( $sut, 'add_site_status_tests' ) );
 		remove_action( 'wp_ajax_health-check-woocommerce-woopayments-native-cutover', array( $sut, 'run_cutover_site_health_ajax_test' ) );
+	}
+
+	/**
+	 * Reset request-local cutover state between PHPUnit test methods.
+	 */
+	private function reset_cutover_preflight_memo(): void {
+		$controller = wc_get_container()->get( WooPaymentsCutoverController::class );
+		$property   = new \ReflectionProperty( $controller, 'preflight_memo' );
+		$property->setAccessible( true );
+		$property->setValue( $controller, array() );
 	}
 
 	/**

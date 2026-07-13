@@ -368,44 +368,51 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 * @return array<string,array<string,mixed>>
 	 */
 	public function add_debug_tools( array $tools ): array {
-		return array_merge(
-			$tools,
-			array(
-				'clear_wcpay_account_cache'            => array(
-					'name'     => __( 'Clear WooPayments account cache', 'woocommerce' ),
-					'button'   => __( 'Clear', 'woocommerce' ),
-					'desc'     => __( 'This tool clears the cached account values used by WooPayments.', 'woocommerce' ),
-					'callback' => array( $this, 'clear_account_cache' ),
-				),
-				'delete_wcpay_test_orders'             => array(
-					'name'     => __( 'Delete WooPayments test orders', 'woocommerce' ),
-					'button'   => __( 'Delete', 'woocommerce' ),
-					'desc'     => __( 'This tool permanently deletes test mode orders placed through WooPayments. Orders placed through other gateways are not affected.', 'woocommerce' ),
-					'callback' => array( $this, 'delete_test_orders' ),
-				),
-				'clear_wcpay_styles_cache'             => array(
-					'name'     => __( 'Clear WooPayments calculated styles', 'woocommerce' ),
-					'button'   => __( 'Clear', 'woocommerce' ),
-					'desc'     => __( 'This tool clears the cached styles used by WooPayments checkout elements.', 'woocommerce' ),
-					'callback' => array( $this, 'clear_styles_cache' ),
-				),
-				'remediate_canceled_auth_fees_dry_run' => array(
-					'name'     => __( 'Preview canceled authorization fix', 'woocommerce' ),
-					'button'   => $this->get_dry_run_button_text(),
-					'desc'     => __( 'This tool previews which orders would be affected by the canceled authorization fix without changing data.', 'woocommerce' ),
-					'callback' => array( $this, 'schedule_canceled_auth_dry_run' ),
-					'disabled' => $this->is_remediation_running_or_complete(),
-				),
-				'remediate_canceled_auth_fees'         => array(
-					'name'     => __( 'Fix canceled authorization analytics', 'woocommerce' ),
-					'button'   => $this->get_remediation_button_text(),
-					'desc'     => $this->get_remediation_description(),
-					'confirm'  => __( 'This will update order metadata and delete incorrect refund records for affected orders. Make sure you have a recent backup before continuing.', 'woocommerce' ),
-					'callback' => array( $this, 'schedule_canceled_auth_remediation' ),
-					'disabled' => $this->is_remediation_running_or_complete(),
-				),
-			)
+		$native_tools = array(
+			'clear_wcpay_account_cache'            => array(
+				'name'     => __( 'Clear WooPayments account cache', 'woocommerce' ),
+				'button'   => __( 'Clear', 'woocommerce' ),
+				'desc'     => __( 'This tool clears the cached account values used by WooPayments.', 'woocommerce' ),
+				'callback' => array( $this, 'clear_account_cache' ),
+			),
+			'delete_wcpay_test_orders'             => array(
+				'name'     => __( 'Delete WooPayments test orders', 'woocommerce' ),
+				'button'   => __( 'Delete', 'woocommerce' ),
+				'desc'     => __( 'This tool permanently deletes test mode orders placed through WooPayments. Orders placed through other gateways are not affected.', 'woocommerce' ),
+				'callback' => array( $this, 'delete_test_orders' ),
+			),
+			'clear_wcpay_styles_cache'             => array(
+				'name'     => __( 'Clear WooPayments calculated styles', 'woocommerce' ),
+				'button'   => __( 'Clear', 'woocommerce' ),
+				'desc'     => __( 'This tool clears the cached styles used by WooPayments checkout elements.', 'woocommerce' ),
+				'callback' => array( $this, 'clear_styles_cache' ),
+			),
+			'remediate_canceled_auth_fees_dry_run' => array(
+				'name'     => __( 'Preview canceled authorization fix', 'woocommerce' ),
+				'button'   => $this->get_dry_run_button_text(),
+				'desc'     => __( 'This tool previews which orders would be affected by the canceled authorization fix without changing data.', 'woocommerce' ),
+				'callback' => array( $this, 'schedule_canceled_auth_dry_run' ),
+				'disabled' => $this->is_remediation_running_or_complete(),
+			),
+			'remediate_canceled_auth_fees'         => array(
+				'name'     => __( 'Fix canceled authorization analytics', 'woocommerce' ),
+				'button'   => $this->get_remediation_button_text(),
+				'desc'     => $this->get_remediation_description(),
+				'confirm'  => __( 'This will update order metadata and delete incorrect refund records for affected orders. Make sure you have a recent backup before continuing.', 'woocommerce' ),
+				'callback' => array( $this, 'schedule_canceled_auth_remediation' ),
+				'disabled' => $this->is_remediation_running_or_complete(),
+			),
 		);
+
+		if ( $this->arbiter->is_plugin_runtime_active() ) {
+			$namespaced_tools = array();
+			foreach ( $native_tools as $tool_id => $tool ) {
+				$namespaced_tools[ 'native-' . $tool_id ] = $tool;
+			}
+			$native_tools = $namespaced_tools;
+		}
+
+		return array_merge( $tools, $native_tools );
 	}
 
 	/**
