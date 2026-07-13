@@ -4,6 +4,8 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsGatewayRegistry;
+use Automattic\WooCommerce\Internal\Payments\PaymentGatewayProviderContract;
+use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use WC_Payment_Gateway;
 use WC_Unit_Test_Case;
 
@@ -78,6 +80,21 @@ class NativePaymentsGatewayRegistryTest extends WC_Unit_Test_Case {
 		$this->assertSame( 10, has_filter( 'woocommerce_payment_gateways', array( $sut, 'register_gateway' ) ) );
 
 		$this->assertSame( array( $gateway ), $this->apply_payment_gateways_filter() );
+	}
+
+	/**
+	 * @testdox Processing providers satisfy the gateway registry contract through the interface hierarchy.
+	 */
+	public function test_processing_provider_contract_is_accepted_by_gateway_registry(): void {
+		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED ) );
+		$sut      = new NativePaymentsGatewayRegistry();
+		$sut->init( new StaticNativeRuntimeArbiter( true ) );
+
+		$this->assertInstanceOf( PaymentGatewayProviderContract::class, $provider );
+
+		$sut->register_provider( $provider );
+
+		$this->assertSame( array(), $sut->register_gateway( array() ) );
 	}
 
 	/**

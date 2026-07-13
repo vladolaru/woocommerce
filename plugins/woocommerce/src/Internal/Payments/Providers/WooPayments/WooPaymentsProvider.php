@@ -10,7 +10,6 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\CapabilityManifest;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
-use Automattic\WooCommerce\Internal\Payments\PaymentGatewayProviderContract;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
@@ -28,7 +27,7 @@ use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceProfile;
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class WooPaymentsProvider implements ProviderContract, PaymentGatewayProviderContract, ProviderOperationEffectApplier, ProviderPostLifecycleEffectApplier {
+class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectApplier, ProviderPostLifecycleEffectApplier {
 
 	/**
 	 * WooPayments gateway adapter.

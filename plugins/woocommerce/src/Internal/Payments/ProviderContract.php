@@ -8,21 +8,17 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments;
 
 /**
- * Internal metadata contract implemented by native payments providers.
+ * Internal processing contract implemented by native payments providers.
  *
- * A3 introduces money-moving operation contracts used by the native processing service.
+ * Processing providers also publish their WooCommerce payment gateways through the
+ * inherited gateway-provider identity contract. Keeping one interface hierarchy
+ * lets the processing service and gateway registry consume the same provider
+ * without duplicate interface declarations on each implementation.
  *
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-interface ProviderContract {
-
-	/**
-	 * Get the provider/gateway ID.
-	 *
-	 * @return string
-	 */
-	public function get_id(): string;
+interface ProviderContract extends PaymentGatewayProviderContract {
 
 	/**
 	 * Get the provider capability manifest.
@@ -39,15 +35,6 @@ interface ProviderContract {
 	 * @since 11.0.0
 	 */
 	public function get_persistence_profile(): ProviderPersistenceProfile;
-
-	/**
-	 * Get payment gateway instances registered by the provider.
-	 *
-	 * @return array<int,\WC_Payment_Gateway>
-	 *
-	 * @since 11.0.0
-	 */
-	public function get_payment_gateways(): array;
 
 	/**
 	 * Charge an order through the provider.
