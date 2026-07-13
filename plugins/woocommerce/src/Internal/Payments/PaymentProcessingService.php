@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
 use Throwable;
+use WC_Logger_Interface;
 use WC_Order;
 use WC_Order_Refund;
 use WP_Error;
@@ -48,6 +49,24 @@ class PaymentProcessingService {
 	 * @var PaymentExceptionPolicy
 	 */
 	private PaymentExceptionPolicy $exception_policy;
+
+	/**
+	 * Payments logger.
+	 *
+	 * @var WC_Logger_Interface|null
+	 */
+	private ?WC_Logger_Interface $logger = null;
+
+	/**
+	 * Constructor.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @param WC_Logger_Interface|null $logger Payments logger.
+	 */
+	public function __construct( ?WC_Logger_Interface $logger = null ) {
+		$this->logger = $logger;
+	}
 
 	/**
 	 * Initialize the class instance.
@@ -269,6 +288,7 @@ class PaymentProcessingService {
 				$provider_outcome = $provider->refund( $context, $idempotency_key );
 			} catch ( Throwable $exception ) {
 				$provider_outcome = $this->exception_policy->to_failed_outcome( $exception );
+				$this->log_provider_failure( $order, 'refund', $idempotency_key, $exception, $provider_outcome );
 			}
 			$outcome = $provider_outcome;
 
@@ -608,7 +628,10 @@ class PaymentProcessingService {
 		try {
 			return $provider->charge( $context, $idempotency_key );
 		} catch ( Throwable $exception ) {
-			return $this->exception_policy->to_failed_outcome( $exception );
+			$outcome = $this->exception_policy->to_failed_outcome( $exception );
+			$this->log_provider_failure( $context->get_order(), 'charge', $idempotency_key, $exception, $outcome );
+
+			return $outcome;
 		}
 	}
 
@@ -673,6 +696,7 @@ class PaymentProcessingService {
 					: $provider->cancel( $context, $idempotency_key );
 			} catch ( Throwable $exception ) {
 				$provider_outcome = $this->exception_policy->to_failed_outcome( $exception );
+				$this->log_provider_failure( $order, $operation, $idempotency_key, $exception, $provider_outcome );
 			}
 			$outcome = $provider_outcome;
 
@@ -693,6 +717,47 @@ class PaymentProcessingService {
 			return $outcome;
 		} finally {
 			$this->order_payment_store->unlock_order_payment( $order, $profile );
+		}
+	}
+
+	/**
+	 * Log a provider operation throwable with idempotency correlation.
+	 *
+	 * Logging is best-effort and must never replace the normalized failed outcome.
+	 *
+	 * @param WC_Order       $order           Order being processed.
+	 * @param string         $operation       Provider operation.
+	 * @param string         $idempotency_key Deterministic operation key.
+	 * @param Throwable      $exception       Provider throwable.
+	 * @param PaymentOutcome $outcome         Normalized failed outcome.
+	 */
+	private function log_provider_failure( WC_Order $order, string $operation, string $idempotency_key, Throwable $exception, PaymentOutcome $outcome ): void {
+		try {
+			$logger = $this->logger;
+			if ( null === $logger ) {
+				if ( ! function_exists( 'wc_get_logger' ) ) {
+					return;
+				}
+
+				$logger = wc_get_logger();
+			}
+
+			$data                = $outcome->get_data();
+			$provider_error_code = isset( $data[ PaymentOutcome::DATA_ERROR_CODE ] ) ? (string) $data[ PaymentOutcome::DATA_ERROR_CODE ] : '';
+			$logger->error(
+				'Native payment provider operation threw an exception.',
+				array(
+					'source'              => 'woopayments-payments',
+					'operation'           => $operation,
+					'order_id'            => $order->get_id(),
+					'idempotency_key'     => $idempotency_key,
+					'exception_class'     => get_class( $exception ),
+					'exception_message'   => $exception->getMessage(),
+					'provider_error_code' => $provider_error_code,
+				)
+			);
+		} catch ( Throwable $logging_exception ) {
+			return;
 		}
 	}
 

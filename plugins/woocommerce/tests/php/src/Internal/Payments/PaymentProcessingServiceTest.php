@@ -108,6 +108,120 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Provider throwables emit one structured operation log with idempotency correlation.
+	 * @dataProvider provider_failure_operations
+	 *
+	 * @param string $operation Provider operation.
+	 */
+	public function test_provider_throwable_emits_one_structured_operation_log( string $operation ): void {
+		$order     = $this->create_woopayments_order( '10.00' );
+		$exception = new class( 'Provider transport failed.' ) extends RuntimeException {
+			/**
+			 * Get the provider error code.
+			 *
+			 * @return string
+			 */
+			public function get_error_code(): string {
+				return 'provider_transport_failure';
+			}
+		};
+
+		// phpcs:disable Squiz.Commenting, Squiz.Classes.ClassFileName.NoMatch
+		$provider = new class( new PaymentOutcome( PaymentOutcome::STATUS_FAILED ), $exception ) extends RecordingProvider {
+			private \Throwable $exception;
+
+			public function __construct( PaymentOutcome $outcome, \Throwable $exception ) {
+				parent::__construct( $outcome );
+				$this->exception = $exception;
+			}
+
+			public function charge( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
+				unset( $context, $idempotency_key );
+				throw $this->exception;
+			}
+
+			public function refund( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
+				unset( $context, $idempotency_key );
+				throw $this->exception;
+			}
+
+			public function capture( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
+				unset( $context, $idempotency_key );
+				throw $this->exception;
+			}
+
+			public function cancel( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
+				unset( $context, $idempotency_key );
+				throw $this->exception;
+			}
+		};
+		// phpcs:enable Squiz.Commenting, Squiz.Classes.ClassFileName.NoMatch
+
+		$logger = $this->create_fake_logger();
+		$sut    = new PaymentProcessingService( $logger );
+		$sut->init(
+			$this->store,
+			wc_get_container()->get( OrderPaymentLifecycleService::class ),
+			$this->idempotency,
+			wc_get_container()->get( PaymentExceptionPolicy::class )
+		);
+
+		switch ( $operation ) {
+			case 'charge':
+				$outcome                  = $sut->process_checkout_outcome( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_failure' ), $provider );
+				$expected_idempotency_key = $this->idempotency->derive_key( $order, OrderPaymentStore::GATEWAY_ID, 'charge', 10.0, 'USD' );
+				$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+				break;
+
+			case 'refund':
+				$result                   = $sut->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 2.5, 'Adjustment' ), $provider );
+				$expected_idempotency_key = $this->idempotency->derive_key( $order, OrderPaymentStore::GATEWAY_ID, 'refund', 2.5, 'USD', 'Adjustment' );
+				$this->assertWPError( $result );
+				break;
+
+			case 'capture':
+				$outcome                  = $sut->capture( PaymentContext::for_capture( $order, OrderPaymentStore::GATEWAY_ID, 4.25 ), $provider );
+				$expected_idempotency_key = $this->idempotency->derive_key( $order, OrderPaymentStore::GATEWAY_ID, 'capture', 4.25, 'USD' );
+				$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+				break;
+
+			default:
+				$outcome                  = $sut->cancel( PaymentContext::for_cancel( $order, OrderPaymentStore::GATEWAY_ID ), $provider );
+				$expected_idempotency_key = $this->idempotency->derive_key( $order, OrderPaymentStore::GATEWAY_ID, 'cancel', 10.0, 'USD' );
+				$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		}
+
+		$this->assertCount( 1, $logger->error_calls );
+		$this->assertSame( 'Native payment provider operation threw an exception.', $logger->error_calls[0]['message'] );
+		$this->assertSame(
+			array(
+				'source'              => 'woopayments-payments',
+				'operation'           => $operation,
+				'order_id'            => $order->get_id(),
+				'idempotency_key'     => $expected_idempotency_key,
+				'exception_class'     => get_class( $exception ),
+				'exception_message'   => 'Provider transport failed.',
+				'provider_error_code' => 'provider_transport_failure',
+			),
+			$logger->error_calls[0]['context']
+		);
+	}
+
+	/**
+	 * Provider operations that normalize throwables.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public static function provider_failure_operations(): array {
+		return array(
+			'charge'  => array( 'charge' ),
+			'refund'  => array( 'refund' ),
+			'capture' => array( 'capture' ),
+			'cancel'  => array( 'cancel' ),
+		);
+	}
+
+	/**
 	 * @testdox Should return a redirect result without completing the order for redirect outcomes.
 	 */
 	public function test_process_checkout_returns_redirect_without_completing_order(): void {
