@@ -206,6 +206,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function setUp(): void {
 		parent::setUp();
+		update_option( 'woocommerce_woocommerce_payments_version', '10.5.0' );
 
 		$this->provider = $this->getMockBuilder( WooPaymentsProvider::class )
 			->disableOriginalConstructor()
@@ -296,6 +297,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		unset( $_GET[ WooPaymentsCutoverController::QUERY_ACTION ], $_GET[ WooPaymentsCutoverController::NONCE_NAME ], $_GET[ WooPaymentsCutoverController::QUERY_STATUS ] );
 		delete_transient( 'woocommerce_woopayments_native_cutover_status' );
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
+		delete_option( 'woocommerce_woocommerce_payments_version' );
 		delete_option( '_wcpay_feature_customer_multi_currency' );
 		delete_option( 'wcpay_multi_currency_enabled_currencies' );
 		delete_option( 'wcpay_multi_currency_exchange_rate_gbp' );
@@ -970,6 +972,35 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertNotContains( 'native_admin_surfaces_unavailable', $failures );
 		$this->assertTrue( $this->sut->should_show_soft_cutover_notice() );
+	}
+
+	/**
+	 * @testdox Cutover preflight blocks when the last active WooPayments version is unsupported.
+	 * @dataProvider provide_unsupported_woopayments_versions
+	 *
+	 * @param string $version Recorded WooPayments version.
+	 */
+	public function test_preflight_blocks_unsupported_woopayments_versions( string $version ): void {
+		$this->fake_plugin_active();
+		$this->enable_ready_cutover();
+		update_option( 'woocommerce_woocommerce_payments_version', $version );
+		add_filter( WooPaymentsCutoverController::FILTER_PREFLIGHT_FAILURES, '__return_empty_array' );
+
+		$this->assertContains( 'woopayments_plugin_version_unsupported', $this->sut->get_preflight_failures() );
+		$this->assertFalse( $this->sut->should_show_soft_cutover_notice() );
+	}
+
+	/**
+	 * Provide unsupported recorded WooPayments versions.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public function provide_unsupported_woopayments_versions(): array {
+		return array(
+			'missing version'   => array( '' ),
+			'malformed version' => array( 'not-a-version' ),
+			'older version'     => array( '10.4.9' ),
+		);
 	}
 
 	/**

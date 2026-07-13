@@ -57,6 +57,13 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	public const DEFAULT_MANDATORY_CUTOVER_ENABLED = false;
 
 	/**
+	 * Minimum last-active WooPayments plugin version eligible for native cutover.
+	 *
+	 * @var string
+	 */
+	public const MINIMUM_CUTOVER_PLUGIN_VERSION = '10.5.0';
+
+	/**
 	 * Filter that reports whether a core-owned WooPayments transport is ready to process after deactivation.
 	 *
 	 * @var string
@@ -125,6 +132,13 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @var string
 	 */
 	private const NOTICE_STATUS_TRANSIENT = 'woocommerce_woopayments_native_cutover_status';
+
+	/**
+	 * Option containing the last active WooPayments plugin version.
+	 *
+	 * @var string
+	 */
+	private const WOOPAYMENTS_VERSION_OPTION = 'woocommerce_woocommerce_payments_version';
 
 	/**
 	 * Status value for a successful plugin disable.
@@ -438,7 +452,13 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 			return $this->preflight_memo;
 		}
 
-		$failures = array();
+		$failures           = array();
+		$protected_failures = array();
+
+		if ( ! $this->is_woopayments_plugin_version_supported() ) {
+			$failures[]           = 'woopayments_plugin_version_unsupported';
+			$protected_failures[] = 'woopayments_plugin_version_unsupported';
+		}
 
 		/**
 		 * Filters whether the native WooPayments transport is ready for cutover.
@@ -453,7 +473,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 
 		$platform_connection_failures = $this->platform_connection_service->get_cutover_preflight_failures();
 		$failures                     = array_merge( $failures, $platform_connection_failures );
-		$protected_failures           = $platform_connection_failures;
+		$protected_failures           = array_merge( $protected_failures, $platform_connection_failures );
 
 		if ( $this->has_unsupported_enabled_payment_methods() ) {
 			$failures[]           = 'unsupported_payment_methods_enabled';
@@ -518,6 +538,26 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 
 		$this->preflight_memo = $failures;
 		return $this->preflight_memo;
+	}
+
+	/**
+	 * Tell whether the recorded WooPayments plugin version is safe for cutover normalization.
+	 *
+	 * @return bool
+	 */
+	private function is_woopayments_plugin_version_supported(): bool {
+		$version = get_option( self::WOOPAYMENTS_VERSION_OPTION, '' );
+
+		if ( ! is_string( $version ) ) {
+			return false;
+		}
+
+		$version = trim( $version );
+		if ( 1 !== preg_match( '/^\d+(?:\.\d+){1,3}(?:[-+][0-9A-Za-z.-]+)?$/D', $version ) ) {
+			return false;
+		}
+
+		return version_compare( $version, self::MINIMUM_CUTOVER_PLUGIN_VERSION, '>=' );
 	}
 
 	/**
