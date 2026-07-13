@@ -141,7 +141,7 @@ class WooPaymentsOnboardingAdapter {
 			}
 		}
 
-		if ( $this->is_native_provider_available() ) {
+		if ( $this->is_native_onboarding_available() ) {
 			return $this->native_gateway;
 		}
 

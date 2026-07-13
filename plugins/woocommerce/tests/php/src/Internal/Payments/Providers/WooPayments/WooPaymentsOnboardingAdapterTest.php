@@ -208,20 +208,40 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 				'class_exists' => fn() => false,
 			)
 		);
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		$this->provider->method( 'can_manage_onboarding' )->willReturn( true );
 		$this->provider->method( 'can_process_payments' )->willReturn( true );
 
 		self::assertSame( $this->native_gateway, $this->adapter->get_payment_gateway() );
 	}
 
 	/**
-	 * @testdox Native gateway is not returned when native processing is unavailable.
+	 * @testdox The injected native gateway is returned when onboarding is available before the account can process payments.
 	 */
-	public function test_native_gateway_is_not_returned_when_native_provider_cannot_process(): void {
+	public function test_native_gateway_is_returned_when_onboarding_is_available_before_account_can_process(): void {
 		$this->legacy_proxy->register_function_mocks(
 			array(
 				'class_exists' => fn() => false,
 			)
 		);
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		$this->provider->method( 'can_manage_onboarding' )->willReturn( true );
+		$this->provider->method( 'can_process_payments' )->willReturn( false );
+
+		self::assertSame( $this->native_gateway, $this->adapter->get_payment_gateway() );
+	}
+
+	/**
+	 * @testdox Native gateway is not returned when native onboarding is unavailable.
+	 */
+	public function test_native_gateway_is_not_returned_when_native_onboarding_is_unavailable(): void {
+		$this->legacy_proxy->register_function_mocks(
+			array(
+				'class_exists' => fn() => false,
+			)
+		);
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		$this->provider->method( 'can_manage_onboarding' )->willReturn( false );
 		$this->provider->method( 'can_process_payments' )->willReturn( false );
 
 		$this->expectException( \RuntimeException::class );
