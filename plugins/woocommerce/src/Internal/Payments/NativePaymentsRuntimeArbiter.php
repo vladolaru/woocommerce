@@ -100,6 +100,15 @@ class NativePaymentsRuntimeArbiter {
 	const FILTER_NATIVE_ENABLED = 'woocommerce_native_payments_enabled';
 
 	/**
+	 * Option that disables native payments in the rollout filter default.
+	 *
+	 * The rollout filter retains final authority and may explicitly override this option.
+	 *
+	 * @var string
+	 */
+	public const NATIVE_RUNTIME_KILL_SWITCH_OPTION = 'woocommerce_native_payments_killswitch';
+
+	/**
 	 * Default state for the native WooPayments runtime rollout.
 	 *
 	 * This intentionally remains false until the final A5 stage-boundary gates approve the release/default-on flip.
@@ -180,6 +189,9 @@ class NativePaymentsRuntimeArbiter {
 	 * @return bool True when the native runtime is enabled.
 	 */
 	public function is_native_runtime_enabled(): bool {
+		$kill_switch_active = (bool) get_option( self::NATIVE_RUNTIME_KILL_SWITCH_OPTION, false );
+		$filter_default     = $kill_switch_active ? false : self::DEFAULT_NATIVE_RUNTIME_ENABLED;
+
 		/**
 		 * Filters whether the core-native payments runtime is enabled for this site.
 		 *
@@ -191,7 +203,7 @@ class NativePaymentsRuntimeArbiter {
 		 *
 		 * @param bool $enabled Whether the native runtime is enabled.
 		 */
-		return (bool) apply_filters( self::FILTER_NATIVE_ENABLED, self::DEFAULT_NATIVE_RUNTIME_ENABLED );
+		return (bool) apply_filters( self::FILTER_NATIVE_ENABLED, $filter_default );
 	}
 
 	/**

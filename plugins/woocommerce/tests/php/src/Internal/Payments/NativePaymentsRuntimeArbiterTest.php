@@ -33,7 +33,9 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
+		delete_option( 'woocommerce_native_payments_killswitch' );
 		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
+		remove_all_filters( 'option_woocommerce_native_payments_killswitch' );
 		$this->reset_legacy_proxy_mocks();
 		parent::tearDown();
 	}
@@ -200,5 +202,54 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $this->sut->is_native_runtime_enabled(), 'The rollout filter should still be able to enable native runtime for controlled gates.' );
 		$this->assertSame( NativePaymentsRuntimeArbiter::DEFAULT_NATIVE_RUNTIME_ENABLED, $observed_default, 'The rollout filter should receive the explicit default value.' );
 		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NATIVE, $this->sut->get_runtime_owner(), 'Native should own the runtime when the plugin is absent and the rollout filter enables native.' );
+	}
+
+	/**
+	 * @testdox The option-backed kill switch makes the rollout filter default false.
+	 */
+	public function test_kill_switch_option_disables_native_filter_default(): void {
+		$this->fake_plugin();
+		update_option( 'woocommerce_native_payments_killswitch', true );
+		$option_reads     = 0;
+		$observed_default = null;
+		add_filter(
+			'option_woocommerce_native_payments_killswitch',
+			static function ( $value ) use ( &$option_reads ) {
+				++$option_reads;
+				return $value;
+			}
+		);
+		add_filter(
+			NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED,
+			static function ( bool $enabled ) use ( &$observed_default ): bool {
+				$observed_default = $enabled;
+				return $enabled;
+			}
+		);
+
+		$this->assertFalse( $this->sut->is_native_runtime_enabled() );
+		$this->assertSame( 1, $option_reads, 'Resolving the native flag must read the host-controlled kill-switch option.' );
+		$this->assertFalse( $observed_default, 'An active kill switch must make the rollout filter default false.' );
+	}
+
+	/**
+	 * @testdox The rollout filter retains final authority over the option-backed kill switch.
+	 */
+	public function test_native_enabled_filter_can_override_kill_switch_option(): void {
+		$this->fake_plugin();
+		update_option( 'woocommerce_native_payments_killswitch', true );
+		$option_reads = 0;
+		add_filter(
+			'option_woocommerce_native_payments_killswitch',
+			static function ( $value ) use ( &$option_reads ) {
+				++$option_reads;
+				return $value;
+			}
+		);
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+
+		$this->assertTrue( $this->sut->is_native_runtime_enabled() );
+		$this->assertSame( 1, $option_reads, 'The filter override must be applied after resolving the kill-switch-backed default.' );
+		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NATIVE, $this->sut->get_runtime_owner() );
 	}
 }

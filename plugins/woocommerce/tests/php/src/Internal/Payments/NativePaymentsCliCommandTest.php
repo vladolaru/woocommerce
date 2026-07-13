@@ -28,6 +28,7 @@ class NativePaymentsCliCommandTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
+		delete_option( 'woocommerce_native_payments_killswitch' );
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		delete_option( 'wcpay_account_data' );
 		delete_option( '_wcpay_feature_customer_multi_currency' );
@@ -54,6 +55,8 @@ class NativePaymentsCliCommandTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( 'Owner: native', $text );
 		$this->assertStringContainsString( 'Native enabled: yes', $text );
 		$this->assertStringContainsString( 'Filter: woocommerce_native_payments_enabled (source: filter)', $text );
+		$this->assertStringContainsString( 'woocommerce_native_payments_killswitch', $text );
+		$this->assertStringContainsString( 'final authority', $text );
 		$this->assertStringContainsString( 'Preflight failures:', $text );
 		$this->assertStringContainsString( 'Account: acct_native_test (connected)', $text );
 	}

@@ -623,8 +623,9 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 */
 	private function get_native_enabled_note(): string {
 		return sprintf(
-			/* translators: %s: filter name. */
-			__( 'The %s filter is resolved while WooCommerce is being loaded. Use a mu-plugin or earlier bootstrap code when changing this value for all native registrations.', 'woocommerce' ),
+			/* translators: 1: option name, 2: filter name. */
+			__( 'The %1$s option disables native runtime by default when set to true. The %2$s filter has final authority and is resolved while WooCommerce is being loaded. Use a mu-plugin or earlier bootstrap code to override this value for all native registrations.', 'woocommerce' ),
+			NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION,
 			NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED
 		);
 	}
