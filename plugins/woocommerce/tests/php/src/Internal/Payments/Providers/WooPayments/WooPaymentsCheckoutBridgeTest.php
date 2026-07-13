@@ -73,6 +73,193 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should track classic and Blocks checkout page views once with the exact WooPayments contract.
+	 */
+	public function test_tracks_classic_and_blocks_checkout_page_views_once(): void {
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		$recorded_events = array();
+		$tracker         = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_shopper_tracking_enabled', 'record_user_event' ) )
+			->getMock();
+		$tracker->method( 'is_shopper_tracking_enabled' )->willReturn( true );
+		$tracker->method( 'record_user_event' )->willReturnCallback(
+			static function ( string $event_name, array $properties ) use ( &$recorded_events ): bool {
+				$recorded_events[] = array( $event_name, $properties );
+				return true;
+			}
+		);
+
+		$sut = new WooPaymentsCheckoutBridge();
+		$sut->init(
+			$this->create_legacy_runtime_for_bridge(),
+			$this->create_account_service_for_bridge( true ),
+			$this->create_woopay_session_service_for_bridge( true ),
+			$this->create_frontend_styles_service_for_bridge(),
+			$tracker
+		);
+
+		try {
+			$sut->register();
+			$sut->register();
+			$this->assertSame( 10, has_action( 'woocommerce_after_checkout_form', array( $sut, 'record_classic_checkout_page_view' ) ) );
+			$this->assertSame( 10, has_action( 'woocommerce_blocks_enqueue_checkout_block_scripts_after', array( $sut, 'record_blocks_checkout_page_view' ) ) );
+			$sut->record_classic_checkout_page_view();
+			$sut->record_blocks_checkout_page_view();
+		} finally {
+			remove_action( 'woocommerce_after_checkout_form', array( $sut, 'handle_woocommerce_after_checkout_form' ) );
+			remove_action( 'woocommerce_after_checkout_form', array( $sut, 'record_classic_checkout_page_view' ) );
+			remove_action( 'woocommerce_blocks_enqueue_checkout_block_scripts_after', array( $sut, 'record_blocks_checkout_page_view' ) );
+			remove_action( 'woocommerce_pay_order_before_payment', array( $sut, 'handle_woocommerce_after_checkout_form' ) );
+			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		}
+
+		$this->assertSame(
+			array(
+				array(
+					'checkout_page_view',
+					array(
+						'theme_type'        => 'short_code',
+						'woopay_enabled'    => true,
+						'record_event_data' => array( 'track_on_all_stores' => true ),
+					),
+				),
+				array(
+					'checkout_page_view',
+					array(
+						'theme_type'        => 'blocks',
+						'woopay_enabled'    => true,
+						'record_event_data' => array( 'track_on_all_stores' => true ),
+					),
+				),
+			),
+			$recorded_events
+		);
+	}
+
+	/**
+	 * @testdox Should track classic and Store API order placement before payment with exact oracle guards.
+	 */
+	public function test_tracks_classic_and_store_api_order_placement_before_payment(): void {
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		$recorded_events = array();
+		$tracker         = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_shopper_tracking_enabled', 'record_user_event' ) )
+			->getMock();
+		$tracker->method( 'is_shopper_tracking_enabled' )->willReturn( true );
+		$tracker->method( 'record_user_event' )->willReturnCallback(
+			static function ( string $event_name, array $properties ) use ( &$recorded_events ): bool {
+				$recorded_events[] = array( $event_name, $properties );
+				return true;
+			}
+		);
+
+		$sut = new WooPaymentsCheckoutBridge();
+		$sut->init(
+			$this->create_legacy_runtime_for_bridge(),
+			$this->create_account_service_for_bridge( true ),
+			$this->create_woopay_session_service_for_bridge( false ),
+			$this->create_frontend_styles_service_for_bridge(),
+			$tracker
+		);
+
+		$classic_order = wc_create_order();
+		$classic_order->set_payment_method( 'woocommerce_payments' );
+		$classic_order->set_payment_method_title( 'Card' );
+		$classic_order->save();
+		$store_api_order = wc_create_order();
+		$store_api_order->set_payment_method( 'woocommerce_payments_klarna' );
+		$store_api_order->set_payment_method_title( 'Klarna' );
+		$store_api_order->save();
+		$other_order = wc_create_order();
+		$other_order->set_payment_method( 'cod' );
+		$other_order->set_payment_method_title( 'Cash on delivery' );
+		$other_order->save();
+
+		try {
+			$sut->register();
+			$sut->register();
+			$this->assertSame( 10, has_action( 'woocommerce_checkout_order_processed', array( $sut, 'record_checkout_order_placed' ) ) );
+			$this->assertSame( 10, has_action( 'woocommerce_store_api_checkout_order_processed', array( $sut, 'record_checkout_order_placed' ) ) );
+			$get_accepted_args = static function ( string $hook_name ) use ( $sut ): int {
+				global $wp_filter;
+				foreach ( $wp_filter[ $hook_name ]->callbacks[10] ?? array() as $callback ) {
+					if ( array( $sut, 'record_checkout_order_placed' ) === $callback['function'] ) {
+						return (int) $callback['accepted_args'];
+					}
+				}
+
+				return 0;
+			};
+			$this->assertSame( 2, $get_accepted_args( 'woocommerce_checkout_order_processed' ) );
+			$this->assertSame( 2, $get_accepted_args( 'woocommerce_store_api_checkout_order_processed' ) );
+			$this->assertSame( 'pending', $classic_order->get_status() );
+
+			/**
+			 * Fires after a classic checkout order is created and before payment processing.
+			 *
+			 * @since 2.1.0
+			 *
+			 * @param int $order_id Order ID.
+			 */
+			do_action( 'woocommerce_checkout_order_processed', $classic_order->get_id() );
+			$classic_order->update_status( 'failed' );
+
+			/**
+			 * Fires after a Store API checkout order is created and before payment processing.
+			 *
+			 * @since 7.2.0
+			 *
+			 * @param \WC_Order $order Checkout order.
+			 */
+			do_action( 'woocommerce_store_api_checkout_order_processed', $store_api_order );
+			$sut->record_checkout_order_placed( $other_order->get_id() );
+
+			$_SERVER['HTTP_USER_AGENT'] = 'WooPay';
+			$sut->record_checkout_order_placed( $classic_order->get_id() );
+			$_SERVER['HTTP_USER_AGENT'] = 'woopay';
+			$sut->record_checkout_order_placed( $classic_order->get_id() );
+		} finally {
+			unset( $_SERVER['HTTP_USER_AGENT'] );
+			remove_action( 'woocommerce_checkout_order_processed', array( $sut, 'record_checkout_order_placed' ) );
+			remove_action( 'woocommerce_store_api_checkout_order_processed', array( $sut, 'record_checkout_order_placed' ) );
+			remove_action( 'woocommerce_after_checkout_form', array( $sut, 'handle_woocommerce_after_checkout_form' ) );
+			remove_action( 'woocommerce_after_checkout_form', array( $sut, 'record_classic_checkout_page_view' ) );
+			remove_action( 'woocommerce_blocks_enqueue_checkout_block_scripts_after', array( $sut, 'record_blocks_checkout_page_view' ) );
+			remove_action( 'woocommerce_pay_order_before_payment', array( $sut, 'handle_woocommerce_after_checkout_form' ) );
+			remove_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		}
+
+		$this->assertSame(
+			array(
+				array(
+					'checkout_order_placed',
+					array(
+						'payment_title'     => 'Card',
+						'record_event_data' => array( 'track_on_all_stores' => true ),
+					),
+				),
+				array(
+					'checkout_order_placed',
+					array(
+						'payment_title'     => 'Klarna',
+						'record_event_data' => array( 'track_on_all_stores' => true ),
+					),
+				),
+				array(
+					'checkout_order_placed',
+					array(
+						'payment_title'     => 'Card',
+						'record_event_data' => array( 'track_on_all_stores' => true ),
+					),
+				),
+			),
+			$recorded_events
+		);
+	}
+
+	/**
 	 * @testdox Should bootstrap payment-list wallets on the classic order-pay form when card fields do not render.
 	 */
 	public function test_order_pay_before_payment_bootstraps_payment_list_wallets_without_card_fields(): void {
@@ -1143,7 +1330,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	private function create_frontend_tracking_controller_for_bridge() {
 		$controller = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_shopper_tracking_enabled' ) )
+			->onlyMethods( array( 'is_shopper_tracking_enabled', 'record_user_event' ) )
 			->getMock();
 
 		$controller->method( 'is_shopper_tracking_enabled' )->willReturn( true );

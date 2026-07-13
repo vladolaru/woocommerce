@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Throwable;
 use WC_Order;
 
 /**
@@ -52,18 +53,27 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 	private WooPaymentsAccountService $account_service;
 
 	/**
+	 * Frontend tracking controller.
+	 *
+	 * @var WooPaymentsFrontendTrackingController|null
+	 */
+	private ?WooPaymentsFrontendTrackingController $frontend_tracking_controller = null;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter     $arbiter                 Runtime owner arbiter.
-	 * @param WooPaymentsPaymentMethodRegistry $payment_method_registry Payment-method definition registry.
-	 * @param WooPaymentsAccountService        $account_service         WooPayments account service.
+	 * @param NativePaymentsRuntimeArbiter               $arbiter                 Runtime owner arbiter.
+	 * @param WooPaymentsPaymentMethodRegistry           $payment_method_registry Payment-method definition registry.
+	 * @param WooPaymentsAccountService                  $account_service              WooPayments account service.
+	 * @param WooPaymentsFrontendTrackingController|null $frontend_tracking_controller Optional frontend tracking controller.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsPaymentMethodRegistry $payment_method_registry, WooPaymentsAccountService $account_service ): void {
-		$this->arbiter                 = $arbiter;
-		$this->payment_method_registry = $payment_method_registry;
-		$this->account_service         = $account_service;
+	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsPaymentMethodRegistry $payment_method_registry, WooPaymentsAccountService $account_service, ?WooPaymentsFrontendTrackingController $frontend_tracking_controller = null ): void {
+		$this->arbiter                      = $arbiter;
+		$this->payment_method_registry      = $payment_method_registry;
+		$this->account_service              = $account_service;
+		$this->frontend_tracking_controller = $frontend_tracking_controller;
 	}
 
 	/**
@@ -76,6 +86,10 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 
 		if ( false === has_action( 'woocommerce_before_thankyou', array( $this, 'register_payment_method_title_override' ) ) ) {
 			add_action( 'woocommerce_before_thankyou', array( $this, 'register_payment_method_title_override' ) );
+		}
+
+		if ( false === has_action( 'woocommerce_thankyou', array( $this, 'record_order_success_page_view' ) ) ) {
+			add_action( 'woocommerce_thankyou', array( $this, 'record_order_success_page_view' ) );
 		}
 
 		if ( false === has_action( 'woocommerce_before_thankyou', array( $this, 'maybe_render_multibanco_payment_instructions' ) ) ) {
@@ -92,6 +106,28 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 
 		if ( false === has_action( 'wp_enqueue_scripts', array( $this, 'enqueue_assets' ) ) ) {
 			add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_assets' ) );
+		}
+	}
+
+	/**
+	 * Record the order-success page view for the canonical WooPayments gateway.
+	 *
+	 * @internal
+	 * @param int $order_id Order ID.
+	 */
+	public function record_order_success_page_view( $order_id ): void {
+		$order = wc_get_order( $order_id );
+		if ( ! $order instanceof WC_Order || OrderPaymentStore::GATEWAY_ID !== $order->get_payment_method() ) {
+			return;
+		}
+
+		try {
+			$this->get_frontend_tracking_controller()->record_user_event(
+				'order_success_page_view',
+				array( 'record_event_data' => array( 'track_on_all_stores' => true ) )
+			);
+		} catch ( Throwable $throwable ) { // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch
+			// Tracking must never interrupt the order-success page.
 		}
 	}
 
@@ -448,5 +484,18 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 			$dark_attribute, // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped attribute composed above.
 			$last4_markup // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Markup is composed from escaped values.
 		);
+	}
+
+	/**
+	 * Get the frontend tracking controller.
+	 *
+	 * @return WooPaymentsFrontendTrackingController
+	 */
+	private function get_frontend_tracking_controller(): WooPaymentsFrontendTrackingController {
+		if ( null === $this->frontend_tracking_controller ) {
+			$this->frontend_tracking_controller = wc_get_container()->get( WooPaymentsFrontendTrackingController::class );
+		}
+
+		return $this->frontend_tracking_controller;
 	}
 }

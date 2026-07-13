@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Throwable;
 
 /**
  * Owns the transitional Core checkout surface for the WooPayments card gateway.
@@ -308,6 +309,18 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 		if ( false === has_action( 'woocommerce_after_checkout_form', array( $this, 'handle_woocommerce_after_checkout_form' ) ) ) {
 			add_action( 'woocommerce_after_checkout_form', array( $this, 'handle_woocommerce_after_checkout_form' ) );
 		}
+		if ( false === has_action( 'woocommerce_after_checkout_form', array( $this, 'record_classic_checkout_page_view' ) ) ) {
+			add_action( 'woocommerce_after_checkout_form', array( $this, 'record_classic_checkout_page_view' ) );
+		}
+		if ( false === has_action( 'woocommerce_blocks_enqueue_checkout_block_scripts_after', array( $this, 'record_blocks_checkout_page_view' ) ) ) {
+			add_action( 'woocommerce_blocks_enqueue_checkout_block_scripts_after', array( $this, 'record_blocks_checkout_page_view' ) );
+		}
+		if ( false === has_action( 'woocommerce_checkout_order_processed', array( $this, 'record_checkout_order_placed' ) ) ) {
+			add_action( 'woocommerce_checkout_order_processed', array( $this, 'record_checkout_order_placed' ), 10, 2 );
+		}
+		if ( false === has_action( 'woocommerce_store_api_checkout_order_processed', array( $this, 'record_checkout_order_placed' ) ) ) {
+			add_action( 'woocommerce_store_api_checkout_order_processed', array( $this, 'record_checkout_order_placed' ), 10, 2 );
+		}
 		if ( false === has_action( 'woocommerce_pay_order_before_payment', array( $this, 'handle_woocommerce_after_checkout_form' ) ) ) {
 			add_action( 'woocommerce_pay_order_before_payment', array( $this, 'handle_woocommerce_after_checkout_form' ) );
 		}
@@ -324,6 +337,75 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 		}
 
 		$this->enqueue_classic_checkout_assets( $this->get_payment_fields_js_config() );
+	}
+
+	/**
+	 * Record the classic checkout page-view contract.
+	 *
+	 * @internal
+	 */
+	public function record_classic_checkout_page_view(): void {
+		$this->record_checkout_page_view( 'short_code' );
+	}
+
+	/**
+	 * Record the Blocks checkout page-view contract.
+	 *
+	 * @internal
+	 */
+	public function record_blocks_checkout_page_view(): void {
+		$this->record_checkout_page_view( 'blocks' );
+	}
+
+	/**
+	 * Record a checkout page view without allowing telemetry failures to interrupt checkout.
+	 *
+	 * @param string $theme_type Checkout implementation identifier.
+	 */
+	private function record_checkout_page_view( string $theme_type ): void {
+		try {
+			$this->get_frontend_tracking_controller()->record_user_event(
+				'checkout_page_view',
+				array(
+					'theme_type'        => $theme_type,
+					'woopay_enabled'    => $this->get_woopay_session_service()->is_woopay_enabled(),
+					'record_event_data' => array( 'track_on_all_stores' => true ),
+				)
+			);
+		} catch ( Throwable $throwable ) { // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch
+			// Tracking must never interrupt checkout rendering.
+		}
+	}
+
+	/**
+	 * Record that checkout created a WooPayments order before payment processing begins.
+	 *
+	 * @internal
+	 * @param int|\WC_Order $order          Order ID or Store API order object.
+	 * @param mixed         $_checkout_data Optional classic checkout data; unused.
+	 */
+	public function record_checkout_order_placed( $order, $_checkout_data = null ): void {
+		$order = wc_get_order( $order );
+		if ( ! $order instanceof \WC_Order || 0 !== strpos( $order->get_payment_method(), 'woocommerce_payments' ) ) {
+			return;
+		}
+
+		$is_woopay_order = isset( $_SERVER['HTTP_USER_AGENT'] ) && 'WooPay' === $_SERVER['HTTP_USER_AGENT'];
+		if ( $is_woopay_order ) {
+			return;
+		}
+
+		try {
+			$this->get_frontend_tracking_controller()->record_user_event(
+				'checkout_order_placed',
+				array(
+					'payment_title'     => $order->get_payment_method_title(),
+					'record_event_data' => array( 'track_on_all_stores' => true ),
+				)
+			);
+		} catch ( Throwable $throwable ) { // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch
+			// Tracking must never interrupt checkout order processing.
+		}
 	}
 
 	/**

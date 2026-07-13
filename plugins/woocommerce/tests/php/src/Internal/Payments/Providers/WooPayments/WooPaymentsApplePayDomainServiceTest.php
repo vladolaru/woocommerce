@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsApplePayDomainService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use WC_Unit_Test_Case;
 
 /**
@@ -88,6 +89,7 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 			remove_action( 'update_option_' . self::APPLE_PAY_SETTINGS_OPTION, array( $this->service, 'verify_domain_on_updated_apple_pay_settings' ) );
 			remove_action( 'add_option_' . self::APPLE_PAY_SETTINGS_OPTION, array( $this->service, 'verify_domain_on_new_apple_pay_settings' ) );
 			remove_action( self::RETRY_ACTION, array( $this->service, 'handle_domain_registration_retry' ) );
+			remove_action( 'shutdown', array( $this->service, 'flush_registration_events' ) );
 		}
 
 		parent::tearDown();
@@ -165,6 +167,151 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should flush one last-write-wins Apple Pay event per event name.
+	 */
+	public function test_registration_event_queue_is_last_write_wins_and_flushes_once(): void {
+		$recorded_events = array();
+		$tracker         = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'record_user_event' ) )
+			->getMock();
+		$tracker->method( 'record_user_event' )->willReturnCallback(
+			static function ( string $event_name, array $properties ) use ( &$recorded_events ): bool {
+				unset( $properties['record_event_data'] );
+				$recorded_events[] = array( $event_name, $properties );
+				return true;
+			}
+		);
+
+		$this->service = $this->create_service( true, false, $tracker );
+		$this->service->register();
+		$this->service->register();
+		$this->assertSame( 10, has_action( 'shutdown', array( $this->service, 'flush_registration_events' ) ) );
+		$this->service->register_domain();
+		$this->service->register_domain();
+
+		$first_error_message        = 'Domain verification failed: first reason';
+		$this->api_client->response = array(
+			'id'        => 'domain_123',
+			'apple_pay' => array(
+				'status'         => 'failed',
+				'status_details' => array( 'error_message' => $first_error_message ),
+			),
+		);
+		$this->service->register_domain();
+		$last_error_message         = 'Domain verification failed: last reason';
+		$this->api_client->response = array(
+			'id'        => 'domain_123',
+			'apple_pay' => array(
+				'status'         => 'failed',
+				'status_details' => array( 'error_message' => $last_error_message ),
+			),
+		);
+		$this->service->register_domain();
+		$this->assertSame( array(), $recorded_events );
+
+		$this->service->flush_registration_events();
+		$this->service->flush_registration_events();
+
+		$this->assertSame(
+			array(
+				array(
+					'apple_pay_domain_registration_success',
+					array(
+						'domain' => $this->expected_domain,
+						'mode'   => 'live',
+					),
+				),
+				array(
+					'apple_pay_domain_registration_failure',
+					array(
+						'domain' => $this->expected_domain,
+						'reason' => $last_error_message,
+						'mode'   => 'live',
+					),
+				),
+			),
+			$recorded_events
+		);
+	}
+
+	/**
+	 * @testdox Should preserve the oracle dev mode value in Apple Pay domain events.
+	 */
+	public function test_register_domain_tracks_dev_mode_value(): void {
+		$recorded_properties = array();
+		$tracker             = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'record_user_event' ) )
+			->getMock();
+		$tracker->method( 'record_user_event' )->willReturnCallback(
+			static function ( string $event_name, array $properties ) use ( &$recorded_properties ): bool {
+				$recorded_properties = $properties;
+				return true;
+			}
+		);
+
+		$this->service = $this->create_service( true, false, $tracker, true );
+		$this->service->register_domain();
+		$this->service->flush_registration_events();
+
+		$this->assertSame( 'dev', $recorded_properties['mode'] ?? null );
+	}
+
+	/**
+	 * @testdox Should preserve successful registration when dev-mode telemetry lookup throws.
+	 */
+	public function test_successful_registration_contains_throwing_dev_mode_telemetry(): void {
+		$tracker = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'record_user_event' ) )
+			->getMock();
+		$tracker->expects( $this->never() )->method( 'record_user_event' );
+		$this->service = $this->create_service( true, false, $tracker, false, 'is_dev_mode_enabled' );
+
+		$result = $this->service->register_domain();
+		$stored = get_option( self::SETTINGS_OPTION );
+
+		$this->assertTrue( $result );
+		$this->assertIsArray( $stored );
+		$this->assertSame( $this->expected_domain, $stored['apple_pay_verified_domain'] );
+		$this->assertSame( 'yes', $stored['apple_pay_domain_set'] );
+		$this->assertFalse( get_option( self::ERROR_OPTION ) );
+		$this->assertSame( array(), $this->scheduler->scheduled_jobs );
+	}
+
+	/**
+	 * @testdox Should preserve failed registration and retry when mode telemetry lookup throws.
+	 */
+	public function test_failed_registration_contains_throwing_mode_telemetry(): void {
+		$error_message              = 'Domain verification failed before telemetry';
+		$this->api_client->response = array(
+			'id'        => 'domain_123',
+			'apple_pay' => array(
+				'status'         => 'failed',
+				'status_details' => array( 'error_message' => $error_message ),
+			),
+		);
+		$tracker                    = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'record_user_event' ) )
+			->getMock();
+		$tracker->expects( $this->never() )->method( 'record_user_event' );
+		$this->service = $this->create_service( true, false, $tracker, false, 'get_mode' );
+
+		$result = $this->service->register_domain();
+		$stored = get_option( self::SETTINGS_OPTION );
+
+		$this->assertFalse( $result );
+		$this->assertIsArray( $stored );
+		$this->assertSame( $this->expected_domain, $stored['apple_pay_verified_domain'] );
+		$this->assertSame( 'no', $stored['apple_pay_domain_set'] );
+		$this->assertSame( $error_message, get_option( self::ERROR_OPTION ) );
+		$this->assertCount( 1, $this->scheduler->scheduled_jobs );
+		$this->assertSame( self::RETRY_ACTION, $this->scheduler->scheduled_jobs[0]['hook'] );
+	}
+
+	/**
 	 * @testdox Should display and clear the Apple Pay domain failure notice for live accounts.
 	 */
 	public function test_display_error_notice_reuses_extension_copy_and_clears_stored_error(): void {
@@ -216,11 +363,14 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the service under test.
 	 *
-	 * @param bool $native_register Whether the native runtime owns registration.
-	 * @param bool $live_account    Whether the account should be treated as live.
+	 * @param bool                                       $native_register Whether the native runtime owns registration.
+	 * @param bool                                       $live_account    Whether the account should be treated as live.
+	 * @param WooPaymentsFrontendTrackingController|null $tracker         Optional tracking controller.
+	 * @param bool                                       $dev_mode        Whether WooPayments dev mode is active.
+	 * @param string|null                                $throwing_mode_method Account mode method that should throw.
 	 * @return WooPaymentsApplePayDomainService
 	 */
-	private function create_service( bool $native_register = true, bool $live_account = false ): WooPaymentsApplePayDomainService {
+	private function create_service( bool $native_register = true, bool $live_account = false, ?WooPaymentsFrontendTrackingController $tracker = null, bool $dev_mode = false, ?string $throwing_mode_method = null ): WooPaymentsApplePayDomainService {
 		$arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'should_native_register' ) )
@@ -229,10 +379,19 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'has_live_account', 'get_mode', 'is_payment_request_method_enabled' ) )
+			->onlyMethods( array( 'has_live_account', 'get_mode', 'is_dev_mode_enabled', 'is_payment_request_method_enabled' ) )
 			->getMock();
 		$account_service->method( 'has_live_account' )->willReturn( $live_account );
-		$account_service->method( 'get_mode' )->willReturn( 'live' );
+		if ( 'get_mode' === $throwing_mode_method ) {
+			$account_service->method( 'get_mode' )->willThrowException( new \RuntimeException( 'Mode lookup failed.' ) );
+		} else {
+			$account_service->method( 'get_mode' )->willReturn( 'live' );
+		}
+		if ( 'is_dev_mode_enabled' === $throwing_mode_method ) {
+			$account_service->method( 'is_dev_mode_enabled' )->willThrowException( new \RuntimeException( 'Dev mode lookup failed.' ) );
+		} else {
+			$account_service->method( 'is_dev_mode_enabled' )->willReturn( $dev_mode );
+		}
 		$account_service->method( 'is_payment_request_method_enabled' )->willReturnCallback(
 			static function ( string $method_id ): bool {
 				$settings = get_option( self::APPLE_PAY_SETTINGS_OPTION, array() );
@@ -242,7 +401,7 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$service = new WooPaymentsApplePayDomainService();
-		$service->init( $arbiter, $this->api_client, $account_service, $this->scheduler );
+		$service->init( $arbiter, $this->api_client, $account_service, $this->scheduler, $tracker );
 
 		return $service;
 	}

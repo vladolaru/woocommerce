@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderSuccessPage;
 use WC_Order;
 use WC_Unit_Test_Case;
@@ -28,6 +29,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		foreach ( $this->registered_pages as $page ) {
+			remove_action( 'woocommerce_thankyou', array( $page, 'record_order_success_page_view' ) );
 			remove_action( 'woocommerce_before_thankyou', array( $page, 'register_payment_method_title_override' ) );
 			remove_action( 'woocommerce_before_thankyou', array( $page, 'maybe_render_multibanco_payment_instructions' ) );
 			remove_action( 'woocommerce_order_details_before_order_table', array( $page, 'unregister_payment_method_title_override' ) );
@@ -42,6 +44,53 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 		wp_deregister_style( 'wc-woopayments-order-success' );
 
 		parent::tearDown();
+	}
+
+	/**
+	 * @testdox Should track the main WooPayments thank-you page once and ignore ineligible orders.
+	 */
+	public function test_tracks_only_main_woopayments_order_success_page_once(): void {
+		$recorded_events = array();
+		$tracker         = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'record_user_event' ) )
+			->getMock();
+		$tracker->method( 'record_user_event' )->willReturnCallback(
+			static function ( string $event_name, array $properties ) use ( &$recorded_events ): bool {
+				$recorded_events[] = array( $event_name, $properties );
+				return true;
+			}
+		);
+
+		$page = $this->create_page( true, $tracker );
+		$page->register();
+		$page->register();
+		$this->registered_pages[] = $page;
+
+		$main_order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $main_order );
+		$main_order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$main_order->save();
+
+		$split_order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $split_order );
+		$split_order->set_payment_method( OrderPaymentStore::GATEWAY_ID_PREFIX . 'klarna' );
+		$split_order->save();
+
+		$this->assertSame( 10, has_action( 'woocommerce_thankyou', array( $page, 'record_order_success_page_view' ) ) );
+		$page->record_order_success_page_view( $main_order->get_id() );
+		$page->record_order_success_page_view( $split_order->get_id() );
+		$page->record_order_success_page_view( 0 );
+
+		$this->assertSame(
+			array(
+				array(
+					'order_success_page_view',
+					array( 'record_event_data' => array( 'track_on_all_stores' => true ) ),
+				),
+			),
+			$recorded_events
+		);
 	}
 
 	/**
@@ -232,10 +281,11 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	/**
 	 * Create an order-success page controller.
 	 *
-	 * @param bool $native_register Whether native should own runtime.
+	 * @param bool                                       $native_register Whether native should own runtime.
+	 * @param WooPaymentsFrontendTrackingController|null $tracker        Optional tracking controller.
 	 * @return WooPaymentsOrderSuccessPage
 	 */
-	private function create_page( bool $native_register ): WooPaymentsOrderSuccessPage {
+	private function create_page( bool $native_register, ?WooPaymentsFrontendTrackingController $tracker = null ): WooPaymentsOrderSuccessPage {
 		$arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'should_native_register' ) )
@@ -248,7 +298,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 		$account_service->method( 'get_account_country' )->willReturn( 'US' );
 
 		$page = new WooPaymentsOrderSuccessPage();
-		$page->init( $arbiter, new WooPaymentsPaymentMethodRegistry(), $account_service );
+		$page->init( $arbiter, new WooPaymentsPaymentMethodRegistry(), $account_service, $tracker );
 
 		return $page;
 	}

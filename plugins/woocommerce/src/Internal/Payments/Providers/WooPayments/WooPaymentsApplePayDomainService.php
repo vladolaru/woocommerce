@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Throwable;
 
 /**
  * Native WooPayments Apple Pay domain registration.
@@ -59,25 +60,42 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	private WooPaymentsActionSchedulerService $scheduler;
 
 	/**
+	 * Frontend tracking controller.
+	 *
+	 * @var WooPaymentsFrontendTrackingController|null
+	 */
+	private ?WooPaymentsFrontendTrackingController $frontend_tracking_controller = null;
+
+	/**
+	 * Apple Pay registration events queued during this request.
+	 *
+	 * @var array<string,array<string,mixed>>
+	 */
+	private array $pending_registration_events = array();
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param NativePaymentsRuntimeArbiter      $arbiter         Runtime owner arbiter.
-	 * @param WooPaymentsApiClient              $api_client      Native WooPayments API client.
-	 * @param WooPaymentsAccountService         $account_service Native WooPayments account service.
-	 * @param WooPaymentsActionSchedulerService $scheduler       Action Scheduler wrapper.
+	 * @param NativePaymentsRuntimeArbiter               $arbiter         Runtime owner arbiter.
+	 * @param WooPaymentsApiClient                       $api_client      Native WooPayments API client.
+	 * @param WooPaymentsAccountService                  $account_service Native WooPayments account service.
+	 * @param WooPaymentsActionSchedulerService          $scheduler                   Action Scheduler wrapper.
+	 * @param WooPaymentsFrontendTrackingController|null $frontend_tracking_controller Optional frontend tracking controller.
 	 */
 	final public function init(
 		NativePaymentsRuntimeArbiter $arbiter,
 		WooPaymentsApiClient $api_client,
 		WooPaymentsAccountService $account_service,
-		WooPaymentsActionSchedulerService $scheduler
+		WooPaymentsActionSchedulerService $scheduler,
+		?WooPaymentsFrontendTrackingController $frontend_tracking_controller = null
 	): void {
-		$this->arbiter         = $arbiter;
-		$this->api_client      = $api_client;
-		$this->account_service = $account_service;
-		$this->scheduler       = $scheduler;
+		$this->arbiter                      = $arbiter;
+		$this->api_client                   = $api_client;
+		$this->account_service              = $account_service;
+		$this->scheduler                    = $scheduler;
+		$this->frontend_tracking_controller = $frontend_tracking_controller;
 	}
 
 	/**
@@ -98,6 +116,9 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 		add_action( 'update_option_home', array( $this, 'verify_domain_on_site_url_change' ), 10, 2 );
 		add_action( 'update_option_siteurl', array( $this, 'verify_domain_on_site_url_change' ), 10, 2 );
 		add_action( self::RETRY_ACTION, array( $this, 'handle_domain_registration_retry' ) );
+		if ( false === has_action( 'shutdown', array( $this, 'flush_registration_events' ) ) ) {
+			add_action( 'shutdown', array( $this, 'flush_registration_events' ) );
+		}
 	}
 
 	/**
@@ -214,6 +235,12 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 				);
 				delete_option( self::ERROR_OPTION );
 				$this->log( __( 'Your domain has been verified with Apple Pay!', 'woocommerce' ) );
+				$this->record_registration_event(
+					'apple_pay_domain_registration_success',
+					array(
+						'domain' => $domain,
+					)
+				);
 
 				return true;
 			}
@@ -236,8 +263,57 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 		update_option( self::ERROR_OPTION, $error );
 		$this->schedule_retry();
 		$this->log( 'Error registering domain with Apple: ' . $error, 'error' );
+		$this->record_registration_event(
+			'apple_pay_domain_registration_failure',
+			array(
+				'domain' => $domain,
+				'reason' => $error,
+			)
+		);
 
 		return false;
+	}
+
+	/**
+	 * Queue an Apple Pay domain event by name, retaining the latest payload.
+	 *
+	 * @param string              $event_name Event name without the wcpay_ prefix.
+	 * @param array<string,mixed> $properties Event properties.
+	 */
+	private function record_registration_event( string $event_name, array $properties ): void {
+		try {
+			$properties                                       = array_merge(
+				$properties,
+				array(
+					'mode'              => $this->get_tracking_mode(),
+					'record_event_data' => array(
+						'is_admin_event'      => true,
+						'track_on_all_stores' => true,
+					),
+				)
+			);
+			$this->pending_registration_events[ $event_name ] = $properties;
+		} catch ( Throwable $throwable ) { // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch
+			// Tracking must never change the registration result or retry lifecycle.
+		}
+	}
+
+	/**
+	 * Flush queued Apple Pay registration events once.
+	 *
+	 * @internal
+	 */
+	public function flush_registration_events(): void {
+		$events                            = $this->pending_registration_events;
+		$this->pending_registration_events = array();
+
+		foreach ( $events as $event_name => $properties ) {
+			try {
+				$this->get_frontend_tracking_controller()->record_user_event( $event_name, $properties );
+			} catch ( Throwable $throwable ) { // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch
+				// Tracking must never change the registration result or retry lifecycle.
+			}
+		}
 	}
 
 	/**
@@ -425,6 +501,28 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 		$domain = wp_parse_url( get_site_url(), PHP_URL_HOST );
 
 		return is_scalar( $domain ) ? (string) $domain : '';
+	}
+
+	/**
+	 * Get the Apple Pay Tracks mode value used by the standalone integration.
+	 *
+	 * @return string
+	 */
+	private function get_tracking_mode(): string {
+		return $this->account_service->is_dev_mode_enabled() ? 'dev' : $this->account_service->get_mode();
+	}
+
+	/**
+	 * Get the frontend tracking controller.
+	 *
+	 * @return WooPaymentsFrontendTrackingController
+	 */
+	private function get_frontend_tracking_controller(): WooPaymentsFrontendTrackingController {
+		if ( null === $this->frontend_tracking_controller ) {
+			$this->frontend_tracking_controller = wc_get_container()->get( WooPaymentsFrontendTrackingController::class );
+		}
+
+		return $this->frontend_tracking_controller;
 	}
 
 	/**
