@@ -27,7 +27,7 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 
 	private const ERROR_OPTION = 'wcpay_apple_pay_domain_error';
 
-	private const RETRY_ACTION = 'wcpay_register_apple_pay_domain';
+	const RETRY_ACTION = 'wcpay_register_apple_pay_domain';
 
 	private const RETRY_DELAY_SECONDS = HOUR_IN_SECONDS;
 

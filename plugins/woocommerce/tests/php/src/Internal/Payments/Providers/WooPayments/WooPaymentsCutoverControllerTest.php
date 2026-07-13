@@ -1128,6 +1128,54 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Cutover preflight allows queued WooPayments actions that have native consumers.
+	 *
+	 * @dataProvider native_owned_operational_action_provider
+	 *
+	 * @param string $hook_name Native-owned Action Scheduler hook.
+	 */
+	public function test_preflight_allows_pending_native_owned_operational_action( string $hook_name ): void {
+		$this->fake_plugin_active();
+		$this->fake_current_user_caps( true );
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsCutoverController::FILTER_NATIVE_ADMIN_SURFACES_READY, '__return_true' );
+		add_filter( WooPaymentsCutoverController::FILTER_PROVIDER_EVENT_TYPES_PENDING_CUTOVER, '__return_empty_array' );
+		$this->native_provider_ready = true;
+
+		$this->scheduled_action_hooks[] = $hook_name;
+		$action_id                      = as_schedule_single_action( time() + HOUR_IN_SECONDS, $hook_name, array(), 'woocommerce-test-cutover', true );
+
+		$this->assertIsInt( $action_id );
+		$this->assertGreaterThan( 0, $action_id );
+		$this->assertNotContains( 'operational_queue_hooks_undispositioned', $this->sut->get_preflight_failures() );
+		$this->assertTrue( $this->sut->should_show_soft_cutover_notice() );
+	}
+
+	/**
+	 * Native-owned Action Scheduler hooks.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public function native_owned_operational_action_provider(): array {
+		return array(
+			'store setup sync'                      => array( 'wcpay_store_setup_sync' ),
+			'update saved payment method'           => array( 'wcpay_update_saved_payment_method' ),
+			'fee breakdown order note'              => array( 'wcpay_add_fee_breakdown_to_order_notes' ),
+			'compatibility data update'             => array( 'wcpay_update_compatibility_data' ),
+			'instant deposit reminder'              => array( 'wcpay_instant_deposit_reminder' ),
+			'post-KYC activation email'             => array( 'wcpay_post_kyc_activation_email_send' ),
+			'new-order tracking'                    => array( 'wcpay_track_new_order' ),
+			'updated-order tracking'                => array( 'wcpay_track_update_order' ),
+			'Apple Pay domain retry'                => array( 'wcpay_register_apple_pay_domain' ),
+			'authorization-fee remediation'         => array( 'wcpay_remediate_canceled_authorization_fees' ),
+			'authorization-fee dry run'             => array( 'wcpay_remediate_canceled_authorization_fees_dry_run' ),
+			'authorization-fee affected-order scan' => array( 'wcpay_check_affected_auth_fee_orders' ),
+			'failed webhook fetch'                  => array( 'wcpay_webhook_fetch_events' ),
+			'failed webhook processing'             => array( 'wcpay_webhook_process_event' ),
+		);
+	}
+
+	/**
 	 * @testdox Cutover preflight blocks while required financial migrations cannot be scheduled.
 	 */
 	public function test_preflight_blocks_when_financial_migrations_cannot_be_scheduled(): void {

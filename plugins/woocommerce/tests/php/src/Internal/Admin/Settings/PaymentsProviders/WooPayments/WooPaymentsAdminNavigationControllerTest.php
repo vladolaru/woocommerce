@@ -60,6 +60,15 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should resolve every published admin route through the canonical client route inventory.
+	 */
+	public function test_all_published_admin_routes_are_registered(): void {
+		$sut = $this->create_controller( true );
+
+		$this->assertTrue( $sut->are_all_available_routes_registered() );
+	}
+
+	/**
 	 * @testdox Should not register the WooPayments navigation hook when native runtime does not own payments.
 	 */
 	public function test_does_not_register_admin_menu_hook_when_native_runtime_does_not_own_payments(): void {

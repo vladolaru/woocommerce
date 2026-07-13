@@ -134,6 +134,28 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	private const NOTICE_STATUS_TRANSIENT = 'woocommerce_woopayments_native_cutover_status';
 
 	/**
+	 * Action Scheduler hooks with native Core consumers.
+	 *
+	 * @var string[]
+	 */
+	private const NATIVE_OWNED_OPERATIONAL_QUEUE_HOOKS = array(
+		WooPaymentsOperationalQueueService::STORE_SETUP_SYNC_ACTION,
+		WooPaymentsOperationalQueueService::UPDATE_SAVED_PAYMENT_METHOD_ACTION,
+		WooPaymentsOperationalQueueService::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
+		WooPaymentsOperationalQueueService::UPDATE_COMPATIBILITY_DATA_ACTION,
+		WooPaymentsOperationalQueueService::INSTANT_DEPOSIT_REMINDER_ACTION,
+		WooPaymentsOperationalQueueService::POST_KYC_ACTIVATION_EMAIL_SEND_ACTION,
+		WooPaymentsOrderTrackingService::TRACK_NEW_ORDER_ACTION,
+		WooPaymentsOrderTrackingService::TRACK_UPDATE_ORDER_ACTION,
+		WooPaymentsApplePayDomainService::RETRY_ACTION,
+		WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_HOOK,
+		WooPaymentsCanceledAuthorizationFeeRemediationService::DRY_RUN_ACTION_HOOK,
+		WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_AFFECTED_ORDERS_HOOK,
+		WooPaymentsWebhookReliabilityService::WEBHOOK_FETCH_EVENTS_ACTION,
+		WooPaymentsWebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION,
+	);
+
+	/**
 	 * Option containing the last active WooPayments plugin version.
 	 *
 	 * @var string
@@ -852,6 +874,8 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @return array<int,string> Operational queue hook names.
 	 */
 	private function get_pending_operational_queue_hooks(): array {
+		$queued_hook_names = $this->get_queued_operational_action_hooks();
+
 		/**
 		 * Filters operational queue hooks that still need native cutover disposition.
 		 *
@@ -859,7 +883,10 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 		 *
 		 * @since 11.0.0
 		 */
-		$hook_names = apply_filters( self::FILTER_OPERATIONAL_QUEUE_HOOKS_PENDING_CUTOVER, $this->get_queued_operational_action_hooks() );
+		$hook_names = apply_filters(
+			self::FILTER_OPERATIONAL_QUEUE_HOOKS_PENDING_CUTOVER,
+			array_values( array_diff( $queued_hook_names, self::NATIVE_OWNED_OPERATIONAL_QUEUE_HOOKS ) )
+		);
 
 		if ( ! is_array( $hook_names ) ) {
 			return array( 'operational_queue_hooks_filter_invalid' );

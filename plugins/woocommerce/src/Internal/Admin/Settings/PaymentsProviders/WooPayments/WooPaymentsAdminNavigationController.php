@@ -66,6 +66,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 		self::PATH_SETTINGS,
 		self::PATH_EXPRESS_CHECKOUT_SETTINGS,
 		self::PATH_FRAUD_PROTECTION_SETTINGS,
+		self::PATH_ONBOARDING,
 		self::PATH_OVERVIEW,
 		self::PATH_PAYOUTS,
 		self::PATH_PAYOUT_DETAILS,
