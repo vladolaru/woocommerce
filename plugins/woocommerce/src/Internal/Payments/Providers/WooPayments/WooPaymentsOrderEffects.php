@@ -358,7 +358,7 @@ class WooPaymentsOrderEffects {
 	 * @return float
 	 */
 	public static function interpret_stripe_amount( int $amount, string $currency ): float {
-		return self::is_zero_decimal_currency( $currency ) ? (float) $amount : (float) $amount / 100;
+		return WooPaymentsCurrencyUtils::amount_from_minor_units( $amount, $currency );
 	}
 
 	/**
@@ -434,11 +434,7 @@ class WooPaymentsOrderEffects {
 	 * @return bool
 	 */
 	public static function is_zero_decimal_currency( string $currency ): bool {
-		return in_array(
-			strtolower( $currency ),
-			array( 'bif', 'clp', 'djf', 'gnf', 'jpy', 'kmf', 'krw', 'mga', 'pyg', 'rwf', 'vnd', 'vuv', 'xaf', 'xof', 'xpf' ),
-			true
-		);
+		return WooPaymentsCurrencyUtils::is_zero_decimal_currency( $currency );
 	}
 
 	/**
