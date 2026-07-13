@@ -177,6 +177,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 		$localized_data = wp_scripts()->get_data( 'wc-woopayments-express-checkout', 'data' );
 		$this->assertIsString( $localized_data );
 		$this->assertStringContainsString( '"button_context":"product"', $localized_data );
+		$this->assertStringContainsString( '"label":"Merchant (via WooCommerce)"', $localized_data );
 	}
 
 	/**

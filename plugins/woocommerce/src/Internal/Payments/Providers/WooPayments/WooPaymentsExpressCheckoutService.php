@@ -438,7 +438,7 @@ class WooPaymentsExpressCheckoutService {
 		 *
 		 * @since 11.0.0
 		 */
-		$total_label = apply_filters( 'wcpay_payment_request_total_label', get_bloginfo( 'name' ) );
+		$total_label = apply_filters( 'wcpay_payment_request_total_label', $this->get_total_label() );
 
 		$data = array(
 			'displayItems'   => $items,
@@ -489,6 +489,27 @@ class WooPaymentsExpressCheckoutService {
 		$filtered_data = apply_filters( 'woocommerce_native_woopayments_express_checkout_product_data', $data, $product, $this );
 
 		return is_array( $filtered_data ) ? $filtered_data : $data;
+	}
+
+	/**
+	 * Get the product-page payment-request total label.
+	 *
+	 * @return string
+	 */
+	private function get_total_label(): string {
+		$account_data         = $this->account_service->get_cached_account_data();
+		$statement_descriptor = isset( $account_data['statement_descriptor'] ) ? (string) $account_data['statement_descriptor'] : '';
+
+		/**
+		 * Filters the suffix appended to the payment-request total label.
+		 *
+		 * @since 11.0.0
+		 *
+		 * @param string $suffix Total label suffix.
+		 */
+		$suffix = apply_filters( 'wcpay_payment_request_total_label_suffix', ' (via WooCommerce)' );
+
+		return str_replace( "'", '', $statement_descriptor ) . $suffix;
 	}
 
 	/**

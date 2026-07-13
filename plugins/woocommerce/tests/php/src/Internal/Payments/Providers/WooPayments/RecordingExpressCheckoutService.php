@@ -60,6 +60,11 @@ class RecordingExpressCheckoutService extends WooPaymentsExpressCheckoutService 
 			),
 			'button_context'  => $context,
 			'enabled_methods' => array( 'payment_request' ),
+			'product'         => array(
+				'total' => array(
+					'label' => 'Merchant (via WooCommerce)',
+				),
+			),
 			'button'          => array(
 				'type'   => 'default',
 				'theme'  => 'dark',

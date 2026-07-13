@@ -26,6 +26,8 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		unset( $_GET['pay_for_order'], $_GET['key'] );
 		remove_all_filters( 'woocommerce_native_woopayments_express_checkout_enabled_methods' );
 		remove_all_filters( 'wcpay_payment_request_supported_types' );
+		remove_all_filters( 'wcpay_payment_request_total_label' );
+		remove_all_filters( 'wcpay_payment_request_total_label_suffix' );
 		remove_all_filters( 'woocommerce_is_checkout' );
 		remove_all_filters( 'woocommerce_is_cart' );
 		remove_all_filters( 'woocommerce_is_product' );
@@ -110,6 +112,85 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 			$product['displayItems']
 		);
 		$this->assertSame( 1234, $product['total']['amount'] );
+	}
+
+	/**
+	 * @testdox Should build the product total label from the apostrophe-free account statement descriptor and exact default suffix.
+	 */
+	public function test_product_total_label_matches_statement_descriptor_oracle(): void {
+		$product = \WC_Helper_Product::create_simple_product(
+			true,
+			array(
+				'name'          => 'Express Widget',
+				'regular_price' => '12.34',
+				'virtual'       => true,
+				'price'         => '12.34',
+			)
+		);
+		$this->set_current_product( $product );
+
+		$params = $this->create_service( array(), true, array( 'statement_descriptor' => "Merchant's Store" ) )->get_express_checkout_params( 'product' );
+
+		$this->assertSame( 'Merchants Store (via WooCommerce)', $params['product']['total']['label'] );
+	}
+
+	/**
+	 * @testdox Should use the exact suffix-only fallback when the account statement descriptor is absent.
+	 */
+	public function test_product_total_label_matches_empty_descriptor_fallback(): void {
+		$product = \WC_Helper_Product::create_simple_product(
+			true,
+			array(
+				'name'          => 'Express Widget',
+				'regular_price' => '12.34',
+				'virtual'       => true,
+				'price'         => '12.34',
+			)
+		);
+		$this->set_current_product( $product );
+
+		$params = $this->create_service()->get_express_checkout_params( 'product' );
+
+		$this->assertSame( ' (via WooCommerce)', $params['product']['total']['label'] );
+	}
+
+	/**
+	 * @testdox Should apply suffix and total-label filters once with the exact oracle values and uncast suffix behavior.
+	 */
+	public function test_product_total_label_preserves_filter_shape_timing_and_type_behavior(): void {
+		$product = \WC_Helper_Product::create_simple_product(
+			true,
+			array(
+				'name'          => 'Express Widget',
+				'regular_price' => '12.34',
+				'virtual'       => true,
+				'price'         => '12.34',
+			)
+		);
+		$this->set_current_product( $product );
+
+		$suffix_filter_calls = array();
+		$total_filter_calls  = array();
+		add_filter(
+			'wcpay_payment_request_total_label_suffix',
+			static function ( ...$suffix_args ) use ( &$suffix_filter_calls ): int {
+				$suffix_filter_calls[] = $suffix_args;
+				return 7;
+			}
+		);
+		add_filter(
+			'wcpay_payment_request_total_label',
+			static function ( $label ) use ( &$total_filter_calls ) {
+				$total_filter_calls[] = func_get_args();
+				return $label;
+			}
+		);
+
+		$params = $this->create_service( array(), true, array( 'statement_descriptor' => 'Merchant' ) )->get_express_checkout_params( 'product' );
+
+		$this->assertSame( 'Merchant7', $params['product']['total']['label'] );
+		$this->assertSame( array( array( ' (via WooCommerce)' ) ), $suffix_filter_calls );
+		$this->assertSame( array( array( 'Merchant7' ) ), $total_filter_calls );
 	}
 
 	/**

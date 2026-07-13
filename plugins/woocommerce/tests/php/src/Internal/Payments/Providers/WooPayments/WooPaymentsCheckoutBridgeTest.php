@@ -345,6 +345,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		$this->reset_frontend_surface_state();
+		unset( $_GET['change_payment_method'], $GLOBALS['wcpay_test_subscription_ids'] );
 		delete_option( '_wcpay_feature_dynamic_checkout_place_order_button' );
 		remove_all_filters( 'wcpay_payment_fields_js_config' );
 		wp_dequeue_script( 'wc-woopayments-checkout' );
@@ -488,6 +489,70 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$this->assertFalse( $config['usesLegacyOrderStatusBridge'] );
 		$this->assertTrue( $config['usesNativeSetupIntentBridge'] );
 		$this->assertTrue( $config['usesNativeOrderStatusBridge'] );
+	}
+
+	/**
+	 * @testdox Should expose change-payment state only for an order-pay subscription request without mutating it.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_get_payment_fields_js_config_exposes_subscription_change_payment_request_state(): void {
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; this isolated test needs its availability marker.
+		eval( 'namespace { class WC_Subscriptions_Core_Plugin {} }' );
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; this isolated test needs its public detector.
+		eval( 'namespace { function wcs_is_subscription( $subscription_id ) { return in_array( $subscription_id, $GLOBALS["wcpay_test_subscription_ids"] ?? array(), true ); } }' );
+
+		$bridge = new WooPaymentsCheckoutBridge();
+		$bridge->init(
+			$this->create_legacy_runtime_for_bridge(),
+			$this->create_account_service_for_bridge( true ),
+			$this->create_woopay_session_service_for_bridge( false ),
+			$this->create_frontend_styles_service_for_bridge(),
+			$this->create_frontend_tracking_controller_for_bridge()
+		);
+
+		$filter_calls = 0;
+		add_filter(
+			'wcpay_payment_fields_js_config',
+			static function ( array $config ) use ( &$filter_calls ): array {
+				++$filter_calls;
+				$config['testFilterMutation'] = true;
+				return $config;
+			}
+		);
+
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- The test verifies read-only request detection and non-mutation.
+		$GLOBALS['wcpay_test_subscription_ids'] = array( '123' );
+		$_GET['change_payment_method']          = '123';
+		$original_request                       = $_GET;
+		$not_order_pay                          = $bridge->get_payment_fields_js_config();
+		$this->assertArrayNotHasKey( 'isChangingPayment', $not_order_pay );
+		$this->assertTrue( $not_order_pay['testFilterMutation'] );
+		$this->assertSame( $original_request, $_GET );
+
+		global $wp;
+		$wp->query_vars['order-pay'] = 456;
+		unset( $_GET['change_payment_method'] );
+		$missing_request = $bridge->get_payment_fields_js_config();
+		$this->assertArrayNotHasKey( 'isChangingPayment', $missing_request );
+		$this->assertTrue( $missing_request['testFilterMutation'] );
+
+		$_GET['change_payment_method'] = '456';
+		$non_subscription_request      = $_GET;
+		$non_subscription              = $bridge->get_payment_fields_js_config();
+		$this->assertArrayNotHasKey( 'isChangingPayment', $non_subscription );
+		$this->assertTrue( $non_subscription['testFilterMutation'] );
+		$this->assertSame( $non_subscription_request, $_GET );
+
+		$_GET['change_payment_method'] = '123';
+		$subscription_request          = $_GET;
+		$changing_payment              = $bridge->get_payment_fields_js_config();
+		$this->assertArrayHasKey( 'isChangingPayment', $changing_payment );
+		$this->assertTrue( $changing_payment['isChangingPayment'] );
+		$this->assertArrayNotHasKey( 'testFilterMutation', $changing_payment );
+		$this->assertSame( $subscription_request, $_GET );
+		// phpcs:enable WordPress.Security.NonceVerification.Recommended
+		$this->assertSame( 3, $filter_calls );
 	}
 
 	/**

@@ -601,6 +601,11 @@ class WooPaymentsTest extends WP_UnitTestCase {
 				'expressCheckoutParams' => array(
 					'enabled_methods' => array( 'payment_request' ),
 					'button_context'  => 'checkout',
+					'product'         => array(
+						'total' => array(
+							'label' => 'Merchant (via WooCommerce)',
+						),
+					),
 				),
 			),
 			$integration->get_payment_method_data()
@@ -672,6 +677,11 @@ class WooPaymentsTest extends WP_UnitTestCase {
 			array(
 				'enabled_methods' => array( 'payment_request' ),
 				'button_context'  => 'checkout',
+				'product'         => array(
+					'total' => array(
+						'label' => 'Merchant (via WooCommerce)',
+					),
+				),
 			)
 		);
 

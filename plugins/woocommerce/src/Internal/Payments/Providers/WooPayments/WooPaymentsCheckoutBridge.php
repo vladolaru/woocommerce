@@ -507,6 +507,12 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 			$config['forceNetworkSavedCards'] = $force_network_saved_cards;
 		}
 
+		if ( $this->is_changing_payment_method_for_subscription() ) {
+			$config['isChangingPayment'] = true;
+
+			return $config;
+		}
+
 		/**
 		 * Allows filtering of the JS config for the WooPayments payment fields.
 		 *
@@ -1134,6 +1140,26 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 		}
 
 		return class_exists( 'WC_Subscriptions_Core_Plugin' );
+	}
+
+	/**
+	 * Tell whether the current order-pay request changes a subscription payment method.
+	 *
+	 * @return bool
+	 */
+	private function is_changing_payment_method_for_subscription(): bool {
+		if (
+			! is_wc_endpoint_url( 'order-pay' ) ||
+			! $this->is_subscriptions_enabled() ||
+			! isset( $_GET['change_payment_method'] ) || // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only request context matching WooCommerce Subscriptions.
+			! function_exists( 'wcs_is_subscription' )
+		) {
+			return false;
+		}
+
+		$subscription_id = wc_clean( wp_unslash( $_GET['change_payment_method'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only request context matching WooCommerce Subscriptions.
+
+		return (bool) wcs_is_subscription( $subscription_id );
 	}
 
 	/**
