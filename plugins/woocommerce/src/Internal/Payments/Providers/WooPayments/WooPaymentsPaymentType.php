@@ -34,22 +34,27 @@ class WooPaymentsPaymentType implements \JsonSerializable {
 	 *
 	 * @var string
 	 */
-	private string $value;
+	protected $value;
 
 	/**
 	 * Static object cache.
 	 *
 	 * @var array<string,self>
 	 */
-	private static array $instances = array();
+	protected static $object_cache = array();
 
 	/**
 	 * Constructor.
 	 *
-	 * @param string $value Payment type value.
+	 * @param string $value Payment type constant name.
+	 * @throws \InvalidArgumentException When the constant name does not exist.
 	 */
-	private function __construct( string $value ) {
-		$this->value = self::RECURRING === $value ? self::RECURRING : self::SINGLE;
+	final private function __construct( string $value ) {
+		if ( ! defined( static::class . "::$value" ) ) {
+			throw new \InvalidArgumentException( "Constant with name '$value' does not exist." ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Preserves the WooPayments oracle exception contract.
+		}
+
+		$this->value = $value;
 	}
 
 	/**
@@ -58,7 +63,7 @@ class WooPaymentsPaymentType implements \JsonSerializable {
 	 * @return self
 	 */
 	public static function single(): self {
-		return self::from_value( self::SINGLE );
+		return static::from_name( 'SINGLE' );
 	}
 
 	/**
@@ -67,7 +72,21 @@ class WooPaymentsPaymentType implements \JsonSerializable {
 	 * @return self
 	 */
 	public static function recurring(): self {
-		return self::from_value( self::RECURRING );
+		return static::from_name( 'RECURRING' );
+	}
+
+	/**
+	 * Create a payment type from an oracle constant name.
+	 *
+	 * @param string $name      Constant name.
+	 * @param array  $arguments Unused static-call arguments.
+	 * @return self
+	 * @throws \InvalidArgumentException When the constant name does not exist.
+	 */
+	public static function __callStatic( string $name, array $arguments ): self {
+		unset( $arguments );
+
+		return static::from_name( $name );
 	}
 
 	/**
@@ -76,7 +95,7 @@ class WooPaymentsPaymentType implements \JsonSerializable {
 	 * @param mixed $other Payment type to compare.
 	 * @return bool
 	 */
-	public function equals( $other = null ): bool {
+	final public function equals( $other = null ): bool {
 		return $this === $other;
 	}
 
@@ -86,7 +105,7 @@ class WooPaymentsPaymentType implements \JsonSerializable {
 	 * @return string
 	 */
 	public function __toString(): string {
-		return $this->value;
+		return (string) constant( get_class( $this ) . '::' . $this->get_value() );
 	}
 
 	/**
@@ -96,6 +115,23 @@ class WooPaymentsPaymentType implements \JsonSerializable {
 	 */
 	public function get_value(): string {
 		return $this->value;
+	}
+
+	/**
+	 * Find a payment type constant name by its exact value.
+	 *
+	 * @param string $value Constant value.
+	 * @return string Constant name.
+	 * @throws \InvalidArgumentException When the constant value does not exist.
+	 */
+	public static function search( string $value ): string {
+		$constants = ( new \ReflectionClass( static::class ) )->getConstants();
+		$name      = array_search( $value, $constants, true );
+		if ( false === $name ) {
+			throw new \InvalidArgumentException( "Constant with value '$value' does not exist." ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Preserves the WooPayments oracle exception contract.
+		}
+
+		return $name;
 	}
 
 	/**
@@ -120,15 +156,14 @@ class WooPaymentsPaymentType implements \JsonSerializable {
 	/**
 	 * Get a cached payment type instance.
 	 *
-	 * @param string $value Payment type value.
+	 * @param string $name Payment type constant name.
 	 * @return self
 	 */
-	private static function from_value( string $value ): self {
-		$value = self::RECURRING === $value ? self::RECURRING : self::SINGLE;
-		if ( ! isset( self::$instances[ $value ] ) ) {
-			self::$instances[ $value ] = new self( $value );
+	protected static function from_name( string $name ): self {
+		if ( ! isset( static::$object_cache[ $name ] ) ) {
+			static::$object_cache[ $name ] = new static( $name );
 		}
 
-		return self::$instances[ $value ];
+		return static::$object_cache[ $name ];
 	}
 }
