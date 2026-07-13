@@ -255,3 +255,46 @@ def test_plan_specific_payment_method_dispositions_are_pinned() -> None:
         assert row[5] == "Native WooPayments plan D13"
         assert row[6]
         assert "deprecated" in row[7].lower()
+
+
+def test_wc_payments_global_service_locator_drop_is_scoped_and_signed() -> None:
+    manifest = MANIFEST.read_text(encoding="utf-8")
+    matching_rows = [
+        cells
+        for line in manifest.splitlines()
+        if line.startswith("|")
+        for cells in ([cell.strip() for cell in line.split("|")[1:-1]],)
+        if len(cells) == 8
+        and cells[1].strip(" `") == "includes/class-wc-payments.php"
+    ]
+
+    assert len(matching_rows) == 1
+
+    row = matching_rows[0]
+    assert row[0] == (
+        "Legacy global object/service-locator and mutable-map accessors (excluding "
+        "scalar/metadata getters); underlying extension initialization, composition, "
+        "hooks, and payment responsibilities are superseded"
+    )
+    assert row[2] == "`DROPPED`"
+    assert row[3] == (
+        "`plugins/woocommerce/src/Internal/Payments/Providers/WooPayments/`; "
+        "`plugins/woocommerce/src/Internal/Payments/PaymentProcessingService.php`; "
+        "`plugins/woocommerce/src/Internal/Payments/NativePaymentsGatewayRegistry.php`"
+    )
+    assert row[4] == (
+        "The 2026-07-13 audit found zero current native-owner callers across the searched "
+        "preserved scopes: WooCommerce Subscriptions release code, WC Calypso Bridge, "
+        "WooPayments Dev Tools, hosted WooPay, and TumblrPay/server-inbound. This is not "
+        "an ecosystem-wide zero-use claim. Hosted WooPay, TumblrPay, and remaining "
+        "plugin-only Dev Tools paths must migrate or use client-owned runtime adapters or "
+        "deliberately public leaf APIs before native ownership changes."
+    )
+    assert row[5] == "Native WooPayments owner decision (Task 3.6)"
+    assert row[6] == "2026-07-13"
+    assert row[7] == (
+        "Owner-approved leaf principle: Core does not define the legacy global "
+        "object/service-locator and mutable-map accessor surface; scalar/metadata getters "
+        "are excluded, and the file's underlying extension responsibilities remain "
+        "represented by the named Core owners."
+    )
