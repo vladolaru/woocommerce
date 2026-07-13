@@ -3,8 +3,8 @@
 # Static inventory gate for the WooPayments extension subsystem disposition manifest.
 #
 # The gate enumerates extension PHP files under includes/ and src/, then verifies that every
-# file has an exact manifest source path. DROPPED rows must carry explicit sign-off, date,
-# and reason fields.
+# file has an exact manifest source path. DROPPED and PARTIAL-DROP rows must carry explicit
+# sign-off, date, and reason fields. Workflow-ledger owner paths must resolve to Core files.
 
 set -euo pipefail
 
@@ -15,6 +15,7 @@ DEFAULT_EXTENSION_ROOT="$(cd "$REPO_ROOT/.." && pwd)/woocommerce-payments"
 EXTENSION_ROOT="${WCPAY_EXTENSION_ROOT:-$DEFAULT_EXTENSION_ROOT}"
 EXTENSION_REF="${WCPAY_EXTENSION_REF:-10.8.0}"
 MANIFEST="$SELF_DIR/subsystem-disposition.md"
+WORKFLOW_LEDGER="$SELF_DIR/workflow-ledger.md"
 
 while [ "$#" -gt 0 ]; do
 	case "$1" in
@@ -30,13 +31,17 @@ while [ "$#" -gt 0 ]; do
 			EXTENSION_REF="$2"
 			shift 2
 			;;
+		--workflow-ledger)
+			WORKFLOW_LEDGER="$2"
+			shift 2
+			;;
 		-h|--help)
-			echo "usage: subsystem-disposition-gate.sh [--extension-root PATH] [--extension-ref 10.8.0|worktree] [--manifest PATH]" >&2
+			echo "usage: subsystem-disposition-gate.sh [--extension-root PATH] [--extension-ref 10.8.0|worktree] [--manifest PATH] [--workflow-ledger PATH]" >&2
 			exit 2
 			;;
 		*)
 			echo "Unknown arg: $1" >&2
-			echo "usage: subsystem-disposition-gate.sh [--extension-root PATH] [--extension-ref 10.8.0|worktree] [--manifest PATH]" >&2
+			echo "usage: subsystem-disposition-gate.sh [--extension-root PATH] [--extension-ref 10.8.0|worktree] [--manifest PATH] [--workflow-ledger PATH]" >&2
 			exit 2
 			;;
 	esac
@@ -44,6 +49,11 @@ done
 
 if [ ! -f "$MANIFEST" ]; then
 	echo "Manifest not found: $MANIFEST" >&2
+	exit 2
+fi
+
+if [ ! -f "$WORKFLOW_LEDGER" ]; then
+	echo "Workflow ledger not found: $WORKFLOW_LEDGER" >&2
 	exit 2
 fi
 
@@ -63,7 +73,7 @@ else
 	exit 2
 fi
 
-python3 - "$EXTENSION_ROOT" "$MANIFEST" "$EXTENSION_REF" "$ORACLE_COMMIT" <<'PY'
+python3 - "$REPO_ROOT" "$EXTENSION_ROOT" "$MANIFEST" "$WORKFLOW_LEDGER" "$EXTENSION_REF" "$ORACLE_COMMIT" <<'PY'
 from __future__ import annotations
 
 import re
@@ -73,7 +83,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-VALID_DISPOSITIONS = {"PORTED", "SUPERSEDED", "DROPPED"}
+DISPOSITION_ORDER = ("PORTED", "SUPERSEDED", "DROPPED", "PARTIAL-DROP")
+VALID_DISPOSITIONS = set(DISPOSITION_ORDER)
+SIGNED_DISPOSITIONS = {"DROPPED", "PARTIAL-DROP"}
 PATH_RE = re.compile(r"`([^`]+)`")
 
 
@@ -92,6 +104,13 @@ class InvalidManifestRow:
     subsystem: str
     disposition: str
     patterns: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class WorkflowLedgerRow:
+    journey: str
+    behavior_half: str
+    owner_file: str
 
 
 def normalize_header(value: str) -> str:
@@ -117,7 +136,7 @@ def path_patterns_from_cell(cell: str) -> tuple[str, ...]:
         if pattern.startswith("ext:"):
             pattern = pattern[4:]
         pattern = pattern.lstrip("/")
-        if pattern.startswith(("includes/", "src/")):
+        if pattern.startswith(("includes/", "src/", "client/")):
             patterns.append(pattern)
 
     return tuple(patterns)
@@ -177,6 +196,40 @@ def read_manifest_rows(manifest: Path) -> tuple[list[ManifestRow], list[InvalidM
     return rows, invalid_rows
 
 
+def read_workflow_ledger_rows(workflow_ledger: Path) -> list[WorkflowLedgerRow]:
+    rows: list[WorkflowLedgerRow] = []
+    headers: list[str] | None = None
+
+    for line in workflow_ledger.read_text(encoding="utf-8").splitlines():
+        cells = split_markdown_row(line)
+        if not cells:
+            continue
+
+        if headers is None:
+            normalized = [normalize_header(cell) for cell in cells]
+            if "journey" in normalized and "behavior_half" in normalized and "owner_file" in normalized:
+                headers = normalized
+            continue
+
+        if is_separator_row(cells):
+            continue
+
+        if len(cells) < len(headers):
+            cells.extend([""] * (len(headers) - len(cells)))
+
+        values = dict(zip(headers, cells))
+        owner_paths = PATH_RE.findall(values.get("owner_file", ""))
+        rows.append(
+            WorkflowLedgerRow(
+                journey=values.get("journey", "").strip() or "(unnamed journey)",
+                behavior_half=values.get("behavior_half", "").strip() or "(unnamed behavior half)",
+                owner_file=owner_paths[0].strip() if owner_paths else "",
+            )
+        )
+
+    return rows
+
+
 def enumerate_extension_files(extension_root: Path, extension_ref: str, oracle_commit: str) -> list[str]:
     if extension_ref != "worktree":
         result = subprocess.run(
@@ -222,24 +275,53 @@ def matches(pattern: str, relative_path: str) -> bool:
     return pattern == relative_path
 
 
-def is_exact_php_source_path(pattern: str) -> bool:
-    if not pattern.endswith(".php"):
+def is_exact_source_path(pattern: str) -> bool:
+    if any(character in pattern for character in ("*", "?", "[", "]")):
         return False
 
-    if not pattern.startswith(("includes/", "src/")):
+    if pattern.startswith(("includes/", "src/")):
+        return pattern.endswith(".php")
+
+    return pattern.startswith("client/") and pattern.endswith("/")
+
+
+def source_exists(
+    pattern: str,
+    extension_root: Path,
+    extension_ref: str,
+    oracle_commit: str,
+    extension_files: list[str],
+) -> bool:
+    if pattern in extension_files:
+        return True
+
+    if not pattern.startswith("client/"):
         return False
 
-    return not any(character in pattern for character in ("*", "?", "[", "]"))
+    source_path = pattern.rstrip("/")
+    if extension_ref == "worktree":
+        return (extension_root / source_path).is_dir()
+
+    result = subprocess.run(
+        ["git", "-C", str(extension_root), "cat-file", "-e", f"{oracle_commit}:{source_path}"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    return result.returncode == 0
 
 
 def main() -> int:
-    extension_root = Path(sys.argv[1]).resolve()
-    manifest = Path(sys.argv[2]).resolve()
-    extension_ref = sys.argv[3]
-    oracle_commit = sys.argv[4]
+    repo_root = Path(sys.argv[1]).resolve()
+    extension_root = Path(sys.argv[2]).resolve()
+    manifest = Path(sys.argv[3]).resolve()
+    workflow_ledger = Path(sys.argv[4]).resolve()
+    extension_ref = sys.argv[5]
+    oracle_commit = sys.argv[6]
 
     extension_files = enumerate_extension_files(extension_root, extension_ref, oracle_commit)
     rows, invalid_rows = read_manifest_rows(manifest)
+    workflow_rows = read_workflow_ledger_rows(workflow_ledger)
 
     unmatched = [
         relative_path
@@ -250,27 +332,38 @@ def main() -> int:
         (row, pattern)
         for row in rows
         for pattern in row.patterns
-        if not any(matches(pattern, relative_path) for relative_path in extension_files)
+        if not source_exists(pattern, extension_root, extension_ref, oracle_commit, extension_files)
     ]
     dropped_without_signoff = [
         row
         for row in rows
-        if row.disposition == "DROPPED" and (not row.signed_off_by or not row.sign_off_date or not row.reason)
+        if row.disposition in SIGNED_DISPOSITIONS
+        and (not row.signed_off_by or not row.sign_off_date or not row.reason)
     ]
     non_exact_patterns = [
         (row, pattern)
         for row in rows
         for pattern in row.patterns
-        if not is_exact_php_source_path(pattern)
+        if not is_exact_source_path(pattern)
     ]
     disposition_counts = {
         disposition: sum(1 for row in rows if row.disposition == disposition)
-        for disposition in sorted(VALID_DISPOSITIONS)
+        for disposition in DISPOSITION_ORDER
     }
     signed_dropped_rows = [
         row
         for row in rows
         if row.disposition == "DROPPED" and row.signed_off_by and row.sign_off_date and row.reason
+    ]
+    signed_partial_drop_rows = [
+        row
+        for row in rows
+        if row.disposition == "PARTIAL-DROP" and row.signed_off_by and row.sign_off_date and row.reason
+    ]
+    missing_workflow_owners = [
+        row
+        for row in workflow_rows
+        if not row.owner_file or not (repo_root / row.owner_file).is_file()
     ]
 
     print("WooPayments subsystem disposition gate")
@@ -279,15 +372,19 @@ def main() -> int:
     if oracle_commit:
         print(f"  oracle commit: {oracle_commit}")
     print(f"  manifest: {manifest}")
+    print(f"  workflow ledger: {workflow_ledger}")
     print(f"  manifest rows: {len(rows)}")
+    print(f"  workflow ledger rows: {len(workflow_rows)}")
     print(f"  extension files: {len(extension_files)}")
     print(
         "  disposition counts: "
         f"PORTED={disposition_counts['PORTED']} "
         f"SUPERSEDED={disposition_counts['SUPERSEDED']} "
-        f"DROPPED={disposition_counts['DROPPED']}"
+        f"DROPPED={disposition_counts['DROPPED']} "
+        f"PARTIAL-DROP={disposition_counts['PARTIAL-DROP']}"
     )
     print(f"  signed DROPPED rows: {len(signed_dropped_rows)}")
+    print(f"  signed PARTIAL-DROP rows: {len(signed_partial_drop_rows)}")
 
     if unmatched:
         print()
@@ -325,7 +422,21 @@ def main() -> int:
         if len(non_exact_patterns) > 200:
             print(f"  ... {len(non_exact_patterns) - 200} more")
 
-    if unmatched or dropped_without_signoff or stale_patterns or invalid_rows or non_exact_patterns:
+    if missing_workflow_owners:
+        print()
+        print(f"workflow ledger owner files missing ({len(missing_workflow_owners)}):")
+        for row in missing_workflow_owners:
+            owner_file = row.owner_file or "(blank owner file)"
+            print(f"  - {row.journey} / {row.behavior_half}: {owner_file}")
+
+    if (
+        unmatched
+        or dropped_without_signoff
+        or stale_patterns
+        or invalid_rows
+        or non_exact_patterns
+        or missing_workflow_owners
+    ):
         print()
         print("RESULT: FAIL")
         return 1

@@ -19,18 +19,23 @@ def run_gate(
     manifest: Path,
     *,
     extension_ref: str = "worktree",
+    workflow_ledger: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
+    command = [
+        "bash",
+        str(SCRIPT),
+        "--extension-root",
+        str(extension_root),
+        "--manifest",
+        str(manifest),
+        "--extension-ref",
+        extension_ref,
+    ]
+    if workflow_ledger is not None:
+        command.extend(["--workflow-ledger", str(workflow_ledger)])
+
     return subprocess.run(
-        [
-            "bash",
-            str(SCRIPT),
-            "--extension-root",
-            str(extension_root),
-            "--manifest",
-            str(manifest),
-            "--extension-ref",
-            extension_ref,
-        ],
+        command,
         cwd=REPO,
         text=True,
         stdout=subprocess.PIPE,
@@ -46,6 +51,18 @@ def write_manifest(path: Path, rows: str) -> None:
 | Subsystem | Extension source | Disposition | Native owner | Verification | Signed-off by | Sign-off date | Reason |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 {rows}
+""",
+        encoding="utf-8",
+    )
+
+
+def write_workflow_ledger(path: Path, owner_file: str) -> None:
+    path.write_text(
+        f"""# Test workflow ledger
+
+| Journey | Behavior half | Owner file | Ownership contract | Evidence |
+| --- | --- | --- | --- | --- |
+| Card checkout | Initiate | `{owner_file}` | Starts payment. | Unit test. |
 """,
         encoding="utf-8",
     )
@@ -104,6 +121,100 @@ def test_gate_accepts_exact_rows_and_signed_dropped_rows() -> None:
         assert "3 extension files covered" in result.stdout
         assert "disposition counts: PORTED=1 SUPERSEDED=1 DROPPED=1" in result.stdout
         assert "signed DROPPED rows: 1" in result.stdout
+
+
+def test_gate_accepts_signed_partial_drop_and_exact_client_bundle_source() -> None:
+    with tempfile.TemporaryDirectory(prefix="subsystem-disposition-gate-test-") as tmp:
+        root = Path(tmp)
+        extension_root = root / "extension"
+        manifest = root / "manifest.md"
+
+        touch(extension_root / "includes/ported.php")
+        touch(extension_root / "client/fraud-scripts/index.js")
+        write_manifest(
+            manifest,
+            "\n".join(
+                [
+                    "| Ported file | `includes/ported.php` | `PORTED` | native owner | unit test |  |  |  |",
+                    "| Partial client bundle | `client/fraud-scripts/` | `PARTIAL-DROP` | native owner | behavior audit | Payments lead | 2026-07-13 | Browser beacon is intentionally omitted. |",
+                ]
+            )
+            + "\n",
+        )
+
+        result = run_gate(extension_root, manifest)
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "manifest rows: 2" in result.stdout
+        assert "PARTIAL-DROP=1" in result.stdout
+
+
+def test_gate_rejects_partial_drop_rows_without_signoff_fields() -> None:
+    with tempfile.TemporaryDirectory(prefix="subsystem-disposition-gate-test-") as tmp:
+        root = Path(tmp)
+        extension_root = root / "extension"
+        manifest = root / "manifest.md"
+
+        touch(extension_root / "includes/ported.php")
+        touch(extension_root / "client/order/index.js")
+        write_manifest(
+            manifest,
+            "\n".join(
+                [
+                    "| Ported file | `includes/ported.php` | `PORTED` | native owner | unit test |  |  |  |",
+                    "| Partial client bundle | `client/order/` | `PARTIAL-DROP` | native owner | behavior audit |  |  |  |",
+                ]
+            )
+            + "\n",
+        )
+
+        result = run_gate(extension_root, manifest)
+
+        assert result.returncode == 1
+        assert "dropped rows missing sign-off" in result.stdout
+        assert "Partial client bundle" in result.stdout
+
+
+def test_gate_accepts_workflow_ledger_rows_with_existing_owner_files() -> None:
+    with tempfile.TemporaryDirectory(prefix="subsystem-disposition-gate-test-") as tmp:
+        root = Path(tmp)
+        extension_root = root / "extension"
+        manifest = root / "manifest.md"
+        workflow_ledger = root / "workflow-ledger.md"
+
+        touch(extension_root / "includes/ported.php")
+        write_manifest(
+            manifest,
+            "| Ported file | `includes/ported.php` | `PORTED` | native owner | unit test |  |  |  |\n",
+        )
+        write_workflow_ledger(workflow_ledger, "plugins/woocommerce/includes/class-woocommerce.php")
+
+        result = run_gate(extension_root, manifest, workflow_ledger=workflow_ledger)
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "workflow ledger rows: 1" in result.stdout
+
+
+def test_gate_rejects_workflow_ledger_rows_with_missing_owner_files() -> None:
+    with tempfile.TemporaryDirectory(prefix="subsystem-disposition-gate-test-") as tmp:
+        root = Path(tmp)
+        extension_root = root / "extension"
+        manifest = root / "manifest.md"
+        workflow_ledger = root / "workflow-ledger.md"
+
+        touch(extension_root / "includes/ported.php")
+        write_manifest(
+            manifest,
+            "| Ported file | `includes/ported.php` | `PORTED` | native owner | unit test |  |  |  |\n",
+        )
+        missing_owner = "plugins/woocommerce/src/does-not-exist.php"
+        write_workflow_ledger(workflow_ledger, missing_owner)
+
+        result = run_gate(extension_root, manifest, workflow_ledger=workflow_ledger)
+
+        assert result.returncode == 1
+        assert "workflow ledger owner files missing" in result.stdout
+        assert missing_owner in result.stdout
 
 
 def test_gate_reads_the_versioned_oracle_tree_without_changing_the_worktree() -> None:
@@ -255,6 +366,38 @@ def test_plan_specific_payment_method_dispositions_are_pinned() -> None:
         assert row[5] == "Native WooPayments plan D13"
         assert row[6]
         assert "deprecated" in row[7].lower()
+
+
+def test_task_5_5_disposition_corrections_and_client_rows_are_pinned() -> None:
+    manifest = MANIFEST.read_text(encoding="utf-8")
+    rows = {
+        cells[1].strip(" `"): cells
+        for line in manifest.splitlines()
+        if line.startswith("|")
+        for cells in ([cell.strip() for cell in line.split("|")[1:-1]],)
+        if len(cells) == 8
+    }
+
+    fraud_service = rows["includes/class-wc-payments-fraud-service.php"]
+    instant_deposits = rows[
+        "includes/notes/class-wc-payments-notes-instant-deposits-eligible.php"
+    ]
+    fraud_scripts = rows["client/fraud-scripts/"]
+    admin_order = rows["client/order/"]
+
+    assert fraud_service[2] == "`PARTIAL-DROP`"
+    assert fraud_service[5:7] == ["Native WooPayments product decision (Task 5.5)", "2026-07-13"]
+    assert "Sift" in fraud_service[7]
+
+    assert instant_deposits[2] == "`PORTED`"
+    assert "WooPaymentsOperationalQueueService.php" in instant_deposits[3]
+
+    assert fraud_scripts[2] == "`DROPPED`"
+    assert admin_order[2] == "`PARTIAL-DROP`"
+    for row in (fraud_scripts, admin_order):
+        assert row[5] == "Native WooPayments product decision (Task 5.5)"
+        assert row[6] == "2026-07-13"
+        assert row[7]
 
 
 def test_wc_payments_global_service_locator_drop_is_scoped_and_signed() -> None:
