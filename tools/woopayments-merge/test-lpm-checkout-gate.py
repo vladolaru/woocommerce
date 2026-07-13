@@ -3813,12 +3813,58 @@ def test_browser_driver_records_sanitized_checkout_response_summaries() -> None:
     assert "pi_[redacted]_secret_[redacted]" in source
     assert "checkoutResponses" in source
     assert "checkout_responses" in source
-    assert "installResponseCapture( page, intentIds, failedResponses, checkoutResponses, pendingResponseCaptures )" in source
+    assert "function installResponseCapture(" in source
+    assert "responseBodyTimeoutMs = 5000" in source
     assert "shouldCaptureFailure" in source
     assert "failedResponses.push( {" in source
     assert "pendingResponseCaptures" in source
     assert "settlePendingResponseCaptures" in source
     assert "await settlePendingResponseCaptures( pendingResponseCaptures );" in source
+
+
+def test_browser_driver_bounds_unavailable_response_body_capture() -> None:
+    source = BROWSER_DRIVER.read_text(encoding="utf-8")
+    capture_source = source[
+        source.index("function installResponseCapture")
+        : source.index("function installCheckoutRequestCapture")
+    ]
+    script = f"""
+function isCartStateProbeResponse() {{ return false; }}
+function isCheckoutAjaxResponse() {{ return false; }}
+function redactSensitiveText( value ) {{ return value; }}
+function plainTextSample( value ) {{ return value; }}
+function intentIdsFromText() {{ return []; }}
+{capture_source}
+
+const handlers = {{}};
+const page = {{ on: ( event, handler ) => {{ handlers[ event ] = handler; }} }};
+const pending = new Set();
+installResponseCapture( page, new Set(), [], [], pending, 5 );
+handlers.response( {{
+    status: () => 200,
+    url: () => 'http://store.test/checkout/order-received/123/',
+    text: () => new Promise( () => {{}} ),
+}} );
+
+const guard = setTimeout( () => process.exit( 7 ), 250 );
+( async () => {{
+    await settlePendingResponseCaptures( pending );
+    clearTimeout( guard );
+    process.stdout.write( JSON.stringify( {{ pending: pending.size }} ) );
+}} )();
+"""
+
+    result = subprocess.run(
+        ["node", "-e", script],
+        cwd=REPO,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {"pending": 0}
 
 
 def test_browser_driver_records_sanitized_checkout_request_summaries() -> None:

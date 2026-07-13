@@ -725,7 +725,30 @@ async function capturePageEvidence( page, extra = {} ) {
 	};
 }
 
-function installResponseCapture( page, intentIds, failedResponses, checkoutResponses, pendingResponseCaptures ) {
+function installResponseCapture(
+	page,
+	intentIds,
+	failedResponses,
+	checkoutResponses,
+	pendingResponseCaptures,
+	responseBodyTimeoutMs = 5000
+) {
+	const readResponseText = async ( response ) => {
+		let timeoutId;
+		try {
+			return await Promise.race( [
+				response.text(),
+				new Promise( ( resolve, reject ) => {
+					timeoutId = setTimeout(
+						() => reject( new Error( 'Response body capture timed out.' ) ),
+						responseBodyTimeoutMs
+					);
+				} ),
+			] );
+		} finally {
+			clearTimeout( timeoutId );
+		}
+	};
 	const captureResponse = async ( response ) => {
 		const status = response.status();
 		const url = response.url();
@@ -740,7 +763,7 @@ function installResponseCapture( page, intentIds, failedResponses, checkoutRespo
 		}
 
 		try {
-			const text = await response.text();
+			const text = await readResponseText( response );
 			if ( shouldCaptureFailure && failedResponses.length < 50 ) {
 				failedResponses.push( {
 					status,
