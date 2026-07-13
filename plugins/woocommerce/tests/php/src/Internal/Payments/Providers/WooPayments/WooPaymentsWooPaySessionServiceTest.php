@@ -272,6 +272,64 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should not treat WooPay as enabled for restricted account status $status.
+	 * @dataProvider restricted_account_statuses
+	 *
+	 * @param string $status Restricted account status.
+	 */
+	public function test_woopay_is_not_enabled_for_restricted_accounts( string $status ): void {
+		$sut = $this->create_service(
+			array( 'platform_checkout' => 'yes' ),
+			array( 'status' => $status )
+		);
+
+		$this->assertFalse( $sut->is_woopay_enabled() );
+		$this->assertFalse( $sut->get_woopay_frontend_config( 'checkout' )['isWooPayEnabled'] );
+	}
+
+	/**
+	 * Restricted account statuses.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public function restricted_account_statuses(): array {
+		return array(
+			'under review' => array( 'under_review' ),
+			'rejected'     => array( 'rejected.fraud' ),
+		);
+	}
+
+	/**
+	 * @testdox Should not treat WooPay as enabled for invalid account data.
+	 * @dataProvider invalid_woopay_accounts
+	 *
+	 * @param array<string,mixed> $account_data Invalid account data.
+	 */
+	public function test_woopay_is_not_enabled_for_invalid_accounts( array $account_data ): void {
+		$sut = $this->create_service(
+			array( 'platform_checkout' => 'yes' ),
+			$account_data
+		);
+
+		$this->assertFalse( $sut->is_woopay_enabled() );
+		$this->assertFalse( $sut->get_woopay_frontend_config( 'checkout' )['isWooPayEnabled'] );
+	}
+
+	/**
+	 * Invalid WooPay accounts.
+	 *
+	 * @return array<string,array{array<string,mixed>}>
+	 */
+	public function invalid_woopay_accounts(): array {
+		return array(
+			'missing account'           => array( array( 'account_id' => '' ) ),
+			'details not submitted'     => array( array( 'details_submitted' => false ) ),
+			'missing card payments'     => array( array( 'capabilities' => array() ) ),
+			'card payments unrequested' => array( array( 'capabilities' => array( 'card_payments' => 'unrequested' ) ) ),
+		);
+	}
+
+	/**
 	 * @testdox Should not show the checkout WooPay button unless the checkout express method is enabled.
 	 */
 	public function test_woopay_checkout_button_requires_checkout_express_method(): void {
@@ -460,7 +518,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		)->should_show_woopay_button( 'product' );
 
 		$this->assertTrue( $result );
-		$this->assertSame( array( 'gateway', 'account', 'enabled', 'account', 'location', 'product', 'guest' ), $events );
+		$this->assertSame( array( 'gateway', 'account', 'account', 'account', 'account', 'account', 'enabled', 'account', 'location', 'product', 'guest' ), $events );
 	}
 
 	/**
@@ -1421,6 +1479,9 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		);
 		$account_data = array_merge(
 			array(
+				'account_id'                 => 'acct_123',
+				'details_submitted'          => true,
+				'capabilities'               => array( 'card_payments' => 'active' ),
 				'country'                    => 'US',
 				'pre_check_save_my_info'     => false,
 				'platform_checkout_eligible' => true,
@@ -1433,7 +1494,13 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 			->onlyMethods( array( 'get_account_id', 'get_publishable_key', 'get_cached_account_data', 'is_test_mode_enabled', 'get_gateway_setting' ) )
 			->getMock();
 
-		$account_service->method( 'get_account_id' )->willReturn( 'acct_123' );
+		$account_service->method( 'get_account_id' )->willReturnCallback(
+			static function () use ( $account_data ): string {
+				$account_id = $account_data['account_id'] ?? '';
+
+				return is_scalar( $account_id ) ? (string) $account_id : '';
+			}
+		);
 		$account_service->method( 'get_publishable_key' )->willReturn( 'pk_test_123' );
 		$account_service->method( 'get_cached_account_data' )->willReturnCallback(
 			static function () use ( $account_data, $event_recorder ): array {

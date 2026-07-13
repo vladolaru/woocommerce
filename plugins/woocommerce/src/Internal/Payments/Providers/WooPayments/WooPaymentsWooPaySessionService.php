@@ -871,7 +871,10 @@ class WooPaymentsWooPaySessionService {
 	private function is_woopay_account_eligible(): bool {
 		$account_data = $this->get_account_service()->get_cached_account_data();
 
-		return ! empty( $account_data['platform_checkout_eligible'] );
+		return ! empty( $account_data['platform_checkout_eligible'] )
+			&& $this->get_account_service()->has_valid_account_for_admin_navigation()
+			&& ! $this->get_account_service()->is_account_rejected()
+			&& ! $this->get_account_service()->is_account_under_review();
 	}
 
 	/**

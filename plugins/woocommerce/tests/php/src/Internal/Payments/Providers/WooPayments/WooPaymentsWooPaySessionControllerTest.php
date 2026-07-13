@@ -624,6 +624,9 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$account_service->method( 'get_publishable_key' )->willReturn( 'pk_test_123' );
 		$account_service->method( 'get_cached_account_data' )->willReturn(
 			array(
+				'account_id'                 => 'acct_123',
+				'details_submitted'          => true,
+				'capabilities'               => array( 'card_payments' => 'active' ),
 				'country'                    => 'US',
 				'platform_checkout_eligible' => true,
 			)
