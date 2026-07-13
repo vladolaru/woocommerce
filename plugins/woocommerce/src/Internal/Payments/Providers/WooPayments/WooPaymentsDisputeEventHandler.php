@@ -32,29 +32,6 @@ class WooPaymentsDisputeEventHandler {
 	private const DISPUTE_NOTE_MARKER_PREFIX = '_wc_native_woopayments_dispute_note_';
 
 	/**
-	 * Stripe zero-decimal currencies.
-	 *
-	 * @var string[]
-	 */
-	private const ZERO_DECIMAL_CURRENCIES = array(
-		'bif',
-		'clp',
-		'djf',
-		'gnf',
-		'jpy',
-		'kmf',
-		'krw',
-		'mga',
-		'pyg',
-		'rwf',
-		'vnd',
-		'vuv',
-		'xaf',
-		'xof',
-		'xpf',
-	);
-
-	/**
 	 * Native WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
@@ -296,7 +273,7 @@ class WooPaymentsDisputeEventHandler {
 			$disputed_amount = isset( $dispute_summary['disputed_amount'] ) ? (int) $dispute_summary['disputed_amount'] : 0;
 			if ( $disputed_amount > 0 ) {
 				$currency      = isset( $dispute_summary['currency'] ) && is_string( $dispute_summary['currency'] ) ? $dispute_summary['currency'] : $order->get_currency();
-				$refund_amount = min( $refund_amount, $this->interpret_stripe_amount( $disputed_amount, $currency ) );
+				$refund_amount = min( $refund_amount, WooPaymentsCurrencyUtils::amount_from_minor_units( $disputed_amount, $currency ) );
 				$order_total   = (float) $order->get_total();
 				$line_items    = $refund_amount < $order_total ? array() : $line_items;
 			}
@@ -397,7 +374,7 @@ class WooPaymentsDisputeEventHandler {
 	private function get_formatted_dispute_amount( WC_Order $order, int $amount ): string {
 		$currency = $order->get_currency();
 		$price    = wc_price(
-			$this->interpret_stripe_amount( $amount, $currency ),
+			WooPaymentsCurrencyUtils::amount_from_minor_units( $amount, $currency ),
 			array(
 				'currency' => strtoupper( $currency ),
 			)
@@ -430,17 +407,6 @@ class WooPaymentsDisputeEventHandler {
 		);
 
 		return count( array_unique( array_merge( array( $store_currency ), $enabled_currencies ) ) ) > 1;
-	}
-
-	/**
-	 * Interpret a Stripe integer amount for a currency.
-	 *
-	 * @param int    $amount   Stripe integer amount.
-	 * @param string $currency Currency code.
-	 * @return float
-	 */
-	private function interpret_stripe_amount( int $amount, string $currency ): float {
-		return in_array( strtolower( $currency ), self::ZERO_DECIMAL_CURRENCIES, true ) ? (float) $amount : (float) $amount / 100;
 	}
 
 	/**
