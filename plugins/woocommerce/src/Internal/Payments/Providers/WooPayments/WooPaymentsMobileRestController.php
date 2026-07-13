@@ -1447,7 +1447,7 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 				'line_items'          => $this->get_receipt_line_items( $order ),
 				'coupon_lines'        => $this->get_receipt_coupon_lines( $order ),
 				'tax_lines'           => $this->get_receipt_tax_lines( $order ),
-				'amount_captured'     => isset( $charge['amount_captured'] ) ? $this->interpret_minor_amount( (int) $charge['amount_captured'], (string) ( $charge['currency'] ?? $intent['currency'] ?? $order->get_currency() ) ) : $this->interpret_minor_amount( (int) ( $intent['amount'] ?? 0 ), (string) ( $intent['currency'] ?? $order->get_currency() ) ),
+				'amount_captured'     => isset( $charge['amount_captured'] ) ? WooPaymentsCurrencyUtils::amount_from_minor_units( (int) $charge['amount_captured'], (string) ( $charge['currency'] ?? $intent['currency'] ?? $order->get_currency() ) ) : WooPaymentsCurrencyUtils::amount_from_minor_units( (int) ( $intent['amount'] ?? 0 ), (string) ( $intent['currency'] ?? $order->get_currency() ) ),
 				'brand'               => isset( $card_present['brand'] ) ? (string) $card_present['brand'] : '',
 				'last4'               => isset( $card_present['last4'] ) ? (string) $card_present['last4'] : '',
 				'payment_method_name' => WooPaymentsTerminalCardFormatter::get_terminal_card_display_name( $card_present ),
@@ -1663,19 +1663,6 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 		}
 
 		return wc_price( $price, array( 'currency' => $currency ) );
-	}
-
-	/**
-	 * Interpret a provider minor-unit amount.
-	 *
-	 * @param int    $amount   Minor-unit amount.
-	 * @param string $currency Currency code.
-	 * @return float
-	 */
-	private function interpret_minor_amount( int $amount, string $currency ): float {
-		$zero_decimal = array( 'bif', 'clp', 'djf', 'gnf', 'jpy', 'kmf', 'krw', 'mga', 'pyg', 'rwf', 'vnd', 'vuv', 'xaf', 'xof', 'xpf' );
-
-		return in_array( strtolower( $currency ), $zero_decimal, true ) ? (float) $amount : (float) $amount / 100;
 	}
 
 	/**
