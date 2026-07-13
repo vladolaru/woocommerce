@@ -312,7 +312,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 			sprintf(
 				/* translators: 1: charged amount, 2: current order total. */
 				__( 'This order was already paid for %1$s, but the order total has since changed to %2$s, so we prevented an overpayment. Please create a new order for any additional items.', 'woocommerce' ),
-				wc_price( $this->interpret_minor_unit_amount( $charged_amount, (string) $order->get_currency() ), array( 'currency' => $order->get_currency() ) ),
+				wc_price( WooPaymentsCurrencyUtils::amount_from_minor_units( $charged_amount, (string) $order->get_currency() ), array( 'currency' => $order->get_currency() ) ),
 				wc_price( (float) $order->get_total(), array( 'currency' => $order->get_currency() ) )
 			)
 		);
@@ -428,21 +428,6 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 			'result'   => 'success',
 			'redirect' => add_query_arg( $flag, 'yes', $gateway->get_return_url( $order ) ),
 		);
-	}
-
-	/**
-	 * Convert provider minor-unit amount to a decimal amount.
-	 *
-	 * @param int    $amount   Minor-unit amount.
-	 * @param string $currency Currency code.
-	 * @return float
-	 */
-	private function interpret_minor_unit_amount( int $amount, string $currency ): float {
-		$zero_decimal_currencies = array( 'bif', 'clp', 'djf', 'gnf', 'jpy', 'kmf', 'krw', 'mga', 'pyg', 'rwf', 'vnd', 'vuv', 'xaf', 'xof', 'xpf' );
-
-		return in_array( strtolower( $currency ), $zero_decimal_currencies, true )
-			? (float) $amount
-			: (float) $amount / 100;
 	}
 
 	/**
