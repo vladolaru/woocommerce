@@ -23,8 +23,11 @@ class WooPaymentsPaymentTypeTest extends WC_Unit_Test_Case {
 	 * @testdox The legacy Payment_Type alias supports the oracle's static construction idiom.
 	 */
 	public function test_legacy_alias_static_construction_returns_payment_type_instance(): void {
+		$this->assertTrue( class_exists( '\\WCPay\\Constants\\Payment_Type' ) );
+
 		$payment_type = \WCPay\Constants\Payment_Type::SINGLE();
 
+		$this->assertSame( 'SINGLE', $payment_type->get_value() );
 		$this->assertInstanceOf( WooPaymentsPaymentType::class, $payment_type );
 		$this->assertInstanceOf( \WCPay\Constants\Payment_Type::class, $payment_type );
 	}
