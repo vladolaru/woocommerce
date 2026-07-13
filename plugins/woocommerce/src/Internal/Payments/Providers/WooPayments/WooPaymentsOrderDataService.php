@@ -20,29 +20,6 @@ class WooPaymentsOrderDataService {
 	private const META_KEY_STRIPE_EXCHANGE_RATE = '_wcpay_multi_currency_stripe_exchange_rate';
 
 	/**
-	 * Stripe zero-decimal currencies.
-	 *
-	 * @var string[]
-	 */
-	private const ZERO_DECIMAL_CURRENCIES = array(
-		'bif',
-		'clp',
-		'djf',
-		'gnf',
-		'jpy',
-		'kmf',
-		'krw',
-		'mga',
-		'pyg',
-		'rwf',
-		'vnd',
-		'vuv',
-		'xaf',
-		'xof',
-		'xpf',
-	);
-
-	/**
 	 * Build the billing-details payload for payment method updates.
 	 *
 	 * @since 11.0.0
@@ -204,7 +181,7 @@ class WooPaymentsOrderDataService {
 	 * @return int
 	 */
 	public function prepare_amount( float $amount, string $currency ): int {
-		$conversion_rate = $this->is_zero_decimal_currency( $currency ) ? 1 : 100;
+		$conversion_rate = WooPaymentsCurrencyUtils::is_zero_decimal_currency( $currency ) ? 1 : 100;
 
 		return (int) round( $amount * $conversion_rate );
 	}
@@ -629,8 +606,8 @@ class WooPaymentsOrderDataService {
 	 * @return float
 	 */
 	private function interpret_string_exchange_rate( float $exchange_rate, string $presentment_currency, string $base_currency ): float {
-		$is_presentment_currency_zero_decimal = $this->is_zero_decimal_currency( $presentment_currency );
-		$is_base_currency_zero_decimal        = $this->is_zero_decimal_currency( $base_currency );
+		$is_presentment_currency_zero_decimal = WooPaymentsCurrencyUtils::is_zero_decimal_currency( $presentment_currency );
+		$is_base_currency_zero_decimal        = WooPaymentsCurrencyUtils::is_zero_decimal_currency( $base_currency );
 
 		if ( $is_presentment_currency_zero_decimal && ! $is_base_currency_zero_decimal ) {
 			return $exchange_rate / 100;
@@ -651,32 +628,11 @@ class WooPaymentsOrderDataService {
 	 * @return string
 	 */
 	private function format_currency_minor_amount( int $amount, string $currency ): string {
-		$decimals = $this->is_zero_decimal_currency( $currency ) ? 0 : 2;
-		$value    = number_format( $this->interpret_stripe_amount( $amount, $currency ), $decimals, '.', '' );
+		$decimals = WooPaymentsCurrencyUtils::is_zero_decimal_currency( $currency ) ? 0 : 2;
+		$value    = number_format( WooPaymentsCurrencyUtils::amount_from_minor_units( $amount, $currency ), $decimals, '.', '' );
 		$symbol   = html_entity_decode( get_woocommerce_currency_symbol( strtoupper( $currency ) ), ENT_QUOTES, 'UTF-8' );
 
 		return $symbol . $value;
-	}
-
-	/**
-	 * Tell whether the currency uses zero decimal places at the provider boundary.
-	 *
-	 * @param string $currency Currency code.
-	 * @return bool
-	 */
-	private function is_zero_decimal_currency( string $currency ): bool {
-		return in_array( strtolower( $currency ), self::ZERO_DECIMAL_CURRENCIES, true );
-	}
-
-	/**
-	 * Interpret a Stripe integer amount for a currency.
-	 *
-	 * @param int    $amount   Stripe integer amount.
-	 * @param string $currency Currency code.
-	 * @return float
-	 */
-	private function interpret_stripe_amount( int $amount, string $currency ): float {
-		return $this->is_zero_decimal_currency( $currency ) ? (float) $amount : (float) $amount / 100;
 	}
 
 	/**
