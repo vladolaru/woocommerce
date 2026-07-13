@@ -10,6 +10,10 @@ namespace Automattic\WooCommerce\Internal\Payments;
 /**
  * Provider capability manifest for the native payments runtime.
  *
+ * Built-in capability keys default to unsupported. Provider-defined keys are
+ * retained so consumers can negotiate extensions without a Core release, and
+ * each unrecognized declaration emits at most one best-effort warning per request.
+ *
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
@@ -41,14 +45,36 @@ class CapabilityManifest {
 	private array $capabilities;
 
 	/**
+	 * Unknown capability keys already logged during this request.
+	 *
+	 * @var array<string,true>
+	 */
+	private static array $logged_unknown_capabilities = array();
+
+	/**
 	 * Constructor.
 	 *
 	 * @param array<string,bool> $capabilities Capability support map.
 	 */
 	public function __construct( array $capabilities = array() ) {
+		$known_capabilities = array_fill_keys( self::get_known_capabilities(), true );
+		$normalized         = array();
+
+		foreach ( $capabilities as $capability => $enabled ) {
+			if ( ! is_string( $capability ) || '' === $capability ) {
+				continue;
+			}
+
+			$normalized[ $capability ] = (bool) $enabled;
+
+			if ( ! isset( $known_capabilities[ $capability ] ) ) {
+				self::log_unknown_capability_once( $capability );
+			}
+		}
+
 		$this->capabilities = array_merge(
-			array_fill_keys( self::get_known_capabilities(), false ),
-			array_intersect_key( $capabilities, array_fill_keys( self::get_known_capabilities(), true ) )
+			array_fill_keys( array_keys( $known_capabilities ), false ),
+			$normalized
 		);
 	}
 
@@ -70,7 +96,7 @@ class CapabilityManifest {
 				$enabled    = (bool) $value;
 			}
 
-			if ( in_array( $capability, self::get_known_capabilities(), true ) ) {
+			if ( '' !== $capability ) {
 				$normalized[ $capability ] = $enabled;
 			}
 		}
@@ -116,11 +142,41 @@ class CapabilityManifest {
 	}
 
 	/**
-	 * Get all known capability support flags.
+	 * Get all built-in and provider-defined capability support flags.
 	 *
 	 * @return array<string,bool>
 	 */
 	public function all(): array {
 		return $this->capabilities;
+	}
+
+	/**
+	 * Log an unknown capability once without making manifest construction depend on logging.
+	 *
+	 * @param string $capability Capability name.
+	 */
+	private static function log_unknown_capability_once( string $capability ): void {
+		if ( isset( self::$logged_unknown_capabilities[ $capability ] ) ) {
+			return;
+		}
+
+		self::$logged_unknown_capabilities[ $capability ] = true;
+
+		if ( ! function_exists( 'wc_get_logger' ) ) {
+			return;
+		}
+
+		try {
+			wc_get_logger()->warning(
+				sprintf( 'Unknown native payments capability "%s" was registered.', $capability ),
+				array(
+					'source'     => 'native-payments',
+					'capability' => $capability,
+				)
+			);
+		} catch ( \Throwable $error ) {
+			// Capability discovery must remain available when logging fails.
+			return;
+		}
 	}
 }
