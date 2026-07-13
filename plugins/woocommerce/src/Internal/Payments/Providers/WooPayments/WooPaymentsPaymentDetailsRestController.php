@@ -552,7 +552,7 @@ class WooPaymentsPaymentDetailsRestController implements RegisterHooksInterface 
 			return $this->get_invalid_refund_amount_error();
 		}
 
-		$refund_amount = $this->interpret_minor_amount( (int) $amount, (string) $order->get_currency() );
+		$refund_amount = WooPaymentsCurrencyUtils::amount_from_minor_units( (int) $amount, (string) $order->get_currency() );
 		$remaining     = (float) $order->get_remaining_refund_amount();
 		if ( $refund_amount <= 0.0 || $refund_amount > $remaining ) {
 			return $this->get_invalid_refund_amount_error();
@@ -572,29 +572,6 @@ class WooPaymentsPaymentDetailsRestController implements RegisterHooksInterface 
 			__( 'The refund amount is not valid.', 'woocommerce' ),
 			array( 'status' => 400 )
 		);
-	}
-
-	/**
-	 * Interpret a provider minor-unit amount in the given currency.
-	 *
-	 * @param int    $amount   Minor-unit amount.
-	 * @param string $currency Currency.
-	 * @return float
-	 */
-	private function interpret_minor_amount( int $amount, string $currency ): float {
-		return $this->is_zero_decimal_currency( $currency ) ? (float) $amount : (float) $amount / 100;
-	}
-
-	/**
-	 * Tell whether the currency uses zero decimal places at the provider boundary.
-	 *
-	 * @param string $currency Currency.
-	 * @return bool
-	 */
-	private function is_zero_decimal_currency( string $currency ): bool {
-		$zero_decimal = array( 'bif', 'clp', 'djf', 'gnf', 'jpy', 'kmf', 'krw', 'mga', 'pyg', 'rwf', 'vnd', 'vuv', 'xaf', 'xof', 'xpf' );
-
-		return in_array( strtolower( $currency ), $zero_decimal, true );
 	}
 
 	/**
