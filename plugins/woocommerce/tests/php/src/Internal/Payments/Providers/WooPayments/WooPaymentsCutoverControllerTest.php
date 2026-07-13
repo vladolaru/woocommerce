@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNavigationController;
 use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeAccountAdapter;
@@ -928,6 +929,22 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Cutover preflight blocks when an allowed admin route is not registered.
+	 */
+	public function test_preflight_blocks_when_admin_route_registry_cannot_resolve_allowed_route(): void {
+		$this->fake_plugin_active();
+		$this->fake_current_user_caps( true );
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsCutoverController::FILTER_PROVIDER_EVENT_TYPES_PENDING_CUTOVER, '__return_empty_array' );
+		add_filter( WooPaymentsCutoverController::FILTER_OPERATIONAL_QUEUE_HOOKS_PENDING_CUTOVER, '__return_empty_array' );
+		$this->native_provider_ready = true;
+		$sut                         = $this->create_cutover_controller( $this->create_admin_navigation_controller( false ) );
+
+		$this->assertContains( 'native_admin_surfaces_unavailable', $sut->get_preflight_failures() );
+		$this->assertFalse( $sut->should_show_soft_cutover_notice() );
+	}
+
+	/**
 	 * @testdox Cutover preflight defaults admin surfaces to ready after the N12 parity gate passes.
 	 */
 	public function test_preflight_defaults_admin_surfaces_ready_after_n12_parity_gate_passes(): void {
@@ -1151,9 +1168,10 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a cutover controller wired to this test's dependencies.
 	 *
+	 * @param WooPaymentsAdminNavigationController|null $admin_navigation_controller Optional admin navigation owner.
 	 * @return WooPaymentsCutoverController
 	 */
-	private function create_cutover_controller(): WooPaymentsCutoverController {
+	private function create_cutover_controller( ?WooPaymentsAdminNavigationController $admin_navigation_controller = null ): WooPaymentsCutoverController {
 		$controller = new WooPaymentsCutoverController();
 		$controller->init(
 			wc_get_container()->get( NativePaymentsRuntimeArbiter::class ),
@@ -1163,10 +1181,46 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			$this->fee_remediation_service,
 			$this->platform_connection_service,
 			$this->native_rate_account,
-			$this->native_rate_api_client
+			$this->native_rate_api_client,
+			$admin_navigation_controller ?? $this->create_admin_navigation_controller( true )
 		);
 
 		return $controller;
+	}
+
+	/**
+	 * Create an admin navigation readiness double.
+	 *
+	 * @param bool $routes_registered Whether every available route is registered.
+	 * @return WooPaymentsAdminNavigationController
+	 */
+	private function create_admin_navigation_controller( bool $routes_registered ): WooPaymentsAdminNavigationController {
+		return new class( $routes_registered ) extends WooPaymentsAdminNavigationController {
+			/**
+			 * Whether every available admin route is registered.
+			 *
+			 * @var bool
+			 */
+			private bool $routes_registered;
+
+			/**
+			 * Initialize the double.
+			 *
+			 * @param bool $routes_registered Whether every available route is registered.
+			 */
+			public function __construct( bool $routes_registered ) {
+				$this->routes_registered = $routes_registered;
+			}
+
+			/**
+			 * Tell whether every available admin route is registered.
+			 *
+			 * @return bool
+			 */
+			public function are_all_available_routes_registered(): bool {
+				return $this->routes_registered;
+			}
+		};
 	}
 
 	/**

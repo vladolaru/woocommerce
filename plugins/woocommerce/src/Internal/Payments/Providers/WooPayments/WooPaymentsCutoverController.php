@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNavigationController;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeAccountAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeApiClientAdapter;
@@ -210,6 +211,13 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	private WooPaymentsNativeApiClientAdapter $native_rate_api_client;
 
 	/**
+	 * Native WooPayments admin navigation owner.
+	 *
+	 * @var WooPaymentsAdminNavigationController
+	 */
+	private WooPaymentsAdminNavigationController $admin_navigation_controller;
+
+	/**
 	 * Request-local cutover preflight failures.
 	 *
 	 * @var array<int,string>|null
@@ -229,6 +237,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @param WooPaymentsPlatformConnectionService|null                  $platform_connection_service Platform connection readiness service.
 	 * @param WooPaymentsNativeAccountAdapter|null                       $native_rate_account         Native rate account boundary.
 	 * @param WooPaymentsNativeApiClientAdapter|null                     $native_rate_api_client      Native rate API client boundary.
+	 * @param WooPaymentsAdminNavigationController|null                  $admin_navigation_controller Native admin navigation owner.
 	 */
 	final public function init(
 		NativePaymentsRuntimeArbiter $arbiter,
@@ -238,7 +247,8 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 		?WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service = null,
 		?WooPaymentsPlatformConnectionService $platform_connection_service = null,
 		?WooPaymentsNativeAccountAdapter $native_rate_account = null,
-		?WooPaymentsNativeApiClientAdapter $native_rate_api_client = null
+		?WooPaymentsNativeApiClientAdapter $native_rate_api_client = null,
+		?WooPaymentsAdminNavigationController $admin_navigation_controller = null
 	): void {
 		$this->arbiter                     = $arbiter;
 		$this->legacy_proxy                = $legacy_proxy;
@@ -248,6 +258,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 		$this->platform_connection_service = $platform_connection_service ?? wc_get_container()->get( WooPaymentsPlatformConnectionService::class );
 		$this->native_rate_account         = $native_rate_account ?? wc_get_container()->get( WooPaymentsNativeAccountAdapter::class );
 		$this->native_rate_api_client      = $native_rate_api_client ?? wc_get_container()->get( WooPaymentsNativeApiClientAdapter::class );
+		$this->admin_navigation_controller = $admin_navigation_controller ?? wc_get_container()->get( WooPaymentsAdminNavigationController::class );
 	}
 
 	/**
@@ -468,7 +479,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 		 *
 		 * @since 11.0.0
 		 */
-		if ( ! (bool) apply_filters( self::FILTER_NATIVE_ADMIN_SURFACES_READY, true ) ) {
+		if ( ! (bool) apply_filters( self::FILTER_NATIVE_ADMIN_SURFACES_READY, $this->admin_navigation_controller->are_all_available_routes_registered() ) ) {
 			$failures[] = 'native_admin_surfaces_unavailable';
 		}
 

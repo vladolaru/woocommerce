@@ -58,7 +58,27 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 
 	private const PATH_FRAUD_PROTECTION_SETTINGS = '/woopayments/settings/fraud-protection';
 
+	private const PATH_EXPRESS_CHECKOUT_SETTINGS = '/woopayments/settings/express-checkout/:methodId';
+
 	private const PATH_PAYOUT_DETAILS = '/woopayments/payouts/details';
+
+	private const REGISTERED_ROUTE_PATHS = array(
+		self::PATH_SETTINGS,
+		self::PATH_EXPRESS_CHECKOUT_SETTINGS,
+		self::PATH_FRAUD_PROTECTION_SETTINGS,
+		self::PATH_OVERVIEW,
+		self::PATH_PAYOUTS,
+		self::PATH_PAYOUT_DETAILS,
+		self::PATH_TRANSACTIONS,
+		self::PATH_TRANSACTION_DETAILS,
+		self::PATH_REPORTS,
+		self::PATH_DISPUTES,
+		self::PATH_DISPUTE_DETAILS,
+		self::PATH_DISPUTE_CHALLENGE,
+		self::PATH_CARD_READERS,
+		self::PATH_LOANS,
+		self::PATH_DOCUMENTS,
+	);
 
 	private const SETTINGS_FRAGMENT_ADVANCED = 'advanced';
 
@@ -491,6 +511,18 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 				self::PATH_DOCUMENTS                 => $full_access && $this->account_service->is_documents_enabled(),
 			),
 		);
+	}
+
+	/**
+	 * Tell whether every route exposed through the availability map is registered by the client router.
+	 *
+	 * @internal
+	 * @return bool
+	 */
+	public function are_all_available_routes_registered(): bool {
+		$available_route_paths = array_keys( $this->get_admin_route_availability()['allowedRoutes'] );
+
+		return array() === array_diff( $available_route_paths, self::REGISTERED_ROUTE_PATHS );
 	}
 
 	/**
