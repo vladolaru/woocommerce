@@ -828,15 +828,17 @@ class WooPaymentsOrderNoteService {
 	/**
 	 * Add an order note unless its content or private identity already exists.
 	 *
-	 * @param WC_Order $order            Order object.
-	 * @param string   $note             Note content.
-	 * @param string   $identity         Stable private note identity.
-	 * @param string[] $equivalent_notes Exact catalog renderings equivalent to the native note.
+	 * @param WC_Order      $order              Order object.
+	 * @param string        $note               Note content.
+	 * @param string        $identity           Stable private note identity.
+	 * @param string[]      $equivalent_notes   Exact catalog renderings equivalent to the native note.
+	 * @param string[]      $legacy_marker_keys Legacy order-meta marker keys that identify the same note.
+	 * @param callable|null $before_add         Side effects to apply only when the note is new.
 	 * @return bool True when the note was added.
 	 *
 	 * @since 11.0.0
 	 */
-	public function add_note_once( WC_Order $order, string $note, string $identity = '', array $equivalent_notes = array() ): bool {
+	public function add_note_once( WC_Order $order, string $note, string $identity = '', array $equivalent_notes = array(), array $legacy_marker_keys = array(), ?callable $before_add = null ): bool {
 		if ( '' === $note ) {
 			return false;
 		}
@@ -851,7 +853,15 @@ class WooPaymentsOrderNoteService {
 		);
 		$identity_hash         = '' === $identity ? '' : hash( 'sha256', $identity );
 		$content_match_note_id = 0;
-		$notes                 = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+		$has_legacy_marker     = false;
+		foreach ( $legacy_marker_keys as $legacy_marker_key ) {
+			if ( '' !== $legacy_marker_key && 'yes' === $order->get_meta( $legacy_marker_key, true ) ) {
+				$has_legacy_marker = true;
+				break;
+			}
+		}
+
+		$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
 
 		foreach ( $notes as $order_note ) {
 			$note_identities = get_comment_meta( $order_note->id, self::NOTE_IDENTITY_META_KEY, false );
@@ -870,6 +880,14 @@ class WooPaymentsOrderNoteService {
 			}
 
 			return false;
+		}
+
+		if ( $has_legacy_marker ) {
+			return false;
+		}
+
+		if ( null !== $before_add ) {
+			$before_add();
 		}
 
 		$meta_data = '' === $identity_hash

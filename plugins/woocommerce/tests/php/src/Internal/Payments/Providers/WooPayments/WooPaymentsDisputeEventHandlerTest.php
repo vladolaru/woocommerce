@@ -154,4 +154,73 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 			update_option( 'wcpay_multi_currency_enabled_currencies', $previous_enabled_currencies );
 		}
 	}
+
+	/**
+	 * @testdox Legacy dispute markers backfill the unified identity onto the existing note.
+	 */
+	public function test_legacy_dispute_marker_backfills_unified_identity(): void {
+		$order = wc_create_order();
+		$this->assertInstanceOf( \WC_Order::class, $order );
+		$order->save();
+
+		$note              = 'Legacy dispute note';
+		$dispute_id        = 'dp_legacy';
+		$status            = 'needs_response';
+		$note_type         = 'created_dispute';
+		$legacy_note_id    = $order->add_order_note( $note );
+		$legacy_marker_key = '_wc_native_woopayments_dispute_note_' . md5( $dispute_id . '|' . $status . '|' . $note_type );
+		$order->update_meta_data( $legacy_marker_key, 'yes' );
+		$order->save_meta_data();
+
+		$this->assertFalse(
+			$this->invoke_private(
+				'add_dispute_order_note_once',
+				array( $order, $note, $dispute_id, $status, $note_type )
+			)
+		);
+		$this->assertSame(
+			hash( 'sha256', 'dispute:' . $dispute_id . '|' . $status . '|' . $note_type ),
+			get_comment_meta( $legacy_note_id, '_wc_woopayments_note_identity', true )
+		);
+	}
+
+	/**
+	 * @testdox New dispute identities suppress changed-content replay without legacy marker writes.
+	 */
+	public function test_new_dispute_identity_suppresses_replay_and_runs_side_effect_once(): void {
+		$order = wc_create_order();
+		$this->assertInstanceOf( \WC_Order::class, $order );
+		$order->save();
+
+		$dispute_id        = 'dp_new';
+		$status            = 'needs_response';
+		$note_type         = 'created_dispute';
+		$before_add_calls  = 0;
+		$before_add        = static function () use ( &$before_add_calls ): void {
+			++$before_add_calls;
+		};
+		$legacy_marker_key = '_wc_native_woopayments_dispute_note_' . md5( $dispute_id . '|' . $status . '|' . $note_type );
+
+		$this->assertTrue(
+			$this->invoke_private(
+				'add_dispute_order_note_once',
+				array( $order, 'New dispute note', $dispute_id, $status, $note_type, $before_add )
+			)
+		);
+		$this->assertFalse(
+			$this->invoke_private(
+				'add_dispute_order_note_once',
+				array( $order, 'Translated dispute note', $dispute_id, $status, $note_type, $before_add )
+			)
+		);
+
+		$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+		$this->assertCount( 1, $notes );
+		$this->assertSame( 1, $before_add_calls );
+		$this->assertSame( '', $order->get_meta( $legacy_marker_key, true ) );
+		$this->assertSame(
+			hash( 'sha256', 'dispute:' . $dispute_id . '|' . $status . '|' . $note_type ),
+			get_comment_meta( $notes[0]->id, '_wc_woopayments_note_identity', true )
+		);
+	}
 }

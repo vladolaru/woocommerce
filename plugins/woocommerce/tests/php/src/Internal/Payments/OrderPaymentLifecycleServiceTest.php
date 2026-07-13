@@ -513,9 +513,9 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native lifecycle markers use stable note type instead of rendered note content.
+	 * @testdox Native lifecycle note identities use stable note type instead of rendered note content.
 	 */
-	public function test_lifecycle_marker_uses_note_type_instead_of_rendered_note_content(): void {
+	public function test_lifecycle_note_identity_uses_note_type_instead_of_rendered_note_content(): void {
 		$order = $this->create_woopayments_order();
 
 		$this->apply_event_unlocked(
@@ -530,11 +530,15 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$order               = wc_get_order( $order->get_id() );
-		$expected_marker_key = '_wc_native_payments_note_' . md5( 'pi_started|started|payment_started' );
+		$order             = wc_get_order( $order->get_id() );
+		$legacy_marker_key = '_wc_native_payments_note_' . md5( 'pi_started|started|payment_started' );
+		$expected_identity = hash( 'sha256', 'payment_lifecycle:pi_started|started|payment_started' );
+		$notes             = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'yes', $order->get_meta( $expected_marker_key, true ) );
+		$this->assertCount( 1, $notes );
+		$this->assertSame( $expected_identity, get_comment_meta( $notes[0]->id, '_wc_woopayments_note_identity', true ) );
+		$this->assertSame( '', $order->get_meta( $legacy_marker_key, true ) );
 
 		$this->apply_event_unlocked(
 			$order,
@@ -553,6 +557,40 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Payment started.' ) );
 		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Zahlung gestartet.' ) );
+	}
+
+	/**
+	 * @testdox Legacy lifecycle markers backfill the unified identity onto an equivalent note.
+	 */
+	public function test_legacy_lifecycle_marker_backfills_unified_identity(): void {
+		$order             = $this->create_woopayments_order();
+		$legacy_note_id    = $order->add_order_note( 'Payment started.' );
+		$legacy_marker_key = '_wc_native_payments_note_' . md5( 'pi_legacy|started|payment_started' );
+		$order->update_meta_data( $legacy_marker_key, 'yes' );
+		$order->save_meta_data();
+
+		$this->apply_event_unlocked(
+			$order,
+			new PaymentLifecycleEvent(
+				PaymentLifecycleEvent::STATUS_STARTED,
+				'pi_legacy',
+				array( '_intent_id' => 'pi_legacy' ),
+				array(),
+				'Zahlung gestartet.',
+				'payment_started',
+				array( 'Payment started.' )
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Payment started.' ) );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Zahlung gestartet.' ) );
+		$this->assertSame(
+			hash( 'sha256', 'payment_lifecycle:pi_legacy|started|payment_started' ),
+			get_comment_meta( $legacy_note_id, '_wc_woopayments_note_identity', true )
+		);
 	}
 
 	/**

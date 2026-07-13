@@ -463,6 +463,54 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Legacy order-meta markers suppress a changed rendering after dedupe ownership migrates.
+	 */
+	public function test_legacy_order_meta_marker_suppresses_changed_note_rendering(): void {
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->save();
+		$order->add_order_note( 'Legacy lifecycle note' );
+
+		$legacy_marker_key = '_wc_native_payments_note_' . md5( 'pi_legacy|started|payment_started' );
+		$order->update_meta_data( $legacy_marker_key, 'yes' );
+		$order->save_meta_data();
+
+		$sut = wc_get_container()->get( WooPaymentsOrderNoteService::class );
+		$this->assertFalse(
+			$sut->add_note_once(
+				$order,
+				'Translated lifecycle note',
+				'payment_lifecycle:pi_legacy|started|payment_started',
+				array(),
+				array( $legacy_marker_key )
+			)
+		);
+
+		$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+		$this->assertCount( 1, $notes );
+		$this->assertSame( 'Legacy lifecycle note', $notes[0]->content );
+	}
+
+	/**
+	 * @testdox New-note side effects run once and are skipped on identity replay.
+	 */
+	public function test_before_add_side_effect_runs_once_for_new_identity(): void {
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->save();
+		$sut              = wc_get_container()->get( WooPaymentsOrderNoteService::class );
+		$before_add_calls = 0;
+		$before_add       = static function () use ( &$before_add_calls ): void {
+			++$before_add_calls;
+		};
+
+		$this->assertTrue( $sut->add_note_once( $order, 'New note', 'event:one', array(), array(), $before_add ) );
+		$this->assertFalse( $sut->add_note_once( $order, 'Translated note', 'event:one', array(), array(), $before_add ) );
+		$this->assertSame( 1, $before_add_calls );
+		$this->assertCount( 1, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+	}
+
+	/**
 	 * Install test-only catalog translations.
 	 *
 	 * @param array<string,array<string,string>> $replacements Source-to-translation maps keyed by text domain.

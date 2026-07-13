@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use WC_Order;
 
 /**
@@ -25,14 +26,23 @@ class OrderPaymentLifecycleService {
 	private OrderPaymentStore $order_payment_store;
 
 	/**
+	 * WooPayments order note service.
+	 *
+	 * @var WooPaymentsOrderNoteService|null
+	 */
+	private ?WooPaymentsOrderNoteService $order_note_service = null;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param OrderPaymentStore $order_payment_store Order payment store.
+	 * @param OrderPaymentStore           $order_payment_store Order payment store.
+	 * @param WooPaymentsOrderNoteService $order_note_service  WooPayments order note service.
 	 */
-	final public function init( OrderPaymentStore $order_payment_store ): void {
+	final public function init( OrderPaymentStore $order_payment_store, ?WooPaymentsOrderNoteService $order_note_service = null ): void {
 		$this->order_payment_store = $order_payment_store;
+		$this->order_note_service  = $order_note_service;
 	}
 
 	/**
@@ -112,10 +122,7 @@ class OrderPaymentLifecycleService {
 		$this->apply_meta_changes( $order, $event );
 
 		$note            = $event->get_note();
-		$should_add_note = null !== $note && '' !== $note && ! $this->has_note_marker( $order, $event, $note ) && ! $this->should_skip_lifecycle_note( $order, $event, $note, $persistence_profile );
-		if ( $should_add_note ) {
-			$order->update_meta_data( $this->get_note_marker_key( $event, $note ), 'yes' );
-		}
+		$should_add_note = null !== $note && '' !== $note && ! $this->should_skip_lifecycle_note( $order, $event, $note, $persistence_profile );
 
 		if ( $this->should_save_meta_before_status_transition( $event ) ) {
 			$order->save_meta_data();
@@ -127,7 +134,13 @@ class OrderPaymentLifecycleService {
 		}
 
 		if ( $should_add_note ) {
-			$order->add_order_note( $note );
+			$this->get_order_note_service()->add_note_once(
+				$order,
+				(string) $note,
+				$this->get_note_identity( $event, (string) $note ),
+				$event->get_note_equivalents(),
+				array( $this->get_note_marker_key( $event, (string) $note ) )
+			);
 		}
 	}
 
@@ -252,18 +265,6 @@ class OrderPaymentLifecycleService {
 	}
 
 	/**
-	 * Tell whether the lifecycle note marker is already present.
-	 *
-	 * @param WC_Order              $order Order object.
-	 * @param PaymentLifecycleEvent $event Lifecycle event.
-	 * @param string                $note  Note content.
-	 * @return bool
-	 */
-	private function has_note_marker( WC_Order $order, PaymentLifecycleEvent $event, string $note ): bool {
-		return 'yes' === $order->get_meta( $this->get_note_marker_key( $event, $note ), true );
-	}
-
-	/**
 	 * Tell whether a lifecycle note should be skipped for an already-applied event.
 	 *
 	 * @param WC_Order                   $order               Order object.
@@ -280,11 +281,6 @@ class OrderPaymentLifecycleService {
 		$payment_reference = (string) $event->get_payment_reference();
 		$note_type         = $event->get_note_type();
 
-		$note_candidates = array_values( array_unique( array_merge( array( $note ), $event->get_note_equivalents() ) ) );
-		if ( null !== $note_type && $this->has_rendered_note( $order, $note_candidates ) ) {
-			return true;
-		}
-
 		return PaymentLifecycleEvent::STATUS_COMPLETED === $event->get_status()
 			&& in_array( $note_type, array( PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_COMPLETE, PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS ), true )
 			&& '' !== $payment_reference
@@ -293,31 +289,7 @@ class OrderPaymentLifecycleService {
 	}
 
 	/**
-	 * Tell whether the order already has the rendered note content.
-	 *
-	 * @param WC_Order $order           Order object.
-	 * @param string[] $note_candidates Exact equivalent note renderings.
-	 * @return bool
-	 */
-	private function has_rendered_note( WC_Order $order, array $note_candidates ): bool {
-		$notes = wc_get_order_notes(
-			array(
-				'order_id' => $order->get_id(),
-				'type'     => 'any',
-			)
-		);
-
-		foreach ( $notes as $order_note ) {
-			if ( in_array( (string) $order_note->content, $note_candidates, true ) ) {
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	/**
-	 * Get the internal idempotency marker key for a lifecycle note.
+	 * Get the legacy idempotency marker key for a lifecycle note.
 	 *
 	 * @param PaymentLifecycleEvent $event Lifecycle event.
 	 * @param string                $note  Note content.
@@ -327,5 +299,31 @@ class OrderPaymentLifecycleService {
 		$note_key = $event->get_note_type() ?? $note;
 
 		return '_wc_native_payments_note_' . md5( (string) $event->get_payment_reference() . '|' . $event->get_status() . '|' . $note_key );
+	}
+
+	/**
+	 * Get the stable private identity for a lifecycle note.
+	 *
+	 * @param PaymentLifecycleEvent $event Lifecycle event.
+	 * @param string                $note  Note content.
+	 * @return string
+	 */
+	private function get_note_identity( PaymentLifecycleEvent $event, string $note ): string {
+		$note_key = $event->get_note_type() ?? $note;
+
+		return 'payment_lifecycle:' . (string) $event->get_payment_reference() . '|' . $event->get_status() . '|' . $note_key;
+	}
+
+	/**
+	 * Get the shared WooPayments order note service.
+	 *
+	 * @return WooPaymentsOrderNoteService
+	 */
+	private function get_order_note_service(): WooPaymentsOrderNoteService {
+		if ( null === $this->order_note_service ) {
+			$this->order_note_service = wc_get_container()->get( WooPaymentsOrderNoteService::class );
+		}
+
+		return $this->order_note_service;
 	}
 }

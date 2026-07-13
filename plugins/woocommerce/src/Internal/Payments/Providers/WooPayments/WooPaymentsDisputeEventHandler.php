@@ -25,7 +25,7 @@ use WC_Order_Refund;
 class WooPaymentsDisputeEventHandler {
 
 	/**
-	 * Prefix for dispute order-note structural dedupe markers.
+	 * Prefix for legacy dispute order-note structural dedupe markers.
 	 *
 	 * @var string
 	 */
@@ -53,6 +53,13 @@ class WooPaymentsDisputeEventHandler {
 	private WooPaymentsDisputeCacheService $dispute_cache_service;
 
 	/**
+	 * WooPayments order note service.
+	 *
+	 * @var WooPaymentsOrderNoteService|null
+	 */
+	private ?WooPaymentsOrderNoteService $order_note_service = null;
+
+	/**
 	 * Initialize the handler.
 	 *
 	 * @internal
@@ -60,11 +67,13 @@ class WooPaymentsDisputeEventHandler {
 	 * @param WooPaymentsLegacyRuntime       $legacy_runtime        WooPayments legacy runtime.
 	 * @param WooPaymentsApiClient           $api_client            Native WooPayments API client.
 	 * @param WooPaymentsDisputeCacheService $dispute_cache_service Dispute cache service.
+	 * @param WooPaymentsOrderNoteService    $order_note_service    WooPayments order note service.
 	 */
-	final public function init( WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, WooPaymentsDisputeCacheService $dispute_cache_service ): void {
+	final public function init( WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, WooPaymentsDisputeCacheService $dispute_cache_service, ?WooPaymentsOrderNoteService $order_note_service = null ): void {
 		$this->legacy_runtime        = $legacy_runtime;
 		$this->api_client            = $api_client;
 		$this->dispute_cache_service = $dispute_cache_service;
+		$this->order_note_service    = $order_note_service;
 	}
 
 	/**
@@ -169,13 +178,20 @@ class WooPaymentsDisputeEventHandler {
 		);
 		$note_type  = $is_inquiry ? 'created_inquiry' : 'created_dispute';
 
-		if ( $this->dispute_order_note_exists( $order, $note, $dispute_id, $status, $note_type ) ) {
+		if (
+			! $this->add_dispute_order_note_once(
+				$order,
+				$note,
+				$dispute_id,
+				$status,
+				$note_type,
+				static function () use ( $order ): void {
+					$order->update_status( 'on-hold' );
+				}
+			)
+		) {
 			return;
 		}
-
-		$order->update_status( 'on-hold' );
-		$this->mark_dispute_order_note( $order, $dispute_id, $status, $note_type );
-		$order->add_order_note( $note );
 	}
 
 	/**
@@ -193,28 +209,30 @@ class WooPaymentsDisputeEventHandler {
 		$note       = $this->get_dispute_closed_note( $charge_id, $status, $is_inquiry, $balance_transaction_id );
 		$note_type  = $is_inquiry ? 'closed_inquiry' : 'closed_dispute';
 
-		if ( $this->dispute_order_note_exists( $order, $note, $dispute_id, $status, $note_type ) ) {
-			return;
-		}
+		$this->add_dispute_order_note_once(
+			$order,
+			$note,
+			$dispute_id,
+			$status,
+			$note_type,
+			function () use ( $order, $status, $dispute_id, $charge_id ): void {
+				add_filter( 'woocommerce_email_enabled_customer_completed_order', '__return_false' );
+				add_filter( 'woocommerce_email_enabled_customer_refunded_order', '__return_false' );
+				add_filter( 'woocommerce_email_enabled_customer_completed_renewal_order', '__return_false' );
 
-		add_filter( 'woocommerce_email_enabled_customer_completed_order', '__return_false' );
-		add_filter( 'woocommerce_email_enabled_customer_refunded_order', '__return_false' );
-		add_filter( 'woocommerce_email_enabled_customer_completed_renewal_order', '__return_false' );
-
-		try {
-			if ( 'lost' === $status ) {
-				$this->create_dispute_lost_refund( $order, $this->get_dispute_summary( $dispute_id, $charge_id ), $charge_id, $dispute_id, $status );
-			} else {
-				$order->update_status( 'completed' );
+				try {
+					if ( 'lost' === $status ) {
+						$this->create_dispute_lost_refund( $order, $this->get_dispute_summary( $dispute_id, $charge_id ), $charge_id, $dispute_id, $status );
+					} else {
+						$order->update_status( 'completed' );
+					}
+				} finally {
+					remove_filter( 'woocommerce_email_enabled_customer_completed_order', '__return_false' );
+					remove_filter( 'woocommerce_email_enabled_customer_refunded_order', '__return_false' );
+					remove_filter( 'woocommerce_email_enabled_customer_completed_renewal_order', '__return_false' );
+				}
 			}
-		} finally {
-			remove_filter( 'woocommerce_email_enabled_customer_completed_order', '__return_false' );
-			remove_filter( 'woocommerce_email_enabled_customer_refunded_order', '__return_false' );
-			remove_filter( 'woocommerce_email_enabled_customer_completed_renewal_order', '__return_false' );
-		}
-
-		$this->mark_dispute_order_note( $order, $dispute_id, $status, $note_type );
-		$order->add_order_note( $note );
+		);
 	}
 
 	/**
@@ -596,85 +614,25 @@ class WooPaymentsDisputeEventHandler {
 	}
 
 	/**
-	 * Tell whether an order already has an exact note.
-	 *
-	 * @param WC_Order $order Order object.
-	 * @param string   $note  Note content.
-	 * @return bool
-	 */
-	private function order_note_exists( WC_Order $order, string $note ): bool {
-		$notes = wc_get_order_notes(
-			array(
-				'order_id' => $order->get_id(),
-				'type'     => 'any',
-			)
-		);
-
-		foreach ( $notes as $order_note ) {
-			if ( $note === (string) $order_note->content ) {
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	/**
-	 * Tell whether a dispute order note was already written.
+	 * Add a dispute order note through the shared identity mechanism.
 	 *
 	 * @param WC_Order $order        Order object.
 	 * @param string   $note         Note content.
 	 * @param string   $dispute_id   Provider dispute ID.
 	 * @param string   $event_status Provider dispute status.
 	 * @param string   $note_type    Stable note type.
-	 * @return bool
-	 */
-	private function dispute_order_note_exists( WC_Order $order, string $note, string $dispute_id, string $event_status, string $note_type ): bool {
-		$marker_key = $this->get_dispute_note_marker_key( $dispute_id, $event_status, $note_type );
-
-		if ( 'yes' === $order->get_meta( $marker_key, true ) ) {
-			return true;
-		}
-
-		if ( $this->order_note_exists( $order, $note ) ) {
-			$this->mark_dispute_order_note( $order, $dispute_id, $event_status, $note_type );
-			return true;
-		}
-
-		return false;
-	}
-
-	/**
-	 * Add a dispute order note only when its structural marker is not already present.
-	 *
-	 * @param WC_Order $order        Order object.
-	 * @param string   $note         Note content.
-	 * @param string   $dispute_id   Provider dispute ID.
-	 * @param string   $event_status Provider dispute status.
-	 * @param string   $note_type    Stable note type.
+	 * @param callable $before_add   Side effects to apply only when the note is new.
 	 * @return bool True when the note was added.
 	 */
-	private function add_dispute_order_note_once( WC_Order $order, string $note, string $dispute_id, string $event_status, string $note_type ): bool {
-		if ( $this->dispute_order_note_exists( $order, $note, $dispute_id, $event_status, $note_type ) ) {
-			return false;
-		}
-
-		$this->mark_dispute_order_note( $order, $dispute_id, $event_status, $note_type );
-		$order->add_order_note( $note );
-		return true;
-	}
-
-	/**
-	 * Persist the structural marker for a dispute order note.
-	 *
-	 * @param WC_Order $order        Order object.
-	 * @param string   $dispute_id   Provider dispute ID.
-	 * @param string   $event_status Provider dispute status.
-	 * @param string   $note_type    Stable note type.
-	 */
-	private function mark_dispute_order_note( WC_Order $order, string $dispute_id, string $event_status, string $note_type ): void {
-		$order->update_meta_data( $this->get_dispute_note_marker_key( $dispute_id, $event_status, $note_type ), 'yes' );
-		$order->save_meta_data();
+	private function add_dispute_order_note_once( WC_Order $order, string $note, string $dispute_id, string $event_status, string $note_type, ?callable $before_add = null ): bool {
+		return $this->get_order_note_service()->add_note_once(
+			$order,
+			$note,
+			'dispute:' . $dispute_id . '|' . $event_status . '|' . $note_type,
+			array(),
+			array( $this->get_dispute_note_marker_key( $dispute_id, $event_status, $note_type ) ),
+			$before_add
+		);
 	}
 
 	/**
@@ -687,6 +645,19 @@ class WooPaymentsDisputeEventHandler {
 	 */
 	private function get_dispute_note_marker_key( string $dispute_id, string $event_status, string $note_type ): string {
 		return self::DISPUTE_NOTE_MARKER_PREFIX . md5( $dispute_id . '|' . $event_status . '|' . $note_type );
+	}
+
+	/**
+	 * Get the shared WooPayments order note service.
+	 *
+	 * @return WooPaymentsOrderNoteService
+	 */
+	private function get_order_note_service(): WooPaymentsOrderNoteService {
+		if ( null === $this->order_note_service ) {
+			$this->order_note_service = wc_get_container()->get( WooPaymentsOrderNoteService::class );
+		}
+
+		return $this->order_note_service;
 	}
 
 	/**
