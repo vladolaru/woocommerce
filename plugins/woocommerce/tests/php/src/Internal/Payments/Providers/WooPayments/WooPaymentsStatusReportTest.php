@@ -60,6 +60,38 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$this->assertSame( 1, has_action( 'woocommerce_system_status_report', array( $sut, 'render_status_report_section' ) ) );
 		$this->assertSame( 10, has_filter( 'woocommerce_debug_tools', array( $sut, 'add_debug_tools' ) ) );
 		$this->assertSame( 10, has_filter( 'debug_information', array( $sut, 'add_site_health_debug_info' ) ) );
+		$this->assertSame( 10, has_filter( 'site_status_tests', array( $sut, 'add_site_status_tests' ) ) );
+		$this->assertSame( 10, has_action( 'wp_ajax_health-check-woocommerce-woopayments-native-cutover', array( $sut, 'run_cutover_site_health_ajax_test' ) ) );
+	}
+
+	/**
+	 * @testdox Site Health registers an asynchronous cutover check that reports runtime ownership and preflight state.
+	 */
+	public function test_site_health_registers_async_cutover_check_with_runtime_and_preflight_state(): void {
+		$this->fake_plugin( true );
+
+		$tests = $this->get_sut()->add_site_status_tests(
+			array(
+				'async' => array(
+					'existing_test' => array(
+						'label' => 'Existing test',
+						'test'  => '__return_empty_array',
+					),
+				),
+			)
+		);
+
+		$this->assertArrayHasKey( 'existing_test', $tests['async'] );
+		$this->assertArrayHasKey( 'woocommerce_woopayments_native_cutover', $tests['async'] );
+		$this->assertSame( 'woocommerce-woopayments-native-cutover', $tests['async']['woocommerce_woopayments_native_cutover']['test'] );
+		$this->assertIsCallable( $tests['async']['woocommerce_woopayments_native_cutover']['async_direct_test'] );
+
+		$result = $tests['async']['woocommerce_woopayments_native_cutover']['async_direct_test']();
+
+		$this->assertSame( 'recommended', $result['status'] );
+		$this->assertSame( 'woocommerce_woopayments_native_cutover', $result['test'] );
+		$this->assertStringContainsString( 'Runtime owner: plugin', $result['description'] );
+		$this->assertStringContainsString( 'Preflight failures: native_runtime_disabled', $result['description'] );
 	}
 
 	/**
@@ -198,6 +230,8 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		remove_action( 'woocommerce_system_status_report', array( $sut, 'render_status_report_section' ), 1 );
 		remove_filter( 'woocommerce_debug_tools', array( $sut, 'add_debug_tools' ) );
 		remove_filter( 'debug_information', array( $sut, 'add_site_health_debug_info' ) );
+		remove_filter( 'site_status_tests', array( $sut, 'add_site_status_tests' ) );
+		remove_action( 'wp_ajax_health-check-woocommerce-woopayments-native-cutover', array( $sut, 'run_cutover_site_health_ajax_test' ) );
 	}
 
 	/**

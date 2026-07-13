@@ -26,6 +26,10 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 
 	private const MULTI_CURRENCY_FLAG_OPTION = '_wcpay_feature_customer_multi_currency';
 
+	private const SITE_HEALTH_TEST_ID = 'woocommerce_woopayments_native_cutover';
+
+	private const SITE_HEALTH_TEST_ACTION = 'woocommerce-woopayments-native-cutover';
+
 	/**
 	 * Runtime owner arbiter.
 	 *
@@ -106,6 +110,79 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 		add_action( 'woocommerce_system_status_report', array( $this, 'render_status_report_section' ), 1 );
 		add_filter( 'woocommerce_debug_tools', array( $this, 'add_debug_tools' ) );
 		add_filter( 'debug_information', array( $this, 'add_site_health_debug_info' ) );
+		add_filter( 'site_status_tests', array( $this, 'add_site_status_tests' ) );
+		add_action( 'wp_ajax_health-check-' . self::SITE_HEALTH_TEST_ACTION, array( $this, 'run_cutover_site_health_ajax_test' ) );
+	}
+
+	/**
+	 * Add the native WooPayments cutover check to Site Health.
+	 *
+	 * @param array<string,array<string,array<string,mixed>>> $tests Site Health tests.
+	 * @return array<string,array<string,array<string,mixed>>>
+	 */
+	public function add_site_status_tests( array $tests ): array {
+		$tests['async'] = $tests['async'] ?? array();
+
+		$tests['async'][ self::SITE_HEALTH_TEST_ID ] = array(
+			'label'             => __( 'WooPayments native cutover readiness', 'woocommerce' ),
+			'test'              => self::SITE_HEALTH_TEST_ACTION,
+			'async_direct_test' => array( $this, 'run_cutover_site_health_test' ),
+		);
+
+		return $tests;
+	}
+
+	/**
+	 * Run the native WooPayments cutover Site Health check over AJAX.
+	 */
+	public function run_cutover_site_health_ajax_test(): void {
+		check_ajax_referer( 'health-check-site-status' );
+
+		if ( ! current_user_can( 'view_site_health_checks' ) ) {
+			wp_send_json_error();
+		}
+
+		wp_send_json_success( $this->run_cutover_site_health_test() );
+	}
+
+	/**
+	 * Run the native WooPayments cutover Site Health check.
+	 *
+	 * @return array<string,mixed> Site Health test result.
+	 */
+	public function run_cutover_site_health_test(): array {
+		$runtime_owner = $this->arbiter->get_runtime_owner();
+		$failures      = $this->cutover_controller->get_preflight_failures();
+		$is_ready      = array() === $failures;
+
+		if ( $is_ready ) {
+			$description = sprintf(
+				/* translators: %s: payments runtime owner. */
+				__( 'Runtime owner: %s. Cutover preflight has no failures.', 'woocommerce' ),
+				$runtime_owner
+			);
+		} else {
+			$description = sprintf(
+				/* translators: 1: payments runtime owner, 2: comma-separated preflight failure codes. */
+				__( 'Runtime owner: %1$s. Preflight failures: %2$s.', 'woocommerce' ),
+				$runtime_owner,
+				implode( ', ', $failures )
+			);
+		}
+
+		return array(
+			'label'       => $is_ready
+				? __( 'WooPayments native cutover is ready', 'woocommerce' )
+				: __( 'WooPayments native cutover is not ready', 'woocommerce' ),
+			'status'      => $is_ready ? 'good' : 'recommended',
+			'badge'       => array(
+				'label' => __( 'Performance', 'woocommerce' ),
+				'color' => 'blue',
+			),
+			'description' => '<p>' . esc_html( $description ) . '</p>',
+			'actions'     => '',
+			'test'        => self::SITE_HEALTH_TEST_ID,
+		);
 	}
 
 	/**
