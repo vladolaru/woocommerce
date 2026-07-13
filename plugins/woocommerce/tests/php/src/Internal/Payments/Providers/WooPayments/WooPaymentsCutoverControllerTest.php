@@ -202,6 +202,13 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	private array $scheduled_action_hooks = array();
 
 	/**
+	 * Multisite blogs created by tests.
+	 *
+	 * @var int[]
+	 */
+	private array $multisite_blog_ids = array();
+
+	/**
 	 * Set up test fixtures.
 	 */
 	public function setUp(): void {
@@ -294,6 +301,11 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
+		while ( function_exists( 'ms_is_switched' ) && ms_is_switched() ) {
+			restore_current_blog();
+		}
+		$multisite_blog_ids       = $this->multisite_blog_ids;
+		$this->multisite_blog_ids = array();
 		unset( $_GET[ WooPaymentsCutoverController::QUERY_ACTION ], $_GET[ WooPaymentsCutoverController::NONCE_NAME ], $_GET[ WooPaymentsCutoverController::QUERY_STATUS ] );
 		delete_transient( 'woocommerce_woopayments_native_cutover_status' );
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
@@ -326,6 +338,15 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->reset_legacy_proxy_mocks();
 
 		parent::tearDown();
+
+		if ( array() !== $multisite_blog_ids ) {
+			foreach ( $multisite_blog_ids as $blog_id ) {
+				if ( get_site( $blog_id ) ) {
+					wpmu_delete_blog( $blog_id, true );
+				}
+			}
+			wp_cache_flush();
+		}
 	}
 
 	/**
@@ -676,6 +697,56 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			$this->deactivate_plugin_calls[0],
 			'Network-active WooPayments must be deactivated with the network-wide flag.'
 		);
+	}
+
+	/**
+	 * @testdox Network cutover evaluates every site and refuses deactivation when any site fails preflight.
+	 * @group multisite
+	 */
+	public function test_network_cutover_refuses_when_any_site_fails_preflight(): void {
+		$site_ids         = $this->create_multisite_preflight_sites();
+		$failing_site_id  = (int) end( $site_ids );
+		$visited_site_ids = array();
+		$this->create_multisite_legacy_subscription_marker( $failing_site_id );
+
+		$this->fake_plugin_active( false, true );
+		$this->fake_current_user_caps( true );
+		$this->enable_ready_cutover();
+		add_filter(
+			WooPaymentsCutoverController::FILTER_PREFLIGHT_FAILURES,
+			static function ( array $failures ) use ( &$visited_site_ids ): array {
+				$current_site_id    = get_current_blog_id();
+				$visited_site_ids[] = $current_site_id;
+				return $failures;
+			}
+		);
+
+		$this->assertFalse( $this->sut->disable_woopayments_plugin() );
+		$this->assertSame( $site_ids, array_values( array_unique( $visited_site_ids ) ) );
+		$this->assertSame( array(), $this->deactivate_plugin_calls );
+		$this->assertTrue( $this->plugin_network_active );
+	}
+
+	/**
+	 * @testdox Network preflight reports failing site IDs in its support surface and blocked notice.
+	 * @group multisite
+	 */
+	public function test_network_preflight_reports_failing_site_ids(): void {
+		$site_ids        = $this->create_multisite_preflight_sites();
+		$failing_site_id = (int) end( $site_ids );
+		$this->create_multisite_legacy_subscription_marker( $failing_site_id );
+
+		$this->fake_plugin_active( false, true );
+		$this->enable_ready_cutover();
+
+		$this->assertSame( array( $failing_site_id ), $this->sut->get_network_preflight_failing_site_ids() );
+
+		ob_start();
+		$this->sut->output_blocked_notice();
+		$notice = (string) ob_get_clean();
+
+		$this->assertStringContainsString( (string) $failing_site_id, $notice );
+		$this->assertStringNotContainsString( (string) $site_ids[1], $notice );
 	}
 
 	/**
@@ -1307,6 +1378,49 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		add_filter( WooPaymentsCutoverController::FILTER_PROVIDER_EVENT_TYPES_PENDING_CUTOVER, '__return_empty_array' );
 		add_filter( WooPaymentsCutoverController::FILTER_OPERATIONAL_QUEUE_HOOKS_PENDING_CUTOVER, '__return_empty_array' );
 		$this->native_provider_ready = true;
+	}
+
+	/**
+	 * Create two sites with the minimum supported cutover version.
+	 *
+	 * @return int[] Current-network site IDs in preflight order.
+	 */
+	private function create_multisite_preflight_sites(): array {
+		$this->skipWithoutMultisite();
+
+		for ( $index = 0; $index < 2; ++$index ) {
+			$blog_id                    = self::factory()->blog->create();
+			$this->multisite_blog_ids[] = $blog_id;
+			switch_to_blog( $blog_id );
+			\WC_Install::create_tables();
+			( new \ActionScheduler_StoreSchema() )->register_tables( true );
+			update_option( 'woocommerce_woocommerce_payments_version', '10.5.0' );
+			restore_current_blog();
+		}
+
+		return array_map(
+			'intval',
+			get_sites(
+				array(
+					'fields'     => 'ids',
+					'network_id' => get_current_network_id(),
+					'number'     => 0,
+					'orderby'    => 'id',
+					'order'      => 'ASC',
+				)
+			)
+		);
+	}
+
+	/**
+	 * Add a legacy Stripe Billing subscription marker to one multisite blog.
+	 *
+	 * @param int $blog_id Blog ID.
+	 */
+	private function create_multisite_legacy_subscription_marker( int $blog_id ): void {
+		switch_to_blog( $blog_id );
+		$this->create_legacy_stripe_billing_subscription( 'active' );
+		restore_current_blog();
 	}
 
 	/**

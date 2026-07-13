@@ -45,11 +45,11 @@ class WooPaymentsLegacySubscriptionsGuard {
 	);
 
 	/**
-	 * Cached result for the current request.
+	 * Cached results for each blog visited during the current request.
 	 *
-	 * @var bool|null
+	 * @var array<int,bool>
 	 */
-	private ?bool $has_legacy_markers = null;
+	private array $has_legacy_markers = array();
 
 	/**
 	 * Tell whether native cutover would strand legacy Stripe Billing subscription data.
@@ -57,13 +57,14 @@ class WooPaymentsLegacySubscriptionsGuard {
 	 * @return bool True when at least one legacy WCPay/Stripe Billing marker exists.
 	 */
 	public function has_legacy_stripe_billing_subscription_markers(): bool {
-		if ( null !== $this->has_legacy_markers ) {
-			return $this->has_legacy_markers;
+		$blog_id = get_current_blog_id();
+		if ( array_key_exists( $blog_id, $this->has_legacy_markers ) ) {
+			return $this->has_legacy_markers[ $blog_id ];
 		}
 
-		$this->has_legacy_markers = $this->query_legacy_marker_exists();
+		$this->has_legacy_markers[ $blog_id ] = $this->query_legacy_marker_exists();
 
-		return $this->has_legacy_markers;
+		return $this->has_legacy_markers[ $blog_id ];
 	}
 
 	/**

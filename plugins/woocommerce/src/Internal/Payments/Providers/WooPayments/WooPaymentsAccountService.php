@@ -156,18 +156,11 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	private ?WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer = null;
 
 	/**
-	 * In-request account cache contents.
+	 * In-request account cache contents keyed by blog ID.
 	 *
-	 * @var array<string,mixed>|false
+	 * @var array<int,array<string,mixed>|false>
 	 */
-	private $account_cache = false;
-
-	/**
-	 * Whether account cache contents have been loaded for this request.
-	 *
-	 * @var bool
-	 */
-	private bool $account_cache_loaded = false;
+	private array $account_cache = array();
 
 	/**
 	 * Whether account refreshes are disabled for this request.
@@ -360,8 +353,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 */
 	public function clear_cache(): void {
 		try {
-			$this->account_cache        = false;
-			$this->account_cache_loaded = false;
+			unset( $this->account_cache[ get_current_blog_id() ] );
 			$this->legacy_proxy->call_function( 'delete_option', self::ACCOUNT_OPTION );
 			$this->legacy_proxy->call_function( 'wp_cache_delete', self::ACCOUNT_OPTION, 'options' );
 		} catch ( \Throwable $e ) {
@@ -501,8 +493,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @return void
 	 */
 	private function clear_preserved_database_cache(): void {
-		$this->account_cache        = false;
-		$this->account_cache_loaded = false;
+		unset( $this->account_cache[ get_current_blog_id() ] );
 
 		foreach ( self::DATABASE_CACHE_OPTIONS as $option_name ) {
 			$this->legacy_proxy->call_function( 'delete_option', $option_name );
@@ -516,8 +507,9 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @return array<string,mixed>|false
 	 */
 	private function get_account_cache() {
-		if ( $this->account_cache_loaded ) {
-			return $this->account_cache;
+		$blog_id = get_current_blog_id();
+		if ( array_key_exists( $blog_id, $this->account_cache ) ) {
+			return $this->account_cache[ $blog_id ];
 		}
 
 		try {
@@ -526,10 +518,9 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 			$cache = false;
 		}
 
-		$this->account_cache        = is_array( $cache ) ? $cache : false;
-		$this->account_cache_loaded = true;
+		$this->account_cache[ $blog_id ] = is_array( $cache ) ? $cache : false;
 
-		return $this->account_cache;
+		return $this->account_cache[ $blog_id ];
 	}
 
 	/**
@@ -579,8 +570,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @return void
 	 */
 	private function persist_account_cache( array $cache_contents ): void {
-		$this->account_cache        = $cache_contents;
-		$this->account_cache_loaded = true;
+		$this->account_cache[ get_current_blog_id() ] = $cache_contents;
 
 		$result = $this->legacy_proxy->call_function( 'update_option', self::ACCOUNT_OPTION, $cache_contents, 'no' );
 		if ( false !== $result ) {

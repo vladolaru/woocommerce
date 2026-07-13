@@ -141,6 +141,13 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	private const WOOPAYMENTS_VERSION_OPTION = 'woocommerce_woocommerce_payments_version';
 
 	/**
+	 * Maximum number of network site IDs loaded for one preflight query.
+	 *
+	 * @var int
+	 */
+	private const NETWORK_PREFLIGHT_BATCH_SIZE = 100;
+
+	/**
 	 * Status value for a successful plugin disable.
 	 *
 	 * @var string
@@ -225,11 +232,18 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	private WooPaymentsAdminNavigationController $admin_navigation_controller;
 
 	/**
-	 * Request-local cutover preflight failures.
+	 * Request-local cutover preflight failures keyed by blog ID.
 	 *
-	 * @var array<int,string>|null
+	 * @var array<int,array<int,string>>
 	 */
-	private ?array $preflight_memo = null;
+	private array $preflight_memo = array();
+
+	/**
+	 * Request-local network preflight failures.
+	 *
+	 * @var int[]|null
+	 */
+	private ?array $network_preflight_failing_site_ids_memo = null;
 
 	/**
 	 * Initialize the class instance.
@@ -443,13 +457,14 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @return array<int,string> Failure codes.
 	 */
 	public function get_preflight_failures(): array {
-		if ( null !== $this->preflight_memo ) {
-			return $this->preflight_memo;
+		$blog_id = get_current_blog_id();
+		if ( array_key_exists( $blog_id, $this->preflight_memo ) ) {
+			return $this->preflight_memo[ $blog_id ];
 		}
 
 		if ( ! $this->arbiter->is_native_runtime_enabled() ) {
-			$this->preflight_memo = array( 'native_runtime_disabled' );
-			return $this->preflight_memo;
+			$this->preflight_memo[ $blog_id ] = array( 'native_runtime_disabled' );
+			return $this->preflight_memo[ $blog_id ];
 		}
 
 		$failures           = array();
@@ -536,8 +551,63 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 			$failures[] = 'legacy_stripe_billing_subscriptions_present';
 		}
 
-		$this->preflight_memo = $failures;
-		return $this->preflight_memo;
+		$this->preflight_memo[ $blog_id ] = $failures;
+		return $this->preflight_memo[ $blog_id ];
+	}
+
+	/**
+	 * Get site IDs whose per-site preflight blocks network-wide deactivation.
+	 *
+	 * @return int[] Failing site IDs in ascending order.
+	 */
+	public function get_network_preflight_failing_site_ids(): array {
+		if ( ! is_multisite() || ! $this->is_woopayments_network_active() ) {
+			return array();
+		}
+
+		if ( null !== $this->network_preflight_failing_site_ids_memo ) {
+			return $this->network_preflight_failing_site_ids_memo;
+		}
+
+		$failing_site_ids = array();
+		$offset           = 0;
+
+		do {
+			$site_ids = get_sites(
+				array(
+					'fields'     => 'ids',
+					'network_id' => get_current_network_id(),
+					'number'     => self::NETWORK_PREFLIGHT_BATCH_SIZE,
+					'offset'     => $offset,
+					'orderby'    => 'id',
+					'order'      => 'ASC',
+				)
+			);
+
+			foreach ( $site_ids as $site_id ) {
+				$site_id  = (int) $site_id;
+				$switched = get_current_blog_id() !== $site_id;
+				if ( $switched ) {
+					switch_to_blog( $site_id );
+				}
+
+				try {
+					if ( array() !== $this->get_preflight_failures() ) {
+						$failing_site_ids[] = $site_id;
+					}
+				} finally {
+					if ( $switched ) {
+						restore_current_blog();
+					}
+				}
+			}
+
+			$site_count = count( $site_ids );
+			$offset    += $site_count;
+		} while ( self::NETWORK_PREFLIGHT_BATCH_SIZE === $site_count );
+
+		$this->network_preflight_failing_site_ids_memo = $failing_site_ids;
+		return $this->network_preflight_failing_site_ids_memo;
 	}
 
 	/**
@@ -727,6 +797,10 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_cutover_ready(): bool {
+		if ( is_multisite() && $this->is_woopayments_network_active() ) {
+			return array() === $this->get_network_preflight_failing_site_ids();
+		}
+
 		return array() === $this->get_preflight_failures();
 	}
 
@@ -1015,10 +1089,22 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * Output the blocked cutover notice.
 	 */
 	public function output_blocked_notice(): void {
-		$failures = $this->get_preflight_failures();
+		$failures         = $this->get_preflight_failures();
+		$failing_site_ids = $this->get_network_preflight_failing_site_ids();
 		?>
 		<div class="notice notice-error">
 			<p><?php esc_html_e( 'WooPayments could not be disabled because native WooPayments is not ready to process payments yet.', 'woocommerce' ); ?></p>
+			<?php if ( array() !== $failing_site_ids ) : ?>
+				<p>
+					<?php
+					printf(
+						/* translators: %s: comma-separated list of site IDs. */
+						esc_html( _n( 'Native WooPayments is not ready on site ID %s.', 'Native WooPayments is not ready on site IDs %s.', count( $failing_site_ids ), 'woocommerce' ) ),
+						esc_html( implode( ', ', $failing_site_ids ) )
+					);
+					?>
+				</p>
+			<?php endif; ?>
 			<?php if ( in_array( 'legacy_stripe_billing_subscriptions_present', $failures, true ) ) : ?>
 				<p>
 					<?php

@@ -16,9 +16,21 @@ use WC_Unit_Test_Case;
 class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 
 	/**
+	 * Multisite blogs created by tests.
+	 *
+	 * @var int[]
+	 */
+	private array $multisite_blog_ids = array();
+
+	/**
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
+		while ( function_exists( 'ms_is_switched' ) && ms_is_switched() ) {
+			restore_current_blog();
+		}
+		$multisite_blog_ids       = $this->multisite_blog_ids;
+		$this->multisite_blog_ids = array();
 		delete_option( 'wcpay_account_data' );
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		delete_option( 'wcpay_onboarding_test_mode' );
@@ -48,6 +60,15 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'allowed_redirect_hosts' );
 		set_current_screen( 'front' );
 		parent::tearDown();
+
+		if ( array() !== $multisite_blog_ids ) {
+			foreach ( $multisite_blog_ids as $blog_id ) {
+				if ( get_site( $blog_id ) ) {
+					wpmu_delete_blog( $blog_id, true );
+				}
+			}
+			wp_cache_flush();
+		}
 	}
 
 	/**
@@ -81,6 +102,27 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pk_test_123', $sut->get_publishable_key() );
 		$this->assertSame( 'test', $sut->get_mode() );
 		$this->assertTrue( $sut->is_test_mode_enabled() );
+	}
+
+	/**
+	 * @testdox Account readiness reads each multisite blog's preserved cache after switching.
+	 * @group multisite
+	 */
+	public function test_account_cache_is_isolated_across_multisite_blog_switches(): void {
+		$this->skipWithoutMultisite();
+		$this->store_account_cache_fixture( 'acct_main' );
+
+		$sut = $this->create_service();
+		$this->assertSame( 'acct_main', $sut->get_account_id() );
+
+		$blog_id                    = self::factory()->blog->create();
+		$this->multisite_blog_ids[] = $blog_id;
+		switch_to_blog( $blog_id );
+		$this->store_account_cache_fixture( 'acct_subsite' );
+		$this->assertSame( 'acct_subsite', $sut->get_account_id() );
+
+		restore_current_blog();
+		$this->assertSame( 'acct_main', $sut->get_account_id() );
 	}
 
 	/**
@@ -1355,6 +1397,23 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 				'details_submitted'    => true,
 			),
 			$overrides
+		);
+	}
+
+	/**
+	 * Store a valid account cache fixture for the current blog.
+	 *
+	 * @param string $account_id Account ID.
+	 */
+	private function store_account_cache_fixture( string $account_id ): void {
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'               => $this->get_valid_live_account_payload( array( 'account_id' => $account_id ) ),
+				'fetched'            => time(),
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			)
 		);
 	}
 
