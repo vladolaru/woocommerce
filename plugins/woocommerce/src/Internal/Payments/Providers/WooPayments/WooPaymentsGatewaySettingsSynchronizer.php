@@ -50,6 +50,7 @@ final class WooPaymentsGatewaySettingsSynchronizer {
 	 */
 	public function persist( array $settings, ?bool $payment_request_enabled = null ): array {
 		$missing_marker                  = new \stdClass();
+		$stored_canonical_settings       = get_option( self::SETTINGS_OPTION, $missing_marker );
 		$pending_payment_request_setting = get_option( self::PAYMENT_REQUEST_PENDING_OPTION, $missing_marker );
 		$has_pending_payment_request     = in_array( $pending_payment_request_setting, array( 'yes', 'no' ), true );
 		if (
@@ -66,8 +67,9 @@ final class WooPaymentsGatewaySettingsSynchronizer {
 		}
 		unset( $settings['payment_request'] );
 
-		$normalization = $this->normalize_settings( $settings );
-		$settings      = $normalization['settings'];
+		$normalization                  = $this->normalize_settings( $settings );
+		$settings                       = $normalization['settings'];
+		$canonical_projection_is_stable = is_array( $stored_canonical_settings ) && $stored_canonical_settings === $settings;
 		if ( $missing_marker !== $pending_payment_request_setting && ! $has_pending_payment_request ) {
 			return array(
 				'settings'                      => $settings,
@@ -103,7 +105,7 @@ final class WooPaymentsGatewaySettingsSynchronizer {
 			);
 		}
 
-		$split_projection      = $this->synchronize_split_settings( $settings );
+		$split_projection      = $this->synchronize_split_settings( $settings, $canonical_projection_is_stable );
 		$updated_split_options = $split_projection['updated_options'];
 		$failed_option_names   = $split_projection['failed_option_names'];
 		$wallet_failures       = array();
@@ -123,6 +125,10 @@ final class WooPaymentsGatewaySettingsSynchronizer {
 				$failed_option_names[] = self::PAYMENT_REQUEST_PENDING_OPTION;
 			}
 		}
+		$this->log_split_settings_drift(
+			$split_projection['drifted_option_names'],
+			array_values( array_intersect( $split_projection['drifted_option_names'], $failed_option_names ) )
+		);
 
 		return array(
 			'settings'                      => $settings,
@@ -260,10 +266,11 @@ final class WooPaymentsGatewaySettingsSynchronizer {
 	/**
 	 * Synchronize existing or enabled split gateway settings.
 	 *
-	 * @param array<string,mixed> $settings Canonical gateway settings.
-	 * @return array{updated_options:string[],failed_option_names:string[]}
+	 * @param array<string,mixed> $settings                       Canonical gateway settings.
+	 * @param bool                $canonical_projection_is_stable Whether the canonical row is unchanged.
+	 * @return array{updated_options:string[],failed_option_names:string[],drifted_option_names:string[]}
 	 */
-	private function synchronize_split_settings( array $settings ): array {
+	private function synchronize_split_settings( array $settings, bool $canonical_projection_is_stable ): array {
 		$enabled_method_ids = is_array( $settings['upe_enabled_payment_method_ids'] ?? null )
 			? $this->normalize_string_list( $settings['upe_enabled_payment_method_ids'] )
 			: array();
@@ -279,9 +286,10 @@ final class WooPaymentsGatewaySettingsSynchronizer {
 			}
 		}
 
-		$updated_options     = array();
-		$failed_option_names = array();
-		$missing_marker      = new \stdClass();
+		$updated_options      = array();
+		$failed_option_names  = array();
+		$drifted_option_names = array();
+		$missing_marker       = new \stdClass();
 		foreach ( array_values( array_unique( $method_ids ) ) as $method_id ) {
 			$option_name       = $this->get_split_option_name( $method_id );
 			$existing          = get_option( $option_name, $missing_marker );
@@ -297,6 +305,9 @@ final class WooPaymentsGatewaySettingsSynchronizer {
 			if ( $projected_settings === $existing ) {
 				continue;
 			}
+			if ( $canonical_projection_is_stable && $missing_marker !== $existing ) {
+				$drifted_option_names[] = $option_name;
+			}
 
 			if ( $this->write_option_and_verify( $option_name, $projected_settings, true ) ) {
 				$updated_options[] = $option_name;
@@ -306,9 +317,40 @@ final class WooPaymentsGatewaySettingsSynchronizer {
 		}
 
 		return array(
-			'updated_options'     => $updated_options,
-			'failed_option_names' => $failed_option_names,
+			'updated_options'      => $updated_options,
+			'failed_option_names'  => $failed_option_names,
+			'drifted_option_names' => array_values( array_unique( $drifted_option_names ) ),
 		);
+	}
+
+	/**
+	 * Log split gateway settings that diverged from an unchanged canonical projection.
+	 *
+	 * Logging is best-effort and must not affect settings persistence.
+	 *
+	 * @param string[] $drifted_option_names Drifted split gateway option names.
+	 * @param string[] $failed_option_names  Drifted option names that could not be healed.
+	 */
+	private function log_split_settings_drift( array $drifted_option_names, array $failed_option_names ): void {
+		if ( empty( $drifted_option_names ) ) {
+			return;
+		}
+
+		sort( $drifted_option_names );
+		sort( $failed_option_names );
+		try {
+			wc_get_logger()->warning(
+				'WooPayments split gateway settings drift was detected during canonical projection.',
+				array(
+					'source'               => 'woocommerce-woopayments-settings',
+					'event'                => 'split_gateway_settings_drift',
+					'drifted_option_names' => $drifted_option_names,
+					'failed_option_names'  => $failed_option_names,
+				)
+			);
+		} catch ( \Throwable $logging_exception ) {
+			return;
+		}
 	}
 
 	/**

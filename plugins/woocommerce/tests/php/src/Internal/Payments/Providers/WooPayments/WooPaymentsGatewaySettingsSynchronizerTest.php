@@ -86,6 +86,52 @@ class WooPaymentsGatewaySettingsSynchronizerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox An externally drifted split gateway row is logged once and healed from canonical settings.
+	 */
+	public function test_persist_detects_logs_and_heals_split_gateway_drift(): void {
+		$option_name = 'woocommerce_woocommerce_payments_ideal_settings';
+		$settings    = array( 'upe_enabled_payment_method_ids' => array( 'card', 'ideal' ) );
+		$logger      = $this->createMock( \WC_Logger_Interface::class );
+		$logger->expects( $this->once() )
+			->method( 'warning' )
+			->with(
+				'WooPayments split gateway settings drift was detected during canonical projection.',
+				array(
+					'source'               => 'woocommerce-woopayments-settings',
+					'event'                => 'split_gateway_settings_drift',
+					'drifted_option_names' => array( $option_name ),
+					'failed_option_names'  => array(),
+				)
+			);
+		$logger_filter = static fn() => $logger;
+		add_filter( 'woocommerce_logging_class', $logger_filter );
+
+		try {
+			$synchronizer       = new WooPaymentsGatewaySettingsSynchronizer();
+			$first              = $synchronizer->persist( $settings );
+			$drifted            = get_option( $option_name );
+			$drifted['enabled'] = 'no';
+			$drifted['custom']  = 'preserved';
+			update_option( $option_name, $drifted );
+
+			$second = $synchronizer->persist( $first['settings'] );
+		} finally {
+			remove_filter( 'woocommerce_logging_class', $logger_filter );
+		}
+
+		$this->assertTrue( $second['persisted'] );
+		$this->assertSame( array( $option_name ), $second['updated_split_options'] );
+		$this->assertSame(
+			array(
+				'enabled'                        => 'yes',
+				'upe_enabled_payment_method_ids' => array( 'card', 'ideal' ),
+				'custom'                         => 'preserved',
+			),
+			get_option( $option_name )
+		);
+	}
+
+	/**
 	 * @testdox A rejected canonical write fails before split gateway projection starts.
 	 */
 	public function test_persist_reports_canonical_write_failure_before_projecting_split_settings(): void {
