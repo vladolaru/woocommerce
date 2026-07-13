@@ -21,29 +21,6 @@ use WC_Order_Refund;
 class WooPaymentsRefundEventHandler {
 
 	/**
-	 * Stripe zero-decimal currencies.
-	 *
-	 * @var string[]
-	 */
-	private const ZERO_DECIMAL_CURRENCIES = array(
-		'bif',
-		'clp',
-		'djf',
-		'gnf',
-		'jpy',
-		'kmf',
-		'krw',
-		'mga',
-		'pyg',
-		'rwf',
-		'vnd',
-		'vuv',
-		'xaf',
-		'xof',
-		'xpf',
-	);
-
-	/**
 	 * Account countries where Future Refunds or Disputes balance is not supported.
 	 *
 	 * @var string[]
@@ -144,7 +121,7 @@ class WooPaymentsRefundEventHandler {
 		$refund_reason     = $this->get_optional_string( $refund, 'reason' );
 		$refund_status     = $this->get_optional_string( $refund, 'status' );
 		$balance_txn_id    = $this->get_refund_balance_transaction_id( $refund['balance_transaction'] ?? null );
-		$refunded_amount   = $this->interpret_stripe_amount( $refund_amount, $currency );
+		$refunded_amount   = WooPaymentsCurrencyUtils::amount_from_minor_units( $refund_amount, $currency );
 		$is_partial_refund = $refund_amount < $charge_amount;
 		$is_pending_refund = 'pending' === $refund_status;
 		$order             = $this->get_order_for_charge_id( $charge_id, $charge );
@@ -361,7 +338,7 @@ class WooPaymentsRefundEventHandler {
 	 * @return string
 	 */
 	private function get_failed_refund_note( WC_Order $order, string $refund_id, int $amount, string $currency, bool $is_cancelled, string $failure_reason ): string {
-		$formatted_amount = $this->format_refund_amount( $this->interpret_stripe_amount( $amount, $currency ), $currency, $order );
+		$formatted_amount = $this->format_refund_amount( WooPaymentsCurrencyUtils::amount_from_minor_units( $amount, $currency ), $currency, $order );
 		$status           = $is_cancelled ? esc_html__( 'cancelled', 'woocommerce' ) : esc_html__( 'unsuccessful', 'woocommerce' );
 		$suffix           = $is_cancelled ? '.' : ': ' . $this->get_refund_failure_message( $failure_reason );
 		$note             = sprintf(
@@ -452,7 +429,7 @@ class WooPaymentsRefundEventHandler {
 	 */
 	private function get_insufficient_balance_refund_note( WC_Order $order, int $amount ): string {
 		$formatted_amount = wc_price(
-			$this->interpret_stripe_amount( $amount, $order->get_currency() ),
+			WooPaymentsCurrencyUtils::amount_from_minor_units( $amount, $order->get_currency() ),
 			array(
 				'currency' => $order->get_currency(),
 			)
@@ -719,17 +696,6 @@ class WooPaymentsRefundEventHandler {
 		}
 
 		return '';
-	}
-
-	/**
-	 * Interpret a Stripe integer amount for a currency.
-	 *
-	 * @param int    $amount   Stripe integer amount.
-	 * @param string $currency Currency code.
-	 * @return float
-	 */
-	private function interpret_stripe_amount( int $amount, string $currency ): float {
-		return in_array( strtolower( $currency ), self::ZERO_DECIMAL_CURRENCIES, true ) ? (float) $amount : (float) $amount / 100;
 	}
 
 	/**
