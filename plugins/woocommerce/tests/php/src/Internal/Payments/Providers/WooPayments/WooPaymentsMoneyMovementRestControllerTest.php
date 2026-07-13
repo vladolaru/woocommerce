@@ -138,6 +138,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 				$observed_request = $request;
 				$request->set_page_size( 50 );
 				$request->set_param( 'customer_email_is', 'ada@example.com' );
+				$request->set( 'extension_custom_param', 'authorizations-custom' );
 
 				return $request;
 			}
@@ -167,14 +168,15 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		$this->assertSame( 'get_authorizations', $this->api_client->last_call['method'] );
 		$this->assertSame(
 			array(
-				'page'              => 2,
-				'pagesize'          => 50,
-				'sort'              => 'created',
-				'direction'         => 'asc',
-				'limit'             => 100,
-				'order_id_is'       => '123',
-				'customer_email_is' => 'ada@example.com',
-				'source_is'         => 'card',
+				'page'                   => 2,
+				'pagesize'               => 50,
+				'sort'                   => 'created',
+				'direction'              => 'asc',
+				'limit'                  => 100,
+				'order_id_is'            => '123',
+				'customer_email_is'      => 'ada@example.com',
+				'source_is'              => 'card',
+				'extension_custom_param' => 'authorizations-custom',
 			),
 			$this->api_client->last_call['query']
 		);
@@ -941,6 +943,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 			static function ( WooPaymentsTransactionsListRequest $request ): WooPaymentsTransactionsListRequest {
 				$request->set_page_size( 50 );
 				$request->set_deposit_id( 'po_filtered' );
+				$request->set( 'extension_custom_param', 'transactions-custom' );
 
 				return $request;
 			}
@@ -964,15 +967,16 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		$this->assertSame( 'get_transactions', $this->api_client->last_call['method'] );
 		$this->assertSame(
 			array(
-				'page'              => 2,
-				'pagesize'          => 50,
-				'sort'              => 'date',
-				'direction'         => 'desc',
-				'limit'             => 100,
-				'type_is_in'        => array( 'charge', 'refund' ),
-				'store_currency_is' => 'usd',
-				'search'            => array( 'Ada' ),
-				'deposit_id'        => 'po_filtered',
+				'page'                   => 2,
+				'pagesize'               => 50,
+				'sort'                   => 'date',
+				'direction'              => 'desc',
+				'limit'                  => 100,
+				'type_is_in'             => array( 'charge', 'refund' ),
+				'store_currency_is'      => 'usd',
+				'search'                 => array( 'Ada' ),
+				'deposit_id'             => 'po_filtered',
+				'extension_custom_param' => 'transactions-custom',
 			),
 			$this->api_client->last_call['query']
 		);
@@ -1205,6 +1209,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 					$hooks_seen[] = $hook;
 					$request->set_page_size( 999 );
 					$request->set_search( array( 'Ada' ) );
+					$request->set( 'extension_custom_param', $hook );
 
 					return $request;
 				}
@@ -1221,6 +1226,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 			$this->assertSame( $hook, end( $hooks_seen ) );
 			$this->assertSame( 100, $this->api_client->last_call['query']['pagesize'] );
 			$this->assertSame( array( 'Ada' ), $this->api_client->last_call['query']['search'] );
+			$this->assertSame( $hook, $this->api_client->last_call['query']['extension_custom_param'] );
 		}
 	}
 
@@ -1279,6 +1285,14 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	 */
 	public function test_disputes_list_maps_reference_filters(): void {
 		$this->create_disputes_controller( true )->register_routes();
+		add_filter(
+			'wcpay_list_disputes_request',
+			static function ( \WCPay\Core\Server\Request\List_Disputes $request ): \WCPay\Core\Server\Request\List_Disputes {
+				$request->set( 'extension_custom_param', 'disputes-custom' );
+
+				return $request;
+			}
+		);
 
 		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/disputes' );
 		$request->set_query_params(
@@ -1298,14 +1312,15 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		$this->assertSame( 'get_disputes', $this->api_client->last_call['method'] );
 		$this->assertSame(
 			array(
-				'page'           => 1,
-				'pagesize'       => 25,
-				'sort'           => 'created',
-				'direction'      => 'desc',
-				'limit'          => 100,
-				'currency_is'    => 'usd',
-				'created_before' => '2026-06-18',
-				'status_is'      => 'needs_response',
+				'page'                   => 1,
+				'pagesize'               => 25,
+				'sort'                   => 'created',
+				'direction'              => 'desc',
+				'limit'                  => 100,
+				'currency_is'            => 'usd',
+				'created_before'         => '2026-06-18',
+				'status_is'              => 'needs_response',
+				'extension_custom_param' => 'disputes-custom',
 			),
 			$this->api_client->last_call['filters']
 		);

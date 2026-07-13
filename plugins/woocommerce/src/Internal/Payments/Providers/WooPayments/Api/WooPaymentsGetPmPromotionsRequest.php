@@ -14,6 +14,12 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
  * @internal Transitional internal component for the native payments runtime.
  */
 class WooPaymentsGetPmPromotionsRequest extends WooPaymentsApiRequest {
+	/**
+	 * WordPress filter applied when the request is sent.
+	 *
+	 * @var string
+	 */
+	protected $hook = 'wcpay_get_pm_promotions_request';
 
 	protected const DEFAULT_PARAMS = array();
 
@@ -52,6 +58,16 @@ class WooPaymentsGetPmPromotionsRequest extends WooPaymentsApiRequest {
 	 */
 	public function should_return_raw_response(): bool {
 		return true;
+	}
+
+	/**
+	 * Wrap the raw transport response like the legacy concrete request.
+	 *
+	 * @param array<mixed> $response Transport response.
+	 * @return mixed
+	 */
+	public function format_response( $response ) {
+		return $this->format_default_response( $response );
 	}
 
 	/**

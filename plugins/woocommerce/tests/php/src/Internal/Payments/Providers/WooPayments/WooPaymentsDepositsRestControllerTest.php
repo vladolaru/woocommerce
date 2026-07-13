@@ -198,6 +198,7 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 					$request->set_date_between( array( '2026-06-01 00:00:00', '2026-06-18 23:59:59' ) );
 					$request->set_status_is( 'failed' );
 					$request->set_param( 'status_is_not', 'canceled' );
+					$request->set( 'extension_custom_param', 'deposits-custom' );
 
 					return $request;
 				},
@@ -220,16 +221,17 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 			$this->assertSame( 25, $observed_page_size );
 			$this->assertSame(
 				array(
-					'page'          => 2,
-					'pagesize'      => 50,
-					'sort'          => 'created',
-					'direction'     => 'desc',
-					'limit'         => 100,
-					'status_is'     => 'failed',
-					'date_after'    => '2026-06-01 00:00:00',
-					'date_before'   => '2026-06-18 23:59:59',
-					'date_between'  => array( '2026-06-01 00:00:00', '2026-06-18 23:59:59' ),
-					'status_is_not' => 'canceled',
+					'page'                   => 2,
+					'pagesize'               => 50,
+					'sort'                   => 'created',
+					'direction'              => 'desc',
+					'limit'                  => 100,
+					'status_is'              => 'failed',
+					'date_after'             => '2026-06-01 00:00:00',
+					'date_before'            => '2026-06-18 23:59:59',
+					'date_between'           => array( '2026-06-01 00:00:00', '2026-06-18 23:59:59' ),
+					'status_is_not'          => 'canceled',
+					'extension_custom_param' => 'deposits-custom',
 				),
 				$this->api_client->last_deposits_query
 			);

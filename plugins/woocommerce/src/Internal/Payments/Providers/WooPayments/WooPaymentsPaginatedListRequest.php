@@ -34,6 +34,16 @@ abstract class WooPaymentsPaginatedListRequest {
 	private array $params = array();
 
 	/**
+	 * WordPress filter applied when the request is sent.
+	 *
+	 * Concrete requests with a fixed legacy filter override this property. Requests with
+	 * operation-specific filters use assign_hook() before send().
+	 *
+	 * @var string
+	 */
+	protected $hook = '';
+
+	/**
 	 * Constructor.
 	 */
 	final public function __construct() {
@@ -43,6 +53,8 @@ abstract class WooPaymentsPaginatedListRequest {
 	 * Register legacy base request aliases when the WooPayments extension is absent.
 	 */
 	protected static function register_legacy_base_aliases(): void {
+		WooPaymentsResponse::register_legacy_alias();
+
 		$legacy_classes = array(
 			'WCPay\Core\Server\Request',
 			'WCPay\Core\Server\Request\Paginated',
@@ -251,6 +263,21 @@ abstract class WooPaymentsPaginatedListRequest {
 	}
 
 	/**
+	 * Set an arbitrary request parameter.
+	 *
+	 * Preserves the fluent generic setter exposed by legacy WooPayments request objects.
+	 *
+	 * @param mixed $key   Param key.
+	 * @param mixed $value Param value.
+	 * @return static
+	 */
+	public function set( $key, $value ) {
+		$this->set_param( (string) $key, $value );
+
+		return $this;
+	}
+
+	/**
 	 * Set a request param.
 	 *
 	 * @param string $key   Param key.
@@ -261,7 +288,48 @@ abstract class WooPaymentsPaginatedListRequest {
 	}
 
 	/**
-	 * Execute the request against the platform and return the decoded result.
+	 * Get the WordPress filter applied when the request is sent.
+	 *
+	 * @return string
+	 */
+	final public function get_hook(): string {
+		return $this->hook;
+	}
+
+	/**
+	 * Assign an operation-specific WordPress request filter.
+	 *
+	 * @param string $hook WordPress filter name.
+	 * @return void
+	 */
+	public function assign_hook( string $hook ) {
+		$this->hook = $hook;
+	}
+
+	/**
+	 * Format the low-level transport response.
+	 *
+	 * @param array<mixed> $response Transport response.
+	 * @return mixed
+	 */
+	public function format_response( $response ) {
+		return $this->format_default_response( $response );
+	}
+
+	/**
+	 * Wrap a transport response in the legacy response type.
+	 *
+	 * @param array<mixed> $response Transport response.
+	 * @return WooPaymentsResponse
+	 */
+	protected function format_default_response( $response ): WooPaymentsResponse {
+		WooPaymentsResponse::register_legacy_alias();
+
+		return new WooPaymentsResponse( $response );
+	}
+
+	/**
+	 * Execute the request against the platform and return its compatibility transport result.
 	 *
 	 * Backward-compatibility shim: the standalone WooPayments plugin's request objects expose
 	 * send(), and extensions hooking the preserved wcpay_list_transactions_request /
@@ -270,17 +338,11 @@ abstract class WooPaymentsPaginatedListRequest {
 	 * delegating to the API client. Do not remove without a _deprecated_function() cycle.
 	 *
 	 * @since 11.0.0
-	 * @return array<string,mixed>
+	 * @return mixed
 	 */
-	public function send(): array {
+	public function send() {
 		$api_client = wc_get_container()->get( WooPaymentsApiClient::class );
 
-		return $api_client->request_list(
-			$this->get_params(),
-			$this->get_api(),
-			$this->get_method(),
-			$this->is_site_specific(),
-			$this->should_use_user_token()
-		);
+		return $this->format_response( $api_client->send_legacy_request( $this ) );
 	}
 }

@@ -16,6 +16,12 @@ use WP_REST_Request;
  * @internal Transitional internal component for the native payments runtime.
  */
 class WooPaymentsDocumentsListRequest extends WooPaymentsPaginatedListRequest {
+	/**
+	 * WordPress filter applied when the request is sent.
+	 *
+	 * @var string
+	 */
+	protected $hook = 'wcpay_list_documents_request';
 
 	protected const DEFAULT_PARAMS = array(
 		'page'      => 0,

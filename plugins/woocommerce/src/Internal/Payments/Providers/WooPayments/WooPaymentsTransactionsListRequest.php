@@ -19,6 +19,12 @@ use WP_REST_Request;
  * @internal Transitional internal component for the native payments runtime.
  */
 class WooPaymentsTransactionsListRequest extends WooPaymentsPaginatedListRequest {
+	/**
+	 * WordPress filter applied when the request is sent.
+	 *
+	 * @var string
+	 */
+	protected $hook = 'wcpay_list_transactions_request';
 
 	protected const DEFAULT_PARAMS = array(
 		'page'      => 0,
@@ -139,6 +145,18 @@ class WooPaymentsTransactionsListRequest extends WooPaymentsPaginatedListRequest
 		if ( 0 === strpos( $name, 'set_' ) && array_key_exists( 0, $arguments ) ) {
 			$this->set_param( substr( $name, 4 ), $arguments[0] );
 		}
+	}
+
+	/**
+	 * Add local order context and wrap the response like the legacy request.
+	 *
+	 * @param array<mixed> $response Transport response.
+	 * @return mixed
+	 */
+	public function format_response( $response ) {
+		$order_service = wc_get_container()->get( WooPaymentsMoneyMovementOrderService::class );
+
+		return $this->format_default_response( $order_service->enrich_transactions_list_response( $response ) );
 	}
 
 	/**

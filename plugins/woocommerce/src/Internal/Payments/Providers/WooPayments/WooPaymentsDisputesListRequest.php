@@ -16,6 +16,12 @@ use WP_REST_Request;
  * @internal Transitional internal component for the native payments runtime.
  */
 class WooPaymentsDisputesListRequest extends WooPaymentsPaginatedListRequest {
+	/**
+	 * WordPress filter applied when the request is sent.
+	 *
+	 * @var string
+	 */
+	protected $hook = 'wcpay_list_disputes_request';
 
 	/**
 	 * Register the legacy request FQCN as an alias when the WooPayments extension is absent.
@@ -74,5 +80,17 @@ class WooPaymentsDisputesListRequest extends WooPaymentsPaginatedListRequest {
 		if ( 0 === strpos( $name, 'set_' ) && array_key_exists( 0, $arguments ) ) {
 			$this->set_param( substr( $name, 4 ), $arguments[0] );
 		}
+	}
+
+	/**
+	 * Add local order context and wrap the response like the legacy request.
+	 *
+	 * @param array<mixed> $response Transport response.
+	 * @return mixed
+	 */
+	public function format_response( $response ) {
+		$order_service = wc_get_container()->get( WooPaymentsMoneyMovementOrderService::class );
+
+		return $this->format_default_response( $order_service->enrich_disputes_list_response( $response ) );
 	}
 }

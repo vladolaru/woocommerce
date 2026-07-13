@@ -14,6 +14,12 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
  * @internal Transitional internal component for the native payments runtime.
  */
 class WooPaymentsGetAccountCapitalLinkRequest extends WooPaymentsApiRequest {
+	/**
+	 * WordPress filter applied when the request is sent.
+	 *
+	 * @var string
+	 */
+	protected $hook = 'wcpay_get_account_capital_link';
 
 	protected const DEFAULT_PARAMS = array();
 
@@ -84,5 +90,15 @@ class WooPaymentsGetAccountCapitalLinkRequest extends WooPaymentsApiRequest {
 	 */
 	public function should_use_user_token(): bool {
 		return true;
+	}
+
+	/**
+	 * Wrap the decoded transport response like the legacy concrete request.
+	 *
+	 * @param array<mixed> $response Transport response.
+	 * @return mixed
+	 */
+	public function format_response( $response ) {
+		return $this->format_default_response( $response );
 	}
 }

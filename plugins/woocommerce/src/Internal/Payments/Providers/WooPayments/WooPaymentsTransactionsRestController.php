@@ -32,48 +32,6 @@ class WooPaymentsTransactionsRestController implements RegisterHooksInterface {
 
 	private const FRAUD_OUTCOME_LOG_SOURCE = 'woopayments-fraud-outcomes';
 
-	private const LIST_QUERY_PARAMS = array(
-		'page'                     => true,
-		'pagesize'                 => true,
-		'sort'                     => true,
-		'direction'                => true,
-		'match'                    => true,
-		'date_before'              => true,
-		'date_after'               => true,
-		'date_between'             => true,
-		'type_is'                  => true,
-		'type_is_not'              => true,
-		'type_is_in'               => true,
-		'source_device_is'         => true,
-		'source_device_is_not'     => true,
-		'channel_is'               => true,
-		'channel_is_not'           => true,
-		'customer_country_is'      => true,
-		'customer_country_is_not'  => true,
-		'risk_level_is'            => true,
-		'risk_level_is_not'        => true,
-		'store_currency_is'        => true,
-		'customer_currency_is'     => true,
-		'customer_currency_is_not' => true,
-		'source_is'                => true,
-		'source_is_not'            => true,
-		'loan_id_is'               => true,
-		'search'                   => true,
-		'deposit_id'               => true,
-		'limit'                    => true,
-	);
-
-	private const FRAUD_OUTCOME_QUERY_PARAMS = array(
-		'page'              => true,
-		'pagesize'          => true,
-		'sort'              => true,
-		'direction'         => true,
-		'status'            => true,
-		'search'            => true,
-		'search_term'       => true,
-		'additional_status' => true,
-	);
-
 	/**
 	 * Runtime owner arbiter.
 	 *
@@ -412,7 +370,7 @@ class WooPaymentsTransactionsRestController implements RegisterHooksInterface {
 		$params = $filtered_request->get_params();
 
 		return $this->order_service->map_transaction_search_params(
-			is_array( $params ) ? array_intersect_key( $params, self::LIST_QUERY_PARAMS ) : $transactions_request->get_params()
+			is_array( $params ) ? $params : $transactions_request->get_params()
 		);
 	}
 
@@ -458,7 +416,7 @@ class WooPaymentsTransactionsRestController implements RegisterHooksInterface {
 		}
 
 		$params = array_filter(
-			array_intersect_key( $params, self::FRAUD_OUTCOME_QUERY_PARAMS ),
+			$params,
 			static function ( $value ): bool {
 				return null !== $value;
 			}

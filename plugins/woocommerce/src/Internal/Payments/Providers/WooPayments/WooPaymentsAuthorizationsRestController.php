@@ -345,7 +345,7 @@ class WooPaymentsAuthorizationsRestController implements RegisterHooksInterface 
 
 		$filtered_params = $filtered_request->get_params();
 
-		return is_array( $filtered_params ) ? array_intersect_key( $filtered_params, self::LIST_QUERY_PARAMS ) : $params;
+		return is_array( $filtered_params ) ? $filtered_params : $params;
 	}
 
 	/**

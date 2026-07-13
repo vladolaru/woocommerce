@@ -29,22 +29,6 @@ class WooPaymentsDisputesRestController implements RegisterHooksInterface {
 
 	private const LOG_SOURCE = 'woopayments-disputes';
 
-	private const LIST_QUERY_PARAMS = array(
-		'page'            => true,
-		'pagesize'        => true,
-		'sort'            => true,
-		'direction'       => true,
-		'match'           => true,
-		'currency_is'     => true,
-		'created_before'  => true,
-		'created_after'   => true,
-		'created_between' => true,
-		'search'          => true,
-		'status_is'       => true,
-		'status_is_not'   => true,
-		'limit'           => true,
-	);
-
 	/**
 	 * Runtime owner arbiter.
 	 *
@@ -356,7 +340,7 @@ class WooPaymentsDisputesRestController implements RegisterHooksInterface {
 
 		$params = $filtered_request->get_params();
 
-		return is_array( $params ) ? array_intersect_key( $params, self::LIST_QUERY_PARAMS ) : $disputes_request->get_params();
+		return is_array( $params ) ? $params : $disputes_request->get_params();
 	}
 
 	/**

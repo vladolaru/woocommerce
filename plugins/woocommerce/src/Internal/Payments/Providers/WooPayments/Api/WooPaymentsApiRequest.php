@@ -100,4 +100,14 @@ class WooPaymentsApiRequest extends WooPaymentsPaginatedListRequest {
 	public function set_method( string $method ): void {
 		$this->method = strtoupper( $method );
 	}
+
+	/**
+	 * Return the decoded transport array unchanged like legacy Get_Request.
+	 *
+	 * @param array<mixed> $response Transport response.
+	 * @return mixed
+	 */
+	public function format_response( $response ) {
+		return $response;
+	}
 }

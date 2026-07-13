@@ -2185,6 +2185,28 @@ class WooPaymentsApiClient {
 	}
 
 	/**
+	 * Send a legacy compatibility request through its request-object filter contract.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @param WooPaymentsPaginatedListRequest $request Request compatibility object.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request has no hook or transport fails.
+	 */
+	public function send_legacy_request( WooPaymentsPaginatedListRequest $request ): array {
+		$hook = $request->get_hook();
+
+		if ( '' === $hook ) {
+			// translators: %s: request class name.
+			$message = sprintf( __( 'WooPayments request %s must define a filter hook before send().', 'woocommerce' ), get_class( $request ) );
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception messages are not HTML output.
+			throw new WooPaymentsApiException( $message, 'wcpay_request_missing_hook', 500 );
+		}
+
+		return $this->request_with_legacy_request_filter( $request, $hook, false, true );
+	}
+
+	/**
 	 * Send a request after applying a legacy WooPayments request-object filter.
 	 *
 	 * @param array<int|string,mixed> $params Request params.
@@ -2208,10 +2230,13 @@ class WooPaymentsApiClient {
 	 * @param WooPaymentsPaginatedListRequest $request Native request compatibility object.
 	 * @param string                          $hook    Legacy WooPayments request filter hook.
 	 * @param bool                            $include_test_mode_in_query Whether to add test mode to the API path query.
+	 * @param bool                            $honor_raw_response Whether to honor the request object's raw-response flag.
 	 * @return array<string,mixed>
 	 * @throws WooPaymentsApiException When the request fails.
 	 */
-	private function request_with_legacy_request_filter( WooPaymentsPaginatedListRequest $request, string $hook, bool $include_test_mode_in_query = false ): array {
+	private function request_with_legacy_request_filter( WooPaymentsPaginatedListRequest $request, string $hook, bool $include_test_mode_in_query = false, bool $honor_raw_response = false ): array {
+		$request->assign_hook( $hook );
+
 		if ( $request instanceof WooPaymentsGetPmPromotionsRequest ) {
 			WooPaymentsGetPmPromotionsRequest::register_legacy_aliases();
 		} elseif ( $request instanceof WooPaymentsActivatePmPromotionRequest ) {
@@ -2266,7 +2291,8 @@ class WooPaymentsApiClient {
 			$filtered_request->is_site_specific(),
 			$filtered_request->should_use_user_token(),
 			true,
-			! $include_test_mode_in_query
+			! $include_test_mode_in_query,
+			$honor_raw_response && $filtered_request->should_return_raw_response()
 		);
 	}
 

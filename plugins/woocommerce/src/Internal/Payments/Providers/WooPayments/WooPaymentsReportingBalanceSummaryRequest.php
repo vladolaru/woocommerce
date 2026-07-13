@@ -16,6 +16,12 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
  * @internal Transitional internal component for the native payments runtime.
  */
 class WooPaymentsReportingBalanceSummaryRequest extends WooPaymentsPaginatedListRequest {
+	/**
+	 * WordPress filter applied when the request is sent.
+	 *
+	 * @var string
+	 */
+	protected $hook = 'wcpay_get_reporting_balance_summary_request';
 
 	private const CURRENCY_CODE_PATTERN = '/^[a-z]{3}$/i';
 
@@ -119,6 +125,16 @@ class WooPaymentsReportingBalanceSummaryRequest extends WooPaymentsPaginatedList
 	 */
 	public static function is_valid_currency_code( $currency ): bool {
 		return is_string( $currency ) && 1 === preg_match( self::CURRENCY_CODE_PATTERN, $currency );
+	}
+
+	/**
+	 * Return the reporting response array unchanged like the upstream request.
+	 *
+	 * @param array<mixed> $response Transport response.
+	 * @return mixed
+	 */
+	public function format_response( $response ) {
+		return $response;
 	}
 
 	/**

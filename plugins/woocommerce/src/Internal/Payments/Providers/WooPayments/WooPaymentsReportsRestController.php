@@ -42,25 +42,6 @@ class WooPaymentsReportsRestController implements RegisterHooksInterface {
 		'network_costs',
 	);
 
-	private const FEES_TRANSACTION_PARAMS = array(
-		'page'              => true,
-		'pagesize'          => true,
-		'sort'              => true,
-		'direction'         => true,
-		'limit'             => true,
-		'source_is'         => true,
-		'type_is_in'        => true,
-		'order_id_is'       => true,
-		'deposit_id'        => true,
-		'date_before'       => true,
-		'date_after'        => true,
-		'date_between'      => true,
-		'match'             => true,
-		'search'            => true,
-		'user_timezone'     => true,
-		'transaction_id_is' => true,
-	);
-
 	/**
 	 * Runtime owner arbiter.
 	 *
@@ -434,7 +415,7 @@ class WooPaymentsReportsRestController implements RegisterHooksInterface {
 			? $filtered_request->get_params()
 			: $fees_request->get_params();
 
-		$params = $this->filter_empty_params( is_array( $params ) ? array_intersect_key( $params, self::FEES_TRANSACTION_PARAMS ) : $fees_request->get_params() );
+		$params = $this->filter_empty_params( is_array( $params ) ? $params : $fees_request->get_params() );
 
 		return $this->order_service->map_transaction_search_params( $params );
 	}
@@ -525,7 +506,27 @@ class WooPaymentsReportsRestController implements RegisterHooksInterface {
 			'user_timezone'     => $user_timezone,
 		);
 
-		return $this->order_service->map_transaction_search_params( $this->filter_empty_params( $params ) );
+		$params = $this->filter_empty_params( $params );
+
+		WooPaymentsTransactionsListRequest::register_legacy_alias();
+		$transactions_request = new WooPaymentsTransactionsListRequest();
+		foreach ( $params as $key => $value ) {
+			$transactions_request->set_param( (string) $key, $value );
+		}
+
+		/**
+		 * Allows the WooPayments transactions report request to be modified before it is sent to the platform.
+		 *
+		 * @since 11.0.0
+		 *
+		 * @param WooPaymentsTransactionsListRequest $transactions_request Native transactions list request.
+		 */
+		$filtered_request = apply_filters( 'wcpay_list_transactions_request', $transactions_request );
+		$filtered_params  = is_object( $filtered_request ) && method_exists( $filtered_request, 'get_params' )
+			? $filtered_request->get_params()
+			: $transactions_request->get_params();
+
+		return $this->order_service->map_transaction_search_params( is_array( $filtered_params ) ? $filtered_params : $params );
 	}
 
 	/**

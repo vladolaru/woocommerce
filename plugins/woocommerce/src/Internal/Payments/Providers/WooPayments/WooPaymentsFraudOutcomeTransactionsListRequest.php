@@ -99,4 +99,16 @@ class WooPaymentsFraudOutcomeTransactionsListRequest extends WooPaymentsPaginate
 	public function set_additional_status( $additional_status ): void {
 		$this->set_param( 'additional_status', (string) $additional_status );
 	}
+
+	/**
+	 * Apply the legacy fraud-outcome array formatter.
+	 *
+	 * @param array<mixed> $response Transport response.
+	 * @return mixed
+	 */
+	public function format_response( $response ) {
+		$order_service = wc_get_container()->get( WooPaymentsMoneyMovementOrderService::class );
+
+		return $order_service->format_fraud_outcome_transactions( $response, $this->get_params() );
+	}
 }

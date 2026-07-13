@@ -32,23 +32,6 @@ class WooPaymentsDepositsRestController implements RegisterHooksInterface {
 	private const LOG_SOURCE = 'woopayments-payouts';
 
 	/**
-	 * Query params accepted by the payout list endpoint.
-	 */
-	private const LIST_QUERY_PARAMS = array(
-		'page'              => true,
-		'pagesize'          => true,
-		'sort'              => true,
-		'direction'         => true,
-		'match'             => true,
-		'store_currency_is' => true,
-		'date_before'       => true,
-		'date_after'        => true,
-		'date_between'      => true,
-		'status_is'         => true,
-		'status_is_not'     => true,
-	);
-
-	/**
 	 * Query params accepted by the payout summary endpoint.
 	 */
 	private const SUMMARY_QUERY_PARAMS = array(
@@ -354,7 +337,7 @@ class WooPaymentsDepositsRestController implements RegisterHooksInterface {
 
 		$params = $filtered_request->get_params();
 
-		return is_array( $params ) ? array_intersect_key( $params, self::LIST_QUERY_PARAMS + array( 'limit' => true ) ) : $deposits_request->get_params();
+		return is_array( $params ) ? $params : $deposits_request->get_params();
 	}
 
 	/**

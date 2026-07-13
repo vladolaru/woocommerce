@@ -9,6 +9,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsMoneyMovementOrderService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsReportsRestController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTransactionsListRequest;
 use WC_Order;
 use WC_REST_Unit_Test_Case;
 use WP_REST_Request;
@@ -180,6 +181,14 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function test_fees_list_maps_filters_and_strips_customer_data(): void {
 		$this->create_controller( true, true )->register_routes();
+		add_filter(
+			'wcpay_list_transactions_request',
+			static function ( WooPaymentsTransactionsListRequest $request ): WooPaymentsTransactionsListRequest {
+				$request->set( 'extension_custom_param', 'fees-custom' );
+
+				return $request;
+			}
+		);
 		$this->api_client->response = array(
 			'data' => array(
 				array(
@@ -232,16 +241,17 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( 'get_transactions', $this->api_client->last_call['method'] );
 		$this->assertSame(
 			array(
-				'page'              => 2,
-				'pagesize'          => 50,
-				'sort'              => 'date',
-				'direction'         => 'desc',
-				'limit'             => 100,
-				'source_is'         => 'card',
-				'type_is_in'        => array( 'charge', 'refund' ),
-				'date_between'      => array( '2026-06-01 03:00:00', '2026-06-20 02:59:59' ),
-				'user_timezone'     => '+03:00',
-				'transaction_id_is' => 'txn_123',
+				'page'                   => 2,
+				'pagesize'               => 50,
+				'sort'                   => 'date',
+				'direction'              => 'desc',
+				'limit'                  => 100,
+				'source_is'              => 'card',
+				'type_is_in'             => array( 'charge', 'refund' ),
+				'date_between'           => array( '2026-06-01 03:00:00', '2026-06-20 02:59:59' ),
+				'user_timezone'          => '+03:00',
+				'transaction_id_is'      => 'txn_123',
+				'extension_custom_param' => 'fees-custom',
 			),
 			$this->api_client->last_call['query']
 		);
@@ -387,6 +397,16 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function test_transaction_report_routes_proxy_transaction_rows(): void {
 		$this->create_controller( true, true )->register_routes();
+		$filter_calls = 0;
+		add_filter(
+			'wcpay_list_transactions_request',
+			static function ( WooPaymentsTransactionsListRequest $request ) use ( &$filter_calls ): WooPaymentsTransactionsListRequest {
+				++$filter_calls;
+				$request->set( 'extension_custom_param', 'report-transactions-custom' );
+
+				return $request;
+			}
+		);
 		$this->api_client->response = array(
 			'data' => array(
 				array(
@@ -433,6 +453,8 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( '123', $this->api_client->last_call['query']['order_id_is'] );
 		$this->assertSame( 'ada@example.com', $this->api_client->last_call['query']['customer_email_is'] );
 		$this->assertSame( 'card', $this->api_client->last_call['query']['source_is'] );
+		$this->assertSame( 'report-transactions-custom', $this->api_client->last_call['query']['extension_custom_param'] );
+		$this->assertSame( 1, $filter_calls, 'The report transactions list should apply its request filter exactly once.' );
 		$this->assertSame( 'txn_123', $list_response->get_data()[0]['transaction_id'] );
 		$this->assertSame(
 			array(
