@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Shadow;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
@@ -446,11 +447,11 @@ class NativePaymentsShadowModeTest extends WC_Unit_Test_Case {
 			/**
 			 * Read a stable, HPOS-safe projection of an order's payment surface.
 			 *
-			 * @param \WC_Order                  $order               Order to project.
-			 * @param ProviderPersistenceProfile $persistence_profile Provider persistence profile.
+			 * @param \WC_Order                     $order               Order to project.
+			 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
 			 * @return array<string,mixed>
 			 */
-			public function read_payment_surface( \WC_Order $order, ProviderPersistenceProfile $persistence_profile ): array {
+			public function read_payment_surface( \WC_Order $order, ProviderPersistenceVocabulary $persistence_profile ): array {
 				++$this->reads;
 
 				return parent::read_payment_surface( $order, $persistence_profile );

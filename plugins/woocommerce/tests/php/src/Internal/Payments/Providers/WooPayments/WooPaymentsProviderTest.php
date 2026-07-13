@@ -8,9 +8,12 @@ use Automattic\WooCommerce\Internal\Payments\CapabilityManifest;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
+use Automattic\WooCommerce\Internal\Payments\ProviderContract;
 use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectApplier;
+use Automattic\WooCommerce\Internal\Payments\ProviderOutcomeMetadataMapper;
 use Automattic\WooCommerce\Internal\Payments\ProviderPostLifecycleEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -66,7 +69,18 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 		$profile = $this->sut->get_persistence_profile();
 
 		$this->assertInstanceOf( ProviderPersistenceProfile::class, $profile );
+		$this->assertInstanceOf( ProviderPersistenceVocabulary::class, $profile );
 		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $profile->get_gateway_id() );
+	}
+
+	/**
+	 * @testdox Provider contracts keep persistence vocabulary separate from outcome mapping behavior.
+	 */
+	public function test_provider_contract_separates_persistence_vocabulary_from_outcome_mapping(): void {
+		$return_type = ( new \ReflectionMethod( ProviderContract::class, 'get_persistence_profile' ) )->getReturnType();
+
+		$this->assertSame( ProviderPersistenceVocabulary::class, (string) $return_type );
+		$this->assertInstanceOf( ProviderOutcomeMetadataMapper::class, $this->sut );
 	}
 
 	/**

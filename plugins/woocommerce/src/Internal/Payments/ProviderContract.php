@@ -30,11 +30,11 @@ interface ProviderContract extends PaymentGatewayProviderContract {
 	/**
 	 * Get the provider persistence profile.
 	 *
-	 * @return ProviderPersistenceProfile
+	 * @return ProviderPersistenceVocabulary
 	 *
 	 * @since 11.0.0
 	 */
-	public function get_persistence_profile(): ProviderPersistenceProfile;
+	public function get_persistence_profile(): ProviderPersistenceVocabulary;
 
 	/**
 	 * Charge an order through the provider.

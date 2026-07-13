@@ -14,8 +14,10 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\ProviderContract;
 use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectApplier;
+use Automattic\WooCommerce\Internal\Payments\ProviderOutcomeMetadataMapper;
 use Automattic\WooCommerce\Internal\Payments\ProviderPostLifecycleEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsHtmlUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
@@ -287,9 +289,9 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should persist checkout outcome metadata from the provider profile.
+	 * @testdox Should persist checkout outcome metadata from the provider mapper without a legacy profile.
 	 */
-	public function test_process_checkout_outcome_uses_provider_profile_meta(): void {
+	public function test_process_checkout_outcome_uses_provider_outcome_metadata_mapper(): void {
 		$order    = $this->create_woopayments_order( '12.00' );
 		$outcome  = new PaymentOutcome(
 			PaymentOutcome::STATUS_COMPLETED,
@@ -298,7 +300,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			'remote_method_123',
 			'remote_customer_123'
 		);
-		$provider = new class( $outcome ) extends RecordingProvider {
+		$provider = new class( $outcome ) extends RecordingProvider implements ProviderOutcomeMetadataMapper {
 
 			/**
 			 * Get the provider/gateway ID.
@@ -312,10 +314,10 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			/**
 			 * Get the provider persistence profile.
 			 *
-			 * @return ProviderPersistenceProfile
+			 * @return ProviderPersistenceVocabulary
 			 */
-			public function get_persistence_profile(): ProviderPersistenceProfile {
-				return new class() implements ProviderPersistenceProfile {
+			public function get_persistence_profile(): ProviderPersistenceVocabulary {
+				return new class() implements ProviderPersistenceVocabulary {
 
 					/**
 					 * Get the provider gateway ID.
@@ -381,45 +383,32 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 						return array( '_offline_intent_id', '_offline_method_id', '_offline_customer_id', '_offline_status' );
 					}
 
-					/**
-					 * Map a neutral outcome to provider order meta.
-					 *
-					 * @param PaymentOutcome $outcome Provider outcome.
-					 * @return array<string,string>
-					 */
-					public function get_outcome_meta( PaymentOutcome $outcome ): array {
-						return array(
-							'_offline_customer_id' => $outcome->get_customer_id(),
-							'_offline_intent_id'   => $outcome->get_provider_payment_id(),
-							'_offline_method_id'   => $outcome->get_payment_method_id(),
-							'_offline_status'      => 'offline-' . $outcome->get_status(),
-						);
-					}
-
-					/**
-					 * Map a failed capture outcome to provider order meta.
-					 *
-					 * @param PaymentOutcome $outcome Provider outcome.
-					 * @return array<string,string>
-					 */
-					public function get_capture_failure_outcome_meta( PaymentOutcome $outcome ): array {
-						return array(
-							'_offline_status' => 'offline-capture-failed',
-						);
-					}
-
-					/**
-					 * Tell whether a provider-written duplicate order note should be skipped.
-					 *
-					 * @param WC_Order              $order Order object.
-					 * @param PaymentLifecycleEvent $event Lifecycle event.
-					 * @param string                $note  Note content.
-					 * @return bool
-					 */
-					public function should_skip_note( WC_Order $order, PaymentLifecycleEvent $event, string $note ): bool {
-						return false;
-					}
 				};
+			}
+
+			/**
+			 * Map a neutral outcome to provider order meta.
+			 *
+			 * @param PaymentOutcome $outcome Provider outcome.
+			 * @return array<string,string>
+			 */
+			public function get_outcome_meta( PaymentOutcome $outcome ): array {
+				return array(
+					'_offline_customer_id' => $outcome->get_customer_id(),
+					'_offline_intent_id'   => $outcome->get_provider_payment_id(),
+					'_offline_method_id'   => $outcome->get_payment_method_id(),
+					'_offline_status'      => 'offline-' . $outcome->get_status(),
+				);
+			}
+
+			/**
+			 * Map a failed capture outcome to provider order meta.
+			 *
+			 * @param PaymentOutcome $outcome Provider outcome.
+			 * @return array<string,string>
+			 */
+			public function get_capture_failure_outcome_meta( PaymentOutcome $outcome ): array {
+				return array( '_offline_status' => 'offline-capture-failed' );
 			}
 		};
 
@@ -1394,6 +1383,47 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Failed captures prefer provider outcome mapping over the legacy profile fallback.
+	 */
+	public function test_capture_failure_uses_provider_outcome_metadata_mapper(): void {
+		$order = $this->create_woopayments_order( '10.00' );
+		$order->set_transaction_id( 'pi_mapper_capture_failure' );
+		$order->save();
+
+		$provider = new class( new PaymentOutcome( PaymentOutcome::STATUS_FAILED, 'pi_mapper_capture_failure' ) ) extends RecordingProvider implements ProviderOutcomeMetadataMapper {
+			/**
+			 * Map a neutral outcome to provider order meta.
+			 *
+			 * @param PaymentOutcome $outcome Provider outcome.
+			 * @return array<string,string>
+			 */
+			public function get_outcome_meta( PaymentOutcome $outcome ): array {
+				unset( $outcome );
+
+				return array( '_mapper_capture_state' => 'mapped' );
+			}
+
+			/**
+			 * Map a failed capture outcome to provider order meta.
+			 *
+			 * @param PaymentOutcome $outcome Provider outcome.
+			 * @return array<string,string>
+			 */
+			public function get_capture_failure_outcome_meta( PaymentOutcome $outcome ): array {
+				unset( $outcome );
+
+				return array( '_mapper_capture_state' => 'authorization-active' );
+			}
+		};
+
+		$this->sut->capture( PaymentContext::for_capture( $order, OrderPaymentStore::GATEWAY_ID ), $provider );
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'authorization-active', $order->get_meta( '_mapper_capture_state', true ) );
+	}
+
+	/**
 	 * @testdox Failed captures should leave authorized orders on hold.
 	 */
 	public function test_capture_failure_preserves_authorized_order_status(): void {
@@ -1842,12 +1872,12 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			/**
 			 * Always throw to simulate a lifecycle application failure after a successful charge.
 			 *
-			 * @param WC_Order                   $order               Order object.
-			 * @param PaymentLifecycleEvent      $event               Lifecycle event.
-			 * @param ProviderPersistenceProfile $persistence_profile Provider persistence profile.
+			 * @param WC_Order                      $order               Order object.
+			 * @param PaymentLifecycleEvent         $event               Lifecycle event.
+			 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
 			 * @throws RuntimeException Always, to drive the post-charge failure path.
 			 */
-			public function apply_unlocked( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceProfile $persistence_profile ): void {
+			public function apply_unlocked( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabulary $persistence_profile ): void {
 				// Avoid parameter not used PHPCS errors.
 				unset( $order, $event, $persistence_profile );
 				throw new RuntimeException( 'Simulated lifecycle failure after a successful charge.' );

@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\ProviderContract;
 use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectApplier;
+use Automattic\WooCommerce\Internal\Payments\ProviderOutcomeMetadataMapper;
 use Automattic\WooCommerce\Internal\Payments\ProviderPostLifecycleEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceProfile;
 
@@ -27,7 +28,7 @@ use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceProfile;
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectApplier, ProviderPostLifecycleEffectApplier {
+class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectApplier, ProviderOutcomeMetadataMapper, ProviderPostLifecycleEffectApplier {
 
 	/**
 	 * WooPayments gateway adapter.
@@ -139,6 +140,26 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 	 */
 	public function get_persistence_profile(): ProviderPersistenceProfile {
 		return new WooPaymentsPersistenceProfile();
+	}
+
+	/**
+	 * Map a neutral outcome to WooPayments order metadata.
+	 *
+	 * @param PaymentOutcome $outcome Provider outcome.
+	 * @return array<string,string>
+	 */
+	public function get_outcome_meta( PaymentOutcome $outcome ): array {
+		return ( new WooPaymentsOutcomeMetadataMapper() )->get_outcome_meta( $outcome );
+	}
+
+	/**
+	 * Map a failed authorization operation to WooPayments order metadata.
+	 *
+	 * @param PaymentOutcome $outcome Provider outcome.
+	 * @return array<string,string>
+	 */
+	public function get_capture_failure_outcome_meta( PaymentOutcome $outcome ): array {
+		return ( new WooPaymentsOutcomeMetadataMapper() )->get_capture_failure_outcome_meta( $outcome );
 	}
 
 	/**

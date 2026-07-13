@@ -10,76 +10,18 @@ namespace Automattic\WooCommerce\Internal\Payments;
 use WC_Order;
 
 /**
- * Provider-specific persistence vocabulary used by the native payments runtime.
+ * Legacy provider persistence profile retained for compatibility.
+ *
+ * New providers should implement ProviderPersistenceVocabulary for persisted
+ * identifiers and ProviderOutcomeMetadataMapper for outcome interpretation.
+ * The three methods declared here remain operational compatibility fallbacks
+ * for existing implementations and will not be extended.
  *
  * @since 11.0.0
+ * @deprecated 11.0.0 Use ProviderPersistenceVocabulary and ProviderOutcomeMetadataMapper.
  * @internal Transitional internal component for the native payments runtime.
  */
-interface ProviderPersistenceProfile {
-
-	/**
-	 * Get the provider gateway ID.
-	 *
-	 * @return string
-	 *
-	 * @since 11.0.0
-	 */
-	public function get_gateway_id(): string;
-
-	/**
-	 * Get the provider gateway ID prefix.
-	 *
-	 * @return string
-	 *
-	 * @since 11.0.0
-	 */
-	public function get_gateway_id_prefix(): string;
-
-	/**
-	 * Get the order payment lock key.
-	 *
-	 * @param WC_Order $order Order object.
-	 * @return string
-	 *
-	 * @since 11.0.0
-	 */
-	public function get_order_lock_key( WC_Order $order ): string;
-
-	/**
-	 * Get the lock sentinel value.
-	 *
-	 * @return string
-	 *
-	 * @since 11.0.0
-	 */
-	public function get_lock_sentinel(): string;
-
-	/**
-	 * Get the lock time-to-live in seconds.
-	 *
-	 * @return int
-	 *
-	 * @since 11.0.0
-	 */
-	public function get_lock_ttl_seconds(): int;
-
-	/**
-	 * Get the processed refund link meta key.
-	 *
-	 * @return string
-	 *
-	 * @since 11.0.0
-	 */
-	public function get_processed_refund_link_meta_key(): string;
-
-	/**
-	 * Get preserved order/refund meta keys.
-	 *
-	 * @return string[]
-	 *
-	 * @since 11.0.0
-	 */
-	public function get_preserved_payment_meta_keys(): array;
+interface ProviderPersistenceProfile extends ProviderPersistenceVocabulary {
 
 	/**
 	 * Map a neutral outcome to provider order meta.
@@ -88,6 +30,7 @@ interface ProviderPersistenceProfile {
 	 * @return array<string,string>
 	 *
 	 * @since 11.0.0
+	 * @deprecated 11.0.0 Implement ProviderOutcomeMetadataMapper on the provider.
 	 */
 	public function get_outcome_meta( PaymentOutcome $outcome ): array;
 
@@ -98,6 +41,7 @@ interface ProviderPersistenceProfile {
 	 * @return array<string,string>
 	 *
 	 * @since 11.0.0
+	 * @deprecated 11.0.0 Implement ProviderOutcomeMetadataMapper on the provider.
 	 */
 	public function get_capture_failure_outcome_meta( PaymentOutcome $outcome ): array;
 
@@ -110,6 +54,7 @@ interface ProviderPersistenceProfile {
 	 * @return bool
 	 *
 	 * @since 11.0.0
+	 * @deprecated 11.0.0 Lifecycle note identity is owned by the lifecycle service.
 	 */
 	public function should_skip_note( WC_Order $order, PaymentLifecycleEvent $event, string $note ): bool;
 }

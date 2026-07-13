@@ -50,11 +50,11 @@ class OrderPaymentLifecycleService {
 	 *
 	 * @since 11.0.0
 	 *
-	 * @param WC_Order                   $order               Order object.
-	 * @param PaymentLifecycleEvent      $event               Lifecycle event.
-	 * @param ProviderPersistenceProfile $persistence_profile Provider persistence profile.
+	 * @param WC_Order                      $order               Order object.
+	 * @param PaymentLifecycleEvent         $event               Lifecycle event.
+	 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
 	 */
-	public function apply( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceProfile $persistence_profile ): void {
+	public function apply( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabulary $persistence_profile ): void {
 		$payment_reference = $event->get_payment_reference();
 		$locked_by_service = false;
 
@@ -110,11 +110,11 @@ class OrderPaymentLifecycleService {
 	 *
 	 * @since 11.0.0
 	 *
-	 * @param WC_Order                   $order               Order object.
-	 * @param PaymentLifecycleEvent      $event               Lifecycle event.
-	 * @param ProviderPersistenceProfile $persistence_profile Provider persistence profile.
+	 * @param WC_Order                      $order               Order object.
+	 * @param PaymentLifecycleEvent         $event               Lifecycle event.
+	 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
 	 */
-	public function apply_unlocked( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceProfile $persistence_profile ): void {
+	public function apply_unlocked( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabulary $persistence_profile ): void {
 		if ( $this->should_skip_late_failure_event( $order, $event ) ) {
 			return;
 		}
@@ -267,14 +267,14 @@ class OrderPaymentLifecycleService {
 	/**
 	 * Tell whether a lifecycle note should be skipped for an already-applied event.
 	 *
-	 * @param WC_Order                   $order               Order object.
-	 * @param PaymentLifecycleEvent      $event               Lifecycle event.
-	 * @param string                     $note                Note content.
-	 * @param ProviderPersistenceProfile $persistence_profile Provider persistence profile.
+	 * @param WC_Order                      $order               Order object.
+	 * @param PaymentLifecycleEvent         $event               Lifecycle event.
+	 * @param string                        $note                Note content.
+	 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
 	 * @return bool
 	 */
-	private function should_skip_lifecycle_note( WC_Order $order, PaymentLifecycleEvent $event, string $note, ProviderPersistenceProfile $persistence_profile ): bool {
-		if ( $persistence_profile->should_skip_note( $order, $event, $note ) ) {
+	private function should_skip_lifecycle_note( WC_Order $order, PaymentLifecycleEvent $event, string $note, ProviderPersistenceVocabulary $persistence_profile ): bool {
+		if ( $persistence_profile instanceof ProviderPersistenceProfile && $persistence_profile->should_skip_note( $order, $event, $note ) ) {
 			return true;
 		}
 

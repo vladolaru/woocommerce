@@ -8,7 +8,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\ProviderContract;
-use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceProfile;
+use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
 
 /**
  * Test provider that records operation calls.
@@ -96,9 +96,9 @@ class RecordingProvider implements ProviderContract {
 	/**
 	 * Get the provider persistence profile.
 	 *
-	 * @return ProviderPersistenceProfile
+	 * @return ProviderPersistenceVocabulary
 	 */
-	public function get_persistence_profile(): ProviderPersistenceProfile {
+	public function get_persistence_profile(): ProviderPersistenceVocabulary {
 		return new RecordingProviderPersistenceProfile( $this->get_id() );
 	}
 

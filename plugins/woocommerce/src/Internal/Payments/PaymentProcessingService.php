@@ -153,7 +153,7 @@ class PaymentProcessingService {
 				// The provider already returned a durable result. Downgrading it to an ID-less failure
 				// would risk a duplicate operation on retry, so keep the result reconcilable.
 				$outcome                  = $provider_outcome;
-				$reconciliation_persisted = $this->persist_reconciliation_context( $order, $provider_outcome, $profile );
+				$reconciliation_persisted = $this->persist_reconciliation_context( $order, $provider_outcome, $provider );
 				$this->log_post_provider_apply_failure( $order, $provider_outcome, 'charge', $apply_exception, $reconciliation_persisted );
 			}
 
@@ -171,12 +171,12 @@ class PaymentProcessingService {
 	 * Recovery is deliberately best-effort: no local persistence failure may replace a durable provider
 	 * outcome after transport has completed.
 	 *
-	 * @param WC_Order                   $order   Order object.
-	 * @param PaymentOutcome             $outcome Provider outcome with a durable reference.
-	 * @param ProviderPersistenceProfile $profile Provider persistence vocabulary.
+	 * @param WC_Order         $order   Order object.
+	 * @param PaymentOutcome   $outcome Provider outcome with a durable reference.
+	 * @param ProviderContract $provider Provider.
 	 * @return bool Whether the reconciliation context was persisted.
 	 */
-	private function persist_reconciliation_context( WC_Order $order, PaymentOutcome $outcome, ProviderPersistenceProfile $profile ): bool {
+	private function persist_reconciliation_context( WC_Order $order, PaymentOutcome $outcome, ProviderContract $provider ): bool {
 		try {
 			$reloaded_order = wc_get_order( $order->get_id() );
 			if ( ! $reloaded_order instanceof WC_Order ) {
@@ -189,7 +189,7 @@ class PaymentProcessingService {
 				return false;
 			}
 
-			foreach ( $profile->get_outcome_meta( $outcome ) as $key => $value ) {
+			foreach ( $this->get_provider_outcome_meta( $outcome, $provider ) as $key => $value ) {
 				$reloaded_order->update_meta_data( $key, $value );
 			}
 
@@ -328,13 +328,13 @@ class PaymentProcessingService {
 	/**
 	 * Retain the provider refund identity on the exact local refund after local effects fail.
 	 *
-	 * @param WC_Order                   $order           Parent order.
-	 * @param string|null                $refund_instance Local refund instance ID.
-	 * @param PaymentOutcome             $outcome         Provider refund outcome.
-	 * @param ProviderPersistenceProfile $profile         Provider persistence vocabulary.
+	 * @param WC_Order                      $order           Parent order.
+	 * @param string|null                   $refund_instance Local refund instance ID.
+	 * @param PaymentOutcome                $outcome         Provider refund outcome.
+	 * @param ProviderPersistenceVocabulary $profile         Provider persistence vocabulary.
 	 * @return bool Whether the refund identity was persisted.
 	 */
-	private function persist_refund_reconciliation_context( WC_Order $order, ?string $refund_instance, PaymentOutcome $outcome, ProviderPersistenceProfile $profile ): bool {
+	private function persist_refund_reconciliation_context( WC_Order $order, ?string $refund_instance, PaymentOutcome $outcome, ProviderPersistenceVocabulary $profile ): bool {
 		$refund_reference = $outcome->get_provider_payment_id();
 		if ( '' === $refund_reference || null === $refund_instance || '' === $refund_instance ) {
 			return false;
@@ -710,7 +710,7 @@ class PaymentProcessingService {
 				}
 
 				$outcome                  = $provider_outcome;
-				$reconciliation_persisted = $this->persist_reconciliation_context( $order, $provider_outcome, $profile );
+				$reconciliation_persisted = $this->persist_reconciliation_context( $order, $provider_outcome, $provider );
 				$this->log_post_provider_apply_failure( $order, $provider_outcome, $operation, $apply_exception, $reconciliation_persisted );
 			}
 
@@ -806,7 +806,7 @@ class PaymentProcessingService {
 		if ( in_array( $operation, array( 'capture', 'cancel' ), true ) && PaymentOutcome::STATUS_FAILED === $outcome->get_status() ) {
 			// A failed authorization operation leaves the original authorization active, regardless of whether
 			// the attempted operation was capture or cancellation.
-			$meta = $provider->get_persistence_profile()->get_capture_failure_outcome_meta( $outcome );
+			$meta = $this->get_capture_failure_outcome_meta( $outcome, $provider );
 
 			$this->lifecycle_service->apply_unlocked(
 				$order,
@@ -888,7 +888,41 @@ class PaymentProcessingService {
 	 * @return array<string,string>
 	 */
 	private function get_lifecycle_meta( PaymentOutcome $outcome, ProviderContract $provider ): array {
-		return $provider->get_persistence_profile()->get_outcome_meta( $outcome );
+		return $this->get_provider_outcome_meta( $outcome, $provider );
+	}
+
+	/**
+	 * Map provider outcome metadata through the provider port or legacy fallback.
+	 *
+	 * @param PaymentOutcome   $outcome  Provider outcome.
+	 * @param ProviderContract $provider Provider.
+	 * @return array<string,string>
+	 */
+	private function get_provider_outcome_meta( PaymentOutcome $outcome, ProviderContract $provider ): array {
+		if ( $provider instanceof ProviderOutcomeMetadataMapper ) {
+			return $provider->get_outcome_meta( $outcome );
+		}
+
+		$profile = $provider->get_persistence_profile();
+
+		return $profile instanceof ProviderPersistenceProfile ? $profile->get_outcome_meta( $outcome ) : array();
+	}
+
+	/**
+	 * Map failed authorization metadata through the provider port or legacy fallback.
+	 *
+	 * @param PaymentOutcome   $outcome  Provider outcome.
+	 * @param ProviderContract $provider Provider.
+	 * @return array<string,string>
+	 */
+	private function get_capture_failure_outcome_meta( PaymentOutcome $outcome, ProviderContract $provider ): array {
+		if ( $provider instanceof ProviderOutcomeMetadataMapper ) {
+			return $provider->get_capture_failure_outcome_meta( $outcome );
+		}
+
+		$profile = $provider->get_persistence_profile();
+
+		return $profile instanceof ProviderPersistenceProfile ? $profile->get_capture_failure_outcome_meta( $outcome ) : array();
 	}
 
 	/**
