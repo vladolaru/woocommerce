@@ -153,17 +153,23 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox payment_intent.succeeded records the structural payment-success note marker.
+	 * @testdox payment_intent.succeeded records the structural payment-success note identity.
 	 */
-	public function test_payment_intent_succeeded_records_structural_payment_complete_note_marker(): void {
+	public function test_payment_intent_succeeded_records_structural_payment_complete_note_identity(): void {
 		$order = $this->create_woopayments_order();
 
 		$this->sut->process( $this->create_payment_intent_event( 'payment_intent.succeeded', $order ) );
 
-		$order = wc_get_order( $order->get_id() );
+		$order           = wc_get_order( $order->get_id() );
+		$notes           = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+		$note_identities = array_map(
+			static fn( $note ): string => (string) get_comment_meta( $note->id, '_wc_woopayments_note_identity', true ),
+			$notes
+		);
 
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'yes', $order->get_meta( '_wc_native_payments_note_' . md5( 'pi_123|completed|payment_success' ), true ) );
+		$this->assertContains( hash( 'sha256', 'payment_lifecycle:pi_123|completed|payment_success' ), $note_identities );
+		$this->assertSame( '', $order->get_meta( '_wc_native_payments_note_' . md5( 'pi_123|completed|payment_success' ), true ) );
 	}
 
 	/**
