@@ -173,8 +173,8 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 				)
 			);
 		}
-		remove_all_filters( 'woocommerce_native_woopayments_woopay_blog_id' );
-		remove_all_filters( 'woocommerce_native_woopayments_woopay_blog_token' );
+		remove_all_filters( 'woocommerce_woopayments_woopay_blog_id' );
+		remove_all_filters( 'woocommerce_woopayments_woopay_blog_token' );
 		remove_all_filters( 'pre_http_request' );
 		remove_all_filters( 'rest_pre_dispatch' );
 		remove_all_filters( 'woocommerce_store_api_disable_nonce_check' );
@@ -777,8 +777,8 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should generate the reference WooPay request signature.
 	 */
 	public function test_generates_reference_request_signature(): void {
-		add_filter( 'woocommerce_native_woopayments_woopay_blog_id', static fn() => '12345' );
-		add_filter( 'woocommerce_native_woopayments_woopay_blog_token', static fn() => 'blog-token' );
+		add_filter( 'woocommerce_woopayments_woopay_blog_id', static fn() => '12345' );
+		add_filter( 'woocommerce_woopayments_woopay_blog_token', static fn() => 'blog-token' );
 
 		$sut      = $this->create_service();
 		$expected = hash_hmac( 'sha512', '12345' . floor( time() / 30 ), 'blog-token' );
@@ -910,8 +910,8 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should encrypt minimum session data with the WooPay reference shape.
 	 */
 	public function test_encrypts_minimum_session_data_with_reference_shape(): void {
-		add_filter( 'woocommerce_native_woopayments_woopay_blog_id', static fn() => '12345' );
-		add_filter( 'woocommerce_native_woopayments_woopay_blog_token', static fn() => 'blog-token' );
+		add_filter( 'woocommerce_woopayments_woopay_blog_id', static fn() => '12345' );
+		add_filter( 'woocommerce_woopayments_woopay_blog_token', static fn() => 'blog-token' );
 
 		$sut    = $this->create_service();
 		$result = $sut->get_encrypted_minimum_session_data();
@@ -990,7 +990,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should build the preserved WooPay checkout frontend config.
 	 */
 	public function test_builds_woopay_checkout_frontend_config(): void {
-		add_filter( 'woocommerce_native_woopayments_woopay_blog_id', static fn() => '12345' );
+		add_filter( 'woocommerce_woopayments_woopay_blog_id', static fn() => '12345' );
 		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
 
 		$sut = $this->create_service();
@@ -1311,8 +1311,8 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should forward init session requests through filterable transport.
 	 */
 	public function test_forwards_init_session_request_through_filterable_transport(): void {
-		add_filter( 'woocommerce_native_woopayments_woopay_blog_id', static fn() => '12345' );
-		add_filter( 'woocommerce_native_woopayments_woopay_blog_token', static fn() => 'blog-token' );
+		add_filter( 'woocommerce_woopayments_woopay_blog_id', static fn() => '12345' );
+		add_filter( 'woocommerce_woopayments_woopay_blog_token', static fn() => 'blog-token' );
 		if ( class_exists( '\Jetpack_Options' ) ) {
 			\Jetpack_Options::update_option( 'id', 12345 );
 			\Jetpack_Options::update_option( 'blog_token', 'token-key.blog-token' );

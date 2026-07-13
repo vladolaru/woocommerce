@@ -968,7 +968,7 @@ class WooPaymentsTokenService {
 		 * @param array<int,mixed> $subscriptions Related subscriptions.
 		 * @param WC_Order         $order         Parent order.
 		 */
-		$subscriptions = apply_filters( 'woocommerce_native_woopayments_related_subscriptions_for_order', $subscriptions, $order );
+		$subscriptions = apply_filters( 'woocommerce_woopayments_related_subscriptions_for_order', $subscriptions, $order );
 
 		return is_array( $subscriptions ) ? $subscriptions : array();
 	}

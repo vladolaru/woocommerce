@@ -1395,7 +1395,7 @@ class WooPaymentsWooPaySessionService {
 		 *
 		 * @since 11.0.0
 		 */
-		return (string) apply_filters( 'woocommerce_native_woopayments_woopay_blog_id', $blog_id );
+		return (string) apply_filters( 'woocommerce_woopayments_woopay_blog_id', $blog_id );
 	}
 
 	/**
@@ -1419,7 +1419,7 @@ class WooPaymentsWooPaySessionService {
 		 *
 		 * @since 11.0.0
 		 */
-		return (string) apply_filters( 'woocommerce_native_woopayments_woopay_blog_token', $blog_token );
+		return (string) apply_filters( 'woocommerce_woopayments_woopay_blog_token', $blog_token );
 	}
 
 	/**

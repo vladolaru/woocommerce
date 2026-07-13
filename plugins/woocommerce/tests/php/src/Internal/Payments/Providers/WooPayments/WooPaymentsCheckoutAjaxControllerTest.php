@@ -53,8 +53,8 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		remove_all_actions( 'wp_ajax_update_order_status' );
 		remove_all_actions( 'wp_ajax_nopriv_update_order_status' );
 		remove_all_actions( 'wp_ajax_create_setup_intent' );
-		remove_all_filters( 'woocommerce_native_woopayments_is_recurring_payment' );
-		remove_all_filters( 'woocommerce_native_woopayments_related_subscriptions_for_order' );
+		remove_all_filters( 'woocommerce_woopayments_is_recurring_payment' );
+		remove_all_filters( 'woocommerce_woopayments_related_subscriptions_for_order' );
 		remove_all_filters( 'woocommerce_payment_token_class' );
 		if ( class_exists( 'WC_Subscriptions_Change_Payment_Gateway', false ) && method_exists( 'WC_Subscriptions_Change_Payment_Gateway', 'reset' ) ) {
 			\WC_Subscriptions_Change_Payment_Gateway::reset();
@@ -1295,9 +1295,9 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		);
 		$sut           = $this->create_controller( $api_client, null, $token_service );
 
-		add_filter( 'woocommerce_native_woopayments_is_recurring_payment', '__return_true' );
+		add_filter( 'woocommerce_woopayments_is_recurring_payment', '__return_true' );
 		add_filter(
-			'woocommerce_native_woopayments_related_subscriptions_for_order',
+			'woocommerce_woopayments_related_subscriptions_for_order',
 			static function ( array $subscriptions, WC_Order $filtered_order ) use ( $order, $subscription ): array {
 				return $order->get_id() === $filtered_order->get_id() ? array( $subscription ) : $subscriptions;
 			},
@@ -1485,7 +1485,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		};
 		$sut           = $this->create_controller( $api_client, null, $token_service );
 
-		add_filter( 'woocommerce_native_woopayments_is_recurring_payment', '__return_true' );
+		add_filter( 'woocommerce_woopayments_is_recurring_payment', '__return_true' );
 
 		$response = $sut->get_update_order_status_response(
 			array(

@@ -102,7 +102,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'wcpay_test_mode' );
 		remove_all_filters( 'wcpay_test_mode_onboarding' );
 		remove_all_filters( 'wcpay_upe_available_payment_methods' );
-		remove_all_filters( 'woocommerce_native_woopayments_gateway_duplicate_payment_method_ids' );
+		remove_all_filters( 'woocommerce_woopayments_gateway_duplicate_payment_method_ids' );
 		remove_all_actions( 'wc_payment_gateways_initialized' );
 		if ( function_exists( 'WC' ) && WC()->payment_gateways() ) {
 			WC()->payment_gateways()->payment_gateways = array();
@@ -730,7 +730,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 		add_filter(
-			'woocommerce_native_woopayments_gateway_duplicate_payment_method_ids',
+			'woocommerce_woopayments_gateway_duplicate_payment_method_ids',
 			static function ( array $payment_method_ids, string $gateway_id ): array {
 				if ( 'declared_wallet_gateway' !== $gateway_id ) {
 					return $payment_method_ids;

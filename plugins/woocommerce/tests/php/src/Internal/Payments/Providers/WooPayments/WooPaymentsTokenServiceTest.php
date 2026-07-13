@@ -49,7 +49,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		delete_option( 'not_wcpay_pm_customer' );
 		remove_all_filters( 'pre_option_wcpay_pm_customer_1' );
 		remove_all_filters( 'woocommerce_payment_token_class' );
-		remove_all_filters( 'woocommerce_native_woopayments_related_subscriptions_for_order' );
+		remove_all_filters( 'woocommerce_woopayments_related_subscriptions_for_order' );
 		parent::tearDown();
 	}
 
@@ -689,7 +689,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$subscription->add_payment_token( $token_a );
 		$subscription->save();
 		add_filter(
-			'woocommerce_native_woopayments_related_subscriptions_for_order',
+			'woocommerce_woopayments_related_subscriptions_for_order',
 			static function () use ( $subscription ): array {
 				return array( $subscription );
 			}

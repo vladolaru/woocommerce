@@ -165,7 +165,7 @@ class WooPaymentsExpressCheckoutService {
 		 *
 		 * @since 11.0.0
 		 */
-		$filtered_methods = apply_filters( 'woocommerce_native_woopayments_express_checkout_enabled_methods', $methods, $context, $this );
+		$filtered_methods = apply_filters( 'woocommerce_woopayments_express_checkout_enabled_methods', $methods, $context, $this );
 		$filtered_methods = is_array( $filtered_methods ) ? $this->normalize_method_list( $filtered_methods ) : $methods;
 
 		return array_values(
@@ -371,7 +371,7 @@ class WooPaymentsExpressCheckoutService {
 		 *
 		 * @since 11.0.0
 		 */
-		$supported_types = apply_filters( 'woocommerce_native_woopayments_express_checkout_product_types', $supported_types, $product, $this );
+		$supported_types = apply_filters( 'woocommerce_woopayments_express_checkout_product_types', $supported_types, $product, $this );
 		if ( ! is_array( $supported_types ) || ! in_array( $product->get_type(), $supported_types, true ) ) {
 			return false;
 		}
@@ -397,7 +397,7 @@ class WooPaymentsExpressCheckoutService {
 		 *
 		 * @since 11.0.0
 		 */
-		return (bool) apply_filters( 'woocommerce_native_woopayments_express_checkout_is_product_supported', $supported, $product, $this );
+		return (bool) apply_filters( 'woocommerce_woopayments_express_checkout_is_product_supported', $supported, $product, $this );
 	}
 
 	/**
@@ -486,7 +486,7 @@ class WooPaymentsExpressCheckoutService {
 		 *
 		 * @since 11.0.0
 		 */
-		$filtered_data = apply_filters( 'woocommerce_native_woopayments_express_checkout_product_data', $data, $product, $this );
+		$filtered_data = apply_filters( 'woocommerce_woopayments_express_checkout_product_data', $data, $product, $this );
 
 		return is_array( $filtered_data ) ? $filtered_data : $data;
 	}

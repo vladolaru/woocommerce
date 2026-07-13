@@ -44,7 +44,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'wcpay_dev_mode' );
 		remove_all_filters( 'wcpay_test_mode' );
 		remove_all_filters( 'wcpay_test_mode_onboarding' );
-		remove_all_filters( 'woocommerce_woopayments_native_fraud_services_config' );
+		remove_all_filters( 'woocommerce_woopayments_fraud_services_config' );
 		remove_all_filters( 'allowed_redirect_hosts' );
 		set_current_screen( 'front' );
 		parent::tearDown();
@@ -113,7 +113,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 		add_filter(
-			'woocommerce_woopayments_native_fraud_services_config',
+			'woocommerce_woopayments_fraud_services_config',
 			static function ( array $config ): array {
 				$config['sift'] = array( 'beacon_key' => 'beacon_test' );
 				return $config;

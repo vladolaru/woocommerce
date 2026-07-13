@@ -54,8 +54,8 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
-		remove_all_filters( 'woocommerce_native_woopayments_is_recurring_payment' );
-		remove_all_filters( 'woocommerce_native_woopayments_related_subscriptions_for_order' );
+		remove_all_filters( 'woocommerce_woopayments_is_recurring_payment' );
+		remove_all_filters( 'woocommerce_woopayments_related_subscriptions_for_order' );
 		remove_all_filters( 'woocommerce_payment_token_class' );
 		remove_all_filters( 'wcpay_metadata_from_order' );
 		delete_option( 'woocommerce_tax_based_on' );
@@ -2036,7 +2036,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->method( 'get_or_create_customer_id_for_order' )
 			->willReturn( 'cus_native' );
 
-		add_filter( 'woocommerce_native_woopayments_is_recurring_payment', '__return_true' );
+		add_filter( 'woocommerce_woopayments_is_recurring_payment', '__return_true' );
 
 		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, $token_service );
 		$outcome = $sut->charge(
@@ -2447,9 +2447,9 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$subscription->set_customer_id( $user_id );
 		$subscription->save();
 
-		add_filter( 'woocommerce_native_woopayments_is_recurring_payment', '__return_true' );
+		add_filter( 'woocommerce_woopayments_is_recurring_payment', '__return_true' );
 		add_filter(
-			'woocommerce_native_woopayments_related_subscriptions_for_order',
+			'woocommerce_woopayments_related_subscriptions_for_order',
 			static function ( array $subscriptions, WC_Order $filtered_order ) use ( $order, $subscription ): array {
 				return $order->get_id() === $filtered_order->get_id() ? array( $subscription ) : $subscriptions;
 			},

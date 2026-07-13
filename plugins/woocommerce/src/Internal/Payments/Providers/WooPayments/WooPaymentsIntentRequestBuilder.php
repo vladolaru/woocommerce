@@ -303,7 +303,7 @@ class WooPaymentsIntentRequestBuilder {
 		 * @param bool     $is_recurring Whether the order requires saved-token persistence.
 		 * @param WC_Order $order        Order object.
 		 */
-		return (bool) apply_filters( 'woocommerce_native_woopayments_is_recurring_payment', $is_recurring, $order );
+		return (bool) apply_filters( 'woocommerce_woopayments_is_recurring_payment', $is_recurring, $order );
 	}
 
 	/**

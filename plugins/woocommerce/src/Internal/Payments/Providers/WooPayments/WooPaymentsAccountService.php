@@ -73,7 +73,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 *
 	 * @var string
 	 */
-	public const FILTER_FRAUD_SERVICES_CONFIG = 'woocommerce_woopayments_native_fraud_services_config';
+	public const FILTER_FRAUD_SERVICES_CONFIG = 'woocommerce_woopayments_fraud_services_config';
 
 	private const ACCOUNT_OPTION = 'wcpay_account_data';
 

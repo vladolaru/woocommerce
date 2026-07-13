@@ -97,7 +97,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$_GET = $this->original_get;
 		remove_all_filters( 'woocommerce_is_order_received_page' );
 		remove_all_filters( 'woocommerce_logging_class' );
-		remove_all_filters( 'woocommerce_native_woopayments_is_recurring_payment' );
+		remove_all_filters( 'woocommerce_woopayments_is_recurring_payment' );
 		WC()->cart->empty_cart();
 		wc_clear_notices();
 		wp_set_current_user( 0 );

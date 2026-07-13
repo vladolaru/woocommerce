@@ -11,4 +11,4 @@
  */
 
 add_filter( 'woocommerce_native_payments_enabled', '__return_true' );
-add_filter( 'woocommerce_woopayments_native_mandatory_cutover_enabled', '__return_true' );
+add_filter( 'woocommerce_woopayments_mandatory_cutover_enabled', '__return_true' );

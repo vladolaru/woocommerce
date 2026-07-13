@@ -31,7 +31,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
-		remove_all_filters( 'woocommerce_native_woopayments_related_subscriptions_for_order' );
+		remove_all_filters( 'woocommerce_woopayments_related_subscriptions_for_order' );
 		remove_all_filters( 'wcpay_payment_request_payment_method_title_suffix' );
 		parent::tearDown();
 	}
@@ -293,7 +293,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$subscription->save();
 
 		add_filter(
-			'woocommerce_native_woopayments_related_subscriptions_for_order',
+			'woocommerce_woopayments_related_subscriptions_for_order',
 			static function ( array $subscriptions, WC_Order $filtered_order ) use ( $order, $subscription ): array {
 				return $order->get_id() === $filtered_order->get_id() ? array( $subscription ) : $subscriptions;
 			},
@@ -453,7 +453,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$subscription->save();
 
 		add_filter(
-			'woocommerce_native_woopayments_related_subscriptions_for_order',
+			'woocommerce_woopayments_related_subscriptions_for_order',
 			static function ( array $subscriptions, WC_Order $filtered_order ) use ( $order, $subscription ): array {
 				return $order->get_id() === $filtered_order->get_id() ? array( $subscription ) : $subscriptions;
 			},

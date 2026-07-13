@@ -23,7 +23,7 @@ class WooPaymentsFailedEventsProvider {
 	 *
 	 * @var string
 	 */
-	const FILTER_FAILED_WEBHOOK_EVENTS = 'woocommerce_native_payments_woopayments_failed_webhook_events';
+	const FILTER_FAILED_WEBHOOK_EVENTS = 'woocommerce_woopayments_failed_webhook_events';
 
 	/**
 	 * Native WooPayments API client.

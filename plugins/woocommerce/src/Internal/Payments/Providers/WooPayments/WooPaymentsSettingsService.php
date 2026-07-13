@@ -112,7 +112,7 @@ class WooPaymentsSettingsService {
 
 	private const PAYMENT_REQUEST_DUPLICATE_METHOD_ID = 'apple_pay_google_pay';
 
-	private const FILTER_GATEWAY_DUPLICATE_PAYMENT_METHOD_IDS = 'woocommerce_native_woopayments_gateway_duplicate_payment_method_ids';
+	private const FILTER_GATEWAY_DUPLICATE_PAYMENT_METHOD_IDS = 'woocommerce_woopayments_gateway_duplicate_payment_method_ids';
 
 	private const PAYMENT_REQUEST_DUPLICATE_GATEWAY_KEYWORDS = array(
 		'apple_pay',

@@ -24,7 +24,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_tax_based_on' );
 		delete_option( 'woocommerce_calc_taxes' );
 		unset( $_GET['pay_for_order'], $_GET['key'] );
-		remove_all_filters( 'woocommerce_native_woopayments_express_checkout_enabled_methods' );
+		remove_all_filters( 'woocommerce_woopayments_express_checkout_enabled_methods' );
 		remove_all_filters( 'wcpay_payment_request_supported_types' );
 		remove_all_filters( 'wcpay_payment_request_total_label' );
 		remove_all_filters( 'wcpay_payment_request_total_label_suffix' );
@@ -455,7 +455,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_enabled_methods_can_be_filtered(): void {
 		add_filter(
-			'woocommerce_native_woopayments_express_checkout_enabled_methods',
+			'woocommerce_woopayments_express_checkout_enabled_methods',
 			static function ( array $methods, string $context ): array {
 				return 'checkout' === $context ? array( 'payment_request', 'klarna' ) : $methods;
 			},

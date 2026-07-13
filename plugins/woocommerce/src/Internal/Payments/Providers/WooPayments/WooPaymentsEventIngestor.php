@@ -29,7 +29,7 @@ class WooPaymentsEventIngestor {
 	 *
 	 * @var string
 	 */
-	const FILTER_LIVE_MODE = 'woocommerce_native_payments_woopayments_live_mode';
+	const FILTER_LIVE_MODE = 'woocommerce_woopayments_live_mode';
 
 	/**
 	 * Transient prefix for the per-event "already processed" idempotency marker.

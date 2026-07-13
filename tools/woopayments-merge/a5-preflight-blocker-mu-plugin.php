@@ -13,9 +13,9 @@
 
 add_filter( 'woocommerce_native_payments_enabled', '__return_true' );
 add_filter(
-	'woocommerce_woopayments_native_cutover_preflight_failures',
+	'woocommerce_woopayments_cutover_preflight_failures',
 	static function ( $failures ): array {
-		$failures = is_array( $failures ) ? $failures : array( 'preflight_filter_invalid' );
+		$failures   = is_array( $failures ) ? $failures : array( 'preflight_filter_invalid' );
 		$failures[] = 'a5_synthetic_preflight_blocker';
 
 		return array_values( array_unique( array_map( 'strval', $failures ) ) );

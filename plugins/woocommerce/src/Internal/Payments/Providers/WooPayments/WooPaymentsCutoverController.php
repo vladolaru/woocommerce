@@ -37,14 +37,14 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 *
 	 * @var string
 	 */
-	public const FILTER_SOFT_CUTOVER_ENABLED = 'woocommerce_woopayments_native_soft_cutover_enabled';
+	public const FILTER_SOFT_CUTOVER_ENABLED = 'woocommerce_woopayments_soft_cutover_enabled';
 
 	/**
 	 * Filter that controls mandatory WooPayments auto-deactivation and activation blocking.
 	 *
 	 * @var string
 	 */
-	public const FILTER_MANDATORY_CUTOVER_ENABLED = 'woocommerce_woopayments_native_mandatory_cutover_enabled';
+	public const FILTER_MANDATORY_CUTOVER_ENABLED = 'woocommerce_woopayments_mandatory_cutover_enabled';
 
 	/**
 	 * Default state for mandatory WooPayments native cutover.
@@ -60,35 +60,35 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 *
 	 * @var string
 	 */
-	public const FILTER_NATIVE_TRANSPORT_READY = 'woocommerce_woopayments_native_transport_ready';
+	public const FILTER_NATIVE_TRANSPORT_READY = 'woocommerce_woopayments_cutover_transport_ready';
 
 	/**
 	 * Filter that reports whether native WooPayments merchant admin surfaces are ready after deactivation.
 	 *
 	 * @var string
 	 */
-	public const FILTER_NATIVE_ADMIN_SURFACES_READY = 'woocommerce_woopayments_native_admin_surfaces_ready';
+	public const FILTER_NATIVE_ADMIN_SURFACES_READY = 'woocommerce_woopayments_cutover_admin_surfaces_ready';
 
 	/**
 	 * Filter that reports provider event types still pending native cutover disposition.
 	 *
 	 * @var string
 	 */
-	public const FILTER_PROVIDER_EVENT_TYPES_PENDING_CUTOVER = 'woocommerce_woopayments_native_cutover_pending_event_types';
+	public const FILTER_PROVIDER_EVENT_TYPES_PENDING_CUTOVER = 'woocommerce_woopayments_cutover_pending_event_types';
 
 	/**
 	 * Filter that reports operational queue hooks still pending native cutover disposition.
 	 *
 	 * @var string
 	 */
-	public const FILTER_OPERATIONAL_QUEUE_HOOKS_PENDING_CUTOVER = 'woocommerce_woopayments_native_cutover_pending_operational_queue_hooks';
+	public const FILTER_OPERATIONAL_QUEUE_HOOKS_PENDING_CUTOVER = 'woocommerce_woopayments_cutover_pending_operational_queue_hooks';
 
 	/**
 	 * Filter for cutover preflight failures.
 	 *
 	 * @var string
 	 */
-	public const FILTER_PREFLIGHT_FAILURES = 'woocommerce_woopayments_native_cutover_preflight_failures';
+	public const FILTER_PREFLIGHT_FAILURES = 'woocommerce_woopayments_cutover_preflight_failures';
 
 	/**
 	 * Nonce action for the one-click disable action.

@@ -61,7 +61,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'woocommerce_subscriptions_update_payment_via_pay_shortcode' );
 		remove_all_actions( 'wp_ajax_wcpay_get_user_payment_tokens' );
 		remove_all_actions( 'woocommerce_woocommerce_payments_payment_requires_action' );
-		remove_all_filters( 'woocommerce_native_woopayments_subscriptions_for_renewal_order' );
+		remove_all_filters( 'woocommerce_woopayments_subscriptions_for_renewal_order' );
 		$subscription_handlers = new \ReflectionProperty( NativeWooPaymentsGateway::class, 'has_attached_subscription_handlers' );
 		$subscription_handlers->setValue( null, false );
 		remove_all_filters( 'woocommerce_email_classes' );
@@ -1085,7 +1085,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$renewal->save();
 
 		add_filter(
-			'woocommerce_native_woopayments_subscriptions_for_renewal_order',
+			'woocommerce_woopayments_subscriptions_for_renewal_order',
 			static function ( array $subscriptions, WC_Order $filtered_order ) use ( $renewal, $subscription ): array {
 				return $renewal->get_id() === $filtered_order->get_id() ? array( $subscription ) : $subscriptions;
 			},
