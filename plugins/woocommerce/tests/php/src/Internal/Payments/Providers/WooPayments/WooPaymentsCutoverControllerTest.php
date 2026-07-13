@@ -195,6 +195,13 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	private array $raw_hpos_order_ids = array();
 
 	/**
+	 * Action Scheduler hooks created by tests.
+	 *
+	 * @var string[]
+	 */
+	private array $scheduled_action_hooks = array();
+
+	/**
 	 * Set up test fixtures.
 	 */
 	public function setUp(): void {
@@ -309,6 +316,10 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			$this->registered_subscription_order_type = false;
 		}
 		$this->delete_raw_hpos_orders();
+		foreach ( $this->scheduled_action_hooks as $hook_name ) {
+			as_unschedule_all_actions( $hook_name );
+		}
+		$this->scheduled_action_hooks = array();
 		Constants::clear_single_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' );
 		$this->reset_legacy_proxy_mocks();
 
@@ -989,6 +1000,27 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		add_filter( WooPaymentsCutoverController::FILTER_OPERATIONAL_QUEUE_HOOKS_PENDING_CUTOVER, static fn() => array( 'example_hook' ) );
 		$this->native_provider_ready = true;
 
+		$this->assertContains( 'operational_queue_hooks_undispositioned', $this->sut->get_preflight_failures() );
+		$this->assertFalse( $this->sut->should_show_soft_cutover_notice() );
+	}
+
+	/**
+	 * @testdox Cutover preflight discovers pending WooPayments actions without a static hook inventory.
+	 */
+	public function test_preflight_blocks_when_unknown_woopayments_action_is_pending(): void {
+		$this->fake_plugin_active();
+		$this->fake_current_user_caps( true );
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		add_filter( WooPaymentsCutoverController::FILTER_NATIVE_ADMIN_SURFACES_READY, '__return_true' );
+		add_filter( WooPaymentsCutoverController::FILTER_PROVIDER_EVENT_TYPES_PENDING_CUTOVER, '__return_empty_array' );
+		$this->native_provider_ready = true;
+
+		$hook_name                      = 'wcpay_synthetic_cutover_probe';
+		$this->scheduled_action_hooks[] = $hook_name;
+		$action_id                      = as_schedule_single_action( time() + HOUR_IN_SECONDS, $hook_name, array(), 'woocommerce-test-cutover', true );
+
+		$this->assertIsInt( $action_id );
+		$this->assertGreaterThan( 0, $action_id );
 		$this->assertContains( 'operational_queue_hooks_undispositioned', $this->sut->get_preflight_failures() );
 		$this->assertFalse( $this->sut->should_show_soft_cutover_notice() );
 	}

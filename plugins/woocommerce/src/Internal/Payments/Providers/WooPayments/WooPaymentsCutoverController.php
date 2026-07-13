@@ -127,13 +127,6 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	private const NOTICE_STATUS_TRANSIENT = 'woocommerce_woopayments_native_cutover_status';
 
 	/**
-	 * Legacy operational queue hooks that still need native cutover disposition.
-	 *
-	 * @var string[]
-	 */
-	private const DEFAULT_PENDING_OPERATIONAL_QUEUE_HOOKS = array();
-
-	/**
 	 * Status value for a successful plugin disable.
 	 *
 	 * @var string
@@ -752,7 +745,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 		 *
 		 * @since 11.0.0
 		 */
-		$hook_names = apply_filters( self::FILTER_OPERATIONAL_QUEUE_HOOKS_PENDING_CUTOVER, self::DEFAULT_PENDING_OPERATIONAL_QUEUE_HOOKS );
+		$hook_names = apply_filters( self::FILTER_OPERATIONAL_QUEUE_HOOKS_PENDING_CUTOVER, $this->get_queued_operational_action_hooks() );
 
 		if ( ! is_array( $hook_names ) ) {
 			return array( 'operational_queue_hooks_filter_invalid' );
@@ -766,6 +759,40 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 				)
 			)
 		);
+	}
+
+	/**
+	 * Get pending or running WooPayments operational hooks from Action Scheduler.
+	 *
+	 * @return string[] Operational hook names.
+	 */
+	private function get_queued_operational_action_hooks(): array {
+		global $wpdb;
+		/**
+		 * WordPress database access abstraction.
+		 *
+		 * @var \wpdb $wpdb
+		 */
+
+		if ( ! class_exists( '\\ActionScheduler_Store' ) || empty( $wpdb->actionscheduler_actions ) ) {
+			return array();
+		}
+
+		$query      = $wpdb->prepare(
+			'SELECT DISTINCT hook
+			FROM %i
+			WHERE status IN ( %s, %s )
+			AND ( hook LIKE %s OR hook LIKE %s )
+			ORDER BY hook ASC',
+			$wpdb->actionscheduler_actions,
+			\ActionScheduler_Store::STATUS_PENDING,
+			\ActionScheduler_Store::STATUS_RUNNING,
+			$wpdb->esc_like( 'wcpay_' ) . '%',
+			$wpdb->esc_like( 'woocommerce_woopayments_' ) . '%'
+		);
+		$hook_names = $wpdb->get_col( $query ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- One request-memoized indexed operational preflight scan.
+
+		return array_values( array_map( 'strval', $hook_names ) );
 	}
 
 	/**
