@@ -202,7 +202,7 @@ class WooPaymentsIntentRequestBuilder {
 			'order_key'            => $order->get_order_key(),
 			'payment_type'         => $payment_type,
 			'checkout_type'        => $order->get_created_via(),
-			'client_version'       => defined( 'WC_VERSION' ) ? WC_VERSION : '',
+			'client_version'       => self::WCPAY_V1_CLIENT_CAPABILITY_VERSION,
 			'subscription_payment' => $subscription_payment,
 		);
 

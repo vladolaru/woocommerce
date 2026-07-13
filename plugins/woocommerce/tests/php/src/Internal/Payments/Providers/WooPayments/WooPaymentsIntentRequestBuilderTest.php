@@ -52,6 +52,18 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Intent metadata reports the WooPayments-compatible client capability version.
+	 */
+	public function test_metadata_client_version_matches_woopayments_transport_capability(): void {
+		$order    = wc_create_order();
+		$metadata = WooPaymentsIntentRequestBuilder::metadata_from_order( $order );
+		$version  = ( new \ReflectionClass( WooPaymentsIntentRequestBuilder::class ) )->getConstant( 'WCPAY_V1_CLIENT_CAPABILITY_VERSION' );
+
+		$this->assertSame( '10.8.0', $version );
+		$this->assertSame( $version, $metadata['client_version'] );
+	}
+
+	/**
 	 * @testdox Redirect and mandate runtime values match the WooPayments 10.8 request shape.
 	 */
 	public function test_redirect_and_mandate_runtime_values_match_10_8_request_shape(): void {
