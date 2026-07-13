@@ -432,6 +432,13 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 			public function build(): MultiCurrencyState {
 				return $this->state;
 			}
+
+			/**
+			 * Keep the deterministic state unchanged when the controller invalidates production state.
+			 */
+			public function reset(): void {
+				// This fixed-state test double has no cache or collaborators to invalidate.
+			}
 		};
 	}
 

@@ -197,6 +197,13 @@ class MultiCurrencySelectedCurrencyPersistenceServiceTest extends WC_Unit_Test_C
 			public function build(): MultiCurrencyState {
 				return $this->state;
 			}
+
+			/**
+			 * Keep the deterministic state unchanged after selected-currency persistence.
+			 */
+			public function reset(): void {
+				// This fixed-state test double has no cache or collaborators to invalidate.
+			}
 		};
 	}
 
