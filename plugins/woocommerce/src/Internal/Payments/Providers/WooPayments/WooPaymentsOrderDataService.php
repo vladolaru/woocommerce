@@ -181,9 +181,7 @@ class WooPaymentsOrderDataService {
 	 * @return int
 	 */
 	public function prepare_amount( float $amount, string $currency ): int {
-		$conversion_rate = WooPaymentsCurrencyUtils::is_zero_decimal_currency( $currency ) ? 1 : 100;
-
-		return (int) round( $amount * $conversion_rate );
+		return WooPaymentsCurrencyUtils::amount_to_minor_units( $amount, $currency );
 	}
 
 	/**

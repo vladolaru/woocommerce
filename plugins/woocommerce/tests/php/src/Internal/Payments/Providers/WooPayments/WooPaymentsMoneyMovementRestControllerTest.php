@@ -412,6 +412,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		$this->assertSame( 'succeeded', $capture_response->get_data()['status'] );
 		$this->assertSame( 'pi_auth', $capture_response->get_data()['id'] );
 		$this->assertInstanceOf( PaymentContext::class, $processing_service->last_capture_context );
+		$this->assertNull( $processing_service->last_capture_context->get_amount() );
 
 		$cancel_request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/cancel_authorization' );
 		$cancel_request->set_body_params( array( 'payment_intent_id' => 'pi_auth' ) );
@@ -421,6 +422,151 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		$this->assertSame( 'canceled', $cancel_response->get_data()['status'] );
 		$this->assertSame( 'pi_auth', $cancel_response->get_data()['id'] );
 		$this->assertInstanceOf( PaymentContext::class, $processing_service->last_cancel_context );
+	}
+
+	/**
+	 * @testdox Explicit capture amounts use provider currency semantics and reach native payment processing.
+	 * @dataProvider valid_capture_amount_provider
+	 *
+	 * @param string $currency                Order currency.
+	 * @param float  $requested_amount         Requested decimal capture amount.
+	 * @param int    $authorized_amount_minor Authorized amount in provider minor units.
+	 */
+	public function test_capture_authorization_threads_explicit_amount( string $currency, float $requested_amount, int $authorized_amount_minor ): void {
+		$processing_service = new class() extends PaymentProcessingService {
+			/**
+			 * Last capture context.
+			 *
+			 * @var PaymentContext|null
+			 */
+			public ?PaymentContext $last_capture_context = null;
+
+			/**
+			 * Capture a payment.
+			 *
+			 * @param PaymentContext   $context  Payment context.
+			 * @param ProviderContract $provider Payment provider.
+			 * @return PaymentOutcome
+			 */
+			public function capture( PaymentContext $context, ProviderContract $provider ): PaymentOutcome {
+				$this->last_capture_context = $context;
+
+				return new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_partial' );
+			}
+		};
+
+		$this->create_authorizations_controller( true, $processing_service )->register_routes();
+		$order = $this->create_authorized_order( 'pi_partial' );
+		$order->set_currency( $currency );
+		$order->save();
+
+		$this->api_client->response = array(
+			'id'       => 'pi_partial',
+			'status'   => 'requires_capture',
+			'amount'   => $authorized_amount_minor,
+			'metadata' => array(
+				'order_id' => (string) $order->get_id(),
+			),
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_authorization' );
+		$request->set_body_params(
+			array(
+				'payment_intent_id' => 'pi_partial',
+				'amount'            => $requested_amount,
+			)
+		);
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertInstanceOf( PaymentContext::class, $processing_service->last_capture_context );
+		$this->assertSame( $requested_amount, $processing_service->last_capture_context->get_amount() );
+	}
+
+	/**
+	 * Valid explicit capture amounts.
+	 *
+	 * @return array<string,array{string,float,int}>
+	 */
+	public static function valid_capture_amount_provider(): array {
+		return array(
+			'USD decimal amount'      => array( 'USD', 4.25, 1000 ),
+			'JPY zero-decimal amount' => array( 'JPY', 425.0, 1000 ),
+		);
+	}
+
+	/**
+	 * @testdox Invalid explicit capture amounts are rejected before payment processing.
+	 * @dataProvider invalid_capture_amount_provider
+	 *
+	 * @param string    $currency                Order currency.
+	 * @param float     $requested_amount         Requested decimal capture amount.
+	 * @param int|float $authorized_amount_minor Authorized amount returned by the provider.
+	 */
+	public function test_capture_authorization_rejects_invalid_explicit_amount( string $currency, float $requested_amount, $authorized_amount_minor ): void {
+		$processing_service = new class() extends PaymentProcessingService {
+			/**
+			 * Capture call count.
+			 *
+			 * @var int
+			 */
+			public int $capture_calls = 0;
+
+			/**
+			 * Capture a payment.
+			 *
+			 * @param PaymentContext   $context  Payment context.
+			 * @param ProviderContract $provider Payment provider.
+			 * @return PaymentOutcome
+			 */
+			public function capture( PaymentContext $context, ProviderContract $provider ): PaymentOutcome {
+				++$this->capture_calls;
+
+				return new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_invalid_amount' );
+			}
+		};
+
+		$this->create_authorizations_controller( true, $processing_service )->register_routes();
+		$order = $this->create_authorized_order( 'pi_invalid_amount' );
+		$order->set_currency( $currency );
+		$order->save();
+
+		$this->api_client->response = array(
+			'id'       => 'pi_invalid_amount',
+			'status'   => 'requires_capture',
+			'amount'   => $authorized_amount_minor,
+			'metadata' => array(
+				'order_id' => (string) $order->get_id(),
+			),
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_authorization' );
+		$request->set_body_params(
+			array(
+				'payment_intent_id' => 'pi_invalid_amount',
+				'amount'            => $requested_amount,
+			)
+		);
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertSame( 'wcpay_invalid_capture_amount', $response->get_data()['code'] );
+		$this->assertSame( 0, $processing_service->capture_calls );
+	}
+
+	/**
+	 * Invalid explicit capture amounts.
+	 *
+	 * @return array<string,array{string,float,int|float}>
+	 */
+	public static function invalid_capture_amount_provider(): array {
+		return array(
+			'zero amount'                  => array( 'USD', 0.0, 1000 ),
+			'negative amount'              => array( 'USD', -1.0, 1000 ),
+			'above authorized amount'      => array( 'USD', 10.01, 1000 ),
+			'non-integral provider amount' => array( 'USD', 4.25, 1000.5 ),
+			'JPY above authorized amount'  => array( 'JPY', 1001.0, 1000 ),
+		);
 	}
 
 	/**

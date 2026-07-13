@@ -74,4 +74,19 @@ final class WooPaymentsCurrencyUtils {
 	public static function amount_from_minor_units( int $amount, string $currency ): float {
 		return self::is_zero_decimal_currency( $currency ) ? (float) $amount : (float) $amount / 100;
 	}
+
+	/**
+	 * Convert a decimal amount to provider minor units.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @param float  $amount   Decimal amount.
+	 * @param string $currency Currency code.
+	 * @return int
+	 */
+	public static function amount_to_minor_units( float $amount, string $currency ): int {
+		$minor_unit = self::get_stripe_minor_unit_for_currency( $currency );
+
+		return (int) round( $amount * ( 10 ** $minor_unit ) );
+	}
 }

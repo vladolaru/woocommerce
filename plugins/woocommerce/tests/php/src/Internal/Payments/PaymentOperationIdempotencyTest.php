@@ -59,6 +59,21 @@ class PaymentOperationIdempotencyTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Capture amounts distinguish partial captures while identical retries retain the same key.
+	 */
+	public function test_capture_amount_distinguishes_partial_capture_keys(): void {
+		$order = wc_create_order();
+		$sut   = new PaymentOperationIdempotency();
+
+		$first       = $sut->derive_key( $order, OrderPaymentStore::GATEWAY_ID, 'capture', 4.25, 'USD' );
+		$second      = $sut->derive_key( $order, OrderPaymentStore::GATEWAY_ID, 'capture', 5.75, 'USD' );
+		$first_retry = $sut->derive_key( $order, OrderPaymentStore::GATEWAY_ID, 'capture', 4.25, 'USD' );
+
+		$this->assertNotSame( $first, $second, 'Distinct partial-capture amounts must not collapse to one provider operation.' );
+		$this->assertSame( $first, $first_retry, 'A retry of the same partial capture must retain its provider operation key.' );
+	}
+
+	/**
 	 * @testdox Should change the key when the per-instance discriminator changes for otherwise identical operations.
 	 */
 	public function test_changes_key_when_instance_changes(): void {
