@@ -46,6 +46,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	public function tearDown(): void {
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		delete_option( '_wcpay_feature_amazon_pay' );
+		remove_all_filters( 'wcpay_upe_available_payment_methods' );
 
 		parent::tearDown();
 	}
@@ -169,6 +170,31 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 		$this->assertFalse( $klarna_gateway->supports( PaymentGatewayFeature::TOKENIZATION ) );
 		$this->assertTrue( $link_gateway->supports( PaymentGatewayFeature::TOKENIZATION ) );
 		$this->assertSame( $gateways, $provider->get_payment_gateways(), 'Provider should cache split gateway instances for the request.' );
+	}
+
+	/**
+	 * @testdox Classic checkout gateway publication honors the filtered availability catalog once.
+	 */
+	public function test_provider_filters_classic_checkout_gateway_publication_once(): void {
+		$filter_calls = 0;
+		add_filter(
+			'wcpay_upe_available_payment_methods',
+			static function ( array $payment_method_ids ) use ( &$filter_calls ): array {
+				++$filter_calls;
+
+				return array_values( array_diff( $payment_method_ids, array( 'bancontact' ) ) );
+			}
+		);
+		$provider = $this->create_provider_with_capabilities( array( 'bancontact_payments' => 'active' ) );
+
+		$gateway_ids = array_map(
+			static fn( NativeWooPaymentsGateway $gateway ): string => $gateway->id,
+			$provider->get_payment_gateways()
+		);
+		$provider->get_payment_gateways();
+
+		$this->assertNotContains( OrderPaymentStore::GATEWAY_ID . '_bancontact', $gateway_ids, 'A filtered method should not be published to classic checkout.' );
+		$this->assertSame( 1, $filter_calls, 'The request-scoped gateway map should compute availability only once.' );
 	}
 
 	/**

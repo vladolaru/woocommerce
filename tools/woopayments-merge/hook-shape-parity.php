@@ -43,6 +43,7 @@ function woopayments_hook_shape_probe_manifest(): array {
 		'wcpay_list_deposits_request' => $probe( 'list_deposits', 'List_Deposits::send', 'WooPaymentsDepositsRestController::get_deposits' ),
 		'wcpay_list_authorizations_request' => $probe( 'list_authorizations', 'List_Authorizations::send', 'WooPaymentsAuthorizationsRestController::get_authorizations' ),
 		'wcpay_metadata_from_order' => $probe( 'order_metadata', 'OrderService::get_payment_metadata', 'WooPaymentsIntentRequestBuilder::metadata_from_order' ),
+		'wcpay_upe_available_payment_methods' => $probe( 'payment_method_availability', 'WC_Payment_Gateway_WCPay::get_upe_available_payment_methods', 'WooPaymentsPaymentMethodRegistry::get_all' ),
 		'wcpay_payment_fields_js_config' => $probe( 'checkout_config', 'WC_Payments_Checkout::get_payment_fields_js_config', 'WooPaymentsCheckoutBridge::get_payment_fields_js_config' ),
 		'wc_payments_thank_you_page_bnpl_payment_method_logo_url' => $probe( 'order_success_logos', 'WC_Payments_Order_Success_Page::show_lpm_payment_method_name', 'WooPaymentsOrderSuccessPage::render_definition_title' ),
 		'wc_payments_thank_you_page_lpm_payment_method_logo_url' => $probe( 'order_success_logos', 'WC_Payments_Order_Success_Page::show_lpm_payment_method_name', 'WooPaymentsOrderSuccessPage::render_definition_title' ),
@@ -462,6 +463,27 @@ $write_object_property = static function ( object $object, string $property, $va
 
 	return true;
 };
+
+$run_until_hook(
+	'wcpay_upe_available_payment_methods',
+	static function () use ( $runtime_owner ): void {
+		if ( 'plugin' === $runtime_owner && class_exists( 'WC_Payments' ) && method_exists( 'WC_Payments', 'get_gateway' ) ) {
+			$gateway = WC_Payments::get_gateway();
+			if ( is_object( $gateway ) && method_exists( $gateway, 'get_upe_available_payment_methods' ) ) {
+				$gateway->get_upe_available_payment_methods();
+			}
+			return;
+		}
+
+		$registry_class = 'Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\PaymentMethods\\WooPaymentsPaymentMethodRegistry';
+		if ( 'native' === $runtime_owner && function_exists( 'wc_get_container' ) && class_exists( $registry_class ) ) {
+			$registry = wc_get_container()->get( $registry_class );
+			if ( is_object( $registry ) && method_exists( $registry, 'get_all' ) ) {
+				$registry->get_all();
+			}
+		}
+	}
+);
 
 $run_product_probe_group(
 	'WooPayments API client surrounding path',
@@ -2083,6 +2105,7 @@ $runtime_hook_probes = array(
 		$probe_order,
 		$payment_type,
 	),
+	'wcpay_upe_available_payment_methods'                            => array( array( 'card', 'bancontact' ) ),
 	'wcpay_payment_fields_js_config'                                 => array(
 		array(
 			'accountId'            => 'acct_hook_shape',

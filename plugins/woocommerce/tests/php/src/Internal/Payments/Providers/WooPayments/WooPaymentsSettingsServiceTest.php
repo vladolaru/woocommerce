@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
@@ -100,6 +101,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'wcpay_dev_mode' );
 		remove_all_filters( 'wcpay_test_mode' );
 		remove_all_filters( 'wcpay_test_mode_onboarding' );
+		remove_all_filters( 'wcpay_upe_available_payment_methods' );
 		remove_all_filters( 'woocommerce_native_woopayments_gateway_duplicate_payment_method_ids' );
 		remove_all_actions( 'wc_payment_gateways_initialized' );
 		if ( function_exists( 'WC' ) && WC()->payment_gateways() ) {
@@ -368,6 +370,131 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$this->assertArrayNotHasKey( 'is_migrating_stripe_billing', $settings );
 		$this->assertArrayNotHasKey( 'stripe_billing_subscription_count', $settings );
 		$this->assertArrayNotHasKey( 'stripe_billing_migrated_count', $settings );
+	}
+
+	/**
+	 * @testdox Public settings availability honors the registry-owned compatibility filter exactly once.
+	 */
+	public function test_get_settings_filters_available_payment_method_ids_once(): void {
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'upe_available_payment_methods'  => array( 'card', 'bancontact' ),
+				'upe_enabled_payment_method_ids' => array( 'card', 'bancontact' ),
+			)
+		);
+		$filter_calls = 0;
+		$filter_args  = array();
+		add_filter(
+			'wcpay_upe_available_payment_methods',
+			static function ( array $payment_method_ids ) use ( &$filter_calls, &$filter_args ): array {
+				++$filter_calls;
+				$filter_args = func_get_args();
+
+				return array_values( array_diff( $payment_method_ids, array( 'bancontact' ) ) );
+			},
+			10,
+			99
+		);
+
+		$settings = $this->sut->get_settings();
+
+		$this->assertSame( array( 'card' ), $settings['available_payment_method_ids'] );
+		$this->assertSame( array( 'card' ), $settings['enabled_payment_method_ids'] );
+		$this->assertSame( 1, $filter_calls, 'One public settings availability computation should dispatch the filter once.' );
+		$this->assertCount( 1, $filter_args, 'The pinned oracle passes no gateway or context argument.' );
+		$this->assertSame(
+			array(
+				'card',
+				'affirm',
+				'afterpay_clearpay',
+				'alipay',
+				'bancontact',
+				'au_becs_debit',
+				'eps',
+				'grabpay',
+				'ideal',
+				'link',
+				'multibanco',
+				'klarna',
+				'p24',
+				'sepa_debit',
+				'wechat_pay',
+				'apple_pay',
+				'google_pay',
+				'amazon_pay',
+			),
+			$filter_args[0],
+			'The settings path should filter the complete registry catalog before intersecting account availability.'
+		);
+	}
+
+	/**
+	 * @testdox Public settings filters the registry catalog before deriving fee-backed availability.
+	 */
+	public function test_get_settings_filters_catalog_before_reading_fee_backed_availability(): void {
+		$events          = array();
+		$account_service = new class( $events ) extends WooPaymentsAccountService {
+			/**
+			 * Recorded availability events.
+			 *
+			 * @var string[]
+			 */
+			private array $events;
+
+			/**
+			 * Create the recording account service.
+			 *
+			 * @param string[] $events Recorded availability events.
+			 */
+			public function __construct( array &$events ) {
+				$this->events = &$events;
+			}
+
+			/**
+			 * Record and return fee-backed account availability.
+			 *
+			 * @param bool $force_refresh Whether to force an account refresh.
+			 * @return array<string,mixed>
+			 */
+			public function get_cached_account_data( bool $force_refresh = false ): array {
+				unset( $force_refresh );
+				$this->events[] = 'account_fees';
+
+				return array(
+					'account_id' => 'acct_ordering_test',
+					'fees'       => array(
+						'card'       => array(),
+						'bancontact' => array(),
+					),
+				);
+			}
+		};
+		$account_service->init( new LegacyProxy() );
+		add_filter(
+			'wcpay_upe_available_payment_methods',
+			static function ( array $payment_method_ids ) use ( &$events ): array {
+				$events[] = 'availability_filter';
+
+				return array_values( array_diff( $payment_method_ids, array( 'bancontact' ) ) );
+			}
+		);
+		$service = new WooPaymentsSettingsService();
+		$service->init(
+			$account_service,
+			$this->api_client,
+			$this->pm_promotions_service,
+			$this->woopay_session_service,
+			null,
+			new WooPaymentsPaymentMethodRegistry()
+		);
+
+		$settings = $service->get_settings();
+
+		$this->assertSame( 'availability_filter', $events[0] );
+		$this->assertSame( 'account_fees', $events[1] );
+		$this->assertSame( 1, count( array_keys( $events, 'availability_filter', true ) ) );
+		$this->assertSame( array( 'card', 'apple_pay', 'google_pay' ), $settings['available_payment_method_ids'] );
 	}
 
 	/**

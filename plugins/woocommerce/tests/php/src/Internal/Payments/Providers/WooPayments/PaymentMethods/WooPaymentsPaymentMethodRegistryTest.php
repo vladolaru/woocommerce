@@ -60,6 +60,8 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
+		remove_all_filters( 'wcpay_upe_available_payment_methods' );
+
 		if ( null === $this->original_currency ) {
 			delete_option( 'woocommerce_currency' );
 		} else {
@@ -77,6 +79,51 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 		$this->assertNull( $this->registry->get( 'giropay' ), 'giropay is deprecated and should not be registered natively.' );
 		$this->assertNull( $this->registry->get( 'sofort' ), 'Sofort is deprecated and should not be registered natively.' );
 		$this->assertNull( $this->registry->get( 'jcb' ), 'The standalone extension has no JCB payment method definition.' );
+	}
+
+	/**
+	 * @testdox Availability filter receives one ordered ID-list argument exactly once and controls the catalog.
+	 */
+	public function test_availability_filter_receives_oracle_shape_once_and_controls_catalog(): void {
+		$filter_calls = 0;
+		$filter_args  = array();
+		add_filter(
+			'wcpay_upe_available_payment_methods',
+			static function ( array $payment_method_ids ) use ( &$filter_calls, &$filter_args ): array {
+				++$filter_calls;
+				$filter_args = func_get_args();
+
+				return array_diff( $payment_method_ids, array( 'bancontact' ) );
+			},
+			10,
+			99
+		);
+
+		$available_definitions = $this->registry->get_all();
+
+		$this->assertSame( 1, $filter_calls, 'One registry catalog computation should dispatch the availability filter once.' );
+		$this->assertCount( 1, $filter_args, 'The pinned oracle passes no gateway or context argument.' );
+		$this->assertSame( self::EXPECTED_DEFINITION_IDS, $filter_args[0], 'The filter should receive every definition ID in registry order.' );
+		$this->assertArrayNotHasKey( 'bancontact', $available_definitions, 'A filtered method should not remain in the available definition catalog.' );
+		$this->assertSame(
+			array_values( array_diff( self::EXPECTED_DEFINITION_IDS, array( 'bancontact' ) ) ),
+			array_keys( $available_definitions ),
+			'The remaining definition order should follow the normalized filtered ID list.'
+		);
+	}
+
+	/**
+	 * @testdox Availability filter preserves the oracle TypeError for a non-array return.
+	 */
+	public function test_availability_filter_rejects_non_array_return_like_oracle(): void {
+		add_filter(
+			'wcpay_upe_available_payment_methods',
+			static fn() => false
+		);
+
+		$this->expectException( \TypeError::class );
+
+		$this->registry->get_all();
 	}
 
 	/**

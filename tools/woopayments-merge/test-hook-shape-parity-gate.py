@@ -41,6 +41,7 @@ REQUIRED_HOOKS = [
     "wcpay_list_deposits_request",
     "wcpay_list_authorizations_request",
     "wcpay_metadata_from_order",
+    "wcpay_upe_available_payment_methods",
     "wcpay_payment_fields_js_config",
     "wc_payments_thank_you_page_bnpl_payment_method_logo_url",
     "wc_payments_thank_you_page_lpm_payment_method_logo_url",
@@ -98,6 +99,7 @@ PRIORITY_SURROUNDING_PATH_HOOKS = [
     "wcpay_list_disputes_request",
     "wcpay_list_deposits_request",
     "wcpay_list_authorizations_request",
+    "wcpay_upe_available_payment_methods",
     "woocommerce_payments_before_webhook_delivery",
     "woocommerce_payments_after_webhook_delivery",
     "wcpay_woopay_is_signed_with_blog_token",
@@ -145,6 +147,10 @@ class HookShapeFakeCheckout {
 }
 
 class HookShapeFakeGateway {
+	public function get_upe_available_payment_methods() {
+		return array_values( apply_filters( 'wcpay_upe_available_payment_methods', array( 'card', 'bancontact' ) ) );
+	}
+
 	public function process_payment( $order_id ) {
 		unset( $order_id );
 		try {
@@ -327,6 +333,15 @@ class NativeWooPaymentsGateway {
 			\apply_filters( 'wcpay_is_woopay_store_api_request', false );
 		}
 		return '';
+	}
+}
+
+namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods;
+
+class WooPaymentsPaymentMethodRegistry {
+	public function get_all(): array {
+		$ids = array_values( \apply_filters( 'wcpay_upe_available_payment_methods', array( 'card', 'bancontact' ) ) );
+		return array_fill_keys( $ids, true );
 	}
 }
 
@@ -627,6 +642,7 @@ def base_hooks() -> dict[str, dict]:
             ]
         },
         "wcpay_metadata_from_order": {"args": [metadata_arg, order_arg, payment_type_arg]},
+        "wcpay_upe_available_payment_methods": {"args": [array_arg]},
         "wcpay_payment_fields_js_config": {"args": [config_arg]},
         "wc_payments_thank_you_page_bnpl_payment_method_logo_url": {"args": [string_arg, string_arg]},
         "wc_payments_thank_you_page_lpm_payment_method_logo_url": {"args": [string_arg, string_arg]},

@@ -6,11 +6,14 @@ namespace Automattic\WooCommerce\Tests\Blocks\Payments\Integrations;
 use Automattic\WooCommerce\Blocks\Assets\Api as AssetApi;
 use Automattic\WooCommerce\Blocks\Payments\Integrations\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutBridge;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionService;
 use WP_UnitTestCase;
 
@@ -23,6 +26,8 @@ class WooPaymentsTest extends WP_UnitTestCase {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
+		remove_all_filters( 'wcpay_upe_available_payment_methods' );
+
 		foreach ( array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-woopay', 'wc-payment-method-woopayments-express-checkout' ) as $handle ) {
 			wp_dequeue_style( $handle );
 			wp_deregister_style( $handle );
@@ -481,6 +486,41 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		);
 		$this->assertSame( array( 'wc-payment-method-woopayments' ), $integrations[0]->get_payment_method_script_handles() );
 		$this->assertSame( array( 'wc-payment-method-woopayments' ), $integrations[1]->get_payment_method_script_handles() );
+	}
+
+	/**
+	 * @testdox Blocks integration publication honors the registry availability filter.
+	 */
+	public function test_get_payment_method_integrations_honors_registry_availability_filter(): void {
+		add_filter(
+			'wcpay_upe_available_payment_methods',
+			static fn( array $payment_method_ids ): array => array_values( array_diff( $payment_method_ids, array( 'bancontact' ) ) )
+		);
+		$gateway_adapter = $this->getMockBuilder( WooPaymentsProviderGatewayAdapter::class )
+			->disableOriginalConstructor()
+			->getMock();
+		$api_client      = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->getMock();
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->getMock();
+		$provider        = new WooPaymentsProvider();
+		$provider->init( $gateway_adapter, $api_client, $account_service, new WooPaymentsPaymentMethodRegistry() );
+		$asset_api       = $this->getMockBuilder( AssetApi::class )
+			->disableOriginalConstructor()
+			->getMock();
+		$bridge          = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
+			->disableOriginalConstructor()
+			->getMock();
+		$integration     = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $bridge, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service() );
+		$integration_ids = array_map(
+			static fn( WooPayments $payment_method ): string => $payment_method->get_name(),
+			$integration->get_payment_method_integrations()
+		);
+
+		$this->assertNotContains( 'woocommerce_payments_bancontact', $integration_ids, 'A filtered method should not be registered with Blocks checkout.' );
+		$this->assertContains( 'woocommerce_payments', $integration_ids, 'Unfiltered methods should remain registered with Blocks checkout.' );
 	}
 
 	/**

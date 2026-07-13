@@ -225,6 +225,13 @@ class WooPaymentsSettingsService {
 	private ?WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer = null;
 
 	/**
+	 * Payment method definition registry.
+	 *
+	 * @var WooPaymentsPaymentMethodRegistry|null
+	 */
+	private ?WooPaymentsPaymentMethodRegistry $payment_method_registry = null;
+
+	/**
 	 * Payment method promotions service.
 	 *
 	 * @var WooPaymentsPmPromotionsService
@@ -248,13 +255,15 @@ class WooPaymentsSettingsService {
 	 * @param WooPaymentsPmPromotionsService              $pm_promotions_service  PM promotions service.
 	 * @param WooPaymentsWooPaySessionService|null        $woopay_session_service       Optional WooPay session service.
 	 * @param WooPaymentsGatewaySettingsSynchronizer|null $gateway_settings_synchronizer Optional gateway settings synchronizer.
+	 * @param WooPaymentsPaymentMethodRegistry|null       $payment_method_registry       Optional payment method registry.
 	 */
-	final public function init( WooPaymentsAccountService $account_service, WooPaymentsApiClient $api_client, WooPaymentsPmPromotionsService $pm_promotions_service, ?WooPaymentsWooPaySessionService $woopay_session_service = null, ?WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer = null ): void {
+	final public function init( WooPaymentsAccountService $account_service, WooPaymentsApiClient $api_client, WooPaymentsPmPromotionsService $pm_promotions_service, ?WooPaymentsWooPaySessionService $woopay_session_service = null, ?WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer = null, ?WooPaymentsPaymentMethodRegistry $payment_method_registry = null ): void {
 		$this->account_service               = $account_service;
 		$this->api_client                    = $api_client;
 		$this->pm_promotions_service         = $pm_promotions_service;
 		$this->woopay_session_service        = $woopay_session_service;
 		$this->gateway_settings_synchronizer = $gateway_settings_synchronizer;
+		$this->payment_method_registry       = $payment_method_registry;
 	}
 
 	/**
@@ -301,10 +310,11 @@ class WooPaymentsSettingsService {
 	 * @return array<string,mixed>
 	 */
 	public function get_settings(): array {
-		$settings                     = $this->get_gateway_settings();
-		$account_fields               = $this->get_account_backed_response_fields( $settings );
-		$available_payment_method_ids = $this->get_available_payment_method_ids( $settings );
-		$enabled_payment_method_ids   = $this->sanitize_payment_method_ids(
+		$settings                        = $this->get_gateway_settings();
+		$filtered_payment_method_catalog = $this->get_payment_method_registry()->get_available_payment_method_ids();
+		$account_fields                  = $this->get_account_backed_response_fields( $settings );
+		$available_payment_method_ids    = $this->get_available_payment_method_ids( $settings, $filtered_payment_method_catalog );
+		$enabled_payment_method_ids      = $this->sanitize_payment_method_ids(
 			$this->get_array_setting( $settings, 'upe_enabled_payment_method_ids', array( 'card' ) ),
 			$available_payment_method_ids
 		);
@@ -775,35 +785,53 @@ class WooPaymentsSettingsService {
 	}
 
 	/**
+	 * Get the payment method definition registry.
+	 *
+	 * @return WooPaymentsPaymentMethodRegistry
+	 */
+	private function get_payment_method_registry(): WooPaymentsPaymentMethodRegistry {
+		if ( null === $this->payment_method_registry ) {
+			$this->payment_method_registry = wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class );
+		}
+
+		return $this->payment_method_registry;
+	}
+
+	/**
 	 * Get payment method IDs available to the connected account.
 	 *
-	 * @param array<string,mixed> $settings Gateway settings.
+	 * @param array<string,mixed> $settings         Gateway settings.
+	 * @param string[]|null       $filtered_catalog Optional pre-filtered payment method catalog.
 	 * @return string[]
 	 */
-	private function get_available_payment_method_ids( array $settings ): array {
+	private function get_available_payment_method_ids( array $settings, ?array $filtered_catalog = null ): array {
+		$filtered_catalog         = $filtered_catalog ?? $this->get_payment_method_registry()->get_available_payment_method_ids();
 		$configured_available_ids = $settings['upe_available_payment_methods'] ?? null;
 		if ( is_array( $configured_available_ids ) && ! empty( $configured_available_ids ) ) {
-			return $this->apply_payment_method_feature_policy(
+			$available_ids = $this->apply_payment_method_feature_policy(
 				$this->sanitize_payment_method_ids( $configured_available_ids, self::SUPPORTED_PAYMENT_METHOD_IDS )
 			);
-		}
+		} else {
+			$account_data = $this->account_service->get_cached_account_data();
+			$fees         = is_array( $account_data['fees'] ?? null ) ? array_keys( $account_data['fees'] ) : array();
+			if ( ! empty( $fees ) ) {
+				$available_ids = $this->sanitize_payment_method_ids( $fees, self::SUPPORTED_PAYMENT_METHOD_IDS );
+				if ( in_array( 'card', $available_ids, true ) ) {
+					$available_ids[] = 'apple_pay';
+					$available_ids[] = 'google_pay';
+				}
 
-		$account_data = $this->account_service->get_cached_account_data();
-		$fees         = is_array( $account_data['fees'] ?? null ) ? array_keys( $account_data['fees'] ) : array();
-		if ( ! empty( $fees ) ) {
-			$available_ids = $this->sanitize_payment_method_ids( $fees, self::SUPPORTED_PAYMENT_METHOD_IDS );
-			if ( in_array( 'card', $available_ids, true ) ) {
-				$available_ids[] = 'apple_pay';
-				$available_ids[] = 'google_pay';
+				$available_ids = $this->apply_payment_method_feature_policy( array_values( array_unique( $available_ids ) ) );
+			} else {
+				$enabled_ids   = $this->get_array_setting( $settings, 'upe_enabled_payment_method_ids', array( 'card' ) );
+				$available_ids = $this->apply_payment_method_feature_policy(
+					$this->sanitize_payment_method_ids( array_merge( array( 'card' ), $enabled_ids ), self::SUPPORTED_PAYMENT_METHOD_IDS )
+				);
 			}
-
-			return $this->apply_payment_method_feature_policy( array_values( array_unique( $available_ids ) ) );
 		}
 
-		$enabled_ids = $this->get_array_setting( $settings, 'upe_enabled_payment_method_ids', array( 'card' ) );
-
-		return $this->apply_payment_method_feature_policy(
-			$this->sanitize_payment_method_ids( array_merge( array( 'card' ), $enabled_ids ), self::SUPPORTED_PAYMENT_METHOD_IDS )
+		return array_values(
+			array_intersect( $filtered_catalog, $available_ids )
 		);
 	}
 

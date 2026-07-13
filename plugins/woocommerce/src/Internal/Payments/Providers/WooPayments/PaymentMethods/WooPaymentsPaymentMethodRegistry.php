@@ -62,7 +62,34 @@ class WooPaymentsPaymentMethodRegistry {
 	public function get_all(): array {
 		$this->initialize_definitions();
 
-		return $this->definitions;
+		$available_definitions = array();
+		foreach ( $this->get_available_payment_method_ids() as $payment_method_id ) {
+			if ( is_string( $payment_method_id ) && isset( $this->definitions[ $payment_method_id ] ) ) {
+				$available_definitions[ $payment_method_id ] = $this->definitions[ $payment_method_id ];
+			}
+		}
+
+		return $available_definitions;
+	}
+
+	/**
+	 * Get available payment method IDs in extension registry order.
+	 *
+	 * @return string[]
+	 */
+	public function get_available_payment_method_ids(): array {
+		$this->initialize_definitions();
+
+		/**
+		 * Filters the payment methods available to WooPayments.
+		 *
+		 * @param string[] $payment_method_ids Available payment method IDs.
+		 *
+		 * @since 11.0.0
+		 */
+		$payment_method_ids = apply_filters( 'wcpay_upe_available_payment_methods', array_keys( $this->definitions ) );
+
+		return array_values( $payment_method_ids );
 	}
 
 	/**
