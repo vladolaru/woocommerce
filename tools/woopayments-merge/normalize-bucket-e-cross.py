@@ -18,15 +18,16 @@ from typing import Any
 
 
 ID_PATTERNS = (
-    # Stripe-shaped ids only: the suffix must contain a digit and be 8+ chars, so
-    # ordinary English after prefix-like words ("re_authorization", "in_progress",
-    # "po_ number") is NOT masked — a changed note wording stays visible to the diff.
+    # Stripe-shaped ids only: the suffix must be a single underscore-free alnum run,
+    # 8+ chars, containing a digit — matching how Stripe mints ids. Ordinary English
+    # after prefix-like words stays visible to the diff, including digit-bearing
+    # underscore-joined tokens ("re_authorization", "in_progress", "in_2024_report").
     # dp_/du_ (disputes), in_ (invoices), sub_ (subscriptions) are included so real
     # provider ids embedded in notes don't produce cross-store false diffs.
     (
         re.compile(
             r"\b(ch|py|pi|seti|pm|cus|acct|evt|req|re|po|src|tok|txn|dp|du|in|sub)"
-            r"_(?=[A-Za-z0-9_]*\d)[A-Za-z0-9][A-Za-z0-9_]{7,}\b"
+            r"_(?=[A-Za-z0-9]*\d)[A-Za-z0-9]{8,}\b"
         ),
         r"\1_<id>",
     ),
