@@ -120,7 +120,7 @@ Legend — **Layers:** `D` deterministic, `A` agent-driven, `D+A` both (overlap)
 |----|------|--------|-----------------------|----------------|--------|
 | SS-01 | Purchase subscription (initial) | D+A | Subscription+order; token saved | Mandate; no save-PM checkbox | PENDING |
 | SS-02 | Change PM → new card | D+A | PM updated; renews on it | "Change payment"; PM row updates | PENDING |
-| SS-03 | **Change PM → saved card** | D+A | Saved token set; renews on it | Saved-card selectable in change-payment | TARGET-CONFIRMED (runner-unverified; ref not driven, persistence blocked — see evidence/SS-03/) |
+| SS-03 | **Change PM → saved card** | D+A | Saved token set; renews on it | Saved-card selectable in change-payment | PASS (runner-verified 2026-07-14: browser Layer A both stores + renewal D layer with provider reconciliation; run archived under evidence/runs/) |
 | SS-04 | Set / change default PM | D | Default updated; renewals use it | Set-default control | PENDING |
 | SS-05 | Renew now (manual, shopper) | D+A | Renewal order paid; date advances | "Renew now" + result | PENDING |
 | SS-06 | Cancel + re-subscribe | D+A | Cancel + new subscription | Cancel control; re-subscribe | PENDING |
@@ -139,7 +139,7 @@ Legend — **Layers:** `D` deterministic, `A` agent-driven, `D+A` both (overlap)
 | MS-04 | Promote w/ coupon | D | Schedule reflects coupon | Coupon effect | PENDING |
 | MS-05 | Renew automatically (scheduled) | D | Charges on date; email; active; next date | Renewal order + email | PENDING |
 | MS-06 | Renew manually (admin) | D+A | Renewal order paid; date advances | "Renew" action | PENDING |
-| MS-07 | **Admin change payment method** | D+A | Admin sets/corrects token; renewal uses it | WooPayments selectable AND editable token fields render+save | TARGET-CONFIRMED (runner-unverified; ref browser partial, renewal via substitute fixture — see evidence/MS-07/) |
+| MS-07 | **Admin change payment method** | D+A | Admin sets/corrects token; renewal uses it | WooPayments selectable AND editable token fields render+save | PASS (runner-verified 2026-07-14: admin browser Layer A both stores + renewal D layer with provider reconciliation; run archived under evidence/runs/) |
 
 ### Merchant — Order (capture / refunds)
 
@@ -223,7 +223,7 @@ FAILED on native per the certification; must flip to PASS (verified both stores,
 - **SC-04 / SS-03 — saved-card (B2):** classic place-order always created a new PaymentMethod; Blocks had no `savedTokenComponent` (saved-token SCA unhandled). Saved cards default on.
 - **MS-07 — admin change PM (B3):** WooPayments selectable but no editable token fields; save left it unbillable. Needs `woocommerce_subscription_payment_meta` family.
 
-Current state: **SC-04 (B2) is runner-verified PASS** (2026-07-14: context-bound `sc04-saved-card-gate.py` run — saved-token selection and saved-token SCA on classic and Blocks, both stores, with bound browser + authoritative order/token state, ingested through `run.sh`). SS-03 and MS-07 still carry `TARGET-CONFIRMED (runner-unverified)` — Phase-2 ad-hoc observation confirmed the remediated behavior on the native target, but no runner-ingested, reference-complete evidence exists yet. Neither counts as PASS for enablement until re-earned per the status legend above.
+Current state: **all three are runner-verified PASS (2026-07-14)**. SC-04: context-bound `sc04-saved-card-gate.py` run (saved-token selection + saved-token SCA, classic and Blocks, both stores). SS-03: browser change-payment on both stores (saved-token list, persistence) plus driven renewals charging the chosen tokens, provider-reconciled. MS-07: admin edit on both stores (WooPayments selectable, `woocommerce_subscription_payment_meta` token fields editable, save persists) plus driven renewals charging the admin-set tokens, provider-reconciled. All three were ingested through `run.sh` against a live evidence context; runs archived under `evidence/runs/`.
 
 ## Coverage ledger (no silent omissions)
 

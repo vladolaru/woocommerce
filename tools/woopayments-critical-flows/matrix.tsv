@@ -23,7 +23,7 @@ SP-04	Delete PM	D+A	comparable	PENDING
 SP-05	Saved-PM management / set default	D+A	comparable	PENDING
 SS-01	Purchase subscription (initial)	D+A	comparable	PENDING
 SS-02	Change PM → new card	D+A	comparable	PENDING
-SS-03	Change PM → saved card	D+A	comparable	TARGET-CONFIRMED (runner-unverified; ref not driven, persistence blocked — see evidence/SS-03/)
+SS-03	Change PM → saved card	D+A	comparable	PASS (runner-verified 2026-07-14: browser Layer A both stores + renewal D layer with provider reconciliation; run archived under evidence/runs/)
 SS-04	Set / change default PM	D	comparable	PENDING
 SS-05	Renew now (manual, shopper)	D+A	comparable	PENDING
 SS-06	Cancel + re-subscribe	D+A	comparable	PENDING
@@ -37,7 +37,7 @@ MS-03	Suspend + resume	D+A	comparable	PENDING
 MS-04	Promote w/ coupon	D	comparable	PENDING
 MS-05	Renew automatically (scheduled)	D	comparable	PENDING
 MS-06	Renew manually (admin)	D+A	comparable	PENDING
-MS-07	Admin change payment method	D+A	comparable	TARGET-CONFIRMED (runner-unverified; ref browser partial, renewal via substitute fixture — see evidence/MS-07/)
+MS-07	Admin change payment method	D+A	comparable	PASS (runner-verified 2026-07-14: admin browser Layer A both stores + renewal D layer with provider reconciliation; run archived under evidence/runs/)
 MO-01	Manual capture (order)	D+A	comparable	PENDING
 MO-02	Manual capture — Uncaptured tab	D+A	comparable	PENDING
 MO-03	Manual capture — payment-details page	D+A	comparable	PENDING
