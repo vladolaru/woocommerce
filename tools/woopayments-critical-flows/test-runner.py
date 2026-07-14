@@ -7,6 +7,7 @@ import importlib.util
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import tempfile
 import time
@@ -999,22 +1000,28 @@ printf '%s\\n' '{"op":"charge","order_id":777,"charge_id":"ch_full","intent_id":
 
 
 def test_full_scope_run_refuses_green_when_matrix_rows_are_unspecced() -> None:
-    # The uncovered->refuse path must stay pinned even now that the real matrix is
-    # fully spec'd: a synthetic matrix with an extra row that no spec covers must
-    # count as uncovered and force blocked/exit 3 on an otherwise-green run.
+    # The uncovered->refuse path must stay pinned in ISOLATION now that the real
+    # matrix is fully spec'd: an otherwise-green full-scope run (a minimal flows dir
+    # whose single flow passes on both stores — zero failed, zero blocked) must
+    # still land blocked/exit 3 purely because a matrix row has no spec at all.
     with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
         evidence_dir = Path(tmp)
+        flows_dir = evidence_dir / "flows"
+        flows_dir.mkdir()
+        shutil.copy2(RUNNER.parent / "flows/SC-01-card-checkout.sh", flows_dir / "SC-01-card-checkout.sh")
+        # The flow sources ../lib/common.sh relative to its own location.
+        (evidence_dir / "lib").mkdir()
+        shutil.copy2(RUNNER.parent / "lib/common.sh", evidence_dir / "lib/common.sh")
         matrix_tsv = evidence_dir / "matrix.tsv"
-        real_matrix = (RUNNER.parent / "matrix.tsv").read_text(encoding="utf-8")
         matrix_tsv.write_text(
-            real_matrix + "ZZ-99\tSynthetic uncovered row\tD+A\tcomparable\tPENDING\n",
+            "id\ttitle\tlayers\toracle\tstatus\n"
+            "SC-01\tCard checkout, shortcode (new card)\tD+A\tcomparable\tPENDING\n"
+            "ZZ-99\tSynthetic uncovered row\tD+A\tcomparable\tPENDING\n",
             encoding="utf-8",
         )
         flow_driver = evidence_dir / "fake-flow-drive.sh"
         fake_ref_wp = evidence_dir / "fake-ref-wp.sh"
         fake_target_wp = evidence_dir / "fake-target-wp.sh"
-        fake_i18n_gate = evidence_dir / "fake-i18n-gate.sh"
-        fake_mc_gate = evidence_dir / "fake-mc-rates-gate.sh"
 
         write_executable(
             flow_driver,
@@ -1024,8 +1031,6 @@ printf '%s\\n' '{"op":"charge","order_id":778,"charge_id":"ch_syn","intent_id":"
         )
         write_executable(fake_ref_wp, sc01_fake_wp_source("plugin", "http://ref.fake.test", "pi_syn", "ch_syn"))
         write_executable(fake_target_wp, sc01_fake_wp_source("native", "http://target.fake.test", "pi_syn", "ch_syn"))
-        write_executable(fake_i18n_gate, "#!/usr/bin/env bash\nexit 0\n")
-        write_executable(fake_mc_gate, "#!/usr/bin/env bash\nexit 0\n")
 
         result = run_runner(
             "--store",
@@ -1041,21 +1046,22 @@ printf '%s\\n' '{"op":"charge","order_id":778,"charge_id":"ch_syn","intent_id":"
                 "SC01_FLOW_DRIVER": str(flow_driver),
                 "REF_WP_COMMAND": str(fake_ref_wp),
                 "TARGET_WP_COMMAND": str(fake_target_wp),
-                "I18N_NOTES_GATE": str(fake_i18n_gate),
-                "MC_RATES_GATE": str(fake_mc_gate),
                 "MATRIX_TSV": str(matrix_tsv),
+                "FLOWS_DIR": str(flows_dir),
             },
         )
 
         assert result.returncode == 3, result.stdout + result.stderr
         rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
-        matrix = rollup["matrix"]
-        assert matrix["total"] == 77
-        assert "ZZ-99" in matrix["uncovered_ids"]
-        assert rollup["status"] != "pass"
-        assert rollup["status"] == "blocked"
+        # Otherwise green: the only flow passed on both stores, nothing failed or blocked.
+        assert rollup["summary"]["passed"] == 2
         assert rollup["summary"]["failed"] == 0
-        assert rollup["summary"]["passed"] >= 6
+        assert rollup["summary"]["blocked"] == 0
+        matrix = rollup["matrix"]
+        assert matrix["total"] == 2
+        assert matrix["uncovered_ids"] == ["ZZ-99"]
+        # The uncovered row ALONE forces the refusal.
+        assert rollup["status"] == "blocked"
 
 
 def test_partial_run_rollup_is_marked_partial_and_keeps_status_semantics() -> None:

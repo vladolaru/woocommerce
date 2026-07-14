@@ -169,6 +169,9 @@ AGENT_QUEUE="$EVIDENCE_DIR/agent-queue.txt"
 I18N_NOTES_GATE="${I18N_NOTES_GATE:-$REPO_ROOT/tools/woopayments-merge/i18n-notes-gate.sh}"
 MC_RATES_GATE="${MC_RATES_GATE:-$REPO_ROOT/tools/woopayments-merge/mc-rates-gate.sh}"
 MATRIX_TSV="${MATRIX_TSV:-$DIR/matrix.tsv}"
+# Test seam: lets the self-tests run against a minimal flows set so properties like
+# "uncovered matrix rows alone refuse green" can be pinned in isolation.
+FLOWS_DIR="${FLOWS_DIR:-$DIR/flows}"
 PASS_COUNT=0
 FAIL_COUNT=0
 BLOCKED_COUNT=0
@@ -473,7 +476,7 @@ fi
 : > "$RESULTS_JSONL"
 if [ "$LAYER" != "agent" ]; then
   echo "Layer D: running deterministic flow scripts (flows/*.sh)"
-  for f in "$DIR"/flows/*.sh; do
+  for f in "$FLOWS_DIR"/*.sh; do
     [ -e "$f" ] || continue
     base="$(basename "$f" .sh)"
     [ -n "$ONLY_FLOW" ] && [[ "$base" != "$ONLY_FLOW"* ]] && continue
@@ -499,7 +502,7 @@ if [ "$LAYER" != "agent" ]; then
       record_result "$base" deterministic "$s" "$status" "$rc"
     done
   done
-  for f in "$DIR"/flows/*.md; do
+  for f in "$FLOWS_DIR"/*.md; do
     [ -e "$f" ] || continue
     spec_requires_agent_layer "$f" && continue
     base="$(basename "$f" .md)"
@@ -524,7 +527,7 @@ fi
 if [ "$LAYER" != "deterministic" ]; then
   echo "Layer A: ingesting agent results from $AGENT_RESULTS_DIR or building dispatch manifest (flows/*.md)"
   : > "$AGENT_QUEUE"
-  for f in "$DIR"/flows/*.md; do
+  for f in "$FLOWS_DIR"/*.md; do
     [ -e "$f" ] || continue
     base="$(basename "$f" .md)"
     [ -n "$ONLY_FLOW" ] && [[ "$base" != "$ONLY_FLOW"* ]] && continue
