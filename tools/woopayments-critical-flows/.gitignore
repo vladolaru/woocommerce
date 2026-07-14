@@ -1,0 +1,4 @@
+# Run output (per-flow verdicts, queues, browser/state artifacts) — machine-generated
+# per run, never committed. The suite's sources, specs, and tests ARE tracked.
+evidence/
+__pycache__/

@@ -1,0 +1,171 @@
+# WooPayments → WooCommerce core — merge transition tooling
+
+Transition-only tooling for merging the WooPayments client into WooCommerce core
+(Option C, "truly native"). Everything here is scaffolding for the staged merge and
+is **removed at stage A6 cleanup** — it is not part of the shipped product.
+
+Design + staging: `~/Work/a8c/ai-prompts/goals/woopayments-merge/`
+(`design-spec.md`, `staging-outline.md`, `follow-up/implementation-plan.md`,
+`follow-up/bc-manifest.md`, `follow-up/bc-extraction/`).
+
+> **Local-only.** All verification runs against the **local** stores and the **local**
+> WPCOM env, plus the **Stripe CLI** for raw account/event data. Never the
+> remote WPCOM sandbox.
+
+> **Start here for running the merge:** [`HARNESS.md`](HARNESS.md) — the implementor runbook
+> (env, gates, the one-command loop `verify.sh`, shadow-mode/cross-store activation, decision
+> rules, how to extend). This README is the per-tool reference.
+
+---
+
+## Lifecycle — keeping this OUT of WooCommerce core
+
+This harness is **transition-only** and must not land in WooCommerce trunk when the merge PRs merge.
+Three properties already protect that, plus one action to take:
+
+- **It never ships to users.** It lives at repo-root `tools/`, **outside `plugins/woocommerce/`**, so it
+  is never in the built/released plugin zip (built from `plugins/woocommerce/` only) — true even now.
+- **It is fully self-contained.** Everything is in this one directory; no shipped code, CI, or build
+  config references it. `git rm -r tools/woopayments-merge` removes it with zero impact on core.
+- **Its commits are separable.** Every harness commit touches only this directory; the shipped A0
+  product (the `NativePaymentsRuntimeArbiter` + its test + changelog, under `plugins/woocommerce/`) is
+  in separate commits.
+
+**Action — pick one so it never reaches trunk:**
+
+- *Recommended:* don't include this directory in the core-code PR(s) — ship only the product commits
+  (keep the harness on a parallel tooling branch, or strip it before the final merge).
+- *Or:* let it ride the branch and delete it as the **first action of stage A6**:
+  `git rm -r tools/woopayments-merge && git commit -m "Remove WooPayments-merge transition harness"`.
+
+The WooPayments plugin is **unmodified** by this merge — there is no plugin-side code here or in the
+plugin repo. A site moves to native by **deactivating** the plugin (see §1).
+
+---
+
+## 1. The runtime arbiter (A0 keystone) — built
+
+`plugins/woocommerce/src/Internal/Payments/NativePaymentsRuntimeArbiter.php`
+
+Single source of truth for **which payments runtime owns a site** — the standalone
+WooPayments plugin or core-native — guaranteeing mutual exclusion (design-spec §4.5).
+Every core-native registration must consult `should_native_register()` before doing
+anything mutating; while the plugin owns the runtime, native registers nothing.
+
+Detection uses the **active-plugins list** (per-site `active_plugins` + network
+`active_sitewide_plugins`), which is reliable in the early-boot window and correct
+per-site under multisite — `class_exists('WC_Payments')` is only a fallback, because
+the plugin defines that bootstrap class late (`wcpay_init()` at `plugins_loaded:11`,
+an explicit require, not the autoloader).
+
+Dormant by default: `OWNER_NATIVE` requires the `woocommerce_native_payments_enabled`
+flag (off in A0) **and** the plugin to be inactive. While the plugin is active, native is
+dormant — **plugin-wins is the only state on any site with the plugin active**, regardless
+of native's flag.
+
+### How a site moves to native (the cutover, A5 — `design-spec.md` §4.5a)
+
+The plugin is unmodified; a site moves to native by **deactivating** the plugin, and core owns
+that UX (modeled on core's own merged-package handling, `src/Packages.php`):
+
+- **Soft phase:** core detects the active plugin (`is_plugin_runtime_active()`) and shows an
+  admin-wide notice — *"WooPayments is now part of WooCommerce core — disable the WooPayments
+  extension to continue processing payments with WooPayments"* — with a one-click **Disable
+  WooPayments** button (`deactivate_plugins()` → reload → reassurance notice).
+- **Mandatory phase (gated on `WC_VERSION >= X`):** core auto-deactivates the plugin on the
+  update/activate request + an activation guard blocking re-activation.
+- **Money-safety:** the one-request deactivation overlap is plugin-owned (arbiter → `OWNER_PLUGIN`),
+  so native stays dormant that request and takes over from the next — no dual submit.
+
+The arbiter is the per-request safety; the notice/auto-deactivation component (A5) is the merchant-
+facing migration. Both are transitional — removed once the plugin is sunset.
+
+---
+
+## 2. BC-manifest drift gate (A0) — built
+
+`bc-drift-gate.sh` — re-runs the BC extraction commands (the "Regeneration Commands"
+blocks in `follow-up/bc-extraction/*.md`) against the **live** WooPayments source,
+normalizes each category into a churn-stable surface signature, and diffs against a
+committed baseline in `bc-drift-baseline/`. Any undispositioned add/remove of a BC
+surface line fails the gate. It is a **drift gate, not a re-extraction**: the prose
+inventories remain the human disposition record; the baseline is the machine snapshot.
+
+```sh
+# Check (CI + local gate): exit 1 on any drift.
+tools/woopayments-merge/bc-drift-gate.sh
+
+# Accept the current live surface as the new baseline (after dispositioning).
+tools/woopayments-merge/bc-drift-gate.sh --update
+
+# Point at a specific WooPayments checkout (CI):
+WCPAY_SRC=/path/to/woocommerce-payments tools/woopayments-merge/bc-drift-gate.sh
+```
+
+Categories & captured baseline sizes (raw match-lines; higher than the corpus's deduped
+prose counts because each grep hit is one line): `scheduler` 161, `php_api` 307,
+`persisted_data` 755, `endpoints` 63, `hooks_filters` 91, `tracks` 159.
+
+The **`tracks`** category enforces the non-negotiable telemetry-continuity contract
+(`bc-manifest.md` §0.3/§3.6, `bc-extraction/tracks-events.md`): the roster of Tracks
+emitters (PHP recorders + JS `recordEvent` call sites + the `Track_Events` constants) must
+not silently change for surfaces that survive the merge. This is the *static, name-level*
+half; *prop-level* parity is the runtime Tracks-parity check (§3).
+
+**When the gate fails:** disposition each new/removed row in `bc-manifest.md`
+(PRESERVE / PRESERVE-AS-FACADE / REDESIGN-FREELY / EXTRACT / DROP / DROP-AFTER-MIGRATION),
+then `--update` to accept the new baseline. This is the check that would have caught the
+"two AS groups" slip (implementation-plan §1).
+
+---
+
+## 3. Verification harness (A0 §1) — status
+
+The harness is the **delta** on top of the already-wired env + existing test suites
+(`tests/e2e-pw`, `playwright.performance.config.ts`, `tests/performance`,
+`tests/metrics`, `tests/php`; WooPayments `tests/e2e` + `tests/fixtures`; WP-CLI):
+
+| Piece | Status | Notes |
+|---|---|---|
+| **Orchestrator** | **built** | `verify.sh` — one entry point; runs every gate, per-gate verdict + aggregate exit; self-check (A0) + cross-store (A1). 5/5 PASS on the unmodified plugin |
+| Manifest drift check | **built** (§2) | `bc-drift-gate.sh`; 6 categories incl. `tracks`; PASS + fail-closed proven |
+| Bucket-E surface dump | **built** | `dump-bucket-e-surface.{php,sh}` — per-order status/meta/notes/refunds; deterministic |
+| Parity differ | **built** | `parity-diff.sh` — self-check PASS on unmodified plugin; fail-closed proven; env-noise excluded at data level |
+| Perf baseline + check gate | **built** | `perf-baseline.{php,sh}` + `perf-baseline.json` — narrow gateway-resolution query-count smoke gate; broad §5.3 perf remains a separate stage gate |
+| Financial reconciliation matrix | **built; e2e proven on driven dimensions** | `financial-reconcile.sh` + `financial-reconcile-normalize.py` — reconciles charge amount/currency, capture state, refunds, fee/net, disputes, payouts, and multi-currency meta against Stripe raw source for supplied orders; fail-closed |
+| **Flow drivers** | **built** | `flow-drive.sh` — charge/refund/dispute/payout via Test Lab → structured order ids the gates consume |
+| **Tracks parity** | **built** | static: the `tracks` drift category. runtime: `tracks-parity.sh` + `tracks-normalize.py` capture at the **wpcom-local sink** (both client `browser_tkq` + server `server_pixel`, attributed by `store_id`). `verify.sh --with-tracks` stages local-helper capture and WooCommerce usage tracking for the capture window, then restores both stores. The normalizer drops global context such as `coming_soon` and `role`, masks volatile values, and FAILs on payment-surface type/enum drift. Enforces `bc-manifest.md` §0.3/§3.6 |
+
+The A0 harness gate — "reproduces the status quo on the *unmodified* plugin before any
+native code exists" — **is met**: `verify.sh --self-check` is 5/5 green on the unmodified plugin
+(drift incl. `tracks`, flow-drive, Bucket-E parity, perf, financial reconciliation matrix on driven order state).
+The **cross-store** parity differs (Bucket-E **and** Tracks props) and the client-side Tracks spy
+become load-bearing at **A1 shadow mode** (no native output to diff against until then); at A0 they
+are validated in self-check. See [`HARNESS.md`](HARNESS.md) for the full operating loop.
+
+### Listeners (operator-run)
+
+Both stores route provider requests and events through local WPCOM. Before any live gate, require
+read-only store probes to confirm `wcpaydev_local_wpcom_base_url=http://wpcom.localhost:30001`,
+`wcpaydev_proxy=0`, a working Jetpack connection, and a healthy `wpcom-local transact status`.
+The operator runs `wpcom-local transact listen` in a long-lived shell. Do not use the legacy
+`transact-platform-server` listener, restart local WPCOM from the harness, or access the remote
+WPCOM sandbox. Payment-method country/business/capability restrictions remain explicit manual-test
+rows rather than reasons to fabricate account data or weaken Core eligibility.
+
+## 4. Cutover — how a site moves to native (A5, core-side, not yet built)
+
+There is **no plugin-side code** — the WooPayments plugin is unmodified. A site moves to native by
+**deactivating** the plugin, and core owns that UX (modeled on core's merged-package handling,
+`src/Packages.php`; full spec in `design-spec.md` §4.5a):
+
+- **Soft phase:** core detects the active plugin (the arbiter's `is_plugin_runtime_active()`) and
+  shows an admin-wide notice with a one-click **Disable WooPayments** button → `deactivate_plugins()`
+  → reload → reassurance notice.
+- **Mandatory phase (gated on `WC_VERSION >= X`):** core auto-deactivates the plugin on the
+  update/activate request + an activation guard against re-activation.
+- **Money-safety:** the one-request deactivation overlap is plugin-owned (arbiter → `OWNER_PLUGIN`);
+  native takes over from the next request.
+
+This component is built at **A5 (cutover)**; the arbiter (§1) is the per-request safety it relies on.
+Both are transitional — removed once the plugin is sunset.
