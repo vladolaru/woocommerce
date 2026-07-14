@@ -131,7 +131,7 @@ def test_update_refuses_empty_probe_output_and_writes_nothing(tmp_path: Path) ->
 
     update = run("bash", str(gate), "--update", cwd=gate.parent, env=env)
 
-    assert update.returncode == 2, update.stdout
+    assert update.returncode == 3, update.stdout
     assert "tracks" in update.stdout
     assert "refusing --update" in update.stdout
     assert not (gate.parent / "bc-drift-baseline").exists(), "refused update must write nothing"
@@ -154,7 +154,7 @@ def test_update_refusal_does_not_clobber_existing_baseline(tmp_path: Path) -> No
 
     update = run("bash", str(gate), "--update", cwd=gate.parent, env=env)
 
-    assert update.returncode == 2, update.stdout
+    assert update.returncode == 3, update.stdout
     assert (gate.parent / "bc-drift-baseline/tracks.txt").read_text(encoding="utf-8") == before
     assert (
         gate.parent / "bc-drift-baseline/source-provenance.txt"

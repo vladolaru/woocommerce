@@ -151,7 +151,7 @@ def test_self_check_missing_order_is_blocked_not_pass(tmp_path: Path) -> None:
 
     result = run_gate(gate, env, "--self-check", ref_wp, "999999")
 
-    assert result.returncode == 2, result.stdout
+    assert result.returncode == 3, result.stdout
     assert "PASS" not in result.stdout
     assert "999999" in result.stdout
     assert "not_found" in result.stdout
@@ -164,7 +164,7 @@ def test_cross_store_missing_on_both_sides_is_blocked_not_pass(tmp_path: Path) -
         gate, env, "--ref", ref_wp, "--target", target_wp, "--target-ids", "888888", "999999"
     )
 
-    assert result.returncode == 2, result.stdout
+    assert result.returncode == 3, result.stdout
     assert "PASS" not in result.stdout
 
 
@@ -174,7 +174,7 @@ def test_cross_store_missing_on_one_side_is_blocked(tmp_path: Path) -> None:
 
     result = run_gate(gate, env, "--ref", ref_wp, "--target", target_wp, "--target-ids", "20", "10")
 
-    assert result.returncode == 2, result.stdout
+    assert result.returncode == 3, result.stdout
     assert "PASS" not in result.stdout
 
 
@@ -252,7 +252,7 @@ def test_record_count_mismatch_is_blocked(tmp_path: Path) -> None:
 
     result = run_gate(gate, env, "--self-check", ref_wp, "10", "11")
 
-    assert result.returncode == 2, result.stdout
+    assert result.returncode == 3, result.stdout
     assert "PASS" not in result.stdout
 
 

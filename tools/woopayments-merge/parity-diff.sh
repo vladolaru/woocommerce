@@ -149,12 +149,12 @@ else
 fi
 
 if [ -z "$left" ]; then
-	echo "FAIL: $LEFT_LABEL produced no surface output (store unreachable or no orders)." >&2
-	exit 2
+	echo "BLOCKED: $LEFT_LABEL produced no surface output (store unreachable or no orders) — not a parity result." >&2
+	exit 3
 fi
 if [ -z "$right" ]; then
-	echo "FAIL: $RIGHT_LABEL produced no surface output (store unreachable or no orders) — not a parity regression, an infra failure." >&2
-	exit 2
+	echo "BLOCKED: $RIGHT_LABEL produced no surface output (store unreachable or no orders) — not a parity regression, an infra failure." >&2
+	exit 3
 fi
 
 # A parity verdict may only rest on records that were positively captured. An order the
@@ -190,7 +190,7 @@ for error in errors:
 	if [ -n "$problems" ]; then
 		echo "BLOCKED: $label surface contains unverifiable records — not a parity result:" >&2
 		printf '%s\n' "$problems" | sed 's/^/    /' >&2
-		exit 2
+		exit 3
 	fi
 }
 

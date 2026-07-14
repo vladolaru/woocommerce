@@ -257,7 +257,7 @@ PY
 			if [ ! -s "$capture" ]; then
 				echo "BLOCKED: empty Tracks capture: $capture (0 events)." >&2
 				echo "  Check that the flow was driven, the wpcom-local sink is receiving, usage tracking is on, and --store matches the store's woocommerce_store_id." >&2
-				exit 2
+				exit 3
 			fi
 		done
 		d="$(diff "$A" "$B")"

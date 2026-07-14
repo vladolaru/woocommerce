@@ -41,9 +41,9 @@ elif [ -n "${1:-}" ]; then
 fi
 
 if [ ! -d "$WCPAY_SRC/includes" ]; then
-	echo "ERROR: WooPayments source not found at: $WCPAY_SRC" >&2
-	echo "       Set WCPAY_SRC to the woocommerce-payments checkout." >&2
-	exit 2
+	echo "BLOCKED: WooPayments source not found at: $WCPAY_SRC" >&2
+	echo "         Set WCPAY_SRC to the woocommerce-payments checkout." >&2
+	exit 3
 fi
 
 resolve_source_commit() {
@@ -77,7 +77,8 @@ resolve_source_commit() {
 	printf '%s\n' "$source_commit"
 }
 
-SOURCE_COMMIT="$(resolve_source_commit)" || exit 2
+# Pin/cleanliness failures are preconditions, not drift verdicts: BLOCKED (exit 3).
+SOURCE_COMMIT="$(resolve_source_commit)" || exit 3
 SOURCE_PROVENANCE="$(printf 'source_ref=%s\nsource_commit=%s\n' "$WCPAY_SOURCE_REF" "$SOURCE_COMMIT")"
 
 if [ "$MODE" = "update" ]; then
@@ -233,7 +234,7 @@ if [ "$MODE" = "update" ]; then
 		echo "       An empty category would bake a permanently vacuous baseline (empty-vs-empty" >&2
 		echo "       compares PASS forever). Likely probe drift or renamed source files — fix the" >&2
 		echo "       probe or the source layout first. No baseline file was written." >&2
-		exit 2
+		exit 3
 	fi
 	mkdir -p "$BASELINE_DIR"
 	for cat in $CATEGORIES; do

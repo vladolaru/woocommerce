@@ -50,7 +50,7 @@ def test_two_empty_captures_are_blocked_not_pass(tmp_path: Path) -> None:
 
     result = run_diff(a, b)
 
-    assert result.returncode == 2, result.stdout
+    assert result.returncode == 3, result.stdout
     assert "PASS" not in result.stdout
     assert "BLOCKED" in result.stdout
 
@@ -63,6 +63,6 @@ def test_one_empty_capture_is_blocked(tmp_path: Path) -> None:
 
     result = run_diff(a, b)
 
-    assert result.returncode == 2, result.stdout
+    assert result.returncode == 3, result.stdout
     assert "PASS" not in result.stdout
     assert str(b) in result.stdout
