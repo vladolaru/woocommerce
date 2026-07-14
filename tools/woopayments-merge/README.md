@@ -25,8 +25,10 @@ Three properties already protect that, plus one action to take:
 
 - **It never ships to users.** It lives at repo-root `tools/`, **outside `plugins/woocommerce/`**, so it
   is never in the built/released plugin zip (built from `plugins/woocommerce/` only) — true even now.
-- **It is fully self-contained.** Everything is in this one directory; no shipped code, CI, or build
-  config references it. `git rm -r tools/woopayments-merge` removes it with zero impact on core.
+- **It is transition-contained.** No shipped code, CI, or build config references it. Removing it
+  has zero impact on core. It is NOT single-directory, though: `verify.sh --full-evidence` also
+  drives scripts under `tools/woopayments-critical-flows/` (the supervisor suite) and reads
+  `tools/pytest.ini` — A6 cleanup removes both tool directories plus that config together.
 - **Its commits are separable.** Every harness commit touches only this directory; the shipped A0
   product (the `NativePaymentsRuntimeArbiter` + its test + changelog, under `plugins/woocommerce/`) is
   in separate commits.

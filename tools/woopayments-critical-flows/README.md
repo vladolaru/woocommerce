@@ -1,6 +1,8 @@
 # WooPayments critical-flows parity suite (native-in-core)
 
-Supervisor-owned verification suite for the native WooPayments-in-core merge. **Separate by design** from the implementor's harness at `tools/woopayments-merge/` — overlap is expected and welcome; the goal is double coverage, not deduplication. Locally git-excluded (mirrors the harness).
+Supervisor-owned verification suite for the native WooPayments-in-core merge. **Independent orchestration, assertions, and evidence provenance** from the implementor's harness at `tools/woopayments-merge/` — but NOT independent machinery: several Layer-D verdicts deliberately delegate to implementor exercisers and gates (`flow-drive.sh` for SC-01, `i18n-notes-gate.sh` for MA-10, `mc-rates-gate.sh` for MC-06, and the SC-04/SC-14/SS-10 gates named in their specs). A fail-open bug in a shared gate would green both harnesses at once; the double-coverage claim holds only for this suite's own assertions layered on top (state asserts, log-clean scans, identity probes, provenance binding). Where the two harnesses disagree on a flow, the disagreement itself is a finding to run down.
+
+The suite's sources, specs, matrix, and tests are git-tracked; only run output under `evidence/` is git-ignored.
 
 ## Mandate
 
@@ -232,14 +234,17 @@ Current state: all three carry `TARGET-CONFIRMED (runner-unverified)` — Phase-
 ## Run
 
 ```bash
-./run.sh --store both --layer all            # full suite, both stores, both layers
-./run.sh --store target --flow SC-04         # one flow on native
-./run.sh --layer deterministic               # CI-able subset
-./run.sh --layer agent --agent-results-dir evidence/agent-results
+# Full suite (both stores, both layers). MC-06 needs explicit store URLs:
+./run.sh --store both --layer all --ref-url http://localhost:8082 --target-url http://store8889.localhost:8889
+./run.sh --store target --flow SC-04         # one flow on native (partial scope)
+./run.sh --layer deterministic --ref-url http://localhost:8082 --target-url http://store8889.localhost:8889
+./run.sh --layer agent --agent-results-dir evidence/agent-results --context-file <evidence-context.json>
 ```
 
-A flow passes only with reference+target evidence on file for each assigned layer. Output under `evidence/`.
+A flow passes only with reference+target evidence on file for each assigned layer. Before any Layer-D flow runs, the runner probes each store's identity (reference must run the plugin, target must run native, homes must differ) and blocks otherwise.
+
+**Scope and matrix accounting:** only a *full-scope* run (`--store both --layer all`, no `--flow`) can claim the suite; it reads `matrix.tsv` (the machine-readable 76-row matrix, kept in sync with the tables above by a self-test) and refuses `status: "pass"` while any matrix row has no evidence — expect `blocked`/exit 3 with `matrix.uncovered_ids` in the rollup until every row is spec'd and evidenced. Filtered runs keep their per-run verdict but are marked `scope: "partial"` in the rollup and never speak for the suite. Every run is archived append-only under `evidence/runs/<stamp>-<scope>/`; the top-level `rollup.json` is just the latest pointer.
 
 ## Relationship to the implementor's harness
 
-`tools/woopayments-merge/` is the implementor's verification harness and is likely built along similar lines. This suite is intentionally separate and may overlap it. Overlap = corroboration. Where this suite and the harness disagree on a flow, the disagreement itself is a finding to run down.
+`tools/woopayments-merge/` is the implementor's verification harness. This suite is separately orchestrated and may overlap it. Overlap = corroboration — but see the header note: several Layer-D verdicts share the implementor's exercisers/gates, so treat agreement between the harnesses on those flows as one signal, not two.

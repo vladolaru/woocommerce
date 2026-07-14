@@ -252,4 +252,5 @@ if [ "$fail" -ne 0 ]; then
 fi
 
 echo "PASS: no undispositioned BC surface drift."
+echo "      scope: reference-source drift only — native reproduction of these surfaces is covered by the parity gates, not this one."
 exit 0

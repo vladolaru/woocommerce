@@ -64,6 +64,26 @@ retired stand-down model needed one; the settled model does not). Plugin active-
 **Oracle discipline:** never edit `~/Work/a8c/woocommerce-develop` or `~/Work/a8c/woocommerce-payments`
 working trees (the reference's WC + plugin). All your changes go in **`woocommerce-develop-2`** only.
 
+**BC-drift source pin (READ THIS when the drift gate blocks):** `bc-drift-gate.sh` requires the
+WooPayments source checkout to be **clean at the pinned ref** (`10.8.0` by default). The shared
+`~/Work/a8c/woocommerce-payments` clone also serves day-to-day work, so a pull or branch switch
+there blocks the gate (and every `verify.sh` run) with "must be checked out at WooPayments ref…".
+Two supported ways out — never bypass the gate:
+
+- **Realign the clone:** `git -C ~/Work/a8c/woocommerce-payments switch --detach 10.8.0` (both
+  local envs mount the same clone as the live plugin, so realign only when the stores can run 10.8.0).
+- **Point the gate at a pinned worktree instead** (leaves the shared clone alone):
+  `git -C ~/Work/a8c/woocommerce-payments worktree add /tmp/wcpay-10.8.0 10.8.0`, then run with
+  `WCPAY_SRC=/tmp/wcpay-10.8.0`. `WCPAY_SOURCE_REF` selects a different pin; the special value
+  `worktree` accepts the current HEAD state (only for deliberately re-baselining — pair with
+  `--update` and a disposition pass, never for a normal check).
+
+**Compose projects (verify.sh `--ref-compose-project` / `--target-compose-project`):** read each
+value from the exact container, never guess: `docker inspect <container> --format
+'{{index .Config.Labels "com.docker.compose.project"}}'` — reference container `wcpay_wp_default`,
+target `<wp-env-hash>-cli-1` (the hash comes from this repo's wp-env instance; `wp-env install-path`
+prints it).
+
 ---
 
 ## 2. The one command — the verification loop
@@ -104,15 +124,27 @@ loop on:
   but not green either. Fix the precondition and re-run.
 
 The A0 self-check must be green **before any native code exists** — that is the proof the harness
-itself is trustworthy. (Validated: 5/5 gates PASS on the unmodified plugin.)
+itself is trustworthy. (Validated 2026-07-14: the self-check loop runs 12 gates — 11 PASS, with
+`drift gate (BC + tracks)` BLOCKED whenever the shared plugin clone is off the 10.8.0 pin, see §1.)
+Self-check proves only the **no-false-positive** half of trust; the fail-closed half (gates still
+detect injected differences) is proven by the harness self-tests — `run-self-tests.sh`, run
+automatically as the first `--full-evidence` gate and runnable standalone anytime (~8 min).
 
 For final-evidence packets with known local/provider limits, use
 `--acknowledge-manual-evidence-limitations` only after the release owner has accepted that those
 specific rows need manual evidence. The verifier recognizes only artifact-backed payment-method
 limitations: LPM rows blocked on exact SEPA capability or P24/AU BECS/GrabPay account-profile
-readiness, token continuity blocked at the exact SEPA fixture/account stage, and critical-flow rows
-blocked only through SC-14 LPM or SS-10 SEPA inheritance. A4aq, payout, generic browser, local-WPCOM,
-runner-identity, and unknown blockers remain non-zero; any failure remains non-zero.
+readiness, and token continuity blocked at the exact SEPA fixture/account stage. A4aq, payout,
+generic browser, local-WPCOM, runner-identity, and unknown blockers remain non-zero; any failure
+remains non-zero.
+
+**Known bound (honest):** acknowledged LPM/token limitations still propagate into the
+critical-flows rollup (`build-agent-results.py` inherits them into SC-14/SS-10), and the
+"critical flows full run" gate label is **not acknowledgeable** — so whenever those acknowledged
+limitations exist, the aggregate stays at exit 3 / INCOMPLETE. The "PASS WITH ACKNOWLEDGED
+MANUAL EVIDENCE LIMITATIONS" outcome is only reachable when the critical-flows gate is green
+independently of the acknowledged rows. Do not try to route around this by editing artifacts;
+record the residual INCOMPLETE and its acknowledged rows in the release evidence instead.
 
 ---
 
@@ -131,7 +163,13 @@ runner-identity, and unknown blockers remain non-zero; any failure remains non-z
 | **Financial reconciliation matrix** (`financial-reconcile.sh`) | For supplied orders, WC charge amount/currency, capture state, refunds, fee/net meta, dispute IDs or dispute side-effect evidence, payout linkage, and multi-currency exchange-rate meta match Stripe raw source; fail-closed | Only dimensions present on the **driven orders**. Full coverage still requires driving full/partial refund, payout, capture/auth, and multi-currency fixtures |
 | **Provider-created dispute e2e** (`dispute-e2e-gate.sh`) | Drives deterministic provider-created disputes on reference and native target, polls WC order status history/notes/refunds for dispute side effects including the created-dispute `on-hold` transition, then runs `financial-reconcile.sh` for each order against Stripe raw source | Dispute lifecycle states beyond the provider-created fixture, dashboard evidence submission, browser/admin flows, payouts, and final current order status when async payment/dispute event ordering races |
 | **Tracks parity** (`tracks-parity.sh`, via the wpcom-local sink) | name + normalized props for **both client (`browser_tkq`) and server (`server_pixel`)** Tracks the store posts, attributed by `store_id` | only events a *driven flow actually fires* (drive the surface); cross-store needs store-config alignment (§5) |
-| **Perf smoke** (`perf-baseline.sh`) — *narrow* | query-count on **3 gateway-resolution surfaces** | checkout render, admin pages, `process_payment`, cold cache, **bundle size (RULE 3)** — this is a weak signal, NOT RULE-1 verification |
+| **Perf smoke** (`perf-surface-gate.sh --gateway-initialization-only`, in-loop) | query-count on the gateway-initialization surface (single sample, diagnostic timing) | checkout render, admin pages, `process_payment`, cold cache, **bundle size (RULE 3)** — this is a weak signal, NOT RULE-1 verification. (`perf-baseline.sh` is the standalone 3-surface variant; verify.sh does not run it.) |
+| **Tracks continuity inventory** (`tracks-parity.sh inventory`) | the static native Tracks name/property contract rows in `tracks-continuity-inventory.tsv` exist at their expected source sites | runtime emission (that is the sink-based Tracks parity's job); props beyond the pinned contract rows |
+| **Native hook naming** (`native-hook-naming-gate.sh`) | the exact native `woocommerce_woopayments_*` filter/emission-site inventory, absence of obsolete spellings, target-only hooks excluded from the reference parity driver | hook *behavior*/payloads (hook-shape parity covers shape; runtime parity covers behavior) |
+| **Hook-shape parity** (`hook-shape-parity.sh`) | ~66 required hooks observed on BOTH stores via product probes with arg shapes compared to depth 4 / first 20 array keys; unobserved hook = FAIL | shapes beyond depth 4/20 keys; hook ordering; hooks outside the required list |
+| **REST route parity** (`rest-route-parity.sh`) | reference routes/methods present on target, minus disposition-signed exceptions (stale/unsigned exceptions rejected) | **one-directional**: target-only (additive native) routes are not flagged; response bodies/schemas |
+| **Subsystem disposition inventory** (`subsystem-disposition-gate.sh`) | every extension PHP file maps to a signed disposition row (static, exact-path) | `client/` rows (no enumeration counterpart); whether dispositions are *correct* — only that they exist and are signed |
+| **Harness self-tests** (`run-self-tests.sh`, full-evidence only) | both pytest suites + the `tests/*.sh` fixture scripts — the fail-closed half of the trust gate (gates still detect injected differences) | product behavior (product suites are separate quality gates) |
 
 Each is **fail-closed** (refuses PASS unless it positively verified the property).
 
@@ -225,7 +263,7 @@ The admin browser gate distinguishes available-route parity from unavailable-rou
 
 Perf in A4aq is a measured smoke signal, not an exact latency proof. The accumulated gate creates local unpaid, paid/refundable, and authorized WooPayments order fixtures for both stores before capture and passes their IDs into `perf-surface-gate.sh`. A missing, invalid, non-refundable, or non-authorized fixture remains `requires_fixture` or `incomplete`, and `perf-compare` exits `3` / `incomplete` when required money-path probes are unmeasured. If local WP-CLI has already fired `rest_api_init`, REST boot is accepted only as both-sides-preinitialized route snapshot evidence with payment-route/controller counts; mixed or missing route evidence remains incomplete. Treat an aggregate A4aq result of `incomplete` as not green; record the missing coverage and do not flip readiness from it.
 
-The aggregate artifact is written to `<out-dir>/a4aq-accumulated-gate.json` and uses exit code `0` for pass, `1` for fail, `3` for incomplete, and `2` for usage/preflight errors. Browser evidence is written under the session data directory; the admin gate currently writes `.agents/scratchpad/sessions/2026-06-15-core-native-payments/data/<gateSlug>-admin-browser-gate.json`, while the checkout gate writes `<out-dir>/<gateSlug>-checkout-browser-gate.json`.
+The aggregate artifact is written to `<out-dir>/a4aq-accumulated-gate.json` and uses exit code `0` for pass, `1` for fail, `3` for incomplete, and `2` for usage/preflight errors. The orchestrator passes explicit evidence paths under `--out-dir` for both browser gates (`<out-dir>/<gateSlug>-admin-browser-gate.json` and `<out-dir>/<gateSlug>-checkout-browser-gate.json`). Standalone-invocation caveat: without flags, `a4aq-accumulated-gate.py` and `lpm-checkout-gate.sh` default `--browser-runner` to `playwriter` (the compatibility runner); only `verify.sh` defaults to `playwright` — pass `--browser-runner playwright` explicitly for final-evidence-equivalent diagnostics.
 
 ### Runbooks (JUDGED by the implementor — NOT automated; do not fake a PASS)
 
@@ -397,9 +435,11 @@ values differ; FAIL on a prop type change *or* a real enum-value change.)
 ## 8. Status (what is built vs activated at A1)
 
 Built + validated against the unmodified plugin (A0 trust gate green): drift gate (incl. `tracks`),
-Bucket-E dump + parity differ, perf baseline + check, widened financial reconciliation matrix
+Bucket-E dump + parity differ, perf surface smoke, widened financial reconciliation matrix
 (proven on real charge, refund, fee/net, and multi-currency data), flow drivers, Tracks capture +
-normalizer + differ, and `verify.sh` (5/5 PASS).
+normalizer + differ, the static contract gates (tracks continuity inventory, native hook naming,
+hook-shape, REST-route, subsystem disposition), the harness self-test entrypoint, and `verify.sh`
+(as of 2026-07-14: 12 self-check gates, plus the full-evidence stage-gate set documented in §3/§A4aq).
 
 Cross-store parity (Bucket-E **and** Tracks props) and the client-side Tracks spy become load-bearing
 at **A1 shadow mode** — there is no native output to diff against until then; at A0 they are validated
