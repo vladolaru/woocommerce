@@ -31,6 +31,17 @@ while [ $# -gt 0 ]; do case "$1" in
 case "$STORE" in both|ref|target) ;; *) echo "unknown store: $STORE" >&2; exit 2;; esac
 case "$LAYER" in all|deterministic|agent) ;; *) echo "unknown layer: $LAYER" >&2; exit 2;; esac
 
+# Scope: only a full run (both stores, all layers, no flow filter) may ever claim the
+# suite green. Partial runs keep their per-run verdicts but are marked machine-visibly.
+if [ "$STORE" = "both" ] && [ "$LAYER" = "all" ] && [ -z "$ONLY_FLOW" ]; then
+  RUN_SCOPE="full"
+else
+  RUN_SCOPE="partial"
+fi
+# PID suffix keeps archive dirs unique when two runs share the same second —
+# otherwise the second run would silently overwrite the first's "append-only" archive.
+RUN_STAMP="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+
 if [ "$LAYER" != "agent" ] && [ "$STORE" != "ref" ] && { [ -z "$ONLY_FLOW" ] || [[ "MC-06-automatic-rates-refresh" == "$ONLY_FLOW"* ]]; }; then
   if [ -z "$REF_URL" ] || [ -z "$TARGET_URL" ]; then
     echo "BLOCKED: explicit --ref-url and --target-url are required when MC-06 can run." >&2
@@ -39,6 +50,46 @@ if [ "$LAYER" != "agent" ] && [ "$STORE" != "ref" ] && { [ -z "$ONLY_FLOW" ] || 
 fi
 
 stores() { case "$STORE" in both) echo "ref target";; ref|target) echo "$STORE";; esac; }
+
+# Layer-D store identity probe: the dual-store oracle is only meaningful when the
+# reference actually runs the plugin, the target actually runs native, and they are
+# distinct stores. Without this, swapped or duplicated WP commands would record
+# earned-looking PASS rows for both stores while comparing a store against itself.
+probe_store_identity() { # <ref|target>
+  local s="$1" raw rc owner home expected
+  raw="$(wp_store "$s" eval '
+$active_plugins = (array) get_option( "active_plugins", array() );
+if ( is_multisite() ) {
+	$active_plugins = array_merge( $active_plugins, array_keys( (array) get_site_option( "active_sitewide_plugins", array() ) ) );
+}
+$owner = in_array( "woocommerce-payments/woocommerce-payments.php", $active_plugins, true ) ? "plugin" : "none";
+if ( class_exists( "\\Automattic\\WooCommerce\\Internal\\Payments\\NativePaymentsRuntimeArbiter" ) && function_exists( "wc_get_container" ) ) {
+	try {
+		$owner = (string) wc_get_container()->get( "\\Automattic\\WooCommerce\\Internal\\Payments\\NativePaymentsRuntimeArbiter" )->get_runtime_owner();
+	} catch ( Throwable $e ) {
+		$owner = "probe_failed";
+	}
+}
+WP_CLI::line( "store_identity_owner=" . $owner );
+WP_CLI::line( "store_identity_home=" . home_url() );
+' 2>&1)"
+  rc=$?
+  owner="$(printf '%s\n' "$raw" | sed -n 's/^store_identity_owner=//p' | tail -1)"
+  home="$(printf '%s\n' "$raw" | sed -n 's/^store_identity_home=//p' | tail -1)"
+  case "$s" in ref) expected="plugin";; target) expected="native";; esac
+
+  if [ "$rc" -ne 0 ] || [ -z "$owner" ] || [ -z "$home" ]; then
+    echo "BLOCKED: $s store identity probe failed (cannot attribute verdicts to a runtime):" >&2
+    printf '%s\n' "$raw" | tail -5 | sed 's/^/    /' >&2
+    exit 3
+  fi
+  if [ "$owner" != "$expected" ]; then
+    echo "BLOCKED: $s store runtime owner is '$owner', expected '$expected' — refusing to record verdicts against the wrong runtime." >&2
+    exit 3
+  fi
+  if [ "$s" = "ref" ]; then PROBE_HOME_REF="$home"; else PROBE_HOME_TARGET="$home"; fi
+  echo "[$s] store identity: owner=$owner home=$home"
+}
 
 spec_requires_agent_layer() { # <spec.md>
   ! grep -qi 'No browser layer is required' "$1"
@@ -117,34 +168,37 @@ ROLLUP_JSON="$EVIDENCE_DIR/rollup.json"
 AGENT_QUEUE="$EVIDENCE_DIR/agent-queue.txt"
 I18N_NOTES_GATE="${I18N_NOTES_GATE:-$REPO_ROOT/tools/woopayments-merge/i18n-notes-gate.sh}"
 MC_RATES_GATE="${MC_RATES_GATE:-$REPO_ROOT/tools/woopayments-merge/mc-rates-gate.sh}"
+MATRIX_TSV="${MATRIX_TSV:-$DIR/matrix.tsv}"
 PASS_COUNT=0
 FAIL_COUNT=0
 BLOCKED_COUNT=0
 QUEUED_AGENT_COUNT=0
 
-: > "$RESULTS_JSONL"
-
 record_result() {
   local flow="$1" layer="$2" store="$3" status="$4" exit_code="$5"
-  local agent_verdict="${6:-}" evidence_path="${7:-}"
+  local agent_verdict="${6:-}" evidence_path="${7:-}" reason="${8:-}"
 
-  python3 - "$RESULTS_JSONL" "$flow" "$layer" "$store" "$status" "$exit_code" "$agent_verdict" "$evidence_path" <<'PY'
+  python3 - "$RESULTS_JSONL" "$flow" "$layer" "$store" "$status" "$exit_code" "$agent_verdict" "$evidence_path" "$reason" <<'PY'
+import datetime
 import json
 import sys
 from pathlib import Path
 
-path, flow, layer, store, status, exit_code, agent_verdict, evidence_path = sys.argv[1:]
+path, flow, layer, store, status, exit_code, agent_verdict, evidence_path, reason = sys.argv[1:]
 payload = {
     "flow": flow,
     "layer": layer,
     "store": store,
     "status": status,
     "exit_code": int(exit_code),
+    "recorded_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
 }
 if agent_verdict:
     payload["agent_verdict"] = agent_verdict
 if evidence_path:
     payload["evidence_path"] = evidence_path
+if reason:
+    payload["reason"] = reason
 with Path(path).open("a", encoding="utf-8") as stream:
     stream.write(json.dumps(payload, sort_keys=True) + "\n")
 PY
@@ -297,12 +351,27 @@ PY
 }
 
 write_rollup() {
-  python3 - "$ROLLUP_JSON" "$RESULTS_JSONL" "$STORE" "$LAYER" "$ONLY_FLOW" "$PASS_COUNT" "$FAIL_COUNT" "$BLOCKED_COUNT" "$QUEUED_AGENT_COUNT" "$AGENT_QUEUE" "$EVIDENCE_CONTEXT_FILE" <<'PY'
+  python3 - "$ROLLUP_JSON" "$RESULTS_JSONL" "$STORE" "$LAYER" "$ONLY_FLOW" "$PASS_COUNT" "$FAIL_COUNT" "$BLOCKED_COUNT" "$QUEUED_AGENT_COUNT" "$AGENT_QUEUE" "$EVIDENCE_CONTEXT_FILE" "$MATRIX_TSV" "$RUN_SCOPE" "$RUN_STAMP" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-rollup_path, results_jsonl, store, layer, only_flow, passed, failed, blocked, queued_agent, agent_queue, context_file = sys.argv[1:]
+(
+    rollup_path,
+    results_jsonl,
+    store,
+    layer,
+    only_flow,
+    passed,
+    failed,
+    blocked,
+    queued_agent,
+    agent_queue,
+    context_file,
+    matrix_tsv,
+    run_scope,
+    run_stamp,
+) = sys.argv[1:]
 results = []
 results_path = Path(results_jsonl)
 if results_path.exists():
@@ -310,12 +379,37 @@ if results_path.exists():
         if line.strip():
             results.append(json.loads(line))
 
+# Matrix coverage: a matrix row is covered by this run when at least one result row
+# was recorded for it (a BLOCKED/queued row counts as covered-but-blocked; a row whose
+# flow has no spec file produces no result at all and is UNCOVERED). Without this, a
+# green run of the implemented specs would report suite "pass" with most of the
+# critical-flows matrix never exercised — fail-open by omission.
+matrix_rows = []
+matrix_path = Path(matrix_tsv)
+if matrix_path.is_file():
+    for line in matrix_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip() or line.startswith("#") or line.startswith("id\t"):
+            continue
+        cells = line.split("\t")
+        if len(cells) >= 5:
+            matrix_rows.append({"id": cells[0], "layers": cells[2], "status": cells[4]})
+
+covered_ids = {row["flow"].split("-", 2)[0] + "-" + row["flow"].split("-", 2)[1] for row in results if "-" in row["flow"]}
+uncovered = sorted(row["id"] for row in matrix_rows if row["id"] not in covered_ids)
+
 failed_count = int(failed)
 blocked_count = int(blocked)
 status = "fail" if failed_count else "blocked" if blocked_count else "pass"
+if run_scope == "full" and status == "pass" and (uncovered or not matrix_rows):
+    # A full-scope run may not claim the suite green while matrix rows lack any
+    # evidence (or the matrix itself is missing).
+    status = "blocked"
+
 payload = {
     "schema": "woopayments_critical_flows_rollup.v1",
     "status": status,
+    "scope": run_scope,
+    "run_stamp": run_stamp,
     "store": store,
     "layer": layer,
     "flow": only_flow or "all",
@@ -324,6 +418,12 @@ payload = {
         "failed": failed_count,
         "blocked": blocked_count,
         "queued_agent_specs": int(queued_agent),
+    },
+    "matrix": {
+        "total": len(matrix_rows),
+        "covered": len(matrix_rows) - len(uncovered),
+        "uncovered": len(uncovered),
+        "uncovered_ids": uncovered,
     },
     "results": results,
 }
@@ -340,8 +440,37 @@ Path(rollup_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n
 PY
 }
 
+preserve_run_history() {
+  # Append-only run history: a partial --flow run previously clobbered the only
+  # machine record of the last full run. The top-level rollup stays as the "latest"
+  # pointer for existing consumers; every run is also archived immutably.
+  local run_dir="$EVIDENCE_DIR/runs/$RUN_STAMP-$RUN_SCOPE"
+  mkdir -p "$run_dir"
+  cp "$ROLLUP_JSON" "$run_dir/rollup.json" 2>/dev/null || true
+  cp "$RESULTS_JSONL" "$run_dir/rollup-results.jsonl" 2>/dev/null || true
+  if [ -s "$AGENT_QUEUE" ]; then
+    cp "$AGENT_QUEUE" "$run_dir/agent-queue.txt" 2>/dev/null || true
+  fi
+  echo "  run archived -> $run_dir"
+}
+
 echo "== critical-flows suite =="
-echo "stores=$(stores) layer=$LAYER flow=${ONLY_FLOW:-all}"
+echo "stores=$(stores) layer=$LAYER flow=${ONLY_FLOW:-all} scope=$RUN_SCOPE"
+if [ "$LAYER" != "agent" ]; then
+  PROBE_HOME_REF=""
+  PROBE_HOME_TARGET=""
+  for s in $(stores); do
+    probe_store_identity "$s"
+  done
+  if [ -n "$PROBE_HOME_REF" ] && [ -n "$PROBE_HOME_TARGET" ] && [ "$PROBE_HOME_REF" = "$PROBE_HOME_TARGET" ]; then
+    echo "BLOCKED: reference and target resolve to the same store ($PROBE_HOME_REF) — dual-store parity would be vacuous." >&2
+    exit 3
+  fi
+fi
+# Truncate the latest-results file only after the identity probes: a probe block
+# exits before write_rollup, and truncating earlier would leave the previous run's
+# rollup.json paired with an emptied results file.
+: > "$RESULTS_JSONL"
 if [ "$LAYER" != "agent" ]; then
   echo "Layer D: running deterministic flow scripts (flows/*.sh)"
   for f in "$DIR"/flows/*.sh; do
@@ -354,7 +483,7 @@ if [ "$LAYER" != "agent" ]; then
       marker_rc=$?
       if [ "$marker_rc" -ne 0 ]; then
         printf '  [%-7s] %s on %s\n' "BLOCKED" "$base" "$s"
-        record_result "$base" deterministic "$s" BLOCKED "$marker_rc"
+        record_result "$base" deterministic "$s" BLOCKED "$marker_rc" "" "" "log-clean marker could not be recorded"
         continue
       fi
       STORE_NAME="$s" bash "$f"
@@ -410,17 +539,17 @@ if [ "$LAYER" != "deterministic" ]; then
         IFS=$'\t' read -r status rc agent_verdict reason queue_required < <(agent_result_verdict "$base" "$s" "$result_file" "$oracle_mode")
         if [ "$status" = "PASS" ] || [ "$status" = "FAIL" ]; then
           printf '  [%-7s] %s on %s (%s)\n' "$status" "$base" "$s" "$reason"
-          record_result "$base" agent "$s" "$status" "$rc" "$agent_verdict" "$result_file"
+          record_result "$base" agent "$s" "$status" "$rc" "$agent_verdict" "$result_file" "$reason"
         else
           printf '  [%-7s] %s on %s (%s)\n' "BLOCKED" "$base" "$s" "$reason"
-          record_result "$base" agent "$s" BLOCKED 3 "$agent_verdict" "$result_file"
+          record_result "$base" agent "$s" BLOCKED 3 "$agent_verdict" "$result_file" "$reason"
           if [ "$queue_required" != "0" ]; then
             spec_queued=1
           fi
         fi
       else
         printf '  [%-7s] %s on %s (agent spec queued)\n' "BLOCKED" "$base" "$s"
-        record_result "$base" agent "$s" BLOCKED 3
+        record_result "$base" agent "$s" BLOCKED 3 "" "" "agent spec queued; no result file"
         spec_queued=1
       fi
     done
@@ -436,14 +565,26 @@ if [ "$LAYER" != "deterministic" ]; then
 fi
 
 write_rollup
+preserve_run_history
+
+UNCOVERED_COUNT="$(python3 -c '
+import json, sys
+payload = json.load(open(sys.argv[1]))
+print(payload.get("matrix", {}).get("uncovered", 0))
+' "$ROLLUP_JSON" 2>/dev/null || echo 0)"
 
 echo "Summary: $PASS_COUNT passed, $FAIL_COUNT failed, $BLOCKED_COUNT blocked, $QUEUED_AGENT_COUNT agent specs queued."
+echo "Matrix coverage: $UNCOVERED_COUNT of the matrix rows have no evidence this run (see rollup.json matrix.uncovered_ids)."
 echo "== done. Evidence under $EVIDENCE_DIR =="
 
 if [ "$FAIL_COUNT" -ne 0 ]; then
   exit 1
 fi
 if [ "$BLOCKED_COUNT" -ne 0 ]; then
+  exit 3
+fi
+if [ "$RUN_SCOPE" = "full" ] && [ "$UNCOVERED_COUNT" -ne 0 ]; then
+  # A full-scope run cannot claim the suite green while matrix rows lack evidence.
   exit 3
 fi
 exit 0

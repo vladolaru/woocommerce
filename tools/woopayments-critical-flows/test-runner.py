@@ -9,6 +9,7 @@ import os
 import shlex
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 
@@ -62,6 +63,63 @@ def ensure_context(evidence_dir: Path) -> tuple[Path, dict]:
 def write_executable(path: Path, source: str) -> None:
     path.write_text(source, encoding="utf-8")
     path.chmod(0o755)
+
+
+def strip_recorded_at(rollup: dict) -> list[dict]:
+    """Return rollup result rows with the volatile recorded_at stamp asserted and removed."""
+    rows = rollup["results"]
+    for row in rows:
+        recorded_at = row.pop("recorded_at", None)
+        assert isinstance(recorded_at, str) and recorded_at.endswith("Z"), (
+            f"result row must carry a UTC recorded_at stamp: {row}"
+        )
+    return rows
+
+
+def sc01_fake_wp_source(owner: str, home: str, intent_id: str, charge_id: str) -> str:
+    """Fake wp CLI that answers the store-identity probe plus the SC-01 state asserts."""
+    return f"""#!/usr/bin/env bash
+if [ "$1" = "eval" ]; then
+  if [[ "$2" == *"store_identity_owner"* ]]; then
+    printf '%s\\n' "store_identity_owner={owner}"
+    printf '%s\\n' "store_identity_home={home}"
+    exit 0
+  fi
+  if [[ "$2" == *"get_status"* ]]; then
+    printf '%s\\n' "order_status=processing"
+    exit 0
+  fi
+  if [[ "$2" == *"wc_get_order"* && "$2" == *"_intent_id"* ]]; then
+    printf '%s\\n' "order_meta_value={intent_id}"
+    exit 0
+  fi
+  if [[ "$2" == *"wc_get_order"* && "$2" == *"_charge_id"* ]]; then
+    printf '%s\\n' "order_meta_value={charge_id}"
+    exit 0
+  fi
+  printf '%s\\n' '{{"status":"pass","paths":["/tmp/fake-debug.log"],"matches":[]}}'
+  exit 0
+fi
+printf 'unexpected fake wp call: %s\\n' "$*" >&2
+exit 2
+"""
+
+
+def probe_only_fake_wp_source(owner: str, home: str) -> str:
+    """Fake wp CLI that answers the store-identity probe and log-clean evals only."""
+    return f"""#!/usr/bin/env bash
+if [ "$1" = "eval" ]; then
+  if [[ "$2" == *"store_identity_owner"* ]]; then
+    printf '%s\\n' "store_identity_owner={owner}"
+    printf '%s\\n' "store_identity_home={home}"
+    exit 0
+  fi
+  printf '%s\\n' '{{"status":"pass","paths":["/tmp/fake-debug.log"],"matches":[]}}'
+  exit 0
+fi
+printf 'unexpected fake wp call: %s\\n' "$*" >&2
+exit 2
+"""
 
 
 def run_runner(
@@ -161,6 +219,11 @@ if [ "$1" = "post" ] && [ "$2" = "meta" ] && [ "$3" = "get" ]; then
   exit 0
 fi
 if [ "$1" = "eval" ]; then
+  if [[ "$2" == *"store_identity_owner"* ]]; then
+    printf '%s\\n' "store_identity_owner=native"
+    printf '%s\\n' "store_identity_home=http://target.fake.test"
+    exit 0
+  fi
   if [[ "$2" == *"get_status"* ]]; then
     printf '%s\\n' "order_status=processing"
     exit 0
@@ -197,18 +260,27 @@ exit 2
 
         assert result.returncode == 0
         assert "SC-01-card-checkout" in result.stdout
+        assert "scope=partial" in result.stdout
+        assert "[target] store identity: owner=native home=http://target.fake.test" in result.stdout
         assert "captured order_id=123" in result.stdout
         assert "EXERCISER NOT WIRED" not in result.stdout
         assert "PASS log-clean target" in result.stdout
         assert "deterministic verdict: PASS" in result.stdout
+        assert "Matrix coverage:" in result.stdout
+        assert "run archived ->" in result.stdout
 
         rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
         assert rollup["schema"] == "woopayments_critical_flows_rollup.v1"
         assert rollup["status"] == "pass"
+        assert rollup["scope"] == "partial"
+        assert rollup["run_stamp"]
+        assert rollup["matrix"]["total"] == 76
+        assert rollup["matrix"]["covered"] == 1
+        assert "SC-01" not in rollup["matrix"]["uncovered_ids"]
         assert rollup["summary"]["passed"] == 1
         assert rollup["summary"]["blocked"] == 0
         assert rollup["summary"]["failed"] == 0
-        assert rollup["results"] == [
+        assert strip_recorded_at(rollup) == [
             {
                 "flow": "SC-01-card-checkout",
                 "layer": "deterministic",
@@ -242,6 +314,11 @@ if [ "$1" = "post" ] && [ "$2" = "meta" ] && [ "$3" = "get" ]; then
   exit 0
 fi
 if [ "$1" = "eval" ]; then
+  if [[ "$2" == *"store_identity_owner"* ]]; then
+    printf '%s\\n' "store_identity_owner=plugin"
+    printf '%s\\n' "store_identity_home=http://ref.fake.test"
+    exit 0
+  fi
   if [[ "$2" == *"get_status"* ]]; then
     printf '%s\\n' "order_status=processing"
     exit 0
@@ -381,6 +458,11 @@ if [ "$1" = "--runner-flag" ] && [ "$2" = "post" ] && [ "$3" = "meta" ]; then
   exit 0
 fi
 if [ "$1" = "--runner-flag" ] && [ "$2" = "eval" ]; then
+  if [[ "$3" == *"store_identity_owner"* ]]; then
+    printf '%s\\n' "store_identity_owner=plugin"
+    printf '%s\\n' "store_identity_home=http://ref.fake.test"
+    exit 0
+  fi
   if [[ "$3" == *"get_status"* ]]; then
     printf '%s\\n' "order_status=processing"
     exit 0
@@ -424,6 +506,7 @@ def test_card_checkout_flow_blocks_when_exerciser_fails() -> None:
     with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
         evidence_dir = Path(tmp)
         flow_driver = evidence_dir / "fake-flow-drive.sh"
+        fake_wp = evidence_dir / "fake-wp.sh"
         write_executable(
             flow_driver,
             """#!/usr/bin/env bash
@@ -431,6 +514,7 @@ printf '%s\\n' "FLOW-DRIVE FAIL (charge): account is not connected" >&2
 exit 1
 """,
         )
+        write_executable(fake_wp, probe_only_fake_wp_source("native", "http://target.fake.test"))
 
         result = run_runner(
             "--store",
@@ -440,7 +524,10 @@ exit 1
             "--flow",
             "SC-01",
             evidence_dir=evidence_dir,
-            extra_env={"SC01_FLOW_DRIVER": str(flow_driver)},
+            extra_env={
+                "SC01_FLOW_DRIVER": str(flow_driver),
+                "TARGET_WP_COMMAND": str(fake_wp),
+            },
         )
 
         assert result.returncode == 3
@@ -455,7 +542,7 @@ exit 1
         assert rollup["status"] == "blocked"
         assert rollup["summary"]["blocked"] == 1
         assert rollup["summary"]["failed"] == 0
-        assert rollup["results"] == [
+        assert strip_recorded_at(rollup) == [
             {
                 "flow": "SC-01-card-checkout",
                 "layer": "deterministic",
@@ -490,13 +577,14 @@ def test_agent_layer_queued_specs_are_blocked_until_executed() -> None:
         assert rollup["summary"]["queued_agent_specs"] == 1
         assert rollup["summary"]["blocked"] == 1
         assert rollup["summary"]["failed"] == 0
-        assert rollup["results"] == [
+        assert strip_recorded_at(rollup) == [
             {
                 "flow": "SC-14-lpm-wave-1-checkout",
                 "layer": "agent",
                 "store": "target",
                 "status": "BLOCKED",
                 "exit_code": 3,
+                "reason": "agent spec queued; no result file",
             }
         ]
 
@@ -532,6 +620,7 @@ def test_deterministic_layer_runs_no_browser_specs_through_gate() -> None:
     with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
         evidence_dir = Path(tmp)
         fake_gate = evidence_dir / "fake-i18n-gate.sh"
+        fake_wp = evidence_dir / "fake-target-wp.sh"
         calls = evidence_dir / "i18n-gate-calls.log"
 
         write_executable(
@@ -539,6 +628,24 @@ def test_deterministic_layer_runs_no_browser_specs_through_gate() -> None:
             """#!/usr/bin/env bash
 printf '%s\\n' "$*" >> "$FAKE_I18N_GATE_CALLS"
 exit 0
+""",
+        )
+        # The command string keeps a trailing flag so the probe exercises the
+        # split-command convention: the eval PHP arrives as $3, not $2.
+        write_executable(
+            fake_wp,
+            """#!/usr/bin/env bash
+if [ "$1" = "--flag" ] && [ "$2" = "eval" ]; then
+  if [[ "$3" == *"store_identity_owner"* ]]; then
+    printf '%s\\n' "store_identity_owner=native"
+    printf '%s\\n' "store_identity_home=http://target.fake.test"
+    exit 0
+  fi
+  printf '%s\\n' '{"status":"pass","paths":["/tmp/fake-debug.log"],"matches":[]}'
+  exit 0
+fi
+printf 'unexpected fake wp call: %s\\n' "$*" >&2
+exit 2
 """,
         )
 
@@ -552,7 +659,7 @@ exit 0
             evidence_dir=evidence_dir,
             extra_env={
                 "I18N_NOTES_GATE": str(fake_gate),
-                "TARGET_WP_COMMAND": "fake-target-wp --flag",
+                "TARGET_WP_COMMAND": f"{fake_wp} --flag",
                 "FAKE_I18N_GATE_CALLS": str(calls),
             },
         )
@@ -560,12 +667,12 @@ exit 0
         assert result.returncode == 0
         assert "MA-10-i18n-order-notes" in result.stdout
         assert "deterministic verdict: PASS" in result.stdout
-        assert "--target fake-target-wp --flag" in calls.read_text(encoding="utf-8")
+        assert f"--target {fake_wp} --flag" in calls.read_text(encoding="utf-8")
 
         rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
         assert rollup["status"] == "pass"
         assert rollup["summary"]["passed"] == 1
-        assert rollup["results"] == [
+        assert strip_recorded_at(rollup) == [
             {
                 "flow": "MA-10-i18n-order-notes",
                 "layer": "deterministic",
@@ -580,6 +687,7 @@ def test_mc06_forwards_explicit_store_urls_to_rates_gate() -> None:
     with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
         evidence_dir = Path(tmp)
         fake_gate = evidence_dir / "fake-mc-rates-gate.sh"
+        fake_target_wp = evidence_dir / "fake-target-wp.sh"
         calls = evidence_dir / "mc-rates-gate-args.log"
         ref_url = "http://reference.localhost:8082"
         target_url = "http://target.localhost:8889"
@@ -589,6 +697,20 @@ def test_mc06_forwards_explicit_store_urls_to_rates_gate() -> None:
             """#!/usr/bin/env bash
 printf '%s\\n' "$@" > "$FAKE_MC_RATES_GATE_CALLS"
 exit 0
+""",
+        )
+        # Only the target store is in scope, so only the target command must answer
+        # the identity probe. The eval PHP arrives as $3 because of the --flag suffix.
+        write_executable(
+            fake_target_wp,
+            """#!/usr/bin/env bash
+if [ "$1" = "--flag" ] && [ "$2" = "eval" ] && [[ "$3" == *"store_identity_owner"* ]]; then
+  printf '%s\\n' "store_identity_owner=native"
+  printf '%s\\n' "store_identity_home=http://target.fake.test"
+  exit 0
+fi
+printf 'unexpected fake wp call: %s\\n' "$*" >&2
+exit 2
 """,
         )
 
@@ -607,7 +729,7 @@ exit 0
             extra_env={
                 "MC_RATES_GATE": str(fake_gate),
                 "REF_WP_COMMAND": "fake-ref-wp --flag",
-                "TARGET_WP_COMMAND": "fake-target-wp --flag",
+                "TARGET_WP_COMMAND": f"{fake_target_wp} --flag",
                 "FAKE_MC_RATES_GATE_CALLS": str(calls),
             },
         )
@@ -617,7 +739,7 @@ exit 0
             "--ref",
             "fake-ref-wp --flag",
             "--target",
-            "fake-target-wp --flag",
+            f"{fake_target_wp} --flag",
             "--ref-url",
             ref_url,
             "--target-url",
@@ -679,6 +801,8 @@ exit 0
 def test_full_layer_blocks_when_agent_specs_are_only_queued() -> None:
     with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
         evidence_dir = Path(tmp)
+        fake_wp = evidence_dir / "fake-wp.sh"
+        write_executable(fake_wp, probe_only_fake_wp_source("native", "http://target.fake.test"))
 
         result = run_runner(
             "--store",
@@ -688,6 +812,7 @@ def test_full_layer_blocks_when_agent_specs_are_only_queued() -> None:
             "--flow",
             "SC-14",
             evidence_dir=evidence_dir,
+            extra_env={"TARGET_WP_COMMAND": str(fake_wp)},
         )
 
         assert result.returncode == 3
@@ -698,6 +823,237 @@ def test_full_layer_blocks_when_agent_specs_are_only_queued() -> None:
         assert rollup["status"] == "blocked"
         assert rollup["summary"]["queued_agent_specs"] == 1
         assert rollup["summary"]["blocked"] == 1
+
+
+def test_runner_blocks_before_flows_when_target_runtime_owner_is_wrong() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
+        evidence_dir = Path(tmp)
+        flow_driver = evidence_dir / "fake-flow-drive.sh"
+        driver_invoked = evidence_dir / "flow-driver-invoked"
+        fake_wp = evidence_dir / "fake-wp.sh"
+
+        write_executable(
+            flow_driver,
+            """#!/usr/bin/env bash
+touch "$FLOW_DRIVER_INVOKED"
+printf '%s\\n' '{"op":"charge","order_id":123,"charge_id":"ch_fake","intent_id":"pi_fake"}'
+""",
+        )
+        # The target store answers the probe as the plugin runtime: verdicts recorded
+        # against it would be attributed to the wrong runtime, so the run must block.
+        write_executable(fake_wp, probe_only_fake_wp_source("plugin", "http://target.fake.test"))
+
+        result = run_runner(
+            "--store",
+            "target",
+            "--layer",
+            "deterministic",
+            "--flow",
+            "SC-01",
+            evidence_dir=evidence_dir,
+            extra_env={
+                "SC01_FLOW_DRIVER": str(flow_driver),
+                "TARGET_WP_COMMAND": str(fake_wp),
+                "FLOW_DRIVER_INVOKED": str(driver_invoked),
+            },
+        )
+
+        assert result.returncode == 3
+        assert "runtime owner is 'plugin', expected 'native'" in result.stderr
+        # No flow may execute and no result row may be recorded against the wrong runtime.
+        assert not driver_invoked.exists()
+        assert "deterministic verdict" not in result.stdout
+        results_jsonl = evidence_dir / "rollup-results.jsonl"
+        assert not results_jsonl.exists() or results_jsonl.read_text(encoding="utf-8") == ""
+        assert not (evidence_dir / "rollup.json").exists()
+
+
+def test_runner_blocks_when_both_stores_resolve_to_the_same_home() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
+        evidence_dir = Path(tmp)
+        flow_driver = evidence_dir / "fake-flow-drive.sh"
+        driver_invoked = evidence_dir / "flow-driver-invoked"
+        fake_ref_wp = evidence_dir / "fake-ref-wp.sh"
+        fake_target_wp = evidence_dir / "fake-target-wp.sh"
+
+        write_executable(
+            flow_driver,
+            """#!/usr/bin/env bash
+touch "$FLOW_DRIVER_INVOKED"
+printf '%s\\n' '{"op":"charge","order_id":123,"charge_id":"ch_fake","intent_id":"pi_fake"}'
+""",
+        )
+        # Both stores report the expected owners but the same home URL: the dual-store
+        # parity oracle would compare a store against itself, so the run must block.
+        write_executable(fake_ref_wp, probe_only_fake_wp_source("plugin", "http://same.fake.test"))
+        write_executable(fake_target_wp, probe_only_fake_wp_source("native", "http://same.fake.test"))
+
+        result = run_runner(
+            "--store",
+            "both",
+            "--layer",
+            "deterministic",
+            "--flow",
+            "SC-01",
+            evidence_dir=evidence_dir,
+            extra_env={
+                "SC01_FLOW_DRIVER": str(flow_driver),
+                "REF_WP_COMMAND": str(fake_ref_wp),
+                "TARGET_WP_COMMAND": str(fake_target_wp),
+                "FLOW_DRIVER_INVOKED": str(driver_invoked),
+            },
+        )
+
+        assert result.returncode == 3
+        assert "resolve to the same store" in result.stderr
+        assert "http://same.fake.test" in result.stderr
+        assert not driver_invoked.exists()
+        assert not (evidence_dir / "rollup.json").exists()
+
+
+def test_full_scope_run_reports_matrix_coverage_and_refuses_green() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
+        evidence_dir = Path(tmp)
+        flow_driver = evidence_dir / "fake-flow-drive.sh"
+        fake_ref_wp = evidence_dir / "fake-ref-wp.sh"
+        fake_target_wp = evidence_dir / "fake-target-wp.sh"
+        fake_i18n_gate = evidence_dir / "fake-i18n-gate.sh"
+        fake_mc_gate = evidence_dir / "fake-mc-rates-gate.sh"
+
+        write_executable(
+            flow_driver,
+            """#!/usr/bin/env bash
+printf '%s\\n' '{"op":"charge","order_id":777,"charge_id":"ch_full","intent_id":"pi_full"}'
+""",
+        )
+        write_executable(fake_ref_wp, sc01_fake_wp_source("plugin", "http://ref.fake.test", "pi_full", "ch_full"))
+        write_executable(fake_target_wp, sc01_fake_wp_source("native", "http://target.fake.test", "pi_full", "ch_full"))
+        write_executable(fake_i18n_gate, "#!/usr/bin/env bash\nexit 0\n")
+        write_executable(fake_mc_gate, "#!/usr/bin/env bash\nexit 0\n")
+
+        result = run_runner(
+            "--store",
+            "both",
+            "--layer",
+            "all",
+            "--ref-url",
+            "http://ref.fake.test",
+            "--target-url",
+            "http://target.fake.test",
+            evidence_dir=evidence_dir,
+            extra_env={
+                "SC01_FLOW_DRIVER": str(flow_driver),
+                "REF_WP_COMMAND": str(fake_ref_wp),
+                "TARGET_WP_COMMAND": str(fake_target_wp),
+                "I18N_NOTES_GATE": str(fake_i18n_gate),
+                "MC_RATES_GATE": str(fake_mc_gate),
+            },
+        )
+
+        assert result.returncode == 3, result.stdout + result.stderr
+        assert "scope=full" in result.stdout
+        assert "[ref] store identity: owner=plugin home=http://ref.fake.test" in result.stdout
+        assert "[target] store identity: owner=native home=http://target.fake.test" in result.stdout
+        assert "Matrix coverage:" in result.stdout
+
+        rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
+        assert rollup["scope"] == "full"
+        assert rollup["run_stamp"]
+        matrix = rollup["matrix"]
+        assert matrix["total"] == 76
+        assert matrix["uncovered"] > 0
+        assert matrix["covered"] == matrix["total"] - matrix["uncovered"]
+        assert len(matrix["uncovered_ids"]) == matrix["uncovered"]
+        assert "SC-01" not in matrix["uncovered_ids"]
+        # A full-scope run may not claim the suite green while matrix rows lack evidence.
+        assert rollup["status"] != "pass"
+        assert rollup["status"] == "blocked"
+        assert rollup["summary"]["failed"] == 0
+        assert rollup["summary"]["passed"] >= 6
+
+
+def test_partial_run_rollup_is_marked_partial_and_keeps_status_semantics() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
+        evidence_dir = Path(tmp)
+        flow_driver = evidence_dir / "fake-flow-drive.sh"
+        fake_wp = evidence_dir / "fake-wp.sh"
+
+        write_executable(
+            flow_driver,
+            """#!/usr/bin/env bash
+printf '%s\\n' '{"op":"charge","order_id":555,"charge_id":"ch_partial","intent_id":"pi_partial"}'
+""",
+        )
+        write_executable(fake_wp, sc01_fake_wp_source("native", "http://target.fake.test", "pi_partial", "ch_partial"))
+
+        result = run_runner(
+            "--flow",
+            "SC-01",
+            "--store",
+            "target",
+            "--layer",
+            "deterministic",
+            evidence_dir=evidence_dir,
+            extra_env={
+                "SC01_FLOW_DRIVER": str(flow_driver),
+                "TARGET_WP_COMMAND": str(fake_wp),
+            },
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "scope=partial" in result.stdout
+
+        rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
+        assert rollup["scope"] == "partial"
+        # Partial runs keep the per-run status semantics: uncovered matrix rows do not
+        # force a partial run to "blocked" — only a full-scope run refuses green.
+        assert rollup["matrix"]["uncovered"] > 0
+        assert rollup["status"] == "pass"
+
+
+def test_consecutive_runs_are_archived_append_only() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
+        evidence_dir = Path(tmp)
+        runs_dir = evidence_dir / "runs"
+
+        first = run_runner(
+            "--store",
+            "target",
+            "--layer",
+            "agent",
+            "--flow",
+            "SC-14",
+            evidence_dir=evidence_dir,
+        )
+        assert first.returncode == 3
+        assert "run archived ->" in first.stdout
+
+        first_dirs = sorted(runs_dir.iterdir())
+        assert len(first_dirs) == 1
+        first_run_dir = first_dirs[0]
+        assert first_run_dir.name.endswith("-partial")
+        first_rollup_bytes = (first_run_dir / "rollup.json").read_bytes()
+        assert (first_run_dir / "rollup-results.jsonl").exists()
+        assert (first_run_dir / "agent-queue.txt").exists()
+
+        # The archive stamp has one-second resolution; make sure the second run
+        # lands in a distinct stamp instead of silently reusing the first one.
+        time.sleep(1.1)
+
+        second = run_runner(
+            "--store",
+            "target",
+            "--layer",
+            "agent",
+            "--flow",
+            "SC-14",
+            evidence_dir=evidence_dir,
+        )
+        assert second.returncode == 3
+
+        run_dirs = sorted(runs_dir.iterdir())
+        assert len(run_dirs) == 2
+        assert (first_run_dir / "rollup.json").read_bytes() == first_rollup_bytes
 
 
 def test_runner_creates_missing_evidence_directory() -> None:
@@ -752,7 +1108,7 @@ def test_agent_layer_accepts_completed_agent_result() -> None:
         assert rollup["summary"]["failed"] == 0
         assert rollup["summary"]["blocked"] == 0
         assert rollup["summary"]["queued_agent_specs"] == 0
-        assert rollup["results"] == [
+        assert strip_recorded_at(rollup) == [
             {
                 "flow": "SC-14-lpm-wave-1-checkout",
                 "layer": "agent",
@@ -761,6 +1117,7 @@ def test_agent_layer_accepts_completed_agent_result() -> None:
                 "exit_code": 0,
                 "agent_verdict": "PASS",
                 "evidence_path": str(result_path),
+                "reason": "agent result accepted: PASS",
             }
         ]
 
@@ -817,7 +1174,7 @@ def test_agent_layer_preserves_target_only_pass_without_requeueing() -> None:
             "blocked": 1,
             "queued_agent_specs": 0,
         }
-        assert rollup["results"] == [
+        assert strip_recorded_at(rollup) == [
             {
                 "flow": "SS-10-sepa-token-renewal-cutover",
                 "layer": "agent",
@@ -826,6 +1183,7 @@ def test_agent_layer_preserves_target_only_pass_without_requeueing() -> None:
                 "exit_code": 3,
                 "agent_verdict": "BLOCKED",
                 "evidence_path": str(result_path),
+                "reason": "target-only reference is intentionally not comparable",
             },
             {
                 "flow": "SS-10-sepa-token-renewal-cutover",
@@ -835,6 +1193,7 @@ def test_agent_layer_preserves_target_only_pass_without_requeueing() -> None:
                 "exit_code": 0,
                 "agent_verdict": "PASS",
                 "evidence_path": str(result_path),
+                "reason": "target-only agent result accepted: PASS; parity not comparable",
             },
         ]
 
@@ -925,7 +1284,7 @@ def test_agent_layer_fails_on_functional_agent_result() -> None:
         assert rollup["summary"]["failed"] == 1
         assert rollup["summary"]["blocked"] == 0
         assert rollup["summary"]["queued_agent_specs"] == 0
-        assert rollup["results"] == [
+        assert strip_recorded_at(rollup) == [
             {
                 "flow": "SC-14-lpm-wave-1-checkout",
                 "layer": "agent",
@@ -934,6 +1293,7 @@ def test_agent_layer_fails_on_functional_agent_result() -> None:
                 "exit_code": 1,
                 "agent_verdict": "FAIL - functional",
                 "evidence_path": str(result_path),
+                "reason": "agent verdict: FAIL - functional",
             }
         ]
 
@@ -971,7 +1331,7 @@ def test_agent_layer_preserves_blocked_agent_result_evidence() -> None:
         assert rollup["summary"]["failed"] == 0
         assert rollup["summary"]["blocked"] == 1
         assert rollup["summary"]["queued_agent_specs"] == 1
-        assert rollup["results"] == [
+        assert strip_recorded_at(rollup) == [
             {
                 "flow": "SC-14-lpm-wave-1-checkout",
                 "layer": "agent",
@@ -980,6 +1340,7 @@ def test_agent_layer_preserves_blocked_agent_result_evidence() -> None:
                 "exit_code": 3,
                 "agent_verdict": "BLOCKED - redirect provider unavailable",
                 "evidence_path": str(result_path),
+                "reason": "agent verdict: BLOCKED - redirect provider unavailable",
             }
         ]
 
@@ -1036,7 +1397,7 @@ def test_agent_layer_fails_target_when_parity_verdict_fails() -> None:
         assert rollup["summary"]["failed"] == 1
         assert rollup["summary"]["blocked"] == 0
         assert rollup["summary"]["queued_agent_specs"] == 0
-        assert rollup["results"] == [
+        assert strip_recorded_at(rollup) == [
             {
                 "flow": "SC-14-lpm-wave-1-checkout",
                 "layer": "agent",
@@ -1045,6 +1406,7 @@ def test_agent_layer_fails_target_when_parity_verdict_fails() -> None:
                 "exit_code": 0,
                 "agent_verdict": "PASS",
                 "evidence_path": str(result_path),
+                "reason": "agent result accepted: PASS",
             },
             {
                 "flow": "SC-14-lpm-wave-1-checkout",
@@ -1054,6 +1416,7 @@ def test_agent_layer_fails_target_when_parity_verdict_fails() -> None:
                 "exit_code": 1,
                 "agent_verdict": "FAIL - UX",
                 "evidence_path": str(result_path),
+                "reason": "agent parity verdict: FAIL - UX",
             },
         ]
 
@@ -1228,6 +1591,11 @@ if [ "$1" = "post" ] && [ "$2" = "meta" ] && [ "$3" = "get" ]; then
 fi
 if [ "$1" = "eval" ]; then
   printf '%s\\n' "---CALL---" "$2" >> "$FAKE_WP_CALL_LOG"
+  if [[ "$2" == *"store_identity_owner"* ]]; then
+    printf '%s\\n' "store_identity_owner=native"
+    printf '%s\\n' "store_identity_home=http://target.fake.test"
+    exit 0
+  fi
   if [[ "$2" == *"update_option"*"woopayments_critical_flows_debug_log_marker"* ]]; then
     touch "$FAKE_MARKER_FILE"
     printf '%s\\n' '{"status":"pass","paths":["/tmp/fake-debug.log"],"markers":{"/tmp/fake-debug.log":5}}'
@@ -1324,38 +1692,32 @@ def test_log_clean_scan_ignores_known_reference_wpcom_zoho_noise() -> None:
 
 
 def main() -> None:
-    test_card_checkout_flow_passes_with_clean_exercised_order()
-    test_card_checkout_flow_blocks_when_exerciser_fails()
-    test_mc06_forwards_explicit_store_urls_to_rates_gate()
-    test_mc06_blocks_before_rates_gate_when_an_explicit_url_is_missing()
-    test_agent_layer_queued_specs_are_blocked_until_executed()
-    test_full_layer_blocks_when_agent_specs_are_only_queued()
-    test_runner_creates_missing_evidence_directory()
-    test_agent_layer_accepts_completed_agent_result()
-    test_agent_layer_fails_on_functional_agent_result()
-    test_agent_layer_preserves_blocked_agent_result_evidence()
-    test_agent_layer_fails_target_when_parity_verdict_fails()
-    test_agent_layer_blocks_when_result_lacks_requested_store()
-    test_log_clean_assertion_passes_when_scan_is_clean()
-    test_log_clean_assertion_fails_when_php_errors_are_found()
-    test_log_clean_assertion_blocks_when_scan_cannot_run()
-    test_log_clean_scan_ignores_known_reference_wpcom_zoho_noise()
-    print("PASS test_card_checkout_flow_passes_with_clean_exercised_order")
-    print("PASS test_card_checkout_flow_blocks_when_exerciser_fails")
-    print("PASS test_mc06_forwards_explicit_store_urls_to_rates_gate")
-    print("PASS test_mc06_blocks_before_rates_gate_when_an_explicit_url_is_missing")
-    print("PASS test_agent_layer_queued_specs_are_blocked_until_executed")
-    print("PASS test_full_layer_blocks_when_agent_specs_are_only_queued")
-    print("PASS test_runner_creates_missing_evidence_directory")
-    print("PASS test_agent_layer_accepts_completed_agent_result")
-    print("PASS test_agent_layer_fails_on_functional_agent_result")
-    print("PASS test_agent_layer_preserves_blocked_agent_result_evidence")
-    print("PASS test_agent_layer_fails_target_when_parity_verdict_fails")
-    print("PASS test_agent_layer_blocks_when_result_lacks_requested_store")
-    print("PASS test_log_clean_assertion_passes_when_scan_is_clean")
-    print("PASS test_log_clean_assertion_fails_when_php_errors_are_found")
-    print("PASS test_log_clean_assertion_blocks_when_scan_cannot_run")
-    print("PASS test_log_clean_scan_ignores_known_reference_wpcom_zoho_noise")
+    tests = [
+        test_card_checkout_flow_passes_with_clean_exercised_order,
+        test_card_checkout_flow_blocks_when_exerciser_fails,
+        test_mc06_forwards_explicit_store_urls_to_rates_gate,
+        test_mc06_blocks_before_rates_gate_when_an_explicit_url_is_missing,
+        test_agent_layer_queued_specs_are_blocked_until_executed,
+        test_full_layer_blocks_when_agent_specs_are_only_queued,
+        test_runner_blocks_before_flows_when_target_runtime_owner_is_wrong,
+        test_runner_blocks_when_both_stores_resolve_to_the_same_home,
+        test_full_scope_run_reports_matrix_coverage_and_refuses_green,
+        test_partial_run_rollup_is_marked_partial_and_keeps_status_semantics,
+        test_consecutive_runs_are_archived_append_only,
+        test_runner_creates_missing_evidence_directory,
+        test_agent_layer_accepts_completed_agent_result,
+        test_agent_layer_fails_on_functional_agent_result,
+        test_agent_layer_preserves_blocked_agent_result_evidence,
+        test_agent_layer_fails_target_when_parity_verdict_fails,
+        test_agent_layer_blocks_when_result_lacks_requested_store,
+        test_log_clean_assertion_passes_when_scan_is_clean,
+        test_log_clean_assertion_fails_when_php_errors_are_found,
+        test_log_clean_assertion_blocks_when_scan_cannot_run,
+        test_log_clean_scan_ignores_known_reference_wpcom_zoho_noise,
+    ]
+    for test in tests:
+        test()
+        print(f"PASS {test.__name__}")
 
 
 if __name__ == "__main__":

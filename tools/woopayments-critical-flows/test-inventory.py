@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import re
+from collections import Counter
 from pathlib import Path
 
 
@@ -11,6 +13,7 @@ README = ROOT / "README.md"
 AGENT_RESULT_BUILDER = ROOT / "build-agent-results.py"
 AGENT_TEMPLATE = ROOT / "agent-specs" / "_template.md"
 RUNNER = ROOT / "run.sh"
+MATRIX_TSV = ROOT / "matrix.tsv"
 SS10_FLOW = ROOT / "flows" / "SS-10-sepa-token-renewal-cutover.md"
 
 REQUIRED_NATIVE_MERGE_FLOWS = {
@@ -144,6 +147,41 @@ def test_agent_dispatch_contract_supports_target_only_flows() -> None:
     assert "agent oracle mode: target-only" in flow
 
 
+def test_matrix_tsv_matches_readme() -> None:
+    """matrix.tsv is the machine-readable mirror of the README matrix tables.
+
+    run.sh computes matrix coverage from matrix.tsv, so a README flow missing from
+    the TSV would silently escape the full-run coverage gate. Keep them 1:1.
+    """
+    readme_ids = re.findall(
+        r"^\|\s*([A-Z]{2,3}-\d{2})\s*\|",
+        README.read_text(encoding="utf-8"),
+        re.MULTILINE,
+    )
+    assert readme_ids, "README matrix tables must declare | <ID> | rows"
+
+    lines = [
+        line
+        for line in MATRIX_TSV.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.startswith("#")
+    ]
+    assert lines, "matrix.tsv must not be empty"
+    assert lines[0].split("\t") == ["id", "title", "layers", "oracle", "status"], (
+        "matrix.tsv must keep the 5-column header: id, title, layers, oracle, status"
+    )
+
+    tsv_counts = Counter(line.split("\t")[0] for line in lines[1:])
+    readme_counts = Counter(readme_ids)
+
+    for flow_id in readme_counts:
+        assert tsv_counts.get(flow_id, 0) == 1, (
+            f"{flow_id} is in a README matrix table but appears {tsv_counts.get(flow_id, 0)} times in matrix.tsv"
+        )
+    for flow_id, count in tsv_counts.items():
+        assert count == 1, f"{flow_id} appears {count} times in matrix.tsv"
+        assert flow_id in readme_counts, f"{flow_id} is in matrix.tsv but missing from the README matrix tables"
+
+
 def main() -> None:
     tests = [
         test_readme_lists_native_merge_required_flows,
@@ -152,6 +190,7 @@ def main() -> None:
         test_agent_result_builder_exists_and_exposes_required_final_evidence_inputs,
         test_ss10_is_documented_as_target_only_and_not_cross_store_parity,
         test_agent_dispatch_contract_supports_target_only_flows,
+        test_matrix_tsv_matches_readme,
     ]
     for test in tests:
         test()

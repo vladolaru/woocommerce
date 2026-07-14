@@ -1,0 +1,80 @@
+# Machine-readable critical-flows matrix — one row per README matrix flow.
+# Columns: id	title	layers	oracle	status. Kept in sync with README.md by
+# test-inventory.py::test_matrix_tsv_matches_readme — edit BOTH or the suite fails.
+id	title	layers	oracle	status
+SC-01	Card checkout, shortcode (new card)	D+A	comparable	PENDING
+SC-02	Card checkout, Blocks (new card)	D+A	comparable	PENDING
+SC-03	3DS-required card (`4000002500003155`), classic + Blocks	A (+D assert)	comparable	PENDING
+SC-04	Saved card → checkout (classic + Blocks)	D+A	comparable	TARGET-CONFIRMED (runner-unverified; ref partial, 3DS browser blocked — see evidence/SC-04/)
+SC-05	Pay for order (My Account), new + save, 3DS	D+A	comparable	PENDING
+SC-06	Save-PM checkbox + terms behavior (sub vs regular)	A	comparable	PENDING
+SC-07	$1M cart limit	D+A	comparable	PENDING
+SC-08	WooPay signup + checkout	A	comparable	BLOCKED (SMS OTP)
+SC-09	Stripe Link save + reuse	A	comparable	BLOCKED (real Chrome card)
+SC-10	Regional — Bancontact / iDEAL / P24	A (+D assert)	comparable	PENDING
+SC-11	BNPL — Klarna / Affirm (≥$50) / Afterpay	A (+D assert)	comparable	PENDING
+SC-12	Add card via OTHER gateway (no WooPayments conflict)	D+A	comparable	PENDING
+SC-13	Shipping cost updates on method switch	D+A	comparable	PENDING
+SC-14	LPM wave-1 checkout	D+A	comparable	PENDING
+SP-01	Add PM — regular card	D+A	comparable	PENDING
+SP-02	Add PM — 3DSv2 (`4000000000003220`) fail→succeed	A	comparable	PENDING
+SP-03	Add PM — declined (`4000000000000002`)	D+A	comparable	PENDING
+SP-04	Delete PM	D+A	comparable	PENDING
+SP-05	Saved-PM management / set default	D+A	comparable	PENDING
+SS-01	Purchase subscription (initial)	D+A	comparable	PENDING
+SS-02	Change PM → new card	D+A	comparable	PENDING
+SS-03	Change PM → saved card	D+A	comparable	TARGET-CONFIRMED (runner-unverified; ref not driven, persistence blocked — see evidence/SS-03/)
+SS-04	Set / change default PM	D	comparable	PENDING
+SS-05	Renew now (manual, shopper)	D+A	comparable	PENDING
+SS-06	Cancel + re-subscribe	D+A	comparable	PENDING
+SS-07	Coupon (signup/one-off/recurring)	D	comparable	PENDING
+SS-08	Free-trial subscription	D+A	comparable	PENDING
+SS-09	Multiple subscriptions one purchase	D	comparable	PENDING
+SS-10	SEPA-token renewal after cutover	D+A	target-only	TARGET-ONLY (parity not comparable)
+MS-01	Create subscription product	D+A	comparable	PENDING
+MS-02	Purchase (merchant view)	D	comparable	PENDING
+MS-03	Suspend + resume	D+A	comparable	PENDING
+MS-04	Promote w/ coupon	D	comparable	PENDING
+MS-05	Renew automatically (scheduled)	D	comparable	PENDING
+MS-06	Renew manually (admin)	D+A	comparable	PENDING
+MS-07	Admin change payment method	D+A	comparable	TARGET-CONFIRMED (runner-unverified; ref browser partial, renewal via substitute fixture — see evidence/MS-07/)
+MO-01	Manual capture (order)	D+A	comparable	PENDING
+MO-02	Manual capture — Uncaptured tab	D+A	comparable	PENDING
+MO-03	Manual capture — payment-details page	D+A	comparable	PENDING
+MO-04	Full refund	D+A	comparable	PENDING
+MO-05	Partial refund (one + several)	D+A	comparable	PENDING
+MO-06	Refund failure handling	D	comparable	PENDING
+MA-01	Open admin as non-admin	D	comparable	PENDING
+MA-02	View account balances	A (+D)	comparable	PENDING
+MA-03	View transactions	D+A	comparable	PENDING
+MA-04	Filter transactions	D+A	comparable	PENDING
+MA-05	Search transactions	D+A	comparable	PENDING
+MA-06	Export transactions CSV	D	comparable	PENDING
+MA-07	View transaction details	A (+D)	comparable	PENDING
+MA-08	View payouts (+ details)	D+A	comparable	PENDING
+MA-09	Large-dataset perf	D	comparable	PENDING
+MA-10	Localized WooPayments order notes	D	comparable	PENDING
+MA-11	Plugin-active WooPayments settings screen	A (+D)	comparable	PENDING
+MD-01	Created: note + on-hold + notify	D+A	comparable	PENDING
+MD-02	Save evidence	A (+D)	comparable	PENDING
+MD-03	Winning dispute	D	comparable	PENDING
+MD-04	Losing dispute	D	comparable	PENDING
+ON-01	Onboard via WC Settings (NOX), test→live	A	comparable	PENDING (KYC)
+ON-02	Onboard via Launch Your Store (NOX)	A	comparable	PENDING (KYC)
+ON-03	Manual install + setup	A	comparable	PENDING
+ON-04	Plugin update via plugins page	D+A	comparable	PENDING
+MC-01	Set up	D+A	comparable	PENDING
+MC-02	Edit settings	D	comparable	PENDING
+MC-03	Add switcher widget	A	comparable	PENDING
+MC-04	Block widget (editor)	A	comparable	PENDING
+MC-05	MC onboarding/setup task	A	comparable	PENDING
+MC-06	Automatic rates refresh	D	comparable	PENDING
+MCS-01	Shopper checkout — guest, selected currency	D+A	comparable	PENDING
+MCS-02	Shopper checkout — logged-in, selected currency	D+A	comparable	PENDING
+EC-01	PRB from product page	A	comparable	BLOCKED (real card)
+EC-02	PRB from cart	A	comparable	BLOCKED (real card)
+EC-03	PRB with 3DS card	A	comparable	BLOCKED (real card)
+MU-01	Network install + activate	D	comparable	PENDING
+MU-02	Manual install (multisite)	D	comparable	PENDING
+MU-03	Plugin update (multisite)	D+A	comparable	PENDING
+MU-04	Card checkout primary + secondary	D+A	comparable	PENDING
