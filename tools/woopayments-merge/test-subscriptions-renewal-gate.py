@@ -18,6 +18,25 @@ REF_WP = "docker exec -i wcpay_wp_default wp --allow-root"
 TARGET_WP = "docker exec -i target-cli-1 wp --allow-root --user=1"
 
 
+def make_fake_reconciler(path: Path, exit_code: int = 0) -> None:
+    write_executable(
+        path,
+        f"""#!/usr/bin/env bash
+printf 'reconcile %s wp=%s\\n' "$*" "${{WP:-}}" >> "${{FAKE_RECONCILE_INVOCATIONS:?}}"
+exit {exit_code}
+""",
+    )
+
+
+def reconciler_env(tmp_path: Path, exit_code: int = 0) -> dict[str, str]:
+    reconciler = tmp_path / "fake-reconcile.sh"
+    make_fake_reconciler(reconciler, exit_code=exit_code)
+    return {
+        "WOOPAYMENTS_RENEWAL_RECONCILER": str(reconciler),
+        "FAKE_RECONCILE_INVOCATIONS": str(tmp_path / "reconcile-invocations.txt"),
+    }
+
+
 def run_gate(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["bash", str(SCRIPT), *args],
@@ -343,14 +362,22 @@ def test_compare_normalizes_reference_and_target_renewal_facts() -> None:
             "101",
             "--target-subscription-id",
             "202",
-            env={**os.environ, "FAKE_WP_INVOCATIONS": str(wp_invocations)},
+            env={**os.environ, "FAKE_WP_INVOCATIONS": str(wp_invocations), **reconciler_env(tmp_path)},
         )
 
         assert result.returncode == 0, result.stderr
-        assert "PASS: WC Subscriptions renewal facts match reference." in result.stdout
+        assert (
+            "PASS: WC Subscriptions renewal facts match reference and renewal charges "
+            "reconcile against the provider." in result.stdout
+        )
         wp_log = wp_invocations.read_text(encoding="utf-8")
         assert "eval-file - drive 101" in wp_log
         assert "eval-file - drive 202" in wp_log
+        reconcile_log = (tmp_path / "reconcile-invocations.txt").read_text(encoding="utf-8")
+        reconcile_lines = [line for line in reconcile_log.splitlines() if line.startswith("reconcile ")]
+        assert len(reconcile_lines) == 2  # one renewal order per store
+        assert reconcile_lines[0] == f"reconcile 1001 wp={ref_wp}"
+        assert reconcile_lines[1] == f"reconcile 2001 wp={target_wp}"
 
 
 def test_compare_selects_and_records_sepa_gateway_and_token_policy() -> None:
@@ -382,7 +409,7 @@ def test_compare_selects_and_records_sepa_gateway_and_token_policy() -> None:
             "2010",
             "--out-dir",
             str(out_dir),
-            env={**os.environ, "FAKE_WP_INVOCATIONS": str(wp_invocations)},
+            env={**os.environ, "FAKE_WP_INVOCATIONS": str(wp_invocations), **reconciler_env(tmp_path)},
         )
 
         assert result.returncode == 0, result.stderr
@@ -432,7 +459,11 @@ def test_compare_writes_durable_evidence_to_out_dir() -> None:
             "202",
             "--out-dir",
             str(out_dir),
-            env={**os.environ, "FAKE_WP_INVOCATIONS": str(tmp_path / "wp-invocations.txt")},
+            env={
+                **os.environ,
+                "FAKE_WP_INVOCATIONS": str(tmp_path / "wp-invocations.txt"),
+                **reconciler_env(tmp_path),
+            },
         )
 
         assert result.returncode == 0, result.stderr
@@ -482,3 +513,67 @@ def test_compare_fails_when_normalized_renewal_facts_differ() -> None:
         assert "FAIL: normalized WC Subscriptions renewal facts differ." in result.stderr
         assert '-    "renewal_order_status": "processing"' in result.stdout
         assert '+    "renewal_order_status": "failed"' in result.stdout
+
+
+def test_compare_blocks_when_renewal_charge_cannot_be_reconciled() -> None:
+    with tempfile.TemporaryDirectory(prefix="subscriptions-renewal-gate-test-") as tmp:
+        tmp_path = Path(tmp)
+        ref_wp = tmp_path / "ref-wp"
+        target_wp = tmp_path / "target-wp"
+        wp_invocations = tmp_path / "wp-invocations.txt"
+
+        make_fake_wp(ref_wp, role="ref")
+        make_fake_wp(target_wp, role="target")
+
+        result = run_gate(
+            "compare",
+            "--ref",
+            str(ref_wp),
+            "--target",
+            str(target_wp),
+            "--ref-subscription-id",
+            "101",
+            "--target-subscription-id",
+            "202",
+            env={
+                **os.environ,
+                "FAKE_WP_INVOCATIONS": str(wp_invocations),
+                **reconciler_env(tmp_path, exit_code=3),
+            },
+        )
+
+        assert result.returncode == 3, result.stdout + result.stderr
+        assert "could not be reconciled against the provider" in result.stderr
+        assert "PASS" not in result.stdout
+
+
+def test_compare_fails_when_renewal_charge_diverges_from_provider() -> None:
+    with tempfile.TemporaryDirectory(prefix="subscriptions-renewal-gate-test-") as tmp:
+        tmp_path = Path(tmp)
+        ref_wp = tmp_path / "ref-wp"
+        target_wp = tmp_path / "target-wp"
+        wp_invocations = tmp_path / "wp-invocations.txt"
+
+        make_fake_wp(ref_wp, role="ref")
+        make_fake_wp(target_wp, role="target")
+
+        result = run_gate(
+            "compare",
+            "--ref",
+            str(ref_wp),
+            "--target",
+            str(target_wp),
+            "--ref-subscription-id",
+            "101",
+            "--target-subscription-id",
+            "202",
+            env={
+                **os.environ,
+                "FAKE_WP_INVOCATIONS": str(wp_invocations),
+                **reconciler_env(tmp_path, exit_code=1),
+            },
+        )
+
+        assert result.returncode == 1, result.stdout + result.stderr
+        assert "diverges from the provider raw source" in result.stderr
+        assert "PASS" not in result.stdout

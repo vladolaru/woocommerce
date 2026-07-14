@@ -281,28 +281,28 @@ echo
 echo "Preflight: reference"
 if ! run_eval "$REF_WP" "ref preflight" "$ref_preflight" preflight ref "$EXPECTED_GATEWAY_ID" "$EXPECTED_TOKEN_TYPE" "$PAYMENT_FAMILY"; then
 	print_errors "$ref_preflight"
-	write_rollup fail false
-	exit 1
+	write_rollup blocked false
+	exit 3
 fi
 if ! json_success "$ref_preflight"; then
-	echo "FAIL: reference preflight did not pass." >&2
+	echo "BLOCKED: reference preflight prerequisites not met (not a renewal verdict)." >&2
 	print_errors "$ref_preflight"
-	write_rollup fail false
-	exit 1
+	write_rollup blocked false
+	exit 3
 fi
 echo "  ok"
 
 echo "Preflight: target"
 if ! run_eval "$TARGET_WP" "target preflight" "$target_preflight" preflight target "$EXPECTED_GATEWAY_ID" "$EXPECTED_TOKEN_TYPE" "$PAYMENT_FAMILY"; then
 	print_errors "$target_preflight"
-	write_rollup fail false
-	exit 1
+	write_rollup blocked false
+	exit 3
 fi
 if ! json_success "$target_preflight"; then
-	echo "FAIL: target preflight did not pass." >&2
+	echo "BLOCKED: target preflight prerequisites not met (not a renewal verdict)." >&2
 	print_errors "$target_preflight"
-	write_rollup fail false
-	exit 1
+	write_rollup blocked false
+	exit 3
 fi
 echo "  ok"
 
@@ -365,6 +365,56 @@ if ! diff -u "$ref_norm" "$target_norm"; then
 	exit 1
 fi
 
+json_int_field() { # <file> <key>
+	python3 - "$1" "$2" <<'PYEOF'
+import json, sys
+try:
+    payload = json.load(open(sys.argv[1]))
+except Exception:
+    print(0)
+    raise SystemExit(0)
+value = payload.get(sys.argv[2], 0)
+print(value if isinstance(value, int) and value > 0 else 0)
+PYEOF
+}
+
+# Renewal money is RULE 0: the drive performed a REAL provider charge, so the
+# renewal order must reconcile against the provider raw source on both stores.
+# Matching meta presence and status with a wrong amount must not ship.
+RECONCILE="${WOOPAYMENTS_RENEWAL_RECONCILER:-$SELF_DIR/financial-reconcile.sh}"
+if [ ! -f "$RECONCILE" ]; then
+	echo "BLOCKED: financial reconciler missing: $RECONCILE" >&2
+	write_rollup blocked true
+	exit 3
+fi
+echo
+echo "Reconcile renewal charges against provider raw source"
+for side in ref target; do
+	if [ "$side" = "ref" ]; then
+		side_wp="$REF_WP"; side_drive="$ref_drive"
+	else
+		side_wp="$TARGET_WP"; side_drive="$target_drive"
+	fi
+	renewal_order_id="$(json_int_field "$side_drive" renewal_order_id)"
+	if [ "$renewal_order_id" -eq 0 ]; then
+		echo "BLOCKED: $side drive emitted no renewal order id to reconcile." >&2
+		write_rollup blocked true
+		exit 3
+	fi
+	WP="$side_wp" bash "$RECONCILE" "$renewal_order_id"
+	reconcile_rc=$?
+	if [ "$reconcile_rc" -eq 3 ] || [ "$reconcile_rc" -eq 2 ]; then
+		echo "BLOCKED: $side renewal order $renewal_order_id could not be reconciled against the provider (exit $reconcile_rc)." >&2
+		write_rollup blocked true
+		exit 3
+	fi
+	if [ "$reconcile_rc" -ne 0 ]; then
+		echo "FAIL: $side renewal order $renewal_order_id diverges from the provider raw source (RULE 0 money-path)." >&2
+		write_rollup fail true
+		exit 1
+	fi
+done
+
 write_rollup pass true
-echo "PASS: WC Subscriptions renewal facts match reference."
+echo "PASS: WC Subscriptions renewal facts match reference and renewal charges reconcile against the provider."
 exit 0
