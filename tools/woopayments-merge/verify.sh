@@ -79,6 +79,10 @@ PERF_TARGET_REFUND_ORDER_ID="${PERF_TARGET_REFUND_ORDER_ID:-}"
 PERF_REF_CAPTURE_ORDER_ID="${PERF_REF_CAPTURE_ORDER_ID:-}"
 PERF_TARGET_CAPTURE_ORDER_ID="${PERF_TARGET_CAPTURE_ORDER_ID:-}"
 FULL_EVIDENCE_OUT_DIR="${FULL_EVIDENCE_OUT_DIR:-}"
+# Every gate command runs under a bounded timeout by default so a hung docker
+# exec or browser launch cannot stall the no-HITL loop (124 -> BLOCKED).
+# Override with GATE_TIMEOUT_SECONDS (env or per-gate prefix); 0 disables the bound.
+GATE_TIMEOUT_SECONDS_DEFAULT="${GATE_TIMEOUT_SECONDS_DEFAULT:-3600}"
 FULL_EVIDENCE_QUALITY_GATE_TIMEOUT_SECONDS="${FULL_EVIDENCE_QUALITY_GATE_TIMEOUT_SECONDS:-1800}"
 FULL_EVIDENCE_QUALITY_GATE_CLEANUP_TIMEOUT_SECONDS="${FULL_EVIDENCE_QUALITY_GATE_CLEANUP_TIMEOUT_SECONDS:-30}"
 FINAL_TRACKS_OUT_DIR="${FINAL_TRACKS_OUT_DIR:-}"
@@ -343,7 +347,7 @@ gate() { # $1 label ; $2.. command
 		printf '      safety stop: cleanup failed in %s; this gate was not started\n' "$MUTATION_SAFETY_STOP_SOURCE"
 		return 70
 	fi
-	timeout_seconds="${GATE_TIMEOUT_SECONDS:-}"
+	timeout_seconds="${GATE_TIMEOUT_SECONDS:-${GATE_TIMEOUT_SECONDS_DEFAULT:-3600}}"
 	tmp_base="${GATE_LOG_DIR:-${TMPDIR:-$SELF_DIR/.tmp}}"
 	mkdir -p "$tmp_base"
 	slug="$(gate_log_slug "$label")"
@@ -382,6 +386,42 @@ gate() { # $1 label ; $2.. command
 		printf '      safety stop armed: cleanup failed in %s; no later gate command will start\n' "$label"
 	fi
 	return "$rc"
+}
+
+# Run flow-drive.sh outside gate() (its stdout is parsed for owned order ids)
+# while keeping gate-style diagnostics: stderr and stdout land in a gate log so
+# a FAIL is diagnosable, and the caller classifies FLOW_DRIVE_RC so flow-drive
+# precondition exits (2/3) become BLOCKED instead of an evidence-free FAIL.
+FLOW_DRIVE_RC=0
+FLOW_DRIVE_IDS=""
+FLOW_DRIVE_LOG=""
+flow_drive_charge() { # $1 label ; $2 WP runner ; $3.. flow-drive.sh args
+	local label="$1" wp_runner="$2"
+	shift 2
+	local slug log_base out_base raw_file
+
+	slug="$(gate_log_slug "$label")"
+	log_base="${GATE_LOG_DIR:-${TMPDIR:-$SELF_DIR/.tmp}}"
+	mkdir -p "$log_base"
+	out_base="$(mktemp "$log_base/woopayments-merge-gate.${slug}.XXXXXX")"
+	FLOW_DRIVE_LOG="${out_base}.log"
+	mv "$out_base" "$FLOW_DRIVE_LOG"
+	raw_file="${FLOW_DRIVE_LOG}.stdout"
+	{
+		printf 'GATE: %s\n' "$label"
+		printf 'COMMAND:'
+		printf ' %q' bash "$SELF_DIR/flow-drive.sh" "$@"
+		printf '\n\nSTDERR:\n'
+	} > "$FLOW_DRIVE_LOG"
+	FLOW_DRIVE_RC=0
+	WP="$wp_runner" bash "$SELF_DIR/flow-drive.sh" "$@" > "$raw_file" 2>> "$FLOW_DRIVE_LOG" || FLOW_DRIVE_RC=$?
+	FLOW_DRIVE_IDS="$(sed -n 's/.*"order_id":\([0-9]*\).*/\1/p' "$raw_file" | tr '\n' ' ')"
+	{
+		printf 'STDOUT:\n'
+		cat "$raw_file"
+		printf 'EXIT_CODE: %s\n' "$FLOW_DRIVE_RC"
+	} >> "$FLOW_DRIVE_LOG"
+	rm -f "$raw_file"
 }
 
 gate_with_admin_credentials() { # $1 label ; $2 user ; $3 password ; $4.. command
@@ -1631,12 +1671,22 @@ stop_before_unwrapped_store_flows_on_cleanup_failure
 # 2. Drive a fixture flow on the reference store and collect order ids.
 echo "  driving a charge fixture on the reference store..."
 FLOW_ARGS=(charge --deterministic --sku=test-lab-beaker-001 --quantity=2 --type=success --run-token "$VERIFY_RUN_TOKEN")
-IDS="$(WP="$REF_WP" bash "$SELF_DIR/flow-drive.sh" "${FLOW_ARGS[@]}" 2>/dev/null | sed -n 's/.*"order_id":\([0-9]*\).*/\1/p' | tr '\n' ' ')"
-if [ -z "$IDS" ]; then
-	record "flow-drive (charge)" FAIL
-else
+flow_drive_charge "flow-drive (charge)" "$REF_WP" "${FLOW_ARGS[@]}"
+IDS="$FLOW_DRIVE_IDS"
+if [ -n "$IDS" ]; then
+	# Even a non-passing run may have created orders; own them so cleanup runs.
 	# shellcheck disable=SC2206
 	OWNED_REF_ORDER_IDS+=( $IDS )
+fi
+if [ "$FLOW_DRIVE_RC" -eq 2 ] || [ "$FLOW_DRIVE_RC" -eq 3 ]; then
+	record "flow-drive (charge)" BLOCKED
+	printf '      log: %s\n' "$FLOW_DRIVE_LOG"
+	IDS=""
+elif [ "$FLOW_DRIVE_RC" -ne 0 ] || [ -z "$IDS" ]; then
+	record "flow-drive (charge)" FAIL
+	printf '      log: %s\n' "$FLOW_DRIVE_LOG"
+	IDS=""
+else
 	record "flow-drive (charge) -> orders: $IDS" PASS
 fi
 if [ "$TRACKS_CAPTURE_READY" -eq 1 ]; then
@@ -1649,12 +1699,21 @@ if [ "$MODE" = "cross" ]; then
 		tracks_mark "target" "$TRACKS_TARGET_MARKER" || TRACKS_CAPTURE_READY=0
 	fi
 	echo "  driving a charge fixture on the target store..."
-	TARGET_IDS="$(WP="$TARGET_WP" bash "$SELF_DIR/flow-drive.sh" "${FLOW_ARGS[@]}" --native 2>/dev/null | sed -n 's/.*"order_id":\([0-9]*\).*/\1/p' | tr '\n' ' ')"
-	if [ -z "$TARGET_IDS" ]; then
-		record "target flow-drive (charge)" FAIL
-	else
+	flow_drive_charge "target flow-drive (charge)" "$TARGET_WP" "${FLOW_ARGS[@]}" --native
+	TARGET_IDS="$FLOW_DRIVE_IDS"
+	if [ -n "$TARGET_IDS" ]; then
 		# shellcheck disable=SC2206
 		OWNED_TARGET_ORDER_IDS+=( $TARGET_IDS )
+	fi
+	if [ "$FLOW_DRIVE_RC" -eq 2 ] || [ "$FLOW_DRIVE_RC" -eq 3 ]; then
+		record "target flow-drive (charge)" BLOCKED
+		printf '      log: %s\n' "$FLOW_DRIVE_LOG"
+		TARGET_IDS=""
+	elif [ "$FLOW_DRIVE_RC" -ne 0 ] || [ -z "$TARGET_IDS" ]; then
+		record "target flow-drive (charge)" FAIL
+		printf '      log: %s\n' "$FLOW_DRIVE_LOG"
+		TARGET_IDS=""
+	else
 		record "target flow-drive (charge) -> orders: $TARGET_IDS" PASS
 	fi
 	if [ "$TRACKS_CAPTURE_READY" -eq 1 ]; then

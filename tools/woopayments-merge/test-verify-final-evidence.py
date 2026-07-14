@@ -2447,6 +2447,137 @@ exit 0
         assert later_label in result.stdout
         assert not marker.exists()
 
+
+def test_gate_commands_run_under_a_conservative_default_timeout(tmp_path: Path) -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    # A hung docker exec or browser launch must not stall the no-HITL loop:
+    # every gate runs bounded by default, overridable via env or per-gate prefix
+    # (0 disables the bound).
+    assert 'GATE_TIMEOUT_SECONDS_DEFAULT="${GATE_TIMEOUT_SECONDS_DEFAULT:-3600}"' in source
+    assert 'timeout_seconds="${GATE_TIMEOUT_SECONDS:-${GATE_TIMEOUT_SECONDS_DEFAULT:-3600}}"' in source
+    # The harness self-tests and quality gates keep their dedicated bounds.
+    assert 'GATE_TIMEOUT_SECONDS="${HARNESS_SELF_TESTS_TIMEOUT_SECONDS:-2700}" gate "harness self-tests"' in source
+    assert 'GATE_TIMEOUT_SECONDS="$FULL_EVIDENCE_QUALITY_GATE_TIMEOUT_SECONDS" gate "$label" "$@"' in source
+    assert 'FULL_EVIDENCE_QUALITY_GATE_TIMEOUT_SECONDS="${FULL_EVIDENCE_QUALITY_GATE_TIMEOUT_SECONDS:-1800}"' in source
+
+    gate_runtime = source[
+        source.index("PASS=(); FAILED=(); BLOCKED=(); ACKNOWLEDGED=()") : source.index(
+            "gate_with_admin_credentials()"
+        )
+    ]
+    log_dir = tmp_path / "logs"
+    probe = tmp_path / "gate-default-timeout-probe.sh"
+    probe.write_text(
+        f"""#!/usr/bin/env bash
+set -uo pipefail
+SELF_DIR={shlex.quote(str(SCRIPT.parent))}
+GATE_LOG_DIR={shlex.quote(str(log_dir))}
+{gate_runtime}
+gate "default timed gate" bash -c 'exit 0'
+GATE_TIMEOUT_SECONDS=0 gate "untimed opt-out gate" bash -c 'exit 0'
+GATE_TIMEOUT_SECONDS=1 gate "hung gate" bash -c 'sleep 30'
+printf 'hung_gate_rc=%s\\n' "$LAST_GATE_RC"
+exit 0
+""",
+        encoding="utf-8",
+    )
+    probe.chmod(0o755)
+
+    result = subprocess.run(
+        ["bash", str(probe)],
+        cwd=REPO,
+        env={**os.environ, "TMPDIR": str(tmp_path)},
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        timeout=30,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "hung_gate_rc=124" in result.stdout
+    assert "[BLOCKED] hung gate" in result.stdout
+    default_logs = sorted(log_dir.glob("woopayments-merge-gate.default-timed-gate.*.log"))
+    untimed_logs = sorted(log_dir.glob("woopayments-merge-gate.untimed-opt-out-gate.*.log"))
+    assert default_logs and "TIMEOUT_SECONDS: 3600" in default_logs[0].read_text(encoding="utf-8")
+    assert untimed_logs and "TIMEOUT_SECONDS" not in untimed_logs[0].read_text(encoding="utf-8")
+
+
+def test_flow_drive_diagnostics_are_logged_and_preconditions_block(tmp_path: Path) -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    # flow-drive stderr is never discarded any more, and flow-drive's own 2/3
+    # precondition exits are classified BLOCKED instead of an evidence-free FAIL.
+    assert "2>/dev/null | sed -n" not in source
+    assert 'record "flow-drive (charge)" BLOCKED' in source
+    assert 'record "target flow-drive (charge)" BLOCKED' in source
+    assert source.count("printf '      log: %s\\n' \"$FLOW_DRIVE_LOG\"") == 4
+
+    gate_runtime = source[
+        source.index("PASS=(); FAILED=(); BLOCKED=(); ACKNOWLEDGED=()") : source.index(
+            "gate_with_admin_credentials()"
+        )
+    ]
+    self_dir = tmp_path / "merge"
+    self_dir.mkdir()
+    write_executable(
+        self_dir / "flow-drive.sh",
+        """#!/usr/bin/env bash
+echo "preconditions missing: connect a test account first" >&2
+if [ "${FLOW_DRIVE_FAKE_MODE:-blocked}" = "pass" ]; then
+    printf '{"order_id":123}\\n'
+    exit 0
+fi
+exit 3
+""",
+    )
+    log_dir = tmp_path / "logs"
+    probe = tmp_path / "flow-drive-probe.sh"
+    probe.write_text(
+        f"""#!/usr/bin/env bash
+set -uo pipefail
+SELF_DIR={shlex.quote(str(self_dir))}
+GATE_LOG_DIR={shlex.quote(str(log_dir))}
+{gate_runtime}
+flow_drive_charge "flow-drive (charge)" "wp-runner" charge --deterministic
+printf 'rc=%s ids=[%s]\\n' "$FLOW_DRIVE_RC" "$FLOW_DRIVE_IDS"
+printf 'log=%s\\n' "$FLOW_DRIVE_LOG"
+export FLOW_DRIVE_FAKE_MODE=pass
+flow_drive_charge "flow-drive (charge)" "wp-runner" charge --deterministic
+printf 'rc2=%s ids2=[%s]\\n' "$FLOW_DRIVE_RC" "$FLOW_DRIVE_IDS"
+exit 0
+""",
+        encoding="utf-8",
+    )
+    probe.chmod(0o755)
+
+    result = subprocess.run(
+        ["bash", str(probe)],
+        cwd=REPO,
+        env={**os.environ, "TMPDIR": str(tmp_path)},
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        timeout=30,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    # Precondition exit is surfaced (2/3 -> BLOCKED at the call site), never
+    # silently flattened into an empty-ids FAIL.
+    assert "rc=3 ids=[]" in result.stdout
+    # A passing run still yields the parsed order ids.
+    assert "rc2=0 ids2=[123 ]" in result.stdout
+    log_line = next(line for line in result.stdout.splitlines() if line.startswith("log="))
+    log_path = Path(log_line[len("log=") :])
+    assert log_path.is_file()
+    assert log_path.parent == log_dir
+    assert log_path.name.startswith("woopayments-merge-gate.flow-drive-charge.")
+    log_text = log_path.read_text(encoding="utf-8")
+    assert "GATE: flow-drive (charge)" in log_text
+    assert "preconditions missing: connect a test account first" in log_text
+    assert "EXIT_CODE: 3" in log_text
+
+
 def test_full_evidence_blocks_browser_gates_without_playwriter_session() -> None:
     with tempfile.TemporaryDirectory(prefix="verify-final-evidence-no-browser-") as tmp:
         repo = Path(tmp) / "repo"
@@ -3001,7 +3132,10 @@ if "--out-dir" in sys.argv:
                 stderr=subprocess.PIPE,
                 env=verify_env,
                 check=False,
-                timeout=20,
+                # Budget for the whole fixture run: gates run wrapped in
+                # run-command-with-timeout by default now, which adds one
+                # python3 startup per gate (including the nested verifiers).
+                timeout=45,
             )
         except subprocess.TimeoutExpired as exc:
             raise AssertionError("verify.sh did not enforce the quality-gate timeout") from exc
@@ -3030,7 +3164,9 @@ if "--out-dir" in sys.argv:
             stderr=subprocess.PIPE,
             env={**verify_env, "PHPUNIT_ALREADY_RUNNING": "1"},
             check=False,
-            timeout=8,
+            # Same per-gate wrapper overhead applies; the run must still finish
+            # promptly because the stuck PHPUnit suite is never started.
+            timeout=30,
         )
 
         assert active_result.returncode == 3, active_result.stdout + active_result.stderr

@@ -1199,7 +1199,7 @@ handle_lpm_exit() {
 		finalize_lpm_state exit >/dev/null 2>&1 || true
 	fi
 	if [ "$exit_code" -eq 0 ] && [ "$HARNESS_CLEANUP_FAILED" -eq 1 ]; then
-		exit_code=3
+		exit_code=70
 	fi
 	exit "$exit_code"
 }
@@ -2469,11 +2469,12 @@ cleanup_codes = {
 cleanup_blocked = cleanup_restore.get("status") != "pass" or any(
     detail.get("code") in cleanup_codes for detail in blocker_details
 )
-if cleanup_blocked:
-    status = "blocked"
-elif failures or any(provider_status not in {"pass", "blocked"} for provider_status in provider_statuses):
+# Real failures outrank cleanup blockage for the verdict (exit 1); the cleanup
+# state stays recorded in the rollup below. Cleanup-only blockage keeps the
+# blocked status and the harness exits 70 so the caller's safety latch arms.
+if failures or any(provider_status not in {"pass", "blocked"} for provider_status in provider_statuses):
     status = "fail"
-elif blockers or any(provider_status == "blocked" for provider_status in provider_statuses):
+elif cleanup_blocked or blockers or any(provider_status == "blocked" for provider_status in provider_statuses):
     status = "blocked"
 
 payload = {
@@ -2481,6 +2482,7 @@ payload = {
     "surface": surface,
     "action_scheduler_drain_enabled": drain_enabled == "1",
     "status": status,
+    "cleanup_blocked": cleanup_blocked,
     "results": results,
     "failures": failures,
     "blockers": blockers,
@@ -2785,30 +2787,37 @@ done
 finalize_lpm_state normal || true
 write_rollup || blocked "could not write LPM checkout rollup."
 rollup_status="$(jq -r '.status // "blocked"' "$OUT_DIR/lpm-checkout-gate.json" 2>/dev/null || printf 'blocked')"
-
-if [ "$rollup_status" = "blocked" ]; then
-	if [ -s "$FAILURES_FILE" ]; then
-		while IFS= read -r failure_message; do
-			if [ -n "$failure_message" ]; then
-				printf 'FAIL (recorded with blocked cleanup): %s\n' "$failure_message" >&2
-			fi
-		done < "$FAILURES_FILE"
-	fi
-	while IFS= read -r blocker_message; do
-		if [ -n "$blocker_message" ]; then
-			printf 'BLOCKED: %s\n' "$blocker_message" >&2
-		fi
-	done < "$BLOCKERS_FILE"
-	exit 3
-fi
+rollup_cleanup_blocked="$(jq -r 'if .cleanup_blocked == true then "1" else "0" end' "$OUT_DIR/lpm-checkout-gate.json" 2>/dev/null || printf '0')"
 
 if [ "$rollup_status" = "fail" ]; then
+	# Real failures win the exit contract; the rollup keeps the cleanup state.
 	while IFS= read -r failure_message; do
 		if [ -n "$failure_message" ]; then
 			printf 'FAIL: %s\n' "$failure_message" >&2
 		fi
 	done < "$FAILURES_FILE"
+	while IFS= read -r blocker_message; do
+		if [ -n "$blocker_message" ]; then
+			printf 'BLOCKED: %s\n' "$blocker_message" >&2
+		fi
+	done < "$BLOCKERS_FILE"
+	if [ "$rollup_cleanup_blocked" = "1" ]; then
+		printf 'CLEANUP FAILED (recorded with failures): see %s\n' "$OUT_DIR/lpm-cleanup-restore.json" >&2
+	fi
 	exit 1
+fi
+
+if [ "$rollup_status" = "blocked" ]; then
+	while IFS= read -r blocker_message; do
+		if [ -n "$blocker_message" ]; then
+			printf 'BLOCKED: %s\n' "$blocker_message" >&2
+		fi
+	done < "$BLOCKERS_FILE"
+	if [ "$rollup_cleanup_blocked" = "1" ]; then
+		printf 'CLEANUP FAILED: LPM cleanup/restore did not complete; see %s\n' "$OUT_DIR/lpm-cleanup-restore.json" >&2
+		exit 70
+	fi
+	exit 3
 fi
 
 if [ "$rollup_status" != "pass" ]; then

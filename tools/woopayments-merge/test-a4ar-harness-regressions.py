@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import signal
 import subprocess
 import sys
@@ -285,6 +286,39 @@ def test_perf_capture_infrastructure_exit_is_classified_as_incomplete(module):
     assert gate.incomplete == ["perf-reference: exited incomplete"]
 
 
+def test_check_timeout_expiry_is_recorded_incomplete_not_pass_or_hang(module):
+    gate = make_gate(module)
+    os.environ["A4AQ_TIMEOUT_OVERRIDE_SECONDS"] = "0.5"
+    try:
+        result = gate.run(
+            "checkout-browser",
+            "checkout",
+            [sys.executable, "-c", "import time; time.sleep(30)"],
+        )
+    finally:
+        os.environ.pop("A4AQ_TIMEOUT_OVERRIDE_SECONDS", None)
+
+    assert result["exit_code"] == module.EXIT_TIMEOUT
+    assert result["status"] == "incomplete"
+    assert result["failures"] == []
+    assert gate.failures == []
+    assert any("timed out after 0.5s" in reason for reason in result["incomplete_reasons"])
+    assert gate.incomplete == ["checkout-browser: timed out after 0.5s"]
+
+
+def test_check_categories_have_bounded_timeouts(module):
+    assert module.BROWSER_CHECK_TIMEOUT_SECONDS == 1800
+    assert module.PERF_BUNDLE_CHECK_TIMEOUT_SECONDS == 900
+    assert module.LOG_SCAN_TIMEOUT_SECONDS == 300
+    for category in ("admin", "browser", "checkout"):
+        assert module.CHECK_CATEGORY_TIMEOUT_SECONDS[category] == module.BROWSER_CHECK_TIMEOUT_SECONDS
+    for category in ("perf", "bundle"):
+        assert module.CHECK_CATEGORY_TIMEOUT_SECONDS[category] == module.PERF_BUNDLE_CHECK_TIMEOUT_SECONDS
+    assert module.CHECK_CATEGORY_TIMEOUT_SECONDS["logs"] == module.LOG_SCAN_TIMEOUT_SECONDS
+    # Unknown categories fall back to the most conservative bound; nothing runs untimed.
+    assert module.check_timeout_seconds("unknown-category") == module.BROWSER_CHECK_TIMEOUT_SECONDS
+
+
 def test_checkout_browser_route_state_uses_plain_permalink_overrides(module):
     assert "blocksCheckoutCard" in module.CHECKOUT_ROUTE_KEYS
     assert "referenceBlocksCheckoutCard" in module.CHECKOUT_ROUTE_KEYS
@@ -348,6 +382,35 @@ def test_a4_checkout_driver_classifies_shared_express_failures_as_incomplete():
     assert "blockers" in source
     assert "status = 'incomplete'" in source
     assert "referenceFailureKeys.has" in source
+
+
+def test_a4_checkout_driver_only_demotes_target_failures_without_own_defects():
+    source = (REPO / "tools/woopayments-merge/a4-checkout-browser-gate.playwriter.mjs").read_text(encoding="utf-8")
+
+    assert "function hasTargetOwnDefects" in source
+    assert "( result.pageErrors || [] ).length > 0" in source
+    assert "( result.consoleIssues || [] ).length > 0" in source
+    assert "( result.failedResponses || [] ).length > 0" in source
+    assert "referenceFailureKeys.has( resultKey( result ) ) && ! hasTargetOwnDefects( result )" in source
+    # The demotion diagnostics stay intact.
+    assert "function summarizeBlockedFailure" in source
+    assert "blockerDiagnostics" in source
+
+
+def test_a4_checkout_driver_blockers_only_run_exits_incomplete_not_zero():
+    source = (REPO / "tools/woopayments-merge/a4-checkout-browser-gate.playwriter.mjs").read_text(encoding="utf-8")
+
+    incomplete_block = source[source.index("if ( finalEvidence.blockers.length > 0 ) {") :]
+    assert "process.exitCode = 3;" in incomplete_block
+    # The evidence file is written before the exit code is set so
+    # a4aq-accumulated-gate.py evidence recovery still sees status incomplete.
+    assert source.index("const finalEvidence = writeEvidence( status );") < source.index("process.exitCode = 3;")
+
+    runner = (REPO / "tools/woopayments-merge/playwright-script-runner.mjs").read_text(encoding="utf-8")
+    # The runner passes the real `process` into the script sandbox and does not
+    # force process.exit(0) on success, so exitCode 3 propagates.
+    assert "return fn(\n\t\tscriptRequire,\n\t\tprocess," in runner
+    assert "process.exit( 0 )" not in runner
 
 
 def test_a4_checkout_driver_surfaces_structured_express_blocker_diagnostics():
@@ -1058,6 +1121,8 @@ def main() -> None:
         test_checkout_incomplete_evidence_marks_aggregate_incomplete,
         test_perf_compare_incomplete_exit_is_classified_as_incomplete,
         test_perf_capture_infrastructure_exit_is_classified_as_incomplete,
+        test_check_timeout_expiry_is_recorded_incomplete_not_pass_or_hang,
+        test_check_categories_have_bounded_timeouts,
         test_checkout_browser_route_state_uses_plain_permalink_overrides,
         test_a4_checkout_driver_uses_store_api_rest_route_fallback,
         test_a4_checkout_driver_allows_current_local_stripe_http_warning_count,
@@ -1065,6 +1130,8 @@ def main() -> None:
         test_a4_checkout_driver_ignores_shared_local_checkout_console_noise,
         test_a4_checkout_driver_ignores_local_placeholder_media_noise,
         test_a4_checkout_driver_classifies_shared_express_failures_as_incomplete,
+        test_a4_checkout_driver_only_demotes_target_failures_without_own_defects,
+        test_a4_checkout_driver_blockers_only_run_exits_incomplete_not_zero,
         test_account_scenario_snapshots_reports_flag,
         test_log_status_ignores_known_wp67_textdomain_notice,
         test_restore_flags_must_match_apply_before,

@@ -1058,11 +1058,26 @@ function resultKey( result ) {
 	return `${ result.surface }::${ result.viewport }`;
 }
 
-function isSharedExpressSurfaceBlocker( result, referenceFailureKeys ) {
+function hasTargetOwnDefects( result ) {
 	return (
-		sharedExpressSurfaceIds.has( result.surface ) &&
-		( result.store === 'reference' || referenceFailureKeys.has( resultKey( result ) ) )
+		( result.pageErrors || [] ).length > 0 ||
+		( result.consoleIssues || [] ).length > 0 ||
+		( result.failedResponses || [] ).length > 0
 	);
+}
+
+function isSharedExpressSurfaceBlocker( result, referenceFailureKeys ) {
+	if ( ! sharedExpressSurfaceIds.has( result.surface ) ) {
+		return false;
+	}
+	if ( result.store === 'reference' ) {
+		return true;
+	}
+	// Only demote a target failure to a shared-prerequisite blocker when the
+	// reference failed the same surface::viewport AND the target result shows
+	// no defects of its own: a target-only JS error, console issue, or failed
+	// response is a real regression and must stay a FAIL.
+	return referenceFailureKeys.has( resultKey( result ) ) && ! hasTargetOwnDefects( result );
 }
 
 function uniqueStrings( values ) {
@@ -1271,4 +1286,13 @@ if ( finalEvidence.blockers.length > 0 ) {
 			2
 		)
 	);
+	// A blockers-only run must not exit 0: exit-code consumers would read it as
+	// a PASS. The evidence file above is already written; exit 3 (incomplete /
+	// blocked-preconditions) so a4aq-accumulated-gate.py records the check as
+	// incomplete and verify.sh's gate() classifies it BLOCKED, never FAIL.
+	// playwright-script-runner.mjs runs this script with the real `process` and
+	// exits with process.exitCode when the script completes without throwing.
+	if ( typeof process !== 'undefined' && process ) {
+		process.exitCode = 3;
+	}
 }

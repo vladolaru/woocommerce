@@ -2690,21 +2690,25 @@ def test_product_cleanup_failure_blocks_an_otherwise_passing_gate() -> None:
             str(out_dir),
             env={
                 "PLAYWRITER_BIN": str(fake_playwriter),
+                "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter.jsonl"),
                 "FAKE_WP_INVOCATIONS": str(wp_invocations),
                 "LPM_PARITY_DIFF_BIN": str(fake_parity),
             },
         )
 
-        assert result.returncode == 3
+        assert result.returncode == 70, result.stdout + result.stderr
+        assert "CLEANUP FAILED" in result.stderr
         rollup = json.loads((out_dir / "lpm-checkout-gate.json").read_text(encoding="utf-8"))
         assert rollup["status"] == "blocked"
+        assert rollup["cleanup_blocked"] is True
+        assert rollup["failures"] == []
         assert any(
             detail["code"] == "target_product_cleanup_failed"
             for detail in rollup["blocker_details"]
         )
 
 
-def test_fixture_restore_failure_overrides_checkout_failure_to_blocked() -> None:
+def test_checkout_failure_takes_exit_precedence_over_fixture_restore_blockage() -> None:
     with tempfile.TemporaryDirectory(prefix="lpm-gate-test-") as tmp:
         tmp_path = Path(tmp)
         ref_wp = tmp_path / "reference" / "wp"
@@ -2748,9 +2752,11 @@ def test_fixture_restore_failure_overrides_checkout_failure_to_blocked() -> None
             },
         )
 
-        assert result.returncode == 3
+        assert result.returncode == 1, result.stdout + result.stderr
+        assert "CLEANUP FAILED (recorded with failures)" in result.stderr
         rollup = json.loads((out_dir / "lpm-checkout-gate.json").read_text(encoding="utf-8"))
-        assert rollup["status"] == "blocked"
+        assert rollup["status"] == "fail"
+        assert rollup["cleanup_blocked"] is True
         assert rollup["failures"]
         assert any(
             detail["code"] == "target_fixture_restore_failed"
@@ -2802,7 +2808,10 @@ def test_finalization_retries_a_transient_fixture_restore_failure() -> None:
             },
         )
 
-        assert result.returncode == 3
+        # The transient mid-run restore failure is recorded as a cleanup blocker
+        # even though the finalization retry succeeded, so the gate exits 70
+        # (cleanup-only blockage) and the caller's mutation-safety latch arms.
+        assert result.returncode == 70
         assert int(Path(f"{target_wp}.restore-count").read_text(encoding="utf-8")) == 2
         assert json.loads(Path(f"{target_wp}.state.json").read_text(encoding="utf-8")) == {
             "country": "US:CA",

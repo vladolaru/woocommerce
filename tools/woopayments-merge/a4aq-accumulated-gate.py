@@ -35,6 +35,28 @@ EXIT_CLEANUP = 70
 EXIT_TIMEOUT = 124
 SCHEMA = "woopayments_a4aq_accumulated_gate.v1"
 WP_EVAL_TIMEOUT_SECONDS = 180
+# Per-category subprocess bounds: a hung chromium launch or wedged docker exec
+# must land as that check's `incomplete` (never a pass, never a hang).
+# A4AQ_TIMEOUT_OVERRIDE_SECONDS overrides every category (used by tests).
+BROWSER_CHECK_TIMEOUT_SECONDS = 1800
+PERF_BUNDLE_CHECK_TIMEOUT_SECONDS = 900
+LOG_SCAN_TIMEOUT_SECONDS = 300
+CHECK_CATEGORY_TIMEOUT_SECONDS = {
+    "admin": BROWSER_CHECK_TIMEOUT_SECONDS,
+    "browser": BROWSER_CHECK_TIMEOUT_SECONDS,
+    "checkout": BROWSER_CHECK_TIMEOUT_SECONDS,
+    "perf": PERF_BUNDLE_CHECK_TIMEOUT_SECONDS,
+    "bundle": PERF_BUNDLE_CHECK_TIMEOUT_SECONDS,
+    "logs": LOG_SCAN_TIMEOUT_SECONDS,
+}
+
+
+def check_timeout_seconds(category: str) -> float:
+    override = os.environ.get("A4AQ_TIMEOUT_OVERRIDE_SECONDS", "").strip()
+    if override:
+        return float(override)
+    return float(CHECK_CATEGORY_TIMEOUT_SECONDS.get(category, BROWSER_CHECK_TIMEOUT_SECONDS))
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_OUT_ROOT = Path(os.environ.get("TMPDIR", str(SCRIPT_DIR / ".tmp")))
 DEFAULT_OUT_DIR = DEFAULT_OUT_ROOT / "woopayments-merge/a4aq"
@@ -302,15 +324,29 @@ class Gate:
         }
         self.checks.append(result)
         self.write_evidence()
-        completed = subprocess.run(
-            command,
-            cwd=str(self.repo),
-            env={**os.environ, **(env or {})},
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=False,
-        )
+        timeout_seconds = check_timeout_seconds(category)
+        try:
+            completed = subprocess.run(
+                command,
+                cwd=str(self.repo),
+                env={**os.environ, **(env or {})},
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+                timeout=timeout_seconds,
+            )
+        except subprocess.TimeoutExpired as exc:
+            result["exit_code"] = EXIT_TIMEOUT
+            result["completed_at"] = now()
+            result["stdout_tail"] = tail(exc.stdout)
+            result["stderr_tail"] = tail(exc.stderr)
+            result["status"] = "incomplete"
+            reason = f"{check_id}: timed out after {timeout_seconds:g}s"
+            result["incomplete_reasons"].append(reason)
+            self.incomplete.append(reason)
+            self.write_evidence()
+            return result
         result["exit_code"] = completed.returncode
         result["completed_at"] = now()
         result["stdout_tail"] = tail(completed.stdout)
@@ -485,6 +521,7 @@ class Gate:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             check=False,
+            timeout=check_timeout_seconds("browser"),
         )
         return {
             "command": command,
@@ -558,6 +595,7 @@ class Gate:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             check=False,
+            timeout=check_timeout_seconds("browser"),
         )
         return {
             "command": command,
@@ -734,6 +772,7 @@ class Gate:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     check=False,
+                    timeout=check_timeout_seconds("browser"),
                 )
                 summary["state_stdout_tail"] = tail(state_result.stdout)
                 summary["state_stderr_tail"] = tail(state_result.stderr)
@@ -761,6 +800,7 @@ class Gate:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 check=False,
+                timeout=check_timeout_seconds("admin"),
             )
             entry["exit_code"] = browser_result.returncode
             summary["browser_stdout_tail"] = tail(browser_result.stdout)
@@ -1511,8 +1551,23 @@ def run_text(command: list[str]) -> str:
     return run_text_result(command)["output"]
 
 
-def run_text_result(command: list[str]) -> dict[str, Any]:
-    completed = subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+def run_text_result(command: list[str], timeout_seconds: float | None = None) -> dict[str, Any]:
+    if timeout_seconds is None:
+        timeout_seconds = check_timeout_seconds("logs")
+    try:
+        completed = subprocess.run(
+            command,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as exc:
+        return {
+            "returncode": EXIT_TIMEOUT,
+            "output": f"{tail(exc.stdout)}\ncommand timed out after {timeout_seconds:g}s".strip(),
+        }
     return {"returncode": completed.returncode, "output": completed.stdout or ""}
 
 
