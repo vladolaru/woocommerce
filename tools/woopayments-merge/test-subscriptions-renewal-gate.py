@@ -9,6 +9,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from tools.woopayments_test_runner import adapt_wp_runner_arguments
+
 
 REPO = Path(__file__).resolve().parents[2]
 SCRIPT = REPO / "tools/woopayments-merge/subscriptions-renewal-gate.sh"
@@ -38,13 +40,17 @@ def reconciler_env(tmp_path: Path, exit_code: int = 0) -> dict[str, str]:
 
 
 def run_gate(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    command_args, process_env = adapt_wp_runner_arguments(
+        list(args),
+        os.environ.copy() if env is None else env,
+    )
     return subprocess.run(
-        ["bash", str(SCRIPT), *args],
+        ["bash", str(SCRIPT), *command_args],
         cwd=REPO,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        env=env,
+        env=process_env,
         check=False,
     )
 
@@ -376,8 +382,12 @@ def test_compare_normalizes_reference_and_target_renewal_facts() -> None:
         reconcile_log = (tmp_path / "reconcile-invocations.txt").read_text(encoding="utf-8")
         reconcile_lines = [line for line in reconcile_log.splitlines() if line.startswith("reconcile ")]
         assert len(reconcile_lines) == 2  # one renewal order per store
-        assert reconcile_lines[0] == f"reconcile 1001 wp={ref_wp}"
-        assert reconcile_lines[1] == f"reconcile 2001 wp={target_wp}"
+        # The test transport wraps the fake runners in Docker-shaped commands, so the
+        # reconciler sees the adapted runner keyed by the per-role container name.
+        assert reconcile_lines[0].startswith("reconcile 1001 wp=")
+        assert "exec -i woopayments-test-reference-wp wp" in reconcile_lines[0]
+        assert reconcile_lines[1].startswith("reconcile 2001 wp=")
+        assert "exec -i woopayments-test-target-cli-1 wp" in reconcile_lines[1]
 
 
 def test_compare_selects_and_records_sepa_gateway_and_token_policy() -> None:
@@ -577,3 +587,27 @@ def test_compare_fails_when_renewal_charge_diverges_from_provider() -> None:
         assert result.returncode == 1, result.stdout + result.stderr
         assert "diverges from the provider raw source" in result.stderr
         assert "PASS" not in result.stdout
+
+
+def test_remote_wp_runners_are_rejected_before_any_store_command() -> None:
+    with tempfile.TemporaryDirectory(prefix="subscriptions-renewal-gate-test-") as tmp:
+        tmp_path = Path(tmp)
+        wp_invocations = tmp_path / "wp-invocations.txt"
+
+        result = run_gate(
+            "compare",
+            "--ref",
+            "wp --ssh=user@remote.example",
+            "--target",
+            TARGET_WP,
+            "--ref-subscription-id",
+            "101",
+            "--target-subscription-id",
+            "202",
+            env={**os.environ, "FAKE_WP_INVOCATIONS": str(wp_invocations)},
+        )
+
+        assert result.returncode == 2, result.stdout + result.stderr
+        assert "unsafe WP-CLI command" in result.stderr
+        assert "--ssh" in result.stderr
+        assert not wp_invocations.exists()

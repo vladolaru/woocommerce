@@ -8,9 +8,12 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from tools.woopayments_test_runner import adapt_single_wp_runner
+
 
 REPO = Path(__file__).resolve().parents[2]
 GATE = REPO / "tools" / "woopayments-merge" / "payout-evidence-gate.sh"
+LOCAL_RUNNER_SAFETY = REPO / "tools" / "woopayments-merge" / "local-runner-safety.sh"
 
 
 def write_executable(path: Path, contents: str) -> None:
@@ -28,6 +31,7 @@ def test_payout_gate_creates_available_balance_payout_for_membership_evidence() 
 
         shutil.copy2(GATE, gate_dir / "payout-evidence-gate.sh")
         (gate_dir / "payout-evidence-gate.sh").chmod(0o755)
+        shutil.copy2(LOCAL_RUNNER_SAFETY, gate_dir / "local-runner-safety.sh")
 
         invocation_log = work_dir / "invocations.log"
         write_executable(
@@ -86,21 +90,24 @@ exit 2
 """,
         )
 
+        runner, env = adapt_single_wp_runner(str(fake_wp), os.environ.copy())
+        env.update(
+            {
+                "PATH": f"{bin_dir}:{work_dir}:{os.environ.get('PATH', '')}",
+                "INVOCATION_LOG": str(invocation_log),
+            }
+        )
         result = subprocess.run(
             [
                 "bash",
                 str(gate_dir / "payout-evidence-gate.sh"),
                 "--wp",
-                str(fake_wp),
+                runner,
                 "--label",
                 "test",
             ],
             cwd=REPO,
-            env={
-                **os.environ,
-                "PATH": f"{bin_dir}:{work_dir}:{os.environ.get('PATH', '')}",
-                "INVOCATION_LOG": str(invocation_log),
-            },
+            env=env,
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -111,3 +118,36 @@ exit 2
         invocations = invocation_log.read_text(encoding="utf-8")
         assert "wp|wcpay-dev test-lab payouts --count=1 --format=json" in invocations
         assert "--amount=1" not in invocations
+
+
+def test_payout_gate_rejects_remote_wp_runner_before_any_invocation() -> None:
+    with tempfile.TemporaryDirectory(prefix="payout-evidence-gate-") as tmp:
+        work_dir = Path(tmp)
+        gate_dir = work_dir / "gate"
+        gate_dir.mkdir()
+        shutil.copy2(GATE, gate_dir / "payout-evidence-gate.sh")
+        (gate_dir / "payout-evidence-gate.sh").chmod(0o755)
+        shutil.copy2(LOCAL_RUNNER_SAFETY, gate_dir / "local-runner-safety.sh")
+        invocation_log = work_dir / "invocations.log"
+
+        result = subprocess.run(
+            [
+                "bash",
+                str(gate_dir / "payout-evidence-gate.sh"),
+                "--wp",
+                "wp --ssh=user@remote.example",
+                "--label",
+                "test",
+            ],
+            cwd=REPO,
+            env={**os.environ, "INVOCATION_LOG": str(invocation_log)},
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        assert result.returncode == 2, result.stdout + result.stderr
+        assert "unsafe WP-CLI command" in result.stderr
+        assert "--ssh" in result.stderr
+        assert not invocation_log.exists()

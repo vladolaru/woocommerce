@@ -191,3 +191,23 @@ def adapt_wp_runner_arguments(
     adapted_env.setdefault("REF_COMPOSE_PROJECT", REF_PROJECT)
     adapted_env.setdefault("TARGET_COMPOSE_PROJECT", TARGET_PROJECT)
     return adapted_args, adapted_env
+
+
+def adapt_single_wp_runner(
+    command: str,
+    env: dict[str, str],
+    *,
+    role: str = "ref",
+) -> tuple[str, dict[str, str]]:
+    """Adapt one WP runner string (env-style seams like $WP) to the Docker contract.
+
+    Wraps a bare temporary WP delegate path in the same fake `docker exec` transport
+    that ``adapt_wp_runner_arguments`` uses for --ref/--target flags, so gates that
+    take their runner from an environment variable exercise the production local-only
+    runner validation. Non-delegate strings pass through untouched (e.g. deliberately
+    unsafe runners in negative tests).
+    """
+
+    flag = "--ref" if role == "ref" else "--target"
+    args, adapted_env = adapt_wp_runner_arguments([flag, command], env)
+    return args[1], adapted_env

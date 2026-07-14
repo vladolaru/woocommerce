@@ -9,6 +9,13 @@
 set -uo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOCAL_RUNNER_SAFETY="$SELF_DIR/local-runner-safety.sh"
+if [ ! -f "$LOCAL_RUNNER_SAFETY" ]; then
+	echo "FAIL: local runner safety library is missing: $LOCAL_RUNNER_SAFETY" >&2
+	exit 2
+fi
+# shellcheck source=tools/woopayments-merge/local-runner-safety.sh
+source "$LOCAL_RUNNER_SAFETY"
 FLOW_DRIVE="$SELF_DIR/flow-drive.sh"
 RECONCILE="$SELF_DIR/financial-reconcile.sh"
 REF_WP=""
@@ -57,6 +64,21 @@ if [ -z "$REF_WP" ] || [ -z "$TARGET_WP" ]; then
 	usage
 	exit 2
 fi
+
+# Local-only enforcement (RULE: never drive disputes against a remote store).
+validate_local_wp_cmd() {
+	local label="$1"
+	local command="$2"
+	local error
+
+	if ! error="$(woopayments_validate_local_wp_runner "$command")"; then
+		echo "FAIL: unsafe WP-CLI command for $label: $error" >&2
+		exit 2
+	fi
+}
+
+validate_local_wp_cmd reference "$REF_WP"
+validate_local_wp_cmd target "$TARGET_WP"
 
 if ! command -v python3 >/dev/null 2>&1; then
 	blocked "python3 is required."

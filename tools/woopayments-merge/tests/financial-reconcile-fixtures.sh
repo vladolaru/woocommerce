@@ -51,6 +51,7 @@ JSON
   "amount_refunded": 1200,
   "currency": "usd",
   "captured": true,
+  "livemode": false,
   "payment_intent": "pi_123",
   "balance_transaction": "txn_123",
   "refunds": {
@@ -159,6 +160,19 @@ expect_fail() {
 	echo "ok: $name"
 }
 
+expect_blocked() {
+	local name="$1"
+	local rc
+	output="$(run_compare 2>&1)"
+	rc=$?
+	if [ "$rc" -ne 3 ]; then
+		echo "FAIL: $name expected BLOCKED (exit 3), got exit $rc"
+		printf '%s\n' "$output"
+		exit 1
+	fi
+	echo "ok: $name"
+}
+
 write_converted_fixtures() {
 	write_matching_fixtures
 	python3 - "$WORK_DIR/wc.json" "$WORK_DIR/charge.json" "$WORK_DIR/intent.json" "$WORK_DIR/balance.json" "$WORK_DIR/refunds.json" <<'PY'
@@ -203,6 +217,30 @@ PY
 
 write_matching_fixtures
 expect_pass "matching charge/refund/fee/dispute/payout/multi-currency fixture"
+
+# Structural live-money guard: a live-mode charge (or one that cannot prove test
+# mode) must BLOCK before any money comparison — never PASS, never a mere FAIL.
+write_matching_fixtures
+python3 - "$WORK_DIR/charge.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+data = json.load(open(path))
+data["livemode"] = True
+with open(path, "w") as handle:
+    json.dump(data, handle)
+PY
+expect_blocked "live-mode provider charge refuses to reconcile"
+
+write_matching_fixtures
+python3 - "$WORK_DIR/charge.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+data = json.load(open(path))
+del data["livemode"]
+with open(path, "w") as handle:
+    json.dump(data, handle)
+PY
+expect_blocked "provider charge without livemode flag cannot prove test mode"
 
 write_matching_fixtures
 python3 - "$WORK_DIR/wc.json" <<'PY'

@@ -7,10 +7,13 @@ import stat
 import subprocess
 from pathlib import Path
 
+from tools.woopayments_test_runner import adapt_single_wp_runner
+
 
 REPO = Path(__file__).resolve().parents[2]
 GATE = REPO / "tools/woopayments-merge/financial-reconcile.sh"
 COMPARATOR = REPO / "tools/woopayments-merge/financial-reconcile-normalize.py"
+LOCAL_RUNNER_SAFETY = REPO / "tools/woopayments-merge/local-runner-safety.sh"
 
 FAKE_STRIPE = """#!/usr/bin/env bash
 # Test stand-in for the Stripe CLI: serves canned raw-source JSON from $FR_FIXTURE_DIR.
@@ -102,6 +105,7 @@ CHARGE = {
     "amount_refunded": 1200,
     "currency": "usd",
     "captured": True,
+    "livemode": False,
     "payment_intent": "pi_123",
     "balance_transaction": "txn_123",
     "refunds": {"data": [{"id": "re_123", "amount": 1200, "currency": "usd"}]},
@@ -152,6 +156,7 @@ def make_harness(tmp_path: Path) -> tuple[Path, Path, dict[str, str]]:
     gate = harness / "financial-reconcile.sh"
     shutil.copy2(GATE, gate)
     shutil.copy2(COMPARATOR, harness / "financial-reconcile-normalize.py")
+    shutil.copy2(LOCAL_RUNNER_SAFETY, harness / "local-runner-safety.sh")
 
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -172,7 +177,8 @@ def make_harness(tmp_path: Path) -> tuple[Path, Path, dict[str, str]]:
     env = os.environ.copy()
     env["PATH"] = f"{bin_dir}:{env['PATH']}"
     env["FR_FIXTURE_DIR"] = str(fixtures)
-    env["WP"] = str(bin_dir / "wp")
+    runner, env = adapt_single_wp_runner(str(bin_dir / "wp"), env)
+    env["WP"] = runner
     return gate, fixtures, env
 
 
@@ -262,3 +268,32 @@ def test_charge_missing_at_provider_fails(tmp_path: Path) -> None:
 
     assert result.returncode == 1, result.stdout
     assert "not found at provider" in result.stdout
+
+
+def test_remote_wp_runner_is_rejected_before_any_store_read(tmp_path: Path) -> None:
+    gate, fixtures, env = make_harness(tmp_path)
+    write_wc_fixture(fixtures, 101)
+    env["WP"] = "wp --ssh=user@remote.example"
+
+    result = run_gate(gate, env, "101")
+
+    assert result.returncode == 2, result.stdout
+    assert "unsafe WP-CLI command" in result.stdout
+    assert "--ssh" in result.stdout
+    # The gate must refuse before its Stripe raw-source preflight or any store read.
+    assert "Preflight:" not in result.stdout
+    assert "PASS" not in result.stdout
+
+
+def test_live_mode_charge_blocks_reconciliation(tmp_path: Path) -> None:
+    gate, fixtures, env = make_harness(tmp_path)
+    write_wc_fixture(fixtures, 101)
+    live_charge = dict(CHARGE)
+    live_charge["livemode"] = True
+    (fixtures / "charge-ch_123.json").write_text(json.dumps(live_charge), encoding="utf-8")
+
+    result = run_gate(gate, env, "101")
+
+    assert result.returncode == 3, result.stdout
+    assert "refusing to operate on live-mode money" in result.stdout
+    assert "PASS" not in result.stdout

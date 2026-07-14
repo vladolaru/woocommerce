@@ -9,6 +9,13 @@
 set -uo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOCAL_RUNNER_SAFETY="$SELF_DIR/local-runner-safety.sh"
+if [ ! -f "$LOCAL_RUNNER_SAFETY" ]; then
+	echo "FAIL: local runner safety library is missing: $LOCAL_RUNNER_SAFETY" >&2
+	exit 2
+fi
+# shellcheck source=tools/woopayments-merge/local-runner-safety.sh
+source "$LOCAL_RUNNER_SAFETY"
 FLOW_DRIVE="$SELF_DIR/flow-drive.sh"
 
 TARGET_WP=""
@@ -139,6 +146,13 @@ if [ -n "$STATE" ]; then
 else
 	if [ -z "$TARGET_WP" ]; then
 		usage_error "provide --target or --state."
+	fi
+	# Local-only enforcement (RULE: never drive live-mode flows against a remote store).
+	# Validated before any store command in live mode; snapshot (--state) and
+	# --print-plan modes run no store commands.
+	if ! runner_error="$(woopayments_validate_local_wp_runner "$TARGET_WP")"; then
+		printf 'FAIL: unsafe WP-CLI command for --target: %s\n' "$runner_error" >&2
+		exit 2
 	fi
 	TARGET_WP_RUNTIME="$TARGET_WP --exec=ini_set(\"memory_limit\",\"$WP_CLI_MEMORY_LIMIT\");"
 fi

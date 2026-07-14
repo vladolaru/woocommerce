@@ -25,6 +25,13 @@
 set -uo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOCAL_RUNNER_SAFETY="$SELF_DIR/local-runner-safety.sh"
+if [ ! -f "$LOCAL_RUNNER_SAFETY" ]; then
+	echo "FLOW-DRIVE FAIL: local runner safety library is missing: $LOCAL_RUNNER_SAFETY" >&2
+	exit 2
+fi
+# shellcheck source=tools/woopayments-merge/local-runner-safety.sh
+source "$LOCAL_RUNNER_SAFETY"
 WP="${WP:-wp}"
 OP="${1:-}"
 shift || true
@@ -70,6 +77,27 @@ if [ -z "$OP" ]; then
 	exit 2
 fi
 
+# Local-only enforcement (RULE: never drive money against a remote store). The runner
+# string is validated before its first use. Carve-out 1: the critical-flows suite
+# (tools/woopayments-critical-flows) passes exported bash wrapper FUNCTIONS (wp_ref /
+# wp_target) as $WP; a function name is not a runner string a shape validator can parse,
+# and those wrappers themselves only wrap validated-shape local runner commands (see
+# lib/common.sh). Only non-function runner strings are validated here. Carve-out 2: the
+# i18n notes gate appends an exactly-shaped, harmless WP-CLI memory-limit token
+# (--exec=ini_set("memory_limit","<n>M");) to its already-validated runner; that fixed
+# suffix is stripped before validation so the transport underneath is still enforced.
+if ! declare -F "$WP" >/dev/null 2>&1; then
+	WP_TO_VALIDATE="$WP"
+	MEMORY_EXEC_SUFFIX_PATTERN=' --exec=ini_set\("memory_limit","[1-9][0-9]*[MmGg]"\);$'
+	if [[ "$WP_TO_VALIDATE" =~ $MEMORY_EXEC_SUFFIX_PATTERN ]]; then
+		WP_TO_VALIDATE="${WP_TO_VALIDATE% --exec=*}"
+	fi
+	if ! runner_error="$(woopayments_validate_local_wp_runner "$WP_TO_VALIDATE")"; then
+		echo "FLOW-DRIVE FAIL: unsafe WP-CLI command for \$WP: $runner_error" >&2
+		exit 2
+	fi
+fi
+
 # Map the singular op to the Test Lab's plural subcommand.
 case "$OP" in
 	charge)  SUB="charges" ;;
@@ -79,6 +107,32 @@ case "$OP" in
 	payout)  SUB="payouts" ;;
 	*) echo "Unknown op: $OP (use charge|refund|capture|dispute|payout)" >&2; exit 2 ;;
 esac
+
+# Structural live-money guard for the native runtime: before driving anything, prove the
+# native store is in TEST mode the same way money-path-parity-preflight.php does
+# (WooPaymentsAccountService::is_test_mode_enabled()). A store that is not provably in
+# test mode BLOCKS (exit 3) — driving it would create real charges.
+if [ "$NATIVE" -eq 1 ]; then
+	test_mode_raw="$($WP eval '
+$account_class = "Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\WooPaymentsAccountService";
+$test_mode = false;
+if ( function_exists( "wc_get_container" ) && class_exists( $account_class ) ) {
+	try {
+		$account_service = wc_get_container()->get( $account_class );
+		$test_mode = is_object( $account_service ) && method_exists( $account_service, "is_test_mode_enabled" ) && $account_service->is_test_mode_enabled();
+	} catch ( Throwable $throwable ) {
+		$test_mode = false;
+	}
+}
+echo $test_mode ? "WCPAY_NATIVE_TEST_MODE:yes" : "WCPAY_NATIVE_TEST_MODE:no";
+' 2>&1)"
+	test_mode_rc=$?
+	if [ "$test_mode_rc" -ne 0 ] || ! printf '%s\n' "$test_mode_raw" | grep -q 'WCPAY_NATIVE_TEST_MODE:yes'; then
+		echo "FLOW-DRIVE BLOCKED ($OP): native store is not provably in test mode; refusing to drive money flows." >&2
+		printf '%s\n' "$test_mode_raw" | tail -3 >&2
+		exit 3
+	fi
+fi
 
 if [ "$DETERMINISTIC" -eq 1 ]; then
 	if [ "$OP" = "charge" ]; then

@@ -4,9 +4,12 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import tempfile
 from pathlib import Path
+
+from tools.woopayments_test_runner import adapt_wp_runner_arguments
 
 
 REPO = Path(__file__).resolve().parents[2]
@@ -16,12 +19,14 @@ TARGET_WP = "docker exec -i target-cli-1 wp --allow-root --user=1"
 
 
 def run_gate(*args: str) -> subprocess.CompletedProcess[str]:
+    command_args, process_env = adapt_wp_runner_arguments(list(args), os.environ.copy())
     return subprocess.run(
-        ["bash", str(SCRIPT), *args],
+        ["bash", str(SCRIPT), *command_args],
         cwd=REPO,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
+        env=process_env,
         check=False,
     )
 
@@ -304,6 +309,27 @@ def test_live_gate_blocks_before_language_switch_when_target_is_not_native_owned
 
         invocations = invocations_path.read_text(encoding="utf-8").splitlines()
         assert invocations == ["wc-native-payments status"]
+
+
+def test_live_gate_rejects_remote_target_runner_before_any_invocation() -> None:
+    with tempfile.TemporaryDirectory(prefix="i18n-notes-gate-test-") as tmp:
+        tmp_path = Path(tmp)
+        fake_wp = tmp_path / "target-wp"
+        invocations_path = tmp_path / "wp-invocations.txt"
+
+        make_fake_wp(fake_wp, invocations_path, native_owner="native")
+
+        result = run_gate(
+            "--target",
+            f"{fake_wp} --ssh=user@remote.example",
+            "--out-dir",
+            str(tmp_path / "evidence"),
+        )
+
+        assert result.returncode == 2, result.stdout + result.stderr
+        assert "unsafe WP-CLI command" in result.stderr
+        assert "--ssh" in result.stderr
+        assert not invocations_path.exists()
 
 
 def test_verify_runs_i18n_notes_gate_for_cross_store_mode() -> None:

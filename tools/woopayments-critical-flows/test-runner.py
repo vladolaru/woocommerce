@@ -12,6 +12,8 @@ import tempfile
 import time
 from pathlib import Path
 
+from tools.woopayments_test_runner import adapt_single_wp_runner
+
 
 REPO = Path(__file__).resolve().parents[2]
 RUNNER = REPO / "tools/woopayments-critical-flows/run.sh"
@@ -364,6 +366,11 @@ def test_flow_drive_parses_wp_env_json_before_success_footer() -> None:
         write_executable(
             fake_wp,
             """#!/usr/bin/env bash
+if [ "${1:-}" = "eval" ]; then
+  # flow-drive's native live-money guard probes test mode before driving.
+  printf 'WCPAY_NATIVE_TEST_MODE:yes\\n'
+  exit 0
+fi
 cat <<'OUT'
 ℹ Starting 'wp eval-file - test-lab-beaker-001 2 pm_card_visa 0 ' on the cli container.
 {"order_id":137,"charge_id":"ch_fake","intent_id":"pi_fake","status":"processing"}
@@ -371,6 +378,10 @@ cat <<'OUT'
 OUT
 """,
         )
+        # flow-drive validates $WP as a local-only runner, so the bare delegate path is
+        # wrapped in the same Docker-shaped test transport the merge harness tests use.
+        runner, env = adapt_single_wp_runner(str(fake_wp), os.environ.copy())
+        env["WP"] = runner
 
         result = subprocess.run(
             [
@@ -390,15 +401,30 @@ OUT
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            env={**os.environ, "WP": str(fake_wp)},
+            env=env,
             check=False,
         )
 
-        assert result.returncode == 0
+        assert result.returncode == 0, result.stdout + result.stderr
         payload = json.loads(result.stdout)
         assert payload["op"] == "charge"
         assert payload["order_id"] == 137
         assert payload["charge_id"] == "ch_fake"
+
+
+def test_flow_drive_rejects_remote_wp_runner_with_exit_2() -> None:
+    result = subprocess.run(
+        ["bash", str(FLOW_DRIVE), "charge", "--deterministic"],
+        cwd=REPO,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env={**os.environ, "WP": "wp --ssh=user@remote.example"},
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert "unsafe WP-CLI command" in result.stderr
 
 
 def test_common_wp_wrappers_accept_command_strings_with_args() -> None:

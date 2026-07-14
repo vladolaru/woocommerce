@@ -9,6 +9,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from tools.woopayments_test_runner import adapt_single_wp_runner
+
 
 REPO = Path(__file__).resolve().parents[2]
 SCRIPT = REPO / "tools/woopayments-merge/flow-drive.sh"
@@ -21,25 +23,35 @@ def write_fake_wp(path: Path, payload: dict) -> None:
     path.write_text(
         "#!/usr/bin/env python3\n"
         "import json\n"
+        "import sys\n"
+        'if len(sys.argv) > 1 and sys.argv[1] == "eval":\n'
+        '    print("WCPAY_NATIVE_TEST_MODE:yes")\n'
+        "    raise SystemExit(0)\n"
         f"print(json.dumps({payload!r}))\n",
         encoding="utf-8",
     )
     path.chmod(0o755)
 
 
+def run_flow_drive(fake_wp: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    runner, env = adapt_single_wp_runner(str(fake_wp), os.environ.copy())
+    env["WP"] = runner
+    return subprocess.run(
+        ["bash", str(SCRIPT), *args],
+        cwd=REPO,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+
 def run_dispute(payload: dict) -> subprocess.CompletedProcess[str]:
     with tempfile.TemporaryDirectory(prefix="flow-drive-provider-fixture-") as temp_dir:
         fake_wp = Path(temp_dir) / "wp"
         write_fake_wp(fake_wp, payload)
-        return subprocess.run(
-            ["bash", str(SCRIPT), "dispute", "--deterministic"],
-            cwd=REPO,
-            env={**os.environ, "WP": str(fake_wp)},
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=False,
-        )
+        return run_flow_drive(fake_wp, "dispute", "--deterministic")
 
 
 def test_dispute_rejects_trashed_order_without_provider_identity() -> None:
@@ -94,25 +106,175 @@ print(json.dumps({
         )
         fake_wp.chmod(0o755)
 
+        result = run_flow_drive(
+            fake_wp,
+            "charge",
+            "--deterministic",
+            "--run-token",
+            RUN_TOKEN,
+        )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout)["received_run_token"] == RUN_TOKEN
+
+
+def test_remote_wp_runner_is_rejected_before_any_store_invocation() -> None:
+    with tempfile.TemporaryDirectory(prefix="flow-drive-remote-runner-") as temp_dir:
+        invoked_marker = Path(temp_dir) / "invoked"
+        fake_wp = Path(temp_dir) / "wp"
+        fake_wp.write_text(
+            "#!/usr/bin/env bash\n"
+            f"touch {json.dumps(str(invoked_marker))}\n"
+            'printf \'{"order_id":123}\\n\'\n',
+            encoding="utf-8",
+        )
+        fake_wp.chmod(0o755)
+
         result = subprocess.run(
-            [
-                "bash",
-                str(SCRIPT),
-                "charge",
-                "--deterministic",
-                "--run-token",
-                RUN_TOKEN,
-            ],
+            ["bash", str(SCRIPT), "charge", "--deterministic"],
             cwd=REPO,
-            env={**os.environ, "WP": str(fake_wp)},
+            env={**os.environ, "WP": f"{fake_wp} --ssh=user@remote.example"},
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             check=False,
         )
 
+        assert result.returncode == 2, result.stdout + result.stderr
+        assert "unsafe WP-CLI command" in result.stderr
+        assert "--ssh" in result.stderr
+        assert not invoked_marker.exists()
+
+
+def test_i18n_memory_limit_exec_suffix_is_stripped_before_validation() -> None:
+    # The i18n notes gate appends an exactly-shaped memory-limit --exec token to its
+    # validated runner; the transport underneath must still validate and drive.
+    with tempfile.TemporaryDirectory(prefix="flow-drive-exec-suffix-") as temp_dir:
+        fake_wp = Path(temp_dir) / "wp"
+        write_fake_wp(
+            fake_wp,
+            {
+                "success": True,
+                "order_id": 123,
+                "status": "processing",
+                "intent_id": "pi_fixture",
+                "charge_id": "ch_fixture",
+            },
+        )
+        runner, env = adapt_single_wp_runner(str(fake_wp), os.environ.copy())
+        env["WP"] = f'{runner} --exec=ini_set("memory_limit","256M");'
+
+        result = subprocess.run(
+            ["bash", str(SCRIPT), "dispute", "--deterministic"],
+            cwd=REPO,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert json.loads(result.stdout)["order_id"] == 123
+
+
+def test_arbitrary_exec_suffix_is_still_rejected() -> None:
+    with tempfile.TemporaryDirectory(prefix="flow-drive-exec-reject-") as temp_dir:
+        fake_wp = Path(temp_dir) / "wp"
+        write_fake_wp(fake_wp, {"order_id": 123})
+        runner, env = adapt_single_wp_runner(str(fake_wp), os.environ.copy())
+        env["WP"] = f'{runner} --exec=system("curl https://remote.example");'
+
+        result = subprocess.run(
+            ["bash", str(SCRIPT), "charge", "--deterministic"],
+            cwd=REPO,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        assert result.returncode == 2, result.stdout + result.stderr
+        assert "unsafe WP-CLI command" in result.stderr
+
+
+def test_exported_wp_wrapper_function_is_accepted_like_critical_flows() -> None:
+    # The critical-flows suite exports bash wrapper functions (wp_ref / wp_target) as
+    # $WP; flow-drive must accept those without string validation because the wrappers
+    # themselves only wrap validated-shape local runner commands.
+    payload = {
+        "success": True,
+        "order_id": 321,
+        "status": "processing",
+        "intent_id": "pi_fn",
+        "charge_id": "ch_fn",
+    }
+    script = f"""
+wp_fake() {{
+    if [ "${{1:-}}" = "eval" ]; then
+        printf 'WCPAY_NATIVE_TEST_MODE:yes\\n'
+        return 0
+    fi
+    printf '%s\\n' {json.dumps(json.dumps(payload))}
+}}
+export -f wp_fake
+WP=wp_fake bash {json.dumps(str(SCRIPT))} charge --deterministic --native --type=success
+"""
+    result = subprocess.run(
+        ["bash", "-c", script],
+        cwd=REPO,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
     assert result.returncode == 0, result.stdout + result.stderr
-    assert json.loads(result.stdout)["received_run_token"] == RUN_TOKEN
+    assert json.loads(result.stdout)["order_id"] == 321
+
+
+def test_native_flow_blocks_when_store_is_not_in_test_mode() -> None:
+    with tempfile.TemporaryDirectory(prefix="flow-drive-live-mode-") as temp_dir:
+        driven_marker = Path(temp_dir) / "driven"
+        fake_wp = Path(temp_dir) / "wp"
+        fake_wp.write_text(
+            "#!/usr/bin/env bash\n"
+            'if [ "${1:-}" = "eval" ]; then\n'
+            "    printf 'WCPAY_NATIVE_TEST_MODE:no\\n'\n"
+            "    exit 0\n"
+            "fi\n"
+            f"touch {json.dumps(str(driven_marker))}\n"
+            'printf \'{"order_id":123,"status":"processing","intent_id":"pi_x","charge_id":"ch_x"}\\n\'\n',
+            encoding="utf-8",
+        )
+        fake_wp.chmod(0o755)
+
+        result = run_flow_drive(fake_wp, "charge", "--deterministic", "--native", "--type=success")
+
+        assert result.returncode == 3, result.stdout + result.stderr
+        assert "not provably in test mode" in result.stderr
+        assert not driven_marker.exists()
+
+
+def test_native_flow_proceeds_when_test_mode_probe_confirms() -> None:
+    with tempfile.TemporaryDirectory(prefix="flow-drive-test-mode-") as temp_dir:
+        fake_wp = Path(temp_dir) / "wp"
+        write_fake_wp(
+            fake_wp,
+            {
+                "success": True,
+                "order_id": 123,
+                "status": "processing",
+                "intent_id": "pi_fixture",
+                "charge_id": "ch_fixture",
+            },
+        )
+
+        result = run_flow_drive(fake_wp, "charge", "--deterministic", "--native", "--type=success")
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert json.loads(result.stdout)["order_id"] == 123
 
 
 def test_charge_drivers_persist_run_token_before_payment_mutation() -> None:

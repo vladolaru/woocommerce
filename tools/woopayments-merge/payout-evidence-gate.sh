@@ -9,6 +9,13 @@
 set -uo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOCAL_RUNNER_SAFETY="$SELF_DIR/local-runner-safety.sh"
+if [ ! -f "$LOCAL_RUNNER_SAFETY" ]; then
+	echo "FAIL: local runner safety library is missing: $LOCAL_RUNNER_SAFETY" >&2
+	exit 2
+fi
+# shellcheck source=tools/woopayments-merge/local-runner-safety.sh
+source "$LOCAL_RUNNER_SAFETY"
 
 WP_CMD=""
 LABEL="store"
@@ -47,6 +54,12 @@ done
 if [ -z "$WP_CMD" ]; then
 	echo "FAIL: --wp is required." >&2
 	usage
+	exit 2
+fi
+
+# Local-only enforcement (RULE: never drive charges/payouts against a remote store).
+if ! runner_error="$(woopayments_validate_local_wp_runner "$WP_CMD")"; then
+	echo "FAIL: unsafe WP-CLI command for --wp: $runner_error" >&2
 	exit 2
 fi
 

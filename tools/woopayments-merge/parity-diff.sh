@@ -27,6 +27,13 @@
 set -uo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOCAL_RUNNER_SAFETY="$SELF_DIR/local-runner-safety.sh"
+if [ ! -f "$LOCAL_RUNNER_SAFETY" ]; then
+	echo "FAIL: local runner safety library is missing: $LOCAL_RUNNER_SAFETY" >&2
+	exit 2
+fi
+# shellcheck source=tools/woopayments-merge/local-runner-safety.sh
+source "$LOCAL_RUNNER_SAFETY"
 DUMP="$SELF_DIR/dump-bucket-e-surface.sh"
 CROSS_SETTLE_TRIES="${CROSS_SETTLE_TRIES:-60}"
 CROSS_SETTLE_SLEEP_SECONDS="${CROSS_SETTLE_SLEEP_SECONDS:-1}"
@@ -57,6 +64,29 @@ IDS+=("$@")
 if [ "${#IDS[@]}" -eq 0 ]; then
 	echo "usage: parity-diff.sh (--self-check WP | --ref WP --target WP) <order_id>..." >&2
 	exit 2
+fi
+
+# Local-only enforcement (RULE: never read Bucket-E surfaces from a remote store).
+# Every accepted runner string is validated once, before any store command.
+validate_local_wp_cmd() {
+	local label="$1"
+	local command="$2"
+	local error
+
+	if ! error="$(woopayments_validate_local_wp_runner "$command")"; then
+		echo "FAIL: unsafe WP-CLI command for $label: $error" >&2
+		exit 2
+	fi
+}
+
+if [ -n "$SELF_WP" ]; then
+	validate_local_wp_cmd self-check "$SELF_WP"
+fi
+if [ -n "$REF_WP" ]; then
+	validate_local_wp_cmd reference "$REF_WP"
+fi
+if [ -n "$TARGET_WP" ]; then
+	validate_local_wp_cmd target "$TARGET_WP"
 fi
 
 # Env-noise (local mail-transport failure notes) is excluded inside the dump itself, at the

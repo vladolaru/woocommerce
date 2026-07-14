@@ -22,6 +22,13 @@
 set -uo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOCAL_RUNNER_SAFETY="$SELF_DIR/local-runner-safety.sh"
+if [ ! -f "$LOCAL_RUNNER_SAFETY" ]; then
+	echo "FAIL: local runner safety library is missing: $LOCAL_RUNNER_SAFETY" >&2
+	exit 2
+fi
+# shellcheck source=tools/woopayments-merge/local-runner-safety.sh
+source "$LOCAL_RUNNER_SAFETY"
 DRIVER="$SELF_DIR/subscriptions-renewal-drive.php"
 
 MODE=""
@@ -144,6 +151,23 @@ if [ "$MODE" = "compare" ]; then
 		exit 2
 	fi
 fi
+
+# Local-only enforcement (RULE: never drive renewals against a remote store). Validated
+# once, before any store command. WOOPAYMENTS_RENEWAL_RECONCILER is intentionally NOT
+# validated here: it is a script path seam, not a WP runner string.
+validate_local_wp_cmd() {
+	local label="$1"
+	local command="$2"
+	local error
+
+	if ! error="$(woopayments_validate_local_wp_runner "$command")"; then
+		echo "FAIL: unsafe WP-CLI command for $label: $error" >&2
+		exit 2
+	fi
+}
+
+validate_local_wp_cmd reference "$REF_WP"
+validate_local_wp_cmd target "$TARGET_WP"
 
 run_eval() {
 	local wp_cmd="$1"
@@ -381,7 +405,14 @@ PYEOF
 # Renewal money is RULE 0: the drive performed a REAL provider charge, so the
 # renewal order must reconcile against the provider raw source on both stores.
 # Matching meta presence and status with a wrong amount must not ship.
+#
+# WOOPAYMENTS_RENEWAL_RECONCILER is a SELF-TEST seam only (the sibling dispute gate
+# deliberately hardcodes its reconciler). An overridden run announces itself loudly
+# below so it can never silently pose as real RULE 0 money evidence.
 RECONCILE="${WOOPAYMENTS_RENEWAL_RECONCILER:-$SELF_DIR/financial-reconcile.sh}"
+if [ -n "${WOOPAYMENTS_RENEWAL_RECONCILER:-}" ]; then
+	echo "NOTE: renewal reconciler overridden via WOOPAYMENTS_RENEWAL_RECONCILER=$RECONCILE — self-test seam; this run's money verdict is NOT release evidence."
+fi
 if [ ! -f "$RECONCILE" ]; then
 	echo "BLOCKED: financial reconciler missing: $RECONCILE" >&2
 	write_rollup blocked true

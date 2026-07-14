@@ -552,6 +552,22 @@ def compare(args: argparse.Namespace) -> Verdict:
         verdict.block("WC order and Stripe charge inputs must be JSON objects")
         return verdict
 
+    # Structural live-money guard: the harness only ever operates on test-mode money.
+    # A live-mode charge — or a charge that cannot prove it is test-mode — must BLOCK
+    # before any money comparison happens.
+    if "livemode" not in charge:
+        verdict.block(
+            "provider charge is missing the livemode flag — cannot prove test mode; "
+            "refusing to operate on live-mode money"
+        )
+        return verdict
+    if charge.get("livemode") is not False:
+        verdict.block(
+            f"provider charge reports livemode={string_value(charge.get('livemode'))} — "
+            "refusing to operate on live-mode money"
+        )
+        return verdict
+
     wc_currency = lower(wc.get("currency"))
     charge_currency = lower(charge.get("currency"))
     compare_equal(verdict, "charge id", wc.get("charge_id"), charge.get("id"))

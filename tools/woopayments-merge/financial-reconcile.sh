@@ -24,12 +24,25 @@
 set -uo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOCAL_RUNNER_SAFETY="$SELF_DIR/local-runner-safety.sh"
+if [ ! -f "$LOCAL_RUNNER_SAFETY" ]; then
+	echo "FAIL: local runner safety library is missing: $LOCAL_RUNNER_SAFETY" >&2
+	exit 2
+fi
+# shellcheck source=tools/woopayments-merge/local-runner-safety.sh
+source "$LOCAL_RUNNER_SAFETY"
 WP="${WP:-wp}"
 IDS=("$@")
 COMPARE="$SELF_DIR/financial-reconcile-normalize.py"
 
 if [ "${#IDS[@]}" -eq 0 ]; then
 	echo "usage: WP='<wp runner>' financial-reconcile.sh <order_id>..." >&2
+	exit 2
+fi
+
+# Local-only enforcement (RULE: never read/mutate store money state on a remote store).
+if ! runner_error="$(woopayments_validate_local_wp_runner "$WP")"; then
+	echo "FAIL: unsafe WP-CLI command for \$WP: $runner_error" >&2
 	exit 2
 fi
 
