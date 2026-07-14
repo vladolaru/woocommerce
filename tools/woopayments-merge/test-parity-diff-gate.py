@@ -152,6 +152,56 @@ def test_cross_store_missing_on_one_side_is_blocked(tmp_path: Path) -> None:
     assert "PASS" not in result.stdout
 
 
+def test_empty_vs_real_transaction_id_is_a_divergence(tmp_path: Path) -> None:
+    # transaction_id is masked as volatile, but the presence/emptiness class must be
+    # preserved: a native store failing to persist the transaction id at all is a
+    # merchant-facing regression, not volatile noise.
+    gate, fixtures, env = make_harness(tmp_path)
+    ref = json.loads(order_record(10))
+    ref["transaction_id"] = "pi_RefAbc1234567890"
+    target = json.loads(order_record(20))
+    target["transaction_id"] = ""
+    write_fixture(fixtures, "refstore", 10, json.dumps(ref, sort_keys=True, separators=(",", ":")))
+    write_fixture(fixtures, "targetstore", 20, json.dumps(target, sort_keys=True, separators=(",", ":")))
+
+    result = run_gate(gate, env, "--ref", "refstore", "--target", "targetstore", "--target-ids", "20", "10")
+
+    assert result.returncode == 1, result.stdout
+    assert "RULE 0 regression" in result.stdout
+
+
+def test_note_wording_change_behind_english_prefix_is_a_divergence(tmp_path: Path) -> None:
+    # "re_authorization" vs "re_authentication" must not both collapse to re_<id>:
+    # the id mask requires a Stripe-shaped suffix (contains a digit, 8+ chars).
+    gate, fixtures, env = make_harness(tmp_path)
+    ref = json.loads(order_record(10))
+    ref["notes"] = ["Payment re_authorization required"]
+    target = json.loads(order_record(20))
+    target["notes"] = ["Payment re_authentication required"]
+    write_fixture(fixtures, "refstore", 10, json.dumps(ref, sort_keys=True, separators=(",", ":")))
+    write_fixture(fixtures, "targetstore", 20, json.dumps(target, sort_keys=True, separators=(",", ":")))
+
+    result = run_gate(gate, env, "--ref", "refstore", "--target", "targetstore", "--target-ids", "20", "10")
+
+    assert result.returncode == 1, result.stdout
+
+
+def test_dispute_ids_in_notes_do_not_false_fail(tmp_path: Path) -> None:
+    # Cross-store dispute ids legitimately differ; dp_ is now masked like the other
+    # Stripe prefixes so a dispute note does not produce false parity noise.
+    gate, fixtures, env = make_harness(tmp_path)
+    ref = json.loads(order_record(10))
+    ref["notes"] = ["Payment disputed (dp_1RefAbc123456789)"]
+    target = json.loads(order_record(20))
+    target["notes"] = ["Payment disputed (dp_1TgtXyz987654321)"]
+    write_fixture(fixtures, "refstore", 10, json.dumps(ref, sort_keys=True, separators=(",", ":")))
+    write_fixture(fixtures, "targetstore", 20, json.dumps(target, sort_keys=True, separators=(",", ":")))
+
+    result = run_gate(gate, env, "--ref", "refstore", "--target", "targetstore", "--target-ids", "20", "10")
+
+    assert result.returncode == 0, result.stdout
+
+
 def test_record_count_mismatch_is_blocked(tmp_path: Path) -> None:
     gate, fixtures, env = make_harness(tmp_path)
     write_fixture(fixtures, "selfstore", 10, order_record(10))

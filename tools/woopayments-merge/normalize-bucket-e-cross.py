@@ -18,7 +18,18 @@ from typing import Any
 
 
 ID_PATTERNS = (
-    (re.compile(r"\b(ch|py|pi|seti|pm|cus|acct|evt|req|re|po|src|tok|txn)_[A-Za-z0-9_]+\b"), r"\1_<id>"),
+    # Stripe-shaped ids only: the suffix must contain a digit and be 8+ chars, so
+    # ordinary English after prefix-like words ("re_authorization", "in_progress",
+    # "po_ number") is NOT masked — a changed note wording stays visible to the diff.
+    # dp_/du_ (disputes), in_ (invoices), sub_ (subscriptions) are included so real
+    # provider ids embedded in notes don't produce cross-store false diffs.
+    (
+        re.compile(
+            r"\b(ch|py|pi|seti|pm|cus|acct|evt|req|re|po|src|tok|txn|dp|du|in|sub)"
+            r"_(?=[A-Za-z0-9_]*\d)[A-Za-z0-9][A-Za-z0-9_]{7,}\b"
+        ),
+        r"\1_<id>",
+    ),
     (re.compile(r"\btest_[0-9]{8,}\b"), "test_<id>"),
     (re.compile(r"\bwc_order_[A-Za-z0-9]+\b"), "wc_order_<id>"),
     (re.compile(r"\b[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}\b", re.IGNORECASE), "<uuid>"),
@@ -77,10 +88,19 @@ def normalize_json_string(value: str) -> str:
     return json.dumps(normalized, sort_keys=True, separators=(",", ":"))
 
 
+def mask_volatile(value: Any) -> str:
+    # Preserve the presence/emptiness class: an EMPTY transaction id on one store and
+    # a real one on the other is a persistence regression, not volatile noise — masking
+    # both to the same token would hide it from the diff.
+    if value is None or (isinstance(value, str) and value.strip() == ""):
+        return "<empty>"
+    return "<volatile>"
+
+
 def normalize(value: Any) -> Any:
     if isinstance(value, dict):
         return {
-            key: "<volatile>" if key in VOLATILE_JSON_KEYS else normalize(inner)
+            key: mask_volatile(inner) if key in VOLATILE_JSON_KEYS else normalize(inner)
             for key, inner in sorted(value.items())
             if key not in RECURSIVELY_IGNORED_META_KEYS
         }
@@ -94,8 +114,16 @@ def normalize(value: Any) -> Any:
 def normalize_record(record: dict[str, Any], index: int) -> dict[str, Any]:
     normalized = normalize(record)
     if isinstance(normalized.get("meta"), dict):
+        # Volatile meta masking preserves row cardinality: three duplicate rows on one
+        # store vs one on the other is a real persistence divergence.
         normalized["meta"] = {
-            key: ["<volatile>"] if key in VOLATILE_META_KEYS else value
+            key: (
+                [mask_volatile(item) for item in value]
+                if key in VOLATILE_META_KEYS and isinstance(value, list)
+                else mask_volatile(value)
+                if key in VOLATILE_META_KEYS
+                else value
+            )
             for key, value in normalized["meta"].items()
             if key not in IGNORED_META_KEYS
         }

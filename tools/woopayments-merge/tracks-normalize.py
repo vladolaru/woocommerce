@@ -44,6 +44,10 @@ def mask(v):
             return 'str:<ver>'
         if DEC_RE.match(v):
             return 'str:<num>'
+        # "0"/"1" are PHP-serialized booleans (feature flags like woopay_enabled), not
+        # volatile numbers — masking them hid real flag flips from the contract diff.
+        if v in ('0', '1'):
+            return 'str:%s' % v
         if re.fullmatch(r'\d+', v):
             return 'str:<n>'
         return 'str:%s' % v  # stable enum string — kept (drift is caught)
@@ -62,7 +66,10 @@ def main():
         store = sys.argv[sys.argv.index('--store') + 1]
     # Synthetic sources injected by the sink tooling itself — not real store telemetry, so excluded.
     synthetic = {'mock', 'helper_smoke', 'codex', 'smoke'}
-    lines = set()
+    # Count occurrences per signature instead of set-deduping: an event fired twice
+    # per checkout (or once instead of per-item) is a real cardinality regression
+    # that a set silently collapsed.
+    lines = {}
     for raw in sys.stdin:
         raw = raw.strip()
         if not raw or raw[0] != '{':
@@ -84,9 +91,14 @@ def main():
             if k.startswith('_') or k in ENVELOPE:
                 continue
             keys.append('%s=%s' % (k, mask(props[k])))
-        lines.add('%s | %s' % (name, ' '.join(keys)))
-    for line in sorted(lines):
-        print(line)
+        signature = '%s | %s' % (name, ' '.join(keys))
+        lines[signature] = lines.get(signature, 0) + 1
+    for signature in sorted(lines):
+        count = lines[signature]
+        if count > 1:
+            print('%s | occurrences=%d' % (signature, count))
+        else:
+            print(signature)
 
 
 if __name__ == '__main__':
