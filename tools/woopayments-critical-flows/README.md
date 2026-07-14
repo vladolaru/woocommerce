@@ -92,7 +92,7 @@ Legend — **Layers:** `D` deterministic, `A` agent-driven, `D+A` both (overlap)
 | SC-01 | Card checkout, shortcode (new card) | D+A | Order paid; txn recorded; amount/currency correct | Card fields; incomplete-form errors; test-mode badge + test-card copy | PENDING |
 | SC-02 | Card checkout, Blocks (new card) | D+A | Order paid; txn recorded | Payment Element mounts; test-mode badge; errors | PENDING |
 | SC-03 | 3DS-required card (`4000002500003155`), classic + Blocks | A (+D assert) | SCA → order paid | 3DS modal completes; fail path errors | PENDING |
-| SC-04 | **Saved card → checkout (classic + Blocks)** | D+A | Saved token charged (not new PM); SCA handled | Saved-card radio selectable; no forced new-card; 3DS on saved token | TARGET-CONFIRMED (runner-unverified; ref partial, 3DS browser blocked — see evidence/SC-04/) |
+| SC-04 | **Saved card → checkout (classic + Blocks)** | D+A | Saved token charged (not new PM); SCA handled | Saved-card radio selectable; no forced new-card; 3DS on saved token | PASS (runner-verified 2026-07-14: context-bound sc04 gate — classic+Blocks, normal+SCA, both stores; run archived under evidence/runs/) |
 | SC-05 | Pay for order (My Account), new + save, 3DS | D+A | Pending order paid; PM optionally saved | "Pay" affordance; save checkbox; PM appears | PENDING |
 | SC-06 | Save-PM checkbox + terms behavior (sub vs regular) | A | UI logic | Mandate only when save checked (regular); hidden for subs | PENDING |
 | SC-07 | $1M cart limit | D+A | Checkout blocked over limit | Error below WooPayments method | PENDING |
@@ -223,7 +223,7 @@ FAILED on native per the certification; must flip to PASS (verified both stores,
 - **SC-04 / SS-03 — saved-card (B2):** classic place-order always created a new PaymentMethod; Blocks had no `savedTokenComponent` (saved-token SCA unhandled). Saved cards default on.
 - **MS-07 — admin change PM (B3):** WooPayments selectable but no editable token fields; save left it unbillable. Needs `woocommerce_subscription_payment_meta` family.
 
-Current state: all three carry `TARGET-CONFIRMED (runner-unverified)` — Phase-2 ad-hoc observation confirmed the remediated behavior on the native target, but no runner-ingested, reference-complete evidence exists yet (the on-disk `evidence/` narratives document exactly which sides and steps were and were not driven). None of the three counts as PASS for enablement until re-earned per the status legend above.
+Current state: **SC-04 (B2) is runner-verified PASS** (2026-07-14: context-bound `sc04-saved-card-gate.py` run — saved-token selection and saved-token SCA on classic and Blocks, both stores, with bound browser + authoritative order/token state, ingested through `run.sh`). SS-03 and MS-07 still carry `TARGET-CONFIRMED (runner-unverified)` — Phase-2 ad-hoc observation confirmed the remediated behavior on the native target, but no runner-ingested, reference-complete evidence exists yet. Neither counts as PASS for enablement until re-earned per the status legend above.
 
 ## Coverage ledger (no silent omissions)
 

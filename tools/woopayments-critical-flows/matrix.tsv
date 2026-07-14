@@ -5,7 +5,7 @@ id	title	layers	oracle	status
 SC-01	Card checkout, shortcode (new card)	D+A	comparable	PENDING
 SC-02	Card checkout, Blocks (new card)	D+A	comparable	PENDING
 SC-03	3DS-required card (`4000002500003155`), classic + Blocks	A (+D assert)	comparable	PENDING
-SC-04	Saved card → checkout (classic + Blocks)	D+A	comparable	TARGET-CONFIRMED (runner-unverified; ref partial, 3DS browser blocked — see evidence/SC-04/)
+SC-04	Saved card → checkout (classic + Blocks)	D+A	comparable	PASS (runner-verified 2026-07-14: context-bound sc04 gate — classic+Blocks, normal+SCA, both stores; run archived under evidence/runs/)
 SC-05	Pay for order (My Account), new + save, 3DS	D+A	comparable	PENDING
 SC-06	Save-PM checkbox + terms behavior (sub vs regular)	A	comparable	PENDING
 SC-07	$1M cart limit	D+A	comparable	PENDING
