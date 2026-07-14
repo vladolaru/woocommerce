@@ -127,6 +127,51 @@ if [ -z "$right" ]; then
 	exit 2
 fi
 
+# A parity verdict may only rest on records that were positively captured. An order the
+# dump could not resolve emits {"order_id":N,"error":"..."} — two such records normalize
+# identically (order ids are masked), so without this check nonexistent orders on both
+# sides would produce a vacuous PASS on the RULE 0 gate.
+verify_surface() {
+	local label="$1" expected_count="$2" surface="$3" problems
+	problems="$(printf '%s\n' "$surface" | python3 -c '
+import json
+import sys
+
+expected = int(sys.argv[1])
+records = 0
+errors = []
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    records += 1
+    try:
+        record = json.loads(line)
+    except json.JSONDecodeError:
+        errors.append("unparseable record")
+        continue
+    if "error" in record:
+        errors.append("order {}: {}".format(record.get("order_id", "?"), record["error"]))
+if records != expected:
+    errors.append("captured {} record(s), expected {}".format(records, expected))
+for error in errors:
+    print(error)
+' "$expected_count")"
+	if [ -n "$problems" ]; then
+		echo "BLOCKED: $label surface contains unverifiable records — not a parity result:" >&2
+		printf '%s\n' "$problems" | sed 's/^/    /' >&2
+		exit 2
+	fi
+}
+
+if [ -n "$SELF_WP" ]; then
+	verify_surface "$LEFT_LABEL" "${#IDS[@]}" "$left"
+	verify_surface "$RIGHT_LABEL" "${#IDS[@]}" "$right"
+else
+	verify_surface "$LEFT_LABEL" "${#IDS[@]}" "$left"
+	verify_surface "$RIGHT_LABEL" "${#TARGET_IDS[@]}" "$right"
+fi
+
 if [ -n "$SELF_WP" ]; then
 	left_compare="$left"
 	right_compare="$right"
