@@ -319,6 +319,64 @@ def test_check_categories_have_bounded_timeouts(module):
     assert module.check_timeout_seconds("unknown-category") == module.BROWSER_CHECK_TIMEOUT_SECONDS
 
 
+def test_hard_timeout_kills_the_whole_process_group(module):
+    # subprocess.run's timeout kills only the direct child; a wedged docker exec or
+    # node->chromium tree could orphan past a hard timeout. The group-kill helper must
+    # take the grandchildren down with the child.
+    import signal as signal_module
+    import subprocess as subprocess_module
+    import time
+
+    marker = f"a4aq-group-kill-test-{os.getpid()}"
+    command = ["bash", "-c", f"sleep 300 & sleep 300 # {marker}"]
+
+    start = time.monotonic()
+    try:
+        module.run_subprocess_group(
+            command,
+            timeout=0.5,
+            text=True,
+            stdout=subprocess_module.PIPE,
+            stderr=subprocess_module.PIPE,
+        )
+        raise AssertionError("expected TimeoutExpired")
+    except subprocess_module.TimeoutExpired:
+        pass
+    elapsed = time.monotonic() - start
+    assert elapsed < 15, f"group kill took {elapsed:.1f}s (SIGTERM drain must not stall)"
+
+    # Neither the bash child nor its backgrounded sleep grandchild may survive.
+    survivors = subprocess_module.run(
+        ["pgrep", "-f", marker],
+        text=True,
+        stdout=subprocess_module.PIPE,
+        stderr=subprocess_module.PIPE,
+        check=False,
+    )
+    assert survivors.returncode != 0, f"orphaned processes survived: {survivors.stdout}"
+    del signal_module
+
+
+def test_no_bare_timeout_subprocess_run_remains(module):
+    # Every timeout-carrying subprocess in the gate must go through the group-kill
+    # helper; a bare subprocess.run(timeout=...) reintroduces the orphaning channel.
+    source = (REPO / "tools/woopayments-merge/a4aq-accumulated-gate.py").read_text(encoding="utf-8")
+    for match_start in _iter_call_sites(source, "subprocess.run("):
+        call = source[match_start : match_start + 600]
+        assert "timeout=" not in call.split(")\n")[0], (
+            "bare subprocess.run with timeout= found; use run_subprocess_group: "
+            + call[:160]
+        )
+    assert source.count("run_subprocess_group(") >= 8  # definition + 7 call sites
+
+
+def _iter_call_sites(source: str, needle: str):
+    index = source.find(needle)
+    while index != -1:
+        yield index
+        index = source.find(needle, index + 1)
+
+
 def test_checkout_browser_route_state_uses_plain_permalink_overrides(module):
     assert "blocksCheckoutCard" in module.CHECKOUT_ROUTE_KEYS
     assert "referenceBlocksCheckoutCard" in module.CHECKOUT_ROUTE_KEYS
@@ -610,9 +668,10 @@ def test_optional_admin_signal_carries_restore_failure(module, monkeypatch):
     }
     gate.browser_command = lambda script, timeout: ["fake-browser"]
     gate.browser_state_env = lambda state, **kwargs: {}
+    # The browser subprocess now runs through the group-kill helper; patch that seam.
     monkeypatch.setattr(
-        module.subprocess,
-        "run",
+        module,
+        "run_subprocess_group",
         lambda *args, **kwargs: (_ for _ in ()).throw(module.GateSignal(signal.SIGTERM)),
     )
 

@@ -51,6 +51,53 @@ CHECK_CATEGORY_TIMEOUT_SECONDS = {
 }
 
 
+def _kill_process_group(process: subprocess.Popen, hard: bool = False) -> None:
+    sig = signal.SIGKILL if hard else signal.SIGTERM
+    try:
+        os.killpg(os.getpgid(process.pid), sig)
+    except (ProcessLookupError, PermissionError, OSError):
+        try:
+            if hard:
+                process.kill()
+            else:
+                process.terminate()
+        except OSError:
+            pass
+
+
+def run_subprocess_group(
+    command: list[str],
+    *,
+    timeout: float,
+    input: str | None = None,
+    check: bool = False,
+    **popen_kwargs: Any,
+) -> subprocess.CompletedProcess:
+    """subprocess.run stand-in that starts the child in its own process group and
+    kills the WHOLE group on timeout.
+
+    subprocess.run's timeout kills only the direct child, so a wedged docker exec
+    (its in-container process aside) or a node->chromium tree could orphan past a
+    hard timeout, keep holding browser/profile locks, and wedge the next run. The
+    group gets SIGTERM, ten seconds to drain, then SIGKILL; the TimeoutExpired is
+    re-raised for the caller's existing incomplete classification.
+    """
+    del check  # parity with the subprocess.run signature; callers pass check=False
+    stdin = subprocess.PIPE if input is not None else popen_kwargs.pop("stdin", None)
+    process = subprocess.Popen(command, start_new_session=True, stdin=stdin, **popen_kwargs)
+    try:
+        stdout, stderr = process.communicate(input=input, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _kill_process_group(process)
+        try:
+            stdout, stderr = process.communicate(timeout=10)
+        except subprocess.TimeoutExpired:
+            _kill_process_group(process, hard=True)
+            stdout, stderr = process.communicate()
+        raise subprocess.TimeoutExpired(command, timeout, output=stdout, stderr=stderr)
+    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+
+
 def check_timeout_seconds(category: str) -> float:
     override = os.environ.get("A4AQ_TIMEOUT_OVERRIDE_SECONDS", "").strip()
     if override:
@@ -326,7 +373,7 @@ class Gate:
         self.write_evidence()
         timeout_seconds = check_timeout_seconds(category)
         try:
-            completed = subprocess.run(
+            completed = run_subprocess_group(
                 command,
                 cwd=str(self.repo),
                 env={**os.environ, **(env or {})},
@@ -404,7 +451,7 @@ class Gate:
             raise RuntimeError(f"WP-CLI driver missing: {script}")
         command = shlex.split(wp_cmd) + ["eval-file", "-"] + [str(arg) for arg in (args or [])]
         try:
-            completed = subprocess.run(
+            completed = run_subprocess_group(
                 command,
                 cwd=str(self.repo),
                 input=script.read_text(encoding="utf-8"),
@@ -514,7 +561,7 @@ class Gate:
                 "delete state.strictReferenceOptional; delete state.page;"
             ),
         ]
-        result = subprocess.run(
+        result = run_subprocess_group(
             command,
             cwd=str(self.repo),
             text=True,
@@ -588,7 +635,7 @@ class Gate:
                 "delete state.strictReferenceOptional; delete state.page;"
             ),
         ]
-        result = subprocess.run(
+        result = run_subprocess_group(
             command,
             cwd=str(self.repo),
             text=True,
@@ -765,7 +812,7 @@ class Gate:
             entry["command"] = [state_command, browser_command]
 
             if self.browser_runner == "playwriter":
-                state_result = subprocess.run(
+                state_result = run_subprocess_group(
                     state_command,
                     cwd=str(self.repo),
                     text=True,
@@ -784,7 +831,7 @@ class Gate:
                 summary["state_stdout_tail"] = "Playwright runner state is passed through PLAYWRIGHT_RUNNER_STATE_JSON."
                 summary["state_stderr_tail"] = ""
 
-            browser_result = subprocess.run(
+            browser_result = run_subprocess_group(
                 browser_command,
                 cwd=str(self.repo),
                 env={
@@ -1555,7 +1602,7 @@ def run_text_result(command: list[str], timeout_seconds: float | None = None) ->
     if timeout_seconds is None:
         timeout_seconds = check_timeout_seconds("logs")
     try:
-        completed = subprocess.run(
+        completed = run_subprocess_group(
             command,
             text=True,
             stdout=subprocess.PIPE,
