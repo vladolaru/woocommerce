@@ -152,7 +152,12 @@ def test_native_charge_driver_forces_store_currency_when_no_currency_is_requeste
     assert "add_filter( 'wcpay_multi_currency_should_return_store_currency', '__return_true' );" in source
     assert "add_filter( 'wcpay_multi_currency_should_convert_product_price', '__return_false' );" in source
     assert "$order->set_currency( $store_currency );" in source
-    assert "$order->delete_meta_data( '_wcpay_multi_currency_order_exchange_rate' );" in source
+    # The driver must NOT scrub multi-currency meta off the order it creates: the
+    # no-currency context is already deterministic (leftover wcpay_currency user meta
+    # cleared + store-currency filters armed), so any MC meta the runtime stamps is
+    # real behavior that Bucket-E parity and reconciliation must be able to see.
+    assert "delete_meta_data( '_wcpay_multi_currency" not in source
+    assert "delete_user_meta( $currency_user_id, 'wcpay_currency' );" in source
 
 
 def main() -> None:

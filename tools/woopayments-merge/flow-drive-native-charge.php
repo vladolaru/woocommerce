@@ -140,12 +140,13 @@ $order->save();
 
 if ( '' !== $currency && $frontend_prices_controller instanceof MultiCurrencyFrontendPricesController ) {
 	$frontend_prices_controller->add_order_meta( $order->get_id(), $order );
-} elseif ( '' === $currency ) {
-	$order->delete_meta_data( '_wcpay_multi_currency_order_exchange_rate' );
-	$order->delete_meta_data( '_wcpay_multi_currency_order_default_currency' );
-	$order->delete_meta_data( '_wcpay_multi_currency_stripe_exchange_rate' );
-	$order->save_meta_data();
 }
+// No-currency case: the driver context is already deterministic (leftover
+// wcpay_currency user meta is cleared above and the store-currency filters are
+// armed), so any multi-currency meta the runtime stamps on this order is REAL
+// behavior. It must stay on the order for Bucket-E parity and reconciliation to
+// see — scrubbing it here would hide exactly the divergence those gates exist
+// to catch. The emitted JSON reports the meta as persisted.
 
 $_POST['wcpay-payment-method'] = $payment_method;
 
