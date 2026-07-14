@@ -987,11 +987,71 @@ printf '%s\\n' '{"op":"charge","order_id":777,"charge_id":"ch_full","intent_id":
         assert rollup["run_stamp"]
         matrix = rollup["matrix"]
         assert matrix["total"] == 76
-        assert matrix["uncovered"] > 0
+        # Coverage milestone (2026-07-14): every matrix row now has a spec, so a
+        # full-scope run leaves nothing uncovered — rows without evidence are
+        # BLOCKED/queued, which still refuses green below.
+        assert matrix["uncovered"] == 0
         assert matrix["covered"] == matrix["total"] - matrix["uncovered"]
         assert len(matrix["uncovered_ids"]) == matrix["uncovered"]
-        assert "SC-01" not in matrix["uncovered_ids"]
-        # A full-scope run may not claim the suite green while matrix rows lack evidence.
+        # A full-scope run may not claim the suite green while rows lack evidence.
+        assert rollup["status"] != "pass"
+        assert rollup["summary"]["blocked"] > 0
+
+
+def test_full_scope_run_refuses_green_when_matrix_rows_are_unspecced() -> None:
+    # The uncovered->refuse path must stay pinned even now that the real matrix is
+    # fully spec'd: a synthetic matrix with an extra row that no spec covers must
+    # count as uncovered and force blocked/exit 3 on an otherwise-green run.
+    with tempfile.TemporaryDirectory(prefix="critical-flows-runner-") as tmp:
+        evidence_dir = Path(tmp)
+        matrix_tsv = evidence_dir / "matrix.tsv"
+        real_matrix = (RUNNER.parent / "matrix.tsv").read_text(encoding="utf-8")
+        matrix_tsv.write_text(
+            real_matrix + "ZZ-99\tSynthetic uncovered row\tD+A\tcomparable\tPENDING\n",
+            encoding="utf-8",
+        )
+        flow_driver = evidence_dir / "fake-flow-drive.sh"
+        fake_ref_wp = evidence_dir / "fake-ref-wp.sh"
+        fake_target_wp = evidence_dir / "fake-target-wp.sh"
+        fake_i18n_gate = evidence_dir / "fake-i18n-gate.sh"
+        fake_mc_gate = evidence_dir / "fake-mc-rates-gate.sh"
+
+        write_executable(
+            flow_driver,
+            """#!/usr/bin/env bash
+printf '%s\\n' '{"op":"charge","order_id":778,"charge_id":"ch_syn","intent_id":"pi_syn"}'
+""",
+        )
+        write_executable(fake_ref_wp, sc01_fake_wp_source("plugin", "http://ref.fake.test", "pi_syn", "ch_syn"))
+        write_executable(fake_target_wp, sc01_fake_wp_source("native", "http://target.fake.test", "pi_syn", "ch_syn"))
+        write_executable(fake_i18n_gate, "#!/usr/bin/env bash\nexit 0\n")
+        write_executable(fake_mc_gate, "#!/usr/bin/env bash\nexit 0\n")
+
+        result = run_runner(
+            "--store",
+            "both",
+            "--layer",
+            "all",
+            "--ref-url",
+            "http://ref.fake.test",
+            "--target-url",
+            "http://target.fake.test",
+            evidence_dir=evidence_dir,
+            extra_env={
+                "SC01_FLOW_DRIVER": str(flow_driver),
+                "REF_WP_COMMAND": str(fake_ref_wp),
+                "TARGET_WP_COMMAND": str(fake_target_wp),
+                "I18N_NOTES_GATE": str(fake_i18n_gate),
+                "MC_RATES_GATE": str(fake_mc_gate),
+                "MATRIX_TSV": str(matrix_tsv),
+            },
+        )
+
+        assert result.returncode == 3, result.stdout + result.stderr
+        rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
+        matrix = rollup["matrix"]
+        assert matrix["total"] == 77
+        assert "ZZ-99" in matrix["uncovered_ids"]
         assert rollup["status"] != "pass"
         assert rollup["status"] == "blocked"
         assert rollup["summary"]["failed"] == 0
@@ -1728,6 +1788,7 @@ def main() -> None:
         test_runner_blocks_before_flows_when_target_runtime_owner_is_wrong,
         test_runner_blocks_when_both_stores_resolve_to_the_same_home,
         test_full_scope_run_reports_matrix_coverage_and_refuses_green,
+        test_full_scope_run_refuses_green_when_matrix_rows_are_unspecced,
         test_partial_run_rollup_is_marked_partial_and_keeps_status_semantics,
         test_consecutive_runs_are_archived_append_only,
         test_runner_creates_missing_evidence_directory,
