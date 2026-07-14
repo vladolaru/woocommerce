@@ -250,6 +250,16 @@ PY
 		if [ -z "$A" ] || [ -z "$B" ] || [ ! -f "$A" ] || [ ! -f "$B" ]; then
 			echo "usage: tracks-parity.sh diff <normalized-a> <normalized-b>" >&2; exit 2
 		fi
+		# An empty capture means nothing was observed - dead sink, wrong --store id, usage
+		# tracking off, or the flow was never driven. Diffing empty-vs-empty would be a
+		# vacuous PASS on the telemetry-continuity shipping criterion; refuse instead.
+		for capture in "$A" "$B"; do
+			if [ ! -s "$capture" ]; then
+				echo "BLOCKED: empty Tracks capture: $capture (0 events)." >&2
+				echo "  Check that the flow was driven, the wpcom-local sink is receiving, usage tracking is on, and --store matches the store's woocommerce_store_id." >&2
+				exit 2
+			fi
+		done
 		d="$(diff "$A" "$B")"
 		if [ -n "$d" ]; then
 			echo "FAIL: Tracks contract drift (name/props) — telemetry continuity break (bc-manifest §0.3):"
