@@ -418,6 +418,19 @@ if [ ! -f "$RECONCILE" ]; then
 	write_rollup blocked true
 	exit 3
 fi
+wait_for_renewal_money_meta() { # <wp-runner> <order_id> — bounded wait for async fee/net meta
+	local wp_runner="$1" order_id="$2" tries=0 max_tries="${WOOPAYMENTS_RENEWAL_MONEY_META_TRIES:-30}" state
+	while [ "$tries" -lt "$max_tries" ]; do
+		state="$($wp_runner eval "\$o = wc_get_order( $order_id ); echo ( \$o && '' !== (string) \$o->get_meta( '_wcpay_transaction_fee', true ) && '' !== (string) \$o->get_meta( '_wcpay_net', true ) ) ? 'money_meta=ready' : 'money_meta=pending';" 2>/dev/null | sed -n 's/^money_meta=//p' | tail -1)"
+		if [ "$state" = "ready" ]; then
+			return 0
+		fi
+		sleep 2
+		tries=$((tries + 1))
+	done
+	return 1
+}
+
 echo
 echo "Reconcile renewal charges against provider raw source"
 for side in ref target; do
@@ -429,6 +442,13 @@ for side in ref target; do
 	renewal_order_id="$(json_int_field "$side_drive" renewal_order_id)"
 	if [ "$renewal_order_id" -eq 0 ]; then
 		echo "BLOCKED: $side drive emitted no renewal order id to reconcile." >&2
+		write_rollup blocked true
+		exit 3
+	fi
+	# The fee/net money meta lands asynchronously (provider event -> local listener);
+	# reconciling a just-driven renewal immediately reads empty amounts and blocks.
+	if ! wait_for_renewal_money_meta "$side_wp" "$renewal_order_id"; then
+		echo "BLOCKED: $side renewal order $renewal_order_id money metadata (fee/net) never arrived — is the local event listener running?" >&2
 		write_rollup blocked true
 		exit 3
 	fi

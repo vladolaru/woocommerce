@@ -84,6 +84,11 @@ def make_fake_wp(
         f"""#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\\n' "$*" >> "${{FAKE_WP_INVOCATIONS:?}}"
+if [ "$1" = "eval" ]; then
+    # The gate's pre-reconcile wait polls for async fee/net money meta.
+    printf '%s\\n' "money_meta=ready"
+    exit 0
+fi
 if [ "$1" = "eval-file" ] && [ "$2" = "-" ]; then
     mode="${{3:-}}"
     if [ "$mode" = "preflight" ]; then
