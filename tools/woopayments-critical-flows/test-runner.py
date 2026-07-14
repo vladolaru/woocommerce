@@ -161,12 +161,16 @@ if [ "$1" = "post" ] && [ "$2" = "meta" ] && [ "$3" = "get" ]; then
   exit 0
 fi
 if [ "$1" = "eval" ]; then
+  if [[ "$2" == *"get_status"* ]]; then
+    printf '%s\\n' "order_status=processing"
+    exit 0
+  fi
   if [[ "$2" == *"wc_get_order"* && "$2" == *"_intent_id"* ]]; then
-    printf '%s\\n' "pi_fake"
+    printf '%s\\n' "order_meta_value=pi_fake"
     exit 0
   fi
   if [[ "$2" == *"wc_get_order"* && "$2" == *"_charge_id"* ]]; then
-    printf '%s\\n' "ch_fake"
+    printf '%s\\n' "order_meta_value=ch_fake"
     exit 0
   fi
   printf '%s\\n' '{"status":"pass","paths":["/tmp/fake-debug.log"],"matches":[]}'
@@ -238,12 +242,16 @@ if [ "$1" = "post" ] && [ "$2" = "meta" ] && [ "$3" = "get" ]; then
   exit 0
 fi
 if [ "$1" = "eval" ]; then
+  if [[ "$2" == *"get_status"* ]]; then
+    printf '%s\\n' "order_status=processing"
+    exit 0
+  fi
   if [[ "$2" == *"wc_get_order"* && "$2" == *"_intent_id"* ]]; then
-    printf '%s\\n' "pi_ref"
+    printf '%s\\n' "order_meta_value=pi_ref"
     exit 0
   fi
   if [[ "$2" == *"wc_get_order"* && "$2" == *"_charge_id"* ]]; then
-    printf '%s\\n' "ch_ref"
+    printf '%s\\n' "order_meta_value=ch_ref"
     exit 0
   fi
   printf '%s\\n' '{"status":"pass","paths":["/tmp/fake-debug.log"],"matches":[]}'
@@ -373,12 +381,16 @@ if [ "$1" = "--runner-flag" ] && [ "$2" = "post" ] && [ "$3" = "meta" ]; then
   exit 0
 fi
 if [ "$1" = "--runner-flag" ] && [ "$2" = "eval" ]; then
+  if [[ "$3" == *"get_status"* ]]; then
+    printf '%s\\n' "order_status=processing"
+    exit 0
+  fi
   if [[ "$3" == *"wc_get_order"* && "$3" == *"_intent_id"* ]]; then
-    printf '%s\\n' "pi_export"
+    printf '%s\\n' "order_meta_value=pi_export"
     exit 0
   fi
   if [[ "$3" == *"wc_get_order"* && "$3" == *"_charge_id"* ]]; then
-    printf '%s\\n' "ch_export"
+    printf '%s\\n' "order_meta_value=ch_export"
     exit 0
   fi
   printf '%s\\n' '{"status":"pass","paths":["/tmp/fake-debug.log"],"matches":[]}'
@@ -1221,12 +1233,16 @@ if [ "$1" = "eval" ]; then
     printf '%s\\n' '{"status":"pass","paths":["/tmp/fake-debug.log"],"markers":{"/tmp/fake-debug.log":5}}'
     exit 0
   fi
+  if [[ "$2" == *"get_status"* ]]; then
+    printf '%s\\n' "order_status=processing"
+    exit 0
+  fi
   if [[ "$2" == *"wc_get_order"* && "$2" == *"_intent_id"* ]]; then
-    printf '%s\\n' "pi_marker"
+    printf '%s\\n' "order_meta_value=pi_marker"
     exit 0
   fi
   if [[ "$2" == *"wc_get_order"* && "$2" == *"_charge_id"* ]]; then
-    printf '%s\\n' "ch_marker"
+    printf '%s\\n' "order_meta_value=ch_marker"
     exit 0
   fi
   if [[ "$2" == *"debug.log"* ]]; then

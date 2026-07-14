@@ -48,7 +48,9 @@ wp_ref() {
     run_wp_command_string "$REF_WP_COMMAND" "$@"
     return $?
   fi
-  docker exec -u www-data "$REF_CONTAINER" wp "$@"
+  # -i is load-bearing: flow drivers feed PHP through stdin (wp eval-file -);
+  # without it docker exec passes an empty stdin and the driver silently no-ops.
+  docker exec -i -u www-data "$REF_CONTAINER" wp "$@"
 }
 
 # wp_store <ref|target> <args...> : dispatch by store name.
@@ -120,8 +122,39 @@ WP_CLI::line(
 }
 
 assert_order_status() { # <store> <order_id> <expected_status>
-  local s="$1" id="$2" want="$3" got
-  got="$(wp_store "$s" wc shop_order get "$id" --field=status 2>/dev/null)"
+  local s="$1" id="$2" want="$3" raw rc got
+
+  case "$id" in
+    ''|*[!0-9]*)
+      echo "BLOCKED order #$id status probe: invalid order id"
+      return 3
+      ;;
+  esac
+
+  # wp eval instead of `wc shop_order get`: the WC REST-backed CLI requires --user
+  # and returns a 401 otherwise, which (with stderr silenced) read as an empty
+  # status and reported a false product FAIL. A probe failure must be BLOCKED,
+  # never a product verdict.
+  raw="$(wp_store "$s" eval "
+\$order = wc_get_order( $id );
+if ( \$order ) {
+	WP_CLI::line( 'order_status=' . \$order->get_status() );
+} else {
+	WP_CLI::line( 'order_status_probe=order_not_found' );
+}
+" 2>&1)"
+  rc=$?
+  got="$(printf '%s\n' "$raw" | sed -n 's/^order_status=//p' | tail -1)"
+
+  if [ "$rc" -ne 0 ] || { [ -z "$got" ] && ! printf '%s\n' "$raw" | grep -q '^order_status_probe=order_not_found$'; }; then
+    echo "BLOCKED order #$id status probe failed on $s (not a product verdict):"
+    printf '%s\n' "$raw" | tail -5 | sed 's/^/    /'
+    return 3
+  fi
+  if [ -z "$got" ]; then
+    echo "FAIL order #$id status: order not found on $s"
+    return 1
+  fi
   [ "$got" = "$want" ] && { echo "PASS order #$id status=$got"; return 0; }
   echo "FAIL order #$id status=$got want=$want"; return 1
 }
@@ -137,20 +170,38 @@ assert_order_meta_present() { # <store> <order_id> <meta_key>  (Bucket-E key mus
   esac
 
   key_literal="$(wp_php_literal "$key")"
+  # The value is emitted behind an anchored marker: the target's wp-env/pnpm wrapper
+  # prints banner lines to STDOUT, so a bare "is output non-empty" check could never
+  # fail on the target (the banner alone satisfied it) - a vacuous PASS.
   script="$(cat <<PHP
 \$order = wc_get_order( $id );
-if ( \$order ) {
+if ( ! \$order ) {
+	WP_CLI::line( 'order_meta_probe=order_not_found' );
+} else {
 	\$value = \$order->get_meta( $key_literal, true );
 	if ( is_array( \$value ) || is_object( \$value ) ) {
 		\$value = wp_json_encode( \$value );
 	}
 	if ( null !== \$value && "" !== (string) \$value ) {
-		WP_CLI::line( (string) \$value );
+		WP_CLI::line( 'order_meta_value=' . (string) \$value );
+	} else {
+		WP_CLI::line( 'order_meta_probe=missing' );
 	}
 }
 PHP
 )"
-  val="$(wp_store "$s" eval "$script" 2>/dev/null)"
+  # Keep stderr separate from the value: a failed probe (auth, fatal, container
+  # down) must surface as BLOCKED with its diagnostics, not read as "meta empty".
+  local raw rc
+  raw="$(wp_store "$s" eval "$script" 2>&1)"
+  rc=$?
+  val="$(printf '%s\n' "$raw" | sed -n 's/^order_meta_value=//p' | tail -1)"
+
+  if [ "$rc" -ne 0 ] || { [ -z "$val" ] && ! printf '%s\n' "$raw" | grep -q '^order_meta_probe='; }; then
+    echo "BLOCKED order #$id $key probe failed on $s (not a product verdict):"
+    printf '%s\n' "$raw" | tail -5 | sed 's/^/    /'
+    return 3
+  fi
   [ -n "$val" ] && { echo "PASS order #$id $key=$val"; return 0; }
   echo "FAIL order #$id $key missing/empty"; return 1
 }
