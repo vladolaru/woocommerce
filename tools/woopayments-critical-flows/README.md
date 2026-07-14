@@ -79,7 +79,9 @@ tools/woopayments-critical-flows/
 
 ## The matrix
 
-Legend — **Layers:** `D` deterministic, `A` agent-driven, `D+A` both (overlap). **Status:** `PENDING` · `KNOWN-FAIL (Bn)` · `BLOCKED (reason)` · `TARGET-ONLY (parity not comparable)`.
+Legend — **Layers:** `D` deterministic, `A` agent-driven, `D+A` both (overlap). **Status:** `PENDING` · `KNOWN-FAIL (Bn)` · `BLOCKED (reason)` · `TARGET-ONLY (parity not comparable)` · `TARGET-CONFIRMED (runner-unverified)`.
+
+**`TARGET-CONFIRMED (runner-unverified)`** records that ad-hoc browser/state observation confirmed the behavior on the native target, but the verdict has NOT been earned through this suite's machinery: no runner-ingested Layer-A result, and reference-side evidence is partial or absent (see the per-flow `evidence/` narrative for exactly what was and wasn't driven). It is an observation ledger entry, not a PASS — the row still blocks enablement. **Re-earn path:** produce the context-bound gate/browser evidence the flow spec names, generate v2 results via `build-agent-results.py` against a live evidence context, and ingest through `run.sh` so the rollup records reference+target for each assigned layer. Only then may the row flip to PASS.
 
 ### Shopper — Checkout
 
@@ -88,7 +90,7 @@ Legend — **Layers:** `D` deterministic, `A` agent-driven, `D+A` both (overlap)
 | SC-01 | Card checkout, shortcode (new card) | D+A | Order paid; txn recorded; amount/currency correct | Card fields; incomplete-form errors; test-mode badge + test-card copy | PENDING |
 | SC-02 | Card checkout, Blocks (new card) | D+A | Order paid; txn recorded | Payment Element mounts; test-mode badge; errors | PENDING |
 | SC-03 | 3DS-required card (`4000002500003155`), classic + Blocks | A (+D assert) | SCA → order paid | 3DS modal completes; fail path errors | PENDING |
-| SC-04 | **Saved card → checkout (classic + Blocks)** | D+A | Saved token charged (not new PM); SCA handled | Saved-card radio selectable; no forced new-card; 3DS on saved token | PASS (Phase-2, browser-confirmed target) |
+| SC-04 | **Saved card → checkout (classic + Blocks)** | D+A | Saved token charged (not new PM); SCA handled | Saved-card radio selectable; no forced new-card; 3DS on saved token | TARGET-CONFIRMED (runner-unverified; ref partial, 3DS browser blocked — see evidence/SC-04/) |
 | SC-05 | Pay for order (My Account), new + save, 3DS | D+A | Pending order paid; PM optionally saved | "Pay" affordance; save checkbox; PM appears | PENDING |
 | SC-06 | Save-PM checkbox + terms behavior (sub vs regular) | A | UI logic | Mandate only when save checked (regular); hidden for subs | PENDING |
 | SC-07 | $1M cart limit | D+A | Checkout blocked over limit | Error below WooPayments method | PENDING |
@@ -116,7 +118,7 @@ Legend — **Layers:** `D` deterministic, `A` agent-driven, `D+A` both (overlap)
 |----|------|--------|-----------------------|----------------|--------|
 | SS-01 | Purchase subscription (initial) | D+A | Subscription+order; token saved | Mandate; no save-PM checkbox | PENDING |
 | SS-02 | Change PM → new card | D+A | PM updated; renews on it | "Change payment"; PM row updates | PENDING |
-| SS-03 | **Change PM → saved card** | D+A | Saved token set; renews on it | Saved-card selectable in change-payment | PASS (Phase-2; UX confirmed in-browser, persistence fixture-limited) |
+| SS-03 | **Change PM → saved card** | D+A | Saved token set; renews on it | Saved-card selectable in change-payment | TARGET-CONFIRMED (runner-unverified; ref not driven, persistence blocked — see evidence/SS-03/) |
 | SS-04 | Set / change default PM | D | Default updated; renewals use it | Set-default control | PENDING |
 | SS-05 | Renew now (manual, shopper) | D+A | Renewal order paid; date advances | "Renew now" + result | PENDING |
 | SS-06 | Cancel + re-subscribe | D+A | Cancel + new subscription | Cancel control; re-subscribe | PENDING |
@@ -135,7 +137,7 @@ Legend — **Layers:** `D` deterministic, `A` agent-driven, `D+A` both (overlap)
 | MS-04 | Promote w/ coupon | D | Schedule reflects coupon | Coupon effect | PENDING |
 | MS-05 | Renew automatically (scheduled) | D | Charges on date; email; active; next date | Renewal order + email | PENDING |
 | MS-06 | Renew manually (admin) | D+A | Renewal order paid; date advances | "Renew" action | PENDING |
-| MS-07 | **Admin change payment method** | D+A | Admin sets/corrects token; renewal uses it | WooPayments selectable AND editable token fields render+save | PASS (Phase-2, browser-confirmed target) |
+| MS-07 | **Admin change payment method** | D+A | Admin sets/corrects token; renewal uses it | WooPayments selectable AND editable token fields render+save | TARGET-CONFIRMED (runner-unverified; ref browser partial, renewal via substitute fixture — see evidence/MS-07/) |
 
 ### Merchant — Order (capture / refunds)
 
@@ -214,10 +216,12 @@ Legend — **Layers:** `D` deterministic, `A` agent-driven, `D+A` both (overlap)
 
 ## Pre-seeded known regressions (N13 acceptance test)
 
-Already FAIL on native per the certification; must flip to PASS (verified both stores, both layers) before enablement:
+FAILED on native per the certification; must flip to PASS (verified both stores, both layers, **through the runner**) before enablement:
 
-- **SC-04 / SS-03 — saved-card (B2):** classic place-order always creates a new PaymentMethod; Blocks has no `savedTokenComponent` (saved-token SCA unhandled). Saved cards default on.
-- **MS-07 — admin change PM (B3):** WooPayments selectable but no editable token fields; save leaves it unbillable. Needs `woocommerce_subscription_payment_meta` family.
+- **SC-04 / SS-03 — saved-card (B2):** classic place-order always created a new PaymentMethod; Blocks had no `savedTokenComponent` (saved-token SCA unhandled). Saved cards default on.
+- **MS-07 — admin change PM (B3):** WooPayments selectable but no editable token fields; save left it unbillable. Needs `woocommerce_subscription_payment_meta` family.
+
+Current state: all three carry `TARGET-CONFIRMED (runner-unverified)` — Phase-2 ad-hoc observation confirmed the remediated behavior on the native target, but no runner-ingested, reference-complete evidence exists yet (the on-disk `evidence/` narratives document exactly which sides and steps were and were not driven). None of the three counts as PASS for enablement until re-earned per the status legend above.
 
 ## Coverage ledger (no silent omissions)
 
