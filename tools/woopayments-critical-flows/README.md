@@ -112,7 +112,7 @@ Legend — **Layers:** `D` deterministic, `A` agent-driven, `D+A` both (overlap)
 | SP-02 | Add PM — 3DSv2 (`4000000000003220`) fail→succeed | A | Fail errors; success saves | 3DS modal; auth-fail msg; success | PASS (runner-verified 2026-07-14: dual-store 3DS Fail → specific authentication error and no token; Complete → exactly one customer-bound Visa 3220 token; no order/charge; target cosmetic storefront divergence; run `20260714T142200Z-34396-partial`) |
 | SP-03 | Add PM — declined (`4000000000000002`) | D+A | Save rejected | "Card was declined" error | FAIL (runner-verified 2026-07-14: Layer A reference PASS, target FAIL — UX; `create_setup_intent` returned HTTP 502 with the specific decline in its body but native rendered a generic error; no token/order/charge; new product regression; run `20260714T140342Z-13810-partial`) |
 | SP-04 | Delete PM | D+A | PM removed | Delete affordance; list updates | PENDING |
-| SP-05 | Saved-PM management / set default | D+A | Default reflected | Default control | PENDING |
+| SP-05 | Saved-PM management / set default | D+A | Default reflected | Default control | FAIL (runner-verified 2026-07-14: Layer A reference PASS, target FAIL — UX; both stores persisted Mastercard 4444 as the sole default after reload, but target Blocks checkout preselected non-default Visa 4242; provider/token/no-order/no-charge assertions passed; Layer D NOT YET WIRED; new product regression; run `20260714T144159Z-57391-partial`) |
 
 ### Shopper — Subscriptions
 
