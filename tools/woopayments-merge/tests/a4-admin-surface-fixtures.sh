@@ -34,6 +34,7 @@ const Transactions = () => import( /* webpackChunkName: "settings-payments-woopa
 const CardReaders = () => import( /* webpackChunkName: "settings-payments-woopayments-card-readers" */ './card-readers' );
 const Capital = () => import( /* webpackChunkName: "settings-payments-woopayments-capital" */ './capital' );
 const Documents = () => import( /* webpackChunkName: "settings-payments-woopayments-documents" */ './documents' );
+const Reports = () => import( /* webpackChunkName: "settings-payments-woopayments-reports" */ './reports' );
 
 registerSettingsPaymentsProviderRoute( { id: 'woopayments-settings', path: '/woopayments/settings', element: <Settings /> } );
 registerSettingsPaymentsProviderRoute( { id: 'woopayments-overview', path: '/woopayments/overview', element: <Overview /> } );
@@ -42,13 +43,14 @@ registerSettingsPaymentsProviderRoute( { id: 'woopayments-transactions', path: '
 registerSettingsPaymentsProviderRoute( { id: 'woopayments-card-readers', path: '/woopayments/card-readers', element: <CardReaders /> } );
 registerSettingsPaymentsProviderRoute( { id: 'woopayments-capital', path: '/woopayments/loans', element: <Capital /> } );
 registerSettingsPaymentsProviderRoute( { id: 'woopayments-documents', path: '/woopayments/documents', element: <Documents /> } );
+registerSettingsPaymentsProviderRoute( { id: 'woopayments-reports', path: '/woopayments/reports', element: <Reports /> } );
 TS
 
 	cat > "$repo/plugins/woocommerce/client/admin/client/settings-payments/provider-routes.tsx" <<'TS'
 export const registerSettingsPaymentsProviderRoute = () => {};
 TS
 
-	for chunk in settings overview payouts money-movement card-readers capital documents; do
+	for chunk in settings overview payouts money-movement card-readers capital documents reports; do
 		printf 'console.log("%s");\n' "$chunk" > "$repo/plugins/woocommerce/assets/client/admin/chunks/settings-payments-woopayments-$chunk.js"
 	done
 
@@ -58,7 +60,6 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	private const CAPABILITY = 'manage_woocommerce';
 	private const UNRESOLVED_NOTIFICATION_BADGE_FORMAT = ' <span class="wcpay-menu-badge awaiting-mod count-%1$d"><span class="plugin-count">%1$d</span></span>';
 	private const LEGACY_DOCUMENTS_ROUTE = '/payments/documents';
-	// Reports legacy routes are intentionally absent until their native UI/API surfaces are ported.
 	public function register() {
 		add_action( 'admin_menu', array( $this, 'add_menu_items' ), 70 );
 	}
@@ -72,6 +73,9 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 		Utils::wc_payments_settings_url( '/woopayments/overview', array( 'from' => Payments::FROM_PAYMENTS_MENU_ITEM ) );
 		Utils::wc_payments_settings_url( '/woopayments/payouts', array( 'from' => Payments::FROM_PAYMENTS_MENU_ITEM ) );
 		Utils::wc_payments_settings_url( '/woopayments/transactions', array( 'from' => Payments::FROM_PAYMENTS_MENU_ITEM ) );
+		if ( $this->account_service->is_reports_enabled() ) {
+			Utils::wc_payments_settings_url( '/woopayments/reports', array( 'from' => Payments::FROM_PAYMENTS_MENU_ITEM ) );
+		}
 		Utils::wc_payments_settings_url( '/woopayments/disputes', array( 'from' => Payments::FROM_PAYMENTS_MENU_ITEM ) );
 		Utils::wc_payments_settings_url( '/woopayments/card-readers', array( 'from' => Payments::FROM_PAYMENTS_MENU_ITEM ) );
 		Utils::wc_payments_settings_url( '/woopayments/loans', array( 'from' => Payments::FROM_PAYMENTS_MENU_ITEM ) );
@@ -95,6 +99,7 @@ class WooPaymentsAccountService {
 	public function has_card_readers_available() {}
 	public function has_previous_capital_loans() {}
 	public function is_documents_enabled() {}
+	public function is_reports_enabled() {}
 }
 PHP
 
@@ -281,6 +286,109 @@ import { getSelectedBalanceCurrency, getPayoutStatusClassName } from '../utils';
 const copy = 'Available funds are automatically dispatched payout-schedule/ Your payouts are temporarily suspended. You have no funds available. Payouts are currently paused because a recent payout failed. Please View payout %s details woocommerce-woopayments-overview__status-chip Change payout schedule';
 export const PayoutsOverviewCard = () => getSelectedBalanceCurrency() + getPayoutStatusClassName() + copy;
 TS
+
+	cat > "$repo/plugins/woocommerce/client/admin/client/woopayments/admin/payout-details.tsx" <<'TS'
+const copy = "Copy bank reference ID to clipboard Bank reference ID copied. We're unable to show transaction history on instant payouts. instant-payouts/#transactions View all transactions in this %s";
+const isInstantPayout = payout?.automatic === false;
+const historyFilter = { deposit_id: payout.id };
+export const PayoutDetails = () => copy + isInstantPayout + historyFilter;
+TS
+
+	cat > "$repo/plugins/woocommerce/client/admin/client/woopayments/admin/test-mode-notice.tsx" <<'TS'
+// payments: shared test mode notice
+const copy = 'account is currently in test mode';
+export const TestModeNotice = ( { isDetailsView } ) => getSettingsPaymentsProviderRouteUrl( isDetailsView ) + copy;
+TS
+
+	cat > "$repo/plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/data.ts" <<'TS'
+export const getWooPaymentsTimeline = ( id: string ) => fetch( '/timeline/' + id );
+export const getWooPaymentsReaderChargeSummary = ( date: string ) => fetch( '/readers/charges/' + date );
+export const getWooPaymentsCharge = ( id: string ) => fetch( id );
+export const getWooPaymentsPaymentIntent = ( id: string ) => fetch( id );
+TS
+
+	cat > "$repo/plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/transaction-details-page.tsx" <<'TS'
+import { getWooPaymentsTimeline } from './data';
+const heading = 'Payment details';
+const isCardReaderFeeRoute = ( query ) => isPaymentIntentId( query ) || isChargeId( query ) || isTransactionId( query );
+export const Page = () => (
+	<>
+		<WooPaymentsPaymentSummarySection />
+		<WooPaymentsMissingOrderNotice />
+		<WooPaymentsPaymentIdentifiersSection />
+		<WooPaymentsPaymentMethodDetailsSection />
+		<WooPaymentsCardReaderFeeDetails />
+		<WooPaymentsTransactionTimeline events={ getWooPaymentsTimeline( heading ) } />
+		<TestModeNotice isDetailsView={ ! isCardReaderFeeRoute( {} ) } />
+	</>
+);
+TS
+
+	cat > "$repo/plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/transaction-card-reader-fee-details.tsx" <<'TS'
+import { getWooPaymentsReaderChargeSummary } from './data';
+const copy = 'Card readers Reader id Status Transactions Fee Readers details not loaded Download';
+export const WooPaymentsCardReaderFeeDetails = () => getWooPaymentsReaderChargeSummary( '' ) + copy;
+TS
+
+	cat > "$repo/plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/transaction-timeline.tsx" <<'TS'
+const copy = 'Timeline Payment status changed to Paid. A payment of %s was successfully charged. A payment of %s was successfully refunded. A dispute was opened for %s. Payment was approved by %s Payment was blocked by %s';
+export const WooPaymentsTransactionTimeline = () => copy;
+TS
+
+	cat > "$repo/plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/transaction-detail-sections.tsx" <<'TS'
+const copy = 'Summary Sales channel This payment is not linked to a WooCommerce order. Identifiers Payment ID Charge ID Payment method Risk evaluation Net amount Bank name IBAN Verified name';
+const customerUrl = transaction.order?.customer_url;
+const orderUrl = order?.url;
+const subscriptions = transaction.order.subscriptions;
+const sanitizeFormattedAddress = ( value ) => value.replace( /<[^>]*>/g, '' );
+export const WooPaymentsPaymentMethodDetailsSection = () => copy + customerUrl + orderUrl + subscriptions + sanitizeFormattedAddress( '' );
+TS
+
+	cat > "$repo/plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/dispute-details.tsx" <<'TS'
+export const WooPaymentsDisputeDetailsRedirect = () => {
+	getWooPaymentsDispute( '' );
+	getTransactionDetailsRoute( '' );
+	getSettingsPaymentsProviderRouteUrl( '' );
+	return null;
+};
+TS
+
+	cat > "$repo/plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/dispute-challenge-page.tsx" <<'TS'
+const copy = 'full 4.5 MB evidence limit Dispute evidence form loaded.';
+export const WooPaymentsDisputeChallengePage = () => getWooPaymentsDisputeFileDetails( '' ) + copy;
+TS
+
+	cat > "$repo/plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/dispute-evidence-form.tsx" <<'TS'
+const copy = "Let's gather the basics Add your shipping details Review your cover letter Recommended documents Save draft Submit evidence Please wait until file upload is finished Are you sure you’re ready to submit this evidence? Evidence submissions are final. Thanks for sharing your response! Dispute information Why do you disagree with this dispute?";
+const handleContinue = () => {};
+export const DisputeEvidenceForm = () => copy + handleContinue();
+TS
+
+	cat > "$repo/plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/dispute-evidence-fields.ts" <<'TS'
+export const getRecommendedDocumentFields = () => [ 'duplicate_charge_documentation' ];
+export const needsShipping = () => false;
+export const isVisaComplianceDispute = () => false;
+TS
+
+	cat > "$repo/plugins/woocommerce/client/admin/client/woopayments/admin/money-movement/dispute-evidence-cover-letter.ts" <<'TS'
+const copy = 'Subject: Chargeback Dispute Dear Dispute Resolution Team To support our case Tracking number';
+export const generateDisputeCoverLetter = () => copy;
+TS
+
+	cat > "$repo/plugins/woocommerce/src/Internal/Payments/Providers/WooPayments/WooPaymentsPaymentDetailsRestController.php" <<'PHP'
+<?php
+class WooPaymentsPaymentDetailsRestController {
+	public function register_routes() {
+		register_rest_route( 'wc/v3', '/payments/timeline/(?P<intention_id>\w+)', array() );
+	}
+	public function get_timeline( $request ) {
+		$timeline     = $this->api_client->get_timeline( $request['intention_id'] );
+		$manual_entry = '_wcpay_fraud_outcome_manual_entry';
+		$review_event = 'fraud_outcome_review';
+		return array( $timeline, $manual_entry, $review_event );
+	}
+}
+PHP
 }
 
 write_plugin_repo() {
@@ -333,7 +441,7 @@ assert data["chunks"]["settings"]["status"] == "present"
 assert data["chunks"]["settings"]["raw_bytes"] > 0
 assert data["chunks"]["settings"]["gzip_bytes"] > 0
 assert data["reference_plugin"]["baseline_files"]["settings-js"]["status"] == "present"
-assert data["summary"]["native_admin_chunks"]["file_count"] == 7
+assert data["summary"]["native_admin_chunks"]["file_count"] == 8
 assert data["summary"]["reference_plugin_admin_baseline"]["file_count"] == 9
 assert data["source"]["pm_promotions"]["frontend_store"]["required_tokens"]["store-name"] is True
 assert data["source"]["pm_promotions"]["spotlight_mounts"]["settings"]["required_tokens"]["mount"] is True
@@ -380,10 +488,10 @@ import pathlib
 import sys
 
 path = pathlib.Path(sys.argv[1])
-path.write_text(path.read_text().replace("'/woopayments/overview'", "'/payments/reports'"), encoding="utf-8")
+path.write_text(path.read_text().replace("'/woopayments/overview'", "'/payments/unknown'"), encoding="utf-8")
 PY
-expect_exit 1 "forbidden reports admin navigation route fails" python3 "$GATE" --repo "$PLUGIN_NAV_ROUTE_REPO"
-grep -q "FAIL: Reports legacy redirect found before native surface exists" "$WORK_DIR/out.txt"
+expect_exit 1 "unexpected plugin-era admin navigation route fails" python3 "$GATE" --repo "$PLUGIN_NAV_ROUTE_REPO"
+grep -q "FAIL: unexpected plugin-era admin navigation route found" "$WORK_DIR/out.txt"
 
 MISSING_PM_REPO="$WORK_DIR/missing-pm-promotions"
 write_repo "$MISSING_PM_REPO"
