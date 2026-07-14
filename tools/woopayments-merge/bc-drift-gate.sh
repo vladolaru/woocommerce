@@ -81,8 +81,11 @@ SOURCE_COMMIT="$(resolve_source_commit)" || exit 2
 SOURCE_PROVENANCE="$(printf 'source_ref=%s\nsource_commit=%s\n' "$WCPAY_SOURCE_REF" "$SOURCE_COMMIT")"
 
 if [ "$MODE" = "update" ]; then
-	mkdir -p "$BASELINE_DIR"
-	printf '%s\n' "$SOURCE_PROVENANCE" > "$PROVENANCE_FILE"
+	# Baseline + provenance are written only after every probe validated non-empty
+	# (see the update summary below) so a refused update leaves the committed
+	# baseline byte-for-byte untouched.
+	UPDATE_STAGING="$(mktemp -d "${TMPDIR:-/tmp}/bc-drift-update.XXXXXX")"
+	trap 'rm -rf "$UPDATE_STAGING"' EXIT
 elif [ ! -f "$PROVENANCE_FILE" ]; then
 	echo "FAIL: BC baseline source provenance is missing: $PROVENANCE_FILE" >&2
 	echo "      regenerate only from the intended immutable WooPayments source with --update" >&2
@@ -195,9 +198,13 @@ for cat in $CATEGORIES; do
 	base="$BASELINE_DIR/$cat.txt"
 
 	if [ "$MODE" = "update" ]; then
-		mkdir -p "$BASELINE_DIR"
-		printf '%s\n' "$out" > "$base"
-		printf '  updated %-16s %5s lines\n' "$cat" "$count"
+		printf '%s\n' "$out" > "$UPDATE_STAGING/$cat.txt"
+		if [ "$count" -eq 0 ]; then
+			printf '  EMPTY   %-16s %5s lines\n' "$cat" "$count"
+			EMPTY_CATEGORIES="${EMPTY_CATEGORIES:-}${EMPTY_CATEGORIES:+ }$cat"
+		else
+			printf '  staged  %-16s %5s lines\n' "$cat" "$count"
+		fi
 		continue
 	fi
 
@@ -221,6 +228,19 @@ done
 
 echo
 if [ "$MODE" = "update" ]; then
+	if [ -n "${EMPTY_CATEGORIES:-}" ]; then
+		echo "ERROR: refusing --update: probe(s) returned 0 lines: ${EMPTY_CATEGORIES}" >&2
+		echo "       An empty category would bake a permanently vacuous baseline (empty-vs-empty" >&2
+		echo "       compares PASS forever). Likely probe drift or renamed source files — fix the" >&2
+		echo "       probe or the source layout first. No baseline file was written." >&2
+		exit 2
+	fi
+	mkdir -p "$BASELINE_DIR"
+	for cat in $CATEGORIES; do
+		mv "$UPDATE_STAGING/$cat.txt" "$BASELINE_DIR/$cat.txt"
+		printf '  updated %-16s\n' "$cat"
+	done
+	printf '%s\n' "$SOURCE_PROVENANCE" > "$PROVENANCE_FILE"
 	echo "Baseline captured. Commit $BASELINE_DIR and disposition any new rows in bc-extraction/*.md + bc-manifest.md."
 	exit 0
 fi
