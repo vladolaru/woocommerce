@@ -125,6 +125,43 @@ exit 2
 """
 
 
+def sp01_fake_wp_source(
+    owner: str,
+    home: str,
+    state_payload: dict,
+    *,
+    log_probe_exit_code: int = 0,
+) -> str:
+    """Fake wp CLI for the SP-01 state driver and shared log assertions."""
+    payload = json.dumps(state_payload, separators=(",", ":"))
+    return f"""#!/usr/bin/env bash
+if [ "$1" = "eval-file" ]; then
+  cat >/dev/null
+  printf '%s\\n' '{payload}'
+  exit 0
+fi
+if [ "$1" = "eval" ]; then
+  if [[ "$2" == *"store_identity_owner"* ]]; then
+    printf '%s\\n' "store_identity_owner={owner}"
+    printf '%s\\n' "store_identity_home={home}"
+    exit 0
+  fi
+  if [[ "$2" == *"update_option"*"woopayments_critical_flows_debug_log_marker"* ]]; then
+    printf '%s\\n' '{{"status":"pass","paths":["/tmp/fake-debug.log"],"markers":{{"/tmp/fake-debug.log":0}}}}'
+    exit 0
+  fi
+  if [[ "$2" == *"ignored_matches"* ]] && [ {log_probe_exit_code} -ne 0 ]; then
+    printf '%s\\n' 'fake log probe unavailable' >&2
+    exit {log_probe_exit_code}
+  fi
+  printf '%s\\n' '{{"status":"pass","paths":["/tmp/fake-debug.log"],"matches":[]}}'
+  exit 0
+fi
+printf 'unexpected fake wp call: %s\\n' "$*" >&2
+exit 2
+"""
+
+
 def run_runner(
     *args: str,
     evidence_dir: Path,
@@ -292,6 +329,125 @@ exit 2
                 "exit_code": 0,
             }
         ]
+
+
+def test_sp01_deterministic_flow_classifies_pass_fail_and_blocked() -> None:
+    passing_checks = {
+        "exactly_one_woopayments_token": True,
+        "visa_4242_token": True,
+        "provider_payment_method_id": True,
+        "customer_binding": True,
+        "setup_intent_succeeded": True,
+        "no_orders_created": True,
+        "no_charge_created": True,
+    }
+    cases = (
+        (
+            "pass",
+            {
+                "schema": "woopayments_sp01_deterministic.v1",
+                "status": "pass",
+                "checks": passing_checks,
+                "fixture": {
+                    "user_id": 91,
+                    "token_id": 17,
+                    "payment_method_id": "pm_unitvisa4242",
+                    "setup_intent_id": "seti_unitvisa4242",
+                    "wcpay_customer_id": "cus_unitvisa4242",
+                },
+                "errors": [],
+                "blockers": [],
+            },
+            0,
+            "deterministic verdict: PASS",
+            0,
+        ),
+        (
+            "fail",
+            {
+                "schema": "woopayments_sp01_deterministic.v1",
+                "status": "fail",
+                "checks": {**passing_checks, "visa_4242_token": False},
+                "fixture": {"user_id": 92, "token_id": 18},
+                "errors": ["Saved token last four did not match 4242."],
+                "blockers": [],
+            },
+            1,
+            "deterministic verdict: FAIL",
+            0,
+        ),
+        (
+            "blocked",
+            {
+                "schema": "woopayments_sp01_deterministic.v1",
+                "status": "blocked",
+                "checks": {},
+                "fixture": {},
+                "errors": [],
+                "blockers": ["Stripe test key is unavailable."],
+            },
+            3,
+            "deterministic verdict: BLOCKED",
+            0,
+        ),
+        (
+            "fail-with-log-probe-blocked",
+            {
+                "schema": "woopayments_sp01_deterministic.v1",
+                "status": "fail",
+                "checks": {**passing_checks, "customer_binding": False},
+                "fixture": {"user_id": 93, "token_id": 19},
+                "errors": ["Provider customer binding did not match."],
+                "blockers": [],
+            },
+            3,
+            "deterministic verdict: BLOCKED",
+            2,
+        ),
+    )
+
+    for case_name, payload, expected_rc, expected_verdict, log_probe_exit_code in cases:
+        with tempfile.TemporaryDirectory(prefix=f"critical-flows-sp01-{case_name}-") as tmp:
+            evidence_dir = Path(tmp)
+            fake_wp = evidence_dir / "fake-wp.sh"
+            write_executable(
+                fake_wp,
+                sp01_fake_wp_source(
+                    "native",
+                    "http://target.fake.test",
+                    payload,
+                    log_probe_exit_code=log_probe_exit_code,
+                ),
+            )
+
+            result = run_runner(
+                "--store",
+                "target",
+                "--layer",
+                "deterministic",
+                "--flow",
+                "SP-01",
+                evidence_dir=evidence_dir,
+                extra_env={"TARGET_WP_COMMAND": str(fake_wp)},
+            )
+
+            assert result.returncode == expected_rc, result.stdout + result.stderr
+            assert "SP-01-add-payment-method-card" in result.stdout
+            assert expected_verdict in result.stdout
+            assert "run archived ->" in result.stdout
+
+            rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
+            expected_status = "pass" if 0 == expected_rc else "blocked" if 3 == expected_rc else "fail"
+            assert rollup["status"] == expected_status
+            assert strip_recorded_at(rollup) == [
+                {
+                    "flow": "SP-01-add-payment-method-card",
+                    "layer": "deterministic",
+                    "store": "target",
+                    "status": expected_status.upper(),
+                    "exit_code": expected_rc,
+                }
+            ]
 
 
 def test_card_checkout_flow_passes_on_reference_with_empty_native_flags() -> None:

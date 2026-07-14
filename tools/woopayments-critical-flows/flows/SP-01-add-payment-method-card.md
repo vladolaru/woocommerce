@@ -26,6 +26,6 @@ BOTH stores:
 - Assert debug log clean for the run.
 - Compare ref vs target end-state.
 
-Deterministic exerciser: NOT YET WIRED — assertions above are the contract for the future flows/SP-01-*.sh.
+Deterministic exerciser: `flows/SP-01-add-payment-method-card.sh`, backed by `flows/class-woopaymentscriticalflowssp01driver.php`. The driver creates a fresh customer and connected-account Visa fixture, executes the active runtime's SetupIntent and token services, and returns fail-closed provider/local state for the shared log assertion and rollup.
 
 Agent oracle mode: comparable (dual-store; reference is the golden oracle).
