@@ -666,6 +666,7 @@ def test_full_evidence_plan_lists_final_gates() -> None:
     assert_occurs_in_order(
         result.stdout,
         [
+            "run-self-tests.sh",
             "verify.sh --self-check",
             "verify.sh --ref",
             "rest-route-parity.sh",
@@ -1114,6 +1115,8 @@ exit 0
         for script_name in (
             "bc-drift-gate.sh",
             "subsystem-disposition-gate.sh",
+            "native-hook-naming-gate.sh",
+            "run-self-tests.sh",
             "hook-shape-parity.sh",
             "rest-route-parity.sh",
             "i18n-notes-gate.sh",
@@ -1870,6 +1873,8 @@ exit 0
         for script_name in (
             "bc-drift-gate.sh",
             "subsystem-disposition-gate.sh",
+            "native-hook-naming-gate.sh",
+            "run-self-tests.sh",
             "hook-shape-parity.sh",
             "rest-route-parity.sh",
             "i18n-notes-gate.sh",
@@ -2322,6 +2327,8 @@ fi
         for script_name in (
             "bc-drift-gate.sh",
             "subsystem-disposition-gate.sh",
+            "native-hook-naming-gate.sh",
+            "run-self-tests.sh",
             "hook-shape-parity.sh",
             "rest-route-parity.sh",
             "flow-drive.sh",
@@ -2486,6 +2493,8 @@ exit 0
         for script_name in (
             "bc-drift-gate.sh",
             "subsystem-disposition-gate.sh",
+            "native-hook-naming-gate.sh",
+            "run-self-tests.sh",
             "hook-shape-parity.sh",
             "rest-route-parity.sh",
             "i18n-notes-gate.sh",
@@ -2782,6 +2791,8 @@ exit 0
         for script_name in (
             "bc-drift-gate.sh",
             "subsystem-disposition-gate.sh",
+            "native-hook-naming-gate.sh",
+            "run-self-tests.sh",
             "hook-shape-parity.sh",
             "rest-route-parity.sh",
             "i18n-notes-gate.sh",

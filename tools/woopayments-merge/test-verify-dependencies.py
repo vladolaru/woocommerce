@@ -34,6 +34,9 @@ VERIFY_DEPENDENCIES = (
     "tools/woopayments-merge/manual-evidence-classifier.py",
     "tools/woopayments-merge/tracks-parity.sh",
     "tools/woopayments-merge/tracks-normalize.py",
+    "tools/woopayments-merge/tracks-continuity-inventory.tsv",
+    "tools/woopayments-merge/native-hook-naming-gate.sh",
+    "tools/woopayments-merge/test-native-hook-naming-gate.py",
     "tools/woopayments-merge/plugin-active-settings-gate.sh",
     "tools/woopayments-merge/plugin-active-settings.playwriter.mjs",
     "tools/woopayments-merge/run-command-with-timeout.py",
@@ -41,6 +44,8 @@ VERIFY_DEPENDENCIES = (
 )
 
 FINAL_EVIDENCE_DEPENDENCIES = VERIFY_DEPENDENCIES + (
+    "tools/woopayments-merge/run-self-tests.sh",
+    "tools/pytest.ini",
     "tools/woopayments-critical-flows/build-agent-results.py",
     "tools/woopayments-critical-flows/evidence_context.py",
     "tools/woopayments-merge/a4-account-scenario.php",

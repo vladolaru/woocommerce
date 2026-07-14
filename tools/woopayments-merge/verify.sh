@@ -1073,6 +1073,7 @@ WooPayments final-evidence plan
 mode=$MODE
 out_dir=$FULL_EVIDENCE_OUT_DIR
 
+bash $SELF_DIR/run-self-tests.sh
 bash $SELF_DIR/verify.sh --self-check "$REF_WP"$(compose_project_arg_for_plan ref "$REF_WP" "$REF_COMPOSE_PROJECT")
 TRACKS_OUT_DIR=$(plan_quote "$FINAL_TRACKS_OUT_DIR") bash $SELF_DIR/verify.sh --ref "$REF_WP" --target "$TARGET_WP"$(compose_project_arg_for_plan ref "$REF_WP" "$REF_COMPOSE_PROJECT")$(compose_project_arg_for_plan target "$TARGET_WP" "$TARGET_COMPOSE_PROJECT") --with-tracks$(full_evidence_tracks_store_args_for_plan)
 bash $SELF_DIR/rest-route-parity.sh --ref "$REF_WP" --target "$TARGET_WP"
@@ -1315,6 +1316,11 @@ run_full_evidence_gates() {
 	fi
 
 	mkdir -p "$FULL_EVIDENCE_OUT_DIR"
+	# The harness's own regression suites are the fail-closed half of the trust
+	# story (self-check only proves no-false-positives). Run them before any
+	# store-mutating verifier: a fail-open regression in a gate script must stop
+	# the run before that gate's green output can be trusted.
+	GATE_TIMEOUT_SECONDS="${HARNESS_SELF_TESTS_TIMEOUT_SECONDS:-2700}" gate "harness self-tests" bash "$SELF_DIR/run-self-tests.sh"
 	gate "final evidence self-check verifier" bash "$SELF_DIR/verify.sh" "${self_scope_args[@]}"
 	if [ "$LAST_GATE_RC" -eq 70 ]; then
 		record "remaining full-evidence mutation gates after self-check cleanup failure" BLOCKED
@@ -1606,6 +1612,10 @@ fi
 # 1. BC + Tracks static drift gate (source-level; independent of stores).
 gate "drift gate (BC + tracks)" env WCPAY_SRC="$WCPAY_SOURCE_ROOT" WCPAY_SOURCE_REF="${WCPAY_EXTENSION_REF:-10.8.0}" bash "$SELF_DIR/bc-drift-gate.sh"
 gate "subsystem disposition inventory" bash "$SELF_DIR/subsystem-disposition-gate.sh"
+# Static native contract gates (source-level; previously enforcement orphans that
+# nothing ran — a hook rename or Tracks-owner move sailed through a green loop).
+gate "tracks continuity inventory" bash "$SELF_DIR/tracks-parity.sh" inventory
+gate "native hook naming" bash "$SELF_DIR/native-hook-naming-gate.sh"
 if [ "$MODE" = "self" ]; then
 	gate "hook-shape parity" bash "$SELF_DIR/hook-shape-parity.sh" --ref "$REF_WP" --target "$TARGET_WP" --self-check
 	gate "REST route parity" bash "$SELF_DIR/rest-route-parity.sh" --ref "$REF_WP" --target "$TARGET_WP" --self-check

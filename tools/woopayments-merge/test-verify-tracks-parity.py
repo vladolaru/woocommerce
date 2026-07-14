@@ -101,6 +101,8 @@ fi
     for script_name in (
         "bc-drift-gate.sh",
         "subsystem-disposition-gate.sh",
+        "native-hook-naming-gate.sh",
+        "run-self-tests.sh",
         "hook-shape-parity.sh",
         "rest-route-parity.sh",
         "i18n-notes-gate.sh",
