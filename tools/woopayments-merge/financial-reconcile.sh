@@ -156,6 +156,9 @@ stripe_to_file() {
 
 # --- Reconcile each order: WC-side money state vs Stripe raw source for its charge. ---
 fail=0
+reconciled=0
+skipped=0
+skipped_ids=""
 for order_id in "${IDS[@]}"; do
 	order_dir="$RUN_DIR/order-$order_id"
 	mkdir -p "$order_dir"
@@ -308,7 +311,9 @@ PHP
 
 	charge_id="$(json_get "$wc_file" charge_id)"
 	if [ -z "$charge_id" ]; then
-		echo "  order $order_id: no charge id on WC side — skipping (not a provider-charged order)."
+		echo "  order $order_id: no charge id on WC side — cannot reconcile against the provider."
+		skipped=$((skipped + 1))
+		skipped_ids="$skipped_ids $order_id"
 		continue
 	fi
 	# Defensive: a charge id is always [A-Za-z0-9_]; reject anything else before it reaches the CLI
@@ -358,6 +363,7 @@ PHP
 
 	if python3 "$COMPARE" --wc "$wc_file" --charge "$charge_file" --intent "$intent_file" --balance-transaction "$balance_file" --refunds "$refunds_file" --disputes "$disputes_file" --payout "$payout_file"; then
 		echo "  order $order_id (charge $charge_id): widened money matrix matches provider. ok"
+		reconciled=$((reconciled + 1))
 	else
 		rc=$?
 		if [ "$rc" -eq 3 ]; then
@@ -374,5 +380,14 @@ if [ "$fail" -ne 0 ]; then
 	echo "FAIL: financial reconciliation matrix found WC↔provider divergence (RULE 0 money-path)."
 	exit 1
 fi
-echo "PASS: WC-side money records match the provider's raw source for all reconciled orders across the widened matrix."
+# Fail-closed on vacuous runs: a PASS may only rest on orders that were positively
+# reconciled against the provider's raw source. An order with no charge id (missing
+# order, or a native run that failed to persist _charge_id — itself a RULE 0 meta
+# regression) is unverified, and unverified must never count green.
+if [ "$reconciled" -eq 0 ] || [ "$skipped" -gt 0 ]; then
+	echo "BLOCKED: reconciled $reconciled order(s); $skipped order(s) had no provider charge to verify (ids:${skipped_ids:- none})."
+	echo "  Nothing unverified may count green. Supply provider-charged order ids, or investigate why these orders lack a charge id."
+	exit 3
+fi
+echo "PASS: WC-side money records match the provider's raw source for all $reconciled reconciled order(s) across the widened matrix."
 exit 0
