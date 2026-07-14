@@ -153,8 +153,8 @@ PY
 		fi
 		ndjson="$(sink_path)"
 		if [ -z "$ndjson" ] || [ ! -f "$ndjson" ]; then
-			echo "FAIL: could not locate the sink store (wpcom-local tracks path). Is the sink enabled?" >&2
-			exit 2
+			echo "BLOCKED: could not locate the sink store (wpcom-local tracks path). Is the sink enabled?" >&2
+			exit 3
 		fi
 		python3 - "$ndjson" "$marker_path" <<'PY'
 import json
@@ -203,8 +203,8 @@ PY
 		fi
 		ndjson="$(sink_path)"
 		if [ -z "$ndjson" ] || [ ! -f "$ndjson" ]; then
-			echo "FAIL: could not locate the sink store (wpcom-local tracks path). Is the sink enabled?" >&2
-			exit 2
+			echo "BLOCKED: could not locate the sink store (wpcom-local tracks path). Is the sink enabled?" >&2
+			exit 3
 		fi
 		if [ -n "$marker_path" ]; then
 			if [ ! -f "$marker_path" ]; then
@@ -238,8 +238,8 @@ try:
         stream.seek(offset)
         shutil.copyfileobj(stream, sys.stdout.buffer)
 except Exception as error:
-    print(f"FAIL: Tracks sink changed since the capture marker: {error}", file=sys.stderr)
-    raise SystemExit(2)
+    print(f"BLOCKED: Tracks sink changed since the capture marker: {error}", file=sys.stderr)
+    raise SystemExit(3)
 PY
 		else
 			"${normalizer[@]}" < "$ndjson"

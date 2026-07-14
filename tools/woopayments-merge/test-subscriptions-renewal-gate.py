@@ -85,8 +85,18 @@ def make_fake_wp(
 set -euo pipefail
 printf '%s\\n' "$*" >> "${{FAKE_WP_INVOCATIONS:?}}"
 if [ "$1" = "eval" ]; then
-    # The gate's pre-reconcile wait polls for async fee/net money meta.
-    printf '%s\\n' "money_meta=ready"
+    # The gate's pre-reconcile wait polls for async fee/net money meta. Simulate the
+    # real asynchrony: report pending for the first N probes (per FAKE_MONEY_META_PENDING),
+    # then ready — so the poll loop's retry path is genuinely exercised.
+    pending_budget="${{FAKE_MONEY_META_PENDING:-1}}"
+    probe_count_file="${{FAKE_WP_INVOCATIONS:?}}.money-meta-probes"
+    probes=$(( $(cat "$probe_count_file" 2>/dev/null || echo 0) + 1 ))
+    printf '%s' "$probes" > "$probe_count_file"
+    if [ "$probes" -le "$pending_budget" ]; then
+        printf '%s\\n' "money_meta=pending"
+    else
+        printf '%s\\n' "money_meta=ready"
+    fi
     exit 0
 fi
 if [ "$1" = "eval-file" ] && [ "$2" = "-" ]; then
@@ -616,3 +626,40 @@ def test_remote_wp_runners_are_rejected_before_any_store_command() -> None:
         assert "unsafe WP-CLI command" in result.stderr
         assert "--ssh" in result.stderr
         assert not wp_invocations.exists()
+
+
+def test_compare_blocks_when_money_metadata_never_arrives() -> None:
+    with tempfile.TemporaryDirectory(prefix="subscriptions-renewal-gate-test-") as tmp:
+        tmp_path = Path(tmp)
+        ref_wp = tmp_path / "ref-wp"
+        target_wp = tmp_path / "target-wp"
+        wp_invocations = tmp_path / "wp-invocations.txt"
+
+        make_fake_wp(ref_wp, role="ref")
+        make_fake_wp(target_wp, role="target")
+
+        result = run_gate(
+            "compare",
+            "--ref",
+            str(ref_wp),
+            "--target",
+            str(target_wp),
+            "--ref-subscription-id",
+            "101",
+            "--target-subscription-id",
+            "202",
+            env={
+                **os.environ,
+                "FAKE_WP_INVOCATIONS": str(wp_invocations),
+                # Metadata stays pending past the (shortened) wait budget.
+                "FAKE_MONEY_META_PENDING": "99",
+                "WOOPAYMENTS_RENEWAL_MONEY_META_TRIES": "2",
+                **reconciler_env(tmp_path),
+            },
+        )
+
+        assert result.returncode == 3, result.stdout + result.stderr
+        assert "money metadata (fee/net) never arrived" in result.stderr
+        assert "PASS" not in result.stdout
+        # The reconciler must never run when metadata never arrived.
+        assert not (tmp_path / "reconcile-invocations.txt").exists()
