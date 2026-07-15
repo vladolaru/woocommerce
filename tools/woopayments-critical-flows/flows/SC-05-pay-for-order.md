@@ -28,3 +28,11 @@ BOTH stores:
 Deterministic exerciser: NOT YET WIRED — assertions above are the contract for the future flows/SC-05-*.sh.
 
 Agent oracle mode: comparable (dual-store; reference is the golden oracle).
+
+## Latest runner evidence (2026-07-15)
+
+- Fresh context `fd2f64c2-fdce-4bb3-9645-355b614a1c60` binds committed source `459d3f895e73ea92077f1d16ccd098e86e39d388`, reference subscription `1283`, target subscription `874`, and the expected plugin/native runtime owners.
+- Reference `PASS`: admin-created orders `1978` and `1979` are processing with succeeded, paid, fully captured USD 20 and USD 40 intent/charge pairs. The first payment saved exactly one reusable Visa 4242 token; the second completed the explicit 3DS challenge with unsaved Visa 3155 and left the token count at one.
+- Target `FAIL — functional`: both Pay affordances and the native Payment Element render for orders `1491` and `1492`, but an ordinary enabled Pay for order click with valid Visa 4242 emits 15 external Stripe/hCaptcha POSTs and no same-origin payment POST or navigation for 120 seconds. Both orders remain pending with no intent, charge, paid timestamp, token, customer mapping, provider object, charge delta, or marker-bounded debug-log byte. The dependent unsaved 3DS payment is unreachable.
+- Runner ingest recorded 1 PASS, 1 FAIL, 0 BLOCKED, and 0 queued in `tools/woopayments-critical-flows/evidence/runs/20260715T082824Z-59646-partial/`. Both rollup rows bind the exact accepted result bytes as `sha256:383134392902fa7acd75364cc58bff37330ff659b8e83347b5e99fc4711f66d5`.
+- Layer D remains unwired, and the target Layer-A failure is independently decisive. The maintained README and matrix therefore remain `PENDING`.
