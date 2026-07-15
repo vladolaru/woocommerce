@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import os
@@ -77,6 +78,11 @@ def strip_recorded_at(rollup: dict) -> list[dict]:
             f"result row must carry a UTC recorded_at stamp: {row}"
         )
     return rows
+
+
+def file_sha256(path: Path) -> str:
+    """Return the runner's prefixed digest format for one evidence file."""
+    return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def sc01_fake_wp_source(owner: str, home: str, intent_id: str, charge_id: str) -> str:
@@ -1365,6 +1371,7 @@ def test_agent_layer_accepts_completed_agent_result() -> None:
                 "exit_code": 0,
                 "agent_verdict": "PASS",
                 "evidence_path": str(result_path),
+                "evidence_sha256": file_sha256(result_path),
                 "reason": "agent result accepted: PASS",
             }
         ]
@@ -1431,6 +1438,7 @@ def test_agent_layer_preserves_target_only_pass_without_requeueing() -> None:
                 "exit_code": 3,
                 "agent_verdict": "BLOCKED",
                 "evidence_path": str(result_path),
+                "evidence_sha256": file_sha256(result_path),
                 "reason": "target-only reference is intentionally not comparable",
             },
             {
@@ -1441,6 +1449,7 @@ def test_agent_layer_preserves_target_only_pass_without_requeueing() -> None:
                 "exit_code": 0,
                 "agent_verdict": "PASS",
                 "evidence_path": str(result_path),
+                "evidence_sha256": file_sha256(result_path),
                 "reason": "target-only agent result accepted: PASS; parity not comparable",
             },
         ]
@@ -1541,6 +1550,7 @@ def test_agent_layer_fails_on_functional_agent_result() -> None:
                 "exit_code": 1,
                 "agent_verdict": "FAIL - functional",
                 "evidence_path": str(result_path),
+                "evidence_sha256": file_sha256(result_path),
                 "reason": "agent verdict: FAIL - functional",
             }
         ]
@@ -1588,6 +1598,7 @@ def test_agent_layer_preserves_blocked_agent_result_evidence() -> None:
                 "exit_code": 3,
                 "agent_verdict": "BLOCKED - redirect provider unavailable",
                 "evidence_path": str(result_path),
+                "evidence_sha256": file_sha256(result_path),
                 "reason": "agent verdict: BLOCKED - redirect provider unavailable",
             }
         ]
@@ -1654,6 +1665,7 @@ def test_agent_layer_fails_target_when_parity_verdict_fails() -> None:
                 "exit_code": 0,
                 "agent_verdict": "PASS",
                 "evidence_path": str(result_path),
+                "evidence_sha256": file_sha256(result_path),
                 "reason": "agent result accepted: PASS",
             },
             {
@@ -1664,6 +1676,7 @@ def test_agent_layer_fails_target_when_parity_verdict_fails() -> None:
                 "exit_code": 1,
                 "agent_verdict": "FAIL - UX",
                 "evidence_path": str(result_path),
+                "evidence_sha256": file_sha256(result_path),
                 "reason": "agent parity verdict: FAIL - UX",
             },
         ]

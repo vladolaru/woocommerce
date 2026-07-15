@@ -179,15 +179,15 @@ QUEUED_AGENT_COUNT=0
 
 record_result() {
   local flow="$1" layer="$2" store="$3" status="$4" exit_code="$5"
-  local agent_verdict="${6:-}" evidence_path="${7:-}" reason="${8:-}"
+  local agent_verdict="${6:-}" evidence_path="${7:-}" reason="${8:-}" evidence_sha256="${9:-}"
 
-  python3 - "$RESULTS_JSONL" "$flow" "$layer" "$store" "$status" "$exit_code" "$agent_verdict" "$evidence_path" "$reason" <<'PY'
+  python3 - "$RESULTS_JSONL" "$flow" "$layer" "$store" "$status" "$exit_code" "$agent_verdict" "$evidence_path" "$reason" "$evidence_sha256" <<'PY'
 import datetime
 import json
 import sys
 from pathlib import Path
 
-path, flow, layer, store, status, exit_code, agent_verdict, evidence_path, reason = sys.argv[1:]
+path, flow, layer, store, status, exit_code, agent_verdict, evidence_path, reason, evidence_sha256 = sys.argv[1:]
 payload = {
     "flow": flow,
     "layer": layer,
@@ -200,6 +200,8 @@ if agent_verdict:
     payload["agent_verdict"] = agent_verdict
 if evidence_path:
     payload["evidence_path"] = evidence_path
+    if evidence_sha256:
+        payload["evidence_sha256"] = evidence_sha256
 if reason:
     payload["reason"] = reason
 with Path(path).open("a", encoding="utf-8") as stream:
@@ -217,6 +219,7 @@ agent_result_verdict() {
   local flow="$1" store="$2" result_file="$3" expected_oracle_mode="$4"
 
   python3 - "$flow" "$store" "$result_file" "$EVIDENCE_CONTEXT_FILE" "$DIR" "$expected_oracle_mode" <<'PY'
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -231,8 +234,22 @@ def clean(value):
     return " ".join(str(value).split())
 
 
+result_sha256 = ""
+
+
 def emit(status, exit_code, verdict, reason, queue_required=True):
-    print("\t".join([status, str(exit_code), clean(verdict), clean(reason), "1" if queue_required else "0"]))
+    print(
+        "\t".join(
+            [
+                status,
+                str(exit_code),
+                clean(verdict),
+                clean(reason),
+                "1" if queue_required else "0",
+                result_sha256,
+            ]
+        )
+    )
 
 
 def classify_verdict(verdict):
@@ -247,7 +264,9 @@ def classify_verdict(verdict):
 
 
 try:
-    payload = json.loads(Path(result_file).read_text(encoding="utf-8"))
+    result_bytes = Path(result_file).read_bytes()
+    result_sha256 = f"sha256:{hashlib.sha256(result_bytes).hexdigest()}"
+    payload = json.loads(result_bytes.decode("utf-8"))
 except Exception as exc:
     emit("BLOCKED", 3, "BLOCKED", f"invalid agent result JSON: {exc}")
     raise SystemExit(0)
@@ -539,13 +558,13 @@ if [ "$LAYER" != "deterministic" ]; then
     spec_queued=0
     for s in $(stores); do
       if [ -f "$result_file" ]; then
-        IFS=$'\t' read -r status rc agent_verdict reason queue_required < <(agent_result_verdict "$base" "$s" "$result_file" "$oracle_mode")
+        IFS=$'\t' read -r status rc agent_verdict reason queue_required evidence_sha256 < <(agent_result_verdict "$base" "$s" "$result_file" "$oracle_mode")
         if [ "$status" = "PASS" ] || [ "$status" = "FAIL" ]; then
           printf '  [%-7s] %s on %s (%s)\n' "$status" "$base" "$s" "$reason"
-          record_result "$base" agent "$s" "$status" "$rc" "$agent_verdict" "$result_file" "$reason"
+          record_result "$base" agent "$s" "$status" "$rc" "$agent_verdict" "$result_file" "$reason" "$evidence_sha256"
         else
           printf '  [%-7s] %s on %s (%s)\n' "BLOCKED" "$base" "$s" "$reason"
-          record_result "$base" agent "$s" BLOCKED 3 "$agent_verdict" "$result_file" "$reason"
+          record_result "$base" agent "$s" BLOCKED 3 "$agent_verdict" "$result_file" "$reason" "$evidence_sha256"
           if [ "$queue_required" != "0" ]; then
             spec_queued=1
           fi
