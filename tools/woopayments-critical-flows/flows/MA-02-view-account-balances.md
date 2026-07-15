@@ -9,7 +9,7 @@ Guards the Payments Overview balance surface: the available and pending balances
 
 ## Layer A — agent-driven browser
 
-BOTH stores (reference `admin.php?page=wc-admin&path=/payments/overview`, target `admin.php?page=wc-admin&path=/woopayments/overview`):
+BOTH stores (reference `admin.php?page=wc-admin&path=/payments/overview`, target `admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview`):
 
 1. Log in as admin and open Payments → Overview.
 2. **Confirm the balance cards render**: an Available balance figure and a Pending balance figure, each with an explicit currency-formatted amount (not `—`, not a perpetual loading skeleton).
@@ -27,3 +27,11 @@ BOTH stores (reference `admin.php?page=wc-admin&path=/payments/overview`, target
 Deterministic exerciser: NOT YET WIRED — assertions above are the contract for the future flows/MA-02-*.sh.
 
 Agent oracle mode: comparable (dual-store; reference is the golden oracle).
+
+## Runner-verified Layer A result (2026-07-15)
+
+- Reference: **FAIL — UX**. The plugin Overview loaded the exact REST-backed USD Total (`$3,884,690.42`) and Available funds (`$0.00`) figures, but it omitted the explicit currency-formatted Pending figure required by MA-02. Pending was only implicit in Total minus Available.
+- Native target: **PASS**. The Payments menu's Overview loaded exact REST-backed USD Total (`US$1,942,288.30`), Available (`US$0.00`), and Pending (`US$1,942,288.30`) figures. The two relevant cards settled without a loading indicator, error notice, fatal console diagnostic, or read-only state divergence.
+- Comparable parity: **FAIL — UX** because the written contract requires both stores to expose the explicit Pending figure. This is a written-contract/reference-oracle mismatch, not a native product regression.
+- Runner archive: `evidence/runs/20260715T131642Z-64666-partial/` (0 PASS, 2 FAIL, 0 BLOCKED, 0 queued). Accepted result digest: `sha256:68715b36a534487bdedbaacaf57cd16ac320d66d3bd00f0e47f66514788da7a0`.
+- The maintained README and matrix status remains `PENDING`: comparable Layer A failed and Layer D is still unwired.
