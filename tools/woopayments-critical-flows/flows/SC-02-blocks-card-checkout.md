@@ -28,4 +28,17 @@ BOTH stores:
 
 Deterministic exerciser: NOT YET WIRED — assertions above are the contract for the future flows/SC-02-*.sh.
 
+## Latest runner evidence
+
+Layer A is reference `PASS` / target `FAIL — functional` in partial run
+`20260715T061833Z-39338-partial`. The reference completed Store API order
+`1964` for USD 40 and bound it to the matching succeeded PaymentIntent and
+captured charge. The native target returned HTTP 400
+`woocommerce_rest_checkout_process_payment_error` for the same Visa 4242
+checkout. Its only resulting order, `1484`, is safely failed with no paid
+timestamp, intent, charge, token, customer mapping, or provider charge delta.
+
+This is a new product regression. Layer D remains unwired, so the matrix row
+stays `PENDING` rather than claiming the full D+A contract.
+
 Agent oracle mode: comparable (dual-store; reference is the golden oracle).
