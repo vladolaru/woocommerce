@@ -27,4 +27,22 @@ BOTH stores, run once on **classic** and once on **Blocks**:
 
 Deterministic exerciser: NOT YET WIRED — assertions above are the contract for the future flows/SC-03-*.sh.
 
+## Latest runner evidence
+
+Layer A is reference `PASS` / target `FAIL — UX` in partial run
+`20260715T072351Z-34257-partial`. Reference classic and Blocks each completed
+the fail→retry→succeed lifecycle with exact `requires_action` checkpoints,
+explicit Complete/Fail challenge controls, specific authentication errors,
+safe failed states, and paid/captured USD 40 orders. Native Blocks matched that
+lifecycle.
+
+Native classic rendered and safely failed the first challenge, but its
+`blockUI` checkout overlay remained visible beyond 45 seconds. The shopper
+could not activate Place order for the required retry. The resulting order is
+failed, unpaid, and chargeless; its intent records the authentication failure,
+and the provider latest charge did not move. This is a new product UX
+regression. A second fresh native-classic fixture reproduced the stuck overlay
+with ordinary simulator clicks, ruling out forced challenge controls as the
+cause. Layer D remains unwired, so the matrix row stays `PENDING`.
+
 Agent oracle mode: comparable (dual-store; reference is the golden oracle).
