@@ -29,3 +29,12 @@ BOTH stores:
 Deterministic exerciser: NOT YET WIRED — assertions above are the contract for the future flows/SC-12-*.sh.
 
 Agent oracle mode: comparable (dual-store; reference is the golden oracle).
+
+## 2026-07-15 Layer A result
+
+- Reference and native both complete the classic-checkout journey with the same versioned local alternate-card fixture. My Account offers WooPayments and `Alternate card` as distinct gateways; each store saves exactly one Visa 4242 token under `sc12_alternate_card` and displays the success notice plus saved-card row.
+- Both stores fail the written checkout-label contract. The required WooPayments `Credit card` label is absent: reference renders `Card` with its method-count badge, native renders `Card` with its method-count badge, and each authoritative browser projection records `credit_card_label_count: 0`. This is a shared UX contract failure, not a native-only regression.
+- Selecting the saved alternate token produces no false WooPayments incomplete-payment error, and each USD 40 order reaches order received as paid `processing` under `sc12_alternate_card`. Authoritative state joins the exact checked gateway, token, and order IDs; both orders contain the alternate token ID and no WooPayments `_intent_id` or `_charge_id`; WooPayments token projections and settings hashes are unchanged.
+- All eight fresh browser confirmations were inspected at original resolution. The add-card images visibly show the selected alternate gateway and complete entered card fixture, and source, screenshot, debug-window, secret, and provenance checks pass.
+- Runner ingest recorded 0 PASS, 2 FAIL — UX, 0 BLOCKED, and 0 queued in `tools/woopayments-critical-flows/evidence/runs/20260715T112142Z-24215-partial/`. Both rollup rows bind the accepted result as `sha256:b4318b00c1f4c8cd2868f4d6a0201f5ee8d7e1c580f839791f4e4f16b91ff9b6`.
+- The matrix and README remain `PENDING` because Layer A fails the written label contract and the required Layer D exerciser is still unwired.
