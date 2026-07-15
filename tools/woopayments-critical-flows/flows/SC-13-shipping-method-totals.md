@@ -28,3 +28,10 @@ BOTH stores (classic, and Blocks where both surfaces are active):
 Deterministic exerciser: NOT YET WIRED — assertions above are the contract for the future flows/SC-13-*.sh.
 
 Agent oracle mode: comparable (dual-store; reference is the golden oracle).
+
+## Runner-verified Layer A result (2026-07-15)
+
+- Reference: **PASS**. Classic and Blocks each displayed `$20 → $40 → $20` in the same document, then created paid `$20` orders whose sole shipping line was Standard `$20` and whose provider intent/charge were succeeded and captured for exactly 2,000 cents.
+- Native target: **FAIL — functional**. Classic passed the same contract. Blocks displayed the exact live total sequence with the `US`, `CA 94107` shipping address and “Use same address for billing” visibly retained, but card confirmation sent an empty `billing_details[address][country]` to Stripe. Stripe returned HTTP 400, the checkout displayed the provider error, and no Blocks order, intent, charge, token, or customer mapping was created.
+- Runner archive: `evidence/runs/20260715T123137Z-9760-partial/` (1 PASS, 1 FAIL, 0 BLOCKED, 0 queued). Accepted result digest: `sha256:767bae8807a8300167122b8d52464bd47e129f8b2e275fd648bc647337a16536`.
+- The maintained README and matrix status remains `PENDING`: Layer A failed on the target and Layer D is still unwired.
