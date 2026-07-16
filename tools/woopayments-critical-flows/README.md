@@ -145,7 +145,7 @@ Legend — **Layers:** `D` deterministic, `A` agent-driven, `D+A` both (overlap)
 
 | ID | Flow | Layers | Functional acceptance | UX checkpoints | Status |
 |----|------|--------|-----------------------|----------------|--------|
-| MO-01 | Manual capture (order) | D+A | Captured; status; amount | Capture button → captured | PENDING |
+| MO-01 | Manual capture (order) | D+A | Captured; status; amount | Capture button → captured | PASS (runner-verified 2026-07-16: Layer D dual-store provider-backed on-hold/requires_capture → processing/succeeded full-capture parity with clean logs; Layer A dual-store checkout and merchant Capture charge UX PASS, target settings-label divergence cosmetic; runs 20260716T132023Z-19450-partial, 20260716T141044Z-84944-partial) |
 | MO-02 | Manual capture — Uncaptured tab | D+A | Capture from list; row leaves tab | Tab lists eligible; capture works | PENDING |
 | MO-03 | Manual capture — payment-details page | D+A | Capture from detail | Capture on detail; clears | PENDING |
 | MO-04 | Full refund | D+A | Full refunded; status; txn shows refund | Refund control + result | PENDING |

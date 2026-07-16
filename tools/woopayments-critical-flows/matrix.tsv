@@ -38,7 +38,7 @@ MS-04	Promote w/ coupon	D	comparable	PENDING
 MS-05	Renew automatically (scheduled)	D	comparable	PENDING
 MS-06	Renew manually (admin)	D+A	comparable	PENDING
 MS-07	Admin change payment method	D+A	comparable	PASS (runner-verified 2026-07-14: admin browser Layer A both stores; renewal D layer provider-reconciled with token-id-pinned gate run + chosen-token binding artifact; run archived under evidence/runs/)
-MO-01	Manual capture (order)	D+A	comparable	PENDING
+MO-01	Manual capture (order)	D+A	comparable	PASS (runner-verified 2026-07-16: Layer D dual-store provider-backed on-hold/requires_capture → processing/succeeded full-capture parity with clean logs; Layer A dual-store checkout and merchant Capture charge UX PASS, target settings-label divergence cosmetic; runs 20260716T132023Z-19450-partial, 20260716T141044Z-84944-partial)
 MO-02	Manual capture — Uncaptured tab	D+A	comparable	PENDING
 MO-03	Manual capture — payment-details page	D+A	comparable	PENDING
 MO-04	Full refund	D+A	comparable	PENDING

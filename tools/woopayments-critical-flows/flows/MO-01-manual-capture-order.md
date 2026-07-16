@@ -11,7 +11,7 @@ Guards the authorize-then-capture path. With WooPayments' manual-capture setting
 
 BOTH stores:
 
-1. WP Admin → WooCommerce → Settings → Payments → WooPayments (Manage). **The manual-capture control ("Issue an authorization on checkout, and capture later") is present**; enable it and save.
+1. WP Admin → WooCommerce → Settings → Payments → WooPayments (Manage). **The manual-capture control is present** (`Enable manual capture` on the reference plugin and `Issue an authorization on checkout and capture later` on native); enable it and save.
 2. Place a storefront checkout with `4242 4242 4242 4242`.
 3. WooCommerce → Orders → open the new order. **Status is On hold and an order note says the payment was authorized (not captured), naming the amount.**
 4. Open the Order actions dropdown. **"Capture charge" is offered.**
@@ -28,3 +28,12 @@ End state: order Processing, captured amount equals order total.
 Deterministic exerciser: `flows/MO-01-manual-capture-order.sh` creates one provider-backed manual authorization per store, archives secret-free pre/post order and provider state, captures the full amount through the active runtime, and compares the normalized reference/target transitions.
 
 Agent oracle mode: comparable (dual-store; reference is the golden oracle).
+
+## Verified result — 2026-07-16
+
+- Layer D: dual-store provider-backed full-capture parity passed with exact pre/post order, intent, charge, amount, currency, note, owner, and marker-bounded log assertions. Archive: `evidence/runs/20260716T132023Z-19450-partial/`.
+- Layer A: both stores enabled and persisted manual capture, completed Visa 4242 checkout, exposed and applied `Capture charge`, showed `Order updated.`, recorded the successful-capture note, and reached Processing. Both settings were restored to disabled and verified after reload. Archive: `evidence/runs/20260716T141044Z-84944-partial/`.
+- Reference order `2139` and native order `1556` both transitioned from on-hold, unpaid, `requires_capture`, and `0/7000` captured to processing, paid, `succeeded`, and `7000/7000` captured.
+- The native settings label and surrounding presentation differ cosmetically from the reference plugin; the behavior and capture contract match.
+
+Status: **PASS** (combined D+A).
