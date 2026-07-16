@@ -104,26 +104,88 @@ agent_oracle_mode() { # <spec.md>
 }
 
 run_no_browser_deterministic_flow() { # <flow-base> <store>
-  local base="$1" store="$2" rc
+  local base="$1" store="$2" rc log_rc marker_rc out_dir validation_output validation_rc trusted_fail evidence_block manifest
 
   case "$base" in
     MA-10-i18n-order-notes)
       if [ "$store" = "ref" ]; then
-        echo "[MA-10/ref] deterministic verdict: PASS (reference oracle is covered by the target-native i18n gate)"
-        return 0
+        FLOW_RESULT_REASON="reference extension same-note-family oracle is not wired"
+        echo "[MA-10/ref] BLOCKED: $FLOW_RESULT_REASON"
+        return 3
       fi
       if [ -z "$TARGET_WP_COMMAND" ]; then
+        FLOW_RESULT_REASON="TARGET_WP_COMMAND is required for the MA-10 gate"
         echo "[MA-10/$store] BLOCKED: TARGET_WP_COMMAND is required for i18n-notes-gate.sh"
         return 3
       fi
       if [ ! -f "$I18N_NOTES_GATE" ]; then
+        FLOW_RESULT_REASON="MA-10 i18n notes gate is missing"
         echo "[MA-10/$store] BLOCKED: i18n notes gate is missing: $I18N_NOTES_GATE"
         return 3
       fi
 
       echo "[MA-10/$store] exercise: validate localized native WooPayments order notes"
-      bash "$I18N_NOTES_GATE" --target "$TARGET_WP_COMMAND" --out-dir "$EVIDENCE_DIR/MA-10-i18n-order-notes"
+      out_dir="$EVIDENCE_DIR/runs/$RUN_STAMP-$RUN_SCOPE/MA-10-i18n-order-notes"
+      mkdir -p "$out_dir"
+      mark_log_clean_start "$store"
+      marker_rc=$?
+      if [ "$marker_rc" -ne 0 ]; then
+        FLOW_RESULT_REASON="log-clean marker could not be recorded before MA-10"
+        return 3
+      fi
+      bash "$I18N_NOTES_GATE" --target "$TARGET_WP_COMMAND" --out-dir "$out_dir"
       rc=$?
+      LOG_SCAN_EVIDENCE_FILE="$out_dir/debug-log-scan.json" assert_log_clean "$store"
+      log_rc=$?
+      validation_rc=0
+      if [ "$rc" -eq 0 ] || [ "$rc" -eq 1 ] || [ "$rc" -eq 3 ]; then
+        validation_output="$(python3 "$MA10_EVIDENCE_VALIDATOR" --evidence-dir "$out_dir" --gate-exit "$rc" 2>&1)"
+        validation_rc=$?
+        if [ "$validation_rc" -ne 0 ]; then
+          printf '%s\n' "$validation_output"
+        fi
+        if { [ "$validation_rc" -eq 0 ] || [ "$validation_rc" -eq 1 ]; } && [ ! -f "$out_dir/manifest.json" ]; then
+          echo "BLOCKED: MA-10 evidence validator returned without a manifest"
+          validation_rc=3
+        fi
+      else
+        validation_rc=3
+      fi
+
+      trusted_fail=0
+      evidence_block=0
+      [ "$validation_rc" -eq 1 ] && trusted_fail=1
+      if [ "$validation_rc" -ne 0 ] && [ "$validation_rc" -ne 1 ]; then
+        evidence_block=1
+      fi
+      if [ "$rc" -eq 1 ] && [ "$validation_rc" -ne 3 ]; then
+        trusted_fail=1
+      fi
+      [ "$log_rc" -eq 1 ] && trusted_fail=1
+
+      if [ -f "$out_dir/manifest.json" ]; then
+        manifest="$out_dir/manifest.json"
+        FLOW_EVIDENCE_PATH="$manifest"
+        FLOW_EVIDENCE_SHA256="$(python3 -c 'import hashlib, sys; print("sha256:" + hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "$manifest")"
+        FLOW_RESULT_REASON="validated MA-10 evidence manifest"
+      fi
+
+      if [ "$evidence_block" -ne 0 ]; then
+        if [ -z "$FLOW_RESULT_REASON" ]; then
+          if [ "$rc" -eq 70 ]; then
+            FLOW_RESULT_REASON="MA-10 gate cleanup failed; no verdict was trusted"
+          else
+            FLOW_RESULT_REASON="MA-10 evidence validation did not complete"
+          fi
+        fi
+        rc=3
+      elif [ "$trusted_fail" -ne 0 ]; then
+        rc=1
+      elif [ "$rc" -eq 3 ] || [ "$log_rc" -eq 3 ]; then
+        rc=3
+      else
+        rc=0
+      fi
       ;;
     MC-06-automatic-rates-refresh)
       if [ "$store" = "ref" ]; then
@@ -167,6 +229,7 @@ RESULTS_JSONL="$EVIDENCE_DIR/rollup-results.jsonl"
 ROLLUP_JSON="$EVIDENCE_DIR/rollup.json"
 AGENT_QUEUE="$EVIDENCE_DIR/agent-queue.txt"
 I18N_NOTES_GATE="${I18N_NOTES_GATE:-$REPO_ROOT/tools/woopayments-merge/i18n-notes-gate.sh}"
+MA10_EVIDENCE_VALIDATOR="${MA10_EVIDENCE_VALIDATOR:-$DIR/flows/ma10-validate.py}"
 MC_RATES_GATE="${MC_RATES_GATE:-$REPO_ROOT/tools/woopayments-merge/mc-rates-gate.sh}"
 MATRIX_TSV="${MATRIX_TSV:-$DIR/matrix.tsv}"
 # Test seam: lets the self-tests run against a minimal flows set so properties like
@@ -532,6 +595,9 @@ if [ "$LAYER" != "agent" ]; then
     [ -n "$ONLY_FLOW" ] && [[ "$base" != "$ONLY_FLOW"* ]] && continue
     echo "--- $base ---"
     for s in $(stores); do
+      FLOW_EVIDENCE_PATH=""
+      FLOW_EVIDENCE_SHA256=""
+      FLOW_RESULT_REASON=""
       run_no_browser_deterministic_flow "$base" "$s"
       rc=$?
       if [ "$rc" -eq 0 ]; then
@@ -542,7 +608,7 @@ if [ "$LAYER" != "agent" ]; then
         status="FAIL"
       fi
       printf '  [%-7s] %s on %s\n' "$status" "$base" "$s"
-      record_result "$base" deterministic "$s" "$status" "$rc"
+      record_result "$base" deterministic "$s" "$status" "$rc" "" "$FLOW_EVIDENCE_PATH" "$FLOW_RESULT_REASON" "$FLOW_EVIDENCE_SHA256"
     done
   done
 fi

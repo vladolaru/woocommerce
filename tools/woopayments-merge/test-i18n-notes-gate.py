@@ -18,8 +18,11 @@ VERIFY = REPO / "tools/woopayments-merge/verify.sh"
 TARGET_WP = "docker exec -i target-cli-1 wp --allow-root --user=1"
 
 
-def run_gate(*args: str) -> subprocess.CompletedProcess[str]:
-    command_args, process_env = adapt_wp_runner_arguments(list(args), os.environ.copy())
+def run_gate(*args: str, extra_env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    process_env = os.environ.copy()
+    if extra_env:
+        process_env.update(extra_env)
+    command_args, process_env = adapt_wp_runner_arguments(list(args), process_env)
     return subprocess.run(
         ["bash", str(SCRIPT), *command_args],
         cwd=REPO,
@@ -90,18 +93,18 @@ def write_state(
                     "textdomain_loaded": True,
                     "messages": {
                         "charge": {
-                            "message_id": "<strong>Fee details:</strong>",
-                            "translation": "<strong>Gebuehrendetails:</strong>" if catalog_translated else "<strong>Fee details:</strong>",
+                            "message_id": "A payment of %1$s was <strong>successfully charged</strong> using %2$s (<a>%3$s</a>).",
+                            "translation": "Eine Zahlung von %1$s wurde mit %2$s erfolgreich belastet (<a>%3$s</a>)." if catalog_translated else "A payment of %1$s was <strong>successfully charged</strong> using %2$s (<a>%3$s</a>).",
                             "translated": catalog_translated,
                         },
                         "refund": {
-                            "message_id": "A refund of %1$s %4$s using %2$s (%3$s).",
-                            "translation": "Eine Rueckerstattung von %1$s %4$s mit %2$s (%3$s)." if catalog_translated else "A refund of %1$s %4$s using %2$s (%3$s).",
+                            "message_id": "A refund of %1$s %5$s using %2$s. Reason: %3$s. (<code>%4$s</code>)",
+                            "translation": "Eine Rueckerstattung von %1$s %5$s mit %2$s. Grund: %3$s. (<code>%4$s</code>)" if catalog_translated else "A refund of %1$s %5$s using %2$s. Reason: %3$s. (<code>%4$s</code>)",
                             "translated": catalog_translated,
                         },
                         "dispute": {
-                            "message_id": "Payment dispute has been updated",
-                            "translation": "Zahlungsdisput wurde aktualisiert" if catalog_translated else "Payment dispute has been updated",
+                            "message_id": 'Payment has been disputed for %1$s with reason "%2$s". <a href="%4$s" target="_blank" rel="noopener noreferrer">Response due by %3$s</a>.',
+                            "translation": 'Zahlung ueber %1$s wurde mit Grund "%2$s" angefochten. <a href="%4$s" target="_blank" rel="noopener noreferrer">Antwort faellig bis %3$s</a>.' if catalog_translated else 'Payment has been disputed for %1$s with reason "%2$s". <a href="%4$s" target="_blank" rel="noopener noreferrer">Response due by %3$s</a>.',
                             "translated": catalog_translated,
                         },
                     },
@@ -274,7 +277,69 @@ def test_deterministic_probe_requires_exact_per_flow_markers() -> None:
         result = run_gate("--state", str(state))
 
         assert result.returncode == 1
-        assert "missing deterministic gettext marker" in result.stderr
+        assert "missing deterministic merchant-note marker" in result.stderr
+
+
+def test_deterministic_probe_rejects_marker_on_unrelated_refund_email() -> None:
+    with tempfile.TemporaryDirectory(prefix="i18n-notes-gate-test-") as tmp:
+        state = Path(tmp) / "state.json"
+        write_state(
+            state,
+            translation_source="deterministic_gettext_probe",
+            orders=[
+                {
+                    "flow": "charge",
+                    "order_id": 101,
+                    "notes": ["[wcpay-i18n:charge] Eine Zahlung pi_test"],
+                },
+                {
+                    "flow": "refund",
+                    "order_id": 101,
+                    "notes": [
+                        "A refund of 25 USD using WooPayments. Reason: test. (<code>re_test</code>)",
+                        "E-Mail [wcpay-i18n:refund] Rueckerstattete Bestellung",
+                    ],
+                },
+                {
+                    "flow": "dispute",
+                    "order_id": 202,
+                    "notes": ["[wcpay-i18n:dispute] Zahlung angefochten"],
+                },
+            ],
+        )
+
+        result = run_gate("--state", str(state))
+
+        assert result.returncode == 1
+        assert "english merchant note found: refund" in result.stderr
+        assert "missing deterministic merchant-note marker for refund" in result.stderr
+
+
+def test_deterministic_probe_rejects_marker_and_provider_id_split_across_notes() -> None:
+    with tempfile.TemporaryDirectory(prefix="i18n-notes-gate-test-") as tmp:
+        state = Path(tmp) / "state.json"
+        provider_ids = {"charge": "pi_test", "refund": "re_test", "dispute": "ch_test"}
+        write_state(
+            state,
+            translation_source="deterministic_gettext_probe",
+            orders=[
+                {
+                    "flow": flow,
+                    "order_id": index,
+                    "notes": [
+                        f"[wcpay-i18n:{flow}] unrelated",
+                        f"Lokalisierte Notiz {provider_ids[flow]}",
+                    ],
+                }
+                for index, flow in enumerate(("charge", "refund", "dispute"), start=101)
+            ],
+        )
+
+        result = run_gate("--state", str(state))
+
+        assert result.returncode == 1
+        for flow in ("charge", "refund", "dispute"):
+            assert f"missing deterministic merchant-note marker for {flow}" in result.stderr
 
 
 def test_gate_fails_when_locale_was_not_switched() -> None:
@@ -350,7 +415,74 @@ def test_live_gate_installs_controlled_gettext_probe_for_new_payment_note_string
     assert "install_translation_probe" in source
     assert "capture_catalog_evidence" in source
     assert "'Fee (%1\\$s): %2\\$s' => 'Gebuehr (%1\\$s): %2\\$s'" in source
+    assert "'A payment of %1\\$s was <strong>successfully charged</strong> using %2\\$s (<a>%3\\$s</a>).' => '[wcpay-i18n:charge]" in source
+    assert "'A refund of %1\\$s %5\\$s using %2\\$s. Reason: %3\\$s. (<code>%4\\$s</code>)' => '[wcpay-i18n:refund]" in source
     assert "'Payment dispute has been updated' => '[wcpay-i18n:dispute] Zahlungsdisput wurde aktualisiert'" in source
+
+
+def test_live_gate_classifies_flow_driver_product_failure_as_fail() -> None:
+    with tempfile.TemporaryDirectory(prefix="i18n-notes-gate-flow-fail-") as tmp:
+        tmp_path = Path(tmp)
+        fake_wp = tmp_path / "fake-wp.sh"
+        fake_flow = tmp_path / "fake-flow.sh"
+        out_dir = tmp_path / "evidence"
+        write_executable(
+            fake_wp,
+            """#!/usr/bin/env bash
+set -u
+if [[ "${1:-}" == --exec=* ]]; then shift; fi
+if [ "${1:-}" = "wc-native-payments" ] && [ "${2:-}" = "status" ]; then
+  printf '%s\n' 'Owner: native'
+  exit 0
+fi
+if [ "${1:-}" = "language" ] || [ "${1:-}" = "site" ]; then exit 0; fi
+if [ "${1:-}" = "eval-file" ]; then
+  body="$(cat)"
+  if [[ "$body" == *"woopayments_i18n_language_restore.v1"* ]]; then
+    printf '%s\n' '{"schema":"woopayments_i18n_language_restore.v1","success":true,"restored_snapshot_exact":true,"errors":[]}'
+  elif [[ "$body" == *"woopayments_i18n_language_snapshot.v1"* ]]; then
+    printf '%s\n' 'WPLANG:en_US'
+    printf '%s\n' '{"schema":"woopayments_i18n_language_snapshot.v1","success":true,"exists":true,"value":"en_US","autoload":"auto"}'
+  elif [[ "$body" == *"woopayments_i18n_catalog_evidence.v1"* ]]; then
+    printf '%s\n' '{"schema":"woopayments_i18n_catalog_evidence.v1","locale":"de_DE","textdomain":"woocommerce","textdomain_loaded":true,"messages":{}}'
+  elif [[ "$body" == *"Translation probe path already exists"* ]]; then
+    printf '%s\n' '{"success":true,"path":"/fake/probe.php","errors":[]}'
+  elif [[ "$body" == *"woopayments_i18n_probe_install.v1"* ]]; then
+    printf '%s\n' '{"schema":"woopayments_i18n_probe_install.v1","success":true,"path":"/fake/probe.php","sha256":"fake"}'
+  elif [[ "$body" == *"woopayments_i18n_probe_cleanup.v1"* ]]; then
+    printf '%s\n' '{"schema":"woopayments_i18n_probe_cleanup.v1","success":true,"errors":[]}'
+  else
+    printf '%s\n' 'unexpected eval-file body' >&2
+    exit 2
+  fi
+  exit 0
+fi
+printf 'unexpected fake wp args: %s\n' "$*" >&2
+exit 2
+""",
+        )
+        write_executable(
+            fake_flow,
+            """#!/usr/bin/env bash
+printf '%s\n' '{"op":"charge","result":"fail","reason":"declined"}'
+exit 1
+""",
+        )
+
+        result = run_gate(
+            "--target",
+            str(fake_wp),
+            "--out-dir",
+            str(out_dir),
+            extra_env={"I18N_NOTES_FLOW_DRIVE": str(fake_flow)},
+        )
+
+        assert result.returncode == 1, result.stdout + result.stderr
+        assert "FAIL: charge flow failed." in result.stderr
+        assert "BLOCKED: charge flow did not complete." not in result.stderr
+        assert json.loads((out_dir / "charge-flow.json").read_text(encoding="utf-8"))["reason"] == "declined"
+        assert json.loads((out_dir / "i18n-probe-cleanup.json").read_text(encoding="utf-8"))["success"] is True
+        assert json.loads((out_dir / "i18n-language-restore.json").read_text(encoding="utf-8"))["restored_snapshot_exact"] is True
 
 
 def test_live_gate_reads_original_locale_with_a_notice_safe_marker() -> None:

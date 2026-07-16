@@ -16,7 +16,7 @@ if [ ! -f "$LOCAL_RUNNER_SAFETY" ]; then
 fi
 # shellcheck source=tools/woopayments-merge/local-runner-safety.sh
 source "$LOCAL_RUNNER_SAFETY"
-FLOW_DRIVE="$SELF_DIR/flow-drive.sh"
+FLOW_DRIVE="${I18N_NOTES_FLOW_DRIVE:-$SELF_DIR/flow-drive.sh}"
 
 TARGET_WP=""
 STATE=""
@@ -426,9 +426,9 @@ capture_catalog_evidence() {
 	raw="$($TARGET_WP_RUNTIME eval-file - <<'PHP' 2>&1
 <?php
 $messages = array(
-	'charge'  => '<strong>Fee details:</strong>',
-	'refund'  => 'A refund of %1$s %4$s using %2$s (%3$s).',
-	'dispute' => 'Payment dispute has been updated',
+	'charge'  => 'A payment of %1$s was <strong>successfully charged</strong> using %2$s (<a>%3$s</a>).',
+	'refund'  => 'A refund of %1$s %5$s using %2$s. Reason: %3$s. (<code>%4$s</code>)',
+	'dispute' => 'Payment has been disputed for %1$s with reason "%2$s". <a href="%4$s" target="_blank" rel="noopener noreferrer">Response due by %3$s</a>.',
 );
 $translated_messages = array();
 
@@ -605,6 +605,7 @@ add_filter(
 
 		\$map = array(
 			'Payment complete.' => '[wcpay-i18n:charge] Zahlung abgeschlossen.',
+			'A payment of %1\$s was <strong>successfully charged</strong> using %2\$s (<a>%3\$s</a>).' => '[wcpay-i18n:charge] Eine Zahlung von %1\$s wurde <strong>erfolgreich belastet</strong> mit %2\$s (<a>%3\$s</a>).',
 			'<strong>Fee details:</strong>' => '<strong>[wcpay-i18n:charge] Gebuehrendetails:</strong>',
 			'Fee (%1\$s): %2\$s' => 'Gebuehr (%1\$s): %2\$s',
 			'Fee: %1\$s' => 'Gebuehr: %1\$s',
@@ -612,8 +613,8 @@ add_filter(
 			'Currency conversion fee: %1\$s' => 'Waehrungsumrechnungsgebuehr: %1\$s',
 			'Net payout: %1\$s' => 'Nettoauszahlung: %1\$s',
 			'Refunded order' => '[wcpay-i18n:refund] Rueckerstattete Bestellung',
-			'A refund of %1\$s %4\$s using %2\$s (%3\$s).' => '[wcpay-i18n:refund] Eine Rueckerstattung von %1\$s %4\$s mit %2\$s (%3\$s).',
-			'A refund of %1\$s %5\$s using %2\$s. Reason: %3\$s. (%4\$s)' => '[wcpay-i18n:refund] Eine Rueckerstattung von %1\$s %5\$s mit %2\$s. Grund: %3\$s. (%4\$s)',
+			'A refund of %1\$s %4\$s using %2\$s (<code>%3\$s</code>).' => '[wcpay-i18n:refund] Eine Rueckerstattung von %1\$s %4\$s mit %2\$s (<code>%3\$s</code>).',
+			'A refund of %1\$s %5\$s using %2\$s. Reason: %3\$s. (<code>%4\$s</code>)' => '[wcpay-i18n:refund] Eine Rueckerstattung von %1\$s %5\$s mit %2\$s. Grund: %3\$s. (<code>%4\$s</code>)',
 			'A refund of %1\$s was <strong>%2\$s</strong> using %3\$s (<code>%4\$s</code>)%5\$s' => '[wcpay-i18n:refund] Eine Rueckerstattung von %1\$s war <strong>%2\$s</strong> mit %3\$s (<code>%4\$s</code>)%5\$s',
 			'was successfully processed' => 'wurde erfolgreich verarbeitet',
 			'is pending' => 'ist ausstehend',
@@ -702,6 +703,38 @@ drive_flow() {
 	raw="$(WP="$TARGET_WP_RUNTIME" bash "$FLOW_DRIVE" "$@" 2>&1)"
 	rc=$?
 	json="$(printf '%s\n' "$raw" | json_from_text)"
+	if [ "$rc" -eq 1 ]; then
+		if [ -n "$json" ]; then
+			printf '%s\n' "$json" > "$out_file"
+			python3 - "$OUT_DIR/i18n-flow-failure.json" "$flow" "$out_file" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+failure_path = Path(sys.argv[1])
+flow = sys.argv[2]
+payload_path = Path(sys.argv[3])
+payload = json.loads(payload_path.read_text(encoding="utf-8"))
+failure_path.write_text(
+    json.dumps(
+        {
+            "schema": "woopayments_i18n_flow_failure.v1",
+            "flow": flow,
+            "driver_exit": 1,
+            "payload": payload,
+        },
+        indent=2,
+        sort_keys=True,
+    )
+    + "\n",
+    encoding="utf-8",
+)
+PY
+		fi
+		printf 'FAIL: %s flow failed.\n' "$flow" >&2
+		printf '%s\n' "$raw" | tail -20 >&2
+		exit 1
+	fi
 
 	if [ "$rc" -ne 0 ] || [ -z "$json" ]; then
 		printf 'BLOCKED: %s flow did not complete.\n' "$flow" >&2
@@ -820,9 +853,22 @@ FLOW_PROBE_MARKERS = {
     "dispute": "[wcpay-i18n:dispute]",
 }
 CATALOG_MESSAGE_IDS = {
-    "charge": "<strong>Fee details:</strong>",
-    "refund": "A refund of %1$s %4$s using %2$s (%3$s).",
-    "dispute": "Payment dispute has been updated",
+    "charge": "A payment of %1$s was <strong>successfully charged</strong> using %2$s (<a>%3$s</a>).",
+    "refund": "A refund of %1$s %5$s using %2$s. Reason: %3$s. (<code>%4$s</code>)",
+    "dispute": 'Payment has been disputed for %1$s with reason "%2$s". <a href="%4$s" target="_blank" rel="noopener noreferrer">Response due by %3$s</a>.',
+}
+FLOW_MERCHANT_PATTERNS = {
+    "charge": re.compile(r"\[wcpay-i18n:charge\].*\bpi_", re.IGNORECASE | re.DOTALL),
+    "refund": re.compile(r"\[wcpay-i18n:refund\].*\bre_", re.IGNORECASE | re.DOTALL),
+    "dispute": re.compile(r"\[wcpay-i18n:dispute\].*\bch_", re.IGNORECASE | re.DOTALL),
+}
+ENGLISH_MERCHANT_PATTERNS = {
+    "charge": re.compile(r"\bA payment of\b.*\busing WooPayments\b", re.IGNORECASE | re.DOTALL),
+    "refund": re.compile(r"\bA refund of\b.*\busing WooPayments\b", re.IGNORECASE | re.DOTALL),
+    "dispute": re.compile(
+        r"\b(?:Payment has been disputed|Payment inquiry has been raised|Payment dispute (?:and fees|funds|has))\b",
+        re.IGNORECASE | re.DOTALL,
+    ),
 }
 ENGLISH_SENTINELS = [
     "Payment complete.",
@@ -887,6 +933,8 @@ for order in orders:
 
     seen: dict[str, int] = {}
     for note in notes:
+        if flow in ENGLISH_MERCHANT_PATTERNS and ENGLISH_MERCHANT_PATTERNS[flow].search(note):
+            failures.append(f"english merchant note found: {flow}")
         for sentinel in ENGLISH_SENTINELS:
             if sentinel in note:
                 failures.append(
@@ -911,9 +959,8 @@ else:
             continue
         flow_notes = "\n".join(notes_by_flow[flow])
         if translation_source == "deterministic_gettext_probe":
-            marker = FLOW_PROBE_MARKERS[flow]
-            if marker not in flow_notes:
-                failures.append(f"missing deterministic gettext marker for {flow}: {marker}")
+            if not any(FLOW_MERCHANT_PATTERNS[flow].search(note) for note in notes_by_flow[flow]):
+                failures.append(f"missing deterministic merchant-note marker for {flow}: {FLOW_PROBE_MARKERS[flow]}")
             continue
 
         if not any(re.search(pattern, flow_notes, flags=re.IGNORECASE) for pattern in FLOW_LOCALIZED_PATTERNS[flow]):

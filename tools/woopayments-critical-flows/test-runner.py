@@ -26,6 +26,7 @@ MA09_DRIVER = (
     REPO
     / "tools/woopayments-critical-flows/flows/class-woopaymentscriticalflowsma09driver.php"
 )
+MA10_VALIDATOR = REPO / "tools/woopayments-critical-flows/flows/ma10-validate.py"
 
 
 def load_context_module():
@@ -385,6 +386,242 @@ require {driver_path};
             stderr=subprocess.PIPE,
             check=False,
         )
+
+
+MA10_SENTINELS = [
+    "Payment complete.",
+    "Payment failed.",
+    "Payment authorization expired.",
+    "Fee details:",
+    "Fee (",
+    "Base fee:",
+    "Currency conversion fee:",
+    "Net payout:",
+    "The refund returned status",
+    "Refunded",
+    "Payment dispute and fees have been deducted",
+    "Payment dispute funds have been reinstated",
+    "Payment dispute has been updated",
+    "dispute overview",
+    "Payment has been disputed",
+    "Payment inquiry has been raised",
+    "A test payment",
+]
+
+
+def ma10_gate_payload(status: str = "pass", *, english_refund: bool = False) -> dict:
+    """Return a strict fake MA-10 borrowed-gate result."""
+    translated = status != "blocked"
+    messages = {
+        "charge": "A payment of %1$s was <strong>successfully charged</strong> using %2$s (<a>%3$s</a>).",
+        "refund": "A refund of %1$s %5$s using %2$s. Reason: %3$s. (<code>%4$s</code>)",
+        "dispute": 'Payment has been disputed for %1$s with reason "%2$s". <a href="%4$s" target="_blank" rel="noopener noreferrer">Response due by %3$s</a>.',
+    }
+    refund_note = "[wcpay-i18n:refund] Eine Rueckerstattung re_test"
+    if english_refund:
+        refund_note = "A refund of 25 USD using WooPayments. Reason: test. (<code>re_test</code>)"
+    state = {
+        "schema": "woopayments_i18n_notes_capture.v1",
+        "locale": "de_DE",
+        "translation_source": "deterministic_gettext_probe",
+        "catalog_evidence": {
+            "schema": "woopayments_i18n_catalog_evidence.v1",
+            "locale": "de_DE",
+            "textdomain": "woocommerce",
+            "textdomain_loaded": True,
+            "messages": {
+                flow: {
+                    "message_id": message_id,
+                    "translation": f"translated {flow}" if translated else message_id,
+                    "translated": translated,
+                }
+                for flow, message_id in messages.items()
+            },
+        },
+        "orders": [
+            {
+                "flow": "charge",
+                "order_id": 101,
+                "notes": ["[wcpay-i18n:charge] Eine Zahlung pi_test_charge"],
+            },
+            {
+                "flow": "refund",
+                "order_id": 101,
+                "notes": [refund_note, "E-Mail [wcpay-i18n:refund] Rueckerstattete Bestellung"],
+            },
+            {
+                "flow": "dispute",
+                "order_id": 202,
+                "notes": ["[wcpay-i18n:dispute] Zahlung angefochten ch_test_dispute"],
+            },
+        ],
+    }
+    if status == "fail":
+        state["orders"][0]["notes"].append("Payment complete.")
+    return {
+        "schema": "woopayments_i18n_notes_gate_result.v1",
+        "status": status,
+        "implementation_status": "fail" if status == "fail" else "pass",
+        "catalog_status": "blocked" if status == "blocked" else "pass",
+        "failures": ["english sentinel found"] if status == "fail" else [],
+        "blockers": ["catalog translation unavailable"] if status == "blocked" else [],
+        "expected_locale": "de_DE",
+        "required_flows": ["charge", "refund", "dispute"],
+        "english_sentinels": MA10_SENTINELS,
+        "state": state,
+    }
+
+
+def ma10_fake_gate_source(
+    status: str = "pass",
+    *,
+    malformed: bool = False,
+    english_refund: bool = False,
+    exit_code_override: int | None = None,
+) -> str:
+    """Fake the borrowed gate while preserving its archived evidence contract."""
+    payload = {"schema": "woopayments_i18n_notes_gate_result.v1", "status": "pass"}
+    if not malformed:
+        payload = ma10_gate_payload(status, english_refund=english_refund)
+    encoded_payload = json.dumps(payload, separators=(",", ":"))
+    encoded_state = json.dumps(payload.get("state", {}), separators=(",", ":"))
+    encoded_catalog = json.dumps(payload.get("state", {}).get("catalog_evidence", {}), separators=(",", ":"))
+    exit_code = exit_code_override if exit_code_override is not None else 0 if status == "pass" else 1 if status == "fail" else 3
+    return f"""#!/usr/bin/env bash
+if [ -n "${{FAKE_I18N_GATE_CALLS:-}}" ]; then
+  printf 'gate %s\\n' "$*" >> "$FAKE_I18N_GATE_CALLS"
+fi
+out_dir=''
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--out-dir" ]; then
+    out_dir="$2"
+    break
+  fi
+  shift
+done
+[ -n "$out_dir" ] || exit 2
+mkdir -p "$out_dir"
+printf '%s\\n' '{encoded_payload}' > "$out_dir/i18n-notes-gate.json"
+printf '%s\\n' '{encoded_state}' > "$out_dir/i18n-notes-state.json"
+printf '%s\\n' '{encoded_catalog}' > "$out_dir/i18n-catalog-evidence.json"
+printf '%s\\n' '{{"schema":"woopayments_i18n_language_snapshot.v1","success":true,"exists":true,"value":"","autoload":"auto"}}' > "$out_dir/i18n-language-snapshot.json"
+printf '%s\\n' '{{"schema":"woopayments_i18n_language_restore.v1","success":true,"restored_snapshot_exact":true,"errors":[]}}' > "$out_dir/i18n-language-restore.json"
+printf '%s\\n' '{{"schema":"woopayments_i18n_probe_cleanup.v1","success":true,"errors":[]}}' > "$out_dir/i18n-probe-cleanup.json"
+printf '%s\\n' '{{"op":"charge","order_id":101,"charge_id":"ch_test_charge","intent_id":"pi_test_charge","transaction_id":"pi_test_charge","intention_status":"succeeded","status":"processing","result":"success"}}' > "$out_dir/charge-flow.json"
+printf '%s\\n' '{{"op":"refund","order_id":101,"refund_id":102,"provider_refund_id":"re_test","success":true}}' > "$out_dir/refund-flow.json"
+printf '%s\\n' '{{"op":"dispute","order_id":202,"charge_id":"ch_test_dispute","intent_id":"pi_test_dispute","transaction_id":"pi_test_dispute","intention_status":"succeeded","status":"processing","result":"success"}}' > "$out_dir/dispute-flow.json"
+if [ "${{FAKE_I18N_GATE_REMOVE_FILE:-}}" ]; then
+  rm -f "$out_dir/$FAKE_I18N_GATE_REMOVE_FILE"
+fi
+if [ -n "${{FAKE_I18N_GATE_CONTRADICT_STATE:-}}" ]; then
+  printf '%s\\n' '{{"schema":"woopayments_i18n_notes_capture.v1","tampered":true}}' > "$out_dir/i18n-notes-state.json"
+fi
+exit {exit_code}
+"""
+
+
+def ma10_fake_wp_source(
+    *,
+    log_status: str = "pass",
+    marker_ok: bool = True,
+    scanned_paths: list[str] | None = None,
+) -> str:
+    """Return a target WP seam with marker-bounded log evidence."""
+    scan_payload = {
+        "status": log_status,
+        "paths": ["/tmp/fake-debug.log"] if scanned_paths is None else scanned_paths,
+        "matches": ["PHP Warning: MA-10 fake warning"] if log_status == "fail" else [],
+        "ignored_matches": [],
+        "marker": {
+            "created_at": "2026-07-16T10:00:00Z",
+            "paths": {"/tmp/fake-debug.log": 4},
+        },
+    }
+    if log_status == "blocked":
+        scan_payload["reason"] = "no readable debug.log path"
+    encoded_scan = json.dumps(scan_payload, separators=(",", ":"))
+    marker_exit = 0 if marker_ok else 1
+    return f"""#!/usr/bin/env bash
+if [ "$1" = "eval" ]; then
+  if [[ "$2" == *"store_identity_owner"* ]]; then
+    printf '%s\\n' 'store_identity_owner=native'
+    printf '%s\\n' 'store_identity_home=http://target.fake.test'
+    exit 0
+  fi
+  if [[ "$2" == *"update_option"*"woopayments_critical_flows_debug_log_marker"* ]]; then
+    [ -z "${{FAKE_I18N_GATE_CALLS:-}}" ] || printf '%s\\n' marker >> "$FAKE_I18N_GATE_CALLS"
+    printf '%s\\n' '{{"status":"pass","paths":["/tmp/fake-debug.log"],"markers":{{"/tmp/fake-debug.log":4}}}}'
+    exit {marker_exit}
+  fi
+  if [[ "$2" == *"ignored_matches"* ]]; then
+    [ -z "${{FAKE_I18N_GATE_CALLS:-}}" ] || printf '%s\\n' scan >> "$FAKE_I18N_GATE_CALLS"
+    printf '%s\\n' '{encoded_scan}'
+    exit 0
+  fi
+fi
+printf 'unexpected fake wp call: %s\\n' "$*" >&2
+exit 2
+"""
+
+
+def ma10_live_failure_wp_source() -> str:
+    """Return a WP seam that supports the real gate through an early flow failure."""
+    catalog = ma10_gate_payload()["state"]["catalog_evidence"]
+    encoded_catalog = json.dumps(catalog, separators=(",", ":"))
+    scan = {
+        "status": "pass",
+        "paths": ["/tmp/fake-debug.log"],
+        "matches": [],
+        "ignored_matches": [],
+        "marker": {
+            "created_at": "2026-07-16T10:00:00Z",
+            "paths": {"/tmp/fake-debug.log": 0},
+        },
+    }
+    encoded_scan = json.dumps(scan, separators=(",", ":"))
+    return f"""#!/usr/bin/env bash
+set -u
+if [[ "${{1:-}}" == --exec=* ]]; then shift; fi
+if [ "${{1:-}}" = "eval" ]; then
+  if [[ "${{2:-}}" == *"store_identity_owner"* ]]; then
+    printf '%s\\n' 'store_identity_owner=native'
+    printf '%s\\n' 'store_identity_home=http://target.fake.test'
+  elif [[ "${{2:-}}" == *"update_option"*"woopayments_critical_flows_debug_log_marker"* ]]; then
+    printf '%s\\n' '{{"status":"pass","paths":["/tmp/fake-debug.log"],"markers":{{"/tmp/fake-debug.log":0}}}}'
+  elif [[ "${{2:-}}" == *"ignored_matches"* ]]; then
+    printf '%s\\n' '{encoded_scan}'
+  else
+    exit 2
+  fi
+  exit 0
+fi
+if [ "${{1:-}}" = "wc-native-payments" ] && [ "${{2:-}}" = "status" ]; then
+  printf '%s\\n' 'Owner: native'
+  exit 0
+fi
+if [ "${{1:-}}" = "language" ] || [ "${{1:-}}" = "site" ]; then exit 0; fi
+if [ "${{1:-}}" = "eval-file" ]; then
+  body="$(cat)"
+  if [[ "$body" == *"woopayments_i18n_language_restore.v1"* ]]; then
+    printf '%s\\n' '{{"schema":"woopayments_i18n_language_restore.v1","success":true,"restored_snapshot_exact":true,"errors":[]}}'
+  elif [[ "$body" == *"woopayments_i18n_language_snapshot.v1"* ]]; then
+    printf '%s\\n' 'WPLANG:en_US'
+    printf '%s\\n' '{{"schema":"woopayments_i18n_language_snapshot.v1","success":true,"exists":true,"value":"en_US","autoload":"auto"}}'
+  elif [[ "$body" == *"woopayments_i18n_catalog_evidence.v1"* ]]; then
+    printf '%s\\n' '{encoded_catalog}'
+  elif [[ "$body" == *"Translation probe path already exists"* ]]; then
+    printf '%s\\n' '{{"success":true,"path":"/fake/probe.php","errors":[]}}'
+  elif [[ "$body" == *"woopayments_i18n_probe_install.v1"* ]]; then
+    printf '%s\\n' '{{"schema":"woopayments_i18n_probe_install.v1","success":true,"path":"/fake/probe.php","sha256":"fake"}}'
+  elif [[ "$body" == *"woopayments_i18n_probe_cleanup.v1"* ]]; then
+    printf '%s\\n' '{{"schema":"woopayments_i18n_probe_cleanup.v1","success":true,"errors":[]}}'
+  else
+    exit 2
+  fi
+  exit 0
+fi
+exit 2
+"""
 
 
 def run_runner(
@@ -1257,29 +1494,9 @@ def test_deterministic_layer_runs_no_browser_specs_through_gate() -> None:
 
         write_executable(
             fake_gate,
-            """#!/usr/bin/env bash
-printf '%s\\n' "$*" >> "$FAKE_I18N_GATE_CALLS"
-exit 0
-""",
+            ma10_fake_gate_source(),
         )
-        # The command string keeps a trailing flag so the probe exercises the
-        # split-command convention: the eval PHP arrives as $3, not $2.
-        write_executable(
-            fake_wp,
-            """#!/usr/bin/env bash
-if [ "$1" = "--flag" ] && [ "$2" = "eval" ]; then
-  if [[ "$3" == *"store_identity_owner"* ]]; then
-    printf '%s\\n' "store_identity_owner=native"
-    printf '%s\\n' "store_identity_home=http://target.fake.test"
-    exit 0
-  fi
-  printf '%s\\n' '{"status":"pass","paths":["/tmp/fake-debug.log"],"matches":[]}'
-  exit 0
-fi
-printf 'unexpected fake wp call: %s\\n' "$*" >&2
-exit 2
-""",
-        )
+        write_executable(fake_wp, ma10_fake_wp_source())
 
         result = run_runner(
             "--store",
@@ -1291,7 +1508,7 @@ exit 2
             evidence_dir=evidence_dir,
             extra_env={
                 "I18N_NOTES_GATE": str(fake_gate),
-                "TARGET_WP_COMMAND": f"{fake_wp} --flag",
+                "TARGET_WP_COMMAND": str(fake_wp),
                 "FAKE_I18N_GATE_CALLS": str(calls),
             },
         )
@@ -1299,20 +1516,479 @@ exit 2
         assert result.returncode == 0
         assert "MA-10-i18n-order-notes" in result.stdout
         assert "deterministic verdict: PASS" in result.stdout
-        assert f"--target {fake_wp} --flag" in calls.read_text(encoding="utf-8")
+        calls_lines = calls.read_text(encoding="utf-8").splitlines()
+        assert calls_lines[0] == "marker"
+        assert calls_lines[1].startswith(f"gate --target {fake_wp} --out-dir ")
+        assert calls_lines[2] == "scan"
 
         rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
         assert rollup["status"] == "pass"
         assert rollup["summary"]["passed"] == 1
-        assert strip_recorded_at(rollup) == [
+        run_dir = evidence_dir / "runs" / f"{rollup['run_stamp']}-{rollup['scope']}"
+        manifest = run_dir / "MA-10-i18n-order-notes/manifest.json"
+        assert manifest.exists()
+        manifest_sha256 = f"sha256:{hashlib.sha256(manifest.read_bytes()).hexdigest()}"
+        rows = strip_recorded_at(rollup)
+        assert rows == [
             {
                 "flow": "MA-10-i18n-order-notes",
                 "layer": "deterministic",
                 "store": "target",
                 "status": "PASS",
                 "exit_code": 0,
+                "evidence_path": str(manifest),
+                "evidence_sha256": manifest_sha256,
+                "reason": "validated MA-10 evidence manifest",
             }
         ]
+
+
+def test_ma10_reference_is_blocked_without_manufacturing_an_oracle() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-ma10-ref-") as tmp:
+        evidence_dir = Path(tmp)
+        fake_wp = evidence_dir / "fake-ref-wp.sh"
+        gate_calls = evidence_dir / "gate-calls.log"
+        write_executable(
+            fake_wp,
+            """#!/usr/bin/env bash
+if [ "$1" = "eval" ] && [[ "$2" == *"store_identity_owner"* ]]; then
+  printf '%s\\n' 'store_identity_owner=plugin'
+  printf '%s\\n' 'store_identity_home=http://reference.fake.test'
+  exit 0
+fi
+exit 2
+""",
+        )
+
+        result = run_runner(
+            "--store",
+            "ref",
+            "--layer",
+            "deterministic",
+            "--flow",
+            "MA-10",
+            evidence_dir=evidence_dir,
+            extra_env={
+                "REF_WP_COMMAND": str(fake_wp),
+                "FAKE_I18N_GATE_CALLS": str(gate_calls),
+            },
+        )
+
+        assert result.returncode == 3, result.stdout + result.stderr
+        assert "reference extension same-note-family oracle is not wired" in result.stdout
+        assert not gate_calls.exists()
+        rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
+        assert strip_recorded_at(rollup) == [
+            {
+                "flow": "MA-10-i18n-order-notes",
+                "layer": "deterministic",
+                "store": "ref",
+                "status": "BLOCKED",
+                "exit_code": 3,
+                "reason": "reference extension same-note-family oracle is not wired",
+            }
+        ]
+
+
+def test_ma10_deterministic_flow_fails_when_debug_log_is_dirty() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-ma10-dirty-log-") as tmp:
+        evidence_dir = Path(tmp)
+        fake_gate = evidence_dir / "fake-i18n-gate.sh"
+        fake_wp = evidence_dir / "fake-target-wp.sh"
+
+        write_executable(fake_gate, ma10_fake_gate_source())
+        write_executable(fake_wp, ma10_fake_wp_source(log_status="fail"))
+
+        result = run_runner(
+            "--store",
+            "target",
+            "--layer",
+            "deterministic",
+            "--flow",
+            "MA-10",
+            evidence_dir=evidence_dir,
+            extra_env={
+                "I18N_NOTES_GATE": str(fake_gate),
+                "TARGET_WP_COMMAND": str(fake_wp),
+            },
+        )
+
+        assert result.returncode == 1, result.stdout + result.stderr
+        assert "FAIL log-clean target" in result.stdout
+        assert "[MA-10-i18n-order-notes/target] deterministic verdict: FAIL" in result.stdout
+
+
+def test_ma10_deterministic_flow_blocks_when_gate_evidence_is_malformed() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-ma10-malformed-") as tmp:
+        evidence_dir = Path(tmp)
+        fake_gate = evidence_dir / "fake-i18n-gate.sh"
+        fake_wp = evidence_dir / "fake-target-wp.sh"
+
+        write_executable(fake_gate, ma10_fake_gate_source(malformed=True))
+        write_executable(fake_wp, ma10_fake_wp_source())
+
+        result = run_runner(
+            "--store",
+            "target",
+            "--layer",
+            "deterministic",
+            "--flow",
+            "MA-10",
+            evidence_dir=evidence_dir,
+            extra_env={
+                "I18N_NOTES_GATE": str(fake_gate),
+                "TARGET_WP_COMMAND": str(fake_wp),
+            },
+        )
+
+        assert result.returncode == 3, result.stdout + result.stderr
+        assert "BLOCKED: MA-10 gate evidence is invalid" in result.stdout
+        assert "[MA-10-i18n-order-notes/target] deterministic verdict: BLOCKED" in result.stdout
+        rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
+        assert strip_recorded_at(rollup)[0]["reason"] == "MA-10 evidence validation did not complete"
+
+
+def test_ma10_blocks_when_one_required_packet_file_is_missing() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-ma10-missing-file-") as tmp:
+        evidence_dir = Path(tmp)
+        fake_gate = evidence_dir / "fake-i18n-gate.sh"
+        fake_wp = evidence_dir / "fake-target-wp.sh"
+        write_executable(fake_gate, ma10_fake_gate_source())
+        write_executable(fake_wp, ma10_fake_wp_source())
+
+        result = run_runner(
+            "--store",
+            "target",
+            "--layer",
+            "deterministic",
+            "--flow",
+            "MA-10",
+            evidence_dir=evidence_dir,
+            extra_env={
+                "I18N_NOTES_GATE": str(fake_gate),
+                "TARGET_WP_COMMAND": str(fake_wp),
+                "FAKE_I18N_GATE_REMOVE_FILE": "refund-flow.json",
+            },
+        )
+
+        assert result.returncode == 3, result.stdout + result.stderr
+        assert "required evidence files are missing: refund-flow.json" in result.stdout
+        assert "[MA-10-i18n-order-notes/target] deterministic verdict: BLOCKED" in result.stdout
+
+
+def test_ma10_blocks_when_result_and_state_files_contradict_each_other() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-ma10-contradict-") as tmp:
+        evidence_dir = Path(tmp)
+        fake_gate = evidence_dir / "fake-i18n-gate.sh"
+        fake_wp = evidence_dir / "fake-target-wp.sh"
+        write_executable(fake_gate, ma10_fake_gate_source())
+        write_executable(fake_wp, ma10_fake_wp_source())
+
+        result = run_runner(
+            "--store",
+            "target",
+            "--layer",
+            "deterministic",
+            "--flow",
+            "MA-10",
+            evidence_dir=evidence_dir,
+            extra_env={
+                "I18N_NOTES_GATE": str(fake_gate),
+                "TARGET_WP_COMMAND": str(fake_wp),
+                "FAKE_I18N_GATE_CONTRADICT_STATE": "1",
+            },
+        )
+
+        assert result.returncode == 3, result.stdout + result.stderr
+        assert "gate result state does not match i18n-notes-state.json" in result.stdout
+
+
+def test_ma10_blocks_when_completed_log_scan_contains_no_scanned_paths() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-ma10-empty-log-scan-") as tmp:
+        evidence_dir = Path(tmp)
+        fake_gate = evidence_dir / "fake-i18n-gate.sh"
+        fake_wp = evidence_dir / "fake-target-wp.sh"
+        write_executable(fake_gate, ma10_fake_gate_source())
+        write_executable(fake_wp, ma10_fake_wp_source(scanned_paths=[]))
+
+        result = run_runner(
+            "--store",
+            "target",
+            "--layer",
+            "deterministic",
+            "--flow",
+            "MA-10",
+            evidence_dir=evidence_dir,
+            extra_env={
+                "I18N_NOTES_GATE": str(fake_gate),
+                "TARGET_WP_COMMAND": str(fake_wp),
+            },
+        )
+
+        assert result.returncode == 3, result.stdout + result.stderr
+        assert "completed debug-log scan contains no scanned paths" in result.stdout
+
+
+def test_ma10_blocks_when_evidence_validator_crashes() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-ma10-validator-crash-") as tmp:
+        evidence_dir = Path(tmp)
+        fake_gate = evidence_dir / "fake-i18n-gate.sh"
+        fake_wp = evidence_dir / "fake-target-wp.sh"
+        fake_validator = evidence_dir / "fake-validator.py"
+        write_executable(fake_gate, ma10_fake_gate_source())
+        write_executable(fake_wp, ma10_fake_wp_source())
+        fake_validator.write_text("raise RuntimeError('validator crash')\n", encoding="utf-8")
+
+        result = run_runner(
+            "--store",
+            "target",
+            "--layer",
+            "deterministic",
+            "--flow",
+            "MA-10",
+            evidence_dir=evidence_dir,
+            extra_env={
+                "I18N_NOTES_GATE": str(fake_gate),
+                "MA10_EVIDENCE_VALIDATOR": str(fake_validator),
+                "TARGET_WP_COMMAND": str(fake_wp),
+            },
+        )
+
+        assert result.returncode == 3, result.stdout + result.stderr
+        assert "RuntimeError: validator crash" in result.stdout
+        assert "[MA-10-i18n-order-notes/target] deterministic verdict: BLOCKED" in result.stdout
+
+
+def test_ma10_blocks_before_gate_when_current_log_marker_fails() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-ma10-marker-") as tmp:
+        evidence_dir = Path(tmp)
+        fake_gate = evidence_dir / "fake-i18n-gate.sh"
+        fake_wp = evidence_dir / "fake-target-wp.sh"
+        calls = evidence_dir / "calls.log"
+        write_executable(fake_gate, ma10_fake_gate_source())
+        write_executable(fake_wp, ma10_fake_wp_source(marker_ok=False))
+
+        result = run_runner(
+            "--store",
+            "target",
+            "--layer",
+            "deterministic",
+            "--flow",
+            "MA-10",
+            evidence_dir=evidence_dir,
+            extra_env={
+                "I18N_NOTES_GATE": str(fake_gate),
+                "TARGET_WP_COMMAND": str(fake_wp),
+                "FAKE_I18N_GATE_CALLS": str(calls),
+            },
+        )
+
+        assert result.returncode == 3, result.stdout + result.stderr
+        assert calls.read_text(encoding="utf-8").splitlines() == ["marker"]
+        assert "log-clean marker" in result.stdout
+
+
+def test_ma10_fails_when_refund_marker_only_comes_from_unrelated_email_note() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-ma10-english-refund-") as tmp:
+        evidence_dir = Path(tmp)
+        fake_gate = evidence_dir / "fake-i18n-gate.sh"
+        fake_wp = evidence_dir / "fake-target-wp.sh"
+        write_executable(fake_gate, ma10_fake_gate_source("blocked", english_refund=True))
+        write_executable(fake_wp, ma10_fake_wp_source())
+
+        result = run_runner(
+            "--store",
+            "target",
+            "--layer",
+            "deterministic",
+            "--flow",
+            "MA-10",
+            evidence_dir=evidence_dir,
+            extra_env={
+                "I18N_NOTES_GATE": str(fake_gate),
+                "TARGET_WP_COMMAND": str(fake_wp),
+            },
+        )
+
+        assert result.returncode == 1, result.stdout + result.stderr
+        assert "FAIL: MA-10 captured English merchant note" in result.stdout
+        assert "[MA-10-i18n-order-notes/target] deterministic verdict: FAIL" in result.stdout
+
+
+def test_ma10_gate_cleanup_failure_is_blocked_not_product_fail() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-ma10-cleanup-") as tmp:
+        evidence_dir = Path(tmp)
+        fake_gate = evidence_dir / "fake-i18n-gate.sh"
+        fake_wp = evidence_dir / "fake-target-wp.sh"
+        write_executable(fake_gate, ma10_fake_gate_source(exit_code_override=70))
+        write_executable(fake_wp, ma10_fake_wp_source(log_status="fail"))
+
+        result = run_runner(
+            "--store",
+            "target",
+            "--layer",
+            "deterministic",
+            "--flow",
+            "MA-10",
+            evidence_dir=evidence_dir,
+            extra_env={
+                "I18N_NOTES_GATE": str(fake_gate),
+                "TARGET_WP_COMMAND": str(fake_wp),
+            },
+        )
+
+        assert result.returncode == 3, result.stdout + result.stderr
+        assert "[MA-10-i18n-order-notes/target] deterministic verdict: BLOCKED" in result.stdout
+
+
+def test_ma10_preserves_valid_gate_failure_when_log_scan_is_unavailable() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-ma10-fail-log-block-") as tmp:
+        evidence_dir = Path(tmp)
+        fake_gate = evidence_dir / "fake-i18n-gate.sh"
+        fake_wp = evidence_dir / "fake-target-wp.sh"
+        write_executable(fake_gate, ma10_fake_gate_source("fail"))
+        write_executable(fake_wp, ma10_fake_wp_source(log_status="blocked"))
+
+        result = run_runner(
+            "--store",
+            "target",
+            "--layer",
+            "deterministic",
+            "--flow",
+            "MA-10",
+            evidence_dir=evidence_dir,
+            extra_env={
+                "I18N_NOTES_GATE": str(fake_gate),
+                "TARGET_WP_COMMAND": str(fake_wp),
+            },
+        )
+
+        assert result.returncode == 1, result.stdout + result.stderr
+        assert "BLOCKED log-clean check for target" in result.stdout
+        assert "[MA-10-i18n-order-notes/target] deterministic verdict: FAIL" in result.stdout
+
+
+def test_ma10_real_gate_preserves_early_flow_driver_product_failure() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-ma10-real-gate-fail-") as tmp:
+        evidence_dir = Path(tmp)
+        fake_wp = evidence_dir / "fake-target-wp.sh"
+        fake_flow = evidence_dir / "fake-flow.sh"
+        write_executable(fake_wp, ma10_live_failure_wp_source())
+        write_executable(
+            fake_flow,
+            """#!/usr/bin/env bash
+printf '%s\n' '{"op":"charge","result":"fail","reason":"declined"}'
+exit 1
+""",
+        )
+        target_runner, adapted_env = adapt_single_wp_runner(
+            str(fake_wp), os.environ.copy(), role="target"
+        )
+
+        result = run_runner(
+            "--store",
+            "target",
+            "--layer",
+            "deterministic",
+            "--flow",
+            "MA-10",
+            evidence_dir=evidence_dir,
+            extra_env={
+                **adapted_env,
+                "I18N_NOTES_GATE": str(REPO / "tools/woopayments-merge/i18n-notes-gate.sh"),
+                "I18N_NOTES_FLOW_DRIVE": str(fake_flow),
+                "TARGET_WP_COMMAND": target_runner,
+            },
+        )
+
+        assert result.returncode == 1, result.stdout + result.stderr
+        assert "FAIL: charge flow failed." in result.stderr
+        assert "FAIL: MA-10 flow driver reported product failure: charge" in result.stdout
+        rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
+        row = strip_recorded_at(rollup)[0]
+        manifest = Path(row["evidence_path"])
+        assert row["status"] == "FAIL"
+        assert row["evidence_sha256"] == f"sha256:{hashlib.sha256(manifest.read_bytes()).hexdigest()}"
+        manifest_payload = json.loads(manifest.read_text(encoding="utf-8"))
+        assert manifest_payload["status"] == "fail"
+        assert "i18n-flow-failure.json" in manifest_payload["files"]
+        assert "i18n-notes-gate.json" not in manifest_payload["files"]
+
+
+def test_ma10_early_later_flow_failure_requires_successful_prefix_packets() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-ma10-prefix-") as tmp:
+        root = Path(tmp)
+        for flow, missing_names in (
+            ("refund", "charge-flow.json"),
+            ("dispute", "charge-flow.json, refund-flow.json"),
+        ):
+            evidence_dir = root / flow
+            evidence_dir.mkdir()
+            failed_payload = {"op": flow, "result": "fail", "reason": "fixture failure"}
+            support = {
+                f"{flow}-flow.json": failed_payload,
+                "i18n-flow-failure.json": {
+                    "schema": "woopayments_i18n_flow_failure.v1",
+                    "flow": flow,
+                    "driver_exit": 1,
+                    "payload": failed_payload,
+                },
+                "i18n-language-snapshot.json": {
+                    "schema": "woopayments_i18n_language_snapshot.v1",
+                    "success": True,
+                    "exists": True,
+                    "value": "en_US",
+                    "autoload": "auto",
+                },
+                "i18n-language-restore.json": {
+                    "schema": "woopayments_i18n_language_restore.v1",
+                    "success": True,
+                    "restored_snapshot_exact": True,
+                    "errors": [],
+                },
+                "i18n-probe-cleanup.json": {
+                    "schema": "woopayments_i18n_probe_cleanup.v1",
+                    "success": True,
+                    "errors": [],
+                },
+                "i18n-catalog-evidence.json": ma10_gate_payload()["state"]["catalog_evidence"],
+                "debug-log-scan.json": {
+                    "schema": "woopayments_debug_log_scan.v1",
+                    "store": "target",
+                    "scan": {
+                        "status": "pass",
+                        "paths": ["/tmp/fake-debug.log"],
+                        "matches": [],
+                        "marker": {
+                            "created_at": "2026-07-16T10:00:00Z",
+                            "paths": {"/tmp/fake-debug.log": 0},
+                        },
+                    },
+                },
+            }
+            for name, payload in support.items():
+                (evidence_dir / name).write_text(
+                    json.dumps(payload) + "\n", encoding="utf-8"
+                )
+
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(MA10_VALIDATOR),
+                    "--evidence-dir",
+                    str(evidence_dir),
+                    "--gate-exit",
+                    "1",
+                ],
+                cwd=REPO,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+            assert result.returncode == 3, result.stdout + result.stderr
+            assert f"required early-failure evidence files are missing: {missing_names}" in result.stdout
 
 
 def test_mc06_forwards_explicit_store_urls_to_rates_gate() -> None:

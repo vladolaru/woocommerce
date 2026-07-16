@@ -207,8 +207,9 @@ PHP
 }
 
 assert_log_clean() { # <store>  (no PHP notice/warning/fatal/deprecation since marker)
-  local s raw rc
+  local s raw rc evidence_file
   s="$1"
+  evidence_file="${LOG_SCAN_EVIDENCE_FILE:-}"
   raw="$(wp_store "$s" eval '
 $paths = array();
 if ( defined( "WP_DEBUG_LOG" ) && is_string( WP_DEBUG_LOG ) && "" !== WP_DEBUG_LOG && "1" !== WP_DEBUG_LOG ) {
@@ -309,12 +310,13 @@ WP_CLI::line(
     return 3
   fi
 
-  LOG_SCAN_RAW="$raw" python3 - "$s" <<'PY'
+  LOG_SCAN_RAW="$raw" python3 - "$s" "$evidence_file" <<'PY'
 import json
 import os
 import sys
+from pathlib import Path
 
-store = sys.argv[1]
+store, evidence_file = sys.argv[1:]
 raw = os.environ.get("LOG_SCAN_RAW", "")
 decoder = json.JSONDecoder()
 payload = None
@@ -334,6 +336,16 @@ if payload is None:
     if raw.strip():
         print(raw.strip())
     sys.exit(3)
+
+if evidence_file:
+    evidence = {
+        "schema": "woopayments_debug_log_scan.v1",
+        "store": store,
+        "scan": payload,
+    }
+    path = Path(evidence_file)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 status = payload.get("status")
 paths = payload.get("paths") or []

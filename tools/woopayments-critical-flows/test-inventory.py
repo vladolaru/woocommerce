@@ -56,7 +56,7 @@ REQUIRED_NATIVE_MERGE_FLOWS = {
         "file": "MA-10-i18n-order-notes.md",
         "tokens": [
             "i18n-notes-gate.sh",
-            "French",
+            "German",
             "native order notes",
         ],
     },
