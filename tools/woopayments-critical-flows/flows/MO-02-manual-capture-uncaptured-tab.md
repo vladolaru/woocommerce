@@ -28,4 +28,6 @@ End state: authorization captured from the list; Uncaptured tab no longer lists 
 
 Deterministic exerciser: `flows/MO-02-manual-capture-uncaptured-tab.sh` creates one provider-backed manual authorization per store, proves the exact seeded row appears through the authorizations REST data source, captures through the row-level REST route, proves the row disappears, and compares normalized order/provider/note/list transitions. Runner-verified Layer-D evidence: `20260716T150009Z-83633-partial`.
 
+Runner-verified Layer-A evidence: `20260716T164405Z-71705-partial`. Reference passes the complete browser contract. Native captures successfully with exact order/provider/transaction parity and a durable success signal, but fails UX because the Transactions navigation omits the non-zero Uncaptured badge and the authorization row renders the order number as plain text instead of the required link.
+
 Agent oracle mode: comparable (dual-store; reference is the golden oracle).
