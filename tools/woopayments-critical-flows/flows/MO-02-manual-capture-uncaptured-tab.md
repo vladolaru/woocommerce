@@ -26,6 +26,6 @@ End state: authorization captured from the list; Uncaptured tab no longer lists 
 - Post-capture: assert the authorizations endpoint no longer returns that charge; order `processing`; intent `succeeded`; captured amount equals order total.
 - Compare ref vs target end-state.
 
-Deterministic exerciser: NOT YET WIRED — assertions above are the contract for the future flows/MO-02-*.sh.
+Deterministic exerciser: `flows/MO-02-manual-capture-uncaptured-tab.sh` creates one provider-backed manual authorization per store, proves the exact seeded row appears through the authorizations REST data source, captures through the row-level REST route, proves the row disappears, and compares normalized order/provider/note/list transitions. Runner-verified Layer-D evidence: `20260716T150009Z-83633-partial`.
 
 Agent oracle mode: comparable (dual-store; reference is the golden oracle).

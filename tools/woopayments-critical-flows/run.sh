@@ -478,6 +478,18 @@ PY
   printf '%s\n' "$semantic_digest"
 }
 
+validate_mo02_manifest() {
+  local manifest_path="$1" expected_store="$2" expected_status="$3" expected_exit_code="$4"
+
+  python3 "$DIR/flows/mo02-evidence.py" validate-bound-manifest \
+    --manifest "$manifest_path" \
+    --store "$expected_store" \
+    --run-stamp "$RUN_STAMP" \
+    --run-scope "$RUN_SCOPE" \
+    --expected-status "$expected_status" \
+    --expected-exit-code "$expected_exit_code"
+}
+
 agent_result_verdict() {
   local flow="$1" store="$2" result_file="$3" expected_oracle_mode="$4"
 
@@ -792,6 +804,26 @@ if [ "$LAYER" != "agent" ]; then
           result_reason="MO-01 deterministic evidence manifest is missing"
         else
           manifest_validation="$(validate_mo01_manifest "$manifest_path" "$s" "$expected_manifest_status" "$rc")"
+          manifest_rc=$?
+          if [ "$manifest_rc" -ne 0 ]; then
+            status="BLOCKED"
+            rc=3
+            result_reason="$manifest_validation"
+          else
+            evidence_path="$manifest_path"
+            evidence_sha256="$manifest_validation"
+            result_reason="manifest-bound deterministic evidence"
+          fi
+        fi
+      elif [ "$base" = "MO-02-manual-capture-uncaptured-tab" ]; then
+        manifest_path="$EVIDENCE_DIR/runs/$RUN_STAMP-$RUN_SCOPE/$base/$s-manifest.json"
+        expected_manifest_status="$(printf '%s' "$status" | tr '[:upper:]' '[:lower:]')"
+        if [ ! -f "$manifest_path" ]; then
+          status="BLOCKED"
+          rc=3
+          result_reason="MO-02 deterministic evidence manifest is missing"
+        else
+          manifest_validation="$(validate_mo02_manifest "$manifest_path" "$s" "$expected_manifest_status" "$rc")"
           manifest_rc=$?
           if [ "$manifest_rc" -ne 0 ]; then
             status="BLOCKED"
