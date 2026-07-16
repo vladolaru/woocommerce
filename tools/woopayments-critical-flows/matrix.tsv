@@ -52,7 +52,7 @@ MA-05	Search transactions	D+A	comparable	PENDING
 MA-06	Export transactions CSV	D	comparable	PENDING
 MA-07	View transaction details	A (+D)	comparable	PENDING
 MA-08	View payouts (+ details)	D+A	comparable	PENDING
-MA-09	Large-dataset perf	D	comparable	PENDING
+MA-09	Large-dataset perf	D	comparable	PASS (runner-verified 2026-07-16: exactly 500 unique rows/store; exhaustive pagination and exact charge/date filters; all native measured calls 0.79–0.93x the reference median; clean logs; run 20260716T100225Z-76348-partial)
 MA-10	Localized WooPayments order notes	D	comparable	PENDING
 MA-11	Plugin-active WooPayments settings screen	A (+D)	comparable	PENDING
 MD-01	Created: note + on-hold + notify	D+A	comparable	PENDING

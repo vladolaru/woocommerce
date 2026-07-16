@@ -164,7 +164,7 @@ Legend — **Layers:** `D` deterministic, `A` agent-driven, `D+A` both (overlap)
 | MA-06 | Export transactions CSV | D | CSV downloads; integrity | Export affordance | PENDING |
 | MA-07 | View transaction details | A (+D) | Fields correct | Method logo + formatting | PENDING |
 | MA-08 | View payouts (+ details) | D+A | List + detail correct | Amounts/dates/status | PENDING |
-| MA-09 | Large-dataset perf | D | Loads + filters responsively | No degradation | PENDING |
+| MA-09 | Large-dataset perf | D | Loads + filters responsively | No degradation | PASS (runner-verified 2026-07-16: exactly 500 unique rows/store; exhaustive pagination and exact charge/date filters; all native measured calls 0.79–0.93× the reference median; clean logs; run `20260716T100225Z-76348-partial`) |
 | MA-10 | Localized WooPayments order notes | D | Native order notes are localized like the plugin | Merchant-facing note text is not hardcoded English | PENDING |
 | MA-11 | Plugin-active WooPayments settings screen | A (+D) | Plugin-owned settings page renders without native store collisions | `woocommerce_payments` settings screen is usable while plugin-active | PENDING |
 

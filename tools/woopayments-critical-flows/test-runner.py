@@ -22,6 +22,10 @@ RUNNER = REPO / "tools/woopayments-critical-flows/run.sh"
 COMMON = REPO / "tools/woopayments-critical-flows/lib/common.sh"
 FLOW_DRIVE = REPO / "tools/woopayments-merge/flow-drive.sh"
 CONTEXT_MODULE_PATH = REPO / "tools/woopayments-critical-flows/evidence_context.py"
+MA09_DRIVER = (
+    REPO
+    / "tools/woopayments-critical-flows/flows/class-woopaymentscriticalflowsma09driver.php"
+)
 
 
 def load_context_module():
@@ -166,6 +170,221 @@ fi
 printf 'unexpected fake wp call: %s\\n' "$*" >&2
 exit 2
 """
+
+
+def ma09_payload(
+    store: str,
+    *,
+    dataset_count: int = 500,
+    status: str = "pass",
+    check_overrides: dict[str, bool] | None = None,
+    measured_seconds: tuple[float, float] = (0.5, 0.6),
+) -> dict:
+    """Return one strict fake MA-09 deterministic payload."""
+    checks = {
+        "route_registered": True,
+        "dataset_minimum": dataset_count >= 500,
+        "unique_ledger": True,
+        "stable_ledger": True,
+        "page_one_full": True,
+        "deep_page_full": True,
+        "pagination_exact": True,
+        "type_filter_exact": True,
+        "date_filter_exact": True,
+    }
+    checks.update(check_overrides or {})
+    timings = {
+        query: {
+            "samples_seconds": [0.4, *measured_seconds],
+            "measured_median_seconds": sum(measured_seconds) / 2,
+        }
+        for query in ("page_1", "page_20", "type_filter", "date_filter")
+    }
+    return {
+        "schema": "woopayments_ma09_deterministic.v1",
+        "status": status,
+        "store": store,
+        "runtime_owner": "plugin" if store == "ref" else "native",
+        "dataset_count": dataset_count,
+        "seeded_count": dataset_count,
+        "page_size": 25,
+        "deep_page": 20,
+        "ledger_sha256": "sha256:" + ("a" if store == "ref" else "b") * 64,
+        "type_filter": "charge",
+        "type_filter_count": 350,
+        "date_filter_after": "2026-07-16 00:00:00",
+        "date_filter_before": "2026-07-16 23:59:59",
+        "date_filter_count": 125,
+        "checks": checks,
+        "timings": timings,
+        "errors": [] if status != "fail" else ["A deterministic state check failed."],
+        "blockers": [] if status != "blocked" else ["The exact 500-row fixture is unavailable."],
+    }
+
+
+def ma09_fake_wp_source(
+    owner: str,
+    home: str,
+    state_payload: dict,
+    *,
+    log_probe_exit_code: int = 0,
+    dirty_log: bool = False,
+) -> str:
+    """Fake wp CLI for the MA-09 performance driver and shared log assertions."""
+    payload = json.dumps(state_payload, separators=(",", ":"))
+    log_payload = json.dumps(
+        {
+            "status": "fail" if dirty_log else "pass",
+            "paths": ["/tmp/fake-debug.log"],
+            "matches": ["PHP Warning: fake MA-09 warning"] if dirty_log else [],
+        },
+        separators=(",", ":"),
+    )
+    return f"""#!/usr/bin/env bash
+if [ "$1" = "--user=1" ]; then
+  shift
+fi
+if [ "$1" = "eval-file" ]; then
+  cat >/dev/null
+  printf '%s\\n' 'fake WP wrapper banner'
+  printf '%s\\n' '{payload}'
+  printf '%s\\n' 'fake WP wrapper footer'
+  exit 0
+fi
+if [ "$1" = "eval" ]; then
+  if [[ "$2" == *"store_identity_owner"* ]]; then
+    printf '%s\\n' "store_identity_owner={owner}"
+    printf '%s\\n' "store_identity_home={home}"
+    exit 0
+  fi
+  if [[ "$2" == *"update_option"*"woopayments_critical_flows_debug_log_marker"* ]]; then
+    printf '%s\\n' '{{"status":"pass","paths":["/tmp/fake-debug.log"],"markers":{{"/tmp/fake-debug.log":0}}}}'
+    exit 0
+  fi
+  if [[ "$2" == *"ignored_matches"* ]] && [ {log_probe_exit_code} -ne 0 ]; then
+    printf '%s\\n' 'fake log probe unavailable' >&2
+    exit {log_probe_exit_code}
+  fi
+  printf '%s\\n' '{log_payload}'
+  exit 0
+fi
+printf 'unexpected fake wp call: %s\\n' "$*" >&2
+exit 2
+"""
+
+
+def run_ma09_php_driver_with_endpoint_exception(
+    failure_mode: str,
+) -> subprocess.CompletedProcess[str]:
+    """Run the real PHP collector with a registered endpoint that throws in one phase."""
+    driver_path = json.dumps(str(MA09_DRIVER))
+    encoded_failure_mode = json.dumps(failure_mode)
+    source = f"""<?php
+namespace Automattic\\WooCommerce\\Internal\\Payments {{
+final class NativePaymentsRuntimeArbiter {{}}
+}}
+
+namespace {{
+final class WP_REST_Request {{
+    public array $query = array();
+    public function __construct( string $method, string $route ) {{}}
+    public function set_query_params( array $query ): void {{ $this->query = $query; }}
+}}
+
+final class FakeRestServer {{
+    public function get_routes(): array {{
+        return array( '/wc/v3/payments/transactions' => array() );
+    }}
+}}
+
+final class FakeRestResponse {{
+    public function __construct( private array $data ) {{}}
+    public function get_data(): array {{ return array( 'data' => $this->data ); }}
+    public function get_status(): int {{ return 200; }}
+}}
+
+function get_option( string $name, $default = false ) {{ return $default; }}
+function wc_get_container(): object {{
+    return new class {{
+        public function get( string $class_name ): object {{
+            return new class {{
+                public function get_runtime_owner(): string {{ return 'native'; }}
+            }};
+        }}
+    }};
+}}
+function wp_get_current_user(): object {{
+    return new class {{
+        public function exists(): bool {{ return true; }}
+    }};
+}}
+function current_user_can( string $capability ): bool {{ return true; }}
+function rest_get_server(): object {{ return new FakeRestServer(); }}
+function is_wp_error( $response ): bool {{ return false; }}
+function wp_json_encode( $value, int $flags = 0 ): string {{ return json_encode( $value, $flags ); }}
+
+$ma09_rows = array();
+for ( $index = 500; $index >= 1; $index-- ) {{
+    $ma09_rows[] = array(
+        'transaction_id' => 'txn_' . $index,
+        'type'           => 'charge',
+        'date'           => '2026-07-16 12:00:00',
+        'amount'         => 1000,
+        'fees'           => 30,
+        'net'            => 970,
+        'currency'       => 'usd',
+    );
+}}
+$ma09_page_twenty_requests = 0;
+$ma09_failure_mode = {encoded_failure_mode};
+
+function rest_do_request( WP_REST_Request $request ): FakeRestResponse {{
+    global $ma09_rows, $ma09_page_twenty_requests, $ma09_failure_mode;
+    $page      = (int) ( $request->query['page'] ?? 1 );
+    $page_size = (int) ( $request->query['per_page'] ?? 25 );
+    if (
+        'type_filter' === $ma09_failure_mode
+        && 1 === $page
+        && 100 === $page_size
+        && 'charge' === ( $request->query['type_is'] ?? '' )
+    ) {{
+        throw new \\RuntimeException( 'type filter endpoint failure' );
+    }}
+    if (
+        'date_filter' === $ma09_failure_mode
+        && 1 === $page
+        && 100 === $page_size
+        && isset( $request->query['date_after'], $request->query['date_before'] )
+    ) {{
+        throw new \\RuntimeException( 'date filter endpoint failure' );
+    }}
+    if ( 'timed' === $ma09_failure_mode && 20 === $page && 25 === $page_size ) {{
+        $ma09_page_twenty_requests++;
+        if ( 3 === $ma09_page_twenty_requests ) {{
+            throw new \\RuntimeException( 'timed endpoint failure' );
+        }}
+    }}
+    usleep( 1000 );
+    $offset = ( $page - 1 ) * $page_size;
+    return new FakeRestResponse( array_slice( $ma09_rows, $offset, $page_size ) );
+}}
+
+$args = array( 'target' );
+require {driver_path};
+}}
+"""
+
+    with tempfile.TemporaryDirectory(prefix="critical-flows-ma09-php-") as tmp:
+        harness = Path(tmp) / "ma09-timed-exception.php"
+        harness.write_text(source, encoding="utf-8")
+        return subprocess.run(
+            ["php", str(harness)],
+            cwd=REPO,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
 
 
 def run_runner(
@@ -454,6 +673,230 @@ def test_sp01_deterministic_flow_classifies_pass_fail_and_blocked() -> None:
                     "exit_code": expected_rc,
                 }
             ]
+
+
+def test_ma09_deterministic_flow_compares_exact_datasets_and_timings() -> None:
+    invalid_median = ma09_payload("target")
+    invalid_median["timings"]["page_1"]["measured_median_seconds"] = 9.0
+    empty_filter_failure = ma09_payload(
+        "target",
+        status="fail",
+        check_overrides={"type_filter_exact": False},
+    )
+    empty_filter_failure["type_filter_count"] = 0
+    cases = (
+        (
+            "pass",
+            ma09_payload("ref"),
+            ma09_payload("target", measured_seconds=(0.8, 0.9)),
+            0,
+            "[MA-09/target] deterministic verdict: PASS",
+            0,
+            False,
+        ),
+        (
+            "dataset-mismatch",
+            ma09_payload("ref"),
+            ma09_payload("target", dataset_count=501),
+            3,
+            "[MA-09/target] deterministic verdict: BLOCKED",
+            0,
+            False,
+        ),
+        (
+            "relative-performance-failure",
+            ma09_payload("ref", measured_seconds=(0.5, 0.5)),
+            ma09_payload("target", measured_seconds=(1.01, 1.02)),
+            1,
+            "[MA-09/target] deterministic verdict: FAIL",
+            0,
+            False,
+        ),
+        (
+            "pagination-failure",
+            ma09_payload("ref"),
+            ma09_payload(
+                "target",
+                status="fail",
+                check_overrides={"pagination_exact": False},
+            ),
+            1,
+            "[MA-09/target] deterministic verdict: FAIL",
+            0,
+            False,
+        ),
+        (
+            "empty-filter-failure",
+            ma09_payload("ref"),
+            empty_filter_failure,
+            1,
+            "[MA-09/target] deterministic verdict: FAIL",
+            0,
+            False,
+        ),
+        (
+            "absolute-performance-failure",
+            ma09_payload("ref"),
+            ma09_payload("target", measured_seconds=(10.01, 0.9)),
+            1,
+            "[MA-09/target] deterministic verdict: FAIL",
+            0,
+            False,
+        ),
+        (
+            "malformed-median",
+            ma09_payload("ref"),
+            invalid_median,
+            3,
+            "[MA-09/target] deterministic verdict: BLOCKED",
+            0,
+            False,
+        ),
+        (
+            "unseeded",
+            ma09_payload("ref"),
+            ma09_payload("target", dataset_count=499, status="blocked"),
+            3,
+            "[MA-09/target] deterministic verdict: BLOCKED",
+            0,
+            False,
+        ),
+        (
+            "product-failure-with-log-probe-blocked",
+            ma09_payload("ref"),
+            ma09_payload(
+                "target",
+                status="fail",
+                check_overrides={"date_filter_exact": False},
+            ),
+            3,
+            "[MA-09/target] deterministic verdict: BLOCKED",
+            2,
+            False,
+        ),
+        (
+            "dirty-log",
+            ma09_payload("ref"),
+            ma09_payload("target"),
+            1,
+            "[MA-09/target] deterministic verdict: FAIL",
+            0,
+            True,
+        ),
+    )
+
+    for case_name, ref_payload, target_payload, expected_rc, target_verdict, target_log_rc, dirty_log in cases:
+        with tempfile.TemporaryDirectory(prefix=f"critical-flows-ma09-{case_name}-") as tmp:
+            evidence_dir = Path(tmp)
+            fake_ref = evidence_dir / "fake-ref-wp.sh"
+            fake_target = evidence_dir / "fake-target-wp.sh"
+            fake_driver = evidence_dir / "fake-ma09-driver.php"
+            fake_driver.write_text("<?php // Test seam.\n", encoding="utf-8")
+            write_executable(
+                fake_ref,
+                ma09_fake_wp_source("plugin", "http://ref.fake.test", ref_payload),
+            )
+            write_executable(
+                fake_target,
+                ma09_fake_wp_source(
+                    "native",
+                    "http://target.fake.test",
+                    target_payload,
+                    log_probe_exit_code=target_log_rc,
+                    dirty_log=dirty_log,
+                ),
+            )
+
+            result = run_runner(
+                "--store",
+                "both",
+                "--layer",
+                "deterministic",
+                "--flow",
+                "MA-09",
+                evidence_dir=evidence_dir,
+                extra_env={
+                    "MA09_STATE_DRIVER": str(fake_driver),
+                    "REF_WP_COMMAND": str(fake_ref),
+                    "TARGET_WP_COMMAND": str(fake_target),
+                },
+            )
+
+            assert result.returncode == expected_rc, result.stdout + result.stderr
+            assert "MA-09-large-dataset-perf" in result.stdout
+            assert target_verdict in result.stdout
+            assert result.stdout.count("[MA-09/ref] deterministic verdict:") == 1
+            assert result.stdout.count("[MA-09/target] deterministic verdict:") == 1
+
+            rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
+            assert len(rollup["results"]) == 2
+            assert {row["store"] for row in rollup["results"]} == {"ref", "target"}
+            if case_name == "pass":
+                run_dir = evidence_dir / "runs" / f"{rollup['run_stamp']}-{rollup['scope']}" / "MA-09-large-dataset-perf"
+                assert {path.name for path in run_dir.iterdir()} == {"comparison.json", "ref.json", "target.json"}
+                ref_result = json.loads((run_dir / "ref.json").read_text(encoding="utf-8"))
+                target_result = json.loads((run_dir / "target.json").read_text(encoding="utf-8"))
+                comparison = json.loads((run_dir / "comparison.json").read_text(encoding="utf-8"))
+                assert comparison["runner_run_stamp"] == rollup["run_stamp"]
+                assert comparison["reference_normalized_sha256"] == ref_result["normalized_sha256"]
+                assert comparison["target_normalized_sha256"] == target_result["normalized_sha256"]
+
+
+def test_ma09_php_driver_classifies_registered_endpoint_exception_as_failure() -> None:
+    for failure_mode in ("timed", "type_filter", "date_filter"):
+        result = run_ma09_php_driver_with_endpoint_exception(failure_mode)
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        payload = json.loads(result.stdout.strip().splitlines()[-1])
+        assert payload["status"] == "fail"
+        assert payload["blockers"] == []
+        assert "The internal REST request threw before returning a response." in payload["errors"]
+        if failure_mode == "timed":
+            assert "Timed page_20 did not produce three complete samples." in payload["errors"]
+            assert payload["timings"]["page_20"]["samples_seconds"][1] is None
+            assert payload["timings"]["page_20"]["measured_median_seconds"] is None
+        elif failure_mode == "type_filter":
+            assert payload["type_filter_count"] == 0
+            assert payload["checks"]["type_filter_exact"] is False
+        else:
+            assert payload["date_filter_count"] == 0
+            assert payload["checks"]["date_filter_exact"] is False
+
+        with tempfile.TemporaryDirectory(prefix=f"critical-flows-ma09-{failure_mode}-") as tmp:
+            evidence_dir = Path(tmp)
+            fake_ref = evidence_dir / "fake-ref-wp.sh"
+            fake_target = evidence_dir / "fake-target-wp.sh"
+            fake_driver = evidence_dir / "fake-ma09-driver.php"
+            fake_driver.write_text("<?php // Test seam.\n", encoding="utf-8")
+            write_executable(
+                fake_ref,
+                ma09_fake_wp_source("plugin", "http://ref.fake.test", ma09_payload("ref")),
+            )
+            write_executable(
+                fake_target,
+                ma09_fake_wp_source("native", "http://target.fake.test", payload),
+            )
+
+            runner_result = run_runner(
+                "--store",
+                "both",
+                "--layer",
+                "deterministic",
+                "--flow",
+                "MA-09",
+                evidence_dir=evidence_dir,
+                extra_env={
+                    "MA09_STATE_DRIVER": str(fake_driver),
+                    "REF_WP_COMMAND": str(fake_ref),
+                    "TARGET_WP_COMMAND": str(fake_target),
+                },
+            )
+
+            assert runner_result.returncode == 1, runner_result.stdout + runner_result.stderr
+            assert "[MA-09/target] deterministic verdict: FAIL" in runner_result.stdout
+            rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
+            target_result = next(row for row in rollup["results"] if row["store"] == "target")
+            assert target_result["status"] == "FAIL"
 
 
 def test_card_checkout_flow_passes_on_reference_with_empty_native_flags() -> None:

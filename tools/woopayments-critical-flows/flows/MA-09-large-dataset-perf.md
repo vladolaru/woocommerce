@@ -19,4 +19,10 @@ On BOTH stores, via internal REST (`wp --user=1 eval` + `rest_do_request`), timi
 
 Reference vs target comparison IS the verdict here: the reference plugin at the same dataset size is the responsiveness oracle; target exceeding the 2× bound or erroring on deep pagination/filtering is a FAIL, and an unseeded store is BLOCKED, never assumed-pass.
 
-Deterministic exerciser: NOT YET WIRED — assertions above are the contract for the future flows/MA-09-*.sh.
+Deterministic exerciser: wired by `MA-09-large-dataset-perf.sh`, `class-woopaymentscriticalflowsma09driver.php`, and `ma09-compare.py`.
+
+## Latest runner result
+
+`PASS` on 2026-07-16. Both connected test accounts were normalized to exactly 500 unique transactions. The reference fixture used one calibrated deterministic charge plus 124 successful Test Lab bulk charges; the target used one calibrated charge plus 16 successful guarded native charges. The gate reconciled the exhaustive 100-row ledger with all twenty 25-row pages, exact charge/date projections, stable pre/post ledger digests, and clean marker-bounded logs.
+
+All eight measured native calls passed the relative bound at 0.79–0.93× the corresponding reference median, and every warmup/measured call was below 0.24 seconds. The append-only archive contains the normalized, run-bound, digest-bound reference/target payloads and comparison result: `evidence/runs/20260716T100225Z-76348-partial/`.

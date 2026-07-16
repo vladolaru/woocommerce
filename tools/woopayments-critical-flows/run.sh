@@ -508,7 +508,7 @@ if [ "$LAYER" != "agent" ]; then
         record_result "$base" deterministic "$s" BLOCKED "$marker_rc" "" "" "log-clean marker could not be recorded"
         continue
       fi
-      STORE_NAME="$s" bash "$f"
+      CRITICAL_FLOWS_RUN_SCOPE="$RUN_SCOPE" CRITICAL_FLOWS_RUN_STAMP="$RUN_STAMP" STORE_NAME="$s" bash "$f"
       rc=$?
       if [ "$rc" -eq 0 ]; then
         status="PASS"
@@ -525,6 +525,10 @@ if [ "$LAYER" != "agent" ]; then
     [ -e "$f" ] || continue
     spec_requires_agent_layer "$f" && continue
     base="$(basename "$f" .md)"
+    # A wired deterministic script supersedes the no-browser markdown fallback.
+    # Without this guard, a D-only flow would run once through its script and a
+    # second time through run_no_browser_deterministic_flow, recording two rows.
+    [ -f "$FLOWS_DIR/$base.sh" ] && continue
     [ -n "$ONLY_FLOW" ] && [[ "$base" != "$ONLY_FLOW"* ]] && continue
     echo "--- $base ---"
     for s in $(stores); do
