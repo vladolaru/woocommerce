@@ -19,6 +19,7 @@ from tools.woopayments_test_runner import adapt_wp_runner_arguments
 
 
 SCRIPT = REPO / "tools/woopayments-merge/plugin-active-settings-gate.sh"
+BROWSER_DRIVER = REPO / "tools/woopayments-merge/plugin-active-settings.playwriter.mjs"
 TARGET_WP = "docker exec -i target-cli-1 wp --allow-root --user=1"
 TARGET_URL = "http://store8889.localhost:8889"
 SETTINGS_URL = f"{TARGET_URL}/wp-admin/admin.php?page=wc-settings&tab=checkout&section=woocommerce_payments"
@@ -104,6 +105,8 @@ def make_transactional_fake_wp(
     mutation_mode: str = "success",
     cleanup_mode: str = "success",
     tamper_disabled_after_mutation: bool = False,
+    staged_runtime_owner: str = "plugin",
+    restored_runtime_owner: str = "native",
 ) -> None:
     write_executable(
         path,
@@ -119,6 +122,8 @@ INITIAL_STATE = {initial_state!r}
 MUTATION_MODE = {mutation_mode!r}
 CLEANUP_MODE = {cleanup_mode!r}
 TAMPER_DISABLED_AFTER_MUTATION = {tamper_disabled_after_mutation!r}
+STAGED_RUNTIME_OWNER = {staged_runtime_owner!r}
+RESTORED_RUNTIME_OWNER = {restored_runtime_owner!r}
 SUFFIX = ".disabled-by-woopayments-merge"
 MARKER = "woocommerce_native_payments_enabled"
 
@@ -186,6 +191,21 @@ if args[:3] == ["option", "get", "home"]:
     print({TARGET_URL!r})
     raise SystemExit(0)
 
+if operation == "probe-runtime-owner":
+    runtime_owner = STAGED_RUNTIME_OWNER if state["plugin_active"] else RESTORED_RUNTIME_OWNER
+    print(
+        json.dumps(
+            {{
+                "success": True,
+                "mode": operation,
+                "errors": [],
+                "runtime_owner": runtime_owner,
+            }},
+            sort_keys=True,
+        )
+    )
+    raise SystemExit(0)
+
 if operation == "snapshot-plugin-active":
     candidate_entries = candidates(state)
     errors = [
@@ -193,6 +213,8 @@ if operation == "snapshot-plugin-active":
         for entry in candidate_entries
         if entry["disabled_path"] in state["files"]
     ]
+    if not candidate_entries:
+        errors.append("No native payments mu-plugin candidates were found for staging.")
     print(
         json.dumps(
             {{
@@ -237,7 +259,7 @@ if operation == "mutate-plugin-active":
     if MUTATION_MODE == "no_json":
         print("mutation completed without JSON")
         raise SystemExit(0)
-    print(json.dumps({{"success": True, "mode": operation, "errors": []}}, sort_keys=True))
+    print(json.dumps({{"success": True, "mode": operation, "errors": [], "wcpay_plugin_active": True}}, sort_keys=True))
     raise SystemExit(0)
 
 if operation == "restore-plugin-active":
@@ -277,7 +299,7 @@ if operation == "restore-plugin-active":
         if destination in state["files"]:
             errors.append("Disabled native payments mu-plugin path remains: " + destination)
     write_state(state)
-    print(json.dumps({{"success": not errors, "mode": operation, "errors": errors}}, sort_keys=True))
+    print(json.dumps({{"success": not errors, "mode": operation, "errors": errors, "wcpay_plugin_active": state["plugin_active"]}}, sort_keys=True))
     raise SystemExit(0)
 
 print("unexpected fake wp args: " + " ".join(args), file=sys.stderr)
@@ -308,6 +330,7 @@ def make_fake_playwriter(
     blocked_responses: list[dict[str, object]] | None = None,
     blockers: list[str] | None = None,
     failures: list[str] | None = None,
+    native_settings_assets: bool = False,
 ) -> None:
     duplicate_errors = (
         '[{"type":"error","text":"Store \\"wc/payments/settings\\" is already registered"}]'
@@ -318,6 +341,9 @@ def make_fake_playwriter(
         failures = []
         if status == "fail":
             failures.append("failed browser responses were captured")
+    if native_settings_assets:
+        status = "fail"
+        failures.append("native WooPayments settings assets were observed")
     write_executable(
         path,
         f"""#!/usr/bin/env python3
@@ -342,6 +368,11 @@ if "-e" in sys.argv:
 
 if os.environ.get("FAKE_GATE_SIGNAL"):
     os.killpg(os.getpgrp(), int(os.environ["FAKE_GATE_SIGNAL"]))
+if os.environ.get("FAKE_CONTEXT_FILE") and os.environ.get("FAKE_CONTEXT_REPLACEMENT_SHA256"):
+    pathlib.Path(os.environ["FAKE_CONTEXT_FILE"]).write_text(
+        json.dumps({{"context_sha256": os.environ["FAKE_CONTEXT_REPLACEMENT_SHA256"]}}) + "\\n",
+        encoding="utf-8",
+    )
 
 payload = {{
     "schema": "woopayments_plugin_active_settings_browser_evidence.v1",
@@ -355,6 +386,7 @@ payload = {{
     "plugin_settings_global_present": {plugin_provenance!r},
     "plugin_settings_script_urls": {json.dumps([f"{TARGET_URL}/wp-content/plugins/woocommerce-payments/dist/settings.js"] if plugin_provenance else [])},
     "plugin_settings_style_urls": {json.dumps([f"{TARGET_URL}/wp-content/plugins/woocommerce-payments/dist/settings.css"] if plugin_provenance else [])},
+    "native_settings_asset_urls": {json.dumps([f"{TARGET_URL}/wp-content/plugins/woocommerce/assets/client/admin/chunks/settings-payments-woopayments.js"] if native_settings_assets else [])},
     "duplicate_store_errors": {duplicate_errors},
     "fatal_console_errors": [],
     "failed_responses": {json.dumps(failed_responses or [])},
@@ -365,6 +397,8 @@ payload = {{
 
 evidence_path = pathlib.Path(os.environ["PLUGIN_SETTINGS_EVIDENCE_PATH"])
 evidence_path.parent.mkdir(parents=True, exist_ok=True)
+payload["screenshot_path"] = str(evidence_path.parent / "plugin-active-settings.png")
+(evidence_path.parent / "plugin-active-settings.png").write_bytes(b"fake screenshot")
 evidence_path.write_text(json.dumps(payload, sort_keys=True) + "\\n", encoding="utf-8")
 """,
     )
@@ -377,9 +411,13 @@ def run_fixture_gate(
     mutation_mode: str = "success",
     cleanup_mode: str = "success",
     tamper_disabled_after_mutation: bool = False,
+    staged_runtime_owner: str = "plugin",
+    restored_runtime_owner: str = "native",
     duplicate_store_error: bool = False,
     preflight_only: bool = False,
     gate_signal: int | None = None,
+    context_file: Path | None = None,
+    context_replacement_sha256: str | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], dict[str, Path]]:
     fake_wp = tmp_path / "target-wp"
     fake_playwriter = tmp_path / "fake-playwriter"
@@ -395,6 +433,8 @@ def run_fixture_gate(
         mutation_mode=mutation_mode,
         cleanup_mode=cleanup_mode,
         tamper_disabled_after_mutation=tamper_disabled_after_mutation,
+        staged_runtime_owner=staged_runtime_owner,
+        restored_runtime_owner=restored_runtime_owner,
     )
     make_fake_playwriter(fake_playwriter, duplicate_store_error=duplicate_store_error)
 
@@ -411,6 +451,8 @@ def run_fixture_gate(
     ]
     if preflight_only:
         args.append("--preflight-only")
+    if context_file:
+        args.extend(("--context-file", str(context_file)))
 
     env = {
         **os.environ,
@@ -421,6 +463,9 @@ def run_fixture_gate(
     }
     if gate_signal is not None:
         env["FAKE_GATE_SIGNAL"] = str(gate_signal)
+    if context_file and context_replacement_sha256:
+        env["FAKE_CONTEXT_FILE"] = str(context_file)
+        env["FAKE_CONTEXT_REPLACEMENT_SHA256"] = context_replacement_sha256
 
     result = run_gate(
         *args,
@@ -463,6 +508,17 @@ def test_print_plan_describes_settings_regression_gate() -> None:
         "standalone WooPayments settings script and localized global are present",
         "no duplicate wc/payments/settings store registration error",
     ]
+
+
+def test_browser_driver_checks_fatal_tokens_before_benign_log_allowances() -> None:
+    source = BROWSER_DRIVER.read_text(encoding="utf-8")
+    classifier = source[
+        source.index("function isFatalConsoleError") : source.index("function decodedUrlText")
+    ]
+
+    assert classifier.index("/uncaught|fatal|exception|typeerror|referenceerror/i") < classifier.index(
+        "/JQMIGRATE|Permissions policy violation: unload/i"
+    )
 
 
 def test_print_plan_rejects_remote_target_runner_before_invocation() -> None:
@@ -613,12 +669,14 @@ def test_full_gate_can_stage_and_restore_plugin_active_fixture() -> None:
 
         assert result.returncode == 0, result.stderr
         invocations = read_json_lines(paths["wp_invocations"])
-        mutation_invocations = [item for item in invocations if item["operation"]]
-        operations = [item["operation"] for item in mutation_invocations]
+        lifecycle_invocations = [item for item in invocations if item["operation"]]
+        operations = [item["operation"] for item in lifecycle_invocations]
         assert operations == [
             "snapshot-plugin-active",
             "mutate-plugin-active",
+            "probe-runtime-owner",
             "restore-plugin-active",
+            "probe-runtime-owner",
         ]
         snapshot = json.loads(
             (paths["out_dir"] / "plugin-active-settings-snapshot.json").read_text(encoding="utf-8")
@@ -636,12 +694,12 @@ def test_full_gate_can_stage_and_restore_plugin_active_fixture() -> None:
                 "sha256": hashlib.sha256(contents_b.encode("utf-8")).hexdigest(),
             },
         ]
-        assert mutation_invocations[1]["payload"] == snapshot
-        assert mutation_invocations[2]["payload"] == snapshot
+        assert lifecycle_invocations[1]["payload"] == snapshot
+        assert lifecycle_invocations[3]["payload"] == snapshot
         assert read_fake_wp_state(paths["wp_state"]) == initial_state
 
-        mutation_source = mutation_invocations[1]["php_source"]
-        restore_source = mutation_invocations[2]["php_source"]
+        mutation_source = lifecycle_invocations[1]["php_source"]
+        restore_source = lifecycle_invocations[3]["php_source"]
         assert "glob(" not in mutation_source
         assert "glob(" not in restore_source
         assert "woocommerce_native_payments_enabled" not in mutation_source
@@ -660,6 +718,120 @@ def test_full_gate_can_stage_and_restore_plugin_active_fixture() -> None:
         assert rollup["evidence"]["settings_screen_present"] is True
 
 
+def test_fixture_blocks_wrong_staged_runtime_owner_and_restores() -> None:
+    with tempfile.TemporaryDirectory(prefix="plugin-settings-gate-test-") as tmp:
+        tmp_path = Path(tmp)
+        initial_state = {
+            "plugin_active": False,
+            "files": {NATIVE_MU_PLUGIN_A: native_mu_plugin_contents("wrong-owner")},
+        }
+
+        result, paths = run_fixture_gate(
+            tmp_path,
+            initial_state=initial_state,
+            staged_runtime_owner="native",
+        )
+
+        assert result.returncode == 3
+        assert "Payments runtime owner is native; expected plugin." in result.stderr
+        stage = json.loads(
+            (paths["out_dir"] / "plugin-active-settings-stage.json").read_text(encoding="utf-8")
+        )
+        assert stage["success"] is False
+        assert stage["runtime_owner"] == "native"
+        assert read_fake_wp_state(paths["wp_state"]) == initial_state
+        assert not paths["playwriter_invocations"].exists()
+
+
+def test_staged_gate_finalizes_context_bound_packet_after_restore() -> None:
+    with tempfile.TemporaryDirectory(prefix="plugin-settings-gate-test-") as tmp:
+        tmp_path = Path(tmp)
+        context_sha256 = "sha256:" + "a" * 64
+        context_file = tmp_path / "critical-flow-context.json"
+        context_file.write_text(json.dumps({"context_sha256": context_sha256}) + "\n", encoding="utf-8")
+        initial_state = {
+            "plugin_active": False,
+            "files": {NATIVE_MU_PLUGIN_A: native_mu_plugin_contents("context-packet")},
+        }
+
+        result, paths = run_fixture_gate(
+            tmp_path,
+            initial_state=initial_state,
+            context_file=context_file,
+        )
+
+        assert result.returncode == 0, result.stderr
+        rollup = json.loads(
+            (paths["out_dir"] / "plugin-active-settings-gate.json").read_text(encoding="utf-8")
+        )
+        assert rollup["context_sha256"] == context_sha256
+        artifacts = {Path(item["path"]).name: item for item in rollup["artifacts"]}
+        assert set(artifacts) == {
+            "plugin-active-settings-blockers.txt",
+            "plugin-active-settings-failures.txt",
+            "plugin-active-settings-restore.json",
+            "plugin-active-settings-snapshot.json",
+            "plugin-active-settings-stage.json",
+            "plugin-active-settings.json",
+            "plugin-active-settings.playwriter.log",
+            "plugin-active-settings.png",
+        }
+        for artifact in artifacts.values():
+            artifact_path = Path(artifact["path"])
+            assert artifact["sha256"] == f"sha256:{hashlib.sha256(artifact_path.read_bytes()).hexdigest()}"
+        restore = json.loads(
+            (paths["out_dir"] / "plugin-active-settings-restore.json").read_text(encoding="utf-8")
+        )
+        snapshot_sha256 = "sha256:" + hashlib.sha256(
+            (paths["out_dir"] / "plugin-active-settings-snapshot.json").read_bytes()
+        ).hexdigest()
+        stage = json.loads(
+            (paths["out_dir"] / "plugin-active-settings-stage.json").read_text(encoding="utf-8")
+        )
+        assert stage == {
+            "success": True,
+            "mode": "mutate-plugin-active",
+            "errors": [],
+            "wcpay_plugin_active": True,
+            "runtime_owner": "plugin",
+            "snapshot_sha256": snapshot_sha256,
+        }
+        assert restore == {
+            "success": True,
+            "mode": "restore-plugin-active",
+            "errors": [],
+            "wcpay_plugin_active": False,
+            "runtime_owner": "native",
+            "snapshot_sha256": snapshot_sha256,
+        }
+        assert read_fake_wp_state(paths["wp_state"]) == initial_state
+
+
+def test_staged_gate_rejects_context_changed_during_browser_capture() -> None:
+    with tempfile.TemporaryDirectory(prefix="plugin-settings-gate-test-") as tmp:
+        tmp_path = Path(tmp)
+        context_file = tmp_path / "critical-flow-context.json"
+        context_file.write_text(
+            json.dumps({"context_sha256": "sha256:" + "a" * 64}) + "\n", encoding="utf-8"
+        )
+        initial_state = {
+            "plugin_active": False,
+            "files": {NATIVE_MU_PLUGIN_A: native_mu_plugin_contents("context-drift")},
+        }
+
+        result, paths = run_fixture_gate(
+            tmp_path,
+            initial_state=initial_state,
+            context_file=context_file,
+            context_replacement_sha256="sha256:" + "b" * 64,
+        )
+
+        assert result.returncode == 70
+        assert "BLOCKED: plugin-active evidence packet finalization failed" in result.stderr
+        assert "aggregate context changed during plugin-active capture" in result.stderr
+        assert read_fake_wp_state(paths["wp_state"]) == initial_state
+
+
 def test_fixture_refuses_preexisting_destination_collision_without_mutation() -> None:
     with tempfile.TemporaryDirectory(prefix="plugin-settings-gate-test-") as tmp:
         tmp_path = Path(tmp)
@@ -676,6 +848,28 @@ def test_fixture_refuses_preexisting_destination_collision_without_mutation() ->
 
         assert result.returncode == 3
         assert f"destination already exists: {destination}" in result.stderr
+        operations = [
+            item["operation"]
+            for item in read_json_lines(paths["wp_invocations"])
+            if item["operation"]
+        ]
+        assert operations == ["snapshot-plugin-active"]
+        assert read_fake_wp_state(paths["wp_state"]) == initial_state
+        assert not paths["playwriter_invocations"].exists()
+
+
+def test_fixture_blocks_empty_native_candidate_set_before_mutation() -> None:
+    with tempfile.TemporaryDirectory(prefix="plugin-settings-gate-test-") as tmp:
+        tmp_path = Path(tmp)
+        initial_state = {
+            "plugin_active": False,
+            "files": {"/wp-content/mu-plugins/unrelated.php": "<?php // unrelated"},
+        }
+
+        result, paths = run_fixture_gate(tmp_path, initial_state=initial_state)
+
+        assert result.returncode == 3
+        assert "No native payments mu-plugin candidates were found" in result.stderr
         operations = [
             item["operation"]
             for item in read_json_lines(paths["wp_invocations"])
@@ -711,6 +905,7 @@ def assert_mutation_failure_is_recovered(mutation_mode: str) -> None:
             "snapshot-plugin-active",
             "mutate-plugin-active",
             "restore-plugin-active",
+            "probe-runtime-owner",
         ]
         assert read_fake_wp_state(paths["wp_state"]) == initial_state
         assert not paths["playwriter_invocations"].exists()
@@ -759,6 +954,7 @@ def assert_cleanup_failure_exits_70(cleanup_mode: str) -> None:
         )
 
         assert result.returncode == 70
+        assert "BLOCKED: plugin-active fixture cleanup failed" in result.stderr
         assert "cleanup failed" in result.stderr
         assert "restore warning" not in result.stderr
 
@@ -819,7 +1015,7 @@ def assert_fixture_restores_after_signal(signal_number: int) -> None:
             for item in read_json_lines(paths["wp_invocations"])
             if item["operation"]
         ]
-        assert operations[-1] == "restore-plugin-active"
+        assert operations[-2:] == ["restore-plugin-active", "probe-runtime-owner"]
 
 
 def test_fixture_restores_after_hup() -> None:
@@ -928,6 +1124,41 @@ def test_gate_rejects_native_only_settings_evidence_without_plugin_assets() -> N
         assert "standalone WooPayments settings assets were not observed" in result.stderr
         rollup = json.loads((out_dir / "plugin-active-settings-gate.json").read_text(encoding="utf-8"))
         assert rollup["status"] == "fail"
+
+
+def test_gate_fails_native_settings_asset_evidence() -> None:
+    with tempfile.TemporaryDirectory(prefix="plugin-settings-gate-test-") as tmp:
+        tmp_path = Path(tmp)
+        fake_wp = tmp_path / "target-wp"
+        fake_playwriter = tmp_path / "fake-playwriter"
+        out_dir = tmp_path / "evidence"
+
+        make_fake_wp(fake_wp)
+        make_fake_playwriter(fake_playwriter, native_settings_assets=True)
+
+        result = run_gate(
+            "--target",
+            str(fake_wp),
+            "--target-url",
+            TARGET_URL,
+            "--playwriter-session",
+            "unit",
+            "--out-dir",
+            str(out_dir),
+            env={
+                **os.environ,
+                "PLAYWRITER_BIN": str(fake_playwriter),
+                "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter-invocations.jsonl"),
+            },
+        )
+
+        assert result.returncode == 1
+        assert "native WooPayments settings assets were observed" in result.stderr
+        rollup = json.loads((out_dir / "plugin-active-settings-gate.json").read_text(encoding="utf-8"))
+        assert rollup["status"] == "fail"
+        assert "native WooPayments settings assets were observed" in rollup["failures"]
+        assert "browser failure: native WooPayments settings assets were observed" not in rollup["failures"]
+        assert "native WooPayments settings assets were observed" in BROWSER_DRIVER.read_text(encoding="utf-8")
 
 
 def test_gate_fails_generic_failed_browser_responses() -> None:
@@ -1057,6 +1288,7 @@ def main() -> None:
         test_full_gate_can_use_playwright_runner_without_playwriter_session,
         test_full_gate_invokes_playwriter_driver_and_validates_evidence,
         test_full_gate_can_stage_and_restore_plugin_active_fixture,
+        test_fixture_blocks_wrong_staged_runtime_owner_and_restores,
         test_fixture_refuses_preexisting_destination_collision_without_mutation,
         test_fixture_recovers_when_mutation_command_fails_after_mutating,
         test_fixture_recovers_when_mutation_emits_no_json_after_mutating,

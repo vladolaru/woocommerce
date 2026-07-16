@@ -3,11 +3,16 @@
 
 from __future__ import annotations
 
+import binascii
+import hashlib
 import importlib.util
 import json
+import struct
 import subprocess
 import tempfile
+import zlib
 from pathlib import Path
+from typing import Callable
 
 
 REPO = Path(__file__).resolve().parents[2]
@@ -76,27 +81,197 @@ def read_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def plugin_active_rollup(store_url: str, screenshot: str) -> dict:
+def write_test_png(path: Path, width: int = 800, height: int = 450) -> None:
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", binascii.crc32(kind + data) & 0xFFFFFFFF)
+
+    pixels = bytearray()
+    value = 0x12345678
+    for _row in range(height):
+        pixels.append(0)
+        for _column in range(width):
+            value = (1103515245 * value + 12345) & 0x7FFFFFFF
+            pixels.extend(((value >> 16) & 0xFF, (value >> 8) & 0xFF, value & 0xFF))
+    path.write_bytes(
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(bytes(pixels), level=6))
+        + chunk(b"IEND", b"")
+    )
+
+
+def write_blank_test_png(path: Path, width: int = 1440, height: int = 1100) -> None:
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", binascii.crc32(kind + data) & 0xFFFFFFFF)
+
+    pixels = (b"\x00" + b"\xff\xff\xff" * width) * height
+    path.write_bytes(
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(pixels, level=9))
+        + chunk(b"IEND", b"")
+    )
+
+
+def plugin_active_rollup(role: str, store_url: str, screenshot: str, context_sha256: str) -> dict:
+    settings_url = f"{store_url}/wp-admin/admin.php?page=wc-settings&tab=checkout&section=woocommerce_payments"
+    evidence = {
+        "schema": "woopayments_plugin_active_settings_browser_evidence.v1",
+        "status": "pass",
+        "target_url": store_url,
+        "settings_url": settings_url,
+        "plugin_active": True,
+        "authenticated_wp_admin": True,
+        "settings_screen_present": True,
+        "plugin_settings_assets_present": True,
+        "plugin_settings_global_present": True,
+        "plugin_settings_script_urls": [
+            f"{store_url}/wp-content/plugins/woocommerce-payments/dist/settings.js"
+        ],
+        "plugin_settings_style_urls": [
+            f"{store_url}/wp-content/plugins/woocommerce-payments/dist/settings.css"
+        ],
+        "native_settings_asset_urls": [],
+        "duplicate_store_errors": [],
+        "fatal_console_errors": [],
+        "all_failed_responses": [],
+        "failed_responses": [],
+        "blocked_responses": [],
+        "blockers": [],
+        "failures": [],
+        "logs": ["[log] JQMIGRATE: Migrate is installed with logging active, version 3.4.1"],
+        "screenshot_path": screenshot,
+        "page": {
+            "finalUrl": settings_url,
+            "hasAdminBody": True,
+            "hasAdminMenu": True,
+            "hasLoginForm": False,
+            "hasWpbodyContent": True,
+            "pluginSettingsAssetsPresent": True,
+            "pluginSettingsGlobalPresent": True,
+            "pluginSettingsScriptUrls": [
+                f"{store_url}/wp-content/plugins/woocommerce-payments/dist/settings.js"
+            ],
+            "pluginSettingsStyleUrls": [
+                f"{store_url}/wp-content/plugins/woocommerce-payments/dist/settings.css"
+            ],
+            "nativeSettingsAssetUrls": [],
+            "selectorMatches": [{"count": 1, "selector": "#wcpay-account-settings-container"}],
+            "settingsScreenPresent": True,
+            "settingsStoreSelectable": True,
+        },
+    }
     return {
         "schema": "woopayments_plugin_active_settings_gate_rollup.v1",
         "status": "pass",
-        "settings_url": f"{store_url}/wp-admin/admin.php?page=wc-settings&tab=checkout&section=woocommerce_payments",
+        "settings_url": settings_url,
         "target_url": store_url,
+        "runner_role": role,
+        "context_sha256": context_sha256,
         "blockers": [],
         "failures": [],
-        "evidence": {
-            "settings_screen_present": True,
-            "duplicate_store_errors": [],
-            "fatal_console_errors": [],
-            "failed_responses": [],
-            "blockers": [],
-            "failures": [],
-            "screenshot_path": screenshot,
-            "page": {
-                "finalUrl": f"{store_url}/wp-admin/admin.php?page=wc-settings&tab=checkout&section=woocommerce_payments",
-            },
-        },
+        "evidence": evidence,
     }
+
+
+def write_plugin_active_packet(base: Path, role: str, context_sha256: str) -> Path:
+    store_url = "http://localhost:8082" if role == "reference" else "http://store8889.localhost:8889"
+    base.mkdir(parents=True, exist_ok=True)
+    screenshot = base / "plugin-active-settings.png"
+    browser = base / "plugin-active-settings.json"
+    failures = base / "plugin-active-settings-failures.txt"
+    blockers = base / "plugin-active-settings-blockers.txt"
+    log = base / "plugin-active-settings.playwriter.log"
+    gate = base / "plugin-active-settings-gate.json"
+    write_test_png(screenshot)
+    payload = plugin_active_rollup(role, store_url, str(screenshot), context_sha256)
+    write_json(browser, payload["evidence"])
+    failures.write_text("", encoding="utf-8")
+    blockers.write_text("", encoding="utf-8")
+    log.write_text("browser capture complete\n", encoding="utf-8")
+    artifact_paths = [browser, blockers, failures, log, screenshot]
+    if role == "target":
+        snapshot = base / "plugin-active-settings-snapshot.json"
+        stage = base / "plugin-active-settings-stage.json"
+        restore = base / "plugin-active-settings-restore.json"
+        write_json(
+            snapshot,
+            {
+                "schema": "woopayments_plugin_active_fixture_snapshot.v1",
+                "success": True,
+                "mode": "snapshot-plugin-active",
+                "errors": [],
+                "was_plugin_active": False,
+                "candidate_mu_plugins": [
+                    {
+                        "path": "/var/www/html/wp-content/mu-plugins/native-payments-enable.php",
+                        "disabled_path": "/var/www/html/wp-content/mu-plugins/native-payments-enable.php.disabled-by-woopayments-merge",
+                        "sha256": "a" * 64,
+                    }
+                ],
+            },
+        )
+        snapshot_sha256 = f"sha256:{hashlib.sha256(snapshot.read_bytes()).hexdigest()}"
+        write_json(
+            stage,
+            {
+                "success": True,
+                "mode": "mutate-plugin-active",
+                "errors": [],
+                "wcpay_plugin_active": True,
+                "runtime_owner": "plugin",
+                "snapshot_sha256": snapshot_sha256,
+            },
+        )
+        write_json(
+            restore,
+            {
+                "success": True,
+                "mode": "restore-plugin-active",
+                "errors": [],
+                "wcpay_plugin_active": False,
+                "runtime_owner": "native",
+                "snapshot_sha256": snapshot_sha256,
+            },
+        )
+        artifact_paths.extend((snapshot, stage, restore))
+    payload["artifacts"] = [
+        {"path": str(path), "sha256": f"sha256:{hashlib.sha256(path.read_bytes()).hexdigest()}"}
+        for path in sorted(artifact_paths)
+    ]
+    write_json(gate, payload)
+    return gate
+
+
+def refresh_plugin_active_manifest(gate: Path) -> None:
+    payload = read_json(gate)
+    for artifact in payload["artifacts"]:
+        path = Path(artifact["path"])
+        artifact["sha256"] = f"sha256:{hashlib.sha256(path.read_bytes()).hexdigest()}"
+    write_json(gate, payload)
+
+
+def corrupt_png_idat(path: Path) -> None:
+    data = bytearray(path.read_bytes())
+    offset = 8
+    while offset < len(data):
+        length = struct.unpack(">I", data[offset : offset + 4])[0]
+        chunk_type = bytes(data[offset + 4 : offset + 8])
+        if chunk_type == b"IDAT":
+            data[offset + 8] ^= 0xFF
+            crc = binascii.crc32(bytes(data[offset + 4 : offset + 8 + length])) & 0xFFFFFFFF
+            data[offset + 8 + length : offset + 12 + length] = struct.pack(">I", crc)
+            path.write_bytes(data)
+            return
+        offset += 12 + length
+    raise AssertionError("test PNG has no IDAT chunk")
+
+
+def duplicate_png_ihdr(path: Path) -> None:
+    data = path.read_bytes()
+    first_chunk_length = struct.unpack(">I", data[8:12])[0]
+    first_chunk_end = 8 + 12 + first_chunk_length
+    path.write_bytes(data[:first_chunk_end] + data[8:first_chunk_end] + data[first_chunk_end:])
 
 
 def token_continuity_rollup(screenshot: Path) -> dict:
@@ -295,12 +470,9 @@ def test_builds_plugin_active_agent_result_from_reference_and_target_gates() -> 
     with tempfile.TemporaryDirectory(prefix="critical-agent-results-") as tmp:
         tmp_path = Path(tmp)
         out_dir = tmp_path / "agent-results"
-        ref_gate = tmp_path / "ref-plugin-active.json"
-        target_gate = tmp_path / "target-plugin-active.json"
-        (tmp_path / "ref.png").write_bytes(b"reference screenshot")
-        (tmp_path / "target.png").write_bytes(b"target screenshot")
-        write_json(ref_gate, plugin_active_rollup("http://localhost:8082", str(tmp_path / "ref.png")))
-        write_json(target_gate, plugin_active_rollup("http://store8889.localhost:8889", str(tmp_path / "target.png")))
+        _context_path, context = builder_context(out_dir)
+        ref_gate = write_plugin_active_packet(tmp_path / "reference", "reference", context["context_sha256"])
+        target_gate = write_plugin_active_packet(tmp_path / "target", "target", context["context_sha256"])
 
         result = run_builder(
             "--out-dir",
@@ -317,6 +489,631 @@ def test_builds_plugin_active_agent_result_from_reference_and_target_gates() -> 
         assert payload["parity_verdict"] == "PASS"
         assert [store["verdict"] for store in payload["store_results"]] == ["PASS", "PASS"]
         assert all(store["evidence"] for store in payload["store_results"])
+
+
+def build_plugin_active_test_result(
+    tmp_path: Path,
+    mutate: Callable[[Path, Path, dict], None] | None = None,
+) -> tuple[subprocess.CompletedProcess[str], dict]:
+    out_dir = tmp_path / "agent-results"
+    _context_path, context = builder_context(out_dir)
+    ref_gate = write_plugin_active_packet(tmp_path / "reference", "reference", context["context_sha256"])
+    target_gate = write_plugin_active_packet(tmp_path / "target", "target", context["context_sha256"])
+    if mutate:
+        mutate(ref_gate, target_gate, context)
+    result = run_builder(
+        "--out-dir",
+        str(out_dir),
+        "--plugin-active-reference-gate",
+        str(ref_gate),
+        "--plugin-active-target-gate",
+        str(target_gate),
+    )
+    return result, read_json(out_dir / "MA-11-plugin-active-settings-screen.json")
+
+
+def test_plugin_active_result_rejects_swapped_store_roles() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-agent-results-") as tmp:
+        tmp_path = Path(tmp)
+
+        def swap_roles(ref_gate: Path, target_gate: Path, _context: dict) -> None:
+            ref = read_json(ref_gate)
+            target = read_json(target_gate)
+            ref["runner_role"], target["runner_role"] = target["runner_role"], ref["runner_role"]
+            write_json(ref_gate, ref)
+            write_json(target_gate, target)
+
+        result, payload = build_plugin_active_test_result(tmp_path, swap_roles)
+
+        assert result.returncode == 0, result.stderr
+        assert payload["parity_verdict"] == "BLOCKED"
+        assert [store["verdict"] for store in payload["store_results"]] == ["BLOCKED", "BLOCKED"]
+
+
+def test_plugin_active_result_rejects_contradictory_passing_browser_evidence() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-agent-results-") as tmp:
+        tmp_path = Path(tmp)
+
+        def hide_settings_screen(_ref_gate: Path, target_gate: Path, _context: dict) -> None:
+            payload = read_json(target_gate)
+            payload["evidence"]["settings_screen_present"] = False
+            write_json(target_gate, payload)
+
+        result, payload = build_plugin_active_test_result(tmp_path, hide_settings_screen)
+
+        assert result.returncode == 0, result.stderr
+        assert payload["parity_verdict"] == "BLOCKED"
+        assert payload["store_results"][1]["verdict"] == "BLOCKED"
+
+
+def test_plugin_active_result_rejects_stale_context_binding() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-agent-results-") as tmp:
+        tmp_path = Path(tmp)
+
+        def stale_context(_ref_gate: Path, target_gate: Path, _context: dict) -> None:
+            payload = read_json(target_gate)
+            payload["context_sha256"] = "sha256:" + "0" * 64
+            write_json(target_gate, payload)
+
+        result, payload = build_plugin_active_test_result(tmp_path, stale_context)
+
+        assert result.returncode == 0, result.stderr
+        assert payload["parity_verdict"] == "BLOCKED"
+        assert payload["store_results"][1]["verdict"] == "BLOCKED"
+
+
+def test_plugin_active_result_rejects_browser_rollup_raw_mismatch() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-agent-results-") as tmp:
+        tmp_path = Path(tmp)
+
+        def tamper_embedded_browser(_ref_gate: Path, target_gate: Path, _context: dict) -> None:
+            payload = read_json(target_gate)
+            payload["evidence"]["page"]["settingsStoreSelectable"] = False
+            write_json(target_gate, payload)
+
+        result, payload = build_plugin_active_test_result(tmp_path, tamper_embedded_browser)
+
+        assert result.returncode == 0, result.stderr
+        assert payload["parity_verdict"] == "BLOCKED"
+        assert payload["store_results"][1]["verdict"] == "BLOCKED"
+
+
+def test_plugin_active_result_rejects_failed_target_restore() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-agent-results-") as tmp:
+        tmp_path = Path(tmp)
+
+        def fail_restore(_ref_gate: Path, target_gate: Path, _context: dict) -> None:
+            restore = target_gate.parent / "plugin-active-settings-restore.json"
+            payload = read_json(restore)
+            payload["success"] = False
+            payload["errors"] = ["fixture did not restore"]
+            write_json(restore, payload)
+
+        result, payload = build_plugin_active_test_result(tmp_path, fail_restore)
+
+        assert result.returncode == 0, result.stderr
+        assert payload["parity_verdict"] == "BLOCKED"
+        assert payload["store_results"][1]["verdict"] == "BLOCKED"
+
+
+def test_plugin_active_result_rejects_empty_target_native_candidate_set() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-agent-results-") as tmp:
+        tmp_path = Path(tmp)
+
+        def empty_candidate(_ref_gate: Path, target_gate: Path, _context: dict) -> None:
+            snapshot = target_gate.parent / "plugin-active-settings-snapshot.json"
+            payload = read_json(snapshot)
+            payload["candidate_mu_plugins"] = []
+            write_json(snapshot, payload)
+            refresh_plugin_active_manifest(target_gate)
+
+        result, payload = build_plugin_active_test_result(tmp_path, empty_candidate)
+
+        assert result.returncode == 0, result.stderr
+        assert payload["parity_verdict"] == "BLOCKED"
+        assert payload["store_results"][1]["verdict"] == "BLOCKED"
+
+
+def test_plugin_active_result_rejects_malformed_target_native_candidate() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-agent-results-") as tmp:
+        tmp_path = Path(tmp)
+
+        def malformed_candidate(_ref_gate: Path, target_gate: Path, _context: dict) -> None:
+            snapshot = target_gate.parent / "plugin-active-settings-snapshot.json"
+            payload = read_json(snapshot)
+            payload["candidate_mu_plugins"] = [
+                {
+                    "path": "../native-payments-enable.php",
+                    "disabled_path": "../native-payments-enable.php.disabled",
+                    "sha256": "not-a-digest",
+                }
+            ]
+            write_json(snapshot, payload)
+            refresh_plugin_active_manifest(target_gate)
+
+        result, payload = build_plugin_active_test_result(tmp_path, malformed_candidate)
+
+        assert result.returncode == 0, result.stderr
+        assert payload["parity_verdict"] == "BLOCKED"
+        assert payload["store_results"][1]["verdict"] == "BLOCKED"
+
+
+def test_plugin_active_result_rejects_lifecycle_snapshot_digest_mismatch() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-agent-results-") as tmp:
+        tmp_path = Path(tmp)
+
+        def wrong_snapshot_digest(_ref_gate: Path, target_gate: Path, _context: dict) -> None:
+            stage = target_gate.parent / "plugin-active-settings-stage.json"
+            payload = read_json(stage)
+            payload["snapshot_sha256"] = "sha256:" + "0" * 64
+            write_json(stage, payload)
+            refresh_plugin_active_manifest(target_gate)
+
+        result, payload = build_plugin_active_test_result(tmp_path, wrong_snapshot_digest)
+
+        assert result.returncode == 0, result.stderr
+        assert payload["parity_verdict"] == "BLOCKED"
+        assert payload["store_results"][1]["verdict"] == "BLOCKED"
+
+
+def test_plugin_active_result_rejects_wrong_staged_runtime_owner() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-agent-results-") as tmp:
+        tmp_path = Path(tmp)
+
+        def wrong_runtime_owner(_ref_gate: Path, target_gate: Path, _context: dict) -> None:
+            stage = target_gate.parent / "plugin-active-settings-stage.json"
+            payload = read_json(stage)
+            payload["runtime_owner"] = "native"
+            write_json(stage, payload)
+            refresh_plugin_active_manifest(target_gate)
+
+        result, payload = build_plugin_active_test_result(tmp_path, wrong_runtime_owner)
+
+        assert result.returncode == 0, result.stderr
+        assert payload["parity_verdict"] == "BLOCKED"
+        assert payload["store_results"][1]["verdict"] == "BLOCKED"
+
+
+def test_plugin_active_result_rejects_artifact_hash_mismatch() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-agent-results-") as tmp:
+        tmp_path = Path(tmp)
+
+        def tamper_log(_ref_gate: Path, target_gate: Path, _context: dict) -> None:
+            (target_gate.parent / "plugin-active-settings.playwriter.log").write_text(
+                "tampered after capture\n", encoding="utf-8"
+            )
+
+        result, payload = build_plugin_active_test_result(tmp_path, tamper_log)
+
+        assert result.returncode == 0, result.stderr
+        assert payload["parity_verdict"] == "BLOCKED"
+        assert payload["store_results"][1]["verdict"] == "BLOCKED"
+
+
+def test_plugin_active_result_rejects_invalid_screenshot() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-agent-results-") as tmp:
+        tmp_path = Path(tmp)
+
+        def truncate_screenshot(_ref_gate: Path, target_gate: Path, _context: dict) -> None:
+            (target_gate.parent / "plugin-active-settings.png").write_bytes(b"not a screenshot")
+
+        result, payload = build_plugin_active_test_result(tmp_path, truncate_screenshot)
+
+        assert result.returncode == 0, result.stderr
+        assert payload["parity_verdict"] == "BLOCKED"
+        assert payload["store_results"][1]["verdict"] == "BLOCKED"
+
+
+def test_plugin_active_result_rejects_png_with_invalid_image_data() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-agent-results-") as tmp:
+        tmp_path = Path(tmp)
+
+        def corrupt_screenshot(_ref_gate: Path, target_gate: Path, _context: dict) -> None:
+            corrupt_png_idat(target_gate.parent / "plugin-active-settings.png")
+            refresh_plugin_active_manifest(target_gate)
+
+        result, payload = build_plugin_active_test_result(tmp_path, corrupt_screenshot)
+
+        assert result.returncode == 0, result.stderr
+        assert payload["parity_verdict"] == "BLOCKED"
+        assert payload["store_results"][1]["verdict"] == "BLOCKED"
+
+
+def test_plugin_active_result_rejects_png_with_duplicate_ihdr() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-agent-results-") as tmp:
+        tmp_path = Path(tmp)
+
+        def duplicate_ihdr(_ref_gate: Path, target_gate: Path, _context: dict) -> None:
+            duplicate_png_ihdr(target_gate.parent / "plugin-active-settings.png")
+            refresh_plugin_active_manifest(target_gate)
+
+        result, payload = build_plugin_active_test_result(tmp_path, duplicate_ihdr)
+
+        assert result.returncode == 0, result.stderr
+        assert payload["parity_verdict"] == "BLOCKED"
+        assert payload["store_results"][1]["verdict"] == "BLOCKED"
+
+
+def test_plugin_active_result_rejects_cross_field_asset_mismatch() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-agent-results-") as tmp:
+        tmp_path = Path(tmp)
+
+        def contradict_assets(_ref_gate: Path, target_gate: Path, _context: dict) -> None:
+            payload = read_json(target_gate)
+            payload["evidence"]["page"]["pluginSettingsScriptUrls"] = []
+            write_json(target_gate.parent / "plugin-active-settings.json", payload["evidence"])
+            write_json(target_gate, payload)
+            refresh_plugin_active_manifest(target_gate)
+
+        result, payload = build_plugin_active_test_result(tmp_path, contradict_assets)
+
+        assert result.returncode == 0, result.stderr
+        assert payload["parity_verdict"] == "BLOCKED"
+        assert payload["store_results"][1]["verdict"] == "BLOCKED"
+
+
+def test_plugin_active_result_rejects_settings_asset_suffix_confusion() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-agent-results-") as tmp:
+        tmp_path = Path(tmp)
+
+        def confuse_asset_suffixes(_ref_gate: Path, target_gate: Path, _context: dict) -> None:
+            payload = read_json(target_gate)
+            script = (
+                "http://store8889.localhost:8889/wp-content/plugins/woocommerce-payments/"
+                "dist/settings-attacker.css?fake=.js"
+            )
+            style = (
+                "http://store8889.localhost:8889/wp-content/plugins/woocommerce-payments/"
+                "dist/settings-attacker.js?fake=.css"
+            )
+            payload["evidence"]["plugin_settings_script_urls"] = [script]
+            payload["evidence"]["plugin_settings_style_urls"] = [style]
+            payload["evidence"]["page"]["pluginSettingsScriptUrls"] = [script]
+            payload["evidence"]["page"]["pluginSettingsStyleUrls"] = [style]
+            write_json(target_gate.parent / "plugin-active-settings.json", payload["evidence"])
+            write_json(target_gate, payload)
+            refresh_plugin_active_manifest(target_gate)
+
+        result, payload = build_plugin_active_test_result(tmp_path, confuse_asset_suffixes)
+
+        assert result.returncode == 0, result.stderr
+        assert payload["parity_verdict"] == "BLOCKED"
+        assert payload["store_results"][1]["verdict"] == "BLOCKED"
+
+
+def test_plugin_active_result_rejects_fatal_token_smuggled_in_console_log() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-agent-results-") as tmp:
+        tmp_path = Path(tmp)
+
+        def smuggle_fatal_log(_ref_gate: Path, target_gate: Path, _context: dict) -> None:
+            payload = read_json(target_gate)
+            payload["evidence"]["logs"] = [
+                "[log] JQMIGRATE: Migrate is installed with logging active; Uncaught TypeError"
+            ]
+            write_json(target_gate.parent / "plugin-active-settings.json", payload["evidence"])
+            write_json(target_gate, payload)
+            refresh_plugin_active_manifest(target_gate)
+
+        result, payload = build_plugin_active_test_result(tmp_path, smuggle_fatal_log)
+
+        assert result.returncode == 0, result.stderr
+        assert payload["parity_verdict"] == "BLOCKED"
+        assert payload["store_results"][1]["verdict"] == "BLOCKED"
+
+
+def test_plugin_active_result_rejects_structured_console_error() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-agent-results-") as tmp:
+        tmp_path = Path(tmp)
+
+        def smuggle_console_error(_ref_gate: Path, target_gate: Path, _context: dict) -> None:
+            payload = read_json(target_gate)
+            payload["evidence"]["logs"] = [
+                {"type": "error", "text": "A generic browser console problem"}
+            ]
+            write_json(target_gate.parent / "plugin-active-settings.json", payload["evidence"])
+            write_json(target_gate, payload)
+            refresh_plugin_active_manifest(target_gate)
+
+        result, payload = build_plugin_active_test_result(tmp_path, smuggle_console_error)
+
+        assert result.returncode == 0, result.stderr
+        assert payload["parity_verdict"] == "BLOCKED"
+        assert payload["store_results"][1]["verdict"] == "BLOCKED"
+
+
+def test_plugin_active_result_rejects_arbitrary_fatal_console_array_entry() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-agent-results-") as tmp:
+        tmp_path = Path(tmp)
+
+        def fake_fatal_entry(_ref_gate: Path, target_gate: Path, _context: dict) -> None:
+            payload = read_json(target_gate)
+            failure = "fatal browser console errors were captured"
+            payload["status"] = "fail"
+            payload["failures"] = [failure]
+            payload["evidence"]["status"] = "fail"
+            payload["evidence"]["fatal_console_errors"] = [
+                {"type": "log", "text": "ordinary console note"}
+            ]
+            payload["evidence"]["failures"] = [failure]
+            write_json(target_gate.parent / "plugin-active-settings.json", payload["evidence"])
+            (target_gate.parent / "plugin-active-settings-failures.txt").write_text(
+                failure + "\n", encoding="utf-8"
+            )
+            write_json(target_gate, payload)
+            refresh_plugin_active_manifest(target_gate)
+
+        result, payload = build_plugin_active_test_result(tmp_path, fake_fatal_entry)
+
+        assert result.returncode == 0, result.stderr
+        assert payload["parity_verdict"] == "BLOCKED"
+        assert payload["store_results"][1]["verdict"] == "BLOCKED"
+
+
+def test_plugin_active_result_preserves_valid_product_failure() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-agent-results-") as tmp:
+        tmp_path = Path(tmp)
+
+        def record_blank_screen(_ref_gate: Path, target_gate: Path, _context: dict) -> None:
+            payload = read_json(target_gate)
+            failure = "WooPayments settings screen is not present"
+            payload["status"] = "fail"
+            payload["failures"] = [failure]
+            payload["evidence"]["status"] = "fail"
+            payload["evidence"]["settings_screen_present"] = False
+            payload["evidence"]["page"]["settingsScreenPresent"] = False
+            payload["evidence"]["failures"] = [failure]
+            write_json(target_gate.parent / "plugin-active-settings.json", payload["evidence"])
+            (target_gate.parent / "plugin-active-settings-failures.txt").write_text(
+                failure + "\n", encoding="utf-8"
+            )
+            write_json(target_gate, payload)
+            refresh_plugin_active_manifest(target_gate)
+
+        result, payload = build_plugin_active_test_result(tmp_path, record_blank_screen)
+
+        assert result.returncode == 0, result.stderr
+        assert payload["parity_verdict"] == "FAIL - UX"
+        assert payload["store_results"][1]["verdict"] == "FAIL - functional"
+
+
+def test_plugin_active_result_preserves_native_asset_hijack_failure() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-agent-results-") as tmp:
+        tmp_path = Path(tmp)
+
+        def record_native_hijack(_ref_gate: Path, target_gate: Path, _context: dict) -> None:
+            payload = read_json(target_gate)
+            failure = "native WooPayments settings assets were observed"
+            native_asset = (
+                "http://store8889.localhost:8889/wp-content/plugins/woocommerce/"
+                "assets/client/admin/chunks/settings-payments-woopayments.js"
+            )
+            payload["status"] = "fail"
+            payload["failures"] = ["browser evidence reported failure status", failure]
+            payload["evidence"]["status"] = "fail"
+            payload["evidence"]["native_settings_asset_urls"] = [native_asset]
+            payload["evidence"]["page"]["nativeSettingsAssetUrls"] = [native_asset]
+            payload["evidence"]["failures"] = [failure]
+            write_json(target_gate.parent / "plugin-active-settings.json", payload["evidence"])
+            (target_gate.parent / "plugin-active-settings-failures.txt").write_text(
+                "\n".join(payload["failures"]) + "\n", encoding="utf-8"
+            )
+            write_json(target_gate, payload)
+            refresh_plugin_active_manifest(target_gate)
+
+        result, payload = build_plugin_active_test_result(tmp_path, record_native_hijack)
+
+        assert result.returncode == 0, result.stderr
+        assert payload["parity_verdict"] == "FAIL - UX"
+        assert payload["store_results"][1]["verdict"] == "FAIL - functional"
+
+
+def test_plugin_active_result_rejects_arbitrary_native_asset_failure() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-agent-results-") as tmp:
+        tmp_path = Path(tmp)
+
+        def fake_native_asset(_ref_gate: Path, target_gate: Path, _context: dict) -> None:
+            payload = read_json(target_gate)
+            failure = "native WooPayments settings assets were observed"
+            arbitrary_asset = "http://store8889.localhost:8889/wp-content/themes/store/style.css"
+            payload["status"] = "fail"
+            payload["failures"] = [failure]
+            payload["evidence"]["status"] = "fail"
+            payload["evidence"]["native_settings_asset_urls"] = [arbitrary_asset]
+            payload["evidence"]["page"]["nativeSettingsAssetUrls"] = [arbitrary_asset]
+            payload["evidence"]["failures"] = [failure]
+            write_json(target_gate.parent / "plugin-active-settings.json", payload["evidence"])
+            (target_gate.parent / "plugin-active-settings-failures.txt").write_text(
+                failure + "\n", encoding="utf-8"
+            )
+            write_json(target_gate, payload)
+            refresh_plugin_active_manifest(target_gate)
+
+        result, payload = build_plugin_active_test_result(tmp_path, fake_native_asset)
+
+        assert result.returncode == 0, result.stderr
+        assert payload["parity_verdict"] == "BLOCKED"
+        assert payload["store_results"][1]["verdict"] == "BLOCKED"
+
+
+def test_plugin_active_result_rejects_unbacked_self_declared_failure() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-agent-results-") as tmp:
+        tmp_path = Path(tmp)
+
+        def declare_failure(_ref_gate: Path, target_gate: Path, _context: dict) -> None:
+            payload = read_json(target_gate)
+            failure = "browser evidence reported failure status"
+            payload["status"] = "fail"
+            payload["failures"] = [failure]
+            payload["evidence"]["status"] = "fail"
+            payload["evidence"]["failures"] = [failure]
+            write_json(target_gate.parent / "plugin-active-settings.json", payload["evidence"])
+            (target_gate.parent / "plugin-active-settings-failures.txt").write_text(
+                failure + "\n", encoding="utf-8"
+            )
+            write_json(target_gate, payload)
+            refresh_plugin_active_manifest(target_gate)
+
+        result, payload = build_plugin_active_test_result(tmp_path, declare_failure)
+
+        assert result.returncode == 0, result.stderr
+        assert payload["parity_verdict"] == "BLOCKED"
+        assert payload["store_results"][1]["verdict"] == "BLOCKED"
+
+
+def test_plugin_active_result_rejects_nonfailure_response_as_product_failure() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-agent-results-") as tmp:
+        tmp_path = Path(tmp)
+
+        def fake_failed_response(_ref_gate: Path, target_gate: Path, _context: dict) -> None:
+            payload = read_json(target_gate)
+            failure = "failed browser responses were captured"
+            response = {
+                "url": (
+                    "http://store8889.localhost:8889/wp-admin/admin.php?"
+                    "page=wc-settings&tab=checkout&section=woocommerce_payments"
+                ),
+                "status": 200,
+                "statusText": "OK",
+            }
+            payload["status"] = "fail"
+            payload["failures"] = [failure]
+            payload["evidence"]["status"] = "fail"
+            payload["evidence"]["failed_responses"] = [response]
+            payload["evidence"]["all_failed_responses"] = [response]
+            payload["evidence"]["failures"] = [failure]
+            write_json(target_gate.parent / "plugin-active-settings.json", payload["evidence"])
+            (target_gate.parent / "plugin-active-settings-failures.txt").write_text(
+                failure + "\n", encoding="utf-8"
+            )
+            write_json(target_gate, payload)
+            refresh_plugin_active_manifest(target_gate)
+
+        result, payload = build_plugin_active_test_result(tmp_path, fake_failed_response)
+
+        assert result.returncode == 0, result.stderr
+        assert payload["parity_verdict"] == "BLOCKED"
+        assert payload["store_results"][1]["verdict"] == "BLOCKED"
+
+
+def test_plugin_active_result_treats_unauthenticated_capture_as_blocked() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-agent-results-") as tmp:
+        tmp_path = Path(tmp)
+
+        def expire_session(_ref_gate: Path, target_gate: Path, _context: dict) -> None:
+            payload = read_json(target_gate)
+            failures = [
+                "authenticated wp-admin settings page did not render",
+                "WooPayments settings screen is not present",
+            ]
+            payload["status"] = "fail"
+            payload["failures"] = failures
+            payload["evidence"]["status"] = "fail"
+            payload["evidence"]["authenticated_wp_admin"] = False
+            payload["evidence"]["settings_screen_present"] = False
+            payload["evidence"]["failures"] = failures
+            payload["evidence"]["page"]["finalUrl"] = (
+                "http://store8889.localhost:8889/wp-login.php"
+            )
+            payload["evidence"]["page"]["hasLoginForm"] = True
+            payload["evidence"]["page"]["settingsScreenPresent"] = False
+            write_json(target_gate.parent / "plugin-active-settings.json", payload["evidence"])
+            (target_gate.parent / "plugin-active-settings-failures.txt").write_text(
+                "\n".join(failures) + "\n", encoding="utf-8"
+            )
+            write_json(target_gate, payload)
+            refresh_plugin_active_manifest(target_gate)
+
+        result, payload = build_plugin_active_test_result(tmp_path, expire_session)
+
+        assert result.returncode == 0, result.stderr
+        assert payload["parity_verdict"] == "BLOCKED"
+        assert payload["store_results"][1]["verdict"] == "BLOCKED"
+
+
+def test_plugin_active_result_rejects_contradictory_authenticated_failure() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-agent-results-") as tmp:
+        tmp_path = Path(tmp)
+
+        def contradict_authentication(_ref_gate: Path, target_gate: Path, _context: dict) -> None:
+            payload = read_json(target_gate)
+            failure = "WooPayments settings screen is not present"
+            payload["status"] = "fail"
+            payload["failures"] = [failure]
+            payload["evidence"]["status"] = "fail"
+            payload["evidence"]["settings_screen_present"] = False
+            payload["evidence"]["failures"] = [failure]
+            payload["evidence"]["page"]["settingsScreenPresent"] = False
+            payload["evidence"]["page"]["hasLoginForm"] = True
+            payload["evidence"]["page"]["hasAdminBody"] = False
+            write_json(target_gate.parent / "plugin-active-settings.json", payload["evidence"])
+            (target_gate.parent / "plugin-active-settings-failures.txt").write_text(
+                failure + "\n", encoding="utf-8"
+            )
+            write_json(target_gate, payload)
+            refresh_plugin_active_manifest(target_gate)
+
+        result, payload = build_plugin_active_test_result(tmp_path, contradict_authentication)
+
+        assert result.returncode == 0, result.stderr
+        assert payload["parity_verdict"] == "BLOCKED"
+        assert payload["store_results"][1]["verdict"] == "BLOCKED"
+
+
+def test_plugin_active_result_rejects_contradictory_asset_failure() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-agent-results-") as tmp:
+        tmp_path = Path(tmp)
+
+        def contradict_assets(_ref_gate: Path, target_gate: Path, _context: dict) -> None:
+            payload = read_json(target_gate)
+            failure = "standalone WooPayments settings assets were not observed"
+            payload["status"] = "fail"
+            payload["failures"] = [failure]
+            payload["evidence"]["status"] = "fail"
+            payload["evidence"]["plugin_settings_assets_present"] = False
+            payload["evidence"]["page"]["pluginSettingsAssetsPresent"] = False
+            payload["evidence"]["failures"] = [failure]
+            write_json(target_gate.parent / "plugin-active-settings.json", payload["evidence"])
+            (target_gate.parent / "plugin-active-settings-failures.txt").write_text(
+                failure + "\n", encoding="utf-8"
+            )
+            write_json(target_gate, payload)
+            refresh_plugin_active_manifest(target_gate)
+
+        result, payload = build_plugin_active_test_result(tmp_path, contradict_assets)
+
+        assert result.returncode == 0, result.stderr
+        assert payload["parity_verdict"] == "BLOCKED"
+        assert payload["store_results"][1]["verdict"] == "BLOCKED"
+
+
+def test_plugin_active_result_preserves_blank_screen_product_failure_with_small_valid_png() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-agent-results-") as tmp:
+        tmp_path = Path(tmp)
+
+        def record_blank_screen(_ref_gate: Path, target_gate: Path, _context: dict) -> None:
+            payload = read_json(target_gate)
+            failure = "WooPayments settings screen is not present"
+            payload["status"] = "fail"
+            payload["failures"] = [failure]
+            payload["evidence"]["status"] = "fail"
+            payload["evidence"]["settings_screen_present"] = False
+            payload["evidence"]["page"]["settingsScreenPresent"] = False
+            payload["evidence"]["failures"] = [failure]
+            write_blank_test_png(target_gate.parent / "plugin-active-settings.png")
+            write_json(target_gate.parent / "plugin-active-settings.json", payload["evidence"])
+            (target_gate.parent / "plugin-active-settings-failures.txt").write_text(
+                failure + "\n", encoding="utf-8"
+            )
+            write_json(target_gate, payload)
+            refresh_plugin_active_manifest(target_gate)
+
+        result, payload = build_plugin_active_test_result(tmp_path, record_blank_screen)
+
+        assert (target_png := tmp_path / "target" / "plugin-active-settings.png").stat().st_size < 20_000
+        assert target_png.stat().st_size > 0
+        assert result.returncode == 0, result.stderr
+        assert payload["parity_verdict"] == "FAIL - UX"
+        assert payload["store_results"][1]["verdict"] == "FAIL - functional"
 
 
 def test_lpm_gate_blocked_result_stays_blocked_with_method_context() -> None:

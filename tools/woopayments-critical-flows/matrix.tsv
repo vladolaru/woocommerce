@@ -54,7 +54,7 @@ MA-07	View transaction details	A (+D)	comparable	PENDING
 MA-08	View payouts (+ details)	D+A	comparable	PENDING
 MA-09	Large-dataset perf	D	comparable	PASS (runner-verified 2026-07-16: exactly 500 unique rows/store; exhaustive pagination and exact charge/date filters; all native measured calls 0.79–0.93x the reference median; clean logs; run 20260716T100225Z-76348-partial)
 MA-10	Localized WooPayments order notes	D	comparable	BLOCKED (runner-verified 2026-07-16: reference same-note-family oracle unwired; native German charge/refund/dispute implementation probe passed with provider-bound merchant-note markers and clean logs, but the installed WooCommerce release catalog leaves all three exact message IDs in English; run 20260716T105904Z-7160-partial)
-MA-11	Plugin-active WooPayments settings screen	A (+D)	comparable	PENDING
+MA-11	Plugin-active WooPayments settings screen	A (+D)	comparable	PASS
 MD-01	Created: note + on-hold + notify	D+A	comparable	PENDING
 MD-02	Save evidence	A (+D)	comparable	PENDING
 MD-03	Winning dispute	D	comparable	PENDING

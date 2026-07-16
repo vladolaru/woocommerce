@@ -74,10 +74,13 @@ function isFatalConsoleError( log ) {
 	if ( isDuplicateStoreError( log ) ) {
 		return false;
 	}
+	if ( /uncaught|fatal|exception|typeerror|referenceerror/i.test( text ) ) {
+		return true;
+	}
 	if ( /JQMIGRATE|Permissions policy violation: unload/i.test( text ) ) {
 		return false;
 	}
-	return type === 'error' || type === 'pageerror' || /uncaught|fatal|exception|typeerror|referenceerror/i.test( text );
+	return type === 'error' || type === 'pageerror';
 }
 
 function decodedUrlText( value ) {
@@ -264,6 +267,9 @@ async function captureEvidence( page, failedResponses ) {
 	}
 	if ( ! adminState.pluginSettingsAssetsPresent ) {
 		failures.push( 'standalone WooPayments settings assets were not observed' );
+	}
+	if ( adminState.nativeSettingsAssetUrls.length > 0 ) {
+		failures.push( 'native WooPayments settings assets were observed' );
 	}
 	if ( duplicateStoreErrors.length > 0 ) {
 		failures.push( 'duplicate wc/payments/settings store registration error' );

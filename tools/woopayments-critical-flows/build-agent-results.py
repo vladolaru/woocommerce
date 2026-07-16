@@ -9,10 +9,17 @@ runner's `{flow, store_results, parity_verdict, regression_note}` contract.
 from __future__ import annotations
 
 import argparse
+import binascii
+from collections import Counter
+import hashlib
 import json
+import re
+import struct
 import sys
-from pathlib import Path
+import zlib
+from pathlib import Path, PurePosixPath
 from typing import Any
+from urllib.parse import unquote
 
 from evidence_context import (
     EvidenceContextError,
@@ -28,6 +35,22 @@ FLOW_SC04 = "SC-04-saved-card"
 FLOW_SC14 = "SC-14-lpm-wave-1-checkout"
 FLOW_SS10 = "SS-10-sepa-token-renewal-cutover"
 SC04_SURFACES = ("classic", "blocks", "sca_classic", "sca_blocks")
+PLUGIN_ACTIVE_STORES = {
+    "ref": ("reference", "http://localhost:8082"),
+    "target": ("target", "http://store8889.localhost:8889"),
+}
+PLUGIN_ACTIVE_BASE_ARTIFACTS = {
+    "plugin-active-settings-blockers.txt",
+    "plugin-active-settings-failures.txt",
+    "plugin-active-settings.json",
+    "plugin-active-settings.playwriter.log",
+    "plugin-active-settings.png",
+}
+PLUGIN_ACTIVE_TARGET_ARTIFACTS = {
+    "plugin-active-settings-restore.json",
+    "plugin-active-settings-snapshot.json",
+    "plugin-active-settings-stage.json",
+}
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -64,7 +87,483 @@ def verdict_for_status(status: str, *, pass_verdict: str = "PASS") -> str:
     return "BLOCKED"
 
 
-def plugin_active_store_result(store: str, gate_path: Path | None) -> dict[str, Any]:
+def sha256_file(path: Path) -> str:
+    return f"sha256:{hashlib.sha256(path.read_bytes()).hexdigest()}"
+
+
+def validate_png_screenshot(path: Path) -> None:
+    data = path.read_bytes()
+    if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise ValueError("plugin-active screenshot is not a PNG")
+
+    offset = 8
+    chunks: list[tuple[bytes, bytes]] = []
+    known_critical_chunks = {b"IHDR", b"PLTE", b"IDAT", b"IEND"}
+    idat_started = False
+    idat_ended = False
+    while offset < len(data):
+        if offset + 12 > len(data):
+            raise ValueError("plugin-active screenshot has a truncated PNG chunk")
+        length = struct.unpack(">I", data[offset : offset + 4])[0]
+        chunk_type = data[offset + 4 : offset + 8]
+        chunk_end = offset + 12 + length
+        if chunk_end > len(data):
+            raise ValueError("plugin-active screenshot has a truncated PNG payload")
+        chunk_data = data[offset + 8 : offset + 8 + length]
+        if not all(65 <= byte <= 90 or 97 <= byte <= 122 for byte in chunk_type):
+            raise ValueError("plugin-active screenshot has an invalid PNG chunk type")
+        if not chunk_type[0] & 0x20 and chunk_type not in known_critical_chunks:
+            raise ValueError("plugin-active screenshot has an unknown critical PNG chunk")
+        if chunk_type == b"IDAT":
+            if not chunk_data or idat_ended:
+                raise ValueError("plugin-active screenshot has invalid or noncontiguous PNG image data")
+            idat_started = True
+        elif idat_started:
+            idat_ended = True
+        expected_crc = struct.unpack(">I", data[offset + 8 + length : chunk_end])[0]
+        actual_crc = binascii.crc32(chunk_type + chunk_data) & 0xFFFFFFFF
+        if actual_crc != expected_crc:
+            raise ValueError("plugin-active screenshot has an invalid PNG checksum")
+        chunks.append((chunk_type, chunk_data))
+        offset = chunk_end
+        if chunk_type == b"IEND":
+            break
+
+    chunk_types = [chunk_type for chunk_type, _chunk_data in chunks]
+    if (
+        offset != len(data)
+        or not chunks
+        or chunks[0][0] != b"IHDR"
+        or chunks[-1][0] != b"IEND"
+        or chunk_types.count(b"IHDR") != 1
+        or chunk_types.count(b"IEND") != 1
+        or chunk_types.count(b"PLTE") > 1
+        or chunks[-1][1]
+    ):
+        raise ValueError("plugin-active screenshot has an invalid PNG structure")
+    if len(chunks[0][1]) != 13 or not any(chunk_type == b"IDAT" for chunk_type, _data in chunks):
+        raise ValueError("plugin-active screenshot is missing required PNG data")
+    width, height, bit_depth, color_type, compression, filter_method, interlace = struct.unpack(
+        ">IIBBBBB", chunks[0][1]
+    )
+    if width < 800 or height < 450 or width > 5_000 or height > 5_000:
+        raise ValueError("plugin-active screenshot dimensions are outside the supported 800x450 to 5000x5000 range")
+    if (bit_depth, color_type, compression, filter_method, interlace) != (8, 2, 0, 0, 0):
+        raise ValueError("plugin-active screenshot does not use the expected non-interlaced RGB PNG format")
+    if b"PLTE" in chunk_types:
+        palette_index = chunk_types.index(b"PLTE")
+        palette_data = chunks[palette_index][1]
+        if (
+            palette_index > chunk_types.index(b"IDAT")
+            or not palette_data
+            or len(palette_data) > 768
+            or len(palette_data) % 3
+        ):
+            raise ValueError("plugin-active screenshot has an invalid PNG palette")
+    row_size = 1 + width * 3
+    expected_size = row_size * height
+    decompressor = zlib.decompressobj()
+    try:
+        pixels = decompressor.decompress(
+            b"".join(chunk_data for chunk_type, chunk_data in chunks if chunk_type == b"IDAT"),
+            expected_size + 1,
+        )
+    except zlib.error as exc:
+        raise ValueError("plugin-active screenshot has invalid compressed image data") from exc
+    if (
+        len(pixels) != expected_size
+        or not decompressor.eof
+        or decompressor.unconsumed_tail
+        or decompressor.unused_data
+        or any(pixels[offset] > 4 for offset in range(0, expected_size, row_size))
+    ):
+        raise ValueError("plugin-active screenshot image data does not match its dimensions")
+
+
+def validate_plugin_active_responses(evidence: dict[str, Any], target_url: str) -> None:
+    response_groups = {
+        key: evidence[key]
+        for key in ("all_failed_responses", "failed_responses", "blocked_responses")
+    }
+    for name, responses in response_groups.items():
+        for response in responses:
+            if not isinstance(response, dict) or set(response) != {"status", "url"}:
+                raise ValueError(f"plugin-active browser evidence has malformed {name}")
+            status = response.get("status")
+            url = response.get("url")
+            if (
+                not isinstance(status, int)
+                or isinstance(status, bool)
+                or not 400 <= status <= 599
+                or not isinstance(url, str)
+                or not url.startswith(target_url + "/")
+            ):
+                raise ValueError(f"plugin-active browser evidence has invalid {name}")
+
+    def response_key(response: dict[str, Any]) -> str:
+        return json.dumps(response, sort_keys=True, separators=(",", ":"))
+
+    if Counter(map(response_key, response_groups["all_failed_responses"])) != Counter(
+        map(
+            response_key,
+            [*response_groups["failed_responses"], *response_groups["blocked_responses"]],
+        )
+    ):
+        raise ValueError("plugin-active browser response partitions are inconsistent")
+
+    def is_optional(response: dict[str, Any]) -> bool:
+        decoded_url = str(response["url"])
+        for _attempt in range(3):
+            decoded = unquote(decoded_url)
+            if decoded == decoded_url:
+                break
+            decoded_url = decoded
+        return response["status"] in {401, 403, 500} and bool(
+            re.search(r"/wc/v3/payments/deposits/overview-all\b", decoded_url)
+        )
+
+    if any(is_optional(response) for response in response_groups["failed_responses"]):
+        raise ValueError("plugin-active optional response was misclassified as a product failure")
+    if any(not is_optional(response) for response in response_groups["blocked_responses"]):
+        raise ValueError("plugin-active hard response failure was misclassified as optional")
+
+
+def validate_plugin_active_artifacts(store: str, gate_path: Path, payload: dict[str, Any]) -> list[Path]:
+    expected_names = set(PLUGIN_ACTIVE_BASE_ARTIFACTS)
+    if store == "target":
+        expected_names.update(PLUGIN_ACTIVE_TARGET_ARTIFACTS)
+
+    artifacts = payload.get("artifacts")
+    if not isinstance(artifacts, list):
+        raise ValueError("plugin-active packet artifact manifest is missing")
+
+    base = gate_path.resolve().parent
+    artifact_paths: dict[str, Path] = {}
+    for artifact in artifacts:
+        if not isinstance(artifact, dict):
+            raise ValueError("plugin-active packet artifact entry is invalid")
+        path = Path(str(artifact.get("path", "")))
+        resolved = path.resolve()
+        if resolved.parent != base or resolved.name in artifact_paths:
+            raise ValueError("plugin-active packet artifact path escaped or was duplicated")
+        if not resolved.is_file() or artifact.get("sha256") != sha256_file(resolved):
+            raise ValueError(f"plugin-active packet artifact hash mismatch: {resolved.name}")
+        artifact_paths[resolved.name] = resolved
+    if set(artifact_paths) != expected_names:
+        raise ValueError("plugin-active packet artifact set is incomplete or unexpected")
+
+    browser = load_json(artifact_paths["plugin-active-settings.json"])
+    if browser != payload.get("evidence"):
+        raise ValueError("plugin-active rollup browser evidence differs from the raw artifact")
+    screenshot = artifact_paths["plugin-active-settings.png"]
+    if Path(str(browser.get("screenshot_path", ""))).resolve() != screenshot:
+        raise ValueError("plugin-active browser screenshot path does not match the packet")
+    validate_png_screenshot(screenshot)
+
+    if store == "target":
+        snapshot = load_json(artifact_paths["plugin-active-settings-snapshot.json"])
+        stage = load_json(artifact_paths["plugin-active-settings-stage.json"])
+        restore = load_json(artifact_paths["plugin-active-settings-restore.json"])
+        snapshot_sha256 = sha256_file(artifact_paths["plugin-active-settings-snapshot.json"])
+        if (
+            snapshot.get("schema") != "woopayments_plugin_active_fixture_snapshot.v1"
+            or snapshot.get("success") is not True
+            or snapshot.get("mode") != "snapshot-plugin-active"
+            or snapshot.get("errors") != []
+            or snapshot.get("was_plugin_active") is not False
+            or not isinstance(snapshot.get("candidate_mu_plugins"), list)
+            or not snapshot.get("candidate_mu_plugins")
+        ):
+            raise ValueError("plugin-active target snapshot is invalid")
+        seen_candidates: set[str] = set()
+        for candidate in snapshot["candidate_mu_plugins"]:
+            if not isinstance(candidate, dict):
+                raise ValueError("plugin-active target snapshot candidate is invalid")
+            source_value = candidate.get("path")
+            disabled_value = candidate.get("disabled_path")
+            digest = candidate.get("sha256")
+            source = PurePosixPath(str(source_value or ""))
+            if (
+                not source.is_absolute()
+                or ".." in source.parts
+                or source.suffix != ".php"
+                or source.parent.name != "mu-plugins"
+                or source.parent.parent.name != "wp-content"
+                or str(disabled_value or "") != str(source) + ".disabled-by-woopayments-merge"
+                or not isinstance(digest, str)
+                or not re.fullmatch(r"[0-9a-f]{64}", digest)
+                or str(source) in seen_candidates
+            ):
+                raise ValueError("plugin-active target snapshot candidate is malformed or duplicated")
+            seen_candidates.add(str(source))
+        if (
+            stage.get("success") is not True
+            or stage.get("mode") != "mutate-plugin-active"
+            or stage.get("errors") != []
+            or stage.get("wcpay_plugin_active") is not True
+            or stage.get("runtime_owner") != "plugin"
+            or stage.get("snapshot_sha256") != snapshot_sha256
+        ):
+            raise ValueError("plugin-active target stage is invalid")
+        if (
+            restore.get("success") is not True
+            or restore.get("mode") != "restore-plugin-active"
+            or restore.get("errors") != []
+            or restore.get("wcpay_plugin_active") is not False
+            or restore.get("runtime_owner") != "native"
+            or restore.get("snapshot_sha256") != snapshot_sha256
+        ):
+            raise ValueError("plugin-active target restoration is invalid")
+
+    return [artifact_paths[name] for name in sorted(artifact_paths)]
+
+
+def validate_plugin_active_packet(
+    store: str,
+    gate_path: Path,
+    payload: dict[str, Any],
+    context: dict[str, Any],
+) -> list[Path]:
+    role, target_url = PLUGIN_ACTIVE_STORES[store]
+    settings_url = f"{target_url}/wp-admin/admin.php?page=wc-settings&tab=checkout&section=woocommerce_payments"
+    if payload.get("schema") != "woopayments_plugin_active_settings_gate_rollup.v1":
+        raise ValueError("plugin-active gate schema is invalid")
+    if payload.get("runner_role") != role:
+        raise ValueError(f"plugin-active gate role is not {role}")
+    if payload.get("target_url") != target_url or payload.get("settings_url") != settings_url:
+        raise ValueError("plugin-active gate URL contract is invalid")
+    if payload.get("context_sha256") != context.get("context_sha256"):
+        raise ValueError("plugin-active gate context does not match the active aggregate context")
+    artifact_paths = validate_plugin_active_artifacts(store, gate_path, payload)
+    artifacts_by_name = {path.name: path for path in artifact_paths}
+    evidence = payload.get("evidence")
+    if not isinstance(evidence, dict):
+        raise ValueError("plugin-active browser evidence is invalid")
+    expected_common = {
+        "schema": "woopayments_plugin_active_settings_browser_evidence.v1",
+        "target_url": target_url,
+        "settings_url": settings_url,
+    }
+    for key, value in expected_common.items():
+        if evidence.get(key) != value:
+            raise ValueError(f"plugin-active browser evidence has invalid {key}")
+    for key in (
+        "plugin_settings_script_urls",
+        "plugin_settings_style_urls",
+        "native_settings_asset_urls",
+        "duplicate_store_errors",
+        "fatal_console_errors",
+        "all_failed_responses",
+        "failed_responses",
+        "blocked_responses",
+        "failures",
+        "blockers",
+        "logs",
+    ):
+        if not isinstance(evidence.get(key), list):
+            raise ValueError(f"plugin-active browser evidence has invalid {key}")
+    validate_plugin_active_responses(evidence, target_url)
+    derived_plugin_assets_present = bool(evidence["plugin_settings_script_urls"]) and evidence.get(
+        "plugin_settings_global_present"
+    ) is True
+    if evidence.get("plugin_settings_assets_present") is not derived_plugin_assets_present:
+        raise ValueError("plugin-active browser asset-presence state is contradictory")
+    page = evidence.get("page")
+    if not isinstance(page, dict) or page.get("finalUrl") != settings_url:
+        raise ValueError("plugin-active browser page did not remain on the canonical settings URL")
+    page_authenticated = (
+        page.get("hasLoginForm") is False
+        and page.get("hasAdminBody") is True
+        and page.get("hasAdminMenu") is True
+        and page.get("hasWpbodyContent") is True
+        and "/wp-admin/" in str(page.get("finalUrl") or "")
+    )
+    if evidence.get("authenticated_wp_admin") is not page_authenticated:
+        raise ValueError("plugin-active browser authentication state contradicts the page")
+    common_cross_fields = {
+        "settingsScreenPresent": "settings_screen_present",
+        "pluginSettingsAssetsPresent": "plugin_settings_assets_present",
+        "pluginSettingsGlobalPresent": "plugin_settings_global_present",
+        "pluginSettingsScriptUrls": "plugin_settings_script_urls",
+        "pluginSettingsStyleUrls": "plugin_settings_style_urls",
+        "nativeSettingsAssetUrls": "native_settings_asset_urls",
+    }
+    for page_key, evidence_key in common_cross_fields.items():
+        if page.get(page_key) != evidence.get(evidence_key):
+            raise ValueError(f"plugin-active browser page state has inconsistent {page_key}")
+
+    status = payload.get("status")
+    if status not in {"pass", "fail", "blocked"} or evidence.get("status") != status:
+        raise ValueError("plugin-active gate and browser statuses are invalid or inconsistent")
+    failures = payload.get("failures")
+    blockers = payload.get("blockers")
+    if not isinstance(failures, list) or not isinstance(blockers, list):
+        raise ValueError("plugin-active gate verdict details are invalid")
+    logs = evidence.get("logs")
+    if not isinstance(logs, list):
+        raise ValueError("plugin-active browser console log capture is missing")
+    log_details = [
+        (
+            str(log.get("text") or log.get("message") or ""),
+            str(log.get("type") or log.get("level") or "").lower(),
+        )
+        if isinstance(log, dict)
+        else (str(log), "")
+        for log in logs
+    ]
+    def is_duplicate_log(log_text: str) -> bool:
+        return bool(
+            re.search(r"wc/payments/settings", log_text, re.IGNORECASE)
+            and re.search(r"already\s+(?:registered|exists)|duplicate", log_text, re.IGNORECASE)
+        )
+
+    def is_fatal_log(log_text: str, log_type: str) -> bool:
+        if is_duplicate_log(log_text):
+            return False
+        if re.search(r"uncaught|fatal|exception|typeerror|referenceerror", log_text, re.IGNORECASE):
+            return True
+        if re.search(r"JQMIGRATE|Permissions policy violation: unload", log_text, re.IGNORECASE):
+            return False
+        return log_type in {"error", "pageerror"}
+
+    derived_duplicate_logs = [
+        log for log, (log_text, _log_type) in zip(logs, log_details) if is_duplicate_log(log_text)
+    ]
+    derived_fatal_logs = [
+        log for log, (log_text, log_type) in zip(logs, log_details) if is_fatal_log(log_text, log_type)
+    ]
+    if evidence["duplicate_store_errors"] != derived_duplicate_logs:
+        raise ValueError("plugin-active duplicate-store errors do not match captured logs")
+    if evidence["fatal_console_errors"] != derived_fatal_logs:
+        raise ValueError("plugin-active fatal console errors do not match captured logs")
+    has_fatal_log = bool(derived_fatal_logs)
+    has_duplicate_log = bool(derived_duplicate_logs)
+    native_asset_pattern = re.compile(
+        re.escape(target_url)
+        + r"/wp-content/plugins/woocommerce/assets/client/admin/chunks/"
+        + r"settings-payments-woopayments[^?#]*(?:[?#].*)?",
+        re.IGNORECASE,
+    )
+    if not all(
+        isinstance(url, str) and native_asset_pattern.fullmatch(url)
+        for url in evidence["native_settings_asset_urls"]
+    ):
+        raise ValueError("plugin-active native settings asset URL is invalid")
+    failure_lines = artifacts_by_name["plugin-active-settings-failures.txt"].read_text(encoding="utf-8").splitlines()
+    blocker_lines = artifacts_by_name["plugin-active-settings-blockers.txt"].read_text(encoding="utf-8").splitlines()
+    if failure_lines != failures or blocker_lines != blockers:
+        raise ValueError("plugin-active gate verdict files differ from the rollup")
+    if status == "fail":
+        evidence_failures = evidence.get("failures")
+        if not failures or not isinstance(evidence_failures, list) or not evidence_failures:
+            raise ValueError("failed plugin-active evidence has no product failure details")
+        if not all(failure in failures for failure in evidence_failures):
+            raise ValueError("plugin-active browser failures differ from the gate failures")
+        if evidence.get("authenticated_wp_admin") is not True:
+            raise ValueError("unauthenticated plugin-active browser evidence is non-gating")
+        semantic_failures = []
+        if evidence.get("settings_screen_present") is not True:
+            semantic_failures.append("WooPayments settings screen is not present")
+        if evidence.get("plugin_settings_assets_present") is not True or evidence.get(
+            "plugin_settings_global_present"
+        ) is not True:
+            semantic_failures.append("standalone WooPayments settings assets were not observed")
+        if evidence.get("native_settings_asset_urls"):
+            semantic_failures.append("native WooPayments settings assets were observed")
+        if evidence.get("duplicate_store_errors") or has_duplicate_log:
+            semantic_failures.append("duplicate wc/payments/settings store registration error")
+        if evidence.get("fatal_console_errors") or has_fatal_log:
+            semantic_failures.append("fatal browser console errors were captured")
+        if evidence.get("failed_responses"):
+            semantic_failures.append("failed browser responses were captured")
+        if not semantic_failures or not any(failure in evidence_failures for failure in semantic_failures):
+            raise ValueError("failed plugin-active evidence is not backed by a concrete browser defect")
+        return artifact_paths
+    if status == "blocked":
+        evidence_blockers = evidence.get("blockers")
+        if (
+            failures
+            or not blockers
+            or not isinstance(evidence_blockers, list)
+            or not evidence_blockers
+            or evidence["failed_responses"]
+            or not evidence["blocked_responses"]
+        ):
+            raise ValueError("blocked plugin-active evidence has invalid blocker details")
+        if not all(blocker in blockers for blocker in evidence_blockers):
+            raise ValueError("plugin-active browser blockers differ from the gate blockers")
+        return artifact_paths
+    if failures or blockers:
+        raise ValueError("passing plugin-active gate has verdict details")
+
+    expected_pass = {
+        "plugin_active": True,
+        "authenticated_wp_admin": True,
+        "settings_screen_present": True,
+        "plugin_settings_assets_present": True,
+        "plugin_settings_global_present": True,
+    }
+    for key, value in expected_pass.items():
+        if evidence.get(key) != value:
+            raise ValueError(f"plugin-active browser evidence has invalid {key}")
+    for key in (
+        "native_settings_asset_urls",
+        "duplicate_store_errors",
+        "fatal_console_errors",
+        "all_failed_responses",
+        "failed_responses",
+        "blocked_responses",
+        "failures",
+        "blockers",
+    ):
+        if evidence.get(key) != []:
+            raise ValueError(f"plugin-active browser evidence has nonempty {key}")
+    if has_fatal_log:
+        raise ValueError("plugin-active browser console log contains a fatal token")
+    if has_duplicate_log:
+        raise ValueError("plugin-active browser console log contains a duplicate-store token")
+
+    for key, extension in (
+        ("plugin_settings_script_urls", "js"),
+        ("plugin_settings_style_urls", "css"),
+    ):
+        urls = evidence.get(key)
+        pattern = re.compile(
+            re.escape(target_url)
+            + rf"/wp-content/plugins/woocommerce-payments/dist/settings(?:\.min)?\.{extension}(?:[?#].*)?"
+        )
+        if not urls or not all(isinstance(url, str) and pattern.fullmatch(url) for url in urls):
+            raise ValueError(f"plugin-active browser evidence has invalid {key}")
+
+    expected_page = {
+        "finalUrl": settings_url,
+        "hasAdminBody": True,
+        "hasAdminMenu": True,
+        "hasLoginForm": False,
+        "hasWpbodyContent": True,
+        "pluginSettingsAssetsPresent": True,
+        "pluginSettingsGlobalPresent": True,
+        "settingsScreenPresent": True,
+        "settingsStoreSelectable": True,
+        "nativeSettingsAssetUrls": [],
+    }
+    for key, value in expected_page.items():
+        if page.get(key) != value:
+            raise ValueError(f"plugin-active browser page state has invalid {key}")
+    selectors = page.get("selectorMatches")
+    if not isinstance(selectors, list) or not any(
+        match == {"selector": "#wcpay-account-settings-container", "count": 1} for match in selectors
+    ):
+        raise ValueError("plugin-active settings container was not uniquely captured")
+
+    return artifact_paths
+
+
+def plugin_active_store_result(
+    store: str,
+    gate_path: Path | None,
+    context: dict[str, Any],
+) -> dict[str, Any]:
     if gate_path is None:
         return {
             "store": store,
@@ -75,16 +574,24 @@ def plugin_active_store_result(store: str, gate_path: Path | None) -> dict[str, 
             "evidence_paths": [],
         }
 
-    payload = load_json(gate_path)
+    try:
+        payload = load_json(gate_path)
+        artifact_paths = validate_plugin_active_packet(store, gate_path, payload, context)
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
+        return {
+            "store": store,
+            "verdict": "BLOCKED",
+            "end_state": f"Plugin-active settings evidence failed validation: {exc}",
+            "ux_observations": ["Plugin-active settings evidence is non-gating because its packet is invalid."],
+            "visual_diffs": [],
+            "evidence_paths": [str(gate_path)] if gate_path.is_file() else [],
+        }
     status = str(payload.get("status", "blocked"))
     evidence = payload.get("evidence", {}) if isinstance(payload.get("evidence"), dict) else {}
     page = evidence.get("page", {}) if isinstance(evidence.get("page"), dict) else {}
     blockers = clean_list(payload.get("blockers")) + clean_list(evidence.get("blockers"))
     failures = clean_list(payload.get("failures")) + clean_list(evidence.get("failures"))
-    screenshot = evidence.get("screenshot_path")
-    evidence_paths = [str(gate_path)]
-    if screenshot:
-        evidence_paths.append(str(screenshot))
+    evidence_paths = [str(gate_path), *(str(path) for path in artifact_paths)]
 
     observations = [
         "WooPayments plugin-active settings screen rendered in authenticated wp-admin."
@@ -113,9 +620,13 @@ def plugin_active_store_result(store: str, gate_path: Path | None) -> dict[str, 
     }
 
 
-def build_plugin_active_result(reference_gate: Path | None, target_gate: Path | None) -> dict[str, Any]:
-    ref = plugin_active_store_result("ref", reference_gate)
-    target = plugin_active_store_result("target", target_gate)
+def build_plugin_active_result(
+    reference_gate: Path | None,
+    target_gate: Path | None,
+    context: dict[str, Any],
+) -> dict[str, Any]:
+    ref = plugin_active_store_result("ref", reference_gate, context)
+    target = plugin_active_store_result("target", target_gate, context)
     if ref["verdict"].startswith("PASS") and target["verdict"].startswith("PASS"):
         parity = "PASS"
         note = "Reference and target plugin-active WooPayments settings screens rendered without native settings-store collisions."
@@ -922,6 +1433,7 @@ def main() -> int:
             build_plugin_active_result(
                 existing_path(args.plugin_active_reference_gate),
                 existing_path(args.plugin_active_target_gate),
+                context,
             ),
             context,
         )

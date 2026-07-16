@@ -34,6 +34,8 @@ CLEANUP_ARMED=0
 SNAPSHOT_FIXTURE_JSON=""
 STAGE_FIXTURE_JSON=""
 RESTORE_FIXTURE_JSON=""
+CONTEXT_FILE=""
+CONTEXT_SHA256=""
 
 usage() {
 	cat >&2 <<'USAGE'
@@ -47,6 +49,7 @@ Options:
   --browser-runner <runner>    Browser runner: playwriter or playwright. Defaults to BROWSER_RUNNER or playwriter.
   --playwriter-session <id>    Existing Playwriter session id. Defaults to PLAYWRITER_SESSION.
   --out-dir <path>             Evidence output directory.
+  --context-file <path>        Aggregate critical-flow context to bind after cleanup.
   --stage-plugin-active-fixture
                                 Temporarily disable native mu-plugin toggles,
                                 activate WooPayments, and restore afterward.
@@ -91,6 +94,8 @@ while [ "$#" -gt 0 ]; do
 		--playwriter-session) PLAYWRITER_SESSION="${2:-}"; shift 2 ;;
 		--out-dir=*) OUT_DIR="${1#--out-dir=}"; shift ;;
 		--out-dir) OUT_DIR="${2:-}"; shift 2 ;;
+		--context-file=*) CONTEXT_FILE="${1#--context-file=}"; shift ;;
+		--context-file) CONTEXT_FILE="${2:-}"; shift 2 ;;
 		--stage-plugin-active-fixture) STAGE_PLUGIN_ACTIVE_FIXTURE=1; shift ;;
 		--preflight-only) PREFLIGHT_ONLY=1; shift ;;
 		--print-plan) PRINT_PLAN=1; shift ;;
@@ -101,6 +106,29 @@ done
 
 if [ -z "$TARGET_WP" ] || [ -z "$TARGET_URL" ]; then
 	usage_error "--target and --target-url are required."
+fi
+if [ -n "$CONTEXT_FILE" ] && [ ! -f "$CONTEXT_FILE" ]; then
+	usage_error "--context-file does not exist: $CONTEXT_FILE"
+fi
+if [ -n "$CONTEXT_FILE" ]; then
+	if ! CONTEXT_SHA256="$(python3 - "$CONTEXT_FILE" <<'PY'
+import json
+import re
+import sys
+from pathlib import Path
+
+try:
+    payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+    raise SystemExit(f"could not load aggregate context: {exc}")
+digest = payload.get("context_sha256")
+if not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+    raise SystemExit("aggregate context has an invalid context_sha256")
+print(digest)
+PY
+)"; then
+		usage_error "--context-file is invalid."
+	fi
 fi
 if ! runner_error="$(woopayments_validate_local_wp_runner "$TARGET_WP")"; then
 	usage_error "unsafe target WP runner: $runner_error"
@@ -212,6 +240,118 @@ for error in payload.get("errors", []):
 PY
 }
 
+bind_snapshot_digest() {
+	python3 - "$1" "$SNAPSHOT_FIXTURE_JSON" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+artifact_path, snapshot_path = (Path(value) for value in sys.argv[1:])
+try:
+    payload = json.loads(artifact_path.read_text(encoding="utf-8"))
+except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+    raise SystemExit(f"could not bind fixture snapshot digest: {exc}")
+payload["snapshot_sha256"] = "sha256:" + hashlib.sha256(snapshot_path.read_bytes()).hexdigest()
+artifact_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+}
+
+probe_runtime_owner() {
+	local raw rc json
+
+	# A fresh WP request is required here. In the restore request, the deactivated
+	# plugin's classes remain loaded until process exit and would make the arbiter's
+	# non-standard-install fallback report a stale plugin owner.
+	# Intentionally split the WP runner string, matching the harness convention.
+	# shellcheck disable=SC2086
+	raw="$($TARGET_WP eval-file - probe-runtime-owner <<'PHP' 2>&1
+<?php
+$errors        = array();
+$runtime_owner = 'unknown';
+$arbiter_class = '\\Automattic\\WooCommerce\\Internal\\Payments\\NativePaymentsRuntimeArbiter';
+
+if ( ! class_exists( $arbiter_class ) || ! function_exists( 'wc_get_container' ) ) {
+	$errors[] = 'Native payments runtime arbiter is unavailable.';
+} else {
+	try {
+		$runtime_owner = (string) wc_get_container()->get( $arbiter_class )->get_runtime_owner();
+	} catch ( Throwable $error ) {
+		$errors[] = 'Could not resolve native payments runtime owner: ' . get_class( $error );
+	}
+}
+
+echo wp_json_encode(
+	array(
+		'success'       => empty( $errors ),
+		'mode'          => 'probe-runtime-owner',
+		'errors'        => $errors,
+		'runtime_owner' => $runtime_owner,
+	),
+	JSON_UNESCAPED_SLASHES
+) . "\n";
+PHP
+)"
+	rc=$?
+	json="$(printf '%s\n' "$raw" | extract_json_line)"
+	if [ "$rc" -ne 0 ] || [ -z "$json" ]; then
+		printf 'Could not probe native payments runtime owner: %s\n' "$raw" >&2
+		return 1
+	fi
+	printf '%s\n' "$json"
+}
+
+bind_runtime_owner() {
+	local artifact_path="$1"
+	local expected_owner="$2"
+	local probe_json
+
+	if ! probe_json="$(probe_runtime_owner)"; then
+		return 1
+	fi
+
+	python3 - "$artifact_path" "$expected_owner" "$probe_json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+artifact_path = Path(sys.argv[1])
+expected_owner = sys.argv[2]
+try:
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    probe = json.loads(sys.argv[3])
+except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+    raise SystemExit(f"could not bind runtime owner: {exc}")
+
+actual_owner = probe.get("runtime_owner")
+artifact["runtime_owner"] = actual_owner
+errors = artifact.get("errors")
+if not isinstance(errors, list):
+    errors = ["Lifecycle evidence returned malformed errors."]
+for error in probe.get("errors", []):
+    if isinstance(error, str) and error:
+        errors.append(error)
+if probe.get("success") is not True or actual_owner != expected_owner:
+    errors.append(
+        f"Payments runtime owner is {actual_owner or '<missing>'}; expected {expected_owner}."
+    )
+    artifact["success"] = False
+artifact["errors"] = list(dict.fromkeys(errors))
+artifact_path.write_text(json.dumps(artifact, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+}
+
+snapshot_restored_runtime_owner() {
+	python3 - "$SNAPSHOT_FIXTURE_JSON" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+print("plugin" if payload.get("was_plugin_active") is True else "native")
+PY
+}
+
 extract_json_line() {
 	grep -E '^\{' | tail -1
 }
@@ -256,6 +396,9 @@ if ( is_dir( $mu_dir ) ) {
 			$errors[] = 'Native payments mu-plugin destination already exists: ' . $disabled_path;
 		}
 	}
+}
+if ( empty( $candidates ) ) {
+	$errors[] = 'No native payments mu-plugin candidates were found for staging.';
 }
 
 echo wp_json_encode(
@@ -423,6 +566,12 @@ PHP
 	fi
 
 	printf '%s\n' "$json" > "$STAGE_FIXTURE_JSON"
+	if ! bind_snapshot_digest "$STAGE_FIXTURE_JSON"; then
+		blocked "could not bind plugin-active fixture snapshot to stage evidence."
+	fi
+	if ! bind_runtime_owner "$STAGE_FIXTURE_JSON" plugin; then
+		blocked "could not bind plugin-active fixture runtime owner to stage evidence."
+	fi
 	if ! json_success "$STAGE_FIXTURE_JSON"; then
 		json_errors "$STAGE_FIXTURE_JSON"
 		blocked "could not mutate plugin-active fixture; see $STAGE_FIXTURE_JSON"
@@ -436,7 +585,7 @@ stage_plugin_active_fixture() {
 }
 
 restore_plugin_active_fixture() {
-	local payload_b64 raw rc json
+	local payload_b64 raw rc json expected_owner
 
 	if [ "$CLEANUP_ARMED" -ne 1 ]; then
 		return 0
@@ -592,6 +741,18 @@ PHP
 	fi
 
 	printf '%s\n' "$json" > "$RESTORE_FIXTURE_JSON"
+	if ! bind_snapshot_digest "$RESTORE_FIXTURE_JSON"; then
+		printf 'Plugin-active settings gate: cleanup failed: could not bind fixture snapshot to restore evidence.\n' >&2
+		return 1
+	fi
+	if ! expected_owner="$(snapshot_restored_runtime_owner)"; then
+		printf 'Plugin-active settings gate: cleanup failed: could not resolve the expected restored runtime owner.\n' >&2
+		return 1
+	fi
+	if ! bind_runtime_owner "$RESTORE_FIXTURE_JSON" "$expected_owner"; then
+		printf 'Plugin-active settings gate: cleanup failed: could not bind fixture runtime owner to restore evidence.\n' >&2
+		return 1
+	fi
 	if ! json_success "$RESTORE_FIXTURE_JSON"; then
 		json_errors "$RESTORE_FIXTURE_JSON"
 		printf 'Plugin-active settings gate: cleanup failed: restore verification failed; see %s\n' "$RESTORE_FIXTURE_JSON" >&2
@@ -602,13 +763,81 @@ PHP
 	return 0
 }
 
+finalize_context_bound_packet() {
+	local rollup_path="$OUT_DIR/plugin-active-settings-gate.json"
+
+	if [ -z "$CONTEXT_FILE" ] || [ ! -f "$rollup_path" ]; then
+		return 0
+	fi
+
+	python3 - "$rollup_path" "$CONTEXT_FILE" "$CONTEXT_SHA256" "$OUT_DIR" "$STAGE_PLUGIN_ACTIVE_FIXTURE" <<'PY'
+import hashlib
+import json
+import re
+import sys
+from pathlib import Path
+
+rollup_path, context_path, expected_context_sha256, out_dir, staged = sys.argv[1:]
+rollup_file = Path(rollup_path).resolve()
+packet_dir = Path(out_dir).resolve()
+
+try:
+    rollup = json.loads(rollup_file.read_text(encoding="utf-8"))
+    context = json.loads(Path(context_path).read_text(encoding="utf-8"))
+except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+    raise SystemExit(f"could not load context-bound packet input: {exc}")
+
+context_sha256 = context.get("context_sha256")
+if not isinstance(context_sha256, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", context_sha256):
+    raise SystemExit("aggregate context has an invalid context_sha256")
+if context_sha256 != expected_context_sha256:
+    raise SystemExit("aggregate context changed during plugin-active capture")
+
+names = {
+    "plugin-active-settings-blockers.txt",
+    "plugin-active-settings-failures.txt",
+    "plugin-active-settings.json",
+    "plugin-active-settings.playwriter.log",
+    "plugin-active-settings.png",
+}
+if staged == "1":
+    names.update(
+        {
+            "plugin-active-settings-restore.json",
+            "plugin-active-settings-snapshot.json",
+            "plugin-active-settings-stage.json",
+        }
+    )
+
+artifacts = []
+for name in sorted(names):
+    path = packet_dir / name
+    if not path.is_file():
+        raise SystemExit(f"context-bound packet artifact is missing: {name}")
+    artifacts.append(
+        {
+            "path": str(path),
+            "sha256": "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest(),
+        }
+    )
+
+rollup["context_sha256"] = context_sha256
+rollup["artifacts"] = artifacts
+rollup_file.write_text(json.dumps(rollup, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+}
+
 handle_exit() {
 	local exit_code=$?
 
 	trap - EXIT
 	trap '' HUP INT TERM
 	if ! restore_plugin_active_fixture; then
-		printf 'FAIL: plugin-active fixture cleanup failed; refusing to report the gate result.\n' >&2
+		printf 'BLOCKED: plugin-active fixture cleanup failed; refusing to report the gate result.\n' >&2
+		exit 70
+	fi
+	if ! finalization_error="$(finalize_context_bound_packet 2>&1)"; then
+		printf 'BLOCKED: plugin-active evidence packet finalization failed: %s\n' "$finalization_error" >&2
 		exit 70
 	fi
 	exit "$exit_code"
@@ -664,6 +893,8 @@ if payload.get("plugin_settings_assets_present") is not True or not has_plugin_s
     errors.append("standalone WooPayments settings assets were not observed")
 if payload.get("plugin_settings_global_present") is not True:
     errors.append("standalone WooPayments settings global was not observed")
+if payload.get("native_settings_asset_urls"):
+    errors.append("native WooPayments settings assets were observed")
 if payload.get("duplicate_store_errors"):
     errors.append("duplicate wc/payments/settings store registration error")
 if payload.get("fatal_console_errors"):
@@ -671,7 +902,7 @@ if payload.get("fatal_console_errors"):
 if payload.get("failed_responses"):
     errors.append("failed browser responses were captured")
 for failure in payload.get("failures", []):
-    errors.append(f"browser failure: {failure}")
+    errors.append(str(failure))
 
 blockers = [str(blocker) for blocker in payload.get("blockers", []) if str(blocker).strip()]
 if status == "blocked" and not blockers:
@@ -679,6 +910,7 @@ if status == "blocked" and not blockers:
 elif status == "pass" and blockers:
     errors.append("passing browser evidence included blocker details")
 
+errors = list(dict.fromkeys(errors))
 for error in errors:
     print(error)
 
