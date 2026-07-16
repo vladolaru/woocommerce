@@ -8,7 +8,7 @@ Guards the Payouts (deposits) list and detail pages: the list must show each pay
 
 ## Layer A — agent-driven browser
 
-BOTH stores (reference `admin.php?page=wc-admin&path=/payments/payouts`, target `admin.php?page=wc-admin&path=/woopayments/payouts`):
+BOTH stores (reference `admin.php?page=wc-admin&path=/payments/payouts`, target `admin.php?page=wc-settings&tab=checkout&path=/woopayments/payouts`):
 
 1. Open Payments → Payouts as admin.
 2. **Confirm the list is populated** with the seeded payouts, each row showing a currency-formatted amount, a date, and a status badge matching the seeded state.
@@ -26,3 +26,11 @@ BOTH stores (reference `admin.php?page=wc-admin&path=/payments/payouts`, target 
 Deterministic exerciser: NOT YET WIRED — assertions above are the contract for the future flows/MA-08-*.sh.
 
 Agent oracle mode: comparable (dual-store; reference is the golden oracle).
+
+## Runner-verified result (2026-07-16)
+
+-   **Reference: PASS.** The plugin rendered 16 provider-backed payouts, including the selected `$3,884,690.42 USD` paid payout and a distinct `$11,730.26 USD` comparison row. Its detail view rendered all 19 constituent transactions; authenticated state reconciled `$4,000,720.00` gross − `$116,029.58` fees = `$3,884,690.42` net.
+-   **Target: PASS.** Native rendered 18 provider-backed payouts, including the selected `US$1,942,288.30` paid payout and a distinct `US$9,831.98` comparison row. Its detail view rendered all 8 constituent transactions and the exact `US$2,000,300.00` gross − `US$58,011.70` fees = `US$1,942,288.30` net summary.
+-   **Parity: PASS.** Both stores matched their own authenticated payout ledger for IDs, amounts, dates, statuses, and transaction order. Pre/post state was byte-identical, all browser and REST responses were successful, and the six screenshots were inspected at original resolution.
+-   Authoritative Layer-A runner archive: `evidence/runs/20260716T091410Z-39036-partial/` (2 PASS / 0 FAIL / 0 BLOCKED / 0 queued; result digest `sha256:df6b4a0d6c48bf48cc89fa06f6c3f73d095fa541b26643996f88aea679b26064`).
+-   Maintained status remains `PENDING`: Layer A passes, but Layer D is still unwired.
