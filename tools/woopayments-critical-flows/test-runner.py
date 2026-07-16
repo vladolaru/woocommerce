@@ -27,6 +27,7 @@ MA09_DRIVER = (
     / "tools/woopayments-critical-flows/flows/class-woopaymentscriticalflowsma09driver.php"
 )
 MA10_VALIDATOR = REPO / "tools/woopayments-critical-flows/flows/ma10-validate.py"
+MO01_COMPARATOR = REPO / "tools/woopayments-critical-flows/flows/mo01-compare.py"
 
 
 def load_context_module():
@@ -163,6 +164,119 @@ if [ "$1" = "eval" ]; then
   fi
   if [[ "$2" == *"ignored_matches"* ]] && [ {log_probe_exit_code} -ne 0 ]; then
     printf '%s\\n' 'fake log probe unavailable' >&2
+    exit {log_probe_exit_code}
+  fi
+  printf '%s\\n' '{{"status":"pass","paths":["/tmp/fake-debug.log"],"matches":[]}}'
+  exit 0
+fi
+printf 'unexpected fake wp call: %s\\n' "$*" >&2
+exit 2
+"""
+
+
+def mo01_state_payload(
+    store: str,
+    phase: str,
+    *,
+    status: str = "raw",
+    intent_status: str | None = None,
+    total_minor: int = 5000,
+    runtime_owner: str | None = None,
+    blockers: list[str] | None = None,
+    provider_currency: str = "USD",
+) -> dict:
+    """Return one strict fake MO-01 provider/order state snapshot."""
+    pre_capture = phase == "pre"
+    order_id = 101 if store == "ref" else 202
+    intent_id = f"pi_{store}_manual"
+    charge_id = f"ch_{store}_manual"
+    return {
+        "schema": "woopayments_mo01_state.v1",
+        "status": status,
+        "blockers": blockers
+        if blockers is not None
+        else ([] if status != "blocked" else ["Provider state is unavailable."]),
+        "store": store,
+        "phase": phase,
+        "runtime_owner": runtime_owner or ("plugin" if store == "ref" else "native"),
+        "order": {
+            "id": order_id,
+            "status": "on-hold" if pre_capture else "processing",
+            "paid": not pre_capture,
+            "currency": "USD",
+            "total_minor": total_minor,
+            "payment_method": "woocommerce_payments",
+            "intent_id": intent_id,
+            "charge_id": charge_id,
+            "intention_status": "requires_capture" if pre_capture else "succeeded",
+        },
+        "provider": {
+            "intent_id": intent_id,
+            "intent_status": intent_status
+            or ("requires_capture" if pre_capture else "succeeded"),
+            "intent_amount_minor": total_minor,
+            "intent_currency": provider_currency,
+            "charge_id": charge_id,
+            "charge_amount_minor": total_minor,
+            "charge_amount_captured_minor": 0 if pre_capture else total_minor,
+            "charge_captured": not pre_capture,
+            "charge_currency": provider_currency,
+        },
+        "notes": {
+            "authorization_count": 1,
+            "capture_success_count": 0 if pre_capture else 1,
+            "capture_failure_count": 0,
+        },
+    }
+
+
+def mo01_fake_wp_source(
+    owner: str,
+    home: str,
+    pre_payload: dict,
+    post_payload: dict,
+    *,
+    state_exit_code: int = 0,
+    post_state_exit_code: int | None = None,
+    log_probe_exit_code: int = 0,
+) -> str:
+    """Fake wp CLI for MO-01 state snapshots plus shared runner probes."""
+    pre = json.dumps(pre_payload, separators=(",", ":"))
+    post = json.dumps(post_payload, separators=(",", ":"))
+    post_exit_code = state_exit_code if post_state_exit_code is None else post_state_exit_code
+    return f"""#!/usr/bin/env bash
+if [ "$1" = "--user=1" ]; then
+  shift
+fi
+if [ "$1" = "eval-file" ]; then
+  cat >/dev/null
+  state_exit_code={state_exit_code}
+  if [ "$5" = "post" ]; then
+    state_exit_code={post_exit_code}
+  fi
+  if [ "$state_exit_code" -ne 0 ]; then
+    printf '%s\\n' 'fake provider transport unavailable' >&2
+    exit "$state_exit_code"
+  fi
+  if [ "$5" = "pre" ]; then
+    printf '%s\\n' '{pre}'
+  else
+    printf '%s\\n' '{post}'
+  fi
+  exit 0
+fi
+if [ "$1" = "eval" ]; then
+  if [[ "$2" == *"store_identity_owner"* ]]; then
+    printf '%s\\n' "store_identity_owner={owner}"
+    printf '%s\\n' "store_identity_home={home}"
+    exit 0
+  fi
+  if [[ "$2" == *"update_option"*"woopayments_critical_flows_debug_log_marker"* ]]; then
+    printf '%s\\n' '{{"status":"pass","paths":["/tmp/fake-debug.log"],"markers":{{"/tmp/fake-debug.log":0}}}}'
+    exit 0
+  fi
+  if [ {log_probe_exit_code} -ne 0 ]; then
+    printf '%s\n' 'fake log probe unavailable' >&2
     exit {log_probe_exit_code}
   fi
   printf '%s\\n' '{{"status":"pass","paths":["/tmp/fake-debug.log"],"matches":[]}}'
@@ -791,6 +905,1097 @@ exit 2
                 "exit_code": 0,
             }
         ]
+
+
+def test_mo01_deterministic_flow_classifies_pass_fail_and_blocked() -> None:
+    cases = (
+        {
+            "name": "pass",
+            "target_status": "raw",
+            "expected_rc": 0,
+            "target_capture_calls": 1,
+            "failed": 0,
+            "blocked": 0,
+        },
+        {
+            "name": "fail",
+            "target_status": "raw",
+            "target_intent_status": "succeeded",
+            "expected_rc": 1,
+            "target_capture_calls": 0,
+            "failed": 1,
+            "blocked": 0,
+        },
+        {
+            "name": "trusted_fail_log_blocked",
+            "target_status": "raw",
+            "target_intent_status": "succeeded",
+            "target_log_probe_exit_code": 3,
+            "expected_rc": 1,
+            "target_capture_calls": 0,
+            "failed": 1,
+            "blocked": 0,
+        },
+        {
+            "name": "pass_log_blocked",
+            "target_status": "raw",
+            "target_log_probe_exit_code": 3,
+            "expected_rc": 3,
+            "target_capture_calls": 1,
+            "failed": 0,
+            "blocked": 1,
+        },
+        {
+            "name": "parity_fail",
+            "target_status": "raw",
+            "target_total_minor": 5100,
+            "expected_rc": 1,
+            "target_capture_calls": 1,
+            "failed": 1,
+            "blocked": 0,
+        },
+        {
+            "name": "blocked",
+            "target_status": "blocked",
+            "expected_rc": 3,
+            "target_capture_calls": 0,
+            "failed": 0,
+            "blocked": 1,
+        },
+        {
+            "name": "attribution_blocked",
+            "target_status": "raw",
+            "target_runtime_owner": "plugin",
+            "expected_rc": 3,
+            "target_capture_calls": 0,
+            "failed": 0,
+            "blocked": 1,
+        },
+        {
+            "name": "contradictory_blocked",
+            "target_status": "raw",
+            "target_blockers": ["Provider state is unavailable."],
+            "expected_rc": 3,
+            "target_capture_calls": 0,
+            "failed": 0,
+            "blocked": 1,
+        },
+        {
+            "name": "currency_fail",
+            "target_status": "raw",
+            "target_provider_currency": "EUR",
+            "expected_rc": 1,
+            "target_capture_calls": 0,
+            "failed": 1,
+            "blocked": 0,
+        },
+        {
+            "name": "malformed_comparison_blocked",
+            "target_status": "raw",
+            "malformed_comparison": True,
+            "expected_rc": 3,
+            "target_capture_calls": 1,
+            "failed": 0,
+            "blocked": 1,
+        },
+        {
+            "name": "capture_prerequisite_blocked",
+            "target_status": "raw",
+            "target_capture_exit_code": 3,
+            "target_capture_product_failure": True,
+            "expected_rc": 3,
+            "target_capture_calls": 1,
+            "failed": 0,
+            "blocked": 1,
+        },
+        {
+            "name": "capture_transport_blocked",
+            "target_status": "raw",
+            "target_capture_exit_code": 1,
+            "expected_rc": 3,
+            "target_capture_calls": 1,
+            "failed": 0,
+            "blocked": 1,
+        },
+        {
+            "name": "capture_product_fail",
+            "target_status": "raw",
+            "target_capture_exit_code": 1,
+            "target_capture_product_failure": True,
+            "expected_rc": 1,
+            "target_capture_calls": 1,
+            "failed": 1,
+            "blocked": 0,
+        },
+        {
+            "name": "capture_product_fail_post_blocked",
+            "target_status": "raw",
+            "target_capture_exit_code": 1,
+            "target_capture_product_failure": True,
+            "post_state_exit_code": 3,
+            "expected_rc": 1,
+            "target_capture_calls": 1,
+            "failed": 1,
+            "blocked": 0,
+        },
+        {
+            "name": "capture_usage_blocked",
+            "target_status": "raw",
+            "target_capture_exit_code": 2,
+            "expected_rc": 3,
+            "target_capture_calls": 1,
+            "failed": 0,
+            "blocked": 1,
+        },
+        {
+            "name": "capture_pass_post_blocked",
+            "target_status": "raw",
+            "post_state_exit_code": 3,
+            "expected_rc": 3,
+            "target_capture_calls": 1,
+            "failed": 0,
+            "blocked": 1,
+        },
+        {
+            "name": "transport_blocked",
+            "target_status": "raw",
+            "state_exit_code": 2,
+            "expected_rc": 3,
+            "target_capture_calls": 0,
+            "failed": 0,
+            "blocked": 1,
+        },
+    )
+
+    for case in cases:
+        name = case["name"]
+        with tempfile.TemporaryDirectory(prefix=f"critical-flows-mo01-{name}-") as tmp:
+            evidence_dir = Path(tmp)
+            flow_driver = evidence_dir / "fake-flow-drive.sh"
+            fake_ref_wp = evidence_dir / "fake-ref-wp.sh"
+            fake_target_wp = evidence_dir / "fake-target-wp.sh"
+            calls = evidence_dir / "calls.txt"
+            comparator = MO01_COMPARATOR
+
+            write_executable(
+                flow_driver,
+                """#!/usr/bin/env bash
+printf '%s:%s\\n' "$STORE_NAME" "$1" >> "$MO01_CALL_LOG"
+if [ "$1" = "charge" ]; then
+  if [ "$STORE_NAME" = "ref" ]; then
+    printf '%s\\n' '{"op":"charge","order_id":101,"charge_id":"ch_ref_manual","intent_id":"pi_ref_manual"}'
+  else
+    printf '%s\\n' '{"op":"charge","order_id":202,"charge_id":"ch_target_manual","intent_id":"pi_target_manual"}'
+  fi
+  exit 0
+fi
+if [ "$STORE_NAME" = "target" ] && [ "${MO01_FAKE_CAPTURE_EXIT:-0}" -ne 0 ]; then
+  if [ "${MO01_FAKE_CAPTURE_PRODUCT_FAILURE:-0}" -eq 1 ]; then
+    printf '%s\n' '{"op":"capture","order_id":202,"intent_id":"pi_target_manual","charge_id":"ch_target_manual","status":"on-hold","intention_status":"requires_capture","success":false,"provider_status":"failed","error_message":"Capture was declined.","error_code":"capture_declined"}' >&2
+  else
+    printf '%s\n' 'fake WP-CLI/provider transport unavailable' >&2
+  fi
+  exit "$MO01_FAKE_CAPTURE_EXIT"
+fi
+printf '%s\\n' "{\"op\":\"capture\",\"order_id\":${!#},\"success\":true}"
+""",
+            )
+            write_executable(
+                fake_ref_wp,
+                mo01_fake_wp_source(
+                    "plugin",
+                    "http://ref.fake.test",
+                    mo01_state_payload("ref", "pre"),
+                    mo01_state_payload("ref", "post"),
+                ),
+            )
+            target_post_payload = mo01_state_payload(
+                "target",
+                "post",
+                total_minor=case.get("target_total_minor", 5000),
+                provider_currency=case.get("target_provider_currency", "USD"),
+            )
+            if case.get("target_capture_exit_code", 0) != 0:
+                target_post_payload = mo01_state_payload(
+                    "target",
+                    "pre",
+                    total_minor=case.get("target_total_minor", 5000),
+                    provider_currency=case.get("target_provider_currency", "USD"),
+                )
+                target_post_payload["phase"] = "post"
+            write_executable(
+                fake_target_wp,
+                mo01_fake_wp_source(
+                    "native",
+                    "http://target.fake.test",
+                    mo01_state_payload(
+                        "target",
+                        "pre",
+                        status=case["target_status"],
+                        intent_status=case.get("target_intent_status"),
+                        total_minor=case.get("target_total_minor", 5000),
+                        runtime_owner=case.get("target_runtime_owner"),
+                        blockers=case.get("target_blockers"),
+                        provider_currency=case.get("target_provider_currency", "USD"),
+                    ),
+                    target_post_payload,
+                    state_exit_code=case.get("state_exit_code", 0),
+                    post_state_exit_code=case.get("post_state_exit_code"),
+                    log_probe_exit_code=case.get("target_log_probe_exit_code", 0),
+                ),
+            )
+            if case.get("malformed_comparison"):
+                comparator = evidence_dir / "malformed-comparator.py"
+                write_executable(
+                    comparator,
+                    f"""#!/usr/bin/env python3
+import os
+import sys
+
+if sys.argv[1] == "compare":
+    print("Traceback: comparator crashed")
+    raise SystemExit(1)
+os.execv(sys.executable, [sys.executable, {json.dumps(str(MO01_COMPARATOR))}, *sys.argv[1:]])
+""",
+                )
+
+            result = run_runner(
+                "--store",
+                "both",
+                "--layer",
+                "deterministic",
+                "--flow",
+                "MO-01",
+                evidence_dir=evidence_dir,
+                extra_env={
+                    "MO01_FLOW_DRIVER": str(flow_driver),
+                    "MO01_STATE_DRIVER": str(COMMON),
+                    "MO01_CALL_LOG": str(calls),
+                    "MO01_COMPARATOR": str(comparator),
+                    "MO01_FAKE_CAPTURE_EXIT": str(case.get("target_capture_exit_code", 0)),
+                    "MO01_FAKE_CAPTURE_PRODUCT_FAILURE": (
+                        "1" if case.get("target_capture_product_failure") else "0"
+                    ),
+                    "REF_WP_COMMAND": str(fake_ref_wp),
+                    "TARGET_WP_COMMAND": str(fake_target_wp),
+                },
+            )
+
+            assert result.returncode == case["expected_rc"], result.stdout + result.stderr
+            assert "MO-01-manual-capture-order" in result.stdout
+            assert "EXERCISER NOT WIRED" not in result.stdout
+            assert "captured authorization order_id=101" in result.stdout
+            assert "PASS log-clean ref" in result.stdout
+            assert calls.read_text(encoding="utf-8").count("target:capture") == case["target_capture_calls"]
+
+            rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
+            assert rollup["summary"] == {
+                "blocked": case["blocked"],
+                "failed": case["failed"],
+                "passed": 2 - case["failed"] - case["blocked"],
+                "queued_agent_specs": 0,
+            }
+
+            if name == "pass":
+                assert "cross-store pre/post parity: PASS" in result.stdout
+                assert "[MO-01/target] deterministic verdict: PASS" in result.stdout
+                rows = {
+                    row["store"]: row
+                    for row in rollup["results"]
+                    if row["flow"] == "MO-01-manual-capture-order"
+                }
+                expected_files = {
+                    "ref": {"ref-pre.json", "ref-post.json"},
+                    "target": {
+                        "ref-pre.json",
+                        "ref-post.json",
+                        "ref-execution.json",
+                        "target-pre.json",
+                        "target-post.json",
+                        "target-execution.json",
+                        "comparison.json",
+                    },
+                }
+                expected_files["ref"].add("ref-execution.json")
+                for store in ("ref", "target"):
+                    row = rows[store]
+                    manifest_path = Path(row["evidence_path"])
+                    assert manifest_path.name == f"{store}-manifest.json"
+                    assert row["evidence_sha256"] == file_sha256(manifest_path)
+                    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                    assert manifest["schema"] == "woopayments_mo01_manifest.v1"
+                    assert manifest["run_stamp"] == rollup["run_stamp"]
+                    assert manifest["run_scope"] == "partial"
+                    assert manifest["store"] == store
+                    assert manifest["status"] == "pass"
+                    assert manifest["exit_code"] == 0
+                    assert manifest["verdict_sources"] == []
+                    assert set(manifest["files"]) == expected_files[store]
+                    unsigned = dict(manifest)
+                    unsigned.pop("payload_sha256")
+                    assert manifest["payload_sha256"] == "sha256:" + hashlib.sha256(
+                        json.dumps(unsigned, sort_keys=True, separators=(",", ":")).encode(
+                            "utf-8"
+                        )
+                    ).hexdigest()
+                    for filename, binding in manifest["files"].items():
+                        artifact = manifest_path.parent / filename
+                        payload = json.loads(artifact.read_text(encoding="utf-8"))
+                        assert binding == {
+                            "file_sha256": file_sha256(artifact),
+                            "payload_sha256": payload["payload_sha256"],
+                        }
+
+                mutated_dir = evidence_dir / "mutated-coherent-chain"
+                shutil.copytree(Path(rows["target"]["evidence_path"]).parent, mutated_dir)
+                mutated_pre_path = mutated_dir / "target-pre.json"
+                mutated_pre = json.loads(mutated_pre_path.read_text(encoding="utf-8"))
+                mutated_pre["order"]["total_minor"] = 5100
+                mutated_pre_unsigned = dict(mutated_pre)
+                mutated_pre_unsigned.pop("payload_sha256")
+                mutated_pre["payload_sha256"] = "sha256:" + hashlib.sha256(
+                    json.dumps(
+                        mutated_pre_unsigned,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                ).hexdigest()
+                mutated_pre_path.write_text(json.dumps(mutated_pre), encoding="utf-8")
+
+                mutated_comparison_path = mutated_dir / "comparison.json"
+                mutated_comparison = json.loads(
+                    mutated_comparison_path.read_text(encoding="utf-8")
+                )
+                mutated_comparison["inputs"]["target_pre"] = mutated_pre["payload_sha256"]
+                mutated_comparison_unsigned = dict(mutated_comparison)
+                mutated_comparison_unsigned.pop("payload_sha256")
+                mutated_comparison["payload_sha256"] = "sha256:" + hashlib.sha256(
+                    json.dumps(
+                        mutated_comparison_unsigned,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                ).hexdigest()
+                mutated_comparison_path.write_text(
+                    json.dumps(mutated_comparison),
+                    encoding="utf-8",
+                )
+
+                mutated_manifest_path = mutated_dir / "target-manifest.json"
+                mutated_manifest = json.loads(
+                    mutated_manifest_path.read_text(encoding="utf-8")
+                )
+                for filename in ("target-pre.json", "comparison.json"):
+                    artifact = mutated_dir / filename
+                    payload = json.loads(artifact.read_text(encoding="utf-8"))
+                    mutated_manifest["files"][filename] = {
+                        "file_sha256": file_sha256(artifact),
+                        "payload_sha256": payload["payload_sha256"],
+                    }
+                mutated_manifest_unsigned = dict(mutated_manifest)
+                mutated_manifest_unsigned.pop("payload_sha256")
+                mutated_manifest["payload_sha256"] = "sha256:" + hashlib.sha256(
+                    json.dumps(
+                        mutated_manifest_unsigned,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                ).hexdigest()
+                mutated_manifest_path.write_text(
+                    json.dumps(mutated_manifest),
+                    encoding="utf-8",
+                )
+                coherent_rehash = subprocess.run(
+                    [
+                        "python3",
+                        str(MO01_COMPARATOR),
+                        "validate-bound-manifest",
+                        "--manifest",
+                        str(mutated_manifest_path),
+                        "--store",
+                        "target",
+                        "--run-stamp",
+                        rollup["run_stamp"],
+                        "--run-scope",
+                        "partial",
+                        "--expected-status",
+                        "pass",
+                        "--expected-exit-code",
+                        "0",
+                    ],
+                    cwd=REPO,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                assert coherent_rehash.returncode == 3
+
+                symlink_dir = evidence_dir / "symlinked-chain"
+                shutil.copytree(Path(rows["target"]["evidence_path"]).parent, symlink_dir)
+                outside_pre = evidence_dir / "outside-target-pre.json"
+                shutil.copy2(symlink_dir / "target-pre.json", outside_pre)
+                (symlink_dir / "target-pre.json").unlink()
+                (symlink_dir / "target-pre.json").symlink_to(outside_pre)
+                symlink_validation = subprocess.run(
+                    [
+                        "python3",
+                        str(MO01_COMPARATOR),
+                        "validate-bound-manifest",
+                        "--manifest",
+                        str(symlink_dir / "target-manifest.json"),
+                        "--store",
+                        "target",
+                        "--run-stamp",
+                        rollup["run_stamp"],
+                        "--run-scope",
+                        "partial",
+                        "--expected-status",
+                        "pass",
+                        "--expected-exit-code",
+                        "0",
+                    ],
+                    cwd=REPO,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                assert symlink_validation.returncode == 3
+
+                relabeled_dir = evidence_dir / "all-pass-relabeled-fail"
+                shutil.copytree(Path(rows["target"]["evidence_path"]).parent, relabeled_dir)
+                relabeled_execution_path = relabeled_dir / "target-execution.json"
+                relabeled_execution = json.loads(
+                    relabeled_execution_path.read_text(encoding="utf-8")
+                )
+                relabeled_execution.update(
+                    {
+                        "status": "fail",
+                        "exit_code": 1,
+                        "verdict_sources": ["capture_operation_failed"],
+                    }
+                )
+                relabeled_execution_unsigned = dict(relabeled_execution)
+                relabeled_execution_unsigned.pop("payload_sha256")
+                relabeled_execution["payload_sha256"] = "sha256:" + hashlib.sha256(
+                    json.dumps(
+                        relabeled_execution_unsigned,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                ).hexdigest()
+                relabeled_execution_path.write_text(
+                    json.dumps(relabeled_execution),
+                    encoding="utf-8",
+                )
+                relabeled_manifest_path = relabeled_dir / "target-manifest.json"
+                relabeled_manifest = json.loads(
+                    relabeled_manifest_path.read_text(encoding="utf-8")
+                )
+                relabeled_manifest.update(
+                    {
+                        "status": "fail",
+                        "exit_code": 1,
+                        "verdict_sources": ["capture_operation_failed"],
+                    }
+                )
+                relabeled_manifest["files"]["target-execution.json"] = {
+                    "file_sha256": file_sha256(relabeled_execution_path),
+                    "payload_sha256": relabeled_execution["payload_sha256"],
+                }
+                relabeled_manifest_unsigned = dict(relabeled_manifest)
+                relabeled_manifest_unsigned.pop("payload_sha256")
+                relabeled_manifest["payload_sha256"] = "sha256:" + hashlib.sha256(
+                    json.dumps(
+                        relabeled_manifest_unsigned,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                ).hexdigest()
+                relabeled_manifest_path.write_text(
+                    json.dumps(relabeled_manifest),
+                    encoding="utf-8",
+                )
+                relabeled_validation = subprocess.run(
+                    [
+                        "python3",
+                        str(MO01_COMPARATOR),
+                        "validate-bound-manifest",
+                        "--manifest",
+                        str(relabeled_manifest_path),
+                        "--store",
+                        "target",
+                        "--run-stamp",
+                        rollup["run_stamp"],
+                        "--run-scope",
+                        "partial",
+                        "--expected-status",
+                        "fail",
+                        "--expected-exit-code",
+                        "1",
+                    ],
+                    cwd=REPO,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                assert relabeled_validation.returncode == 3
+            elif name == "fail":
+                assert "provider intent status=succeeded want=requires_capture" in result.stdout
+                assert "[MO-01/target] deterministic verdict: FAIL" in result.stdout
+            elif name == "trusted_fail_log_blocked":
+                assert "provider intent status=succeeded want=requires_capture" in result.stdout
+                assert "[MO-01/target] deterministic verdict: FAIL" in result.stdout
+                target_row = next(
+                    row for row in rollup["results"] if row["store"] == "target"
+                )
+                assert Path(target_row["evidence_path"]).is_file()
+            elif name == "pass_log_blocked":
+                assert "[MO-01/target] deterministic verdict: BLOCKED" in result.stdout
+                target_row = next(
+                    row for row in rollup["results"] if row["store"] == "target"
+                )
+                manifest = json.loads(
+                    Path(target_row["evidence_path"]).read_text(encoding="utf-8")
+                )
+                assert manifest["verdict_sources"] == ["log_assertion_blocked"]
+            elif name == "parity_fail":
+                assert "cross-store pre/post parity: FAIL" in result.stdout
+                assert "pre-capture canonical state differs" in result.stdout
+                assert "[MO-01/target] deterministic verdict: FAIL" in result.stdout
+            elif name == "blocked":
+                assert "Provider state is unavailable." in result.stdout
+                assert "[MO-01/target] deterministic verdict: BLOCKED" in result.stdout
+            elif name == "attribution_blocked":
+                assert "runtime owner=plugin want=native" in result.stdout
+                assert "[MO-01/target] deterministic verdict: BLOCKED" in result.stdout
+            elif name == "contradictory_blocked":
+                assert "Provider state is unavailable." in result.stdout
+                assert "[MO-01/target] deterministic verdict: BLOCKED" in result.stdout
+            elif name == "currency_fail":
+                assert "provider intent currency=EUR want=USD" in result.stdout
+                assert "[MO-01/target] deterministic verdict: FAIL" in result.stdout
+            elif name == "malformed_comparison_blocked":
+                assert "Comparator emitted malformed or contradictory evidence." in result.stdout
+                assert "[MO-01/target] deterministic verdict: BLOCKED" in result.stdout
+                target_row = next(
+                    row for row in rollup["results"] if row["store"] == "target"
+                )
+                assert "evidence_path" in target_row, (
+                    target_row,
+                    result.stdout,
+                    result.stderr,
+                )
+                manifest_path = Path(target_row["evidence_path"])
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                assert manifest["verdict_sources"] == ["comparison_blocked"]
+                execution = json.loads(
+                    (manifest_path.parent / "target-execution.json").read_text(
+                        encoding="utf-8"
+                    )
+                )
+                assert execution["comparison_exit_code"] == 3
+                assert execution["verdict_sources"] == ["comparison_blocked"]
+            elif name in {
+                "capture_prerequisite_blocked",
+                "capture_usage_blocked",
+                "capture_transport_blocked",
+            }:
+                assert "capture operation blocked" in result.stdout
+                assert "[MO-01/target] deterministic verdict: BLOCKED" in result.stdout
+                target_row = next(
+                    row for row in rollup["results"] if row["store"] == "target"
+                )
+                manifest_path = Path(target_row["evidence_path"])
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                assert manifest["status"] == "blocked"
+                assert manifest["verdict_sources"] == ["capture_operation_blocked"]
+                execution = json.loads(
+                    (manifest_path.parent / "target-execution.json").read_text(
+                        encoding="utf-8"
+                    )
+                )
+                assert execution["capture_exit_code"] == case["target_capture_exit_code"]
+                assert execution["capture_classification"] == "blocked"
+                assert execution["post_state_exit_code"] == 1
+            elif name == "capture_product_fail":
+                assert "capture operation failed" in result.stdout
+                assert "[MO-01/target] deterministic verdict: FAIL" in result.stdout
+                target_row = next(
+                    row for row in rollup["results"] if row["store"] == "target"
+                )
+                manifest_path = Path(target_row["evidence_path"])
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                assert manifest["verdict_sources"] == [
+                    "capture_operation_failed",
+                    "comparison_failed",
+                    "post_state_failed",
+                ]
+                execution = json.loads(
+                    (manifest_path.parent / "target-execution.json").read_text(
+                        encoding="utf-8"
+                    )
+                )
+                assert execution["capture_exit_code"] == 1
+                assert execution["capture_classification"] == "product_failure"
+            elif name == "capture_product_fail_post_blocked":
+                assert "post-capture state unavailable" in result.stdout
+                assert "[MO-01/target] deterministic verdict: FAIL" in result.stdout
+                target_row = next(
+                    row for row in rollup["results"] if row["store"] == "target"
+                )
+                manifest_path = Path(target_row["evidence_path"])
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                assert manifest["verdict_sources"] == ["capture_operation_failed"]
+                execution = json.loads(
+                    (manifest_path.parent / "target-execution.json").read_text(
+                        encoding="utf-8"
+                    )
+                )
+                assert execution["capture_exit_code"] == 1
+                assert execution["capture_classification"] == "product_failure"
+                assert execution["post_state_exit_code"] == 3
+            elif name == "capture_pass_post_blocked":
+                assert "post-capture state unavailable" in result.stdout
+                assert "[MO-01/target] deterministic verdict: BLOCKED" in result.stdout
+                target_row = next(
+                    row for row in rollup["results"] if row["store"] == "target"
+                )
+                manifest_path = Path(target_row["evidence_path"])
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                assert manifest["verdict_sources"] == ["post_state_blocked"]
+                execution = json.loads(
+                    (manifest_path.parent / "target-execution.json").read_text(
+                        encoding="utf-8"
+                    )
+                )
+                assert execution["capture_exit_code"] == 0
+                assert execution["capture_classification"] == "pass"
+                assert execution["post_state_exit_code"] == 3
+            else:
+                assert "pre-capture state driver could not run" in result.stdout
+                assert "[MO-01/target] deterministic verdict: BLOCKED" in result.stdout
+
+
+def test_mo01_comparator_rejects_swapped_and_malformed_normalized_evidence() -> None:
+    run_stamp = "20260716T120000Z-12345"
+
+    def normalize(payload: dict, store: str, phase: str) -> tuple[subprocess.CompletedProcess[str], dict]:
+        result = subprocess.run(
+            [
+                "python3",
+                str(MO01_COMPARATOR),
+                "normalize",
+                "--store",
+                store,
+                "--phase",
+                phase,
+                "--run-stamp",
+                run_stamp,
+            ],
+            cwd=REPO,
+            input=json.dumps(payload),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        return result, json.loads(result.stdout)
+
+    wrong_owner, wrong_owner_payload = normalize(
+        mo01_state_payload("target", "pre", runtime_owner="plugin"),
+        "target",
+        "pre",
+    )
+    assert wrong_owner.returncode == 3
+    assert wrong_owner_payload["status"] == "blocked"
+    assert "runtime owner=plugin want=native" in wrong_owner_payload["blockers"]
+
+    raw_blocker, raw_blocker_payload = normalize(
+        mo01_state_payload(
+            "target",
+            "pre",
+            blockers=["Provider state is unavailable."],
+        ),
+        "target",
+        "pre",
+    )
+    assert raw_blocker.returncode == 3
+    assert raw_blocker_payload["status"] == "blocked"
+    assert raw_blocker_payload["blockers"] == ["Provider state is unavailable."]
+
+    currency_mismatch, currency_payload = normalize(
+        mo01_state_payload("target", "pre", provider_currency="EUR"),
+        "target",
+        "pre",
+    )
+    assert currency_mismatch.returncode == 1
+    assert "provider intent currency=EUR want=USD" in currency_payload["errors"]
+    assert "provider charge currency=EUR want=USD" in currency_payload["errors"]
+
+    duplicate_raw = subprocess.run(
+        [
+            "python3",
+            str(MO01_COMPARATOR),
+            "normalize",
+            "--store",
+            "target",
+            "--phase",
+            "pre",
+            "--run-stamp",
+            run_stamp,
+        ],
+        cwd=REPO,
+        input=(
+            json.dumps(mo01_state_payload("target", "pre"))
+            + "\n"
+            + json.dumps(
+                mo01_state_payload("target", "pre", intent_status="succeeded")
+            )
+        ),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    duplicate_payload = json.loads(duplicate_raw.stdout)
+    assert duplicate_raw.returncode == 3
+    assert duplicate_payload["status"] == "blocked"
+    assert duplicate_payload["blockers"] == [
+        "State driver must emit exactly one MO-01 payload; observed 2."
+    ]
+
+    missing_intent = mo01_state_payload("target", "pre")
+    missing_intent["order"]["intent_id"] = ""
+    missing_intent["provider"].update(
+        {
+            "intent_id": "",
+            "intent_status": "",
+            "intent_amount_minor": 0,
+            "intent_currency": "",
+            "charge_id": "",
+            "charge_amount_minor": 0,
+            "charge_amount_captured_minor": 0,
+            "charge_captured": False,
+            "charge_currency": "",
+        }
+    )
+    missing_intent_result, missing_intent_payload = normalize(
+        missing_intent,
+        "target",
+        "pre",
+    )
+    assert missing_intent_result.returncode == 1
+    assert missing_intent_payload["status"] == "fail"
+    assert "order intent id is not provider-backed" in missing_intent_payload["errors"]
+
+    with tempfile.TemporaryDirectory(prefix="critical-flows-mo01-compare-") as tmp:
+        root = Path(tmp)
+        empty_fail_manifest = subprocess.run(
+            [
+                "python3",
+                str(MO01_COMPARATOR),
+                "manifest",
+                "--store",
+                "target",
+                "--status",
+                "fail",
+                "--exit-code",
+                "1",
+                "--run-stamp",
+                run_stamp,
+                "--run-scope",
+                "partial",
+                "--output",
+                str(root / "empty-fail-manifest.json"),
+            ],
+            cwd=REPO,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert empty_fail_manifest.returncode == 3
+        unbound_operational_fail = subprocess.run(
+            [
+                "python3",
+                str(MO01_COMPARATOR),
+                "manifest",
+                "--store",
+                "target",
+                "--status",
+                "fail",
+                "--exit-code",
+                "1",
+                "--verdict-source",
+                "capture_operation_failed",
+                "--run-stamp",
+                run_stamp,
+                "--run-scope",
+                "partial",
+                "--output",
+                str(root / "unbound-operational-fail.json"),
+            ],
+            cwd=REPO,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert unbound_operational_fail.returncode == 3
+        capture_block_mislabeled_fail = subprocess.run(
+            [
+                "python3",
+                str(MO01_COMPARATOR),
+                "execution",
+                "--store",
+                "target",
+                "--status",
+                "fail",
+                "--exit-code",
+                "1",
+                "--verdict-source",
+                "capture_operation_failed",
+                "--run-stamp",
+                run_stamp,
+                "--output",
+                str(root / "capture-block-mislabeled-fail.json"),
+                "--authorization-exit-code",
+                "0",
+                "--authorization-order-id-present",
+                "true",
+                "--pre-state-exit-code",
+                "0",
+                "--capture-exit-code",
+                "3",
+                "--capture-classification",
+                "blocked",
+                "--post-state-exit-code",
+                "1",
+                "--log-assertion-exit-code",
+                "0",
+            ],
+            cwd=REPO,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert capture_block_mislabeled_fail.returncode == 3
+
+        normalized: dict[tuple[str, str], dict] = {}
+        paths: dict[tuple[str, str], Path] = {}
+        for store in ("ref", "target"):
+            for phase in ("pre", "post"):
+                result, payload = normalize(mo01_state_payload(store, phase), store, phase)
+                assert result.returncode == 0
+                assert payload["payload_sha256"].startswith("sha256:")
+                normalized[(store, phase)] = payload
+                path = root / f"{store}-{phase}.json"
+                path.write_text(json.dumps(payload), encoding="utf-8")
+                paths[(store, phase)] = path
+
+        def compare(target_pre: Path, target_post: Path) -> tuple[subprocess.CompletedProcess[str], dict]:
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(MO01_COMPARATOR),
+                    "compare",
+                    "--reference-pre",
+                    str(paths[("ref", "pre")]),
+                    "--reference-post",
+                    str(paths[("ref", "post")]),
+                    "--target-pre",
+                    str(target_pre),
+                    "--target-post",
+                    str(target_post),
+                    "--run-stamp",
+                    run_stamp,
+                ],
+                cwd=REPO,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            return result, json.loads(result.stdout)
+
+        valid, valid_payload = compare(
+            paths[("target", "pre")],
+            paths[("target", "post")],
+        )
+        assert valid.returncode == 0
+        assert valid_payload["status"] == "pass"
+        assert valid_payload["inputs"] == {
+            "ref_pre": normalized[("ref", "pre")]["payload_sha256"],
+            "ref_post": normalized[("ref", "post")]["payload_sha256"],
+            "target_pre": normalized[("target", "pre")]["payload_sha256"],
+            "target_post": normalized[("target", "post")]["payload_sha256"],
+        }
+        valid_unsigned = dict(valid_payload)
+        valid_unsigned.pop("payload_sha256")
+        assert valid_payload["payload_sha256"] == "sha256:" + hashlib.sha256(
+            json.dumps(valid_unsigned, sort_keys=True, separators=(",", ":")).encode(
+                "utf-8"
+            )
+        ).hexdigest()
+
+        forged = json.loads(json.dumps(valid_payload))
+        forged["inputs"] = {
+            "ref_pre": "sha256:" + "1" * 64,
+            "ref_post": "sha256:" + "2" * 64,
+            "target_pre": "sha256:" + "3" * 64,
+            "target_post": "sha256:" + "4" * 64,
+        }
+        forged["reference"] = {"pre": {}, "post": {}}
+        forged["target"] = {"pre": {}, "post": {}}
+        forged_unsigned = dict(forged)
+        forged_unsigned.pop("payload_sha256")
+        forged["payload_sha256"] = "sha256:" + hashlib.sha256(
+            json.dumps(forged_unsigned, sort_keys=True, separators=(",", ":")).encode(
+                "utf-8"
+            )
+        ).hexdigest()
+        forged_validation = subprocess.run(
+            [
+                "python3",
+                str(MO01_COMPARATOR),
+                "validate-comparison",
+                "--run-stamp",
+                run_stamp,
+                "--expected-exit-code",
+                "0",
+            ],
+            cwd=REPO,
+            input=json.dumps(forged),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert forged_validation.returncode == 3
+
+        swapped, swapped_payload = compare(paths[("ref", "pre")], paths[("ref", "post")])
+        assert swapped.returncode == 3
+        assert swapped_payload["status"] == "blocked"
+        assert any(
+            "target_pre" in reason and "store=ref want=target" in reason
+            for reason in swapped_payload["blockers"]
+        )
+        assert any(
+            "target_post" in reason and "runtime owner=plugin want=native" in reason
+            for reason in swapped_payload["blockers"]
+        )
+
+        malformed_path = root / "target-pre-malformed.json"
+        malformed_path.write_text(
+            json.dumps(
+                {
+                    "schema": "woopayments_mo01_normalized.v1",
+                    "status": "pass",
+                    "store": "target",
+                    "phase": "pre",
+                    "runtime_owner": "native",
+                    "run_stamp": run_stamp,
+                    "errors": [],
+                    "blockers": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        malformed, malformed_payload = compare(malformed_path, paths[("target", "post")])
+        assert malformed.returncode == 3
+        assert malformed_payload["status"] == "blocked"
+        assert any("target-pre-malformed.json" in reason for reason in malformed_payload["blockers"])
+
+        invalid_utf8_path = root / "target-pre-invalid-utf8.json"
+        invalid_utf8_path.write_bytes(b"\xff\xfe{not utf8}")
+        invalid_utf8, invalid_utf8_payload = compare(
+            invalid_utf8_path,
+            paths[("target", "post")],
+        )
+        assert invalid_utf8.returncode == 3
+        assert invalid_utf8_payload["status"] == "blocked"
+        assert any(
+            "target-pre-invalid-utf8.json" in reason
+            for reason in invalid_utf8_payload["blockers"]
+        )
+
+        contradictory_path = root / "target-pre-contradictory.json"
+        contradictory = dict(normalized[("target", "pre")])
+        contradictory["errors"] = ["Smuggled error."]
+        contradictory["blockers"] = ["Smuggled blocker."]
+        contradictory_path.write_text(json.dumps(contradictory), encoding="utf-8")
+        contradiction, contradiction_payload = compare(
+            contradictory_path,
+            paths[("target", "post")],
+        )
+        assert contradiction.returncode == 3
+        assert contradiction_payload["status"] == "blocked"
+        assert any("status/error/blocker fields are inconsistent" in reason for reason in contradiction_payload["blockers"])
+
+        unexpected_path = root / "target-pre-unexpected.json"
+        unexpected = json.loads(json.dumps(normalized[("target", "pre")]))
+        unexpected["unexpected"] = "smuggled"
+        unexpected["order"]["unexpected_status"] = "failed"
+        unexpected["provider"]["unexpected_currency"] = "EUR"
+        unsigned = dict(unexpected)
+        unsigned.pop("payload_sha256")
+        unexpected["payload_sha256"] = "sha256:" + hashlib.sha256(
+            json.dumps(unsigned, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        unexpected_path.write_text(json.dumps(unexpected), encoding="utf-8")
+        unexpected_result, unexpected_payload = compare(
+            unexpected_path,
+            paths[("target", "post")],
+        )
+        assert unexpected_result.returncode == 3
+        assert unexpected_payload["status"] == "blocked"
+        assert any("unexpected normalized fields" in reason for reason in unexpected_payload["blockers"])
+        assert any("order has unexpected fields" in reason for reason in unexpected_payload["blockers"])
+        assert any("provider has unexpected fields" in reason for reason in unexpected_payload["blockers"])
+
+
+def test_mo01_runner_rejects_an_invalid_deterministic_manifest() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-mo01-invalid-manifest-") as tmp:
+        evidence_dir = Path(tmp)
+        flows_dir = evidence_dir / "flows"
+        flows_dir.mkdir()
+        fake_target_wp = evidence_dir / "fake-target-wp.sh"
+        write_executable(
+            fake_target_wp,
+            probe_only_fake_wp_source("native", "http://target.fake.test"),
+        )
+        write_executable(
+            flows_dir / "MO-01-manual-capture-order.sh",
+            """#!/usr/bin/env bash
+manifest_dir="$EVIDENCE_DIR/runs/$CRITICAL_FLOWS_RUN_STAMP-$CRITICAL_FLOWS_RUN_SCOPE/MO-01-manual-capture-order"
+mkdir -p "$manifest_dir"
+printf '%s\n' '{"schema":"woopayments_mo01_manifest.v1","flow":"MO-01-manual-capture-order","run_stamp":"wrong","run_scope":"partial","store":"target","status":"pass","exit_code":0,"verdict_sources":[],"files":{},"payload_sha256":"sha256:0000000000000000000000000000000000000000000000000000000000000000"}' > "$manifest_dir/target-manifest.json"
+exit 0
+""",
+        )
+
+        result = run_runner(
+            "--store",
+            "target",
+            "--layer",
+            "deterministic",
+            "--flow",
+            "MO-01",
+            evidence_dir=evidence_dir,
+            extra_env={
+                "FLOWS_DIR": str(flows_dir),
+                "TARGET_WP_COMMAND": str(fake_target_wp),
+            },
+        )
+
+        assert result.returncode == 3
+        rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
+        assert rollup["summary"] == {
+            "blocked": 1,
+            "failed": 0,
+            "passed": 0,
+            "queued_agent_specs": 0,
+        }
+        row = rollup["results"][0]
+        assert row["status"] == "BLOCKED"
+        assert row["exit_code"] == 3
+        assert "different runner invocation" in row["reason"]
+        assert "evidence_path" not in row
+        assert "evidence_sha256" not in row
 
 
 def test_sp01_deterministic_flow_classifies_pass_fail_and_blocked() -> None:

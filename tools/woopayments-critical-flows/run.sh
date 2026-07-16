@@ -278,6 +278,206 @@ PY
   esac
 }
 
+validate_mo01_manifest() {
+  local manifest_path="$1" expected_store="$2" expected_status="$3" expected_exit_code="$4"
+  local structural_digest structural_rc semantic_digest semantic_rc
+  structural_digest="$(python3 - "$manifest_path" "$expected_store" "$expected_status" "$expected_exit_code" "$RUN_STAMP" "$RUN_SCOPE" <<'PY'
+import hashlib
+import json
+import re
+import sys
+from pathlib import Path
+
+manifest_path, expected_store, expected_status, expected_exit_code, run_stamp, run_scope = sys.argv[1:]
+path = Path(manifest_path)
+
+
+def digest_payload(payload):
+    unsigned = dict(payload)
+    unsigned.pop("payload_sha256", None)
+    encoded = json.dumps(unsigned, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
+def digest_file(candidate):
+    return "sha256:" + hashlib.sha256(candidate.read_bytes()).hexdigest()
+
+
+def refuse(reason):
+    print(reason)
+    raise SystemExit(3)
+
+
+if path.is_symlink() or not path.is_file():
+    refuse("MO-01 evidence manifest must be a regular non-symlinked file")
+path = path.resolve()
+
+try:
+    raw = path.read_bytes()
+    manifest = json.loads(raw.decode("utf-8"))
+except (OSError, UnicodeError, ValueError) as exc:
+    refuse(f"MO-01 evidence manifest is unreadable: {exc}")
+
+required_fields = {
+    "schema",
+    "flow",
+    "run_stamp",
+    "run_scope",
+    "store",
+    "status",
+    "exit_code",
+    "verdict_sources",
+    "files",
+    "payload_sha256",
+}
+if not isinstance(manifest, dict) or set(manifest) != required_fields:
+    refuse("MO-01 evidence manifest has an invalid field set")
+if manifest.get("schema") != "woopayments_mo01_manifest.v1":
+    refuse("MO-01 evidence manifest has an invalid schema")
+if manifest.get("flow") != "MO-01-manual-capture-order":
+    refuse("MO-01 evidence manifest has an invalid flow binding")
+if manifest.get("run_stamp") != run_stamp or manifest.get("run_scope") != run_scope:
+    refuse("MO-01 evidence manifest belongs to a different runner invocation")
+if manifest.get("store") != expected_store:
+    refuse("MO-01 evidence manifest has an invalid store binding")
+if manifest.get("status") != expected_status or manifest.get("exit_code") != int(expected_exit_code):
+    refuse("MO-01 evidence manifest contradicts the deterministic verdict")
+if manifest.get("payload_sha256") != digest_payload(manifest):
+    refuse("MO-01 evidence manifest payload digest does not match")
+verdict_sources = manifest.get("verdict_sources")
+allowed_sources = {
+    "pass": set(),
+    "fail": {
+        "pre_state_failed",
+        "post_state_failed",
+        "comparison_failed",
+        "capture_operation_failed",
+        "log_assertion_failed",
+    },
+    "blocked": {
+        "authorization_driver_blocked",
+        "authorization_order_id_missing",
+        "pre_state_blocked",
+        "post_state_blocked",
+        "capture_operation_blocked",
+        "comparison_blocked",
+        "log_assertion_blocked",
+    },
+}
+if (
+    not isinstance(verdict_sources, list)
+    or not all(isinstance(source, str) and source for source in verdict_sources)
+    or len(verdict_sources) != len(set(verdict_sources))
+    or not set(verdict_sources).issubset(allowed_sources[expected_status])
+    or (expected_status == "pass" and verdict_sources)
+    or (expected_status != "pass" and not verdict_sources)
+):
+    refuse("MO-01 evidence manifest has invalid verdict sources")
+
+files = manifest.get("files")
+if not isinstance(files, dict):
+    refuse("MO-01 evidence manifest files must be an object")
+allowed = (
+    {"ref-pre.json", "ref-post.json", "ref-execution.json"}
+    if expected_store == "ref"
+    else {
+        "ref-pre.json",
+        "ref-post.json",
+        "ref-execution.json",
+        "target-pre.json",
+        "target-post.json",
+        "target-execution.json",
+        "comparison.json",
+    }
+)
+if not set(files).issubset(allowed):
+    refuse("MO-01 evidence manifest contains an unexpected artifact")
+if expected_status == "pass" and set(files) != allowed:
+    refuse("Passing MO-01 evidence manifest is incomplete")
+
+artifact_payloads = {}
+for filename, binding in files.items():
+    if not isinstance(binding, dict) or set(binding) != {"file_sha256", "payload_sha256"}:
+        refuse(f"MO-01 manifest binding is malformed: {filename}")
+    if not all(
+        isinstance(binding.get(field), str)
+        and re.fullmatch(r"sha256:[0-9a-f]{64}", binding[field])
+        for field in ("file_sha256", "payload_sha256")
+    ):
+        refuse(f"MO-01 manifest binding has an invalid digest: {filename}")
+    artifact = path.parent / filename
+    if artifact.is_symlink() or not artifact.is_file() or artifact.resolve().parent != path.parent:
+        refuse(f"MO-01 manifest artifact escapes the archive or is not a regular file: {filename}")
+    try:
+        artifact_raw = artifact.read_bytes()
+        payload = json.loads(artifact_raw.decode("utf-8"))
+    except (OSError, UnicodeError, ValueError) as exc:
+        refuse(f"MO-01 manifest artifact is unreadable ({filename}): {exc}")
+    if not isinstance(payload, dict):
+        refuse(f"MO-01 manifest artifact is not an object: {filename}")
+    if binding["file_sha256"] != "sha256:" + hashlib.sha256(artifact_raw).hexdigest():
+        refuse(f"MO-01 manifest artifact byte digest does not match: {filename}")
+    if binding["payload_sha256"] != payload.get("payload_sha256"):
+        refuse(f"MO-01 manifest artifact payload binding does not match: {filename}")
+    if payload.get("payload_sha256") != digest_payload(payload):
+        refuse(f"MO-01 manifest artifact payload digest does not match: {filename}")
+    expected_schema = (
+        "woopayments_mo01_comparison.v1"
+        if filename == "comparison.json"
+        else "woopayments_mo01_execution.v1"
+        if filename.endswith("-execution.json")
+        else "woopayments_mo01_normalized.v1"
+    )
+    if payload.get("schema") != expected_schema or payload.get("run_stamp") != run_stamp:
+        refuse(f"MO-01 manifest artifact has an invalid schema/run binding: {filename}")
+    artifact_payloads[filename] = payload
+    if filename.endswith("-execution.json"):
+        store = filename.removesuffix("-execution.json")
+        if payload.get("store") != store:
+            refuse(f"MO-01 execution artifact has an invalid role binding: {filename}")
+    elif filename != "comparison.json":
+        store, phase = filename.removesuffix(".json").split("-")
+        if payload.get("store") != store or payload.get("phase") != phase:
+            refuse(f"MO-01 manifest artifact has an invalid role binding: {filename}")
+
+if "comparison.json" in artifact_payloads:
+    expected_inputs = {
+        "ref_pre": artifact_payloads.get("ref-pre.json", {}).get("payload_sha256"),
+        "ref_post": artifact_payloads.get("ref-post.json", {}).get("payload_sha256"),
+        "target_pre": artifact_payloads.get("target-pre.json", {}).get("payload_sha256"),
+        "target_post": artifact_payloads.get("target-post.json", {}).get("payload_sha256"),
+    }
+    if artifact_payloads["comparison.json"].get("inputs") != expected_inputs:
+        refuse("MO-01 comparison does not bind the manifest's normalized evidence")
+
+print("sha256:" + hashlib.sha256(raw).hexdigest())
+PY
+)"
+  structural_rc=$?
+  if [ "$structural_rc" -ne 0 ]; then
+    printf '%s\n' "$structural_digest"
+    return 3
+  fi
+
+  semantic_digest="$(python3 "$DIR/flows/mo01-compare.py" validate-bound-manifest \
+    --manifest "$manifest_path" \
+    --store "$expected_store" \
+    --run-stamp "$RUN_STAMP" \
+    --run-scope "$RUN_SCOPE" \
+    --expected-status "$expected_status" \
+    --expected-exit-code "$expected_exit_code")"
+  semantic_rc=$?
+  if [ "$semantic_rc" -ne 0 ]; then
+    printf '%s\n' "$semantic_digest"
+    return 3
+  fi
+  if [ "$semantic_digest" != "$structural_digest" ]; then
+    echo "MO-01 structural and semantic manifest digests disagree"
+    return 3
+  fi
+  printf '%s\n' "$semantic_digest"
+}
+
 agent_result_verdict() {
   local flow="$1" store="$2" result_file="$3" expected_oracle_mode="$4"
 
@@ -580,8 +780,32 @@ if [ "$LAYER" != "agent" ]; then
       else
         status="FAIL"
       fi
+      evidence_path=""
+      evidence_sha256=""
+      result_reason=""
+      if [ "$base" = "MO-01-manual-capture-order" ]; then
+        manifest_path="$EVIDENCE_DIR/runs/$RUN_STAMP-$RUN_SCOPE/$base/$s-manifest.json"
+        expected_manifest_status="$(printf '%s' "$status" | tr '[:upper:]' '[:lower:]')"
+        if [ ! -f "$manifest_path" ]; then
+          status="BLOCKED"
+          rc=3
+          result_reason="MO-01 deterministic evidence manifest is missing"
+        else
+          manifest_validation="$(validate_mo01_manifest "$manifest_path" "$s" "$expected_manifest_status" "$rc")"
+          manifest_rc=$?
+          if [ "$manifest_rc" -ne 0 ]; then
+            status="BLOCKED"
+            rc=3
+            result_reason="$manifest_validation"
+          else
+            evidence_path="$manifest_path"
+            evidence_sha256="$manifest_validation"
+            result_reason="manifest-bound deterministic evidence"
+          fi
+        fi
+      fi
       printf '  [%-7s] %s on %s\n' "$status" "$base" "$s"
-      record_result "$base" deterministic "$s" "$status" "$rc"
+      record_result "$base" deterministic "$s" "$status" "$rc" "" "$evidence_path" "$result_reason" "$evidence_sha256"
     done
   done
   for f in "$FLOWS_DIR"/*.md; do

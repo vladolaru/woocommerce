@@ -25,6 +25,6 @@ End state: order Processing, captured amount equals order total.
 - Post-capture: assert order status `processing`, intent status `succeeded`, captured amount equals the order total (no partial/zero capture), and a capture order note exists.
 - Compare ref vs target end-state.
 
-Deterministic exerciser: NOT YET WIRED — assertions above are the contract for the future flows/MO-01-*.sh.
+Deterministic exerciser: `flows/MO-01-manual-capture-order.sh` creates one provider-backed manual authorization per store, archives secret-free pre/post order and provider state, captures the full amount through the active runtime, and compares the normalized reference/target transitions.
 
 Agent oracle mode: comparable (dual-store; reference is the golden oracle).
