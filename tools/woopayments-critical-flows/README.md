@@ -118,7 +118,7 @@ Legend — **Layers:** `D` deterministic, `A` agent-driven, `D+A` both (overlap)
 
 | ID | Flow | Layers | Functional acceptance | UX checkpoints | Status |
 |----|------|--------|-----------------------|----------------|--------|
-| SS-01 | Purchase subscription (initial) | D+A | Subscription+order; token saved | Mandate; no save-PM checkbox | PENDING |
+| SS-01 | Purchase subscription (initial) | D+A | Subscription+order; token saved | Mandate; no save-PM checkbox | PENDING (Layer A runner-verified PASS 2026-07-17: dual-store $9.99 monthly block checkout, store-naming future-payments mandate, no save-PM checkbox, order/active-subscription/next-payment/token/provider/customer binding and My Account Visa 4242 parity; target missing product placeholder recorded as visual divergence; Layer D NOT YET WIRED; run `20260717T112612Z-29585-partial`) |
 | SS-02 | Change PM → new card | D+A | PM updated; renews on it | "Change payment"; PM row updates | PENDING |
 | SS-03 | **Change PM → saved card** | D+A | Saved token set; renews on it | Saved-card selectable in change-payment | PASS (runner-verified 2026-07-14: browser Layer A both stores; renewal D layer provider-reconciled with chosen-token binding artifact; run archived under evidence/runs/) |
 | SS-04 | Set / change default PM | D | Default updated; renewals use it | Set-default control | PENDING |
