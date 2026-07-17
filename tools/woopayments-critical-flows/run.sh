@@ -40,7 +40,47 @@ else
 fi
 # PID suffix keeps archive dirs unique when two runs share the same second —
 # otherwise the second run would silently overwrite the first's "append-only" archive.
-RUN_STAMP="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+RUN_STAMP="${CRITICAL_FLOWS_RUN_STAMP:-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
+if [[ ! "$RUN_STAMP" =~ ^[0-9]{8}T[0-9]{6}Z-[0-9]+$ ]]; then
+  echo "invalid critical-flows run stamp" >&2
+  exit 3
+fi
+export CRITICAL_FLOWS_RUN_STAMP="$RUN_STAMP"
+
+# Bind every run to a fresh, private 256-bit context. Callers may inject a key for
+# deterministic verification, but only the exact lowercase hexadecimal encoding is
+# accepted. The raw key is inherited by child processes; it is never passed through
+# argv or written to the evidence archive.
+if [ -z "${CRITICAL_FLOWS_RUN_CONTEXT_KEY:-}" ]; then
+  CRITICAL_FLOWS_RUN_CONTEXT_KEY="$(python3 - <<'PY'
+import secrets
+
+print(secrets.token_hex(32))
+PY
+)"
+fi
+if [[ ! "$CRITICAL_FLOWS_RUN_CONTEXT_KEY" =~ ^[0-9a-f]{64}$ ]]; then
+  echo "invalid critical-flows run context key" >&2
+  exit 3
+fi
+export CRITICAL_FLOWS_RUN_CONTEXT_KEY
+
+RUN_CONTEXT_METADATA="$(python3 - <<'PY'
+import hashlib
+import hmac
+import os
+
+key = bytes.fromhex(os.environ["CRITICAL_FLOWS_RUN_CONTEXT_KEY"])
+run_stamp = os.environ["CRITICAL_FLOWS_RUN_STAMP"]
+fingerprint = "sha256:" + hashlib.sha256(key).hexdigest()
+material = ("woopayments_critical_flows_run_context.v1\0" + run_stamp).encode("utf-8")
+binding = "hmac-sha256:" + hmac.new(key, material, hashlib.sha256).hexdigest()
+print(f"{fingerprint}\t{binding}")
+PY
+)"
+IFS=$'\t' read -r CRITICAL_FLOWS_RUN_CONTEXT_KEY_FINGERPRINT CRITICAL_FLOWS_RUN_CONTEXT_BINDING <<< "$RUN_CONTEXT_METADATA"
+unset RUN_CONTEXT_METADATA
+export CRITICAL_FLOWS_RUN_CONTEXT_KEY_FINGERPRINT CRITICAL_FLOWS_RUN_CONTEXT_BINDING
 
 if [ "$LAYER" != "agent" ] && [ "$STORE" != "ref" ] && { [ -z "$ONLY_FLOW" ] || [[ "MC-06-automatic-rates-refresh" == "$ONLY_FLOW"* ]]; }; then
   if [ -z "$REF_URL" ] || [ -z "$TARGET_URL" ]; then
@@ -103,11 +143,23 @@ agent_oracle_mode() { # <spec.md>
   fi
 }
 
+set_log_evidence_context() { # <flow-id>
+  local flow_id="$1"
+  if [[ ! "$flow_id" =~ ^[A-Z]{2,3}-[0-9]{2}-[a-z0-9]+(-[a-z0-9]+)*$ ]]; then
+    echo "BLOCKED: invalid critical-flow ID for log evidence: $flow_id" >&2
+    return 3
+  fi
+  CRITICAL_FLOWS_FLOW_ID="$flow_id"
+  CRITICAL_FLOWS_LOG_PURPOSE="clean-debug-log"
+  export CRITICAL_FLOWS_FLOW_ID CRITICAL_FLOWS_LOG_PURPOSE
+}
+
 run_no_browser_deterministic_flow() { # <flow-base> <store>
-  local base="$1" store="$2" rc log_rc marker_rc out_dir validation_output validation_rc trusted_fail evidence_block manifest
+  local base="$1" store="$2" rc log_rc marker_rc out_dir validation_output validation_rc fixed_validation_output fixed_validation_rc trusted_fail evidence_block manifest
 
   case "$base" in
     MA-10-i18n-order-notes)
+      set_log_evidence_context "$base" || return 3
       if [ "$store" = "ref" ]; then
         FLOW_RESULT_REASON="reference extension same-note-family oracle is not wired"
         echo "[MA-10/ref] BLOCKED: $FLOW_RESULT_REASON"
@@ -127,6 +179,7 @@ run_no_browser_deterministic_flow() { # <flow-base> <store>
       echo "[MA-10/$store] exercise: validate localized native WooPayments order notes"
       out_dir="$EVIDENCE_DIR/runs/$RUN_STAMP-$RUN_SCOPE/MA-10-i18n-order-notes"
       mkdir -p "$out_dir"
+      rm -f "$out_dir/manifest.json" "$out_dir/manifest.json.tmp"
       mark_log_clean_start "$store"
       marker_rc=$?
       if [ "$marker_rc" -ne 0 ]; then
@@ -139,14 +192,26 @@ run_no_browser_deterministic_flow() { # <flow-base> <store>
       log_rc=$?
       validation_rc=0
       if [ "$rc" -eq 0 ] || [ "$rc" -eq 1 ] || [ "$rc" -eq 3 ]; then
-        validation_output="$(python3 "$MA10_EVIDENCE_VALIDATOR" --evidence-dir "$out_dir" --gate-exit "$rc" 2>&1)"
+        validation_output="$(python3 "$MA10_EVIDENCE_VALIDATOR" --evidence-dir "$out_dir" --gate-exit "$rc" --run-stamp "$RUN_STAMP" --store target --flow-id MA-10-i18n-order-notes --purpose clean-debug-log 2>&1)"
         validation_rc=$?
         if [ "$validation_rc" -ne 0 ]; then
           printf '%s\n' "$validation_output"
         fi
-        if { [ "$validation_rc" -eq 0 ] || [ "$validation_rc" -eq 1 ]; } && [ ! -f "$out_dir/manifest.json" ]; then
-          echo "BLOCKED: MA-10 evidence validator returned without a manifest"
-          validation_rc=3
+        if [ "$validation_rc" -eq 0 ] || [ "$validation_rc" -eq 1 ]; then
+          if [ -f "$out_dir/manifest.json" ]; then
+            fixed_validation_output="$(python3 "$DIR/flows/ma10-validate.py" --verify-manifest --evidence-dir "$out_dir" --gate-exit "$rc" --run-stamp "$RUN_STAMP" --store target --flow-id MA-10-i18n-order-notes --purpose clean-debug-log 2>&1)"
+            fixed_validation_rc=$?
+          else
+            fixed_validation_output="BLOCKED: MA-10 manifest verification failed: manifest.json is missing"
+            fixed_validation_rc=3
+          fi
+          if [ "$fixed_validation_rc" -eq 0 ] || [ "$fixed_validation_rc" -eq 1 ]; then
+            validation_rc=$fixed_validation_rc
+          else
+            printf '%s\n' "$fixed_validation_output"
+            echo "BLOCKED: MA-10 evidence validator returned without a trusted current manifest"
+            validation_rc=3
+          fi
         fi
       else
         validation_rc=3
@@ -157,13 +222,11 @@ run_no_browser_deterministic_flow() { # <flow-base> <store>
       [ "$validation_rc" -eq 1 ] && trusted_fail=1
       if [ "$validation_rc" -ne 0 ] && [ "$validation_rc" -ne 1 ]; then
         evidence_block=1
-      fi
-      if [ "$rc" -eq 1 ] && [ "$validation_rc" -ne 3 ]; then
-        trusted_fail=1
+        rm -f "$out_dir/manifest.json" "$out_dir/manifest.json.tmp"
       fi
       [ "$log_rc" -eq 1 ] && trusted_fail=1
 
-      if [ -f "$out_dir/manifest.json" ]; then
+      if { [ "$validation_rc" -eq 0 ] || [ "$validation_rc" -eq 1 ]; } && [ -f "$out_dir/manifest.json" ]; then
         manifest="$out_dir/manifest.json"
         FLOW_EVIDENCE_PATH="$manifest"
         FLOW_EVIDENCE_SHA256="$(python3 -c 'import hashlib, sys; print("sha256:" + hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "$manifest")"
@@ -490,6 +553,20 @@ validate_mo02_manifest() {
     --expected-exit-code "$expected_exit_code"
 }
 
+validate_mo03_manifest() {
+  local manifest_path="$1" expected_store="$2" expected_status="$3" expected_exit_code="$4"
+
+  python3 "$DIR/flows/mo03-evidence.py" validate-bound-manifest \
+    --manifest "$manifest_path" \
+    --store "$expected_store" \
+    --run-stamp "$RUN_STAMP" \
+    --run-scope "$RUN_SCOPE" \
+    --expected-status "$expected_status" \
+    --expected-exit-code "$expected_exit_code" \
+    --flow-id "MO-03-manual-capture-payment-details" \
+    --purpose "clean-debug-log"
+}
+
 agent_result_verdict() {
   local flow="$1" store="$2" result_file="$3" expected_oracle_mode="$4"
 
@@ -650,6 +727,7 @@ PY
 write_rollup() {
   python3 - "$ROLLUP_JSON" "$RESULTS_JSONL" "$STORE" "$LAYER" "$ONLY_FLOW" "$PASS_COUNT" "$FAIL_COUNT" "$BLOCKED_COUNT" "$QUEUED_AGENT_COUNT" "$AGENT_QUEUE" "$EVIDENCE_CONTEXT_FILE" "$MATRIX_TSV" "$RUN_SCOPE" "$RUN_STAMP" <<'PY'
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -710,6 +788,11 @@ payload = {
     "store": store,
     "layer": layer,
     "flow": only_flow or "all",
+    "run_context": {
+        "schema": "woopayments_critical_flows_run_context.v1",
+        "key_fingerprint": os.environ["CRITICAL_FLOWS_RUN_CONTEXT_KEY_FINGERPRINT"],
+        "run_binding": os.environ["CRITICAL_FLOWS_RUN_CONTEXT_BINDING"],
+    },
     "summary": {
         "passed": int(passed),
         "failed": failed_count,
@@ -775,16 +858,30 @@ if [ "$LAYER" != "agent" ]; then
     base="$(basename "$f" .sh)"
     [ -n "$ONLY_FLOW" ] && [[ "$base" != "$ONLY_FLOW"* ]] && continue
     echo "--- $base ---"
+    if ! set_log_evidence_context "$base"; then
+      echo "BLOCKED: refusing to run $base without an exact log evidence context" >&2
+      exit 3
+    fi
     for s in $(stores); do
-      mark_log_clean_start "$s"
-      marker_rc=$?
-      if [ "$marker_rc" -ne 0 ]; then
+      (
+        mark_log_clean_start "$s"
+        marker_rc=$?
+        if [ "$marker_rc" -ne 0 ]; then
+          exit 125
+        fi
+        CRITICAL_FLOWS_RUN_SCOPE="$RUN_SCOPE"
+        CRITICAL_FLOWS_RUN_STAMP="$RUN_STAMP"
+        STORE_NAME="$s"
+        export CRITICAL_FLOWS_RUN_SCOPE CRITICAL_FLOWS_RUN_STAMP STORE_NAME
+        source "$f"
+      )
+      rc=$?
+      if [ "$rc" -eq 125 ]; then
+        marker_rc=3
         printf '  [%-7s] %s on %s\n' "BLOCKED" "$base" "$s"
         record_result "$base" deterministic "$s" BLOCKED "$marker_rc" "" "" "log-clean marker could not be recorded"
         continue
       fi
-      CRITICAL_FLOWS_RUN_SCOPE="$RUN_SCOPE" CRITICAL_FLOWS_RUN_STAMP="$RUN_STAMP" STORE_NAME="$s" bash "$f"
-      rc=$?
       if [ "$rc" -eq 0 ]; then
         status="PASS"
       elif [ "$rc" -eq 2 ] || [ "$rc" -eq 3 ]; then
@@ -824,6 +921,26 @@ if [ "$LAYER" != "agent" ]; then
           result_reason="MO-02 deterministic evidence manifest is missing"
         else
           manifest_validation="$(validate_mo02_manifest "$manifest_path" "$s" "$expected_manifest_status" "$rc")"
+          manifest_rc=$?
+          if [ "$manifest_rc" -ne 0 ]; then
+            status="BLOCKED"
+            rc=3
+            result_reason="$manifest_validation"
+          else
+            evidence_path="$manifest_path"
+            evidence_sha256="$manifest_validation"
+            result_reason="manifest-bound deterministic evidence"
+          fi
+        fi
+      elif [ "$base" = "MO-03-manual-capture-payment-details" ]; then
+        manifest_path="$EVIDENCE_DIR/runs/$RUN_STAMP-$RUN_SCOPE/$base/$s-manifest.json"
+        expected_manifest_status="$(printf '%s' "$status" | tr '[:upper:]' '[:lower:]')"
+        if [ ! -f "$manifest_path" ]; then
+          status="BLOCKED"
+          rc=3
+          result_reason="MO-03 deterministic evidence manifest is missing"
+        else
+          manifest_validation="$(validate_mo03_manifest "$manifest_path" "$s" "$expected_manifest_status" "$rc")"
           manifest_rc=$?
           if [ "$manifest_rc" -ne 0 ]; then
             status="BLOCKED"

@@ -3,16 +3,27 @@
 
 from __future__ import annotations
 
+import array
+import calendar
+import fcntl
 import hashlib
+import hmac
 import importlib.util
 import json
 import os
+import re
+import select
 import shlex
 import shutil
+import signal
+import stat
 import subprocess
 import tempfile
+import termios
 import time
 from pathlib import Path
+
+import pytest
 
 from tools.woopayments_test_runner import adapt_single_wp_runner
 
@@ -21,15 +32,51 @@ REPO = Path(__file__).resolve().parents[2]
 RUNNER = REPO / "tools/woopayments-critical-flows/run.sh"
 COMMON = REPO / "tools/woopayments-critical-flows/lib/common.sh"
 FLOW_DRIVE = REPO / "tools/woopayments-merge/flow-drive.sh"
+FLOW_CAPTURE_DRIVER = REPO / "tools/woopayments-merge/flow-drive-capture.php"
 CONTEXT_MODULE_PATH = REPO / "tools/woopayments-critical-flows/evidence_context.py"
 MA09_DRIVER = (
     REPO
     / "tools/woopayments-critical-flows/flows/class-woopaymentscriticalflowsma09driver.php"
 )
 MA10_VALIDATOR = REPO / "tools/woopayments-critical-flows/flows/ma10-validate.py"
+LOG_OBSERVER_DRIVER = (
+    REPO
+    / "tools/woopayments-critical-flows/flows/class-woopaymentscriticalflowslogobserver.php"
+)
 MO01_COMPARATOR = REPO / "tools/woopayments-critical-flows/flows/mo01-compare.py"
 MO02_EVIDENCE = REPO / "tools/woopayments-critical-flows/flows/mo02-evidence.py"
+MO03_EVIDENCE = REPO / "tools/woopayments-critical-flows/flows/mo03-evidence.py"
+MO03_DRIVER = (
+    REPO
+    / "tools/woopayments-critical-flows/flows/class-woopaymentscriticalflowsmo03driver.php"
+)
+MO03_CONTRACT = (
+    REPO
+    / "tools/woopayments-critical-flows/flows/"
+    "MO-03-manual-capture-payment-details.md"
+)
 MO02_TEST_EPOCH = int(time.time())
+MO03_TEST_EPOCH = MO02_TEST_EPOCH
+TEST_RUN_STAMP = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime(MO03_TEST_EPOCH)) + "-30303"
+TEST_MARKER_CREATED_AT = time.strftime(
+    "%Y-%m-%dT%H:%M:%SZ", time.gmtime(MO03_TEST_EPOCH)
+)
+TEST_RUN_CONTEXT_KEY = "11" * 32
+STARTUP_DRAIN_MAX_BYTES = 8 * 1024 * 1024
+MO03_LOG_CONTEXT_ARGS = (
+    "--flow-id",
+    "MO-03-manual-capture-payment-details",
+    "--purpose",
+    "clean-debug-log",
+)
+MA10_LOG_CONTEXT_ARGS = (
+    "--store",
+    "target",
+    "--flow-id",
+    "MA-10-i18n-order-notes",
+    "--purpose",
+    "clean-debug-log",
+)
 
 
 def load_context_module():
@@ -93,9 +140,47 @@ def file_sha256(path: Path) -> str:
     return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def sc01_fake_wp_source(owner: str, home: str, intent_id: str, charge_id: str) -> str:
+def sc01_fake_wp_source(
+    owner: str,
+    home: str,
+    intent_id: str,
+    charge_id: str,
+    *,
+    command_prefix: str = "",
+) -> str:
     """Fake wp CLI that answers the store-identity probe plus the SC-01 state asserts."""
+    store = "ref" if owner == "plugin" else "target"
+    log_payload = common_log_scan_v5(
+        run_stamp=TEST_RUN_STAMP,
+        store=store,
+        flow_id="SC-01-card-checkout",
+        purpose="clean-debug-log",
+        marker_created_at=TEST_MARKER_CREATED_AT,
+    )
+    log_json = json.dumps(log_payload, separators=(",", ":"))
+    prefix_shift = (
+        f'if [ "$1" = {shlex.quote(command_prefix)} ]; then shift; fi'
+        if command_prefix
+        else ""
+    )
     return f"""#!/usr/bin/env bash
+{authenticated_log_fake_prelude(log_payload)}
+{prefix_shift}
+if [ "$1" = "option" ] && [ "$2" = "get" ]; then
+  printf '%s\n' '{home}'
+  exit 0
+fi
+if [ "$1" = "eval-file" ]; then
+  body="$(cat)"
+  if [[ "$body" == "<?php"* && "$body" == *"update_option"*"woopayments_critical_flows_debug_log_marker"* ]]; then
+    printf '%s\n' '{{"status":"pass"}}'
+    exit 0
+  fi
+  if [[ "$body" == "<?php"* && "$body" == *"ignored_matches"* ]]; then
+    printf '%s\n' '{log_json}'
+    exit 0
+  fi
+fi
 if [ "$1" = "eval" ]; then
   if [[ "$2" == *"store_identity_owner"* ]]; then
     printf '%s\\n' "store_identity_owner={owner}"
@@ -114,7 +199,7 @@ if [ "$1" = "eval" ]; then
     printf '%s\\n' "order_meta_value={charge_id}"
     exit 0
   fi
-  printf '%s\\n' '{{"status":"pass","paths":["/tmp/fake-debug.log"],"matches":[]}}'
+  printf '%s\\n' '{log_json}'
   exit 0
 fi
 printf 'unexpected fake wp call: %s\\n' "$*" >&2
@@ -122,16 +207,42 @@ exit 2
 """
 
 
-def probe_only_fake_wp_source(owner: str, home: str) -> str:
+def probe_only_fake_wp_source(
+    owner: str,
+    home: str,
+    *,
+    flow_id: str = "SC-01-card-checkout",
+) -> str:
     """Fake wp CLI that answers the store-identity probe and log-clean evals only."""
+    store = "ref" if owner == "plugin" else "target"
+    log_payload = common_log_scan_v5(
+        run_stamp=TEST_RUN_STAMP,
+        store=store,
+        flow_id=flow_id,
+        purpose="clean-debug-log",
+        marker_created_at=TEST_MARKER_CREATED_AT,
+    )
+    log_json = json.dumps(log_payload, separators=(",", ":"))
     return f"""#!/usr/bin/env bash
+{authenticated_log_fake_prelude(log_payload)}
+if [ "$1" = "eval-file" ]; then
+  body="$(cat)"
+  if [[ "$body" == "<?php"* && "$body" == *"update_option"*"woopayments_critical_flows_debug_log_marker"* ]]; then
+    printf '%s\n' '{{"status":"pass"}}'
+    exit 0
+  fi
+  if [[ "$body" == "<?php"* && "$body" == *"ignored_matches"* ]]; then
+    printf '%s\n' '{log_json}'
+    exit 0
+  fi
+fi
 if [ "$1" = "eval" ]; then
   if [[ "$2" == *"store_identity_owner"* ]]; then
     printf '%s\\n' "store_identity_owner={owner}"
     printf '%s\\n' "store_identity_home={home}"
     exit 0
   fi
-  printf '%s\\n' '{{"status":"pass","paths":["/tmp/fake-debug.log"],"matches":[]}}'
+  printf '%s\\n' '{log_json}'
   exit 0
 fi
 printf 'unexpected fake wp call: %s\\n' "$*" >&2
@@ -148,9 +259,31 @@ def sp01_fake_wp_source(
 ) -> str:
     """Fake wp CLI for the SP-01 state driver and shared log assertions."""
     payload = json.dumps(state_payload, separators=(",", ":"))
+    store = "ref" if owner == "plugin" else "target"
+    log_payload = common_log_scan_v5(
+        run_stamp=TEST_RUN_STAMP,
+        store=store,
+        flow_id="SP-01-add-payment-method-card",
+        purpose="clean-debug-log",
+        marker_created_at=TEST_MARKER_CREATED_AT,
+    )
+    log_json = json.dumps(log_payload, separators=(",", ":"))
     return f"""#!/usr/bin/env bash
+{authenticated_log_fake_prelude(log_payload)}
 if [ "$1" = "eval-file" ]; then
-  cat >/dev/null
+  body="$(cat)"
+  if [[ "$body" == *"update_option"*"woopayments_critical_flows_debug_log_marker"* ]]; then
+    printf '%s\\n' '{{"status":"pass"}}'
+    exit 0
+  fi
+  if [[ "$body" == *"ignored_matches"* ]]; then
+    if [ {log_probe_exit_code} -ne 0 ]; then
+      printf '%s\\n' 'fake log probe unavailable' >&2
+      exit {log_probe_exit_code}
+    fi
+    printf '%s\\n' '{log_json}'
+    exit 0
+  fi
   printf '%s\\n' '{payload}'
   exit 0
 fi
@@ -168,7 +301,7 @@ if [ "$1" = "eval" ]; then
     printf '%s\\n' 'fake log probe unavailable' >&2
     exit {log_probe_exit_code}
   fi
-  printf '%s\\n' '{{"status":"pass","paths":["/tmp/fake-debug.log"],"matches":[]}}'
+  printf '%s\\n' '{log_json}'
   exit 0
 fi
 printf 'unexpected fake wp call: %s\\n' "$*" >&2
@@ -245,13 +378,35 @@ def mo01_fake_wp_source(
     """Fake wp CLI for MO-01 state snapshots plus shared runner probes."""
     pre = json.dumps(pre_payload, separators=(",", ":"))
     post = json.dumps(post_payload, separators=(",", ":"))
+    store = "ref" if owner == "plugin" else "target"
+    log_payload = common_log_scan_v5(
+        run_stamp=TEST_RUN_STAMP,
+        store=store,
+        flow_id="MO-01-manual-capture-order",
+        purpose="clean-debug-log",
+        marker_created_at=TEST_MARKER_CREATED_AT,
+    )
+    log_json = json.dumps(log_payload, separators=(",", ":"))
     post_exit_code = state_exit_code if post_state_exit_code is None else post_state_exit_code
     return f"""#!/usr/bin/env bash
+{authenticated_log_fake_prelude(log_payload)}
 if [ "$1" = "--user=1" ]; then
   shift
 fi
 if [ "$1" = "eval-file" ]; then
-  cat >/dev/null
+  body="$(cat)"
+  if [[ "$body" == "<?php"* && "$body" == *"update_option"*"woopayments_critical_flows_debug_log_marker"* ]]; then
+    printf '%s\\n' '{{"status":"pass"}}'
+    exit 0
+  fi
+  if [[ "$body" == "<?php"* && "$body" == *"ignored_matches"* ]]; then
+    if [ {log_probe_exit_code} -ne 0 ]; then
+      printf '%s\\n' 'fake log probe unavailable' >&2
+      exit {log_probe_exit_code}
+    fi
+    printf '%s\\n' '{log_json}'
+    exit 0
+  fi
   state_exit_code={state_exit_code}
   if [ "$5" = "post" ]; then
     state_exit_code={post_exit_code}
@@ -281,7 +436,7 @@ if [ "$1" = "eval" ]; then
     printf '%s\n' 'fake log probe unavailable' >&2
     exit {log_probe_exit_code}
   fi
-  printf '%s\\n' '{{"status":"pass","paths":["/tmp/fake-debug.log"],"matches":[]}}'
+  printf '%s\\n' '{log_json}'
   exit 0
 fi
 printf 'unexpected fake wp call: %s\\n' "$*" >&2
@@ -404,13 +559,35 @@ def mo02_fake_wp_source(
     pre = json.dumps(pre_payload, separators=(",", ":"))
     post = json.dumps(post_payload, separators=(",", ":"))
     capture = json.dumps(capture_payload, separators=(",", ":"))
+    store = "ref" if owner == "plugin" else "target"
+    log_payload = common_log_scan_v5(
+        run_stamp=TEST_RUN_STAMP,
+        store=store,
+        flow_id="MO-02-manual-capture-uncaptured-tab",
+        purpose="clean-debug-log",
+        marker_created_at=TEST_MARKER_CREATED_AT,
+    )
+    log_json = json.dumps(log_payload, separators=(",", ":"))
     post_exit_code = state_exit_code if post_state_exit_code is None else post_state_exit_code
     return f"""#!/usr/bin/env bash
+{authenticated_log_fake_prelude(log_payload)}
 if [ "$1" = "--user=1" ]; then
   shift
 fi
 if [ "$1" = "eval-file" ]; then
-  cat >/dev/null
+  body="$(cat)"
+  if [[ "$body" == "<?php"* && "$body" == *"update_option"*"woopayments_critical_flows_debug_log_marker"* ]]; then
+    printf '%s\\n' '{{"status":"pass"}}'
+    exit 0
+  fi
+  if [[ "$body" == "<?php"* && "$body" == *"ignored_matches"* ]]; then
+    if [ {log_probe_exit_code} -ne 0 ]; then
+      printf '%s\\n' 'fake log probe unavailable' >&2
+      exit {log_probe_exit_code}
+    fi
+    printf '%s\\n' '{log_json}'
+    exit 0
+  fi
   if [ "$4" = "capture" ]; then
     printf '%s\\n' '{pre_payload["store"]}:capture' >> {shlex.quote(str(call_log))}
     printf '%s\\n' '{capture}'
@@ -445,11 +622,2031 @@ if [ "$1" = "eval" ]; then
     printf '%s\\n' 'fake log probe unavailable' >&2
     exit {log_probe_exit_code}
   fi
-  printf '%s\\n' '{{"status":"pass","paths":["/tmp/fake-debug.log"],"matches":[]}}'
+  printf '%s\\n' '{log_json}'
   exit 0
 fi
 printf 'unexpected fake wp call: %s\\n' "$*" >&2
 exit 2
+"""
+
+
+def mo03_state_payload(
+    store: str,
+    phase: str,
+    *,
+    status: str = "raw",
+    authorization_present: bool | None = None,
+    total_minor: int = 5000,
+    runtime_owner: str | None = None,
+    blockers: list[str] | None = None,
+    order_created: int | None = None,
+    observed_at: int | None = None,
+    row_created: int | None = None,
+    authorization_note_count: int = 1,
+) -> dict:
+    """Return one strict fake MO-03 payment-details state snapshot."""
+    pre_capture = phase == "pre"
+    present = pre_capture if authorization_present is None else authorization_present
+    order_id = 301 if store == "ref" else 302
+    intent_id = f"pi_{store}_details"
+    charge_id = f"ch_{store}_details"
+    matched_rows = []
+    if present:
+        matched_rows.append(
+            {
+                "charge_id": charge_id,
+                "payment_intent_id": intent_id,
+                "order_id": order_id,
+                "amount_minor": total_minor,
+                "amount_captured_minor": 0,
+                "currency": "USD",
+                "status": "succeeded",
+                "created": row_created if row_created is not None else MO03_TEST_EPOCH,
+            }
+        )
+    return {
+        "schema": "woopayments_mo03_state.v1",
+        "status": status,
+        "blockers": blockers
+        if blockers is not None
+        else ([] if status != "blocked" else ["Payment details state is unavailable."]),
+        "store": store,
+        "phase": phase,
+        "runtime_owner": runtime_owner or ("plugin" if store == "ref" else "native"),
+        "order": {
+            "id": order_id,
+            "created": order_created if order_created is not None else MO03_TEST_EPOCH,
+            "status": "on-hold" if pre_capture else "processing",
+            "paid": not pre_capture,
+            "currency": "USD",
+            "total_minor": total_minor,
+            "payment_method": "woocommerce_payments",
+            "intent_id": intent_id,
+            "charge_id": charge_id,
+            "intention_status": "requires_capture" if pre_capture else "succeeded",
+        },
+        "provider": {
+            "intent_id": intent_id,
+            "intent_status": "requires_capture" if pre_capture else "succeeded",
+            "intent_amount_minor": total_minor,
+            "intent_currency": "USD",
+            "charge_id": charge_id,
+            "charge_amount_minor": total_minor,
+            "charge_amount_captured_minor": 0 if pre_capture else total_minor,
+            "charge_captured": not pre_capture,
+            "charge_currency": "USD",
+        },
+        "authorizations": {
+            "route": "/wc/v3/payments/authorizations",
+            "http_status": 200,
+            "pages_scanned": 1,
+            "rows_scanned": 1 if present else 0,
+            "observed_at": observed_at if observed_at is not None else MO03_TEST_EPOCH,
+            "exact_match_count": 1 if present else 0,
+            "matched_rows": matched_rows,
+        },
+        "notes": {
+            "authorization_count": authorization_note_count,
+            "capture_success_count": 0 if pre_capture else 1,
+            "capture_failure_count": 0,
+        },
+    }
+
+
+def mo03_capture_payload(store: str, *, status: str = "pass") -> dict:
+    """Return one fake provider/order capture record from flow-drive.sh."""
+    order_id = 301 if store == "ref" else 302
+    passing = status == "pass"
+    transient = status == "blocked"
+    native = store == "target"
+    payload = {
+        "op": "capture",
+        "order_id": order_id,
+        "intent_id": f"pi_{store}_details",
+        "charge_id": f"ch_{store}_details",
+        "status": "processing" if passing else "on-hold",
+        "intention_status": "succeeded" if passing else "requires_capture",
+        "success": passing,
+        "transport_kind": "native_outcome" if native else "plugin_http",
+        "provider_status": "completed" if passing and native else "succeeded" if passing else "failed",
+        "http_code": 0 if native and not transient else 200 if passing else 503 if transient else 402,
+    }
+    if not passing:
+        payload.update(
+            {
+                "error_code": "http_503" if transient else "capture_declined",
+                "error_message": (
+                    "Provider service temporarily unavailable."
+                    if transient
+                    else "Capture was declined."
+                ),
+            }
+        )
+    return payload
+
+
+def safe_log_record(
+    *,
+    path: str = "fake-debug.log",
+    line: int = 12,
+    category: str = "warning",
+    diagnostic: str = "PHP Warning: deterministic fake warning",
+) -> dict:
+    """Return one secret-free log match projection."""
+    return {
+        "path": path,
+        "line": line,
+        "category": category,
+        "fingerprint": "sha256:" + hashlib.sha256(diagnostic.encode("utf-8")).hexdigest(),
+    }
+
+
+def log_scan_v2(
+    *,
+    status: str = "pass",
+    marker_created_at: str = "2026-07-16T16:00:00Z",
+    run_stamp: str | None = None,
+    start_line_count: int = 4,
+    end_line_count: int = 4,
+    path: str = "fake-debug.log",
+    matches: list[dict] | None = None,
+    ignored_matches: list[dict] | None = None,
+    blocker_code: str = "",
+) -> dict:
+    """Return one current strict shared log-scan packet for legacy-named fixtures."""
+    if run_stamp is None:
+        try:
+            run_stamp = time.strftime(
+                "%Y%m%dT%H%M%SZ",
+                time.strptime(marker_created_at, "%Y-%m-%dT%H:%M:%SZ"),
+            ) + "-30303"
+        except ValueError:
+            run_stamp = "20260716T160000Z-30303"
+    identity = "sha256:" + hashlib.sha256(b"fake-log-identity").hexdigest()
+    prefix = "sha256:" + hashlib.sha256(b"fake-log-prefix").hexdigest()
+    canary = "sha256:" + hashlib.sha256(b"fake-log-canary").hexdigest()
+    return {
+        "status": status,
+        "run_stamp": run_stamp,
+        "marker_created_at": marker_created_at,
+        "observations": [
+            {
+                "path": path,
+                "start_line_count": start_line_count,
+                "end_line_count": end_line_count,
+                "marker_identity_fingerprint": identity,
+                "observed_identity_fingerprint": identity,
+                "marker_prefix_fingerprint": prefix,
+                "observed_prefix_fingerprint": prefix,
+                "marker_canary_fingerprint": canary,
+                "observed_canary_fingerprint": canary,
+            }
+        ],
+        "matches": [] if matches is None else matches,
+        "ignored_matches": [] if ignored_matches is None else ignored_matches,
+        "blocker_code": blocker_code,
+    }
+
+
+def anchored_log_scan_v3(
+    *,
+    status: str = "pass",
+    marker_created_at: str = "2026-07-16T16:00:00Z",
+    start_line_count: int = 4,
+    end_line_count: int = 4,
+    path: str = "fake-debug.log",
+    matches: list[dict] | None = None,
+    ignored_matches: list[dict] | None = None,
+    blocker_code: str = "",
+    marker_identity_fingerprint: str | None = None,
+    observed_identity_fingerprint: str | None = None,
+    marker_prefix_fingerprint: str | None = None,
+    observed_prefix_fingerprint: str | None = None,
+) -> dict:
+    """Return one strict anchored shared log-scan v3 payload."""
+    identity = "sha256:" + hashlib.sha256(b"fake-log-identity").hexdigest()
+    prefix = "sha256:" + hashlib.sha256(b"fake-log-prefix").hexdigest()
+    return {
+        "status": status,
+        "marker_created_at": marker_created_at,
+        "observations": [
+            {
+                "path": path,
+                "start_line_count": start_line_count,
+                "end_line_count": end_line_count,
+                "marker_identity_fingerprint": marker_identity_fingerprint or identity,
+                "observed_identity_fingerprint": observed_identity_fingerprint or identity,
+                "marker_prefix_fingerprint": marker_prefix_fingerprint or prefix,
+                "observed_prefix_fingerprint": observed_prefix_fingerprint or prefix,
+            }
+        ],
+        "matches": [] if matches is None else matches,
+        "ignored_matches": [] if ignored_matches is None else ignored_matches,
+        "blocker_code": blocker_code,
+    }
+
+
+def canary_log_scan_v4(
+    *,
+    status: str = "pass",
+    run_stamp: str = "20260716T160000Z-30303",
+    marker_created_at: str = "2026-07-16T16:00:00Z",
+    start_line_count: int = 5,
+    end_line_count: int = 5,
+    path: str = "fake-debug.log",
+    matches: list[dict] | None = None,
+    ignored_matches: list[dict] | None = None,
+    blocker_code: str = "",
+    observed_identity_fingerprint: str | None = None,
+    observed_prefix_fingerprint: str | None = None,
+    observed_canary_fingerprint: str | None = None,
+) -> dict:
+    """Return one exact-origin, canary-bound shared log-scan v4 payload."""
+    identity = "sha256:" + hashlib.sha256(b"fake-log-identity").hexdigest()
+    prefix = "sha256:" + hashlib.sha256(b"fake-log-prefix-with-canary").hexdigest()
+    canary = "sha256:" + hashlib.sha256(b"fake-log-canary").hexdigest()
+    return {
+        "status": status,
+        "run_stamp": run_stamp,
+        "marker_created_at": marker_created_at,
+        "observations": [
+            {
+                "path": path,
+                "start_line_count": start_line_count,
+                "end_line_count": end_line_count,
+                "marker_identity_fingerprint": identity,
+                "observed_identity_fingerprint": observed_identity_fingerprint or identity,
+                "marker_prefix_fingerprint": prefix,
+                "observed_prefix_fingerprint": observed_prefix_fingerprint or prefix,
+                "marker_canary_fingerprint": canary,
+                "observed_canary_fingerprint": observed_canary_fingerprint or canary,
+            }
+        ],
+        "matches": [] if matches is None else matches,
+        "ignored_matches": [] if ignored_matches is None else ignored_matches,
+        "blocker_code": blocker_code,
+    }
+
+
+def common_log_scan_v5(
+    *,
+    store: str = "target",
+    flow_id: str = "MO-03-manual-capture-payment-details",
+    purpose: str = "clean-debug-log",
+    status: str = "pass",
+    run_stamp: str = "20260716T160000Z-30303",
+    marker_created_at: str = "2026-07-16T16:00:00Z",
+    start_line_count: int = 4,
+    end_line_count: int = 4,
+    start_byte_count: int = 128,
+    end_byte_count: int = 128,
+    path: str = "fake-debug.log",
+    matches: list[dict] | None = None,
+    ignored_matches: list[dict] | None = None,
+    blocker_code: str = "",
+    observed_identity_fingerprint: str | None = None,
+    observed_prefix_fingerprint: str | None = None,
+    observed_canary_fingerprint: str | None = None,
+    origin_nonce: str = "00000000-0000-4000-8000-000000000111",
+    observer_id: str = "00000000-0000-4000-8000-000000000777",
+) -> dict:
+    """Return one strict authenticated common log-scan v5 producer payload."""
+    identity = "sha256:" + hashlib.sha256(b"fake-log-identity").hexdigest()
+    prefix = "sha256:" + hashlib.sha256(b"fake-log-prefix-with-canary").hexdigest()
+    canary = "sha256:" + hashlib.sha256(b"fake-log-canary").hexdigest()
+    owner = 501
+    group = 20
+    mode = 0o640
+    marker_path = f"/tmp/{path}"
+    path_id = "hmac-sha256:" + hmac.new(
+        bytes.fromhex(TEST_RUN_CONTEXT_KEY),
+        b"woopayments_debug_log_path.v1\0" + marker_path.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    marker = {
+        "schema": "woopayments_debug_log_marker.v6",
+        "created_at": marker_created_at,
+        "run_stamp": run_stamp,
+        "store": store,
+        "flow_id": flow_id,
+        "purpose": purpose,
+        "origin_nonce": origin_nonce,
+        "observer_id": observer_id,
+        "key_fingerprint": "sha256:"
+        + hashlib.sha256(bytes.fromhex(TEST_RUN_CONTEXT_KEY)).hexdigest(),
+        "origin_binding": "",
+        "paths": {
+            marker_path: {
+                "path_id": path_id,
+                "line_count": start_line_count,
+                "byte_count": start_byte_count,
+                "identity_fingerprint": identity,
+                "prefix_fingerprint": prefix,
+                "canary_fingerprint": canary,
+                "owner": owner,
+                "group": group,
+                "mode": mode,
+            }
+        },
+    }
+    marker["origin_binding"] = "hmac-sha256:" + hmac.new(
+        bytes.fromhex(TEST_RUN_CONTEXT_KEY),
+        log_observer_origin_material(marker),
+        hashlib.sha256,
+    ).hexdigest()
+    return {
+        "status": status,
+        "run_stamp": run_stamp,
+        "store": store,
+        "flow_id": flow_id,
+        "purpose": purpose,
+        "marker_created_at": marker_created_at,
+        "origin_nonce": origin_nonce,
+        "observer_id": observer_id,
+        "key_fingerprint": marker["key_fingerprint"],
+        "origin_binding": marker["origin_binding"],
+        "observations": [
+            {
+                "path": path,
+                "path_id": path_id,
+                "start_line_count": start_line_count,
+                "end_line_count": end_line_count,
+                "start_byte_count": start_byte_count,
+                "end_byte_count": end_byte_count,
+                "marker_identity_fingerprint": identity,
+                "observed_identity_fingerprint": observed_identity_fingerprint or identity,
+                "marker_prefix_fingerprint": prefix,
+                "observed_prefix_fingerprint": observed_prefix_fingerprint or prefix,
+                "marker_canary_fingerprint": canary,
+                "observed_canary_fingerprint": observed_canary_fingerprint or canary,
+                "marker_owner": owner,
+                "observed_owner": owner,
+                "marker_group": group,
+                "observed_group": group,
+                "marker_mode": mode,
+                "observed_mode": mode,
+            }
+        ],
+        "matches": [] if matches is None else matches,
+        "ignored_matches": [] if ignored_matches is None else ignored_matches,
+        "blocker_code": blocker_code,
+    }
+
+
+def ma10_log_scan_v5(**overrides: object) -> dict:
+    """Return one exact target/MA-10/clean-debug-log common scan fixture."""
+    return common_log_scan_v5(
+        store="target",
+        flow_id="MA-10-i18n-order-notes",
+        purpose="clean-debug-log",
+        **overrides,
+    )
+
+
+def mo03_ref_log_scan_v5(**overrides: object) -> dict:
+    """Return one exact reference/MO-03/clean-debug-log common scan fixture."""
+    return common_log_scan_v5(
+        store="ref",
+        flow_id="MO-03-manual-capture-payment-details",
+        purpose="clean-debug-log",
+        **overrides,
+    )
+
+
+def common_log_evidence_v5(
+    *,
+    store: str = "target",
+    scan: dict | None = None,
+    extra_observer_categories: tuple[str, ...] = (),
+) -> dict:
+    """Return one strict archived common v5 packet with its observer summary."""
+    current_scan = common_log_scan_v5(store=store) if scan is None else scan
+    records: list[dict] = []
+    previous = "0" * 64
+    path_contexts = sorted(
+        (
+            {"path": item["path"], "path_id": item["path_id"]}
+            for item in current_scan.get("observations", [])
+        ),
+        key=lambda item: item["path_id"],
+    )
+
+    def append_record(kind: str, **fields: object) -> None:
+        nonlocal previous
+        record = {
+            "schema": "woopayments_debug_log_observer_record.v2",
+            "sequence": len(records) + 1,
+            "kind": kind,
+            "run_stamp": current_scan.get("run_stamp", ""),
+            "store": current_scan.get("store", ""),
+            "flow_id": current_scan.get("flow_id", ""),
+            "purpose": current_scan.get("purpose", ""),
+            "marker_created_at": current_scan.get("marker_created_at", ""),
+            "observer_id": current_scan.get("observer_id", ""),
+            "paths": path_contexts,
+            "previous_hmac": "hmac-sha256:" + previous,
+            **fields,
+        }
+        canonical = json.dumps(
+            record, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+        )
+        previous = hmac.new(
+            bytes.fromhex(TEST_RUN_CONTEXT_KEY),
+            (record["previous_hmac"].removeprefix("hmac-sha256:") + "\0" + canonical).encode(
+                "utf-8"
+            ),
+            hashlib.sha256,
+        ).hexdigest()
+        record["hmac"] = "hmac-sha256:" + previous
+        records.append(record)
+
+    observations = current_scan.get("observations", [])
+    append_record(
+        "ready",
+        status="pass",
+        path_count=len(observations),
+        key_fingerprint=current_scan.get("key_fingerprint", ""),
+        origin_binding=current_scan.get("origin_binding", ""),
+    )
+    for projected in (
+        *current_scan.get("matches", []),
+        *current_scan.get("ignored_matches", []),
+    ):
+        append_record("line", **projected)
+    for index, category in enumerate(extra_observer_categories, start=1):
+        observation = observations[0]
+        append_record(
+            "line",
+            path=observation["path"],
+            line=observation["end_line_count"],
+            category=category,
+            fingerprint="sha256:"
+            + hashlib.sha256(f"extra:{category}:{index}".encode()).hexdigest(),
+        )
+    for observation in observations:
+        append_record(
+            "line",
+            path=observation["path"],
+            line=observation["end_line_count"],
+            category="terminal",
+            fingerprint="sha256:"
+            + hashlib.sha256(
+                f"terminal:{observation['path']}:{observation['end_line_count']}".encode()
+            ).hexdigest(),
+        )
+    append_record("complete", status="pass")
+    counts: dict[str, int] = {}
+    for record in records:
+        if record["kind"] == "line":
+            category = str(record["category"])
+            counts[category] = counts.get(category, 0) + 1
+    line_event_count = sum(counts.values())
+    summary = {
+        "schema": "woopayments_debug_log_observer_summary.v2",
+        "store": current_scan.get("store", ""),
+        "flow_id": current_scan.get("flow_id", ""),
+        "purpose": current_scan.get("purpose", ""),
+        "marker_created_at": current_scan.get("marker_created_at", ""),
+        "observer_id": current_scan.get("observer_id", ""),
+        "paths": path_contexts,
+        "key_fingerprint": current_scan.get("key_fingerprint", ""),
+        "origin_binding": current_scan.get("origin_binding", ""),
+        "records": records,
+        "record_count": len(records),
+        "line_event_count": line_event_count,
+        "category_counts": counts,
+        "chain_head": "hmac-sha256:" + previous,
+    }
+    archived_scan = {**current_scan, "observer_summary": summary}
+    return {
+        "schema": "woopayments_debug_log_scan.v6",
+        "store": store,
+        "scan": archived_scan,
+    }
+
+
+def rewrite_warning_fail_to_pass_log_evidence(packet: dict) -> dict:
+    """Rewrite one warning failure and its unsigned summary while retaining its origin."""
+    forged = json.loads(json.dumps(packet))
+    scan = forged["scan"]
+    retained_origin = scan["origin_binding"]
+    retained_observer = scan["observer_id"]
+    scan.update(
+        {
+            "status": "pass",
+            "matches": [],
+            "ignored_matches": [],
+            "blocker_code": "",
+        }
+    )
+    scan["observer_summary"].update(
+        {
+            "record_count": 3,
+            "line_event_count": 1,
+            "category_counts": {"terminal": 1},
+            "chain_head": "hmac-sha256:" + "a" * 64,
+        }
+    )
+    assert scan["origin_binding"] == retained_origin
+    assert scan["observer_summary"]["origin_binding"] == retained_origin
+    assert scan["observer_id"] == retained_observer
+    return forged
+
+
+def forged_warning_summary_pass(
+    *, store: str = "target", flow_id: str = "MO-03-manual-capture-payment-details"
+) -> tuple[dict, dict]:
+    """Return an authentic warning failure and a coherent unsigned PASS rewrite."""
+    warning = safe_log_record(
+        line=5,
+        category="warning",
+        diagnostic="PHP Warning: authenticated history must not disappear",
+    )
+    failing = common_log_evidence_v5(
+        store=store,
+        scan=common_log_scan_v5(
+            store=store,
+            flow_id=flow_id,
+            status="fail",
+            run_stamp=TEST_RUN_STAMP,
+            marker_created_at=TEST_MARKER_CREATED_AT,
+            end_line_count=5,
+            end_byte_count=192,
+            matches=[warning],
+        ),
+    )
+    return failing, rewrite_warning_fail_to_pass_log_evidence(failing)
+
+
+def run_common_archived_log_validator(packet: dict) -> subprocess.CompletedProcess[str]:
+    """Execute common.sh's literal archived log validator with a supplied summary."""
+    source = COMMON.read_text(encoding="utf-8")
+    shell_start = source.index('LOG_SCAN_RAW="$raw" python3 -')
+    python_start = source.index("import collections", shell_start)
+    python_end = source.index("\nPY\n}", python_start)
+    validator = source[python_start:python_end]
+    raw_scan = json.loads(json.dumps(packet["scan"]))
+    summary = raw_scan.pop("observer_summary")
+    flow_id = raw_scan.get("flow_id", "")
+    purpose = raw_scan.get("purpose", "")
+    with tempfile.TemporaryDirectory(prefix="critical-flows-common-log-validator-") as tmp:
+        script = Path(tmp) / "common-log-validator.py"
+        script.write_text(validator, encoding="utf-8")
+        return subprocess.run(
+            [
+                "python3",
+                str(script),
+                packet["store"],
+                "",
+                TEST_RUN_STAMP,
+                flow_id,
+                purpose,
+            ],
+            cwd=REPO,
+            env={
+                **os.environ,
+                "CRITICAL_FLOWS_RUN_CONTEXT_KEY": TEST_RUN_CONTEXT_KEY,
+                "CRITICAL_FLOWS_LOG_OBSERVER_SUMMARY": json.dumps(
+                    summary, separators=(",", ":")
+                ),
+                "LOG_SCAN_RAW": json.dumps(raw_scan, separators=(",", ":")),
+            },
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+
+def run_mo03_log_normalizer(
+    packet: dict, *, store: str, expected_exit_code: int
+) -> tuple[subprocess.CompletedProcess[str], dict]:
+    """Run the literal MO-03 log normalizer against one archived common packet."""
+    with tempfile.TemporaryDirectory(prefix="critical-flows-mo03-log-normalizer-") as tmp:
+        root = Path(tmp)
+        input_path = root / "raw.json"
+        output_path = root / "typed.json"
+        input_path.write_text(json.dumps(packet), encoding="utf-8")
+        result = subprocess.run(
+            [
+                "python3",
+                str(MO03_EVIDENCE),
+                "normalize-log-scan",
+                "--input",
+                str(input_path),
+                "--output",
+                str(output_path),
+                "--store",
+                store,
+                "--run-stamp",
+                TEST_RUN_STAMP,
+                "--expected-exit-code",
+                str(expected_exit_code),
+                "--flow-id",
+                "MO-03-manual-capture-payment-details",
+                "--purpose",
+                "clean-debug-log",
+            ],
+            cwd=REPO,
+            env={**os.environ, "CRITICAL_FLOWS_RUN_CONTEXT_KEY": TEST_RUN_CONTEXT_KEY},
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        output = (
+            json.loads(output_path.read_text(encoding="utf-8"))
+            if output_path.is_file()
+            else {}
+        )
+        return result, output
+
+
+def unobserved_common_log_evidence_v5(
+    *,
+    store: str = "target",
+    flow_id: str = "MA-10-i18n-order-notes",
+    purpose: str = "clean-debug-log",
+    run_stamp: str = TEST_RUN_STAMP,
+    blocker_code: str,
+) -> dict:
+    """Return the sole strict common-v5 shape allowed without trusted origin evidence."""
+    return {
+        "schema": "woopayments_debug_log_scan.v6",
+        "store": store,
+        "scan": {
+            "status": "blocked",
+            "run_stamp": run_stamp,
+            "store": store,
+            "flow_id": flow_id,
+            "purpose": purpose,
+            "marker_created_at": "",
+            "origin_nonce": "",
+            "observer_id": "",
+            "key_fingerprint": "",
+            "origin_binding": "",
+            "observations": [],
+            "matches": [],
+            "ignored_matches": [],
+            "blocker_code": blocker_code,
+            "observer_summary": {},
+        },
+    }
+
+
+def validate_ma10_log_scan_for_test(module, payload: dict, run_stamp: str) -> str:
+    """Validate MA-10 log evidence under the deterministic current-run test key."""
+    prior_key = os.environ.get("CRITICAL_FLOWS_RUN_CONTEXT_KEY")
+    os.environ["CRITICAL_FLOWS_RUN_CONTEXT_KEY"] = TEST_RUN_CONTEXT_KEY
+    try:
+        return module.validate_log_scan(payload, run_stamp)
+    finally:
+        if prior_key is None:
+            os.environ.pop("CRITICAL_FLOWS_RUN_CONTEXT_KEY", None)
+        else:
+            os.environ["CRITICAL_FLOWS_RUN_CONTEXT_KEY"] = prior_key
+
+
+def test_common_log_rejects_forged_pass_summary_with_retained_origin() -> None:
+    failing, forged = forged_warning_summary_pass(store="target")
+
+    authentic_failure = run_common_archived_log_validator(failing)
+    assert authentic_failure.returncode == 1, (
+        authentic_failure.stdout + authentic_failure.stderr
+    )
+    rewritten_pass = run_common_archived_log_validator(forged)
+    assert rewritten_pass.returncode == 3, (
+        "common.sh accepted a warning FAIL->PASS rewrite with a fabricated chain head; "
+        + rewritten_pass.stdout
+        + rewritten_pass.stderr
+    )
+
+
+def test_mo03_log_rejects_forged_pass_summary_with_retained_origin() -> None:
+    failing, forged = forged_warning_summary_pass(store="ref")
+
+    authentic_failure, _ = run_mo03_log_normalizer(
+        failing, store="ref", expected_exit_code=1
+    )
+    assert authentic_failure.returncode == 1, (
+        authentic_failure.stdout + authentic_failure.stderr
+    )
+    rewritten_pass, evidence = run_mo03_log_normalizer(
+        forged, store="ref", expected_exit_code=0
+    )
+    assert rewritten_pass.returncode == 3, (
+        "MO-03 accepted a warning FAIL->PASS rewrite with retained origin evidence; "
+        + rewritten_pass.stdout
+        + rewritten_pass.stderr
+    )
+    assert evidence.get("status") == "blocked"
+
+
+def test_ma10_log_rejects_forged_pass_summary_with_retained_origin() -> None:
+    spec = importlib.util.spec_from_file_location(
+        "ma10_validator_unsigned_summary_for_test", MA10_VALIDATOR
+    )
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    failing, forged = forged_warning_summary_pass(
+        store="target", flow_id="MA-10-i18n-order-notes"
+    )
+
+    assert validate_ma10_log_scan_for_test(module, failing, TEST_RUN_STAMP) == "fail"
+    try:
+        validate_ma10_log_scan_for_test(module, forged, TEST_RUN_STAMP)
+    except module.EvidenceError:
+        pass
+    else:
+        raise AssertionError(
+            "MA-10 accepted a warning FAIL->PASS rewrite with a fabricated chain head"
+        )
+
+
+def test_v6_retained_observer_records_reject_malformed_and_reordered_chains() -> None:
+    spec = importlib.util.spec_from_file_location(
+        "ma10_validator_retained_records_for_test", MA10_VALIDATOR
+    )
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    current_mo03 = common_log_evidence_v5(
+        scan=common_log_scan_v5(
+            run_stamp=TEST_RUN_STAMP,
+            marker_created_at=TEST_MARKER_CREATED_AT,
+        )
+    )
+    current_ma10 = common_log_evidence_v5(
+        scan=ma10_log_scan_v5(
+            run_stamp=TEST_RUN_STAMP,
+            marker_created_at=TEST_MARKER_CREATED_AT,
+        )
+    )
+    assert run_common_archived_log_validator(current_mo03).returncode == 0
+    assert run_common_archived_log_validator(current_ma10).returncode == 0
+    valid_mo03, _ = run_mo03_log_normalizer(
+        current_mo03, store="target", expected_exit_code=0
+    )
+    assert valid_mo03.returncode == 0, valid_mo03.stdout + valid_mo03.stderr
+    assert validate_ma10_log_scan_for_test(module, current_ma10, TEST_RUN_STAMP) == "pass"
+
+    def adversaries(packet: dict) -> dict[str, dict]:
+        """Return identical retained-chain attacks bound to one literal flow packet."""
+        malformed_hmac = json.loads(json.dumps(packet))
+        malformed_hmac["scan"]["observer_summary"]["records"][1]["hmac"] = (
+            "hmac-sha256:" + "0" * 64
+        )
+        reordered = json.loads(json.dumps(packet))
+        records = reordered["scan"]["observer_summary"]["records"]
+        records[0], records[1] = records[1], records[0]
+        extra_field = json.loads(json.dumps(packet))
+        extra_field["scan"]["observer_summary"]["records"][1]["diagnostic"] = (
+            "Authorization: Bearer MUST_NOT_ESCAPE"
+        )
+        downgraded_summary = json.loads(json.dumps(packet))
+        downgraded_summary["scan"]["observer_summary"]["schema"] = (
+            "woopayments_debug_log_observer_summary.v1"
+        )
+        return {
+            "malformed_hmac": malformed_hmac,
+            "reordered": reordered,
+            "extra_field": extra_field,
+            "downgraded_summary": downgraded_summary,
+        }
+
+    ma10_adversaries = adversaries(current_ma10)
+    for name, mo03_adversary in adversaries(current_mo03).items():
+        ma10_adversary = ma10_adversaries[name]
+        for packet in (mo03_adversary, ma10_adversary):
+            common_result = run_common_archived_log_validator(packet)
+            assert common_result.returncode == 3, (
+                name,
+                common_result.stdout,
+                common_result.stderr,
+            )
+            assert "MUST_NOT_ESCAPE" not in common_result.stdout + common_result.stderr
+        mo03_result, mo03_evidence = run_mo03_log_normalizer(
+            mo03_adversary, store="target", expected_exit_code=0
+        )
+        assert mo03_result.returncode == 3, (
+            name,
+            mo03_result.stdout,
+            mo03_result.stderr,
+        )
+        assert "MUST_NOT_ESCAPE" not in json.dumps(mo03_evidence)
+        try:
+            validate_ma10_log_scan_for_test(module, ma10_adversary, TEST_RUN_STAMP)
+        except module.EvidenceError:
+            pass
+        else:
+            raise AssertionError(f"MA-10 accepted malformed retained chain: {name}")
+
+
+def extract_common_wp_eval(function_name: str) -> str:
+    """Extract one exact embedded WP-CLI PHP producer from common.sh."""
+    source = COMMON.read_text(encoding="utf-8")
+    function_start = source.index(f"{function_name}()")
+    function_source = source[function_start:]
+    php_start_marker = (
+        "raw=\"$(critical_flows_wp_eval_with_context \"$s\" '\n"
+    )
+    php_start = function_source.index(php_start_marker) + len(php_start_marker)
+    php_end = function_source.index("\n' 2>&1)\"", php_start)
+    php_source = function_source[php_start:php_end]
+    replacements = {
+        '$run_stamp = \'"$run_stamp_literal"\';': '$run_stamp = getenv( "CRITICAL_FLOWS_RUN_STAMP" );',
+        '$store = \'"$store_literal"\';': '$store = getenv( "CRITICAL_FLOWS_STORE" );',
+        '$flow_id = \'"$flow_literal"\';': '$flow_id = getenv( "CRITICAL_FLOWS_FLOW_ID" );',
+        '$purpose = \'"$purpose_literal"\';': '$purpose = getenv( "CRITICAL_FLOWS_LOG_PURPOSE" );',
+        '$expected_store = \'"$store_literal"\';': '$expected_store = getenv( "CRITICAL_FLOWS_STORE" );',
+        '$expected_flow_id = \'"$flow_literal"\';': '$expected_flow_id = getenv( "CRITICAL_FLOWS_FLOW_ID" );',
+        '$expected_purpose = \'"$purpose_literal"\';': '$expected_purpose = getenv( "CRITICAL_FLOWS_LOG_PURPOSE" );',
+    }
+    for literal, replacement in replacements.items():
+        php_source = php_source.replace(literal, replacement)
+    return php_source
+
+
+def common_log_producer_php_source() -> str:
+    """Return an executable seam around the exact shared marker and scan PHP."""
+    marker_php = extract_common_wp_eval("mark_log_clean_start")
+    scan_php = extract_common_wp_eval("assert_log_clean")
+    return f"""<?php
+putenv( 'CRITICAL_FLOWS_RUN_CONTEXT_KEY={TEST_RUN_CONTEXT_KEY}' );
+putenv( 'CRITICAL_FLOWS_STORE=target' );
+putenv( 'CRITICAL_FLOWS_FLOW_ID=MO-03-manual-capture-payment-details' );
+putenv( 'CRITICAL_FLOWS_LOG_PURPOSE=clean-debug-log' );
+define( 'WP_DEBUG_LOG', $argv[1] );
+define( 'WP_CONTENT_DIR', dirname( $argv[1] ) );
+$GLOBALS['critical_flow_options'] = array();
+$GLOBALS['critical_flow_output']  = array();
+
+function update_option( $key, $value ) {{
+    $GLOBALS['critical_flow_options'][ $key ] = $value;
+}}
+
+function get_option( $key, $default = array() ) {{
+    return $GLOBALS['critical_flow_options'][ $key ] ?? $default;
+}}
+
+function wp_json_encode( $value ) {{
+    return json_encode( $value );
+}}
+
+function wp_generate_uuid4() {{
+    return '00000000-0000-4000-8000-000000000001';
+}}
+
+class WP_CLI {{
+    public static function line( $line ) {{
+        $GLOBALS['critical_flow_output'][] = $line;
+    }}
+
+    public static function error( $message ) {{
+        throw new RuntimeException( $message );
+    }}
+}}
+
+$original_content = file_get_contents( $argv[1] );
+
+{marker_php}
+
+$post_marker_content = file_get_contents( $argv[1] );
+
+if ( 'same_count_replacement' === $argv[2] ) {{
+    rename( $argv[1], $argv[1] . '.rotated' );
+    file_put_contents( $argv[1], "replacement one\nreplacement two\nreplacement three\nreplacement four\nreplacement five\n" );
+}} elseif ( 'truncate_regrow' === $argv[2] ) {{
+    file_put_contents( $argv[1], "PHP Warning: hidden one\nreplacement two\nreplacement three\nreplacement four\nreplacement five\n" );
+}} elseif ( 'exact_content_restore' === $argv[2] ) {{
+    file_put_contents( $argv[1], "PHP Warning: erased after marker\n", FILE_APPEND );
+    file_put_contents( $argv[1], $original_content );
+}} elseif ( 'post_canary_snapshot_restore' === $argv[2] ) {{
+    file_put_contents( $argv[1], "PHP Warning: erased after readable canary\n", FILE_APPEND );
+    file_put_contents( $argv[1], $post_marker_content );
+}} elseif ( 'post_canary_restore_safe_append' === $argv[2] ) {{
+    file_put_contents( $argv[1], "PHP Warning: erased before safe append\n", FILE_APPEND );
+    file_put_contents( $argv[1], $post_marker_content );
+    file_put_contents( $argv[1], "ordinary application line\n", FILE_APPEND );
+}} elseif ( 'ordinary_append' === $argv[2] ) {{
+    file_put_contents( $argv[1], "ordinary application line\n", FILE_APPEND );
+}} elseif ( 'invalid_utf8_rewrite' === $argv[2] ) {{
+    $binary_lines    = file( $argv[1], FILE_IGNORE_NEW_LINES );
+    $binary_lines[1] = chr( 254 ) . " rewritten invalid byte";
+    file_put_contents( $argv[1], implode( "\n", $binary_lines ) . "\n" );
+}} elseif ( 'crlf_to_lf_rewrite' === $argv[2] ) {{
+    file_put_contents( $argv[1], str_replace( "\r\n", "\n", $post_marker_content ) );
+}}
+clearstatcache( true, $argv[1] );
+
+{scan_php}
+
+echo end( $GLOBALS['critical_flow_output'] ), "\n";
+"""
+
+
+def common_log_marker_php_source() -> str:
+    """Return an executable seam around the exact shared v5 marker producer."""
+    marker_php = extract_common_wp_eval("mark_log_clean_start")
+    return f"""<?php
+putenv( 'CRITICAL_FLOWS_STORE=target' );
+putenv( 'CRITICAL_FLOWS_FLOW_ID=MO-03-manual-capture-payment-details' );
+putenv( 'CRITICAL_FLOWS_LOG_PURPOSE=clean-debug-log' );
+define( 'WP_DEBUG_LOG', $argv[1] );
+define( 'WP_CONTENT_DIR', dirname( $argv[1] ) );
+$GLOBALS['critical_flow_options'] = array();
+
+function update_option( $key, $value ) {{
+    $GLOBALS['critical_flow_options'][ $key ] = $value;
+}}
+
+function wp_json_encode( $value ) {{
+    return json_encode( $value );
+}}
+
+function wp_generate_uuid4() {{
+    static $sequence = 1;
+    return sprintf( '00000000-0000-4000-8000-%012d', $sequence++ );
+}}
+
+class WP_CLI {{
+    public static function line( $line ) {{}}
+
+    public static function error( $message ) {{
+        throw new RuntimeException( $message );
+    }}
+}}
+
+{marker_php}
+
+echo json_encode( $GLOBALS['critical_flow_options']['woopayments_critical_flows_debug_log_marker'] ), "\n";
+"""
+
+
+def log_observer_origin_material(marker: dict) -> bytes:
+    """Return the versioned marker-origin material shared with the observer contract."""
+    parts = [
+        "woopayments_debug_log_origin.v2",
+        marker["run_stamp"],
+        marker["store"],
+        marker["flow_id"],
+        marker["purpose"],
+        marker["created_at"],
+        marker["origin_nonce"],
+        marker["observer_id"],
+        marker["key_fingerprint"],
+    ]
+    for path, observation in sorted(
+        marker["paths"].items(), key=lambda item: item[1]["path_id"]
+    ):
+        parts.extend(
+            [
+                observation["path_id"],
+                Path(path).name,
+                str(observation["line_count"]),
+                str(observation["byte_count"]),
+                observation["identity_fingerprint"],
+                observation["prefix_fingerprint"],
+                observation["canary_fingerprint"],
+                str(observation["owner"]),
+                str(observation["group"]),
+                str(observation["mode"]),
+            ]
+        )
+    return "\0".join(parts).encode("utf-8")
+
+
+def observer_terminal_line_for_path(case: dict, debug_log: Path) -> bytes:
+    """Return the authenticated terminal line for one exact observed path."""
+    marker = case["marker"]
+    path = str(debug_log)
+    observation = marker["paths"][path]
+    material = "\0".join(
+        (
+            "terminal",
+            marker["run_stamp"],
+            marker["store"],
+            marker["flow_id"],
+            marker["purpose"],
+            marker["created_at"],
+            marker["observer_id"],
+            observation["path_id"],
+            debug_log.name,
+        )
+    ).encode()
+    signature = hmac.new(
+        bytes.fromhex(TEST_RUN_CONTEXT_KEY), material, hashlib.sha256
+    ).hexdigest()
+    return (
+        "[woopayments-critical-flows-log-observer-stop] hmac-sha256:"
+        + signature
+        + "\n"
+    ).encode()
+
+
+def observer_terminal_line(case: dict) -> bytes:
+    """Return the authenticated terminal line for the primary observed path."""
+    return observer_terminal_line_for_path(case, case["debug_log"])
+
+
+def add_log_observer_paths(case: dict, *, count: int) -> list[Path]:
+    """Extend one observer fixture with exact authenticated sibling paths."""
+    assert count >= 1
+    debug_logs = [case["debug_log"]]
+    for index in range(2, count + 1):
+        debug_log = case["debug_log"].with_name(f"debug-{index}.log").resolve()
+        debug_log.write_bytes(case["original"])
+        debug_log.chmod(0o640)
+        initial_stat = debug_log.stat()
+        path_id = "hmac-sha256:" + hmac.new(
+            bytes.fromhex(TEST_RUN_CONTEXT_KEY),
+            b"woopayments_debug_log_path.v1\0" + str(debug_log).encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        canary = case["original"].splitlines()[-1]
+        case["marker"]["paths"][str(debug_log)] = {
+            "path_id": path_id,
+            "line_count": case["original"].count(b"\n"),
+            "byte_count": len(case["original"]),
+            "identity_fingerprint": "sha256:"
+            + hashlib.sha256(
+                f"{initial_stat.st_dev}:{initial_stat.st_ino}".encode()
+            ).hexdigest(),
+            "prefix_fingerprint": "sha256:"
+            + hashlib.sha256(case["original"]).hexdigest(),
+            "canary_fingerprint": "sha256:" + hashlib.sha256(canary).hexdigest(),
+            "owner": initial_stat.st_uid,
+            "group": initial_stat.st_gid,
+            "mode": stat.S_IMODE(initial_stat.st_mode),
+        }
+        debug_logs.append(debug_log)
+
+    case["marker"]["origin_binding"] = "hmac-sha256:" + hmac.new(
+        bytes.fromhex(TEST_RUN_CONTEXT_KEY),
+        log_observer_origin_material(case["marker"]),
+        hashlib.sha256,
+    ).hexdigest()
+    assert len({item["path_id"] for item in case["marker"]["paths"].values()}) == count
+    case["debug_logs"] = debug_logs
+    return debug_logs
+
+
+def prepare_log_observer_case(root: Path) -> dict:
+    """Prepare one exact marker option and standalone WP-CLI observer harness."""
+    debug_log = (root / "debug.log").resolve()
+    canary_line = (
+        "[woopayments-critical-flows-log-canary] sha256:"
+        + hashlib.sha256(b"deterministic-observer-canary").hexdigest()
+    )
+    original = b"one\ntwo\nthree\nfour\n" + canary_line.encode() + b"\n"
+    debug_log.write_bytes(original)
+    debug_log.chmod(0o640)
+    initial_stat = debug_log.stat()
+    run_stamp = "20260716T160000Z-30303"
+    observer_id = "00000000-0000-4000-8000-000000000777"
+    path_id = "hmac-sha256:" + hmac.new(
+        bytes.fromhex(TEST_RUN_CONTEXT_KEY),
+        b"woopayments_debug_log_path.v1\0" + str(debug_log).encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    marker = {
+        "schema": "woopayments_debug_log_marker.v6",
+        "created_at": "2026-07-16T16:00:00Z",
+        "run_stamp": run_stamp,
+        "store": "target",
+        "flow_id": "MO-03-manual-capture-payment-details",
+        "purpose": "clean-debug-log",
+        "origin_nonce": "00000000-0000-4000-8000-000000000666",
+        "observer_id": observer_id,
+        "key_fingerprint": "sha256:"
+        + hashlib.sha256(bytes.fromhex(TEST_RUN_CONTEXT_KEY)).hexdigest(),
+        "origin_binding": "",
+        "paths": {
+            str(debug_log): {
+                "path_id": path_id,
+                "line_count": 5,
+                "byte_count": len(original),
+                "identity_fingerprint": "sha256:"
+                + hashlib.sha256(
+                    f"{initial_stat.st_dev}:{initial_stat.st_ino}".encode()
+                ).hexdigest(),
+                "prefix_fingerprint": "sha256:" + hashlib.sha256(original).hexdigest(),
+                "canary_fingerprint": "sha256:"
+                + hashlib.sha256(canary_line.encode()).hexdigest(),
+                "owner": initial_stat.st_uid,
+                "group": initial_stat.st_gid,
+                "mode": stat.S_IMODE(initial_stat.st_mode),
+            }
+        },
+    }
+    marker["origin_binding"] = "hmac-sha256:" + hmac.new(
+        bytes.fromhex(TEST_RUN_CONTEXT_KEY),
+        log_observer_origin_material(marker),
+        hashlib.sha256,
+    ).hexdigest()
+    wrapper = root / "observer-harness.php"
+    wrapper.write_text(
+        """<?php
+$GLOBALS['critical_flow_marker'] = json_decode( getenv( 'TEST_LOG_MARKER_JSON' ), true );
+function get_option( $key, $default = array() ) {
+    return $GLOBALS['critical_flow_marker'] ?? $default;
+}
+function wp_json_encode( $value ) {
+    static $lease_hook_used = false;
+    static $unsigned_lease_calls = 0;
+    $barrier = getenv( 'TEST_LEASE_BARRIER_DIR' );
+    $unsigned_lease = is_array( $value )
+        && 'woopayments_debug_log_forwarder_lease.v2' === ( $value['schema'] ?? '' )
+        && ! isset( $value['hmac'] );
+    if ( $unsigned_lease ) {
+        ++$unsigned_lease_calls;
+    }
+    if ( ! $lease_hook_used && $unsigned_lease && is_string( $barrier ) && '' !== $barrier ) {
+        $lease_hook_used = true;
+        file_put_contents( $barrier . '/lease-encode-reached', (string) getmypid() );
+        $deadline = hrtime( true ) + 5000000000;
+        while ( ! file_exists( $barrier . '/lease-encode-release' ) && hrtime( true ) < $deadline ) {
+            usleep( 1000 );
+        }
+        $file_size_limit = getenv( 'TEST_RLIMIT_FSIZE_AFTER_BARRIER' );
+        if ( is_string( $file_size_limit ) && preg_match( '/^[0-9]+$/', $file_size_limit ) ) {
+            if (
+                ! function_exists( 'posix_setrlimit' )
+                || ! defined( 'POSIX_RLIMIT_FSIZE' )
+                || ! posix_setrlimit( POSIX_RLIMIT_FSIZE, (int) $file_size_limit, (int) $file_size_limit )
+            ) {
+                throw new RuntimeException( 'test RLIMIT_FSIZE setup failed' );
+            }
+        }
+        if ( '1' === getenv( 'TEST_FAIL_LEASE_ENCODE' ) ) {
+            return false;
+        }
+    }
+    $validation_barrier = getenv( 'TEST_LEASE_VALIDATION_BARRIER_DIR' );
+    if (
+        $unsigned_lease
+        && 2 === $unsigned_lease_calls
+        && is_string( $validation_barrier )
+        && '' !== $validation_barrier
+    ) {
+        file_put_contents( $validation_barrier . '/lease-validation-reached', (string) getmypid() );
+        $deadline = hrtime( true ) + 5000000000;
+        while ( ! file_exists( $validation_barrier . '/lease-validation-release' ) && hrtime( true ) < $deadline ) {
+            usleep( 1000 );
+        }
+    }
+    return json_encode( $value );
+}
+class WP_CLI {
+    public static function line( $line ) { fwrite( STDOUT, $line . "\\n" ); fflush( STDOUT ); }
+    public static function error( $message ) { throw new RuntimeException( $message ); }
+}
+if ( '1' === getenv( 'TEST_REAP_STARTUP_CHILD_EARLY' ) ) {
+    pcntl_async_signals( true );
+    pcntl_signal(
+        SIGCHLD,
+        static function () {
+            $status = 0;
+            while ( pcntl_waitpid( -1, $status, WNOHANG ) > 0 ) {
+            }
+        }
+    );
+}
+if ( '1' === getenv( 'TEST_IGNORE_SIGXFSZ' ) && defined( 'SIGXFSZ' ) ) {
+    if (
+        ! function_exists( 'pcntl_sigprocmask' )
+        || ! pcntl_sigprocmask( SIG_BLOCK, array( SIGXFSZ ) )
+    ) {
+        throw new RuntimeException( 'test SIGXFSZ mask setup failed' );
+    }
+}
+$args = array( getenv( 'TEST_RUN_STAMP' ), getenv( 'TEST_OBSERVER_ACTION' ) ?: 'observe' );
+require getenv( 'TEST_LOG_OBSERVER_DRIVER' );
+""",
+        encoding="utf-8",
+    )
+    backing_path = debug_log.with_name(
+        f"{debug_log.name}.woopayments-critical-flows.{observer_id}.backing"
+    )
+    return {
+        "backing_path": backing_path,
+        "debug_log": debug_log,
+        "initial_stat": initial_stat,
+        "marker": marker,
+        "original": original,
+        "run_stamp": run_stamp,
+        "observer_id": observer_id,
+        "wrapper": wrapper,
+    }
+
+
+def launch_log_observer(
+    case: dict,
+    *,
+    maximum_seconds: str = "2",
+    action: str = "observe",
+    context_key: str = TEST_RUN_CONTEXT_KEY,
+    extra_environment: dict[str, str] | None = None,
+) -> subprocess.Popen[str]:
+    """Launch the standalone observer without exposing its context key in argv."""
+    return subprocess.Popen(
+        ["php", str(case["wrapper"])],
+        cwd=REPO,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env={
+            **os.environ,
+            "CRITICAL_FLOWS_RUN_CONTEXT_KEY": context_key,
+            "CRITICAL_FLOWS_STORE": case["marker"]["store"],
+            "CRITICAL_FLOWS_FLOW_ID": case["marker"]["flow_id"],
+            "CRITICAL_FLOWS_LOG_PURPOSE": case["marker"]["purpose"],
+            "CRITICAL_FLOWS_LOG_OBSERVER_MAX_SECONDS": maximum_seconds,
+            "TEST_LOG_MARKER_JSON": json.dumps(case["marker"], separators=(",", ":")),
+            "TEST_LOG_OBSERVER_DRIVER": str(LOG_OBSERVER_DRIVER),
+            "TEST_OBSERVER_ACTION": action,
+            "TEST_RUN_STAMP": case["run_stamp"],
+            **(extra_environment or {}),
+        },
+    )
+
+
+def wait_for_test_path(path: Path, *, timeout: float = 3.0) -> None:
+    """Wait until one test synchronization path exists."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if path.exists() or path.is_symlink():
+            return
+        time.sleep(0.005)
+    raise AssertionError(f"test path did not appear before deadline: {path.name}")
+
+
+def direct_child_pids(parent_pid: int) -> list[int]:
+    """Return the current direct children of one test-owned process."""
+    result = subprocess.run(
+        ["ps", "-axo", "pid=,ppid="],
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    children = []
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        if len(fields) == 2 and int(fields[1]) == parent_pid:
+            children.append(int(fields[0]))
+    return sorted(children)
+
+
+def process_exists(pid: int) -> bool:
+    """Return whether one process identifier still names a process."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def wait_for_no_process(pid: int, *, timeout: float = 2.0) -> bool:
+    """Wait conditionally until one exact process identifier disappears."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not process_exists(pid):
+            return True
+        time.sleep(0.01)
+    return not process_exists(pid)
+
+
+def stop_test_owned_observer_child(pid: int, wrapper: Path) -> None:
+    """Kill only a still-running child whose command names this test wrapper."""
+    if not process_exists(pid):
+        return
+    command = subprocess.run(
+        ["ps", "-p", str(pid), "-o", "command="],
+        text=True,
+        capture_output=True,
+        check=False,
+    ).stdout.strip()
+    if str(wrapper) not in command:
+        return
+    os.kill(pid, signal.SIGKILL)
+    wait_for_no_process(pid)
+
+
+def wait_log_observer_record(
+    process: subprocess.Popen[str],
+    kind: str,
+    *,
+    timeout: float = 3.0,
+    category: str | None = None,
+) -> tuple[dict, list[str]]:
+    """Wait conditionally for one safe observer record, never for an arbitrary sleep."""
+    assert process.stdout is not None
+    deadline = time.monotonic() + timeout
+    encoded_records: list[str] = []
+    while True:
+        remaining = deadline - time.monotonic()
+        assert remaining > 0, f"observer did not emit {kind} before its deadline"
+        ready, _, _ = select.select([process.stdout], [], [], remaining)
+        assert ready, f"observer did not emit {kind} before its deadline"
+        line = process.stdout.readline()
+        if not line:
+            assert process.stderr is not None
+            diagnostic = process.stderr.read()
+            raise AssertionError(
+                f"observer exited before {kind}; rc={process.poll()}; stderr={diagnostic}"
+            )
+        if not line.strip():
+            continue
+        encoded_records.append(line)
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError as error:
+            raise AssertionError("observer emitted non-JSON output") from error
+        if record.get("kind") == kind and (
+            category is None or record.get("category") == category
+        ):
+            return record, encoded_records
+
+
+def write_observer_fifo(path: Path, content: bytes) -> None:
+    """Write one nonblocking chunk to an observer FIFO after readiness."""
+    descriptor = os.open(path, os.O_WRONLY | os.O_NONBLOCK)
+    try:
+        assert os.write(descriptor, content) == len(content)
+    finally:
+        os.close(descriptor)
+
+
+def write_observer_fifo_fully(
+    path: Path, content: bytes, *, timeout: float = 10.0
+) -> None:
+    """Write arbitrarily many bytes without blocking the test process."""
+    descriptor = os.open(path, os.O_WRONLY | os.O_NONBLOCK)
+    pending = memoryview(content)
+    deadline = time.monotonic() + timeout
+    try:
+        while pending:
+            assert time.monotonic() < deadline, "FIFO write exceeded its bounded deadline"
+            _, writable, _ = select.select([], [descriptor], [], 0.1)
+            if writable:
+                pending = pending[os.write(descriptor, pending) :]
+    finally:
+        os.close(descriptor)
+
+
+def stop_observer_process(process: subprocess.Popen[str]) -> None:
+    """Bound test cleanup so a RED observer cannot leak a process."""
+    if process.poll() is None:
+        process.terminate()
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=2)
+
+
+def wait_log_forwarder_lease(case: dict, *, timeout: float = 1.0) -> tuple[Path, dict]:
+    """Wait conditionally for the authenticated lease that identifies the detached child."""
+    lease_path = case["debug_log"].with_name(
+        f"{case['debug_log'].name}.woopayments-critical-flows."
+        f"{case['observer_id']}.lease"
+    )
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if lease_path.is_file():
+            lease = json.loads(lease_path.read_text(encoding="utf-8"))
+            child_pid = lease.get("child_pid", lease.get("forwarder_pid"))
+            assert isinstance(child_pid, int) and child_pid > 1
+            return lease_path, lease
+        time.sleep(0.02)
+    raise AssertionError("observer ready did not create an authenticated forwarder lease")
+
+
+def log_forwarder_artifact_paths(case: dict) -> dict[str, Path]:
+    """Return the exact same-directory durable forwarder artifact paths."""
+    prefix = (
+        f"{case['debug_log'].name}.woopayments-critical-flows."
+        f"{case['observer_id']}"
+    )
+    return {
+        kind: case["debug_log"].with_name(f"{prefix}.{kind}")
+        for kind in ("lease", "journal", "control")
+    }
+
+
+def php_json_bytes(value: object) -> bytes:
+    """Encode the ASCII fixture shape like the observer harness's PHP json_encode."""
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":")).replace(
+        "/", "\\/"
+    ).encode("utf-8")
+
+
+def validated_log_forwarder_journal(case: dict) -> list[dict]:
+    """Independently validate the complete current observer journal HMAC chain."""
+    journal_path = log_forwarder_artifact_paths(case)["journal"]
+    encoded = journal_path.read_bytes()
+    assert encoded.endswith(b"\n")
+    records = [json.loads(line) for line in encoded.decode("utf-8").splitlines()]
+    assert records
+    previous = "0" * 64
+    for sequence, signed_record in enumerate(records, start=1):
+        record = dict(signed_record)
+        signature = record.pop("hmac")
+        canonical = {key: record[key] for key in sorted(record)}
+        expected = "hmac-sha256:" + hmac.new(
+            bytes.fromhex(TEST_RUN_CONTEXT_KEY),
+            previous.encode("ascii") + b"\0" + php_json_bytes(canonical),
+            hashlib.sha256,
+        ).hexdigest()
+        assert hmac.compare_digest(signature, expected)
+        assert record["schema"] == "woopayments_debug_log_observer_record.v2"
+        assert record["sequence"] == sequence
+        assert record["previous_hmac"] == "hmac-sha256:" + previous
+        assert record["run_stamp"] == case["run_stamp"]
+        assert record["store"] == case["marker"]["store"]
+        assert record["flow_id"] == case["marker"]["flow_id"]
+        assert record["purpose"] == case["marker"]["purpose"]
+        assert record["marker_created_at"] == case["marker"]["created_at"]
+        assert record["observer_id"] == case["observer_id"]
+        previous = signature.removeprefix("hmac-sha256:")
+    return records
+
+
+def write_signed_log_forwarder_lease(path: Path, lease: dict) -> None:
+    """Rewrite one coherent lease fixture with its schema-keyed HMAC."""
+    unsigned = dict(lease)
+    unsigned.pop("hmac", None)
+    signature = hmac.new(
+        bytes.fromhex(TEST_RUN_CONTEXT_KEY),
+        unsigned["schema"].encode("ascii") + b"\0" + php_json_bytes(unsigned),
+        hashlib.sha256,
+    ).hexdigest()
+    unsigned["hmac"] = "hmac-sha256:" + signature
+    path.write_bytes(php_json_bytes(unsigned))
+    path.chmod(0o600)
+
+
+def wait_log_forwarder_terminal(case: dict, *, timeout: float = 4.0) -> tuple[dict, list[dict]]:
+    """Wait until the authenticated journal ends in a child terminal record."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            records = validated_log_forwarder_journal(case)
+        except (AssertionError, FileNotFoundError, json.JSONDecodeError, UnicodeError):
+            time.sleep(0.01)
+            continue
+        terminal = records[-1]
+        if terminal.get("kind") in {"complete", "blocked"}:
+            return terminal, records
+        time.sleep(0.01)
+    raise AssertionError("forwarder did not persist an authenticated terminal record")
+
+
+def wait_log_forwarder_control(
+    case: dict, action: str, *, timeout: float = 4.0
+) -> dict:
+    """Wait for and authenticate one exact forwarder control action."""
+    control_path = log_forwarder_artifact_paths(case)["control"]
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            control = json.loads(control_path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError):
+            time.sleep(0.01)
+            continue
+        if control.get("action") != action:
+            time.sleep(0.01)
+            continue
+        signature = control.pop("hmac")
+        expected = "hmac-sha256:" + hmac.new(
+            bytes.fromhex(TEST_RUN_CONTEXT_KEY),
+            b"woopayments_debug_log_forwarder_control.v1\0"
+            + php_json_bytes(control),
+            hashlib.sha256,
+        ).hexdigest()
+        assert hmac.compare_digest(signature, expected)
+        assert control["run_stamp"] == case["run_stamp"]
+        assert control["store"] == case["marker"]["store"]
+        assert control["flow_id"] == case["marker"]["flow_id"]
+        assert control["purpose"] == case["marker"]["purpose"]
+        assert control["marker_created_at"] == case["marker"]["created_at"]
+        assert control["observer_id"] == case["observer_id"]
+        return control
+    raise AssertionError(f"observer did not write authenticated {action} control")
+
+
+def fifo_bytes_available(path: Path) -> int:
+    """Return the exact unread byte count currently held by one named FIFO."""
+    descriptor = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+    try:
+        available = array.array("i", [0])
+        fcntl.ioctl(descriptor, termios.FIONREAD, available, True)
+        return available[0]
+    finally:
+        os.close(descriptor)
+
+
+def fifo_descriptor_bytes_available(descriptor: int) -> int:
+    """Return unread bytes without opening or consuming the retained FIFO."""
+    available = array.array("i", [0])
+    fcntl.ioctl(descriptor, termios.FIONREAD, available, True)
+    return available[0]
+
+
+def launch_counted_fifo_writer(
+    path: Path,
+    total_bytes: int,
+    *,
+    pause_after: int = 0,
+    pause_seconds: float = 0.0,
+) -> subprocess.Popen[str]:
+    """Write bounded FIFO bytes and report only the count accepted by the kernel."""
+    source = r"""
+import os
+import select
+import signal
+import sys
+import time
+
+path = sys.argv[1]
+target = int(sys.argv[2])
+pause_after = int(sys.argv[3])
+pause_seconds = float(sys.argv[4])
+descriptor = os.open(path, os.O_WRONLY | os.O_NONBLOCK)
+accepted = 0
+paused = False
+running = True
+deadline = time.monotonic() + 10
+chunk = b"x" * 4096
+def stop(_signum, _frame):
+    global running
+    running = False
+signal.signal(signal.SIGTERM, stop)
+try:
+    while running and accepted < target and time.monotonic() < deadline:
+        if pause_after and not paused and accepted >= pause_after:
+            time.sleep(pause_seconds)
+            paused = True
+        try:
+            accepted += os.write(descriptor, chunk[: min(len(chunk), target - accepted)])
+        except BlockingIOError:
+            select.select([], [descriptor], [], 0.01)
+        except BrokenPipeError:
+            break
+finally:
+    os.close(descriptor)
+print(accepted, flush=True)
+"""
+    return subprocess.Popen(
+        [
+            "python3",
+            "-c",
+            source,
+            str(path),
+            str(total_bytes),
+            str(pause_after),
+            str(pause_seconds),
+        ],
+        cwd=REPO,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+
+def wait_counted_fifo_writer(writer: subprocess.Popen[str]) -> int:
+    """Return one test-owned writer's exact accepted-byte count."""
+    stdout, stderr = writer.communicate(timeout=12)
+    assert writer.returncode == 0, stdout + stderr
+    assert re.fullmatch(r"[0-9]+\n", stdout), stdout + stderr
+    return int(stdout)
+
+
+def wait_fifo_bytes_available(
+    path: Path, expected: int, *, timeout: float = 2.0
+) -> None:
+    """Wait conditionally until the FIFO kernel queue has the exact byte count."""
+    deadline = time.monotonic() + timeout
+    observed = -1
+    while time.monotonic() < deadline:
+        observed = fifo_bytes_available(path)
+        if observed == expected:
+            return
+        time.sleep(0.01)
+    raise AssertionError(
+        f"FIFO did not reach {expected} unread bytes; last observed {observed}"
+    )
+
+
+def forwarder_child_pid(lease: dict) -> int:
+    """Return the detached child PID from the strict lease."""
+    child_pid = lease.get("child_pid", lease.get("forwarder_pid"))
+    assert isinstance(child_pid, int) and child_pid > 1
+    return child_pid
+
+
+def process_exists(pid: int) -> bool:
+    """Return whether a process still answers the non-mutating signal-zero probe."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def wait_process_absent(pid: int, *, timeout: float = 2.0) -> None:
+    """Require a forwarder to disappear before the bounded recovery deadline."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not process_exists(pid):
+            return
+        time.sleep(0.02)
+    raise AssertionError(f"forwarder child {pid} remained orphaned after recovery")
+
+
+def terminate_forwarder_for_test(pid: int | None) -> None:
+    """Best-effort bounded cleanup for a RED test's detached process."""
+    if pid is None or not process_exists(pid):
+        return
+    for signum in (signal.SIGCONT, signal.SIGTERM):
+        try:
+            os.kill(pid, signum)
+        except ProcessLookupError:
+            return
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline and process_exists(pid):
+        time.sleep(0.02)
+    if process_exists(pid):
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+
+def default_wp_boundary_shim_source(kind: str) -> str:
+    """Return a Docker/pnpm shim that validates stdin key transport without retaining it."""
+    return f"""#!/usr/bin/env bash
+set -eu
+source_payload="$(cat)"
+unset CRITICAL_FLOWS_RUN_CONTEXT_KEY
+fingerprint="$(printf '%s' "$source_payload" | python3 -c '
+import hashlib
+import re
+import sys
+source = sys.stdin.read()
+match = re.search(r\"putenv\\( [\\\"]CRITICAL_FLOWS_RUN_CONTEXT_KEY=([0-9a-f]{{64}})[\\\"] \\);\", source)
+if match is None:
+    raise SystemExit(3)
+print(\"sha256:\" + hashlib.sha256(bytes.fromhex(match.group(1))).hexdigest())
+')" || fingerprint=""
+printf '%s\t' {shlex.quote(kind)} >> "$DEFAULT_BOUNDARY_CALL_LOG"
+printf '%q ' "$@" >> "$DEFAULT_BOUNDARY_CALL_LOG"
+printf 'source_key_fingerprint=%s\n' "$fingerprint" >> "$DEFAULT_BOUNDARY_CALL_LOG"
+[ "$fingerprint" = "$EXPECTED_CONTEXT_KEY_FINGERPRINT" ] || exit 3
+printf '%s\n' '{{"status":"pass"}}'
+"""
+
+
+def test_default_store_wrapper_transports_observer_key_for_all_actions() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-default-observer-wrapper-") as tmp:
+        root = Path(tmp)
+        bin_dir = root / "bin"
+        bin_dir.mkdir()
+        call_log = root / "calls.log"
+        write_executable(bin_dir / "docker", default_wp_boundary_shim_source("docker"))
+        write_executable(bin_dir / "pnpm", default_wp_boundary_shim_source("pnpm"))
+        fingerprint = "sha256:" + hashlib.sha256(
+            bytes.fromhex(TEST_RUN_CONTEXT_KEY)
+        ).hexdigest()
+        results: dict[tuple[str, str], subprocess.CompletedProcess[str]] = {}
+        for store in ("ref", "target"):
+            for action in ("observe", "stop", "recover"):
+                script = f"""
+source {shlex.quote(str(COMMON))}
+REF_CONTAINER=test-ref-container
+REF_WP_COMMAND=
+TARGET_WPENV_CWD=test-target-cwd
+TARGET_WP_COMMAND=
+CRITICAL_FLOWS_RUN_STAMP={TEST_RUN_STAMP}
+CRITICAL_FLOWS_RUN_CONTEXT_KEY={TEST_RUN_CONTEXT_KEY}
+CRITICAL_FLOWS_FLOW_ID=MO-03-manual-capture-payment-details
+CRITICAL_FLOWS_LOG_PURPOSE=clean-debug-log
+export CRITICAL_FLOWS_RUN_STAMP CRITICAL_FLOWS_RUN_CONTEXT_KEY
+export CRITICAL_FLOWS_FLOW_ID CRITICAL_FLOWS_LOG_PURPOSE
+if declare -F critical_flows_log_observer_action >/dev/null; then
+  critical_flows_log_observer_action {store} {action}
+else
+  wp_store {store} eval-file - "$CRITICAL_FLOWS_RUN_STAMP" {action} < "$LOG_OBSERVER_DRIVER"
+fi
+"""
+                results[(store, action)] = subprocess.run(
+                    ["bash", "-c", script],
+                    cwd=REPO,
+                    env={
+                        **os.environ,
+                        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+                        "DEFAULT_BOUNDARY_CALL_LOG": str(call_log),
+                        "EXPECTED_CONTEXT_KEY_FINGERPRINT": fingerprint,
+                    },
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                )
+
+        failures = [
+            f"{store}/{action}: rc={result.returncode}: {result.stderr.strip()}"
+            for (store, action), result in results.items()
+            if result.returncode != 0
+        ]
+        assert not failures, "default observer actions did not cross WP stdin safely: " + "; ".join(
+            failures
+        )
+        calls = call_log.read_text(encoding="utf-8").splitlines()
+        assert len(calls) == 6
+        for action in ("observe", "stop", "recover"):
+            assert any(
+                line.startswith("docker\t")
+                and "exec -i -u www-data test-ref-container wp eval-file - " in line
+                and f" {action} source_key_fingerprint={fingerprint}" in line
+                for line in calls
+            )
+            assert any(
+                line.startswith("pnpm\t")
+                and "wp-env run --env-cwd=test-target-cwd cli wp eval-file - " in line
+                and f" {action} source_key_fingerprint={fingerprint}" in line
+                for line in calls
+            )
+        disclosure = call_log.read_text(encoding="utf-8")
+        for result in results.values():
+            disclosure += result.stdout + result.stderr
+        for path in root.rglob("*"):
+            if path.is_file():
+                disclosure += path.read_text(encoding="utf-8", errors="replace")
+        assert TEST_RUN_CONTEXT_KEY not in disclosure
+
+
+def assert_log_observer_cleaned(case: dict, required_bytes: bytes = b"") -> None:
+    """Require exact regular-file restoration, no leftovers, and post-failure usability."""
+    debug_log = case["debug_log"]
+    current_stat = debug_log.stat()
+    assert stat.S_ISREG(current_stat.st_mode)
+    assert current_stat.st_uid == case["initial_stat"].st_uid
+    assert current_stat.st_gid == case["initial_stat"].st_gid
+    assert stat.S_IMODE(current_stat.st_mode) == stat.S_IMODE(case["initial_stat"].st_mode)
+    restored = debug_log.read_bytes()
+    assert restored.startswith(case["original"])
+    assert required_bytes in restored
+    assert not case["backing_path"].exists()
+    assert not list(debug_log.parent.glob(f"{debug_log.name}.woopayments-critical-flows.*"))
+    with debug_log.open("ab") as stream:
+        stream.write(b"store-usable-after-observer-cleanup\n")
+    assert debug_log.read_bytes().endswith(b"store-usable-after-observer-cleanup\n")
+
+
+def native_capture_driver_php_source() -> str:
+    """Return an executable native-outcome seam around the real capture driver."""
+    return """<?php
+namespace Automattic\\WooCommerce\\Internal\\Payments {
+    class NativePaymentsRuntimeArbiter {
+        public const OWNER_NATIVE = 'native';
+        public function get_runtime_owner() { return self::OWNER_NATIVE; }
+    }
+    class OrderPaymentStore { public const GATEWAY_ID = 'woocommerce_payments'; }
+    class PaymentContext {
+        public static function for_capture( $order, $gateway_id ) { return new self(); }
+    }
+    class PaymentOutcome {
+        public const STATUS_COMPLETED = 'completed';
+        public const STATUS_FAILED = 'failed';
+        public function __construct( private $status, private $data ) {}
+        public function get_status() { return $this->status; }
+        public function get_provider_payment_id() { return 'pi_ref_details'; }
+        public function get_data() { return $this->data; }
+    }
+    class PaymentProcessingService {
+        public function capture( $context, $provider ) {
+            $status = getenv( 'FAKE_OUTCOME_STATUS' ) ?: PaymentOutcome::STATUS_COMPLETED;
+            $data = array();
+            if ( PaymentOutcome::STATUS_FAILED === $status ) {
+                $data = array(
+                    'error_code' => getenv( 'FAKE_ERROR_CODE' ) ?: 'api_error',
+                    'error_message' => getenv( 'FAKE_ERROR_MESSAGE' ) ?: 'Provider failure.',
+                );
+            }
+            return new PaymentOutcome( $status, $data );
+        }
+    }
+}
+namespace Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments {
+    class WooPaymentsProvider {}
+}
+namespace {
+    class WC_Order {
+        public function get_payment_method() { return 'woocommerce_payments'; }
+        public function get_status() {
+            return $GLOBALS['order_reads'] > 1 && 'completed' === getenv( 'FAKE_OUTCOME_STATUS' )
+                ? 'processing'
+                : 'on-hold';
+        }
+        public function get_meta( $key, $single ) {
+            if ( '_intent_id' === $key ) { return 'pi_ref_details'; }
+            if ( '_charge_id' === $key ) { return 'ch_ref_details'; }
+            if ( '_intention_status' === $key ) {
+                return $GLOBALS['order_reads'] > 1 && 'completed' === getenv( 'FAKE_OUTCOME_STATUS' )
+                    ? 'succeeded'
+                    : 'requires_capture';
+            }
+            return '';
+        }
+    }
+    class CriticalFlowContainer {
+        public function get( $class ) { return new $class(); }
+    }
+    class WP_CLI {
+        public static function line( $line ) { echo $line, "\n"; }
+        public static function error( $message ) { echo $message, "\n"; exit( 1 ); }
+    }
+    function wc_get_order( $order_id ) {
+        ++$GLOBALS['order_reads'];
+        return new WC_Order();
+    }
+    function wc_get_container() { return new CriticalFlowContainer(); }
+    function wp_json_encode( $value ) { return json_encode( $value ); }
+    $GLOBALS['order_reads'] = 0;
+    $args = array( 301 );
+    require $argv[1];
+}
+"""
+
+
+def native_transport_exception_codec_php_source() -> str:
+    """Project one real native transport exception through the production codec."""
+    return """<?php
+function esc_html( $value ) { return $value; }
+function __( $value, $domain = '' ) { return $value; }
+function _x( $value, $context = '', $domain = '' ) { return $value; }
+function apply_filters( $hook, $value ) { return $value; }
+require $argv[1];
+
+$exception = new Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\Api\\WooPaymentsApiException(
+    'Your card was declined.',
+    'card_declined',
+    503,
+    'card_error',
+    'card_declined'
+);
+$outcome = Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\WooPaymentsIntentCodec::failed_transport_outcome(
+    'capture',
+    $exception,
+    'pi_ref_details'
+);
+$data = $outcome->get_data();
+echo json_encode(
+    array(
+        'op'               => 'capture',
+        'order_id'         => 301,
+        'intent_id'        => 'pi_ref_details',
+        'charge_id'        => 'ch_ref_details',
+        'status'           => 'on-hold',
+        'intention_status' => 'requires_capture',
+        'success'          => false,
+        'transport_kind'   => 'native_outcome',
+        'provider_status'  => $outcome->get_status(),
+        'http_code'        => (int) ( $data['http_code'] ?? 0 ),
+        'error_code'       => (string) ( $data['error_code'] ?? '' ),
+        'error_message'    => (string) ( $data['error_message'] ?? '' ),
+    )
+), "\\n";
+"""
+
+
+def mo03_fake_wp_source(
+    owner: str,
+    home: str,
+    pre_payload: dict,
+    post_payload: dict,
+    *,
+    state_exit_code: int = 0,
+    post_state_exit_code: int | None = None,
+    log_probe_exit_code: int = 0,
+    log_probe_status: str = "pass",
+) -> str:
+    """Fake wp CLI for MO-03 snapshots and shared runner probes."""
+    pre = json.dumps(pre_payload, separators=(",", ":"))
+    post = json.dumps(post_payload, separators=(",", ":"))
+    post_exit_code = state_exit_code if post_state_exit_code is None else post_state_exit_code
+    log_matches = (
+        []
+        if log_probe_status != "fail"
+        else [safe_log_record(line=5, diagnostic="PHP Warning: deterministic capture warning")]
+    )
+    store = "ref" if owner == "plugin" else "target"
+    log_payload = common_log_scan_v5(
+        status=log_probe_status,
+        run_stamp=TEST_RUN_STAMP,
+        store=store,
+        flow_id="MO-03-manual-capture-payment-details",
+        purpose="clean-debug-log",
+        marker_created_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(MO03_TEST_EPOCH)),
+        end_line_count=5 if log_matches else 4,
+        end_byte_count=160 if log_matches else 128,
+        matches=log_matches,
+        blocker_code="no_configured_paths" if log_probe_status == "blocked" else "",
+    )
+    log_json = json.dumps(log_payload, separators=(",", ":"))
+    return f"""#!/usr/bin/env bash
+{authenticated_log_fake_prelude(log_payload, observer_categories='warning' if log_probe_status == 'fail' else '')}
+if [ "$1" = "--user=1" ]; then
+  shift
+fi
+if [ "$1" = "eval-file" ]; then
+  body="$(cat)"
+  if [[ "$body" == *"update_option"*"woopayments_critical_flows_debug_log_marker"* ]]; then
+    printf '%s\n' '{{"status":"pass"}}'
+    exit 0
+  fi
+  if [[ "$body" == *"ignored_matches"* ]]; then
+    if [ {log_probe_exit_code} -ne 0 ]; then
+      printf '%s\n' 'fake log probe unavailable' >&2
+      exit {log_probe_exit_code}
+    fi
+    printf '%s\n' '{log_json}'
+    exit 0
+  fi
+  state_exit_code={state_exit_code}
+  if [ "$5" = "post" ]; then
+    state_exit_code={post_exit_code}
+  fi
+  if [ "$state_exit_code" -ne 0 ]; then
+    printf '%s\\n' 'fake payment details state unavailable' >&2
+    exit "$state_exit_code"
+  fi
+  if [ "$5" = "pre" ]; then
+    printf '%s\\n' '{pre}'
+  else
+    printf '%s\\n' '{post}'
+  fi
+  exit 0
+fi
+if [ "$1" = "eval" ]; then
+  if [[ "$2" == *"store_identity_owner"* ]]; then
+    printf '%s\\n' "store_identity_owner={owner}"
+    printf '%s\\n' "store_identity_home={home}"
+    exit 0
+  fi
+  if [[ "$2" == *"update_option"*"woopayments_critical_flows_debug_log_marker"* ]]; then
+    printf '%s\\n' '{{"status":"pass","paths":["/tmp/fake-debug.log"],"markers":{{"/tmp/fake-debug.log":0}}}}'
+    exit 0
+  fi
+  if [[ "$2" == *"ignored_matches"* ]] && [ {log_probe_exit_code} -ne 0 ]; then
+    printf '%s\\n' 'fake log probe unavailable' >&2
+    exit {log_probe_exit_code}
+  fi
+  printf '%s\\n' '{log_json}'
+  exit 0
+fi
+printf 'unexpected fake wp call: %s\\n' "$*" >&2
+exit 2
+"""
+
+
+def mo03_fake_flow_driver_source(
+    target_capture: dict,
+    target_capture_exit_code: int,
+    call_log: Path,
+) -> str:
+    """Fake deterministic charge/capture driver with a capture call ledger."""
+    target_capture_json = json.dumps(target_capture, separators=(",", ":"))
+    ref_capture_json = json.dumps(mo03_capture_payload("ref"), separators=(",", ":"))
+    return f"""#!/usr/bin/env bash
+case "$1" in
+  charge)
+    if [ "$STORE_NAME" = "ref" ]; then
+      printf '%s\\n' '{{"op":"charge","order_id":301,"charge_id":"ch_ref_details","intent_id":"pi_ref_details"}}'
+    else
+      printf '%s\\n' '{{"op":"charge","order_id":302,"charge_id":"ch_target_details","intent_id":"pi_target_details"}}'
+    fi
+    ;;
+  capture)
+    printf '%s\\n' "$STORE_NAME:capture:$*" >> {shlex.quote(str(call_log))}
+    if [ "$STORE_NAME" = "ref" ]; then
+      printf '%s\\n' '{ref_capture_json}'
+      exit 0
+    fi
+    printf '%s\\n' '{target_capture_json}'
+    exit {target_capture_exit_code}
+    ;;
+  *)
+    printf 'unexpected flow operation: %s\\n' "$*" >&2
+    exit 9
+    ;;
+esac
 """
 
 
@@ -513,20 +2710,42 @@ def ma09_fake_wp_source(
 ) -> str:
     """Fake wp CLI for the MA-09 performance driver and shared log assertions."""
     payload = json.dumps(state_payload, separators=(",", ":"))
-    log_payload = json.dumps(
-        {
-            "status": "fail" if dirty_log else "pass",
-            "paths": ["/tmp/fake-debug.log"],
-            "matches": ["PHP Warning: fake MA-09 warning"] if dirty_log else [],
-        },
-        separators=(",", ":"),
+    log_matches = (
+        [safe_log_record(line=5, diagnostic="PHP Warning: fake MA-09 warning")]
+        if dirty_log
+        else []
     )
+    log_scan = common_log_scan_v5(
+        status="fail" if dirty_log else "pass",
+        run_stamp=TEST_RUN_STAMP,
+        store="ref" if owner == "plugin" else "target",
+        flow_id="MA-09-large-dataset-perf",
+        purpose="clean-debug-log",
+        marker_created_at=TEST_MARKER_CREATED_AT,
+        end_line_count=5 if dirty_log else 4,
+        end_byte_count=160 if dirty_log else 128,
+        matches=log_matches,
+    )
+    log_payload = json.dumps(log_scan, separators=(",", ":"))
     return f"""#!/usr/bin/env bash
+{authenticated_log_fake_prelude(log_scan, observer_categories="warning" if dirty_log else "")}
 if [ "$1" = "--user=1" ]; then
   shift
 fi
 if [ "$1" = "eval-file" ]; then
-  cat >/dev/null
+  body="$(cat)"
+  if [[ "$body" == *"update_option"*"woopayments_critical_flows_debug_log_marker"* ]]; then
+    printf '%s\\n' '{{"status":"pass"}}'
+    exit 0
+  fi
+  if [[ "$body" == *"ignored_matches"* ]]; then
+    if [ {log_probe_exit_code} -ne 0 ]; then
+      printf '%s\\n' 'fake log probe unavailable' >&2
+      exit {log_probe_exit_code}
+    fi
+    printf '%s\\n' '{log_payload}'
+    exit 0
+  fi
   printf '%s\\n' 'fake WP wrapper banner'
   printf '%s\\n' '{payload}'
   printf '%s\\n' 'fake WP wrapper footer'
@@ -800,6 +3019,149 @@ exit {exit_code}
 """
 
 
+def fake_authenticated_log_observer_source() -> str:
+    """Return the fake WP seam for the runner's authenticated observer lifecycle."""
+    return r'''
+observer_state="$EVIDENCE_DIR/.fake-log-observer-$CRITICAL_FLOWS_RUN_STAMP"
+observer_args=("$@")
+observer_action=""
+observer_run_stamp=""
+for observer_index in "${!observer_args[@]}"; do
+  if [ "${observer_args[$observer_index]}" = "eval-file" ]; then
+    observer_action="${observer_args[$((observer_index + 3))]:-}"
+    observer_run_stamp="${observer_args[$((observer_index + 2))]:-}"
+    break
+  fi
+done
+if [ -n "$observer_action" ]; then
+  case "$observer_action" in
+    observe)
+      while IFS= read -r _line; do :; done
+      rm -f "$observer_state.stop"
+      FAKE_OBSERVER_STATE="$observer_state" FAKE_OBSERVER_RUN_STAMP="$observer_run_stamp" python3 - <<'PY'
+import hashlib
+import hmac
+import json
+import os
+import time
+from pathlib import Path
+
+key = bytes.fromhex(os.environ["CRITICAL_FLOWS_RUN_CONTEXT_KEY"])
+run_stamp = os.environ["FAKE_OBSERVER_RUN_STAMP"]
+observer_id = os.environ.get(
+    "FAKE_OBSERVER_ID", "00000000-0000-4000-8000-000000000777"
+)
+store = os.environ.get("FAKE_OBSERVER_STORE", "target")
+flow_id = os.environ.get("FAKE_OBSERVER_FLOW_ID", "MO-03-manual-capture-payment-details")
+purpose = os.environ.get("FAKE_OBSERVER_PURPOSE", "clean-debug-log")
+marker_created_at = os.environ.get("FAKE_OBSERVER_MARKER_CREATED_AT", "")
+path_contexts = [
+    {
+        "path": os.environ.get("FAKE_OBSERVER_PATH", "fake-debug.log"),
+        "path_id": os.environ.get("FAKE_OBSERVER_PATH_ID", ""),
+    }
+]
+stop_path = Path(os.environ["FAKE_OBSERVER_STATE"] + ".stop")
+previous = "0" * 64
+sequence = 0
+
+
+def emit(kind, **fields):
+    global previous, sequence
+    sequence += 1
+    record = {
+        "schema": "woopayments_debug_log_observer_record.v2",
+        "sequence": sequence,
+        "run_stamp": run_stamp,
+        "store": store,
+        "flow_id": flow_id,
+        "purpose": purpose,
+        "marker_created_at": marker_created_at,
+        "observer_id": observer_id,
+        "paths": path_contexts,
+        "previous_hmac": "hmac-sha256:" + previous,
+        "kind": kind,
+        **fields,
+    }
+    canonical = json.dumps(
+        record, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+    )
+    previous = hmac.new(
+        key,
+        (record["previous_hmac"].removeprefix("hmac-sha256:") + "\0" + canonical).encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    record["hmac"] = "hmac-sha256:" + previous
+    print(json.dumps(record, separators=(",", ":"), ensure_ascii=True), flush=True)
+
+
+emit(
+    "ready",
+    status="pass",
+    path_count=1,
+    key_fingerprint="sha256:" + hashlib.sha256(key).hexdigest(),
+    origin_binding=os.environ["CRITICAL_FLOWS_RUN_CONTEXT_BINDING"],
+)
+deadline = time.monotonic() + 10
+while not stop_path.is_file() and time.monotonic() < deadline:
+    time.sleep(0.02)
+if not stop_path.is_file():
+    raise SystemExit(3)
+for category in filter(None, os.environ.get("FAKE_OBSERVER_CATEGORIES", "").split(",")):
+    emit(
+        "line",
+        path=os.environ.get("FAKE_OBSERVER_PATH", "fake-debug.log"),
+        line=5,
+        category=category,
+        fingerprint="sha256:" + hashlib.sha256(category.encode("utf-8")).hexdigest(),
+    )
+emit(
+    "line",
+    path=os.environ.get("FAKE_OBSERVER_PATH", "fake-debug.log"),
+    line=int(
+        os.environ.get(
+            "FAKE_OBSERVER_TERMINAL_LINE",
+            "5" if os.environ.get("FAKE_OBSERVER_CATEGORIES") else "4",
+        )
+    ),
+    category="terminal",
+    fingerprint="sha256:" + hashlib.sha256(b"fake terminal").hexdigest(),
+)
+emit("complete", status="pass")
+PY
+      exit $?
+      ;;
+    stop|recover)
+      while IFS= read -r _line; do :; done
+      : > "$observer_state.stop"
+      exit 0
+      ;;
+  esac
+fi
+'''
+
+
+def authenticated_log_fake_prelude(
+    scan_payload: dict, *, observer_categories: str = ""
+) -> str:
+    """Return the strict-v5 fake observer environment and lifecycle dispatcher."""
+    observation = scan_payload["observations"][0]
+    return f"""CRITICAL_FLOWS_RUN_CONTEXT_BINDING={shlex.quote(scan_payload['origin_binding'])}
+FAKE_OBSERVER_ID={shlex.quote(scan_payload['observer_id'])}
+FAKE_OBSERVER_CATEGORIES={shlex.quote(observer_categories)}
+FAKE_OBSERVER_STORE={shlex.quote(scan_payload['store'])}
+FAKE_OBSERVER_FLOW_ID={shlex.quote(scan_payload['flow_id'])}
+FAKE_OBSERVER_PURPOSE={shlex.quote(scan_payload['purpose'])}
+FAKE_OBSERVER_MARKER_CREATED_AT={shlex.quote(scan_payload['marker_created_at'])}
+FAKE_OBSERVER_PATH={shlex.quote(observation['path'])}
+FAKE_OBSERVER_PATH_ID={shlex.quote(observation['path_id'])}
+export CRITICAL_FLOWS_RUN_CONTEXT_BINDING FAKE_OBSERVER_ID FAKE_OBSERVER_CATEGORIES
+export FAKE_OBSERVER_STORE FAKE_OBSERVER_FLOW_ID FAKE_OBSERVER_PURPOSE
+export FAKE_OBSERVER_MARKER_CREATED_AT FAKE_OBSERVER_PATH FAKE_OBSERVER_PATH_ID
+{fake_authenticated_log_observer_source()}
+"""
+
+
 def ma10_fake_wp_source(
     *,
     log_status: str = "pass",
@@ -807,21 +3169,40 @@ def ma10_fake_wp_source(
     scanned_paths: list[str] | None = None,
 ) -> str:
     """Return a target WP seam with marker-bounded log evidence."""
-    scan_payload = {
-        "status": log_status,
-        "paths": ["/tmp/fake-debug.log"] if scanned_paths is None else scanned_paths,
-        "matches": ["PHP Warning: MA-10 fake warning"] if log_status == "fail" else [],
-        "ignored_matches": [],
-        "marker": {
-            "created_at": "2026-07-16T10:00:00Z",
-            "paths": {"/tmp/fake-debug.log": 4},
-        },
-    }
-    if log_status == "blocked":
-        scan_payload["reason"] = "no readable debug.log path"
+    log_matches = (
+        [safe_log_record(line=5, diagnostic="PHP Warning: MA-10 fake warning")]
+        if log_status == "fail"
+        else []
+    )
+    scan_payload = ma10_log_scan_v5(
+        status=log_status,
+        run_stamp=TEST_RUN_STAMP,
+        marker_created_at=TEST_MARKER_CREATED_AT,
+        end_line_count=5 if log_matches else 4,
+        end_byte_count=160 if log_matches else 128,
+        matches=log_matches,
+        blocker_code="no_configured_paths" if log_status == "blocked" else "",
+    )
+    observer_scan = scan_payload
+    if scanned_paths == []:
+        scan_payload = {**scan_payload, "observations": []}
     encoded_scan = json.dumps(scan_payload, separators=(",", ":"))
     marker_exit = 0 if marker_ok else 1
     return f"""#!/usr/bin/env bash
+{authenticated_log_fake_prelude(observer_scan, observer_categories='warning' if log_status == 'fail' else '')}
+if [ "$1" = "eval-file" ]; then
+  body="$(cat)"
+  if [[ "$body" == *"update_option"*"woopayments_critical_flows_debug_log_marker"* ]]; then
+    [ -z "${{FAKE_I18N_GATE_CALLS:-}}" ] || printf '%s\n' marker >> "$FAKE_I18N_GATE_CALLS"
+    printf '%s\n' '{{"status":"pass"}}'
+    exit {marker_exit}
+  fi
+  if [[ "$body" == *"ignored_matches"* ]]; then
+    [ -z "${{FAKE_I18N_GATE_CALLS:-}}" ] || printf '%s\n' scan >> "$FAKE_I18N_GATE_CALLS"
+    printf '%s\n' '{encoded_scan}'
+    exit 0
+  fi
+fi
 if [ "$1" = "eval" ]; then
   if [[ "$2" == *"store_identity_owner"* ]]; then
     printf '%s\\n' 'store_identity_owner=native'
@@ -848,19 +3229,14 @@ def ma10_live_failure_wp_source() -> str:
     """Return a WP seam that supports the real gate through an early flow failure."""
     catalog = ma10_gate_payload()["state"]["catalog_evidence"]
     encoded_catalog = json.dumps(catalog, separators=(",", ":"))
-    scan = {
-        "status": "pass",
-        "paths": ["/tmp/fake-debug.log"],
-        "matches": [],
-        "ignored_matches": [],
-        "marker": {
-            "created_at": "2026-07-16T10:00:00Z",
-            "paths": {"/tmp/fake-debug.log": 0},
-        },
-    }
+    scan = ma10_log_scan_v5(
+        run_stamp=TEST_RUN_STAMP,
+        marker_created_at=TEST_MARKER_CREATED_AT,
+    )
     encoded_scan = json.dumps(scan, separators=(",", ":"))
     return f"""#!/usr/bin/env bash
 set -u
+{authenticated_log_fake_prelude(scan)}
 if [[ "${{1:-}}" == --exec=* ]]; then shift; fi
 if [ "${{1:-}}" = "eval" ]; then
   if [[ "${{2:-}}" == *"store_identity_owner"* ]]; then
@@ -882,7 +3258,11 @@ fi
 if [ "${{1:-}}" = "language" ] || [ "${{1:-}}" = "site" ]; then exit 0; fi
 if [ "${{1:-}}" = "eval-file" ]; then
   body="$(cat)"
-  if [[ "$body" == *"woopayments_i18n_language_restore.v1"* ]]; then
+  if [[ "$body" == *"update_option"*"woopayments_critical_flows_debug_log_marker"* ]]; then
+    printf '%s\n' '{{"status":"pass"}}'
+  elif [[ "$body" == *"ignored_matches"* ]]; then
+    printf '%s\n' '{encoded_scan}'
+  elif [[ "$body" == *"woopayments_i18n_language_restore.v1"* ]]; then
     printf '%s\\n' '{{"schema":"woopayments_i18n_language_restore.v1","success":true,"restored_snapshot_exact":true,"errors":[]}}'
   elif [[ "$body" == *"woopayments_i18n_language_snapshot.v1"* ]]; then
     printf '%s\\n' 'WPLANG:en_US'
@@ -920,7 +3300,48 @@ def run_runner(
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        env={**os.environ, "EVIDENCE_DIR": str(evidence_dir), **(extra_env or {})},
+        env={
+            **os.environ,
+            "EVIDENCE_DIR": str(evidence_dir),
+            "CRITICAL_FLOWS_RUN_STAMP": TEST_RUN_STAMP,
+            "CRITICAL_FLOWS_RUN_CONTEXT_KEY": TEST_RUN_CONTEXT_KEY,
+            **(extra_env or {}),
+        },
+        check=False,
+    )
+
+
+def run_fixed_ma10_verifier(
+    evidence_dir: Path,
+    *,
+    gate_exit: int,
+    run_stamp: str = TEST_RUN_STAMP,
+    context_key: str = TEST_RUN_CONTEXT_KEY,
+) -> subprocess.CompletedProcess[str]:
+    """Run the literal repository MA-10 verifier against an existing packet."""
+    return subprocess.run(
+        [
+            "python3",
+            str(MA10_VALIDATOR),
+            "--verify-manifest",
+            "--evidence-dir",
+            str(evidence_dir),
+            "--gate-exit",
+            str(gate_exit),
+            "--run-stamp",
+            run_stamp,
+            "--store",
+            "target",
+            "--flow-id",
+            "MA-10-i18n-order-notes",
+            "--purpose",
+            "clean-debug-log",
+        ],
+        cwd=REPO,
+        env={**os.environ, "CRITICAL_FLOWS_RUN_CONTEXT_KEY": context_key},
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         check=False,
     )
 
@@ -983,7 +3404,6 @@ def test_card_checkout_flow_passes_with_clean_exercised_order() -> None:
         evidence_dir = Path(tmp)
         flow_driver = evidence_dir / "fake-flow-drive.sh"
         fake_wp = evidence_dir / "fake-wp.sh"
-
         write_executable(
             flow_driver,
             """#!/usr/bin/env bash
@@ -992,38 +3412,9 @@ printf '%s\\n' '{"op":"charge","order_id":123,"charge_id":"ch_fake","intent_id":
         )
         write_executable(
             fake_wp,
-            """#!/usr/bin/env bash
-if [ "$1" = "wc" ] && [ "$2" = "shop_order" ] && [ "$3" = "get" ]; then
-  printf '%s\\n' "processing"
-  exit 0
-fi
-if [ "$1" = "post" ] && [ "$2" = "meta" ] && [ "$3" = "get" ]; then
-  exit 0
-fi
-if [ "$1" = "eval" ]; then
-  if [[ "$2" == *"store_identity_owner"* ]]; then
-    printf '%s\\n' "store_identity_owner=native"
-    printf '%s\\n' "store_identity_home=http://target.fake.test"
-    exit 0
-  fi
-  if [[ "$2" == *"get_status"* ]]; then
-    printf '%s\\n' "order_status=processing"
-    exit 0
-  fi
-  if [[ "$2" == *"wc_get_order"* && "$2" == *"_intent_id"* ]]; then
-    printf '%s\\n' "order_meta_value=pi_fake"
-    exit 0
-  fi
-  if [[ "$2" == *"wc_get_order"* && "$2" == *"_charge_id"* ]]; then
-    printf '%s\\n' "order_meta_value=ch_fake"
-    exit 0
-  fi
-  printf '%s\\n' '{"status":"pass","paths":["/tmp/fake-debug.log"],"matches":[]}'
-  exit 0
-fi
-printf 'unexpected fake wp call: %s\\n' "$*" >&2
-exit 2
-""",
+            sc01_fake_wp_source(
+                "native", "http://target.fake.test", "pi_fake", "ch_fake"
+            ),
         )
 
         result = run_runner(
@@ -2193,6 +4584,1777 @@ def test_mo02_evidence_rejects_incomplete_fail_transient_http_and_expired_row() 
         ]
 
 
+def test_mo03_deterministic_flow_uses_provider_order_capture() -> None:
+    cases = (
+        {
+            "name": "pass",
+            "expected_rc": 0,
+            "target_capture_calls": 1,
+            "failed": 0,
+            "blocked": 0,
+        },
+        {
+            "name": "pre_authorization_missing",
+            "pre_authorization_present": False,
+            "expected_rc": 1,
+            "target_capture_calls": 0,
+            "failed": 1,
+            "blocked": 0,
+        },
+        {
+            "name": "post_authorization_retained",
+            "post_authorization_present": True,
+            "expected_rc": 1,
+            "target_capture_calls": 1,
+            "failed": 1,
+            "blocked": 0,
+        },
+        {
+            "name": "parity_fail",
+            "target_total_minor": 5100,
+            "expected_rc": 1,
+            "target_capture_calls": 1,
+            "failed": 1,
+            "blocked": 0,
+        },
+        {
+            "name": "state_blocked",
+            "target_status": "blocked",
+            "expected_rc": 3,
+            "target_capture_calls": 0,
+            "failed": 0,
+            "blocked": 1,
+        },
+        {
+            "name": "owner_mismatch_blocked",
+            "target_runtime_owner": "plugin",
+            "expected_rc": 3,
+            "target_capture_calls": 0,
+            "failed": 0,
+            "blocked": 1,
+        },
+        {
+            "name": "capture_product_fail",
+            "capture_status": "fail",
+            "capture_exit_code": 1,
+            "post_authorization_present": True,
+            "expected_rc": 3,
+            "target_capture_calls": 1,
+            "failed": 0,
+            "blocked": 1,
+        },
+        {
+            "name": "capture_product_fail_post_blocked",
+            "capture_status": "fail",
+            "capture_exit_code": 1,
+            "target_post_state_exit_code": 3,
+            "expected_rc": 3,
+            "target_capture_calls": 1,
+            "failed": 0,
+            "blocked": 1,
+        },
+        {
+            "name": "capture_product_fail_log_blocked",
+            "capture_status": "fail",
+            "capture_exit_code": 1,
+            "target_log_probe_exit_code": 3,
+            "expected_rc": 3,
+            "target_capture_calls": 1,
+            "failed": 0,
+            "blocked": 1,
+        },
+        {
+            "name": "capture_transport_blocked",
+            "capture_status": "blocked",
+            "capture_exit_code": 1,
+            "post_authorization_present": True,
+            "expected_rc": 3,
+            "target_capture_calls": 1,
+            "failed": 0,
+            "blocked": 1,
+        },
+        {
+            "name": "capture_secret_diagnostic_blocked",
+            "capture_status": "fail",
+            "capture_exit_code": 1,
+            "capture_error_code": "sk_test_mo03_must_not_escape",
+            "capture_error_message": "Bearer merchant-private@example.test",
+            "post_authorization_present": True,
+            "expected_rc": 3,
+            "target_capture_calls": 1,
+            "failed": 0,
+            "blocked": 1,
+        },
+        {
+            "name": "pass_log_blocked",
+            "target_log_probe_exit_code": 3,
+            "expected_rc": 3,
+            "target_capture_calls": 1,
+            "failed": 0,
+            "blocked": 1,
+        },
+        {
+            "name": "pass_log_failed",
+            "target_log_probe_status": "fail",
+            "expected_rc": 1,
+            "target_capture_calls": 1,
+            "failed": 1,
+            "blocked": 0,
+        },
+        {
+            "name": "authorization_note_count_is_diagnostic",
+            "target_authorization_note_count": 0,
+            "expected_rc": 0,
+            "target_capture_calls": 1,
+            "failed": 0,
+            "blocked": 0,
+        },
+        {
+            "name": "malformed_comparison_blocked",
+            "malformed_comparison": True,
+            "expected_rc": 3,
+            "target_capture_calls": 1,
+            "failed": 0,
+            "blocked": 1,
+        },
+    )
+
+    for case in cases:
+        name = case["name"]
+        with tempfile.TemporaryDirectory(prefix=f"critical-flows-mo03-{name}-") as tmp:
+            evidence_dir = Path(tmp)
+            flow_driver = evidence_dir / "fake-flow-drive.sh"
+            fake_ref_wp = evidence_dir / "fake-ref-wp.sh"
+            fake_target_wp = evidence_dir / "fake-target-wp.sh"
+            calls = evidence_dir / "calls.txt"
+            comparator = MO03_EVIDENCE
+
+            capture_status = case.get("capture_status", "pass")
+            capture_exit_code = case.get("capture_exit_code", 0)
+            target_capture = mo03_capture_payload("target", status=capture_status)
+            if "capture_error_code" in case:
+                target_capture.update(
+                    {
+                        "error_code": case["capture_error_code"],
+                        "error_message": case["capture_error_message"],
+                    }
+                )
+            write_executable(
+                flow_driver,
+                mo03_fake_flow_driver_source(
+                    target_capture,
+                    capture_exit_code,
+                    calls,
+                ),
+            )
+            write_executable(
+                fake_ref_wp,
+                mo03_fake_wp_source(
+                    "plugin",
+                    "http://ref.mo03.fake.test",
+                    mo03_state_payload("ref", "pre"),
+                    mo03_state_payload("ref", "post"),
+                ),
+            )
+            target_total = case.get("target_total_minor", 5000)
+            target_post = mo03_state_payload(
+                "target",
+                "post",
+                authorization_present=case.get("post_authorization_present"),
+                total_minor=target_total,
+                authorization_note_count=case.get("target_authorization_note_count", 1),
+            )
+            if capture_status != "pass":
+                target_post = mo03_state_payload(
+                    "target",
+                    "pre",
+                    authorization_present=True,
+                    total_minor=target_total,
+                    authorization_note_count=case.get("target_authorization_note_count", 1),
+                )
+                target_post["phase"] = "post"
+            write_executable(
+                fake_target_wp,
+                mo03_fake_wp_source(
+                    "native",
+                    "http://target.mo03.fake.test",
+                    mo03_state_payload(
+                        "target",
+                        "pre",
+                        status=case.get("target_status", "raw"),
+                        authorization_present=case.get("pre_authorization_present"),
+                        total_minor=target_total,
+                        runtime_owner=case.get("target_runtime_owner"),
+                        authorization_note_count=case.get(
+                            "target_authorization_note_count", 1
+                        ),
+                    ),
+                    target_post,
+                    post_state_exit_code=case.get("target_post_state_exit_code"),
+                    log_probe_exit_code=case.get("target_log_probe_exit_code", 0),
+                    log_probe_status=case.get("target_log_probe_status", "pass"),
+                ),
+            )
+            if case.get("malformed_comparison"):
+                comparator = evidence_dir / "malformed-mo03-evidence.py"
+                write_executable(
+                    comparator,
+                    f"""#!/usr/bin/env python3
+import os
+import sys
+
+if sys.argv[1] == "compare":
+    print("Traceback: comparator crashed")
+    raise SystemExit(1)
+os.execv(sys.executable, [sys.executable, {json.dumps(str(MO03_EVIDENCE))}, *sys.argv[1:]])
+""",
+                )
+
+            result = run_runner(
+                "--store",
+                "both",
+                "--layer",
+                "deterministic",
+                "--flow",
+                "MO-03",
+                evidence_dir=evidence_dir,
+                extra_env={
+                    "MO03_FLOW_DRIVER": str(flow_driver),
+                    "MO03_STATE_DRIVER": str(MO03_DRIVER),
+                    "MO03_COMPARATOR": str(comparator),
+                    "REF_WP_COMMAND": str(fake_ref_wp),
+                    "TARGET_WP_COMMAND": str(fake_target_wp),
+                },
+            )
+
+            assert result.returncode == case["expected_rc"], result.stdout + result.stderr
+            assert "MO-03-manual-capture-payment-details" in result.stdout
+            assert "EXERCISER NOT WIRED" not in result.stdout
+            assert "captured authorization order_id=301" in result.stdout
+            call_lines = calls.read_text(encoding="utf-8").splitlines() if calls.exists() else []
+            target_capture_lines = [
+                line for line in call_lines if line.startswith("target:capture:")
+            ]
+            ref_capture_lines = [line for line in call_lines if line.startswith("ref:capture:")]
+            assert len(ref_capture_lines) == 1
+            assert "capture --deterministic --order-id 301" in ref_capture_lines[0]
+            assert len(target_capture_lines) == case["target_capture_calls"]
+            for line in target_capture_lines:
+                assert "capture --deterministic --native --order-id 302" in line
+
+            rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
+            assert rollup["summary"] == {
+                "blocked": case["blocked"],
+                "failed": case["failed"],
+                "passed": 2 - case["failed"] - case["blocked"],
+                "queued_agent_specs": 0,
+            }
+            target_row = next(row for row in rollup["results"] if row["store"] == "target")
+            assert "evidence_path" in target_row, (
+                name,
+                target_row,
+                result.stdout,
+                result.stderr,
+            )
+            manifest_path = Path(target_row["evidence_path"])
+            assert target_row["evidence_sha256"] == file_sha256(manifest_path)
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            assert manifest["schema"] == "woopayments_mo03_manifest.v1"
+            assert manifest["flow"] == "MO-03-manual-capture-payment-details"
+            assert manifest["run_stamp"] == rollup["run_stamp"]
+            target_log_path = manifest_path.parent / "target-log-scan.json"
+            assert "target-log-scan.json" in manifest["files"]
+            target_log = json.loads(target_log_path.read_text(encoding="utf-8"))
+            assert target_log["schema"] == "woopayments_mo03_log_scan.v6"
+            assert target_log["store"] == "target"
+            assert target_log["run_stamp"] == rollup["run_stamp"]
+            assert target_log["payload_sha256"] == (
+                "sha256:"
+                + hashlib.sha256(
+                    json.dumps(
+                        {
+                            key: value
+                            for key, value in target_log.items()
+                            if key != "payload_sha256"
+                        },
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                ).hexdigest()
+            )
+            assert manifest["files"]["target-log-scan.json"]["file_sha256"] == file_sha256(
+                target_log_path
+            )
+
+            if name == "pass":
+                assert "provider/order capture transition: PASS" in result.stdout
+                assert "cross-store pre/post financial parity: PASS" in result.stdout
+                assert "does not prove the payment-details browser affordance" in result.stdout
+                assert "[MO-03/target] deterministic verdict: PASS" in result.stdout
+                assert set(manifest["files"]) == {
+                    "ref-fixture.json",
+                    "ref-pre.json",
+                    "ref-capture.json",
+                    "ref-post.json",
+                    "ref-execution.json",
+                    "ref-log-scan.json",
+                    "target-fixture.json",
+                    "target-pre.json",
+                    "target-capture.json",
+                    "target-post.json",
+                    "target-execution.json",
+                    "target-log-scan.json",
+                    "comparison.json",
+                }
+                comparison = json.loads(
+                    (manifest_path.parent / "comparison.json").read_text(encoding="utf-8")
+                )
+                masked_intent = comparison["reference"]["pre"]["identity"]["intent_id"]
+                assert masked_intent.startswith("pi_…")
+                assert masked_intent != "pi_ref_details"
+
+                ref_row = next(
+                    row
+                    for row in rollup["results"]
+                    if row["store"] == "ref"
+                    and row["flow"] == "MO-03-manual-capture-payment-details"
+                )
+                rebound_dir = evidence_dir / "mo03-ref-coherent-rebind"
+                shutil.copytree(Path(ref_row["evidence_path"]).parent, rebound_dir)
+                changed_names = ("ref-pre.json", "ref-capture.json", "ref-post.json")
+                for filename in changed_names:
+                    artifact_path = rebound_dir / filename
+                    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+                    if filename.endswith(("-pre.json", "-post.json")):
+                        artifact["order"].update(
+                            {
+                                "id": 999,
+                                "intent_id": "pi_ref_rebound",
+                                "charge_id": "ch_ref_rebound",
+                            }
+                        )
+                        artifact["provider"].update(
+                            {
+                                "intent_id": "pi_ref_rebound",
+                                "charge_id": "ch_ref_rebound",
+                            }
+                        )
+                        for row in artifact["authorizations"]["matched_rows"]:
+                            row.update(
+                                {
+                                    "order_id": 999,
+                                    "payment_intent_id": "pi_ref_rebound",
+                                    "charge_id": "ch_ref_rebound",
+                                }
+                            )
+                    else:
+                        artifact.update(
+                            {
+                                "order_id": 999,
+                                "intent_id": "pi_ref_rebound",
+                                "charge_id": "ch_ref_rebound",
+                            }
+                        )
+                    artifact.pop("payload_sha256")
+                    artifact["payload_sha256"] = "sha256:" + hashlib.sha256(
+                        json.dumps(
+                            artifact,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ).encode("utf-8")
+                    ).hexdigest()
+                    artifact_path.write_text(json.dumps(artifact), encoding="utf-8")
+
+                rebound_manifest_path = rebound_dir / "ref-manifest.json"
+                rebound_manifest = json.loads(
+                    rebound_manifest_path.read_text(encoding="utf-8")
+                )
+                for filename in changed_names:
+                    artifact_path = rebound_dir / filename
+                    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+                    rebound_manifest["files"][filename] = {
+                        "file_sha256": file_sha256(artifact_path),
+                        "payload_sha256": artifact["payload_sha256"],
+                    }
+                rebound_manifest.pop("payload_sha256")
+                rebound_manifest["payload_sha256"] = "sha256:" + hashlib.sha256(
+                    json.dumps(
+                        rebound_manifest,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                ).hexdigest()
+                rebound_manifest_path.write_text(
+                    json.dumps(rebound_manifest), encoding="utf-8"
+                )
+                rebound_validation = subprocess.run(
+                    [
+                        "python3",
+                        str(MO03_EVIDENCE),
+                        "validate-bound-manifest",
+                        "--manifest",
+                        str(rebound_manifest_path),
+                        "--store",
+                        "ref",
+                        *MO03_LOG_CONTEXT_ARGS,
+                        "--run-stamp",
+                        rollup["run_stamp"],
+                        "--run-scope",
+                        "partial",
+                        "--expected-status",
+                        "pass",
+                        "--expected-exit-code",
+                        "0",
+                    ],
+                    cwd=REPO,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                assert rebound_validation.returncode == 3
+
+                log_rebind_dir = evidence_dir / "mo03-target-log-coherent-rebind"
+                shutil.copytree(manifest_path.parent, log_rebind_dir)
+                rebound_log_path = log_rebind_dir / "target-log-scan.json"
+                rebound_log = json.loads(rebound_log_path.read_text(encoding="utf-8"))
+                rebound_log["ignored_match_count"] = 101
+                rebound_log.pop("payload_sha256")
+                rebound_log["payload_sha256"] = "sha256:" + hashlib.sha256(
+                    json.dumps(
+                        rebound_log,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                ).hexdigest()
+                rebound_log_path.write_text(json.dumps(rebound_log), encoding="utf-8")
+                rebound_manifest_path = log_rebind_dir / "target-manifest.json"
+                rebound_manifest = json.loads(
+                    rebound_manifest_path.read_text(encoding="utf-8")
+                )
+                rebound_manifest["files"]["target-log-scan.json"] = {
+                    "file_sha256": file_sha256(rebound_log_path),
+                    "payload_sha256": rebound_log["payload_sha256"],
+                }
+                rebound_manifest.pop("payload_sha256")
+                rebound_manifest["payload_sha256"] = "sha256:" + hashlib.sha256(
+                    json.dumps(
+                        rebound_manifest,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                ).hexdigest()
+                rebound_manifest_path.write_text(
+                    json.dumps(rebound_manifest), encoding="utf-8"
+                )
+                log_rebind_validation = subprocess.run(
+                    [
+                        "python3",
+                        str(MO03_EVIDENCE),
+                        "validate-bound-manifest",
+                        "--manifest",
+                        str(rebound_manifest_path),
+                        "--store",
+                        "target",
+                        *MO03_LOG_CONTEXT_ARGS,
+                        "--run-stamp",
+                        rollup["run_stamp"],
+                        "--run-scope",
+                        "partial",
+                        "--expected-status",
+                        "pass",
+                        "--expected-exit-code",
+                        "0",
+                    ],
+                    cwd=REPO,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                assert log_rebind_validation.returncode == 3
+            elif name == "pre_authorization_missing":
+                assert "exact authorization row count=0 want=1" in result.stdout
+                assert "[MO-03/target] deterministic verdict: FAIL" in result.stdout
+            elif name == "post_authorization_retained":
+                assert "exact authorization row count=1 want=0" in result.stdout
+                assert "[MO-03/target] deterministic verdict: FAIL" in result.stdout
+            elif name == "parity_fail":
+                assert "cross-store pre/post financial parity: FAIL" in result.stdout
+                assert "[MO-03/target] deterministic verdict: FAIL" in result.stdout
+            elif name == "state_blocked":
+                assert "Payment details state is unavailable." in result.stdout
+                assert "[MO-03/target] deterministic verdict: BLOCKED" in result.stdout
+            elif name == "owner_mismatch_blocked":
+                assert "runtime owner=plugin want=native" in result.stdout
+                assert "[MO-03/target] deterministic verdict: BLOCKED" in result.stdout
+            elif name in {
+                "capture_product_fail",
+                "capture_product_fail_post_blocked",
+                "capture_product_fail_log_blocked",
+            }:
+                assert "provider/order capture operation blocked" in result.stdout
+                assert "[MO-03/target] deterministic verdict: BLOCKED" in result.stdout
+                assert "capture_operation_blocked" in manifest["verdict_sources"]
+                if name == "capture_product_fail_log_blocked":
+                    assert set(manifest["verdict_sources"]) >= {
+                        "capture_operation_blocked",
+                        "log_assertion_blocked",
+                    }
+            elif name == "capture_transport_blocked":
+                assert "provider/order capture operation blocked" in result.stdout
+                assert "[MO-03/target] deterministic verdict: BLOCKED" in result.stdout
+            elif name == "capture_secret_diagnostic_blocked":
+                combined_output = result.stdout + result.stderr
+                assert case["capture_error_code"] not in combined_output
+                assert case["capture_error_message"] not in combined_output
+                assert "provider/order capture operation blocked" in result.stdout
+                capture_evidence = (
+                    manifest_path.parent / "target-capture.json"
+                ).read_text(encoding="utf-8")
+                assert case["capture_error_code"] not in capture_evidence
+                assert case["capture_error_message"] not in capture_evidence
+            elif name == "pass_log_blocked":
+                assert "[MO-03/target] deterministic verdict: BLOCKED" in result.stdout
+                assert manifest["verdict_sources"] == ["log_assertion_blocked"]
+                assert target_log["status"] == "blocked"
+                assert target_log["exit_code"] == 3
+            elif name == "pass_log_failed":
+                assert "[MO-03/target] deterministic verdict: FAIL" in result.stdout
+                assert manifest["verdict_sources"] == ["log_assertion_failed"]
+                assert target_log["status"] == "fail"
+                assert target_log["exit_code"] == 1
+                assert target_log["match_count"] == 1
+            elif name == "authorization_note_count_is_diagnostic":
+                assert "[MO-03/target] deterministic verdict: PASS" in result.stdout
+            else:
+                assert "Comparator emitted malformed or contradictory evidence." in result.stdout
+                assert "[MO-03/target] deterministic verdict: BLOCKED" in result.stdout
+
+
+def test_mo03_evidence_rejects_missing_fail_artifact_and_coherent_rebinding() -> None:
+    run_stamp = "20260716T160000Z-30303"
+
+    with tempfile.TemporaryDirectory(prefix="critical-flows-mo03-adversarial-") as tmp:
+        evidence_dir = Path(tmp)
+        execution = {
+            "schema": "woopayments_mo03_execution.v1",
+            "status": "fail",
+            "store": "ref",
+            "run_stamp": run_stamp,
+            "exit_code": 1,
+            "verdict_sources": ["post_state_failed"],
+            "authorization_exit_code": 0,
+            "authorization_order_id_present": True,
+            "pre_state_exit_code": 0,
+            "capture_exit_code": 0,
+            "capture_classification": "pass",
+            "post_state_exit_code": 1,
+            "comparison_exit_code": None,
+            "log_assertion_exit_code": 0,
+        }
+        execution["payload_sha256"] = "sha256:" + hashlib.sha256(
+            json.dumps(execution, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        execution_path = evidence_dir / "ref-execution.json"
+        execution_path.write_text(json.dumps(execution), encoding="utf-8")
+        manifest = {
+            "schema": "woopayments_mo03_manifest.v1",
+            "flow": "MO-03-manual-capture-payment-details",
+            "run_stamp": run_stamp,
+            "run_scope": "partial",
+            "store": "ref",
+            "status": "fail",
+            "exit_code": 1,
+            "verdict_sources": ["post_state_failed"],
+            "files": {
+                "ref-execution.json": {
+                    "file_sha256": file_sha256(execution_path),
+                    "payload_sha256": execution["payload_sha256"],
+                }
+            },
+        }
+        manifest["payload_sha256"] = "sha256:" + hashlib.sha256(
+            json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        manifest_path = evidence_dir / "ref-manifest.json"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        incomplete = subprocess.run(
+            [
+                "python3",
+                str(MO03_EVIDENCE),
+                "validate-bound-manifest",
+                "--manifest",
+                str(manifest_path),
+                "--store",
+                "ref",
+                *MO03_LOG_CONTEXT_ARGS,
+                "--run-stamp",
+                run_stamp,
+                "--run-scope",
+                "partial",
+                "--expected-status",
+                "fail",
+                "--expected-exit-code",
+                "1",
+            ],
+            cwd=REPO,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert incomplete.returncode == 3
+
+
+def test_mo03_capture_normalizer_blocks_untrusted_capture_output() -> None:
+    run_stamp = "20260716T160000Z-30303"
+    cases = (
+        ("authentication_error", "Authentication failed.", {}),
+        ("rest_no_route", "The capture route is unavailable.", {}),
+        ("http_503", "Provider service temporarily unavailable.", {}),
+        ("api_error", "An unexpected provider error occurred.", {}),
+        ("capture_declined", "HTTP 503 service temporarily unavailable.", {}),
+        ("capture_declined", "x" * 241, {}),
+        (
+            "capture_declined",
+            "Capture was declined.",
+            {
+                "status": "processing",
+                "intention_status": "succeeded",
+                "provider_status": "succeeded",
+            },
+        ),
+    )
+
+    for error_code, error_message, overrides in cases:
+        payload = mo03_capture_payload("ref", status="fail")
+        payload.update(
+            {"error_code": error_code, "error_message": error_message, **overrides}
+        )
+        result = subprocess.run(
+            [
+                "python3",
+                str(MO03_EVIDENCE),
+                "normalize-capture",
+                "--store",
+                "ref",
+                "--order-id",
+                "301",
+                "--intent-id",
+                "pi_ref_details",
+                "--charge-id",
+                "ch_ref_details",
+                "--expected-exit-code",
+                "1",
+                "--run-stamp",
+                run_stamp,
+            ],
+            cwd=REPO,
+            input=json.dumps(payload),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert result.returncode == 3, (error_code, result.stdout, result.stderr)
+        assert json.loads(result.stdout)["status"] == "blocked"
+
+    malformed = mo03_capture_payload("ref")
+    malformed.pop("provider_status")
+    malformed_result = subprocess.run(
+        [
+            "python3",
+            str(MO03_EVIDENCE),
+            "normalize-capture",
+            "--store",
+            "ref",
+            "--order-id",
+            "301",
+            "--intent-id",
+            "pi_ref_details",
+            "--charge-id",
+            "ch_ref_details",
+            "--expected-exit-code",
+            "0",
+            "--run-stamp",
+            run_stamp,
+        ],
+        cwd=REPO,
+        input=json.dumps(malformed),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert malformed_result.returncode == 3
+    assert json.loads(malformed_result.stdout)["status"] == "blocked"
+
+
+def test_mo03_capture_binds_http_rejects_extra_fields_and_redacts_diagnostics() -> None:
+    run_stamp = "20260716T160000Z-30303"
+    secret = "Bearer sk_test_DO_NOT_ARCHIVE customer@example.test"
+
+    cases = []
+    server_error = mo03_capture_payload("ref", status="fail")
+    server_error.update(
+        {
+            "error_code": "card_declined",
+            "error_message": secret,
+            "http_code": 503,
+        }
+    )
+    cases.append(("server_error", server_error, 1))
+    extra_field = mo03_capture_payload("ref", status="fail")
+    extra_field["unexpected_transport_hint"] = "http_503"
+    cases.append(("extra_field", extra_field, 1))
+    missing_http = mo03_capture_payload("ref", status="fail")
+    missing_http.pop("http_code")
+    cases.append(("missing_http", missing_http, 1))
+    zero_http_success = mo03_capture_payload("ref")
+    zero_http_success["http_code"] = 0
+    cases.append(("zero_http_success", zero_http_success, 0))
+
+    for name, payload, expected_exit_code in cases:
+        result = subprocess.run(
+            [
+                "python3",
+                str(MO03_EVIDENCE),
+                "normalize-capture",
+                "--store",
+                "ref",
+                "--order-id",
+                "301",
+                "--intent-id",
+                "pi_ref_details",
+                "--charge-id",
+                "ch_ref_details",
+                "--expected-exit-code",
+                str(expected_exit_code),
+                "--run-stamp",
+                run_stamp,
+            ],
+            cwd=REPO,
+            input=json.dumps(payload),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert result.returncode == 3, (name, result.stdout, result.stderr)
+        assert secret not in result.stdout
+        evidence = json.loads(result.stdout)
+        assert evidence["status"] == "blocked"
+        assert "error_message" not in evidence
+        if expected_exit_code == 1:
+            assert evidence["error_fingerprint"].startswith("sha256:")
+        if name == "server_error":
+            assert evidence["provider_http_code"] == 503
+
+    product_error = mo03_capture_payload("ref", status="fail")
+    product_error["error_message"] = secret
+    product_result = subprocess.run(
+        [
+            "python3",
+            str(MO03_EVIDENCE),
+            "normalize-capture",
+            "--store",
+            "ref",
+            "--order-id",
+            "301",
+            "--intent-id",
+            "pi_ref_details",
+            "--charge-id",
+            "ch_ref_details",
+            "--expected-exit-code",
+            "1",
+            "--run-stamp",
+            run_stamp,
+        ],
+        cwd=REPO,
+        input=json.dumps(product_error),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert product_result.returncode == 1, product_result.stdout + product_result.stderr
+    assert secret not in product_result.stdout
+    product_evidence = json.loads(product_result.stdout)
+    assert product_evidence["provider_http_code"] == 402
+    assert product_evidence["error_category"] == "product_decline"
+    assert "error_message" not in product_evidence
+
+    source = FLOW_CAPTURE_DRIVER.read_text(encoding="utf-8")
+    assert "$outcome_data" in source
+    assert "'http_code'" in source
+    assert "(int) ( $result['http_code'] ?? 0 )" in source
+
+
+def test_mo03_native_capture_producer_and_normalizer_accept_real_completed_outcome() -> None:
+    run_stamp = "20260716T160000Z-30303"
+
+    with tempfile.TemporaryDirectory(prefix="critical-flows-mo03-native-outcome-") as tmp:
+        evidence_dir = Path(tmp)
+        wrapper = evidence_dir / "native-capture-wrapper.php"
+        wrapper.write_text(native_capture_driver_php_source(), encoding="utf-8")
+
+        producer = subprocess.run(
+            ["php", str(wrapper), str(FLOW_CAPTURE_DRIVER)],
+            cwd=REPO,
+            env={**os.environ, "FAKE_OUTCOME_STATUS": "completed"},
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert producer.returncode == 0, producer.stdout + producer.stderr
+        raw = json.loads(producer.stdout)
+        assert raw["transport_kind"] == "native_outcome"
+        assert raw["provider_status"] == "completed"
+        assert raw["http_code"] == 0
+
+        normalized = subprocess.run(
+            [
+                "python3",
+                str(MO03_EVIDENCE),
+                "normalize-capture",
+                "--store",
+                "target",
+                "--order-id",
+                "301",
+                "--intent-id",
+                "pi_ref_details",
+                "--charge-id",
+                "ch_ref_details",
+                "--expected-exit-code",
+                "0",
+                "--run-stamp",
+                run_stamp,
+            ],
+            cwd=REPO,
+            input=producer.stdout,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert normalized.returncode == 0, normalized.stdout + normalized.stderr
+        evidence = json.loads(normalized.stdout)
+        assert evidence["schema"] == "woopayments_mo03_capture_evidence.v3"
+        assert evidence["status"] == "pass"
+        assert evidence["transport_kind"] == "native_outcome"
+        assert evidence["provider_http_code"] == 0
+
+        spec = importlib.util.spec_from_file_location(
+            "mo03_capture_transport_validation_for_test", MO03_EVIDENCE
+        )
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        rebound = dict(evidence)
+        rebound.update(
+            {
+                "transport_kind": "plugin_http",
+                "provider_status": "succeeded",
+                "provider_http_code": 200,
+            }
+        )
+        rebound["payload_sha256"] = module.payload_digest(rebound)
+        assert (
+            module.capture_validation_error(
+                rebound,
+                run_stamp,
+                expected_store="target",
+            )
+            == "capture evidence has an invalid transport binding"
+        )
+
+        for error_code, expected_rc, expected_category in (
+            ("api_error", 3, "untrusted"),
+            ("capture_declined", 3, "untrusted"),
+        ):
+            failed_producer = subprocess.run(
+                ["php", str(wrapper), str(FLOW_CAPTURE_DRIVER)],
+                cwd=REPO,
+                env={
+                    **os.environ,
+                    "FAKE_OUTCOME_STATUS": "failed",
+                    "FAKE_ERROR_CODE": error_code,
+                    "FAKE_ERROR_MESSAGE": "Capture was not completed.",
+                },
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            assert failed_producer.returncode == 1
+            failed_raw = json.loads(failed_producer.stdout)
+            assert failed_raw["transport_kind"] == "native_outcome"
+            assert failed_raw["provider_status"] == "failed"
+            assert failed_raw["http_code"] == 0
+            failed_normalized = subprocess.run(
+                [
+                    "python3",
+                    str(MO03_EVIDENCE),
+                    "normalize-capture",
+                    "--store",
+                    "target",
+                    "--order-id",
+                    "301",
+                    "--intent-id",
+                    "pi_ref_details",
+                    "--charge-id",
+                    "ch_ref_details",
+                    "--expected-exit-code",
+                    "1",
+                    "--run-stamp",
+                    run_stamp,
+                ],
+                cwd=REPO,
+                input=failed_producer.stdout,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            assert failed_normalized.returncode == expected_rc
+            failed_evidence = json.loads(failed_normalized.stdout)
+            assert failed_evidence["error_category"] == expected_category
+            assert failed_evidence["status"] == ("fail" if expected_rc == 1 else "blocked")
+
+
+def test_mo03_capture_redacts_unknown_syntax_valid_provider_code() -> None:
+    run_stamp = "20260716T160000Z-30303"
+    secret_code = "sk_test_do_not_archive"
+    secret_message = "Bearer secret-message-do-not-archive@example.test"
+    raw = mo03_capture_payload("ref", status="fail")
+    raw.update(
+        {
+            "transport_kind": "plugin_http",
+            "error_code": secret_code,
+            "error_message": secret_message,
+        }
+    )
+
+    with tempfile.TemporaryDirectory(prefix="critical-flows-mo03-secret-code-") as tmp:
+        archive = Path(tmp) / "capture-evidence.json"
+        result = subprocess.run(
+            [
+                "python3",
+                str(MO03_EVIDENCE),
+                "normalize-capture",
+                "--store",
+                "ref",
+                "--order-id",
+                "301",
+                "--intent-id",
+                "pi_ref_details",
+                "--charge-id",
+                "ch_ref_details",
+                "--expected-exit-code",
+                "1",
+                "--run-stamp",
+                run_stamp,
+            ],
+            cwd=REPO,
+            input=json.dumps(raw),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        archive.write_text(result.stdout, encoding="utf-8")
+
+        assert result.returncode == 3, result.stdout + result.stderr
+        assert secret_code not in result.stdout
+        assert secret_message not in result.stdout
+        assert secret_code not in archive.read_text(encoding="utf-8")
+        assert secret_message not in archive.read_text(encoding="utf-8")
+        evidence = json.loads(result.stdout)
+        assert evidence["schema"] == "woopayments_mo03_capture_evidence.v3"
+        assert evidence["status"] == "blocked"
+        assert evidence["error_code"] == "untrusted_provider_error"
+        assert evidence["error_fingerprint"].startswith("sha256:")
+
+
+def test_mo03_real_native_http_503_codec_failure_blocks_without_provenance() -> None:
+    run_stamp = "20260716T160000Z-30303"
+
+    with tempfile.TemporaryDirectory(prefix="critical-flows-mo03-native-503-") as tmp:
+        root = Path(tmp)
+        wrapper = root / "native-transport-exception-codec.php"
+        wrapper.write_text(native_transport_exception_codec_php_source(), encoding="utf-8")
+        producer = subprocess.run(
+            [
+                "php",
+                str(wrapper),
+                str(REPO / "plugins/woocommerce/vendor/autoload.php"),
+            ],
+            cwd=REPO,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert producer.returncode == 0, producer.stdout + producer.stderr
+        raw = json.loads(producer.stdout)
+        assert raw["transport_kind"] == "native_outcome"
+        assert raw["provider_status"] == "failed"
+        assert raw["error_code"] == "card_declined"
+        assert raw["http_code"] == 0
+
+        normalized = subprocess.run(
+            [
+                "python3",
+                str(MO03_EVIDENCE),
+                "normalize-capture",
+                "--store",
+                "target",
+                "--order-id",
+                "301",
+                "--intent-id",
+                "pi_ref_details",
+                "--charge-id",
+                "ch_ref_details",
+                "--expected-exit-code",
+                "1",
+                "--run-stamp",
+                run_stamp,
+            ],
+            cwd=REPO,
+            input=producer.stdout,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert normalized.returncode == 3, normalized.stdout + normalized.stderr
+        evidence = json.loads(normalized.stdout)
+        assert evidence["status"] == "blocked"
+        assert evidence["error_category"] == "untrusted"
+        assert evidence["blocker_code"] == "unproven_native_failure"
+
+
+def test_mo03_state_timing_blocks_and_authorization_note_count_is_diagnostic() -> None:
+    run_stamp = "20260716T160000Z-30303"
+    run_epoch = calendar.timegm(time.strptime("20260716T160000Z", "%Y%m%dT%H%M%SZ"))
+
+    stale = mo03_state_payload(
+        "ref",
+        "pre",
+        order_created=run_epoch - 3600,
+        observed_at=run_epoch,
+        row_created=run_epoch - 3600,
+    )
+    stale_result = subprocess.run(
+        [
+            "python3",
+            str(MO03_EVIDENCE),
+            "normalize-state",
+            "--store",
+            "ref",
+            "--phase",
+            "pre",
+            "--run-stamp",
+            run_stamp,
+        ],
+        cwd=REPO,
+        input=json.dumps(stale),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert stale_result.returncode == 3, stale_result.stdout + stale_result.stderr
+    stale_evidence = json.loads(stale_result.stdout)
+    assert stale_evidence["status"] == "blocked"
+    assert "order creation time does not bind the runner invocation" in stale_evidence[
+        "blockers"
+    ]
+
+    stale_row = mo03_state_payload(
+        "ref",
+        "pre",
+        order_created=run_epoch,
+        observed_at=run_epoch,
+        row_created=run_epoch - (9 * 24 * 60 * 60),
+    )
+    stale_row_result = subprocess.run(
+        [
+            "python3",
+            str(MO03_EVIDENCE),
+            "normalize-state",
+            "--store",
+            "ref",
+            "--phase",
+            "pre",
+            "--run-stamp",
+            run_stamp,
+        ],
+        cwd=REPO,
+        input=json.dumps(stale_row),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert stale_row_result.returncode == 3, (
+        stale_row_result.stdout + stale_row_result.stderr
+    )
+    stale_row_evidence = json.loads(stale_row_result.stdout)
+    assert "authorization created timestamp is outside the active window" in (
+        stale_row_evidence["blockers"]
+    )
+    assert "authorization creation time does not bind the seeded order" in (
+        stale_row_evidence["blockers"]
+    )
+
+    no_authorization_note = mo03_state_payload(
+        "ref",
+        "pre",
+        authorization_note_count=0,
+        order_created=run_epoch,
+        observed_at=run_epoch,
+        row_created=run_epoch,
+    )
+    note_result = subprocess.run(
+        [
+            "python3",
+            str(MO03_EVIDENCE),
+            "normalize-state",
+            "--store",
+            "ref",
+            "--phase",
+            "pre",
+            "--run-stamp",
+            run_stamp,
+        ],
+        cwd=REPO,
+        input=json.dumps(no_authorization_note),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert note_result.returncode == 0, note_result.stdout + note_result.stderr
+    note_evidence = json.loads(note_result.stdout)
+    assert note_evidence["status"] == "pass"
+    assert note_evidence["notes"]["authorization_count"] == 0
+
+
+def test_mo03_manifest_requires_bound_log_scan_for_log_verdict() -> None:
+    run_stamp = "20260716T160000Z-30303"
+
+    with tempfile.TemporaryDirectory(prefix="critical-flows-mo03-log-adversarial-") as tmp:
+        evidence_dir = Path(tmp)
+        fixture = {
+            "schema": "woopayments_mo03_fixture.v1",
+            "status": "pass",
+            "store": "ref",
+            "run_stamp": run_stamp,
+            "driver_exit_code": 0,
+            "order_id": 301,
+            "intent_id": "pi_ref_details",
+            "charge_id": "ch_ref_details",
+            "errors": [],
+            "blockers": [],
+        }
+        fixture["payload_sha256"] = "sha256:" + hashlib.sha256(
+            json.dumps(fixture, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        fixture_path = evidence_dir / "ref-fixture.json"
+        fixture_path.write_text(json.dumps(fixture), encoding="utf-8")
+        execution = {
+            "schema": "woopayments_mo03_execution.v1",
+            "status": "fail",
+            "store": "ref",
+            "run_stamp": run_stamp,
+            "exit_code": 1,
+            "verdict_sources": ["log_assertion_failed"],
+            "authorization_exit_code": 0,
+            "authorization_order_id_present": True,
+            "pre_state_exit_code": 0,
+            "capture_exit_code": 0,
+            "capture_classification": "pass",
+            "post_state_exit_code": 0,
+            "comparison_exit_code": None,
+            "log_assertion_exit_code": 1,
+        }
+        execution["payload_sha256"] = "sha256:" + hashlib.sha256(
+            json.dumps(execution, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        execution_path = evidence_dir / "ref-execution.json"
+        execution_path.write_text(json.dumps(execution), encoding="utf-8")
+        manifest_path = evidence_dir / "ref-manifest.json"
+        build = subprocess.run(
+            [
+                "python3",
+                str(MO03_EVIDENCE),
+                "manifest",
+                "--store",
+                "ref",
+                "--status",
+                "fail",
+                "--exit-code",
+                "1",
+                "--run-stamp",
+                run_stamp,
+                "--run-scope",
+                "partial",
+                "--output",
+                str(manifest_path),
+                "--verdict-source",
+                "log_assertion_failed",
+                "--file",
+                str(fixture_path),
+                "--file",
+                str(execution_path),
+            ],
+            cwd=REPO,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert build.returncode == 3, build.stdout + build.stderr
+
+        manifest = {
+            "schema": "woopayments_mo03_manifest.v1",
+            "flow": "MO-03-manual-capture-payment-details",
+            "run_stamp": run_stamp,
+            "run_scope": "partial",
+            "store": "ref",
+            "status": "fail",
+            "exit_code": 1,
+            "verdict_sources": ["log_assertion_failed"],
+            "files": {
+                "ref-fixture.json": {
+                    "file_sha256": file_sha256(fixture_path),
+                    "payload_sha256": fixture["payload_sha256"],
+                },
+                "ref-execution.json": {
+                    "file_sha256": file_sha256(execution_path),
+                    "payload_sha256": execution["payload_sha256"],
+                },
+            },
+        }
+        manifest["payload_sha256"] = "sha256:" + hashlib.sha256(
+            json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        validation = subprocess.run(
+            [
+                "python3",
+                str(MO03_EVIDENCE),
+                "validate-bound-manifest",
+                "--manifest",
+                str(manifest_path),
+                "--store",
+                "ref",
+                *MO03_LOG_CONTEXT_ARGS,
+                "--run-stamp",
+                run_stamp,
+                "--run-scope",
+                "partial",
+                "--expected-status",
+                "fail",
+                "--expected-exit-code",
+                "1",
+            ],
+            cwd=REPO,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert validation.returncode == 3, validation.stdout + validation.stderr
+
+
+def test_mo03_log_scan_normalizer_rejects_unobserved_pass() -> None:
+    run_stamp = "20260716T160000Z-30303"
+
+    with tempfile.TemporaryDirectory(prefix="critical-flows-mo03-empty-log-") as tmp:
+        evidence_dir = Path(tmp)
+        raw_path = evidence_dir / "raw-log.json"
+        output_path = evidence_dir / "ref-log-scan.json"
+        raw_path.write_text(
+            json.dumps(
+                {
+                    "schema": "woopayments_debug_log_scan.v1",
+                    "store": "ref",
+                    "scan": {
+                        "status": "pass",
+                        "paths": [],
+                        "matches": [],
+                        "ignored_matches": [],
+                        "marker": {},
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        result = subprocess.run(
+            [
+                "python3",
+                str(MO03_EVIDENCE),
+                "normalize-log-scan",
+                "--input",
+                str(raw_path),
+                "--output",
+                str(output_path),
+                "--store",
+                "ref",
+                "--run-stamp",
+                run_stamp,
+                "--expected-exit-code",
+                "0",
+                *MO03_LOG_CONTEXT_ARGS,
+            ],
+            cwd=REPO,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert result.returncode == 3, result.stdout + result.stderr
+        evidence = json.loads(output_path.read_text(encoding="utf-8"))
+        assert evidence["status"] == "blocked"
+        assert not evidence["scan_observed"]
+
+
+def test_mo03_log_scan_v5_binds_fresh_anchors_and_redacts_diagnostics() -> None:
+    run_stamp = "20260716T160000Z-30303"
+    secret = "Authorization: Bearer sk_test_DO_NOT_ARCHIVE customer@example.test"
+    safe_match = safe_log_record(line=5, diagnostic=secret)
+
+    with tempfile.TemporaryDirectory(prefix="critical-flows-mo03-log-v2-") as tmp:
+        evidence_dir = Path(tmp)
+        raw_path = evidence_dir / "raw-log.json"
+        output_path = evidence_dir / "ref-log-scan.json"
+        scan = mo03_ref_log_scan_v5(
+            status="fail",
+            run_stamp=run_stamp,
+            end_line_count=5,
+            end_byte_count=160,
+            matches=[safe_match],
+        )
+        raw_path.write_text(
+            json.dumps(common_log_evidence_v5(store="ref", scan=scan)), encoding="utf-8"
+        )
+        result = subprocess.run(
+            [
+                "python3",
+                str(MO03_EVIDENCE),
+                "normalize-log-scan",
+                "--input",
+                str(raw_path),
+                "--output",
+                str(output_path),
+                "--store",
+                "ref",
+                "--run-stamp",
+                run_stamp,
+                "--expected-exit-code",
+                "1",
+                *MO03_LOG_CONTEXT_ARGS,
+            ],
+            cwd=REPO,
+            env={**os.environ, "CRITICAL_FLOWS_RUN_CONTEXT_KEY": TEST_RUN_CONTEXT_KEY},
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert result.returncode == 1, result.stdout + result.stderr
+        archived = output_path.read_text(encoding="utf-8")
+        assert secret not in archived
+        evidence = json.loads(archived)
+        assert evidence["schema"] == "woopayments_mo03_log_scan.v6"
+        assert evidence["marker_created_at"] == "2026-07-16T16:00:00Z"
+        assert evidence["observations"] == scan["observations"]
+        assert evidence["matches"] == [safe_match]
+
+
+def test_mo03_log_scan_v5_blocks_stale_truncated_missing_and_downgraded_evidence() -> None:
+    run_stamp = "20260716T160000Z-30303"
+    cases = {
+        "stale_marker": common_log_evidence_v5(
+            store="ref",
+            scan=mo03_ref_log_scan_v5(
+                run_stamp=run_stamp, marker_created_at="2020-01-01T00:00:00Z"
+            ),
+        ),
+        "log_truncated": common_log_evidence_v5(
+            store="ref",
+            scan=mo03_ref_log_scan_v5(
+                run_stamp=run_stamp, start_line_count=9, end_line_count=8
+            ),
+        ),
+        "missing_observation": common_log_evidence_v5(
+            store="ref", scan=mo03_ref_log_scan_v5(run_stamp=run_stamp)
+        ),
+        "malformed_marker": common_log_evidence_v5(
+            store="ref",
+            scan=mo03_ref_log_scan_v5(
+                run_stamp=run_stamp, marker_created_at="not-a-time"
+            ),
+        ),
+        "schema_downgrade": {
+            "schema": "woopayments_debug_log_scan.v1",
+            "store": "ref",
+            "scan": {
+                "status": "pass",
+                "paths": ["/tmp/fake-debug.log"],
+                "matches": [],
+                "ignored_matches": [],
+                "marker": {
+                    "created_at": "2026-07-16T16:00:00Z",
+                    "paths": {"/tmp/fake-debug.log": 4},
+                },
+            },
+        },
+        "schema_downgrade_v3": {
+            "schema": "woopayments_debug_log_scan.v3",
+            "store": "ref",
+            "scan": anchored_log_scan_v3(),
+        },
+        "schema_downgrade_v2": {
+            "schema": "woopayments_debug_log_scan.v2",
+            "store": "ref",
+            "scan": log_scan_v2(run_stamp=run_stamp),
+        },
+        "schema_downgrade_v4": {
+            "schema": "woopayments_debug_log_scan.v4",
+            "store": "ref",
+            "scan": canary_log_scan_v4(run_stamp=run_stamp),
+        },
+        "schema_downgrade_v5": {
+            **common_log_evidence_v5(
+                store="ref", scan=mo03_ref_log_scan_v5(run_stamp=run_stamp)
+            ),
+            "schema": "woopayments_debug_log_scan.v5",
+        },
+        "raw_diagnostic": {
+            "schema": "woopayments_debug_log_scan.v6",
+            "store": "ref",
+            "scan": {
+                **common_log_evidence_v5(
+                    store="ref",
+                    scan=mo03_ref_log_scan_v5(
+                        status="fail",
+                        run_stamp=run_stamp,
+                        end_line_count=5,
+                        end_byte_count=160,
+                        matches=[safe_log_record(line=5)],
+                    ),
+                )["scan"],
+                "matches": ["PHP Warning: Authorization: Bearer secret"],
+            },
+        },
+        "unhashable_record": {
+            "schema": "woopayments_debug_log_scan.v6",
+            "store": "ref",
+            "scan": {
+                **common_log_evidence_v5(
+                    store="ref",
+                    scan=mo03_ref_log_scan_v5(
+                        status="fail",
+                        run_stamp=run_stamp,
+                        end_line_count=5,
+                        end_byte_count=160,
+                        matches=[safe_log_record(line=5)],
+                    ),
+                )["scan"],
+                "matches": [
+                    {
+                        **safe_log_record(line=5),
+                        "path": ["fake-debug.log"],
+                    }
+                ],
+            },
+        },
+    }
+    cases["missing_observation"]["scan"]["observations"] = []
+
+    with tempfile.TemporaryDirectory(prefix="critical-flows-mo03-log-invalid-") as tmp:
+        evidence_dir = Path(tmp)
+        for name, raw in cases.items():
+            raw_path = evidence_dir / f"{name}-raw.json"
+            output_path = evidence_dir / f"{name}-normalized.json"
+            raw_path.write_text(json.dumps(raw), encoding="utf-8")
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(MO03_EVIDENCE),
+                    "normalize-log-scan",
+                    "--input",
+                    str(raw_path),
+                    "--output",
+                    str(output_path),
+                    "--store",
+                    "ref",
+                    "--run-stamp",
+                    run_stamp,
+                    "--expected-exit-code",
+                    "1" if name == "raw_diagnostic" else "0",
+                    *MO03_LOG_CONTEXT_ARGS,
+                ],
+                cwd=REPO,
+                env={**os.environ, "CRITICAL_FLOWS_RUN_CONTEXT_KEY": TEST_RUN_CONTEXT_KEY},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            assert result.returncode == 3, (name, result.stdout, result.stderr)
+            archived = output_path.read_text(encoding="utf-8")
+            assert "Bearer secret" not in archived
+            evidence = json.loads(archived)
+            assert evidence["status"] == "blocked"
+            assert evidence["blocker_code"] in {
+                "stale_marker",
+                "log_truncated",
+                "missing_path_observation",
+                "invalid_marker",
+                "invalid_run_binding",
+                "invalid_scan_evidence",
+                "schema_downgrade",
+            }
+
+
+def test_mo03_log_scan_v5_requires_identity_and_prefix_continuity() -> None:
+    run_stamp = "20260716T160000Z-30303"
+    identity = "sha256:" + hashlib.sha256(b"replacement-log-identity").hexdigest()
+    prefix = "sha256:" + hashlib.sha256(b"rewritten-log-prefix").hexdigest()
+    cases = {
+        "pass": mo03_ref_log_scan_v5(run_stamp=run_stamp),
+        "identity_changed": mo03_ref_log_scan_v5(
+            run_stamp=run_stamp,
+            observed_identity_fingerprint=identity,
+        ),
+        "prefix_changed": mo03_ref_log_scan_v5(
+            run_stamp=run_stamp,
+            observed_prefix_fingerprint=prefix,
+        ),
+    }
+
+    with tempfile.TemporaryDirectory(prefix="critical-flows-mo03-log-v3-") as tmp:
+        evidence_dir = Path(tmp)
+        for name, scan in cases.items():
+            raw_path = evidence_dir / f"{name}-raw.json"
+            output_path = evidence_dir / f"{name}-normalized.json"
+            raw_path.write_text(
+                json.dumps(common_log_evidence_v5(store="ref", scan=scan)),
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(MO03_EVIDENCE),
+                    "normalize-log-scan",
+                    "--input",
+                    str(raw_path),
+                    "--output",
+                    str(output_path),
+                    "--store",
+                    "ref",
+                    "--run-stamp",
+                    run_stamp,
+                    "--expected-exit-code",
+                    "0",
+                    *MO03_LOG_CONTEXT_ARGS,
+                ],
+                cwd=REPO,
+                env={**os.environ, "CRITICAL_FLOWS_RUN_CONTEXT_KEY": TEST_RUN_CONTEXT_KEY},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            expected = 0 if name == "pass" else 3
+            assert result.returncode == expected, (name, result.stdout, result.stderr)
+            evidence = json.loads(output_path.read_text(encoding="utf-8"))
+            assert evidence["schema"] == "woopayments_mo03_log_scan.v6"
+            if name == "pass":
+                assert evidence["status"] == "pass"
+                assert evidence["observations"] == scan["observations"]
+            else:
+                assert evidence["status"] == "blocked"
+                assert evidence["blocker_code"] == f"log_{name}"
+
+
+def test_mo03_log_scan_v5_requires_exact_origin_and_canary_continuity() -> None:
+    run_stamp = "20260716T160000Z-30303"
+    scans = {
+        "pass": mo03_ref_log_scan_v5(run_stamp=run_stamp),
+        "prior_origin": mo03_ref_log_scan_v5(run_stamp="20260716T155000Z-30302"),
+        "future_origin": mo03_ref_log_scan_v5(run_stamp="20260716T161000Z-30304"),
+        "canary_changed": mo03_ref_log_scan_v5(
+            run_stamp=run_stamp,
+            observed_canary_fingerprint="sha256:"
+            + hashlib.sha256(b"restored-pre-canary-content").hexdigest(),
+        ),
+    }
+
+    with tempfile.TemporaryDirectory(prefix="critical-flows-mo03-log-v4-") as tmp:
+        root = Path(tmp)
+        for name, scan in scans.items():
+            raw_path = root / f"{name}-raw.json"
+            output_path = root / f"{name}-normalized.json"
+            raw_path.write_text(
+                json.dumps(common_log_evidence_v5(store="ref", scan=scan)),
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(MO03_EVIDENCE),
+                    "normalize-log-scan",
+                    "--input",
+                    str(raw_path),
+                    "--output",
+                    str(output_path),
+                    "--store",
+                    "ref",
+                    "--run-stamp",
+                    run_stamp,
+                    "--expected-exit-code",
+                    "0",
+                    *MO03_LOG_CONTEXT_ARGS,
+                ],
+                cwd=REPO,
+                env={**os.environ, "CRITICAL_FLOWS_RUN_CONTEXT_KEY": TEST_RUN_CONTEXT_KEY},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            expected = 0 if name == "pass" else 3
+            assert result.returncode == expected, (name, result.stdout, result.stderr)
+            evidence = json.loads(output_path.read_text(encoding="utf-8"))
+            assert evidence["schema"] == "woopayments_mo03_log_scan.v6"
+            assert evidence["run_stamp"] == run_stamp
+            if name == "pass":
+                assert evidence["observations"] == scan["observations"]
+            else:
+                assert evidence["status"] == "blocked"
+
+
+def test_mo03_log_scan_v5_binds_current_key_origin_and_observer_summary() -> None:
+    run_stamp = TEST_RUN_STAMP
+    scan = mo03_ref_log_scan_v5(
+        run_stamp=run_stamp,
+        marker_created_at=TEST_MARKER_CREATED_AT,
+    )
+    raw = common_log_evidence_v5(store="ref", scan=scan)
+    with tempfile.TemporaryDirectory(prefix="critical-flows-mo03-log-v5-") as tmp:
+        root = Path(tmp)
+        input_path = root / "raw.json"
+        output_path = root / "typed.json"
+        input_path.write_text(json.dumps(raw), encoding="utf-8")
+        result = subprocess.run(
+            [
+                "python3",
+                str(MO03_EVIDENCE),
+                "normalize-log-scan",
+                "--input",
+                str(input_path),
+                "--output",
+                str(output_path),
+                "--store",
+                "ref",
+                "--run-stamp",
+                run_stamp,
+                "--expected-exit-code",
+                "0",
+                *MO03_LOG_CONTEXT_ARGS,
+            ],
+            cwd=REPO,
+            env={**os.environ, "CRITICAL_FLOWS_RUN_CONTEXT_KEY": TEST_RUN_CONTEXT_KEY},
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        typed = json.loads(output_path.read_text(encoding="utf-8"))
+        assert typed["schema"] == "woopayments_mo03_log_scan.v6"
+        assert typed["origin_nonce"] == scan["origin_nonce"]
+        assert typed["observer_id"] == scan["observer_id"]
+        assert typed["key_fingerprint"] == scan["key_fingerprint"]
+        assert typed["origin_binding"] == scan["origin_binding"]
+        assert typed["observer_summary"] == raw["scan"]["observer_summary"]
+
+        changed_nonce = json.loads(json.dumps(raw))
+        changed_nonce["scan"]["origin_nonce"] = "00000000-0000-4000-8000-000000000999"
+        changed_summary = json.loads(json.dumps(raw))
+        changed_summary["scan"]["observer_summary"]["record_count"] += 1
+        extra_field = json.loads(json.dumps(raw))
+        extra_field["scan"]["unexpected"] = True
+        prior = common_log_evidence_v5(
+            store="ref",
+            scan=mo03_ref_log_scan_v5(
+                run_stamp="20260716T160000Z-30302",
+                marker_created_at="2026-07-16T16:00:00Z",
+            ),
+        )
+        prior["scan"]["run_stamp"] = run_stamp
+        prior["scan"]["marker_created_at"] = TEST_MARKER_CREATED_AT
+        for name, adversary in {
+            "changed_nonce": changed_nonce,
+            "changed_summary": changed_summary,
+            "extra_field": extra_field,
+            "coherently_relabelled": prior,
+        }.items():
+            input_path.write_text(json.dumps(adversary), encoding="utf-8")
+            rejected = subprocess.run(
+                [
+                    "python3",
+                    str(MO03_EVIDENCE),
+                    "normalize-log-scan",
+                    "--input",
+                    str(input_path),
+                    "--output",
+                    str(output_path),
+                    "--store",
+                    "ref",
+                    "--run-stamp",
+                    run_stamp,
+                    "--expected-exit-code",
+                    "0",
+                    *MO03_LOG_CONTEXT_ARGS,
+                ],
+                cwd=REPO,
+                env={**os.environ, "CRITICAL_FLOWS_RUN_CONTEXT_KEY": TEST_RUN_CONTEXT_KEY},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            assert rejected.returncode == 3, (name, rejected.stdout, rejected.stderr)
+            assert json.loads(output_path.read_text(encoding="utf-8"))["status"] == "blocked"
+
+        input_path.write_text(json.dumps(raw), encoding="utf-8")
+        wrong_key = subprocess.run(
+            [
+                "python3",
+                str(MO03_EVIDENCE),
+                "normalize-log-scan",
+                "--input",
+                str(input_path),
+                "--output",
+                str(output_path),
+                "--store",
+                "ref",
+                "--run-stamp",
+                run_stamp,
+                "--expected-exit-code",
+                "0",
+                *MO03_LOG_CONTEXT_ARGS,
+            ],
+            cwd=REPO,
+            env={**os.environ, "CRITICAL_FLOWS_RUN_CONTEXT_KEY": "22" * 32},
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert wrong_key.returncode == 3, wrong_key.stdout + wrong_key.stderr
+
+
+def test_mo03_php_driver_keeps_bounded_observation_contract() -> None:
+    source = MO03_DRIVER.read_text(encoding="utf-8")
+
+    assert "private const STATE_SCHEMA = 'woopayments_mo03_state.v1';" in source
+    assert "private const LIST_ROUTE   = '/wc/v3/payments/authorizations';" in source
+    assert "private const PAGE_SIZE    = 100;" in source
+    assert "private const MAX_PAGES    = 50;" in source
+    assert "NativePaymentsRuntimeArbiter::class" in source
+    assert "WooPaymentsApiClient::class" in source
+    assert "get_payment_intention( $intent_id )" in source
+    assert "get_payments_api_client()->get_intent( $intent_id )" in source
+    assert "'successfully captured'" in source
+    assert "'capture of'" in source and "'failed'" in source
+    assert "private const NOTE_LIMIT" in source
+    assert "'limit'    => self::NOTE_LIMIT + 1" in source
+    assert "count( $notes ) > self::NOTE_LIMIT" in source
+
+
 def test_mo01_comparator_rejects_swapped_and_malformed_normalized_evidence() -> None:
     run_stamp = "20260716T120000Z-12345"
 
@@ -2573,7 +6735,11 @@ def test_mo01_runner_rejects_an_invalid_deterministic_manifest() -> None:
         fake_target_wp = evidence_dir / "fake-target-wp.sh"
         write_executable(
             fake_target_wp,
-            probe_only_fake_wp_source("native", "http://target.fake.test"),
+            probe_only_fake_wp_source(
+                "native",
+                "http://target.fake.test",
+                flow_id="MO-01-manual-capture-order",
+            ),
         )
         write_executable(
             flows_dir / "MO-01-manual-capture-order.sh",
@@ -2963,7 +7129,6 @@ def test_card_checkout_flow_passes_on_reference_with_empty_native_flags() -> Non
         evidence_dir = Path(tmp)
         flow_driver = evidence_dir / "fake-flow-drive.sh"
         fake_wp = evidence_dir / "fake-wp.sh"
-
         write_executable(
             flow_driver,
             """#!/usr/bin/env bash
@@ -2972,38 +7137,9 @@ printf '%s\\n' '{"op":"charge","order_id":456,"charge_id":"ch_ref","intent_id":"
         )
         write_executable(
             fake_wp,
-            """#!/usr/bin/env bash
-if [ "$1" = "wc" ] && [ "$2" = "shop_order" ] && [ "$3" = "get" ]; then
-  printf '%s\\n' "processing"
-  exit 0
-fi
-if [ "$1" = "post" ] && [ "$2" = "meta" ] && [ "$3" = "get" ]; then
-  exit 0
-fi
-if [ "$1" = "eval" ]; then
-  if [[ "$2" == *"store_identity_owner"* ]]; then
-    printf '%s\\n' "store_identity_owner=plugin"
-    printf '%s\\n' "store_identity_home=http://ref.fake.test"
-    exit 0
-  fi
-  if [[ "$2" == *"get_status"* ]]; then
-    printf '%s\\n' "order_status=processing"
-    exit 0
-  fi
-  if [[ "$2" == *"wc_get_order"* && "$2" == *"_intent_id"* ]]; then
-    printf '%s\\n' "order_meta_value=pi_ref"
-    exit 0
-  fi
-  if [[ "$2" == *"wc_get_order"* && "$2" == *"_charge_id"* ]]; then
-    printf '%s\\n' "order_meta_value=ch_ref"
-    exit 0
-  fi
-  printf '%s\\n' '{"status":"pass","paths":["/tmp/fake-debug.log"],"matches":[]}'
-  exit 0
-fi
-printf 'unexpected fake wp call: %s\\n' "$*" >&2
-exit 2
-""",
+            sc01_fake_wp_source(
+                "plugin", "http://ref.fake.test", "pi_ref", "ch_ref"
+            ),
         )
 
         result = run_runner(
@@ -3125,7 +7261,6 @@ def test_card_checkout_flow_exports_command_string_helper_to_flow_driver() -> No
         evidence_dir = Path(tmp)
         flow_driver = evidence_dir / "fake-flow-drive.sh"
         fake_wp = evidence_dir / "fake-wp.sh"
-
         write_executable(
             flow_driver,
             """#!/usr/bin/env bash
@@ -3136,42 +7271,13 @@ printf '%s\\n' '{"op":"charge","order_id":789,"charge_id":"ch_export","intent_id
         )
         write_executable(
             fake_wp,
-            """#!/usr/bin/env bash
-if [ "$1" = "--runner-flag" ] && [ "$2" = "option" ]; then
-  printf '%s\\n' "http://example.test"
-  exit 0
-fi
-if [ "$1" = "--runner-flag" ] && [ "$2" = "wc" ] && [ "$3" = "shop_order" ]; then
-  printf '%s\\n' "processing"
-  exit 0
-fi
-if [ "$1" = "--runner-flag" ] && [ "$2" = "post" ] && [ "$3" = "meta" ]; then
-  exit 0
-fi
-if [ "$1" = "--runner-flag" ] && [ "$2" = "eval" ]; then
-  if [[ "$3" == *"store_identity_owner"* ]]; then
-    printf '%s\\n' "store_identity_owner=plugin"
-    printf '%s\\n' "store_identity_home=http://ref.fake.test"
-    exit 0
-  fi
-  if [[ "$3" == *"get_status"* ]]; then
-    printf '%s\\n' "order_status=processing"
-    exit 0
-  fi
-  if [[ "$3" == *"wc_get_order"* && "$3" == *"_intent_id"* ]]; then
-    printf '%s\\n' "order_meta_value=pi_export"
-    exit 0
-  fi
-  if [[ "$3" == *"wc_get_order"* && "$3" == *"_charge_id"* ]]; then
-    printf '%s\\n' "order_meta_value=ch_export"
-    exit 0
-  fi
-  printf '%s\\n' '{"status":"pass","paths":["/tmp/fake-debug.log"],"matches":[]}'
-  exit 0
-fi
-printf 'unexpected fake wp call: %s\\n' "$*" >&2
-exit 2
-""",
+            sc01_fake_wp_source(
+                "plugin",
+                "http://ref.fake.test",
+                "pi_export",
+                "ch_export",
+                command_prefix="--runner-flag",
+            ),
         )
 
         result = run_runner(
@@ -3349,6 +7455,9 @@ def test_deterministic_layer_runs_no_browser_specs_through_gate() -> None:
         run_dir = evidence_dir / "runs" / f"{rollup['run_stamp']}-{rollup['scope']}"
         manifest = run_dir / "MA-10-i18n-order-notes/manifest.json"
         assert manifest.exists()
+        manifest_payload = json.loads(manifest.read_text(encoding="utf-8"))
+        assert manifest_payload["schema"] == "woopayments_ma10_evidence_manifest.v2"
+        assert manifest_payload["run_stamp"] == rollup["run_stamp"]
         manifest_sha256 = f"sha256:{hashlib.sha256(manifest.read_bytes()).hexdigest()}"
         rows = strip_recorded_at(rollup)
         assert rows == [
@@ -3363,6 +7472,35 @@ def test_deterministic_layer_runs_no_browser_specs_through_gate() -> None:
                 "reason": "validated MA-10 evidence manifest",
             }
         ]
+
+        log_scan_path = run_dir / "MA-10-i18n-order-notes/debug-log-scan.json"
+        replayed_log_scan = json.loads(log_scan_path.read_text(encoding="utf-8"))
+        replayed_log_scan["schema"] = "woopayments_debug_log_scan.v2"
+        replayed_log_scan["scan"]["marker_created_at"] = "2020-01-01T00:00:00Z"
+        log_scan_path.write_text(
+            json.dumps(replayed_log_scan, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        replayed = subprocess.run(
+            [
+                "python3",
+                str(MA10_VALIDATOR),
+                "--evidence-dir",
+                str(manifest.parent),
+                "--gate-exit",
+                "0",
+                "--run-stamp",
+                rollup["run_stamp"],
+                *MA10_LOG_CONTEXT_ARGS,
+            ],
+            cwd=REPO,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert replayed.returncode == 3, replayed.stdout + replayed.stderr
+        assert "debug-log scan schema is invalid" in replayed.stdout
+        assert not manifest.exists()
 
 
 def test_ma10_reference_is_blocked_without_manufacturing_an_oracle() -> None:
@@ -3410,6 +7548,386 @@ exit 2
                 "reason": "reference extension same-note-family oracle is not wired",
             }
         ]
+
+
+def test_ma10_validator_requires_secret_safe_log_scan_v5() -> None:
+    spec = importlib.util.spec_from_file_location("ma10_validator_for_test", MA10_VALIDATOR)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    run_stamp = "20260716T160000Z-30303"
+
+    legacy = {
+        "schema": "woopayments_debug_log_scan.v1",
+        "store": "target",
+        "scan": {
+            "status": "pass",
+            "paths": ["/tmp/fake-debug.log"],
+            "matches": [],
+            "marker": {
+                "created_at": "2026-07-16T16:00:00Z",
+                "paths": {"/tmp/fake-debug.log": 4},
+            },
+        },
+    }
+    try:
+        validate_ma10_log_scan_for_test(module, legacy, run_stamp)
+    except module.EvidenceError:
+        pass
+    else:
+        raise AssertionError("MA-10 accepted downgraded v1 log evidence")
+
+    current = common_log_evidence_v5(scan=ma10_log_scan_v5(run_stamp=run_stamp))
+    assert validate_ma10_log_scan_for_test(module, current, run_stamp) == "pass"
+
+    fatal_match = safe_log_record(
+        line=5,
+        category="fatal_error",
+        diagnostic="PHP Fatal error: deterministic fake failure",
+    )
+    shared_fail = common_log_evidence_v5(
+        scan=ma10_log_scan_v5(
+            status="fail",
+            run_stamp=run_stamp,
+            end_line_count=5,
+            end_byte_count=160,
+            matches=[fatal_match],
+        ),
+    )
+    assert validate_ma10_log_scan_for_test(module, shared_fail, run_stamp) == "fail"
+
+    shared_blocked = unobserved_common_log_evidence_v5(
+        run_stamp=run_stamp, blocker_code="missing_marked_path"
+    )
+    assert validate_ma10_log_scan_for_test(module, shared_blocked, run_stamp) == "blocked"
+
+    malformed_record = common_log_evidence_v5(
+        scan=ma10_log_scan_v5(
+            status="fail",
+            run_stamp=run_stamp,
+            end_line_count=5,
+            end_byte_count=160,
+            matches=[safe_log_record(line=5)],
+        )
+    )
+    malformed_record["scan"]["matches"][0]["category"] = ["warning"]
+    try:
+        validate_ma10_log_scan_for_test(module, malformed_record, run_stamp)
+    except module.EvidenceError:
+        pass
+    else:
+        raise AssertionError("MA-10 accepted a malformed nested log record")
+
+
+def test_ma10_validator_requires_run_bound_anchored_log_scan_v5() -> None:
+    spec = importlib.util.spec_from_file_location("ma10_validator_v4_anchor_for_test", MA10_VALIDATOR)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    run_stamp = "20260716T160000Z-30303"
+
+    current = common_log_evidence_v5(scan=ma10_log_scan_v5(run_stamp=run_stamp))
+    assert validate_ma10_log_scan_for_test(module, current, run_stamp) == "pass"
+
+    adversaries = {
+        "replayed_v2": {
+            "schema": "woopayments_debug_log_scan.v2",
+            "store": "target",
+            "scan": log_scan_v2(marker_created_at="2020-01-01T00:00:00Z"),
+        },
+        "replayed_v3": {
+            "schema": "woopayments_debug_log_scan.v3",
+            "store": "target",
+            "scan": anchored_log_scan_v3(),
+        },
+        "replayed_v4": {
+            "schema": "woopayments_debug_log_scan.v4",
+            "store": "target",
+            "scan": canary_log_scan_v4(run_stamp=run_stamp),
+        },
+        "replayed_v5": {
+            **common_log_evidence_v5(
+                scan=ma10_log_scan_v5(run_stamp=run_stamp)
+            ),
+            "schema": "woopayments_debug_log_scan.v5",
+        },
+        "stale_v5": common_log_evidence_v5(
+            scan=ma10_log_scan_v5(
+                run_stamp=run_stamp,
+                marker_created_at="2020-01-01T00:00:00Z",
+            ),
+        ),
+        "identity_changed": common_log_evidence_v5(
+            scan=ma10_log_scan_v5(
+                run_stamp=run_stamp,
+                observed_identity_fingerprint="sha256:"
+                + hashlib.sha256(b"replacement-log").hexdigest(),
+            ),
+        ),
+    }
+    for name, payload in adversaries.items():
+        try:
+            validate_ma10_log_scan_for_test(module, payload, run_stamp)
+        except module.EvidenceError:
+            pass
+        else:
+            raise AssertionError(f"MA-10 accepted {name} log evidence")
+
+
+def test_ma10_validator_requires_exact_origin_canary_log_scan_v5() -> None:
+    spec = importlib.util.spec_from_file_location("ma10_validator_v4_for_test", MA10_VALIDATOR)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    run_stamp = "20260716T161000Z-30303"
+
+    current = common_log_evidence_v5(
+        scan=ma10_log_scan_v5(
+            run_stamp=run_stamp,
+            marker_created_at="2026-07-16T16:10:00Z",
+        ),
+    )
+    assert validate_ma10_log_scan_for_test(module, current, run_stamp) == "pass"
+
+    for origin in ("20260716T160000Z-30302", "20260716T162000Z-30304"):
+        adjacent = common_log_evidence_v5(
+            scan=ma10_log_scan_v5(
+                run_stamp=origin,
+                marker_created_at="2026-07-16T16:10:00Z",
+            ),
+        )
+        try:
+            validate_ma10_log_scan_for_test(module, adjacent, run_stamp)
+        except module.EvidenceError as error:
+            assert "current invocation" in str(error) or "run stamp" in str(error)
+        else:
+            raise AssertionError(f"MA-10 accepted adjacent originating run {origin}")
+
+
+def test_ma10_validator_rejects_coherently_relabelled_prior_log_packet() -> None:
+    spec = importlib.util.spec_from_file_location("ma10_validator_relabel_for_test", MA10_VALIDATOR)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    current_run_stamp = "20260716T161000Z-30303"
+    prior = ma10_log_scan_v5(
+        run_stamp="20260716T160000Z-30302",
+        marker_created_at="2026-07-16T16:00:00Z",
+    )
+    prior["run_stamp"] = current_run_stamp
+    prior["marker_created_at"] = "2026-07-16T16:10:00Z"
+    relabelled = common_log_evidence_v5(scan=prior)
+
+    try:
+        validate_ma10_log_scan_for_test(module, relabelled, current_run_stamp)
+    except module.EvidenceError as error:
+        assert "origin" in str(error) or "binding" in str(error)
+    else:
+        raise AssertionError("MA-10 accepted a coherently relabelled prior-run log packet")
+
+
+def test_log_origin_rejects_ref_to_target_relabel_with_unchanged_hmac() -> None:
+    spec = importlib.util.spec_from_file_location(
+        "ma10_validator_store_relabel_for_test", MA10_VALIDATOR
+    )
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    reference = common_log_evidence_v5(
+        store="ref",
+        scan=common_log_scan_v5(
+            store="ref",
+            run_stamp=TEST_RUN_STAMP,
+            marker_created_at=TEST_MARKER_CREATED_AT,
+        ),
+    )
+    assert run_common_archived_log_validator(reference).returncode == 0
+    source_mo03, _ = run_mo03_log_normalizer(
+        reference, store="ref", expected_exit_code=0
+    )
+    assert source_mo03.returncode == 0, source_mo03.stdout + source_mo03.stderr
+
+    relabelled = json.loads(json.dumps(reference))
+    relabelled["store"] = "target"
+    assert (
+        relabelled["scan"]["origin_binding"]
+        == reference["scan"]["origin_binding"]
+    )
+    accepted_by: list[str] = []
+    if run_common_archived_log_validator(relabelled).returncode == 0:
+        accepted_by.append("common")
+    target_mo03, _ = run_mo03_log_normalizer(
+        relabelled, store="target", expected_exit_code=0
+    )
+    if target_mo03.returncode == 0:
+        accepted_by.append("MO-03")
+    try:
+        if validate_ma10_log_scan_for_test(module, relabelled, TEST_RUN_STAMP) == "pass":
+            accepted_by.append("MA-10")
+    except module.EvidenceError:
+        pass
+    assert not accepted_by, (
+        "unchanged origin HMAC survived ref->target relabel at: "
+        + ", ".join(accepted_by)
+    )
+
+
+def test_common_log_origin_rejects_ref_to_target_relabel_with_unchanged_hmac() -> None:
+    reference = common_log_evidence_v5(
+        store="ref",
+        scan=common_log_scan_v5(
+            store="ref",
+            flow_id="MO-03-manual-capture-payment-details",
+            purpose="clean-debug-log",
+            run_stamp=TEST_RUN_STAMP,
+            marker_created_at=TEST_MARKER_CREATED_AT,
+        ),
+    )
+    source = run_common_archived_log_validator(reference)
+    assert source.returncode == 0, source.stdout + source.stderr
+
+    relabelled = json.loads(json.dumps(reference))
+    relabelled["store"] = "target"
+    assert relabelled["scan"] == reference["scan"]
+    rejected = run_common_archived_log_validator(relabelled)
+    assert rejected.returncode == 3, rejected.stdout + rejected.stderr
+    assert "invalid_run_binding" in rejected.stdout
+
+
+def test_log_origin_rejects_same_run_cross_flow_and_full_path_relabel() -> None:
+    spec = importlib.util.spec_from_file_location(
+        "ma10_validator_flow_path_relabel_for_test", MA10_VALIDATOR
+    )
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    packet = common_log_evidence_v5(
+        store="target",
+        scan=common_log_scan_v5(
+            run_stamp=TEST_RUN_STAMP,
+            marker_created_at=TEST_MARKER_CREATED_AT,
+            path="debug.log",
+        ),
+    )
+    observation = packet["scan"]["observations"][0]
+    path_state = {
+        "line_count": observation["start_line_count"],
+        "byte_count": observation["start_byte_count"],
+        "identity_fingerprint": observation["marker_identity_fingerprint"],
+        "prefix_fingerprint": observation["marker_prefix_fingerprint"],
+        "canary_fingerprint": observation["marker_canary_fingerprint"],
+        "owner": observation["marker_owner"],
+        "group": observation["marker_group"],
+        "mode": observation["marker_mode"],
+    }
+    marker_base = {
+        "schema": "woopayments_debug_log_marker.v6",
+        "created_at": packet["scan"]["marker_created_at"],
+        "run_stamp": packet["scan"]["run_stamp"],
+        "store": "target",
+        "purpose": "clean-debug-log",
+        "origin_nonce": packet["scan"]["origin_nonce"],
+        "observer_id": packet["scan"]["observer_id"],
+        "key_fingerprint": packet["scan"]["key_fingerprint"],
+        "origin_binding": "",
+    }
+    mo03_path = "/srv/mo03/wp-content/debug.log"
+    ma10_path = "/different/ma10/wp-content/debug.log"
+    mo03_path_state = {
+        **path_state,
+        "path_id": "hmac-sha256:"
+        + hmac.new(
+            bytes.fromhex(TEST_RUN_CONTEXT_KEY),
+            b"woopayments_debug_log_path.v1\0" + mo03_path.encode(),
+            hashlib.sha256,
+        ).hexdigest(),
+    }
+    ma10_path_state = {
+        **path_state,
+        "path_id": "hmac-sha256:"
+        + hmac.new(
+            bytes.fromhex(TEST_RUN_CONTEXT_KEY),
+            b"woopayments_debug_log_path.v1\0" + ma10_path.encode(),
+            hashlib.sha256,
+        ).hexdigest(),
+    }
+    mo03_marker = {
+        **marker_base,
+        "flow_id": "MO-03-manual-capture-payment-details",
+        "paths": {mo03_path: mo03_path_state},
+    }
+    ma10_marker = {
+        **marker_base,
+        "flow_id": "MA-10-i18n-order-notes",
+        "paths": {ma10_path: ma10_path_state},
+    }
+    assert log_observer_origin_material(mo03_marker) != log_observer_origin_material(
+        ma10_marker
+    ), "flow and keyed canonical full path must change origin material"
+
+    mo03_result, _ = run_mo03_log_normalizer(
+        packet, store="target", expected_exit_code=0
+    )
+    assert mo03_result.returncode == 0, mo03_result.stdout + mo03_result.stderr
+    try:
+        ma10_status = validate_ma10_log_scan_for_test(module, packet, TEST_RUN_STAMP)
+    except module.EvidenceError:
+        ma10_status = "blocked"
+    assert ma10_status == "blocked", (
+        "the same run/key/HMAC and basename were accepted after relabelling "
+        "MO-03 to MA-10 and changing the configured full path"
+    )
+
+
+def test_ma10_validator_requires_authenticated_log_scan_v5() -> None:
+    spec = importlib.util.spec_from_file_location("ma10_validator_v5_for_test", MA10_VALIDATOR)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    scan = ma10_log_scan_v5(
+        run_stamp=TEST_RUN_STAMP,
+        marker_created_at=TEST_MARKER_CREATED_AT,
+    )
+    current = common_log_evidence_v5(scan=scan)
+    prior_key = os.environ.get("CRITICAL_FLOWS_RUN_CONTEXT_KEY")
+    os.environ["CRITICAL_FLOWS_RUN_CONTEXT_KEY"] = TEST_RUN_CONTEXT_KEY
+    try:
+        assert module.validate_log_scan(current, TEST_RUN_STAMP) == "pass"
+
+        adversaries = []
+        changed_nonce = json.loads(json.dumps(current))
+        changed_nonce["scan"]["origin_nonce"] = "00000000-0000-4000-8000-000000000999"
+        adversaries.append(changed_nonce)
+        extra_field = json.loads(json.dumps(current))
+        extra_field["scan"]["unexpected"] = True
+        adversaries.append(extra_field)
+        adversaries.append(
+            {
+                "schema": "woopayments_debug_log_scan.v4",
+                "store": "target",
+                "scan": canary_log_scan_v4(run_stamp=TEST_RUN_STAMP),
+            }
+        )
+        for adversary in adversaries:
+            try:
+                module.validate_log_scan(adversary, TEST_RUN_STAMP)
+            except module.EvidenceError:
+                pass
+            else:
+                raise AssertionError("MA-10 accepted mutated/downgraded v5 log evidence")
+
+        os.environ["CRITICAL_FLOWS_RUN_CONTEXT_KEY"] = "22" * 32
+        try:
+            module.validate_log_scan(current, TEST_RUN_STAMP)
+        except module.EvidenceError:
+            pass
+        else:
+            raise AssertionError("MA-10 accepted log evidence authenticated by another key")
+    finally:
+        if prior_key is None:
+            os.environ.pop("CRITICAL_FLOWS_RUN_CONTEXT_KEY", None)
+        else:
+            os.environ["CRITICAL_FLOWS_RUN_CONTEXT_KEY"] = prior_key
 
 
 def test_ma10_deterministic_flow_fails_when_debug_log_is_dirty() -> None:
@@ -3525,7 +8043,7 @@ def test_ma10_blocks_when_result_and_state_files_contradict_each_other() -> None
         assert "gate result state does not match i18n-notes-state.json" in result.stdout
 
 
-def test_ma10_blocks_when_completed_log_scan_contains_no_scanned_paths() -> None:
+def test_ma10_blocks_when_completed_log_scan_contains_no_observations() -> None:
     with tempfile.TemporaryDirectory(prefix="critical-flows-ma10-empty-log-scan-") as tmp:
         evidence_dir = Path(tmp)
         fake_gate = evidence_dir / "fake-i18n-gate.sh"
@@ -3548,7 +8066,7 @@ def test_ma10_blocks_when_completed_log_scan_contains_no_scanned_paths() -> None
         )
 
         assert result.returncode == 3, result.stdout + result.stderr
-        assert "completed debug-log scan contains no scanned paths" in result.stdout
+        assert "missing_path_observation" in result.stdout
 
 
 def test_ma10_blocks_when_evidence_validator_crashes() -> None:
@@ -3559,7 +8077,17 @@ def test_ma10_blocks_when_evidence_validator_crashes() -> None:
         fake_validator = evidence_dir / "fake-validator.py"
         write_executable(fake_gate, ma10_fake_gate_source())
         write_executable(fake_wp, ma10_fake_wp_source())
-        fake_validator.write_text("raise RuntimeError('validator crash')\n", encoding="utf-8")
+        fake_validator.write_text(
+            """#!/usr/bin/env python3
+import pathlib
+import sys
+
+evidence_dir = pathlib.Path(sys.argv[sys.argv.index('--evidence-dir') + 1])
+(evidence_dir / 'manifest.json').write_text('{\"stale\":true}\\n', encoding='utf-8')
+raise RuntimeError('validator crash')
+""",
+            encoding="utf-8",
+        )
 
         result = run_runner(
             "--store",
@@ -3579,6 +8107,243 @@ def test_ma10_blocks_when_evidence_validator_crashes() -> None:
         assert result.returncode == 3, result.stdout + result.stderr
         assert "RuntimeError: validator crash" in result.stdout
         assert "[MA-10-i18n-order-notes/target] deterministic verdict: BLOCKED" in result.stdout
+        rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
+        row = strip_recorded_at(rollup)[0]
+        assert row["reason"] == "MA-10 evidence validation did not complete"
+        assert "evidence_path" not in row
+        assert "evidence_sha256" not in row
+
+
+def test_ma10_fixed_runner_verifier_rejects_incomplete_forged_pass_manifest() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-ma10-forged-manifest-") as tmp:
+        evidence_dir = Path(tmp)
+        fake_gate = evidence_dir / "fake-i18n-gate.sh"
+        fake_wp = evidence_dir / "fake-target-wp.sh"
+        fake_validator = evidence_dir / "fake-validator.py"
+        write_executable(fake_gate, ma10_fake_gate_source())
+        write_executable(fake_wp, ma10_fake_wp_source())
+        fake_validator.write_text(
+            """#!/usr/bin/env python3
+import hashlib
+import json
+import pathlib
+import sys
+
+evidence_dir = pathlib.Path(sys.argv[sys.argv.index('--evidence-dir') + 1])
+gate_exit = int(sys.argv[sys.argv.index('--gate-exit') + 1])
+run_stamp = sys.argv[sys.argv.index('--run-stamp') + 1]
+charge = evidence_dir / 'charge-flow.json'
+manifest = {
+    'schema': 'woopayments_ma10_evidence_manifest.v2',
+    'run_stamp': run_stamp,
+    'gate_exit': gate_exit,
+    'gate_status': 'pass',
+    'log_status': 'pass',
+    'product_errors': [],
+    'status': 'pass',
+    'files': {
+        charge.name: 'sha256:' + hashlib.sha256(charge.read_bytes()).hexdigest(),
+    },
+}
+(evidence_dir / 'manifest.json').write_text(
+    json.dumps(manifest, indent=2, sort_keys=True) + '\\n', encoding='utf-8'
+)
+""",
+            encoding="utf-8",
+        )
+
+        result = run_runner(
+            "--store",
+            "target",
+            "--layer",
+            "deterministic",
+            "--flow",
+            "MA-10",
+            evidence_dir=evidence_dir,
+            extra_env={
+                "I18N_NOTES_GATE": str(fake_gate),
+                "MA10_EVIDENCE_VALIDATOR": str(fake_validator),
+                "TARGET_WP_COMMAND": str(fake_wp),
+            },
+        )
+
+        assert result.returncode == 3, result.stdout + result.stderr
+        rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
+        row = strip_recorded_at(rollup)[0]
+        assert row["status"] == "BLOCKED"
+        assert row["reason"] == "MA-10 evidence validation did not complete"
+        assert "evidence_path" not in row
+        assert "validated MA-10 evidence manifest" not in result.stdout
+
+
+def test_ma10_fixed_verifier_is_non_mutating_and_revalidates_exact_normal_packet() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-ma10-fixed-normal-") as tmp:
+        evidence_dir = Path(tmp)
+        fake_gate = evidence_dir / "fake-i18n-gate.sh"
+        fake_wp = evidence_dir / "fake-target-wp.sh"
+        write_executable(fake_gate, ma10_fake_gate_source())
+        write_executable(fake_wp, ma10_fake_wp_source())
+
+        result = run_runner(
+            "--store",
+            "target",
+            "--layer",
+            "deterministic",
+            "--flow",
+            "MA-10",
+            evidence_dir=evidence_dir,
+            extra_env={
+                "I18N_NOTES_GATE": str(fake_gate),
+                "TARGET_WP_COMMAND": str(fake_wp),
+            },
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
+        packet_dir = Path(strip_recorded_at(rollup)[0]["evidence_path"]).parent
+        original_bytes = {
+            path.relative_to(packet_dir): path.read_bytes()
+            for path in packet_dir.rglob("*")
+            if path.is_file()
+        }
+
+        verified = run_fixed_ma10_verifier(packet_dir, gate_exit=0)
+        assert verified.returncode == 0, verified.stdout + verified.stderr
+        assert original_bytes == {
+            path.relative_to(packet_dir): path.read_bytes()
+            for path in packet_dir.rglob("*")
+            if path.is_file()
+        }
+
+        for name in ("extra_file", "wrong_digest", "wrong_status", "changed_source"):
+            attack_dir = evidence_dir / f"fixed-normal-{name}"
+            shutil.copytree(packet_dir, attack_dir)
+            manifest_path = attack_dir / "manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if name == "extra_file":
+                manifest["files"]["unexpected.json"] = "sha256:" + "0" * 64
+            elif name == "wrong_digest":
+                manifest["files"]["charge-flow.json"] = "sha256:" + "0" * 64
+            elif name == "wrong_status":
+                manifest["status"] = "fail"
+            else:
+                charge_path = attack_dir / "charge-flow.json"
+                charge = json.loads(charge_path.read_text(encoding="utf-8"))
+                charge["order_id"] = 999
+                charge_path.write_text(json.dumps(charge) + "\n", encoding="utf-8")
+                manifest["files"]["charge-flow.json"] = file_sha256(charge_path)
+            manifest_path.write_text(
+                json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            )
+            before = {
+                path.relative_to(attack_dir): path.read_bytes()
+                for path in attack_dir.rglob("*")
+                if path.is_file()
+            }
+            rejected = run_fixed_ma10_verifier(attack_dir, gate_exit=0)
+            assert rejected.returncode == 3, (name, rejected.stdout, rejected.stderr)
+            assert before == {
+                path.relative_to(attack_dir): path.read_bytes()
+                for path in attack_dir.rglob("*")
+                if path.is_file()
+            }
+
+        wrong_key = run_fixed_ma10_verifier(
+            packet_dir, gate_exit=0, context_key="22" * 32
+        )
+        assert wrong_key.returncode == 3, wrong_key.stdout + wrong_key.stderr
+
+
+def test_ma10_fixed_verifier_rejects_forged_pass_summary_with_retained_origin() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-ma10-fixed-summary-rewrite-") as tmp:
+        evidence_dir = Path(tmp)
+        fake_gate = evidence_dir / "fake-i18n-gate.sh"
+        fake_wp = evidence_dir / "fake-target-wp.sh"
+        write_executable(fake_gate, ma10_fake_gate_source())
+        write_executable(fake_wp, ma10_fake_wp_source(log_status="fail"))
+
+        result = run_runner(
+            "--store",
+            "target",
+            "--layer",
+            "deterministic",
+            "--flow",
+            "MA-10",
+            evidence_dir=evidence_dir,
+            extra_env={
+                "I18N_NOTES_GATE": str(fake_gate),
+                "TARGET_WP_COMMAND": str(fake_wp),
+            },
+        )
+        assert result.returncode == 1, result.stdout + result.stderr
+        rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
+        packet_dir = Path(strip_recorded_at(rollup)[0]["evidence_path"]).parent
+        authentic_failure = run_fixed_ma10_verifier(packet_dir, gate_exit=0)
+        assert authentic_failure.returncode == 1, (
+            authentic_failure.stdout + authentic_failure.stderr
+        )
+
+        log_path = packet_dir / "debug-log-scan.json"
+        failing_packet = json.loads(log_path.read_text(encoding="utf-8"))
+        retained_origin = failing_packet["scan"]["origin_binding"]
+        forged_packet = rewrite_warning_fail_to_pass_log_evidence(failing_packet)
+        assert forged_packet["scan"]["origin_binding"] == retained_origin
+        log_path.write_text(
+            json.dumps(forged_packet, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        manifest_path = packet_dir / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["log_status"] = "pass"
+        manifest["status"] = "pass"
+        manifest["files"]["debug-log-scan.json"] = file_sha256(log_path)
+        manifest_path.write_text(
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+        rewritten_pass = run_fixed_ma10_verifier(packet_dir, gate_exit=0)
+        assert rewritten_pass.returncode == 3, (
+            "the fixed verifier accepted a warning FAIL->PASS rewrite with a "
+            "fabricated chain head and retained origin; "
+            + rewritten_pass.stdout
+            + rewritten_pass.stderr
+        )
+
+
+def test_runner_archives_only_context_key_fingerprint_and_authenticated_chain() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-ma10-context-key-") as tmp:
+        evidence_dir = Path(tmp)
+        fake_gate = evidence_dir / "fake-i18n-gate.sh"
+        fake_wp = evidence_dir / "fake-target-wp.sh"
+        write_executable(fake_gate, ma10_fake_gate_source())
+        write_executable(fake_wp, ma10_fake_wp_source())
+
+        result = run_runner(
+            "--store",
+            "target",
+            "--layer",
+            "deterministic",
+            "--flow",
+            "MA-10",
+            evidence_dir=evidence_dir,
+            extra_env={
+                "CRITICAL_FLOWS_RUN_CONTEXT_KEY": TEST_RUN_CONTEXT_KEY,
+                "I18N_NOTES_GATE": str(fake_gate),
+                "TARGET_WP_COMMAND": str(fake_wp),
+            },
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        archived_text = result.stdout + result.stderr
+        for path in evidence_dir.rglob("*"):
+            if path.is_file():
+                archived_text += path.read_text(encoding="utf-8", errors="replace")
+        key_fingerprint = "sha256:" + hashlib.sha256(
+            bytes.fromhex(TEST_RUN_CONTEXT_KEY)
+        ).hexdigest()
+        assert TEST_RUN_CONTEXT_KEY not in archived_text
+        assert key_fingerprint in archived_text
+        assert "hmac-sha256:" in archived_text
 
 
 def test_ma10_blocks_before_gate_when_current_log_marker_fails() -> None:
@@ -3735,6 +8500,28 @@ exit 1
         assert manifest_payload["status"] == "fail"
         assert "i18n-flow-failure.json" in manifest_payload["files"]
         assert "i18n-notes-gate.json" not in manifest_payload["files"]
+        before = {
+            path.relative_to(manifest.parent): path.read_bytes()
+            for path in manifest.parent.rglob("*")
+            if path.is_file()
+        }
+        verified = run_fixed_ma10_verifier(manifest.parent, gate_exit=1)
+        assert verified.returncode == 1, verified.stdout + verified.stderr
+        assert before == {
+            path.relative_to(manifest.parent): path.read_bytes()
+            for path in manifest.parent.rglob("*")
+            if path.is_file()
+        }
+
+        manifest_payload["files"]["i18n-notes-gate.json"] = "sha256:" + "0" * 64
+        manifest.write_text(
+            json.dumps(manifest_payload, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        mutated = manifest.read_bytes()
+        rejected = run_fixed_ma10_verifier(manifest.parent, gate_exit=1)
+        assert rejected.returncode == 3, rejected.stdout + rejected.stderr
+        assert manifest.read_bytes() == mutated
 
 
 def test_ma10_early_later_flow_failure_requires_successful_prefix_packets() -> None:
@@ -3775,17 +8562,9 @@ def test_ma10_early_later_flow_failure_requires_successful_prefix_packets() -> N
                 },
                 "i18n-catalog-evidence.json": ma10_gate_payload()["state"]["catalog_evidence"],
                 "debug-log-scan.json": {
-                    "schema": "woopayments_debug_log_scan.v1",
+                    "schema": "woopayments_debug_log_scan.v4",
                     "store": "target",
-                    "scan": {
-                        "status": "pass",
-                        "paths": ["/tmp/fake-debug.log"],
-                        "matches": [],
-                        "marker": {
-                            "created_at": "2026-07-16T10:00:00Z",
-                            "paths": {"/tmp/fake-debug.log": 0},
-                        },
-                    },
+                    "scan": log_scan_v2(),
                 },
             }
             for name, payload in support.items():
@@ -3801,6 +8580,9 @@ def test_ma10_early_later_flow_failure_requires_successful_prefix_packets() -> N
                     str(evidence_dir),
                     "--gate-exit",
                     "1",
+                    "--run-stamp",
+                    "20260716T160000Z-30303",
+                    *MA10_LOG_CONTEXT_ARGS,
                 ],
                 cwd=REPO,
                 text=True,
@@ -4112,6 +8894,7 @@ def test_full_scope_run_refuses_green_when_matrix_rows_are_unspecced() -> None:
         flows_dir = evidence_dir / "flows"
         flows_dir.mkdir()
         shutil.copy2(RUNNER.parent / "flows/SC-01-card-checkout.sh", flows_dir / "SC-01-card-checkout.sh")
+        shutil.copy2(LOG_OBSERVER_DRIVER, flows_dir / LOG_OBSERVER_DRIVER.name)
         # The flow sources ../lib/common.sh relative to its own location.
         (evidence_dir / "lib").mkdir()
         shutil.copy2(RUNNER.parent / "lib/common.sh", evidence_dir / "lib/common.sh")
@@ -4148,16 +8931,16 @@ printf '%s\\n' '{"op":"charge","order_id":778,"charge_id":"ch_syn","intent_id":"
             extra_env={
                 "SC01_FLOW_DRIVER": str(flow_driver),
                 "REF_WP_COMMAND": str(fake_ref_wp),
-                "TARGET_WP_COMMAND": str(fake_target_wp),
-                "MATRIX_TSV": str(matrix_tsv),
-                "FLOWS_DIR": str(flows_dir),
-            },
+                    "TARGET_WP_COMMAND": str(fake_target_wp),
+                    "MATRIX_TSV": str(matrix_tsv),
+                    "FLOWS_DIR": str(flows_dir),
+                },
         )
 
         assert result.returncode == 3, result.stdout + result.stderr
         rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
         # Otherwise green: the only flow passed on both stores, nothing failed or blocked.
-        assert rollup["summary"]["passed"] == 2
+        assert rollup["summary"]["passed"] == 2, result.stdout + result.stderr
         assert rollup["summary"]["failed"] == 0
         assert rollup["summary"]["blocked"] == 0
         matrix = rollup["matrix"]
@@ -4219,6 +9002,7 @@ def test_consecutive_runs_are_archived_append_only() -> None:
             "--flow",
             "SC-14",
             evidence_dir=evidence_dir,
+            extra_env={"CRITICAL_FLOWS_RUN_STAMP": "20260716T160000Z-30303"},
         )
         assert first.returncode == 3
         assert "run archived ->" in first.stdout
@@ -4243,6 +9027,7 @@ def test_consecutive_runs_are_archived_append_only() -> None:
             "--flow",
             "SC-14",
             evidence_dir=evidence_dir,
+            extra_env={"CRITICAL_FLOWS_RUN_STAMP": "20260716T160001Z-30304"},
         )
         assert second.returncode == 3
 
@@ -4708,13 +9493,58 @@ def test_agent_layer_blocks_result_when_hashed_artifact_changes() -> None:
         assert "queued 1 agent-driven flow specs" in result.stdout
 
 
-def run_log_clean_assertion(fake_wp_source: str) -> subprocess.CompletedProcess[str]:
+def run_log_clean_assertion(
+    fake_wp_source: str,
+    *,
+    run_stamp: str = "20260716T160000Z-30303",
+    evidence_path: Path | None = None,
+    context_key: str = TEST_RUN_CONTEXT_KEY,
+    origin_binding: str | None = None,
+    observer_categories: tuple[str, ...] = (),
+    observer_id: str = "00000000-0000-4000-8000-000000000777",
+    observer_path: str = "fake-debug.log",
+    observer_terminal_line: int | None = None,
+    observer_scan: dict | None = None,
+) -> subprocess.CompletedProcess[str]:
     with tempfile.TemporaryDirectory(prefix="critical-flows-log-clean-") as tmp:
         fake_wp = Path(tmp) / "fake-wp.sh"
-        write_executable(fake_wp, fake_wp_source)
+        write_executable(
+            fake_wp,
+            fake_authenticated_log_observer_source() + "\n" + fake_wp_source,
+        )
+        if origin_binding is None:
+            origin_binding = common_log_scan_v5()["origin_binding"]
+        context_scan = common_log_scan_v5() if observer_scan is None else observer_scan
+        context_observation = context_scan["observations"][0]
         script = f"""
 source {shlex.quote(str(COMMON))}
 TARGET_WP_COMMAND={shlex.quote(str(fake_wp))}
+RUN_STAMP={shlex.quote(run_stamp)}
+CRITICAL_FLOWS_RUN_STAMP={shlex.quote(run_stamp)}
+CRITICAL_FLOWS_RUN_CONTEXT_KEY={shlex.quote(context_key)}
+CRITICAL_FLOWS_FLOW_ID=MO-03-manual-capture-payment-details
+CRITICAL_FLOWS_LOG_PURPOSE=clean-debug-log
+CRITICAL_FLOWS_RUN_CONTEXT_BINDING={shlex.quote(origin_binding)}
+FAKE_OBSERVER_CATEGORIES={shlex.quote(','.join(observer_categories))}
+FAKE_OBSERVER_ID={shlex.quote(observer_id)}
+FAKE_OBSERVER_PATH={shlex.quote(observer_path)}
+FAKE_OBSERVER_PATH_ID={shlex.quote(context_observation['path_id'])}
+FAKE_OBSERVER_STORE={shlex.quote(context_scan['store'])}
+FAKE_OBSERVER_FLOW_ID={shlex.quote(context_scan['flow_id'])}
+FAKE_OBSERVER_PURPOSE={shlex.quote(context_scan['purpose'])}
+FAKE_OBSERVER_MARKER_CREATED_AT={shlex.quote(context_scan['marker_created_at'])}
+FAKE_OBSERVER_TERMINAL_LINE={shlex.quote(str(observer_terminal_line if observer_terminal_line is not None else (5 if observer_categories else 4)))}
+LOG_SCAN_EVIDENCE_FILE={shlex.quote(str(evidence_path) if evidence_path else '')}
+TMPDIR={shlex.quote(tmp)}
+EVIDENCE_DIR={shlex.quote(tmp)}
+export CRITICAL_FLOWS_RUN_STAMP CRITICAL_FLOWS_RUN_CONTEXT_KEY CRITICAL_FLOWS_FLOW_ID
+export CRITICAL_FLOWS_LOG_PURPOSE
+export CRITICAL_FLOWS_RUN_CONTEXT_BINDING FAKE_OBSERVER_CATEGORIES FAKE_OBSERVER_ID
+export FAKE_OBSERVER_PATH FAKE_OBSERVER_PATH_ID FAKE_OBSERVER_TERMINAL_LINE
+export FAKE_OBSERVER_STORE FAKE_OBSERVER_FLOW_ID FAKE_OBSERVER_PURPOSE
+export FAKE_OBSERVER_MARKER_CREATED_AT
+export TMPDIR EVIDENCE_DIR
+critical_flows_log_observer_start target || exit 3
 assert_log_clean target
 """
 
@@ -4728,10 +9558,35 @@ assert_log_clean target
         )
 
 
+def run_log_clean_marker(
+    fake_wp_source: str,
+    *,
+    run_stamp: str = "20260716T160000Z-30303",
+) -> subprocess.CompletedProcess[str]:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-marker-") as tmp:
+        fake_wp = Path(tmp) / "fake-wp.sh"
+        write_executable(fake_wp, fake_wp_source)
+        script = f"""
+source {shlex.quote(str(COMMON))}
+TARGET_WP_COMMAND={shlex.quote(str(fake_wp))}
+export CRITICAL_FLOWS_RUN_STAMP={shlex.quote(run_stamp)}
+mark_log_clean_start target
+"""
+        return subprocess.run(
+            ["bash", "-c", script],
+            cwd=REPO,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+
 def test_log_clean_assertion_passes_when_scan_is_clean() -> None:
+    payload = json.dumps(common_log_scan_v5(), separators=(",", ":"))
     result = run_log_clean_assertion(
-        """#!/usr/bin/env bash
-printf '%s\\n' '{"status":"pass","paths":["/tmp/fake-debug.log"],"matches":[]}'
+        f"""#!/usr/bin/env bash
+printf '%s\\n' '{payload}'
 """
     )
 
@@ -4740,15 +9595,27 @@ printf '%s\\n' '{"status":"pass","paths":["/tmp/fake-debug.log"],"matches":[]}'
 
 
 def test_log_clean_assertion_fails_when_php_errors_are_found() -> None:
+    match = safe_log_record(line=5)
+    payload = json.dumps(
+        common_log_scan_v5(
+            status="fail",
+            end_line_count=5,
+            end_byte_count=160,
+            matches=[match],
+        ),
+        separators=(",", ":"),
+    )
     result = run_log_clean_assertion(
-        """#!/usr/bin/env bash
-printf '%s\\n' '{"status":"fail","paths":["/tmp/fake-debug.log"],"matches":["PHP Warning: fake warning"]}'
-"""
+        f"""#!/usr/bin/env bash
+printf '%s\\n' '{payload}'
+""",
+        observer_categories=("warning",),
     )
 
     assert result.returncode == 1
     assert "FAIL log-clean target" in result.stdout
-    assert "PHP Warning: fake warning" in result.stdout
+    assert match["fingerprint"] in result.stdout
+    assert "PHP Warning: deterministic fake warning" not in result.stdout
 
 
 def test_log_clean_assertion_blocks_when_scan_cannot_run() -> None:
@@ -4761,7 +9628,3130 @@ exit 2
 
     assert result.returncode == 3
     assert "BLOCKED log-clean check for target" in result.stdout
-    assert "wp unavailable" in result.stdout
+    assert "wp unavailable" not in result.stdout
+
+
+def test_common_log_producer_blocks_replacement_and_truncate_regrow() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-anchor-") as tmp:
+        evidence_dir = Path(tmp)
+        wrapper = evidence_dir / "common-log-producer.php"
+        wrapper.write_text(common_log_producer_php_source(), encoding="utf-8")
+
+        for mutation, blocker_code in (
+            ("same_count_replacement", "log_identity_changed"),
+            ("truncate_regrow", "log_prefix_changed"),
+        ):
+            case_dir = evidence_dir / mutation
+            case_dir.mkdir()
+            debug_log = case_dir / "debug.log"
+            debug_log.write_text("one\ntwo\nthree\nfour\n", encoding="utf-8")
+            result = subprocess.run(
+                ["php", str(wrapper), str(debug_log), mutation],
+                cwd=REPO,
+                env={
+                    **os.environ,
+                    "CRITICAL_FLOWS_RUN_STAMP": "20260716T160000Z-30303",
+                },
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            assert result.returncode == 0, (mutation, result.stdout, result.stderr)
+            payload = json.loads(result.stdout)
+            assert payload["status"] == "blocked", (mutation, payload)
+            assert payload["blocker_code"] == blocker_code
+            assert payload["observations"]
+            observation = payload["observations"][0]
+            assert observation["marker_identity_fingerprint"].startswith("sha256:")
+            assert observation["observed_identity_fingerprint"].startswith("sha256:")
+            assert observation["marker_prefix_fingerprint"].startswith("sha256:")
+            assert observation["observed_prefix_fingerprint"].startswith("sha256:")
+
+
+def test_common_log_producer_canary_blocks_exact_restore_but_allows_append() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-canary-") as tmp:
+        root = Path(tmp)
+        wrapper = root / "common-log-producer.php"
+        wrapper.write_text(common_log_producer_php_source(), encoding="utf-8")
+        environment = {
+            **os.environ,
+            "CRITICAL_FLOWS_RUN_STAMP": TEST_RUN_STAMP,
+        }
+
+        restored_dir = root / "restored"
+        restored_dir.mkdir()
+        restored_log = restored_dir / "debug.log"
+        restored_log.write_text("one\ntwo\nthree\nfour\n", encoding="utf-8")
+        restored = subprocess.run(
+            ["php", str(wrapper), str(restored_log), "exact_content_restore"],
+            cwd=REPO,
+            env=environment,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert restored.returncode == 0, restored.stdout + restored.stderr
+        restored_payload = json.loads(restored.stdout)
+        assert restored_payload["status"] == "blocked"
+        assert restored_payload["blocker_code"] in {
+            "log_truncated",
+            "log_prefix_changed",
+            "log_canary_changed",
+        }
+
+        append_dir = root / "append"
+        append_dir.mkdir()
+        append_log = append_dir / "debug.log"
+        append_log.write_text("one\ntwo\nthree\nfour\n", encoding="utf-8")
+        appended = subprocess.run(
+            ["php", str(wrapper), str(append_log), "ordinary_append"],
+            cwd=REPO,
+            env=environment,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert appended.returncode == 0, appended.stdout + appended.stderr
+        appended_payload = json.loads(appended.stdout)
+        assert appended_payload["status"] == "pass"
+        observation = appended_payload["observations"][0]
+        assert observation["start_line_count"] == 5
+        assert observation["end_line_count"] == 6
+        assert observation["marker_canary_fingerprint"].startswith("sha256:")
+        assert (
+            observation["marker_canary_fingerprint"]
+            == observation["observed_canary_fingerprint"]
+        )
+
+
+def run_common_post_canary_restore_attack(mutation: str) -> dict:
+    """Run one terminal-snapshot attack against the exact current common producer."""
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-history-") as tmp:
+        root = Path(tmp)
+        wrapper = root / "common-log-producer.php"
+        wrapper.write_text(common_log_producer_php_source(), encoding="utf-8")
+        environment = {
+            **os.environ,
+            "CRITICAL_FLOWS_RUN_STAMP": TEST_RUN_STAMP,
+        }
+
+        debug_log = root / "debug.log"
+        debug_log.write_text("one\ntwo\nthree\nfour\n", encoding="utf-8")
+        result = subprocess.run(
+            ["php", str(wrapper), str(debug_log), mutation],
+            cwd=REPO,
+            env=environment,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "erased after" not in result.stdout
+        assert "erased before" not in result.stdout
+        return json.loads(result.stdout)
+
+
+def assert_common_log_history_packet_blocks(payload: dict) -> None:
+    assert payload["status"] == "pass", payload
+    encoded = json.dumps(payload, separators=(",", ":"))
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-history-evidence-") as tmp:
+        evidence_path = Path(tmp) / "debug-log-scan.json"
+        result = run_log_clean_assertion(
+            f"""#!/usr/bin/env bash
+printf '%s\\n' '{encoded}'
+""",
+            evidence_path=evidence_path,
+            run_stamp=payload["run_stamp"],
+            origin_binding=payload["origin_binding"],
+            observer_categories=("warning",),
+            observer_id=payload["observer_id"],
+            observer_path=payload["observations"][0]["path"],
+            observer_terminal_line=payload["observations"][0]["end_line_count"],
+            observer_scan=payload,
+        )
+
+        assert result.returncode == 3, result.stdout + result.stderr
+        assert "log_history_changed" in result.stdout
+        evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+        assert evidence["schema"] == "woopayments_debug_log_scan.v6"
+        assert evidence["scan"]["blocker_code"] == "log_history_changed"
+        summary = evidence["scan"]["observer_summary"]
+        assert summary["origin_binding"] == payload["origin_binding"]
+        assert summary["category_counts"]["warning"] == 1
+        assert summary["chain_head"].startswith("hmac-sha256:")
+        assert TEST_RUN_CONTEXT_KEY not in evidence_path.read_text(encoding="utf-8")
+
+
+def test_common_log_history_blocks_post_canary_snapshot_restore() -> None:
+    assert_common_log_history_packet_blocks(
+        run_common_post_canary_restore_attack("post_canary_snapshot_restore")
+    )
+
+
+def test_common_log_history_blocks_restore_followed_by_safe_append() -> None:
+    assert_common_log_history_packet_blocks(
+        run_common_post_canary_restore_attack("post_canary_restore_safe_append")
+    )
+
+
+def test_common_log_prefix_hash_binds_exact_crlf_bytes() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-crlf-prefix-") as tmp:
+        root = Path(tmp)
+        wrapper = root / "common-log-producer.php"
+        wrapper.write_text(common_log_producer_php_source(), encoding="utf-8")
+        debug_log = root / "debug.log"
+        debug_log.write_bytes(b"one\r\ntwo\r\nthree\r\nfour\r\n")
+        result = subprocess.run(
+            ["php", str(wrapper), str(debug_log), "crlf_to_lf_rewrite"],
+            cwd=REPO,
+            env={
+                **os.environ,
+                "CRITICAL_FLOWS_RUN_STAMP": "20260716T160000Z-30303",
+            },
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        payload = json.loads(result.stdout)
+        assert payload["status"] == "blocked"
+        assert payload["blocker_code"] == "log_prefix_changed"
+
+
+def test_common_log_marker_v6_binds_exact_bytes_and_current_key() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-marker-v6-") as tmp:
+        root = Path(tmp)
+        case = prepare_log_observer_case(root)
+        marker_wrapper = root / "common-log-marker.php"
+        marker_wrapper.write_text(common_log_marker_php_source(), encoding="utf-8")
+        initial = b"one\r\ntwo\r\nthree\r\nfour\r\n"
+        case["debug_log"].write_bytes(initial)
+        case["debug_log"].chmod(0o640)
+
+        produced = subprocess.run(
+            ["php", str(marker_wrapper), str(case["debug_log"])],
+            cwd=REPO,
+            env={
+                **os.environ,
+                "CRITICAL_FLOWS_RUN_STAMP": case["run_stamp"],
+                "CRITICAL_FLOWS_RUN_CONTEXT_KEY": TEST_RUN_CONTEXT_KEY,
+            },
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert produced.returncode == 0, produced.stdout + produced.stderr
+        marker = json.loads(produced.stdout)
+        final_bytes = case["debug_log"].read_bytes()
+        observation = marker["paths"][str(case["debug_log"])]
+
+        assert marker["schema"] == "woopayments_debug_log_marker.v6"
+        assert observation["byte_count"] == len(final_bytes)
+        assert observation["line_count"] == 5
+        assert observation["prefix_fingerprint"] == "sha256:" + hashlib.sha256(
+            final_bytes
+        ).hexdigest()
+        assert marker["key_fingerprint"] == "sha256:" + hashlib.sha256(
+            bytes.fromhex(TEST_RUN_CONTEXT_KEY)
+        ).hexdigest()
+        assert marker["origin_binding"] == "hmac-sha256:" + hmac.new(
+            bytes.fromhex(TEST_RUN_CONTEXT_KEY),
+            log_observer_origin_material(marker),
+            hashlib.sha256,
+        ).hexdigest()
+
+        case["marker"] = marker
+        case["original"] = final_bytes
+        case["initial_stat"] = case["debug_log"].stat()
+        case["observer_id"] = marker["observer_id"]
+        case["backing_path"] = case["debug_log"].with_name(
+            f"{case['debug_log'].name}.woopayments-critical-flows.{marker['observer_id']}.backing"
+        )
+        wrong_key_process = launch_log_observer(case, context_key="22" * 32)
+        try:
+            blocked, _ = wait_log_observer_record(wrong_key_process, "blocked")
+            assert blocked["blocker_code"] == "invalid_marker_origin"
+            assert wrong_key_process.wait(timeout=2) != 0
+        finally:
+            stop_observer_process(wrong_key_process)
+
+
+def test_log_observer_happy_path_preserves_bytes_metadata_and_store_usability() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-observer-happy-") as tmp:
+        case = prepare_log_observer_case(Path(tmp))
+        process = launch_log_observer(case)
+        records: list[str] = []
+        try:
+            ready, encoded = wait_log_observer_record(process, "ready")
+            records.extend(encoded)
+            assert ready["origin_binding"] == case["marker"]["origin_binding"]
+            safe_line = b"ordinary safe application line\n"
+            write_observer_fifo(case["debug_log"], safe_line)
+            event, encoded = wait_log_observer_record(process, "line", category="other")
+            records.extend(encoded)
+            assert event["fingerprint"] == "sha256:" + hashlib.sha256(
+                safe_line.rstrip(b"\r\n")
+            ).hexdigest()
+            write_observer_fifo(
+                case["debug_log"],
+                observer_terminal_line(case),
+            )
+            complete, encoded = wait_log_observer_record(process, "complete")
+            records.extend(encoded)
+            assert complete["status"] == "pass"
+            assert process.wait(timeout=2) == 0
+            assert_log_observer_cleaned(case, safe_line)
+        finally:
+            stop_observer_process(process)
+
+
+def test_log_forwarder_postfork_eight_path_attack_preserves_all_nodes_and_reaps_child() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-start-eight-") as tmp:
+        root = Path(tmp)
+        case = prepare_log_observer_case(root)
+        debug_logs = add_log_observer_paths(case, count=8)
+        barrier = root / "lease-barrier"
+        barrier.mkdir()
+        process = launch_log_observer(
+            case,
+            maximum_seconds="5",
+            extra_environment={"TEST_LEASE_BARRIER_DIR": str(barrier)},
+        )
+        child_pid = 0
+        try:
+            wait_for_test_path(barrier / "lease-encode-reached")
+            children = direct_child_pids(process.pid)
+            assert len(children) == 1
+            child_pid = children[0]
+            artifacts = log_forwarder_artifact_paths(case)
+            for debug_log in debug_logs:
+                assert stat.S_ISFIFO(debug_log.lstat().st_mode)
+            for path in artifacts.values():
+                assert path.is_file()
+
+            journal_deadline = time.monotonic() + 0.5
+            while (
+                time.monotonic() < journal_deadline
+                and not artifacts["journal"].read_bytes()
+            ):
+                time.sleep(0.005)
+            precommit_journal = artifacts["journal"].read_bytes()
+
+            authentic_fifo_stat = case["debug_log"].lstat()
+            parked_fifo = root / "authenticated-first.fifo.parked"
+            case["debug_log"].rename(parked_fifo)
+            os.mkfifo(case["debug_log"], 0o600)
+            foreign_fifo_stat = case["debug_log"].lstat()
+
+            authentic_lease_stat = artifacts["lease"].lstat()
+            parked_lease = root / "authenticated.lease.parked"
+            artifacts["lease"].rename(parked_lease)
+            artifacts["lease"].mkdir(mode=0o700)
+            foreign_lease_stat = artifacts["lease"].lstat()
+            backing_stats = {
+                debug_log: debug_log.with_name(
+                    f"{debug_log.name}.woopayments-critical-flows."
+                    f"{case['observer_id']}.backing"
+                ).lstat()
+                for debug_log in debug_logs
+            }
+
+            (barrier / "lease-encode-release").write_text("release", encoding="utf-8")
+            stdout, stderr = process.communicate(timeout=6)
+            records = [json.loads(line) for line in stdout.splitlines() if line]
+            assert process.returncode == 3, stdout + stderr
+            assert records[-1]["kind"] == "blocked"
+            assert records[-1]["blocker_code"] == "forwarder_start_failed"
+            assert wait_for_no_process(child_pid)
+            assert precommit_journal == b""
+
+            current_fifo = case["debug_log"].lstat()
+            assert stat.S_ISFIFO(current_fifo.st_mode)
+            assert (current_fifo.st_dev, current_fifo.st_ino) == (
+                foreign_fifo_stat.st_dev,
+                foreign_fifo_stat.st_ino,
+            )
+            parked_fifo_stat = parked_fifo.lstat()
+            assert (parked_fifo_stat.st_dev, parked_fifo_stat.st_ino) == (
+                authentic_fifo_stat.st_dev,
+                authentic_fifo_stat.st_ino,
+            )
+            current_lease = artifacts["lease"].lstat()
+            assert stat.S_ISDIR(current_lease.st_mode)
+            assert (current_lease.st_dev, current_lease.st_ino) == (
+                foreign_lease_stat.st_dev,
+                foreign_lease_stat.st_ino,
+            )
+            parked_lease_stat = parked_lease.lstat()
+            assert (parked_lease_stat.st_dev, parked_lease_stat.st_ino) == (
+                authentic_lease_stat.st_dev,
+                authentic_lease_stat.st_ino,
+            )
+            assert artifacts["journal"].is_file()
+            assert artifacts["control"].is_file()
+            for debug_log, expected in backing_stats.items():
+                backing = debug_log.with_name(
+                    f"{debug_log.name}.woopayments-critical-flows."
+                    f"{case['observer_id']}.backing"
+                )
+                current = backing.lstat()
+                assert (current.st_dev, current.st_ino) == (
+                    expected.st_dev,
+                    expected.st_ino,
+                )
+            assert TEST_RUN_CONTEXT_KEY not in stdout + stderr
+        finally:
+            if child_pid:
+                stop_test_owned_observer_child(child_pid, case["wrapper"])
+            stop_observer_process(process)
+
+
+def test_log_forwarder_postfork_encode_failure_reaps_child_and_strictly_restores_intact_paths() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-start-encode-") as tmp:
+        root = Path(tmp)
+        case = prepare_log_observer_case(root)
+        barrier = root / "lease-barrier"
+        barrier.mkdir()
+        process = launch_log_observer(
+            case,
+            maximum_seconds="5",
+            extra_environment={
+                "TEST_LEASE_BARRIER_DIR": str(barrier),
+                "TEST_FAIL_LEASE_ENCODE": "1",
+            },
+        )
+        child_pid = 0
+        application_bytes = b"application bytes queued before lease failure\n"
+        try:
+            wait_for_test_path(barrier / "lease-encode-reached")
+            children = direct_child_pids(process.pid)
+            assert len(children) == 1
+            child_pid = children[0]
+            artifacts = log_forwarder_artifact_paths(case)
+            journal_deadline = time.monotonic() + 0.5
+            while (
+                time.monotonic() < journal_deadline
+                and not artifacts["journal"].read_bytes()
+            ):
+                time.sleep(0.005)
+            precommit_journal = artifacts["journal"].read_bytes()
+            write_observer_fifo(case["debug_log"], application_bytes)
+            (barrier / "lease-encode-release").write_text("release", encoding="utf-8")
+
+            stdout, stderr = process.communicate(timeout=6)
+            records = [json.loads(line) for line in stdout.splitlines() if line]
+            assert process.returncode == 3, stdout + stderr
+            assert records[-1]["kind"] == "blocked"
+            assert records[-1]["blocker_code"] == "forwarder_start_failed"
+            assert wait_for_no_process(child_pid)
+            assert precommit_journal == b""
+            assert stat.S_ISREG(case["debug_log"].stat().st_mode)
+            assert case["debug_log"].read_bytes() == case["original"] + application_bytes
+            assert stat.S_IMODE(case["debug_log"].stat().st_mode) == stat.S_IMODE(
+                case["initial_stat"].st_mode
+            )
+            assert all(not path.exists() for path in artifacts.values())
+            assert application_bytes.decode().strip() not in stdout + stderr
+            assert TEST_RUN_CONTEXT_KEY not in stdout + stderr
+        finally:
+            if child_pid:
+                stop_test_owned_observer_child(child_pid, case["wrapper"])
+            stop_observer_process(process)
+
+
+def test_log_forwarder_postfork_failure_kills_and_reaps_stopped_exact_child() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-start-stopped-") as tmp:
+        root = Path(tmp)
+        case = prepare_log_observer_case(root)
+        barrier = root / "lease-barrier"
+        barrier.mkdir()
+        process = launch_log_observer(
+            case,
+            maximum_seconds="5",
+            extra_environment={
+                "TEST_LEASE_BARRIER_DIR": str(barrier),
+                "TEST_FAIL_LEASE_ENCODE": "1",
+            },
+        )
+        child_pid = 0
+        try:
+            wait_for_test_path(barrier / "lease-encode-reached")
+            children = direct_child_pids(process.pid)
+            assert len(children) == 1
+            child_pid = children[0]
+            os.kill(child_pid, signal.SIGSTOP)
+            (barrier / "lease-encode-release").write_text("release", encoding="utf-8")
+
+            stdout, stderr = process.communicate(timeout=6)
+            records = [json.loads(line) for line in stdout.splitlines() if line]
+            assert process.returncode == 3, stdout + stderr
+            assert records[-1]["blocker_code"] == "forwarder_start_failed"
+            assert wait_for_no_process(child_pid)
+            assert stat.S_ISREG(case["debug_log"].stat().st_mode)
+            assert case["debug_log"].read_bytes() == case["original"]
+            assert all(
+                not path.exists() for path in log_forwarder_artifact_paths(case).values()
+            )
+        finally:
+            if child_pid:
+                stop_test_owned_observer_child(child_pid, case["wrapper"])
+            stop_observer_process(process)
+
+
+def test_log_forwarder_parent_death_before_commit_closes_gate_and_child_exits() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-start-parent-death-") as tmp:
+        root = Path(tmp)
+        case = prepare_log_observer_case(root)
+        barrier = root / "lease-barrier"
+        barrier.mkdir()
+        process = launch_log_observer(
+            case,
+            maximum_seconds="5",
+            extra_environment={"TEST_LEASE_BARRIER_DIR": str(barrier)},
+        )
+        child_pid = 0
+        try:
+            wait_for_test_path(barrier / "lease-encode-reached")
+            children = direct_child_pids(process.pid)
+            assert len(children) == 1
+            child_pid = children[0]
+            artifacts = log_forwarder_artifact_paths(case)
+            assert artifacts["journal"].read_bytes() == b""
+            process.kill()
+            assert process.wait(timeout=2) != 0
+            assert wait_for_no_process(child_pid)
+            assert stat.S_ISFIFO(case["debug_log"].lstat().st_mode)
+            assert case["backing_path"].read_bytes() == case["original"]
+            assert all(path.is_file() for path in artifacts.values())
+            assert artifacts["journal"].read_bytes() == b""
+        finally:
+            if child_pid:
+                stop_test_owned_observer_child(child_pid, case["wrapper"])
+            stop_observer_process(process)
+
+
+def test_log_forwarder_unowned_reap_result_preserves_every_startup_node() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-start-unowned-reap-") as tmp:
+        root = Path(tmp)
+        case = prepare_log_observer_case(root)
+        barrier = root / "lease-barrier"
+        barrier.mkdir()
+        process = launch_log_observer(
+            case,
+            maximum_seconds="5",
+            extra_environment={
+                "TEST_LEASE_BARRIER_DIR": str(barrier),
+                "TEST_FAIL_LEASE_ENCODE": "1",
+                "TEST_REAP_STARTUP_CHILD_EARLY": "1",
+            },
+        )
+        child_pid = 0
+        try:
+            wait_for_test_path(barrier / "lease-encode-reached")
+            children = direct_child_pids(process.pid)
+            assert len(children) == 1
+            child_pid = children[0]
+            fifo_stat = case["debug_log"].lstat()
+            backing_stat = case["backing_path"].lstat()
+            artifacts = log_forwarder_artifact_paths(case)
+            artifact_stats = {kind: path.lstat() for kind, path in artifacts.items()}
+            os.kill(child_pid, signal.SIGSTOP)
+            (barrier / "lease-encode-release").write_text("release", encoding="utf-8")
+
+            stdout, stderr = process.communicate(timeout=6)
+            records = [json.loads(line) for line in stdout.splitlines() if line]
+            assert process.returncode == 3, stdout + stderr
+            assert records[-1]["blocker_code"] == "forwarder_start_failed"
+            assert wait_for_no_process(child_pid)
+            current_fifo = case["debug_log"].lstat()
+            current_backing = case["backing_path"].lstat()
+            assert stat.S_ISFIFO(current_fifo.st_mode)
+            assert (current_fifo.st_dev, current_fifo.st_ino) == (
+                fifo_stat.st_dev,
+                fifo_stat.st_ino,
+            )
+            assert (current_backing.st_dev, current_backing.st_ino) == (
+                backing_stat.st_dev,
+                backing_stat.st_ino,
+            )
+            for kind, path in artifacts.items():
+                current = path.lstat()
+                expected = artifact_stats[kind]
+                assert (current.st_dev, current.st_ino) == (
+                    expected.st_dev,
+                    expected.st_ino,
+                )
+        finally:
+            if child_pid:
+                stop_test_owned_observer_child(child_pid, case["wrapper"])
+            stop_observer_process(process)
+
+
+@pytest.mark.parametrize("kind", ["fifo", "backing", "lease", "journal", "control"])
+def test_log_forwarder_postfork_failure_preserves_substituted_startup_identity(
+    kind: str,
+) -> None:
+    with tempfile.TemporaryDirectory(
+        prefix=f"critical-flows-log-start-substitute-{kind}-"
+    ) as tmp:
+        root = Path(tmp)
+        case = prepare_log_observer_case(root)
+        barrier = root / "lease-barrier"
+        barrier.mkdir()
+        process = launch_log_observer(
+            case,
+            maximum_seconds="5",
+            extra_environment={
+                "TEST_LEASE_BARRIER_DIR": str(barrier),
+                "TEST_FAIL_LEASE_ENCODE": "1",
+            },
+        )
+        child_pid = 0
+        try:
+            wait_for_test_path(barrier / "lease-encode-reached")
+            children = direct_child_pids(process.pid)
+            assert len(children) == 1
+            child_pid = children[0]
+            artifacts = log_forwarder_artifact_paths(case)
+            paths = {
+                "fifo": case["debug_log"],
+                "backing": case["backing_path"],
+                **artifacts,
+            }
+            original_stats = {name: path.lstat() for name, path in paths.items()}
+            application_bytes = f"queued before {kind} substitution\n".encode()
+            write_observer_fifo(case["debug_log"], application_bytes)
+
+            target = paths[kind]
+            parked = root / f"authenticated-{kind}.startup.parked"
+            target.rename(parked)
+            if kind == "fifo":
+                os.mkfifo(target, 0o600)
+            else:
+                target.write_bytes(f"foreign {kind}\n".encode())
+                target.chmod(0o600)
+            foreign_stat = target.lstat()
+
+            (barrier / "lease-encode-release").write_text("release", encoding="utf-8")
+            stdout, stderr = process.communicate(timeout=6)
+            records = [json.loads(line) for line in stdout.splitlines() if line]
+            assert process.returncode == 3, stdout + stderr
+            assert records[-1]["blocker_code"] == "forwarder_start_failed"
+            assert wait_for_no_process(child_pid)
+
+            current_target = target.lstat()
+            assert (current_target.st_dev, current_target.st_ino) == (
+                foreign_stat.st_dev,
+                foreign_stat.st_ino,
+            )
+            parked_stat = parked.lstat()
+            assert (parked_stat.st_dev, parked_stat.st_ino) == (
+                original_stats[kind].st_dev,
+                original_stats[kind].st_ino,
+            )
+            for other_kind, other_path in paths.items():
+                if other_kind == kind:
+                    continue
+                current = other_path.lstat()
+                expected = original_stats[other_kind]
+                assert (current.st_dev, current.st_ino) == (
+                    expected.st_dev,
+                    expected.st_ino,
+                )
+            authentic_backing = parked if kind == "backing" else case["backing_path"]
+            assert authentic_backing.read_bytes() == case["original"] + application_bytes
+            assert application_bytes.decode().strip() not in stdout + stderr
+            assert TEST_RUN_CONTEXT_KEY not in stdout + stderr
+        finally:
+            if child_pid:
+                stop_test_owned_observer_child(child_pid, case["wrapper"])
+            stop_observer_process(process)
+
+
+@pytest.mark.parametrize("kind", ["journal", "control"])
+def test_log_forwarder_postfork_failure_preserves_in_place_artifact_mutation(
+    kind: str,
+) -> None:
+    with tempfile.TemporaryDirectory(
+        prefix=f"critical-flows-log-start-mutate-{kind}-"
+    ) as tmp:
+        root = Path(tmp)
+        case = prepare_log_observer_case(root)
+        barrier = root / "lease-barrier"
+        barrier.mkdir()
+        process = launch_log_observer(
+            case,
+            maximum_seconds="5",
+            extra_environment={
+                "TEST_LEASE_BARRIER_DIR": str(barrier),
+                "TEST_FAIL_LEASE_ENCODE": "1",
+            },
+        )
+        child_pid = 0
+        mutation = f"in-place {kind} mutation\n".encode()
+        application_bytes = b"queued before in-place artifact mutation\n"
+        try:
+            wait_for_test_path(barrier / "lease-encode-reached")
+            children = direct_child_pids(process.pid)
+            assert len(children) == 1
+            child_pid = children[0]
+            artifacts = log_forwarder_artifact_paths(case)
+            artifact_stat = artifacts[kind].lstat()
+            artifacts[kind].write_bytes(mutation)
+            write_observer_fifo(case["debug_log"], application_bytes)
+            (barrier / "lease-encode-release").write_text("release", encoding="utf-8")
+
+            stdout, stderr = process.communicate(timeout=6)
+            records = [json.loads(line) for line in stdout.splitlines() if line]
+            assert process.returncode == 3, stdout + stderr
+            assert records[-1]["blocker_code"] == "forwarder_start_failed"
+            assert wait_for_no_process(child_pid)
+            current_artifact = artifacts[kind].lstat()
+            assert (current_artifact.st_dev, current_artifact.st_ino) == (
+                artifact_stat.st_dev,
+                artifact_stat.st_ino,
+            )
+            assert artifacts[kind].read_bytes() == mutation
+            assert stat.S_ISFIFO(case["debug_log"].lstat().st_mode)
+            assert case["backing_path"].read_bytes() == case["original"] + application_bytes
+            assert all(path.exists() for path in artifacts.values())
+            assert mutation.decode().strip() not in stdout + stderr
+        finally:
+            if child_pid:
+                stop_test_owned_observer_child(child_pid, case["wrapper"])
+            stop_observer_process(process)
+
+
+def test_log_forwarder_postfork_mutated_lease_pid_cannot_redirect_abort() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-start-lease-pid-") as tmp:
+        root = Path(tmp)
+        case = prepare_log_observer_case(root)
+        barrier = root / "lease-validation-barrier"
+        barrier.mkdir()
+        process = launch_log_observer(
+            case,
+            maximum_seconds="1",
+            extra_environment={"TEST_LEASE_VALIDATION_BARRIER_DIR": str(barrier)},
+        )
+        child_pid = 0
+        application_bytes = b"queued before coherent lease PID mutation\n"
+        try:
+            wait_for_test_path(barrier / "lease-validation-reached")
+            children = direct_child_pids(process.pid)
+            assert len(children) == 1
+            child_pid = children[0]
+            artifacts = log_forwarder_artifact_paths(case)
+            lease_stat = artifacts["lease"].lstat()
+            lease = json.loads(artifacts["lease"].read_text(encoding="utf-8"))
+            assert lease["child_pid"] == child_pid
+            lease["child_pid"] = process.pid
+            write_signed_log_forwarder_lease(artifacts["lease"], lease)
+            write_observer_fifo(case["debug_log"], application_bytes)
+            (barrier / "lease-validation-release").write_text(
+                "release", encoding="utf-8"
+            )
+
+            stdout, stderr = process.communicate(timeout=6)
+            records = [json.loads(line) for line in stdout.splitlines() if line]
+            assert process.returncode == 3, stdout + stderr
+            assert records[-1]["blocker_code"] == "forwarder_start_failed"
+            assert wait_for_no_process(child_pid)
+            current_lease = artifacts["lease"].lstat()
+            assert (current_lease.st_dev, current_lease.st_ino) == (
+                lease_stat.st_dev,
+                lease_stat.st_ino,
+            )
+            assert json.loads(artifacts["lease"].read_text(encoding="utf-8"))[
+                "child_pid"
+            ] == process.pid
+            assert stat.S_ISFIFO(case["debug_log"].lstat().st_mode)
+            assert case["backing_path"].read_bytes() == case["original"] + application_bytes
+            assert all(path.exists() for path in artifacts.values())
+            assert TEST_RUN_CONTEXT_KEY not in stdout + stderr
+        finally:
+            if child_pid:
+                stop_test_owned_observer_child(child_pid, case["wrapper"])
+            stop_observer_process(process)
+
+
+def test_log_forwarder_valid_eight_path_startup_completes_and_cleans() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-start-valid-eight-") as tmp:
+        case = prepare_log_observer_case(Path(tmp))
+        debug_logs = add_log_observer_paths(case, count=8)
+        process = launch_log_observer(case, maximum_seconds="5")
+        try:
+            ready, _ = wait_log_observer_record(process, "ready")
+            assert ready["path_count"] == 8
+            _, lease = wait_log_forwarder_lease(case)
+            child_pid = lease["child_pid"]
+            additions = {}
+            for index, debug_log in enumerate(debug_logs, start=1):
+                addition = f"safe startup control path {index}\n".encode()
+                additions[debug_log] = addition
+                write_observer_fifo(debug_log, addition)
+                write_observer_fifo(
+                    debug_log,
+                    observer_terminal_line_for_path(case, debug_log),
+                )
+            complete, _ = wait_log_observer_record(process, "complete", timeout=6)
+            assert complete["status"] == "pass"
+            assert process.wait(timeout=3) == 0
+            assert wait_for_no_process(child_pid)
+            for debug_log, addition in additions.items():
+                assert stat.S_ISREG(debug_log.stat().st_mode)
+                assert debug_log.read_bytes() == case["original"] + addition
+            assert all(
+                not path.exists() for path in log_forwarder_artifact_paths(case).values()
+            )
+        finally:
+            stop_observer_process(process)
+
+
+def test_log_forwarder_postfork_simultaneous_substitution_preserves_every_inode() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-start-substitute-all-") as tmp:
+        root = Path(tmp)
+        case = prepare_log_observer_case(root)
+        barrier = root / "lease-barrier"
+        barrier.mkdir()
+        process = launch_log_observer(
+            case,
+            maximum_seconds="5",
+            extra_environment={
+                "TEST_LEASE_BARRIER_DIR": str(barrier),
+                "TEST_FAIL_LEASE_ENCODE": "1",
+            },
+        )
+        child_pid = 0
+        try:
+            wait_for_test_path(barrier / "lease-encode-reached")
+            children = direct_child_pids(process.pid)
+            assert len(children) == 1
+            child_pid = children[0]
+            artifacts = log_forwarder_artifact_paths(case)
+            paths = {
+                "fifo": case["debug_log"],
+                "backing": case["backing_path"],
+                **artifacts,
+            }
+            application_bytes = b"queued before simultaneous substitution\n"
+            write_observer_fifo(case["debug_log"], application_bytes)
+            parked = {}
+            authentic_stats = {}
+            foreign_stats = {}
+            for kind, path in paths.items():
+                authentic_stats[kind] = path.lstat()
+                parked[kind] = root / f"authenticated-{kind}.all.parked"
+                path.rename(parked[kind])
+                if kind == "fifo":
+                    os.mkfifo(path, 0o600)
+                else:
+                    path.write_bytes(f"foreign simultaneous {kind}\n".encode())
+                    path.chmod(0o600)
+                foreign_stats[kind] = path.lstat()
+
+            (barrier / "lease-encode-release").write_text("release", encoding="utf-8")
+            stdout, stderr = process.communicate(timeout=6)
+            records = [json.loads(line) for line in stdout.splitlines() if line]
+            assert process.returncode == 3, stdout + stderr
+            assert records[-1]["blocker_code"] == "forwarder_start_failed"
+            assert wait_for_no_process(child_pid)
+            for kind, path in paths.items():
+                current = path.lstat()
+                assert (current.st_dev, current.st_ino) == (
+                    foreign_stats[kind].st_dev,
+                    foreign_stats[kind].st_ino,
+                )
+                authentic = parked[kind].lstat()
+                assert (authentic.st_dev, authentic.st_ino) == (
+                    authentic_stats[kind].st_dev,
+                    authentic_stats[kind].st_ino,
+                )
+            assert parked["backing"].read_bytes() == case["original"] + application_bytes
+            assert application_bytes.decode().strip() not in stdout + stderr
+        finally:
+            if child_pid:
+                stop_test_owned_observer_child(child_pid, case["wrapper"])
+            stop_observer_process(process)
+
+
+@pytest.mark.parametrize(
+    "total_bytes,pause_after,pause_seconds",
+    [
+        pytest.param(
+            STARTUP_DRAIN_MAX_BYTES + 16_384,
+            0,
+            0.0,
+            id="reviewer-cap-plus-full-chunk",
+        ),
+        pytest.param(
+            STARTUP_DRAIN_MAX_BYTES,
+            0,
+            0.0,
+            id="exact-cap-pre-ready",
+        ),
+        pytest.param(
+            STARTUP_DRAIN_MAX_BYTES + 4_096,
+            0,
+            0.0,
+            id="cap-plus-partial-chunk",
+        ),
+        pytest.param(
+            STARTUP_DRAIN_MAX_BYTES + 8_192,
+            STARTUP_DRAIN_MAX_BYTES,
+            0.07,
+            id="resuming-pre-ready-writer",
+        ),
+    ],
+)
+def test_log_forwarder_pre_ready_cap_is_blocked_without_archival_claim_or_keeper(
+    total_bytes: int,
+    pause_after: int,
+    pause_seconds: float,
+) -> None:
+    with tempfile.TemporaryDirectory(
+        prefix="critical-flows-log-pre-ready-production-lifecycle-"
+    ) as tmp:
+        root = Path(tmp)
+        case = prepare_log_observer_case(root)
+        barrier = root / "lease-barrier"
+        barrier.mkdir()
+        process = launch_log_observer(
+            case,
+            maximum_seconds="5",
+            extra_environment={
+                "TEST_LEASE_BARRIER_DIR": str(barrier),
+                "TEST_FAIL_LEASE_ENCODE": "1",
+            },
+        )
+        writer: subprocess.Popen[str] | None = None
+        child_pid = 0
+        try:
+            wait_for_test_path(barrier / "lease-encode-reached")
+            children = direct_child_pids(process.pid)
+            assert len(children) == 1
+            child_pid = children[0]
+            writer = launch_counted_fifo_writer(
+                case["debug_log"],
+                total_bytes,
+                pause_after=pause_after,
+                pause_seconds=pause_seconds,
+            )
+            queued_deadline = time.monotonic() + 2
+            while (
+                time.monotonic() < queued_deadline
+                and fifo_bytes_available(case["debug_log"]) == 0
+            ):
+                time.sleep(0.005)
+            assert fifo_bytes_available(case["debug_log"]) > 0
+            (barrier / "lease-encode-release").write_text(
+                "release", encoding="utf-8"
+            )
+
+            stdout, stderr = process.communicate(timeout=10)
+            successfully_written = wait_counted_fifo_writer(writer)
+            writer = None
+            records = [json.loads(line) for line in stdout.splitlines() if line]
+            assert successfully_written > 0
+            assert process.returncode == 3, stdout + stderr
+            assert records[-1]["kind"] == "blocked"
+            assert records[-1]["blocker_code"] == "forwarder_start_failed"
+            assert not any(record["kind"] == "complete" for record in records)
+            assert not any(record.get("status") == "pass" for record in records)
+            assert wait_for_no_process(child_pid)
+            assert "x" * 64 not in stdout + stderr
+            assert TEST_RUN_CONTEXT_KEY not in stdout + stderr
+
+            # Intentionally make no accepted=backing+FIFO assertion. After the
+            # production descriptors close there is no archival claim.
+            assert case["debug_log"].exists() or case["backing_path"].exists()
+        finally:
+            if writer is not None:
+                stop_observer_process(writer)
+            if child_pid:
+                stop_test_owned_observer_child(child_pid, case["wrapper"])
+            stop_observer_process(process)
+
+
+def test_log_forwarder_observed_pre_ready_input_can_never_support_pass() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-pre-ready-block-") as tmp:
+        root = Path(tmp)
+        case = prepare_log_observer_case(root)
+        barrier = root / "lease-validation-barrier"
+        barrier.mkdir()
+        process = launch_log_observer(
+            case,
+            maximum_seconds="5",
+            extra_environment={"TEST_LEASE_VALIDATION_BARRIER_DIR": str(barrier)},
+        )
+        child_pid = 0
+        hostile = b"hostile-pre-ready-input-must-not-appear\n"
+        try:
+            wait_for_test_path(barrier / "lease-validation-reached")
+            children = direct_child_pids(process.pid)
+            assert len(children) == 1
+            child_pid = children[0]
+            write_observer_fifo(case["debug_log"], hostile)
+            (barrier / "lease-validation-release").write_text(
+                "release", encoding="utf-8"
+            )
+
+            # Old bytes commit and emit ready; give that implementation an exact
+            # terminal so its incorrect PASS is deterministic instead of hanging.
+            ready_deadline = time.monotonic() + 1
+            while process.poll() is None and time.monotonic() < ready_deadline:
+                try:
+                    journal = validated_log_forwarder_journal(case)
+                except (
+                    AssertionError,
+                    FileNotFoundError,
+                    json.JSONDecodeError,
+                    UnicodeError,
+                ):
+                    time.sleep(0.01)
+                    continue
+                if any(record["kind"] == "ready" for record in journal):
+                    write_observer_fifo(
+                        case["debug_log"], observer_terminal_line(case)
+                    )
+                    break
+                time.sleep(0.01)
+
+            stdout, stderr = process.communicate(timeout=5)
+            records = [json.loads(line) for line in stdout.splitlines() if line]
+            assert process.returncode == 3, stdout + stderr
+            assert records[-1]["kind"] == "blocked"
+            assert records[-1]["blocker_code"] == "forwarder_start_failed"
+            assert not any(record["kind"] == "complete" for record in records)
+            assert hostile.decode().strip() not in stdout + stderr
+            assert TEST_RUN_CONTEXT_KEY not in stdout + stderr
+            assert wait_for_no_process(child_pid)
+        finally:
+            if child_pid:
+                stop_test_owned_observer_child(child_pid, case["wrapper"])
+            stop_observer_process(process)
+
+
+def test_log_forwarder_post_read_append_failure_blocks_without_archival_claim() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-post-read-rlimit-") as tmp:
+        root = Path(tmp)
+        case = prepare_log_observer_case(root)
+        barrier = root / "lease-barrier"
+        barrier.mkdir()
+        payload = b"post-read-rlimit-secret-must-not-be-disclosed"
+        process = launch_log_observer(
+            case,
+            maximum_seconds="5",
+            extra_environment={
+                "TEST_LEASE_BARRIER_DIR": str(barrier),
+                "TEST_FAIL_LEASE_ENCODE": "1",
+                "TEST_IGNORE_SIGXFSZ": "1",
+                "TEST_RLIMIT_FSIZE_AFTER_BARRIER": str(len(case["original"])),
+            },
+        )
+        child_pid = 0
+        try:
+            wait_for_test_path(barrier / "lease-encode-reached")
+            children = direct_child_pids(process.pid)
+            assert len(children) == 1
+            child_pid = children[0]
+            write_observer_fifo(case["debug_log"], payload)
+            (barrier / "lease-encode-release").write_text(
+                "release", encoding="utf-8"
+            )
+
+            stdout, stderr = process.communicate(timeout=5)
+            records = [json.loads(line) for line in stdout.splitlines() if line]
+            assert process.returncode == 3, stdout + stderr
+            assert records[-1]["kind"] == "blocked"
+            assert records[-1]["blocker_code"] == "forwarder_start_failed"
+            assert not any(record["kind"] == "complete" for record in records)
+            assert payload.decode() not in stdout + stderr
+            assert TEST_RUN_CONTEXT_KEY not in stdout + stderr
+            assert wait_for_no_process(child_pid)
+
+            # Do not assert FIFO remainder, backing delta, or byte conservation:
+            # the real post-read failure is exactly outside archival scope.
+        finally:
+            if child_pid:
+                stop_test_owned_observer_child(child_pid, case["wrapper"])
+            stop_observer_process(process)
+
+
+def test_log_forwarder_authorized_ready_gated_write_restores_exact_bytes() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-ready-gated-") as tmp:
+        case = prepare_log_observer_case(Path(tmp))
+        coordinator = launch_log_observer(case, maximum_seconds="5")
+        child_pid = 0
+        payload = b"authorized-ready-gated-line\n"
+        try:
+            ready, _ = wait_log_observer_record(coordinator, "ready")
+            assert ready["status"] == "pass"
+            _, lease = wait_log_forwarder_lease(case)
+            child_pid = forwarder_child_pid(lease)
+
+            write_observer_fifo(case["debug_log"], payload)
+            write_observer_fifo(case["debug_log"], observer_terminal_line(case))
+            complete, _ = wait_log_observer_record(coordinator, "complete")
+            assert complete["status"] == "pass"
+            assert coordinator.wait(timeout=3) == 0
+            wait_process_absent(child_pid)
+
+            assert case["debug_log"].read_bytes() == case["original"] + payload
+            assert_log_observer_cleaned(case, payload)
+        finally:
+            stop_observer_process(coordinator)
+            terminate_forwarder_for_test(child_pid)
+
+
+def test_log_forwarder_postfork_drain_preflights_failures_without_fifo_consumption() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-start-drain-failure-") as tmp:
+        root = Path(tmp)
+        wrapper = root / "drain-failure-harness.php"
+        wrapper.write_text(
+            r"""<?php
+$source = file_get_contents( getenv( 'TEST_LOG_OBSERVER_DRIVER' ) );
+$source = preg_replace( '/\nWooPaymentsCriticalFlowsLogObserver::run\( \$args \);\s*$/', "\n", $source );
+eval( '?>' . $source );
+$paths = new ReflectionProperty( WooPaymentsCriticalFlowsLogObserver::class, 'paths' );
+$drain = new ReflectionMethod( WooPaymentsCriticalFlowsLogObserver::class, 'drain_pre_ready_bytes' );
+if ( PHP_VERSION_ID < 80100 ) {
+    $paths->setAccessible( true );
+    $drain->setAccessible( true );
+}
+function run_case( string $root, string $kind, ReflectionProperty $paths, ReflectionMethod $drain ): array {
+    $directory = $root . DIRECTORY_SEPARATOR . $kind;
+    mkdir( $directory, 0700 );
+    $fifo_path = $directory . DIRECTORY_SEPARATOR . 'debug.log';
+    $backing_path = $directory . DIRECTORY_SEPARATOR . 'debug.backing';
+    posix_mkfifo( $fifo_path, 0600 );
+    file_put_contents( $backing_path, 'original' );
+    chmod( $backing_path, 0600 );
+    $reader = fopen( $fifo_path, 'r+' );
+    stream_set_blocking( $reader, false );
+    stream_set_read_buffer( $reader, 0 );
+    $fifo = 'unreadable_fifo' === $kind ? fopen( $fifo_path, 'wb' ) : $reader;
+    stream_set_blocking( $fifo, false );
+    $backing = fopen( $backing_path, 'unwritable_sink' === $kind ? 'rb' : 'r+b' );
+    fseek( $backing, 0, SEEK_END );
+    $fifo_stat = fstat( $fifo );
+    $backing_stat = fstat( $backing );
+    $state = array(
+        'path_id' => 'hmac-sha256:' . str_repeat( '1', 64 ),
+        'backing_path' => $backing_path,
+        'backing_stream' => $backing,
+        'fifo_stream' => $fifo,
+        'fifo_dev' => (int) $fifo_stat['dev'],
+        'fifo_ino' => (int) $fifo_stat['ino'],
+        'dev' => (int) $backing_stat['dev'],
+        'ino' => (int) $backing_stat['ino'],
+        'byte_count' => (int) $backing_stat['size'],
+    );
+    $paths->setValue( null, array( $fifo_path => $state ) );
+    $writer = fopen( $fifo_path, 'wb' );
+    stream_set_blocking( $writer, false );
+    $payload = 'queued-before-' . $kind;
+    $written = fwrite( $writer, $payload );
+    fclose( $writer );
+    $result = $drain->invoke( null );
+    $remaining = fread( $reader, 8192 );
+    if ( $fifo !== $reader ) {
+        fclose( $fifo );
+    }
+    fclose( $reader );
+    fclose( $backing );
+    return array(
+        'failed' => false === $result,
+        'written' => $written,
+        'remaining' => $remaining,
+        'payload' => $payload,
+        'backing' => file_get_contents( $backing_path ),
+    );
+}
+echo json_encode(
+    array(
+        'unwritable_sink' => run_case( $argv[1], 'unwritable_sink', $paths, $drain ),
+        'unreadable_fifo' => run_case( $argv[1], 'unreadable_fifo', $paths, $drain ),
+    )
+), "\n";
+""",
+            encoding="utf-8",
+        )
+        result = subprocess.run(
+            ["php", str(wrapper), str(root)],
+            cwd=REPO,
+            env={**os.environ, "TEST_LOG_OBSERVER_DRIVER": str(LOG_OBSERVER_DRIVER)},
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        cases = json.loads(result.stdout)
+        for outcome in cases.values():
+            assert outcome["failed"] is True
+            assert outcome["written"] == len(outcome["payload"])
+            assert outcome["remaining"] == outcome["payload"]
+            assert outcome["backing"] == "original"
+
+    source = LOG_OBSERVER_DRIVER.read_text(encoding="utf-8")
+    begin = source.index("private static function drain_pre_ready_bytes(): bool")
+    end = source.index("\n\t/**", begin)
+    drain = source[begin:end]
+    assert "usort(" in drain
+    assert "min( self::READ_BYTES, $remaining )" in drain
+    assert drain.index("retained_backing_sink_ready") < drain.index("@fread(")
+    assert drain.index("self::sync_stream") < drain.index("$total_bytes += strlen")
+
+
+def test_log_forwarder_postfork_drain_overflow_preserves_fifo_backing_and_artifacts() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-start-drain-overflow-") as tmp:
+        root = Path(tmp)
+        case = prepare_log_observer_case(root)
+        barrier = root / "lease-barrier"
+        barrier.mkdir()
+        process = launch_log_observer(
+            case,
+            maximum_seconds="5",
+            extra_environment={
+                "TEST_LEASE_BARRIER_DIR": str(barrier),
+                "TEST_FAIL_LEASE_ENCODE": "1",
+            },
+        )
+        writer = None
+        child_pid = 0
+        try:
+            wait_for_test_path(barrier / "lease-encode-reached")
+            children = direct_child_pids(process.pid)
+            assert len(children) == 1
+            child_pid = children[0]
+            fifo_stat = case["debug_log"].lstat()
+            backing_stat = case["backing_path"].lstat()
+            artifacts = log_forwarder_artifact_paths(case)
+            writer = subprocess.Popen(
+                [
+                    "python3",
+                    "-c",
+                    (
+                        "import os,select,sys,time;"
+                        "fd=os.open(sys.argv[1],os.O_WRONLY|os.O_NONBLOCK);"
+                        "data=b'x'*9437184;view=memoryview(data);end=time.monotonic()+5;"
+                        "\nwhile view and time.monotonic()<end:\n"
+                        " try:\n  view=view[os.write(fd,view):]\n"
+                        " except BlockingIOError:\n  select.select([],[fd],[],0.05)\n"
+                        " except BrokenPipeError:\n  break\n"
+                        "os.close(fd)"
+                    ),
+                    str(case["debug_log"]),
+                ],
+                cwd=REPO,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            queued_deadline = time.monotonic() + 2
+            while time.monotonic() < queued_deadline and fifo_bytes_available(
+                case["debug_log"]
+            ) == 0:
+                time.sleep(0.005)
+            assert fifo_bytes_available(case["debug_log"]) > 0
+            (barrier / "lease-encode-release").write_text("release", encoding="utf-8")
+
+            stdout, stderr = process.communicate(timeout=8)
+            records = [json.loads(line) for line in stdout.splitlines() if line]
+            assert process.returncode == 3, stdout + stderr
+            assert records[-1]["blocker_code"] == "forwarder_start_failed"
+            assert wait_for_no_process(child_pid)
+            current_fifo = case["debug_log"].lstat()
+            current_backing = case["backing_path"].lstat()
+            assert stat.S_ISFIFO(current_fifo.st_mode)
+            assert (current_fifo.st_dev, current_fifo.st_ino) == (
+                fifo_stat.st_dev,
+                fifo_stat.st_ino,
+            )
+            assert (current_backing.st_dev, current_backing.st_ino) == (
+                backing_stat.st_dev,
+                backing_stat.st_ino,
+            )
+            assert case["backing_path"].stat().st_size > len(case["original"])
+            assert all(path.is_file() for path in artifacts.values())
+            assert TEST_RUN_CONTEXT_KEY not in stdout + stderr
+        finally:
+            if writer is not None and writer.poll() is None:
+                writer.terminate()
+                try:
+                    writer.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    writer.kill()
+                    writer.wait(timeout=2)
+            if child_pid:
+                stop_test_owned_observer_child(child_pid, case["wrapper"])
+            stop_observer_process(process)
+
+
+def test_log_forwarder_commit_peer_exit_uses_active_side_abort_and_drain() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-start-commit-exit-") as tmp:
+        root = Path(tmp)
+        case = prepare_log_observer_case(root)
+        barrier = root / "lease-validation-barrier"
+        barrier.mkdir()
+        process = launch_log_observer(
+            case,
+            maximum_seconds="5",
+            extra_environment={"TEST_LEASE_VALIDATION_BARRIER_DIR": str(barrier)},
+        )
+        child_pid = 0
+        application_bytes = b"queued before commit peer exit\n"
+        try:
+            wait_for_test_path(barrier / "lease-validation-reached")
+            children = direct_child_pids(process.pid)
+            assert len(children) == 1
+            child_pid = children[0]
+            write_observer_fifo(case["debug_log"], application_bytes)
+            os.kill(child_pid, signal.SIGKILL)
+            (barrier / "lease-validation-release").write_text(
+                "release", encoding="utf-8"
+            )
+
+            stdout, stderr = process.communicate(timeout=6)
+            records = [json.loads(line) for line in stdout.splitlines() if line]
+            assert process.returncode == 3, stdout + stderr
+            assert records[-1]["blocker_code"] == "forwarder_start_failed"
+            assert wait_for_no_process(child_pid)
+            assert stat.S_ISREG(case["debug_log"].stat().st_mode)
+            assert case["debug_log"].read_bytes() == case["original"] + application_bytes
+            assert all(
+                not path.exists() for path in log_forwarder_artifact_paths(case).values()
+            )
+        finally:
+            if child_pid:
+                stop_test_owned_observer_child(child_pid, case["wrapper"])
+            stop_observer_process(process)
+
+
+def test_log_forwarder_full_commit_then_stopped_child_death_recovers_boundedly() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-full-commit-child-death-") as tmp:
+        root = Path(tmp)
+        case = prepare_log_observer_case(root)
+        barrier = root / "lease-validation-barrier"
+        barrier.mkdir()
+        process = launch_log_observer(
+            case,
+            maximum_seconds="5",
+            extra_environment={"TEST_LEASE_VALIDATION_BARRIER_DIR": str(barrier)},
+        )
+        child_pid = 0
+        try:
+            wait_for_test_path(barrier / "lease-validation-reached")
+            children = direct_child_pids(process.pid)
+            assert len(children) == 1
+            child_pid = children[0]
+            os.kill(child_pid, signal.SIGSTOP)
+            (barrier / "lease-validation-release").write_text(
+                "release", encoding="utf-8"
+            )
+            time.sleep(0.15)
+            assert process.poll() is None
+            assert log_forwarder_artifact_paths(case)["journal"].read_bytes() == b""
+            os.kill(child_pid, signal.SIGKILL)
+            assert wait_for_no_process(child_pid)
+
+            try:
+                stdout, stderr = process.communicate(timeout=3)
+            except subprocess.TimeoutExpired as error:
+                process.kill()
+                process.wait(timeout=2)
+                raise AssertionError(
+                    "coordinator did not leave terminal-less exact-reap state"
+                ) from error
+            records = [json.loads(line) for line in stdout.splitlines() if line]
+            assert process.returncode == 3, stdout + stderr
+            assert records[-1]["kind"] == "blocked"
+            assert records[-1]["blocker_code"] == "observer_forced_recovery"
+            assert case["debug_log"].read_bytes() == case["original"]
+            assert stat.S_ISREG(case["debug_log"].stat().st_mode)
+            assert all(
+                not path.exists() for path in log_forwarder_artifact_paths(case).values()
+            )
+            assert TEST_RUN_CONTEXT_KEY not in stdout + stderr
+        finally:
+            if child_pid:
+                stop_test_owned_observer_child(child_pid, case["wrapper"])
+            stop_observer_process(process)
+
+
+def test_log_forwarder_coordinator_recovers_exact_child_death_after_consumed_fragment() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-coordinator-child-fragment-") as tmp:
+        case = prepare_log_observer_case(Path(tmp))
+        coordinator = launch_log_observer(case, maximum_seconds="5")
+        child_pid = 0
+        fragment = b"PHP Warning: exact child died after consuming this unterminated fragment"
+        try:
+            wait_log_observer_record(coordinator, "ready")
+            _, lease = wait_log_forwarder_lease(case)
+            child_pid = forwarder_child_pid(lease)
+            write_observer_fifo(case["debug_log"], fragment)
+            wait_fifo_bytes_available(case["debug_log"], 0)
+            os.kill(child_pid, signal.SIGKILL)
+            assert wait_for_no_process(child_pid)
+
+            try:
+                stdout, stderr = coordinator.communicate(timeout=3)
+            except subprocess.TimeoutExpired as error:
+                coordinator.kill()
+                coordinator.wait(timeout=2)
+                raise AssertionError(
+                    "coordinator did not recover exact child death after raw durability"
+                ) from error
+            records = [json.loads(line) for line in stdout.splitlines() if line]
+            assert coordinator.returncode == 3, stdout + stderr
+            assert records[-1]["blocker_code"] == "observer_forced_recovery"
+            assert case["debug_log"].read_bytes() == case["original"] + fragment
+            assert stat.S_ISREG(case["debug_log"].stat().st_mode)
+            assert all(
+                not path.exists() for path in log_forwarder_artifact_paths(case).values()
+            )
+        finally:
+            stop_observer_process(coordinator)
+            terminate_forwarder_for_test(child_pid)
+
+
+def test_log_forwarder_coordinator_recovers_exact_child_death_after_ready() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-coordinator-child-ready-") as tmp:
+        case = prepare_log_observer_case(Path(tmp))
+        coordinator = launch_log_observer(case, maximum_seconds="5")
+        child_pid = 0
+        try:
+            wait_log_observer_record(coordinator, "ready")
+            _, lease = wait_log_forwarder_lease(case)
+            child_pid = forwarder_child_pid(lease)
+            os.kill(child_pid, signal.SIGKILL)
+            assert wait_for_no_process(child_pid)
+
+            try:
+                stdout, stderr = coordinator.communicate(timeout=3)
+            except subprocess.TimeoutExpired as error:
+                coordinator.kill()
+                coordinator.wait(timeout=2)
+                raise AssertionError(
+                    "coordinator did not recover exact child death after ready"
+                ) from error
+            records = [json.loads(line) for line in stdout.splitlines() if line]
+            assert coordinator.returncode == 3, stdout + stderr
+            assert records[-1]["blocker_code"] == "observer_forced_recovery"
+            assert case["debug_log"].read_bytes() == case["original"]
+            assert stat.S_ISREG(case["debug_log"].stat().st_mode)
+            assert all(
+                not path.exists() for path in log_forwarder_artifact_paths(case).values()
+            )
+            assert TEST_RUN_CONTEXT_KEY not in stdout + stderr
+        finally:
+            stop_observer_process(coordinator)
+            terminate_forwarder_for_test(child_pid)
+
+
+def test_log_forwarder_child_death_recovery_filters_split_authenticated_sentinel() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-child-death-split-stop-") as tmp:
+        case = prepare_log_observer_case(Path(tmp))
+        coordinator = launch_log_observer(case, maximum_seconds="5")
+        child_pid = 0
+        terminal = observer_terminal_line(case)
+        durable_prefix = terminal[:-13]
+        unread_suffix = terminal[-13:]
+        try:
+            wait_log_observer_record(coordinator, "ready")
+            _, lease = wait_log_forwarder_lease(case)
+            child_pid = forwarder_child_pid(lease)
+            write_observer_fifo(case["debug_log"], durable_prefix)
+            wait_fifo_bytes_available(case["debug_log"], 0)
+            backing_deadline = time.monotonic() + 2
+            while (
+                time.monotonic() < backing_deadline
+                and not case["backing_path"].read_bytes().endswith(durable_prefix)
+            ):
+                time.sleep(0.01)
+            assert case["backing_path"].read_bytes().endswith(durable_prefix)
+            os.kill(child_pid, signal.SIGSTOP)
+            write_observer_fifo(case["debug_log"], unread_suffix)
+            assert fifo_bytes_available(case["debug_log"]) == len(unread_suffix)
+            os.kill(child_pid, signal.SIGKILL)
+            assert wait_for_no_process(child_pid)
+
+            try:
+                stdout, stderr = coordinator.communicate(timeout=3)
+            except subprocess.TimeoutExpired as error:
+                coordinator.kill()
+                coordinator.wait(timeout=2)
+                raise AssertionError(
+                    "coordinator did not filter a split terminal after exact reap"
+                ) from error
+            records = [json.loads(line) for line in stdout.splitlines() if line]
+            assert coordinator.returncode == 3, stdout + stderr
+            assert records[-1]["blocker_code"] == "observer_forced_recovery"
+            assert case["debug_log"].read_bytes() == case["original"]
+            assert terminal not in case["debug_log"].read_bytes()
+            assert all(
+                not path.exists() for path in log_forwarder_artifact_paths(case).values()
+            )
+        finally:
+            stop_observer_process(coordinator)
+            terminate_forwarder_for_test(child_pid)
+
+
+@pytest.mark.parametrize("kind", ["fifo", "backing", "lease", "journal", "control"])
+def test_log_forwarder_child_death_recovery_preserves_substituted_identity(
+    kind: str,
+) -> None:
+    with tempfile.TemporaryDirectory(prefix=f"critical-flows-log-child-death-{kind}-") as tmp:
+        root = Path(tmp)
+        case = prepare_log_observer_case(root)
+        coordinator = launch_log_observer(case, maximum_seconds="5")
+        child_pid = 0
+        coordinator_stopped = False
+        parked = root / f"authenticated-{kind}"
+        try:
+            wait_log_observer_record(coordinator, "ready")
+            _, lease = wait_log_forwarder_lease(case)
+            child_pid = forwarder_child_pid(lease)
+            paths = {
+                "fifo": case["debug_log"],
+                "backing": case["backing_path"],
+                **log_forwarder_artifact_paths(case),
+            }
+            target = paths[kind]
+            authentic_stat = target.lstat()
+            authentic_bytes = b"" if kind == "fifo" else target.read_bytes()
+            os.kill(coordinator.pid, signal.SIGSTOP)
+            coordinator_stopped = True
+            os.kill(child_pid, signal.SIGKILL)
+            target.rename(parked)
+            if kind == "fifo":
+                os.mkfifo(target, 0o600)
+            else:
+                target.write_bytes(f"foreign-{kind}".encode())
+                target.chmod(0o600)
+            foreign_stat = target.lstat()
+            os.kill(coordinator.pid, signal.SIGCONT)
+            coordinator_stopped = False
+
+            try:
+                stdout, stderr = coordinator.communicate(timeout=3)
+            except subprocess.TimeoutExpired as error:
+                coordinator.kill()
+                coordinator.wait(timeout=2)
+                raise AssertionError(
+                    f"coordinator did not bound {kind} substitution after exact reap"
+                ) from error
+            records = [json.loads(line) for line in stdout.splitlines() if line]
+            assert coordinator.returncode == 3, stdout + stderr
+            assert records[-1]["kind"] == "blocked"
+            current_foreign = target.lstat()
+            current_authentic = parked.lstat()
+            assert (current_foreign.st_dev, current_foreign.st_ino) == (
+                foreign_stat.st_dev,
+                foreign_stat.st_ino,
+            )
+            assert (current_authentic.st_dev, current_authentic.st_ino) == (
+                authentic_stat.st_dev,
+                authentic_stat.st_ino,
+            )
+            if kind != "fifo":
+                assert parked.read_bytes() == authentic_bytes
+            assert TEST_RUN_CONTEXT_KEY not in stdout + stderr
+        finally:
+            if coordinator_stopped and coordinator.poll() is None:
+                os.kill(coordinator.pid, signal.SIGCONT)
+            stop_observer_process(coordinator)
+            terminate_forwarder_for_test(child_pid)
+
+
+def test_log_forwarder_child_death_recovery_preserves_simultaneous_substitutions() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-child-death-all-") as tmp:
+        root = Path(tmp)
+        case = prepare_log_observer_case(root)
+        coordinator = launch_log_observer(case, maximum_seconds="5")
+        child_pid = 0
+        coordinator_stopped = False
+        parked: dict[str, Path] = {}
+        try:
+            wait_log_observer_record(coordinator, "ready")
+            _, lease = wait_log_forwarder_lease(case)
+            child_pid = forwarder_child_pid(lease)
+            paths = {
+                "fifo": case["debug_log"],
+                "backing": case["backing_path"],
+                **log_forwarder_artifact_paths(case),
+            }
+            authentic_stats = {kind: path.lstat() for kind, path in paths.items()}
+            authentic_bytes = {
+                kind: path.read_bytes() for kind, path in paths.items() if kind != "fifo"
+            }
+            os.kill(coordinator.pid, signal.SIGSTOP)
+            coordinator_stopped = True
+            os.kill(child_pid, signal.SIGKILL)
+            foreign_stats = {}
+            for kind, path in paths.items():
+                parked[kind] = root / f"authenticated-{kind}"
+                path.rename(parked[kind])
+                if kind == "fifo":
+                    os.mkfifo(path, 0o600)
+                else:
+                    path.write_bytes(f"foreign-all-{kind}".encode())
+                    path.chmod(0o600)
+                foreign_stats[kind] = path.lstat()
+            os.kill(coordinator.pid, signal.SIGCONT)
+            coordinator_stopped = False
+
+            try:
+                stdout, stderr = coordinator.communicate(timeout=3)
+            except subprocess.TimeoutExpired as error:
+                coordinator.kill()
+                coordinator.wait(timeout=2)
+                raise AssertionError(
+                    "coordinator did not bound simultaneous substitutions after exact reap"
+                ) from error
+            records = [json.loads(line) for line in stdout.splitlines() if line]
+            assert coordinator.returncode == 3, stdout + stderr
+            assert records[-1]["kind"] == "blocked"
+            for kind, path in paths.items():
+                current = path.lstat()
+                authentic = parked[kind].lstat()
+                assert (current.st_dev, current.st_ino) == (
+                    foreign_stats[kind].st_dev,
+                    foreign_stats[kind].st_ino,
+                )
+                assert (authentic.st_dev, authentic.st_ino) == (
+                    authentic_stats[kind].st_dev,
+                    authentic_stats[kind].st_ino,
+                )
+                if kind != "fifo":
+                    assert parked[kind].read_bytes() == authentic_bytes[kind]
+            assert TEST_RUN_CONTEXT_KEY not in stdout + stderr
+        finally:
+            if coordinator_stopped and coordinator.poll() is None:
+                os.kill(coordinator.pid, signal.SIGCONT)
+            stop_observer_process(coordinator)
+            terminate_forwarder_for_test(child_pid)
+
+
+@pytest.mark.parametrize("kind", ["journal", "control"])
+def test_log_forwarder_child_death_recovery_preserves_in_place_artifact_mutation(
+    kind: str,
+) -> None:
+    with tempfile.TemporaryDirectory(prefix=f"critical-flows-log-child-death-in-place-{kind}-") as tmp:
+        case = prepare_log_observer_case(Path(tmp))
+        coordinator = launch_log_observer(case, maximum_seconds="5")
+        child_pid = 0
+        coordinator_stopped = False
+        try:
+            wait_log_observer_record(coordinator, "ready")
+            _, lease = wait_log_forwarder_lease(case)
+            child_pid = forwarder_child_pid(lease)
+            target = log_forwarder_artifact_paths(case)[kind]
+            identity = target.lstat()
+            os.kill(coordinator.pid, signal.SIGSTOP)
+            coordinator_stopped = True
+            os.kill(child_pid, signal.SIGKILL)
+            if kind == "journal":
+                mutated = bytearray(target.read_bytes())
+                assert mutated
+                mutated[0] ^= 1
+                mutation = bytes(mutated)
+            else:
+                mutation = b"foreign-control-content"
+            target.write_bytes(mutation)
+            target.chmod(0o600)
+            os.kill(coordinator.pid, signal.SIGCONT)
+            coordinator_stopped = False
+
+            try:
+                stdout, stderr = coordinator.communicate(timeout=3)
+            except subprocess.TimeoutExpired as error:
+                coordinator.kill()
+                coordinator.wait(timeout=2)
+                raise AssertionError(
+                    f"coordinator did not bound in-place {kind} mutation"
+                ) from error
+            records = [json.loads(line) for line in stdout.splitlines() if line]
+            assert coordinator.returncode == 3, stdout + stderr
+            assert records[-1]["kind"] == "blocked"
+            current = target.lstat()
+            assert (current.st_dev, current.st_ino) == (identity.st_dev, identity.st_ino)
+            assert target.read_bytes() == mutation
+            assert TEST_RUN_CONTEXT_KEY not in stdout + stderr
+        finally:
+            if coordinator_stopped and coordinator.poll() is None:
+                os.kill(coordinator.pid, signal.SIGCONT)
+            stop_observer_process(coordinator)
+            terminate_forwarder_for_test(child_pid)
+
+
+def test_log_forwarder_child_death_recovery_bounds_continuing_fifo_writer() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-child-death-writer-") as tmp:
+        case = prepare_log_observer_case(Path(tmp))
+        coordinator = launch_log_observer(case, maximum_seconds="5")
+        child_pid = 0
+        writer: subprocess.Popen[str] | None = None
+        try:
+            wait_log_observer_record(coordinator, "ready")
+            _, lease = wait_log_forwarder_lease(case)
+            child_pid = forwarder_child_pid(lease)
+            os.kill(child_pid, signal.SIGSTOP)
+            writer = subprocess.Popen(
+                [
+                    "python3",
+                    "-c",
+                    (
+                        "import os,select,sys,time;"
+                        "fd=os.open(sys.argv[1],os.O_WRONLY|os.O_NONBLOCK);"
+                        "end=time.monotonic()+3;payload=b'continuing-writer\\n';"
+                        "\nwhile time.monotonic()<end:\n"
+                        " try:\n  os.write(fd,payload);time.sleep(0.01)\n"
+                        " except BlockingIOError:\n  select.select([],[fd],[],0.01)\n"
+                        " except BrokenPipeError:\n  break\n"
+                        "os.close(fd)"
+                    ),
+                    str(case["debug_log"]),
+                ],
+                cwd=REPO,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            write_deadline = time.monotonic() + 1
+            while time.monotonic() < write_deadline and fifo_bytes_available(
+                case["debug_log"]
+            ) == 0:
+                time.sleep(0.005)
+            assert fifo_bytes_available(case["debug_log"]) > 0
+            os.kill(child_pid, signal.SIGKILL)
+            assert wait_for_no_process(child_pid)
+
+            started = time.monotonic()
+            try:
+                stdout, stderr = coordinator.communicate(timeout=4)
+            except subprocess.TimeoutExpired as error:
+                coordinator.kill()
+                coordinator.wait(timeout=2)
+                raise AssertionError(
+                    "coordinator did not bound a continuing retained-FIFO writer"
+                ) from error
+            elapsed = time.monotonic() - started
+            records = [json.loads(line) for line in stdout.splitlines() if line]
+            assert elapsed < 4
+            assert coordinator.returncode == 3, stdout + stderr
+            assert records[-1]["kind"] == "blocked"
+            assert stat.S_ISFIFO(case["debug_log"].lstat().st_mode)
+            assert all(
+                path.is_file() for path in log_forwarder_artifact_paths(case).values()
+            )
+            assert "continuing-writer" not in stdout + stderr
+            assert TEST_RUN_CONTEXT_KEY not in stdout + stderr
+        finally:
+            if writer is not None:
+                stop_observer_process(writer)
+            stop_observer_process(coordinator)
+            terminate_forwarder_for_test(child_pid)
+
+
+def test_log_forwarder_terminal_write_race_honors_authenticated_terminal() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-terminal-race-") as tmp:
+        case = prepare_log_observer_case(Path(tmp))
+        coordinator = launch_log_observer(case, maximum_seconds="5")
+        child_pid = 0
+        coordinator_stopped = False
+        warning = b"PHP Warning: terminal race retains this exact warning\n"
+        try:
+            wait_log_observer_record(coordinator, "ready")
+            _, lease = wait_log_forwarder_lease(case)
+            child_pid = forwarder_child_pid(lease)
+            os.kill(coordinator.pid, signal.SIGSTOP)
+            coordinator_stopped = True
+            write_observer_fifo(case["debug_log"], warning + observer_terminal_line(case))
+            terminal, _ = wait_log_forwarder_terminal(case)
+            assert terminal["kind"] == "complete"
+            try:
+                os.kill(child_pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            os.kill(coordinator.pid, signal.SIGCONT)
+            coordinator_stopped = False
+
+            stdout, stderr = coordinator.communicate(timeout=3)
+            records = [json.loads(line) for line in stdout.splitlines() if line]
+            assert coordinator.returncode == 0, stdout + stderr
+            assert records[-1]["kind"] == "complete"
+            assert case["debug_log"].read_bytes() == case["original"] + warning
+            assert all(
+                not path.exists() for path in log_forwarder_artifact_paths(case).values()
+            )
+        finally:
+            if coordinator_stopped and coordinator.poll() is None:
+                os.kill(coordinator.pid, signal.SIGCONT)
+            stop_observer_process(coordinator)
+            terminate_forwarder_for_test(child_pid)
+
+
+def test_log_forwarder_suppresses_raw_pcntl_fork_warning() -> None:
+    source = LOG_OBSERVER_DRIVER.read_text(encoding="utf-8")
+    start = source.index("private static function start_forwarder_foundation(): bool")
+    end = source.index("\n\t/**", start)
+    foundation = source[start:end]
+    assert "$child_pid = @pcntl_fork();" in foundation
+    assert "$child_pid = pcntl_fork();" not in foundation
+
+
+def test_mo03_fifo_witness_contract_is_ready_gated_and_fail_closed() -> None:
+    contract = MO03_CONTRACT.read_text(encoding="utf-8")
+    assert "evidence-integrity mechanism, not a general durable message queue" in contract
+    assert "after authenticated `ready` and before the coordinated terminal" in contract
+    assert "successful backing append and PHP flush" in contract
+    assert "does not claim stable-media durability on PHP 7.4" in contract
+    assert "does not claim archival preservation" in contract
+    assert "durably appends accepted bytes" not in contract
+
+    source = LOG_OBSERVER_DRIVER.read_text(encoding="utf-8")
+    foundation_start = source.index(
+        "private static function start_forwarder_foundation(): bool"
+    )
+    foundation_end = source.index("\n\t/**", foundation_start)
+    foundation = source[foundation_start:foundation_end]
+    assert "self::startup_fifos_are_quiet()" in foundation
+    assert foundation.index("self::startup_fifos_are_quiet()") < foundation.index(
+        "self::write_startup_frame( $gates[0], 'COMMIT'"
+    )
+
+    forwarder_start = source.index("private static function run_forwarder(): void")
+    forwarder_end = source.index("\n\t/**", forwarder_start)
+    forwarder = source[forwarder_start:forwarder_end]
+    assert "$blocker_code = 'backing_write_failed';" in forwarder
+    assert forwarder.index("self::forward_bytes(") < forwarder.index(
+        "$blocker_code = 'backing_write_failed';"
+    )
+
+    sync_start = source.index("private static function sync_stream( $stream ): bool")
+    sync_end = source.index("\n\t/**", sync_start)
+    sync_source = source[sync_start:sync_end]
+    assert "if ( ! function_exists( 'fsync' ) )" in sync_source
+    assert "return true;" in sync_source
+    assert "return true === @call_user_func( 'fsync', $stream );" in sync_source
+
+
+def test_log_forwarder_startup_frames_reject_partial_oversized_and_wrong_tokens() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-start-frames-") as tmp:
+        wrapper = Path(tmp) / "startup-frame-harness.php"
+        wrapper.write_text(
+            """<?php
+$source = file_get_contents( getenv( 'TEST_LOG_OBSERVER_DRIVER' ) );
+$source = preg_replace( '/\\nWooPaymentsCriticalFlowsLogObserver::run\\( \\$args \\);\\s*$/', "\\n", $source );
+eval( '?>' . $source );
+$read = new ReflectionMethod( WooPaymentsCriticalFlowsLogObserver::class, 'read_startup_frame' );
+$write = new ReflectionMethod( WooPaymentsCriticalFlowsLogObserver::class, 'write_startup_frame' );
+if ( PHP_VERSION_ID < 80100 ) {
+    $read->setAccessible( true );
+    $write->setAccessible( true );
+}
+$cases = array(
+    'partial_header' => "\\x00\\x00",
+    'oversized' => pack( 'N', 17 ) . str_repeat( 'A', 17 ),
+    'partial_payload' => pack( 'N', 6 ) . 'COM',
+    'wrong_token' => pack( 'N', 4 ) . 'NOPE',
+);
+$results = array();
+foreach ( $cases as $name => $bytes ) {
+    $pair = stream_socket_pair( STREAM_PF_UNIX, STREAM_SOCK_STREAM, 0 );
+    stream_set_blocking( $pair[0], false );
+    stream_set_blocking( $pair[1], false );
+    fwrite( $pair[0], $bytes );
+    fclose( $pair[0] );
+    $results[ $name ] = false === $read->invoke( null, $pair[1], array( 'COMMIT' ), hrtime( true ) + 200000000 );
+    fclose( $pair[1] );
+}
+$pair = stream_socket_pair( STREAM_PF_UNIX, STREAM_SOCK_STREAM, 0 );
+stream_set_blocking( $pair[0], false );
+stream_set_blocking( $pair[1], false );
+$results['valid_write'] = true === $write->invoke( null, $pair[0], 'COMMIT', hrtime( true ) + 200000000 );
+$results['valid_read'] = 'COMMIT' === $read->invoke( null, $pair[1], array( 'COMMIT' ), hrtime( true ) + 200000000 );
+$results['invalid_write'] = false === $write->invoke( null, $pair[0], 'UNKNOWN', hrtime( true ) + 200000000 );
+fclose( $pair[0] );
+fclose( $pair[1] );
+echo json_encode( $results ), "\\n";
+""",
+            encoding="utf-8",
+        )
+        result = subprocess.run(
+            ["php", str(wrapper)],
+            cwd=REPO,
+            env={**os.environ, "TEST_LOG_OBSERVER_DRIVER": str(LOG_OBSERVER_DRIVER)},
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert json.loads(result.stdout) == {
+            "partial_header": True,
+            "oversized": True,
+            "partial_payload": True,
+            "wrong_token": True,
+            "valid_write": True,
+            "valid_read": True,
+            "invalid_write": True,
+        }
+
+
+def test_log_observer_context_key_is_not_disclosed() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-observer-secret-") as tmp:
+        case = prepare_log_observer_case(Path(tmp))
+        process = launch_log_observer(case)
+        encoded_records: list[str] = []
+        try:
+            assert all(TEST_RUN_CONTEXT_KEY not in str(argument) for argument in process.args)
+            _, encoded = wait_log_observer_record(process, "ready")
+            encoded_records.extend(encoded)
+            write_observer_fifo(
+                case["debug_log"],
+                observer_terminal_line(case),
+            )
+            _, encoded = wait_log_observer_record(process, "complete")
+            encoded_records.extend(encoded)
+            assert process.wait(timeout=2) == 0
+            assert process.stderr is not None
+            stderr = process.stderr.read()
+            archived = json.dumps(case["marker"], sort_keys=True) + "".join(encoded_records)
+            assert TEST_RUN_CONTEXT_KEY not in archived
+            assert TEST_RUN_CONTEXT_KEY not in stderr
+            assert TEST_RUN_CONTEXT_KEY.encode() not in case["debug_log"].read_bytes()
+            assert case["marker"]["key_fingerprint"].startswith("sha256:")
+            assert case["marker"]["origin_binding"].startswith("hmac-sha256:")
+        finally:
+            stop_observer_process(process)
+
+
+def test_log_observer_refuses_preexisting_backing_collision_without_data_loss() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-observer-collision-") as tmp:
+        case = prepare_log_observer_case(Path(tmp))
+        collision = b"do-not-overwrite-collision\n"
+        case["backing_path"].write_bytes(collision)
+        process = launch_log_observer(case)
+        try:
+            blocked, _ = wait_log_observer_record(process, "blocked")
+            assert blocked["blocker_code"] == "backing_collision"
+            assert process.wait(timeout=2) != 0
+            assert case["debug_log"].read_bytes() == case["original"]
+            assert case["backing_path"].read_bytes() == collision
+            with case["debug_log"].open("ab") as stream:
+                stream.write(b"store-still-usable\n")
+        finally:
+            stop_observer_process(process)
+
+
+def test_log_observer_blocks_fifo_setup_failure_without_replacing_regular_log() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-observer-setup-") as tmp:
+        root = Path(tmp)
+        case = prepare_log_observer_case(root)
+        root.chmod(0o500)
+        process = launch_log_observer(case)
+        try:
+            blocked, _ = wait_log_observer_record(process, "blocked")
+            assert blocked["blocker_code"] == "fifo_setup_failed"
+            assert process.wait(timeout=2) != 0
+        finally:
+            root.chmod(0o700)
+            stop_observer_process(process)
+        assert case["debug_log"].read_bytes() == case["original"]
+        assert stat.S_ISREG(case["debug_log"].stat().st_mode)
+        with case["debug_log"].open("ab") as stream:
+            stream.write(b"store-still-usable-after-setup-failure\n")
+
+
+def test_common_marker_blocks_when_observer_never_reports_ready_within_deadline() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-observer-ready-timeout-") as tmp:
+        root = Path(tmp)
+        fake_wp = root / "fake-wp.sh"
+        write_executable(
+            fake_wp,
+            """#!/usr/bin/env bash
+if [ "$1" = "eval" ]; then
+  printf '%s\n' '{"status":"pass","run_stamp":"20260716T160000Z-30303","paths":["/tmp/fake-debug.log"],"markers":{}}'
+  exit 0
+fi
+if [ "$1" = "eval-file" ]; then
+  exit 0
+fi
+exit 2
+""",
+        )
+        script = f"""
+source {shlex.quote(str(COMMON))}
+TARGET_WP_COMMAND={shlex.quote(str(fake_wp))}
+CRITICAL_FLOWS_RUN_STAMP=20260716T160000Z-30303
+CRITICAL_FLOWS_RUN_CONTEXT_KEY={TEST_RUN_CONTEXT_KEY}
+CRITICAL_FLOWS_FLOW_ID=SC-01-card-checkout
+CRITICAL_FLOWS_LOG_PURPOSE=clean-debug-log
+CRITICAL_FLOWS_LOG_OBSERVER_READY_TIMEOUT=1
+TMPDIR={shlex.quote(str(root))}
+export CRITICAL_FLOWS_RUN_STAMP CRITICAL_FLOWS_RUN_CONTEXT_KEY
+export CRITICAL_FLOWS_FLOW_ID CRITICAL_FLOWS_LOG_PURPOSE
+export CRITICAL_FLOWS_LOG_OBSERVER_READY_TIMEOUT TMPDIR
+mark_log_clean_start target
+"""
+        started = time.monotonic()
+        result = subprocess.run(
+            ["bash", "-c", script],
+            cwd=REPO,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=4,
+        )
+        elapsed = time.monotonic() - started
+
+        assert result.returncode == 3, result.stdout + result.stderr
+        assert elapsed < 3
+        assert "observer_readiness_timeout" in result.stdout
+        assert TEST_RUN_CONTEXT_KEY not in result.stdout + result.stderr
+        assert not list(root.glob("*observer*sidecar*"))
+
+
+def test_common_observer_cleanup_ignores_untrusted_pid_sidecar() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-observer-cleanup-pid-") as tmp:
+        root = Path(tmp)
+        sidecar = root / "observer-sidecar"
+        script = f"""
+source {shlex.quote(str(COMMON))}
+sidecar={shlex.quote(str(sidecar))}
+: > "$sidecar"
+sleep 30 &
+unrelated_pid=$!
+sleep 30 &
+observer_pid=$!
+cleanup_processes() {{
+  kill "$unrelated_pid" "$observer_pid" 2>/dev/null || true
+  wait "$unrelated_pid" "$observer_pid" 2>/dev/null || true
+}}
+trap cleanup_processes EXIT
+printf '%s\n' "$unrelated_pid" > "$sidecar.pid"
+printf '143\n' > "$sidecar.exit"
+CRITICAL_FLOWS_LOG_OBSERVER_PID="$observer_pid"
+CRITICAL_FLOWS_LOG_OBSERVER_SIDECAR="$sidecar"
+CRITICAL_FLOWS_LOG_OBSERVER_EXIT_FILE="$sidecar.exit"
+critical_flows_log_observer_cleanup
+kill -0 "$unrelated_pid" 2>/dev/null || exit 41
+if kill -0 "$observer_pid" 2>/dev/null; then
+  exit 42
+fi
+kill "$unrelated_pid" 2>/dev/null || true
+wait "$unrelated_pid" 2>/dev/null || true
+trap - EXIT
+"""
+        result = subprocess.run(
+            ["bash", "-c", script],
+            cwd=REPO,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=5,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_common_observer_start_requires_tmpdir_without_tmp_fallback() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-observer-tmpdir-") as tmp:
+        root = Path(tmp)
+        fake_bin = root / "bin"
+        fake_bin.mkdir()
+        probe = root / "mktemp-invoked"
+        write_executable(
+            fake_bin / "mktemp",
+            f"""#!/usr/bin/env bash
+printf '%s\n' "$*" > {shlex.quote(str(probe))}
+exit 1
+""",
+        )
+        script = f"""
+source {shlex.quote(str(COMMON))}
+unset TMPDIR
+PATH={shlex.quote(str(fake_bin))}:$PATH
+critical_flows_log_observer_start target
+rc=$?
+[ "$rc" -eq 1 ] || exit 51
+[ ! -e {shlex.quote(str(probe))} ] || exit 52
+"""
+        result = subprocess.run(
+            ["bash", "-c", script],
+            cwd=REPO,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_log_observer_maximum_lifetime_restores_and_leaves_no_orphans() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-observer-lifetime-") as tmp:
+        case = prepare_log_observer_case(Path(tmp))
+        process = launch_log_observer(case, maximum_seconds="1")
+        try:
+            wait_log_observer_record(process, "ready")
+            blocked, _ = wait_log_observer_record(process, "blocked", timeout=3)
+            assert blocked["blocker_code"] == "observer_lifetime_exceeded"
+            assert process.wait(timeout=2) != 0
+            assert_log_observer_cleaned(case)
+        finally:
+            stop_observer_process(process)
+
+
+def test_log_observer_rejects_unauthenticated_sentinel_then_restores() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-observer-sentinel-") as tmp:
+        case = prepare_log_observer_case(Path(tmp))
+        process = launch_log_observer(case, maximum_seconds="1")
+        try:
+            wait_log_observer_record(process, "ready")
+            write_observer_fifo(
+                case["debug_log"],
+                b"[woopayments-critical-flows-log-observer-stop] hmac-sha256:"
+                + b"0" * 64
+                + b"\n",
+            )
+            blocked, _ = wait_log_observer_record(process, "blocked", timeout=3)
+            assert blocked["blocker_code"] == "sentinel_timeout"
+            assert process.wait(timeout=2) != 0
+            assert_log_observer_cleaned(case)
+        finally:
+            stop_observer_process(process)
+
+
+def run_log_observer_signal_restoration(signum: int) -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-observer-signal-") as tmp:
+        case = prepare_log_observer_case(Path(tmp))
+        process = launch_log_observer(case, maximum_seconds="5")
+        try:
+            wait_log_observer_record(process, "ready")
+            proxied = b"write-before-signal\n"
+            write_observer_fifo(case["debug_log"], proxied)
+            wait_log_observer_record(process, "line", category="other")
+            process.send_signal(signum)
+            blocked, _ = wait_log_observer_record(process, "blocked")
+            assert blocked["blocker_code"] == "observer_interrupted"
+            assert process.wait(timeout=2) != 0
+            assert_log_observer_cleaned(case, proxied)
+        finally:
+            stop_observer_process(process)
+
+
+def test_log_observer_int_handler_restores_regular_log() -> None:
+    run_log_observer_signal_restoration(signal.SIGINT)
+
+
+def test_log_observer_term_handler_restores_regular_log() -> None:
+    run_log_observer_signal_restoration(signal.SIGTERM)
+
+
+def run_log_observer_snapshot_replacement_attack(*, safe_append: bool) -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-observer-replace-") as tmp:
+        case = prepare_log_observer_case(Path(tmp))
+        process = launch_log_observer(case, maximum_seconds="1")
+        warning = b"PHP Warning: must survive snapshot restoration\n"
+        try:
+            wait_log_observer_record(process, "ready")
+            assert stat.S_ISFIFO(case["debug_log"].stat().st_mode)
+            write_observer_fifo(case["debug_log"], warning)
+            observed, encoded = wait_log_observer_record(process, "line", category="warning")
+            assert observed["fingerprint"] == "sha256:" + hashlib.sha256(
+                warning.rstrip(b"\r\n")
+            ).hexdigest()
+            assert warning.decode().strip() not in "".join(encoded)
+            artifacts = log_forwarder_artifact_paths(case)
+            backing_stat = case["backing_path"].stat()
+            backing_bytes = case["backing_path"].read_bytes()
+            assert backing_bytes == case["original"] + warning
+            case["debug_log"].unlink()
+            replacement = case["original"]
+            if safe_append:
+                replacement += b"ordinary safe line after restoration\n"
+            case["debug_log"].write_bytes(replacement)
+            replacement_stat = case["debug_log"].stat()
+            blocked, _ = wait_log_observer_record(process, "blocked", timeout=3)
+            assert blocked["blocker_code"] in {
+                "observer_path_replaced",
+                "sentinel_timeout",
+            }
+            assert process.wait(timeout=2) != 0
+            preserved_replacement = case["debug_log"].stat()
+            assert (
+                preserved_replacement.st_dev,
+                preserved_replacement.st_ino,
+            ) == (replacement_stat.st_dev, replacement_stat.st_ino)
+            assert case["debug_log"].read_bytes() == replacement
+            preserved_backing = case["backing_path"].stat()
+            assert (preserved_backing.st_dev, preserved_backing.st_ino) == (
+                backing_stat.st_dev,
+                backing_stat.st_ino,
+            )
+            assert case["backing_path"].read_bytes() == backing_bytes
+            assert all(path.is_file() for path in artifacts.values())
+        finally:
+            stop_observer_process(process)
+
+
+def test_log_observer_blocks_exact_post_readiness_snapshot_restore() -> None:
+    run_log_observer_snapshot_replacement_attack(safe_append=False)
+
+
+def test_log_observer_blocks_snapshot_restore_followed_by_safe_append() -> None:
+    run_log_observer_snapshot_replacement_attack(safe_append=True)
+
+
+def test_log_observer_blocked_terminal_preserves_fifo_when_backing_name_disappears() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-observer-backing-") as tmp:
+        case = prepare_log_observer_case(Path(tmp))
+        process = launch_log_observer(case)
+        proxied = b"write-before-backing-disappears\n"
+        try:
+            wait_log_observer_record(process, "ready")
+            fifo_stat = case["debug_log"].lstat()
+            artifacts = log_forwarder_artifact_paths(case)
+            assert case["backing_path"].is_file()
+            case["backing_path"].unlink()
+            write_observer_fifo(case["debug_log"], proxied)
+            wait_log_observer_record(process, "line", category="other")
+            write_observer_fifo(
+                case["debug_log"],
+                observer_terminal_line(case),
+            )
+            blocked, _ = wait_log_observer_record(process, "blocked")
+            assert blocked["blocker_code"] == "backing_path_changed"
+            assert process.wait(timeout=2) != 0
+            preserved_fifo = case["debug_log"].lstat()
+            assert stat.S_ISFIFO(preserved_fifo.st_mode)
+            assert (preserved_fifo.st_dev, preserved_fifo.st_ino) == (
+                fifo_stat.st_dev,
+                fifo_stat.st_ino,
+            )
+            assert not case["backing_path"].exists()
+            assert all(path.is_file() for path in artifacts.values())
+        finally:
+            stop_observer_process(process)
+
+
+def test_log_observer_recovery_mode_restores_after_forced_crash() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-observer-crash-") as tmp:
+        case = prepare_log_observer_case(Path(tmp))
+        process = launch_log_observer(case, maximum_seconds="5")
+        proxied = b"write-before-forced-crash\n"
+        try:
+            wait_log_observer_record(process, "ready")
+            write_observer_fifo(case["debug_log"], proxied)
+            wait_log_observer_record(process, "line", category="other")
+            process.kill()
+            assert process.wait(timeout=2) != 0
+            assert stat.S_ISFIFO(case["debug_log"].stat().st_mode)
+            recovery = launch_log_observer(case, action="recover")
+            try:
+                recovered, _ = wait_log_observer_record(recovery, "recovered")
+                assert recovered["status"] == "blocked"
+                assert recovery.wait(timeout=2) == 3
+            finally:
+                stop_observer_process(recovery)
+            assert_log_observer_cleaned(case, proxied)
+        finally:
+            stop_observer_process(process)
+
+
+def test_log_forwarder_rejects_unauthenticated_complete_before_restore() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-journal-terminal-") as tmp:
+        case = prepare_log_observer_case(Path(tmp))
+        coordinator = launch_log_observer(case, maximum_seconds="5")
+        child_pid: int | None = None
+        warning = b"PHP Warning: forged journal terminal must not erase this line\n"
+        try:
+            wait_log_observer_record(coordinator, "ready")
+            _, lease = wait_log_forwarder_lease(case)
+            child_pid = forwarder_child_pid(lease)
+            assert [record["kind"] for record in validated_log_forwarder_journal(case)] == [
+                "ready"
+            ]
+            os.kill(child_pid, signal.SIGSTOP)
+            write_observer_fifo(case["debug_log"], warning)
+
+            journal_path = log_forwarder_artifact_paths(case)["journal"]
+            forged_terminal = b'{"kind":"complete"}\n'
+            with journal_path.open("ab", buffering=0) as stream:
+                assert stream.write(forged_terminal) == len(forged_terminal)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.kill(child_pid, signal.SIGKILL)
+
+            try:
+                coordinator_exit: int | None = coordinator.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                coordinator_exit = None
+            assert coordinator_exit != 0
+            assert stat.S_ISFIFO(case["debug_log"].lstat().st_mode)
+            assert case["backing_path"].is_file()
+            durable_bytes = case["backing_path"].read_bytes()
+            assert warning in durable_bytes or fifo_bytes_available(
+                case["debug_log"]
+            ) >= len(warning)
+            assert all(
+                path.is_file() for path in log_forwarder_artifact_paths(case).values()
+            )
+        finally:
+            stop_observer_process(coordinator)
+            terminate_forwarder_for_test(child_pid)
+
+
+def test_log_forwarder_child_sigkill_preserves_consumed_non_line_bytes() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-consumed-fragment-") as tmp:
+        case = prepare_log_observer_case(Path(tmp))
+        coordinator = launch_log_observer(case, maximum_seconds="5")
+        child_pid: int | None = None
+        fragment = b"PHP Warning: child-consumed fragment without a line terminator"
+        try:
+            wait_log_observer_record(coordinator, "ready")
+            _, lease = wait_log_forwarder_lease(case)
+            child_pid = forwarder_child_pid(lease)
+            write_observer_fifo(case["debug_log"], fragment)
+            wait_fifo_bytes_available(case["debug_log"], 0)
+            os.kill(child_pid, signal.SIGKILL)
+            wait_process_absent(child_pid)
+
+            stdout, stderr = coordinator.communicate(timeout=3)
+            records = [json.loads(line) for line in stdout.splitlines() if line]
+            assert coordinator.returncode == 3, stdout + stderr
+            assert records[-1]["blocker_code"] == "observer_forced_recovery"
+
+            assert case["debug_log"].read_bytes() == case["original"] + fragment
+            assert_log_observer_cleaned(case, fragment)
+        finally:
+            stop_observer_process(coordinator)
+            terminate_forwarder_for_test(child_pid)
+
+
+def test_log_forwarder_recovery_preserves_foreign_fifo_in_final_unlink_window() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-final-inode-") as tmp:
+        case = prepare_log_observer_case(Path(tmp))
+        coordinator = launch_log_observer(case, maximum_seconds="5")
+        child_pid: int | None = None
+        coordinator_stopped = False
+        parked_fifo = case["debug_log"].with_name("authenticated-final-window.fifo")
+        try:
+            wait_log_observer_record(coordinator, "ready")
+            _, lease = wait_log_forwarder_lease(case)
+            child_pid = forwarder_child_pid(lease)
+            os.kill(coordinator.pid, signal.SIGSTOP)
+            coordinator_stopped = True
+            os.kill(child_pid, signal.SIGKILL)
+
+            original_fifo_stat = case["debug_log"].lstat()
+            case["debug_log"].rename(parked_fifo)
+            os.mkfifo(case["debug_log"], 0o600)
+            foreign_stat = case["debug_log"].lstat()
+            backing_stat = case["backing_path"].stat()
+            backing_bytes = case["backing_path"].read_bytes()
+            os.kill(coordinator.pid, signal.SIGCONT)
+            coordinator_stopped = False
+
+            blocked, _ = wait_log_observer_record(coordinator, "blocked")
+            assert blocked["blocker_code"] == "observer_path_replaced"
+            assert coordinator.wait(timeout=3) == 3
+            wait_process_absent(child_pid)
+
+            preserved_foreign = case["debug_log"].lstat()
+            assert stat.S_ISFIFO(preserved_foreign.st_mode)
+            assert (preserved_foreign.st_dev, preserved_foreign.st_ino) == (
+                foreign_stat.st_dev,
+                foreign_stat.st_ino,
+            )
+            authentic_fifo = parked_fifo.lstat()
+            assert (authentic_fifo.st_dev, authentic_fifo.st_ino) == (
+                original_fifo_stat.st_dev,
+                original_fifo_stat.st_ino,
+            )
+            preserved_backing = case["backing_path"].stat()
+            assert (preserved_backing.st_dev, preserved_backing.st_ino) == (
+                backing_stat.st_dev,
+                backing_stat.st_ino,
+            )
+            assert case["backing_path"].read_bytes() == backing_bytes
+            assert all(
+                path.is_file() for path in log_forwarder_artifact_paths(case).values()
+            )
+        finally:
+            if coordinator_stopped and coordinator.poll() is None:
+                os.kill(coordinator.pid, signal.SIGCONT)
+            stop_observer_process(coordinator)
+            terminate_forwarder_for_test(child_pid)
+
+
+def test_log_forwarder_emergency_drain_filters_split_authenticated_sentinel() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-split-sentinel-") as tmp:
+        case = prepare_log_observer_case(Path(tmp))
+        coordinator = launch_log_observer(case, maximum_seconds="5")
+        child_pid: int | None = None
+        warning = b"PHP Warning: emergency split sentinel warning must survive\n"
+        sentinel = observer_terminal_line(case)
+        split_at = len(sentinel) // 2
+        try:
+            wait_log_observer_record(coordinator, "ready")
+            _, lease = wait_log_forwarder_lease(case)
+            child_pid = forwarder_child_pid(lease)
+            first_chunk = warning + sentinel[:split_at]
+            write_observer_fifo(case["debug_log"], first_chunk)
+            wait_fifo_bytes_available(case["debug_log"], 0)
+            backing_deadline = time.monotonic() + 2
+            while (
+                time.monotonic() < backing_deadline
+                and not case["backing_path"].read_bytes().endswith(first_chunk)
+            ):
+                time.sleep(0.01)
+            assert case["backing_path"].read_bytes().endswith(first_chunk)
+            os.kill(child_pid, signal.SIGSTOP)
+            write_observer_fifo(case["debug_log"], sentinel[split_at:])
+            os.kill(child_pid, signal.SIGKILL)
+            wait_process_absent(child_pid)
+
+            stdout, stderr = coordinator.communicate(timeout=3)
+            records = [json.loads(line) for line in stdout.splitlines() if line]
+            assert coordinator.returncode == 3, stdout + stderr
+            assert records[-1]["blocker_code"] == "observer_forced_recovery"
+
+            assert case["debug_log"].read_bytes() == case["original"] + warning
+            assert sentinel not in case["debug_log"].read_bytes()
+            assert_log_observer_cleaned(case, warning)
+        finally:
+            stop_observer_process(coordinator)
+            terminate_forwarder_for_test(child_pid)
+
+
+def test_log_forwarder_signed_terminal_preserves_foreign_fifo_before_ordinary_restore() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-ordinary-inode-") as tmp:
+        case = prepare_log_observer_case(Path(tmp))
+        coordinator = launch_log_observer(case, maximum_seconds="5")
+        coordinator_stopped = False
+        parked_fifo = case["debug_log"].with_name("authenticated-observer.fifo")
+        try:
+            wait_log_observer_record(coordinator, "ready")
+            artifacts = log_forwarder_artifact_paths(case)
+            original_fifo_stat = case["debug_log"].lstat()
+            backing_stat = case["backing_path"].stat()
+            backing_bytes = case["backing_path"].read_bytes()
+
+            os.kill(coordinator.pid, signal.SIGSTOP)
+            coordinator_stopped = True
+            write_observer_fifo(case["debug_log"], observer_terminal_line(case))
+            terminal, _ = wait_log_forwarder_terminal(case)
+            assert terminal["kind"] == "complete"
+
+            case["debug_log"].rename(parked_fifo)
+            os.mkfifo(case["debug_log"], 0o600)
+            foreign_fifo_stat = case["debug_log"].lstat()
+            os.kill(coordinator.pid, signal.SIGCONT)
+            coordinator_stopped = False
+
+            blocked, _ = wait_log_observer_record(coordinator, "blocked")
+            assert blocked["blocker_code"] == "observer_path_replaced"
+            assert coordinator.wait(timeout=3) == 3
+
+            current_foreign = case["debug_log"].lstat()
+            assert stat.S_ISFIFO(current_foreign.st_mode)
+            assert (current_foreign.st_dev, current_foreign.st_ino) == (
+                foreign_fifo_stat.st_dev,
+                foreign_fifo_stat.st_ino,
+            )
+            current_authenticated = parked_fifo.lstat()
+            assert stat.S_ISFIFO(current_authenticated.st_mode)
+            assert (current_authenticated.st_dev, current_authenticated.st_ino) == (
+                original_fifo_stat.st_dev,
+                original_fifo_stat.st_ino,
+            )
+            current_backing = case["backing_path"].stat()
+            assert (current_backing.st_dev, current_backing.st_ino) == (
+                backing_stat.st_dev,
+                backing_stat.st_ino,
+            )
+            assert case["backing_path"].read_bytes() == backing_bytes
+            assert all(path.is_file() for path in artifacts.values())
+        finally:
+            if coordinator_stopped and coordinator.poll() is None:
+                os.kill(coordinator.pid, signal.SIGCONT)
+            stop_observer_process(coordinator)
+
+
+def test_log_forwarder_signed_terminal_preserves_foreign_backing_before_ordinary_restore() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-ordinary-backing-") as tmp:
+        case = prepare_log_observer_case(Path(tmp))
+        coordinator = launch_log_observer(case, maximum_seconds="5")
+        coordinator_stopped = False
+        parked_backing = case["backing_path"].with_name("authenticated-backing.parked")
+        try:
+            wait_log_observer_record(coordinator, "ready")
+            artifacts = log_forwarder_artifact_paths(case)
+            fifo_stat = case["debug_log"].lstat()
+            original_backing_stat = case["backing_path"].stat()
+
+            os.kill(coordinator.pid, signal.SIGSTOP)
+            coordinator_stopped = True
+            write_observer_fifo(case["debug_log"], observer_terminal_line(case))
+            terminal, _ = wait_log_forwarder_terminal(case)
+            assert terminal["kind"] == "complete"
+
+            backing_bytes = case["backing_path"].read_bytes()
+            backing_mode = stat.S_IMODE(case["backing_path"].stat().st_mode)
+            case["backing_path"].rename(parked_backing)
+            case["backing_path"].write_bytes(backing_bytes)
+            case["backing_path"].chmod(backing_mode)
+            foreign_backing_stat = case["backing_path"].stat()
+            os.kill(coordinator.pid, signal.SIGCONT)
+            coordinator_stopped = False
+
+            blocked, _ = wait_log_observer_record(coordinator, "blocked")
+            assert blocked["blocker_code"] == "backing_path_changed"
+            assert coordinator.wait(timeout=3) == 3
+
+            current_fifo = case["debug_log"].lstat()
+            assert stat.S_ISFIFO(current_fifo.st_mode)
+            assert (current_fifo.st_dev, current_fifo.st_ino) == (
+                fifo_stat.st_dev,
+                fifo_stat.st_ino,
+            )
+            current_foreign = case["backing_path"].stat()
+            assert (current_foreign.st_dev, current_foreign.st_ino) == (
+                foreign_backing_stat.st_dev,
+                foreign_backing_stat.st_ino,
+            )
+            current_authenticated = parked_backing.stat()
+            assert (
+                current_authenticated.st_dev,
+                current_authenticated.st_ino,
+            ) == (original_backing_stat.st_dev, original_backing_stat.st_ino)
+            assert all(path.is_file() for path in artifacts.values())
+        finally:
+            if coordinator_stopped and coordinator.poll() is None:
+                os.kill(coordinator.pid, signal.SIGCONT)
+            stop_observer_process(coordinator)
+
+
+def run_log_forwarder_signed_terminal_artifact_substitution_attack(kind: str) -> None:
+    with tempfile.TemporaryDirectory(
+        prefix=f"critical-flows-log-{kind}-identity-"
+    ) as tmp:
+        case = prepare_log_observer_case(Path(tmp))
+        coordinator = launch_log_observer(case, maximum_seconds="5")
+        coordinator_stopped = False
+        artifact = log_forwarder_artifact_paths(case)[kind]
+        parked_artifact = artifact.with_name(f"authenticated-{kind}.parked")
+        try:
+            wait_log_observer_record(coordinator, "ready")
+            original_artifact_stat = artifact.stat()
+            fifo_stat = case["debug_log"].lstat()
+            backing_stat = case["backing_path"].stat()
+            backing_bytes = case["backing_path"].read_bytes()
+
+            os.kill(coordinator.pid, signal.SIGSTOP)
+            coordinator_stopped = True
+            write_observer_fifo(case["debug_log"], observer_terminal_line(case))
+            terminal, _ = wait_log_forwarder_terminal(case)
+            assert terminal["kind"] == "complete"
+
+            copied_bytes = artifact.read_bytes()
+            artifact.rename(parked_artifact)
+            artifact.write_bytes(copied_bytes)
+            artifact.chmod(0o600)
+            foreign_artifact_stat = artifact.stat()
+            os.kill(coordinator.pid, signal.SIGCONT)
+            coordinator_stopped = False
+
+            blocked, _ = wait_log_observer_record(coordinator, "blocked")
+            assert blocked["blocker_code"] == "forwarder_artifact_changed"
+            assert coordinator.wait(timeout=3) == 3
+
+            current_foreign = artifact.stat()
+            assert (current_foreign.st_dev, current_foreign.st_ino) == (
+                foreign_artifact_stat.st_dev,
+                foreign_artifact_stat.st_ino,
+            )
+            current_authenticated = parked_artifact.stat()
+            assert (
+                current_authenticated.st_dev,
+                current_authenticated.st_ino,
+            ) == (original_artifact_stat.st_dev, original_artifact_stat.st_ino)
+            current_fifo = case["debug_log"].lstat()
+            assert stat.S_ISFIFO(current_fifo.st_mode)
+            assert (current_fifo.st_dev, current_fifo.st_ino) == (
+                fifo_stat.st_dev,
+                fifo_stat.st_ino,
+            )
+            current_backing = case["backing_path"].stat()
+            assert (current_backing.st_dev, current_backing.st_ino) == (
+                backing_stat.st_dev,
+                backing_stat.st_ino,
+            )
+            assert case["backing_path"].read_bytes() == backing_bytes
+        finally:
+            if coordinator_stopped and coordinator.poll() is None:
+                os.kill(coordinator.pid, signal.SIGCONT)
+            stop_observer_process(coordinator)
+
+
+def test_log_forwarder_signed_terminal_preserves_substituted_lease_inode() -> None:
+    run_log_forwarder_signed_terminal_artifact_substitution_attack("lease")
+
+
+def test_log_forwarder_signed_terminal_preserves_substituted_journal_inode() -> None:
+    run_log_forwarder_signed_terminal_artifact_substitution_attack("journal")
+
+
+def test_log_forwarder_signed_terminal_preserves_substituted_control_inode() -> None:
+    run_log_forwarder_signed_terminal_artifact_substitution_attack("control")
+
+
+def run_log_forwarder_blocked_terminal_substitution_attack(
+    kinds: tuple[str, ...],
+) -> None:
+    valid_kinds = {"fifo", "backing", "lease", "journal", "control"}
+    assert kinds and len(kinds) == len(set(kinds))
+    assert set(kinds) <= valid_kinds
+    prefix = "-".join(kinds)
+    with tempfile.TemporaryDirectory(
+        prefix=f"critical-flows-log-blocked-{prefix}-"
+    ) as tmp:
+        case = prepare_log_observer_case(Path(tmp))
+        coordinator = launch_log_observer(case, maximum_seconds="5")
+        coordinator_stopped = False
+        parked: dict[str, Path] = {}
+        original_stats: dict[str, os.stat_result] = {}
+        foreign_stats: dict[str, os.stat_result] = {}
+        try:
+            wait_log_observer_record(coordinator, "ready")
+            artifacts = log_forwarder_artifact_paths(case)
+            paths = {
+                "fifo": case["debug_log"],
+                "backing": case["backing_path"],
+                **artifacts,
+            }
+            for kind, path in paths.items():
+                original_stats[kind] = path.lstat()
+
+            source = LOG_OBSERVER_DRIVER.read_text(encoding="utf-8")
+            match = re.search(
+                r"private const MAX_PARSER_LINE\s*=\s*([0-9]+);", source
+            )
+            assert match is not None
+            parser_cap = int(match.group(1))
+            payload = b"blocked-terminal-parser-line:" + (b"x" * (parser_cap + 1))
+
+            os.kill(coordinator.pid, signal.SIGSTOP)
+            coordinator_stopped = True
+            write_observer_fifo_fully(case["debug_log"], payload)
+            write_observer_fifo(
+                case["debug_log"],
+                observer_terminal_line(case),
+            )
+            terminal, _ = wait_log_forwarder_terminal(case)
+            assert terminal["kind"] == "blocked"
+            assert terminal["blocker_code"] == "observer_line_too_long"
+            backing_bytes = case["backing_path"].read_bytes()
+            assert backing_bytes == case["original"] + payload
+
+            for kind in kinds:
+                path = paths[kind]
+                parked_path = path.with_name(f"authenticated-{kind}.blocked.parked")
+                copied_bytes = b"" if kind == "fifo" else path.read_bytes()
+                copied_mode = stat.S_IMODE(path.lstat().st_mode)
+                path.rename(parked_path)
+                if kind == "fifo":
+                    os.mkfifo(path, copied_mode)
+                else:
+                    path.write_bytes(copied_bytes)
+                    path.chmod(copied_mode)
+                parked[kind] = parked_path
+                foreign_stats[kind] = path.lstat()
+
+            os.kill(coordinator.pid, signal.SIGCONT)
+            coordinator_stopped = False
+            blocked, _ = wait_log_observer_record(coordinator, "blocked")
+            if set(kinds) & {"lease", "journal", "control"}:
+                expected_blocker = "forwarder_artifact_changed"
+            elif "fifo" in kinds:
+                expected_blocker = "observer_path_replaced"
+            else:
+                expected_blocker = "backing_path_changed"
+            assert blocked["blocker_code"] == expected_blocker
+            assert coordinator.wait(timeout=3) == 3
+
+            for kind, path in paths.items():
+                current_stat = path.lstat()
+                if kind in kinds:
+                    expected_foreign = foreign_stats[kind]
+                    assert (current_stat.st_dev, current_stat.st_ino) == (
+                        expected_foreign.st_dev,
+                        expected_foreign.st_ino,
+                    )
+                    parked_stat = parked[kind].lstat()
+                    expected_original = original_stats[kind]
+                    assert (parked_stat.st_dev, parked_stat.st_ino) == (
+                        expected_original.st_dev,
+                        expected_original.st_ino,
+                    )
+                else:
+                    expected_original = original_stats[kind]
+                    assert (current_stat.st_dev, current_stat.st_ino) == (
+                        expected_original.st_dev,
+                        expected_original.st_ino,
+                    )
+            assert case["backing_path"].read_bytes() == backing_bytes
+        finally:
+            if coordinator_stopped and coordinator.poll() is None:
+                os.kill(coordinator.pid, signal.SIGCONT)
+            stop_observer_process(coordinator)
+
+
+def test_log_forwarder_blocked_terminal_preserves_foreign_fifo_before_ordinary_restore() -> None:
+    run_log_forwarder_blocked_terminal_substitution_attack(("fifo",))
+
+
+def test_log_forwarder_blocked_terminal_preserves_foreign_backing_before_ordinary_restore() -> None:
+    run_log_forwarder_blocked_terminal_substitution_attack(("backing",))
+
+
+def test_log_forwarder_blocked_terminal_preserves_substituted_lease_inode() -> None:
+    run_log_forwarder_blocked_terminal_substitution_attack(("lease",))
+
+
+def test_log_forwarder_blocked_terminal_preserves_substituted_journal_inode() -> None:
+    run_log_forwarder_blocked_terminal_substitution_attack(("journal",))
+
+
+def test_log_forwarder_blocked_terminal_preserves_substituted_control_inode() -> None:
+    run_log_forwarder_blocked_terminal_substitution_attack(("control",))
+
+
+def test_log_forwarder_blocked_terminal_preserves_simultaneous_substitutions() -> None:
+    run_log_forwarder_blocked_terminal_substitution_attack(
+        ("fifo", "backing", "lease", "journal", "control")
+    )
+
+
+def test_log_forwarder_live_terminal_always_uses_strict_identity_restore() -> None:
+    source = LOG_OBSERVER_DRIVER.read_text(encoding="utf-8")
+    coordinate_start = source.index("private static function coordinate_forwarder(): void")
+    coordinate_end = source.index("\n\t/**", coordinate_start)
+    coordinate_source = source[coordinate_start:coordinate_end]
+    assert coordinate_source.count("self::restore_all( true )") == 1
+    assert "self::restore_all()" not in coordinate_source
+    assert "self::restore_all( false )" not in coordinate_source
+    assert "$strict_identity" not in coordinate_source
+
+    restore_calls = re.findall(r"self::restore_all\(([^)]*)\)", source)
+    assert restore_calls.count("") == 2
+    assert restore_calls.count(" true ") == 3
+    assert len(restore_calls) == 5
+    start_begin = source.index("private static function start_forwarder_foundation(): bool")
+    start_end = source.index("\n\t/**", start_begin)
+    start_source = source[start_begin:start_end]
+    assert start_source.count("return false;") == 6
+    assert start_source.count("self::cleanup_failed_forwarder_start") == 6
+    assert "self::restore_all()" not in start_source
+    cleanup_begin = source.index(
+        "private static function cleanup_failed_forwarder_start("
+    )
+    cleanup_end = source.index("\n\t/**", cleanup_begin)
+    cleanup_source = source[cleanup_begin:cleanup_end]
+    assert "self::abort_and_reap_startup_child" in cleanup_source
+    assert "self::drain_pre_ready_bytes()" in cleanup_source
+    assert "self::complete_startup_identities_match()" in cleanup_source
+    assert "self::restore_all( true )" in cleanup_source
+    assert "self::restore_all()" not in cleanup_source
+    shutdown_start = source.index("public static function shutdown_restore(): void")
+    shutdown_end = source.index("\n\t/**", shutdown_start)
+    shutdown_source = source[shutdown_start:shutdown_end]
+    assert "! self::$durable_forwarder_active" in shutdown_source
+    assert "self::restore_all()" in shutdown_source
+
+
+def test_log_forwarder_long_unterminated_line_is_bounded_blocked_and_lossless() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-parser-bound-") as tmp:
+        source = LOG_OBSERVER_DRIVER.read_text(encoding="utf-8")
+        match = re.search(r"private const MAX_PARSER_LINE\s*=\s*([0-9]+);", source)
+        parser_cap = int(match.group(1)) if match is not None else 65536
+        assert parser_cap == 65536
+        payload = b"unterminated-parser-line:" + (b"x" * (parser_cap * 3 + 1))
+
+        case = prepare_log_observer_case(Path(tmp))
+        coordinator = launch_log_observer(case, maximum_seconds="5")
+        coordinator_stopped = False
+        try:
+            ready, ready_encoded = wait_log_observer_record(coordinator, "ready")
+            assert ready["status"] == "pass"
+            os.kill(coordinator.pid, signal.SIGSTOP)
+            coordinator_stopped = True
+
+            write_observer_fifo_fully(case["debug_log"], payload)
+            write_observer_fifo(case["debug_log"], observer_terminal_line(case))
+            terminal, records = wait_log_forwarder_terminal(case)
+            assert terminal["kind"] == "blocked"
+            assert terminal["blocker_code"] == "observer_line_too_long"
+            assert [record["kind"] for record in records][-2:] == ["line", "blocked"]
+
+            os.kill(coordinator.pid, signal.SIGCONT)
+            coordinator_stopped = False
+            blocked, blocked_encoded = wait_log_observer_record(coordinator, "blocked")
+            assert blocked["blocker_code"] == "observer_line_too_long"
+            assert coordinator.wait(timeout=3) == 3
+            assert case["debug_log"].read_bytes() == case["original"] + payload
+            assert payload[:64].decode() not in "".join(
+                ready_encoded + blocked_encoded
+            )
+            assert match is not None
+            assert_log_observer_cleaned(case, payload)
+        finally:
+            if coordinator_stopped and coordinator.poll() is None:
+                os.kill(coordinator.pid, signal.SIGCONT)
+            stop_observer_process(coordinator)
+
+
+def test_log_forwarder_recovery_rejects_coherent_lease_downgrade_partial_and_mismatch() -> None:
+    def downgrade(lease: dict) -> None:
+        lease["schema"] = "woopayments_debug_log_forwarder_lease.v1"
+
+    def remove_control_identity(lease: dict) -> None:
+        lease["artifacts"].pop("control")
+
+    def mismatch_journal_identity(lease: dict) -> None:
+        lease["artifacts"]["journal"]["ino"] += 1
+
+    for name, mutate in (
+        ("downgrade", downgrade),
+        ("partial", remove_control_identity),
+        ("mismatch", mismatch_journal_identity),
+    ):
+        with tempfile.TemporaryDirectory(
+            prefix=f"critical-flows-log-lease-{name}-"
+        ) as tmp:
+            case = prepare_log_observer_case(Path(tmp))
+            coordinator = launch_log_observer(case, maximum_seconds="5")
+            recovery: subprocess.Popen[str] | None = None
+            child_pid: int | None = None
+            try:
+                wait_log_observer_record(coordinator, "ready")
+                lease_path, lease = wait_log_forwarder_lease(case)
+                assert lease["schema"] == "woopayments_debug_log_forwarder_lease.v2"
+                child_pid = forwarder_child_pid(lease)
+                coordinator.kill()
+                assert coordinator.wait(timeout=2) != 0
+
+                mutated = json.loads(json.dumps(lease))
+                mutate(mutated)
+                write_signed_log_forwarder_lease(lease_path, mutated)
+                recovery = launch_log_observer(case, action="recover")
+                recovered, _ = wait_log_observer_record(recovery, "recovered")
+                assert recovered["status"] == "blocked"
+                assert recovered["blocker_code"] == "observer_recovery_failed"
+                assert recovery.wait(timeout=3) == 3
+                assert stat.S_ISFIFO(case["debug_log"].lstat().st_mode)
+                assert case["backing_path"].is_file()
+                assert all(
+                    path.is_file()
+                    for path in log_forwarder_artifact_paths(case).values()
+                )
+            finally:
+                if recovery is not None:
+                    stop_observer_process(recovery)
+                stop_observer_process(coordinator)
+                terminate_forwarder_for_test(child_pid)
+
+
+def test_log_forwarder_valid_authenticated_terminal_journal_restores() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-valid-journal-") as tmp:
+        case = prepare_log_observer_case(Path(tmp))
+        coordinator = launch_log_observer(case, maximum_seconds="5")
+        warning = b"PHP Warning: valid journal control preserves this warning\n"
+        try:
+            wait_log_observer_record(coordinator, "ready")
+            _, lease = wait_log_forwarder_lease(case)
+            assert lease["schema"] == "woopayments_debug_log_forwarder_lease.v2"
+            assert tuple(lease["artifacts"]) == ("lease", "journal", "control")
+            for kind, identity in lease["artifacts"].items():
+                artifact_stat = log_forwarder_artifact_paths(case)[kind].stat()
+                assert identity == {
+                    "kind": kind,
+                    "dev": artifact_stat.st_dev,
+                    "ino": artifact_stat.st_ino,
+                    "mode": 0o600,
+                }
+            assert forwarder_child_pid(lease) > 1
+            assert validated_log_forwarder_journal(case)[-1]["kind"] == "ready"
+
+            write_observer_fifo(case["debug_log"], warning)
+            wait_log_observer_record(coordinator, "line", category="warning")
+            records = validated_log_forwarder_journal(case)
+            assert [record["kind"] for record in records] == ["ready", "line"]
+            write_observer_fifo(case["debug_log"], observer_terminal_line(case))
+            complete, _ = wait_log_observer_record(coordinator, "complete")
+            assert complete["status"] == "pass"
+            assert coordinator.wait(timeout=3) == 0
+
+            assert case["debug_log"].read_bytes() == case["original"] + warning
+            assert_log_observer_cleaned(case, warning)
+        finally:
+            stop_observer_process(coordinator)
+
+
+def test_log_forwarder_survives_coordinator_sigkill_before_fifo_read() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-forwarder-parent-kill-") as tmp:
+        case = prepare_log_observer_case(Path(tmp))
+        coordinator = launch_log_observer(case, maximum_seconds="5")
+        child_pid: int | None = None
+        warning = b"PHP Warning: accepted before coordinator SIGKILL must survive\n"
+        try:
+            wait_log_observer_record(coordinator, "ready")
+            lease_path, lease = wait_log_forwarder_lease(case)
+            child_pid = forwarder_child_pid(lease)
+            assert lease_path.stat().st_mode & 0o077 == 0
+            os.kill(child_pid, signal.SIGSTOP)
+            write_observer_fifo(case["debug_log"], warning)
+            coordinator.kill()
+            assert coordinator.wait(timeout=2) != 0
+            os.kill(child_pid, signal.SIGCONT)
+
+            recovery = launch_log_observer(case, action="recover")
+            try:
+                recovered, _ = wait_log_observer_record(recovery, "recovered")
+                assert recovered["status"] == "blocked"
+                assert recovery.wait(timeout=3) == 3
+            finally:
+                stop_observer_process(recovery)
+
+            wait_process_absent(child_pid)
+            assert_log_observer_cleaned(case, warning)
+            assert b"[woopayments-critical-flows-log-observer-stop]" not in case[
+                "debug_log"
+            ].read_bytes()
+        finally:
+            if child_pid is not None and process_exists(child_pid):
+                try:
+                    os.kill(child_pid, signal.SIGCONT)
+                except ProcessLookupError:
+                    pass
+            stop_observer_process(coordinator)
+            terminate_forwarder_for_test(child_pid)
+
+
+def test_log_forwarder_child_sigkill_emergency_recovery_preserves_fifo_bytes() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-forwarder-child-kill-") as tmp:
+        case = prepare_log_observer_case(Path(tmp))
+        coordinator = launch_log_observer(case, maximum_seconds="5")
+        child_pid: int | None = None
+        warning = b"PHP Warning: kernel-buffered before forwarder SIGKILL must survive\n"
+        try:
+            wait_log_observer_record(coordinator, "ready")
+            lease_path, lease = wait_log_forwarder_lease(case)
+            child_pid = forwarder_child_pid(lease)
+            assert lease_path.stat().st_mode & 0o077 == 0
+            os.kill(child_pid, signal.SIGSTOP)
+            write_observer_fifo(case["debug_log"], warning)
+            os.kill(child_pid, signal.SIGKILL)
+            wait_process_absent(child_pid)
+
+            stdout, stderr = coordinator.communicate(timeout=3)
+            records = [json.loads(line) for line in stdout.splitlines() if line]
+            assert coordinator.returncode == 3, stdout + stderr
+            assert records[-1]["blocker_code"] == "observer_forced_recovery"
+
+            assert_log_observer_cleaned(case, warning)
+            assert b"[woopayments-critical-flows-log-observer-stop]" not in case[
+                "debug_log"
+            ].read_bytes()
+        finally:
+            stop_observer_process(coordinator)
+            terminate_forwarder_for_test(child_pid)
+
+
+def test_common_log_prefix_hash_distinguishes_invalid_utf8_bytes() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-binary-prefix-") as tmp:
+        root = Path(tmp)
+        wrapper = root / "common-log-producer.php"
+        wrapper.write_text(common_log_producer_php_source(), encoding="utf-8")
+        debug_log = root / "debug.log"
+        debug_log.write_bytes(b"one\n\xff original invalid byte\nthree\nfour\n")
+        result = subprocess.run(
+            ["php", str(wrapper), str(debug_log), "invalid_utf8_rewrite"],
+            cwd=REPO,
+            env={
+                **os.environ,
+                "CRITICAL_FLOWS_RUN_STAMP": "20260716T160000Z-30303",
+            },
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        payload = json.loads(result.stdout)
+        assert payload["status"] == "blocked"
+        assert payload["blocker_code"] == "log_prefix_changed"
+
+
+def test_common_log_marker_blocks_when_canary_cannot_be_appended() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-read-only-") as tmp:
+        root = Path(tmp)
+        wrapper = root / "common-log-producer.php"
+        wrapper.write_text(common_log_producer_php_source(), encoding="utf-8")
+        debug_log = root / "debug.log"
+        debug_log.write_text("one\ntwo\n", encoding="utf-8")
+        debug_log.chmod(0o444)
+        try:
+            result = subprocess.run(
+                ["php", str(wrapper), str(debug_log), "ordinary_append"],
+                cwd=REPO,
+                env={
+                    **os.environ,
+                    "CRITICAL_FLOWS_RUN_STAMP": "20260716T160000Z-30303",
+                },
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        finally:
+            debug_log.chmod(0o644)
+        assert result.returncode != 0
+
+
+def test_common_log_marker_does_not_forward_raw_wp_cli_failure_output() -> None:
+    secret = "Authorization: Bearer sk_test_marker customer@example.test"
+    result = run_log_clean_marker(
+        f"""#!/usr/bin/env bash
+printf '%s\\n' '{secret}' >&2
+exit 2
+"""
+    )
+
+    assert result.returncode == 3
+    assert result.stdout.strip() == "BLOCKED log-clean marker for target: marker_command_failed"
+    assert secret not in result.stdout
+    assert secret not in result.stderr
+
+
+def test_common_log_marker_injects_exact_run_stamp_into_wp_eval() -> None:
+    run_stamp = "20260716T160000Z-30303"
+    scan = common_log_scan_v5()
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-marker-stamp-") as tmp:
+        root = Path(tmp)
+        fake_wp = root / "fake-wp.sh"
+        call_log = root / "eval-source.txt"
+        write_executable(
+            fake_wp,
+            fake_authenticated_log_observer_source()
+            + """#!/usr/bin/env bash
+body="$(cat)"
+printf '%s' "$body" > "$FAKE_MARKER_EVAL_SOURCE"
+printf '%s\n' '{"status":"pass"}'
+""",
+        )
+        script = f"""
+source {shlex.quote(str(COMMON))}
+TARGET_WP_COMMAND={shlex.quote(str(fake_wp))}
+CRITICAL_FLOWS_RUN_STAMP={shlex.quote(run_stamp)}
+CRITICAL_FLOWS_RUN_CONTEXT_KEY={TEST_RUN_CONTEXT_KEY}
+CRITICAL_FLOWS_FLOW_ID={scan['flow_id']}
+CRITICAL_FLOWS_LOG_PURPOSE={scan['purpose']}
+CRITICAL_FLOWS_RUN_CONTEXT_BINDING={scan['origin_binding']}
+FAKE_OBSERVER_STORE={scan['store']}
+FAKE_OBSERVER_FLOW_ID={scan['flow_id']}
+FAKE_OBSERVER_PURPOSE={scan['purpose']}
+FAKE_OBSERVER_MARKER_CREATED_AT={scan['marker_created_at']}
+FAKE_OBSERVER_PATH={scan['observations'][0]['path']}
+FAKE_OBSERVER_PATH_ID={scan['observations'][0]['path_id']}
+FAKE_MARKER_EVAL_SOURCE={shlex.quote(str(call_log))}
+EVIDENCE_DIR={shlex.quote(str(root))}
+TMPDIR={shlex.quote(str(root))}
+export CRITICAL_FLOWS_RUN_CONTEXT_KEY CRITICAL_FLOWS_RUN_CONTEXT_BINDING
+export CRITICAL_FLOWS_FLOW_ID CRITICAL_FLOWS_LOG_PURPOSE
+export FAKE_OBSERVER_STORE FAKE_OBSERVER_FLOW_ID FAKE_OBSERVER_PURPOSE
+export FAKE_OBSERVER_MARKER_CREATED_AT FAKE_OBSERVER_PATH FAKE_OBSERVER_PATH_ID
+export FAKE_MARKER_EVAL_SOURCE EVIDENCE_DIR TMPDIR
+mark_log_clean_start target
+"""
+        result = subprocess.run(
+            ["bash", "-c", script],
+            cwd=REPO,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        source = call_log.read_text(encoding="utf-8")
+        assert f"$run_stamp = '{run_stamp}';" in source
+        assert 'putenv( "CRITICAL_FLOWS_RUN_CONTEXT_KEY=' in source
+
+
+def test_common_log_validator_requires_authenticated_v5_observations() -> None:
+    current_payload = common_log_scan_v5()
+    current = json.dumps(current_payload, separators=(",", ":"))
+    passed = run_log_clean_assertion(
+        f"""#!/usr/bin/env bash
+printf '%s\\n' '{current}'
+"""
+    )
+    assert passed.returncode == 0, passed.stdout + passed.stderr
+
+    changed = json.dumps(
+        common_log_scan_v5(
+            observed_prefix_fingerprint="sha256:"
+            + hashlib.sha256(b"rewritten-prefix").hexdigest(),
+        ),
+        separators=(",", ":"),
+    )
+    blocked = run_log_clean_assertion(
+        f"""#!/usr/bin/env bash
+printf '%s\\n' '{changed}'
+"""
+    )
+    assert blocked.returncode == 3, blocked.stdout + blocked.stderr
+    assert "BLOCKED log-clean check for target" in blocked.stdout
+
+    changed_metadata_payload = json.loads(json.dumps(current_payload))
+    changed_metadata_payload["observations"][0]["observed_mode"] = 0o600
+    changed_metadata = json.dumps(changed_metadata_payload, separators=(",", ":"))
+    metadata_blocked = run_log_clean_assertion(
+        f"""#!/usr/bin/env bash
+printf '%s\\n' '{changed_metadata}'
+"""
+    )
+    assert metadata_blocked.returncode == 3, (
+        metadata_blocked.stdout + metadata_blocked.stderr
+    )
+    assert "BLOCKED log-clean check for target" in metadata_blocked.stdout
+
+    wrong_key = run_log_clean_assertion(
+        f"""#!/usr/bin/env bash
+printf '%s\\n' '{current}'
+""",
+        context_key="22" * 32,
+        origin_binding=current_payload["origin_binding"],
+    )
+    assert wrong_key.returncode == 3, wrong_key.stdout + wrong_key.stderr
+
+    changed_nonce_payload = {**current_payload, "origin_nonce": "00000000-0000-4000-8000-000000000999"}
+    changed_nonce = json.dumps(changed_nonce_payload, separators=(",", ":"))
+    relabeled_origin = run_log_clean_assertion(
+        f"""#!/usr/bin/env bash
+printf '%s\\n' '{changed_nonce}'
+""",
+        origin_binding=current_payload["origin_binding"],
+    )
+    assert relabeled_origin.returncode == 3, relabeled_origin.stdout + relabeled_origin.stderr
+
+    downgraded = json.dumps(canary_log_scan_v4(), separators=(",", ":"))
+    downgrade = run_log_clean_assertion(
+        f"""#!/usr/bin/env bash
+printf '%s\\n' '{downgraded}'
+"""
+    )
+    assert downgrade.returncode == 3, downgrade.stdout + downgrade.stderr
 
 
 def test_deterministic_runner_records_log_marker_before_scanning_logs() -> None:
@@ -4771,6 +12761,24 @@ def test_deterministic_runner_records_log_marker_before_scanning_logs() -> None:
         fake_wp = evidence_dir / "fake-wp.sh"
         call_log = evidence_dir / "fake-wp-calls.log"
         marker_file = evidence_dir / "marker-created"
+        clean_log_scan = common_log_scan_v5(
+            run_stamp=TEST_RUN_STAMP,
+            flow_id="SC-01-card-checkout",
+            purpose="clean-debug-log",
+            marker_created_at=TEST_MARKER_CREATED_AT,
+        )
+        clean_log_json = json.dumps(clean_log_scan, separators=(",", ":"))
+        dirty_log_scan = common_log_scan_v5(
+            status="fail",
+            run_stamp=TEST_RUN_STAMP,
+            flow_id="SC-01-card-checkout",
+            purpose="clean-debug-log",
+            marker_created_at=TEST_MARKER_CREATED_AT,
+            end_line_count=5,
+            end_byte_count=160,
+            matches=[safe_log_record(line=5, diagnostic="PHP Warning: stale warning")],
+        )
+        dirty_log_json = json.dumps(dirty_log_scan, separators=(",", ":"))
 
         write_executable(
             flow_driver,
@@ -4780,7 +12788,25 @@ printf '%s\\n' '{"op":"charge","order_id":321,"charge_id":"ch_marker","intent_id
         )
         write_executable(
             fake_wp,
-            """#!/usr/bin/env bash
+            f"""#!/usr/bin/env bash
+{authenticated_log_fake_prelude(clean_log_scan)}
+if [ "$1" = "eval-file" ]; then
+  body="$(cat)"
+  printf '%s\n' "---CALL---" "$body" >> "$FAKE_WP_CALL_LOG"
+  if [[ "$body" == "<?php"* && "$body" == *"update_option"*"woopayments_critical_flows_debug_log_marker"* ]]; then
+    touch "$FAKE_MARKER_FILE"
+    printf '%s\n' '{{"status":"pass"}}'
+    exit 0
+  fi
+  if [[ "$body" == "<?php"* && "$body" == *"ignored_matches"* ]]; then
+    if [ -f "$FAKE_MARKER_FILE" ]; then
+      printf '%s\n' '{clean_log_json}'
+    else
+      printf '%s\n' '{dirty_log_json}'
+    fi
+    exit 0
+  fi
+fi
 if [ "$1" = "wc" ] && [ "$2" = "shop_order" ] && [ "$3" = "get" ]; then
   printf '%s\\n' "processing"
   exit 0
@@ -4800,7 +12826,7 @@ if [ "$1" = "eval" ]; then
   fi
   if [[ "$2" == *"update_option"*"woopayments_critical_flows_debug_log_marker"* ]]; then
     touch "$FAKE_MARKER_FILE"
-    printf '%s\\n' '{"status":"pass","paths":["/tmp/fake-debug.log"],"markers":{"/tmp/fake-debug.log":5}}'
+    printf '%s\\n' '{clean_log_json}'
     exit 0
   fi
   if [[ "$2" == *"get_status"* ]]; then
@@ -4817,9 +12843,9 @@ if [ "$1" = "eval" ]; then
   fi
   if [[ "$2" == *"debug.log"* ]]; then
     if [ -f "$FAKE_MARKER_FILE" ]; then
-      printf '%s\\n' '{"status":"pass","paths":["/tmp/fake-debug.log"],"matches":[]}'
+      printf '%s\\n' '{clean_log_json}'
     else
-      printf '%s\\n' '{"status":"fail","paths":["/tmp/fake-debug.log"],"matches":["debug.log:1: PHP Warning: stale warning"]}'
+      printf '%s\\n' '{dirty_log_json}'
     fi
     exit 0
   fi
@@ -4866,17 +12892,185 @@ exit 2
         assert marker_call < scan_call
 
 
+def test_deterministic_runner_owns_observer_and_sourced_flow_in_one_subshell() -> None:
+    source = RUNNER.read_text(encoding="utf-8")
+    layer_d_start = source.index('echo "Layer D: running deterministic flow scripts')
+    layer_d_end = source.index(
+        'if [ "$LAYER" != "deterministic" ]', layer_d_start
+    )
+    layer_d = source[layer_d_start:layer_d_end]
+
+    assert re.search(
+        r"for s in \$\(stores\); do\s+\(\s+mark_log_clean_start \"\$s\""
+        r".*?source \"\$f\"\s+\)\s+rc=\$\?",
+        layer_d,
+        flags=re.DOTALL,
+    )
+    assert 'bash "$f"' not in layer_d
+
+
+def test_sourced_flow_exit_reaps_observer_before_next_flow_and_preserves_unrelated() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-sourced-flow-cleanup-") as tmp:
+        root = Path(tmp)
+        first_flow = root / "first-flow.sh"
+        second_flow = root / "second-flow.sh"
+        first_pid_file = root / "first-observer.pid"
+        second_pid_file = root / "second-observer.pid"
+        write_executable(first_flow, "#!/usr/bin/env bash\nexit 3\n")
+        write_executable(
+            second_flow,
+            f"""#!/usr/bin/env bash
+first_pid="$(cat {shlex.quote(str(first_pid_file))})"
+if kill -0 "$first_pid" 2>/dev/null; then
+  exit 61
+fi
+exit 0
+""",
+        )
+        script = f"""
+source {shlex.quote(str(COMMON))}
+root={shlex.quote(str(root))}
+sleep 30 &
+unrelated_pid=$!
+cleanup_unrelated() {{
+  kill "$unrelated_pid" 2>/dev/null || true
+  wait "$unrelated_pid" 2>/dev/null || true
+}}
+trap cleanup_unrelated EXIT
+
+run_sourced_flow() (
+  flow="$1"
+  pid_file="$2"
+  sidecar="$root/$(basename "$pid_file").sidecar"
+  : > "$sidecar"
+  printf '143\n' > "$sidecar.exit"
+  printf '%s\n' "$unrelated_pid" > "$sidecar.pid"
+  sleep 30 &
+  CRITICAL_FLOWS_LOG_OBSERVER_PID=$!
+  CRITICAL_FLOWS_LOG_OBSERVER_SIDECAR="$sidecar"
+  CRITICAL_FLOWS_LOG_OBSERVER_EXIT_FILE="$sidecar.exit"
+  printf '%s\n' "$CRITICAL_FLOWS_LOG_OBSERVER_PID" > "$pid_file"
+  critical_flows_log_observer_install_trap
+  source "$flow"
+)
+
+run_sourced_flow {shlex.quote(str(first_flow))} {shlex.quote(str(first_pid_file))}
+first_rc=$?
+[ "$first_rc" -eq 3 ] || exit 71
+first_pid="$(cat {shlex.quote(str(first_pid_file))})"
+if kill -0 "$first_pid" 2>/dev/null; then
+  exit 72
+fi
+kill -0 "$unrelated_pid" 2>/dev/null || exit 73
+
+run_sourced_flow {shlex.quote(str(second_flow))} {shlex.quote(str(second_pid_file))}
+second_rc=$?
+[ "$second_rc" -eq 0 ] || exit 74
+second_pid="$(cat {shlex.quote(str(second_pid_file))})"
+if kill -0 "$second_pid" 2>/dev/null; then
+  exit 75
+fi
+kill -0 "$unrelated_pid" 2>/dev/null || exit 76
+
+cleanup_unrelated
+trap - EXIT
+"""
+        result = subprocess.run(
+            ["bash", "-c", script],
+            cwd=REPO,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=5,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_log_clean_parser_skips_wrapper_braces_before_payload() -> None:
+    payload = json.dumps(common_log_scan_v5(), separators=(",", ":"))
     result = run_log_clean_assertion(
-        """#!/usr/bin/env bash
-printf '%s\\n' "ℹ Starting wp eval { not json"
-printf '%s\\n' '{"status":"pass","paths":["/tmp/fake-debug.log"],"matches":[]}'
+        f"""#!/usr/bin/env bash
+printf '%s\\n' "ℹ Starting wp eval {{ not json"
+printf '%s\\n' '{payload}'
 printf '%s\\n' "✔ Ran wp eval"
 """
     )
 
     assert result.returncode == 0
     assert "PASS log-clean target" in result.stdout
+
+
+def test_log_clean_assertion_blocks_stale_truncated_missing_malformed_and_v1() -> None:
+    cases = {
+        "stale": common_log_scan_v5(marker_created_at="2020-01-01T00:00:00Z"),
+        "truncated": common_log_scan_v5(
+            start_line_count=9,
+            end_line_count=8,
+            start_byte_count=256,
+            end_byte_count=128,
+        ),
+        "missing": {**common_log_scan_v5(), "observations": []},
+        "malformed": {**common_log_scan_v5(), "marker_created_at": "not-a-time"},
+        "unhashable_record": {
+            **common_log_scan_v5(
+                status="fail",
+                end_line_count=5,
+                end_byte_count=160,
+            ),
+            "matches": [
+                {
+                    **safe_log_record(line=5),
+                    "path": ["fake-debug.log"],
+                }
+            ],
+        },
+        "v1": {
+            "status": "pass",
+            "paths": ["/tmp/fake-debug.log"],
+            "matches": [],
+            "marker": {
+                "created_at": "2026-07-16T16:00:00Z",
+                "paths": {"/tmp/fake-debug.log": 4},
+            },
+        },
+    }
+    for name, payload in cases.items():
+        encoded = json.dumps(payload, separators=(",", ":"))
+        result = run_log_clean_assertion(
+            f"""#!/usr/bin/env bash
+printf '%s\\n' '{encoded}'
+"""
+        )
+        assert result.returncode == 3, (name, result.stdout, result.stderr)
+        assert "BLOCKED log-clean check for target" in result.stdout
+
+
+def test_log_clean_assertion_rejects_and_does_not_archive_raw_diagnostics() -> None:
+    secret = "Authorization: Bearer sk_test_DO_NOT_ARCHIVE customer@example.test"
+    payload = {
+        **common_log_scan_v5(
+            status="fail",
+            end_line_count=5,
+            end_byte_count=160,
+        ),
+        "matches": [f"fake-debug.log:5: PHP Warning: {secret}"],
+    }
+    encoded = json.dumps(payload, separators=(",", ":"))
+
+    with tempfile.TemporaryDirectory(prefix="critical-flows-log-secret-") as tmp:
+        evidence_path = Path(tmp) / "debug-log-scan.json"
+        result = run_log_clean_assertion(
+            f"""#!/usr/bin/env bash
+printf '%s\\n' '{encoded}'
+""",
+            evidence_path=evidence_path,
+        )
+
+        assert result.returncode == 3, result.stdout + result.stderr
+        assert secret not in result.stdout
+        if evidence_path.exists():
+            assert secret not in evidence_path.read_text(encoding="utf-8")
 
 
 def test_log_clean_scan_ignores_known_wp67_textdomain_notice() -> None:
