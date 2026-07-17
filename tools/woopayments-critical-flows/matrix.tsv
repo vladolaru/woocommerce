@@ -25,7 +25,7 @@ SS-01	Purchase subscription (initial)	D+A	comparable	PENDING (Layer A runner-ver
 SS-02	Change PM → new card	D+A	comparable	PENDING (Layer A runner-verified 2026-07-17: reference PASS, target FAIL — functional; unlike reference, native renders an unchecked optional Save to account control, then creates provider Mastercard 4444 but redirects to Order received and does not save/bind a local token, leaving the subscription UI and Payment methods on Visa 4242; Active/schedule/order/charge state remains safe; Layer D NOT YET WIRED; new product regression; run 20260717T123027Z-62070-partial)
 SS-03	Change PM → saved card	D+A	comparable	PASS (runner-verified 2026-07-14: browser Layer A both stores; renewal D layer provider-reconciled with chosen-token binding artifact; run archived under evidence/runs/)
 SS-04	Set / change default PM	D	comparable	PENDING
-SS-05	Renew now (manual, shopper)	D+A	comparable	PENDING
+SS-05	Renew now (manual, shopper)	D+A	comparable	PENDING (Layer A runner-verified PASS 2026-07-17: dual-store ordinary Renew now used the preselected saved Visa 4242, created exactly one processing USD 20.00 early-renewal order and one succeeded/paid/captured provider charge per store, advanced the next-payment date exactly one month, persisted the new Related orders row, and left local/provider PaymentMethod inventories unchanged; target missing product placeholder is cosmetic; the reference marker window preserves exact harness-attributed WP-CLI diagnostics and does not support a blanket log-clean claim; Layer D NOT YET WIRED; run `20260717T130442Z-85447-partial`)
 SS-06	Cancel + re-subscribe	D+A	comparable	PENDING
 SS-07	Coupon (signup/one-off/recurring)	D	comparable	PENDING
 SS-08	Free-trial subscription	D+A	comparable	PENDING
