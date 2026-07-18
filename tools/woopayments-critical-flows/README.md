@@ -89,7 +89,7 @@ Legend — **Layers:** `D` deterministic, `A` agent-driven, `D+A` both (overlap)
 
 | ID | Flow | Layers | Functional acceptance | UX / parity-sensitive | Status |
 |----|------|--------|-----------------------|-----------------------|--------|
-| SC-01 | Card checkout, shortcode (new card) | D+A | Order paid; txn recorded; amount/currency correct | Card fields; incomplete-form errors; test-mode badge + test-card copy | PENDING |
+| SC-01 | Card checkout, shortcode (new card) | D+A | Order paid; txn recorded; amount/currency correct | Card fields; incomplete-form errors; test-mode badge + test-card copy | PENDING (Layer A runner-verified FAIL — UX 2026-07-18: both stores completed one trusted incomplete attempt with an inline error and no order, then one trusted USD 25 paid checkout with exact intent/charge/PaymentMethod joins, but both omit the separately required Test mode indicator while rendering the 4242 copy; shared reference/target contract failure, not a native-only regression; run `20260718T105343Z-40055-partial`) |
 | SC-02 | Card checkout, Blocks (new card) | D+A | Order paid; txn recorded | Payment Element mounts; test-mode badge; errors | PENDING |
 | SC-03 | 3DS-required card (`4000002500003155`), classic + Blocks | A (+D assert) | SCA → order paid | 3DS modal completes; fail path errors | PENDING |
 | SC-04 | **Saved card → checkout (classic + Blocks)** | D+A | Saved token charged (not new PM); SCA handled | Saved-card radio selectable; no forced new-card; 3DS on saved token | PASS (runner-verified 2026-07-14: context-bound sc04 gate — classic+Blocks, normal+SCA, both stores; run archived under evidence/runs/) |

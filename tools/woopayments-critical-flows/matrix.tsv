@@ -2,7 +2,7 @@
 # Columns: id	title	layers	oracle	status. Kept in sync with README.md by
 # test-inventory.py::test_matrix_tsv_matches_readme — edit BOTH or the suite fails.
 id	title	layers	oracle	status
-SC-01	Card checkout, shortcode (new card)	D+A	comparable	PENDING
+SC-01	Card checkout, shortcode (new card)	D+A	comparable	PENDING (Layer A runner-verified FAIL — UX 2026-07-18: both stores completed one trusted incomplete attempt with an inline error and no order, then one trusted USD 25 paid checkout with exact intent/charge/PaymentMethod joins, but both omit the separately required Test mode indicator while rendering the 4242 copy; shared reference/target contract failure, not a native-only regression; run `20260718T105343Z-40055-partial`)
 SC-02	Card checkout, Blocks (new card)	D+A	comparable	PENDING
 SC-03	3DS-required card (`4000002500003155`), classic + Blocks	A (+D assert)	comparable	PENDING
 SC-04	Saved card → checkout (classic + Blocks)	D+A	comparable	PASS (runner-verified 2026-07-14: context-bound sc04 gate — classic+Blocks, normal+SCA, both stores; run archived under evidence/runs/)
