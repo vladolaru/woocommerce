@@ -28,4 +28,36 @@ BOTH stores:
 
 Deterministic exerciser: NOT YET WIRED — assertions above are the contract for the future flows/SS-08-*.sh.
 
+## Latest runner evidence
+
+Layer A is runner-verified `PASS` on both stores in partial run
+`20260718T131104Z-54077-partial`. Each store rendered the $15/month,
+seven-day-free-trial contract, card fields, future-payment mandate, and $0 signup
+total. One ordinary trusted checkout submission per store created a zero-total
+processing order, an active subscription with next payment at the seven-day trial
+end, one pending renewal action, and a default saved WooPayments Visa 4242 token.
+
+Reference ended with order/subscription `2173`/`2174`, token `104`, customer
+`cus_UuMT3QJ1oLrapV`, PaymentMethod `pm_1TuXkFJCMHkg3Y1tlM8967w3`, and succeeded
+SetupIntent `seti_1TuXkHJCMHkg3Y1tZds2AwEp`. Target ended with
+order/subscription `1587`/`1588`, token `70`, customer
+`cus_UuMWFZ2v0Z2Apg`, PaymentMethod `pm_1TuXngBzWlxcwgpP0mdvZnvb`, and succeeded
+SetupIntent `seti_1TuXniBzWlxcwgpP91MZTqnm`. Independent provider reads bind
+each SetupIntent to the exact customer, PaymentMethod, local token, order, and
+subscription. Neither store's order recorded a PaymentIntent or charge ID. The
+captured provider charge projections are empty, and both connected-account charge
+windows are unchanged.
+
+The reference browser classified delayed Blocks totals before they finished
+rendering. A hash-bound OCR artifact from that same mutation's checkout screenshot
+proves the monthly/trial wording, $0 due today, and first-payment date; only that
+exact classifier signature is accepted. The target's broken product placeholder
+and seven narrowly classified placeholder 404s are a visual divergence. Functional
+checkout, order, account, schedule, token, and provider outcomes match.
+
+Accepted result digest:
+`sha256:ff19808a448cc5badba562ebfc83d5df16108db4cfb691ddf84cb8efecd75ed9`.
+The matrix row remains `PENDING` until a separate deterministic exerciser drives
+and verifies the first renewal through Layer D.
+
 Agent oracle mode: comparable (dual-store; reference is the golden oracle).
