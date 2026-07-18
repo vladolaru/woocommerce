@@ -28,4 +28,29 @@ BOTH stores:
 
 Deterministic exerciser: NOT YET WIRED — assertions above are the contract for the future flows/SS-06-*.sh.
 
+## Latest runner evidence
+
+Layer A is runner-verified `PASS` on both stores in partial run
+`20260718T122605Z-78454-partial`. Each store exposed one ordinary Cancel control,
+confirmed Pending Cancellation with an end date, and removed the original
+subscription's future renewal action. The exact primary-product Add to cart
+fallback then opened Blocks checkout, where one trusted new-card submission with
+Visa 4242 and a store-naming future-payment mandate created a distinct active
+$9.99/month subscription with its own pending renewal action.
+
+Reference ended with old subscription `2169` pending cancellation and new active
+subscription `2171` on processing order `2170`; target ended with old `1583`, new
+`1585`, and order `1584`. Both new orders join exactly through their local
+transaction IDs to independent succeeded PaymentIntents, paid/captured charges,
+provider PaymentMethods, customer mappings, and saved WooPayments tokens. The
+target-only broken product placeholder appears alongside five generic resource
+404 console errors; no captured request URL attributes those messages to the
+placeholder. The divergence is cosmetic, while relevant local response failures,
+page errors, and bounded PHP severity checks are clean.
+
+Accepted result digest:
+`sha256:566a874533805abed7ce2753904d989b1f9b33765980e4485fd7a493c8d31cec`.
+The matrix row remains `PENDING` until a separate deterministic exerciser is wired
+and accepted through the Layer D runner.
+
 Agent oracle mode: comparable (dual-store; reference is the golden oracle).
