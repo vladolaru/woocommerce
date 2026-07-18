@@ -11,6 +11,12 @@ This is harness-only work. It does not change WooCommerce or WooPayments
 production code. A reproducible native difference is an honest `FAIL`, not a
 reason to weaken the request path, assertions, or verdict.
 
+The architectural oracle is deliberately behavioral. It binds WooCommerce's
+public Store API, gateway ID, order model, established payment metadata, and
+provider outcome without requiring the native implementation to copy private
+WooPayments plugin classes or internal call structure. This protects parity and
+backward compatibility while leaving room for core-native abstractions.
+
 ## Scope
 
 The implementation will:
@@ -147,14 +153,18 @@ will execute this sequence against the configured local origin:
    ```
 
 The client will accept only `http` or `https` URLs whose hostname is
-`localhost`, `127.0.0.1`, or ends in `.localhost`. Redirects must remain on the
-configured origin. Every request has a bounded timeout. Every mutation must
-carry the same non-empty Cart Token, and every response must be valid JSON with
-the expected status and minimal schema.
+`localhost`, `127.0.0.1`, or ends in `.localhost`. Store API redirects are
+unexpected and fail closed; an off-origin redirect is explicitly rejected.
+Every request has a bounded timeout. Every mutation must
+carry the non-empty Cart Token returned by the immediately preceding response.
+Because WooCommerce may refresh the signed token expiry, byte-for-byte rotation
+is valid; a continuous response-token to next-request-token lineage is required.
+Every response must be valid JSON with the expected status and minimal schema.
 
 The client will refuse:
 
-- a missing, changed, or persisted Cart Token;
+- a missing Cart Token, broken token lineage, cross-store reuse, or archived
+  token value;
 - a non-local or changed origin;
 - an unexpected redirect;
 - pre-existing or extra cart items;
@@ -180,8 +190,8 @@ package; Layer D neither fabricates those values nor claims to re-prove them.
 ### WordPress State Collector
 
 Add `flows/class-woopaymentscriticalflowssc02driver.php` with `preflight` and
-`post` modes. Invoke it through the existing keyed WP-CLI helper so its output is
-bound to the runner context.
+`post` modes. The evidence normalizer binds each strict raw projection to the
+private runner context before it can become a verdict source.
 
 Preflight will report:
 
@@ -339,7 +349,8 @@ would not test the intended product surface.
 The normalized transcript must prove:
 
 - every request stayed on the configured local origin;
-- one fresh Cart Token carried the entire sequence;
+- one fresh Cart-Token lineage carried the entire sequence without a broken
+  response-to-request link;
 - the final cart contained exactly one expected product at quantity one;
 - the selected shipping rate cost zero;
 - the final cart total was USD 25.00;
@@ -439,7 +450,8 @@ Add focused tests for the Store API client and evidence evaluator, then extend
 
 - valid distinct reference and target identities and homes;
 - valid Cart-Token request sequencing and local-origin enforcement;
-- missing, changed, leaked, or reused Cart Tokens;
+- missing, leaked, cross-store reused, or discontinuous Cart Tokens, while
+  accepting valid response-to-request rotation;
 - redirects to another origin and non-local configured URLs;
 - extra cart items, wrong product or quantity, and wrong total or currency;
 - zero, one, and multiple zero-cost shipping rates;
