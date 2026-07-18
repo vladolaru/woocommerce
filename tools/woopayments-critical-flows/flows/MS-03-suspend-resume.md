@@ -28,4 +28,35 @@ End state: subscription Active again with an intact schedule; both status transi
 
 Deterministic exerciser: NOT YET WIRED — assertions above are the contract for the future flows/MS-03-*.sh.
 
+## Latest runner evidence
+
+Layer A is runner-verified `PASS` on both stores in partial run
+`20260718T151903Z-45965-partial`. Reference subscription `1283` and target
+subscription `874` each exposed the exact-row **Suspend** action, changed to
+**On hold** with visible list/edit feedback and a new status note, exposed the
+exact-row **Reactivate** action, and returned to **Active** with the original
+future September 10 schedule and a second status note. Every transition was one
+ordinary trusted browser click; hash-bound continuations preserved post-action
+screenshot failures without replaying a transition.
+
+The authoritative state series are `active` → `on-hold` → `active`. Suspending
+removed the pending renewal action, and reactivating recreated one with the same
+hook, group, and GMT schedule. Each store retained its exact recent/related order
+inventories, Visa 4242 and Mastercard 4444 token inventories, gateway state,
+amount, currency, and payment identifiers; no checkout, renewal drive, new order,
+or payment occurred. All twelve accepted screenshots visibly bind the exact
+subscription row/action and resulting list/edit state.
+
+The reference marker-bounded debug window retains one WooPayments
+translation-loading notice. Target retains twelve exact `settings-ui`
+asset-registry exception lines and three bounded aborted `s.w.org` emoji requests
+across the two final browser contexts. No accepted context contains an HTTP
+response failure, console error, page error, error notice, or functional failure;
+neither store is represented as log-clean.
+
+Accepted result digest:
+`sha256:81461a442fe04815abcbf54d168ae5d246f59524a5ef91d7007ffdbe7cfe3dca`.
+The matrix row remains `PENDING`: Layer A passes independently, while Layer D is
+still unwired and no suspended/resumed renewal was driven by this package.
+
 Agent oracle mode: comparable (dual-store; reference is the golden oracle).

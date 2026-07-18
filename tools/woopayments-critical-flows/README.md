@@ -135,7 +135,7 @@ Legend — **Layers:** `D` deterministic, `A` agent-driven, `D+A` both (overlap)
 |----|------|--------|-----------------------|----------------|--------|
 | MS-01 | Create subscription product | D+A | Purchasable | Subscription type + settings | PENDING |
 | MS-02 | Purchase (merchant view) | D | Visible admin + My Account | Admin record | PENDING |
-| MS-03 | Suspend + resume | D+A | On-hold blocks renewal; resume restores | Suspend/Resume + status | PENDING |
+| MS-03 | Suspend + resume | D+A | On-hold blocks renewal; resume restores | Suspend/Resume + status | PENDING (Layer A runner-verified PASS in 20260718T151903Z-45965-partial; Layer D NOT YET WIRED; run flows/MS-03-suspend-resume.md) |
 | MS-04 | Promote w/ coupon | D | Schedule reflects coupon | Coupon effect | PENDING |
 | MS-05 | Renew automatically (scheduled) | D | Charges on date; email; active; next date | Renewal order + email | PENDING |
 | MS-06 | Renew manually (admin) | D+A | Renewal order paid; date advances | "Renew" action | PENDING |

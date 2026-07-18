@@ -33,7 +33,7 @@ SS-09	Multiple subscriptions one purchase	D	comparable	PENDING
 SS-10	SEPA-token renewal after cutover	D+A	target-only	TARGET-ONLY (parity not comparable)
 MS-01	Create subscription product	D+A	comparable	PENDING
 MS-02	Purchase (merchant view)	D	comparable	PENDING
-MS-03	Suspend + resume	D+A	comparable	PENDING
+MS-03	Suspend + resume	D+A	comparable	PENDING (Layer A runner-verified PASS in 20260718T151903Z-45965-partial; Layer D NOT YET WIRED; run flows/MS-03-suspend-resume.md)
 MS-04	Promote w/ coupon	D	comparable	PENDING
 MS-05	Renew automatically (scheduled)	D	comparable	PENDING
 MS-06	Renew manually (admin)	D+A	comparable	PENDING
