@@ -26,19 +26,28 @@ BOTH stores:
 - Amount/currency match the cart; order created via the Blocks/Store API checkout path.
 - Compare ref vs target end-state.
 
-Deterministic exerciser: NOT YET WIRED — assertions above are the contract for the future flows/SC-02-*.sh.
+Deterministic exerciser: NOT YET WIRED. The current agent evidence package
+includes authoritative WP-CLI and provider state corroboration, but it does not
+satisfy the suite's separate Layer D runner requirement.
 
 ## Latest runner evidence
 
-Layer A is reference `PASS` / target `FAIL — functional` in partial run
-`20260715T061833Z-39338-partial`. The reference completed Store API order
-`1964` for USD 40 and bound it to the matching succeeded PaymentIntent and
-captured charge. The native target returned HTTP 400
-`woocommerce_rest_checkout_process_payment_error` for the same Visa 4242
-checkout. Its only resulting order, `1484`, is safely failed with no paid
-timestamp, intent, charge, token, customer mapping, or provider charge delta.
+Layer A is runner-verified `PASS` on both stores in partial run
+`20260718T113300Z-51058-partial`. From an explicitly empty cart, each store
+rendered an interactive Payment Element, a distinct Test Mode badge, the Visa
+4242 instruction, and an actionable incomplete-card error without creating an
+order. One trusted complete submission then created a paid USD 25 Store API
+order (`2166` reference, `1580` target) whose status, line item, customer,
+WooCommerce transaction ID, PaymentIntent, PaymentMethod, and captured charge
+joined exactly.
 
-This is a new product regression. Layer D remains unwired, so the matrix row
-stays `PENDING` rather than claiming the full D+A contract.
+The target HTTP 400 from `20260715T061833Z-39338-partial` did not reproduce on
+the current committed tree. A reference USD 50 quantity-two control caused by
+harness persistent-cart contamination was fully reconciled, explicitly
+excluded, and replaced with a fresh zero-state customer after adding a
+fail-closed empty-cart precondition.
+
+The matrix row remains `PENDING` until a separate deterministic exerciser is
+wired and accepted through the Layer D runner.
 
 Agent oracle mode: comparable (dual-store; reference is the golden oracle).
