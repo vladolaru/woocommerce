@@ -70,6 +70,7 @@ tools/woopayments-critical-flows/
     fixtures.sh        # idempotent fixture setup (account state, products, settings, coupons, shipping) + snapshot/restore
   flows/
     SC-01-card-checkout.sh         # Layer D example (deterministic exerciser + state assert)
+    SC-02-blocks-card-checkout.sh  # Cart-Token Store API + exact order/provider parity
     SC-04-saved-card.md            # Hybrid example (D state-assert + A browser) — B2 acceptance test
     MS-07-admin-change-method.md   # Hybrid example (A browser + D state-assert) — B3 acceptance test
     ...                            # one per matrix row

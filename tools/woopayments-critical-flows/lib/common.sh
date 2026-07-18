@@ -32,6 +32,11 @@ REF_WP_COMMAND="${REF_WP_COMMAND:-}"
 # Target store: wp-env wrapper from the WC dir, :8889.
 TARGET_WPENV_CWD="${TARGET_WPENV_CWD:-wp-content/plugins/woocommerce}"
 TARGET_WP_COMMAND="${TARGET_WP_COMMAND:-}"
+APPROVED_TARGET_CONTAINER="${WOOPAYMENTS_APPROVED_TARGET_CONTAINER:-}"
+if [ -z "$TARGET_WP_COMMAND" ] \
+  && [[ "$APPROVED_TARGET_CONTAINER" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]; then
+  TARGET_WP_COMMAND="docker exec -i -u www-data $APPROVED_TARGET_CONTAINER wp"
+fi
 
 run_wp_command_string() {
   local command="$1"

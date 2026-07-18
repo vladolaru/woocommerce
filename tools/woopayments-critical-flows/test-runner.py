@@ -51,6 +51,13 @@ MO03_DRIVER = (
     REPO
     / "tools/woopayments-critical-flows/flows/class-woopaymentscriticalflowsmo03driver.php"
 )
+SC02_DRIVER = (
+    REPO
+    / "tools/woopayments-critical-flows/flows/class-woopaymentscriticalflowssc02driver.php"
+)
+SC02_FLOW = (
+    REPO / "tools/woopayments-critical-flows/flows/SC-02-blocks-card-checkout.sh"
+)
 MO03_CONTRACT = (
     REPO
     / "tools/woopayments-critical-flows/flows/"
@@ -3285,6 +3292,264 @@ exit 2
 """
 
 
+def sc02_raw_preflight(store: str) -> dict:
+    """Return one complete raw SC-02 preflight projection."""
+    owner = "plugin" if store == "ref" else "native"
+    gateway_class = "WC_Payment_Gateway_WCPay" if store == "ref" else "NativeWooPaymentsGateway"
+    return {
+        "schema": "woopayments_sc02_state_raw.v1",
+        "phase": "preflight",
+        "store": store,
+        "run_stamp": TEST_RUN_STAMP,
+        "runtime_owner": owner,
+        "gateway": {
+            "id": "woocommerce_payments",
+            "class": gateway_class,
+            "available": True,
+            "test_mode": True,
+            "connected": True,
+        },
+        "product": {
+            "id": 24 if store == "ref" else 34,
+            "sku": "test-lab-beaker-001",
+            "price": "25.00",
+            "purchasable": True,
+            "in_stock": True,
+        },
+        "store_currency": "USD",
+        "connected_account_id": f"acct_{store}fixture1234",
+        "blockers": [],
+    }
+
+
+def sc02_raw_post(store: str) -> dict:
+    """Return one complete raw SC-02 post-checkout projection."""
+    owner = "plugin" if store == "ref" else "native"
+    product_id = 24 if store == "ref" else 34
+    order_id = 1701 if store == "ref" else 2701
+    intent_id = f"pi_{store}_sc02_fixture"
+    charge_id = f"ch_{store}_sc02_fixture"
+    payment_method = f"pm_{store}_sc02_fixture"
+    return {
+        "schema": "woopayments_sc02_state_raw.v1",
+        "phase": "post",
+        "store": store,
+        "run_stamp": TEST_RUN_STAMP,
+        "runtime_owner": owner,
+        "order": {
+            "id": order_id,
+            "status": "processing",
+            "created_via": "store-api",
+            "payment_method": "woocommerce_payments",
+            "customer_id": 0,
+            "customer_note": f"sc02-{TEST_RUN_STAMP}-{store}",
+            "total": "25.00",
+            "currency": "USD",
+            "date_paid_present": True,
+            "transaction_id": intent_id,
+            "intent_id": intent_id,
+            "charge_id": charge_id,
+            "line_items": [
+                {
+                    "product_id": product_id,
+                    "sku": "test-lab-beaker-001",
+                    "quantity": 1,
+                    "total": "25.00",
+                }
+            ],
+        },
+        "provider": {
+            "intent": {
+                "id": intent_id,
+                "object": "payment_intent",
+                "status": "succeeded",
+                "amount": 2500,
+                "currency": "usd",
+                "latest_charge": charge_id,
+                "payment_method": payment_method,
+            },
+            "charge": {
+                "id": charge_id,
+                "object": "charge",
+                "status": "succeeded",
+                "paid": True,
+                "amount": 2500,
+                "amount_captured": 2500,
+                "currency": "usd",
+                "payment_intent": intent_id,
+                "payment_method": payment_method,
+            },
+        },
+        "blockers": [],
+    }
+
+
+def sc02_fake_wp_source(
+    store: str, *, connected: bool = True, log_status: str = "pass"
+) -> str:
+    """Return a WP seam for SC-02 state and authenticated log collection."""
+    owner = "plugin" if store == "ref" else "native"
+    home = f"http://{store}.sc02.fake.test"
+    preflight_payload = sc02_raw_preflight(store)
+    preflight_payload["gateway"]["connected"] = connected
+    preflight = json.dumps(preflight_payload, separators=(",", ":"))
+    post = json.dumps(sc02_raw_post(store), separators=(",", ":"))
+    log_matches = (
+        [safe_log_record(line=5, diagnostic="PHP Warning: SC-02 fake warning")]
+        if log_status == "fail"
+        else []
+    )
+    log_payload = common_log_scan_v5(
+        run_stamp=TEST_RUN_STAMP,
+        store=store,
+        flow_id="SC-02-blocks-card-checkout",
+        purpose="clean-debug-log",
+        status=log_status,
+        marker_created_at=TEST_MARKER_CREATED_AT,
+        end_line_count=5 if log_matches else 4,
+        end_byte_count=160 if log_matches else 128,
+        matches=log_matches,
+        blocker_code="observer_unavailable" if log_status == "blocked" else "",
+    )
+    log_json = json.dumps(log_payload, separators=(",", ":"))
+    return f"""#!/usr/bin/env bash
+{authenticated_log_fake_prelude(log_payload, observer_categories='warning' if log_status == 'fail' else '')}
+if [ "${{1:-}}" = "eval-file" ]; then
+  body="$(cat)"
+  if [[ "$body" == *"update_option"*"woopayments_critical_flows_debug_log_marker"* ]]; then
+    printf '%s\n' '{{"status":"pass"}}'
+    exit 0
+  fi
+  if [[ "$body" == *"ignored_matches"* ]]; then
+    printf '%s\n' '{log_json}'
+    exit 0
+  fi
+  if [[ "$body" == *"WooPaymentsCriticalFlowsSc02Driver"* ]]; then
+    if [[ "$body" == *"array( 'post'"* ]]; then
+      printf '%s\n' '{post}'
+    else
+      printf '%s\n' '{preflight}'
+    fi
+    exit 0
+  fi
+fi
+if [ "${{1:-}}" = "eval" ]; then
+  if [[ "${{2:-}}" == *"store_identity_owner"* ]]; then
+    printf '%s\n' 'store_identity_owner={owner}'
+    printf '%s\n' 'store_identity_home={home}'
+    exit 0
+  fi
+  if [[ "${{2:-}}" == *"update_option"*"woopayments_critical_flows_debug_log_marker"* ]]; then
+    printf '%s\n' '{{"status":"pass","paths":["/tmp/fake-debug.log"],"markers":{{"/tmp/fake-debug.log":4}}}}'
+    exit 0
+  fi
+  if [[ "${{2:-}}" == *"ignored_matches"* ]]; then
+    printf '%s\n' '{log_json}'
+    exit 0
+  fi
+fi
+printf 'unexpected SC-02 fake wp call: %s\n' "$*" >&2
+exit 2
+"""
+
+
+def sc02_fake_http_source(call_log: Path) -> str:
+    """Return a one-shot HTTP transcript producer with pass/fail/block modes."""
+    client_path = REPO / "tools/woopayments-critical-flows/flows/sc02-store-api.py"
+    return f"""#!/usr/bin/env python3
+import argparse
+import hashlib
+import importlib.util
+import os
+from pathlib import Path
+
+spec = importlib.util.spec_from_file_location("sc02_store_api_fixture", {str(client_path)!r})
+if spec is None or spec.loader is None:
+    raise SystemExit(3)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--base-url", required=True)
+parser.add_argument("--store", required=True)
+parser.add_argument("--run-stamp", required=True)
+parser.add_argument("--run-token", required=True)
+parser.add_argument("--product-id", type=int, required=True)
+parser.add_argument("--timeout", required=True)
+parser.add_argument("--output", required=True)
+args = parser.parse_args()
+with Path({str(call_log)!r}).open("a", encoding="utf-8") as handle:
+    handle.write(args.store + "\\n")
+
+key = bytes.fromhex(os.environ["CRITICAL_FLOWS_RUN_CONTEXT_KEY"])
+fingerprint = "hmac-sha256:" + hashlib.sha256((args.store + "-lineage").encode()).hexdigest()
+payload = module.empty_transcript(args.store, args.run_stamp, args.product_id, fingerprint)
+mode = os.environ.get(
+    f"SC02_FAKE_HTTP_{{args.store.upper()}}_MODE",
+    os.environ.get("SC02_FAKE_HTTP_MODE", "pass"),
+)
+if mode in {{"pass", "fail"}}:
+    payload.update({{
+        "order_id": 1701 if args.store == "ref" and mode == "pass" else 2701 if mode == "pass" else 0,
+        "cart_token_fingerprint": fingerprint,
+        "request_sequence": list(module.EXPECTED_SEQUENCE),
+        "cart_token_lineage": True,
+        "local_origin": True,
+        "redirect_count": 0,
+    }})
+    payload["cart"].update({{
+        "started_empty": True,
+        "item_count": 1,
+        "product_id": args.product_id,
+        "sku": "test-lab-beaker-001",
+        "quantity": 1,
+        "selected_shipping_rate_count": 1,
+        "selected_shipping_rate_cost": "0",
+        "total_price": "2500",
+        "currency_code": "USD",
+        "currency_minor_unit": 2,
+        "payment_methods": ["woocommerce_payments"],
+    }})
+    payload["checkout"].update({{
+        "http_status": 200 if mode == "pass" else 400,
+        "payment_status": "success" if mode == "pass" else "",
+        "order_status": "processing" if mode == "pass" else "",
+        "structured_error": mode == "fail",
+    }})
+module.derive_verdict(payload)
+raise SystemExit(module.write_payload(payload, Path(args.output), key))
+"""
+
+
+def sc02_adversarial_evidence_source(mode: str) -> str:
+    """Proxy the SC-02 evidence tool and corrupt only the target final packet."""
+    evidence_tool = REPO / "tools/woopayments-critical-flows/flows/sc02-evidence.py"
+    return f"""#!/usr/bin/env python3
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+result = subprocess.run([sys.executable, {str(evidence_tool)!r}, *sys.argv[1:]], check=False)
+if sys.argv[1] == "manifest" and "--output" in sys.argv:
+    output = Path(sys.argv[sys.argv.index("--output") + 1])
+    if output.name == "target-manifest.json" and output.exists():
+        mode = {mode!r}
+        if mode == "missing_manifest":
+            output.unlink()
+        elif mode == "missing_artifact":
+            (output.parent / "target-post.json").unlink()
+        else:
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            if mode == "tampered_hmac":
+                payload["context_hmac"] = "hmac-sha256:" + "0" * 64
+            elif mode == "wrong_binding":
+                payload["run_stamp"] = "20260718T000000Z-1"
+            output.write_text(json.dumps(payload, sort_keys=True) + "\\n", encoding="utf-8")
+raise SystemExit(result.returncode)
+"""
+
+
 def run_runner(
     *args: str,
     evidence_dir: Path,
@@ -3463,6 +3728,339 @@ printf '%s\\n' '{"op":"charge","order_id":123,"charge_id":"ch_fake","intent_id":
                 "exit_code": 0,
             }
         ]
+
+
+def test_sc02_deterministic_flow_runs_each_store_once_and_binds_manifests() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-sc02-pass-") as tmp:
+        evidence_dir = Path(tmp)
+        fake_ref_wp = evidence_dir / "fake-ref-wp.sh"
+        fake_target_wp = evidence_dir / "fake-target-wp.sh"
+        fake_http = evidence_dir / "fake-sc02-http.py"
+        calls = evidence_dir / "http-calls.txt"
+        write_executable(fake_ref_wp, sc02_fake_wp_source("ref"))
+        write_executable(fake_target_wp, sc02_fake_wp_source("target"))
+        write_executable(fake_http, sc02_fake_http_source(calls))
+
+        result = run_runner(
+            "--store",
+            "both",
+            "--layer",
+            "deterministic",
+            "--flow",
+            "SC-02",
+            "--ref-url",
+            "http://ref.sc02.localhost:8082",
+            "--target-url",
+            "http://target.sc02.localhost:8889",
+            evidence_dir=evidence_dir,
+            extra_env={
+                "REF_WP_COMMAND": str(fake_ref_wp),
+                "TARGET_WP_COMMAND": str(fake_target_wp),
+                "SC02_HTTP_DRIVER": str(fake_http),
+            },
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert calls.read_text(encoding="utf-8").splitlines() == ["ref", "target"]
+        assert "EXERCISER NOT WIRED" not in result.stdout
+        assert result.stdout.count("deterministic verdict: PASS") == 2
+        rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
+        assert rollup["summary"]["passed"] == 2
+        for row in rollup["results"]:
+            manifest_path = Path(row["evidence_path"])
+            assert manifest_path.is_file()
+            assert row["evidence_sha256"] == file_sha256(manifest_path)
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            assert manifest["schema"] == "woopayments_sc02_manifest.v1"
+            assert manifest["status"] == "pass"
+            assert manifest["stage"] == "post"
+
+
+def test_sc02_transport_block_invokes_checkout_once_and_never_collects_post() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-sc02-block-") as tmp:
+        evidence_dir = Path(tmp)
+        fake_target_wp = evidence_dir / "fake-target-wp.sh"
+        fake_http = evidence_dir / "fake-sc02-http.py"
+        calls = evidence_dir / "http-calls.txt"
+        write_executable(fake_target_wp, sc02_fake_wp_source("target"))
+        write_executable(fake_http, sc02_fake_http_source(calls))
+
+        result = run_runner(
+            "--store",
+            "target",
+            "--layer",
+            "deterministic",
+            "--flow",
+            "SC-02",
+            "--target-url",
+            "http://target.sc02.localhost:8889",
+            evidence_dir=evidence_dir,
+            extra_env={
+                "TARGET_WP_COMMAND": str(fake_target_wp),
+                "SC02_HTTP_DRIVER": str(fake_http),
+                "SC02_FAKE_HTTP_MODE": "blocked",
+            },
+        )
+
+        assert result.returncode == 3, result.stdout + result.stderr
+        assert calls.read_text(encoding="utf-8").splitlines() == ["target"]
+        flow_root = (
+            evidence_dir
+            / "runs"
+            / f"{TEST_RUN_STAMP}-partial"
+            / "SC-02-blocks-card-checkout"
+        )
+        assert not (flow_root / "target-post.json").exists()
+        manifest_path = flow_root / "target-manifest.json"
+        assert manifest_path.is_file()
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        assert manifest["status"] == "blocked"
+        assert manifest["stage"] == "http"
+
+
+def test_sc02_structured_checkout_failure_remains_fail_without_post_collection() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-sc02-fail-") as tmp:
+        evidence_dir = Path(tmp)
+        fake_target_wp = evidence_dir / "fake-target-wp.sh"
+        fake_http = evidence_dir / "fake-sc02-http.py"
+        calls = evidence_dir / "http-calls.txt"
+        write_executable(fake_target_wp, sc02_fake_wp_source("target"))
+        write_executable(fake_http, sc02_fake_http_source(calls))
+
+        result = run_runner(
+            "--store",
+            "target",
+            "--layer",
+            "deterministic",
+            "--flow",
+            "SC-02",
+            "--target-url",
+            "http://target.sc02.localhost:8889",
+            evidence_dir=evidence_dir,
+            extra_env={
+                "TARGET_WP_COMMAND": str(fake_target_wp),
+                "SC02_HTTP_DRIVER": str(fake_http),
+                "SC02_FAKE_HTTP_MODE": "fail",
+            },
+        )
+
+        assert result.returncode == 1, result.stdout + result.stderr
+        assert calls.read_text(encoding="utf-8").splitlines() == ["target"]
+        flow_root = (
+            evidence_dir
+            / "runs"
+            / f"{TEST_RUN_STAMP}-partial"
+            / "SC-02-blocks-card-checkout"
+        )
+        assert not (flow_root / "target-post.json").exists()
+        manifest = json.loads(
+            (flow_root / "target-manifest.json").read_text(encoding="utf-8")
+        )
+        assert manifest["status"] == "fail"
+        assert manifest["stage"] == "http"
+        assert manifest["verdict_sources"] == ["http_failed"]
+
+
+def test_sc02_parity_fail_binds_reference_actual_http_prefix() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-sc02-parity-fail-") as tmp:
+        evidence_dir = Path(tmp)
+        fake_ref_wp = evidence_dir / "fake-ref-wp.sh"
+        fake_target_wp = evidence_dir / "fake-target-wp.sh"
+        fake_http = evidence_dir / "fake-sc02-http.py"
+        calls = evidence_dir / "http-calls.txt"
+        write_executable(fake_ref_wp, sc02_fake_wp_source("ref"))
+        write_executable(fake_target_wp, sc02_fake_wp_source("target"))
+        write_executable(fake_http, sc02_fake_http_source(calls))
+
+        result = run_runner(
+            "--store",
+            "both",
+            "--layer",
+            "deterministic",
+            "--flow",
+            "SC-02",
+            "--ref-url",
+            "http://ref.sc02.localhost:8082",
+            "--target-url",
+            "http://target.sc02.localhost:8889",
+            evidence_dir=evidence_dir,
+            extra_env={
+                "REF_WP_COMMAND": str(fake_ref_wp),
+                "TARGET_WP_COMMAND": str(fake_target_wp),
+                "SC02_HTTP_DRIVER": str(fake_http),
+                "SC02_FAKE_HTTP_REF_MODE": "fail",
+            },
+        )
+
+        assert result.returncode == 1, result.stdout + result.stderr
+        assert calls.read_text(encoding="utf-8").splitlines() == ["ref", "target"]
+        rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
+        assert [(row["store"], row["status"]) for row in rollup["results"]] == [
+            ("ref", "FAIL"),
+            ("target", "FAIL"),
+        ]
+        target = next(row for row in rollup["results"] if row["store"] == "target")
+        manifest_path = Path(target["evidence_path"])
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        assert manifest["status"] == "fail"
+        assert manifest["stage"] == "post"
+        assert manifest["verdict_sources"] == ["comparison_failed"]
+        assert "ref-http.json" in manifest["files"]
+        assert "ref-post.json" not in manifest["files"]
+
+
+@pytest.mark.parametrize(
+    "reference_log_status,expected_status,expected_source",
+    [
+        pytest.param("fail", "FAIL", "comparison_failed", id="diagnostic-fail"),
+        pytest.param(
+            "blocked", "BLOCKED", "comparison_blocked", id="diagnostic-blocked"
+        ),
+    ],
+)
+def test_sc02_dual_store_verdict_includes_reference_diagnostics(
+    reference_log_status: str, expected_status: str, expected_source: str
+) -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-sc02-ref-log-") as tmp:
+        evidence_dir = Path(tmp)
+        fake_ref_wp = evidence_dir / "fake-ref-wp.sh"
+        fake_target_wp = evidence_dir / "fake-target-wp.sh"
+        fake_http = evidence_dir / "fake-sc02-http.py"
+        calls = evidence_dir / "http-calls.txt"
+        write_executable(
+            fake_ref_wp,
+            sc02_fake_wp_source("ref", log_status=reference_log_status),
+        )
+        write_executable(fake_target_wp, sc02_fake_wp_source("target"))
+        write_executable(fake_http, sc02_fake_http_source(calls))
+
+        result = run_runner(
+            "--store",
+            "both",
+            "--layer",
+            "deterministic",
+            "--flow",
+            "SC-02",
+            "--ref-url",
+            "http://ref.sc02.localhost:8082",
+            "--target-url",
+            "http://target.sc02.localhost:8889",
+            evidence_dir=evidence_dir,
+            extra_env={
+                "REF_WP_COMMAND": str(fake_ref_wp),
+                "TARGET_WP_COMMAND": str(fake_target_wp),
+                "SC02_HTTP_DRIVER": str(fake_http),
+            },
+        )
+
+        expected_exit = 1 if expected_status == "FAIL" else 3
+        assert result.returncode == expected_exit, result.stdout + result.stderr
+        assert calls.read_text(encoding="utf-8").splitlines() == ["ref", "target"]
+        rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
+        assert [(row["store"], row["status"]) for row in rollup["results"]] == [
+            ("ref", expected_status),
+            ("target", expected_status),
+        ]
+        target = next(row for row in rollup["results"] if row["store"] == "target")
+        manifest = json.loads(Path(target["evidence_path"]).read_text(encoding="utf-8"))
+        assert manifest["verdict_sources"] == [expected_source]
+        comparison = json.loads(
+            (Path(target["evidence_path"]).parent / "comparison.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert comparison["status"].upper() == expected_status
+        assert comparison["parity"]["clean_diagnostics"] is False
+
+
+def test_sc02_blocked_preflight_builds_manifest_without_http_mutation() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-sc02-preflight-") as tmp:
+        evidence_dir = Path(tmp)
+        fake_target_wp = evidence_dir / "fake-target-wp.sh"
+        fake_http = evidence_dir / "fake-sc02-http.py"
+        calls = evidence_dir / "http-calls.txt"
+        write_executable(
+            fake_target_wp, sc02_fake_wp_source("target", connected=False)
+        )
+        write_executable(fake_http, sc02_fake_http_source(calls))
+
+        result = run_runner(
+            "--store",
+            "target",
+            "--layer",
+            "deterministic",
+            "--flow",
+            "SC-02",
+            "--target-url",
+            "http://target.sc02.localhost:8889",
+            evidence_dir=evidence_dir,
+            extra_env={
+                "TARGET_WP_COMMAND": str(fake_target_wp),
+                "SC02_HTTP_DRIVER": str(fake_http),
+            },
+        )
+
+        assert result.returncode == 3, result.stdout + result.stderr
+        assert not calls.exists()
+        flow_root = (
+            evidence_dir
+            / "runs"
+            / f"{TEST_RUN_STAMP}-partial"
+            / "SC-02-blocks-card-checkout"
+        )
+        assert not (flow_root / "target-http.json").exists()
+        assert not (flow_root / "target-post.json").exists()
+        manifest = json.loads(
+            (flow_root / "target-manifest.json").read_text(encoding="utf-8")
+        )
+        assert manifest["status"] == "blocked"
+        assert manifest["stage"] == "preflight"
+        assert manifest["verdict_sources"] == ["preflight_blocked"]
+
+
+@pytest.mark.parametrize(
+    "mode",
+    ("missing_manifest", "missing_artifact", "tampered_hmac", "wrong_binding"),
+)
+def test_sc02_runner_rejects_unbound_or_incomplete_target_manifest(mode: str) -> None:
+    with tempfile.TemporaryDirectory(prefix=f"critical-flows-sc02-{mode}-") as tmp:
+        evidence_dir = Path(tmp)
+        fake_ref_wp = evidence_dir / "fake-ref-wp.sh"
+        fake_target_wp = evidence_dir / "fake-target-wp.sh"
+        fake_http = evidence_dir / "fake-sc02-http.py"
+        fake_evidence = evidence_dir / "fake-sc02-evidence.py"
+        calls = evidence_dir / "http-calls.txt"
+        write_executable(fake_ref_wp, sc02_fake_wp_source("ref"))
+        write_executable(fake_target_wp, sc02_fake_wp_source("target"))
+        write_executable(fake_http, sc02_fake_http_source(calls))
+        write_executable(fake_evidence, sc02_adversarial_evidence_source(mode))
+
+        result = run_runner(
+            "--store",
+            "both",
+            "--layer",
+            "deterministic",
+            "--flow",
+            "SC-02",
+            "--ref-url",
+            "http://ref.sc02.localhost:8082",
+            "--target-url",
+            "http://target.sc02.localhost:8889",
+            evidence_dir=evidence_dir,
+            extra_env={
+                "REF_WP_COMMAND": str(fake_ref_wp),
+                "TARGET_WP_COMMAND": str(fake_target_wp),
+                "SC02_HTTP_DRIVER": str(fake_http),
+                "SC02_EVIDENCE_TOOL": str(fake_evidence),
+            },
+        )
+
+        assert result.returncode == 3, (mode, result.stdout, result.stderr)
+        assert calls.read_text(encoding="utf-8").splitlines() == ["ref", "target"]
+        rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
+        target = next(row for row in rollup["results"] if row["store"] == "target")
+        assert target["status"] == "BLOCKED"
+        assert "evidence_path" not in target
 
 
 def test_mo01_deterministic_flow_classifies_pass_fail_and_blocked() -> None:
@@ -6354,6 +6952,94 @@ def test_mo03_php_driver_keeps_bounded_observation_contract() -> None:
     assert "private const NOTE_LIMIT" in source
     assert "'limit'    => self::NOTE_LIMIT + 1" in source
     assert "count( $notes ) > self::NOTE_LIMIT" in source
+
+
+def test_sc02_driver_has_exact_modes_bounds_and_secret_safe_provider_projection() -> None:
+    source = SC02_DRIVER.read_text(encoding="utf-8")
+
+    assert "woopayments_sc02_state_raw.v1" in source
+    assert "preflight" in source and "post" in source
+    assert "CRITICAL_FLOWS_RUN_CONTEXT_KEY" in source
+    assert "test-lab-beaker-001" in source
+    assert "woocommerce_payments" in source
+    assert "_intent_id" in source and "_charge_id" in source
+    assert "https://api.stripe.com/v1/payment_intents/" in source
+    assert "https://api.stripe.com/v1/charges/" in source
+    assert "Authorization" in source and "Stripe-Account" in source
+    assert "limit_response_size" in source
+    assert "client_secret" not in source
+    assert "charges?limit=1" not in source
+    assert "wc_get_orders" not in source
+
+
+def test_sc02_shell_owns_one_shot_store_api_and_bound_stage_evidence() -> None:
+    source = SC02_FLOW.read_text(encoding="utf-8")
+
+    assert 'HTTP_DRIVER="${SC02_HTTP_DRIVER:-$DIR/sc02-store-api.py}"' in source
+    assert 'STATE_DRIVER="${SC02_STATE_DRIVER:-$DIR/class-woopaymentscriticalflowssc02driver.php}"' in source
+    assert 'EVIDENCE_TOOL="${SC02_EVIDENCE_TOOL:-$DIR/sc02-evidence.py}"' in source
+    assert 'RUN_TOKEN="sc02-$RUN_STAMP-$S"' in source
+    assert source.count('"$HTTP_DRIVER"') == 2  # Dependency check plus one invocation.
+    assert "validate-http" in source
+    assert "evaluate-store" in source
+    assert "normalize-log-scan" in source
+    assert "comparison_failed" in source and "comparison_blocked" in source
+    assert "--stage" in source and "--verdict-source" in source
+    assert "wc_get_orders" not in source
+    assert "retry" not in source.lower()
+
+
+def test_sc02_approved_target_container_uses_direct_noise_free_wp_cli() -> None:
+    with tempfile.TemporaryDirectory(prefix="sc02-approved-target-") as tmp:
+        root = Path(tmp)
+        fake_docker = root / "docker"
+        calls = root / "docker-calls.txt"
+        write_executable(
+            fake_docker,
+            f"""#!/usr/bin/env bash
+printf '%s\n' "$*" > {shlex.quote(str(calls))}
+printf '%s\n' 'direct-target-output'
+""",
+        )
+
+        result = subprocess.run(
+            ["bash", "-c", f'source {shlex.quote(str(COMMON))}; wp_target option get home'],
+            cwd=REPO,
+            env={
+                **os.environ,
+                "PATH": f"{root}:{os.environ['PATH']}",
+                "TARGET_WP_COMMAND": "",
+                "WOOPAYMENTS_APPROVED_TARGET_CONTAINER": "approved-target-cli-1",
+            },
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert result.stdout.strip() == "direct-target-output"
+        assert calls.read_text(encoding="utf-8").strip() == (
+            "exec -i -u www-data approved-target-cli-1 wp option get home"
+        )
+
+        unsafe = subprocess.run(
+            [
+                "bash",
+                "-c",
+                f'source {shlex.quote(str(COMMON))}; printf "<%s>\\n" "$TARGET_WP_COMMAND"',
+            ],
+            cwd=REPO,
+            env={
+                **os.environ,
+                "TARGET_WP_COMMAND": "",
+                "WOOPAYMENTS_APPROVED_TARGET_CONTAINER": "target;touch-pwned",
+            },
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert unsafe.returncode == 0
+        assert unsafe.stdout.strip() == "<>"
 
 
 def test_mo01_comparator_rejects_swapped_and_malformed_normalized_evidence() -> None:

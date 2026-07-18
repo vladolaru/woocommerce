@@ -22,13 +22,30 @@ BOTH stores:
 
 ## Layer D — deterministic state assertion
 
-- Order status `processing`/`completed`; `_intent_id` / `_charge_id` present.
-- Amount/currency match the cart; order created via the Blocks/Store API checkout path.
-- Compare ref vs target end-state.
+- Run one anonymous Cart-Token sequence through `/wc/store/v1/*`, ending at the
+  public checkout endpoint with `woocommerce_payments` and the shared
+  `wcpay-payment-method` payment-data field.
+- Require an initially empty cart, the fixed USD 25 product, one selected free
+  shipping rate, one unbroken rotating Cart-Token lineage, no redirects, and a
+  successful paid checkout response.
+- Load only the response order ID. Require guest `store-api` creation, status
+  `processing`/`completed`, the fixed line item and total, and persisted
+  transaction, `_intent_id`, and `_charge_id` linkage.
+- Observe only those exact Stripe PaymentIntent and Charge objects through
+  bounded read-only requests; compare their success, amount/currency, and
+  identity linkage across the plugin reference and native target runtimes.
+- Bind preflight, HTTP, post-state, parity, log, and final verdict evidence to
+  the current private runner context. The runner independently recomputes the
+  result and manifest before accepting a rollup row.
 
-Deterministic exerciser: NOT YET WIRED. The current agent evidence package
-includes authoritative WP-CLI and provider state corroboration, but it does not
-satisfy the suite's separate Layer D runner requirement.
+Deterministic exerciser: WIRED —
+`flows/SC-02-blocks-card-checkout.sh` coordinates the local-only HTTP client,
+WP-CLI collector, evidence oracle, and exact stage manifest. It invokes checkout
+at most once per store and never finds an order by recency.
+
+Layer D does not prove that the Payment Element mounted, browser card fields
+were usable, the test-mode badge rendered, or incomplete-card feedback reached
+the Blocks error UI. Those remain Layer A responsibilities.
 
 ## Latest runner evidence
 
@@ -47,7 +64,18 @@ harness persistent-cart contamination was fully reconciled, explicitly
 excluded, and replaced with a fresh zero-state customer after adding a
 fail-closed empty-cart precondition.
 
-The matrix row remains `PENDING` until a separate deterministic exerciser is
-wired and accepted through the Layer D runner.
+The first one-shot Layer D run, `20260718T221303Z-46945-partial`, was
+runner-verified `BLOCKED` on both stores without creating an order. Reference
+preflight passed, but its sole shipping rate cost USD 20 and made the fixed cart
+USD 45, so the client stopped after `update-customer` and before checkout. The
+target stopped at preflight because `pnpm wp-env run` progress output surrounded
+the collector JSON and independently blocked log observation. The harness now
+uses the explicitly approved target container as a direct WP-CLI transport;
+that post-run correction is hermetically covered, but the live flow was not
+repeated. Both accepted manifest hashes and the exact outcome are preserved in
+the run archive.
+
+The matrix row remains `PENDING` until a new explicitly authorized run starts
+with the required free-shipping fixture and earns passing Layer D parity.
 
 Agent oracle mode: comparable (dual-store; reference is the golden oracle).
