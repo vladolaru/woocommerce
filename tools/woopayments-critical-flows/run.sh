@@ -553,6 +553,18 @@ validate_mo02_manifest() {
     --expected-exit-code "$expected_exit_code"
 }
 
+validate_ma01_manifest() {
+  local manifest_path="$1" expected_store="$2" expected_status="$3" expected_exit_code="$4"
+
+  python3 "$DIR/flows/ma01-evidence.py" validate-bound-manifest \
+    --manifest "$manifest_path" \
+    --store "$expected_store" \
+    --run-stamp "$RUN_STAMP" \
+    --run-scope "$RUN_SCOPE" \
+    --expected-status "$expected_status" \
+    --expected-exit-code "$expected_exit_code"
+}
+
 validate_mo03_manifest() {
   local manifest_path="$1" expected_store="$2" expected_status="$3" expected_exit_code="$4"
 
@@ -892,7 +904,27 @@ if [ "$LAYER" != "agent" ]; then
       evidence_path=""
       evidence_sha256=""
       result_reason=""
-      if [ "$base" = "MO-01-manual-capture-order" ]; then
+      if [ "$base" = "MA-01-open-admin-as-non-admin" ]; then
+        manifest_path="$EVIDENCE_DIR/runs/$RUN_STAMP-$RUN_SCOPE/$base/$s-manifest.json"
+        expected_manifest_status="$(printf '%s' "$status" | tr '[:upper:]' '[:lower:]')"
+        if [ ! -f "$manifest_path" ]; then
+          status="BLOCKED"
+          rc=3
+          result_reason="MA-01 deterministic evidence manifest is missing"
+        else
+          manifest_validation="$(validate_ma01_manifest "$manifest_path" "$s" "$expected_manifest_status" "$rc")"
+          manifest_rc=$?
+          if [ "$manifest_rc" -ne 0 ]; then
+            status="BLOCKED"
+            rc=3
+            result_reason="$manifest_validation"
+          else
+            evidence_path="$manifest_path"
+            evidence_sha256="$manifest_validation"
+            result_reason="manifest-bound deterministic evidence"
+          fi
+        fi
+      elif [ "$base" = "MO-01-manual-capture-order" ]; then
         manifest_path="$EVIDENCE_DIR/runs/$RUN_STAMP-$RUN_SCOPE/$base/$s-manifest.json"
         expected_manifest_status="$(printf '%s' "$status" | tr '[:upper:]' '[:lower:]')"
         if [ ! -f "$manifest_path" ]; then

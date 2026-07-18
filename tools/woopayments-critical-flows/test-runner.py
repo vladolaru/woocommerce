@@ -46,6 +46,7 @@ LOG_OBSERVER_DRIVER = (
 MO01_COMPARATOR = REPO / "tools/woopayments-critical-flows/flows/mo01-compare.py"
 MO02_EVIDENCE = REPO / "tools/woopayments-critical-flows/flows/mo02-evidence.py"
 MO03_EVIDENCE = REPO / "tools/woopayments-critical-flows/flows/mo03-evidence.py"
+MA01_EVIDENCE = REPO / "tools/woopayments-critical-flows/flows/ma01-evidence.py"
 MO03_DRIVER = (
     REPO
     / "tools/woopayments-critical-flows/flows/class-woopaymentscriticalflowsmo03driver.php"
@@ -13085,6 +13086,2699 @@ def test_log_clean_scan_ignores_known_reference_wpcom_zoho_noise() -> None:
 
     assert "sopreda/archi/zoho/class-zoho-integration.php" in source
     assert "ignored_matches" in source
+
+
+MA01_RUN_STAMP = "20260718T120000Z-10101"
+MA01_ROUTES = {
+    "transactions": "/wc/v3/payments/transactions",
+    "deposits": "/wc/v3/payments/deposits",
+    "disputes": "/wc/v3/payments/disputes",
+}
+
+
+def ma01_raw_probe(store: str, *, run_stamp: str = MA01_RUN_STAMP) -> dict:
+    requested_path = (
+        "/wp-admin/admin.php?page=wc-admin&path=/payments/overview"
+        if store == "ref"
+        else "/wp-admin/admin.php?page=wc-admin&path=/woopayments/overview"
+    )
+    return {
+        "schema": "woopayments_ma01_probe.v1",
+        "store": store,
+        "run_stamp": run_stamp,
+        "runtime_owner": "plugin" if store == "ref" else "native",
+        "fixture": {
+            "customer_login": "ma01-customer",
+            "customer_roles": ["customer"],
+            "customer_preexisting": True,
+            "customer_created": False,
+            "customer_manage_woocommerce": False,
+            "admin_manage_woocommerce": True,
+        },
+        "routes": {
+            name: {
+                "path": path,
+                "customer": {
+                    "status": 403,
+                    "code": "rest_forbidden",
+                    "standard_error": True,
+                    "financial_list_absent": True,
+                },
+                "admin": {
+                    "status": 200,
+                    "well_formed_data_list": True,
+                    "list_envelope": True,
+                },
+            }
+            for name, path in MA01_ROUTES.items()
+        },
+        "http": {
+            "requested_path": requested_path,
+            "final_path": requested_path,
+            "requested_status": 403,
+            "final_status": 403,
+            "redirect_count": 0,
+            "transport_errors": [],
+            "logged_in_marker": True,
+            "logout_marker": True,
+            "login_form_marker": False,
+            "permission_marker": True,
+            "app_marker": False,
+        },
+        "exact_session_cleanup": True,
+        "blockers": [],
+    }
+
+
+def ma01_clone(payload: dict) -> dict:
+    return json.loads(json.dumps(payload))
+
+
+def run_ma01(
+    *args: str,
+    input_text: str | None = None,
+    context_key: str | None = TEST_RUN_CONTEXT_KEY,
+) -> subprocess.CompletedProcess[str]:
+    env = dict(os.environ)
+    if context_key is None:
+        env.pop("CRITICAL_FLOWS_RUN_CONTEXT_KEY", None)
+    else:
+        env["CRITICAL_FLOWS_RUN_CONTEXT_KEY"] = context_key
+    return subprocess.run(
+        ["python3", str(MA01_EVIDENCE), *args],
+        cwd=REPO,
+        input=input_text,
+        text=True,
+        capture_output=True,
+        check=False,
+        env=env,
+    )
+
+
+def normalize_ma01(
+    raw: dict,
+    *,
+    store: str | None = None,
+    run_stamp: str = MA01_RUN_STAMP,
+    raw_text: str | None = None,
+    context_key: str | None = TEST_RUN_CONTEXT_KEY,
+) -> tuple[subprocess.CompletedProcess[str], dict]:
+    bound_store = store or str(raw.get("store", "ref"))
+    result = run_ma01(
+        "normalize-probe",
+        "--store",
+        bound_store,
+        "--run-stamp",
+        run_stamp,
+        input_text=raw_text if raw_text is not None else json.dumps(raw),
+        context_key=context_key,
+    )
+    return result, json.loads(result.stdout)
+
+
+def ma01_payload_digest(payload: dict) -> str:
+    unsigned = dict(payload)
+    unsigned.pop("payload_sha256", None)
+    return "sha256:" + hashlib.sha256(
+        json.dumps(unsigned, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def ma01_context_hmac(payload: dict, key: str = TEST_RUN_CONTEXT_KEY) -> str:
+    fields = (
+        "schema",
+        "store",
+        "run_stamp",
+        "runtime_owner",
+        "status",
+        "evidence_complete",
+        "facts",
+        "contract",
+        "errors",
+        "blockers",
+    )
+    semantics = {field: payload[field] for field in fields}
+    message = b"woopayments-ma01-normalized-probe-context-v1\0" + json.dumps(
+        semantics, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return "hmac-sha256:" + hmac.new(
+        bytes.fromhex(key), message, hashlib.sha256
+    ).hexdigest()
+
+
+def ma01_rehash(path: Path, payload: dict) -> None:
+    payload["payload_sha256"] = ma01_payload_digest(payload)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def write_ma01_probe(root: Path, raw: dict) -> tuple[Path, dict, int]:
+    root = root.resolve()
+    result, normalized = normalize_ma01(raw, run_stamp=raw["run_stamp"])
+    path = root / f"{raw['store']}-probe.json"
+    path.write_text(json.dumps(normalized, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return path, normalized, result.returncode
+
+
+def compare_ma01(
+    reference: Path,
+    target: Path,
+    *,
+    run_stamp: str = MA01_RUN_STAMP,
+) -> tuple[subprocess.CompletedProcess[str], dict]:
+    result = run_ma01(
+        "compare",
+        "--reference",
+        str(reference),
+        "--target",
+        str(target),
+        "--run-stamp",
+        run_stamp,
+    )
+    return result, json.loads(result.stdout)
+
+
+def build_ma01_pass_chain(root: Path) -> dict[str, Path]:
+    root = root.resolve()
+    ref_path, _, ref_rc = write_ma01_probe(root, ma01_raw_probe("ref"))
+    target_raw = ma01_raw_probe("target")
+    for route in target_raw["routes"].values():
+        route["customer"]["status"] = 401
+        route["customer"]["code"] = "rest_forbidden_context"
+    target_raw["http"].update(
+        {
+            "requested_status": 302,
+            "final_status": 200,
+            "redirect_count": 1,
+            "final_path": "/wp-admin/",
+            "permission_marker": False,
+        }
+    )
+    target_path, _, target_rc = write_ma01_probe(root, target_raw)
+    assert ref_rc == target_rc == 0
+    comparison_result, comparison = compare_ma01(ref_path, target_path)
+    assert comparison_result.returncode == 0, comparison_result.stderr
+    comparison_path = root / "comparison.json"
+    comparison_path.write_text(
+        json.dumps(comparison, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+
+    paths = {
+        "ref-probe.json": ref_path,
+        "target-probe.json": target_path,
+        "comparison.json": comparison_path,
+    }
+    for store in ("ref", "target"):
+        execution_path = root / f"{store}-execution.json"
+        command = [
+            "execution",
+            "--store",
+            store,
+            "--status",
+            "pass",
+            "--exit-code",
+            "0",
+            "--run-stamp",
+            MA01_RUN_STAMP,
+            "--output",
+            str(execution_path),
+            "--probe",
+            str(paths[f"{store}-probe.json"]),
+            "--probe-exit-code",
+            "0",
+            "--log-assertion-exit-code",
+            "0",
+        ]
+        if store == "target":
+            command.extend(
+                [
+                    "--comparison",
+                    str(comparison_path),
+                    "--comparison-exit-code",
+                    "0",
+                ]
+            )
+        result = run_ma01(*command)
+        assert result.returncode == 0, result.stdout + result.stderr
+        paths[f"{store}-execution.json"] = execution_path
+
+    for store in ("ref", "target"):
+        manifest_path = root / f"{store}-manifest.json"
+        allowed = (
+            ("ref-probe.json", "ref-execution.json")
+            if store == "ref"
+            else (
+                "ref-probe.json",
+                "target-probe.json",
+                "comparison.json",
+                "target-execution.json",
+            )
+        )
+        command = [
+            "manifest",
+            "--store",
+            store,
+            "--status",
+            "pass",
+            "--exit-code",
+            "0",
+            "--run-stamp",
+            MA01_RUN_STAMP,
+            "--run-scope",
+            "partial",
+            "--output",
+            str(manifest_path),
+        ]
+        for filename in allowed:
+            command.extend(["--file", str(paths[filename])])
+        result = run_ma01(*command)
+        assert result.returncode == 0, result.stdout + result.stderr
+        paths[f"{store}-manifest.json"] = manifest_path
+    return paths
+
+
+def build_ma01_fail_chain(root: Path) -> dict[str, Path]:
+    root = root.resolve()
+    ref_path, _, ref_rc = write_ma01_probe(root, ma01_raw_probe("ref"))
+    target_raw = ma01_raw_probe("target")
+    target_raw["routes"]["transactions"]["customer"].update(
+        {
+            "status": 200,
+            "code": "",
+            "standard_error": False,
+            "financial_list_absent": False,
+        }
+    )
+    target_path, _, target_rc = write_ma01_probe(root, target_raw)
+    assert ref_rc == 0
+    assert target_rc == 1
+    comparison_result, comparison = compare_ma01(ref_path, target_path)
+    assert comparison_result.returncode == 1
+    comparison_path = root / "comparison.json"
+    comparison_path.write_text(
+        json.dumps(comparison, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    execution_path = root / "target-execution.json"
+    execution_result = run_ma01(
+        "execution",
+        "--store",
+        "target",
+        "--status",
+        "fail",
+        "--exit-code",
+        "1",
+        "--run-stamp",
+        MA01_RUN_STAMP,
+        "--output",
+        str(execution_path),
+        "--probe",
+        str(target_path),
+        "--probe-exit-code",
+        "1",
+        "--comparison",
+        str(comparison_path),
+        "--comparison-exit-code",
+        "1",
+        "--log-assertion-exit-code",
+        "0",
+        "--verdict-source",
+        "probe_failed",
+        "--verdict-source",
+        "comparison_failed",
+    )
+    assert execution_result.returncode == 0, execution_result.stdout + execution_result.stderr
+    paths = {
+        "ref-probe.json": ref_path,
+        "target-probe.json": target_path,
+        "comparison.json": comparison_path,
+        "target-execution.json": execution_path,
+    }
+    manifest_path = root / "target-manifest.json"
+    command = [
+        "manifest",
+        "--store",
+        "target",
+        "--status",
+        "fail",
+        "--exit-code",
+        "1",
+        "--run-stamp",
+        MA01_RUN_STAMP,
+        "--run-scope",
+        "partial",
+        "--output",
+        str(manifest_path),
+        "--verdict-source",
+        "probe_failed",
+        "--verdict-source",
+        "comparison_failed",
+    ]
+    for path in paths.values():
+        command.extend(["--file", str(path)])
+    manifest_result = run_ma01(*command)
+    assert manifest_result.returncode == 0, manifest_result.stdout + manifest_result.stderr
+    paths["target-manifest.json"] = manifest_path
+    return paths
+
+
+def build_ma01_log_fail_chain(root: Path) -> dict[str, Path]:
+    paths = build_ma01_pass_chain(root)
+    execution_path = paths["target-execution.json"]
+    execution_result = run_ma01(
+        "execution",
+        "--store",
+        "target",
+        "--status",
+        "fail",
+        "--exit-code",
+        "1",
+        "--run-stamp",
+        MA01_RUN_STAMP,
+        "--output",
+        str(execution_path),
+        "--probe",
+        str(paths["target-probe.json"]),
+        "--probe-exit-code",
+        "0",
+        "--comparison",
+        str(paths["comparison.json"]),
+        "--comparison-exit-code",
+        "0",
+        "--log-assertion-exit-code",
+        "1",
+        "--verdict-source",
+        "log_assertion_failed",
+    )
+    assert execution_result.returncode == 0, execution_result.stdout + execution_result.stderr
+
+    manifest_path = paths["target-manifest.json"]
+    command = [
+        "manifest",
+        "--store",
+        "target",
+        "--status",
+        "fail",
+        "--exit-code",
+        "1",
+        "--run-stamp",
+        MA01_RUN_STAMP,
+        "--run-scope",
+        "partial",
+        "--output",
+        str(manifest_path),
+        "--verdict-source",
+        "log_assertion_failed",
+    ]
+    for filename in (
+        "ref-probe.json",
+        "target-probe.json",
+        "comparison.json",
+        "target-execution.json",
+    ):
+        command.extend(["--file", str(paths[filename])])
+    manifest_result = run_ma01(*command)
+    assert manifest_result.returncode == 0, manifest_result.stdout + manifest_result.stderr
+    return paths
+
+
+def rewrite_ma01_fail_chain(
+    paths: dict[str, Path], outcome: str
+) -> tuple[str, int]:
+    target_path = paths["target-probe.json"]
+    original_target = json.loads(target_path.read_text(encoding="utf-8"))
+    raw = ma01_raw_probe("target")
+    if outcome == "blocked":
+        raw["exact_session_cleanup"] = False
+    result, replacement = normalize_ma01(raw)
+    assert result.returncode == (0 if outcome == "pass" else 3)
+    replacement["context_hmac"] = original_target.get(
+        "context_hmac", "hmac-sha256:" + "0" * 64
+    )
+    ma01_rehash(target_path, replacement)
+
+    ref_probe = json.loads(paths["ref-probe.json"].read_text(encoding="utf-8"))
+    comparison_path = paths["comparison.json"]
+    comparison = json.loads(comparison_path.read_text(encoding="utf-8"))
+    comparison["inputs"] = {
+        "ref_probe": ref_probe["payload_sha256"],
+        "target_probe": replacement["payload_sha256"],
+    }
+    if outcome == "pass":
+        comparison.update(
+            {
+                "status": "pass",
+                "reference": {
+                    key: ref_probe["contract"][key]
+                    for key in ("capabilities", "routes", "http")
+                },
+                "target": {
+                    key: replacement["contract"][key]
+                    for key in ("capabilities", "routes", "http")
+                },
+                "errors": [],
+                "blockers": [],
+            }
+        )
+    else:
+        comparison.update(
+            {
+                "status": "blocked",
+                "reference": {},
+                "target": {},
+                "errors": [],
+                "blockers": ["Target normalized probe is blocked."],
+            }
+        )
+    ma01_rehash(comparison_path, comparison)
+
+    execution_path = paths["target-execution.json"]
+    execution = json.loads(execution_path.read_text(encoding="utf-8"))
+    if outcome == "pass":
+        execution.update(
+            {
+                "status": "pass",
+                "exit_code": 0,
+                "verdict_sources": [],
+                "probe_exit_code": 0,
+                "comparison_exit_code": 0,
+            }
+        )
+    else:
+        execution.update(
+            {
+                "status": "blocked",
+                "exit_code": 3,
+                "verdict_sources": ["comparison_blocked", "probe_blocked"],
+                "probe_exit_code": 3,
+                "comparison_exit_code": 3,
+            }
+        )
+    execution["probe_payload_sha256"] = replacement["payload_sha256"]
+    execution["comparison_payload_sha256"] = comparison["payload_sha256"]
+    ma01_rehash(execution_path, execution)
+
+    manifest_path = paths["target-manifest.json"]
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest.update(
+        {
+            "status": execution["status"],
+            "exit_code": execution["exit_code"],
+            "verdict_sources": execution["verdict_sources"],
+        }
+    )
+    for filename, payload in (
+        ("target-probe.json", replacement),
+        ("comparison.json", comparison),
+        ("target-execution.json", execution),
+    ):
+        manifest["files"][filename] = {
+            "file_sha256": file_sha256(paths[filename]),
+            "payload_sha256": payload["payload_sha256"],
+        }
+    ma01_rehash(manifest_path, manifest)
+    return execution["status"], execution["exit_code"]
+
+
+def rewrite_ma01_log_fail_chain(
+    paths: dict[str, Path], outcome: str
+) -> tuple[str, int]:
+    execution_path = paths["target-execution.json"]
+    execution = json.loads(execution_path.read_text(encoding="utf-8"))
+    if outcome == "pass":
+        execution.update(
+            {
+                "status": "pass",
+                "exit_code": 0,
+                "verdict_sources": [],
+                "log_assertion_exit_code": 0,
+            }
+        )
+    else:
+        execution.update(
+            {
+                "status": "blocked",
+                "exit_code": 3,
+                "verdict_sources": ["log_assertion_blocked"],
+                "log_assertion_exit_code": 3,
+            }
+        )
+    ma01_rehash(execution_path, execution)
+
+    manifest_path = paths["target-manifest.json"]
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest.update(
+        {
+            "status": execution["status"],
+            "exit_code": execution["exit_code"],
+            "verdict_sources": execution["verdict_sources"],
+        }
+    )
+    manifest["files"]["target-execution.json"] = {
+        "file_sha256": file_sha256(execution_path),
+        "payload_sha256": execution["payload_sha256"],
+    }
+    ma01_rehash(manifest_path, manifest)
+    return execution["status"], execution["exit_code"]
+
+
+def validate_ma01_manifest(
+    manifest: Path,
+    *,
+    store: str = "target",
+    run_stamp: str = MA01_RUN_STAMP,
+    status: str = "pass",
+    exit_code: int = 0,
+    context_key: str | None = TEST_RUN_CONTEXT_KEY,
+) -> subprocess.CompletedProcess[str]:
+    return run_ma01(
+        "validate-bound-manifest",
+        "--manifest",
+        str(manifest),
+        "--store",
+        store,
+        "--run-stamp",
+        run_stamp,
+        "--run-scope",
+        "partial",
+        "--expected-status",
+        status,
+        "--expected-exit-code",
+        str(exit_code),
+        context_key=context_key,
+    )
+
+
+def run_ma01_ref_execution_builder(
+    output: Path, paths: dict[str, Path]
+) -> subprocess.CompletedProcess[str]:
+    return run_ma01(
+        "execution",
+        "--store",
+        "ref",
+        "--status",
+        "pass",
+        "--exit-code",
+        "0",
+        "--run-stamp",
+        MA01_RUN_STAMP,
+        "--output",
+        str(output),
+        "--probe",
+        str(paths["ref-probe.json"]),
+        "--probe-exit-code",
+        "0",
+        "--log-assertion-exit-code",
+        "0",
+    )
+
+
+def run_ma01_target_manifest_builder(
+    output: Path, paths: dict[str, Path]
+) -> subprocess.CompletedProcess[str]:
+    command = [
+        "manifest",
+        "--store",
+        "target",
+        "--status",
+        "pass",
+        "--exit-code",
+        "0",
+        "--run-stamp",
+        MA01_RUN_STAMP,
+        "--run-scope",
+        "partial",
+        "--output",
+        str(output),
+    ]
+    for filename in (
+        "ref-probe.json",
+        "target-probe.json",
+        "comparison.json",
+        "target-execution.json",
+    ):
+        command.extend(["--file", str(paths[filename])])
+    return run_ma01(*command)
+
+
+def test_ma01_normalizes_happy_reference_and_target_without_sensitive_evidence() -> None:
+    for store in ("ref", "target"):
+        raw = ma01_raw_probe(store)
+        if store == "target":
+            for route in raw["routes"].values():
+                route["customer"].update(
+                    {"status": 401, "code": "rest_forbidden_context"}
+                )
+            raw["http"].update(
+                {
+                    "requested_status": 302,
+                    "final_status": 200,
+                    "redirect_count": 1,
+                    "final_path": "/wp-admin/",
+                    "permission_marker": False,
+                }
+            )
+        result, normalized = normalize_ma01(raw)
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert normalized["schema"] == "woopayments_ma01_normalized.v1"
+        assert normalized["status"] == "pass"
+        assert normalized["store"] == store
+        assert normalized["runtime_owner"] == ("plugin" if store == "ref" else "native")
+        assert normalized["evidence_complete"] is True
+        assert normalized["errors"] == []
+        assert normalized["blockers"] == []
+        assert normalized["contract"]["capabilities"] == {
+            "admin_admitted": True,
+            "customer_denied": True,
+        }
+        assert all(
+            route == {
+                "admin_admitted": True,
+                "admin_data_list_well_formed": True,
+                "customer_denied": True,
+                "customer_financial_list_absent": True,
+                "customer_standard_error": True,
+            }
+            for route in normalized["contract"]["routes"].values()
+        )
+        assert normalized["contract"]["http"] == {
+            "access_denied": True,
+            "app_absent": True,
+            "authenticated": True,
+            "never_login": True,
+        }
+        assert normalized["contract"]["cleanup_proven"] is True
+        assert re.fullmatch(r"hmac-sha256:[0-9a-f]{64}", normalized["context_hmac"])
+        assert normalized["context_hmac"] == ma01_context_hmac(normalized)
+        assert normalized["payload_sha256"] == ma01_payload_digest(normalized)
+        encoded = json.dumps(normalized)
+        assert TEST_RUN_CONTEXT_KEY not in encoded
+        for forbidden in (
+            "response_rows",
+            "raw_html",
+            "headers",
+            "credentials",
+            "cookies",
+            "tokens",
+            "password",
+            "ma01-customer",
+        ):
+            assert forbidden not in encoded
+
+
+@pytest.mark.parametrize(
+    "customer_preexisting,customer_created",
+    [(True, False), (False, True)],
+)
+def test_ma01_accepts_truthful_fixture_ensure_states(
+    customer_preexisting: bool, customer_created: bool
+) -> None:
+    raw = ma01_raw_probe("ref")
+    raw["fixture"].update(
+        {
+            "customer_preexisting": customer_preexisting,
+            "customer_created": customer_created,
+        }
+    )
+
+    result, normalized = normalize_ma01(raw)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert normalized["status"] == "pass"
+    assert normalized["facts"]["fixture"]["customer_preexisting"] is customer_preexisting
+    assert normalized["facts"]["fixture"]["customer_created"] is customer_created
+    assert normalized["context_hmac"] == ma01_context_hmac(normalized)
+    assert normalized["payload_sha256"] == ma01_payload_digest(normalized)
+
+
+@pytest.mark.parametrize(
+    "customer_preexisting,customer_created",
+    [(False, False), (True, True)],
+)
+def test_ma01_blocks_unavailable_fixture_ensure_states(
+    customer_preexisting: bool, customer_created: bool
+) -> None:
+    raw = ma01_raw_probe("ref")
+    raw["fixture"].update(
+        {
+            "customer_preexisting": customer_preexisting,
+            "customer_created": customer_created,
+            "customer_roles": ["subscriber"],
+            "customer_manage_woocommerce": True,
+        }
+    )
+
+    result, normalized = normalize_ma01(raw)
+
+    assert result.returncode == 3, result.stdout + result.stderr
+    assert normalized["status"] == "blocked"
+    assert normalized["evidence_complete"] is True
+    assert normalized["errors"] == []
+    assert any("fixture ensure state" in reason for reason in normalized["blockers"])
+    assert normalized["facts"]["fixture"]["customer_preexisting"] is customer_preexisting
+    assert normalized["facts"]["fixture"]["customer_created"] is customer_created
+    assert normalized["context_hmac"] == ma01_context_hmac(normalized)
+    assert normalized["payload_sha256"] == ma01_payload_digest(normalized)
+
+
+def test_ma01_permission_page_affirmatively_authenticates_without_session_markers() -> None:
+    raw = ma01_raw_probe("ref")
+    raw["http"].update(
+        {
+            "logged_in_marker": False,
+            "logout_marker": False,
+        }
+    )
+
+    result, normalized = normalize_ma01(raw)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert normalized["status"] == "pass"
+    assert normalized["errors"] == []
+    assert normalized["blockers"] == []
+    assert normalized["contract"]["http"] == {
+        "access_denied": True,
+        "app_absent": True,
+        "authenticated": True,
+        "never_login": True,
+    }
+    assert normalized["context_hmac"] == ma01_context_hmac(normalized)
+    assert normalized["payload_sha256"] == ma01_payload_digest(normalized)
+
+
+def test_ma01_context_key_is_required_for_normalization_and_bound_validation() -> None:
+    raw = ma01_raw_probe("target")
+    for context_key in (None, "A" * 64, "not-a-context-key"):
+        result = run_ma01(
+            "normalize-probe",
+            "--store",
+            "target",
+            "--run-stamp",
+            MA01_RUN_STAMP,
+            input_text=json.dumps(raw),
+            context_key=context_key,
+        )
+        transcript = result.stdout + result.stderr
+        assert result.returncode == 3, transcript
+        assert "Traceback" not in transcript
+        assert str(REPO) not in transcript
+        if context_key is not None:
+            assert context_key not in transcript
+
+    with tempfile.TemporaryDirectory(prefix="critical-flows-ma01-context-key-") as tmp:
+        root = Path(tmp)
+        paths = build_ma01_pass_chain(root)
+        for context_key in (None, "22" * 32):
+            validation = validate_ma01_manifest(
+                paths["target-manifest.json"], context_key=context_key
+            )
+            transcript = validation.stdout + validation.stderr
+            assert validation.returncode == 3, transcript
+            assert "Traceback" not in transcript
+            assert str(REPO) not in transcript
+            if context_key is not None:
+                assert context_key not in transcript
+
+
+@pytest.mark.parametrize(
+    "name,mutate,error_fragment",
+    [
+        (
+            "wrong_role",
+            lambda raw: raw["fixture"].update({"customer_roles": ["subscriber"]}),
+            "customer role",
+        ),
+        (
+            "customer_capability",
+            lambda raw: raw["fixture"].update({"customer_manage_woocommerce": True}),
+            "customer capability",
+        ),
+        (
+            "admin_capability",
+            lambda raw: raw["fixture"].update({"admin_manage_woocommerce": False}),
+            "admin capability",
+        ),
+        (
+            "customer_data_leak",
+            lambda raw: raw["routes"]["transactions"]["customer"].update(
+                {
+                    "status": 200,
+                    "code": "",
+                    "standard_error": False,
+                    "financial_list_absent": False,
+                }
+            ),
+            "transactions customer",
+        ),
+        (
+            "admin_denial",
+            lambda raw: raw["routes"]["deposits"]["admin"].update({"status": 403}),
+            "deposits admin status",
+        ),
+        (
+            "admin_numeric_503",
+            lambda raw: raw["routes"]["deposits"]["admin"].update({"status": 503}),
+            "deposits admin status",
+        ),
+        (
+            "customer_numeric_502_data_leak",
+            lambda raw: raw["routes"]["transactions"]["customer"].update(
+                {
+                    "status": 502,
+                    "code": "",
+                    "standard_error": False,
+                    "financial_list_absent": False,
+                }
+            ),
+            "transactions customer",
+        ),
+        (
+            "admin_malformed_list",
+            lambda raw: raw["routes"]["disputes"]["admin"].update(
+                {"well_formed_data_list": False}
+            ),
+            "disputes admin data list",
+        ),
+        (
+            "app_rendered",
+            lambda raw: raw["http"].update({"app_marker": True}),
+            "Payments app rendered",
+        ),
+        (
+            "authenticated_500_app_rendered",
+            lambda raw: raw["http"].update(
+                {
+                    "requested_status": 500,
+                    "final_status": 500,
+                    "app_marker": True,
+                }
+            ),
+            "Payments app rendered",
+        ),
+        (
+            "payments_path_retained",
+            lambda raw: raw["http"].update({"permission_marker": False}),
+            "remained on the Payments path",
+        ),
+        (
+            "authenticated_503_payments_path_retained",
+            lambda raw: raw["http"].update(
+                {
+                    "requested_status": 503,
+                    "final_status": 503,
+                    "permission_marker": False,
+                }
+            ),
+            "remained on the Payments path",
+        ),
+    ],
+)
+def test_ma01_completed_contract_mismatches_are_functional_failures(
+    name: str, mutate, error_fragment: str
+) -> None:
+    raw = ma01_raw_probe("target")
+    mutate(raw)
+    result, normalized = normalize_ma01(raw)
+
+    assert result.returncode == 1, (name, result.stdout, result.stderr)
+    assert normalized["status"] == "fail"
+    assert normalized["errors"]
+    assert any(error_fragment in error for error in normalized["errors"])
+
+
+def test_ma01_missing_malformed_and_incomplete_probes_block_fail_closed() -> None:
+    raw = ma01_raw_probe("target")
+    cases: list[tuple[str, str]] = []
+    cases.append(("missing", "probe produced no MA-01 payload"))
+    cases.append(
+        (
+            json.dumps(raw) + "\n" + json.dumps(raw),
+            "exactly one MA-01 payload",
+        )
+    )
+    malformed = ma01_clone(raw)
+    malformed["unexpected"] = "Authorization: Bearer secret@example.test"
+    cases.append((json.dumps(malformed), "invalid field set"))
+    missing_ensure_state = ma01_clone(raw)
+    missing_ensure_state["fixture"].pop("customer_preexisting", None)
+    cases.append((json.dumps(missing_ensure_state), "fixture has an invalid field set"))
+
+    for raw_text, blocker_fragment in cases:
+        result, normalized = normalize_ma01(
+            raw,
+            store="target",
+            raw_text=raw_text,
+        )
+        assert result.returncode == 3, result.stdout + result.stderr
+        assert normalized["status"] == "blocked"
+        assert normalized["errors"] == []
+        assert any(blocker_fragment in reason for reason in normalized["blockers"])
+        assert "secret@example.test" not in json.dumps(normalized)
+
+    blockers = (
+        (
+            lambda candidate: candidate["http"].update(
+                {"transport_errors": ["timeout cookie=secret@example.test"]}
+            ),
+            "HTTP transport failed",
+        ),
+        (
+            lambda candidate: candidate["http"].update(
+                {
+                    "final_path": "/wp-login.php?redirect_to=secret@example.test",
+                    "final_status": 200,
+                    "redirect_count": 1,
+                    "logged_in_marker": False,
+                    "logout_marker": False,
+                    "login_form_marker": True,
+                    "permission_marker": True,
+                }
+            ),
+            "login",
+        ),
+        (
+            lambda candidate: candidate["http"].update(
+                {
+                    "permission_marker": False,
+                    "logged_in_marker": False,
+                    "logout_marker": False,
+                }
+            ),
+            "affirmatively authenticated",
+        ),
+        (
+            lambda candidate: candidate.update({"exact_session_cleanup": False}),
+            "cleanup",
+        ),
+        (
+            lambda candidate: candidate.update(
+                {"blockers": ["password=DO_NOT_ARCHIVE secret@example.test"]}
+            ),
+            "reported a blocker",
+        ),
+    )
+    for mutate, blocker_fragment in blockers:
+        candidate = ma01_raw_probe("target")
+        mutate(candidate)
+        result, normalized = normalize_ma01(candidate)
+        assert result.returncode == 3, result.stdout + result.stderr
+        assert normalized["status"] == "blocked"
+        assert any(blocker_fragment in reason for reason in normalized["blockers"])
+        assert "secret@example.test" not in json.dumps(normalized)
+        assert "DO_NOT_ARCHIVE" not in json.dumps(normalized)
+
+
+@pytest.mark.parametrize(
+    "name,mutate",
+    [
+        (
+            "customer_zero",
+            lambda raw: raw["routes"]["transactions"]["customer"].update(
+                {"status": 0}
+            ),
+        ),
+        (
+            "customer_negative",
+            lambda raw: raw["routes"]["transactions"]["customer"].update(
+                {"status": -1}
+            ),
+        ),
+        (
+            "customer_700_with_false_list_fact",
+            lambda raw: raw["routes"]["transactions"]["customer"].update(
+                {
+                    "status": 700,
+                    "code": "",
+                    "standard_error": False,
+                    "financial_list_absent": False,
+                }
+            ),
+        ),
+        (
+            "admin_zero",
+            lambda raw: raw["routes"]["deposits"]["admin"].update(
+                {"status": 0}
+            ),
+        ),
+        (
+            "admin_700",
+            lambda raw: raw["routes"]["deposits"]["admin"].update(
+                {
+                    "status": 700,
+                    "well_formed_data_list": False,
+                    "list_envelope": False,
+                }
+            ),
+        ),
+    ],
+)
+def test_ma01_invalid_route_statuses_are_unavailable_without_functional_inference(
+    name: str, mutate
+) -> None:
+    raw = ma01_raw_probe("target")
+    mutate(raw)
+    result, normalized = normalize_ma01(raw)
+
+    assert result.returncode == 3, (name, result.stdout, result.stderr)
+    assert normalized["status"] == "blocked"
+    assert normalized["errors"] == []
+    assert any(
+        "route observation was unavailable" in blocker
+        for blocker in normalized["blockers"]
+    )
+
+
+def test_ma01_completed_failure_precedes_invalid_route_status_without_inference() -> None:
+    raw = ma01_raw_probe("target")
+    raw["routes"]["transactions"]["customer"].update(
+        {
+            "status": 700,
+            "code": "",
+            "standard_error": False,
+            "financial_list_absent": False,
+        }
+    )
+    raw["routes"]["deposits"]["admin"]["status"] = 403
+    result, normalized = normalize_ma01(raw)
+
+    assert result.returncode == 1
+    assert normalized["status"] == "fail"
+    assert normalized["errors"] == ["deposits admin status was 403, not 200."]
+    assert any(
+        "transactions customer route observation was unavailable" in blocker
+        for blocker in normalized["blockers"]
+    )
+
+
+@pytest.mark.parametrize(
+    "name,status_field,status",
+    [
+        ("requested_zero", "requested_status", 0),
+        ("final_700", "final_status", 700),
+    ],
+)
+def test_ma01_invalid_page_statuses_block_without_functional_inference(
+    name: str, status_field: str, status: int
+) -> None:
+    raw = ma01_raw_probe("target")
+    raw["http"].update(
+        {
+            status_field: status,
+            "app_marker": True,
+            "permission_marker": False,
+        }
+    )
+    result, normalized = normalize_ma01(raw)
+
+    assert result.returncode == 3, (name, result.stdout, result.stderr)
+    assert normalized["status"] == "blocked"
+    assert normalized["errors"] == []
+    assert any(
+        "HTTP status observation was unavailable" in blocker
+        for blocker in normalized["blockers"]
+    )
+
+
+def test_ma01_completed_failure_precedes_invalid_page_status_without_inference() -> None:
+    raw = ma01_raw_probe("target")
+    raw["http"].update(
+        {
+            "final_status": 700,
+            "app_marker": True,
+            "permission_marker": False,
+        }
+    )
+    raw["routes"]["deposits"]["admin"]["status"] = 403
+    result, normalized = normalize_ma01(raw)
+
+    assert result.returncode == 1
+    assert normalized["status"] == "fail"
+    assert normalized["errors"] == ["deposits admin status was 403, not 200."]
+    assert any(
+        "HTTP status observation was unavailable" in blocker
+        for blocker in normalized["blockers"]
+    )
+
+
+def test_ma01_functional_failure_takes_precedence_over_cleanup_and_transport_blocks() -> None:
+    raw = ma01_raw_probe("target")
+    raw["routes"]["transactions"]["customer"].update(
+        {
+            "status": 200,
+            "code": "",
+            "standard_error": False,
+            "financial_list_absent": False,
+        }
+    )
+    raw["http"]["transport_errors"] = ["connection reset token=DO_NOT_ARCHIVE"]
+    raw["exact_session_cleanup"] = False
+    result, normalized = normalize_ma01(raw)
+
+    assert result.returncode == 1
+    assert normalized["status"] == "fail"
+    assert any("transactions customer" in error for error in normalized["errors"])
+    assert any("transport failed" in blocker for blocker in normalized["blockers"])
+    assert any("cleanup" in blocker for blocker in normalized["blockers"])
+    assert "DO_NOT_ARCHIVE" not in json.dumps(normalized)
+
+
+def test_ma01_comparison_binds_inputs_allows_presentation_and_rejects_mismatch_or_stale() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-ma01-compare-") as tmp:
+        root = Path(tmp)
+        ref_raw = ma01_raw_probe("ref")
+        ref_raw["http"].update(
+            {
+                "logged_in_marker": False,
+                "logout_marker": False,
+            }
+        )
+        ref_path, ref, ref_rc = write_ma01_probe(root, ref_raw)
+        target_raw = ma01_raw_probe("target")
+        for route in target_raw["routes"].values():
+            route["customer"].update(
+                {"status": 401, "code": "rest_forbidden_context"}
+            )
+        target_raw["http"].update(
+            {
+                "requested_status": 302,
+                "final_status": 200,
+                "redirect_count": 1,
+                "final_path": "/wp-admin/",
+                "permission_marker": False,
+            }
+        )
+        target_path, target, target_rc = write_ma01_probe(root, target_raw)
+        assert ref_rc == target_rc == 0
+
+        equivalent, comparison = compare_ma01(ref_path, target_path)
+        assert equivalent.returncode == 0, equivalent.stdout + equivalent.stderr
+        assert comparison["status"] == "pass"
+        assert comparison["inputs"] == {
+            "ref_probe": ref["payload_sha256"],
+            "target_probe": target["payload_sha256"],
+        }
+        assert comparison["reference"] == comparison["target"]
+
+        mismatch_raw = ma01_clone(target_raw)
+        mismatch_raw["fixture"]["customer_manage_woocommerce"] = True
+        mismatch_path, _, mismatch_rc = write_ma01_probe(root, mismatch_raw)
+        assert mismatch_rc == 1
+        mismatch, mismatch_payload = compare_ma01(ref_path, mismatch_path)
+        assert mismatch.returncode == 1
+        assert mismatch_payload["status"] == "fail"
+        assert mismatch_payload["errors"]
+
+        stale_raw = ma01_raw_probe("target", run_stamp="20260718T110000Z-10100")
+        stale_path, _, stale_rc = write_ma01_probe(root, stale_raw)
+        assert stale_rc == 0
+        stale, stale_payload = compare_ma01(ref_path, stale_path)
+        assert stale.returncode == 3
+        assert stale_payload["status"] == "blocked"
+        assert any("run binding" in blocker for blocker in stale_payload["blockers"])
+
+        wrong_store, wrong_store_payload = compare_ma01(ref_path, ref_path)
+        assert wrong_store.returncode == 3
+        assert wrong_store_payload["status"] == "blocked"
+        assert any("store binding" in blocker for blocker in wrong_store_payload["blockers"])
+
+
+def test_ma01_execution_and_manifests_enforce_vocabulary_bindings_and_allowlists() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-ma01-chain-") as tmp:
+        root = Path(tmp).resolve()
+        paths = build_ma01_pass_chain(root)
+
+        invalid_execution = run_ma01(
+            "execution",
+            "--store",
+            "ref",
+            "--status",
+            "pass",
+            "--exit-code",
+            "0",
+            "--run-stamp",
+            MA01_RUN_STAMP,
+            "--output",
+            str(root / "invalid-execution.json"),
+            "--probe",
+            str(paths["ref-probe.json"]),
+            "--probe-exit-code",
+            "0",
+            "--log-assertion-exit-code",
+            "0",
+            "--verdict-source",
+            "invented_source",
+        )
+        assert invalid_execution.returncode == 3
+
+        ref_manifest = json.loads(paths["ref-manifest.json"].read_text(encoding="utf-8"))
+        target_manifest = json.loads(
+            paths["target-manifest.json"].read_text(encoding="utf-8")
+        )
+        assert ref_manifest["schema"] == "woopayments_ma01_manifest.v1"
+        assert ref_manifest["flow"] == "MA-01-open-admin-as-non-admin"
+        assert set(ref_manifest["files"]) == {
+            "ref-probe.json",
+            "ref-execution.json",
+        }
+        assert set(target_manifest["files"]) == {
+            "ref-probe.json",
+            "target-probe.json",
+            "comparison.json",
+            "target-execution.json",
+        }
+        for manifest in (ref_manifest, target_manifest):
+            assert manifest["status"] == "pass"
+            assert manifest["exit_code"] == 0
+            assert manifest["verdict_sources"] == []
+            assert manifest["payload_sha256"] == ma01_payload_digest(manifest)
+            for filename, binding in manifest["files"].items():
+                assert binding == {
+                    "file_sha256": file_sha256(root / filename),
+                    "payload_sha256": json.loads(
+                        (root / filename).read_text(encoding="utf-8")
+                    )["payload_sha256"],
+                }
+
+        unexpected = root / "unexpected.json"
+        unexpected.write_text(
+            paths["target-probe.json"].read_text(encoding="utf-8"), encoding="utf-8"
+        )
+        rejected_allowlist = run_ma01(
+            "manifest",
+            "--store",
+            "target",
+            "--status",
+            "pass",
+            "--exit-code",
+            "0",
+            "--run-stamp",
+            MA01_RUN_STAMP,
+            "--run-scope",
+            "partial",
+            "--output",
+            str(root / "invalid-manifest.json"),
+            "--file",
+            str(paths["ref-probe.json"]),
+            "--file",
+            str(paths["target-probe.json"]),
+            "--file",
+            str(paths["comparison.json"]),
+            "--file",
+            str(paths["target-execution.json"]),
+            "--file",
+            str(unexpected),
+        )
+        assert rejected_allowlist.returncode == 3
+
+        failure_root = root / "failure-chain"
+        failure_root.mkdir()
+        failure_ref_path, _, failure_ref_rc = write_ma01_probe(
+            failure_root, ma01_raw_probe("ref")
+        )
+        failure_target_raw = ma01_raw_probe("target")
+        failure_target_raw["routes"]["transactions"]["customer"].update(
+            {
+                "status": 200,
+                "code": "",
+                "standard_error": False,
+                "financial_list_absent": False,
+            }
+        )
+        failure_target_path, _, failure_target_rc = write_ma01_probe(
+            failure_root, failure_target_raw
+        )
+        assert failure_ref_rc == 0
+        assert failure_target_rc == 1
+        failure_comparison_result, failure_comparison = compare_ma01(
+            failure_ref_path, failure_target_path
+        )
+        assert failure_comparison_result.returncode == 1
+        failure_comparison_path = failure_root / "comparison.json"
+        failure_comparison_path.write_text(
+            json.dumps(failure_comparison, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        failure_execution_path = failure_root / "target-execution.json"
+        failure_execution_result = run_ma01(
+            "execution",
+            "--store",
+            "target",
+            "--status",
+            "fail",
+            "--exit-code",
+            "1",
+            "--run-stamp",
+            MA01_RUN_STAMP,
+            "--output",
+            str(failure_execution_path),
+            "--probe",
+            str(failure_target_path),
+            "--probe-exit-code",
+            "1",
+            "--comparison",
+            str(failure_comparison_path),
+            "--comparison-exit-code",
+            "1",
+            "--log-assertion-exit-code",
+            "3",
+            "--verdict-source",
+            "probe_failed",
+            "--verdict-source",
+            "comparison_failed",
+        )
+        assert failure_execution_result.returncode == 0, (
+            failure_execution_result.stdout + failure_execution_result.stderr
+        )
+        failure_execution = json.loads(
+            failure_execution_path.read_text(encoding="utf-8")
+        )
+        assert failure_execution["status"] == "fail"
+        assert failure_execution["verdict_sources"] == [
+            "comparison_failed",
+            "probe_failed",
+        ]
+        failure_manifest_path = failure_root / "target-manifest.json"
+        failure_manifest_command = [
+            "manifest",
+            "--store",
+            "target",
+            "--status",
+            "fail",
+            "--exit-code",
+            "1",
+            "--run-stamp",
+            MA01_RUN_STAMP,
+            "--run-scope",
+            "partial",
+            "--output",
+            str(failure_manifest_path),
+            "--verdict-source",
+            "probe_failed",
+            "--verdict-source",
+            "comparison_failed",
+        ]
+        for path in (
+            failure_ref_path,
+            failure_target_path,
+            failure_comparison_path,
+            failure_execution_path,
+        ):
+            failure_manifest_command.extend(["--file", str(path)])
+        failure_manifest_result = run_ma01(*failure_manifest_command)
+        assert failure_manifest_result.returncode == 0, (
+            failure_manifest_result.stdout + failure_manifest_result.stderr
+        )
+        failure_validation = validate_ma01_manifest(
+            failure_manifest_path, status="fail", exit_code=1
+        )
+        assert failure_validation.returncode == 0, (
+            failure_validation.stdout + failure_validation.stderr
+        )
+
+
+def test_ma01_bound_manifest_validator_fails_closed_against_artifact_attacks() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-ma01-attacks-") as tmp:
+        root = Path(tmp).resolve()
+        base = root / "base"
+        base.mkdir()
+        paths = build_ma01_pass_chain(base)
+        valid = validate_ma01_manifest(paths["target-manifest.json"])
+        assert valid.returncode == 0, valid.stdout + valid.stderr
+        assert re.fullmatch(r"sha256:[0-9a-f]{64}\n?", valid.stdout)
+
+        wrong_run = validate_ma01_manifest(
+            paths["target-manifest.json"], run_stamp="20260718T120001Z-10102"
+        )
+        assert wrong_run.returncode == 3
+
+        malformed_dir = root / "malformed"
+        shutil.copytree(base, malformed_dir)
+        malformed_manifest = malformed_dir / "target-manifest.json"
+        malformed_manifest.write_text("{not-json", encoding="utf-8")
+        assert validate_ma01_manifest(malformed_manifest).returncode == 3
+
+        missing_dir = root / "missing"
+        shutil.copytree(base, missing_dir)
+        (missing_dir / "target-probe.json").unlink()
+        assert validate_ma01_manifest(missing_dir / "target-manifest.json").returncode == 3
+
+        tampered_dir = root / "tampered"
+        shutil.copytree(base, tampered_dir)
+        with (tampered_dir / "target-probe.json").open("a", encoding="utf-8") as stream:
+            stream.write(" ")
+        assert validate_ma01_manifest(tampered_dir / "target-manifest.json").returncode == 3
+
+        symlink_dir = root / "symlink"
+        shutil.copytree(base, symlink_dir)
+        outside = root / "outside-probe.json"
+        outside.write_text(
+            (symlink_dir / "target-probe.json").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        (symlink_dir / "target-probe.json").unlink()
+        (symlink_dir / "target-probe.json").symlink_to(outside)
+        assert validate_ma01_manifest(symlink_dir / "target-manifest.json").returncode == 3
+
+        escape_dir = root / "escape"
+        shutil.copytree(base, escape_dir)
+        escape_manifest_path = escape_dir / "target-manifest.json"
+        escape_manifest = json.loads(escape_manifest_path.read_text(encoding="utf-8"))
+        escape_manifest["files"]["../outside-probe.json"] = escape_manifest["files"].pop(
+            "target-probe.json"
+        )
+        ma01_rehash(escape_manifest_path, escape_manifest)
+        assert validate_ma01_manifest(escape_manifest_path).returncode == 3
+
+        forged_dir = root / "forged"
+        shutil.copytree(base, forged_dir)
+        forged_probe_path = forged_dir / "target-probe.json"
+        forged_probe = json.loads(forged_probe_path.read_text(encoding="utf-8"))
+        forged_probe["facts"]["routes"]["transactions"]["customer_status"] = 200
+        ma01_rehash(forged_probe_path, forged_probe)
+
+        forged_comparison_path = forged_dir / "comparison.json"
+        forged_comparison = json.loads(
+            forged_comparison_path.read_text(encoding="utf-8")
+        )
+        forged_comparison["inputs"]["target_probe"] = forged_probe["payload_sha256"]
+        ma01_rehash(forged_comparison_path, forged_comparison)
+
+        forged_execution_path = forged_dir / "target-execution.json"
+        forged_execution = json.loads(
+            forged_execution_path.read_text(encoding="utf-8")
+        )
+        forged_execution["probe_payload_sha256"] = forged_probe["payload_sha256"]
+        forged_execution["comparison_payload_sha256"] = forged_comparison[
+            "payload_sha256"
+        ]
+        ma01_rehash(forged_execution_path, forged_execution)
+
+        forged_manifest_path = forged_dir / "target-manifest.json"
+        forged_manifest = json.loads(forged_manifest_path.read_text(encoding="utf-8"))
+        for filename, payload in (
+            ("target-probe.json", forged_probe),
+            ("comparison.json", forged_comparison),
+            ("target-execution.json", forged_execution),
+        ):
+            forged_manifest["files"][filename] = {
+                "file_sha256": file_sha256(forged_dir / filename),
+                "payload_sha256": payload["payload_sha256"],
+            }
+        ma01_rehash(forged_manifest_path, forged_manifest)
+        forged = validate_ma01_manifest(forged_manifest_path)
+        assert forged.returncode == 3, forged.stdout + forged.stderr
+
+
+def test_ma01_bound_manifest_rejects_symlinked_evidence_directory_components() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-ma01-parent-link-") as tmp:
+        root = Path(tmp).resolve()
+        backing_parent = root / "private-backing-parent"
+        evidence_dir = backing_parent / "evidence"
+        evidence_dir.mkdir(parents=True)
+        paths = build_ma01_pass_chain(evidence_dir)
+
+        linked_evidence = root / "linked-evidence"
+        linked_evidence.symlink_to(evidence_dir, target_is_directory=True)
+        linked_parent = root / "linked-parent"
+        linked_parent.symlink_to(backing_parent, target_is_directory=True)
+
+        for manifest in (
+            linked_evidence / "target-manifest.json",
+            linked_parent / "evidence" / "target-manifest.json",
+        ):
+            validation = validate_ma01_manifest(manifest)
+            transcript = validation.stdout + validation.stderr
+            assert validation.returncode == 3, transcript
+            assert "symlinked directory" in transcript
+            assert "Traceback" not in transcript
+            assert str(backing_parent) not in transcript
+            assert re.fullmatch(r"[^/]*\n?", transcript)
+
+        assert validate_ma01_manifest(paths["target-manifest.json"]).returncode == 0
+
+
+def test_ma01_builders_reject_symlinked_relative_and_missing_output_parents() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-ma01-builder-paths-") as tmp:
+        root = Path(tmp).resolve()
+        evidence_dir = root / "private-evidence"
+        evidence_dir.mkdir()
+        paths = build_ma01_pass_chain(evidence_dir)
+        linked_evidence = root / "linked-evidence"
+        linked_evidence.symlink_to(evidence_dir, target_is_directory=True)
+
+        relative_execution = Path(
+            os.path.relpath(evidence_dir / "relative-execution.json", REPO)
+        )
+        relative_manifest = Path(
+            os.path.relpath(evidence_dir / "relative-manifest.json", REPO)
+        )
+        missing_parent = root / "private-missing-parent"
+        cases = (
+            (
+                run_ma01_ref_execution_builder(
+                    linked_evidence / "escaped-execution.json", paths
+                ),
+                evidence_dir / "escaped-execution.json",
+            ),
+            (
+                run_ma01_target_manifest_builder(
+                    linked_evidence / "escaped-manifest.json", paths
+                ),
+                evidence_dir / "escaped-manifest.json",
+            ),
+            (
+                run_ma01_ref_execution_builder(relative_execution, paths),
+                evidence_dir / "relative-execution.json",
+            ),
+            (
+                run_ma01_target_manifest_builder(relative_manifest, paths),
+                evidence_dir / "relative-manifest.json",
+            ),
+            (
+                run_ma01_ref_execution_builder(
+                    missing_parent / "missing-execution.json", paths
+                ),
+                missing_parent / "missing-execution.json",
+            ),
+            (
+                run_ma01_target_manifest_builder(
+                    missing_parent / "missing-manifest.json", paths
+                ),
+                missing_parent / "missing-manifest.json",
+            ),
+        )
+
+        for result, escaped_output in cases:
+            transcript = result.stdout + result.stderr
+            assert result.returncode == 3, transcript
+            assert "Traceback" not in transcript
+            assert str(root) not in transcript
+            assert not escaped_output.exists()
+
+
+def test_ma01_bound_manifest_rejects_coherently_rehashed_fail_to_blocked_downgrade() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-ma01-downgrade-") as tmp:
+        root = Path(tmp)
+        paths = build_ma01_fail_chain(root)
+        valid = validate_ma01_manifest(
+            paths["target-manifest.json"], status="fail", exit_code=1
+        )
+        assert valid.returncode == 0, valid.stdout + valid.stderr
+
+        execution_path = paths["target-execution.json"]
+        execution = json.loads(execution_path.read_text(encoding="utf-8"))
+        execution.update(
+            {
+                "status": "blocked",
+                "exit_code": 3,
+                "verdict_sources": ["comparison_blocked", "probe_blocked"],
+                "probe_exit_code": 3,
+                "comparison_exit_code": 3,
+            }
+        )
+        ma01_rehash(execution_path, execution)
+
+        manifest_path = paths["target-manifest.json"]
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest.update(
+            {
+                "status": "blocked",
+                "exit_code": 3,
+                "verdict_sources": ["comparison_blocked", "probe_blocked"],
+            }
+        )
+        manifest["files"]["target-execution.json"] = {
+            "file_sha256": file_sha256(execution_path),
+            "payload_sha256": execution["payload_sha256"],
+        }
+        ma01_rehash(manifest_path, manifest)
+
+        downgraded = validate_ma01_manifest(
+            manifest_path, status="blocked", exit_code=3
+        )
+        assert downgraded.returncode == 3, downgraded.stdout + downgraded.stderr
+
+
+@pytest.mark.parametrize("outcome", ["pass", "blocked"])
+def test_ma01_context_hmac_rejects_full_chain_post_run_rewrites(outcome: str) -> None:
+    with tempfile.TemporaryDirectory(
+        prefix=f"critical-flows-ma01-context-rewrite-{outcome}-"
+    ) as tmp:
+        root = Path(tmp)
+        paths = build_ma01_fail_chain(root)
+        status, exit_code = rewrite_ma01_fail_chain(paths, outcome)
+
+        validation = validate_ma01_manifest(
+            paths["target-manifest.json"], status=status, exit_code=exit_code
+        )
+        transcript = validation.stdout + validation.stderr
+        assert validation.returncode == 3, transcript
+        assert "Traceback" not in transcript
+        assert str(REPO) not in transcript
+        assert TEST_RUN_CONTEXT_KEY not in transcript
+
+
+@pytest.mark.parametrize("outcome", ["pass", "blocked"])
+def test_ma01_context_hmac_rejects_log_only_post_run_rewrites(outcome: str) -> None:
+    with tempfile.TemporaryDirectory(
+        prefix=f"critical-flows-ma01-log-context-rewrite-{outcome}-"
+    ) as tmp:
+        root = Path(tmp)
+        paths = build_ma01_log_fail_chain(root)
+        valid = validate_ma01_manifest(
+            paths["target-manifest.json"], status="fail", exit_code=1
+        )
+        assert valid.returncode == 0, valid.stdout + valid.stderr
+
+        status, exit_code = rewrite_ma01_log_fail_chain(paths, outcome)
+        validation = validate_ma01_manifest(
+            paths["target-manifest.json"], status=status, exit_code=exit_code
+        )
+        transcript = validation.stdout + validation.stderr
+        assert validation.returncode == 3, transcript
+        assert "Traceback" not in transcript
+        assert str(REPO) not in transcript
+        assert TEST_RUN_CONTEXT_KEY not in transcript
+
+
+def test_ma01_bound_validator_rejects_resigned_fixture_ensure_state_forgery() -> None:
+    with tempfile.TemporaryDirectory(
+        prefix="critical-flows-ma01-fixture-forgery-"
+    ) as tmp:
+        root = Path(tmp).resolve()
+        paths = build_ma01_pass_chain(root)
+        probe_path = paths["target-probe.json"]
+        probe = json.loads(probe_path.read_text(encoding="utf-8"))
+        probe["facts"]["fixture"].update(
+            {
+                "customer_preexisting": True,
+                "customer_created": True,
+            }
+        )
+        probe["context_hmac"] = ma01_context_hmac(probe)
+        ma01_rehash(probe_path, probe)
+
+        manifest_path = paths["target-manifest.json"]
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["files"]["target-probe.json"] = {
+            "file_sha256": file_sha256(probe_path),
+            "payload_sha256": probe["payload_sha256"],
+        }
+        ma01_rehash(manifest_path, manifest)
+
+        validation = validate_ma01_manifest(manifest_path)
+        transcript = validation.stdout + validation.stderr
+        assert validation.returncode == 3, transcript
+        assert "Traceback" not in transcript
+        assert str(root) not in transcript
+        assert TEST_RUN_CONTEXT_KEY not in transcript
+
+
+def test_ma01_bound_manifest_rejects_boolean_execution_exit_code() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-ma01-bool-exit-") as tmp:
+        root = Path(tmp)
+        paths = build_ma01_fail_chain(root)
+        execution_path = paths["target-execution.json"]
+        execution = json.loads(execution_path.read_text(encoding="utf-8"))
+        execution["exit_code"] = True
+        ma01_rehash(execution_path, execution)
+
+        manifest_path = paths["target-manifest.json"]
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["files"]["target-execution.json"] = {
+            "file_sha256": file_sha256(execution_path),
+            "payload_sha256": execution["payload_sha256"],
+        }
+        ma01_rehash(manifest_path, manifest)
+
+        validation = validate_ma01_manifest(
+            manifest_path, status="fail", exit_code=1
+        )
+        assert validation.returncode == 3, validation.stdout + validation.stderr
+
+
+def test_ma01_bound_manifest_rejects_float_manifest_exit_code() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-ma01-float-exit-") as tmp:
+        root = Path(tmp)
+        paths = build_ma01_fail_chain(root)
+        manifest_path = paths["target-manifest.json"]
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["exit_code"] = 1.0
+        ma01_rehash(manifest_path, manifest)
+
+        validation = validate_ma01_manifest(
+            manifest_path, status="fail", exit_code=1
+        )
+        assert validation.returncode == 3, validation.stdout + validation.stderr
+
+
+def test_ma01_validate_comparison_rejects_malformed_typed_json_without_traceback() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-ma01-comparison-types-") as tmp:
+        root = Path(tmp)
+        paths = build_ma01_pass_chain(root)
+        valid = json.loads(paths["comparison.json"].read_text(encoding="utf-8"))
+        cases = (
+            ("status_array", "status", []),
+            ("reference_array", "reference", []),
+            ("target_scalar", "target", "RAW_TYPED_MARKER"),
+        )
+        for name, field, value in cases:
+            malformed = ma01_clone(valid)
+            malformed[field] = value
+            malformed["payload_sha256"] = ma01_payload_digest(malformed)
+            result = run_ma01(
+                "validate-comparison",
+                "--run-stamp",
+                MA01_RUN_STAMP,
+                "--expected-exit-code",
+                "0",
+                input_text=json.dumps(malformed),
+            )
+            transcript = result.stdout + result.stderr
+            assert result.returncode == 3, (name, transcript)
+            assert "Traceback" not in transcript
+            assert str(REPO) not in transcript
+            assert "RAW_TYPED_MARKER" not in transcript
+
+
+@pytest.mark.parametrize("artifact_name,field,value", [
+    ("target-probe.json", "store", []),
+    ("target-probe.json", "status", {}),
+    ("target-execution.json", "status", []),
+])
+def test_ma01_bound_validator_rejects_malformed_typed_artifacts_without_traceback(
+    artifact_name: str, field: str, value
+) -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-ma01-bound-types-") as tmp:
+        root = Path(tmp)
+        paths = build_ma01_pass_chain(root)
+        artifact_path = paths[artifact_name]
+        artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+        artifact[field] = value
+        ma01_rehash(artifact_path, artifact)
+
+        manifest_path = paths["target-manifest.json"]
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["files"][artifact_name] = {
+            "file_sha256": file_sha256(artifact_path),
+            "payload_sha256": artifact["payload_sha256"],
+        }
+        ma01_rehash(manifest_path, manifest)
+
+        validation = validate_ma01_manifest(manifest_path)
+        transcript = validation.stdout + validation.stderr
+        assert validation.returncode == 3, transcript
+        assert "Traceback" not in transcript
+        assert str(REPO) not in transcript
+
+
+MA01_DRIVER = (
+    REPO
+    / "tools/woopayments-critical-flows/flows/"
+    "class-woopaymentscriticalflowsma01driver.php"
+)
+MA01_FLOW = (
+    REPO
+    / "tools/woopayments-critical-flows/flows/"
+    "MA-01-open-admin-as-non-admin.sh"
+)
+
+
+def ma01_php_driver_harness_source() -> str:
+    """Return isolated WordPress stubs that execute the real MA-01 driver entry."""
+    return r'''
+define( 'MINUTE_IN_SECONDS', 60 );
+$config = json_decode( getenv( 'MA01_TEST_CONFIG' ) ?: '{}', true );
+$config = is_array( $config ) ? $config : array();
+$trace = array(
+    'insert_count' => 0,
+    'actor_switches' => array(),
+    'rest_calls' => array(),
+    'session_create_count' => 0,
+    'session_destroy_tokens' => array(),
+    'session_verify_tokens' => array(),
+    'cookie_calls' => array(),
+    'http_calls' => array(),
+);
+$current_user_id = 1;
+$customer_inserted = false;
+
+class WP_User {
+    public int $ID;
+    public array $roles;
+    public function __construct( int $id, array $roles ) {
+        $this->ID = $id;
+        $this->roles = $roles;
+    }
+}
+class WP_Error {}
+class WP_REST_Request {
+    public string $method;
+    public string $route;
+    public array $query = array();
+    public function __construct( string $method, string $route ) {
+        $this->method = $method;
+        $this->route = $route;
+    }
+    public function set_query_params( array $query ): void { $this->query = $query; }
+}
+class WP_REST_Response {
+    private int $status;
+    private $data;
+    public function __construct( $data, int $status ) {
+        $this->data = $data;
+        $this->status = $status;
+    }
+    public function get_status(): int { return $this->status; }
+    public function get_data() { return $this->data; }
+}
+class FakeMa01SessionManager {
+    private bool $destroyed = false;
+    public function create( int $expiration ): string {
+        ++$GLOBALS['trace']['session_create_count'];
+        $GLOBALS['trace']['session_expiration'] = $expiration;
+        return 'session-secret-token';
+    }
+    public function destroy( string $token ): void {
+        $GLOBALS['trace']['session_destroy_tokens'][] = $token;
+        if ( 'session-secret-token' === $token ) { $this->destroyed = true; }
+    }
+    public function verify( string $token ) {
+        $GLOBALS['trace']['session_verify_tokens'][] = $token;
+        return $this->destroyed && 'session-secret-token' === $token ? false : array( 'expiration' => 1 );
+    }
+}
+class WP_Session_Tokens {
+    public static function get_instance( int $user_id ): FakeMa01SessionManager {
+        $GLOBALS['trace']['session_user_id'] = $user_id;
+        if ( ! isset( $GLOBALS['session_manager'] ) ) {
+            $GLOBALS['session_manager'] = new FakeMa01SessionManager();
+        }
+        return $GLOBALS['session_manager'];
+    }
+}
+
+function get_user_by( string $field, $value ) {
+    if ( 'id' === $field && 1 === (int) $value ) { return new WP_User( 1, array( 'administrator' ) ); }
+    if ( 'id' === $field && 22 === (int) $value ) { return new WP_User( 22, array( 'customer' ) ); }
+    if ( 'login' === $field && 'ma01-customer' === $value ) {
+        if ( ! empty( $GLOBALS['config']['existing_customer'] ) || $GLOBALS['customer_inserted'] ) {
+            return new WP_User( 22, array( 'customer' ) );
+        }
+    }
+    return false;
+}
+function wp_generate_password( int $length, bool $special, bool $extra ): string {
+    return 'generated-password-secret';
+}
+function wp_insert_user( array $user ) {
+    ++$GLOBALS['trace']['insert_count'];
+    $GLOBALS['trace']['insert_login'] = $user['user_login'] ?? '';
+    $GLOBALS['trace']['insert_role'] = $user['role'] ?? '';
+    $GLOBALS['customer_inserted'] = true;
+    return 22;
+}
+function is_wp_error( $value ): bool { return $value instanceof WP_Error; }
+function user_can( WP_User $user, string $capability ): bool { return 1 === $user->ID; }
+function get_woocommerce_currency(): string { return 'USD'; }
+function get_option( string $name, $default = null ) {
+    return 'active_plugins' === $name
+        ? array( 'woocommerce-payments/woocommerce-payments.php' )
+        : $default;
+}
+function is_multisite(): bool { return false; }
+function get_site_option( string $name, $default = null ) { return $default; }
+function get_current_user_id(): int { return $GLOBALS['current_user_id']; }
+function wp_set_current_user( int $user_id ): void {
+    $GLOBALS['current_user_id'] = $user_id;
+    $GLOBALS['trace']['actor_switches'][] = $user_id;
+}
+function rest_do_request( WP_REST_Request $request ): WP_REST_Response {
+    $GLOBALS['trace']['rest_calls'][] = array(
+        'actor' => $GLOBALS['current_user_id'],
+        'route' => $request->route,
+        'query' => $request->query,
+    );
+    if ( 22 === $GLOBALS['current_user_id'] ) {
+        $data = array_key_exists( 'customer_data', $GLOBALS['config'] )
+            ? $GLOBALS['config']['customer_data']
+            : array(
+                'code' => 'rest_forbidden',
+                'message' => 'Forbidden.',
+                'data' => array( 'status' => 403 ),
+            );
+        return new WP_REST_Response( $data, (int) ( $GLOBALS['config']['customer_status'] ?? 403 ) );
+    }
+    return new WP_REST_Response( array( 'data' => array() ), 200 );
+}
+function wp_generate_auth_cookie( int $user_id, int $expiration, string $scheme, string $token ): string {
+    $GLOBALS['trace']['cookie_calls'][] = array( 'scheme' => $scheme, 'token' => $token );
+    return 'cookie-secret|' . $scheme . '|' . $token;
+}
+function wp_remote_get( string $url, array $arguments ) {
+    $GLOBALS['trace']['http_calls'][] = array( 'url' => $url, 'arguments' => $arguments );
+    $call = count( $GLOBALS['trace']['http_calls'] );
+    $mode = (string) ( $GLOBALS['config']['http_mode'] ?? 'same_origin_redirect' );
+    if ( 'exception' === $mode ) { throw new RuntimeException( 'test HTTP exception' ); }
+    if ( 1 === $call && 'off_origin_redirect' === $mode ) {
+        return array( 'status' => 302, 'headers' => array( 'location' => 'https://example.test/escape' ), 'body' => '' );
+    }
+    if ( 1 === $call && 'same_origin_redirect' === $mode ) {
+        return array( 'status' => 302, 'headers' => array( 'location' => '/my-account/' ), 'body' => '' );
+    }
+    return array(
+        'status' => 200,
+        'headers' => array(),
+        'body' => '<body class="logged-in"><a href="?customer-logout=1">Sign out</a></body>',
+    );
+}
+function wp_remote_retrieve_response_code( array $response ): int { return $response['status']; }
+function wp_remote_retrieve_header( array $response, string $name ): string {
+    return (string) ( $response['headers'][strtolower( $name )] ?? '' );
+}
+function wp_remote_retrieve_body( array $response ): string { return $response['body']; }
+function wp_parse_url( string $url, int $component = -1 ) {
+    return -1 === $component ? parse_url( $url ) : parse_url( $url, $component );
+}
+function wp_json_encode( $value, int $flags = 0 ): string { return json_encode( $value, $flags ); }
+
+$args = array( 'ref', 'probe', '20260718T120000Z-10101', 'http://localhost:8082' );
+require $argv[1];
+$trace['final_user_id'] = $current_user_id;
+$trace['no_proxy_after'] = getenv( 'NO_PROXY' );
+$trace['no_proxy_lower_after'] = getenv( 'no_proxy' );
+echo '__TRACE__' . json_encode( $trace ) . "\n";
+'''
+
+
+def run_ma01_php_driver(config: dict | None = None) -> tuple[dict, dict, str]:
+    """Execute the real PHP entry against deterministic isolated WordPress stubs."""
+    result = subprocess.run(
+        ["php", "-r", ma01_php_driver_harness_source(), str(MA01_DRIVER)],
+        cwd=REPO,
+        text=True,
+        capture_output=True,
+        check=False,
+        env={
+            **os.environ,
+            "MA01_TEST_CONFIG": json.dumps(config or {}, separators=(",", ":")),
+            "NO_PROXY": "original-upper",
+            "no_proxy": "original-lower",
+        },
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    lines = [line for line in result.stdout.splitlines() if line]
+    assert len(lines) == 2, result.stdout + result.stderr
+    assert lines[1].startswith("__TRACE__")
+    return json.loads(lines[0]), json.loads(lines[1][len("__TRACE__") :]), result.stderr
+
+
+def ma01_fake_wp_source(
+    owner: str,
+    home: str,
+    raw_probe: dict,
+    *,
+    probe_exit_code: int = 0,
+    log_probe_status: str = "pass",
+    wrapper_noise: str = "",
+) -> str:
+    """Fake WP runner for one MA-01 probe plus shared identity/log observations."""
+    store = "ref" if owner == "plugin" else "target"
+    log_matches = (
+        []
+        if log_probe_status != "fail"
+        else [safe_log_record(line=5, diagnostic="PHP Warning: fake MA-01 warning")]
+    )
+    log_scan = common_log_scan_v5(
+        status=log_probe_status,
+        run_stamp=TEST_RUN_STAMP,
+        store=store,
+        flow_id="MA-01-open-admin-as-non-admin",
+        purpose="clean-debug-log",
+        marker_created_at=TEST_MARKER_CREATED_AT,
+        end_line_count=5 if log_matches else 4,
+        end_byte_count=160 if log_matches else 128,
+        matches=log_matches,
+        blocker_code="no_configured_paths" if log_probe_status == "blocked" else "",
+    )
+    raw_json = json.dumps(raw_probe, separators=(",", ":"))
+    log_json = json.dumps(log_scan, separators=(",", ":"))
+    noise_command = (
+        f"printf '%s\\n' {shlex.quote(wrapper_noise)}" if wrapper_noise else ":"
+    )
+    return f"""#!/usr/bin/env bash
+set -u
+{authenticated_log_fake_prelude(log_scan, observer_categories="warning" if log_matches else "")}
+if [ "${{1:-}}" = "--user=1" ]; then shift; fi
+if [ "${{1:-}}" = "eval-file" ]; then
+  body="$(cat)"
+  if [[ "$body" == *"update_option"*"woopayments_critical_flows_debug_log_marker"* ]]; then
+    printf '%s\n' '{{"status":"pass"}}'
+    exit 0
+  fi
+  if [[ "$body" == *"ignored_matches"* ]]; then
+    printf '%s\n' '{log_json}'
+    exit 0
+  fi
+  if [[ "$body" == *"woopayments_ma01_probe.v1"* ]]; then
+    {noise_command}
+    printf '%s\n' '{raw_json}'
+    exit {probe_exit_code}
+  fi
+fi
+if [ "${{1:-}}" = "eval" ]; then
+  if [[ "${{2:-}}" == *"store_identity_owner"* ]]; then
+    printf '%s\n' 'store_identity_owner={owner}'
+    printf '%s\n' 'store_identity_home={home}'
+    exit 0
+  fi
+  if [[ "${{2:-}}" == *"update_option"*"woopayments_critical_flows_debug_log_marker"* ]]; then
+    printf '%s\n' '{{"status":"pass","paths":["/tmp/fake-debug.log"],"markers":{{"/tmp/fake-debug.log":0}}}}'
+    exit 0
+  fi
+  printf '%s\n' '{log_json}'
+  exit 0
+fi
+printf 'unexpected fake WP call: %s\n' "$*" >&2
+exit 2
+"""
+
+
+def run_ma01_runner_case(
+    root: Path,
+    *,
+    store: str = "both",
+    ref_raw: dict | None = None,
+    target_raw: dict | None = None,
+    ref_probe_exit_code: int = 0,
+    target_probe_exit_code: int = 0,
+    wrapper_noise: str = "",
+) -> subprocess.CompletedProcess[str]:
+    """Run the repository MA-01 flow through the real deterministic runner."""
+    root = root.resolve()
+    evidence_dir = root / "evidence"
+    bin_dir = root / "bin"
+    evidence_dir.mkdir()
+    bin_dir.mkdir()
+    fake_ref_wp = bin_dir / "fake-ref-wp.sh"
+    fake_target_wp = bin_dir / "fake-target-wp.sh"
+    write_executable(
+        fake_ref_wp,
+        ma01_fake_wp_source(
+            "plugin",
+            "http://localhost:8082",
+            ref_raw or ma01_raw_probe("ref", run_stamp=TEST_RUN_STAMP),
+            probe_exit_code=ref_probe_exit_code,
+            wrapper_noise=wrapper_noise,
+        ),
+    )
+    write_executable(
+        fake_target_wp,
+        ma01_fake_wp_source(
+            "native",
+            "http://store8889.localhost:8889",
+            target_raw or ma01_raw_probe("target", run_stamp=TEST_RUN_STAMP),
+            probe_exit_code=target_probe_exit_code,
+            wrapper_noise=wrapper_noise,
+        ),
+    )
+    return run_runner(
+        "--store",
+        store,
+        "--layer",
+        "deterministic",
+        "--flow",
+        "MA-01",
+        "--ref-url",
+        "http://localhost:8082",
+        "--target-url",
+        "http://store8889.localhost:8889",
+        evidence_dir=evidence_dir,
+        extra_env={
+            "REF_WP_COMMAND": str(fake_ref_wp),
+            "TARGET_WP_COMMAND": str(fake_target_wp),
+        },
+    )
+
+
+def test_ma01_real_flow_and_runner_bind_dual_store_pass_without_raw_archive() -> None:
+    raw_only_noise = (
+        '<html><body>Authorization: Bearer ma01_raw_token Cookie: wordpress_logged_in_raw; '
+        'password=ma01-secret customer@example.test financial_rows=[{"amount":999}]</body></html>'
+    )
+    with tempfile.TemporaryDirectory(prefix="critical-flows-ma01-runner-pass-") as tmp:
+        root = Path(tmp)
+        result = run_ma01_runner_case(root, wrapper_noise=raw_only_noise)
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "[MA-01/ref] deterministic verdict: PASS" in result.stdout
+        assert "[MA-01/target] deterministic verdict: PASS" in result.stdout
+        assert "cross-store access-control parity: PASS" in result.stdout
+        rollup = json.loads((root / "evidence/rollup.json").read_text(encoding="utf-8"))
+        rows = [
+            row
+            for row in strip_recorded_at(rollup)
+            if row["flow"] == "MA-01-open-admin-as-non-admin"
+        ]
+        assert len(rows) == 2, "the markdown fallback must not duplicate the wired shell flow"
+        assert {row["store"]: row["status"] for row in rows} == {
+            "ref": "PASS",
+            "target": "PASS",
+        }
+        expected_files = {
+            "ref": {"ref-probe.json", "ref-execution.json"},
+            "target": {
+                "ref-probe.json",
+                "target-probe.json",
+                "comparison.json",
+                "target-execution.json",
+            },
+        }
+        for row in rows:
+            manifest_path = Path(row["evidence_path"])
+            assert row["evidence_sha256"] == file_sha256(manifest_path)
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            assert manifest["schema"] == "woopayments_ma01_manifest.v1"
+            assert manifest["run_stamp"] == TEST_RUN_STAMP
+            assert manifest["run_scope"] == "partial"
+            assert manifest["store"] == row["store"]
+            assert manifest["status"] == "pass"
+            assert set(manifest["files"]) == expected_files[row["store"]]
+
+        archived_text = result.stdout + result.stderr
+        for path in (root / "evidence").rglob("*"):
+            if path.is_file():
+                archived_text += path.read_text(encoding="utf-8", errors="replace")
+        for forbidden in (
+            raw_only_noise,
+            "<html>",
+            "Authorization:",
+            "Cookie:",
+            "wordpress_logged_in_raw",
+            "ma01_raw_token",
+            "ma01-secret",
+            "customer@example.test",
+            "financial_rows",
+            '"amount":999',
+        ):
+            assert forbidden not in archived_text
+        assert not list((root / "evidence").rglob("*raw*"))
+
+
+def test_ma01_real_flow_accepts_specific_permission_denial_as_authentication_proof() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-ma01-permission-proof-") as tmp:
+        root = Path(tmp)
+        ref_raw = ma01_raw_probe("ref", run_stamp=TEST_RUN_STAMP)
+        target_raw = ma01_raw_probe("target", run_stamp=TEST_RUN_STAMP)
+        for raw in (ref_raw, target_raw):
+            raw["http"].update(
+                {
+                    "logged_in_marker": False,
+                    "logout_marker": False,
+                    "permission_marker": True,
+                }
+            )
+
+        result = run_ma01_runner_case(root, ref_raw=ref_raw, target_raw=target_raw)
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "[MA-01/ref] deterministic verdict: PASS" in result.stdout
+        assert "[MA-01/target] deterministic verdict: PASS" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "existing_customer,expected_preexisting,expected_created,expected_inserts",
+    [(True, True, False, 0), (False, False, True, 1)],
+)
+def test_ma01_real_php_driver_reports_truthful_fixture_ensure_state(
+    existing_customer: bool,
+    expected_preexisting: bool,
+    expected_created: bool,
+    expected_inserts: int,
+) -> None:
+    payload, trace, stderr = run_ma01_php_driver(
+        {"existing_customer": existing_customer}
+    )
+
+    assert stderr == ""
+    assert payload["fixture"]["customer_preexisting"] is expected_preexisting
+    assert payload["fixture"]["customer_created"] is expected_created
+    assert payload["fixture"]["customer_preexisting"] != payload["fixture"][
+        "customer_created"
+    ]
+    assert trace["insert_count"] == expected_inserts
+    result, normalized = normalize_ma01(payload)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert normalized["status"] == "pass"
+
+
+@pytest.mark.parametrize(
+    "name,response_data,expected_standard,expected_absent,expected_rc",
+    [
+        (
+            "exact-standard-403",
+            {"code": "rest_forbidden", "message": "Forbidden.", "data": {"status": 403}},
+            True,
+            True,
+            0,
+        ),
+        (
+            "top-level-rows",
+            {
+                "code": "rest_forbidden",
+                "message": "Forbidden.",
+                "data": {"status": 403},
+                "transactions": [],
+            },
+            False,
+            False,
+            1,
+        ),
+        (
+            "nested-rows",
+            {
+                "code": "rest_forbidden",
+                "message": "Forbidden.",
+                "data": {"status": 403, "rows": []},
+            },
+            False,
+            False,
+            1,
+        ),
+        ("top-level-list", [], False, False, 1),
+    ],
+)
+def test_ma01_real_php_driver_projects_customer_errors_fail_closed(
+    name: str,
+    response_data,
+    expected_standard: bool,
+    expected_absent: bool,
+    expected_rc: int,
+) -> None:
+    payload, _, _ = run_ma01_php_driver(
+        {"existing_customer": True, "customer_data": response_data}
+    )
+
+    for route in payload["routes"].values():
+        assert route["customer"]["standard_error"] is expected_standard, name
+        assert route["customer"]["financial_list_absent"] is expected_absent, name
+    result, normalized = normalize_ma01(payload)
+    assert result.returncode == expected_rc, (name, result.stdout, result.stderr)
+    assert normalized["status"] == ("pass" if expected_rc == 0 else "fail")
+
+
+def test_ma01_real_php_driver_exercises_actors_queries_session_and_local_http() -> None:
+    payload, trace, _ = run_ma01_php_driver({"existing_customer": True})
+
+    assert [call["actor"] for call in trace["rest_calls"]] == [22, 1] * 3
+    assert [call["route"] for call in trace["rest_calls"]] == [
+        MA01_ROUTES["transactions"],
+        MA01_ROUTES["transactions"],
+        MA01_ROUTES["deposits"],
+        MA01_ROUTES["deposits"],
+        MA01_ROUTES["disputes"],
+        MA01_ROUTES["disputes"],
+    ]
+    list_query = {
+        "page": 1,
+        "pagesize": 1,
+        "sort": "date",
+        "direction": "desc",
+        "store_currency_is": "usd",
+    }
+    assert trace["rest_calls"][0]["query"] == list_query
+    assert trace["rest_calls"][2]["query"] == list_query
+    assert trace["rest_calls"][4]["query"] == {"page": 1, "pagesize": 1}
+    assert trace["final_user_id"] == 1
+    assert trace["session_create_count"] == 1
+    assert trace["session_destroy_tokens"] == ["session-secret-token"]
+    assert trace["session_verify_tokens"] == ["session-secret-token"]
+    assert trace["session_user_id"] == 22
+    assert len(trace["http_calls"]) == 2
+    assert trace["http_calls"][0]["url"].startswith("http://127.0.0.1/wp-admin/")
+    assert trace["http_calls"][1]["url"] == "http://127.0.0.1/my-account/"
+    request_arguments = trace["http_calls"][0]["arguments"]
+    assert request_arguments["redirection"] == 0
+    assert request_arguments["headers"]["Host"] == "localhost:8082"
+    cookie_header = request_arguments["headers"]["Cookie"]
+    cookie_hash = hashlib.md5(b"http://localhost:8082").hexdigest()
+    assert f"wordpress_{cookie_hash}=" in cookie_header
+    assert f"wordpress_sec_{cookie_hash}=" in cookie_header
+    assert f"wordpress_logged_in_{cookie_hash}=" in cookie_header
+    assert payload["http"]["redirect_count"] == 1
+    assert payload["http"]["final_path"] == "/my-account/"
+    assert payload["exact_session_cleanup"] is True
+    assert trace["no_proxy_after"] == "original-upper"
+    assert trace["no_proxy_lower_after"] == "original-lower"
+    encoded_payload = json.dumps(payload)
+    for forbidden in (
+        "session-secret-token",
+        "cookie-secret",
+        "generated-password-secret",
+        "ma01-customer@example.com",
+        "Cookie",
+        "response_body",
+    ):
+        assert forbidden not in encoded_payload
+
+
+def test_ma01_real_php_driver_cleans_session_and_proxy_after_http_exception() -> None:
+    payload, trace, _ = run_ma01_php_driver(
+        {"existing_customer": True, "http_mode": "exception"}
+    )
+
+    assert payload["exact_session_cleanup"] is True
+    assert payload["blockers"] == ["authenticated_http_probe_unavailable"]
+    assert trace["session_create_count"] == 1
+    assert trace["session_destroy_tokens"] == ["session-secret-token"]
+    assert trace["session_verify_tokens"] == ["session-secret-token"]
+    assert trace["no_proxy_after"] == "original-upper"
+    assert trace["no_proxy_lower_after"] == "original-lower"
+
+
+def test_ma01_real_php_driver_refuses_off_origin_redirect_and_cleans_session() -> None:
+    payload, trace, _ = run_ma01_php_driver(
+        {"existing_customer": True, "http_mode": "off_origin_redirect"}
+    )
+
+    assert len(trace["http_calls"]) == 1
+    assert payload["http"]["transport_errors"] == ["redirect_not_same_origin"]
+    assert payload["http"]["redirect_count"] == 0
+    assert payload["exact_session_cleanup"] is True
+    assert trace["session_destroy_tokens"] == ["session-secret-token"]
+    assert trace["no_proxy_after"] == "original-upper"
+    assert trace["no_proxy_lower_after"] == "original-lower"
+
+
+@pytest.mark.parametrize("unsafe_kind", ["symlink", "traversal", "mkdir-failure"])
+def test_ma01_flow_rejects_unsafe_archive_before_wp_probe(unsafe_kind: str) -> None:
+    with tempfile.TemporaryDirectory(prefix=f"critical-flows-ma01-path-{unsafe_kind}-") as tmp:
+        root = Path(tmp)
+        outside = root / "outside"
+        outside.mkdir()
+        if unsafe_kind == "symlink":
+            evidence_dir = root / "evidence-link"
+            evidence_dir.symlink_to(outside, target_is_directory=True)
+        elif unsafe_kind == "traversal":
+            safe = root / "safe"
+            safe.mkdir()
+            evidence_dir = safe / ".." / "outside"
+        else:
+            non_directory = root / "not-a-directory"
+            non_directory.write_text("sentinel", encoding="utf-8")
+            evidence_dir = non_directory / "evidence"
+        called = root / "wp-called"
+        fake_wp = root / "fake-wp.sh"
+        write_executable(
+            fake_wp,
+            f"#!/usr/bin/env bash\nprintf called > {shlex.quote(str(called))}\nexit 99\n",
+        )
+        result = subprocess.run(
+            ["bash", str(MA01_FLOW)],
+            cwd=REPO,
+            text=True,
+            capture_output=True,
+            check=False,
+            env={
+                **os.environ,
+                "STORE_NAME": "ref",
+                "CRITICAL_FLOWS_RUN_STAMP": TEST_RUN_STAMP,
+                "CRITICAL_FLOWS_RUN_SCOPE": "partial",
+                "CRITICAL_FLOWS_RUN_CONTEXT_KEY": TEST_RUN_CONTEXT_KEY,
+                "CRITICAL_FLOWS_FLOW_ID": "MA-01-open-admin-as-non-admin",
+                "CRITICAL_FLOWS_LOG_PURPOSE": "clean-debug-log",
+                "EVIDENCE_DIR": str(evidence_dir),
+                "REF_WP_COMMAND": str(fake_wp),
+                "REF_URL": "http://localhost:8082",
+                "TARGET_URL": "http://store8889.localhost:8889",
+            },
+        )
+
+        assert result.returncode == 3, result.stdout + result.stderr
+        assert not called.exists()
+        assert list(outside.iterdir()) == []
+
+
+@pytest.mark.parametrize(
+    "outcome,expected_rc,expected_status,mutate",
+    [
+        (
+            "functional-fail",
+            1,
+            "FAIL",
+            lambda raw: raw["routes"]["transactions"]["customer"].update(
+                {"status": 200, "code": "", "standard_error": False, "financial_list_absent": False}
+            ),
+        ),
+        (
+            "transport-blocked",
+            3,
+            "BLOCKED",
+            lambda raw: raw["http"]["transport_errors"].append("http_request_failed"),
+        ),
+    ],
+)
+def test_ma01_real_flow_propagates_functional_fail_and_blocked(
+    outcome: str, expected_rc: int, expected_status: str, mutate
+) -> None:
+    with tempfile.TemporaryDirectory(prefix=f"critical-flows-ma01-{outcome}-") as tmp:
+        root = Path(tmp)
+        target_raw = ma01_raw_probe("target", run_stamp=TEST_RUN_STAMP)
+        mutate(target_raw)
+        result = run_ma01_runner_case(root, target_raw=target_raw)
+
+        assert result.returncode == expected_rc, result.stdout + result.stderr
+        rollup = json.loads((root / "evidence/rollup.json").read_text(encoding="utf-8"))
+        target_row = next(row for row in rollup["results"] if row["store"] == "target")
+        assert target_row["status"] == expected_status
+        assert target_row["exit_code"] == expected_rc
+        assert f"[MA-01/target] deterministic verdict: {expected_status}" in result.stdout
+
+
+def test_ma01_target_only_is_blocked_without_same_invocation_reference_probe() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-ma01-target-only-") as tmp:
+        root = Path(tmp)
+        result = run_ma01_runner_case(root, store="target")
+
+        assert result.returncode == 3, result.stdout + result.stderr
+        assert "cross-store access-control parity: BLOCKED" in result.stdout
+        comparison = (
+            root
+            / "evidence/runs"
+            / f"{TEST_RUN_STAMP}-partial/MA-01-open-admin-as-non-admin/comparison.json"
+        )
+        payload = json.loads(comparison.read_text(encoding="utf-8"))
+        assert payload["status"] == "blocked"
+        assert any("Reference input is invalid" in blocker for blocker in payload["blockers"])
+        row = json.loads((root / "evidence/rollup.json").read_text(encoding="utf-8"))[
+            "results"
+        ][0]
+        assert row["status"] == "BLOCKED"
+        assert row["exit_code"] == 3
+        assert "evidence_path" not in row
+
+
+@pytest.mark.parametrize(
+    "attack",
+    ["missing", "malformed", "stale", "forged", "contradictory"],
+)
+def test_ma01_runner_converts_apparent_pass_with_invalid_manifest_to_blocked(
+    attack: str,
+) -> None:
+    with tempfile.TemporaryDirectory(prefix=f"critical-flows-ma01-manifest-{attack}-") as tmp:
+        root = Path(tmp).resolve()
+        evidence_dir = root / "evidence"
+        flows_dir = root / "flows"
+        bin_dir = root / "bin"
+        evidence_dir.mkdir()
+        flows_dir.mkdir()
+        bin_dir.mkdir()
+        fake_target_wp = bin_dir / "fake-target-wp.sh"
+        write_executable(
+            fake_target_wp,
+            probe_only_fake_wp_source(
+                "native",
+                "http://store8889.localhost:8889",
+                flow_id="MA-01-open-admin-as-non-admin",
+            ),
+        )
+        manifest_source = root / "attack-manifest.json"
+        if attack == "malformed":
+            manifest_source.write_text("{not-json\n", encoding="utf-8")
+        elif attack != "missing":
+            manifest = {
+                "schema": "woopayments_ma01_manifest.v1",
+                "flow": "MA-01-open-admin-as-non-admin",
+                "run_stamp": (
+                    "20260718T110000Z-10000" if attack == "stale" else TEST_RUN_STAMP
+                ),
+                "run_scope": "partial",
+                "store": "target",
+                "status": "fail" if attack == "contradictory" else "pass",
+                "exit_code": 1 if attack == "contradictory" else 0,
+                "verdict_sources": ["probe_failed"] if attack == "contradictory" else [],
+                "files": {},
+            }
+            manifest["payload_sha256"] = ma01_payload_digest(manifest)
+            manifest_source.write_text(
+                json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            )
+        flow_script = flows_dir / "MA-01-open-admin-as-non-admin.sh"
+        write_executable(
+            flow_script,
+            """#!/usr/bin/env bash
+manifest_dir="$EVIDENCE_DIR/runs/$CRITICAL_FLOWS_RUN_STAMP-$CRITICAL_FLOWS_RUN_SCOPE/MA-01-open-admin-as-non-admin"
+mkdir -p "$manifest_dir"
+if [ -n "${MA01_FAKE_MANIFEST:-}" ]; then
+  cp "$MA01_FAKE_MANIFEST" "$manifest_dir/target-manifest.json"
+fi
+echo '[MA-01/target] deterministic verdict: PASS'
+exit 0
+""",
+        )
+
+        result = run_runner(
+            "--store",
+            "target",
+            "--layer",
+            "deterministic",
+            "--flow",
+            "MA-01",
+            evidence_dir=evidence_dir,
+            extra_env={
+                "FLOWS_DIR": str(flows_dir),
+                "TARGET_WP_COMMAND": str(fake_target_wp),
+                "MA01_FAKE_MANIFEST": "" if attack == "missing" else str(manifest_source),
+            },
+        )
+
+        assert result.returncode == 3, result.stdout + result.stderr
+        rollup = json.loads((evidence_dir / "rollup.json").read_text(encoding="utf-8"))
+        row = strip_recorded_at(rollup)[0]
+        assert row["status"] == "BLOCKED"
+        assert row["exit_code"] == 3
+        assert "MA-01" in row["reason"]
+        assert "evidence_path" not in row
+        assert "evidence_sha256" not in row
+
+
+def test_ma01_driver_source_contract_contains_exact_local_secret_safe_probe() -> None:
+    source = MA01_DRIVER.read_text(encoding="utf-8")
+
+    assert "finally {" in source
+    assert "$session_manager->destroy( $session_token );" in source
+    assert "false === $session_manager->verify( $session_token )" in source
+    assert "destroy_all" not in source
+    assert "delete_user" not in source
+    assert "wp_delete_user" not in source
+    assert "'ref'    => 'http://localhost:8082'" in source
+    assert "'target' => 'http://store8889.localhost:8889'" in source
+    assert "'ref'    => 'http://127.0.0.1'" in source
+    assert "'target' => 'http://wordpress'" in source
+    assert "md5( $external_origin )" in source
+    assert "'wordpress_' . $cookie_hash" in source
+    assert "'wordpress_sec_' . $cookie_hash" in source
+    assert "'wordpress_logged_in_' . $cookie_hash" in source
+    assert "wp_generate_auth_cookie" in source
+    assert "rawurlencode( $cookie_value )" in source
+    assert re.search(r"wp_remote_get\(\s*\$internal_url\s*,", source)
+    assert "'redirection' => 0" in source
+    assert re.search(r"'Host'\s*=>\s*\$external_host", source)
+    assert "NO_PROXY" in source and "no_proxy" in source
+    assert "customer-logout" in source
+    assert "woocommerce-MyAccount-navigation-link--customer-logout" in source
+    assert "action=logout" in source
+    assert "You need a higher level of permission" in source
+    assert "Sorry, you are not allowed to access this page" in source
+    assert "wp-die-message" not in source
+    assert "woopaymentsSettings" in source
+    assert len(re.findall(r"'store_currency_is'\s*=>\s*\$store_currency", source)) == 2
+    assert len(re.findall(r"'page'\s*=>\s*1", source)) == 3
+    assert len(re.findall(r"'pagesize'\s*=>\s*1", source)) == 3
+    assert len(re.findall(r"'sort'\s*=>\s*'date'", source)) == 2
+    assert len(re.findall(r"'direction'\s*=>\s*'desc'", source)) == 2
+    assert source.count("/wp-admin/admin.php?page=wc-admin&path=/payments/overview") == 1
+    assert source.count("/wp-admin/admin.php?page=wc-admin&path=/woopayments/overview") == 1
+    payload_start = source.index("private static function initial_payload")
+    payload_end = source.index("private static function", payload_start + 1)
+    payload_source = source[payload_start:payload_end]
+    for forbidden_field in (
+        "password",
+        "email",
+        "token",
+        "cookie",
+        "header",
+        "body",
+        "row",
+        "count",
+        "message",
+        "id",
+    ):
+        assert f"'{forbidden_field}' =>" not in payload_source
+
+
+def test_ma01_driver_projects_only_specific_auth_denial_and_app_markers() -> None:
+    php_source = r'''
+function wp_json_encode( $value, $flags = 0 ) {
+    return json_encode( $value, $flags );
+}
+$args = array( 'invalid', 'invalid', 'invalid', 'invalid' );
+ob_start();
+require $argv[1];
+ob_end_clean();
+$markers = array();
+$method = new ReflectionMethod( 'WooPaymentsCriticalFlowsMa01Driver', 'project_body_markers' );
+$arguments = array( $argv[2], &$markers );
+$method->invokeArgs( null, $arguments );
+echo json_encode( $markers );
+'''
+
+    def project(body: str) -> dict:
+        result = subprocess.run(
+            ["php", "-r", php_source, str(MA01_DRIVER), body],
+            cwd=REPO,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        return json.loads(result.stdout)
+
+    assert project(
+        '<body class="logged-in"><a href="?customer-logout=1">Sign out</a></body>'
+    )["logout_marker"] is True
+    assert project(
+        '<body class="logged-in"><a class="woocommerce-MyAccount-navigation-link--customer-logout">Sign out</a></body>'
+    )["logout_marker"] is True
+    assert project('<body class="logged-in"><a href="?action=logout">Sign out</a></body>')[
+        "logout_marker"
+    ] is True
+    assert project('<div class="wp-die-message">A database error occurred.</div>')[
+        "permission_marker"
+    ] is False
+    assert project("You need a higher level of permission")["permission_marker"] is True
+    assert project("Sorry, you are not allowed to access this page")[
+        "permission_marker"
+    ] is True
+    assert project('<script>window.woopaymentsSettings = {};</script>')[
+        "app_marker"
+    ] is True
+
+
+def test_ma01_shell_and_runner_source_contract_is_manifest_bound_and_raw_free() -> None:
+    flow = MA01_FLOW.read_text(encoding="utf-8")
+    runner = RUNNER.read_text(encoding="utf-8")
+
+    assert 'source "$DIR/../lib/common.sh"' in flow
+    assert 'wp_store "$S" --user=1 eval-file - "$S" probe "$RUN_STAMP" "$BASE_URL"' in flow
+    assert "normalize-probe" in flow
+    assert "assert_log_clean" in flow
+    assert "ref-probe.json" in flow and "target-probe.json" in flow
+    assert "comparison.json" in flow
+    assert "raw-probe" not in flow
+    assert "raw.html" not in flow
+    assert "validate_ma01_manifest()" in runner
+    assert 'python3 "$DIR/flows/ma01-evidence.py" validate-bound-manifest' in runner
+    assert 'if [ "$base" = "MA-01-open-admin-as-non-admin" ]' in runner
 
 
 def main() -> None:

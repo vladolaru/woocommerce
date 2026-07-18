@@ -156,7 +156,7 @@ Legend — **Layers:** `D` deterministic, `A` agent-driven, `D+A` both (overlap)
 
 | ID | Flow | Layers | Functional acceptance | UX checkpoints | Status |
 |----|------|--------|-----------------------|----------------|--------|
-| MA-01 | Open admin as non-admin | D | Capability-gated | `manage_woocommerce` gating | PENDING |
+| MA-01 | Open admin as non-admin | D | Capability-gated | `manage_woocommerce` gating | PASS (runner-verified 2026-07-18: manifest-sealed Layer D dual-store capability, exact REST denial/admission, authenticated page denial, session cleanup, and clean-log parity; no customer financial payload escaped; run `20260718T193353Z-30156-partial`) |
 | MA-02 | View account balances | A (+D) | Balance + available/pending correct | Overview cards | PENDING |
 | MA-03 | View transactions | D+A | List populated | Table + row→detail | PENDING |
 | MA-04 | Filter transactions | D+A | Narrows to criteria | Filter controls | PENDING |

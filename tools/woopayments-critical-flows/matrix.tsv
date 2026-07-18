@@ -44,7 +44,7 @@ MO-03	Manual capture — payment-details page	D+A	comparable	PENDING
 MO-04	Full refund	D+A	comparable	PENDING (Layer A runner-verified 2026-07-17: reference PASS / target FAIL — functional; both stores completed one trusted full USD 25 gateway refund, reached Refunded with zero remaining local/provider amount, and showed the refund on Payment details, but native local refund 1574 omits `_wcpay_refund_id` and order 1573 has no WooPayments success note binding the amount to provider refund `re_3TuCRUBzWlxcwgpP0pxQyZPP`; exact reference collector and target admin diagnostic exceptions are preserved without a blanket clean claim; Layer D NOT YET WIRED; run `20260717T142803Z-72976-partial`)
 MO-05	Partial refund (one + several)	D+A	comparable	PENDING (Layer A runner-verified 2026-07-17: reference PASS / target FAIL — functional; separate trusted USD 15/USD 5 refunds and cumulative USD 20/USD 5 remaining state pass on both stores, but native Payment details remains Succeeded instead of Partial refund, local refunds 1576/1577 lack `_wcpay_refund_id`, and both WooPayments amount/provider success-note joins are absent; Layer D NOT YET WIRED; run `20260717T151846Z-97190-partial`)
 MO-06	Refund failure handling	D	comparable	PENDING
-MA-01	Open admin as non-admin	D	comparable	PENDING
+MA-01	Open admin as non-admin	D	comparable	PASS (runner-verified 2026-07-18: manifest-sealed dual-store capability, exact REST denial/admission, authenticated page denial, session cleanup, and clean-log parity; no customer financial payload escaped; run `20260718T193353Z-30156-partial`)
 MA-02	View account balances	A (+D)	comparable	PENDING
 MA-03	View transactions	D+A	comparable	PENDING
 MA-04	Filter transactions	D+A	comparable	PENDING
