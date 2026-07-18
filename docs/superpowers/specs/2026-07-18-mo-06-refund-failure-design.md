@@ -38,6 +38,28 @@ The implementation will not:
   a direct `process_refund()` call, which starts after any order-screen refund
   record would have been created.
 
+## Mandatory Environment Preflight
+
+Before the first fixture or money mutation, perform the objective's local-only
+cold-start check:
+
+- reference HTTP responds at `http://localhost:8082`;
+- target HTTP responds at `http://store8889.localhost:8889`;
+- WP-CLI reaches both isolated containers and reports distinct WordPress homes;
+- the reference gateway owner is `plugin` and the target owner is `native`;
+- `WOOPAYMENTS_APPROVED_TARGET_CONTAINER` names the approved target CLI
+  container supplied by the run environment;
+- `stripe charges list --limit 1` succeeds without recording credentials;
+- the local WPCOM environment passes its wpcom-local readiness check;
+- the local Transact services needed by the stores are ready; and
+- the operator's event listener is alive before any asynchronous money flow.
+
+Any failed or contradictory preflight is `BLOCKED` before mutation. Recovery is
+limited to starting or repairing the existing dedicated environments and
+listeners. The workflow must not reset, recreate, prune, or reseed their data.
+Repeat the preflight after an unexpected Docker or storage interruption before
+resuming the flow.
+
 ## Chosen Failure Condition
 
 Each store gets a fresh captured order. The harness first performs a normal full
