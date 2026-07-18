@@ -138,7 +138,7 @@ Legend — **Layers:** `D` deterministic, `A` agent-driven, `D+A` both (overlap)
 | MS-03 | Suspend + resume | D+A | On-hold blocks renewal; resume restores | Suspend/Resume + status | PENDING (Layer A runner-verified PASS in 20260718T151903Z-45965-partial; Layer D NOT YET WIRED; run flows/MS-03-suspend-resume.md) |
 | MS-04 | Promote w/ coupon | D | Schedule reflects coupon | Coupon effect | PENDING |
 | MS-05 | Renew automatically (scheduled) | D | Charges on date; email; active; next date | Renewal order + email | PENDING |
-| MS-06 | Renew manually (admin) | D+A | Renewal order paid; date advances | "Renew" action | PENDING |
+| MS-06 | Renew manually (admin) | D+A | Renewal order paid; date advances | "Renew" action | PENDING (Layer A runner-verified FAIL — functional 2026-07-18: one confirmed admin renewal per store created exactly one Processing USD 20 renewal and succeeded/captured provider charge through the saved Visa 4242, but neither future schedule advanced after reload; shared reference/target contract failure, not native-only; Layer D NOT YET WIRED; run `20260718T163605Z-37081-partial`) |
 | MS-07 | **Admin change payment method** | D+A | Admin sets/corrects token; renewal uses it | WooPayments selectable AND editable token fields render+save | PASS (runner-verified 2026-07-14: admin browser Layer A both stores; renewal D layer provider-reconciled with token-id-pinned gate run + chosen-token binding artifact; run archived under evidence/runs/) |
 
 ### Merchant — Order (capture / refunds)
