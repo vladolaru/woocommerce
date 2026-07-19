@@ -6,6 +6,7 @@ const path = require( 'node:path' );
 const {
 	canonicalCustomerNameJson,
 	deriveAssertions,
+	isChallengeRoute,
 	isAllowedTimelineFailure,
 	isAllowedTimelineConsole,
 } = require( './md02-browser-assertions.cjs' );
@@ -224,7 +225,7 @@ async function maskedScreenshot( name ) {
 		path: path.join( config.screenshotDir, name ),
 		fullPage: false,
 		scale: 'css',
-		mask: piiMasks,
+		mask: [ piiMasks ],
 	} );
 }
 
@@ -276,14 +277,25 @@ try {
 	phase = 'details';
 	await page.goto( sameOriginUrl( rowResult.href ), { waitUntil: 'domcontentloaded', timeout: 45000 } );
 	await waitForPageLoad( { page, timeout: 30000, minWait: 800 } );
-	if ( ! /(?:disputes\/challenge|new-evidence)/.test( page.url() ) ) {
-		const challenge = page.getByRole( 'button', { name: /challenge dispute|respond/i } ).or(
-			page.getByRole( 'link', { name: /challenge dispute|respond/i } )
+	if ( ! isChallengeRoute( page.url() ) ) {
+		const exactChallenge = page.getByRole( 'button', { name: /^(?:Challenge dispute|Respond(?: now)?)$/i } ).or(
+			page.getByRole( 'link', { name: /^(?:Challenge dispute|Respond(?: now)?)$/i } )
 		).first();
-		if ( await challenge.count() === 0 ) {
+		if ( await exactChallenge.count() === 0 ) {
 			throw new Error( 'The discovered dispute does not expose a challenge action.' );
 		}
-		await challenge.click();
+		if ( ! await exactChallenge.isVisible() ) {
+			const challengeDisclosure = page.getByRole( 'button', { name: /^Steps you can take/i } ).first();
+			if ( await challengeDisclosure.count() === 0 ) {
+				throw new Error( 'The exact dispute challenge action is not visible.' );
+			}
+			await challengeDisclosure.click();
+			await exactChallenge.waitFor( { state: 'visible', timeout: 10000 } );
+		}
+		await exactChallenge.click();
+		await page.waitForURL( ( url ) => isChallengeRoute( url.toString() ), {
+			timeout: 30000,
+		} );
 		await waitForPageLoad( { page, timeout: 30000, minWait: 800 } );
 	}
 

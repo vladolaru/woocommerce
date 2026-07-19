@@ -67,6 +67,22 @@ process.stdout.write( JSON.stringify( helper.isAllowedTimelineFailure( JSON.pars
     return json.loads(completed.stdout)
 
 
+def run_challenge_route(url: str) -> bool:
+    script = """
+const helper = require( process.argv[ 1 ] );
+process.stdout.write( JSON.stringify( helper.isChallengeRoute( process.argv[ 2 ] ) ) );
+"""
+    completed = subprocess.run(
+        ["node", "-e", script, str(ASSERTIONS), url],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    return json.loads(completed.stdout)
+
+
 def valid_facts() -> dict:
     return {
         "authenticatedAdmin": True,
@@ -117,6 +133,26 @@ def test_assertions_separate_functional_behavior_from_exact_ux() -> None:
     assert all(target["functional"].values())
     assert target["ux"] == {"save_for_later_copy": False, "customer_name_visible": False}
 
+
+@pytest.mark.parametrize(
+    "url",
+    (
+        "http://localhost:8082/wp-admin/admin.php?page=wc-admin&path=%2Fpayments%2Fdisputes%2Fchallenge&id=du_ref",
+        "http://store8889.localhost:8889/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fdisputes%2Fchallenge&id=du_target",
+        "http://localhost:8082/wp-admin/admin.php?page=wc-admin&path=%2Fpayments%2Fnew-evidence&id=du_ref",
+    ),
+)
+def test_challenge_route_decodes_the_wc_admin_path_parameter(url: str) -> None:
+    assert run_challenge_route(url) is True
+
+
+def test_challenge_route_rejects_transaction_details() -> None:
+    assert (
+        run_challenge_route(
+            "http://localhost:8082/wp-admin/admin.php?page=wc-admin&path=%2Fpayments%2Ftransactions%2Fdetails&id=pi_ref"
+        )
+        is False
+    )
 
 @pytest.mark.parametrize(
     "field,assertion",
@@ -227,6 +263,9 @@ def test_scenario_is_incremental_direct_playwright_only_and_masks_pii() -> None:
     assert "waitForResponse" in source
     assert "submit === false" in source or "payload.submit === false" in source
     assert "mask:" in source
+    assert "mask: [ piiMasks ]" in source
+    assert "exactChallenge" in source
+    assert "challengeDisclosure" in source
     assert "customerNameHmac" in source
     assert "authCookies" in source
     assert "sameOriginUrl" in source
@@ -774,11 +813,12 @@ def test_run_store_records_trusted_request_outcomes(
 
 
 @pytest.mark.parametrize(
-    "state_changed,emit_early_artifact,expected_boundary",
+    "state_changed,emit_early_artifact,form_no_files_proven,expected_boundary",
     (
-        (False, False, "unchanged_safe_failure"),
-        (True, False, "ambiguous_mutation"),
-        (False, True, "unchanged_safe_failure"),
+        (False, False, False, "unchanged_safe_failure"),
+        (True, False, False, "ambiguous_mutation"),
+        (False, True, False, "unchanged_safe_failure"),
+        (False, True, True, "unchanged_safe_failure"),
     ),
 )
 def test_run_store_records_untrusted_outcome_as_blocked_packet(
@@ -786,6 +826,7 @@ def test_run_store_records_untrusted_outcome_as_blocked_packet(
     monkeypatch: pytest.MonkeyPatch,
     state_changed: bool,
     emit_early_artifact: bool,
+    form_no_files_proven: bool,
     expected_boundary: str,
 ) -> None:
     module = load_gate()
@@ -861,11 +902,13 @@ def test_run_store_records_untrusted_outcome_as_blocked_packet(
                     },
                     "facts": {
                         **{name: False for name in module.EVIDENCE.BROWSER_FACT_BOOLEAN_FIELDS},
+                        "noFilesAttached": form_no_files_proven,
                         "requestMethod": "",
                         "saveButtonLabel": "",
                     },
                     "functional_assertions": {
-                        name: False for name in module.EVIDENCE.FUNCTIONAL_ASSERTIONS
+                        name: form_no_files_proven if name == "no_files_attached" else False
+                        for name in module.EVIDENCE.FUNCTIONAL_ASSERTIONS
                     },
                     "ux_assertions": {name: False for name in module.EVIDENCE.UX_ASSERTIONS},
                     "request": {

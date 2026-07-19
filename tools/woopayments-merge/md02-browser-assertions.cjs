@@ -26,6 +26,17 @@ const deriveAssertions = ( facts ) => ( {
 
 const canonicalCustomerNameJson = ( value ) => JSON.stringify( String( value ?? '' ).trim() );
 
+const isChallengeRoute = ( value ) => {
+	let parsed;
+	try {
+		parsed = new URL( String( value || '' ) );
+	} catch {
+		return false;
+	}
+	const route = parsed.searchParams.get( 'path' ) || parsed.pathname;
+	return /(?:disputes\/challenge|new-evidence)/.test( route );
+};
+
 const isAllowedTimelineFailure = ( failure ) =>
 	failure?.store === 'ref' &&
 	failure?.status === 500 &&
@@ -56,6 +67,7 @@ const isAllowedTimelineConsole = ( event ) => {
 module.exports = {
 	canonicalCustomerNameJson,
 	deriveAssertions,
+	isChallengeRoute,
 	isAllowedTimelineFailure,
 	isAllowedTimelineConsole,
 };

@@ -399,7 +399,10 @@ def validate_browser(payload: dict[str, Any], *, store: str, run_stamp: str, ide
         or request["submit_false"] != facts["submitFalse"]
         or request["description_matches"] != facts["descriptionMatches"]
         or request["customer_name_matches"] != facts["payloadCustomerNameMatches"]
-        or (request["files_selected"] == 0) != facts["noFilesAttached"]
+        or (
+            request["files_selected"] >= 0
+            and (request["files_selected"] == 0) != facts["noFilesAttached"]
+        )
         or response["ok"] != facts["responseOk"]
         or (200 <= response["status"] < 300) != facts["responseOk"]
     ):
