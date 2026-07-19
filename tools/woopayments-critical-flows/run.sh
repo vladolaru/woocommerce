@@ -603,6 +603,18 @@ validate_md01_manifest() {
     --run-scope "$RUN_SCOPE"
 }
 
+validate_md02_manifest() {
+  local manifest_path="$1" expected_store="$2" expected_status="$3" expected_exit_code="$4"
+
+  python3 "$DIR/flows/md02-evidence.py" validate-bound-manifest \
+    --manifest "$manifest_path" \
+    --store "$expected_store" \
+    --status "$expected_status" \
+    --exit-code "$expected_exit_code" \
+    --run-stamp "$RUN_STAMP" \
+    --run-scope "$RUN_SCOPE"
+}
+
 agent_result_verdict() {
   local flow="$1" store="$2" result_file="$3" expected_oracle_mode="$4"
 
@@ -664,7 +676,7 @@ try:
         raise EvidenceContextError("evidence_context_missing", "current critical-flow context was not supplied")
     context = json.loads(Path(context_file).read_text(encoding="utf-8"))
     validate_context(context)
-    validate_imported_result(payload, context, flow, store)
+    validate_imported_result(payload, context, flow, store, result_path=Path(result_file))
 except EvidenceContextError as exc:
     emit("BLOCKED", 3, "BLOCKED", f"{exc.code}: {exc}")
     raise SystemExit(0)
@@ -1046,6 +1058,26 @@ if [ "$LAYER" != "agent" ]; then
             evidence_path="$manifest_path"
             evidence_sha256="$manifest_validation"
             result_reason="manifest-bound deterministic evidence"
+          fi
+        fi
+      elif [ "$base" = "MD-02-save-evidence" ]; then
+        manifest_path="$EVIDENCE_DIR/runs/$RUN_STAMP-$RUN_SCOPE/$base/$s/$s-manifest.json"
+        expected_manifest_status="$(printf '%s' "$status" | tr '[:upper:]' '[:lower:]')"
+        if [ ! -f "$manifest_path" ]; then
+          status="BLOCKED"
+          rc=3
+          result_reason="MD-02 deterministic evidence manifest is missing"
+        else
+          manifest_validation="$(validate_md02_manifest "$manifest_path" "$s" "$expected_manifest_status" "$rc")"
+          manifest_rc=$?
+          if [ "$manifest_rc" -ne 0 ]; then
+            status="BLOCKED"
+            rc=3
+            result_reason="$manifest_validation"
+          else
+            evidence_path="$manifest_path"
+            evidence_sha256="$manifest_validation"
+            result_reason="manifest-bound deterministic and Playwright evidence"
           fi
         fi
       fi

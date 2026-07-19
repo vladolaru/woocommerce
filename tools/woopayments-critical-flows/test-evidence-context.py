@@ -120,6 +120,34 @@ def test_generated_result_is_stamped_and_validated_with_artifact_hashes(module, 
     assert error.value.code == "evidence_artifact_mismatch"
 
 
+def test_generated_result_can_bind_archive_relative_artifact_paths(module, tmp_path: Path) -> None:
+    context = sample_context(module)
+    evidence_dir = tmp_path / "evidence"
+    result_dir = tmp_path / "results"
+    evidence_dir.mkdir()
+    result_dir.mkdir()
+    evidence = evidence_dir / "selected.png"
+    evidence.write_bytes(b"current screenshot")
+    result_path = result_dir / "result.json"
+
+    stamped = module.stamp_generated_result(
+        sample_result(evidence),
+        context,
+        evidence_base_dir=result_dir,
+    )
+    recorded = stamped["store_results"][0]["evidence"][0]["path"]
+
+    assert not Path(recorded).is_absolute()
+    assert "vladolaru" not in recorded
+    module.validate_imported_result(
+        stamped,
+        context,
+        "MS-07-admin-change-method",
+        "target",
+        result_path=result_path,
+    )
+
+
 def test_manual_capture_must_match_current_context_before_import(module, tmp_path: Path) -> None:
     context = sample_context(module)
     evidence = tmp_path / "result.json"

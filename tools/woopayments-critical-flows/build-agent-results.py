@@ -13,6 +13,7 @@ import binascii
 from collections import Counter
 import hashlib
 import hmac
+import importlib.util
 import json
 import os
 import re
@@ -31,8 +32,10 @@ from evidence_context import (
 )
 
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
 FLOW_MA11 = "MA-11-plugin-active-settings-screen"
 FLOW_MD01 = "MD-01-created-note-on-hold-notify"
+FLOW_MD02 = "MD-02-save-evidence"
 FLOW_MS07 = "MS-07-admin-change-method"
 FLOW_SC04 = "SC-04-saved-card"
 FLOW_SC14 = "SC-14-lpm-wave-1-checkout"
@@ -96,10 +99,22 @@ def load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def write_result(out_dir: Path, flow: str, payload: dict[str, Any], context: dict[str, Any]) -> None:
+def write_result(
+    out_dir: Path,
+    flow: str,
+    payload: dict[str, Any],
+    context: dict[str, Any],
+    *,
+    archive_relative: bool = False,
+) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / f"{flow}.json").write_text(
-        json.dumps(stamp_generated_result(payload, context), indent=2, sort_keys=True) + "\n",
+        json.dumps(
+            stamp_generated_result(payload, context, evidence_base_dir=out_dir if archive_relative else None),
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
         encoding="utf-8",
     )
 
@@ -1153,6 +1168,218 @@ def build_md01_result(gate_path: Path | None, context: dict[str, Any]) -> dict[s
     }
 
 
+def load_md02_evidence_module():
+    path = Path(__file__).resolve().parent / "flows" / "md02-evidence.py"
+    spec = importlib.util.spec_from_file_location("md02_evidence", path)
+    if spec is None or spec.loader is None:
+        raise ValueError("MD-02 evidence core is unavailable")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def validate_md02_manifest_packet(
+    manifest_path: Path,
+    store: str,
+    context: dict[str, Any],
+    module: Any,
+) -> tuple[dict[str, Any], dict[str, Any], list[str]]:
+    manifest = load_json(manifest_path)
+    status = str(manifest.get("status", ""))
+    exit_code = manifest.get("exit_code")
+    run_stamp = str(manifest.get("run_stamp", ""))
+    run_scope = str(manifest.get("run_scope", ""))
+    if status not in module.STATUS_EXIT or exit_code != module.STATUS_EXIT.get(status):
+        raise ValueError(f"MD-02 {store} manifest has an invalid verdict")
+    module.validate_manifest(
+        manifest_path,
+        store=store,
+        status=status,
+        exit_code=exit_code,
+        run_stamp=run_stamp,
+        run_scope=run_scope,
+    )
+    packet_name = f"{store}-md02-store-packet.json"
+    binding = manifest.get("files", {}).get(packet_name)
+    if not isinstance(binding, dict):
+        raise ValueError(f"MD-02 {store} manifest has no store packet")
+    packet_path = validate_md01_bound_file(
+        manifest_path.parent / packet_name,
+        str(binding.get("sha256", "")),
+        f"{store} store packet",
+    )
+    packet = load_json(packet_path)
+    module.validate_store_packet(packet, store=store, run_stamp=run_stamp)
+    expected_context = {
+        "aggregate_run_id": context.get("aggregate_run_id"),
+        "context_sha256": context.get("context_sha256"),
+    }
+    if packet.get("context_binding") != expected_context:
+        raise ValueError(f"MD-02 {store} packet does not match the current aggregate context")
+    source = packet.get("source_manifest", {})
+    raw_source_path = Path(str(source.get("path", "")))
+    if raw_source_path.is_absolute() or ".." in raw_source_path.parts or not raw_source_path.parts:
+        raise ValueError(f"MD-02 {store} inherited source path is not archive-safe")
+    source_candidates = (
+        packet_path.parent / raw_source_path,
+        REPO_ROOT / raw_source_path,
+    )
+    source_path_candidate = next((candidate for candidate in source_candidates if candidate.is_file()), None)
+    if source_path_candidate is None:
+        raise ValueError(f"MD-02 {store} inherited source manifest is unavailable")
+    source_path = validate_md01_bound_file(
+        Path(os.path.abspath(source_path_candidate)),
+        str(source.get("sha256", "")),
+        f"{store} inherited MD-01 manifest",
+    )
+    evidence_paths = [str(manifest_path), str(packet_path), str(source_path)]
+    for name, artifact_binding in manifest.get("files", {}).items():
+        if name == packet_name:
+            continue
+        artifact = validate_md01_bound_file(
+            manifest_path.parent / name,
+            str(artifact_binding.get("sha256", "")),
+            f"{store} manifest artifact {name}",
+        )
+        evidence_paths.append(str(artifact))
+    screenshots = packet.get("browser", {}).get("screenshots")
+    expected_screenshots = {
+        f"{store}-md02-form.png",
+        f"{store}-md02-saved.png",
+        f"{store}-md02-reloaded.png",
+    }
+    if not isinstance(screenshots, dict) or (
+        not set(screenshots).issubset(expected_screenshots)
+        if packet.get("browser_status") in {"blocked", "fail_functional"}
+        else set(screenshots) != expected_screenshots
+    ):
+        raise ValueError(f"MD-02 {store} screenshot binding is incomplete")
+    for name, digest in screenshots.items():
+        screenshot = validate_md01_bound_file(packet_path.parent / name, str(digest), f"{store} screenshot {name}")
+        validate_png_screenshot(screenshot)
+        evidence_paths.append(str(screenshot))
+    return manifest, packet, list(dict.fromkeys(evidence_paths))
+
+
+def md02_store_result(store: str, packet: dict[str, Any], evidence_paths: list[str]) -> dict[str, Any]:
+    browser_status = packet["browser_status"]
+    deterministic_status = packet["deterministic_status"]
+    observations: list[str] = []
+    ux = packet["browser"].get("ux_assertions", {})
+    if browser_status == "fail_ux":
+        if ux.get("save_for_later_copy") is not True:
+            observations.append("The exact Save for later action copy is missing; the client uses different draft-save copy.")
+        if ux.get("customer_name_visible") is not True:
+            observations.append("The preserved customer name is not visibly presented in the evidence form.")
+    observations.extend(str(item) for item in packet.get("diagnostics", []))
+    boundary = packet.get("mutation_boundary")
+    blocked_boundary = boundary in {"unchanged_safe_failure", "ambiguous_mutation"}
+    if (
+        packet.get("status") == "blocked"
+        or deterministic_status == "blocked"
+        or browser_status == "blocked"
+        or packet.get("cleanup_failures")
+        or blocked_boundary
+    ):
+        verdict = "BLOCKED"
+    elif deterministic_status != "pass" or boundary == "trusted_mutation_mismatch" or browser_status == "fail_functional":
+        verdict = "FAIL - functional"
+    elif browser_status == "fail_ux":
+        verdict = "FAIL - UX"
+    elif browser_status == "pass":
+        verdict = "PASS"
+    else:
+        raise ValueError(f"MD-02 {store} has an unknown browser verdict")
+    identity = packet["pre_state"]["identity"]
+    exact_end_state = (
+        f"Dispute {identity['dispute_id']} for order {identity['order_id']} retains an editable, "
+        "unsubmitted evidence draft with its original response deadline."
+    )
+    if verdict == "PASS":
+        end_state = exact_end_state
+    elif verdict == "FAIL - UX":
+        end_state = exact_end_state + " The browser UX checkpoints differ from the reference contract."
+    elif verdict == "FAIL - functional" and deterministic_status == "pass":
+        end_state = exact_end_state + " The browser functional contract failed."
+    elif verdict == "FAIL - functional" and boundary == "trusted_mutation_mismatch":
+        end_state = "The captured save request did not establish the required persisted evidence draft."
+    elif verdict == "FAIL - functional":
+        end_state = "Authoritative state checks did not prove the required persisted, unsubmitted evidence draft."
+    elif boundary == "unchanged_safe_failure":
+        end_state = "No mutation was observed, but the required end state could not be established authoritatively."
+    else:
+        end_state = "The required end state could not be established authoritatively."
+    return {
+        "store": store,
+        "verdict": verdict,
+        "end_state": end_state,
+        "ux_observations": observations,
+        "visual_diffs": [],
+        "evidence_paths": evidence_paths,
+    }
+
+
+def build_md02_result(
+    reference_manifest_path: Path | None,
+    target_manifest_path: Path | None,
+    context: dict[str, Any],
+) -> dict[str, Any]:
+    if reference_manifest_path is None or target_manifest_path is None:
+        result = build_missing_agent_result(FLOW_MD02)
+        result["oracle_mode"] = "comparable"
+        return result
+    module = load_md02_evidence_module()
+    manifests: dict[str, dict[str, Any]] = {}
+    packets: dict[str, dict[str, Any]] = {}
+    store_results = []
+    for store, path in (("ref", reference_manifest_path), ("target", target_manifest_path)):
+        manifest, packet, evidence_paths = validate_md02_manifest_packet(path, store, context, module)
+        manifests[store] = manifest
+        packets[store] = packet
+        store_results.append(md02_store_result(store, packet, evidence_paths))
+    run_stamp = manifests["ref"]["run_stamp"]
+    if manifests["target"]["run_stamp"] != run_stamp:
+        raise ValueError("MD-02 manifests belong to different runner invocations")
+    comparison_binding = manifests["target"].get("files", {}).get("comparison.json")
+    if not isinstance(comparison_binding, dict):
+        raise ValueError("MD-02 target manifest has no cross-store comparison")
+    comparison_path = validate_md01_bound_file(
+        target_manifest_path.parent / "comparison.json",
+        str(comparison_binding.get("sha256", "")),
+        "target comparison",
+    )
+    comparison = load_json(comparison_path)
+    module.validate_comparison(comparison, run_stamp)
+    recomputed = module.compare_store_packets(packets["ref"], packets["target"], run_stamp)
+    if any(comparison.get(field) != recomputed.get(field) for field in ("schema", "run_stamp", "status", "assertions")):
+        raise ValueError("MD-02 cross-store comparison was not recomputed from the bound packets")
+    verdicts = [result["verdict"] for result in store_results]
+    if any(verdict == "BLOCKED" for verdict in verdicts):
+        parity = "BLOCKED"
+    elif any(verdict == "FAIL - functional" for verdict in verdicts):
+        parity = "FAIL - functional"
+    elif any(verdict == "FAIL - UX" for verdict in verdicts):
+        parity = "FAIL - UX"
+    else:
+        parity = "PASS"
+    note = (
+        "Reference and native target both persist the same recoverable, unsubmitted dispute evidence draft."
+        if parity == "PASS"
+        else "The deterministic draft lifecycle matches, but the exact evidence-form UX differs."
+        if parity == "FAIL - UX"
+        else "At least one MD-02 functional contract failed."
+        if parity == "FAIL - functional"
+        else "MD-02 evidence is incomplete or blocked."
+    )
+    return {
+        "flow": FLOW_MD02,
+        "oracle_mode": "comparable",
+        "store_results": store_results,
+        "parity_verdict": parity,
+        "regression_note": note,
+    }
+
+
 def sc04_store_result(
     store: str,
     browser_path: Path | None,
@@ -1650,6 +1877,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--plugin-active-target-gate", help="Target plugin-active settings gate JSON.")
     parser.add_argument("--lpm-gate", help="LPM checkout gate rollup JSON.")
     parser.add_argument("--md01-browser-gate", help="Context-bound MD-01 deterministic/Playwright gate JSON.")
+    parser.add_argument("--md02-reference-manifest", help="Context-bound reference MD-02 manifest JSON.")
+    parser.add_argument("--md02-target-manifest", help="Context-bound target MD-02 manifest JSON.")
     parser.add_argument("--sc04-reference-browser", help="Reference SC-04 browser evidence JSON.")
     parser.add_argument("--sc04-reference-state", help="Reference SC-04 saved-token/order state JSON.")
     parser.add_argument("--sc04-target-browser", help="Target SC-04 browser evidence JSON.")
@@ -1719,6 +1948,20 @@ def main() -> int:
             context,
         )
         written_flows.add(FLOW_MD01)
+
+    if args.md02_reference_manifest or args.md02_target_manifest:
+        write_result(
+            out_dir,
+            FLOW_MD02,
+            build_md02_result(
+                existing_path(args.md02_reference_manifest),
+                existing_path(args.md02_target_manifest),
+                context,
+            ),
+            context,
+            archive_relative=True,
+        )
+        written_flows.add(FLOW_MD02)
 
     has_sc04_source = bool(
         args.sc04_reference_browser

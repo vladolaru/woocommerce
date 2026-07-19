@@ -13,7 +13,7 @@ BOTH stores:
 
 1. Open Payments → Disputes (reference `admin.php?page=wc-admin&path=/payments/disputes`, target `.../path=/woopayments/disputes`) and open the fixture dispute.
 2. **Confirm the challenge/respond affordance is discoverable** and opens the evidence form.
-3. Fill the evidence fields (product description, customer name; attach no files). **Confirm an explicit "Save for later" affordance exists** and use it — do NOT submit.
+3. Fill the product description, preserve the fixture order's prefilled customer name, and attach no files. **Confirm an explicit "Save for later" affordance exists** and use it — do NOT submit.
 4. **Confirm save feedback renders** (success notice, no error), then reload the evidence form. **Confirm the entered evidence is still present and editable.**
 5. End state: evidence persisted as a draft; the dispute remains `needs_response` (not submitted) on both stores.
 
@@ -24,6 +24,6 @@ BOTH stores:
 - Re-fetch after 30s to rule out async reversion of the saved evidence.
 - Compare reference vs target: same persistence semantics for the same evidence payload.
 
-Deterministic exerciser: NOT YET WIRED — assertions above are the contract for the future flows/MD-02-*.sh.
+Deterministic exerciser: `flows/MD-02-save-evidence.sh`. It binds each retained dispute to its passing MD-01 manifest, drives one isolated direct-Playwright save attempt, independently probes the exact current REST state before, immediately after, and after the delayed interval, records mutation trust and browser verdicts separately, and emits sealed runner manifests. A missing request witness, ambiguous mutation, cleanup failure, or incomplete artifact remains `BLOCKED`; an authoritative functional or UX mismatch remains `FAIL`.
 
 Agent oracle mode: comparable (dual-store; reference is the golden oracle).

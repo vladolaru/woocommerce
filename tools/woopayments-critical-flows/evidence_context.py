@@ -7,6 +7,7 @@ import argparse
 import copy
 import hashlib
 import json
+import os
 import shlex
 import subprocess
 import sys
@@ -181,7 +182,11 @@ def validate_capture(capture: Any, context: dict[str, Any]) -> None:
         )
 
 
-def normalize_evidence_paths(payload: dict[str, Any]) -> dict[str, Any]:
+def normalize_evidence_paths(
+    payload: dict[str, Any],
+    *,
+    evidence_base_dir: Path | None = None,
+) -> dict[str, Any]:
     normalized = copy.deepcopy(payload)
     for store_result in normalized.get("store_results", []):
         if not isinstance(store_result, dict):
@@ -194,7 +199,12 @@ def normalize_evidence_paths(payload: dict[str, Any]) -> dict[str, Any]:
             path = Path(str(value))
             if not path.is_file():
                 raise EvidenceContextError("evidence_artifact_missing", f"critical-flow evidence artifact is missing: {path}")
-            evidence.append({"path": str(path), "sha256": sha256_file(path)})
+            recorded_path = (
+                Path(os.path.relpath(path, evidence_base_dir)).as_posix()
+                if evidence_base_dir is not None
+                else str(path)
+            )
+            evidence.append({"path": recorded_path, "sha256": sha256_file(path)})
         if evidence:
             store_result["evidence"] = evidence
         elif "evidence" not in store_result:
@@ -237,9 +247,14 @@ def _stamp_import(
     return stamped
 
 
-def stamp_generated_result(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+def stamp_generated_result(
+    payload: dict[str, Any],
+    context: dict[str, Any],
+    *,
+    evidence_base_dir: Path | None = None,
+) -> dict[str, Any]:
     validate_context(context)
-    stamped = normalize_evidence_paths(payload)
+    stamped = normalize_evidence_paths(payload, evidence_base_dir=evidence_base_dir)
     stamped["schema"] = RESULT_SCHEMA
     stamped["provenance"] = {"capture": build_capture(context, context["aggregate_run_id"])}
     return _stamp_import(stamped, context, None)
@@ -266,6 +281,8 @@ def validate_imported_result(
     context: dict[str, Any],
     expected_flow: str,
     expected_store: str | None = None,
+    *,
+    result_path: Path | None = None,
 ) -> None:
     validate_context(context)
     if payload.get("schema") != RESULT_SCHEMA:
@@ -312,6 +329,8 @@ def validate_imported_result(
             if not isinstance(artifact, dict):
                 raise EvidenceContextError("evidence_artifact_invalid", "critical-flow evidence artifact entry is invalid")
             path = Path(str(artifact.get("path", "")))
+            if not path.is_absolute() and result_path is not None:
+                path = Path(os.path.abspath(result_path.parent / path))
             if not path.is_file() or artifact.get("sha256") != sha256_file(path):
                 raise EvidenceContextError("evidence_artifact_mismatch", f"critical-flow evidence artifact hash does not match: {path}")
 

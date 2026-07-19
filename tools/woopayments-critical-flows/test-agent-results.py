@@ -20,6 +20,7 @@ from typing import Callable
 REPO = Path(__file__).resolve().parents[2]
 SCRIPT = REPO / "tools/woopayments-critical-flows/build-agent-results.py"
 CONTEXT_MODULE_PATH = REPO / "tools/woopayments-critical-flows/evidence_context.py"
+MD02_EVIDENCE_PATH = REPO / "tools/woopayments-critical-flows/flows/md02-evidence.py"
 
 
 def load_context_module():
@@ -31,6 +32,14 @@ def load_context_module():
 
 
 CONTEXT_MODULE = load_context_module()
+
+
+def load_md02_module():
+    spec = importlib.util.spec_from_file_location("md02_evidence", MD02_EVIDENCE_PATH)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def builder_context(out_dir: Path, subscriptions: tuple[str, str] = ("862", "366")) -> tuple[Path, dict]:
@@ -182,6 +191,228 @@ def write_md01_packet(base: Path, context: dict, key: str = "42" * 32) -> Path:
     gate_path = base / "md01-browser-gate.json"
     write_json(gate_path, gate)
     return gate_path
+
+
+def write_md02_manifests(
+    base: Path,
+    context: dict,
+    *,
+    target_ux_fail: bool = False,
+    target_blocked: bool = False,
+    key: str = "42" * 32,
+) -> tuple[Path, Path]:
+    module = load_md02_module()
+    old_key = os.environ.get("CRITICAL_FLOWS_RUN_CONTEXT_KEY")
+    os.environ["CRITICAL_FLOWS_RUN_CONTEXT_KEY"] = key
+    run_stamp = "20260719T220000Z-4242"
+    packets = {}
+    manifests = {}
+    try:
+        for index, store in enumerate(("ref", "target"), start=1):
+            store_dir = base / store
+            store_dir.mkdir(parents=True, exist_ok=True)
+            source_manifest = store_dir / f"{store}-md01-source-manifest.json"
+            write_json(source_manifest, {"schema": "test-md01-source.v1", "store": store})
+            identity = {
+                "order_id": 100 + index,
+                "charge_id": f"ch_{store}_md02",
+                "intent_id": f"pi_{store}_md02",
+                "dispute_id": f"du_{store}_md02",
+            }
+
+            def state(phase: str, saved: bool) -> dict:
+                decisive = "4" if saved else "3"
+                return {
+                    "schema": "woopayments_md02_state.v1",
+                    "store": store,
+                    "run_stamp": run_stamp,
+                    "phase": phase,
+                    "runtime_owner": "plugin" if store == "ref" else "native",
+                    "identity": identity,
+                    "lifecycle": {
+                        "status": "needs_response",
+                        "due_by": 1785196799,
+                        "past_due": False,
+                        "has_evidence": saved,
+                        "submission_count": 0,
+                    },
+                    "evidence": {
+                        "product_description": module.DESCRIPTION if saved else "prior description",
+                        "customer_name_present": True,
+                        "customer_name_matches_order": True,
+                        "customer_name_hmac": "hmac-sha256:" + "1" * 64,
+                        "file_evidence_hmac": "hmac-sha256:" + "2" * 64,
+                        "decisive_state_hmac": "hmac-sha256:" + decisive * 64,
+                    },
+                    "metadata_keys": [],
+                    "blockers": [],
+                }
+
+            screenshots = {}
+            for surface in ("form", "saved", "reloaded"):
+                screenshot = store_dir / f"{store}-md02-{surface}.png"
+                write_test_png(screenshot, width=800, height=450)
+                screenshots[screenshot.name] = "sha256:" + hashlib.sha256(screenshot.read_bytes()).hexdigest()
+            partial_screenshots = dict(list(screenshots.items())[:1])
+            ux_fail = store == "target" and target_ux_fail
+            blocked = store == "target" and target_blocked
+            browser = {
+                "schema": "woopayments_md02_browser.v1",
+                "store": store,
+                "run_stamp": run_stamp,
+                "runtime_owner": "plugin" if store == "ref" else "native",
+                "phase": "unavailable" if blocked else "reloaded",
+                "identity": {
+                    "order_id": identity["order_id"],
+                    "charge_id": identity["charge_id"],
+                    "dispute_id": identity["dispute_id"],
+                },
+                "facts": {
+                    "authenticatedAdmin": not blocked,
+                    "exactDisputeRow": not blocked,
+                    "responseActionDiscovered": not blocked,
+                    "requestSeen": not blocked,
+                    "requestMethod": "" if blocked else "POST",
+                    "requestPathMatches": not blocked,
+                    "submitFalse": not blocked,
+                    "descriptionMatches": not blocked,
+                    "payloadCustomerNameMatches": not blocked,
+                    "noFilesAttached": not blocked,
+                    "responseOk": not blocked,
+                    "saveFeedback": not blocked,
+                    "reloadedDescriptionMatches": not blocked,
+                    "descriptionEditable": not blocked,
+                    "saveButtonLabel": "" if blocked else "Save draft" if ux_fail else "Save for later",
+                    "customerNameVisible": not ux_fail and not blocked,
+                },
+                "functional_assertions": {
+                    name: not blocked for name in module.FUNCTIONAL_ASSERTIONS
+                },
+                "ux_assertions": {
+                    "save_for_later_copy": not ux_fail and not blocked,
+                    "customer_name_visible": not ux_fail and not blocked,
+                },
+                "request": {
+                    "method": "" if blocked else "POST",
+                    "path": "" if blocked else f"/wp-json/wc/v3/payments/disputes/{identity['dispute_id']}",
+                    "submit_false": not blocked,
+                    "description_matches": not blocked,
+                    "customer_name_matches": not blocked,
+                    "files_selected": -1 if blocked else 0,
+                },
+                "response": {"status": 0 if blocked else 200, "ok": not blocked},
+                "failed_responses": [],
+                "diagnostics": [],
+                "console_errors": [],
+                "page_errors": [],
+                "screenshots": partial_screenshots if blocked else screenshots,
+                "errors": [],
+                "blockers": ["browser_not_started"] if blocked else [],
+            }
+            pre = state("pre", False)
+            post = state("post", not blocked)
+            delayed = state("delayed", not blocked)
+            assertions = module.derive_deterministic_assertions(pre, post, delayed, module.DESCRIPTION)
+            browser_status, _ = module.derive_browser_verdict(browser)
+            packet = module.seal(
+                {
+                    "schema": "woopayments_md02_store_packet.v1",
+                    "status": "blocked" if blocked else "fail" if ux_fail else "pass",
+                    "store": store,
+                    "run_stamp": run_stamp,
+                    "runtime_owner": "plugin" if store == "ref" else "native",
+                    "source_manifest": {
+                        "path": source_manifest.name,
+                        "sha256": "sha256:" + hashlib.sha256(source_manifest.read_bytes()).hexdigest(),
+                        "historical_context_hmac": "unverifiable_without_original_run_key",
+                    },
+                    "context_binding": {
+                        "aggregate_run_id": context["aggregate_run_id"],
+                        "context_sha256": context["context_sha256"],
+                    },
+                    "pre_state": pre,
+                    "post_state": post,
+                    "delayed_state": delayed,
+                    "mutation_boundary": "unchanged_safe_failure" if blocked else "trusted_mutation",
+                    "deterministic_assertions": assertions,
+                    "deterministic_status": "blocked" if blocked else "pass",
+                    "browser": browser,
+                    "browser_status": browser_status,
+                    "diagnostics": [],
+                    "cleanup_failures": [],
+                },
+                module.STORE_PACKET_DOMAIN,
+            )
+            packet_path = store_dir / f"{store}-md02-store-packet.json"
+            write_json(packet_path, packet)
+            packets[store] = (packet, packet_path)
+
+        comparison = module.seal(
+            module.compare_store_packets(packets["ref"][0], packets["target"][0], run_stamp),
+            module.COMPARISON_DOMAIN,
+        )
+        comparison_path = base / "target/comparison.json"
+        write_json(comparison_path, comparison)
+        for store in ("ref", "target"):
+            packet, packet_path = packets[store]
+            store_dir = base / store
+            status = packet["status"]
+            exit_code = module.STATUS_EXIT[status]
+            log_scan = module.seal(
+                {
+                    "schema": "woopayments_md02_log_scan.v1",
+                    "status": "pass",
+                    "store": store,
+                    "run_stamp": run_stamp,
+                    "flow_id": module.FLOW,
+                    "purpose": "clean-debug-log",
+                    "exit_code": 0,
+                    "scan_observed": True,
+                    "match_count": 0,
+                    "blocker_code": "",
+                    "source_payload_sha256": "sha256:" + str(7 if store == "ref" else 8) * 64,
+                },
+                module.LOG_DOMAIN,
+            )
+            log_path = store_dir / f"{store}-log-scan.json"
+            write_json(log_path, log_scan)
+            execution = module.seal(
+                module.build_execution(
+                    packet,
+                    log_scan,
+                    status=status,
+                    exit_code=exit_code,
+                    verdict_sources=[] if status == "pass" else ["browser_gate_fail"],
+                    comparison=comparison if store == "target" else None,
+                ),
+                module.EXECUTION_DOMAIN,
+            )
+            execution_path = store_dir / f"{store}-execution.json"
+            write_json(execution_path, execution)
+            artifact_paths = [packet_path, log_path, execution_path]
+            if store == "target":
+                artifact_paths.append(comparison_path)
+            manifest = module.seal(
+                module.build_manifest(
+                    store=store,
+                    status=status,
+                    exit_code=exit_code,
+                    run_stamp=run_stamp,
+                    run_scope="partial",
+                    verdict_sources=[] if status == "pass" else ["browser_gate_fail"],
+                    paths=artifact_paths,
+                ),
+                module.MANIFEST_DOMAIN,
+            )
+            manifest_path = store_dir / f"{store}-manifest.json"
+            write_json(manifest_path, manifest)
+            manifests[store] = manifest_path
+        return manifests["ref"], manifests["target"]
+    finally:
+        if old_key is None:
+            os.environ.pop("CRITICAL_FLOWS_RUN_CONTEXT_KEY", None)
+        else:
+            os.environ["CRITICAL_FLOWS_RUN_CONTEXT_KEY"] = old_key
 
 
 def write_test_png(path: Path, width: int = 800, height: int = 450) -> None:
@@ -2126,6 +2357,171 @@ def test_md01_browser_gate_rejects_missing_deterministic_manifest(tmp_path: Path
     )
     assert completed.returncode != 0
     assert not (out_dir / "MD-01-created-note-on-hold-notify.json").exists()
+
+
+def test_md02_manifests_build_comparable_dual_store_pass(tmp_path: Path) -> None:
+    out_dir = tmp_path / "results"
+    context_path, context = builder_context(out_dir)
+    reference, target = write_md02_manifests(tmp_path / "md02", context)
+    completed = subprocess.run(
+        [
+            "python3",
+            str(SCRIPT),
+            "--context-file",
+            str(context_path),
+            "--out-dir",
+            str(out_dir),
+            "--md02-reference-manifest",
+            str(reference),
+            "--md02-target-manifest",
+            str(target),
+        ],
+        cwd=REPO,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env={**os.environ, "CRITICAL_FLOWS_RUN_CONTEXT_KEY": "42" * 32},
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    payload = read_json(out_dir / "MD-02-save-evidence.json")
+    assert payload["flow"] == "MD-02-save-evidence"
+    assert payload["parity_verdict"] == "PASS"
+    assert [result["verdict"] for result in payload["store_results"]] == ["PASS", "PASS"]
+    assert all(result["evidence"] for result in payload["store_results"])
+    assert "customer_name" not in json.dumps(payload)
+    assert "auth_cookie" not in json.dumps(payload)
+    assert all(
+        not Path(item["path"]).is_absolute()
+        for result in payload["store_results"]
+        for item in result["evidence"]
+    )
+    reference_packet = read_json(reference.parent / "ref-md02-store-packet.json")
+    assert not Path(reference_packet["source_manifest"]["path"]).is_absolute()
+
+
+def test_md02_target_ux_failure_is_not_promoted_to_pass(tmp_path: Path) -> None:
+    out_dir = tmp_path / "results"
+    context_path, context = builder_context(out_dir)
+    reference, target = write_md02_manifests(tmp_path / "md02", context, target_ux_fail=True)
+    completed = subprocess.run(
+        [
+            "python3",
+            str(SCRIPT),
+            "--context-file",
+            str(context_path),
+            "--out-dir",
+            str(out_dir),
+            "--md02-reference-manifest",
+            str(reference),
+            "--md02-target-manifest",
+            str(target),
+        ],
+        cwd=REPO,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env={**os.environ, "CRITICAL_FLOWS_RUN_CONTEXT_KEY": "42" * 32},
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    payload = read_json(out_dir / "MD-02-save-evidence.json")
+    assert [result["verdict"] for result in payload["store_results"]] == ["PASS", "FAIL - UX"]
+    assert payload["parity_verdict"] == "FAIL - UX"
+    target_result = payload["store_results"][1]
+    assert any("Save for later" in item for item in target_result["ux_observations"])
+    assert any("customer" in item.lower() for item in target_result["ux_observations"])
+
+
+def test_md02_blocked_result_does_not_claim_the_required_end_state(tmp_path: Path) -> None:
+    out_dir = tmp_path / "results"
+    context_path, context = builder_context(out_dir)
+    reference, target = write_md02_manifests(tmp_path / "md02", context, target_blocked=True)
+    completed = subprocess.run(
+        [
+            "python3",
+            str(SCRIPT),
+            "--context-file",
+            str(context_path),
+            "--out-dir",
+            str(out_dir),
+            "--md02-reference-manifest",
+            str(reference),
+            "--md02-target-manifest",
+            str(target),
+        ],
+        cwd=REPO,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env={**os.environ, "CRITICAL_FLOWS_RUN_CONTEXT_KEY": "42" * 32},
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    payload = read_json(out_dir / "MD-02-save-evidence.json")
+    target_result = payload["store_results"][1]
+    assert target_result["verdict"] == "BLOCKED"
+    assert "could not be established authoritatively" in target_result["end_state"]
+    assert "retains an editable" not in target_result["end_state"]
+
+
+def test_md02_manifest_rejects_rewritten_screenshot(tmp_path: Path) -> None:
+    out_dir = tmp_path / "results"
+    context_path, context = builder_context(out_dir)
+    reference, target = write_md02_manifests(tmp_path / "md02", context)
+    screenshot = reference.parent / "ref-md02-form.png"
+    screenshot.write_bytes(screenshot.read_bytes() + b"tampered")
+    completed = subprocess.run(
+        [
+            "python3",
+            str(SCRIPT),
+            "--context-file",
+            str(context_path),
+            "--out-dir",
+            str(out_dir),
+            "--md02-reference-manifest",
+            str(reference),
+            "--md02-target-manifest",
+            str(target),
+        ],
+        cwd=REPO,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env={**os.environ, "CRITICAL_FLOWS_RUN_CONTEXT_KEY": "42" * 32},
+    )
+    assert completed.returncode != 0
+    assert not (out_dir / "MD-02-save-evidence.json").exists()
+
+
+def test_md02_incomplete_manifest_pair_is_explicitly_blocked(tmp_path: Path) -> None:
+    out_dir = tmp_path / "results"
+    context_path, context = builder_context(out_dir)
+    reference, _ = write_md02_manifests(tmp_path / "md02", context)
+    completed = subprocess.run(
+        [
+            "python3",
+            str(SCRIPT),
+            "--context-file",
+            str(context_path),
+            "--out-dir",
+            str(out_dir),
+            "--md02-reference-manifest",
+            str(reference),
+        ],
+        cwd=REPO,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env={**os.environ, "CRITICAL_FLOWS_RUN_CONTEXT_KEY": "42" * 32},
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    payload = read_json(out_dir / "MD-02-save-evidence.json")
+    assert payload["oracle_mode"] == "comparable"
+    assert payload["parity_verdict"] == "BLOCKED"
+    assert [result["verdict"] for result in payload["store_results"]] == ["BLOCKED", "BLOCKED"]
 
 
 def main() -> None:

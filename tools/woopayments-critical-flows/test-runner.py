@@ -63,6 +63,7 @@ MD01_FLOW = (
     REPO
     / "tools/woopayments-critical-flows/flows/MD-01-created-note-on-hold-notify.sh"
 )
+MD02_FLOW = REPO / "tools/woopayments-critical-flows/flows/MD-02-save-evidence.sh"
 MO03_CONTRACT = (
     REPO
     / "tools/woopayments-critical-flows/flows/"
@@ -16489,6 +16490,23 @@ def test_md01_shell_and_runner_source_contract_is_manifest_bound() -> None:
     assert "validate_md01_manifest()" in runner
     assert 'python3 "$DIR/flows/md01-evidence.py" validate-bound-manifest' in runner
     assert 'elif [ "$base" = "MD-01-created-note-on-hold-notify" ]' in runner
+
+
+def test_md02_shell_and_runner_source_contract_is_manifest_bound() -> None:
+    flow = MD02_FLOW.read_text(encoding="utf-8")
+    runner = RUNNER.read_text(encoding="utf-8")
+
+    assert 'source "$DIR/../lib/common.sh"' in flow
+    assert 'python3 "$GATE"' in flow
+    assert "--browser-runner playwright" in flow
+    assert "assert_md02_check" in flow
+    assert "assert_log_clean" in flow
+    assert "compare" in flow
+    assert "validate-bound-manifest" in flow
+    assert "validate_md02_manifest()" in runner
+    assert 'python3 "$DIR/flows/md02-evidence.py" validate-bound-manifest' in runner
+    assert 'elif [ "$base" = "MD-02-save-evidence" ]; then' in runner
+    assert '$base/$s/$s-manifest.json' in runner
 
 
 def main() -> None:
