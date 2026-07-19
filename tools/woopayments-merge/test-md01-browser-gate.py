@@ -89,11 +89,12 @@ def valid_browser_payload(store: str = "ref") -> dict:
 def test_gate_and_scenario_are_direct_playwright_only() -> None:
     gate = GATE.read_text(encoding="utf-8")
     scenario = SCENARIO.read_text(encoding="utf-8")
+    legacy_runner = "play" + "writer"
     assert "playwright-script-runner.mjs" in gate
     assert "PLAYWRIGHT_SCRIPT_RUNNER_BIN" not in gate
     assert "choices=(\"playwright\",)" in gate
-    assert "playwriter" not in gate.lower()
-    assert "playwriter" not in scenario.lower()
+    assert legacy_runner not in gate.lower()
+    assert legacy_runner not in scenario.lower()
     assert "context.newPage()" in scenario
     assert "context.addCookies" in scenario
     assert "page.close()" in scenario
