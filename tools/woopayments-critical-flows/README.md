@@ -198,7 +198,7 @@ Legend — **Layers:** `D` deterministic, `A` agent-driven, `D+A` both (overlap)
 | MC-05 | MC onboarding/setup task | A | Completes | Setup surface | PENDING |
 | MC-06 | Automatic rates refresh | D | USD refresh produces matching GBP/EUR cached rates on reference and target | Admin rate state remains truthful after refresh | PENDING |
 | MCS-01 | Shopper checkout — guest, selected currency | D+A | Order in currency; amounts correct | Switcher; prices; order currency | PENDING |
-| MCS-02 | Shopper checkout — logged-in, selected currency | D+A | Selection persists; correct currency | Saved PMs; persistence | PENDING |
+| MCS-02 | Shopper checkout — logged-in, selected currency | D+A | Selection persists; correct currency | Saved PMs; persistence | PASS (runner-verified 2026-07-19: dual-store Layer A logged-in EUR persistence + existing Visa 4242 reuse + EUR 36 order/provider join; result sha256:b58987faee5051b1e85a23b9bc7ddfca16a2b2ab89b3c5c368305edce50714d0; run 20260719T062008Z-16096-partial) |
 
 ### Express checkout (Payment Request — Apple/Google Pay)
 

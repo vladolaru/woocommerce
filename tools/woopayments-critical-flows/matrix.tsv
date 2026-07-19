@@ -70,7 +70,7 @@ MC-04	Block widget (editor)	A	comparable	PENDING
 MC-05	MC onboarding/setup task	A	comparable	PENDING
 MC-06	Automatic rates refresh	D	comparable	PENDING
 MCS-01	Shopper checkout — guest, selected currency	D+A	comparable	PENDING
-MCS-02	Shopper checkout — logged-in, selected currency	D+A	comparable	PENDING
+MCS-02	Shopper checkout — logged-in, selected currency	D+A	comparable	PASS (runner-verified 2026-07-19: dual-store Layer A logged-in EUR persistence + existing Visa 4242 reuse + EUR 36 order/provider join; result sha256:b58987faee5051b1e85a23b9bc7ddfca16a2b2ab89b3c5c368305edce50714d0; run 20260719T062008Z-16096-partial)
 EC-01	PRB from product page	A	comparable	BLOCKED (real card)
 EC-02	PRB from cart	A	comparable	BLOCKED (real card)
 EC-03	PRB with 3DS card	A	comparable	BLOCKED (real card)
