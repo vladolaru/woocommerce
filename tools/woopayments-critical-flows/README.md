@@ -191,7 +191,7 @@ Legend — **Layers:** `D` deterministic, `A` agent-driven, `D+A` both (overlap)
 
 | ID | Flow | Layers | Functional acceptance | UX checkpoints | Status |
 |----|------|--------|-----------------------|----------------|--------|
-| MC-01 | Set up | D+A | Currencies enabled; rates | Setup UI | PENDING |
+| MC-01 | Set up | D+A | Currencies enabled; rates | Setup UI | PENDING (Layer A runner-verified PASS 2026-07-19: capture-time-bound dual-store USD-only start with strict original/stage/browser/post chronology and pre-state hash joins, semantic EUR/GBP enablement, automatic `0.88`/`0.75` response/cache timestamp joins, reload persistence, exact WP-CLI state, and USD `$20.00` storefront proof; plugin-card/native-table presentation difference and existing diagnostics preserved; Layer D NOT YET WIRED; run `20260718T235156Z-3608-partial`) |
 | MC-02 | Edit settings | D | Persist | Edit UI | PENDING |
 | MC-03 | Add switcher widget | A | Renders + switches | Widget config | PENDING |
 | MC-04 | Block widget (editor) | A | Inserts + switches | Editor block | PENDING |
