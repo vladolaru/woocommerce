@@ -46,6 +46,7 @@ import type { WooPaymentsDispute, WooPaymentsDisputeFile } from './types';
 import {
 	formatAmount,
 	formatDate,
+	formatDisputeReasonLabel,
 	formatLabel,
 	getDisputeId,
 	getErrorMessage,
@@ -692,7 +693,7 @@ export const DisputeEvidenceForm = ( {
 					</div>
 					<div>
 						<dt>{ __( 'Reason', 'woocommerce' ) }</dt>
-						<dd>{ formatLabel( dispute.reason ) }</dd>
+						<dd>{ formatDisputeReasonLabel( dispute.reason ) }</dd>
 					</div>
 					<div>
 						<dt>{ __( 'Status', 'woocommerce' ) }</dt>

@@ -32,6 +32,7 @@ import { runWooPaymentsExport } from './export';
 import {
 	formatAmount,
 	formatDate,
+	formatDisputeReasonLabel,
 	formatLabel,
 	getDisputeId,
 	getErrorMessage,
@@ -119,7 +120,7 @@ export const WooPaymentsDisputesPage = () => {
 				label: __( 'Dispute', 'woocommerce' ),
 				enableHiding: false,
 				render: ( { item }: { item: WooPaymentsDispute } ) =>
-					formatLabel( item.reason ),
+					formatDisputeReasonLabel( item.reason ),
 			},
 			{
 				id: 'status',
@@ -143,6 +144,7 @@ export const WooPaymentsDisputesPage = () => {
 				render: ( { item }: { item: WooPaymentsDispute } ) => {
 					const id = getDisputeId( item );
 					const isActionable = isDisputeActionable( item );
+					const reasonLabel = formatDisputeReasonLabel( item.reason );
 					const rowHref = getSettingsPaymentsProviderRouteUrl(
 						getTransactionDetailsRoute( item )
 					);
@@ -153,7 +155,7 @@ export const WooPaymentsDisputesPage = () => {
 									'Respond now to %1$s dispute %2$s from transaction details',
 									'woocommerce'
 								),
-								formatLabel( item.reason ).toLowerCase(),
+								reasonLabel.toLowerCase(),
 								id
 						  )
 						: sprintf(
@@ -162,7 +164,7 @@ export const WooPaymentsDisputesPage = () => {
 									'View transaction details for %1$s dispute %2$s',
 									'woocommerce'
 								),
-								formatLabel( item.reason ),
+								reasonLabel,
 								id
 						  );
 					const action = isActionable

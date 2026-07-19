@@ -2,7 +2,10 @@
  * Internal dependencies
  */
 import { getSettingsPaymentsProviderRouteUrl } from '../utils';
-import { getTransactionDetailsRoute } from '../money-movement/utils';
+import {
+	formatDisputeReasonLabel,
+	getTransactionDetailsRoute,
+} from '../money-movement/utils';
 import {
 	getBalanceCurrencyOptions,
 	getInstantBalanceForCurrency,
@@ -111,6 +114,23 @@ describe( 'getTransactionDetailsRoute', () => {
 			} )
 		).toBe(
 			'/woopayments/transactions/details?id=txn_reader_fee_123&transaction_type=card_reader_fee'
+		);
+	} );
+} );
+
+describe( 'formatDisputeReasonLabel', () => {
+	it( 'uses the established merchant-facing dispute reason labels', () => {
+		expect( formatDisputeReasonLabel( 'fraudulent' ) ).toBe(
+			'Transaction unauthorized'
+		);
+		expect( formatDisputeReasonLabel( 'bank_cannot_process' ) ).toBe(
+			'Bank cannot process'
+		);
+		expect( formatDisputeReasonLabel( 'noncompliant' ) ).toBe(
+			'Non-compliant'
+		);
+		expect( formatDisputeReasonLabel( 'future_provider_reason' ) ).toBe(
+			'General'
 		);
 	} );
 } );

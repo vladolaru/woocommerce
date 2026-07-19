@@ -956,7 +956,7 @@ describe( 'WooPayments money movement pages', () => {
 		expect( screen.getByText( 'Spotlight promotion' ) ).toBeInTheDocument();
 
 		const challengeLink = await screen.findByRole( 'link', {
-			name: 'Respond now to fraudulent dispute dp_test from transaction details',
+			name: 'Respond now to transaction unauthorized dispute dp_test from transaction details',
 		} );
 		expect( challengeLink ).toHaveAttribute(
 			'href',
@@ -964,9 +964,12 @@ describe( 'WooPayments money movement pages', () => {
 		);
 		expect(
 			screen.getByRole( 'link', {
-				name: 'View transaction details for Fraudulent dispute dp_closed',
+				name: 'View transaction details for Transaction unauthorized dispute dp_closed',
 			} )
 		).toBeInTheDocument();
+		expect(
+			screen.getAllByText( 'Transaction unauthorized' )
+		).toHaveLength( 2 );
 		expect( screen.getByText( 'Disputes loaded.' ) ).toBeInTheDocument();
 	} );
 
@@ -1004,7 +1007,7 @@ describe( 'WooPayments money movement pages', () => {
 
 		expect(
 			await screen.findByRole( 'link', {
-				name: 'Respond now to fraudulent dispute dp_test from transaction details',
+				name: 'Respond now to transaction unauthorized dispute dp_test from transaction details',
 			} )
 		).toHaveAttribute(
 			'href',

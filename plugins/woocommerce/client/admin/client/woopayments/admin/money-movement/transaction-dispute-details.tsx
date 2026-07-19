@@ -17,6 +17,7 @@ import type { WooPaymentsDispute, WooPaymentsTransaction } from './types';
 import {
 	formatAmount,
 	formatDate,
+	formatDisputeReasonLabel,
 	formatLabel,
 	getDisputeId,
 	getErrorMessage,
@@ -360,7 +361,7 @@ export const WooPaymentsTransactionDisputeDetails = ( {
 				/>
 				<DetailRow
 					label={ __( 'Reason', 'woocommerce' ) }
-					value={ formatLabel( currentDispute.reason ) }
+					value={ formatDisputeReasonLabel( currentDispute.reason ) }
 				/>
 				<DetailRow
 					label={ __( 'Status', 'woocommerce' ) }

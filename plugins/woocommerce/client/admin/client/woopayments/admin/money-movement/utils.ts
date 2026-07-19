@@ -178,6 +178,41 @@ export const formatLabel = ( value?: string ) => {
 		.replace( /^\w/, ( match ) => match.toUpperCase() );
 };
 
+export const formatDisputeReasonLabel = ( reason?: string ) => {
+	switch ( reason ) {
+		case 'bank_cannot_process':
+			return __( 'Bank cannot process', 'woocommerce' );
+		case 'check_returned':
+			return __( 'Check returned', 'woocommerce' );
+		case 'credit_not_processed':
+			return __( 'Credit not processed', 'woocommerce' );
+		case 'customer_initiated':
+			return __( 'Customer initiated', 'woocommerce' );
+		case 'debit_not_authorized':
+			return __( 'Debit not authorized', 'woocommerce' );
+		case 'duplicate':
+			return __( 'Duplicate', 'woocommerce' );
+		case 'fraudulent':
+			return __( 'Transaction unauthorized', 'woocommerce' );
+		case 'incorrect_account_details':
+			return __( 'Incorrect account details', 'woocommerce' );
+		case 'insufficient_funds':
+			return __( 'Insufficient funds', 'woocommerce' );
+		case 'product_not_received':
+			return __( 'Product not received', 'woocommerce' );
+		case 'product_unacceptable':
+			return __( 'Product unacceptable', 'woocommerce' );
+		case 'subscription_canceled':
+			return __( 'Subscription canceled', 'woocommerce' );
+		case 'unrecognized':
+			return __( 'Unrecognized', 'woocommerce' );
+		case 'noncompliant':
+			return __( 'Non-compliant', 'woocommerce' );
+		default:
+			return __( 'General', 'woocommerce' );
+	}
+};
+
 export const getChargeChannelLabel = (
 	paymentMethodType?: string,
 	metadata: Record< string, unknown > = {},
