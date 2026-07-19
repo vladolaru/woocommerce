@@ -23,3 +23,11 @@ BOTH stores:
 End state: block inserted and published on both stores; frontend switching works; storefront back on USD.
 
 Agent oracle mode: comparable (dual-store; reference is the golden oracle).
+
+## Latest runner evidence (2026-07-19)
+
+- Context `ad452df9-e7a6-41ae-96d1-202c13abae37` at source `8a4d612f69a6d14c090b7bde92a9773807be1196` was accepted by runner archive `evidence/runs/20260719T032524Z-73598-partial` with stamped result `sha256:db7819a484c49ee01ef7adc6a9537c252e0e81adb60894b0aa1b04d2a8727460`: reference `PASS`, target `FAIL - functional`, parity `FAIL - functional`.
+- Reference inserted the public block through the normal page editor, persisted `flag: true` without recovery, published exactly one content-owned switcher, switched to EUR through GET navigation, kept EUR on the shop at the expected rounded `18,00 €`, and restored USD at `$20.00`.
+- Target registers the same public server block name, public attribute-name set, and render callback, but its block type has no editor script handle. The identical inserter search reported `No results found.`; the fixture page remained an empty draft and no fallback block markup was injected.
+- This is a new native gap relative to the WooPayments client, not one of the previously expected redirect, manual-capture, or wallet limitations. The matrix row remains `PENDING` because a callable server renderer does not satisfy the merchant-facing `Inserts + switches` contract.
+- Re-earn requires Core to register a native editor implementation for `woocommerce-payments/multi-currency-switcher` that preserves the existing public name and serialized attributes, then complete this spec's insertion, preview, persistence, published switching, EUR navigation, and USD restoration journey under a fresh evidence context.
