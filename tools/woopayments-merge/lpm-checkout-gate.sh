@@ -228,11 +228,11 @@ for raw_method in "${METHODS[@]}"; do
 done
 
 print_plan() {
-	python3 - "$REF_WP" "$TARGET_WP" "$REF_URL" "$TARGET_URL" "$SURFACE" "$ACTION_SCHEDULER_DRAIN_ENABLED" "${METHODS[@]}" <<'PY'
+	python3 - "$REF_WP" "$TARGET_WP" "$REF_URL" "$TARGET_URL" "$SURFACE" "$ACTION_SCHEDULER_DRAIN_ENABLED" "$BROWSER_RUNNER" "${METHODS[@]}" <<'PY'
 import json
 import sys
 
-ref, target, ref_url, target_url, surface, drain_enabled, *methods = sys.argv[1:]
+ref, target, ref_url, target_url, surface, drain_enabled, browser_runner, *methods = sys.argv[1:]
 
 
 def usd_cny_wallet_fixture(gateway_id, stripe_payment_method_type, family):
@@ -340,6 +340,7 @@ print(
             "ref_url": ref_url,
             "target_url": target_url,
             "action_scheduler_drain_enabled": drain_enabled == "1",
+            "browser_runner": browser_runner,
             "methods": methods,
             "fixtures": {method: fixtures[method] for method in methods},
         },
@@ -2413,12 +2414,12 @@ PY
 write_rollup() {
 	local rollup_path="$OUT_DIR/lpm-checkout-gate.json"
 
-	python3 - "$rollup_path" "$SURFACE" "$ACTION_SCHEDULER_DRAIN_ENABLED" "$RESULTS_JSONL" "$FAILURES_FILE" "$BLOCKERS_FILE" "$BLOCKER_DETAILS_JSONL" <<'PY'
+	python3 - "$rollup_path" "$SURFACE" "$ACTION_SCHEDULER_DRAIN_ENABLED" "$BROWSER_RUNNER" "$RESULTS_JSONL" "$FAILURES_FILE" "$BLOCKERS_FILE" "$BLOCKER_DETAILS_JSONL" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-rollup_path, surface, drain_enabled, results_jsonl, failures_file, blockers_file, blocker_details_jsonl = sys.argv[1:]
+rollup_path, surface, drain_enabled, browser_runner, results_jsonl, failures_file, blockers_file, blocker_details_jsonl = sys.argv[1:]
 results = []
 results_path = Path(results_jsonl)
 if results_path.exists():
@@ -2481,6 +2482,7 @@ payload = {
     "schema": "woopayments_lpm_checkout_gate_rollup.v1",
     "surface": surface,
     "action_scheduler_drain_enabled": drain_enabled == "1",
+    "browser_runner": browser_runner,
     "status": status,
     "cleanup_blocked": cleanup_blocked,
     "results": results,
@@ -2612,6 +2614,12 @@ PY
 		record_failure "$role/$method: missing browser evidence $evidence_path"
 		return
 	fi
+	if ! jq --arg browser_runner "$BROWSER_RUNNER" '.browser_runner = $browser_runner' "$evidence_path" > "$evidence_path.runner"; then
+		record_failure "$role/$method: could not bind browser runner provenance."
+		rm -f "$evidence_path.runner"
+		return
+	fi
+	mv "$evidence_path.runner" "$evidence_path"
 
 	if [ "$role" = "reference" ]; then
 		wp_cmd="$REF_WP"

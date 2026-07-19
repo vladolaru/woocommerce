@@ -347,6 +347,7 @@ def test_print_plan_reports_action_scheduler_drain_enabled_by_default() -> None:
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
     assert payload["action_scheduler_drain_enabled"] is True
+    assert payload["browser_runner"] == "playwriter"
 
 
 def test_print_plan_reports_action_scheduler_drain_disabled_when_skipped() -> None:
@@ -1805,7 +1806,9 @@ def test_full_gate_invokes_playwriter_driver_for_each_store_and_validates_eviden
 
         rollup = json.loads((out_dir / "lpm-checkout-gate.json").read_text(encoding="utf-8"))
         assert rollup["status"] == "pass"
+        assert rollup["browser_runner"] == "playwriter"
         assert len(rollup["results"]) == 2
+        assert all(item["browser_runner"] == "playwriter" for item in rollup["results"])
         assert all(item["method"] == "ideal" for item in rollup["results"])
         assert all(item["gateway_id"] == "woocommerce_payments_ideal" for item in rollup["results"])
         assert all(item["stripe_payment_method_type"] == "ideal" for item in rollup["results"])
@@ -2575,7 +2578,9 @@ def test_full_gate_can_use_playwright_runner_without_playwriter_session() -> Non
 
         rollup = json.loads((out_dir / "lpm-checkout-gate.json").read_text(encoding="utf-8"))
         assert rollup["status"] == "pass"
+        assert rollup["browser_runner"] == "playwright"
         assert len(rollup["results"]) == 2
+        assert all(item["browser_runner"] == "playwright" for item in rollup["results"])
 
 
 def test_full_gate_uses_unique_owned_product_fixtures_and_cleans_them_up() -> None:
