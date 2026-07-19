@@ -35,6 +35,27 @@ def emit_chunk(chunk: bytes, state: dict[str, int | None]) -> None:
     sys.stdout.buffer.flush()
 
 
+def process_group_exists(process_group_id: int) -> bool:
+    try:
+        os.killpg(process_group_id, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # macOS can report EPERM during process-group teardown. The group may
+        # still exist, so keep cleanup bounded without converting timeout into
+        # an unhandled verifier failure.
+        return True
+    return True
+
+
+def signal_process_group(process_group_id: int, signum: int) -> bool:
+    try:
+        os.killpg(process_group_id, signum)
+    except (PermissionError, ProcessLookupError):
+        return False
+    return True
+
+
 def main() -> int:
     args = parse_args()
     if args.timeout < 0:
@@ -80,13 +101,6 @@ def main() -> int:
                     emit_chunk(chunk, output_state)
                 wait_seconds = 0
 
-        def process_group_exists() -> bool:
-            try:
-                os.killpg(process.pid, 0)
-            except ProcessLookupError:
-                return False
-            return True
-
         try:
             while True:
                 drain_ready(0.1)
@@ -103,27 +117,21 @@ def main() -> int:
                     f"TIMEOUT: command exceeded {args.timeout:g}s; terminating process group.",
                     flush=True,
                 )
-                try:
-                    os.killpg(process.pid, signal.SIGTERM)
-                except ProcessLookupError:
-                    pass
+                signal_process_group(process.pid, signal.SIGTERM)
 
                 grace_deadline = time.monotonic() + 5
                 while time.monotonic() < grace_deadline:
                     drain_ready(0.1)
                     process.poll()
-                    if not process_group_exists() and not selector.get_map():
+                    if not process_group_exists(process.pid) and not selector.get_map():
                         break
 
-                if process.poll() is None or process_group_exists() or selector.get_map():
+                if process.poll() is None or process_group_exists(process.pid) or selector.get_map():
                     print(
                         "TIMEOUT: command did not exit after SIGTERM; sending SIGKILL.",
                         flush=True,
                     )
-                    try:
-                        os.killpg(process.pid, signal.SIGKILL)
-                    except ProcessLookupError:
-                        pass
+                    signal_process_group(process.pid, signal.SIGKILL)
 
                 if process.poll() is None:
                     try:

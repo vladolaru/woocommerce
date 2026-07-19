@@ -3258,6 +3258,20 @@ def test_timeout_runner_does_not_block_on_a_descendant_holding_stdout() -> None:
     assert "TIMEOUT: command exceeded 0.1s; terminating process group." in result.stdout
 
 
+def test_timeout_runner_treats_process_group_permission_races_as_bounded(monkeypatch) -> None:
+    spec = importlib.util.spec_from_file_location("timeout_runner", TIMEOUT_RUNNER)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    def deny_process_group(_pgid: int, _signal: int) -> None:
+        raise PermissionError(1, "operation not permitted")
+
+    monkeypatch.setattr(module.os, "killpg", deny_process_group)
+    assert module.process_group_exists(12345) is True
+    assert module.signal_process_group(12345, module.signal.SIGKILL) is False
+
+
 def test_a5g_disposable_cleanup_answers_wp_env_destroy_prompt(monkeypatch, tmp_path: Path) -> None:
     module = load_a5g_gate_module()
     work_dir = tmp_path / "a5g-wp-env"
