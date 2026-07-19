@@ -111,6 +111,16 @@ tools/woopayments-merge/verify.sh \
 
 The verifier exact-inspects each Docker runner's Compose project and probes the expected local URL/runtime owner before any gate runs. A missing or mismatched project/store identity is `BLOCKED`; do not bypass it. Add `--with-tracks` for the smaller non-full-evidence loop when sink-based Tracks parity is explicitly required.
 
+### Browser runner selection
+
+Use direct Playwright for repeatable gates, CI-shaped diagnostics, and evidence that can affect a parity or readiness verdict. It launches an isolated browser process, does not depend on an operator's Chrome profile or extension state, and is the runner selected by `verify.sh`. Pass `--browser-runner playwright` explicitly when invoking a browser gate directly so the standalone run matches the final-evidence path.
+
+Use Playwriter only when the task specifically needs an agent to inspect and steer a persistent, visible Chrome session in small observe/act/observe steps, or when reproducing a legacy compatibility-runner issue. Playwriter relays Playwright code into that session; it is not a second browser assertion API. Its session continuity is useful for exploratory UI judgment, but the dependency on a shared browser, extension/CDP connection, and retained session state makes it the wrong default for authoritative automated evidence.
+
+The `.playwriter.mjs` suffix on existing scenario files describes their historical script interface, not the required runner. Those scenarios execute process-locally through `playwright-script-runner.mjs` when Playwright is selected. Do not infer the runner from the filename.
+
+Some standalone gates still default to Playwriter for backward compatibility. Treat that default as legacy behavior: select Playwright explicitly unless the interactive or compatibility rationale above applies, and record that rationale with any retained Playwriter evidence.
+
 `verify.sh` runs every gate, prints a per-gate verdict, and sets an **aggregate exit code** you can
 loop on:
 
