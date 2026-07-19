@@ -12,7 +12,7 @@ SC-07	$1M cart limit	D+A	comparable	PENDING
 SC-08	WooPay signup + checkout	A	comparable	BLOCKED (SMS OTP)
 SC-09	Stripe Link save + reuse	A	comparable	BLOCKED (real Chrome card)
 SC-10	Regional — Bancontact / iDEAL / P24	A (+D assert)	comparable	PENDING
-SC-11	BNPL — Klarna / Affirm (≥$50) / Afterpay	A (+D assert)	comparable	PENDING
+SC-11	BNPL — Klarna / Affirm (≥$50) / Afterpay	A (+D assert)	comparable	PENDING (Layer A runner-verified 2026-07-19: reference BLOCKED for hosted checkout/order/refund by a common pre-order browser-runner failure; target FAIL — FUNCTIONAL because native Afterpay Manage has no normal-UI control, with missing checkout logos and fragmented generic provider rows also recorded; both stores passed USD 60 registration, USD 30 Affirm eligibility, card continuity, and exact restoration; Layer D NOT YET WIRED; result `sha256:c96a4a0f7ce038b48fd50e070a0b39b8ddfaec94b193c6e61ce7ee7aa6738d70`; run `20260719T080247Z-19380-partial`)
 SC-12	Add card via OTHER gateway (no WooPayments conflict)	D+A	comparable	PENDING
 SC-13	Shipping cost updates on method switch	D+A	comparable	PENDING
 SC-14	LPM wave-1 checkout	D+A	comparable	PENDING
