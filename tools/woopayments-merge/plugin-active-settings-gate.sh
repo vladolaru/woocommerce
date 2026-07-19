@@ -21,7 +21,6 @@ BROWSER_DRIVER="$SELF_DIR/plugin-active-settings.playwright.mjs"
 TARGET_WP=""
 TARGET_URL="${TARGET_URL:-}"
 RUNNER_ROLE="${RUNNER_ROLE:-target}"
-PLAYWRITER_SESSION="${PLAYWRITER_SESSION:-}"
 BROWSER_RUNNER="${BROWSER_RUNNER:-playwright}"
 PLAYWRIGHT_SCRIPT_RUNNER_BIN="${PLAYWRIGHT_SCRIPT_RUNNER_BIN:-$SELF_DIR/playwright-script-runner.mjs}"
 WP_ADMIN_USER="${WP_ADMIN_USER:-admin}"
@@ -46,8 +45,7 @@ Options:
   --target "<wp>"              Target store WP-CLI command.
   --target-url <url>           Target store browser base URL.
   --runner-role <role>         Approved aggregate runner role: reference or target. Default: target.
-  --browser-runner <runner>    Browser runner: playwright or playwriter. Defaults to BROWSER_RUNNER or playwright.
-  --playwriter-session <id>    Existing Playwriter session for explicit compatibility runs only.
+  --browser-runner <runner>    Browser runner provenance; only playwright is supported. Defaults to BROWSER_RUNNER or playwright.
   --out-dir <path>             Evidence output directory.
   --context-file <path>        Aggregate critical-flow context to bind after cleanup.
   --stage-plugin-active-fixture
@@ -90,8 +88,6 @@ while [ "$#" -gt 0 ]; do
 		--runner-role) RUNNER_ROLE="${2:-}"; shift 2 ;;
 		--browser-runner=*) BROWSER_RUNNER="${1#--browser-runner=}"; shift ;;
 		--browser-runner) BROWSER_RUNNER="${2:-}"; shift 2 ;;
-		--playwriter-session=*) PLAYWRITER_SESSION="${1#--playwriter-session=}"; shift ;;
-		--playwriter-session) PLAYWRITER_SESSION="${2:-}"; shift 2 ;;
 		--out-dir=*) OUT_DIR="${1#--out-dir=}"; shift ;;
 		--out-dir) OUT_DIR="${2:-}"; shift 2 ;;
 		--context-file=*) CONTEXT_FILE="${1#--context-file=}"; shift ;;
@@ -141,10 +137,9 @@ if ! runner_error="$(woopayments_validate_approved_docker_runner "$TARGET_WP" "$
 	usage_error "unapproved $RUNNER_ROLE WP runner: $runner_error"
 fi
 
-case "$BROWSER_RUNNER" in
-	playwriter|playwright) ;;
-	*) usage_error "unsupported browser runner: $BROWSER_RUNNER" ;;
-esac
+if [ "$BROWSER_RUNNER" != "playwright" ]; then
+	usage_error "unsupported browser runner: $BROWSER_RUNNER; only playwright is supported"
+fi
 
 TARGET_URL="${TARGET_URL%/}"
 SETTINGS_URL="$TARGET_URL/wp-admin/admin.php?page=wc-settings&tab=checkout&section=woocommerce_payments"
@@ -982,57 +977,17 @@ run_browser_gate() {
 	local exit_code
 	local validation_output
 	local validation_code
-	local browser_config_js
 
 	rm -f "$evidence_path"
 	progress "driving settings page at $SETTINGS_URL"
 
-	browser_config_js="$(
-		python3 - "$TARGET_URL" "$SETTINGS_URL" "$evidence_path" "$OUT_DIR" <<'PY'
-import json
-import sys
-
-target_url, settings_url, evidence_path, data_dir = sys.argv[1:]
-print(
-    "state.pluginActiveSettingsConfig = "
-    + json.dumps(
-        {
-            "targetUrl": target_url,
-            "settingsUrl": settings_url,
-            "evidencePath": evidence_path,
-            "dataDir": data_dir,
-        },
-        sort_keys=True,
-    )
-    + ";"
-)
-PY
-	)"
-
-	# Compatibility only: default/verdict evidence uses isolated Playwright.
-	if [ "$BROWSER_RUNNER" = "playwriter" ]; then
-		"${PLAYWRITER_CMD[@]}" -s "$PLAYWRITER_SESSION" -e "$browser_config_js" --timeout "30000" >"$log_path" 2>&1
-		exit_code=$?
-		if [ "$exit_code" -ne 0 ]; then
-			record_failure "Playwriter config seed exited $exit_code; see $log_path"
-			write_rollup "$evidence_path"
-			return
-		fi
-
-		PLUGIN_SETTINGS_TARGET_URL="$TARGET_URL" \
-		PLUGIN_SETTINGS_SETTINGS_URL="$SETTINGS_URL" \
-		PLUGIN_SETTINGS_EVIDENCE_PATH="$evidence_path" \
-		PLUGIN_SETTINGS_DATA_DIR="$OUT_DIR" \
-		"${PLAYWRITER_CMD[@]}" -s "$PLAYWRITER_SESSION" -f "$BROWSER_DRIVER" --timeout "180000" >>"$log_path" 2>&1
-	else
-		PLUGIN_SETTINGS_TARGET_URL="$TARGET_URL" \
-		PLUGIN_SETTINGS_SETTINGS_URL="$SETTINGS_URL" \
-		PLUGIN_SETTINGS_EVIDENCE_PATH="$evidence_path" \
-		PLUGIN_SETTINGS_DATA_DIR="$OUT_DIR" \
-		WP_ADMIN_USER="$WP_ADMIN_USER" \
-		WP_ADMIN_PASSWORD="$WP_ADMIN_PASSWORD" \
-		"${PLAYWRIGHT_RUNNER_CMD[@]}" "$BROWSER_DRIVER" --timeout "180000" >"$log_path" 2>&1
-	fi
+	PLUGIN_SETTINGS_TARGET_URL="$TARGET_URL" \
+	PLUGIN_SETTINGS_SETTINGS_URL="$SETTINGS_URL" \
+	PLUGIN_SETTINGS_EVIDENCE_PATH="$evidence_path" \
+	PLUGIN_SETTINGS_DATA_DIR="$OUT_DIR" \
+	WP_ADMIN_USER="$WP_ADMIN_USER" \
+	WP_ADMIN_PASSWORD="$WP_ADMIN_PASSWORD" \
+	"${PLAYWRIGHT_RUNNER_CMD[@]}" "$BROWSER_DRIVER" --timeout "180000" >"$log_path" 2>&1
 	exit_code=$?
 
 	if [ "$exit_code" -ne 0 ]; then
@@ -1080,21 +1035,8 @@ if [ ! -f "$BROWSER_DRIVER" ]; then
 	blocked "browser driver is missing: $BROWSER_DRIVER"
 fi
 
-if [ "$BROWSER_RUNNER" = "playwriter" ]; then
-	if [ -n "${PLAYWRITER_BIN:-}" ]; then
-		# shellcheck disable=SC2206
-		PLAYWRITER_CMD=( $PLAYWRITER_BIN )
-	elif command -v playwriter >/dev/null 2>&1; then
-		PLAYWRITER_CMD=( playwriter )
-	elif command -v npx >/dev/null 2>&1; then
-		PLAYWRITER_CMD=( npx --yes playwriter@latest )
-	else
-		blocked "Playwriter is required. Install playwriter or provide PLAYWRITER_BIN."
-	fi
-else
-	# shellcheck disable=SC2206
-	PLAYWRIGHT_RUNNER_CMD=( $PLAYWRIGHT_SCRIPT_RUNNER_BIN )
-fi
+# shellcheck disable=SC2206
+PLAYWRIGHT_RUNNER_CMD=( $PLAYWRIGHT_SCRIPT_RUNNER_BIN )
 
 mkdir -p "$OUT_DIR" || blocked "could not create evidence output directory: $OUT_DIR"
 OUT_DIR="$(cd "$OUT_DIR" && pwd)"
@@ -1120,10 +1062,6 @@ assert_plugin_active
 if [ "$PREFLIGHT_ONLY" -eq 1 ]; then
 	progress "preflight ok for plugin-active settings gate."
 	exit 0
-fi
-
-if [ "$BROWSER_RUNNER" = "playwriter" ] && [ -z "$PLAYWRITER_SESSION" ]; then
-	blocked "pass --playwriter-session or set PLAYWRITER_SESSION before running plugin-active settings browser flow."
 fi
 
 run_browser_gate || blocked "could not run plugin-active settings browser gate."

@@ -173,14 +173,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--target-wp", required=True, help="Target WP-CLI command string.")
     parser.add_argument(
         "--browser-runner",
-        choices=("playwright", "playwriter"),
+        choices=("playwright",),
         default=os.environ.get("BROWSER_RUNNER", "playwright"),
-        help="Browser runner for admin/checkout evidence gates. Defaults to direct Playwright.",
-    )
-    parser.add_argument(
-        "--playwriter-session",
-        default=os.environ.get("PLAYWRITER_SESSION", ""),
-        help="Playwriter session id. Required only when --browser-runner=playwriter.",
+        help="Browser runner for admin/checkout evidence gates; only direct Playwright is supported.",
     )
     parser.add_argument("--out-dir", default=str(DEFAULT_OUT_DIR), help="Evidence output directory.")
     parser.add_argument("--skip-admin-browser", action="store_true", help="Skip the admin browser gate.")
@@ -206,7 +201,6 @@ class Gate:
         self.ref_wp = args.ref_wp
         self.target_wp = args.target_wp
         self.browser_runner = str(args.browser_runner)
-        self.playwriter_session = str(args.playwriter_session)
         self.out_dir = Path(args.out_dir).resolve()
         self.gate_slug = self.out_dir.name
         self.evidence_path = self.out_dir / "a4aq-accumulated-gate.json"
@@ -266,11 +260,8 @@ class Gate:
                 raise SystemExit(f"ERROR: refusing non-local WPCOM/Automattic host in {label}")
         validate_local_wp_command("ref-wp", self.ref_wp)
         validate_local_wp_command("target-wp", self.target_wp)
-        if self.browser_runner not in {"playwright", "playwriter"}:
+        if self.browser_runner != "playwright":
             raise SystemExit(f"ERROR: unsupported browser runner: {self.browser_runner}")
-        needs_browser = not self.args.skip_admin_browser or not self.args.skip_checkout_browser
-        if needs_browser and self.browser_runner == "playwriter" and not self.playwriter_session:
-            raise SystemExit("ERROR: --playwriter-session is required when --browser-runner=playwriter")
         self.out_dir.mkdir(parents=True, exist_ok=True)
         self.validate_runtime_containers()
         self.capture_log_baselines()
@@ -299,49 +290,36 @@ class Gate:
         if evidence_path is not None:
             env["WOOPAYMENTS_BROWSER_EVIDENCE_PATH"] = str(evidence_path)
             merged_state["evidencePath"] = str(evidence_path)
-        if self.browser_runner == "playwright":
-            env["PLAYWRIGHT_RUNNER_STATE_JSON"] = json.dumps(merged_state, sort_keys=True)
-            env["WP_ADMIN_CREDENTIALS_JSON"] = json.dumps(
-                {
-                    "localhost:8082": {
-                        "user": os.environ.get("REF_WP_ADMIN_USER", "admin"),
-                        "password": os.environ.get("REF_WP_ADMIN_PASSWORD", "admin"),
-                    },
-                    "http://localhost:8082": {
-                        "user": os.environ.get("REF_WP_ADMIN_USER", "admin"),
-                        "password": os.environ.get("REF_WP_ADMIN_PASSWORD", "admin"),
-                    },
-                    "store8889.localhost:8889": {
-                        "user": os.environ.get("TARGET_WP_ADMIN_USER", "admin"),
-                        "password": os.environ.get("TARGET_WP_ADMIN_PASSWORD", "password"),
-                    },
-                    "http://store8889.localhost:8889": {
-                        "user": os.environ.get("TARGET_WP_ADMIN_USER", "admin"),
-                        "password": os.environ.get("TARGET_WP_ADMIN_PASSWORD", "password"),
-                    },
+        env["PLAYWRIGHT_RUNNER_STATE_JSON"] = json.dumps(merged_state, sort_keys=True)
+        env["WP_ADMIN_CREDENTIALS_JSON"] = json.dumps(
+            {
+                "localhost:8082": {
+                    "user": os.environ.get("REF_WP_ADMIN_USER", "admin"),
+                    "password": os.environ.get("REF_WP_ADMIN_PASSWORD", "admin"),
                 },
-                sort_keys=True,
-            )
+                "http://localhost:8082": {
+                    "user": os.environ.get("REF_WP_ADMIN_USER", "admin"),
+                    "password": os.environ.get("REF_WP_ADMIN_PASSWORD", "admin"),
+                },
+                "store8889.localhost:8889": {
+                    "user": os.environ.get("TARGET_WP_ADMIN_USER", "admin"),
+                    "password": os.environ.get("TARGET_WP_ADMIN_PASSWORD", "password"),
+                },
+                "http://store8889.localhost:8889": {
+                    "user": os.environ.get("TARGET_WP_ADMIN_USER", "admin"),
+                    "password": os.environ.get("TARGET_WP_ADMIN_PASSWORD", "password"),
+                },
+            },
+            sort_keys=True,
+        )
         return env
 
     def browser_command(self, script: Path, timeout: int) -> list[str]:
-        if self.browser_runner == "playwright":
-            return [
-                str(self.scripts_dir / "playwright-script-runner.mjs"),
-                str(script),
-                "--timeout",
-                str(timeout),
-            ]
-        # Compatibility only: final/default evidence uses isolated Playwright.
         return [
-            "npx",
-            "playwriter@latest",
-            "-s",
-            self.playwriter_session,
+            str(self.scripts_dir / "playwright-script-runner.mjs"),
+            str(script),
             "--timeout",
             str(timeout),
-            "-f",
-            str(script),
         ]
 
     def browser_data_dir(self, check_id: str, gate_slug: str | None = None) -> Path:
@@ -537,45 +515,11 @@ class Gate:
             )
 
     def reset_browser_selection_state(self) -> dict[str, Any]:
-        if self.browser_runner == "playwright":
-            return {
-                "command": [],
-                "exit_code": 0,
-                "stdout_tail": "Playwright runner state is per-process; no persistent selection state reset needed.",
-                "stderr_tail": "",
-            }
-        command = [
-            "npx",
-            "playwriter@latest",
-            "-s",
-            self.playwriter_session,
-            "--timeout",
-            "120000",
-            "-e",
-            (
-                f"state.gateSlug = {json.dumps(self.gate_slug)}; "
-                "state.targetBase = 'http://store8889.localhost:8889'; "
-                "state.referenceBase = 'http://localhost:8082'; "
-                "delete state.routes; delete state.skipNavigation; "
-                "delete state.allowBaseOverrides; delete state.allowRouteOverrides; "
-                "delete state.surfaceIds; delete state.viewportIds; delete state.storeIds; "
-                "delete state.strictReferenceOptional; delete state.page;"
-            ),
-        ]
-        result = run_subprocess_group(
-            command,
-            cwd=str(self.repo),
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=False,
-            timeout=check_timeout_seconds("browser"),
-        )
         return {
-            "command": command,
-            "exit_code": result.returncode,
-            "stdout_tail": tail(result.stdout),
-            "stderr_tail": tail(result.stderr),
+            "command": [],
+            "exit_code": 0,
+            "stdout_tail": "Playwright runner state is per-process; no persistent selection state reset needed.",
+            "stderr_tail": "",
         }
 
     def collect_checkout_fixture_routes(self) -> dict[str, Any]:
@@ -608,48 +552,11 @@ class Gate:
 
     def set_checkout_browser_route_state(self) -> dict[str, Any]:
         fixture_state = self.collect_checkout_fixture_routes()
-        if self.browser_runner == "playwright":
-            return {
-                "command": [],
-                "exit_code": 0,
-                "stdout_tail": "Checkout route overrides will be passed through PLAYWRIGHT_RUNNER_STATE_JSON.",
-                "stderr_tail": "",
-                "fixtures": fixture_state["fixtures"],
-                "routes": fixture_state["routes"],
-            }
-        command = [
-            "npx",
-            "playwriter@latest",
-            "-s",
-            self.playwriter_session,
-            "--timeout",
-            "120000",
-            "-e",
-            (
-                f"state.gateSlug = {json.dumps(self.gate_slug)}; "
-                "state.targetBase = 'http://store8889.localhost:8889'; "
-                "state.referenceBase = 'http://localhost:8082'; "
-                f"state.routes = {json.dumps(fixture_state['routes'], sort_keys=True)}; "
-                "state.allowRouteOverrides = true; "
-                "delete state.skipNavigation; delete state.allowBaseOverrides; "
-                "delete state.surfaceIds; delete state.viewportIds; delete state.storeIds; "
-                "delete state.strictReferenceOptional; delete state.page;"
-            ),
-        ]
-        result = run_subprocess_group(
-            command,
-            cwd=str(self.repo),
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=False,
-            timeout=check_timeout_seconds("browser"),
-        )
         return {
-            "command": command,
-            "exit_code": result.returncode,
-            "stdout_tail": tail(result.stdout),
-            "stderr_tail": tail(result.stderr),
+            "command": [],
+            "exit_code": 0,
+            "stdout_tail": "Checkout route overrides will be passed through PLAYWRIGHT_RUNNER_STATE_JSON.",
+            "stderr_tail": "",
             "fixtures": fixture_state["fixtures"],
             "routes": fixture_state["routes"],
         }
@@ -785,52 +692,12 @@ class Gate:
                 "surfaceIds": ["documents", "reports-fees", "card-readers", "capital"],
                 "storeIds": ["target"],
             }
-            if self.browser_runner == "playwriter":
-                state_command = [
-                    "npx",
-                    "playwriter@latest",
-                    "-s",
-                    self.playwriter_session,
-                    "--timeout",
-                    "120000",
-                    "-e",
-                    (
-                        f"state.gateSlug = {json.dumps(evidence_slug)}; "
-                        f"state.dataDir = {json.dumps(str(data_dir))}; "
-                        f"state.evidencePath = {json.dumps(str(evidence_path))}; "
-                        "state.targetBase = 'http://store8889.localhost:8889'; "
-                        "state.referenceBase = 'http://localhost:8082'; "
-                        "state.surfaceIds = [ 'documents', 'reports-fees', 'card-readers', 'capital' ]; "
-                        "state.storeIds = [ 'target' ]; "
-                        "delete state.viewportIds; delete state.routes; delete state.skipNavigation; "
-                        "delete state.allowBaseOverrides; delete state.allowRouteOverrides; "
-                        "delete state.strictReferenceOptional; delete state.page;"
-                    ),
-                ]
-            else:
-                state_command = []
+            state_command: list[str] = []
             browser_command = self.browser_command(self.scripts_dir / "a4-admin-browser-gate.playwright.mjs", 900000)
             entry["command"] = [state_command, browser_command]
 
-            if self.browser_runner == "playwriter":
-                state_result = run_subprocess_group(
-                    state_command,
-                    cwd=str(self.repo),
-                    text=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    check=False,
-                    timeout=check_timeout_seconds("browser"),
-                )
-                summary["state_stdout_tail"] = tail(state_result.stdout)
-                summary["state_stderr_tail"] = tail(state_result.stderr)
-                if state_result.returncode != 0:
-                    entry["exit_code"] = state_result.returncode
-                    raise RuntimeError(f"optional admin Playwriter state setup failed: {state_result.stderr or state_result.stdout}")
-            else:
-                state_result = subprocess.CompletedProcess(state_command, 0, stdout="", stderr="")
-                summary["state_stdout_tail"] = "Playwright runner state is passed through PLAYWRIGHT_RUNNER_STATE_JSON."
-                summary["state_stderr_tail"] = ""
+            summary["state_stdout_tail"] = "Playwright runner state is passed through PLAYWRIGHT_RUNNER_STATE_JSON."
+            summary["state_stderr_tail"] = ""
 
             browser_result = run_subprocess_group(
                 browser_command,
@@ -925,19 +792,19 @@ class Gate:
                     "exit_code": EXIT_CLEANUP,
                     "stderr_tail": f"interrupted by signal {exc.signum}",
                 }
-                reason = f"{check_id}: failed to reset Playwriter selection state"
+                reason = f"{check_id}: failed to reset browser selection state"
                 record_cleanup_failure(reason)
             except Exception as exc:
                 summary["selection_state_reset"] = {
                     "exit_code": EXIT_CLEANUP,
                     "stderr_tail": str(exc),
                 }
-                reason = f"{check_id}: failed to reset Playwriter selection state: {exc}"
+                reason = f"{check_id}: failed to reset browser selection state: {exc}"
                 record_cleanup_failure(reason)
             else:
                 summary["selection_state_reset"] = state_reset_result
                 if state_reset_result["exit_code"] != 0:
-                    reason = f"{check_id}: failed to reset Playwriter selection state"
+                    reason = f"{check_id}: failed to reset browser selection state"
                     record_cleanup_failure(reason)
 
             entry["completed_at"] = now()
@@ -971,7 +838,7 @@ class Gate:
             if check_id == "checkout-browser":
                 try:
                     checkout_route_state = self.set_checkout_browser_route_state()
-                    if self.browser_runner == "playwright" and checkout_route_state["exit_code"] == 0:
+                    if checkout_route_state["exit_code"] == 0:
                         env = {
                             **(env or {}),
                             **self.browser_state_env(
@@ -1083,33 +950,6 @@ class Gate:
                 admin_source,
             )
         )
-        if self.browser_runner == "playwriter" and (not self.args.skip_admin_browser or not self.args.skip_checkout_browser):
-            checks.append(
-                (
-                    "playwriter-state",
-                    "browser",
-                    [
-                        "npx",
-                        "playwriter@latest",
-                        "-s",
-                        self.playwriter_session,
-                        "--timeout",
-                        "120000",
-                        "-e",
-                        (
-                            f"state.gateSlug = {json.dumps(self.gate_slug)}; "
-                            "state.targetBase = 'http://store8889.localhost:8889'; "
-                            "state.referenceBase = 'http://localhost:8082'; "
-                            "delete state.routes; delete state.skipNavigation; "
-                            "delete state.allowBaseOverrides; delete state.allowRouteOverrides; "
-                            "delete state.surfaceIds; delete state.viewportIds; delete state.storeIds; "
-                            "delete state.strictReferenceOptional; delete state.page;"
-                        ),
-                    ],
-                    None,
-                    None,
-                )
-            )
         if not self.args.skip_admin_browser:
             evidence_path = self.admin_browser_evidence_path()
             checks.append(

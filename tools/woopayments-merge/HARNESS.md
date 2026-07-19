@@ -111,15 +111,15 @@ tools/woopayments-merge/verify.sh \
 
 The verifier exact-inspects each Docker runner's Compose project and probes the expected local URL/runtime owner before any gate runs. A missing or mismatched project/store identity is `BLOCKED`; do not bypass it. Add `--with-tracks` for the smaller non-full-evidence loop when sink-based Tracks parity is explicitly required.
 
-### Browser runner selection
+### Browser runner boundary
 
-Use direct Playwright for repeatable gates, CI-shaped diagnostics, and evidence that can affect a parity or readiness verdict. It launches an isolated browser process, does not depend on an operator's Chrome profile or extension state, and is the default for both `verify.sh` and standalone browser gates.
+All repeatable gates, CI-shaped diagnostics, and evidence that can affect a parity or readiness verdict use direct Playwright. It launches an isolated browser process, does not depend on an operator's Chrome profile or extension state, and is the only supported runner for both `verify.sh` and standalone browser gates.
 
-Use Playwriter only when the task specifically needs an agent to inspect and steer a persistent, visible Chrome session in small observe/act/observe steps, or when reproducing a legacy compatibility-runner issue. Playwriter relays Playwright code into that session; it is not a second browser assertion API. Its session continuity is useful for exploratory UI judgment, but the dependency on a shared browser, extension/CDP connection, and retained session state makes it the wrong default for authoritative automated evidence.
+Authenticated customer evidence must also be independent of page-shape login heuristics. The token-continuity gate creates a one-hour WordPress session for the exact fixture customer, injects only that session cookie into each isolated Playwright phase, and destroys the caller-owned session during fail-closed cleanup. The persisted create-session artifact records only cookie presence, never its value.
 
-The `.playwright.mjs` suffix identifies browser scenarios that normally execute process-locally through `playwright-script-runner.mjs`. The compatibility runner can execute the same scenario interface when `--browser-runner playwriter` and a session are supplied explicitly.
+The `.playwright.mjs` suffix identifies browser scenarios that execute process-locally through `playwright-script-runner.mjs`. Gates retain `--browser-runner playwright` as an explicit provenance pin, but reject every other value rather than silently falling back to shared browser state.
 
-Playwriter is never selected by a default. Select it explicitly with `--browser-runner playwriter` (or a controlled `BROWSER_RUNNER=playwriter` environment), and record the interactive or legacy-reproduction reason that required a persistent browser session with any retained evidence.
+Historical plugin-active browser-log filename aliases remain read-compatible in the result importer so retained evidence can still be inspected. That is input-format compatibility only; no current browser launcher emits those aliases.
 
 `verify.sh` runs every gate, prints a per-gate verdict, and sets an **aggregate exit code** you can
 loop on:
@@ -251,7 +251,7 @@ standalone plugin admin app without folding unrelated checkout or multi-currency
 
 ### A4aq accumulated admin/checkout gate
 
-`a4aq-accumulated-gate.py` is the local-only fail-closed rollup for the final reopened-A4/N12 boundary. It runs the A4 admin source/chunk gate, the admin and checkout browser gates, bundle capture/compare, perf capture/compare, and target/reference log scans into one aggregate JSON artifact. Playwright is the active final-evidence path; Playwriter remains an explicit compatibility runner. Use this gate through `verify.sh --full-evidence` when deciding whether the accumulated A4 admin/checkout evidence is green enough to consider any later native-admin readiness flip.
+`a4aq-accumulated-gate.py` is the local-only fail-closed rollup for the final reopened-A4/N12 boundary. It runs the A4 admin source/chunk gate, the direct Playwright admin and checkout browser gates, bundle capture/compare, perf capture/compare, and target/reference log scans into one aggregate JSON artifact. Use this gate through `verify.sh --full-evidence` when deciding whether the accumulated A4 admin/checkout evidence is green enough to consider any later native-admin readiness flip.
 
 ```bash
 tools/woopayments-merge/a4aq-accumulated-gate.py \
@@ -267,13 +267,13 @@ The target CLI container name is wp-env-instance-specific. Never select it throu
 
 The checkout browser scenario is implemented in `a4-checkout-browser-gate.playwright.mjs` and executed process-locally through `playwright-script-runner.mjs` when `--browser-runner playwright` is selected. It covers bounded structural and asset parity for Blocks card checkout, Blocks checkout express, Blocks cart express, classic card checkout, My Account add-payment-method, and product-page express/WooPay surfaces across desktop and mobile for both target and reference stores. The gate captures screenshots, selected settings/resources, Store API cart-extension evidence, failed responses, console issues, page errors, and expected local third-party/browser noise annotated with explicit `expectedRuleId` source/count metadata. Unmatched target console warnings fail by default. It does not claim 3DS/SCA, redirect, saved-method mutation, order-pay WooPay, pixel-perfect visual diff, or complete Stripe wallet-sheet behavior.
 
-The admin browser gate distinguishes available-route parity from unavailable-route guard coverage. If target protected routes are unavailable for the connected account state, the base admin pass records guard coverage but the accumulated A4aq gate only clears that incomplete state after the target-only optional-admin scenario passes. That scenario snapshots the target `wcpay_account_data` cache, temporarily enables the Documents/Card Readers/Capital capability flags, drives those protected routes through the selected browser runner across desktop and mobile, and restores the original cache in cleanup. Reference cache mutation is deliberately not used for this scenario because cache-only Capital flags do not synthesize a valid reference Capital loan payload.
+The admin browser gate distinguishes available-route parity from unavailable-route guard coverage. If target protected routes are unavailable for the connected account state, the base admin pass records guard coverage but the accumulated A4aq gate only clears that incomplete state after the target-only optional-admin scenario passes. That scenario snapshots the target `wcpay_account_data` cache, temporarily enables the Documents/Card Readers/Capital capability flags, drives those protected routes through direct Playwright across desktop and mobile, and restores the original cache in cleanup. Reference cache mutation is deliberately not used for this scenario because cache-only Capital flags do not synthesize a valid reference Capital loan payload.
 
 `a4aq-bundle-budget.json` is intentionally explicit. Any allowed asset presence drift or raw/gzip growth must be named there; do not use broad allow-new/growth budgets to hide unexpected WooPayments assets.
 
 Perf in A4aq is a measured smoke signal, not an exact latency proof. The accumulated gate creates local unpaid, paid/refundable, and authorized WooPayments order fixtures for both stores before capture and passes their IDs into `perf-surface-gate.sh`. A missing, invalid, non-refundable, or non-authorized fixture remains `requires_fixture` or `incomplete`, and `perf-compare` exits `3` / `incomplete` when required money-path probes are unmeasured. If local WP-CLI has already fired `rest_api_init`, REST boot is accepted only as both-sides-preinitialized route snapshot evidence with payment-route/controller counts; mixed or missing route evidence remains incomplete. Treat an aggregate A4aq result of `incomplete` as not green; record the missing coverage and do not flip readiness from it.
 
-The aggregate artifact is written to `<out-dir>/a4aq-accumulated-gate.json` and uses exit code `0` for pass, `1` for fail, `3` for incomplete, and `2` for usage/preflight errors. The orchestrator passes explicit evidence paths under `--out-dir` for both browser gates (`<out-dir>/<gateSlug>-admin-browser-gate.json` and `<out-dir>/<gateSlug>-checkout-browser-gate.json`). Standalone invocations use direct Playwright by default, matching `verify.sh`; choose `--browser-runner playwriter` only for the explicit persistent-session compatibility cases described above.
+The aggregate artifact is written to `<out-dir>/a4aq-accumulated-gate.json` and uses exit code `0` for pass, `1` for fail, `3` for incomplete, and `2` for usage/preflight errors. The orchestrator passes explicit evidence paths under `--out-dir` for both browser gates (`<out-dir>/<gateSlug>-admin-browser-gate.json` and `<out-dir>/<gateSlug>-checkout-browser-gate.json`). Standalone invocations and `verify.sh` both use direct Playwright exclusively.
 
 ### Runbooks (JUDGED by the implementor — NOT automated; do not fake a PASS)
 

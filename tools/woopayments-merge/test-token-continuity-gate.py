@@ -206,6 +206,8 @@ def make_fake_wp(
     sepa_restore_failure: bool = False,
     sepa_restore_semantic_failure: bool = False,
     cutover_failure_without_json: bool = False,
+    auth_create_failure: bool = False,
+    auth_destroy_failure: bool = False,
     subscription_product_id: int = 116,
     token_id: int = 4242,
 ) -> None:
@@ -311,6 +313,22 @@ fi
         printf '{{"success":true,"mode":"%s","errors":[]}}\\n' "$mode"
         exit 0
     fi
+    if [ "$mode" = "create-auth-session" ]; then
+        if [ {str(auth_create_failure).lower()} = "true" ]; then
+            printf '{{"success":false,"mode":"create-auth-session","customer_id":%s,"auth_cookie":{{"name":"wordpress_logged_in_unit","value":"unit-auth-cookie"}},"errors":["simulated auth session creation failure"]}}\\n' "${{4:-0}}"
+            exit 0
+        fi
+        printf '{{"success":true,"mode":"create-auth-session","customer_id":%s,"auth_cookie":{{"name":"wordpress_logged_in_unit","value":"unit-auth-cookie"}},"errors":[]}}\\n' "${{4:-0}}"
+        exit 0
+    fi
+    if [ "$mode" = "destroy-auth-session" ]; then
+        if [ {str(auth_destroy_failure).lower()} = "true" ]; then
+            printf '{{"success":false,"mode":"destroy-auth-session","customer_id":%s,"destroyed":false,"errors":["simulated auth session cleanup failure"]}}\\n' "${{4:-0}}"
+            exit 0
+        fi
+        printf '{{"success":true,"mode":"destroy-auth-session","customer_id":%s,"destroyed":true,"errors":[]}}\\n' "${{4:-0}}"
+        exit 0
+    fi
     if [ "$mode" = "prepare-source-cart" ]; then
         printf '{{"success":true,"mode":"prepare-source-cart","customer_id":%s,"errors":[],"persistent_cart_keys_deleted":["_woocommerce_persistent_cart_1"],"cart_count_before":2,"cart_count_after":0}}\\n' "${{4:-0}}"
         exit 0
@@ -414,6 +432,8 @@ payload = {
     "token_type": os.environ["TOKEN_CONTINUITY_GATE_TOKEN_TYPE"],
     "customer_id": int(os.environ["TOKEN_CONTINUITY_GATE_CUSTOMER_ID"]),
     "source_flow": source_flow,
+    "auth_cookie_name": os.environ.get("TOKEN_CONTINUITY_GATE_AUTH_COOKIE_NAME", ""),
+    "auth_cookie_present": bool(os.environ.get("TOKEN_CONTINUITY_GATE_AUTH_COOKIE_VALUE")),
     "failures": [],
 }
 if phase == "save_sepa_token":
@@ -643,80 +663,6 @@ def test_print_plan_describes_provider_setup_intent_source_flow() -> None:
     ]
 
 
-def test_full_gate_supports_explicit_playwriter_compatibility_runner() -> None:
-    with tempfile.TemporaryDirectory(prefix="token-continuity-gate-test-") as tmp:
-        tmp_path = Path(tmp)
-        target_wp = tmp_path / "target-wp"
-        fake_playwright_runner = tmp_path / "fake-playwright-runner"
-        wp_invocations = tmp_path / "wp-invocations.txt"
-        playwright_invocations = tmp_path / "playwright-invocations.jsonl"
-        out_dir = tmp_path / "evidence"
-
-        make_fake_wp(target_wp, "http://store8889.localhost:8889")
-        make_fake_playwright_runner(fake_playwright_runner)
-
-        env = {
-            **os.environ,
-            "PLAYWRITER_BIN": str(fake_playwright_runner),
-            "FAKE_WP_INVOCATIONS": str(wp_invocations),
-            "FAKE_PLAYWRIGHT_INVOCATIONS": str(playwright_invocations),
-        }
-
-        result = run_gate(
-            "--target",
-            str(target_wp),
-            "--customer-id",
-            "7",
-            "--subscription-id",
-            "77",
-            "--browser-runner",
-            "playwriter",
-            "--playwriter-session",
-            "unit",
-            "--out-dir",
-            str(out_dir),
-            env=env,
-        )
-
-        assert result.returncode == 0, result.stderr
-        invocations = [
-            json.loads(line)
-            for line in playwright_invocations.read_text(encoding="utf-8").splitlines()
-            if line
-        ]
-        seed_invocations = [item for item in invocations if "-e" in item["argv"]]
-        driver_invocations = [item for item in invocations if "-f" in item["argv"]]
-        assert len(seed_invocations) == 2
-        assert len(driver_invocations) == 2
-        assert all("state.tokenContinuityConfig" in " ".join(item["argv"]) for item in seed_invocations)
-        assert all('"checkoutUrl": "http://store8889.localhost:8889/?page_id=7"' in " ".join(item["argv"]) for item in seed_invocations)
-        assert [item["env"]["phase"] for item in driver_invocations] == [
-            "save_sepa_token",
-            "render_payment_methods",
-        ]
-        assert all("-s" in item["argv"] and "unit" in item["argv"] for item in invocations)
-        assert all(str(REPO / "tools/woopayments-merge/token-continuity.playwright.mjs") in item["argv"] for item in driver_invocations)
-
-        wp_log = wp_invocations.read_text(encoding="utf-8")
-        assert "eval-file - prepare-source-cart" not in wp_log
-        assert "eval-file - preflight-plugin" in wp_log
-        assert "eval-file - cutover-native 4242" in wp_log
-        assert "eval-file - assert-native-token 7 4242 woocommerce_payments_sepa_debit wcpay_sepa" in wp_log
-        assert "wc payment_token list" not in wp_log
-        assert "eval-file - drive 77 woocommerce_payments_sepa_debit 4242" in wp_log
-        assert "eval-file - restore" in wp_log
-
-        rollup = json.loads((out_dir / "token-continuity-gate.json").read_text(encoding="utf-8"))
-        assert rollup["status"] == "pass"
-        assert rollup["browser_runner"] == "playwriter"
-        assert rollup["token_id"] == 4242
-        assert rollup["customer_id"] == 7
-        assert rollup["native_token_loader"]["token_id"] == 4242
-        assert "cli_token_list" not in rollup
-        assert rollup["renewal"]["success"] is True
-        assert rollup["failures"] == []
-
-
 def test_gate_does_not_depend_on_unregistered_wc_payment_token_command() -> None:
     with tempfile.TemporaryDirectory(prefix="token-continuity-gate-test-") as tmp:
         tmp_path = Path(tmp)
@@ -908,6 +854,17 @@ def test_full_gate_validates_browser_token_against_reusable_customer_payment_met
         assert wp_log.index("eval-file - persist-source-token 7 pm_unitsepa123 mandate_unitsepa123 4242") < wp_log.index(
             "eval-file - cutover-native 4242"
         )
+        assert "eval-file - create-auth-session 7 " in wp_log
+        assert "eval-file - destroy-auth-session 7 " in wp_log
+
+        browser_invocations = [
+            json.loads(line)
+            for line in playwright_invocations.read_text(encoding="utf-8").splitlines()
+            if line
+        ]
+        assert browser_invocations
+        assert all(item["env"]["auth_cookie_name"] == "wordpress_logged_in_unit" for item in browser_invocations)
+        assert all(item["env"]["auth_cookie_present"] is True for item in browser_invocations)
 
         rollup = json.loads((out_dir / "token-continuity-gate.json").read_text(encoding="utf-8"))
         assert rollup["status"] == "pass"
@@ -916,7 +873,99 @@ def test_full_gate_validates_browser_token_against_reusable_customer_payment_met
         assert rollup["source_token"]["payment_method_id"] == "pm_unitsepa123"
         assert rollup["source_token"]["source_payment_method_customer_ready"] is True
         assert rollup["source_token"]["customer_payment_method_ids"] == ["pm_unitsepa123"]
+        assert rollup["auth_session_create"]["success"] is True
+        assert rollup["auth_session_create"]["auth_cookie"] == {
+            "name": "wordpress_logged_in_unit",
+            "present": True,
+        }
+        assert "value" not in rollup["auth_session_create"]["auth_cookie"]
+        assert rollup["auth_session_destroy"]["destroyed"] is True
+        assert "unit-auth-cookie" not in (out_dir / "token-continuity-gate.json").read_text(encoding="utf-8")
         assert rollup["failures"] == []
+
+
+def test_auth_session_creation_failure_cleans_the_caller_owned_session_without_running_browser() -> None:
+    with tempfile.TemporaryDirectory(prefix="token-continuity-gate-test-") as tmp:
+        tmp_path = Path(tmp)
+        target_wp = tmp_path / "target-wp"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
+        wp_invocations = tmp_path / "wp-invocations.txt"
+        playwright_invocations = tmp_path / "playwright-invocations.jsonl"
+        out_dir = tmp_path / "evidence"
+
+        make_fake_wp(
+            target_wp,
+            "http://store8889.localhost:8889",
+            auth_create_failure=True,
+        )
+        make_fake_playwright_runner(fake_playwright_runner)
+
+        result = run_gate(
+            "--target",
+            str(target_wp),
+            "--customer-id",
+            "7",
+            "--subscription-id",
+            "77",
+            "--out-dir",
+            str(out_dir),
+            env={
+                **os.environ,
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+                "FAKE_WP_INVOCATIONS": str(wp_invocations),
+                "FAKE_PLAYWRIGHT_INVOCATIONS": str(playwright_invocations),
+            },
+        )
+
+        assert result.returncode == 3, result.stderr
+        wp_log = wp_invocations.read_text(encoding="utf-8")
+        assert "eval-file - create-auth-session 7 " in wp_log
+        assert "eval-file - destroy-auth-session 7 " in wp_log
+        assert not playwright_invocations.exists()
+        assert not (out_dir / ".auth-session-create.json").exists()
+        evidence_text = (out_dir / "auth-session-create.json").read_text(encoding="utf-8")
+        assert "unit-auth-cookie" not in evidence_text
+
+
+def test_auth_session_cleanup_failure_is_cleanup_fatal() -> None:
+    with tempfile.TemporaryDirectory(prefix="token-continuity-gate-test-") as tmp:
+        tmp_path = Path(tmp)
+        target_wp = tmp_path / "target-wp"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
+        wp_invocations = tmp_path / "wp-invocations.txt"
+        out_dir = tmp_path / "evidence"
+
+        make_fake_wp(
+            target_wp,
+            "http://store8889.localhost:8889",
+            auth_destroy_failure=True,
+        )
+        make_fake_playwright_runner(fake_playwright_runner)
+
+        result = run_gate(
+            "--target",
+            str(target_wp),
+            "--customer-id",
+            "7",
+            "--subscription-id",
+            "77",
+            "--out-dir",
+            str(out_dir),
+            env={
+                **os.environ,
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+                "FAKE_WP_INVOCATIONS": str(wp_invocations),
+                "FAKE_PLAYWRIGHT_INVOCATIONS": str(tmp_path / "playwright-invocations.jsonl"),
+            },
+        )
+
+        assert result.returncode == 70, result.stderr
+        wp_log = wp_invocations.read_text(encoding="utf-8")
+        assert wp_log.count("eval-file - destroy-auth-session 7 ") >= 2
+        rollup = json.loads((out_dir / "token-continuity-gate.json").read_text(encoding="utf-8"))
+        assert rollup["status"] == "fail"
+        assert rollup["auth_session_destroy"]["success"] is False
+        assert any("auth session cleanup failed" in failure for failure in rollup["failures"])
 
 
 def test_full_gate_can_use_add_payment_method_source_flow_for_renewal_fixture() -> None:

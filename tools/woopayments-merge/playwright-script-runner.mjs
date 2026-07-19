@@ -2,10 +2,9 @@
 /**
  * Run the merge harness browser evidence scripts under Playwright.
  *
- * The historical scripts were authored for Playwriter, which provides globals
- * such as `context`, `state`, `waitForPageLoad`, `getLatestLogs`, and
- * `snapshot`. This shim supplies that small compatibility surface while keeping
- * the evidence-producing scripts unchanged.
+ * Browser scenarios use a small injected interface containing globals such as
+ * `context`, `state`, `waitForPageLoad`, `getLatestLogs`, and `snapshot`. This
+ * runner supplies that interface inside an isolated Playwright process.
  */
 
 import fs from 'node:fs';

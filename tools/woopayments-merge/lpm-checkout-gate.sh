@@ -24,7 +24,6 @@ REF_WP=""
 TARGET_WP=""
 REF_URL="${REF_URL:-}"
 TARGET_URL="${TARGET_URL:-}"
-PLAYWRITER_SESSION="${PLAYWRITER_SESSION:-}"
 BROWSER_RUNNER="${BROWSER_RUNNER:-playwright}"
 PLAYWRIGHT_SCRIPT_RUNNER_BIN="${PLAYWRIGHT_SCRIPT_RUNNER_BIN:-$SELF_DIR/playwright-script-runner.mjs}"
 OUT_DIR="${TMPDIR:-$SELF_DIR/.tmp}/lpm-checkout-gate"
@@ -59,8 +58,7 @@ Options:
   --target "<wp>"             Target store WP-CLI command.
   --ref-url <url>             Browser base URL for the reference store.
   --target-url <url>          Browser base URL for the target store.
-  --browser-runner <runner>   Browser runner: playwright or playwriter. Defaults to BROWSER_RUNNER or playwright.
-  --playwriter-session <id>   Existing Playwriter session for explicit compatibility runs only.
+  --browser-runner <runner>   Browser runner provenance; only playwright is supported. Defaults to BROWSER_RUNNER or playwright.
   --out-dir <path>            Evidence output directory.
   --surface classic|blocks    Checkout surface to drive. Default: classic.
   --preflight-only            Validate arguments and local dependencies, then exit.
@@ -109,8 +107,6 @@ while [ "$#" -gt 0 ]; do
 		--target-url) TARGET_URL="${2:-}"; shift 2 ;;
 		--browser-runner=*) BROWSER_RUNNER="${1#--browser-runner=}"; shift ;;
 		--browser-runner) BROWSER_RUNNER="${2:-}"; shift 2 ;;
-		--playwriter-session=*) PLAYWRITER_SESSION="${1#--playwriter-session=}"; shift ;;
-		--playwriter-session) PLAYWRITER_SESSION="${2:-}"; shift 2 ;;
 		--out-dir=*) OUT_DIR="${1#--out-dir=}"; shift ;;
 		--out-dir) OUT_DIR="${2:-}"; shift 2 ;;
 		--surface=*) SURFACE="${1#--surface=}"; shift ;;
@@ -148,10 +144,9 @@ case "$SURFACE" in
 	*) usage_error "unsupported surface: $SURFACE" ;;
 esac
 
-case "$BROWSER_RUNNER" in
-	playwriter|playwright) ;;
-	*) usage_error "unsupported browser runner: $BROWSER_RUNNER" ;;
-esac
+if [ "$BROWSER_RUNNER" != "playwright" ]; then
+	usage_error "unsupported browser runner: $BROWSER_RUNNER; only playwright is supported"
+fi
 
 IFS=',' read -r -a METHODS <<< "$METHODS_CSV"
 if [ "${#METHODS[@]}" -eq 0 ]; then
@@ -2512,97 +2507,26 @@ run_driver_for_store() {
 	local exit_code
 	local validation_output
 	local validation_exit_code
-	local browser_config_js
 	local wp_cmd
 	local driver_exit_message=""
 
 	rm -f "$evidence_path"
 	progress "driving $role checkout for $method on $base_url"
 
-	browser_config_js="$(
-		python3 - "$role" "$method" "$SURFACE" "$base_url" "$currency" "$country" "$gateway_id" "$stripe_type" "$method_family" "$automation_disposition" "$product_id" "$checkout_page_id" "$evidence_path" <<'PY'
-import json
-import sys
-
-(
-    role,
-    method,
-    surface,
-    base_url,
-    currency,
-    country,
-    gateway_id,
-    stripe_type,
-    method_family,
-    automation_disposition,
-    product_id,
-    checkout_page_id,
-    evidence_path,
-) = sys.argv[1:]
-print(
-    "state.lpmCheckoutConfig = "
-    + json.dumps(
-        {
-            "role": role,
-            "method": method,
-            "surface": surface,
-            "baseUrl": base_url,
-            "currency": currency,
-            "country": country,
-            "gatewayId": gateway_id,
-            "stripePaymentMethodType": stripe_type,
-            "methodFamily": method_family,
-            "automationDisposition": automation_disposition,
-            "productId": product_id,
-            "checkoutPageId": checkout_page_id,
-            "evidencePath": evidence_path,
-        },
-        sort_keys=True,
-    )
-    + ";"
-)
-PY
-	)"
-
-	# Compatibility only: default/verdict evidence uses isolated Playwright.
-	if [ "$BROWSER_RUNNER" = "playwriter" ]; then
-		"${PLAYWRITER_CMD[@]}" -s "$PLAYWRITER_SESSION" -e "$browser_config_js" --timeout "30000" >"$log_path" 2>&1
-		exit_code=$?
-		if [ "$exit_code" -ne 0 ]; then
-			record_failure "$role/$method: Playwriter config seed exited $exit_code; see $log_path"
-			return
-		fi
-
-		LPM_GATE_ROLE="$role" \
-		LPM_GATE_METHOD="$method" \
-		LPM_GATE_SURFACE="$SURFACE" \
-		LPM_GATE_BASE_URL="$base_url" \
-		LPM_GATE_CURRENCY="$currency" \
-		LPM_GATE_COUNTRY="$country" \
-		LPM_GATE_GATEWAY_ID="$gateway_id" \
-		LPM_GATE_STRIPE_PAYMENT_METHOD_TYPE="$stripe_type" \
-		LPM_GATE_METHOD_FAMILY="$method_family" \
-		LPM_GATE_AUTOMATION_DISPOSITION="$automation_disposition" \
-		LPM_GATE_PRODUCT_ID="$product_id" \
-		LPM_GATE_CHECKOUT_PAGE_ID="$checkout_page_id" \
-		LPM_GATE_EVIDENCE_PATH="$evidence_path" \
-		"${PLAYWRITER_CMD[@]}" -s "$PLAYWRITER_SESSION" -f "$SELF_DIR/lpm-checkout.playwright.mjs" --timeout "300000" >>"$log_path" 2>&1
-	else
-		LPM_GATE_ROLE="$role" \
-		LPM_GATE_METHOD="$method" \
-		LPM_GATE_SURFACE="$SURFACE" \
-		LPM_GATE_BASE_URL="$base_url" \
-		LPM_GATE_CURRENCY="$currency" \
-		LPM_GATE_COUNTRY="$country" \
-		LPM_GATE_GATEWAY_ID="$gateway_id" \
-		LPM_GATE_STRIPE_PAYMENT_METHOD_TYPE="$stripe_type" \
-		LPM_GATE_METHOD_FAMILY="$method_family" \
-		LPM_GATE_AUTOMATION_DISPOSITION="$automation_disposition" \
-		LPM_GATE_PRODUCT_ID="$product_id" \
-		LPM_GATE_CHECKOUT_PAGE_ID="$checkout_page_id" \
-		LPM_GATE_EVIDENCE_PATH="$evidence_path" \
-		"${PLAYWRIGHT_RUNNER_CMD[@]}" "$SELF_DIR/lpm-checkout.playwright.mjs" --timeout "300000" >"$log_path" 2>&1
-	fi
+	LPM_GATE_ROLE="$role" \
+	LPM_GATE_METHOD="$method" \
+	LPM_GATE_SURFACE="$SURFACE" \
+	LPM_GATE_BASE_URL="$base_url" \
+	LPM_GATE_CURRENCY="$currency" \
+	LPM_GATE_COUNTRY="$country" \
+	LPM_GATE_GATEWAY_ID="$gateway_id" \
+	LPM_GATE_STRIPE_PAYMENT_METHOD_TYPE="$stripe_type" \
+	LPM_GATE_METHOD_FAMILY="$method_family" \
+	LPM_GATE_AUTOMATION_DISPOSITION="$automation_disposition" \
+	LPM_GATE_PRODUCT_ID="$product_id" \
+	LPM_GATE_CHECKOUT_PAGE_ID="$checkout_page_id" \
+	LPM_GATE_EVIDENCE_PATH="$evidence_path" \
+	"${PLAYWRIGHT_RUNNER_CMD[@]}" "$SELF_DIR/lpm-checkout.playwright.mjs" --timeout "300000" >"$log_path" 2>&1
 	exit_code=$?
 
 	if [ "$exit_code" -ne 0 ]; then
@@ -2675,38 +2599,13 @@ if [ ! -f "$LPM_EVIDENCE_HELPER" ]; then
 	blocked "LPM evidence helper is missing: $LPM_EVIDENCE_HELPER"
 fi
 
-if [ "$BROWSER_RUNNER" = "playwriter" ]; then
-	if [ -n "${PLAYWRITER_BIN:-}" ]; then
-		# shellcheck disable=SC2206
-		PLAYWRITER_CMD=( $PLAYWRITER_BIN )
-	elif command -v playwriter >/dev/null 2>&1; then
-		PLAYWRITER_CMD=( playwriter )
-	elif command -v npx >/dev/null 2>&1; then
-		PLAYWRITER_CMD=( npx --yes playwriter@latest )
-	else
-		blocked "Playwriter is required. Install playwriter or provide PLAYWRITER_BIN."
-	fi
-
-	playwriter_launcher="${PLAYWRITER_CMD[0]}"
-	if [[ "$playwriter_launcher" == */* ]]; then
-		if [ ! -x "$playwriter_launcher" ]; then
-			blocked "Playwriter launcher is missing or not executable: $playwriter_launcher"
-		fi
-	elif ! command -v "$playwriter_launcher" >/dev/null 2>&1; then
-		blocked "Playwriter launcher is missing or not executable: $playwriter_launcher"
-	fi
-else
-	# shellcheck disable=SC2206
-	PLAYWRIGHT_RUNNER_CMD=( $PLAYWRIGHT_SCRIPT_RUNNER_BIN )
-fi
+# shellcheck disable=SC2206
+PLAYWRIGHT_RUNNER_CMD=( $PLAYWRIGHT_SCRIPT_RUNNER_BIN )
 
 if [ ! -f "$SELF_DIR/lpm-checkout.playwright.mjs" ]; then
 	blocked "submit-capable browser driver is missing: $SELF_DIR/lpm-checkout.playwright.mjs"
 fi
-if [ "$BROWSER_RUNNER" = "playwriter" ] && [ -z "$PLAYWRITER_SESSION" ]; then
-	blocked "pass --playwriter-session or set PLAYWRITER_SESSION before running browser checkout flows."
-fi
-if [ "$BROWSER_RUNNER" = "playwright" ] && [ ! -x "$PLAYWRIGHT_SCRIPT_RUNNER_BIN" ]; then
+if [ ! -x "$PLAYWRIGHT_SCRIPT_RUNNER_BIN" ]; then
 	blocked "Playwright script runner is missing or not executable: $PLAYWRIGHT_SCRIPT_RUNNER_BIN"
 fi
 

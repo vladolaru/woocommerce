@@ -761,7 +761,6 @@ def test_full_evidence_plan_defaults_to_playwright_without_persistent_sessions()
         )
     ]
     assert browser_gate_lines
-    assert all("--playwriter-session" not in line for line in browser_gate_lines)
 
 
 def test_full_evidence_default_output_requires_tmpdir(tmp_path: Path) -> None:
@@ -2034,10 +2033,6 @@ if "--out-dir" in sys.argv:
                 "--full-evidence",
                 "--browser-runner",
                 "playwright",
-                "--playwriter-session",
-                "session-1",
-                "--checkout-playwriter-session",
-                "checkout-session-1",
                 "--ms07-reference-browser",
                 str(Path(tmp) / "ms07-reference-browser.json"),
                 "--ms07-reference-state",
@@ -2578,7 +2573,7 @@ exit 0
     assert "EXIT_CODE: 3" in log_text
 
 
-def test_full_evidence_blocks_browser_gates_without_playwriter_session() -> None:
+def test_full_evidence_runs_browser_gates_with_direct_playwright() -> None:
     with tempfile.TemporaryDirectory(prefix="verify-final-evidence-no-browser-") as tmp:
         repo = Path(tmp) / "repo"
         merge_dir = repo / "tools" / "woopayments-merge"
@@ -2800,7 +2795,7 @@ if "--out-dir" in sys.argv:
                 str(full_evidence_dir),
                 "--full-evidence",
                 "--browser-runner",
-                "playwriter",
+                "playwright",
                 "--ref-subscription-id",
                 "101",
                 "--target-subscription-id",
@@ -2831,15 +2826,13 @@ if "--out-dir" in sys.argv:
         assert "token continuity cutover" in result.stdout
         assert "A5f cutover rehearsal" in result.stdout
         assert "A4aq accumulated admin/checkout/perf evidence" in result.stdout
-        assert result.stdout.count("pass --playwriter-session") >= 3
-        assert result.stdout.count("pass --checkout-playwriter-session") >= 2
 
         invocation_log = invocations.read_text(encoding="utf-8")
-        assert "plugin-active-settings-gate.sh|" not in invocation_log
-        assert "lpm-checkout-gate.sh|" not in invocation_log
-        assert "token-continuity-gate.sh|" not in invocation_log
-        assert "a5f-cutover-rehearsal.py|" not in invocation_log
-        assert "a4aq-accumulated-gate.py|" not in invocation_log
+        assert "plugin-active-settings-gate.sh|" in invocation_log
+        assert "lpm-checkout-gate.sh|" in invocation_log
+        assert "token-continuity-gate.sh|" in invocation_log
+        assert "a5f-cutover-rehearsal.py|" in invocation_log
+        assert "a4aq-accumulated-gate.py|" in invocation_log
         assert "build-agent-results.py|--context-file " in invocation_log
         assert "--require-sc04" in invocation_log
         assert "--require-ms07" in invocation_log
@@ -3184,7 +3177,6 @@ def test_full_evidence_flag_is_documented_in_usage() -> None:
     assert "--full-evidence" in result.stderr
     assert "accumulated final evidence plan" in result.stderr
     assert "--print-full-evidence-plan" in result.stderr
-    assert "--checkout-playwriter-session" in result.stderr
     assert "--critical-flows-agent-results-dir" in result.stderr
     assert "--critical-flow-agent-result" in result.stderr
     assert "--ms07-reference-browser" in result.stderr
@@ -3416,7 +3408,7 @@ def main() -> None:
         test_full_evidence_plan_uses_provider_setup_intent_for_token_fixture,
         test_full_evidence_plan_passes_perf_fixture_ids_to_perf_captures,
         test_full_evidence_executes_nested_self_check_and_tracks_verifier,
-        test_full_evidence_blocks_browser_gates_without_playwriter_session,
+        test_full_evidence_runs_browser_gates_with_direct_playwright,
         test_full_evidence_flag_is_documented_in_usage,
         test_full_perf_compare_requires_two_successful_nonempty_captures,
     ]

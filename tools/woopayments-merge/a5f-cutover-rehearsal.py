@@ -11,7 +11,6 @@ import os
 import pathlib
 import secrets
 import shlex
-import shutil
 import signal
 import subprocess
 import sys
@@ -687,26 +686,12 @@ class Rehearsal:
 
     def run_browser_gate(self, phase_id: str, script: pathlib.Path, source_evidence: pathlib.Path) -> None:
         browser_runner = self.browser_runner
-        if browser_runner not in {"playwright", "playwriter"}:
+        if browser_runner != "playwright":
             raise HarnessError(f"unsupported browser runner: {browser_runner}")
 
-        # Compatibility only: authoritative/default evidence uses the isolated
-        # Playwright runner; this branch exists for persistent-session repros.
-        if browser_runner == "playwriter":
-            if not str(self.args.playwriter_session):
-                raise HarnessError("pass --playwriter-session or set PLAYWRITER_SESSION before running Playwriter browser gates")
-            playwriter = os.environ.get("PLAYWRITER_BIN")
-            if playwriter:
-                command = shlex.split(playwriter)
-            elif shutil.which("playwriter"):
-                command = ["playwriter"]
-            else:
-                command = ["npx", "--yes", "playwriter@latest"]
-            runner_args = command + ["-s", str(self.args.playwriter_session), "-f", str(script), "--timeout", "300000"]
-        else:
-            runner = os.environ.get("PLAYWRIGHT_SCRIPT_RUNNER_BIN") or str(TOOLS_DIR / "playwright-script-runner.mjs")
-            command = shlex.split(runner)
-            runner_args = command + [str(script), "--timeout", "300000"]
+        runner = os.environ.get("PLAYWRIGHT_SCRIPT_RUNNER_BIN") or str(TOOLS_DIR / "playwright-script-runner.mjs")
+        command = shlex.split(runner)
+        runner_args = command + [str(script), "--timeout", "300000"]
 
         previous_mtime = source_evidence.stat().st_mtime_ns if source_evidence.exists() else None
         command_error: Exception | None = None
@@ -946,14 +931,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--store-dir", default=str(REPO))
     parser.add_argument(
         "--browser-runner",
-        choices=("playwright", "playwriter"),
+        choices=("playwright",),
         default=os.environ.get("BROWSER_RUNNER", "playwright"),
-        help="Browser runner for rehearsal evidence. Defaults to direct Playwright.",
-    )
-    parser.add_argument(
-        "--playwriter-session",
-        default=os.environ.get("PLAYWRITER_SESSION", ""),
-        help="Playwriter session id for explicit persistent-session compatibility runs only.",
+        help="Browser runner for rehearsal evidence; only direct Playwright is supported.",
     )
     parser.add_argument("--out-dir", default=str(DEFAULT_OUT_DIR))
     parser.add_argument("--skip-wpcom-readiness", action="store_true")

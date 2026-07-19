@@ -491,7 +491,7 @@ def test_builds_plugin_active_agent_result_from_reference_and_target_gates() -> 
         assert all(store["evidence"] for store in payload["store_results"])
 
 
-def test_builds_plugin_active_result_from_legacy_playwriter_log_packets() -> None:
+def test_builds_plugin_active_result_from_legacy_browser_log_packets() -> None:
     with tempfile.TemporaryDirectory(prefix="critical-agent-results-") as tmp:
         tmp_path = Path(tmp)
 

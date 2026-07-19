@@ -44,7 +44,6 @@ def make_args(out_dir: str):
         target_url="http://store8889.localhost:8889",
         store_dir=str(REPO),
         browser_runner="playwright",
-        playwriter_session="",
         out_dir=out_dir,
         skip_wpcom_readiness=False,
     )
@@ -56,7 +55,6 @@ def make_args_without_user(out_dir: str):
         target_url="http://store8889.localhost:8889",
         store_dir=str(REPO),
         browser_runner="playwright",
-        playwriter_session="",
         out_dir=out_dir,
         skip_wpcom_readiness=False,
     )
@@ -573,44 +571,6 @@ def test_browser_gate_copies_failed_source_evidence():
             source_evidence.unlink(missing_ok=True)
 
 
-def test_explicit_playwriter_compatibility_gate_passes_portable_browser_environment():
-    module = load_module()
-    with tempfile.TemporaryDirectory(prefix="a5f-rehearsal-test-") as out_dir:
-        out_path = Path(out_dir)
-        source_evidence = out_path / "a5e-env-gate.json"
-        args = make_args(out_dir)
-        args.browser_runner = "playwriter"
-        args.playwriter_session = "unit"
-        rehearsal = module.Rehearsal(args)
-        captured_env = {}
-        captured_command = []
-        previous_playwriter_bin = os.environ.get("PLAYWRITER_BIN")
-
-        def pass_command(*args, **kwargs):
-            captured_command.extend(args[1])
-            captured_env.update(kwargs["env"])
-            source_evidence.write_text('{"status":"pass","updated":true}\n', encoding="utf-8")
-            return {"status": "pass"}
-
-        try:
-            os.environ["PLAYWRITER_BIN"] = "/fake/playwriter"
-            rehearsal.run_command = pass_command
-            rehearsal.run_browser_gate("env-gate", MODULE_PATH, source_evidence)
-        finally:
-            if previous_playwriter_bin is None:
-                os.environ.pop("PLAYWRITER_BIN", None)
-            else:
-                os.environ["PLAYWRITER_BIN"] = previous_playwriter_bin
-
-    assert captured_env["A5_GATE_TARGET_URL"] == "http://store8889.localhost:8889"
-    assert captured_env["A5_GATE_PLUGINS_URL"] == "http://store8889.localhost:8889/wp-admin/plugins.php"
-    assert captured_env["A5_GATE_DATA_DIR"] == str(source_evidence.parent)
-    assert captured_env["A5_GATE_EVIDENCE_PATH"] == str(source_evidence)
-    assert captured_command[0] == "/fake/playwriter"
-    assert "-s" in captured_command
-    assert "unit" in captured_command
-
-
 def test_browser_gate_uses_default_playwright_runner():
     module = load_module()
     with tempfile.TemporaryDirectory(prefix="a5f-rehearsal-test-") as out_dir:
@@ -706,7 +666,6 @@ def main() -> None:
         test_expected_failure_command_records_pass_phase,
         test_orchestrator_uses_browser_for_blocked_mandatory_gate,
         test_browser_gate_copies_failed_source_evidence,
-        test_explicit_playwriter_compatibility_gate_passes_portable_browser_environment,
         test_browser_gates_use_isolated_pages_and_close_them,
         test_browser_gates_are_portable_and_env_driven,
         test_cutover_screenshot_capture_is_non_fatal_evidence,

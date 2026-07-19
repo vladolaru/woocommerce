@@ -21,6 +21,21 @@ if ( 'preflight-plugin' === $mode ) {
 	exit( 0 );
 }
 
+if ( 'create-auth-session' === $mode ) {
+	$customer_id   = isset( $tool_args[1] ) ? (int) $tool_args[1] : 0;
+	$session_token = isset( $tool_args[2] ) ? (string) $tool_args[2] : '';
+	$external_url  = isset( $tool_args[3] ) ? (string) $tool_args[3] : '';
+	woopayments_merge_token_continuity_emit( woopayments_merge_token_continuity_create_auth_session( $customer_id, $session_token, $external_url ) );
+	exit( 0 );
+}
+
+if ( 'destroy-auth-session' === $mode ) {
+	$customer_id   = isset( $tool_args[1] ) ? (int) $tool_args[1] : 0;
+	$session_token = isset( $tool_args[2] ) ? (string) $tool_args[2] : '';
+	woopayments_merge_token_continuity_emit( woopayments_merge_token_continuity_destroy_auth_session( $customer_id, $session_token ) );
+	exit( 0 );
+}
+
 if ( 'prepare-source-cart' === $mode ) {
 	$customer_id = isset( $tool_args[1] ) ? (int) $tool_args[1] : 0;
 	woopayments_merge_token_continuity_emit( woopayments_merge_token_continuity_prepare_source_cart( $customer_id ) );
@@ -81,7 +96,7 @@ woopayments_merge_token_continuity_emit(
 	array(
 		'success' => false,
 		'mode'    => $mode,
-		'errors'  => array( 'Unknown mode. Use preflight-plugin, prepare-source-cart, persist-source-token, assert-native-token, subscription-from-order, provision-renewal-subscription, cutover-native, or restore.' ),
+		'errors'  => array( 'Unknown mode. Use preflight-plugin, create-auth-session, destroy-auth-session, prepare-source-cart, persist-source-token, assert-native-token, subscription-from-order, provision-renewal-subscription, cutover-native, or restore.' ),
 	)
 );
 exit( 2 );
@@ -102,6 +117,135 @@ function woopayments_merge_token_continuity_load_plugin_helpers(): void {
 	if ( ! function_exists( 'is_plugin_active' ) ) {
 		require_once ABSPATH . 'wp-admin/includes/plugin.php';
 	}
+}
+
+/**
+ * Translate the configured logged-in cookie name to the external local URL.
+ *
+ * WP-env can expose WordPress through a URL whose COOKIEHASH differs from the
+ * URL WordPress sees internally. Preserve the WordPress cookie prefix while
+ * binding the suffix to the browser-visible site URL.
+ *
+ * @param string $internal_name Internal WordPress logged-in cookie name.
+ * @param string $external_url  Browser-visible local site URL.
+ * @return string
+ */
+function woopayments_merge_token_continuity_external_cookie_name( string $internal_name, string $external_url ): string {
+	if ( ! preg_match( '/^(.+_)[0-9a-f]{32}$/i', $internal_name, $matches ) ) {
+		return $internal_name;
+	}
+
+	return $matches[1] . md5( untrailingslashit( $external_url ) );
+}
+
+/**
+ * Create a short-lived logged-in session for the exact test customer.
+ *
+ * @param int    $customer_id   Customer/user ID.
+ * @param string $session_token Caller-owned raw WordPress session token.
+ * @param string $external_url  Browser-visible local site URL.
+ * @return array<string,mixed>
+ */
+function woopayments_merge_token_continuity_create_auth_session( int $customer_id, string $session_token, string $external_url ): array {
+	$errors      = array();
+	$auth_cookie = '';
+	$cookie_name = '';
+	$expiration  = time() + HOUR_IN_SECONDS;
+	$user        = $customer_id > 0 ? get_userdata( $customer_id ) : false;
+	$url_parts   = wp_parse_url( $external_url );
+
+	if ( ! $user ) {
+		$errors[] = 'The token-continuity customer is unavailable.';
+	}
+	if ( ! preg_match( '/^[a-f0-9]{64}$/D', $session_token ) ) {
+		$errors[] = 'The caller-owned session token is invalid.';
+	}
+	if ( ! is_array( $url_parts ) || ! in_array( $url_parts['scheme'] ?? '', array( 'http', 'https' ), true ) || empty( $url_parts['host'] ) ) {
+		$errors[] = 'The browser-visible site URL is invalid.';
+	}
+	if ( ! class_exists( 'WP_Session_Tokens' ) ) {
+		$errors[] = 'WordPress session APIs are unavailable.';
+	}
+
+	if ( empty( $errors ) ) {
+		$sessions = WP_Session_Tokens::get_instance( $customer_id );
+		/**
+		 * Filters the information attached to the newly created session.
+		 *
+		 * @since 4.0.0
+		 *
+		 * @param array $session     Session information.
+		 * @param int   $customer_id Customer/user ID.
+		 */
+		$session               = apply_filters( 'attach_session_information', array(), $customer_id );
+		$session['expiration'] = $expiration;
+		$session['login']      = time();
+		$sessions->update( $session_token, $session );
+
+		if ( ! is_array( $sessions->get( $session_token ) ) ) {
+			$errors[] = 'The short-lived customer session could not be persisted.';
+		}
+
+		$auth_cookie = wp_generate_auth_cookie( $customer_id, $expiration, 'logged_in', $session_token );
+		$cookie_name = woopayments_merge_token_continuity_external_cookie_name(
+			defined( 'LOGGED_IN_COOKIE' ) ? LOGGED_IN_COOKIE : '',
+			$external_url
+		);
+		if ( '' === $auth_cookie || '' === $cookie_name ) {
+			$errors[] = 'The short-lived customer auth cookie could not be created.';
+		}
+	}
+
+	return array(
+		'success'     => empty( $errors ),
+		'mode'        => 'create-auth-session',
+		'customer_id' => $customer_id,
+		'expiration'  => $expiration,
+		'auth_cookie' => array(
+			'name'  => $cookie_name,
+			'value' => $auth_cookie,
+		),
+		'errors'      => $errors,
+	);
+}
+
+/**
+ * Destroy only the caller-owned short-lived customer session.
+ *
+ * @param int    $customer_id   Customer/user ID.
+ * @param string $session_token Caller-owned raw WordPress session token.
+ * @return array<string,mixed>
+ */
+function woopayments_merge_token_continuity_destroy_auth_session( int $customer_id, string $session_token ): array {
+	$errors    = array();
+	$destroyed = false;
+
+	if ( $customer_id <= 0 ) {
+		$errors[] = 'A positive customer ID is required to destroy the auth session.';
+	}
+	if ( ! preg_match( '/^[a-f0-9]{64}$/D', $session_token ) ) {
+		$errors[] = 'The caller-owned session token is invalid.';
+	}
+	if ( ! class_exists( 'WP_Session_Tokens' ) ) {
+		$errors[] = 'WordPress session APIs are unavailable.';
+	}
+
+	if ( empty( $errors ) ) {
+		$sessions = WP_Session_Tokens::get_instance( $customer_id );
+		$sessions->destroy( $session_token );
+		$destroyed = null === $sessions->get( $session_token );
+		if ( ! $destroyed ) {
+			$errors[] = 'The caller-owned short-lived customer session still exists.';
+		}
+	}
+
+	return array(
+		'success'     => empty( $errors ) && $destroyed,
+		'mode'        => 'destroy-auth-session',
+		'customer_id' => $customer_id,
+		'destroyed'   => $destroyed,
+		'errors'      => $errors,
+	);
 }
 
 /**

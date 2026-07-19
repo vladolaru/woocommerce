@@ -595,62 +595,6 @@ def test_full_gate_uses_default_playwright_runner() -> None:
         assert rollup["browser_runner"] == "playwright"
 
 
-def test_full_gate_supports_explicit_playwriter_compatibility_runner() -> None:
-    with tempfile.TemporaryDirectory(prefix="plugin-settings-gate-test-") as tmp:
-        tmp_path = Path(tmp)
-        fake_wp = tmp_path / "target-wp"
-        fake_playwright_runner = tmp_path / "fake-playwright-runner"
-        invocations_path = tmp_path / "playwright-invocations.jsonl"
-        out_dir = tmp_path / "evidence"
-
-        make_fake_wp(fake_wp)
-        make_fake_playwright_runner(fake_playwright_runner)
-
-        env = {
-            **os.environ,
-            "PLAYWRITER_BIN": str(fake_playwright_runner),
-            "FAKE_PLAYWRIGHT_INVOCATIONS": str(invocations_path),
-        }
-
-        result = run_gate(
-            "--target",
-            str(fake_wp),
-            "--target-url",
-            TARGET_URL,
-            "--browser-runner",
-            "playwriter",
-            "--playwriter-session",
-            "unit",
-            "--out-dir",
-            str(out_dir),
-            env=env,
-        )
-
-        assert result.returncode == 0, result.stderr
-        invocations = [
-            json.loads(line)
-            for line in invocations_path.read_text(encoding="utf-8").splitlines()
-            if line
-        ]
-        assert len(invocations) == 2
-        assert "-e" in invocations[0]["argv"]
-        assert "state.pluginActiveSettingsConfig" in " ".join(invocations[0]["argv"])
-        assert TARGET_URL in " ".join(invocations[0]["argv"])
-        assert SETTINGS_URL in " ".join(invocations[0]["argv"])
-        assert "-s" in invocations[1]["argv"]
-        assert "unit" in invocations[1]["argv"]
-        assert str(REPO / "tools/woopayments-merge/plugin-active-settings.playwright.mjs") in invocations[1]["argv"]
-        assert invocations[1]["env"]["target_url"] == TARGET_URL
-        assert invocations[1]["env"]["settings_url"] == SETTINGS_URL
-
-        rollup = json.loads((out_dir / "plugin-active-settings-gate.json").read_text(encoding="utf-8"))
-        assert rollup["schema"] == "woopayments_plugin_active_settings_gate_rollup.v1"
-        assert rollup["status"] == "pass"
-        assert rollup["browser_runner"] == "playwriter"
-        assert rollup["evidence"]["settings_screen_present"] is True
-        assert rollup["evidence"]["duplicate_store_errors"] == []
-
-
 def test_full_gate_can_stage_and_restore_plugin_active_fixture() -> None:
     with tempfile.TemporaryDirectory(prefix="plugin-settings-gate-test-") as tmp:
         tmp_path = Path(tmp)

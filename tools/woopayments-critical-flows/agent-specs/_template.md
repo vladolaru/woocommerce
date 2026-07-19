@@ -1,6 +1,6 @@
 # Layer-A agent verification — prompt template
 
-Use this to dispatch an AI agent with direct Playwright to verify ONE critical flow. Playwriter/chrome-devtools are explicit compatibility choices only when a flow documents why it needs a persistent, operator-visible Chrome session. Fill the `{{...}}` slots from the flow's `.md`, including `{{ORACLE_MODE}}`: `comparable` unless the flow explicitly says `Agent oracle mode: target-only`. The agent is the right tool when deterministic scripting is too flaky/unrealistic/complex (SCA modals, Stripe-hosted redirects, WooPay, dynamic admin journeys, visual/UX judgment).
+Use this to dispatch an AI agent with direct Playwright to verify ONE critical flow. Fill the `{{...}}` slots from the flow's `.md`, including `{{ORACLE_MODE}}`: `comparable` unless the flow explicitly says `Agent oracle mode: target-only`. The agent is the right tool when deterministic scripting is too flaky/unrealistic/complex (SCA modals, Stripe-hosted redirects, WooPay, dynamic admin journeys, visual/UX judgment).
 
 ---
 

@@ -3,9 +3,8 @@
 // This driver normally runs in the isolated local Playwright runner. It saves a
 // SEPA token while the WooPayments plugin is active, then verifies that the same
 // token renders in My Account after the shell gate cuts the store over to native
-// WooPayments. The explicit Playwriter compatibility runner supplies the same
-// scenario interface for persistent-session reproduction. Evidence stays
-// fail-closed unless browser-observed semantics satisfy token-continuity-gate.sh.
+// WooPayments through the process-local Playwright scenario interface. Evidence
+// stays fail-closed unless browser-observed semantics satisfy token-continuity-gate.sh.
 
 const fs = require( 'node:fs' );
 const path = require( 'node:path' );
@@ -42,6 +41,10 @@ const gatewayId = requiredConfig( 'TOKEN_CONTINUITY_GATE_GATEWAY_ID', 'gatewayId
 const stripePaymentMethodType = requiredConfig( 'TOKEN_CONTINUITY_GATE_STRIPE_PAYMENT_METHOD_TYPE', 'stripePaymentMethodType' );
 const tokenType = requiredConfig( 'TOKEN_CONTINUITY_GATE_TOKEN_TYPE', 'tokenType' );
 const customerId = Number.parseInt( requiredConfig( 'TOKEN_CONTINUITY_GATE_CUSTOMER_ID', 'customerId' ), 10 );
+const authCookieName =
+	env.TOKEN_CONTINUITY_GATE_AUTH_COOKIE_NAME || stateConfig.authCookie?.name;
+const authCookieValue =
+	env.TOKEN_CONTINUITY_GATE_AUTH_COOKIE_VALUE || stateConfig.authCookie?.value;
 const configuredTokenId = env.TOKEN_CONTINUITY_GATE_TOKEN_ID || stateConfig.tokenId;
 const tokenId = configuredTokenId ? Number.parseInt( configuredTokenId, 10 ) : null;
 const configuredSubscriptionProductId =
@@ -1077,11 +1080,24 @@ if ( subscriptionProductId !== null && ( ! Number.isInteger( subscriptionProduct
 if ( checkoutProductId !== null && ( ! Number.isInteger( checkoutProductId ) || checkoutProductId <= 0 ) ) {
 	throw new Error( 'TOKEN_CONTINUITY_GATE_CHECKOUT_PRODUCT_ID must be a positive integer when provided.' );
 }
+if ( ! authCookieName || ! authCookieValue ) {
+	throw new Error( 'Token-continuity Playwright phases require the exact customer auth cookie.' );
+}
 writeEvidence( { status: 'running' } );
 
 let gatePage = null;
 
 try {
+	await context.addCookies( [
+		{
+			name: authCookieName,
+			value: authCookieValue,
+			url: `${ baseUrl }/`,
+			httpOnly: true,
+			secure: new URL( baseUrl ).protocol === 'https:',
+			sameSite: 'Lax',
+		},
+	] );
 	gatePage = await context.newPage();
 	if ( typeof state !== 'undefined' ) {
 		state.tokenContinuityPage = gatePage;

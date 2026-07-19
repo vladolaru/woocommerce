@@ -3,8 +3,7 @@
 // This script normally runs in the isolated local Playwright runner. It drives
 // one requested split WooPayments gateway through checkout and writes evidence
 // that lpm-checkout-gate.sh validates for both the reference plugin store and
-// native target store. The explicit Playwriter compatibility runner supplies
-// the same small scenario interface for persistent-session reproduction.
+// native target store through the process-local Playwright scenario interface.
 
 const fs = require( 'node:fs' );
 const path = require( 'node:path' );

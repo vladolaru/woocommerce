@@ -58,8 +58,6 @@ TRACKS_TARGET_STORE_ID="${TRACKS_TARGET_STORE_ID:-}"
 WLOCAL="${WLOCAL:-wpcom-local}"
 TRACKS_OUT_DIR="${TRACKS_OUT_DIR:-${TMPDIR:?TMPDIR is required for Tracks evidence}/woopayments-tracks-parity}"
 GATE_LOG_DIR="${GATE_LOG_DIR:-}"
-PLAYWRITER_SESSION="${PLAYWRITER_SESSION:-}"
-PLAYWRITER_CHECKOUT_SESSION="${PLAYWRITER_CHECKOUT_SESSION:-}"
 BROWSER_RUNNER="${BROWSER_RUNNER:-playwright}"
 REF_WP_ADMIN_USER="${REF_WP_ADMIN_USER:-admin}"
 REF_WP_ADMIN_PASSWORD="${REF_WP_ADMIN_PASSWORD:-admin}"
@@ -118,11 +116,7 @@ Options:
   --print-full-evidence-plan    Print the final readiness gate plan and exit.
   --validate-scope-only        Validate runner projects, runtime owners, and local store URLs,
                                 then exit before running or mutating any gate.
-  --browser-runner RUNNER       Browser runner for final browser gates: playwright (default) or
-                                playwriter (explicit persistent-session compatibility only).
-  --playwriter-session ID       Authenticated Playwriter session for compatibility admin gates.
-  --checkout-playwriter-session ID
-                                Unauthenticated Playwriter session for compatibility checkout gates.
+  --browser-runner RUNNER       Browser runner for final browser gates; only playwright is supported.
   --ref-subscription-id ID      Browser-created reference subscription for renewal compare.
   --target-subscription-id ID   Browser-created target subscription for renewal compare.
   --token-customer-id ID        Customer fixture ID for token-continuity evidence.
@@ -177,8 +171,6 @@ while [ "$#" -gt 0 ]; do
 		--validate-scope-only) VALIDATE_SCOPE_ONLY=1; shift ;;
 		--acknowledge-manual-evidence-limitations) ACK_MANUAL_EVIDENCE_LIMITATIONS=1; shift ;;
 		--browser-runner) BROWSER_RUNNER="${2:-}"; shift 2 ;;
-		--playwriter-session) PLAYWRITER_SESSION="${2:-}"; shift 2 ;;
-		--checkout-playwriter-session|--guest-playwriter-session) PLAYWRITER_CHECKOUT_SESSION="${2:-}"; shift 2 ;;
 		--ref-subscription-id) SUBSCRIPTIONS_REF_SUBSCRIPTION_ID="${2:-}"; shift 2 ;;
 		--target-subscription-id) SUBSCRIPTIONS_TARGET_SUBSCRIPTION_ID="${2:-}"; shift 2 ;;
 		--token-customer-id) TOKEN_CONTINUITY_CUSTOMER_ID="${2:-}"; shift 2 ;;
@@ -269,14 +261,11 @@ validate_execution_scope() {
 	export WOOPAYMENTS_APPROVED_REF_CONTAINER WOOPAYMENTS_APPROVED_TARGET_CONTAINER
 }
 
-case "$BROWSER_RUNNER" in
-	playwriter|playwright) ;;
-	*)
-		echo "Unknown --browser-runner: $BROWSER_RUNNER" >&2
-		usage
-		exit 2
-		;;
-esac
+if [ "$BROWSER_RUNNER" != "playwright" ]; then
+	echo "Unknown --browser-runner: $BROWSER_RUNNER; only playwright is supported" >&2
+	usage
+	exit 2
+fi
 
 if [ -z "$TOKEN_CONTINUITY_SOURCE_FLOW" ]; then
 	if [ -n "$TOKEN_CONTINUITY_CHECKOUT_PRODUCT_ID" ]; then
@@ -941,24 +930,6 @@ full_evidence_token_continuity_source_args_for_plan() {
 	fi
 }
 
-full_evidence_admin_browser_session_args_for_plan() {
-	if [ "$BROWSER_RUNNER" != "playwriter" ]; then
-		return
-	fi
-
-	printf ' --playwriter-session '
-	plan_quote "${PLAYWRITER_SESSION:-<required-admin-session>}"
-}
-
-full_evidence_checkout_browser_session_args_for_plan() {
-	if [ "$BROWSER_RUNNER" != "playwriter" ]; then
-		return
-	fi
-
-	printf ' --playwriter-session '
-	plan_quote "${PLAYWRITER_CHECKOUT_SESSION:-<required-checkout-session>}"
-}
-
 perf_fixture_var_name() {
 	case "$1:$2" in
 		reference:process) printf 'PERF_REF_PROCESS_ORDER_ID' ;;
@@ -1122,12 +1093,12 @@ bash $SELF_DIR/subsystem-disposition-gate.sh
 bash $SELF_DIR/i18n-notes-gate.sh --target "$TARGET_WP"
 bash $SELF_DIR/money-path-parity-gate.sh --ref "$REF_WP" --target "$TARGET_WP" --out-dir "$FULL_EVIDENCE_OUT_DIR/money-path-parity"
 bash $SELF_DIR/subscriptions-renewal-gate.sh compare --ref "$REF_WP" --target "$TARGET_WP" --ref-subscription-id "${SUBSCRIPTIONS_REF_SUBSCRIPTION_ID:-<required>}" --target-subscription-id "${SUBSCRIPTIONS_TARGET_SUBSCRIPTION_ID:-<required>}" --out-dir "$FULL_EVIDENCE_OUT_DIR/subscriptions-renewal"
-bash $SELF_DIR/plugin-active-settings-gate.sh --target "$REF_WP" --target-url "$REF_URL" --runner-role reference --browser-runner "$BROWSER_RUNNER"$(full_evidence_admin_browser_session_args_for_plan) --out-dir "$FULL_EVIDENCE_OUT_DIR/plugin-active-settings-reference"
-bash $SELF_DIR/plugin-active-settings-gate.sh --target "$TARGET_WP" --target-url "$TARGET_URL" --runner-role target --browser-runner "$BROWSER_RUNNER"$(full_evidence_admin_browser_session_args_for_plan) --stage-plugin-active-fixture --out-dir "$FULL_EVIDENCE_OUT_DIR/plugin-active-settings"
-bash $SELF_DIR/lpm-checkout-gate.sh --methods $LPM_FULL_METHODS --ref "$REF_WP" --target "$TARGET_WP" --ref-url "$REF_URL" --target-url "$TARGET_URL" --browser-runner "$BROWSER_RUNNER"$(full_evidence_checkout_browser_session_args_for_plan) --out-dir "$FULL_EVIDENCE_OUT_DIR/lpm-all-methods"
+bash $SELF_DIR/plugin-active-settings-gate.sh --target "$REF_WP" --target-url "$REF_URL" --runner-role reference --browser-runner "$BROWSER_RUNNER" --out-dir "$FULL_EVIDENCE_OUT_DIR/plugin-active-settings-reference"
+bash $SELF_DIR/plugin-active-settings-gate.sh --target "$TARGET_WP" --target-url "$TARGET_URL" --runner-role target --browser-runner "$BROWSER_RUNNER" --stage-plugin-active-fixture --out-dir "$FULL_EVIDENCE_OUT_DIR/plugin-active-settings"
+bash $SELF_DIR/lpm-checkout-gate.sh --methods $LPM_FULL_METHODS --ref "$REF_WP" --target "$TARGET_WP" --ref-url "$REF_URL" --target-url "$TARGET_URL" --browser-runner "$BROWSER_RUNNER" --out-dir "$FULL_EVIDENCE_OUT_DIR/lpm-all-methods"
 bash $SELF_DIR/mc-rates-gate.sh --ref "$REF_WP" --target "$TARGET_WP" --ref-url "$REF_URL" --target-url "$TARGET_URL" --currency-from USD --currencies-to GBP,EUR --out-dir "$FULL_EVIDENCE_OUT_DIR/mc-rates"
-bash $SELF_DIR/token-continuity-gate.sh --target "$TARGET_WP" --customer-id "${TOKEN_CONTINUITY_CUSTOMER_ID:-<required>}"$(full_evidence_token_continuity_source_args_for_plan) --browser-runner "$BROWSER_RUNNER"$(full_evidence_checkout_browser_session_args_for_plan) --stage-sepa-fixture --out-dir "$FULL_EVIDENCE_OUT_DIR/token-continuity"
-python3 $SELF_DIR/a5f-cutover-rehearsal.py --target-wp "$TARGET_WP" --target-url "$TARGET_URL" --store-dir "$REPO_ROOT" --browser-runner "$BROWSER_RUNNER"$(full_evidence_admin_browser_session_args_for_plan) --out-dir "$FULL_EVIDENCE_OUT_DIR/a5f-cutover"
+bash $SELF_DIR/token-continuity-gate.sh --target "$TARGET_WP" --customer-id "${TOKEN_CONTINUITY_CUSTOMER_ID:-<required>}"$(full_evidence_token_continuity_source_args_for_plan) --browser-runner "$BROWSER_RUNNER" --stage-sepa-fixture --out-dir "$FULL_EVIDENCE_OUT_DIR/token-continuity"
+python3 $SELF_DIR/a5f-cutover-rehearsal.py --target-wp "$TARGET_WP" --target-url "$TARGET_URL" --store-dir "$REPO_ROOT" --browser-runner "$BROWSER_RUNNER" --out-dir "$FULL_EVIDENCE_OUT_DIR/a5f-cutover"
 python3 $SELF_DIR/a5g-multisite-runtime-gate.py --repo "$REPO_ROOT" --wcpay-repo "$WCPAY_REPO" --out-dir "$FULL_EVIDENCE_OUT_DIR/a5g-multisite-runtime"
 bash $SELF_DIR/dispute-e2e-gate.sh --ref "$REF_WP" --target "$TARGET_WP"
 bash $SELF_DIR/payout-evidence-gate.sh --wp "$REF_WP" --label reference
@@ -1140,7 +1111,7 @@ $(if ! perf_fixture_ids_complete; then printf 'python3 %s/perf-fixtures-gate.py 
 bash $SELF_DIR/perf-surface-gate.sh capture --wp "$REF_WP" --out "$FULL_EVIDENCE_OUT_DIR/perf-reference.json"$(full_evidence_perf_fixture_args_for_plan reference)
 bash $SELF_DIR/perf-surface-gate.sh capture --wp "$TARGET_WP" --out "$FULL_EVIDENCE_OUT_DIR/perf-target.json"$(full_evidence_perf_fixture_args_for_plan target)
 bash $SELF_DIR/perf-surface-gate.sh compare --ref "$FULL_EVIDENCE_OUT_DIR/perf-reference.json" --target "$FULL_EVIDENCE_OUT_DIR/perf-target.json"
-python3 $SELF_DIR/a4aq-accumulated-gate.py --repo "$REPO_ROOT" --plugin-repo "$WCPAY_REPO" --ref-wp "$REF_WP" --target-wp "$TARGET_WP" --browser-runner "$BROWSER_RUNNER"$(full_evidence_admin_browser_session_args_for_plan) --out-dir "$FULL_EVIDENCE_OUT_DIR/a4aq-accumulated"
+python3 $SELF_DIR/a4aq-accumulated-gate.py --repo "$REPO_ROOT" --plugin-repo "$WCPAY_REPO" --ref-wp "$REF_WP" --target-wp "$TARGET_WP" --browser-runner "$BROWSER_RUNNER" --out-dir "$FULL_EVIDENCE_OUT_DIR/a4aq-accumulated"
 python3 $REPO_ROOT/tools/woopayments-critical-flows/test-inventory.py
 EVIDENCE_DIR="$CRITICAL_FLOWS_EVIDENCE_DIR" REF_WP_COMMAND="$REF_WP" TARGET_WP_COMMAND="$TARGET_WP" bash $REPO_ROOT/tools/woopayments-critical-flows/setup/fixtures.sh fixture_all ref
 EVIDENCE_DIR="$CRITICAL_FLOWS_EVIDENCE_DIR" REF_WP_COMMAND="$REF_WP" TARGET_WP_COMMAND="$TARGET_WP" bash $REPO_ROOT/tools/woopayments-critical-flows/setup/fixtures.sh fixture_all target
@@ -1188,23 +1159,12 @@ cleanup_timed_out_phpunit() {
 }
 
 run_a4aq_accumulated_evidence() {
-	if [ "$BROWSER_RUNNER" = "playwriter" ] && [ -z "$PLAYWRITER_SESSION" ]; then
-		record_playwriter_block "A4aq accumulated admin/checkout/perf evidence" "a4aq-accumulated-gate.py" "--playwriter-session"
-	elif [ ! -f "$WCPAY_REPO/woocommerce-payments.php" ]; then
+	if [ ! -f "$WCPAY_REPO/woocommerce-payments.php" ]; then
 		record "A4aq accumulated admin/checkout/perf evidence" BLOCKED
 		printf '      set WCPAY_REPO to a local WooPayments plugin checkout before running a4aq-accumulated-gate.py\n'
 	else
-		if [ "$BROWSER_RUNNER" = "playwriter" ]; then
-			gate "A4aq accumulated admin/checkout/perf evidence" python3 "$SELF_DIR/a4aq-accumulated-gate.py" --repo "$REPO_ROOT" --plugin-repo "$WCPAY_REPO" --ref-wp "$REF_WP" --target-wp "$TARGET_WP" --browser-runner "$BROWSER_RUNNER" --playwriter-session "$PLAYWRITER_SESSION" --out-dir "$FULL_EVIDENCE_OUT_DIR/a4aq-accumulated"
-		else
-			gate "A4aq accumulated admin/checkout/perf evidence" python3 "$SELF_DIR/a4aq-accumulated-gate.py" --repo "$REPO_ROOT" --plugin-repo "$WCPAY_REPO" --ref-wp "$REF_WP" --target-wp "$TARGET_WP" --browser-runner "$BROWSER_RUNNER" --out-dir "$FULL_EVIDENCE_OUT_DIR/a4aq-accumulated"
-		fi
+		gate "A4aq accumulated admin/checkout/perf evidence" python3 "$SELF_DIR/a4aq-accumulated-gate.py" --repo "$REPO_ROOT" --plugin-repo "$WCPAY_REPO" --ref-wp "$REF_WP" --target-wp "$TARGET_WP" --browser-runner "$BROWSER_RUNNER" --out-dir "$FULL_EVIDENCE_OUT_DIR/a4aq-accumulated"
 	fi
-}
-
-record_playwriter_block() {
-	record "$1" BLOCKED
-	printf '      pass %s to run %s\n' "$3" "$2"
 }
 
 run_bundle_size_evidence() {
@@ -1388,40 +1348,16 @@ run_full_evidence_gates() {
 	else
 		gate "subscriptions renewal compare" bash "$SELF_DIR/subscriptions-renewal-gate.sh" compare --ref "$REF_WP" --target "$TARGET_WP" --ref-subscription-id "$SUBSCRIPTIONS_REF_SUBSCRIPTION_ID" --target-subscription-id "$SUBSCRIPTIONS_TARGET_SUBSCRIPTION_ID" --out-dir "$FULL_EVIDENCE_OUT_DIR/subscriptions-renewal"
 	fi
-	if [ "$BROWSER_RUNNER" = "playwriter" ] && [ -z "$PLAYWRITER_SESSION" ]; then
-		record_playwriter_block "plugin-active settings screen (reference)" "plugin-active-settings-gate.sh" "--playwriter-session"
-		record_playwriter_block "plugin-active settings screen (target)" "plugin-active-settings-gate.sh" "--playwriter-session"
-	else
-		if [ "$BROWSER_RUNNER" = "playwriter" ]; then
-			gate_with_admin_credentials "plugin-active settings screen (reference)" "$REF_WP_ADMIN_USER" "$REF_WP_ADMIN_PASSWORD" bash "$SELF_DIR/plugin-active-settings-gate.sh" --target "$REF_WP" --target-url "$REF_URL" --runner-role reference --browser-runner "$BROWSER_RUNNER" --playwriter-session "$PLAYWRITER_SESSION" --out-dir "$FULL_EVIDENCE_OUT_DIR/plugin-active-settings-reference"
-			gate_with_admin_credentials "plugin-active settings screen (target)" "$TARGET_WP_ADMIN_USER" "$TARGET_WP_ADMIN_PASSWORD" bash "$SELF_DIR/plugin-active-settings-gate.sh" --target "$TARGET_WP" --target-url "$TARGET_URL" --runner-role target --browser-runner "$BROWSER_RUNNER" --playwriter-session "$PLAYWRITER_SESSION" --stage-plugin-active-fixture --out-dir "$FULL_EVIDENCE_OUT_DIR/plugin-active-settings"
-		else
-			gate_with_admin_credentials "plugin-active settings screen (reference)" "$REF_WP_ADMIN_USER" "$REF_WP_ADMIN_PASSWORD" bash "$SELF_DIR/plugin-active-settings-gate.sh" --target "$REF_WP" --target-url "$REF_URL" --runner-role reference --browser-runner "$BROWSER_RUNNER" --out-dir "$FULL_EVIDENCE_OUT_DIR/plugin-active-settings-reference"
-			gate_with_admin_credentials "plugin-active settings screen (target)" "$TARGET_WP_ADMIN_USER" "$TARGET_WP_ADMIN_PASSWORD" bash "$SELF_DIR/plugin-active-settings-gate.sh" --target "$TARGET_WP" --target-url "$TARGET_URL" --runner-role target --browser-runner "$BROWSER_RUNNER" --stage-plugin-active-fixture --out-dir "$FULL_EVIDENCE_OUT_DIR/plugin-active-settings"
-		fi
-	fi
-	if [ "$BROWSER_RUNNER" = "playwriter" ] && [ -z "$PLAYWRITER_CHECKOUT_SESSION" ]; then
-		record_playwriter_block "LPM all-method checkout" "lpm-checkout-gate.sh" "--checkout-playwriter-session"
-	else
-		if [ "$BROWSER_RUNNER" = "playwriter" ]; then
-			gate "LPM all-method checkout" bash "$SELF_DIR/lpm-checkout-gate.sh" --methods "$LPM_FULL_METHODS" --ref "$REF_WP" --target "$TARGET_WP" --ref-url "$REF_URL" --target-url "$TARGET_URL" --browser-runner "$BROWSER_RUNNER" --playwriter-session "$PLAYWRITER_CHECKOUT_SESSION" --out-dir "$FULL_EVIDENCE_OUT_DIR/lpm-all-methods"
-		else
-			gate "LPM all-method checkout" bash "$SELF_DIR/lpm-checkout-gate.sh" --methods "$LPM_FULL_METHODS" --ref "$REF_WP" --target "$TARGET_WP" --ref-url "$REF_URL" --target-url "$TARGET_URL" --browser-runner "$BROWSER_RUNNER" --out-dir "$FULL_EVIDENCE_OUT_DIR/lpm-all-methods"
-		fi
-	fi
+	gate_with_admin_credentials "plugin-active settings screen (reference)" "$REF_WP_ADMIN_USER" "$REF_WP_ADMIN_PASSWORD" bash "$SELF_DIR/plugin-active-settings-gate.sh" --target "$REF_WP" --target-url "$REF_URL" --runner-role reference --browser-runner "$BROWSER_RUNNER" --out-dir "$FULL_EVIDENCE_OUT_DIR/plugin-active-settings-reference"
+	gate_with_admin_credentials "plugin-active settings screen (target)" "$TARGET_WP_ADMIN_USER" "$TARGET_WP_ADMIN_PASSWORD" bash "$SELF_DIR/plugin-active-settings-gate.sh" --target "$TARGET_WP" --target-url "$TARGET_URL" --runner-role target --browser-runner "$BROWSER_RUNNER" --stage-plugin-active-fixture --out-dir "$FULL_EVIDENCE_OUT_DIR/plugin-active-settings"
+	gate "LPM all-method checkout" bash "$SELF_DIR/lpm-checkout-gate.sh" --methods "$LPM_FULL_METHODS" --ref "$REF_WP" --target "$TARGET_WP" --ref-url "$REF_URL" --target-url "$TARGET_URL" --browser-runner "$BROWSER_RUNNER" --out-dir "$FULL_EVIDENCE_OUT_DIR/lpm-all-methods"
 	gate "multi-currency rates refresh" bash "$SELF_DIR/mc-rates-gate.sh" --ref "$REF_WP" --target "$TARGET_WP" --ref-url "$REF_URL" --target-url "$TARGET_URL" --currency-from USD --currencies-to GBP,EUR --out-dir "$FULL_EVIDENCE_OUT_DIR/mc-rates"
 
-	if [ "$BROWSER_RUNNER" = "playwriter" ] && [ -z "$PLAYWRITER_CHECKOUT_SESSION" ]; then
-		record_playwriter_block "token continuity cutover" "token-continuity-gate.sh" "--checkout-playwriter-session"
-	elif [ -z "$TOKEN_CONTINUITY_CUSTOMER_ID" ]; then
+	if [ -z "$TOKEN_CONTINUITY_CUSTOMER_ID" ]; then
 		record "token continuity cutover" BLOCKED
 		printf '      pass --token-customer-id and token source fixture inputs to run token-continuity-gate.sh\n'
 	elif [ -n "$TOKEN_CONTINUITY_SUBSCRIPTION_ID" ]; then
-		if [ "$BROWSER_RUNNER" = "playwriter" ]; then
-			gate "token continuity cutover" bash "$SELF_DIR/token-continuity-gate.sh" --target "$TARGET_WP" --customer-id "$TOKEN_CONTINUITY_CUSTOMER_ID" --source-flow "${TOKEN_CONTINUITY_SOURCE_FLOW//_/-}" --subscription-id "$TOKEN_CONTINUITY_SUBSCRIPTION_ID" --browser-runner "$BROWSER_RUNNER" --playwriter-session "$PLAYWRITER_CHECKOUT_SESSION" --stage-sepa-fixture --out-dir "$FULL_EVIDENCE_OUT_DIR/token-continuity"
-		else
-			gate "token continuity cutover" bash "$SELF_DIR/token-continuity-gate.sh" --target "$TARGET_WP" --customer-id "$TOKEN_CONTINUITY_CUSTOMER_ID" --source-flow "${TOKEN_CONTINUITY_SOURCE_FLOW//_/-}" --subscription-id "$TOKEN_CONTINUITY_SUBSCRIPTION_ID" --browser-runner "$BROWSER_RUNNER" --stage-sepa-fixture --out-dir "$FULL_EVIDENCE_OUT_DIR/token-continuity"
-		fi
+		gate "token continuity cutover" bash "$SELF_DIR/token-continuity-gate.sh" --target "$TARGET_WP" --customer-id "$TOKEN_CONTINUITY_CUSTOMER_ID" --source-flow "${TOKEN_CONTINUITY_SOURCE_FLOW//_/-}" --subscription-id "$TOKEN_CONTINUITY_SUBSCRIPTION_ID" --browser-runner "$BROWSER_RUNNER" --stage-sepa-fixture --out-dir "$FULL_EVIDENCE_OUT_DIR/token-continuity"
 	elif [ "$TOKEN_CONTINUITY_SOURCE_FLOW" = "provider_setup_intent" ] && [ -z "$TOKEN_CONTINUITY_RENEWAL_PRODUCT_ID" ]; then
 		record "token continuity cutover" BLOCKED
 		printf '      pass --token-renewal-product-id for provider setup-intent token-continuity evidence\n'
@@ -1429,28 +1365,12 @@ run_full_evidence_gates() {
 		record "token continuity cutover" BLOCKED
 		printf '      pass --token-checkout-product-id and --token-renewal-product-id, or pass --token-subscription-id, to run token-continuity-gate.sh\n'
 	elif [ "$TOKEN_CONTINUITY_SOURCE_FLOW" = "provider_setup_intent" ]; then
-		if [ "$BROWSER_RUNNER" = "playwriter" ]; then
-			gate "token continuity cutover" bash "$SELF_DIR/token-continuity-gate.sh" --target "$TARGET_WP" --customer-id "$TOKEN_CONTINUITY_CUSTOMER_ID" --source-flow provider-setup-intent --renewal-product-id "$TOKEN_CONTINUITY_RENEWAL_PRODUCT_ID" --browser-runner "$BROWSER_RUNNER" --playwriter-session "$PLAYWRITER_CHECKOUT_SESSION" --stage-sepa-fixture --out-dir "$FULL_EVIDENCE_OUT_DIR/token-continuity"
-		else
-			gate "token continuity cutover" bash "$SELF_DIR/token-continuity-gate.sh" --target "$TARGET_WP" --customer-id "$TOKEN_CONTINUITY_CUSTOMER_ID" --source-flow provider-setup-intent --renewal-product-id "$TOKEN_CONTINUITY_RENEWAL_PRODUCT_ID" --browser-runner "$BROWSER_RUNNER" --stage-sepa-fixture --out-dir "$FULL_EVIDENCE_OUT_DIR/token-continuity"
-		fi
+		gate "token continuity cutover" bash "$SELF_DIR/token-continuity-gate.sh" --target "$TARGET_WP" --customer-id "$TOKEN_CONTINUITY_CUSTOMER_ID" --source-flow provider-setup-intent --renewal-product-id "$TOKEN_CONTINUITY_RENEWAL_PRODUCT_ID" --browser-runner "$BROWSER_RUNNER" --stage-sepa-fixture --out-dir "$FULL_EVIDENCE_OUT_DIR/token-continuity"
 	else
-		if [ "$BROWSER_RUNNER" = "playwriter" ]; then
-			gate "token continuity cutover" bash "$SELF_DIR/token-continuity-gate.sh" --target "$TARGET_WP" --customer-id "$TOKEN_CONTINUITY_CUSTOMER_ID" --source-flow "${TOKEN_CONTINUITY_SOURCE_FLOW//_/-}" --checkout-product-id "$TOKEN_CONTINUITY_CHECKOUT_PRODUCT_ID" --renewal-product-id "$TOKEN_CONTINUITY_RENEWAL_PRODUCT_ID" --browser-runner "$BROWSER_RUNNER" --playwriter-session "$PLAYWRITER_CHECKOUT_SESSION" --stage-sepa-fixture --out-dir "$FULL_EVIDENCE_OUT_DIR/token-continuity"
-		else
-			gate "token continuity cutover" bash "$SELF_DIR/token-continuity-gate.sh" --target "$TARGET_WP" --customer-id "$TOKEN_CONTINUITY_CUSTOMER_ID" --source-flow "${TOKEN_CONTINUITY_SOURCE_FLOW//_/-}" --checkout-product-id "$TOKEN_CONTINUITY_CHECKOUT_PRODUCT_ID" --renewal-product-id "$TOKEN_CONTINUITY_RENEWAL_PRODUCT_ID" --browser-runner "$BROWSER_RUNNER" --stage-sepa-fixture --out-dir "$FULL_EVIDENCE_OUT_DIR/token-continuity"
-		fi
+		gate "token continuity cutover" bash "$SELF_DIR/token-continuity-gate.sh" --target "$TARGET_WP" --customer-id "$TOKEN_CONTINUITY_CUSTOMER_ID" --source-flow "${TOKEN_CONTINUITY_SOURCE_FLOW//_/-}" --checkout-product-id "$TOKEN_CONTINUITY_CHECKOUT_PRODUCT_ID" --renewal-product-id "$TOKEN_CONTINUITY_RENEWAL_PRODUCT_ID" --browser-runner "$BROWSER_RUNNER" --stage-sepa-fixture --out-dir "$FULL_EVIDENCE_OUT_DIR/token-continuity"
 	fi
 
-	if [ "$BROWSER_RUNNER" = "playwriter" ] && [ -z "$PLAYWRITER_SESSION" ]; then
-		record_playwriter_block "A5f cutover rehearsal" "a5f-cutover-rehearsal.py" "--playwriter-session"
-	else
-		if [ "$BROWSER_RUNNER" = "playwriter" ]; then
-			gate_with_admin_credentials "A5f cutover rehearsal" "$TARGET_WP_ADMIN_USER" "$TARGET_WP_ADMIN_PASSWORD" python3 "$SELF_DIR/a5f-cutover-rehearsal.py" --target-wp "$TARGET_WP" --target-url "$TARGET_URL" --store-dir "$REPO_ROOT" --browser-runner "$BROWSER_RUNNER" --playwriter-session "$PLAYWRITER_SESSION" --out-dir "$FULL_EVIDENCE_OUT_DIR/a5f-cutover"
-		else
-			gate_with_admin_credentials "A5f cutover rehearsal" "$TARGET_WP_ADMIN_USER" "$TARGET_WP_ADMIN_PASSWORD" python3 "$SELF_DIR/a5f-cutover-rehearsal.py" --target-wp "$TARGET_WP" --target-url "$TARGET_URL" --store-dir "$REPO_ROOT" --browser-runner "$BROWSER_RUNNER" --out-dir "$FULL_EVIDENCE_OUT_DIR/a5f-cutover"
-		fi
-	fi
+	gate_with_admin_credentials "A5f cutover rehearsal" "$TARGET_WP_ADMIN_USER" "$TARGET_WP_ADMIN_PASSWORD" python3 "$SELF_DIR/a5f-cutover-rehearsal.py" --target-wp "$TARGET_WP" --target-url "$TARGET_URL" --store-dir "$REPO_ROOT" --browser-runner "$BROWSER_RUNNER" --out-dir "$FULL_EVIDENCE_OUT_DIR/a5f-cutover"
 
 	if [ ! -f "$WCPAY_REPO/woocommerce-payments.php" ]; then
 		record "A5g multisite runtime" BLOCKED
@@ -1475,12 +1395,7 @@ run_full_evidence_gates() {
 	else
 		gate "critical flows evidence context" python3 "$REPO_ROOT/tools/woopayments-critical-flows/evidence_context.py" create --repo "$REPO_ROOT" --out "$CRITICAL_FLOW_CONTEXT_FILE" --ref-wp "$REF_WP" --target-wp "$TARGET_WP" --ref-subscription-id "$SUBSCRIPTIONS_REF_SUBSCRIPTION_ID" --target-subscription-id "$SUBSCRIPTIONS_TARGET_SUBSCRIPTION_ID"
 	fi
-	if [ "$BROWSER_RUNNER" != "playwright" ]; then
-		record "SC-04 context-bound saved-card browser evidence" BLOCKED
-		printf '      SC-04 final evidence requires the process-local Playwright runner\n'
-	else
-		gate "SC-04 context-bound saved-card browser evidence" python3 "$SELF_DIR/sc04-saved-card-gate.py" --repo "$REPO_ROOT" --context-file "$CRITICAL_FLOW_CONTEXT_FILE" --ref-wp "$REF_WP" --target-wp "$TARGET_WP" --ref-url "$REF_URL" --target-url "$TARGET_URL" --ref-subscription-id "$SUBSCRIPTIONS_REF_SUBSCRIPTION_ID" --target-subscription-id "$SUBSCRIPTIONS_TARGET_SUBSCRIPTION_ID" --browser-runner "$BROWSER_RUNNER" --out-dir "$SC04_EVIDENCE_DIR"
-	fi
+	gate "SC-04 context-bound saved-card browser evidence" python3 "$SELF_DIR/sc04-saved-card-gate.py" --repo "$REPO_ROOT" --context-file "$CRITICAL_FLOW_CONTEXT_FILE" --ref-wp "$REF_WP" --target-wp "$TARGET_WP" --ref-url "$REF_URL" --target-url "$TARGET_URL" --ref-subscription-id "$SUBSCRIPTIONS_REF_SUBSCRIPTION_ID" --target-subscription-id "$SUBSCRIPTIONS_TARGET_SUBSCRIPTION_ID" --browser-runner "$BROWSER_RUNNER" --out-dir "$SC04_EVIDENCE_DIR"
 	build_critical_flow_agent_result_args
 	gate "critical flows agent result synthesis" python3 "$REPO_ROOT/tools/woopayments-critical-flows/build-agent-results.py" "${CRITICAL_FLOW_AGENT_RESULT_ARGS[@]}"
 	gate "critical flows full run" env EVIDENCE_DIR="$CRITICAL_FLOWS_EVIDENCE_DIR" REF_WP_COMMAND="$REF_WP" TARGET_WP_COMMAND="$TARGET_WP" bash "$REPO_ROOT/tools/woopayments-critical-flows/run.sh" --store both --layer all --ref-url "$REF_URL" --target-url "$TARGET_URL" --agent-results-dir "$CRITICAL_FLOWS_AGENT_RESULTS_DIR" --context-file "$CRITICAL_FLOW_CONTEXT_FILE"

@@ -1594,26 +1594,6 @@ def test_preflight_rejects_missing_playwright_runner() -> None:
     assert "Playwright script runner is missing or not executable" in result.stderr
 
 
-def test_preflight_rejects_missing_explicit_playwriter_launcher() -> None:
-    result = run_gate(
-        "--methods",
-        "ideal",
-        "--ref",
-        REF_WP,
-        "--target",
-        TARGET_WP,
-        "--browser-runner",
-        "playwriter",
-        "--playwriter-session",
-        "unit",
-        "--preflight-only",
-        env={"PLAYWRITER_BIN": "/missing/playwriter"},
-    )
-
-    assert result.returncode == 3
-    assert "Playwriter launcher is missing or not executable" in result.stderr
-
-
 def test_gate_rejects_reused_output_directory_before_store_invocation() -> None:
     with tempfile.TemporaryDirectory(prefix="lpm-gate-test-") as tmp:
         tmp_path = Path(tmp)
@@ -1738,94 +1718,6 @@ def test_full_gate_can_skip_action_scheduler_drain_without_skipping_cleanup() ->
             (out_dir / "lpm-checkout-gate.json").read_text(encoding="utf-8")
         )
         assert rollup["action_scheduler_drain_enabled"] is False
-
-
-def test_full_gate_supports_explicit_playwriter_compatibility_runner() -> None:
-    with tempfile.TemporaryDirectory(prefix="lpm-gate-test-") as tmp:
-        tmp_path = Path(tmp)
-        ref_wp = tmp_path / "reference" / "wp"
-        target_wp = tmp_path / "target" / "wp"
-        fake_playwright_runner = tmp_path / "fake-playwright-runner"
-        fake_parity = tmp_path / "fake-parity-diff"
-        invocations_path = tmp_path / "playwright-invocations.jsonl"
-        parity_invocations_path = tmp_path / "parity-invocations.jsonl"
-        out_dir = tmp_path / "evidence"
-
-        make_fake_wp(ref_wp, "http://localhost:8082", enrich_order_evidence=True)
-        make_fake_wp(target_wp, "http://store8889.localhost:8889", enrich_order_evidence=True)
-        make_fake_playwright_runner(fake_playwright_runner)
-        make_fake_parity_diff(fake_parity, parity_invocations_path)
-
-        env = {
-            **os.environ,
-            "PLAYWRITER_BIN": str(fake_playwright_runner),
-            "FAKE_PLAYWRIGHT_INVOCATIONS": str(invocations_path),
-            "LPM_PARITY_DIFF_BIN": str(fake_parity),
-        }
-
-        result = run_gate(
-            "--methods",
-            "ideal",
-            "--ref",
-            str(ref_wp),
-            "--target",
-            str(target_wp),
-            "--browser-runner",
-            "playwriter",
-            "--playwriter-session",
-            "unit",
-            "--out-dir",
-            str(out_dir),
-            env=env,
-        )
-
-        assert result.returncode == 0, result.stderr
-        invocations = [
-            json.loads(line)
-            for line in invocations_path.read_text(encoding="utf-8").splitlines()
-            if line
-        ]
-        assert len(invocations) == 4
-        seed_invocations = [item for item in invocations if "-e" in item["argv"]]
-        driver_invocations = [item for item in invocations if "-f" in item["argv"]]
-        assert len(seed_invocations) == 2
-        assert len(driver_invocations) == 2
-        assert all("state.lpmCheckoutConfig" in " ".join(item["argv"]) for item in seed_invocations)
-        assert all("woocommerce_payments_ideal" in " ".join(item["argv"]) for item in seed_invocations)
-        assert all('"productId": "1001"' in " ".join(item["argv"]) for item in seed_invocations)
-        assert all('"checkoutPageId": "90"' in " ".join(item["argv"]) for item in seed_invocations)
-        assert {item["env"]["role"] for item in driver_invocations} == {"reference", "target"}
-        assert {item["env"]["base_url"] for item in driver_invocations} == {
-            "http://localhost:8082",
-            "http://store8889.localhost:8889",
-        }
-        assert all("-s" in item["argv"] and "unit" in item["argv"] for item in invocations)
-        assert all(str(REPO / "tools/woopayments-merge/lpm-checkout.playwright.mjs") in item["argv"] for item in driver_invocations)
-
-        rollup = json.loads((out_dir / "lpm-checkout-gate.json").read_text(encoding="utf-8"))
-        assert rollup["status"] == "pass"
-        assert rollup["browser_runner"] == "playwriter"
-        assert len(rollup["results"]) == 2
-        assert all(item["browser_runner"] == "playwriter" for item in rollup["results"])
-        assert all(item["method"] == "ideal" for item in rollup["results"])
-        assert all(item["gateway_id"] == "woocommerce_payments_ideal" for item in rollup["results"])
-        assert all(item["stripe_payment_method_type"] == "ideal" for item in rollup["results"])
-        assert all(item["order_id"] == 1001 for item in rollup["results"])
-        assert all(item["selected_gateway_id"] == "woocommerce_payments_ideal" for item in rollup["results"])
-        assert all(item["order_payment_method"] == "woocommerce_payments_ideal" for item in rollup["results"])
-        assert all(item["payment_intent_id"] == "pi_wp_1001" for item in rollup["results"])
-        assert all(
-            item["order_enrichment"]["payment_intent_id"] == "pi_wp_1001"
-            for item in rollup["results"]
-        )
-
-        parity_invocation = json.loads(parity_invocations_path.read_text(encoding="utf-8"))
-        parity_args = parity_invocation["argv"]
-        assert parity_args[0] == "--ref"
-        assert parity_args[1].endswith("docker exec -i woopayments-test-reference-wp wp")
-        assert parity_args[2] == "--target"
-        assert parity_args[3].endswith("docker exec -i woopayments-test-target-cli-1 wp")
-        assert parity_args[4:] == ["--target-ids", "1001", "1001"]
 
 
 def test_gate_rejects_conflicting_browser_and_persisted_payment_intent_ids() -> None:

@@ -46,7 +46,6 @@ def make_gate(module):
         ref_wp="docker exec -i wcpay_wp_default wp --allow-root --user=1",
         target_wp="docker exec -i example-cli-1 wp --allow-root --user=1",
         browser_runner="playwright",
-        playwriter_session="",
         out_dir=tempfile.mkdtemp(prefix="a4ar-harness-test-"),
         skip_admin_browser=False,
         skip_optional_admin_scenario=False,
@@ -143,7 +142,7 @@ def test_reports_fee_surface_is_part_of_optional_admin_scenario(module):
     assert "is_reports_enabled" in module.OPTIONAL_ADMIN_RESTORE_KEYS
 
     source = (REPO / "tools/woopayments-merge/a4aq-accumulated-gate.py").read_text(encoding="utf-8")
-    assert "state.surfaceIds = [ 'documents', 'reports-fees', 'card-readers', 'capital' ];" in source
+    assert '"surfaceIds": ["documents", "reports-fees", "card-readers", "capital"]' in source
 
 
 def test_browser_evidence_paths_stay_under_aggregate_out_dir(module):
@@ -167,16 +166,13 @@ def test_browser_evidence_paths_stay_under_aggregate_out_dir(module):
 def test_browser_checks_use_default_playwright_without_persistent_state(module):
     gate = make_gate(module)
     gate.browser_runner = "playwright"
-    gate.playwriter_session = ""
     gate.args.skip_checkout_browser = False
 
     checks = gate.build_checks()
-    ids = [check[0] for check in checks]
     admin_check = next(check for check in checks if check[0] == "admin-browser")
     checkout_check = next(check for check in checks if check[0] == "checkout-browser")
     admin_env = admin_check[3] or {}
 
-    assert "playwriter-state" not in ids
     assert "playwright-script-runner.mjs" in admin_check[2][0]
     assert "playwright-script-runner.mjs" in checkout_check[2][0]
     assert "PLAYWRIGHT_RUNNER_STATE_JSON" in admin_env
@@ -388,7 +384,7 @@ def test_no_bare_timeout_subprocess_run_remains(module):
             "bare subprocess.run with timeout= found; use run_subprocess_group: "
             + call[:160]
         )
-    assert source.count("run_subprocess_group(") >= 8  # definition + 7 call sites
+    assert source.count("run_subprocess_group(") >= 5  # definition + direct process-group call sites
 
 
 def _iter_call_sites(source: str, needle: str):
@@ -408,7 +404,7 @@ def test_checkout_browser_route_state_uses_plain_permalink_overrides(module):
     fixture_source = (REPO / "tools/woopayments-merge/a4-checkout-fixture-state.php").read_text(encoding="utf-8")
     assert "def set_checkout_browser_route_state" in source
     assert "def collect_checkout_fixture_routes" in source
-    assert "state.allowRouteOverrides = true" in source
+    assert '"allowRouteOverrides": True' in source
     assert "add-to-cart" in fixture_source
     assert "h20-ece-probe-product" in fixture_source
 

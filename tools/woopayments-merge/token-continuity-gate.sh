@@ -24,7 +24,6 @@ CHECKOUT_PRODUCT_ID=""
 RENEWAL_PRODUCT_ID=""
 SUBSCRIPTION_SOURCE="provided"
 SOURCE_FLOW="checkout"
-PLAYWRITER_SESSION="${PLAYWRITER_SESSION:-}"
 BROWSER_RUNNER="${BROWSER_RUNNER:-playwright}"
 PLAYWRIGHT_SCRIPT_RUNNER_BIN="${PLAYWRIGHT_SCRIPT_RUNNER_BIN:-$SELF_DIR/playwright-script-runner.mjs}"
 OUT_DIR="${TMPDIR:-$SELF_DIR/.tmp}/token-continuity-gate"
@@ -39,6 +38,11 @@ TOKEN_TYPE="wcpay_sepa"
 
 RESTORE_NEEDED=0
 RESTORE_SEPA_FIXTURE_NEEDED=0
+AUTH_SESSION_NEEDED=0
+AUTH_SESSION_ATTEMPTED=0
+AUTH_SESSION_TOKEN=""
+AUTH_COOKIE_NAME=""
+AUTH_COOKIE_VALUE=""
 
 usage() {
 	cat >&2 <<'USAGE'
@@ -57,8 +61,7 @@ Options:
   --renewal-product-id <id>    Subscription product used to provision a renewal fixture from the source token.
   --source-flow <flow>         Source token acquisition flow: checkout, add-payment-method, or provider-setup-intent.
                                Defaults to checkout.
-  --browser-runner <runner>    Browser runner: playwright or playwriter. Defaults to BROWSER_RUNNER or playwright.
-  --playwriter-session <id>    Existing Playwriter session for explicit compatibility runs only.
+  --browser-runner <runner>    Browser runner provenance; only playwright is supported. Defaults to BROWSER_RUNNER or playwright.
   --out-dir <path>             Evidence output directory.
   --stage-sepa-fixture         Stage/restore local SEPA checkout settings before preflight.
   --preflight-only             Validate arguments, dependencies, and plugin-side preflight, then exit.
@@ -121,8 +124,6 @@ while [ "$#" -gt 0 ]; do
 		--source-flow) SOURCE_FLOW="${2:-}"; shift 2 ;;
 		--browser-runner=*) BROWSER_RUNNER="${1#--browser-runner=}"; shift ;;
 		--browser-runner) BROWSER_RUNNER="${2:-}"; shift 2 ;;
-		--playwriter-session=*) PLAYWRITER_SESSION="${1#--playwriter-session=}"; shift ;;
-		--playwriter-session) PLAYWRITER_SESSION="${2:-}"; shift 2 ;;
 		--out-dir=*) OUT_DIR="${1#--out-dir=}"; shift ;;
 		--out-dir) OUT_DIR="${2:-}"; shift 2 ;;
 		--stage-sepa-fixture) STAGE_SEPA_FIXTURE=1; shift ;;
@@ -143,10 +144,9 @@ case "$SOURCE_FLOW" in
 	*) usage_error "--source-flow must be checkout, add-payment-method, or provider-setup-intent." ;;
 esac
 
-case "$BROWSER_RUNNER" in
-	playwriter|playwright) ;;
-	*) usage_error "unsupported browser runner: $BROWSER_RUNNER" ;;
-esac
+if [ "$BROWSER_RUNNER" != "playwright" ]; then
+	usage_error "unsupported browser runner: $BROWSER_RUNNER; only playwright is supported"
+fi
 
 source_count=0
 [ -n "$SUBSCRIPTION_ID" ] && source_count=$(( source_count + 1 ))
@@ -259,21 +259,8 @@ if [ "$STAGE_SEPA_FIXTURE" -eq 1 ] && [ ! -f "$PAYMENT_METHOD_FIXTURE_STATE" ]; 
 	blocked "payment-method fixture state driver is missing: $PAYMENT_METHOD_FIXTURE_STATE"
 fi
 
-if [ "$BROWSER_RUNNER" = "playwriter" ]; then
-	if [ -n "${PLAYWRITER_BIN:-}" ]; then
-		# shellcheck disable=SC2206
-		PLAYWRITER_CMD=( $PLAYWRITER_BIN )
-	elif command -v playwriter >/dev/null 2>&1; then
-		PLAYWRITER_CMD=( playwriter )
-	elif command -v npx >/dev/null 2>&1; then
-		PLAYWRITER_CMD=( npx --yes playwriter@latest )
-	else
-		blocked "Playwriter is required. Install playwriter or provide PLAYWRITER_BIN."
-	fi
-else
-	# shellcheck disable=SC2206
-	PLAYWRIGHT_RUNNER_CMD=( $PLAYWRIGHT_SCRIPT_RUNNER_BIN )
-fi
+# shellcheck disable=SC2206
+PLAYWRIGHT_RUNNER_CMD=( $PLAYWRIGHT_SCRIPT_RUNNER_BIN )
 
 wp_home_url() {
 	local output
@@ -384,6 +371,26 @@ with open(sys.argv[1], encoding="utf-8") as stream:
     payload = json.load(stream)
 value = payload.get(sys.argv[2])
 if value is None:
+    raise SystemExit(1)
+print(value)
+PY
+}
+
+json_nested_field() {
+	local path="$1"
+	shift
+
+	python3 - "$path" "$@" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    value = json.load(stream)
+for field in sys.argv[2:]:
+    if not isinstance(value, dict) or field not in value:
+        raise SystemExit(1)
+    value = value[field]
+if value is None or isinstance(value, (dict, list)):
     raise SystemExit(1)
 print(value)
 PY
@@ -512,12 +519,12 @@ write_rollup() {
 	local token_id="${1:-0}"
 	local renewal_path="${2:-}"
 
-	python3 - "$rollup_path" "$CUSTOMER_ID" "$SUBSCRIPTION_ID" "$SUBSCRIPTION_SOURCE" "$SOURCE_FLOW" "$SUBSCRIPTION_PRODUCT_ID" "$CHECKOUT_PRODUCT_ID" "$RENEWAL_PRODUCT_ID" "$token_id" "$SAVE_EVIDENCE" "$SOURCE_TOKEN_JSON" "$RENDER_EVIDENCE" "$renewal_path" "$SUBSCRIPTION_FIXTURE_JSON" "$NATIVE_TOKEN_JSON" "$RESTORE_JSON" "$SEPA_FIXTURE_SNAPSHOT_JSON" "$SEPA_FIXTURE_JSON" "$SEPA_FIXTURE_RESTORE_JSON" "$FAILURES_FILE" "$BLOCKERS_FILE" "$BROWSER_RUNNER" <<'PY'
+	python3 - "$rollup_path" "$CUSTOMER_ID" "$SUBSCRIPTION_ID" "$SUBSCRIPTION_SOURCE" "$SOURCE_FLOW" "$SUBSCRIPTION_PRODUCT_ID" "$CHECKOUT_PRODUCT_ID" "$RENEWAL_PRODUCT_ID" "$token_id" "$SAVE_EVIDENCE" "$SOURCE_TOKEN_JSON" "$RENDER_EVIDENCE" "$renewal_path" "$SUBSCRIPTION_FIXTURE_JSON" "$NATIVE_TOKEN_JSON" "$RESTORE_JSON" "$SEPA_FIXTURE_SNAPSHOT_JSON" "$SEPA_FIXTURE_JSON" "$SEPA_FIXTURE_RESTORE_JSON" "$AUTH_SESSION_EVIDENCE_JSON" "$AUTH_SESSION_DESTROY_JSON" "$FAILURES_FILE" "$BLOCKERS_FILE" "$BROWSER_RUNNER" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-rollup_path, customer_id, subscription_id, subscription_source, source_flow, subscription_product_id, checkout_product_id, renewal_product_id, token_id, save_path, source_token_path, render_path, renewal_path, subscription_fixture_path, native_token_path, restore_path, sepa_fixture_snapshot_path, sepa_fixture_stage_path, sepa_fixture_restore_path, failures_file, blockers_file, browser_runner = sys.argv[1:]
+rollup_path, customer_id, subscription_id, subscription_source, source_flow, subscription_product_id, checkout_product_id, renewal_product_id, token_id, save_path, source_token_path, render_path, renewal_path, subscription_fixture_path, native_token_path, restore_path, sepa_fixture_snapshot_path, sepa_fixture_stage_path, sepa_fixture_restore_path, auth_session_create_path, auth_session_destroy_path, failures_file, blockers_file, browser_runner = sys.argv[1:]
 
 def load_json(path):
     if not path:
@@ -559,6 +566,8 @@ payload = {
     "sepa_fixture_snapshot": load_json(sepa_fixture_snapshot_path),
     "sepa_fixture_stage": load_json(sepa_fixture_stage_path),
     "sepa_fixture_restore": load_json(sepa_fixture_restore_path),
+    "auth_session_create": load_json(auth_session_create_path),
+    "auth_session_destroy": load_json(auth_session_destroy_path),
     "failures": failures,
     "blockers": blockers,
 }
@@ -744,6 +753,95 @@ PY
 	return 0
 }
 
+write_auth_session_evidence() {
+	local source_path="$1"
+	local evidence_path="$2"
+
+	python3 - "$source_path" "$evidence_path" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+source_path, evidence_path = map(Path, sys.argv[1:])
+payload = json.loads(source_path.read_text(encoding="utf-8"))
+auth_cookie = payload.get("auth_cookie") if isinstance(payload, dict) else None
+cookie_name = auth_cookie.get("name") if isinstance(auth_cookie, dict) else ""
+cookie_value = auth_cookie.get("value") if isinstance(auth_cookie, dict) else ""
+sanitized = {
+    "success": payload.get("success") is True,
+    "mode": payload.get("mode"),
+    "customer_id": payload.get("customer_id"),
+    "expiration": payload.get("expiration"),
+    "auth_cookie": {
+        "name": cookie_name,
+        "present": bool(cookie_value),
+    },
+    "errors": payload.get("errors", []),
+}
+evidence_path.write_text(json.dumps(sanitized, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+}
+
+create_auth_session() {
+	local run_rc=0
+
+	AUTH_SESSION_TOKEN="$(python3 - <<'PY'
+import secrets
+
+print(secrets.token_hex(32))
+PY
+	)"
+	if [ -z "$AUTH_SESSION_TOKEN" ]; then
+		record_blocker "short-lived customer auth session token could not be generated"
+		return 1
+	fi
+
+	AUTH_SESSION_ATTEMPTED=1
+	AUTH_SESSION_NEEDED=1
+	progress "creating short-lived customer auth session"
+	run_eval_file "$STATE_DRIVER" "create-auth-session" "$AUTH_SESSION_SECRET_JSON" create-auth-session "$CUSTOMER_ID" "$AUTH_SESSION_TOKEN" "$TARGET_BASE_URL" || run_rc=$?
+
+	if [ -f "$AUTH_SESSION_SECRET_JSON" ]; then
+		write_auth_session_evidence "$AUTH_SESSION_SECRET_JSON" "$AUTH_SESSION_EVIDENCE_JSON" || true
+	fi
+	if [ "$run_rc" -ne 0 ] || [ ! -f "$AUTH_SESSION_SECRET_JSON" ] || ! json_success "$AUTH_SESSION_SECRET_JSON"; then
+		if [ -f "$AUTH_SESSION_SECRET_JSON" ]; then
+			print_errors "$AUTH_SESSION_SECRET_JSON"
+		fi
+		rm -f "$AUTH_SESSION_SECRET_JSON"
+		record_blocker "short-lived customer auth session could not be created"
+		return 1
+	fi
+
+	AUTH_COOKIE_NAME="$(json_nested_field "$AUTH_SESSION_SECRET_JSON" auth_cookie name 2>/dev/null || printf '')"
+	AUTH_COOKIE_VALUE="$(json_nested_field "$AUTH_SESSION_SECRET_JSON" auth_cookie value 2>/dev/null || printf '')"
+	rm -f "$AUTH_SESSION_SECRET_JSON"
+	if [ -z "$AUTH_COOKIE_NAME" ] || [ -z "$AUTH_COOKIE_VALUE" ]; then
+		record_blocker "short-lived customer auth cookie is missing"
+		return 1
+	fi
+
+	return 0
+}
+
+destroy_auth_session_if_needed() {
+	if [ "$AUTH_SESSION_NEEDED" -ne 1 ]; then
+		return 0
+	fi
+
+	progress "destroying short-lived customer auth session"
+	if ! run_state_checked destroy-auth-session "$AUTH_SESSION_DESTROY_JSON" "$CUSTOMER_ID" "$AUTH_SESSION_TOKEN"; then
+		record_failure "short-lived customer auth session cleanup failed"
+		return 1
+	fi
+
+	AUTH_SESSION_NEEDED=0
+	AUTH_SESSION_TOKEN=""
+	AUTH_COOKIE_NAME=""
+	AUTH_COOKIE_VALUE=""
+	return 0
+}
+
 cleanup_if_needed() {
 	local original_exit_code=$?
 	local cleanup_failed=0
@@ -751,9 +849,13 @@ cleanup_if_needed() {
 	trap - EXIT HUP INT TERM
 	restore_if_needed || cleanup_failed=1
 	restore_sepa_fixture_if_needed || cleanup_failed=1
+	destroy_auth_session_if_needed || cleanup_failed=1
+	rm -f "$AUTH_SESSION_SECRET_JSON"
+	if [ "$AUTH_SESSION_ATTEMPTED" -eq 1 ]; then
+		write_rollup "${TOKEN_ID:-0}" "${RENEWAL_JSON:-}" >/dev/null 2>&1 || cleanup_failed=1
+	fi
 
 	if [ "$cleanup_failed" -eq 1 ]; then
-		write_rollup "${TOKEN_ID:-0}" "${RENEWAL_JSON:-}" >/dev/null 2>&1 || true
 		exit 70
 	fi
 
@@ -767,107 +869,29 @@ run_browser_phase() {
 	local log_path="$OUT_DIR/${phase}.browser.log"
 	local exit_code
 	local validation_output
-	local browser_config_js
 
 	progress "browser phase: $phase"
 	rm -f "$evidence_path"
 
-	browser_config_js="$(
-		python3 - "$phase" "$TARGET_BASE_URL" "$TARGET_CHECKOUT_URL" "$TARGET_CART_URL" "$TARGET_ADD_PAYMENT_METHOD_URL" "$TARGET_PAYMENT_METHODS_URL" "$SOURCE_FLOW" "$METHOD" "$GATEWAY_ID" "$STRIPE_PAYMENT_METHOD_TYPE" "$TOKEN_TYPE" "$CUSTOMER_ID" "$token_id" "$SUBSCRIPTION_PRODUCT_ID" "$CHECKOUT_PRODUCT_ID" "$evidence_path" <<'PY'
-import json
-import sys
-
-(
-    phase,
-    base_url,
-    checkout_url,
-    cart_url,
-    add_payment_method_url,
-    payment_methods_url,
-    source_flow,
-    method,
-    gateway_id,
-    stripe_type,
-    token_type,
-    customer_id,
-    token_id,
-    subscription_product_id,
-    checkout_product_id,
-    evidence_path,
-) = sys.argv[1:]
-print(
-    "state.tokenContinuityConfig = "
-    + json.dumps(
-        {
-            "phase": phase,
-            "baseUrl": base_url,
-            "checkoutUrl": checkout_url,
-            "cartUrl": cart_url,
-            "addPaymentMethodUrl": add_payment_method_url,
-            "paymentMethodsUrl": payment_methods_url,
-            "sourceFlow": source_flow,
-            "method": method,
-            "gatewayId": gateway_id,
-            "stripePaymentMethodType": stripe_type,
-            "tokenType": token_type,
-            "customerId": customer_id,
-            "tokenId": token_id,
-            "subscriptionProductId": subscription_product_id,
-            "checkoutProductId": checkout_product_id,
-            "evidencePath": evidence_path,
-        },
-        sort_keys=True,
-    )
-    + ";"
-)
-PY
-	)"
-
-	# Compatibility only: default/verdict evidence uses isolated Playwright.
-	if [ "$BROWSER_RUNNER" = "playwriter" ]; then
-		"${PLAYWRITER_CMD[@]}" -s "$PLAYWRITER_SESSION" -e "$browser_config_js" --timeout "30000" >"$log_path" 2>&1
-		exit_code=$?
-		if [ "$exit_code" -ne 0 ]; then
-			record_failure "$phase: Playwriter config seed exited $exit_code; see $log_path"
-			return
-		fi
-
-		TOKEN_CONTINUITY_GATE_PHASE="$phase" \
-		TOKEN_CONTINUITY_GATE_BASE_URL="$TARGET_BASE_URL" \
-		TOKEN_CONTINUITY_GATE_CHECKOUT_URL="$TARGET_CHECKOUT_URL" \
-		TOKEN_CONTINUITY_GATE_CART_URL="$TARGET_CART_URL" \
-		TOKEN_CONTINUITY_GATE_ADD_PAYMENT_METHOD_URL="$TARGET_ADD_PAYMENT_METHOD_URL" \
-		TOKEN_CONTINUITY_GATE_PAYMENT_METHODS_URL="$TARGET_PAYMENT_METHODS_URL" \
-		TOKEN_CONTINUITY_GATE_SOURCE_FLOW="$SOURCE_FLOW" \
-		TOKEN_CONTINUITY_GATE_METHOD="$METHOD" \
-		TOKEN_CONTINUITY_GATE_GATEWAY_ID="$GATEWAY_ID" \
-		TOKEN_CONTINUITY_GATE_STRIPE_PAYMENT_METHOD_TYPE="$STRIPE_PAYMENT_METHOD_TYPE" \
-		TOKEN_CONTINUITY_GATE_TOKEN_TYPE="$TOKEN_TYPE" \
-		TOKEN_CONTINUITY_GATE_CUSTOMER_ID="$CUSTOMER_ID" \
-		TOKEN_CONTINUITY_GATE_TOKEN_ID="$token_id" \
-		TOKEN_CONTINUITY_GATE_SUBSCRIPTION_PRODUCT_ID="$SUBSCRIPTION_PRODUCT_ID" \
-		TOKEN_CONTINUITY_GATE_CHECKOUT_PRODUCT_ID="$CHECKOUT_PRODUCT_ID" \
-		TOKEN_CONTINUITY_GATE_EVIDENCE_PATH="$evidence_path" \
-		"${PLAYWRITER_CMD[@]}" -s "$PLAYWRITER_SESSION" -f "$BROWSER_DRIVER" --timeout "300000" >>"$log_path" 2>&1
-	else
-		TOKEN_CONTINUITY_GATE_PHASE="$phase" \
-		TOKEN_CONTINUITY_GATE_BASE_URL="$TARGET_BASE_URL" \
-		TOKEN_CONTINUITY_GATE_CHECKOUT_URL="$TARGET_CHECKOUT_URL" \
-		TOKEN_CONTINUITY_GATE_CART_URL="$TARGET_CART_URL" \
-		TOKEN_CONTINUITY_GATE_ADD_PAYMENT_METHOD_URL="$TARGET_ADD_PAYMENT_METHOD_URL" \
-		TOKEN_CONTINUITY_GATE_PAYMENT_METHODS_URL="$TARGET_PAYMENT_METHODS_URL" \
-		TOKEN_CONTINUITY_GATE_SOURCE_FLOW="$SOURCE_FLOW" \
-		TOKEN_CONTINUITY_GATE_METHOD="$METHOD" \
-		TOKEN_CONTINUITY_GATE_GATEWAY_ID="$GATEWAY_ID" \
-		TOKEN_CONTINUITY_GATE_STRIPE_PAYMENT_METHOD_TYPE="$STRIPE_PAYMENT_METHOD_TYPE" \
-		TOKEN_CONTINUITY_GATE_TOKEN_TYPE="$TOKEN_TYPE" \
-		TOKEN_CONTINUITY_GATE_CUSTOMER_ID="$CUSTOMER_ID" \
-		TOKEN_CONTINUITY_GATE_TOKEN_ID="$token_id" \
-		TOKEN_CONTINUITY_GATE_SUBSCRIPTION_PRODUCT_ID="$SUBSCRIPTION_PRODUCT_ID" \
-		TOKEN_CONTINUITY_GATE_CHECKOUT_PRODUCT_ID="$CHECKOUT_PRODUCT_ID" \
-		TOKEN_CONTINUITY_GATE_EVIDENCE_PATH="$evidence_path" \
-		"${PLAYWRIGHT_RUNNER_CMD[@]}" "$BROWSER_DRIVER" --timeout "300000" >"$log_path" 2>&1
-	fi
+	TOKEN_CONTINUITY_GATE_PHASE="$phase" \
+	TOKEN_CONTINUITY_GATE_BASE_URL="$TARGET_BASE_URL" \
+	TOKEN_CONTINUITY_GATE_CHECKOUT_URL="$TARGET_CHECKOUT_URL" \
+	TOKEN_CONTINUITY_GATE_CART_URL="$TARGET_CART_URL" \
+	TOKEN_CONTINUITY_GATE_ADD_PAYMENT_METHOD_URL="$TARGET_ADD_PAYMENT_METHOD_URL" \
+	TOKEN_CONTINUITY_GATE_PAYMENT_METHODS_URL="$TARGET_PAYMENT_METHODS_URL" \
+	TOKEN_CONTINUITY_GATE_SOURCE_FLOW="$SOURCE_FLOW" \
+	TOKEN_CONTINUITY_GATE_METHOD="$METHOD" \
+	TOKEN_CONTINUITY_GATE_GATEWAY_ID="$GATEWAY_ID" \
+	TOKEN_CONTINUITY_GATE_STRIPE_PAYMENT_METHOD_TYPE="$STRIPE_PAYMENT_METHOD_TYPE" \
+	TOKEN_CONTINUITY_GATE_TOKEN_TYPE="$TOKEN_TYPE" \
+	TOKEN_CONTINUITY_GATE_CUSTOMER_ID="$CUSTOMER_ID" \
+	TOKEN_CONTINUITY_GATE_AUTH_COOKIE_NAME="$AUTH_COOKIE_NAME" \
+	TOKEN_CONTINUITY_GATE_AUTH_COOKIE_VALUE="$AUTH_COOKIE_VALUE" \
+	TOKEN_CONTINUITY_GATE_TOKEN_ID="$token_id" \
+	TOKEN_CONTINUITY_GATE_SUBSCRIPTION_PRODUCT_ID="$SUBSCRIPTION_PRODUCT_ID" \
+	TOKEN_CONTINUITY_GATE_CHECKOUT_PRODUCT_ID="$CHECKOUT_PRODUCT_ID" \
+	TOKEN_CONTINUITY_GATE_EVIDENCE_PATH="$evidence_path" \
+	"${PLAYWRIGHT_RUNNER_CMD[@]}" "$BROWSER_DRIVER" --timeout "300000" >"$log_path" 2>&1
 	exit_code=$?
 
 	if [ "$exit_code" -ne 0 ]; then
@@ -1035,8 +1059,12 @@ SEPA_FIXTURE_SNAPSHOT_JSON="$OUT_DIR/sepa-fixture-snapshot.json"
 SEPA_FIXTURE_RESTORE_JSON="$OUT_DIR/sepa-fixture-restore.json"
 RENEWAL_JSON="$OUT_DIR/renewal.json"
 NATIVE_TOKEN_JSON="$OUT_DIR/native-token.json"
+AUTH_SESSION_SECRET_JSON="$OUT_DIR/.auth-session-create.json"
+AUTH_SESSION_EVIDENCE_JSON="$OUT_DIR/auth-session-create.json"
+AUTH_SESSION_DESTROY_JSON="$OUT_DIR/auth-session-destroy.json"
 : > "$FAILURES_FILE"
 : > "$BLOCKERS_FILE"
+rm -f "$AUTH_SESSION_SECRET_JSON"
 
 trap cleanup_if_needed EXIT
 trap 'exit 129' HUP
@@ -1062,8 +1090,8 @@ if [ "$PREFLIGHT_ONLY" -eq 1 ]; then
 	exit 0
 fi
 
-if [ "$BROWSER_RUNNER" = "playwriter" ] && [ -z "$PLAYWRITER_SESSION" ]; then
-	blocked "pass --playwriter-session or set PLAYWRITER_SESSION before running browser token-continuity flows."
+if ! create_auth_session; then
+	blocked "could not create a short-lived auth session for the token-continuity customer."
 fi
 
 if [ "$SOURCE_FLOW" = "provider_setup_intent" ]; then
@@ -1106,6 +1134,7 @@ run_renewal "$TOKEN_ID"
 
 restore_if_needed || true
 restore_sepa_fixture_if_needed || true
+destroy_auth_session_if_needed || true
 
 write_rollup "$TOKEN_ID" "$RENEWAL_JSON" || blocked "could not write token-continuity rollup."
 
