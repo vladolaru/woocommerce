@@ -19,7 +19,7 @@ from tools.woopayments_test_runner import adapt_wp_runner_arguments
 
 
 SCRIPT = REPO / "tools/woopayments-merge/plugin-active-settings-gate.sh"
-BROWSER_DRIVER = REPO / "tools/woopayments-merge/plugin-active-settings.playwriter.mjs"
+BROWSER_DRIVER = REPO / "tools/woopayments-merge/plugin-active-settings.playwright.mjs"
 TARGET_WP = "docker exec -i target-cli-1 wp --allow-root --user=1"
 TARGET_URL = "http://store8889.localhost:8889"
 SETTINGS_URL = f"{TARGET_URL}/wp-admin/admin.php?page=wc-settings&tab=checkout&section=woocommerce_payments"
@@ -320,7 +320,7 @@ def read_fake_wp_state(path: Path) -> dict[str, object]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def make_fake_playwriter(
+def make_fake_playwright_runner(
     path: Path,
     *,
     duplicate_store_error: bool = False,
@@ -352,7 +352,7 @@ import os
 import pathlib
 import sys
 
-invocation_path = pathlib.Path(os.environ["FAKE_PLAYWRITER_INVOCATIONS"])
+invocation_path = pathlib.Path(os.environ["FAKE_PLAYWRIGHT_INVOCATIONS"])
 with invocation_path.open("a", encoding="utf-8") as stream:
     stream.write(json.dumps({{
         "argv": sys.argv[1:],
@@ -420,11 +420,11 @@ def run_fixture_gate(
     context_replacement_sha256: str | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], dict[str, Path]]:
     fake_wp = tmp_path / "target-wp"
-    fake_playwriter = tmp_path / "fake-playwriter"
+    fake_playwright_runner = tmp_path / "fake-playwright-runner"
     paths = {
         "wp_invocations": tmp_path / "wp-invocations.jsonl",
         "wp_state": tmp_path / "wp-state.json",
-        "playwriter_invocations": tmp_path / "playwriter-invocations.jsonl",
+        "playwright_invocations": tmp_path / "playwright-invocations.jsonl",
         "out_dir": tmp_path / "evidence",
     }
     make_transactional_fake_wp(
@@ -436,15 +436,13 @@ def run_fixture_gate(
         staged_runtime_owner=staged_runtime_owner,
         restored_runtime_owner=restored_runtime_owner,
     )
-    make_fake_playwriter(fake_playwriter, duplicate_store_error=duplicate_store_error)
+    make_fake_playwright_runner(fake_playwright_runner, duplicate_store_error=duplicate_store_error)
 
     args = [
         "--target",
         str(fake_wp),
         "--target-url",
         TARGET_URL,
-        "--playwriter-session",
-        "unit",
         "--stage-plugin-active-fixture",
         "--out-dir",
         str(paths["out_dir"]),
@@ -456,8 +454,8 @@ def run_fixture_gate(
 
     env = {
         **os.environ,
-        "PLAYWRITER_BIN": str(fake_playwriter),
-        "FAKE_PLAYWRITER_INVOCATIONS": str(paths["playwriter_invocations"]),
+        "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+        "FAKE_PLAYWRIGHT_INVOCATIONS": str(paths["playwright_invocations"]),
         "FAKE_WP_INVOCATIONS": str(paths["wp_invocations"]),
         "FAKE_WP_STATE": str(paths["wp_state"]),
     }
@@ -500,7 +498,8 @@ def test_print_plan_describes_settings_regression_gate() -> None:
     assert payload["target_wp"] == TARGET_WP
     assert payload["target_url"] == TARGET_URL
     assert payload["settings_url"] == SETTINGS_URL
-    assert payload["browser_driver"].endswith("plugin-active-settings.playwriter.mjs")
+    assert payload["browser_runner"] == "playwright"
+    assert payload["browser_driver"].endswith("plugin-active-settings.playwright.mjs")
     assert payload["checks"] == [
         "woocommerce-payments plugin is active before browser run",
         "authenticated wp-admin settings page renders",
@@ -552,7 +551,7 @@ def test_reference_runner_role_accepts_the_aggregate_approved_reference() -> Non
         assert result.returncode == 0, result.stderr
 
 
-def test_full_gate_can_use_playwright_runner_without_playwriter_session() -> None:
+def test_full_gate_uses_default_playwright_runner() -> None:
     with tempfile.TemporaryDirectory(prefix="plugin-settings-gate-test-") as tmp:
         tmp_path = Path(tmp)
         fake_wp = tmp_path / "target-wp"
@@ -561,7 +560,7 @@ def test_full_gate_can_use_playwright_runner_without_playwriter_session() -> Non
         out_dir = tmp_path / "evidence"
 
         make_fake_wp(fake_wp)
-        make_fake_playwriter(fake_runner)
+        make_fake_playwright_runner(fake_runner)
 
         result = run_gate(
             "--target",
@@ -574,7 +573,7 @@ def test_full_gate_can_use_playwright_runner_without_playwriter_session() -> Non
                 **os.environ,
                 "BROWSER_RUNNER": "playwright",
                 "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_runner),
-                "FAKE_PLAYWRITER_INVOCATIONS": str(invocations_path),
+                "FAKE_PLAYWRIGHT_INVOCATIONS": str(invocations_path),
             },
         )
 
@@ -585,7 +584,7 @@ def test_full_gate_can_use_playwright_runner_without_playwriter_session() -> Non
             if line
         ]
         assert len(invocations) == 1
-        assert str(REPO / "tools/woopayments-merge/plugin-active-settings.playwriter.mjs") in invocations[0]["argv"]
+        assert str(REPO / "tools/woopayments-merge/plugin-active-settings.playwright.mjs") in invocations[0]["argv"]
         assert "-s" not in invocations[0]["argv"]
         assert "-e" not in invocations[0]["argv"]
         assert invocations[0]["env"]["target_url"] == TARGET_URL
@@ -593,23 +592,24 @@ def test_full_gate_can_use_playwright_runner_without_playwriter_session() -> Non
 
         rollup = json.loads((out_dir / "plugin-active-settings-gate.json").read_text(encoding="utf-8"))
         assert rollup["status"] == "pass"
+        assert rollup["browser_runner"] == "playwright"
 
 
-def test_full_gate_invokes_playwriter_driver_and_validates_evidence() -> None:
+def test_full_gate_supports_explicit_playwriter_compatibility_runner() -> None:
     with tempfile.TemporaryDirectory(prefix="plugin-settings-gate-test-") as tmp:
         tmp_path = Path(tmp)
         fake_wp = tmp_path / "target-wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
-        invocations_path = tmp_path / "playwriter-invocations.jsonl"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
+        invocations_path = tmp_path / "playwright-invocations.jsonl"
         out_dir = tmp_path / "evidence"
 
         make_fake_wp(fake_wp)
-        make_fake_playwriter(fake_playwriter)
+        make_fake_playwright_runner(fake_playwright_runner)
 
         env = {
             **os.environ,
-            "PLAYWRITER_BIN": str(fake_playwriter),
-            "FAKE_PLAYWRITER_INVOCATIONS": str(invocations_path),
+            "PLAYWRITER_BIN": str(fake_playwright_runner),
+            "FAKE_PLAYWRIGHT_INVOCATIONS": str(invocations_path),
         }
 
         result = run_gate(
@@ -617,6 +617,8 @@ def test_full_gate_invokes_playwriter_driver_and_validates_evidence() -> None:
             str(fake_wp),
             "--target-url",
             TARGET_URL,
+            "--browser-runner",
+            "playwriter",
             "--playwriter-session",
             "unit",
             "--out-dir",
@@ -637,13 +639,14 @@ def test_full_gate_invokes_playwriter_driver_and_validates_evidence() -> None:
         assert SETTINGS_URL in " ".join(invocations[0]["argv"])
         assert "-s" in invocations[1]["argv"]
         assert "unit" in invocations[1]["argv"]
-        assert str(REPO / "tools/woopayments-merge/plugin-active-settings.playwriter.mjs") in invocations[1]["argv"]
+        assert str(REPO / "tools/woopayments-merge/plugin-active-settings.playwright.mjs") in invocations[1]["argv"]
         assert invocations[1]["env"]["target_url"] == TARGET_URL
         assert invocations[1]["env"]["settings_url"] == SETTINGS_URL
 
         rollup = json.loads((out_dir / "plugin-active-settings-gate.json").read_text(encoding="utf-8"))
         assert rollup["schema"] == "woopayments_plugin_active_settings_gate_rollup.v1"
         assert rollup["status"] == "pass"
+        assert rollup["browser_runner"] == "playwriter"
         assert rollup["evidence"]["settings_screen_present"] is True
         assert rollup["evidence"]["duplicate_store_errors"] == []
 
@@ -740,7 +743,7 @@ def test_fixture_blocks_wrong_staged_runtime_owner_and_restores() -> None:
         assert stage["success"] is False
         assert stage["runtime_owner"] == "native"
         assert read_fake_wp_state(paths["wp_state"]) == initial_state
-        assert not paths["playwriter_invocations"].exists()
+        assert not paths["playwright_invocations"].exists()
 
 
 def test_staged_gate_finalizes_context_bound_packet_after_restore() -> None:
@@ -773,7 +776,7 @@ def test_staged_gate_finalizes_context_bound_packet_after_restore() -> None:
             "plugin-active-settings-snapshot.json",
             "plugin-active-settings-stage.json",
             "plugin-active-settings.json",
-            "plugin-active-settings.playwriter.log",
+            "plugin-active-settings.browser.log",
             "plugin-active-settings.png",
         }
         for artifact in artifacts.values():
@@ -855,7 +858,7 @@ def test_fixture_refuses_preexisting_destination_collision_without_mutation() ->
         ]
         assert operations == ["snapshot-plugin-active"]
         assert read_fake_wp_state(paths["wp_state"]) == initial_state
-        assert not paths["playwriter_invocations"].exists()
+        assert not paths["playwright_invocations"].exists()
 
 
 def test_fixture_blocks_empty_native_candidate_set_before_mutation() -> None:
@@ -877,7 +880,7 @@ def test_fixture_blocks_empty_native_candidate_set_before_mutation() -> None:
         ]
         assert operations == ["snapshot-plugin-active"]
         assert read_fake_wp_state(paths["wp_state"]) == initial_state
-        assert not paths["playwriter_invocations"].exists()
+        assert not paths["playwright_invocations"].exists()
 
 
 def assert_mutation_failure_is_recovered(mutation_mode: str) -> None:
@@ -908,7 +911,7 @@ def assert_mutation_failure_is_recovered(mutation_mode: str) -> None:
             "probe-runtime-owner",
         ]
         assert read_fake_wp_state(paths["wp_state"]) == initial_state
-        assert not paths["playwriter_invocations"].exists()
+        assert not paths["playwright_invocations"].exists()
 
 
 def test_fixture_recovers_when_mutation_command_fails_after_mutating() -> None:
@@ -1034,25 +1037,23 @@ def test_gate_blocks_when_woopayments_plugin_is_not_active() -> None:
     with tempfile.TemporaryDirectory(prefix="plugin-settings-gate-test-") as tmp:
         tmp_path = Path(tmp)
         fake_wp = tmp_path / "target-wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
-        invocations_path = tmp_path / "playwriter-invocations.jsonl"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
+        invocations_path = tmp_path / "playwright-invocations.jsonl"
 
         make_fake_wp(fake_wp, active=False)
-        make_fake_playwriter(fake_playwriter)
+        make_fake_playwright_runner(fake_playwright_runner)
 
         result = run_gate(
             "--target",
             str(fake_wp),
             "--target-url",
             TARGET_URL,
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(tmp_path / "evidence"),
             env={
                 **os.environ,
-                "PLAYWRITER_BIN": str(fake_playwriter),
-                "FAKE_PLAYWRITER_INVOCATIONS": str(invocations_path),
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+                "FAKE_PLAYWRIGHT_INVOCATIONS": str(invocations_path),
             },
         )
 
@@ -1065,25 +1066,23 @@ def test_gate_fails_duplicate_settings_store_evidence() -> None:
     with tempfile.TemporaryDirectory(prefix="plugin-settings-gate-test-") as tmp:
         tmp_path = Path(tmp)
         fake_wp = tmp_path / "target-wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         out_dir = tmp_path / "evidence"
 
         make_fake_wp(fake_wp)
-        make_fake_playwriter(fake_playwriter, duplicate_store_error=True)
+        make_fake_playwright_runner(fake_playwright_runner, duplicate_store_error=True)
 
         result = run_gate(
             "--target",
             str(fake_wp),
             "--target-url",
             TARGET_URL,
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env={
                 **os.environ,
-                "PLAYWRITER_BIN": str(fake_playwriter),
-                "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter-invocations.jsonl"),
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+                "FAKE_PLAYWRIGHT_INVOCATIONS": str(tmp_path / "playwright-invocations.jsonl"),
             },
         )
 
@@ -1098,25 +1097,23 @@ def test_gate_rejects_native_only_settings_evidence_without_plugin_assets() -> N
     with tempfile.TemporaryDirectory(prefix="plugin-settings-gate-test-") as tmp:
         tmp_path = Path(tmp)
         fake_wp = tmp_path / "target-wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         out_dir = tmp_path / "evidence"
 
         make_fake_wp(fake_wp)
-        make_fake_playwriter(fake_playwriter, plugin_provenance=False)
+        make_fake_playwright_runner(fake_playwright_runner, plugin_provenance=False)
 
         result = run_gate(
             "--target",
             str(fake_wp),
             "--target-url",
             TARGET_URL,
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env={
                 **os.environ,
-                "PLAYWRITER_BIN": str(fake_playwriter),
-                "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter-invocations.jsonl"),
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+                "FAKE_PLAYWRIGHT_INVOCATIONS": str(tmp_path / "playwright-invocations.jsonl"),
             },
         )
 
@@ -1130,25 +1127,23 @@ def test_gate_fails_native_settings_asset_evidence() -> None:
     with tempfile.TemporaryDirectory(prefix="plugin-settings-gate-test-") as tmp:
         tmp_path = Path(tmp)
         fake_wp = tmp_path / "target-wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         out_dir = tmp_path / "evidence"
 
         make_fake_wp(fake_wp)
-        make_fake_playwriter(fake_playwriter, native_settings_assets=True)
+        make_fake_playwright_runner(fake_playwright_runner, native_settings_assets=True)
 
         result = run_gate(
             "--target",
             str(fake_wp),
             "--target-url",
             TARGET_URL,
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env={
                 **os.environ,
-                "PLAYWRITER_BIN": str(fake_playwriter),
-                "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter-invocations.jsonl"),
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+                "FAKE_PLAYWRIGHT_INVOCATIONS": str(tmp_path / "playwright-invocations.jsonl"),
             },
         )
 
@@ -1165,12 +1160,12 @@ def test_gate_fails_generic_failed_browser_responses() -> None:
     with tempfile.TemporaryDirectory(prefix="plugin-settings-gate-test-") as tmp:
         tmp_path = Path(tmp)
         fake_wp = tmp_path / "target-wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         out_dir = tmp_path / "evidence"
 
         make_fake_wp(fake_wp)
-        make_fake_playwriter(
-            fake_playwriter,
+        make_fake_playwright_runner(
+            fake_playwright_runner,
             status="fail",
             failed_responses=[{"status": 500, "url": f"{TARGET_URL}/wp-json/custom/fatal"}],
         )
@@ -1180,14 +1175,12 @@ def test_gate_fails_generic_failed_browser_responses() -> None:
             str(fake_wp),
             "--target-url",
             TARGET_URL,
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env={
                 **os.environ,
-                "PLAYWRITER_BIN": str(fake_playwriter),
-                "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter-invocations.jsonl"),
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+                "FAKE_PLAYWRIGHT_INVOCATIONS": str(tmp_path / "playwright-invocations.jsonl"),
             },
         )
 
@@ -1202,25 +1195,23 @@ def test_gate_rejects_failed_status_without_failure_details() -> None:
     with tempfile.TemporaryDirectory(prefix="plugin-settings-gate-test-") as tmp:
         tmp_path = Path(tmp)
         fake_wp = tmp_path / "target-wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         out_dir = tmp_path / "evidence"
 
         make_fake_wp(fake_wp)
-        make_fake_playwriter(fake_playwriter, status="fail", failures=[])
+        make_fake_playwright_runner(fake_playwright_runner, status="fail", failures=[])
 
         result = run_gate(
             "--target",
             str(fake_wp),
             "--target-url",
             TARGET_URL,
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env={
                 **os.environ,
-                "PLAYWRITER_BIN": str(fake_playwriter),
-                "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter-invocations.jsonl"),
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+                "FAKE_PLAYWRIGHT_INVOCATIONS": str(tmp_path / "playwright-invocations.jsonl"),
             },
         )
 
@@ -1235,7 +1226,7 @@ def test_gate_blocks_optional_deposits_overview_wiring_response_after_settings_r
     with tempfile.TemporaryDirectory(prefix="plugin-settings-gate-test-") as tmp:
         tmp_path = Path(tmp)
         fake_wp = tmp_path / "target-wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         out_dir = tmp_path / "evidence"
         blocker = "optional WooPayments deposits overview request was unavailable in the local plugin-active fixture"
         blocked_response = {
@@ -1244,8 +1235,8 @@ def test_gate_blocks_optional_deposits_overview_wiring_response_after_settings_r
         }
 
         make_fake_wp(fake_wp)
-        make_fake_playwriter(
-            fake_playwriter,
+        make_fake_playwright_runner(
+            fake_playwright_runner,
             status="blocked",
             blocked_responses=[blocked_response],
             blockers=[blocker],
@@ -1256,14 +1247,12 @@ def test_gate_blocks_optional_deposits_overview_wiring_response_after_settings_r
             str(fake_wp),
             "--target-url",
             TARGET_URL,
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env={
                 **os.environ,
-                "PLAYWRITER_BIN": str(fake_playwriter),
-                "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter-invocations.jsonl"),
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+                "FAKE_PLAYWRIGHT_INVOCATIONS": str(tmp_path / "playwright-invocations.jsonl"),
             },
         )
 
@@ -1285,8 +1274,8 @@ def main() -> None:
         test_print_plan_describes_settings_regression_gate,
         test_print_plan_rejects_remote_target_runner_before_invocation,
         test_reference_runner_role_accepts_the_aggregate_approved_reference,
-        test_full_gate_can_use_playwright_runner_without_playwriter_session,
-        test_full_gate_invokes_playwriter_driver_and_validates_evidence,
+        test_full_gate_uses_default_playwright_runner,
+        test_full_gate_invokes_playwright_driver_and_validates_evidence,
         test_full_gate_can_stage_and_restore_plugin_active_fixture,
         test_fixture_blocks_wrong_staged_runtime_owner_and_restores,
         test_fixture_refuses_preexisting_destination_collision_without_mutation,

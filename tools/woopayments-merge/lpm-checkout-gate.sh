@@ -3,7 +3,7 @@
 # Local payment-method checkout gate for the WooPayments -> core merge harness.
 #
 # This local-only transition harness configures per-method fixtures and fails closed
-# until the submit-capable Playwriter checkout driver is available.
+# until the submit-capable browser checkout driver produces authoritative evidence.
 
 set -uo pipefail
 
@@ -25,7 +25,7 @@ TARGET_WP=""
 REF_URL="${REF_URL:-}"
 TARGET_URL="${TARGET_URL:-}"
 PLAYWRITER_SESSION="${PLAYWRITER_SESSION:-}"
-BROWSER_RUNNER="${BROWSER_RUNNER:-playwriter}"
+BROWSER_RUNNER="${BROWSER_RUNNER:-playwright}"
 PLAYWRIGHT_SCRIPT_RUNNER_BIN="${PLAYWRIGHT_SCRIPT_RUNNER_BIN:-$SELF_DIR/playwright-script-runner.mjs}"
 OUT_DIR="${TMPDIR:-$SELF_DIR/.tmp}/lpm-checkout-gate"
 SURFACE="classic"
@@ -59,8 +59,8 @@ Options:
   --target "<wp>"             Target store WP-CLI command.
   --ref-url <url>             Browser base URL for the reference store.
   --target-url <url>          Browser base URL for the target store.
-  --browser-runner <runner>   Browser runner: playwriter or playwright. Defaults to BROWSER_RUNNER or playwriter.
-  --playwriter-session <id>   Existing Playwriter session id. Defaults to PLAYWRITER_SESSION.
+  --browser-runner <runner>   Browser runner: playwright or playwriter. Defaults to BROWSER_RUNNER or playwright.
+  --playwriter-session <id>   Existing Playwriter session for explicit compatibility runs only.
   --out-dir <path>            Evidence output directory.
   --surface classic|blocks    Checkout surface to drive. Default: classic.
   --preflight-only            Validate arguments and local dependencies, then exit.
@@ -2508,7 +2508,7 @@ run_driver_for_store() {
 	local product_id="${10}"
 	local checkout_page_id="${11}"
 	local evidence_path="$OUT_DIR/${role}-${method}-${SURFACE}.json"
-	local log_path="$OUT_DIR/${role}-${method}-${SURFACE}.playwriter.log"
+	local log_path="$OUT_DIR/${role}-${method}-${SURFACE}.browser.log"
 	local exit_code
 	local validation_output
 	local validation_exit_code
@@ -2564,6 +2564,7 @@ print(
 PY
 	)"
 
+	# Compatibility only: default/verdict evidence uses isolated Playwright.
 	if [ "$BROWSER_RUNNER" = "playwriter" ]; then
 		"${PLAYWRITER_CMD[@]}" -s "$PLAYWRITER_SESSION" -e "$browser_config_js" --timeout "30000" >"$log_path" 2>&1
 		exit_code=$?
@@ -2585,7 +2586,7 @@ PY
 		LPM_GATE_PRODUCT_ID="$product_id" \
 		LPM_GATE_CHECKOUT_PAGE_ID="$checkout_page_id" \
 		LPM_GATE_EVIDENCE_PATH="$evidence_path" \
-		"${PLAYWRITER_CMD[@]}" -s "$PLAYWRITER_SESSION" -f "$SELF_DIR/lpm-checkout.playwriter.mjs" --timeout "300000" >>"$log_path" 2>&1
+		"${PLAYWRITER_CMD[@]}" -s "$PLAYWRITER_SESSION" -f "$SELF_DIR/lpm-checkout.playwright.mjs" --timeout "300000" >>"$log_path" 2>&1
 	else
 		LPM_GATE_ROLE="$role" \
 		LPM_GATE_METHOD="$method" \
@@ -2600,7 +2601,7 @@ PY
 		LPM_GATE_PRODUCT_ID="$product_id" \
 		LPM_GATE_CHECKOUT_PAGE_ID="$checkout_page_id" \
 		LPM_GATE_EVIDENCE_PATH="$evidence_path" \
-		"${PLAYWRIGHT_RUNNER_CMD[@]}" "$SELF_DIR/lpm-checkout.playwriter.mjs" --timeout "300000" >"$log_path" 2>&1
+		"${PLAYWRIGHT_RUNNER_CMD[@]}" "$SELF_DIR/lpm-checkout.playwright.mjs" --timeout "300000" >"$log_path" 2>&1
 	fi
 	exit_code=$?
 
@@ -2699,8 +2700,8 @@ else
 	PLAYWRIGHT_RUNNER_CMD=( $PLAYWRIGHT_SCRIPT_RUNNER_BIN )
 fi
 
-if [ ! -f "$SELF_DIR/lpm-checkout.playwriter.mjs" ]; then
-	blocked "submit-capable browser driver is missing: $SELF_DIR/lpm-checkout.playwriter.mjs"
+if [ ! -f "$SELF_DIR/lpm-checkout.playwright.mjs" ]; then
+	blocked "submit-capable browser driver is missing: $SELF_DIR/lpm-checkout.playwright.mjs"
 fi
 if [ "$BROWSER_RUNNER" = "playwriter" ] && [ -z "$PLAYWRITER_SESSION" ]; then
 	blocked "pass --playwriter-session or set PLAYWRITER_SESSION before running browser checkout flows."

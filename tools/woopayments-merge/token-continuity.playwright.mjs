@@ -1,10 +1,11 @@
 // SEPA token-continuity browser evidence driver.
 //
-// This driver runs inside an authenticated local Playwriter session. It saves a
+// This driver normally runs in the isolated local Playwright runner. It saves a
 // SEPA token while the WooPayments plugin is active, then verifies that the same
 // token renders in My Account after the shell gate cuts the store over to native
-// WooPayments. Evidence stays fail-closed unless browser-observed semantics
-// satisfy token-continuity-gate.sh.
+// WooPayments. The explicit Playwriter compatibility runner supplies the same
+// scenario interface for persistent-session reproduction. Evidence stays
+// fail-closed unless browser-observed semantics satisfy token-continuity-gate.sh.
 
 const fs = require( 'node:fs' );
 const path = require( 'node:path' );
@@ -412,7 +413,7 @@ async function capturePageEvidence( page, extra = {} ) {
 	try {
 		logs = await getLatestLogs( { page, sinceLastCall: true } );
 	} catch ( error ) {
-		logs = [ { type: 'playwriter-log-error', text: error?.message || String( error ) } ];
+		logs = [ { type: 'browser-log-error', text: error?.message || String( error ) } ];
 	}
 
 	try {

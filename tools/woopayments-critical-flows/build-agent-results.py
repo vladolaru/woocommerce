@@ -43,8 +43,12 @@ PLUGIN_ACTIVE_BASE_ARTIFACTS = {
     "plugin-active-settings-blockers.txt",
     "plugin-active-settings-failures.txt",
     "plugin-active-settings.json",
-    "plugin-active-settings.playwriter.log",
     "plugin-active-settings.png",
+}
+PLUGIN_ACTIVE_BROWSER_LOG_ARTIFACTS = {
+    "plugin-active-settings.browser.log",
+    # Accept already-captured packets from before browser-neutral log naming.
+    "plugin-active-settings.playwriter.log",
 }
 PLUGIN_ACTIVE_TARGET_ARTIFACTS = {
     "plugin-active-settings-restore.json",
@@ -249,7 +253,11 @@ def validate_plugin_active_artifacts(store: str, gate_path: Path, payload: dict[
         if not resolved.is_file() or artifact.get("sha256") != sha256_file(resolved):
             raise ValueError(f"plugin-active packet artifact hash mismatch: {resolved.name}")
         artifact_paths[resolved.name] = resolved
-    if set(artifact_paths) != expected_names:
+    artifact_names = set(artifact_paths)
+    if not any(
+        artifact_names == expected_names | {log_name}
+        for log_name in PLUGIN_ACTIVE_BROWSER_LOG_ARTIFACTS
+    ):
         raise ValueError("plugin-active packet artifact set is incomplete or unexpected")
 
     browser = load_json(artifact_paths["plugin-active-settings.json"])

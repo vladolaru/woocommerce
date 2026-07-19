@@ -231,7 +231,7 @@ async function captureEvidence( page, failedResponses ) {
 	try {
 		logs = await getLatestLogs( { page, sinceLastCall: true } );
 	} catch ( error ) {
-		logs = [ { type: 'playwriter-log-error', text: error?.message || String( error ) } ];
+		logs = [ { type: 'browser-log-error', text: error?.message || String( error ) } ];
 	}
 
 	try {

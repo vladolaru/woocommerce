@@ -10,7 +10,7 @@ Native must preserve the WooPayments extension's first wave of local payment met
 
 ## Layer D
 
-Run `lpm-checkout-gate.sh` for the full wave-1 method list. The gate is fail-closed: until the Playwriter driver submits real orders, the flow remains BLOCKED rather than assumed-pass.
+Run `lpm-checkout-gate.sh` for the full wave-1 method list. The direct Playwright driver must submit real orders; missing browser or order evidence leaves the flow BLOCKED rather than assumed-pass.
 
 Required deterministic evidence:
 

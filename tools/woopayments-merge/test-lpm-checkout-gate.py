@@ -16,7 +16,7 @@ from tools.woopayments_test_runner import adapt_wp_runner_arguments
 
 REPO = Path(__file__).resolve().parents[2]
 SCRIPT = REPO / "tools/woopayments-merge/lpm-checkout-gate.sh"
-BROWSER_DRIVER = REPO / "tools/woopayments-merge/lpm-checkout.playwriter.mjs"
+BROWSER_DRIVER = REPO / "tools/woopayments-merge/lpm-checkout.playwright.mjs"
 NORMALIZER = REPO / "tools/woopayments-merge/normalize-bucket-e-cross.py"
 PAYMENT_METHOD_FIXTURE_STATE = REPO / "tools/woopayments-merge/payment-method-fixture-state.php"
 LPM_EVIDENCE = REPO / "tools/woopayments-merge/lpm_evidence.py"
@@ -347,7 +347,7 @@ def test_print_plan_reports_action_scheduler_drain_enabled_by_default() -> None:
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
     assert payload["action_scheduler_drain_enabled"] is True
-    assert payload["browser_runner"] == "playwriter"
+    assert payload["browser_runner"] == "playwright"
 
 
 def test_print_plan_reports_action_scheduler_drain_disabled_when_skipped() -> None:
@@ -1067,7 +1067,7 @@ print("PASS: fake Bucket-E parity diff")
     )
 
 
-def make_fake_playwriter(
+def make_fake_playwright_runner(
     path: Path,
     *,
     omit_order_id: bool = False,
@@ -1117,7 +1117,7 @@ import os
 import pathlib
 import sys
 
-invocation_path = pathlib.Path(os.environ["FAKE_PLAYWRITER_INVOCATIONS"])
+invocation_path = pathlib.Path(os.environ["FAKE_PLAYWRIGHT_INVOCATIONS"])
 with invocation_path.open("a", encoding="utf-8") as stream:
     stream.write(json.dumps({{
         "argv": sys.argv[1:],
@@ -1505,9 +1505,9 @@ def run_lpm_docker_alias_gate(
     ref_wp = tmp_path / "reference" / "wp"
     target_wp = tmp_path / "target" / "wp"
     fake_docker = tmp_path / "docker"
-    fake_playwriter = tmp_path / "fake-playwriter"
+    fake_playwright_runner = tmp_path / "fake-playwright-runner"
     fake_parity = tmp_path / "fake-parity-diff"
-    playwriter_invocations = tmp_path / "playwriter-invocations.jsonl"
+    playwright_invocations = tmp_path / "playwright-invocations.jsonl"
     out_dir = tmp_path / "evidence"
 
     make_fake_wp(
@@ -1528,7 +1528,7 @@ def run_lpm_docker_alias_gate(
             }
         },
     )
-    make_fake_playwriter(fake_playwriter)
+    make_fake_playwright_runner(fake_playwright_runner)
     make_fake_parity_diff(fake_parity, tmp_path / "parity-invocations.jsonl")
 
     result = run_gate(
@@ -1542,40 +1542,38 @@ def run_lpm_docker_alias_gate(
         REF_URL,
         "--target-url",
         TARGET_URL,
-        "--playwriter-session",
-        "unit",
         "--out-dir",
         str(out_dir),
         env={
             "DOCKER_CONTEXT": "",
             "DOCKER_HOST": "",
-            "PLAYWRITER_BIN": str(fake_playwriter),
-            "FAKE_PLAYWRITER_INVOCATIONS": str(playwriter_invocations),
+            "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+            "FAKE_PLAYWRIGHT_INVOCATIONS": str(playwright_invocations),
             "LPM_PARITY_DIFF_BIN": str(fake_parity),
         },
     )
-    return result, playwriter_invocations
+    return result, playwright_invocations
 
 
 def test_gate_accepts_exact_docker_published_url_alias() -> None:
     with tempfile.TemporaryDirectory(prefix="lpm-gate-test-") as tmp:
-        result, playwriter_invocations = run_lpm_docker_alias_gate(
+        result, playwright_invocations = run_lpm_docker_alias_gate(
             Path(tmp), "8082"
         )
 
         assert result.returncode == 0, result.stderr
-        assert playwriter_invocations.exists()
+        assert playwright_invocations.exists()
 
 
 def test_gate_rejects_unpublished_docker_url_alias() -> None:
     with tempfile.TemporaryDirectory(prefix="lpm-gate-test-") as tmp:
-        result, playwriter_invocations = run_lpm_docker_alias_gate(
+        result, playwright_invocations = run_lpm_docker_alias_gate(
             Path(tmp), "8081"
         )
 
         assert result.returncode == 3
         assert "reference WP runner home URL does not match" in result.stderr
-        assert not playwriter_invocations.exists()
+        assert not playwright_invocations.exists()
 
 
 def test_preflight_rejects_missing_playwright_runner() -> None:
@@ -1604,6 +1602,8 @@ def test_preflight_rejects_missing_explicit_playwriter_launcher() -> None:
         REF_WP,
         "--target",
         TARGET_WP,
+        "--browser-runner",
+        "playwriter",
         "--playwriter-session",
         "unit",
         "--preflight-only",
@@ -1619,10 +1619,10 @@ def test_gate_rejects_reused_output_directory_before_store_invocation() -> None:
         tmp_path = Path(tmp)
         ref_wp = tmp_path / "reference" / "wp"
         target_wp = tmp_path / "target" / "wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         fake_parity = tmp_path / "fake-parity-diff"
         invocations_path = tmp_path / "wp-invocations.log"
-        playwriter_invocations = tmp_path / "playwriter-invocations.jsonl"
+        playwright_invocations = tmp_path / "playwright-invocations.jsonl"
         parity_invocations = tmp_path / "parity-invocations.jsonl"
         out_dir = tmp_path / "evidence"
         snapshot_dir = out_dir / "lpm-fixtures"
@@ -1633,7 +1633,7 @@ def test_gate_rejects_reused_output_directory_before_store_invocation() -> None:
 
         make_fake_wp(ref_wp, REF_URL, enrich_order_evidence=True)
         make_fake_wp(target_wp, TARGET_URL, enrich_order_evidence=True)
-        make_fake_playwriter(fake_playwriter, payment_intent_id="pi_unit_ideal")
+        make_fake_playwright_runner(fake_playwright_runner, payment_intent_id="pi_unit_ideal")
         make_fake_parity_diff(fake_parity, parity_invocations)
 
         result = run_gate(
@@ -1643,13 +1643,11 @@ def test_gate_rejects_reused_output_directory_before_store_invocation() -> None:
             str(ref_wp),
             "--target",
             str(target_wp),
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env={
-                "PLAYWRITER_BIN": str(fake_playwriter),
-                "FAKE_PLAYWRITER_INVOCATIONS": str(playwriter_invocations),
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+                "FAKE_PLAYWRIGHT_INVOCATIONS": str(playwright_invocations),
                 "FAKE_WP_INVOCATIONS": str(invocations_path),
                 "LPM_PARITY_DIFF_BIN": str(fake_parity),
             },
@@ -1658,7 +1656,7 @@ def test_gate_rejects_reused_output_directory_before_store_invocation() -> None:
         assert result.returncode == 3
         assert "fresh empty --out-dir" in result.stderr
         assert not invocations_path.exists()
-        assert not playwriter_invocations.exists()
+        assert not playwright_invocations.exists()
 
 
 def run_action_scheduler_drain_gate(
@@ -1666,16 +1664,16 @@ def run_action_scheduler_drain_gate(
 ) -> tuple[subprocess.CompletedProcess[str], Path, str]:
     ref_wp = tmp_path / "reference" / "wp"
     target_wp = tmp_path / "target" / "wp"
-    fake_playwriter = tmp_path / "fake-playwriter"
+    fake_playwright_runner = tmp_path / "fake-playwright-runner"
     fake_parity = tmp_path / "fake-parity-diff"
-    playwriter_invocations = tmp_path / "playwriter-invocations.jsonl"
+    playwright_invocations = tmp_path / "playwright-invocations.jsonl"
     parity_invocations = tmp_path / "parity-invocations.jsonl"
     wp_invocations = tmp_path / "wp-invocations.txt"
     out_dir = tmp_path / "evidence"
 
     make_fake_wp(ref_wp, REF_URL, enrich_order_evidence=True)
     make_fake_wp(target_wp, TARGET_URL, enrich_order_evidence=True)
-    make_fake_playwriter(fake_playwriter)
+    make_fake_playwright_runner(fake_playwright_runner)
     make_fake_parity_diff(fake_parity, parity_invocations)
 
     result = run_gate(
@@ -1685,14 +1683,12 @@ def run_action_scheduler_drain_gate(
         str(ref_wp),
         "--target",
         str(target_wp),
-        "--playwriter-session",
-        "unit",
         "--out-dir",
         str(out_dir),
         *extra_args,
         env={
-            "PLAYWRITER_BIN": str(fake_playwriter),
-            "FAKE_PLAYWRITER_INVOCATIONS": str(playwriter_invocations),
+            "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+            "FAKE_PLAYWRIGHT_INVOCATIONS": str(playwright_invocations),
             "FAKE_WP_INVOCATIONS": str(wp_invocations),
             "LPM_PARITY_DIFF_BIN": str(fake_parity),
         },
@@ -1744,26 +1740,26 @@ def test_full_gate_can_skip_action_scheduler_drain_without_skipping_cleanup() ->
         assert rollup["action_scheduler_drain_enabled"] is False
 
 
-def test_full_gate_invokes_playwriter_driver_for_each_store_and_validates_evidence() -> None:
+def test_full_gate_supports_explicit_playwriter_compatibility_runner() -> None:
     with tempfile.TemporaryDirectory(prefix="lpm-gate-test-") as tmp:
         tmp_path = Path(tmp)
         ref_wp = tmp_path / "reference" / "wp"
         target_wp = tmp_path / "target" / "wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         fake_parity = tmp_path / "fake-parity-diff"
-        invocations_path = tmp_path / "playwriter-invocations.jsonl"
+        invocations_path = tmp_path / "playwright-invocations.jsonl"
         parity_invocations_path = tmp_path / "parity-invocations.jsonl"
         out_dir = tmp_path / "evidence"
 
         make_fake_wp(ref_wp, "http://localhost:8082", enrich_order_evidence=True)
         make_fake_wp(target_wp, "http://store8889.localhost:8889", enrich_order_evidence=True)
-        make_fake_playwriter(fake_playwriter)
+        make_fake_playwright_runner(fake_playwright_runner)
         make_fake_parity_diff(fake_parity, parity_invocations_path)
 
         env = {
             **os.environ,
-            "PLAYWRITER_BIN": str(fake_playwriter),
-            "FAKE_PLAYWRITER_INVOCATIONS": str(invocations_path),
+            "PLAYWRITER_BIN": str(fake_playwright_runner),
+            "FAKE_PLAYWRIGHT_INVOCATIONS": str(invocations_path),
             "LPM_PARITY_DIFF_BIN": str(fake_parity),
         }
 
@@ -1774,6 +1770,8 @@ def test_full_gate_invokes_playwriter_driver_for_each_store_and_validates_eviden
             str(ref_wp),
             "--target",
             str(target_wp),
+            "--browser-runner",
+            "playwriter",
             "--playwriter-session",
             "unit",
             "--out-dir",
@@ -1802,7 +1800,7 @@ def test_full_gate_invokes_playwriter_driver_for_each_store_and_validates_eviden
             "http://store8889.localhost:8889",
         }
         assert all("-s" in item["argv"] and "unit" in item["argv"] for item in invocations)
-        assert all(str(REPO / "tools/woopayments-merge/lpm-checkout.playwriter.mjs") in item["argv"] for item in driver_invocations)
+        assert all(str(REPO / "tools/woopayments-merge/lpm-checkout.playwright.mjs") in item["argv"] for item in driver_invocations)
 
         rollup = json.loads((out_dir / "lpm-checkout-gate.json").read_text(encoding="utf-8"))
         assert rollup["status"] == "pass"
@@ -1835,15 +1833,15 @@ def test_gate_rejects_conflicting_browser_and_persisted_payment_intent_ids() -> 
         tmp_path = Path(tmp)
         ref_wp = tmp_path / "reference" / "wp"
         target_wp = tmp_path / "target" / "wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         fake_parity = tmp_path / "fake-parity-diff"
-        playwriter_invocations = tmp_path / "playwriter-invocations.jsonl"
+        playwright_invocations = tmp_path / "playwright-invocations.jsonl"
         parity_invocations = tmp_path / "parity-invocations.jsonl"
         out_dir = tmp_path / "evidence"
 
         make_fake_wp(ref_wp, REF_URL, enrich_order_evidence=True)
         make_fake_wp(target_wp, TARGET_URL, enrich_order_evidence=True)
-        make_fake_playwriter(fake_playwriter, payment_intent_id="pi_unit_ideal")
+        make_fake_playwright_runner(fake_playwright_runner, payment_intent_id="pi_unit_ideal")
         make_fake_parity_diff(fake_parity, parity_invocations)
 
         result = run_gate(
@@ -1853,13 +1851,11 @@ def test_gate_rejects_conflicting_browser_and_persisted_payment_intent_ids() -> 
             str(ref_wp),
             "--target",
             str(target_wp),
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env={
-                "PLAYWRITER_BIN": str(fake_playwriter),
-                "FAKE_PLAYWRITER_INVOCATIONS": str(playwriter_invocations),
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+                "FAKE_PLAYWRIGHT_INVOCATIONS": str(playwright_invocations),
                 "LPM_PARITY_DIFF_BIN": str(fake_parity),
             },
         )
@@ -1881,16 +1877,16 @@ def test_gate_rejects_multibanco_without_target_voucher_rendering() -> None:
         tmp_path = Path(tmp)
         ref_wp = tmp_path / "reference" / "wp"
         target_wp = tmp_path / "target" / "wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         fake_parity = tmp_path / "fake-parity-diff"
-        playwriter_invocations = tmp_path / "playwriter-invocations.jsonl"
+        playwright_invocations = tmp_path / "playwright-invocations.jsonl"
         parity_invocations = tmp_path / "parity-invocations.jsonl"
         out_dir = tmp_path / "evidence"
 
         make_fake_wp(ref_wp, REF_URL, enrich_order_evidence=True)
         make_fake_wp(target_wp, TARGET_URL, enrich_order_evidence=True)
-        make_fake_playwriter(
-            fake_playwriter,
+        make_fake_playwright_runner(
+            fake_playwright_runner,
             omit_target_multibanco_voucher=True,
         )
         make_fake_parity_diff(fake_parity, parity_invocations)
@@ -1902,13 +1898,11 @@ def test_gate_rejects_multibanco_without_target_voucher_rendering() -> None:
             str(ref_wp),
             "--target",
             str(target_wp),
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env={
-                "PLAYWRITER_BIN": str(fake_playwriter),
-                "FAKE_PLAYWRITER_INVOCATIONS": str(playwriter_invocations),
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+                "FAKE_PLAYWRIGHT_INVOCATIONS": str(playwright_invocations),
                 "LPM_PARITY_DIFF_BIN": str(fake_parity),
             },
         )
@@ -1922,16 +1916,16 @@ def test_gate_rejects_multibanco_voucher_mismatch_between_stores() -> None:
         tmp_path = Path(tmp)
         ref_wp = tmp_path / "reference" / "wp"
         target_wp = tmp_path / "target" / "wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         fake_parity = tmp_path / "fake-parity-diff"
-        playwriter_invocations = tmp_path / "playwriter-invocations.jsonl"
+        playwright_invocations = tmp_path / "playwright-invocations.jsonl"
         parity_invocations = tmp_path / "parity-invocations.jsonl"
         out_dir = tmp_path / "evidence"
 
         make_fake_wp(ref_wp, REF_URL, enrich_order_evidence=True)
         make_fake_wp(target_wp, TARGET_URL, enrich_order_evidence=True)
-        make_fake_playwriter(
-            fake_playwriter,
+        make_fake_playwright_runner(
+            fake_playwright_runner,
             mismatch_target_multibanco_voucher=True,
         )
         make_fake_parity_diff(fake_parity, parity_invocations)
@@ -1943,13 +1937,11 @@ def test_gate_rejects_multibanco_voucher_mismatch_between_stores() -> None:
             str(ref_wp),
             "--target",
             str(target_wp),
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env={
-                "PLAYWRITER_BIN": str(fake_playwriter),
-                "FAKE_PLAYWRITER_INVOCATIONS": str(playwriter_invocations),
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+                "FAKE_PLAYWRIGHT_INVOCATIONS": str(playwright_invocations),
                 "LPM_PARITY_DIFF_BIN": str(fake_parity),
             },
         )
@@ -1963,9 +1955,9 @@ def test_gate_rejects_provider_observation_outside_test_mode() -> None:
         tmp_path = Path(tmp)
         ref_wp = tmp_path / "reference" / "wp"
         target_wp = tmp_path / "target" / "wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         fake_parity = tmp_path / "fake-parity-diff"
-        playwriter_invocations = tmp_path / "playwriter-invocations.jsonl"
+        playwright_invocations = tmp_path / "playwright-invocations.jsonl"
         parity_invocations = tmp_path / "parity-invocations.jsonl"
         out_dir = tmp_path / "evidence"
 
@@ -1981,7 +1973,7 @@ def test_gate_rejects_provider_observation_outside_test_mode() -> None:
             enrich_order_evidence=True,
             provider_test_mode=False,
         )
-        make_fake_playwriter(fake_playwriter, omit_payment_intent_id=True)
+        make_fake_playwright_runner(fake_playwright_runner, omit_payment_intent_id=True)
         make_fake_parity_diff(fake_parity, parity_invocations)
 
         result = run_gate(
@@ -1991,13 +1983,11 @@ def test_gate_rejects_provider_observation_outside_test_mode() -> None:
             str(ref_wp),
             "--target",
             str(target_wp),
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env={
-                "PLAYWRITER_BIN": str(fake_playwriter),
-                "FAKE_PLAYWRITER_INVOCATIONS": str(playwriter_invocations),
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+                "FAKE_PLAYWRIGHT_INVOCATIONS": str(playwright_invocations),
                 "LPM_PARITY_DIFF_BIN": str(fake_parity),
             },
         )
@@ -2011,9 +2001,9 @@ def test_gate_records_fresh_provider_payment_method_observations_for_both_store_
         tmp_path = Path(tmp)
         ref_wp = tmp_path / "reference" / "wp"
         target_wp = tmp_path / "target" / "wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         fake_parity = tmp_path / "fake-parity-diff"
-        invocations_path = tmp_path / "playwriter-invocations.jsonl"
+        invocations_path = tmp_path / "playwright-invocations.jsonl"
         parity_invocations_path = tmp_path / "parity-invocations.jsonl"
         wp_invocations_path = tmp_path / "wp-invocations.txt"
         out_dir = tmp_path / "evidence"
@@ -2030,7 +2020,7 @@ def test_gate_records_fresh_provider_payment_method_observations_for_both_store_
             enrich_order_evidence=True,
             provider_runtime_adapter="native_woocommerce_api_client",
         )
-        make_fake_playwriter(fake_playwriter)
+        make_fake_playwright_runner(fake_playwright_runner)
         make_fake_parity_diff(fake_parity, parity_invocations_path)
 
         result = run_gate(
@@ -2040,14 +2030,12 @@ def test_gate_records_fresh_provider_payment_method_observations_for_both_store_
             str(ref_wp),
             "--target",
             str(target_wp),
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env={
                 **os.environ,
-                "PLAYWRITER_BIN": str(fake_playwriter),
-                "FAKE_PLAYWRITER_INVOCATIONS": str(invocations_path),
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+                "FAKE_PLAYWRIGHT_INVOCATIONS": str(invocations_path),
                 "FAKE_WP_INVOCATIONS": str(wp_invocations_path),
                 "LPM_PARITY_DIFF_BIN": str(fake_parity),
             },
@@ -2101,7 +2089,7 @@ def test_gate_rejects_native_runtime_for_reference_role() -> None:
         tmp_path = Path(tmp)
         ref_wp = tmp_path / "reference" / "wp"
         target_wp = tmp_path / "target" / "wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         fake_parity = tmp_path / "fake-parity-diff"
         out_dir = tmp_path / "evidence"
 
@@ -2112,7 +2100,7 @@ def test_gate_rejects_native_runtime_for_reference_role() -> None:
             provider_runtime_adapter="native_woocommerce_api_client",
         )
         make_fake_wp(target_wp, TARGET_URL, enrich_order_evidence=True)
-        make_fake_playwriter(fake_playwriter)
+        make_fake_playwright_runner(fake_playwright_runner)
         make_fake_parity_diff(fake_parity, tmp_path / "parity.json")
 
         result = run_gate(
@@ -2122,13 +2110,11 @@ def test_gate_rejects_native_runtime_for_reference_role() -> None:
             str(ref_wp),
             "--target",
             str(target_wp),
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env={
-                "PLAYWRITER_BIN": str(fake_playwriter),
-                "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter.jsonl"),
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+                "FAKE_PLAYWRIGHT_INVOCATIONS": str(tmp_path / "playwright.jsonl"),
                 "LPM_PARITY_DIFF_BIN": str(fake_parity),
             },
         )
@@ -2144,9 +2130,9 @@ def test_gate_fails_core_parity_when_provider_reports_wrong_payment_method_type(
         tmp_path = Path(tmp)
         ref_wp = tmp_path / "reference" / "wp"
         target_wp = tmp_path / "target" / "wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         fake_parity = tmp_path / "fake-parity-diff"
-        invocations_path = tmp_path / "playwriter-invocations.jsonl"
+        invocations_path = tmp_path / "playwright-invocations.jsonl"
         parity_invocations_path = tmp_path / "parity-invocations.jsonl"
         out_dir = tmp_path / "evidence"
 
@@ -2162,7 +2148,7 @@ def test_gate_fails_core_parity_when_provider_reports_wrong_payment_method_type(
             "http://store8889.localhost:8889",
             enrich_order_evidence=True,
         )
-        make_fake_playwriter(fake_playwriter)
+        make_fake_playwright_runner(fake_playwright_runner)
         make_fake_parity_diff(fake_parity, parity_invocations_path)
 
         result = run_gate(
@@ -2172,14 +2158,12 @@ def test_gate_fails_core_parity_when_provider_reports_wrong_payment_method_type(
             str(ref_wp),
             "--target",
             str(target_wp),
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env={
                 **os.environ,
-                "PLAYWRITER_BIN": str(fake_playwriter),
-                "FAKE_PLAYWRITER_INVOCATIONS": str(invocations_path),
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+                "FAKE_PLAYWRIGHT_INVOCATIONS": str(invocations_path),
                 "LPM_PARITY_DIFF_BIN": str(fake_parity),
             },
         )
@@ -2203,9 +2187,9 @@ def test_gate_blocks_with_structured_provenance_when_provider_transport_is_unava
         tmp_path = Path(tmp)
         ref_wp = tmp_path / "reference" / "wp"
         target_wp = tmp_path / "target" / "wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         fake_parity = tmp_path / "fake-parity-diff"
-        invocations_path = tmp_path / "playwriter-invocations.jsonl"
+        invocations_path = tmp_path / "playwright-invocations.jsonl"
         parity_invocations_path = tmp_path / "parity-invocations.jsonl"
         out_dir = tmp_path / "evidence"
 
@@ -2221,7 +2205,7 @@ def test_gate_blocks_with_structured_provenance_when_provider_transport_is_unava
             "http://store8889.localhost:8889",
             enrich_order_evidence=True,
         )
-        make_fake_playwriter(fake_playwriter)
+        make_fake_playwright_runner(fake_playwright_runner)
         make_fake_parity_diff(fake_parity, parity_invocations_path)
 
         result = run_gate(
@@ -2231,14 +2215,12 @@ def test_gate_blocks_with_structured_provenance_when_provider_transport_is_unava
             str(ref_wp),
             "--target",
             str(target_wp),
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env={
                 **os.environ,
-                "PLAYWRITER_BIN": str(fake_playwriter),
-                "FAKE_PLAYWRITER_INVOCATIONS": str(invocations_path),
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+                "FAKE_PLAYWRIGHT_INVOCATIONS": str(invocations_path),
                 "LPM_PARITY_DIFF_BIN": str(fake_parity),
             },
         )
@@ -2271,7 +2253,7 @@ def test_gate_fails_resolved_provider_invariants_even_when_transport_is_blocked(
         tmp_path = Path(tmp)
         ref_wp = tmp_path / "reference" / "wp"
         target_wp = tmp_path / "target" / "wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         fake_parity = tmp_path / "fake-parity-diff"
         out_dir = tmp_path / "evidence"
 
@@ -2284,7 +2266,7 @@ def test_gate_fails_resolved_provider_invariants_even_when_transport_is_blocked(
             provider_test_mode=False,
         )
         make_fake_wp(target_wp, TARGET_URL, enrich_order_evidence=True)
-        make_fake_playwriter(fake_playwriter)
+        make_fake_playwright_runner(fake_playwright_runner)
         make_fake_parity_diff(fake_parity, tmp_path / "parity-invocations.jsonl")
 
         result = run_gate(
@@ -2294,13 +2276,11 @@ def test_gate_fails_resolved_provider_invariants_even_when_transport_is_blocked(
             str(ref_wp),
             "--target",
             str(target_wp),
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env={
-                "PLAYWRITER_BIN": str(fake_playwriter),
-                "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter.jsonl"),
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+                "FAKE_PLAYWRIGHT_INVOCATIONS": str(tmp_path / "playwright.jsonl"),
                 "LPM_PARITY_DIFF_BIN": str(fake_parity),
             },
         )
@@ -2321,7 +2301,7 @@ def test_gate_blocks_account_and_api_provider_unavailability() -> None:
             tmp_path = Path(tmp)
             ref_wp = tmp_path / "reference" / "wp"
             target_wp = tmp_path / "target" / "wp"
-            fake_playwriter = tmp_path / "fake-playwriter"
+            fake_playwright_runner = tmp_path / "fake-playwright-runner"
             fake_parity = tmp_path / "fake-parity-diff"
             out_dir = tmp_path / "evidence"
 
@@ -2338,7 +2318,7 @@ def test_gate_blocks_account_and_api_provider_unavailability() -> None:
                 "http://store8889.localhost:8889",
                 enrich_order_evidence=True,
             )
-            make_fake_playwriter(fake_playwriter)
+            make_fake_playwright_runner(fake_playwright_runner)
             make_fake_parity_diff(fake_parity, tmp_path / "parity-invocations.jsonl")
 
             result = run_gate(
@@ -2348,15 +2328,13 @@ def test_gate_blocks_account_and_api_provider_unavailability() -> None:
                 str(ref_wp),
                 "--target",
                 str(target_wp),
-                "--playwriter-session",
-                "unit",
                 "--out-dir",
                 str(out_dir),
                 env={
                     **os.environ,
-                    "PLAYWRITER_BIN": str(fake_playwriter),
-                    "FAKE_PLAYWRITER_INVOCATIONS": str(
-                        tmp_path / "playwriter-invocations.jsonl"
+                    "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+                    "FAKE_PLAYWRIGHT_INVOCATIONS": str(
+                        tmp_path / "playwright-invocations.jsonl"
                     ),
                     "LPM_PARITY_DIFF_BIN": str(fake_parity),
                 },
@@ -2384,7 +2362,7 @@ def test_gate_fails_non_retriable_provider_identity_errors() -> None:
             tmp_path = Path(tmp)
             ref_wp = tmp_path / "reference" / "wp"
             target_wp = tmp_path / "target" / "wp"
-            fake_playwriter = tmp_path / "fake-playwriter"
+            fake_playwright_runner = tmp_path / "fake-playwright-runner"
             fake_parity = tmp_path / "fake-parity-diff"
             out_dir = tmp_path / "evidence"
 
@@ -2396,7 +2374,7 @@ def test_gate_fails_non_retriable_provider_identity_errors() -> None:
                 provider_http_code=provider_http_code,
             )
             make_fake_wp(target_wp, TARGET_URL, enrich_order_evidence=True)
-            make_fake_playwriter(fake_playwriter)
+            make_fake_playwright_runner(fake_playwright_runner)
             make_fake_parity_diff(fake_parity, tmp_path / "parity.json")
 
             result = run_gate(
@@ -2406,13 +2384,11 @@ def test_gate_fails_non_retriable_provider_identity_errors() -> None:
                 str(ref_wp),
                 "--target",
                 str(target_wp),
-                "--playwriter-session",
-                "unit",
                 "--out-dir",
                 str(out_dir),
                 env={
-                    "PLAYWRITER_BIN": str(fake_playwriter),
-                    "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter.jsonl"),
+                    "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+                    "FAKE_PLAYWRIGHT_INVOCATIONS": str(tmp_path / "playwright.jsonl"),
                     "LPM_PARITY_DIFF_BIN": str(fake_parity),
                 },
             )
@@ -2436,9 +2412,9 @@ def test_gate_rejects_stale_browser_observation_and_mismatched_provider_intent()
         tmp_path = Path(tmp)
         ref_wp = tmp_path / "reference" / "wp"
         target_wp = tmp_path / "target" / "wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         fake_parity = tmp_path / "fake-parity-diff"
-        invocations_path = tmp_path / "playwriter-invocations.jsonl"
+        invocations_path = tmp_path / "playwright-invocations.jsonl"
         parity_invocations_path = tmp_path / "parity-invocations.jsonl"
         out_dir = tmp_path / "evidence"
         stale_observation = {
@@ -2462,8 +2438,8 @@ def test_gate_rejects_stale_browser_observation_and_mismatched_provider_intent()
             "http://store8889.localhost:8889",
             enrich_order_evidence=True,
         )
-        make_fake_playwriter(
-            fake_playwriter,
+        make_fake_playwright_runner(
+            fake_playwright_runner,
             provider_observation=stale_observation,
         )
         make_fake_parity_diff(fake_parity, parity_invocations_path)
@@ -2475,14 +2451,12 @@ def test_gate_rejects_stale_browser_observation_and_mismatched_provider_intent()
             str(ref_wp),
             "--target",
             str(target_wp),
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env={
                 **os.environ,
-                "PLAYWRITER_BIN": str(fake_playwriter),
-                "FAKE_PLAYWRITER_INVOCATIONS": str(invocations_path),
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+                "FAKE_PLAYWRIGHT_INVOCATIONS": str(invocations_path),
                 "LPM_PARITY_DIFF_BIN": str(fake_parity),
             },
         )
@@ -2530,7 +2504,7 @@ def test_provider_observer_normalizes_unexpanded_latest_charge_id() -> None:
     assert "$fetch_charge( $charge_fields['id'] )" in observer_source
 
 
-def test_full_gate_can_use_playwright_runner_without_playwriter_session() -> None:
+def test_full_gate_uses_default_playwright_runner() -> None:
     with tempfile.TemporaryDirectory(prefix="lpm-gate-test-") as tmp:
         tmp_path = Path(tmp)
         ref_wp = tmp_path / "reference" / "wp"
@@ -2543,7 +2517,7 @@ def test_full_gate_can_use_playwright_runner_without_playwriter_session() -> Non
 
         make_fake_wp(ref_wp, "http://localhost:8082", enrich_order_evidence=True)
         make_fake_wp(target_wp, "http://store8889.localhost:8889", enrich_order_evidence=True)
-        make_fake_playwriter(fake_runner)
+        make_fake_playwright_runner(fake_runner)
         make_fake_parity_diff(fake_parity, parity_invocations_path)
 
         result = run_gate(
@@ -2559,7 +2533,7 @@ def test_full_gate_can_use_playwright_runner_without_playwriter_session() -> Non
                 **os.environ,
                 "BROWSER_RUNNER": "playwright",
                 "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_runner),
-                "FAKE_PLAYWRITER_INVOCATIONS": str(invocations_path),
+                "FAKE_PLAYWRIGHT_INVOCATIONS": str(invocations_path),
                 "LPM_PARITY_DIFF_BIN": str(fake_parity),
             },
         )
@@ -2574,7 +2548,7 @@ def test_full_gate_can_use_playwright_runner_without_playwriter_session() -> Non
         assert {item["env"]["role"] for item in invocations} == {"reference", "target"}
         assert all("-s" not in item["argv"] for item in invocations)
         assert all("-e" not in item["argv"] for item in invocations)
-        assert all(str(REPO / "tools/woopayments-merge/lpm-checkout.playwriter.mjs") in item["argv"] for item in invocations)
+        assert all(str(REPO / "tools/woopayments-merge/lpm-checkout.playwright.mjs") in item["argv"] for item in invocations)
 
         rollup = json.loads((out_dir / "lpm-checkout-gate.json").read_text(encoding="utf-8"))
         assert rollup["status"] == "pass"
@@ -2588,22 +2562,22 @@ def test_full_gate_uses_unique_owned_product_fixtures_and_cleans_them_up() -> No
         tmp_path = Path(tmp)
         ref_wp = tmp_path / "reference" / "wp"
         target_wp = tmp_path / "target" / "wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         fake_parity = tmp_path / "fake-parity-diff"
-        invocations_path = tmp_path / "playwriter-invocations.jsonl"
+        invocations_path = tmp_path / "playwright-invocations.jsonl"
         parity_invocations_path = tmp_path / "parity-invocations.jsonl"
         wp_invocations = tmp_path / "wp-invocations.txt"
         out_dir = tmp_path / "evidence"
 
         make_fake_wp(ref_wp, "http://localhost:8082", product_id=1101, enrich_order_evidence=True)
         make_fake_wp(target_wp, "http://store8889.localhost:8889", product_id=2202, enrich_order_evidence=True)
-        make_fake_playwriter(fake_playwriter)
+        make_fake_playwright_runner(fake_playwright_runner)
         make_fake_parity_diff(fake_parity, parity_invocations_path)
 
         env = {
             **os.environ,
-            "PLAYWRITER_BIN": str(fake_playwriter),
-            "FAKE_PLAYWRITER_INVOCATIONS": str(invocations_path),
+            "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+            "FAKE_PLAYWRIGHT_INVOCATIONS": str(invocations_path),
             "FAKE_WP_INVOCATIONS": str(wp_invocations),
             "LPM_PARITY_DIFF_BIN": str(fake_parity),
         }
@@ -2615,8 +2589,6 @@ def test_full_gate_uses_unique_owned_product_fixtures_and_cleans_them_up() -> No
             str(ref_wp),
             "--target",
             str(target_wp),
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env=env,
@@ -2648,7 +2620,7 @@ def test_full_gate_uses_unique_owned_product_fixtures_and_cleans_them_up() -> No
             for line in invocations_path.read_text(encoding="utf-8").splitlines()
             if line
         ]
-        driver_invocations = [item for item in invocations if "-f" in item["argv"]]
+        driver_invocations = invocations
         assert {item["env"]["product_id"] for item in driver_invocations} == {
             "1101",
             "2202",
@@ -2666,7 +2638,7 @@ def test_product_cleanup_failure_blocks_an_otherwise_passing_gate() -> None:
         tmp_path = Path(tmp)
         ref_wp = tmp_path / "reference" / "wp"
         target_wp = tmp_path / "target" / "wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         fake_parity = tmp_path / "fake-parity-diff"
         parity_invocations_path = tmp_path / "parity-invocations.jsonl"
         wp_invocations = tmp_path / "wp-invocations.txt"
@@ -2679,7 +2651,7 @@ def test_product_cleanup_failure_blocks_an_otherwise_passing_gate() -> None:
             enrich_order_evidence=True,
             product_cleanup_succeeds=False,
         )
-        make_fake_playwriter(fake_playwriter)
+        make_fake_playwright_runner(fake_playwright_runner)
         make_fake_parity_diff(fake_parity, parity_invocations_path)
 
         result = run_gate(
@@ -2689,13 +2661,11 @@ def test_product_cleanup_failure_blocks_an_otherwise_passing_gate() -> None:
             str(ref_wp),
             "--target",
             str(target_wp),
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env={
-                "PLAYWRITER_BIN": str(fake_playwriter),
-                "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter.jsonl"),
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+                "FAKE_PLAYWRIGHT_INVOCATIONS": str(tmp_path / "playwright.jsonl"),
                 "FAKE_WP_INVOCATIONS": str(wp_invocations),
                 "LPM_PARITY_DIFF_BIN": str(fake_parity),
             },
@@ -2718,7 +2688,7 @@ def test_checkout_failure_takes_exit_precedence_over_fixture_restore_blockage() 
         tmp_path = Path(tmp)
         ref_wp = tmp_path / "reference" / "wp"
         target_wp = tmp_path / "target" / "wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         fake_parity = tmp_path / "fake-parity-diff"
         parity_invocations_path = tmp_path / "parity-invocations.jsonl"
         wp_invocations = tmp_path / "wp-invocations.txt"
@@ -2731,8 +2701,8 @@ def test_checkout_failure_takes_exit_precedence_over_fixture_restore_blockage() 
             enrich_order_evidence=True,
             restore_succeeds=False,
         )
-        make_fake_playwriter(
-            fake_playwriter,
+        make_fake_playwright_runner(
+            fake_playwright_runner,
             status="fail",
             failure_messages=("synthetic checkout failure",),
             exit_code=1,
@@ -2746,12 +2716,10 @@ def test_checkout_failure_takes_exit_precedence_over_fixture_restore_blockage() 
             str(ref_wp),
             "--target",
             str(target_wp),
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env={
-                "PLAYWRITER_BIN": str(fake_playwriter),
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
                 "FAKE_WP_INVOCATIONS": str(wp_invocations),
                 "LPM_PARITY_DIFF_BIN": str(fake_parity),
             },
@@ -2778,7 +2746,7 @@ def test_finalization_retries_a_transient_fixture_restore_failure() -> None:
         tmp_path = Path(tmp)
         ref_wp = tmp_path / "reference" / "wp"
         target_wp = tmp_path / "target" / "wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         fake_parity = tmp_path / "fake-parity-diff"
         parity_invocations_path = tmp_path / "parity-invocations.jsonl"
         wp_invocations = tmp_path / "wp-invocations.txt"
@@ -2791,7 +2759,7 @@ def test_finalization_retries_a_transient_fixture_restore_failure() -> None:
             enrich_order_evidence=True,
             restore_failures_before_success=1,
         )
-        make_fake_playwriter(fake_playwriter, omit_payment_intent_id=True)
+        make_fake_playwright_runner(fake_playwright_runner, omit_payment_intent_id=True)
         make_fake_parity_diff(fake_parity, parity_invocations_path)
 
         result = run_gate(
@@ -2801,13 +2769,11 @@ def test_finalization_retries_a_transient_fixture_restore_failure() -> None:
             str(ref_wp),
             "--target",
             str(target_wp),
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env={
-                "PLAYWRITER_BIN": str(fake_playwriter),
-                "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter.jsonl"),
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+                "FAKE_PLAYWRIGHT_INVOCATIONS": str(tmp_path / "playwright.jsonl"),
                 "FAKE_WP_INVOCATIONS": str(wp_invocations),
                 "LPM_PARITY_DIFF_BIN": str(fake_parity),
             },
@@ -2830,7 +2796,7 @@ def test_prepare_transport_failure_still_cleans_product_by_owned_sku() -> None:
         tmp_path = Path(tmp)
         ref_wp = tmp_path / "reference" / "wp"
         target_wp = tmp_path / "target" / "wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         fake_parity = tmp_path / "fake-parity-diff"
         parity_invocations_path = tmp_path / "parity-invocations.jsonl"
         wp_invocations = tmp_path / "wp-invocations.txt"
@@ -2842,7 +2808,7 @@ def test_prepare_transport_failure_still_cleans_product_by_owned_sku() -> None:
             TARGET_URL,
             product_prepare_fails_after_create=True,
         )
-        make_fake_playwriter(fake_playwriter)
+        make_fake_playwright_runner(fake_playwright_runner)
         make_fake_parity_diff(fake_parity, parity_invocations_path)
 
         result = run_gate(
@@ -2852,12 +2818,10 @@ def test_prepare_transport_failure_still_cleans_product_by_owned_sku() -> None:
             str(ref_wp),
             "--target",
             str(target_wp),
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env={
-                "PLAYWRITER_BIN": str(fake_playwriter),
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
                 "FAKE_WP_INVOCATIONS": str(wp_invocations),
                 "LPM_PARITY_DIFF_BIN": str(fake_parity),
             },
@@ -2873,9 +2837,9 @@ def test_full_gate_stages_and_restores_per_method_lpm_fixtures() -> None:
         tmp_path = Path(tmp)
         ref_wp = tmp_path / "reference" / "wp"
         target_wp = tmp_path / "target" / "wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         fake_parity = tmp_path / "fake-parity-diff"
-        invocations_path = tmp_path / "playwriter-invocations.jsonl"
+        invocations_path = tmp_path / "playwright-invocations.jsonl"
         parity_invocations_path = tmp_path / "parity-invocations.jsonl"
         wp_invocations = tmp_path / "wp-invocations.txt"
         ref_state = Path(f"{ref_wp}.state.json")
@@ -2884,13 +2848,13 @@ def test_full_gate_stages_and_restores_per_method_lpm_fixtures() -> None:
 
         make_fake_wp(ref_wp, "http://localhost:8082", stageable=True, enrich_order_evidence=True)
         make_fake_wp(target_wp, "http://store8889.localhost:8889", stageable=True, enrich_order_evidence=True)
-        make_fake_playwriter(fake_playwriter)
+        make_fake_playwright_runner(fake_playwright_runner)
         make_fake_parity_diff(fake_parity, parity_invocations_path)
 
         env = {
             **os.environ,
-            "PLAYWRITER_BIN": str(fake_playwriter),
-            "FAKE_PLAYWRITER_INVOCATIONS": str(invocations_path),
+            "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+            "FAKE_PLAYWRIGHT_INVOCATIONS": str(invocations_path),
             "FAKE_WP_INVOCATIONS": str(wp_invocations),
             "LPM_PARITY_DIFF_BIN": str(fake_parity),
         }
@@ -2902,8 +2866,6 @@ def test_full_gate_stages_and_restores_per_method_lpm_fixtures() -> None:
             str(ref_wp),
             "--target",
             str(target_wp),
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env=env,
@@ -2932,22 +2894,22 @@ def test_lpm_gate_records_fixture_blockers_per_method_and_continues() -> None:
         tmp_path = Path(tmp)
         ref_wp = tmp_path / "reference" / "wp"
         target_wp = tmp_path / "target" / "wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         fake_parity = tmp_path / "fake-parity-diff"
-        invocations_path = tmp_path / "playwriter-invocations.jsonl"
+        invocations_path = tmp_path / "playwright-invocations.jsonl"
         parity_invocations_path = tmp_path / "parity-invocations.jsonl"
         wp_invocations = tmp_path / "wp-invocations.txt"
         out_dir = tmp_path / "evidence"
 
         make_fake_wp(ref_wp, "http://localhost:8082", blocked_stage_methods=("p24",), enrich_order_evidence=True)
         make_fake_wp(target_wp, "http://store8889.localhost:8889", blocked_stage_methods=("p24",), enrich_order_evidence=True)
-        make_fake_playwriter(fake_playwriter)
+        make_fake_playwright_runner(fake_playwright_runner)
         make_fake_parity_diff(fake_parity, parity_invocations_path)
 
         env = {
             **os.environ,
-            "PLAYWRITER_BIN": str(fake_playwriter),
-            "FAKE_PLAYWRITER_INVOCATIONS": str(invocations_path),
+            "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+            "FAKE_PLAYWRIGHT_INVOCATIONS": str(invocations_path),
             "FAKE_WP_INVOCATIONS": str(wp_invocations),
             "LPM_PARITY_DIFF_BIN": str(fake_parity),
         }
@@ -2959,8 +2921,6 @@ def test_lpm_gate_records_fixture_blockers_per_method_and_continues() -> None:
             str(ref_wp),
             "--target",
             str(target_wp),
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env=env,
@@ -2982,7 +2942,7 @@ def test_lpm_gate_records_fixture_blockers_per_method_and_continues() -> None:
             for line in invocations_path.read_text(encoding="utf-8").splitlines()
             if line
         ]
-        driver_invocations = [item for item in invocations if "-f" in item["argv"]]
+        driver_invocations = invocations
         assert {item["env"]["method"] for item in driver_invocations} == {"ideal", "alipay"}
         assert len(driver_invocations) == 4
 
@@ -3013,16 +2973,16 @@ def test_lpm_gate_stages_profile_method_only_after_ready_profile() -> None:
         tmp_path = Path(tmp)
         ref_wp = tmp_path / "reference" / "wp"
         target_wp = tmp_path / "target" / "wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         fake_parity = tmp_path / "fake-parity-diff"
-        invocations_path = tmp_path / "playwriter-invocations.jsonl"
+        invocations_path = tmp_path / "playwright-invocations.jsonl"
         parity_invocations_path = tmp_path / "parity-invocations.jsonl"
         wp_invocations = tmp_path / "wp-invocations.txt"
         out_dir = tmp_path / "evidence"
 
         make_fake_wp(ref_wp, "http://localhost:8082", account_profile_ready=True, enrich_order_evidence=True)
         make_fake_wp(target_wp, "http://store8889.localhost:8889", account_profile_ready=True, enrich_order_evidence=True)
-        make_fake_playwriter(fake_playwriter)
+        make_fake_playwright_runner(fake_playwright_runner)
         make_fake_parity_diff(fake_parity, parity_invocations_path)
 
         result = run_gate(
@@ -3032,14 +2992,12 @@ def test_lpm_gate_stages_profile_method_only_after_ready_profile() -> None:
             str(ref_wp),
             "--target",
             str(target_wp),
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env={
                 **os.environ,
-                "PLAYWRITER_BIN": str(fake_playwriter),
-                "FAKE_PLAYWRITER_INVOCATIONS": str(invocations_path),
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+                "FAKE_PLAYWRIGHT_INVOCATIONS": str(invocations_path),
                 "FAKE_WP_INVOCATIONS": str(wp_invocations),
                 "LPM_PARITY_DIFF_BIN": str(fake_parity),
             },
@@ -3056,7 +3014,7 @@ def test_lpm_gate_stages_profile_method_only_after_ready_profile() -> None:
             for line in invocations_path.read_text(encoding="utf-8").splitlines()
             if line
         ]
-        driver_invocations = [item for item in invocations if "-f" in item["argv"]]
+        driver_invocations = invocations
         assert {item["env"]["method"] for item in driver_invocations} == {"p24"}
         assert len(driver_invocations) == 2
 
@@ -3073,9 +3031,9 @@ def test_lpm_gate_parses_pretty_account_profile_json_for_blockers() -> None:
         tmp_path = Path(tmp)
         ref_wp = tmp_path / "reference" / "wp"
         target_wp = tmp_path / "target" / "wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         fake_parity = tmp_path / "fake-parity-diff"
-        invocations_path = tmp_path / "playwriter-invocations.jsonl"
+        invocations_path = tmp_path / "playwright-invocations.jsonl"
         parity_invocations_path = tmp_path / "parity-invocations.jsonl"
         out_dir = tmp_path / "evidence"
 
@@ -3093,7 +3051,7 @@ def test_lpm_gate_parses_pretty_account_profile_json_for_blockers() -> None:
             pretty_account_profile_json=True,
             enrich_order_evidence=True,
         )
-        make_fake_playwriter(fake_playwriter)
+        make_fake_playwright_runner(fake_playwright_runner)
         make_fake_parity_diff(fake_parity, parity_invocations_path)
 
         result = run_gate(
@@ -3103,14 +3061,12 @@ def test_lpm_gate_parses_pretty_account_profile_json_for_blockers() -> None:
             str(ref_wp),
             "--target",
             str(target_wp),
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env={
                 **os.environ,
-                "PLAYWRITER_BIN": str(fake_playwriter),
-                "FAKE_PLAYWRITER_INVOCATIONS": str(invocations_path),
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+                "FAKE_PLAYWRIGHT_INVOCATIONS": str(invocations_path),
                 "LPM_PARITY_DIFF_BIN": str(fake_parity),
             },
         )
@@ -3146,22 +3102,22 @@ def test_gate_rejects_expected_url_that_does_not_match_wp_runner() -> None:
         tmp_path = Path(tmp)
         ref_wp = tmp_path / "reference" / "wp"
         target_wp = tmp_path / "target" / "wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         fake_parity = tmp_path / "fake-parity-diff"
-        invocations_path = tmp_path / "playwriter-invocations.jsonl"
+        invocations_path = tmp_path / "playwright-invocations.jsonl"
         parity_invocations_path = tmp_path / "parity-invocations.jsonl"
         wp_invocations_path = tmp_path / "wp-invocations.txt"
         out_dir = tmp_path / "evidence"
 
         make_fake_wp(ref_wp, "http://localhost", enrich_order_evidence=True)
         make_fake_wp(target_wp, "http://internal-target.localhost", enrich_order_evidence=True)
-        make_fake_playwriter(fake_playwriter)
+        make_fake_playwright_runner(fake_playwright_runner)
         make_fake_parity_diff(fake_parity, parity_invocations_path)
 
         env = {
             **os.environ,
-            "PLAYWRITER_BIN": str(fake_playwriter),
-            "FAKE_PLAYWRITER_INVOCATIONS": str(invocations_path),
+            "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+            "FAKE_PLAYWRIGHT_INVOCATIONS": str(invocations_path),
             "FAKE_WP_INVOCATIONS": str(wp_invocations_path),
             "LPM_PARITY_DIFF_BIN": str(fake_parity),
         }
@@ -3177,8 +3133,6 @@ def test_gate_rejects_expected_url_that_does_not_match_wp_runner() -> None:
             "http://localhost:8082",
             "--target-url",
             "http://store8889.localhost:8889",
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env=env,
@@ -3195,23 +3149,23 @@ def test_gate_enriches_query_order_received_evidence_from_wp_order_meta() -> Non
         tmp_path = Path(tmp)
         ref_wp = tmp_path / "reference" / "wp"
         target_wp = tmp_path / "target" / "wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         fake_parity = tmp_path / "fake-parity-diff"
         parity_invocations_path = tmp_path / "parity-invocations.jsonl"
         out_dir = tmp_path / "evidence"
 
         make_fake_wp(ref_wp, "http://localhost:8082", enrich_order_evidence=True)
         make_fake_wp(target_wp, "http://store8889.localhost:8889", enrich_order_evidence=True)
-        make_fake_playwriter(
-            fake_playwriter,
+        make_fake_playwright_runner(
+            fake_playwright_runner,
             query_order_received_url=True,
             omit_payment_intent_id=True,
         )
 
         env = {
             **os.environ,
-            "PLAYWRITER_BIN": str(fake_playwriter),
-            "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter-invocations.jsonl"),
+            "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+            "FAKE_PLAYWRIGHT_INVOCATIONS": str(tmp_path / "playwright-invocations.jsonl"),
             "LPM_PARITY_DIFF_BIN": str(fake_parity),
         }
         make_fake_parity_diff(fake_parity, parity_invocations_path)
@@ -3223,8 +3177,6 @@ def test_gate_enriches_query_order_received_evidence_from_wp_order_meta() -> Non
             str(ref_wp),
             "--target",
             str(target_wp),
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env=env,
@@ -3247,15 +3199,15 @@ def test_gate_does_not_promote_pending_action_order_to_pass() -> None:
         tmp_path = Path(tmp)
         ref_wp = tmp_path / "reference" / "wp"
         target_wp = tmp_path / "target" / "wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         fake_parity = tmp_path / "fake-parity-diff"
         parity_invocations_path = tmp_path / "parity-invocations.jsonl"
         out_dir = tmp_path / "evidence"
 
         make_fake_wp(ref_wp, "http://localhost:8082", enrich_order_evidence=True)
         make_fake_wp(target_wp, "http://store8889.localhost:8889", enrich_order_evidence=True)
-        make_fake_playwriter(
-            fake_playwriter,
+        make_fake_playwright_runner(
+            fake_playwright_runner,
             omit_order_id=True,
             omit_order_received_url=True,
             status="fail",
@@ -3266,8 +3218,8 @@ def test_gate_does_not_promote_pending_action_order_to_pass() -> None:
 
         env = {
             **os.environ,
-            "PLAYWRITER_BIN": str(fake_playwriter),
-            "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter-invocations.jsonl"),
+            "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+            "FAKE_PLAYWRIGHT_INVOCATIONS": str(tmp_path / "playwright-invocations.jsonl"),
             "LPM_PARITY_DIFF_BIN": str(fake_parity),
         }
 
@@ -3278,8 +3230,6 @@ def test_gate_does_not_promote_pending_action_order_to_pass() -> None:
             str(ref_wp),
             "--target",
             str(target_wp),
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env=env,
@@ -3305,7 +3255,7 @@ def test_gate_classifies_symmetric_klarna_customer_action_as_manual_blockers() -
         tmp_path = Path(tmp)
         ref_wp = tmp_path / "reference" / "wp"
         target_wp = tmp_path / "target" / "wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         fake_parity = tmp_path / "fake-parity-diff"
         parity_invocations_path = tmp_path / "parity-invocations.jsonl"
         out_dir = tmp_path / "evidence"
@@ -3325,8 +3275,8 @@ def test_gate_classifies_symmetric_klarna_customer_action_as_manual_blockers() -
             enriched_order_status="pending",
             enriched_intention_status="requires_action",
         )
-        make_fake_playwriter(
-            fake_playwriter,
+        make_fake_playwright_runner(
+            fake_playwright_runner,
             omit_order_id=True,
             omit_order_received_url=True,
             status="fail",
@@ -3342,14 +3292,12 @@ def test_gate_classifies_symmetric_klarna_customer_action_as_manual_blockers() -
             str(ref_wp),
             "--target",
             str(target_wp),
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env={
-                "PLAYWRITER_BIN": str(fake_playwriter),
-                "FAKE_PLAYWRITER_INVOCATIONS": str(
-                    tmp_path / "playwriter-invocations.jsonl"
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+                "FAKE_PLAYWRIGHT_INVOCATIONS": str(
+                    tmp_path / "playwright-invocations.jsonl"
                 ),
                 "LPM_PARITY_DIFF_BIN": str(fake_parity),
             },
@@ -3384,7 +3332,7 @@ def test_gate_rejects_browser_selected_gateway_when_persisted_order_uses_base_ca
         tmp_path = Path(tmp)
         ref_wp = tmp_path / "reference" / "wp"
         target_wp = tmp_path / "target" / "wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         fake_parity = tmp_path / "fake-parity-diff"
         parity_invocations_path = tmp_path / "parity-invocations.jsonl"
         out_dir = tmp_path / "evidence"
@@ -3401,13 +3349,13 @@ def test_gate_rejects_browser_selected_gateway_when_persisted_order_uses_base_ca
             enrich_order_evidence=True,
             enriched_order_payment_method="woocommerce_payments",
         )
-        make_fake_playwriter(fake_playwriter)
+        make_fake_playwright_runner(fake_playwright_runner)
         make_fake_parity_diff(fake_parity, parity_invocations_path)
 
         env = {
             **os.environ,
-            "PLAYWRITER_BIN": str(fake_playwriter),
-            "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter-invocations.jsonl"),
+            "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+            "FAKE_PLAYWRIGHT_INVOCATIONS": str(tmp_path / "playwright-invocations.jsonl"),
             "LPM_PARITY_DIFF_BIN": str(fake_parity),
         }
 
@@ -3418,8 +3366,6 @@ def test_gate_rejects_browser_selected_gateway_when_persisted_order_uses_base_ca
             str(ref_wp),
             "--target",
             str(target_wp),
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env=env,
@@ -3436,20 +3382,20 @@ def test_gate_rejects_customer_action_evidence_without_order_received_url() -> N
         tmp_path = Path(tmp)
         ref_wp = tmp_path / "reference" / "wp"
         target_wp = tmp_path / "target" / "wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         fake_parity = tmp_path / "fake-parity-diff"
         parity_invocations_path = tmp_path / "parity-invocations.jsonl"
         out_dir = tmp_path / "evidence"
 
         make_fake_wp(ref_wp, "http://localhost:8082", enrich_order_evidence=True)
         make_fake_wp(target_wp, "http://store8889.localhost:8889", enrich_order_evidence=True)
-        make_fake_playwriter(fake_playwriter, omit_order_received_url=True)
+        make_fake_playwright_runner(fake_playwright_runner, omit_order_received_url=True)
         make_fake_parity_diff(fake_parity, parity_invocations_path)
 
         env = {
             **os.environ,
-            "PLAYWRITER_BIN": str(fake_playwriter),
-            "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter-invocations.jsonl"),
+            "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+            "FAKE_PLAYWRIGHT_INVOCATIONS": str(tmp_path / "playwright-invocations.jsonl"),
             "LPM_PARITY_DIFF_BIN": str(fake_parity),
         }
 
@@ -3460,8 +3406,6 @@ def test_gate_rejects_customer_action_evidence_without_order_received_url() -> N
             str(ref_wp),
             "--target",
             str(target_wp),
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env=env,
@@ -3481,20 +3425,20 @@ def test_gate_rejects_hosted_action_evidence_without_order_received_url() -> Non
         tmp_path = Path(tmp)
         ref_wp = tmp_path / "reference" / "wp"
         target_wp = tmp_path / "target" / "wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         fake_parity = tmp_path / "fake-parity-diff"
         parity_invocations_path = tmp_path / "parity-invocations.jsonl"
         out_dir = tmp_path / "evidence"
 
         make_fake_wp(ref_wp, "http://localhost:8082", enrich_order_evidence=True)
         make_fake_wp(target_wp, "http://store8889.localhost:8889", enrich_order_evidence=True)
-        make_fake_playwriter(fake_playwriter, omit_order_received_url=True)
+        make_fake_playwright_runner(fake_playwright_runner, omit_order_received_url=True)
         make_fake_parity_diff(fake_parity, parity_invocations_path)
 
         env = {
             **os.environ,
-            "PLAYWRITER_BIN": str(fake_playwriter),
-            "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter-invocations.jsonl"),
+            "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+            "FAKE_PLAYWRIGHT_INVOCATIONS": str(tmp_path / "playwright-invocations.jsonl"),
             "LPM_PARITY_DIFF_BIN": str(fake_parity),
         }
 
@@ -3505,8 +3449,6 @@ def test_gate_rejects_hosted_action_evidence_without_order_received_url() -> Non
             str(ref_wp),
             "--target",
             str(target_wp),
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env=env,
@@ -3527,17 +3469,17 @@ def test_gate_fails_when_driver_evidence_omits_required_order_fields() -> None:
         tmp_path = Path(tmp)
         ref_wp = tmp_path / "reference" / "wp"
         target_wp = tmp_path / "target" / "wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         out_dir = tmp_path / "evidence"
 
         make_fake_wp(ref_wp, "http://localhost:8082")
         make_fake_wp(target_wp, "http://store8889.localhost:8889")
-        make_fake_playwriter(fake_playwriter, omit_order_id=True)
+        make_fake_playwright_runner(fake_playwright_runner, omit_order_id=True)
 
         env = {
             **os.environ,
-            "PLAYWRITER_BIN": str(fake_playwriter),
-            "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter-invocations.jsonl"),
+            "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+            "FAKE_PLAYWRIGHT_INVOCATIONS": str(tmp_path / "playwright-invocations.jsonl"),
         }
 
         result = run_gate(
@@ -3547,8 +3489,6 @@ def test_gate_fails_when_driver_evidence_omits_required_order_fields() -> None:
             str(ref_wp),
             "--target",
             str(target_wp),
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env=env,
@@ -3566,17 +3506,17 @@ def test_gate_requires_semantic_lpm_checkout_evidence() -> None:
         tmp_path = Path(tmp)
         ref_wp = tmp_path / "reference" / "wp"
         target_wp = tmp_path / "target" / "wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         out_dir = tmp_path / "evidence"
 
         make_fake_wp(ref_wp, "http://localhost:8082")
         make_fake_wp(target_wp, "http://store8889.localhost:8889")
-        make_fake_playwriter(fake_playwriter, omit_semantic_fields=True)
+        make_fake_playwright_runner(fake_playwright_runner, omit_semantic_fields=True)
 
         env = {
             **os.environ,
-            "PLAYWRITER_BIN": str(fake_playwriter),
-            "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter-invocations.jsonl"),
+            "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+            "FAKE_PLAYWRIGHT_INVOCATIONS": str(tmp_path / "playwright-invocations.jsonl"),
         }
 
         result = run_gate(
@@ -3586,8 +3526,6 @@ def test_gate_requires_semantic_lpm_checkout_evidence() -> None:
             str(ref_wp),
             "--target",
             str(target_wp),
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env=env,
@@ -3607,17 +3545,17 @@ def test_gate_rejects_base_card_gateway_fallback_evidence() -> None:
         tmp_path = Path(tmp)
         ref_wp = tmp_path / "reference" / "wp"
         target_wp = tmp_path / "target" / "wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         out_dir = tmp_path / "evidence"
 
         make_fake_wp(ref_wp, "http://localhost:8082")
         make_fake_wp(target_wp, "http://store8889.localhost:8889")
-        make_fake_playwriter(fake_playwriter, use_base_card_gateway=True)
+        make_fake_playwright_runner(fake_playwright_runner, use_base_card_gateway=True)
 
         env = {
             **os.environ,
-            "PLAYWRITER_BIN": str(fake_playwriter),
-            "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter-invocations.jsonl"),
+            "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
+            "FAKE_PLAYWRIGHT_INVOCATIONS": str(tmp_path / "playwright-invocations.jsonl"),
         }
 
         result = run_gate(
@@ -3627,8 +3565,6 @@ def test_gate_rejects_base_card_gateway_fallback_evidence() -> None:
             str(ref_wp),
             "--target",
             str(target_wp),
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env=env,

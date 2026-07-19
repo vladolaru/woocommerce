@@ -15,7 +15,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 SCRIPT = REPO / "tools/woopayments-merge/token-continuity-gate.sh"
 TARGET_WP = "docker exec -i target-cli-1 wp --allow-root --user=1"
-BROWSER_DRIVER = REPO / "tools/woopayments-merge/token-continuity.playwriter.mjs"
+BROWSER_DRIVER = REPO / "tools/woopayments-merge/token-continuity.playwright.mjs"
 PAYMENT_METHOD_FIXTURE_STATE = REPO / "tools/woopayments-merge/payment-method-fixture-state.php"
 
 
@@ -350,7 +350,7 @@ exit 1
     )
 
 
-def make_fake_playwriter(
+def make_fake_playwright_runner(
     path: Path,
     *,
     omit_save_semantics: bool = False,
@@ -368,7 +368,7 @@ import pathlib
 import sys
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
-invocation_path = pathlib.Path(os.environ["FAKE_PLAYWRITER_INVOCATIONS"])
+invocation_path = pathlib.Path(os.environ["FAKE_PLAYWRIGHT_INVOCATIONS"])
 if "-e" in sys.argv[1:]:
     with invocation_path.open("a", encoding="utf-8") as stream:
         stream.write(json.dumps({"argv": sys.argv[1:], "env": {"phase": "config_seed"}}, sort_keys=True) + "\\n")
@@ -463,11 +463,11 @@ def test_gate_rejects_unapproved_standalone_target_before_invocation() -> None:
     with tempfile.TemporaryDirectory(prefix="token-continuity-gate-test-") as tmp:
         tmp_path = Path(tmp)
         target_wp = tmp_path / "target-wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         wp_invocations = tmp_path / "wp-invocations.txt"
 
         make_fake_wp(target_wp, "http://store8889.localhost:8889")
-        make_fake_playwriter(fake_playwriter)
+        make_fake_playwright_runner(fake_playwright_runner)
 
         result = run_gate(
             "--target",
@@ -476,14 +476,12 @@ def test_gate_rejects_unapproved_standalone_target_before_invocation() -> None:
             "7",
             "--subscription-id",
             "77",
-            "--playwriter-session",
-            "unit",
             "--preflight-only",
             env={
                 **os.environ,
-                "PLAYWRITER_BIN": str(fake_playwriter),
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
                 "FAKE_WP_INVOCATIONS": str(wp_invocations),
-                "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter-invocations.jsonl"),
+                "FAKE_PLAYWRIGHT_INVOCATIONS": str(tmp_path / "playwright-invocations.jsonl"),
             },
             wrap_fake_target=False,
         )
@@ -508,6 +506,8 @@ def test_print_plan_describes_sepa_cutover_evidence() -> None:
     payload = json.loads(result.stdout)
 
     assert payload["schema"] == "woopayments_token_continuity_gate_plan.v1"
+    assert payload["browser_runner"] == "playwright"
+    assert payload["browser_driver"].endswith("token-continuity.playwright.mjs")
     assert payload["target_wp"] == TARGET_WP
     assert payload["customer_id"] == 7
     assert payload["subscription_id"] == 77
@@ -643,23 +643,23 @@ def test_print_plan_describes_provider_setup_intent_source_flow() -> None:
     ]
 
 
-def test_full_gate_invokes_browser_native_token_loader_and_renewal_checks() -> None:
+def test_full_gate_supports_explicit_playwriter_compatibility_runner() -> None:
     with tempfile.TemporaryDirectory(prefix="token-continuity-gate-test-") as tmp:
         tmp_path = Path(tmp)
         target_wp = tmp_path / "target-wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         wp_invocations = tmp_path / "wp-invocations.txt"
-        playwriter_invocations = tmp_path / "playwriter-invocations.jsonl"
+        playwright_invocations = tmp_path / "playwright-invocations.jsonl"
         out_dir = tmp_path / "evidence"
 
         make_fake_wp(target_wp, "http://store8889.localhost:8889")
-        make_fake_playwriter(fake_playwriter)
+        make_fake_playwright_runner(fake_playwright_runner)
 
         env = {
             **os.environ,
-            "PLAYWRITER_BIN": str(fake_playwriter),
+            "PLAYWRITER_BIN": str(fake_playwright_runner),
             "FAKE_WP_INVOCATIONS": str(wp_invocations),
-            "FAKE_PLAYWRITER_INVOCATIONS": str(playwriter_invocations),
+            "FAKE_PLAYWRIGHT_INVOCATIONS": str(playwright_invocations),
         }
 
         result = run_gate(
@@ -669,6 +669,8 @@ def test_full_gate_invokes_browser_native_token_loader_and_renewal_checks() -> N
             "7",
             "--subscription-id",
             "77",
+            "--browser-runner",
+            "playwriter",
             "--playwriter-session",
             "unit",
             "--out-dir",
@@ -679,7 +681,7 @@ def test_full_gate_invokes_browser_native_token_loader_and_renewal_checks() -> N
         assert result.returncode == 0, result.stderr
         invocations = [
             json.loads(line)
-            for line in playwriter_invocations.read_text(encoding="utf-8").splitlines()
+            for line in playwright_invocations.read_text(encoding="utf-8").splitlines()
             if line
         ]
         seed_invocations = [item for item in invocations if "-e" in item["argv"]]
@@ -693,7 +695,7 @@ def test_full_gate_invokes_browser_native_token_loader_and_renewal_checks() -> N
             "render_payment_methods",
         ]
         assert all("-s" in item["argv"] and "unit" in item["argv"] for item in invocations)
-        assert all(str(REPO / "tools/woopayments-merge/token-continuity.playwriter.mjs") in item["argv"] for item in driver_invocations)
+        assert all(str(REPO / "tools/woopayments-merge/token-continuity.playwright.mjs") in item["argv"] for item in driver_invocations)
 
         wp_log = wp_invocations.read_text(encoding="utf-8")
         assert "eval-file - prepare-source-cart" not in wp_log
@@ -706,6 +708,7 @@ def test_full_gate_invokes_browser_native_token_loader_and_renewal_checks() -> N
 
         rollup = json.loads((out_dir / "token-continuity-gate.json").read_text(encoding="utf-8"))
         assert rollup["status"] == "pass"
+        assert rollup["browser_runner"] == "playwriter"
         assert rollup["token_id"] == 4242
         assert rollup["customer_id"] == 7
         assert rollup["native_token_loader"]["token_id"] == 4242
@@ -718,7 +721,7 @@ def test_gate_does_not_depend_on_unregistered_wc_payment_token_command() -> None
     with tempfile.TemporaryDirectory(prefix="token-continuity-gate-test-") as tmp:
         tmp_path = Path(tmp)
         target_wp = tmp_path / "target-wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         out_dir = tmp_path / "evidence"
 
         make_fake_wp(
@@ -726,7 +729,7 @@ def test_gate_does_not_depend_on_unregistered_wc_payment_token_command() -> None
             "http://store8889.localhost:8889",
             payment_token_command_available=False,
         )
-        make_fake_playwriter(fake_playwriter)
+        make_fake_playwright_runner(fake_playwright_runner)
 
         result = run_gate(
             "--target",
@@ -735,15 +738,13 @@ def test_gate_does_not_depend_on_unregistered_wc_payment_token_command() -> None
             "7",
             "--subscription-id",
             "77",
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env={
                 **os.environ,
-                "PLAYWRITER_BIN": str(fake_playwriter),
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
                 "FAKE_WP_INVOCATIONS": str(tmp_path / "wp-invocations.txt"),
-                "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter-invocations.jsonl"),
+                "FAKE_PLAYWRIGHT_INVOCATIONS": str(tmp_path / "playwright-invocations.jsonl"),
             },
         )
 
@@ -752,6 +753,7 @@ def test_gate_does_not_depend_on_unregistered_wc_payment_token_command() -> None
         assert "wc payment_token list" not in wp_log
         rollup = json.loads((out_dir / "token-continuity-gate.json").read_text(encoding="utf-8"))
         assert rollup["status"] == "pass"
+        assert rollup["browser_runner"] == "playwright"
         assert rollup["native_token_loader"]["success"] is True
         assert "cli_token_list" not in rollup
 
@@ -760,7 +762,7 @@ def test_gate_fails_and_rolls_up_plugin_state_restore_failure() -> None:
     with tempfile.TemporaryDirectory(prefix="token-continuity-gate-test-") as tmp:
         tmp_path = Path(tmp)
         target_wp = tmp_path / "target-wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         out_dir = tmp_path / "evidence"
 
         make_fake_wp(
@@ -768,7 +770,7 @@ def test_gate_fails_and_rolls_up_plugin_state_restore_failure() -> None:
             "http://store8889.localhost:8889",
             restore_failure=True,
         )
-        make_fake_playwriter(fake_playwriter)
+        make_fake_playwright_runner(fake_playwright_runner)
 
         result = run_gate(
             "--target",
@@ -777,15 +779,13 @@ def test_gate_fails_and_rolls_up_plugin_state_restore_failure() -> None:
             "7",
             "--subscription-id",
             "77",
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env={
                 **os.environ,
-                "PLAYWRITER_BIN": str(fake_playwriter),
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
                 "FAKE_WP_INVOCATIONS": str(tmp_path / "wp-invocations.txt"),
-                "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter-invocations.jsonl"),
+                "FAKE_PLAYWRIGHT_INVOCATIONS": str(tmp_path / "playwright-invocations.jsonl"),
             },
         )
 
@@ -801,7 +801,7 @@ def test_exit_zero_negative_plugin_restore_stays_armed_for_cleanup_retry() -> No
     with tempfile.TemporaryDirectory(prefix="token-continuity-gate-test-") as tmp:
         tmp_path = Path(tmp)
         target_wp = tmp_path / "target-wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         wp_invocations = tmp_path / "wp-invocations.txt"
         out_dir = tmp_path / "evidence"
 
@@ -810,7 +810,7 @@ def test_exit_zero_negative_plugin_restore_stays_armed_for_cleanup_retry() -> No
             "http://store8889.localhost:8889",
             restore_semantic_failure=True,
         )
-        make_fake_playwriter(fake_playwriter)
+        make_fake_playwright_runner(fake_playwright_runner)
 
         result = run_gate(
             "--target",
@@ -819,15 +819,13 @@ def test_exit_zero_negative_plugin_restore_stays_armed_for_cleanup_retry() -> No
             "7",
             "--subscription-id",
             "77",
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env={
                 **os.environ,
-                "PLAYWRITER_BIN": str(fake_playwriter),
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
                 "FAKE_WP_INVOCATIONS": str(wp_invocations),
-                "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter-invocations.jsonl"),
+                "FAKE_PLAYWRIGHT_INVOCATIONS": str(tmp_path / "playwright-invocations.jsonl"),
             },
         )
 
@@ -839,7 +837,7 @@ def test_cutover_failure_without_json_still_restores_plugin_state() -> None:
     with tempfile.TemporaryDirectory(prefix="token-continuity-cutover-cleanup-") as tmp:
         tmp_path = Path(tmp)
         target_wp = tmp_path / "target-wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         wp_invocations = tmp_path / "wp-invocations.txt"
         out_dir = tmp_path / "evidence"
 
@@ -848,7 +846,7 @@ def test_cutover_failure_without_json_still_restores_plugin_state() -> None:
             "http://store8889.localhost:8889",
             cutover_failure_without_json=True,
         )
-        make_fake_playwriter(fake_playwriter)
+        make_fake_playwright_runner(fake_playwright_runner)
 
         result = run_gate(
             "--target",
@@ -857,15 +855,13 @@ def test_cutover_failure_without_json_still_restores_plugin_state() -> None:
             "7",
             "--subscription-id",
             "77",
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env={
                 **os.environ,
-                "PLAYWRITER_BIN": str(fake_playwriter),
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
                 "FAKE_WP_INVOCATIONS": str(wp_invocations),
-                "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter-invocations.jsonl"),
+                "FAKE_PLAYWRIGHT_INVOCATIONS": str(tmp_path / "playwright-invocations.jsonl"),
             },
         )
 
@@ -879,19 +875,19 @@ def test_full_gate_validates_browser_token_against_reusable_customer_payment_met
     with tempfile.TemporaryDirectory(prefix="token-continuity-gate-test-") as tmp:
         tmp_path = Path(tmp)
         target_wp = tmp_path / "target-wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         wp_invocations = tmp_path / "wp-invocations.txt"
-        playwriter_invocations = tmp_path / "playwriter-invocations.jsonl"
+        playwright_invocations = tmp_path / "playwright-invocations.jsonl"
         out_dir = tmp_path / "evidence"
 
         make_fake_wp(target_wp, "http://store8889.localhost:8889")
-        make_fake_playwriter(fake_playwriter)
+        make_fake_playwright_runner(fake_playwright_runner)
 
         env = {
             **os.environ,
-            "PLAYWRITER_BIN": str(fake_playwriter),
+            "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
             "FAKE_WP_INVOCATIONS": str(wp_invocations),
-            "FAKE_PLAYWRITER_INVOCATIONS": str(playwriter_invocations),
+            "FAKE_PLAYWRIGHT_INVOCATIONS": str(playwright_invocations),
         }
 
         result = run_gate(
@@ -901,8 +897,6 @@ def test_full_gate_validates_browser_token_against_reusable_customer_payment_met
             "7",
             "--subscription-id",
             "77",
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env=env,
@@ -929,19 +923,19 @@ def test_full_gate_can_use_add_payment_method_source_flow_for_renewal_fixture() 
     with tempfile.TemporaryDirectory(prefix="token-continuity-gate-test-") as tmp:
         tmp_path = Path(tmp)
         target_wp = tmp_path / "target-wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         wp_invocations = tmp_path / "wp-invocations.txt"
-        playwriter_invocations = tmp_path / "playwriter-invocations.jsonl"
+        playwright_invocations = tmp_path / "playwright-invocations.jsonl"
         out_dir = tmp_path / "evidence"
 
         make_fake_wp(target_wp, "http://store8889.localhost:8889", subscription_product_id=116)
-        make_fake_playwriter(fake_playwriter)
+        make_fake_playwright_runner(fake_playwright_runner)
 
         env = {
             **os.environ,
-            "PLAYWRITER_BIN": str(fake_playwriter),
+            "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
             "FAKE_WP_INVOCATIONS": str(wp_invocations),
-            "FAKE_PLAYWRITER_INVOCATIONS": str(playwriter_invocations),
+            "FAKE_PLAYWRIGHT_INVOCATIONS": str(playwright_invocations),
         }
 
         result = run_gate(
@@ -953,8 +947,6 @@ def test_full_gate_can_use_add_payment_method_source_flow_for_renewal_fixture() 
             "116",
             "--source-flow",
             "add-payment-method",
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env=env,
@@ -969,17 +961,12 @@ def test_full_gate_can_use_add_payment_method_source_flow_for_renewal_fixture() 
 
         invocations = [
             json.loads(line)
-            for line in playwriter_invocations.read_text(encoding="utf-8").splitlines()
+            for line in playwright_invocations.read_text(encoding="utf-8").splitlines()
             if line
         ]
-        seed_invocations = [item for item in invocations if "-e" in item["argv"]]
-        driver_invocations = [item for item in invocations if "-f" in item["argv"]]
-        assert len(seed_invocations) == 2
+        driver_invocations = invocations
         assert len(driver_invocations) == 2
-        assert '"sourceFlow": "add_payment_method"' in " ".join(seed_invocations[0]["argv"])
-        assert '"addPaymentMethodUrl": "http://store8889.localhost:8889/?page_id=8&add-payment-method"' in " ".join(
-            seed_invocations[0]["argv"]
-        )
+        assert all("-e" not in item["argv"] and "-s" not in item["argv"] for item in driver_invocations)
         assert driver_invocations[0]["env"]["phase"] == "save_sepa_token"
         assert driver_invocations[0]["env"]["source_flow"] == "add_payment_method"
         assert driver_invocations[0]["env"]["url"] == (
@@ -998,19 +985,19 @@ def test_full_gate_can_use_provider_setup_intent_source_flow_for_renewal_fixture
     with tempfile.TemporaryDirectory(prefix="token-continuity-gate-test-") as tmp:
         tmp_path = Path(tmp)
         target_wp = tmp_path / "target-wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         wp_invocations = tmp_path / "wp-invocations.txt"
-        playwriter_invocations = tmp_path / "playwriter-invocations.jsonl"
+        playwright_invocations = tmp_path / "playwright-invocations.jsonl"
         out_dir = tmp_path / "evidence"
 
         make_fake_wp(target_wp, "http://store8889.localhost:8889", subscription_product_id=116)
-        make_fake_playwriter(fake_playwriter)
+        make_fake_playwright_runner(fake_playwright_runner)
 
         env = {
             **os.environ,
-            "PLAYWRITER_BIN": str(fake_playwriter),
+            "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
             "FAKE_WP_INVOCATIONS": str(wp_invocations),
-            "FAKE_PLAYWRITER_INVOCATIONS": str(playwriter_invocations),
+            "FAKE_PLAYWRIGHT_INVOCATIONS": str(playwright_invocations),
         }
 
         result = run_gate(
@@ -1022,8 +1009,6 @@ def test_full_gate_can_use_provider_setup_intent_source_flow_for_renewal_fixture
             "116",
             "--source-flow",
             "provider-setup-intent",
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env=env,
@@ -1039,13 +1024,12 @@ def test_full_gate_can_use_provider_setup_intent_source_flow_for_renewal_fixture
 
         invocations = [
             json.loads(line)
-            for line in playwriter_invocations.read_text(encoding="utf-8").splitlines()
+            for line in playwright_invocations.read_text(encoding="utf-8").splitlines()
             if line
         ]
-        seed_invocations = [item for item in invocations if "-e" in item["argv"]]
-        driver_invocations = [item for item in invocations if "-f" in item["argv"]]
-        assert len(seed_invocations) == 1
+        driver_invocations = invocations
         assert len(driver_invocations) == 1
+        assert "-e" not in driver_invocations[0]["argv"]
         assert driver_invocations[0]["env"]["phase"] == "render_payment_methods"
         assert driver_invocations[0]["env"]["source_flow"] == "provider_setup_intent"
 
@@ -1065,19 +1049,19 @@ def test_full_gate_can_discover_browser_created_subscription_from_checkout_order
     with tempfile.TemporaryDirectory(prefix="token-continuity-gate-test-") as tmp:
         tmp_path = Path(tmp)
         target_wp = tmp_path / "target-wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         wp_invocations = tmp_path / "wp-invocations.txt"
-        playwriter_invocations = tmp_path / "playwriter-invocations.jsonl"
+        playwright_invocations = tmp_path / "playwright-invocations.jsonl"
         out_dir = tmp_path / "evidence"
 
         make_fake_wp(target_wp, "http://store8889.localhost:8889", subscription_product_id=116)
-        make_fake_playwriter(fake_playwriter)
+        make_fake_playwright_runner(fake_playwright_runner)
 
         env = {
             **os.environ,
-            "PLAYWRITER_BIN": str(fake_playwriter),
+            "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
             "FAKE_WP_INVOCATIONS": str(wp_invocations),
-            "FAKE_PLAYWRITER_INVOCATIONS": str(playwriter_invocations),
+            "FAKE_PLAYWRIGHT_INVOCATIONS": str(playwright_invocations),
         }
 
         result = run_gate(
@@ -1087,8 +1071,6 @@ def test_full_gate_can_discover_browser_created_subscription_from_checkout_order
             "7",
             "--subscription-product-id",
             "116",
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env=env,
@@ -1104,16 +1086,12 @@ def test_full_gate_can_discover_browser_created_subscription_from_checkout_order
 
         invocations = [
             json.loads(line)
-            for line in playwriter_invocations.read_text(encoding="utf-8").splitlines()
+            for line in playwright_invocations.read_text(encoding="utf-8").splitlines()
             if line
         ]
-        seed_invocations = [item for item in invocations if "-e" in item["argv"]]
-        driver_invocations = [item for item in invocations if "-f" in item["argv"]]
-        assert len(seed_invocations) == 2
+        driver_invocations = invocations
         assert len(driver_invocations) == 2
-        assert "state.tokenContinuityConfig" in " ".join(seed_invocations[0]["argv"])
-        assert '"checkoutUrl": "http://store8889.localhost:8889/?page_id=7"' in " ".join(seed_invocations[0]["argv"])
-        assert '"subscriptionProductId": "116"' in " ".join(seed_invocations[0]["argv"])
+        assert all("-e" not in item["argv"] and "-s" not in item["argv"] for item in driver_invocations)
         assert driver_invocations[0]["env"]["phase"] == "save_sepa_token"
         assert driver_invocations[0]["env"]["subscription_product_id"] == 116
 
@@ -1130,19 +1108,19 @@ def test_full_gate_can_provision_renewal_fixture_from_saved_token() -> None:
     with tempfile.TemporaryDirectory(prefix="token-continuity-gate-test-") as tmp:
         tmp_path = Path(tmp)
         target_wp = tmp_path / "target-wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         wp_invocations = tmp_path / "wp-invocations.txt"
-        playwriter_invocations = tmp_path / "playwriter-invocations.jsonl"
+        playwright_invocations = tmp_path / "playwright-invocations.jsonl"
         out_dir = tmp_path / "evidence"
 
         make_fake_wp(target_wp, "http://store8889.localhost:8889", subscription_product_id=116)
-        make_fake_playwriter(fake_playwriter)
+        make_fake_playwright_runner(fake_playwright_runner)
 
         env = {
             **os.environ,
-            "PLAYWRITER_BIN": str(fake_playwriter),
+            "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
             "FAKE_WP_INVOCATIONS": str(wp_invocations),
-            "FAKE_PLAYWRITER_INVOCATIONS": str(playwriter_invocations),
+            "FAKE_PLAYWRIGHT_INVOCATIONS": str(playwright_invocations),
         }
 
         result = run_gate(
@@ -1154,8 +1132,6 @@ def test_full_gate_can_provision_renewal_fixture_from_saved_token() -> None:
             "187",
             "--renewal-product-id",
             "116",
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env=env,
@@ -1172,15 +1148,12 @@ def test_full_gate_can_provision_renewal_fixture_from_saved_token() -> None:
 
         invocations = [
             json.loads(line)
-            for line in playwriter_invocations.read_text(encoding="utf-8").splitlines()
+            for line in playwright_invocations.read_text(encoding="utf-8").splitlines()
             if line
         ]
-        seed_invocations = [item for item in invocations if "-e" in item["argv"]]
-        driver_invocations = [item for item in invocations if "-f" in item["argv"]]
-        assert len(seed_invocations) == 2
+        driver_invocations = invocations
         assert len(driver_invocations) == 2
-        assert '"checkoutProductId": "187"' in " ".join(seed_invocations[0]["argv"])
-        assert '"subscriptionProductId": ""' in " ".join(seed_invocations[0]["argv"])
+        assert all("-e" not in item["argv"] and "-s" not in item["argv"] for item in driver_invocations)
         assert driver_invocations[0]["env"]["phase"] == "save_sepa_token"
         assert driver_invocations[0]["env"]["checkout_product_id"] == 187
         assert driver_invocations[0]["env"]["subscription_product_id"] == 0
@@ -1200,19 +1173,19 @@ def test_full_gate_persists_source_token_from_real_payment_method_when_checkout_
     with tempfile.TemporaryDirectory(prefix="token-continuity-gate-test-") as tmp:
         tmp_path = Path(tmp)
         target_wp = tmp_path / "target-wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         wp_invocations = tmp_path / "wp-invocations.txt"
-        playwriter_invocations = tmp_path / "playwriter-invocations.jsonl"
+        playwright_invocations = tmp_path / "playwright-invocations.jsonl"
         out_dir = tmp_path / "evidence"
 
         make_fake_wp(target_wp, "http://store8889.localhost:8889", subscription_product_id=116, token_id=5252)
-        make_fake_playwriter(fake_playwriter, source_token_requires_state_persistence=True)
+        make_fake_playwright_runner(fake_playwright_runner, source_token_requires_state_persistence=True)
 
         env = {
             **os.environ,
-            "PLAYWRITER_BIN": str(fake_playwriter),
+            "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
             "FAKE_WP_INVOCATIONS": str(wp_invocations),
-            "FAKE_PLAYWRITER_INVOCATIONS": str(playwriter_invocations),
+            "FAKE_PLAYWRIGHT_INVOCATIONS": str(playwright_invocations),
         }
 
         result = run_gate(
@@ -1224,8 +1197,6 @@ def test_full_gate_persists_source_token_from_real_payment_method_when_checkout_
             "187",
             "--renewal-product-id",
             "116",
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env=env,
@@ -1264,19 +1235,19 @@ def test_stage_sepa_fixture_stages_and_restores_checkout_readiness() -> None:
     with tempfile.TemporaryDirectory(prefix="token-continuity-gate-test-") as tmp:
         tmp_path = Path(tmp)
         target_wp = tmp_path / "target-wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         wp_invocations = tmp_path / "wp-invocations.txt"
-        playwriter_invocations = tmp_path / "playwriter-invocations.jsonl"
+        playwright_invocations = tmp_path / "playwright-invocations.jsonl"
         out_dir = tmp_path / "evidence"
 
         make_fake_wp(target_wp, "http://store8889.localhost:8889")
-        make_fake_playwriter(fake_playwriter)
+        make_fake_playwright_runner(fake_playwright_runner)
 
         env = {
             **os.environ,
-            "PLAYWRITER_BIN": str(fake_playwriter),
+            "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
             "FAKE_WP_INVOCATIONS": str(wp_invocations),
-            "FAKE_PLAYWRITER_INVOCATIONS": str(playwriter_invocations),
+            "FAKE_PLAYWRIGHT_INVOCATIONS": str(playwright_invocations),
         }
 
         result = run_gate(
@@ -1286,8 +1257,6 @@ def test_stage_sepa_fixture_stages_and_restores_checkout_readiness() -> None:
             "7",
             "--subscription-id",
             "77",
-            "--playwriter-session",
-            "unit",
             "--stage-sepa-fixture",
             "--out-dir",
             str(out_dir),
@@ -1308,12 +1277,12 @@ def test_stage_verification_failure_still_restores_the_mutated_fixture() -> None
     with tempfile.TemporaryDirectory(prefix="token-continuity-gate-test-") as tmp:
         tmp_path = Path(tmp)
         target_wp = tmp_path / "target-wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         wp_invocations = tmp_path / "wp-invocations.txt"
         out_dir = tmp_path / "evidence"
 
         make_fake_wp(target_wp, "http://store8889.localhost:8889", sepa_stage_failure=True)
-        make_fake_playwriter(fake_playwriter)
+        make_fake_playwright_runner(fake_playwright_runner)
 
         result = run_gate(
             "--target",
@@ -1322,16 +1291,14 @@ def test_stage_verification_failure_still_restores_the_mutated_fixture() -> None
             "7",
             "--subscription-id",
             "77",
-            "--playwriter-session",
-            "unit",
             "--stage-sepa-fixture",
             "--out-dir",
             str(out_dir),
             env={
                 **os.environ,
-                "PLAYWRITER_BIN": str(fake_playwriter),
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
                 "FAKE_WP_INVOCATIONS": str(wp_invocations),
-                "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter-invocations.jsonl"),
+                "FAKE_PLAYWRIGHT_INVOCATIONS": str(tmp_path / "playwright-invocations.jsonl"),
             },
         )
 
@@ -1346,7 +1313,7 @@ def test_gate_fails_and_rolls_up_sepa_fixture_restore_failure() -> None:
     with tempfile.TemporaryDirectory(prefix="token-continuity-gate-test-") as tmp:
         tmp_path = Path(tmp)
         target_wp = tmp_path / "target-wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         out_dir = tmp_path / "evidence"
 
         make_fake_wp(
@@ -1354,7 +1321,7 @@ def test_gate_fails_and_rolls_up_sepa_fixture_restore_failure() -> None:
             "http://store8889.localhost:8889",
             sepa_restore_failure=True,
         )
-        make_fake_playwriter(fake_playwriter)
+        make_fake_playwright_runner(fake_playwright_runner)
 
         result = run_gate(
             "--target",
@@ -1363,16 +1330,14 @@ def test_gate_fails_and_rolls_up_sepa_fixture_restore_failure() -> None:
             "7",
             "--subscription-id",
             "77",
-            "--playwriter-session",
-            "unit",
             "--stage-sepa-fixture",
             "--out-dir",
             str(out_dir),
             env={
                 **os.environ,
-                "PLAYWRITER_BIN": str(fake_playwriter),
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
                 "FAKE_WP_INVOCATIONS": str(tmp_path / "wp-invocations.txt"),
-                "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter-invocations.jsonl"),
+                "FAKE_PLAYWRIGHT_INVOCATIONS": str(tmp_path / "playwright-invocations.jsonl"),
             },
         )
 
@@ -1387,7 +1352,7 @@ def test_exit_zero_negative_sepa_restore_stays_armed_for_cleanup_retry() -> None
     with tempfile.TemporaryDirectory(prefix="token-continuity-gate-test-") as tmp:
         tmp_path = Path(tmp)
         target_wp = tmp_path / "target-wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         wp_invocations = tmp_path / "wp-invocations.txt"
         out_dir = tmp_path / "evidence"
 
@@ -1396,7 +1361,7 @@ def test_exit_zero_negative_sepa_restore_stays_armed_for_cleanup_retry() -> None
             "http://store8889.localhost:8889",
             sepa_restore_semantic_failure=True,
         )
-        make_fake_playwriter(fake_playwriter)
+        make_fake_playwright_runner(fake_playwright_runner)
 
         result = run_gate(
             "--target",
@@ -1405,16 +1370,14 @@ def test_exit_zero_negative_sepa_restore_stays_armed_for_cleanup_retry() -> None
             "7",
             "--subscription-id",
             "77",
-            "--playwriter-session",
-            "unit",
             "--stage-sepa-fixture",
             "--out-dir",
             str(out_dir),
             env={
                 **os.environ,
-                "PLAYWRITER_BIN": str(fake_playwriter),
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
                 "FAKE_WP_INVOCATIONS": str(wp_invocations),
-                "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter-invocations.jsonl"),
+                "FAKE_PLAYWRIGHT_INVOCATIONS": str(tmp_path / "playwright-invocations.jsonl"),
             },
         )
 
@@ -1426,7 +1389,7 @@ def test_sepa_stage_failure_without_json_restores_prearmed_snapshot() -> None:
     with tempfile.TemporaryDirectory(prefix="token-continuity-sepa-snapshot-") as tmp:
         tmp_path = Path(tmp)
         target_wp = tmp_path / "target-wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         wp_invocations = tmp_path / "wp-invocations.txt"
         out_dir = tmp_path / "evidence"
 
@@ -1435,7 +1398,7 @@ def test_sepa_stage_failure_without_json_restores_prearmed_snapshot() -> None:
             "http://store8889.localhost:8889",
             sepa_stage_failure_without_json=True,
         )
-        make_fake_playwriter(fake_playwriter)
+        make_fake_playwright_runner(fake_playwright_runner)
 
         result = run_gate(
             "--target",
@@ -1444,16 +1407,14 @@ def test_sepa_stage_failure_without_json_restores_prearmed_snapshot() -> None:
             "7",
             "--subscription-id",
             "77",
-            "--playwriter-session",
-            "unit",
             "--stage-sepa-fixture",
             "--out-dir",
             str(out_dir),
             env={
                 **os.environ,
-                "PLAYWRITER_BIN": str(fake_playwriter),
+                "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
                 "FAKE_WP_INVOCATIONS": str(wp_invocations),
-                "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter-invocations.jsonl"),
+                "FAKE_PLAYWRIGHT_INVOCATIONS": str(tmp_path / "playwright-invocations.jsonl"),
             },
         )
 
@@ -1554,17 +1515,17 @@ def test_gate_fails_when_native_state_assertion_omits_saved_token() -> None:
     with tempfile.TemporaryDirectory(prefix="token-continuity-gate-test-") as tmp:
         tmp_path = Path(tmp)
         target_wp = tmp_path / "target-wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         out_dir = tmp_path / "evidence"
 
         make_fake_wp(target_wp, "http://store8889.localhost:8889", omit_token=True)
-        make_fake_playwriter(fake_playwriter)
+        make_fake_playwright_runner(fake_playwright_runner)
 
         env = {
             **os.environ,
-            "PLAYWRITER_BIN": str(fake_playwriter),
+            "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
             "FAKE_WP_INVOCATIONS": str(tmp_path / "wp-invocations.txt"),
-            "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter-invocations.jsonl"),
+            "FAKE_PLAYWRIGHT_INVOCATIONS": str(tmp_path / "playwright-invocations.jsonl"),
         }
 
         result = run_gate(
@@ -1574,8 +1535,6 @@ def test_gate_fails_when_native_state_assertion_omits_saved_token() -> None:
             "7",
             "--subscription-id",
             "77",
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env=env,
@@ -1592,17 +1551,17 @@ def test_gate_requires_save_token_browser_semantic_evidence() -> None:
     with tempfile.TemporaryDirectory(prefix="token-continuity-gate-test-") as tmp:
         tmp_path = Path(tmp)
         target_wp = tmp_path / "target-wp"
-        fake_playwriter = tmp_path / "fake-playwriter"
+        fake_playwright_runner = tmp_path / "fake-playwright-runner"
         out_dir = tmp_path / "evidence"
 
         make_fake_wp(target_wp, "http://store8889.localhost:8889")
-        make_fake_playwriter(fake_playwriter, omit_save_semantics=True)
+        make_fake_playwright_runner(fake_playwright_runner, omit_save_semantics=True)
 
         env = {
             **os.environ,
-            "PLAYWRITER_BIN": str(fake_playwriter),
+            "PLAYWRIGHT_SCRIPT_RUNNER_BIN": str(fake_playwright_runner),
             "FAKE_WP_INVOCATIONS": str(tmp_path / "wp-invocations.txt"),
-            "FAKE_PLAYWRITER_INVOCATIONS": str(tmp_path / "playwriter-invocations.jsonl"),
+            "FAKE_PLAYWRIGHT_INVOCATIONS": str(tmp_path / "playwright-invocations.jsonl"),
         }
 
         result = run_gate(
@@ -1612,8 +1571,6 @@ def test_gate_requires_save_token_browser_semantic_evidence() -> None:
             "7",
             "--subscription-id",
             "77",
-            "--playwriter-session",
-            "unit",
             "--out-dir",
             str(out_dir),
             env=env,

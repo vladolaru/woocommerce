@@ -82,7 +82,7 @@ def test_reference_baseline_requires_entrypoints_but_not_later_split_chunks(modu
 def test_reference_fees_report_is_optional_without_weakening_target_route(module) -> None:
     del module
     browser_source = (
-        REPO / "tools/woopayments-merge/a4-admin-browser-gate.playwriter.mjs"
+        REPO / "tools/woopayments-merge/a4-admin-browser-gate.playwright.mjs"
     ).read_text(encoding="utf-8")
     reports_surface = re.search(
         r"id: 'reports-fees',(?P<body>.*?)targetAssets:",

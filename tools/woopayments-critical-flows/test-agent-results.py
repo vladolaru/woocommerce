@@ -181,7 +181,7 @@ def write_plugin_active_packet(base: Path, role: str, context_sha256: str) -> Pa
     browser = base / "plugin-active-settings.json"
     failures = base / "plugin-active-settings-failures.txt"
     blockers = base / "plugin-active-settings-blockers.txt"
-    log = base / "plugin-active-settings.playwriter.log"
+    log = base / "plugin-active-settings.browser.log"
     gate = base / "plugin-active-settings-gate.json"
     write_test_png(screenshot)
     payload = plugin_active_rollup(role, store_url, str(screenshot), context_sha256)
@@ -491,6 +491,29 @@ def test_builds_plugin_active_agent_result_from_reference_and_target_gates() -> 
         assert all(store["evidence"] for store in payload["store_results"])
 
 
+def test_builds_plugin_active_result_from_legacy_playwriter_log_packets() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-agent-results-") as tmp:
+        tmp_path = Path(tmp)
+
+        def use_legacy_log_name(ref_gate: Path, target_gate: Path, _context: dict) -> None:
+            for gate in (ref_gate, target_gate):
+                payload = read_json(gate)
+                for artifact in payload["artifacts"]:
+                    path = Path(artifact["path"])
+                    if path.name != "plugin-active-settings.browser.log":
+                        continue
+                    legacy_path = path.with_name("plugin-active-settings.playwriter.log")
+                    path.rename(legacy_path)
+                    artifact["path"] = str(legacy_path)
+                    artifact["sha256"] = f"sha256:{hashlib.sha256(legacy_path.read_bytes()).hexdigest()}"
+                write_json(gate, payload)
+
+        result, payload = build_plugin_active_test_result(tmp_path, use_legacy_log_name)
+
+        assert result.returncode == 0, result.stderr
+        assert payload["parity_verdict"] == "PASS"
+
+
 def build_plugin_active_test_result(
     tmp_path: Path,
     mutate: Callable[[Path, Path, dict], None] | None = None,
@@ -679,7 +702,7 @@ def test_plugin_active_result_rejects_artifact_hash_mismatch() -> None:
         tmp_path = Path(tmp)
 
         def tamper_log(_ref_gate: Path, target_gate: Path, _context: dict) -> None:
-            (target_gate.parent / "plugin-active-settings.playwriter.log").write_text(
+            (target_gate.parent / "plugin-active-settings.browser.log").write_text(
                 "tampered after capture\n", encoding="utf-8"
             )
 

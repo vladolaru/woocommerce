@@ -173,9 +173,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--target-wp", required=True, help="Target WP-CLI command string.")
     parser.add_argument(
         "--browser-runner",
-        choices=("playwriter", "playwright"),
-        default=os.environ.get("BROWSER_RUNNER", "playwriter"),
-        help="Browser runner for admin/checkout evidence gates.",
+        choices=("playwright", "playwriter"),
+        default=os.environ.get("BROWSER_RUNNER", "playwright"),
+        help="Browser runner for admin/checkout evidence gates. Defaults to direct Playwright.",
     )
     parser.add_argument(
         "--playwriter-session",
@@ -183,9 +183,9 @@ def parse_args() -> argparse.Namespace:
         help="Playwriter session id. Required only when --browser-runner=playwriter.",
     )
     parser.add_argument("--out-dir", default=str(DEFAULT_OUT_DIR), help="Evidence output directory.")
-    parser.add_argument("--skip-admin-browser", action="store_true", help="Skip admin Playwriter gate.")
-    parser.add_argument("--skip-optional-admin-scenario", action="store_true", help="Skip the optional account-state admin Playwriter scenario.")
-    parser.add_argument("--skip-checkout-browser", action="store_true", help="Skip checkout Playwriter gate.")
+    parser.add_argument("--skip-admin-browser", action="store_true", help="Skip the admin browser gate.")
+    parser.add_argument("--skip-optional-admin-scenario", action="store_true", help="Skip the optional account-state admin browser scenario.")
+    parser.add_argument("--skip-checkout-browser", action="store_true", help="Skip the checkout browser gate.")
     parser.add_argument("--skip-perf", action="store_true", help="Skip measured perf gate.")
     parser.add_argument("--skip-perf-fixtures", action="store_true", help="Skip local money fixture creation for perf probes.")
     parser.add_argument("--skip-bundle", action="store_true", help="Skip measured bundle gate.")
@@ -266,7 +266,7 @@ class Gate:
                 raise SystemExit(f"ERROR: refusing non-local WPCOM/Automattic host in {label}")
         validate_local_wp_command("ref-wp", self.ref_wp)
         validate_local_wp_command("target-wp", self.target_wp)
-        if self.browser_runner not in {"playwriter", "playwright"}:
+        if self.browser_runner not in {"playwright", "playwriter"}:
             raise SystemExit(f"ERROR: unsupported browser runner: {self.browser_runner}")
         needs_browser = not self.args.skip_admin_browser or not self.args.skip_checkout_browser
         if needs_browser and self.browser_runner == "playwriter" and not self.playwriter_session:
@@ -332,6 +332,7 @@ class Gate:
                 "--timeout",
                 str(timeout),
             ]
+        # Compatibility only: final/default evidence uses isolated Playwright.
         return [
             "npx",
             "playwriter@latest",
@@ -808,7 +809,7 @@ class Gate:
                 ]
             else:
                 state_command = []
-            browser_command = self.browser_command(self.scripts_dir / "a4-admin-browser-gate.playwriter.mjs", 900000)
+            browser_command = self.browser_command(self.scripts_dir / "a4-admin-browser-gate.playwright.mjs", 900000)
             entry["command"] = [state_command, browser_command]
 
             if self.browser_runner == "playwriter":
@@ -1115,7 +1116,7 @@ class Gate:
                 (
                     "admin-browser",
                     "admin",
-                    self.browser_command(self.scripts_dir / "a4-admin-browser-gate.playwriter.mjs", 900000),
+                    self.browser_command(self.scripts_dir / "a4-admin-browser-gate.playwright.mjs", 900000),
                     self.browser_state_env(
                         evidence_path=evidence_path,
                         data_dir=self.browser_data_dir("admin-browser"),
@@ -1129,7 +1130,7 @@ class Gate:
                 (
                     "checkout-browser",
                     "checkout",
-                    self.browser_command(self.scripts_dir / "a4-checkout-browser-gate.playwriter.mjs", 900000),
+                    self.browser_command(self.scripts_dir / "a4-checkout-browser-gate.playwright.mjs", 900000),
                     self.browser_state_env(
                         evidence_path=evidence_path,
                         data_dir=self.browser_data_dir("checkout-browser"),

@@ -16,7 +16,7 @@ from tools.woopayments_test_runner import adapt_wp_runner_arguments
 
 REPO = Path(__file__).resolve().parents[2]
 SCRIPT = REPO / "tools/woopayments-merge/sc04-saved-card-gate.py"
-DRIVER = REPO / "tools/woopayments-merge/sc04-saved-card.playwriter.mjs"
+DRIVER = REPO / "tools/woopayments-merge/sc04-saved-card.playwright.mjs"
 CONTEXT_MODULE_PATH = REPO / "tools/woopayments-critical-flows/evidence_context.py"
 REF_WP = "docker exec -i wcpay_wp_default wp"
 TARGET_WP = "docker exec -i unit-target-cli-1 wp"
@@ -456,7 +456,7 @@ def test_gate_runs_both_stores_and_destroys_short_lived_sessions() -> None:
         assert (out_dir / "reference-state.json").is_file()
         assert (out_dir / "target-browser.json").is_file()
         assert (out_dir / "target-state.json").is_file()
-        assert browser_log.read_text(encoding="utf-8").count("sc04-saved-card.playwriter.mjs") == 2
+        assert browser_log.read_text(encoding="utf-8").count("sc04-saved-card.playwright.mjs") == 2
         wp_invocations = wp_log.read_text(encoding="utf-8")
         assert wp_invocations.count(" eval-file - ") == 10
         assert wp_invocations.count("SC04_FIXTURE_PROBE") == 2

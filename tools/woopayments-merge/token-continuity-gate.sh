@@ -13,7 +13,7 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOCAL_RUNNER_SAFETY="$SELF_DIR/local-runner-safety.sh"
 STATE_DRIVER="$SELF_DIR/token-continuity-state.php"
 RENEWAL_DRIVER="$SELF_DIR/subscriptions-renewal-drive.php"
-BROWSER_DRIVER="$SELF_DIR/token-continuity.playwriter.mjs"
+BROWSER_DRIVER="$SELF_DIR/token-continuity.playwright.mjs"
 PAYMENT_METHOD_FIXTURE_STATE="$SELF_DIR/payment-method-fixture-state.php"
 
 TARGET_WP=""
@@ -25,7 +25,7 @@ RENEWAL_PRODUCT_ID=""
 SUBSCRIPTION_SOURCE="provided"
 SOURCE_FLOW="checkout"
 PLAYWRITER_SESSION="${PLAYWRITER_SESSION:-}"
-BROWSER_RUNNER="${BROWSER_RUNNER:-playwriter}"
+BROWSER_RUNNER="${BROWSER_RUNNER:-playwright}"
 PLAYWRIGHT_SCRIPT_RUNNER_BIN="${PLAYWRIGHT_SCRIPT_RUNNER_BIN:-$SELF_DIR/playwright-script-runner.mjs}"
 OUT_DIR="${TMPDIR:-$SELF_DIR/.tmp}/token-continuity-gate"
 PRINT_PLAN=0
@@ -57,8 +57,8 @@ Options:
   --renewal-product-id <id>    Subscription product used to provision a renewal fixture from the source token.
   --source-flow <flow>         Source token acquisition flow: checkout, add-payment-method, or provider-setup-intent.
                                Defaults to checkout.
-  --browser-runner <runner>    Browser runner: playwriter or playwright. Defaults to BROWSER_RUNNER or playwriter.
-  --playwriter-session <id>    Existing Playwriter session id. Defaults to PLAYWRITER_SESSION.
+  --browser-runner <runner>    Browser runner: playwright or playwriter. Defaults to BROWSER_RUNNER or playwright.
+  --playwriter-session <id>    Existing Playwriter session for explicit compatibility runs only.
   --out-dir <path>             Evidence output directory.
   --stage-sepa-fixture         Stage/restore local SEPA checkout settings before preflight.
   --preflight-only             Validate arguments, dependencies, and plugin-side preflight, then exit.
@@ -178,11 +178,11 @@ else
 fi
 
 print_plan() {
-	python3 - "$TARGET_WP" "$CUSTOMER_ID" "$SUBSCRIPTION_ID" "$SUBSCRIPTION_PRODUCT_ID" "$CHECKOUT_PRODUCT_ID" "$RENEWAL_PRODUCT_ID" "$SUBSCRIPTION_SOURCE" "$SOURCE_FLOW" "$METHOD" "$GATEWAY_ID" "$STRIPE_PAYMENT_METHOD_TYPE" "$TOKEN_TYPE" <<'PY'
+	python3 - "$TARGET_WP" "$CUSTOMER_ID" "$SUBSCRIPTION_ID" "$SUBSCRIPTION_PRODUCT_ID" "$CHECKOUT_PRODUCT_ID" "$RENEWAL_PRODUCT_ID" "$SUBSCRIPTION_SOURCE" "$SOURCE_FLOW" "$METHOD" "$GATEWAY_ID" "$STRIPE_PAYMENT_METHOD_TYPE" "$TOKEN_TYPE" "$BROWSER_DRIVER" "$BROWSER_RUNNER" <<'PY'
 import json
 import sys
 
-target, customer_id, subscription_id, subscription_product_id, checkout_product_id, renewal_product_id, subscription_source, source_flow, method, gateway_id, stripe_type, token_type = sys.argv[1:]
+target, customer_id, subscription_id, subscription_product_id, checkout_product_id, renewal_product_id, subscription_source, source_flow, method, gateway_id, stripe_type, token_type, browser_driver, browser_runner = sys.argv[1:]
 if source_flow == "provider_setup_intent":
     source_check = "provider_setup_intent_creates_reusable_sepa_token"
 elif source_flow == "add_payment_method":
@@ -216,6 +216,8 @@ print(
             "gateway_id": gateway_id,
             "stripe_payment_method_type": stripe_type,
             "token_type": token_type,
+            "browser_driver": browser_driver,
+            "browser_runner": browser_runner,
             "checks": checks,
         },
         sort_keys=True,
@@ -510,12 +512,12 @@ write_rollup() {
 	local token_id="${1:-0}"
 	local renewal_path="${2:-}"
 
-	python3 - "$rollup_path" "$CUSTOMER_ID" "$SUBSCRIPTION_ID" "$SUBSCRIPTION_SOURCE" "$SOURCE_FLOW" "$SUBSCRIPTION_PRODUCT_ID" "$CHECKOUT_PRODUCT_ID" "$RENEWAL_PRODUCT_ID" "$token_id" "$SAVE_EVIDENCE" "$SOURCE_TOKEN_JSON" "$RENDER_EVIDENCE" "$renewal_path" "$SUBSCRIPTION_FIXTURE_JSON" "$NATIVE_TOKEN_JSON" "$RESTORE_JSON" "$SEPA_FIXTURE_SNAPSHOT_JSON" "$SEPA_FIXTURE_JSON" "$SEPA_FIXTURE_RESTORE_JSON" "$FAILURES_FILE" "$BLOCKERS_FILE" <<'PY'
+	python3 - "$rollup_path" "$CUSTOMER_ID" "$SUBSCRIPTION_ID" "$SUBSCRIPTION_SOURCE" "$SOURCE_FLOW" "$SUBSCRIPTION_PRODUCT_ID" "$CHECKOUT_PRODUCT_ID" "$RENEWAL_PRODUCT_ID" "$token_id" "$SAVE_EVIDENCE" "$SOURCE_TOKEN_JSON" "$RENDER_EVIDENCE" "$renewal_path" "$SUBSCRIPTION_FIXTURE_JSON" "$NATIVE_TOKEN_JSON" "$RESTORE_JSON" "$SEPA_FIXTURE_SNAPSHOT_JSON" "$SEPA_FIXTURE_JSON" "$SEPA_FIXTURE_RESTORE_JSON" "$FAILURES_FILE" "$BLOCKERS_FILE" "$BROWSER_RUNNER" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-rollup_path, customer_id, subscription_id, subscription_source, source_flow, subscription_product_id, checkout_product_id, renewal_product_id, token_id, save_path, source_token_path, render_path, renewal_path, subscription_fixture_path, native_token_path, restore_path, sepa_fixture_snapshot_path, sepa_fixture_stage_path, sepa_fixture_restore_path, failures_file, blockers_file = sys.argv[1:]
+rollup_path, customer_id, subscription_id, subscription_source, source_flow, subscription_product_id, checkout_product_id, renewal_product_id, token_id, save_path, source_token_path, render_path, renewal_path, subscription_fixture_path, native_token_path, restore_path, sepa_fixture_snapshot_path, sepa_fixture_stage_path, sepa_fixture_restore_path, failures_file, blockers_file, browser_runner = sys.argv[1:]
 
 def load_json(path):
     if not path:
@@ -538,6 +540,7 @@ if blockers_path.exists():
 payload = {
     "schema": "woopayments_token_continuity_gate_rollup.v1",
     "status": "fail" if failures else "blocked" if blockers else "pass",
+    "browser_runner": browser_runner,
     "customer_id": int(customer_id),
     "subscription_id": int(subscription_id or 0),
     "subscription_source": subscription_source,
@@ -761,7 +764,7 @@ run_browser_phase() {
 	local phase="$1"
 	local evidence_path="$2"
 	local token_id="${3:-}"
-	local log_path="$OUT_DIR/${phase}.playwriter.log"
+	local log_path="$OUT_DIR/${phase}.browser.log"
 	local exit_code
 	local validation_output
 	local browser_config_js
@@ -820,6 +823,7 @@ print(
 PY
 	)"
 
+	# Compatibility only: default/verdict evidence uses isolated Playwright.
 	if [ "$BROWSER_RUNNER" = "playwriter" ]; then
 		"${PLAYWRITER_CMD[@]}" -s "$PLAYWRITER_SESSION" -e "$browser_config_js" --timeout "30000" >"$log_path" 2>&1
 		exit_code=$?

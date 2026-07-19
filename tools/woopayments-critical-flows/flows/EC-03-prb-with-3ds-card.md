@@ -1,6 +1,6 @@
 # EC-03 — PRB with 3DS card · AGENT (A)
 
-Guards the regression where the native gateway cannot complete SCA inside the express Payment Request flow: the flow fails if the 3DS challenge never appears after wallet authorization, cannot be completed, or the order is not paid after the challenge. Locally BLOCKED: Payment Request/Apple Pay/Google Pay sheets need a real browser wallet + real card (a wallet-enrolled card that triggers 3DS); manual/live pass only — the runner keeps this row queued/BLOCKED, never assume-pass. The implementor's a4aq checkout browser gate (`tools/woopayments-merge/a4-checkout-browser-gate.playwriter.mjs`) already captures express-surface structural evidence — corroboration for button presence, not sheet/3DS completion.
+Guards the regression where the native gateway cannot complete SCA inside the express Payment Request flow: the flow fails if the 3DS challenge never appears after wallet authorization, cannot be completed, or the order is not paid after the challenge. Locally BLOCKED: Payment Request/Apple Pay/Google Pay sheets need a real browser wallet + real card (a wallet-enrolled card that triggers 3DS); manual/live pass only — the runner keeps this row queued/BLOCKED, never assume-pass. The implementor's a4aq checkout browser gate (`tools/woopayments-merge/a4-checkout-browser-gate.playwright.mjs`) already captures express-surface structural evidence — corroboration for button presence, not sheet/3DS completion.
 
 ## Fixtures (both stores)
 

@@ -688,7 +688,7 @@ def print_plan(args: argparse.Namespace) -> None:
             {
                 "schema": "woopayments_sc04_saved_card_gate_plan.v1",
                 "browser_runner": args.browser_runner,
-                "browser_driver": str(SELF_DIR / "sc04-saved-card.playwriter.mjs"),
+                "browser_driver": str(SELF_DIR / "sc04-saved-card.playwright.mjs"),
                 "context_file": args.context_file,
                 "stores": {
                     "ref": {"url": args.ref_url, "subscription_id": args.ref_subscription_id},
@@ -710,7 +710,7 @@ def run_gate_main() -> int:
     repo = Path(args.repo).resolve()
     context_path = Path(args.context_file)
     out_dir = Path(args.out_dir)
-    browser_driver = SELF_DIR / "sc04-saved-card.playwriter.mjs"
+    browser_driver = SELF_DIR / "sc04-saved-card.playwright.mjs"
     browser_runner = Path(os.environ.get("PLAYWRIGHT_SCRIPT_RUNNER_BIN", SELF_DIR / "playwright-script-runner.mjs"))
     if not context_path.is_file():
         raise GateBlocked(f"critical-flow context is missing: {context_path}")

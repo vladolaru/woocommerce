@@ -43,7 +43,8 @@ def make_args(out_dir: str):
         target_wp="docker exec -i target-cli-1 wp --allow-root --user=1",
         target_url="http://store8889.localhost:8889",
         store_dir=str(REPO),
-        playwriter_session="unit",
+        browser_runner="playwright",
+        playwriter_session="",
         out_dir=out_dir,
         skip_wpcom_readiness=False,
     )
@@ -54,7 +55,8 @@ def make_args_without_user(out_dir: str):
         target_wp="docker exec -i target-cli-1 wp --allow-root",
         target_url="http://store8889.localhost:8889",
         store_dir=str(REPO),
-        playwriter_session="unit",
+        browser_runner="playwright",
+        playwriter_session="",
         out_dir=out_dir,
         skip_wpcom_readiness=False,
     )
@@ -67,6 +69,15 @@ def assert_raises(fn, expected: str):
         assert expected in str(exc)
     else:
         raise AssertionError(f"Expected exception containing {expected!r}")
+
+
+def test_parser_defaults_to_direct_playwright(monkeypatch: pytest.MonkeyPatch):
+    module = load_module()
+    monkeypatch.delenv("BROWSER_RUNNER", raising=False)
+
+    args = module.parse_args(["--target-wp", "docker exec -i target-cli-1 wp"])
+
+    assert args.browser_runner == "playwright"
 
 
 def test_validate_local_wp_command_rejects_shell_and_remote_transports():
@@ -134,6 +145,7 @@ def test_rollup_declares_cutover_scope_without_claiming_external_profile_executi
         payload = module.read_json(Path(out_dir) / "a5f-cutover-rehearsal.json")
 
     assert "required_store_profiles" not in payload
+    assert payload["browser_runner"] == "playwright"
     assert payload["evidence_scope"]["owned_by_a5f"] == [
         "runtime_ownership_transitions",
         "soft_cutover",
@@ -531,11 +543,11 @@ def test_expected_failure_command_records_pass_phase():
 def test_orchestrator_uses_browser_for_blocked_mandatory_gate():
     source = MODULE_PATH.read_text(encoding="utf-8")
 
-    assert "a5-blocked-mandatory-browser-gate.playwriter.mjs" in source
+    assert "a5-blocked-mandatory-browser-gate.playwright.mjs" in source
     assert "trigger-blocked-mandatory-admin-init" not in source
 
 
-def test_playwriter_gate_copies_failed_source_evidence():
+def test_browser_gate_copies_failed_source_evidence():
     module = load_module()
     with tempfile.TemporaryDirectory(prefix="a5f-rehearsal-test-") as out_dir:
         out_path = Path(out_dir)
@@ -549,7 +561,7 @@ def test_playwriter_gate_copies_failed_source_evidence():
 
             rehearsal.run_command = fail_command
             assert_raises(
-                lambda: rehearsal.run_playwriter_gate("failing-gate", MODULE_PATH, source_evidence),
+                lambda: rehearsal.run_browser_gate("failing-gate", MODULE_PATH, source_evidence),
                 "browser gate failed",
             )
 
@@ -561,35 +573,50 @@ def test_playwriter_gate_copies_failed_source_evidence():
             source_evidence.unlink(missing_ok=True)
 
 
-def test_playwriter_gate_passes_portable_browser_environment():
+def test_explicit_playwriter_compatibility_gate_passes_portable_browser_environment():
     module = load_module()
     with tempfile.TemporaryDirectory(prefix="a5f-rehearsal-test-") as out_dir:
         out_path = Path(out_dir)
         source_evidence = out_path / "a5e-env-gate.json"
-        rehearsal = module.Rehearsal(make_args(out_dir))
+        args = make_args(out_dir)
+        args.browser_runner = "playwriter"
+        args.playwriter_session = "unit"
+        rehearsal = module.Rehearsal(args)
         captured_env = {}
+        captured_command = []
+        previous_playwriter_bin = os.environ.get("PLAYWRITER_BIN")
 
         def pass_command(*args, **kwargs):
+            captured_command.extend(args[1])
             captured_env.update(kwargs["env"])
             source_evidence.write_text('{"status":"pass","updated":true}\n', encoding="utf-8")
             return {"status": "pass"}
 
-        rehearsal.run_command = pass_command
-        rehearsal.run_playwriter_gate("env-gate", MODULE_PATH, source_evidence)
+        try:
+            os.environ["PLAYWRITER_BIN"] = "/fake/playwriter"
+            rehearsal.run_command = pass_command
+            rehearsal.run_browser_gate("env-gate", MODULE_PATH, source_evidence)
+        finally:
+            if previous_playwriter_bin is None:
+                os.environ.pop("PLAYWRITER_BIN", None)
+            else:
+                os.environ["PLAYWRITER_BIN"] = previous_playwriter_bin
 
     assert captured_env["A5_GATE_TARGET_URL"] == "http://store8889.localhost:8889"
     assert captured_env["A5_GATE_PLUGINS_URL"] == "http://store8889.localhost:8889/wp-admin/plugins.php"
     assert captured_env["A5_GATE_DATA_DIR"] == str(source_evidence.parent)
     assert captured_env["A5_GATE_EVIDENCE_PATH"] == str(source_evidence)
+    assert captured_command[0] == "/fake/playwriter"
+    assert "-s" in captured_command
+    assert "unit" in captured_command
 
 
-def test_browser_gate_can_use_playwright_runner_without_playwriter_session():
+def test_browser_gate_uses_default_playwright_runner():
     module = load_module()
     with tempfile.TemporaryDirectory(prefix="a5f-rehearsal-test-") as out_dir:
         out_path = Path(out_dir)
         source_evidence = out_path / "a5e-playwright-gate.json"
         args = make_args(out_dir)
-        args.playwriter_session = ""
         rehearsal = module.Rehearsal(args)
         captured_command = []
         old_browser_runner = os.environ.get("BROWSER_RUNNER")
@@ -604,7 +631,7 @@ def test_browser_gate_can_use_playwright_runner_without_playwriter_session():
             os.environ["BROWSER_RUNNER"] = "playwright"
             os.environ["PLAYWRIGHT_SCRIPT_RUNNER_BIN"] = "/fake/playwright-script-runner.mjs"
             rehearsal.run_command = pass_command
-            rehearsal.run_playwriter_gate("playwright-gate", MODULE_PATH, source_evidence)
+            rehearsal.run_browser_gate("playwright-gate", MODULE_PATH, source_evidence)
         finally:
             if old_browser_runner is None:
                 os.environ.pop("BROWSER_RUNNER", None)
@@ -622,9 +649,9 @@ def test_browser_gate_can_use_playwright_runner_without_playwriter_session():
 
 def test_browser_gates_use_isolated_pages_and_close_them():
     scripts = [
-        REPO / "tools/woopayments-merge/a5-cutover-browser-gate.playwriter.mjs",
-        REPO / "tools/woopayments-merge/a5-mandatory-browser-gate.playwriter.mjs",
-        REPO / "tools/woopayments-merge/a5-blocked-mandatory-browser-gate.playwriter.mjs",
+        REPO / "tools/woopayments-merge/a5-cutover-browser-gate.playwright.mjs",
+        REPO / "tools/woopayments-merge/a5-mandatory-browser-gate.playwright.mjs",
+        REPO / "tools/woopayments-merge/a5-blocked-mandatory-browser-gate.playwright.mjs",
     ]
 
     for script in scripts:
@@ -636,9 +663,9 @@ def test_browser_gates_use_isolated_pages_and_close_them():
 
 def test_browser_gates_are_portable_and_env_driven():
     scripts = [
-        REPO / "tools/woopayments-merge/a5-cutover-browser-gate.playwriter.mjs",
-        REPO / "tools/woopayments-merge/a5-mandatory-browser-gate.playwriter.mjs",
-        REPO / "tools/woopayments-merge/a5-blocked-mandatory-browser-gate.playwriter.mjs",
+        REPO / "tools/woopayments-merge/a5-cutover-browser-gate.playwright.mjs",
+        REPO / "tools/woopayments-merge/a5-mandatory-browser-gate.playwright.mjs",
+        REPO / "tools/woopayments-merge/a5-blocked-mandatory-browser-gate.playwright.mjs",
     ]
 
     for script in scripts:
@@ -651,8 +678,8 @@ def test_browser_gates_are_portable_and_env_driven():
 
 def test_cutover_screenshot_capture_is_non_fatal_evidence():
     scripts = [
-        REPO / "tools/woopayments-merge/a5-cutover-browser-gate.playwriter.mjs",
-        REPO / "tools/woopayments-merge/a5-mandatory-browser-gate.playwriter.mjs",
+        REPO / "tools/woopayments-merge/a5-cutover-browser-gate.playwright.mjs",
+        REPO / "tools/woopayments-merge/a5-mandatory-browser-gate.playwright.mjs",
     ]
 
     for script in scripts:
@@ -678,8 +705,8 @@ def main() -> None:
         test_cleanup_attempts_every_runtime_restore_after_one_failure,
         test_expected_failure_command_records_pass_phase,
         test_orchestrator_uses_browser_for_blocked_mandatory_gate,
-        test_playwriter_gate_copies_failed_source_evidence,
-        test_playwriter_gate_passes_portable_browser_environment,
+        test_browser_gate_copies_failed_source_evidence,
+        test_explicit_playwriter_compatibility_gate_passes_portable_browser_environment,
         test_browser_gates_use_isolated_pages_and_close_them,
         test_browser_gates_are_portable_and_env_driven,
         test_cutover_screenshot_capture_is_non_fatal_evidence,

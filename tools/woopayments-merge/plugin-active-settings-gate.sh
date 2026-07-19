@@ -16,13 +16,13 @@ if [ ! -f "$LOCAL_RUNNER_SAFETY" ]; then
 fi
 # shellcheck source=tools/woopayments-merge/local-runner-safety.sh
 source "$LOCAL_RUNNER_SAFETY"
-BROWSER_DRIVER="$SELF_DIR/plugin-active-settings.playwriter.mjs"
+BROWSER_DRIVER="$SELF_DIR/plugin-active-settings.playwright.mjs"
 
 TARGET_WP=""
 TARGET_URL="${TARGET_URL:-}"
 RUNNER_ROLE="${RUNNER_ROLE:-target}"
 PLAYWRITER_SESSION="${PLAYWRITER_SESSION:-}"
-BROWSER_RUNNER="${BROWSER_RUNNER:-playwriter}"
+BROWSER_RUNNER="${BROWSER_RUNNER:-playwright}"
 PLAYWRIGHT_SCRIPT_RUNNER_BIN="${PLAYWRIGHT_SCRIPT_RUNNER_BIN:-$SELF_DIR/playwright-script-runner.mjs}"
 WP_ADMIN_USER="${WP_ADMIN_USER:-admin}"
 WP_ADMIN_PASSWORD="${WP_ADMIN_PASSWORD:-password}"
@@ -46,8 +46,8 @@ Options:
   --target "<wp>"              Target store WP-CLI command.
   --target-url <url>           Target store browser base URL.
   --runner-role <role>         Approved aggregate runner role: reference or target. Default: target.
-  --browser-runner <runner>    Browser runner: playwriter or playwright. Defaults to BROWSER_RUNNER or playwriter.
-  --playwriter-session <id>    Existing Playwriter session id. Defaults to PLAYWRITER_SESSION.
+  --browser-runner <runner>    Browser runner: playwright or playwriter. Defaults to BROWSER_RUNNER or playwright.
+  --playwriter-session <id>    Existing Playwriter session for explicit compatibility runs only.
   --out-dir <path>             Evidence output directory.
   --context-file <path>        Aggregate critical-flow context to bind after cleanup.
   --stage-plugin-active-fixture
@@ -168,11 +168,11 @@ PY
 }
 
 print_plan() {
-	python3 - "$TARGET_WP" "$TARGET_URL" "$SETTINGS_URL" "$BROWSER_DRIVER" "$RUNNER_ROLE" <<'PY'
+	python3 - "$TARGET_WP" "$TARGET_URL" "$SETTINGS_URL" "$BROWSER_DRIVER" "$RUNNER_ROLE" "$BROWSER_RUNNER" <<'PY'
 import json
 import sys
 
-target_wp, target_url, settings_url, browser_driver, runner_role = sys.argv[1:]
+target_wp, target_url, settings_url, browser_driver, runner_role, browser_runner = sys.argv[1:]
 print(
     json.dumps(
         {
@@ -181,6 +181,7 @@ print(
             "target_url": target_url,
             "settings_url": settings_url,
             "browser_driver": browser_driver,
+            "browser_runner": browser_runner,
             "runner_role": runner_role,
             "checks": [
                 "woocommerce-payments plugin is active before browser run",
@@ -797,7 +798,7 @@ names = {
     "plugin-active-settings-blockers.txt",
     "plugin-active-settings-failures.txt",
     "plugin-active-settings.json",
-    "plugin-active-settings.playwriter.log",
+    "plugin-active-settings.browser.log",
     "plugin-active-settings.png",
 }
 if staged == "1":
@@ -928,12 +929,12 @@ write_rollup() {
 	local rollup_path="$OUT_DIR/plugin-active-settings-gate.json"
 	local evidence_path="$1"
 
-	python3 - "$rollup_path" "$TARGET_URL" "$SETTINGS_URL" "$evidence_path" "$FAILURES_FILE" "$BLOCKERS_FILE" "$RUNNER_ROLE" <<'PY'
+	python3 - "$rollup_path" "$TARGET_URL" "$SETTINGS_URL" "$evidence_path" "$FAILURES_FILE" "$BLOCKERS_FILE" "$RUNNER_ROLE" "$BROWSER_RUNNER" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-rollup_path, target_url, settings_url, evidence_path, failures_file, blockers_file, runner_role = sys.argv[1:]
+rollup_path, target_url, settings_url, evidence_path, failures_file, blockers_file, runner_role, browser_runner = sys.argv[1:]
 
 def load_json(path):
     candidate = Path(path)
@@ -966,6 +967,7 @@ payload = {
     "target_url": target_url,
     "settings_url": settings_url,
     "runner_role": runner_role,
+    "browser_runner": browser_runner,
     "evidence": evidence,
     "failures": failures,
     "blockers": blockers,
@@ -976,7 +978,7 @@ PY
 
 run_browser_gate() {
 	local evidence_path="$OUT_DIR/plugin-active-settings.json"
-	local log_path="$OUT_DIR/plugin-active-settings.playwriter.log"
+	local log_path="$OUT_DIR/plugin-active-settings.browser.log"
 	local exit_code
 	local validation_output
 	local validation_code
@@ -1007,6 +1009,7 @@ print(
 PY
 	)"
 
+	# Compatibility only: default/verdict evidence uses isolated Playwright.
 	if [ "$BROWSER_RUNNER" = "playwriter" ]; then
 		"${PLAYWRITER_CMD[@]}" -s "$PLAYWRITER_SESSION" -e "$browser_config_js" --timeout "30000" >"$log_path" 2>&1
 		exit_code=$?

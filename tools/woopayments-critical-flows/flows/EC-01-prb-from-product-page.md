@@ -1,6 +1,6 @@
 # EC-01 — PRB from product page · AGENT (A)
 
-Guards the regression where the native gateway drops the express Payment Request surface from single-product pages: the flow fails if the PRB does not render, the wallet sheet cannot complete, or the resulting order is not paid via PRB. Locally BLOCKED: Payment Request/Apple Pay/Google Pay sheets need a real browser wallet + real card; manual/live pass only — the runner keeps this row queued/BLOCKED, never assume-pass. The implementor's a4aq checkout browser gate (`tools/woopayments-merge/a4-checkout-browser-gate.playwriter.mjs`, `blocks-checkout-express` route) already captures express-surface structural evidence — corroboration for button presence, not sheet completion.
+Guards the regression where the native gateway drops the express Payment Request surface from single-product pages: the flow fails if the PRB does not render, the wallet sheet cannot complete, or the resulting order is not paid via PRB. Locally BLOCKED: Payment Request/Apple Pay/Google Pay sheets need a real browser wallet + real card; manual/live pass only — the runner keeps this row queued/BLOCKED, never assume-pass. The implementor's a4aq checkout browser gate (`tools/woopayments-merge/a4-checkout-browser-gate.playwright.mjs`, `blocks-checkout-express` route) already captures express-surface structural evidence — corroboration for button presence, not sheet completion.
 
 ## Fixtures (both stores)
 

@@ -45,8 +45,8 @@ def make_gate(module):
         plugin_repo=str(REPO.parent / "woocommerce-payments"),
         ref_wp="docker exec -i wcpay_wp_default wp --allow-root --user=1",
         target_wp="docker exec -i example-cli-1 wp --allow-root --user=1",
-        browser_runner="playwriter",
-        playwriter_session="unit",
+        browser_runner="playwright",
+        playwriter_session="",
         out_dir=tempfile.mkdtemp(prefix="a4ar-harness-test-"),
         skip_admin_browser=False,
         skip_optional_admin_scenario=False,
@@ -56,6 +56,27 @@ def make_gate(module):
         skip_bundle=True,
     )
     return module.Gate(args)
+
+
+def test_parser_defaults_to_direct_playwright(module, monkeypatch):
+    monkeypatch.delenv("BROWSER_RUNNER", raising=False)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            str(MODULE_PATH),
+            "--repo",
+            str(REPO),
+            "--plugin-repo",
+            str(REPO.parent / "woocommerce-payments"),
+            "--ref-wp",
+            "ref wp",
+            "--target-wp",
+            "target wp",
+        ],
+    )
+
+    assert module.parse_args().browser_runner == "playwright"
 
 
 def assert_raises(fn, expected: str):
@@ -143,7 +164,7 @@ def test_browser_evidence_paths_stay_under_aggregate_out_dir(module):
     assert checkout_check[3]["WOOPAYMENTS_BROWSER_DATA_DIR"].startswith(str(Path(gate.out_dir)))
 
 
-def test_browser_checks_can_use_playwright_without_persistent_playwriter_state(module):
+def test_browser_checks_use_default_playwright_without_persistent_state(module):
     gate = make_gate(module)
     gate.browser_runner = "playwright"
     gate.playwriter_session = ""
@@ -196,8 +217,8 @@ def test_playwright_runner_handles_frontend_account_login_and_browser_noise():
 def test_accumulated_harness_sources_do_not_embed_machine_specific_paths():
     sources = (
         REPO / "tools/woopayments-merge/a4aq-accumulated-gate.py",
-        REPO / "tools/woopayments-merge/a4-admin-browser-gate.playwriter.mjs",
-        REPO / "tools/woopayments-merge/a4-checkout-browser-gate.playwriter.mjs",
+        REPO / "tools/woopayments-merge/a4-admin-browser-gate.playwright.mjs",
+        REPO / "tools/woopayments-merge/a4-checkout-browser-gate.playwright.mjs",
     )
 
     for source_path in sources:
@@ -393,7 +414,7 @@ def test_checkout_browser_route_state_uses_plain_permalink_overrides(module):
 
 
 def test_a4_checkout_driver_uses_store_api_rest_route_fallback():
-    source = (REPO / "tools/woopayments-merge/a4-checkout-browser-gate.playwriter.mjs").read_text(encoding="utf-8")
+    source = (REPO / "tools/woopayments-merge/a4-checkout-browser-gate.playwright.mjs").read_text(encoding="utf-8")
 
     assert "for ( const cartEndpoint of [ '/wp-json/wc/store/v1/cart', '/?rest_route=/wc/store/v1/cart' ] )" in source
     assert "endpoint: cartEndpoint" in source
@@ -402,21 +423,21 @@ def test_a4_checkout_driver_uses_store_api_rest_route_fallback():
 
 
 def test_a4_checkout_driver_allows_current_local_stripe_http_warning_count():
-    source = (REPO / "tools/woopayments-merge/a4-checkout-browser-gate.playwriter.mjs").read_text(encoding="utf-8")
+    source = (REPO / "tools/woopayments-merge/a4-checkout-browser-gate.playwright.mjs").read_text(encoding="utf-8")
 
     assert "id: 'stripe-local-http-warning'" in source
     assert "maxCount: 6" in source
 
 
 def test_a4_checkout_driver_ignores_chromium_webgl_readpixels_warning():
-    source = (REPO / "tools/woopayments-merge/a4-checkout-browser-gate.playwriter.mjs").read_text(encoding="utf-8")
+    source = (REPO / "tools/woopayments-merge/a4-checkout-browser-gate.playwright.mjs").read_text(encoding="utf-8")
 
     assert "id: 'chromium-webgl-readpixels-warning'" in source
     assert "ReadPixels" in source
 
 
 def test_a4_checkout_driver_ignores_shared_local_checkout_console_noise():
-    source = (REPO / "tools/woopayments-merge/a4-checkout-browser-gate.playwriter.mjs").read_text(encoding="utf-8")
+    source = (REPO / "tools/woopayments-merge/a4-checkout-browser-gate.playwright.mjs").read_text(encoding="utf-8")
 
     assert "id: 'wc-blocks-useselect-validation'" in source
     assert "/\\/wp-includes\\/js\\/dist\\/data\\.js/" in source
@@ -426,7 +447,7 @@ def test_a4_checkout_driver_ignores_shared_local_checkout_console_noise():
 
 
 def test_a4_checkout_driver_ignores_local_placeholder_media_noise():
-    source = (REPO / "tools/woopayments-merge/a4-checkout-browser-gate.playwriter.mjs").read_text(encoding="utf-8")
+    source = (REPO / "tools/woopayments-merge/a4-checkout-browser-gate.playwright.mjs").read_text(encoding="utf-8")
 
     assert "function isLocalWooCommercePlaceholderMediaFailure" in source
     assert "woocommerce-placeholder" in source
@@ -434,7 +455,7 @@ def test_a4_checkout_driver_ignores_local_placeholder_media_noise():
 
 
 def test_a4_checkout_driver_classifies_shared_express_failures_as_incomplete():
-    source = (REPO / "tools/woopayments-merge/a4-checkout-browser-gate.playwriter.mjs").read_text(encoding="utf-8")
+    source = (REPO / "tools/woopayments-merge/a4-checkout-browser-gate.playwright.mjs").read_text(encoding="utf-8")
 
     assert "function isSharedExpressSurfaceBlocker" in source
     assert "blockers" in source
@@ -443,7 +464,7 @@ def test_a4_checkout_driver_classifies_shared_express_failures_as_incomplete():
 
 
 def test_a4_checkout_driver_only_demotes_target_failures_without_own_defects():
-    source = (REPO / "tools/woopayments-merge/a4-checkout-browser-gate.playwriter.mjs").read_text(encoding="utf-8")
+    source = (REPO / "tools/woopayments-merge/a4-checkout-browser-gate.playwright.mjs").read_text(encoding="utf-8")
 
     assert "function hasTargetOwnDefects" in source
     assert "( result.pageErrors || [] ).length > 0" in source
@@ -456,7 +477,7 @@ def test_a4_checkout_driver_only_demotes_target_failures_without_own_defects():
 
 
 def test_a4_checkout_driver_blockers_only_run_exits_incomplete_not_zero():
-    source = (REPO / "tools/woopayments-merge/a4-checkout-browser-gate.playwriter.mjs").read_text(encoding="utf-8")
+    source = (REPO / "tools/woopayments-merge/a4-checkout-browser-gate.playwright.mjs").read_text(encoding="utf-8")
 
     incomplete_block = source[source.index("if ( finalEvidence.blockers.length > 0 ) {") :]
     assert "process.exitCode = 3;" in incomplete_block
@@ -472,7 +493,7 @@ def test_a4_checkout_driver_blockers_only_run_exits_incomplete_not_zero():
 
 
 def test_a4_checkout_driver_surfaces_structured_express_blocker_diagnostics():
-    source = (REPO / "tools/woopayments-merge/a4-checkout-browser-gate.playwriter.mjs").read_text(encoding="utf-8")
+    source = (REPO / "tools/woopayments-merge/a4-checkout-browser-gate.playwright.mjs").read_text(encoding="utf-8")
 
     assert "function collectExpressBlockerDiagnostics" in source
     assert "function describeExpressBlockerDiagnostics" in source
@@ -1174,7 +1195,7 @@ def main() -> None:
         test_optional_admin_available_evidence_is_required,
         test_reports_fee_surface_is_part_of_optional_admin_scenario,
         test_checkout_browser_evidence_path_matches_driver_data_dir,
-        test_browser_checks_can_use_playwright_without_persistent_playwriter_state,
+        test_browser_checks_use_default_playwright_without_persistent_state,
         test_playwright_checkout_route_state_is_process_local,
         test_playwright_runner_handles_frontend_account_login_and_browser_noise,
         test_checkout_incomplete_evidence_marks_aggregate_incomplete,

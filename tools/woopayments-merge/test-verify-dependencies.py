@@ -38,7 +38,7 @@ VERIFY_DEPENDENCIES = (
     "tools/woopayments-merge/native-hook-naming-gate.sh",
     "tools/woopayments-merge/test-native-hook-naming-gate.py",
     "tools/woopayments-merge/plugin-active-settings-gate.sh",
-    "tools/woopayments-merge/plugin-active-settings.playwriter.mjs",
+    "tools/woopayments-merge/plugin-active-settings.playwright.mjs",
     "tools/woopayments-merge/run-command-with-timeout.py",
     "tools/woopayments-merge/verify-owned-order-cleanup.php",
 )
@@ -49,9 +49,9 @@ FINAL_EVIDENCE_DEPENDENCIES = VERIFY_DEPENDENCIES + (
     "tools/woopayments-critical-flows/build-agent-results.py",
     "tools/woopayments-critical-flows/evidence_context.py",
     "tools/woopayments-merge/a4-account-scenario.php",
-    "tools/woopayments-merge/a4-admin-browser-gate.playwriter.mjs",
+    "tools/woopayments-merge/a4-admin-browser-gate.playwright.mjs",
     "tools/woopayments-merge/a4-admin-surface-gate.py",
-    "tools/woopayments-merge/a4-checkout-browser-gate.playwriter.mjs",
+    "tools/woopayments-merge/a4-checkout-browser-gate.playwright.mjs",
     "tools/woopayments-merge/a4-checkout-fixture-state.php",
     "tools/woopayments-merge/a4-perf-fixture-inspect.php",
     "tools/woopayments-merge/a4aq-accumulated-gate.py",
@@ -68,7 +68,7 @@ FINAL_EVIDENCE_DEPENDENCIES = VERIFY_DEPENDENCIES + (
     "tools/woopayments-merge/perf_fixtures.py",
     "tools/woopayments-merge/playwright-script-runner.mjs",
     "tools/woopayments-merge/sc04-saved-card-gate.py",
-    "tools/woopayments-merge/sc04-saved-card.playwriter.mjs",
+    "tools/woopayments-merge/sc04-saved-card.playwright.mjs",
 )
 
 FINAL_EVIDENCE_TEST_DEPENDENCIES = (

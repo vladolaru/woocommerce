@@ -118,11 +118,11 @@ Options:
   --print-full-evidence-plan    Print the final readiness gate plan and exit.
   --validate-scope-only        Validate runner projects, runtime owners, and local store URLs,
                                 then exit before running or mutating any gate.
-  --browser-runner RUNNER       Browser runner for final browser gates: playwriter or playwright.
-                                Defaults to BROWSER_RUNNER or playwright.
-  --playwriter-session ID       Authenticated Playwriter session for admin-oriented final gates.
+  --browser-runner RUNNER       Browser runner for final browser gates: playwright (default) or
+                                playwriter (explicit persistent-session compatibility only).
+  --playwriter-session ID       Authenticated Playwriter session for compatibility admin gates.
   --checkout-playwriter-session ID
-                                Unauthenticated Playwriter session for checkout-oriented final gates.
+                                Unauthenticated Playwriter session for compatibility checkout gates.
   --ref-subscription-id ID      Browser-created reference subscription for renewal compare.
   --target-subscription-id ID   Browser-created target subscription for renewal compare.
   --token-customer-id ID        Customer fixture ID for token-continuity evidence.

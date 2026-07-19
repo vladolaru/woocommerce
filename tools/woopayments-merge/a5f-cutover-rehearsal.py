@@ -337,6 +337,9 @@ class Rehearsal:
         self.args = args
         self.target_wp = validate_local_wp_command(args.target_wp)
         self.target_url = str(args.target_url).rstrip("/")
+        self.browser_runner = str(
+            getattr(args, "browser_runner", os.environ.get("BROWSER_RUNNER", "playwright"))
+        )
         self.repo = REPO
         self.out_dir = pathlib.Path(args.out_dir)
         if not self.out_dir.is_absolute():
@@ -367,6 +370,7 @@ class Rehearsal:
             "lastUpdatedAt": utc_now(),
             "target_url": self.target_url,
             "target_wp": shlex.join(self.target_wp),
+            "browser_runner": self.browser_runner,
             "phase_results": self.phase_results,
             "state_snapshots": self.state_snapshots,
             "browser_evidence_paths": self.browser_evidence_paths,
@@ -681,11 +685,13 @@ class Rehearsal:
         self.write_rollup()
         return copied
 
-    def run_playwriter_gate(self, phase_id: str, script: pathlib.Path, source_evidence: pathlib.Path) -> None:
-        browser_runner = getattr(self.args, "browser_runner", os.environ.get("BROWSER_RUNNER", "playwriter"))
-        if browser_runner not in {"playwriter", "playwright"}:
+    def run_browser_gate(self, phase_id: str, script: pathlib.Path, source_evidence: pathlib.Path) -> None:
+        browser_runner = self.browser_runner
+        if browser_runner not in {"playwright", "playwriter"}:
             raise HarnessError(f"unsupported browser runner: {browser_runner}")
 
+        # Compatibility only: authoritative/default evidence uses the isolated
+        # Playwright runner; this branch exists for persistent-session repros.
         if browser_runner == "playwriter":
             if not str(self.args.playwriter_session):
                 raise HarnessError("pass --playwriter-session or set PLAYWRITER_SESSION before running Playwriter browser gates")
@@ -791,9 +797,9 @@ class Rehearsal:
             )
             self.assert_preflight_empty("default-off-plugin-state", default_off)
 
-            self.run_playwriter_gate(
+            self.run_browser_gate(
                 "soft-cutover-browser-gate",
-                TOOLS_DIR / "a5-cutover-browser-gate.playwriter.mjs",
+                TOOLS_DIR / "a5-cutover-browser-gate.playwright.mjs",
                 DEFAULT_OUT_DIR.parent / "a5e-soft-cutover-browser-gate.json",
             )
             post_soft = self.run_state_probe("post-soft-native-state")
@@ -830,9 +836,9 @@ class Rehearsal:
                 TOOLS_DIR / "a5-mandatory-cutover-mu-plugin.php",
                 MANDATORY_HELPER_FILE,
             )
-            self.run_playwriter_gate(
+            self.run_browser_gate(
                 "mandatory-browser-gate",
-                TOOLS_DIR / "a5-mandatory-browser-gate.playwriter.mjs",
+                TOOLS_DIR / "a5-mandatory-browser-gate.playwright.mjs",
                 DEFAULT_OUT_DIR.parent / "a5e-mandatory-auto-deactivation-browser-check.json",
             )
             mandatory_post = self.run_state_probe("post-mandatory-native-state")
@@ -871,9 +877,9 @@ class Rehearsal:
             blocked_state = self.run_state_probe("blocked-mandatory-plugin-state")
             if "a5_synthetic_preflight_blocker" not in blocked_state.get("preflight_failures", []):
                 raise HarnessError(f"synthetic blocker missing from preflight failures: {blocked_state.get('preflight_failures')}")
-            self.run_playwriter_gate(
+            self.run_browser_gate(
                 "blocked-mandatory-browser-gate",
-                TOOLS_DIR / "a5-blocked-mandatory-browser-gate.playwriter.mjs",
+                TOOLS_DIR / "a5-blocked-mandatory-browser-gate.playwright.mjs",
                 DEFAULT_OUT_DIR.parent / "a5f-blocked-mandatory-browser-gate.json",
             )
             blocked_after = self.run_state_probe("blocked-mandatory-after-browser-state")
@@ -938,8 +944,17 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--target-wp", required=True, help="Local target WP-CLI command.")
     parser.add_argument("--target-url", default="http://store8889.localhost:8889")
     parser.add_argument("--store-dir", default=str(REPO))
-    parser.add_argument("--browser-runner", choices=("playwriter", "playwright"), default=os.environ.get("BROWSER_RUNNER", "playwriter"))
-    parser.add_argument("--playwriter-session", default=os.environ.get("PLAYWRITER_SESSION", ""))
+    parser.add_argument(
+        "--browser-runner",
+        choices=("playwright", "playwriter"),
+        default=os.environ.get("BROWSER_RUNNER", "playwright"),
+        help="Browser runner for rehearsal evidence. Defaults to direct Playwright.",
+    )
+    parser.add_argument(
+        "--playwriter-session",
+        default=os.environ.get("PLAYWRITER_SESSION", ""),
+        help="Playwriter session id for explicit persistent-session compatibility runs only.",
+    )
     parser.add_argument("--out-dir", default=str(DEFAULT_OUT_DIR))
     parser.add_argument("--skip-wpcom-readiness", action="store_true")
     return parser.parse_args(argv)

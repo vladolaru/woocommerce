@@ -1,9 +1,10 @@
 // WooPayments local payment-method checkout driver.
 //
-// This script runs inside an authenticated local Playwriter session. It drives
+// This script normally runs in the isolated local Playwright runner. It drives
 // one requested split WooPayments gateway through checkout and writes evidence
 // that lpm-checkout-gate.sh validates for both the reference plugin store and
-// native target store.
+// native target store. The explicit Playwriter compatibility runner supplies
+// the same small scenario interface for persistent-session reproduction.
 
 const fs = require( 'node:fs' );
 const path = require( 'node:path' );
@@ -575,7 +576,7 @@ async function capturePageEvidence( page, extra = {} ) {
 	try {
 		logs = await getLatestLogs( { page, sinceLastCall: true } );
 	} catch ( error ) {
-		logs = [ { type: 'playwriter-log-error', text: error?.message || String( error ) } ];
+		logs = [ { type: 'browser-log-error', text: error?.message || String( error ) } ];
 	}
 
 	try {

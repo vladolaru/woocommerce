@@ -1,6 +1,6 @@
 # EC-02 — PRB from cart · AGENT (A)
 
-Guards the regression where the native gateway loses the express Payment Request surface on the cart page: the flow fails if the PRB is missing from the cart, the wallet sheet does not reflect the cart contents/total, or the order is not paid via PRB. Locally BLOCKED: Payment Request/Apple Pay/Google Pay sheets need a real browser wallet + real card; manual/live pass only — the runner keeps this row queued/BLOCKED, never assume-pass. The implementor's a4aq checkout browser gate (`tools/woopayments-merge/a4-checkout-browser-gate.playwriter.mjs`, `blocks-cart-express` route) already captures express-surface structural evidence — corroboration for button presence, not sheet completion.
+Guards the regression where the native gateway loses the express Payment Request surface on the cart page: the flow fails if the PRB is missing from the cart, the wallet sheet does not reflect the cart contents/total, or the order is not paid via PRB. Locally BLOCKED: Payment Request/Apple Pay/Google Pay sheets need a real browser wallet + real card; manual/live pass only — the runner keeps this row queued/BLOCKED, never assume-pass. The implementor's a4aq checkout browser gate (`tools/woopayments-merge/a4-checkout-browser-gate.playwright.mjs`, `blocks-cart-express` route) already captures express-surface structural evidence — corroboration for button presence, not sheet completion.
 
 ## Fixtures (both stores)
 
