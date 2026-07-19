@@ -118,7 +118,11 @@ case "$S" in
 	target)
 		SOURCE_MANIFEST="$TARGET_SOURCE_MANIFEST"
 		BROWSER_URL="$TARGET_BROWSER_URL"
-		WP_COMMAND="${TARGET_WP_COMMAND:-}"
+		if [[ "${APPROVED_TARGET_CONTAINER:-}" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]; then
+			WP_COMMAND="docker exec -i $APPROVED_TARGET_CONTAINER wp --allow-root"
+		else
+			WP_COMMAND="${TARGET_WP_COMMAND:-}"
+		fi
 		;;
 	*) block "store role must be ref or target." ;;
 esac

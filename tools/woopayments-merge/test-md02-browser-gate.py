@@ -342,7 +342,7 @@ def test_source_manifest_validation_binds_the_exact_md01_probe(tmp_path: Path) -
             "intent_id": "pi_ref_md02",
             "dispute_id": "du_ref_md02",
         },
-        "facts": {"dispute": {"status": "needs_response", "due_by": 1785196799}},
+        "facts": {"dispute": {"status": "needs_response", "due_by": "2026-07-27 23:59:59"}},
         "blockers": [],
         "errors": [],
         "context_hmac": "hmac-sha256:" + "1" * 64,
@@ -374,6 +374,7 @@ def test_source_manifest_validation_binds_the_exact_md01_probe(tmp_path: Path) -
     loaded_manifest, loaded_probe = module.validate_source_manifest(manifest_path, "ref")
     assert loaded_manifest["run_stamp"] == probe["run_stamp"]
     assert loaded_probe["identity"] == probe["identity"]
+    assert module.source_due_by_epoch(loaded_probe["facts"]["dispute"]["due_by"]) == 1785196799
 
     rewritten = json.loads(probe_path.read_text(encoding="utf-8"))
     rewritten["identity"]["dispute_id"] = "du_other"
@@ -552,6 +553,42 @@ def test_pre_state_deadline_must_outlive_the_delayed_probe() -> None:
     probe = {"identity": {"order_id": 1}, "facts": {"dispute": {"due_by": 100}}}
     with pytest.raises(module.GateBlocked, match="future"):
         module.validate_pre_state(pre, probe, minimum_due_by=160)
+
+
+def test_pre_state_accepts_the_archived_md01_utc_deadline_shape() -> None:
+    module = load_gate()
+    identity = {"order_id": 1}
+    pre = {
+        "identity": identity,
+        "lifecycle": {
+            "status": "needs_response",
+            "due_by": 1785196799,
+            "past_due": False,
+            "submission_count": 0,
+        },
+        "evidence": {
+            "product_description": "prior",
+            "customer_name_present": True,
+            "customer_name_matches_order": True,
+        },
+    }
+    probe = {
+        "identity": identity,
+        "facts": {"dispute": {"due_by": "2026-07-27 23:59:59"}},
+    }
+
+    module.validate_pre_state(pre, probe, minimum_due_by=1785196700)
+
+
+@pytest.mark.parametrize(
+    "due_by",
+    ("", "2026-07-27", "2026-7-27 23:59:59", "2026-07-27 3:59:59", "not-a-date", True, None),
+)
+def test_source_deadline_rejects_malformed_archive_values(due_by: object) -> None:
+    module = load_gate()
+
+    with pytest.raises(module.GateBlocked, match="deadline"):
+        module.source_due_by_epoch(due_by)
 
 
 @pytest.mark.parametrize(

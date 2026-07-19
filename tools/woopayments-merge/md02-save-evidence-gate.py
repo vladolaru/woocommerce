@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import hashlib
 import importlib.util
 import json
@@ -244,6 +245,22 @@ def _valid_identity(identity: Any) -> bool:
     )
 
 
+def source_due_by_epoch(value: Any) -> int:
+    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+        return value
+    timestamp_pattern = r"[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}"
+    if isinstance(value, str) and re.fullmatch(timestamp_pattern, value):
+        try:
+            parsed = datetime.strptime(value, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+        except ValueError:
+            pass
+        else:
+            epoch = int(parsed.timestamp())
+            if epoch > 0:
+                return epoch
+    raise GateBlocked("MD-01 source deadline is invalid")
+
+
 def validate_source_manifest(path: Path, store: str) -> tuple[dict[str, Any], dict[str, Any]]:
     manifest = safe_json(path)
     if (
@@ -268,6 +285,7 @@ def validate_source_manifest(path: Path, store: str) -> tuple[dict[str, Any], di
         raise GateBlocked(f"{store} MD-01 source probe digest binding is invalid")
     expected_owner = "plugin" if store == "ref" else "native"
     dispute = probe.get("facts", {}).get("dispute", {})
+    due_by = source_due_by_epoch(dispute.get("due_by"))
     if (
         probe.get("schema") != "woopayments_md01_normalized.v1"
         or probe.get("store") != store
@@ -278,8 +296,7 @@ def validate_source_manifest(path: Path, store: str) -> tuple[dict[str, Any], di
         or probe.get("errors") != []
         or not _valid_identity(probe.get("identity"))
         or dispute.get("status") != "needs_response"
-        or not isinstance(dispute.get("due_by"), int)
-        or dispute["due_by"] <= 0
+        or due_by <= 0
     ):
         raise GateBlocked(f"{store} MD-01 source probe semantics are invalid")
     return manifest, probe
@@ -304,10 +321,11 @@ def validate_pre_state(pre: dict[str, Any], probe: dict[str, Any], *, minimum_du
         raise GateBlocked("live MD-02 fixture identity differs from its MD-01 source")
     lifecycle = pre.get("lifecycle", {})
     source_dispute = probe.get("facts", {}).get("dispute", {})
+    source_due_by = source_due_by_epoch(source_dispute.get("due_by"))
     deadline_floor = int(time.time()) + 60 if minimum_due_by is None else minimum_due_by
     if (
         lifecycle.get("status") != "needs_response"
-        or lifecycle.get("due_by") != source_dispute.get("due_by")
+        or lifecycle.get("due_by") != source_due_by
         or not isinstance(lifecycle.get("due_by"), int)
         or isinstance(lifecycle.get("due_by"), bool)
         or lifecycle["due_by"] <= deadline_floor

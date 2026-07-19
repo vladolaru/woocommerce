@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -122,3 +123,51 @@ def test_md02_flow_preserves_gate_cleanup_exit_70(tmp_path: Path) -> None:
     )
     assert completed.returncode == 70
     assert "cleanup-fatal" in completed.stderr
+
+
+def test_md02_target_gate_uses_the_canonical_approved_container_command(tmp_path: Path) -> None:
+    capture = tmp_path / "gate-argv.json"
+    fake_gate = tmp_path / "fake-gate.py"
+    fake_gate.write_text(
+        "import json, os, sys\n"
+        "from pathlib import Path\n"
+        "Path(os.environ['ARG_CAPTURE']).write_text(json.dumps(sys.argv))\n"
+        "raise SystemExit(70)\n",
+        encoding="utf-8",
+    )
+    context = tmp_path / "context.json"
+    source_manifest = tmp_path / "source-manifest.json"
+    context.write_text("{}\n", encoding="utf-8")
+    source_manifest.write_text("{}\n", encoding="utf-8")
+    container = "approved-target-cli-1"
+    completed = subprocess.run(
+        ["bash", str(FLOW)],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env={
+            **os.environ,
+            "STORE_NAME": "target",
+            "CRITICAL_FLOWS_RUN_STAMP": "20260719T220000Z-4242",
+            "CRITICAL_FLOWS_RUN_SCOPE": "partial",
+            "CRITICAL_FLOWS_RUN_CONTEXT_KEY": "42" * 32,
+            "CRITICAL_FLOWS_FLOW_ID": "MD-02-save-evidence",
+            "CRITICAL_FLOWS_LOG_PURPOSE": "clean-debug-log",
+            "EVIDENCE_DIR": str(tmp_path / "evidence"),
+            "MD02_CONTEXT_FILE": str(context),
+            "MD02_TARGET_SOURCE_MANIFEST": str(source_manifest),
+            "MD02_TARGET_URL": "http://store8889.localhost:8889",
+            "MD02_GATE": str(fake_gate),
+            "MD02_DELAY_SECONDS": "0",
+            "WOOPAYMENTS_APPROVED_TARGET_CONTAINER": container,
+            "TARGET_WP_COMMAND": f"docker exec -i -u www-data {container} wp",
+            "ARG_CAPTURE": str(capture),
+        },
+    )
+
+    assert completed.returncode == 70
+    argv = json.loads(capture.read_text(encoding="utf-8"))
+    wp_index = argv.index("--wp")
+    assert argv[wp_index + 1] == f"docker exec -i {container} wp --allow-root"
