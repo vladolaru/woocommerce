@@ -58,6 +58,11 @@ SC02_DRIVER = (
 SC02_FLOW = (
     REPO / "tools/woopayments-critical-flows/flows/SC-02-blocks-card-checkout.sh"
 )
+MD01_EVIDENCE = REPO / "tools/woopayments-critical-flows/flows/md01-evidence.py"
+MD01_FLOW = (
+    REPO
+    / "tools/woopayments-critical-flows/flows/MD-01-created-note-on-hold-notify.sh"
+)
 MO03_CONTRACT = (
     REPO
     / "tools/woopayments-critical-flows/flows/"
@@ -16465,6 +16470,25 @@ def test_ma01_shell_and_runner_source_contract_is_manifest_bound_and_raw_free() 
     assert "validate_ma01_manifest()" in runner
     assert 'python3 "$DIR/flows/ma01-evidence.py" validate-bound-manifest' in runner
     assert 'if [ "$base" = "MA-01-open-admin-as-non-admin" ]' in runner
+
+
+def test_md01_shell_and_runner_source_contract_is_manifest_bound() -> None:
+    flow = MD01_FLOW.read_text(encoding="utf-8")
+    runner = RUNNER.read_text(encoding="utf-8")
+
+    assert 'source "$DIR/../lib/common.sh"' in flow
+    assert 'args=(dispute --deterministic' in flow
+    assert 'wp_store "$S" --user=1 eval-file - "$S" probe "$RUN_STAMP" "$ORDER_ID" "$CHARGE_ID" "$INTENT_ID"' in flow
+    assert 'WP="$RECONCILE_WP" bash "$RECONCILER" "$ORDER_ID"' in flow
+    assert "normalize-probe" in flow and "compare" in flow
+    assert "assert_log_clean" in flow
+    assert "ref-probe.json" in flow and "target-probe.json" in flow
+    assert "ref-webhook-order.json" in flow and "target-webhook-order.json" in flow
+    assert "wpcom-local --json jobs run-one --id" in flow
+    assert "comparison.json" in flow
+    assert "validate_md01_manifest()" in runner
+    assert 'python3 "$DIR/flows/md01-evidence.py" validate-bound-manifest' in runner
+    assert 'elif [ "$base" = "MD-01-created-note-on-hold-notify" ]' in runner
 
 
 def main() -> None:

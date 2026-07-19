@@ -12,7 +12,9 @@ import argparse
 import binascii
 from collections import Counter
 import hashlib
+import hmac
 import json
+import os
 import re
 import struct
 import sys
@@ -30,6 +32,7 @@ from evidence_context import (
 
 
 FLOW_MA11 = "MA-11-plugin-active-settings-screen"
+FLOW_MD01 = "MD-01-created-note-on-hold-notify"
 FLOW_MS07 = "MS-07-admin-change-method"
 FLOW_SC04 = "SC-04-saved-card"
 FLOW_SC14 = "SC-14-lpm-wave-1-checkout"
@@ -54,6 +57,38 @@ PLUGIN_ACTIVE_TARGET_ARTIFACTS = {
     "plugin-active-settings-restore.json",
     "plugin-active-settings-snapshot.json",
     "plugin-active-settings-stage.json",
+}
+MD01_ASSERTIONS = {
+    "authenticated_admin",
+    "order_on_hold",
+    "created_note",
+    "note_reason_context",
+    "note_response_due_context",
+    "exact_dispute_row",
+    "needs_response",
+    "amount",
+    "reason",
+    "respond_action",
+    "badge_count",
+}
+MD01_BROWSER_FIELDS = {
+    "schema",
+    "status",
+    "store",
+    "run_stamp",
+    "runtime_owner",
+    "deterministic_manifest_sha256",
+    "identity",
+    "assertions",
+    "failed_responses",
+    "console_errors",
+    "page_errors",
+    "screenshots",
+    "errors",
+    "blockers",
+    "raw_sha256",
+    "context_hmac",
+    "payload_sha256",
 }
 
 
@@ -894,6 +929,230 @@ def build_token_continuity_result(gate_path: Path | None) -> dict[str, Any]:
     }
 
 
+def md01_context_key() -> bytes:
+    value = os.environ.get("CRITICAL_FLOWS_RUN_CONTEXT_KEY", "")
+    if re.fullmatch(r"[0-9a-f]{64}", value) is None:
+        raise ValueError("MD-01 runner evidence context key is unavailable")
+    return bytes.fromhex(value)
+
+
+def md01_payload_digest(payload: dict[str, Any]) -> str:
+    unsigned = dict(payload)
+    unsigned.pop("payload_sha256", None)
+    encoded = json.dumps(unsigned, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
+def validate_md01_seal(payload: dict[str, Any], domain: bytes) -> None:
+    if payload.get("payload_sha256") != md01_payload_digest(payload):
+        raise ValueError("MD-01 evidence payload digest does not match")
+    material = dict(payload)
+    material.pop("payload_sha256", None)
+    material.pop("context_hmac", None)
+    encoded = json.dumps(material, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    expected = "hmac-sha256:" + hmac.new(md01_context_key(), domain + encoded, hashlib.sha256).hexdigest()
+    if payload.get("context_hmac") != expected:
+        raise ValueError("MD-01 evidence context HMAC does not match")
+
+
+def validate_md01_bound_file(path: Path, expected_digest: str, label: str) -> Path:
+    lexical = path
+    if sys.platform == "darwin" and len(path.parts) > 1 and path.parts[1] == "var":
+        lexical = Path("/private") / Path(*path.parts[1:])
+    if (
+        not path.is_absolute()
+        or ".." in path.parts
+        or any(component.is_symlink() for component in (lexical, *lexical.parents))
+        or not path.is_file()
+        or sha256_file(path) != expected_digest
+    ):
+        raise ValueError(f"MD-01 {label} is missing, unsafe, or has a mismatched digest")
+    return path
+
+
+def validate_md01_browser_packet(
+    path: Path,
+    store: str,
+    run_stamp: str,
+    manifest_digest: str,
+) -> tuple[dict[str, Any], list[str]]:
+    payload = load_json(path)
+    if set(payload) != MD01_BROWSER_FIELDS or payload.get("schema") != "woopayments_md01_browser.v1":
+        raise ValueError(f"MD-01 {store} browser packet has an invalid field set or schema")
+    validate_md01_seal(payload, b"woopayments-md01-browser-context-v1\0")
+    expected_owner = "plugin" if store == "ref" else "native"
+    if (
+        payload.get("status") != "pass"
+        or payload.get("store") != store
+        or payload.get("run_stamp") != run_stamp
+        or payload.get("runtime_owner") != expected_owner
+        or payload.get("deterministic_manifest_sha256") != manifest_digest
+    ):
+        raise ValueError(f"MD-01 {store} browser packet has an invalid run/store/manifest binding")
+    assertions = payload.get("assertions")
+    if not isinstance(assertions, dict) or set(assertions) != MD01_ASSERTIONS or not all(
+        value is True for value in assertions.values()
+    ):
+        raise ValueError(f"MD-01 {store} browser packet does not prove every UI assertion")
+    for field in ("failed_responses", "console_errors", "page_errors", "errors", "blockers"):
+        if payload.get(field) != []:
+            raise ValueError(f"MD-01 {store} browser packet has non-clean {field}")
+    identity = payload.get("identity")
+    if (
+        not isinstance(identity, dict)
+        or set(identity) != {"order_id", "charge_id", "intent_id", "dispute_id"}
+        or not isinstance(identity.get("order_id"), int)
+        or isinstance(identity.get("order_id"), bool)
+        or identity["order_id"] <= 0
+        or re.fullmatch(r"(?:ch|py)_[A-Za-z0-9_]+", str(identity.get("charge_id", ""))) is None
+        or re.fullmatch(r"pi_[A-Za-z0-9_]+", str(identity.get("intent_id", ""))) is None
+        or re.fullmatch(r"[A-Za-z]{2,4}_[A-Za-z0-9_]+", str(identity.get("dispute_id", ""))) is None
+    ):
+        raise ValueError(f"MD-01 {store} browser packet has an invalid exact identity")
+    screenshots = payload.get("screenshots")
+    expected_names = {f"{store}-order.png", f"{store}-disputes.png"}
+    if not isinstance(screenshots, dict) or set(screenshots) != expected_names:
+        raise ValueError(f"MD-01 {store} browser screenshot binding is incomplete")
+    evidence_paths = [str(path)]
+    for name, digest in screenshots.items():
+        screenshot = validate_md01_bound_file(path.parent / name, str(digest), f"{store} screenshot {name}")
+        if not screenshot.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"):
+            raise ValueError(f"MD-01 {store} screenshot is not a PNG: {name}")
+        evidence_paths.append(str(screenshot))
+    return payload, evidence_paths
+
+
+def build_md01_result(gate_path: Path | None, context: dict[str, Any]) -> dict[str, Any]:
+    if gate_path is None:
+        return build_missing_agent_result(FLOW_MD01)
+    gate = load_json(gate_path)
+    required_fields = {
+        "schema",
+        "status",
+        "run_stamp",
+        "context_binding",
+        "deterministic_manifests",
+        "results",
+        "failures",
+        "blockers",
+        "cleanup_failures",
+        "context_hmac",
+        "payload_sha256",
+    }
+    if set(gate) != required_fields or gate.get("schema") != "woopayments_md01_browser_gate.v1":
+        raise ValueError("MD-01 browser gate has an invalid field set or schema")
+    validate_md01_seal(gate, b"woopayments-md01-browser-gate-context-v1\0")
+    expected_context = {
+        "aggregate_run_id": context.get("aggregate_run_id"),
+        "context_sha256": context.get("context_sha256"),
+    }
+    if gate.get("context_binding") != expected_context:
+        raise ValueError("MD-01 browser gate does not match the current aggregate context")
+    run_stamp = str(gate.get("run_stamp") or "")
+    if re.fullmatch(r"[0-9]{8}T[0-9]{6}Z-[0-9]+", run_stamp) is None:
+        raise ValueError("MD-01 browser gate has an invalid run stamp")
+    manifests = gate.get("deterministic_manifests")
+    if not isinstance(manifests, dict) or set(manifests) != {"ref", "target"}:
+        raise ValueError("MD-01 deterministic manifest packet is incomplete")
+    manifest_paths: dict[str, Path] = {}
+    for store in ("ref", "target"):
+        binding = manifests[store]
+        if not isinstance(binding, dict) or set(binding) != {"path", "sha256"}:
+            raise ValueError(f"MD-01 {store} deterministic manifest binding is invalid")
+        manifest_paths[store] = validate_md01_bound_file(
+            Path(str(binding["path"])), str(binding["sha256"]), f"{store} deterministic manifest"
+        )
+    results = gate.get("results")
+    if not isinstance(results, list) or len(results) != 2:
+        raise ValueError("MD-01 browser gate must contain one result for each store")
+    by_store: dict[str, dict[str, Any]] = {}
+    for result in results:
+        if not isinstance(result, dict) or set(result) != {
+            "store",
+            "status",
+            "browser_path",
+            "browser_sha256",
+            "log_path",
+        }:
+            raise ValueError("MD-01 browser gate store result is malformed")
+        store = str(result.get("store") or "")
+        if store not in {"ref", "target"} or store in by_store:
+            raise ValueError("MD-01 browser gate store result role is invalid or duplicated")
+        by_store[store] = result
+
+    store_results = []
+    for store in ("ref", "target"):
+        result = by_store[store]
+        evidence_paths = [str(gate_path), str(manifest_paths[store])]
+        observations: list[str] = []
+        if result["status"] == "pass":
+            browser_path = validate_md01_bound_file(
+                Path(str(result["browser_path"])), str(result["browser_sha256"]), f"{store} browser packet"
+            )
+            browser, browser_paths = validate_md01_browser_packet(
+                browser_path,
+                store,
+                run_stamp,
+                str(manifests[store]["sha256"]),
+            )
+            evidence_paths.extend(browser_paths)
+            identity = browser["identity"]
+            verdict = "PASS"
+            end_state = (
+                f"order={identity['order_id']}; charge={identity['charge_id']}; "
+                f"dispute={identity['dispute_id']}; order_status=on-hold; dispute_status=needs_response"
+            )
+            observations = [
+                "Authenticated order detail rendered the on-hold state and dispute-created note with reason/respond-by context.",
+                "Payments → Disputes rendered the exact current dispute with needs-response amount/reason, response action, status count and badge.",
+            ]
+        elif result["status"] == "fail":
+            verdict = "FAIL - functional"
+            end_state = "The current MD-01 browser contract failed for this store."
+            observations = clean_list(gate.get("failures"))
+        elif result["status"] == "blocked":
+            verdict = "BLOCKED"
+            end_state = "The current MD-01 browser contract was blocked for this store."
+            observations = clean_list(gate.get("blockers"))
+        else:
+            raise ValueError(f"MD-01 {store} browser result has an invalid status")
+        store_results.append(
+            {
+                "store": store,
+                "verdict": verdict,
+                "end_state": end_state,
+                "ux_observations": observations,
+                "visual_diffs": [],
+                "evidence_paths": list(dict.fromkeys(evidence_paths)),
+            }
+        )
+
+    derived_status = (
+        "fail"
+        if gate.get("cleanup_failures") or any(result["verdict"].startswith("FAIL") for result in store_results)
+        else "blocked"
+        if any(result["verdict"] == "BLOCKED" for result in store_results)
+        else "pass"
+    )
+    if gate.get("status") != derived_status:
+        raise ValueError("MD-01 browser gate verdict contradicts its store results")
+    parity = "PASS" if derived_status == "pass" else "FAIL - functional" if derived_status == "fail" else "BLOCKED"
+    note = (
+        "Reference and native target render the same provider-created dispute lifecycle end state."
+        if parity == "PASS"
+        else "At least one MD-01 browser/store result failed."
+        if parity.startswith("FAIL")
+        else "MD-01 browser evidence is incomplete or blocked."
+    )
+    return {
+        "flow": FLOW_MD01,
+        "oracle_mode": "comparable",
+        "store_results": store_results,
+        "parity_verdict": parity,
+        "regression_note": note,
+    }
+
+
 def sc04_store_result(
     store: str,
     browser_path: Path | None,
@@ -1390,6 +1649,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--plugin-active-reference-gate", help="Reference plugin-active settings gate JSON.")
     parser.add_argument("--plugin-active-target-gate", help="Target plugin-active settings gate JSON.")
     parser.add_argument("--lpm-gate", help="LPM checkout gate rollup JSON.")
+    parser.add_argument("--md01-browser-gate", help="Context-bound MD-01 deterministic/Playwright gate JSON.")
     parser.add_argument("--sc04-reference-browser", help="Reference SC-04 browser evidence JSON.")
     parser.add_argument("--sc04-reference-state", help="Reference SC-04 saved-token/order state JSON.")
     parser.add_argument("--sc04-target-browser", help="Target SC-04 browser evidence JSON.")
@@ -1450,6 +1710,15 @@ def main() -> int:
     if args.lpm_gate:
         write_result(out_dir, FLOW_SC14, build_lpm_result(existing_path(args.lpm_gate)), context)
         written_flows.add(FLOW_SC14)
+
+    if args.md01_browser_gate:
+        write_result(
+            out_dir,
+            FLOW_MD01,
+            build_md01_result(existing_path(args.md01_browser_gate), context),
+            context,
+        )
+        written_flows.add(FLOW_MD01)
 
     has_sc04_source = bool(
         args.sc04_reference_browser

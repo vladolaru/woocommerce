@@ -5,8 +5,10 @@ from __future__ import annotations
 
 import binascii
 import hashlib
+import hmac
 import importlib.util
 import json
+import os
 import struct
 import subprocess
 import tempfile
@@ -60,6 +62,7 @@ def builder_context(out_dir: Path, subscriptions: tuple[str, str] = ("862", "366
 def run_builder(
     *args: str,
     context_subscriptions: tuple[str, str] = ("862", "366"),
+    extra_env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     out_dir = Path(args[args.index("--out-dir") + 1])
     context_path, _ = builder_context(out_dir, context_subscriptions)
@@ -70,6 +73,7 @@ def run_builder(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,
+        env={**os.environ, **(extra_env or {})},
     )
 
 
@@ -79,6 +83,105 @@ def write_json(path: Path, payload: dict) -> None:
 
 def read_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def md01_seal(payload: dict, key: str, domain: bytes) -> dict:
+    sealed = dict(payload)
+    material = json.dumps(sealed, sort_keys=True, separators=(",", ":")).encode()
+    sealed["context_hmac"] = "hmac-sha256:" + hmac.new(bytes.fromhex(key), domain + material, hashlib.sha256).hexdigest()
+    unsigned = dict(sealed)
+    encoded = json.dumps(unsigned, sort_keys=True, separators=(",", ":")).encode()
+    sealed["payload_sha256"] = "sha256:" + hashlib.sha256(encoded).hexdigest()
+    return sealed
+
+
+def write_md01_packet(base: Path, context: dict, key: str = "42" * 32) -> Path:
+    base.mkdir(parents=True, exist_ok=True)
+    run_stamp = "20260719T140000Z-4242"
+    manifests: dict[str, dict[str, str]] = {}
+    results = []
+    for index, store in enumerate(("ref", "target"), start=1):
+        manifest = base / f"{store}-manifest.json"
+        write_json(manifest, {"fixture": store, "run_stamp": run_stamp})
+        manifest_digest = "sha256:" + hashlib.sha256(manifest.read_bytes()).hexdigest()
+        manifests[store] = {"path": str(manifest), "sha256": manifest_digest}
+        screenshots = {}
+        for surface in ("order", "disputes"):
+            screenshot = base / f"{store}-{surface}.png"
+            screenshot.write_bytes(b"\x89PNG\r\n\x1a\n" + bytes([index]) * 32)
+            screenshots[screenshot.name] = "sha256:" + hashlib.sha256(screenshot.read_bytes()).hexdigest()
+        browser = md01_seal(
+            {
+                "schema": "woopayments_md01_browser.v1",
+                "status": "pass",
+                "store": store,
+                "run_stamp": run_stamp,
+                "runtime_owner": "plugin" if store == "ref" else "native",
+                "deterministic_manifest_sha256": manifest_digest,
+                "identity": {
+                    "order_id": 100 + index,
+                    "charge_id": f"ch_{store}_md01",
+                    "intent_id": f"pi_{store}_md01",
+                    "dispute_id": f"dp_{store}_md01",
+                },
+                "assertions": {
+                    "authenticated_admin": True,
+                    "order_on_hold": True,
+                    "created_note": True,
+                    "note_reason_context": True,
+                    "note_response_due_context": True,
+                    "exact_dispute_row": True,
+                    "needs_response": True,
+                    "amount": True,
+                    "reason": True,
+                    "respond_action": True,
+                    "badge_count": True,
+                },
+                "failed_responses": [],
+                "console_errors": [],
+                "page_errors": [],
+                "screenshots": screenshots,
+                "errors": [],
+                "blockers": [],
+                "raw_sha256": "sha256:" + str(index) * 64,
+            },
+            key,
+            b"woopayments-md01-browser-context-v1\0",
+        )
+        browser_path = base / f"{store}-browser.json"
+        write_json(browser_path, browser)
+        log_path = base / f"{store}-browser.log"
+        log_path.write_text("Playwright capture complete\n", encoding="utf-8")
+        results.append(
+            {
+                "store": store,
+                "status": "pass",
+                "browser_path": str(browser_path),
+                "browser_sha256": "sha256:" + hashlib.sha256(browser_path.read_bytes()).hexdigest(),
+                "log_path": str(log_path),
+            }
+        )
+    gate = md01_seal(
+        {
+            "schema": "woopayments_md01_browser_gate.v1",
+            "status": "pass",
+            "run_stamp": run_stamp,
+            "context_binding": {
+                "aggregate_run_id": context["aggregate_run_id"],
+                "context_sha256": context["context_sha256"],
+            },
+            "deterministic_manifests": manifests,
+            "results": results,
+            "failures": [],
+            "blockers": [],
+            "cleanup_failures": [],
+        },
+        key,
+        b"woopayments-md01-browser-gate-context-v1\0",
+    )
+    gate_path = base / "md01-browser-gate.json"
+    write_json(gate_path, gate)
+    return gate_path
 
 
 def write_test_png(path: Path, width: int = 800, height: int = 450) -> None:
@@ -1919,6 +2022,110 @@ def test_required_agent_flow_does_not_overwrite_copied_result() -> None:
         payload = read_json(out_dir / "SC-04-saved-card.json")
         assert payload["parity_verdict"] == "PASS"
         assert payload["regression_note"] == "copied-pass"
+
+
+def test_md01_browser_gate_builds_comparable_dual_store_pass(tmp_path: Path) -> None:
+    out_dir = tmp_path / "results"
+    context_path, context = builder_context(out_dir)
+    gate = write_md01_packet(tmp_path / "md01", context)
+    completed = subprocess.run(
+        [
+            "python3",
+            str(SCRIPT),
+            "--context-file",
+            str(context_path),
+            "--out-dir",
+            str(out_dir),
+            "--md01-browser-gate",
+            str(gate),
+        ],
+        cwd=REPO,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env={**os.environ, "CRITICAL_FLOWS_RUN_CONTEXT_KEY": "42" * 32},
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    payload = read_json(out_dir / "MD-01-created-note-on-hold-notify.json")
+    assert payload["flow"] == "MD-01-created-note-on-hold-notify"
+    assert payload["oracle_mode"] == "comparable"
+    assert payload["parity_verdict"] == "PASS"
+    assert [result["verdict"] for result in payload["store_results"]] == ["PASS", "PASS"]
+    assert all(result["evidence"] for result in payload["store_results"])
+    observations = [
+        observation
+        for result in payload["store_results"]
+        for observation in result["ux_observations"]
+    ]
+    assert any("status count and badge" in observation for observation in observations)
+    assert all("summary" not in observation for observation in observations)
+
+
+def test_md01_browser_gate_rejects_tampered_browser_packet(tmp_path: Path) -> None:
+    out_dir = tmp_path / "results"
+    context_path, context = builder_context(out_dir)
+    gate = write_md01_packet(tmp_path / "md01", context)
+    gate_payload = read_json(gate)
+    browser_path = Path(gate_payload["results"][0]["browser_path"])
+    browser = read_json(browser_path)
+    browser["assertions"]["created_note"] = False
+    write_json(browser_path, browser)
+    gate_payload["results"][0]["browser_sha256"] = "sha256:" + hashlib.sha256(browser_path.read_bytes()).hexdigest()
+    gate_payload = md01_seal(
+        {key: value for key, value in gate_payload.items() if key not in {"context_hmac", "payload_sha256"}},
+        "42" * 32,
+        b"woopayments-md01-browser-gate-context-v1\0",
+    )
+    write_json(gate, gate_payload)
+    completed = subprocess.run(
+        [
+            "python3",
+            str(SCRIPT),
+            "--context-file",
+            str(context_path),
+            "--out-dir",
+            str(out_dir),
+            "--md01-browser-gate",
+            str(gate),
+        ],
+        cwd=REPO,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env={**os.environ, "CRITICAL_FLOWS_RUN_CONTEXT_KEY": "42" * 32},
+    )
+    assert completed.returncode != 0
+    assert not (out_dir / "MD-01-created-note-on-hold-notify.json").exists()
+
+
+def test_md01_browser_gate_rejects_missing_deterministic_manifest(tmp_path: Path) -> None:
+    out_dir = tmp_path / "results"
+    context_path, context = builder_context(out_dir)
+    gate = write_md01_packet(tmp_path / "md01", context)
+    gate_payload = read_json(gate)
+    Path(gate_payload["deterministic_manifests"]["target"]["path"]).unlink()
+    completed = subprocess.run(
+        [
+            "python3",
+            str(SCRIPT),
+            "--context-file",
+            str(context_path),
+            "--out-dir",
+            str(out_dir),
+            "--md01-browser-gate",
+            str(gate),
+        ],
+        cwd=REPO,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env={**os.environ, "CRITICAL_FLOWS_RUN_CONTEXT_KEY": "42" * 32},
+    )
+    assert completed.returncode != 0
+    assert not (out_dir / "MD-01-created-note-on-hold-notify.json").exists()
 
 
 def main() -> None:

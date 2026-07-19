@@ -173,7 +173,7 @@ Legend — **Layers:** `D` deterministic, `A` agent-driven, `D+A` both (overlap)
 
 | ID | Flow | Layers | Functional acceptance | UX checkpoints | Status |
 |----|------|--------|-----------------------|----------------|--------|
-| MD-01 | Created: note + on-hold + notify | D+A | Order on-hold; dispute note | Note + status | PENDING |
+| MD-01 | Created: note + on-hold + notify | D+A | Order on-hold; dispute note | Note + status | PASS (runner-verified 2026-07-19: corrected-source dual-store Layer D and direct-Playwright Layer A proved one provider-originated dispute per store, exact WPCOM payment-success→dispute-created delivery, on-hold order + merchant dispute note, boundary-exact dispute row/amount/count identity, merchant reason/status/action parity, financial reconciliation, and automatic-mode/log/session cleanup; result `sha256:7f9ade690952cacdf14329791a6fcdf145bbc0e15d2ff020c2cd35bb35273e48`; runs `20260719T191058Z-64015-partial`, `20260719T191257Z-64015-partial`) |
 | MD-02 | Save evidence | A (+D) | Evidence persisted | Evidence form + save | PENDING |
 | MD-03 | Winning dispute | D | Won; funds returned; notes | Lifecycle notes | PENDING |
 | MD-04 | Losing dispute | D | Lost; chargeback; notes | Lifecycle notes | PENDING |
