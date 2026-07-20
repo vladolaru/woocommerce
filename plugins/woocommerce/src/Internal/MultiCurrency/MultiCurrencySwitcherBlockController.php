@@ -19,7 +19,19 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  */
 class MultiCurrencySwitcherBlockController implements RegisterHooksInterface {
 
-	private const BLOCK_NAME = 'woocommerce-payments/multi-currency-switcher';
+	private const BLOCK_NAME                 = 'woocommerce-payments/multi-currency-switcher';
+	private const EDITOR_SCRIPT_HANDLE       = self::BLOCK_NAME;
+	private const EDITOR_SCRIPT_PATH         = 'assets/client/blocks/multi-currency-switcher.js';
+	private const EDITOR_SCRIPT_ASSET_PATH   = 'assets/client/blocks/multi-currency-switcher.asset.php';
+	private const EDITOR_SCRIPT_DEPENDENCIES = array(
+		'react-jsx-runtime',
+		'wp-block-editor',
+		'wp-blocks',
+		'wp-components',
+		'wp-i18n',
+		'wp-polyfill',
+		'wp-server-side-render',
+	);
 
 	/**
 	 * Runtime owner arbiter.
@@ -100,14 +112,75 @@ class MultiCurrencySwitcherBlockController implements RegisterHooksInterface {
 			return;
 		}
 
+		$this->register_editor_script();
+
 		register_block_type(
 			self::BLOCK_NAME,
 			// @phpstan-ignore-next-line argument.type (WordPress accepts integer api_version values and stores them unchanged at runtime.)
 			array(
 				'api_version'     => 3,
+				'editor_script'   => self::EDITOR_SCRIPT_HANDLE,
 				'render_callback' => array( $this, 'render_block_widget' ),
 				'attributes'      => self::get_block_attributes(),
 			)
+		);
+	}
+
+	/**
+	 * Register the editor-only switcher block script.
+	 */
+	private function register_editor_script(): void {
+		if ( wp_script_is( self::EDITOR_SCRIPT_HANDLE, 'registered' ) ) {
+			return;
+		}
+
+		$asset_data_path = WC()->plugin_path() . '/' . self::EDITOR_SCRIPT_ASSET_PATH;
+		$asset_data      = array();
+
+		if ( file_exists( $asset_data_path ) ) {
+			$loaded_asset_data = require $asset_data_path;
+
+			if ( is_array( $loaded_asset_data ) ) {
+				$asset_data = $loaded_asset_data;
+			}
+		}
+
+		$asset_dependencies = $asset_data['dependencies'] ?? null;
+		$dependencies       = self::resolve_editor_script_dependencies( $asset_dependencies );
+		$version            = isset( $asset_data['version'] ) && is_string( $asset_data['version'] ) && '' !== $asset_data['version']
+			? $asset_data['version']
+			: WC_VERSION;
+
+		wp_register_script(
+			self::EDITOR_SCRIPT_HANDLE,
+			WC()->plugin_url() . '/' . self::EDITOR_SCRIPT_PATH,
+			$dependencies,
+			$version,
+			true
+		);
+		wp_set_script_translations( self::EDITOR_SCRIPT_HANDLE, 'woocommerce' );
+	}
+
+	/**
+	 * Resolve build-derived editor dependencies with a complete runtime fallback.
+	 *
+	 * @param mixed $asset_dependencies Dependencies from generated asset metadata.
+	 * @return string[]
+	 */
+	private static function resolve_editor_script_dependencies( $asset_dependencies ): array {
+		$metadata_dependencies = is_array( $asset_dependencies )
+			? array_values(
+				array_filter(
+					$asset_dependencies,
+					static function ( $dependency ): bool {
+						return is_string( $dependency ) && '' !== $dependency;
+					}
+				)
+			)
+			: array();
+
+		return array_values(
+			array_unique( array_merge( self::EDITOR_SCRIPT_DEPENDENCIES, $metadata_dependencies ) )
 		);
 	}
 

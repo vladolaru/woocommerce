@@ -16,7 +16,8 @@ use WP_Block_Type_Registry;
  */
 class MultiCurrencySwitcherBlockControllerTest extends WC_Unit_Test_Case {
 
-	private const BLOCK_NAME = 'woocommerce-payments/multi-currency-switcher';
+	private const BLOCK_NAME           = 'woocommerce-payments/multi-currency-switcher';
+	private const EDITOR_SCRIPT_HANDLE = 'woocommerce-payments/multi-currency-switcher';
 
 	/**
 	 * Hooks touched by the switcher block controller.
@@ -36,6 +37,7 @@ class MultiCurrencySwitcherBlockControllerTest extends WC_Unit_Test_Case {
 		}
 
 		$this->unregister_block_type();
+		wp_deregister_script( self::EDITOR_SCRIPT_HANDLE );
 
 		unset( $_GET['currency'], $_GET['orderby'] );
 
@@ -121,7 +123,79 @@ class MultiCurrencySwitcherBlockControllerTest extends WC_Unit_Test_Case {
 			$expected_attributes,
 			array_intersect_key( $block_type->attributes, $expected_attributes )
 		);
-		$this->assertSame( array(), $block_type->editor_script_handles );
+		$this->assertSame( array( self::EDITOR_SCRIPT_HANDLE ), $block_type->editor_script_handles );
+		$this->assertTrue( wp_script_is( self::EDITOR_SCRIPT_HANDLE, 'registered' ) );
+		$this->assertFalse( wp_script_is( self::EDITOR_SCRIPT_HANDLE, 'enqueued' ) );
+
+		$registered_script = wp_scripts()->registered[ self::EDITOR_SCRIPT_HANDLE ] ?? null;
+
+		$this->assertInstanceOf( \_WP_Dependency::class, $registered_script );
+		$this->assertSame(
+			WC()->plugin_url() . '/assets/client/blocks/multi-currency-switcher.js',
+			$registered_script->src
+		);
+		$this->assertContains( 'react-jsx-runtime', $registered_script->deps );
+		$this->assertContains( 'wp-blocks', $registered_script->deps );
+		$this->assertContains( 'wp-block-editor', $registered_script->deps );
+		$this->assertContains( 'wp-components', $registered_script->deps );
+		$this->assertContains( 'wp-i18n', $registered_script->deps );
+		$this->assertContains( 'wp-polyfill', $registered_script->deps );
+		$this->assertContains( 'wp-server-side-render', $registered_script->deps );
+		$this->assertNotContains( 'wp-element', $registered_script->deps );
+		$this->assertNotEmpty( $registered_script->ver );
+	}
+
+	/**
+	 * @testdox Should provide every compiled runtime dependency when asset metadata is unavailable.
+	 */
+	public function test_fallback_editor_script_dependencies_cover_compiled_bundle(): void {
+		$dependency_resolver = new \ReflectionMethod(
+			MultiCurrencySwitcherBlockController::class,
+			'resolve_editor_script_dependencies'
+		);
+		$dependency_resolver->setAccessible( true );
+
+		$this->assertSame(
+			array(
+				'react-jsx-runtime',
+				'wp-block-editor',
+				'wp-blocks',
+				'wp-components',
+				'wp-i18n',
+				'wp-polyfill',
+				'wp-server-side-render',
+			),
+			$dependency_resolver->invoke( null, null )
+		);
+	}
+
+	/**
+	 * @testdox Should preserve an existing public editor script registration.
+	 */
+	public function test_preserves_existing_editor_script_registration(): void {
+		wp_register_script(
+			self::EDITOR_SCRIPT_HANDLE,
+			'https://example.test/existing-switcher.js',
+			array( 'existing-dependency' ),
+			'existing-version',
+			true
+		);
+
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+
+		$sut->handle_init();
+
+		$registered_script = wp_scripts()->registered[ self::EDITOR_SCRIPT_HANDLE ] ?? null;
+
+		$this->assertInstanceOf( \_WP_Dependency::class, $registered_script );
+		$this->assertSame( 'https://example.test/existing-switcher.js', $registered_script->src );
+		$this->assertSame( array( 'existing-dependency' ), $registered_script->deps );
+		$this->assertSame( 'existing-version', $registered_script->ver );
+
+		$block_type = WP_Block_Type_Registry::get_instance()->get_registered( self::BLOCK_NAME );
+
+		$this->assertNotFalse( $block_type );
+		$this->assertSame( array( self::EDITOR_SCRIPT_HANDLE ), $block_type->editor_script_handles );
 	}
 
 	/**
