@@ -488,21 +488,25 @@ def run_gate(
     if submission.get("response_class") == "trusted_success":
         terminal_seen = False
         for attempt in range(poll_tries):
-            observation_failed = False
+            observation_blockers: list[str] = []
             try:
                 provider_facts = _retrieve_provider(
                     dispute_id, execute, config["stripe_argv"], account_id
                 )
             except (GateError, OSError, subprocess.TimeoutExpired):
-                blockers.append("provider_observation_unavailable")
-                observation_failed = True
+                observation_blockers.append("provider_observation_unavailable")
             try:
                 store_facts = _probe_store(config, identity, execute)
             except (GateError, OSError, subprocess.TimeoutExpired):
-                blockers.append("store_observation_unavailable")
-                observation_failed = True
-            if observation_failed:
-                blockers = list(dict.fromkeys(blockers))
+                observation_blockers.append("store_observation_unavailable")
+            if observation_blockers:
+                if attempt + 1 < poll_tries:
+                    # Store observations cross the WPCOM API boundary and can be
+                    # transiently rate-limited. Retry only these read-only probes;
+                    # the evidence submission above remains single-attempt.
+                    sleep(max(float(poll_delay), 5.0))
+                    continue
+                blockers.extend(observation_blockers)
                 break
             _assert_identity(identity, store_facts, provider_facts)
             assertions = evidence.derive_outcome_assertions(

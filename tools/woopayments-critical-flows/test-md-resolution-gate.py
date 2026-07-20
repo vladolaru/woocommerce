@@ -97,6 +97,7 @@ class FakeBoundary:
         submission_class: str = "trusted_success",
         submission_transport_failure: bool = False,
         post_submit_provider_failure: bool = False,
+        post_submit_store_failures: int = 0,
         provider_preflight_failure: bool = False,
         list_has_more: bool = False,
         account_id: str = "acct_1234567890ref",
@@ -109,6 +110,7 @@ class FakeBoundary:
         self.submission_class = submission_class
         self.submission_transport_failure = submission_transport_failure
         self.post_submit_provider_failure = post_submit_provider_failure
+        self.post_submit_store_failures = post_submit_store_failures
         self.provider_preflight_failure = provider_preflight_failure
         self.list_has_more = list_has_more
         self.account_id = account_id
@@ -209,6 +211,11 @@ class FakeBoundary:
             action = argv[argv.index("eval-file") + 2]
             if action == "probe":
                 self.store_probes += 1
+                if self.submit_calls and self.post_submit_store_failures > 0:
+                    self.post_submit_store_failures -= 1
+                    return subprocess.CompletedProcess(
+                        argv, 1, "", "store observation unavailable"
+                    )
                 status = "won" if self.terminal and self.store_probes > 1 else "needs_response"
                 facts = store_facts(status)
                 if self.wrong_store_identity:
@@ -397,6 +404,26 @@ def test_gate_seals_last_projection_when_provider_becomes_unavailable_after_subm
     assert packet["status"] == "blocked"
     assert "provider_observation_unavailable" in packet["blockers"]
     assert packet["provider_facts"]["dispute_status"] == "needs_response"
+
+
+def test_gate_recovers_from_transient_post_submit_store_read_without_replaying_submit(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("CRITICAL_FLOWS_RUN_CONTEXT_KEY", CONTEXT_KEY)
+    module = load_gate()
+    out_dir = tmp_path / "ref"
+    boundary = FakeBoundary(out_dir, post_submit_store_failures=1)
+    sleeps: list[float] = []
+
+    result = module.run_gate(config(out_dir, poll_tries=3), execute=boundary, sleep=sleeps.append)
+
+    assert result == 0
+    assert boundary.submit_calls == 1
+    assert boundary.store_probes == 3
+    assert sleeps == [5.0]
+    packet = json.loads((out_dir / "ref-store-packet.json").read_text())
+    assert packet["status"] == "pass"
+    assert packet["blockers"] == []
 
 
 def test_cli_rejects_unsafe_wp_command_before_creating_archive(tmp_path: Path) -> None:
