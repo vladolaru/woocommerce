@@ -9,7 +9,33 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyGeolocat
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySelectedCurrencyPersistenceService;
+use WC_Session;
 use WC_Unit_Test_Case;
+
+// phpcs:disable Generic.Files.OneObjectStructurePerFile.MultipleFound,Squiz.Classes.ClassFileName.NoMatch,SlevomatCodingStandard.Files.TypeNameMatchesFileName.NoMatchBetweenTypeNameAndFileName
+
+/**
+ * In-memory cookie-style session handler for selected-currency readiness tests.
+ */
+class MultiCurrencySelectedCurrencyCookieSessionTestDouble extends WC_Session {
+
+	/**
+	 * Initialize the session without persistence.
+	 *
+	 * @internal
+	 */
+	final public function init(): void {
+		$this->set( 'wcpay_currency', 'GBP' );
+	}
+}
+
+/**
+ * In-memory token-style session handler for selected-currency readiness tests.
+ *
+ * This is an identity-only stand-in for a token-selected handler; it intentionally
+ * reuses the in-memory behavior above and does not model token semantics.
+ */
+class MultiCurrencySelectedCurrencyTokenSessionTestDouble extends MultiCurrencySelectedCurrencyCookieSessionTestDouble {}
 
 /**
  * Tests for the MultiCurrencySelectedCurrencyController class.
@@ -23,9 +49,12 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	 */
 	private array $hooks = array(
 		'init',
+		'rest_pre_dispatch',
 		'wp_footer',
 		'woocommerce_created_customer',
 		'woocommerce_edit_account_form',
+		'woocommerce_init',
+		'woocommerce_load_cart_from_session',
 		'woocommerce_save_account_details',
 	);
 
@@ -37,12 +66,20 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	private $original_session;
 
 	/**
+	 * Original WooCommerce cart.
+	 *
+	 * @var mixed
+	 */
+	private $original_cart;
+
+	/**
 	 * Set up test fixtures.
 	 */
 	public function set_up(): void {
 		parent::set_up();
 
 		$this->original_session = WC()->session;
+		$this->original_cart    = WC()->cart;
 	}
 
 	/**
@@ -65,6 +102,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_multi_currency_rendering_mode' );
 		delete_option( '_wcpay_feature_mc_cache_optimized' );
 		WC()->session = $this->original_session;
+		WC()->cart    = $this->original_cart;
 
 		parent::tear_down();
 	}
@@ -74,11 +112,18 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_does_not_register_selected_currency_hooks_when_plugin_owns_runtime(): void {
 		$service = $this->create_persistence_service();
-		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN, $service );
+		$sut     = $this->create_controller(
+			MultiCurrencyRuntimeArbiter::OWNER_PLUGIN,
+			$service,
+			$this->create_request_context( true, false )
+		);
 
 		$sut->register();
 
 		$this->assertFalse( has_action( 'init', array( $sut, 'handle_init' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_load_cart_from_session', array( $sut, 'handle_woocommerce_load_cart_from_session' ) ) );
+		$this->assertFalse( has_filter( 'rest_pre_dispatch', array( $sut, 'handle_store_api_rest_pre_dispatch' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_init', array( $sut, 'handle_woocommerce_init' ) ) );
 		$this->assertFalse( has_action( 'woocommerce_save_account_details', array( $sut, 'handle_woocommerce_save_account_details' ) ) );
 	}
 
@@ -87,11 +132,18 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_registers_selected_currency_hooks_when_core_owns_runtime(): void {
 		$service = $this->create_persistence_service();
-		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $service );
+		$sut     = $this->create_controller(
+			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			$service,
+			$this->create_request_context( true, false )
+		);
 
 		$sut->register();
 		$sut->register();
 
+		$this->assertSame( 10, has_action( 'woocommerce_load_cart_from_session', array( $sut, 'handle_woocommerce_load_cart_from_session' ) ) );
+		$this->assertFalse( has_filter( 'rest_pre_dispatch', array( $sut, 'handle_store_api_rest_pre_dispatch' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_init', array( $sut, 'handle_woocommerce_init' ) ) );
 		$this->assertSame( 11, has_action( 'init', array( $sut, 'handle_init' ) ) );
 		$this->assertSame( 12, has_action( 'init', array( $sut, 'handle_geolocation_init' ) ) );
 		$this->assertSame( 10, has_action( 'woocommerce_created_customer', array( $sut, 'handle_woocommerce_created_customer' ) ) );
@@ -114,6 +166,9 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertFalse( has_action( 'init', array( $sut, 'handle_init' ) ) );
 		$this->assertFalse( has_action( 'init', array( $sut, 'handle_geolocation_init' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_load_cart_from_session', array( $sut, 'handle_woocommerce_load_cart_from_session' ) ) );
+		$this->assertFalse( has_filter( 'rest_pre_dispatch', array( $sut, 'handle_store_api_rest_pre_dispatch' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_init', array( $sut, 'handle_woocommerce_init' ) ) );
 		$this->assertFalse( has_action( 'woocommerce_created_customer', array( $sut, 'handle_woocommerce_created_customer' ) ) );
 		$this->assertSame( 10, has_action( 'woocommerce_edit_account_form', array( $sut, 'handle_woocommerce_edit_account_form' ) ) );
 		$this->assertSame( 10, has_action( 'woocommerce_save_account_details', array( $sut, 'handle_woocommerce_save_account_details' ) ) );
@@ -127,14 +182,134 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 		$sut     = $this->create_controller(
 			MultiCurrencyRuntimeArbiter::OWNER_CORE,
 			$service,
-			$this->create_request_context( true )
+			$this->create_request_context( true, true )
 		);
 
 		$sut->register();
 
+		$this->assertSame( 10, has_filter( 'rest_pre_dispatch', array( $sut, 'handle_store_api_rest_pre_dispatch' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_load_cart_from_session', array( $sut, 'handle_woocommerce_load_cart_from_session' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_init', array( $sut, 'handle_woocommerce_init' ) ) );
 		$this->assertSame( 11, has_action( 'init', array( $sut, 'handle_init' ) ) );
 		$this->assertSame( 12, has_action( 'init', array( $sut, 'handle_geolocation_init' ) ) );
 		$this->assertSame( 10, has_action( 'woocommerce_created_customer', array( $sut, 'handle_woocommerce_created_customer' ) ) );
+	}
+
+	/**
+	 * @testdox Should reset selected-currency state once when the classic cart session is ready.
+	 */
+	public function test_classic_session_readiness_resets_selected_currency_state_once(): void {
+		$service = $this->create_persistence_service();
+		$sut     = $this->create_controller(
+			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			$service,
+			$this->create_request_context( true, false )
+		);
+		$session = new MultiCurrencySelectedCurrencyCookieSessionTestDouble();
+		$session->init();
+
+		WC()->session = $session;
+
+		$this->assertTrue( method_exists( $sut, 'handle_woocommerce_load_cart_from_session' ), 'The classic session-readiness callback should exist.' );
+		$sut->handle_woocommerce_load_cart_from_session();
+		$sut->handle_woocommerce_load_cart_from_session();
+
+		$this->assertSame( $session, WC()->session, 'Classic readiness should preserve the initialized session.' );
+		$this->assertSame( 'GBP', WC()->session->get( 'wcpay_currency' ), 'Classic readiness should preserve the session currency.' );
+		$this->assertSame( 1, $service->state_reset_calls, 'Classic readiness should reset selected-currency state once per request.' );
+	}
+
+	/**
+	 * @testdox Should initialize the selected Store API session handler and reset state once without constructing a cart.
+	 * @dataProvider store_api_session_handler_data
+	 *
+	 * @param string $session_handler_class Session handler class.
+	 * @phpstan-param class-string<WC_Session> $session_handler_class
+	 */
+	public function test_store_api_pre_dispatch_initializes_session_and_resets_state_once( string $session_handler_class ): void {
+		$service           = $this->create_persistence_service();
+		$sut               = $this->create_controller(
+			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			$service,
+			$this->create_request_context( true, true )
+		);
+		$result            = new \WP_REST_Response( array( 'sentinel' => true ) );
+		$request           = new \WP_REST_Request( 'GET', '/wc/store/v1/products' );
+		$duplicate_request = new \WP_REST_Request( 'GET', '/wc/store/v1/products' );
+		$server            = rest_get_server();
+		$cart              = new \stdClass();
+
+		$session_handler_filter = static function ( $current_session_handler ) use ( $session_handler_class ) {
+			unset( $current_session_handler );
+
+			return $session_handler_class;
+		};
+
+		add_filter( 'woocommerce_session_handler', $session_handler_filter, 10, 1 );
+		WC()->session = null;
+		WC()->cart    = $cart;
+
+		try {
+			$this->assertTrue( method_exists( $sut, 'handle_store_api_rest_pre_dispatch' ), 'The Store API session-readiness callback should exist.' );
+			$first_result        = $sut->handle_store_api_rest_pre_dispatch( $result, $server, $request );
+			$initialized_session = WC()->session;
+			$second_result       = $sut->handle_store_api_rest_pre_dispatch( $result, $server, $duplicate_request );
+
+			$this->assertSame( $result, $first_result, 'Store API readiness should return the incoming result unchanged.' );
+			$this->assertSame( $result, $second_result, 'Duplicate Store API dispatch should return the incoming result unchanged.' );
+			$this->assertSame( $session_handler_class, get_class( WC()->session ), 'WooCommerce should initialize the exact selected session handler.' );
+			$this->assertSame( $initialized_session, WC()->session, 'Duplicate Store API dispatch should preserve the initialized session identity.' );
+			$this->assertSame( 'GBP', WC()->session->get( 'wcpay_currency' ), 'Store API readiness should expose the initialized session currency.' );
+			$this->assertSame( 1, $service->state_reset_calls, 'Store API readiness should reset selected-currency state once per request.' );
+			$this->assertSame( $cart, WC()->cart, 'Store API readiness should not initialize or replace the cart.' );
+		} finally {
+			remove_filter( 'woocommerce_session_handler', $session_handler_filter, 10 );
+			WC()->session = $this->original_session;
+			WC()->cart    = $this->original_cart;
+		}
+	}
+
+	/**
+	 * @testdox Should pass through non-Store REST requests without initializing session state.
+	 */
+	public function test_store_api_pre_dispatch_ignores_non_store_request(): void {
+		$service = $this->create_persistence_service();
+		$sut     = $this->create_controller(
+			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			$service,
+			$this->create_request_context( true, true )
+		);
+		$result  = new \WP_REST_Response( array( 'sentinel' => true ) );
+		$request = new \WP_REST_Request( 'GET', '/wp/v2/posts' );
+		$cart    = new \stdClass();
+
+		WC()->session = null;
+		WC()->cart    = $cart;
+
+		try {
+			$this->assertTrue( method_exists( $sut, 'handle_store_api_rest_pre_dispatch' ), 'The Store API session-readiness callback should exist.' );
+			$actual_result = $sut->handle_store_api_rest_pre_dispatch( $result, rest_get_server(), $request );
+
+			$this->assertSame( $result, $actual_result, 'Non-Store REST requests should pass through unchanged.' );
+			$this->assertNull( WC()->session, 'Non-Store REST requests should not initialize a WooCommerce session.' );
+			$this->assertSame( 0, $service->state_reset_calls, 'Non-Store REST requests should not reset selected-currency state.' );
+			$this->assertSame( $cart, WC()->cart, 'Non-Store REST requests should not initialize or replace the cart.' );
+		} finally {
+			WC()->session = $this->original_session;
+			WC()->cart    = $this->original_cart;
+		}
+	}
+
+	/**
+	 * Provide cookie-style and token-style in-memory Store API session handlers.
+	 *
+	 * @return array<string,array{class-string<WC_Session>}>
+	 */
+	public static function store_api_session_handler_data(): array {
+		return array(
+			'cookie-style handler' => array( MultiCurrencySelectedCurrencyCookieSessionTestDouble::class ),
+			'token-style handler'  => array( MultiCurrencySelectedCurrencyTokenSessionTestDouble::class ),
+		);
 	}
 
 	/**
@@ -545,7 +720,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	 * @param string   $selected_code             Selected currency code.
 	 * @param bool     $has_stored_currency       Whether a stored currency exists.
 	 * @param string[] $enabled_currency_codes    Enabled currency codes.
-	 * @return MultiCurrencySelectedCurrencyPersistenceService&object{updated_currencies: string[], persist_flags: bool[], new_customer_ids: int[]}
+	 * @return MultiCurrencySelectedCurrencyPersistenceService&object{updated_currencies: string[], persist_flags: bool[], new_customer_ids: int[], state_reset_calls: int}
 	 */
 	private function create_persistence_service(
 		bool $has_additional_currencies = true,
@@ -574,6 +749,13 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 			 * @var int[]
 			 */
 			public array $new_customer_ids = array();
+
+			/**
+			 * Selected-currency state reset count.
+			 *
+			 * @var int
+			 */
+			public int $state_reset_calls = 0;
 
 			/**
 			 * Whether multiple currencies are enabled.
@@ -653,6 +835,13 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 				$this->new_customer_ids[] = $customer_id;
 
 				return true;
+			}
+
+			/**
+			 * Reset request-local selected-currency state.
+			 */
+			public function reset_selected_currency_state(): void {
+				++$this->state_reset_calls;
 			}
 
 			/**

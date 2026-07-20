@@ -156,6 +156,80 @@ class MultiCurrencySelectedCurrencyPersistenceServiceTest extends WC_Unit_Test_C
 	}
 
 	/**
+	 * @testdox Should reset only request-local selected-currency state without writing persisted storage.
+	 */
+	public function test_resets_selected_currency_state_without_writing_persisted_storage(): void {
+		$option_values         = array(
+			'woocommerce_currency'                    => 'CAD',
+			'wcpay_multi_currency_store_currency'     => 'USD',
+			'wcpay_multi_currency_enabled_currencies' => array( 'USD', 'GBP' ),
+			'wcpay_multi_currency_cached_currencies'  => array(
+				'GBP' => array(
+					'rate' => '0.75',
+				),
+			),
+			'wcpay_multi_currency_show_store_currency_changed_notice' => 'yes',
+		);
+		$missing_option_marker = new \stdClass();
+		$original_options      = array();
+
+		foreach ( array_keys( $option_values ) as $option_name ) {
+			$original_value                   = get_option( $option_name, $missing_option_marker );
+			$original_options[ $option_name ] = array(
+				'exists' => $missing_option_marker !== $original_value,
+				'value'  => $original_value,
+			);
+		}
+
+		$user_id             = self::factory()->user->create();
+		$original_session    = WC()->session;
+		$state_builder       = $this->create_state_builder( 'USD' );
+		$sut                 = new MultiCurrencySelectedCurrencyPersistenceService( $state_builder );
+		$storage_snapshotter = static function () use ( $user_id, $option_values ): string {
+			$options = array();
+			foreach ( array_keys( $option_values ) as $option_name ) {
+				$options[ $option_name ] = get_option( $option_name );
+			}
+
+			return (string) wp_json_encode(
+				array(
+					'session_currency'      => WC()->session->get( 'wcpay_currency' ),
+					'session_cookie_writes' => WC()->session->cookie_writes,
+					'user_currency'         => get_user_meta( $user_id, 'wcpay_currency', true ),
+					'options'               => $options,
+				)
+			);
+		};
+
+		try {
+			WC()->session = $this->create_session( 'GBP' );
+			wp_set_current_user( $user_id );
+			update_user_meta( $user_id, 'wcpay_currency', 'EUR' );
+			foreach ( $option_values as $option_name => $option_value ) {
+				update_option( $option_name, $option_value );
+			}
+			$before_snapshot = $storage_snapshotter();
+
+			$this->assertTrue( method_exists( $sut, 'reset_selected_currency_state' ), 'The request-local selected-currency reset method should exist.' );
+			$sut->reset_selected_currency_state();
+
+			$this->assertSame( 1, $state_builder->reset_calls, 'The shared state builder should reset exactly once.' );
+			$this->assertSame( $before_snapshot, $storage_snapshotter(), 'Resetting request-local state must preserve persisted selected-currency bytes.' );
+		} finally {
+			WC()->session = $original_session;
+			wp_set_current_user( 0 );
+			delete_user_meta( $user_id, 'wcpay_currency' );
+			foreach ( $original_options as $option_name => $original_option ) {
+				if ( $original_option['exists'] ) {
+					update_option( $option_name, $original_option['value'] );
+				} else {
+					delete_option( $option_name );
+				}
+			}
+		}
+	}
+
+	/**
 	 * Create the persistence service.
 	 *
 	 * @param string $selected_code Selected currency code.
@@ -169,10 +243,17 @@ class MultiCurrencySelectedCurrencyPersistenceServiceTest extends WC_Unit_Test_C
 	 * Create a state builder test double.
 	 *
 	 * @param string $selected_code Selected currency code.
-	 * @return MultiCurrencyStateBuilder
+	 * @return MultiCurrencyStateBuilder&object{reset_calls: int}
 	 */
 	private function create_state_builder( string $selected_code ): MultiCurrencyStateBuilder {
 		return new class( $this->create_state( $selected_code ) ) extends MultiCurrencyStateBuilder {
+			/**
+			 * Reset call count.
+			 *
+			 * @var int
+			 */
+			public int $reset_calls = 0;
+
 			/**
 			 * Multi-currency state.
 			 *
@@ -199,10 +280,10 @@ class MultiCurrencySelectedCurrencyPersistenceServiceTest extends WC_Unit_Test_C
 			}
 
 			/**
-			 * Keep the deterministic state unchanged after selected-currency persistence.
+			 * Record request-local state resets while keeping deterministic state unchanged.
 			 */
 			public function reset(): void {
-				// This fixed-state test double has no cache or collaborators to invalidate.
+				++$this->reset_calls;
 			}
 		};
 	}

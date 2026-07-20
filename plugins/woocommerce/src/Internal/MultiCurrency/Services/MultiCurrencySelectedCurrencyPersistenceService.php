@@ -36,6 +36,15 @@ class MultiCurrencySelectedCurrencyPersistenceService {
 	}
 
 	/**
+	 * Reset request-local selected-currency state.
+	 *
+	 * @internal
+	 */
+	public function reset_selected_currency_state(): void {
+		$this->state_builder->reset();
+	}
+
+	/**
 	 * Persist the selected currency when it is enabled.
 	 *
 	 * @param string $currency_code  Three-letter currency code.

@@ -207,23 +207,97 @@ class MultiCurrencyRuntimeRegistryTest extends WC_Unit_Test_Case {
 	 * @testdox Should preserve the WooPayments selected currency hook surface.
 	 */
 	public function test_selected_currency_manifest_contains_preserved_hooks(): void {
-		$hook_groups             = MultiCurrencyRuntimeRegistry::get_core_hook_groups();
-		$selected_currency_hooks = array_column( $hook_groups['selected_currency']['actions'], 'hook' );
+		$hook_groups = MultiCurrencyRuntimeRegistry::get_core_hook_groups();
 
 		$this->assertSame(
 			array(
-				'init',
-				'init',
-				'wp_footer',
-				'woocommerce_created_customer',
-				'woocommerce_edit_account_form',
-				'woocommerce_save_account_details',
+				array(
+					'hook'          => 'rest_pre_dispatch',
+					'callback'      => 'handle_store_api_rest_pre_dispatch',
+					'priority'      => 10,
+					'accepted_args' => 3,
+				),
 			),
-			$selected_currency_hooks
+			$hook_groups['selected_currency']['filters']
 		);
-		$this->assertSame( 11, $hook_groups['selected_currency']['actions'][0]['priority'] );
-		$this->assertSame( 12, $hook_groups['selected_currency']['actions'][1]['priority'] );
-		$this->assertSame( 10, $hook_groups['selected_currency']['actions'][2]['priority'] );
+
+		$classic_readiness_entries = array_values(
+			array_filter(
+				$hook_groups['selected_currency']['actions'],
+				static function ( array $entry ): bool {
+					return 'woocommerce_load_cart_from_session' === $entry['hook'] && 'handle_woocommerce_load_cart_from_session' === $entry['callback'];
+				}
+			)
+		);
+		$this->assertSame(
+			array(
+				array(
+					'hook'          => 'woocommerce_load_cart_from_session',
+					'callback'      => 'handle_woocommerce_load_cart_from_session',
+					'priority'      => 10,
+					'accepted_args' => 0,
+				),
+			),
+			$classic_readiness_entries
+		);
+
+		$preserved_actions = array_values(
+			array_filter(
+				$hook_groups['selected_currency']['actions'],
+				static function ( array $entry ): bool {
+					return 'woocommerce_load_cart_from_session' !== $entry['hook'] || 'handle_woocommerce_load_cart_from_session' !== $entry['callback'];
+				}
+			)
+		);
+		$this->assertSame(
+			array(
+				array(
+					'hook'          => 'init',
+					'callback'      => 'update_selected_currency_by_url',
+					'priority'      => 11,
+					'accepted_args' => 1,
+				),
+				array(
+					'hook'          => 'init',
+					'callback'      => 'update_selected_currency_by_geolocation',
+					'priority'      => 12,
+					'accepted_args' => 1,
+				),
+				array(
+					'hook'          => 'wp_footer',
+					'callback'      => 'display_geolocation_currency_update_notice',
+					'priority'      => 10,
+					'accepted_args' => 1,
+				),
+				array(
+					'hook'          => 'woocommerce_created_customer',
+					'callback'      => 'set_new_customer_currency_meta',
+					'priority'      => 10,
+					'accepted_args' => 1,
+				),
+				array(
+					'hook'          => 'woocommerce_edit_account_form',
+					'callback'      => 'add_presentment_currency_switch',
+					'priority'      => 10,
+					'accepted_args' => 1,
+				),
+				array(
+					'hook'          => 'woocommerce_save_account_details',
+					'callback'      => 'save_presentment_currency',
+					'priority'      => 10,
+					'accepted_args' => 1,
+				),
+			),
+			$preserved_actions
+		);
+
+		$woocommerce_init_readiness_entries = array_filter(
+			$hook_groups['selected_currency']['actions'],
+			static function ( array $entry ): bool {
+				return 'woocommerce_init' === $entry['hook'] && 'handle_woocommerce_init' === $entry['callback'];
+			}
+		);
+		$this->assertSame( array(), $woocommerce_init_readiness_entries, 'Selected-currency readiness must not register on woocommerce_init.' );
 	}
 
 	/**

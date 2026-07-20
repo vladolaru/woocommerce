@@ -61,6 +61,13 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 	private ?MultiCurrencyGeolocationService $geolocation_service = null;
 
 	/**
+	 * Whether selected-currency state is ready to read from the WooCommerce session.
+	 *
+	 * @var bool
+	 */
+	private bool $selected_currency_state_is_session_ready = false;
+
+	/**
 	 * Runtime service factory.
 	 *
 	 * @var MultiCurrencyRuntimeServiceFactory
@@ -122,6 +129,12 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 		}
 
 		if ( $this->get_request_context()->should_register_selected_currency_entry_hooks() ) {
+			if ( $this->get_request_context()->is_store_api_request() ) {
+				$this->add_filter_once( 'rest_pre_dispatch', array( $this, 'handle_store_api_rest_pre_dispatch' ), 10, 3 );
+			} else {
+				$this->add_action_once( 'woocommerce_load_cart_from_session', array( $this, 'handle_woocommerce_load_cart_from_session' ), 10, 0 );
+			}
+
 			$this->add_action_once( 'init', array( $this, 'handle_init' ), 11 );
 			$this->add_action_once( 'init', array( $this, 'handle_geolocation_init' ), 12 );
 			$this->add_action_once( 'woocommerce_created_customer', array( $this, 'handle_woocommerce_created_customer' ) );
@@ -129,6 +142,37 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 
 		$this->add_action_once( 'woocommerce_edit_account_form', array( $this, 'handle_woocommerce_edit_account_form' ) );
 		$this->add_action_once( 'woocommerce_save_account_details', array( $this, 'handle_woocommerce_save_account_details' ) );
+	}
+
+	/**
+	 * Handle classic cart session readiness.
+	 *
+	 * @internal
+	 */
+	public function handle_woocommerce_load_cart_from_session(): void {
+		$this->prepare_selected_currency_state_for_session( false );
+	}
+
+	/**
+	 * Handle Store API session readiness before REST dispatch.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $result  Response to replace the requested version with, or null.
+	 * @param mixed $server  REST server instance.
+	 * @param mixed $request REST request instance.
+	 * @return mixed Incoming result unchanged.
+	 */
+	public function handle_store_api_rest_pre_dispatch( $result, $server, $request ) {
+		unset( $server );
+
+		if ( ! $request instanceof \WP_REST_Request || 0 !== strpos( $request->get_route(), '/wc/store/' ) ) {
+			return $result;
+		}
+
+		$this->prepare_selected_currency_state_for_session( true );
+
+		return $result;
 	}
 
 	/**
@@ -407,6 +451,29 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 	}
 
 	/**
+	 * Prepare selected-currency state after the WooCommerce session is ready.
+	 *
+	 * @param bool $initialize_session Whether WooCommerce should initialize its session first.
+	 */
+	private function prepare_selected_currency_state_for_session( bool $initialize_session ): void {
+		if ( $this->selected_currency_state_is_session_ready || ! function_exists( 'WC' ) ) {
+			return;
+		}
+
+		$woocommerce = WC();
+		if ( $initialize_session && ! $woocommerce->session && method_exists( $woocommerce, 'initialize_session' ) ) {
+			$woocommerce->initialize_session();
+		}
+
+		if ( ! $woocommerce->session ) {
+			return;
+		}
+
+		$this->get_persistence_service()->reset_selected_currency_state();
+		$this->selected_currency_state_is_session_ready = true;
+	}
+
+	/**
 	 * Register an action only once for this controller instance.
 	 *
 	 * @param string   $hook          Hook name.
@@ -417,6 +484,20 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 	private function add_action_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
 		if ( false === has_action( $hook, $callback ) ) {
 			add_action( $hook, $callback, $priority, $accepted_args );
+		}
+	}
+
+	/**
+	 * Register a filter only once for this controller instance.
+	 *
+	 * @param string   $hook          Hook name.
+	 * @param callable $callback      Hook callback.
+	 * @param int      $priority      Hook priority.
+	 * @param int      $accepted_args Accepted argument count.
+	 */
+	private function add_filter_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
+		if ( false === has_filter( $hook, $callback ) ) {
+			add_filter( $hook, $callback, $priority, $accepted_args );
 		}
 	}
 }

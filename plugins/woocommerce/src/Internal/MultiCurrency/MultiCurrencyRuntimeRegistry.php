@@ -230,8 +230,11 @@ class MultiCurrencyRuntimeRegistry {
 	 */
 	private static function get_selected_currency_hook_group(): array {
 		return array(
-			'filters' => array(),
+			'filters' => array(
+				self::hook_entry( 'rest_pre_dispatch', 'handle_store_api_rest_pre_dispatch', 10, 3 ),
+			),
 			'actions' => array(
+				self::hook_entry( 'woocommerce_load_cart_from_session', 'handle_woocommerce_load_cart_from_session', 10, 0 ),
 				self::hook_entry( 'init', 'update_selected_currency_by_url', 11 ),
 				self::hook_entry( 'init', 'update_selected_currency_by_geolocation', 12 ),
 				self::hook_entry( 'wp_footer', 'display_geolocation_currency_update_notice', 10 ),
