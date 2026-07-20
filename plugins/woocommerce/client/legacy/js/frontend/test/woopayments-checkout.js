@@ -5,6 +5,7 @@
 describe( 'WooPayments checkout', () => {
 	let bodyEventHandlers;
 	let checkoutFormEventHandlers;
+	let documentEventListeners;
 	let orderPayFormEventHandlers;
 	let elementsMock;
 	let mountPaymentElement;
@@ -15,6 +16,7 @@ describe( 'WooPayments checkout', () => {
 	let unmountPaymentElement;
 	let updatePaymentElement;
 	const originalFetch = window.fetch;
+	const originalDocumentAddEventListener = document.addEventListener;
 
 	async function flushPromises() {
 		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
@@ -243,6 +245,18 @@ describe( 'WooPayments checkout', () => {
 		jest.resetModules();
 		bodyEventHandlers = {};
 		checkoutFormEventHandlers = {};
+		documentEventListeners = [];
+		jest.spyOn( document, 'addEventListener' ).mockImplementation(
+			( type, listener, options ) => {
+				documentEventListeners.push( [ type, listener, options ] );
+				return originalDocumentAddEventListener.call(
+					document,
+					type,
+					listener,
+					options
+				);
+			}
+		);
 		orderPayFormEventHandlers = {};
 		submitElements = jest.fn( () => Promise.resolve( {} ) );
 		mountPaymentElement = jest.fn();
@@ -365,6 +379,9 @@ describe( 'WooPayments checkout', () => {
 
 	afterEach( () => {
 		jest.useRealTimers();
+		documentEventListeners.forEach( ( [ type, listener, options ] ) => {
+			document.removeEventListener( type, listener, options );
+		} );
 		jest.restoreAllMocks();
 		delete global.jQuery;
 		delete global.$;
@@ -1572,6 +1589,32 @@ describe( 'WooPayments checkout', () => {
 		).not.toBeNull();
 	} );
 
+	function createAddPaymentMethodForm() {
+		const form = document.createElement( 'form' );
+		form.id = 'add_payment_method';
+		form.submit = jest.fn();
+		form.innerHTML =
+			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
+			'<div id="wcpay-core-payment-element"></div>' +
+			'<div id="wcpay-core-payment-errors" role="alert" hidden></div>' +
+			'<button type="submit">Add payment method</button>';
+		document.body.innerHTML = '';
+		document.body.appendChild( form );
+		window.wcpay_core_checkout_config.cartTotal = '0';
+		window.wcpay_core_checkout_config.confirmationErrorMessage =
+			'Unable to add payment method.';
+
+		return form;
+	}
+
+	function mockSetupIntentHttpFailure( jqXHR ) {
+		global.jQuery.post.mockReturnValueOnce( {
+			done: jest.fn( () => ( {
+				fail: jest.fn( ( callback ) => callback( jqXHR ) ),
+			} ) ),
+		} );
+	}
+
 	test( 'adds a setup intent field before submitting the add-payment-method form', async () => {
 		const addPaymentMethodForm = document.createElement( 'form' );
 		addPaymentMethodForm.id = 'add_payment_method';
@@ -1686,4 +1729,119 @@ describe( 'WooPayments checkout', () => {
 		expect( global.jQuery.post ).not.toHaveBeenCalled();
 		expect( addPaymentMethodForm.submit ).not.toHaveBeenCalled();
 	} );
+
+	test( 'preserves a safe setup-intent error from an HTTP failure', async () => {
+		const addPaymentMethodForm = createAddPaymentMethodForm();
+		const submitButton = addPaymentMethodForm.querySelector(
+			'button[type="submit"]'
+		);
+		mockSetupIntentHttpFailure( {
+			responseJSON: {
+				success: false,
+				data: {
+					error: {
+						message: 'Error: Your card was declined.',
+					},
+				},
+			},
+		} );
+
+		require( '../woopayments-checkout' );
+		addPaymentMethodForm.dispatchEvent(
+			new window.Event( 'submit', {
+				bubbles: true,
+				cancelable: true,
+			} )
+		);
+		await flushPromises();
+
+		const errorElement = document.getElementById(
+			'wcpay-core-payment-errors'
+		);
+		expect( errorElement.textContent ).toBe(
+			'Error: Your card was declined.'
+		);
+		expect( errorElement.hidden ).toBe( false );
+		expect( errorElement.getAttribute( 'role' ) ).toBe( 'alert' );
+		expect(
+			addPaymentMethodForm.querySelector(
+				'input[name="wcpay-setup-intent"]'
+			)
+		).toBeNull();
+		expect( addPaymentMethodForm.submit ).not.toHaveBeenCalled();
+		expect( submitButton.disabled ).toBe( false );
+		expect( submitButton.getAttribute( 'aria-disabled' ) ).not.toBe(
+			'true'
+		);
+		expect( addPaymentMethodForm.querySelector( '.blockUI' ) ).toBeNull();
+	} );
+
+	test.each( [
+		{ description: 'an absent request object', jqXHR: undefined },
+		{
+			description: 'a scalar response',
+			jqXHR: { responseJSON: 'failure' },
+		},
+		{
+			description: 'a missing data envelope',
+			jqXHR: { responseJSON: { success: false } },
+		},
+		{
+			description: 'a scalar error',
+			jqXHR: {
+				responseJSON: {
+					success: false,
+					data: { error: 'failure' },
+				},
+			},
+		},
+		{
+			description: 'a non-string message',
+			jqXHR: {
+				responseJSON: {
+					success: false,
+					data: { error: { message: 500 } },
+				},
+			},
+		},
+		{
+			description: 'an empty message',
+			jqXHR: {
+				responseJSON: {
+					success: false,
+					data: { error: { message: '' } },
+				},
+			},
+		},
+		{
+			description: 'a whitespace-only message',
+			jqXHR: {
+				responseJSON: {
+					success: false,
+					data: { error: { message: ' \t ' } },
+				},
+			},
+		},
+	] )(
+		'uses the generic setup-intent error for $description',
+		async ( { jqXHR } ) => {
+			const addPaymentMethodForm = createAddPaymentMethodForm();
+			mockSetupIntentHttpFailure( jqXHR );
+
+			require( '../woopayments-checkout' );
+			addPaymentMethodForm.dispatchEvent(
+				new window.Event( 'submit', {
+					bubbles: true,
+					cancelable: true,
+				} )
+			);
+			await flushPromises();
+
+			expect(
+				document.getElementById( 'wcpay-core-payment-errors' )
+					.textContent
+			).toBe( 'Unable to add payment method.' );
+			expect( addPaymentMethodForm.submit ).not.toHaveBeenCalled();
+		}
+	);
 } );

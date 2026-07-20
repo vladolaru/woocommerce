@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAjaxController;
@@ -1578,6 +1579,50 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Setup-intent card declines should return localized shopper-safe messages.
+	 */
+	public function test_create_setup_intent_localizes_card_decline_api_errors(): void {
+		$technical_message = 'Provider debug: decline trace 12345.';
+		$response          = $this->get_create_setup_intent_api_error_response(
+			new WooPaymentsApiException(
+				$technical_message,
+				'card_declined',
+				402,
+				'card_error',
+				'generic_decline'
+			)
+		);
+
+		$this->assertFalse( $response['success'] );
+		$this->assertSame( 502, $response['status_code'] );
+		$this->assertSame( 'Error: Your card was declined.', $response['data']['error']['message'] );
+		$this->assertStringNotContainsString( $technical_message, wp_json_encode( $response ) );
+	}
+
+	/**
+	 * @testdox Setup-intent transport failures should redact technical messages.
+	 */
+	public function test_create_setup_intent_redacts_non_card_api_errors(): void {
+		$technical_message = 'Upstream socket credentials debug detail.';
+		$response          = $this->get_create_setup_intent_api_error_response(
+			new WooPaymentsApiException(
+				$technical_message,
+				'api_connection_error',
+				503,
+				'api_error'
+			)
+		);
+
+		$this->assertFalse( $response['success'] );
+		$this->assertSame( 502, $response['status_code'] );
+		$this->assertSame(
+			"We're not able to process this request. Please refresh the page and try again.",
+			$response['data']['error']['message']
+		);
+		$this->assertStringNotContainsString( $technical_message, wp_json_encode( $response ) );
+	}
+
+	/**
 	 * @testdox Setup-intent callback should derive payment method types from the submitted WooPayments gateway ID.
 	 */
 	public function test_create_setup_intent_derives_payment_method_type_from_submitted_gateway_id(): void {
@@ -1641,6 +1686,73 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		);
 
 		$this->assertSame( array( 'sepa_debit' ), $api_client->last_request_data['payment_method_types'] );
+	}
+
+	/**
+	 * Get a setup-intent response for a native API failure.
+	 *
+	 * @param WooPaymentsApiException $exception API exception to throw.
+	 * @return array<string,mixed>
+	 */
+	private function get_create_setup_intent_api_error_response( WooPaymentsApiException $exception ): array {
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+
+		$api_client = new class( $exception ) extends WooPaymentsApiClient {
+			/**
+			 * API exception to throw.
+			 *
+			 * @var WooPaymentsApiException
+			 */
+			private WooPaymentsApiException $exception;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param WooPaymentsApiException $exception API exception to throw.
+			 */
+			public function __construct( WooPaymentsApiException $exception ) {
+				$this->exception = $exception;
+			}
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			// phpcs:ignore Squiz.Commenting.FunctionComment.InvalidNoReturn -- Test double always throws.
+			/**
+			 * Fail SetupIntent creation.
+			 *
+			 * @param array<string,mixed> $request_data    Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @throws WooPaymentsApiException Always.
+			 */
+			public function create_and_confirm_setup_intention( array $request_data, string $idempotency_key ): array {
+				unset( $request_data, $idempotency_key );
+
+				throw $this->exception;
+			}
+		};
+
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_user' ) )
+			->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_user' )->willReturn( 'cus_user' );
+
+		$sut = $this->create_controller( $api_client, $customer_service );
+
+		return $sut->get_create_setup_intent_response(
+			array(
+				'_ajax_nonce'          => wp_create_nonce( 'wcpay_create_setup_intent_nonce' ),
+				'wcpay-payment-method' => 'pm_card',
+			)
+		);
 	}
 
 	/**

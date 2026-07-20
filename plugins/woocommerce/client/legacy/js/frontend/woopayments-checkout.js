@@ -1185,6 +1185,21 @@
 		return response || {};
 	}
 
+	function getSetupIntentError( response ) {
+		var setupIntent = getSetupIntentData( response );
+		var error = setupIntent && setupIntent.error;
+
+		if (
+			error &&
+			typeof error.message === 'string' &&
+			error.message.trim()
+		) {
+			return error;
+		}
+
+		return new Error( config.confirmationErrorMessage || '' );
+	}
+
 	function confirmSetupIntentIfNeeded( setupIntent ) {
 		if ( setupIntent && setupIntent.status === 'succeeded' ) {
 			return Promise.resolve( setupIntent );
@@ -1225,7 +1240,7 @@
 				.done( function ( response ) {
 					var setupIntent = getSetupIntentData( response );
 					if ( response && response.success === false ) {
-						reject( setupIntent.error || setupIntent );
+						reject( getSetupIntentError( response ) );
 						return;
 					}
 
@@ -1233,9 +1248,9 @@
 						.then( resolve )
 						.catch( reject );
 				} )
-				.fail( function () {
+				.fail( function ( jqXHR ) {
 					reject(
-						new Error( config.confirmationErrorMessage || '' )
+						getSetupIntentError( jqXHR && jqXHR.responseJSON )
 					);
 				} );
 		} );

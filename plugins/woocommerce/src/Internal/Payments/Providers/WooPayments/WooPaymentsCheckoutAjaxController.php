@@ -338,7 +338,14 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 				'status_code' => 200,
 			);
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->json_error_response( $exception->getMessage(), 502 );
+			return $this->json_error_response(
+				WooPaymentsErrorMessages::get_shopper_message(
+					$exception->get_error_type(),
+					$exception->get_error_code(),
+					$exception->get_decline_code()
+				),
+				502
+			);
 		} catch ( Throwable $exception ) {
 			return $this->json_error_response( __( "We're not able to add this payment method. Please try again later.", 'woocommerce' ), 500 );
 		}
