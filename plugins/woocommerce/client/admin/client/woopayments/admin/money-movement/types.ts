@@ -29,7 +29,11 @@ export interface WooPaymentsTransaction {
 	refunded?: boolean;
 	captured?: boolean;
 	fee?: number;
+	fees?: number;
 	net?: number;
+	order_id?: number | string;
+	source?: string;
+	source_identifier?: string;
 	status?: string;
 }
 
@@ -366,7 +370,10 @@ export type WooPaymentsMoneyMovementDataViewFilterOperator =
 	| 'isAny'
 	| 'isNone'
 	| 'isAll'
-	| 'isNotAll';
+	| 'isNotAll'
+	| 'before'
+	| 'after'
+	| 'between';
 
 export interface WooPaymentsMoneyMovementDataViewFilter {
 	field: string;

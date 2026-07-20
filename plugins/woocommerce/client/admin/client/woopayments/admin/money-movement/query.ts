@@ -84,6 +84,197 @@ const FILTER_PARAM_TO_FIELD: Partial<
 	status_is: 'status',
 	status_is_not: 'status',
 	loan_id_is: 'loan_id',
+	date_after: 'date',
+	date_before: 'date',
+	date_between: 'date',
+};
+
+const DATE_FILTER_OPERATOR_BY_PARAM: Partial<
+	Record<
+		WooPaymentsMoneyMovementQueryFilterParam,
+		WooPaymentsMoneyMovementDataViewFilterOperator
+	>
+> = {
+	date_after: 'after',
+	date_before: 'before',
+	date_between: 'between',
+};
+
+const isDateFilterParam = (
+	param: WooPaymentsMoneyMovementQueryFilterParam
+): param is 'date_after' | 'date_before' | 'date_between' =>
+	param === 'date_after' ||
+	param === 'date_before' ||
+	param === 'date_between';
+
+const normalizeLocalCalendarDate = ( value: unknown ): string | undefined => {
+	if ( typeof value !== 'string' ) {
+		return undefined;
+	}
+
+	const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec( value );
+
+	if ( ! match ) {
+		return undefined;
+	}
+
+	const year = Number( match[ 1 ] );
+	const month = Number( match[ 2 ] );
+	const day = Number( match[ 3 ] );
+	const date = new Date( 0 );
+
+	date.setUTCHours( 0, 0, 0, 0 );
+	date.setUTCFullYear( year, month - 1, day );
+
+	return date.getUTCFullYear() === year &&
+		date.getUTCMonth() === month - 1 &&
+		date.getUTCDate() === day
+		? value
+		: undefined;
+};
+
+const normalizeDateFilterValue = (
+	param: 'date_after' | 'date_before' | 'date_between',
+	value: unknown
+): string | string[] | undefined => {
+	if ( param === 'date_between' ) {
+		if ( ! Array.isArray( value ) || value.length !== 2 ) {
+			return undefined;
+		}
+
+		const dates = value.map( normalizeLocalCalendarDate );
+
+		return dates.every( ( date ): date is string => date !== undefined )
+			? dates.sort()
+			: undefined;
+	}
+
+	if ( Array.isArray( value ) ) {
+		return value.length === 1
+			? normalizeLocalCalendarDate( value[ 0 ] )
+			: undefined;
+	}
+
+	return normalizeLocalCalendarDate( value );
+};
+
+const formatUtcSqlDate = ( date: Date ) => {
+	const pad = ( value: number ) => String( value ).padStart( 2, '0' );
+
+	return `${ date.getUTCFullYear() }-${ pad(
+		date.getUTCMonth() + 1
+	) }-${ pad( date.getUTCDate() ) } ${ pad( date.getUTCHours() ) }:${ pad(
+		date.getUTCMinutes()
+	) }:${ pad( date.getUTCSeconds() ) }`;
+};
+
+const formatLocalDateBoundaryForApi = (
+	value: string,
+	upperBound: boolean
+) => {
+	const [ year, month, day ] = value.split( '-' ).map( Number );
+	const hours = upperBound ? 23 : 0;
+	const minutes = upperBound ? 59 : 0;
+	const seconds = upperBound ? 59 : 0;
+	const localBoundary = new Date(
+		year,
+		month - 1,
+		day,
+		hours,
+		minutes,
+		seconds
+	);
+	const utcTimestamp =
+		Date.UTC( year, month - 1, day, hours, minutes, seconds ) +
+		localBoundary.getTimezoneOffset() * 60 * 1000;
+
+	return formatUtcSqlDate( new Date( utcTimestamp ) );
+};
+
+const getUserTimezone = () => {
+	const offset = -new Date().getTimezoneOffset();
+	const sign = offset >= 0 ? '+' : '-';
+	const absoluteOffset = Math.abs( offset );
+
+	return `${ sign }${ String( Math.floor( absoluteOffset / 60 ) ).padStart(
+		2,
+		'0'
+	) }:${ String( absoluteOffset % 60 ).padStart( 2, '0' ) }`;
+};
+
+const normalizeSettledTransactionsApiQuery = (
+	query: WooPaymentsMoneyMovementQuery
+): WooPaymentsMoneyMovementQuery => {
+	const normalizedQuery = { ...query };
+	const dateAfter = normalizeDateFilterValue(
+		'date_after',
+		query.date_after
+	);
+	const dateBefore = normalizeDateFilterValue(
+		'date_before',
+		query.date_before
+	);
+	const dateBetween = normalizeDateFilterValue(
+		'date_between',
+		query.date_between
+	);
+
+	delete normalizedQuery.date_after;
+	delete normalizedQuery.date_before;
+	delete normalizedQuery.date_between;
+
+	if ( typeof dateAfter === 'string' ) {
+		normalizedQuery.date_after = formatLocalDateBoundaryForApi(
+			dateAfter,
+			false
+		);
+	}
+
+	if ( typeof dateBefore === 'string' ) {
+		normalizedQuery.date_before = formatLocalDateBoundaryForApi(
+			dateBefore,
+			true
+		);
+	}
+
+	if ( Array.isArray( dateBetween ) ) {
+		normalizedQuery.date_between = [
+			formatLocalDateBoundaryForApi( dateBetween[ 0 ], false ),
+			formatLocalDateBoundaryForApi( dateBetween[ 1 ], true ),
+		];
+	}
+
+	normalizedQuery.user_timezone = getUserTimezone();
+
+	return normalizedQuery;
+};
+
+export const buildSettledTransactionsApiPath = (
+	path: string,
+	query: WooPaymentsMoneyMovementQuery = {}
+) => {
+	const params = new URLSearchParams();
+
+	Object.entries( normalizeSettledTransactionsApiQuery( query ) ).forEach(
+		( [ key, value ] ) => {
+			if ( value === undefined || value === null || value === '' ) {
+				return;
+			}
+
+			if ( Array.isArray( value ) ) {
+				value.forEach( ( item ) =>
+					params.append( `${ key }[]`, String( item ) )
+				);
+				return;
+			}
+
+			params.append( key, String( value ) );
+		}
+	);
+
+	const queryString = params.toString();
+
+	return queryString ? `${ path }?${ queryString }` : path;
 };
 
 const isSortDirection = (
@@ -169,6 +360,12 @@ const getFilterOperator = (
 	param: WooPaymentsMoneyMovementQueryFilterParam,
 	value: string | string[]
 ): WooPaymentsMoneyMovementDataViewFilterOperator => {
+	const dateOperator = DATE_FILTER_OPERATOR_BY_PARAM[ param ];
+
+	if ( dateOperator ) {
+		return dateOperator;
+	}
+
 	if ( param === 'status_is_not' ) {
 		return Array.isArray( value ) ? 'isNone' : 'isNot';
 	}
@@ -179,6 +376,22 @@ const getFilterOperator = (
 const getFilterParamForDataViewFilter = (
 	filter: WooPaymentsMoneyMovementDataViewFilter
 ): WooPaymentsMoneyMovementQueryFilterParam | undefined => {
+	if ( filter.field === 'date' ) {
+		if ( filter.operator === 'after' ) {
+			return 'date_after';
+		}
+
+		if ( filter.operator === 'before' ) {
+			return 'date_before';
+		}
+
+		if ( filter.operator === 'between' ) {
+			return 'date_between';
+		}
+
+		return undefined;
+	}
+
 	if (
 		filter.field === 'status' &&
 		[ 'isNot', 'isNone', 'isNotAll' ].includes( filter.operator )
@@ -345,7 +558,10 @@ export const moneyMovementQueryToDataViewsView = (
 	const filters = MONEY_MOVEMENT_FILTER_PARAMS.reduce<
 		WooPaymentsMoneyMovementDataViewFilter[]
 	>( ( result, param ) => {
-		const value = normalizedQuery[ param ];
+		const rawValue = normalizedQuery[ param ];
+		const value = isDateFilterParam( param )
+			? normalizeDateFilterValue( param, rawValue )
+			: rawValue;
 
 		if (
 			typeof value === 'string' ||
@@ -433,7 +649,13 @@ export const dataViewsViewToMoneyMovementQuery = (
 
 	view.filters?.forEach( ( filter ) => {
 		const param = getFilterParamForDataViewFilter( filter );
-		const value = getFilterQueryValue( filter.value );
+		let value: string | string[] | undefined;
+
+		if ( param ) {
+			value = isDateFilterParam( param )
+				? normalizeDateFilterValue( param, filter.value )
+				: getFilterQueryValue( filter.value );
+		}
 
 		if ( ! param || value === undefined ) {
 			return;

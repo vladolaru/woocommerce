@@ -25,6 +25,7 @@ import {
 	getWooPaymentsReaderChargeSummary,
 	getWooPaymentsTransactionSearch,
 	getWooPaymentsTransactions,
+	getWooPaymentsTransactionsSummary,
 	requestWooPaymentsDisputesExport,
 	requestWooPaymentsTransactionsExport,
 	updateWooPaymentsDispute,
@@ -35,6 +36,17 @@ jest.mock( '@wordpress/api-fetch', () => jest.fn() );
 
 const mockApiFetch = apiFetch as jest.MockedFunction< typeof apiFetch >;
 
+const getCurrentUserTimezone = () => {
+	const offset = -new Date().getTimezoneOffset();
+	const sign = offset >= 0 ? '+' : '-';
+	const absoluteOffset = Math.abs( offset );
+
+	return `${ sign }${ String( Math.floor( absoluteOffset / 60 ) ).padStart(
+		2,
+		'0'
+	) }:${ String( absoluteOffset % 60 ).padStart( 2, '0' ) }`;
+};
+
 describe( 'WooPayments money movement data helpers', () => {
 	beforeEach( () => {
 		mockApiFetch.mockReset();
@@ -43,6 +55,9 @@ describe( 'WooPayments money movement data helpers', () => {
 
 	it( 'preserves transactions endpoint paths and query names', async () => {
 		const readerSummaryAbortController = new AbortController();
+		const encodedUserTimezone = encodeURIComponent(
+			getCurrentUserTimezone()
+		);
 
 		await getWooPaymentsTransactions( {
 			page: 2,
@@ -65,7 +80,7 @@ describe( 'WooPayments money movement data helpers', () => {
 		await getWooPaymentsTransactionsExportUrl( 'export_test' );
 
 		expect( mockApiFetch ).toHaveBeenNthCalledWith( 1, {
-			path: '/wc/v3/payments/transactions?page=2&pagesize=25&sort=date&direction=desc&store_currency_is=usd',
+			path: `/wc/v3/payments/transactions?page=2&pagesize=25&sort=date&direction=desc&store_currency_is=usd&user_timezone=${ encodedUserTimezone }`,
 			method: 'GET',
 		} );
 		expect( mockApiFetch ).toHaveBeenNthCalledWith( 2, {
@@ -94,13 +109,101 @@ describe( 'WooPayments money movement data helpers', () => {
 			method: 'GET',
 		} );
 		expect( mockApiFetch ).toHaveBeenNthCalledWith( 8, {
-			path: '/wc/v3/payments/transactions/download?deposit_id=po_test',
+			path: `/wc/v3/payments/transactions/download?deposit_id=po_test&user_timezone=${ encodedUserTimezone }`,
 			method: 'POST',
 		} );
 		expect( mockApiFetch ).toHaveBeenNthCalledWith( 9, {
 			path: '/wc/v3/payments/transactions/download/export_test',
 			method: 'GET',
 		} );
+	} );
+
+	it( 'normalizes date and array filters only at settled transaction API boundaries', async () => {
+		const timezoneSpy = jest
+			.spyOn( Date.prototype, 'getTimezoneOffset' )
+			.mockReturnValue( -180 );
+
+		try {
+			await getWooPaymentsTransactions( {
+				date_after: '2026-07-08',
+				type_is: [ 'charge', 'refund' ],
+			} );
+			await getWooPaymentsTransactionsSummary( {
+				date_before: '2026-07-08',
+			} );
+			await requestWooPaymentsTransactionsExport( {
+				date_between: [ '2026-07-09', '2026-07-08' ],
+				search: [ 'Ada', 'Order #1520' ],
+			} );
+			await getWooPaymentsFraudOutcomeTransactions( {
+				search: [ 'Ada', 'Grace' ],
+			} );
+			await getWooPaymentsDisputes( {
+				status_is: [ 'needs_response', 'under_review' ],
+			} );
+
+			const calls = mockApiFetch.mock.calls.map(
+				( [ request ] ) =>
+					new URL(
+						( request as { path: string } ).path,
+						'https://example.com'
+					)
+			);
+			const [ list, summary, exportRequest, fraudOutcomes, disputes ] =
+				calls;
+
+			expect( list.pathname ).toBe( '/wc/v3/payments/transactions' );
+			expect( list.searchParams.get( 'date_after' ) ).toBe(
+				'2026-07-07 21:00:00'
+			);
+			expect( list.searchParams.getAll( 'type_is[]' ) ).toEqual( [
+				'charge',
+				'refund',
+			] );
+			expect( list.searchParams.getAll( 'type_is' ) ).toEqual( [] );
+			expect( list.searchParams.get( 'user_timezone' ) ).toBe( '+03:00' );
+
+			expect( summary.pathname ).toBe(
+				'/wc/v3/payments/transactions/summary'
+			);
+			expect( summary.searchParams.get( 'date_before' ) ).toBe(
+				'2026-07-08 20:59:59'
+			);
+			expect( summary.searchParams.get( 'user_timezone' ) ).toBe(
+				'+03:00'
+			);
+
+			expect( exportRequest.pathname ).toBe(
+				'/wc/v3/payments/transactions/download'
+			);
+			expect(
+				exportRequest.searchParams.getAll( 'date_between[]' )
+			).toEqual( [ '2026-07-07 21:00:00', '2026-07-09 20:59:59' ] );
+			expect( exportRequest.searchParams.getAll( 'search[]' ) ).toEqual( [
+				'Ada',
+				'Order #1520',
+			] );
+			expect( exportRequest.searchParams.get( 'user_timezone' ) ).toBe(
+				'+03:00'
+			);
+
+			expect( fraudOutcomes.searchParams.getAll( 'search' ) ).toEqual( [
+				'Ada',
+				'Grace',
+			] );
+			expect( fraudOutcomes.searchParams.getAll( 'search[]' ) ).toEqual(
+				[]
+			);
+			expect( disputes.searchParams.getAll( 'status_is' ) ).toEqual( [
+				'needs_response',
+				'under_review',
+			] );
+			expect( disputes.searchParams.getAll( 'status_is[]' ) ).toEqual(
+				[]
+			);
+		} finally {
+			timezoneSpy.mockRestore();
+		}
 	} );
 
 	it( 'preserves authorizations endpoint paths and action routes', async () => {

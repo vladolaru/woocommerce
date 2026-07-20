@@ -25,7 +25,10 @@ import type {
 	WooPaymentsTimelineResponse,
 } from './types';
 import { buildPathWithQuery } from './utils';
-import { serializeWooPaymentsAuthorizationsQuery } from './query';
+import {
+	buildSettledTransactionsApiPath,
+	serializeWooPaymentsAuthorizationsQuery,
+} from './query';
 
 const PAYMENTS_PATH = '/wc/v3/payments';
 
@@ -42,7 +45,10 @@ export const getWooPaymentsTransactions = (
 	query: WooPaymentsMoneyMovementQuery = {}
 ): Promise< WooPaymentsListResponse< WooPaymentsTransaction > > =>
 	apiFetch< WooPaymentsListResponse< WooPaymentsTransaction > >( {
-		path: buildPathWithQuery( `${ PAYMENTS_PATH }/transactions`, query ),
+		path: buildSettledTransactionsApiPath(
+			`${ PAYMENTS_PATH }/transactions`,
+			query
+		),
 		method: 'GET',
 	} );
 
@@ -50,7 +56,7 @@ export const getWooPaymentsTransactionsSummary = (
 	query: WooPaymentsMoneyMovementQuery = {}
 ): Promise< Record< string, unknown > > =>
 	apiFetch< Record< string, unknown > >( {
-		path: buildPathWithQuery(
+		path: buildSettledTransactionsApiPath(
 			`${ PAYMENTS_PATH }/transactions/summary`,
 			query
 		),
@@ -121,7 +127,7 @@ export const requestWooPaymentsTransactionsExport = (
 	query: WooPaymentsMoneyMovementQuery = {}
 ): Promise< Record< string, unknown > > =>
 	apiFetch< Record< string, unknown > >( {
-		path: buildPathWithQuery(
+		path: buildSettledTransactionsApiPath(
 			`${ PAYMENTS_PATH }/transactions/download`,
 			query
 		),

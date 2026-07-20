@@ -42,7 +42,13 @@ import { runWooPaymentsExport } from './export';
 import {
 	formatAmount,
 	formatDate,
+	formatDateTime,
 	formatLabel,
+	getTransactionListAmount,
+	getTransactionListFees,
+	getTransactionListPaymentMethod,
+	getTransactionListType,
+	getTransactionTypeLabel,
 	getResourceId,
 	getErrorMessage,
 	getTransactionDetailsRoute,
@@ -74,10 +80,33 @@ type PendingAuthorizationAction = {
 	action: AuthorizationAction;
 	paymentIntentId: string;
 } | null;
+type WorkingMoneyMovementView = {
+	key: string;
+	view: WooPaymentsMoneyMovementDataView;
+} | null;
 type NoticeDispatch = {
 	createSuccessNotice: ( message: string ) => void;
 	createErrorNotice: ( message: string ) => void;
 };
+
+const TRANSACTION_TYPE_FILTER_ELEMENTS = [
+	'charge',
+	'payment',
+	'payment_failure_refund',
+	'payment_refund',
+	'refund',
+	'refund_failure',
+	'dispute',
+	'dispute_reversal',
+	'card_reader_fee',
+	'financing_payout',
+	'financing_paydown',
+	'fee_refund',
+	'network_costs',
+].map( ( value ) => ( {
+	value,
+	label: getTransactionTypeLabel( value ),
+} ) );
 
 const getSummaryCount = ( summary: MoneyMovementSummary ) => {
 	const totalCount =
@@ -205,6 +234,9 @@ export const WooPaymentsTransactionsPage = () => {
 	const [ viewPreferences, setViewPreferences ] = useState( () =>
 		getMoneyMovementViewPreferences( resource )
 	);
+	const [ workingView, setWorkingView ] =
+		useState< WorkingMoneyMovementView >( null );
+	const canonicalViewKey = `${ resource }\u0000${ location.search }`;
 	const query = useMemo(
 		() =>
 			parseMoneyMovementQuery( location.search, {
@@ -235,31 +267,56 @@ export const WooPaymentsTransactionsPage = () => {
 							'customer',
 							'actions',
 					  ]
-					: [ 'date', 'type', 'customer', 'amount' ],
+					: [
+							'date',
+							'type',
+							'amount',
+							'fees',
+							'net',
+							'source',
+							'customer',
+					  ],
 				titleField: isUncaptured ? 'order' : 'type',
 				showTitle: false,
 			} ),
 		[ isUncaptured, resourceQuery ]
 	);
-	const view = useMemo(
+	const canonicalView = useMemo(
 		() => mergeMoneyMovementViewPreferences( queryView, viewPreferences ),
 		[ queryView, viewPreferences ]
 	);
+	const view =
+		workingView?.key === canonicalViewKey
+			? workingView.view
+			: canonicalView;
 	const transactionFields = useMemo(
 		() => [
 			{
 				id: 'date',
 				label: __( 'Date', 'woocommerce' ),
+				header: __( 'Date / time', 'woocommerce' ),
+				type: 'date' as const,
 				enableHiding: true,
+				filterBy: {
+					operators: [ 'before', 'after', 'between' ] as const,
+				},
+				getValue: ( { item }: { item: WooPaymentsTransaction } ) =>
+					item.date || item.created || '',
 				render: ( { item }: { item: WooPaymentsTransaction } ) =>
-					formatDate( item.date || item.created ),
+					formatDateTime( item.date || item.created ),
 			},
 			{
 				id: 'type',
 				label: __( 'Type', 'woocommerce' ),
 				enableHiding: false,
+				elements: TRANSACTION_TYPE_FILTER_ELEMENTS,
+				filterBy: { operators: [ 'is' ] as const },
+				getValue: ( { item }: { item: WooPaymentsTransaction } ) =>
+					getTransactionListType( item ),
 				render: ( { item }: { item: WooPaymentsTransaction } ) => {
 					const id = getResourceId( item );
+					const type = getTransactionListType( item );
+					const typeLabel = getTransactionTypeLabel( type );
 
 					return (
 						<a
@@ -272,14 +329,62 @@ export const WooPaymentsTransactionsPage = () => {
 									'View transaction details for %1$s transaction %2$s',
 									'woocommerce'
 								),
-								formatLabel( item.type ),
+								typeLabel,
 								id
 							) }
 						>
-							{ formatLabel( item.type ) }
+							{ typeLabel }
 						</a>
 					);
 				},
+			},
+			{
+				id: 'amount',
+				label: __( 'Amount', 'woocommerce' ),
+				type: 'integer' as const,
+				enableHiding: true,
+				filterBy: false,
+				getValue: ( { item }: { item: WooPaymentsTransaction } ) =>
+					getTransactionListAmount( item ) ?? '',
+				render: ( { item }: { item: WooPaymentsTransaction } ) =>
+					formatAmount(
+						getTransactionListAmount( item ),
+						item.currency
+					),
+			},
+			{
+				id: 'fees',
+				label: __( 'Fees', 'woocommerce' ),
+				type: 'integer' as const,
+				enableHiding: true,
+				filterBy: false,
+				getValue: ( { item }: { item: WooPaymentsTransaction } ) =>
+					getTransactionListFees( item ) ?? '',
+				render: ( { item }: { item: WooPaymentsTransaction } ) =>
+					formatAmount(
+						getTransactionListFees( item ),
+						item.currency
+					),
+			},
+			{
+				id: 'net',
+				label: __( 'Net', 'woocommerce' ),
+				type: 'integer' as const,
+				enableHiding: true,
+				filterBy: false,
+				getValue: ( { item }: { item: WooPaymentsTransaction } ) =>
+					item.net ?? '',
+				render: ( { item }: { item: WooPaymentsTransaction } ) =>
+					formatAmount( item.net, item.currency ),
+			},
+			{
+				id: 'source',
+				label: __( 'Payment method', 'woocommerce' ),
+				enableHiding: true,
+				getValue: ( { item }: { item: WooPaymentsTransaction } ) =>
+					getTransactionListPaymentMethod( item ),
+				render: ( { item }: { item: WooPaymentsTransaction } ) =>
+					getTransactionListPaymentMethod( item ),
 			},
 			{
 				id: 'customer',
@@ -289,13 +394,6 @@ export const WooPaymentsTransactionsPage = () => {
 				render: ( { item }: { item: WooPaymentsTransaction } ) =>
 					item.customer_name || item.customer_email || '-',
 			},
-			{
-				id: 'amount',
-				label: __( 'Amount', 'woocommerce' ),
-				enableHiding: true,
-				render: ( { item }: { item: WooPaymentsTransaction } ) =>
-					formatAmount( item.amount, item.currency ),
-			},
 		],
 		[]
 	);
@@ -304,6 +402,12 @@ export const WooPaymentsTransactionsPage = () => {
 		setViewPreferences( getMoneyMovementViewPreferences( resource ) );
 		setExportMessage( null );
 	}, [ resource ] );
+
+	useEffect( () => {
+		setWorkingView( ( currentView ) =>
+			currentView?.key === canonicalViewKey ? currentView : null
+		);
+	}, [ canonicalViewKey ] );
 
 	useEffect( () => {
 		recordEvent( 'page_view', {
@@ -355,7 +459,12 @@ export const WooPaymentsTransactionsPage = () => {
 
 				if ( canUpdate() ) {
 					setTransactions( response.data || [] );
-					setTotalCount( response.total_count || 0 );
+					setTotalCount(
+						response.total_count ??
+							getSummaryCount( nextSummary ) ??
+							response.data?.length ??
+							0
+					);
 					setSummary( nextSummary );
 					setErrorMessage( null );
 				}
@@ -401,6 +510,17 @@ export const WooPaymentsTransactionsPage = () => {
 		setViewPreferences(
 			setMoneyMovementViewPreferences( resource, nextView )
 		);
+		setWorkingView( {
+			key: canonicalViewKey,
+			view: nextView,
+		} );
+
+		if (
+			nextView.filters?.some( ( filter ) => filter.value === undefined )
+		) {
+			return;
+		}
+
 		getHistory().push(
 			getSettingsPaymentsProviderAdminPath(
 				buildTransactionsRoute( nextView, resourceQuery, isUncaptured )
@@ -782,7 +902,7 @@ export const WooPaymentsTransactionsPage = () => {
 						rows={ transactions }
 						view={ view }
 						onChangeView={ handleViewChange }
-						total={ totalCount || transactions.length }
+						total={ totalCount }
 						isLoading={ isLoading }
 						search={ false }
 						searchLabel={ __(

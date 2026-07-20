@@ -4,7 +4,7 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
-import { MemoryRouter, useNavigate } from 'react-router-dom';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 
 /**
  * Internal dependencies
@@ -40,6 +40,7 @@ import { getWooPaymentsAccountSettings } from '../../settings/api';
 const mockCreateSuccessNotice = jest.fn();
 const mockCreateErrorNotice = jest.fn();
 const mockHistoryPush = jest.fn();
+let mockHistoryNavigate: ( ( to: string ) => void ) | null = null;
 
 jest.mock( '@woocommerce/navigation', () => ( {
 	getHistory: () => ( {
@@ -75,6 +76,7 @@ jest.mock( '@wordpress/dataviews/wp', () => ( {
 		fields = [],
 		header,
 		onChangeView,
+		paginationInfo,
 		search = true,
 		searchLabel,
 		view = {},
@@ -83,81 +85,221 @@ jest.mock( '@wordpress/dataviews/wp', () => ( {
 		fields?: Array< {
 			id: string;
 			label?: ReactNode;
+			header?: ReactNode;
+			type?: string;
+			filterBy?: false | { operators: string[] };
+			elements?: Array< { value: string; label: ReactNode } >;
 			render?: ( props: {
 				item: Record< string, unknown >;
 			} ) => ReactNode;
 		} >;
 		header?: ReactNode;
 		onChangeView?: ( view: Record< string, unknown > ) => void;
+		paginationInfo?: { totalItems: number; totalPages: number };
 		search?: boolean;
 		searchLabel?: string;
-		view?: { search?: string; fields?: string[] };
-	} ) => (
-		<div data-testid="money-movement-dataviews">
-			{ search && searchLabel && (
-				<input
-					type="search"
-					aria-label={ searchLabel }
-					value={ view.search || '' }
-					readOnly
-				/>
-			) }
-			<button
-				type="button"
-				onClick={ () =>
-					onChangeView?.( {
-						...view,
-						page: 2,
-						search: 'Order #1520',
-					} )
-				}
+		view?: {
+			search?: string;
+			fields?: string[];
+			filters?: Array< {
+				field: string;
+				operator: string;
+				value?: unknown;
+			} >;
+			[ key: string ]: unknown;
+		};
+	} ) => {
+		const visibleFields = fields.filter(
+			( field ) => ! view.fields || view.fields.includes( field.id )
+		);
+		const discoverableFilterFields = fields
+			.filter(
+				( field ) =>
+					field.filterBy !== false &&
+					( !! field.filterBy ||
+						field.type === 'date' ||
+						field.type === 'integer' )
+			)
+			.map( ( field ) => field.id );
+
+		return (
+			<div
+				data-testid="money-movement-dataviews"
+				data-total-items={ paginationInfo?.totalItems }
+				data-total-pages={ paginationInfo?.totalPages }
+				data-visible-fields={ view.fields?.join( ',' ) }
+				data-view-filters={ JSON.stringify( view.filters || [] ) }
+				data-discoverable-filter-fields={ discoverableFilterFields.join(
+					','
+				) }
 			>
-				Mock change transaction page and search
-			</button>
-			<button
-				type="button"
-				onClick={ () =>
-					onChangeView?.( {
-						...view,
-						fields: [ 'type', 'amount' ],
-						layout: {
-							table: {
-								density: 'compact',
-							},
-						},
-					} )
-				}
-			>
-				Mock change DataViews columns
-			</button>
-			{ header }
-			<div role="row">
-				{ fields.map( ( field ) => (
-					<div key={ field.id } role="columnheader">
-						{ field.label }
-					</div>
-				) ) }
-			</div>
-			{ data.map( ( item ) => (
-				<div
-					key={ String(
-						item.id ||
-							item.transaction_id ||
-							item.payment_intent_id ||
-							item.order_id
-					) }
+				{ search && searchLabel && (
+					<input
+						type="search"
+						aria-label={ searchLabel }
+						value={ view.search || '' }
+						readOnly
+					/>
+				) }
+				<button
+					type="button"
+					onClick={ () =>
+						onChangeView?.( {
+							...view,
+							page: 2,
+							search: 'Order #1520',
+						} )
+					}
 				>
-					{ fields.map( ( field ) => (
-						<div key={ field.id }>
-							{ field.render
-								? field.render( { item } )
-								: String( item[ field.id ] || '' ) }
+					Mock change transaction page and search
+				</button>
+				<button
+					type="button"
+					onClick={ () =>
+						onChangeView?.( {
+							...view,
+							fields: [ 'type', 'amount' ],
+							layout: {
+								table: {
+									density: 'compact',
+								},
+							},
+						} )
+					}
+				>
+					Mock change DataViews columns
+				</button>
+				<button
+					type="button"
+					onClick={ () =>
+						onChangeView?.( {
+							...view,
+							filters: [
+								...( view.filters || [] ),
+								{
+									field: 'type',
+									operator: 'is',
+								},
+							],
+						} )
+					}
+				>
+					Mock add Type filter
+				</button>
+				<button
+					type="button"
+					onClick={ () =>
+						onChangeView?.( {
+							...view,
+							filters: ( view.filters || [] ).map( ( filter ) =>
+								filter.field === 'type'
+									? { ...filter, value: 'refund' }
+									: filter
+							),
+						} )
+					}
+				>
+					Mock choose Refund
+				</button>
+				<button
+					type="button"
+					onClick={ () =>
+						onChangeView?.( {
+							...view,
+							filters: ( view.filters || [] ).map( ( filter ) =>
+								filter.field === 'date'
+									? {
+											...filter,
+											operator: 'between',
+											value: undefined,
+									  }
+									: filter
+							),
+						} )
+					}
+				>
+					Mock change Date to between
+				</button>
+				<button
+					type="button"
+					onClick={ () =>
+						onChangeView?.( {
+							...view,
+							filters: ( view.filters || [] ).map( ( filter ) =>
+								filter.field === 'date'
+									? {
+											...filter,
+											value: [
+												'2026-07-13',
+												'2026-07-20',
+											],
+									  }
+									: filter
+							),
+						} )
+					}
+				>
+					Mock complete Date range
+				</button>
+				<button
+					type="button"
+					onClick={ () =>
+						onChangeView?.( {
+							...view,
+							filters: [],
+						} )
+					}
+				>
+					Mock clear DataViews filters
+				</button>
+				{ header }
+				<div role="row">
+					{ visibleFields.map( ( field ) => (
+						<div
+							key={ field.id }
+							role="columnheader"
+							data-field-type={ field.type }
+							data-filter-disabled={ field.filterBy === false }
+							data-filter-operators={
+								field.filterBy
+									? field.filterBy.operators.join( ',' )
+									: undefined
+							}
+							data-filter-elements={ field.elements
+								?.map(
+									( element ) =>
+										`${ element.value }:${ String(
+											element.label
+										) }`
+								)
+								.join( '|' ) }
+						>
+							{ field.header || field.label }
 						</div>
 					) ) }
 				</div>
-			) ) }
-		</div>
-	),
+				{ data.map( ( item ) => (
+					<div
+						role="row"
+						key={ String(
+							item.id ||
+								item.transaction_id ||
+								item.payment_intent_id ||
+								item.order_id
+						) }
+					>
+						{ visibleFields.map( ( field ) => (
+							<div key={ field.id }>
+								{ field.render
+									? field.render( { item } )
+									: String( item[ field.id ] || '' ) }
+							</div>
+						) ) }
+					</div>
+				) ) }
+			</div>
+		);
+	},
 } ) );
 
 jest.mock(
@@ -309,6 +451,32 @@ const RouteChangeButton = ( { to }: { to: string } ) => {
 	);
 };
 
+const MoneyMovementRouterBridge = () => {
+	const location = useLocation();
+	const navigate = useNavigate();
+
+	mockHistoryNavigate = ( to ) => navigate( to );
+
+	return (
+		<>
+			<output data-testid="money-movement-route">
+				{ `${ location.pathname }${ location.search }` }
+			</output>
+			<button type="button" onClick={ () => navigate( -1 ) }>
+				Mock router back
+			</button>
+			<button
+				type="button"
+				onClick={ () =>
+					navigate( '/woopayments/transactions?view=uncaptured' )
+				}
+			>
+				Mock open uncaptured transactions
+			</button>
+		</>
+	);
+};
+
 const getDetailValue = ( container: HTMLElement, label: string ) => {
 	const term = within( container ).getByText( label, {
 		selector: 'dt',
@@ -381,6 +549,9 @@ describe( 'WooPayments money movement pages', () => {
 		mockCreateSuccessNotice.mockReset();
 		mockCreateErrorNotice.mockReset();
 		mockHistoryPush.mockReset();
+		mockHistoryPush.mockImplementation( ( to: string ) =>
+			mockHistoryNavigate?.( to )
+		);
 	} );
 
 	it.each( [
@@ -440,6 +611,7 @@ describe( 'WooPayments money movement pages', () => {
 	);
 
 	afterEach( () => {
+		mockHistoryNavigate = null;
 		anchorClickSpy.mockRestore();
 		jest.useRealTimers();
 	} );
@@ -478,6 +650,460 @@ describe( 'WooPayments money movement pages', () => {
 		expect(
 			screen.getByText( 'Transactions loaded.' )
 		).toBeInTheDocument();
+	} );
+
+	it.each( [
+		[
+			'summary count when the list omits its total',
+			{ data: [] },
+			{ count: 641 },
+			'641',
+			'26',
+		],
+		[
+			'explicit zero from the list before a non-zero summary',
+			{
+				data: [
+					{
+						id: 'txn_explicit_zero',
+						type: 'charge',
+						date: '2026-07-20',
+						amount: 2500,
+						currency: 'usd',
+					},
+				],
+				total_count: 0,
+			},
+			{ count: 641 },
+			'0',
+			'0',
+		],
+	] )(
+		'passes %s through the settled pagination contract',
+		async ( _label, response, summary, totalItems, totalPages ) => {
+			mockGetTransactions.mockResolvedValue( response as never );
+			mockGetTransactionsSummary.mockResolvedValue( summary );
+
+			render(
+				<MemoryRouter
+					initialEntries={ [ '/woopayments/transactions' ] }
+				>
+					<WooPaymentsTransactionsPage />
+				</MemoryRouter>
+			);
+
+			await screen.findByText( '641 transactions' );
+			expect(
+				screen.getByTestId( 'money-movement-dataviews' )
+			).toHaveAttribute( 'data-total-items', totalItems );
+			expect(
+				screen.getByTestId( 'money-movement-dataviews' )
+			).toHaveAttribute( 'data-total-pages', totalPages );
+		}
+	);
+
+	it( 'uses the complete settled defaults without replacing stored field preferences', async () => {
+		mockGetTransactions.mockResolvedValue( {
+			data: [
+				{
+					id: 'txn_preference_boundary',
+					type: 'charge',
+					date: '2026-07-20',
+					amount: 2500,
+					currency: 'usd',
+				},
+			],
+			total_count: 1,
+		} );
+		mockGetTransactionsSummary.mockResolvedValue( { count: 1 } );
+
+		const firstRender = render(
+			<MemoryRouter initialEntries={ [ '/woopayments/transactions' ] }>
+				<WooPaymentsTransactionsPage />
+			</MemoryRouter>
+		);
+
+		await screen.findByText( 'Transactions loaded.' );
+		expect(
+			screen.getByTestId( 'money-movement-dataviews' )
+		).toHaveAttribute(
+			'data-visible-fields',
+			'date,type,amount,fees,net,source,customer'
+		);
+
+		firstRender.unmount();
+		window.localStorage.setItem(
+			'woocommerce_woopayments_money_movement_view_transactions',
+			JSON.stringify( {
+				fields: [ 'date', 'type', 'customer', 'amount' ],
+			} )
+		);
+
+		render(
+			<MemoryRouter initialEntries={ [ '/woopayments/transactions' ] }>
+				<WooPaymentsTransactionsPage />
+			</MemoryRouter>
+		);
+
+		await screen.findByText( 'Transactions loaded.' );
+		expect(
+			screen.getByTestId( 'money-movement-dataviews' )
+		).toHaveAttribute( 'data-visible-fields', 'date,type,customer,amount' );
+	} );
+
+	it( 'renders the settled field schema from normalized ordinary and exceptional rows', async () => {
+		const toLocaleStringSpy = jest
+			.spyOn( Date.prototype, 'toLocaleString' )
+			.mockReturnValue( 'Jul 20, 2026, 10:30 AM' );
+		window.localStorage.setItem(
+			'woocommerce_woopayments_money_movement_view_transactions',
+			JSON.stringify( {
+				fields: [
+					'date',
+					'type',
+					'amount',
+					'fees',
+					'net',
+					'source',
+					'customer',
+				],
+			} )
+		);
+
+		mockGetTransactions.mockResolvedValue( {
+			data: [
+				{
+					id: 'txn_card',
+					type: 'charge',
+					date: '2026-07-20T10:30:00',
+					amount: 2500,
+					fees: 103,
+					net: 2397,
+					currency: 'usd',
+					source: 'visa',
+					source_identifier: '4242',
+				},
+				{
+					id: 'txn_reader_fee',
+					type: 'charge',
+					metadata: { charge_type: 'card_reader_fee' },
+					date: '2026-07-20T10:30:00',
+					amount: -50,
+					fees: 0,
+					net: -50,
+					currency: 'usd',
+					source: 'visa',
+					source_identifier: '4242',
+				},
+				{
+					id: 'txn_giropay',
+					type: 'charge',
+					currency: 'eur',
+					source: 'giropay',
+					source_identifier: 'DE89370400440532013000',
+				},
+				{
+					id: 'txn_p24',
+					type: 'charge',
+					currency: 'eur',
+					source: 'p24',
+					source_identifier: 'ing',
+				},
+				{
+					id: 'txn_unknown',
+					type: 'charge',
+					currency: 'usd',
+					source: 'custom_method',
+					source_identifier: 'bank-42',
+				},
+				{
+					id: 'txn_afterpay',
+					type: 'charge',
+					currency: 'usd',
+					source: 'afterpay_clearpay',
+				},
+			] as never,
+		} );
+		mockGetTransactionsSummary.mockResolvedValue( {
+			count: 6,
+			total: 2450,
+			currency: 'usd',
+		} );
+
+		try {
+			render(
+				<MemoryRouter
+					initialEntries={ [ '/woopayments/transactions' ] }
+				>
+					<WooPaymentsTransactionsPage />
+				</MemoryRouter>
+			);
+
+			const cardLink = await screen.findByRole( 'link', {
+				name: 'View transaction details for Charge transaction txn_card',
+			} );
+			const cardRow = cardLink.closest( '[role="row"]' ) as HTMLElement;
+			const readerLink = screen.getByRole( 'link', {
+				name: 'View transaction details for Reader fee transaction txn_reader_fee',
+			} );
+			const readerRow = readerLink.closest(
+				'[role="row"]'
+			) as HTMLElement;
+
+			const dateHeader = screen.getByRole( 'columnheader', {
+				name: 'Date / time',
+			} );
+			expect( dateHeader ).toHaveAttribute( 'data-field-type', 'date' );
+			expect( dateHeader ).toHaveAttribute(
+				'data-filter-operators',
+				'before,after,between'
+			);
+			const typeHeader = screen.getByRole( 'columnheader', {
+				name: 'Type',
+			} );
+			expect( typeHeader ).toHaveAttribute(
+				'data-filter-operators',
+				'is'
+			);
+			expect(
+				screen.getByTestId( 'money-movement-dataviews' )
+			).toHaveAttribute( 'data-discoverable-filter-fields', 'date,type' );
+			[ 'Amount', 'Fees', 'Net' ].forEach( ( name ) => {
+				expect(
+					screen.getByRole( 'columnheader', { name } )
+				).toHaveAttribute( 'data-filter-disabled', 'true' );
+			} );
+			expect( typeHeader ).toHaveAttribute(
+				'data-filter-elements',
+				'charge:Charge|payment:Payment|payment_failure_refund:Payment failure refund|payment_refund:Payment refund|refund:Refund|refund_failure:Refund failure|dispute:Dispute|dispute_reversal:Dispute reversal|card_reader_fee:Reader fee|financing_payout:Loan disbursement|financing_paydown:Loan repayment|fee_refund:Fee refund|network_costs:Network costs'
+			);
+
+			expect(
+				within( cardRow ).getByText( 'Jul 20, 2026, 10:30 AM' )
+			).toBeInTheDocument();
+			expect(
+				within( cardRow ).getByText( '$25.00' )
+			).toBeInTheDocument();
+			expect(
+				within( cardRow ).getByText( '-$1.03' )
+			).toBeInTheDocument();
+			expect(
+				within( cardRow ).getByText( '$23.97' )
+			).toBeInTheDocument();
+			expect(
+				within( cardRow ).getByText( 'Visa •••• 4242' )
+			).toBeInTheDocument();
+
+			expect(
+				within( readerRow ).getByText( '$0.00' )
+			).toBeInTheDocument();
+			expect( within( readerRow ).getAllByText( '-$0.50' ) ).toHaveLength(
+				2
+			);
+			expect(
+				within( readerRow ).queryByText( /Visa/ )
+			).not.toBeInTheDocument();
+			expect( within( readerRow ).getAllByText( '-' ) ).toHaveLength( 2 );
+
+			expect(
+				screen.getByText( 'Giropay DE89370400440532013000' )
+			).toBeInTheDocument();
+			expect(
+				screen.getByText( 'Przelewy24 (P24) ING' )
+			).toBeInTheDocument();
+			expect(
+				screen.getByText( 'Custom method bank-42' )
+			).toBeInTheDocument();
+			expect( screen.getByText( 'Afterpay' ) ).toBeInTheDocument();
+		} finally {
+			toLocaleStringSpy.mockRestore();
+		}
+	} );
+
+	it( 'retains an incomplete Type filter until Refund commits, then clears and follows router history', async () => {
+		mockGetTransactions.mockResolvedValue( { data: [], total_count: 0 } );
+		mockGetTransactionsSummary.mockResolvedValue( { count: 0 } );
+
+		render(
+			<MemoryRouter initialEntries={ [ '/woopayments/transactions' ] }>
+				<MoneyMovementRouterBridge />
+				<WooPaymentsTransactionsPage />
+			</MemoryRouter>
+		);
+
+		await screen.findByText( '0 transactions' );
+		const initialRequestCount = mockGetTransactions.mock.calls.length;
+		const dataViews = screen.getByTestId( 'money-movement-dataviews' );
+
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Mock add Type filter' } )
+		);
+		expect( dataViews ).toHaveAttribute(
+			'data-view-filters',
+			'[{"field":"type","operator":"is"}]'
+		);
+		expect( mockHistoryPush ).not.toHaveBeenCalled();
+		expect( mockGetTransactions ).toHaveBeenCalledTimes(
+			initialRequestCount
+		);
+
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Mock choose Refund' } )
+		);
+		await waitFor( () => {
+			expect( mockHistoryPush ).toHaveBeenCalledTimes( 1 );
+			expect(
+				screen.getByTestId( 'money-movement-route' )
+			).toHaveTextContent( 'type_is=refund' );
+			expect( mockGetTransactions ).toHaveBeenLastCalledWith(
+				expect.objectContaining( { type_is: 'refund' } )
+			);
+		} );
+
+		await userEvent.click(
+			screen.getByRole( 'button', {
+				name: 'Mock clear DataViews filters',
+			} )
+		);
+		await waitFor( () => {
+			expect( mockHistoryPush ).toHaveBeenCalledTimes( 2 );
+			expect(
+				screen.getByTestId( 'money-movement-route' )
+			).not.toHaveTextContent( 'type_is' );
+			expect( mockGetTransactions ).toHaveBeenLastCalledWith(
+				expect.not.objectContaining( { type_is: expect.anything() } )
+			);
+		} );
+
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Mock router back' } )
+		);
+		await waitFor( () => {
+			expect(
+				screen.getByTestId( 'money-movement-route' )
+			).toHaveTextContent( 'type_is=refund' );
+			expect( dataViews ).toHaveAttribute(
+				'data-view-filters',
+				'[{"field":"type","operator":"is","value":"refund"}]'
+			);
+		} );
+	} );
+
+	it( 'keeps the applied Date URL while a between range is incomplete and commits the complete range once', async () => {
+		mockGetTransactions.mockResolvedValue( { data: [], total_count: 0 } );
+		mockGetTransactionsSummary.mockResolvedValue( { count: 0 } );
+
+		render(
+			<MemoryRouter
+				initialEntries={ [
+					'/woopayments/transactions?date_after=2026-07-13',
+				] }
+			>
+				<MoneyMovementRouterBridge />
+				<WooPaymentsTransactionsPage />
+			</MemoryRouter>
+		);
+
+		await screen.findByText( '0 transactions' );
+		mockHistoryPush.mockClear();
+		const initialRequestCount = mockGetTransactions.mock.calls.length;
+
+		await userEvent.click(
+			screen.getByRole( 'button', {
+				name: 'Mock change Date to between',
+			} )
+		);
+		expect(
+			screen.getByTestId( 'money-movement-route' )
+		).toHaveTextContent( 'date_after=2026-07-13' );
+		expect(
+			screen.getByTestId( 'money-movement-dataviews' )
+		).toHaveAttribute(
+			'data-view-filters',
+			'[{"field":"date","operator":"between"}]'
+		);
+		expect( mockHistoryPush ).not.toHaveBeenCalled();
+		expect( mockGetTransactions ).toHaveBeenCalledTimes(
+			initialRequestCount
+		);
+
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Mock complete Date range' } )
+		);
+		await waitFor( () => {
+			expect( mockHistoryPush ).toHaveBeenCalledTimes( 1 );
+			expect(
+				screen.getByTestId( 'money-movement-route' )
+			).toHaveTextContent(
+				'date_between=2026-07-13&date_between=2026-07-20'
+			);
+			expect( mockGetTransactions ).toHaveBeenLastCalledWith(
+				expect.objectContaining( {
+					date_between: [ '2026-07-13', '2026-07-20' ],
+				} )
+			);
+		} );
+	} );
+
+	it( 'drops transaction filter drafts when routing to uncaptured state without crossing preferences or query contracts', async () => {
+		window.localStorage.setItem(
+			'woocommerce_woopayments_money_movement_view_transactions',
+			JSON.stringify( { fields: [ 'date', 'type' ] } )
+		);
+		window.localStorage.setItem(
+			'woocommerce_woopayments_money_movement_view_authorizations',
+			JSON.stringify( { fields: [ 'order', 'amount' ] } )
+		);
+		mockGetTransactions.mockResolvedValue( { data: [], total_count: 0 } );
+		mockGetTransactionsSummary.mockResolvedValue( { count: 0 } );
+		mockGetAuthorizations.mockResolvedValue( { data: [], total_count: 0 } );
+		mockGetAuthorizationsSummary.mockResolvedValue( { count: 0 } );
+
+		render(
+			<MemoryRouter initialEntries={ [ '/woopayments/transactions' ] }>
+				<MoneyMovementRouterBridge />
+				<WooPaymentsTransactionsPage />
+			</MemoryRouter>
+		);
+
+		await screen.findByText( '0 transactions' );
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Mock add Type filter' } )
+		);
+		await userEvent.click(
+			screen.getByRole( 'button', {
+				name: 'Mock open uncaptured transactions',
+			} )
+		);
+
+		await screen.findByText( '0 uncaptured transactions' );
+		await waitFor( () => {
+			expect(
+				screen.getByTestId( 'money-movement-dataviews' )
+			).toHaveAttribute( 'data-view-filters', '[]' );
+			expect(
+				screen.getByTestId( 'money-movement-dataviews' )
+			).toHaveAttribute( 'data-visible-fields', 'order,amount' );
+		} );
+		expect( mockGetAuthorizations ).toHaveBeenLastCalledWith(
+			expect.not.objectContaining( { type_is: expect.anything() } )
+		);
+		expect(
+			JSON.parse(
+				window.localStorage.getItem(
+					'woocommerce_woopayments_money_movement_view_transactions'
+				) || '{}'
+			)
+		).toEqual( expect.objectContaining( { fields: [ 'date', 'type' ] } ) );
+		expect(
+			JSON.parse(
+				window.localStorage.getItem(
+					'woocommerce_woopayments_money_movement_view_authorizations'
+				) || '{}'
+			)
+		).toEqual(
+			expect.objectContaining( { fields: [ 'order', 'amount' ] } )
+		);
 	} );
 
 	it( 'builds transaction list links with payment ids and transaction context', async () => {

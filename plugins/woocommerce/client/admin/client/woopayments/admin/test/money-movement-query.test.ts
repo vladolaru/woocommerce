@@ -184,7 +184,6 @@ describe( 'WooPayments money movement query helpers', () => {
 				status_is: 'paid',
 				status_is_not: 'failed',
 				store_currency_is: 'usd',
-				date_after: '2026-06-01',
 			},
 			{
 				fields: [ 'date', 'status', 'amount' ],
@@ -209,14 +208,120 @@ describe( 'WooPayments money movement query helpers', () => {
 				{ field: 'status', operator: 'is', value: 'paid' },
 				{ field: 'status', operator: 'isNot', value: 'failed' },
 				{ field: 'currency', operator: 'is', value: 'usd' },
-				{
-					field: 'date_after',
-					operator: 'is',
-					value: '2026-06-01',
-				},
 			] )
 		);
 	} );
+
+	it.each( [
+		[ 'date_after', 'after', '2026-06-01' ],
+		[ 'date_before', 'before', '2026-06-19' ],
+		[ 'date_between', 'between', [ '2026-06-01', '2026-06-19' ] ],
+	] )(
+		'maps %s between native query state and one DataViews Date filter',
+		( queryParam, operator, value ) => {
+			const view = moneyMovementQueryToDataViewsView( {
+				[ queryParam ]: value,
+			} );
+
+			expect( view.filters ).toContainEqual( {
+				field: 'date',
+				operator,
+				value,
+			} );
+
+			const roundTrippedQuery = dataViewsViewToMoneyMovementQuery( {
+				type: 'table',
+				filters: [
+					{ field: 'status', operator: 'is', value: 'paid' },
+					{
+						field: 'date',
+						operator: operator as never,
+						value,
+					},
+				],
+			} );
+
+			expect( roundTrippedQuery ).toMatchObject( {
+				status_is: 'paid',
+				[ queryParam ]: value,
+			} );
+		}
+	);
+
+	it.each( [
+		[
+			'sorts a reversed range',
+			'date_between',
+			'between',
+			[ '2026-06-19', '2026-06-01' ],
+			[ '2026-06-01', '2026-06-19' ],
+		],
+		[
+			'omits an incomplete range',
+			'date_between',
+			'between',
+			[ '2026-06-01' ],
+			undefined,
+		],
+		[
+			'omits a malformed scalar',
+			'date_after',
+			'after',
+			'06-01-2026',
+			undefined,
+		],
+		[
+			'omits an impossible calendar date',
+			'date_before',
+			'before',
+			'2026-02-31',
+			undefined,
+		],
+		[
+			'omits repeated scalar values',
+			'date_after',
+			'after',
+			[ '2026-06-01', '2026-06-02' ],
+			undefined,
+		],
+		[
+			'omits a range with extra values',
+			'date_between',
+			'between',
+			[ '2026-06-01', '2026-06-19', '2026-06-20' ],
+			undefined,
+		],
+	] )(
+		'%s when mapping local Date filter state',
+		( _case, queryParam, operator, value, expectedValue ) => {
+			const query = dataViewsViewToMoneyMovementQuery( {
+				type: 'table',
+				filters: [
+					{
+						field: 'date',
+						operator: operator as never,
+						value,
+					},
+				],
+			} );
+			const view = moneyMovementQueryToDataViewsView( {
+				[ queryParam ]: value,
+			} );
+
+			if ( expectedValue === undefined ) {
+				expect( query ).not.toHaveProperty( queryParam );
+				expect( view.filters ).toEqual( [] );
+				return;
+			}
+
+			expect( query ).toHaveProperty( queryParam, expectedValue );
+			expect( view.filters ).toContainEqual( {
+				field: 'date',
+				operator,
+				value: expectedValue,
+			} );
+		}
+	);
 
 	it( 'converts DataViews table state back to native REST query params', () => {
 		const query = dataViewsViewToMoneyMovementQuery( {
