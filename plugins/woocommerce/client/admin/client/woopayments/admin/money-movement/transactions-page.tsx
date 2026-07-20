@@ -5,8 +5,9 @@ import { Button } from '@wordpress/components';
 import { dispatch } from '@wordpress/data';
 import { useCallback, useEffect, useMemo, useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
+import { getHistory } from '@woocommerce/navigation';
 import { recordEvent } from '@woocommerce/tracks';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 
 /**
  * Internal dependencies
@@ -36,6 +37,7 @@ import {
 	sanitizeWooPaymentsAuthorizationsQuery,
 } from './query';
 import { WooPaymentsMoneyMovementDataViews } from './dataviews';
+import { WooPaymentsTransactionSearch } from './transaction-search';
 import { runWooPaymentsExport } from './export';
 import {
 	formatAmount,
@@ -51,7 +53,10 @@ import {
 	mergeMoneyMovementViewPreferences,
 	setMoneyMovementViewPreferences,
 } from './view-preferences';
-import { getSettingsPaymentsProviderRouteUrl } from '../utils';
+import {
+	getSettingsPaymentsProviderAdminPath,
+	getSettingsPaymentsProviderRouteUrl,
+} from '../utils';
 import { SpotlightPromotion } from '../../promotions/spotlight';
 import '../style.scss';
 
@@ -171,7 +176,6 @@ const buildTransactionsRoute = (
 
 export const WooPaymentsTransactionsPage = () => {
 	const location = useLocation();
-	const navigate = useNavigate();
 	const isUncaptured = useMemo( () => {
 		const params = new URLSearchParams( location.search );
 
@@ -397,9 +401,18 @@ export const WooPaymentsTransactionsPage = () => {
 		setViewPreferences(
 			setMoneyMovementViewPreferences( resource, nextView )
 		);
-		navigate(
-			buildTransactionsRoute( nextView, resourceQuery, isUncaptured )
+		getHistory().push(
+			getSettingsPaymentsProviderAdminPath(
+				buildTransactionsRoute( nextView, resourceQuery, isUncaptured )
+			)
 		);
+	};
+	const handleTransactionSearchChange = ( search: string ) => {
+		handleViewChange( {
+			...view,
+			page: 1,
+			search: search || undefined,
+		} );
 	};
 
 	const handleExport = async () => {
@@ -675,6 +688,9 @@ export const WooPaymentsTransactionsPage = () => {
 	const summaryCount = getSummaryCount( summary ) ?? totalCount;
 	const summaryTotal = getSummaryTotal( summary );
 	const summaryCurrency = getSummaryCurrency( summary );
+	const transactionSearchValue = Array.isArray( resourceQuery.search )
+		? resourceQuery.search[ 0 ] || ''
+		: resourceQuery.search || '';
 	const tabTransactionsUrl = getSettingsPaymentsProviderRouteUrl(
 		'/woopayments/transactions'
 	);
@@ -768,6 +784,7 @@ export const WooPaymentsTransactionsPage = () => {
 						onChangeView={ handleViewChange }
 						total={ totalCount || transactions.length }
 						isLoading={ isLoading }
+						search={ false }
 						searchLabel={ __(
 							'Search transactions',
 							'woocommerce'
@@ -775,14 +792,23 @@ export const WooPaymentsTransactionsPage = () => {
 						empty={ emptyMessage }
 						getItemId={ getResourceId }
 						toolbarActions={
-							<Button
-								variant="secondary"
-								onClick={ handleExport }
-								isBusy={ isExporting }
-								disabled={ isExporting }
-							>
-								{ __( 'Download transactions', 'woocommerce' ) }
-							</Button>
+							<>
+								<WooPaymentsTransactionSearch
+									value={ transactionSearchValue }
+									onChange={ handleTransactionSearchChange }
+								/>
+								<Button
+									variant="secondary"
+									onClick={ handleExport }
+									isBusy={ isExporting }
+									disabled={ isExporting }
+								>
+									{ __(
+										'Download transactions',
+										'woocommerce'
+									) }
+								</Button>
+							</>
 						}
 					/>
 				) }

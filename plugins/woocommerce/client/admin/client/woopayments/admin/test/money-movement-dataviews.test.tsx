@@ -136,4 +136,30 @@ describe( 'WooPaymentsMoneyMovementDataViews', () => {
 			screen.getByText( 'No transactions found.' )
 		).toBeInTheDocument();
 	} );
+
+	it( 'allows callers to replace the built-in plain-text search', () => {
+		render(
+			<WooPaymentsMoneyMovementDataViews
+				fields={ [ { id: 'date', label: 'Date' } ] }
+				rows={ [] }
+				view={ {
+					type: 'table',
+					page: 1,
+					perPage: 25,
+					fields: [ 'date' ],
+				} }
+				onChangeView={ jest.fn() }
+				total={ 0 }
+				isLoading={ false }
+				search={ false }
+				searchLabel="Search transactions"
+			/>
+		);
+
+		expect( mockDataViews ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				search: false,
+			} )
+		);
+	} );
 } );

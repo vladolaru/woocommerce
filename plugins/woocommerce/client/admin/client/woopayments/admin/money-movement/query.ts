@@ -218,10 +218,13 @@ export const parseMoneyMovementQuery = (
 ): WooPaymentsMoneyMovementQuery => {
 	const params = getSearchParams( locationOrSearch );
 	const page = normalizePositiveInteger(
-		params.get( 'page' ),
+		params.get( 'paged' ),
 		normalizePositiveInteger(
-			defaults.page,
-			DEFAULT_MONEY_MOVEMENT_QUERY.page
+			params.get( 'page' ),
+			normalizePositiveInteger(
+				defaults.page,
+				DEFAULT_MONEY_MOVEMENT_QUERY.page
+			)
 		)
 	);
 	const pagesize = normalizePositiveInteger(

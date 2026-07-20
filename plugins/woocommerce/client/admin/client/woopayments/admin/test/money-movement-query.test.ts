@@ -71,6 +71,26 @@ describe( 'WooPayments money movement query helpers', () => {
 		} );
 	} );
 
+	it( 'prefers settings-shell paged state when reloading provider routes', () => {
+		const query = parseMoneyMovementQuery(
+			'?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions&paged=2&pagesize=25&sort=date&direction=desc&search=Ada',
+			{
+				page: 1,
+				pagesize: 10,
+				sort: 'created',
+				direction: 'asc',
+			}
+		);
+
+		expect( query ).toEqual( {
+			page: 2,
+			pagesize: 25,
+			sort: 'date',
+			direction: 'desc',
+			search: 'Ada',
+		} );
+	} );
+
 	it( 'serializes only the provider subroute query contract', () => {
 		const queryString = serializeMoneyMovementQuery( {
 			page: 1,

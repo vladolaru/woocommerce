@@ -39,6 +39,13 @@ import { getWooPaymentsAccountSettings } from '../../settings/api';
 
 const mockCreateSuccessNotice = jest.fn();
 const mockCreateErrorNotice = jest.fn();
+const mockHistoryPush = jest.fn();
+
+jest.mock( '@woocommerce/navigation', () => ( {
+	getHistory: () => ( {
+		push: mockHistoryPush,
+	} ),
+} ) );
 
 jest.mock( '@woocommerce/tracks', () => ( {
 	recordEvent: jest.fn(),
@@ -68,6 +75,7 @@ jest.mock( '@wordpress/dataviews/wp', () => ( {
 		fields = [],
 		header,
 		onChangeView,
+		search = true,
 		searchLabel,
 		view = {},
 	}: {
@@ -81,11 +89,12 @@ jest.mock( '@wordpress/dataviews/wp', () => ( {
 		} >;
 		header?: ReactNode;
 		onChangeView?: ( view: Record< string, unknown > ) => void;
+		search?: boolean;
 		searchLabel?: string;
 		view?: { search?: string; fields?: string[] };
 	} ) => (
 		<div data-testid="money-movement-dataviews">
-			{ searchLabel && (
+			{ search && searchLabel && (
 				<input
 					type="search"
 					aria-label={ searchLabel }
@@ -93,6 +102,18 @@ jest.mock( '@wordpress/dataviews/wp', () => ( {
 					readOnly
 				/>
 			) }
+			<button
+				type="button"
+				onClick={ () =>
+					onChangeView?.( {
+						...view,
+						page: 2,
+						search: 'Order #1520',
+					} )
+				}
+			>
+				Mock change transaction page and search
+			</button>
 			<button
 				type="button"
 				onClick={ () =>
@@ -138,6 +159,38 @@ jest.mock( '@wordpress/dataviews/wp', () => ( {
 		</div>
 	),
 } ) );
+
+jest.mock(
+	'../money-movement/transaction-search',
+	() => ( {
+		WooPaymentsTransactionSearch: ( {
+			value,
+			onChange,
+		}: {
+			value: string;
+			onChange: ( value: string ) => void;
+		} ) => (
+			<>
+				<input
+					type="search"
+					aria-label="Search transactions"
+					value={ value }
+					readOnly
+				/>
+				<button
+					type="button"
+					onClick={ () => onChange( 'MA05 Searchable' ) }
+				>
+					Mock apply transaction search
+				</button>
+				<button type="button" onClick={ () => onChange( '' ) }>
+					Mock clear transaction search
+				</button>
+			</>
+		),
+	} ),
+	{ virtual: true }
+);
 
 jest.mock( '../../promotions/spotlight', () => ( {
 	SpotlightPromotion: () => <div>Spotlight promotion</div>,
@@ -327,6 +380,7 @@ describe( 'WooPayments money movement pages', () => {
 		} );
 		mockCreateSuccessNotice.mockReset();
 		mockCreateErrorNotice.mockReset();
+		mockHistoryPush.mockReset();
 	} );
 
 	it.each( [
@@ -530,6 +584,83 @@ describe( 'WooPayments money movement pages', () => {
 				loan_id_is: 'loan_test',
 			} )
 		);
+	} );
+
+	it( 'keeps transaction pagination and search inside the settings shell', async () => {
+		mockGetTransactions.mockResolvedValue( {
+			data: [],
+			total_count: 50,
+		} );
+		mockGetTransactionsSummary.mockResolvedValue( {
+			total_count: 50,
+			total: 0,
+			currency: 'usd',
+		} );
+
+		render(
+			<MemoryRouter initialEntries={ [ '/woopayments/transactions' ] }>
+				<WooPaymentsTransactionsPage />
+			</MemoryRouter>
+		);
+
+		await screen.findByText( '50 transactions' );
+		await userEvent.click(
+			screen.getByRole( 'button', {
+				name: 'Mock change transaction page and search',
+			} )
+		);
+
+		expect( mockHistoryPush ).toHaveBeenCalledTimes( 1 );
+		const route = new URL(
+			mockHistoryPush.mock.calls[ 0 ][ 0 ],
+			'https://example.com/wp-admin/'
+		);
+		expect( route.searchParams.getAll( 'page' ) ).toEqual( [
+			'wc-settings',
+		] );
+		expect( route.searchParams.get( 'path' ) ).toBe(
+			'/woopayments/transactions'
+		);
+		expect( route.searchParams.get( 'paged' ) ).toBe( '2' );
+		expect( route.searchParams.get( 'search' ) ).toBe( 'Order #1520' );
+	} );
+
+	it( 'routes transaction autocomplete changes through the settings shell', async () => {
+		mockGetTransactions.mockResolvedValue( {
+			data: [],
+			total_count: 0,
+		} );
+		mockGetTransactionsSummary.mockResolvedValue( {
+			total_count: 0,
+			total: 0,
+			currency: 'usd',
+		} );
+
+		render(
+			<MemoryRouter initialEntries={ [ '/woopayments/transactions' ] }>
+				<WooPaymentsTransactionsPage />
+			</MemoryRouter>
+		);
+
+		await screen.findByRole( 'searchbox', {
+			name: 'Search transactions',
+		} );
+		await userEvent.click(
+			screen.getByRole( 'button', {
+				name: 'Mock apply transaction search',
+			} )
+		);
+
+		expect( mockHistoryPush ).toHaveBeenCalledTimes( 1 );
+		const route = new URL(
+			mockHistoryPush.mock.calls[ 0 ][ 0 ],
+			'https://example.com/wp-admin/'
+		);
+		expect( route.searchParams.getAll( 'page' ) ).toEqual( [
+			'wc-settings',
+		] );
+		expect( route.searchParams.get( 'paged' ) ).toBe( '1' );
+		expect( route.searchParams.get( 'search' ) ).toBe( 'MA05 Searchable' );
 	} );
 
 	it( 'offers searchable transaction exports with the active query', async () => {

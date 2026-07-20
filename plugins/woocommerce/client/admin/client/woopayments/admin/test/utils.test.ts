@@ -1,7 +1,10 @@
 /**
  * Internal dependencies
  */
-import { getSettingsPaymentsProviderRouteUrl } from '../utils';
+import {
+	getSettingsPaymentsProviderAdminPath,
+	getSettingsPaymentsProviderRouteUrl,
+} from '../utils';
 import {
 	formatDisputeReasonLabel,
 	getTransactionDetailsRoute,
@@ -99,6 +102,25 @@ describe( 'getSettingsPaymentsProviderRouteUrl', () => {
 		).toBe(
 			'https://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings%2Ffraud-protection&from=woopayments-settings'
 		);
+	} );
+
+	it( 'keeps the settings shell page unique and maps provider pagination to paged', () => {
+		const adminPath = getSettingsPaymentsProviderAdminPath(
+			'/woopayments/transactions?page=2&pagesize=25&search=Order%20%231520'
+		);
+		const url = new URL( adminPath, 'https://example.com/wp-admin/' );
+
+		expect( url.pathname ).toBe( '/wp-admin/admin.php' );
+		expect( url.searchParams.getAll( 'page' ) ).toEqual( [
+			'wc-settings',
+		] );
+		expect( url.searchParams.get( 'tab' ) ).toBe( 'checkout' );
+		expect( url.searchParams.get( 'path' ) ).toBe(
+			'/woopayments/transactions'
+		);
+		expect( url.searchParams.get( 'paged' ) ).toBe( '2' );
+		expect( url.searchParams.get( 'pagesize' ) ).toBe( '25' );
+		expect( url.searchParams.get( 'search' ) ).toBe( 'Order #1520' );
 	} );
 } );
 

@@ -15,6 +15,7 @@ export type WooPaymentsMoneyMovementDataViewsProps<
 	onChangeView: ( view: View ) => void;
 	total: number;
 	isLoading: boolean;
+	search?: boolean;
 	searchLabel: string;
 	header?: ReactNode;
 	toolbarActions?: ReactNode;
@@ -32,6 +33,7 @@ export function WooPaymentsMoneyMovementDataViews<
 	onChangeView,
 	total,
 	isLoading,
+	search = true,
 	searchLabel,
 	header,
 	toolbarActions,
@@ -77,7 +79,7 @@ export function WooPaymentsMoneyMovementDataViews<
 				fields={ fields }
 				data={ rows }
 				isLoading={ isLoading }
-				search
+				search={ search }
 				searchLabel={ searchLabel }
 				header={ headerContent }
 				paginationInfo={ {

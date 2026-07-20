@@ -28,6 +28,10 @@ export type SearchState = {
 
 export type SearchProps = {
 	/**
+	 * Accessible name for the search input.
+	 */
+	ariaLabel?: string;
+	/**
 	 * Render additional options in the autocompleter to allow free text entering depending on the type.
 	 */
 	allowFreeTextSearch?: boolean;
