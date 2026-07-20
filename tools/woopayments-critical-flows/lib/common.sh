@@ -198,12 +198,104 @@ critical_flows_log_observer_job_is_owned() { # <pid>
   return 1
 }
 
+critical_flows_log_observer_validate_recovery_result() { # <output-file>
+  python3 - \
+    "$1" \
+    "${CRITICAL_FLOWS_RUN_STAMP:-${RUN_STAMP:-}}" \
+    "${CRITICAL_FLOWS_LOG_OBSERVER_STORE:-}" \
+    "${CRITICAL_FLOWS_FLOW_ID:-}" \
+    "${CRITICAL_FLOWS_LOG_PURPOSE:-}" \
+    "${CRITICAL_FLOWS_LOG_OBSERVER_ID:-}" <<'PY'
+import datetime
+import hashlib
+import hmac
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+output_path, run_stamp, store, flow_id, purpose, observer_id = sys.argv[1:]
+key_hex = os.environ.get("CRITICAL_FLOWS_RUN_CONTEXT_KEY", "")
+if (
+    re.fullmatch(r"[0-9a-f]{64}", key_hex) is None
+    or re.fullmatch(
+        r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
+        observer_id,
+    ) is None
+):
+    raise SystemExit(1)
+try:
+    encoded = Path(output_path).read_text(encoding="utf-8")
+except (OSError, UnicodeError):
+    raise SystemExit(1)
+lines = encoded.splitlines()
+if len(lines) != 1 or len(lines[0]) > 1024 * 1024:
+    raise SystemExit(1)
+try:
+    retained = json.loads(lines[0])
+except (TypeError, json.JSONDecodeError):
+    raise SystemExit(1)
+expected_fields = {
+    "schema", "sequence", "kind", "run_stamp", "store", "flow_id", "purpose",
+    "marker_created_at", "observer_id", "paths", "previous_hmac", "status",
+    "blocker_code", "hmac",
+}
+if not isinstance(retained, dict) or set(retained) != expected_fields:
+    raise SystemExit(1)
+record = dict(retained)
+signature = record.pop("hmac")
+previous = "0" * 64
+canonical = json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+expected = hmac.new(
+    bytes.fromhex(key_hex),
+    (previous + "\0" + canonical).encode("utf-8"),
+    hashlib.sha256,
+).hexdigest()
+paths = record.get("paths")
+if (
+    record.get("schema") != "woopayments_debug_log_observer_record.v2"
+    or record.get("sequence") != 1
+    or record.get("kind") != "recovered"
+    or record.get("run_stamp") != run_stamp
+    or record.get("store") != store
+    or record.get("flow_id") != flow_id
+    or record.get("purpose") != purpose
+    or record.get("status") != "blocked"
+    or record.get("blocker_code") != "observer_forced_recovery"
+    or record.get("previous_hmac") != "hmac-sha256:" + previous
+    or signature != "hmac-sha256:" + expected
+    or record.get("observer_id") != observer_id
+    or not isinstance(paths, list)
+    or not paths
+    or paths != sorted(paths, key=lambda item: item.get("path_id", "") if isinstance(item, dict) else "")
+    or any(
+        not isinstance(item, dict)
+        or set(item) != {"path", "path_id"}
+        or not isinstance(item["path"], str)
+        or Path(item["path"]).name != item["path"]
+        or not isinstance(item["path_id"], str)
+        or re.fullmatch(r"hmac-sha256:[0-9a-f]{64}", item["path_id"]) is None
+        for item in paths
+    )
+):
+    raise SystemExit(1)
+try:
+    datetime.datetime.fromisoformat(record["marker_created_at"].replace("Z", "+00:00"))
+except (AttributeError, ValueError):
+    raise SystemExit(1)
+PY
+}
+
 critical_flows_log_observer_recover() {
   local s="${CRITICAL_FLOWS_LOG_OBSERVER_STORE:-}"
-  local recovery_pid recovery_status=0
+  local recovery_pid recovery_status=0 recovery_action_status=0 recovery_output=""
   [ -n "$s" ] || return 0
   [ -f "$LOG_OBSERVER_DRIVER" ] || return 0
-  critical_flows_log_observer_action "$s" recover >/dev/null 2>/dev/null &
+  case "${TMPDIR:-}" in /*) ;; *) return 1;; esac
+  recovery_output="$(mktemp "${TMPDIR%/}/woopayments-critical-flows-recovery.XXXXXX")" || return 1
+  chmod 600 "$recovery_output" || { rm -f -- "$recovery_output"; return 1; }
+  critical_flows_log_observer_action "$s" recover >"$recovery_output" 2>/dev/null &
   recovery_pid=$!
   if ! python3 - "$recovery_pid" <<'PY'
 import os
@@ -244,11 +336,32 @@ PY
       critical_flows_log_observer_signal_tree "$recovery_pid" KILL
     fi
   fi
-  wait "$recovery_pid" 2>/dev/null || recovery_status=1
+  wait "$recovery_pid" 2>/dev/null
+  recovery_action_status=$?
+  if [ "$recovery_status" -eq 0 ]; then
+    [ "$recovery_action_status" -eq 3 ] \
+      && critical_flows_log_observer_validate_recovery_result "$recovery_output" \
+      || recovery_status=1
+  fi
+  rm -f -- "$recovery_output" || recovery_status=1
   return "$recovery_status"
 }
 
+critical_flows_log_observer_graceful_cleanup() { # <store> <pid>
+  local s="$1" pid="$2" timeout
+  timeout="${CRITICAL_FLOWS_LOG_OBSERVER_STOP_TIMEOUT:-5}"
+  case "$timeout" in ''|*[!0-9]*) timeout=5;; esac
+  [ "$timeout" -ge 1 ] 2>/dev/null || timeout=1
+  [ "$timeout" -le 30 ] 2>/dev/null || timeout=30
+  critical_flows_log_observer_action "$s" stop >/dev/null 2>/dev/null || return 1
+  critical_flows_log_observer_wait_for_exit "$timeout" >/dev/null 2>&1 || return 1
+  critical_flows_log_observer_validate_sidecar >/dev/null 2>&1 || return 1
+  wait "$pid" 2>/dev/null || true
+  critical_flows_log_observer_clear_state
+}
+
 critical_flows_log_observer_cleanup() {
+  local s="${CRITICAL_FLOWS_LOG_OBSERVER_STORE:-}"
   local pid="${CRITICAL_FLOWS_LOG_OBSERVER_PID:-}" cleanup_status=0
   if [ -z "$pid" ]; then
     critical_flows_log_observer_clear_state
@@ -256,12 +369,17 @@ critical_flows_log_observer_cleanup() {
   fi
 
   if critical_flows_log_observer_job_is_owned "$pid"; then
-    critical_flows_log_observer_signal_tree "$pid" TERM
-    critical_flows_log_observer_wait_for_exit 2 >/dev/null 2>&1 || {
-      if critical_flows_log_observer_job_is_owned "$pid"; then
-        critical_flows_log_observer_signal_tree "$pid" KILL
-      fi
-    }
+    if critical_flows_log_observer_graceful_cleanup "$s" "$pid"; then
+      return 0
+    fi
+    if critical_flows_log_observer_job_is_owned "$pid"; then
+      critical_flows_log_observer_signal_tree "$pid" TERM
+      critical_flows_log_observer_wait_for_exit 2 >/dev/null 2>&1 || {
+        if critical_flows_log_observer_job_is_owned "$pid"; then
+          critical_flows_log_observer_signal_tree "$pid" KILL
+        fi
+      }
+    fi
   fi
   wait "$pid" 2>/dev/null || true
   critical_flows_log_observer_recover || cleanup_status=1

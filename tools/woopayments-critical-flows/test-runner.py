@@ -12395,6 +12395,156 @@ assert_log_clean target
         assert result.returncode == 0, result.stdout + result.stderr
 
 
+@pytest.mark.parametrize(
+    "expected_observer_id,expected_exit",
+    [
+        ("12345678-1234-4123-8123-123456789abc", 0),
+        ("87654321-4321-4321-8321-cba987654321", 1),
+    ],
+)
+def test_common_observer_recovery_binds_authenticated_result_to_started_observer(
+    expected_observer_id: str, expected_exit: int
+) -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-observer-recovery-success-") as tmp:
+        root = Path(tmp)
+        script = f'''
+source {shlex.quote(str(COMMON))}
+CRITICAL_FLOWS_RUN_STAMP=20260720T160000Z-31313
+CRITICAL_FLOWS_RUN_CONTEXT_KEY={TEST_RUN_CONTEXT_KEY}
+CRITICAL_FLOWS_FLOW_ID=MD-03-winning-dispute
+CRITICAL_FLOWS_LOG_PURPOSE=clean-debug-log
+CRITICAL_FLOWS_LOG_OBSERVER_STORE=target
+CRITICAL_FLOWS_LOG_OBSERVER_ID={expected_observer_id}
+LOG_OBSERVER_DRIVER={shlex.quote(str(COMMON))}
+export CRITICAL_FLOWS_RUN_STAMP CRITICAL_FLOWS_RUN_CONTEXT_KEY
+export CRITICAL_FLOWS_FLOW_ID CRITICAL_FLOWS_LOG_PURPOSE
+critical_flows_log_observer_action() {{
+  python3 - <<'PY'
+import hashlib
+import hmac
+import json
+import os
+
+record = {{
+    "schema": "woopayments_debug_log_observer_record.v2",
+    "sequence": 1,
+    "kind": "recovered",
+    "run_stamp": os.environ["CRITICAL_FLOWS_RUN_STAMP"],
+    "store": "target",
+    "flow_id": os.environ["CRITICAL_FLOWS_FLOW_ID"],
+    "purpose": os.environ["CRITICAL_FLOWS_LOG_PURPOSE"],
+    "marker_created_at": "2026-07-20T13:00:00Z",
+    "observer_id": "12345678-1234-4123-8123-123456789abc",
+    "paths": [
+        {{
+            "path": "debug.log",
+            "path_id": "hmac-sha256:" + "1" * 64,
+        }}
+    ],
+    "previous_hmac": "hmac-sha256:" + "0" * 64,
+    "status": "blocked",
+    "blocker_code": "observer_forced_recovery",
+}}
+canonical = json.dumps(record, separators=(",", ":"), sort_keys=True).encode()
+key = bytes.fromhex(os.environ["CRITICAL_FLOWS_RUN_CONTEXT_KEY"])
+record["hmac"] = "hmac-sha256:" + hmac.new(
+    key, ("0" * 64).encode() + b"\\0" + canonical, hashlib.sha256
+).hexdigest()
+print(json.dumps(record, separators=(",", ":")))
+PY
+  return 3
+}}
+critical_flows_log_observer_recover
+'''
+        result = subprocess.run(
+            ["bash", "-c", script],
+            cwd=REPO,
+            env={**os.environ, "TMPDIR": str(root)},
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=5,
+        )
+
+        assert result.returncode == expected_exit, result.stdout + result.stderr
+
+
+def test_common_observer_cleanup_prefers_authenticated_graceful_stop() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-observer-graceful-cleanup-") as tmp:
+        root = Path(tmp)
+        sidecar = root / "observer-sidecar"
+        script = f'''
+source {shlex.quote(str(COMMON))}
+sleep 30 &
+observer_pid=$!
+cleanup_process() {{
+  kill "$observer_pid" 2>/dev/null || true
+  wait "$observer_pid" 2>/dev/null || true
+}}
+trap cleanup_process EXIT
+CRITICAL_FLOWS_LOG_OBSERVER_PID="$observer_pid"
+CRITICAL_FLOWS_LOG_OBSERVER_SIDECAR={shlex.quote(str(sidecar))}
+CRITICAL_FLOWS_LOG_OBSERVER_EXIT_FILE={shlex.quote(str(sidecar))}.exit
+CRITICAL_FLOWS_LOG_OBSERVER_STORE=target
+critical_flows_log_observer_action() {{
+  [ "$2" = stop ] || exit 61
+  kill "$observer_pid"
+  printf '0\n' > "$CRITICAL_FLOWS_LOG_OBSERVER_EXIT_FILE"
+  return 0
+}}
+critical_flows_log_observer_wait_for_exit() {{ return 0; }}
+critical_flows_log_observer_validate_sidecar() {{ printf '{{}}\n'; return 0; }}
+critical_flows_log_observer_recover() {{ exit 62; }}
+critical_flows_log_observer_clear_state() {{ return 0; }}
+critical_flows_log_observer_cleanup
+'''
+        result = subprocess.run(
+            ["bash", "-c", script],
+            cwd=REPO,
+            env={**os.environ, "TMPDIR": str(root)},
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=5,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_common_observer_cleanup_rechecks_pid_ownership_after_graceful_failure() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-observer-cleanup-pid-reuse-") as tmp:
+        root = Path(tmp)
+        signal_log = root / "signals"
+        script = f'''
+source {shlex.quote(str(COMMON))}
+CRITICAL_FLOWS_LOG_OBSERVER_PID=4242
+CRITICAL_FLOWS_LOG_OBSERVER_STORE=target
+owned_checks=0
+critical_flows_log_observer_job_is_owned() {{
+  owned_checks=$((owned_checks + 1))
+  [ "$owned_checks" -eq 1 ]
+}}
+critical_flows_log_observer_graceful_cleanup() {{ return 1; }}
+critical_flows_log_observer_signal_tree() {{ printf '%s %s\n' "$1" "$2" >> {shlex.quote(str(signal_log))}; }}
+critical_flows_log_observer_recover() {{ return 0; }}
+critical_flows_log_observer_clear_state() {{ return 0; }}
+critical_flows_log_observer_cleanup
+[ ! -e {shlex.quote(str(signal_log))} ] || exit 71
+[ "$owned_checks" -ge 2 ] || exit 72
+'''
+        result = subprocess.run(
+            ["bash", "-c", script],
+            cwd=REPO,
+            env={**os.environ, "TMPDIR": str(root)},
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=5,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_common_observer_start_requires_tmpdir_without_tmp_fallback() -> None:
     with tempfile.TemporaryDirectory(prefix="critical-flows-observer-tmpdir-") as tmp:
         root = Path(tmp)
