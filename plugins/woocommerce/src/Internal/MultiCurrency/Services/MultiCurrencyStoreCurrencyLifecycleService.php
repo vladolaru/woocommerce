@@ -54,7 +54,7 @@ class MultiCurrencyStoreCurrencyLifecycleService {
 	 * @since 11.0.0
 	 */
 	public function synchronize_store_currency(): bool {
-		$store_currency = strtoupper( get_woocommerce_currency() );
+		$store_currency = strtoupper( (string) get_option( 'woocommerce_currency' ) );
 
 		if ( ! array_key_exists( $store_currency, get_woocommerce_currencies() ) ) {
 			return false;

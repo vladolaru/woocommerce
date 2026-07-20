@@ -21,6 +21,11 @@ class MultiCurrencyStoreCurrencyLifecycleServiceTest extends WC_Unit_Test_Case {
 	private const NOTICE_OPTION         = 'wcpay_multi_currency_show_store_currency_changed_notice';
 
 	/**
+	 * Custom currency code used by isolated filter tests.
+	 */
+	private const CUSTOM_CURRENCY = 'XTS';
+
+	/**
 	 * Original store currency.
 	 *
 	 * @var string
@@ -77,6 +82,140 @@ class MultiCurrencyStoreCurrencyLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should ignore shopper currency filters when the configured store currency is unchanged.
+	 */
+	public function test_ignores_shopper_currency_filter_when_configured_currency_is_unchanged(): void {
+		$cache_value             = $this->get_currencies_cache_fixture();
+		$shopper_currency_filter = static fn(): string => 'GBP';
+
+		update_option( self::STORE_CURRENCY_OPTION, 'USD' );
+		update_option( MultiCurrencyCacheInterface::CURRENCIES_KEY, $cache_value, false );
+		add_filter( 'woocommerce_currency', $shopper_currency_filter, 900 );
+
+		try {
+			$changed = $this->create_service()->synchronize_store_currency();
+		} finally {
+			remove_filter( 'woocommerce_currency', $shopper_currency_filter, 900 );
+		}
+
+		$this->assertFalse( $changed );
+		$this->assertSame( 'USD', get_option( self::STORE_CURRENCY_OPTION ) );
+		$this->assertSame( $cache_value, get_option( MultiCurrencyCacheInterface::CURRENCIES_KEY ) );
+		$this->assertFalse( get_option( self::NOTICE_OPTION, false ) );
+	}
+
+	/**
+	 * @testdox Should not mutate lifecycle state when configured currency is missing or empty.
+	 * @dataProvider missing_or_empty_configured_currency_data
+	 *
+	 * @param bool $configured_option_exists Whether the configured currency option exists with an empty value.
+	 * @param bool $tracked_option_exists    Whether the tracked store-currency option exists.
+	 */
+	public function test_does_not_mutate_state_when_configured_currency_is_missing_or_empty(
+		bool $configured_option_exists,
+		bool $tracked_option_exists
+	): void {
+		$cache_value  = $this->get_currencies_cache_fixture();
+		$notice_value = array( 'Pound sterling' );
+
+		if ( $configured_option_exists ) {
+			update_option( 'woocommerce_currency', '' );
+		} else {
+			delete_option( 'woocommerce_currency' );
+		}
+
+		if ( $tracked_option_exists ) {
+			update_option( self::STORE_CURRENCY_OPTION, 'USD' );
+		} else {
+			delete_option( self::STORE_CURRENCY_OPTION );
+		}
+
+		update_option( MultiCurrencyCacheInterface::CURRENCIES_KEY, $cache_value, false );
+		update_option( self::NOTICE_OPTION, $notice_value, false );
+
+		$changed = $this->create_service()->synchronize_store_currency();
+
+		$this->assertFalse( $changed );
+		$this->assertSame(
+			$tracked_option_exists ? 'USD' : false,
+			get_option( self::STORE_CURRENCY_OPTION, false )
+		);
+		$this->assertSame( $cache_value, get_option( MultiCurrencyCacheInterface::CURRENCIES_KEY ) );
+		$this->assertSame( $notice_value, get_option( self::NOTICE_OPTION ) );
+	}
+
+	/**
+	 * Data provider for missing and empty configured currency states.
+	 *
+	 * @return array<string, array{bool, bool}>
+	 */
+	public static function missing_or_empty_configured_currency_data(): array {
+		return array(
+			'missing configuration and missing tracked state' => array( false, false ),
+			'missing configuration and existing tracked state' => array( false, true ),
+			'empty configuration and missing tracked state'   => array( true, false ),
+			'empty configuration and existing tracked state'  => array( true, true ),
+		);
+	}
+
+	/**
+	 * @testdox Should honor a custom configured currency admitted by WooCommerce.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_honors_custom_configured_currency_admitted_by_woocommerce(): void {
+		$currencies_filter = $this->get_custom_currencies_filter();
+
+		$this->expose_fresh_woocommerce_currencies_to_service();
+		add_filter( 'woocommerce_currencies', $currencies_filter );
+
+		try {
+			update_option( 'woocommerce_currency', self::CUSTOM_CURRENCY );
+			update_option( self::STORE_CURRENCY_OPTION, 'USD' );
+			update_option( MultiCurrencyCacheInterface::CURRENCIES_KEY, $this->get_currencies_cache_fixture(), false );
+
+			$changed = $this->create_service()->synchronize_store_currency();
+		} finally {
+			remove_filter( 'woocommerce_currencies', $currencies_filter );
+		}
+
+		$this->assertTrue( $changed );
+		$this->assertSame( self::CUSTOM_CURRENCY, get_option( self::STORE_CURRENCY_OPTION ) );
+		$this->assertFalse( get_option( MultiCurrencyCacheInterface::CURRENCIES_KEY, false ) );
+	}
+
+	/**
+	 * @testdox Should ignore an admitted custom currency used only for shopper presentation.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_ignores_admitted_custom_currency_used_only_for_shopper_presentation(): void {
+		$cache_value             = $this->get_currencies_cache_fixture();
+		$notice_value            = array( 'Pound sterling' );
+		$currencies_filter       = $this->get_custom_currencies_filter();
+		$shopper_currency_filter = static fn(): string => self::CUSTOM_CURRENCY;
+
+		update_option( self::STORE_CURRENCY_OPTION, 'USD' );
+		update_option( MultiCurrencyCacheInterface::CURRENCIES_KEY, $cache_value, false );
+		update_option( self::NOTICE_OPTION, $notice_value, false );
+		$this->expose_fresh_woocommerce_currencies_to_service();
+		add_filter( 'woocommerce_currencies', $currencies_filter );
+		add_filter( 'woocommerce_currency', $shopper_currency_filter, 900 );
+
+		try {
+			$changed = $this->create_service()->synchronize_store_currency();
+		} finally {
+			remove_filter( 'woocommerce_currency', $shopper_currency_filter, 900 );
+			remove_filter( 'woocommerce_currencies', $currencies_filter );
+		}
+
+		$this->assertFalse( $changed );
+		$this->assertSame( 'USD', get_option( self::STORE_CURRENCY_OPTION ) );
+		$this->assertSame( $cache_value, get_option( MultiCurrencyCacheInterface::CURRENCIES_KEY ) );
+		$this->assertSame( $notice_value, get_option( self::NOTICE_OPTION ) );
+	}
+
+	/**
 	 * @testdox Should update store currency, clear cache, and write manual rate notice.
 	 */
 	public function test_updates_store_currency_clears_cache_and_writes_manual_rate_notice(): void {
@@ -116,15 +255,58 @@ class MultiCurrencyStoreCurrencyLifecycleServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should skip unknown store currency without mutating state.
 	 */
 	public function test_skips_unknown_store_currency_without_mutating_state(): void {
+		$cache_value = $this->get_currencies_cache_fixture();
+
 		update_option( self::STORE_CURRENCY_OPTION, 'USD' );
 		update_option( 'woocommerce_currency', 'XYZ' );
-		update_option( MultiCurrencyCacheInterface::CURRENCIES_KEY, array( 'data' => array() ), false );
+		update_option( MultiCurrencyCacheInterface::CURRENCIES_KEY, $cache_value, false );
 
 		$changed = $this->create_service()->synchronize_store_currency();
 
 		$this->assertFalse( $changed );
 		$this->assertSame( 'USD', get_option( self::STORE_CURRENCY_OPTION ) );
-		$this->assertIsArray( get_option( MultiCurrencyCacheInterface::CURRENCIES_KEY ) );
+		$this->assertSame( $cache_value, get_option( MultiCurrencyCacheInterface::CURRENCIES_KEY ) );
+	}
+
+	/**
+	 * Get a recognizable currencies cache value.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function get_currencies_cache_fixture(): array {
+		return array(
+			'data'               => array(
+				'currencies' => array(
+					'eur' => 0.88,
+					'gbp' => 0.75,
+				),
+				'updated'    => 123456,
+			),
+			'fetched'            => 123456,
+			'errored'            => false,
+			'consecutive_errors' => 0,
+		);
+	}
+
+	/**
+	 * Get a filter that adds the custom test currency.
+	 *
+	 * @return callable(array<string, string>): array<string, string>
+	 */
+	private function get_custom_currencies_filter(): callable {
+		return static function ( array $currencies ): array {
+			$currencies[ self::CUSTOM_CURRENCY ] = 'Test currency';
+
+			return $currencies;
+		};
+	}
+
+	/**
+	 * Expose a fresh filtered currency list to the service in an isolated process.
+	 */
+	private function expose_fresh_woocommerce_currencies_to_service(): void {
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- The global currency list is memoized during test bootstrap; this isolated shim reapplies its public filter for the service call.
+		eval( 'namespace Automattic\WooCommerce\Internal\MultiCurrency\Services; function get_woocommerce_currencies() { return apply_filters( "woocommerce_currencies", \get_woocommerce_currencies() ); }' );
 	}
 
 	/**
