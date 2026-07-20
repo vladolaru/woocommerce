@@ -7,6 +7,10 @@ import type { ReactNode } from 'react';
 /**
  * Internal dependencies
  */
+import {
+	CARD_BRANDS,
+	type WooPaymentsCardBrand,
+} from '../../settings/payment-method-definitions';
 import type {
 	WooPaymentsBillingDetails,
 	WooPaymentsPaymentMethodDetails,
@@ -174,6 +178,28 @@ const getPaymentMethodCardDetails = (
 	return typedDetails || method.card;
 };
 
+const NETWORKS_DISPLAYED_OVER_CARD_BRAND = new Set( [
+	'cartes_bancaires',
+	'cb',
+	'eftpos',
+	'eftpos_au',
+] );
+
+const getPaymentMethodCardBrand = (
+	card?: CardDetails
+): WooPaymentsCardBrand | undefined => {
+	const network = card?.network?.toLowerCase();
+	const brand = card?.brand?.toLowerCase();
+	const preferredId =
+		network && NETWORKS_DISPLAYED_OVER_CARD_BRAND.has( network )
+			? network
+			: brand || network;
+	const normalizedId =
+		preferredId === 'cb' ? 'cartes_bancaires' : preferredId;
+
+	return CARD_BRANDS.find( ( candidate ) => candidate.id === normalizedId );
+};
+
 const getPaymentMethodTypedDetails = (
 	method: WooPaymentsPaymentMethodDetails
 ): NonCardPaymentMethodDetails => {
@@ -222,6 +248,40 @@ export const getPaymentMethodLabel = (
 
 const isCardPaymentMethodType = ( type?: string ) =>
 	type === 'card' || type === 'card_present' || type === 'interac_present';
+
+const PaymentMethodSummary = ( {
+	transaction,
+}: {
+	transaction: WooPaymentsTransaction;
+} ) => {
+	const method = transaction.payment_method_details;
+	const card = method ? getPaymentMethodCardDetails( method ) : undefined;
+	const cardBrand = isCardPaymentMethodType( method?.type )
+		? getPaymentMethodCardBrand( card )
+		: undefined;
+
+	if ( ! cardBrand || ! card?.last4 ) {
+		return getPaymentMethodLabel( transaction ) || null;
+	}
+
+	return (
+		<span className="woocommerce-woopayments-money-movement__card-summary">
+			<img
+				className="woocommerce-woopayments-money-movement__card-brand"
+				src={ cardBrand.iconUrl }
+				alt={ cardBrand.label }
+			/>
+			<span aria-hidden="true">{ `•••• ${ card.last4 }` }</span>
+			<span className="screen-reader-text">
+				{ sprintf(
+					/* translators: %s: last four card digits. */
+					__( 'ending in %s', 'woocommerce' ),
+					card.last4
+				) }
+			</span>
+		</span>
+	);
+};
 
 const nonCardPaymentMethodDetailFields: Record<
 	string,
@@ -678,7 +738,9 @@ export const WooPaymentsPaymentSummarySection = ( {
 				{ paymentMethodLabel && (
 					<DetailRow
 						label={ __( 'Payment method', 'woocommerce' ) }
-						value={ paymentMethodLabel }
+						value={
+							<PaymentMethodSummary transaction={ transaction } />
+						}
 					/>
 				) }
 				{ transaction.outcome?.risk_level && (

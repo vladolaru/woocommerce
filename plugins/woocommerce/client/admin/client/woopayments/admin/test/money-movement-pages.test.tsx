@@ -610,6 +610,30 @@ describe( 'WooPayments money movement pages', () => {
 		}
 	);
 
+	it( 'keeps readable text for unsupported historical card brands', () => {
+		render(
+			<WooPaymentsPaymentSummarySection
+				transaction={ {
+					status: 'succeeded',
+					amount: 5000,
+					currency: 'usd',
+					payment_method_details: {
+						type: 'card',
+						card: { brand: 'custom_brand', last4: '4242' },
+					},
+				} }
+			/>
+		);
+
+		const summary = screen
+			.getByRole( 'heading', { name: 'Summary' } )
+			.closest( 'section' ) as HTMLElement;
+		expect(
+			within( summary ).getByText( 'Custom brand ending in 4242' )
+		).toBeInTheDocument();
+		expect( summary.querySelector( 'img' ) ).toBeNull();
+	} );
+
 	afterEach( () => {
 		mockHistoryNavigate = null;
 		anchorClickSpy.mockRestore();
@@ -2203,9 +2227,17 @@ describe( 'WooPayments money movement pages', () => {
 			'href',
 			'http://example.com/wp-admin/admin.php?page=wc-orders&action=edit&id=456'
 		);
-		expect(
-			within( summary ).getByText( 'Visa ending in 4242' )
-		).toBeInTheDocument();
+		const visaLogo = within( summary ).getByRole( 'img', { name: 'Visa' } );
+		expect( visaLogo.getAttribute( 'src' ) ).toContain(
+			'images/payment-methods-cards/visa.svg'
+		);
+		expect( within( summary ).getByText( '•••• 4242' ) ).toHaveAttribute(
+			'aria-hidden',
+			'true'
+		);
+		expect( within( summary ).getByText( 'ending in 4242' ) ).toHaveClass(
+			'screen-reader-text'
+		);
 		expect( within( summary ).getByText( 'Normal' ) ).toBeInTheDocument();
 		expect(
 			within( summary ).getAllByText( '$50.00' ).length
@@ -2371,9 +2403,13 @@ describe( 'WooPayments money movement pages', () => {
 		expect( getDetailValue( summary, 'Sales channel' ) ).toHaveTextContent(
 			'In-person (POS)'
 		);
-		expect( getDetailValue( summary, 'Payment method' ) ).toHaveTextContent(
-			'Card ending in 4242'
-		);
+		const paymentMethod = getDetailValue( summary, 'Payment method' );
+		expect(
+			within( paymentMethod ).getByRole( 'img', { name: 'Visa' } )
+		).toBeInTheDocument();
+		expect(
+			within( paymentMethod ).getByText( '•••• 4242' )
+		).toHaveAttribute( 'aria-hidden', 'true' );
 	} );
 
 	it( 'renders generic payment method details for non-card payment methods', async () => {

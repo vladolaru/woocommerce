@@ -89,7 +89,8 @@
 	margin: 0;
 }
 
-.woocommerce-woopayments-overview__balance-grid .woocommerce-woopayments-overview__help {
+.woocommerce-woopayments-overview__balance-grid
+	.woocommerce-woopayments-overview__help {
 	color: #646970;
 	font-size: 12px;
 	font-weight: 400;
@@ -541,6 +542,18 @@
 .woocommerce-woopayments-money-movement__payment-method-grid dd {
 	margin: 0;
 	overflow-wrap: anywhere;
+}
+
+.woocommerce-woopayments-money-movement__card-summary {
+	align-items: center;
+	display: inline-flex;
+	gap: 5px;
+}
+
+.woocommerce-woopayments-money-movement__card-brand {
+	height: 17px;
+	object-fit: contain;
+	width: 28px;
 }
 
 .woocommerce-woopayments-money-movement__notice-card {
