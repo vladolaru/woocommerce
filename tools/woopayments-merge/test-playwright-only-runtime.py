@@ -12,10 +12,6 @@ MERGE_DIR = Path(__file__).resolve().parent
 CRITICAL_FLOWS_DIR = MERGE_DIR.parent / "woopayments-critical-flows"
 REPO = MERGE_DIR.parent.parent
 EXECUTABLE_SUFFIXES = {".cjs", ".js", ".jsx", ".mjs", ".php", ".py", ".sh", ".ts", ".tsx"}
-LEGACY_ALIAS_FILES = {
-    CRITICAL_FLOWS_DIR / "build-agent-results.py",
-    CRITICAL_FLOWS_DIR / "test-agent-results.py",
-}
 
 
 def tracked_executable_source_files(root: Path) -> list[Path]:
@@ -36,9 +32,7 @@ def tracked_executable_source_files(root: Path) -> list[Path]:
 
 def test_browser_runtime_is_direct_playwright_only() -> None:
     legacy_runner = "play" + "writer"
-    legacy_filename = "plugin-active-settings." + legacy_runner + ".log"
     offenders: list[str] = []
-    legacy_alias_counts = {path: 0 for path in LEGACY_ALIAS_FILES}
 
     for path in [
         *tracked_executable_source_files(MERGE_DIR),
@@ -46,14 +40,7 @@ def test_browser_runtime_is_direct_playwright_only() -> None:
     ]:
         for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
             if legacy_runner in line.lower():
-                if (
-                    path in legacy_alias_counts
-                    and line.count(legacy_filename) == 1
-                    and line.lower().count(legacy_runner) == 1
-                ):
-                    legacy_alias_counts[path] += 1
-                else:
-                    offenders.append(f"{path.relative_to(MERGE_DIR.parent.parent)}:{line_number}")
+                offenders.append(f"{path.relative_to(MERGE_DIR.parent.parent)}:{line_number}")
 
     agent_template = CRITICAL_FLOWS_DIR / "agent-specs" / "_template.md"
     for line_number, line in enumerate(agent_template.read_text(encoding="utf-8").splitlines(), start=1):
@@ -61,7 +48,6 @@ def test_browser_runtime_is_direct_playwright_only() -> None:
             offenders.append(f"{agent_template.relative_to(MERGE_DIR.parent.parent)}:{line_number}")
 
     assert offenders == [], f"shared-session browser references remain in live harness sources: {offenders}"
-    assert legacy_alias_counts == {path: 1 for path in LEGACY_ALIAS_FILES}
 
 
 def test_every_browser_entrypoint_rejects_a_legacy_runner(tmp_path: Path) -> None:
@@ -184,10 +170,8 @@ def test_every_browser_entrypoint_rejects_a_legacy_runner(tmp_path: Path) -> Non
     assert all(not output_dir.exists() for output_dir in output_dirs.values())
 
 
-def test_legacy_browser_log_alias_is_read_only_and_bounded() -> None:
+def test_legacy_browser_log_alias_is_not_accepted() -> None:
     legacy_filename = "plugin-active-settings." + "play" + "writer.log"
     importer = (CRITICAL_FLOWS_DIR / "build-agent-results.py").read_text(encoding="utf-8")
-    fixture = (CRITICAL_FLOWS_DIR / "test-agent-results.py").read_text(encoding="utf-8")
 
-    assert importer.count(legacy_filename) == 1
-    assert fixture.count(legacy_filename) == 1
+    assert legacy_filename not in importer

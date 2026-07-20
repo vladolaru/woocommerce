@@ -825,18 +825,19 @@ def test_builds_plugin_active_agent_result_from_reference_and_target_gates() -> 
         assert all(store["evidence"] for store in payload["store_results"])
 
 
-def test_builds_plugin_active_result_from_legacy_browser_log_packets() -> None:
+def test_plugin_active_result_rejects_legacy_browser_log_packets() -> None:
     with tempfile.TemporaryDirectory(prefix="critical-agent-results-") as tmp:
         tmp_path = Path(tmp)
 
         def use_legacy_log_name(ref_gate: Path, target_gate: Path, _context: dict) -> None:
+            legacy_runner = "play" + "writer"
             for gate in (ref_gate, target_gate):
                 payload = read_json(gate)
                 for artifact in payload["artifacts"]:
                     path = Path(artifact["path"])
                     if path.name != "plugin-active-settings.browser.log":
                         continue
-                    legacy_path = path.with_name("plugin-active-settings.playwriter.log")
+                    legacy_path = path.with_name(f"plugin-active-settings.{legacy_runner}.log")
                     path.rename(legacy_path)
                     artifact["path"] = str(legacy_path)
                     artifact["sha256"] = f"sha256:{hashlib.sha256(legacy_path.read_bytes()).hexdigest()}"
@@ -845,7 +846,9 @@ def test_builds_plugin_active_result_from_legacy_browser_log_packets() -> None:
         result, payload = build_plugin_active_test_result(tmp_path, use_legacy_log_name)
 
         assert result.returncode == 0, result.stderr
-        assert payload["parity_verdict"] == "PASS"
+        assert payload["parity_verdict"] == "BLOCKED"
+        assert [store["verdict"] for store in payload["store_results"]] == ["BLOCKED", "BLOCKED"]
+        assert all("artifact set is incomplete or unexpected" in store["end_state"] for store in payload["store_results"])
 
 
 def build_plugin_active_test_result(

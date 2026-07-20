@@ -51,11 +51,7 @@ PLUGIN_ACTIVE_BASE_ARTIFACTS = {
     "plugin-active-settings.json",
     "plugin-active-settings.png",
 }
-PLUGIN_ACTIVE_BROWSER_LOG_ARTIFACTS = {
-    "plugin-active-settings.browser.log",
-    # Accept already-captured packets from before browser-neutral log naming.
-    "plugin-active-settings.playwriter.log",
-}
+PLUGIN_ACTIVE_BROWSER_LOG_ARTIFACTS = {"plugin-active-settings.browser.log"}
 PLUGIN_ACTIVE_TARGET_ARTIFACTS = {
     "plugin-active-settings-restore.json",
     "plugin-active-settings-snapshot.json",
