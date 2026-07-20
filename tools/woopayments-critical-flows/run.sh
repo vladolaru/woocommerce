@@ -615,6 +615,19 @@ validate_md02_manifest() {
     --run-scope "$RUN_SCOPE"
 }
 
+validate_md_resolution_manifest() {
+  local manifest_path="$1" expected_store="$2" expected_outcome="$3" expected_status="$4" expected_exit_code="$5"
+
+  python3 "$DIR/flows/md-resolution-evidence.py" validate-bound-manifest \
+    --manifest "$manifest_path" \
+    --outcome "$expected_outcome" \
+    --store "$expected_store" \
+    --status "$expected_status" \
+    --exit-code "$expected_exit_code" \
+    --run-stamp "$RUN_STAMP" \
+    --run-scope "$RUN_SCOPE"
+}
+
 agent_result_verdict() {
   local flow="$1" store="$2" result_file="$3" expected_oracle_mode="$4"
 
@@ -1078,6 +1091,33 @@ if [ "$LAYER" != "agent" ]; then
             evidence_path="$manifest_path"
             evidence_sha256="$manifest_validation"
             result_reason="manifest-bound deterministic and Playwright evidence"
+          fi
+        fi
+      elif [ "$base" = "MD-03-winning-dispute" ] || [ "$base" = "MD-04-losing-dispute" ]; then
+        case "$base" in
+          MD-03-winning-dispute) expected_outcome="won" ;;
+          MD-04-losing-dispute) expected_outcome="lost" ;;
+        esac
+        manifest_path="$EVIDENCE_DIR/runs/$RUN_STAMP-$RUN_SCOPE/$base/$s/$s-manifest.json"
+        expected_manifest_status="$(printf '%s' "$status" | tr '[:upper:]' '[:lower:]')"
+        if [ "$rc" -eq 70 ]; then
+          status="FAIL"
+          result_reason="$base resolution cleanup-fatal; manifest intentionally not ingested"
+        elif [ ! -f "$manifest_path" ]; then
+          status="BLOCKED"
+          rc=3
+          result_reason="$base resolution deterministic evidence manifest is missing"
+        else
+          manifest_validation="$(validate_md_resolution_manifest "$manifest_path" "$s" "$expected_outcome" "$expected_manifest_status" "$rc" 2>&1)"
+          manifest_rc=$?
+          if [ "$manifest_rc" -ne 0 ]; then
+            status="BLOCKED"
+            rc=3
+            result_reason="$manifest_validation"
+          else
+            evidence_path="$manifest_path"
+            evidence_sha256="$manifest_validation"
+            result_reason="manifest-bound deterministic resolution evidence"
           fi
         fi
       fi

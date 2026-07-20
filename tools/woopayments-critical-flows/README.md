@@ -21,6 +21,8 @@ Scriptable, fast, CI-able, zero human judgment:
 - **Assertions** (`lib/assert.sh`): verify resulting **store state** — order status, `_intent_id`/`_charge_id`/token meta, transaction record, subscription status + next-renewal date, refund record, email sent (mail catcher), debug-log clean. This is the "expected store state" backbone.
 - Verdict: machine pass/fail + state diff vs reference.
 
+MD-03/MD-04 dispute resolution uses a stricter non-replayable Layer-D boundary. Each store gets one fresh provider-backed dispute and one exact evidence submission; every provider read is scoped to the connected account resolved from that exact store. The harness requires an English site locale for its bounded lifecycle-note families, writes an armed journal record before submission, and never retries after a trusted response. Target refuses to mutate until the exact same-run reference manifest revalidates as `PASS`. It then seals allowlisted store/provider facts, normalized log evidence, execution status, and a comparison recomputed from the current reference and target packets into a context-bound manifest; `run.sh` revalidates that manifest independently before recording a result. Post-submit observation unavailability or timeout is `BLOCKED`, while a reachable contract mismatch is `FAIL` even when a separate observation is blocked.
+
 ### Layer A — AI-agent-driven browser (where deterministic is flaky/unrealistic/too complex)
 
 A subagent drives a real browser and **judges** functional + UX parity against the reference, for:

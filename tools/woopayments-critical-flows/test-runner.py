@@ -64,6 +64,9 @@ MD01_FLOW = (
     / "tools/woopayments-critical-flows/flows/MD-01-created-note-on-hold-notify.sh"
 )
 MD02_FLOW = REPO / "tools/woopayments-critical-flows/flows/MD-02-save-evidence.sh"
+MD_RESOLUTION_EVIDENCE = (
+    REPO / "tools/woopayments-critical-flows/flows/md-resolution-evidence.py"
+)
 MO03_CONTRACT = (
     REPO
     / "tools/woopayments-critical-flows/flows/"
@@ -12348,6 +12351,50 @@ trap - EXIT
         assert result.returncode == 0, result.stdout + result.stderr
 
 
+def test_common_observer_recovery_and_cleanup_propagate_recovery_failure() -> None:
+    with tempfile.TemporaryDirectory(prefix="critical-flows-observer-recovery-failure-") as tmp:
+        root = Path(tmp)
+        script = f"""
+source {shlex.quote(str(COMMON))}
+CRITICAL_FLOWS_LOG_OBSERVER_STORE=target
+LOG_OBSERVER_DRIVER={shlex.quote(str(COMMON))}
+critical_flows_log_observer_action() {{ return 3; }}
+critical_flows_log_observer_recover
+[ "$?" -ne 0 ] || exit 51
+
+CRITICAL_FLOWS_LOG_OBSERVER_PID=999999
+critical_flows_log_observer_job_is_owned() {{ return 1; }}
+critical_flows_log_observer_recover() {{ return 1; }}
+critical_flows_log_observer_clear_state() {{ return 0; }}
+critical_flows_log_observer_cleanup
+[ "$?" -ne 0 ] || exit 52
+
+CRITICAL_FLOWS_LOG_OBSERVER_PID=999999
+critical_flows_log_observer_action() {{ return 1; }}
+critical_flows_log_observer_cleanup() {{ return 1; }}
+critical_flows_log_observer_finish target
+[ "$?" -eq 70 ] || exit 53
+
+critical_flows_log_observer_finish() {{ return 70; }}
+CRITICAL_FLOWS_RUN_CONTEXT_KEY={TEST_RUN_CONTEXT_KEY}
+CRITICAL_FLOWS_FLOW_ID=MD-03-winning-dispute
+CRITICAL_FLOWS_LOG_PURPOSE=clean-debug-log
+assert_log_clean target
+[ "$?" -eq 70 ] || exit 54
+"""
+        result = subprocess.run(
+            ["bash", "-c", script],
+            cwd=REPO,
+            env={**os.environ, "TMPDIR": str(root)},
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=5,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_common_observer_start_requires_tmpdir_without_tmp_fallback() -> None:
     with tempfile.TemporaryDirectory(prefix="critical-flows-observer-tmpdir-") as tmp:
         root = Path(tmp)
@@ -16507,6 +16554,330 @@ def test_md02_shell_and_runner_source_contract_is_manifest_bound() -> None:
     assert 'python3 "$DIR/flows/md02-evidence.py" validate-bound-manifest' in runner
     assert 'elif [ "$base" = "MD-02-save-evidence" ]; then' in runner
     assert '$base/$s/$s-manifest.json' in runner
+
+
+def test_md_resolution_runner_source_contract_revalidates_each_outcome_manifest() -> None:
+    runner = RUNNER.read_text(encoding="utf-8")
+
+    assert "validate_md_resolution_manifest()" in runner
+    assert (
+        'python3 "$DIR/flows/md-resolution-evidence.py" validate-bound-manifest'
+        in runner
+    )
+    assert '--outcome "$expected_outcome"' in runner
+    assert (
+        'elif [ "$base" = "MD-03-winning-dispute" ] || '
+        '[ "$base" = "MD-04-losing-dispute" ]; then'
+        in runner
+    )
+    assert 'MD-03-winning-dispute) expected_outcome="won"' in runner
+    assert 'MD-04-losing-dispute) expected_outcome="lost"' in runner
+    assert '$base/$s/$s-manifest.json' in runner
+    assert "resolution deterministic evidence manifest is missing" in runner
+    assert 'result_reason="manifest-bound deterministic resolution evidence"' in runner
+    assert 'if [ "$rc" -eq 70 ]; then' in runner
+    assert "resolution cleanup-fatal" in runner
+    assert 'validate_md_resolution_manifest "$manifest_path"' in runner
+    assert '2>&1)' in runner
+
+
+def load_md_resolution_evidence():
+    spec = importlib.util.spec_from_file_location(
+        "runner_md_resolution_evidence", MD_RESOLUTION_EVIDENCE
+    )
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def md_resolution_packet(module, *, store: str, outcome: str) -> dict:
+    profile = module.outcome_profile(outcome)
+    suffix = f"{store}_{outcome}"
+    identity = {
+        "order_id": 101 if store == "ref" else 202,
+        "charge_id": f"ch_{suffix}",
+        "intent_id": f"pi_{suffix}",
+        "dispute_id": f"dp_{suffix}",
+    }
+    journal = [
+        module.build_journal_record(
+            outcome, store, TEST_RUN_STAMP, 1, "fresh_dispute_create_armed", {}
+        ),
+        module.build_journal_record(
+            outcome, store, TEST_RUN_STAMP, 2, "fresh_dispute_created", identity
+        ),
+        module.build_journal_record(
+            outcome,
+            store,
+            TEST_RUN_STAMP,
+            3,
+            "evidence_submit_armed",
+            identity,
+            marker=profile["evidence_marker"],
+        ),
+        module.build_journal_record(
+            outcome,
+            store,
+            TEST_RUN_STAMP,
+            4,
+            "evidence_submit_observed",
+            identity,
+            marker=profile["evidence_marker"],
+            response_class="trusted_success",
+        ),
+    ]
+    submission = {
+        "trusted": True,
+        "response_class": "trusted_success",
+        "submit": True,
+        "marker": profile["evidence_marker"],
+        "http_status": 200,
+        "dispute_id": identity["dispute_id"],
+    }
+    store_facts = {
+        "available": True,
+        "dispute_id": identity["dispute_id"],
+        "dispute_status": profile["terminal_status"],
+        "charge_id": identity["charge_id"],
+        "intent_id": identity["intent_id"],
+        "order_id": identity["order_id"],
+        "order_status": "completed" if outcome == "won" else "refunded",
+        "order_total_minor": 5000,
+        "currency": "usd",
+        "notes": {
+            "created": True,
+            "evidence_submitted": True,
+            "funds_reinstated": outcome == "won",
+            "fees_deducted": outcome == "lost",
+        },
+        "refunds": []
+        if outcome == "won"
+        else [{"amount_minor": 5000, "reason_family": "dispute"}],
+    }
+    transactions = [
+        {
+            "id": f"txn_debit_{suffix}",
+            "amount": -5000,
+            "fee": 1500,
+            "net": -6500,
+        }
+    ]
+    if outcome == "won":
+        transactions.append(
+            {
+                "id": f"txn_reversal_{suffix}",
+                "amount": 5000,
+                "fee": -1500,
+                "net": 6500,
+            }
+        )
+    provider_facts = {
+        "available": True,
+        "livemode": False,
+        "dispute_id": identity["dispute_id"],
+        "dispute_status": profile["terminal_status"],
+        "charge_id": identity["charge_id"],
+        "intent_id": identity["intent_id"],
+        "amount": 5000,
+        "currency": "usd",
+        "balance_transactions": transactions,
+    }
+    return module.build_store_packet(
+        outcome=outcome,
+        store=store,
+        run_stamp=TEST_RUN_STAMP,
+        runtime_owner="plugin" if store == "ref" else "native",
+        drive={
+            "op": "dispute",
+            "order_id": identity["order_id"],
+            "charge_id": identity["charge_id"],
+            "intent_id": identity["intent_id"],
+            "status": "on-hold",
+            "order_currency": "USD",
+        },
+        journal=journal,
+        submission=submission,
+        store_facts=store_facts,
+        provider_facts=provider_facts,
+        blockers=[],
+    )
+
+
+def write_json_artifact(path: Path, payload: dict) -> None:
+    path.write_text(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+
+
+def build_md_resolution_manifests(root: Path, *, outcome: str) -> dict[str, Path]:
+    module = load_md_resolution_evidence()
+    profile = module.outcome_profile(outcome)
+    packets = {
+        store: md_resolution_packet(module, store=store, outcome=outcome)
+        for store in ("ref", "target")
+    }
+    paths: dict[str, Path] = {}
+    for store in ("ref", "target"):
+        store_dir = root / profile["flow"] / store
+        store_dir.mkdir(parents=True)
+        packet_path = store_dir / f"{store}-store-packet.json"
+        write_json_artifact(packet_path, packets[store])
+        log_scan = module.build_log_scan(
+            {
+                "schema": "woopayments_debug_log_scan.v6",
+                "store": store,
+                "scan": {
+                    "status": "pass",
+                    "run_stamp": TEST_RUN_STAMP,
+                    "store": store,
+                    "flow_id": profile["flow"],
+                    "purpose": "clean-debug-log",
+                    "matches": [],
+                    "blocker_code": "",
+                },
+            },
+            outcome=outcome,
+            store=store,
+            run_stamp=TEST_RUN_STAMP,
+            expected_exit_code=0,
+        )
+        log_path = store_dir / f"{store}-log-scan.json"
+        write_json_artifact(log_path, log_scan)
+        comparison = None
+        artifact_paths = [packet_path, log_path]
+        if store == "target":
+            comparison = module.build_comparison(
+                packets["ref"],
+                packets["target"],
+                outcome=outcome,
+                run_stamp=TEST_RUN_STAMP,
+            )
+            comparison_path = store_dir / "comparison.json"
+            write_json_artifact(comparison_path, comparison)
+            artifact_paths.append(comparison_path)
+        execution = module.build_execution(
+            packets[store],
+            log_scan,
+            comparison=comparison,
+            outcome=outcome,
+            store=store,
+            run_stamp=TEST_RUN_STAMP,
+        )
+        execution_path = store_dir / f"{store}-execution.json"
+        write_json_artifact(execution_path, execution)
+        artifact_paths.append(execution_path)
+        manifest = module.build_manifest(
+            artifact_paths,
+            outcome=outcome,
+            store=store,
+            run_stamp=TEST_RUN_STAMP,
+            run_scope="partial",
+            status="pass",
+            exit_code=0,
+        )
+        manifest_path = store_dir / f"{store}-manifest.json"
+        write_json_artifact(manifest_path, manifest)
+        paths[store] = manifest_path
+    return paths
+
+
+def run_md_resolution_runner_validator(
+    manifest: Path,
+    *,
+    store: str,
+    outcome: str,
+    status: str = "pass",
+    exit_code: int = 0,
+) -> subprocess.CompletedProcess[str]:
+    source = RUNNER.read_text(encoding="utf-8")
+    start = source.index("validate_md_resolution_manifest()")
+    end = source.index("\nagent_result_verdict()", start)
+    function_source = source[start:end]
+    script = (
+        function_source
+        + '\nvalidate_md_resolution_manifest "$1" "$2" "$3" "$4" "$5"\n'
+    )
+    return subprocess.run(
+        ["bash", "-c", script, "bash", str(manifest), store, outcome, status, str(exit_code)],
+        cwd=REPO,
+        env={
+            **os.environ,
+            "DIR": str(RUNNER.parent),
+            "RUN_STAMP": TEST_RUN_STAMP,
+            "RUN_SCOPE": "partial",
+            "CRITICAL_FLOWS_RUN_CONTEXT_KEY": TEST_RUN_CONTEXT_KEY,
+        },
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+
+@pytest.mark.parametrize("outcome", ("won", "lost"))
+def test_md_resolution_runner_validator_accepts_only_exact_current_manifests(
+    monkeypatch, tmp_path: Path, outcome: str
+) -> None:
+    monkeypatch.setenv("CRITICAL_FLOWS_RUN_CONTEXT_KEY", TEST_RUN_CONTEXT_KEY)
+    manifests = build_md_resolution_manifests(tmp_path, outcome=outcome)
+
+    for store, manifest in manifests.items():
+        result = run_md_resolution_runner_validator(
+            manifest, store=store, outcome=outcome
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert re.fullmatch(r"sha256:[0-9a-f]{64}\n", result.stdout)
+
+
+@pytest.mark.parametrize(
+    "corruption",
+    (
+        "stale_run",
+        "wrong_store",
+        "wrong_outcome",
+        "status_exit",
+        "artifact_tamper",
+        "missing_artifact",
+        "reference_tamper",
+    ),
+)
+def test_md_resolution_runner_validator_rejects_corrupt_or_misbound_evidence(
+    monkeypatch, tmp_path: Path, corruption: str
+) -> None:
+    monkeypatch.setenv("CRITICAL_FLOWS_RUN_CONTEXT_KEY", TEST_RUN_CONTEXT_KEY)
+    manifest_path = build_md_resolution_manifests(tmp_path, outcome="won")["target"]
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if corruption == "stale_run":
+        manifest["run_stamp"] = "20260719T000000Z-1"
+        write_json_artifact(manifest_path, manifest)
+    elif corruption == "wrong_store":
+        manifest["store"] = "ref"
+        write_json_artifact(manifest_path, manifest)
+    elif corruption == "wrong_outcome":
+        manifest["outcome"] = "lost"
+        write_json_artifact(manifest_path, manifest)
+    elif corruption == "status_exit":
+        manifest.update(status="blocked", exit_code=0)
+        write_json_artifact(manifest_path, manifest)
+    elif corruption == "artifact_tamper":
+        packet = manifest_path.parent / "target-store-packet.json"
+        packet.write_text(packet.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    elif corruption == "missing_artifact":
+        (manifest_path.parent / "target-execution.json").unlink()
+    else:
+        reference_packet = manifest_path.parent.parent / "ref/ref-store-packet.json"
+        reference_packet.write_text(
+            reference_packet.read_text(encoding="utf-8") + "\n",
+            encoding="utf-8",
+        )
+
+    result = run_md_resolution_runner_validator(
+        manifest_path, store="target", outcome="won"
+    )
+    assert result.returncode == 3
+    assert "BLOCKED:" in result.stderr
 
 
 def main() -> None:

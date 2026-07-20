@@ -200,7 +200,7 @@ critical_flows_log_observer_job_is_owned() { # <pid>
 
 critical_flows_log_observer_recover() {
   local s="${CRITICAL_FLOWS_LOG_OBSERVER_STORE:-}"
-  local recovery_pid
+  local recovery_pid recovery_status=0
   [ -n "$s" ] || return 0
   [ -f "$LOG_OBSERVER_DRIVER" ] || return 0
   critical_flows_log_observer_action "$s" recover >/dev/null 2>/dev/null &
@@ -223,8 +223,9 @@ while time.monotonic() < deadline:
 raise SystemExit(1)
 PY
   then
+    recovery_status=1
     critical_flows_log_observer_signal_tree "$recovery_pid" TERM
-    python3 - "$recovery_pid" <<'PY'
+    if ! python3 - "$recovery_pid" <<'PY'
 import os
 import sys
 import time
@@ -239,16 +240,20 @@ while time.monotonic() < deadline:
     time.sleep(0.02)
 raise SystemExit(1)
 PY
-    if [ "$?" -ne 0 ]; then
+    then
       critical_flows_log_observer_signal_tree "$recovery_pid" KILL
     fi
   fi
-  wait "$recovery_pid" 2>/dev/null || true
+  wait "$recovery_pid" 2>/dev/null || recovery_status=1
+  return "$recovery_status"
 }
 
 critical_flows_log_observer_cleanup() {
-  local pid="${CRITICAL_FLOWS_LOG_OBSERVER_PID:-}"
-  [ -n "$pid" ] || { critical_flows_log_observer_clear_state; return 0; }
+  local pid="${CRITICAL_FLOWS_LOG_OBSERVER_PID:-}" cleanup_status=0
+  if [ -z "$pid" ]; then
+    critical_flows_log_observer_clear_state
+    return $?
+  fi
 
   if critical_flows_log_observer_job_is_owned "$pid"; then
     critical_flows_log_observer_signal_tree "$pid" TERM
@@ -259,8 +264,9 @@ critical_flows_log_observer_cleanup() {
     }
   fi
   wait "$pid" 2>/dev/null || true
-  critical_flows_log_observer_recover
-  critical_flows_log_observer_clear_state
+  critical_flows_log_observer_recover || cleanup_status=1
+  critical_flows_log_observer_clear_state || cleanup_status=1
+  return "$cleanup_status"
 }
 
 critical_flows_log_observer_install_trap() {
@@ -600,21 +606,21 @@ critical_flows_log_observer_finish() { # <store>
     rc=$?
   fi
   if [ "$rc" -ne 0 ] || ! critical_flows_log_observer_wait_for_exit "$timeout"; then
-    critical_flows_log_observer_cleanup
+    critical_flows_log_observer_cleanup || return 70
     return 1
   fi
 
   summary="$(critical_flows_log_observer_validate_sidecar)"
   rc=$?
   if [ "$rc" -ne 0 ]; then
-    critical_flows_log_observer_cleanup
+    critical_flows_log_observer_cleanup || return 70
     return 1
   fi
   CRITICAL_FLOWS_LOG_OBSERVER_SUMMARY="$summary"
   export CRITICAL_FLOWS_LOG_OBSERVER_SUMMARY
 
   wait "$pid" 2>/dev/null || true
-  critical_flows_log_observer_clear_state
+  critical_flows_log_observer_clear_state || return 70
   return 0
 }
 
@@ -955,7 +961,13 @@ assert_log_clean() { # <store>  (no PHP notice/warning/fatal/deprecation since m
     return 3
   fi
   if [ -n "${CRITICAL_FLOWS_RUN_CONTEXT_KEY:-}" ]; then
-    if ! critical_flows_log_observer_finish "$s"; then
+    critical_flows_log_observer_finish "$s"
+    rc=$?
+    if [ "$rc" -eq 70 ]; then
+      echo "cleanup-fatal log-clean check for $s: log_observer_cleanup_failed" >&2
+      return 70
+    fi
+    if [ "$rc" -ne 0 ]; then
       echo "BLOCKED log-clean check for $s: log_observer_failed"
       return 3
     fi
