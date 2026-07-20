@@ -908,6 +908,32 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should preserve the appearance dependency when WooCommerce registers frontend scripts before the bridge.
+	 */
+	public function test_payment_fields_preserves_appearance_dependency_after_frontend_script_registration(): void {
+		\WC_Frontend_Scripts::load_scripts();
+
+		$this->assertTrue( wp_script_is( 'wc-woopayments-checkout', 'registered' ) );
+
+		$legacy_runtime  = $this->create_legacy_runtime_for_bridge();
+		$account_service = $this->create_account_service_for_bridge( true );
+		$legacy_runtime->method( 'get_gateway_prepared_customer_data' )->willReturn( array() );
+		$legacy_runtime->method( 'can_handle_checkout_bridge_callbacks' )->willReturn( true );
+
+		$bridge = new WooPaymentsCheckoutBridge();
+		$bridge->init( $legacy_runtime, $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+
+		$payment_method_registry = new WooPaymentsPaymentMethodRegistry();
+
+		ob_start();
+		$bridge->render_payment_fields( $payment_method_registry->get( 'ideal' ) );
+		ob_end_clean();
+
+		$this->assertTrue( wp_script_is( 'wc-woopayments-appearance', 'registered' ) );
+		$this->assertContains( 'wc-woopayments-appearance', wp_scripts()->registered['wc-woopayments-checkout']->deps );
+	}
+
+	/**
 	 * @testdox Should localize split gateway classic config under a gateway-specific object name.
 	 */
 	public function test_payment_fields_localizes_split_gateway_config_under_gateway_specific_object_name(): void {

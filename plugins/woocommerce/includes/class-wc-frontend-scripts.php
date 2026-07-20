@@ -271,9 +271,14 @@ class WC_Frontend_Scripts {
 				),
 				'version' => $version,
 			),
+			'wc-woopayments-appearance'    => array(
+				'src'     => self::get_asset_url( 'assets/js/frontend/utils/woopayments-appearance' . $suffix . '.js' ),
+				'deps'    => array(),
+				'version' => $version,
+			),
 			'wc-woopayments-checkout'      => array(
 				'src'     => self::get_asset_url( 'assets/js/frontend/woopayments-checkout' . $suffix . '.js' ),
-				'deps'    => array( 'jquery', 'wc-checkout', 'stripe' ),
+				'deps'    => array( 'jquery', 'wc-checkout', 'stripe', 'wc-woopayments-appearance' ),
 				'version' => $version,
 			),
 			'wc-woopayments-woopay'        => array(
