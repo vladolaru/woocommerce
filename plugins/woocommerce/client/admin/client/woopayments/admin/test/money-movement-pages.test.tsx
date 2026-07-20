@@ -10,6 +10,7 @@ import { MemoryRouter, useNavigate } from 'react-router-dom';
  * Internal dependencies
  */
 import { WooPaymentsDisputesPage } from '../money-movement/disputes-page';
+import { WooPaymentsPaymentSummarySection } from '../money-movement/transaction-detail-sections';
 import { WooPaymentsTransactionDetailsPage } from '../money-movement/transaction-details-page';
 import { WooPaymentsTransactionsPage } from '../money-movement/transactions-page';
 import {
@@ -327,6 +328,62 @@ describe( 'WooPayments money movement pages', () => {
 		mockCreateSuccessNotice.mockReset();
 		mockCreateErrorNotice.mockReset();
 	} );
+
+	it.each( [
+		[
+			'partially refunded',
+			{
+				status: 'succeeded',
+				amount: 5000,
+				amount_refunded: 1000,
+				refunded: false,
+				currency: 'usd',
+			},
+			'Partial refund',
+		],
+		[
+			'fully refunded',
+			{
+				status: 'succeeded',
+				amount: 5000,
+				amount_refunded: 5000,
+				refunded: true,
+				currency: 'usd',
+			},
+			'Refunded',
+		],
+		[
+			'disputed and partially refunded',
+			{
+				status: 'succeeded',
+				amount: 5000,
+				amount_refunded: 1000,
+				refunded: false,
+				currency: 'usd',
+				dispute: {
+					status: 'needs_response',
+				},
+			},
+			'Disputed: Response needed',
+		],
+	] )(
+		'derives the %s payment summary status with oracle precedence',
+		( _state, transaction, expectedStatus ) => {
+			render(
+				<WooPaymentsPaymentSummarySection transaction={ transaction } />
+			);
+
+			const summary = screen
+				.getByRole( 'heading', { name: 'Summary' } )
+				.closest( 'section' ) as HTMLElement;
+			expect(
+				within( summary ).getByText( expectedStatus )
+			).toBeInTheDocument();
+			expect(
+				within( summary ).queryByText( 'Succeeded' )
+			).not.toBeInTheDocument();
+		}
+	);
 
 	afterEach( () => {
 		anchorClickSpy.mockRestore();
@@ -1358,8 +1415,11 @@ describe( 'WooPayments money movement pages', () => {
 			.closest( 'section' ) as HTMLElement;
 		expect( summary ).toBeInTheDocument();
 		expect(
-			within( summary ).getByText( 'Succeeded' )
+			within( summary ).getByText( 'Partial refund' )
 		).toBeInTheDocument();
+		expect(
+			within( summary ).queryByText( 'Succeeded' )
+		).not.toBeInTheDocument();
 		expect(
 			within( summary ).getByText( 'Sales channel' )
 		).toBeInTheDocument();

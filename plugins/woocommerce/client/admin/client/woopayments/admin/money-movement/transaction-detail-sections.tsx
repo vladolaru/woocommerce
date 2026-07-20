@@ -487,6 +487,80 @@ const StackedLines = ( { lines }: { lines: ReactNode[] } ) => {
 const getTransactionFee = ( transaction: WooPaymentsTransaction ) =>
 	transaction.fee ?? transaction.application_fee_amount;
 
+const disputeStatusLabels: Record< string, string > = {
+	warning_needs_response: __( 'Inquiry: Response needed', 'woocommerce' ),
+	warning_under_review: __( 'Inquiry: Under review', 'woocommerce' ),
+	warning_closed: __( 'Inquiry: Closed', 'woocommerce' ),
+	needs_response: __( 'Response needed', 'woocommerce' ),
+	under_review: __( 'Under review', 'woocommerce' ),
+	charge_refunded: __( 'Charge refunded', 'woocommerce' ),
+	won: __( 'Won', 'woocommerce' ),
+	lost: __( 'Lost', 'woocommerce' ),
+};
+
+const getDisputeStatusLabel = ( transaction: WooPaymentsTransaction ) => {
+	const disputeStatus = transaction.dispute?.status || '';
+	const disputeLabel =
+		disputeStatusLabels[ disputeStatus ] || formatLabel( disputeStatus );
+
+	if ( disputeStatus.startsWith( 'warning_' ) ) {
+		return disputeLabel;
+	}
+
+	return sprintf(
+		/* translators: %s: dispute status, such as Response needed or Won. */
+		__( 'Disputed: %s', 'woocommerce' ),
+		disputeLabel
+	);
+};
+
+const getPaymentSummaryStatusLabel = (
+	transaction: WooPaymentsTransaction
+) => {
+	const fraudState = transaction.order?.fraud_meta_box_type || '';
+
+	if (
+		transaction.status === 'requires_capture' &&
+		fraudState === 'review'
+	) {
+		return __( 'Needs review', 'woocommerce' );
+	}
+
+	if ( [ 'block', 'review_blocked' ].includes( fraudState ) ) {
+		return __( 'Payment blocked', 'woocommerce' );
+	}
+
+	if ( transaction.status === 'failed' ) {
+		return formatLabel( transaction.status );
+	}
+
+	if ( transaction.dispute?.status ) {
+		return getDisputeStatusLabel( transaction );
+	}
+
+	const refundedAmount = Number( transaction.amount_refunded );
+	const hasRefundedAmount =
+		Number.isFinite( refundedAmount ) && refundedAmount > 0;
+	const isSuccessfulCharge = [ 'paid', 'succeeded' ].includes(
+		transaction.status || ''
+	);
+
+	if ( ! isSuccessfulCharge || ! hasRefundedAmount ) {
+		return formatLabel( transaction.status );
+	}
+
+	const chargeAmount = Math.abs( Number( transaction.amount ) );
+	const isFullyRefunded =
+		transaction.refunded === true ||
+		( Number.isFinite( chargeAmount ) &&
+			chargeAmount > 0 &&
+			refundedAmount >= chargeAmount );
+
+	return isFullyRefunded
+		? __( 'Refunded', 'woocommerce' )
+		: __( 'Partial refund', 'woocommerce' );
+};
+
 export const WooPaymentsPaymentSummarySection = ( {
 	transaction,
 }: {
@@ -522,7 +596,7 @@ export const WooPaymentsPaymentSummarySection = ( {
 				</div>
 				{ hasDisplayValue( transaction.status ) && (
 					<span className="woocommerce-woopayments-money-movement__status-chip">
-						{ formatLabel( transaction.status ) }
+						{ getPaymentSummaryStatusLabel( transaction ) }
 					</span>
 				) }
 			</div>

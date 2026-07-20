@@ -1231,6 +1231,186 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox An AJAX-formatted refund amount must resolve to the exact local refund despite decimal scale differences.
+	 */
+	public function test_process_refund_matches_ajax_formatted_refund_amount(): void {
+		$order  = $this->create_woopayments_order( '10.00' );
+		$refund = wc_create_refund(
+			array(
+				'order_id'       => $order->get_id(),
+				'amount'         => '2.50',
+				'reason'         => 'Adjustment',
+				'refund_payment' => false,
+			)
+		);
+		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
+
+		$provider = new RecordingProvider(
+			new PaymentOutcome(
+				PaymentOutcome::STATUS_COMPLETED,
+				're_ajax_amount',
+				'',
+				'',
+				'',
+				array(
+					'order_meta'  => array( '_wcpay_refund_status' => 'successful' ),
+					'refund_meta' => array(
+						'_wcpay_refund_id'             => 're_ajax_amount',
+						'_wcpay_refund_transaction_id' => 'txn_ajax_amount',
+					),
+					'refund_note' => 'A refund of $2.50 was successfully processed using WooPayments. Reason: Adjustment. (<code>re_ajax_amount</code>)',
+				)
+			)
+		);
+
+		$result = $this->sut->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 2.50, 'Adjustment' ), $provider );
+		$order  = wc_get_order( $order->get_id() );
+		$refund = wc_get_order( $refund->get_id() );
+
+		$this->assertTrue( $result );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
+		$this->assertSame(
+			$this->idempotency->derive_key( $order, OrderPaymentStore::GATEWAY_ID, 'refund', 2.50, 'USD', 'Adjustment', (string) $refund->get_id() ),
+			$provider->last_idempotency_key,
+			'The provider key must bind to the exact AJAX-created local refund regardless of decimal string scale.'
+		);
+		$this->assertSame( 'successful', $order->get_meta( '_wcpay_refund_status', true ) );
+		$this->assertSame( 're_ajax_amount', $refund->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( 'txn_ajax_amount', $refund->get_meta( '_wcpay_refund_transaction_id', true ) );
+		$this->assertOrderHasNoteContaining( $order, 're_ajax_amount' );
+	}
+
+	/**
+	 * @testdox Refund matching must not round distinct extra-precision amounts into the same candidate.
+	 */
+	public function test_process_refund_does_not_collapse_distinct_extra_precision_amounts(): void {
+		$order        = $this->create_woopayments_order( '10.00' );
+		$close_refund = wc_create_refund(
+			array(
+				'order_id'       => $order->get_id(),
+				'amount'         => '2.501',
+				'reason'         => 'Adjustment',
+				'refund_payment' => false,
+			)
+		);
+		$exact_refund = wc_create_refund(
+			array(
+				'order_id'       => $order->get_id(),
+				'amount'         => '2.504',
+				'reason'         => 'Adjustment',
+				'refund_payment' => false,
+			)
+		);
+
+		$this->assertInstanceOf( WC_Order_Refund::class, $close_refund );
+		$this->assertInstanceOf( WC_Order_Refund::class, $exact_refund );
+
+		$provider = new RecordingProvider(
+			new PaymentOutcome(
+				PaymentOutcome::STATUS_COMPLETED,
+				're_extra_precision',
+				'',
+				'',
+				'',
+				array(
+					'refund_meta' => array(
+						'_wcpay_refund_id' => 're_extra_precision',
+					),
+				)
+			)
+		);
+
+		$result       = $this->sut->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 2.504, 'Adjustment' ), $provider );
+		$close_refund = wc_get_order( $close_refund->get_id() );
+		$exact_refund = wc_get_order( $exact_refund->get_id() );
+
+		$this->assertTrue( $result );
+		$this->assertInstanceOf( WC_Order_Refund::class, $close_refund );
+		$this->assertInstanceOf( WC_Order_Refund::class, $exact_refund );
+		$this->assertSame(
+			$this->idempotency->derive_key( $order, OrderPaymentStore::GATEWAY_ID, 'refund', 2.504, 'USD', 'Adjustment', (string) $exact_refund->get_id() ),
+			$provider->last_idempotency_key,
+			'The provider key must bind to the exact extra-precision refund rather than a rounded neighbor.'
+		);
+		$this->assertSame( '', $close_refund->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( 're_extra_precision', $exact_refund->get_meta( '_wcpay_refund_id', true ) );
+	}
+
+	/**
+	 * @testdox An invalid exact refund target after provider success must enter reconciliation instead of failing silently.
+	 */
+	public function test_process_refund_logs_reconciliation_when_resolved_refund_disappears_after_provider_success(): void {
+		$order  = $this->create_woopayments_order( '10.00' );
+		$refund = wc_create_refund(
+			array(
+				'order_id'       => $order->get_id(),
+				'amount'         => 2.50,
+				'reason'         => 'Adjustment',
+				'refund_payment' => false,
+			)
+		);
+		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
+
+		$provider = new class( $this->successful_refund_outcome( 're_missing_target' ), $refund->get_id() ) extends RecordingProvider implements ProviderOperationEffectApplier {
+			/**
+			 * Exact local refund ID to remove after provider transport.
+			 *
+			 * @var int
+			 */
+			private int $refund_id;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param PaymentOutcome $outcome   Successful provider outcome.
+			 * @param int            $refund_id Exact local refund ID.
+			 */
+			public function __construct( PaymentOutcome $outcome, int $refund_id ) {
+				parent::__construct( $outcome );
+				$this->refund_id = $refund_id;
+			}
+
+			/**
+			 * Remove the exact local target after provider transport, before generic effects are applied.
+			 *
+			 * @param PaymentContext $context   Payment context.
+			 * @param PaymentOutcome $outcome   Provider outcome.
+			 * @param string         $operation Operation name.
+			 * @return PaymentOutcome
+			 */
+			public function apply_operation_effects( PaymentContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome {
+				unset( $context, $operation );
+				$refund = wc_get_order( $this->refund_id );
+				if ( $refund instanceof WC_Order_Refund ) {
+					$refund->delete( true );
+				}
+
+				return $outcome;
+			}
+		};
+
+		$fake_logger = $this->create_fake_logger();
+		add_filter(
+			'woocommerce_logging_class',
+			function () use ( $fake_logger ) {
+				return $fake_logger;
+			}
+		);
+
+		$result = $this->sut->process_refund( PaymentContext::for_refund( $order, OrderPaymentStore::GATEWAY_ID, 2.50, 'Adjustment' ), $provider );
+
+		remove_all_filters( 'woocommerce_logging_class' );
+
+		$this->assertTrue( $result, 'Provider success must remain successful while the local failure is made reconcilable.' );
+		$this->assertCount( 1, $fake_logger->error_calls, 'The invalid post-provider target must emit one reconciliation error log.' );
+		$context = $fake_logger->error_calls[0]['context'];
+		$this->assertSame( 'refund', $context['operation'] );
+		$this->assertSame( 're_missing_target', $context['payment_reference'] );
+		$this->assertFalse( $context['reconciliation_persisted'] );
+	}
+
+	/**
 	 * @testdox Should match the first unlinked refund using provider supplied meta keys.
 	 */
 	public function test_process_refund_skips_refunds_linked_by_provider_meta_keys(): void {

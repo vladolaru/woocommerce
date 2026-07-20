@@ -295,7 +295,7 @@ class PaymentProcessingService {
 			try {
 				$outcome = $this->apply_provider_operation_effects( $context, $outcome, $provider, 'refund' );
 				if ( $outcome->is_successful() ) {
-					$this->apply_refund_outcome( $order, $outcome, $amount, $reason );
+					$this->apply_refund_outcome( $order, $outcome, $refund_instance );
 				}
 			} catch ( Throwable $apply_exception ) {
 				if ( ! $this->is_reconcilable_provider_outcome( $provider_outcome ) ) {
@@ -385,13 +385,12 @@ class PaymentProcessingService {
 	 * two distinct refunds of the same amount and reason never share a key, which would otherwise let
 	 * the provider replay the first refund and silently drop the second.
 	 *
-	 * Resolution must identify the *fresh, unprocessed* refund rather than rely on row ordering. An
+	 * Resolution must identify the *fresh, unprocessed* refund rather than rely only on row ordering. An
 	 * equal-amount, equal-reason refund that has already been processed carries
 	 * {@see self::PROCESSED_REFUND_LINK_META_KEY}; passing that key as the exclusion set makes
-	 * find_matching_refund() skip such refunds. Without this exclusion, resolution would depend on
-	 * the order get_refunds() happens to return rows (CPT vs HPOS, same-second ties, future query
-	 * changes) and could latch onto an already-processed refund — reusing its key and reintroducing
-	 * the exact collision this guard prevents.
+	 * find_matching_refund() skip such refunds. Without this exclusion, resolution could latch onto
+	 * an already-processed refund — reusing its key and reintroducing the exact collision this guard
+	 * prevents.
 	 *
 	 * Returns null only when no matching refund can be located. In the normal synchronous WooCommerce
 	 * refund flow this cannot happen: core creates and saves the `WC_Order_Refund` row before invoking
@@ -446,12 +445,12 @@ class PaymentProcessingService {
 	/**
 	 * Apply provider refund metadata to the matching WooCommerce refund.
 	 *
-	 * @param WC_Order       $order   Parent order.
-	 * @param PaymentOutcome $outcome Provider refund outcome.
-	 * @param float          $amount  Refund amount.
-	 * @param string         $reason  Refund reason.
+	 * @param WC_Order       $order           Parent order.
+	 * @param PaymentOutcome $outcome         Provider refund outcome.
+	 * @param string|null    $refund_instance Exact local refund instance resolved before provider transport.
+	 * @throws \RuntimeException When the exact refund or parent order cannot be reloaded.
 	 */
-	private function apply_refund_outcome( WC_Order $order, PaymentOutcome $outcome, float $amount, string $reason ): void {
+	private function apply_refund_outcome( WC_Order $order, PaymentOutcome $outcome, ?string $refund_instance ): void {
 		$data        = $outcome->get_data();
 		$refund_meta = isset( $data[ PaymentOutcome::DATA_REFUND_META ] ) && is_array( $data[ PaymentOutcome::DATA_REFUND_META ] )
 			? $data[ PaymentOutcome::DATA_REFUND_META ]
@@ -467,13 +466,15 @@ class PaymentProcessingService {
 			return;
 		}
 
-		$matched_refund = $this->find_matching_refund( $order, $amount, $reason, array_map( 'strval', array_keys( $refund_meta ) ) );
+		$matched_refund = null !== $refund_instance && '' !== $refund_instance
+			? wc_get_order( (int) $refund_instance )
+			: false;
 		$reloaded_order = wc_get_order( $order->get_id() );
-		if ( ! $matched_refund instanceof WC_Order_Refund ) {
-			return;
+		if ( ! $matched_refund instanceof WC_Order_Refund || $order->get_id() !== $matched_refund->get_parent_id() ) {
+			throw new \RuntimeException( 'The exact local refund target could not be loaded after the provider refund succeeded.' );
 		}
 		if ( ! $reloaded_order instanceof WC_Order ) {
-			return;
+			throw new \RuntimeException( 'The parent order could not be loaded after the provider refund succeeded.' );
 		}
 
 		foreach ( $refund_meta as $meta_key => $meta_value ) {
@@ -506,7 +507,7 @@ class PaymentProcessingService {
 			return null;
 		}
 
-		$expected_amount = wc_format_decimal( $amount );
+		$expected_amount = wc_format_decimal( $amount, false, true );
 		$refunds         = array_reverse( $reloaded_order->get_refunds() );
 
 		foreach ( $refunds as $refund ) {
@@ -518,7 +519,7 @@ class PaymentProcessingService {
 				continue;
 			}
 
-			if ( wc_format_decimal( $refund->get_amount() ) !== $expected_amount ) {
+			if ( wc_format_decimal( $refund->get_amount(), false, true ) !== $expected_amount ) {
 				continue;
 			}
 
