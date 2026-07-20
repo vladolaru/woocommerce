@@ -158,6 +158,84 @@ describe( 'wc-payment-method-woopayments', () => {
 		jest.clearAllMocks();
 	} );
 
+	const setUpNewCardPayment = async ( billing ) => {
+		window.fetch = jest.fn().mockResolvedValue( {
+			json: jest.fn().mockResolvedValue( { success: true } ),
+		} );
+		const calls = [];
+		const elementsInstance = {
+			create: jest.fn( () => ( {
+				mount: jest.fn(),
+			} ) ),
+			submit: jest.fn( () => {
+				calls.push( 'submit' );
+				return Promise.resolve( {} );
+			} ),
+		};
+		const createPaymentMethod = jest.fn( () => {
+			calls.push( 'createPaymentMethod' );
+			return Promise.resolve( {
+				paymentMethod: {
+					id: 'pm_123',
+					card: {
+						fingerprint: 'fp_123',
+					},
+				},
+			} );
+		} );
+		window.Stripe = jest.fn( () => ( {
+			elements: jest.fn( () => elementsInstance ),
+			createPaymentMethod,
+		} ) );
+
+		const registration = registerWooPayments();
+		const setupCallbacks = [];
+		const unsubscribePaymentSetup = jest.fn();
+		const onPaymentSetup = jest.fn( ( callback ) => {
+			setupCallbacks.push( callback );
+			return unsubscribePaymentSetup;
+		} );
+		const onCheckoutSuccess = jest.fn();
+		const emitResponse = {
+			responseTypes: {
+				SUCCESS: 'success',
+				ERROR: 'error',
+			},
+			noticeContexts: {
+				PAYMENTS: 'payments',
+			},
+		};
+		const content = registration.content;
+		const createContent = ( nextBilling ) =>
+			createElement( content.type, {
+				...content.props,
+				...( nextBilling === undefined
+					? {}
+					: { billing: nextBilling } ),
+				eventRegistration: {
+					onPaymentSetup,
+					onCheckoutSuccess,
+				},
+				emitResponse,
+			} );
+
+		const view = render( createContent( billing ) );
+		await waitFor( () => {
+			expect( onPaymentSetup ).toHaveBeenCalledTimes( 1 );
+		} );
+
+		return {
+			...view,
+			calls,
+			createContent,
+			createPaymentMethod,
+			elementsInstance,
+			onPaymentSetup,
+			setupCallbacks,
+			unsubscribePaymentSetup,
+		};
+	};
+
 	it( 'submits wcpay-payment-method metadata for a new card method', async () => {
 		window.wcpayFraudPreventionToken = 'fraud-token-123';
 		const registration = registerWooPayments();
@@ -642,79 +720,36 @@ describe( 'wc-payment-method-woopayments', () => {
 	} );
 
 	it( 'submits Stripe Elements before creating a payment method', async () => {
-		const calls = [];
-		const elementsInstance = {
-			create: jest.fn( () => ( {
-				mount: jest.fn(),
-			} ) ),
-			submit: jest.fn( () => {
-				calls.push( 'submit' );
-				return Promise.resolve( {} );
-			} ),
-		};
-		const createPaymentMethod = jest.fn( () => {
-			calls.push( 'createPaymentMethod' );
-			return Promise.resolve( {
-				paymentMethod: {
-					id: 'pm_123',
-					card: {
-						fingerprint: 'fp_123',
-					},
-				},
-			} );
-		} );
 		document.body.innerHTML = `
-			<input id="email" value="customer@example.test" />
-			<input id="billing-first_name" value="Ada" />
-			<input id="billing-last_name" value="Lovelace" />
-			<input id="billing-address_1" value="1 Test Street" />
-			<input id="billing-address_2" value="Suite 2" />
-			<input id="billing-city" value="London" />
-			<input id="billing-state" value="" />
-			<input id="billing-postcode" value=" SW1A 1AA " />
-			<input id="billing-phone" value="07123456789" />
+			<input id="email" value="dom@example.test" />
+			<input id="billing-first_name" value="Grace" />
+			<input id="billing-last_name" value="Hopper" />
+			<input id="billing-address_1" value="2 DOM Street" />
+			<input id="billing-address_2" value="DOM suite" />
+			<input id="billing-city" value="New York" />
+			<input id="billing-state" value="NY" />
+			<input id="billing-postcode" value="10001" />
+			<input id="billing-phone" value="5550000000" />
 			<select id="billing-country">
-				<option value="GB" selected>United Kingdom</option>
+				<option value="US" selected>United States</option>
 			</select>
 		`;
-		window.Stripe = jest.fn( () => ( {
-			elements: jest.fn( () => elementsInstance ),
-			createPaymentMethod,
-		} ) );
-
-		const registration = registerWooPayments();
-		let setupResult;
-		const onPaymentSetup = jest.fn( ( callback ) => {
-			setupResult = callback();
-		} );
-		const emitResponse = {
-			responseTypes: {
-				SUCCESS: 'success',
-				ERROR: 'error',
+		const harness = await setUpNewCardPayment( {
+			billingAddress: {
+				first_name: 'Ada',
+				last_name: 'Lovelace',
+				email: 'customer@example.test',
+				phone: '07123456789',
+				address_1: '1 Test Street',
+				address_2: 'Suite 2',
+				city: 'London',
+				state: '',
+				postcode: ' SW1A 1AA ',
+				country: 'GB',
 			},
-			noticeContexts: {
-				PAYMENTS: 'payments',
-			},
-		};
-
-		const content = registration.content;
-
-		render(
-			createElement( content.type, {
-				...content.props,
-				eventRegistration: {
-					onPaymentSetup,
-					onCheckoutSuccess: jest.fn(),
-				},
-				emitResponse,
-			} )
-		);
-
-		await waitFor( () => {
-			expect( onPaymentSetup ).toHaveBeenCalled();
 		} );
 
-		await expect( setupResult ).resolves.toMatchObject( {
+		await expect( harness.setupCallbacks[ 0 ]() ).resolves.toMatchObject( {
 			type: 'success',
 			meta: {
 				paymentMethodData: {
@@ -724,9 +759,9 @@ describe( 'wc-payment-method-woopayments', () => {
 				},
 			},
 		} );
-		expect( elementsInstance.submit ).toHaveBeenCalled();
-		expect( createPaymentMethod ).toHaveBeenCalledWith( {
-			elements: elementsInstance,
+		expect( harness.elementsInstance.submit ).toHaveBeenCalled();
+		expect( harness.createPaymentMethod ).toHaveBeenCalledWith( {
+			elements: harness.elementsInstance,
 			params: {
 				billing_details: {
 					name: 'Ada Lovelace',
@@ -743,7 +778,152 @@ describe( 'wc-payment-method-woopayments', () => {
 				},
 			},
 		} );
-		expect( calls ).toEqual( [ 'submit', 'createPaymentMethod' ] );
+		expect( harness.calls ).toEqual( [ 'submit', 'createPaymentMethod' ] );
+	} );
+
+	it( 'uses the historical Blocks billing data alias when the modern alias is absent', async () => {
+		const harness = await setUpNewCardPayment( {
+			billingData: {
+				first_name: 'Katherine',
+				last_name: 'Johnson',
+				email: 'katherine@example.test',
+				phone: '5551234567',
+				address_1: '3 Legacy Avenue',
+				address_2: '',
+				city: 'Hampton',
+				state: 'VA',
+				postcode: ' 23666 ',
+				country: 'US',
+			},
+		} );
+
+		await harness.setupCallbacks[ 0 ]();
+
+		expect( harness.createPaymentMethod ).toHaveBeenCalledWith( {
+			elements: harness.elementsInstance,
+			params: {
+				billing_details: {
+					name: 'Katherine Johnson',
+					email: 'katherine@example.test',
+					phone: '5551234567',
+					address: {
+						city: 'Hampton',
+						country: 'US',
+						line1: '3 Legacy Avenue',
+						line2: '',
+						postal_code: '23666',
+						state: 'VA',
+					},
+				},
+			},
+		} );
+	} );
+
+	it.each( [
+		[
+			'an empty modern billing address over a populated historical alias',
+			{
+				billingAddress: {},
+				billingData: {
+					first_name: 'Legacy',
+					last_name: 'Shopper',
+					country: 'GB',
+				},
+			},
+		],
+		[ 'empty billing details when both aliases are absent', undefined ],
+	] )( 'submits %s', async ( description, billing ) => {
+		document.body.innerHTML = `
+			<input id="email" value="dom@example.test" />
+			<input id="billing-first_name" value="DOM" />
+			<input id="billing-last_name" value="Shopper" />
+			<input id="billing-address_1" value="4 DOM Road" />
+			<input id="billing-address_2" value="DOM suite" />
+			<input id="billing-city" value="Boston" />
+			<input id="billing-state" value="MA" />
+			<input id="billing-postcode" value="02108" />
+			<input id="billing-phone" value="5559999999" />
+			<select id="billing-country">
+				<option value="US" selected>United States</option>
+			</select>
+		`;
+		const harness = await setUpNewCardPayment( billing );
+
+		await harness.setupCallbacks[ 0 ]();
+
+		expect( harness.createPaymentMethod ).toHaveBeenCalledWith( {
+			elements: harness.elementsInstance,
+			params: {
+				billing_details: {
+					name: '',
+					email: '',
+					phone: '',
+					address: {
+						city: '',
+						country: '',
+						line1: '',
+						line2: '',
+						postal_code: '',
+						state: '',
+					},
+				},
+			},
+		} );
+	} );
+
+	it( 'refreshes payment setup when the Blocks billing address changes', async () => {
+		const initialBilling = {
+			billingAddress: {
+				first_name: 'Initial',
+				last_name: 'Shopper',
+				country: 'US',
+			},
+		};
+		const updatedBilling = {
+			billingAddress: {
+				first_name: 'Updated',
+				last_name: 'Shopper',
+				email: 'updated@example.test',
+				phone: '5551111111',
+				address_1: '5 Current Street',
+				address_2: '',
+				city: 'Chicago',
+				state: 'IL',
+				postcode: '60601',
+				country: 'US',
+			},
+		};
+		const harness = await setUpNewCardPayment( initialBilling );
+
+		harness.rerender( harness.createContent( initialBilling ) );
+		expect( harness.onPaymentSetup ).toHaveBeenCalledTimes( 1 );
+
+		harness.rerender( harness.createContent( updatedBilling ) );
+		await waitFor( () => {
+			expect( harness.onPaymentSetup ).toHaveBeenCalledTimes( 2 );
+		} );
+		expect( harness.unsubscribePaymentSetup ).toHaveBeenCalledTimes( 1 );
+
+		await harness.setupCallbacks[ 1 ]();
+
+		expect( harness.createPaymentMethod ).toHaveBeenCalledWith( {
+			elements: harness.elementsInstance,
+			params: {
+				billing_details: {
+					name: 'Updated Shopper',
+					email: 'updated@example.test',
+					phone: '5551111111',
+					address: {
+						city: 'Chicago',
+						country: 'US',
+						line1: '5 Current Street',
+						line2: '',
+						postal_code: '60601',
+						state: 'IL',
+					},
+				},
+			},
+		} );
 	} );
 
 	it( 'initializes Stripe Elements in setup mode for zero-total checkouts', async () => {

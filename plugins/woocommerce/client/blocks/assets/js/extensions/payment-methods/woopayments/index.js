@@ -23,6 +23,7 @@ const defaultLabel = __( 'Card', 'woocommerce' );
 const testModeBadgeLabel = __( 'Test Mode', 'woocommerce' );
 const saveUserRoots = new WeakMap();
 const copyTestNumberSuccessDuration = 2000;
+const EMPTY_BILLING_DATA = {};
 
 const getPrimaryPaymentMethodConfig = ( paymentSettings = defaultSettings ) => {
 	const paymentMethodsConfig = paymentSettings?.paymentMethodsConfig || {};
@@ -720,22 +721,22 @@ const renderWooPaySaveUserSection = ( paymentSettings = defaultSettings ) => {
 		);
 };
 
-const getBillingDetails = () => {
-	const firstName = getFieldValue( '#billing-first_name' );
-	const lastName = getFieldValue( '#billing-last_name' );
-	const name = `${ firstName || '' } ${ lastName || '' }`.trim();
+const getBillingDetails = ( billingData = EMPTY_BILLING_DATA ) => {
+	const firstName = billingData.first_name || '';
+	const lastName = billingData.last_name || '';
+	const name = `${ firstName } ${ lastName }`.trim();
 
 	return {
 		name,
-		email: getFieldValue( '#email' ),
-		phone: getFieldValue( '#billing-phone' ),
+		email: billingData.email || '',
+		phone: billingData.phone || '',
 		address: {
-			city: getFieldValue( '#billing-city' ),
-			country: getFieldValue( '#billing-country' ),
-			line1: getFieldValue( '#billing-address_1' ),
-			line2: getFieldValue( '#billing-address_2' ),
-			postal_code: getFieldValue( '#billing-postcode' )?.trim(),
-			state: getFieldValue( '#billing-state' ),
+			city: billingData.city || '',
+			country: billingData.country || '',
+			line1: billingData.address_1 || '',
+			line2: billingData.address_2 || '',
+			postal_code: ( billingData.postcode || '' ).trim(),
+			state: billingData.state || '',
 		},
 	};
 };
@@ -802,6 +803,7 @@ const WooPaymentsContent = ( {
 	eventRegistration,
 	emitResponse,
 	shouldSavePayment,
+	billing,
 	paymentSettings = defaultSettings,
 } ) => {
 	const { onPaymentSetup, onCheckoutSuccess } = eventRegistration || {};
@@ -812,6 +814,8 @@ const WooPaymentsContent = ( {
 	const paymentElement = useRef( null );
 	const emitResponseRef = useRef( emitResponse );
 	const shouldSavePaymentRef = useRef( shouldSavePayment );
+	const billingData =
+		billing?.billingAddress || billing?.billingData || EMPTY_BILLING_DATA;
 
 	emitResponseRef.current = emitResponse;
 	shouldSavePaymentRef.current = shouldSavePayment;
@@ -938,7 +942,7 @@ const WooPaymentsContent = ( {
 				const result = await stripe.current.createPaymentMethod( {
 					elements: elements.current,
 					params: {
-						billing_details: getBillingDetails(),
+						billing_details: getBillingDetails( billingData ),
 					},
 				} );
 
@@ -981,7 +985,7 @@ const WooPaymentsContent = ( {
 		} );
 
 		return typeof unsubscribe === 'function' ? unsubscribe : undefined;
-	}, [ onPaymentSetup, paymentSettings ] );
+	}, [ billingData, onPaymentSetup, paymentSettings ] );
 
 	useEffect( () => {
 		if ( ! onCheckoutSuccess ) {
