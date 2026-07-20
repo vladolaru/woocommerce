@@ -2036,15 +2036,14 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->method( 'get_or_create_customer_id_for_order' )
 			->willReturn( 'cus_native' );
 
-		add_filter( 'woocommerce_woopayments_is_recurring_payment', '__return_true' );
-
 		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, $token_service );
 		$outcome = $sut->charge(
 			PaymentContext::for_checkout(
 				$order,
 				OrderPaymentStore::GATEWAY_ID,
 				'pm_request',
-				array( 'save_payment_method' => false )
+				array( 'save_payment_method' => false ),
+				array( WooPaymentsIntentRequestBuilder::PROVIDER_DATA_RECURRING_PAYMENT => true )
 			),
 			'key_charge'
 		);
@@ -2447,7 +2446,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$subscription->set_customer_id( $user_id );
 		$subscription->save();
 
-		add_filter( 'woocommerce_woopayments_is_recurring_payment', '__return_true' );
 		add_filter(
 			'woocommerce_woopayments_related_subscriptions_for_order',
 			static function ( array $subscriptions, WC_Order $filtered_order ) use ( $order, $subscription ): array {
@@ -2462,7 +2460,16 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->willReturn( 'cus_native' );
 
 		$sut          = $this->create_adapter( $gateway, $api_client, $customer_service, $token_service );
-		$outcome      = $sut->charge( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_zero' ), 'key_setup' );
+		$outcome      = $sut->charge(
+			PaymentContext::for_checkout(
+				$order,
+				OrderPaymentStore::GATEWAY_ID,
+				'pm_zero',
+				array( 'save_payment_method' => true ),
+				array( WooPaymentsIntentRequestBuilder::PROVIDER_DATA_RECURRING_PAYMENT => true )
+			),
+			'key_setup'
+		);
 		$order        = wc_get_order( $order->get_id() );
 		$tokens       = \WC_Payment_Tokens::get_customer_tokens( $user_id, OrderPaymentStore::GATEWAY_ID );
 		$subscription = wc_get_order( $subscription->get_id() );

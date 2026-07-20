@@ -75,8 +75,11 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		unset( $_POST['is-woopay-preflight-check'] );
 		unset( $_POST['_wcsnonce'] );
 		unset( $_POST['change_payment_method'] );
+		unset( $_POST['woocommerce_change_payment'] );
 		unset( $_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' ] );
+		unset( $_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-new-payment-method' ] );
 		unset( $_POST['update_all_subscriptions_payment_method'] );
+		unset( $_GET['change_payment_method'], $GLOBALS['wcpay_test_subscription_ids'] );
 		if ( class_exists( 'WC_Subscriptions_Change_Payment_Gateway', false ) && method_exists( 'WC_Subscriptions_Change_Payment_Gateway', 'reset' ) ) {
 			\WC_Subscriptions_Change_Payment_Gateway::reset();
 		}
@@ -2144,21 +2147,36 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function test_process_payment_updates_subscription_payment_method_after_successful_new_method_change(): void {
 		$this->ensure_wcs_change_payment_gateway_double();
+		$this->ensure_wcs_subscription_detector_double();
 		$order   = $this->create_order();
 		$service = new RecordingPaymentProcessingService();
 		$gateway = new NativeWooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
+		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
 		add_filter( 'woocommerce_subscriptions_update_payment_via_pay_shortcode', array( WooPaymentsSubscriptionAdminPaymentMethodHandler::instance(), 'update_payment_method_for_subscriptions' ), 10, 3 );
 		$_POST['_wcsnonce'] = wp_create_nonce( 'wcs_change_payment_method' );
 
-		$_POST['change_payment_method'] = (string) $order->get_id();
+		$_POST['woocommerce_change_payment'] = (string) $order->get_id();
 
 		$_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' ] = 'new';
 
-		$result = $gateway->process_payment( $order->get_id() );
+		$return_url_filter = static function ( string $return_url, WC_Order $filtered_order ) use ( $order ): string {
+			return $order->get_id() === $filtered_order->get_id() ? 'https://example.test/my-account/' : $return_url;
+		};
+		add_filter( 'woocommerce_get_return_url', $return_url_filter, 11, 2 );
+
+		try {
+			$result = $gateway->process_payment( $order->get_id() );
+		} finally {
+			remove_filter( 'woocommerce_get_return_url', $return_url_filter, 11 );
+		}
 
 		$this->assertSame( 'success', $result['result'] );
+		$this->assertSame( 'https://example.test/my-account/', $result['redirect'] );
+		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertTrue( $service->last_checkout_context->get_payment_data()['save_payment_method'] ?? false );
+		$this->assertTrue( $service->last_checkout_context->get_provider_data()['recurring_payment'] ?? false );
 		$this->assertSame(
 			array(
 				array(
@@ -2169,6 +2187,189 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			\WC_Subscriptions_Change_Payment_Gateway::$updated_payment_methods
 		);
 		$this->assertFalse( has_filter( 'woocommerce_subscriptions_update_payment_via_pay_shortcode', array( WooPaymentsSubscriptionAdminPaymentMethodHandler::instance(), 'update_payment_method_for_subscriptions' ) ) );
+	}
+
+	/**
+	 * @testdox Should preserve confirmation redirects and delay update-all bookkeeping for subscription changes.
+	 */
+	public function test_process_payment_preserves_subscription_change_confirmation_redirect(): void {
+		$this->ensure_wcs_change_payment_gateway_double();
+		$this->ensure_wcs_subscription_detector_double();
+		$order                     = $this->create_order();
+		$confirmation_redirect     = '#wcpay-confirm-pi:' . $order->get_id() . ':secret:nonce';
+		$service                   = new RecordingPaymentProcessingService();
+		$service->checkout_outcome = new PaymentOutcome(
+			PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION,
+			'pi_requires_action',
+			$confirmation_redirect,
+			'pm_new'
+		);
+		$gateway                   = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
+		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
+		$_POST['woocommerce_change_payment']    = (string) $order->get_id();
+
+		$_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' ] = 'new';
+
+		$_POST['update_all_subscriptions_payment_method'] = '1';
+
+		$result = $gateway->process_payment( $order->get_id() );
+		$order  = wc_get_order( $order->get_id() );
+
+		$this->assertSame( 'success', $result['result'] );
+		$this->assertSame( $confirmation_redirect, $result['redirect'] );
+		$this->assertSame( array(), \WC_Subscriptions_Change_Payment_Gateway::$updated_payment_methods );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $order->get_meta( '_delayed_update_payment_method_all', true ) );
+	}
+
+	/**
+	 * @testdox Should preserve provider redirects and defer subscription bookkeeping until authorization returns.
+	 */
+	public function test_process_payment_defers_subscription_change_update_for_provider_redirect(): void {
+		$this->ensure_wcs_change_payment_gateway_double();
+		$this->ensure_wcs_subscription_detector_double();
+		$order                     = $this->create_order();
+		$provider_redirect         = 'https://payments.example.test/authorize';
+		$service                   = new RecordingPaymentProcessingService();
+		$service->checkout_outcome = new PaymentOutcome(
+			PaymentOutcome::STATUS_REQUIRES_REDIRECT,
+			'pi_requires_redirect',
+			$provider_redirect,
+			'pm_new'
+		);
+		$gateway                   = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
+		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
+		$_POST['woocommerce_change_payment']    = (string) $order->get_id();
+
+		$_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' ] = 'new';
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$this->assertSame( 'success', $result['result'] );
+		$this->assertSame( $provider_redirect, $result['redirect'] );
+		$this->assertSame( array(), \WC_Subscriptions_Change_Payment_Gateway::$updated_payment_methods );
+	}
+
+	/**
+	 * @testdox Should reject no-external-payment success semantics when a new subscription credential is missing.
+	 */
+	public function test_process_payment_does_not_complete_subscription_change_without_provider_credential(): void {
+		$this->ensure_wcs_change_payment_gateway_double();
+		$this->ensure_wcs_subscription_detector_double();
+		$order                     = $this->create_order();
+		$service                   = new RecordingPaymentProcessingService();
+		$service->checkout_outcome = new PaymentOutcome( PaymentOutcome::STATUS_NO_EXTERNAL_PAYMENT );
+		$gateway                   = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
+		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
+		$_POST['woocommerce_change_payment']    = (string) $order->get_id();
+
+		$_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' ] = 'new';
+
+		$return_filter_calls = 0;
+		$return_url_filter   = static function () use ( &$return_filter_calls ): string {
+			++$return_filter_calls;
+			return 'https://example.test/my-account/';
+		};
+		add_filter( 'woocommerce_get_return_url', $return_url_filter, 11 );
+
+		try {
+			$result = $gateway->process_payment( $order->get_id() );
+		} finally {
+			remove_filter( 'woocommerce_get_return_url', $return_url_filter, 11 );
+		}
+
+		$this->assertSame( 'success', $result['result'] );
+		$this->assertSame( $order->get_checkout_order_received_url(), $result['redirect'] );
+		$this->assertSame( '', $result['payment_method'] );
+		$this->assertSame( 0, $return_filter_calls );
+		$this->assertSame( array(), \WC_Subscriptions_Change_Payment_Gateway::$updated_payment_methods );
+	}
+
+	/**
+	 * @testdox Should not update subscription payment methods or success redirects after a failed new-method change.
+	 */
+	public function test_process_payment_does_not_update_subscription_payment_method_after_failed_new_method_change(): void {
+		$this->ensure_wcs_change_payment_gateway_double();
+		$this->ensure_wcs_subscription_detector_double();
+		$order                     = $this->create_order();
+		$service                   = new RecordingPaymentProcessingService();
+		$service->checkout_outcome = new PaymentOutcome( PaymentOutcome::STATUS_FAILED );
+		$gateway                   = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
+		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
+		$_POST['woocommerce_change_payment']    = (string) $order->get_id();
+
+		$_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' ] = 'new';
+
+		$return_filter_calls = 0;
+		$return_url_filter   = static function ( string $return_url ) use ( &$return_filter_calls ): string {
+			++$return_filter_calls;
+			return $return_url;
+		};
+		add_filter( 'woocommerce_get_return_url', $return_url_filter, 11 );
+
+		try {
+			$result = $gateway->process_payment( $order->get_id() );
+		} finally {
+			remove_filter( 'woocommerce_get_return_url', $return_url_filter, 11 );
+		}
+
+		$this->assertSame( 'failure', $result['result'] );
+		$this->assertSame( 0, $return_filter_calls );
+		$this->assertSame( array(), \WC_Subscriptions_Change_Payment_Gateway::$updated_payment_methods );
+	}
+
+	/**
+	 * @testdox Should require a positive matching subscription ID for new-method change semantics.
+	 * @dataProvider invalid_subscription_change_requests
+	 *
+	 * @param string $request_id_type Request ID scenario.
+	 * @param bool   $is_subscription Whether the processed order should be identified as a subscription.
+	 */
+	public function test_process_payment_rejects_invalid_subscription_change_request_identity( string $request_id_type, bool $is_subscription ): void {
+		$this->ensure_wcs_change_payment_gateway_double();
+		$this->ensure_wcs_subscription_detector_double();
+		$order   = $this->create_order();
+		$service = new RecordingPaymentProcessingService();
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		$GLOBALS['wcpay_test_subscription_ids'] = $is_subscription ? array( $order->get_id() ) : array();
+		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
+		$_POST['change_payment_method']         = 'zero' === $request_id_type ? '0' : (string) ( $order->get_id() + ( 'mismatch' === $request_id_type ? 1 : 0 ) );
+
+		$_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' ] = 'new';
+
+		$gateway->process_payment( $order->get_id() );
+
+		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertFalse( $service->last_checkout_context->get_payment_data()['save_payment_method'] ?? false );
+		$this->assertFalse( $service->last_checkout_context->get_provider_data()['recurring_payment'] ?? false );
+		$this->assertSame( array(), \WC_Subscriptions_Change_Payment_Gateway::$updated_payment_methods );
+	}
+
+	/**
+	 * Invalid subscription change request cases.
+	 *
+	 * @return array<string,array{string,bool}>
+	 */
+	public static function invalid_subscription_change_requests(): array {
+		return array(
+			'zero request ID'       => array( 'zero', true ),
+			'mismatched request ID' => array( 'mismatch', true ),
+			'non-subscription ID'   => array( 'match', false ),
+		);
 	}
 
 	/**
@@ -2355,6 +2556,110 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( 'wcpay-bridge-marker', $output );
 		$this->assertStringContainsString( 'wc-woocommerce_payments-new-payment-method', $output );
 		$this->assertStringContainsString( 'wc-woocommerce_payments-payment-token-new', $output );
+		$this->assertMatchesRegularExpression( '/<input[^>]+id="wc-woocommerce_payments-new-payment-method"[^>]+type="checkbox"[^>]*>/', $output );
+		$this->assertDoesNotMatchRegularExpression( '/<input[^>]+id="wc-woocommerce_payments-new-payment-method"[^>]+checked[^>]*>/', $output );
+	}
+
+	/**
+	 * @testdox Should render mandatory subscription change saving as a visually hidden checked checkbox.
+	 */
+	public function test_payment_fields_hide_checked_save_payment_method_for_subscription_change(): void {
+		$this->ensure_wcs_subscription_detector_double();
+		$order = $this->create_order();
+
+		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
+		$_GET['change_payment_method']          = (string) $order->get_id();
+
+		global $wp;
+		$wp->query_vars['order-pay'] = $order->get_id();
+		add_filter( 'woocommerce_is_checkout', '__return_true' );
+
+		$service = new RecordingPaymentProcessingService();
+		$bridge  = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'render_payment_fields' ) )
+			->getMock();
+		$bridge->method( 'render_payment_fields' )->willReturnCallback(
+			static function (): void {
+				echo '<div id="wcpay-bridge-marker"></div>';
+			}
+		);
+
+		$output = '';
+		try {
+			$this->with_gateway_settings(
+				array( 'saved_cards' => 'yes' ),
+				function () use ( $service, $bridge, &$output ): void {
+					$gateway = new class() extends NativeWooPaymentsGateway {
+						/**
+						 * Simulate optional WooCommerce Subscriptions availability.
+						 *
+						 * @return bool
+						 */
+						public function is_subscriptions_enabled(): bool {
+							return true;
+						}
+					};
+					$gateway->init( $service, new WooPaymentsProvider(), $bridge );
+
+					ob_start();
+					$gateway->payment_fields();
+					$output = (string) ob_get_clean();
+				}
+			);
+		} finally {
+			remove_filter( 'woocommerce_is_checkout', '__return_true' );
+			unset( $wp->query_vars['order-pay'] );
+		}
+
+		$this->assertSame( 1, substr_count( $output, 'id="wc-woocommerce_payments-new-payment-method"' ) );
+		$this->assertStringContainsString( 'style="display:none;"', $output );
+		$this->assertMatchesRegularExpression( '/<input[^>]+id="wc-woocommerce_payments-new-payment-method"[^>]+type="checkbox"[^>]+checked[^>]*>/', $output );
+	}
+
+	/**
+	 * @testdox Should keep the ordinary save control when subscription change form identity does not match.
+	 */
+	public function test_payment_fields_reject_mismatched_subscription_change_form_identity(): void {
+		$this->ensure_wcs_subscription_detector_double();
+		$order = $this->create_order();
+
+		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
+		$_GET['change_payment_method']          = (string) ( $order->get_id() + 1 );
+
+		global $wp;
+		$wp->query_vars['order-pay'] = $order->get_id();
+		add_filter( 'woocommerce_is_checkout', '__return_true' );
+
+		$output = '';
+		try {
+			$this->with_gateway_settings(
+				array( 'saved_cards' => 'yes' ),
+				function () use ( &$output ): void {
+					$gateway = new class() extends NativeWooPaymentsGateway {
+						/**
+						 * Simulate optional WooCommerce Subscriptions availability.
+						 *
+						 * @return bool
+						 */
+						public function is_subscriptions_enabled(): bool {
+							return true;
+						}
+					};
+
+					ob_start();
+					$gateway->payment_fields();
+					$output = (string) ob_get_clean();
+				}
+			);
+		} finally {
+			remove_filter( 'woocommerce_is_checkout', '__return_true' );
+			unset( $wp->query_vars['order-pay'] );
+		}
+
+		$this->assertStringNotContainsString( 'style="display:none;"', $output );
+		$this->assertMatchesRegularExpression( '/<input[^>]+id="wc-woocommerce_payments-new-payment-method"[^>]+type="checkbox"[^>]*>/', $output );
+		$this->assertDoesNotMatchRegularExpression( '/<input[^>]+id="wc-woocommerce_payments-new-payment-method"[^>]+checked[^>]*>/', $output );
 	}
 
 	/**
@@ -2664,6 +2969,20 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		} finally {
 			remove_filter( 'pre_option_woocommerce_woocommerce_payments_settings', $filter );
 		}
+	}
+
+	/**
+	 * Ensure a minimal WooCommerce Subscriptions detector double exists.
+	 *
+	 * @return void
+	 */
+	private function ensure_wcs_subscription_detector_double(): void {
+		if ( function_exists( 'wcs_is_subscription' ) ) {
+			return;
+		}
+
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public detector contract.
+		eval( 'namespace { function wcs_is_subscription( $subscription_id ) { $subscription_id = is_object( $subscription_id ) && method_exists( $subscription_id, "get_id" ) ? $subscription_id->get_id() : $subscription_id; return in_array( absint( $subscription_id ), $GLOBALS["wcpay_test_subscription_ids"] ?? array(), true ); } }' );
 	}
 
 	/**

@@ -315,7 +315,7 @@ class WooPaymentsProviderGatewayAdapter {
 		$context            = $this->request_builder->with_saved_payment_token_method_type( $context );
 		$order              = $context->get_order();
 		$payment_credential = $this->request_builder->payment_credential_from_context( $context );
-		$is_recurring       = $this->request_builder->is_recurring_payment( $order );
+		$is_recurring       = $this->is_recurring_payment( $context );
 
 		if ( '' === $payment_credential ) {
 			return $this->missing_payment_credential_outcome();
@@ -356,7 +356,7 @@ class WooPaymentsProviderGatewayAdapter {
 		$context            = $this->request_builder->with_saved_payment_token_method_type( $context );
 		$order              = $context->get_order();
 		$payment_credential = $this->request_builder->payment_credential_from_context( $context );
-		$is_recurring       = $this->request_builder->is_recurring_payment( $order );
+		$is_recurring       = $this->is_recurring_payment( $context );
 
 		if ( '' === $payment_credential ) {
 			return $this->missing_payment_credential_outcome();
@@ -392,6 +392,19 @@ class WooPaymentsProviderGatewayAdapter {
 		);
 
 		return $outcome->with_effect_plan( $plan );
+	}
+
+	/**
+	 * Tell whether checkout context requires recurring credential persistence.
+	 *
+	 * @param PaymentContext $context Payment context.
+	 * @return bool
+	 */
+	private function is_recurring_payment( PaymentContext $context ): bool {
+		$provider_data = $context->get_provider_data();
+
+		return ! empty( $provider_data[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_RECURRING_PAYMENT ] )
+			|| $this->request_builder->is_recurring_payment( $context->get_order() );
 	}
 
 	/**

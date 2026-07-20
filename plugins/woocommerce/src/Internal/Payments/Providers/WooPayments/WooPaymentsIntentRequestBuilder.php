@@ -31,6 +31,13 @@ class WooPaymentsIntentRequestBuilder {
 	public const PROVIDER_DATA_SAVED_PAYMENT_METHOD_TYPE = 'saved_payment_method_type';
 
 	/**
+	 * Provider-data key for payments that must persist a reusable recurring credential.
+	 *
+	 * @var string
+	 */
+	public const PROVIDER_DATA_RECURRING_PAYMENT = 'recurring_payment';
+
+	/**
 	 * WooPayments client version advertised to the V1 API.
 	 *
 	 * @var string

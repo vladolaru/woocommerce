@@ -375,6 +375,42 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
+	 * Output the save-payment-method checkbox.
+	 *
+	 * Subscription payment-method changes must save a reusable credential, so the checkbox remains
+	 * checked in the form for the checkout bridge while being hidden from the shopper.
+	 *
+	 * @return void
+	 */
+	public function save_payment_method_checkbox() {
+		if ( ! $this->is_subscription_change_payment_form() ) {
+			parent::save_payment_method_checkbox();
+			return;
+		}
+
+		$html = sprintf(
+			'<p class="form-row woocommerce-SavedPaymentMethods-saveNew">
+				<input id="wc-%1$s-new-payment-method" name="wc-%1$s-new-payment-method" type="checkbox" value="true" style="width:auto;" checked="checked" />
+				<label for="wc-%1$s-new-payment-method" style="display:inline;">%2$s</label>
+			</p>',
+			esc_attr( $this->id ),
+			esc_html__( 'Save to account', 'woocommerce' )
+		);
+
+		echo '<div style="display:none;">';
+		/**
+		 * Filters the saved payment method checkbox HTML.
+		 *
+		 * @since 2.6.0
+		 *
+		 * @param string              $html    Saved payment method checkbox HTML.
+		 * @param \WC_Payment_Gateway $gateway Payment gateway instance.
+		 */
+		echo apply_filters( 'woocommerce_payment_gateway_save_new_payment_method_option_html', $html, $this ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+		echo '</div>';
+	}
+
+	/**
 	 * Add a WooPayments payment method from the My Account payment-method form.
 	 *
 	 * @return array<string,string>
@@ -1184,20 +1220,30 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return $existing_intent_result;
 		}
 
-		$context = PaymentContext::for_checkout(
+		$is_subscription_change = $this->is_subscription_change_payment_request( $order );
+		$context                = PaymentContext::for_checkout(
 			$order,
 			$this->id,
 			$this->get_request_payment_method_id(),
-			$this->get_checkout_payment_data(),
-			$this->get_checkout_provider_data()
+			$this->get_checkout_payment_data( $is_subscription_change ),
+			$this->get_checkout_provider_data( $is_subscription_change )
 		);
-		$outcome = $this->get_processing_service()->process_checkout_outcome( $context, $this->get_provider() );
+		$outcome                = $this->get_processing_service()->process_checkout_outcome( $context, $this->get_provider() );
 		$this->maybe_bump_failed_transaction_rate_limiter( $outcome );
 		self::maybe_add_failed_checkout_notice( $outcome );
 
 		$result = self::format_checkout_result( $context, $order, $outcome );
+		if (
+			$is_subscription_change
+			&& $this->is_terminal_subscription_change_outcome( $outcome )
+			&& 'success' === ( $result['result'] ?? '' )
+			&& ! $this->is_confirmation_redirect_result( $result )
+			&& $order->get_checkout_order_received_url() === ( $result['redirect'] ?? '' )
+		) {
+			$result['redirect'] = $this->get_return_url( $order );
+		}
 
-		$this->maybe_handle_subscription_change_payment_success( $order, $result );
+		$this->maybe_handle_subscription_change_payment_success( $order, $result, $outcome, $is_subscription_change );
 
 		return $result;
 	}
@@ -1683,17 +1729,22 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	/**
 	 * Complete WC Subscriptions bookkeeping after a successful customer payment-method change.
 	 *
-	 * @param WC_Order             $order  Subscription order.
-	 * @param array<string,string> $result Native checkout result.
+	 * @param WC_Order             $order                  Subscription order.
+	 * @param array<string,string> $result                 Native checkout result.
+	 * @param PaymentOutcome       $outcome                Provider payment outcome.
+	 * @param bool                 $is_subscription_change Whether this is a validated new-method change.
 	 * @return void
 	 */
-	private function maybe_handle_subscription_change_payment_success( WC_Order $order, array $result ): void {
-		if ( ! $this->is_subscription_change_payment_request( $order ) ) {
+	private function maybe_handle_subscription_change_payment_success( WC_Order $order, array $result, PaymentOutcome $outcome, bool $is_subscription_change ): void {
+		if ( ! $is_subscription_change || 'success' !== ( $result['result'] ?? '' ) ) {
 			return;
 		}
 
 		if ( $this->is_confirmation_redirect_result( $result ) ) {
 			$this->maybe_set_delayed_subscription_update_all_marker( $order );
+			return;
+		}
+		if ( ! $this->is_terminal_subscription_change_outcome( $outcome ) ) {
 			return;
 		}
 
@@ -1704,6 +1755,19 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		\WC_Subscriptions_Change_Payment_Gateway::update_payment_method( $order, $this->id );
 
 		remove_filter( 'woocommerce_subscriptions_update_payment_via_pay_shortcode', array( WooPaymentsSubscriptionAdminPaymentMethodHandler::instance(), 'update_payment_method_for_subscriptions' ), 10 );
+	}
+
+	/**
+	 * Tell whether a new subscription credential reached an authorized terminal state.
+	 *
+	 * Generic no-external-payment success is valid for some zero-total checkouts, but it cannot
+	 * complete a new-method subscription change because no reusable credential was established.
+	 *
+	 * @param PaymentOutcome $outcome Provider payment outcome.
+	 * @return bool
+	 */
+	private function is_terminal_subscription_change_outcome( PaymentOutcome $outcome ): bool {
+		return in_array( $outcome->get_status(), array( PaymentOutcome::STATUS_COMPLETED, PaymentOutcome::STATUS_AUTHORIZED ), true );
 	}
 
 	/**
@@ -1723,13 +1787,38 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		$request_id = 0;
-		if ( isset( $_POST['change_payment_method'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		if ( isset( $_POST['woocommerce_change_payment'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
+			$request_id = absint( $_POST['woocommerce_change_payment'] ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		} elseif ( isset( $_POST['change_payment_method'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
 			$request_id = absint( $_POST['change_payment_method'] ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
 		} elseif ( isset( $_GET['change_payment_method'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 			$request_id = absint( $_GET['change_payment_method'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		}
 
-		return 0 === $request_id || $order->get_id() === $request_id;
+		return 0 < $request_id
+			&& $order->get_id() === $request_id
+			&& function_exists( 'wcs_is_subscription' )
+			&& (bool) wcs_is_subscription( $request_id );
+	}
+
+	/**
+	 * Tell whether the current order-pay form is a validated subscription payment-method change.
+	 *
+	 * @return bool
+	 */
+	private function is_subscription_change_payment_form(): bool {
+		if ( ! $this->is_subscriptions_enabled() || ! function_exists( 'wcs_is_subscription' ) ) {
+			return false;
+		}
+
+		global $wp;
+
+		$order_id   = isset( $wp->query_vars['order-pay'] ) ? absint( $wp->query_vars['order-pay'] ) : 0;
+		$request_id = isset( $_GET['change_payment_method'] ) ? absint( $_GET['change_payment_method'] ) : 0; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+
+		return 0 < $request_id
+			&& $order_id === $request_id
+			&& (bool) wcs_is_subscription( $request_id );
 	}
 
 	/**
@@ -1945,26 +2034,28 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	/**
 	 * Get generic checkout payment data.
 	 *
+	 * @param bool $is_subscription_change Whether this is a validated new-method subscription change.
 	 * @return array<string,mixed>
 	 */
-	private function get_checkout_payment_data(): array {
+	private function get_checkout_payment_data( bool $is_subscription_change = false ): array {
 		$token_key = 'wc-' . $this->id . '-payment-token';
 
 		return array(
 			'payment_token'       => $this->sanitize_post_string( $token_key ),
-			'save_payment_method' => ! empty( $_POST[ 'wc-' . $this->id . '-new-payment-method' ] ), // phpcs:ignore WordPress.Security.NonceVerification.Missing
+			'save_payment_method' => $is_subscription_change || ! empty( $_POST[ 'wc-' . $this->id . '-new-payment-method' ] ), // phpcs:ignore WordPress.Security.NonceVerification.Missing
 		);
 	}
 
 	/**
 	 * Get WooPayments-scoped checkout provider data.
 	 *
+	 * @param bool $is_subscription_change Whether this is a validated new-method subscription change.
 	 * @return array<string,mixed>
 	 */
-	private function get_checkout_provider_data(): array {
+	private function get_checkout_provider_data( bool $is_subscription_change = false ): array {
 		$cvc_key = 'wc-' . $this->id . '-payment-cvc-confirmation';
 
-		return array_merge(
+		$provider_data = array_merge(
 			WooPaymentsPlatformPaymentMethodContext::provider_data_from_checkout_value( $this->sanitize_post_string( WooPaymentsPlatformPaymentMethodContext::CHECKOUT_FIELD ) ),
 			WooPaymentsExpressPaymentMethodTypes::provider_data_from_checkout_value( $this->sanitize_post_string( WooPaymentsExpressPaymentMethodTypes::CHECKOUT_FIELD ) ),
 			WooPaymentsExpressPaymentMethodTypes::provider_context_from_checkout_value( $this->sanitize_post_string( WooPaymentsExpressPaymentMethodTypes::CONTEXT_FIELD ) ),
@@ -1976,6 +2067,12 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 				'is_woopay'                 => ! empty( $_POST['is_woopay'] ), // phpcs:ignore WordPress.Security.NonceVerification.Missing
 			)
 		);
+
+		if ( $is_subscription_change ) {
+			$provider_data[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_RECURRING_PAYMENT ] = true;
+		}
+
+		return $provider_data;
 	}
 
 	/**
