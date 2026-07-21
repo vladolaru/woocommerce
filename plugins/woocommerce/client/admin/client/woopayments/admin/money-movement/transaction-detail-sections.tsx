@@ -598,6 +598,10 @@ const getPaymentSummaryStatusLabel = (
 		return getDisputeStatusLabel( transaction );
 	}
 
+	if ( transaction.status === 'requires_capture' ) {
+		return __( 'Authorized', 'woocommerce' );
+	}
+
 	const refundedAmount = Number( transaction.amount_refunded );
 	const hasRefundedAmount =
 		Number.isFinite( refundedAmount ) && refundedAmount > 0;

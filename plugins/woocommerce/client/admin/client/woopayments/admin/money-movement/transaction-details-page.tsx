@@ -339,7 +339,10 @@ const normalizePaymentIntent = (
 		dispute: transaction.dispute || intent.dispute,
 		sales_channel:
 			transaction.sales_channel || intent.sales_channel || undefined,
-		status: transaction.status || intent.status,
+		status:
+			intent.status === 'requires_capture'
+				? intent.status
+				: transaction.status || intent.status,
 	};
 };
 

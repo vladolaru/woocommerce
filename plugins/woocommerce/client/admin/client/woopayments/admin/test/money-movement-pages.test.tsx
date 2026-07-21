@@ -676,6 +676,47 @@ describe( 'WooPayments money movement pages', () => {
 		).toBeInTheDocument();
 	} );
 
+	it( 'projects the global uncaptured count on the ordinary transactions view', async () => {
+		mockGetTransactions.mockResolvedValue( { data: [], total_count: 0 } );
+		mockGetTransactionsSummary.mockResolvedValue( { count: 0 } );
+		mockGetAuthorizationsSummary.mockResolvedValue( { count: 26 } );
+
+		render(
+			<MemoryRouter initialEntries={ [ '/woopayments/transactions' ] }>
+				<WooPaymentsTransactionsPage />
+			</MemoryRouter>
+		);
+
+		expect(
+			await screen.findByText( '0 transactions' )
+		).toBeInTheDocument();
+		expect(
+			await screen.findByRole( 'link', { name: 'Uncaptured (26)' } )
+		).toBeInTheDocument();
+		expect( mockGetAuthorizationsSummary ).toHaveBeenCalledWith( {} );
+	} );
+
+	it( 'keeps transactions usable when the uncaptured count fails', async () => {
+		mockGetTransactions.mockResolvedValue( { data: [], total_count: 0 } );
+		mockGetTransactionsSummary.mockResolvedValue( { count: 0 } );
+		mockGetAuthorizationsSummary.mockRejectedValue(
+			new Error( 'Authorization summary unavailable.' )
+		);
+
+		render(
+			<MemoryRouter initialEntries={ [ '/woopayments/transactions' ] }>
+				<WooPaymentsTransactionsPage />
+			</MemoryRouter>
+		);
+
+		expect(
+			await screen.findByText( '0 transactions' )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'link', { name: 'Uncaptured (…)' } )
+		).toBeInTheDocument();
+	} );
+
 	it.each( [
 		[
 			'summary count when the list omits its total',
@@ -1467,7 +1508,7 @@ describe( 'WooPayments money movement pages', () => {
 			screen.getByRole( 'link', { name: 'Transactions' } )
 		).toBeInTheDocument();
 		expect(
-			screen.getByRole( 'link', { name: 'Uncaptured' } )
+			await screen.findByRole( 'link', { name: 'Uncaptured (1)' } )
 		).toHaveAttribute( 'aria-current', 'page' );
 
 		expect(
@@ -1498,6 +1539,73 @@ describe( 'WooPayments money movement pages', () => {
 			} )
 		).toBeInTheDocument();
 		expect( screen.getByText( 'Ada Lovelace' ) ).toBeInTheDocument();
+	} );
+
+	it( 'links uncaptured orders to payment details', async () => {
+		mockGetAuthorizations.mockResolvedValue( {
+			data: [
+				{
+					payment_intent_id: 'pi_auth',
+					order_id: 123,
+					created: '2026-06-12T10:30:00Z',
+					amount: 5000,
+					currency: 'usd',
+				},
+			],
+			total_count: 1,
+		} );
+		mockGetAuthorizationsSummary.mockResolvedValue( { count: 1 } );
+
+		render(
+			<MemoryRouter
+				initialEntries={ [
+					'/woopayments/transactions?view=uncaptured',
+				] }
+			>
+				<WooPaymentsTransactionsPage />
+			</MemoryRouter>
+		);
+
+		expect(
+			await screen.findByRole( 'link', {
+				name: 'View payment details for order #123',
+			} )
+		).toHaveAttribute(
+			'href',
+			'http://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Ftransactions%2Fdetails&id=pi_auth'
+		);
+	} );
+
+	it( 'keeps incomplete authorization orders as text', async () => {
+		mockGetAuthorizations.mockResolvedValue( {
+			data: [
+				{
+					order_id: 124,
+					created: '2026-06-12T10:30:00Z',
+					amount: 5000,
+					currency: 'usd',
+				},
+			],
+			total_count: 1,
+		} );
+		mockGetAuthorizationsSummary.mockResolvedValue( { count: 1 } );
+
+		render(
+			<MemoryRouter
+				initialEntries={ [
+					'/woopayments/transactions?view=uncaptured',
+				] }
+			>
+				<WooPaymentsTransactionsPage />
+			</MemoryRouter>
+		);
+
+		expect( await screen.findByText( '#124' ) ).toBeInTheDocument();
+		expect(
+			screen.queryByRole( 'link', {
+				name: 'View payment details for order #124',
+			} )
+		).not.toBeInTheDocument();
 	} );
 
 	it( 'uses sanitized uncaptured query state and separate DataViews preferences', async () => {
@@ -1603,11 +1711,12 @@ describe( 'WooPayments money movement pages', () => {
 			</MemoryRouter>
 		);
 
-		await userEvent.click(
-			await screen.findByRole( 'button', {
-				name: 'Capture authorization for order #123',
-			} )
-		);
+		const captureButton = await screen.findByRole( 'button', {
+			name: 'Capture authorization for order #123',
+		} );
+		await act( async () => {
+			await userEvent.click( captureButton );
+		} );
 
 		expect(
 			await screen.findByRole( 'button', {
@@ -1660,6 +1769,16 @@ describe( 'WooPayments money movement pages', () => {
 				currency: 'usd',
 			} )
 			.mockResolvedValueOnce( {
+				count: 1,
+				total: 5000,
+				currency: 'usd',
+			} )
+			.mockResolvedValueOnce( {
+				count: 0,
+				total: 0,
+				currency: 'usd',
+			} )
+			.mockResolvedValueOnce( {
 				count: 0,
 				total: 0,
 				currency: 'usd',
@@ -1684,18 +1803,23 @@ describe( 'WooPayments money movement pages', () => {
 		).toBeInTheDocument();
 		expect( screen.getAllByText( '$50.00' ) ).not.toHaveLength( 0 );
 
-		await userEvent.click(
-			screen.getByRole( 'button', {
-				name: 'Capture authorization for order #123',
-			} )
-		);
+		await act( async () => {
+			await userEvent.click(
+				screen.getByRole( 'button', {
+					name: 'Capture authorization for order #123',
+				} )
+			);
+		} );
 
 		await waitFor( () => {
 			expect( mockGetAuthorizations ).toHaveBeenCalledTimes( 2 );
-			expect( mockGetAuthorizationsSummary ).toHaveBeenCalledTimes( 2 );
+			expect( mockGetAuthorizationsSummary ).toHaveBeenCalledTimes( 4 );
 		} );
 		expect(
 			await screen.findByText( '0 uncaptured transactions' )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'link', { name: 'Uncaptured (0)' } )
 		).toBeInTheDocument();
 		expect( screen.getByText( '$0.00' ) ).toBeInTheDocument();
 		expect(
@@ -1703,6 +1827,233 @@ describe( 'WooPayments money movement pages', () => {
 				name: 'Capture authorization for order #123',
 			} )
 		).not.toBeInTheDocument();
+	} );
+
+	it( 'keeps the newest uncaptured count when an older request resolves last', async () => {
+		let resolveInitialCount: ( value: {
+			count: number;
+			total: number;
+			currency: string;
+		} ) => void = () => undefined;
+		let resolveRefreshedCount: ( value: {
+			count: number;
+			total: number;
+			currency: string;
+		} ) => void = () => undefined;
+		const initialCountPromise = new Promise< {
+			count: number;
+			total: number;
+			currency: string;
+		} >( ( resolve ) => {
+			resolveInitialCount = resolve;
+		} );
+		const refreshedCountPromise = new Promise< {
+			count: number;
+			total: number;
+			currency: string;
+		} >( ( resolve ) => {
+			resolveRefreshedCount = resolve;
+		} );
+
+		mockGetAuthorizations
+			.mockResolvedValueOnce( {
+				data: [
+					{
+						payment_intent_id: 'pi_auth',
+						order_id: 123,
+						created: '2026-06-12T10:30:00Z',
+						amount: 5000,
+						currency: 'usd',
+					},
+				],
+				total_count: 1,
+			} )
+			.mockResolvedValueOnce( { data: [], total_count: 0 } );
+		mockGetAuthorizationsSummary
+			.mockResolvedValueOnce( {
+				count: 1,
+				total: 5000,
+				currency: 'usd',
+			} )
+			.mockReturnValueOnce( initialCountPromise )
+			.mockResolvedValueOnce( {
+				count: 0,
+				total: 0,
+				currency: 'usd',
+			} )
+			.mockReturnValueOnce( refreshedCountPromise );
+		mockCaptureAuthorization.mockResolvedValueOnce( {
+			id: 'pi_auth',
+			status: 'succeeded',
+		} );
+
+		render(
+			<MemoryRouter
+				initialEntries={ [
+					'/woopayments/transactions?tab=uncaptured',
+				] }
+			>
+				<WooPaymentsTransactionsPage />
+			</MemoryRouter>
+		);
+
+		const captureButton = await screen.findByRole( 'button', {
+			name: 'Capture authorization for order #123',
+		} );
+		await act( async () => {
+			await userEvent.click( captureButton );
+		} );
+		await waitFor( () =>
+			expect( mockGetAuthorizationsSummary ).toHaveBeenCalledTimes( 4 )
+		);
+
+		await act( async () => {
+			resolveRefreshedCount( {
+				count: 0,
+				total: 0,
+				currency: 'usd',
+			} );
+			await refreshedCountPromise;
+		} );
+		expect(
+			await screen.findByRole( 'link', { name: 'Uncaptured (0)' } )
+		).toBeInTheDocument();
+
+		await act( async () => {
+			resolveInitialCount( {
+				count: 1,
+				total: 5000,
+				currency: 'usd',
+			} );
+			await initialCountPromise;
+		} );
+		expect(
+			screen.getByRole( 'link', { name: 'Uncaptured (0)' } )
+		).toBeInTheDocument();
+	} );
+
+	it( 'shows an unavailable uncaptured count when the newest refresh fails', async () => {
+		mockGetAuthorizations
+			.mockResolvedValueOnce( {
+				data: [
+					{
+						payment_intent_id: 'pi_auth',
+						order_id: 123,
+						created: '2026-06-12T10:30:00Z',
+						amount: 5000,
+						currency: 'usd',
+					},
+				],
+				total_count: 1,
+			} )
+			.mockResolvedValueOnce( { data: [], total_count: 0 } );
+		mockGetAuthorizationsSummary
+			.mockResolvedValueOnce( {
+				count: 1,
+				total: 5000,
+				currency: 'usd',
+			} )
+			.mockResolvedValueOnce( {
+				count: 1,
+				total: 5000,
+				currency: 'usd',
+			} )
+			.mockResolvedValueOnce( {
+				count: 0,
+				total: 0,
+				currency: 'usd',
+			} )
+			.mockRejectedValueOnce(
+				new Error( 'Global authorization count unavailable.' )
+			);
+		mockCaptureAuthorization.mockResolvedValueOnce( {
+			id: 'pi_auth',
+			status: 'succeeded',
+		} );
+
+		render(
+			<MemoryRouter
+				initialEntries={ [
+					'/woopayments/transactions?tab=uncaptured',
+				] }
+			>
+				<WooPaymentsTransactionsPage />
+			</MemoryRouter>
+		);
+
+		expect(
+			await screen.findByRole( 'link', { name: 'Uncaptured (1)' } )
+		).toBeInTheDocument();
+		await act( async () => {
+			await userEvent.click(
+				screen.getByRole( 'button', {
+					name: 'Capture authorization for order #123',
+				} )
+			);
+		} );
+
+		expect(
+			await screen.findByText( '0 uncaptured transactions' )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'link', { name: 'Uncaptured (…)' } )
+		).toBeInTheDocument();
+	} );
+
+	it( 'skips the global count refresh when capture completes after unmount', async () => {
+		let resolveCapture: ( value: unknown ) => void = () => undefined;
+		const capturePromise = new Promise( ( resolve ) => {
+			resolveCapture = resolve;
+		} );
+
+		mockGetAuthorizations.mockResolvedValue( {
+			data: [
+				{
+					payment_intent_id: 'pi_auth',
+					order_id: 123,
+					created: '2026-06-12T10:30:00Z',
+					amount: 5000,
+					currency: 'usd',
+				},
+			],
+			total_count: 1,
+		} );
+		mockGetAuthorizationsSummary.mockResolvedValue( {
+			count: 1,
+			total: 5000,
+			currency: 'usd',
+		} );
+		mockCaptureAuthorization.mockReturnValueOnce(
+			capturePromise as Promise< never >
+		);
+
+		const mountedPage = render(
+			<MemoryRouter
+				initialEntries={ [
+					'/woopayments/transactions?tab=uncaptured',
+				] }
+			>
+				<WooPaymentsTransactionsPage />
+			</MemoryRouter>
+		);
+
+		expect(
+			await screen.findByRole( 'link', { name: 'Uncaptured (1)' } )
+		).toBeInTheDocument();
+		await userEvent.click(
+			screen.getByRole( 'button', {
+				name: 'Capture authorization for order #123',
+			} )
+		);
+		mountedPage.unmount();
+
+		await act( async () => {
+			resolveCapture( { id: 'pi_auth', status: 'succeeded' } );
+			await capturePromise;
+			await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+		} );
+
+		expect( mockGetAuthorizationsSummary ).toHaveBeenCalledTimes( 3 );
 	} );
 
 	it( 'dispatches an error notice when canceling an authorization fails', async () => {
@@ -3047,6 +3398,7 @@ describe( 'WooPayments money movement pages', () => {
 					currency: 'usd',
 					created: 1781712000,
 					payment_intent: 'pi_auth',
+					status: 'succeeded',
 					captured: false,
 					amount_refunded: 0,
 					order: {
@@ -3102,6 +3454,15 @@ describe( 'WooPayments money movement pages', () => {
 		const captureButton = await screen.findByRole( 'button', {
 			name: 'Capture authorization for order #123',
 		} );
+		const summary = screen
+			.getByRole( 'heading', { name: 'Summary' } )
+			.closest( 'section' ) as HTMLElement;
+		expect(
+			within( summary ).getByText( 'Authorized' )
+		).toBeInTheDocument();
+		expect(
+			within( summary ).queryByText( 'Succeeded' )
+		).not.toBeInTheDocument();
 
 		await act( async () => {
 			await userEvent.click( captureButton );

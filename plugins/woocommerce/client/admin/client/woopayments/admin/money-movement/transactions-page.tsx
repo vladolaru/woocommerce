@@ -3,7 +3,13 @@
  */
 import { Button } from '@wordpress/components';
 import { dispatch } from '@wordpress/data';
-import { useCallback, useEffect, useMemo, useState } from '@wordpress/element';
+import {
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { getHistory } from '@woocommerce/navigation';
 import { recordEvent } from '@woocommerce/tracks';
@@ -224,6 +230,11 @@ export const WooPaymentsTransactionsPage = () => {
 	>( [] );
 	const [ totalCount, setTotalCount ] = useState( 0 );
 	const [ summary, setSummary ] = useState< MoneyMovementSummary >( {} );
+	const [ uncapturedCount, setUncapturedCount ] = useState< number | null >(
+		null
+	);
+	const isMountedRef = useRef( false );
+	const uncapturedCountRequestIdRef = useRef( 0 );
 	const [ isLoading, setIsLoading ] = useState( true );
 	const [ errorMessage, setErrorMessage ] = useState< string | null >( null );
 	const [ exportMessage, setExportMessage ] =
@@ -397,6 +408,36 @@ export const WooPaymentsTransactionsPage = () => {
 		],
 		[]
 	);
+	const loadUncapturedCount = useCallback( async () => {
+		if ( ! isMountedRef.current ) {
+			return;
+		}
+
+		const requestId = ++uncapturedCountRequestIdRef.current;
+		setUncapturedCount( null );
+
+		try {
+			const nextSummary = await getWooPaymentsAuthorizationsSummary( {} );
+			const nextCount = getSummaryCount( nextSummary );
+
+			if (
+				isMountedRef.current &&
+				requestId === uncapturedCountRequestIdRef.current
+			) {
+				setUncapturedCount(
+					typeof nextCount === 'number' ? nextCount : null
+				);
+			}
+		} catch {
+			if (
+				isMountedRef.current &&
+				requestId === uncapturedCountRequestIdRef.current
+			) {
+				// Keep the active transactions view usable when its count fails.
+				setUncapturedCount( null );
+			}
+		}
+	}, [] );
 
 	useEffect( () => {
 		setViewPreferences( getMoneyMovementViewPreferences( resource ) );
@@ -506,6 +547,17 @@ export const WooPaymentsTransactionsPage = () => {
 		};
 	}, [ loadMoneyMovement ] );
 
+	useEffect( () => {
+		isMountedRef.current = true;
+
+		loadUncapturedCount();
+
+		return () => {
+			isMountedRef.current = false;
+			uncapturedCountRequestIdRef.current += 1;
+		};
+	}, [ loadUncapturedCount ] );
+
 	const handleViewChange = ( nextView: WooPaymentsMoneyMovementDataView ) => {
 		setViewPreferences(
 			setMoneyMovementViewPreferences( resource, nextView )
@@ -600,7 +652,10 @@ export const WooPaymentsTransactionsPage = () => {
 					orderId,
 					paymentIntentId
 				);
-				await loadMoneyMovement( { setLoading: false } );
+				await Promise.all( [
+					loadMoneyMovement( { setLoading: false } ),
+					loadUncapturedCount(),
+				] );
 				setPendingAuthorizationAction( null );
 				getNotices().createSuccessNotice(
 					sprintf(
@@ -617,7 +672,10 @@ export const WooPaymentsTransactionsPage = () => {
 					orderId,
 					paymentIntentId
 				);
-				await loadMoneyMovement( { setLoading: false } );
+				await Promise.all( [
+					loadMoneyMovement( { setLoading: false } ),
+					loadUncapturedCount(),
+				] );
 				setPendingAuthorizationAction( null );
 				getNotices().createSuccessNotice(
 					sprintf(
@@ -675,7 +733,35 @@ export const WooPaymentsTransactionsPage = () => {
 			render: ( { item }: { item: WooPaymentsAuthorization } ) => {
 				const orderId = getAuthorizationOrderId( item );
 
-				return orderId ? `#${ orderId }` : '-';
+				if ( ! orderId ) {
+					return '-';
+				}
+
+				const paymentIntentId = getAuthorizationPaymentIntentId( item );
+
+				if ( ! paymentIntentId ) {
+					return `#${ orderId }`;
+				}
+
+				return (
+					<a
+						href={ getSettingsPaymentsProviderRouteUrl(
+							getTransactionDetailsRoute( {
+								payment_intent_id: paymentIntentId,
+							} )
+						) }
+						aria-label={ sprintf(
+							/* translators: %s: order ID. */
+							__(
+								'View payment details for order #%s',
+								'woocommerce'
+							),
+							orderId
+						) }
+					>
+						{ `#${ orderId }` }
+					</a>
+				);
 			},
 		},
 		{
@@ -817,6 +903,11 @@ export const WooPaymentsTransactionsPage = () => {
 	const tabUncapturedUrl = getSettingsPaymentsProviderRouteUrl(
 		'/woopayments/transactions?view=uncaptured'
 	);
+	const uncapturedTabLabel = sprintf(
+		/* translators: %1$s: number of uncaptured authorizations, or an ellipsis while loading. */
+		__( 'Uncaptured (%1$s)', 'woocommerce' ),
+		uncapturedCount === null ? '…' : String( uncapturedCount )
+	);
 	const summaryCountLabel = isUncaptured
 		? sprintf(
 				/* translators: %d: uncaptured transactions count. */
@@ -852,7 +943,7 @@ export const WooPaymentsTransactionsPage = () => {
 						href={ tabUncapturedUrl }
 						aria-current={ isUncaptured ? 'page' : undefined }
 					>
-						{ __( 'Uncaptured', 'woocommerce' ) }
+						{ uncapturedTabLabel }
 					</a>
 				</nav>
 				<LiveStatusMessage isError={ !! errorMessage }>
