@@ -1242,6 +1242,77 @@ describe( 'WooPayments checkout', () => {
 				order_id: '123',
 				_ajax_nonce: 'nonce',
 				intent_id: 'pi_native',
+				should_save_payment_method: 'false',
+			} )
+		);
+	} );
+
+	test( 'carries order-pay save intent through confirmation and consumes only its transient URL state', async () => {
+		const replaceState = jest.spyOn( window.history, 'replaceState' );
+		document.body.innerHTML =
+			'<form id="order_review">' +
+			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
+			'</form>';
+		window.history.pushState(
+			{},
+			'',
+			'/checkout/order-pay/123/?pay_for_order=true&key=wc_order_test' +
+				'&extension=kept&save_payment_method=yes' +
+				'#wcpay-confirm-pi:123:pi_native_secret_abc:nonce'
+		);
+
+		require( '../woopayments-checkout' );
+
+		expect( replaceState ).toHaveBeenCalledWith(
+			'',
+			document.title,
+			'/checkout/order-pay/123/?pay_for_order=true&key=wc_order_test&extension=kept'
+		);
+		expect( window.location.hash ).toBe( '' );
+		expect( window.location.search ).toBe(
+			'?pay_for_order=true&key=wc_order_test&extension=kept'
+		);
+
+		await flushPromises();
+
+		expect( global.jQuery.post ).toHaveBeenCalledWith(
+			'https://example.test/admin-ajax.php',
+			expect.objectContaining( {
+				should_save_payment_method: 'true',
+			} )
+		);
+	} );
+
+	test( 'snapshots checked save intent before pending confirmation work', async () => {
+		let resolveConfirmation;
+		document.body.innerHTML =
+			'<form class="checkout">' +
+			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
+			'<input id="wc-woocommerce_payments-new-payment-method" type="checkbox" checked />' +
+			'<div id="wcpay-core-payment-element"></div>' +
+			'</form>';
+		stripeMock.handleNextAction.mockImplementationOnce(
+			() =>
+				new Promise( ( resolve ) => {
+					resolveConfirmation = resolve;
+				} )
+		);
+		setPaymentIntentConfirmationHash();
+
+		require( '../woopayments-checkout' );
+
+		document.getElementById(
+			'wc-woocommerce_payments-new-payment-method'
+		).checked = false;
+		resolveConfirmation( {
+			paymentIntent: { id: 'pi_native' },
+		} );
+		await flushPromises();
+
+		expect( global.jQuery.post ).toHaveBeenCalledWith(
+			'https://example.test/admin-ajax.php',
+			expect.objectContaining( {
+				should_save_payment_method: 'true',
 			} )
 		);
 	} );

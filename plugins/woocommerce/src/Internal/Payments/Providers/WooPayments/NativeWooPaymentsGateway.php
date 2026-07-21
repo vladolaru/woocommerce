@@ -1260,6 +1260,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		$this->maybe_handle_subscription_change_payment_success( $order, $result, $outcome, $is_subscription_change );
+		$result = $this->maybe_add_order_pay_save_intent_to_confirmation_redirect( $context, $order, $result );
 
 		return $result;
 	}
@@ -1858,6 +1859,34 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		$redirect = isset( $result['redirect'] ) ? (string) $result['redirect'] : '';
 
 		return 0 === strpos( $redirect, '#wcpay-confirm-' );
+	}
+
+	/**
+	 * Carry an order-pay save choice across the local confirmation redirect.
+	 *
+	 * @param PaymentContext       $context Payment context.
+	 * @param WC_Order             $order   Order being paid.
+	 * @param array<string,string> $result  Native checkout result.
+	 * @return array<string,string>
+	 */
+	private function maybe_add_order_pay_save_intent_to_confirmation_redirect( PaymentContext $context, WC_Order $order, array $result ): array {
+		if (
+			! isset( $_POST['woocommerce_pay'] ) // phpcs:ignore WordPress.Security.NonceVerification.Missing
+			|| ! ( $context->get_payment_data()['save_payment_method'] ?? false )
+			|| ! $this->is_confirmation_redirect_result( $result )
+		) {
+			return $result;
+		}
+
+		$payment_url     = $order->get_checkout_payment_url();
+		$fragment_offset = strpos( $payment_url, '#' );
+		if ( false !== $fragment_offset ) {
+			$payment_url = substr( $payment_url, 0, $fragment_offset );
+		}
+
+		$result['redirect'] = add_query_arg( 'save_payment_method', 'yes', $payment_url ) . $result['redirect'];
+
+		return $result;
 	}
 
 	/**

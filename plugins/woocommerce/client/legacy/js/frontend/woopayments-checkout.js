@@ -1875,7 +1875,20 @@
 		);
 	}
 
-	function updateOrderStatusAfterConfirmation( confirmation, intentId ) {
+	function shouldSavePaymentMethodAfterConfirmation() {
+		var currentUrl = new window.URL( window.location.href );
+
+		return (
+			currentUrl.searchParams.get( 'save_payment_method' ) === 'yes' ||
+			shouldSavePaymentMethod()
+		);
+	}
+
+	function updateOrderStatusAfterConfirmation(
+		confirmation,
+		intentId,
+		shouldSaveAfterConfirmation
+	) {
 		if (
 			! config.ajaxUrl ||
 			! confirmation ||
@@ -1891,7 +1904,9 @@
 			order_id: confirmation.orderId,
 			_ajax_nonce: confirmation.nonce,
 			intent_id: intentId,
-			should_save_payment_method: 'false',
+			should_save_payment_method: shouldSaveAfterConfirmation
+				? 'true'
+				: 'false',
 			is_changing_payment: isChangingPaymentMethodForSubscription()
 				? 'true'
 				: 'false',
@@ -1899,10 +1914,14 @@
 	}
 
 	function consumeConfirmationHash() {
+		var currentUrl = new window.URL( window.location.href );
+
+		currentUrl.hash = '';
+		currentUrl.searchParams.delete( 'save_payment_method' );
 		window.history.replaceState(
 			'',
 			document.title,
-			window.location.pathname + window.location.search
+			currentUrl.pathname + currentUrl.search
 		);
 	}
 
@@ -1948,6 +1967,7 @@
 		var activePaymentForm;
 		var intentId;
 		var confirmationPromise;
+		var shouldSaveAfterConfirmation;
 		var hasReleasedConfirmationUi = false;
 
 		function blockConfirmationUi() {
@@ -1976,6 +1996,8 @@
 			return;
 		}
 
+		shouldSaveAfterConfirmation =
+			shouldSavePaymentMethodAfterConfirmation();
 		consumeConfirmationHash();
 		blockConfirmationUi();
 
@@ -2037,7 +2059,11 @@
 					return;
 				}
 
-				updateOrderStatusAfterConfirmation( confirmation, intentId )
+				updateOrderStatusAfterConfirmation(
+					confirmation,
+					intentId,
+					shouldSaveAfterConfirmation
+				)
 					.done( function ( response ) {
 						var resultResponse;
 						var returnUrl;

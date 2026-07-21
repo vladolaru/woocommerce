@@ -73,6 +73,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		unset( $_POST['wcpay-express-checkout-context'] );
 		unset( $_POST['wcpay-fraud-prevention-token'] );
 		unset( $_POST['is-woopay-preflight-check'] );
+		unset( $_POST['woocommerce_pay'] );
 		unset( $_POST['_wcsnonce'] );
 		unset( $_POST['change_payment_method'] );
 		unset( $_POST['woocommerce_change_payment'] );
@@ -1634,6 +1635,73 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( $order->get_id(), $service->last_checkout_context->get_order_id() );
 		$this->assertSame( OrderPaymentStore::GATEWAY_ID, $service->last_checkout_context->get_gateway_id() );
 		$this->assertFalse( $service->last_checkout_context->get_provider_data()['is_platform_payment_method'] );
+	}
+
+	/**
+	 * @testdox Should carry checked save intent only across order-pay confirmation redirects.
+	 *
+	 * @dataProvider confirmation_redirect_save_intent_contexts
+	 *
+	 * @param bool $is_order_pay       Whether the request came from the order-pay form.
+	 * @param bool $should_save        Whether the shopper requested payment-method saving.
+	 * @param bool $should_carry_intent Whether the confirmation redirect should carry the save intent.
+	 */
+	public function test_process_payment_carries_checked_save_intent_only_across_order_pay_confirmation_redirect( bool $is_order_pay, bool $should_save, bool $should_carry_intent ): void {
+		$order                 = $this->create_order();
+		$confirmation_redirect = '#wcpay-confirm-pi:' . $order->get_id() . ':pi_native_secret_abc:nonce';
+		$service               = new RecordingPaymentProcessingService();
+
+		$service->checkout_outcome = new PaymentOutcome(
+			PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION,
+			'pi_native',
+			$confirmation_redirect,
+			'pm_native'
+		);
+
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		if ( $is_order_pay ) {
+			$_POST['woocommerce_pay'] = '1';
+		}
+		if ( $should_save ) {
+			$_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-new-payment-method' ] = 'true';
+		}
+
+		$filtered_payment_url = 'https://example.test/filtered-order-pay/?pay_for_order=true&key=wc_order_test&extension=kept#extension-anchor';
+		$payment_url_filter   = static function ( string $payment_url, WC_Order $filtered_order ) use ( $order, $filtered_payment_url ): string {
+			return $filtered_order->get_id() === $order->get_id() ? $filtered_payment_url : $payment_url;
+		};
+		add_filter( 'woocommerce_get_checkout_payment_url', $payment_url_filter, 10, 2 );
+
+		try {
+			$result = $gateway->process_payment( $order->get_id() );
+		} finally {
+			remove_filter( 'woocommerce_get_checkout_payment_url', $payment_url_filter, 10 );
+		}
+
+		$expected_payment_url = 'https://example.test/filtered-order-pay/?pay_for_order=true&key=wc_order_test&extension=kept';
+		$expected_redirect    = $should_carry_intent
+			? add_query_arg( 'save_payment_method', 'yes', $expected_payment_url ) . $confirmation_redirect
+			: $confirmation_redirect;
+
+		$this->assertSame( 'success', $result['result'] );
+		$this->assertSame( $expected_redirect, $result['redirect'] );
+		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertSame( $should_save, $service->last_checkout_context->get_payment_data()['save_payment_method'] ?? false );
+	}
+
+	/**
+	 * Confirmation redirect request contexts.
+	 *
+	 * @return array<string,array{0:bool,1:bool,2:bool}>
+	 */
+	public function confirmation_redirect_save_intent_contexts(): array {
+		return array(
+			'checked order pay'   => array( true, true, true ),
+			'unchecked order pay' => array( true, false, false ),
+			'checked checkout'    => array( false, true, false ),
+		);
 	}
 
 	/**
