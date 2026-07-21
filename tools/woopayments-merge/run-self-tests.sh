@@ -25,6 +25,7 @@ set -uo pipefail
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SELF_DIR/../.." && pwd)"
 CRITICAL_FLOWS_DIR="$REPO_ROOT/tools/woopayments-critical-flows"
+CLAIM_GRAPH_TEST="$SELF_DIR/test-release-claim-graph.py"
 
 if ! command -v python3 >/dev/null 2>&1; then
 	echo "BLOCKED: python3 is required for the harness self-tests." >&2
@@ -36,6 +37,10 @@ if ! python3 -c 'import pytest' >/dev/null 2>&1; then
 fi
 if [ ! -d "$CRITICAL_FLOWS_DIR" ]; then
 	echo "BLOCKED: missing critical-flows suite: $CRITICAL_FLOWS_DIR" >&2
+	exit 2
+fi
+if [ ! -f "$CLAIM_GRAPH_TEST" ]; then
+	echo "BLOCKED: missing release-claim graph self-test: $CLAIM_GRAPH_TEST" >&2
 	exit 2
 fi
 
