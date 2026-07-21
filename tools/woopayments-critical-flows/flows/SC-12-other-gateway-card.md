@@ -1,6 +1,6 @@
 # SC-12 — Add card via another gateway (no WooPayments conflict) · HYBRID (D + A)
 
-Coexistence guard: with a second card-capable gateway active (e.g. the WooCommerce Stripe extension in test mode), saving and using a card through that gateway must work, and WooPayments must not interfere — only WooPayments' own entry carries its "Credit card" label, and WooPayments must not raise a false "your payment information is incomplete" error when its own fields are untouched while the shopper pays via the other gateway. Functional acceptance: card saved via the alternate gateway and usable.
+Coexistence guard: with a second card-capable gateway active (e.g. the WooCommerce Stripe extension in test mode), saving and using a card through that gateway must work, and WooPayments must not interfere. WooPayments owns the shopper-facing `Card` title, the alternate gateway must remain separately identifiable, and WooPayments must not raise a false "your payment information is incomplete" error when its own fields are untouched while the shopper pays via the other gateway. Functional acceptance: card saved via the alternate gateway and usable.
 
 ## Fixtures (both stores)
 
@@ -15,7 +15,7 @@ BOTH stores:
 
 1. My Account → Payment methods → Add payment method. **Confirm both gateways are offered**; select the OTHER gateway; save `4242 4242 4242 4242`.
 2. **Functional:** the card saves under the other gateway; **confirm it is listed in Payment methods** with a success notice.
-3. Go to checkout. **Confirm exactly one WooPayments "Credit card" entry renders** — the other gateway keeps its own distinct label, no duplicate/misattributed card entries.
+3. Go to checkout. **Confirm WooPayments renders its owned `Card` title and the other gateway keeps its own distinct label** — no duplicate or misattributed gateway entry.
 4. Select the OTHER gateway (its saved card) and Place order. **Confirm WooPayments raises no false "payment information is incomplete" error** while its fields are unused.
 5. **Functional:** the order is paid via the other gateway.
 
@@ -38,3 +38,10 @@ Agent oracle mode: comparable (dual-store; reference is the golden oracle).
 - All eight fresh browser confirmations were inspected at original resolution. The add-card images visibly show the selected alternate gateway and complete entered card fixture, and source, screenshot, debug-window, secret, and provenance checks pass.
 - Runner ingest recorded 0 PASS, 2 FAIL — UX, 0 BLOCKED, and 0 queued in `tools/woopayments-critical-flows/evidence/runs/20260715T112142Z-24215-partial/`. Both rollup rows bind the accepted result as `sha256:b4318b00c1f4c8cd2868f4d6a0201f5ee8d7e1c580f839791f4e4f16b91ff9b6`.
 - The matrix and README remain `PENDING` because Layer A fails the written label contract and the required Layer D exerciser is still unwired.
+
+## 2026-07-21 contract correction
+
+- The accepted run and its historical two `FAIL — UX` verdicts remain unchanged; they evaluated the former exact `Credit card` assertion.
+- `Card` is the deliberate pinned/native shopper title. `Credit / Debit Cards` is a separate merchant-settings label, and the flow had no authority for substituting the historical literal.
+- The accepted controlled fixture verifies distinct `Card` and `Alternate card` entries, alternate-gateway token/order isolation, and no false WooPayments error. It does not establish universal gateway-name clarity or assistive-technology comprehension.
+- The row remains `PENDING` because Layer D is unwired. Correcting the prospective label contract does not retroactively change the accepted runner verdict.

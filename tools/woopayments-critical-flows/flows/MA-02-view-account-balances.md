@@ -1,6 +1,6 @@
 # MA-02 — View account balances · HYBRID (A + D)
 
-Guards the Payments Overview balance surface: the available and pending balances shown to the merchant must be correct for the connected account, and the Overview cards (the primary "how much money do I have" affordance) must render on native as they do on the reference plugin. Local prerequisite: each store's test account must have balance data (seed charges via the WCPay Dev Tools Test Lab, `admin.php?page=wcpaydev-test-lab`, or prior checkout flows); if an account reports no balance object, the runner honestly keeps this BLOCKED rather than asserting on empty cards.
+Guards the Payments Overview balance surface: each store's Balance card must show exact REST-backed Total and Available figures, while native's adjacent Payouts card must also show its deliberately exposed Pending figure. Parity is shared financial correctness, not identical card topology. Local prerequisite: each store's test account must have balance data (seed charges via the WCPay Dev Tools Test Lab, `admin.php?page=wcpaydev-test-lab`, or prior checkout flows); if an account reports no balance object, the runner honestly keeps this `BLOCKED` rather than asserting on empty cards.
 
 ## Fixtures (both stores)
 
@@ -12,8 +12,8 @@ Guards the Payments Overview balance surface: the available and pending balances
 BOTH stores (reference `admin.php?page=wc-admin&path=/payments/overview`, target `admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview`):
 
 1. Log in as admin and open Payments → Overview.
-2. **Confirm the balance cards render**: an Available balance figure and a Pending balance figure, each with an explicit currency-formatted amount (not `—`, not a perpetual loading skeleton).
-3. Cross-check each displayed amount against the store's own account state (Layer D step 1 output). Amounts differ BETWEEN stores (separate test accounts) — parity is card presence + per-store correctness, not equal numbers.
+2. **On both stores, confirm the Balance card renders currency-formatted Total and Available figures** (not `—`, not a perpetual loading skeleton). **On native, additionally confirm the adjacent Payouts card renders its currency-formatted Pending figure.** The pinned plugin does not require a separate Pending row.
+3. Cross-check each displayed amount against the store's own account state (Layer D step 1 output): Total equals Available plus Pending; displayed Available matches REST; native's displayed Pending matches REST. Amounts differ BETWEEN stores (separate test accounts) — parity is per-store financial correctness, not equal numbers or identical card layout.
 4. **Confirm the currency formatting matches the account's default currency** and that no error notice or console crash replaces the cards.
 5. End state: read-only — no store mutation; Overview remains loaded with populated cards on both stores.
 
@@ -21,12 +21,13 @@ BOTH stores (reference `admin.php?page=wc-admin&path=/payments/overview`, target
 
 - On each store, fetch the account/overview balances via the internal REST endpoint (`wp --user=1 eval` + `rest_do_request` on the payments overview/balance route) and record `available` and `pending` amounts + currency.
 - Assert both fields are present, numeric, and denominated in the account's default currency.
-- Assert the REST payload amounts equal what Layer A observed on the cards for the same store.
-- Compare reference vs target: identical payload SHAPE (fields present, currency semantics), per-store amount correctness.
+- Assert Total equals Available plus Pending for each store and each Balance card's displayed Total and Available equal its REST state.
+- Assert native's additional displayed Pending equals its REST state; do not require the pinned plugin to expose a separate Pending row.
+- Compare reference vs target: identical payload SHAPE (fields present, currency semantics) and per-store amount correctness, allowing the deliberate presentation difference.
 
 Deterministic exerciser: NOT YET WIRED — assertions above are the contract for the future flows/MA-02-*.sh.
 
-Agent oracle mode: comparable (dual-store; reference is the golden oracle).
+Agent oracle mode: comparable for the shared Total/Available correctness contract, with the explicitly additive native Pending assertion above.
 
 ## Runner-verified Layer A result (2026-07-15)
 
@@ -35,3 +36,10 @@ Agent oracle mode: comparable (dual-store; reference is the golden oracle).
 - Comparable parity: **FAIL — UX** because the written contract requires both stores to expose the explicit Pending figure. This is a written-contract/reference-oracle mismatch, not a native product regression.
 - Runner archive: `evidence/runs/20260715T131642Z-64666-partial/` (0 PASS, 2 FAIL, 0 BLOCKED, 0 queued). Accepted result digest: `sha256:68715b36a534487bdedbaacaf57cd16ac320d66d3bd00f0e47f66514788da7a0`.
 - The maintained README and matrix status remains `PENDING`: comparable Layer A failed and Layer D is still unwired.
+
+## 2026-07-21 contract correction
+
+- The accepted run and its historical reference `FAIL — UX`, target `PASS`, and comparable `FAIL — UX` verdicts remain unchanged; they evaluated the former requirement that both owners show an explicit Pending figure.
+- Pinned WooPayments and its published contract deliberately present Total plus Available on the Balance card. Native presents the same pair and additionally exposes Pending on the adjacent Payouts card.
+- The accepted native observation verifies exact REST-backed Total, zero Available, and positive Pending in USD. It does not verify positive-Available, other-currency, negative-balance, multi-currency, or transition behavior.
+- The row remains `PENDING` because Layer D is unwired and the intended positive-Available plus positive-Pending fixture has not been rerun under the corrected asymmetric contract.

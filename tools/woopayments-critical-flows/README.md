@@ -51,7 +51,7 @@ Comparable flows run on **reference `:8082`** (current WC + WooPayments extensio
 ## Verdict rubric (encodes "visual may change, function/UX may not")
 
 | Verdict | Rule |
-|---------|------|
+| --------- | ------ |
 | **PASS** | All steps completable AND end-state correct (amount, order/subscription state, meta, emails, token saved/charged) AND every reference affordance discoverable + every critical feedback signal present. Styling/layout/copy-format may differ. |
 | **PASS — visual divergence** | As PASS; cosmetic differences recorded, not a regression. |
 | **FAIL — functional** | A step can't complete, OR end-state differs in a way that matters (wrong amount/status/meta, no email, token not saved/charged, money moved wrong). |
@@ -91,26 +91,26 @@ Legend — **Layers:** `D` deterministic, `A` agent-driven, `D+A` both (overlap)
 ### Shopper — Checkout
 
 | ID | Flow | Layers | Functional acceptance | UX / parity-sensitive | Status |
-|----|------|--------|-----------------------|-----------------------|--------|
-| SC-01 | Card checkout, shortcode (new card) | D+A | Order paid; txn recorded; amount/currency correct | Card fields; incomplete-form errors; test-mode badge + test-card copy | PENDING (Layer A runner-verified FAIL — UX 2026-07-18: both stores completed one trusted incomplete attempt with an inline error and no order, then one trusted USD 25 paid checkout with exact intent/charge/PaymentMethod joins, but both omit the separately required Test mode indicator while rendering the 4242 copy; shared reference/target contract failure, not a native-only regression; run `20260718T105343Z-40055-partial`) |
+| ---- | ------ | -------- | ----------------------- | ----------------------- | -------- |
+| SC-01 | Card checkout, shortcode (new card) | D+A | Order paid; txn recorded; amount/currency correct | Card fields; incomplete-form errors; shared test-card copy; native badge preserved | PENDING (accepted Layer A historical FAIL — UX 2026-07-18 against the former dual-owner badge oracle; both stores passed the functional and shared test-instruction contract, and the real native badge-hydration defect is corrected on current HEAD; corrected Layer A runner replay not earned; run `20260718T105343Z-40055-partial`) |
 | SC-02 | Card checkout, Blocks (new card) | D+A | Order paid; txn recorded | Payment Element mounts; test-mode badge; errors | PENDING (runner-verified 2026-07-18: Layer A PASS on both stores with context-bound WP-CLI/provider state corroboration; WooCommerce transaction IDs match PaymentIntents; Layer D deterministic exerciser NOT YET WIRED; run `20260718T113300Z-51058-partial`) |
 | SC-03 | 3DS-required card (`4000002500003155`), classic + Blocks | A (+D assert) | SCA → order paid | 3DS modal completes; fail path errors | PENDING |
 | SC-04 | **Saved card → checkout (classic + Blocks)** | D+A | Saved token charged (not new PM); SCA handled | Saved-card radio selectable; no forced new-card; 3DS on saved token | PASS (runner-verified 2026-07-14: context-bound sc04 gate — classic+Blocks, normal+SCA, both stores; run archived under evidence/runs/) |
 | SC-05 | Pay for order (My Account), new + save, 3DS | D+A | Pending order paid; PM optionally saved | "Pay" affordance; save checkbox; PM appears | PENDING |
 | SC-06 | Save-PM checkbox + terms behavior (sub vs regular) | A | UI logic | Mandate only when save checked (regular); hidden for subs | PENDING |
-| SC-07 | $1M cart limit | D+A | Checkout blocked over limit | Error below WooPayments method | PENDING |
+| SC-07 | Provider amount-limit handling | D+A | Provider-specific rejection blocks payment; supported control pays | Safe error at WooPayments method | PENDING (accepted Layer A historical FAIL 2026-07-15 against the stale universal `$1M` Visa USD oracle; Layer D unwired and no corrected method/network/currency-specific rejecting journey executed; run `20260715T103633Z-75383-partial`) |
 | SC-08 | WooPay signup + checkout | A | Account created; order paid; PM+address reusable | WooPay button; OTP; redirect | BLOCKED (SMS OTP) |
 | SC-09 | Stripe Link save + reuse | A | Order paid; Link UI on return | Link registration + reuse UI | BLOCKED (real Chrome card) |
 | SC-10 | Regional — Bancontact / iDEAL / P24 | A (+D assert) | Currency-gated; pay + refund; correct logo | Shows only in correct currency; add/remove clean | PENDING (Layer A runner-verified 2026-07-19: reference BLOCKED only for real P24 capability and the undriven settings lifecycle after direct-Playwright iDEAL/Bancontact checkout + full-refund PASS; target FAIL — FUNCTIONAL because ordinary EUR checkout omits both methods and the broader selectable path fails on a missing appearance dependency, with fragmented generic settings rows also recorded; both stores passed USD hiding, card continuity, and exact restoration; Layer D NOT YET WIRED; result `sha256:8e8afaa7b9420a950c9f903d919d3bc46d363113877d81a9999401141d015c92`; run `20260719T093748Z-12570-partial`) |
 | SC-11 | BNPL — Klarna / Affirm (≥$50) / Afterpay | A (+D assert) | Shows; pay + refund; "Payment via X"; logo | BNPL group; add/remove clean | PENDING (Layer A runner-verified 2026-07-19: reference BLOCKED for hosted checkout/order/refund by a common pre-order browser-runner failure; target FAIL — FUNCTIONAL because native Afterpay Manage has no normal-UI control, with missing checkout logos and fragmented generic provider rows also recorded; both stores passed USD 60 registration, USD 30 Affirm eligibility, card continuity, and exact restoration; Layer D NOT YET WIRED; result `sha256:c96a4a0f7ce038b48fd50e070a0b39b8ddfaec94b193c6e61ce7ee7aa6738d70`; run `20260719T080247Z-19380-partial`) |
-| SC-12 | Add card via OTHER gateway (no WooPayments conflict) | D+A | Card saved via alt gateway | Only WooPayments "credit card" shown; no false "incomplete" error | PENDING |
+| SC-12 | Add card via OTHER gateway (no WooPayments conflict) | D+A | Card saved and used via alternate gateway | WooPayments `Card` and distinct alternate entry; no false "incomplete" error | PENDING (accepted Layer A historical FAIL — UX 2026-07-15 against the stale `Credit card` literal; controlled coexistence/state isolation verified, but Layer D remains unwired; run `20260715T112142Z-24215-partial`) |
 | SC-13 | Shipping cost updates on method switch | D+A | Totals recompute $20→$40→$20 | Live total update | PENDING |
 | SC-14 | LPM wave-1 checkout | D+A | Each wave-1 method pays or redirects with method-specific gateway/token metadata | Method appears only for valid currency/country and does not fall back to card | PENDING (Layer A runner-verified 2026-07-19 from a context-bound direct-Playwright gate: reference BLOCKED after iDEAL/Bancontact/Affirm/Afterpay checkout+provider PASS, provider-backed Klarna pending-order proof, and real SEPA capability blocking; target FAIL — FUNCTIONAL because all five executable split gateways expose/select correctly but their Payment Element stays empty when native checkout dereferences the missing appearance utility, so no target order/provider intent is created; 12/12 exact fixture restores and both temporary-product cleanups passed; result `sha256:ca9dc8dd38c9691c9fce2a30801b9c58d80f3724816e40733d8ce8e58da8fe97`; run `20260719T104733Z-70230-partial`) |
 
 ### Shopper — Payment methods (My Account)
 
 | ID | Flow | Layers | Functional acceptance | UX checkpoints | Status |
-|----|------|--------|-----------------------|----------------|--------|
+| ---- | ------ | -------- | ----------------------- | ---------------- | -------- |
 | SP-01 | Add PM — regular card | D+A | PM saved; usable | Success notice; listed | PASS (runner-verified 2026-07-17: fresh context-bound Layer A used one trusted submit per store and proved the success notice, saved Visa 4242 listing and checkout reuse, exact one-token/customer/PaymentMethod/succeeded off-session SetupIntent joins, zero orders, and no charge delta; the target raw checkout timing miss is preserved and reconciled by a read-only saved-card observation, while its exact placeholder 404 remains cosmetic; Layer D independently repeated the provider-bound Visa token/setup success with zero orders/charges and clean marker-bounded logs; runs `20260717T135914Z-35762-partial`, `20260717T134419Z-3276-partial`) |
 | SP-02 | Add PM — 3DSv2 (`4000000000003220`) fail→succeed | A | Fail errors; success saves | 3DS modal; auth-fail msg; success | PASS (runner-verified 2026-07-14: dual-store 3DS Fail → specific authentication error and no token; Complete → exactly one customer-bound Visa 3220 token; no order/charge; target cosmetic storefront divergence; run `20260714T142200Z-34396-partial`) |
 | SP-03 | Add PM — declined (`4000000000000002`) | D+A | Save rejected | "Card was declined" error | FAIL (runner-verified 2026-07-14: Layer A reference PASS, target FAIL — UX; `create_setup_intent` returned HTTP 502 with the specific decline in its body but native rendered a generic error; no token/order/charge; new product regression; run `20260714T140342Z-13810-partial`) |
@@ -120,7 +120,7 @@ Legend — **Layers:** `D` deterministic, `A` agent-driven, `D+A` both (overlap)
 ### Shopper — Subscriptions
 
 | ID | Flow | Layers | Functional acceptance | UX checkpoints | Status |
-|----|------|--------|-----------------------|----------------|--------|
+| ---- | ------ | -------- | ----------------------- | ---------------- | -------- |
 | SS-01 | Purchase subscription (initial) | D+A | Subscription+order; token saved | Mandate; no save-PM checkbox | PENDING (Layer A runner-verified PASS 2026-07-17: dual-store $9.99 monthly block checkout, store-naming future-payments mandate, no save-PM checkbox, order/active-subscription/next-payment/token/provider/customer binding and My Account Visa 4242 parity; target missing product placeholder recorded as visual divergence; Layer D NOT YET WIRED; run `20260717T112612Z-29585-partial`) |
 | SS-02 | Change PM → new card | D+A | PM updated; renews on it | "Change payment"; PM row updates | PENDING (Layer A runner-verified 2026-07-17: reference PASS, target FAIL — functional; unlike reference, native renders an unchecked optional Save to account control, then creates provider Mastercard 4444 but redirects to Order received and does not save/bind a local token, leaving the subscription UI and Payment methods on Visa 4242; Active/schedule/order/charge state remains safe; Layer D NOT YET WIRED; new product regression; run `20260717T123027Z-62070-partial`) |
 | SS-03 | **Change PM → saved card** | D+A | Saved token set; renews on it | Saved-card selectable in change-payment | PASS (runner-verified 2026-07-14: browser Layer A both stores; renewal D layer provider-reconciled with chosen-token binding artifact; run archived under evidence/runs/) |
@@ -135,19 +135,19 @@ Legend — **Layers:** `D` deterministic, `A` agent-driven, `D+A` both (overlap)
 ### Merchant — Subscriptions (admin)
 
 | ID | Flow | Layers | Functional acceptance | UX checkpoints | Status |
-|----|------|--------|-----------------------|----------------|--------|
-| MS-01 | Create subscription product | D+A | Purchasable | Subscription type + settings | PENDING |
+| ---- | ------ | -------- | ----------------------- | ---------------- | -------- |
+| MS-01 | Create subscription product | D+A | Published, purchasable; WooPayments offered | Subscription type, settings, and owner-resolved CTA | PENDING (accepted Layer A historical FAIL — UX 2026-07-18 against stale `Sign up now`; both stores resolved `Add to cart`, but Layer D remains unwired; run `20260718T141201Z-30996-partial`) |
 | MS-02 | Purchase (merchant view) | D | Visible admin + My Account | Admin record | PENDING |
 | MS-03 | Suspend + resume | D+A | On-hold blocks renewal; resume restores | Suspend/Resume + status | PENDING (Layer A runner-verified PASS in 20260718T151903Z-45965-partial; Layer D NOT YET WIRED; run flows/MS-03-suspend-resume.md) |
 | MS-04 | Promote w/ coupon | D | Schedule reflects coupon | Coupon effect | PENDING |
 | MS-05 | Renew automatically (scheduled) | D | Charges on date; email; active; next date | Renewal order + email | PENDING |
-| MS-06 | Renew manually (admin) | D+A | Renewal order paid; date advances | "Renew" action | PENDING (Layer A runner-verified FAIL — functional 2026-07-18: one confirmed admin renewal per store created exactly one Processing USD 20 renewal and succeeded/captured provider charge through the saved Visa 4242, but neither future schedule advanced after reload; shared reference/target contract failure, not native-only; Layer D NOT YET WIRED; run `20260718T163605Z-37081-partial`) |
+| MS-06 | Renew manually (admin) | D+A | Renewal paid; future schedule preserved | "Process renewal" action and result | PENDING (accepted Layer A historical FAIL — functional 2026-07-18 against the stale future-date advancement oracle; both stores proved paid saved-method renewal with the Subscriptions-owned schedule preserved, but Layer D remains unwired; run `20260718T163605Z-37081-partial`) |
 | MS-07 | **Admin change payment method** | D+A | Admin sets/corrects token; renewal uses it | WooPayments selectable AND editable token fields render+save | PASS (runner-verified 2026-07-14: admin browser Layer A both stores; renewal D layer provider-reconciled with token-id-pinned gate run + chosen-token binding artifact; run archived under evidence/runs/) |
 
 ### Merchant — Order (capture / refunds)
 
 | ID | Flow | Layers | Functional acceptance | UX checkpoints | Status |
-|----|------|--------|-----------------------|----------------|--------|
+| ---- | ------ | -------- | ----------------------- | ---------------- | -------- |
 | MO-01 | Manual capture (order) | D+A | Captured; status; amount | Capture button → captured | PASS (runner-verified 2026-07-16: Layer D dual-store provider-backed on-hold/requires_capture → processing/succeeded full-capture parity with clean logs; Layer A dual-store checkout and merchant Capture charge UX PASS, target settings-label divergence cosmetic; runs 20260716T132023Z-19450-partial, 20260716T141044Z-84944-partial) |
 | MO-02 | Manual capture — Uncaptured tab | D+A | Capture from list; row leaves tab | Tab lists eligible; capture works | PENDING (Layer D runner-verified PASS 2026-07-16: dual-store exact authorizations-list inclusion → row-route capture → list removal/provider/order/note parity with clean logs; Layer A runner-verified reference PASS / target FAIL — UX: native omits the non-zero Uncaptured navigation badge and renders the row's order number as plain text instead of the required link, while exact capture, success feedback, and financial state pass; runs 20260716T150009Z-83633-partial, 20260716T164405Z-71705-partial) |
 | MO-03 | Manual capture — payment-details page | D+A | Capture from detail | Capture on detail; clears | PENDING (Layer D runner-verified PASS 2026-07-17: dual-store exact authorization → full-capture provider/order/note parity with clean logs; Layer A runner-verified reference PASS / target FAIL — UX: native renders the exact authorization row with zero links, and ordinary row/order-cell clicks cannot open Payment details, so no detail-level capture mutation occurs; runs 20260717T093508Z-67583-partial, 20260717T104031Z-97822-partial) |
@@ -158,9 +158,9 @@ Legend — **Layers:** `D` deterministic, `A` agent-driven, `D+A` both (overlap)
 ### Merchant — Admin (overview / transactions / payouts)
 
 | ID | Flow | Layers | Functional acceptance | UX checkpoints | Status |
-|----|------|--------|-----------------------|----------------|--------|
+| ---- | ------ | -------- | ----------------------- | ---------------- | -------- |
 | MA-01 | Open admin as non-admin | D | Capability-gated | `manage_woocommerce` gating | PASS (runner-verified 2026-07-18: manifest-sealed Layer D dual-store capability, exact REST denial/admission, authenticated page denial, session cleanup, and clean-log parity; no customer financial payload escaped; run `20260718T193353Z-30156-partial`) |
-| MA-02 | View account balances | A (+D) | Balance + available/pending correct | Overview cards | PENDING |
+| MA-02 | View account balances | A (+D) | REST-backed Total/Available; native Pending | Overview cards | PENDING (accepted Layer A historical reference FAIL — UX 2026-07-15 against the overconstrained dual-owner Pending oracle; observed native state was correct but Available was zero, and Layer D remains unwired; run `20260715T131642Z-64666-partial`) |
 | MA-03 | View transactions | D+A | List populated | Table + row→detail | PENDING |
 | MA-04 | Filter transactions | D+A | Narrows to criteria | Filter controls | PENDING |
 | MA-05 | Search transactions | D+A | Results match | Search field | PENDING |
@@ -174,7 +174,7 @@ Legend — **Layers:** `D` deterministic, `A` agent-driven, `D+A` both (overlap)
 ### Merchant — Disputes
 
 | ID | Flow | Layers | Functional acceptance | UX checkpoints | Status |
-|----|------|--------|-----------------------|----------------|--------|
+| ---- | ------ | -------- | ----------------------- | ---------------- | -------- |
 | MD-01 | Created: note + on-hold + notify | D+A | Order on-hold; dispute note | Note + status | PASS (runner-verified 2026-07-19: corrected-source dual-store Layer D and direct-Playwright Layer A proved one provider-originated dispute per store, exact WPCOM payment-success→dispute-created delivery, on-hold order + merchant dispute note, boundary-exact dispute row/amount/count identity, merchant reason/status/action parity, financial reconciliation, and automatic-mode/log/session cleanup; result `sha256:7f9ade690952cacdf14329791a6fcdf145bbc0e15d2ff020c2cd35bb35273e48`; runs `20260719T191058Z-64015-partial`, `20260719T191257Z-64015-partial`) |
 | MD-02 | Save evidence | A (+D) | Evidence persisted | Evidence form + save | PENDING |
 | MD-03 | Winning dispute | D | Won; funds returned; notes | Lifecycle notes | PENDING |
@@ -183,7 +183,7 @@ Legend — **Layers:** `D` deterministic, `A` agent-driven, `D+A` both (overlap)
 ### Merchant — Onboarding
 
 | ID | Flow | Layers | Functional acceptance | UX checkpoints | Status |
-|----|------|--------|-----------------------|----------------|--------|
+| ---- | ------ | -------- | ----------------------- | ---------------- | -------- |
 | ON-01 | Onboard via WC Settings (NOX), test→live | A | Test+live account; methods configured | Incentive→NOX→KYC→task complete | PENDING (KYC) |
 | ON-02 | Onboard via Launch Your Store (NOX) | A | Account ready; methods enabled | LYS task → complete | PENDING (KYC) |
 | ON-03 | Manual install + setup | A | Wizard completes; methods at checkout | Install → badge → setup | PENDING |
@@ -192,7 +192,7 @@ Legend — **Layers:** `D` deterministic, `A` agent-driven, `D+A` both (overlap)
 ### Multi-currency
 
 | ID | Flow | Layers | Functional acceptance | UX checkpoints | Status |
-|----|------|--------|-----------------------|----------------|--------|
+| ---- | ------ | -------- | ----------------------- | ---------------- | -------- |
 | MC-01 | Set up | D+A | Currencies enabled; rates | Setup UI | PENDING (Layer A runner-verified PASS 2026-07-19: capture-time-bound dual-store USD-only start with strict original/stage/browser/post chronology and pre-state hash joins, semantic EUR/GBP enablement, automatic `0.88`/`0.75` response/cache timestamp joins, reload persistence, exact WP-CLI state, and USD `$20.00` storefront proof; plugin-card/native-table presentation difference and existing diagnostics preserved; Layer D NOT YET WIRED; run `20260718T235156Z-3608-partial`) |
 | MC-02 | Edit settings | D | Persist | Edit UI | PENDING |
 | MC-03 | Add switcher widget | A | Renders + switches | Widget config | PENDING |
@@ -205,7 +205,7 @@ Legend — **Layers:** `D` deterministic, `A` agent-driven, `D+A` both (overlap)
 ### Express checkout (Payment Request — Apple/Google Pay)
 
 | ID | Flow | Layers | Functional acceptance | UX checkpoints | Status |
-|----|------|--------|-----------------------|----------------|--------|
+| ---- | ------ | -------- | ----------------------- | ---------------- | -------- |
 | EC-01 | PRB from product page | A | Order via PRB | "Pay now"; PRB sheet | BLOCKED (real card) |
 | EC-02 | PRB from cart | A | Order via PRB | PRB on cart | BLOCKED (real card) |
 | EC-03 | PRB with 3DS card | A | 3DS via PRB | 3DS in PRB | BLOCKED (real card) |
@@ -213,7 +213,7 @@ Legend — **Layers:** `D` deterministic, `A` agent-driven, `D+A` both (overlap)
 ### Multisite
 
 | ID | Flow | Layers | Functional acceptance | UX checkpoints | Status |
-|----|------|--------|-----------------------|----------------|--------|
+| ---- | ------ | -------- | ----------------------- | ---------------- | -------- |
 | MU-01 | Network install + activate | D | Network-wide availability | Network activation | PENDING |
 | MU-02 | Manual install (multisite) | D | Per-site activation | Site-level control | PENDING |
 | MU-03 | Plugin update (multisite) | D+A | Clean on primary+secondary | Pages load both | PENDING |
