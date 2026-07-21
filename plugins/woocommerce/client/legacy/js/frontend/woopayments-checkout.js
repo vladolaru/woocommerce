@@ -69,6 +69,12 @@
 		'form.checkout',
 		'body',
 	];
+	var classicIconBackgroundSelectors = [
+		'#payment',
+		'#order_review',
+		'form.checkout',
+		'body',
+	];
 	var checkoutBillingFieldIds = [
 		'billing_first_name',
 		'billing_last_name',
@@ -970,14 +976,15 @@
 		}, {} );
 	}
 
-	function getBackgroundColor() {
+	function getBackgroundColor( selectors ) {
+		var backgroundSelectors = selectors || classicBackgroundSelectors;
 		var index;
 		var element;
 		var color;
 		var parsedColor;
 
-		for ( index = 0; index < classicBackgroundSelectors.length; index++ ) {
-			element = queryFirst( classicBackgroundSelectors[ index ] );
+		for ( index = 0; index < backgroundSelectors.length; index++ ) {
+			element = queryFirst( backgroundSelectors[ index ] );
 			if ( ! element || ! window.getComputedStyle ) {
 				continue;
 			}
@@ -992,6 +999,46 @@
 		}
 
 		return '#ffffff';
+	}
+
+	function swapPaymentMethodIconsForTheme() {
+		var useDark = ! isColorLight(
+			getBackgroundColor( classicIconBackgroundSelectors )
+		);
+
+		getKnownGatewayIds().forEach( function ( paymentGatewayId ) {
+			var paymentMethodId = getPaymentMethodIdForGateway(
+				paymentGatewayId
+			);
+			var paymentMethodConfig;
+			var targetIcon;
+			var input;
+			var listItem;
+			var image;
+
+			if ( 'card' === paymentMethodId ) {
+				return;
+			}
+
+			paymentMethodConfig = getPaymentMethodConfigForGateway(
+				paymentGatewayId
+			);
+			targetIcon =
+				useDark && paymentMethodConfig.darkIcon
+					? paymentMethodConfig.darkIcon
+					: paymentMethodConfig.icon;
+			input = getPaymentMethodInput( paymentGatewayId );
+			listItem = input && input.closest ? input.closest( 'li' ) : null;
+			image = listItem
+				? listItem.querySelector(
+						'label .wcpay-payment-method-icon'
+				  )
+				: null;
+
+			if ( targetIcon && image ) {
+				image.src = targetIcon;
+			}
+		} );
 	}
 
 	function getClassicCheckoutAppearanceFromPage() {
@@ -2065,6 +2112,7 @@
 		registerPaymentListWallets();
 		togglePaymentMethodsForBillingCountry();
 		initializeStripeElement();
+		swapPaymentMethodIconsForTheme();
 		confirmRedirectIfPresent();
 		document.addEventListener( 'click', copyTestNumber );
 		document.addEventListener( 'click', recordPlaceOrderButtonClick );
@@ -2087,11 +2135,13 @@
 	$( document.body ).on( 'updated_checkout', function () {
 		togglePaymentMethodsForBillingCountry();
 		initializeStripeElement();
+		swapPaymentMethodIconsForTheme();
 	} );
 
 	$( document.body ).on( 'payment_method_selected', function () {
 		togglePaymentMethodsForBillingCountry();
 		initializeStripeElement();
+		swapPaymentMethodIconsForTheme();
 	} );
 
 	getKnownGatewayIds().forEach( function ( paymentGatewayId ) {

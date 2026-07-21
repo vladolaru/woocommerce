@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { render, waitFor } from '@testing-library/react';
+import { act, render, waitFor } from '@testing-library/react';
 import { createElement } from '@wordpress/element';
 import { registerPaymentMethod } from '@woocommerce/blocks-registry';
 
@@ -9,10 +9,16 @@ import { registerPaymentMethod } from '@woocommerce/blocks-registry';
  * Internal dependencies
  */
 import registerWooPayments, { getWooPaymentsPaymentMethod } from '../index';
+import { getCachedAppearance } from '../upe-styles';
 
 jest.mock( '@woocommerce/blocks-registry', () => ( {
 	registerPaymentMethod: jest.fn(),
 	registerExpressPaymentMethod: jest.fn(),
+} ) );
+
+jest.mock( '../upe-styles', () => ( {
+	...jest.requireActual( '../upe-styles' ),
+	getCachedAppearance: jest.fn(),
 } ) );
 
 jest.mock( '@woocommerce/settings', () => {
@@ -49,6 +55,8 @@ jest.mock( '@woocommerce/settings', () => {
 			paymentMethodsConfig: {
 				klarna: {
 					title: 'Klarna',
+					icon: 'https://example.com/klarna.svg',
+					darkIcon: 'https://example.com/klarna-dark.svg',
 					isReusable: false,
 					isBnpl: true,
 					countries: [ 'BE' ],
@@ -80,9 +88,14 @@ jest.mock( '@wordpress/data', () => ( {
 } ) );
 
 describe( 'wc-payment-method-woopayments per-method registration', () => {
+	beforeEach( () => {
+		getCachedAppearance.mockReturnValue( null );
+	} );
+
 	afterEach( () => {
 		delete window.Stripe;
 		document.body.innerHTML = '';
+		jest.restoreAllMocks();
 		jest.clearAllMocks();
 	} );
 
@@ -173,6 +186,77 @@ describe( 'wc-payment-method-woopayments per-method registration', () => {
 				paymentMethods: [ 'cod', 'bacs', 'cheque' ],
 			} )
 		).toBe( true );
+	} );
+
+	it( 'renders definition branding and follows the cached checkout appearance', () => {
+		getCachedAppearance.mockReturnValue( { theme: 'stripe' } );
+		const addEventListener = jest.spyOn( window, 'addEventListener' );
+		const removeEventListener = jest.spyOn( window, 'removeEventListener' );
+		const PaymentMethodLabel = ( { text, icon } ) => (
+			<span>
+				{ text }
+				{ icon }
+			</span>
+		);
+		const paymentMethod = getWooPaymentsPaymentMethod( {
+			gatewayId: 'woocommerce_payments_klarna',
+			stylesCacheVersion: 'styles-v1',
+			paymentMethodsConfig: {
+				klarna: {
+					title: 'Klarna',
+					icon: 'https://example.com/klarna.svg',
+					darkIcon: 'https://example.com/klarna-dark.svg',
+				},
+			},
+		} );
+		const { container, unmount } = render(
+			createElement( paymentMethod.label.type, {
+				...paymentMethod.label.props,
+				components: { PaymentMethodLabel },
+			} )
+		);
+		const icon = container.querySelector( 'img' );
+
+		expect( icon ).toHaveClass( 'wcpay-payment-method-icon' );
+		expect( icon ).toHaveAttribute(
+			'src',
+			'https://example.com/klarna.svg'
+		);
+		expect( icon ).toHaveAttribute( 'alt', 'Klarna' );
+
+		const appearanceListener = addEventListener.mock.calls.find(
+			( [ eventName ] ) => eventName === 'wcpay-appearance-cached'
+		)?.[ 1 ];
+		getCachedAppearance.mockReturnValue( { theme: 'night' } );
+		act( () => {
+			window.dispatchEvent( new Event( 'wcpay-appearance-cached' ) );
+		} );
+
+		expect( container.querySelector( 'img' ) ).toBe( icon );
+		expect( icon ).toHaveAttribute(
+			'src',
+			'https://example.com/klarna-dark.svg'
+		);
+
+		unmount();
+		expect( appearanceListener ).toEqual( expect.any( Function ) );
+		expect( removeEventListener ).toHaveBeenCalledWith(
+			'wcpay-appearance-cached',
+			appearanceListener
+		);
+
+		const labelOnlyMethod = getWooPaymentsPaymentMethod( {
+			gatewayId: 'woocommerce_payments_klarna',
+			paymentMethodsConfig: { klarna: { title: 'Klarna' } },
+		} );
+		const labelOnly = render(
+			createElement( labelOnlyMethod.label.type, {
+				...labelOnlyMethod.label.props,
+				components: { PaymentMethodLabel },
+			} )
+		);
+
+		expect( labelOnly.queryByRole( 'img' ) ).not.toBeInTheDocument();
 	} );
 
 	it( 'initializes split gateway Elements with the configured Stripe payment method type', async () => {

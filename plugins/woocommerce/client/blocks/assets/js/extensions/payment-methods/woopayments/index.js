@@ -12,6 +12,7 @@ import { useSelect } from '@wordpress/data';
  * Internal dependencies
  */
 import {
+	getCachedAppearance,
 	getBlocksCheckoutAppearance,
 	getFontRulesFromPage,
 } from './upe-styles';
@@ -66,6 +67,12 @@ const getCardBrandIcons = ( paymentSettings = defaultSettings ) => {
 		? paymentMethodConfig.cardBrandIcons
 		: [];
 };
+
+const getCachedBlocksTheme = ( paymentSettings = defaultSettings ) =>
+	getCachedAppearance(
+		'blocks_checkout',
+		paymentSettings?.stylesCacheVersion
+	)?.theme || 'stripe';
 
 const getAriaLabel = ( paymentSettings = defaultSettings ) => {
 	const label = getPaymentMethodLabel( paymentSettings );
@@ -169,12 +176,54 @@ const CardBrandIcons = ( { paymentSettings } ) => {
 	);
 };
 
-const PaymentMethodIcon = ( { paymentSettings } ) => (
-	<>
-		<TestModeBadge paymentSettings={ paymentSettings } />
-		<CardBrandIcons paymentSettings={ paymentSettings } />
-	</>
-);
+const PaymentMethodIcon = ( { paymentSettings } ) => {
+	const paymentMethodConfig =
+		getPrimaryPaymentMethodConfig( paymentSettings );
+	const icon = paymentMethodConfig?.icon || '';
+	const darkIcon = paymentMethodConfig?.darkIcon || '';
+	const [ theme, setTheme ] = useState( () =>
+		getCachedBlocksTheme( paymentSettings )
+	);
+
+	useEffect( () => {
+		if ( ! icon ) {
+			return undefined;
+		}
+
+		const updateTheme = () =>
+			setTheme( getCachedBlocksTheme( paymentSettings ) );
+		window.addEventListener( 'wcpay-appearance-cached', updateTheme );
+		updateTheme();
+
+		return () =>
+			window.removeEventListener(
+				'wcpay-appearance-cached',
+				updateTheme
+			);
+	}, [ icon, paymentSettings ] );
+
+	let paymentMethodIcon = null;
+	if ( getCardBrandIcons( paymentSettings ).length ) {
+		paymentMethodIcon = (
+			<CardBrandIcons paymentSettings={ paymentSettings } />
+		);
+	} else if ( icon ) {
+		paymentMethodIcon = (
+			<img
+				className="wcpay-payment-method-icon"
+				src={ theme === 'night' && darkIcon ? darkIcon : icon }
+				alt={ getPaymentMethodLabel( paymentSettings ) }
+			/>
+		);
+	}
+
+	return (
+		<>
+			<TestModeBadge paymentSettings={ paymentSettings } />
+			{ paymentMethodIcon }
+		</>
+	);
+};
 
 const getSuccessResponse = (
 	emitResponse,

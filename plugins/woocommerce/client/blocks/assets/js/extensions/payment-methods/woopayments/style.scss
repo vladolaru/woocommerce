@@ -4,6 +4,13 @@
 		align-items: center;
 		width: 100%;
 
+		.wcpay-payment-method-icon {
+			height: 24px;
+			width: auto;
+			order: 2;
+			margin-left: auto;
+		}
+
 		.payment-methods--logos {
 			height: 24px;
 			order: 2;

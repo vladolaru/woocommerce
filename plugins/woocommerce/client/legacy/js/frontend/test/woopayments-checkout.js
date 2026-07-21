@@ -595,6 +595,72 @@ describe( 'WooPayments checkout', () => {
 		} );
 	} );
 
+	test( 'uses theme-appropriate split gateway icons without changing card brands', () => {
+		document.body.innerHTML =
+			'<form class="checkout">' +
+			'<div id="payment" style="background-color: rgb(0, 0, 0)">' +
+			'<ul class="payment_methods">' +
+			'<li class="wc_payment_method payment_method_woocommerce_payments">' +
+			'<input id="payment_method_woocommerce_payments" type="radio" ' +
+			'name="payment_method" value="woocommerce_payments" />' +
+			'<label for="payment_method_woocommerce_payments">' +
+			'<img class="card-brand-icon" src="https://example.test/visa.svg" alt="Visa" /></label>' +
+			'</li>' +
+			'<li class="wc_payment_method payment_method_woocommerce_payments_klarna">' +
+			'<input id="payment_method_woocommerce_payments_klarna" type="radio" ' +
+			'name="payment_method" value="woocommerce_payments_klarna" checked />' +
+			'<label for="payment_method_woocommerce_payments_klarna">' +
+			'<img class="wcpay-payment-method-icon" ' +
+			'src="https://example.test/klarna.svg" alt="Klarna" /></label>' +
+			'<div class="payment_box" style="background-color: rgb(255, 255, 255)"></div>' +
+			'<div id="wcpay-core-payment-element"></div>' +
+			'</li>' +
+			'</ul>' +
+			'</div>' +
+			'<button id="place_order" type="button">Place order</button>' +
+			'</form>';
+		window.wcpay_core_checkout_config_woocommerce_payments_klarna =
+			Object.assign( {}, window.wcpay_core_checkout_config, {
+				gatewayId: 'woocommerce_payments_klarna',
+				paymentMethodId: 'klarna',
+				paymentMethodTypes: [ 'klarna' ],
+				paymentMethodsConfig: {
+					klarna: {
+						icon: 'https://example.test/klarna.svg',
+						darkIcon: 'https://example.test/klarna-dark.svg',
+						isReusable: false,
+					},
+				},
+			} );
+
+		require( '../woopayments-checkout' );
+
+		const payment = document.getElementById( 'payment' );
+		const splitIcon = document.querySelector(
+			'.payment_method_woocommerce_payments_klarna .wcpay-payment-method-icon'
+		);
+		const cardIcon = document.querySelector(
+			'.payment_method_woocommerce_payments .card-brand-icon'
+		);
+
+		expect( splitIcon.getAttribute( 'src' ) ).toBe(
+			'https://example.test/klarna-dark.svg'
+		);
+		expect( cardIcon.getAttribute( 'src' ) ).toBe(
+			'https://example.test/visa.svg'
+		);
+
+		payment.style.backgroundColor = 'rgb(255, 255, 255)';
+		bodyEventHandlers.updated_checkout();
+
+		expect( splitIcon.getAttribute( 'src' ) ).toBe(
+			'https://example.test/klarna.svg'
+		);
+		expect( cardIcon.getAttribute( 'src' ) ).toBe(
+			'https://example.test/visa.svg'
+		);
+	} );
+
 	test( 'registers payment-list wallets through the custom place-order button API', () => {
 		preparePaymentListWallets();
 

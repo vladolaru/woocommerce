@@ -879,6 +879,8 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 			'gatewayId'         => $this->get_gateway_id_for_payment_method_definition( $definition ),
 			'title'             => $definition->get_title( $account_country ),
 			'label'             => $definition->get_title( $account_country ),
+			'icon'              => $this->get_payment_method_icon_url( $definition->get_icon_asset_path( $account_country ) ),
+			'darkIcon'          => $this->get_payment_method_icon_url( $definition->get_dark_icon_asset_path( $account_country ) ),
 			'isReusable'        => $is_reusable,
 			'isBnpl'            => $this->payment_method_definition_supports( $definition, self::PAYMENT_METHOD_CAPABILITY_BUY_NOW_PAY_LATER ),
 			'isExpressCheckout' => $this->payment_method_definition_supports( $definition, self::PAYMENT_METHOD_CAPABILITY_EXPRESS_CHECKOUT ),
@@ -886,6 +888,20 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 			'supports'          => $this->get_blocks_supports(),
 			'countries'         => $definition->get_supported_countries( $account_country ),
 		);
+	}
+
+	/**
+	 * Convert a payment method's plugin-relative asset path to a shopper-facing URL.
+	 *
+	 * @param string $asset_path Payment method asset path.
+	 * @return string
+	 */
+	private function get_payment_method_icon_url( string $asset_path ): string {
+		if ( '' === $asset_path ) {
+			return '';
+		}
+
+		return WC()->plugin_url() . '/' . ltrim( $asset_path, '/' );
 	}
 
 	/**

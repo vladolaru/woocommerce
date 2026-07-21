@@ -612,6 +612,26 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should expose country-aware shopper icons for a split payment method.
+	 */
+	public function test_get_payment_fields_js_config_exposes_country_aware_afterpay_icons(): void {
+		$legacy_runtime  = $this->create_legacy_runtime_for_bridge();
+		$account_service = $this->create_account_service_for_bridge(
+			true,
+			array( 'country' => 'US' )
+		);
+		$registry        = new WooPaymentsPaymentMethodRegistry();
+		$sut             = new WooPaymentsCheckoutBridge();
+		$sut->init( $legacy_runtime, $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge(), null, $registry );
+
+		$config          = $sut->get_payment_fields_js_config( $registry->get( 'afterpay_clearpay' ) );
+		$afterpay_config = $config['paymentMethodsConfig']['afterpay_clearpay'];
+
+		$this->assertStringEndsWith( '/assets/images/payment-methods/afterpay-cashapp-logo.svg', $afterpay_config['icon'] );
+		$this->assertStringEndsWith( '/assets/images/payment-methods/afterpay-cashapp-logo-dark.svg', $afterpay_config['darkIcon'] );
+	}
+
+	/**
 	 * @testdox Should expose enabled payment-list wallets separately from Payment Element methods.
 	 */
 	public function test_get_payment_fields_js_config_exposes_payment_list_wallets_with_gateway_identity(): void {

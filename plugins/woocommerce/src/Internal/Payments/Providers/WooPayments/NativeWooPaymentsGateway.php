@@ -859,15 +859,12 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
-	 * Return the shopper-facing card brand icons.
+	 * Return the shopper-facing payment method icons.
 	 *
 	 * @return string
 	 */
 	public function get_icon() {
-		$icons                 = array();
-		$brand_labels          = $this->get_card_brand_icon_labels();
-		$brands                = array_slice( $brand_labels, 0, 3, true );
-		$additional_icon_count = count( $brand_labels ) - count( $brands );
+		$icons = array();
 
 		if ( $this->is_test_mode() ) {
 			$badge_style = implode(
@@ -891,22 +888,41 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			);
 		}
 
-		foreach ( $brands as $brand => $label ) {
-			$icons[] = sprintf(
-				'<img src="%1$s" alt="%2$s" width="38" height="24" />',
-				esc_url( \WC_HTTPS::force_https_url( WC()->plugin_url() . '/assets/images/payment-methods/' . $brand . '.svg' ) ),
-				esc_attr( $label )
-			);
-		}
+		if ( 'card' !== $this->get_payment_method_id() ) {
+			$account_country = $this->get_account_country();
+			$icon_asset_path = $this->payment_method_definition->get_icon_asset_path( $account_country );
 
-		if ( $additional_icon_count > 0 ) {
-			$icons[] = sprintf(
-				'<span class="payment-methods--logos-count">+ %d</span>',
-				$additional_icon_count
-			);
-		}
+			if ( '' !== $icon_asset_path ) {
+				$icons[] = sprintf(
+					'<img class="wcpay-payment-method-icon" src="%1$s" alt="%2$s" />',
+					esc_url( \WC_HTTPS::force_https_url( WC()->plugin_url() . '/' . ltrim( $icon_asset_path, '/' ) ) ),
+					esc_attr( $this->payment_method_definition->get_title( $account_country ) )
+				);
+			}
 
-		$icon = '<span class="wcpay-core-card-brand-icons payment-methods--logos">' . implode( '', $icons ) . '</span>';
+			$icon = implode( '', $icons );
+		} else {
+			$brand_labels          = $this->get_card_brand_icon_labels();
+			$brands                = array_slice( $brand_labels, 0, 3, true );
+			$additional_icon_count = count( $brand_labels ) - count( $brands );
+
+			foreach ( $brands as $brand => $label ) {
+				$icons[] = sprintf(
+					'<img src="%1$s" alt="%2$s" width="38" height="24" />',
+					esc_url( \WC_HTTPS::force_https_url( WC()->plugin_url() . '/assets/images/payment-methods/' . $brand . '.svg' ) ),
+					esc_attr( $label )
+				);
+			}
+
+			if ( $additional_icon_count > 0 ) {
+				$icons[] = sprintf(
+					'<span class="payment-methods--logos-count">+ %d</span>',
+					$additional_icon_count
+				);
+			}
+
+			$icon = '<span class="wcpay-core-card-brand-icons payment-methods--logos">' . implode( '', $icons ) . '</span>';
+		}
 
 		/**
 		 * Filter the gateway icon.
