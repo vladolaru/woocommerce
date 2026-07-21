@@ -1851,14 +1851,89 @@
 		} );
 	}
 
+	function consumeConfirmationHash() {
+		window.history.replaceState(
+			'',
+			document.title,
+			window.location.pathname + window.location.search
+		);
+	}
+
+	function getConfirmationErrorMessage( error ) {
+		return error && typeof error.message === 'string'
+			? error.message
+			: config.confirmationErrorMessage || '';
+	}
+
+	function isRetrySafePaymentIntentError( error ) {
+		var paymentIntent =
+			error && typeof error === 'object' ? error.payment_intent : null;
+
+		return (
+			paymentIntent &&
+			typeof paymentIntent === 'object' &&
+			( paymentIntent.status === 'requires_payment_method' ||
+				paymentIntent.status === 'canceled' )
+		);
+	}
+
+	function getConfirmedIntentId( confirmation, result ) {
+		var intent;
+
+		if ( ! result || typeof result !== 'object' || result.error ) {
+			return '';
+		}
+
+		intent =
+			confirmation.type === 'si'
+				? result.setupIntent
+				: result.paymentIntent;
+
+		return intent &&
+			typeof intent === 'object' &&
+			typeof intent.id === 'string'
+			? intent.id
+			: '';
+	}
+
 	function confirmRedirectIfPresent() {
 		var confirmation = parseConfirmationHash( window.location.hash || '' );
+		var activePaymentForm;
 		var intentId;
 		var confirmationPromise;
+		var hasReleasedConfirmationUi = false;
+
+		function blockConfirmationUi() {
+			activePaymentForm = getActivePaymentForm();
+			activePaymentForm.addClass( 'processing' ).block( {
+				message: null,
+				overlayCSS: {
+					background: '#fff',
+					opacity: 0.6,
+				},
+			} );
+		}
+
+		function releaseConfirmationUi() {
+			if ( hasReleasedConfirmationUi ) {
+				return;
+			}
+
+			hasReleasedConfirmationUi = true;
+			activePaymentForm.removeClass( 'processing' ).unblock();
+		}
 
 		setCurrentGatewayConfig();
 
-		if ( ! confirmation || ! config.publishableKey || ! window.Stripe ) {
+		if ( ! confirmation ) {
+			return;
+		}
+
+		consumeConfirmationHash();
+		blockConfirmationUi();
+
+		if ( ! config.publishableKey || ! window.Stripe ) {
+			setError( config.confirmationErrorMessage || '' );
 			return;
 		}
 
@@ -1890,43 +1965,100 @@
 		}
 
 		if ( ! confirmationPromise ) {
+			setError( config.confirmationErrorMessage || '' );
 			return;
 		}
 
-		confirmationPromise.then( function ( result ) {
-			if ( result.error ) {
-				setError( result.error.message );
-				return;
-			}
-
-			intentId =
-				( result.paymentIntent && result.paymentIntent.id ) ||
-				( result.setupIntent && result.setupIntent.id ) ||
-				confirmation.intentId;
-
-			updateOrderStatusAfterConfirmation( confirmation, intentId )
-				.done( function ( response ) {
-					var resultResponse =
-						typeof response === 'string'
-							? JSON.parse( response )
-							: response;
-
-					if (
-						resultResponse.error &&
-						resultResponse.error.message
-					) {
-						setError( resultResponse.error.message );
-						return;
-					}
-
-					if ( resultResponse.return_url ) {
-						window.location.href = resultResponse.return_url;
-					}
-				} )
-				.fail( function () {
+		confirmationPromise.then(
+			function ( result ) {
+				if ( ! result || typeof result !== 'object' ) {
 					setError( config.confirmationErrorMessage || '' );
-				} );
-		} );
+					return;
+				}
+
+				if ( result.error ) {
+					setError( getConfirmationErrorMessage( result.error ) );
+					if ( isRetrySafePaymentIntentError( result.error ) ) {
+						releaseConfirmationUi();
+					}
+					return;
+				}
+
+				intentId = getConfirmedIntentId( confirmation, result );
+				if ( ! intentId ) {
+					setError( config.confirmationErrorMessage || '' );
+					return;
+				}
+
+				updateOrderStatusAfterConfirmation( confirmation, intentId )
+					.done( function ( response ) {
+						var resultResponse;
+						var returnUrl;
+
+						try {
+							resultResponse =
+								typeof response === 'string'
+									? JSON.parse( response )
+									: response;
+						} catch ( error ) {
+							setError( config.confirmationErrorMessage || '' );
+							return;
+						}
+
+						if (
+							! resultResponse ||
+							typeof resultResponse !== 'object'
+						) {
+							setError( config.confirmationErrorMessage || '' );
+							return;
+						}
+
+						if ( resultResponse.error ) {
+							setError(
+								getConfirmationErrorMessage(
+									resultResponse.error
+								)
+							);
+							return;
+						}
+
+						returnUrl =
+							typeof resultResponse.return_url === 'string'
+								? resultResponse.return_url.trim()
+								: '';
+						if ( ! returnUrl ) {
+							setError( config.confirmationErrorMessage || '' );
+							return;
+						}
+
+						try {
+							returnUrl = new window.URL(
+								returnUrl,
+								window.location.href
+							);
+						} catch ( error ) {
+							setError( config.confirmationErrorMessage || '' );
+							return;
+						}
+						if (
+							returnUrl.protocol !== 'http:' &&
+							returnUrl.protocol !== 'https:'
+						) {
+							setError( config.confirmationErrorMessage || '' );
+							return;
+						}
+
+						releaseConfirmationUi();
+						window.location.href = returnUrl.href;
+					} )
+					.fail( function () {
+						setError( config.confirmationErrorMessage || '' );
+					} );
+			},
+			function ( error ) {
+				setError( getConfirmationErrorMessage( error ) );
+			}
+		);
 	}
 
 	$( function () {

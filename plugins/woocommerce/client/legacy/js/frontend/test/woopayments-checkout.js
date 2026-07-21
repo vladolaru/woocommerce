@@ -4,9 +4,11 @@
 
 describe( 'WooPayments checkout', () => {
 	let bodyEventHandlers;
+	let checkoutFormState;
 	let checkoutFormEventHandlers;
 	let documentEventListeners;
 	let orderPayFormEventHandlers;
+	let orderPayFormState;
 	let elementsMock;
 	let mountPaymentElement;
 	let paymentElementOptions;
@@ -15,11 +17,83 @@ describe( 'WooPayments checkout', () => {
 	let submitElements;
 	let unmountPaymentElement;
 	let updatePaymentElement;
+	let windowEventHandlers;
 	const originalFetch = window.fetch;
 	const originalDocumentAddEventListener = document.addEventListener;
 
 	async function flushPromises() {
 		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+	}
+
+	function setPaymentIntentConfirmationHash( intentId = 'pi_native' ) {
+		window.location.hash =
+			'#wcpay-confirm-pi:123:' + intentId + '_secret_abc:nonce';
+	}
+
+	function mockConfirmationCallbackResponse( response ) {
+		const fail = jest.fn();
+
+		global.jQuery.post.mockImplementationOnce( () => ( {
+			done: jest.fn( ( callback ) => {
+				callback( response );
+				return { fail };
+			} ),
+		} ) );
+	}
+
+	function mockConfirmationCallbackFailure() {
+		const fail = jest.fn( ( callback ) => callback() );
+
+		global.jQuery.post.mockImplementationOnce( () => ( {
+			done: jest.fn( () => ( { fail } ) ),
+		} ) );
+	}
+
+	function expectClassicCheckoutReleaseCount( count ) {
+		expect(
+			global.jQuery.checkoutFormResult.removeClass
+		).toHaveBeenCalledTimes( count );
+		expect(
+			global.jQuery.checkoutFormResult.unblock
+		).toHaveBeenCalledTimes( count );
+	}
+
+	function expectClassicCheckoutBlockCount( count ) {
+		expect(
+			global.jQuery.checkoutFormResult.addClass
+		).toHaveBeenCalledTimes( count );
+		expect( global.jQuery.checkoutFormResult.block ).toHaveBeenCalledTimes(
+			count
+		);
+	}
+
+	function expectClassicCheckoutUiState( isBlocked ) {
+		expect( checkoutFormState ).toEqual( {
+			processing: isBlocked,
+			blocked: isBlocked,
+		} );
+	}
+
+	function expectClassicCheckoutBlockedOnce() {
+		expectClassicCheckoutBlockCount( 1 );
+		expectClassicCheckoutReleaseCount( 0 );
+		expectClassicCheckoutUiState( true );
+	}
+
+	function expectOrderPayBlockCount( count ) {
+		expect(
+			global.jQuery.orderPayFormResult.addClass
+		).toHaveBeenCalledTimes( count );
+		expect( global.jQuery.orderPayFormResult.block ).toHaveBeenCalledTimes(
+			count
+		);
+	}
+
+	function expectNoConfirmationResubmit() {
+		expect( stripeMock.createPaymentMethod ).not.toHaveBeenCalled();
+		expect(
+			global.jQuery.checkoutFormResult.trigger
+		).not.toHaveBeenCalledWith( 'submit' );
 	}
 
 	function getTrackingEvents() {
@@ -92,6 +166,14 @@ describe( 'WooPayments checkout', () => {
 	function createJQueryMock() {
 		const checkoutFormFields = {};
 		const orderPayFormFields = {};
+		checkoutFormState = {
+			processing: false,
+			blocked: false,
+		};
+		orderPayFormState = {
+			processing: false,
+			blocked: false,
+		};
 		const defaultResult = {
 			length: 0,
 			filter: jest.fn( () => defaultResult ),
@@ -117,8 +199,25 @@ describe( 'WooPayments checkout', () => {
 				return bodyResult;
 			} ),
 		};
+		const windowResult = {
+			length: 1,
+			on: jest.fn( ( event, handler ) => {
+				windowEventHandlers[ event ] = handler;
+				return windowResult;
+			} ),
+		};
 		const checkoutFormResult = {
 			length: 1,
+			addClass: jest.fn( ( className ) => {
+				if ( className === 'processing' ) {
+					checkoutFormState.processing = true;
+				}
+				return checkoutFormResult;
+			} ),
+			block: jest.fn( () => {
+				checkoutFormState.blocked = true;
+				return checkoutFormResult;
+			} ),
 			filter: jest.fn( () => checkoutFormResult ),
 			find: jest.fn( ( selector ) => {
 				const match = selector.match( /input\[name="([^"]+)"\]/ );
@@ -134,11 +233,31 @@ describe( 'WooPayments checkout', () => {
 				return checkoutFormResult;
 			} ),
 			appendTo: jest.fn( () => checkoutFormResult ),
+			removeClass: jest.fn( ( className ) => {
+				if ( className === 'processing' ) {
+					checkoutFormState.processing = false;
+				}
+				return checkoutFormResult;
+			} ),
 			trigger: jest.fn( () => checkoutFormResult ),
+			unblock: jest.fn( () => {
+				checkoutFormState.blocked = false;
+				return checkoutFormResult;
+			} ),
 			val: jest.fn(),
 		};
 		const orderPayFormResult = {
 			length: 1,
+			addClass: jest.fn( ( className ) => {
+				if ( className === 'processing' ) {
+					orderPayFormState.processing = true;
+				}
+				return orderPayFormResult;
+			} ),
+			block: jest.fn( () => {
+				orderPayFormState.blocked = true;
+				return orderPayFormResult;
+			} ),
 			filter: jest.fn( () => orderPayFormResult ),
 			find: jest.fn( ( selector ) => {
 				const match = selector.match( /input\[name="([^"]+)"\]/ );
@@ -154,7 +273,17 @@ describe( 'WooPayments checkout', () => {
 				return orderPayFormResult;
 			} ),
 			appendTo: jest.fn( () => orderPayFormResult ),
+			removeClass: jest.fn( ( className ) => {
+				if ( className === 'processing' ) {
+					orderPayFormState.processing = false;
+				}
+				return orderPayFormResult;
+			} ),
 			trigger: jest.fn( () => orderPayFormResult ),
+			unblock: jest.fn( () => {
+				orderPayFormState.blocked = false;
+				return orderPayFormResult;
+			} ),
 			val: jest.fn(),
 		};
 
@@ -166,6 +295,10 @@ describe( 'WooPayments checkout', () => {
 
 			if ( selectorOrCallback === document.body ) {
 				return bodyResult;
+			}
+
+			if ( selectorOrCallback === window ) {
+				return windowResult;
 			}
 
 			if ( selectorOrCallback === 'form.checkout' ) {
@@ -258,6 +391,7 @@ describe( 'WooPayments checkout', () => {
 			}
 		);
 		orderPayFormEventHandlers = {};
+		windowEventHandlers = {};
 		submitElements = jest.fn( () => Promise.resolve( {} ) );
 		mountPaymentElement = jest.fn();
 		paymentElementOptions = null;
@@ -1044,6 +1178,444 @@ describe( 'WooPayments checkout', () => {
 				intent_id: 'pi_native',
 			} )
 		);
+	} );
+
+	test( 'blocks a fresh confirmation before Stripe work and keeps it blocked while pending', async () => {
+		let resolveConfirmation;
+		stripeMock.handleNextAction.mockImplementationOnce(
+			() =>
+				new Promise( ( resolve ) => {
+					resolveConfirmation = resolve;
+				} )
+		);
+		setPaymentIntentConfirmationHash( 'pi_pending' );
+
+		require( '../woopayments-checkout' );
+
+		expect( window.location.hash ).toBe( '' );
+		expectClassicCheckoutBlockCount( 1 );
+		expect(
+			global.jQuery.checkoutFormResult.addClass
+		).toHaveBeenCalledWith( 'processing' );
+		expect( global.jQuery.checkoutFormResult.block ).toHaveBeenCalledWith( {
+			message: null,
+			overlayCSS: {
+				background: '#fff',
+				opacity: 0.6,
+			},
+		} );
+		expect(
+			global.jQuery.checkoutFormResult.block.mock.invocationCallOrder[ 0 ]
+		).toBeLessThan(
+			stripeMock.handleNextAction.mock.invocationCallOrder[ 0 ]
+		);
+		expectClassicCheckoutUiState( true );
+		expectClassicCheckoutReleaseCount( 0 );
+
+		resolveConfirmation( {
+			error: {
+				message: 'Authentication failed.',
+				payment_intent: {
+					id: 'pi_pending',
+					status: 'requires_payment_method',
+				},
+			},
+		} );
+		await flushPromises();
+
+		expectClassicCheckoutBlockCount( 1 );
+		expectClassicCheckoutReleaseCount( 1 );
+		expectClassicCheckoutUiState( false );
+	} );
+
+	test( 'releases classic checkout after a retry-safe 3DS failure', async () => {
+		document
+			.querySelector( 'form.checkout' )
+			.insertAdjacentHTML(
+				'beforeend',
+				'<div id="wcpay-core-payment-errors" hidden></div>'
+			);
+		stripeMock.handleNextAction.mockResolvedValueOnce( {
+			error: {
+				message:
+					'We are unable to authenticate your payment method. Please choose a different payment method and try again.',
+				payment_intent: {
+					id: 'pi_failed_authentication',
+					status: 'requires_payment_method',
+				},
+			},
+		} );
+		window.location.hash =
+			'#wcpay-confirm-pi:123:pi_failed_authentication_secret_abc:nonce';
+
+		require( '../woopayments-checkout' );
+		await flushPromises();
+
+		expect(
+			document.getElementById( 'wcpay-core-payment-errors' ).textContent
+		).toBe(
+			'We are unable to authenticate your payment method. Please choose a different payment method and try again.'
+		);
+		expect(
+			global.jQuery.checkoutFormResult.removeClass
+		).toHaveBeenCalledTimes( 1 );
+		expect(
+			global.jQuery.checkoutFormResult.removeClass
+		).toHaveBeenCalledWith( 'processing' );
+		expect(
+			global.jQuery.checkoutFormResult.unblock
+		).toHaveBeenCalledTimes( 1 );
+		expectClassicCheckoutBlockCount( 1 );
+		expectClassicCheckoutUiState( false );
+		expect( global.jQuery.post ).not.toHaveBeenCalled();
+		expect( stripeMock.createPaymentMethod ).not.toHaveBeenCalled();
+		expect(
+			global.jQuery.checkoutFormResult.trigger
+		).not.toHaveBeenCalledWith( 'submit' );
+	} );
+
+	test( 'consumes each classic confirmation hash once', async () => {
+		const replaceState = jest.spyOn( window.history, 'replaceState' );
+		stripeMock.handleNextAction.mockResolvedValue( {
+			error: {
+				message: 'Authentication failed.',
+				payment_intent: {
+					id: 'pi_failed_authentication',
+					status: 'requires_payment_method',
+				},
+			},
+		} );
+		window.location.hash =
+			'#wcpay-confirm-pi:123:pi_failed_authentication_secret_abc:nonce';
+
+		require( '../woopayments-checkout' );
+		await flushPromises();
+
+		expect( replaceState ).toHaveBeenCalledWith( '', document.title, '/' );
+		expect( window.location.hash ).toBe( '' );
+		expect( stripeMock.handleNextAction ).toHaveBeenCalledTimes( 1 );
+
+		windowEventHandlers.hashchange();
+		await flushPromises();
+
+		expect( stripeMock.handleNextAction ).toHaveBeenCalledTimes( 1 );
+		expect( global.jQuery.post ).not.toHaveBeenCalled();
+		expectClassicCheckoutReleaseCount( 1 );
+		expectClassicCheckoutBlockCount( 1 );
+		expectClassicCheckoutUiState( false );
+		expectNoConfirmationResubmit();
+	} );
+
+	test( 'releases the active order-pay form after a retry-safe failure', async () => {
+		document.body.innerHTML =
+			'<form id="order_review">' +
+			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
+			'<div id="wcpay-core-payment-errors" hidden></div>' +
+			'</form>';
+		stripeMock.handleNextAction.mockResolvedValueOnce( {
+			error: {
+				message: 'Authentication failed.',
+				payment_intent: {
+					id: 'pi_order_pay_failed',
+					status: 'requires_payment_method',
+				},
+			},
+		} );
+		setPaymentIntentConfirmationHash( 'pi_order_pay_failed' );
+
+		require( '../woopayments-checkout' );
+		await flushPromises();
+
+		expect(
+			global.jQuery.orderPayFormResult.removeClass
+		).toHaveBeenCalledWith( 'processing' );
+		expect(
+			global.jQuery.orderPayFormResult.unblock
+		).toHaveBeenCalledTimes( 1 );
+		expectOrderPayBlockCount( 1 );
+		expect( orderPayFormState ).toEqual( {
+			processing: false,
+			blocked: false,
+		} );
+		expectClassicCheckoutReleaseCount( 0 );
+		expect( global.jQuery.post ).not.toHaveBeenCalled();
+	} );
+
+	test( 'keeps ambiguous 3DS failures non-reentrant', async () => {
+		stripeMock.handleNextAction.mockResolvedValueOnce( {
+			error: {
+				message: 'Payment status is uncertain.',
+				payment_intent: {
+					id: 'pi_ambiguous',
+					status: 'processing',
+				},
+			},
+		} );
+		window.location.hash =
+			'#wcpay-confirm-pi:123:pi_ambiguous_secret_abc:nonce';
+
+		require( '../woopayments-checkout' );
+		await flushPromises();
+
+		expect(
+			global.jQuery.checkoutFormResult.removeClass
+		).not.toHaveBeenCalled();
+		expect(
+			global.jQuery.checkoutFormResult.unblock
+		).not.toHaveBeenCalled();
+		expectClassicCheckoutBlockedOnce();
+		expect( global.jQuery.post ).not.toHaveBeenCalled();
+	} );
+
+	test( 'releases classic checkout after a canceled PaymentIntent', async () => {
+		stripeMock.handleNextAction.mockResolvedValueOnce( {
+			error: {
+				message: 'Authentication was canceled.',
+				payment_intent: {
+					id: 'pi_canceled',
+					status: 'canceled',
+				},
+			},
+		} );
+		setPaymentIntentConfirmationHash( 'pi_canceled' );
+
+		require( '../woopayments-checkout' );
+		await flushPromises();
+
+		expectClassicCheckoutReleaseCount( 1 );
+		expectClassicCheckoutBlockCount( 1 );
+		expectClassicCheckoutUiState( false );
+		expect( global.jQuery.post ).not.toHaveBeenCalled();
+		expectNoConfirmationResubmit();
+	} );
+
+	test.each( [
+		[ 'succeeded', 'succeeded' ],
+		[ 'missing', undefined ],
+	] )(
+		'keeps a %s PaymentIntent error non-reentrant',
+		async ( label, status ) => {
+			stripeMock.handleNextAction.mockResolvedValueOnce( {
+				error: {
+					message: 'Payment status is not retry-safe.',
+					payment_intent: {
+						id: 'pi_' + label,
+						status,
+					},
+				},
+			} );
+			setPaymentIntentConfirmationHash( 'pi_' + label );
+
+			require( '../woopayments-checkout' );
+			await flushPromises();
+
+			expectClassicCheckoutBlockedOnce();
+			expect( global.jQuery.post ).not.toHaveBeenCalled();
+			expectNoConfirmationResubmit();
+		}
+	);
+
+	test( 'keeps scalar Stripe errors non-reentrant', async () => {
+		stripeMock.handleNextAction.mockResolvedValueOnce( {
+			error: 'Authentication failed.',
+		} );
+		setPaymentIntentConfirmationHash();
+
+		require( '../woopayments-checkout' );
+		await flushPromises();
+
+		expectClassicCheckoutBlockedOnce();
+		expect( global.jQuery.post ).not.toHaveBeenCalled();
+		expectNoConfirmationResubmit();
+	} );
+
+	test.each( [
+		[ 'absent', undefined ],
+		[ 'null', null ],
+		[ 'scalar', 'unexpected' ],
+		[ 'missing intent', {} ],
+		[ 'malformed intent', { paymentIntent: { id: '' } } ],
+	] )(
+		'keeps the %s Stripe confirmation result non-reentrant',
+		async ( label, result ) => {
+			stripeMock.handleNextAction.mockResolvedValueOnce( result );
+			setPaymentIntentConfirmationHash();
+
+			require( '../woopayments-checkout' );
+			await flushPromises();
+
+			expectClassicCheckoutBlockedOnce();
+			expect( global.jQuery.post ).not.toHaveBeenCalled();
+			expectNoConfirmationResubmit();
+		}
+	);
+
+	test( 'keeps a rejected Stripe confirmation non-reentrant', async () => {
+		stripeMock.handleNextAction.mockRejectedValueOnce(
+			new Error( 'Stripe.js failed.' )
+		);
+		setPaymentIntentConfirmationHash();
+
+		require( '../woopayments-checkout' );
+		await flushPromises();
+
+		expectClassicCheckoutBlockedOnce();
+		expect( global.jQuery.post ).not.toHaveBeenCalled();
+		expectNoConfirmationResubmit();
+	} );
+
+	test( 'consumes the hash but stays blocked without a Stripe confirmation capability', async () => {
+		delete stripeMock.handleNextAction;
+		setPaymentIntentConfirmationHash();
+
+		require( '../woopayments-checkout' );
+		await flushPromises();
+
+		expect( window.location.hash ).toBe( '' );
+		expectClassicCheckoutBlockedOnce();
+		expect( global.jQuery.post ).not.toHaveBeenCalled();
+		expectNoConfirmationResubmit();
+	} );
+
+	test( 'keeps malformed confirmation callback JSON non-reentrant', async () => {
+		mockConfirmationCallbackResponse( '{' );
+		setPaymentIntentConfirmationHash();
+
+		require( '../woopayments-checkout' );
+		await flushPromises();
+
+		expect( global.jQuery.post ).toHaveBeenCalledTimes( 1 );
+		expectClassicCheckoutBlockedOnce();
+		expectNoConfirmationResubmit();
+	} );
+
+	test( 'keeps confirmation callback application errors non-reentrant', async () => {
+		mockConfirmationCallbackResponse( {
+			error: { message: 'The order could not be updated.' },
+		} );
+		setPaymentIntentConfirmationHash();
+
+		require( '../woopayments-checkout' );
+		await flushPromises();
+
+		expect( global.jQuery.post ).toHaveBeenCalledTimes( 1 );
+		expectClassicCheckoutBlockedOnce();
+		expectNoConfirmationResubmit();
+	} );
+
+	test( 'keeps confirmation callback transport failures non-reentrant', async () => {
+		mockConfirmationCallbackFailure();
+		setPaymentIntentConfirmationHash();
+
+		require( '../woopayments-checkout' );
+		await flushPromises();
+
+		expect( global.jQuery.post ).toHaveBeenCalledTimes( 1 );
+		expectClassicCheckoutBlockedOnce();
+		expectNoConfirmationResubmit();
+	} );
+
+	test( 'keeps callback success without a return URL non-reentrant', async () => {
+		mockConfirmationCallbackResponse( { status_code: 200 } );
+		setPaymentIntentConfirmationHash();
+
+		require( '../woopayments-checkout' );
+		await flushPromises();
+
+		expect( global.jQuery.post ).toHaveBeenCalledTimes( 1 );
+		expectClassicCheckoutBlockedOnce();
+		expectNoConfirmationResubmit();
+	} );
+
+	test( 'keeps callback success with an invalid return URL non-reentrant', async () => {
+		mockConfirmationCallbackResponse( {
+			status_code: 200,
+			return_url: 'http://[',
+		} );
+		setPaymentIntentConfirmationHash();
+
+		require( '../woopayments-checkout' );
+		await flushPromises();
+
+		expect( global.jQuery.post ).toHaveBeenCalledTimes( 1 );
+		expectClassicCheckoutBlockedOnce();
+		expect( window.location.hash ).toBe( '' );
+		expectNoConfirmationResubmit();
+	} );
+
+	test.each( [
+		[ 'JavaScript', 'javascript:void(0)' ],
+		[ 'data', 'data:text/plain,order-received' ],
+	] )(
+		'keeps callback success with a %s return URL non-reentrant',
+		async ( label, returnUrl ) => {
+			mockConfirmationCallbackResponse( {
+				status_code: 200,
+				return_url: returnUrl,
+			} );
+			setPaymentIntentConfirmationHash();
+
+			require( '../woopayments-checkout' );
+			await flushPromises();
+
+			expect( global.jQuery.post ).toHaveBeenCalledTimes( 1 );
+			expectClassicCheckoutBlockedOnce();
+			expect( window.location.hash ).toBe( '' );
+			expectNoConfirmationResubmit();
+		}
+	);
+
+	test( 'releases once immediately before valid return navigation', async () => {
+		let hashWhenReleased;
+		global.jQuery.checkoutFormResult.unblock.mockImplementationOnce( () => {
+			hashWhenReleased = window.location.hash;
+			checkoutFormState.blocked = false;
+			return global.jQuery.checkoutFormResult;
+		} );
+		mockConfirmationCallbackResponse( {
+			status_code: 200,
+			return_url: window.location.origin + '/#order-received',
+		} );
+		setPaymentIntentConfirmationHash();
+
+		require( '../woopayments-checkout' );
+		await flushPromises();
+
+		expect( global.jQuery.post ).toHaveBeenCalledTimes( 1 );
+		expectClassicCheckoutReleaseCount( 1 );
+		expectClassicCheckoutBlockCount( 1 );
+		expectClassicCheckoutUiState( false );
+		expect(
+			global.jQuery.checkoutFormResult.removeClass
+		).toHaveBeenCalledWith( 'processing' );
+		expect( hashWhenReleased ).toBe( '' );
+		expect( window.location.hash ).toBe( '#order-received' );
+		expectNoConfirmationResubmit();
+	} );
+
+	test( 'preserves SetupIntent confirmation callbacks', async () => {
+		window.location.hash =
+			'#wcpay-confirm-si:123:seti_native_secret_abc:nonce:ctoken_native';
+
+		require( '../woopayments-checkout' );
+		await flushPromises();
+
+		expect( stripeMock.confirmSetup ).toHaveBeenCalledWith( {
+			clientSecret: 'seti_native_secret_abc',
+			confirmParams: {
+				confirmation_token: 'ctoken_native',
+			},
+			redirect: 'if_required',
+		} );
+		expect( global.jQuery.post ).toHaveBeenCalledWith(
+			'https://example.test/admin-ajax.php',
+			expect.objectContaining( {
+				action: 'update_order_status',
+				intent_id: 'seti_native',
+			} )
+		);
+		expect( window.location.hash ).toBe( '' );
+		expectClassicCheckoutBlockedOnce();
 	} );
 
 	test( 'marks confirmation callbacks as subscription payment-method changes on change-payment URLs', async () => {
