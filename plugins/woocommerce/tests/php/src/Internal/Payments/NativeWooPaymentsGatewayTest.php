@@ -79,7 +79,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		unset( $_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-payment-token' ] );
 		unset( $_POST[ 'wc-' . OrderPaymentStore::GATEWAY_ID . '-new-payment-method' ] );
 		unset( $_POST['update_all_subscriptions_payment_method'] );
-		unset( $_GET['change_payment_method'], $GLOBALS['wcpay_test_subscription_ids'] );
+		unset( $_GET['change_payment_method'], $GLOBALS['wcpay_test_subscription_ids'], $GLOBALS['wcpay_test_cart_contains_subscription'] );
 		if ( class_exists( 'WC_Subscriptions_Change_Payment_Gateway', false ) && method_exists( 'WC_Subscriptions_Change_Payment_Gateway', 'reset' ) ) {
 			\WC_Subscriptions_Change_Payment_Gateway::reset();
 		}
@@ -2618,6 +2618,42 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should hide a checked save-payment control for a subscription cart.
+	 */
+	public function test_save_payment_method_checkbox_hides_checked_control_for_subscription_cart(): void {
+		$this->ensure_wcs_cart_double();
+		$GLOBALS['wcpay_test_cart_contains_subscription'] = true;
+
+		$gateway = new NativeWooPaymentsGateway();
+
+		ob_start();
+		$gateway->save_payment_method_checkbox();
+		$output = (string) ob_get_clean();
+
+		$this->assertSame( 1, substr_count( $output, 'id="wc-woocommerce_payments-new-payment-method"' ) );
+		$this->assertStringContainsString( 'style="display:none;"', $output );
+		$this->assertMatchesRegularExpression( '/<input[^>]+id="wc-woocommerce_payments-new-payment-method"[^>]+type="checkbox"[^>]+checked[^>]*>/', $output );
+	}
+
+	/**
+	 * @testdox Should keep the save-payment control visible and unchecked for a regular cart.
+	 */
+	public function test_save_payment_method_checkbox_keeps_visible_unchecked_control_for_regular_cart(): void {
+		$this->ensure_wcs_cart_double();
+		$GLOBALS['wcpay_test_cart_contains_subscription'] = false;
+
+		$gateway = new NativeWooPaymentsGateway();
+
+		ob_start();
+		$gateway->save_payment_method_checkbox();
+		$output = (string) ob_get_clean();
+
+		$this->assertSame( 1, substr_count( $output, 'id="wc-woocommerce_payments-new-payment-method"' ) );
+		$this->assertStringNotContainsString( 'style="display:none;"', $output );
+		$this->assertDoesNotMatchRegularExpression( '/<input[^>]+id="wc-woocommerce_payments-new-payment-method"[^>]+checked[^>]*>/', $output );
+	}
+
+	/**
 	 * @testdox Should keep the ordinary save control when subscription change form identity does not match.
 	 */
 	public function test_payment_fields_reject_mismatched_subscription_change_form_identity(): void {
@@ -2983,6 +3019,20 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public detector contract.
 		eval( 'namespace { function wcs_is_subscription( $subscription_id ) { $subscription_id = is_object( $subscription_id ) && method_exists( $subscription_id, "get_id" ) ? $subscription_id->get_id() : $subscription_id; return in_array( absint( $subscription_id ), $GLOBALS["wcpay_test_subscription_ids"] ?? array(), true ); } }' );
+	}
+
+	/**
+	 * Ensure a minimal WooCommerce Subscriptions cart double exists.
+	 *
+	 * @return void
+	 */
+	private function ensure_wcs_cart_double(): void {
+		if ( class_exists( 'WC_Subscriptions_Cart', false ) ) {
+			return;
+		}
+
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public cart contract.
+		eval( 'class WC_Subscriptions_Cart { public static function cart_contains_subscription() { return (bool) ( $GLOBALS["wcpay_test_cart_contains_subscription"] ?? false ); } }' );
 	}
 
 	/**

@@ -1359,10 +1359,10 @@ describe( 'wc-payment-method-woopayments', () => {
 		);
 	} );
 
-	it( 'shows reusable card terms when the shopper saves the payment method', async () => {
-		const create = jest.fn( () => ( {
-			mount: jest.fn(),
-		} ) );
+	it( 'updates reusable card terms when the Blocks save choice changes', async () => {
+		const mount = jest.fn();
+		const update = jest.fn();
+		const create = jest.fn( () => ( { mount, update } ) );
 		window.Stripe = jest.fn( () => ( {
 			elements: jest.fn( () => ( {
 				create,
@@ -1371,8 +1371,7 @@ describe( 'wc-payment-method-woopayments', () => {
 		} ) );
 		const registration = registerWooPayments();
 		const content = registration.content;
-
-		render(
+		const createContent = ( shouldSavePayment ) =>
 			createElement( content.type, {
 				...content.props,
 				eventRegistration: {
@@ -1388,9 +1387,9 @@ describe( 'wc-payment-method-woopayments', () => {
 						PAYMENTS: 'payments',
 					},
 				},
-				shouldSavePayment: true,
-			} )
-		);
+				shouldSavePayment,
+			} );
+		const { rerender } = render( createContent( false ) );
 
 		await waitFor( () => {
 			expect( create ).toHaveBeenCalled();
@@ -1400,10 +1399,83 @@ describe( 'wc-payment-method-woopayments', () => {
 			'payment',
 			expect.objectContaining( {
 				terms: {
-					card: 'always',
+					card: 'never',
 				},
 			} )
 		);
+
+		rerender( createContent( true ) );
+
+		await waitFor( () => {
+			expect( update ).toHaveBeenCalledWith( {
+				terms: {
+					card: 'always',
+				},
+			} );
+		} );
+
+		rerender( createContent( false ) );
+
+		await waitFor( () => {
+			expect( update ).toHaveBeenLastCalledWith( {
+				terms: {
+					card: 'never',
+				},
+			} );
+		} );
+
+		expect( create ).toHaveBeenCalledTimes( 1 );
+		expect( mount ).toHaveBeenCalledTimes( 1 );
+		expect( update ).toHaveBeenCalledTimes( 2 );
+	} );
+
+	it( 'keeps reusable card terms visible for a subscription cart', async () => {
+		const create = jest.fn( () => ( {
+			mount: jest.fn(),
+		} ) );
+		window.Stripe = jest.fn( () => ( {
+			elements: jest.fn( () => ( {
+				create,
+			} ) ),
+			createPaymentMethod: jest.fn().mockResolvedValue( {} ),
+		} ) );
+		const registration = registerWooPayments();
+		const content = registration.content;
+
+		render(
+			createElement( content.type, {
+				...content.props,
+				paymentSettings: {
+					...content.props.paymentSettings,
+					cartContainsSubscription: true,
+				},
+				eventRegistration: {
+					onPaymentSetup: jest.fn(),
+					onCheckoutSuccess: jest.fn(),
+				},
+				emitResponse: {
+					responseTypes: {
+						SUCCESS: 'success',
+						ERROR: 'error',
+					},
+					noticeContexts: {
+						PAYMENTS: 'payments',
+					},
+				},
+				shouldSavePayment: false,
+			} )
+		);
+
+		await waitFor( () => {
+			expect( create ).toHaveBeenCalledWith(
+				'payment',
+				expect.objectContaining( {
+					terms: {
+						card: 'always',
+					},
+				} )
+			);
+		} );
 	} );
 
 	it( 'keeps checkout event subscriptions stable across parent rerenders', async () => {

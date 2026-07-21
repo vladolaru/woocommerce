@@ -865,10 +865,20 @@ const WooPaymentsContent = ( {
 
 	useEffect( () => {
 		if (
-			paymentElement.current ||
 			! elementContainer.current ||
 			! paymentSettings.isCoreNativeCheckoutAvailable
 		) {
+			return;
+		}
+
+		const paymentElementOptions = getStripePaymentElementOptions(
+			paymentSettings,
+			Boolean( shouldSavePayment )
+		);
+		if ( paymentElement.current ) {
+			paymentElement.current.update( {
+				terms: paymentElementOptions.terms,
+			} );
 			return;
 		}
 
@@ -882,10 +892,7 @@ const WooPaymentsContent = ( {
 		);
 		paymentElement.current = elements.current.create(
 			'payment',
-			getStripePaymentElementOptions(
-				paymentSettings,
-				Boolean( shouldSavePayment )
-			)
+			paymentElementOptions
 		);
 		paymentElement.current.mount( elementContainer.current );
 	}, [ paymentSettings, shouldSavePayment ] );

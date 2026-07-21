@@ -377,13 +377,13 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	/**
 	 * Output the save-payment-method checkbox.
 	 *
-	 * Subscription payment-method changes must save a reusable credential, so the checkbox remains
-	 * checked in the form for the checkout bridge while being hidden from the shopper.
+	 * Subscription checkouts and payment-method changes must save a reusable credential, so the
+	 * checkbox remains checked in the form for the checkout bridge while being hidden from the shopper.
 	 *
 	 * @return void
 	 */
 	public function save_payment_method_checkbox() {
-		if ( ! $this->is_subscription_change_payment_form() ) {
+		if ( ! $this->cart_contains_subscription() && ! $this->is_subscription_change_payment_form() ) {
 			parent::save_payment_method_checkbox();
 			return;
 		}
@@ -1819,6 +1819,17 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		return 0 < $request_id
 			&& $order_id === $request_id
 			&& (bool) wcs_is_subscription( $request_id );
+	}
+
+	/**
+	 * Tell whether the current cart contains a subscription.
+	 *
+	 * @return bool
+	 */
+	private function cart_contains_subscription(): bool {
+		return class_exists( 'WC_Subscriptions_Cart' )
+			&& is_callable( array( 'WC_Subscriptions_Cart', 'cart_contains_subscription' ) )
+			&& (bool) \WC_Subscriptions_Cart::cart_contains_subscription();
 	}
 
 	/**
