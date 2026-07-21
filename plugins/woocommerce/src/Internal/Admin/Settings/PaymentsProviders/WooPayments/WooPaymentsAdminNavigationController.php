@@ -10,6 +10,8 @@ namespace Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPa
 use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminMenuBadgeService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -27,6 +29,8 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	private const CAPABILITY = 'manage_woocommerce';
 
 	private const MENU_HOOK_PRIORITY = 70;
+
+	private const PAYMENT_GATEWAYS_DISPLAY_HOOK_PRIORITY = 5;
 
 	private const UNRESOLVED_NOTIFICATION_BADGE_FORMAT = ' <span class="wcpay-menu-badge awaiting-mod count-%1$d"><span class="plugin-count">%1$d</span></span>';
 
@@ -183,6 +187,46 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 
 		if ( false === has_filter( 'woocommerce_admin_shared_settings', array( $this, 'preload_shared_settings' ) ) ) {
 			add_filter( 'woocommerce_admin_shared_settings', array( $this, 'preload_shared_settings' ) );
+		}
+
+		if ( false === has_action( 'woocommerce_admin_field_payment_gateways', array( $this, 'handle_payment_gateways_display' ) ) ) {
+			add_action(
+				'woocommerce_admin_field_payment_gateways',
+				array( $this, 'handle_payment_gateways_display' ),
+				self::PAYMENT_GATEWAYS_DISPLAY_HOOK_PRIORITY
+			);
+		}
+	}
+
+	/**
+	 * Keep only the canonical native WooPayments gateway in settings displays.
+	 *
+	 * Split gateways remain registered for checkout and payment processing. This
+	 * callback only changes the request-local collection after the settings display
+	 * hook fires, matching the standalone WooPayments provider projection.
+	 *
+	 * @internal
+	 */
+	public function handle_payment_gateways_display(): void {
+		$payment_gateways  = WC()->payment_gateways();
+		$gateways          = $payment_gateways->payment_gateways;
+		$canonical_gateway = null;
+
+		foreach ( $gateways as $gateway ) {
+			if ( $gateway instanceof NativeWooPaymentsGateway && OrderPaymentStore::GATEWAY_ID === $gateway->id ) {
+				$canonical_gateway = $gateway;
+				break;
+			}
+		}
+
+		if ( ! $canonical_gateway instanceof NativeWooPaymentsGateway ) {
+			return;
+		}
+
+		foreach ( $gateways as $index => $gateway ) {
+			if ( $gateway instanceof NativeWooPaymentsGateway && $gateway !== $canonical_gateway ) {
+				unset( $payment_gateways->payment_gateways[ $index ] );
+			}
 		}
 	}
 

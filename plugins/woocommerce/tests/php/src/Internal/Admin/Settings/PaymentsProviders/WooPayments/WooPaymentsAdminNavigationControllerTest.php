@@ -7,9 +7,11 @@ use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNavigationController;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminMenuBadgeService;
 use PHPUnit\Framework\MockObject\MockObject;
+use WC_Payment_Gateway;
 use WC_Unit_Test_Case;
 
 /**
@@ -25,10 +27,42 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	private string $intercepted_redirect = '';
 
 	/**
+	 * Original WooCommerce payment gateway collection.
+	 *
+	 * @var array<int|string,mixed>
+	 */
+	private array $original_payment_gateways;
+
+	/**
+	 * Controllers created by the test.
+	 *
+	 * @var WooPaymentsAdminNavigationController[]
+	 */
+	private array $controllers = array();
+
+	/**
+	 * Set up test fixtures.
+	 */
+	public function setUp(): void {
+		parent::setUp();
+
+		$this->original_payment_gateways = WC()->payment_gateways()->payment_gateways;
+	}
+
+	/**
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
 		global $submenu;
+
+		foreach ( $this->controllers as $controller ) {
+			remove_action(
+				'woocommerce_admin_field_payment_gateways',
+				array( $controller, 'handle_payment_gateways_display' ),
+				5
+			);
+		}
+		WC()->payment_gateways()->payment_gateways = $this->original_payment_gateways;
 
 		// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Isolate admin menu assertions in this test.
 		$submenu = array();
@@ -48,15 +82,19 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		$sut = $this->create_controller( true );
 
 		$sut->register();
+		$sut->register();
 
 		$this->assertSame( 70, has_action( 'admin_menu', array( $sut, 'add_menu_items' ) ) );
 		$this->assertSame( 10, has_action( 'admin_init', array( $sut, 'redirect_legacy_payment_paths' ) ) );
 		$this->assertSame( 10, has_filter( 'woocommerce_admin_shared_settings', array( $sut, 'preload_shared_settings' ) ) );
+		$this->assertSame( 5, has_action( 'woocommerce_admin_field_payment_gateways', array( $sut, 'handle_payment_gateways_display' ) ) );
+		$this->assertFalse( has_filter( 'woocommerce_payment_gateways', array( $sut, 'handle_payment_gateways_display' ) ) );
 
 		remove_action( 'admin_menu', array( $sut, 'add_menu_items' ), 70 );
 		remove_action( 'admin_init', array( $sut, 'redirect_legacy_payment_paths' ), 10 );
 		remove_action( 'template_redirect', array( $sut, 'redirect_vat_details_request' ), 10 );
 		remove_filter( 'woocommerce_admin_shared_settings', array( $sut, 'preload_shared_settings' ), 10 );
+		remove_action( 'woocommerce_admin_field_payment_gateways', array( $sut, 'handle_payment_gateways_display' ), 5 );
 	}
 
 	/**
@@ -80,6 +118,54 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		$this->assertFalse( has_action( 'admin_init', array( $sut, 'redirect_legacy_payment_paths' ) ) );
 		$this->assertFalse( has_action( 'template_redirect', array( $sut, 'redirect_vat_details_request' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_admin_shared_settings', array( $sut, 'preload_shared_settings' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_admin_field_payment_gateways', array( $sut, 'handle_payment_gateways_display' ) ) );
+	}
+
+	/**
+	 * @testdox Should retain the canonical and unrelated gateways while removing native split gateways from settings.
+	 */
+	public function test_projects_only_the_canonical_native_gateway_for_settings_display(): void {
+		$canonical = $this->create_native_gateway( 'woocommerce_payments' );
+		$afterpay  = $this->create_native_gateway( 'woocommerce_payments_afterpay_clearpay' );
+		$klarna    = $this->create_native_gateway( 'woocommerce_payments_klarna' );
+		$unrelated = $this->create_unrelated_gateway( 'bacs' );
+		$sut       = $this->create_controller( true );
+
+		WC()->payment_gateways()->payment_gateways = array(
+			2  => $canonical,
+			7  => $afterpay,
+			11 => $unrelated,
+			14 => $klarna,
+		);
+
+		$sut->handle_payment_gateways_display();
+
+		$this->assertSame(
+			array(
+				2  => $canonical,
+				11 => $unrelated,
+			),
+			WC()->payment_gateways()->payment_gateways
+		);
+	}
+
+	/**
+	 * @testdox Should not change the settings collection when the canonical native gateway is absent.
+	 */
+	public function test_does_not_change_settings_collection_when_canonical_gateway_is_absent(): void {
+		$afterpay  = $this->create_native_gateway( 'woocommerce_payments_afterpay_clearpay' );
+		$unrelated = $this->create_unrelated_gateway( 'bacs' );
+		$sut       = $this->create_controller( true );
+		$gateways  = array(
+			7  => $afterpay,
+			11 => $unrelated,
+		);
+
+		WC()->payment_gateways()->payment_gateways = $gateways;
+
+		$sut->handle_payment_gateways_display();
+
+		$this->assertSame( $gateways, WC()->payment_gateways()->payment_gateways );
 	}
 
 	/**
@@ -1248,8 +1334,43 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		$badge_service   = $this->create_badge_service( $badge_counts );
 		$controller      = new $class_name();
 		$controller->init( $arbiter, $account_service, $badge_service );
+		$this->controllers[] = $controller;
 
 		return $controller;
+	}
+
+	/**
+	 * Create a constructor-free native gateway identity.
+	 *
+	 * @param string $gateway_id Gateway ID.
+	 * @return NativeWooPaymentsGateway
+	 */
+	private function create_native_gateway( string $gateway_id ): NativeWooPaymentsGateway {
+		$gateway     = $this->getMockBuilder( NativeWooPaymentsGateway::class )
+			->disableOriginalConstructor()
+			->getMock();
+		$gateway->id = $gateway_id;
+
+		return $gateway;
+	}
+
+	/**
+	 * Create a non-WooPayments gateway identity.
+	 *
+	 * @param string $gateway_id Gateway ID.
+	 * @return WC_Payment_Gateway
+	 */
+	private function create_unrelated_gateway( string $gateway_id ): WC_Payment_Gateway {
+		return new class( $gateway_id ) extends WC_Payment_Gateway {
+			/**
+			 * Set the gateway ID.
+			 *
+			 * @param string $gateway_id Gateway ID.
+			 */
+			public function __construct( string $gateway_id ) {
+				$this->id = $gateway_id;
+			}
+		};
 	}
 
 	/**
