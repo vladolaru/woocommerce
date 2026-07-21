@@ -1623,6 +1623,7 @@ $payment_requires_action_probe = static function () use ( $read_object_property,
 		&& class_exists( 'WC_Payments_API_Payment_Intention' )
 		&& class_exists( 'WCPay\Payment_Information' )
 		&& class_exists( 'WCPay\Constants\Payment_Initiated_By' )
+		&& function_exists( 'wc_get_order' )
 	) {
 		$gateway = WC_Payments::get_gateway();
 		if ( ! is_object( $gateway ) || ! method_exists( $gateway, 'process_payment_for_order' ) ) {
@@ -1690,32 +1691,57 @@ $payment_requires_action_probe = static function () use ( $read_object_property,
 		$order = new WC_Order();
 		$order->set_total( 12.34 );
 		$order->set_currency( 'USD' );
-		$order->save();
-		$payment_information = new WCPay\Payment_Information(
-			'pm_hook_shape',
-			$order,
-			null,
-			null,
-			WCPay\Constants\Payment_Initiated_By::MERCHANT(),
-			null,
-			null,
-			'',
-			'card',
-			'cus_hook_shape'
-		);
-
-		$gateway_api  = $read_object_property( $gateway, 'payments_api_client' );
-		$wc_payments  = new ReflectionClass( 'WC_Payments' );
-		$api_property = $wc_payments->getProperty( 'api_client' );
-		$api_property->setAccessible( true );
-		$static_api = $api_property->getValue();
-		$write_object_property( $gateway, 'payments_api_client', $api_client );
-		$api_property->setValue( null, $api_client );
+		$order->update_meta_data( '_wcpay_hook_shape_probe', 'payment_requires_action' );
+		$probe_order_id = 0;
 		try {
-			$gateway->process_payment_for_order( null, $payment_information );
+			$order->save();
+			$probe_order_id = $order->get_id();
+			if ( 0 >= $probe_order_id ) {
+				throw new RuntimeException( 'Failed to create the payment-requires-action probe order.' );
+			}
+			$payment_information = new WCPay\Payment_Information(
+				'pm_hook_shape',
+				$order,
+				null,
+				null,
+				WCPay\Constants\Payment_Initiated_By::MERCHANT(),
+				null,
+				null,
+				'',
+				'card',
+				'cus_hook_shape'
+			);
+
+			$gateway_api  = $read_object_property( $gateway, 'payments_api_client' );
+			$wc_payments  = new ReflectionClass( 'WC_Payments' );
+			$api_property = $wc_payments->getProperty( 'api_client' );
+			$api_property->setAccessible( true );
+			$static_api = $api_property->getValue();
+			try {
+				$write_object_property( $gateway, 'payments_api_client', $api_client );
+				$api_property->setValue( null, $api_client );
+				$gateway->process_payment_for_order( null, $payment_information );
+			} finally {
+				try {
+					$write_object_property( $gateway, 'payments_api_client', $gateway_api );
+				} finally {
+					$api_property->setValue( null, $static_api );
+				}
+			}
 		} finally {
-			$write_object_property( $gateway, 'payments_api_client', $gateway_api );
-			$api_property->setValue( null, $static_api );
+			$owned_order_id = 0 < $probe_order_id ? $probe_order_id : $order->get_id();
+			if ( 0 < $owned_order_id ) {
+				if (
+					( 0 < $probe_order_id && $probe_order_id !== $order->get_id() )
+					|| 'payment_requires_action' !== $order->get_meta( '_wcpay_hook_shape_probe' )
+				) {
+					throw new RuntimeException( 'Refusing to delete an unowned payment-requires-action probe order.' );
+				}
+				$delete_result = $order->delete( true );
+				if ( true !== $delete_result || false !== wc_get_order( $owned_order_id ) ) {
+					throw new RuntimeException( 'Failed to delete the payment-requires-action probe order.' );
+				}
+			}
 		}
 		return;
 	}
@@ -1915,52 +1941,51 @@ $run_product_probe_group(
 $run_until_hook(
 	'wcpay_is_woopay_store_api_request',
 	static function () use ( $runtime_owner ): void {
-		if ( 'plugin' === $runtime_owner && class_exists( 'WC_Payments' ) && method_exists( 'WC_Payments', 'get_gateway' ) && function_exists( 'wc_get_orders' ) && function_exists( 'WC' ) ) {
+		if ( 'plugin' === $runtime_owner && class_exists( 'WC_Payments' ) && method_exists( 'WC_Payments', 'get_gateway' ) && class_exists( 'WC_Order' ) && function_exists( 'wc_get_order' ) && function_exists( 'WC' ) ) {
 			$gateway = WC_Payments::get_gateway();
 			if ( ! is_object( $gateway ) || ! method_exists( $gateway, 'process_payment' ) ) {
 				return;
 			}
 
-			$orders = wc_get_orders(
-				array(
-					'limit'   => 10,
-					'orderby' => 'ID',
-					'order'   => 'ASC',
-					'return'  => 'objects',
-				)
-			);
-			$order  = null;
-			foreach ( $orders as $candidate ) {
-				if ( ! is_object( $candidate ) || ! method_exists( $candidate, 'get_id' ) ) {
-					continue;
-				}
-
-				$phone = method_exists( $candidate, 'get_billing_phone' ) ? (string) $candidate->get_billing_phone() : '';
-				if ( 20 >= strlen( $phone ) ) {
-					$order = $candidate;
-					break;
-				}
-			}
-
-			if ( null === $order ) {
-				return;
-			}
-
-			$woocommerce      = WC();
-			$had_session      = is_object( $woocommerce ) && property_exists( $woocommerce, 'session' );
-			$previous_session = $had_session ? $woocommerce->session : null;
-			if ( is_object( $woocommerce ) && ! $previous_session ) {
-				$woocommerce->session = (object) array();
-			}
-
+			$order = new WC_Order();
+			$order->update_meta_data( '_wcpay_hook_shape_probe', 'woopay_store_api_request' );
+			$probe_order_id = 0;
 			try {
-				$gateway->process_payment( $order->get_id() );
+				$order->save();
+				$probe_order_id = $order->get_id();
+				if ( 0 >= $probe_order_id ) {
+					throw new RuntimeException( 'Failed to create the WooPay Store API probe order.' );
+				}
+
+				$woocommerce      = WC();
+				$had_session      = is_object( $woocommerce ) && property_exists( $woocommerce, 'session' );
+				$previous_session = $had_session ? $woocommerce->session : null;
+				try {
+					if ( is_object( $woocommerce ) && ! $previous_session ) {
+						$woocommerce->session = (object) array();
+					}
+					$gateway->process_payment( $probe_order_id );
+				} finally {
+					if ( is_object( $woocommerce ) ) {
+						if ( $had_session ) {
+							$woocommerce->session = $previous_session;
+						} else {
+							unset( $woocommerce->session );
+						}
+					}
+				}
 			} finally {
-				if ( is_object( $woocommerce ) ) {
-					if ( $had_session ) {
-						$woocommerce->session = $previous_session;
-					} else {
-						unset( $woocommerce->session );
+				$owned_order_id = 0 < $probe_order_id ? $probe_order_id : $order->get_id();
+				if ( 0 < $owned_order_id ) {
+					if (
+						( 0 < $probe_order_id && $probe_order_id !== $order->get_id() )
+						|| 'woopay_store_api_request' !== $order->get_meta( '_wcpay_hook_shape_probe' )
+					) {
+						throw new RuntimeException( 'Refusing to delete an unowned WooPay Store API probe order.' );
+					}
+					$delete_result = $order->delete( true );
+					if ( true !== $delete_result || false !== wc_get_order( $owned_order_id ) ) {
+						throw new RuntimeException( 'Failed to delete the WooPay Store API probe order.' );
 					}
 				}
 			}

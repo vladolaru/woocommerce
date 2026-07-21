@@ -161,9 +161,67 @@ class HookShapeFakeGateway {
 	}
 }
 
-class HookShapeFakeOrder {
+class WC_Order {
+	private static $next_id = 123;
+	private $id = 0;
+	private $meta_data = array();
+	private $billing_first_name = '';
+	private $billing_last_name = '';
+	private $billing_email = '';
+
 	public function get_id() {
-		return 123;
+		return $this->id;
+	}
+
+	public function update_meta_data( $key, $value ) {
+		$this->meta_data[ $key ] = $value;
+	}
+
+	public function get_meta( $key ) {
+		return $this->meta_data[ $key ] ?? '';
+	}
+
+	public function set_billing_first_name( $first_name ) {
+		$this->billing_first_name = $first_name;
+	}
+
+	public function set_billing_last_name( $last_name ) {
+		$this->billing_last_name = $last_name;
+	}
+
+	public function set_billing_email( $email ) {
+		$this->billing_email = $email;
+	}
+
+	public function save() {
+		if ( 0 === $this->id ) {
+			$this->id = self::$next_id++;
+		}
+		$GLOBALS['hook_shape_live_orders'][ $this->id ] = $this;
+		if (
+			! empty( $GLOBALS['hook_shape_throw_after_probe_save'] )
+			&& 'woopay_store_api_request' === $this->get_meta( '_wcpay_hook_shape_probe' )
+		) {
+			unset( $GLOBALS['hook_shape_throw_after_probe_save'] );
+			$GLOBALS['hook_shape_partial_save_order_id'] = $this->id;
+			throw new RuntimeException( 'Simulated failure after persisting the probe order.' );
+		}
+		return $this->get_id();
+	}
+
+	public function delete( $force_delete = false ) {
+		$GLOBALS['hook_shape_delete_attempt_order_ids'][] = $this->id;
+		$check = apply_filters( 'woocommerce_pre_delete_order', null, $this, $force_delete );
+		if ( null !== $check ) {
+			return $check;
+		}
+		if ( true !== $force_delete ) {
+			return false;
+		}
+
+		unset( $GLOBALS['hook_shape_live_orders'][ $this->id ] );
+		$this->id = 0;
+		return true;
 	}
 }
 
@@ -197,9 +255,14 @@ class WooPay_Session {
 }
 PHP );
 
-function wc_get_orders( $args ) {
-	unset( $args );
-	return array( new HookShapeFakeOrder() );
+function wc_create_order() {
+	$order = new WC_Order();
+	$order->save();
+	return $order;
+}
+
+function wc_get_order( $order_id ) {
+	return $GLOBALS['hook_shape_live_orders'][ $order_id ] ?? false;
 }
 
 function WC() {
@@ -410,7 +473,7 @@ def run_gate(*args: str) -> subprocess.CompletedProcess[str]:
 def run_driver_with_offline_hook_runtime(
     product_runtime: str = "",
     runtime_args: list[str] | None = None,
-) -> tuple[dict, list[str]]:
+) -> tuple[dict, list[str], dict]:
     runtime_args = runtime_args or ["--role", "offline"]
     runtime_args_json = json.dumps(json.dumps(runtime_args))
     with tempfile.TemporaryDirectory(prefix="hook-shape-parity-runtime-") as tmp:
@@ -481,6 +544,13 @@ function do_action( $hook_name, ...$args ) {
             + """
 include $argv[1];
 
+echo 'HOOK_SHAPE_RUNTIME_STATE=' . json_encode(
+	array(
+		'delete_attempt_order_ids' => array_map( 'intval', $GLOBALS['hook_shape_delete_attempt_order_ids'] ?? array() ),
+		'live_order_ids'           => array_map( 'intval', array_keys( $GLOBALS['hook_shape_live_orders'] ?? array() ) ),
+		'partial_save_order_id'    => $GLOBALS['hook_shape_partial_save_order_id'] ?? null,
+	)
+) . PHP_EOL;
 echo 'HOOK_SHAPE_DISPATCHES=' . json_encode( $GLOBALS['hook_shape_dispatches'] ) . PHP_EOL;
 """,
             encoding="utf-8",
@@ -503,7 +573,14 @@ echo 'HOOK_SHAPE_DISPATCHES=' . json_encode( $GLOBALS['hook_shape_dispatches'] )
             "=", 1
         )[1]
     )
-    return capture, dispatches
+    runtime_state = json.loads(
+        next(
+            line
+            for line in output_lines
+            if line.startswith("HOOK_SHAPE_RUNTIME_STATE=")
+        ).split("=", 1)[1]
+    )
+    return capture, dispatches, runtime_state
 
 
 def write_snapshot(
@@ -1259,6 +1336,154 @@ def test_requires_action_probe_saves_order_before_payment_information() -> None:
     )
 
 
+def test_requires_action_probe_deletes_owned_order() -> None:
+    source = DRIVER.read_text(encoding="utf-8")
+    section = source[
+        source.index("$payment_requires_action_probe = static function") : source.index(
+            "if ( 'native' === $runtime_owner )"
+        )
+    ]
+    order_section = section[section.index("$order = new WC_Order();") :]
+
+    assert (
+        "$order->update_meta_data( '_wcpay_hook_shape_probe', "
+        "'payment_requires_action' );"
+    ) in order_section
+    assert "try {\n\t\t\t$order->save();" in order_section
+    assert "$probe_order_id = $order->get_id();" in order_section
+    assert "0 < $probe_order_id" in order_section
+    assert "$probe_order_id !== $order->get_id()" in order_section
+    assert (
+        "'payment_requires_action' !== "
+        "$order->get_meta( '_wcpay_hook_shape_probe' )"
+    ) in order_section
+    assert "$delete_result = $order->delete( true );" in order_section
+    assert "true !== $delete_result" in order_section
+    assert "false !== wc_get_order( $owned_order_id )" in order_section
+    assert (
+        "$owned_order_id = 0 < $probe_order_id ? "
+        "$probe_order_id : $order->get_id();"
+    ) in order_section
+    assert "if ( 0 >= $owned_order_id ) {\n\t\t\t\treturn;" not in order_section
+    assert order_section.index("$order->save();") < order_section.index(
+        "$payment_information = new WCPay\\Payment_Information("
+    )
+    assert order_section.index(
+        "$api_property->setValue( null, $static_api );"
+    ) < order_section.index("$delete_result = $order->delete( true );")
+    static_api_section = order_section[
+        order_section.index("$static_api = $api_property->getValue();") :
+    ]
+    assert static_api_section.index("try {") < static_api_section.index(
+        "$write_object_property( $gateway, 'payments_api_client', $api_client );"
+    )
+    assert (
+        "} finally {\n\t\t\t\ttry {\n"
+        "\t\t\t\t\t$write_object_property( $gateway, 'payments_api_client', "
+        "$gateway_api );"
+    ) in static_api_section
+    assert (
+        "\t\t\t\t} finally {\n"
+        "\t\t\t\t\t$api_property->setValue( null, $static_api );"
+    ) in static_api_section
+
+
+def test_woopay_store_api_probe_owns_and_deletes_order() -> None:
+    source = DRIVER.read_text(encoding="utf-8")
+    section_start = source.index(
+        "$run_until_hook(\n\t'wcpay_is_woopay_store_api_request'"
+    )
+    section = source[section_start : source.index("$probe_object =", section_start)]
+    plugin_section = section[: section.index("if ( 'native' !== $runtime_owner")]
+
+    assert "wc_get_orders" not in plugin_section
+    assert "wc_create_order" not in plugin_section
+    assert "$order = new WC_Order();" in plugin_section
+    assert (
+        "$order->update_meta_data( '_wcpay_hook_shape_probe', "
+        "'woopay_store_api_request' );"
+    ) in plugin_section
+    assert "$probe_order_id = 0;" in plugin_section
+    assert "try {\n\t\t\t\t$order->save();" in plugin_section
+    assert "$probe_order_id = $order->get_id();" in plugin_section
+    assert "$gateway->process_payment( $probe_order_id );" in plugin_section
+    assert "$probe_order_id !== $order->get_id()" in plugin_section
+    assert (
+        "'woopay_store_api_request' !== "
+        "$order->get_meta( '_wcpay_hook_shape_probe' )"
+    ) in plugin_section
+    assert "$delete_result = $order->delete( true );" in plugin_section
+    assert "true !== $delete_result" in plugin_section
+    assert "false !== wc_get_order( $owned_order_id )" in plugin_section
+    assert (
+        "$owned_order_id = 0 < $probe_order_id ? "
+        "$probe_order_id : $order->get_id();"
+    ) in plugin_section
+    assert "if ( 0 >= $owned_order_id ) {\n\t\t\t\t\treturn;" not in plugin_section
+    assert plugin_section.index(
+        "$order->update_meta_data( '_wcpay_hook_shape_probe', "
+        "'woopay_store_api_request' );"
+    ) < plugin_section.index("$order->save();")
+    session_section = plugin_section[
+        plugin_section.index("$previous_session =") :
+    ]
+    assert session_section.index("try {") < session_section.index(
+        "$woocommerce->session = (object) array();"
+    )
+    assert plugin_section.index("$woocommerce->session = $previous_session;") < (
+        plugin_section.index("$delete_result = $order->delete( true );")
+    )
+
+
+def test_woopay_store_api_probe_reports_surviving_owned_order() -> None:
+    capture, _, _ = run_driver_with_offline_hook_runtime(
+        EXTENSION_PRODUCT_RUNTIME
+        + r"""
+add_filter(
+	'woocommerce_pre_delete_order',
+	static function ( $check, $order, $force_delete ) {
+		unset( $check, $order, $force_delete );
+		return true;
+	},
+	10,
+	3
+);
+"""
+    )
+
+    assert any(
+        error
+        == (
+            "wcpay_is_woopay_store_api_request surrounding path: "
+            "Failed to delete the WooPay Store API probe order."
+        )
+        for error in capture["errors"]
+    )
+
+
+def test_woopay_store_api_probe_deletes_partial_save_before_reporting_error() -> None:
+    capture, dispatches, runtime_state = run_driver_with_offline_hook_runtime(
+        EXTENSION_PRODUCT_RUNTIME
+        + r"""
+$GLOBALS['hook_shape_throw_after_probe_save'] = true;
+"""
+    )
+
+    partial_save_order_id = runtime_state["partial_save_order_id"]
+    assert partial_save_order_id is not None
+    assert partial_save_order_id not in runtime_state["live_order_ids"]
+    assert partial_save_order_id in runtime_state["delete_attempt_order_ids"]
+    assert "woocommerce_pre_delete_order" in dispatches
+    assert any(
+        error
+        == (
+            "wcpay_is_woopay_store_api_request surrounding path: "
+            "Simulated failure after persisting the probe order."
+        )
+        for error in capture["errors"]
+    )
+
+
 def test_native_add_method_fake_overrides_active_token_method() -> None:
     source = DRIVER.read_text(encoding="utf-8")
     section = source[
@@ -1286,7 +1511,7 @@ def test_extension_vat_probe_uses_the_real_controller_even_when_its_route_is_fea
 
 
 def test_php_driver_ignores_wp_cli_command_name_when_parsing_capture_role() -> None:
-    capture, _dispatches = run_driver_with_offline_hook_runtime(
+    capture, _dispatches, _runtime_state = run_driver_with_offline_hook_runtime(
         runtime_args=["eval-file", "target"]
     )
 
@@ -1294,7 +1519,7 @@ def test_php_driver_ignores_wp_cli_command_name_when_parsing_capture_role() -> N
 
 
 def test_php_driver_direct_probes_are_diagnostic_not_product_observations() -> None:
-    capture, dispatches = run_driver_with_offline_hook_runtime()
+    capture, dispatches, _runtime_state = run_driver_with_offline_hook_runtime()
 
     direct_probe_hooks = [
         hook
@@ -1313,7 +1538,7 @@ def test_php_driver_direct_probes_are_diagnostic_not_product_observations() -> N
 
 
 def test_nested_hook_during_direct_diagnostic_cannot_gain_product_provenance() -> None:
-    capture, _ = run_driver_with_offline_hook_runtime(
+    capture, _, _ = run_driver_with_offline_hook_runtime(
         r"""
 add_filter(
 	'wcpay_test_mode',
@@ -1333,7 +1558,7 @@ add_filter(
 
 
 def test_priority_extension_paths_are_captured_as_surrounding_product_paths() -> None:
-    capture, _ = run_driver_with_offline_hook_runtime(EXTENSION_PRODUCT_RUNTIME)
+    capture, _, _ = run_driver_with_offline_hook_runtime(EXTENSION_PRODUCT_RUNTIME)
 
     assert capture["errors"] == []
     for hook_name in PRIORITY_SURROUNDING_PATH_HOOKS:
@@ -1342,7 +1567,7 @@ def test_priority_extension_paths_are_captured_as_surrounding_product_paths() ->
 
 
 def test_priority_native_paths_are_captured_as_surrounding_product_paths() -> None:
-    capture, _ = run_driver_with_offline_hook_runtime(NATIVE_PRODUCT_RUNTIME)
+    capture, _, _ = run_driver_with_offline_hook_runtime(NATIVE_PRODUCT_RUNTIME)
 
     assert capture["errors"] == []
     for hook_name in PRIORITY_SURROUNDING_PATH_HOOKS:
