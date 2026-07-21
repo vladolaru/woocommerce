@@ -1527,6 +1527,7 @@
 		var icons = getCardBrandIcons();
 		var existingLogos;
 		var sourceLogos;
+		var testModeBadge;
 		var container;
 		var logos;
 		var resizeHandler;
@@ -1556,6 +1557,7 @@
 		if ( ! sourceLogos ) {
 			return;
 		}
+		testModeBadge = sourceLogos.querySelector( '.test-mode.badge' );
 
 		cleanupCardBrandIconsHydration();
 
@@ -1563,6 +1565,9 @@
 		container.className = 'payment-methods--logos';
 		logos = document.createElement( 'span' );
 		logos.setAttribute( 'data-testid', 'payment-methods-logos' );
+		if ( testModeBadge ) {
+			container.appendChild( testModeBadge );
+		}
 		container.appendChild( logos );
 
 		updateCardBrandLogos( logos, label, icons );

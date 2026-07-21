@@ -2163,13 +2163,14 @@ describe( 'WooPayments checkout', () => {
 		expect( button.classList.contains( 'state--success' ) ).toBe( false );
 	} );
 
-	test( 'hydrates card brand icons with a keyboard accessible popover', () => {
+	test( 'preserves the test-mode badge while hydrating accessible card brand icons', () => {
 		document.body.innerHTML =
 			'<form class="checkout">' +
 			'<input id="payment_method_woocommerce_payments" type="radio" ' +
 			'name="payment_method" value="woocommerce_payments" checked />' +
 			'<label for="payment_method_woocommerce_payments">Card ' +
 			'<span class="wcpay-core-card-brand-icons payment-methods--logos">' +
+			'<span class="test-mode badge">Test Mode</span>' +
 			'<img src="https://example.test/visa.svg" alt="Visa" />' +
 			'</span></label>' +
 			'<div id="wcpay-core-payment-element"></div>' +
@@ -2180,8 +2181,18 @@ describe( 'WooPayments checkout', () => {
 		const logos = document.querySelector(
 			'[data-testid="payment-methods-logos"]'
 		);
+		const badges = document.querySelectorAll( '.test-mode.badge' );
+		const badge = badges[ 0 ];
+		const container = logos.parentElement;
 
 		expect( logos ).not.toBeNull();
+		expect( badges ).toHaveLength( 1 );
+		expect( badge.textContent ).toBe( 'Test Mode' );
+		expect( container.classList.contains( 'payment-methods--logos' ) ).toBe(
+			true
+		);
+		expect( container.contains( badge ) ).toBe( true );
+		expect( logos.contains( badge ) ).toBe( false );
 		expect(
 			Array.from( logos.querySelectorAll( 'img' ) ).map(
 				( img ) => img.alt
@@ -2231,6 +2242,13 @@ describe( 'WooPayments checkout', () => {
 
 		expect( document.querySelector( '.logo-popover' ) ).toBeNull();
 		expect( document.activeElement ).toBe( logos );
+
+		window.dispatchEvent( new window.Event( 'resize' ) );
+
+		expect( document.querySelectorAll( '.test-mode.badge' ) ).toHaveLength(
+			1
+		);
+		expect( document.querySelector( '.test-mode.badge' ) ).toBe( badge );
 	} );
 
 	test( 'cleans up card brand logo resize handlers when checkout fragments replace payment markup', () => {
