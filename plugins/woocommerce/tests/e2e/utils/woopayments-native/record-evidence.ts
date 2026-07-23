@@ -13,7 +13,10 @@ export interface PaymentEvidence {
 	currency: string;
 	orderStatus: string;
 	providerStatus: string;
+	chargeStatus: string;
+	chargeCaptured: boolean;
 	occurrenceCount: number;
+	captureOccurrenceCount: number;
 }
 
 export interface OrderPaymentEvidence {
@@ -41,6 +44,15 @@ interface OrderResponse {
 	currency_minor_unit?: unknown;
 	status?: unknown;
 	meta_data?: unknown;
+}
+
+interface OrderNoteResponse {
+	note?: unknown;
+}
+
+export interface CaptureOrderNoteEvidence {
+	captureNoteCount: number;
+	captureNote: string;
 }
 
 async function readJson(
@@ -169,5 +181,53 @@ export async function getPaymentEvidence(
 	return {
 		...orderEvidence,
 		...providerEvidence,
+	};
+}
+
+export async function getCaptureOrderNoteEvidence(
+	restApi: APIRequestContext,
+	evidence: Pick< PaymentEvidence, 'orderId' | 'intentId' >
+): Promise< CaptureOrderNoteEvidence > {
+	if ( ! Number.isInteger( evidence.orderId ) || evidence.orderId <= 0 ) {
+		throw new Error(
+			'Capture note evidence requires a positive order ID.'
+		);
+	}
+	const intentId = requiredString( evidence.intentId, 'intent ID' );
+	const notes = await readJson(
+		await restApi.get(
+			`/wp-json/wc/v3/orders/${ evidence.orderId }/notes?context=edit&per_page=100`
+		),
+		`WooCommerce order ${ evidence.orderId } notes`
+	);
+	if ( ! Array.isArray( notes ) ) {
+		throw new Error(
+			'Capture note evidence requires an order note array.'
+		);
+	}
+
+	const captureNotes = ( notes as OrderNoteResponse[] )
+		.map( ( note, index ) => {
+			if ( typeof note.note !== 'string' ) {
+				throw new Error(
+					`Capture note evidence requires note ${
+						index + 1
+					} to be a string.`
+				);
+			}
+			return note.note;
+		} )
+		.filter(
+			( note ) =>
+				note.startsWith( 'A payment of ' ) &&
+				note.includes(
+					' was <strong>successfully captured</strong> using WooPayments ('
+				) &&
+				note.endsWith( `>${ intentId }</a>).` )
+		);
+
+	return {
+		captureNoteCount: captureNotes.length,
+		captureNote: captureNotes.length === 1 ? captureNotes[ 0 ] : '',
 	};
 }

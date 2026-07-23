@@ -269,7 +269,7 @@ test( 'recovers only an expired lock and records the displaced owner', async () 
 	}
 } );
 
-test( 'enforces account to store to feature to record acquisition order', async () => {
+test( 'rejects a store lock when the matching account lock is not owned', async () => {
 	const directory = await lockDirectory();
 	const manager = new ResourceLockManager( {
 		lockDir: directory,
@@ -279,20 +279,110 @@ test( 'enforces account to store to feature to record acquisition order', async 
 	} );
 
 	try {
-		const featureLock = await manager.acquire( {
-			...accountRequest,
-			kind: 'feature-setting',
-			resource: 'manual-capture',
-		} );
-
 		await expect(
 			manager.acquire( {
 				...accountRequest,
 				kind: 'store',
 				resource: 'native-store',
 			} )
+		).rejects.toThrow( /requires.*account/i );
+	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'rejects setting and record locks without matching account and store ownership', async () => {
+	const directory = await lockDirectory();
+	const manager = new ResourceLockManager( {
+		lockDir: directory,
+		runId: 'run-prerequisites',
+		pid: 1011,
+		autoRenew: false,
+	} );
+
+	try {
+		await expect(
+			manager.acquire( {
+				...accountRequest,
+				kind: 'feature-setting',
+				resource: 'manual-capture',
+			} )
+		).rejects.toThrow( /requires.*account.*store/i );
+		await expect(
+			manager.acquire( {
+				...accountRequest,
+				kind: 'record-event',
+				resource: 'order-42',
+			} )
+		).rejects.toThrow( /requires.*account.*store/i );
+
+		const accountLock = await manager.acquire( accountRequest );
+		await expect(
+			manager.acquire( {
+				...accountRequest,
+				kind: 'feature-setting',
+				resource: 'manual-capture',
+			} )
+		).rejects.toThrow( /requires.*store/i );
+
+		const storeLock = await manager.acquire( {
+			...accountRequest,
+			kind: 'store',
+			resource: 'native-store',
+		} );
+		const featureLock = await manager.acquire( {
+			...accountRequest,
+			kind: 'feature-setting',
+			resource: 'manual-capture',
+		} );
+		const recordLock = await manager.acquire( {
+			...accountRequest,
+			kind: 'record-event',
+			resource: 'order-42',
+		} );
+
+		await expect( recordLock.release() ).resolves.toBe( true );
+		await expect( featureLock.release() ).resolves.toBe( true );
+		await expect( storeLock.release() ).resolves.toBe( true );
+		await expect( accountLock.release() ).resolves.toBe( true );
+	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'rejects a lower hierarchy lock after a higher hierarchy lock', async () => {
+	const directory = await lockDirectory();
+	const manager = new ResourceLockManager( {
+		lockDir: directory,
+		runId: 'run-order-regression',
+		pid: 1012,
+		autoRenew: false,
+	} );
+
+	try {
+		const accountLock = await manager.acquire( accountRequest );
+		const storeLock = await manager.acquire( {
+			...accountRequest,
+			kind: 'store',
+			resource: 'native-store',
+		} );
+		const recordLock = await manager.acquire( {
+			...accountRequest,
+			kind: 'record-event',
+			resource: 'order-42',
+		} );
+
+		await expect(
+			manager.acquire( {
+				...accountRequest,
+				kind: 'feature-setting',
+				resource: 'manual-capture',
+			} )
 		).rejects.toThrow( /acquisition order/i );
-		await featureLock.release();
+
+		await expect( recordLock.release() ).resolves.toBe( true );
+		await expect( storeLock.release() ).resolves.toBe( true );
+		await expect( accountLock.release() ).resolves.toBe( true );
 	} finally {
 		await rm( directory, { recursive: true, force: true } );
 	}

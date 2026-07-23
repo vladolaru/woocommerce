@@ -11,6 +11,7 @@ interface ProviderObject {
 	amount?: unknown;
 	currency?: unknown;
 	status?: unknown;
+	captured?: unknown;
 	payment_intent?: unknown;
 	payment_method?: unknown;
 	charges?: unknown;
@@ -18,7 +19,10 @@ interface ProviderObject {
 
 export interface ProviderPaymentEvidence {
 	providerStatus: string;
+	chargeStatus: string;
+	chargeCaptured: boolean;
 	occurrenceCount: number;
+	captureOccurrenceCount: number;
 }
 
 async function readJson(
@@ -36,6 +40,15 @@ async function readJson(
 function requiredString( value: unknown, label: string ): string {
 	if ( typeof value !== 'string' || ! value.trim() ) {
 		throw new Error( `Provider evidence requires a non-empty ${ label }.` );
+	}
+	return value;
+}
+
+function requiredBoolean( value: unknown, label: string ): boolean {
+	if ( typeof value !== 'boolean' ) {
+		throw new Error(
+			`Provider evidence requires ${ label } to be boolean.`
+		);
 	}
 	return value;
 }
@@ -110,6 +123,37 @@ function getChargeIds( intent: ProviderObject ): string[] {
 	} );
 }
 
+function getCaptureOccurrenceCount( timeline: unknown ): number {
+	if (
+		typeof timeline !== 'object' ||
+		timeline === null ||
+		! ( 'data' in timeline ) ||
+		! Array.isArray( timeline.data )
+	) {
+		throw new Error(
+			'Provider capture occurrence count cannot be proved without timeline data.'
+		);
+	}
+
+	let captureCount = 0;
+	for ( const [ index, event ] of timeline.data.entries() ) {
+		if (
+			typeof event !== 'object' ||
+			event === null ||
+			! ( 'type' in event ) ||
+			typeof event.type !== 'string'
+		) {
+			throw new Error(
+				`Provider timeline event ${ index + 1 } has no valid type.`
+			);
+		}
+		if ( event.type === 'captured' ) {
+			captureCount += 1;
+		}
+	}
+	return captureCount;
+}
+
 function delay( milliseconds: number ): Promise< void > {
 	return new Promise( ( resolve ) => setTimeout( resolve, milliseconds ) );
 }
@@ -134,6 +178,14 @@ export async function getProviderEvidence(
 		),
 		`charge ${ order.chargeId }`
 	) ) as ProviderObject;
+	const timeline = await readJson(
+		await restApi.get(
+			`/wp-json/wc/v3/payments/timeline/${ encodeURIComponent(
+				order.intentId
+			) }`
+		),
+		`timeline ${ order.intentId }`
+	);
 
 	assertExactId( intent.id, order.intentId, 'intent' );
 	assertExactId( charge.id, order.chargeId, 'charge' );
@@ -165,7 +217,13 @@ export async function getProviderEvidence(
 
 	return {
 		providerStatus: requiredString( intent.status, 'provider status' ),
+		chargeStatus: requiredString( charge.status, 'charge status' ),
+		chargeCaptured: requiredBoolean(
+			charge.captured,
+			'charge captured field'
+		),
 		occurrenceCount,
+		captureOccurrenceCount: getCaptureOccurrenceCount( timeline ),
 	};
 }
 

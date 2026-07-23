@@ -219,7 +219,13 @@ export class ResourceLockManager {
 	private readonly renewEveryMs: number;
 	private readonly maxWaitMs: number;
 	private readonly autoRenew: boolean;
-	private readonly heldKinds = new Map< string, ResourceLockKind >();
+	private readonly heldLocks = new Map<
+		string,
+		{
+			request: ResourceLockRequest;
+			payload: ResourceLockPayload;
+		}
+	>();
 
 	public constructor( options: ResourceLockManagerOptions ) {
 		const lockDir = options.lockDir ?? process.env.E2E_WOOPAYMENTS_LOCK_DIR;
@@ -249,6 +255,7 @@ export class ResourceLockManager {
 	): Promise< ResourceLock > {
 		this.assertRequest( request );
 		this.assertAcquisitionOrder( request.kind );
+		await this.assertAcquisitionPrerequisites( request );
 		await mkdir( this.lockDir, { recursive: true } );
 
 		const key = this.getKey( request );
@@ -267,7 +274,7 @@ export class ResourceLockManager {
 
 			const created = await this.tryCreate( lockPath, payload );
 			if ( created ) {
-				return this.trackLock( request.kind, payload );
+				return this.trackLock( request, payload );
 			}
 
 			const displacedOwner = await this.tryRecoverExpired(
@@ -275,7 +282,7 @@ export class ResourceLockManager {
 				payload
 			);
 			if ( displacedOwner ) {
-				return this.trackLock( request.kind, payload, displacedOwner );
+				return this.trackLock( request, payload, displacedOwner );
 			}
 
 			if ( this.now() >= deadline ) {
@@ -294,7 +301,7 @@ export class ResourceLockManager {
 	): Promise< ResourceLockPayload > {
 		const lockPath = this.getLockPath( ownedPayload.key );
 
-		return this.withMutationGuard( lockPath, async () => {
+		const renewed = await this.withMutationGuard( lockPath, async () => {
 			const current = await this.readPayload( lockPath );
 			if ( ! current || ! exactOwner( current, ownedPayload ) ) {
 				throw new Error(
@@ -302,15 +309,24 @@ export class ResourceLockManager {
 				);
 			}
 
-			const renewed = {
+			const renewedPayload = {
 				...current,
 				expiresAt: this.now() + this.leaseMs,
 			};
-			await writeFile( lockPath, `${ JSON.stringify( renewed ) }\n`, {
-				mode: 0o600,
-			} );
-			return renewed;
+			await writeFile(
+				lockPath,
+				`${ JSON.stringify( renewedPayload ) }\n`,
+				{
+					mode: 0o600,
+				}
+			);
+			return renewedPayload;
 		} );
+		const held = this.heldLocks.get( ownedPayload.key );
+		if ( held && exactOwner( held.payload, ownedPayload ) ) {
+			held.payload = renewed;
+		}
+		return renewed;
 	}
 
 	public async isOwned(
@@ -390,17 +406,17 @@ export class ResourceLockManager {
 		} );
 
 		if ( released ) {
-			this.heldKinds.delete( ownedPayload.key );
+			this.heldLocks.delete( ownedPayload.key );
 		}
 		return released;
 	}
 
 	private trackLock(
-		kind: ResourceLockKind,
+		request: ResourceLockRequest,
 		payload: ResourceLockPayload,
 		displacedOwner?: ResourceLockPayload
 	): ResourceLock {
-		this.heldKinds.set( payload.key, kind );
+		this.heldLocks.set( payload.key, { request, payload } );
 		const lock = new ResourceLock( this, payload, displacedOwner );
 		if ( this.autoRenew ) {
 			lock.startRenewal( this.renewEveryMs );
@@ -420,13 +436,59 @@ export class ResourceLockManager {
 
 	private assertAcquisitionOrder( nextKind: ResourceLockKind ): void {
 		const nextOrder = LOCK_ORDER[ nextKind ];
-		for ( const heldKind of this.heldKinds.values() ) {
+		for ( const { request } of this.heldLocks.values() ) {
+			const heldKind = request.kind;
 			if ( LOCK_ORDER[ heldKind ] > nextOrder ) {
 				throw new Error(
 					`Resource lock acquisition order violation: ${ nextKind } cannot be acquired after ${ heldKind }.`
 				);
 			}
 		}
+	}
+
+	private async assertAcquisitionPrerequisites(
+		request: ResourceLockRequest
+	): Promise< void > {
+		if ( request.kind === 'account' ) {
+			return;
+		}
+
+		const hasAccount = await this.hasOwnedPrerequisite(
+			request,
+			'account'
+		);
+		if ( request.kind === 'store' ) {
+			if ( ! hasAccount ) {
+				throw new Error(
+					'Resource lock prerequisite violation: store requires the matching account lock.'
+				);
+			}
+			return;
+		}
+
+		const hasStore = await this.hasOwnedPrerequisite( request, 'store' );
+		if ( ! hasAccount || ! hasStore ) {
+			throw new Error(
+				`Resource lock prerequisite violation: ${ request.kind } requires matching account and store locks.`
+			);
+		}
+	}
+
+	private async hasOwnedPrerequisite(
+		request: ResourceLockRequest,
+		kind: 'account' | 'store'
+	): Promise< boolean > {
+		for ( const held of this.heldLocks.values() ) {
+			if (
+				held.request.kind === kind &&
+				held.request.providerAccountId === request.providerAccountId &&
+				held.request.storeId === request.storeId &&
+				( await this.isOwned( held.payload ) )
+			) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private getKey( request: ResourceLockRequest ): string {

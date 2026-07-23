@@ -5,7 +5,10 @@ import {
 	type APIResponse,
 } from '@playwright/test';
 
-import { getPaymentEvidence } from './record-evidence';
+import {
+	getCaptureOrderNoteEvidence,
+	getPaymentEvidence,
+} from './record-evidence';
 import { waitForPaymentState } from './provider-evidence';
 
 interface ResponseDefinition {
@@ -80,8 +83,22 @@ function charge( overrides: Record< string, unknown > = {} ) {
 		amount: 1099,
 		currency: 'usd',
 		status: 'succeeded',
+		captured: true,
 		payment_intent: 'pi_e2e',
 		payment_method: 'pm_e2e',
+		...overrides,
+	};
+}
+
+function timeline( overrides: Record< string, unknown > = {} ) {
+	return {
+		data: [
+			{
+				id: 'evt_capture_e2e',
+				type: 'captured',
+				message: 'Payment captured.',
+			},
+		],
 		...overrides,
 	};
 }
@@ -95,6 +112,7 @@ test( 'joins the exact order, intent, and charge into payment evidence', async (
 				{ body: intent() },
 			],
 			'/wp-json/wc/v3/payments/charges/ch_e2e': [ { body: charge() } ],
+			'/wp-json/wc/v3/payments/timeline/pi_e2e': [ { body: timeline() } ],
 		},
 		calls
 	);
@@ -110,12 +128,16 @@ test( 'joins the exact order, intent, and charge into payment evidence', async (
 		currency: 'USD',
 		orderStatus: 'processing',
 		providerStatus: 'succeeded',
+		chargeStatus: 'succeeded',
+		chargeCaptured: true,
 		occurrenceCount: 1,
+		captureOccurrenceCount: 1,
 	} );
 	expect( calls ).toEqual( [
 		'/wp-json/wc/v3/orders/42',
 		'/wp-json/wc/v3/payments/payment_intents/pi_e2e',
 		'/wp-json/wc/v3/payments/charges/ch_e2e',
+		'/wp-json/wc/v3/payments/timeline/pi_e2e',
 	] );
 } );
 
@@ -158,6 +180,7 @@ test( 'rejects amount or currency mismatches', async () => {
 			'/wp-json/wc/v3/payments/charges/ch_e2e': [
 				{ body: charge( { currency: 'eur' } ) },
 			],
+			'/wp-json/wc/v3/payments/timeline/pi_e2e': [ { body: timeline() } ],
 		},
 		[]
 	);
@@ -177,6 +200,7 @@ test( 'rejects provider currency mismatches independently of amount', async () =
 			'/wp-json/wc/v3/payments/charges/ch_e2e': [
 				{ body: charge( { currency: 'eur' } ) },
 			],
+			'/wp-json/wc/v3/payments/timeline/pi_e2e': [ { body: timeline() } ],
 		},
 		[]
 	);
@@ -200,6 +224,7 @@ test( 'rejects payment intents with occurrence count other than one', async () =
 				},
 			],
 			'/wp-json/wc/v3/payments/charges/ch_e2e': [ { body: charge() } ],
+			'/wp-json/wc/v3/payments/timeline/pi_e2e': [ { body: timeline() } ],
 		},
 		[]
 	);
@@ -218,6 +243,7 @@ test( 'returns immediately when the named provider state already succeeded', asy
 				{ body: intent() },
 			],
 			'/wp-json/wc/v3/payments/charges/ch_e2e': [ { body: charge() } ],
+			'/wp-json/wc/v3/payments/timeline/pi_e2e': [ { body: timeline() } ],
 		},
 		calls
 	);
@@ -232,7 +258,7 @@ test( 'returns immediately when the named provider state already succeeded', asy
 
 	expect( evidence.providerStatus ).toBe( 'succeeded' );
 	expect( Date.now() - startedAt ).toBeLessThan( 450 );
-	expect( calls ).toHaveLength( 3 );
+	expect( calls ).toHaveLength( 4 );
 } );
 
 test( 'fails at the caller deadline without an extra sleep', async () => {
@@ -243,6 +269,7 @@ test( 'fails at the caller deadline without an extra sleep', async () => {
 				{ body: intent( { status: 'processing' } ) },
 			],
 			'/wp-json/wc/v3/payments/charges/ch_e2e': [ { body: charge() } ],
+			'/wp-json/wc/v3/payments/timeline/pi_e2e': [ { body: timeline() } ],
 		},
 		[]
 	);
@@ -257,4 +284,179 @@ test( 'fails at the caller deadline without an extra sleep', async () => {
 		)
 	).rejects.toThrow( /deadline/i );
 	expect( Date.now() - startedAt ).toBeLessThan( 450 );
+} );
+
+test( 'reports charge capture state and a distinct capture-event count', async () => {
+	const restApi = mockRestApi(
+		{
+			'/wp-json/wc/v3/orders/42': [
+				{ body: order( { status: 'on-hold' } ) },
+			],
+			'/wp-json/wc/v3/payments/payment_intents/pi_e2e': [
+				{ body: intent( { status: 'requires_capture' } ) },
+			],
+			'/wp-json/wc/v3/payments/charges/ch_e2e': [
+				{
+					body: charge( {
+						status: 'succeeded',
+						captured: false,
+					} ),
+				},
+			],
+			'/wp-json/wc/v3/payments/timeline/pi_e2e': [
+				{ body: timeline( { data: [] } ) },
+			],
+		},
+		[]
+	);
+
+	await expect( getPaymentEvidence( restApi, 42 ) ).resolves.toMatchObject( {
+		providerStatus: 'requires_capture',
+		chargeStatus: 'succeeded',
+		chargeCaptured: false,
+		occurrenceCount: 1,
+		captureOccurrenceCount: 0,
+	} );
+} );
+
+test( 'rejects malformed charge capture state', async () => {
+	const restApi = mockRestApi(
+		{
+			'/wp-json/wc/v3/orders/42': [ { body: order() } ],
+			'/wp-json/wc/v3/payments/payment_intents/pi_e2e': [
+				{ body: intent() },
+			],
+			'/wp-json/wc/v3/payments/charges/ch_e2e': [
+				{ body: charge( { captured: 'yes' } ) },
+			],
+			'/wp-json/wc/v3/payments/timeline/pi_e2e': [ { body: timeline() } ],
+		},
+		[]
+	);
+
+	await expect( getPaymentEvidence( restApi, 42 ) ).rejects.toThrow(
+		/captured.*boolean/i
+	);
+} );
+
+test( 'counts capture events independently from charge occurrences', async () => {
+	const restApi = mockRestApi(
+		{
+			'/wp-json/wc/v3/orders/42': [ { body: order() } ],
+			'/wp-json/wc/v3/payments/payment_intents/pi_e2e': [
+				{ body: intent() },
+			],
+			'/wp-json/wc/v3/payments/charges/ch_e2e': [ { body: charge() } ],
+			'/wp-json/wc/v3/payments/timeline/pi_e2e': [
+				{
+					body: timeline( {
+						data: [
+							{ id: 'evt_capture_1', type: 'captured' },
+							{ id: 'evt_capture_2', type: 'captured' },
+						],
+					} ),
+				},
+			],
+		},
+		[]
+	);
+
+	await expect( getPaymentEvidence( restApi, 42 ) ).resolves.toMatchObject( {
+		occurrenceCount: 1,
+		captureOccurrenceCount: 2,
+	} );
+} );
+
+test( 'proves exactly one Core capture-success note for the same intent', async () => {
+	const calls: string[] = [];
+	const restApi = mockRestApi(
+		{
+			'/wp-json/wc/v3/orders/42/notes?context=edit&per_page=100': [
+				{
+					body: [
+						{
+							id: 91,
+							note: 'A payment of <span>$10.99</span> USD was <strong>successfully captured</strong> using WooPayments (<a href="https://example.test/transaction/pi_e2e">pi_e2e</a>).',
+						},
+						{
+							id: 90,
+							note: 'Payment status changed from On hold to Processing.',
+						},
+					],
+				},
+			],
+		},
+		calls
+	);
+
+	await expect(
+		getCaptureOrderNoteEvidence( restApi, {
+			orderId: 42,
+			intentId: 'pi_e2e',
+		} )
+	).resolves.toEqual( {
+		captureNoteCount: 1,
+		captureNote:
+			'A payment of <span>$10.99</span> USD was <strong>successfully captured</strong> using WooPayments (<a href="https://example.test/transaction/pi_e2e">pi_e2e</a>).',
+	} );
+	expect( calls ).toEqual( [
+		'/wp-json/wc/v3/orders/42/notes?context=edit&per_page=100',
+	] );
+} );
+
+test( 'does not accept a loose status message in place of the exact capture note', async () => {
+	const restApi = mockRestApi(
+		{
+			'/wp-json/wc/v3/orders/42/notes?context=edit&per_page=100': [
+				{
+					body: [
+						{ id: 92, note: 'Payment captured.' },
+						{
+							id: 91,
+							note: 'Order status changed to Processing.',
+						},
+					],
+				},
+			],
+		},
+		[]
+	);
+
+	await expect(
+		getCaptureOrderNoteEvidence( restApi, {
+			orderId: 42,
+			intentId: 'pi_e2e',
+		} )
+	).resolves.toEqual( {
+		captureNoteCount: 0,
+		captureNote: '',
+	} );
+} );
+
+test( 'exposes duplicate exact capture notes instead of collapsing them', async () => {
+	const exactNote =
+		'A payment of $10.99 USD was <strong>successfully captured</strong> using WooPayments (<a href="https://example.test/pi_e2e">pi_e2e</a>).';
+	const restApi = mockRestApi(
+		{
+			'/wp-json/wc/v3/orders/42/notes?context=edit&per_page=100': [
+				{
+					body: [
+						{ id: 92, note: exactNote },
+						{ id: 91, note: exactNote },
+					],
+				},
+			],
+		},
+		[]
+	);
+
+	await expect(
+		getCaptureOrderNoteEvidence( restApi, {
+			orderId: 42,
+			intentId: 'pi_e2e',
+		} )
+	).resolves.toEqual( {
+		captureNoteCount: 2,
+		captureNote: '',
+	} );
 } );

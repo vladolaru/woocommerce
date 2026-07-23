@@ -39,6 +39,19 @@ interface SavedCardState extends SavedCardIdentity {
 	providerDefaultPaymentMethodId: string;
 }
 
+interface ProviderWriteLockOptions {
+	featureSetting?: string;
+	recordEvent?: string;
+}
+
+interface ProviderWriteLocks {
+	manager: ResourceLockManager;
+	account: ResourceLock;
+	store: ResourceLock;
+	featureSetting?: ResourceLock;
+	recordEvent?: ResourceLock;
+}
+
 function getRuntime(): WooPaymentsRuntime {
 	const runtime = process.env.WCPAY_RUNTIME;
 	if (
@@ -80,7 +93,7 @@ function requireAllocations(): StoreAccountAllocation[] {
 	return allocations;
 }
 
-class WooPaymentsPilotRuntime {
+export class WooPaymentsPilotRuntime {
 	private readonly adminApi: APIRequestContext;
 	private readonly runtime: WooPaymentsRuntime;
 	private readonly runId: string;
@@ -88,7 +101,9 @@ class WooPaymentsPilotRuntime {
 	private readonly wpcomBlogId: number;
 	private readonly storeId: string;
 	private readonly accountId: string;
+	private readonly lockDir?: string;
 	private readonly ownedProductIds: number[] = [];
+	private activeProviderWriteLocks?: ProviderWriteLocks;
 
 	public constructor(
 		adminApi: APIRequestContext,
@@ -97,7 +112,8 @@ class WooPaymentsPilotRuntime {
 		baseURL: string,
 		wpcomBlogId: number,
 		storeId: string,
-		accountId: string
+		accountId: string,
+		lockDir?: string
 	) {
 		this.adminApi = adminApi;
 		this.runtime = runtime;
@@ -106,6 +122,7 @@ class WooPaymentsPilotRuntime {
 		this.wpcomBlogId = wpcomBlogId;
 		this.storeId = storeId;
 		this.accountId = accountId;
+		this.lockDir = lockDir;
 	}
 
 	public requireApprovedProviderFixture( capability: string ): void {
@@ -136,6 +153,7 @@ class WooPaymentsPilotRuntime {
 	}
 
 	public async createOwnedProduct( amount: string ): Promise< OwnedProduct > {
+		await this.assertProviderWriteLocksOwned();
 		this.requireApprovedProviderFixture( 'product/payment' );
 		const name = `WooPayments native E2E ${ this.runId }`;
 		const response = await this.adminApi.post( '/wp-json/wc/v3/products', {
@@ -171,6 +189,7 @@ class WooPaymentsPilotRuntime {
 		product: OwnedProduct,
 		runId: string
 	): Promise< number > {
+		await this.assertProviderWriteLocksOwned();
 		this.requireApprovedProviderFixture( 'basic-card' );
 
 		await page.goto( `?post_type=product&p=${ product.id }` );
@@ -214,6 +233,7 @@ class WooPaymentsPilotRuntime {
 		page: Page,
 		label: string
 	): Promise< SavedCardIdentity > {
+		await this.assertProviderWriteLocksOwned();
 		this.requireApprovedProviderFixture( 'plugin-owned-saved-card' );
 		await page.goto( 'my-account/payment-methods/' );
 		await page.getByRole( 'link', { name: /add payment method/i } ).click();
@@ -227,6 +247,7 @@ class WooPaymentsPilotRuntime {
 		page: Page,
 		tokenId: number
 	): Promise< void > {
+		await this.assertProviderWriteLocksOwned();
 		this.requireApprovedProviderFixture( 'saved-card-default' );
 		await page.goto( 'my-account/payment-methods/' );
 		await page
@@ -236,6 +257,7 @@ class WooPaymentsPilotRuntime {
 	}
 
 	public async softCutOverEphemeralStore( page: Page ): Promise< void > {
+		await this.assertProviderWriteLocksOwned();
 		this.requireEphemeralTransitionAllocation();
 		this.requireApprovedProviderFixture( 'soft-cutover' );
 		await page.goto( 'wp-admin/' );
@@ -252,6 +274,7 @@ class WooPaymentsPilotRuntime {
 	public async getSavedCardState(
 		card: SavedCardIdentity
 	): Promise< SavedCardState > {
+		await this.assertProviderWriteLocksOwned();
 		this.requireApprovedProviderFixture( 'saved-card-state' );
 		throw new Error(
 			`Owner-approved saved-card state fixture has not proved local token ${ card.tokenId } and provider default ${ card.paymentMethodId }.`
@@ -264,6 +287,7 @@ class WooPaymentsPilotRuntime {
 		checkout: 'classic' | 'blocks',
 		runId: string
 	): Promise< number > {
+		await this.assertProviderWriteLocksOwned();
 		this.requireApprovedProviderFixture( `saved-card-${ checkout }` );
 		const product = await this.createOwnedProduct( '10.99' );
 		await page.goto( `?post_type=product&p=${ product.id }` );
@@ -281,81 +305,77 @@ class WooPaymentsPilotRuntime {
 		return orderId;
 	}
 
-	public async withCapturedManualCaptureSetting(
-		callback: () => Promise< void >
-	): Promise< void > {
-		this.requireApprovedProviderFixture( 'manual-capture-setting' );
+	public async withProviderWriteLocks< Result >(
+		options: ProviderWriteLockOptions,
+		callback: () => Promise< Result >
+	): Promise< Result > {
+		if ( this.activeProviderWriteLocks ) {
+			throw new Error( 'WooPayments provider write locks cannot nest.' );
+		}
 		const manager = new ResourceLockManager( {
+			lockDir: this.lockDir,
 			runId: this.runId,
 		} );
 		const locks: ResourceLock[] = [];
 		const teardownErrors: Error[] = [];
-		let settingLock: ResourceLock | undefined;
-		let original: boolean | undefined;
-		let settingMutated = false;
 		let primaryError: unknown;
+		let result: Result | undefined;
 
 		try {
-			locks.push(
-				await manager.acquire( {
-					providerAccountId: this.accountId,
-					storeId: this.storeId,
-					kind: 'account',
-					resource: 'provider-writes',
-					diagnosticPath: `test-results/${ this.runId }`,
-				} )
-			);
-			locks.push(
-				await manager.acquire( {
-					providerAccountId: this.accountId,
-					storeId: this.storeId,
-					kind: 'store',
-					resource: this.storeId,
-					diagnosticPath: `test-results/${ this.runId }`,
-				} )
-			);
-			settingLock = await manager.acquire( {
+			const account = await manager.acquire( {
 				providerAccountId: this.accountId,
 				storeId: this.storeId,
-				kind: 'feature-setting',
-				resource: 'manual-capture',
+				kind: 'account',
+				resource: 'provider-writes',
 				diagnosticPath: `test-results/${ this.runId }`,
 			} );
-			locks.push( settingLock );
+			locks.push( account );
+			const store = await manager.acquire( {
+				providerAccountId: this.accountId,
+				storeId: this.storeId,
+				kind: 'store',
+				resource: this.storeId,
+				diagnosticPath: `test-results/${ this.runId }`,
+			} );
+			locks.push( store );
+			const featureSetting = options.featureSetting
+				? await manager.acquire( {
+						providerAccountId: this.accountId,
+						storeId: this.storeId,
+						kind: 'feature-setting',
+						resource: options.featureSetting,
+						diagnosticPath: `test-results/${ this.runId }`,
+				  } )
+				: undefined;
+			if ( featureSetting ) {
+				locks.push( featureSetting );
+			}
+			const recordEvent = options.recordEvent
+				? await manager.acquire( {
+						providerAccountId: this.accountId,
+						storeId: this.storeId,
+						kind: 'record-event',
+						resource: options.recordEvent,
+						diagnosticPath: `test-results/${ this.runId }`,
+				  } )
+				: undefined;
+			if ( recordEvent ) {
+				locks.push( recordEvent );
+			}
 
-			original = await this.getManualCaptureSetting();
-			await this.setManualCaptureSetting( true );
-			settingMutated = true;
-			await callback();
+			this.activeProviderWriteLocks = {
+				manager,
+				account,
+				store,
+				featureSetting,
+				recordEvent,
+			};
+			result = await callback();
 		} catch ( error ) {
 			primaryError = error;
 		}
 
-		if (
-			settingMutated &&
-			settingLock !== undefined &&
-			original !== undefined
-		) {
-			try {
-				const restored = await settingLock.restoreIfOwned( async () => {
-					await this.setManualCaptureSetting( original );
-				} );
-				if ( ! restored ) {
-					teardownErrors.push(
-						new Error(
-							'Manual capture setting was not restored because lock ownership was lost.'
-						)
-					);
-				}
-			} catch ( error ) {
-				teardownErrors.push(
-					error instanceof Error
-						? error
-						: new Error( String( error ) )
-				);
-			}
-		}
-
+		this.activeProviderWriteLocks = undefined;
 		for ( const lock of locks.toReversed() ) {
 			try {
 				const released = await lock.release();
@@ -390,12 +410,87 @@ class WooPaymentsPilotRuntime {
 				'WooPayments pilot teardown failed.'
 			);
 		}
+		return result as Result;
+	}
+
+	public async withCapturedManualCaptureSetting(
+		callback: () => Promise< void >
+	): Promise< void > {
+		await this.withProviderWriteLocks(
+			{
+				featureSetting: 'manual-capture',
+				recordEvent: 'merchant-manual-capture',
+			},
+			async () => {
+				this.requireApprovedProviderFixture( 'manual-capture-setting' );
+				const settingLock =
+					this.activeProviderWriteLocks?.featureSetting;
+				if ( ! settingLock ) {
+					throw new Error(
+						'Manual capture requires an owned feature-setting lock.'
+					);
+				}
+
+				const original = await this.getManualCaptureSetting();
+				let mutationMayHaveApplied = false;
+				let primaryError: unknown;
+				const teardownErrors: Error[] = [];
+
+				try {
+					mutationMayHaveApplied = true;
+					await this.setManualCaptureSetting( true );
+					await callback();
+				} catch ( error ) {
+					primaryError = error;
+				}
+
+				if ( mutationMayHaveApplied ) {
+					try {
+						const restored = await settingLock.restoreIfOwned(
+							async () => {
+								await this.setManualCaptureSetting( original );
+							}
+						);
+						if ( ! restored ) {
+							teardownErrors.push(
+								new Error(
+									'Manual capture setting was not restored because lock ownership was lost.'
+								)
+							);
+						}
+					} catch ( error ) {
+						teardownErrors.push(
+							error instanceof Error
+								? error
+								: new Error( String( error ) )
+						);
+					}
+				}
+
+				if ( primaryError !== undefined ) {
+					for ( const teardownError of teardownErrors ) {
+						console.error(
+							'WooPayments pilot teardown failed after the primary test failure:',
+							teardownError
+						);
+					}
+					throw primaryError;
+				}
+				if ( teardownErrors.length > 0 ) {
+					throw new AggregateError(
+						teardownErrors,
+						'WooPayments pilot teardown failed.'
+					);
+				}
+			}
+		);
 	}
 
 	public async captureExactOrder(
 		page: Page,
 		evidence: PaymentEvidence
 	): Promise< void > {
+		await this.assertProviderWriteLocksOwned();
 		this.requireApprovedProviderFixture( 'manual-capture-action' );
 		await this.logInAsAdmin( page );
 		await page.goto( 'wp-admin/admin.php?page=wc-orders' );
@@ -418,7 +513,10 @@ class WooPaymentsPilotRuntime {
 			page.getByText( new RegExp( evidence.chargeId ) )
 		).toBeVisible();
 		await expect(
-			page.getByText( /payment captured|order status.*processing/i )
+			page.getByText( /successfully captured.*WooPayments/i )
+		).toBeVisible();
+		await expect(
+			page.getByText( /order status.*processing/i )
 		).toBeVisible();
 	}
 
@@ -426,6 +524,7 @@ class WooPaymentsPilotRuntime {
 		page: Page,
 		evidence: PaymentEvidence
 	): Promise< void > {
+		await this.assertProviderWriteLocksOwned();
 		await this.logInAsAdmin( page );
 		await page.goto( 'wp-admin/' );
 
@@ -458,6 +557,32 @@ class WooPaymentsPilotRuntime {
 				`/wp-json/wc/v3/products/${ productId }`,
 				{ data: { force: true }, failOnStatusCode: false }
 			);
+		}
+	}
+
+	private async assertProviderWriteLocksOwned(): Promise< void > {
+		const locks = this.activeProviderWriteLocks;
+		if ( ! locks ) {
+			throw new Error(
+				'WooPayments provider helpers require owned account and store locks.'
+			);
+		}
+
+		const activeLocks = [
+			{ kind: 'account', lock: locks.account },
+			{ kind: 'store', lock: locks.store },
+			{ kind: 'feature-setting', lock: locks.featureSetting },
+			{ kind: 'record-event', lock: locks.recordEvent },
+		];
+		for ( const active of activeLocks ) {
+			if (
+				active.lock &&
+				! ( await locks.manager.isOwned( active.lock.payload ) )
+			) {
+				throw new Error(
+					`WooPayments provider helpers lost active ${ active.kind } lock ownership.`
+				);
+			}
 		}
 	}
 
@@ -554,7 +679,7 @@ class WooPaymentsPilotRuntime {
 		const response = await this.adminApi.get(
 			'/wp-json/wc/v3/payments/settings'
 		);
-		if ( ! response.ok() ) {
+		if ( response.status() !== 200 ) {
 			throw new Error(
 				`Unable to read manual capture setting: HTTP ${ response.status() }.`
 			);
@@ -571,11 +696,12 @@ class WooPaymentsPilotRuntime {
 	}
 
 	private async setManualCaptureSetting( value: boolean ): Promise< void > {
-		const response = await this.adminApi.put(
-			'/wp-json/wc/v3/payments/settings/is_manual_capture_enabled',
-			{ data: { value } }
+		await this.assertProviderWriteLocksOwned();
+		const response = await this.adminApi.post(
+			'/wp-json/wc/v3/payments/settings',
+			{ data: { is_manual_capture_enabled: value } }
 		);
-		if ( ! response.ok() ) {
+		if ( response.status() !== 200 ) {
 			throw new Error(
 				`Unable to update manual capture setting: HTTP ${ response.status() }.`
 			);
