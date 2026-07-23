@@ -60,6 +60,11 @@ const dispositions = {
 };
 const allowedDispositions = Object.values( dispositions );
 const allowedDispositionSet = new Set( allowedDispositions );
+const futureOnlyDispositions = new Set( [
+	dispositions.shared,
+	dispositions.rewrite,
+	dispositions.transition,
+] );
 const nativeTestsRoot =
 	'plugins/woocommerce/tests/e2e/tests/woopayments-native';
 const approvedFutureTargetDispositions = new Map( [
@@ -338,6 +343,15 @@ const assertPlannedTargets = ( row ) => {
 			);
 		}
 		retainedEvidenceCount++;
+	}
+
+	if (
+		futureOnlyDispositions.has( row.planned_disposition ) &&
+		( approvedFutureTargetCount === 0 || retainedEvidenceCount > 0 )
+	) {
+		throw new Error(
+			`${ row.planned_disposition } requires only approved future targets for ${ row.case_id }`
+		);
 	}
 
 	if (
