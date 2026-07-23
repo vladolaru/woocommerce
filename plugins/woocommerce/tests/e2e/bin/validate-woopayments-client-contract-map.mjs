@@ -46,65 +46,151 @@ const closureHeaders = [
 const expectedHeaders = [ ...frozenSourceHeaders, ...closureHeaders ];
 const frozenSourceSha256 =
 	'aa458aae69abbf938418776a7dd1c0b42e4450e625d71ac61ea341f5da2485e3';
-const allowedDispositions = [
-	'Run unchanged against both runtimes',
-	'Extract a shared scenario with thin runtime adapters',
-	'Rewrite as a native-specific E2E test preserving the contract',
-	'Keep client-only with a paired native contract test elsewhere',
-	'Convert to a coexistence, cutover, rollback, or historical backward-compatibility test',
-	'Keep manual or external because automation is unsafe or impractical',
-	'Cover at a lower layer plus a smaller E2E smoke test',
-	'Retire because the test is stale, redundant, or guards only obsolete plugin structure',
-];
+const dispositions = {
+	unchanged: 'Run unchanged against both runtimes',
+	shared: 'Extract a shared scenario with thin runtime adapters',
+	rewrite: 'Rewrite as a native-specific E2E test preserving the contract',
+	clientOnly: 'Keep client-only with a paired native contract test elsewhere',
+	transition:
+		'Convert to a coexistence, cutover, rollback, or historical backward-compatibility test',
+	manual: 'Keep manual or external because automation is unsafe or impractical',
+	lowerLayer: 'Cover at a lower layer plus a smaller E2E smoke test',
+	retired:
+		'Retire because the test is stale, redundant, or guards only obsolete plugin structure',
+};
+const allowedDispositions = Object.values( dispositions );
 const allowedDispositionSet = new Set( allowedDispositions );
 const nativeTestsRoot =
 	'plugins/woocommerce/tests/e2e/tests/woopayments-native';
-const approvedFutureTargets = new Set( [
-	`${ nativeTestsRoot }/pilots/shopper-card-payment.spec.ts`,
-	`${ nativeTestsRoot }/pilots/saved-method-cutover.spec.ts`,
-	`${ nativeTestsRoot }/pilots/merchant-manual-capture.spec.ts`,
-	`${ nativeTestsRoot }/pilots/merchant-transaction-navigation.spec.ts`,
-	`${ nativeTestsRoot }/scenarios/card-payment.ts`,
-	`${ nativeTestsRoot }/scenarios/saved-method.ts`,
-	`${ nativeTestsRoot }/scenarios/manual-capture.ts`,
-	`${ nativeTestsRoot }/scenarios/transaction-navigation.ts`,
-	`${ nativeTestsRoot }/scenarios/checkout.ts`,
-	`${ nativeTestsRoot }/scenarios/decline.ts`,
-	`${ nativeTestsRoot }/scenarios/multi-currency.ts`,
-	`${ nativeTestsRoot }/scenarios/refund.ts`,
-	`${ nativeTestsRoot }/scenarios/authorization.ts`,
-	`${ nativeTestsRoot }/scenarios/merchant-record-navigation.ts`,
-	`${ nativeTestsRoot }/shopper/classic-card.spec.ts`,
-	`${ nativeTestsRoot }/shopper/blocks-card.spec.ts`,
-	`${ nativeTestsRoot }/shopper/alternative-methods.spec.ts`,
-	`${ nativeTestsRoot }/shopper/declines.spec.ts`,
-	`${ nativeTestsRoot }/shopper/pay-for-order.spec.ts`,
-	`${ nativeTestsRoot }/shopper/saved-methods.spec.ts`,
-	`${ nativeTestsRoot }/shopper/multi-currency.spec.ts`,
-	`${ nativeTestsRoot }/shopper/woopay.spec.ts`,
-	`${ nativeTestsRoot }/shopper/theme-compatibility.spec.ts`,
-	`${ nativeTestsRoot }/merchant/orders-refunds.spec.ts`,
-	`${ nativeTestsRoot }/merchant/authorizations.spec.ts`,
-	`${ nativeTestsRoot }/merchant/status-actions.spec.ts`,
-	`${ nativeTestsRoot }/merchant/settings-methods.spec.ts`,
-	`${ nativeTestsRoot }/merchant/overview-transactions.spec.ts`,
-	`${ nativeTestsRoot }/merchant/payouts-disputes-smoke.spec.ts`,
-	`${ nativeTestsRoot }/merchant/role-access.spec.ts`,
-	`${ nativeTestsRoot }/merchant/onboarding.spec.ts`,
-	`${ nativeTestsRoot }/subscriptions/purchase.spec.ts`,
-	`${ nativeTestsRoot }/subscriptions/renewal.spec.ts`,
-	`${ nativeTestsRoot }/subscriptions/payment-methods.spec.ts`,
-	`${ nativeTestsRoot }/merchant/dispute-lifecycle.spec.ts`,
-	`${ nativeTestsRoot }/merchant/payout-record.spec.ts`,
-	`${ nativeTestsRoot }/merchant/event-recovery.spec.ts`,
-	`${ nativeTestsRoot }/performance/checkout-readiness.spec.ts`,
-	`${ nativeTestsRoot }/transitions/coexistence-cutover.spec.ts`,
-	`${ nativeTestsRoot }/transitions/historical-settings.spec.ts`,
-	`${ nativeTestsRoot }/transitions/historical-money-records.spec.ts`,
-	`${ nativeTestsRoot }/transitions/historical-tokens.spec.ts`,
-	`${ nativeTestsRoot }/transitions/historical-subscriptions.spec.ts`,
-	`${ nativeTestsRoot }/transitions/event-ownership.spec.ts`,
-	`${ nativeTestsRoot }/transitions/rollback-reactivation.spec.ts`,
+const approvedFutureTargetDispositions = new Map( [
+	[
+		`${ nativeTestsRoot }/pilots/shopper-card-payment.spec.ts`,
+		new Set( [ dispositions.shared ] ),
+	],
+	[
+		`${ nativeTestsRoot }/pilots/saved-method-cutover.spec.ts`,
+		new Set( [ dispositions.transition ] ),
+	],
+	[
+		`${ nativeTestsRoot }/pilots/merchant-manual-capture.spec.ts`,
+		new Set( [ dispositions.shared ] ),
+	],
+	[
+		`${ nativeTestsRoot }/pilots/merchant-transaction-navigation.spec.ts`,
+		new Set( [ dispositions.rewrite ] ),
+	],
+	[
+		`${ nativeTestsRoot }/scenarios/card-payment.ts`,
+		new Set( [ dispositions.shared ] ),
+	],
+	[
+		`${ nativeTestsRoot }/scenarios/saved-method.ts`,
+		new Set( [ dispositions.shared ] ),
+	],
+	[
+		`${ nativeTestsRoot }/scenarios/manual-capture.ts`,
+		new Set( [ dispositions.shared ] ),
+	],
+	[
+		`${ nativeTestsRoot }/scenarios/transaction-navigation.ts`,
+		new Set( [ dispositions.shared ] ),
+	],
+	[
+		`${ nativeTestsRoot }/scenarios/checkout.ts`,
+		new Set( [ dispositions.shared, dispositions.unchanged ] ),
+	],
+	[
+		`${ nativeTestsRoot }/scenarios/decline.ts`,
+		new Set( [ dispositions.shared ] ),
+	],
+	[
+		`${ nativeTestsRoot }/scenarios/multi-currency.ts`,
+		new Set( [ dispositions.shared ] ),
+	],
+	[
+		`${ nativeTestsRoot }/scenarios/refund.ts`,
+		new Set( [ dispositions.shared ] ),
+	],
+	[
+		`${ nativeTestsRoot }/shopper/alternative-methods.spec.ts`,
+		new Set( [ dispositions.rewrite ] ),
+	],
+	[
+		`${ nativeTestsRoot }/shopper/declines.spec.ts`,
+		new Set( [ dispositions.rewrite, dispositions.lowerLayer ] ),
+	],
+	[
+		`${ nativeTestsRoot }/shopper/pay-for-order.spec.ts`,
+		new Set( [ dispositions.rewrite ] ),
+	],
+	[
+		`${ nativeTestsRoot }/shopper/saved-methods.spec.ts`,
+		new Set( [ dispositions.unchanged, dispositions.lowerLayer ] ),
+	],
+	[
+		`${ nativeTestsRoot }/shopper/multi-currency.spec.ts`,
+		new Set( [ dispositions.rewrite, dispositions.lowerLayer ] ),
+	],
+	[
+		`${ nativeTestsRoot }/shopper/theme-compatibility.spec.ts`,
+		new Set( [ dispositions.clientOnly, dispositions.lowerLayer ] ),
+	],
+	[
+		`${ nativeTestsRoot }/merchant/orders-refunds.spec.ts`,
+		new Set( [ dispositions.lowerLayer ] ),
+	],
+	[
+		`${ nativeTestsRoot }/merchant/settings-methods.spec.ts`,
+		new Set( [ dispositions.shared, dispositions.rewrite ] ),
+	],
+	[
+		`${ nativeTestsRoot }/merchant/overview-transactions.spec.ts`,
+		new Set( [ dispositions.rewrite ] ),
+	],
+	[
+		`${ nativeTestsRoot }/merchant/payouts-disputes-smoke.spec.ts`,
+		new Set( [ dispositions.rewrite ] ),
+	],
+	[
+		`${ nativeTestsRoot }/merchant/role-access.spec.ts`,
+		new Set( [ dispositions.shared ] ),
+	],
+	[
+		`${ nativeTestsRoot }/merchant/onboarding.spec.ts`,
+		new Set( [ dispositions.rewrite ] ),
+	],
+	[
+		`${ nativeTestsRoot }/merchant/dispute-lifecycle.spec.ts`,
+		new Set( [ dispositions.shared ] ),
+	],
+	[
+		`${ nativeTestsRoot }/subscriptions/purchase.spec.ts`,
+		new Set( [ dispositions.shared, dispositions.unchanged ] ),
+	],
+	[
+		`${ nativeTestsRoot }/subscriptions/renewal.spec.ts`,
+		new Set( [ dispositions.shared ] ),
+	],
+	[
+		`${ nativeTestsRoot }/subscriptions/payment-methods.spec.ts`,
+		new Set( [ dispositions.shared ] ),
+	],
+	[
+		`${ nativeTestsRoot }/performance/checkout-readiness.spec.ts`,
+		new Set( [ dispositions.lowerLayer ] ),
+	],
+	[
+		`${ nativeTestsRoot }/transitions/historical-money-records.spec.ts`,
+		new Set( [ dispositions.transition ] ),
+	],
+	[
+		`${ nativeTestsRoot }/transitions/historical-tokens.spec.ts`,
+		new Set( [ dispositions.transition ] ),
+	],
+	[
+		`${ nativeTestsRoot }/transitions/historical-subscriptions.spec.ts`,
+		new Set( [ dispositions.transition ] ),
+	],
 ] );
 const requireClosed = process.argv.includes( '--require-closed' );
 const showSummary = process.argv.includes( '--summary' );
@@ -211,15 +297,23 @@ const assertConcreteExistingFiles = ( row, column ) => {
 };
 
 const assertPlannedTargets = ( row ) => {
-	const evidencePaths = new Set( [
-		...splitPaths( row, 'native_owner_paths' ),
-		...splitPaths( row, 'native_lower_layer_context' ),
-	] );
+	const lowerLayerPaths = new Set(
+		splitPaths( row, 'native_lower_layer_context' )
+	);
+	let retainedEvidenceCount = 0;
+	let approvedFutureTargetCount = 0;
 
 	for ( const targetPath of splitPaths( row, 'target_path' ) ) {
 		const absolutePath = resolve( repositoryRoot, targetPath );
+		const allowedTargetDispositions =
+			approvedFutureTargetDispositions.get( targetPath );
 
-		if ( approvedFutureTargets.has( targetPath ) ) {
+		if ( allowedTargetDispositions ) {
+			if ( ! allowedTargetDispositions.has( row.planned_disposition ) ) {
+				throw new Error(
+					`target_path is not approved for ${ row.planned_disposition } in ${ row.case_id }: ${ targetPath }`
+				);
+			}
 			if (
 				existsSync( absolutePath ) &&
 				! statSync( absolutePath ).isFile()
@@ -228,12 +322,13 @@ const assertPlannedTargets = ( row ) => {
 					`Non-concrete target_path for ${ row.case_id }: ${ targetPath }`
 				);
 			}
+			approvedFutureTargetCount++;
 			continue;
 		}
 
-		if ( ! evidencePaths.has( targetPath ) ) {
+		if ( ! lowerLayerPaths.has( targetPath ) ) {
 			throw new Error(
-				`Unapproved future target_path for ${ row.case_id }: ${ targetPath }`
+				`target_path is neither an approved future target nor source-named lower-layer evidence for ${ row.case_id }: ${ targetPath }`
 			);
 		}
 
@@ -242,6 +337,43 @@ const assertPlannedTargets = ( row ) => {
 				`Missing retained target_path for ${ row.case_id }: ${ targetPath }`
 			);
 		}
+		retainedEvidenceCount++;
+	}
+
+	if (
+		row.planned_disposition === dispositions.lowerLayer &&
+		( retainedEvidenceCount === 0 || approvedFutureTargetCount === 0 )
+	) {
+		throw new Error(
+			`Lower-layer disposition requires retained evidence and a future E2E smoke target for ${ row.case_id }`
+		);
+	}
+
+	if (
+		row.planned_disposition === dispositions.clientOnly &&
+		( retainedEvidenceCount === 0 || approvedFutureTargetCount === 0 )
+	) {
+		throw new Error(
+			`Client-only disposition requires retained evidence and a paired native target for ${ row.case_id }`
+		);
+	}
+
+	if (
+		row.planned_disposition === dispositions.retired &&
+		( retainedEvidenceCount === 0 || approvedFutureTargetCount > 0 )
+	) {
+		throw new Error(
+			`Retired disposition requires only retained lower-layer evidence for ${ row.case_id }`
+		);
+	}
+
+	if (
+		row.planned_disposition === dispositions.manual &&
+		( retainedEvidenceCount === 0 || approvedFutureTargetCount > 0 )
+	) {
+		throw new Error(
+			`Manual disposition requires existing retained or classified manual evidence for ${ row.case_id }`
+		);
 	}
 };
 
@@ -264,8 +396,7 @@ for ( const row of rows ) {
 	}
 
 	if (
-		row.planned_disposition ===
-			'Extract a shared scenario with thin runtime adapters' &&
+		row.planned_disposition === dispositions.shared &&
 		row.disposition_state !== 'pilot-gated'
 	) {
 		throw new Error( `Unproven shared disposition for ${ row.case_id }` );
