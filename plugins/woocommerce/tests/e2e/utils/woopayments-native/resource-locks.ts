@@ -328,17 +328,29 @@ export class ResourceLockManager {
 				diagnosticPath: request.diagnosticPath,
 			};
 
-			const created = await this.tryCreate( lockPath, payload );
-			if ( created ) {
-				return this.trackLock( request, payload );
-			}
-
-			const displacedOwner = await this.tryRecoverExpired(
+			const acquisition = await this.withMutationGuard(
 				lockPath,
-				payload
+				async () => {
+					if ( await this.tryCreate( lockPath, payload ) ) {
+						return {
+							acquired: true,
+						};
+					}
+					const displacedOwner = await this.tryRecoverExpired(
+						lockPath,
+						payload
+					);
+					return displacedOwner
+						? { acquired: true, displacedOwner }
+						: undefined;
+				}
 			);
-			if ( displacedOwner ) {
-				return this.trackLock( request, payload, displacedOwner );
+			if ( acquisition?.acquired ) {
+				return this.trackLock(
+					request,
+					payload,
+					acquisition.displacedOwner
+				);
 			}
 
 			if ( this.now() >= deadline ) {
@@ -778,34 +790,27 @@ export class ResourceLockManager {
 		lockPath: string,
 		replacement: ResourceLockPayload
 	): Promise< ResourceLockPayload | undefined > {
-		return this.withMutationGuard( lockPath, async () => {
-			const current = await this.readPayload( lockPath );
-			if ( ! current || current.expiresAt > this.now() ) {
-				return undefined;
-			}
+		const current = await this.readPayload( lockPath );
+		if ( ! current || current.expiresAt > this.now() ) {
+			return undefined;
+		}
 
-			const stalePath = `${ lockPath }.stale-${ this.now() }-${
-				this.pid
-			}`;
-			await rename( lockPath, stalePath );
-			const created = await this.tryCreate( lockPath, replacement );
-			if ( ! created ) {
-				throw new Error(
-					`Failed to atomically replace expired resource lock ${ current.key }.`
-				);
-			}
-			await appendFile(
-				this.recoveryLogPath,
-				`${ JSON.stringify( {
-					recoveredAt: this.now(),
-					displacedOwner: current,
-					recoveredBy: replacement,
-					stalePath,
-				} ) }\n`,
-				{ mode: 0o600 }
-			);
-			return current;
-		} );
+		const stalePath = `${ lockPath }.stale-${ this.now() }-${ this.pid }`;
+		await rename( lockPath, stalePath );
+		if ( ! ( await this.tryCreate( lockPath, replacement ) ) ) {
+			return undefined;
+		}
+		await appendFile(
+			this.recoveryLogPath,
+			`${ JSON.stringify( {
+				recoveredAt: this.now(),
+				displacedOwner: current,
+				recoveredBy: replacement,
+				stalePath,
+			} ) }\n`,
+			{ mode: 0o600 }
+		);
+		return current;
 	}
 
 	private async readPayload(

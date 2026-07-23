@@ -8,25 +8,27 @@ shift || true
 ROLLBACK_ARMED=0
 ROLLBACK_PROVISIONER=''
 ROLLBACK_WORKSPACE=''
-ROLLBACK_STORE_ID=''
-ROLLBACK_BASE_URL=''
+ROLLBACK_RECEIPT_PATH=''
 
 rollback_created_store() {
 	local primary_status=$?
 	trap - EXIT
 	if [[ "$ROLLBACK_ARMED" == '1' ]]; then
 		local cleanup_output=''
-		if cleanup_output="$(
-			"$ROLLBACK_PROVISIONER" destroy \
-				--workspace "$ROLLBACK_WORKSPACE" \
-				--store-id "$ROLLBACK_STORE_ID" \
-				--base-url "$ROLLBACK_BASE_URL" 2>&1
-		)"; then
-			if ! rm -rf -- "$ROLLBACK_WORKSPACE"; then
-				echo "Transition rollback removed the provisioned store but could not remove workspace $ROLLBACK_WORKSPACE." >&2
-			fi
+		if ! validate_rollback_receipt_file "$ROLLBACK_RECEIPT_PATH"; then
+			echo "Transition rollback cleanup is impossible for $ROLLBACK_WORKSPACE without a valid rollback receipt." >&2
 		else
-			echo "Transition rollback cleanup failed for $ROLLBACK_WORKSPACE: $cleanup_output" >&2
+			if cleanup_output="$(
+				"$ROLLBACK_PROVISIONER" destroy \
+					--workspace "$ROLLBACK_WORKSPACE" \
+					--rollback-receipt-file "$ROLLBACK_RECEIPT_PATH" 2>&1
+			)"; then
+				if ! rm -rf -- "$ROLLBACK_WORKSPACE"; then
+					echo "Transition rollback removed the provisioned store but could not remove workspace $ROLLBACK_WORKSPACE." >&2
+				fi
+			else
+				echo "Transition rollback cleanup failed for $ROLLBACK_WORKSPACE: $cleanup_output" >&2
+			fi
 		fi
 	fi
 	exit "$primary_status"
@@ -79,6 +81,68 @@ json_field() {
 	' "$json" "$field"
 }
 
+json_field_from_stdin() {
+	local field="$1"
+	node -e '
+		const { readFileSync } = require( "node:fs" );
+		const value = JSON.parse( readFileSync( 0, "utf8" ) )[ process.argv[ 1 ] ];
+		if ( typeof value !== "string" || ! value ) process.exit( 1 );
+		process.stdout.write( value );
+	' "$field"
+}
+
+persist_rollback_receipt() {
+	local receipt="$1"
+	local receipt_path="$2"
+	local workspace="$3"
+	printf '%s' "$receipt" | node -e '
+		const {
+			closeSync,
+			fchmodSync,
+			fsyncSync,
+			openSync,
+			readFileSync,
+			writeFileSync,
+		} = require( "node:fs" );
+		const receipt = readFileSync( 0, "utf8" );
+		if ( ! /^[\x21-\x7e]{16,1024}$/.test( receipt ) ) process.exit( 1 );
+		const fd = openSync( process.argv[ 1 ], "wx", 0o600 );
+		try {
+			fchmodSync( fd, 0o600 );
+			writeFileSync( fd, receipt );
+			fsyncSync( fd );
+		} finally {
+			closeSync( fd );
+		}
+		const workspaceFd = openSync( process.argv[ 2 ], "r" );
+		try {
+			fsyncSync( workspaceFd );
+		} finally {
+			closeSync( workspaceFd );
+		}
+	' "$receipt_path" "$workspace"
+}
+
+validate_rollback_receipt_file() {
+	local receipt_path="$1"
+	if [[ -z "$receipt_path" ]]; then
+		return 1
+	fi
+	node -e '
+		const { lstatSync, readFileSync } = require( "node:fs" );
+		let stat;
+		try {
+			stat = lstatSync( process.argv[ 1 ] );
+		} catch {
+			process.exit( 1 );
+		}
+		if ( ! stat.isFile() || stat.isSymbolicLink() ) process.exit( 1 );
+		if ( ( stat.mode & 0o777 ) !== 0o600 ) process.exit( 1 );
+		const receipt = readFileSync( process.argv[ 1 ], "utf8" );
+		if ( ! /^[\x21-\x7e]{16,1024}$/.test( receipt ) ) process.exit( 1 );
+	' "$receipt_path"
+}
+
 create_store() {
 	readonly RUN_ID="${E2E_TRANSITION_RUN_ID:?E2E_TRANSITION_RUN_ID is required}"
 	readonly SEED_ARCHIVE="${E2E_TRANSITION_SEED_ARCHIVE:?E2E_TRANSITION_SEED_ARCHIVE is required}"
@@ -124,12 +188,13 @@ create_store() {
 
 	ROLLBACK_PROVISIONER="$PROVISIONER"
 	ROLLBACK_WORKSPACE="$WORKSPACE"
-	ROLLBACK_STORE_ID="$store_id"
-	ROLLBACK_BASE_URL="$base_url"
+	ROLLBACK_RECEIPT_PATH="$WORKSPACE/rollback-receipt"
 	ROLLBACK_ARMED=1
 	trap rollback_created_store EXIT
 
 	local created
+	local create_status
+	set +e
 	created="$(
 		"$PROVISIONER" create \
 			--workspace "$WORKSPACE" \
@@ -138,10 +203,41 @@ create_store() {
 			--base-url "$base_url" \
 				--store-id "$store_id"
 	)"
+	create_status=$?
+	set -e
 
-	if [[ "$(json_field "$created" 'base_url')" != "$base_url" ]] ||
-		[[ "$(json_field "$created" 'store_id')" != "$store_id" ]] ||
-		[[ "$(json_field "$created" 'plugin_version')" != "$plugin_version" ]]; then
+	local rollback_receipt
+	if ! rollback_receipt="$(
+		printf '%s' "$created" |
+			json_field_from_stdin 'rollback_receipt' 2>/dev/null
+	)" ||
+		! persist_rollback_receipt \
+			"$rollback_receipt" \
+			"$ROLLBACK_RECEIPT_PATH" \
+			"$WORKSPACE"; then
+		echo 'Transition provisioner did not return a valid rollback receipt; cleanup is impossible.' >&2
+		exit 1
+	fi
+	if (( create_status != 0 )); then
+		echo "Transition provisioner create failed with status $create_status after returning a rollback receipt." >&2
+		exit "$create_status"
+	fi
+
+	local created_base_url
+	local created_store_id
+	local created_plugin_version
+	created_base_url="$(
+		printf '%s' "$created" | json_field_from_stdin 'base_url'
+	)"
+	created_store_id="$(
+		printf '%s' "$created" | json_field_from_stdin 'store_id'
+	)"
+	created_plugin_version="$(
+		printf '%s' "$created" | json_field_from_stdin 'plugin_version'
+	)"
+	if [[ "$created_base_url" != "$base_url" ]] ||
+		[[ "$created_store_id" != "$store_id" ]] ||
+		[[ "$created_plugin_version" != "$plugin_version" ]]; then
 		echo 'Transition provisioner result does not exactly match its validated plan.' >&2
 		exit 1
 	fi
@@ -272,10 +368,14 @@ destroy_store() {
 		}
 	' "$supplied" "$saved"
 
+	local rollback_receipt_path="$workspace/rollback-receipt"
+	if ! validate_rollback_receipt_file "$rollback_receipt_path"; then
+		echo 'Transition teardown refused: the saved rollback receipt is missing or invalid.' >&2
+		exit 1
+	fi
 	"$PROVISIONER" destroy \
 		--workspace "$workspace" \
-		--store-id "$store_id" \
-		--base-url "$base_url"
+		--rollback-receipt-file "$rollback_receipt_path"
 	rm -rf "$workspace"
 }
 

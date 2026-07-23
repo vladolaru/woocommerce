@@ -12,6 +12,7 @@ import {
 	assertAccountSeparation,
 	ResourceLock,
 	ResourceLockManager,
+	type ResourceLockPayload,
 	type ResourceLockRequest,
 } from './resource-locks';
 
@@ -30,6 +31,8 @@ async function lockDirectory(): Promise< string > {
 async function yieldToPeer(): Promise< void > {
 	return new Promise( ( resolve ) => setImmediate( resolve ) );
 }
+
+function noop(): void {}
 
 function spawnLockWorker(
 	lockDir: string,
@@ -236,6 +239,127 @@ interface MutationGuardTestManager {
 	): Promise< void >;
 }
 
+interface ResourceLockAcquisitionTestManager {
+	tryCreate(
+		lockPath: string,
+		payload: ResourceLockPayload
+	): Promise< boolean >;
+	tryCreateMutationGuard(
+		guardPath: string,
+		owner: MutationGuardTestPayload
+	): Promise< boolean >;
+}
+
+function pauseSecondTryCreate( manager: ResourceLockManager ): {
+	replacementReached: Promise< void >;
+	resumeReplacement: () => void;
+} {
+	const internals = manager as unknown as ResourceLockAcquisitionTestManager;
+	const originalTryCreate = internals.tryCreate.bind( manager );
+	let callCount = 0;
+	let signalReplacementReached: () => void = noop;
+	let resumeReplacement: () => void = noop;
+	const replacementReached = new Promise< void >( ( resolve ) => {
+		signalReplacementReached = resolve;
+	} );
+	const replacementResumed = new Promise< void >( ( resolve ) => {
+		resumeReplacement = resolve;
+	} );
+
+	internals.tryCreate = async ( lockPath, payload ) => {
+		callCount += 1;
+		if ( callCount === 2 ) {
+			signalReplacementReached();
+			await replacementResumed;
+		}
+		return originalTryCreate( lockPath, payload );
+	};
+
+	return { replacementReached, resumeReplacement };
+}
+
+function observeFreshAcquisitionArbitration(
+	manager: ResourceLockManager
+): Promise< 'canonical-created' | 'guard-contended' > {
+	const internals = manager as unknown as ResourceLockAcquisitionTestManager;
+	const originalTryCreate = internals.tryCreate.bind( manager );
+	const originalTryCreateMutationGuard =
+		internals.tryCreateMutationGuard.bind( manager );
+	let signalCanonicalCreated: () => void = noop;
+	let signalGuardContended: () => void = noop;
+	const canonicalCreated = new Promise< void >( ( resolve ) => {
+		signalCanonicalCreated = resolve;
+	} );
+	const guardContended = new Promise< void >( ( resolve ) => {
+		signalGuardContended = resolve;
+	} );
+
+	internals.tryCreate = async ( lockPath, payload ) => {
+		const created = await originalTryCreate( lockPath, payload );
+		if ( created ) {
+			signalCanonicalCreated();
+		}
+		return created;
+	};
+	internals.tryCreateMutationGuard = async ( guardPath, owner ) => {
+		const created = await originalTryCreateMutationGuard(
+			guardPath,
+			owner
+		);
+		if ( ! created ) {
+			signalGuardContended();
+		}
+		return created;
+	};
+
+	return Promise.race( [
+		canonicalCreated.then( () => 'canonical-created' as const ),
+		guardContended.then( () => 'guard-contended' as const ),
+	] );
+}
+
+async function settleAcquisitionRace(
+	arbitration: Promise< 'canonical-created' | 'guard-contended' >,
+	resumeReplacement: () => void,
+	recovererAttempt: Promise< ResourceLock >,
+	freshAttempt: Promise< ResourceLock >,
+	isFreshSettled: () => boolean
+): Promise< {
+	arbitration: 'canonical-created' | 'guard-contended';
+	recovered?: ResourceLock;
+	recovererError?: unknown;
+	fresh: ResourceLock;
+	freshSettledBeforeRecoveryRelease: boolean;
+} > {
+	const observed = await arbitration;
+	resumeReplacement();
+	const recovererOutcome = await recovererAttempt.then(
+		( lock ) => ( { lock } ),
+		( error: unknown ) => ( { error } )
+	);
+	if ( 'error' in recovererOutcome ) {
+		const fresh = await freshAttempt;
+		await fresh.release();
+		return {
+			arbitration: observed,
+			recovererError: recovererOutcome.error,
+			fresh,
+			freshSettledBeforeRecoveryRelease: isFreshSettled(),
+		};
+	}
+
+	const freshSettledBeforeRecoveryRelease = isFreshSettled();
+	await recovererOutcome.lock.release();
+	const fresh = await freshAttempt;
+	await fresh.release();
+	return {
+		arbitration: observed,
+		recovered: recovererOutcome.lock,
+		fresh,
+		freshSettledBeforeRecoveryRelease,
+	};
+}
+
 async function expectStaleGuardOperationBlocked(
 	manager: ResourceLockManager,
 	internals: MutationGuardTestManager,
@@ -394,6 +518,81 @@ test( 'recovers an expired lock left by a terminated process', async () => {
 		await expect( recovered.release() ).resolves.toBe( true );
 	} finally {
 		await stopWorker( worker );
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'serializes fresh acquisition while an expired lock is being replaced', async () => {
+	const directory = await lockDirectory();
+	let resumeReplacement = noop;
+	const expiredManager = new ResourceLockManager( {
+		lockDir: directory,
+		runId: 'run-expired-owner',
+		leaseMs: 10,
+		autoRenew: false,
+	} );
+	const recoverer = new ResourceLockManager( {
+		lockDir: directory,
+		runId: 'run-expired-recoverer',
+		leaseMs: 1_000,
+		maxWaitMs: 1_000,
+		autoRenew: false,
+	} );
+	const freshContender = new ResourceLockManager( {
+		lockDir: directory,
+		runId: 'run-fresh-contender',
+		leaseMs: 1_000,
+		maxWaitMs: 1_000,
+		autoRenew: false,
+	} );
+
+	try {
+		await expiredManager.acquire( accountRequest );
+		await waitForMilliseconds( 20 );
+
+		const pause = pauseSecondTryCreate( recoverer );
+		resumeReplacement = pause.resumeReplacement;
+		const recovererAttempt = recoverer.acquire( accountRequest );
+		void recovererAttempt.catch( () => {} );
+		await pause.replacementReached;
+
+		let freshSettled = false;
+		const arbitration =
+			observeFreshAcquisitionArbitration( freshContender );
+		const freshAttempt = freshContender
+			.acquire( accountRequest )
+			.then( ( lock ) => {
+				freshSettled = true;
+				return lock;
+			} );
+		const outcome = await settleAcquisitionRace(
+			arbitration,
+			pause.resumeReplacement,
+			recovererAttempt,
+			freshAttempt,
+			() => freshSettled
+		);
+		expect( outcome.arbitration ).toBe( 'guard-contended' );
+		expect( outcome.recovererError ).toBeUndefined();
+		expect( outcome.recovered?.displacedOwner?.runId ).toBe(
+			'run-expired-owner'
+		);
+		expect( outcome.freshSettledBeforeRecoveryRelease ).toBe( false );
+		expect( outcome.fresh.displacedOwner ).toBeUndefined();
+
+		const staleFiles = ( await readdir( directory ) ).filter( ( file ) =>
+			file.includes( '.stale-' )
+		);
+		expect( staleFiles ).toHaveLength( 1 );
+		expect(
+			JSON.parse(
+				await readFile( join( directory, staleFiles[ 0 ] ), 'utf8' )
+			) as ResourceLockPayload
+		).toMatchObject( { runId: 'run-expired-owner' } );
+		const recoveryLog = await readFile( recoverer.recoveryLogPath, 'utf8' );
+		expect( recoveryLog.match( /"displacedOwner"/g ) ).toHaveLength( 1 );
+	} finally {
+		resumeReplacement();
 		await rm( directory, { recursive: true, force: true } );
 	}
 } );
