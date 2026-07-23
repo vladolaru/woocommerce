@@ -1,7 +1,51 @@
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+const frozenSourceHeaders = [
+	'suite_config',
+	'case_id',
+	'project',
+	'source_file',
+	'line',
+	'title_path',
+	'role',
+	'feature_family',
+	'current_tags',
+	'fixtures_helpers',
+	'seeded_data_mocks_provider_dependencies',
+	'setup_state_mutations',
+	'teardown_cleanup',
+	'user_observable_outcome',
+	'financial_provider_assertions',
+	'plugin_specific_coupling',
+	'proof_layer',
+	'contract',
+	'contract_classification',
+	'sequential_shared_state_retries_flake',
+	'preliminary_disposition',
+	'preliminary_disposition_evidence',
+	'residual_risk',
+	'native_owner_paths',
+	'native_lower_layer_context',
+	'native_user_surface_runtime_role',
+	'required_native_fixtures_runtime_adapters',
+	'smallest_honest_adaptation',
+	'planned_disposition',
+	'planned_disposition_evidence',
+	'disposition_state',
+	'ci_lane',
+];
+const closureHeaders = [
+	'accepted_disposition',
+	'target_path',
+	'implementation_owner',
+	'closure_state',
+];
+const expectedHeaders = [ ...frozenSourceHeaders, ...closureHeaders ];
+const frozenSourceSha256 =
+	'aa458aae69abbf938418776a7dd1c0b42e4450e625d71ac61ea341f5da2485e3';
 const allowedDispositions = [
 	'Run unchanged against both runtimes',
 	'Extract a shared scenario with thin runtime adapters',
@@ -13,17 +57,55 @@ const allowedDispositions = [
 	'Retire because the test is stale, redundant, or guards only obsolete plugin structure',
 ];
 const allowedDispositionSet = new Set( allowedDispositions );
-const requiredColumns = [
-	'case_id',
-	'planned_disposition',
-	'disposition_state',
-	'native_owner_paths',
-	'native_lower_layer_context',
-	'accepted_disposition',
-	'target_path',
-	'implementation_owner',
-	'closure_state',
-];
+const nativeTestsRoot =
+	'plugins/woocommerce/tests/e2e/tests/woopayments-native';
+const approvedFutureTargets = new Set( [
+	`${ nativeTestsRoot }/pilots/shopper-card-payment.spec.ts`,
+	`${ nativeTestsRoot }/pilots/saved-method-cutover.spec.ts`,
+	`${ nativeTestsRoot }/pilots/merchant-manual-capture.spec.ts`,
+	`${ nativeTestsRoot }/pilots/merchant-transaction-navigation.spec.ts`,
+	`${ nativeTestsRoot }/scenarios/card-payment.ts`,
+	`${ nativeTestsRoot }/scenarios/saved-method.ts`,
+	`${ nativeTestsRoot }/scenarios/manual-capture.ts`,
+	`${ nativeTestsRoot }/scenarios/transaction-navigation.ts`,
+	`${ nativeTestsRoot }/scenarios/checkout.ts`,
+	`${ nativeTestsRoot }/scenarios/decline.ts`,
+	`${ nativeTestsRoot }/scenarios/multi-currency.ts`,
+	`${ nativeTestsRoot }/scenarios/refund.ts`,
+	`${ nativeTestsRoot }/scenarios/authorization.ts`,
+	`${ nativeTestsRoot }/scenarios/merchant-record-navigation.ts`,
+	`${ nativeTestsRoot }/shopper/classic-card.spec.ts`,
+	`${ nativeTestsRoot }/shopper/blocks-card.spec.ts`,
+	`${ nativeTestsRoot }/shopper/alternative-methods.spec.ts`,
+	`${ nativeTestsRoot }/shopper/declines.spec.ts`,
+	`${ nativeTestsRoot }/shopper/pay-for-order.spec.ts`,
+	`${ nativeTestsRoot }/shopper/saved-methods.spec.ts`,
+	`${ nativeTestsRoot }/shopper/multi-currency.spec.ts`,
+	`${ nativeTestsRoot }/shopper/woopay.spec.ts`,
+	`${ nativeTestsRoot }/shopper/theme-compatibility.spec.ts`,
+	`${ nativeTestsRoot }/merchant/orders-refunds.spec.ts`,
+	`${ nativeTestsRoot }/merchant/authorizations.spec.ts`,
+	`${ nativeTestsRoot }/merchant/status-actions.spec.ts`,
+	`${ nativeTestsRoot }/merchant/settings-methods.spec.ts`,
+	`${ nativeTestsRoot }/merchant/overview-transactions.spec.ts`,
+	`${ nativeTestsRoot }/merchant/payouts-disputes-smoke.spec.ts`,
+	`${ nativeTestsRoot }/merchant/role-access.spec.ts`,
+	`${ nativeTestsRoot }/merchant/onboarding.spec.ts`,
+	`${ nativeTestsRoot }/subscriptions/purchase.spec.ts`,
+	`${ nativeTestsRoot }/subscriptions/renewal.spec.ts`,
+	`${ nativeTestsRoot }/subscriptions/payment-methods.spec.ts`,
+	`${ nativeTestsRoot }/merchant/dispute-lifecycle.spec.ts`,
+	`${ nativeTestsRoot }/merchant/payout-record.spec.ts`,
+	`${ nativeTestsRoot }/merchant/event-recovery.spec.ts`,
+	`${ nativeTestsRoot }/performance/checkout-readiness.spec.ts`,
+	`${ nativeTestsRoot }/transitions/coexistence-cutover.spec.ts`,
+	`${ nativeTestsRoot }/transitions/historical-settings.spec.ts`,
+	`${ nativeTestsRoot }/transitions/historical-money-records.spec.ts`,
+	`${ nativeTestsRoot }/transitions/historical-tokens.spec.ts`,
+	`${ nativeTestsRoot }/transitions/historical-subscriptions.spec.ts`,
+	`${ nativeTestsRoot }/transitions/event-ownership.spec.ts`,
+	`${ nativeTestsRoot }/transitions/rollback-reactivation.spec.ts`,
+] );
 const requireClosed = process.argv.includes( '--require-closed' );
 const showSummary = process.argv.includes( '--summary' );
 const binDirectory = dirname( fileURLToPath( import.meta.url ) );
@@ -33,19 +115,21 @@ const ledgerPath = resolve(
 	'../tests/woopayments-native/client-contract-map.tsv'
 );
 
-const lines = readFileSync( ledgerPath, 'utf8' ).trimEnd().split( /\r?\n/ );
+const lines = readFileSync( ledgerPath, 'utf8' )
+	.replace( /\r?\n$/, '' )
+	.split( /\r?\n/ );
 const headers = lines.shift().split( '\t' );
-const missingColumns = requiredColumns.filter(
-	( column ) => ! headers.includes( column )
-);
 
-if ( missingColumns.length > 0 ) {
+if (
+	headers.length !== expectedHeaders.length ||
+	headers.some( ( header, index ) => header !== expectedHeaders[ index ] )
+) {
 	throw new Error(
-		`Missing required columns: ${ missingColumns.join( ', ' ) }`
+		`Invalid contract-map schema; expected the exact ${ expectedHeaders.length } ordered columns`
 	);
 }
 
-const rows = lines.map( ( line, index ) => {
+const rowValues = lines.map( ( line, index ) => {
 	const values = line.split( '\t' );
 
 	if ( values.length !== headers.length ) {
@@ -54,23 +138,61 @@ const rows = lines.map( ( line, index ) => {
 		);
 	}
 
-	return Object.fromEntries(
-		headers.map( ( header, valueIndex ) => [
-			header,
-			values[ valueIndex ],
-		] )
-	);
+	return values;
 } );
+const rows = rowValues.map( ( values ) =>
+	Object.fromEntries(
+		headers.map( ( header, valueIndex ) => [ header, values[ valueIndex ] ] )
+	)
+);
 
 if ( rows.length !== 181 ) {
 	throw new Error( `Expected 181 cases; found ${ rows.length }` );
 }
 
+const frozenSourceContent =
+	[
+		frozenSourceHeaders,
+		...rowValues.map( ( values ) =>
+			values.slice( 0, frozenSourceHeaders.length )
+		),
+	]
+		.map( ( values ) => values.join( '\t' ) )
+		.join( '\n' ) + '\n';
+const actualFrozenSourceSha256 = createHash( 'sha256' )
+	.update( frozenSourceContent )
+	.digest( 'hex' );
+
+if ( actualFrozenSourceSha256 !== frozenSourceSha256 ) {
+	throw new Error(
+		`Frozen source content drifted; expected SHA-256 ${ frozenSourceSha256 }, found ${ actualFrozenSourceSha256 }`
+	);
+}
+
+const assertRepositoryRelativeFilePath = ( row, column, filePath ) => {
+	const pathParts = filePath.split( '/' );
+
+	if (
+		filePath !== filePath.trim() ||
+		filePath.length === 0 ||
+		/^[a-z][a-z\d+.-]*:/i.test( filePath ) ||
+		isAbsolute( filePath ) ||
+		filePath.includes( '\\' ) ||
+		filePath.endsWith( '/' ) ||
+		pathParts.includes( '.' ) ||
+		pathParts.includes( '..' )
+	) {
+		throw new Error(
+			`Invalid ${ column } for ${ row.case_id }: ${ filePath }`
+		);
+	}
+};
+
 const splitPaths = ( row, column ) => {
 	const paths = row[ column ].split( ';' );
 
-	if ( paths.some( ( filePath ) => filePath.length === 0 ) ) {
-		throw new Error( `Empty ${ column } for ${ row.case_id }` );
+	for ( const filePath of paths ) {
+		assertRepositoryRelativeFilePath( row, column, filePath );
 	}
 
 	return paths;
@@ -80,13 +202,44 @@ const assertConcreteExistingFiles = ( row, column ) => {
 	for ( const filePath of splitPaths( row, column ) ) {
 		const absolutePath = resolve( repositoryRoot, filePath );
 
-		if (
-			filePath.endsWith( '/' ) ||
-			! existsSync( absolutePath ) ||
-			! statSync( absolutePath ).isFile()
-		) {
+		if ( ! existsSync( absolutePath ) || ! statSync( absolutePath ).isFile() ) {
 			throw new Error(
 				`Non-concrete ${ column } for ${ row.case_id }: ${ filePath }`
+			);
+		}
+	}
+};
+
+const assertPlannedTargets = ( row ) => {
+	const evidencePaths = new Set( [
+		...splitPaths( row, 'native_owner_paths' ),
+		...splitPaths( row, 'native_lower_layer_context' ),
+	] );
+
+	for ( const targetPath of splitPaths( row, 'target_path' ) ) {
+		const absolutePath = resolve( repositoryRoot, targetPath );
+
+		if ( approvedFutureTargets.has( targetPath ) ) {
+			if (
+				existsSync( absolutePath ) &&
+				! statSync( absolutePath ).isFile()
+			) {
+				throw new Error(
+					`Non-concrete target_path for ${ row.case_id }: ${ targetPath }`
+				);
+			}
+			continue;
+		}
+
+		if ( ! evidencePaths.has( targetPath ) ) {
+			throw new Error(
+				`Unapproved future target_path for ${ row.case_id }: ${ targetPath }`
+			);
+		}
+
+		if ( ! existsSync( absolutePath ) || ! statSync( absolutePath ).isFile() ) {
+			throw new Error(
+				`Missing retained target_path for ${ row.case_id }: ${ targetPath }`
 			);
 		}
 	}
@@ -129,6 +282,8 @@ for ( const row of rows ) {
 	) {
 		throw new Error( `Incomplete closure fields for ${ row.case_id }` );
 	}
+
+	assertPlannedTargets( row );
 
 	if (
 		row.accepted_disposition !== 'pending' &&
