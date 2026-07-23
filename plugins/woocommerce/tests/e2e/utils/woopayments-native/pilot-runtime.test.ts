@@ -7,12 +7,13 @@ import {
 	test,
 	type APIRequestContext,
 	type APIResponse,
+	type Page,
 } from '@playwright/test';
 
 import { WooPaymentsPilotRuntime } from '../../fixtures/woopayments-native';
 
 interface RequestCall {
-	method: 'GET' | 'POST';
+	method: 'DELETE' | 'GET' | 'POST' | 'PUT';
 	url: string;
 	data?: unknown;
 }
@@ -56,11 +57,20 @@ function runtime(
 		throwAfterManualCaptureUpdate?: boolean;
 		updateStatus?: number;
 		loseFeatureAfterSettingsRead?: boolean;
+		loseRecordBeforeCleanupDelete?: boolean;
 	} = {}
 ): WooPaymentsPilotRuntime {
 	let manualCapture = options.manualCapture ?? false;
 	let updateCount = 0;
 	const api = {
+		delete: async ( url: string, requestOptions?: { data?: unknown } ) => {
+			calls.push( {
+				method: 'DELETE',
+				url,
+				data: requestOptions?.data,
+			} );
+			return response( {} );
+		},
 		get: async ( url: string ) => {
 			calls.push( { method: 'GET', url } );
 			if ( url === '/wp-json/wc/v3/payments/settings' ) {
@@ -98,10 +108,38 @@ function runtime(
 				updateCount === 1 ? options.updateStatus : 200
 			);
 		},
+		put: async ( url: string, requestOptions?: { data?: unknown } ) => {
+			calls.push( {
+				method: 'PUT',
+				url,
+				data: requestOptions?.data,
+			} );
+			return response( {} );
+		},
 	} as APIRequestContext;
 
 	class ApprovedPilotRuntime extends WooPaymentsPilotRuntime {
 		public override requireApprovedProviderFixture(): void {}
+
+		public override requireEphemeralTransitionAllocation(): void {}
+
+		public override async withProviderWriteLocks< Result >(
+			lockOptions: {
+				featureSetting?: string;
+				recordEvent?: string;
+			},
+			callback: () => Promise< Result >
+		): Promise< Result > {
+			return super.withProviderWriteLocks( lockOptions, async () => {
+				if (
+					options.loseRecordBeforeCleanupDelete &&
+					lockOptions.recordEvent === 'owned-product-cleanup'
+				) {
+					await removeOwnedLock( lockDir, 'record-event' );
+				}
+				return callback();
+			} );
+		}
 	}
 
 	return new ApprovedPilotRuntime(
@@ -118,6 +156,114 @@ function runtime(
 
 async function lockDirectory(): Promise< string > {
 	return mkdtemp( join( tmpdir(), 'woopayments-pilot-runtime-test-' ) );
+}
+
+interface LockLossPageOptions {
+	loseOn: {
+		action: 'goto' | 'click' | 'check' | 'expect';
+		name: string;
+	};
+	mutation: {
+		role: string;
+		name: string;
+	};
+}
+
+function lockLossPage(
+	lockDir: string,
+	options: LockLossPageOptions
+): { page: Page; mutationInvocations: () => number } {
+	let lockLost = false;
+	let mutationCount = 0;
+
+	const maybeLoseLock = async (
+		action: LockLossPageOptions[ 'loseOn' ][ 'action' ],
+		name: string
+	): Promise< void > => {
+		if (
+			! lockLost &&
+			action === options.loseOn.action &&
+			name.includes( options.loseOn.name )
+		) {
+			lockLost = true;
+			await removeOwnedLock( lockDir, 'record-event' );
+		}
+	};
+
+	const locator = ( role: string, name: string ) => {
+		const value = {
+			_apiName: 'Locator',
+			_expect: async () => {
+				await maybeLoseLock( 'expect', name );
+				return { matches: true };
+			},
+			check: async () => {
+				await maybeLoseLock( 'check', name );
+			},
+			click: async () => {
+				if (
+					role === options.mutation.role &&
+					name.includes( options.mutation.name )
+				) {
+					mutationCount += 1;
+					return;
+				}
+				await maybeLoseLock( 'click', name );
+			},
+			fill: async () => {},
+			first: () => value,
+			getByRole: (
+				childRole: string,
+				childOptions?: { name?: string | RegExp }
+			) =>
+				locator( childRole, String( childOptions?.name ?? childRole ) ),
+			toString: () => `fake locator ${ role } ${ name }`,
+		};
+		return value;
+	};
+
+	const page = {
+		getByLabel: ( name: string | RegExp ) =>
+			locator( 'label', String( name ) ),
+		getByRole: ( role: string, roleOptions?: { name?: string | RegExp } ) =>
+			locator( role, String( roleOptions?.name ?? role ) ),
+		getByText: ( name: string | RegExp ) =>
+			locator( 'text', String( name ) ),
+		goto: async ( url: string ) => {
+			await maybeLoseLock( 'goto', url );
+		},
+		url: () => 'http://native.test/checkout/order-received/42/',
+	} as unknown as Page;
+
+	return {
+		page,
+		mutationInvocations: () => mutationCount,
+	};
+}
+
+async function expectMutationBlockedAfterPreparation(
+	options: LockLossPageOptions,
+	mutate: (
+		pilotRuntime: WooPaymentsPilotRuntime,
+		page: Page
+	) => Promise< void >
+): Promise< void > {
+	const directory = await lockDirectory();
+	const calls: RequestCall[] = [];
+	const pilotRuntime = runtime( directory, calls );
+	const { page, mutationInvocations } = lockLossPage( directory, options );
+
+	try {
+		await expect(
+			pilotRuntime.withProviderWriteLocks(
+				{ recordEvent: 'late-ownership-loss' },
+				async () => mutate( pilotRuntime, page )
+			)
+		).rejects.toThrow( /record-event.*ownership/i );
+		expect( mutationInvocations() ).toBe( 0 );
+	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
 }
 
 test( 'fails before a provider helper call when account and store locks are not owned', async () => {
@@ -247,6 +393,143 @@ test( 'fails before a helper write when the active record lock is lost', async (
 	}
 } );
 
+test( 'blocks a card payment after lock loss during checkout preparation', async () => {
+	await expect(
+		expectMutationBlockedAfterPreparation(
+			{
+				loseOn: { action: 'check', name: 'WooPayments|credit card' },
+				mutation: { role: 'button', name: 'place order' },
+			},
+			async ( pilotRuntime, page ) => {
+				await pilotRuntime.completeCardCheckout(
+					page,
+					{ id: 73, name: 'Owned product', amount: '10.99' },
+					'run-pilot-runtime'
+				);
+			}
+		)
+	).resolves.toBeUndefined();
+} );
+
+test( 'blocks the order metadata write after lock loss during confirmation', async () => {
+	const directory = await lockDirectory();
+	const calls: RequestCall[] = [];
+	const pilotRuntime = runtime( directory, calls );
+	const { page } = lockLossPage( directory, {
+		loseOn: {
+			action: 'expect',
+			name: 'Your order has been received',
+		},
+		mutation: { role: 'unused', name: 'unused' },
+	} );
+
+	try {
+		await expect(
+			pilotRuntime.withProviderWriteLocks(
+				{ recordEvent: 'order-metadata-ownership-loss' },
+				async () => {
+					await pilotRuntime.completeCardCheckout(
+						page,
+						{
+							id: 73,
+							name: 'Owned product',
+							amount: '10.99',
+						},
+						'run-pilot-runtime'
+					);
+				}
+			)
+		).rejects.toThrow( /record-event.*ownership/i );
+		expect( calls.filter( ( call ) => call.method === 'PUT' ) ).toEqual(
+			[]
+		);
+	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'blocks a saved-card default update after lock loss during preparation', async () => {
+	await expect(
+		expectMutationBlockedAfterPreparation(
+			{
+				loseOn: {
+					action: 'goto',
+					name: 'my-account/payment-methods/',
+				},
+				mutation: { role: 'button', name: 'make default' },
+			},
+			async ( pilotRuntime, page ) => {
+				await pilotRuntime.makeSavedCardDefault( page, 73 );
+			}
+		)
+	).resolves.toBeUndefined();
+} );
+
+test( 'blocks cutover after lock loss during admin preparation', async () => {
+	await expect(
+		expectMutationBlockedAfterPreparation(
+			{
+				loseOn: { action: 'click', name: 'WooCommerce' },
+				mutation: {
+					role: 'button',
+					name: 'switch to native WooPayments',
+				},
+			},
+			async ( pilotRuntime, page ) => {
+				await pilotRuntime.softCutOverEphemeralStore( page );
+			}
+		)
+	).resolves.toBeUndefined();
+} );
+
+test( 'blocks a saved-card checkout after lock loss during preparation', async () => {
+	await expect(
+		expectMutationBlockedAfterPreparation(
+			{
+				loseOn: { action: 'check', name: 'pm_saved_card' },
+				mutation: { role: 'button', name: 'place order' },
+			},
+			async ( pilotRuntime, page ) => {
+				await pilotRuntime.payWithExactSavedCard(
+					page,
+					{ tokenId: 73, paymentMethodId: 'pm_saved_card' },
+					'classic',
+					'run-pilot-runtime'
+				);
+			}
+		)
+	).resolves.toBeUndefined();
+} );
+
+test( 'blocks capture after lock loss during order preparation', async () => {
+	await expect(
+		expectMutationBlockedAfterPreparation(
+			{
+				loseOn: { action: 'click', name: '42' },
+				mutation: { role: 'button', name: 'capture' },
+			},
+			async ( pilotRuntime, page ) => {
+				await pilotRuntime.captureExactOrder( page, {
+					runId: 'run-pilot-runtime',
+					orderId: 42,
+					orderKey: 'wc_order_key',
+					intentId: 'pi_exact',
+					chargeId: 'ch_exact',
+					paymentMethodId: 'pm_exact',
+					amountMinor: 1099,
+					currency: 'USD',
+					orderStatus: 'on-hold',
+					providerStatus: 'requires_capture',
+					chargeStatus: 'pending',
+					chargeCaptured: false,
+					occurrenceCount: 1,
+					captureOccurrenceCount: 0,
+				} );
+			}
+		)
+	).resolves.toBeUndefined();
+} );
+
 test( 'fails before a manual-setting write when the feature lock is lost', async () => {
 	const directory = await lockDirectory();
 	const calls: RequestCall[] = [];
@@ -259,6 +542,32 @@ test( 'fails before a manual-setting write when the feature lock is lost', async
 			pilotRuntime.withCapturedManualCaptureSetting( async () => {} )
 		).rejects.toThrow( /feature-setting.*ownership/i );
 		expect( calls.filter( ( call ) => call.method === 'POST' ) ).toEqual(
+			[]
+		);
+	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'blocks product cleanup after loss of the cleanup record lock', async () => {
+	const directory = await lockDirectory();
+	const calls: RequestCall[] = [];
+	const pilotRuntime = runtime( directory, calls, {
+		loseRecordBeforeCleanupDelete: true,
+	} );
+
+	try {
+		await pilotRuntime.withProviderWriteLocks(
+			{ recordEvent: 'create-product-for-cleanup' },
+			async () => {
+				await pilotRuntime.createOwnedProduct( '10.99' );
+			}
+		);
+
+		await expect( pilotRuntime.cleanup() ).rejects.toThrow(
+			/record-event.*ownership/i
+		);
+		expect( calls.filter( ( call ) => call.method === 'DELETE' ) ).toEqual(
 			[]
 		);
 	} finally {

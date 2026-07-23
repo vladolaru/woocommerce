@@ -10,8 +10,8 @@ import { expect, test } from '@playwright/test';
 
 import {
 	assertAccountSeparation,
+	ResourceLock,
 	ResourceLockManager,
-	type ResourceLock,
 	type ResourceLockRequest,
 } from './resource-locks';
 
@@ -234,6 +234,36 @@ test( 'renews an owned lease for another 90 seconds', async () => {
 	} finally {
 		await rm( directory, { recursive: true, force: true } );
 	}
+} );
+
+test( 'surfaces a background renewal failure before reporting ownership', async () => {
+	let renewalFailed!: () => void;
+	const renewalAttempt = new Promise< void >( ( resolve ) => {
+		renewalFailed = resolve;
+	} );
+	const manager = {
+		isOwned: async () => true,
+		renew: async () => {
+			renewalFailed();
+			throw new Error( 'Background lease renewal failed.' );
+		},
+	} as unknown as ResourceLockManager;
+	const lock = new ResourceLock( manager, {
+		key: accountRequest.providerAccountId,
+		runId: 'run-renewal-failure',
+		pid: 1003,
+		acquiredAt: 1_000,
+		expiresAt: 91_000,
+		diagnosticPath: accountRequest.diagnosticPath,
+	} );
+
+	lock.startRenewal( 1 );
+	await renewalAttempt;
+	await yieldToPeer();
+
+	await expect( lock.isOwned() ).rejects.toThrow(
+		/Background lease renewal failed/
+	);
 } );
 
 test( 'recovers only an expired lock and records the displaced owner', async () => {

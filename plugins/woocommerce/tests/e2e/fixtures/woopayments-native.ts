@@ -45,7 +45,6 @@ interface ProviderWriteLockOptions {
 }
 
 interface ProviderWriteLocks {
-	manager: ResourceLockManager;
 	account: ResourceLock;
 	store: ResourceLock;
 	featureSetting?: ResourceLock;
@@ -153,22 +152,24 @@ export class WooPaymentsPilotRuntime {
 	}
 
 	public async createOwnedProduct( amount: string ): Promise< OwnedProduct > {
-		await this.assertProviderWriteLocksOwned();
+		await this.assertCanWrite();
 		this.requireApprovedProviderFixture( 'product/payment' );
 		const name = `WooPayments native E2E ${ this.runId }`;
-		const response = await this.adminApi.post( '/wp-json/wc/v3/products', {
-			data: {
-				name,
-				type: 'simple',
-				regular_price: amount,
-				meta_data: [
-					{
-						key: '_e2e_woopayments_run_id',
-						value: this.runId,
-					},
-				],
-			},
-		} );
+		const response = await this.performWrite( () =>
+			this.adminApi.post( '/wp-json/wc/v3/products', {
+				data: {
+					name,
+					type: 'simple',
+					regular_price: amount,
+					meta_data: [
+						{
+							key: '_e2e_woopayments_run_id',
+							value: this.runId,
+						},
+					],
+				},
+			} )
+		);
 		if ( ! response.ok() ) {
 			throw new Error(
 				`Unable to create run-owned product: HTTP ${ response.status() }.`
@@ -189,11 +190,13 @@ export class WooPaymentsPilotRuntime {
 		product: OwnedProduct,
 		runId: string
 	): Promise< number > {
-		await this.assertProviderWriteLocksOwned();
+		await this.assertCanWrite();
 		this.requireApprovedProviderFixture( 'basic-card' );
 
 		await page.goto( `?post_type=product&p=${ product.id }` );
-		await page.getByRole( 'button', { name: /add to cart/i } ).click();
+		await this.performWrite( () =>
+			page.getByRole( 'button', { name: /add to cart/i } ).click()
+		);
 		await page.getByRole( 'link', { name: /checkout/i } ).click();
 		await page
 			.getByRole( 'textbox', { name: /first name/i } )
@@ -219,7 +222,9 @@ export class WooPaymentsPilotRuntime {
 		await page.getByLabel( /WooPayments|credit card/i ).check();
 
 		this.requireApprovedProviderFixture( 'basic-card-entry' );
-		await page.getByRole( 'button', { name: /place order/i } ).click();
+		await this.performWrite( () =>
+			page.getByRole( 'button', { name: /place order/i } ).click()
+		);
 		await expect(
 			page.getByText( 'Your order has been received' )
 		).toBeVisible();
@@ -233,7 +238,7 @@ export class WooPaymentsPilotRuntime {
 		page: Page,
 		label: string
 	): Promise< SavedCardIdentity > {
-		await this.assertProviderWriteLocksOwned();
+		await this.assertCanWrite();
 		this.requireApprovedProviderFixture( 'plugin-owned-saved-card' );
 		await page.goto( 'my-account/payment-methods/' );
 		await page.getByRole( 'link', { name: /add payment method/i } ).click();
@@ -247,17 +252,21 @@ export class WooPaymentsPilotRuntime {
 		page: Page,
 		tokenId: number
 	): Promise< void > {
-		await this.assertProviderWriteLocksOwned();
+		await this.assertCanWrite();
 		this.requireApprovedProviderFixture( 'saved-card-default' );
 		await page.goto( 'my-account/payment-methods/' );
-		await page
-			.getByRole( 'row', { name: new RegExp( tokenId.toString() ) } )
-			.getByRole( 'button', { name: /make default/i } )
-			.click();
+		await this.performWrite( () =>
+			page
+				.getByRole( 'row', {
+					name: new RegExp( tokenId.toString() ),
+				} )
+				.getByRole( 'button', { name: /make default/i } )
+				.click()
+		);
 	}
 
 	public async softCutOverEphemeralStore( page: Page ): Promise< void > {
-		await this.assertProviderWriteLocksOwned();
+		await this.assertCanWrite();
 		this.requireEphemeralTransitionAllocation();
 		this.requireApprovedProviderFixture( 'soft-cutover' );
 		await page.goto( 'wp-admin/' );
@@ -265,16 +274,20 @@ export class WooPaymentsPilotRuntime {
 			.getByRole( 'link', { name: /WooCommerce/i } )
 			.first()
 			.click();
-		await page
-			.getByRole( 'button', { name: /switch to native WooPayments/i } )
-			.click();
+		await this.performWrite( () =>
+			page
+				.getByRole( 'button', {
+					name: /switch to native WooPayments/i,
+				} )
+				.click()
+		);
 		await this.assertCurrentRuntimeReady( 'native' );
 	}
 
 	public async getSavedCardState(
 		card: SavedCardIdentity
 	): Promise< SavedCardState > {
-		await this.assertProviderWriteLocksOwned();
+		await this.assertCanWrite();
 		this.requireApprovedProviderFixture( 'saved-card-state' );
 		throw new Error(
 			`Owner-approved saved-card state fixture has not proved local token ${ card.tokenId } and provider default ${ card.paymentMethodId }.`
@@ -287,11 +300,13 @@ export class WooPaymentsPilotRuntime {
 		checkout: 'classic' | 'blocks',
 		runId: string
 	): Promise< number > {
-		await this.assertProviderWriteLocksOwned();
+		await this.assertCanWrite();
 		this.requireApprovedProviderFixture( `saved-card-${ checkout }` );
 		const product = await this.createOwnedProduct( '10.99' );
 		await page.goto( `?post_type=product&p=${ product.id }` );
-		await page.getByRole( 'button', { name: /add to cart/i } ).click();
+		await this.performWrite( () =>
+			page.getByRole( 'button', { name: /add to cart/i } ).click()
+		);
 		await page
 			.getByRole( 'link', {
 				name:
@@ -299,7 +314,9 @@ export class WooPaymentsPilotRuntime {
 			} )
 			.click();
 		await page.getByLabel( new RegExp( card.paymentMethodId ) ).check();
-		await page.getByRole( 'button', { name: /place order/i } ).click();
+		await this.performWrite( () =>
+			page.getByRole( 'button', { name: /place order/i } ).click()
+		);
 		const orderId = this.getOrderIdFromUrl( page.url() );
 		await this.setOrderRunId( orderId, runId );
 		return orderId;
@@ -364,7 +381,6 @@ export class WooPaymentsPilotRuntime {
 			}
 
 			this.activeProviderWriteLocks = {
-				manager,
 				account,
 				store,
 				featureSetting,
@@ -490,7 +506,7 @@ export class WooPaymentsPilotRuntime {
 		page: Page,
 		evidence: PaymentEvidence
 	): Promise< void > {
-		await this.assertProviderWriteLocksOwned();
+		await this.assertCanWrite();
 		this.requireApprovedProviderFixture( 'manual-capture-action' );
 		await this.logInAsAdmin( page );
 		await page.goto( 'wp-admin/admin.php?page=wc-orders' );
@@ -502,7 +518,9 @@ export class WooPaymentsPilotRuntime {
 				name: new RegExp( evidence.orderId.toString() ),
 			} )
 			.click();
-		await page.getByRole( 'button', { name: /capture/i } ).click();
+		await this.performWrite( () =>
+			page.getByRole( 'button', { name: /capture/i } ).click()
+		);
 	}
 
 	public async expectCapturedOrderState(
@@ -524,7 +542,7 @@ export class WooPaymentsPilotRuntime {
 		page: Page,
 		evidence: PaymentEvidence
 	): Promise< void > {
-		await this.assertProviderWriteLocksOwned();
+		await this.assertCanWrite();
 		await this.logInAsAdmin( page );
 		await page.goto( 'wp-admin/' );
 
@@ -552,15 +570,36 @@ export class WooPaymentsPilotRuntime {
 	}
 
 	public async cleanup(): Promise< void > {
-		for ( const productId of this.ownedProductIds ) {
-			await this.adminApi.delete(
-				`/wp-json/wc/v3/products/${ productId }`,
-				{ data: { force: true }, failOnStatusCode: false }
-			);
+		if ( this.ownedProductIds.length === 0 ) {
+			return;
 		}
+
+		await this.withProviderWriteLocks(
+			{ recordEvent: 'owned-product-cleanup' },
+			async () => {
+				while ( this.ownedProductIds.length > 0 ) {
+					const productId = this.ownedProductIds[ 0 ];
+					const response = await this.performWrite( () =>
+						this.adminApi.delete(
+							`/wp-json/wc/v3/products/${ productId }`,
+							{
+								data: { force: true },
+								failOnStatusCode: false,
+							}
+						)
+					);
+					if ( ! response.ok() ) {
+						throw new Error(
+							`Unable to clean up run-owned product ${ productId }: HTTP ${ response.status() }.`
+						);
+					}
+					this.ownedProductIds.shift();
+				}
+			}
+		);
 	}
 
-	private async assertProviderWriteLocksOwned(): Promise< void > {
+	private async assertCanWrite(): Promise< void > {
 		const locks = this.activeProviderWriteLocks;
 		if ( ! locks ) {
 			throw new Error(
@@ -575,15 +614,32 @@ export class WooPaymentsPilotRuntime {
 			{ kind: 'record-event', lock: locks.recordEvent },
 		];
 		for ( const active of activeLocks ) {
-			if (
-				active.lock &&
-				! ( await locks.manager.isOwned( active.lock.payload ) )
-			) {
+			if ( ! active.lock ) {
+				continue;
+			}
+
+			let isOwned: boolean;
+			try {
+				isOwned = await active.lock.isOwned();
+			} catch ( error ) {
+				throw new Error(
+					`WooPayments provider helpers lost active ${ active.kind } lock ownership.`,
+					{ cause: error }
+				);
+			}
+			if ( ! isOwned ) {
 				throw new Error(
 					`WooPayments provider helpers lost active ${ active.kind } lock ownership.`
 				);
 			}
 		}
+	}
+
+	private async performWrite< Result >(
+		write: () => Promise< Result >
+	): Promise< Result > {
+		await this.assertCanWrite();
+		return write();
 	}
 
 	private async logInAsAdmin( page: Page ): Promise< void > {
@@ -655,9 +711,8 @@ export class WooPaymentsPilotRuntime {
 		orderId: number,
 		runId: string
 	): Promise< void > {
-		const response = await this.adminApi.put(
-			`/wp-json/wc/v3/orders/${ orderId }`,
-			{
+		const response = await this.performWrite( () =>
+			this.adminApi.put( `/wp-json/wc/v3/orders/${ orderId }`, {
 				data: {
 					meta_data: [
 						{
@@ -666,7 +721,7 @@ export class WooPaymentsPilotRuntime {
 						},
 					],
 				},
-			}
+			} )
 		);
 		if ( ! response.ok() ) {
 			throw new Error(
@@ -696,10 +751,10 @@ export class WooPaymentsPilotRuntime {
 	}
 
 	private async setManualCaptureSetting( value: boolean ): Promise< void > {
-		await this.assertProviderWriteLocksOwned();
-		const response = await this.adminApi.post(
-			'/wp-json/wc/v3/payments/settings',
-			{ data: { is_manual_capture_enabled: value } }
+		const response = await this.performWrite( () =>
+			this.adminApi.post( '/wp-json/wc/v3/payments/settings', {
+				data: { is_manual_capture_enabled: value },
+			} )
 		);
 		if ( response.status() !== 200 ) {
 			throw new Error(

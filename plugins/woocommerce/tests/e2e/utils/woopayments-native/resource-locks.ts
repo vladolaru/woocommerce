@@ -180,6 +180,11 @@ export class ResourceLock {
 		this.payload = await this.manager.renew( this.payload );
 	}
 
+	public async isOwned(): Promise< boolean > {
+		this.throwRenewalError();
+		return this.manager.isOwned( this.payload );
+	}
+
 	public async release(): Promise< boolean > {
 		this.stopRenewal();
 		this.throwRenewalError();
