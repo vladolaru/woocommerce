@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+printf '%s\tpnpm %s\n' "$PWD" "$*" >> "$E2E_FAKE_COMMAND_LOG"
+
+if [[ "$*" == *"wc-native-payments status"* ]]; then
+	echo 'Owner: native'
+	exit 0
+fi
+
+if [[ "$*" == *"/wc/v3/payments/accounts"* ]]; then
+	printf '{"account_id":"acct_fixture","test_mode":true}\n'
+	exit 0
+fi
+
+echo "Unexpected fake pnpm invocation: $*" >&2
+exit 1

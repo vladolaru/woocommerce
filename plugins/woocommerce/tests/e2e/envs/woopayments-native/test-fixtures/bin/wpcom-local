@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+printf '%s\twpcom-local %s\n' "$PWD" "$*" >> "$E2E_FAKE_COMMAND_LOG"
+printf '{"ready":true,"command":"%s"}\n' "$*"

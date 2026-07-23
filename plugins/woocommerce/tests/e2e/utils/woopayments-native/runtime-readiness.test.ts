@@ -1,0 +1,126 @@
+import { expect, test } from '@playwright/test';
+
+import { assertRuntimeReady, type RuntimeStatus } from './runtime-readiness';
+
+const expected = {
+	siteUrl: 'http://store8889.localhost:8889',
+	wpcomBlogId: 882001,
+	accountId: 'acct_local_native',
+};
+
+function readyStatus(
+	overrides: Partial< RuntimeStatus > = {}
+): RuntimeStatus {
+	return {
+		site_url: expected.siteUrl,
+		wpcom_blog_id: expected.wpcomBlogId,
+		runtime_owner: 'native',
+		native_enabled: true,
+		account_id: expected.accountId,
+		account_connected: true,
+		gateway_enabled: true,
+		test_mode: true,
+		enabled_payment_methods: [ 'card' ],
+		last_webhook_fetch: 1_800_000_000,
+		callback_probe: {
+			registered: true,
+			reachable: true,
+			wpcom_blog_id: expected.wpcomBlogId,
+		},
+		...overrides,
+	};
+}
+
+test( 'accepts exact native runtime readiness', () => {
+	expect( () =>
+		assertRuntimeReady( 'native', readyStatus(), expected )
+	).not.toThrow();
+} );
+
+test( 'requires plugin ownership for client and transition runtimes', () => {
+	for ( const runtime of [ 'client', 'transition' ] as const ) {
+		expect( () =>
+			assertRuntimeReady(
+				runtime,
+				readyStatus( { runtime_owner: 'native' } ),
+				expected
+			)
+		).toThrow( /expected runtime owner plugin/i );
+	}
+} );
+
+test( 'rejects an exact store, blog, or account mismatch', () => {
+	expect( () =>
+		assertRuntimeReady(
+			'native',
+			readyStatus( { site_url: 'http://localhost:8082' } ),
+			expected
+		)
+	).toThrow( /site URL/i );
+
+	expect( () =>
+		assertRuntimeReady(
+			'native',
+			readyStatus( { wpcom_blog_id: 882002 } ),
+			expected
+		)
+	).toThrow( /WPCOM blog ID/i );
+
+	expect( () =>
+		assertRuntimeReady(
+			'native',
+			readyStatus( { account_id: 'acct_other' } ),
+			expected
+		)
+	).toThrow( /account ID/i );
+} );
+
+test( 'rejects disconnected, disabled, live-mode, or card-incapable stores', () => {
+	for ( const [ field, value ] of [
+		[ 'account_connected', false ],
+		[ 'gateway_enabled', false ],
+		[ 'test_mode', false ],
+		[ 'enabled_payment_methods', [ 'link' ] ],
+	] as const ) {
+		expect( () =>
+			assertRuntimeReady(
+				'native',
+				readyStatus( { [ field ]: value } ),
+				expected
+			)
+		).toThrow();
+	}
+} );
+
+test( 'webhook freshness cannot substitute for registered callback reachability', () => {
+	expect( () =>
+		assertRuntimeReady(
+			'native',
+			readyStatus( {
+				last_webhook_fetch: Date.now(),
+				callback_probe: {
+					registered: false,
+					reachable: false,
+					wpcom_blog_id: expected.wpcomBlogId,
+				},
+			} ),
+			expected
+		)
+	).toThrow( /callback/i );
+} );
+
+test( 'requires callback proof for the same WPCOM blog', () => {
+	expect( () =>
+		assertRuntimeReady(
+			'native',
+			readyStatus( {
+				callback_probe: {
+					registered: true,
+					reachable: true,
+					wpcom_blog_id: 882999,
+				},
+			} ),
+			expected
+		)
+	).toThrow( /callback.*WPCOM blog ID/i );
+} );

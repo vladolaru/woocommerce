@@ -2,7 +2,10 @@
 	"core": "https://wordpress.org/wordpress-latest.zip",
 	"phpVersion": "8.1",
 	"testsEnvironment": false,
-	"plugins": [ "." ],
+	"plugins": [ ".", "./tests/e2e/test-plugins/wc-email-template-sync-test-helper" ],
+	"mappings": {
+		"wp-content/mu-plugins/woopayments-native-runtime.php": "./tests/e2e/test-plugins/woopayments-native-runtime/woopayments-native-runtime.php"
+	},
 	"config": {
 		"JETPACK_AUTOLOAD_DEV": true,
 		"WP_DEBUG_LOG": true,
