@@ -1,6 +1,12 @@
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, statSync } from 'node:fs';
-import { dirname, isAbsolute, resolve } from 'node:path';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import {
+	dirname,
+	isAbsolute,
+	relative,
+	resolve,
+	sep as pathSeparator,
+} from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const frozenSourceHeaders = [
@@ -197,10 +203,27 @@ const approvedFutureTargetDispositions = new Map( [
 		new Set( [ dispositions.transition ] ),
 	],
 ] );
-const requireClosed = process.argv.includes( '--require-closed' );
-const showSummary = process.argv.includes( '--summary' );
+const cliArguments = process.argv.slice( 2 );
+const allowedCliArguments = new Set( [
+	'--',
+	'--require-closed',
+	'--summary',
+] );
+const unknownCliArguments = cliArguments.filter(
+	( argument ) => ! allowedCliArguments.has( argument )
+);
+
+if ( unknownCliArguments.length > 0 ) {
+	throw new Error(
+		`Unknown argument(s): ${ unknownCliArguments.join( ', ' ) }`
+	);
+}
+
+const requireClosed = cliArguments.includes( '--require-closed' );
+const showSummary = cliArguments.includes( '--summary' );
 const binDirectory = dirname( fileURLToPath( import.meta.url ) );
 const repositoryRoot = resolve( binDirectory, '../../../../..' );
+const realRepositoryRoot = realpathSync( repositoryRoot );
 const ledgerPath = resolve(
 	binDirectory,
 	'../tests/woopayments-native/client-contract-map.tsv'
@@ -289,15 +312,36 @@ const splitPaths = ( row, column ) => {
 	return paths;
 };
 
+const assertConcreteExistingFile = ( row, column, filePath ) => {
+	const absolutePath = resolve( repositoryRoot, filePath );
+
+	if ( ! existsSync( absolutePath ) ) {
+		throw new Error(
+			`Non-concrete ${ column } for ${ row.case_id }: ${ filePath }`
+		);
+	}
+
+	const realFilePath = realpathSync( absolutePath );
+	const repositoryRelativeRealPath = relative(
+		realRepositoryRoot,
+		realFilePath
+	);
+
+	if (
+		repositoryRelativeRealPath === '..' ||
+		repositoryRelativeRealPath.startsWith( `..${ pathSeparator }` ) ||
+		isAbsolute( repositoryRelativeRealPath ) ||
+		! statSync( realFilePath ).isFile()
+	) {
+		throw new Error(
+			`Non-concrete or out-of-repository ${ column } for ${ row.case_id }: ${ filePath }`
+		);
+	}
+};
+
 const assertConcreteExistingFiles = ( row, column ) => {
 	for ( const filePath of splitPaths( row, column ) ) {
-		const absolutePath = resolve( repositoryRoot, filePath );
-
-		if ( ! existsSync( absolutePath ) || ! statSync( absolutePath ).isFile() ) {
-			throw new Error(
-				`Non-concrete ${ column } for ${ row.case_id }: ${ filePath }`
-			);
-		}
+		assertConcreteExistingFile( row, column, filePath );
 	}
 };
 
@@ -319,13 +363,8 @@ const assertPlannedTargets = ( row ) => {
 					`target_path is not approved for ${ row.planned_disposition } in ${ row.case_id }: ${ targetPath }`
 				);
 			}
-			if (
-				existsSync( absolutePath ) &&
-				! statSync( absolutePath ).isFile()
-			) {
-				throw new Error(
-					`Non-concrete target_path for ${ row.case_id }: ${ targetPath }`
-				);
+			if ( existsSync( absolutePath ) ) {
+				assertConcreteExistingFile( row, 'target_path', targetPath );
 			}
 			approvedFutureTargetCount++;
 			continue;
@@ -337,11 +376,7 @@ const assertPlannedTargets = ( row ) => {
 			);
 		}
 
-		if ( ! existsSync( absolutePath ) || ! statSync( absolutePath ).isFile() ) {
-			throw new Error(
-				`Missing retained target_path for ${ row.case_id }: ${ targetPath }`
-			);
-		}
+		assertConcreteExistingFile( row, 'target_path', targetPath );
 		retainedEvidenceCount++;
 	}
 
