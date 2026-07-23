@@ -89,6 +89,7 @@
 		"test:e2e:gb-stable": "pnpm test:e2e:with-env gutenberg-stable",
 		"test:e2e:gb-nightly": "pnpm test:e2e:with-env gutenberg-nightly",
 		"test:e2e:paypal-standard": "pnpm test:e2e:default --project=paypal-standard",
+		"test:e2e:woopayments:contract-map": "node tests/e2e/bin/validate-woopayments-client-contract-map.mjs",
 		"test:env:start": "pnpm env:test",
 		"test:perf": "./tests/performance/bin/k6 run ./tests/performance/tests/main.js",
 		"test:perf:ci-setup": "pnpm test:perf:install-k6 && pnpm env:perf",
