@@ -71,6 +71,59 @@ expect_failure env \
 	E2E_FAKE_TRANSITION_BASE_URL='http://localhost:8082' \
 	"$PROVISION_SCRIPT" create
 
+rollback_log="$TEST_ROOT/rollback.log"
+expect_failure env \
+	TMPDIR="$TEST_ROOT" \
+	E2E_TRANSITION_RUN_ID='post-create-mismatch' \
+	E2E_TRANSITION_SEED_ARCHIVE="$FIXTURES/transition-seed.tar.gz" \
+	E2E_TRANSITION_STORE_PROVISIONER="$FIXTURES/fake-transition-provisioner.sh" \
+	E2E_FAKE_CREATED_STORE_ID='unexpected-created-store' \
+	E2E_FAKE_PROVISIONER_LOG="$rollback_log" \
+	"$PROVISION_SCRIPT" create
+grep -Fqx \
+	"destroy --workspace $TEST_ROOT/woopayments-native-transition-post-create-mismatch --store-id transition-store-test --base-url http://transition.localhost:8899" \
+	"$rollback_log"
+test ! -e "$TEST_ROOT/woopayments-native-transition-post-create-mismatch"
+
+expect_failure env \
+	TMPDIR="$TEST_ROOT" \
+	E2E_TRANSITION_RUN_ID='partial-create-failure' \
+	E2E_TRANSITION_SEED_ARCHIVE="$FIXTURES/transition-seed.tar.gz" \
+	E2E_TRANSITION_STORE_PROVISIONER="$FIXTURES/fake-transition-provisioner.sh" \
+	E2E_FAKE_CREATE_PARTIAL_FAILURE='1' \
+	E2E_FAKE_PROVISIONER_LOG="$rollback_log" \
+	"$PROVISION_SCRIPT" create
+grep -Fqx \
+	"destroy --workspace $TEST_ROOT/woopayments-native-transition-partial-create-failure --store-id transition-store-test --base-url http://transition.localhost:8899" \
+	"$rollback_log"
+test ! -e "$TEST_ROOT/woopayments-native-transition-partial-create-failure"
+
+expect_failure env \
+	TMPDIR="$TEST_ROOT" \
+	E2E_TRANSITION_RUN_ID='allocation-write-failure' \
+	E2E_TRANSITION_SEED_ARCHIVE="$FIXTURES/transition-seed.tar.gz" \
+	E2E_TRANSITION_STORE_PROVISIONER="$FIXTURES/fake-transition-provisioner.sh" \
+	E2E_FAKE_BLOCK_ALLOCATION_WRITE='1' \
+	E2E_FAKE_PROVISIONER_LOG="$rollback_log" \
+	"$PROVISION_SCRIPT" create
+grep -Fqx \
+	"destroy --workspace $TEST_ROOT/woopayments-native-transition-allocation-write-failure --store-id transition-store-test --base-url http://transition.localhost:8899" \
+	"$rollback_log"
+test ! -e "$TEST_ROOT/woopayments-native-transition-allocation-write-failure"
+
+expect_failure env \
+	TMPDIR="$TEST_ROOT" \
+	E2E_TRANSITION_RUN_ID='rollback-cleanup-failure' \
+	E2E_TRANSITION_SEED_ARCHIVE="$FIXTURES/transition-seed.tar.gz" \
+	E2E_TRANSITION_STORE_PROVISIONER="$FIXTURES/fake-transition-provisioner.sh" \
+	E2E_FAKE_CREATED_STORE_ID='unexpected-created-store' \
+	E2E_FAKE_DESTROY_FAILURE='1' \
+	E2E_FAKE_PROVISIONER_LOG="$rollback_log" \
+	"$PROVISION_SCRIPT" create
+grep -q 'does not exactly match its validated plan' "$TEST_ROOT/expected-error"
+grep -q 'Transition rollback cleanup failed' "$TEST_ROOT/expected-error"
+test -d "$TEST_ROOT/woopayments-native-transition-rollback-cleanup-failure"
+
 env \
 	TMPDIR="$TEST_ROOT" \
 	E2E_TRANSITION_STORE_PROVISIONER="$FIXTURES/fake-transition-provisioner.sh" \

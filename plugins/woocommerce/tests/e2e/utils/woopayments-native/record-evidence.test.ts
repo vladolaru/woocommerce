@@ -262,6 +262,7 @@ test( 'returns immediately when the named provider state already succeeded', asy
 } );
 
 test( 'fails at the caller deadline without an extra sleep', async () => {
+	const calls: string[] = [];
 	const restApi = mockRestApi(
 		{
 			'/wp-json/wc/v3/orders/42': [ { body: order() } ],
@@ -271,7 +272,7 @@ test( 'fails at the caller deadline without an extra sleep', async () => {
 			'/wp-json/wc/v3/payments/charges/ch_e2e': [ { body: charge() } ],
 			'/wp-json/wc/v3/payments/timeline/pi_e2e': [ { body: timeline() } ],
 		},
-		[]
+		calls
 	);
 	const startedAt = Date.now();
 
@@ -284,6 +285,60 @@ test( 'fails at the caller deadline without an extra sleep', async () => {
 		)
 	).rejects.toThrow( /deadline/i );
 	expect( Date.now() - startedAt ).toBeLessThan( 450 );
+	expect( calls ).toEqual( [] );
+} );
+
+test( 'threads the shrinking deadline through every sequential evidence request', async () => {
+	const originalNow = Date.now;
+	let now = 10_000;
+	const deadline = now + 100;
+	const calls: Array< { timeout: number | undefined; url: string } > = [];
+	const bodies: Record< string, unknown > = {
+		'/wp-json/wc/v3/orders/42': order(),
+		'/wp-json/wc/v3/payments/payment_intents/pi_e2e': intent( {
+			status: 'processing',
+		} ),
+		'/wp-json/wc/v3/payments/charges/ch_e2e': charge(),
+		'/wp-json/wc/v3/payments/timeline/pi_e2e': timeline(),
+	};
+	const restApi = {
+		get: async (
+			url: string,
+			options?: { timeout?: number }
+		): Promise< APIResponse > => {
+			calls.push( { url, timeout: options?.timeout } );
+			now += 40;
+			return response( { body: bodies[ url ] } );
+		},
+	} as APIRequestContext;
+	Date.now = () => now;
+
+	try {
+		await expect(
+			waitForPaymentState(
+				restApi,
+				{ orderId: 42, intentId: 'pi_e2e' },
+				'succeeded',
+				deadline
+			)
+		).rejects.toThrow( /deadline/i );
+		expect( calls ).toEqual( [
+			{
+				url: '/wp-json/wc/v3/orders/42',
+				timeout: 100,
+			},
+			{
+				url: '/wp-json/wc/v3/payments/payment_intents/pi_e2e',
+				timeout: 60,
+			},
+			{
+				url: '/wp-json/wc/v3/payments/charges/ch_e2e',
+				timeout: 20,
+			},
+		] );
+	} finally {
+		Date.now = originalNow;
+	}
 } );
 
 test( 'reports charge capture state and a distinct capture-event count', async () => {

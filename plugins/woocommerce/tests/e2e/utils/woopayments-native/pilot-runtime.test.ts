@@ -7,10 +7,12 @@ import {
 	test,
 	type APIRequestContext,
 	type APIResponse,
+	type Locator,
 	type Page,
 } from '@playwright/test';
 
 import { WooPaymentsPilotRuntime } from '../../fixtures/woopayments-native';
+import type { PaymentEvidence } from './record-evidence';
 
 interface RequestCall {
 	method: 'DELETE' | 'GET' | 'POST' | 'PUT';
@@ -158,6 +160,184 @@ async function lockDirectory(): Promise< string > {
 	return mkdtemp( join( tmpdir(), 'woopayments-pilot-runtime-test-' ) );
 }
 
+function visibleLocator(
+	overrides: Partial< {
+		check: () => Promise< void >;
+		click: () => Promise< void >;
+		fill: ( value: string ) => Promise< void >;
+		getAttribute: ( name: string ) => Promise< string | null >;
+		getByRole: (
+			role: string,
+			options?: { exact?: boolean; name?: string | RegExp }
+		) => Locator;
+		selectOption: (
+			option: string | { label?: string; value?: string }
+		) => Promise< string[] >;
+	} > = {}
+): Locator {
+	const locator = {
+		_apiName: 'Locator',
+		_expect: async () => ( { matches: true, received: 'visible' } ),
+		check: overrides.check ?? ( async () => {} ),
+		click: overrides.click ?? ( async () => {} ),
+		fill: overrides.fill ?? ( async () => {} ),
+		first: () => locator,
+		getAttribute:
+			overrides.getAttribute ?? ( async () => null as string | null ),
+		getByRole:
+			overrides.getByRole ??
+			( () => {
+				throw new Error( 'Unexpected nested role locator.' );
+			} ),
+		selectOption:
+			overrides.selectOption ??
+			( async () => {
+				throw new Error( 'Unexpected select option.' );
+			} ),
+		toString: () => 'DOM-faithful fixture locator',
+	};
+	return locator as unknown as Locator;
+}
+
+function exactEvidence(): PaymentEvidence {
+	return {
+		runId: 'run-pilot-runtime',
+		orderId: 42,
+		orderKey: 'wc_order_key',
+		intentId: 'pi_exact',
+		chargeId: 'ch_exact',
+		paymentMethodId: 'pm_exact',
+		amountMinor: 1099,
+		currency: 'USD',
+		orderStatus: 'on-hold',
+		providerStatus: 'requires_capture',
+		chargeStatus: 'pending',
+		chargeCaptured: false,
+		occurrenceCount: 1,
+		captureOccurrenceCount: 0,
+	};
+}
+
+function savedCheckoutContractPage( expectedSelector: string ): {
+	page: Page;
+	selected: () => boolean;
+	waitedForConfirmation: () => boolean;
+} {
+	let selected = false;
+	let currentUrl = 'http://native.test/checkout/';
+	let waitedForConfirmation = false;
+	const page = {
+		goto: async () => {},
+		getByRole: ( role: string, options?: { name?: string | RegExp } ) => {
+			const name = String( options?.name ?? '' );
+			if (
+				( role === 'button' &&
+					/add to cart|place order/i.test( name ) ) ||
+				( role === 'link' && /checkout/i.test( name ) )
+			) {
+				return visibleLocator();
+			}
+			throw new Error( `Unexpected role locator: ${ role } ${ name }` );
+		},
+		getByText: ( text: string ) => {
+			expect( text ).toBe( 'Your order has been received' );
+			return visibleLocator();
+		},
+		locator: ( selector: string ) => {
+			expect( selector ).toBe( expectedSelector );
+			return visibleLocator( {
+				check: async () => {
+					selected = true;
+				},
+				getAttribute: async ( name ) =>
+					name === 'value' ? '73' : null,
+			} );
+		},
+		url: () => currentUrl,
+		waitForURL: async ( matcher: RegExp ) => {
+			expect(
+				matcher.test(
+					'http://native.test/checkout/order-received/42/?key=wc_order_key'
+				)
+			).toBe( true );
+			waitedForConfirmation = true;
+			currentUrl =
+				'http://native.test/checkout/order-received/42/?key=wc_order_key';
+		},
+	} as unknown as Page;
+
+	return {
+		page,
+		selected: () => selected,
+		waitedForConfirmation: () => waitedForConfirmation,
+	};
+}
+
+function captureContractPage(): {
+	applied: () => boolean;
+	page: Page;
+	selected: () => boolean;
+} {
+	let applied = false;
+	let selected = false;
+	const loginField = visibleLocator();
+	const page = {
+		goto: async () => {},
+		getByLabel: () => loginField,
+		getByRole: (
+			role: string,
+			options?: { exact?: boolean; name?: string | RegExp }
+		) => {
+			const name = String( options?.name ?? '' );
+			if (
+				( role === 'button' && name === 'Log In' ) ||
+				( role === 'searchbox' && /search orders/i.test( name ) ) ||
+				( role === 'link' && /42/.test( name ) )
+			) {
+				return visibleLocator();
+			}
+			throw new Error( `Unexpected role locator: ${ role } ${ name }` );
+		},
+		locator: ( selector: string ) => {
+			if ( selector === 'select[name="wc_order_action"]' ) {
+				return visibleLocator( {
+					selectOption: async ( option ) => {
+						expect( option ).toEqual( {
+							label: 'Capture charge',
+							value: 'capture_charge',
+						} );
+						selected = true;
+						return [ 'capture_charge' ];
+					},
+				} );
+			}
+			if ( selector === '#actions' ) {
+				return visibleLocator( {
+					getByRole: ( role, options ) => {
+						expect( role ).toBe( 'button' );
+						expect( options ).toEqual( {
+							exact: true,
+							name: 'Apply',
+						} );
+						return visibleLocator( {
+							click: async () => {
+								applied = true;
+							},
+						} );
+					},
+				} );
+			}
+			throw new Error( `Unexpected selector: ${ selector }` );
+		},
+	} as unknown as Page;
+
+	return {
+		applied: () => applied,
+		page,
+		selected: () => selected,
+	};
+}
+
 interface LockLossPageOptions {
 	loseOn: {
 		action: 'goto' | 'click' | 'check' | 'expect';
@@ -212,11 +392,24 @@ function lockLossPage(
 			},
 			fill: async () => {},
 			first: () => value,
+			getAttribute: async ( attribute: string ) => {
+				if (
+					attribute === 'href' &&
+					name.includes( 'set-default-payment-method' )
+				) {
+					return 'http://native.test/my-account/set-default-payment-method/73/?_wpnonce=nonce';
+				}
+				if ( attribute === 'value' && name.includes( 'value="73"' ) ) {
+					return '73';
+				}
+				return null;
+			},
 			getByRole: (
 				childRole: string,
 				childOptions?: { name?: string | RegExp }
 			) =>
 				locator( childRole, String( childOptions?.name ?? childRole ) ),
+			selectOption: async () => [ 'capture_charge' ],
 			toString: () => `fake locator ${ role } ${ name }`,
 		};
 		return value;
@@ -229,10 +422,12 @@ function lockLossPage(
 			locator( role, String( roleOptions?.name ?? role ) ),
 		getByText: ( name: string | RegExp ) =>
 			locator( 'text', String( name ) ),
+		locator: ( selector: string ) => locator( 'locator', selector ),
 		goto: async ( url: string ) => {
 			await maybeLoseLock( 'goto', url );
 		},
 		url: () => 'http://native.test/checkout/order-received/42/',
+		waitForURL: async () => {},
 	} as unknown as Page;
 
 	return {
@@ -265,6 +460,143 @@ async function expectMutationBlockedAfterPreparation(
 		await rm( directory, { recursive: true, force: true } );
 	}
 }
+
+test( 'uses the token-bound My Account action link rendered by Core', async () => {
+	const directory = await lockDirectory();
+	const calls: RequestCall[] = [];
+	const pilotRuntime = runtime( directory, calls );
+	const actionHref =
+		'http://native.test/my-account/set-default-payment-method/73/?_wpnonce=nonce';
+	let clicked = false;
+	const page = {
+		goto: async () => {},
+		locator: ( selector: string ) => {
+			expect( selector ).toBe(
+				'a.button.default[href*="/set-default-payment-method/73/"]'
+			);
+			return visibleLocator( {
+				click: async () => {
+					clicked = true;
+				},
+				getAttribute: async ( name ) =>
+					name === 'href' ? actionHref : null,
+			} );
+		},
+	} as unknown as Page;
+
+	try {
+		await pilotRuntime.withProviderWriteLocks(
+			{ recordEvent: 'saved-card-default-dom' },
+			async () => pilotRuntime.makeSavedCardDefault( page, 73 )
+		);
+		expect( clicked ).toBe( true );
+	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+const checkoutContracts = [
+	{
+		checkout: 'classic',
+		selector:
+			'input.woocommerce-SavedPaymentMethods-tokenInput[name="wc-woocommerce_payments-payment-token"][value="73"]',
+	},
+	{
+		checkout: 'blocks',
+		selector:
+			'input.wc-block-components-radio-control__input[name="radio-control-wc-payment-method-saved-tokens"][value="73"]',
+	},
+] as const;
+
+for ( const contract of checkoutContracts ) {
+	test( `selects the exact local token in ${ contract.checkout } checkout markup`, async () => {
+		const directory = await lockDirectory();
+		const calls: RequestCall[] = [];
+		const pilotRuntime = runtime( directory, calls );
+		const fixture = savedCheckoutContractPage( contract.selector );
+
+		try {
+			const orderId = await pilotRuntime.withProviderWriteLocks(
+				{ recordEvent: `saved-card-${ contract.checkout }-dom` },
+				async () =>
+					pilotRuntime.payWithExactSavedCard(
+						fixture.page,
+						{
+							tokenId: 73,
+							paymentMethodId: 'pm_provider_only',
+						},
+						contract.checkout,
+						'run-pilot-runtime'
+					)
+			);
+			expect( orderId ).toBe( 42 );
+			expect( fixture.selected() ).toBe( true );
+			expect( fixture.waitedForConfirmation() ).toBe( true );
+		} finally {
+			await rm( directory, { recursive: true, force: true } );
+		}
+	} );
+}
+
+test( 'uses the Core order-actions dropdown and Apply button for capture', async () => {
+	const directory = await lockDirectory();
+	const calls: RequestCall[] = [];
+	const pilotRuntime = runtime( directory, calls );
+	const fixture = captureContractPage();
+
+	try {
+		await pilotRuntime.withProviderWriteLocks(
+			{ recordEvent: 'capture-order-dom' },
+			async () =>
+				pilotRuntime.captureExactOrder( fixture.page, exactEvidence() )
+		);
+		expect( fixture.selected() ).toBe( true );
+		expect( fixture.applied() ).toBe( true );
+	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'asserts the real payment details heading and exact evidence fields', async () => {
+	const directory = await lockDirectory();
+	const calls: RequestCall[] = [];
+	const pilotRuntime = runtime( directory, calls );
+	const evidence = exactEvidence();
+	const requested: string[] = [];
+	const page = {
+		getByRole: (
+			role: string,
+			options?: { exact?: boolean; name?: string | RegExp }
+		) => {
+			requested.push(
+				`${ role }:${ String( options?.name ) }:${ String(
+					options?.exact
+				) }`
+			);
+			return visibleLocator();
+		},
+		getByText: ( text: string | RegExp, options?: { exact?: boolean } ) => {
+			requested.push(
+				`text:${ String( text ) }:${ String( options?.exact ) }`
+			);
+			return visibleLocator();
+		},
+	} as unknown as Page;
+
+	try {
+		await pilotRuntime.expectExactMerchantTransaction( page, evidence );
+		expect( requested ).toContain(
+			'heading:/^(Payment details|Transaction details)$/:undefined'
+		);
+		expect( requested ).toContain( 'link:Order #42:true' );
+		expect( requested ).toContain( 'text:pi_exact:true' );
+		expect( requested ).toContain( 'text:ch_exact:true' );
+		expect( requested ).toContain( 'text:USD:true' );
+		expect( requested ).toContain( 'text:Authorized:true' );
+	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
 
 test( 'fails before a provider helper call when account and store locks are not owned', async () => {
 	const directory = await lockDirectory();
@@ -456,7 +788,10 @@ test( 'blocks a saved-card default update after lock loss during preparation', a
 					action: 'goto',
 					name: 'my-account/payment-methods/',
 				},
-				mutation: { role: 'button', name: 'make default' },
+				mutation: {
+					role: 'locator',
+					name: 'set-default-payment-method',
+				},
 			},
 			async ( pilotRuntime, page ) => {
 				await pilotRuntime.makeSavedCardDefault( page, 73 );
@@ -486,7 +821,7 @@ test( 'blocks a saved-card checkout after lock loss during preparation', async (
 	await expect(
 		expectMutationBlockedAfterPreparation(
 			{
-				loseOn: { action: 'check', name: 'pm_saved_card' },
+				loseOn: { action: 'check', name: 'value="73"' },
 				mutation: { role: 'button', name: 'place order' },
 			},
 			async ( pilotRuntime, page ) => {
@@ -506,7 +841,7 @@ test( 'blocks capture after lock loss during order preparation', async () => {
 		expectMutationBlockedAfterPreparation(
 			{
 				loseOn: { action: 'click', name: '42' },
-				mutation: { role: 'button', name: 'capture' },
+				mutation: { role: 'button', name: 'Apply' },
 			},
 			async ( pilotRuntime, page ) => {
 				await pilotRuntime.captureExactOrder( page, {

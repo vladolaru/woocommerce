@@ -158,6 +158,48 @@ function delay( milliseconds: number ): Promise< void > {
 	return new Promise( ( resolve ) => setTimeout( resolve, milliseconds ) );
 }
 
+function remainingDeadlineMs(
+	deadlineMs: number,
+	intentId: string,
+	expectedStatus: string
+): number {
+	const remainingMs = deadlineMs - Date.now();
+	if ( remainingMs <= 0 ) {
+		throw new Error(
+			`Payment state deadline reached waiting for ${ intentId } to become ${ expectedStatus }.`
+		);
+	}
+	return remainingMs;
+}
+
+function bindRequestDeadline(
+	restApi: APIRequestContext,
+	deadlineMs: number,
+	intentId: string,
+	expectedStatus: string
+): APIRequestContext {
+	return new Proxy( restApi, {
+		get( target, property, receiver ) {
+			if ( property === 'get' ) {
+				return (
+					url: string,
+					options?: Parameters< APIRequestContext[ 'get' ] >[ 1 ]
+				) =>
+					target.get( url, {
+						...options,
+						timeout: remainingDeadlineMs(
+							deadlineMs,
+							intentId,
+							expectedStatus
+						),
+					} );
+			}
+			const value = Reflect.get( target, property, receiver );
+			return typeof value === 'function' ? value.bind( target ) : value;
+		},
+	} );
+}
+
 export async function getProviderEvidence(
 	restApi: APIRequestContext,
 	order: OrderPaymentEvidence
@@ -236,9 +278,19 @@ export async function waitForPaymentState(
 	if ( ! expectedStatus.trim() ) {
 		throw new Error( 'A non-empty expected provider status is required.' );
 	}
+	const deadlineApi = bindRequestDeadline(
+		restApi,
+		deadlineMs,
+		evidence.intentId,
+		expectedStatus
+	);
 
 	for (;;) {
-		const current = await getPaymentEvidence( restApi, evidence.orderId );
+		remainingDeadlineMs( deadlineMs, evidence.intentId, expectedStatus );
+		const current = await getPaymentEvidence(
+			deadlineApi,
+			evidence.orderId
+		);
 		if ( current.intentId !== evidence.intentId ) {
 			throw new Error(
 				`Payment intent changed while polling: expected ${ evidence.intentId }, received ${ current.intentId }.`
@@ -248,12 +300,11 @@ export async function waitForPaymentState(
 			return current;
 		}
 
-		const remainingMs = deadlineMs - Date.now();
-		if ( remainingMs <= 0 ) {
-			throw new Error(
-				`Payment state deadline reached waiting for ${ evidence.intentId } to become ${ expectedStatus }; last state was ${ current.providerStatus }.`
-			);
-		}
+		const remainingMs = remainingDeadlineMs(
+			deadlineMs,
+			evidence.intentId,
+			expectedStatus
+		);
 		await delay( Math.min( 500, remainingMs ) );
 	}
 }

@@ -5,6 +5,33 @@ set -euo pipefail
 readonly ACTION="${1:-}"
 shift || true
 
+ROLLBACK_ARMED=0
+ROLLBACK_PROVISIONER=''
+ROLLBACK_WORKSPACE=''
+ROLLBACK_STORE_ID=''
+ROLLBACK_BASE_URL=''
+
+rollback_created_store() {
+	local primary_status=$?
+	trap - EXIT
+	if [[ "$ROLLBACK_ARMED" == '1' ]]; then
+		local cleanup_output=''
+		if cleanup_output="$(
+			"$ROLLBACK_PROVISIONER" destroy \
+				--workspace "$ROLLBACK_WORKSPACE" \
+				--store-id "$ROLLBACK_STORE_ID" \
+				--base-url "$ROLLBACK_BASE_URL" 2>&1
+		)"; then
+			if ! rm -rf -- "$ROLLBACK_WORKSPACE"; then
+				echo "Transition rollback removed the provisioned store but could not remove workspace $ROLLBACK_WORKSPACE." >&2
+			fi
+		else
+			echo "Transition rollback cleanup failed for $ROLLBACK_WORKSPACE: $cleanup_output" >&2
+		fi
+	fi
+	exit "$primary_status"
+}
+
 require_command() {
 	local command_name="$1"
 	if ! command -v "$command_name" >/dev/null 2>&1; then
@@ -95,6 +122,13 @@ create_store() {
 	plugin_version="$(json_field "$planned" 'plugin_version')"
 	validate_base_url "$base_url"
 
+	ROLLBACK_PROVISIONER="$PROVISIONER"
+	ROLLBACK_WORKSPACE="$WORKSPACE"
+	ROLLBACK_STORE_ID="$store_id"
+	ROLLBACK_BASE_URL="$base_url"
+	ROLLBACK_ARMED=1
+	trap rollback_created_store EXIT
+
 	local created
 	created="$(
 		"$PROVISIONER" create \
@@ -102,8 +136,9 @@ create_store() {
 			--seed-archive "$SEED_ARCHIVE" \
 			--run-id "$RUN_ID" \
 			--base-url "$base_url" \
-			--store-id "$store_id"
+				--store-id "$store_id"
 	)"
+
 	if [[ "$(json_field "$created" 'base_url')" != "$base_url" ]] ||
 		[[ "$(json_field "$created" 'store_id')" != "$store_id" ]] ||
 		[[ "$(json_field "$created" 'plugin_version')" != "$plugin_version" ]]; then
@@ -116,8 +151,15 @@ create_store() {
 	seed_hash="$(shasum -a 256 "$SEED_ARCHIVE" | awk '{ print $1 }')"
 	teardown_token="$(openssl rand -hex 32)"
 
+	local allocation_json
+	allocation_json="$(
 	node -e '
-		const { writeFileSync } = require( "node:fs" );
+		const {
+			closeSync,
+			fsyncSync,
+			openSync,
+			writeSync,
+		} = require( "node:fs" );
 		const allocation = {
 			base_url: process.argv[ 1 ],
 			store_id: process.argv[ 2 ],
@@ -129,9 +171,29 @@ create_store() {
 			allocation_path: process.argv[ 8 ],
 		};
 		const json = `${ JSON.stringify( allocation ) }\n`;
-		writeFileSync( allocation.allocation_path, json, { mode: 0o600, flag: "wx" } );
+		const allocationFd = openSync(
+			allocation.allocation_path,
+			"wx",
+			0o600
+		);
+		try {
+			writeSync( allocationFd, json );
+			fsyncSync( allocationFd );
+		} finally {
+			closeSync( allocationFd );
+		}
+		const workspaceFd = openSync( allocation.workspace, "r" );
+		try {
+			fsyncSync( workspaceFd );
+		} finally {
+			closeSync( workspaceFd );
+		}
 		process.stdout.write( json );
 	' "$base_url" "$store_id" "$seed_hash" "$plugin_version" "$teardown_token" "$RUN_ID" "$WORKSPACE" "$ALLOCATION_PATH"
+	)"
+	ROLLBACK_ARMED=0
+	trap - EXIT
+	printf '%s\n' "$allocation_json"
 }
 
 destroy_store() {

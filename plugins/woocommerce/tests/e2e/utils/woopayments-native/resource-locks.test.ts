@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve as resolvePath } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -73,6 +73,89 @@ function spawnLockWorker(
 	);
 }
 
+function spawnGuardWorker(
+	lockDir: string,
+	runId: string,
+	leaseMs: number
+): ChildProcessWithoutNullStreams {
+	const moduleUrl = pathToFileURL(
+		resolvePath(
+			process.cwd(),
+			'tests/e2e/utils/woopayments-native/resource-locks.ts'
+		)
+	).href;
+	const source = `
+		import { ResourceLockManager } from ${ JSON.stringify( moduleUrl ) };
+		const request = ${ JSON.stringify( accountRequest ) };
+		const manager = new ResourceLockManager( {
+			lockDir: ${ JSON.stringify( lockDir ) },
+			runId: ${ JSON.stringify( runId ) },
+			leaseMs: ${ leaseMs },
+			mutationGuardLeaseMs: ${ leaseMs },
+			autoRenew: false,
+		} );
+		const lock = await manager.acquire( request );
+		await lock.restoreIfOwned( async () => {
+			process.stdout.write( JSON.stringify( { event: 'guard-held', payload: lock.payload } ) + '\\n' );
+			await new Promise( () => {} );
+		} );
+	`;
+
+	return spawn(
+		process.execPath,
+		[ '--no-warnings', '--input-type=module', '--eval', source ],
+		{ stdio: [ 'pipe', 'pipe', 'pipe' ] }
+	);
+}
+
+function spawnJournalWorker(
+	lockDir: string,
+	statePath: string,
+	runId: string,
+	leaseMs: number
+): ChildProcessWithoutNullStreams {
+	const moduleUrl = pathToFileURL(
+		resolvePath(
+			process.cwd(),
+			'tests/e2e/utils/woopayments-native/resource-locks.ts'
+		)
+	).href;
+	const storeRequest = {
+		...accountRequest,
+		kind: 'store',
+		resource: accountRequest.storeId,
+	};
+	const settingRequest = {
+		...accountRequest,
+		kind: 'feature-setting',
+		resource: 'manual-capture',
+	};
+	const source = `
+		import { writeFile } from 'node:fs/promises';
+		import { ResourceLockManager } from ${ JSON.stringify( moduleUrl ) };
+		const manager = new ResourceLockManager( {
+			lockDir: ${ JSON.stringify( lockDir ) },
+			runId: ${ JSON.stringify( runId ) },
+			leaseMs: ${ leaseMs },
+			mutationGuardLeaseMs: ${ leaseMs },
+			autoRenew: false,
+		} );
+		await manager.acquire( ${ JSON.stringify( accountRequest ) } );
+		await manager.acquire( ${ JSON.stringify( storeRequest ) } );
+		const setting = await manager.acquire( ${ JSON.stringify( settingRequest ) } );
+		await setting.writeRestorationJournal( false );
+		await writeFile( ${ JSON.stringify( statePath ) }, 'true' );
+		process.stdout.write( JSON.stringify( { event: 'setting-enabled', payload: setting.payload } ) + '\\n' );
+		setInterval( () => {}, 1_000 );
+	`;
+
+	return spawn(
+		process.execPath,
+		[ '--no-warnings', '--input-type=module', '--eval', source ],
+		{ stdio: [ 'pipe', 'pipe', 'pipe' ] }
+	);
+}
+
 async function readWorkerMessage(
 	worker: ChildProcessWithoutNullStreams
 ): Promise< { event: string; payload: { runId: string } } > {
@@ -97,7 +180,7 @@ async function readWorkerMessage(
 async function stopWorker(
 	worker: ChildProcessWithoutNullStreams
 ): Promise< void > {
-	if ( worker.exitCode !== null ) {
+	if ( worker.exitCode !== null || worker.signalCode !== null ) {
 		return;
 	}
 	worker.kill( 'SIGTERM' );
@@ -107,13 +190,86 @@ async function stopWorker(
 async function waitForWorkerExit(
 	worker: ChildProcessWithoutNullStreams
 ): Promise< void > {
-	if ( worker.exitCode === null ) {
+	if ( worker.exitCode === null && worker.signalCode === null ) {
 		await once( worker, 'exit' );
 	}
 }
 
+async function forceStopWorker(
+	worker: ChildProcessWithoutNullStreams
+): Promise< void > {
+	if ( worker.exitCode === null && worker.signalCode === null ) {
+		worker.kill( 'SIGKILL' );
+		await waitForWorkerExit( worker );
+	}
+}
+
+function getPeerAttempt< Result >(
+	attempts: Promise< Result >[],
+	firstIndex: number
+): Promise< Result > {
+	return attempts[ firstIndex === 0 ? 1 : 0 ];
+}
+
 async function waitForMilliseconds( milliseconds: number ): Promise< void > {
 	return new Promise( ( resolve ) => setTimeout( resolve, milliseconds ) );
+}
+
+interface MutationGuardTestPayload {
+	ownerId: string;
+	pid: number;
+	acquiredAt: number;
+	expiresAt: number;
+}
+
+interface MutationGuardTestManager {
+	readMutationGuard(
+		guardPath: string
+	): Promise< MutationGuardTestPayload | undefined >;
+	renewMutationGuard(
+		guardPath: string,
+		owner: MutationGuardTestPayload
+	): Promise< void >;
+	releaseMutationGuard(
+		guardPath: string,
+		owner: MutationGuardTestPayload
+	): Promise< void >;
+}
+
+async function expectStaleGuardOperationBlocked(
+	manager: ResourceLockManager,
+	internals: MutationGuardTestManager,
+	guardPath: string,
+	staleOwner: MutationGuardTestPayload,
+	recoveredOwner: MutationGuardTestPayload,
+	operation: (
+		guardPath: string,
+		owner: MutationGuardTestPayload
+	) => Promise< void >
+): Promise< void > {
+	const originalRead = internals.readMutationGuard.bind( manager );
+	await writeFile( guardPath, `${ JSON.stringify( staleOwner ) }\n` );
+	let replaced = false;
+	internals.readMutationGuard = async ( path ) => {
+		const current = await originalRead( path );
+		if ( ! replaced ) {
+			replaced = true;
+			await writeFile(
+				guardPath,
+				`${ JSON.stringify( recoveredOwner ) }\n`
+			);
+		}
+		return current;
+	};
+
+	await expect( operation( guardPath, staleOwner ) ).rejects.toThrow(
+		/ownership was lost/i
+	);
+	expect(
+		JSON.parse(
+			await readFile( guardPath, 'utf8' )
+		) as MutationGuardTestPayload
+	).toEqual( recoveredOwner );
 }
 
 test( 'atomically excludes a second process from the same resource', async () => {
@@ -179,6 +335,36 @@ test( 'excludes and renews the same resource across an actual process', async ()
 	}
 } );
 
+test( 'excludes the same provider account across different stores and processes', async () => {
+	const directory = await lockDirectory();
+	const worker = spawnLockWorker(
+		directory,
+		'run-account-store-a',
+		1_000,
+		true,
+		false
+	);
+	const contender = new ResourceLockManager( {
+		lockDir: directory,
+		runId: 'run-account-store-b',
+		maxWaitMs: 0,
+		autoRenew: false,
+	} );
+
+	try {
+		await readWorkerMessage( worker );
+		await expect(
+			contender.acquire( {
+				...accountRequest,
+				storeId: 'different-store',
+			} )
+		).rejects.toThrow( /timed out/i );
+	} finally {
+		await stopWorker( worker );
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
 test( 'recovers an expired lock left by a terminated process', async () => {
 	const directory = await lockDirectory();
 	const worker = spawnLockWorker(
@@ -208,6 +394,205 @@ test( 'recovers an expired lock left by a terminated process', async () => {
 		await expect( recovered.release() ).resolves.toBe( true );
 	} finally {
 		await stopWorker( worker );
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'recovers after a worker is killed while holding the mutation guard', async () => {
+	const directory = await lockDirectory();
+	const worker = spawnGuardWorker( directory, 'run-killed-guard', 100 );
+
+	try {
+		const held = await readWorkerMessage( worker );
+		expect( held.event ).toBe( 'guard-held' );
+		worker.kill( 'SIGKILL' );
+		await waitForWorkerExit( worker );
+		await waitForMilliseconds( 250 );
+
+		const contender = new ResourceLockManager( {
+			lockDir: directory,
+			runId: 'run-after-killed-guard',
+			leaseMs: 100,
+			mutationGuardLeaseMs: 100,
+			maxWaitMs: 1_000,
+			autoRenew: false,
+		} );
+		const recovered = await contender.acquire( accountRequest );
+		expect( recovered.displacedOwner?.runId ).toBe( 'run-killed-guard' );
+		await expect( recovered.renew() ).resolves.toBeUndefined();
+		await expect( recovered.release() ).resolves.toBe( true );
+	} finally {
+		await forceStopWorker( worker );
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'allows only one contender to recover a stale mutation guard at a time', async () => {
+	const directory = await lockDirectory();
+	const worker = spawnGuardWorker( directory, 'run-stale-guard-race', 100 );
+
+	try {
+		await readWorkerMessage( worker );
+		worker.kill( 'SIGKILL' );
+		await waitForWorkerExit( worker );
+		await waitForMilliseconds( 250 );
+
+		const managers = [ 'a', 'b' ].map(
+			( suffix, index ) =>
+				new ResourceLockManager( {
+					lockDir: directory,
+					runId: `run-guard-contender-${ suffix }`,
+					pid: 2_000 + index,
+					leaseMs: 500,
+					mutationGuardLeaseMs: 100,
+					maxWaitMs: 1_000,
+					autoRenew: false,
+				} )
+		);
+		const attempts = managers.map( async ( manager, index ) => ( {
+			index,
+			lock: await manager.acquire( accountRequest ),
+		} ) );
+		const first = await Promise.race( attempts );
+
+		expect( first.lock.displacedOwner?.runId ).toBe(
+			'run-stale-guard-race'
+		);
+		await expect( first.lock.release() ).resolves.toBe( true );
+		const second = await getPeerAttempt( attempts, first.index );
+		expect( second.lock.displacedOwner ).toBeUndefined();
+		await expect( second.lock.release() ).resolves.toBe( true );
+	} finally {
+		await forceStopWorker( worker );
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'a resumed stale guard owner cannot clobber or delete a recovered guard', async () => {
+	const directory = await lockDirectory();
+	const guardPath = join( directory, 'interleaving.mutation' );
+	const manager = new ResourceLockManager( {
+		lockDir: directory,
+		runId: 'run-stale-owner-interleaving',
+		mutationGuardLeaseMs: 100,
+		autoRenew: false,
+	} );
+	const internals = manager as unknown as MutationGuardTestManager;
+	const staleOwner: MutationGuardTestPayload = {
+		ownerId: 'stale-owner',
+		pid: process.pid,
+		acquiredAt: 100,
+		expiresAt: 200,
+	};
+	const recoveredOwner: MutationGuardTestPayload = {
+		ownerId: 'recovered-owner',
+		pid: process.pid,
+		acquiredAt: 300,
+		expiresAt: 400,
+	};
+
+	try {
+		await expectStaleGuardOperationBlocked(
+			manager,
+			internals,
+			guardPath,
+			staleOwner,
+			recoveredOwner,
+			internals.renewMutationGuard.bind( manager )
+		);
+		await expectStaleGuardOperationBlocked(
+			manager,
+			internals,
+			guardPath,
+			staleOwner,
+			recoveredOwner,
+			internals.releaseMutationGuard.bind( manager )
+		);
+		expect(
+			JSON.parse(
+				await readFile( guardPath, 'utf8' )
+			) as MutationGuardTestPayload
+		).toEqual( recoveredOwner );
+	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'restores a durable original setting after the enabling worker is killed', async () => {
+	const directory = await lockDirectory();
+	const statePath = join( directory, 'manual-capture-state.txt' );
+	await writeFile( statePath, 'false' );
+	const worker = spawnJournalWorker(
+		directory,
+		statePath,
+		'run-setting-crash',
+		100
+	);
+
+	try {
+		const enabled = await readWorkerMessage( worker );
+		expect( enabled.event ).toBe( 'setting-enabled' );
+		expect( await readFile( statePath, 'utf8' ) ).toBe( 'true' );
+		const journalPath = ( await readdir( directory ) ).find( ( file ) =>
+			file.endsWith( '.restoration.json' )
+		);
+		expect( journalPath ).toBeTruthy();
+		const journal = await readFile(
+			join( directory, journalPath as string ),
+			'utf8'
+		);
+		expect( journal ).not.toContain( accountRequest.providerAccountId );
+		expect( journal ).not.toContain( accountRequest.storeId );
+
+		worker.kill( 'SIGKILL' );
+		await waitForWorkerExit( worker );
+		await waitForMilliseconds( 250 );
+
+		const manager = new ResourceLockManager( {
+			lockDir: directory,
+			runId: 'run-setting-recovery',
+			leaseMs: 500,
+			mutationGuardLeaseMs: 100,
+			maxWaitMs: 1_000,
+			autoRenew: false,
+		} );
+		const account = await manager.acquire( accountRequest );
+		const store = await manager.acquire( {
+			...accountRequest,
+			kind: 'store',
+			resource: accountRequest.storeId,
+		} );
+		const setting = await manager.acquire( {
+			...accountRequest,
+			kind: 'feature-setting',
+			resource: 'manual-capture',
+		} );
+		let recoveredOriginal: boolean | undefined;
+
+		await expect(
+			setting.restoreFromJournalIfOwned( async ( original ) => {
+				recoveredOriginal = original;
+				await writeFile( statePath, String( original ) );
+			} )
+		).resolves.toBe( true );
+		expect( recoveredOriginal ).toBe( false );
+		expect( await readFile( statePath, 'utf8' ) ).toBe( 'false' );
+
+		const newBaseline = ( await readFile( statePath, 'utf8' ) ) === 'true';
+		await setting.writeRestorationJournal( newBaseline );
+		await writeFile( statePath, 'true' );
+		await expect(
+			setting.restoreFromJournalIfOwned( async ( original ) => {
+				await writeFile( statePath, String( original ) );
+			} )
+		).resolves.toBe( true );
+		expect( await readFile( statePath, 'utf8' ) ).toBe( 'false' );
+
+		await expect( setting.release() ).resolves.toBe( true );
+		await expect( store.release() ).resolves.toBe( true );
+		await expect( account.release() ).resolves.toBe( true );
+	} finally {
+		await forceStopWorker( worker );
 		await rm( directory, { recursive: true, force: true } );
 	}
 } );

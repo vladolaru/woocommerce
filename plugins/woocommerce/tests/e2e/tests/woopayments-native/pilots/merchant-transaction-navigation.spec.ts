@@ -31,21 +31,13 @@ test(
 					page,
 					evidence
 				);
-
+				await pilotRuntime.expectExactMerchantTransaction(
+					page,
+					evidence
+				);
 				await expect(
 					page.getByRole( 'heading', {
-						name: new RegExp( evidence.orderId.toString() ),
-					} )
-				).toBeVisible();
-				await expect(
-					page.getByText( evidence.currency, { exact: false } )
-				).toBeVisible();
-				await expect(
-					page.getByText( evidence.providerStatus, { exact: false } )
-				).toBeVisible();
-				await expect(
-					page.getByRole( 'button', {
-						name: /refund|capture|view order/i,
+						name: /^(Payment details|Transaction details)$/,
 					} )
 				).toBeVisible();
 			}

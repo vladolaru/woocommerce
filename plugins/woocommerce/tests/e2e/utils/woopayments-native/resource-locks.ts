@@ -1,6 +1,7 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
 	appendFile,
+	type FileHandle,
 	mkdir,
 	open,
 	readFile,
@@ -47,8 +48,27 @@ interface ResourceLockManagerOptions {
 	sleep?: ( milliseconds: number ) => Promise< void >;
 	leaseMs?: number;
 	renewEveryMs?: number;
+	mutationGuardLeaseMs?: number;
 	maxWaitMs?: number;
 	autoRenew?: boolean;
+}
+
+interface MutationGuardPayload {
+	ownerId: string;
+	pid: number;
+	acquiredAt: number;
+	expiresAt: number;
+}
+
+interface RestorationJournalPayload {
+	version: 1;
+	journalId: string;
+	accountHash: string;
+	storeHash: string;
+	settingHash: string;
+	runId: string;
+	originalValue: boolean;
+	createdAt: number;
 }
 
 const LOCK_ORDER: Record< ResourceLockKind, number > = {
@@ -74,6 +94,17 @@ function exactOwner(
 	return (
 		left.key === right.key &&
 		left.runId === right.runId &&
+		left.pid === right.pid &&
+		left.acquiredAt === right.acquiredAt
+	);
+}
+
+function exactGuardOwner(
+	left: MutationGuardPayload,
+	right: MutationGuardPayload
+): boolean {
+	return (
+		left.ownerId === right.ownerId &&
 		left.pid === right.pid &&
 		left.acquiredAt === right.acquiredAt
 	);
@@ -198,6 +229,23 @@ export class ResourceLock {
 		return this.manager.restoreIfOwned( this.payload, restore );
 	}
 
+	public async writeRestorationJournal(
+		originalValue: boolean
+	): Promise< void > {
+		this.throwRenewalError();
+		await this.manager.writeRestorationJournal(
+			this.payload,
+			originalValue
+		);
+	}
+
+	public async restoreFromJournalIfOwned(
+		restore: ( originalValue: boolean ) => Promise< void >
+	): Promise< boolean > {
+		this.throwRenewalError();
+		return this.manager.restoreFromJournalIfOwned( this.payload, restore );
+	}
+
 	private stopRenewal(): void {
 		if ( this.renewalTimer ) {
 			clearInterval( this.renewalTimer );
@@ -222,6 +270,7 @@ export class ResourceLockManager {
 	private readonly sleep: ( milliseconds: number ) => Promise< void >;
 	private readonly leaseMs: number;
 	private readonly renewEveryMs: number;
+	private readonly mutationGuardLeaseMs: number;
 	private readonly maxWaitMs: number;
 	private readonly autoRenew: boolean;
 	private readonly heldLocks = new Map<
@@ -250,6 +299,8 @@ export class ResourceLockManager {
 		this.sleep = options.sleep ?? delay;
 		this.leaseMs = options.leaseMs ?? DEFAULT_LEASE_MS;
 		this.renewEveryMs = options.renewEveryMs ?? DEFAULT_RENEW_EVERY_MS;
+		this.mutationGuardLeaseMs =
+			options.mutationGuardLeaseMs ?? DEFAULT_LEASE_MS;
 		this.maxWaitMs = options.maxWaitMs ?? DEFAULT_MAX_WAIT_MS;
 		this.autoRenew = options.autoRenew ?? true;
 		this.recoveryLogPath = join( lockDir, 'stale-recoveries.jsonl' );
@@ -392,6 +443,91 @@ export class ResourceLockManager {
 		} );
 	}
 
+	public async writeRestorationJournal(
+		ownedPayload: ResourceLockPayload,
+		originalValue: boolean
+	): Promise< void > {
+		const request = this.getHeldFeatureRequest( ownedPayload );
+		const lockPath = this.getLockPath( ownedPayload.key );
+		const journalPath = this.getRestorationJournalPath( request );
+
+		await this.withMutationGuard( lockPath, async () => {
+			if ( ! ( await this.isOwned( ownedPayload ) ) ) {
+				throw new Error(
+					`Cannot journal restoration for ${ ownedPayload.key }: lock ownership was lost.`
+				);
+			}
+			if ( await this.readRestorationJournal( journalPath ) ) {
+				throw new Error(
+					`Cannot replace an unresolved restoration journal: ${ journalPath }`
+				);
+			}
+			const journal: RestorationJournalPayload = {
+				version: 1,
+				journalId: randomUUID(),
+				accountHash: this.redactIdentity( request.providerAccountId ),
+				storeHash: this.redactIdentity( request.storeId ),
+				settingHash: this.redactIdentity( request.resource ),
+				runId: this.runId,
+				originalValue,
+				createdAt: this.now(),
+			};
+			await this.writeDurableJson( journalPath, journal );
+		} );
+	}
+
+	public async restoreFromJournalIfOwned(
+		ownedPayload: ResourceLockPayload,
+		restore: ( originalValue: boolean ) => Promise< void >
+	): Promise< boolean > {
+		const request = this.getHeldFeatureRequest( ownedPayload );
+		const lockPath = this.getLockPath( ownedPayload.key );
+		const journalPath = this.getRestorationJournalPath( request );
+
+		return this.withMutationGuard( lockPath, async () => {
+			const current = await this.readPayload( lockPath );
+			if (
+				! current ||
+				! exactOwner( current, ownedPayload ) ||
+				current.expiresAt <= this.now()
+			) {
+				return false;
+			}
+
+			const journal = await this.readRestorationJournal( journalPath );
+			if ( ! journal ) {
+				return false;
+			}
+			this.assertJournalIdentity( journal, request, journalPath );
+			await writeFile(
+				lockPath,
+				`${ JSON.stringify( {
+					...current,
+					expiresAt: this.now() + this.leaseMs,
+				} ) }\n`,
+				{ mode: 0o600 }
+			);
+
+			await restore( journal.originalValue );
+
+			const afterRestore = await this.readPayload( lockPath );
+			const afterJournal = await this.readRestorationJournal(
+				journalPath
+			);
+			if (
+				! afterRestore ||
+				! exactOwner( afterRestore, ownedPayload ) ||
+				! afterJournal ||
+				afterJournal.journalId !== journal.journalId
+			) {
+				return false;
+			}
+			await unlink( journalPath );
+			await this.syncLockDirectory();
+			return true;
+		} );
+	}
+
 	public async release(
 		ownedPayload: ResourceLockPayload
 	): Promise< boolean > {
@@ -497,12 +633,121 @@ export class ResourceLockManager {
 	}
 
 	private getKey( request: ResourceLockRequest ): string {
+		if ( request.kind === 'account' ) {
+			return `${ request.providerAccountId }/${ request.kind }:${ request.resource }`;
+		}
 		return `${ request.providerAccountId }/${ request.storeId }/${ request.kind }:${ request.resource }`;
 	}
 
 	private getLockPath( key: string ): string {
 		const hash = createHash( 'sha256' ).update( key ).digest( 'hex' );
 		return join( this.lockDir, `${ hash }.lock` );
+	}
+
+	private getHeldFeatureRequest(
+		ownedPayload: ResourceLockPayload
+	): ResourceLockRequest {
+		const held = this.heldLocks.get( ownedPayload.key );
+		if (
+			! held ||
+			held.request.kind !== 'feature-setting' ||
+			! exactOwner( held.payload, ownedPayload )
+		) {
+			throw new Error(
+				'Restoration journals require the matching owned feature-setting lock.'
+			);
+		}
+		return held.request;
+	}
+
+	private redactIdentity( identity: string ): string {
+		return createHash( 'sha256' ).update( identity ).digest( 'hex' );
+	}
+
+	private getRestorationJournalPath( request: ResourceLockRequest ): string {
+		const identity = [
+			request.providerAccountId,
+			request.storeId,
+			request.resource,
+		].join( '\u0000' );
+		const hash = createHash( 'sha256' ).update( identity ).digest( 'hex' );
+		return join( this.lockDir, `${ hash }.restoration.json` );
+	}
+
+	private async writeDurableJson(
+		path: string,
+		payload: RestorationJournalPayload
+	): Promise< void > {
+		const temporaryPath = `${ path }.tmp-${ payload.journalId }`;
+		const handle = await open( temporaryPath, 'wx', 0o600 );
+		try {
+			await handle.writeFile( `${ JSON.stringify( payload ) }\n` );
+			await handle.sync();
+		} finally {
+			await handle.close();
+		}
+		await rename( temporaryPath, path );
+		await this.syncLockDirectory();
+	}
+
+	private async syncLockDirectory(): Promise< void > {
+		const directory = await open( this.lockDir, 'r' );
+		try {
+			await directory.sync();
+		} finally {
+			await directory.close();
+		}
+	}
+
+	private async readRestorationJournal(
+		path: string
+	): Promise< RestorationJournalPayload | undefined > {
+		try {
+			const data = JSON.parse(
+				await readFile( path, 'utf8' )
+			) as RestorationJournalPayload;
+			if (
+				data.version !== 1 ||
+				typeof data.journalId !== 'string' ||
+				typeof data.accountHash !== 'string' ||
+				typeof data.storeHash !== 'string' ||
+				typeof data.settingHash !== 'string' ||
+				typeof data.runId !== 'string' ||
+				typeof data.originalValue !== 'boolean' ||
+				typeof data.createdAt !== 'number'
+			) {
+				throw new Error(
+					`Invalid restoration journal payload: ${ path }`
+				);
+			}
+			return data;
+		} catch ( error ) {
+			if (
+				error instanceof Error &&
+				'code' in error &&
+				error.code === 'ENOENT'
+			) {
+				return undefined;
+			}
+			throw error;
+		}
+	}
+
+	private assertJournalIdentity(
+		journal: RestorationJournalPayload,
+		request: ResourceLockRequest,
+		path: string
+	): void {
+		if (
+			journal.accountHash !==
+				this.redactIdentity( request.providerAccountId ) ||
+			journal.storeHash !== this.redactIdentity( request.storeId ) ||
+			journal.settingHash !== this.redactIdentity( request.resource )
+		) {
+			throw new Error(
+				`Restoration journal identity mismatch: ${ path }`
+			);
+		}
 	}
 
 	private async tryCreate(
@@ -601,37 +846,382 @@ export class ResourceLockManager {
 	): Promise< Result > {
 		const guardPath = `${ lockPath }.mutation`;
 		const deadline = this.now() + this.maxWaitMs;
-		let guard;
+		const guardOwner: MutationGuardPayload = {
+			ownerId: randomUUID(),
+			pid: process.pid,
+			acquiredAt: this.now(),
+			expiresAt: this.now() + this.mutationGuardLeaseMs,
+		};
 
 		for (;;) {
-			try {
-				guard = await open( guardPath, 'wx', 0o600 );
+			if ( await this.tryCreateMutationGuard( guardPath, guardOwner ) ) {
 				break;
-			} catch ( error ) {
-				if (
-					! (
-						error instanceof Error &&
-						'code' in error &&
-						error.code === 'EEXIST'
-					)
-				) {
-					throw error;
-				}
-				if ( this.now() >= deadline ) {
-					throw new Error(
-						`Timed out waiting for the mutation guard for ${ lockPath }.`,
-						{ cause: error }
-					);
-				}
-				await this.sleep( RETRY_INTERVAL_MS );
 			}
+			if (
+				await this.tryRecoverExpiredMutationGuard(
+					guardPath,
+					guardOwner
+				)
+			) {
+				break;
+			}
+			if ( this.now() >= deadline ) {
+				throw new Error(
+					`Timed out waiting for the mutation guard for ${ lockPath }.`
+				);
+			}
+			await this.sleep(
+				Math.min( RETRY_INTERVAL_MS, deadline - this.now() )
+			);
+		}
+
+		let renewalError: Error | undefined;
+		let renewalInFlight = Promise.resolve();
+		const renewalTimer = setInterval( () => {
+			renewalInFlight = renewalInFlight.then( async () => {
+				try {
+					await this.renewMutationGuard( guardPath, guardOwner );
+				} catch ( error ) {
+					renewalError =
+						error instanceof Error
+							? error
+							: new Error( String( error ) );
+				}
+			} );
+		}, Math.max( 10, Math.floor( this.mutationGuardLeaseMs / 3 ) ) );
+		renewalTimer.unref();
+
+		let primaryError: unknown;
+		let result: Result | undefined;
+		try {
+			result = await operation();
+		} catch ( error ) {
+			primaryError = error;
+		} finally {
+			clearInterval( renewalTimer );
+		}
+		await renewalInFlight;
+
+		let releaseError: unknown;
+		try {
+			await this.releaseMutationGuard( guardPath, guardOwner );
+		} catch ( error ) {
+			releaseError = error;
+		}
+
+		if ( primaryError !== undefined ) {
+			throw primaryError;
+		}
+		if ( renewalError ) {
+			throw renewalError;
+		}
+		if ( releaseError !== undefined ) {
+			throw releaseError;
+		}
+		return result as Result;
+	}
+
+	private async tryCreateMutationGuard(
+		guardPath: string,
+		owner: MutationGuardPayload
+	): Promise< boolean > {
+		try {
+			const handle = await open( guardPath, 'wx', 0o600 );
+			try {
+				await handle.writeFile( `${ JSON.stringify( owner ) }\n` );
+				await handle.sync();
+			} finally {
+				await handle.close();
+			}
+			return true;
+		} catch ( error ) {
+			if (
+				error instanceof Error &&
+				'code' in error &&
+				error.code === 'EEXIST'
+			) {
+				return false;
+			}
+			throw error;
+		}
+	}
+
+	private async tryRecoverExpiredMutationGuard(
+		guardPath: string,
+		replacement: MutationGuardPayload
+	): Promise< boolean > {
+		const current = await this.readMutationGuard( guardPath );
+		if ( ! current ) {
+			return false;
+		}
+		const released = await this.isMutationGuardReleased(
+			guardPath,
+			current
+		);
+		if (
+			! released &&
+			( current.expiresAt + this.mutationGuardLeaseMs > this.now() ||
+				this.isProcessAlive( current.pid ) )
+		) {
+			return false;
+		}
+
+		const stalePath = `${ guardPath }.stale-${ replacement.ownerId }`;
+		try {
+			await rename( guardPath, stalePath );
+		} catch ( error ) {
+			if (
+				error instanceof Error &&
+				'code' in error &&
+				error.code === 'ENOENT'
+			) {
+				return false;
+			}
+			throw error;
+		}
+
+		const displaced = await this.readMutationGuard( stalePath );
+		const displacedReleased = displaced
+			? await this.isMutationGuardReleased( guardPath, displaced )
+			: false;
+		if (
+			! displaced ||
+			! exactGuardOwner( displaced, current ) ||
+			( ! displacedReleased &&
+				( displaced.expiresAt + this.mutationGuardLeaseMs >
+					this.now() ||
+					this.isProcessAlive( displaced.pid ) ) )
+		) {
+			try {
+				await rename( stalePath, guardPath );
+			} catch {
+				// A live contender already installed an owned guard.
+			}
+			return false;
+		}
+
+		const created = await this.tryCreateMutationGuard(
+			guardPath,
+			replacement
+		);
+		await unlink( stalePath );
+		if ( displacedReleased ) {
+			await this.removeMutationGuardReleaseMarker( guardPath, displaced );
+		}
+		return created;
+	}
+
+	private async renewMutationGuard(
+		guardPath: string,
+		owner: MutationGuardPayload
+	): Promise< void > {
+		const { handle, current } = await this.openOwnedMutationGuard(
+			guardPath,
+			owner,
+			'renew'
+		);
+		try {
+			const renewed = {
+				...current,
+				expiresAt: this.now() + this.mutationGuardLeaseMs,
+			};
+			const serialized = `${ JSON.stringify( renewed ) }\n`;
+			await handle.write( serialized, 0, 'utf8' );
+			await handle.truncate( Buffer.byteLength( serialized ) );
+			await handle.sync();
+			owner.expiresAt = renewed.expiresAt;
+		} finally {
+			await handle.close();
+		}
+	}
+
+	private async releaseMutationGuard(
+		guardPath: string,
+		owner: MutationGuardPayload
+	): Promise< void > {
+		const { handle } = await this.openOwnedMutationGuard(
+			guardPath,
+			owner,
+			'release'
+		);
+		await handle.close();
+
+		const markerPath = this.getMutationGuardReleaseMarkerPath(
+			guardPath,
+			owner
+		);
+		try {
+			const marker = await open( markerPath, 'wx', 0o600 );
+			try {
+				await marker.writeFile( `${ owner.ownerId }\n` );
+				await marker.sync();
+			} finally {
+				await marker.close();
+			}
+		} catch ( error ) {
+			if (
+				! (
+					error instanceof Error &&
+					'code' in error &&
+					error.code === 'EEXIST'
+				)
+			) {
+				throw error;
+			}
+		}
+	}
+
+	private async openOwnedMutationGuard(
+		guardPath: string,
+		owner: MutationGuardPayload,
+		action: 'renew' | 'release'
+	): Promise< {
+		handle: FileHandle;
+		current: MutationGuardPayload;
+	} > {
+		const expected = await this.readMutationGuard( guardPath );
+		if ( ! expected || ! exactGuardOwner( expected, owner ) ) {
+			throw new Error(
+				`Cannot ${ action } mutation guard ${ guardPath }: ownership was lost.`
+			);
+		}
+
+		let handle: FileHandle;
+		try {
+			handle = await open( guardPath, 'r+' );
+		} catch ( error ) {
+			if (
+				error instanceof Error &&
+				'code' in error &&
+				error.code === 'ENOENT'
+			) {
+				throw new Error(
+					`Cannot ${ action } mutation guard ${ guardPath }: ownership was lost.`,
+					{ cause: error }
+				);
+			}
+			throw error;
 		}
 
 		try {
-			return await operation();
-		} finally {
-			await guard.close();
-			await unlink( guardPath );
+			const current = this.parseMutationGuard(
+				await handle.readFile( 'utf8' ),
+				guardPath
+			);
+			if ( ! exactGuardOwner( current, owner ) ) {
+				throw new Error(
+					`Cannot ${ action } mutation guard ${ guardPath }: ownership was lost.`
+				);
+			}
+			return { handle, current };
+		} catch ( error ) {
+			await handle.close();
+			throw error;
+		}
+	}
+
+	private async readMutationGuard(
+		guardPath: string
+	): Promise< MutationGuardPayload | undefined > {
+		try {
+			return this.parseMutationGuard(
+				await readFile( guardPath, 'utf8' ),
+				guardPath
+			);
+		} catch ( error ) {
+			if (
+				error instanceof Error &&
+				'code' in error &&
+				error.code === 'ENOENT'
+			) {
+				return undefined;
+			}
+			throw error;
+		}
+	}
+
+	private parseMutationGuard(
+		serialized: string,
+		guardPath: string
+	): MutationGuardPayload {
+		const data = JSON.parse( serialized ) as MutationGuardPayload;
+		if (
+			typeof data.ownerId !== 'string' ||
+			typeof data.pid !== 'number' ||
+			typeof data.acquiredAt !== 'number' ||
+			typeof data.expiresAt !== 'number'
+		) {
+			throw new Error( `Invalid mutation guard payload: ${ guardPath }` );
+		}
+		return data;
+	}
+
+	private getMutationGuardReleaseMarkerPath(
+		guardPath: string,
+		owner: MutationGuardPayload
+	): string {
+		return `${ guardPath }.released-${ owner.ownerId }`;
+	}
+
+	private async isMutationGuardReleased(
+		guardPath: string,
+		owner: MutationGuardPayload
+	): Promise< boolean > {
+		try {
+			return (
+				(
+					await readFile(
+						this.getMutationGuardReleaseMarkerPath(
+							guardPath,
+							owner
+						),
+						'utf8'
+					)
+				 ).trim() === owner.ownerId
+			);
+		} catch ( error ) {
+			if (
+				error instanceof Error &&
+				'code' in error &&
+				error.code === 'ENOENT'
+			) {
+				return false;
+			}
+			throw error;
+		}
+	}
+
+	private async removeMutationGuardReleaseMarker(
+		guardPath: string,
+		owner: MutationGuardPayload
+	): Promise< void > {
+		try {
+			await unlink(
+				this.getMutationGuardReleaseMarkerPath( guardPath, owner )
+			);
+		} catch ( error ) {
+			if (
+				! (
+					error instanceof Error &&
+					'code' in error &&
+					error.code === 'ENOENT'
+				)
+			) {
+				throw error;
+			}
+		}
+	}
+
+	private isProcessAlive( pid: number ): boolean {
+		try {
+			process.kill( pid, 0 );
+			return true;
+		} catch ( error ) {
+			return ! (
+				error instanceof Error &&
+				'code' in error &&
+				error.code === 'ESRCH'
+			);
 		}
 	}
 }

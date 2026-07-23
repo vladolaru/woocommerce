@@ -255,14 +255,21 @@ export class WooPaymentsPilotRuntime {
 		await this.assertCanWrite();
 		this.requireApprovedProviderFixture( 'saved-card-default' );
 		await page.goto( 'my-account/payment-methods/' );
-		await this.performWrite( () =>
-			page
-				.getByRole( 'row', {
-					name: new RegExp( tokenId.toString() ),
-				} )
-				.getByRole( 'button', { name: /make default/i } )
-				.click()
+		const action = page.locator(
+			`a.button.default[href*="/set-default-payment-method/${ tokenId }/"]`
 		);
+		const href = await action.getAttribute( 'href' );
+		if (
+			! href ||
+			! new URL( href, this.baseURL ).pathname.endsWith(
+				`/set-default-payment-method/${ tokenId }/`
+			)
+		) {
+			throw new Error(
+				`Saved-card default action is not bound to local token ${ tokenId }.`
+			);
+		}
+		await this.performWrite( () => action.click() );
 	}
 
 	public async softCutOverEphemeralStore( page: Page ): Promise< void > {
@@ -313,10 +320,25 @@ export class WooPaymentsPilotRuntime {
 					checkout === 'classic' ? /classic checkout/i : /checkout/i,
 			} )
 			.click();
-		await page.getByLabel( new RegExp( card.paymentMethodId ) ).check();
+		const token = page.locator(
+			checkout === 'classic'
+				? `input.woocommerce-SavedPaymentMethods-tokenInput[name="wc-woocommerce_payments-payment-token"][value="${ card.tokenId }"]`
+				: `input.wc-block-components-radio-control__input[name="radio-control-wc-payment-method-saved-tokens"][value="${ card.tokenId }"]`
+		);
+		const localTokenId = await token.getAttribute( 'value' );
+		if ( localTokenId !== card.tokenId.toString() ) {
+			throw new Error(
+				`Saved-card checkout selection is not bound to local token ${ card.tokenId }.`
+			);
+		}
+		await token.check();
 		await this.performWrite( () =>
 			page.getByRole( 'button', { name: /place order/i } ).click()
 		);
+		await page.waitForURL( /\/order-received\/[1-9]\d*\/?(?:\?.*)?$/ );
+		await expect(
+			page.getByText( 'Your order has been received' )
+		).toBeVisible();
 		const orderId = this.getOrderIdFromUrl( page.url() );
 		await this.setOrderRunId( orderId, runId );
 		return orderId;
@@ -447,7 +469,13 @@ export class WooPaymentsPilotRuntime {
 					);
 				}
 
+				await settingLock.restoreFromJournalIfOwned(
+					async ( originalValue ) => {
+						await this.setManualCaptureSetting( originalValue );
+					}
+				);
 				const original = await this.getManualCaptureSetting();
+				await settingLock.writeRestorationJournal( original );
 				let mutationMayHaveApplied = false;
 				let primaryError: unknown;
 				const teardownErrors: Error[] = [];
@@ -462,15 +490,18 @@ export class WooPaymentsPilotRuntime {
 
 				if ( mutationMayHaveApplied ) {
 					try {
-						const restored = await settingLock.restoreIfOwned(
-							async () => {
-								await this.setManualCaptureSetting( original );
-							}
-						);
+						const restored =
+							await settingLock.restoreFromJournalIfOwned(
+								async ( originalValue ) => {
+									await this.setManualCaptureSetting(
+										originalValue
+									);
+								}
+							);
 						if ( ! restored ) {
 							teardownErrors.push(
 								new Error(
-									'Manual capture setting was not restored because lock ownership was lost.'
+									'Manual capture setting was not restored because the restoration journal or lock ownership was lost.'
 								)
 							);
 						}
@@ -518,8 +549,15 @@ export class WooPaymentsPilotRuntime {
 				name: new RegExp( evidence.orderId.toString() ),
 			} )
 			.click();
+		await page.locator( 'select[name="wc_order_action"]' ).selectOption( {
+			label: 'Capture charge',
+			value: 'capture_charge',
+		} );
 		await this.performWrite( () =>
-			page.getByRole( 'button', { name: /capture/i } ).click()
+			page
+				.locator( '#actions' )
+				.getByRole( 'button', { name: 'Apply', exact: true } )
+				.click()
 		);
 	}
 
@@ -567,6 +605,44 @@ export class WooPaymentsPilotRuntime {
 			} )
 			.first()
 			.click();
+	}
+
+	public async expectExactMerchantTransaction(
+		page: Page,
+		evidence: PaymentEvidence
+	): Promise< void > {
+		await expect(
+			page.getByRole( 'heading', {
+				name: /^(Payment details|Transaction details)$/,
+			} )
+		).toBeVisible();
+		await expect(
+			page.getByRole( 'link', {
+				name: `Order #${ evidence.orderId }`,
+				exact: true,
+			} )
+		).toBeVisible();
+		await expect(
+			page.getByText( evidence.intentId, { exact: true } )
+		).toBeVisible();
+		await expect(
+			page.getByText( evidence.chargeId, { exact: true } )
+		).toBeVisible();
+		await expect(
+			page.getByText( evidence.currency, { exact: true } )
+		).toBeVisible();
+		await expect(
+			page.getByText(
+				evidence.providerStatus === 'requires_capture'
+					? 'Authorized'
+					: evidence.providerStatus
+							.replace( /_/g, ' ' )
+							.replace( /\b\w/g, ( value ) =>
+								value.toUpperCase()
+							),
+				{ exact: true }
+			)
+		).toBeVisible();
 	}
 
 	public async cleanup(): Promise< void > {
