@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { join } from 'node:path';
 
 import {
 	expect,
@@ -11,6 +12,7 @@ import { test as baseTest } from './fixtures';
 import { admin } from '../test-data/data';
 import {
 	assertRuntimeReady,
+	readRuntimeStatusArtifact,
 	type RuntimeStatus,
 	type WooPaymentsRuntime,
 } from '../utils/woopayments-native/runtime-readiness';
@@ -90,6 +92,35 @@ function requireAllocations(): StoreAccountAllocation[] {
 		);
 	}
 	return allocations;
+}
+
+export async function loadInitialRuntimeStatus(
+	runtime: WooPaymentsRuntime,
+	adminApi: APIRequestContext,
+	diagnosticsDir?: string
+): Promise< RuntimeStatus > {
+	if ( runtime === 'client' ) {
+		if ( ! diagnosticsDir ) {
+			throw new Error(
+				'E2E_WOOPAYMENTS_DIAGNOSTICS_DIR is required for client runtime readiness.'
+			);
+		}
+
+		return readRuntimeStatusArtifact(
+			join( diagnosticsDir, 'client', 'runtime-status.json' )
+		);
+	}
+
+	const response = await adminApi.get(
+		'/wp-json/wc-native-payments-e2e/v1/status'
+	);
+	if ( ! response.ok() ) {
+		throw new Error(
+			`Runtime readiness route failed: HTTP ${ response.status() }.`
+		);
+	}
+
+	return ( await response.json() ) as RuntimeStatus;
 }
 
 export class WooPaymentsPilotRuntime {
@@ -872,19 +903,15 @@ export const test = baseTest.extend< WooPaymentsNativeFixtures >( {
 		async ( { adminApi, baseURL }, use ) => {
 			const runtime = getRuntime();
 			const expected = {
-				siteUrl: requireValue( 'BASE_URL', baseURL ),
+				siteUrl: requireValue( 'E2E_WOOPAYMENTS_SITE_URL', baseURL ),
 				wpcomBlogId: requireNumber( 'E2E_WOOPAYMENTS_WPCOM_BLOG_ID' ),
 				accountId: requireValue( 'E2E_WOOPAYMENTS_ACCOUNT_ID' ),
 			};
-			const response = await adminApi.get(
-				'/wp-json/wc-native-payments-e2e/v1/status'
+			const status = await loadInitialRuntimeStatus(
+				runtime,
+				adminApi,
+				process.env.E2E_WOOPAYMENTS_DIAGNOSTICS_DIR
 			);
-			if ( ! response.ok() ) {
-				throw new Error(
-					`Runtime readiness route failed: HTTP ${ response.status() }.`
-				);
-			}
-			const status = ( await response.json() ) as RuntimeStatus;
 			assertRuntimeReady( runtime, status, expected );
 
 			const allocation = {

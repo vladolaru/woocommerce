@@ -1,4 +1,12 @@
-import { mkdtemp, readFile, readdir, rm, unlink } from 'node:fs/promises';
+import {
+	mkdir,
+	mkdtemp,
+	readFile,
+	readdir,
+	rm,
+	unlink,
+	writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -11,7 +19,10 @@ import {
 	type Page,
 } from '@playwright/test';
 
-import { WooPaymentsPilotRuntime } from '../../fixtures/woopayments-native';
+import {
+	loadInitialRuntimeStatus,
+	WooPaymentsPilotRuntime,
+} from '../../fixtures/woopayments-native';
 import type { PaymentEvidence } from './record-evidence';
 
 interface RequestCall {
@@ -27,6 +38,52 @@ function response( body: unknown, status = 200 ): APIResponse {
 		json: async () => body,
 	} as APIResponse;
 }
+
+test( 'loads client readiness from plugin-owned diagnostics without calling the native route', async () => {
+	const directory = await mkdtemp(
+		join( tmpdir(), 'woopayments-client-readiness-' )
+	);
+	const clientDirectory = join( directory, 'client' );
+	const status = {
+		site_url: 'http://localhost',
+		wpcom_blog_id: 2,
+		runtime_owner: 'plugin',
+		native_enabled: false,
+		account_id: 'acct_client',
+		account_connected: true,
+		gateway_enabled: true,
+		test_mode: true,
+		enabled_payment_methods: [ 'card' ],
+		last_webhook_fetch: 0,
+		callback_probe: {
+			registered: false,
+			reachable: false,
+			wpcom_blog_id: 0,
+		},
+	} as const;
+	let nativeRouteCalls = 0;
+	const api = {
+		get: async () => {
+			nativeRouteCalls++;
+			throw new Error( 'The client adapter called the native route.' );
+		},
+	} as unknown as APIRequestContext;
+
+	try {
+		await mkdir( clientDirectory );
+		await writeFile(
+			join( clientDirectory, 'runtime-status.json' ),
+			JSON.stringify( status )
+		);
+
+		await expect(
+			loadInitialRuntimeStatus( 'client', api, directory )
+		).resolves.toEqual( status );
+		expect( nativeRouteCalls ).toBe( 0 );
+	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
 
 async function removeOwnedLock(
 	lockDir: string,

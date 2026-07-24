@@ -9,8 +9,18 @@ if [[ "$*" == *"wc-native-payments status"* ]]; then
 	exit 0
 fi
 
+if [[ "$*" == *"/wc-native-payments-e2e/v1/status"* ]]; then
+	printf 'wp-env starting\n{"site_url":"http://native.test","wpcom_blog_id":2,"runtime_owner":"native","native_enabled":true,"account_id":"acct_native","account_connected":true,"gateway_enabled":true,"test_mode":true,"enabled_payment_methods":["card"],"last_webhook_fetch":0,"callback_probe":{"registered":false,"reachable":false,"wpcom_blog_id":0}}wp-env done\n'
+	exit 0
+fi
+
+if [[ "$*" == *'"runtime_owner"'* ]]; then
+	printf 'pnpm wrapper\n{"site_url":"http://client.test","wpcom_blog_id":1,"runtime_owner":"plugin","native_enabled":false,"account_id":"acct_client","account_connected":true,"gateway_enabled":true,"test_mode":true,"enabled_payment_methods":["card"],"last_webhook_fetch":0,"callback_probe":{"registered":false,"reachable":false,"wpcom_blog_id":0}}\npnpm done\n'
+	exit 0
+fi
+
 if [[ "$*" == *"/wc/v3/payments/accounts"* ]]; then
-	printf '{"account_id":"acct_fixture","test_mode":true}\n'
+	printf 'runner starting\n{"account_id":"acct_fixture","test_mode":true}runner done\n'
 	exit 0
 fi
 

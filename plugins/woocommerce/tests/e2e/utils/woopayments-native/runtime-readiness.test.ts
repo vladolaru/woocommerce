@@ -1,6 +1,14 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { expect, test } from '@playwright/test';
 
-import { assertRuntimeReady, type RuntimeStatus } from './runtime-readiness';
+import {
+	assertRuntimeReady,
+	readRuntimeStatusArtifact,
+	type RuntimeStatus,
+} from './runtime-readiness';
 
 const expected = {
 	siteUrl: 'http://store8889.localhost:8889',
@@ -123,4 +131,49 @@ test( 'requires callback proof for the same WPCOM blog', () => {
 			expected
 		)
 	).toThrow( /callback.*WPCOM blog ID/i );
+} );
+
+test( 'reads a validated runtime status artifact', async () => {
+	const directory = await mkdtemp(
+		join( tmpdir(), 'woopayments-runtime-status-' )
+	);
+	const artifact = join( directory, 'runtime-status.json' );
+
+	try {
+		await writeFile(
+			artifact,
+			JSON.stringify(
+				readyStatus( {
+					runtime_owner: 'plugin',
+					native_enabled: false,
+				} )
+			)
+		);
+
+		await expect( readRuntimeStatusArtifact( artifact ) ).resolves.toEqual(
+			readyStatus( {
+				runtime_owner: 'plugin',
+				native_enabled: false,
+			} )
+		);
+	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'rejects a malformed runtime status artifact', async () => {
+	const directory = await mkdtemp(
+		join( tmpdir(), 'woopayments-runtime-status-' )
+	);
+	const artifact = join( directory, 'runtime-status.json' );
+
+	try {
+		await writeFile( artifact, '{"runtime_owner":"plugin"}' );
+
+		await expect( readRuntimeStatusArtifact( artifact ) ).rejects.toThrow(
+			/invalid runtime status artifact/i
+		);
+	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
 } );

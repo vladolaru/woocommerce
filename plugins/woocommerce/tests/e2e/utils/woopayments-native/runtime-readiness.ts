@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+
 export type WooPaymentsRuntime = 'client' | 'native' | 'transition';
 
 export interface RuntimeStatus {
@@ -16,6 +18,61 @@ export interface RuntimeStatus {
 		reachable: boolean;
 		wpcom_blog_id: number;
 	};
+}
+
+function isRuntimeStatus( value: unknown ): value is RuntimeStatus {
+	if ( ! value || typeof value !== 'object' ) {
+		return false;
+	}
+
+	const status = value as Partial< RuntimeStatus >;
+	const callback = status.callback_probe;
+
+	return (
+		typeof status.site_url === 'string' &&
+		typeof status.wpcom_blog_id === 'number' &&
+		[ 'plugin', 'native', 'none' ].includes(
+			status.runtime_owner as string
+		) &&
+		typeof status.native_enabled === 'boolean' &&
+		typeof status.account_id === 'string' &&
+		typeof status.account_connected === 'boolean' &&
+		typeof status.gateway_enabled === 'boolean' &&
+		typeof status.test_mode === 'boolean' &&
+		Array.isArray( status.enabled_payment_methods ) &&
+		status.enabled_payment_methods.every(
+			( method ) => typeof method === 'string'
+		) &&
+		typeof status.last_webhook_fetch === 'number' &&
+		!! callback &&
+		typeof callback === 'object' &&
+		typeof callback.registered === 'boolean' &&
+		typeof callback.reachable === 'boolean' &&
+		typeof callback.wpcom_blog_id === 'number'
+	);
+}
+
+export async function readRuntimeStatusArtifact(
+	artifactPath: string
+): Promise< RuntimeStatus > {
+	let status: unknown;
+
+	try {
+		status = JSON.parse( await readFile( artifactPath, 'utf8' ) );
+	} catch ( error ) {
+		throw new Error(
+			`Invalid runtime status artifact at ${ artifactPath }.`,
+			{ cause: error }
+		);
+	}
+
+	if ( ! isRuntimeStatus( status ) ) {
+		throw new Error(
+			`Invalid runtime status artifact at ${ artifactPath }.`
+		);
+	}
+
+	return status;
 }
 
 export function assertRuntimeReady(
