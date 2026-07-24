@@ -120,9 +120,13 @@ class NativePaymentsE2EBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Load the same file that wp-env maps into the mu-plugins directory.
+	 * Load the same file that wp-env maps into the mu-plugins directory when needed.
 	 */
 	private function load_bootstrap(): void {
+		if ( class_exists( 'WooCommerce_WooPayments_Native_E2E_Runtime', false ) ) {
+			return;
+		}
+
 		require_once dirname( __DIR__, 4 ) . '/e2e/test-plugins/woopayments-native-runtime/woopayments-native-runtime.php';
 	}
 }
