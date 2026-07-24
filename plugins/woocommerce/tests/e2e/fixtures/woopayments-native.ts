@@ -3,8 +3,9 @@ import { join } from 'node:path';
 
 import {
 	expect,
-	request as playwrightRequest,
 	type APIRequestContext,
+	type BrowserContext,
+	type Locator,
 	type Page,
 } from '@playwright/test';
 
@@ -23,6 +24,7 @@ import {
 	type StoreAccountAllocation,
 } from '../utils/woopayments-native/resource-locks';
 import type { PaymentEvidence } from '../utils/woopayments-native/record-evidence';
+import { assertApprovedProviderFixture } from '../utils/woopayments-native/provider-fixture';
 import { assertTransitionAllocation } from '../utils/woopayments-native/transition-allocation';
 
 interface OwnedProduct {
@@ -94,20 +96,140 @@ function requireAllocations(): StoreAccountAllocation[] {
 	return allocations;
 }
 
+export async function authenticateAdminContext(
+	context: BrowserContext,
+	credentials: { username: string; password: string }
+): Promise< void > {
+	const page = await context.newPage();
+	try {
+		await page.goto( 'wp-login.php' );
+		await page
+			.getByLabel( 'Username or Email Address' )
+			.fill( credentials.username );
+		await page
+			.getByRole( 'textbox', { name: 'Password' } )
+			.fill( credentials.password );
+		await page.getByRole( 'button', { name: 'Log In' } ).click();
+		await page.waitForURL( '**/wp-admin/**' );
+		const nonce = await page.evaluate( () => {
+			const settings = (
+				window as Window & {
+					wpApiSettings?: { nonce?: unknown };
+				}
+			 ).wpApiSettings;
+			return typeof settings?.nonce === 'string' ? settings.nonce : '';
+		} );
+		if ( ! nonce ) {
+			throw new Error(
+				'Authenticated WordPress admin session did not expose a REST nonce.'
+			);
+		}
+		await context.setExtraHTTPHeaders( {
+			'X-WP-Nonce': nonce,
+		} );
+	} finally {
+		await page.close();
+	}
+}
+
+export function getBlocksCardFrameSelector(
+	runtime: WooPaymentsRuntime
+): string {
+	return runtime === 'client'
+		? '#payment-method .wcpay-payment-element iframe[name^="__privateStripeFrame"]'
+		: '#wcpay-core-blocks-payment-element iframe[name^="__privateStripeFrame"]';
+}
+
+export async function submitBlocksCheckout(
+	page: Page,
+	click: ( button: Locator ) => Promise< void >
+): Promise< void > {
+	const checkoutUrl = page.url();
+	const button = page.getByRole( 'button', { name: /place order/i } );
+
+	for ( let attempt = 1; attempt <= 3; attempt++ ) {
+		const checkoutRequestStarted = page
+			.waitForRequest(
+				( request ) => {
+					if ( request.method() !== 'POST' ) {
+						return false;
+					}
+					try {
+						return (
+							new URL( request.url() ).pathname.replace(
+								/\/+$/,
+								''
+							) === '/wp-json/wc/store/v1/checkout'
+						);
+					} catch {
+						return false;
+					}
+				},
+				{ timeout: 2_000 }
+			)
+			.then(
+				() => true,
+				() => false
+			);
+		await click( button );
+		const submissionStarted = await page
+			.waitForFunction(
+				() => {
+					type Selector = ( ...args: unknown[] ) => unknown;
+					type Store = Record< string, Selector >;
+					const wpData = (
+						window as Window & {
+							wp?: {
+								data?: {
+									select?: ( key: string ) => Store;
+								};
+							};
+						}
+					 ).wp?.data;
+					const checkout = wpData?.select?.( 'wc/store/checkout' );
+					const payment = wpData?.select?.( 'wc/store/payment' );
+					return (
+						checkout?.getCheckoutStatus?.() !== 'idle' ||
+						checkout?.hasError?.() === true ||
+						payment?.isPaymentIdle?.() === false ||
+						payment?.hasPaymentError?.() === true
+					);
+				},
+				undefined,
+				{ timeout: 2_000 }
+			)
+			.then(
+				() => true,
+				() => false
+			);
+		if (
+			( await checkoutRequestStarted ) ||
+			submissionStarted ||
+			page.url() !== checkoutUrl
+		) {
+			return;
+		}
+	}
+
+	throw new Error(
+		'WooPayments Blocks checkout did not start after 3 attempts while Core remained idle.'
+	);
+}
+
 export async function loadInitialRuntimeStatus(
 	runtime: WooPaymentsRuntime,
 	adminApi: APIRequestContext,
 	diagnosticsDir?: string
 ): Promise< RuntimeStatus > {
-	if ( runtime === 'client' ) {
+	if ( runtime !== 'transition' ) {
 		if ( ! diagnosticsDir ) {
 			throw new Error(
-				'E2E_WOOPAYMENTS_DIAGNOSTICS_DIR is required for client runtime readiness.'
+				'E2E_WOOPAYMENTS_DIAGNOSTICS_DIR is required for standing-store runtime readiness.'
 			);
 		}
 
 		return readRuntimeStatusArtifact(
-			join( diagnosticsDir, 'client', 'runtime-status.json' )
+			join( diagnosticsDir, runtime, 'runtime-status.json' )
 		);
 	}
 
@@ -156,8 +278,18 @@ export class WooPaymentsPilotRuntime {
 	}
 
 	public requireApprovedProviderFixture( capability: string ): void {
-		throw new Error(
-			`WooPayments ${ capability } pilot is fail-closed: no owner-approved provider fixture interface is available.`
+		assertApprovedProviderFixture(
+			process.env.E2E_WOOPAYMENTS_PROVIDER_FIXTURE,
+			{
+				runtime: this.runtime,
+				storeId: this.storeId,
+				siteUrl: this.baseURL,
+				wpcomBlogId: this.wpcomBlogId,
+				accountId: this.accountId,
+				accountAlias: requireValue( 'E2E_WOOPAYMENTS_ACCOUNT_ALIAS' ),
+				isCI: !! process.env.CI,
+			},
+			capability
 		);
 	}
 
@@ -191,6 +323,7 @@ export class WooPaymentsPilotRuntime {
 				data: {
 					name,
 					type: 'simple',
+					virtual: true,
 					regular_price: amount,
 					meta_data: [
 						{
@@ -226,39 +359,47 @@ export class WooPaymentsPilotRuntime {
 
 		await page.goto( `?post_type=product&p=${ product.id }` );
 		await this.performWrite( () =>
-			page.getByRole( 'button', { name: /add to cart/i } ).click()
+			page
+				.getByRole( 'button', {
+					name: 'Add to cart',
+					exact: true,
+				} )
+				.click()
 		);
-		await page.getByRole( 'link', { name: /checkout/i } ).click();
-		await page
-			.getByRole( 'textbox', { name: /first name/i } )
-			.fill( 'E2E' );
-		await page
-			.getByRole( 'textbox', { name: /last name/i } )
-			.fill( 'WooPayments' );
-		await page
-			.getByRole( 'textbox', { name: /street address/i } )
-			.fill( '123 Test Street' );
-		await page
-			.getByRole( 'textbox', { name: /town|city/i } )
-			.fill( 'San Francisco' );
-		await page
-			.getByRole( 'textbox', { name: /zip|postcode/i } )
-			.fill( '94107' );
-		await page
-			.getByRole( 'textbox', { name: /phone/i } )
-			.fill( '5555550100' );
-		await page
-			.getByRole( 'textbox', { name: /email/i } )
-			.fill( `woopayments-${ runId }@example.com` );
-		await page.getByLabel( /WooPayments|credit card/i ).check();
+		await page.goto( 'checkout/' );
+		const isBlockCheckout = await this.fillCheckoutDetails( page, runId );
 
 		this.requireApprovedProviderFixture( 'basic-card-entry' );
-		await this.performWrite( () =>
-			page.getByRole( 'button', { name: /place order/i } ).click()
-		);
-		await expect(
-			page.getByText( 'Your order has been received' )
-		).toBeVisible();
+		await this.fillBasicTestCard( page, isBlockCheckout );
+		if ( isBlockCheckout ) {
+			await submitBlocksCheckout( page, ( button ) =>
+				this.performWrite( () => button.click() )
+			);
+		} else {
+			await this.performWrite( () =>
+				page.getByRole( 'button', { name: /place order/i } ).click()
+			);
+		}
+		try {
+			await page.waitForURL( /\/order-received\/[1-9]\d*\/?(?:\?.*)?$/, {
+				timeout: 60_000,
+			} );
+			await expect(
+				page.getByText(
+					/^(Your order has been received|Order received)$/i
+				)
+			).toBeVisible();
+		} catch ( error ) {
+			const diagnostics = isBlockCheckout
+				? await this.getBlocksCheckoutDiagnostics( page )
+				: undefined;
+			throw new Error(
+				`WooPayments checkout did not reach order confirmation${
+					diagnostics ? `: ${ JSON.stringify( diagnostics ) }` : '.'
+				}`,
+				{ cause: error }
+			);
+		}
 
 		const orderId = this.getOrderIdFromUrl( page.url() );
 		await this.setOrderRunId( orderId, runId );
@@ -587,7 +728,7 @@ export class WooPaymentsPilotRuntime {
 		await this.performWrite( () =>
 			page
 				.locator( '#actions' )
-				.getByRole( 'button', { name: 'Apply', exact: true } )
+				.getByRole( 'button', { name: /^Apply\b/ } )
 				.click()
 		);
 	}
@@ -596,15 +737,22 @@ export class WooPaymentsPilotRuntime {
 		page: Page,
 		evidence: PaymentEvidence
 	): Promise< void > {
-		await expect(
-			page.getByText( new RegExp( evidence.chargeId ) )
-		).toBeVisible();
+		const providerReference =
+			this.runtime === 'native'
+				? page
+						.getByRole( 'link', {
+							name: evidence.intentId,
+							exact: true,
+						} )
+						.first()
+				: page.getByText( new RegExp( evidence.chargeId ) ).first();
+		await expect( providerReference ).toBeVisible();
 		await expect(
 			page.getByText( /successfully captured.*WooPayments/i )
 		).toBeVisible();
-		await expect(
-			page.getByText( /order status.*processing/i )
-		).toBeVisible();
+		await expect( page.locator( '#order_status' ) ).toHaveValue(
+			'wc-processing'
+		);
 	}
 
 	public async openExactMerchantTransaction(
@@ -615,18 +763,43 @@ export class WooPaymentsPilotRuntime {
 		await this.logInAsAdmin( page );
 		await page.goto( 'wp-admin/' );
 
-		const paymentsLink =
-			this.runtime === 'client'
-				? page.getByRole( 'link', {
-						name: /Payments/i,
-				  } )
-				: page.getByRole( 'link', {
-						name: /WooPayments/i,
-				  } );
-		await paymentsLink.first().click();
-		await page.getByRole( 'link', { name: /transactions/i } ).click();
 		await page
-			.getByRole( 'searchbox', { name: /search transactions/i } )
+			.getByRole( 'link', {
+				name: 'Payments',
+				exact: true,
+			} )
+			.first()
+			.click();
+		const transactionsLink = page
+			.getByRole( 'link', {
+				name: 'Transactions',
+				exact: true,
+			} )
+			.first();
+		await expect( transactionsLink ).toHaveAttribute(
+			'href',
+			/transactions/
+		);
+		const transactionsUrl = await transactionsLink.getAttribute( 'href' );
+		if ( ! transactionsUrl ) {
+			throw new Error(
+				'The WooPayments Transactions menu link has no destination.'
+			);
+		}
+		await page.goto( transactionsUrl );
+
+		if ( this.runtime === 'native' ) {
+			await page
+				.locator(
+					`a[href*="id=${ encodeURIComponent( evidence.intentId ) }"]`
+				)
+				.first()
+				.click();
+			return;
+		}
+
+		await page
+			.getByLabel( 'Search transactions', { exact: true } )
 			.fill( evidence.orderId.toString() );
 		await page
 			.getByRole( 'link', {
@@ -754,7 +927,9 @@ export class WooPaymentsPilotRuntime {
 		await page
 			.getByLabel( 'Username or Email Address' )
 			.fill( admin.username );
-		await page.getByLabel( 'Password' ).fill( admin.password );
+		await page
+			.getByRole( 'textbox', { name: 'Password' } )
+			.fill( admin.password );
 		await page.getByRole( 'button', { name: 'Log In' } ).click();
 	}
 
@@ -869,6 +1044,201 @@ export class WooPaymentsPilotRuntime {
 			);
 		}
 	}
+
+	private async fillCheckoutDetails(
+		page: Page,
+		runId: string
+	): Promise< boolean > {
+		const shippingAddress = page.getByRole( 'group', {
+			name: 'Shipping address',
+		} );
+		const billingAddress = page.getByRole( 'group', {
+			name: 'Billing address',
+		} );
+		const blocksAddress = ( await shippingAddress.isVisible() )
+			? shippingAddress
+			: billingAddress;
+		if ( await blocksAddress.isVisible() ) {
+			await page
+				.getByRole( 'textbox', { name: 'Email address' } )
+				.fill( `woopayments-${ runId }@example.com` );
+			await blocksAddress
+				.getByRole( 'combobox', { name: 'Country/Region' } )
+				.selectOption( 'US' );
+			await blocksAddress
+				.getByRole( 'textbox', { name: 'First name' } )
+				.fill( 'E2E' );
+			await blocksAddress
+				.getByRole( 'textbox', { name: 'Last name' } )
+				.fill( 'WooPayments' );
+			await blocksAddress
+				.getByRole( 'textbox', { name: 'Address', exact: true } )
+				.fill( '123 Test Street' );
+			await blocksAddress
+				.getByRole( 'textbox', { name: 'City', exact: true } )
+				.fill( 'San Francisco' );
+			await blocksAddress
+				.getByRole( 'combobox', { name: 'State', exact: true } )
+				.selectOption( 'CA' );
+			await blocksAddress
+				.getByRole( 'textbox', { name: 'ZIP Code' } )
+				.fill( '94107' );
+			await blocksAddress
+				.getByRole( 'textbox', { name: 'Phone (optional)' } )
+				.fill( '5555550100' );
+			await page
+				.getByRole( 'group', { name: 'Payment options' } )
+				.getByRole( 'radio', { name: /Card/i } )
+				.check();
+			return true;
+		}
+
+		await page
+			.getByRole( 'textbox', { name: /first name/i } )
+			.fill( 'E2E' );
+		await page
+			.getByRole( 'textbox', { name: /last name/i } )
+			.fill( 'WooPayments' );
+		await page
+			.getByRole( 'textbox', { name: /street address/i } )
+			.fill( '123 Test Street' );
+		await page
+			.getByRole( 'textbox', { name: /town|city/i } )
+			.fill( 'San Francisco' );
+		await page
+			.getByRole( 'textbox', { name: /zip|postcode/i } )
+			.fill( '94107' );
+		await page
+			.getByRole( 'textbox', { name: /phone/i } )
+			.fill( '5555550100' );
+		await page
+			.getByRole( 'textbox', { name: /email/i } )
+			.fill( `woopayments-${ runId }@example.com` );
+		await page.getByLabel( /WooPayments|credit card/i ).check();
+		return false;
+	}
+
+	private async fillBasicTestCard(
+		page: Page,
+		isBlockCheckout: boolean
+	): Promise< void > {
+		if ( isBlockCheckout ) {
+			const frame = page.frameLocator(
+				getBlocksCardFrameSelector( this.runtime )
+			);
+			await frame
+				.getByRole( 'textbox', { name: 'Card number' } )
+				.fill( '4242424242424242' );
+			await frame
+				.getByRole( 'textbox', { name: /Expiration date/i } )
+				.fill( '0245' );
+			await frame
+				.getByRole( 'textbox', { name: 'Security code' } )
+				.fill( '424' );
+			await page.getByRole( 'button', { name: /place order/i } ).focus();
+			return;
+		}
+
+		const upeContainer = page.locator(
+			'#payment .payment_method_woocommerce_payments .wcpay-upe-element'
+		);
+		let cardNumber: Locator;
+		let expiry: Locator;
+		let cvc: Locator;
+
+		if ( await upeContainer.isVisible() ) {
+			const frame = page.frameLocator(
+				'#payment .payment_method_woocommerce_payments .wcpay-upe-element iframe'
+			);
+			cardNumber = frame.locator( '[name="number"]' );
+			expiry = frame.locator( '[name="expiry"]' );
+			cvc = frame.locator( '[name="cvc"]' );
+		} else {
+			const frame = page.frameLocator(
+				'#payment #wcpay-card-element iframe[name^="__privateStripeFrame"]'
+			);
+			cardNumber = frame.locator( '[name="cardnumber"]' );
+			expiry = frame.locator( '[name="exp-date"]' );
+			cvc = frame.locator( '[name="cvc"]' );
+		}
+
+		await cardNumber.fill( '4242424242424242' );
+		await expiry.fill( '0245' );
+		await cvc.fill( '424' );
+		await page.getByRole( 'button', { name: /place order/i } ).focus();
+	}
+
+	private async getBlocksCheckoutDiagnostics(
+		page: Page
+	): Promise< unknown > {
+		const dataStoreState = await page.evaluate( () => {
+			type Selector = ( ...args: unknown[] ) => unknown;
+			type Store = Record< string, Selector >;
+			const wpData = (
+				window as Window & {
+					wp?: {
+						data?: {
+							select?: ( key: string ) => Store;
+						};
+					};
+				}
+			 ).wp?.data;
+			const select = wpData?.select;
+			if ( ! select ) {
+				return { dataStoresAvailable: false };
+			}
+
+			const checkout = select( 'wc/store/checkout' );
+			const payment = select( 'wc/store/payment' );
+			const validation = select( 'wc/store/validation' );
+			const call = ( store: Store, method: string ) =>
+				typeof store?.[ method ] === 'function'
+					? store[ method ]()
+					: undefined;
+			const availablePaymentMethods = call(
+				payment,
+				'getAvailablePaymentMethods'
+			);
+			const paymentMethodData = call( payment, 'getPaymentMethodData' );
+			const validationErrors = call( validation, 'getValidationErrors' );
+			return {
+				dataStoresAvailable: true,
+				checkoutStatus: call( checkout, 'getCheckoutStatus' ),
+				checkoutHasError: call( checkout, 'hasError' ),
+				checkoutIsCalculating: call( checkout, 'isCalculating' ),
+				activePaymentMethod: call( payment, 'getActivePaymentMethod' ),
+				paymentIsIdle: call( payment, 'isPaymentIdle' ),
+				paymentIsProcessing: call( payment, 'isPaymentProcessing' ),
+				paymentIsReady: call( payment, 'isPaymentReady' ),
+				paymentHasError: call( payment, 'hasPaymentError' ),
+				availablePaymentMethodIds:
+					availablePaymentMethods &&
+					typeof availablePaymentMethods === 'object'
+						? Object.keys( availablePaymentMethods )
+						: [],
+				paymentMethodDataKeys:
+					paymentMethodData && typeof paymentMethodData === 'object'
+						? Object.keys( paymentMethodData )
+						: [],
+				validationErrorIds:
+					validationErrors && typeof validationErrors === 'object'
+						? Object.keys( validationErrors )
+						: [],
+			};
+		} );
+		const visibleNotices = await page
+			.locator(
+				'[role="alert"]:visible, .wc-block-components-notice-banner:visible'
+			)
+			.allTextContents();
+
+		return {
+			...dataStoreState,
+			visibleNotices: visibleNotices.map( ( notice ) =>
+				notice.trim().replace( /\s+/g, ' ' )
+			),
+		};
+	}
 }
 
 interface WooPaymentsNativeFixtures {
@@ -879,19 +1249,25 @@ interface WooPaymentsNativeFixtures {
 }
 
 export const test = baseTest.extend< WooPaymentsNativeFixtures >( {
-	adminApi: async ( { baseURL }, use ) => {
+	adminApi: async ( { baseURL, browser }, use ) => {
 		if ( ! baseURL ) {
 			throw new Error( 'BASE_URL is required for WooPayments pilots.' );
 		}
-		const adminApi = await playwrightRequest.newContext( {
+		const adminContext = await browser.newContext( {
 			baseURL,
-			httpCredentials: {
-				username: admin.username,
-				password: admin.password,
-			},
 		} );
-		await use( adminApi );
-		await adminApi.dispose();
+		await authenticateAdminContext( adminContext, {
+			username: requireValue(
+				'E2E_WOOPAYMENTS_ADMIN_USERNAME',
+				admin.username
+			),
+			password: requireValue(
+				'E2E_WOOPAYMENTS_ADMIN_PASSWORD',
+				admin.password
+			),
+		} );
+		await use( adminContext.request );
+		await adminContext.close();
 	},
 	runId: async ( { baseURL }, use ) => {
 		if ( ! baseURL ) {
@@ -921,10 +1297,8 @@ export const test = baseTest.extend< WooPaymentsNativeFixtures >( {
 			};
 			assertAccountSeparation( allocation, requireAllocations(), {
 				isCI: !! process.env.CI,
-				ciAccountAlias: requireValue(
-					'E2E_WOOPAYMENTS_CI_ACCOUNT_ALIAS'
-				),
-				ciAccountId: requireValue( 'E2E_WOOPAYMENTS_CI_ACCOUNT_ID' ),
+				ciAccountAlias: process.env.E2E_WOOPAYMENTS_CI_ACCOUNT_ALIAS,
+				ciAccountId: process.env.E2E_WOOPAYMENTS_CI_ACCOUNT_ID,
 			} );
 			await use();
 		},

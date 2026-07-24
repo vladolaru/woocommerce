@@ -141,6 +141,53 @@ test( 'joins the exact order, intent, and charge into payment evidence', async (
 	] );
 } );
 
+test( 'joins the exact plugin intent charge and charge route into one occurrence', async () => {
+	const restApi = mockRestApi(
+		{
+			'/wp-json/wc/v3/orders/42': [ { body: order() } ],
+			'/wp-json/wc/v3/payments/payment_intents/pi_e2e': [
+				{
+					body: intent( {
+						charges: undefined,
+						charge: { id: 'ch_e2e' },
+					} ),
+				},
+			],
+			'/wp-json/wc/v3/payments/charges/ch_e2e': [ { body: charge() } ],
+			'/wp-json/wc/v3/payments/timeline/pi_e2e': [ { body: timeline() } ],
+		},
+		[]
+	);
+
+	await expect( getPaymentEvidence( restApi, 42 ) ).resolves.toMatchObject( {
+		chargeId: 'ch_e2e',
+		occurrenceCount: 1,
+	} );
+} );
+
+test( 'rejects a plugin intent whose exact charge relationship changed', async () => {
+	const restApi = mockRestApi(
+		{
+			'/wp-json/wc/v3/orders/42': [ { body: order() } ],
+			'/wp-json/wc/v3/payments/payment_intents/pi_e2e': [
+				{
+					body: intent( {
+						charges: undefined,
+						charge: { id: 'ch_other' },
+					} ),
+				},
+			],
+			'/wp-json/wc/v3/payments/charges/ch_e2e': [ { body: charge() } ],
+			'/wp-json/wc/v3/payments/timeline/pi_e2e': [ { body: timeline() } ],
+		},
+		[]
+	);
+
+	await expect( getPaymentEvidence( restApi, 42 ) ).rejects.toThrow(
+		/charge relationship mismatch/i
+	);
+} );
+
 test( 'rejects empty durable provider IDs before provider lookup', async () => {
 	const calls: string[] = [];
 	const restApi = mockRestApi(

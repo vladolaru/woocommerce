@@ -14,6 +14,7 @@ interface ProviderObject {
 	captured?: unknown;
 	payment_intent?: unknown;
 	payment_method?: unknown;
+	charge?: unknown;
 	charges?: unknown;
 }
 
@@ -108,8 +109,20 @@ function getChargeIds( intent: ProviderObject ): string[] {
 		! ( 'data' in intent.charges ) ||
 		! Array.isArray( intent.charges.data )
 	) {
+		if (
+			typeof intent.charge === 'object' &&
+			intent.charge !== null &&
+			'id' in intent.charge
+		) {
+			return [
+				requiredString(
+					intent.charge.id,
+					'plugin intent charge occurrence ID'
+				),
+			];
+		}
 		throw new Error(
-			'Provider occurrence count cannot be proved without the intent charge collection.'
+			'Provider occurrence count cannot be proved without the native intent charge collection or plugin intent charge relationship.'
 		);
 	}
 
@@ -245,13 +258,14 @@ export async function getProviderEvidence(
 		'charge'
 	);
 
-	const occurrenceCount = getChargeIds( intent ).length;
+	const chargeIds = getChargeIds( intent );
+	const occurrenceCount = chargeIds.length;
 	if ( occurrenceCount !== 1 ) {
 		throw new Error(
 			`Provider occurrence count mismatch: expected 1 charge, received ${ occurrenceCount }.`
 		);
 	}
-	if ( getChargeIds( intent )[ 0 ] !== order.chargeId ) {
+	if ( chargeIds[ 0 ] !== order.chargeId ) {
 		throw new Error(
 			`Provider charge relationship mismatch: intent ${ order.intentId } does not contain ${ order.chargeId }.`
 		);

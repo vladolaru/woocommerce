@@ -1164,3 +1164,52 @@ test( 'rejects local use of the CI alias and alias reuse across stores', () => {
 		)
 	).toThrow( /must be unique/i );
 } );
+
+test( 'allows a local-only allocation manifest without inventing a CI identity', () => {
+	expect( () =>
+		assertAccountSeparation(
+			{
+				storeId: 'native-store',
+				accountId: 'acct_native',
+				accountAlias: 'local-native',
+			},
+			[
+				{
+					storeId: 'native-store',
+					accountId: 'acct_native',
+					accountAlias: 'local-native',
+				},
+				{
+					storeId: 'client-store',
+					accountId: 'acct_client',
+					accountAlias: 'local-client',
+				},
+			],
+			{
+				isCI: false,
+			}
+		)
+	).not.toThrow();
+} );
+
+test( 'requires the protected account identity for CI execution', () => {
+	expect( () =>
+		assertAccountSeparation(
+			{
+				storeId: 'ci-store',
+				accountId: 'acct_ci',
+				accountAlias: 'ci-provider',
+			},
+			[
+				{
+					storeId: 'ci-store',
+					accountId: 'acct_ci',
+					accountAlias: 'ci-provider',
+				},
+			],
+			{
+				isCI: true,
+			}
+		)
+	).toThrow( /CI.*alias.*ID/i );
+} );

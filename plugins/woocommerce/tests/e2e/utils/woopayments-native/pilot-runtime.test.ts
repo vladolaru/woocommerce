@@ -85,6 +85,54 @@ test( 'loads client readiness from plugin-owned diagnostics without calling the 
 	}
 } );
 
+test( 'loads native readiness from the callback-bound setup artifact without calling the live route', async () => {
+	const directory = await mkdtemp(
+		join( tmpdir(), 'woopayments-native-readiness-' )
+	);
+	const nativeDirectory = join( directory, 'native' );
+	const status = {
+		site_url: 'http://store8889.localhost',
+		wpcom_blog_id: 4,
+		runtime_owner: 'native',
+		native_enabled: true,
+		account_id: 'acct_native',
+		account_connected: true,
+		gateway_enabled: true,
+		test_mode: true,
+		enabled_payment_methods: [ 'card' ],
+		last_webhook_fetch: 0,
+		callback_probe: {
+			registered: true,
+			reachable: true,
+			wpcom_blog_id: 4,
+		},
+	} as const;
+	let nativeRouteCalls = 0;
+	const api = {
+		get: async () => {
+			nativeRouteCalls++;
+			throw new Error(
+				'The native adapter ignored the callback-bound artifact.'
+			);
+		},
+	} as unknown as APIRequestContext;
+
+	try {
+		await mkdir( nativeDirectory );
+		await writeFile(
+			join( nativeDirectory, 'runtime-status.json' ),
+			JSON.stringify( status )
+		);
+
+		await expect(
+			loadInitialRuntimeStatus( 'native', api, directory )
+		).resolves.toEqual( status );
+		expect( nativeRouteCalls ).toBe( 0 );
+	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
 async function removeOwnedLock(
 	lockDir: string,
 	kind: 'feature-setting' | 'record-event'
@@ -222,6 +270,7 @@ function visibleLocator(
 		check: () => Promise< void >;
 		click: () => Promise< void >;
 		fill: ( value: string ) => Promise< void >;
+		focus: () => Promise< void >;
 		getAttribute: ( name: string ) => Promise< string | null >;
 		getByRole: (
 			role: string,
@@ -238,6 +287,7 @@ function visibleLocator(
 		check: overrides.check ?? ( async () => {} ),
 		click: overrides.click ?? ( async () => {} ),
 		fill: overrides.fill ?? ( async () => {} ),
+		focus: overrides.focus ?? ( async () => {} ),
 		first: () => locator,
 		getAttribute:
 			overrides.getAttribute ?? ( async () => null as string | null ),
@@ -251,6 +301,7 @@ function visibleLocator(
 			( async () => {
 				throw new Error( 'Unexpected select option.' );
 			} ),
+		isVisible: async () => true,
 		toString: () => 'DOM-faithful fixture locator',
 	};
 	return locator as unknown as Locator;
@@ -348,6 +399,7 @@ function captureContractPage(): {
 			const name = String( options?.name ?? '' );
 			if (
 				( role === 'button' && name === 'Log In' ) ||
+				( role === 'textbox' && name === 'Password' ) ||
 				( role === 'searchbox' && /search orders/i.test( name ) ) ||
 				( role === 'link' && /42/.test( name ) )
 			) {
@@ -373,8 +425,7 @@ function captureContractPage(): {
 					getByRole: ( role, options ) => {
 						expect( role ).toBe( 'button' );
 						expect( options ).toEqual( {
-							exact: true,
-							name: 'Apply',
+							name: /^Apply\b/,
 						} );
 						return visibleLocator( {
 							click: async () => {
@@ -448,6 +499,7 @@ function lockLossPage(
 				await maybeLoseLock( 'click', name );
 			},
 			fill: async () => {},
+			focus: async () => {},
 			first: () => value,
 			getAttribute: async ( attribute: string ) => {
 				if (
@@ -467,6 +519,7 @@ function lockLossPage(
 			) =>
 				locator( childRole, String( childOptions?.name ?? childRole ) ),
 			selectOption: async () => [ 'capture_charge' ],
+			isVisible: async () => role !== 'group',
 			toString: () => `fake locator ${ role } ${ name }`,
 		};
 		return value;
@@ -479,6 +532,9 @@ function lockLossPage(
 			locator( role, String( roleOptions?.name ?? role ) ),
 		getByText: ( name: string | RegExp ) =>
 			locator( 'text', String( name ) ),
+		frameLocator: () => ( {
+			locator: ( selector: string ) => locator( 'frame-field', selector ),
+		} ),
 		locator: ( selector: string ) => locator( 'locator', selector ),
 		goto: async ( url: string ) => {
 			await maybeLoseLock( 'goto', url );
@@ -693,6 +749,7 @@ test( 'owns account, store, and record locks before a provider helper call', asy
 				data: {
 					name: 'WooPayments native E2E run-pilot-runtime',
 					type: 'simple',
+					virtual: true,
 					regular_price: '10.99',
 					meta_data: [
 						{

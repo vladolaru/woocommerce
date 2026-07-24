@@ -115,13 +115,25 @@ export function assertAccountSeparation(
 	allocations: StoreAccountAllocation[],
 	options: {
 		isCI: boolean;
-		ciAccountAlias: string;
-		ciAccountId: string;
+		ciAccountAlias?: string;
+		ciAccountId?: string;
 	}
 ): void {
 	if ( ! current.accountId || ! current.accountAlias || ! current.storeId ) {
 		throw new Error(
 			'Account separation failed: store, account ID, and account alias are required.'
+		);
+	}
+	const hasCIAccountAlias = !! options.ciAccountAlias;
+	const hasCIAccountId = !! options.ciAccountId;
+	if ( hasCIAccountAlias !== hasCIAccountId ) {
+		throw new Error(
+			'Account separation failed: the protected CI account alias and ID must be supplied together.'
+		);
+	}
+	if ( options.isCI && ! hasCIAccountAlias ) {
+		throw new Error(
+			'Account separation failed: CI requires the exact protected account alias and ID.'
 		);
 	}
 	if (
