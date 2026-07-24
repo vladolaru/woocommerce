@@ -4,8 +4,38 @@ set -euo pipefail
 
 printf '%s\tpnpm %s\n' "$PWD" "$*" >> "$E2E_FAKE_COMMAND_LOG"
 
+if [[ "$*" == *"config get E2E_WOOPAYMENTS_NATIVE"* ]]; then
+	echo "Error: constant is not defined." >&2
+	exit 1
+fi
+
+if [[ "$*" == *"config set E2E_WOOPAYMENTS_NATIVE true --raw"* ]]; then
+	echo 'Success: Updated the constant.'
+	exit 0
+fi
+
+if [[ "$*" == *"config delete E2E_WOOPAYMENTS_NATIVE"* ]]; then
+	echo 'Success: Deleted the constant.'
+	exit 0
+fi
+
 if [[ "$*" == *"wc-native-payments status"* ]]; then
 	echo 'Owner: native'
+	exit 0
+fi
+
+if [[ "$*" == *"active_theme_exists"* ]]; then
+	if [[ "${E2E_FAKE_NATIVE_THEME_MISSING:-0}" == '1' ]] &&
+		! grep -Fq 'theme activate twentytwentyfive' "$E2E_FAKE_COMMAND_LOG"; then
+		printf 'wp-env starting\n{"active_theme_exists":false,"active_stylesheet":"twentytwentyone","fallback_stylesheet":"twentytwentyfive"}\nwp-env done\n'
+	else
+		printf 'wp-env starting\n{"active_theme_exists":true,"active_stylesheet":"twentytwentyfive","fallback_stylesheet":"twentytwentyfive"}\nwp-env done\n'
+	fi
+	exit 0
+fi
+
+if [[ "$*" == *"theme activate twentytwentyfive"* ]]; then
+	echo 'Success: Switched to theme twentytwentyfive.'
 	exit 0
 fi
 

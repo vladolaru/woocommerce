@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+printf '%s\tdocker %s\n' "$PWD" "$*" >> "$E2E_FAKE_COMMAND_LOG"
+
+if [[ "$*" == *"active_theme_exists"* ]]; then
+	printf 'docker wrapper\n{"active_theme_exists":true,"active_stylesheet":"storefront","fallback_stylesheet":"twentytwentyfive"}\ndocker done\n'
+	exit 0
+fi
+
+if [[ "$*" == *'"runtime_owner"'* ]]; then
+	printf 'docker wrapper\n{"site_url":"http://client.test","wpcom_blog_id":1,"runtime_owner":"plugin","native_enabled":false,"account_id":"acct_client","account_connected":true,"gateway_enabled":true,"test_mode":true,"enabled_payment_methods":["card"],"last_webhook_fetch":0,"callback_probe":{"registered":false,"reachable":false,"wpcom_blog_id":0}}\ndocker done\n'
+	exit 0
+fi
+
+if [[ "$*" == *"/wc/v3/payments/accounts"* ]]; then
+	printf 'docker starting\n{"account_id":"acct_fixture","test_mode":true}docker done\n'
+	exit 0
+fi
+
+echo "Unexpected fake docker invocation: $*" >&2
+exit 1
