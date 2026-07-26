@@ -128,6 +128,9 @@ if [[ "$*" == *'transition_delete_blog'* ]]; then
 fi
 
 if [[ "$*" == *'wcpay callback probe'* ]]; then
+	if [[ "${E2E_FAKE_TRANSITION_TO_NATIVE_CORE_BEFORE_EXIT:-0}" == '1' ]]; then
+		touch "$RUNTIME_STATE/native-core"
+	fi
 	store_url=''
 	blog_id=''
 	while (( $# > 0 )); do

@@ -371,6 +371,7 @@ write_initial_state() {
 	local marker="$2"
 	local port="$3"
 	local port_lease_path="$4"
+	local port_lease_candidate_path="$5"
 	node -e '
 		const {
 			closeSync,
@@ -394,6 +395,7 @@ write_initial_state() {
 			wp_env_home: process.argv[ 10 ],
 			port: Number( process.argv[ 11 ] ),
 			port_lease_path: process.argv[ 12 ],
+			port_lease_candidate_path: process.argv[ 13 ],
 			wpcom_blog_id: 0,
 			account_id: "",
 			account_alias: "",
@@ -440,7 +442,8 @@ write_initial_state() {
 		"$receipt_hash" \
 		"$workspace/wp-env-home" \
 		"$port" \
-		"$port_lease_path"
+		"$port_lease_path" \
+		"$port_lease_candidate_path"
 }
 
 update_state() {
@@ -472,6 +475,25 @@ port_lease_path_for() {
 	printf '%s/woopayments-native-transition-port-leases/%s' "$temporary_root" "$port"
 }
 
+port_lease_candidate_path_for() {
+	local port="$1"
+	local receipt_hash="$2"
+	local lease_path
+	lease_path="$(port_lease_path_for "$port")"
+	local nonce
+	nonce="$(
+		node -e '
+			const { randomBytes } = require( "node:crypto" );
+			process.stdout.write( randomBytes( 16 ).toString( "hex" ) );
+		'
+	)"
+	printf '%s/.%s.%s.%s.candidate' \
+		"$(dirname "$lease_path")" \
+		"$port" \
+		"$receipt_hash" \
+		"$nonce"
+}
+
 ensure_port_lease_namespace() {
 	local lease_path
 	lease_path="$(state_field port_lease_path)"
@@ -484,36 +506,10 @@ ensure_port_lease_namespace() {
 		echo 'Transition port lease namespace is not an exact private directory.' >&2
 		return 1
 	fi
-}
-
-write_port_lease_owner() {
-	local lease_path
-	lease_path="$(state_field port_lease_path)"
 	node -e '
-		const {
-			closeSync,
-			fsyncSync,
-			openSync,
-			writeFileSync,
-		} = require( "node:fs" );
-		const { dirname, join } = require( "node:path" );
-		const leasePath = process.argv[ 1 ];
-		const ownerPath = join( leasePath, "owner.json" );
-		const owner = {
-			port: Number( process.argv[ 2 ] ),
-			run_id: process.argv[ 3 ],
-			workspace: process.argv[ 4 ],
-			base_url: process.argv[ 5 ],
-			receipt_sha256: process.argv[ 6 ],
-		};
-		const ownerDescriptor = openSync( ownerPath, "wx", 0o600 );
-		try {
-			writeFileSync( ownerDescriptor, `${ JSON.stringify( owner ) }\n` );
-			fsyncSync( ownerDescriptor );
-		} finally {
-			closeSync( ownerDescriptor );
-		}
-		for ( const path of [ leasePath, dirname( leasePath ), dirname( dirname( leasePath ) ) ] ) {
+		const { closeSync, fsyncSync, openSync } = require( "node:fs" );
+		const { dirname } = require( "node:path" );
+		for ( const path of [ process.argv[ 1 ], dirname( process.argv[ 1 ] ) ] ) {
 			const descriptor = openSync( path, "r" );
 			try {
 				fsyncSync( descriptor );
@@ -521,44 +517,35 @@ write_port_lease_owner() {
 				closeSync( descriptor );
 			}
 		}
+	' "$lease_root"
+}
+
+validate_port_lease_candidate_path() {
+	local lease_path
+	lease_path="$(state_field port_lease_path)"
+	local candidate_path
+	candidate_path="$(state_field port_lease_candidate_path)"
+	node -e '
+		const { basename, dirname } = require( "node:path" );
+		const port = process.argv[ 3 ];
+		const receiptHash = process.argv[ 4 ];
+		if (
+			dirname( process.argv[ 2 ] ) !== dirname( process.argv[ 1 ] ) ||
+			! new RegExp(
+				`^\\.${ port }\\.${ receiptHash }\\.[a-f0-9]{32}\\.candidate$`
+			).test( basename( process.argv[ 2 ] ) )
+		) process.exit( 1 );
 	' \
 		"$lease_path" \
+		"$candidate_path" \
 		"$(state_field port)" \
-		"$run_id" \
-		"$workspace" \
-		"$base_url" \
 		"$(state_field receipt_sha256)"
 }
 
-acquire_port_lease() {
-	update_state port_lease_attempted true boolean
-	update_state phase 'port-lease-attempted'
-	ensure_port_lease_namespace
-	local lease_path
-	lease_path="$(state_field port_lease_path)"
-	if ! mkdir "$lease_path" 2> /dev/null; then
-		update_state port_lease_collision true boolean
-		echo "Transition port $(state_field port) already has a lease; existing ownership was preserved." >&2
-		return 1
-	fi
-	chmod 0700 "$lease_path"
-	write_port_lease_owner
-	update_state port_lease_acquired true boolean
-	update_state phase 'port-lease-acquired'
-}
-
-validate_port_lease_owner() {
-	local state_port
-	state_port="$(state_field port)"
-	local lease_path
-	lease_path="$(state_field port_lease_path)"
-	local expected_lease_path
-	expected_lease_path="$(port_lease_path_for "$state_port")"
-	if [[ "$lease_path" != "$expected_lease_path" ]] ||
-		[[ ! -d "$lease_path" || -L "$lease_path" ]] ||
-		[[ "$(file_mode "$lease_path")" != '700' ]] ||
-		[[ ! -f "$lease_path/owner.json" || -L "$lease_path/owner.json" ]] ||
-		[[ "$(file_mode "$lease_path/owner.json")" != '600' ]]; then
+validate_port_lease_owner_file() {
+	local owner_path="$1"
+	if [[ ! -f "$owner_path" || -L "$owner_path" ]] ||
+		[[ "$(file_mode "$owner_path")" != '600' ]]; then
 		return 1
 	fi
 	node -e '
@@ -574,12 +561,194 @@ validate_port_lease_owner() {
 				"base_url,port,receipt_sha256,run_id,workspace"
 		) process.exit( 1 );
 	' \
-		"$lease_path/owner.json" \
-		"$state_port" \
+		"$owner_path" \
+		"$(state_field port)" \
 		"$run_id" \
 		"$workspace" \
 		"$base_url" \
 		"$(state_field receipt_sha256)"
+}
+
+validate_port_lease_owner() {
+	local state_port
+	state_port="$(state_field port)"
+	local lease_path
+	lease_path="$(state_field port_lease_path)"
+	if [[ "$lease_path" != "$(port_lease_path_for "$state_port")" ]]; then
+		return 1
+	fi
+	validate_port_lease_owner_file "$lease_path"
+}
+
+validate_port_lease_candidate_owner() {
+	validate_port_lease_candidate_path
+	validate_port_lease_owner_file "$(state_field port_lease_candidate_path)"
+}
+
+fsync_port_lease_namespace() {
+	node -e '
+		const { closeSync, fsyncSync, openSync } = require( "node:fs" );
+		const descriptor = openSync( process.argv[ 1 ], "r" );
+		try {
+			fsyncSync( descriptor );
+		} finally {
+			closeSync( descriptor );
+		}
+	' "$(dirname "$(state_field port_lease_path)")"
+}
+
+remove_exact_port_lease_candidate() {
+	local candidate_path
+	candidate_path="$(state_field port_lease_candidate_path)"
+	if [[ -e "$candidate_path" || -L "$candidate_path" ]]; then
+		validate_port_lease_candidate_owner
+		rm "$candidate_path"
+		fsync_port_lease_namespace
+	fi
+}
+
+publish_port_lease_owner() {
+	local lease_path
+	lease_path="$(state_field port_lease_path)"
+	local candidate_path
+	candidate_path="$(state_field port_lease_candidate_path)"
+	validate_port_lease_candidate_path
+	node -e '
+		const {
+			closeSync,
+			fsyncSync,
+			linkSync,
+			openSync,
+			unlinkSync,
+			writeSync,
+		} = require( "node:fs" );
+		const { dirname } = require( "node:path" );
+		const finalPath = process.argv[ 1 ];
+		const candidatePath = process.argv[ 2 ];
+		const owner = Buffer.from( `${ JSON.stringify( {
+			port: Number( process.argv[ 3 ] ),
+			run_id: process.argv[ 4 ],
+			workspace: process.argv[ 5 ],
+			base_url: process.argv[ 6 ],
+			receipt_sha256: process.argv[ 7 ],
+		} ) }\n` );
+		const failPoint = process.env.E2E_TRANSITION_LEASE_FAIL_POINT || "";
+		const killPoint = process.env.E2E_TRANSITION_TEST_KILL_DURING_LEASE || "";
+		const leaseRoot = dirname( finalPath );
+		let descriptor;
+		let candidateExists = false;
+		let published = false;
+		const fsyncDirectory = () => {
+			const directoryDescriptor = openSync( leaseRoot, "r" );
+			try {
+				fsyncSync( directoryDescriptor );
+			} finally {
+				closeSync( directoryDescriptor );
+			}
+		};
+		try {
+			descriptor = openSync( candidatePath, "wx", 0o600 );
+			candidateExists = true;
+			if ( failPoint === "candidate-write" ) {
+				writeSync(
+					descriptor,
+					owner,
+					0,
+					Math.max( 1, Math.floor( owner.length / 2 ) )
+				);
+				throw new Error( "Injected lease candidate write failure." );
+			}
+			let offset = 0;
+			while ( offset < owner.length ) {
+				const bytesWritten = writeSync(
+					descriptor,
+					owner,
+					offset,
+					owner.length - offset
+				);
+				if ( bytesWritten <= 0 ) {
+					throw new Error( "Lease candidate write made no progress." );
+				}
+				offset += bytesWritten;
+			}
+			if ( failPoint === "candidate-fsync" ) {
+				throw new Error( "Injected lease candidate fsync failure." );
+			}
+			fsyncSync( descriptor );
+			closeSync( descriptor );
+			descriptor = undefined;
+			if ( killPoint === "before-link" ) {
+				process.kill( process.ppid, "SIGKILL" );
+				process.exit( 137 );
+			}
+			if ( failPoint === "link" ) {
+				throw new Error( "Injected lease publication link failure." );
+			}
+			try {
+				linkSync( candidatePath, finalPath );
+				published = true;
+			} catch ( error ) {
+				if ( error.code === "EEXIST" ) {
+					unlinkSync( candidatePath );
+					candidateExists = false;
+					fsyncDirectory();
+					process.exit( 73 );
+				}
+				throw error;
+			}
+			if ( killPoint === "after-link" ) {
+				process.kill( process.ppid, "SIGKILL" );
+				process.exit( 137 );
+			}
+			if ( failPoint === "directory-fsync" ) {
+				throw new Error( "Injected lease directory fsync failure." );
+			}
+			fsyncDirectory();
+			unlinkSync( candidatePath );
+			candidateExists = false;
+			fsyncDirectory();
+		} catch ( error ) {
+			if ( descriptor !== undefined ) {
+				closeSync( descriptor );
+			}
+			if ( candidateExists ) {
+				try {
+					unlinkSync( candidatePath );
+					if ( ! published ) fsyncDirectory();
+				} catch {}
+			}
+			console.error( error.message );
+			process.exit( 1 );
+		}
+	' \
+		"$lease_path" \
+		"$candidate_path" \
+		"$(state_field port)" \
+		"$run_id" \
+		"$workspace" \
+		"$base_url" \
+		"$(state_field receipt_sha256)"
+}
+
+acquire_port_lease() {
+	update_state port_lease_attempted true boolean
+	update_state phase 'port-lease-attempted'
+	ensure_port_lease_namespace
+	local publication_status
+	set +e
+	publish_port_lease_owner
+	publication_status=$?
+	set -e
+	if (( publication_status == 73 )); then
+		update_state port_lease_collision true boolean
+		echo "Transition port $(state_field port) already has a lease; existing ownership was preserved." >&2
+		return 1
+	fi
+	if (( publication_status != 0 )); then
+		return "$publication_status"
+	fi
+	update_state port_lease_acquired true boolean
+	update_state phase 'port-lease-acquired'
 }
 
 prepare_port_lease_for_destroy() {
@@ -594,16 +763,13 @@ prepare_port_lease_for_destroy() {
 	lease_path="$(state_field port_lease_path)"
 	if [[ "$(state_field port_lease_acquired)" == 'true' ]]; then
 		if validate_port_lease_owner; then
+			remove_exact_port_lease_candidate
 			return
 		fi
 		if [[ "$(state_field wp_env_destroyed)" == 'true' ]] &&
 			[[ "$(state_field port_lease_release_attempted)" == 'true' ]]; then
-			if [[ ! -e "$lease_path" ]]; then
-				return
-			fi
-			if [[ -d "$lease_path" && ! -L "$lease_path" ]] &&
-				[[ "$(file_mode "$lease_path")" == '700' ]] &&
-				! find "$lease_path" -mindepth 1 -print -quit | grep -q .; then
+			if [[ ! -e "$lease_path" && ! -L "$lease_path" ]]; then
+				remove_exact_port_lease_candidate
 				return
 			fi
 		fi
@@ -615,20 +781,23 @@ prepare_port_lease_for_destroy() {
 			echo 'A colliding transition port lease has unexpected environment mutation state.' >&2
 			return 1
 		fi
+		remove_exact_port_lease_candidate
 		return
 	fi
 	if validate_port_lease_owner; then
+		remove_exact_port_lease_candidate
 		update_state port_lease_acquired true boolean
 		update_state phase 'port-lease-recovered'
 		return
 	fi
-	if [[ -e "$lease_path" ]]; then
-		echo 'Transition destroy found ambiguous port lease ownership.' >&2
-		return 1
-	fi
 	if [[ "$(state_field wp_env_start_attempted)" != 'false' ]]; then
 		echo 'Transition environment mutation has no exact port lease owner.' >&2
 		return 1
+	fi
+	remove_exact_port_lease_candidate
+	if [[ -e "$lease_path" || -L "$lease_path" ]]; then
+		update_state port_lease_collision true boolean
+		update_state phase 'port-lease-collision-recovered'
 	fi
 }
 
@@ -641,34 +810,23 @@ release_port_lease() {
 		return 1
 	fi
 	if [[ "$(state_field port_lease_acquired)" != 'true' ]]; then
+		remove_exact_port_lease_candidate
 		update_state port_lease_released true boolean
 		return
 	fi
 	local lease_path
 	lease_path="$(state_field port_lease_path)"
+	local release_was_attempted
+	release_was_attempted="$(state_field port_lease_release_attempted)"
 	update_state port_lease_release_attempted true boolean
-	if [[ -L "$lease_path" ]]; then
-		echo 'Transition port lease release refuses a symlinked lease path.' >&2
+	remove_exact_port_lease_candidate
+	if [[ -e "$lease_path" || -L "$lease_path" ]]; then
+		validate_port_lease_owner
+		rm "$lease_path"
+		fsync_port_lease_namespace
+	elif [[ "$release_was_attempted" != 'true' ]]; then
+		echo 'Transition port lease disappeared before exact release.' >&2
 		return 1
-	fi
-	if [[ -e "$lease_path" ]]; then
-		if [[ -f "$lease_path/owner.json" ]]; then
-			validate_port_lease_owner
-			rm "$lease_path/owner.json"
-		elif find "$lease_path" -mindepth 1 -print -quit | grep -q .; then
-			echo 'Transition port lease release found unexpected directory contents.' >&2
-			return 1
-		fi
-		rmdir "$lease_path"
-		node -e '
-			const { closeSync, fsyncSync, openSync } = require( "node:fs" );
-			const descriptor = openSync( process.argv[ 1 ], "r" );
-			try {
-				fsyncSync( descriptor );
-			} finally {
-				closeSync( descriptor );
-			}
-		' "$(dirname "$lease_path")"
 	fi
 	if [[ "${E2E_TRANSITION_TEST_KILL_AFTER_LEASE_RELEASE:-0}" == '1' ]]; then
 		kill -KILL "$$"
@@ -828,11 +986,18 @@ query_account_snapshot() {
 }
 
 classify_account_snapshot() {
+	local runtime_policy="$2"
 	node -e '
 		const snapshot = JSON.parse( process.argv[ 1 ] );
 		const store = snapshot.store || {};
 		const status = snapshot.status || {};
 		const account = snapshot.account_data;
+		const runtimePolicy = process.argv[ 5 ];
+		const runtimeAllowed =
+			runtimePolicy === "extension-only"
+				? status.runtime === "extension"
+				: runtimePolicy === "extension-or-native-core" &&
+					[ "extension", "native_core" ].includes( status.runtime );
 		const exactRoot = ( candidate ) => {
 			if ( typeof candidate !== "string" ) process.exit( 1 );
 			const url = new URL( candidate );
@@ -845,7 +1010,7 @@ classify_account_snapshot() {
 			store.marker !== process.argv[ 3 ] ||
 			store.wpcom_blog_id !== Number( process.argv[ 4 ] ) ||
 			status.environment !== "local" ||
-			status.runtime !== "extension" ||
+			! runtimeAllowed ||
 			status.wcpay_active !== true ||
 			status.is_test_mode !== true ||
 			status.is_live_mode !== false ||
@@ -889,11 +1054,12 @@ classify_account_snapshot() {
 		"$1" \
 		"$base_url" \
 		"$(state_field marker)" \
-		"$(state_field wpcom_blog_id)"
+		"$(state_field wpcom_blog_id)" \
+		"$runtime_policy"
 }
 
 require_fresh_account_snapshot() {
-	if [[ "$(classify_account_snapshot "$1")" != 'absent' ]]; then
+	if [[ "$(classify_account_snapshot "$1" extension-only)" != 'absent' ]]; then
 		echo 'Transition account creation requires exact disconnected empty Test Lab evidence.' >&2
 		return 1
 	fi
@@ -901,7 +1067,7 @@ require_fresh_account_snapshot() {
 
 account_id_from_snapshot() {
 	local classification
-	classification="$(classify_account_snapshot "$1")"
+	classification="$(classify_account_snapshot "$1" extension-only)"
 	if [[ "$classification" != present:* ]]; then
 		echo 'Transition account recovery requires one exact test-drive Test Lab account.' >&2
 		return 1
@@ -934,6 +1100,61 @@ emit_create_result() {
 		"$status"
 }
 
+write_durable_receipt() {
+	local receipt="$1"
+	node -e '
+		const {
+			closeSync,
+			fsyncSync,
+			openSync,
+			writeSync,
+		} = require( "node:fs" );
+		const receiptPath = process.argv[ 1 ];
+		const workspace = process.argv[ 2 ];
+		const receipt = Buffer.from( process.argv[ 3 ] );
+		const failPoint = process.env.E2E_TRANSITION_RECEIPT_FAIL_POINT || "";
+		const receiptDescriptor = openSync( receiptPath, "wx", 0o600 );
+		try {
+			if ( failPoint === "after-write" ) {
+				writeSync( receiptDescriptor, receipt, 0, Math.max( 1, Math.floor( receipt.length / 2 ) ) );
+				throw new Error( "Injected receipt write failure." );
+			}
+			let offset = 0;
+			while ( offset < receipt.length ) {
+				const bytesWritten = writeSync(
+					receiptDescriptor,
+					receipt,
+					offset,
+					receipt.length - offset
+				);
+				if ( bytesWritten <= 0 ) {
+					throw new Error( "Receipt write made no progress." );
+				}
+				offset += bytesWritten;
+			}
+			if ( failPoint === "before-file-fsync" ) {
+				throw new Error( "Injected receipt file fsync failure." );
+			}
+			fsyncSync( receiptDescriptor );
+		} finally {
+			closeSync( receiptDescriptor );
+		}
+		if ( failPoint === "kill-before-directory-fsync" ) {
+			process.kill( process.ppid, "SIGKILL" );
+			process.exit( 137 );
+		}
+		if ( failPoint === "before-directory-fsync" ) {
+			throw new Error( "Injected receipt directory fsync failure." );
+		}
+		const workspaceDescriptor = openSync( workspace, "r" );
+		try {
+			fsyncSync( workspaceDescriptor );
+		} finally {
+			closeSync( workspaceDescriptor );
+		}
+	' "$workspace/rollback-receipt" "$workspace" "$receipt"
+}
+
 create_store() {
 	local expected_plan
 	expected_plan="$(emit_plan)"
@@ -955,16 +1176,22 @@ create_store() {
 			process.stdout.write( `receipt_${ randomBytes( 32 ).toString( "hex" ) }` );
 		'
 	)"
-	printf '%s' "$receipt" > "$workspace/rollback-receipt"
-	chmod 0600 "$workspace/rollback-receipt"
+	write_durable_receipt "$receipt"
 	local receipt_hash
-	receipt_hash="$(printf '%s' "$receipt" | shasum -a 256 | awk '{ print $1 }')"
+	receipt_hash="$(shasum -a 256 "$workspace/rollback-receipt" | awk '{ print $1 }')"
 	local marker="wc-native-transition:${run_id}:${receipt_hash:0:16}"
 	local port
 	port="$(base_url_port)"
 	local port_lease_path
 	port_lease_path="$(port_lease_path_for "$port")"
-	write_initial_state "$receipt_hash" "$marker" "$port" "$port_lease_path"
+	local port_lease_candidate_path
+	port_lease_candidate_path="$(port_lease_candidate_path_for "$port" "$receipt_hash")"
+	write_initial_state \
+		"$receipt_hash" \
+		"$marker" \
+		"$port" \
+		"$port_lease_path" \
+		"$port_lease_candidate_path"
 
 	on_create_error() {
 		local status=$?
@@ -1428,7 +1655,7 @@ destroy_store() {
 			validate_created_identity "$(query_store_identity)"
 			validate_blog_identity "$(query_blog_identity)"
 			local account_classification
-			account_classification="$(classify_account_snapshot "$(query_account_snapshot)")"
+			account_classification="$(classify_account_snapshot "$(query_account_snapshot)" extension-or-native-core)"
 			if [[ "$account_classification" == present:* ]]; then
 				local exact_account_id="${account_classification#present:}"
 				if [[ "$(state_field account_created)" == 'true' ]]; then
@@ -1453,7 +1680,7 @@ destroy_store() {
 					const value=JSON.parse(process.argv[1]);
 					if(value.success!==true||value.deleted_account!==process.argv[2])process.exit(1);
 				' "$deleted" "$(state_field account_id)"
-				if [[ "$(classify_account_snapshot "$(query_account_snapshot)")" != 'absent' ]]; then
+				if [[ "$(classify_account_snapshot "$(query_account_snapshot)" extension-or-native-core)" != 'absent' ]]; then
 					echo 'Transition account deletion did not establish exact local absence.' >&2
 					return 1
 				fi
@@ -1485,7 +1712,7 @@ destroy_store() {
 			local blog_classification
 			blog_classification="$(classify_blog_identity "$(query_blog_identity)")"
 			if [[ "$blog_classification" == 'present' ]]; then
-				if [[ "$(classify_account_snapshot "$(query_account_snapshot)")" != 'absent' ]]; then
+				if [[ "$(classify_account_snapshot "$(query_account_snapshot)" extension-or-native-core)" != 'absent' ]]; then
 					echo 'Transition blog deletion requires exact local account absence.' >&2
 					return 1
 				fi
@@ -1519,7 +1746,7 @@ destroy_store() {
 				else
 					validate_created_identity "$(query_store_identity)"
 				fi
-				if [[ "$(classify_account_snapshot "$(query_account_snapshot)")" != 'absent' ]]; then
+				if [[ "$(classify_account_snapshot "$(query_account_snapshot)" extension-or-native-core)" != 'absent' ]]; then
 					echo 'Transition wp-env deletion requires exact local account absence.' >&2
 					return 1
 				fi
@@ -1530,7 +1757,7 @@ destroy_store() {
 					fi
 				fi
 			fi
-			E2E_TRANSITION_PROVISIONER_PID="$$" wp_env destroy > /dev/null
+			E2E_TRANSITION_PROVISIONER_PID="$$" wp_env destroy --force > /dev/null
 		fi
 		update_state wp_env_destroyed true boolean
 	fi

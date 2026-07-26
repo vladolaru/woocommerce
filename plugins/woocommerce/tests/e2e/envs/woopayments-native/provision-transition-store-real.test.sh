@@ -7,6 +7,7 @@ SCRIPT_DIR="$(
 	pwd -P
 )"
 PROVISIONER="$SCRIPT_DIR/provision-transition-store-real.sh"
+PROVISION_WRAPPER="$SCRIPT_DIR/provision-transition-store.sh"
 STATE_WRITER="$SCRIPT_DIR/write-transition-state.js"
 TEST_ROOT="$(mktemp -d "${TMPDIR:?TMPDIR is required}/woopayments-transition-real-test.XXXXXX")"
 SHARED_TMPDIR="$TEST_ROOT/shared-tmp"
@@ -23,6 +24,42 @@ SHARED_TMPDIR="$(
 
 mode_of() {
 	stat -f '%Lp' "$1" 2> /dev/null || stat -c '%a' "$1"
+}
+
+assert_exact_lease_owner() {
+	local lease_path="$1"
+	local owned_workspace="$2"
+	local owned_run_id="$3"
+	local owned_base_url="$4"
+	local owned_port="$5"
+	local receipt_path="$6"
+	node -e '
+		const { createHash } = require( "node:crypto" );
+		const { lstatSync, readFileSync } = require( "node:fs" );
+		const stat = lstatSync( process.argv[ 1 ] );
+		const owner = JSON.parse( readFileSync( process.argv[ 1 ], "utf8" ) );
+		const receiptHash = createHash( "sha256" )
+			.update( readFileSync( process.argv[ 6 ] ) )
+			.digest( "hex" );
+		if (
+			! stat.isFile() ||
+			stat.isSymbolicLink() ||
+			( stat.mode & 0o777 ) !== 0o600 ||
+			owner.workspace !== process.argv[ 2 ] ||
+			owner.run_id !== process.argv[ 3 ] ||
+			owner.base_url !== process.argv[ 4 ] ||
+			owner.port !== Number( process.argv[ 5 ] ) ||
+			owner.receipt_sha256 !== receiptHash ||
+			Object.keys( owner ).sort().join( "," ) !==
+				"base_url,port,receipt_sha256,run_id,workspace"
+		) process.exit( 1 );
+	' \
+		"$lease_path" \
+		"$owned_workspace" \
+		"$owned_run_id" \
+		"$owned_base_url" \
+		"$owned_port" \
+		"$receipt_path"
 }
 
 state_writer_root="$TEST_ROOT/state-writer"
@@ -367,6 +404,7 @@ run_provisioner() {
 		E2E_FAKE_ACCOUNT_CREATE_FAIL="${E2E_FAKE_ACCOUNT_CREATE_FAIL:-0}" \
 		E2E_FAKE_ACCOUNT_CREATE_MODE="${E2E_FAKE_ACCOUNT_CREATE_MODE:-success}" \
 		E2E_FAKE_ACCOUNT_EVIDENCE_MODE="${E2E_FAKE_ACCOUNT_EVIDENCE_MODE:-exact}" \
+		E2E_FAKE_ACCOUNT_RUNTIME="${E2E_FAKE_ACCOUNT_RUNTIME:-extension}" \
 		E2E_FAKE_ACCOUNT_MISMATCH="${E2E_FAKE_ACCOUNT_MISMATCH:-0}" \
 		E2E_FAKE_WP_ENV_START_AFTER_CREATE_FAIL="${E2E_FAKE_WP_ENV_START_AFTER_CREATE_FAIL:-0}" \
 		E2E_FAKE_WP_ENV_DESTROY_FAIL="${E2E_FAKE_WP_ENV_DESTROY_FAIL:-0}" \
@@ -374,10 +412,51 @@ run_provisioner() {
 		E2E_FAKE_BLOG_RECOVERY_MODE="${E2E_FAKE_BLOG_RECOVERY_MODE:-unique}" \
 		E2E_FAKE_BLOG_IDENTITY_MODE="${E2E_FAKE_BLOG_IDENTITY_MODE:-exact}" \
 		E2E_FAKE_CALLBACK_MODE="${E2E_FAKE_CALLBACK_MODE:-valid}" \
+		E2E_FAKE_TRANSITION_TO_NATIVE_CORE_BEFORE_EXIT="${E2E_FAKE_TRANSITION_TO_NATIVE_CORE_BEFORE_EXIT:-0}" \
 		E2E_FAKE_KILL_AFTER_DELETE="${E2E_FAKE_KILL_AFTER_DELETE:-}" \
+		E2E_TRANSITION_RECEIPT_FAIL_POINT="${E2E_TRANSITION_RECEIPT_FAIL_POINT:-}" \
+		E2E_TRANSITION_LEASE_FAIL_POINT="${E2E_TRANSITION_LEASE_FAIL_POINT:-}" \
+		E2E_TRANSITION_TEST_KILL_DURING_LEASE="${E2E_TRANSITION_TEST_KILL_DURING_LEASE:-}" \
 		E2E_TRANSITION_TEST_KILL_AFTER_LEASE_RELEASE="${E2E_TRANSITION_TEST_KILL_AFTER_LEASE_RELEASE:-0}" \
 		"$PROVISIONER" "$@"
 }
+
+receipt_failure_port=19100
+for receipt_fail_point in \
+	after-write \
+	before-file-fsync \
+	before-directory-fsync \
+	kill-before-directory-fsync; do
+	receipt_failure_workspace="$TEST_ROOT/woopayments-native-transition-receipt-$receipt_fail_point"
+	receipt_failure_runtime="$TEST_ROOT/runtime-receipt-$receipt_fail_point"
+	receipt_failure_log="$TEST_ROOT/receipt-$receipt_fail_point-commands.log"
+	mkdir "$receipt_failure_workspace"
+	set +e
+	E2E_TRANSITION_PORT="$receipt_failure_port" E2E_TRANSITION_RECEIPT_FAIL_POINT="$receipt_fail_point" run_provisioner \
+		"$receipt_failure_workspace" "$receipt_failure_runtime" "$receipt_failure_log" \
+		create \
+		--workspace "$receipt_failure_workspace" \
+		--seed-archive "$TEST_ROOT/seed.tar.gz" \
+		--seed-manifest "$TEST_ROOT/seed.json" \
+		--run-id "receipt-$receipt_fail_point" \
+		--base-url "http://transition-receipt-$receipt_fail_point.localhost:$receipt_failure_port" \
+		--store-id "woopayments-native-transition-receipt-$receipt_fail_point" \
+		> /dev/null 2> "$TEST_ROOT/receipt-$receipt_fail_point.stderr"
+	receipt_failure_status=$?
+	set -e
+	if (( receipt_failure_status == 0 )); then
+		echo "The $receipt_fail_point receipt durability injection did not fail create." >&2
+		exit 1
+	fi
+	test ! -e "$receipt_failure_workspace/resource-state.json"
+	test ! -e "$SHARED_TMPDIR/woopayments-native-transition-port-leases/$receipt_failure_port"
+	test ! -s "$receipt_failure_log"
+	if [[ -e "$receipt_failure_workspace/rollback-receipt" ]]; then
+		test -f "$receipt_failure_workspace/rollback-receipt"
+		test "$(mode_of "$receipt_failure_workspace/rollback-receipt")" = '600'
+	fi
+	receipt_failure_port=$((receipt_failure_port + 1))
+done
 
 create_workspace="$TEST_ROOT/woopayments-native-transition-create-run"
 create_runtime="$TEST_ROOT/runtime-create"
@@ -411,8 +490,9 @@ test "$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1])).ph
 test "$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1])).account_creation_attempted" "$create_workspace/resource-state.json")" = 'true'
 create_lease_path="$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1])).port_lease_path" "$create_workspace/resource-state.json")"
 test "$create_lease_path" = "$SHARED_TMPDIR/woopayments-native-transition-port-leases/19091"
-test -d "$create_lease_path"
-test "$(mode_of "$create_lease_path/owner.json")" = '600'
+test -f "$create_lease_path"
+test ! -L "$create_lease_path"
+test "$(mode_of "$create_lease_path")" = '600'
 test "$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1])).port_lease_acquired" "$create_workspace/resource-state.json")" = 'true'
 
 node -e '
@@ -442,7 +522,7 @@ node -e '
 	if ( evidence.ingress_routes !== "current" ) process.exit( 1 );
 ' "$create_workspace/evidence/callback-probe.json"
 
-run_provisioner "$create_workspace" "$create_runtime" "$create_log" \
+E2E_FAKE_ACCOUNT_RUNTIME=native_core run_provisioner "$create_workspace" "$create_runtime" "$create_log" \
 	destroy \
 	--workspace "$create_workspace" \
 	--rollback-receipt-file "$create_workspace/rollback-receipt"
@@ -453,12 +533,78 @@ if (( account_delete_line >= blog_delete_line || blog_delete_line >= store_destr
 	echo 'Transition teardown did not delete account, blog, then wp-env in order.' >&2
 	exit 1
 fi
+test "$(grep -Fc 'exec wp-env destroy --force' "$create_log")" = '1'
 test "$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1])).phase" "$create_workspace/resource-state.json")" = 'destroyed'
 test ! -e "$create_runtime/account"
 test ! -e "$create_runtime/blog"
 test ! -e "$create_runtime/wp-env"
 test ! -e "$create_lease_path"
 test "$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1])).port_lease_released" "$create_workspace/resource-state.json")" = 'true'
+
+native_precreate_workspace="$TEST_ROOT/woopayments-native-transition-native-precreate"
+native_precreate_runtime="$TEST_ROOT/runtime-native-precreate"
+native_precreate_log="$TEST_ROOT/native-precreate-commands.log"
+mkdir "$native_precreate_workspace"
+if E2E_TRANSITION_PORT=19109 E2E_FAKE_ACCOUNT_RUNTIME=native_core run_provisioner \
+	"$native_precreate_workspace" "$native_precreate_runtime" "$native_precreate_log" \
+	create \
+	--workspace "$native_precreate_workspace" \
+	--seed-archive "$TEST_ROOT/seed.tar.gz" \
+	--seed-manifest "$TEST_ROOT/seed.json" \
+	--run-id native-precreate \
+	--base-url 'http://transition-native-precreate.localhost:19109' \
+	--store-id 'woopayments-native-transition-native-precreate' > /dev/null 2>&1; then
+	echo 'Transition create accepted native_core pre-create account evidence.' >&2
+	exit 1
+fi
+if grep -Fq 'test-lab account create' "$native_precreate_log"; then
+	echo 'Transition create mutated account state after native_core pre-create evidence.' >&2
+	exit 1
+fi
+E2E_TRANSITION_PORT=19109 E2E_FAKE_ACCOUNT_RUNTIME=native_core run_provisioner \
+	"$native_precreate_workspace" "$native_precreate_runtime" "$native_precreate_log" \
+	destroy \
+	--workspace "$native_precreate_workspace" \
+	--rollback-receipt-file "$native_precreate_workspace/rollback-receipt"
+test ! -e "$native_precreate_runtime/blog"
+test ! -e "$native_precreate_runtime/wp-env"
+
+native_exit_runtime="$TEST_ROOT/runtime-native-exit"
+native_exit_log="$TEST_ROOT/native-exit-commands.log"
+set +e
+env \
+	TMPDIR="$SHARED_TMPDIR" \
+	E2E_TRANSITION_PORT=19108 \
+	E2E_TRANSITION_FRONTEND_LOCK_SHA256="$frontend_lock_hash" \
+	E2E_TRANSITION_RUN_ID=native-exit \
+	E2E_TRANSITION_SEED_ARCHIVE="$TEST_ROOT/seed.tar.gz" \
+	E2E_TRANSITION_SEED_MANIFEST="$TEST_ROOT/seed.json" \
+	E2E_TRANSITION_STORE_PROVISIONER="$PROVISIONER" \
+	E2E_TRANSITION_CORE_REPO="$TEST_ROOT/mounts/core" \
+	E2E_TRANSITION_DEV_TOOLS_REPO="$TEST_ROOT/mounts/dev-tools" \
+	E2E_TRANSITION_WPCOM_HELPER_REPO="$TEST_ROOT/mounts/wpcom-helper" \
+	E2E_TRANSITION_WPCOM_URL='http://wpcom.localhost:8080' \
+	E2E_TRANSITION_WPCOM_API_URL='http://host.docker.internal:8080/wp-json/' \
+	E2E_TRANSITION_PNPM_BIN="$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" \
+	E2E_WPCOM_LOCAL_BIN="$SCRIPT_DIR/test-fixtures/fake-transition-wpcom-local.sh" \
+	E2E_FAKE_TRANSITION_WORKSPACE="$SHARED_TMPDIR/woopayments-native-transition-native-exit" \
+	E2E_FAKE_RUNTIME_STATE="$native_exit_runtime" \
+	E2E_FAKE_COMMAND_LOG="$native_exit_log" \
+	E2E_FAKE_CALLBACK_MODE=stale-ingress-routes \
+	E2E_FAKE_TRANSITION_TO_NATIVE_CORE_BEFORE_EXIT=1 \
+	"$PROVISION_WRAPPER" create \
+	> /dev/null 2> "$TEST_ROOT/native-exit.stderr"
+native_exit_status=$?
+set -e
+if (( native_exit_status == 0 )); then
+	echo 'The native_core EXIT cleanup fixture did not fail after transition.' >&2
+	exit 1
+fi
+test ! -e "$SHARED_TMPDIR/woopayments-native-transition-native-exit"
+test ! -e "$native_exit_runtime/account"
+test ! -e "$native_exit_runtime/blog"
+test ! -e "$native_exit_runtime/wp-env"
+test "$(grep -Fc 'exec wp-env destroy --force' "$native_exit_log")" = '1'
 
 lease_owner_workspace="$TEST_ROOT/woopayments-native-transition-lease-owner"
 lease_owner_runtime="$TEST_ROOT/runtime-lease-owner"
@@ -477,7 +623,7 @@ E2E_TRANSITION_PORT=19150 run_provisioner \
 	--base-url 'http://transition-lease-owner.localhost:19150' \
 	--store-id 'woopayments-native-transition-lease-owner' > /dev/null
 lease_owner_path="$SHARED_TMPDIR/woopayments-native-transition-port-leases/19150"
-lease_owner_before="$(shasum -a 256 "$lease_owner_path/owner.json" | awk '{ print $1 }')"
+lease_owner_before="$(shasum -a 256 "$lease_owner_path" | awk '{ print $1 }')"
 if E2E_TRANSITION_PORT=19150 run_provisioner \
 	"$lease_collision_workspace" "$lease_collision_runtime" "$lease_collision_log" \
 	create \
@@ -493,13 +639,15 @@ fi
 test ! -s "$lease_collision_log"
 test -f "$lease_collision_workspace/rollback-receipt"
 test -f "$lease_collision_workspace/resource-state.json"
-test "$lease_owner_before" = "$(shasum -a 256 "$lease_owner_path/owner.json" | awk '{ print $1 }')"
+lease_collision_candidate="$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1])).port_lease_candidate_path" "$lease_collision_workspace/resource-state.json")"
+test ! -e "$lease_collision_candidate"
+test "$lease_owner_before" = "$(shasum -a 256 "$lease_owner_path" | awk '{ print $1 }')"
 E2E_TRANSITION_PORT=19150 run_provisioner \
 	"$lease_collision_workspace" "$lease_collision_runtime" "$lease_collision_log" \
 	destroy \
 	--workspace "$lease_collision_workspace" \
 	--rollback-receipt-file "$lease_collision_workspace/rollback-receipt"
-test -d "$lease_owner_path"
+test -f "$lease_owner_path"
 E2E_TRANSITION_PORT=19150 run_provisioner \
 	"$lease_owner_workspace" "$lease_owner_runtime" "$lease_owner_log" \
 	destroy \
@@ -509,7 +657,6 @@ test ! -e "$lease_owner_path"
 
 lease_namespace="$SHARED_TMPDIR/woopayments-native-transition-port-leases"
 stale_lease_path="$lease_namespace/19151"
-mkdir -p "$stale_lease_path"
 node -e '
 	const { writeFileSync } = require( "node:fs" );
 	writeFileSync( process.argv[ 1 ], `${ JSON.stringify( {
@@ -519,8 +666,8 @@ node -e '
 		base_url: "http://transition-stale-owner.localhost:19151",
 		receipt_sha256: "0".repeat( 64 ),
 	} ) }\n`, { mode: 0o600 } );
-' "$stale_lease_path/owner.json"
-stale_owner_before="$(shasum -a 256 "$stale_lease_path/owner.json" | awk '{ print $1 }')"
+	' "$stale_lease_path"
+stale_owner_before="$(shasum -a 256 "$stale_lease_path" | awk '{ print $1 }')"
 stale_collision_workspace="$TEST_ROOT/woopayments-native-transition-stale-collision"
 stale_collision_runtime="$TEST_ROOT/runtime-stale-collision"
 stale_collision_log="$TEST_ROOT/stale-collision-commands.log"
@@ -538,15 +685,116 @@ if E2E_TRANSITION_PORT=19151 run_provisioner \
 	exit 1
 fi
 test ! -s "$stale_collision_log"
-test "$stale_owner_before" = "$(shasum -a 256 "$stale_lease_path/owner.json" | awk '{ print $1 }')"
+test "$stale_owner_before" = "$(shasum -a 256 "$stale_lease_path" | awk '{ print $1 }')"
 E2E_TRANSITION_PORT=19151 run_provisioner \
 	"$stale_collision_workspace" "$stale_collision_runtime" "$stale_collision_log" \
 	destroy \
 	--workspace "$stale_collision_workspace" \
 	--rollback-receipt-file "$stale_collision_workspace/rollback-receipt"
-test -d "$stale_lease_path"
-rm "$stale_lease_path/owner.json"
-rmdir "$stale_lease_path"
+test -f "$stale_lease_path"
+rm "$stale_lease_path"
+
+lease_failure_port=19160
+for lease_failure_mode in \
+	candidate-write \
+	candidate-fsync \
+	link \
+	directory-fsync \
+	kill-before-link \
+	kill-after-link; do
+	lease_failure_workspace="$TEST_ROOT/woopayments-native-transition-lease-$lease_failure_mode"
+	lease_failure_runtime="$TEST_ROOT/runtime-lease-$lease_failure_mode"
+	lease_failure_log="$TEST_ROOT/lease-$lease_failure_mode-commands.log"
+	lease_failure_base_url="http://transition-lease-$lease_failure_mode.localhost:$lease_failure_port"
+	mkdir "$lease_failure_workspace"
+	set +e
+	if [[ "$lease_failure_mode" == kill-* ]]; then
+		E2E_TRANSITION_PORT="$lease_failure_port" E2E_TRANSITION_TEST_KILL_DURING_LEASE="${lease_failure_mode#kill-}" run_provisioner \
+			"$lease_failure_workspace" "$lease_failure_runtime" "$lease_failure_log" \
+			create \
+			--workspace "$lease_failure_workspace" \
+			--seed-archive "$TEST_ROOT/seed.tar.gz" \
+			--seed-manifest "$TEST_ROOT/seed.json" \
+			--run-id "lease-$lease_failure_mode" \
+			--base-url "$lease_failure_base_url" \
+			--store-id "woopayments-native-transition-lease-$lease_failure_mode" \
+			> /dev/null 2> "$TEST_ROOT/lease-$lease_failure_mode.stderr"
+	else
+		E2E_TRANSITION_PORT="$lease_failure_port" E2E_TRANSITION_LEASE_FAIL_POINT="$lease_failure_mode" run_provisioner \
+			"$lease_failure_workspace" "$lease_failure_runtime" "$lease_failure_log" \
+			create \
+			--workspace "$lease_failure_workspace" \
+			--seed-archive "$TEST_ROOT/seed.tar.gz" \
+			--seed-manifest "$TEST_ROOT/seed.json" \
+			--run-id "lease-$lease_failure_mode" \
+			--base-url "$lease_failure_base_url" \
+			--store-id "woopayments-native-transition-lease-$lease_failure_mode" \
+			> /dev/null 2> "$TEST_ROOT/lease-$lease_failure_mode.stderr"
+	fi
+	lease_failure_status=$?
+	set -e
+	if (( lease_failure_status == 0 )); then
+		echo "The $lease_failure_mode lease publication injection did not fail create." >&2
+		exit 1
+	fi
+	test -f "$lease_failure_workspace/resource-state.json"
+	lease_failure_path="$lease_namespace/$lease_failure_port"
+	lease_failure_candidate="$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1])).port_lease_candidate_path" "$lease_failure_workspace/resource-state.json")"
+	case "$lease_failure_mode" in
+		candidate-write|candidate-fsync|link)
+			test ! -e "$lease_failure_path"
+			test ! -e "$lease_failure_candidate"
+			;;
+		kill-before-link)
+			test ! -e "$lease_failure_path"
+			assert_exact_lease_owner \
+				"$lease_failure_candidate" \
+				"$lease_failure_workspace" \
+				"lease-$lease_failure_mode" \
+				"$lease_failure_base_url" \
+				"$lease_failure_port" \
+				"$lease_failure_workspace/rollback-receipt"
+			;;
+		directory-fsync)
+			assert_exact_lease_owner \
+				"$lease_failure_path" \
+				"$lease_failure_workspace" \
+				"lease-$lease_failure_mode" \
+				"$lease_failure_base_url" \
+				"$lease_failure_port" \
+				"$lease_failure_workspace/rollback-receipt"
+			test ! -e "$lease_failure_candidate"
+			;;
+		kill-after-link)
+			assert_exact_lease_owner \
+				"$lease_failure_path" \
+				"$lease_failure_workspace" \
+				"lease-$lease_failure_mode" \
+				"$lease_failure_base_url" \
+				"$lease_failure_port" \
+				"$lease_failure_workspace/rollback-receipt"
+			assert_exact_lease_owner \
+				"$lease_failure_candidate" \
+				"$lease_failure_workspace" \
+				"lease-$lease_failure_mode" \
+				"$lease_failure_base_url" \
+				"$lease_failure_port" \
+				"$lease_failure_workspace/rollback-receipt"
+			test "$(stat -f '%i' "$lease_failure_path" 2> /dev/null || stat -c '%i' "$lease_failure_path")" = \
+				"$(stat -f '%i' "$lease_failure_candidate" 2> /dev/null || stat -c '%i' "$lease_failure_candidate")"
+			;;
+	esac
+	test ! -s "$lease_failure_log"
+	E2E_TRANSITION_PORT="$lease_failure_port" run_provisioner \
+		"$lease_failure_workspace" "$lease_failure_runtime" "$lease_failure_log" \
+		destroy \
+		--workspace "$lease_failure_workspace" \
+		--rollback-receipt-file "$lease_failure_workspace/rollback-receipt"
+	test ! -e "$lease_failure_path"
+	test ! -e "$lease_failure_candidate"
+	test "$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1])).phase" "$lease_failure_workspace/resource-state.json")" = 'destroyed'
+	lease_failure_port=$((lease_failure_port + 1))
+done
 
 lease_retry_workspace="$TEST_ROOT/woopayments-native-transition-lease-retry"
 lease_retry_runtime="$TEST_ROOT/runtime-lease-retry"
@@ -602,13 +850,13 @@ E2E_TRANSITION_PORT=19153 run_provisioner \
 	--base-url 'http://transition-lease-wrong-owner.localhost:19153' \
 	--store-id 'woopayments-native-transition-lease-wrong-owner' > /dev/null
 lease_wrong_owner_path="$lease_namespace/19153"
-cp "$lease_wrong_owner_path/owner.json" "$lease_wrong_owner_workspace/exact-owner.json"
+cp "$lease_wrong_owner_path" "$lease_wrong_owner_workspace/exact-owner.json"
 node -e '
 	const { readFileSync, writeFileSync } = require( "node:fs" );
 	const owner = JSON.parse( readFileSync( process.argv[ 1 ], "utf8" ) );
 	owner.run_id = "wrong-owner";
 	writeFileSync( process.argv[ 1 ], `${ JSON.stringify( owner ) }\n`, { mode: 0o600 } );
-' "$lease_wrong_owner_path/owner.json"
+' "$lease_wrong_owner_path"
 if E2E_TRANSITION_PORT=19153 run_provisioner \
 	"$lease_wrong_owner_workspace" "$lease_wrong_owner_runtime" "$lease_wrong_owner_log" \
 	destroy \
@@ -621,7 +869,7 @@ fi
 test -f "$lease_wrong_owner_runtime/account"
 test -f "$lease_wrong_owner_runtime/blog"
 test -f "$lease_wrong_owner_runtime/wp-env"
-cp "$lease_wrong_owner_workspace/exact-owner.json" "$lease_wrong_owner_path/owner.json"
+cp "$lease_wrong_owner_workspace/exact-owner.json" "$lease_wrong_owner_path"
 E2E_TRANSITION_PORT=19153 run_provisioner \
 	"$lease_wrong_owner_workspace" "$lease_wrong_owner_runtime" "$lease_wrong_owner_log" \
 	destroy \
@@ -765,9 +1013,10 @@ for deleted_resource in account blog wp-env; do
 	test ! -e "$delete_kill_runtime/account"
 	test ! -e "$delete_kill_runtime/blog"
 	test ! -e "$delete_kill_runtime/wp-env"
-	if [[ "$deleted_resource" == 'wp-env' ]]; then
-		test "$(< "$delete_kill_runtime/wp-env-destroy-observed-absent")" = 'true'
-	fi
+		if [[ "$deleted_resource" == 'wp-env' ]]; then
+			test "$(< "$delete_kill_runtime/wp-env-destroy-observed-absent")" = 'true'
+			test "$(grep -Fc 'exec wp-env destroy --force' "$delete_kill_log")" = '2'
+		fi
 	delete_kill_port=$((delete_kill_port + 1))
 done
 
@@ -873,7 +1122,7 @@ node -e '
 ' "$account_kill_workspace/resource-state.json"
 
 account_rejection_port=19123
-for evidence_mode in ambiguous live wrong-account wrong-runtime guardrail-denied; do
+for evidence_mode in ambiguous live wrong-account wrong-runtime wrong-native-identity guardrail-denied; do
 	rejection_workspace="$TEST_ROOT/woopayments-native-transition-account-$evidence_mode"
 	rejection_runtime="$TEST_ROOT/runtime-account-$evidence_mode"
 	rejection_log="$TEST_ROOT/account-$evidence_mode-commands.log"

@@ -48,7 +48,7 @@ if [[ "$*" == 'exec wp-env start' ]]; then
 	exit 0
 fi
 
-if [[ "$*" == 'exec wp-env destroy' ]]; then
+if [[ "$*" == 'exec wp-env destroy --force' ]]; then
 	if [[ "${E2E_FAKE_WP_ENV_DESTROY_FAIL:-0}" == '1' ]]; then
 		echo 'Fake exact wp-env destroy failed.' >&2
 		exit 42
@@ -71,6 +71,10 @@ fi
 
 if [[ "$*" == *'transition_account_recovery_evidence'* ]]; then
 	account_evidence_mode="${E2E_FAKE_ACCOUNT_EVIDENCE_MODE:-exact}"
+	account_runtime="${E2E_FAKE_ACCOUNT_RUNTIME:-extension}"
+	if [[ -f "$RUNTIME_STATE/native-core" ]]; then
+		account_runtime='native_core'
+	fi
 	if [[ "${E2E_FAKE_ACCOUNT_MISMATCH:-0}" == '1' ]]; then
 		account_evidence_mode='wrong-account'
 	fi
@@ -78,10 +82,11 @@ if [[ "$*" == *'transition_account_recovery_evidence'* ]]; then
 		const { existsSync, readFileSync } = require( "node:fs" );
 		const state = JSON.parse( readFileSync( process.argv[ 1 ], "utf8" ) );
 		const mode = process.argv[ 3 ];
+		const runtime = process.argv[ 4 ];
 		const hasAccount = existsSync( process.argv[ 2 ] ) || mode === "preexisting";
 		const status = {
 			environment: "local",
-			runtime: mode === "wrong-runtime" ? "native_core" : "extension",
+			runtime: mode === "wrong-runtime" ? "embedded" : runtime,
 			wcpay_active: true,
 			connected: hasAccount,
 			account_id: hasAccount ? "acct_transition_77" : "",
@@ -126,20 +131,26 @@ if [[ "$*" == *'transition_account_recovery_evidence'* ]]; then
 		} else if ( mode === "guardrail-denied" ) {
 			status.guardrail = { tier: 2, allowed: false };
 		}
-		process.stdout.write( JSON.stringify( {
-			store: {
+		const store = {
 				site_url: state.base_url,
 				home: state.home,
 				marker: state.marker,
 				wpcom_blog_id: state.wpcom_blog_id,
-			},
+			};
+		if ( mode === "wrong-native-identity" ) {
+			status.runtime = "native_core";
+			store.marker = `${ state.marker }:wrong-native-owner`;
+		}
+		process.stdout.write( JSON.stringify( {
+			store,
 			status,
 			account_data: accountData,
 		} ) );
 	' \
 		"$WORKSPACE/resource-state.json" \
 		"$RUNTIME_STATE/account" \
-		"$account_evidence_mode"
+		"$account_evidence_mode" \
+		"$account_runtime"
 	exit 0
 fi
 
