@@ -10,7 +10,6 @@ use WC_Data_Store;
 use WC_Payment_Token_CC;
 use WC_Rate_Limiter;
 use WC_Unit_Test_Case;
-use WPDieException;
 use WP_REST_Request;
 
 /**
@@ -199,7 +198,7 @@ class NativePaymentsE2EBootstrapTest extends WC_Unit_Test_Case {
 			 * @param int|null $user_id WordPress user ID.
 			 * @return string
 			 */
-			public function get_customer_id_by_user_id( ?int $user_id ): ?string {
+			public function get_persisted_customer_id_by_user_id( ?int $user_id ): ?string {
 				unset( $user_id );
 				return 'cus_exact';
 			}
@@ -269,107 +268,29 @@ class NativePaymentsE2EBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Transition cutover action is hidden without the exact transition constant.
+	 * @testdox The E2E runtime does not register a surrogate WooPayments cutover action.
 	 *
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 */
-	public function test_transition_cutover_action_is_hidden_outside_transition_mode(): void {
-		$this->define_native_e2e_constant();
-		$this->load_bootstrap();
-		update_option( 'active_plugins', array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) );
-		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
-
-		ob_start();
-		( new \WooCommerce_WooPayments_Native_E2E_Runtime() )->render_transition_cutover();
-		$output = (string) ob_get_clean();
-
-		$this->assertStringNotContainsString( 'Switch to native WooPayments', $output, 'The irreversible action must remain transition-only.' );
-	}
-
-	/**
-	 * @testdox Transition cutover renders a nonce-protected semantic button for authorized merchants.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
-	 */
-	public function test_transition_cutover_renders_semantic_nonce_protected_button(): void {
+	public function test_runtime_does_not_register_surrogate_cutover_action(): void {
 		$this->define_native_e2e_constant();
 		$this->define_transition_e2e_constant();
 		$this->load_bootstrap();
-		update_option( 'active_plugins', array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) );
-		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
 
-		ob_start();
-		( new \WooCommerce_WooPayments_Native_E2E_Runtime() )->render_transition_cutover();
-		$output = (string) ob_get_clean();
-
-		$this->assertStringContainsString( '<button', $output, 'The transition action must use native button semantics.' );
-		$this->assertStringContainsString( 'Switch to native WooPayments', $output, 'The button must describe the exact transition.' );
-		$this->assertStringContainsString( '_wpnonce', $output, 'The transition form must carry a WordPress nonce.' );
-	}
-
-	/**
-	 * @testdox Transition cutover deactivates only the standalone WooPayments plugin.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
-	 */
-	public function test_transition_cutover_deactivates_only_standalone_woopayments(): void {
-		$this->define_native_e2e_constant();
-		$this->define_transition_e2e_constant();
-		$this->load_bootstrap();
-		$other_plugin = 'other-plugin/other-plugin.php';
-		update_option( 'active_plugins', array( NativePaymentsRuntimeArbiter::PLUGIN_FILE, $other_plugin ) );
-		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
-		$nonce                = wp_create_nonce( 'wc-native-payments-e2e-cutover' );
-		$_POST['_wpnonce']    = $nonce;
-		$_REQUEST['_wpnonce'] = $nonce;
-		add_filter(
-			'wp_redirect',
-			static function () {
-				throw new \RuntimeException( 'redirected' );
-			}
+		$this->assertFalse(
+			has_action( 'admin_post_wc_native_payments_e2e_cutover' ),
+			'The pilot must drive the product-owned WooPaymentsCutoverController instead of an MU-plugin surrogate.'
 		);
-
-		try {
-			( new \WooCommerce_WooPayments_Native_E2E_Runtime() )->handle_transition_cutover();
-			$this->fail( 'A successful transition must redirect.' );
-		} catch ( \RuntimeException $exception ) {
-			$this->assertSame( 'redirected', $exception->getMessage(), 'The handler should finish with the expected redirect.' );
-		}
-
-		$this->assertSame( array( $other_plugin ), array_values( get_option( 'active_plugins' ) ), 'No unrelated plugin may be deactivated.' );
 	}
 
 	/**
-	 * @testdox Transition cutover refuses callers without WooCommerce management capability.
+	 * @testdox Runtime status never trusts locally writable callback proof.
 	 *
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 */
-	public function test_transition_cutover_rejects_unauthorized_user(): void {
-		$this->define_native_e2e_constant();
-		$this->define_transition_e2e_constant();
-		$this->load_bootstrap();
-		update_option( 'active_plugins', array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) );
-		wp_set_current_user( self::factory()->user->create( array( 'role' => 'customer' ) ) );
-		$nonce                = wp_create_nonce( 'wc-native-payments-e2e-cutover' );
-		$_POST['_wpnonce']    = $nonce;
-		$_REQUEST['_wpnonce'] = $nonce;
-
-		$this->expectException( WPDieException::class );
-
-		( new \WooCommerce_WooPayments_Native_E2E_Runtime() )->handle_transition_cutover();
-	}
-
-	/**
-	 * @testdox Runtime status accepts only fresh callback proof for the exact current blog ID.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
-	 */
-	public function test_status_accepts_only_fresh_exact_callback_proof(): void {
+	public function test_status_rejects_locally_writable_callback_proof(): void {
 		$this->define_native_e2e_constant();
 		$this->define_transition_e2e_constant();
 		$this->load_bootstrap();
@@ -393,12 +314,12 @@ class NativePaymentsE2EBootstrapTest extends WC_Unit_Test_Case {
 
 		$this->assertSame(
 			array(
-				'registered'    => true,
-				'reachable'     => true,
-				'wpcom_blog_id' => 321,
+				'registered'    => false,
+				'reachable'     => false,
+				'wpcom_blog_id' => 0,
 			),
 			$response->get_data()['callback_probe'],
-			'Fresh proof must remain bound to the exact current Jetpack blog.'
+			'The local runtime must not be able to invent callback readiness.'
 		);
 	}
 

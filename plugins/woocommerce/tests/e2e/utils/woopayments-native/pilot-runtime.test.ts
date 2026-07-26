@@ -39,6 +39,105 @@ function response( body: unknown, status = 200 ): APIResponse {
 	} as APIResponse;
 }
 
+function transitionStatus( callbackReady: boolean ) {
+	return {
+		site_url: 'http://transition.test',
+		wpcom_blog_id: 321,
+		runtime_owner: 'plugin',
+		native_enabled: false,
+		account_id: 'acct_transition',
+		account_connected: true,
+		gateway_enabled: true,
+		test_mode: true,
+		enabled_payment_methods: [ 'card' ],
+		last_webhook_fetch: 0,
+		callback_probe: {
+			registered: callbackReady,
+			reachable: callbackReady,
+			wpcom_blog_id: callbackReady ? 321 : 0,
+		},
+	};
+}
+
+function callbackProbeResult(
+	overrides: Record< string, unknown > = {}
+): Record< string, unknown > {
+	return {
+		exit_code: 0,
+		status: 'success',
+		command: 'wcpay callback probe',
+		context: {
+			store_url: 'http://transition.test',
+			wpcom_blog_id: '321',
+			callback_auth_model: 'jetpack_capability',
+			callback_registered: 'true',
+			callback_reachable: 'true',
+			callback_provider_write: 'false',
+			callback_response_result: 'success',
+			...overrides,
+		},
+		artifacts: [],
+	};
+}
+
+test( 'loads transition callback readiness only from the executable wpcom-local probe', async () => {
+	const api = {
+		get: async () => response( transitionStatus( false ) ),
+	} as unknown as APIRequestContext;
+	const invocations: unknown[] = [];
+
+	await expect(
+		loadInitialRuntimeStatus(
+			'transition',
+			api,
+			undefined,
+			{
+				siteUrl: 'http://transition.test',
+				wpcomBlogId: 321,
+			},
+			async ( expected ) => {
+				invocations.push( expected );
+				return callbackProbeResult();
+			}
+		)
+	).resolves.toEqual( {
+		...transitionStatus( false ),
+		callback_probe: {
+			registered: true,
+			reachable: true,
+			wpcom_blog_id: 321,
+		},
+	} );
+	expect( invocations ).toEqual( [
+		{
+			siteUrl: 'http://transition.test',
+			wpcomBlogId: 321,
+		},
+	] );
+} );
+
+test( 'rejects a forged local callback flag when the executable probe is not exact', async () => {
+	const api = {
+		get: async () => response( transitionStatus( true ) ),
+	} as unknown as APIRequestContext;
+
+	await expect(
+		loadInitialRuntimeStatus(
+			'transition',
+			api,
+			undefined,
+			{
+				siteUrl: 'http://transition.test',
+				wpcomBlogId: 321,
+			},
+			async () =>
+				callbackProbeResult( {
+					callback_provider_write: 'true',
+				} )
+		)
+	).rejects.toThrow( /callback probe.*validated evidence/i );
+} );
+
 test( 'loads client readiness from plugin-owned diagnostics without calling the native route', async () => {
 	const directory = await mkdtemp(
 		join( tmpdir(), 'woopayments-client-readiness-' )
@@ -167,6 +266,7 @@ function runtime(
 		updateStatus?: number;
 		loseFeatureAfterSettingsRead?: boolean;
 		loseRecordBeforeCleanupDelete?: boolean;
+		runtimeStatus?: unknown;
 	} = {}
 ): WooPaymentsPilotRuntime {
 	let manualCapture = options.manualCapture ?? false;
@@ -182,6 +282,14 @@ function runtime(
 		},
 		get: async ( url: string ) => {
 			calls.push( { method: 'GET', url } );
+			if ( url === '/wp-json/wc-native-payments-e2e/v1/status' ) {
+				if ( options.runtimeStatus === undefined ) {
+					throw new Error(
+						'No runtime status fixture is configured.'
+					);
+				}
+				return response( options.runtimeStatus );
+			}
 			if (
 				url.startsWith(
 					'/wp-json/wc-native-payments-e2e/v1/saved-card-evidence'
@@ -284,7 +392,12 @@ function runtime(
 		123,
 		'native-store',
 		'acct_native',
-		lockDir
+		lockDir,
+		async ( target ) =>
+			callbackProbeResult( {
+				store_url: target.siteUrl,
+				wpcom_blog_id: target.wpcomBlogId.toString(),
+			} )
 	);
 }
 
@@ -595,6 +708,12 @@ function lockLossPage(
 				) {
 					return 'http://native.test/my-account/set-default-payment-method/73/?_wpnonce=nonce';
 				}
+				if (
+					attribute === 'href' &&
+					name.includes( 'Disable WooPayments' )
+				) {
+					return 'http://native.test/wp-admin/admin.php?wc_woopayments_cutover_action=disable_woopayments&_wc_woopayments_cutover_nonce=nonce';
+				}
 				if ( attribute === 'value' && name.includes( 'value="73"' ) ) {
 					return '73';
 				}
@@ -883,7 +1002,7 @@ test( 'rejects malformed saved-card token evidence before submitting', async () 
 	}
 } );
 
-test( 'proves the exact local and provider saved-card default after native cutover', async () => {
+test( 'proves both exact saved-card mappings and the second-card default after native cutover', async () => {
 	const directory = await lockDirectory();
 	const calls: RequestCall[] = [];
 	const pilotRuntime = runtime( directory, calls, {
@@ -891,11 +1010,16 @@ test( 'proves the exact local and provider saved-card default after native cutov
 			{
 				creation_ready: true,
 				provider_customer_id: 'cus_exact',
-				provider_default_payment_method_id: 'pm_exact',
+				provider_default_payment_method_id: 'pm_second',
 				tokens: [
 					{
+						token_id: 41,
+						payment_method_id: 'pm_first',
+						is_default: false,
+					},
+					{
 						token_id: 73,
-						payment_method_id: 'pm_exact',
+						payment_method_id: 'pm_second',
 						is_default: true,
 					},
 				],
@@ -903,8 +1027,8 @@ test( 'proves the exact local and provider saved-card default after native cutov
 		],
 		providerPaymentMethods: [
 			[
-				{ id: 'pm_other', type: 'card' },
-				{ id: 'pm_exact', type: 'card' },
+				{ id: 'pm_first', type: 'card' },
+				{ id: 'pm_second', type: 'card' },
 			],
 		],
 	} );
@@ -913,17 +1037,23 @@ test( 'proves the exact local and provider saved-card default after native cutov
 		const state = await pilotRuntime.withProviderWriteLocks(
 			{ recordEvent: 'saved-card-state-exact' },
 			async () =>
-				pilotRuntime.getSavedCardState( {
-					tokenId: 73,
-					paymentMethodId: 'pm_exact',
-				} )
+				pilotRuntime.getSavedCardState( [
+					{
+						tokenId: 41,
+						paymentMethodId: 'pm_first',
+					},
+					{
+						tokenId: 73,
+						paymentMethodId: 'pm_second',
+					},
+				] )
 		);
 
 		expect( state ).toEqual( {
 			tokenId: 73,
-			paymentMethodId: 'pm_exact',
+			paymentMethodId: 'pm_second',
 			isDefault: true,
-			providerDefaultPaymentMethodId: 'pm_exact',
+			providerDefaultPaymentMethodId: 'pm_second',
 		} );
 	} finally {
 		await rm( directory, { recursive: true, force: true } );
@@ -932,38 +1062,54 @@ test( 'proves the exact local and provider saved-card default after native cutov
 
 for ( const invalidState of [
 	{
-		name: 'a mismatched local payment-method ID',
+		name: 'a mismatched first local payment-method ID',
 		evidence: {
 			creation_ready: true,
 			provider_customer_id: 'cus_exact',
-			provider_default_payment_method_id: 'pm_exact',
+			provider_default_payment_method_id: 'pm_second',
 			tokens: [
 				{
-					token_id: 73,
+					token_id: 41,
 					payment_method_id: 'pm_wrong',
+					is_default: false,
+				},
+				{
+					token_id: 73,
+					payment_method_id: 'pm_second',
 					is_default: true,
 				},
 			],
 		},
-		providerMethods: [ { id: 'pm_exact', type: 'card' } ],
-		error: /local token 73.*pm_exact/i,
+		providerMethods: [
+			{ id: 'pm_first', type: 'card' },
+			{ id: 'pm_second', type: 'card' },
+		],
+		error: /local token 41.*pm_first/i,
 	},
 	{
-		name: 'a non-default local token',
+		name: 'the first local token still marked default',
 		evidence: {
 			creation_ready: true,
 			provider_customer_id: 'cus_exact',
-			provider_default_payment_method_id: 'pm_exact',
+			provider_default_payment_method_id: 'pm_second',
 			tokens: [
 				{
+					token_id: 41,
+					payment_method_id: 'pm_first',
+					is_default: true,
+				},
+				{
 					token_id: 73,
-					payment_method_id: 'pm_exact',
-					is_default: false,
+					payment_method_id: 'pm_second',
+					is_default: true,
 				},
 			],
 		},
-		providerMethods: [ { id: 'pm_exact', type: 'card' } ],
-		error: /local token 73.*not.*default/i,
+		providerMethods: [
+			{ id: 'pm_first', type: 'card' },
+			{ id: 'pm_second', type: 'card' },
+		],
+		error: /local token 41.*must not.*default/i,
 	},
 	{
 		name: 'a mismatched provider default',
@@ -973,34 +1119,44 @@ for ( const invalidState of [
 			provider_default_payment_method_id: 'pm_other',
 			tokens: [
 				{
-					token_id: 73,
-					payment_method_id: 'pm_exact',
-					is_default: true,
+					token_id: 41,
+					payment_method_id: 'pm_first',
+					is_default: false,
 				},
-			],
-		},
-		providerMethods: [ { id: 'pm_exact', type: 'card' } ],
-		error: /provider default.*pm_exact/i,
-	},
-	{
-		name: 'an ambiguous provider payment-method list',
-		evidence: {
-			creation_ready: true,
-			provider_customer_id: 'cus_exact',
-			provider_default_payment_method_id: 'pm_exact',
-			tokens: [
 				{
 					token_id: 73,
-					payment_method_id: 'pm_exact',
+					payment_method_id: 'pm_second',
 					is_default: true,
 				},
 			],
 		},
 		providerMethods: [
-			{ id: 'pm_exact', type: 'card' },
-			{ id: 'pm_exact', type: 'card' },
+			{ id: 'pm_first', type: 'card' },
+			{ id: 'pm_second', type: 'card' },
 		],
-		error: /exactly one provider payment method.*pm_exact/i,
+		error: /provider default.*pm_second/i,
+	},
+	{
+		name: 'a missing first provider payment method',
+		evidence: {
+			creation_ready: true,
+			provider_customer_id: 'cus_exact',
+			provider_default_payment_method_id: 'pm_second',
+			tokens: [
+				{
+					token_id: 41,
+					payment_method_id: 'pm_first',
+					is_default: false,
+				},
+				{
+					token_id: 73,
+					payment_method_id: 'pm_second',
+					is_default: true,
+				},
+			],
+		},
+		providerMethods: [ { id: 'pm_second', type: 'card' } ],
+		error: /exactly one provider payment method.*pm_first/i,
 	},
 ] ) {
 	test( `rejects saved-card state with ${ invalidState.name }`, async () => {
@@ -1016,10 +1172,16 @@ for ( const invalidState of [
 				pilotRuntime.withProviderWriteLocks(
 					{ recordEvent: 'saved-card-invalid-state' },
 					async () =>
-						pilotRuntime.getSavedCardState( {
-							tokenId: 73,
-							paymentMethodId: 'pm_exact',
-						} )
+						pilotRuntime.getSavedCardState( [
+							{
+								tokenId: 41,
+								paymentMethodId: 'pm_first',
+							},
+							{
+								tokenId: 73,
+								paymentMethodId: 'pm_second',
+							},
+						] )
 				)
 			).rejects.toThrow( invalidState.error );
 		} finally {
@@ -1390,14 +1552,84 @@ test( 'blocks a saved-card default update after lock loss during preparation', a
 	).resolves.toBeUndefined();
 } );
 
+test( 'drives the nonce-protected product cutover controller entry point', async () => {
+	const directory = await lockDirectory();
+	const calls: RequestCall[] = [];
+	const pilotRuntime = runtime( directory, calls, {
+		runtimeStatus: {
+			site_url: 'http://native.test',
+			wpcom_blog_id: 123,
+			runtime_owner: 'native',
+			native_enabled: true,
+			account_id: 'acct_native',
+			account_connected: true,
+			gateway_enabled: true,
+			test_mode: true,
+			enabled_payment_methods: [ 'card' ],
+			last_webhook_fetch: 0,
+			callback_probe: {
+				registered: false,
+				reachable: false,
+				wpcom_blog_id: 0,
+			},
+		},
+	} );
+	let cutoverClicked = false;
+	const cutoverLink = visibleLocator( {
+		click: async () => {
+			cutoverClicked = true;
+		},
+		getAttribute: async ( name ) =>
+			name === 'href'
+				? 'http://native.test/wp-admin/admin.php?wc_woopayments_cutover_action=disable_woopayments&_wc_woopayments_cutover_nonce=nonce'
+				: null,
+	} );
+	const page = {
+		context: () => ( {
+			clearCookies: async () => {},
+		} ),
+		goto: async () => {},
+		getByLabel: () => visibleLocator(),
+		getByRole: (
+			role: string,
+			options?: { exact?: boolean; name?: string | RegExp }
+		) => {
+			const name = String( options?.name ?? '' );
+			if ( role === 'link' && name === 'Disable WooPayments' ) {
+				expect( options?.exact ).toBe( true );
+				return cutoverLink;
+			}
+			if (
+				( role === 'button' && name === 'Log In' ) ||
+				( role === 'textbox' && name === 'Password' ) ||
+				( role === 'textbox' && /Email address/i.test( name ) )
+			) {
+				return visibleLocator();
+			}
+			throw new Error( `Unexpected role locator: ${ role } ${ name }` );
+		},
+	} as unknown as Page;
+
+	try {
+		await pilotRuntime.withProviderWriteLocks(
+			{ recordEvent: 'product-cutover-entry-point' },
+			async () => pilotRuntime.softCutOverEphemeralStore( page )
+		);
+
+		expect( cutoverClicked ).toBe( true );
+	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
 test( 'blocks cutover after lock loss during admin preparation', async () => {
 	await expect(
 		expectMutationBlockedAfterPreparation(
 			{
-				loseOn: { action: 'click', name: 'WooCommerce' },
+				loseOn: { action: 'expect', name: 'Disable WooPayments' },
 				mutation: {
-					role: 'button',
-					name: 'switch to native WooPayments',
+					role: 'link',
+					name: 'Disable WooPayments',
 				},
 			},
 			async ( pilotRuntime, page ) => {

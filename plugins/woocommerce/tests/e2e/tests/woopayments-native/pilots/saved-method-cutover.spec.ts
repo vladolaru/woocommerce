@@ -35,7 +35,7 @@ test(
 				);
 				await pilotRuntime.softCutOverEphemeralStore( page );
 				const nativeDefaultCard = await pilotRuntime.getSavedCardState(
-					defaultCard
+					[ firstCard, defaultCard ]
 				);
 
 				const classicOrderId = await pilotRuntime.payWithExactSavedCard(

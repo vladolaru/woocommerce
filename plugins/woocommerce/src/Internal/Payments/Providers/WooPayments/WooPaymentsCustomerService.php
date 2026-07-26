@@ -463,6 +463,29 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Read a persisted customer ID without migrating or deleting user options.
+	 *
+	 * This accessor is intended for evidence and diagnostic paths where reading
+	 * the observed state must not change it.
+	 *
+	 * @param int|null $user_id WordPress user ID or null for guests.
+	 * @return string|null
+	 */
+	public function get_persisted_customer_id_by_user_id( ?int $user_id ): ?string {
+		if ( null === $user_id || 0 === $user_id ) {
+			$customer_id = WC()->session ? WC()->session->get( self::CUSTOMER_ID_SESSION_KEY ) : null;
+			return is_string( $customer_id ) && '' !== $customer_id ? $customer_id : null;
+		}
+
+		$customer_id = get_user_option( $this->get_customer_id_option(), $user_id );
+		if ( false === $customer_id ) {
+			$customer_id = get_user_option( self::DEPRECATED_CUSTOMER_ID_OPTION, $user_id );
+		}
+
+		return is_string( $customer_id ) && '' !== $customer_id ? $customer_id : null;
+	}
+
+	/**
 	 * Persist a WooPayments customer ID for a user or guest session.
 	 *
 	 * @param int|null $user_id     WordPress user ID or null for guests.

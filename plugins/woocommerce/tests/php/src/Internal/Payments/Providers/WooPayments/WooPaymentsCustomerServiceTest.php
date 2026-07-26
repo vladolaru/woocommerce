@@ -83,6 +83,27 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Read-only customer evidence should not migrate or delete persisted user options.
+	 */
+	public function test_get_persisted_customer_id_by_user_id_does_not_mutate_deprecated_storage(): void {
+		$user_id = $this->factory->user->create( array( 'user_login' => 'read-only-customer-evidence' ) );
+		update_user_option( $user_id, WooPaymentsCustomerService::DEPRECATED_CUSTOMER_ID_OPTION, 'cus_deprecated' );
+
+		$sut = $this->create_sut( false, $this->create_customer_api_client( array() ) );
+
+		$this->assertSame( 'cus_deprecated', $sut->get_persisted_customer_id_by_user_id( $user_id ) );
+		$this->assertSame(
+			'cus_deprecated',
+			get_user_option( WooPaymentsCustomerService::DEPRECATED_CUSTOMER_ID_OPTION, $user_id ),
+			'Read-only evidence must preserve the deprecated customer option in place.'
+		);
+		$this->assertFalse(
+			get_user_option( WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, $user_id ),
+			'Read-only evidence must not create the mode-aware option.'
+		);
+	}
+
+	/**
 	 * @testdox Guest shoppers should use session storage for WooPayments customer IDs.
 	 */
 	public function test_get_or_create_customer_id_uses_session_storage_for_guests(): void {
