@@ -79,9 +79,46 @@ cat > "$TEST_ROOT/seed/woocommerce-payments/vendor/composer/installed.json" <<'J
 	]
 }
 JSON
+printf '20.11\n' > "$TEST_ROOT/seed/woocommerce-payments/.nvmrc"
+cat > "$TEST_ROOT/seed/woocommerce-payments/package.json" <<'JSON'
+{
+	"name": "woocommerce-payments",
+	"version": "10.5.0",
+	"scripts": {
+		"build:client": "NODE_ENV=production webpack"
+	}
+}
+JSON
+cat > "$TEST_ROOT/seed/woocommerce-payments/package-lock.json" <<'JSON'
+{
+	"name": "woocommerce-payments",
+	"version": "10.5.0",
+	"lockfileVersion": 3,
+	"requires": true,
+	"packages": {
+		"": {
+			"name": "woocommerce-payments",
+			"version": "10.5.0"
+		},
+		"node_modules/fake-webpack": {
+			"version": "5.93.0"
+		}
+	}
+}
+JSON
+mkdir "$TEST_ROOT/seed/woocommerce-payments/dist"
+printf 'generated index JavaScript\n' > "$TEST_ROOT/seed/woocommerce-payments/dist/index.js"
+printf 'generated index CSS\n' > "$TEST_ROOT/seed/woocommerce-payments/dist/index.css"
+printf 'generated checkout JavaScript\n' > "$TEST_ROOT/seed/woocommerce-payments/dist/checkout.js"
+printf 'generated blocks checkout JavaScript\n' > "$TEST_ROOT/seed/woocommerce-payments/dist/blocks-checkout.js"
 tar -czf "$TEST_ROOT/seed.tar.gz" -C "$TEST_ROOT/seed" woocommerce-payments
 seed_hash="$(shasum -a 256 "$TEST_ROOT/seed.tar.gz" | awk '{ print $1 }')"
 dependency_lock_hash="$(shasum -a 256 "$TEST_ROOT/seed/woocommerce-payments/composer.lock" | awk '{ print $1 }')"
+frontend_lock_hash="$(shasum -a 256 "$TEST_ROOT/seed/woocommerce-payments/package-lock.json" | awk '{ print $1 }')"
+frontend_index_js_hash="$(shasum -a 256 "$TEST_ROOT/seed/woocommerce-payments/dist/index.js" | awk '{ print $1 }')"
+frontend_index_css_hash="$(shasum -a 256 "$TEST_ROOT/seed/woocommerce-payments/dist/index.css" | awk '{ print $1 }')"
+frontend_checkout_js_hash="$(shasum -a 256 "$TEST_ROOT/seed/woocommerce-payments/dist/checkout.js" | awk '{ print $1 }')"
+frontend_blocks_checkout_js_hash="$(shasum -a 256 "$TEST_ROOT/seed/woocommerce-payments/dist/blocks-checkout.js" | awk '{ print $1 }')"
 node -e '
 	const { writeFileSync } = require( "node:fs" );
 	writeFileSync( process.argv[ 1 ], `${ JSON.stringify( {
@@ -93,14 +130,37 @@ node -e '
 		archive_format: "tar.gz",
 		dependency_lock_sha256: process.argv[ 3 ],
 		production_package_count: 2,
+		frontend_lock_sha256: process.argv[ 4 ],
+		frontend_lockfile_version: 3,
+		frontend_node_line: "20.11",
+		frontend_build_script: "build:client",
 		executable_seed_files: [
 			"vendor/autoload_packages.php",
 			"vendor/autoload.php",
 			"vendor/composer/installed.php",
 			"vendor/composer/installed.json",
+			"dist/index.js",
+			"dist/index.css",
+			"dist/checkout.js",
+			"dist/blocks-checkout.js",
+		],
+		frontend_bundles: [
+			{ path: "dist/index.js", sha256: process.argv[ 5 ] },
+			{ path: "dist/index.css", sha256: process.argv[ 6 ] },
+			{ path: "dist/checkout.js", sha256: process.argv[ 7 ] },
+			{ path: "dist/blocks-checkout.js", sha256: process.argv[ 8 ] },
 		],
 	} ) }\n` );
-' "$TEST_ROOT/seed.json" "$seed_hash" "$dependency_lock_hash"
+' \
+	"$TEST_ROOT/seed.json" \
+	"$seed_hash" \
+	"$dependency_lock_hash" \
+	"$frontend_lock_hash" \
+	"$frontend_index_js_hash" \
+	"$frontend_index_css_hash" \
+	"$frontend_checkout_js_hash" \
+	"$frontend_blocks_checkout_js_hash"
+export E2E_TRANSITION_FRONTEND_LOCK_SHA256="$frontend_lock_hash"
 chmod 0444 \
 	"$TEST_ROOT/source-only-seed.tar.gz" \
 	"$TEST_ROOT/source-only-seed.json" \
@@ -135,6 +195,89 @@ node -e '
 	if ( plan.plugin_version !== "10.5.0" ) process.exit( 1 );
 ' "$plan"
 
+make_invalid_frontend_seed() {
+	local variant="$1"
+	local variant_tree="$TEST_ROOT/$variant-tree"
+	cp -R "$TEST_ROOT/seed" "$variant_tree"
+	case "$variant" in
+		vendor-only)
+			rm -rf "$variant_tree/woocommerce-payments/dist"
+			;;
+		partial-dist)
+			rm "$variant_tree/woocommerce-payments/dist/blocks-checkout.js"
+			;;
+		forged-dist)
+			printf 'forged distribution payload\n' > "$variant_tree/woocommerce-payments/dist/index.js"
+			;;
+		forged-hash)
+			;;
+		forged-lock)
+			node -e '
+				const { readFileSync, writeFileSync } = require( "node:fs" );
+				const lock = JSON.parse( readFileSync( process.argv[ 1 ], "utf8" ) );
+				lock.packages[ "" ].version = "99.0.0-forged";
+				writeFileSync( process.argv[ 1 ], `${ JSON.stringify( lock ) }\n` );
+			' "$variant_tree/woocommerce-payments/package-lock.json"
+			;;
+	esac
+	local variant_archive="$TEST_ROOT/$variant-seed.tar.gz"
+	local variant_manifest="$TEST_ROOT/$variant-seed.json"
+	tar -czf "$variant_archive" -C "$variant_tree" woocommerce-payments
+	local variant_archive_hash
+	variant_archive_hash="$(shasum -a 256 "$variant_archive" | awk '{ print $1 }')"
+	local variant_lock_hash
+	variant_lock_hash="$(shasum -a 256 "$variant_tree/woocommerce-payments/package-lock.json" | awk '{ print $1 }')"
+	node -e '
+		const { readFileSync, writeFileSync } = require( "node:fs" );
+		const manifest = JSON.parse( readFileSync( process.argv[ 1 ], "utf8" ) );
+		manifest.archive_sha256 = process.argv[ 3 ];
+		if ( process.argv[ 5 ] === "forged-hash" ) {
+			manifest.frontend_bundles[ 0 ].sha256 = "0".repeat( 64 );
+		}
+		if ( process.argv[ 5 ] === "forged-lock" ) {
+			manifest.frontend_lock_sha256 = process.argv[ 4 ];
+		}
+		writeFileSync( process.argv[ 2 ], `${ JSON.stringify( manifest ) }\n` );
+	' \
+		"$TEST_ROOT/seed.json" \
+		"$variant_manifest" \
+		"$variant_archive_hash" \
+		"$variant_lock_hash" \
+		"$variant"
+	chmod 0444 "$variant_archive" "$variant_manifest"
+}
+
+for invalid_frontend_seed in \
+	vendor-only \
+	partial-dist \
+	forged-dist \
+	forged-hash \
+	forged-lock; do
+	make_invalid_frontend_seed "$invalid_frontend_seed"
+done
+
+invalid_frontend_seed_accepted=0
+for invalid_frontend_seed in \
+	vendor-only \
+	partial-dist \
+	forged-dist \
+	forged-hash \
+	forged-lock; do
+	if env E2E_TRANSITION_PORT=19091 \
+		"$PROVISIONER" plan \
+		--workspace "$workspace" \
+		--seed-archive "$TEST_ROOT/$invalid_frontend_seed-seed.tar.gz" \
+		--seed-manifest "$TEST_ROOT/$invalid_frontend_seed-seed.json" \
+		--run-id "$invalid_frontend_seed" > /dev/null 2>&1; then
+		echo "Plan accepted the invalid frontend seed: $invalid_frontend_seed." >&2
+		invalid_frontend_seed_accepted=1
+	fi
+done
+if (( invalid_frontend_seed_accepted != 0 )); then
+	exit 1
+fi
+test "$(find "$workspace" -mindepth 1 -print)" = "$before_plan"
+
 sed 's/"plugin":"woocommerce-payments"/"plugin":"forged-plugin"/' \
 	"$TEST_ROOT/seed.json" > "$TEST_ROOT/forged-seed.json"
 chmod 0444 "$TEST_ROOT/forged-seed.json"
@@ -166,6 +309,7 @@ run_provisioner() {
 	shift 3
 	env \
 		E2E_TRANSITION_PORT="${E2E_TRANSITION_PORT:-19091}" \
+		E2E_TRANSITION_FRONTEND_LOCK_SHA256="$frontend_lock_hash" \
 		E2E_TRANSITION_CORE_REPO="$TEST_ROOT/mounts/core" \
 		E2E_TRANSITION_DEV_TOOLS_REPO="$TEST_ROOT/mounts/dev-tools" \
 		E2E_TRANSITION_WPCOM_HELPER_REPO="$TEST_ROOT/mounts/wpcom-helper" \

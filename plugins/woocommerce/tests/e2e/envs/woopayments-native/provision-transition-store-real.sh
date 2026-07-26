@@ -5,6 +5,7 @@ umask 077
 
 readonly SEED_COMMIT='a1f755fc903966387f8629f78f75976ac8d2016e'
 readonly SEED_VERSION='10.5.0'
+readonly FRONTEND_LOCK_SHA256="${E2E_TRANSITION_FRONTEND_LOCK_SHA256:-6e279cfadb1851486976f67a72a11bc9ea36fa62c7f74d31b4d0d73c006b34b1}"
 readonly SCRIPT_DIR="$(
 	cd "$(dirname "${BASH_SOURCE[0]}")"
 	pwd -P
@@ -111,17 +112,41 @@ validate_seed() {
 			! /^[a-f0-9]{64}$/.test( manifest.dependency_lock_sha256 ) ||
 			! Number.isSafeInteger( manifest.production_package_count ) ||
 			manifest.production_package_count <= 0 ||
+			manifest.frontend_lock_sha256 !== process.argv[ 5 ] ||
+			manifest.frontend_lockfile_version !== 3 ||
+			manifest.frontend_node_line !== "20.11" ||
+			manifest.frontend_build_script !== "build:client" ||
 			JSON.stringify( manifest.executable_seed_files ) !== JSON.stringify( [
 				"vendor/autoload_packages.php",
 				"vendor/autoload.php",
 				"vendor/composer/installed.php",
 				"vendor/composer/installed.json",
-			] )
+				"dist/index.js",
+				"dist/index.css",
+				"dist/checkout.js",
+				"dist/blocks-checkout.js",
+			] ) ||
+			! Array.isArray( manifest.frontend_bundles ) ||
+			JSON.stringify( manifest.frontend_bundles.map( ( value ) => value.path ) ) !==
+				JSON.stringify( [
+					"dist/index.js",
+					"dist/index.css",
+					"dist/checkout.js",
+					"dist/blocks-checkout.js",
+				] ) ||
+			manifest.frontend_bundles.some(
+				( value ) => ! /^[a-f0-9]{64}$/.test( value.sha256 )
+			)
 		) {
 			console.error( "Transition seed manifest does not match the approved immutable floor." );
 			process.exit( 1 );
 		}
-	' "$seed_manifest" "$seed_archive" "$SEED_VERSION" "$SEED_COMMIT"
+	' \
+		"$seed_manifest" \
+		"$seed_archive" \
+		"$SEED_VERSION" \
+		"$SEED_COMMIT" \
+		"$FRONTEND_LOCK_SHA256"
 
 	if ! tar -tzf "$seed_archive" |
 		grep -Fqx 'woocommerce-payments/woocommerce-payments.php'; then
@@ -137,15 +162,26 @@ validate_seed() {
 		echo 'Transition seed archive contains forbidden Git metadata.' >&2
 		exit 1
 	fi
+	if tar -tzf "$seed_archive" | grep -Eq '(^|/)node_modules(/|$)'; then
+		echo 'Transition seed archive contains build-only frontend dependencies.' >&2
+		exit 1
+	fi
 
 	local validation_root
 	validation_root="$(mktemp -d "${TMPDIR:?TMPDIR is required}/woopayments-transition-seed-validation.XXXXXX")"
 	local -a executable_entries=(
 		'woocommerce-payments/composer.lock'
+		'woocommerce-payments/.nvmrc'
+		'woocommerce-payments/package.json'
+		'woocommerce-payments/package-lock.json'
 		'woocommerce-payments/vendor/autoload_packages.php'
 		'woocommerce-payments/vendor/autoload.php'
 		'woocommerce-payments/vendor/composer/installed.php'
 		'woocommerce-payments/vendor/composer/installed.json'
+		'woocommerce-payments/dist/index.js'
+		'woocommerce-payments/dist/index.css'
+		'woocommerce-payments/dist/checkout.js'
+		'woocommerce-payments/dist/blocks-checkout.js'
 	)
 	if ! tar -xzf "$seed_archive" -C "$validation_root" "${executable_entries[@]}"; then
 		rm -rf "$validation_root"
@@ -163,16 +199,26 @@ validate_seed() {
 	if ! node -e '
 		const { createHash } = require( "node:crypto" );
 		const { readFileSync } = require( "node:fs" );
+		const { join } = require( "node:path" );
 		const manifest = JSON.parse( readFileSync( process.argv[ 1 ], "utf8" ) );
 		const lock = JSON.parse( readFileSync( process.argv[ 2 ], "utf8" ) );
 		const installedDocument = JSON.parse(
 			readFileSync( process.argv[ 3 ], "utf8" )
+		);
+		const frontendManifest = JSON.parse(
+			readFileSync( process.argv[ 4 ], "utf8" )
+		);
+		const frontendLock = JSON.parse(
+			readFileSync( process.argv[ 5 ], "utf8" )
 		);
 		const installed = Array.isArray( installedDocument )
 			? installedDocument
 			: installedDocument.packages;
 		const lockHash = createHash( "sha256" )
 			.update( readFileSync( process.argv[ 2 ] ) )
+			.digest( "hex" );
+		const frontendLockHash = createHash( "sha256" )
+			.update( readFileSync( process.argv[ 5 ] ) )
 			.digest( "hex" );
 		const normalize = ( packages ) => {
 			if ( ! Array.isArray( packages ) ) process.exit( 1 );
@@ -190,14 +236,36 @@ validate_seed() {
 			lockHash !== manifest.dependency_lock_sha256 ||
 			lock.packages.length !== manifest.production_package_count ||
 			JSON.stringify( normalize( lock.packages ) ) !==
-				JSON.stringify( normalize( installed ) )
+				JSON.stringify( normalize( installed ) ) ||
+			frontendLockHash !== manifest.frontend_lock_sha256 ||
+			frontendLock.lockfileVersion !== manifest.frontend_lockfile_version ||
+			frontendLock.name !== "woocommerce-payments" ||
+			frontendLock.version !== "10.5.0" ||
+			frontendLock.packages?.[ "" ]?.name !== "woocommerce-payments" ||
+			frontendLock.packages?.[ "" ]?.version !== "10.5.0" ||
+			frontendManifest.name !== "woocommerce-payments" ||
+			frontendManifest.version !== "10.5.0" ||
+			frontendManifest.scripts?.[ "build:client" ] !==
+				"NODE_ENV=production webpack" ||
+			readFileSync( process.argv[ 6 ], "utf8" ).trim() !==
+				manifest.frontend_node_line
 		) process.exit( 1 );
+		for ( const bundle of manifest.frontend_bundles ) {
+			const digest = createHash( "sha256" )
+				.update( readFileSync( join( process.argv[ 7 ], bundle.path ) ) )
+				.digest( "hex" );
+			if ( digest !== bundle.sha256 ) process.exit( 1 );
+		}
 	' \
 		"$seed_manifest" \
 		"$validation_root/woocommerce-payments/composer.lock" \
-		"$validation_root/woocommerce-payments/vendor/composer/installed.json"; then
+		"$validation_root/woocommerce-payments/vendor/composer/installed.json" \
+		"$validation_root/woocommerce-payments/package.json" \
+		"$validation_root/woocommerce-payments/package-lock.json" \
+		"$validation_root/woocommerce-payments/.nvmrc" \
+		"$validation_root/woocommerce-payments"; then
 		rm -rf "$validation_root"
-		echo 'Transition seed executable dependencies do not match its safe manifest.' >&2
+		echo 'Transition seed executable dependencies or frontend bundles do not match its safe manifest.' >&2
 		exit 1
 	fi
 	rm -rf "$validation_root"
