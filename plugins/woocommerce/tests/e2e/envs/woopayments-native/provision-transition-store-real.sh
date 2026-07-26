@@ -1509,7 +1509,11 @@ destroy_store() {
 		if [[ "$(state_field wp_env_start_attempted)" == 'true' ]]; then
 			validate_port_lease_owner
 			validate_exact_wp_env_scope
-			if [[ "$(state_field wp_env_created)" == 'true' ]]; then
+			if [[ "$(state_field wp_env_created)" == 'true' ]] &&
+				{
+					[[ "$(state_field account_deleted)" != 'true' ]] ||
+						[[ "$(state_field wpcom_blog_deleted)" != 'true' ]]
+				}; then
 				if [[ "$(state_field wpcom_blog_id_recovered)" == 'true' ]]; then
 					validate_store_scope "$(query_store_identity)"
 				else

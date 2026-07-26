@@ -732,6 +732,28 @@ for deleted_resource in account blog wp-env; do
 		wp-env)
 			test ! -e "$delete_kill_runtime/wp-env"
 			test "$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1])).wp_env_destroyed" "$delete_kill_workspace/resource-state.json")" = 'false'
+			for incomplete_phase in account_deleted wpcom_blog_deleted; do
+				node "$STATE_WRITER" \
+					"$delete_kill_workspace/resource-state.json" \
+					"$incomplete_phase" \
+					false \
+					boolean
+				if E2E_TRANSITION_PORT="$delete_kill_port" run_provisioner \
+					"$delete_kill_workspace" "$delete_kill_runtime" "$delete_kill_log" \
+					destroy \
+					--workspace "$delete_kill_workspace" \
+					--rollback-receipt-file "$delete_kill_workspace/rollback-receipt" \
+					> /dev/null 2> "$TEST_ROOT/delete-kill-$deleted_resource-$incomplete_phase.stderr"; then
+					echo "Transition destroy skipped required probes with $incomplete_phase incomplete." >&2
+					exit 1
+				fi
+				test "$(grep -Fc 'exec wp-env destroy' "$delete_kill_log")" = '1'
+				node "$STATE_WRITER" \
+					"$delete_kill_workspace/resource-state.json" \
+					"$incomplete_phase" \
+					true \
+					boolean
+			done
 			;;
 	esac
 	E2E_TRANSITION_PORT="$delete_kill_port" run_provisioner \

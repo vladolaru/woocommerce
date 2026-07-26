@@ -23,6 +23,12 @@ assert_recovery_state_precedes_mutation() {
 mkdir -p "$RUNTIME_STATE"
 printf 'pnpm\t%s\t%s\t%s\n' "${WP_ENV_HOME:-unset}" "$PWD" "$*" >> "$COMMAND_LOG"
 
+if [[ "$*" == exec\ wp-env\ run\ * ]] &&
+	[[ ! -f "$RUNTIME_STATE/wp-env" ]]; then
+	echo 'Fake wp-env run refused a destroyed environment.' >&2
+	exit 43
+fi
+
 if [[ "$*" == 'exec wp-env start' ]]; then
 	assert_recovery_state_precedes_mutation
 	node -e '
