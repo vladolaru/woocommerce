@@ -72,6 +72,20 @@ case "${1:-}" in
 		if [[ "${E2E_FAKE_BLOCK_ALLOCATION_WRITE:-0}" == '1' ]]; then
 			mkdir "$workspace/allocation.json"
 		fi
+		if [[ "${E2E_FAKE_PORT_LEASE_COLLISION:-0}" == '1' ]]; then
+			node -e '
+				const { createHash } = require( "node:crypto" );
+				const { readFileSync, writeFileSync } = require( "node:fs" );
+				const receipt = readFileSync( process.argv[ 2 ] );
+				writeFileSync( process.argv[ 1 ], `${ JSON.stringify( {
+					receipt_sha256: createHash( "sha256" ).update( receipt ).digest( "hex" ),
+					port_lease_attempted: true,
+					port_lease_collision: true,
+					port_lease_acquired: false,
+					wp_env_start_attempted: false,
+				} ) }\n`, { mode: 0o600, flag: "wx" } );
+			' "$workspace/resource-state.json" "$workspace/rollback-receipt"
+		fi
 		printf '%s' "$rollback_receipt" | node -e '
 			const { readFileSync } = require( "node:fs" );
 			const result = {
@@ -92,6 +106,10 @@ case "${1:-}" in
 		if [[ "${E2E_FAKE_CREATE_PARTIAL_FAILURE:-0}" == '1' ]]; then
 			echo 'Fake transition create failed after creating the store.' >&2
 			exit 1
+		fi
+		if [[ "${E2E_FAKE_PORT_LEASE_COLLISION:-0}" == '1' ]]; then
+			echo 'Fake transition create observed an existing port lease.' >&2
+			exit 72
 		fi
 		;;
 	destroy)

@@ -17,6 +17,10 @@ rollback_created_store() {
 		local cleanup_output=''
 		if ! validate_rollback_receipt_file "$ROLLBACK_RECEIPT_PATH"; then
 			echo "Transition rollback cleanup is impossible for $ROLLBACK_WORKSPACE without a valid rollback receipt." >&2
+		elif validate_port_lease_collision_state \
+			"$ROLLBACK_WORKSPACE/resource-state.json" \
+			"$ROLLBACK_RECEIPT_PATH"; then
+			echo "Transition port lease collision preserved the collision recovery workspace $ROLLBACK_WORKSPACE." >&2
 		else
 			if cleanup_output="$(
 				"$ROLLBACK_PROVISIONER" destroy \
@@ -32,6 +36,37 @@ rollback_created_store() {
 		fi
 	fi
 	exit "$primary_status"
+}
+
+validate_port_lease_collision_state() {
+	local state_path="$1"
+	local receipt_path="$2"
+	node -e '
+		const { createHash } = require( "node:crypto" );
+		const { lstatSync, readFileSync } = require( "node:fs" );
+		let stateStat;
+		try {
+			stateStat = lstatSync( process.argv[ 1 ] );
+		} catch {
+			process.exit( 1 );
+		}
+		if (
+			! stateStat.isFile() ||
+			stateStat.isSymbolicLink() ||
+			( stateStat.mode & 0o777 ) !== 0o600
+		) process.exit( 1 );
+		const state = JSON.parse( readFileSync( process.argv[ 1 ], "utf8" ) );
+		const receiptHash = createHash( "sha256" )
+			.update( readFileSync( process.argv[ 2 ] ) )
+			.digest( "hex" );
+		if (
+			state.receipt_sha256 !== receiptHash ||
+			state.port_lease_attempted !== true ||
+			state.port_lease_collision !== true ||
+			state.port_lease_acquired !== false ||
+			state.wp_env_start_attempted !== false
+		) process.exit( 1 );
+	' "$state_path" "$receipt_path"
 }
 
 require_command() {

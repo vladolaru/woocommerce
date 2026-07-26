@@ -187,6 +187,20 @@ grep -q 'does not exactly match its validated plan' "$TEST_ROOT/expected-error"
 grep -q 'Transition rollback cleanup failed' "$TEST_ROOT/expected-error"
 test -d "$TEST_ROOT/woopayments-native-transition-rollback-cleanup-failure"
 
+expect_failure env \
+	TMPDIR="$TEST_ROOT" \
+	E2E_TRANSITION_RUN_ID='port-lease-collision' \
+	E2E_TRANSITION_SEED_ARCHIVE="$FIXTURES/transition-seed.tar.gz" \
+	E2E_TRANSITION_SEED_MANIFEST="$SEED_MANIFEST" \
+	E2E_TRANSITION_STORE_PROVISIONER="$FIXTURES/fake-transition-provisioner.sh" \
+	E2E_FAKE_PORT_LEASE_COLLISION='1' \
+	E2E_FAKE_PROVISIONER_LOG="$rollback_log" \
+	"$PROVISION_SCRIPT" create
+grep -q 'preserved the collision recovery workspace' "$TEST_ROOT/expected-error"
+test -f "$TEST_ROOT/woopayments-native-transition-port-lease-collision/rollback-receipt"
+test -f "$TEST_ROOT/woopayments-native-transition-port-lease-collision/resource-state.json"
+expect_log_absent 'port-lease-collision' "$rollback_log"
+
 env \
 	TMPDIR="$TEST_ROOT" \
 	E2E_TRANSITION_STORE_PROVISIONER="$FIXTURES/fake-transition-provisioner.sh" \

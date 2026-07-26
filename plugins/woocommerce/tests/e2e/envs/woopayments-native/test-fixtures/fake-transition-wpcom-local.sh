@@ -71,6 +71,22 @@ if [[ "$*" == *'transition_blog_identity'* ]]; then
 	node -e '
 		const { existsSync, readFileSync } = require( "node:fs" );
 		const state = JSON.parse( readFileSync( process.argv[ 1 ], "utf8" ) );
+		const mode = process.argv[ 3 ];
+		if ( mode === "wrong-absent" ) {
+			process.stdout.write( `wpcom-local starting\n${ JSON.stringify( {
+				exists: false,
+				wpcom_blog_id: state.wpcom_blog_id + 1,
+			} ) }\nwpcom-local completed\n` );
+			process.exit();
+		}
+		if ( mode === "ambiguous" ) {
+			process.stdout.write( `wpcom-local starting\n${ JSON.stringify( {
+				exists: "ambiguous",
+				wpcom_blog_id: state.wpcom_blog_id,
+				matches: [ state.wpcom_blog_id, state.wpcom_blog_id + 1 ],
+			} ) }\nwpcom-local completed\n` );
+			process.exit();
+		}
 		if ( ! existsSync( process.argv[ 2 ] ) ) {
 			process.stdout.write( `wpcom-local starting\n${ JSON.stringify( {
 				exists: false,
@@ -85,7 +101,10 @@ if [[ "$*" == *'transition_blog_identity'* ]]; then
 			home: state.home,
 			marker: state.marker,
 		} ) }\nwpcom-local completed\n` );
-	' "$WORKSPACE/resource-state.json" "$RUNTIME_STATE/blog"
+	' \
+		"$WORKSPACE/resource-state.json" \
+		"$RUNTIME_STATE/blog" \
+		"${E2E_FAKE_BLOG_IDENTITY_MODE:-exact}"
 	exit 0
 fi
 
@@ -100,6 +119,10 @@ if [[ "$*" == *'transition_delete_blog'* ]]; then
 		"$WORKSPACE/resource-state.json" \
 		"$RUNTIME_STATE/blog-id-before-delete"
 	rm -f "$RUNTIME_STATE/blog"
+	if [[ "${E2E_FAKE_KILL_AFTER_DELETE:-}" == 'blog' ]]; then
+		kill -KILL "${E2E_TRANSITION_PROVISIONER_PID:?E2E_TRANSITION_PROVISIONER_PID is required}"
+		exit 137
+	fi
 	printf 'deleted\n'
 	exit 0
 fi
@@ -119,12 +142,37 @@ if [[ "$*" == *'wcpay callback probe'* ]]; then
 				;;
 			*)
 				shift
-				;;
+			;;
 		esac
 	done
-	printf 'wpcom-local starting\n{"status":"success","exit_code":0,"provider_secret":"must-not-be-persisted","context":{"store_url":"%s","wpcom_blog_id":"%s","callback_registered":"true","callback_reachable":"true","callback_auth_model":"jetpack_capability","callback_provider_write":"false","callback_response_result":"success"}}\nwpcom-local completed\n' \
-		"$store_url" \
-		"$blog_id"
+	node -e '
+		const mode = process.argv[ 3 ];
+		const callbackRoute = `/sites/${ process.argv[ 2 ] }/wcpay/callback`;
+		const context = {
+			store_url: process.argv[ 1 ],
+			wpcom_blog_id: process.argv[ 2 ],
+			callback_registered: "true",
+			callback_reachable: "true",
+			callback_auth_model: "jetpack_capability",
+			callback_provider_write: "false",
+			callback_response_result: "success",
+			callback_route: callbackRoute,
+			callback_delivered_route: callbackRoute,
+			ingress_routes: "current",
+		};
+		if ( mode === "missing-delivered-route" ) delete context.callback_delivered_route;
+		if ( mode === "mismatched-delivered-route" ) context.callback_delivered_route = `${ callbackRoute }/other`;
+		if ( mode === "missing-ingress-routes" ) delete context.ingress_routes;
+		if ( mode === "stale-ingress-routes" ) context.ingress_routes = "stale";
+		process.stdout.write(
+			`wpcom-local starting\n${ JSON.stringify( {
+				status: "success",
+				exit_code: 0,
+				provider_secret: "must-not-be-persisted",
+				context,
+			} ) }\nwpcom-local completed\n`
+		);
+	' "$store_url" "$blog_id" "${E2E_FAKE_CALLBACK_MODE:-valid}"
 	exit 0
 fi
 

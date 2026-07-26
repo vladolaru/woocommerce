@@ -20,6 +20,7 @@ readonly PROJECTS_ROOT="$(
 )"
 readonly PNPM_BIN="${E2E_TRANSITION_PNPM_BIN:-pnpm}"
 readonly WPCOM_LOCAL_BIN="${E2E_WPCOM_LOCAL_BIN:-wpcom-local}"
+readonly STATE_WRITER="$SCRIPT_DIR/write-transition-state.js"
 
 workspace=''
 seed_archive=''
@@ -368,8 +369,16 @@ json_object_from_stdin() {
 write_initial_state() {
 	local receipt_hash="$1"
 	local marker="$2"
+	local port="$3"
+	local port_lease_path="$4"
 	node -e '
-		const { writeFileSync } = require( "node:fs" );
+		const {
+			closeSync,
+			fsyncSync,
+			openSync,
+			writeFileSync,
+		} = require( "node:fs" );
+		const { dirname } = require( "node:path" );
 		const state = {
 			schema_version: 1,
 			run_id: process.argv[ 2 ],
@@ -383,24 +392,42 @@ write_initial_state() {
 			marker: process.argv[ 8 ],
 			receipt_sha256: process.argv[ 9 ],
 			wp_env_home: process.argv[ 10 ],
+			port: Number( process.argv[ 11 ] ),
+			port_lease_path: process.argv[ 12 ],
 			wpcom_blog_id: 0,
 			account_id: "",
 			account_alias: "",
 			wp_env_start_attempted: false,
 			wp_env_created: false,
+			port_lease_attempted: false,
+			port_lease_acquired: false,
+			port_lease_collision: false,
+			port_lease_release_attempted: false,
+			port_lease_released: false,
 			wpcom_blog_registration_attempted: false,
 			wpcom_blog_created: false,
 			wpcom_blog_id_recovered: false,
+			account_creation_attempted: false,
 			account_created: false,
+			account_id_recovered: false,
 			account_deleted: false,
 			wpcom_blog_deleted: false,
 			wp_env_destroyed: false,
 			phase: "prepared",
 		};
-		writeFileSync( process.argv[ 1 ], `${ JSON.stringify( state ) }\n`, {
-			mode: 0o600,
-			flag: "wx",
-		} );
+		const stateDescriptor = openSync( process.argv[ 1 ], "wx", 0o600 );
+		try {
+			writeFileSync( stateDescriptor, `${ JSON.stringify( state ) }\n` );
+			fsyncSync( stateDescriptor );
+		} finally {
+			closeSync( stateDescriptor );
+		}
+		const directoryDescriptor = openSync( dirname( process.argv[ 1 ] ), "r" );
+		try {
+			fsyncSync( directoryDescriptor );
+		} finally {
+			closeSync( directoryDescriptor );
+		}
 	' \
 		"$workspace/resource-state.json" \
 		"$run_id" \
@@ -411,29 +438,243 @@ write_initial_state() {
 		"$(shasum -a 256 "$seed_archive" | awk '{ print $1 }')" \
 		"$marker" \
 		"$receipt_hash" \
-		"$workspace/wp-env-home"
+		"$workspace/wp-env-home" \
+		"$port" \
+		"$port_lease_path"
 }
 
 update_state() {
 	local key="$1"
 	local value="$2"
 	local type="${3:-string}"
+	node "$STATE_WRITER" "$workspace/resource-state.json" "$key" "$value" "$type"
+}
+
+base_url_port() {
+	node -p '
+		const url = new URL( process.argv[ 1 ] );
+		if ( ! url.port ) process.exit( 1 );
+		Number( url.port );
+	' "$base_url"
+}
+
+port_lease_path_for() {
+	local port="$1"
+	local temporary_root="${TMPDIR:?TMPDIR is required}"
+	if [[ ! -d "$temporary_root" || -L "$temporary_root" ]]; then
+		echo 'Transition port leasing requires an exact non-symlinked TMPDIR.' >&2
+		return 1
+	fi
+	temporary_root="$(
+		cd "$temporary_root"
+		pwd -P
+	)"
+	printf '%s/woopayments-native-transition-port-leases/%s' "$temporary_root" "$port"
+}
+
+ensure_port_lease_namespace() {
+	local lease_path
+	lease_path="$(state_field port_lease_path)"
+	local lease_root
+	lease_root="$(dirname "$lease_path")"
+	if mkdir "$lease_root" 2> /dev/null; then
+		chmod 0700 "$lease_root"
+	elif [[ ! -d "$lease_root" || -L "$lease_root" ]] ||
+		[[ "$(file_mode "$lease_root")" != '700' ]]; then
+		echo 'Transition port lease namespace is not an exact private directory.' >&2
+		return 1
+	fi
+}
+
+write_port_lease_owner() {
+	local lease_path
+	lease_path="$(state_field port_lease_path)"
 	node -e '
-		const { chmodSync, readFileSync, renameSync, writeFileSync } = require( "node:fs" );
-		const path = process.argv[ 1 ];
-		const next = `${ path }.next`;
-		const state = JSON.parse( readFileSync( path, "utf8" ) );
-		let value = process.argv[ 3 ];
-		if ( process.argv[ 4 ] === "number" ) value = Number( value );
-		if ( process.argv[ 4 ] === "boolean" ) value = value === "true";
-		state[ process.argv[ 2 ] ] = value;
-		writeFileSync( next, `${ JSON.stringify( state ) }\n`, {
-			mode: 0o600,
-			flag: "wx",
-		} );
-		renameSync( next, path );
-		chmodSync( path, 0o600 );
-	' "$workspace/resource-state.json" "$key" "$value" "$type"
+		const {
+			closeSync,
+			fsyncSync,
+			openSync,
+			writeFileSync,
+		} = require( "node:fs" );
+		const { dirname, join } = require( "node:path" );
+		const leasePath = process.argv[ 1 ];
+		const ownerPath = join( leasePath, "owner.json" );
+		const owner = {
+			port: Number( process.argv[ 2 ] ),
+			run_id: process.argv[ 3 ],
+			workspace: process.argv[ 4 ],
+			base_url: process.argv[ 5 ],
+			receipt_sha256: process.argv[ 6 ],
+		};
+		const ownerDescriptor = openSync( ownerPath, "wx", 0o600 );
+		try {
+			writeFileSync( ownerDescriptor, `${ JSON.stringify( owner ) }\n` );
+			fsyncSync( ownerDescriptor );
+		} finally {
+			closeSync( ownerDescriptor );
+		}
+		for ( const path of [ leasePath, dirname( leasePath ), dirname( dirname( leasePath ) ) ] ) {
+			const descriptor = openSync( path, "r" );
+			try {
+				fsyncSync( descriptor );
+			} finally {
+				closeSync( descriptor );
+			}
+		}
+	' \
+		"$lease_path" \
+		"$(state_field port)" \
+		"$run_id" \
+		"$workspace" \
+		"$base_url" \
+		"$(state_field receipt_sha256)"
+}
+
+acquire_port_lease() {
+	update_state port_lease_attempted true boolean
+	update_state phase 'port-lease-attempted'
+	ensure_port_lease_namespace
+	local lease_path
+	lease_path="$(state_field port_lease_path)"
+	if ! mkdir "$lease_path" 2> /dev/null; then
+		update_state port_lease_collision true boolean
+		echo "Transition port $(state_field port) already has a lease; existing ownership was preserved." >&2
+		return 1
+	fi
+	chmod 0700 "$lease_path"
+	write_port_lease_owner
+	update_state port_lease_acquired true boolean
+	update_state phase 'port-lease-acquired'
+}
+
+validate_port_lease_owner() {
+	local state_port
+	state_port="$(state_field port)"
+	local lease_path
+	lease_path="$(state_field port_lease_path)"
+	local expected_lease_path
+	expected_lease_path="$(port_lease_path_for "$state_port")"
+	if [[ "$lease_path" != "$expected_lease_path" ]] ||
+		[[ ! -d "$lease_path" || -L "$lease_path" ]] ||
+		[[ "$(file_mode "$lease_path")" != '700' ]] ||
+		[[ ! -f "$lease_path/owner.json" || -L "$lease_path/owner.json" ]] ||
+		[[ "$(file_mode "$lease_path/owner.json")" != '600' ]]; then
+		return 1
+	fi
+	node -e '
+		const { readFileSync } = require( "node:fs" );
+		const owner = JSON.parse( readFileSync( process.argv[ 1 ], "utf8" ) );
+		if (
+			owner.port !== Number( process.argv[ 2 ] ) ||
+			owner.run_id !== process.argv[ 3 ] ||
+			owner.workspace !== process.argv[ 4 ] ||
+			owner.base_url !== process.argv[ 5 ] ||
+			owner.receipt_sha256 !== process.argv[ 6 ] ||
+			Object.keys( owner ).sort().join( "," ) !==
+				"base_url,port,receipt_sha256,run_id,workspace"
+		) process.exit( 1 );
+	' \
+		"$lease_path/owner.json" \
+		"$state_port" \
+		"$run_id" \
+		"$workspace" \
+		"$base_url" \
+		"$(state_field receipt_sha256)"
+}
+
+prepare_port_lease_for_destroy() {
+	if [[ "$(state_field port_lease_released)" == 'true' ]]; then
+		if [[ "$(state_field wp_env_destroyed)" != 'true' ]]; then
+			echo 'Transition port lease was released before durable environment cleanup.' >&2
+			return 1
+		fi
+		return
+	fi
+	local lease_path
+	lease_path="$(state_field port_lease_path)"
+	if [[ "$(state_field port_lease_acquired)" == 'true' ]]; then
+		if validate_port_lease_owner; then
+			return
+		fi
+		if [[ "$(state_field wp_env_destroyed)" == 'true' ]] &&
+			[[ "$(state_field port_lease_release_attempted)" == 'true' ]]; then
+			if [[ ! -e "$lease_path" ]]; then
+				return
+			fi
+			if [[ -d "$lease_path" && ! -L "$lease_path" ]] &&
+				[[ "$(file_mode "$lease_path")" == '700' ]] &&
+				! find "$lease_path" -mindepth 1 -print -quit | grep -q .; then
+				return
+			fi
+		fi
+		echo 'Transition destroy cannot prove exact port lease ownership.' >&2
+		return 1
+	fi
+	if [[ "$(state_field port_lease_collision)" == 'true' ]]; then
+		if [[ "$(state_field wp_env_start_attempted)" != 'false' ]]; then
+			echo 'A colliding transition port lease has unexpected environment mutation state.' >&2
+			return 1
+		fi
+		return
+	fi
+	if validate_port_lease_owner; then
+		update_state port_lease_acquired true boolean
+		update_state phase 'port-lease-recovered'
+		return
+	fi
+	if [[ -e "$lease_path" ]]; then
+		echo 'Transition destroy found ambiguous port lease ownership.' >&2
+		return 1
+	fi
+	if [[ "$(state_field wp_env_start_attempted)" != 'false' ]]; then
+		echo 'Transition environment mutation has no exact port lease owner.' >&2
+		return 1
+	fi
+}
+
+release_port_lease() {
+	if [[ "$(state_field port_lease_released)" == 'true' ]]; then
+		return
+	fi
+	if [[ "$(state_field wp_env_destroyed)" != 'true' ]]; then
+		echo 'Transition port lease release requires durable environment cleanup.' >&2
+		return 1
+	fi
+	if [[ "$(state_field port_lease_acquired)" != 'true' ]]; then
+		update_state port_lease_released true boolean
+		return
+	fi
+	local lease_path
+	lease_path="$(state_field port_lease_path)"
+	update_state port_lease_release_attempted true boolean
+	if [[ -L "$lease_path" ]]; then
+		echo 'Transition port lease release refuses a symlinked lease path.' >&2
+		return 1
+	fi
+	if [[ -e "$lease_path" ]]; then
+		if [[ -f "$lease_path/owner.json" ]]; then
+			validate_port_lease_owner
+			rm "$lease_path/owner.json"
+		elif find "$lease_path" -mindepth 1 -print -quit | grep -q .; then
+			echo 'Transition port lease release found unexpected directory contents.' >&2
+			return 1
+		fi
+		rmdir "$lease_path"
+		node -e '
+			const { closeSync, fsyncSync, openSync } = require( "node:fs" );
+			const descriptor = openSync( process.argv[ 1 ], "r" );
+			try {
+				fsyncSync( descriptor );
+			} finally {
+				closeSync( descriptor );
+			}
+		' "$(dirname "$lease_path")"
+	fi
+	if [[ "${E2E_TRANSITION_TEST_KILL_AFTER_LEASE_RELEASE:-0}" == '1' ]]; then
+		kill -KILL "$$"
+	fi
+	update_state port_lease_released true boolean
+	update_state phase 'port-lease-released'
 }
 
 wp_env() {
@@ -459,10 +700,11 @@ validate_exact_wp_env_scope() {
 		const expected = new URL( process.argv[ 2 ] );
 		if (
 			config.port !== Number( expected.port ) ||
+			config.port !== Number( process.argv[ 3 ] ) ||
 			config.config?.WP_SITEURL !== process.argv[ 2 ] ||
 			config.config?.WP_HOME !== process.argv[ 2 ]
-		) process.exit( 1 );
-	' "$config_path" "$base_url"
+			) process.exit( 1 );
+	' "$config_path" "$base_url" "$(state_field port)"
 }
 
 store_wp() {
@@ -514,6 +756,33 @@ validate_blog_identity() {
 		"$(state_field marker)"
 }
 
+classify_blog_identity() {
+	node -e '
+		const value = JSON.parse( process.argv[ 1 ] );
+		if ( value.wpcom_blog_id !== Number( process.argv[ 2 ] ) ) process.exit( 1 );
+		if ( value.exists === false ) {
+			process.stdout.write( "absent" );
+			process.exit();
+		}
+		if ( value.exists !== true ) process.exit( 1 );
+		const home = new URL( value.home );
+		if (
+			value.domain !== process.argv[ 3 ] ||
+			home.pathname !== "/" ||
+			home.search ||
+			home.hash ||
+			home.origin !== process.argv[ 4 ] ||
+			value.marker !== process.argv[ 5 ]
+		) process.exit( 1 );
+		process.stdout.write( "present" );
+	' \
+		"$1" \
+		"$(state_field wpcom_blog_id)" \
+		"$(state_field domain)" \
+		"$(state_field home)" \
+		"$(state_field marker)"
+}
+
 validate_callback_probe() {
 	node -e '
 		const proof = JSON.parse( process.argv[ 1 ] );
@@ -527,9 +796,117 @@ validate_callback_probe() {
 			context.callback_reachable !== "true" ||
 			context.callback_auth_model !== "jetpack_capability" ||
 			context.callback_provider_write !== "false" ||
-			context.callback_response_result !== "success"
+			context.callback_response_result !== "success" ||
+			typeof context.callback_route !== "string" ||
+			! context.callback_route ||
+			context.callback_delivered_route !== context.callback_route ||
+			context.ingress_routes !== "current"
 		) process.exit( 1 );
 	' "$1" "$base_url" "$(state_field wpcom_blog_id)"
+}
+
+query_account_snapshot() {
+	store_wp --user=1 eval '
+		/* transition_account_recovery_evidence */
+		if ( ! class_exists( "\WCPayDev\TestLab\Operations\Environment" ) ) {
+			WP_CLI::error( "WooPayments Test Lab environment is unavailable." );
+		}
+		$environment = new \WCPayDev\TestLab\Operations\Environment();
+		echo wp_json_encode(
+			array(
+				"store" => array(
+					"site_url" => untrailingslashit( site_url() ),
+					"home" => untrailingslashit( home_url() ),
+					"marker" => get_option( "e2e_woopayments_transition_marker" ),
+					"wpcom_blog_id" => class_exists( "Jetpack_Options" ) ? (int) Jetpack_Options::get_option( "id" ) : 0,
+				),
+				"status" => $environment->get_status_summary(),
+				"account_data" => $environment->get_account_data(),
+			)
+		);
+	' | json_object_from_stdin
+}
+
+classify_account_snapshot() {
+	node -e '
+		const snapshot = JSON.parse( process.argv[ 1 ] );
+		const store = snapshot.store || {};
+		const status = snapshot.status || {};
+		const account = snapshot.account_data;
+		const exactRoot = ( candidate ) => {
+			if ( typeof candidate !== "string" ) process.exit( 1 );
+			const url = new URL( candidate );
+			if ( url.pathname !== "/" || url.search || url.hash ) process.exit( 1 );
+			return url.origin;
+		};
+		if (
+			exactRoot( store.site_url ) !== process.argv[ 2 ] ||
+			exactRoot( store.home ) !== process.argv[ 2 ] ||
+			store.marker !== process.argv[ 3 ] ||
+			store.wpcom_blog_id !== Number( process.argv[ 4 ] ) ||
+			status.environment !== "local" ||
+			status.runtime !== "extension" ||
+			status.wcpay_active !== true ||
+			status.is_test_mode !== true ||
+			status.is_live_mode !== false ||
+			status.is_dev_environment !== true ||
+			! status.guardrail ||
+			typeof status.guardrail.allowed !== "boolean"
+		) process.exit( 1 );
+		const accountIsEmpty =
+			( Array.isArray( account ) && account.length === 0 ) ||
+			( account && ! Array.isArray( account ) &&
+				typeof account === "object" &&
+				Object.keys( account ).length === 0 );
+		if (
+			status.connected === false &&
+			status.account_id === "" &&
+			status.account_type === "unknown" &&
+			status.guardrail.allowed === false &&
+			accountIsEmpty
+		) {
+			process.stdout.write( "absent" );
+			process.exit();
+		}
+		if (
+			status.connected === true &&
+			typeof status.account_id === "string" &&
+			/^acct_[A-Za-z0-9_]+$/.test( status.account_id ) &&
+			status.account_type === "test_drive" &&
+			status.guardrail.allowed === true &&
+			account &&
+			! Array.isArray( account ) &&
+			typeof account === "object" &&
+			account.account_id === status.account_id &&
+			account.is_test_drive === true &&
+			account.is_live !== true
+		) {
+			process.stdout.write( `present:${ status.account_id }` );
+			process.exit();
+		}
+		process.exit( 1 );
+	' \
+		"$1" \
+		"$base_url" \
+		"$(state_field marker)" \
+		"$(state_field wpcom_blog_id)"
+}
+
+require_fresh_account_snapshot() {
+	if [[ "$(classify_account_snapshot "$1")" != 'absent' ]]; then
+		echo 'Transition account creation requires exact disconnected empty Test Lab evidence.' >&2
+		return 1
+	fi
+}
+
+account_id_from_snapshot() {
+	local classification
+	classification="$(classify_account_snapshot "$1")"
+	if [[ "$classification" != present:* ]]; then
+		echo 'Transition account recovery requires one exact test-drive Test Lab account.' >&2
+		return 1
+	fi
+	printf '%s' "${classification#present:}"
 }
 
 emit_create_result() {
@@ -583,7 +960,11 @@ create_store() {
 	local receipt_hash
 	receipt_hash="$(printf '%s' "$receipt" | shasum -a 256 | awk '{ print $1 }')"
 	local marker="wc-native-transition:${run_id}:${receipt_hash:0:16}"
-	write_initial_state "$receipt_hash" "$marker"
+	local port
+	port="$(base_url_port)"
+	local port_lease_path
+	port_lease_path="$(port_lease_path_for "$port")"
+	write_initial_state "$receipt_hash" "$marker" "$port" "$port_lease_path"
 
 	on_create_error() {
 		local status=$?
@@ -593,6 +974,7 @@ create_store() {
 		exit "$status"
 	}
 	trap on_create_error ERR
+	acquire_port_lease
 
 	local core_repo="${E2E_TRANSITION_CORE_REPO:-$PLUGIN_ROOT}"
 	local dev_tools="${E2E_TRANSITION_DEV_TOOLS_REPO:-$PROJECTS_ROOT/woocommerce-payments-dev-tools}"
@@ -826,23 +1208,55 @@ create_store() {
 	store_wp wcpay_dev redirect_to "$wpcom_api_url" > /dev/null
 	store_wp wcpay_dev set_blog_id "$blog_id" > /dev/null
 
-	local account
-	account="$(
-		store_wp --user=1 wcpay-dev test-lab account create --type=test_drive --country=US --format=json |
-			json_object_from_stdin
-	)"
+	require_fresh_account_snapshot "$(query_account_snapshot)"
+	update_state account_creation_attempted true boolean
+	update_state phase 'account-creation-attempted'
+	local account_output
+	local account_status
+	if account_output="$(
+		E2E_TRANSITION_PROVISIONER_PID="$$" \
+			store_wp --user=1 wcpay-dev test-lab account create --type=test_drive --country=US --format=json
+	)"; then
+		account_status=0
+	else
+		account_status=$?
+	fi
+	local returned_account_id=''
+	local account=''
+	if account="$(
+		printf '%s' "$account_output" |
+			json_object_from_stdin 2> /dev/null
+	)"; then
+		returned_account_id="$(
+			node -p '
+				const value = JSON.parse( process.argv[ 1 ] );
+				if (
+					value.success !== true ||
+					value.is_test_drive !== true ||
+					typeof value.account_id !== "string" ||
+					! /^acct_[A-Za-z0-9_]+$/.test( value.account_id ) ||
+					value.deleted_account
+				) process.exit( 1 );
+				value.account_id;
+			' "$account" 2> /dev/null || true
+		)"
+	fi
 	local account_id
-	account_id="$(
-		node -p '
-			const value=JSON.parse(process.argv[1]);
-			if(value.success!==true||value.is_test_drive!==true||typeof value.account_id!=="string"||!/^acct_[A-Za-z0-9_]+$/.test(value.account_id)||value.deleted_account)process.exit(1);
-			value.account_id;
-		' "$account"
-	)"
+	account_id="$(account_id_from_snapshot "$(query_account_snapshot)")"
+	if [[ -n "$returned_account_id" && "$returned_account_id" != "$account_id" ]]; then
+		echo 'Transition account creation response does not match exact local Test Lab evidence.' >&2
+		return 1
+	fi
 	update_state account_id "$account_id"
 	update_state account_alias "transition-${run_id}"
+	if (( account_status != 0 )) || [[ -z "$returned_account_id" ]]; then
+		update_state account_id_recovered true boolean
+	fi
 	update_state account_created true boolean
 	update_state phase 'account-created'
+	if (( account_status != 0 )); then
+		return "$account_status"
+	fi
 
 	local store_identity
 	store_identity="$(query_store_identity)"
@@ -867,6 +1281,9 @@ create_store() {
 			callback_auth_model: context.callback_auth_model,
 			callback_provider_write: false,
 			callback_response_result: context.callback_response_result,
+			callback_route: context.callback_route,
+			callback_delivered_route: context.callback_delivered_route,
+			ingress_routes: context.ingress_routes,
 		};
 		writeFileSync( process.argv[ 1 ], `${ JSON.stringify( evidence ) }\n`, { mode: 0o600 } );
 	' "$workspace/evidence/callback-probe.json" "$callback"
@@ -976,11 +1393,6 @@ recover_exact_blog_id() {
 		"$(state_field marker)"
 }
 
-query_account_identity() {
-	store_wp --user=1 wcpay-dev test-lab account info --format=json |
-		json_object_from_stdin
-}
-
 destroy_store() {
 	local receipt_path="$workspace/rollback-receipt"
 	if [[ ! -f "$receipt_path" || -L "$receipt_path" ]] ||
@@ -1008,26 +1420,47 @@ destroy_store() {
 	run_id="$(state_field run_id)"
 	require_safe_identity
 	validate_base_store_identity
+	prepare_port_lease_for_destroy
 
 	if [[ "$(state_field account_deleted)" == 'false' ]]; then
-		if [[ "$(state_field account_created)" == 'true' ]]; then
+		if [[ "$(state_field account_created)" == 'true' ]] ||
+			[[ "$(state_field account_creation_attempted)" == 'true' ]]; then
 			validate_created_identity "$(query_store_identity)"
 			validate_blog_identity "$(query_blog_identity)"
-			local account
-			account="$(query_account_identity)"
-			node -e '
-				const value=JSON.parse(process.argv[1]);
-				if(value.account_id!==process.argv[2]||value.is_test_drive!==true)process.exit(1);
-			' "$account" "$(state_field account_id)"
-			local deleted
-			deleted="$(
-				store_wp --user=1 wcpay-dev test-lab account delete --format=json |
-					json_object_from_stdin
-			)"
-			node -e '
-				const value=JSON.parse(process.argv[1]);
-				if(value.success!==true||value.deleted_account!==process.argv[2])process.exit(1);
-			' "$deleted" "$(state_field account_id)"
+			local account_classification
+			account_classification="$(classify_account_snapshot "$(query_account_snapshot)")"
+			if [[ "$account_classification" == present:* ]]; then
+				local exact_account_id="${account_classification#present:}"
+				if [[ "$(state_field account_created)" == 'true' ]]; then
+					if [[ "$exact_account_id" != "$(state_field account_id)" ]]; then
+						echo 'Transition account teardown identity does not match durable state.' >&2
+						return 1
+					fi
+				else
+					update_state account_id "$exact_account_id"
+					update_state account_alias "transition-${run_id}"
+					update_state account_id_recovered true boolean
+					update_state account_created true boolean
+					update_state phase 'account-id-recovered'
+				fi
+				local deleted
+				deleted="$(
+					E2E_TRANSITION_PROVISIONER_PID="$$" \
+						store_wp --user=1 wcpay-dev test-lab account delete --format=json |
+						json_object_from_stdin
+				)"
+				node -e '
+					const value=JSON.parse(process.argv[1]);
+					if(value.success!==true||value.deleted_account!==process.argv[2])process.exit(1);
+				' "$deleted" "$(state_field account_id)"
+				if [[ "$(classify_account_snapshot "$(query_account_snapshot)")" != 'absent' ]]; then
+					echo 'Transition account deletion did not establish exact local absence.' >&2
+					return 1
+				fi
+			elif [[ "$account_classification" != 'absent' ]]; then
+				echo 'Transition account teardown returned ambiguous local evidence.' >&2
+				return 1
+			fi
 		fi
 		update_state account_deleted true boolean
 		update_state phase 'account-deleted'
@@ -1049,19 +1482,24 @@ destroy_store() {
 			else
 				validate_created_identity "$(query_store_identity)"
 			fi
-			validate_blog_identity "$(query_blog_identity)"
-			node -e '
-				const value=JSON.parse(process.argv[1]);
-				if(value && value.account_id)process.exit(1);
-			' "$(query_account_identity)"
-			"$WPCOM_LOCAL_BIN" wp -- --user=1 eval \
-				"/* transition_delete_blog */ wpmu_delete_blog( $(state_field wpcom_blog_id), true ); echo 'deleted';" > /dev/null
-			local deleted_blog
-			deleted_blog="$(query_blog_identity)"
-			node -e '
-				const value=JSON.parse(process.argv[1]);
-				if(value.exists!==false||value.wpcom_blog_id!==Number(process.argv[2]))process.exit(1);
-			' "$deleted_blog" "$(state_field wpcom_blog_id)"
+			local blog_classification
+			blog_classification="$(classify_blog_identity "$(query_blog_identity)")"
+			if [[ "$blog_classification" == 'present' ]]; then
+				if [[ "$(classify_account_snapshot "$(query_account_snapshot)")" != 'absent' ]]; then
+					echo 'Transition blog deletion requires exact local account absence.' >&2
+					return 1
+				fi
+				E2E_TRANSITION_PROVISIONER_PID="$$" \
+					"$WPCOM_LOCAL_BIN" wp -- --user=1 eval \
+					"/* transition_delete_blog */ wpmu_delete_blog( $(state_field wpcom_blog_id), true ); echo 'deleted';" > /dev/null
+				if [[ "$(classify_blog_identity "$(query_blog_identity)")" != 'absent' ]]; then
+					echo 'Transition blog deletion did not establish exact absence.' >&2
+					return 1
+				fi
+			elif [[ "$blog_classification" != 'absent' ]]; then
+				echo 'Transition blog teardown returned ambiguous identity evidence.' >&2
+				return 1
+			fi
 		fi
 		update_state wpcom_blog_deleted true boolean
 		update_state phase 'wpcom-blog-deleted'
@@ -1069,6 +1507,7 @@ destroy_store() {
 
 	if [[ "$(state_field wp_env_destroyed)" == 'false' ]]; then
 		if [[ "$(state_field wp_env_start_attempted)" == 'true' ]]; then
+			validate_port_lease_owner
 			validate_exact_wp_env_scope
 			if [[ "$(state_field wp_env_created)" == 'true' ]]; then
 				if [[ "$(state_field wpcom_blog_id_recovered)" == 'true' ]]; then
@@ -1076,23 +1515,22 @@ destroy_store() {
 				else
 					validate_created_identity "$(query_store_identity)"
 				fi
-				node -e '
-					const value=JSON.parse(process.argv[1]);
-					if(value && value.account_id)process.exit(1);
-				' "$(query_account_identity)"
+				if [[ "$(classify_account_snapshot "$(query_account_snapshot)")" != 'absent' ]]; then
+					echo 'Transition wp-env deletion requires exact local account absence.' >&2
+					return 1
+				fi
 				if [[ "$(state_field wpcom_blog_created)" == 'true' ]]; then
-					local absent
-					absent="$(query_blog_identity)"
-					node -e '
-						const value=JSON.parse(process.argv[1]);
-						if(value.exists!==false||value.wpcom_blog_id!==Number(process.argv[2]))process.exit(1);
-					' "$absent" "$(state_field wpcom_blog_id)"
+					if [[ "$(classify_blog_identity "$(query_blog_identity)")" != 'absent' ]]; then
+						echo 'Transition wp-env deletion requires exact blog absence.' >&2
+						return 1
+					fi
 				fi
 			fi
-			wp_env destroy > /dev/null
+			E2E_TRANSITION_PROVISIONER_PID="$$" wp_env destroy > /dev/null
 		fi
 		update_state wp_env_destroyed true boolean
 	fi
+	release_port_lease
 	update_state phase 'destroyed'
 }
 
