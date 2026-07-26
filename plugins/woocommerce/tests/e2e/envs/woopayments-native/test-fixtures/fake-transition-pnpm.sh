@@ -45,89 +45,7 @@ if [[ "${WP_ENV_HOME:-}" != "$WORKSPACE/wp-env-home" ]]; then
 	echo 'Fake wp-env was not invoked with the exact generated-store WP_ENV_HOME.' >&2
 	exit 44
 fi
-expected_wp_env_home="$(
-	cd "$WORKSPACE/wp-env-home"
-	pwd -P
-)"
-wp_env_install_path="$(
-	node -e '
-		const { createHash } = require( "node:crypto" );
-		const { join } = require( "node:path" );
-		const configPath = join( process.argv[ 1 ], ".wp-env.json" );
-		const hash = createHash( "md5" )
-			.update( configPath )
-			.digest( "hex" )
-			.slice( 0, 8 );
-		process.stdout.write(
-			join( process.argv[ 2 ], `wp-env-store-${ hash }` )
-		);
-	' "$expected_store" "$expected_wp_env_home"
-)"
 printf 'wp-env\t%s\t%s\t%s\n' "$WP_ENV_HOME" "$PWD" "$*" >> "$COMMAND_LOG"
-
-if [[ "$*" == 'status --json' ]]; then
-	status_mode="${E2E_FAKE_WP_ENV_STATUS_MODE:-exact}"
-	if [[ -f "$RUNTIME_STATE/wp-env-destroyed" ]]; then
-		status_mode="${E2E_FAKE_WP_ENV_STATUS_AFTER_DESTROY_MODE:-$status_mode}"
-	fi
-	case "$status_mode" in
-		error)
-			echo 'Fake wp-env status failed.' >&2
-			exit 46
-			;;
-		malformed)
-			printf '{not-json}\n'
-			exit 0
-			;;
-	esac
-	status_value='uninitialized'
-	runtime_value=''
-	config_path="$expected_store"
-	install_path="$wp_env_install_path"
-	if [[ -f "$RUNTIME_STATE/wp-env" ]]; then
-		status_value='running'
-		runtime_value='docker'
-	fi
-	case "$status_mode" in
-		unknown)
-			status_value='unknown'
-			;;
-		wrong-config)
-			config_path="$WORKSPACE/wrong-store"
-			;;
-		wrong-install)
-			install_path="$expected_wp_env_home/wp-env-wrong-owner-00000000"
-			;;
-		wrong-runtime)
-			status_value='running'
-			runtime_value='playground'
-			;;
-		stopped)
-			status_value='stopped'
-			runtime_value='docker'
-			;;
-		initialized)
-			status_value='running'
-			runtime_value='docker'
-			;;
-	esac
-	node -e '
-		const status = process.argv[ 1 ];
-		const value = {
-			status,
-			installPath: process.argv[ 4 ],
-			configPath: process.argv[ 3 ],
-		};
-		if ( status === "running" || status === "stopped" ) {
-			value.runtime = process.argv[ 2 ];
-			value.urls = { development: null, phpmyadmin: null };
-			value.ports = { development: null, tests: null, mysql: null };
-			value.config = { multisite: false, xdebug: "off" };
-		}
-		process.stdout.write( `${ JSON.stringify( value ) }\n` );
-	' "$status_value" "$runtime_value" "$config_path" "$install_path"
-	exit 0
-fi
 
 if [[ "$*" == run\ * ]] &&
 	[[ ! -f "$RUNTIME_STATE/wp-env" ]]; then
@@ -146,13 +64,7 @@ if [[ "$*" == 'start' ]]; then
 	' \
 		"$WORKSPACE/resource-state.json" \
 		"$RUNTIME_STATE/wp-env-intent-before-start"
-	if [[ "${E2E_FAKE_WP_ENV_START_BEFORE_CREATE_FAIL:-0}" == '1' ]]; then
-		echo 'Fake wp-env start failed before initializing the isolated environment.' >&2
-		exit 40
-	fi
-	mkdir "$wp_env_install_path"
 	touch "$RUNTIME_STATE/wp-env"
-	rm -f "$RUNTIME_STATE/wp-env-destroyed"
 	if [[ "${E2E_FAKE_WP_ENV_START_AFTER_CREATE_FAIL:-0}" == '1' ]]; then
 		echo 'Fake wp-env start failed after creating the isolated environment.' >&2
 		exit 41
@@ -161,19 +73,14 @@ if [[ "$*" == 'start' ]]; then
 fi
 
 if [[ "$*" == 'destroy --force' ]]; then
-	if [[ ! -f "$RUNTIME_STATE/wp-env" ]]; then
-		echo 'Environment not initialized. Run `wp-env start` first.' >&2
-		exit 45
-	fi
 	if [[ "${E2E_FAKE_WP_ENV_DESTROY_FAIL:-0}" == '1' ]]; then
 		echo 'Fake exact wp-env destroy failed.' >&2
 		exit 42
 	fi
-	if [[ -d "$wp_env_install_path" && ! -L "$wp_env_install_path" ]]; then
-		rm -r "$wp_env_install_path"
+	if [[ ! -f "$RUNTIME_STATE/wp-env" ]]; then
+		printf 'true' > "$RUNTIME_STATE/wp-env-destroy-observed-absent"
 	fi
 	rm -f "$RUNTIME_STATE/wp-env"
-	touch "$RUNTIME_STATE/wp-env-destroyed"
 	if [[ "${E2E_FAKE_KILL_AFTER_DELETE:-}" == 'wp-env' ]]; then
 		kill -KILL "${E2E_TRANSITION_PROVISIONER_PID:?E2E_TRANSITION_PROVISIONER_PID is required}"
 		exit 137
