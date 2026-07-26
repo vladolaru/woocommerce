@@ -10,7 +10,7 @@ import {
 } from '@playwright/test';
 
 import { test as baseTest } from './fixtures';
-import { admin } from '../test-data/data';
+import { admin, customer } from '../test-data/data';
 import {
 	assertRuntimeReady,
 	readRuntimeStatusArtifact,
@@ -41,6 +41,19 @@ interface SavedCardIdentity {
 interface SavedCardState extends SavedCardIdentity {
 	isDefault: boolean;
 	providerDefaultPaymentMethodId: string;
+}
+
+interface SavedCardTokenEvidence {
+	tokenId: number;
+	paymentMethodId: string;
+	isDefault: boolean;
+}
+
+interface SavedCardEvidence {
+	creationReady: boolean;
+	tokens: SavedCardTokenEvidence[];
+	providerCustomerId?: string;
+	providerDefaultPaymentMethodId?: string;
 }
 
 interface ProviderWriteLockOptions {
@@ -412,12 +425,70 @@ export class WooPaymentsPilotRuntime {
 	): Promise< SavedCardIdentity > {
 		await this.assertCanWrite();
 		this.requireApprovedProviderFixture( 'plugin-owned-saved-card' );
+		const before = await this.waitForSavedCardCreationReady();
+
+		await this.logInAsCustomer( page );
 		await page.goto( 'my-account/payment-methods/' );
 		await page.getByRole( 'link', { name: /add payment method/i } ).click();
-		await page.getByLabel( /card label/i ).fill( label );
-		throw new Error(
-			'Owner-approved saved-card fixture has not supplied durable token and payment-method IDs.'
+
+		await page.getByText( 'Card', { exact: true } ).click();
+		const cardFrame = page
+			.getByTitle( 'Secure payment input frame' )
+			.contentFrame();
+		await cardFrame
+			.getByPlaceholder( '1234 1234 1234 1234' )
+			.fill( '4242 4242 4242 4242' );
+		await cardFrame.getByPlaceholder( 'MM / YY' ).fill( '02 / 45' );
+		await cardFrame.getByPlaceholder( 'CVC' ).fill( '123' );
+		await cardFrame
+			.getByRole( 'combobox', { name: /country/i } )
+			.selectOption( 'US' );
+		await cardFrame.getByLabel( /ZIP/i ).fill( '90210' );
+		await this.performWrite( () =>
+			page
+				.getByRole( 'button', {
+					name: 'Add payment method',
+					exact: true,
+				} )
+				.click()
 		);
+		await expect(
+			page.getByText( 'Payment method successfully added.', {
+				exact: true,
+			} )
+		).toBeVisible();
+
+		const after = await this.getSavedCardEvidence();
+		const beforeByTokenId = new Map(
+			before.tokens.map( ( token ) => [ token.tokenId, token ] )
+		);
+		for ( const token of before.tokens ) {
+			const preserved = after.tokens.find(
+				( candidate ) => candidate.tokenId === token.tokenId
+			);
+			if (
+				! preserved ||
+				preserved.paymentMethodId !== token.paymentMethodId
+			) {
+				throw new Error(
+					`Saved-card ${ label } changed the existing local token ${ token.tokenId } mapping.`
+				);
+			}
+		}
+
+		const created = after.tokens.filter(
+			( token ) => ! beforeByTokenId.has( token.tokenId )
+		);
+		if ( created.length !== 1 ) {
+			throw new Error(
+				`Saved-card ${ label } must create exactly one new local token; found ${ created.length }.`
+			);
+		}
+
+		return {
+			tokenId: created[ 0 ].tokenId,
+			paymentMethodId: created[ 0 ].paymentMethodId,
+		};
 	}
 
 	public async makeSavedCardDefault(
@@ -427,27 +498,34 @@ export class WooPaymentsPilotRuntime {
 		await this.assertCanWrite();
 		this.requireApprovedProviderFixture( 'saved-card-default' );
 		await page.goto( 'my-account/payment-methods/' );
-		const action = page.locator(
-			`a.button.default[href*="/set-default-payment-method/${ tokenId }/"]`
-		);
-		const href = await action.getAttribute( 'href' );
-		if (
-			! href ||
-			! new URL( href, this.baseURL ).pathname.endsWith(
-				`/set-default-payment-method/${ tokenId }/`
-			)
-		) {
+		const candidates = await page
+			.getByRole( 'link', { name: /make default/i } )
+			.all();
+		const matchingActions: Locator[] = [];
+		for ( const candidate of candidates ) {
+			const href = await candidate.getAttribute( 'href' );
+			if (
+				href &&
+				new URL( href, this.baseURL ).pathname.endsWith(
+					`/set-default-payment-method/${ tokenId }/`
+				)
+			) {
+				matchingActions.push( candidate );
+			}
+		}
+		if ( matchingActions.length !== 1 ) {
 			throw new Error(
-				`Saved-card default action is not bound to local token ${ tokenId }.`
+				`Saved-card default action is not uniquely bound to local token ${ tokenId }.`
 			);
 		}
-		await this.performWrite( () => action.click() );
+		await this.performWrite( () => matchingActions[ 0 ].click() );
 	}
 
 	public async softCutOverEphemeralStore( page: Page ): Promise< void > {
 		await this.assertCanWrite();
 		this.requireEphemeralTransitionAllocation();
 		this.requireApprovedProviderFixture( 'soft-cutover' );
+		await this.logInAsAdmin( page );
 		await page.goto( 'wp-admin/' );
 		await page
 			.getByRole( 'link', { name: /WooCommerce/i } )
@@ -461,6 +539,7 @@ export class WooPaymentsPilotRuntime {
 				.click()
 		);
 		await this.assertCurrentRuntimeReady( 'native' );
+		await this.logInAsCustomer( page );
 	}
 
 	public async getSavedCardState(
@@ -468,9 +547,80 @@ export class WooPaymentsPilotRuntime {
 	): Promise< SavedCardState > {
 		await this.assertCanWrite();
 		this.requireApprovedProviderFixture( 'saved-card-state' );
-		throw new Error(
-			`Owner-approved saved-card state fixture has not proved local token ${ card.tokenId } and provider default ${ card.paymentMethodId }.`
+		const evidence = await this.getSavedCardEvidence( card );
+		const localMatches = evidence.tokens.filter(
+			( token ) => token.tokenId === card.tokenId
 		);
+		if (
+			localMatches.length !== 1 ||
+			localMatches[ 0 ].paymentMethodId !== card.paymentMethodId
+		) {
+			throw new Error(
+				`The local token ${ card.tokenId } is not mapped exactly to ${ card.paymentMethodId }.`
+			);
+		}
+		if ( ! localMatches[ 0 ].isDefault ) {
+			throw new Error(
+				`The local token ${ card.tokenId } is not the default payment method.`
+			);
+		}
+		if (
+			evidence.providerDefaultPaymentMethodId !== card.paymentMethodId
+		) {
+			throw new Error(
+				`The provider default is not the exact payment method ${ card.paymentMethodId }.`
+			);
+		}
+		if ( ! evidence.providerCustomerId ) {
+			throw new Error(
+				'Named saved-card evidence did not contain an exact provider customer ID.'
+			);
+		}
+
+		const paymentMethodsResponse = await this.adminApi.get(
+			`/wp-json/wc/v3/payments/customers/${ encodeURIComponent(
+				evidence.providerCustomerId
+			) }/payment_methods`
+		);
+		if ( ! paymentMethodsResponse.ok() ) {
+			throw new Error(
+				`Provider payment-method evidence failed: HTTP ${ paymentMethodsResponse.status() }.`
+			);
+		}
+		const paymentMethods = await paymentMethodsResponse.json();
+		if ( ! Array.isArray( paymentMethods ) ) {
+			throw new Error(
+				'Provider payment-method evidence must be an array.'
+			);
+		}
+		const providerIds = paymentMethods.map( ( paymentMethod, index ) => {
+			if (
+				typeof paymentMethod !== 'object' ||
+				paymentMethod === null ||
+				typeof ( paymentMethod as { id?: unknown } ).id !== 'string' ||
+				( paymentMethod as { id: string } ).id === ''
+			) {
+				throw new Error(
+					`Provider payment-method evidence at index ${ index } has no exact ID.`
+				);
+			}
+			return ( paymentMethod as { id: string } ).id;
+		} );
+		const providerMatches = providerIds.filter(
+			( paymentMethodId ) => paymentMethodId === card.paymentMethodId
+		);
+		if ( providerMatches.length !== 1 ) {
+			throw new Error(
+				`Expected exactly one provider payment method ${ card.paymentMethodId }; found ${ providerMatches.length }.`
+			);
+		}
+
+		return {
+			...card,
+			isDefault: true,
+			providerDefaultPaymentMethodId:
+				evidence.providerDefaultPaymentMethodId,
+		};
 	}
 
 	public async payWithExactSavedCard(
@@ -486,12 +636,9 @@ export class WooPaymentsPilotRuntime {
 		await this.performWrite( () =>
 			page.getByRole( 'button', { name: /add to cart/i } ).click()
 		);
-		await page
-			.getByRole( 'link', {
-				name:
-					checkout === 'classic' ? /classic checkout/i : /checkout/i,
-			} )
-			.click();
+		await page.goto(
+			checkout === 'classic' ? 'classic-checkout/' : 'checkout/'
+		);
 		const token = page.locator(
 			checkout === 'classic'
 				? `input.woocommerce-SavedPaymentMethods-tokenInput[name="wc-woocommerce_payments-payment-token"][value="${ card.tokenId }"]`
@@ -879,6 +1026,150 @@ export class WooPaymentsPilotRuntime {
 		);
 	}
 
+	private async getSavedCardEvidence(
+		card?: SavedCardIdentity
+	): Promise< SavedCardEvidence > {
+		const parameters = new URLSearchParams( {
+			customer_username: customer.username,
+		} );
+		if ( card ) {
+			parameters.set( 'token_id', card.tokenId.toString() );
+			parameters.set( 'payment_method_id', card.paymentMethodId );
+		}
+		const response = await this.adminApi.get(
+			`/wp-json/wc-native-payments-e2e/v1/saved-card-evidence?${ parameters.toString() }`
+		);
+		if ( ! response.ok() ) {
+			throw new Error(
+				`Saved-card evidence failed: HTTP ${ response.status() }.`
+			);
+		}
+
+		return this.parseSavedCardEvidence( await response.json() );
+	}
+
+	private parseSavedCardEvidence( value: unknown ): SavedCardEvidence {
+		if ( typeof value !== 'object' || value === null ) {
+			throw new Error( 'Saved-card evidence must be an object.' );
+		}
+		const raw = value as {
+			creation_ready?: unknown;
+			tokens?: unknown;
+			provider_customer_id?: unknown;
+			provider_default_payment_method_id?: unknown;
+		};
+		if ( typeof raw.creation_ready !== 'boolean' ) {
+			throw new Error(
+				'Saved-card evidence creation_ready must be a boolean.'
+			);
+		}
+		if ( ! Array.isArray( raw.tokens ) ) {
+			throw new Error( 'Saved-card evidence tokens must be an array.' );
+		}
+
+		const tokenIds = new Set< number >();
+		const paymentMethodIds = new Set< string >();
+		const tokens = raw.tokens.map( ( tokenValue, index ) => {
+			if ( typeof tokenValue !== 'object' || tokenValue === null ) {
+				throw new Error(
+					`Saved-card evidence token ${ index } must be an object.`
+				);
+			}
+			const token = tokenValue as {
+				token_id?: unknown;
+				payment_method_id?: unknown;
+				is_default?: unknown;
+			};
+			if (
+				typeof token.token_id !== 'number' ||
+				! Number.isSafeInteger( token.token_id ) ||
+				token.token_id <= 0
+			) {
+				throw new Error(
+					`Saved-card evidence token_id at index ${ index } must be a positive integer.`
+				);
+			}
+			if (
+				typeof token.payment_method_id !== 'string' ||
+				token.payment_method_id === ''
+			) {
+				throw new Error(
+					`Saved-card evidence payment_method_id at index ${ index } must be a non-empty string.`
+				);
+			}
+			if ( typeof token.is_default !== 'boolean' ) {
+				throw new Error(
+					`Saved-card evidence is_default at index ${ index } must be a boolean.`
+				);
+			}
+			if ( tokenIds.has( token.token_id ) ) {
+				throw new Error(
+					`Saved-card evidence contains duplicate token_id ${ token.token_id }.`
+				);
+			}
+			if ( paymentMethodIds.has( token.payment_method_id ) ) {
+				throw new Error(
+					`Saved-card evidence contains duplicate payment_method_id ${ token.payment_method_id }.`
+				);
+			}
+			tokenIds.add( token.token_id );
+			paymentMethodIds.add( token.payment_method_id );
+
+			return {
+				tokenId: token.token_id,
+				paymentMethodId: token.payment_method_id,
+				isDefault: token.is_default,
+			};
+		} );
+
+		const providerCustomerId = raw.provider_customer_id;
+		if (
+			providerCustomerId !== undefined &&
+			( typeof providerCustomerId !== 'string' ||
+				providerCustomerId === '' )
+		) {
+			throw new Error(
+				'Saved-card evidence provider_customer_id must be a non-empty string.'
+			);
+		}
+		const providerDefaultPaymentMethodId =
+			raw.provider_default_payment_method_id;
+		if (
+			providerDefaultPaymentMethodId !== undefined &&
+			( typeof providerDefaultPaymentMethodId !== 'string' ||
+				providerDefaultPaymentMethodId === '' )
+		) {
+			throw new Error(
+				'Saved-card evidence provider_default_payment_method_id must be a non-empty string.'
+			);
+		}
+
+		return {
+			creationReady: raw.creation_ready,
+			tokens,
+			providerCustomerId,
+			providerDefaultPaymentMethodId,
+		};
+	}
+
+	private async waitForSavedCardCreationReady(): Promise< SavedCardEvidence > {
+		const deadline = Date.now() + 25_000;
+		let evidence = await this.getSavedCardEvidence();
+		while ( ! evidence.creationReady ) {
+			const remaining = deadline - Date.now();
+			if ( remaining <= 0 ) {
+				throw new Error(
+					'Core add-payment-method rate limit did not become ready before the saved-card deadline.'
+				);
+			}
+			await new Promise( ( resolve ) =>
+				setTimeout( resolve, Math.min( 500, remaining ) )
+			);
+			evidence = await this.getSavedCardEvidence();
+		}
+		return evidence;
+	}
+
 	private async assertCanWrite(): Promise< void > {
 		const locks = this.activeProviderWriteLocks;
 		if ( ! locks ) {
@@ -923,6 +1214,7 @@ export class WooPaymentsPilotRuntime {
 	}
 
 	private async logInAsAdmin( page: Page ): Promise< void > {
+		await page.context().clearCookies();
 		await page.goto( 'wp-login.php' );
 		await page
 			.getByLabel( 'Username or Email Address' )
@@ -931,6 +1223,22 @@ export class WooPaymentsPilotRuntime {
 			.getByRole( 'textbox', { name: 'Password' } )
 			.fill( admin.password );
 		await page.getByRole( 'button', { name: 'Log In' } ).click();
+	}
+
+	private async logInAsCustomer( page: Page ): Promise< void > {
+		await page.context().clearCookies();
+		await page.goto( 'wp-login.php' );
+		await page
+			.getByLabel( 'Username or Email Address' )
+			.fill( customer.username );
+		await page
+			.getByRole( 'textbox', { name: 'Password' } )
+			.fill( customer.password );
+		await page.getByRole( 'button', { name: 'Log In' } ).click();
+		await page.goto( 'my-account/edit-account/' );
+		await expect(
+			page.getByRole( 'textbox', { name: /Email address/i } )
+		).toHaveValue( customer.email );
 	}
 
 	private async assertCurrentRuntimeReady(

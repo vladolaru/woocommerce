@@ -161,6 +161,8 @@ function runtime(
 	calls: RequestCall[],
 	options: {
 		manualCapture?: boolean;
+		providerPaymentMethods?: unknown[];
+		savedCardEvidence?: unknown[];
 		throwAfterManualCaptureUpdate?: boolean;
 		updateStatus?: number;
 		loseFeatureAfterSettingsRead?: boolean;
@@ -180,6 +182,31 @@ function runtime(
 		},
 		get: async ( url: string ) => {
 			calls.push( { method: 'GET', url } );
+			if (
+				url.startsWith(
+					'/wp-json/wc-native-payments-e2e/v1/saved-card-evidence'
+				)
+			) {
+				const evidence = options.savedCardEvidence?.shift();
+				if ( evidence === undefined ) {
+					throw new Error(
+						`No saved-card evidence fixture remains for ${ url }`
+					);
+				}
+				return response( evidence );
+			}
+			if (
+				url.startsWith( '/wp-json/wc/v3/payments/customers/' ) &&
+				url.endsWith( '/payment_methods' )
+			) {
+				const paymentMethods = options.providerPaymentMethods?.shift();
+				if ( paymentMethods === undefined ) {
+					throw new Error(
+						`No provider payment-method fixture remains for ${ url }`
+					);
+				}
+				return response( paymentMethods );
+			}
 			if ( url === '/wp-json/wc/v3/payments/settings' ) {
 				if ( options.loseFeatureAfterSettingsRead ) {
 					await removeOwnedLock( lockDir, 'feature-setting' );
@@ -267,8 +294,10 @@ async function lockDirectory(): Promise< string > {
 
 function visibleLocator(
 	overrides: Partial< {
+		all: () => Promise< Locator[] >;
 		check: () => Promise< void >;
 		click: () => Promise< void >;
+		contentFrame: () => unknown;
 		fill: ( value: string ) => Promise< void >;
 		focus: () => Promise< void >;
 		getAttribute: ( name: string ) => Promise< string | null >;
@@ -284,8 +313,10 @@ function visibleLocator(
 	const locator = {
 		_apiName: 'Locator',
 		_expect: async () => ( { matches: true, received: 'visible' } ),
+		all: overrides.all ?? ( async () => [ locator as unknown as Locator ] ),
 		check: overrides.check ?? ( async () => {} ),
 		click: overrides.click ?? ( async () => {} ),
+		contentFrame: overrides.contentFrame,
 		fill: overrides.fill ?? ( async () => {} ),
 		focus: overrides.focus ?? ( async () => {} ),
 		first: () => locator,
@@ -329,19 +360,22 @@ function exactEvidence(): PaymentEvidence {
 function savedCheckoutContractPage( expectedSelector: string ): {
 	page: Page;
 	selected: () => boolean;
+	visited: () => string[];
 	waitedForConfirmation: () => boolean;
 } {
 	let selected = false;
 	let currentUrl = 'http://native.test/checkout/';
+	const visited: string[] = [];
 	let waitedForConfirmation = false;
 	const page = {
-		goto: async () => {},
+		goto: async ( url: string ) => {
+			visited.push( url );
+		},
 		getByRole: ( role: string, options?: { name?: string | RegExp } ) => {
 			const name = String( options?.name ?? '' );
 			if (
-				( role === 'button' &&
-					/add to cart|place order/i.test( name ) ) ||
-				( role === 'link' && /checkout/i.test( name ) )
+				role === 'button' &&
+				/add to cart|place order/i.test( name )
 			) {
 				return visibleLocator();
 			}
@@ -377,7 +411,55 @@ function savedCheckoutContractPage( expectedSelector: string ): {
 	return {
 		page,
 		selected: () => selected,
+		visited: () => visited,
 		waitedForConfirmation: () => waitedForConfirmation,
+	};
+}
+
+function savedCardCreationPage(): {
+	page: Page;
+	submissions: () => number;
+} {
+	let submissions = 0;
+	const frame = {
+		getByPlaceholder: () => visibleLocator(),
+		getByRole: () =>
+			visibleLocator( {
+				selectOption: async () => [ 'US' ],
+			} ),
+		getByLabel: () => visibleLocator(),
+	};
+	const submit = visibleLocator( {
+		click: async () => {
+			submissions++;
+		},
+	} );
+	const page = {
+		context: () => ( {
+			clearCookies: async () => {},
+		} ),
+		goto: async () => {},
+		getByLabel: () => visibleLocator(),
+		getByRole: (
+			role: string,
+			options?: { exact?: boolean; name?: string | RegExp }
+		) => {
+			const name = String( options?.name ?? '' );
+			if ( role === 'button' && /Add payment method/.test( name ) ) {
+				return submit;
+			}
+			return visibleLocator();
+		},
+		getByText: () => visibleLocator(),
+		getByTitle: () =>
+			visibleLocator( {
+				contentFrame: () => frame,
+			} ),
+	} as unknown as Page;
+
+	return {
+		page,
+		submissions: () => submissions,
 	};
 }
 
@@ -390,6 +472,9 @@ function captureContractPage(): {
 	let selected = false;
 	const loginField = visibleLocator();
 	const page = {
+		context: () => ( {
+			clearCookies: async () => {},
+		} ),
 		goto: async () => {},
 		getByLabel: () => loginField,
 		getByRole: (
@@ -500,11 +585,13 @@ function lockLossPage(
 			},
 			fill: async () => {},
 			focus: async () => {},
+			all: async () => [ value ],
 			first: () => value,
 			getAttribute: async ( attribute: string ) => {
 				if (
 					attribute === 'href' &&
-					name.includes( 'set-default-payment-method' )
+					( name.includes( 'set-default-payment-method' ) ||
+						/make default/i.test( name ) )
 				) {
 					return 'http://native.test/my-account/set-default-payment-method/73/?_wpnonce=nonce';
 				}
@@ -526,6 +613,9 @@ function lockLossPage(
 	};
 
 	const page = {
+		context: () => ( {
+			clearCookies: async () => {},
+		} ),
 		getByLabel: ( name: string | RegExp ) =>
 			locator( 'label', String( name ) ),
 		getByRole: ( role: string, roleOptions?: { name?: string | RegExp } ) =>
@@ -574,7 +664,371 @@ async function expectMutationBlockedAfterPreparation(
 	}
 }
 
-test( 'uses the token-bound My Account action link rendered by Core', async () => {
+test( 'creates two plugin-owned cards from exact token diffs and returns distinct durable IDs', async () => {
+	const directory = await lockDirectory();
+	const calls: RequestCall[] = [];
+	const pilotRuntime = runtime( directory, calls, {
+		savedCardEvidence: [
+			{
+				creation_ready: true,
+				tokens: [
+					{
+						token_id: 7,
+						payment_method_id: 'pm_existing',
+						is_default: true,
+					},
+				],
+			},
+			{
+				creation_ready: true,
+				tokens: [
+					{
+						token_id: 7,
+						payment_method_id: 'pm_existing',
+						is_default: false,
+					},
+					{
+						token_id: 73,
+						payment_method_id: 'pm_first_exact',
+						is_default: true,
+					},
+				],
+			},
+			{
+				creation_ready: false,
+				tokens: [
+					{
+						token_id: 7,
+						payment_method_id: 'pm_existing',
+						is_default: false,
+					},
+					{
+						token_id: 73,
+						payment_method_id: 'pm_first_exact',
+						is_default: true,
+					},
+				],
+			},
+			{
+				creation_ready: true,
+				tokens: [
+					{
+						token_id: 7,
+						payment_method_id: 'pm_existing',
+						is_default: false,
+					},
+					{
+						token_id: 73,
+						payment_method_id: 'pm_first_exact',
+						is_default: true,
+					},
+				],
+			},
+			{
+				creation_ready: true,
+				tokens: [
+					{
+						token_id: 7,
+						payment_method_id: 'pm_existing',
+						is_default: false,
+					},
+					{
+						token_id: 73,
+						payment_method_id: 'pm_first_exact',
+						is_default: false,
+					},
+					{
+						token_id: 81,
+						payment_method_id: 'pm_second_exact',
+						is_default: true,
+					},
+				],
+			},
+		],
+	} );
+	const fixture = savedCardCreationPage();
+
+	try {
+		const cards = await pilotRuntime.withProviderWriteLocks(
+			{ recordEvent: 'saved-card-exact-diff' },
+			async () => [
+				await pilotRuntime.createPluginOwnedSavedCard(
+					fixture.page,
+					'first card'
+				),
+				await pilotRuntime.createPluginOwnedSavedCard(
+					fixture.page,
+					'second card'
+				),
+			]
+		);
+
+		expect( cards ).toEqual( [
+			{ tokenId: 73, paymentMethodId: 'pm_first_exact' },
+			{ tokenId: 81, paymentMethodId: 'pm_second_exact' },
+		] );
+		expect( fixture.submissions() ).toBe( 2 );
+		expect( cards[ 0 ] ).not.toEqual( cards[ 1 ] );
+	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+for ( const invalidDiff of [
+	{
+		name: 'zero new tokens',
+		after: [
+			{
+				token_id: 7,
+				payment_method_id: 'pm_existing',
+				is_default: true,
+			},
+		],
+	},
+	{
+		name: 'multiple new tokens',
+		after: [
+			{
+				token_id: 7,
+				payment_method_id: 'pm_existing',
+				is_default: false,
+			},
+			{
+				token_id: 73,
+				payment_method_id: 'pm_new_one',
+				is_default: true,
+			},
+			{
+				token_id: 81,
+				payment_method_id: 'pm_new_two',
+				is_default: false,
+			},
+		],
+	},
+] ) {
+	test( `rejects ${ invalidDiff.name } after a plugin-owned saved-card submission`, async () => {
+		const directory = await lockDirectory();
+		const calls: RequestCall[] = [];
+		const pilotRuntime = runtime( directory, calls, {
+			savedCardEvidence: [
+				{
+					creation_ready: true,
+					tokens: [
+						{
+							token_id: 7,
+							payment_method_id: 'pm_existing',
+							is_default: true,
+						},
+					],
+				},
+				{
+					creation_ready: true,
+					tokens: invalidDiff.after,
+				},
+			],
+		} );
+		const fixture = savedCardCreationPage();
+
+		try {
+			await expect(
+				pilotRuntime.withProviderWriteLocks(
+					{ recordEvent: 'saved-card-invalid-diff' },
+					async () =>
+						pilotRuntime.createPluginOwnedSavedCard(
+							fixture.page,
+							invalidDiff.name
+						)
+				)
+			).rejects.toThrow( /exactly one new.*token/i );
+			expect( fixture.submissions() ).toBe( 1 );
+		} finally {
+			await rm( directory, { recursive: true, force: true } );
+		}
+	} );
+}
+
+test( 'rejects malformed saved-card token evidence before submitting', async () => {
+	const directory = await lockDirectory();
+	const calls: RequestCall[] = [];
+	const pilotRuntime = runtime( directory, calls, {
+		savedCardEvidence: [
+			{
+				creation_ready: true,
+				tokens: [
+					{
+						token_id: '73',
+						payment_method_id: 'pm_not_numeric',
+						is_default: true,
+					},
+				],
+			},
+		],
+	} );
+	const fixture = savedCardCreationPage();
+
+	try {
+		await expect(
+			pilotRuntime.withProviderWriteLocks(
+				{ recordEvent: 'saved-card-malformed-evidence' },
+				async () =>
+					pilotRuntime.createPluginOwnedSavedCard(
+						fixture.page,
+						'malformed evidence'
+					)
+			)
+		).rejects.toThrow( /token_id.*positive integer/i );
+		expect( fixture.submissions() ).toBe( 0 );
+	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'proves the exact local and provider saved-card default after native cutover', async () => {
+	const directory = await lockDirectory();
+	const calls: RequestCall[] = [];
+	const pilotRuntime = runtime( directory, calls, {
+		savedCardEvidence: [
+			{
+				creation_ready: true,
+				provider_customer_id: 'cus_exact',
+				provider_default_payment_method_id: 'pm_exact',
+				tokens: [
+					{
+						token_id: 73,
+						payment_method_id: 'pm_exact',
+						is_default: true,
+					},
+				],
+			},
+		],
+		providerPaymentMethods: [
+			[
+				{ id: 'pm_other', type: 'card' },
+				{ id: 'pm_exact', type: 'card' },
+			],
+		],
+	} );
+
+	try {
+		const state = await pilotRuntime.withProviderWriteLocks(
+			{ recordEvent: 'saved-card-state-exact' },
+			async () =>
+				pilotRuntime.getSavedCardState( {
+					tokenId: 73,
+					paymentMethodId: 'pm_exact',
+				} )
+		);
+
+		expect( state ).toEqual( {
+			tokenId: 73,
+			paymentMethodId: 'pm_exact',
+			isDefault: true,
+			providerDefaultPaymentMethodId: 'pm_exact',
+		} );
+	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+for ( const invalidState of [
+	{
+		name: 'a mismatched local payment-method ID',
+		evidence: {
+			creation_ready: true,
+			provider_customer_id: 'cus_exact',
+			provider_default_payment_method_id: 'pm_exact',
+			tokens: [
+				{
+					token_id: 73,
+					payment_method_id: 'pm_wrong',
+					is_default: true,
+				},
+			],
+		},
+		providerMethods: [ { id: 'pm_exact', type: 'card' } ],
+		error: /local token 73.*pm_exact/i,
+	},
+	{
+		name: 'a non-default local token',
+		evidence: {
+			creation_ready: true,
+			provider_customer_id: 'cus_exact',
+			provider_default_payment_method_id: 'pm_exact',
+			tokens: [
+				{
+					token_id: 73,
+					payment_method_id: 'pm_exact',
+					is_default: false,
+				},
+			],
+		},
+		providerMethods: [ { id: 'pm_exact', type: 'card' } ],
+		error: /local token 73.*not.*default/i,
+	},
+	{
+		name: 'a mismatched provider default',
+		evidence: {
+			creation_ready: true,
+			provider_customer_id: 'cus_exact',
+			provider_default_payment_method_id: 'pm_other',
+			tokens: [
+				{
+					token_id: 73,
+					payment_method_id: 'pm_exact',
+					is_default: true,
+				},
+			],
+		},
+		providerMethods: [ { id: 'pm_exact', type: 'card' } ],
+		error: /provider default.*pm_exact/i,
+	},
+	{
+		name: 'an ambiguous provider payment-method list',
+		evidence: {
+			creation_ready: true,
+			provider_customer_id: 'cus_exact',
+			provider_default_payment_method_id: 'pm_exact',
+			tokens: [
+				{
+					token_id: 73,
+					payment_method_id: 'pm_exact',
+					is_default: true,
+				},
+			],
+		},
+		providerMethods: [
+			{ id: 'pm_exact', type: 'card' },
+			{ id: 'pm_exact', type: 'card' },
+		],
+		error: /exactly one provider payment method.*pm_exact/i,
+	},
+] ) {
+	test( `rejects saved-card state with ${ invalidState.name }`, async () => {
+		const directory = await lockDirectory();
+		const calls: RequestCall[] = [];
+		const pilotRuntime = runtime( directory, calls, {
+			savedCardEvidence: [ invalidState.evidence ],
+			providerPaymentMethods: [ invalidState.providerMethods ],
+		} );
+
+		try {
+			await expect(
+				pilotRuntime.withProviderWriteLocks(
+					{ recordEvent: 'saved-card-invalid-state' },
+					async () =>
+						pilotRuntime.getSavedCardState( {
+							tokenId: 73,
+							paymentMethodId: 'pm_exact',
+						} )
+				)
+			).rejects.toThrow( invalidState.error );
+		} finally {
+			await rm( directory, { recursive: true, force: true } );
+		}
+	} );
+}
+
+test( 'uses the token-bound semantic My Account action rendered by Core', async () => {
 	const directory = await lockDirectory();
 	const calls: RequestCall[] = [];
 	const pilotRuntime = runtime( directory, calls );
@@ -582,18 +1036,35 @@ test( 'uses the token-bound My Account action link rendered by Core', async () =
 		'http://native.test/my-account/set-default-payment-method/73/?_wpnonce=nonce';
 	let clicked = false;
 	const page = {
+		context: () => ( {
+			clearCookies: async () => {},
+		} ),
 		goto: async () => {},
-		locator: ( selector: string ) => {
-			expect( selector ).toBe(
-				'a.button.default[href*="/set-default-payment-method/73/"]'
-			);
-			return visibleLocator( {
-				click: async () => {
-					clicked = true;
-				},
-				getAttribute: async ( name ) =>
-					name === 'href' ? actionHref : null,
-			} );
+		getByLabel: () => visibleLocator(),
+		getByRole: ( role: string, options?: { name?: string | RegExp } ) => {
+			if (
+				role === 'link' &&
+				/make default/i.test( String( options?.name ) )
+			) {
+				return visibleLocator( {
+					all: async () => [
+						visibleLocator( {
+							getAttribute: async ( name ) =>
+								name === 'href'
+									? 'http://native.test/my-account/set-default-payment-method/22/?_wpnonce=other'
+									: null,
+						} ),
+						visibleLocator( {
+							click: async () => {
+								clicked = true;
+							},
+							getAttribute: async ( name ) =>
+								name === 'href' ? actionHref : null,
+						} ),
+					],
+				} );
+			}
+			return visibleLocator();
 		},
 	} as unknown as Page;
 
@@ -644,6 +1115,11 @@ for ( const contract of checkoutContracts ) {
 			);
 			expect( orderId ).toBe( 42 );
 			expect( fixture.selected() ).toBe( true );
+			expect( fixture.visited() ).toContain(
+				contract.checkout === 'classic'
+					? 'classic-checkout/'
+					: 'checkout/'
+			);
 			expect( fixture.waitedForConfirmation() ).toBe( true );
 		} finally {
 			await rm( directory, { recursive: true, force: true } );

@@ -326,6 +326,19 @@ class WooPaymentsApiClient {
 	}
 
 	/**
+	 * Retrieve a WooPayments customer.
+	 *
+	 * @param string $customer_id Customer ID.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the customer ID is invalid.
+	 */
+	public function get_customer( string $customer_id ): array {
+		$this->validate_route_customer_id( $customer_id );
+
+		return $this->request( array(), 'customers/' . $customer_id, 'GET' );
+	}
+
+	/**
 	 * Create and confirm a positive-amount WooPayments PaymentIntent.
 	 *
 	 * @param array<string,mixed> $request_data     Intent payload.
