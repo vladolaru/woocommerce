@@ -260,6 +260,7 @@ function runtime(
 	calls: RequestCall[],
 	options: {
 		manualCapture?: boolean;
+		callbackProbeTargets?: unknown[];
 		providerPaymentMethods?: unknown[];
 		savedCardEvidence?: unknown[];
 		throwAfterManualCaptureUpdate?: boolean;
@@ -267,6 +268,7 @@ function runtime(
 		loseFeatureAfterSettingsRead?: boolean;
 		loseRecordBeforeCleanupDelete?: boolean;
 		runtimeStatus?: unknown;
+		runtimeStatuses?: unknown[];
 	} = {}
 ): WooPaymentsPilotRuntime {
 	let manualCapture = options.manualCapture ?? false;
@@ -283,12 +285,14 @@ function runtime(
 		get: async ( url: string ) => {
 			calls.push( { method: 'GET', url } );
 			if ( url === '/wp-json/wc-native-payments-e2e/v1/status' ) {
-				if ( options.runtimeStatus === undefined ) {
+				const runtimeStatus =
+					options.runtimeStatuses?.shift() ?? options.runtimeStatus;
+				if ( runtimeStatus === undefined ) {
 					throw new Error(
 						'No runtime status fixture is configured.'
 					);
 				}
-				return response( options.runtimeStatus );
+				return response( runtimeStatus );
 			}
 			if (
 				url.startsWith(
@@ -393,11 +397,13 @@ function runtime(
 		'native-store',
 		'acct_native',
 		lockDir,
-		async ( target ) =>
-			callbackProbeResult( {
+		async ( target ) => {
+			options.callbackProbeTargets?.push( target );
+			return callbackProbeResult( {
 				store_url: target.siteUrl,
 				wpcom_blog_id: target.wpcomBlogId.toString(),
-			} )
+			} );
+		}
 	);
 }
 
@@ -423,7 +429,7 @@ function visibleLocator(
 		) => Promise< string[] >;
 	} > = {}
 ): Locator {
-	const locator = {
+	const locator: Locator = {
 		_apiName: 'Locator',
 		_expect: async () => ( { matches: true, received: 'visible' } ),
 		all: overrides.all ?? ( async () => [ locator as unknown as Locator ] ),
@@ -447,8 +453,8 @@ function visibleLocator(
 			} ),
 		isVisible: async () => true,
 		toString: () => 'DOM-faithful fixture locator',
-	};
-	return locator as unknown as Locator;
+	} as unknown as Locator;
+	return locator;
 }
 
 function exactEvidence(): PaymentEvidence {
@@ -1555,24 +1561,45 @@ test( 'blocks a saved-card default update after lock loss during preparation', a
 test( 'drives the nonce-protected product cutover controller entry point', async () => {
 	const directory = await lockDirectory();
 	const calls: RequestCall[] = [];
+	const callbackProbeTargets: unknown[] = [];
 	const pilotRuntime = runtime( directory, calls, {
-		runtimeStatus: {
-			site_url: 'http://native.test',
-			wpcom_blog_id: 123,
-			runtime_owner: 'native',
-			native_enabled: true,
-			account_id: 'acct_native',
-			account_connected: true,
-			gateway_enabled: true,
-			test_mode: true,
-			enabled_payment_methods: [ 'card' ],
-			last_webhook_fetch: 0,
-			callback_probe: {
-				registered: false,
-				reachable: false,
-				wpcom_blog_id: 0,
+		callbackProbeTargets,
+		runtimeStatuses: [
+			{
+				site_url: 'http://native.test',
+				wpcom_blog_id: 123,
+				runtime_owner: 'plugin',
+				native_enabled: false,
+				account_id: 'acct_native',
+				account_connected: true,
+				gateway_enabled: true,
+				test_mode: true,
+				enabled_payment_methods: [ 'card' ],
+				last_webhook_fetch: 0,
+				callback_probe: {
+					registered: false,
+					reachable: false,
+					wpcom_blog_id: 0,
+				},
 			},
-		},
+			{
+				site_url: 'http://native.test',
+				wpcom_blog_id: 123,
+				runtime_owner: 'native',
+				native_enabled: true,
+				account_id: 'acct_native',
+				account_connected: true,
+				gateway_enabled: true,
+				test_mode: true,
+				enabled_payment_methods: [ 'card' ],
+				last_webhook_fetch: 0,
+				callback_probe: {
+					registered: false,
+					reachable: false,
+					wpcom_blog_id: 0,
+				},
+			},
+		],
 	} );
 	let cutoverClicked = false;
 	const cutoverLink = visibleLocator( {
@@ -1617,6 +1644,18 @@ test( 'drives the nonce-protected product cutover controller entry point', async
 		);
 
 		expect( cutoverClicked ).toBe( true );
+		expect(
+			calls.filter(
+				( call ) =>
+					call.url === '/wp-json/wc-native-payments-e2e/v1/status'
+			)
+		).toHaveLength( 2 );
+		expect( callbackProbeTargets ).toEqual( [
+			{
+				siteUrl: 'http://native.test',
+				wpcomBlogId: 123,
+			},
+		] );
 	} finally {
 		await rm( directory, { recursive: true, force: true } );
 	}

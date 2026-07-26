@@ -1408,11 +1408,11 @@ export class WooPaymentsPilotRuntime {
 						`Runtime ownership recheck failed: HTTP ${ response.status() }.`
 					);
 				}
-				status = ( await response.json() ) as RuntimeStatus;
+				const candidate = ( await response.json() ) as RuntimeStatus;
 				assertRuntimeReady(
 					runtime,
 					{
-						...status,
+						...candidate,
 						callback_probe: {
 							registered: true,
 							reachable: true,
@@ -1425,6 +1425,7 @@ export class WooPaymentsPilotRuntime {
 						accountId: this.accountId,
 					}
 				);
+				status = candidate;
 			} catch ( error ) {
 				lastFailure =
 					error instanceof Error
