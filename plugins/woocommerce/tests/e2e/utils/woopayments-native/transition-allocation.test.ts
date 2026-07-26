@@ -25,6 +25,8 @@ function allocation(
 		store_id: STORE_ID,
 		seed_hash: 'a'.repeat( 64 ),
 		plugin_version: '10.5.0',
+		wpcom_blog_id: 77,
+		account_id: 'acct_transition_77',
 		teardown_token: 'b'.repeat( 64 ),
 		run_id: RUN_ID,
 		workspace,
@@ -104,6 +106,48 @@ test( 'rejects a transition allocation for a different base URL', async () => {
 				runId: RUN_ID,
 			} )
 		).toThrow( /exact Playwright base URL/i );
+	} finally {
+		await rm( tempRoot, { recursive: true, force: true } );
+	}
+} );
+
+test( 'rejects a transition allocation without a positive WPCOM blog identity', async () => {
+	const tempRoot = await mkdtemp(
+		join( tmpdir(), 'woopayments-allocation-blog-' )
+	);
+	const emitted = allocation( tempRoot, { wpcom_blog_id: 0 } );
+
+	try {
+		await writeSavedAllocation( emitted );
+		expect( () =>
+			assertTransitionAllocation( JSON.stringify( emitted ), {
+				baseUrl: emitted.base_url,
+				storeId: STORE_ID,
+				tempRoot,
+				runId: RUN_ID,
+			} )
+		).toThrow( /positive WPCOM blog ID/i );
+	} finally {
+		await rm( tempRoot, { recursive: true, force: true } );
+	}
+} );
+
+test( 'rejects a transition allocation without an exact account identity', async () => {
+	const tempRoot = await mkdtemp(
+		join( tmpdir(), 'woopayments-allocation-account-' )
+	);
+	const emitted = allocation( tempRoot, { account_id: '' } );
+
+	try {
+		await writeSavedAllocation( emitted );
+		expect( () =>
+			assertTransitionAllocation( JSON.stringify( emitted ), {
+				baseUrl: emitted.base_url,
+				storeId: STORE_ID,
+				tempRoot,
+				runId: RUN_ID,
+			} )
+		).toThrow( /account(?:_| )ID/i );
 	} finally {
 		await rm( tempRoot, { recursive: true, force: true } );
 	}

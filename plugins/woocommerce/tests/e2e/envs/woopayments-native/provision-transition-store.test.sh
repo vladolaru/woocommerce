@@ -13,6 +13,8 @@ TEST_ROOT="$(
 	cd "$TEST_ROOT"
 	pwd -P
 )"
+SEED_MANIFEST="$TEST_ROOT/transition-seed.json"
+printf '{}\n' > "$SEED_MANIFEST"
 
 cleanup() {
 	rm -rf "$TEST_ROOT"
@@ -45,6 +47,7 @@ allocation="$(
 		TMPDIR="$TEST_ROOT" \
 		E2E_TRANSITION_RUN_ID='run-safe' \
 		E2E_TRANSITION_SEED_ARCHIVE="$FIXTURES/transition-seed.tar.gz" \
+		E2E_TRANSITION_SEED_MANIFEST="$SEED_MANIFEST" \
 		E2E_TRANSITION_STORE_PROVISIONER="$FIXTURES/fake-transition-provisioner.sh" \
 		"$PROVISION_SCRIPT" create
 )"
@@ -54,6 +57,8 @@ node -e '
 	if ( allocation.base_url !== "http://transition.localhost:8899" ) process.exit( 1 );
 	if ( allocation.store_id !== "transition-store-test" ) process.exit( 1 );
 	if ( allocation.plugin_version !== "10.5.0" ) process.exit( 1 );
+	if ( allocation.wpcom_blog_id !== 77 ) process.exit( 1 );
+	if ( allocation.account_id !== "acct_transition_test" ) process.exit( 1 );
 	if ( ! /^[a-f0-9]{64}$/.test( allocation.seed_hash ) ) process.exit( 1 );
 	if ( ! /^[a-f0-9]{64}$/.test( allocation.teardown_token ) ) process.exit( 1 );
 	if ( ! allocation.allocation_path.endsWith( "/allocation.json" ) ) process.exit( 1 );
@@ -89,6 +94,7 @@ expect_failure env \
 	TMPDIR="$TEST_ROOT" \
 	E2E_TRANSITION_RUN_ID='standing-port' \
 	E2E_TRANSITION_SEED_ARCHIVE="$FIXTURES/transition-seed.tar.gz" \
+	E2E_TRANSITION_SEED_MANIFEST="$SEED_MANIFEST" \
 	E2E_TRANSITION_STORE_PROVISIONER="$FIXTURES/fake-transition-provisioner.sh" \
 	E2E_FAKE_TRANSITION_BASE_URL='http://localhost:8082' \
 	"$PROVISION_SCRIPT" create
@@ -98,6 +104,7 @@ expect_failure env \
 	TMPDIR="$TEST_ROOT" \
 	E2E_TRANSITION_RUN_ID='post-create-mismatch' \
 	E2E_TRANSITION_SEED_ARCHIVE="$FIXTURES/transition-seed.tar.gz" \
+	E2E_TRANSITION_SEED_MANIFEST="$SEED_MANIFEST" \
 	E2E_TRANSITION_STORE_PROVISIONER="$FIXTURES/fake-transition-provisioner.sh" \
 	E2E_FAKE_CREATED_STORE_ID='unexpected-created-store' \
 	E2E_FAKE_PROVISIONER_LOG="$rollback_log" \
@@ -111,6 +118,7 @@ expect_failure env \
 	TMPDIR="$TEST_ROOT" \
 	E2E_TRANSITION_RUN_ID='partial-create-failure' \
 	E2E_TRANSITION_SEED_ARCHIVE="$FIXTURES/transition-seed.tar.gz" \
+	E2E_TRANSITION_SEED_MANIFEST="$SEED_MANIFEST" \
 	E2E_TRANSITION_STORE_PROVISIONER="$FIXTURES/fake-transition-provisioner.sh" \
 	E2E_FAKE_CREATE_PARTIAL_FAILURE='1' \
 	E2E_FAKE_CREATED_STORE_ID='partial-created-store' \
@@ -125,6 +133,7 @@ expect_failure env \
 	TMPDIR="$TEST_ROOT" \
 	E2E_TRANSITION_RUN_ID='missing-rollback-receipt' \
 	E2E_TRANSITION_SEED_ARCHIVE="$FIXTURES/transition-seed.tar.gz" \
+	E2E_TRANSITION_SEED_MANIFEST="$SEED_MANIFEST" \
 	E2E_TRANSITION_STORE_PROVISIONER="$FIXTURES/fake-transition-provisioner.sh" \
 	E2E_FAKE_CREATED_STORE_ID='missing-receipt-store' \
 	E2E_FAKE_RECEIPT_MODE='missing' \
@@ -139,6 +148,7 @@ expect_failure env \
 	TMPDIR="$TEST_ROOT" \
 	E2E_TRANSITION_RUN_ID='invalid-rollback-receipt' \
 	E2E_TRANSITION_SEED_ARCHIVE="$FIXTURES/transition-seed.tar.gz" \
+	E2E_TRANSITION_SEED_MANIFEST="$SEED_MANIFEST" \
 	E2E_TRANSITION_STORE_PROVISIONER="$FIXTURES/fake-transition-provisioner.sh" \
 	E2E_FAKE_CREATED_STORE_ID='invalid-receipt-store' \
 	E2E_FAKE_RECEIPT_MODE='invalid' \
@@ -153,6 +163,7 @@ expect_failure env \
 	TMPDIR="$TEST_ROOT" \
 	E2E_TRANSITION_RUN_ID='allocation-write-failure' \
 	E2E_TRANSITION_SEED_ARCHIVE="$FIXTURES/transition-seed.tar.gz" \
+	E2E_TRANSITION_SEED_MANIFEST="$SEED_MANIFEST" \
 	E2E_TRANSITION_STORE_PROVISIONER="$FIXTURES/fake-transition-provisioner.sh" \
 	E2E_FAKE_BLOCK_ALLOCATION_WRITE='1' \
 	E2E_FAKE_PROVISIONER_LOG="$rollback_log" \
@@ -166,6 +177,7 @@ expect_failure env \
 	TMPDIR="$TEST_ROOT" \
 	E2E_TRANSITION_RUN_ID='rollback-cleanup-failure' \
 	E2E_TRANSITION_SEED_ARCHIVE="$FIXTURES/transition-seed.tar.gz" \
+	E2E_TRANSITION_SEED_MANIFEST="$SEED_MANIFEST" \
 	E2E_TRANSITION_STORE_PROVISIONER="$FIXTURES/fake-transition-provisioner.sh" \
 	E2E_FAKE_CREATED_STORE_ID='unexpected-created-store' \
 	E2E_FAKE_DESTROY_FAILURE='1' \

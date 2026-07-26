@@ -26,6 +26,8 @@ case "${1:-}" in
 		actual_base_url="${E2E_FAKE_CREATED_BASE_URL:-${E2E_FAKE_TRANSITION_BASE_URL:-http://transition.localhost:8899}}"
 		actual_store_id="${E2E_FAKE_CREATED_STORE_ID:-${E2E_FAKE_TRANSITION_STORE_ID:-transition-store-test}}"
 		plugin_version="${E2E_FAKE_CREATED_PLUGIN_VERSION:-${E2E_FAKE_TRANSITION_PLUGIN_VERSION:-10.5.0}}"
+		wpcom_blog_id="${E2E_FAKE_WPCOM_BLOG_ID:-77}"
+		account_id="${E2E_FAKE_ACCOUNT_ID:-acct_transition_test}"
 		rollback_receipt="$(
 			node -e '
 				const { createHash } = require( "node:crypto" );
@@ -35,6 +37,14 @@ case "${1:-}" in
 				);
 			' "$workspace" "$actual_base_url" "$actual_store_id"
 		)"
+		receipt_mode="${E2E_FAKE_RECEIPT_MODE:-valid}"
+		if [[ "$receipt_mode" == 'valid' ]]; then
+			printf '%s' "$rollback_receipt" > "$workspace/rollback-receipt"
+			chmod 0600 "$workspace/rollback-receipt"
+		elif [[ "$receipt_mode" == 'invalid' ]]; then
+			printf 'invalid receipt' > "$workspace/rollback-receipt"
+			chmod 0600 "$workspace/rollback-receipt"
+		fi
 		state_path="$workspace/fake-created-resource.json"
 		printf '%s' "$rollback_receipt" | node -e '
 			const {
@@ -49,6 +59,8 @@ case "${1:-}" in
 				base_url: process.argv[ 2 ],
 				store_id: process.argv[ 3 ],
 				rollback_receipt: receipt,
+				wpcom_blog_id: Number( process.argv[ 4 ] ),
+				account_id: process.argv[ 5 ],
 			};
 			const fd = openSync( statePath, "wx", 0o600 );
 			try {
@@ -56,17 +68,18 @@ case "${1:-}" in
 			} finally {
 				closeSync( fd );
 			}
-		' "$state_path" "$actual_base_url" "$actual_store_id"
+		' "$state_path" "$actual_base_url" "$actual_store_id" "$wpcom_blog_id" "$account_id"
 		if [[ "${E2E_FAKE_BLOCK_ALLOCATION_WRITE:-0}" == '1' ]]; then
 			mkdir "$workspace/allocation.json"
 		fi
-		receipt_mode="${E2E_FAKE_RECEIPT_MODE:-valid}"
 		printf '%s' "$rollback_receipt" | node -e '
 			const { readFileSync } = require( "node:fs" );
 			const result = {
 				base_url: process.argv[ 1 ],
 				store_id: process.argv[ 2 ],
 				plugin_version: process.argv[ 3 ],
+				wpcom_blog_id: Number( process.argv[ 5 ] ),
+				account_id: process.argv[ 6 ],
 			};
 			const receipt = readFileSync( 0, "utf8" );
 			if ( process.argv[ 4 ] === "valid" ) {
@@ -75,7 +88,7 @@ case "${1:-}" in
 				result.rollback_receipt = "invalid receipt";
 			}
 			process.stdout.write( `${ JSON.stringify( result ) }\n` );
-		' "$actual_base_url" "$actual_store_id" "$plugin_version" "$receipt_mode"
+		' "$actual_base_url" "$actual_store_id" "$plugin_version" "$receipt_mode" "$wpcom_blog_id" "$account_id"
 		if [[ "${E2E_FAKE_CREATE_PARTIAL_FAILURE:-0}" == '1' ]]; then
 			echo 'Fake transition create failed after creating the store.' >&2
 			exit 1

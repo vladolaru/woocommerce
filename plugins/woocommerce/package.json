@@ -90,6 +90,8 @@
 		"test:e2e:gb-nightly": "pnpm test:e2e:with-env gutenberg-nightly",
 		"test:e2e:paypal-standard": "pnpm test:e2e:default --project=paypal-standard",
 		"test:e2e:woopayments:contract-map": "node tests/e2e/bin/validate-woopayments-client-contract-map.mjs",
+		"test:e2e:woopayments:transition-saved-method": "bash tests/e2e/envs/woopayments-native/run-saved-method-transition.sh",
+		"test:e2e:woopayments:transition-unit": "bash tests/e2e/envs/woopayments-native/build-transition-seed.test.sh && bash tests/e2e/envs/woopayments-native/provision-transition-store-real.test.sh && bash tests/e2e/envs/woopayments-native/provision-transition-store.test.sh && bash tests/e2e/envs/woopayments-native/run-saved-method-transition.test.sh && pnpm playwright test --config=tests/e2e/envs/woopayments-native/unit.playwright.config.ts tests/e2e/utils/woopayments-native/transition-allocation.test.ts",
 		"test:env:start": "pnpm env:test",
 		"test:perf": "./tests/performance/bin/k6 run ./tests/performance/tests/main.js",
 		"test:perf:ci-setup": "pnpm test:perf:install-k6 && pnpm env:perf",

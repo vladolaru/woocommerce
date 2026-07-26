@@ -68,6 +68,17 @@ validate_base_url() {
 			console.error( `Transition allocation refuses standing store port ${ url.port }.` );
 			process.exit( 1 );
 		}
+		if (
+			url.hostname === "localhost" ||
+			! url.hostname.endsWith( ".localhost" ) ||
+			! url.port ||
+			url.pathname !== "/" ||
+			url.search ||
+			url.hash
+		) {
+			console.error( "Transition base URL must use one unique run-owned *.localhost host and explicit port." );
+			process.exit( 1 );
+		}
 	' "$base_url"
 }
 
@@ -91,36 +102,21 @@ json_field_from_stdin() {
 	' "$field"
 }
 
-persist_rollback_receipt() {
+json_positive_integer_from_stdin() {
+	local field="$1"
+	node -e '
+		const { readFileSync } = require( "node:fs" );
+		const value = JSON.parse( readFileSync( 0, "utf8" ) )[ process.argv[ 1 ] ];
+		if ( ! Number.isSafeInteger( value ) || value <= 0 ) process.exit( 1 );
+		process.stdout.write( String( value ) );
+	' "$field"
+}
+
+validate_returned_rollback_receipt() {
 	local receipt="$1"
 	local receipt_path="$2"
-	local workspace="$3"
-	printf '%s' "$receipt" | node -e '
-		const {
-			closeSync,
-			fchmodSync,
-			fsyncSync,
-			openSync,
-			readFileSync,
-			writeFileSync,
-		} = require( "node:fs" );
-		const receipt = readFileSync( 0, "utf8" );
-		if ( ! /^[\x21-\x7e]{16,1024}$/.test( receipt ) ) process.exit( 1 );
-		const fd = openSync( process.argv[ 1 ], "wx", 0o600 );
-		try {
-			fchmodSync( fd, 0o600 );
-			writeFileSync( fd, receipt );
-			fsyncSync( fd );
-		} finally {
-			closeSync( fd );
-		}
-		const workspaceFd = openSync( process.argv[ 2 ], "r" );
-		try {
-			fsyncSync( workspaceFd );
-		} finally {
-			closeSync( workspaceFd );
-		}
-	' "$receipt_path" "$workspace"
+	validate_rollback_receipt_file "$receipt_path" &&
+		[[ "$(< "$receipt_path")" == "$receipt" ]]
 }
 
 validate_rollback_receipt_file() {
@@ -146,6 +142,7 @@ validate_rollback_receipt_file() {
 create_store() {
 	readonly RUN_ID="${E2E_TRANSITION_RUN_ID:?E2E_TRANSITION_RUN_ID is required}"
 	readonly SEED_ARCHIVE="${E2E_TRANSITION_SEED_ARCHIVE:?E2E_TRANSITION_SEED_ARCHIVE is required}"
+	readonly SEED_MANIFEST="${E2E_TRANSITION_SEED_MANIFEST:?E2E_TRANSITION_SEED_MANIFEST is required}"
 	readonly PROVISIONER="${E2E_TRANSITION_STORE_PROVISIONER:?E2E_TRANSITION_STORE_PROVISIONER is required}"
 	readonly TEMP_ROOT="${TMPDIR:?TMPDIR is required}"
 
@@ -156,6 +153,10 @@ create_store() {
 
 	if [[ ! -f "$SEED_ARCHIVE" ]]; then
 		echo "Immutable transition seed archive does not exist: $SEED_ARCHIVE" >&2
+		exit 1
+	fi
+	if [[ ! -f "$SEED_MANIFEST" ]]; then
+		echo "Immutable transition seed manifest does not exist: $SEED_MANIFEST" >&2
 		exit 1
 	fi
 	if [[ ! -x "$PROVISIONER" ]]; then
@@ -176,6 +177,7 @@ create_store() {
 		"$PROVISIONER" plan \
 			--workspace "$WORKSPACE" \
 			--seed-archive "$SEED_ARCHIVE" \
+			--seed-manifest "$SEED_MANIFEST" \
 			--run-id "$RUN_ID"
 	)"
 	local base_url
@@ -185,6 +187,10 @@ create_store() {
 	store_id="$(json_field "$planned" 'store_id')"
 	plugin_version="$(json_field "$planned" 'plugin_version')"
 	validate_base_url "$base_url"
+	if [[ ! "$store_id" =~ ^[a-z0-9][a-z0-9-]{0,95}$ ]]; then
+		echo 'Transition plan returned an unsafe or ambiguous store ID.' >&2
+		exit 1
+	fi
 
 	ROLLBACK_PROVISIONER="$PROVISIONER"
 	ROLLBACK_WORKSPACE="$WORKSPACE"
@@ -199,6 +205,7 @@ create_store() {
 		"$PROVISIONER" create \
 			--workspace "$WORKSPACE" \
 			--seed-archive "$SEED_ARCHIVE" \
+			--seed-manifest "$SEED_MANIFEST" \
 			--run-id "$RUN_ID" \
 			--base-url "$base_url" \
 				--store-id "$store_id"
@@ -211,11 +218,10 @@ create_store() {
 		printf '%s' "$created" |
 			json_field_from_stdin 'rollback_receipt' 2>/dev/null
 	)" ||
-		! persist_rollback_receipt \
+		! validate_returned_rollback_receipt \
 			"$rollback_receipt" \
-			"$ROLLBACK_RECEIPT_PATH" \
-			"$WORKSPACE"; then
-		echo 'Transition provisioner did not return a valid rollback receipt; cleanup is impossible.' >&2
+			"$ROLLBACK_RECEIPT_PATH"; then
+		echo 'Transition provisioner did not prewrite and return the same valid rollback receipt; cleanup is impossible.' >&2
 		exit 1
 	fi
 	if (( create_status != 0 )); then
@@ -226,6 +232,8 @@ create_store() {
 	local created_base_url
 	local created_store_id
 	local created_plugin_version
+	local wpcom_blog_id
+	local account_id
 	created_base_url="$(
 		printf '%s' "$created" | json_field_from_stdin 'base_url'
 	)"
@@ -234,6 +242,12 @@ create_store() {
 	)"
 	created_plugin_version="$(
 		printf '%s' "$created" | json_field_from_stdin 'plugin_version'
+	)"
+	wpcom_blog_id="$(
+		printf '%s' "$created" | json_positive_integer_from_stdin 'wpcom_blog_id'
+	)"
+	account_id="$(
+		printf '%s' "$created" | json_field_from_stdin 'account_id'
 	)"
 	if [[ "$created_base_url" != "$base_url" ]] ||
 		[[ "$created_store_id" != "$store_id" ]] ||
@@ -261,10 +275,12 @@ create_store() {
 			store_id: process.argv[ 2 ],
 			seed_hash: process.argv[ 3 ],
 			plugin_version: process.argv[ 4 ],
-			teardown_token: process.argv[ 5 ],
-			run_id: process.argv[ 6 ],
-			workspace: process.argv[ 7 ],
-			allocation_path: process.argv[ 8 ],
+			wpcom_blog_id: Number( process.argv[ 5 ] ),
+			account_id: process.argv[ 6 ],
+			teardown_token: process.argv[ 7 ],
+			run_id: process.argv[ 8 ],
+			workspace: process.argv[ 9 ],
+			allocation_path: process.argv[ 10 ],
 		};
 		const json = `${ JSON.stringify( allocation ) }\n`;
 		const allocationFd = openSync(
@@ -285,7 +301,7 @@ create_store() {
 			closeSync( workspaceFd );
 		}
 		process.stdout.write( json );
-	' "$base_url" "$store_id" "$seed_hash" "$plugin_version" "$teardown_token" "$RUN_ID" "$WORKSPACE" "$ALLOCATION_PATH"
+	' "$base_url" "$store_id" "$seed_hash" "$plugin_version" "$wpcom_blog_id" "$account_id" "$teardown_token" "$RUN_ID" "$WORKSPACE" "$ALLOCATION_PATH"
 	)"
 	ROLLBACK_ARMED=0
 	trap - EXIT
@@ -356,6 +372,8 @@ destroy_store() {
 			"store_id",
 			"seed_hash",
 			"plugin_version",
+			"wpcom_blog_id",
+			"account_id",
 			"teardown_token",
 			"run_id",
 			"workspace",

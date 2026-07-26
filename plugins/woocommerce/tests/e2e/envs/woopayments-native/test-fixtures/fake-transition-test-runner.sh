@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+printf 'runner %s WCPAY_RUNTIME=%s E2E_WOOPAYMENTS_WPCOM_BLOG_ID=%s E2E_WOOPAYMENTS_ACCOUNT_ID=%s\n' \
+	"$*" \
+	"${WCPAY_RUNTIME:-}" \
+	"${E2E_WOOPAYMENTS_WPCOM_BLOG_ID:-}" \
+	"${E2E_WOOPAYMENTS_ACCOUNT_ID:-}" >> "${E2E_FAKE_COMMAND_LOG:?}"
+
+if [[ "${E2E_FAKE_TEST_RUNNER_FAIL:-0}" == '1' ]]; then
+	exit 17
+fi

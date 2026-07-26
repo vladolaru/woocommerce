@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+printf 'git %s\n' "$*" >> "${E2E_FAKE_COMMAND_LOG:?E2E_FAKE_COMMAND_LOG is required}"
+
+if [[ "$*" == *'rev-parse --verify'* ]]; then
+	printf '%s\n' "${E2E_FAKE_GIT_COMMIT:-a1f755fc903966387f8629f78f75976ac8d2016e}"
+	exit 0
+fi
+
+if [[ "$*" == *'archive --format=tar'* ]]; then
+	tar -cf - -C "${E2E_FAKE_SEED_TREE:?E2E_FAKE_SEED_TREE is required}" woocommerce-payments
+	exit 0
+fi
+
+echo "Unexpected fake git invocation: $*" >&2
+exit 1

@@ -6,6 +6,8 @@ export interface TransitionAllocation {
 	store_id: string;
 	seed_hash: string;
 	plugin_version: string;
+	wpcom_blog_id: number;
+	account_id: string;
 	teardown_token: string;
 	run_id: string;
 	workspace: string;
@@ -17,6 +19,7 @@ const TRANSITION_ALLOCATION_FIELDS: ( keyof TransitionAllocation )[] = [
 	'store_id',
 	'seed_hash',
 	'plugin_version',
+	'account_id',
 	'teardown_token',
 	'run_id',
 	'workspace',
@@ -49,6 +52,15 @@ function parseTransitionAllocation( value: string ): TransitionAllocation {
 				`Transition allocation requires a non-empty ${ field }.`
 			);
 		}
+	}
+	if (
+		typeof allocation.wpcom_blog_id !== 'number' ||
+		! Number.isSafeInteger( allocation.wpcom_blog_id ) ||
+		allocation.wpcom_blog_id <= 0
+	) {
+		throw new Error(
+			'Transition allocation requires a positive WPCOM blog ID.'
+		);
 	}
 	return allocation as unknown as TransitionAllocation;
 }
@@ -135,6 +147,11 @@ export function assertTransitionAllocation(
 				`Transition allocation ${ field } does not match its saved identity.`
 			);
 		}
+	}
+	if ( emitted.wpcom_blog_id !== saved.wpcom_blog_id ) {
+		throw new Error(
+			'Transition allocation wpcom_blog_id does not match its saved identity.'
+		);
 	}
 
 	return emitted;
