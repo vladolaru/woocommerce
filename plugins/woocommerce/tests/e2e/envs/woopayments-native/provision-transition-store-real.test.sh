@@ -380,6 +380,24 @@ if env E2E_TRANSITION_PORT=8082 "$PROVISIONER" plan \
 	exit 1
 fi
 
+non_executable_wp_env="$TEST_ROOT/non-executable-wp-env"
+printf '#!/usr/bin/env bash\nexit 99\n' > "$non_executable_wp_env"
+chmod 0600 "$non_executable_wp_env"
+for invalid_wp_env in "$TEST_ROOT/missing-wp-env" "$non_executable_wp_env"; do
+	binary_plan_workspace="$TEST_ROOT/wp-env-binary-plan-$(basename "$invalid_wp_env")"
+	mkdir "$binary_plan_workspace"
+	if env E2E_TRANSITION_PORT=19089 E2E_TRANSITION_WP_ENV_BIN="$invalid_wp_env" \
+		"$PROVISIONER" plan \
+		--workspace "$binary_plan_workspace" \
+		--seed-archive "$TEST_ROOT/seed.tar.gz" \
+		--seed-manifest "$TEST_ROOT/seed.json" \
+		--run-id binary-plan > /dev/null 2>&1; then
+		echo "Transition plan accepted an unavailable wp-env executable: $invalid_wp_env" >&2
+		exit 1
+	fi
+	test ! -n "$(find "$binary_plan_workspace" -mindepth 1 -print -quit)"
+done
+
 mkdir -p "$TEST_ROOT/mounts/core" "$TEST_ROOT/mounts/dev-tools" "$TEST_ROOT/mounts/wpcom-helper"
 
 run_provisioner() {
@@ -396,7 +414,8 @@ run_provisioner() {
 		E2E_TRANSITION_WPCOM_HELPER_REPO="$TEST_ROOT/mounts/wpcom-helper" \
 		E2E_TRANSITION_WPCOM_URL='http://wpcom.localhost:8080' \
 		E2E_TRANSITION_WPCOM_API_URL='http://host.docker.internal:8080/wp-json/' \
-		E2E_TRANSITION_PNPM_BIN="$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" \
+		E2E_TRANSITION_WP_ENV_BIN="${E2E_TRANSITION_WP_ENV_BIN:-$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh}" \
+		E2E_TRANSITION_PNPM_BIN="$TEST_ROOT/poison-pnpm-must-not-run" \
 		E2E_WPCOM_LOCAL_BIN="$SCRIPT_DIR/test-fixtures/fake-transition-wpcom-local.sh" \
 		E2E_FAKE_TRANSITION_WORKSPACE="$owned_workspace" \
 		E2E_FAKE_RUNTIME_STATE="$runtime_state" \
@@ -420,6 +439,31 @@ run_provisioner() {
 		E2E_TRANSITION_TEST_KILL_AFTER_LEASE_RELEASE="${E2E_TRANSITION_TEST_KILL_AFTER_LEASE_RELEASE:-0}" \
 		"$PROVISIONER" "$@"
 }
+
+binary_create_port=19087
+for invalid_wp_env in "$TEST_ROOT/missing-wp-env" "$non_executable_wp_env"; do
+	binary_create_workspace="$TEST_ROOT/wp-env-binary-create-$(basename "$invalid_wp_env")"
+	binary_create_runtime="$TEST_ROOT/runtime-wp-env-binary-create-$(basename "$invalid_wp_env")"
+	binary_create_log="$TEST_ROOT/wp-env-binary-create-$(basename "$invalid_wp_env").log"
+	mkdir "$binary_create_workspace"
+	if E2E_TRANSITION_PORT="$binary_create_port" E2E_TRANSITION_WP_ENV_BIN="$invalid_wp_env" run_provisioner \
+		"$binary_create_workspace" "$binary_create_runtime" "$binary_create_log" \
+		create \
+		--workspace "$binary_create_workspace" \
+		--seed-archive "$TEST_ROOT/seed.tar.gz" \
+		--seed-manifest "$TEST_ROOT/seed.json" \
+		--run-id "binary-create-$binary_create_port" \
+		--base-url "http://transition-binary-create-$binary_create_port.localhost:$binary_create_port" \
+		--store-id "woopayments-native-transition-binary-create-$binary_create_port" \
+		> /dev/null 2>&1; then
+		echo "Transition create accepted an unavailable wp-env executable: $invalid_wp_env" >&2
+		exit 1
+	fi
+	test ! -n "$(find "$binary_create_workspace" -mindepth 1 -print -quit)"
+	test ! -e "$SHARED_TMPDIR/woopayments-native-transition-port-leases/$binary_create_port"
+	test ! -s "$binary_create_log"
+	binary_create_port=$((binary_create_port + 1))
+done
 
 receipt_failure_port=19100
 for receipt_fail_point in \
@@ -528,12 +572,18 @@ E2E_FAKE_ACCOUNT_RUNTIME=native_core run_provisioner "$create_workspace" "$creat
 	--rollback-receipt-file "$create_workspace/rollback-receipt"
 account_delete_line="$(grep -nF 'test-lab account delete --format=json' "$create_log" | tail -1 | cut -d: -f1)"
 blog_delete_line="$(grep -nF 'transition_delete_blog' "$create_log" | tail -1 | cut -d: -f1)"
-store_destroy_line="$(grep -nF 'exec wp-env destroy' "$create_log" | tail -1 | cut -d: -f1)"
+store_destroy_line="$(grep -nF $'\tdestroy --force' "$create_log" | tail -1 | cut -d: -f1)"
 if (( account_delete_line >= blog_delete_line || blog_delete_line >= store_destroy_line )); then
 	echo 'Transition teardown did not delete account, blog, then wp-env in order.' >&2
 	exit 1
 fi
-test "$(grep -Fc 'exec wp-env destroy --force' "$create_log")" = '1'
+test "$(grep -Fc $'\tdestroy --force' "$create_log")" = '1'
+grep -Fq $'\tstart' "$create_log"
+grep -Fq $'\trun cli wp ' "$create_log"
+if grep -Fq 'exec wp-env' "$create_log" || grep -Fq $'pnpm\t' "$create_log"; then
+	echo 'Transition store commands still used package-manager wp-env resolution.' >&2
+	exit 1
+fi
 test "$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1])).phase" "$create_workspace/resource-state.json")" = 'destroyed'
 test ! -e "$create_runtime/account"
 test ! -e "$create_runtime/blog"
@@ -585,7 +635,8 @@ env \
 	E2E_TRANSITION_WPCOM_HELPER_REPO="$TEST_ROOT/mounts/wpcom-helper" \
 	E2E_TRANSITION_WPCOM_URL='http://wpcom.localhost:8080' \
 	E2E_TRANSITION_WPCOM_API_URL='http://host.docker.internal:8080/wp-json/' \
-	E2E_TRANSITION_PNPM_BIN="$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" \
+	E2E_TRANSITION_WP_ENV_BIN="$SCRIPT_DIR/test-fixtures/fake-transition-pnpm.sh" \
+	E2E_TRANSITION_PNPM_BIN="$TEST_ROOT/poison-pnpm-must-not-run" \
 	E2E_WPCOM_LOCAL_BIN="$SCRIPT_DIR/test-fixtures/fake-transition-wpcom-local.sh" \
 	E2E_FAKE_TRANSITION_WORKSPACE="$SHARED_TMPDIR/woopayments-native-transition-native-exit" \
 	E2E_FAKE_RUNTIME_STATE="$native_exit_runtime" \
@@ -604,7 +655,7 @@ test ! -e "$SHARED_TMPDIR/woopayments-native-transition-native-exit"
 test ! -e "$native_exit_runtime/account"
 test ! -e "$native_exit_runtime/blog"
 test ! -e "$native_exit_runtime/wp-env"
-test "$(grep -Fc 'exec wp-env destroy --force' "$native_exit_log")" = '1'
+test "$(grep -Fc $'\tdestroy --force' "$native_exit_log")" = '1'
 
 lease_owner_workspace="$TEST_ROOT/woopayments-native-transition-lease-owner"
 lease_owner_runtime="$TEST_ROOT/runtime-lease-owner"
@@ -995,7 +1046,7 @@ for deleted_resource in account blog wp-env; do
 					echo "Transition destroy skipped required probes with $incomplete_phase incomplete." >&2
 					exit 1
 				fi
-				test "$(grep -Fc 'exec wp-env destroy' "$delete_kill_log")" = '1'
+				test "$(grep -Fc $'\tdestroy --force' "$delete_kill_log")" = '1'
 				node "$STATE_WRITER" \
 					"$delete_kill_workspace/resource-state.json" \
 					"$incomplete_phase" \
@@ -1015,7 +1066,7 @@ for deleted_resource in account blog wp-env; do
 	test ! -e "$delete_kill_runtime/wp-env"
 		if [[ "$deleted_resource" == 'wp-env' ]]; then
 			test "$(< "$delete_kill_runtime/wp-env-destroy-observed-absent")" = 'true'
-			test "$(grep -Fc 'exec wp-env destroy --force' "$delete_kill_log")" = '2'
+			test "$(grep -Fc $'\tdestroy --force' "$delete_kill_log")" = '2'
 		fi
 	delete_kill_port=$((delete_kill_port + 1))
 done
@@ -1189,7 +1240,7 @@ if E2E_TRANSITION_PORT=19092 E2E_FAKE_ACCOUNT_MISMATCH=1 run_provisioner \
 fi
 if grep -Fq 'test-lab account delete --format=json' "$mismatch_log" ||
 	grep -Fq 'transition_delete_blog' "$mismatch_log" ||
-	grep -Fq 'exec wp-env destroy' "$mismatch_log"; then
+	grep -Fq $'\tdestroy --force' "$mismatch_log"; then
 	echo 'Transition teardown mutated resources after an identity mismatch.' >&2
 	exit 1
 fi
@@ -1243,7 +1294,7 @@ if grep -Fq 'test-lab account delete --format=json' "$partial_log"; then
 	exit 1
 fi
 grep -Fq 'transition_delete_blog' "$partial_log"
-grep -Fq 'exec wp-env destroy' "$partial_log"
+grep -Fq $'\tdestroy --force' "$partial_log"
 test "$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1])).phase" "$partial_workspace/resource-state.json")" = 'destroyed'
 
 wp_env_failure_workspace="$TEST_ROOT/woopayments-native-transition-wp-env-failure"
@@ -1405,7 +1456,7 @@ for recovery_mode in none ambiguous; do
 	test -f "$recovery_runtime/blog"
 	test -f "$recovery_runtime/wp-env"
 	if grep -Fq 'transition_delete_blog' "$recovery_log" ||
-		grep -Fq 'exec wp-env destroy' "$recovery_log"; then
+		grep -Fq $'\tdestroy --force' "$recovery_log"; then
 		echo "Transition cleanup mutated resources after a $recovery_mode blog recovery result." >&2
 		exit 1
 	fi

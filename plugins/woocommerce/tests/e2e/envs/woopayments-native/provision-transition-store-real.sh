@@ -18,7 +18,7 @@ readonly PROJECTS_ROOT="$(
 	cd "$PLUGIN_ROOT/../../.."
 	pwd -P
 )"
-readonly PNPM_BIN="${E2E_TRANSITION_PNPM_BIN:-pnpm}"
+readonly WP_ENV_BIN_INPUT="${E2E_TRANSITION_WP_ENV_BIN:-$PLUGIN_ROOT/node_modules/.bin/wp-env}"
 readonly WPCOM_LOCAL_BIN="${E2E_WPCOM_LOCAL_BIN:-wpcom-local}"
 readonly STATE_WRITER="$SCRIPT_DIR/write-transition-state.js"
 
@@ -29,6 +29,7 @@ run_id=''
 base_url=''
 store_id=''
 rollback_receipt_file=''
+wp_env_bin=''
 
 parse_arguments() {
 	while (( $# > 0 )); do
@@ -82,6 +83,28 @@ require_safe_identity() {
 
 file_mode() {
 	stat -f '%Lp' "$1" 2> /dev/null || stat -c '%a' "$1"
+}
+
+validate_wp_env_binary() {
+	local resolved_wp_env_bin
+	if ! resolved_wp_env_bin="$(
+		node -e '
+			const { realpathSync, statSync } = require( "node:fs" );
+			let resolved;
+			try {
+				resolved = realpathSync( process.argv[ 1 ] );
+				if ( ! statSync( resolved ).isFile() ) process.exit( 1 );
+			} catch {
+				process.exit( 1 );
+			}
+			process.stdout.write( resolved );
+		' "$WP_ENV_BIN_INPUT"
+	)" ||
+		[[ ! -x "$resolved_wp_env_bin" ]]; then
+		echo "Transition wp-env executable is unavailable or unsafe: $WP_ENV_BIN_INPUT" >&2
+		return 1
+	fi
+	wp_env_bin="$resolved_wp_env_bin"
 }
 
 validate_seed() {
@@ -838,7 +861,7 @@ release_port_lease() {
 wp_env() {
 	(
 		cd "$workspace/store"
-		WP_ENV_HOME="$workspace/wp-env-home" "$PNPM_BIN" exec wp-env "$@"
+		WP_ENV_HOME="$workspace/wp-env-home" "$wp_env_bin" "$@"
 	)
 }
 
@@ -1168,6 +1191,7 @@ create_store() {
 		echo 'Transition create requires an unused workspace.' >&2
 		exit 1
 	fi
+	validate_wp_env_binary
 
 	local receipt
 	receipt="$(
@@ -1647,6 +1671,7 @@ destroy_store() {
 	run_id="$(state_field run_id)"
 	require_safe_identity
 	validate_base_store_identity
+	validate_wp_env_binary
 	prepare_port_lease_for_destroy
 
 	if [[ "$(state_field account_deleted)" == 'false' ]]; then
@@ -1773,6 +1798,7 @@ case "$action" in
 	plan)
 		require_safe_identity
 		validate_seed
+		validate_wp_env_binary
 		emit_plan
 		;;
 	create)

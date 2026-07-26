@@ -21,15 +21,39 @@ assert_recovery_state_precedes_mutation() {
 }
 
 mkdir -p "$RUNTIME_STATE"
-printf 'pnpm\t%s\t%s\t%s\n' "${WP_ENV_HOME:-unset}" "$PWD" "$*" >> "$COMMAND_LOG"
+expected_store="$(
+	cd "$WORKSPACE/store"
+	pwd -P
+)"
+actual_store="$(
+	cd "$PWD"
+	pwd -P
+)"
+if [[ "$actual_store" != "$expected_store" ]]; then
+	echo 'Fake wp-env was not invoked from the generated store.' >&2
+	exit 44
+fi
+if [[ ! -f "$PWD/.wp-env.json" || -L "$PWD/.wp-env.json" ]]; then
+	echo 'Fake wp-env observed no exact generated-store config.' >&2
+	exit 44
+fi
+if [[ -e "$PWD/package.json" ]]; then
+	echo 'Fake wp-env observed a forbidden generated-store package manifest.' >&2
+	exit 44
+fi
+if [[ "${WP_ENV_HOME:-}" != "$WORKSPACE/wp-env-home" ]]; then
+	echo 'Fake wp-env was not invoked with the exact generated-store WP_ENV_HOME.' >&2
+	exit 44
+fi
+printf 'wp-env\t%s\t%s\t%s\n' "$WP_ENV_HOME" "$PWD" "$*" >> "$COMMAND_LOG"
 
-if [[ "$*" == exec\ wp-env\ run\ * ]] &&
+if [[ "$*" == run\ * ]] &&
 	[[ ! -f "$RUNTIME_STATE/wp-env" ]]; then
 	echo 'Fake wp-env run refused a destroyed environment.' >&2
 	exit 43
 fi
 
-if [[ "$*" == 'exec wp-env start' ]]; then
+if [[ "$*" == 'start' ]]; then
 	assert_recovery_state_precedes_mutation
 	node -e '
 		const state = JSON.parse( require( "node:fs" ).readFileSync( process.argv[ 1 ], "utf8" ) );
@@ -48,7 +72,7 @@ if [[ "$*" == 'exec wp-env start' ]]; then
 	exit 0
 fi
 
-if [[ "$*" == 'exec wp-env destroy --force' ]]; then
+if [[ "$*" == 'destroy --force' ]]; then
 	if [[ "${E2E_FAKE_WP_ENV_DESTROY_FAIL:-0}" == '1' ]]; then
 		echo 'Fake exact wp-env destroy failed.' >&2
 		exit 42
