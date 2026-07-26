@@ -26,8 +26,8 @@ cat > "$TEST_ROOT/seed/woocommerce-payments/woocommerce-payments.php" <<'PHP'
  * Version: 10.5.0
  */
 PHP
-tar -czf "$TEST_ROOT/seed.tar.gz" -C "$TEST_ROOT/seed" woocommerce-payments
-seed_hash="$(shasum -a 256 "$TEST_ROOT/seed.tar.gz" | awk '{ print $1 }')"
+tar -czf "$TEST_ROOT/source-only-seed.tar.gz" -C "$TEST_ROOT/seed" woocommerce-payments
+source_only_seed_hash="$(shasum -a 256 "$TEST_ROOT/source-only-seed.tar.gz" | awk '{ print $1 }')"
 node -e '
 	const { writeFileSync } = require( "node:fs" );
 	writeFileSync( process.argv[ 1 ], `${ JSON.stringify( {
@@ -37,12 +37,87 @@ node -e '
 		source_commit: "a1f755fc903966387f8629f78f75976ac8d2016e",
 		archive_sha256: process.argv[ 2 ],
 		archive_format: "tar.gz",
+		dependency_lock_sha256: "0".repeat( 64 ),
+		production_package_count: 2,
+		executable_seed_files: [
+			"vendor/autoload_packages.php",
+			"vendor/autoload.php",
+			"vendor/composer/installed.php",
+			"vendor/composer/installed.json",
+		],
 	} ) }\n` );
-' "$TEST_ROOT/seed.json" "$seed_hash"
-chmod 0444 "$TEST_ROOT/seed.tar.gz" "$TEST_ROOT/seed.json"
+' "$TEST_ROOT/source-only-seed.json" "$source_only_seed_hash"
+mkdir -p "$TEST_ROOT/seed/woocommerce-payments/vendor/composer"
+cat > "$TEST_ROOT/seed/woocommerce-payments/composer.lock" <<'JSON'
+{
+	"packages": [
+		{
+			"name": "automattic/jetpack-autoloader",
+			"version": "v5.0.15"
+		},
+		{
+			"name": "automattic/jetpack-config",
+			"version": "v3.1.1"
+		}
+	]
+}
+JSON
+printf '<?php // generated Jetpack package autoloader\n' > "$TEST_ROOT/seed/woocommerce-payments/vendor/autoload_packages.php"
+printf '<?php // generated Composer autoloader\n' > "$TEST_ROOT/seed/woocommerce-payments/vendor/autoload.php"
+printf '<?php // generated installed map\n' > "$TEST_ROOT/seed/woocommerce-payments/vendor/composer/installed.php"
+cat > "$TEST_ROOT/seed/woocommerce-payments/vendor/composer/installed.json" <<'JSON'
+{
+	"packages": [
+		{
+			"name": "automattic/jetpack-autoloader",
+			"version": "v5.0.15"
+		},
+		{
+			"name": "automattic/jetpack-config",
+			"version": "v3.1.1"
+		}
+	]
+}
+JSON
+tar -czf "$TEST_ROOT/seed.tar.gz" -C "$TEST_ROOT/seed" woocommerce-payments
+seed_hash="$(shasum -a 256 "$TEST_ROOT/seed.tar.gz" | awk '{ print $1 }')"
+dependency_lock_hash="$(shasum -a 256 "$TEST_ROOT/seed/woocommerce-payments/composer.lock" | awk '{ print $1 }')"
+node -e '
+	const { writeFileSync } = require( "node:fs" );
+	writeFileSync( process.argv[ 1 ], `${ JSON.stringify( {
+		schema_version: 1,
+		plugin: "woocommerce-payments",
+		plugin_version: "10.5.0",
+		source_commit: "a1f755fc903966387f8629f78f75976ac8d2016e",
+		archive_sha256: process.argv[ 2 ],
+		archive_format: "tar.gz",
+		dependency_lock_sha256: process.argv[ 3 ],
+		production_package_count: 2,
+		executable_seed_files: [
+			"vendor/autoload_packages.php",
+			"vendor/autoload.php",
+			"vendor/composer/installed.php",
+			"vendor/composer/installed.json",
+		],
+	} ) }\n` );
+' "$TEST_ROOT/seed.json" "$seed_hash" "$dependency_lock_hash"
+chmod 0444 \
+	"$TEST_ROOT/source-only-seed.tar.gz" \
+	"$TEST_ROOT/source-only-seed.json" \
+	"$TEST_ROOT/seed.tar.gz" \
+	"$TEST_ROOT/seed.json"
 
 workspace="$TEST_ROOT/woopayments-native-transition-real-run"
 mkdir "$workspace"
+if env E2E_TRANSITION_PORT=19091 \
+	"$PROVISIONER" plan \
+	--workspace "$workspace" \
+	--seed-archive "$TEST_ROOT/source-only-seed.tar.gz" \
+	--seed-manifest "$TEST_ROOT/source-only-seed.json" \
+	--run-id source-only > /dev/null 2>&1; then
+	echo 'Plan accepted a source-only seed without its executable dependency boundary.' >&2
+	exit 1
+fi
 before_plan="$(find "$workspace" -mindepth 1 -print)"
 plan="$(
 	env E2E_TRANSITION_PORT=19091 \
@@ -103,6 +178,10 @@ run_provisioner() {
 		E2E_FAKE_COMMAND_LOG="$command_log" \
 		E2E_FAKE_ACCOUNT_CREATE_FAIL="${E2E_FAKE_ACCOUNT_CREATE_FAIL:-0}" \
 		E2E_FAKE_ACCOUNT_MISMATCH="${E2E_FAKE_ACCOUNT_MISMATCH:-0}" \
+		E2E_FAKE_WP_ENV_START_AFTER_CREATE_FAIL="${E2E_FAKE_WP_ENV_START_AFTER_CREATE_FAIL:-0}" \
+		E2E_FAKE_WP_ENV_DESTROY_FAIL="${E2E_FAKE_WP_ENV_DESTROY_FAIL:-0}" \
+		E2E_FAKE_BLOG_REGISTER_AFTER_CREATE_FAIL="${E2E_FAKE_BLOG_REGISTER_AFTER_CREATE_FAIL:-0}" \
+		E2E_FAKE_BLOG_RECOVERY_MODE="${E2E_FAKE_BLOG_RECOVERY_MODE:-unique}" \
 		"$PROVISIONER" "$@"
 }
 
@@ -140,6 +219,8 @@ node -e '
 	const { readFileSync } = require( "node:fs" );
 	const config = JSON.parse( readFileSync( process.argv[ 1 ], "utf8" ) );
 	if ( config.port !== 19091 ) process.exit( 1 );
+	if ( config.config.WP_SITEURL !== "http://transition-create-run.localhost:19091" ) process.exit( 1 );
+	if ( config.config.WP_HOME !== "http://transition-create-run.localhost:19091" ) process.exit( 1 );
 	if ( config.mappings[ "wp-content/plugins/woocommerce" ] !== process.argv[ 2 ] ) process.exit( 1 );
 	if ( config.mappings[ "wp-content/plugins/woocommerce-payments" ] !== `${ process.argv[ 3 ] }/seed/woocommerce-payments` ) process.exit( 1 );
 	if ( config.mappings[ "wp-content/plugins/woocommerce-payments-dev-tools" ] !== process.argv[ 4 ] ) process.exit( 1 );
@@ -251,5 +332,170 @@ fi
 grep -Fq 'transition_delete_blog' "$partial_log"
 grep -Fq 'exec wp-env destroy' "$partial_log"
 test "$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1])).phase" "$partial_workspace/resource-state.json")" = 'destroyed'
+
+wp_env_failure_workspace="$TEST_ROOT/woopayments-native-transition-wp-env-failure"
+wp_env_failure_runtime="$TEST_ROOT/runtime-wp-env-failure"
+wp_env_failure_log="$TEST_ROOT/wp-env-failure-commands.log"
+mkdir "$wp_env_failure_workspace"
+set +e
+wp_env_failure_result="$(
+	E2E_TRANSITION_PORT=19094 E2E_FAKE_WP_ENV_START_AFTER_CREATE_FAIL=1 run_provisioner \
+		"$wp_env_failure_workspace" "$wp_env_failure_runtime" "$wp_env_failure_log" \
+		create \
+		--workspace "$wp_env_failure_workspace" \
+		--seed-archive "$TEST_ROOT/seed.tar.gz" \
+		--seed-manifest "$TEST_ROOT/seed.json" \
+		--run-id wp-env-failure \
+		--base-url 'http://transition-wp-env-failure.localhost:19094' \
+		--store-id 'woopayments-native-transition-wp-env-failure' \
+		2> "$TEST_ROOT/wp-env-failure-create.stderr"
+)"
+wp_env_failure_status=$?
+set -e
+if (( wp_env_failure_status == 0 )); then
+	echo 'The fake wp-env post-create failure did not fail transition create.' >&2
+	exit 1
+fi
+node -e '
+	const result = JSON.parse( process.argv[ 1 ] );
+	const state = JSON.parse( require( "node:fs" ).readFileSync( process.argv[ 2 ], "utf8" ) );
+	if ( result.status !== "failed" ) process.exit( 1 );
+	if ( state.wp_env_start_attempted !== true ) process.exit( 1 );
+	if ( state.wp_env_created !== false ) process.exit( 1 );
+' "$wp_env_failure_result" "$wp_env_failure_workspace/resource-state.json"
+test "$(< "$wp_env_failure_runtime/wp-env-intent-before-start")" = 'true'
+test -f "$wp_env_failure_runtime/wp-env"
+E2E_TRANSITION_PORT=19094 run_provisioner \
+	"$wp_env_failure_workspace" "$wp_env_failure_runtime" "$wp_env_failure_log" \
+	destroy \
+	--workspace "$wp_env_failure_workspace" \
+	--rollback-receipt-file "$wp_env_failure_workspace/rollback-receipt"
+test ! -e "$wp_env_failure_runtime/wp-env"
+test "$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1])).phase" "$wp_env_failure_workspace/resource-state.json")" = 'destroyed'
+
+wp_env_cleanup_workspace="$TEST_ROOT/woopayments-native-transition-wp-env-cleanup-failure"
+wp_env_cleanup_runtime="$TEST_ROOT/runtime-wp-env-cleanup-failure"
+wp_env_cleanup_log="$TEST_ROOT/wp-env-cleanup-failure-commands.log"
+mkdir "$wp_env_cleanup_workspace"
+set +e
+E2E_TRANSITION_PORT=19095 E2E_FAKE_WP_ENV_START_AFTER_CREATE_FAIL=1 run_provisioner \
+	"$wp_env_cleanup_workspace" "$wp_env_cleanup_runtime" "$wp_env_cleanup_log" \
+	create \
+	--workspace "$wp_env_cleanup_workspace" \
+	--seed-archive "$TEST_ROOT/seed.tar.gz" \
+	--seed-manifest "$TEST_ROOT/seed.json" \
+	--run-id wp-env-cleanup-failure \
+	--base-url 'http://transition-wp-env-cleanup-failure.localhost:19095' \
+	--store-id 'woopayments-native-transition-wp-env-cleanup-failure' \
+	> /dev/null 2> "$TEST_ROOT/wp-env-cleanup-create.stderr"
+wp_env_cleanup_create_status=$?
+set -e
+if (( wp_env_cleanup_create_status == 0 )); then
+	echo 'The cleanup-retention fixture did not fail transition create.' >&2
+	exit 1
+fi
+if E2E_TRANSITION_PORT=19095 E2E_FAKE_WP_ENV_DESTROY_FAIL=1 run_provisioner \
+	"$wp_env_cleanup_workspace" "$wp_env_cleanup_runtime" "$wp_env_cleanup_log" \
+	destroy \
+	--workspace "$wp_env_cleanup_workspace" \
+	--rollback-receipt-file "$wp_env_cleanup_workspace/rollback-receipt" \
+	> /dev/null 2> "$TEST_ROOT/wp-env-cleanup-destroy.stderr"; then
+	echo 'Transition destroy hid the exact wp-env cleanup failure.' >&2
+	exit 1
+fi
+test -f "$wp_env_cleanup_workspace/resource-state.json"
+test -f "$wp_env_cleanup_workspace/rollback-receipt"
+test -f "$wp_env_cleanup_runtime/wp-env"
+
+blog_failure_workspace="$TEST_ROOT/woopayments-native-transition-blog-failure"
+blog_failure_runtime="$TEST_ROOT/runtime-blog-failure"
+blog_failure_log="$TEST_ROOT/blog-failure-commands.log"
+mkdir "$blog_failure_workspace"
+set +e
+blog_failure_result="$(
+	E2E_TRANSITION_PORT=19096 E2E_FAKE_BLOG_REGISTER_AFTER_CREATE_FAIL=1 run_provisioner \
+		"$blog_failure_workspace" "$blog_failure_runtime" "$blog_failure_log" \
+		create \
+		--workspace "$blog_failure_workspace" \
+		--seed-archive "$TEST_ROOT/seed.tar.gz" \
+		--seed-manifest "$TEST_ROOT/seed.json" \
+		--run-id blog-failure \
+		--base-url 'http://transition-blog-failure.localhost:19096' \
+		--store-id 'woopayments-native-transition-blog-failure' \
+		2> "$TEST_ROOT/blog-failure-create.stderr"
+)"
+blog_failure_status=$?
+set -e
+if (( blog_failure_status == 0 )); then
+	echo 'The fake blog post-create failure did not fail transition create.' >&2
+	exit 1
+fi
+node -e '
+	const result = JSON.parse( process.argv[ 1 ] );
+	const state = JSON.parse( require( "node:fs" ).readFileSync( process.argv[ 2 ], "utf8" ) );
+	if ( result.status !== "failed" ) process.exit( 1 );
+	if ( state.wpcom_blog_registration_attempted !== true ) process.exit( 1 );
+	if ( state.wpcom_blog_created !== false ) process.exit( 1 );
+	if ( state.wpcom_blog_id !== 0 ) process.exit( 1 );
+' "$blog_failure_result" "$blog_failure_workspace/resource-state.json"
+test "$(< "$blog_failure_runtime/blog-intent-before-registration")" = 'true'
+test -f "$blog_failure_runtime/blog"
+E2E_TRANSITION_PORT=19096 run_provisioner \
+	"$blog_failure_workspace" "$blog_failure_runtime" "$blog_failure_log" \
+	destroy \
+	--workspace "$blog_failure_workspace" \
+	--rollback-receipt-file "$blog_failure_workspace/rollback-receipt"
+test "$(< "$blog_failure_runtime/blog-id-before-delete")" = '77'
+test ! -e "$blog_failure_runtime/blog"
+test ! -e "$blog_failure_runtime/wp-env"
+node -e '
+	const state = JSON.parse( require( "node:fs" ).readFileSync( process.argv[ 1 ], "utf8" ) );
+	if ( state.wpcom_blog_id !== 77 ) process.exit( 1 );
+	if ( state.wpcom_blog_id_recovered !== true ) process.exit( 1 );
+	if ( state.phase !== "destroyed" ) process.exit( 1 );
+' "$blog_failure_workspace/resource-state.json"
+
+for recovery_mode in none ambiguous; do
+	recovery_workspace="$TEST_ROOT/woopayments-native-transition-blog-$recovery_mode"
+	recovery_runtime="$TEST_ROOT/runtime-blog-$recovery_mode"
+	recovery_log="$TEST_ROOT/blog-$recovery_mode-commands.log"
+	mkdir "$recovery_workspace"
+	recovery_port="$(( 19096 + ${#recovery_mode} ))"
+	set +e
+	E2E_TRANSITION_PORT="$recovery_port" E2E_FAKE_BLOG_REGISTER_AFTER_CREATE_FAIL=1 run_provisioner \
+		"$recovery_workspace" "$recovery_runtime" "$recovery_log" \
+		create \
+		--workspace "$recovery_workspace" \
+		--seed-archive "$TEST_ROOT/seed.tar.gz" \
+		--seed-manifest "$TEST_ROOT/seed.json" \
+		--run-id "blog-$recovery_mode" \
+		--base-url "http://transition-blog-$recovery_mode.localhost:$recovery_port" \
+		--store-id "woopayments-native-transition-blog-$recovery_mode" \
+		> /dev/null 2> "$TEST_ROOT/blog-$recovery_mode-create.stderr"
+	recovery_create_status=$?
+	set -e
+	if (( recovery_create_status == 0 )); then
+		echo "The $recovery_mode blog recovery fixture did not fail create." >&2
+		exit 1
+	fi
+	if E2E_TRANSITION_PORT="$recovery_port" E2E_FAKE_BLOG_RECOVERY_MODE="$recovery_mode" run_provisioner \
+		"$recovery_workspace" "$recovery_runtime" "$recovery_log" \
+		destroy \
+		--workspace "$recovery_workspace" \
+		--rollback-receipt-file "$recovery_workspace/rollback-receipt" \
+		> /dev/null 2> "$TEST_ROOT/blog-$recovery_mode-destroy.stderr"; then
+		echo "Transition destroy accepted a $recovery_mode exact blog recovery result." >&2
+		exit 1
+	fi
+	test -f "$recovery_workspace/resource-state.json"
+	test -f "$recovery_workspace/rollback-receipt"
+	test -f "$recovery_runtime/blog"
+	test -f "$recovery_runtime/wp-env"
+	if grep -Fq 'transition_delete_blog' "$recovery_log" ||
+		grep -Fq 'exec wp-env destroy' "$recovery_log"; then
+		echo "Transition cleanup mutated resources after a $recovery_mode blog recovery result." >&2
+		exit 1
+	fi
+done
 
 echo 'provision-transition-store-real.sh tests passed.'

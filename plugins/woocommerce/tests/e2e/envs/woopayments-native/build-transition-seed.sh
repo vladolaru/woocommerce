@@ -15,6 +15,7 @@ readonly PROJECTS_ROOT="$(
 )"
 readonly WCPAY_REPOSITORY="${E2E_TRANSITION_WCPAY_REPO:-$PROJECTS_ROOT/woocommerce-payments}"
 readonly GIT_BIN="${E2E_TRANSITION_GIT_BIN:-git}"
+readonly COMPOSER_BIN="${E2E_TRANSITION_COMPOSER_BIN:-composer}"
 readonly TEMP_ROOT="${TMPDIR:?TMPDIR is required}"
 
 output_dir=''
@@ -69,15 +70,86 @@ mkdir "$extracted"
 tar -xf "$raw_archive" -C "$extracted"
 
 plugin_file="$extracted/woocommerce-payments/woocommerce-payments.php"
+composer_lock="$extracted/woocommerce-payments/composer.lock"
 if [[ ! -f "$plugin_file" ]] ||
 	! grep -Eq '^[[:space:]]*\*[[:space:]]*Version:[[:space:]]*10\.5\.0[[:space:]]*$' "$plugin_file"; then
 	echo 'The approved seed tree does not identify WooPayments 10.5.0.' >&2
+	exit 1
+fi
+if [[ ! -f "$extracted/woocommerce-payments/composer.json" || -L "$extracted/woocommerce-payments/composer.json" ]] ||
+	[[ ! -f "$composer_lock" || -L "$composer_lock" ]]; then
+	echo 'The approved seed tree has no exact Composer manifest and lock.' >&2
 	exit 1
 fi
 if find "$extracted" -name .git -print -quit | grep -q .; then
 	echo 'The approved seed tree unexpectedly contains Git metadata.' >&2
 	exit 1
 fi
+if [[ -e "$extracted/woocommerce-payments/vendor" ]]; then
+	echo 'The approved tracked seed unexpectedly contains mutable dependency artifacts.' >&2
+	exit 1
+fi
+
+"$COMPOSER_BIN" install \
+	"--working-dir=$extracted/woocommerce-payments" \
+	--no-dev \
+	--prefer-dist \
+	--no-interaction \
+	--no-progress \
+	--no-ansi \
+	--optimize-autoloader > /dev/null
+
+readonly -a EXECUTABLE_SEED_FILES=(
+	'vendor/autoload_packages.php'
+	'vendor/autoload.php'
+	'vendor/composer/installed.php'
+	'vendor/composer/installed.json'
+)
+for executable_file in "${EXECUTABLE_SEED_FILES[@]}"; do
+	artifact="$extracted/woocommerce-payments/$executable_file"
+	if [[ ! -f "$artifact" || -L "$artifact" ]]; then
+		echo "Materialized transition seed lacks exact activation artifact: $executable_file" >&2
+		exit 1
+	fi
+done
+production_package_count="$(
+	node -e '
+		const { readFileSync } = require( "node:fs" );
+		const lock = JSON.parse( readFileSync( process.argv[ 1 ], "utf8" ) );
+		const installedDocument = JSON.parse(
+			readFileSync( process.argv[ 2 ], "utf8" )
+		);
+		const installed = Array.isArray( installedDocument )
+			? installedDocument
+			: installedDocument.packages;
+		if ( ! Array.isArray( lock.packages ) || ! Array.isArray( installed ) ) {
+			process.exit( 1 );
+		}
+		const normalize = ( packages ) =>
+			packages
+				.map( ( value ) => {
+					if (
+						typeof value.name !== "string" ||
+						typeof value.version !== "string"
+					) process.exit( 1 );
+					return `${ value.name }@${ value.version }`;
+				} )
+				.sort();
+		if (
+			JSON.stringify( normalize( lock.packages ) ) !==
+			JSON.stringify( normalize( installed ) )
+		) {
+			console.error(
+				"Materialized transition dependencies do not match the pinned production lock."
+			);
+			process.exit( 1 );
+		}
+		process.stdout.write( String( lock.packages.length ) );
+	' \
+		"$composer_lock" \
+		"$extracted/woocommerce-payments/vendor/composer/installed.json"
+)"
+dependency_lock_hash="$(shasum -a 256 "$composer_lock" | awk '{ print $1 }')"
 
 find "$extracted" -type d -exec chmod 0555 {} +
 find "$extracted" -type f -exec chmod 0444 {} +
@@ -97,12 +169,26 @@ node -e '
 		source_commit: process.argv[ 3 ],
 		archive_sha256: process.argv[ 4 ],
 		archive_format: "tar.gz",
+		dependency_lock_sha256: process.argv[ 5 ],
+		production_package_count: Number( process.argv[ 6 ] ),
+		executable_seed_files: [
+			"vendor/autoload_packages.php",
+			"vendor/autoload.php",
+			"vendor/composer/installed.php",
+			"vendor/composer/installed.json",
+		],
 	};
 	writeFileSync( process.argv[ 1 ], `${ JSON.stringify( manifest ) }\n`, {
 		mode: 0o600,
 		flag: "wx",
 	} );
-' "$manifest_path" "$SEED_VERSION" "$SEED_COMMIT" "$archive_hash"
+' \
+	"$manifest_path" \
+	"$SEED_VERSION" \
+	"$SEED_COMMIT" \
+	"$archive_hash" \
+	"$dependency_lock_hash" \
+	"$production_package_count"
 chmod 0444 "$archive_path" "$manifest_path"
 
 node -e '

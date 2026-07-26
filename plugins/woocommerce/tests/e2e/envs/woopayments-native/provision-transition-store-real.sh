@@ -107,7 +107,16 @@ validate_seed() {
 			manifest.plugin_version !== process.argv[ 3 ] ||
 			manifest.source_commit !== process.argv[ 4 ] ||
 			manifest.archive_sha256 !== archiveHash ||
-			manifest.archive_format !== "tar.gz"
+			manifest.archive_format !== "tar.gz" ||
+			! /^[a-f0-9]{64}$/.test( manifest.dependency_lock_sha256 ) ||
+			! Number.isSafeInteger( manifest.production_package_count ) ||
+			manifest.production_package_count <= 0 ||
+			JSON.stringify( manifest.executable_seed_files ) !== JSON.stringify( [
+				"vendor/autoload_packages.php",
+				"vendor/autoload.php",
+				"vendor/composer/installed.php",
+				"vendor/composer/installed.json",
+			] )
 		) {
 			console.error( "Transition seed manifest does not match the approved immutable floor." );
 			process.exit( 1 );
@@ -128,6 +137,70 @@ validate_seed() {
 		echo 'Transition seed archive contains forbidden Git metadata.' >&2
 		exit 1
 	fi
+
+	local validation_root
+	validation_root="$(mktemp -d "${TMPDIR:?TMPDIR is required}/woopayments-transition-seed-validation.XXXXXX")"
+	local -a executable_entries=(
+		'woocommerce-payments/composer.lock'
+		'woocommerce-payments/vendor/autoload_packages.php'
+		'woocommerce-payments/vendor/autoload.php'
+		'woocommerce-payments/vendor/composer/installed.php'
+		'woocommerce-payments/vendor/composer/installed.json'
+	)
+	if ! tar -xzf "$seed_archive" -C "$validation_root" "${executable_entries[@]}"; then
+		rm -rf "$validation_root"
+		echo 'Transition seed archive cannot materialize its exact executable boundary.' >&2
+		exit 1
+	fi
+	local executable_entry
+	for executable_entry in "${executable_entries[@]}"; do
+		if [[ ! -s "$validation_root/$executable_entry" || -L "$validation_root/$executable_entry" ]]; then
+			rm -rf "$validation_root"
+			echo "Transition seed executable boundary is missing or ambiguous: $executable_entry" >&2
+			exit 1
+		fi
+	done
+	if ! node -e '
+		const { createHash } = require( "node:crypto" );
+		const { readFileSync } = require( "node:fs" );
+		const manifest = JSON.parse( readFileSync( process.argv[ 1 ], "utf8" ) );
+		const lock = JSON.parse( readFileSync( process.argv[ 2 ], "utf8" ) );
+		const installedDocument = JSON.parse(
+			readFileSync( process.argv[ 3 ], "utf8" )
+		);
+		const installed = Array.isArray( installedDocument )
+			? installedDocument
+			: installedDocument.packages;
+		const lockHash = createHash( "sha256" )
+			.update( readFileSync( process.argv[ 2 ] ) )
+			.digest( "hex" );
+		const normalize = ( packages ) => {
+			if ( ! Array.isArray( packages ) ) process.exit( 1 );
+			return packages
+				.map( ( value ) => {
+					if (
+						typeof value.name !== "string" ||
+						typeof value.version !== "string"
+					) process.exit( 1 );
+					return `${ value.name }@${ value.version }`;
+				} )
+				.sort();
+		};
+		if (
+			lockHash !== manifest.dependency_lock_sha256 ||
+			lock.packages.length !== manifest.production_package_count ||
+			JSON.stringify( normalize( lock.packages ) ) !==
+				JSON.stringify( normalize( installed ) )
+		) process.exit( 1 );
+	' \
+		"$seed_manifest" \
+		"$validation_root/woocommerce-payments/composer.lock" \
+		"$validation_root/woocommerce-payments/vendor/composer/installed.json"; then
+		rm -rf "$validation_root"
+		echo 'Transition seed executable dependencies do not match its safe manifest.' >&2
+		exit 1
+	fi
+	rm -rf "$validation_root"
 }
 
 planned_port() {
@@ -245,8 +318,11 @@ write_initial_state() {
 			wpcom_blog_id: 0,
 			account_id: "",
 			account_alias: "",
+			wp_env_start_attempted: false,
 			wp_env_created: false,
+			wpcom_blog_registration_attempted: false,
 			wpcom_blog_created: false,
+			wpcom_blog_id_recovered: false,
 			account_created: false,
 			account_deleted: false,
 			wpcom_blog_deleted: false,
@@ -299,11 +375,33 @@ wp_env() {
 	)
 }
 
+validate_exact_wp_env_scope() {
+	local expected_wp_env_home="$workspace/wp-env-home"
+	local config_path="$workspace/store/.wp-env.json"
+	if [[ "$(state_field wp_env_home)" != "$expected_wp_env_home" ]] ||
+		[[ ! -d "$expected_wp_env_home" || -L "$expected_wp_env_home" ]] ||
+		[[ ! -d "$workspace/store" || -L "$workspace/store" ]] ||
+		[[ ! -f "$config_path" || -L "$config_path" ]]; then
+		echo 'Transition wp-env recovery scope does not match its exact isolated workspace.' >&2
+		return 1
+	fi
+	node -e '
+		const { readFileSync } = require( "node:fs" );
+		const config = JSON.parse( readFileSync( process.argv[ 1 ], "utf8" ) );
+		const expected = new URL( process.argv[ 2 ] );
+		if (
+			config.port !== Number( expected.port ) ||
+			config.config?.WP_SITEURL !== process.argv[ 2 ] ||
+			config.config?.WP_HOME !== process.argv[ 2 ]
+		) process.exit( 1 );
+	' "$config_path" "$base_url"
+}
+
 store_wp() {
 	wp_env run cli wp "$@"
 }
 
-validate_created_identity() {
+validate_store_scope() {
 	node -e '
 		const value = JSON.parse( process.argv[ 1 ] );
 		const exactRoot = ( candidate ) => {
@@ -314,10 +412,17 @@ validate_created_identity() {
 		if (
 			exactRoot( value.site_url ) !== process.argv[ 2 ] ||
 			exactRoot( value.home ) !== process.argv[ 2 ] ||
-			value.marker !== process.argv[ 3 ] ||
-			value.wpcom_blog_id !== Number( process.argv[ 4 ] )
+			value.marker !== process.argv[ 3 ]
 		) process.exit( 1 );
-	' "$1" "$base_url" "$(state_field marker)" "$(state_field wpcom_blog_id)"
+	' "$1" "$base_url" "$(state_field marker)"
+}
+
+validate_created_identity() {
+	validate_store_scope "$1"
+	node -e '
+		const value = JSON.parse( process.argv[ 1 ] );
+		if ( value.wpcom_blog_id !== Number( process.argv[ 2 ] ) ) process.exit( 1 );
+	' "$1" "$(state_field wpcom_blog_id)"
 }
 
 validate_blog_identity() {
@@ -447,8 +552,8 @@ create_store() {
 			phpVersion: "8.1",
 			port: Number( process.argv[ 2 ] ),
 			config: {
-				WP_SITEURL: process.argv[ 3 ].replace( /:\d+$/, "" ),
-				WP_HOME: process.argv[ 3 ].replace( /:\d+$/, "" ),
+				WP_SITEURL: process.argv[ 3 ],
+				WP_HOME: process.argv[ 3 ],
 				E2E_WOOPAYMENTS_NATIVE: true,
 				WP_DEBUG_DISPLAY: false,
 			},
@@ -476,7 +581,16 @@ create_store() {
 		"$PLUGIN_ROOT/tests/e2e/bin" \
 		"$PLUGIN_ROOT/tests/e2e/test-plugins/woopayments-native-runtime/woopayments-native-runtime.php"
 
+	update_state wp_env_start_attempted true boolean
+	update_state phase 'wp-env-start-attempted'
+	local wp_env_start_status
+	set +e
 	wp_env start > /dev/null
+	wp_env_start_status=$?
+	set -e
+	if (( wp_env_start_status != 0 )); then
+		return "$wp_env_start_status"
+	fi
 	update_state wp_env_created true boolean
 	update_state phase 'wp-env-created'
 	store_wp plugin activate woocommerce woocommerce-payments woocommerce-payments-dev-tools wpcom-local-helper > /dev/null
@@ -561,8 +675,12 @@ create_store() {
 	store_wp option update woocommerce_currency USD > /dev/null
 	store_wp option update e2e_woopayments_transition_marker "$marker" > /dev/null
 
-	local registration
-	registration="$(
+	update_state wpcom_blog_registration_attempted true boolean
+	update_state phase 'wpcom-blog-registration-attempted'
+	local registration_output
+	local registration_status
+	set +e
+	registration_output="$(
 		"$WPCOM_LOCAL_BIN" wp -- --user=1 eval \
 			"/* transition_register_blog */
 			if ( ! class_exists( 'Jetpack_Data' ) || ! defined( 'JETPACK__SKIP_IS_ACCESSIBLE_CHECK_SECRET' ) ) {
@@ -590,14 +708,51 @@ create_store() {
 				'marker' => get_option( 'e2e_woopayments_transition_marker' ),
 			);
 			restore_current_blog();
-			echo wp_json_encode( \$identity );" |
-			json_object_from_stdin
+			echo wp_json_encode( \$identity );"
 	)"
+	registration_status=$?
+	set -e
+	local registration=''
 	local blog_id
-	blog_id="$(node -p 'const v=JSON.parse(process.argv[1]); if(!Number.isSafeInteger(v.wpcom_blog_id)||v.wpcom_blog_id<=0)process.exit(1); v.wpcom_blog_id' "$registration")"
-	update_state wpcom_blog_id "$blog_id" number
-	update_state wpcom_blog_created true boolean
-	update_state phase 'wpcom-blog-created'
+	blog_id=''
+	if registration="$(
+		printf '%s' "$registration_output" |
+			json_object_from_stdin 2> /dev/null
+	)"; then
+		blog_id="$(
+			node -p '
+				const value = JSON.parse( process.argv[ 1 ] );
+				const home = new URL( value.home );
+				if (
+					! Number.isSafeInteger( value.wpcom_blog_id ) ||
+					value.wpcom_blog_id <= 0 ||
+					value.domain !== process.argv[ 2 ] ||
+					home.pathname !== "/" ||
+					home.search ||
+					home.hash ||
+					home.origin !== process.argv[ 3 ] ||
+					value.marker !== process.argv[ 4 ]
+				) process.exit( 1 );
+				value.wpcom_blog_id;
+			' \
+			"$registration" \
+			"$(state_field domain)" \
+			"$(state_field home)" \
+			"$(state_field marker)"
+		)"
+	fi
+	if [[ -n "$blog_id" ]]; then
+		update_state wpcom_blog_id "$blog_id" number
+		update_state wpcom_blog_created true boolean
+		update_state phase 'wpcom-blog-created'
+	fi
+	if (( registration_status != 0 )); then
+		return "$registration_status"
+	fi
+	if [[ -z "$blog_id" ]]; then
+		echo 'Local WPCOM registration returned no exact transition blog identity.' >&2
+		return 1
+	fi
 
 	store_wp wcpay_dev local_wpcom_jetpack enable "$wpcom_url" > /dev/null
 	store_wp wcpay_dev redirect_to "$wpcom_api_url" > /dev/null
@@ -688,6 +843,71 @@ query_blog_identity() {
 		json_object_from_stdin
 }
 
+find_expected_blog_identity() {
+	"$WPCOM_LOCAL_BIN" wp -- --user=1 eval \
+		"/* transition_find_blog_identity */
+		global \$wpdb;
+		\$expected_domain = '$(state_field domain)';
+		\$expected_home = '$(state_field home)';
+		\$expected_marker = '$(state_field marker)';
+		\$candidate_ids = \$wpdb->get_col(
+			\$wpdb->prepare(
+				\"SELECT blog_id FROM {\$wpdb->blogs} WHERE domain = %s\",
+				\$expected_domain
+			)
+		);
+		\$matches = array();
+		foreach ( array_unique( array_map( 'intval', \$candidate_ids ) ) as \$candidate_id ) {
+			if ( \$candidate_id <= 0 || ! get_blog_details( \$candidate_id ) ) {
+				continue;
+			}
+			switch_to_blog( \$candidate_id );
+			\$candidate_home = untrailingslashit( home_url() );
+			\$candidate_marker = get_option( 'e2e_woopayments_transition_marker' );
+			restore_current_blog();
+			if (
+				\$expected_home === \$candidate_home &&
+				\$expected_marker === \$candidate_marker
+			) {
+				\$matches[] = array(
+					'wpcom_blog_id' => \$candidate_id,
+					'domain' => \$expected_domain,
+					'home' => \$candidate_home,
+					'marker' => \$candidate_marker,
+				);
+			}
+		}
+		echo wp_json_encode( array( 'matches' => \$matches ) );" |
+		json_object_from_stdin
+}
+
+recover_exact_blog_id() {
+	node -p '
+		const value = JSON.parse( process.argv[ 1 ] );
+		if ( ! Array.isArray( value.matches ) || value.matches.length !== 1 ) {
+			console.error( "Transition blog recovery requires one unique exact match." );
+			process.exit( 1 );
+		}
+		const match = value.matches[ 0 ];
+		const home = new URL( match.home );
+		if (
+			! Number.isSafeInteger( match.wpcom_blog_id ) ||
+			match.wpcom_blog_id <= 0 ||
+			match.domain !== process.argv[ 2 ] ||
+			home.pathname !== "/" ||
+			home.search ||
+			home.hash ||
+			home.origin !== process.argv[ 3 ] ||
+			match.marker !== process.argv[ 4 ]
+		) process.exit( 1 );
+		match.wpcom_blog_id;
+	' \
+		"$1" \
+		"$(state_field domain)" \
+		"$(state_field home)" \
+		"$(state_field marker)"
+}
+
 query_account_identity() {
 	store_wp --user=1 wcpay-dev test-lab account info --format=json |
 		json_object_from_stdin
@@ -746,8 +966,21 @@ destroy_store() {
 	fi
 
 	if [[ "$(state_field wpcom_blog_deleted)" == 'false' ]]; then
+		if [[ "$(state_field wpcom_blog_created)" == 'false' ]] &&
+			[[ "$(state_field wpcom_blog_registration_attempted)" == 'true' ]]; then
+			local recovered_blog_id
+			recovered_blog_id="$(recover_exact_blog_id "$(find_expected_blog_identity)")"
+			update_state wpcom_blog_id "$recovered_blog_id" number
+			update_state wpcom_blog_id_recovered true boolean
+			update_state wpcom_blog_created true boolean
+			update_state phase 'wpcom-blog-id-recovered'
+		fi
 		if [[ "$(state_field wpcom_blog_created)" == 'true' ]]; then
-			validate_created_identity "$(query_store_identity)"
+			if [[ "$(state_field wpcom_blog_id_recovered)" == 'true' ]]; then
+				validate_store_scope "$(query_store_identity)"
+			else
+				validate_created_identity "$(query_store_identity)"
+			fi
 			validate_blog_identity "$(query_blog_identity)"
 			node -e '
 				const value=JSON.parse(process.argv[1]);
@@ -755,25 +988,38 @@ destroy_store() {
 			' "$(query_account_identity)"
 			"$WPCOM_LOCAL_BIN" wp -- --user=1 eval \
 				"/* transition_delete_blog */ wpmu_delete_blog( $(state_field wpcom_blog_id), true ); echo 'deleted';" > /dev/null
+			local deleted_blog
+			deleted_blog="$(query_blog_identity)"
+			node -e '
+				const value=JSON.parse(process.argv[1]);
+				if(value.exists!==false||value.wpcom_blog_id!==Number(process.argv[2]))process.exit(1);
+			' "$deleted_blog" "$(state_field wpcom_blog_id)"
 		fi
 		update_state wpcom_blog_deleted true boolean
 		update_state phase 'wpcom-blog-deleted'
 	fi
 
 	if [[ "$(state_field wp_env_destroyed)" == 'false' ]]; then
-		if [[ "$(state_field wp_env_created)" == 'true' ]]; then
-			validate_created_identity "$(query_store_identity)"
-			node -e '
-				const value=JSON.parse(process.argv[1]);
-				if(value && value.account_id)process.exit(1);
-			' "$(query_account_identity)"
-			if [[ "$(state_field wpcom_blog_created)" == 'true' ]]; then
-				local absent
-				absent="$(query_blog_identity)"
+		if [[ "$(state_field wp_env_start_attempted)" == 'true' ]]; then
+			validate_exact_wp_env_scope
+			if [[ "$(state_field wp_env_created)" == 'true' ]]; then
+				if [[ "$(state_field wpcom_blog_id_recovered)" == 'true' ]]; then
+					validate_store_scope "$(query_store_identity)"
+				else
+					validate_created_identity "$(query_store_identity)"
+				fi
 				node -e '
 					const value=JSON.parse(process.argv[1]);
-					if(value.exists!==false||value.wpcom_blog_id!==Number(process.argv[2]))process.exit(1);
-				' "$absent" "$(state_field wpcom_blog_id)"
+					if(value && value.account_id)process.exit(1);
+				' "$(query_account_identity)"
+				if [[ "$(state_field wpcom_blog_created)" == 'true' ]]; then
+					local absent
+					absent="$(query_blog_identity)"
+					node -e '
+						const value=JSON.parse(process.argv[1]);
+						if(value.exists!==false||value.wpcom_blog_id!==Number(process.argv[2]))process.exit(1);
+					' "$absent" "$(state_field wpcom_blog_id)"
+				fi
 			fi
 			wp_env destroy > /dev/null
 		fi

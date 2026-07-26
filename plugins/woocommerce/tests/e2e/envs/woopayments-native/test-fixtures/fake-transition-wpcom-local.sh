@@ -10,7 +10,20 @@ mkdir -p "$RUNTIME_STATE"
 printf 'wpcom-local\t%s\t%s\n' "$PWD" "$*" >> "$COMMAND_LOG"
 
 if [[ "$*" == *'transition_register_blog'* ]]; then
+	node -e '
+		const state = JSON.parse( require( "node:fs" ).readFileSync( process.argv[ 1 ], "utf8" ) );
+		require( "node:fs" ).writeFileSync(
+			process.argv[ 2 ],
+			String( state.wpcom_blog_registration_attempted === true )
+		);
+	' \
+		"$WORKSPACE/resource-state.json" \
+		"$RUNTIME_STATE/blog-intent-before-registration"
 	touch "$RUNTIME_STATE/blog"
+	if [[ "${E2E_FAKE_BLOG_REGISTER_AFTER_CREATE_FAIL:-0}" == '1' ]]; then
+		echo 'Fake blog registration failed after creating the exact blog.' >&2
+		exit 51
+	fi
 	node -e '
 		const { readFileSync } = require( "node:fs" );
 		const state = JSON.parse( readFileSync( process.argv[ 1 ], "utf8" ) );
@@ -21,6 +34,36 @@ if [[ "$*" == *'transition_register_blog'* ]]; then
 			marker: state.marker,
 		} ) }\nwpcom-local completed\n` );
 	' "$WORKSPACE/resource-state.json"
+	exit 0
+fi
+
+if [[ "$*" == *'transition_find_blog_identity'* ]]; then
+	node -e '
+		const { existsSync, readFileSync } = require( "node:fs" );
+		const state = JSON.parse( readFileSync( process.argv[ 1 ], "utf8" ) );
+		const mode = process.argv[ 3 ];
+		let matches = [];
+		if ( existsSync( process.argv[ 2 ] ) && mode !== "none" ) {
+			matches.push( {
+				wpcom_blog_id: 77,
+				domain: state.domain,
+				home: state.home,
+				marker: state.marker,
+			} );
+			if ( mode === "ambiguous" ) {
+				matches.push( {
+					wpcom_blog_id: 78,
+					domain: state.domain,
+					home: state.home,
+					marker: state.marker,
+				} );
+			}
+		}
+		process.stdout.write( JSON.stringify( { matches } ) );
+	' \
+		"$WORKSPACE/resource-state.json" \
+		"$RUNTIME_STATE/blog" \
+		"${E2E_FAKE_BLOG_RECOVERY_MODE:-unique}"
 	exit 0
 fi
 
@@ -47,6 +90,15 @@ if [[ "$*" == *'transition_blog_identity'* ]]; then
 fi
 
 if [[ "$*" == *'transition_delete_blog'* ]]; then
+	node -e '
+		const state = JSON.parse( require( "node:fs" ).readFileSync( process.argv[ 1 ], "utf8" ) );
+		if ( ! Number.isSafeInteger( state.wpcom_blog_id ) || state.wpcom_blog_id <= 0 ) {
+			process.exit( 1 );
+		}
+		require( "node:fs" ).writeFileSync( process.argv[ 2 ], String( state.wpcom_blog_id ) );
+	' \
+		"$WORKSPACE/resource-state.json" \
+		"$RUNTIME_STATE/blog-id-before-delete"
 	rm -f "$RUNTIME_STATE/blog"
 	printf 'deleted\n'
 	exit 0

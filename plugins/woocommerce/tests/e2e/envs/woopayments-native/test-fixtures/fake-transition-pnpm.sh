@@ -25,11 +25,28 @@ printf 'pnpm\t%s\t%s\t%s\n' "${WP_ENV_HOME:-unset}" "$PWD" "$*" >> "$COMMAND_LOG
 
 if [[ "$*" == 'exec wp-env start' ]]; then
 	assert_recovery_state_precedes_mutation
+	node -e '
+		const state = JSON.parse( require( "node:fs" ).readFileSync( process.argv[ 1 ], "utf8" ) );
+		require( "node:fs" ).writeFileSync(
+			process.argv[ 2 ],
+			String( state.wp_env_start_attempted === true )
+		);
+	' \
+		"$WORKSPACE/resource-state.json" \
+		"$RUNTIME_STATE/wp-env-intent-before-start"
 	touch "$RUNTIME_STATE/wp-env"
+	if [[ "${E2E_FAKE_WP_ENV_START_AFTER_CREATE_FAIL:-0}" == '1' ]]; then
+		echo 'Fake wp-env start failed after creating the isolated environment.' >&2
+		exit 41
+	fi
 	exit 0
 fi
 
 if [[ "$*" == 'exec wp-env destroy' ]]; then
+	if [[ "${E2E_FAKE_WP_ENV_DESTROY_FAIL:-0}" == '1' ]]; then
+		echo 'Fake exact wp-env destroy failed.' >&2
+		exit 42
+	fi
 	rm -f "$RUNTIME_STATE/wp-env"
 	exit 0
 fi
