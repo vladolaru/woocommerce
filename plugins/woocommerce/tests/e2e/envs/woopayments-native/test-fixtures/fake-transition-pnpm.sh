@@ -37,6 +37,18 @@ if [[ ! -f "$PWD/.wp-env.json" || -L "$PWD/.wp-env.json" ]]; then
 	echo 'Fake wp-env observed no exact generated-store config.' >&2
 	exit 44
 fi
+if ! node -e '
+	const config = JSON.parse(
+		require( "node:fs" ).readFileSync( process.argv[ 1 ], "utf8" )
+	);
+	if (
+		config.testsEnvironment !== false ||
+		Object.hasOwn( config, "testsPort" )
+	) process.exit( 1 );
+' "$PWD/.wp-env.json"; then
+	echo 'Fake wp-env observed a tests environment or tests port.' >&2
+	exit 44
+fi
 if [[ -e "$PWD/package.json" ]]; then
 	echo 'Fake wp-env observed a forbidden generated-store package manifest.' >&2
 	exit 44

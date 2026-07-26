@@ -882,6 +882,8 @@ validate_exact_wp_env_scope() {
 		if (
 			config.port !== Number( expected.port ) ||
 			config.port !== Number( process.argv[ 3 ] ) ||
+			config.testsEnvironment !== false ||
+			Object.hasOwn( config, "testsPort" ) ||
 			config.config?.WP_SITEURL !== process.argv[ 2 ] ||
 			config.config?.WP_HOME !== process.argv[ 2 ]
 			) process.exit( 1 );
@@ -1252,6 +1254,7 @@ create_store() {
 			core: "https://wordpress.org/wordpress-latest.zip",
 			phpVersion: "8.1",
 			port: Number( process.argv[ 2 ] ),
+			testsEnvironment: false,
 			config: {
 				WP_SITEURL: process.argv[ 3 ],
 				WP_HOME: process.argv[ 3 ],

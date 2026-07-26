@@ -543,6 +543,8 @@ node -e '
 	const { readFileSync } = require( "node:fs" );
 	const config = JSON.parse( readFileSync( process.argv[ 1 ], "utf8" ) );
 	if ( config.port !== 19091 ) process.exit( 1 );
+	if ( config.testsEnvironment !== false ) process.exit( 1 );
+	if ( Object.hasOwn( config, "testsPort" ) ) process.exit( 1 );
 	if ( config.config.WP_SITEURL !== "http://transition-create-run.localhost:19091" ) process.exit( 1 );
 	if ( config.config.WP_HOME !== "http://transition-create-run.localhost:19091" ) process.exit( 1 );
 	if ( config.mappings[ "wp-content/plugins/woocommerce" ] !== process.argv[ 2 ] ) process.exit( 1 );
