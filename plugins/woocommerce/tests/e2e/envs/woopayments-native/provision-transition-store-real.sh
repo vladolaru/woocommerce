@@ -888,6 +888,92 @@ validate_exact_wp_env_scope() {
 	' "$config_path" "$base_url" "$(state_field port)"
 }
 
+classify_wp_env_status() {
+	node -e '
+		const { createHash } = require( "node:crypto" );
+		const { lstatSync, realpathSync } = require( "node:fs" );
+		const { basename, dirname, join, resolve } = require( "node:path" );
+		let value;
+		try {
+			value = JSON.parse( process.argv[ 1 ] );
+		} catch {
+			process.exit( 1 );
+		}
+		if ( ! value || Array.isArray( value ) || typeof value !== "object" ) {
+			process.exit( 1 );
+		}
+		const expectedStore = realpathSync( process.argv[ 2 ] );
+		const expectedHome = realpathSync( process.argv[ 3 ] );
+		if (
+			typeof value.configPath !== "string" ||
+			resolve( value.configPath ) !== expectedStore ||
+			realpathSync( value.configPath ) !== expectedStore
+		) process.exit( 1 );
+		const configPath = join( expectedStore, ".wp-env.json" );
+		const expectedInstallBasename = `wp-env-${ basename( expectedStore ) }-${ createHash( "md5" )
+			.update( configPath )
+			.digest( "hex" )
+			.slice( 0, 8 ) }`;
+		if (
+			typeof value.installPath !== "string" ||
+			basename( value.installPath ) !== expectedInstallBasename ||
+			realpathSync( dirname( resolve( value.installPath ) ) ) !== expectedHome
+		) process.exit( 1 );
+		let installStat;
+		try {
+			installStat = lstatSync( value.installPath );
+		} catch ( error ) {
+			if ( error?.code !== "ENOENT" ) process.exit( 1 );
+			installStat = null;
+		}
+		const installExists = installStat !== null;
+		if ( installStat ) {
+			if (
+				installStat.isSymbolicLink() ||
+				! installStat.isDirectory() ||
+				realpathSync( value.installPath ) !==
+					join( expectedHome, expectedInstallBasename )
+			) process.exit( 1 );
+		}
+		const keys = Object.keys( value ).sort().join( "," );
+		if ( value.status === "uninitialized" ) {
+			if ( keys !== "configPath,installPath,status" ) process.exit( 1 );
+			process.stdout.write( "uninitialized" );
+			return;
+		}
+		if (
+			! [ "running", "stopped" ].includes( value.status ) ||
+			value.runtime !== "docker" ||
+			! installExists ||
+			keys !== "config,configPath,installPath,ports,runtime,status,urls" ||
+			! value.config ||
+			Array.isArray( value.config ) ||
+			typeof value.config !== "object" ||
+			! value.ports ||
+			Array.isArray( value.ports ) ||
+			typeof value.ports !== "object" ||
+			! value.urls ||
+			Array.isArray( value.urls ) ||
+			typeof value.urls !== "object"
+		) process.exit( 1 );
+		process.stdout.write( "initialized" );
+	' "$1" "$workspace/store" "$workspace/wp-env-home"
+}
+
+query_wp_env_status() {
+	local status_output
+	if ! status_output="$(wp_env status --json)"; then
+		echo 'Transition wp-env status command failed.' >&2
+		return 1
+	fi
+	local classification
+	if ! classification="$(classify_wp_env_status "$status_output")"; then
+		echo 'Transition wp-env status is ambiguous or outside the exact workspace.' >&2
+		return 1
+	fi
+	printf '%s' "$classification"
+}
+
 store_wp() {
 	wp_env run cli wp "$@"
 }
@@ -1782,7 +1868,18 @@ destroy_store() {
 					fi
 				fi
 			fi
-			E2E_TRANSITION_PROVISIONER_PID="$$" wp_env destroy --force > /dev/null
+			local wp_env_status
+			wp_env_status="$(query_wp_env_status)"
+			if [[ "$wp_env_status" == 'initialized' ]]; then
+				E2E_TRANSITION_PROVISIONER_PID="$$" wp_env destroy --force > /dev/null
+				if [[ "$(query_wp_env_status)" != 'uninitialized' ]]; then
+					echo 'Transition wp-env destroy did not establish exact absence.' >&2
+					return 1
+				fi
+			elif [[ "$wp_env_status" != 'uninitialized' ]]; then
+				echo 'Transition wp-env status classification is unsupported.' >&2
+				return 1
+			fi
 		fi
 		update_state wp_env_destroyed true boolean
 	fi

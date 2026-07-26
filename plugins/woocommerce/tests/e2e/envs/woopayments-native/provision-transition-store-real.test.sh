@@ -425,8 +425,11 @@ run_provisioner() {
 		E2E_FAKE_ACCOUNT_EVIDENCE_MODE="${E2E_FAKE_ACCOUNT_EVIDENCE_MODE:-exact}" \
 		E2E_FAKE_ACCOUNT_RUNTIME="${E2E_FAKE_ACCOUNT_RUNTIME:-extension}" \
 		E2E_FAKE_ACCOUNT_MISMATCH="${E2E_FAKE_ACCOUNT_MISMATCH:-0}" \
+		E2E_FAKE_WP_ENV_START_BEFORE_CREATE_FAIL="${E2E_FAKE_WP_ENV_START_BEFORE_CREATE_FAIL:-0}" \
 		E2E_FAKE_WP_ENV_START_AFTER_CREATE_FAIL="${E2E_FAKE_WP_ENV_START_AFTER_CREATE_FAIL:-0}" \
 		E2E_FAKE_WP_ENV_DESTROY_FAIL="${E2E_FAKE_WP_ENV_DESTROY_FAIL:-0}" \
+		E2E_FAKE_WP_ENV_STATUS_MODE="${E2E_FAKE_WP_ENV_STATUS_MODE:-exact}" \
+		E2E_FAKE_WP_ENV_STATUS_AFTER_DESTROY_MODE="${E2E_FAKE_WP_ENV_STATUS_AFTER_DESTROY_MODE:-exact}" \
 		E2E_FAKE_BLOG_REGISTER_AFTER_CREATE_FAIL="${E2E_FAKE_BLOG_REGISTER_AFTER_CREATE_FAIL:-0}" \
 		E2E_FAKE_BLOG_RECOVERY_MODE="${E2E_FAKE_BLOG_RECOVERY_MODE:-unique}" \
 		E2E_FAKE_BLOG_IDENTITY_MODE="${E2E_FAKE_BLOG_IDENTITY_MODE:-exact}" \
@@ -991,6 +994,126 @@ for blog_identity_mode in wrong-absent ambiguous; do
 	mismatched_absence_port=$((mismatched_absence_port + 1))
 done
 
+never_initialized_workspace="$TEST_ROOT/woopayments-native-transition-never-initialized"
+never_initialized_runtime="$TEST_ROOT/runtime-never-initialized"
+never_initialized_log="$TEST_ROOT/never-initialized-commands.log"
+never_initialized_port=19139
+mkdir "$never_initialized_workspace"
+set +e
+E2E_TRANSITION_PORT="$never_initialized_port" E2E_FAKE_WP_ENV_START_BEFORE_CREATE_FAIL=1 run_provisioner \
+	"$never_initialized_workspace" "$never_initialized_runtime" "$never_initialized_log" \
+	create \
+	--workspace "$never_initialized_workspace" \
+	--seed-archive "$TEST_ROOT/seed.tar.gz" \
+	--seed-manifest "$TEST_ROOT/seed.json" \
+	--run-id never-initialized \
+	--base-url "http://transition-never-initialized.localhost:$never_initialized_port" \
+	--store-id 'woopayments-native-transition-never-initialized' \
+	> /dev/null 2> "$TEST_ROOT/never-initialized-create.stderr"
+never_initialized_create_status=$?
+set -e
+if (( never_initialized_create_status == 0 )); then
+	echo 'The pre-initialization wp-env failure did not fail create.' >&2
+	exit 1
+fi
+test ! -e "$never_initialized_runtime/wp-env"
+test "$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1])).wp_env_start_attempted" "$never_initialized_workspace/resource-state.json")" = 'true'
+test "$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1])).wp_env_created" "$never_initialized_workspace/resource-state.json")" = 'false'
+E2E_TRANSITION_PORT="$never_initialized_port" run_provisioner \
+	"$never_initialized_workspace" "$never_initialized_runtime" "$never_initialized_log" \
+	destroy \
+	--workspace "$never_initialized_workspace" \
+	--rollback-receipt-file "$never_initialized_workspace/rollback-receipt"
+test "$(grep -Fc $'\tstatus --json' "$never_initialized_log")" = '1'
+test "$(grep -Fc $'\tdestroy --force' "$never_initialized_log")" = '0'
+test ! -e "$SHARED_TMPDIR/woopayments-native-transition-port-leases/$never_initialized_port"
+test "$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1])).phase" "$never_initialized_workspace/resource-state.json")" = 'destroyed'
+
+status_failure_workspace="$TEST_ROOT/woopayments-native-transition-status-failure"
+status_failure_runtime="$TEST_ROOT/runtime-status-failure"
+status_failure_log="$TEST_ROOT/status-failure-commands.log"
+status_failure_port=19170
+mkdir "$status_failure_workspace"
+E2E_TRANSITION_PORT="$status_failure_port" run_provisioner \
+	"$status_failure_workspace" "$status_failure_runtime" "$status_failure_log" \
+	create \
+	--workspace "$status_failure_workspace" \
+	--seed-archive "$TEST_ROOT/seed.tar.gz" \
+	--seed-manifest "$TEST_ROOT/seed.json" \
+	--run-id status-failure \
+	--base-url "http://transition-status-failure.localhost:$status_failure_port" \
+	--store-id 'woopayments-native-transition-status-failure' > /dev/null
+status_failure_lease="$SHARED_TMPDIR/woopayments-native-transition-port-leases/$status_failure_port"
+for status_failure_mode in error malformed unknown wrong-config wrong-install wrong-runtime; do
+	if E2E_TRANSITION_PORT="$status_failure_port" E2E_FAKE_WP_ENV_STATUS_MODE="$status_failure_mode" run_provisioner \
+		"$status_failure_workspace" "$status_failure_runtime" "$status_failure_log" \
+		destroy \
+		--workspace "$status_failure_workspace" \
+		--rollback-receipt-file "$status_failure_workspace/rollback-receipt" \
+		> /dev/null 2> "$TEST_ROOT/status-failure-$status_failure_mode.stderr"; then
+		echo "Transition destroy accepted $status_failure_mode wp-env status evidence." >&2
+		exit 1
+	fi
+	test -f "$status_failure_runtime/wp-env"
+	test "$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1])).wp_env_destroyed" "$status_failure_workspace/resource-state.json")" = 'false'
+	assert_exact_lease_owner \
+		"$status_failure_lease" \
+		"$status_failure_workspace" \
+		status-failure \
+		"http://transition-status-failure.localhost:$status_failure_port" \
+		"$status_failure_port" \
+		"$status_failure_workspace/rollback-receipt"
+	test "$(grep -Fc $'\tdestroy --force' "$status_failure_log")" = '0'
+done
+E2E_TRANSITION_PORT="$status_failure_port" run_provisioner \
+	"$status_failure_workspace" "$status_failure_runtime" "$status_failure_log" \
+	destroy \
+	--workspace "$status_failure_workspace" \
+	--rollback-receipt-file "$status_failure_workspace/rollback-receipt"
+test ! -e "$status_failure_lease"
+
+post_status_workspace="$TEST_ROOT/woopayments-native-transition-post-status"
+post_status_runtime="$TEST_ROOT/runtime-post-status"
+post_status_log="$TEST_ROOT/post-status-commands.log"
+post_status_port=19171
+mkdir "$post_status_workspace"
+E2E_TRANSITION_PORT="$post_status_port" run_provisioner \
+	"$post_status_workspace" "$post_status_runtime" "$post_status_log" \
+	create \
+	--workspace "$post_status_workspace" \
+	--seed-archive "$TEST_ROOT/seed.tar.gz" \
+	--seed-manifest "$TEST_ROOT/seed.json" \
+	--run-id post-status \
+	--base-url "http://transition-post-status.localhost:$post_status_port" \
+	--store-id 'woopayments-native-transition-post-status' > /dev/null
+post_status_lease="$SHARED_TMPDIR/woopayments-native-transition-port-leases/$post_status_port"
+if E2E_TRANSITION_PORT="$post_status_port" E2E_FAKE_WP_ENV_STATUS_AFTER_DESTROY_MODE=initialized run_provisioner \
+	"$post_status_workspace" "$post_status_runtime" "$post_status_log" \
+	destroy \
+	--workspace "$post_status_workspace" \
+	--rollback-receipt-file "$post_status_workspace/rollback-receipt" \
+	> /dev/null 2> "$TEST_ROOT/post-status-destroy.stderr"; then
+	echo 'Transition destroy accepted initialized wp-env status after deletion.' >&2
+	exit 1
+fi
+test ! -e "$post_status_runtime/wp-env"
+test "$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1])).wp_env_destroyed" "$post_status_workspace/resource-state.json")" = 'false'
+assert_exact_lease_owner \
+	"$post_status_lease" \
+	"$post_status_workspace" \
+	post-status \
+	"http://transition-post-status.localhost:$post_status_port" \
+	"$post_status_port" \
+	"$post_status_workspace/rollback-receipt"
+E2E_TRANSITION_PORT="$post_status_port" run_provisioner \
+	"$post_status_workspace" "$post_status_runtime" "$post_status_log" \
+	destroy \
+	--workspace "$post_status_workspace" \
+	--rollback-receipt-file "$post_status_workspace/rollback-receipt"
+test "$(grep -Fc $'\tdestroy --force' "$post_status_log")" = '1'
+test "$(grep -Fc $'\tstatus --json' "$post_status_log")" = '3'
+test ! -e "$post_status_lease"
+
 delete_kill_port=19140
 for deleted_resource in account blog wp-env; do
 	delete_kill_workspace="$TEST_ROOT/woopayments-native-transition-delete-kill-$deleted_resource"
@@ -1065,8 +1188,8 @@ for deleted_resource in account blog wp-env; do
 	test ! -e "$delete_kill_runtime/blog"
 	test ! -e "$delete_kill_runtime/wp-env"
 		if [[ "$deleted_resource" == 'wp-env' ]]; then
-			test "$(< "$delete_kill_runtime/wp-env-destroy-observed-absent")" = 'true'
-			test "$(grep -Fc $'\tdestroy --force' "$delete_kill_log")" = '2'
+			test "$(grep -Fc $'\tdestroy --force' "$delete_kill_log")" = '1'
+			test "$(grep -Fc $'\tstatus --json' "$delete_kill_log")" = '2'
 		fi
 	delete_kill_port=$((delete_kill_port + 1))
 done
@@ -1358,7 +1481,7 @@ if (( wp_env_cleanup_create_status == 0 )); then
 	echo 'The cleanup-retention fixture did not fail transition create.' >&2
 	exit 1
 fi
-if E2E_TRANSITION_PORT=19095 E2E_FAKE_WP_ENV_DESTROY_FAIL=1 run_provisioner \
+if E2E_TRANSITION_PORT=19095 E2E_FAKE_WP_ENV_STATUS_MODE=stopped E2E_FAKE_WP_ENV_DESTROY_FAIL=1 run_provisioner \
 	"$wp_env_cleanup_workspace" "$wp_env_cleanup_runtime" "$wp_env_cleanup_log" \
 	destroy \
 	--workspace "$wp_env_cleanup_workspace" \
