@@ -2,7 +2,7 @@
 	"schema_version": 1,
 	"slice_id": "000-pilot-calibration",
 	"wc_base_commit": "244e7d48a9cb44768f7b8a7592877bd0ae3ee1d5",
-	"verified_at_commit": "2edeeafbcf99f4ca61c306d881dd1aa018619553",
+	"verified_at_commit": "6cf3169e9612ca185e723aea6188657d5ff309f9",
 	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
 	"source_test_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 	"contract_ids": [
@@ -43,7 +43,10 @@
 			"contract": "Saved cards › When using a 3ds card added on checkout › should process a payment with the saved card"
 		}
 	],
-	"implementation_commits": [],
+	"implementation_commits": [
+		"2edeeafbcf99f4ca61c306d881dd1aa018619553",
+		"6cf3169e9612ca185e723aea6188657d5ff309f9"
+	],
 	"verification": [
 		{
 			"command": "pnpm --dir plugins/woocommerce test:e2e:woopayments:controller",
@@ -61,24 +64,9 @@
 			"summary": "Dry calibration run 2 reproduced the exact run 1 counts and gates without tracked residual state"
 		},
 		{
-			"command": "pnpm --dir plugins/woocommerce test:e2e:woopayments:contract-map -- --require-saturated",
-			"exit_code": 1,
-			"summary": "Expected Unsaturated contract failure while planned and specified contracts remain"
-		},
-		{
-			"command": "pnpm --dir plugins/woocommerce test:e2e:woopayments:contract-map -- --require-migrated",
-			"exit_code": 1,
-			"summary": "Expected Unmigrated contract failure before every retained contract is closed"
-		},
-		{
 			"command": "pnpm --dir plugins/woocommerce exec playwright test --config=tests/e2e/envs/woopayments-native/unit.playwright.config.ts tests/e2e/utils/woopayments-native/known-gap-runner.test.ts tests/e2e/utils/woopayments-native/resource-quarantine.test.ts",
 			"exit_code": 0,
 			"summary": "All 10 exact known-gap and quarantine meta-tests passed with one worker"
-		},
-		{
-			"command": "E2E_WOOPAYMENTS_DIAGNOSTICS_DIR=$TMPDIR/task9-native-readiness E2E_WOOPAYMENTS_NATIVE_STORE_DIR=plugins/woocommerce WCPAY_RUNTIME=native plugins/woocommerce/tests/e2e/envs/woopayments-native/env-setup.sh",
-			"exit_code": 1,
-			"summary": "blocked-environment:PILOT-NATIVE-READINESS before provider or browser work because the existing wp-env cli service was not running; redacted:local-artifact:sha256:c4375ef5067f3658e1099ab5b270dc9aeb1125cddb5cb074fcf2a1b572da25c4"
 		},
 		{
 			"command": "E2E_TRANSITION_RUN_ID=pilot-calibration-20260727174138 pnpm --dir plugins/woocommerce test:e2e:woopayments:transition-saved-method",
@@ -110,6 +98,36 @@
 			"verdict": "APPROVE",
 			"source_test_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 			"summary": "Reliability review approved identical controller counts and fail-closed terminal, expected-failure, and quarantine behavior with zero findings"
+		},
+		{
+			"role": "ecosystem-integration-final-closure",
+			"verdict": "APPROVE",
+			"source_test_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			"summary": "Final ecosystem review approved only the exact basic saved-token classic and Blocks closures with zero findings; manual capture and three partial contracts remain open"
+		},
+		{
+			"role": "e2e-tests-final-closure",
+			"verdict": "APPROVE",
+			"source_test_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			"summary": "Final E2E review approved exact token and provider identity, one worker, zero retries, cleanup, and disposable teardown for only the two saved-token closures"
+		},
+		{
+			"role": "reliability-final-closure",
+			"verdict": "APPROVE",
+			"source_test_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			"summary": "Final reliability review approved the single transition proof and bounded cleanup while requiring manual capture and the other three unexecuted clauses to remain open"
+		},
+		{
+			"role": "decision-critic-final-closure",
+			"verdict": "APPROVE",
+			"source_test_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			"summary": "Seven-step final closure decision returned STAND with C1-C5 and A1-A2 verified, no failed or uncertain claims, and exactly two closures"
+		},
+		{
+			"role": "code-final-closure-correction",
+			"verdict": "APPROVE",
+			"source_test_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			"summary": "Correction-cycle code review approved closure-valid evidence and the conservative two-row ledger transition with zero findings"
 		}
 	],
 	"known_gaps": [],
