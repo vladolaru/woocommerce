@@ -1,0 +1,76 @@
+{
+	"schema_version": 1,
+	"slice_id": "000-pilot-calibration",
+	"wc_base_commit": "244e7d48a9cb44768f7b8a7592877bd0ae3ee1d5",
+	"verified_at_commit": "244e7d48a9cb44768f7b8a7592877bd0ae3ee1d5",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-admin-transactions.spec.ts:14::Admin transactions › page should load without errors",
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-manual-capture.spec.ts:39::Order › Manual Capture › should create an \"On hold\" order then capture the charge",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase.spec.ts:53::Successful purchase › Carding protection false › using a basic card",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-save-card-and-purchase.spec.ts:93::Saved cards › When using a 3ds card added on checkout › should process a payment with the saved card",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-save-card-and-purchase.spec.ts:93::Saved cards › When using a basic card added on checkout › should process a payment with the saved card",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-saved-card-checkout-and-usage.spec.ts:71::WooCommerce Blocks › Saved cards › should process a payment with the saved card from Blocks checkout"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/pilots/merchant-manual-capture.spec.ts",
+			"contract": "merchant manually captures one exact authorization and restores capture mode"
+		},
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/pilots/merchant-transaction-navigation.spec.ts",
+			"contract": "merchant reaches the exact transaction created by this atomic journey"
+		},
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/pilots/saved-method-cutover.spec.ts",
+			"contract": "plugin default saved method survives ephemeral native cutover"
+		},
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/pilots/shopper-card-payment.spec.ts",
+			"contract": "shopper card payment retains exact order and provider evidence"
+		},
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/overview-transactions.spec.ts",
+			"contract": "Admin transactions › page should load without errors"
+		},
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/card-payment.ts",
+			"contract": "Successful purchase › Carding protection false › using a basic card"
+		},
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/transitions/historical-tokens.spec.ts",
+			"contract": "Saved cards › When using a 3ds card added on checkout › should process a payment with the saved card"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [
+		{
+			"command": "pnpm --dir plugins/woocommerce test:e2e:woopayments:controller",
+			"exit_code": 0,
+			"summary": "Phase 1 controller passed at the pinned base commit; no real pilot execution is claimed"
+		}
+	],
+	"reviews": [
+		{
+			"role": "ecosystem-integration",
+			"verdict": "APPROVE",
+			"source_test_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			"summary": "Frozen-source review approved the corrected three-eligible and three-open classification with zero findings"
+		},
+		{
+			"role": "e2e-tests",
+			"verdict": "APPROVE",
+			"source_test_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			"summary": "E2E review approved exact annotations, provider correlation, prerequisites, cleanup, and conservative gaps with zero findings"
+		},
+		{
+			"role": "decision-critic",
+			"verdict": "APPROVE",
+			"source_test_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			"summary": "Seven-step correction-cycle decision review returned STAND with no failed or uncertain claims"
+		}
+	],
+	"known_gaps": [],
+	"deferral": null
+}

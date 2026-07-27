@@ -9,6 +9,11 @@ test(
 			tags.WOOPAYMENTS_PROVIDER,
 			tags.WOOPAYMENTS_PR,
 		],
+		annotation: {
+			type: 'woopayments-contract',
+			description:
+				'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-admin-transactions.spec.ts:14::Admin transactions › page should load without errors',
+		},
 	},
 	async ( { adminApi, page, pilotRuntime, runId } ) => {
 		await pilotRuntime.withProviderWriteLocks(

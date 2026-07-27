@@ -393,9 +393,23 @@ test( 'CLI from-git-ref HEAD runs git show and prints the real summary', () => {
 		logLines[ 0 ],
 		'Validated 181 WooPayments client contracts.'
 	);
-	assert.equal( logLines.includes( '181\tmigration_state\tplanned' ), true );
+	const summarizedMigrationStates = Object.entries(
+		summary.migrationStateCounts
+	)
+		.filter( ( [ , count ] ) => count > 0 )
+		.map(
+			( [ state, count ] ) => `${ count }\tmigration_state\t${ state }`
+		);
 	assert.equal(
-		logLines.includes( '181\tnative_support_state\tnot-assessed' ),
+		summarizedMigrationStates.every( ( line ) =>
+			logLines.includes( line )
+		),
+		true
+	);
+	assert.equal(
+		logLines.includes(
+			`${ summary.nativeSupportStateCounts[ 'not-assessed' ] }\tnative_support_state\tnot-assessed`
+		),
 		true
 	);
 	assert.equal(
@@ -1815,10 +1829,19 @@ test( 'summarizes migration and native-support states', () => {
 
 	assert.equal(
 		summary.migrationStateCounts.planned,
-		metadata.frozen_contract_count
+		contractMap.rows.filter( ( row ) => row.migration_state === 'planned' )
+			.length
+	);
+	assert.equal(
+		summary.migrationStateCounts.specified,
+		contractMap.rows.filter(
+			( row ) => row.migration_state === 'specified'
+		).length
 	);
 	assert.equal(
 		summary.nativeSupportStateCounts[ 'not-assessed' ],
-		metadata.frozen_contract_count
+		contractMap.rows.filter(
+			( row ) => row.native_support_state === 'not-assessed'
+		).length
 	);
 } );

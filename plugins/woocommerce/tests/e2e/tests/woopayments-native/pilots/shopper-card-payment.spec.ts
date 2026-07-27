@@ -9,6 +9,11 @@ test(
 			tags.WOOPAYMENTS_PROVIDER,
 			tags.WOOPAYMENTS_PR,
 		],
+		annotation: {
+			type: 'woopayments-contract',
+			description:
+				'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase.spec.ts:53::Successful purchase › Carding protection false › using a basic card',
+		},
 	},
 	async ( { adminApi, page, pilotRuntime, runId } ) => {
 		await pilotRuntime.withProviderWriteLocks(
