@@ -11,6 +11,9 @@ import {
 } from 'node:fs/promises';
 import { join } from 'node:path';
 
+// @ts-expect-error Node's direct TypeScript lock workers require the explicit extension.
+import { assertResourcesUsable } from './resource-quarantine.ts';
+
 export type ResourceLockKind =
 	| 'account'
 	| 'store'
@@ -324,9 +327,10 @@ export class ResourceLockManager {
 		this.assertRequest( request );
 		this.assertAcquisitionOrder( request.kind );
 		await this.assertAcquisitionPrerequisites( request );
+		const key = this.getKey( request );
+		await assertResourcesUsable( [ key ], this.lockDir );
 		await mkdir( this.lockDir, { recursive: true } );
 
-		const key = this.getKey( request );
 		const lockPath = this.getLockPath( key );
 		const deadline = this.now() + this.maxWaitMs;
 
@@ -358,6 +362,12 @@ export class ResourceLockManager {
 				}
 			);
 			if ( acquisition?.acquired ) {
+				try {
+					await assertResourcesUsable( [ key ], this.lockDir );
+				} catch ( error ) {
+					await this.release( payload );
+					throw error;
+				}
 				return this.trackLock(
 					request,
 					payload,

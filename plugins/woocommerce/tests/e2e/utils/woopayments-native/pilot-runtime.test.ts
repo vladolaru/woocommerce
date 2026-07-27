@@ -23,6 +23,14 @@ import {
 	loadInitialRuntimeStatus,
 	WooPaymentsPilotRuntime,
 } from '../../fixtures/woopayments-native';
+import WooPaymentsKnownGapsReporter from '../../reporters/woopayments-known-gaps';
+import {
+	assertResourcesUsable,
+	quarantineResources,
+	type ResourceQuarantineReceipt,
+} from './resource-quarantine';
+import { ResourceLockManager } from './resource-locks';
+import { KNOWN_GAP_ANNOTATION, KNOWN_GAP_SENTINEL } from './known-gap';
 import type { PaymentEvidence } from './record-evidence';
 
 interface RequestCall {
@@ -195,9 +203,13 @@ function runtime(
 		runtime?: 'native' | 'transition';
 		savedCardEvidence?: unknown[];
 		throwAfterManualCaptureUpdate?: boolean;
+		failManualCaptureRestore?: boolean;
+		initialManualCaptureRestoreError?: Error;
 		updateStatus?: number;
 		loseFeatureAfterSettingsRead?: boolean;
 		loseRecordBeforeCleanupDelete?: boolean;
+		productCleanupStatus?: number;
+		onResourceQuarantined?: ( receipt: ResourceQuarantineReceipt ) => void;
 		runtimeStatus?: unknown;
 		runtimeStatuses?: unknown[];
 	} = {}
@@ -211,7 +223,7 @@ function runtime(
 				url,
 				data: requestOptions?.data,
 			} );
-			return response( {} );
+			return response( {}, options.productCleanupStatus );
 		},
 		get: async ( url: string ) => {
 			calls.push( { method: 'GET', url } );
@@ -277,6 +289,15 @@ function runtime(
 			};
 			manualCapture = data.is_manual_capture_enabled as boolean;
 			updateCount += 1;
+			if (
+				options.initialManualCaptureRestoreError &&
+				updateCount === 1
+			) {
+				throw options.initialManualCaptureRestoreError;
+			}
+			if ( options.failManualCaptureRestore && updateCount === 2 ) {
+				throw new Error( 'Manual capture restoration failed.' );
+			}
 			if ( options.throwAfterManualCaptureUpdate && updateCount === 1 ) {
 				throw new Error( 'Response lost after settings application.' );
 			}
@@ -327,12 +348,25 @@ function runtime(
 		123,
 		'native-store',
 		'acct_native',
-		lockDir
+		lockDir,
+		options.onResourceQuarantined
 	);
 }
 
 async function lockDirectory(): Promise< string > {
 	return mkdtemp( join( tmpdir(), 'woopayments-pilot-runtime-test-' ) );
+}
+
+function useLockDirectory( directory: string ): () => void {
+	const previous = process.env.E2E_WOOPAYMENTS_LOCK_DIR;
+	process.env.E2E_WOOPAYMENTS_LOCK_DIR = directory;
+	return () => {
+		if ( previous === undefined ) {
+			delete process.env.E2E_WOOPAYMENTS_LOCK_DIR;
+		} else {
+			process.env.E2E_WOOPAYMENTS_LOCK_DIR = previous;
+		}
+	};
 }
 
 function visibleLocator(
@@ -1736,6 +1770,237 @@ test( 'blocks product cleanup after loss of the cleanup record lock', async () =
 	} finally {
 		await rm( directory, { recursive: true, force: true } );
 	}
+} );
+
+test( 'lock release failure quarantines every lock acquired by the scenario', async () => {
+	const directory = await lockDirectory();
+	const restoreLockDirectory = useLockDirectory( directory );
+	const calls: RequestCall[] = [];
+	const annotated: ResourceQuarantineReceipt[] = [];
+	const pilotRuntime = runtime( directory, calls, {
+		onResourceQuarantined: ( receipt ) => annotated.push( receipt ),
+	} );
+	const keys = [
+		'acct_native/account:provider-writes',
+		'acct_native/native-store/store:native-store',
+		'acct_native/native-store/record-event:release-failure',
+	];
+
+	try {
+		await expect(
+			pilotRuntime.withProviderWriteLocks(
+				{ recordEvent: 'release-failure' },
+				async () => {
+					await removeOwnedLock( directory, 'record-event' );
+				}
+			)
+		).rejects.toThrow( /pilot teardown failed/i );
+		for ( const key of keys ) {
+			await expect( assertResourcesUsable( [ key ] ) ).rejects.toThrow(
+				/quarantined/i
+			);
+		}
+		expect( annotated ).toHaveLength( keys.length );
+	} finally {
+		restoreLockDirectory();
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'manual-capture restoration failure quarantines account/store/setting', async () => {
+	const directory = await lockDirectory();
+	const restoreLockDirectory = useLockDirectory( directory );
+	const calls: RequestCall[] = [];
+	const pilotRuntime = runtime( directory, calls, {
+		failManualCaptureRestore: true,
+	} );
+	const keys = [
+		'acct_native/account:provider-writes',
+		'acct_native/native-store/store:native-store',
+		'acct_native/native-store/feature-setting:manual-capture',
+	];
+
+	try {
+		await expect(
+			pilotRuntime.withCapturedManualCaptureSetting( async () => {} )
+		).rejects.toThrow( /restoration failed/i );
+		for ( const key of keys ) {
+			await expect( assertResourcesUsable( [ key ] ) ).rejects.toThrow(
+				/quarantined/i
+			);
+		}
+	} finally {
+		restoreLockDirectory();
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'stale-journal recovery failure quarantines resources and preserves the original error', async () => {
+	const directory = await lockDirectory();
+	const restoreLockDirectory = useLockDirectory( directory );
+	const originalError = new Error( 'Stale journal recovery failed.' );
+	const calls: RequestCall[] = [];
+	const staleManager = new ResourceLockManager( {
+		lockDir: directory,
+		runId: 'run-stale-journal',
+		autoRenew: false,
+	} );
+	const account = await staleManager.acquire( {
+		providerAccountId: 'acct_native',
+		storeId: 'native-store',
+		kind: 'account',
+		resource: 'provider-writes',
+		diagnosticPath: 'test-results/run-stale-journal',
+	} );
+	const store = await staleManager.acquire( {
+		providerAccountId: 'acct_native',
+		storeId: 'native-store',
+		kind: 'store',
+		resource: 'native-store',
+		diagnosticPath: 'test-results/run-stale-journal',
+	} );
+	const setting = await staleManager.acquire( {
+		providerAccountId: 'acct_native',
+		storeId: 'native-store',
+		kind: 'feature-setting',
+		resource: 'manual-capture',
+		diagnosticPath: 'test-results/run-stale-journal',
+	} );
+	await setting.writeRestorationJournal( false );
+	await setting.release();
+	await store.release();
+	await account.release();
+	const pilotRuntime = runtime( directory, calls, {
+		initialManualCaptureRestoreError: originalError,
+	} );
+	const keys = [
+		'acct_native/account:provider-writes',
+		'acct_native/native-store/store:native-store',
+		'acct_native/native-store/feature-setting:manual-capture',
+	];
+
+	try {
+		let thrown: unknown;
+		try {
+			await pilotRuntime.withCapturedManualCaptureSetting(
+				async () => {}
+			);
+		} catch ( error ) {
+			thrown = error;
+		}
+
+		expect( thrown ).toBe( originalError );
+		for ( const key of keys ) {
+			await expect( assertResourcesUsable( [ key ] ) ).rejects.toThrow(
+				/quarantined/i
+			);
+		}
+	} finally {
+		restoreLockDirectory();
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'run-owned product cleanup failure quarantines account/store', async () => {
+	const directory = await lockDirectory();
+	const restoreLockDirectory = useLockDirectory( directory );
+	const calls: RequestCall[] = [];
+	const pilotRuntime = runtime( directory, calls, {
+		productCleanupStatus: 500,
+	} );
+	const keys = [
+		'acct_native/account:provider-writes',
+		'acct_native/native-store/store:native-store',
+	];
+
+	try {
+		await pilotRuntime.withProviderWriteLocks(
+			{ recordEvent: 'create-product-for-cleanup' },
+			async () => {
+				await pilotRuntime.createOwnedProduct( '10.99' );
+			}
+		);
+
+		await expect( pilotRuntime.cleanup() ).rejects.toThrow(
+			/clean up run-owned product/i
+		);
+		for ( const key of keys ) {
+			await expect( assertResourcesUsable( [ key ] ) ).rejects.toThrow(
+				/quarantined/i
+			);
+		}
+	} finally {
+		restoreLockDirectory();
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'fixture readiness rejects quarantine before provider approval or browser work', async () => {
+	const directory = await lockDirectory();
+	const restoreLockDirectory = useLockDirectory( directory );
+	const accountKey = 'acct_native/account:provider-writes';
+
+	try {
+		await quarantineResources(
+			[ accountKey ],
+			'cleanup-failed',
+			'test-results/run-readiness'
+		);
+		const fixtureSource = await readFile(
+			resolve(
+				process.cwd(),
+				'tests/e2e/fixtures/woopayments-native.ts'
+			),
+			'utf8'
+		);
+		const quarantineCheck = fixtureSource.indexOf(
+			'await assertResourcesUsable('
+		);
+		const browserWork = fixtureSource.indexOf(
+			'await browser.newContext',
+			quarantineCheck
+		);
+
+		await expect( assertResourcesUsable( [ accountKey ] ) ).rejects.toThrow(
+			/quarantined/i
+		);
+		expect( quarantineCheck ).toBeGreaterThan( -1 );
+		expect( quarantineCheck ).toBeLessThan( browserWork );
+	} finally {
+		restoreLockDirectory();
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'a quarantine annotation makes an expected-gap run fail', () => {
+	const reporter = new WooPaymentsKnownGapsReporter();
+	reporter.onTestEnd(
+		{
+			title: 'known gap fixture',
+			expectedStatus: 'failed',
+		} as never,
+		{
+			annotations: [
+				{
+					type: KNOWN_GAP_ANNOTATION,
+					description: 'WPNATIVE-GAP-0001|refunds',
+				},
+				{
+					type: 'woopayments-resource-quarantine',
+					description: 'redacted-resource-hash',
+				},
+			],
+			retry: 0,
+			status: 'failed',
+			errors: [
+				{
+					message: `${ KNOWN_GAP_SENTINEL }WPNATIVE-GAP-0001] Exact gap.`,
+				},
+			],
+		} as never
+	);
+
+	expect( reporter.onEnd() ).toEqual( { status: 'failed' } );
 } );
 
 test( 'uses the exact aggregate settings contract for mutation and restore', async () => {

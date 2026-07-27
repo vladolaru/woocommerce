@@ -23,6 +23,11 @@ import {
 	type ResourceLock,
 	type StoreAccountAllocation,
 } from '../utils/woopayments-native/resource-locks';
+import {
+	assertResourcesUsable,
+	quarantineResources,
+	type ResourceQuarantineReceipt,
+} from '../utils/woopayments-native/resource-quarantine';
 import type { PaymentEvidence } from '../utils/woopayments-native/record-evidence';
 import { assertApprovedProviderFixture } from '../utils/woopayments-native/provider-fixture';
 import { assertTransitionAllocation } from '../utils/woopayments-native/transition-allocation';
@@ -64,6 +69,29 @@ interface ProviderWriteLocks {
 	store: ResourceLock;
 	featureSetting?: ResourceLock;
 	recordEvent?: ResourceLock;
+}
+
+export class ResourceQuarantineRequiredError extends Error {
+	public readonly reasonCode: ResourceQuarantineReceipt[ 'reasonCode' ];
+	public readonly primaryError?: unknown;
+
+	public constructor(
+		message: string,
+		reasonCode: ResourceQuarantineReceipt[ 'reasonCode' ],
+		primaryError?: unknown
+	) {
+		super( message );
+		this.name = 'ResourceQuarantineRequiredError';
+		this.reasonCode = reasonCode;
+		this.primaryError = primaryError;
+	}
+}
+
+function providerResourceKeys( accountId: string, storeId: string ): string[] {
+	return [
+		`${ accountId }/account:provider-writes`,
+		`${ accountId }/${ storeId }/store:${ storeId }`,
+	];
 }
 
 function getRuntime(): WooPaymentsRuntime {
@@ -265,6 +293,9 @@ export class WooPaymentsPilotRuntime {
 	private readonly storeId: string;
 	private readonly accountId: string;
 	private readonly lockDir?: string;
+	private readonly onResourceQuarantined?: (
+		receipt: ResourceQuarantineReceipt
+	) => void | Promise< void >;
 	private readonly ownedProductIds: number[] = [];
 	private activeProviderWriteLocks?: ProviderWriteLocks;
 
@@ -276,7 +307,10 @@ export class WooPaymentsPilotRuntime {
 		wpcomBlogId: number,
 		storeId: string,
 		accountId: string,
-		lockDir?: string
+		lockDir?: string,
+		onResourceQuarantined?: (
+			receipt: ResourceQuarantineReceipt
+		) => void | Promise< void >
 	) {
 		this.adminApi = adminApi;
 		this.runtime = runtime;
@@ -286,6 +320,7 @@ export class WooPaymentsPilotRuntime {
 		this.storeId = storeId;
 		this.accountId = accountId;
 		this.lockDir = lockDir;
+		this.onResourceQuarantined = onResourceQuarantined;
 	}
 
 	public requireApprovedProviderFixture( capability: string ): void {
@@ -842,6 +877,37 @@ export class WooPaymentsPilotRuntime {
 			}
 		}
 
+		let quarantineReason:
+			| ResourceQuarantineReceipt[ 'reasonCode' ]
+			| undefined;
+		if ( primaryError instanceof ResourceQuarantineRequiredError ) {
+			quarantineReason = primaryError.reasonCode;
+		} else if ( teardownErrors.length > 0 ) {
+			quarantineReason = 'lock-ownership-lost';
+		}
+		if ( quarantineReason ) {
+			try {
+				const receipts = await quarantineResources(
+					locks.map( ( lock ) => lock.payload.key ),
+					quarantineReason,
+					`test-results/${ this.runId }`,
+					this.lockDir
+				);
+				for ( const receipt of receipts ) {
+					console.error( 'WooPayments resource quarantined:', {
+						resourceKeyHash: receipt.resourceKeyHash,
+						evidencePath: receipt.evidencePath,
+					} );
+					await this.onResourceQuarantined?.( receipt );
+				}
+			} catch ( quarantineError ) {
+				console.error(
+					'WooPayments resource quarantine failed after an uncertain provider write:',
+					quarantineError
+				);
+			}
+		}
+
 		if ( primaryError !== undefined ) {
 			for ( const teardownError of teardownErrors ) {
 				console.error(
@@ -849,7 +915,10 @@ export class WooPaymentsPilotRuntime {
 					teardownError
 				);
 			}
-			throw primaryError;
+			throw primaryError instanceof ResourceQuarantineRequiredError &&
+				primaryError.primaryError !== undefined
+				? primaryError.primaryError
+				: primaryError;
 		}
 		if ( teardownErrors.length > 0 ) {
 			throw new AggregateError(
@@ -878,11 +947,19 @@ export class WooPaymentsPilotRuntime {
 					);
 				}
 
-				await settingLock.restoreFromJournalIfOwned(
-					async ( originalValue ) => {
-						await this.setManualCaptureSetting( originalValue );
-					}
-				);
+				try {
+					await settingLock.restoreFromJournalIfOwned(
+						async ( originalValue ) => {
+							await this.setManualCaptureSetting( originalValue );
+						}
+					);
+				} catch ( error ) {
+					throw new ResourceQuarantineRequiredError(
+						'Manual capture stale-journal recovery failed.',
+						'restoration-failed',
+						error
+					);
+				}
 				const original = await this.getManualCaptureSetting();
 				await settingLock.writeRestorationJournal( original );
 				let mutationMayHaveApplied = false;
@@ -930,12 +1007,19 @@ export class WooPaymentsPilotRuntime {
 							teardownError
 						);
 					}
+					if ( teardownErrors.length > 0 ) {
+						throw new ResourceQuarantineRequiredError(
+							'Manual capture restoration failed after the primary pilot failure.',
+							'restoration-failed',
+							primaryError
+						);
+					}
 					throw primaryError;
 				}
 				if ( teardownErrors.length > 0 ) {
-					throw new AggregateError(
-						teardownErrors,
-						'WooPayments pilot teardown failed.'
+					throw new ResourceQuarantineRequiredError(
+						'Manual capture restoration failed.',
+						'restoration-failed'
 					);
 				}
 			}
@@ -1094,23 +1178,33 @@ export class WooPaymentsPilotRuntime {
 		await this.withProviderWriteLocks(
 			{ recordEvent: 'owned-product-cleanup' },
 			async () => {
-				while ( this.ownedProductIds.length > 0 ) {
-					const productId = this.ownedProductIds[ 0 ];
-					const response = await this.performWrite( () =>
-						this.adminApi.delete(
-							`/wp-json/wc/v3/products/${ productId }`,
-							{
-								data: { force: true },
-								failOnStatusCode: false,
-							}
-						)
-					);
-					if ( ! response.ok() ) {
-						throw new Error(
-							`Unable to clean up run-owned product ${ productId }: HTTP ${ response.status() }.`
+				try {
+					while ( this.ownedProductIds.length > 0 ) {
+						const productId = this.ownedProductIds[ 0 ];
+						const response = await this.performWrite( () =>
+							this.adminApi.delete(
+								`/wp-json/wc/v3/products/${ productId }`,
+								{
+									data: { force: true },
+									failOnStatusCode: false,
+								}
+							)
 						);
+						if ( ! response.ok() ) {
+							throw new Error(
+								`Unable to clean up run-owned product ${ productId }: HTTP ${ response.status() }.`
+							);
+						}
+						this.ownedProductIds.shift();
 					}
-					this.ownedProductIds.shift();
+				} catch ( error ) {
+					throw new ResourceQuarantineRequiredError(
+						error instanceof Error
+							? error.message
+							: 'Run-owned product cleanup failed.',
+						'cleanup-failed',
+						error
+					);
 				}
 			}
 		);
@@ -1641,6 +1735,12 @@ interface WooPaymentsNativeFixtures {
 
 export const test = baseTest.extend< WooPaymentsNativeFixtures >( {
 	adminApi: async ( { baseURL, browser }, use ) => {
+		await assertResourcesUsable(
+			providerResourceKeys(
+				requireValue( 'E2E_WOOPAYMENTS_ACCOUNT_ID' ),
+				requireValue( 'E2E_WOOPAYMENTS_STORE_ID' )
+			)
+		);
 		if ( ! baseURL ) {
 			throw new Error( 'BASE_URL is required for WooPayments pilots.' );
 		}
@@ -1697,7 +1797,7 @@ export const test = baseTest.extend< WooPaymentsNativeFixtures >( {
 		},
 		{ auto: true },
 	],
-	pilotRuntime: async ( { adminApi, baseURL, runId }, use ) => {
+	pilotRuntime: async ( { adminApi, baseURL, runId }, use, testInfo ) => {
 		if ( ! baseURL ) {
 			throw new Error( 'BASE_URL is required for WooPayments pilots.' );
 		}
@@ -1708,7 +1808,14 @@ export const test = baseTest.extend< WooPaymentsNativeFixtures >( {
 			baseURL.replace( /\/+$/, '' ),
 			requireNumber( 'E2E_WOOPAYMENTS_WPCOM_BLOG_ID' ),
 			requireValue( 'E2E_WOOPAYMENTS_STORE_ID' ),
-			requireValue( 'E2E_WOOPAYMENTS_ACCOUNT_ID' )
+			requireValue( 'E2E_WOOPAYMENTS_ACCOUNT_ID' ),
+			undefined,
+			( receipt ) => {
+				testInfo.annotations.push( {
+					type: 'woopayments-resource-quarantine',
+					description: receipt.resourceKeyHash,
+				} );
+			}
 		);
 		await use( runtime );
 		await runtime.cleanup();

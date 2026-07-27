@@ -15,6 +15,7 @@ import {
 	type ResourceLockPayload,
 	type ResourceLockRequest,
 } from './resource-locks';
+import { quarantineResources } from './resource-quarantine';
 
 const accountRequest: ResourceLockRequest = {
 	providerAccountId: 'acct_local',
@@ -26,6 +27,18 @@ const accountRequest: ResourceLockRequest = {
 
 async function lockDirectory(): Promise< string > {
 	return mkdtemp( join( tmpdir(), 'woopayments-native-lock-test-' ) );
+}
+
+function useLockDirectory( directory: string ): () => void {
+	const previous = process.env.E2E_WOOPAYMENTS_LOCK_DIR;
+	process.env.E2E_WOOPAYMENTS_LOCK_DIR = directory;
+	return () => {
+		if ( previous === undefined ) {
+			delete process.env.E2E_WOOPAYMENTS_LOCK_DIR;
+		} else {
+			process.env.E2E_WOOPAYMENTS_LOCK_DIR = previous;
+		}
+	};
 }
 
 async function yieldToPeer(): Promise< void > {
@@ -998,6 +1011,136 @@ test( 'rejects a lower hierarchy lock after a higher hierarchy lock', async () =
 		await expect( storeLock.release() ).resolves.toBe( true );
 		await expect( accountLock.release() ).resolves.toBe( true );
 	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'a second run cannot acquire the same quarantined account', async () => {
+	const directory = await lockDirectory();
+	const restoreLockDirectory = useLockDirectory( directory );
+
+	try {
+		await quarantineResources(
+			[ 'acct_local/account:provider-writes' ],
+			'cleanup-failed',
+			'test-results/run-first'
+		);
+		const second = new ResourceLockManager( {
+			lockDir: directory,
+			runId: 'run-second',
+			autoRenew: false,
+		} );
+
+		await expect( second.acquire( accountRequest ) ).rejects.toThrow(
+			/quarantined/i
+		);
+	} finally {
+		restoreLockDirectory();
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'a waiter rejects quarantine created while it waits for a resource', async () => {
+	const directory = await lockDirectory();
+	let resumeWaiter: () => void = noop;
+	let waiterIsWaiting: () => void = noop;
+	const waiterWaiting = new Promise< void >( ( resolve ) => {
+		waiterIsWaiting = resolve;
+	} );
+	const waiterMayRetry = new Promise< void >( ( resolve ) => {
+		resumeWaiter = resolve;
+	} );
+	const first = new ResourceLockManager( {
+		lockDir: directory,
+		runId: 'run-first',
+		autoRenew: false,
+	} );
+	const second = new ResourceLockManager( {
+		lockDir: directory,
+		runId: 'run-second',
+		autoRenew: false,
+		maxWaitMs: 1_000,
+		sleep: async () => {
+			waiterIsWaiting();
+			await waiterMayRetry;
+		},
+	} );
+
+	try {
+		const held = await first.acquire( accountRequest );
+		const waiting = second.acquire( accountRequest );
+		await waiterWaiting;
+		await quarantineResources(
+			[ 'acct_local/account:provider-writes' ],
+			'cleanup-failed',
+			'test-results/run-first',
+			directory
+		);
+		await held.release();
+		resumeWaiter();
+
+		await expect( waiting ).rejects.toThrow( /quarantined/i );
+		expect(
+			( await readdir( directory ) ).filter( ( file ) =>
+				file.endsWith( '.lock' )
+			)
+		).toEqual( [] );
+	} finally {
+		resumeWaiter();
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'an explicit lock directory rejects its quarantined account without an environment lock directory', async () => {
+	const directory = await lockDirectory();
+	const restoreLockDirectory = useLockDirectory( directory );
+
+	try {
+		await quarantineResources(
+			[ 'acct_local/account:provider-writes' ],
+			'cleanup-failed',
+			'test-results/run-first'
+		);
+		delete process.env.E2E_WOOPAYMENTS_LOCK_DIR;
+		const second = new ResourceLockManager( {
+			lockDir: directory,
+			runId: 'run-second',
+			autoRenew: false,
+		} );
+
+		await expect( second.acquire( accountRequest ) ).rejects.toThrow(
+			/quarantined/i
+		);
+	} finally {
+		restoreLockDirectory();
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'a disjoint account/store remains usable', async () => {
+	const directory = await lockDirectory();
+	const restoreLockDirectory = useLockDirectory( directory );
+
+	try {
+		await quarantineResources(
+			[ 'acct_local/account:provider-writes' ],
+			'cleanup-failed',
+			'test-results/run-first'
+		);
+		const disjoint = new ResourceLockManager( {
+			lockDir: directory,
+			runId: 'run-disjoint',
+			autoRenew: false,
+		} );
+		const lock = await disjoint.acquire( {
+			...accountRequest,
+			providerAccountId: 'acct_disjoint',
+			storeId: 'disjoint-store',
+		} );
+
+		await expect( lock.release() ).resolves.toBe( true );
+	} finally {
+		restoreLockDirectory();
 		await rm( directory, { recursive: true, force: true } );
 	}
 } );
