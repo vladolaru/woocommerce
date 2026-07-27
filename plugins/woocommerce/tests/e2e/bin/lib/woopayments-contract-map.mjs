@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
-import { existsSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep as pathSeparator } from 'node:path';
+
+import { validateMigrationEvidence } from './woopayments-migration-evidence.mjs';
 
 export const MIGRATION_STATES = new Set( [
 	'planned',
@@ -527,6 +529,48 @@ const assertEvidence = ( row, repositoryRoot, realRepositoryRoot ) => {
 	return true;
 };
 
+const assertMigrationEvidence = (
+	row,
+	metadata,
+	repositoryRoot,
+	realRepositoryRoot
+) => {
+	if ( ! hasExactValue( row.evidence_path ) ) {
+		return;
+	}
+
+	if ( row.evidence_path.includes( ';' ) ) {
+		throw new Error(
+			`Migration evidence must use one JSON file for ${ row.case_id }`
+		);
+	}
+
+	assertConcreteExistingFiles(
+		row,
+		'evidence_path',
+		repositoryRoot,
+		realRepositoryRoot
+	);
+
+	let evidence;
+
+	try {
+		evidence = JSON.parse(
+			readFileSync( resolve( repositoryRoot, row.evidence_path ), 'utf8' )
+		);
+	} catch ( error ) {
+		if ( error instanceof SyntaxError ) {
+			throw new Error(
+				`Invalid migration evidence JSON for ${ row.case_id }`,
+				{ cause: error }
+			);
+		}
+		throw error;
+	}
+
+	validateMigrationEvidence( evidence, { row, metadata } );
+};
+
 const assertRowState = ( row, repositoryRoot, realRepositoryRoot ) => {
 	if ( ! MIGRATION_STATES.has( row.migration_state ) ) {
 		throw new Error(
@@ -888,6 +932,12 @@ export const validateContractMap = (
 
 		assertRowState( row, repositoryRoot, realRepositoryRoot );
 		assertCompatibleTargets( row, repositoryRoot, realRepositoryRoot );
+		assertMigrationEvidence(
+			row,
+			metadata,
+			repositoryRoot,
+			realRepositoryRoot
+		);
 
 		if (
 			requireSaturated &&

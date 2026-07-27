@@ -27,6 +27,7 @@ import {
 	validateDispositionTransition,
 	validateStateTransition,
 } from './lib/woopayments-contract-map.mjs';
+import { validateMigrationEvidence } from './lib/woopayments-migration-evidence.mjs';
 import { runCli } from './validate-woopayments-client-contract-map.mjs';
 
 const binDirectory = dirname( fileURLToPath( import.meta.url ) );
@@ -50,6 +51,52 @@ const temporaryTargetDirectories = new Set();
 const cloneContractMap = ( source = contractMap ) => ( {
 	headers: [ ...source.headers ],
 	rows: source.rows.map( ( row ) => ( { ...row } ) ),
+} );
+
+const createValidEvidence = ( fixtureRow, overrides = {} ) => ( {
+	schema_version: 1,
+	slice_id: 'fixture-slice',
+	wc_base_commit: '1'.repeat( 40 ),
+	verified_at_commit: '2'.repeat( 40 ),
+	reference_contract_commit: '6dda1d4eb101f05c22f60882d67a22f75281ae45',
+	source_test_sha256: 'a'.repeat( 64 ),
+	contract_ids: [ fixtureRow.case_id ],
+	targets: [
+		{
+			path: fixtureRow.target_path,
+			contract: fixtureRow.target_contract,
+		},
+	],
+	implementation_commits: [ '3'.repeat( 40 ) ],
+	verification: [
+		{
+			command: 'pnpm test:e2e:woopayments:controller',
+			exit_code: 0,
+			summary: 'controller checks passed',
+		},
+	],
+	reviews: [
+		{
+			role: 'spec',
+			verdict: 'APPROVE',
+			source_test_sha256: 'a'.repeat( 64 ),
+			summary: 'contract preserved',
+		},
+		{
+			role: 'code',
+			verdict: 'APPROVE',
+			source_test_sha256: 'a'.repeat( 64 ),
+			summary: 'implementation approved',
+		},
+	],
+	known_gaps: [],
+	deferral: null,
+	...overrides,
+} );
+
+const createEvidenceContext = ( row ) => ( {
+	row,
+	metadata,
 } );
 
 const serializeLegacyContractMap = () => {
@@ -108,11 +155,57 @@ const createRepositoryTemporaryDirectory = () => {
 	return temporaryDirectory;
 };
 
-const createEvidenceFile = () => {
-	const temporaryDirectory = createRepositoryTemporaryDirectory();
-	const evidencePath = join( temporaryDirectory, 'evidence.txt' );
+const createKnownGapEvidence = ( reference = 'issue:known-gap' ) => ( {
+	id: 'WPNATIVE-GAP-0001',
+	owner: 'woocommerce-e2e',
+	reference,
+	fingerprint: {
+		error_name: 'Error',
+		message_pattern: '^Native contract remains unavailable\\.$',
+	},
+} );
 
-	writeFileSync( evidencePath, 'contract evidence\n' );
+const createDecisionReadyDeferral = (
+	reference = 'issue:inventory-deferral'
+) => ( {
+	blocker: 'The required external authority is unavailable',
+	affected_scope: 'The selected WooPayments contract',
+	no_allowlisted_action_reason:
+		'No repository-local action can grant the external authority',
+	reference,
+	unlock_decision: 'Grant the required external account authority',
+	quarantine_status: 'No shared resource was allocated',
+} );
+
+const createEvidenceFile = ( row, overrides = {} ) => {
+	const temporaryDirectory = createRepositoryTemporaryDirectory();
+	const evidencePath = join( temporaryDirectory, 'evidence.json' );
+	const stateOverrides = {};
+
+	if ( row.migration_state === 'deferred' ) {
+		stateOverrides.implementation_commits = [];
+		stateOverrides.verification = [];
+		stateOverrides.deferral = createDecisionReadyDeferral(
+			row.gap_or_decision_reference
+		);
+	}
+	if ( row.native_support_state === 'known-gap' ) {
+		stateOverrides.known_gaps = [
+			createKnownGapEvidence( row.gap_or_decision_reference ),
+		];
+	}
+
+	writeFileSync(
+		evidencePath,
+		`${ JSON.stringify(
+			createValidEvidence( row, {
+				...stateOverrides,
+				...overrides,
+			} ),
+			null,
+			2
+		) }\n`
+	);
 
 	return repositoryRelativePath( evidencePath );
 };
@@ -175,7 +268,7 @@ const close = ( row ) => {
 	row.migration_state = 'closed';
 	row.native_support_state = 'supported';
 	row.gap_or_decision_reference = 'none';
-	row.evidence_path = row.target_path;
+	row.evidence_path = createEvidenceFile( row );
 };
 
 const closeInventory = ( map ) => {
@@ -582,7 +675,7 @@ for ( const nativeSupportState of [
 		row.migration_state = 'deferred';
 		row.native_support_state = nativeSupportState;
 		row.gap_or_decision_reference = 'issue:deferral';
-		row.evidence_path = createEvidenceFile();
+		row.evidence_path = createEvidenceFile( row );
 
 		assert.throws(
 			() => validate( map ),
@@ -606,7 +699,7 @@ for ( const nativeSupportState of [
 		row.migration_state = 'deferred';
 		row.native_support_state = nativeSupportState;
 		row.gap_or_decision_reference = 'issue:deferral';
-		row.evidence_path = createEvidenceFile();
+		row.evidence_path = createEvidenceFile( row );
 
 		assert.doesNotThrow( () => validate( map ) );
 	} );
@@ -633,7 +726,7 @@ for ( const [ description, mutate ] of [
 		row.migration_state = 'deferred';
 		row.native_support_state = 'known-gap';
 		row.gap_or_decision_reference = 'issue:deferral';
-		row.evidence_path = createEvidenceFile();
+		row.evidence_path = createEvidenceFile( row );
 		mutate( row );
 
 		assert.throws(
@@ -762,7 +855,7 @@ test( 'accepts a rewritten retirement contract with a compatible exact target', 
 		'Rewrite as a native-specific E2E test preserving the contract';
 	row.gap_or_decision_reference = 'human-approved:rewrite-decision';
 	row.target_path = targetPath;
-	row.evidence_path = targetPath;
+	row.evidence_path = createEvidenceFile( row );
 
 	assert.doesNotThrow( () => validate( map ) );
 } );
@@ -784,7 +877,7 @@ test( 'rejects changing a non-pilot-gated contract to a shared disposition', () 
 		'Extract a shared scenario with thin runtime adapters';
 	row.gap_or_decision_reference = 'human-approved:shared-decision';
 	row.target_path = targetPath;
-	row.evidence_path = targetPath;
+	row.evidence_path = createEvidenceFile( row );
 
 	assert.throws(
 		() => validate( map ),
@@ -826,6 +919,25 @@ test( 'rejects a repository-contained symlink that escapes the repository', () =
 		new RegExp(
 			`Non-concrete or out-of-repository evidence_path for ${ row.case_id }`
 		)
+	);
+} );
+
+test( 'rejects malformed JSON evidence', () => {
+	const map = cloneContractMap();
+	const row = map.rows[ 0 ];
+	const repositoryDirectory = createRepositoryTemporaryDirectory();
+	const evidencePath = join( repositoryDirectory, 'malformed-evidence.json' );
+
+	writeFileSync( evidencePath, '{not-json}\n' );
+	specify( row );
+	row.migration_state = 'implemented';
+	row.native_support_state = 'known-gap';
+	row.gap_or_decision_reference = 'issue:known-gap';
+	row.evidence_path = repositoryRelativePath( evidencePath );
+
+	assert.throws(
+		() => validate( map ),
+		new RegExp( `Invalid migration evidence JSON for ${ row.case_id }` )
 	);
 } );
 
@@ -906,7 +1018,7 @@ test( 'allows an implemented contract to remain a known gap', () => {
 	row.migration_state = 'implemented';
 	row.native_support_state = 'known-gap';
 	row.gap_or_decision_reference = 'issue:known-gap';
-	row.evidence_path = createEvidenceFile();
+	row.evidence_path = createEvidenceFile( row );
 
 	assert.doesNotThrow( () => validate( map ) );
 } );
@@ -937,7 +1049,7 @@ test( 'requires an existing implemented target file', () => {
 	row.migration_state = 'implemented';
 	row.native_support_state = 'known-gap';
 	row.gap_or_decision_reference = 'issue:known-gap';
-	row.evidence_path = createEvidenceFile();
+	row.evidence_path = createEvidenceFile( row );
 	row.target_path =
 		'plugins/woocommerce/tests/e2e/bin/does-not-exist.spec.ts';
 
@@ -965,6 +1077,618 @@ test( 'requires verification evidence', () => {
 	);
 } );
 
+test( 'accepts public-safe evidence bound to the referencing row', () => {
+	const row = {
+		...contractMap.rows[ 0 ],
+		target_contract: 'Native fixture contract',
+		migration_state: 'closed',
+		native_support_state: 'supported',
+	};
+	const evidence = createValidEvidence( row );
+
+	assert.doesNotThrow( () =>
+		validateMigrationEvidence( evidence, createEvidenceContext( row ) )
+	);
+} );
+
+test( 'accepts public-safe Phase 3 proof through the approved evidence entries', () => {
+	const artifactSha256 = 'b'.repeat( 64 );
+	const providerCorrelationSha256 = 'c'.repeat( 64 );
+	const row = {
+		...contractMap.rows[ 0 ],
+		target_contract:
+			'Shopper card payment: pays with the selected saved method',
+		migration_state: 'closed',
+		native_support_state: 'supported',
+	};
+	const evidence = createValidEvidence( row, {
+		verification: [
+			{
+				command:
+					'pnpm exec playwright test tests/e2e/tests/woopayments-native/shopper/card-payment.spec.ts',
+				exit_code: 0,
+				summary: `Target/title passed; provider redacted:payment-intent:sha256:${ providerCorrelationSha256 }; cleanup restored; quarantine not required; artifact SHA-256 ${ artifactSha256 }`,
+			},
+		],
+		reviews: [
+			{
+				role: 'spec',
+				verdict: 'APPROVE',
+				source_test_sha256: 'a'.repeat( 64 ),
+				summary: `Specification provenance approved at artifact SHA-256 ${ artifactSha256 }`,
+			},
+			{
+				role: 'code',
+				verdict: 'APPROVE',
+				source_test_sha256: 'a'.repeat( 64 ),
+				summary:
+					'The password and token safeguards were reviewed; no credential values were recorded',
+			},
+		],
+	} );
+
+	assert.doesNotThrow( () =>
+		validateMigrationEvidence( evidence, createEvidenceContext( row ) )
+	);
+} );
+
+for ( const [ description, mutate, expectedError ] of [
+	[
+		'an unsupported schema version',
+		( evidence ) => {
+			evidence.schema_version = 2;
+		},
+		/schema_version/,
+	],
+	[
+		'an empty slice ID',
+		( evidence ) => {
+			evidence.slice_id = '';
+		},
+		/slice_id/,
+	],
+	[
+		'an invalid WC base commit',
+		( evidence ) => {
+			evidence.wc_base_commit = 'A'.repeat( 40 );
+		},
+		/wc_base_commit/,
+	],
+	[
+		'an invalid verified-at commit',
+		( evidence ) => {
+			evidence.verified_at_commit = 'not-a-commit';
+		},
+		/verified_at_commit/,
+	],
+	[
+		'a reference commit that differs from frozen metadata',
+		( evidence ) => {
+			evidence.reference_contract_commit = '4'.repeat( 40 );
+		},
+		/reference_contract_commit/,
+	],
+	[
+		'a missing referencing contract ID',
+		( evidence ) => {
+			evidence.contract_ids = [ 'another-contract-id' ];
+		},
+		/contract_ids/,
+	],
+	[
+		'a missing exact target path',
+		( evidence ) => {
+			evidence.targets[ 0 ].path =
+				'plugins/woocommerce/tests/e2e/tests/woopayments-native/other.spec.ts';
+		},
+		/targets/,
+	],
+	[
+		'a missing exact target contract',
+		( evidence ) => {
+			evidence.targets[ 0 ].contract = 'A neighboring contract';
+		},
+		/targets/,
+	],
+] ) {
+	test( `rejects evidence with ${ description }`, () => {
+		const row = {
+			...contractMap.rows[ 0 ],
+			target_contract: 'Native fixture contract',
+			migration_state: 'closed',
+			native_support_state: 'supported',
+		};
+		const evidence = createValidEvidence( row );
+
+		mutate( evidence );
+
+		assert.throws(
+			() =>
+				validateMigrationEvidence(
+					evidence,
+					createEvidenceContext( row )
+				),
+			expectedError
+		);
+	} );
+}
+
+for ( const migrationState of [ 'implemented', 'verified', 'closed' ] ) {
+	test( `rejects ${ migrationState } evidence without implementation commits`, () => {
+		const row = {
+			...contractMap.rows[ 0 ],
+			target_contract: 'Native fixture contract',
+			migration_state: migrationState,
+			native_support_state:
+				migrationState === 'implemented' ? 'known-gap' : 'supported',
+			gap_or_decision_reference:
+				migrationState === 'implemented' ? 'issue:12345' : 'none',
+		};
+		const evidence = createValidEvidence( row, {
+			implementation_commits: [],
+			known_gaps:
+				migrationState === 'implemented'
+					? [
+							{
+								id: 'WPNATIVE-GAP-0001',
+								owner: 'payments',
+								reference: 'issue:12345',
+								fingerprint: {
+									error_name: 'Error',
+									message_pattern:
+										'^Native payment is unavailable\\.$',
+								},
+							},
+					  ]
+					: [],
+		} );
+
+		assert.throws(
+			() =>
+				validateMigrationEvidence(
+					evidence,
+					createEvidenceContext( row )
+				),
+			/implementation_commits/
+		);
+	} );
+}
+
+for ( const migrationState of [ 'verified', 'closed' ] ) {
+	for ( const [ description, verification ] of [
+		[ 'no verification commands', [] ],
+		[
+			'a failing verification command',
+			[
+				{
+					command: 'pnpm test:e2e:woopayments:controller',
+					exit_code: 1,
+					summary: 'controller checks failed',
+				},
+			],
+		],
+	] ) {
+		test( `rejects ${ migrationState } evidence with ${ description }`, () => {
+			const row = {
+				...contractMap.rows[ 0 ],
+				target_contract: 'Native fixture contract',
+				migration_state: migrationState,
+				native_support_state: 'supported',
+			};
+			const evidence = createValidEvidence( row, { verification } );
+
+			assert.throws(
+				() =>
+					validateMigrationEvidence(
+						evidence,
+						createEvidenceContext( row )
+					),
+				/verification/
+			);
+		} );
+	}
+}
+
+for ( const [ description, reviews ] of [
+	[ 'no reviews', [] ],
+	[
+		'a non-approving review',
+		[
+			{
+				role: 'spec',
+				verdict: 'REVISE',
+				source_test_sha256: 'a'.repeat( 64 ),
+				summary: 'contract needs revision',
+			},
+		],
+	],
+	[
+		'a review of a different source test',
+		[
+			{
+				role: 'spec',
+				verdict: 'APPROVE',
+				source_test_sha256: 'b'.repeat( 64 ),
+				summary: 'different source reviewed',
+			},
+		],
+	],
+] ) {
+	test( `rejects evidence with ${ description }`, () => {
+		const row = {
+			...contractMap.rows[ 0 ],
+			target_contract: 'Native fixture contract',
+			migration_state: 'closed',
+			native_support_state: 'supported',
+		};
+		const evidence = createValidEvidence( row, { reviews } );
+
+		assert.throws(
+			() =>
+				validateMigrationEvidence(
+					evidence,
+					createEvidenceContext( row )
+				),
+			/reviews/
+		);
+	} );
+}
+
+test( 'rejects deferred evidence without a decision-ready deferral', () => {
+	const row = {
+		...contractMap.rows[ 0 ],
+		migration_state: 'deferred',
+		native_support_state: 'blocked-external',
+	};
+	const evidence = createValidEvidence( row, {
+		implementation_commits: [],
+		verification: [],
+	} );
+
+	assert.throws(
+		() =>
+			validateMigrationEvidence( evidence, createEvidenceContext( row ) ),
+		/deferral/
+	);
+} );
+
+test( 'accepts a decision-ready deferral without invented runtime evidence', () => {
+	const row = {
+		...contractMap.rows[ 0 ],
+		migration_state: 'deferred',
+		native_support_state: 'blocked-external',
+		gap_or_decision_reference: 'issue:12345',
+	};
+	const evidence = createValidEvidence( row, {
+		implementation_commits: [],
+		verification: [],
+		deferral: {
+			blocker: 'External account authority is unavailable',
+			affected_scope: 'The selected saved-payment contract',
+			no_allowlisted_action_reason:
+				'No repository-local action can grant account authority',
+			reference: 'issue:12345',
+			unlock_decision: 'Grant the required account authority',
+			quarantine_status: 'No shared resource was allocated',
+		},
+	} );
+
+	assert.doesNotThrow( () =>
+		validateMigrationEvidence( evidence, createEvidenceContext( row ) )
+	);
+} );
+
+for ( const unresolvedPlaceholder of [
+	'none',
+	'PeNdInG',
+	'unknown',
+	'TBD',
+	'N / A',
+	'not-assessed',
+	'Owner Decision Required',
+] ) {
+	test( `rejects a deferred blocker using the unresolved placeholder ${ unresolvedPlaceholder }`, () => {
+		const row = {
+			...contractMap.rows[ 0 ],
+			migration_state: 'deferred',
+			native_support_state: 'blocked-external',
+			gap_or_decision_reference: 'issue:12345',
+		};
+		const evidence = createValidEvidence( row, {
+			implementation_commits: [],
+			verification: [],
+			deferral: {
+				...createDecisionReadyDeferral( 'issue:12345' ),
+				blocker: unresolvedPlaceholder,
+			},
+		} );
+
+		assert.throws(
+			() =>
+				validateMigrationEvidence(
+					evidence,
+					createEvidenceContext( row )
+				),
+			/deferral/
+		);
+	} );
+}
+
+for ( const deferralField of [
+	'blocker',
+	'affected_scope',
+	'no_allowlisted_action_reason',
+	'unlock_decision',
+	'quarantine_status',
+] ) {
+	test( `rejects an unresolved ${ deferralField } deferral field`, () => {
+		const row = {
+			...contractMap.rows[ 0 ],
+			migration_state: 'deferred',
+			native_support_state: 'blocked-external',
+			gap_or_decision_reference: 'issue:12345',
+		};
+		const evidence = createValidEvidence( row, {
+			implementation_commits: [],
+			verification: [],
+			deferral: {
+				...createDecisionReadyDeferral( 'issue:12345' ),
+				[ deferralField ]: 'pending',
+			},
+		} );
+
+		assert.throws(
+			() =>
+				validateMigrationEvidence(
+					evidence,
+					createEvidenceContext( row )
+				),
+			/deferral/
+		);
+	} );
+}
+
+for ( const [ description, overrides ] of [
+	[
+		'a mismatched decision reference',
+		{
+			deferral: createDecisionReadyDeferral( 'issue:another-decision' ),
+		},
+	],
+	[
+		'invented implementation commits',
+		{
+			implementation_commits: [ '3'.repeat( 40 ) ],
+			deferral: createDecisionReadyDeferral( 'issue:12345' ),
+		},
+	],
+	[
+		'invented verification results',
+		{
+			verification: [
+				{
+					command: 'pnpm test:e2e:woopayments:controller',
+					exit_code: 0,
+					summary: 'controller checks passed',
+				},
+			],
+			deferral: createDecisionReadyDeferral( 'issue:12345' ),
+		},
+	],
+] ) {
+	test( `rejects deferred evidence with ${ description }`, () => {
+		const row = {
+			...contractMap.rows[ 0 ],
+			migration_state: 'deferred',
+			native_support_state: 'blocked-external',
+			gap_or_decision_reference: 'issue:12345',
+		};
+		const evidence = createValidEvidence( row, {
+			implementation_commits: [],
+			verification: [],
+			...overrides,
+		} );
+
+		assert.throws(
+			() =>
+				validateMigrationEvidence(
+					evidence,
+					createEvidenceContext( row )
+				),
+			/deferral|implementation_commits|verification/
+		);
+	} );
+}
+
+for ( const [ description, mutate ] of [
+	[ 'no known gaps', ( evidence ) => ( evidence.known_gaps = [] ) ],
+	[
+		'a gap without a stable local ID',
+		( evidence ) => {
+			evidence.known_gaps[ 0 ].id = 'provider-gap';
+		},
+	],
+	[
+		'a gap without an owner',
+		( evidence ) => {
+			evidence.known_gaps[ 0 ].owner = '';
+		},
+	],
+	[
+		'a gap without an issue reference',
+		( evidence ) => {
+			evidence.known_gaps[ 0 ].reference = '';
+		},
+	],
+	[
+		'a gap without an error-name fingerprint',
+		( evidence ) => {
+			evidence.known_gaps[ 0 ].fingerprint.error_name = '';
+		},
+	],
+	[
+		'a gap without a message-pattern fingerprint',
+		( evidence ) => {
+			evidence.known_gaps[ 0 ].fingerprint.message_pattern = '';
+		},
+	],
+	[
+		'a gap with a catch-all zero-or-more fingerprint',
+		( evidence ) => {
+			evidence.known_gaps[ 0 ].fingerprint.message_pattern = '^.*$';
+		},
+	],
+	[
+		'a gap with a catch-all one-or-more fingerprint',
+		( evidence ) => {
+			evidence.known_gaps[ 0 ].fingerprint.message_pattern = '^.+$';
+		},
+	],
+	[
+		'a gap with an alternative match-all fingerprint',
+		( evidence ) => {
+			evidence.known_gaps[ 0 ].fingerprint.message_pattern =
+				'^[\\s\\S]*$';
+		},
+	],
+	[
+		'a gap with an invalid anchored fingerprint',
+		( evidence ) => {
+			evidence.known_gaps[ 0 ].fingerprint.message_pattern = '^(?$';
+		},
+	],
+	[
+		'a gap bound to another decision reference',
+		( evidence ) => {
+			evidence.known_gaps[ 0 ].reference = 'issue:another-gap';
+		},
+	],
+] ) {
+	test( `rejects known-gap evidence with ${ description }`, () => {
+		const row = {
+			...contractMap.rows[ 0 ],
+			target_contract: 'Native fixture contract',
+			migration_state: 'implemented',
+			native_support_state: 'known-gap',
+			gap_or_decision_reference: 'issue:12345',
+		};
+		const evidence = createValidEvidence( row, {
+			known_gaps: [
+				{
+					id: 'WPNATIVE-GAP-0001',
+					owner: 'payments',
+					reference: 'issue:12345',
+					fingerprint: {
+						error_name: 'Error',
+						message_pattern: '^Native payment is unavailable\\.$',
+					},
+				},
+			],
+		} );
+
+		mutate( evidence );
+
+		assert.throws(
+			() =>
+				validateMigrationEvidence(
+					evidence,
+					createEvidenceContext( row )
+				),
+			/known_gaps/
+		);
+	} );
+}
+
+for ( const [ description, mutate ] of [
+	[
+		'an absolute filesystem path',
+		( evidence ) => {
+			evidence.verification[ 0 ].summary =
+				'/private/provider/evidence.json';
+		},
+	],
+	[
+		'a secret-bearing key',
+		( evidence ) => {
+			evidence.verification[ 0 ].authorization = 'Bearer redacted';
+		},
+	],
+	[
+		'a raw provider payload',
+		( evidence ) => {
+			evidence.verification[ 0 ].raw_payload = {
+				provider_id: 'redacted:provider-account',
+			};
+		},
+	],
+	[
+		'an unexpected object key',
+		( evidence ) => {
+			evidence.unexpected_field = 'not part of the evidence contract';
+		},
+	],
+] ) {
+	test( `rejects evidence containing ${ description }`, () => {
+		const row = {
+			...contractMap.rows[ 0 ],
+			target_contract: 'Native fixture contract',
+			migration_state: 'closed',
+			native_support_state: 'supported',
+		};
+		const evidence = createValidEvidence( row );
+
+		mutate( evidence );
+
+		assert.throws(
+			() =>
+				validateMigrationEvidence(
+					evidence,
+					createEvidenceContext( row )
+				),
+			/public-safe|unsafe/i
+		);
+	} );
+}
+
+for ( const [ description, unsafeValue ] of [
+	[ 'an email address', 'Merchant email merchant@example.com was removed' ],
+	[
+		'a bearer credential',
+		'Provider response used Bearer sk_test_51N4secretvalue',
+	],
+	[ 'a key-value credential', 'api_key=sk_test_51N4secretvalue pnpm test' ],
+	[ 'a serialized JSON object', '{"result":"passed"}' ],
+	[
+		'an unredacted provider ID',
+		'Provider payment intent pi_3MtwBwLkdIwHu7ix28a3tqPa was verified',
+	],
+	[
+		'a provider correlation without a one-way hash',
+		'Provider correlation redacted:payment-intent',
+	],
+] ) {
+	test( `rejects evidence containing ${ description } in an allowed string field`, () => {
+		const row = {
+			...contractMap.rows[ 0 ],
+			target_contract: 'Native fixture contract',
+			migration_state: 'closed',
+			native_support_state: 'supported',
+		};
+		const evidence = createValidEvidence( row );
+
+		evidence.verification[ 0 ].summary = unsafeValue;
+
+		assert.throws(
+			() =>
+				validateMigrationEvidence(
+					evidence,
+					createEvidenceContext( row )
+				),
+			/public-safe|unsafe/i
+		);
+	} );
+}
+
 test( 'require-saturated rejects a planned contract', () => {
 	assert.throws(
 		() => validate( cloneContractMap(), { requireSaturated: true } ),
@@ -974,13 +1698,12 @@ test( 'require-saturated rejects a planned contract', () => {
 
 test( 'require-saturated accepts only closed or deferred contracts', () => {
 	const map = cloneContractMap();
-	const evidencePath = createEvidenceFile();
 
 	for ( const row of map.rows ) {
 		row.migration_state = 'deferred';
 		row.native_support_state = 'blocked-external';
 		row.gap_or_decision_reference = 'issue:inventory-deferral';
-		row.evidence_path = evidencePath;
+		row.evidence_path = createEvidenceFile( row );
 	}
 
 	assert.doesNotThrow( () => validate( map, { requireSaturated: true } ) );
@@ -1013,7 +1736,7 @@ test( 'require-migrated rejects known gaps and deferrals', () => {
 	row.migration_state = 'deferred';
 	row.native_support_state = 'known-gap';
 	row.gap_or_decision_reference = 'issue:known-gap';
-	row.evidence_path = createEvidenceFile();
+	row.evidence_path = createEvidenceFile( row );
 
 	assert.throws(
 		() => validate( map, { requireMigrated: true } ),
