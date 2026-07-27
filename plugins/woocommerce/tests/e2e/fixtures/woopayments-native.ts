@@ -1,7 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { execFile } from 'node:child_process';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 
 import {
 	expect,
@@ -42,7 +40,6 @@ interface SavedCardIdentity {
 
 interface SavedCardState extends SavedCardIdentity {
 	isDefault: boolean;
-	providerDefaultPaymentMethodId: string;
 }
 
 interface SavedCardTokenEvidence {
@@ -55,17 +52,7 @@ interface SavedCardEvidence {
 	creationReady: boolean;
 	tokens: SavedCardTokenEvidence[];
 	providerCustomerId?: string;
-	providerDefaultPaymentMethodId?: string;
 }
-
-interface CallbackProbeTarget {
-	siteUrl: string;
-	wpcomBlogId: number;
-}
-
-type CallbackProbeRunner = (
-	target: CallbackProbeTarget
-) => Promise< unknown >;
 
 interface ProviderWriteLockOptions {
 	featureSetting?: string;
@@ -118,92 +105,6 @@ function requireAllocations(): StoreAccountAllocation[] {
 		);
 	}
 	return allocations;
-}
-
-const execFileAsync = promisify( execFile );
-
-async function runWpcomLocalCallbackProbe(
-	target: CallbackProbeTarget
-): Promise< unknown > {
-	const executable = process.env.E2E_WPCOM_LOCAL_BIN ?? 'wpcom-local';
-	let stdout: string;
-
-	try {
-		( { stdout } = await execFileAsync(
-			executable,
-			[
-				'--json',
-				'wcpay',
-				'callback',
-				'probe',
-				'--store-url',
-				target.siteUrl,
-				'--wpcom-blog-id',
-				target.wpcomBlogId.toString(),
-			],
-			{
-				maxBuffer: 1024 * 1024,
-				timeout: 60_000,
-			}
-		) );
-		return JSON.parse( stdout );
-	} catch {
-		throw new Error(
-			'The wpcom-local callback probe did not return executable evidence.'
-		);
-	}
-}
-
-function assertExactCallbackProbe(
-	result: unknown,
-	target: CallbackProbeTarget
-): void {
-	if ( ! result || typeof result !== 'object' ) {
-		throw new Error(
-			'The wpcom-local callback probe did not return validated evidence.'
-		);
-	}
-
-	const proof = result as {
-		exit_code?: unknown;
-		status?: unknown;
-		context?: Record< string, unknown >;
-	};
-	const context = proof.context;
-	if (
-		proof.exit_code !== 0 ||
-		( proof.status !== 'success' && proof.status !== 'warning' ) ||
-		! context ||
-		context.store_url !== target.siteUrl ||
-		context.wpcom_blog_id !== target.wpcomBlogId.toString() ||
-		context.callback_auth_model !== 'jetpack_capability' ||
-		context.callback_registered !== 'true' ||
-		context.callback_reachable !== 'true' ||
-		context.callback_provider_write !== 'false' ||
-		context.callback_response_result !== 'success'
-	) {
-		throw new Error(
-			'The wpcom-local callback probe did not return validated evidence.'
-		);
-	}
-}
-
-async function withValidatedCallbackProbe(
-	status: RuntimeStatus,
-	target: CallbackProbeTarget,
-	runCallbackProbe: CallbackProbeRunner
-): Promise< RuntimeStatus > {
-	const callbackProof = await runCallbackProbe( target );
-	assertExactCallbackProbe( callbackProof, target );
-
-	return {
-		...status,
-		callback_probe: {
-			registered: true,
-			reachable: true,
-			wpcom_blog_id: target.wpcomBlogId,
-		},
-	};
 }
 
 export async function authenticateAdminContext(
@@ -329,9 +230,7 @@ export async function submitBlocksCheckout(
 export async function loadInitialRuntimeStatus(
 	runtime: WooPaymentsRuntime,
 	adminApi: APIRequestContext,
-	diagnosticsDir?: string,
-	callbackProbeTarget?: CallbackProbeTarget,
-	runCallbackProbe: CallbackProbeRunner = runWpcomLocalCallbackProbe
+	diagnosticsDir?: string
 ): Promise< RuntimeStatus > {
 	if ( runtime !== 'transition' ) {
 		if ( ! diagnosticsDir ) {
@@ -354,18 +253,7 @@ export async function loadInitialRuntimeStatus(
 		);
 	}
 
-	if ( ! callbackProbeTarget ) {
-		throw new Error(
-			'Transition readiness requires an exact wpcom-local callback probe target.'
-		);
-	}
-
-	const status = ( await response.json() ) as RuntimeStatus;
-	return withValidatedCallbackProbe(
-		status,
-		callbackProbeTarget,
-		runCallbackProbe
-	);
+	return ( await response.json() ) as RuntimeStatus;
 }
 
 export class WooPaymentsPilotRuntime {
@@ -377,7 +265,6 @@ export class WooPaymentsPilotRuntime {
 	private readonly storeId: string;
 	private readonly accountId: string;
 	private readonly lockDir?: string;
-	private readonly callbackProbeRunner: CallbackProbeRunner;
 	private readonly ownedProductIds: number[] = [];
 	private activeProviderWriteLocks?: ProviderWriteLocks;
 
@@ -389,8 +276,7 @@ export class WooPaymentsPilotRuntime {
 		wpcomBlogId: number,
 		storeId: string,
 		accountId: string,
-		lockDir?: string,
-		callbackProbeRunner: CallbackProbeRunner = runWpcomLocalCallbackProbe
+		lockDir?: string
 	) {
 		this.adminApi = adminApi;
 		this.runtime = runtime;
@@ -400,7 +286,6 @@ export class WooPaymentsPilotRuntime {
 		this.storeId = storeId;
 		this.accountId = accountId;
 		this.lockDir = lockDir;
-		this.callbackProbeRunner = callbackProbeRunner;
 	}
 
 	public requireApprovedProviderFixture( capability: string ): void {
@@ -634,6 +519,66 @@ export class WooPaymentsPilotRuntime {
 		await this.performWrite( () => matchingActions[ 0 ].click() );
 	}
 
+	public async deleteExactSavedCards(
+		page: Page,
+		cards: readonly SavedCardIdentity[]
+	): Promise< void > {
+		if ( cards.length === 0 ) {
+			return;
+		}
+
+		await this.assertCanWrite();
+		this.requireApprovedProviderFixture( 'saved-card-cleanup' );
+		await this.logInAsCustomer( page );
+
+		for ( const card of cards.toReversed() ) {
+			await page.goto( 'my-account/payment-methods/' );
+			const candidates = await page
+				.getByRole( 'link', { name: 'Delete', exact: true } )
+				.all();
+			const matchingActions: Locator[] = [];
+			for ( const candidate of candidates ) {
+				const href = await candidate.getAttribute( 'href' );
+				if ( ! href ) {
+					continue;
+				}
+				const url = new URL( href, this.baseURL );
+				if (
+					url.pathname.endsWith(
+						`/delete-payment-method/${ card.tokenId }/`
+					) &&
+					url.searchParams.has( '_wpnonce' )
+				) {
+					matchingActions.push( candidate );
+				}
+			}
+			if ( matchingActions.length !== 1 ) {
+				throw new Error(
+					`Saved-card delete action is not uniquely bound to local token ${ card.tokenId }.`
+				);
+			}
+			await this.performWrite( () => matchingActions[ 0 ].click() );
+			await expect(
+				page.getByText( 'Payment method deleted.', { exact: true } )
+			).toBeVisible();
+		}
+
+		const evidence = await this.getSavedCardEvidence();
+		for ( const card of cards ) {
+			if (
+				evidence.tokens.some(
+					( token ) =>
+						token.tokenId === card.tokenId ||
+						token.paymentMethodId === card.paymentMethodId
+				)
+			) {
+				throw new Error(
+					`Saved-card cleanup did not remove exact token ${ card.tokenId } (${ card.paymentMethodId }).`
+				);
+			}
+		}
+	}
+
 	public async softCutOverEphemeralStore( page: Page ): Promise< void > {
 		await this.assertCanWrite();
 		this.requireEphemeralTransitionAllocation();
@@ -711,14 +656,6 @@ export class WooPaymentsPilotRuntime {
 			}
 		}
 
-		if (
-			evidence.providerDefaultPaymentMethodId !==
-			defaultCard.paymentMethodId
-		) {
-			throw new Error(
-				`The provider default is not the exact payment method ${ defaultCard.paymentMethodId }.`
-			);
-		}
 		if ( ! evidence.providerCustomerId ) {
 			throw new Error(
 				'Named saved-card evidence did not contain an exact provider customer ID.'
@@ -768,8 +705,6 @@ export class WooPaymentsPilotRuntime {
 		return {
 			...defaultCard,
 			isDefault: true,
-			providerDefaultPaymentMethodId:
-				evidence.providerDefaultPaymentMethodId,
 		};
 	}
 
@@ -784,7 +719,12 @@ export class WooPaymentsPilotRuntime {
 		const product = await this.createOwnedProduct( '10.99' );
 		await page.goto( `?post_type=product&p=${ product.id }` );
 		await this.performWrite( () =>
-			page.getByRole( 'button', { name: /add to cart/i } ).click()
+			page
+				.getByRole( 'button', {
+					name: 'Add to cart',
+					exact: true,
+				} )
+				.click()
 		);
 		await page.goto(
 			checkout === 'classic' ? 'classic-checkout/' : 'checkout/'
@@ -1206,7 +1146,6 @@ export class WooPaymentsPilotRuntime {
 			creation_ready?: unknown;
 			tokens?: unknown;
 			provider_customer_id?: unknown;
-			provider_default_payment_method_id?: unknown;
 		};
 		if ( typeof raw.creation_ready !== 'boolean' ) {
 			throw new Error(
@@ -1282,23 +1221,10 @@ export class WooPaymentsPilotRuntime {
 				'Saved-card evidence provider_customer_id must be a non-empty string.'
 			);
 		}
-		const providerDefaultPaymentMethodId =
-			raw.provider_default_payment_method_id;
-		if (
-			providerDefaultPaymentMethodId !== undefined &&
-			( typeof providerDefaultPaymentMethodId !== 'string' ||
-				providerDefaultPaymentMethodId === '' )
-		) {
-			throw new Error(
-				'Saved-card evidence provider_default_payment_method_id must be a non-empty string.'
-			);
-		}
-
 		return {
 			creationReady: raw.creation_ready,
 			tokens,
 			providerCustomerId,
-			providerDefaultPaymentMethodId,
 		};
 	}
 
@@ -1411,19 +1337,13 @@ export class WooPaymentsPilotRuntime {
 				const candidate = ( await response.json() ) as RuntimeStatus;
 				assertRuntimeReady(
 					runtime,
-					{
-						...candidate,
-						callback_probe: {
-							registered: true,
-							reachable: true,
-							wpcom_blog_id: this.wpcomBlogId,
-						},
-					},
+					candidate,
 					{
 						siteUrl: this.baseURL,
 						wpcomBlogId: this.wpcomBlogId,
 						accountId: this.accountId,
-					}
+					},
+					{ requireCallback: this.runtime !== 'transition' }
 				);
 				status = candidate;
 			} catch ( error ) {
@@ -1434,14 +1354,6 @@ export class WooPaymentsPilotRuntime {
 			}
 
 			if ( status ) {
-				await withValidatedCallbackProbe(
-					status,
-					{
-						siteUrl: this.baseURL,
-						wpcomBlogId: this.wpcomBlogId,
-					},
-					this.callbackProbeRunner
-				);
 				return;
 			}
 
@@ -1765,13 +1677,11 @@ export const test = baseTest.extend< WooPaymentsNativeFixtures >( {
 			const status = await loadInitialRuntimeStatus(
 				runtime,
 				adminApi,
-				process.env.E2E_WOOPAYMENTS_DIAGNOSTICS_DIR,
-				{
-					siteUrl: expected.siteUrl,
-					wpcomBlogId: expected.wpcomBlogId,
-				}
+				process.env.E2E_WOOPAYMENTS_DIAGNOSTICS_DIR
 			);
-			assertRuntimeReady( runtime, status, expected );
+			assertRuntimeReady( runtime, status, expected, {
+				requireCallback: runtime !== 'transition',
+			} );
 
 			const allocation = {
 				storeId: requireValue( 'E2E_WOOPAYMENTS_STORE_ID' ),

@@ -133,6 +133,25 @@ test( 'requires callback proof for the same WPCOM blog', () => {
 	).toThrow( /callback.*WPCOM blog ID/i );
 } );
 
+test( 'allows a borrowed transition fixture to skip callback ownership proof', () => {
+	expect( () =>
+		assertRuntimeReady(
+			'transition',
+			readyStatus( {
+				runtime_owner: 'plugin',
+				native_enabled: false,
+				callback_probe: {
+					registered: false,
+					reachable: false,
+					wpcom_blog_id: 0,
+				},
+			} ),
+			expected,
+			{ requireCallback: false }
+		)
+	).not.toThrow();
+} );
+
 test( 'reads a validated runtime status artifact', async () => {
 	const directory = await mkdtemp(
 		join( tmpdir(), 'woopayments-runtime-status-' )

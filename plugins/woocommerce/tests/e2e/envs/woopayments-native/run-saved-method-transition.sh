@@ -14,7 +14,6 @@ readonly PLUGIN_ROOT="$(
 readonly WRAPPER="${E2E_TRANSITION_WRAPPER:-$SCRIPT_DIR/provision-transition-store.sh}"
 readonly REAL_PROVISIONER="${E2E_TRANSITION_STORE_PROVISIONER:-$SCRIPT_DIR/provision-transition-store-real.sh}"
 readonly RUN_ID="${E2E_TRANSITION_RUN_ID:?E2E_TRANSITION_RUN_ID is required}"
-readonly WPCOM_LOCAL_BIN="${E2E_WPCOM_LOCAL_BIN:-wpcom-local}"
 
 allocation=''
 teardown_started=0
@@ -72,7 +71,7 @@ identity="$(
 )"
 IFS=$'\t' read -r BASE_URL STORE_ID WPCOM_BLOG_ID ACCOUNT_ID WORKSPACE <<< "$identity"
 readonly BASE_URL STORE_ID WPCOM_BLOG_ID ACCOUNT_ID WORKSPACE
-readonly ACCOUNT_ALIAS="transition-${RUN_ID}"
+readonly ACCOUNT_ALIAS='reference-client'
 readonly EXECUTION_SCOPE="$([[ -n "${CI:-}" ]] && printf ci || printf local)"
 
 provider_approval="$(
@@ -94,6 +93,7 @@ provider_approval="$(
 				"saved-card-default",
 				"soft-cutover",
 				"saved-card-state",
+				"saved-card-cleanup",
 				"saved-card-classic",
 				"saved-card-blocks",
 				"product/payment",
@@ -130,7 +130,6 @@ export E2E_WOOPAYMENTS_ACCOUNT_ALLOCATIONS="$account_allocations"
 export E2E_WOOPAYMENTS_PROVIDER_FIXTURE="$provider_approval"
 export E2E_WOOPAYMENTS_LOCK_DIR="$WORKSPACE/locks"
 export E2E_TRANSITION_ALLOCATION="$allocation"
-export E2E_WPCOM_LOCAL_BIN="$WPCOM_LOCAL_BIN"
 mkdir "$E2E_WOOPAYMENTS_LOCK_DIR"
 
 if [[ "$EXECUTION_SCOPE" == 'ci' ]]; then

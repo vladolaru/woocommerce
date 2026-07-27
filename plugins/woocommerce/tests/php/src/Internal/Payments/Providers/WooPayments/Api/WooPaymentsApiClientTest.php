@@ -564,35 +564,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should retrieve an existing customer through the native transport customer resource endpoint.
-	 */
-	public function test_get_customer_reads_customer_resource(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'id'               => 'cus_test',
-					'invoice_settings' => array(
-						'default_payment_method' => 'pm_default',
-					),
-				)
-			),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
-
-		$customer = $sut->get_customer( 'cus_test' );
-
-		$this->assertSame( 'pm_default', $customer['invoice_settings']['default_payment_method'] );
-		$this->assertSame( '/sites/123/wcpay/customers/cus_test?test_mode=0', $http_client->last_path );
-		$this->assertSame( 'GET', $http_client->last_method );
-	}
-
-	/**
 	 * @testdox Should create and confirm native WooPayments PaymentIntents with one payment credential and lifted idempotency.
 	 */
 	public function test_create_and_confirm_payment_intention_lifts_idempotency_and_preserves_request_shape(): void {

@@ -23,7 +23,6 @@ run_orchestrator() {
 		E2E_TRANSITION_STORE_PROVISIONER="$SCRIPT_DIR/test-fixtures/fake-transition-provisioner.sh" \
 		E2E_TRANSITION_WRAPPER="$SCRIPT_DIR/test-fixtures/fake-transition-wrapper.sh" \
 		E2E_TRANSITION_TEST_RUNNER="$SCRIPT_DIR/test-fixtures/fake-transition-test-runner.sh" \
-		E2E_WPCOM_LOCAL_BIN="$SCRIPT_DIR/test-fixtures/bin/wpcom-local" \
 		E2E_FAKE_COMMAND_LOG="$TEST_ROOT/commands.log" \
 		"$ORCHESTRATOR"
 }
@@ -38,6 +37,7 @@ grep -Fq -- '--workers=1' "$TEST_ROOT/commands.log"
 grep -Fq 'WCPAY_RUNTIME=transition' "$TEST_ROOT/commands.log"
 grep -Fq 'E2E_WOOPAYMENTS_WPCOM_BLOG_ID=77' "$TEST_ROOT/commands.log"
 grep -Fq 'E2E_WOOPAYMENTS_ACCOUNT_ID=acct_transition_77' "$TEST_ROOT/commands.log"
+grep -Fq 'E2E_WOOPAYMENTS_ACCOUNT_ALIAS=reference-client' "$TEST_ROOT/commands.log"
 grep -Fq 'destroy exact-allocation' "$TEST_ROOT/commands.log"
 if grep -qi 'listen' "$TEST_ROOT/commands.log"; then
 	echo 'The transition orchestrator must not start the Stripe listener.' >&2

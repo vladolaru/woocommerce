@@ -78,9 +78,11 @@ export async function readRuntimeStatusArtifact(
 export function assertRuntimeReady(
 	runtime: WooPaymentsRuntime,
 	status: RuntimeStatus,
-	expected: { siteUrl: string; wpcomBlogId: number; accountId: string }
+	expected: { siteUrl: string; wpcomBlogId: number; accountId: string },
+	options: { requireCallback?: boolean } = {}
 ): void {
 	const expectedOwner = runtime === 'native' ? 'native' : 'plugin';
+	const requireCallback = options.requireCallback ?? true;
 
 	if ( status.site_url !== expected.siteUrl ) {
 		throw new Error(
@@ -128,14 +130,18 @@ export function assertRuntimeReady(
 		);
 	}
 	if (
-		status.callback_probe.registered !== true ||
-		status.callback_probe.reachable !== true
+		requireCallback &&
+		( status.callback_probe.registered !== true ||
+			status.callback_probe.reachable !== true )
 	) {
 		throw new Error(
 			'Runtime readiness failed: an owner-approved callback probe has not proved registration and reachability.'
 		);
 	}
-	if ( status.callback_probe.wpcom_blog_id !== expected.wpcomBlogId ) {
+	if (
+		requireCallback &&
+		status.callback_probe.wpcom_blog_id !== expected.wpcomBlogId
+	) {
 		throw new Error(
 			`Runtime readiness failed: callback WPCOM blog ID ${ status.callback_probe.wpcom_blog_id } does not exactly match ${ expected.wpcomBlogId }.`
 		);

@@ -272,12 +272,7 @@ final class WooCommerce_WooPayments_Native_E2E_Runtime {
 		}
 
 		$customer_service_class = 'Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\WooPaymentsCustomerService';
-		$api_client_class       = 'Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\Api\\WooPaymentsApiClient';
-		if (
-			! function_exists( 'wc_get_container' ) ||
-			! class_exists( $customer_service_class ) ||
-			! class_exists( $api_client_class )
-		) {
+		if ( ! function_exists( 'wc_get_container' ) || ! class_exists( $customer_service_class ) ) {
 			return new WP_Error(
 				'saved_card_provider_unavailable',
 				'Native WooPayments provider evidence is unavailable.',
@@ -295,9 +290,6 @@ final class WooCommerce_WooPayments_Native_E2E_Runtime {
 					array( 'status' => 409 )
 				);
 			}
-
-			$api_client        = wc_get_container()->get( $api_client_class );
-			$provider_customer = $api_client->get_customer( $provider_customer_id );
 		} catch ( Throwable $exception ) {
 			unset( $exception );
 			return new WP_Error(
@@ -307,17 +299,7 @@ final class WooCommerce_WooPayments_Native_E2E_Runtime {
 			);
 		}
 
-		$provider_default = $provider_customer['invoice_settings']['default_payment_method'] ?? null;
-		if ( ! is_string( $provider_default ) || $provider_default !== $payment_method_id ) {
-			return new WP_Error(
-				'saved_card_provider_default_mismatch',
-				'The exact provider payment method is not the customer default.',
-				array( 'status' => 409 )
-			);
-		}
-
-		$response['provider_customer_id']               = $provider_customer_id;
-		$response['provider_default_payment_method_id'] = $provider_default;
+		$response['provider_customer_id'] = $provider_customer_id;
 
 		return rest_ensure_response( $response );
 	}

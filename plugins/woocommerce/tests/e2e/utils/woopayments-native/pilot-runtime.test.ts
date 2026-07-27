@@ -59,83 +59,14 @@ function transitionStatus( callbackReady: boolean ) {
 	};
 }
 
-function callbackProbeResult(
-	overrides: Record< string, unknown > = {}
-): Record< string, unknown > {
-	return {
-		exit_code: 0,
-		status: 'success',
-		command: 'wcpay callback probe',
-		context: {
-			store_url: 'http://transition.test',
-			wpcom_blog_id: '321',
-			callback_auth_model: 'jetpack_capability',
-			callback_registered: 'true',
-			callback_reachable: 'true',
-			callback_provider_write: 'false',
-			callback_response_result: 'success',
-			...overrides,
-		},
-		artifacts: [],
-	};
-}
-
-test( 'loads transition callback readiness only from the executable wpcom-local probe', async () => {
+test( 'loads transition readiness without claiming callback ownership', async () => {
 	const api = {
 		get: async () => response( transitionStatus( false ) ),
 	} as unknown as APIRequestContext;
-	const invocations: unknown[] = [];
 
 	await expect(
-		loadInitialRuntimeStatus(
-			'transition',
-			api,
-			undefined,
-			{
-				siteUrl: 'http://transition.test',
-				wpcomBlogId: 321,
-			},
-			async ( expected ) => {
-				invocations.push( expected );
-				return callbackProbeResult();
-			}
-		)
-	).resolves.toEqual( {
-		...transitionStatus( false ),
-		callback_probe: {
-			registered: true,
-			reachable: true,
-			wpcom_blog_id: 321,
-		},
-	} );
-	expect( invocations ).toEqual( [
-		{
-			siteUrl: 'http://transition.test',
-			wpcomBlogId: 321,
-		},
-	] );
-} );
-
-test( 'rejects a forged local callback flag when the executable probe is not exact', async () => {
-	const api = {
-		get: async () => response( transitionStatus( true ) ),
-	} as unknown as APIRequestContext;
-
-	await expect(
-		loadInitialRuntimeStatus(
-			'transition',
-			api,
-			undefined,
-			{
-				siteUrl: 'http://transition.test',
-				wpcomBlogId: 321,
-			},
-			async () =>
-				callbackProbeResult( {
-					callback_provider_write: 'true',
-				} )
-		)
-	).rejects.toThrow( /callback probe.*validated evidence/i );
+		loadInitialRuntimeStatus( 'transition', api )
+	).resolves.toEqual( transitionStatus( false ) );
 } );
 
 test( 'loads client readiness from plugin-owned diagnostics without calling the native route', async () => {
@@ -260,8 +191,8 @@ function runtime(
 	calls: RequestCall[],
 	options: {
 		manualCapture?: boolean;
-		callbackProbeTargets?: unknown[];
 		providerPaymentMethods?: unknown[];
+		runtime?: 'native' | 'transition';
 		savedCardEvidence?: unknown[];
 		throwAfterManualCaptureUpdate?: boolean;
 		updateStatus?: number;
@@ -390,20 +321,13 @@ function runtime(
 
 	return new ApprovedPilotRuntime(
 		api,
-		'native',
+		options.runtime ?? 'native',
 		'run-pilot-runtime',
 		'http://native.test',
 		123,
 		'native-store',
 		'acct_native',
-		lockDir,
-		async ( target ) => {
-			options.callbackProbeTargets?.push( target );
-			return callbackProbeResult( {
-				store_url: target.siteUrl,
-				wpcom_blog_id: target.wpcomBlogId.toString(),
-			} );
-		}
+		lockDir
 	);
 }
 
@@ -490,12 +414,19 @@ function savedCheckoutContractPage( expectedSelector: string ): {
 		goto: async ( url: string ) => {
 			visited.push( url );
 		},
-		getByRole: ( role: string, options?: { name?: string | RegExp } ) => {
+		getByRole: (
+			role: string,
+			options?: { exact?: boolean; name?: string | RegExp }
+		) => {
 			const name = String( options?.name ?? '' );
-			if (
-				role === 'button' &&
-				/add to cart|place order/i.test( name )
-			) {
+			if ( role === 'button' && /add to cart/i.test( name ) ) {
+				expect( options ).toEqual( {
+					name: 'Add to cart',
+					exact: true,
+				} );
+				return visibleLocator();
+			}
+			if ( role === 'button' && /place order/i.test( name ) ) {
 				return visibleLocator();
 			}
 			throw new Error( `Unexpected role locator: ${ role } ${ name }` );
@@ -1016,7 +947,6 @@ test( 'proves both exact saved-card mappings and the second-card default after n
 			{
 				creation_ready: true,
 				provider_customer_id: 'cus_exact',
-				provider_default_payment_method_id: 'pm_second',
 				tokens: [
 					{
 						token_id: 41,
@@ -1059,7 +989,6 @@ test( 'proves both exact saved-card mappings and the second-card default after n
 			tokenId: 73,
 			paymentMethodId: 'pm_second',
 			isDefault: true,
-			providerDefaultPaymentMethodId: 'pm_second',
 		} );
 	} finally {
 		await rm( directory, { recursive: true, force: true } );
@@ -1072,7 +1001,6 @@ for ( const invalidState of [
 		evidence: {
 			creation_ready: true,
 			provider_customer_id: 'cus_exact',
-			provider_default_payment_method_id: 'pm_second',
 			tokens: [
 				{
 					token_id: 41,
@@ -1097,7 +1025,6 @@ for ( const invalidState of [
 		evidence: {
 			creation_ready: true,
 			provider_customer_id: 'cus_exact',
-			provider_default_payment_method_id: 'pm_second',
 			tokens: [
 				{
 					token_id: 41,
@@ -1118,36 +1045,10 @@ for ( const invalidState of [
 		error: /local token 41.*must not.*default/i,
 	},
 	{
-		name: 'a mismatched provider default',
-		evidence: {
-			creation_ready: true,
-			provider_customer_id: 'cus_exact',
-			provider_default_payment_method_id: 'pm_other',
-			tokens: [
-				{
-					token_id: 41,
-					payment_method_id: 'pm_first',
-					is_default: false,
-				},
-				{
-					token_id: 73,
-					payment_method_id: 'pm_second',
-					is_default: true,
-				},
-			],
-		},
-		providerMethods: [
-			{ id: 'pm_first', type: 'card' },
-			{ id: 'pm_second', type: 'card' },
-		],
-		error: /provider default.*pm_second/i,
-	},
-	{
 		name: 'a missing first provider payment method',
 		evidence: {
 			creation_ready: true,
 			provider_customer_id: 'cus_exact',
-			provider_default_payment_method_id: 'pm_second',
 			tokens: [
 				{
 					token_id: 41,
@@ -1242,6 +1143,79 @@ test( 'uses the token-bound semantic My Account action rendered by Core', async 
 			async () => pilotRuntime.makeSavedCardDefault( page, 73 )
 		);
 		expect( clicked ).toBe( true );
+	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'deletes only the two exact run-owned saved cards through My Account', async () => {
+	const directory = await lockDirectory();
+	const calls: RequestCall[] = [];
+	const pilotRuntime = runtime( directory, calls, {
+		savedCardEvidence: [
+			{
+				creation_ready: true,
+				tokens: [
+					{
+						token_id: 7,
+						payment_method_id: 'pm_existing',
+						is_default: true,
+					},
+				],
+			},
+		],
+	} );
+	const remainingTokenIds = new Set( [ 7, 73, 81 ] );
+	const deletedTokenIds: number[] = [];
+	const deleteAction = ( tokenId: number ) =>
+		visibleLocator( {
+			click: async () => {
+				deletedTokenIds.push( tokenId );
+				remainingTokenIds.delete( tokenId );
+			},
+			getAttribute: async ( name ) =>
+				name === 'href'
+					? `http://native.test/my-account/delete-payment-method/${ tokenId }/?_wpnonce=nonce-${ tokenId }`
+					: null,
+		} );
+	const page = {
+		context: () => ( {
+			clearCookies: async () => {},
+		} ),
+		goto: async () => {},
+		getByLabel: () => visibleLocator(),
+		getByText: () => visibleLocator(),
+		getByRole: ( role: string, options?: { name?: string | RegExp } ) => {
+			const name = String( options?.name ?? '' );
+			if ( role === 'link' && name === 'Delete' ) {
+				return visibleLocator( {
+					all: async () =>
+						[ ...remainingTokenIds ].map( deleteAction ),
+				} );
+			}
+			if (
+				( role === 'button' && name === 'Log In' ) ||
+				( role === 'textbox' && name === 'Password' ) ||
+				( role === 'textbox' && /Email address/i.test( name ) )
+			) {
+				return visibleLocator();
+			}
+			throw new Error( `Unexpected role locator: ${ role } ${ name }` );
+		},
+	} as unknown as Page;
+
+	try {
+		await pilotRuntime.withProviderWriteLocks(
+			{ recordEvent: 'saved-card-cleanup' },
+			async () =>
+				pilotRuntime.deleteExactSavedCards( page, [
+					{ tokenId: 73, paymentMethodId: 'pm_first' },
+					{ tokenId: 81, paymentMethodId: 'pm_second' },
+				] )
+		);
+
+		expect( deletedTokenIds ).toEqual( [ 81, 73 ] );
+		expect( remainingTokenIds ).toEqual( new Set( [ 7 ] ) );
 	} finally {
 		await rm( directory, { recursive: true, force: true } );
 	}
@@ -1561,9 +1535,8 @@ test( 'blocks a saved-card default update after lock loss during preparation', a
 test( 'drives the nonce-protected product cutover controller entry point', async () => {
 	const directory = await lockDirectory();
 	const calls: RequestCall[] = [];
-	const callbackProbeTargets: unknown[] = [];
 	const pilotRuntime = runtime( directory, calls, {
-		callbackProbeTargets,
+		runtime: 'transition',
 		runtimeStatuses: [
 			{
 				site_url: 'http://native.test',
@@ -1650,12 +1623,6 @@ test( 'drives the nonce-protected product cutover controller entry point', async
 					call.url === '/wp-json/wc-native-payments-e2e/v1/status'
 			)
 		).toHaveLength( 2 );
-		expect( callbackProbeTargets ).toEqual( [
-			{
-				siteUrl: 'http://native.test',
-				wpcomBlogId: 123,
-			},
-		] );
 	} finally {
 		await rm( directory, { recursive: true, force: true } );
 	}

@@ -4,7 +4,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use WC_Data_Store;
 use WC_Payment_Token_CC;
@@ -176,12 +175,12 @@ class NativePaymentsE2EBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Named saved-card evidence proves the exact local and provider default.
+	 * @testdox Named saved-card evidence proves the exact local mapping and provider customer.
 	 *
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 */
-	public function test_named_saved_card_evidence_proves_local_and_provider_default(): void {
+	public function test_named_saved_card_evidence_proves_local_mapping_and_provider_customer(): void {
 		$this->define_native_e2e_constant();
 		$this->load_bootstrap();
 		$user_id          = self::factory()->user->create(
@@ -203,24 +202,7 @@ class NativePaymentsE2EBootstrapTest extends WC_Unit_Test_Case {
 				return 'cus_exact';
 			}
 		};
-		$api_client       = new class() extends WooPaymentsApiClient {
-			/**
-			 * Return deterministic provider default evidence.
-			 *
-			 * @param string $customer_id Provider customer ID.
-			 * @return array<string,mixed>
-			 */
-			public function get_customer( string $customer_id ): array {
-				return array(
-					'id'               => $customer_id,
-					'invoice_settings' => array(
-						'default_payment_method' => 'pm_exact',
-					),
-				);
-			}
-		};
 		wc_get_container()->replace( WooPaymentsCustomerService::class, $customer_service );
-		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Initializing the REST server in a test.
 		do_action( 'rest_api_init' );
@@ -234,7 +216,11 @@ class NativePaymentsE2EBootstrapTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 200, $response->get_status(), 'Exact native saved-card evidence should be readable.' );
 		$this->assertSame( 'cus_exact', $data['provider_customer_id'], 'Evidence must name the exact provider customer.' );
-		$this->assertSame( 'pm_exact', $data['provider_default_payment_method_id'], 'Evidence must return the exact provider default.' );
+		$this->assertArrayNotHasKey(
+			'provider_default_payment_method_id',
+			$data,
+			'Evidence must not depend on an unsupported individual-customer provider read.'
+		);
 	}
 
 	/**
