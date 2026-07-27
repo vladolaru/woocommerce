@@ -67,6 +67,7 @@ const reporter = [
 		`${ TESTS_ROOT_PATH }/reporters/environment-reporter.ts`,
 		{ outputFolder: `${ TESTS_ROOT_PATH }/test-results/allure-results` },
 	],
+	[ `${ TESTS_ROOT_PATH }/reporters/woopayments-known-gaps.ts` ],
 ];
 
 if ( process.env.CI ) {
