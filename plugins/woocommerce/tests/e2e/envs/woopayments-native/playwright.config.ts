@@ -1,6 +1,7 @@
 import defaultConfig from '../../playwright.config';
 
-const pilotSpecs = '**/tests/woopayments-native/pilots/*.spec.ts';
+const wooPaymentsSpecs = '**/tests/woopayments-native/**/*.spec.ts';
+const serializedProjectWorkerLimit = 1;
 
 export default {
 	...defaultConfig,
@@ -8,24 +9,30 @@ export default {
 	projects: [
 		{
 			name: 'woopayments-native-readonly',
-			testMatch: pilotSpecs,
+			testMatch: wooPaymentsSpecs,
 			grepInvert: /@woopayments-provider|@woopayments-transition/,
-			retries: process.env.CI ? 1 : 0,
+			retries: 0,
 		},
 		{
 			name: 'woopayments-native-provider',
-			testMatch: pilotSpecs,
+			testMatch: wooPaymentsSpecs,
 			grep: /@woopayments-provider/,
 			grepInvert: /@woopayments-transition/,
+			metadata: {
+				woopaymentsWorkerLimit: serializedProjectWorkerLimit,
+			},
 			retries: 0,
-			workers: 1,
+			workers: serializedProjectWorkerLimit,
 		},
 		{
 			name: 'woopayments-native-transition',
-			testMatch: pilotSpecs,
+			testMatch: wooPaymentsSpecs,
 			grep: /@woopayments-transition/,
+			metadata: {
+				woopaymentsWorkerLimit: serializedProjectWorkerLimit,
+			},
 			retries: 0,
-			workers: 1,
+			workers: serializedProjectWorkerLimit,
 		},
 	],
 };

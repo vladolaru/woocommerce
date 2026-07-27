@@ -104,4 +104,8 @@ export const tags = {
 	NOT_E2E: '@not-e2e',
 	WP_CORE: '@wp-core',
 	PAYPAL: '@paypal',
+	WOOPAYMENTS_NATIVE: '@woopayments-native',
+	WOOPAYMENTS_PROVIDER: '@woopayments-provider',
+	WOOPAYMENTS_TRANSITION: '@woopayments-transition',
+	WOOPAYMENTS_PR: '@woopayments-pr',
 } as const;

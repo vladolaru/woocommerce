@@ -1,13 +1,13 @@
-import { expect, test } from '../../../fixtures/woopayments-native';
+import { expect, tags, test } from '../../../fixtures/woopayments-native';
 import { getPaymentEvidence } from '../../../utils/woopayments-native/record-evidence';
 
 test(
 	'merchant reaches the exact transaction created by this atomic journey',
 	{
 		tag: [
-			'@woopayments-native',
-			'@woopayments-provider',
-			'@woopayments-pr',
+			tags.WOOPAYMENTS_NATIVE,
+			tags.WOOPAYMENTS_PROVIDER,
+			tags.WOOPAYMENTS_PR,
 		],
 	},
 	async ( { adminApi, page, pilotRuntime, runId } ) => {

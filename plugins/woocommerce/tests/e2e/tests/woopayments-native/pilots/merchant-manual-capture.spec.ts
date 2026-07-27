@@ -1,4 +1,4 @@
-import { expect, test } from '../../../fixtures/woopayments-native';
+import { expect, tags, test } from '../../../fixtures/woopayments-native';
 import {
 	getCaptureOrderNoteEvidence,
 	getPaymentEvidence,
@@ -10,9 +10,9 @@ test(
 	'merchant manually captures one exact authorization and restores capture mode',
 	{
 		tag: [
-			'@woopayments-native',
-			'@woopayments-provider',
-			'@woopayments-pr',
+			tags.WOOPAYMENTS_NATIVE,
+			tags.WOOPAYMENTS_PROVIDER,
+			tags.WOOPAYMENTS_PR,
 		],
 	},
 	async ( { adminApi, page, pilotRuntime, runId } ) => {

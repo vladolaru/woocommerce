@@ -1,14 +1,14 @@
-import { expect, test } from '../../../fixtures/woopayments-native';
+import { expect, tags, test } from '../../../fixtures/woopayments-native';
 import { getPaymentEvidence } from '../../../utils/woopayments-native/record-evidence';
 
 test(
 	'plugin default saved method survives ephemeral native cutover',
 	{
 		tag: [
-			'@woopayments-native',
-			'@woopayments-provider',
-			'@woopayments-transition',
-			'@woopayments-pr',
+			tags.WOOPAYMENTS_NATIVE,
+			tags.WOOPAYMENTS_PROVIDER,
+			tags.WOOPAYMENTS_TRANSITION,
+			tags.WOOPAYMENTS_PR,
 		],
 	},
 	async ( { adminApi, page, pilotRuntime, runId } ) => {

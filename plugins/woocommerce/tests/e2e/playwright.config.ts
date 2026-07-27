@@ -204,6 +204,7 @@ const nonCoreSpecs = [
 	'**/api-tests/**',
 	'**/tests/paypal/**',
 	'**/tests/blocks/**',
+	'**/tests/woopayments-native/**',
 ];
 
 export default defineConfig( {

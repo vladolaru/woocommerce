@@ -32,6 +32,8 @@ import type { PaymentEvidence } from '../utils/woopayments-native/record-evidenc
 import { assertApprovedProviderFixture } from '../utils/woopayments-native/provider-fixture';
 import { assertTransitionAllocation } from '../utils/woopayments-native/transition-allocation';
 
+export { tags } from './fixtures';
+
 interface OwnedProduct {
 	id: number;
 	name: string;
