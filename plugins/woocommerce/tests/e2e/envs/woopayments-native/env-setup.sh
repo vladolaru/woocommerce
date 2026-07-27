@@ -2,20 +2,30 @@
 
 set -euo pipefail
 
-readonly CLIENT_STORE_DIR="${E2E_WOOPAYMENTS_CLIENT_STORE_DIR:?E2E_WOOPAYMENTS_CLIENT_STORE_DIR is required}"
-readonly NATIVE_STORE_DIR="${E2E_WOOPAYMENTS_NATIVE_STORE_DIR:?E2E_WOOPAYMENTS_NATIVE_STORE_DIR is required}"
+readonly WCPAY_RUNTIME="${WCPAY_RUNTIME:?WCPAY_RUNTIME is required}"
 readonly DIAGNOSTICS_DIR="${E2E_WOOPAYMENTS_DIAGNOSTICS_DIR:?E2E_WOOPAYMENTS_DIAGNOSTICS_DIR is required}"
-readonly CLIENT_STORE_URL="${E2E_WOOPAYMENTS_CLIENT_STORE_URL:-http://localhost:8082}"
-readonly NATIVE_STORE_URL="${E2E_WOOPAYMENTS_NATIVE_STORE_URL:-http://store8889.localhost:8889}"
 readonly WPCOM_LOCAL_BIN="${E2E_WPCOM_LOCAL_BIN:-wpcom-local}"
 readonly ACCOUNT_REQUEST_CODE='$request = new WP_REST_Request( "GET", "/wc/v3/payments/accounts" ); $response = rest_do_request( $request ); $data = $response->get_data(); echo wp_json_encode( array( "status" => $response->get_status(), "is_error" => $response->is_error(), "account_id" => is_array( $data ) ? (string) ( $data["account_id"] ?? "" ) : "", "test_mode" => is_array( $data ) ? (bool) ( $data["test_mode"] ?? false ) : false ) );'
 readonly CLIENT_RUNTIME_STATUS_CODE='if ( ! function_exists( "is_plugin_active" ) ) { require_once ABSPATH . "wp-admin/includes/plugin.php"; } $plugin_active = is_plugin_active( "woocommerce-payments/woocommerce-payments.php" ); $account = $plugin_active && class_exists( "WC_Payments" ) ? WC_Payments::get_account_service()->get_cached_account_data() : array(); $account = is_array( $account ) ? $account : array(); $settings = get_option( "woocommerce_woocommerce_payments_settings", array() ); $settings = is_array( $settings ) ? $settings : array(); $methods = $settings["upe_enabled_payment_method_ids"] ?? array(); $methods = is_array( $methods ) ? array_values( array_map( "strval", array_filter( $methods, "is_scalar" ) ) ) : array(); echo wp_json_encode( array( "site_url" => get_site_url(), "wpcom_blog_id" => class_exists( "Jetpack_Options" ) ? (int) Jetpack_Options::get_option( "id" ) : 0, "runtime_owner" => $plugin_active ? "plugin" : "none", "native_enabled" => false, "account_id" => (string) ( $account["account_id"] ?? "" ), "account_connected" => ! empty( $account["account_id"] ), "gateway_enabled" => "yes" === ( $settings["enabled"] ?? "no" ), "test_mode" => "yes" === ( $settings["test_mode"] ?? "no" ), "enabled_payment_methods" => $methods, "last_webhook_fetch" => 0, "callback_probe" => array( "registered" => false, "reachable" => false, "wpcom_blog_id" => 0 ) ) );'
 readonly NATIVE_RUNTIME_STATUS_CODE='$request = new WP_REST_Request( "GET", "/wc-native-payments-e2e/v1/status" ); $response = rest_do_request( $request ); echo wp_json_encode( $response->get_data() );'
 readonly THEME_STATUS_CODE='$active = wp_get_theme(); $installed = wp_get_themes(); $fallback = ""; foreach ( array( "twentytwentyfive", "twentytwentyfour", "storefront" ) as $candidate ) { if ( isset( $installed[ $candidate ] ) ) { $fallback = $candidate; break; } } if ( "" === $fallback && ! empty( $installed ) ) { $fallback = (string) array_key_first( $installed ); } echo wp_json_encode( array( "active_theme_exists" => $active->exists(), "active_stylesheet" => get_stylesheet(), "fallback_stylesheet" => $fallback ) );'
 
-NATIVE_CONSTANT_ORIGINAL_STATE='unchanged'
-NATIVE_ACTIVATION_CHANGED='false'
-NATIVE_ACTIVATION_COMMITTED='false'
+case "$WCPAY_RUNTIME" in
+	client)
+		readonly STORE_NAME='client'
+		readonly STORE_DIR="${E2E_WOOPAYMENTS_CLIENT_STORE_DIR:?E2E_WOOPAYMENTS_CLIENT_STORE_DIR is required}"
+		readonly STORE_URL="${E2E_WOOPAYMENTS_CLIENT_STORE_URL:-http://localhost:8082}"
+		;;
+	native)
+		readonly STORE_NAME='native'
+		readonly STORE_DIR="${E2E_WOOPAYMENTS_NATIVE_STORE_DIR:?E2E_WOOPAYMENTS_NATIVE_STORE_DIR is required}"
+		readonly STORE_URL="${E2E_WOOPAYMENTS_NATIVE_STORE_URL:-http://store8889.localhost:8889}"
+		;;
+	*)
+		echo 'WCPAY_RUNTIME must be client or native.' >&2
+		exit 1
+		;;
+esac
 
 run_store_wp() {
 	local store_name="$1"
@@ -52,58 +62,20 @@ run_store_wp_json() {
 	fi
 }
 
-ensure_store_theme() {
+assert_store_theme() {
 	local store_name="$1"
 	local store_dir="$2"
 	local theme_status
-	local fallback
 
 	theme_status="$(
 		cd "$store_dir"
 		run_store_wp_json "$store_name" eval "$THEME_STATUS_CODE"
 	)"
-	if jq -e '.active_theme_exists == true' <<< "$theme_status" > /dev/null; then
-		return
-	fi
-
-	fallback="$(jq -er '.fallback_stylesheet | select(type == "string" and length > 0)' <<< "$theme_status")"
-	(
-		cd "$store_dir"
-		run_store_wp "$store_name" theme activate "$fallback"
-	)
-
-	theme_status="$(
-		cd "$store_dir"
-		run_store_wp_json "$store_name" eval "$THEME_STATUS_CODE"
-	)"
-	if ! jq -e \
-		--arg fallback "$fallback" \
-		'.active_theme_exists == true and .active_stylesheet == $fallback' \
-		<<< "$theme_status" > /dev/null; then
-		echo "WooPayments $store_name store did not activate fallback theme $fallback." >&2
+	if ! jq -e '.active_theme_exists == true' <<< "$theme_status" > /dev/null; then
+		echo "WooPayments $store_name store has no renderable active theme." >&2
 		return 1
 	fi
 }
-
-restore_native_runtime_on_failure() {
-	if [[ "$NATIVE_ACTIVATION_CHANGED" != 'true' || "$NATIVE_ACTIVATION_COMMITTED" == 'true' ]]; then
-		return
-	fi
-
-	if [[ "$NATIVE_CONSTANT_ORIGINAL_STATE" == 'absent' ]]; then
-		(
-			cd "$NATIVE_STORE_DIR"
-			run_store_wp 'native' config delete E2E_WOOPAYMENTS_NATIVE --yes
-		) || echo 'Failed to remove E2E_WOOPAYMENTS_NATIVE while rolling back readiness.' >&2
-		return
-	fi
-
-	(
-		cd "$NATIVE_STORE_DIR"
-		run_store_wp 'native' config set E2E_WOOPAYMENTS_NATIVE "$NATIVE_CONSTANT_ORIGINAL_STATE" --raw
-	) || echo 'Failed to restore E2E_WOOPAYMENTS_NATIVE while rolling back readiness.' >&2
-}
-trap restore_native_runtime_on_failure EXIT
 
 collect_store_diagnostics() {
 	local store_name="$1"
@@ -128,17 +100,6 @@ collect_store_diagnostics() {
 			run_store_wp_json "$store_name" --user=1 eval "$CLIENT_RUNTIME_STATUS_CODE" > "$output_dir/runtime-status.json"
 		fi
 		run_store_wp_json "$store_name" --user=1 eval "$ACCOUNT_REQUEST_CODE" > "$output_dir/account.json"
-	)
-}
-
-collect_native_runtime_diagnostics() {
-	local output_dir="$DIAGNOSTICS_DIR/native"
-
-	(
-		cd "$NATIVE_STORE_DIR"
-		run_store_wp 'native' --user=1 wc-native-payments status > "$output_dir/native-payments-status.txt"
-		run_store_wp_json 'native' --user=1 eval "$NATIVE_RUNTIME_STATUS_CODE" > "$output_dir/runtime-status.json"
-		run_store_wp_json 'native' --user=1 eval "$ACCOUNT_REQUEST_CODE" > "$output_dir/account.json"
 	)
 }
 
@@ -214,56 +175,43 @@ run_callback_probe() {
 	merge_callback_proof "$output_dir/runtime-status.json" "$callback_probe_path" "$blog_id"
 }
 
-enable_native_runtime_reversibly() {
-	local raw_output
-	local prior_value
+assert_store_theme "$STORE_NAME" "$STORE_DIR"
+collect_store_diagnostics "$STORE_NAME" "$STORE_DIR"
 
-	if raw_output="$(
-		cd "$NATIVE_STORE_DIR"
-		run_store_wp 'native' config get E2E_WOOPAYMENTS_NATIVE --format=json 2> /dev/null
-	)"; then
-		prior_value="$(
-			printf '%s\n' "$raw_output" |
-				sed -n -E '/^(true|false)$/p' |
-				tail -n 1
-		)"
-		if [[ "$prior_value" != 'true' && "$prior_value" != 'false' ]]; then
-			echo 'E2E_WOOPAYMENTS_NATIVE exists but is not a boolean constant.' >&2
-			return 1
-		fi
-		NATIVE_CONSTANT_ORIGINAL_STATE="$prior_value"
-		if [[ "$prior_value" == 'true' ]]; then
-			return
-		fi
-	else
-		NATIVE_CONSTANT_ORIGINAL_STATE='absent'
+runtime_status_path="$DIAGNOSTICS_DIR/$STORE_NAME/runtime-status.json"
+if [[ "$STORE_NAME" == 'client' ]]; then
+	if ! jq -e '.runtime_owner == "plugin" and .native_enabled == false' "$runtime_status_path" > /dev/null; then
+		echo 'WooPayments client readiness requires runtime_owner=plugin and native_enabled=false.' >&2
+		exit 1
 	fi
-
-	(
-		cd "$NATIVE_STORE_DIR"
-		run_store_wp 'native' config set E2E_WOOPAYMENTS_NATIVE true --raw
-	)
-	NATIVE_ACTIVATION_CHANGED='true'
-}
-
-ensure_store_theme 'client' "$CLIENT_STORE_DIR"
-ensure_store_theme 'native' "$NATIVE_STORE_DIR"
-collect_store_diagnostics 'client' "$CLIENT_STORE_DIR"
-collect_store_diagnostics 'native' "$NATIVE_STORE_DIR"
-
-client_blog_id="$(runtime_blog_id "$DIAGNOSTICS_DIR/client/runtime-status.json")"
-native_blog_id="$(runtime_blog_id "$DIAGNOSTICS_DIR/native/runtime-status.json")"
-
-run_callback_probe 'client' "$CLIENT_STORE_DIR" "$CLIENT_STORE_URL" "$client_blog_id"
-enable_native_runtime_reversibly
-collect_native_runtime_diagnostics
-if [[ "$(runtime_blog_id "$DIAGNOSTICS_DIR/native/runtime-status.json")" != "$native_blog_id" ]]; then
-	echo 'Native WPCOM blog ID changed during reversible activation.' >&2
+elif ! jq -e '.runtime_owner == "native" and .native_enabled == true' "$runtime_status_path" > /dev/null; then
+	echo 'WooPayments native readiness requires runtime_owner=native and native_enabled=true.' >&2
 	exit 1
 fi
-run_callback_probe 'native' "$NATIVE_STORE_DIR" "$NATIVE_STORE_URL" "$native_blog_id"
 
-NATIVE_ACTIVATION_COMMITTED='true'
-printf 'WooPayments callback readiness proved for client blog %s and native blog %s.\n' \
-	"$client_blog_id" \
-	"$native_blog_id"
+if ! runtime_account_id="$(
+	jq -er '.account_id | select(type == "string" and length > 0)' "$runtime_status_path"
+)"; then
+	echo "WooPayments $STORE_NAME runtime status has no account identity." >&2
+	exit 1
+fi
+
+account_status_path="$DIAGNOSTICS_DIR/$STORE_NAME/account.json"
+if ! jq -e \
+	--arg account_id "$runtime_account_id" \
+	'.status >= 200 and
+	.status < 300 and
+	.is_error == false and
+	.account_id == $account_id and
+	.test_mode == true' \
+	"$account_status_path" > /dev/null; then
+	echo "WooPayments $STORE_NAME account readiness is not a matching test-mode account." >&2
+	exit 1
+fi
+
+blog_id="$(runtime_blog_id "$runtime_status_path")"
+run_callback_probe "$STORE_NAME" "$STORE_DIR" "$STORE_URL" "$blog_id"
+
+printf 'WooPayments callback readiness proved for %s blog %s.\n' \
+	"$STORE_NAME" \
+	"$blog_id"

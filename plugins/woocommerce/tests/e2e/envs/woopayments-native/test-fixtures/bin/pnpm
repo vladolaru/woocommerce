@@ -4,29 +4,13 @@ set -euo pipefail
 
 printf '%s\tpnpm %s\n' "$PWD" "$*" >> "$E2E_FAKE_COMMAND_LOG"
 
-if [[ "$*" == *"config get E2E_WOOPAYMENTS_NATIVE"* ]]; then
-	echo "Error: constant is not defined." >&2
-	exit 1
-fi
-
-if [[ "$*" == *"config set E2E_WOOPAYMENTS_NATIVE true --raw"* ]]; then
-	echo 'Success: Updated the constant.'
-	exit 0
-fi
-
-if [[ "$*" == *"config delete E2E_WOOPAYMENTS_NATIVE"* ]]; then
-	echo 'Success: Deleted the constant.'
-	exit 0
-fi
-
 if [[ "$*" == *"wc-native-payments status"* ]]; then
 	echo 'Owner: native'
 	exit 0
 fi
 
 if [[ "$*" == *"active_theme_exists"* ]]; then
-	if [[ "${E2E_FAKE_NATIVE_THEME_MISSING:-0}" == '1' ]] &&
-		! grep -Fq 'theme activate twentytwentyfive' "$E2E_FAKE_COMMAND_LOG"; then
+	if [[ "${E2E_FAKE_NATIVE_THEME_MISSING:-0}" == '1' ]]; then
 		printf 'wp-env starting\n{"active_theme_exists":false,"active_stylesheet":"twentytwentyone","fallback_stylesheet":"twentytwentyfive"}\nwp-env done\n'
 	else
 		printf 'wp-env starting\n{"active_theme_exists":true,"active_stylesheet":"twentytwentyfive","fallback_stylesheet":"twentytwentyfive"}\nwp-env done\n'
@@ -34,13 +18,12 @@ if [[ "$*" == *"active_theme_exists"* ]]; then
 	exit 0
 fi
 
-if [[ "$*" == *"theme activate twentytwentyfive"* ]]; then
-	echo 'Success: Switched to theme twentytwentyfive.'
-	exit 0
-fi
-
 if [[ "$*" == *"/wc-native-payments-e2e/v1/status"* ]]; then
-	printf 'wp-env starting\n{"site_url":"http://native.test","wpcom_blog_id":2,"runtime_owner":"native","native_enabled":true,"account_id":"acct_native","account_connected":true,"gateway_enabled":true,"test_mode":true,"enabled_payment_methods":["card"],"last_webhook_fetch":0,"callback_probe":{"registered":false,"reachable":false,"wpcom_blog_id":0}}wp-env done\n'
+	if [[ "${E2E_FAKE_NATIVE_DISABLED:-0}" == '1' ]]; then
+		printf 'wp-env starting\n{"site_url":"http://native.test","wpcom_blog_id":2,"runtime_owner":"native","native_enabled":false,"account_id":"acct_native","account_connected":true,"gateway_enabled":true,"test_mode":true,"enabled_payment_methods":["card"],"last_webhook_fetch":0,"callback_probe":{"registered":false,"reachable":false,"wpcom_blog_id":0}}wp-env done\n'
+	else
+		printf 'wp-env starting\n{"site_url":"http://native.test","wpcom_blog_id":2,"runtime_owner":"native","native_enabled":true,"account_id":"acct_native","account_connected":true,"gateway_enabled":true,"test_mode":true,"enabled_payment_methods":["card"],"last_webhook_fetch":0,"callback_probe":{"registered":false,"reachable":false,"wpcom_blog_id":0}}wp-env done\n'
+	fi
 	exit 0
 fi
 
@@ -50,7 +33,15 @@ if [[ "$*" == *'"runtime_owner"'* ]]; then
 fi
 
 if [[ "$*" == *"/wc/v3/payments/accounts"* ]]; then
-	printf 'runner starting\n{"account_id":"acct_fixture","test_mode":true}runner done\n'
+	if [[ "${E2E_FAKE_ACCOUNT_ERROR:-0}" == '1' ]]; then
+		printf 'runner starting\n{"status":500,"is_error":true,"account_id":"acct_native","test_mode":true}runner done\n'
+	elif [[ "${E2E_FAKE_ACCOUNT_NOT_TEST_MODE:-0}" == '1' ]]; then
+		printf 'runner starting\n{"status":200,"is_error":false,"account_id":"acct_native","test_mode":false}runner done\n'
+	elif [[ "${E2E_FAKE_ACCOUNT_ID_MISMATCH:-0}" == '1' ]]; then
+		printf 'runner starting\n{"status":200,"is_error":false,"account_id":"acct_other","test_mode":true}runner done\n'
+	else
+		printf 'runner starting\n{"status":200,"is_error":false,"account_id":"acct_native","test_mode":true}runner done\n'
+	fi
 	exit 0
 fi
 
