@@ -4,7 +4,11 @@
 	"wc_base_commit": "244e7d48a9cb44768f7b8a7592877bd0ae3ee1d5",
 	"verified_at_commit": "6cf3169e9612ca185e723aea6188657d5ff309f9",
 	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
-	"source_test_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/fixtures/woopayments-native.ts",
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/pilots/saved-method-cutover.spec.ts"
+	],
+	"source_test_sha256": "eb030b164db64f97fa537b8547a6dfec57963f14cf39edc21bcc4ce232f22865",
 	"contract_ids": [
 		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-admin-transactions.spec.ts:14::Admin transactions › page should load without errors",
 		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-manual-capture.spec.ts:39::Order › Manual Capture › should create an \"On hold\" order then capture the charge",
@@ -128,6 +132,24 @@
 			"verdict": "APPROVE",
 			"source_test_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 			"summary": "Correction-cycle code review approved closure-valid evidence and the conservative two-row ledger transition with zero findings"
+		},
+		{
+			"role": "code-review-root-cause-correction",
+			"verdict": "APPROVE",
+			"source_test_sha256": "eb485e490de260d39916bcaf916ce3a27537ed6741c99fa652f3b0f351dba74a",
+			"summary": "Reviewed the exact saved-method pilot and shared fixture bundle after the quarantine-before-release correction; focused runtime and source-binding tests passed"
+		},
+		{
+			"role": "code-review-saved-card-cleanup-correction",
+			"verdict": "APPROVE",
+			"source_test_sha256": "510266cbc3df46c2cca977a6ed6144d7e265ac8b464aaf7e5b5575dbea89027e",
+			"summary": "Reviewed the exact saved-method pilot and shared fixture after provider-detachment proof, cleanup quarantine, and exact admin credential corrections; focused pilot and lock suites passed"
+		},
+		{
+			"role": "code-review-lock-release-correction",
+			"verdict": "APPROVE",
+			"source_test_sha256": "eb030b164db64f97fa537b8547a6dfec57963f14cf39edc21bcc4ce232f22865",
+			"summary": "Confirmed that every acquired lock is preflighted, required quarantine is durable before release, and publication failure retains all surviving locks"
 		}
 	],
 	"known_gaps": [],

@@ -606,7 +606,11 @@ const assertMigrationEvidence = (
 		parsedEvidenceByPath.set( row.evidence_path, evidence );
 	}
 
-	validateMigrationEvidence( evidence, { row, metadata } );
+	validateMigrationEvidence( evidence, {
+		row,
+		metadata,
+		repositoryRoot,
+	} );
 };
 
 const assertRowState = ( row, repositoryRoot, realRepositoryRoot ) => {

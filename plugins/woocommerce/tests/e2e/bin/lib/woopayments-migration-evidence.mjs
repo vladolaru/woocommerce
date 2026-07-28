@@ -1,3 +1,7 @@
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import {
 	isAnchoredMessagePattern,
 	LOCAL_GAP_ID_PATTERN,
@@ -54,6 +58,7 @@ const EVIDENCE_KEYS = [
 	'wc_base_commit',
 	'verified_at_commit',
 	'reference_contract_commit',
+	'source_test_paths',
 	'source_test_sha256',
 	'contract_ids',
 	'targets',
@@ -275,6 +280,56 @@ const assertRepositoryRelativePath = ( value, label ) => {
 	}
 };
 
+const sha256 = ( value ) =>
+	createHash( 'sha256' ).update( value ).digest( 'hex' );
+
+const assertSourceTestBundle = (
+	sourceTestPaths,
+	sourceTestSha256,
+	repositoryRoot
+) => {
+	assertArray( sourceTestPaths, 'source_test_paths' );
+	if ( sourceTestPaths.length === 0 ) {
+		throw new Error(
+			'Invalid migration evidence source_test_paths; expected at least one reviewed source'
+		);
+	}
+
+	const uniquePaths = new Set();
+	for ( const [ index, sourceTestPath ] of sourceTestPaths.entries() ) {
+		assertRepositoryRelativePath(
+			sourceTestPath,
+			`source_test_paths[${ index }]`
+		);
+		if ( uniquePaths.has( sourceTestPath ) ) {
+			throw new Error(
+				`Invalid migration evidence source_test_paths; duplicate path ${ sourceTestPath }`
+			);
+		}
+		uniquePaths.add( sourceTestPath );
+	}
+
+	const sourceEntries = [ ...uniquePaths ].toSorted().map( ( sourcePath ) => {
+		let contents;
+		try {
+			contents = readFileSync( resolve( repositoryRoot, sourcePath ) );
+		} catch ( error ) {
+			throw new Error(
+				`Invalid migration evidence source_test_paths; cannot read ${ sourcePath }`,
+				{ cause: error }
+			);
+		}
+		return [ sourcePath, sha256( contents ) ];
+	} );
+	const actualSha256 = sha256( JSON.stringify( sourceEntries ) );
+
+	if ( actualSha256 !== sourceTestSha256 ) {
+		throw new Error(
+			'Invalid migration evidence source bundle SHA-256; reviewed source changed'
+		);
+	}
+};
+
 const assertTargets = ( targets, row ) => {
 	assertArray( targets, 'targets' );
 
@@ -369,14 +424,13 @@ const assertReviews = ( reviews, sourceTestSha256 ) => {
 
 	if (
 		reviews.length === 0 ||
-		reviews.some(
-			( review ) =>
-				review.verdict !== 'APPROVE' ||
-				review.source_test_sha256 !== sourceTestSha256
+		reviews.some( ( review ) => review.verdict !== 'APPROVE' ) ||
+		! reviews.some(
+			( review ) => review.source_test_sha256 === sourceTestSha256
 		)
 	) {
 		throw new Error(
-			'Invalid migration evidence reviews; every review must approve the source test SHA-256'
+			'Invalid migration evidence reviews; every review must approve and at least one must bind the current source test SHA-256'
 		);
 	}
 };
@@ -479,14 +533,19 @@ const assertDeferral = ( deferral, row, evidence ) => {
 
 export const validateMigrationEvidence = (
 	evidence,
-	{ row, metadata } = {}
+	{ row, metadata, repositoryRoot } = {}
 ) => {
 	assertPublicSafeJson( evidence );
 	assertExactKeys( evidence, EVIDENCE_KEYS, 'migration evidence' );
 
-	if ( ! isPlainObject( row ) || ! isPlainObject( metadata ) ) {
+	if (
+		! isPlainObject( row ) ||
+		! isPlainObject( metadata ) ||
+		typeof repositoryRoot !== 'string' ||
+		repositoryRoot.length === 0
+	) {
 		throw new Error(
-			'Migration evidence requires row and metadata context'
+			'Migration evidence requires row, metadata, and repository root context'
 		);
 	}
 
@@ -520,6 +579,11 @@ export const validateMigrationEvidence = (
 		evidence.source_test_sha256,
 		'source_test_sha256',
 		SHA256_PATTERN
+	);
+	assertSourceTestBundle(
+		evidence.source_test_paths,
+		evidence.source_test_sha256,
+		repositoryRoot
 	);
 
 	assertArray( evidence.contract_ids, 'contract_ids' );

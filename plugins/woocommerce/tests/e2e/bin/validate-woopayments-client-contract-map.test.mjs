@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import {
 	existsSync,
 	mkdirSync,
@@ -59,7 +60,8 @@ const createValidEvidence = ( fixtureRow, overrides = {} ) => ( {
 	wc_base_commit: '1'.repeat( 40 ),
 	verified_at_commit: '2'.repeat( 40 ),
 	reference_contract_commit: '6dda1d4eb101f05c22f60882d67a22f75281ae45',
-	source_test_sha256: 'a'.repeat( 64 ),
+	source_test_paths: [ ...DEFAULT_SOURCE_TEST_PATHS ],
+	source_test_sha256: DEFAULT_SOURCE_TEST_SHA256,
 	contract_ids: [ fixtureRow.case_id ],
 	targets: [
 		{
@@ -79,13 +81,13 @@ const createValidEvidence = ( fixtureRow, overrides = {} ) => ( {
 		{
 			role: 'spec',
 			verdict: 'APPROVE',
-			source_test_sha256: 'a'.repeat( 64 ),
+			source_test_sha256: DEFAULT_SOURCE_TEST_SHA256,
 			summary: 'contract preserved',
 		},
 		{
 			role: 'code',
 			verdict: 'APPROVE',
-			source_test_sha256: 'a'.repeat( 64 ),
+			source_test_sha256: DEFAULT_SOURCE_TEST_SHA256,
 			summary: 'implementation approved',
 		},
 	],
@@ -97,7 +99,33 @@ const createValidEvidence = ( fixtureRow, overrides = {} ) => ( {
 const createEvidenceContext = ( row ) => ( {
 	row,
 	metadata,
+	repositoryRoot,
 } );
+
+const calculateSourceBundleSha256 = ( repositoryPaths ) =>
+	createHash( 'sha256' )
+		.update(
+			JSON.stringify(
+				repositoryPaths.toSorted().map( ( repositoryPath ) => [
+					repositoryPath,
+					createHash( 'sha256' )
+						.update(
+							readFileSync(
+								resolve( repositoryRoot, repositoryPath )
+							)
+						)
+						.digest( 'hex' ),
+				] )
+			)
+		)
+		.digest( 'hex' );
+
+const DEFAULT_SOURCE_TEST_PATHS = [
+	'plugins/woocommerce/tests/e2e/utils/woopayments-native/known-gap-format.mjs',
+];
+const DEFAULT_SOURCE_TEST_SHA256 = calculateSourceBundleSha256(
+	DEFAULT_SOURCE_TEST_PATHS
+);
 
 const serializeLegacyContractMap = () => {
 	const legacyHeaders = [
@@ -1105,6 +1133,46 @@ test( 'accepts public-safe evidence bound to the referencing row', () => {
 	);
 } );
 
+test( 'rejects closure evidence after its reviewed source bundle changes', () => {
+	const row = {
+		...contractMap.rows[ 0 ],
+		target_contract: 'Native fixture contract',
+		migration_state: 'closed',
+		native_support_state: 'supported',
+	};
+	const temporaryDirectory = createRepositoryTemporaryDirectory();
+	const sourcePath = join( temporaryDirectory, 'reviewed-source.ts' );
+	const repositorySourcePath = repositoryRelativePath( sourcePath );
+	writeFileSync( sourcePath, 'export const reviewed = true;\n' );
+	const sourceTestSha256 = calculateSourceBundleSha256( [
+		repositorySourcePath,
+	] );
+	const evidence = createValidEvidence( row, {
+		source_test_paths: [ repositorySourcePath ],
+		source_test_sha256: sourceTestSha256,
+		reviews: [
+			{
+				role: 'code',
+				verdict: 'APPROVE',
+				source_test_sha256: sourceTestSha256,
+				summary: 'exact source bundle approved',
+			},
+		],
+	} );
+
+	assert.doesNotThrow( () =>
+		validateMigrationEvidence( evidence, createEvidenceContext( row ) )
+	);
+
+	writeFileSync( sourcePath, 'export const reviewed = false;\n' );
+
+	assert.throws(
+		() =>
+			validateMigrationEvidence( evidence, createEvidenceContext( row ) ),
+		/source bundle SHA-256/
+	);
+} );
+
 test( 'accepts public-safe Phase 3 proof through the approved evidence entries', () => {
 	const artifactSha256 = 'b'.repeat( 64 );
 	const providerCorrelationSha256 = 'c'.repeat( 64 );
@@ -1128,13 +1196,13 @@ test( 'accepts public-safe Phase 3 proof through the approved evidence entries',
 			{
 				role: 'spec',
 				verdict: 'APPROVE',
-				source_test_sha256: 'a'.repeat( 64 ),
+				source_test_sha256: DEFAULT_SOURCE_TEST_SHA256,
 				summary: `Specification provenance approved at artifact SHA-256 ${ artifactSha256 }`,
 			},
 			{
 				role: 'code',
 				verdict: 'APPROVE',
-				source_test_sha256: 'a'.repeat( 64 ),
+				source_test_sha256: DEFAULT_SOURCE_TEST_SHA256,
 				summary:
 					'The password and token safeguards were reviewed; no credential values were recorded',
 			},
@@ -1311,7 +1379,7 @@ for ( const [ description, reviews ] of [
 			{
 				role: 'spec',
 				verdict: 'REVISE',
-				source_test_sha256: 'a'.repeat( 64 ),
+				source_test_sha256: DEFAULT_SOURCE_TEST_SHA256,
 				summary: 'contract needs revision',
 			},
 		],
