@@ -7,7 +7,6 @@ import {
 	readFile,
 	rename,
 	unlink,
-	writeFile,
 } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -423,13 +422,7 @@ export class ResourceLockManager {
 				...current,
 				expiresAt: this.now() + this.leaseMs,
 			};
-			await writeFile(
-				lockPath,
-				`${ JSON.stringify( renewedPayload ) }\n`,
-				{
-					mode: 0o600,
-				}
-			);
+			await this.writeLockPayload( lockPath, renewedPayload );
 			return renewedPayload;
 		} );
 		const held = this.heldLocks.get( ownedPayload.key );
@@ -468,14 +461,10 @@ export class ResourceLockManager {
 				return false;
 			}
 
-			await writeFile(
-				lockPath,
-				`${ JSON.stringify( {
-					...current,
-					expiresAt: this.now() + this.leaseMs,
-				} ) }\n`,
-				{ mode: 0o600 }
-			);
+			await this.writeLockPayload( lockPath, {
+				...current,
+				expiresAt: this.now() + this.leaseMs,
+			} );
 			await restore();
 
 			const afterRestore = await this.readPayload( lockPath );
@@ -485,14 +474,10 @@ export class ResourceLockManager {
 			) {
 				return false;
 			}
-			await writeFile(
-				lockPath,
-				`${ JSON.stringify( {
-					...afterRestore,
-					expiresAt: this.now() + this.leaseMs,
-				} ) }\n`,
-				{ mode: 0o600 }
-			);
+			await this.writeLockPayload( lockPath, {
+				...afterRestore,
+				expiresAt: this.now() + this.leaseMs,
+			} );
 			return true;
 		} );
 	}
@@ -553,14 +538,10 @@ export class ResourceLockManager {
 				return false;
 			}
 			this.assertJournalIdentity( journal, request, journalPath );
-			await writeFile(
-				lockPath,
-				`${ JSON.stringify( {
-					...current,
-					expiresAt: this.now() + this.leaseMs,
-				} ) }\n`,
-				{ mode: 0o600 }
-			);
+			await this.writeLockPayload( lockPath, {
+				...current,
+				expiresAt: this.now() + this.leaseMs,
+			} );
 
 			await restore( journal.originalValue );
 
@@ -733,6 +714,13 @@ export class ResourceLockManager {
 			payload,
 			payload.journalId
 		);
+	}
+
+	private async writeLockPayload(
+		path: string,
+		payload: ResourceLockPayload
+	): Promise< void > {
+		await writeDurableJson( this.lockDir, path, payload, randomUUID() );
 	}
 
 	private async syncLockDirectory(): Promise< void > {

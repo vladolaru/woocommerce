@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { once } from 'node:events';
-import { readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { join, resolve as resolvePath } from 'node:path';
 import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
@@ -815,6 +815,35 @@ test( 'renews an owned lease for another 90 seconds', async () => {
 		await lock.renew();
 
 		expect( lock.payload.expiresAt ).toBe( 130_000 );
+		await lock.release();
+	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'atomically replaces the published lock record during renewal', async () => {
+	const directory = await lockDirectory();
+	const manager = new ResourceLockManager( {
+		lockDir: directory,
+		runId: 'run-atomic-renew',
+		pid: 1003,
+		autoRenew: false,
+	} );
+
+	try {
+		const lock = await manager.acquire( accountRequest );
+		const lockFile = ( await readdir( directory ) ).find( ( file ) =>
+			file.endsWith( '.lock' )
+		);
+		expect( lockFile ).toBeDefined();
+		const lockPath = join( directory, lockFile as string );
+		const before = await stat( lockPath );
+
+		await lock.renew();
+
+		const after = await stat( lockPath );
+		expect( after.ino ).not.toBe( before.ino );
+		await expect( lock.isOwned() ).resolves.toBe( true );
 		await lock.release();
 	} finally {
 		await rm( directory, { recursive: true, force: true } );
