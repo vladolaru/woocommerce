@@ -124,7 +124,27 @@ function requireValue( name: string, fallback?: string ): string {
 	if ( ! value ) {
 		throw new Error( `${ name } is required for WooPayments pilots.` );
 	}
-	return value.replace( /\/+$/, '' );
+	return value;
+}
+
+function requireUrlValue( name: string, fallback?: string ): string {
+	return requireValue( name, fallback ).replace( /\/+$/, '' );
+}
+
+function getWooPaymentsAdminCredentials(): {
+	username: string;
+	password: string;
+} {
+	return {
+		username: requireValue(
+			'E2E_WOOPAYMENTS_ADMIN_USERNAME',
+			admin.username
+		),
+		password: requireValue(
+			'E2E_WOOPAYMENTS_ADMIN_PASSWORD',
+			admin.password
+		),
+	};
 }
 
 function requireNumber( name: string ): number {
@@ -1399,14 +1419,15 @@ export class WooPaymentsPilotRuntime {
 	}
 
 	private async logInAsAdmin( page: Page ): Promise< void > {
+		const credentials = getWooPaymentsAdminCredentials();
 		await page.context().clearCookies();
 		await page.goto( 'wp-login.php' );
 		await page
 			.getByLabel( 'Username or Email Address' )
-			.fill( admin.username );
+			.fill( credentials.username );
 		await page
 			.getByRole( 'textbox', { name: 'Password' } )
-			.fill( admin.password );
+			.fill( credentials.password );
 		await page.getByRole( 'button', { name: 'Log In' } ).click();
 	}
 
@@ -1762,16 +1783,10 @@ export const test = baseTest.extend< WooPaymentsNativeFixtures >( {
 		const adminContext = await browser.newContext( {
 			baseURL,
 		} );
-		await authenticateAdminContext( adminContext, {
-			username: requireValue(
-				'E2E_WOOPAYMENTS_ADMIN_USERNAME',
-				admin.username
-			),
-			password: requireValue(
-				'E2E_WOOPAYMENTS_ADMIN_PASSWORD',
-				admin.password
-			),
-		} );
+		await authenticateAdminContext(
+			adminContext,
+			getWooPaymentsAdminCredentials()
+		);
 		await use( adminContext.request );
 		await adminContext.close();
 	},
@@ -1785,7 +1800,7 @@ export const test = baseTest.extend< WooPaymentsNativeFixtures >( {
 		async ( { adminApi, baseURL }, use ) => {
 			const runtime = getRuntime();
 			const expected = {
-				siteUrl: requireValue( 'E2E_WOOPAYMENTS_SITE_URL', baseURL ),
+				siteUrl: requireUrlValue( 'E2E_WOOPAYMENTS_SITE_URL', baseURL ),
 				wpcomBlogId: requireNumber( 'E2E_WOOPAYMENTS_WPCOM_BLOG_ID' ),
 				accountId: requireValue( 'E2E_WOOPAYMENTS_ACCOUNT_ID' ),
 			};

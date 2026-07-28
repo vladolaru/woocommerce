@@ -1561,6 +1561,10 @@ test( 'blocks a saved-card default update after lock loss during preparation', a
 test( 'drives the nonce-protected product cutover controller entry point', async () => {
 	const directory = await lockDirectory();
 	const calls: RequestCall[] = [];
+	const previousAdminUsername = process.env.E2E_WOOPAYMENTS_ADMIN_USERNAME;
+	const previousAdminPassword = process.env.E2E_WOOPAYMENTS_ADMIN_PASSWORD;
+	process.env.E2E_WOOPAYMENTS_ADMIN_USERNAME = 'standing-store-admin';
+	process.env.E2E_WOOPAYMENTS_ADMIN_PASSWORD = 'standing-store-password/';
 	const pilotRuntime = runtime( directory, calls, {
 		runtime: 'transition',
 		runtimeStatuses: [
@@ -1601,6 +1605,7 @@ test( 'drives the nonce-protected product cutover controller entry point', async
 		],
 	} );
 	let cutoverClicked = false;
+	const loginValues: string[] = [];
 	const cutoverLink = visibleLocator( {
 		click: async () => {
 			cutoverClicked = true;
@@ -1615,7 +1620,12 @@ test( 'drives the nonce-protected product cutover controller entry point', async
 			clearCookies: async () => {},
 		} ),
 		goto: async () => {},
-		getByLabel: () => visibleLocator(),
+		getByLabel: () =>
+			visibleLocator( {
+				fill: async ( value ) => {
+					loginValues.push( value );
+				},
+			} ),
 		getByRole: (
 			role: string,
 			options?: { exact?: boolean; name?: string | RegExp }
@@ -1627,10 +1637,16 @@ test( 'drives the nonce-protected product cutover controller entry point', async
 			}
 			if (
 				( role === 'button' && name === 'Log In' ) ||
-				( role === 'textbox' && name === 'Password' ) ||
 				( role === 'textbox' && /Email address/i.test( name ) )
 			) {
 				return visibleLocator();
+			}
+			if ( role === 'textbox' && name === 'Password' ) {
+				return visibleLocator( {
+					fill: async ( value ) => {
+						loginValues.push( value );
+					},
+				} );
 			}
 			throw new Error( `Unexpected role locator: ${ role } ${ name }` );
 		},
@@ -1643,6 +1659,10 @@ test( 'drives the nonce-protected product cutover controller entry point', async
 		);
 
 		expect( cutoverClicked ).toBe( true );
+		expect( loginValues.slice( 0, 2 ) ).toEqual( [
+			'standing-store-admin',
+			'standing-store-password/',
+		] );
 		expect(
 			calls.filter(
 				( call ) =>
@@ -1650,6 +1670,16 @@ test( 'drives the nonce-protected product cutover controller entry point', async
 			)
 		).toHaveLength( 2 );
 	} finally {
+		if ( previousAdminUsername === undefined ) {
+			delete process.env.E2E_WOOPAYMENTS_ADMIN_USERNAME;
+		} else {
+			process.env.E2E_WOOPAYMENTS_ADMIN_USERNAME = previousAdminUsername;
+		}
+		if ( previousAdminPassword === undefined ) {
+			delete process.env.E2E_WOOPAYMENTS_ADMIN_PASSWORD;
+		} else {
+			process.env.E2E_WOOPAYMENTS_ADMIN_PASSWORD = previousAdminPassword;
+		}
 		await rm( directory, { recursive: true, force: true } );
 	}
 } );
