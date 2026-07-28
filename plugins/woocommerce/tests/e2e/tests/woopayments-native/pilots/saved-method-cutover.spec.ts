@@ -1,4 +1,9 @@
-import { expect, tags, test } from '../../../fixtures/woopayments-native';
+import {
+	expect,
+	ResourceQuarantineRequiredError,
+	tags,
+	test,
+} from '../../../fixtures/woopayments-native';
 import { getPaymentEvidence } from '../../../utils/woopayments-native/record-evidence';
 
 test(
@@ -24,6 +29,7 @@ test(
 					paymentMethodId: string;
 				} > = [];
 				let scenarioFailure: unknown;
+				let providerCustomerId: string | undefined;
 
 				try {
 					const firstCard =
@@ -48,6 +54,7 @@ test(
 							firstCard,
 							defaultCard,
 						] );
+					providerCustomerId = nativeDefaultCard.providerCustomerId;
 
 					const classicOrderId =
 						await pilotRuntime.payWithExactSavedCard(
@@ -95,17 +102,36 @@ test(
 				try {
 					await pilotRuntime.deleteExactSavedCards(
 						page,
-						savedCards
+						savedCards,
+						providerCustomerId
 					);
 				} catch ( cleanupFailure ) {
 					if ( scenarioFailure ) {
-						throw new AggregateError(
-							[ scenarioFailure, cleanupFailure ],
+						throw new ResourceQuarantineRequiredError(
 							'The saved-method scenario and exact saved-card cleanup both failed.',
-							{ cause: cleanupFailure }
+							'cleanup-failed',
+							new AggregateError(
+								[
+									scenarioFailure,
+									cleanupFailure instanceof
+									ResourceQuarantineRequiredError
+										? cleanupFailure.primaryError ??
+										  cleanupFailure
+										: cleanupFailure,
+								],
+								'The saved-method scenario and exact saved-card cleanup both failed.',
+								{ cause: cleanupFailure }
+							)
 						);
 					}
-					throw cleanupFailure;
+					throw cleanupFailure instanceof
+						ResourceQuarantineRequiredError
+						? cleanupFailure
+						: new ResourceQuarantineRequiredError(
+								'Exact saved-card cleanup failed.',
+								'cleanup-failed',
+								cleanupFailure
+						  );
 				}
 
 				if ( scenarioFailure ) {

@@ -30,7 +30,7 @@ import {
 	RESOURCE_QUARANTINE_ANNOTATION,
 	type ResourceQuarantineReceipt,
 } from './resource-quarantine';
-import { ResourceLockManager } from './resource-locks';
+import { ResourceLock, ResourceLockManager } from './resource-locks';
 import { temporaryLockDirectory, useLockDirectory } from './lock-test-helpers';
 import { KNOWN_GAP_ANNOTATION, KNOWN_GAP_SENTINEL } from './known-gap';
 import type { PaymentEvidence } from './record-evidence';
@@ -1015,6 +1015,7 @@ test( 'proves both exact saved-card mappings and the second-card default after n
 			tokenId: 73,
 			paymentMethodId: 'pm_second',
 			isDefault: true,
+			providerCustomerId: 'cus_exact',
 		} );
 	} finally {
 		await rm( directory, { recursive: true, force: true } );
@@ -1178,6 +1179,7 @@ test( 'deletes only the two exact run-owned saved cards through My Account', asy
 	const directory = await lockDirectory();
 	const calls: RequestCall[] = [];
 	const pilotRuntime = runtime( directory, calls, {
+		providerPaymentMethods: [ [] ],
 		savedCardEvidence: [
 			{
 				creation_ready: true,
@@ -1234,14 +1236,101 @@ test( 'deletes only the two exact run-owned saved cards through My Account', asy
 		await pilotRuntime.withProviderWriteLocks(
 			{ recordEvent: 'saved-card-cleanup' },
 			async () =>
-				pilotRuntime.deleteExactSavedCards( page, [
-					{ tokenId: 73, paymentMethodId: 'pm_first' },
-					{ tokenId: 81, paymentMethodId: 'pm_second' },
-				] )
+				pilotRuntime.deleteExactSavedCards(
+					page,
+					[
+						{ tokenId: 73, paymentMethodId: 'pm_first' },
+						{ tokenId: 81, paymentMethodId: 'pm_second' },
+					],
+					'cus_exact'
+				)
 		);
 
 		expect( deletedTokenIds ).toEqual( [ 81, 73 ] );
 		expect( remainingTokenIds ).toEqual( new Set( [ 7 ] ) );
+	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'quarantines saved-card resources while an exact provider payment method remains attached', async () => {
+	const directory = await lockDirectory();
+	const calls: RequestCall[] = [];
+	const pilotRuntime = runtime( directory, calls, {
+		savedCardEvidence: [
+			{
+				creation_ready: true,
+				tokens: [],
+			},
+		],
+		providerPaymentMethods: [ [ { id: 'pm_first' } ] ],
+	} );
+	const remainingTokenIds = new Set( [ 73, 81 ] );
+	const deleteAction = ( tokenId: number ) =>
+		visibleLocator( {
+			click: async () => {
+				remainingTokenIds.delete( tokenId );
+			},
+			getAttribute: async ( name ) =>
+				name === 'href'
+					? `http://native.test/my-account/delete-payment-method/${ tokenId }/?_wpnonce=nonce-${ tokenId }`
+					: null,
+		} );
+	const page = {
+		context: () => ( {
+			clearCookies: async () => {},
+		} ),
+		goto: async () => {},
+		getByLabel: () => visibleLocator(),
+		getByText: () => visibleLocator(),
+		getByRole: ( role: string, options?: { name?: string | RegExp } ) => {
+			const name = String( options?.name ?? '' );
+			if ( role === 'link' && name === 'Delete' ) {
+				return visibleLocator( {
+					all: async () =>
+						[ ...remainingTokenIds ].map( deleteAction ),
+				} );
+			}
+			if (
+				( role === 'button' && name === 'Log In' ) ||
+				( role === 'textbox' && name === 'Password' ) ||
+				( role === 'textbox' && /Email address/i.test( name ) )
+			) {
+				return visibleLocator();
+			}
+			throw new Error( `Unexpected role locator: ${ role } ${ name }` );
+		},
+	} as unknown as Page;
+	try {
+		await expect(
+			pilotRuntime.withProviderWriteLocks(
+				{ recordEvent: 'saved-card-provider-cleanup' },
+				async () =>
+					pilotRuntime.deleteExactSavedCards(
+						page,
+						[
+							{
+								tokenId: 73,
+								paymentMethodId: 'pm_first',
+							},
+							{
+								tokenId: 81,
+								paymentMethodId: 'pm_second',
+							},
+						],
+						'cus_exact'
+					)
+			)
+		).rejects.toThrow( /provider payment method pm_first.*attached/i );
+		for ( const key of [
+			'acct_native/account:provider-writes',
+			'acct_native/native-store/store:native-store',
+			'acct_native/native-store/record-event:saved-card-provider-cleanup',
+		] ) {
+			await expect(
+				assertResourcesUsable( [ key ], directory )
+			).rejects.toThrow( /quarantined/i );
+		}
 	} finally {
 		await rm( directory, { recursive: true, force: true } );
 	}
@@ -1829,6 +1918,37 @@ test( 'lock release failure quarantines every lock acquired by the scenario', as
 	}
 } );
 
+test( 'keeps every owned lock when required quarantine publication fails', async () => {
+	const directory = await lockDirectory();
+	const calls: RequestCall[] = [];
+	const pilotRuntime = runtime( directory, calls );
+	const originalRelease = ResourceLock.prototype.release;
+	let releaseCount = 0;
+
+	ResourceLock.prototype.release = async function (
+		this: ResourceLock
+	): Promise< boolean > {
+		releaseCount += 1;
+		return originalRelease.call( this );
+	};
+
+	try {
+		await expect(
+			pilotRuntime.withProviderWriteLocks( {}, async () => {
+				await writeFile(
+					join( directory, 'quarantine' ),
+					'not-a-directory'
+				);
+				await removeOwnedLock( directory, 'account' );
+			} )
+		).rejects.toThrow( /quarantine/i );
+		expect( releaseCount ).toBe( 0 );
+	} finally {
+		ResourceLock.prototype.release = originalRelease;
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
 test( 'manual-capture restoration failure quarantines account/store/setting', async () => {
 	const directory = await lockDirectory();
 	const restoreLockDirectory = useLockDirectory( directory );
@@ -1852,6 +1972,54 @@ test( 'manual-capture restoration failure quarantines account/store/setting', as
 			);
 		}
 	} finally {
+		restoreLockDirectory();
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'publishes restoration-failure quarantine before releasing provider locks', async () => {
+	const directory = await lockDirectory();
+	const restoreLockDirectory = useLockDirectory( directory );
+	const calls: RequestCall[] = [];
+	const pilotRuntime = runtime( directory, calls, {
+		failManualCaptureRestore: true,
+	} );
+	const originalRelease = ResourceLock.prototype.release;
+	const releaseObservations: Array< {
+		key: string;
+		quarantined: boolean;
+	} > = [];
+
+	ResourceLock.prototype.release = async function (
+		this: ResourceLock
+	): Promise< boolean > {
+		let quarantined = false;
+		try {
+			await assertResourcesUsable( [ this.payload.key ], directory );
+		} catch ( error ) {
+			expect( error ).toBeInstanceOf( Error );
+			expect( ( error as Error ).message ).toMatch( /quarantined/i );
+			quarantined = true;
+		}
+		releaseObservations.push( {
+			key: this.payload.key,
+			quarantined,
+		} );
+		return originalRelease.call( this );
+	};
+
+	try {
+		await expect(
+			pilotRuntime.withCapturedManualCaptureSetting( async () => {} )
+		).rejects.toThrow( /restoration failed/i );
+		expect( releaseObservations ).toHaveLength( 4 );
+		expect(
+			releaseObservations.every(
+				( observation ) => observation.quarantined
+			)
+		).toBe( true );
+	} finally {
+		ResourceLock.prototype.release = originalRelease;
 		restoreLockDirectory();
 		await rm( directory, { recursive: true, force: true } );
 	}

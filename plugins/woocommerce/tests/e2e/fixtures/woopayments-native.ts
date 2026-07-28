@@ -49,6 +49,7 @@ interface SavedCardIdentity {
 
 interface SavedCardState extends SavedCardIdentity {
 	isDefault: boolean;
+	providerCustomerId: string;
 }
 
 interface SavedCardTokenEvidence {
@@ -591,61 +592,91 @@ export class WooPaymentsPilotRuntime {
 
 	public async deleteExactSavedCards(
 		page: Page,
-		cards: readonly SavedCardIdentity[]
+		cards: readonly SavedCardIdentity[],
+		providerCustomerId?: string
 	): Promise< void > {
 		if ( cards.length === 0 ) {
 			return;
 		}
 
-		await this.assertCanWrite();
-		this.requireApprovedProviderFixture( 'saved-card-cleanup' );
-		await this.logInAsCustomer( page );
+		try {
+			await this.assertCanWrite();
+			this.requireApprovedProviderFixture( 'saved-card-cleanup' );
+			await this.logInAsCustomer( page );
 
-		for ( const card of cards.toReversed() ) {
-			await page.goto( 'my-account/payment-methods/' );
-			const candidates = await page
-				.getByRole( 'link', { name: 'Delete', exact: true } )
-				.all();
-			const matchingActions: Locator[] = [];
-			for ( const candidate of candidates ) {
-				const href = await candidate.getAttribute( 'href' );
-				if ( ! href ) {
-					continue;
+			for ( const card of cards.toReversed() ) {
+				await page.goto( 'my-account/payment-methods/' );
+				const candidates = await page
+					.getByRole( 'link', { name: 'Delete', exact: true } )
+					.all();
+				const matchingActions: Locator[] = [];
+				for ( const candidate of candidates ) {
+					const href = await candidate.getAttribute( 'href' );
+					if ( ! href ) {
+						continue;
+					}
+					const url = new URL( href, this.baseURL );
+					if (
+						url.pathname.endsWith(
+							`/delete-payment-method/${ card.tokenId }/`
+						) &&
+						url.searchParams.has( '_wpnonce' )
+					) {
+						matchingActions.push( candidate );
+					}
 				}
-				const url = new URL( href, this.baseURL );
+				if ( matchingActions.length !== 1 ) {
+					throw new Error(
+						`Saved-card delete action is not uniquely bound to local token ${ card.tokenId }.`
+					);
+				}
+				await this.performWrite( () => matchingActions[ 0 ].click() );
+				await expect(
+					page.getByText( 'Payment method deleted.', { exact: true } )
+				).toBeVisible();
+			}
+
+			const evidence = await this.getSavedCardEvidence();
+			for ( const card of cards ) {
 				if (
-					url.pathname.endsWith(
-						`/delete-payment-method/${ card.tokenId }/`
-					) &&
-					url.searchParams.has( '_wpnonce' )
+					evidence.tokens.some(
+						( token ) =>
+							token.tokenId === card.tokenId ||
+							token.paymentMethodId === card.paymentMethodId
+					)
 				) {
-					matchingActions.push( candidate );
+					throw new Error(
+						`Saved-card cleanup did not remove exact token ${ card.tokenId } (${ card.paymentMethodId }).`
+					);
 				}
 			}
-			if ( matchingActions.length !== 1 ) {
+			if ( ! providerCustomerId ) {
 				throw new Error(
-					`Saved-card delete action is not uniquely bound to local token ${ card.tokenId }.`
+					'Saved-card cleanup cannot prove provider detachment without an exact provider customer ID.'
 				);
 			}
-			await this.performWrite( () => matchingActions[ 0 ].click() );
-			await expect(
-				page.getByText( 'Payment method deleted.', { exact: true } )
-			).toBeVisible();
-		}
 
-		const evidence = await this.getSavedCardEvidence();
-		for ( const card of cards ) {
-			if (
-				evidence.tokens.some(
-					( token ) =>
-						token.tokenId === card.tokenId ||
-						token.paymentMethodId === card.paymentMethodId
-				)
-			) {
-				throw new Error(
-					`Saved-card cleanup did not remove exact token ${ card.tokenId } (${ card.paymentMethodId }).`
-				);
+			const providerIds = await this.getProviderPaymentMethodIds(
+				providerCustomerId
+			);
+			for ( const card of cards ) {
+				if ( providerIds.includes( card.paymentMethodId ) ) {
+					throw new Error(
+						`Saved-card cleanup left provider payment method ${ card.paymentMethodId } attached.`
+					);
+				}
 			}
+		} catch ( error ) {
+			if ( error instanceof ResourceQuarantineRequiredError ) {
+				throw error;
+			}
+			throw new ResourceQuarantineRequiredError(
+				error instanceof Error
+					? error.message
+					: 'Exact saved-card cleanup failed.',
+				'cleanup-failed',
+				error
+			);
 		}
 	}
 
@@ -732,35 +763,9 @@ export class WooPaymentsPilotRuntime {
 			);
 		}
 
-		const paymentMethodsResponse = await this.adminApi.get(
-			`/wp-json/wc/v3/payments/customers/${ encodeURIComponent(
-				evidence.providerCustomerId
-			) }/payment_methods`
+		const providerIds = await this.getProviderPaymentMethodIds(
+			evidence.providerCustomerId
 		);
-		if ( ! paymentMethodsResponse.ok() ) {
-			throw new Error(
-				`Provider payment-method evidence failed: HTTP ${ paymentMethodsResponse.status() }.`
-			);
-		}
-		const paymentMethods = await paymentMethodsResponse.json();
-		if ( ! Array.isArray( paymentMethods ) ) {
-			throw new Error(
-				'Provider payment-method evidence must be an array.'
-			);
-		}
-		const providerIds = paymentMethods.map( ( paymentMethod, index ) => {
-			if (
-				typeof paymentMethod !== 'object' ||
-				paymentMethod === null ||
-				typeof ( paymentMethod as { id?: unknown } ).id !== 'string' ||
-				( paymentMethod as { id: string } ).id === ''
-			) {
-				throw new Error(
-					`Provider payment-method evidence at index ${ index } has no exact ID.`
-				);
-			}
-			return ( paymentMethod as { id: string } ).id;
-		} );
 		for ( const card of cards ) {
 			const providerMatches = providerIds.filter(
 				( paymentMethodId ) => paymentMethodId === card.paymentMethodId
@@ -775,6 +780,7 @@ export class WooPaymentsPilotRuntime {
 		return {
 			...defaultCard,
 			isDefault: true,
+			providerCustomerId: evidence.providerCustomerId,
 		};
 	}
 
@@ -892,8 +898,64 @@ export class WooPaymentsPilotRuntime {
 			primaryError = error;
 		}
 
+		let quarantineAttempted = false;
+		const publishQuarantine = async (
+			reasonCode: ResourceQuarantineReceipt[ 'reasonCode' ]
+		): Promise< void > => {
+			if ( quarantineAttempted ) {
+				return;
+			}
+			quarantineAttempted = true;
+
+			const receipts = await quarantineResources(
+				locks.map( ( lock ) => lock.payload.key ),
+				reasonCode,
+				`test-results/${ this.runId }`,
+				this.lockDir
+			);
+			for ( const receipt of receipts ) {
+				console.error( 'WooPayments resource quarantined:', {
+					resourceKeyHash: receipt.resourceKeyHash,
+					evidencePath: receipt.evidencePath,
+				} );
+				await this.onResourceQuarantined?.( receipt );
+			}
+		};
+
 		this.activeProviderWriteLocks = undefined;
+		let quarantineReason =
+			primaryError instanceof ResourceQuarantineRequiredError
+				? primaryError.reasonCode
+				: undefined;
+		const unownedLocks = new Set< ResourceLock >();
+		for ( const lock of locks ) {
+			try {
+				if ( await lock.isOwned() ) {
+					continue;
+				}
+				teardownErrors.push(
+					new Error(
+						`WooPayments resource lock ${ lock.payload.key } lost ownership before release.`
+					)
+				);
+			} catch ( error ) {
+				teardownErrors.push(
+					error instanceof Error
+						? error
+						: new Error( String( error ) )
+				);
+			}
+			unownedLocks.add( lock );
+			quarantineReason ??= 'lock-ownership-lost';
+		}
+		if ( quarantineReason ) {
+			await publishQuarantine( quarantineReason );
+		}
+
 		for ( const lock of locks.toReversed() ) {
+			if ( unownedLocks.has( lock ) ) {
+				continue;
+			}
 			try {
 				const released = await lock.release();
 				if ( ! released ) {
@@ -902,6 +964,7 @@ export class WooPaymentsPilotRuntime {
 							`WooPayments resource lock ${ lock.payload.key } was not released because ownership was lost.`
 						)
 					);
+					await publishQuarantine( 'lock-ownership-lost' );
 				}
 			} catch ( error ) {
 				teardownErrors.push(
@@ -909,37 +972,7 @@ export class WooPaymentsPilotRuntime {
 						? error
 						: new Error( String( error ) )
 				);
-			}
-		}
-
-		let quarantineReason:
-			| ResourceQuarantineReceipt[ 'reasonCode' ]
-			| undefined;
-		if ( primaryError instanceof ResourceQuarantineRequiredError ) {
-			quarantineReason = primaryError.reasonCode;
-		} else if ( teardownErrors.length > 0 ) {
-			quarantineReason = 'lock-ownership-lost';
-		}
-		if ( quarantineReason ) {
-			try {
-				const receipts = await quarantineResources(
-					locks.map( ( lock ) => lock.payload.key ),
-					quarantineReason,
-					`test-results/${ this.runId }`,
-					this.lockDir
-				);
-				for ( const receipt of receipts ) {
-					console.error( 'WooPayments resource quarantined:', {
-						resourceKeyHash: receipt.resourceKeyHash,
-						evidencePath: receipt.evidencePath,
-					} );
-					await this.onResourceQuarantined?.( receipt );
-				}
-			} catch ( quarantineError ) {
-				console.error(
-					'WooPayments resource quarantine failed after an uncertain provider write:',
-					quarantineError
-				);
+				await publishQuarantine( 'lock-ownership-lost' );
 			}
 		}
 
@@ -1265,6 +1298,40 @@ export class WooPaymentsPilotRuntime {
 		}
 
 		return this.parseSavedCardEvidence( await response.json() );
+	}
+
+	private async getProviderPaymentMethodIds(
+		providerCustomerId: string
+	): Promise< string[] > {
+		const response = await this.adminApi.get(
+			`/wp-json/wc/v3/payments/customers/${ encodeURIComponent(
+				providerCustomerId
+			) }/payment_methods`
+		);
+		if ( ! response.ok() ) {
+			throw new Error(
+				`Provider payment-method evidence failed: HTTP ${ response.status() }.`
+			);
+		}
+		const paymentMethods = await response.json();
+		if ( ! Array.isArray( paymentMethods ) ) {
+			throw new Error(
+				'Provider payment-method evidence must be an array.'
+			);
+		}
+		return paymentMethods.map( ( paymentMethod, index ) => {
+			if (
+				typeof paymentMethod !== 'object' ||
+				paymentMethod === null ||
+				typeof ( paymentMethod as { id?: unknown } ).id !== 'string' ||
+				( paymentMethod as { id: string } ).id === ''
+			) {
+				throw new Error(
+					`Provider payment-method evidence at index ${ index } has no exact ID.`
+				);
+			}
+			return ( paymentMethod as { id: string } ).id;
+		} );
 	}
 
 	private parseSavedCardEvidence( value: unknown ): SavedCardEvidence {
