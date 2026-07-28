@@ -9,8 +9,9 @@ ROLLBACK_ARMED=0
 ROLLBACK_PROVISIONER=''
 ROLLBACK_WORKSPACE=''
 ROLLBACK_RECEIPT_PATH=''
+WORKSPACE_CLEANUP_ARMED=0
 
-rollback_created_store() {
+cleanup_failed_create() {
 	local primary_status=$?
 	trap - EXIT
 	if [[ "$ROLLBACK_ARMED" == '1' ]]; then
@@ -33,6 +34,10 @@ rollback_created_store() {
 			else
 				echo "Transition rollback cleanup failed for $ROLLBACK_WORKSPACE: $cleanup_output" >&2
 			fi
+		fi
+	elif [[ "$WORKSPACE_CLEANUP_ARMED" == '1' ]]; then
+		if ! rm -rf -- "$ROLLBACK_WORKSPACE"; then
+			echo "Transition planning failed and its workspace could not be removed: $ROLLBACK_WORKSPACE" >&2
 		fi
 	fi
 	exit "$primary_status"
@@ -206,6 +211,9 @@ create_store() {
 		exit 1
 	fi
 	mkdir "$WORKSPACE"
+	ROLLBACK_WORKSPACE="$WORKSPACE"
+	WORKSPACE_CLEANUP_ARMED=1
+	trap cleanup_failed_create EXIT
 
 	local planned
 	planned="$(
@@ -228,10 +236,9 @@ create_store() {
 	fi
 
 	ROLLBACK_PROVISIONER="$PROVISIONER"
-	ROLLBACK_WORKSPACE="$WORKSPACE"
 	ROLLBACK_RECEIPT_PATH="$WORKSPACE/rollback-receipt"
+	WORKSPACE_CLEANUP_ARMED=0
 	ROLLBACK_ARMED=1
-	trap rollback_created_store EXIT
 
 	local created
 	local create_status
@@ -339,6 +346,7 @@ create_store() {
 	' "$base_url" "$store_id" "$seed_hash" "$plugin_version" "$wpcom_blog_id" "$account_id" "$teardown_token" "$RUN_ID" "$WORKSPACE" "$ALLOCATION_PATH"
 	)"
 	ROLLBACK_ARMED=0
+	WORKSPACE_CLEANUP_ARMED=0
 	trap - EXIT
 	printf '%s\n' "$allocation_json"
 }

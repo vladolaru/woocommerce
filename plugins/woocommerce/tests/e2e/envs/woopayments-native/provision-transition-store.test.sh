@@ -98,6 +98,10 @@ expect_failure env \
 	E2E_TRANSITION_STORE_PROVISIONER="$FIXTURES/fake-transition-provisioner.sh" \
 	E2E_FAKE_TRANSITION_BASE_URL='http://localhost:8082' \
 	"$PROVISION_SCRIPT" create
+if [[ -e "$TEST_ROOT/woopayments-native-transition-standing-port" ]]; then
+	echo 'Invalid transition plan left its pre-resource workspace behind.' >&2
+	exit 1
+fi
 
 rollback_log="$TEST_ROOT/rollback.log"
 expect_failure env \
