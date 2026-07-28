@@ -1,5 +1,11 @@
 import type { TestInfo } from '@playwright/test';
 
+// @ts-expect-error Shared with the bare-Node ledger validator, so it stays .mjs.
+import {
+	isAnchoredMessagePattern,
+	LOCAL_GAP_ID_PATTERN,
+} from './known-gap-format.mjs';
+
 export const KNOWN_GAP_ANNOTATION = 'woopayments-known-gap';
 export const KNOWN_GAP_SENTINEL = '[WCPAY_KNOWN_GAP:';
 
@@ -14,7 +20,7 @@ type KnownWooPaymentsGap = {
 };
 
 function assertGapDefinition( gap: KnownWooPaymentsGap ): void {
-	if ( ! /^WPNATIVE-GAP-[0-9]{4}$/.test( gap.id ) ) {
+	if ( ! LOCAL_GAP_ID_PATTERN.test( gap.id ) ) {
 		throw new Error( `Invalid WooPayments known-gap ID: ${ gap.id }` );
 	}
 	if ( ! gap.owner.trim() ) {
@@ -23,10 +29,7 @@ function assertGapDefinition( gap: KnownWooPaymentsGap ): void {
 	if ( ! gap.reference.trim() ) {
 		throw new Error( `${ gap.id } must have a nonempty reference.` );
 	}
-	if (
-		! gap.fingerprint.messagePattern.source.startsWith( '^' ) ||
-		! gap.fingerprint.messagePattern.source.endsWith( '$' )
-	) {
+	if ( ! isAnchoredMessagePattern( gap.fingerprint.messagePattern.source ) ) {
 		throw new Error( `${ gap.id } must use an anchored message pattern.` );
 	}
 }

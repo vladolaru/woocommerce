@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import {
 	appendFile,
 	type FileHandle,
@@ -11,6 +11,8 @@ import {
 } from 'node:fs/promises';
 import { join } from 'node:path';
 
+// @ts-expect-error Node's direct TypeScript lock workers require the explicit extension.
+import { sha256, syncDirectory, writeDurableJson } from './durable-fs.ts';
 // @ts-expect-error Node's direct TypeScript lock workers require the explicit extension.
 import { assertResourcesUsable } from './resource-quarantine.ts';
 
@@ -26,6 +28,24 @@ export interface ResourceLockRequest {
 	kind: ResourceLockKind;
 	resource: string;
 	diagnosticPath: string;
+}
+
+/**
+ * The single definition of a resource lock key. Quarantine receipts are keyed
+ * by the SHA-256 of this string, so anything that wants to ask "is this
+ * resource quarantined?" must derive the key here rather than hand-encode it —
+ * a divergence would silently stop matching receipts instead of failing loudly.
+ */
+export function resourceLockKey(
+	request: Pick<
+		ResourceLockRequest,
+		'providerAccountId' | 'storeId' | 'kind' | 'resource'
+	>
+): string {
+	if ( request.kind === 'account' ) {
+		return `${ request.providerAccountId }/${ request.kind }:${ request.resource }`;
+	}
+	return `${ request.providerAccountId }/${ request.storeId }/${ request.kind }:${ request.resource }`;
 }
 
 export interface ResourceLockPayload {
@@ -667,15 +687,11 @@ export class ResourceLockManager {
 	}
 
 	private getKey( request: ResourceLockRequest ): string {
-		if ( request.kind === 'account' ) {
-			return `${ request.providerAccountId }/${ request.kind }:${ request.resource }`;
-		}
-		return `${ request.providerAccountId }/${ request.storeId }/${ request.kind }:${ request.resource }`;
+		return resourceLockKey( request );
 	}
 
 	private getLockPath( key: string ): string {
-		const hash = createHash( 'sha256' ).update( key ).digest( 'hex' );
-		return join( this.lockDir, `${ hash }.lock` );
+		return join( this.lockDir, `${ sha256( key ) }.lock` );
 	}
 
 	private getHeldFeatureRequest(
@@ -695,7 +711,7 @@ export class ResourceLockManager {
 	}
 
 	private redactIdentity( identity: string ): string {
-		return createHash( 'sha256' ).update( identity ).digest( 'hex' );
+		return sha256( identity );
 	}
 
 	private getRestorationJournalPath( request: ResourceLockRequest ): string {
@@ -704,33 +720,23 @@ export class ResourceLockManager {
 			request.storeId,
 			request.resource,
 		].join( '\u0000' );
-		const hash = createHash( 'sha256' ).update( identity ).digest( 'hex' );
-		return join( this.lockDir, `${ hash }.restoration.json` );
+		return join( this.lockDir, `${ sha256( identity ) }.restoration.json` );
 	}
 
 	private async writeDurableJson(
 		path: string,
 		payload: RestorationJournalPayload
 	): Promise< void > {
-		const temporaryPath = `${ path }.tmp-${ payload.journalId }`;
-		const handle = await open( temporaryPath, 'wx', 0o600 );
-		try {
-			await handle.writeFile( `${ JSON.stringify( payload ) }\n` );
-			await handle.sync();
-		} finally {
-			await handle.close();
-		}
-		await rename( temporaryPath, path );
-		await this.syncLockDirectory();
+		await writeDurableJson(
+			this.lockDir,
+			path,
+			payload,
+			payload.journalId
+		);
 	}
 
 	private async syncLockDirectory(): Promise< void > {
-		const directory = await open( this.lockDir, 'r' );
-		try {
-			await directory.sync();
-		} finally {
-			await directory.close();
-		}
+		await syncDirectory( this.lockDir );
 	}
 
 	private async readRestorationJournal(

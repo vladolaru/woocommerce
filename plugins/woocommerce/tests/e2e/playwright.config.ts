@@ -36,7 +36,7 @@ export const ADMIN_STATE_PATH = `${ STORAGE_DIR_PATH }/admin.json`;
 export const CUSTOMER_STATE_PATH = `${ STORAGE_DIR_PATH }/customer.json`;
 export const CONSUMER_KEY = { name: '', key: '', secret: '' };
 
-const reporter = [
+export const reporter = [
 	[ 'list' ],
 	[
 		'allure-playwright',
@@ -67,7 +67,6 @@ const reporter = [
 		`${ TESTS_ROOT_PATH }/reporters/environment-reporter.ts`,
 		{ outputFolder: `${ TESTS_ROOT_PATH }/test-results/allure-results` },
 	],
-	[ `${ TESTS_ROOT_PATH }/reporters/woopayments-known-gaps.ts` ],
 ];
 
 if ( process.env.CI ) {

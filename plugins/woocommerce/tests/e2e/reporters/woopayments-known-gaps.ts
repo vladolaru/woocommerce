@@ -4,8 +4,7 @@ import {
 	KNOWN_GAP_ANNOTATION,
 	KNOWN_GAP_SENTINEL,
 } from '../utils/woopayments-native/known-gap';
-
-const RESOURCE_QUARANTINE_ANNOTATION = 'woopayments-resource-quarantine';
+import { RESOURCE_QUARANTINE_ANNOTATION } from '../utils/woopayments-native/resource-quarantine';
 
 class WooPaymentsKnownGapsReporter implements Reporter {
 	private violations: string[] = [];

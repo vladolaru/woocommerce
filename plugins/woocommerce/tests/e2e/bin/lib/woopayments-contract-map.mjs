@@ -2,7 +2,10 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep as pathSeparator } from 'node:path';
 
-import { validateMigrationEvidence } from './woopayments-migration-evidence.mjs';
+import {
+	isRepositoryRelativePath,
+	validateMigrationEvidence,
+} from './woopayments-migration-evidence.mjs';
 
 export const MIGRATION_STATES = new Set( [
 	'planned',
@@ -12,6 +15,18 @@ export const MIGRATION_STATES = new Set( [
 	'closed',
 	'deferred',
 ] );
+
+// States in which the migration work itself has been carried out, so the row
+// must name a real target file and a real owner.
+export const EXECUTED_MIGRATION_STATES = new Set( [
+	'implemented',
+	'verified',
+	'closed',
+] );
+
+// States that count as terminal for a saturation check: nothing further is
+// expected of the row.
+const SATURATED_MIGRATION_STATES = new Set( [ 'closed', 'deferred' ] );
 
 export const NATIVE_SUPPORT_STATES = new Set( [
 	'not-assessed',
@@ -105,6 +120,15 @@ const LEGACY_EDITABLE_HEADERS = [
 	'closure_state',
 ];
 const LEGACY_HEADERS = [ ...FROZEN_SOURCE_HEADERS, ...LEGACY_EDITABLE_HEADERS ];
+
+// Columns the legacy schema never carried; reading a legacy ledger backfills
+// them with the same values a freshly planned row would hold.
+const LEGACY_SCHEMA_DEFAULTS = {
+	target_contract: 'pending',
+	native_support_state: 'not-assessed',
+	gap_or_decision_reference: 'none',
+	evidence_path: 'none',
+};
 const EXPECTED_METADATA = {
 	schema_version: 1,
 	source_repository: 'woocommerce/woocommerce-payments',
@@ -313,33 +337,35 @@ const assertMetadata = ( metadata ) => {
 	}
 };
 
-const assertRepositoryRelativeFilePath = ( row, column, filePath ) => {
-	const pathParts = filePath.split( '/' );
-
-	if (
-		filePath !== filePath.trim() ||
-		filePath.length === 0 ||
-		/^[a-z][a-z\d+.-]*:/i.test( filePath ) ||
-		isAbsolute( filePath ) ||
-		filePath.includes( '\\' ) ||
-		filePath.endsWith( '/' ) ||
-		pathParts.includes( '.' ) ||
-		pathParts.includes( '..' )
-	) {
-		throw new Error(
-			`Invalid ${ column } for ${ row.case_id }: ${ filePath }`
-		);
-	}
-};
-
 const splitPaths = ( row, column ) => {
 	const paths = row[ column ].split( ';' );
 
 	for ( const filePath of paths ) {
-		assertRepositoryRelativeFilePath( row, column, filePath );
+		if ( ! isRepositoryRelativePath( filePath ) ) {
+			throw new Error(
+				`Invalid ${ column } for ${ row.case_id }: ${ filePath }`
+			);
+		}
 	}
 
 	return paths;
+};
+
+/**
+ * Filesystem checks dominate a validation run: a handful of shared owner and
+ * lower-layer files are named by dozens of rows each, and every mention costs
+ * an existsSync/realpathSync/statSync triple. These caches hold results for
+ * exactly one validateContractMap() call — reset() at the top of it — so a
+ * fixture file created or deleted between calls is never served stale.
+ *
+ * Only successes are cached; a failure aborts the whole run anyway.
+ */
+let verifiedFilePaths = new Set();
+let parsedEvidenceByPath = new Map();
+
+const resetValidationCaches = () => {
+	verifiedFilePaths = new Set();
+	parsedEvidenceByPath = new Map();
 };
 
 const assertConcreteExistingFile = (
@@ -349,6 +375,10 @@ const assertConcreteExistingFile = (
 	repositoryRoot,
 	realRepositoryRoot
 ) => {
+	if ( verifiedFilePaths.has( filePath ) ) {
+		return;
+	}
+
 	const absolutePath = resolve( repositoryRoot, filePath );
 
 	if ( ! existsSync( absolutePath ) ) {
@@ -373,6 +403,8 @@ const assertConcreteExistingFile = (
 			`Non-concrete or out-of-repository ${ column } for ${ row.case_id }: ${ filePath }`
 		);
 	}
+
+	verifiedFilePaths.add( filePath );
 };
 
 const assertConcreteExistingFiles = (
@@ -552,20 +584,26 @@ const assertMigrationEvidence = (
 		realRepositoryRoot
 	);
 
-	let evidence;
+	let evidence = parsedEvidenceByPath.get( row.evidence_path );
 
-	try {
-		evidence = JSON.parse(
-			readFileSync( resolve( repositoryRoot, row.evidence_path ), 'utf8' )
-		);
-	} catch ( error ) {
-		if ( error instanceof SyntaxError ) {
-			throw new Error(
-				`Invalid migration evidence JSON for ${ row.case_id }`,
-				{ cause: error }
+	if ( evidence === undefined ) {
+		try {
+			evidence = JSON.parse(
+				readFileSync(
+					resolve( repositoryRoot, row.evidence_path ),
+					'utf8'
+				)
 			);
+		} catch ( error ) {
+			if ( error instanceof SyntaxError ) {
+				throw new Error(
+					`Invalid migration evidence JSON for ${ row.case_id }`,
+					{ cause: error }
+				);
+			}
+			throw error;
 		}
-		throw error;
+		parsedEvidenceByPath.set( row.evidence_path, evidence );
 	}
 
 	validateMigrationEvidence( evidence, { row, metadata } );
@@ -652,37 +690,32 @@ const assertRowState = ( row, repositoryRoot, realRepositoryRoot ) => {
 		}
 	}
 
-	if (
-		[ 'implemented', 'verified', 'closed' ].includes( row.migration_state )
-	) {
+	if ( EXECUTED_MIGRATION_STATES.has( row.migration_state ) ) {
 		assertExactTargetAndOwner( row );
 	}
 
-	if ( row.migration_state === 'implemented' ) {
+	if (
+		row.migration_state === 'implemented' ||
+		row.migration_state === 'verified'
+	) {
 		if ( ! assertEvidence( row, repositoryRoot, realRepositoryRoot ) ) {
+			const state =
+				row.migration_state === 'implemented'
+					? 'Implemented'
+					: 'Verified';
 			throw new Error(
-				`Implemented contract requires target evidence: ${ row.case_id }`
+				`${ state } contract requires target evidence: ${ row.case_id }`
 			);
 		}
 	}
 
-	if (
-		[ 'implemented', 'verified', 'closed' ].includes( row.migration_state )
-	) {
+	if ( EXECUTED_MIGRATION_STATES.has( row.migration_state ) ) {
 		assertConcreteExistingFiles(
 			row,
 			'target_path',
 			repositoryRoot,
 			realRepositoryRoot
 		);
-	}
-
-	if ( row.migration_state === 'verified' ) {
-		if ( ! assertEvidence( row, repositoryRoot, realRepositoryRoot ) ) {
-			throw new Error(
-				`Verified contract requires target evidence: ${ row.case_id }`
-			);
-		}
 	}
 
 	if ( row.migration_state === 'closed' ) {
@@ -765,24 +798,12 @@ export const parseContractMap = (
 
 	const rows = parsedRows.map( ( legacyRow ) =>
 		Object.fromEntries(
-			EXPECTED_HEADERS.map( ( header ) => {
-				if ( header === 'target_contract' ) {
-					return [ header, 'pending' ];
-				}
-				if ( header === 'migration_state' ) {
-					return [ header, legacyRow.closure_state ];
-				}
-				if ( header === 'native_support_state' ) {
-					return [ header, 'not-assessed' ];
-				}
-				if ( header === 'gap_or_decision_reference' ) {
-					return [ header, 'none' ];
-				}
-				if ( header === 'evidence_path' ) {
-					return [ header, 'none' ];
-				}
-				return [ header, legacyRow[ header ] ];
-			} )
+			EXPECTED_HEADERS.map( ( header ) => [
+				header,
+				header === 'migration_state'
+					? legacyRow.closure_state
+					: LEGACY_SCHEMA_DEFAULTS[ header ] ?? legacyRow[ header ],
+			] )
 		)
 	);
 
@@ -836,6 +857,7 @@ export const validateContractMap = (
 		requireMigrated = false,
 	} = {}
 ) => {
+	resetValidationCaches();
 	assertMetadata( metadata );
 
 	if (
@@ -846,12 +868,7 @@ export const validateContractMap = (
 		throw new Error( 'Invalid parsed contract map' );
 	}
 
-	if (
-		contractMap.headers.length !== EXPECTED_HEADERS.length ||
-		contractMap.headers.some(
-			( header, index ) => header !== EXPECTED_HEADERS[ index ]
-		)
-	) {
+	if ( ! hasExactHeaders( contractMap.headers, EXPECTED_HEADERS ) ) {
 		throw new Error(
 			`Invalid contract-map schema; expected the exact ${ EXPECTED_HEADERS.length } ordered columns`
 		);
@@ -941,7 +958,7 @@ export const validateContractMap = (
 
 		if (
 			requireSaturated &&
-			! [ 'closed', 'deferred' ].includes( row.migration_state )
+			! SATURATED_MIGRATION_STATES.has( row.migration_state )
 		) {
 			throw new Error( `Unsaturated contract: ${ row.case_id }` );
 		}

@@ -27,9 +27,11 @@ import WooPaymentsKnownGapsReporter from '../../reporters/woopayments-known-gaps
 import {
 	assertResourcesUsable,
 	quarantineResources,
+	RESOURCE_QUARANTINE_ANNOTATION,
 	type ResourceQuarantineReceipt,
 } from './resource-quarantine';
 import { ResourceLockManager } from './resource-locks';
+import { temporaryLockDirectory, useLockDirectory } from './lock-test-helpers';
 import { KNOWN_GAP_ANNOTATION, KNOWN_GAP_SENTINEL } from './known-gap';
 import type { PaymentEvidence } from './record-evidence';
 
@@ -348,25 +350,15 @@ function runtime(
 		123,
 		'native-store',
 		'acct_native',
-		lockDir,
-		options.onResourceQuarantined
+		{
+			lockDir,
+			onResourceQuarantined: options.onResourceQuarantined,
+		}
 	);
 }
 
 async function lockDirectory(): Promise< string > {
-	return mkdtemp( join( tmpdir(), 'woopayments-pilot-runtime-test-' ) );
-}
-
-function useLockDirectory( directory: string ): () => void {
-	const previous = process.env.E2E_WOOPAYMENTS_LOCK_DIR;
-	process.env.E2E_WOOPAYMENTS_LOCK_DIR = directory;
-	return () => {
-		if ( previous === undefined ) {
-			delete process.env.E2E_WOOPAYMENTS_LOCK_DIR;
-		} else {
-			process.env.E2E_WOOPAYMENTS_LOCK_DIR = previous;
-		}
-	};
+	return temporaryLockDirectory( 'woopayments-pilot-runtime-test-' );
 }
 
 function visibleLocator(
@@ -1986,7 +1978,7 @@ test( 'a quarantine annotation makes an expected-gap run fail', () => {
 					description: 'WPNATIVE-GAP-0001|refunds',
 				},
 				{
-					type: 'woopayments-resource-quarantine',
+					type: RESOURCE_QUARANTINE_ANNOTATION,
 					description: 'redacted-resource-hash',
 				},
 			],

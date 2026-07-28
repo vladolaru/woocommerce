@@ -68,7 +68,6 @@ const listTests = ( configPath ) => {
 				tests.push( {
 					file: spec.file,
 					projectName: test.projectName,
-					retries: projects.get( test.projectName )?.retries,
 					tags: spec.tags ?? [],
 					title: spec.title,
 				} );

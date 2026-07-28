@@ -1,14 +1,12 @@
 import { createHash } from 'node:crypto';
 import {
 	mkdir,
-	mkdtemp,
 	readFile,
 	readdir,
 	rm,
 	stat,
 	writeFile,
 } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { expect, test } from '@playwright/test';
@@ -18,6 +16,7 @@ import {
 	assertResourcesUsable,
 	quarantineResources,
 } from './resource-quarantine';
+import { temporaryLockDirectory, useLockDirectory } from './lock-test-helpers';
 
 const resourceKey = 'acct_local/account:provider-writes';
 const resourceKeyHash = createHash( 'sha256' )
@@ -25,19 +24,7 @@ const resourceKeyHash = createHash( 'sha256' )
 	.digest( 'hex' );
 
 async function quarantineDirectory(): Promise< string > {
-	return mkdtemp( join( tmpdir(), 'woopayments-quarantine-test-' ) );
-}
-
-function useLockDirectory( directory: string ): () => void {
-	const previous = process.env.E2E_WOOPAYMENTS_LOCK_DIR;
-	process.env.E2E_WOOPAYMENTS_LOCK_DIR = directory;
-	return () => {
-		if ( previous === undefined ) {
-			delete process.env.E2E_WOOPAYMENTS_LOCK_DIR;
-		} else {
-			process.env.E2E_WOOPAYMENTS_LOCK_DIR = previous;
-		}
-	};
+	return temporaryLockDirectory( 'woopayments-quarantine-test-' );
 }
 
 test( 'quarantine writes a versioned 0600 receipt using only the SHA-256 resource key', async () => {
@@ -211,6 +198,7 @@ test( 'concurrent quarantines both resolve with an immutable first receipt and v
 
 test( 'no public clear/unquarantine method exists', () => {
 	expect( Object.keys( quarantineModule ).sort() ).toEqual( [
+		'RESOURCE_QUARANTINE_ANNOTATION',
 		'assertResourcesUsable',
 		'quarantineResources',
 	] );

@@ -14,11 +14,6 @@ test(
 			tags.WOOPAYMENTS_PROVIDER,
 			tags.WOOPAYMENTS_PR,
 		],
-		annotation: {
-			type: 'woopayments-contract',
-			description:
-				'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-manual-capture.spec.ts:39::Order › Manual Capture › should create an "On hold" order then capture the charge',
-		},
 	},
 	async ( { adminApi, page, pilotRuntime, runId } ) => {
 		await pilotRuntime.withCapturedManualCaptureSetting( async () => {

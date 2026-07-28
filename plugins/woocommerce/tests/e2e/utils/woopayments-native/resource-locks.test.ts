@@ -1,7 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join, resolve as resolvePath } from 'node:path';
 import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
@@ -16,6 +15,7 @@ import {
 	type ResourceLockRequest,
 } from './resource-locks';
 import { quarantineResources } from './resource-quarantine';
+import { temporaryLockDirectory, useLockDirectory } from './lock-test-helpers';
 
 const accountRequest: ResourceLockRequest = {
 	providerAccountId: 'acct_local',
@@ -26,19 +26,7 @@ const accountRequest: ResourceLockRequest = {
 };
 
 async function lockDirectory(): Promise< string > {
-	return mkdtemp( join( tmpdir(), 'woopayments-native-lock-test-' ) );
-}
-
-function useLockDirectory( directory: string ): () => void {
-	const previous = process.env.E2E_WOOPAYMENTS_LOCK_DIR;
-	process.env.E2E_WOOPAYMENTS_LOCK_DIR = directory;
-	return () => {
-		if ( previous === undefined ) {
-			delete process.env.E2E_WOOPAYMENTS_LOCK_DIR;
-		} else {
-			process.env.E2E_WOOPAYMENTS_LOCK_DIR = previous;
-		}
-	};
+	return temporaryLockDirectory( 'woopayments-native-lock-test-' );
 }
 
 async function yieldToPeer(): Promise< void > {

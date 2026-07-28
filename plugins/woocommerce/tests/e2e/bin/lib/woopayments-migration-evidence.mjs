@@ -1,3 +1,8 @@
+import {
+	isAnchoredMessagePattern,
+	LOCAL_GAP_ID_PATTERN,
+} from '../../utils/woopayments-native/known-gap-format.mjs';
+
 const SECRET_KEY_PATTERN =
 	/(token|password|secret|authorization|cookie|raw_payload)/i;
 const ABSOLUTE_PATH_PATTERN = /^(?:\/|[A-Za-z]:[\\/])/;
@@ -13,7 +18,35 @@ const REDACTED_PROVIDER_REFERENCE_PATTERN =
 const REDACTED_PROVIDER_REFERENCE_CANDIDATE_PATTERN = /\bredacted:[^\s;,]+/g;
 const SHA1_PATTERN = /^[0-9a-f]{40}$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
-const LOCAL_GAP_ID_PATTERN = /^WPNATIVE-GAP-[0-9]{4}$/;
+const URI_SCHEME_PATTERN = /^[a-z][a-z\d+.-]*:/i;
+
+/**
+ * The one definition of a legal repository-relative path in the ledger. The
+ * contract map and the evidence records describe the same files, so they must
+ * agree on what a path may look like; each caller wraps this with its own
+ * error message rather than restating the rules.
+ */
+export const isRepositoryRelativePath = ( value ) => {
+	if (
+		typeof value !== 'string' ||
+		value.length === 0 ||
+		value !== value.trim()
+	) {
+		return false;
+	}
+
+	const pathParts = value.split( '/' );
+
+	return ! (
+		ABSOLUTE_PATH_PATTERN.test( value ) ||
+		URI_SCHEME_PATTERN.test( value ) ||
+		value.includes( '\\' ) ||
+		value.endsWith( '/' ) ||
+		pathParts.includes( '' ) ||
+		pathParts.includes( '.' ) ||
+		pathParts.includes( '..' )
+	);
+};
 
 const EVIDENCE_KEYS = [
 	'schema_version',
@@ -236,17 +269,7 @@ const assertRepositoryRelativePath = ( value, label ) => {
 	assertExactString( value, label );
 
 	for ( const repositoryPath of value.split( ';' ) ) {
-		const pathParts = repositoryPath.split( '/' );
-
-		if (
-			ABSOLUTE_PATH_PATTERN.test( repositoryPath ) ||
-			/^[a-z][a-z\d+.-]*:/i.test( repositoryPath ) ||
-			repositoryPath.includes( '\\' ) ||
-			repositoryPath.endsWith( '/' ) ||
-			pathParts.includes( '' ) ||
-			pathParts.includes( '.' ) ||
-			pathParts.includes( '..' )
-		) {
+		if ( ! isRepositoryRelativePath( repositoryPath ) ) {
 			throw new Error( `Invalid migration evidence ${ label }` );
 		}
 	}
@@ -392,8 +415,9 @@ const assertKnownGaps = ( knownGaps, row ) => {
 		);
 
 		if (
-			! knownGap.fingerprint.message_pattern.startsWith( '^' ) ||
-			! knownGap.fingerprint.message_pattern.endsWith( '$' ) ||
+			! isAnchoredMessagePattern(
+				knownGap.fingerprint.message_pattern
+			) ||
 			isInvalidOrMatchAllFingerprint(
 				knownGap.fingerprint.message_pattern
 			) ||

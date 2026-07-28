@@ -76,12 +76,10 @@ const parseArguments = ( cliArguments ) => {
 
 export const runCli = ( cliArguments, overrides = {} ) => {
 	const activeRepositoryRoot = overrides.repositoryRoot ?? repositoryRoot;
-	const activeLedgerRepositoryPath =
-		overrides.ledgerRepositoryPath ?? ledgerRepositoryPath;
 	const ledgerContent =
 		overrides.ledgerContent ??
 		readFileSync(
-			resolve( activeRepositoryRoot, activeLedgerRepositoryPath ),
+			resolve( activeRepositoryRoot, ledgerRepositoryPath ),
 			'utf8'
 		);
 	const metadata =
@@ -116,7 +114,7 @@ export const runCli = ( cliArguments, overrides = {} ) => {
 	if ( options.fromGitRef ) {
 		const previousContent = loadFromGitRef(
 			options.fromGitRef,
-			activeLedgerRepositoryPath
+			ledgerRepositoryPath
 		);
 		const previousContractMap = parseContractMap( previousContent, {
 			allowLegacySchema: true,
@@ -147,27 +145,17 @@ export const runCli = ( cliArguments, overrides = {} ) => {
 	log( `Validated ${ summary.rowCount } WooPayments client contracts.` );
 
 	if ( options.showSummary ) {
-		for ( const [ disposition, count ] of Object.entries(
-			summary.dispositionCounts
-		) ) {
-			if ( count > 0 ) {
-				log( `${ count }\t${ disposition }` );
-			}
-		}
+		const countGroups = [
+			[ summary.dispositionCounts, '' ],
+			[ summary.migrationStateCounts, 'migration_state\t' ],
+			[ summary.nativeSupportStateCounts, 'native_support_state\t' ],
+		];
 
-		for ( const [ state, count ] of Object.entries(
-			summary.migrationStateCounts
-		) ) {
-			if ( count > 0 ) {
-				log( `${ count }\tmigration_state\t${ state }` );
-			}
-		}
-
-		for ( const [ state, count ] of Object.entries(
-			summary.nativeSupportStateCounts
-		) ) {
-			if ( count > 0 ) {
-				log( `${ count }\tnative_support_state\t${ state }` );
+		for ( const [ counts, labelPrefix ] of countGroups ) {
+			for ( const [ name, count ] of Object.entries( counts ) ) {
+				if ( count > 0 ) {
+					log( `${ count }\t${ labelPrefix }${ name }` );
+				}
 			}
 		}
 	}

@@ -1,6 +1,11 @@
-import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { mkdir, open, readFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
+
+// @ts-expect-error Node's direct TypeScript lock workers require the explicit extension.
+import { sha256, syncDirectory, writeDurableJson } from './durable-fs.ts';
+
+export const RESOURCE_QUARANTINE_ANNOTATION = 'woopayments-resource-quarantine';
 
 export interface ResourceQuarantineReceipt {
 	version: 1;
@@ -32,16 +37,13 @@ const REASON_CODES = new Set< ResourceQuarantineReceipt[ 'reasonCode' ] >( [
 const IN_PROGRESS_RECEIPT_READ_ATTEMPTS = 20;
 const IN_PROGRESS_RECEIPT_READ_INTERVAL_MS = 5;
 
-function sha256( value: string ): string {
-	return createHash( 'sha256' ).update( value ).digest( 'hex' );
+function getLockDirectory( lockDirOverride?: string ): string | undefined {
+	return lockDirOverride ?? process.env.E2E_WOOPAYMENTS_LOCK_DIR;
 }
 
-function getLockDirectory(
-	required: boolean,
-	lockDirOverride?: string
-): string | undefined {
-	const lockDir = lockDirOverride ?? process.env.E2E_WOOPAYMENTS_LOCK_DIR;
-	if ( ! lockDir && required ) {
+function requireLockDirectory( lockDirOverride?: string ): string {
+	const lockDir = getLockDirectory( lockDirOverride );
+	if ( ! lockDir ) {
 		throw new Error(
 			'E2E_WOOPAYMENTS_LOCK_DIR is required to quarantine WooPayments resources.'
 		);
@@ -82,7 +84,7 @@ function createReceipt(
 
 function assertReceipt(
 	value: unknown,
-	expectedHash: string,
+	expectedHash: string | undefined,
 	path: string
 ): ResourceQuarantineReceipt {
 	if ( ! value || typeof value !== 'object' || Array.isArray( value ) ) {
@@ -107,7 +109,10 @@ function assertReceipt(
 	) {
 		throw new Error( `Invalid WooPayments quarantine receipt: ${ path }` );
 	}
-	if ( receipt.resourceKeyHash !== expectedHash ) {
+	if (
+		expectedHash !== undefined &&
+		receipt.resourceKeyHash !== expectedHash
+	) {
 		throw new Error(
 			`WooPayments quarantine receipt identity mismatch: ${ path }`
 		);
@@ -133,21 +138,16 @@ async function readReceipt(
 		throw error;
 	}
 
+	let parsed: unknown;
 	try {
-		return assertReceipt( JSON.parse( contents ), expectedHash, path );
+		parsed = JSON.parse( contents );
 	} catch ( error ) {
-		if (
-			error instanceof Error &&
-			/^(Invalid|WooPayments quarantine receipt identity)/.test(
-				error.message
-			)
-		) {
-			throw error;
-		}
 		throw new Error( `Invalid WooPayments quarantine receipt: ${ path }`, {
 			cause: error,
 		} );
 	}
+
+	return assertReceipt( parsed, expectedHash, path );
 }
 
 async function readClaimedReceipt(
@@ -183,15 +183,6 @@ async function readClaimedReceipt(
 	return undefined;
 }
 
-async function syncDirectory( directoryPath: string ): Promise< void > {
-	const directory = await open( directoryPath, 'r' );
-	try {
-		await directory.sync();
-	} finally {
-		await directory.close();
-	}
-}
-
 async function writeNewReceipt(
 	quarantineDir: string,
 	receiptPath: string,
@@ -213,22 +204,8 @@ async function writeNewReceipt(
 		throw error;
 	}
 
-	const temporaryPath = `${ receiptPath }.tmp-${ randomUUID() }`;
-	try {
-		const temporary = await open( temporaryPath, 'wx', 0o600 );
-		try {
-			await temporary.writeFile( `${ JSON.stringify( receipt ) }\n` );
-			await temporary.sync();
-		} finally {
-			await temporary.close();
-		}
-		await rename( temporaryPath, receiptPath );
-		await syncDirectory( quarantineDir );
-		return true;
-	} catch ( error ) {
-		await unlink( temporaryPath ).catch( () => {} );
-		throw error;
-	}
+	await writeDurableJson( quarantineDir, receiptPath, receipt, randomUUID() );
+	return true;
 }
 
 async function appendQuarantineEvent(
@@ -246,10 +223,14 @@ async function appendQuarantineEvent(
 	await syncDirectory( quarantineDir );
 }
 
-async function hasQuarantineEvent(
-	quarantineDir: string,
-	resourceKeyHash: string
-): Promise< boolean > {
+/**
+ * Reads the append-only event log once and returns the set of resource hashes
+ * it mentions. Callers check several resources per run, so parsing and
+ * validating the whole log per resource is wasted work.
+ */
+async function readQuarantinedHashes(
+	quarantineDir: string
+): Promise< Set< string > > {
 	let contents: string;
 	const eventsPath = join( quarantineDir, 'events.jsonl' );
 	try {
@@ -260,46 +241,41 @@ async function hasQuarantineEvent(
 			'code' in error &&
 			error.code === 'ENOENT'
 		) {
-			return false;
+			return new Set();
 		}
 		throw error;
 	}
 
-	return contents
-		.split( '\n' )
-		.filter( Boolean )
-		.map( ( line ) => {
-			try {
-				const event = JSON.parse( line ) as {
-					resourceKeyHash?: unknown;
-				};
-				if ( typeof event.resourceKeyHash !== 'string' ) {
-					throw new Error( 'Missing resource key hash.' );
-				}
-				return assertReceipt(
-					event,
-					event.resourceKeyHash,
-					eventsPath
-				);
-			} catch ( error ) {
-				throw new Error(
-					`Invalid WooPayments quarantine event log: ${ eventsPath }`,
-					{ cause: error }
-				);
-			}
-		} )
-		.some( ( event ) => event.resourceKeyHash === resourceKeyHash );
+	const hashes = new Set< string >();
+	for ( const line of contents.split( '\n' ) ) {
+		if ( ! line ) {
+			continue;
+		}
+		try {
+			hashes.add(
+				assertReceipt( JSON.parse( line ), undefined, eventsPath )
+					.resourceKeyHash
+			);
+		} catch ( error ) {
+			throw new Error(
+				`Invalid WooPayments quarantine event log: ${ eventsPath }`,
+				{ cause: error }
+			);
+		}
+	}
+	return hashes;
 }
 
 export async function assertResourcesUsable(
 	resourceKeys: string[],
 	lockDirOverride?: string
 ): Promise< void > {
-	const lockDir = getLockDirectory( false, lockDirOverride );
+	const lockDir = getLockDirectory( lockDirOverride );
 	if ( ! lockDir ) {
 		return;
 	}
 	const quarantineDir = join( lockDir, 'quarantine' );
+	let quarantinedHashes: Set< string > | undefined;
 
 	for ( const resourceKey of resourceKeys ) {
 		const resourceKeyHash = sha256( resourceKey );
@@ -312,7 +288,8 @@ export async function assertResourcesUsable(
 				`WooPayments resource ${ resourceKeyHash } is quarantined; see ${ receipt.evidencePath }.`
 			);
 		}
-		if ( await hasQuarantineEvent( quarantineDir, resourceKeyHash ) ) {
+		quarantinedHashes ??= await readQuarantinedHashes( quarantineDir );
+		if ( quarantinedHashes.has( resourceKeyHash ) ) {
 			throw new Error(
 				`WooPayments resource ${ resourceKeyHash } has a missing quarantine receipt and remains quarantined.`
 			);
@@ -326,7 +303,7 @@ export async function quarantineResources(
 	evidencePath: string,
 	lockDirOverride?: string
 ): Promise< ResourceQuarantineReceipt[] > {
-	const lockDir = getLockDirectory( true, lockDirOverride ) as string;
+	const lockDir = requireLockDirectory( lockDirOverride );
 	const quarantineDir = join( lockDir, 'quarantine' );
 	await mkdir( quarantineDir, { recursive: true, mode: 0o700 } );
 	const receipts: ResourceQuarantineReceipt[] = [];

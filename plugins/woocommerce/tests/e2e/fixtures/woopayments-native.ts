@@ -19,6 +19,7 @@ import {
 } from '../utils/woopayments-native/runtime-readiness';
 import {
 	assertAccountSeparation,
+	resourceLockKey,
 	ResourceLockManager,
 	type ResourceLock,
 	type StoreAccountAllocation,
@@ -26,6 +27,7 @@ import {
 import {
 	assertResourcesUsable,
 	quarantineResources,
+	RESOURCE_QUARANTINE_ANNOTATION,
 	type ResourceQuarantineReceipt,
 } from '../utils/woopayments-native/resource-quarantine';
 import type { PaymentEvidence } from '../utils/woopayments-native/record-evidence';
@@ -91,9 +93,16 @@ export class ResourceQuarantineRequiredError extends Error {
 
 function providerResourceKeys( accountId: string, storeId: string ): string[] {
 	return [
-		`${ accountId }/account:provider-writes`,
-		`${ accountId }/${ storeId }/store:${ storeId }`,
-	];
+		{ kind: 'account', resource: 'provider-writes' } as const,
+		{ kind: 'store', resource: storeId } as const,
+	].map( ( { kind, resource } ) =>
+		resourceLockKey( {
+			providerAccountId: accountId,
+			storeId,
+			kind,
+			resource,
+		} )
+	);
 }
 
 function getRuntime(): WooPaymentsRuntime {
@@ -286,6 +295,13 @@ export async function loadInitialRuntimeStatus(
 	return ( await response.json() ) as RuntimeStatus;
 }
 
+interface PilotRuntimeOptions {
+	lockDir?: string;
+	onResourceQuarantined?: (
+		receipt: ResourceQuarantineReceipt
+	) => void | Promise< void >;
+}
+
 export class WooPaymentsPilotRuntime {
 	private readonly adminApi: APIRequestContext;
 	private readonly runtime: WooPaymentsRuntime;
@@ -309,10 +325,7 @@ export class WooPaymentsPilotRuntime {
 		wpcomBlogId: number,
 		storeId: string,
 		accountId: string,
-		lockDir?: string,
-		onResourceQuarantined?: (
-			receipt: ResourceQuarantineReceipt
-		) => void | Promise< void >
+		options: PilotRuntimeOptions = {}
 	) {
 		this.adminApi = adminApi;
 		this.runtime = runtime;
@@ -321,8 +334,8 @@ export class WooPaymentsPilotRuntime {
 		this.wpcomBlogId = wpcomBlogId;
 		this.storeId = storeId;
 		this.accountId = accountId;
-		this.lockDir = lockDir;
-		this.onResourceQuarantined = onResourceQuarantined;
+		this.lockDir = options.lockDir;
+		this.onResourceQuarantined = options.onResourceQuarantined;
 	}
 
 	public requireApprovedProviderFixture( capability: string ): void {
@@ -1811,12 +1824,13 @@ export const test = baseTest.extend< WooPaymentsNativeFixtures >( {
 			requireNumber( 'E2E_WOOPAYMENTS_WPCOM_BLOG_ID' ),
 			requireValue( 'E2E_WOOPAYMENTS_STORE_ID' ),
 			requireValue( 'E2E_WOOPAYMENTS_ACCOUNT_ID' ),
-			undefined,
-			( receipt ) => {
-				testInfo.annotations.push( {
-					type: 'woopayments-resource-quarantine',
-					description: receipt.resourceKeyHash,
-				} );
+			{
+				onResourceQuarantined: ( receipt ) => {
+					testInfo.annotations.push( {
+						type: RESOURCE_QUARANTINE_ANNOTATION,
+						description: receipt.resourceKeyHash,
+					} );
+				},
 			}
 		);
 		await use( runtime );

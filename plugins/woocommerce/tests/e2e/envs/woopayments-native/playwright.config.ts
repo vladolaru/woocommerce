@@ -1,10 +1,19 @@
-import defaultConfig from '../../playwright.config';
+import defaultConfig, {
+	reporter,
+	TESTS_ROOT_PATH,
+} from '../../playwright.config';
 
 const wooPaymentsSpecs = '**/tests/woopayments-native/**/*.spec.ts';
 const serializedProjectWorkerLimit = 1;
 
 export default {
 	...defaultConfig,
+	// The known-gap gate is a WooPayments policy, so it belongs to this env
+	// rather than to every Core E2E project inheriting the root config.
+	reporter: [
+		...reporter,
+		[ `${ TESTS_ROOT_PATH }/reporters/woopayments-known-gaps.ts` ],
+	],
 	retries: 0,
 	projects: [
 		{
