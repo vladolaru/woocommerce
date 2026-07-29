@@ -203,3 +203,21 @@ test( 'no public clear/unquarantine method exists', () => {
 		'quarantineResources',
 	] );
 } );
+
+test( 'accepts the uncertain-provider-write quarantine reason code', async () => {
+	const directory = await quarantineDirectory();
+	const restoreLockDirectory = useLockDirectory( directory );
+
+	try {
+		const [ receipt ] = await quarantineResources(
+			[ resourceKey ],
+			'uncertain-provider-write',
+			'test-results/run-uncertain'
+		);
+
+		expect( receipt.reasonCode ).toBe( 'uncertain-provider-write' );
+	} finally {
+		restoreLockDirectory();
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );

@@ -15,6 +15,7 @@ export interface ResourceQuarantineReceipt {
 		| 'cleanup-failed'
 		| 'restoration-failed'
 		| 'lock-ownership-lost'
+		| 'uncertain-provider-write'
 		| 'teardown-failed';
 	evidencePath: string;
 	quarantinedAt: number;
@@ -32,6 +33,7 @@ const REASON_CODES = new Set< ResourceQuarantineReceipt[ 'reasonCode' ] >( [
 	'cleanup-failed',
 	'restoration-failed',
 	'lock-ownership-lost',
+	'uncertain-provider-write',
 	'teardown-failed',
 ] );
 const IN_PROGRESS_RECEIPT_READ_ATTEMPTS = 20;
