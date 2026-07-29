@@ -8,7 +8,7 @@
 		"plugins/woocommerce/tests/e2e/fixtures/woopayments-native.ts",
 		"plugins/woocommerce/tests/e2e/tests/woopayments-native/pilots/saved-method-cutover.spec.ts"
 	],
-	"source_test_sha256": "eb030b164db64f97fa537b8547a6dfec57963f14cf39edc21bcc4ce232f22865",
+	"source_test_sha256": "6d831bf3212b8af4cdcf918ae1147b2c8adee0f712dd6579afe2e7f324a43bb6",
 	"contract_ids": [
 		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-admin-transactions.spec.ts:14::Admin transactions › page should load without errors",
 		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-manual-capture.spec.ts:39::Order › Manual Capture › should create an \"On hold\" order then capture the charge",
@@ -112,7 +112,7 @@
 		{
 			"role": "e2e-tests-final-closure",
 			"verdict": "APPROVE",
-			"source_test_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			"source_test_sha256": "6d831bf3212b8af4cdcf918ae1147b2c8adee0f712dd6579afe2e7f324a43bb6",
 			"summary": "Final E2E review approved exact token and provider identity, one worker, zero retries, cleanup, and disposable teardown for only the two saved-token closures"
 		},
 		{
