@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import {
+	errors,
 	expect,
 	test,
 	type APIRequestContext,
@@ -21,6 +22,7 @@ import {
 
 import {
 	loadInitialRuntimeStatus,
+	submitBlocksCheckout,
 	WooPaymentsPilotRuntime,
 } from '../../fixtures/woopayments-native';
 import WooPaymentsKnownGapsReporter from '../../reporters/woopayments-known-gaps';
@@ -426,10 +428,90 @@ function exactEvidence(): PaymentEvidence {
 	};
 }
 
-function savedCheckoutContractPage(
-	expectedSelector: string,
-	behavior: { swallowFirstSubmit?: boolean } = {}
-): {
+type MockRequest = { method: () => string; url: () => string };
+type MockRequestListener = ( request: MockRequest ) => void;
+type MockClickOutcome = 'dispatched' | 'not-dispatched';
+
+function createBlocksSubmissionPage( options: {
+	// requestDelayByDispatch[ n ] fires a Store API checkout POST that many
+	// milliseconds after dispatched click n (1-based); undefined = no request.
+	requestDelayByDispatch: Array< number | undefined >;
+	clickOutcomes?: MockClickOutcome[];
+	stateProbeError?: Error;
+} ): {
+	page: Page;
+	callbackAttempts: () => number;
+	dispatchedClicks: () => number;
+	listenerCount: () => number;
+	click: () => Promise< MockClickOutcome >;
+} {
+	const listeners = new Set< MockRequestListener >();
+	let callbackAttempts = 0;
+	let dispatchedClicks = 0;
+	const emitCheckoutRequest = () => {
+		const request: MockRequest = {
+			method: () => 'POST',
+			url: () => 'http://store.test/wp-json/wc/store/v1/checkout',
+		};
+		for ( const listener of listeners ) {
+			listener( request );
+		}
+	};
+	const page = {
+		url: () => 'http://store.test/checkout/',
+		on: ( _event: string, listener: MockRequestListener ) => {
+			listeners.add( listener );
+		},
+		off: ( _event: string, listener: MockRequestListener ) => {
+			listeners.delete( listener );
+		},
+		getByRole: () => ( {} as Locator ),
+		waitForFunction: (
+			_fn: unknown,
+			_arg: unknown,
+			waitOptions: { timeout: number }
+		) => {
+			if ( options.stateProbeError ) {
+				return Promise.reject( options.stateProbeError );
+			}
+			return new Promise( ( _resolve, reject ) =>
+				setTimeout(
+					() =>
+						reject(
+							new errors.TimeoutError(
+								'Checkout state remained idle.'
+							)
+						),
+					waitOptions.timeout
+				)
+			);
+		},
+	} as unknown as Page;
+	const click = async () => {
+		callbackAttempts++;
+		const outcome =
+			options.clickOutcomes?.[ callbackAttempts - 1 ] ?? 'dispatched';
+		if ( outcome === 'not-dispatched' ) {
+			return outcome;
+		}
+		dispatchedClicks++;
+		const delay =
+			options.requestDelayByDispatch[ dispatchedClicks - 1 ];
+		if ( delay !== undefined ) {
+			setTimeout( emitCheckoutRequest, delay );
+		}
+		return outcome;
+	};
+	return {
+		page,
+		callbackAttempts: () => callbackAttempts,
+		dispatchedClicks: () => dispatchedClicks,
+		listenerCount: () => listeners.size,
+		click,
+	};
+}
+
+function savedCheckoutContractPage( expectedSelector: string ): {
 	page: Page;
 	selected: () => boolean;
 	submissions: () => number;
@@ -481,19 +563,10 @@ function savedCheckoutContractPage(
 			} );
 		},
 		url: () => currentUrl,
-		waitForFunction: async () => {
-			if ( behavior.swallowFirstSubmit && submissions < 2 ) {
-				throw new Error( 'Checkout stores remained idle.' );
-			}
-			return true;
-		},
-		waitForRequest: async () => {
-			throw new Error( 'No checkout request started.' );
-		},
+		on: () => {},
+		off: () => {},
+		waitForFunction: async () => true,
 		waitForURL: async ( matcher: RegExp ) => {
-			if ( behavior.swallowFirstSubmit && submissions < 2 ) {
-				throw new Error( 'The first Blocks click was swallowed.' );
-			}
 			expect(
 				matcher.test(
 					'http://native.test/checkout/order-received/42/?key=wc_order_key'
@@ -1415,34 +1488,94 @@ for ( const contract of checkoutContracts ) {
 	} );
 }
 
-test( 'retries a swallowed saved-card Blocks checkout click', async () => {
-	const directory = await lockDirectory();
-	const calls: RequestCall[] = [];
-	const pilotRuntime = runtime( directory, calls );
-	const fixture = savedCheckoutContractPage(
-		checkoutContracts[ 1 ].selector,
-		{ swallowFirstSubmit: true }
-	);
+test( 'refuses to retry when a dispatched checkout request crosses the observation boundary', async () => {
+	const mock = createBlocksSubmissionPage( {
+		requestDelayByDispatch: [ 150 ],
+	} );
 
-	try {
-		const orderId = await pilotRuntime.withProviderWriteLocks(
-			{ recordEvent: 'saved-card-blocks-retry' },
-			async () =>
-				pilotRuntime.payWithExactSavedCard(
-					fixture.page,
-					{
-						tokenId: 73,
-						paymentMethodId: 'pm_provider_only',
-					},
-					'blocks',
-					'run-pilot-runtime'
-				)
-		);
-		expect( orderId ).toBe( 42 );
-		expect( fixture.submissions() ).toBe( 2 );
-	} finally {
-		await rm( directory, { recursive: true, force: true } );
-	}
+	await expect(
+		submitBlocksCheckout( mock.page, mock.click, {
+			submissionWaitMs: 100,
+		} )
+	).rejects.toThrow( /Refusing to retry.*provider outcome is uncertain/i );
+	await new Promise( ( resolveDelay ) => setTimeout( resolveDelay, 100 ) );
+
+	expect( mock.callbackAttempts() ).toBe( 1 );
+	expect( mock.dispatchedClicks() ).toBe( 1 );
+	expect( mock.listenerCount() ).toBe( 0 );
+} );
+
+test( 'propagates a non-timeout checkout-state failure without retrying', async () => {
+	const stateProbeError = new Error( 'Checkout state probe failed.' );
+	const mock = createBlocksSubmissionPage( {
+		requestDelayByDispatch: [ undefined ],
+		stateProbeError,
+	} );
+
+	await expect(
+		submitBlocksCheckout( mock.page, mock.click, {
+			submissionWaitMs: 100,
+		} )
+	).rejects.toBe( stateProbeError );
+
+	expect( mock.callbackAttempts() ).toBe( 1 );
+	expect( mock.dispatchedClicks() ).toBe( 1 );
+	expect( mock.listenerCount() ).toBe( 0 );
+} );
+
+test( 'retries one explicit not-dispatched outcome without a second provider write', async () => {
+	const mock = createBlocksSubmissionPage( {
+		requestDelayByDispatch: [ 10 ],
+		clickOutcomes: [ 'not-dispatched', 'dispatched' ],
+	} );
+	const startedAt = Date.now();
+
+	await submitBlocksCheckout( mock.page, mock.click, {
+		submissionWaitMs: 200,
+	} );
+
+	expect( Date.now() - startedAt ).toBeLessThan( 150 );
+	expect( mock.callbackAttempts() ).toBe( 2 );
+	expect( mock.dispatchedClicks() ).toBe( 1 );
+	expect( mock.listenerCount() ).toBe( 0 );
+} );
+
+test( 'fails after three explicit not-dispatched outcomes without a provider write', async () => {
+	const mock = createBlocksSubmissionPage( {
+		requestDelayByDispatch: [],
+		clickOutcomes: [
+			'not-dispatched',
+			'not-dispatched',
+			'not-dispatched',
+		],
+	} );
+
+	await expect(
+		submitBlocksCheckout( mock.page, mock.click, {
+			submissionWaitMs: 20,
+		} )
+	).rejects.toThrow(
+		/was not dispatched after 3 explicit not-dispatched attempts/
+	);
+	expect( mock.callbackAttempts() ).toBe( 3 );
+	expect( mock.dispatchedClicks() ).toBe( 0 );
+	expect( mock.listenerCount() ).toBe( 0 );
+} );
+
+test( 'returns promptly when a slow checkout request starts inside the observation window', async () => {
+	const mock = createBlocksSubmissionPage( {
+		requestDelayByDispatch: [ 50 ],
+	} );
+	const startedAt = Date.now();
+
+	await submitBlocksCheckout( mock.page, mock.click, {
+		submissionWaitMs: 400,
+	} );
+
+	expect( Date.now() - startedAt ).toBeLessThan( 300 );
+	expect( mock.callbackAttempts() ).toBe( 1 );
+	expect( mock.dispatchedClicks() ).toBe( 1 );
+	expect( mock.listenerCount() ).toBe( 0 );
 } );
 
 test( 'uses the Core order-actions dropdown and Apply button for capture', async () => {

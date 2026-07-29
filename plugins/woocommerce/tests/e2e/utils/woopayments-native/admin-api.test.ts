@@ -9,7 +9,6 @@ import {
 import {
 	authenticateAdminContext,
 	getBlocksCardFrameSelector,
-	submitBlocksCheckout,
 } from '../../fixtures/woopayments-native';
 
 test( 'authenticates REST through the exact browser cookie and nonce session', async () => {
@@ -84,95 +83,4 @@ test( 'targets the runtime-owned Blocks card frame', () => {
 	expect( getBlocksCardFrameSelector( 'transition' ) ).toContain(
 		'#wcpay-core-blocks-payment-element'
 	);
-} );
-
-test( 'retries a swallowed Blocks checkout click only while Core remains idle', async () => {
-	let clicks = 0;
-	let stateChecks = 0;
-	const button = {
-		click: async () => {
-			clicks += 1;
-		},
-	} as Locator;
-	const page = {
-		getByRole: () => button,
-		url: () => 'http://store.test/checkout/',
-		waitForRequest: async () => {
-			throw new Error( 'No checkout request started.' );
-		},
-		waitForFunction: async () => {
-			stateChecks += 1;
-			if ( stateChecks === 1 ) {
-				throw new Error( 'Core remained idle.' );
-			}
-		},
-	} as unknown as Page;
-
-	await submitBlocksCheckout( page, ( checkoutButton ) =>
-		checkoutButton.click()
-	);
-
-	expect( clicks ).toBe( 2 );
-	expect( stateChecks ).toBe( 2 );
-} );
-
-test( 'does not retry after the Blocks checkout request starts while Core looks idle', async () => {
-	let clicks = 0;
-	let observedRequest = false;
-	const button = {
-		click: async () => {
-			clicks += 1;
-		},
-	} as Locator;
-	const page = {
-		getByRole: () => button,
-		url: () => 'http://store.test/checkout/',
-		waitForRequest: async (
-			predicate: ( request: {
-				method: () => string;
-				url: () => string;
-			} ) => boolean
-		) => {
-			observedRequest = predicate( {
-				method: () => 'POST',
-				url: () => 'http://store.test/wp-json/wc/store/v1/checkout',
-			} );
-		},
-		waitForFunction: async () => {
-			throw new Error( 'Core still looked idle.' );
-		},
-	} as unknown as Page;
-
-	await submitBlocksCheckout( page, ( checkoutButton ) =>
-		checkoutButton.click()
-	);
-
-	expect( observedRequest ).toBe( true );
-	expect( clicks ).toBe( 1 );
-} );
-
-test( 'fails after the bounded Blocks checkout click attempts stay idle', async () => {
-	let clicks = 0;
-	const button = {
-		click: async () => {
-			clicks += 1;
-		},
-	} as Locator;
-	const page = {
-		getByRole: () => button,
-		url: () => 'http://store.test/checkout/',
-		waitForRequest: async () => {
-			throw new Error( 'No checkout request started.' );
-		},
-		waitForFunction: async () => {
-			throw new Error( 'Core remained idle.' );
-		},
-	} as unknown as Page;
-
-	await expect(
-		submitBlocksCheckout( page, ( checkoutButton ) =>
-			checkoutButton.click()
-		)
-	).rejects.toThrow( /did not start after 3 attempts/i );
-	expect( clicks ).toBe( 3 );
 } );

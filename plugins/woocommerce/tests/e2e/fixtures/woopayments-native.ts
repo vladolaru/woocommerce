@@ -2,11 +2,13 @@ import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 
 import {
+	errors,
 	expect,
 	type APIRequestContext,
 	type BrowserContext,
 	type Locator,
 	type Page,
+	type Request,
 } from '@playwright/test';
 
 import { test as baseTest } from './fixtures';
@@ -213,39 +215,55 @@ export function getBlocksCardFrameSelector(
 
 export async function submitBlocksCheckout(
 	page: Page,
-	click: ( button: Locator ) => Promise< void >
+	click: (
+		button: Locator
+	) => Promise< 'dispatched' | 'not-dispatched' >,
+	options: { submissionWaitMs?: number } = {}
 ): Promise< void > {
+	const submissionWaitMs = options.submissionWaitMs ?? 10_000;
 	const checkoutUrl = page.url();
 	const button = page.getByRole( 'button', { name: /place order/i } );
+	let checkoutRequestObserved = false;
+	let resolveCheckoutRequest = () => {};
+	const checkoutRequestStarted = new Promise< void >( ( resolveRequest ) => {
+		resolveCheckoutRequest = resolveRequest;
+	} );
+	const countCheckoutRequest = ( request: Request ): void => {
+		if ( request.method() !== 'POST' ) {
+			return;
+		}
+		try {
+			if (
+				new URL( request.url() ).pathname.replace( /\/+$/, '' ) ===
+				'/wp-json/wc/store/v1/checkout'
+			) {
+				checkoutRequestObserved = true;
+				resolveCheckoutRequest();
+			}
+		} catch {
+			// Unparsable URLs cannot be the Store API checkout endpoint.
+		}
+	};
+	page.on( 'request', countCheckoutRequest );
 
-	for ( let attempt = 1; attempt <= 3; attempt++ ) {
-		const checkoutRequestStarted = page
-			.waitForRequest(
-				( request ) => {
-					if ( request.method() !== 'POST' ) {
-						return false;
+	try {
+		for ( let attempt = 1; attempt <= 3; attempt++ ) {
+			const outcome = await click( button );
+			if ( outcome === 'not-dispatched' ) {
+				if (
+					checkoutRequestObserved ||
+					page.url() !== checkoutUrl
+				) {
+					return;
+				}
+				continue;
+			}
+
+			const checkoutStateOrNavigationStarted = page.waitForFunction(
+				( initialCheckoutUrl ) => {
+					if ( window.location.href !== initialCheckoutUrl ) {
+						return true;
 					}
-					try {
-						return (
-							new URL( request.url() ).pathname.replace(
-								/\/+$/,
-								''
-							) === '/wp-json/wc/store/v1/checkout'
-						);
-					} catch {
-						return false;
-					}
-				},
-				{ timeout: 2_000 }
-			)
-			.then(
-				() => true,
-				() => false
-			);
-		await click( button );
-		const submissionStarted = await page
-			.waitForFunction(
-				() => {
 					type Selector = ( ...args: unknown[] ) => unknown;
 					type Store = Record< string, Selector >;
 					const wpData = (
@@ -266,24 +284,33 @@ export async function submitBlocksCheckout(
 						payment?.hasPaymentError?.() === true
 					);
 				},
-				undefined,
-				{ timeout: 2_000 }
-			)
-			.then(
-				() => true,
-				() => false
+				checkoutUrl,
+				{ timeout: submissionWaitMs }
 			);
-		if (
-			( await checkoutRequestStarted ) ||
-			submissionStarted ||
-			page.url() !== checkoutUrl
-		) {
-			return;
+			try {
+				await Promise.race( [
+					checkoutRequestStarted,
+					checkoutStateOrNavigationStarted,
+				] );
+				return;
+			} catch ( error ) {
+				if ( page.url() !== checkoutUrl ) {
+					return;
+				}
+				if ( ! ( error instanceof errors.TimeoutError ) ) {
+					throw error;
+				}
+				throw new Error(
+					`WooPayments Blocks checkout was dispatched, but no checkout request, Core state, or navigation signal was observed within ${ submissionWaitMs }ms. Refusing to retry because the provider outcome is uncertain.`
+				);
+			}
 		}
+	} finally {
+		page.off( 'request', countCheckoutRequest );
 	}
 
 	throw new Error(
-		'WooPayments Blocks checkout did not start after 3 attempts while Core remained idle.'
+		'WooPayments Blocks checkout was not dispatched after 3 explicit not-dispatched attempts.'
 	);
 }
 
@@ -454,9 +481,10 @@ export class WooPaymentsPilotRuntime {
 		this.requireApprovedProviderFixture( 'basic-card-entry' );
 		await this.fillBasicTestCard( page, isBlockCheckout );
 		if ( isBlockCheckout ) {
-			await submitBlocksCheckout( page, ( button ) =>
-				this.performWrite( () => button.click() )
-			);
+			await submitBlocksCheckout( page, async ( button ) => {
+				await this.performWrite( () => button.click() );
+				return 'dispatched';
+			} );
 		} else {
 			await this.performWrite( () =>
 				page.getByRole( 'button', { name: /place order/i } ).click()
@@ -833,9 +861,10 @@ export class WooPaymentsPilotRuntime {
 		}
 		await token.check();
 		if ( checkout === 'blocks' ) {
-			await submitBlocksCheckout( page, ( button ) =>
-				this.performWrite( () => button.click() )
-			);
+			await submitBlocksCheckout( page, async ( button ) => {
+				await this.performWrite( () => button.click() );
+				return 'dispatched';
+			} );
 		} else {
 			await this.performWrite( () =>
 				page.getByRole( 'button', { name: /place order/i } ).click()
