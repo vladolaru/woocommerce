@@ -5,9 +5,10 @@ test( 'provider and transition projects serialize with truthful metadata', async
 	const configModule = await import(
 		'../../envs/woopayments-native/playwright.config'
 	);
-	const importedConfig = configModule.default as typeof configModule.default & {
-		default?: typeof configModule.default;
-	};
+	const importedConfig =
+		configModule.default as typeof configModule.default & {
+			default?: typeof configModule.default;
+		};
 	const config = importedConfig.projects
 		? importedConfig
 		: importedConfig.default;
