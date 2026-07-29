@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
 	existsSync,
@@ -44,6 +45,11 @@ const metadataPath = resolve(
 const metadata = JSON.parse( readFileSync( metadataPath, 'utf8' ) );
 const ledgerContent = readFileSync( ledgerPath, 'utf8' );
 const contractMap = parseContractMap( ledgerContent );
+const currentCommit = execFileSync(
+	'git',
+	[ '-C', repositoryRoot, 'rev-parse', 'HEAD' ],
+	{ encoding: 'utf8' }
+).trim();
 const temporaryDirectories = [];
 const externalTemporaryDirectories = [];
 const temporaryFiles = [];
@@ -58,7 +64,7 @@ const createValidEvidence = ( fixtureRow, overrides = {} ) => ( {
 	schema_version: 1,
 	slice_id: 'fixture-slice',
 	wc_base_commit: '1'.repeat( 40 ),
-	verified_at_commit: '2'.repeat( 40 ),
+	verified_at_commit: currentCommit,
 	reference_contract_commit: '6dda1d4eb101f05c22f60882d67a22f75281ae45',
 	source_test_paths: [ ...DEFAULT_SOURCE_TEST_PATHS ],
 	source_test_sha256: DEFAULT_SOURCE_TEST_SHA256,
@@ -102,7 +108,10 @@ const createEvidenceContext = ( row ) => ( {
 	repositoryRoot,
 } );
 
-const calculateSourceBundleSha256 = ( repositoryPaths ) =>
+const calculateSourceBundleSha256 = (
+	repositoryPaths,
+	commit = currentCommit
+) =>
 	createHash( 'sha256' )
 		.update(
 			JSON.stringify(
@@ -110,9 +119,12 @@ const calculateSourceBundleSha256 = ( repositoryPaths ) =>
 					repositoryPath,
 					createHash( 'sha256' )
 						.update(
-							readFileSync(
-								resolve( repositoryRoot, repositoryPath )
-							)
+							execFileSync( 'git', [
+								'-C',
+								repositoryRoot,
+								'show',
+								`${ commit }:${ repositoryPath }`,
+							] )
 						)
 						.digest( 'hex' ),
 				] )
@@ -1133,29 +1145,36 @@ test( 'accepts public-safe evidence bound to the referencing row', () => {
 	);
 } );
 
-test( 'rejects closure evidence after its reviewed source bundle changes', () => {
+test( 'loads the reviewed source bundle from the verified revision', () => {
 	const row = {
 		...contractMap.rows[ 0 ],
 		target_contract: 'Native fixture contract',
 		migration_state: 'closed',
 		native_support_state: 'supported',
 	};
-	const temporaryDirectory = createRepositoryTemporaryDirectory();
-	const sourcePath = join( temporaryDirectory, 'reviewed-source.ts' );
-	const repositorySourcePath = repositoryRelativePath( sourcePath );
-	writeFileSync( sourcePath, 'export const reviewed = true;\n' );
-	const sourceTestSha256 = calculateSourceBundleSha256( [
-		repositorySourcePath,
-	] );
+	const verifiedAtCommit = '6cf3169e9612ca185e723aea6188657d5ff309f9';
+	const sourceTestPaths = [
+		'plugins/woocommerce/tests/e2e/fixtures/woopayments-native.ts',
+		'plugins/woocommerce/tests/e2e/tests/woopayments-native/pilots/saved-method-cutover.spec.ts',
+	];
+	const verifiedSourceTestSha256 = calculateSourceBundleSha256(
+		sourceTestPaths,
+		verifiedAtCommit
+	);
+	const currentSourceTestSha256 =
+		calculateSourceBundleSha256( sourceTestPaths );
+	assert.notEqual( verifiedSourceTestSha256, currentSourceTestSha256 );
+
 	const evidence = createValidEvidence( row, {
-		source_test_paths: [ repositorySourcePath ],
-		source_test_sha256: sourceTestSha256,
+		verified_at_commit: verifiedAtCommit,
+		source_test_paths: sourceTestPaths,
+		source_test_sha256: verifiedSourceTestSha256,
 		reviews: [
 			{
 				role: 'code',
 				verdict: 'APPROVE',
-				source_test_sha256: sourceTestSha256,
-				summary: 'exact source bundle approved',
+				source_test_sha256: verifiedSourceTestSha256,
+				summary: 'verified revision source bundle approved',
 			},
 		],
 	} );
@@ -1164,8 +1183,8 @@ test( 'rejects closure evidence after its reviewed source bundle changes', () =>
 		validateMigrationEvidence( evidence, createEvidenceContext( row ) )
 	);
 
-	writeFileSync( sourcePath, 'export const reviewed = false;\n' );
-
+	evidence.source_test_sha256 = currentSourceTestSha256;
+	evidence.reviews[ 0 ].source_test_sha256 = currentSourceTestSha256;
 	assert.throws(
 		() =>
 			validateMigrationEvidence( evidence, createEvidenceContext( row ) ),

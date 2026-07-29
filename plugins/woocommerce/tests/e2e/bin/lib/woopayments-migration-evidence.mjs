@@ -1,6 +1,5 @@
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 
 import {
 	isAnchoredMessagePattern,
@@ -286,7 +285,8 @@ const sha256 = ( value ) =>
 const assertSourceTestBundle = (
 	sourceTestPaths,
 	sourceTestSha256,
-	repositoryRoot
+	repositoryRoot,
+	verifiedAtCommit
 ) => {
 	assertArray( sourceTestPaths, 'source_test_paths' );
 	if ( sourceTestPaths.length === 0 ) {
@@ -312,10 +312,19 @@ const assertSourceTestBundle = (
 	const sourceEntries = [ ...uniquePaths ].toSorted().map( ( sourcePath ) => {
 		let contents;
 		try {
-			contents = readFileSync( resolve( repositoryRoot, sourcePath ) );
+			contents = execFileSync(
+				'git',
+				[
+					'-C',
+					repositoryRoot,
+					'show',
+					`${ verifiedAtCommit }:${ sourcePath }`,
+				],
+				{ maxBuffer: 10 * 1024 * 1024 }
+			);
 		} catch ( error ) {
 			throw new Error(
-				`Invalid migration evidence source_test_paths; cannot read ${ sourcePath }`,
+				`Invalid migration evidence source_test_paths; cannot read ${ sourcePath } at verified_at_commit`,
 				{ cause: error }
 			);
 		}
@@ -583,7 +592,8 @@ export const validateMigrationEvidence = (
 	assertSourceTestBundle(
 		evidence.source_test_paths,
 		evidence.source_test_sha256,
-		repositoryRoot
+		repositoryRoot,
+		evidence.verified_at_commit
 	);
 
 	assertArray( evidence.contract_ids, 'contract_ids' );
