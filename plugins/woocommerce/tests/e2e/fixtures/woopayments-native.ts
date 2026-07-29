@@ -34,6 +34,11 @@ import {
 } from '../utils/woopayments-native/resource-quarantine';
 import type { PaymentEvidence } from '../utils/woopayments-native/record-evidence';
 import { assertApprovedProviderFixture } from '../utils/woopayments-native/provider-fixture';
+import {
+	findUnresolvedProviderWriteAttempts,
+	openProviderWriteAttempt,
+	resolveProviderWriteAttempt,
+} from '../utils/woopayments-native/provider-write-journal';
 import { assertTransitionAllocation } from '../utils/woopayments-native/transition-allocation';
 
 export { tags } from './fixtures';
@@ -78,6 +83,13 @@ interface ProviderWriteLocks {
 	recordEvent?: ResourceLock;
 }
 
+interface ProviderSubmissionScope {
+	queueTail: Promise< void >;
+	inFlight: Set< Promise< unknown > >;
+	blockedError?: unknown;
+	firstError?: unknown;
+}
+
 export class ResourceQuarantineRequiredError extends Error {
 	public readonly reasonCode: ResourceQuarantineReceipt[ 'reasonCode' ];
 	public readonly primaryError?: unknown;
@@ -93,6 +105,8 @@ export class ResourceQuarantineRequiredError extends Error {
 		this.primaryError = primaryError;
 	}
 }
+
+export class ProviderSubmissionNotStartedError extends Error {}
 
 function providerResourceKeys( accountId: string, storeId: string ): string[] {
 	return [
@@ -215,9 +229,7 @@ export function getBlocksCardFrameSelector(
 
 export async function submitBlocksCheckout(
 	page: Page,
-	click: (
-		button: Locator
-	) => Promise< 'dispatched' | 'not-dispatched' >,
+	click: ( button: Locator ) => Promise< 'dispatched' | 'not-dispatched' >,
 	options: { submissionWaitMs?: number } = {}
 ): Promise< void > {
 	const submissionWaitMs = options.submissionWaitMs ?? 10_000;
@@ -250,10 +262,7 @@ export async function submitBlocksCheckout(
 		for ( let attempt = 1; attempt <= 3; attempt++ ) {
 			const outcome = await click( button );
 			if ( outcome === 'not-dispatched' ) {
-				if (
-					checkoutRequestObserved ||
-					page.url() !== checkoutUrl
-				) {
+				if ( checkoutRequestObserved || page.url() !== checkoutUrl ) {
 					return;
 				}
 				continue;
@@ -309,7 +318,7 @@ export async function submitBlocksCheckout(
 		page.off( 'request', countCheckoutRequest );
 	}
 
-	throw new Error(
+	throw new ProviderSubmissionNotStartedError(
 		'WooPayments Blocks checkout was not dispatched after 3 explicit not-dispatched attempts.'
 	);
 }
@@ -364,6 +373,7 @@ export class WooPaymentsPilotRuntime {
 	) => void | Promise< void >;
 	private readonly ownedProductIds: number[] = [];
 	private activeProviderWriteLocks?: ProviderWriteLocks;
+	private activeProviderSubmissionScope?: ProviderSubmissionScope;
 
 	public constructor(
 		adminApi: APIRequestContext,
@@ -480,36 +490,49 @@ export class WooPaymentsPilotRuntime {
 
 		this.requireApprovedProviderFixture( 'basic-card-entry' );
 		await this.fillBasicTestCard( page, isBlockCheckout );
-		if ( isBlockCheckout ) {
-			await submitBlocksCheckout( page, async ( button ) => {
-				await this.performWrite( () => button.click() );
-				return 'dispatched';
-			} );
-		} else {
-			await this.performWrite( () =>
-				page.getByRole( 'button', { name: /place order/i } ).click()
-			);
-		}
-		try {
-			await page.waitForURL( /\/order-received\/[1-9]\d*\/?(?:\?.*)?$/, {
-				timeout: 60_000,
-			} );
-			await expect(
-				page.getByText(
-					/^(Your order has been received|Order received)$/i
-				)
-			).toBeVisible();
-		} catch ( error ) {
-			const diagnostics = isBlockCheckout
-				? await this.getBlocksCheckoutDiagnostics( page )
-				: undefined;
-			throw new Error(
-				`WooPayments checkout did not reach order confirmation${
-					diagnostics ? `: ${ JSON.stringify( diagnostics ) }` : '.'
-				}`,
-				{ cause: error }
-			);
-		}
+		await this.withProviderSubmissionJournal(
+			`basic-card-${ isBlockCheckout ? 'blocks' : 'classic' }-checkout`,
+			async () => {
+				if ( isBlockCheckout ) {
+					await submitBlocksCheckout( page, async ( button ) => {
+						await this.performWrite( () => button.click() );
+						return 'dispatched';
+					} );
+				} else {
+					await this.performWrite( () =>
+						page
+							.getByRole( 'button', { name: /place order/i } )
+							.click()
+					);
+				}
+				try {
+					await page.waitForURL(
+						/\/order-received\/[1-9]\d*\/?(?:\?.*)?$/,
+						{ timeout: 60_000 }
+					);
+					await expect(
+						page.getByText(
+							/^(Your order has been received|Order received)$/i
+						)
+					).toBeVisible();
+				} catch ( error ) {
+					const diagnostics = isBlockCheckout
+						? await this.getBlocksCheckoutDiagnostics( page )
+						: undefined;
+					throw new ResourceQuarantineRequiredError(
+						`WooPayments checkout submission has no proven outcome${
+							diagnostics
+								? `: ${ JSON.stringify( diagnostics ) }`
+								: '.'
+						}`,
+						'uncertain-provider-write',
+						error instanceof Error
+							? error
+							: new Error( String( error ) )
+					);
+				}
+			}
+		);
 
 		const orderId = this.getOrderIdFromUrl( page.url() );
 		await this.setOrderRunId( orderId, runId );
@@ -860,20 +883,39 @@ export class WooPaymentsPilotRuntime {
 			);
 		}
 		await token.check();
-		if ( checkout === 'blocks' ) {
-			await submitBlocksCheckout( page, async ( button ) => {
-				await this.performWrite( () => button.click() );
-				return 'dispatched';
-			} );
-		} else {
-			await this.performWrite( () =>
-				page.getByRole( 'button', { name: /place order/i } ).click()
-			);
-		}
-		await page.waitForURL( /\/order-received\/[1-9]\d*\/?(?:\?.*)?$/ );
-		await expect(
-			page.getByText( 'Your order has been received' )
-		).toBeVisible();
+		await this.withProviderSubmissionJournal(
+			`saved-card-${ checkout }-checkout`,
+			async () => {
+				if ( checkout === 'blocks' ) {
+					await submitBlocksCheckout( page, async ( button ) => {
+						await this.performWrite( () => button.click() );
+						return 'dispatched';
+					} );
+				} else {
+					await this.performWrite( () =>
+						page
+							.getByRole( 'button', { name: /place order/i } )
+							.click()
+					);
+				}
+				try {
+					await page.waitForURL(
+						/\/order-received\/[1-9]\d*\/?(?:\?.*)?$/
+					);
+					await expect(
+						page.getByText( 'Your order has been received' )
+					).toBeVisible();
+				} catch ( error ) {
+					throw new ResourceQuarantineRequiredError(
+						`WooPayments saved-card ${ checkout } checkout submission has no proven outcome.`,
+						'uncertain-provider-write',
+						error instanceof Error
+							? error
+							: new Error( String( error ) )
+					);
+				}
+			}
+		);
 		const orderId = this.getOrderIdFromUrl( page.url() );
 		await this.setOrderRunId( orderId, runId );
 		return orderId;
@@ -887,7 +929,7 @@ export class WooPaymentsPilotRuntime {
 			throw new Error( 'WooPayments provider write locks cannot nest.' );
 		}
 		const manager = new ResourceLockManager( {
-			lockDir: this.lockDir,
+			lockDir: this.getProviderLockDirectory(),
 			runId: this.runId,
 		} );
 		const locks: ResourceLock[] = [];
@@ -937,15 +979,43 @@ export class WooPaymentsPilotRuntime {
 				locks.push( recordEvent );
 			}
 
+			const unresolvedAttempts =
+				await findUnresolvedProviderWriteAttempts(
+					this.getProviderLockDirectory(),
+					[ account.payload.key, store.payload.key ],
+					this.runId
+				);
+			if ( unresolvedAttempts.length > 0 ) {
+				throw new ResourceQuarantineRequiredError(
+					`A prior provider write on these resources has no proven outcome (${ unresolvedAttempts.length } unresolved attempt(s)).`,
+					'uncertain-provider-write'
+				);
+			}
+
 			this.activeProviderWriteLocks = {
 				account,
 				store,
 				featureSetting,
 				recordEvent,
 			};
+			this.activeProviderSubmissionScope = {
+				queueTail: Promise.resolve(),
+				inFlight: new Set(),
+			};
 			result = await callback();
 		} catch ( error ) {
 			primaryError = error;
+		}
+
+		const submissionScope = this.activeProviderSubmissionScope;
+		if ( submissionScope ) {
+			await Promise.allSettled( [ ...submissionScope.inFlight ] );
+			if (
+				primaryError === undefined &&
+				submissionScope.firstError !== undefined
+			) {
+				primaryError = submissionScope.firstError;
+			}
 		}
 
 		let quarantineAttempted = false;
@@ -972,11 +1042,19 @@ export class WooPaymentsPilotRuntime {
 			}
 		};
 
+		this.activeProviderSubmissionScope = undefined;
 		this.activeProviderWriteLocks = undefined;
 		let quarantineReason =
 			primaryError instanceof ResourceQuarantineRequiredError
 				? primaryError.reasonCode
 				: undefined;
+		if (
+			quarantineReason === undefined &&
+			submissionScope?.blockedError instanceof
+				ResourceQuarantineRequiredError
+		) {
+			quarantineReason = submissionScope.blockedError.reasonCode;
+		}
 		const unownedLocks = new Set< ResourceLock >();
 		for ( const lock of locks ) {
 			try {
@@ -1490,6 +1568,107 @@ export class WooPaymentsPilotRuntime {
 			evidence = await this.getSavedCardEvidence();
 		}
 		return evidence;
+	}
+
+	private getProviderLockDirectory(): string {
+		const lockDir = this.lockDir ?? process.env.E2E_WOOPAYMENTS_LOCK_DIR;
+		if ( ! lockDir ) {
+			throw new Error(
+				'E2E_WOOPAYMENTS_LOCK_DIR is required for provider-writing tests.'
+			);
+		}
+		return lockDir;
+	}
+
+	private withProviderSubmissionJournal< Result >(
+		description: string,
+		submit: () => Promise< Result >
+	): Promise< Result > {
+		const locks = this.activeProviderWriteLocks;
+		const submissionScope = this.activeProviderSubmissionScope;
+		if ( ! locks || ! submissionScope ) {
+			throw new Error(
+				'WooPayments provider submissions require active provider write locks.'
+			);
+		}
+
+		const queuedSubmission = submissionScope.queueTail.then( async () => {
+			if ( submissionScope.blockedError !== undefined ) {
+				throw submissionScope.blockedError;
+			}
+
+			let attemptPath: string;
+			try {
+				attemptPath = await openProviderWriteAttempt(
+					this.getProviderLockDirectory(),
+					{
+						version: 1,
+						runId: this.runId,
+						resourceKeys: [
+							locks.account.payload.key,
+							locks.store.payload.key,
+						],
+						description,
+						startedAt: Date.now(),
+					}
+				);
+			} catch ( journalError ) {
+				submissionScope.blockedError = journalError;
+				throw journalError;
+			}
+
+			let submissionResult: Result;
+			try {
+				submissionResult = await submit();
+			} catch ( submissionError ) {
+				if (
+					submissionError instanceof ProviderSubmissionNotStartedError
+				) {
+					try {
+						await resolveProviderWriteAttempt( attemptPath );
+					} catch ( journalError ) {
+						submissionScope.blockedError = journalError;
+						throw journalError;
+					}
+					throw submissionError;
+				}
+				const quarantineError =
+					submissionError instanceof ResourceQuarantineRequiredError
+						? submissionError
+						: new ResourceQuarantineRequiredError(
+								`WooPayments provider submission ${ description } has no proven outcome.`,
+								'uncertain-provider-write',
+								submissionError
+						  );
+				submissionScope.blockedError = quarantineError;
+				throw quarantineError;
+			}
+
+			try {
+				await resolveProviderWriteAttempt( attemptPath );
+			} catch ( journalError ) {
+				submissionScope.blockedError = journalError;
+				throw journalError;
+			}
+			return submissionResult;
+		} );
+		const trackedSubmission = queuedSubmission.catch(
+			( submissionError: unknown ) => {
+				submissionScope.firstError ??= submissionError;
+				throw submissionError;
+			}
+		);
+		submissionScope.queueTail = trackedSubmission.then(
+			() => {},
+			() => {}
+		);
+		submissionScope.inFlight.add( trackedSubmission );
+		void trackedSubmission.catch( () => {} );
+		void trackedSubmission.then(
+			() => submissionScope.inFlight.delete( trackedSubmission ),
+			() => submissionScope.inFlight.delete( trackedSubmission )
+		);
+		return trackedSubmission;
 	}
 
 	private async assertCanWrite(): Promise< void > {

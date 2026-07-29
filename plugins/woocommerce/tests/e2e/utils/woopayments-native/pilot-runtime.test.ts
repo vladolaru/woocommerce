@@ -22,6 +22,7 @@ import {
 
 import {
 	loadInitialRuntimeStatus,
+	ProviderSubmissionNotStartedError,
 	submitBlocksCheckout,
 	WooPaymentsPilotRuntime,
 } from '../../fixtures/woopayments-native';
@@ -32,6 +33,10 @@ import {
 	RESOURCE_QUARANTINE_ANNOTATION,
 	type ResourceQuarantineReceipt,
 } from './resource-quarantine';
+import {
+	findUnresolvedProviderWriteAttempts,
+	openProviderWriteAttempt,
+} from './provider-write-journal';
 import { ResourceLock, ResourceLockManager } from './resource-locks';
 import { temporaryLockDirectory, useLockDirectory } from './lock-test-helpers';
 import { KNOWN_GAP_ANNOTATION, KNOWN_GAP_SENTINEL } from './known-gap';
@@ -432,6 +437,30 @@ type MockRequest = { method: () => string; url: () => string };
 type MockRequestListener = ( request: MockRequest ) => void;
 type MockClickOutcome = 'dispatched' | 'not-dispatched';
 
+interface SubmissionJournalRuntime {
+	withProviderSubmissionJournal< Result >(
+		description: string,
+		submit: () => Promise< Result >
+	): Promise< Result >;
+}
+
+function submissionJournalRuntime(
+	pilotRuntime: WooPaymentsPilotRuntime
+): SubmissionJournalRuntime {
+	return pilotRuntime as unknown as SubmissionJournalRuntime;
+}
+
+function deferred(): {
+	promise: Promise< void >;
+	resolve: () => void;
+} {
+	let resolvePromise = () => {};
+	const promise = new Promise< void >( ( resolvePromiseValue ) => {
+		resolvePromise = resolvePromiseValue;
+	} );
+	return { promise, resolve: resolvePromise };
+}
+
 function createBlocksSubmissionPage( options: {
 	// requestDelayByDispatch[ n ] fires a Store API checkout POST that many
 	// milliseconds after dispatched click n (1-based); undefined = no request.
@@ -495,8 +524,7 @@ function createBlocksSubmissionPage( options: {
 			return outcome;
 		}
 		dispatchedClicks++;
-		const delay =
-			options.requestDelayByDispatch[ dispatchedClicks - 1 ];
+		const delay = options.requestDelayByDispatch[ dispatchedClicks - 1 ];
 		if ( delay !== undefined ) {
 			setTimeout( emitCheckoutRequest, delay );
 		}
@@ -511,7 +539,10 @@ function createBlocksSubmissionPage( options: {
 	};
 }
 
-function savedCheckoutContractPage( expectedSelector: string ): {
+function savedCheckoutContractPage(
+	expectedSelector: string,
+	options: { confirmationError?: Error } = {}
+): {
 	page: Page;
 	selected: () => boolean;
 	submissions: () => number;
@@ -529,11 +560,11 @@ function savedCheckoutContractPage( expectedSelector: string ): {
 		},
 		getByRole: (
 			role: string,
-			options?: { exact?: boolean; name?: string | RegExp }
+			locatorOptions?: { exact?: boolean; name?: string | RegExp }
 		) => {
-			const name = String( options?.name ?? '' );
+			const name = String( locatorOptions?.name ?? '' );
 			if ( role === 'button' && /add to cart/i.test( name ) ) {
-				expect( options ).toEqual( {
+				expect( locatorOptions ).toEqual( {
 					name: 'Add to cart',
 					exact: true,
 				} );
@@ -567,6 +598,9 @@ function savedCheckoutContractPage( expectedSelector: string ): {
 		off: () => {},
 		waitForFunction: async () => true,
 		waitForURL: async ( matcher: RegExp ) => {
+			if ( options.confirmationError ) {
+				throw options.confirmationError;
+			}
 			expect(
 				matcher.test(
 					'http://native.test/checkout/order-received/42/?key=wc_order_key'
@@ -1543,18 +1577,21 @@ test( 'retries one explicit not-dispatched outcome without a second provider wri
 test( 'fails after three explicit not-dispatched outcomes without a provider write', async () => {
 	const mock = createBlocksSubmissionPage( {
 		requestDelayByDispatch: [],
-		clickOutcomes: [
-			'not-dispatched',
-			'not-dispatched',
-			'not-dispatched',
-		],
+		clickOutcomes: [ 'not-dispatched', 'not-dispatched', 'not-dispatched' ],
 	} );
 
-	await expect(
-		submitBlocksCheckout( mock.page, mock.click, {
+	let submissionError: unknown;
+	try {
+		await submitBlocksCheckout( mock.page, mock.click, {
 			submissionWaitMs: 20,
-		} )
-	).rejects.toThrow(
+		} );
+	} catch ( error ) {
+		submissionError = error;
+	}
+	expect( submissionError ).toBeInstanceOf(
+		ProviderSubmissionNotStartedError
+	);
+	expect( ( submissionError as Error ).message ).toMatch(
 		/was not dispatched after 3 explicit not-dispatched attempts/
 	);
 	expect( mock.callbackAttempts() ).toBe( 3 );
@@ -1576,6 +1613,362 @@ test( 'returns promptly when a slow checkout request starts inside the observati
 	expect( mock.callbackAttempts() ).toBe( 1 );
 	expect( mock.dispatchedClicks() ).toBe( 1 );
 	expect( mock.listenerCount() ).toBe( 0 );
+} );
+
+test( 'quarantines every held lock when a prior provider write attempt overlaps the account and store', async () => {
+	const directory = await lockDirectory();
+	const calls: RequestCall[] = [];
+	const annotated: ResourceQuarantineReceipt[] = [];
+	const pilotRuntime = runtime( directory, calls, {
+		onResourceQuarantined: ( receipt ) => annotated.push( receipt ),
+	} );
+	let callbackInvoked = false;
+
+	try {
+		await openProviderWriteAttempt( directory, {
+			version: 1,
+			runId: 'dead-run',
+			resourceKeys: [
+				'acct_native/account:provider-writes',
+				'acct_native/native-store/store:native-store',
+			],
+			description: 'saved-card-classic-checkout',
+			startedAt: 1753790000000,
+		} );
+
+		await expect(
+			pilotRuntime.withProviderWriteLocks(
+				{ recordEvent: 'prior-provider-write-attempt' },
+				async () => {
+					callbackInvoked = true;
+				}
+			)
+		).rejects.toThrow( /prior provider write.*no proven outcome/i );
+
+		expect( callbackInvoked ).toBe( false );
+		expect( annotated ).toHaveLength( 3 );
+		expect(
+			annotated.every(
+				( receipt ) => receipt.reasonCode === 'uncertain-provider-write'
+			)
+		).toBe( true );
+	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'removes the provider write attempt after successful submission and confirmation', async () => {
+	const directory = await lockDirectory();
+	const calls: RequestCall[] = [];
+	const pilotRuntime = runtime( directory, calls );
+	const fixture = savedCheckoutContractPage(
+		checkoutContracts[ 0 ].selector
+	);
+
+	try {
+		await pilotRuntime.withProviderWriteLocks(
+			{ recordEvent: 'successful-journaled-checkout' },
+			async () =>
+				pilotRuntime.payWithExactSavedCard(
+					fixture.page,
+					{ tokenId: 73, paymentMethodId: 'pm_provider_only' },
+					'classic',
+					'run-pilot-runtime'
+				)
+		);
+
+		expect(
+			await readdir( join( directory, 'provider-write-attempts' ) )
+		).toEqual( [] );
+	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'removes the provider write attempt after three proven not-dispatched outcomes', async () => {
+	const directory = await lockDirectory();
+	const calls: RequestCall[] = [];
+	const pilotRuntime = runtime( directory, calls );
+	const mock = createBlocksSubmissionPage( {
+		requestDelayByDispatch: [],
+		clickOutcomes: [ 'not-dispatched', 'not-dispatched', 'not-dispatched' ],
+	} );
+	const journalRuntime = submissionJournalRuntime( pilotRuntime );
+
+	try {
+		await expect(
+			pilotRuntime.withProviderWriteLocks( {}, async () =>
+				journalRuntime.withProviderSubmissionJournal(
+					'blocks-not-dispatched',
+					async () =>
+						submitBlocksCheckout( mock.page, mock.click, {
+							submissionWaitMs: 20,
+						} )
+				)
+			)
+		).rejects.toThrow(
+			/was not dispatched after 3 explicit not-dispatched attempts/
+		);
+		expect(
+			await readdir( join( directory, 'provider-write-attempts' ) )
+		).toEqual( [] );
+	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'keeps a dispatched unconfirmed attempt and quarantines it in the current lock scope', async () => {
+	const directory = await lockDirectory();
+	const calls: RequestCall[] = [];
+	const annotated: ResourceQuarantineReceipt[] = [];
+	const pilotRuntime = runtime( directory, calls, {
+		onResourceQuarantined: ( receipt ) => annotated.push( receipt ),
+	} );
+	const fixture = savedCheckoutContractPage(
+		checkoutContracts[ 0 ].selector,
+		{ confirmationError: new Error( 'Order confirmation timed out.' ) }
+	);
+
+	try {
+		await expect(
+			pilotRuntime.withProviderWriteLocks(
+				{ recordEvent: 'uncertain-journaled-checkout' },
+				async () =>
+					pilotRuntime.payWithExactSavedCard(
+						fixture.page,
+						{
+							tokenId: 73,
+							paymentMethodId: 'pm_provider_only',
+						},
+						'classic',
+						'run-pilot-runtime'
+					)
+			)
+		).rejects.toThrow( /confirmation timed out/i );
+
+		expect(
+			await findUnresolvedProviderWriteAttempts(
+				directory,
+				[
+					'acct_native/account:provider-writes',
+					'acct_native/native-store/store:native-store',
+				],
+				'a-later-run'
+			)
+		).toHaveLength( 1 );
+		expect( annotated ).toHaveLength( 3 );
+		expect(
+			annotated.every(
+				( receipt ) => receipt.reasonCode === 'uncertain-provider-write'
+			)
+		).toBe( true );
+	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'serializes concurrent provider submissions and holds locks until they all settle', async () => {
+	const directory = await lockDirectory();
+	const calls: RequestCall[] = [];
+	const pilotRuntime = runtime( directory, calls );
+	const journalRuntime = submissionJournalRuntime( pilotRuntime );
+	const releaseFirst = deferred();
+	const releaseSecond = deferred();
+	const firstStarted = deferred();
+	const secondStarted = deferred();
+	const attemptNames = new Set< string >();
+	let activeSubmissions = 0;
+	let maximumActiveSubmissions = 0;
+	let lockScopeSettled = false;
+	let firstSubmission: Promise< void > | undefined;
+	let secondSubmission: Promise< void > | undefined;
+	let lockScope: Promise< void > | undefined;
+	let firstLockCount = -1;
+	let secondLockCount = -1;
+	let settledBeforeFirstRelease = false;
+	let settledBeforeSecondRelease = false;
+
+	try {
+		lockScope = pilotRuntime.withProviderWriteLocks( {}, async () => {
+			firstSubmission = journalRuntime.withProviderSubmissionJournal(
+				'concurrent-first',
+				async () => {
+					activeSubmissions++;
+					maximumActiveSubmissions = Math.max(
+						maximumActiveSubmissions,
+						activeSubmissions
+					);
+					for ( const entry of await readdir(
+						join( directory, 'provider-write-attempts' )
+					) ) {
+						if ( entry.endsWith( '.json' ) ) {
+							attemptNames.add( entry );
+						}
+					}
+					firstStarted.resolve();
+					try {
+						await releaseFirst.promise;
+					} finally {
+						activeSubmissions--;
+					}
+				}
+			);
+			void firstSubmission.catch( () => {} );
+			secondSubmission = journalRuntime.withProviderSubmissionJournal(
+				'concurrent-second',
+				async () => {
+					activeSubmissions++;
+					maximumActiveSubmissions = Math.max(
+						maximumActiveSubmissions,
+						activeSubmissions
+					);
+					for ( const entry of await readdir(
+						join( directory, 'provider-write-attempts' )
+					) ) {
+						if ( entry.endsWith( '.json' ) ) {
+							attemptNames.add( entry );
+						}
+					}
+					secondStarted.resolve();
+					try {
+						await releaseSecond.promise;
+					} finally {
+						activeSubmissions--;
+					}
+				}
+			);
+			void secondSubmission.catch( () => {} );
+		} );
+		void lockScope.then(
+			() => {
+				lockScopeSettled = true;
+			},
+			() => {
+				lockScopeSettled = true;
+			}
+		);
+
+		await firstStarted.promise;
+		settledBeforeFirstRelease = lockScopeSettled;
+		firstLockCount = ( await readdir( directory ) ).filter( ( entry ) =>
+			entry.endsWith( '.lock' )
+		).length;
+		releaseFirst.resolve();
+
+		await secondStarted.promise;
+		settledBeforeSecondRelease = lockScopeSettled;
+		secondLockCount = ( await readdir( directory ) ).filter( ( entry ) =>
+			entry.endsWith( '.lock' )
+		).length;
+		releaseSecond.resolve();
+
+		await lockScope;
+		await Promise.all( [ firstSubmission, secondSubmission ] );
+
+		expect( maximumActiveSubmissions ).toBe( 1 );
+		expect( attemptNames.size ).toBe( 2 );
+		expect( settledBeforeFirstRelease ).toBe( false );
+		expect( settledBeforeSecondRelease ).toBe( false );
+		expect( firstLockCount ).toBe( 2 );
+		expect( secondLockCount ).toBe( 2 );
+	} finally {
+		releaseFirst.resolve();
+		releaseSecond.resolve();
+		await Promise.allSettled(
+			[ firstSubmission, secondSubmission, lockScope ].filter(
+				( value ): value is Promise< void > => value !== undefined
+			)
+		);
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'blocks queued provider submissions after uncertainty and waits before quarantine teardown', async () => {
+	const directory = await lockDirectory();
+	const calls: RequestCall[] = [];
+	const annotated: ResourceQuarantineReceipt[] = [];
+	const pilotRuntime = runtime( directory, calls, {
+		onResourceQuarantined: ( receipt ) => annotated.push( receipt ),
+	} );
+	const journalRuntime = submissionJournalRuntime( pilotRuntime );
+	const releaseUncertainSubmission = deferred();
+	const uncertainSubmissionStarted = deferred();
+	let firstSubmission: Promise< void > | undefined;
+	let secondSubmission: Promise< void > | undefined;
+	let secondSubmissionClicks = 0;
+	let lockScope: Promise< void > | undefined;
+	let lockScopeSettled = false;
+	let locksHeldWhileSubmissionPending = -1;
+
+	try {
+		lockScope = pilotRuntime.withProviderWriteLocks( {}, async () => {
+			firstSubmission = journalRuntime.withProviderSubmissionJournal(
+				'uncertain-first',
+				async () => {
+					uncertainSubmissionStarted.resolve();
+					await releaseUncertainSubmission.promise;
+					throw new Error(
+						'First provider submission outcome is uncertain.'
+					);
+				}
+			);
+			void firstSubmission.catch( () => {} );
+			secondSubmission = journalRuntime.withProviderSubmissionJournal(
+				'queued-second',
+				async () => {
+					secondSubmissionClicks++;
+				}
+			);
+			void secondSubmission.catch( () => {} );
+		} );
+		void lockScope.then(
+			() => {
+				lockScopeSettled = true;
+			},
+			() => {
+				lockScopeSettled = true;
+			}
+		);
+
+		await uncertainSubmissionStarted.promise;
+		locksHeldWhileSubmissionPending = ( await readdir( directory ) ).filter(
+			( entry ) => entry.endsWith( '.lock' )
+		).length;
+		expect( lockScopeSettled ).toBe( false );
+		releaseUncertainSubmission.resolve();
+
+		await expect( lockScope ).rejects.toThrow(
+			/First provider submission outcome is uncertain/
+		);
+		await Promise.allSettled( [ firstSubmission, secondSubmission ] );
+
+		expect( locksHeldWhileSubmissionPending ).toBe( 2 );
+		expect( secondSubmissionClicks ).toBe( 0 );
+		expect( annotated ).toHaveLength( 2 );
+		expect(
+			annotated.every(
+				( receipt ) => receipt.reasonCode === 'uncertain-provider-write'
+			)
+		).toBe( true );
+		expect(
+			await findUnresolvedProviderWriteAttempts(
+				directory,
+				[
+					'acct_native/account:provider-writes',
+					'acct_native/native-store/store:native-store',
+				],
+				'a-later-run'
+			)
+		).toHaveLength( 1 );
+	} finally {
+		releaseUncertainSubmission.resolve();
+		await Promise.allSettled(
+			[ firstSubmission, secondSubmission, lockScope ].filter(
+				( value ): value is Promise< void > => value !== undefined
+			)
+		);
+		await rm( directory, { recursive: true, force: true } );
+	}
 } );
 
 test( 'uses the Core order-actions dropdown and Apply button for capture', async () => {
