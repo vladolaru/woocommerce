@@ -15,9 +15,10 @@ cleanup() {
 trap cleanup EXIT
 
 run_orchestrator() {
+	local run_id="${1:-orchestrator-run}"
 	env \
 		TMPDIR="$TEST_ROOT" \
-		E2E_TRANSITION_RUN_ID='orchestrator-run' \
+		E2E_TRANSITION_RUN_ID="$run_id" \
 		E2E_TRANSITION_SEED_ARCHIVE="$TEST_ROOT/seed.tar.gz" \
 		E2E_TRANSITION_SEED_MANIFEST="$TEST_ROOT/seed.json" \
 		E2E_TRANSITION_STORE_PROVISIONER="$SCRIPT_DIR/test-fixtures/fake-transition-provisioner.sh" \
@@ -39,6 +40,18 @@ grep -Fq 'E2E_WOOPAYMENTS_WPCOM_BLOG_ID=77' "$TEST_ROOT/commands.log"
 grep -Fq 'E2E_WOOPAYMENTS_ACCOUNT_ID=acct_transition_77' "$TEST_ROOT/commands.log"
 grep -Fq 'E2E_WOOPAYMENTS_ACCOUNT_ALIAS=reference-client' "$TEST_ROOT/commands.log"
 grep -Fq 'destroy exact-allocation' "$TEST_ROOT/commands.log"
+
+run_orchestrator 'orchestrator-run-2'
+if [[ "$(
+	sed -n 's/.* E2E_WOOPAYMENTS_LOCK_DIR=//p' "$TEST_ROOT/commands.log" |
+		sort -u |
+		wc -l |
+		tr -d ' '
+)" != '1' ]]; then
+	echo 'Transition runs borrowing one provider account must share a lock root.' >&2
+	exit 1
+fi
+
 if grep -qi 'listen' "$TEST_ROOT/commands.log"; then
 	echo 'The transition orchestrator must not start the Stripe listener.' >&2
 	exit 1

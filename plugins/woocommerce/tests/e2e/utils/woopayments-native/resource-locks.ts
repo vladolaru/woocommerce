@@ -11,7 +11,12 @@ import {
 import { join } from 'node:path';
 
 // @ts-expect-error Node's direct TypeScript lock workers require the explicit extension.
-import { sha256, syncDirectory, writeDurableJson } from './durable-fs.ts';
+import {
+	sha256,
+	syncDirectory,
+	writeDurableJson,
+	writeNewDurableJson,
+} from './durable-fs.ts';
 // @ts-expect-error Node's direct TypeScript lock workers require the explicit extension.
 import { assertResourcesUsable } from './resource-quarantine.ts';
 
@@ -782,24 +787,12 @@ export class ResourceLockManager {
 		lockPath: string,
 		payload: ResourceLockPayload
 	): Promise< boolean > {
-		try {
-			const handle = await open( lockPath, 'wx', 0o600 );
-			try {
-				await handle.writeFile( `${ JSON.stringify( payload ) }\n` );
-			} finally {
-				await handle.close();
-			}
-			return true;
-		} catch ( error ) {
-			if (
-				error instanceof Error &&
-				'code' in error &&
-				error.code === 'EEXIST'
-			) {
-				return false;
-			}
-			throw error;
-		}
+		return writeNewDurableJson(
+			this.lockDir,
+			lockPath,
+			payload,
+			randomUUID()
+		);
 	}
 
 	private async tryRecoverExpired(
@@ -946,25 +939,12 @@ export class ResourceLockManager {
 		guardPath: string,
 		owner: MutationGuardPayload
 	): Promise< boolean > {
-		try {
-			const handle = await open( guardPath, 'wx', 0o600 );
-			try {
-				await handle.writeFile( `${ JSON.stringify( owner ) }\n` );
-				await handle.sync();
-			} finally {
-				await handle.close();
-			}
-			return true;
-		} catch ( error ) {
-			if (
-				error instanceof Error &&
-				'code' in error &&
-				error.code === 'EEXIST'
-			) {
-				return false;
-			}
-			throw error;
-		}
+		return writeNewDurableJson(
+			this.lockDir,
+			guardPath,
+			owner,
+			randomUUID()
+		);
 	}
 
 	private async tryRecoverExpiredMutationGuard(

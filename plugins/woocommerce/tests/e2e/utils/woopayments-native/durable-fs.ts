@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { open, rename, unlink } from 'node:fs/promises';
+import { link, open, rename, unlink } from 'node:fs/promises';
 
 /**
  * Crash-safety primitives shared by the WooPayments resource lock and
@@ -40,6 +40,46 @@ export async function writeDurableJson(
 		}
 		await rename( temporaryPath, filePath );
 		await syncDirectory( directoryPath );
+	} catch ( error ) {
+		await unlink( temporaryPath ).catch( () => {} );
+		throw error;
+	}
+}
+
+export async function writeNewDurableJson(
+	directoryPath: string,
+	filePath: string,
+	payload: unknown,
+	temporarySuffix: string
+): Promise< boolean > {
+	const temporaryPath = `${ filePath }.tmp-${ temporarySuffix }`;
+	const temporary = await open( temporaryPath, 'wx', 0o600 );
+
+	try {
+		try {
+			await temporary.writeFile( `${ JSON.stringify( payload ) }\n` );
+			await temporary.sync();
+		} finally {
+			await temporary.close();
+		}
+
+		try {
+			await link( temporaryPath, filePath );
+		} catch ( error ) {
+			if (
+				error instanceof Error &&
+				'code' in error &&
+				error.code === 'EEXIST'
+			) {
+				await unlink( temporaryPath );
+				return false;
+			}
+			throw error;
+		}
+
+		await unlink( temporaryPath );
+		await syncDirectory( directoryPath );
+		return true;
 	} catch ( error ) {
 		await unlink( temporaryPath ).catch( () => {} );
 		throw error;
