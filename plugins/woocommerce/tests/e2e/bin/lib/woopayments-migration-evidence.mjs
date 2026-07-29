@@ -64,12 +64,19 @@ const EVIDENCE_KEYS = [
 	'implementation_commits',
 	'verification',
 	'reviews',
+	'closures',
 	'known_gaps',
 	'deferral',
 ];
 const TARGET_KEYS = [ 'path', 'contract' ];
 const VERIFICATION_KEYS = [ 'command', 'exit_code', 'summary' ];
 const REVIEW_KEYS = [ 'role', 'verdict', 'source_test_sha256', 'summary' ];
+const CLOSURE_KEYS = [ 'contract_id', 'target', 'verification', 'reviews' ];
+export const REQUIRED_CLOSURE_REVIEW_ROLES = [
+	'code',
+	'e2e-tests',
+	'reliability',
+];
 const KNOWN_GAP_KEYS = [ 'id', 'owner', 'reference', 'fingerprint' ];
 const FINGERPRINT_KEYS = [ 'error_name', 'message_pattern' ];
 const DEFERRAL_KEYS = [
@@ -416,7 +423,7 @@ const assertVerification = ( verification, row ) => {
 	}
 };
 
-const assertReviews = ( reviews, sourceTestSha256 ) => {
+const assertReviews = ( reviews ) => {
 	assertArray( reviews, 'reviews' );
 
 	for ( const [ index, review ] of reviews.entries() ) {
@@ -433,13 +440,161 @@ const assertReviews = ( reviews, sourceTestSha256 ) => {
 
 	if (
 		reviews.length === 0 ||
-		reviews.some( ( review ) => review.verdict !== 'APPROVE' ) ||
-		! reviews.some(
-			( review ) => review.source_test_sha256 === sourceTestSha256
+		reviews.some( ( review ) => review.verdict !== 'APPROVE' )
+	) {
+		throw new Error(
+			'Invalid migration evidence reviews; every review must approve'
+		);
+	}
+};
+
+const assertClosureReviewList = ( reviews, label ) => {
+	assertArray( reviews, label );
+
+	const roles = new Set();
+	for ( const [ index, review ] of reviews.entries() ) {
+		assertExactKeys(
+			review,
+			REVIEW_KEYS,
+			`${ label } review ${ index }`
+		);
+		assertExactString( review.role, `${ label }[${ index }].role` );
+		assertExactString( review.verdict, `${ label }[${ index }].verdict` );
+		assertExactString(
+			review.source_test_sha256,
+			`${ label }[${ index }].source_test_sha256`,
+			SHA256_PATTERN
+		);
+		assertExactString( review.summary, `${ label }[${ index }].summary` );
+
+		if ( roles.has( review.role ) ) {
+			throw new Error(
+				`Invalid migration evidence ${ label }; duplicate review role`
+			);
+		}
+		roles.add( review.role );
+	}
+};
+
+const assertClosures = ( closures, row, evidence ) => {
+	assertArray( closures, 'closures' );
+
+	const contractIds = new Set();
+	for ( const [ index, closure ] of closures.entries() ) {
+		assertExactKeys(
+			closure,
+			CLOSURE_KEYS,
+			`evidence closure ${ index }`
+		);
+		assertExactString(
+			closure.contract_id,
+			`closures[${ index }].contract_id`
+		);
+		if ( contractIds.has( closure.contract_id ) ) {
+			throw new Error(
+				`Invalid migration evidence closures[${ index }].contract_id; duplicate contract_id`
+			);
+		}
+		contractIds.add( closure.contract_id );
+
+		if ( ! evidence.contract_ids.includes( closure.contract_id ) ) {
+			throw new Error(
+				`Invalid migration evidence closures[${ index }].contract_id; contract must occur in contract_ids`
+			);
+		}
+
+		assertExactKeys(
+			closure.target,
+			TARGET_KEYS,
+			`evidence closure ${ index } target`
+		);
+		assertRepositoryRelativePath(
+			closure.target.path,
+			`closures[${ index }].target.path`
+		);
+		assertExactString(
+			closure.target.contract,
+			`closures[${ index }].target.contract`
+		);
+
+		assertArray(
+			closure.verification,
+			`closures[${ index }].verification`
+		);
+		for ( const [ resultIndex, result ] of closure.verification.entries() ) {
+			assertExactKeys(
+				result,
+				VERIFICATION_KEYS,
+				`evidence closure ${ index } verification ${ resultIndex }`
+			);
+			assertExactString(
+				result.command,
+				`closures[${ index }].verification[${ resultIndex }].command`
+			);
+			if (
+				! Number.isSafeInteger( result.exit_code ) ||
+				result.exit_code < 0
+			) {
+				throw new Error(
+					`Invalid migration evidence closures[${ index }].verification[${ resultIndex }].exit_code`
+				);
+			}
+			assertExactString(
+				result.summary,
+				`closures[${ index }].verification[${ resultIndex }].summary`
+			);
+		}
+
+		assertClosureReviewList(
+			closure.reviews,
+			`closures[${ index }].reviews`
+		);
+	}
+
+	if ( ! [ 'verified', 'closed' ].includes( row.migration_state ) ) {
+		return;
+	}
+
+	const rowClosure = closures.find(
+		( closure ) => closure.contract_id === row.case_id
+	);
+	if ( ! rowClosure ) {
+		throw new Error(
+			`Invalid migration evidence closures for ${ row.case_id }; a terminal row requires its own closure entry`
+		);
+	}
+	if (
+		rowClosure.target.path !== row.target_path ||
+		rowClosure.target.contract !== row.target_contract
+	) {
+		throw new Error(
+			`Invalid migration evidence closures for ${ row.case_id }; closure target must match the exact ledger target`
+		);
+	}
+	if (
+		rowClosure.verification.length === 0 ||
+		rowClosure.verification.some( ( result ) => result.exit_code !== 0 )
+	) {
+		throw new Error(
+			`Invalid migration evidence closures for ${ row.case_id }; closure verification must exist and pass`
+		);
+	}
+
+	const rowClosureReviewRoles = new Set(
+		rowClosure.reviews.map( ( review ) => review.role )
+	);
+	if (
+		REQUIRED_CLOSURE_REVIEW_ROLES.some(
+			( role ) => ! rowClosureReviewRoles.has( role )
+		) ||
+		rowClosure.reviews.some(
+			( review ) =>
+				review.verdict !== 'APPROVE' ||
+				review.source_test_sha256 !== evidence.source_test_sha256
 		)
 	) {
 		throw new Error(
-			'Invalid migration evidence reviews; every review must approve and at least one must bind the current source test SHA-256'
+			`Invalid migration evidence closures for ${ row.case_id }; every required role must approve the current source bundle`
 		);
 	}
 };
@@ -558,9 +713,9 @@ export const validateMigrationEvidence = (
 		);
 	}
 
-	if ( evidence.schema_version !== 1 ) {
+	if ( evidence.schema_version !== 2 ) {
 		throw new Error(
-			'Invalid migration evidence schema_version; expected 1'
+			'Invalid migration evidence schema_version; expected 2'
 		);
 	}
 	assertExactString( evidence.slice_id, 'slice_id' );
@@ -609,7 +764,8 @@ export const validateMigrationEvidence = (
 	assertTargets( evidence.targets, row );
 	assertImplementationCommits( evidence.implementation_commits, row );
 	assertVerification( evidence.verification, row );
-	assertReviews( evidence.reviews, evidence.source_test_sha256 );
+	assertReviews( evidence.reviews );
+	assertClosures( evidence.closures, row, evidence );
 	assertKnownGaps( evidence.known_gaps, row );
 	assertDeferral( evidence.deferral, row, evidence );
 

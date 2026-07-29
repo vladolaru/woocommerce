@@ -1,5 +1,5 @@
 {
-	"schema_version": 1,
+	"schema_version": 2,
 	"slice_id": "000-pilot-calibration",
 	"wc_base_commit": "244e7d48a9cb44768f7b8a7592877bd0ae3ee1d5",
 	"verified_at_commit": "6cf3169e9612ca185e723aea6188657d5ff309f9",
@@ -152,6 +152,7 @@
 			"summary": "Confirmed that every acquired lock is preflighted, required quarantine is durable before release, and publication failure retains all surviving locks"
 		}
 	],
+	"closures": [],
 	"known_gaps": [],
 	"deferral": null
 }

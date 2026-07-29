@@ -29,7 +29,10 @@ import {
 	validateDispositionTransition,
 	validateStateTransition,
 } from './lib/woopayments-contract-map.mjs';
-import { validateMigrationEvidence } from './lib/woopayments-migration-evidence.mjs';
+import {
+	REQUIRED_CLOSURE_REVIEW_ROLES,
+	validateMigrationEvidence,
+} from './lib/woopayments-migration-evidence.mjs';
 import { runCli } from './validate-woopayments-client-contract-map.mjs';
 
 const binDirectory = dirname( fileURLToPath( import.meta.url ) );
@@ -60,8 +63,30 @@ const cloneContractMap = ( source = contractMap ) => ( {
 	rows: source.rows.map( ( row ) => ( { ...row } ) ),
 } );
 
+const createClosureEntry = ( row, overrides = {} ) => ( {
+	contract_id: row.case_id,
+	target: {
+		path: row.target_path,
+		contract: row.target_contract,
+	},
+	verification: [
+		{
+			command: 'pnpm test:e2e:woopayments:controller',
+			exit_code: 0,
+			summary: 'closure verification passed',
+		},
+	],
+	reviews: REQUIRED_CLOSURE_REVIEW_ROLES.map( ( role ) => ( {
+		role,
+		verdict: 'APPROVE',
+		source_test_sha256: DEFAULT_SOURCE_TEST_SHA256,
+		summary: `${ role } closure review approved`,
+	} ) ),
+	...overrides,
+} );
+
 const createValidEvidence = ( fixtureRow, overrides = {} ) => ( {
-	schema_version: 1,
+	schema_version: 2,
 	slice_id: 'fixture-slice',
 	wc_base_commit: '1'.repeat( 40 ),
 	verified_at_commit: currentCommit,
@@ -97,6 +122,7 @@ const createValidEvidence = ( fixtureRow, overrides = {} ) => ( {
 			summary: 'implementation approved',
 		},
 	],
+	closures: [],
 	known_gaps: [],
 	deferral: null,
 	...overrides,
@@ -308,7 +334,9 @@ const close = ( row ) => {
 	row.migration_state = 'closed';
 	row.native_support_state = 'supported';
 	row.gap_or_decision_reference = 'none';
-	row.evidence_path = createEvidenceFile( row );
+	row.evidence_path = createEvidenceFile( row, {
+		closures: [ createClosureEntry( row ) ],
+	} );
 };
 
 const closeInventory = ( map ) => {
@@ -918,7 +946,9 @@ test( 'accepts a rewritten retirement contract with a compatible exact target', 
 		'Rewrite as a native-specific E2E test preserving the contract';
 	row.gap_or_decision_reference = 'human-approved:rewrite-decision';
 	row.target_path = targetPath;
-	row.evidence_path = createEvidenceFile( row );
+	row.evidence_path = createEvidenceFile( row, {
+		closures: [ createClosureEntry( row ) ],
+	} );
 
 	assert.doesNotThrow( () => validate( map ) );
 } );
@@ -1147,11 +1177,163 @@ test( 'accepts public-safe evidence bound to the referencing row', () => {
 		migration_state: 'closed',
 		native_support_state: 'supported',
 	};
-	const evidence = createValidEvidence( row );
+	const evidence = createValidEvidence( row, {
+		closures: [ createClosureEntry( row ) ],
+	} );
 
 	assert.doesNotThrow( () =>
 		validateMigrationEvidence( evidence, createEvidenceContext( row ) )
 	);
+} );
+
+test( 'rejects closing a row that shares slice evidence without its own closure entry', () => {
+	const map = cloneContractMap();
+	const [ first, second ] = map.rows.slice( 0, 2 );
+	specify( first );
+	specify( second );
+	first.migration_state = 'closed';
+	first.native_support_state = 'supported';
+	second.migration_state = 'closed';
+	second.native_support_state = 'supported';
+	const sharedEvidencePath = createEvidenceFile( first, {
+		contract_ids: [ first.case_id, second.case_id ],
+		targets: [
+			{ path: first.target_path, contract: first.target_contract },
+			{ path: second.target_path, contract: second.target_contract },
+		],
+		closures: [ createClosureEntry( first ) ],
+	} );
+	first.evidence_path = sharedEvidencePath;
+	second.evidence_path = sharedEvidencePath;
+	createMissingTargetFile( first.target_path );
+	createMissingTargetFile( second.target_path );
+
+	assert.throws(
+		() => validate( map ),
+		/a terminal row requires its own closure entry/
+	);
+} );
+
+test( 'rejects a closure entry whose target is not the exact ledger target', () => {
+	const row = cloneContractMap().rows[ 0 ];
+	specify( row );
+	row.migration_state = 'closed';
+	row.native_support_state = 'supported';
+	const evidence = createValidEvidence( row, {
+		closures: [
+			createClosureEntry( row, {
+				target: {
+					path: row.target_path,
+					contract: 'a different contract',
+				},
+			} ),
+		],
+	} );
+
+	assert.throws(
+		() =>
+			validateMigrationEvidence( evidence, createEvidenceContext( row ) ),
+		/closure target must match the exact ledger target/
+	);
+} );
+
+test( 'rejects a closure missing a required review role', () => {
+	const row = cloneContractMap().rows[ 0 ];
+	specify( row );
+	row.migration_state = 'closed';
+	row.native_support_state = 'supported';
+	const evidence = createValidEvidence( row, {
+		closures: [
+			createClosureEntry( row, {
+				reviews: [
+					{
+						role: 'code',
+						verdict: 'APPROVE',
+						source_test_sha256: DEFAULT_SOURCE_TEST_SHA256,
+						summary: 'code closure review approved',
+					},
+				],
+			} ),
+		],
+	} );
+
+	assert.throws(
+		() =>
+			validateMigrationEvidence( evidence, createEvidenceContext( row ) ),
+		/every required role must approve the current source bundle/
+	);
+} );
+
+test( 'rejects a closure review that does not bind the evidence source bundle hash', () => {
+	const row = cloneContractMap().rows[ 0 ];
+	specify( row );
+	row.migration_state = 'closed';
+	row.native_support_state = 'supported';
+	const evidence = createValidEvidence( row, {
+		closures: [
+			createClosureEntry( row, {
+				reviews: REQUIRED_CLOSURE_REVIEW_ROLES.map( ( role ) => ( {
+					role,
+					verdict: 'APPROVE',
+					source_test_sha256: 'e'.repeat( 64 ),
+					summary: `${ role } closure review approved`,
+				} ) ),
+			} ),
+		],
+	} );
+
+	assert.throws(
+		() =>
+			validateMigrationEvidence( evidence, createEvidenceContext( row ) ),
+		/every required role must approve the current source bundle/
+	);
+} );
+
+test( 'rejects duplicate closure entries for the same contract', async ( t ) => {
+	const row = cloneContractMap().rows[ 0 ];
+	specify( row );
+	row.migration_state = 'closed';
+	row.native_support_state = 'supported';
+	const validClosure = createClosureEntry( row );
+	const conflictingClosure = createClosureEntry( row, {
+		target: {
+			path: row.target_path,
+			contract: 'a conflicting contract',
+		},
+		verification: [
+			{
+				command: 'pnpm test:e2e:woopayments:controller',
+				exit_code: 1,
+				summary: 'closure verification failed',
+			},
+		],
+		reviews: [
+			{
+				role: 'code',
+				verdict: 'APPROVE',
+				source_test_sha256: DEFAULT_SOURCE_TEST_SHA256,
+				summary: 'code closure review approved',
+			},
+		],
+	} );
+
+	for ( const [ label, closures ] of [
+		[ 'valid entry first', [ validClosure, conflictingClosure ] ],
+		[ 'conflicting entry first', [ conflictingClosure, validClosure ] ],
+	] ) {
+		await t.test( label, () => {
+			const evidence = createValidEvidence( row, { closures } );
+
+			assert.throws(
+				() =>
+					validateMigrationEvidence(
+						evidence,
+						createEvidenceContext( row )
+					),
+				/duplicate contract_id/
+			);
+		} );
+	}
 } );
 
 test( 'loads the reviewed source bundle from the verified revision', () => {
@@ -1178,6 +1360,16 @@ test( 'loads the reviewed source bundle from the verified revision', () => {
 		verified_at_commit: verifiedAtCommit,
 		source_test_paths: sourceTestPaths,
 		source_test_sha256: verifiedSourceTestSha256,
+		closures: [
+			createClosureEntry( row, {
+				reviews: REQUIRED_CLOSURE_REVIEW_ROLES.map( ( role ) => ( {
+					role,
+					verdict: 'APPROVE',
+					source_test_sha256: verifiedSourceTestSha256,
+					summary: `${ role } closure review approved`,
+				} ) ),
+			} ),
+		],
 		reviews: [
 			{
 				role: 'code',
@@ -1235,6 +1427,7 @@ test( 'accepts public-safe Phase 3 proof through the approved evidence entries',
 					'The password and token safeguards were reviewed; no credential values were recorded',
 			},
 		],
+		closures: [ createClosureEntry( row ) ],
 	} );
 
 	assert.doesNotThrow( () =>
@@ -1246,9 +1439,9 @@ for ( const [ description, mutate, expectedError ] of [
 	[
 		'an unsupported schema version',
 		( evidence ) => {
-			evidence.schema_version = 2;
+			evidence.schema_version = 1;
 		},
-		/schema_version/,
+		/expected 2/,
 	],
 	[
 		'an empty slice ID',
@@ -1412,17 +1605,6 @@ for ( const [ description, reviews ] of [
 			},
 		],
 	],
-	[
-		'a review of a different source test',
-		[
-			{
-				role: 'spec',
-				verdict: 'APPROVE',
-				source_test_sha256: 'b'.repeat( 64 ),
-				summary: 'different source reviewed',
-			},
-		],
-	],
 ] ) {
 	test( `rejects evidence with ${ description }`, () => {
 		const row = {
@@ -1443,6 +1625,30 @@ for ( const [ description, reviews ] of [
 		);
 	} );
 }
+
+test( 'accepts historical slice reviews that predate the current source bundle', () => {
+	const row = {
+		...contractMap.rows[ 0 ],
+		target_contract: 'Native fixture contract',
+		migration_state: 'closed',
+		native_support_state: 'supported',
+	};
+	const evidence = createValidEvidence( row, {
+		reviews: [
+			{
+				role: 'spec',
+				verdict: 'APPROVE',
+				source_test_sha256: 'b'.repeat( 64 ),
+				summary: 'historical source review approved',
+			},
+		],
+		closures: [ createClosureEntry( row ) ],
+	} );
+
+	assert.doesNotThrow( () =>
+		validateMigrationEvidence( evidence, createEvidenceContext( row ) )
+	);
+} );
 
 test( 'rejects deferred evidence without a decision-ready deferral', () => {
 	const row = {
