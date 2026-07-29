@@ -2288,6 +2288,150 @@ for ( const [ description, unsafeValue ] of [
 	} );
 }
 
+test( 'rejects a standalone provider secret token in evidence strings', () => {
+	const row = contractMap.rows[ 0 ];
+	const evidence = createValidEvidence( row, {
+		verification: [
+			{
+				command: 'pnpm test:e2e:woopayments:controller',
+				exit_code: 0,
+				summary: 'verified with sk_live_1234567890abcdefTESTONLY',
+			},
+		],
+	} );
+
+	assert.throws(
+		() =>
+			validateMigrationEvidence( evidence, createEvidenceContext( row ) ),
+		/credentials are forbidden/
+	);
+} );
+
+test( 'rejects JSON payloads embedded after a prose prefix', () => {
+	const row = contractMap.rows[ 0 ];
+	const evidence = createValidEvidence( row, {
+		verification: [
+			{
+				command: 'pnpm test:e2e:woopayments:controller',
+				exit_code: 0,
+				summary:
+					'provider response: {"name":"Synthetic Person","phone":"555-0100"}',
+			},
+		],
+	} );
+
+	assert.throws(
+		() =>
+			validateMigrationEvidence( evidence, createEvidenceContext( row ) ),
+		/serialized payloads are forbidden/
+	);
+} );
+
+for ( const [ description, embeddedPayload ] of [
+	[ 'a numeric scalar-leading array', '[1234567890123456]' ],
+	[ 'a boolean and null scalar-leading array', '[true,false,null]' ],
+	[
+		'an object with an escaped key',
+		'{"na\\"me":"Synthetic Person"}',
+	],
+] ) {
+	test( `rejects ${ description } embedded after a prose prefix`, () => {
+		const row = contractMap.rows[ 0 ];
+		const evidence = createValidEvidence( row, {
+			verification: [
+				{
+					command: 'pnpm test:e2e:woopayments:controller',
+					exit_code: 0,
+					summary: `provider response: ${ embeddedPayload }`,
+				},
+			],
+		} );
+
+		assert.throws(
+			() =>
+				validateMigrationEvidence(
+					evidence,
+					createEvidenceContext( row )
+				),
+			/serialized payloads are forbidden/
+		);
+	} );
+}
+
+test( 'accepts incidental non-JSON brackets and braces in evidence strings', () => {
+	const row = contractMap.rows[ 0 ];
+	const evidence = createValidEvidence( row, {
+		verification: [
+			{
+				command: 'pnpm test:e2e:woopayments:controller',
+				exit_code: 0,
+				summary:
+					'Verified items[primary] with the expected {status} placeholder',
+			},
+		],
+	} );
+
+	assert.doesNotThrow( () =>
+		validateMigrationEvidence( evidence, createEvidenceContext( row ) )
+	);
+} );
+
+test( 'rejects opening-heavy evidence strings over 4096 characters', () => {
+	const row = contractMap.rows[ 0 ];
+	const evidence = createValidEvidence( row, {
+		verification: [
+			{
+				command: 'pnpm test:e2e:woopayments:controller',
+				exit_code: 0,
+				summary: '['.repeat( 4097 ),
+			},
+		],
+	} );
+
+	assert.throws(
+		() =>
+			validateMigrationEvidence( evidence, createEvidenceContext( row ) ),
+		/evidence strings must not exceed 4096 characters/
+	);
+} );
+
+test( 'accepts safe evidence strings exactly 4096 characters long', () => {
+	const row = contractMap.rows[ 0 ];
+	const evidence = createValidEvidence( row, {
+		verification: [
+			{
+				command: 'pnpm test:e2e:woopayments:controller',
+				exit_code: 0,
+				summary: 'x'.repeat( 4096 ),
+			},
+		],
+	} );
+
+	assert.doesNotThrow( () =>
+		validateMigrationEvidence( evidence, createEvidenceContext( row ) )
+	);
+} );
+
+test( 'rejects JWT-shaped tokens in evidence strings', () => {
+	const row = contractMap.rows[ 0 ];
+	const evidence = createValidEvidence( row, {
+		verification: [
+			{
+				command: 'pnpm test:e2e:woopayments:controller',
+				exit_code: 0,
+				summary:
+					'session eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl',
+			},
+		],
+	} );
+
+	assert.throws(
+		() =>
+			validateMigrationEvidence( evidence, createEvidenceContext( row ) ),
+		/credentials are forbidden/
+	);
+} );
+
 test( 'require-saturated rejects a planned contract', () => {
 	assert.throws(
 		() => validate( cloneContractMap(), { requireSaturated: true } ),

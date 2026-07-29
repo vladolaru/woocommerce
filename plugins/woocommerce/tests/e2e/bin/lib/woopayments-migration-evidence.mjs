@@ -15,6 +15,7 @@ import {
 
 const SECRET_KEY_PATTERN =
 	/(token|password|secret|authorization|cookie|raw_payload)/i;
+const MAX_EVIDENCE_STRING_LENGTH = 4096;
 const ABSOLUTE_PATH_PATTERN = /^(?:\/|[A-Za-z]:[\\/])/;
 const OBVIOUS_EMBEDDED_ABSOLUTE_PATH_PATTERN =
 	/(?:^|[\s"'(=])(?:\/(?:Users|home|private|tmp|var)\/\S+|[A-Za-z]:[\\/]\S+)/;
@@ -22,6 +23,10 @@ const EMAIL_ADDRESS_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i;
 const BEARER_CREDENTIAL_PATTERN = /\bbearer\s+[A-Za-z0-9._~+/=-]{8,}\b/i;
 const KEY_VALUE_CREDENTIAL_PATTERN =
 	/\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|passwd|secret|authorization|cookie)\s*(?:=|:)\s*(?:"[^"]+"|'[^']+'|[^\s,;]+)/i;
+const PROVIDER_SECRET_TOKEN_PATTERN =
+	/\b(?:(?:sk|pk|rk)_(?:live|test)|whsec)_[A-Za-z0-9]{8,}\b/;
+const JWT_LIKE_PATTERN =
+	/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\b/;
 const RAW_PROVIDER_ID_PATTERN = /\b(?:acct|ch|cus|pi|pm)_[A-Za-z0-9]{6,}\b/;
 const REDACTED_PROVIDER_REFERENCE_PATTERN =
 	/^redacted:[a-z][a-z0-9-]*:sha256:[0-9a-f]{64}$/;
@@ -163,6 +168,77 @@ const isSerializedJsonPayload = ( value ) => {
 	}
 };
 
+const findStructuredPayloadEnd = ( value, startIndex ) => {
+	const expectedClosers = [ value[ startIndex ] === '{' ? '}' : ']' ];
+	let isInsideString = false;
+	let isEscaped = false;
+
+	for ( let index = startIndex + 1; index < value.length; index++ ) {
+		const character = value[ index ];
+
+		if ( isInsideString ) {
+			if ( isEscaped ) {
+				isEscaped = false;
+			} else if ( character === '\\' ) {
+				isEscaped = true;
+			} else if ( character === '"' ) {
+				isInsideString = false;
+			}
+			continue;
+		}
+
+		if ( character === '"' ) {
+			isInsideString = true;
+			continue;
+		}
+		if ( character === '{' || character === '[' ) {
+			expectedClosers.push( character === '{' ? '}' : ']' );
+			continue;
+		}
+		if ( character !== '}' && character !== ']' ) {
+			continue;
+		}
+		if ( character !== expectedClosers.at( -1 ) ) {
+			return -1;
+		}
+
+		expectedClosers.pop();
+		if ( expectedClosers.length === 0 ) {
+			return index;
+		}
+	}
+
+	return -1;
+};
+
+const containsEmbeddedSerializedJsonPayload = ( value ) => {
+	for ( let startIndex = 0; startIndex < value.length; startIndex++ ) {
+		if ( value[ startIndex ] !== '{' && value[ startIndex ] !== '[' ) {
+			continue;
+		}
+
+		const endIndex = findStructuredPayloadEnd( value, startIndex );
+
+		if ( endIndex === -1 ) {
+			continue;
+		}
+
+		try {
+			const parsedValue = JSON.parse(
+				value.slice( startIndex, endIndex + 1 )
+			);
+
+			if ( parsedValue !== null && typeof parsedValue === 'object' ) {
+				return true;
+			}
+		} catch {
+			// Keep scanning: incidental balanced punctuation is allowed.
+		}
+	}
+
+	return false;
+};
+
 const containsUnsafeProviderData = ( value ) => {
 	if ( RAW_PROVIDER_ID_PATTERN.test( value ) ) {
 		return true;
@@ -180,16 +256,24 @@ const containsUnsafeProviderData = ( value ) => {
 };
 
 const getUnsafeStringReason = ( value ) => {
+	if ( value.length > MAX_EVIDENCE_STRING_LENGTH ) {
+		return `evidence strings must not exceed ${ MAX_EVIDENCE_STRING_LENGTH } characters`;
+	}
 	if ( EMAIL_ADDRESS_PATTERN.test( value ) ) {
 		return 'personally identifiable information is forbidden';
 	}
 	if (
 		BEARER_CREDENTIAL_PATTERN.test( value ) ||
-		KEY_VALUE_CREDENTIAL_PATTERN.test( value )
+		KEY_VALUE_CREDENTIAL_PATTERN.test( value ) ||
+		PROVIDER_SECRET_TOKEN_PATTERN.test( value ) ||
+		JWT_LIKE_PATTERN.test( value )
 	) {
 		return 'credentials are forbidden';
 	}
-	if ( isSerializedJsonPayload( value ) ) {
+	if (
+		isSerializedJsonPayload( value ) ||
+		containsEmbeddedSerializedJsonPayload( value )
+	) {
 		return 'serialized payloads are forbidden';
 	}
 	if ( containsUnsafeProviderData( value ) ) {
