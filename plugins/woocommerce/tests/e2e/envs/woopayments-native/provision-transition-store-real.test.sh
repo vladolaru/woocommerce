@@ -101,6 +101,19 @@ if find "$state_writer_root" -maxdepth 1 -name 'resource-state.json.tmp-*' -prin
 	echo 'A failed state writer leaked its owned temporary file.' >&2
 	exit 1
 fi
+test ! -e "$state_writer_root/resource-state.json.lock"
+
+mkdir "$state_writer_root/resource-state.json.lock"
+touch -t 200001010000 "$state_writer_root/resource-state.json.lock"
+state_before_stale_lock="$(< "$state_writer_root/resource-state.json")"
+if node "$STATE_WRITER" "$state_writer_root/resource-state.json" phase must-not-land string \
+	> /dev/null 2> "$state_writer_root/stale-lock-stderr"; then
+	echo 'The state writer stole a stale transition state lock.' >&2
+	exit 1
+fi
+grep -Fq 'is stale; a writer died mid-update' "$state_writer_root/stale-lock-stderr"
+test "$(< "$state_writer_root/resource-state.json")" = "$state_before_stale_lock"
+test -d "$state_writer_root/resource-state.json.lock"
 
 mkdir -p "$TEST_ROOT/seed/woocommerce-payments"
 cat > "$TEST_ROOT/seed/woocommerce-payments/woocommerce-payments.php" <<'PHP'
@@ -612,5 +625,46 @@ test -f "$create_runtime/account"
 test ! -e "$create_runtime/wp-env"
 test ! -e "$create_lease_path"
 test "$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1])).port_lease_released" "$create_workspace/resource-state.json")" = 'true'
+
+# Concurrent state writers must serialize: without a lock, two writers
+# read the same snapshot and one key's update is lost.
+concurrent_state="$TEST_ROOT/concurrent-state.json"
+printf '{}\n' > "$concurrent_state"
+chmod 600 "$concurrent_state"
+for i in $(seq 1 20); do
+	node "$STATE_WRITER" "$concurrent_state" alpha "a$i" &
+	node "$STATE_WRITER" "$concurrent_state" beta "b$i" &
+	wait
+done
+node -e '
+	const state = JSON.parse( require( "node:fs" ).readFileSync( process.argv[ 1 ], "utf8" ) );
+	if ( state.alpha !== "a20" || state.beta !== "b20" ) {
+		console.error( "Lost transition state update:", JSON.stringify( state ) );
+		process.exit( 1 );
+	}
+' "$concurrent_state"
+test ! -e "$concurrent_state.lock"
+
+# Destroy is idempotent after completion: the phase gate answers before
+# the claim, and wp-env destroy does not run a second time.
+E2E_FAKE_ACCOUNT_RUNTIME=native_core run_provisioner "$create_workspace" "$create_runtime" "$create_log" \
+	destroy \
+	--workspace "$create_workspace" \
+	--rollback-receipt-file "$create_workspace/rollback-receipt"
+test "$(grep -Fc $'\tdestroy --force' "$create_log")" = '1'
+
+# A pre-existing destroy claim on an undestroyed workspace fails closed.
+node "$STATE_WRITER" "$create_workspace/resource-state.json" phase created
+node "$STATE_WRITER" "$create_workspace/resource-state.json" wp_env_destroyed false boolean
+claim_stderr="$TEST_ROOT/destroy-claim-stderr"
+if E2E_FAKE_ACCOUNT_RUNTIME=native_core run_provisioner "$create_workspace" "$create_runtime" "$create_log" \
+	destroy \
+	--workspace "$create_workspace" \
+	--rollback-receipt-file "$create_workspace/rollback-receipt" 2> "$claim_stderr"; then
+	echo 'Transition destroy proceeded despite an existing destroy claim.' >&2
+	exit 1
+fi
+grep -Fq 'Transition destroy claim already exists' "$claim_stderr" "$create_log"
+test "$(grep -Fc $'\tdestroy --force' "$create_log")" = '1'
 
 echo 'provision-transition-store-real.sh reference fixture tests passed.'

@@ -1401,6 +1401,13 @@ destroy_store() {
 	require_safe_identity
 	validate_base_store_identity
 	validate_wp_env_binary
+	if [[ "$(state_field phase)" == 'destroyed' ]]; then
+		return 0
+	fi
+	if ! mkdir "$workspace/.destroy-claim" 2> /dev/null; then
+		echo 'Transition destroy claim already exists; a concurrent or interrupted destroy owns this workspace.' >&2
+		exit 1
+	fi
 	prepare_port_lease_for_destroy
 
 	if [[ "$(state_field wp_env_destroyed)" == 'false' ]]; then
