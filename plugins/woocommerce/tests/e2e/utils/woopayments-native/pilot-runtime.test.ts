@@ -923,6 +923,15 @@ for ( const invalidDiff of [
 				)
 			).rejects.toThrow( /exactly one new.*token/i );
 			expect( fixture.submissions() ).toBe( 1 );
+			for ( const key of [
+				'acct_native/account:provider-writes',
+				'acct_native/native-store/store:native-store',
+				'acct_native/native-store/record-event:saved-card-invalid-diff',
+			] ) {
+				await expect(
+					assertResourcesUsable( [ key ], directory )
+				).rejects.toThrow( /quarantined/i );
+			}
 		} finally {
 			await rm( directory, { recursive: true, force: true } );
 		}

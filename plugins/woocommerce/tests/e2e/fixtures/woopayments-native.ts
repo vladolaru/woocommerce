@@ -513,51 +513,66 @@ export class WooPaymentsPilotRuntime {
 			.getByRole( 'combobox', { name: /country/i } )
 			.selectOption( 'US' );
 		await cardFrame.getByLabel( /ZIP/i ).fill( '90210' );
-		await this.performWrite( () =>
-			page
-				.getByRole( 'button', {
-					name: 'Add payment method',
+		const addPaymentMethod = page.getByRole( 'button', {
+			name: 'Add payment method',
+			exact: true,
+		} );
+		let submissionAttempted = false;
+		try {
+			await this.performWrite( () => {
+				submissionAttempted = true;
+				return addPaymentMethod.click();
+			} );
+			await expect(
+				page.getByText( 'Payment method successfully added.', {
 					exact: true,
 				} )
-				.click()
-		);
-		await expect(
-			page.getByText( 'Payment method successfully added.', {
-				exact: true,
-			} )
-		).toBeVisible();
+			).toBeVisible();
 
-		const after = await this.getSavedCardEvidence();
-		const beforeByTokenId = new Map(
-			before.tokens.map( ( token ) => [ token.tokenId, token ] )
-		);
-		for ( const token of before.tokens ) {
-			const preserved = after.tokens.find(
-				( candidate ) => candidate.tokenId === token.tokenId
+			const after = await this.getSavedCardEvidence();
+			const beforeByTokenId = new Map(
+				before.tokens.map( ( token ) => [ token.tokenId, token ] )
 			);
-			if (
-				! preserved ||
-				preserved.paymentMethodId !== token.paymentMethodId
-			) {
+			for ( const token of before.tokens ) {
+				const preserved = after.tokens.find(
+					( candidate ) => candidate.tokenId === token.tokenId
+				);
+				if (
+					! preserved ||
+					preserved.paymentMethodId !== token.paymentMethodId
+				) {
+					throw new Error(
+						`Saved-card ${ label } changed the existing local token ${ token.tokenId } mapping.`
+					);
+				}
+			}
+
+			const created = after.tokens.filter(
+				( token ) => ! beforeByTokenId.has( token.tokenId )
+			);
+			if ( created.length !== 1 ) {
 				throw new Error(
-					`Saved-card ${ label } changed the existing local token ${ token.tokenId } mapping.`
+					`Saved-card ${ label } must create exactly one new local token; found ${ created.length }.`
 				);
 			}
-		}
 
-		const created = after.tokens.filter(
-			( token ) => ! beforeByTokenId.has( token.tokenId )
-		);
-		if ( created.length !== 1 ) {
-			throw new Error(
-				`Saved-card ${ label } must create exactly one new local token; found ${ created.length }.`
+			return {
+				tokenId: created[ 0 ].tokenId,
+				paymentMethodId: created[ 0 ].paymentMethodId,
+			};
+		} catch ( error ) {
+			if (
+				! submissionAttempted ||
+				error instanceof ResourceQuarantineRequiredError
+			) {
+				throw error;
+			}
+			throw new ResourceQuarantineRequiredError(
+				`Saved-card ${ label } creation could not be proven after submission.`,
+				'cleanup-failed',
+				error
 			);
 		}
-
-		return {
-			tokenId: created[ 0 ].tokenId,
-			paymentMethodId: created[ 0 ].paymentMethodId,
-		};
 	}
 
 	public async makeSavedCardDefault(
