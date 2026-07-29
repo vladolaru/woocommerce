@@ -21,8 +21,10 @@ import {
 } from '../utils/woopayments-native/runtime-readiness';
 import {
 	assertAccountSeparation,
+	assertNoDisplacedProviderLocks,
 	resourceLockKey,
 	ResourceLockManager,
+	ResourceQuarantineRequiredError,
 	type ResourceLock,
 	type StoreAccountAllocation,
 } from '../utils/woopayments-native/resource-locks';
@@ -42,6 +44,7 @@ import {
 import { assertTransitionAllocation } from '../utils/woopayments-native/transition-allocation';
 
 export { tags } from './fixtures';
+export { ResourceQuarantineRequiredError };
 
 interface OwnedProduct {
 	id: number;
@@ -88,22 +91,6 @@ interface ProviderSubmissionScope {
 	inFlight: Set< Promise< unknown > >;
 	blockedError?: unknown;
 	firstError?: unknown;
-}
-
-export class ResourceQuarantineRequiredError extends Error {
-	public readonly reasonCode: ResourceQuarantineReceipt[ 'reasonCode' ];
-	public readonly primaryError?: unknown;
-
-	public constructor(
-		message: string,
-		reasonCode: ResourceQuarantineReceipt[ 'reasonCode' ],
-		primaryError?: unknown
-	) {
-		super( message );
-		this.name = 'ResourceQuarantineRequiredError';
-		this.reasonCode = reasonCode;
-		this.primaryError = primaryError;
-	}
 }
 
 export class ProviderSubmissionNotStartedError extends Error {}
@@ -979,6 +966,7 @@ export class WooPaymentsPilotRuntime {
 				locks.push( recordEvent );
 			}
 
+			assertNoDisplacedProviderLocks( locks );
 			const unresolvedAttempts =
 				await findUnresolvedProviderWriteAttempts(
 					this.getProviderLockDirectory(),
@@ -1004,7 +992,12 @@ export class WooPaymentsPilotRuntime {
 			};
 			result = await callback();
 		} catch ( error ) {
-			primaryError = error;
+			try {
+				assertNoDisplacedProviderLocks( locks );
+				primaryError = error;
+			} catch ( displacementError ) {
+				primaryError = displacementError;
+			}
 		}
 
 		const submissionScope = this.activeProviderSubmissionScope;

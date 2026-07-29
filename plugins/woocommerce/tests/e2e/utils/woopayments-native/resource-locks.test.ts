@@ -9,11 +9,14 @@ import { expect, test } from '@playwright/test';
 
 import {
 	assertAccountSeparation,
+	assertNoDisplacedProviderLocks,
 	ResourceLock,
 	ResourceLockManager,
+	ResourceQuarantineRequiredError,
 	type ResourceLockPayload,
 	type ResourceLockRequest,
 } from './resource-locks';
+import { sha256 } from './durable-fs';
 import { quarantineResources } from './resource-quarantine';
 import { temporaryLockDirectory, useLockDirectory } from './lock-test-helpers';
 
@@ -34,6 +37,43 @@ async function yieldToPeer(): Promise< void > {
 }
 
 function noop(): void {}
+
+test( 'a displaced provider lock owner forces quarantine instead of reuse', () => {
+	const displacedKey = 'acct_x/account:provider-writes';
+	const displaced = {
+		payload: { key: displacedKey },
+		displacedOwner: {
+			key: displacedKey,
+			runId: 'dead-run',
+			pid: 4242,
+			acquiredAt: 1,
+			expiresAt: 2,
+			diagnosticPath: 'test-results/dead-run',
+		},
+	} as unknown as ResourceLock;
+	const clean = {
+		payload: { key: 'store-1/store:store-1' },
+	} as unknown as ResourceLock;
+
+	let quarantineError: unknown;
+	try {
+		assertNoDisplacedProviderLocks( [ clean, displaced ] );
+	} catch ( error ) {
+		quarantineError = error;
+	}
+
+	expect( quarantineError ).toBeInstanceOf( ResourceQuarantineRequiredError );
+	expect( quarantineError ).toMatchObject( {
+		reasonCode: 'uncertain-provider-write',
+	} );
+	expect( ( quarantineError as Error ).message ).toContain(
+		`sha256:${ sha256( displacedKey ) }`
+	);
+	expect( ( quarantineError as Error ).message ).not.toContain(
+		displacedKey
+	);
+	expect( () => assertNoDisplacedProviderLocks( [ clean ] ) ).not.toThrow();
+} );
 
 function spawnLockWorker(
 	lockDir: string,

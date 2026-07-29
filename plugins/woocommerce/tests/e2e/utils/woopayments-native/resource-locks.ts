@@ -18,7 +18,10 @@ import {
 	writeNewDurableJson,
 } from './durable-fs.ts';
 // @ts-expect-error Node's direct TypeScript lock workers require the explicit extension.
-import { assertResourcesUsable } from './resource-quarantine.ts';
+import {
+	assertResourcesUsable,
+	type ResourceQuarantineReceipt,
+} from './resource-quarantine.ts';
 
 export type ResourceLockKind =
 	| 'account'
@@ -59,6 +62,22 @@ export interface ResourceLockPayload {
 	acquiredAt: number;
 	expiresAt: number;
 	diagnosticPath: string;
+}
+
+export class ResourceQuarantineRequiredError extends Error {
+	public readonly reasonCode: ResourceQuarantineReceipt[ 'reasonCode' ];
+	public readonly primaryError?: unknown;
+
+	public constructor(
+		message: string,
+		reasonCode: ResourceQuarantineReceipt[ 'reasonCode' ],
+		primaryError?: unknown
+	) {
+		super( message );
+		this.name = 'ResourceQuarantineRequiredError';
+		this.reasonCode = reasonCode;
+		this.primaryError = primaryError;
+	}
 }
 
 export interface StoreAccountAllocation {
@@ -296,6 +315,20 @@ export class ResourceLock {
 		if ( this.renewalError ) {
 			throw this.renewalError;
 		}
+	}
+}
+
+export function assertNoDisplacedProviderLocks(
+	locks: readonly ResourceLock[]
+): void {
+	const displaced = locks.find( ( lock ) => lock.displacedOwner );
+	if ( displaced ) {
+		throw new ResourceQuarantineRequiredError(
+			`Resource lock sha256:${ sha256(
+				displaced.payload.key
+			) } was recovered from an expired owner without a clean-completion receipt.`,
+			'uncertain-provider-write'
+		);
 	}
 }
 

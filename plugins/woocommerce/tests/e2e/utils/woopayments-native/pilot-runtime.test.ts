@@ -23,6 +23,7 @@ import {
 import {
 	loadInitialRuntimeStatus,
 	ProviderSubmissionNotStartedError,
+	ResourceQuarantineRequiredError,
 	submitBlocksCheckout,
 	WooPaymentsPilotRuntime,
 } from '../../fixtures/woopayments-native';
@@ -37,6 +38,7 @@ import {
 	findUnresolvedProviderWriteAttempts,
 	openProviderWriteAttempt,
 } from './provider-write-journal';
+import { sha256 } from './durable-fs';
 import { ResourceLock, ResourceLockManager } from './resource-locks';
 import { temporaryLockDirectory, useLockDirectory } from './lock-test-helpers';
 import { KNOWN_GAP_ANNOTATION, KNOWN_GAP_SENTINEL } from './known-gap';
@@ -1653,6 +1655,141 @@ test( 'quarantines every held lock when a prior provider write attempt overlaps 
 			)
 		).toBe( true );
 	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'quarantines every held lock when provider-write acquisition displaces an expired owner', async () => {
+	const directory = await lockDirectory();
+	const calls: RequestCall[] = [];
+	const annotated: ResourceQuarantineReceipt[] = [];
+	const pilotRuntime = runtime( directory, calls, {
+		onResourceQuarantined: ( receipt ) => annotated.push( receipt ),
+	} );
+	const displacedKey = 'acct_native/account:provider-writes';
+	const expiredOwner = new ResourceLockManager( {
+		lockDir: directory,
+		runId: 'dead-run',
+		leaseMs: 10,
+		autoRenew: false,
+	} );
+	let callbackInvoked = false;
+
+	try {
+		await expiredOwner.acquire( {
+			providerAccountId: 'acct_native',
+			storeId: 'native-store',
+			kind: 'account',
+			resource: 'provider-writes',
+			diagnosticPath: 'test-results/dead-run',
+		} );
+		await new Promise( ( resolveDelay ) => setTimeout( resolveDelay, 25 ) );
+
+		let quarantineError: unknown;
+		try {
+			await pilotRuntime.withProviderWriteLocks(
+				{ recordEvent: 'displaced-provider-owner' },
+				async () => {
+					callbackInvoked = true;
+				}
+			);
+		} catch ( error ) {
+			quarantineError = error;
+		}
+
+		expect( callbackInvoked ).toBe( false );
+		expect( quarantineError ).toBeInstanceOf(
+			ResourceQuarantineRequiredError
+		);
+		expect( quarantineError ).toMatchObject( {
+			reasonCode: 'uncertain-provider-write',
+		} );
+		expect( ( quarantineError as Error ).message ).toContain(
+			`sha256:${ sha256( displacedKey ) }`
+		);
+		expect( ( quarantineError as Error ).message ).not.toContain(
+			displacedKey
+		);
+		expect( annotated ).toHaveLength( 3 );
+		expect(
+			annotated.every(
+				( receipt ) => receipt.reasonCode === 'uncertain-provider-write'
+			)
+		).toBe( true );
+	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'preserves displaced-owner quarantine when a later lock acquisition fails', async () => {
+	const directory = await lockDirectory();
+	const calls: RequestCall[] = [];
+	const annotated: ResourceQuarantineReceipt[] = [];
+	const pilotRuntime = runtime( directory, calls, {
+		onResourceQuarantined: ( receipt ) => annotated.push( receipt ),
+	} );
+	const displacedKey = 'acct_native/account:provider-writes';
+	const laterKey = 'acct_native/native-store/store:native-store';
+	const expiredOwner = new ResourceLockManager( {
+		lockDir: directory,
+		runId: 'dead-run',
+		leaseMs: 10,
+		autoRenew: false,
+	} );
+	const originalAcquire = ResourceLockManager.prototype.acquire;
+	let callbackInvoked = false;
+
+	try {
+		await expiredOwner.acquire( {
+			providerAccountId: 'acct_native',
+			storeId: 'native-store',
+			kind: 'account',
+			resource: 'provider-writes',
+			diagnosticPath: 'test-results/dead-run',
+		} );
+		await new Promise( ( resolveDelay ) => setTimeout( resolveDelay, 25 ) );
+		const acquisitionSteps: Array< typeof originalAcquire > = [
+			originalAcquire,
+			async function () {
+				throw new Error(
+					`Forced later acquisition failure for ${ laterKey }.`
+				);
+			},
+		];
+		let acquisitionStep = 0;
+		ResourceLockManager.prototype.acquire = function ( request ) {
+			return acquisitionSteps[ acquisitionStep++ ].call( this, request );
+		};
+
+		let quarantineError: unknown;
+		try {
+			await pilotRuntime.withProviderWriteLocks( {}, async () => {
+				callbackInvoked = true;
+			} );
+		} catch ( error ) {
+			quarantineError = error;
+		}
+
+		expect( callbackInvoked ).toBe( false );
+		expect( quarantineError ).toBeInstanceOf(
+			ResourceQuarantineRequiredError
+		);
+		expect( quarantineError ).toMatchObject( {
+			reasonCode: 'uncertain-provider-write',
+		} );
+		expect( ( quarantineError as Error ).message ).toContain(
+			`sha256:${ sha256( displacedKey ) }`
+		);
+		expect( ( quarantineError as Error ).message ).not.toContain(
+			displacedKey
+		);
+		expect( ( quarantineError as Error ).message ).not.toContain(
+			laterKey
+		);
+		expect( annotated ).toHaveLength( 1 );
+		expect( annotated[ 0 ].reasonCode ).toBe( 'uncertain-provider-write' );
+	} finally {
+		ResourceLockManager.prototype.acquire = originalAcquire;
 		await rm( directory, { recursive: true, force: true } );
 	}
 } );
