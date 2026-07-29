@@ -158,6 +158,27 @@ const calculateSourceBundleSha256 = (
 		)
 		.digest( 'hex' );
 
+const calculateCurrentSourceBundleSha256 = (
+	repositoryPaths,
+	sourceRepositoryRoot = repositoryRoot
+) =>
+	createHash( 'sha256' )
+		.update(
+			JSON.stringify(
+				repositoryPaths.toSorted().map( ( repositoryPath ) => [
+					repositoryPath,
+					createHash( 'sha256' )
+						.update(
+							readFileSync(
+								resolve( sourceRepositoryRoot, repositoryPath )
+							)
+						)
+						.digest( 'hex' ),
+				] )
+			)
+		)
+		.digest( 'hex' );
+
 const DEFAULT_SOURCE_TEST_PATHS = [
 	'plugins/woocommerce/tests/e2e/utils/woopayments-native/known-gap-format.mjs',
 ];
@@ -285,6 +306,16 @@ const createExternalTemporaryFile = () => {
 	externalTemporaryDirectories.push( temporaryDirectory );
 	writeFileSync( filePath, 'external contract evidence\n' );
 	return filePath;
+};
+
+const createTemporaryGitRepository = () => {
+	const temporaryDirectory = mkdtempSync(
+		join( tmpdir(), 'woocommerce-contract-map-' )
+	);
+
+	externalTemporaryDirectories.push( temporaryDirectory );
+	execFileSync( 'git', [ '-C', temporaryDirectory, 'init', '--quiet' ] );
+	return temporaryDirectory;
 };
 
 const createMissingTargetFile = ( repositoryPath ) => {
@@ -1336,36 +1367,50 @@ test( 'rejects duplicate closure entries for the same contract', async ( t ) => 
 	}
 } );
 
-test( 'loads the reviewed source bundle from the verified revision', () => {
-	const row = {
-		...contractMap.rows[ 0 ],
-		target_contract: 'Native fixture contract',
-		migration_state: 'closed',
-		native_support_state: 'supported',
-	};
-	const verifiedAtCommit = '6cf3169e9612ca185e723aea6188657d5ff309f9';
+test( 'terminal evidence must attest the current retained source bytes', () => {
+	const closedRow = cloneContractMap().rows[ 0 ];
+	specify( closedRow );
+	closedRow.migration_state = 'closed';
+	closedRow.native_support_state = 'supported';
 	const sourceTestPaths = [
-		'plugins/woocommerce/tests/e2e/fixtures/woopayments-native.ts',
-		'plugins/woocommerce/tests/e2e/tests/woopayments-native/pilots/saved-method-cutover.spec.ts',
+		'plugins/woocommerce/tests/e2e/bin/lib/woopayments-contract-map.mjs',
 	];
-	const verifiedSourceTestSha256 = calculateSourceBundleSha256(
+	const lastTouchCommit = execFileSync(
+		'git',
+		[
+			'-C',
+			repositoryRoot,
+			'log',
+			'-n',
+			'1',
+			'--format=%H',
+			'--',
+			sourceTestPaths[ 0 ],
+		],
+		{ encoding: 'utf8' }
+	).trim();
+	const historicalCommit = execFileSync(
+		'git',
+		[ '-C', repositoryRoot, 'rev-parse', `${ lastTouchCommit }^` ],
+		{ encoding: 'utf8' }
+	).trim();
+	const staleSha256 = calculateSourceBundleSha256(
 		sourceTestPaths,
-		verifiedAtCommit
+		historicalCommit
 	);
-	const currentSourceTestSha256 =
-		calculateSourceBundleSha256( sourceTestPaths );
-	assert.notEqual( verifiedSourceTestSha256, currentSourceTestSha256 );
+	const currentSha256 = calculateSourceBundleSha256( sourceTestPaths );
+	assert.notEqual( staleSha256, currentSha256 );
 
-	const evidence = createValidEvidence( row, {
-		verified_at_commit: verifiedAtCommit,
+	const evidence = createValidEvidence( closedRow, {
+		verified_at_commit: historicalCommit,
 		source_test_paths: sourceTestPaths,
-		source_test_sha256: verifiedSourceTestSha256,
+		source_test_sha256: staleSha256,
 		closures: [
-			createClosureEntry( row, {
+			createClosureEntry( closedRow, {
 				reviews: REQUIRED_CLOSURE_REVIEW_ROLES.map( ( role ) => ( {
 					role,
 					verdict: 'APPROVE',
-					source_test_sha256: verifiedSourceTestSha256,
+					source_test_sha256: staleSha256,
 					summary: `${ role } closure review approved`,
 				} ) ),
 			} ),
@@ -1374,22 +1419,260 @@ test( 'loads the reviewed source bundle from the verified revision', () => {
 			{
 				role: 'code',
 				verdict: 'APPROVE',
-				source_test_sha256: verifiedSourceTestSha256,
+				source_test_sha256: staleSha256,
+				summary: 'historical source bundle approved',
+			},
+		],
+	} );
+
+	assert.throws(
+		() =>
+			validateMigrationEvidence(
+				evidence,
+				createEvidenceContext( closedRow )
+			),
+		/terminal evidence must attest the current retained bytes/
+	);
+} );
+
+test( 'terminal evidence rejects an untracked current source path', () => {
+	const closedRow = cloneContractMap().rows[ 0 ];
+	specify( closedRow );
+	closedRow.migration_state = 'closed';
+	closedRow.native_support_state = 'supported';
+	const sourceRepositoryRoot = createTemporaryGitRepository();
+	const sourceTestPaths = [ '.git/HEAD' ];
+	const sourceTestSha256 = calculateCurrentSourceBundleSha256(
+		sourceTestPaths,
+		sourceRepositoryRoot
+	);
+	const evidence = createValidEvidence( closedRow, {
+		source_test_paths: sourceTestPaths,
+		source_test_sha256: sourceTestSha256,
+		closures: [
+			createClosureEntry( closedRow, {
+				reviews: REQUIRED_CLOSURE_REVIEW_ROLES.map( ( role ) => ( {
+					role,
+					verdict: 'APPROVE',
+					source_test_sha256: sourceTestSha256,
+					summary: `${ role } closure review approved`,
+				} ) ),
+			} ),
+		],
+	} );
+
+	assert.throws(
+		() =>
+			validateMigrationEvidence( evidence, {
+				...createEvidenceContext( closedRow ),
+				repositoryRoot: sourceRepositoryRoot,
+			} ),
+		/current source must be a tracked regular file within the repository/
+	);
+} );
+
+test( 'terminal evidence rejects an escaping current source symlink', () => {
+	const closedRow = cloneContractMap().rows[ 0 ];
+	specify( closedRow );
+	closedRow.migration_state = 'closed';
+	closedRow.native_support_state = 'supported';
+	const sourceRepositoryRoot = createTemporaryGitRepository();
+	const externalFile = createExternalTemporaryFile();
+	const sourceTestPaths = [ 'tracked-source.mjs' ];
+	symlinkSync(
+		externalFile,
+		resolve( sourceRepositoryRoot, sourceTestPaths[ 0 ] )
+	);
+	execFileSync( 'git', [
+		'-C',
+		sourceRepositoryRoot,
+		'add',
+		'--',
+		sourceTestPaths[ 0 ],
+	] );
+	const sourceTestSha256 = calculateCurrentSourceBundleSha256(
+		sourceTestPaths,
+		sourceRepositoryRoot
+	);
+	const evidence = createValidEvidence( closedRow, {
+		source_test_paths: sourceTestPaths,
+		source_test_sha256: sourceTestSha256,
+		closures: [
+			createClosureEntry( closedRow, {
+				reviews: REQUIRED_CLOSURE_REVIEW_ROLES.map( ( role ) => ( {
+					role,
+					verdict: 'APPROVE',
+					source_test_sha256: sourceTestSha256,
+					summary: `${ role } closure review approved`,
+				} ) ),
+			} ),
+		],
+	} );
+
+	assert.throws(
+		() =>
+			validateMigrationEvidence( evidence, {
+				...createEvidenceContext( closedRow ),
+				repositoryRoot: sourceRepositoryRoot,
+			} ),
+		/current source must be a tracked regular file within the repository/
+	);
+} );
+
+test( 'terminal evidence rejects a tracked symlink to an untracked in-repository file', () => {
+	const closedRow = cloneContractMap().rows[ 0 ];
+	specify( closedRow );
+	closedRow.migration_state = 'closed';
+	closedRow.native_support_state = 'supported';
+	const sourceRepositoryRoot = createTemporaryGitRepository();
+	const sourceTestPaths = [ 'tracked-source.mjs' ];
+	const untrackedTargetPath = resolve(
+		sourceRepositoryRoot,
+		'untracked-target.mjs'
+	);
+	writeFileSync( untrackedTargetPath, 'untracked in-repository source\n' );
+	symlinkSync(
+		untrackedTargetPath,
+		resolve( sourceRepositoryRoot, sourceTestPaths[ 0 ] )
+	);
+	execFileSync( 'git', [
+		'-C',
+		sourceRepositoryRoot,
+		'add',
+		'--',
+		sourceTestPaths[ 0 ],
+	] );
+	assert.equal(
+		execFileSync( 'git', [ '-C', sourceRepositoryRoot, 'ls-files' ], {
+			encoding: 'utf8',
+		} ).trim(),
+		sourceTestPaths[ 0 ]
+	);
+	const sourceTestSha256 = calculateCurrentSourceBundleSha256(
+		sourceTestPaths,
+		sourceRepositoryRoot
+	);
+	const evidence = createValidEvidence( closedRow, {
+		source_test_paths: sourceTestPaths,
+		source_test_sha256: sourceTestSha256,
+		closures: [
+			createClosureEntry( closedRow, {
+				reviews: REQUIRED_CLOSURE_REVIEW_ROLES.map( ( role ) => ( {
+					role,
+					verdict: 'APPROVE',
+					source_test_sha256: sourceTestSha256,
+					summary: `${ role } closure review approved`,
+				} ) ),
+			} ),
+		],
+	} );
+
+	assert.throws(
+		() =>
+			validateMigrationEvidence( evidence, {
+				...createEvidenceContext( closedRow ),
+				repositoryRoot: sourceRepositoryRoot,
+			} ),
+		/current source must be a tracked regular file within the repository/
+	);
+} );
+
+test( 'terminal evidence attests modified tracked working-tree bytes', () => {
+	const closedRow = cloneContractMap().rows[ 0 ];
+	specify( closedRow );
+	closedRow.migration_state = 'closed';
+	closedRow.native_support_state = 'supported';
+	const sourceRepositoryRoot = createTemporaryGitRepository();
+	const sourceTestPaths = [ 'tracked-source.mjs' ];
+	const sourcePath = resolve( sourceRepositoryRoot, sourceTestPaths[ 0 ] );
+	writeFileSync( sourcePath, 'indexed source bytes\n' );
+	execFileSync( 'git', [
+		'-C',
+		sourceRepositoryRoot,
+		'add',
+		'--',
+		sourceTestPaths[ 0 ],
+	] );
+	writeFileSync( sourcePath, 'modified working-tree source bytes\n' );
+	const sourceTestSha256 = calculateCurrentSourceBundleSha256(
+		sourceTestPaths,
+		sourceRepositoryRoot
+	);
+	const evidence = createValidEvidence( closedRow, {
+		source_test_paths: sourceTestPaths,
+		source_test_sha256: sourceTestSha256,
+		closures: [
+			createClosureEntry( closedRow, {
+				reviews: REQUIRED_CLOSURE_REVIEW_ROLES.map( ( role ) => ( {
+					role,
+					verdict: 'APPROVE',
+					source_test_sha256: sourceTestSha256,
+					summary: `${ role } closure review approved`,
+				} ) ),
+			} ),
+		],
+	} );
+
+	assert.doesNotThrow( () =>
+		validateMigrationEvidence( evidence, {
+			...createEvidenceContext( closedRow ),
+			repositoryRoot: sourceRepositoryRoot,
+		} )
+	);
+} );
+
+test( 'implemented evidence still validates against the verified revision', () => {
+	const implementedRow = cloneContractMap().rows[ 0 ];
+	specify( implementedRow );
+	implementedRow.migration_state = 'implemented';
+	const sourceTestPaths = [
+		'plugins/woocommerce/tests/e2e/bin/lib/woopayments-contract-map.mjs',
+	];
+	const lastTouchCommit = execFileSync(
+		'git',
+		[
+			'-C',
+			repositoryRoot,
+			'log',
+			'-n',
+			'1',
+			'--format=%H',
+			'--',
+			sourceTestPaths[ 0 ],
+		],
+		{ encoding: 'utf8' }
+	).trim();
+	const historicalCommit = execFileSync(
+		'git',
+		[ '-C', repositoryRoot, 'rev-parse', `${ lastTouchCommit }^` ],
+		{ encoding: 'utf8' }
+	).trim();
+	const historicalSha256 = calculateSourceBundleSha256(
+		sourceTestPaths,
+		historicalCommit
+	);
+	const currentSha256 = calculateSourceBundleSha256( sourceTestPaths );
+	assert.notEqual( historicalSha256, currentSha256 );
+
+	const evidence = createValidEvidence( implementedRow, {
+		verified_at_commit: historicalCommit,
+		source_test_paths: sourceTestPaths,
+		source_test_sha256: historicalSha256,
+		reviews: [
+			{
+				role: 'code',
+				verdict: 'APPROVE',
+				source_test_sha256: historicalSha256,
 				summary: 'verified revision source bundle approved',
 			},
 		],
 	} );
 
 	assert.doesNotThrow( () =>
-		validateMigrationEvidence( evidence, createEvidenceContext( row ) )
-	);
-
-	evidence.source_test_sha256 = currentSourceTestSha256;
-	evidence.reviews[ 0 ].source_test_sha256 = currentSourceTestSha256;
-	assert.throws(
-		() =>
-			validateMigrationEvidence( evidence, createEvidenceContext( row ) ),
-		/source bundle SHA-256/
+		validateMigrationEvidence(
+			evidence,
+			createEvidenceContext( implementedRow )
+		)
 	);
 } );
 

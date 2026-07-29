@@ -1,5 +1,12 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import {
+	lstatSync,
+	readFileSync,
+	realpathSync,
+	statSync,
+} from 'node:fs';
+import { isAbsolute, relative, resolve, sep as pathSeparator } from 'node:path';
 
 import {
 	isAnchoredMessagePattern,
@@ -22,6 +29,7 @@ const REDACTED_PROVIDER_REFERENCE_CANDIDATE_PATTERN = /\bredacted:[^\s;,]+/g;
 const SHA1_PATTERN = /^[0-9a-f]{40}$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const URI_SCHEME_PATTERN = /^[a-z][a-z\d+.-]*:/i;
+const REGULAR_GIT_INDEX_MODES = new Set( [ '100644', '100755' ] );
 
 /**
  * The one definition of a legal repository-relative path in the ledger. The
@@ -289,11 +297,75 @@ const assertRepositoryRelativePath = ( value, label ) => {
 const sha256 = ( value ) =>
 	createHash( 'sha256' ).update( value ).digest( 'hex' );
 
+const readCurrentSource = ( repositoryRoot, sourcePath ) => {
+	const invalidSourceMessage = `Invalid migration evidence source_test_paths; current source must be a tracked regular file within the repository: ${ sourcePath }`;
+
+	try {
+		const indexEntries = execFileSync(
+			'git',
+			[
+				'-C',
+				repositoryRoot,
+				'ls-files',
+				'--error-unmatch',
+				'--stage',
+				'--',
+				`:(literal)${ sourcePath }`,
+			],
+			{
+				encoding: 'utf8',
+				stdio: [ 'ignore', 'pipe', 'ignore' ],
+			}
+		)
+			.trimEnd()
+			.split( '\n' );
+		const [ indexMode, , indexStage ] = indexEntries[ 0 ]
+			.split( '\t', 1 )[ 0 ]
+			.split( ' ' );
+
+		const realRepositoryRoot = realpathSync( repositoryRoot );
+		const absoluteSourcePath = resolve(
+			realRepositoryRoot,
+			sourcePath
+		);
+		const realSourcePath = realpathSync(
+			absoluteSourcePath
+		);
+		const repositoryRelativeRealPath = relative(
+			realRepositoryRoot,
+			realSourcePath
+		);
+
+		if (
+			indexEntries.length !== 1 ||
+			! REGULAR_GIT_INDEX_MODES.has( indexMode ) ||
+			indexStage !== '0' ||
+			realSourcePath !== absoluteSourcePath ||
+			repositoryRelativeRealPath === '..' ||
+			repositoryRelativeRealPath.startsWith( `..${ pathSeparator }` ) ||
+			isAbsolute( repositoryRelativeRealPath ) ||
+			! lstatSync( absoluteSourcePath ).isFile() ||
+			! statSync( realSourcePath ).isFile()
+		) {
+			throw new Error( invalidSourceMessage );
+		}
+
+		return readFileSync( realSourcePath );
+	} catch ( error ) {
+		if ( error.message === invalidSourceMessage ) {
+			throw error;
+		}
+
+		throw new Error( invalidSourceMessage, { cause: error } );
+	}
+};
+
 const assertSourceTestBundle = (
 	sourceTestPaths,
 	sourceTestSha256,
 	repositoryRoot,
-	verifiedAtCommit
+	verifiedAtCommit,
+	bindCurrentBytes
 ) => {
 	assertArray( sourceTestPaths, 'source_test_paths' );
 	if ( sourceTestPaths.length === 0 ) {
@@ -318,22 +390,26 @@ const assertSourceTestBundle = (
 
 	const sourceEntries = [ ...uniquePaths ].toSorted().map( ( sourcePath ) => {
 		let contents;
-		try {
-			contents = execFileSync(
-				'git',
-				[
-					'-C',
-					repositoryRoot,
-					'show',
-					`${ verifiedAtCommit }:${ sourcePath }`,
-				],
-				{ maxBuffer: 10 * 1024 * 1024 }
-			);
-		} catch ( error ) {
-			throw new Error(
-				`Invalid migration evidence source_test_paths; cannot read ${ sourcePath } at verified_at_commit`,
-				{ cause: error }
-			);
+		if ( bindCurrentBytes ) {
+			contents = readCurrentSource( repositoryRoot, sourcePath );
+		} else {
+			try {
+				contents = execFileSync(
+					'git',
+					[
+						'-C',
+						repositoryRoot,
+						'show',
+						`${ verifiedAtCommit }:${ sourcePath }`,
+					],
+					{ maxBuffer: 10 * 1024 * 1024 }
+				);
+			} catch ( error ) {
+				throw new Error(
+					`Invalid migration evidence source_test_paths; cannot read ${ sourcePath } at verified_at_commit`,
+					{ cause: error }
+				);
+			}
 		}
 		return [ sourcePath, sha256( contents ) ];
 	} );
@@ -341,7 +417,9 @@ const assertSourceTestBundle = (
 
 	if ( actualSha256 !== sourceTestSha256 ) {
 		throw new Error(
-			'Invalid migration evidence source bundle SHA-256; reviewed source changed'
+			bindCurrentBytes
+				? 'Invalid migration evidence source bundle SHA-256; terminal evidence must attest the current retained bytes'
+				: 'Invalid migration evidence source bundle SHA-256; reviewed source changed'
 		);
 	}
 };
@@ -748,7 +826,8 @@ export const validateMigrationEvidence = (
 		evidence.source_test_paths,
 		evidence.source_test_sha256,
 		repositoryRoot,
-		evidence.verified_at_commit
+		evidence.verified_at_commit,
+		[ 'verified', 'closed' ].includes( row.migration_state )
 	);
 
 	assertArray( evidence.contract_ids, 'contract_ids' );
