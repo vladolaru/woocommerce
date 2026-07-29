@@ -99,14 +99,30 @@ test(
 						defaultCard.paymentMethodId
 					);
 					expect( nativeDefaultCard.isDefault ).toBe( true );
-					expect( classicEvidence.paymentMethodId ).toBe(
-						defaultCard.paymentMethodId
+					expect( classicEvidence.orderId ).toBe( classicOrderId );
+					expect( blocksEvidence.orderId ).toBe( blocksOrderId );
+					expect( classicEvidence.intentId ).not.toBe(
+						blocksEvidence.intentId
 					);
-					expect( blocksEvidence.paymentMethodId ).toBe(
-						defaultCard.paymentMethodId
-					);
-					expect( classicEvidence.occurrenceCount ).toBe( 1 );
-					expect( blocksEvidence.occurrenceCount ).toBe( 1 );
+					for ( const evidence of [
+						classicEvidence,
+						blocksEvidence,
+					] ) {
+						expect( evidence.runId ).toBe( runId );
+						expect( evidence.paymentMethodId ).toBe(
+							defaultCard.paymentMethodId
+						);
+						expect( [ 'processing', 'completed' ] ).toContain(
+							evidence.orderStatus
+						);
+						expect( evidence.providerStatus ).toBe( 'succeeded' );
+						expect( evidence.chargeStatus ).toBe( 'succeeded' );
+						expect( evidence.chargeCaptured ).toBe( true );
+						expect( evidence.amountMinor ).toBe( 1099 );
+						expect( evidence.currency ).toBe( 'USD' );
+						expect( evidence.occurrenceCount ).toBe( 1 );
+						expect( evidence.captureOccurrenceCount ).toBe( 1 );
+					}
 				} catch ( error ) {
 					scenarioFailure = error;
 				}
