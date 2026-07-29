@@ -678,10 +678,7 @@ for ( const [ description, decisionReference ] of [
 	} );
 }
 
-for ( const [ previous, next ] of [
-	[ 'planned', 'closed' ],
-	[ 'closed', 'implemented' ],
-] ) {
+for ( const [ previous, next ] of [ [ 'planned', 'closed' ] ] ) {
 	test( `rejects the ${ previous } -> ${ next } migration transition`, () => {
 		assert.throws(
 			() => validateStateTransition( previous, next ),
@@ -691,6 +688,18 @@ for ( const [ previous, next ] of [
 		);
 	} );
 }
+
+test( 'allows reopening a closed contract to implemented and nothing else', () => {
+	validateStateTransition( 'closed', 'implemented' );
+	assert.throws(
+		() => validateStateTransition( 'closed', 'specified' ),
+		/Illegal migration transition/
+	);
+	assert.throws(
+		() => validateStateTransition( 'closed', 'planned' ),
+		/Illegal migration transition/
+	);
+} );
 
 for ( const [ previous, next ] of [
 	[ 'planned', 'specified' ],

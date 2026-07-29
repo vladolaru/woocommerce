@@ -62,7 +62,7 @@ const ALLOWED_MIGRATION_TRANSITIONS = new Map( [
 		new Set( [ 'implemented', 'verified', 'closed', 'deferred' ] ),
 	],
 	[ 'verified', new Set( [ 'verified', 'closed', 'deferred' ] ) ],
-	[ 'closed', new Set( [ 'closed' ] ) ],
+	[ 'closed', new Set( [ 'closed', 'implemented' ] ) ],
 	[ 'deferred', new Set( [ 'deferred' ] ) ],
 ] );
 
