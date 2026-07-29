@@ -4,6 +4,13 @@ import { getPaymentEvidence } from '../../../utils/woopayments-native/record-evi
 test(
 	'shopper card payment retains exact order and provider evidence',
 	{
+		annotation: [
+			{
+				type: 'woopayments-contract',
+				description:
+					'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase.spec.ts:53::Successful purchase › Carding protection false › using a basic card',
+			},
+		],
 		tag: [
 			tags.WOOPAYMENTS_NATIVE,
 			tags.WOOPAYMENTS_PROVIDER,

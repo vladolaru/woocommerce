@@ -4,6 +4,13 @@ import { getPaymentEvidence } from '../../../utils/woopayments-native/record-evi
 test(
 	'merchant reaches the exact transaction created by this atomic journey',
 	{
+		annotation: [
+			{
+				type: 'woopayments-contract',
+				description:
+					'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-admin-transactions.spec.ts:14::Admin transactions › page should load without errors',
+			},
+		],
 		tag: [
 			tags.WOOPAYMENTS_NATIVE,
 			tags.WOOPAYMENTS_PROVIDER,

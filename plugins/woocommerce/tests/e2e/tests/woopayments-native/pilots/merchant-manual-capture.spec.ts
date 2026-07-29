@@ -9,6 +9,13 @@ import { waitForPaymentState } from '../../../utils/woopayments-native/provider-
 test(
 	'merchant manually captures one exact authorization and restores capture mode',
 	{
+		annotation: [
+			{
+				type: 'woopayments-contract',
+				description:
+					'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-manual-capture.spec.ts:39::Order › Manual Capture › should create an "On hold" order then capture the charge',
+			},
+		],
 		tag: [
 			tags.WOOPAYMENTS_NATIVE,
 			tags.WOOPAYMENTS_PROVIDER,

@@ -1,11 +1,17 @@
 import { execFileSync } from 'node:child_process';
-import { dirname, resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { parseContractMap } from './lib/woopayments-contract-map.mjs';
 
 const binDirectory = dirname( fileURLToPath( import.meta.url ) );
 const validatorPath = fileURLToPath( import.meta.url );
 const packageRoot = resolve( binDirectory, '../../..' );
 const wooPaymentsTestRoot = 'tests/e2e/tests/woopayments-native';
+const providerProject = 'woopayments-native-provider';
+const readonlyProject = 'woopayments-native-readonly';
+const transitionProject = 'woopayments-native-transition';
 const providerPilotOrder = [
 	'shopper-card-payment',
 	'merchant-transaction-navigation',
@@ -66,6 +72,8 @@ const listTests = ( configPath ) => {
 		for ( const spec of suite.specs ?? [] ) {
 			for ( const test of spec.tests ) {
 				tests.push( {
+					annotations: test.annotations ?? [],
+					expectedStatus: test.expectedStatus,
 					file: spec.file,
 					projectName: test.projectName,
 					tags: spec.tags ?? [],
@@ -83,6 +91,108 @@ const listTests = ( configPath ) => {
 	}
 
 	return { projects, tests };
+};
+
+const collectContractAnnotationRecords = ( tests ) =>
+	tests.flatMap( ( collectedTest ) =>
+		collectedTest.annotations
+			.filter(
+				( annotation ) => annotation.type === 'woopayments-contract'
+			)
+			.map( ( annotation ) => ( {
+				description: annotation.description,
+				expectedStatus: collectedTest.expectedStatus,
+				file: collectedTest.file,
+				projectName: collectedTest.projectName,
+				tags: collectedTest.tags,
+				title: collectedTest.title,
+			} ) )
+	);
+
+const owningProjectForTags = ( tags ) => {
+	if ( tags.includes( 'woopayments-transition' ) ) {
+		return transitionProject;
+	}
+	if ( tags.includes( 'woopayments-provider' ) ) {
+		return providerProject;
+	}
+	return readonlyProject;
+};
+
+const canonicalAnnotationPath = ( file, packageDirectory ) =>
+	isAbsolute( file )
+		? resolve( file )
+		: resolve( packageDirectory, 'tests/e2e/tests', file );
+
+const canonicalLedgerTargetPath = ( file, packageDirectory ) =>
+	resolve( packageDirectory, '../..', file );
+
+export const validateContractAnnotationBindings = (
+	ledgerRows,
+	annotationRecords,
+	packageDirectory
+) => {
+	const ledgerCaseIds = new Set(
+		ledgerRows.map( ( row ) => row.case_id )
+	);
+	const recordsByDescription = new Map();
+
+	for ( const record of annotationRecords ) {
+		if ( ! ledgerCaseIds.has( record.description ) ) {
+			throw new Error(
+				`woopayments-contract annotation does not resolve to a ledger contract: ${ record.description }`
+			);
+		}
+
+		const matchingRecords =
+			recordsByDescription.get( record.description ) ?? [];
+		matchingRecords.push( record );
+		recordsByDescription.set( record.description, matchingRecords );
+	}
+
+	for ( const [ description, records ] of recordsByDescription ) {
+		if ( records.length > 1 ) {
+			throw new Error(
+				`Duplicate woopayments-contract annotation records for ledger contract: ${ description }`
+			);
+		}
+	}
+
+	for ( const row of ledgerRows ) {
+		if ( ! [ 'verified', 'closed' ].includes( row.migration_state ) ) {
+			continue;
+		}
+
+		const record = recordsByDescription.get( row.case_id )?.[ 0 ];
+		if ( ! record ) {
+			throw new Error(
+				`Terminal ledger contract has no collected woopayments-contract annotation: ${ row.case_id }`
+			);
+		}
+		if ( record.expectedStatus !== 'passed' ) {
+			throw new Error(
+				`Terminal ledger contract annotation must expect to pass: ${ row.case_id }`
+			);
+		}
+		if (
+			canonicalAnnotationPath( record.file, packageDirectory ) !==
+			canonicalLedgerTargetPath( row.target_path, packageDirectory )
+		) {
+			throw new Error(
+				`Terminal ledger contract annotation has the wrong target file: ${ row.case_id }`
+			);
+		}
+		if ( record.title !== row.target_contract ) {
+			throw new Error(
+				`Terminal ledger contract annotation has the wrong test title: ${ row.case_id }`
+			);
+		}
+		if ( record.projectName !== owningProjectForTags( record.tags ) ) {
+			throw new Error(
+				`Terminal ledger contract annotation has the wrong owning project: ${ row.case_id }`
+			);
+		}
+	}
 };
 
 const pilotNames = ( tests, projectName, canonicalOrder ) => {
@@ -116,9 +226,23 @@ export const validateWooPaymentsProjectRouting = () => {
 	const wooPayments = listTests(
 		'tests/e2e/envs/woopayments-native/playwright.config.ts'
 	);
-	const providerProject = 'woopayments-native-provider';
-	const readonlyProject = 'woopayments-native-readonly';
-	const transitionProject = 'woopayments-native-transition';
+	const ledger = parseContractMap(
+		readFileSync(
+			resolve(
+				packageRoot,
+				'tests/e2e/tests/woopayments-native/client-contract-map.tsv'
+			),
+			'utf8'
+		)
+	);
+	const contractAnnotationRecords = collectContractAnnotationRecords(
+		wooPayments.tests
+	);
+	validateContractAnnotationBindings(
+		ledger.rows,
+		contractAnnotationRecords,
+		packageRoot
+	);
 
 	return {
 		baseProjectsCollectWooPayments: base.tests.length > 0,
@@ -158,6 +282,13 @@ export const validateWooPaymentsProjectRouting = () => {
 							'future WooPayments nested routing sentinel'
 					)
 					.map( ( test ) => test.projectName )
+			),
+		].toSorted(),
+		wooPaymentsContractAnnotations: [
+			...new Set(
+				contractAnnotationRecords.map(
+					( annotation ) => annotation.description
+				)
 			),
 		].toSorted(),
 	};
