@@ -14,9 +14,9 @@ test.afterEach( () => {
 	}
 } );
 
-test( 'known gap fixture', async ( {
-	browserName: _browserName,
-}, testInfo ) => {
+test( 'known gap fixture', async () => {
+	const testInfo = test.info();
+
 	await expectKnownWooPaymentsGap(
 		testInfo,
 		{
