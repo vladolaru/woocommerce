@@ -426,14 +426,19 @@ function exactEvidence(): PaymentEvidence {
 	};
 }
 
-function savedCheckoutContractPage( expectedSelector: string ): {
+function savedCheckoutContractPage(
+	expectedSelector: string,
+	behavior: { swallowFirstSubmit?: boolean } = {}
+): {
 	page: Page;
 	selected: () => boolean;
+	submissions: () => number;
 	visited: () => string[];
 	waitedForConfirmation: () => boolean;
 } {
 	let selected = false;
 	let currentUrl = 'http://native.test/checkout/';
+	let submissions = 0;
 	const visited: string[] = [];
 	let waitedForConfirmation = false;
 	const page = {
@@ -453,7 +458,11 @@ function savedCheckoutContractPage( expectedSelector: string ): {
 				return visibleLocator();
 			}
 			if ( role === 'button' && /place order/i.test( name ) ) {
-				return visibleLocator();
+				return visibleLocator( {
+					click: async () => {
+						submissions++;
+					},
+				} );
 			}
 			throw new Error( `Unexpected role locator: ${ role } ${ name }` );
 		},
@@ -472,7 +481,19 @@ function savedCheckoutContractPage( expectedSelector: string ): {
 			} );
 		},
 		url: () => currentUrl,
+		waitForFunction: async () => {
+			if ( behavior.swallowFirstSubmit && submissions < 2 ) {
+				throw new Error( 'Checkout stores remained idle.' );
+			}
+			return true;
+		},
+		waitForRequest: async () => {
+			throw new Error( 'No checkout request started.' );
+		},
 		waitForURL: async ( matcher: RegExp ) => {
+			if ( behavior.swallowFirstSubmit && submissions < 2 ) {
+				throw new Error( 'The first Blocks click was swallowed.' );
+			}
 			expect(
 				matcher.test(
 					'http://native.test/checkout/order-received/42/?key=wc_order_key'
@@ -487,6 +508,7 @@ function savedCheckoutContractPage( expectedSelector: string ): {
 	return {
 		page,
 		selected: () => selected,
+		submissions: () => submissions,
 		visited: () => visited,
 		waitedForConfirmation: () => waitedForConfirmation,
 	};
@@ -1392,6 +1414,36 @@ for ( const contract of checkoutContracts ) {
 		}
 	} );
 }
+
+test( 'retries a swallowed saved-card Blocks checkout click', async () => {
+	const directory = await lockDirectory();
+	const calls: RequestCall[] = [];
+	const pilotRuntime = runtime( directory, calls );
+	const fixture = savedCheckoutContractPage(
+		checkoutContracts[ 1 ].selector,
+		{ swallowFirstSubmit: true }
+	);
+
+	try {
+		const orderId = await pilotRuntime.withProviderWriteLocks(
+			{ recordEvent: 'saved-card-blocks-retry' },
+			async () =>
+				pilotRuntime.payWithExactSavedCard(
+					fixture.page,
+					{
+						tokenId: 73,
+						paymentMethodId: 'pm_provider_only',
+					},
+					'blocks',
+					'run-pilot-runtime'
+				)
+		);
+		expect( orderId ).toBe( 42 );
+		expect( fixture.submissions() ).toBe( 2 );
+	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
 
 test( 'uses the Core order-actions dropdown and Apply button for capture', async () => {
 	const directory = await lockDirectory();

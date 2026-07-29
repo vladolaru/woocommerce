@@ -832,9 +832,15 @@ export class WooPaymentsPilotRuntime {
 			);
 		}
 		await token.check();
-		await this.performWrite( () =>
-			page.getByRole( 'button', { name: /place order/i } ).click()
-		);
+		if ( checkout === 'blocks' ) {
+			await submitBlocksCheckout( page, ( button ) =>
+				this.performWrite( () => button.click() )
+			);
+		} else {
+			await this.performWrite( () =>
+				page.getByRole( 'button', { name: /place order/i } ).click()
+			);
+		}
 		await page.waitForURL( /\/order-received\/[1-9]\d*\/?(?:\?.*)?$/ );
 		await expect(
 			page.getByText( 'Your order has been received' )
