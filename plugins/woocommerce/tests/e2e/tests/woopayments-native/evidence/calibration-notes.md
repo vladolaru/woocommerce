@@ -3,6 +3,14 @@
 Durable, public-safe record of calibration blockers and ledger revisions
 that the evidence JSON schema cannot carry. Newest entries first.
 
+## 2026-07-30 — saved-token closures re-established
+
+One serialized, zero-retry transition run re-established the Classic
+and Blocks saved-token closures against the immutable WooPayments 10.5.0
+seed. Schema-v2 row-scoped evidence binds the passing run and three fresh
+`code`, `e2e-tests`, and `reliability` approvals to the retained source
+bundle at commit `5f68bfd468e30a121fc1cde550636b21f0a8dfd2`.
+
 ## 2026-07-29 — saved-token closures reopened
 
 The two saved-token contracts (classic and Blocks saved-card payment)

@@ -2,13 +2,13 @@
 	"schema_version": 2,
 	"slice_id": "000-pilot-calibration",
 	"wc_base_commit": "244e7d48a9cb44768f7b8a7592877bd0ae3ee1d5",
-	"verified_at_commit": "6cf3169e9612ca185e723aea6188657d5ff309f9",
+	"verified_at_commit": "5f68bfd468e30a121fc1cde550636b21f0a8dfd2",
 	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
 	"source_test_paths": [
 		"plugins/woocommerce/tests/e2e/fixtures/woopayments-native.ts",
 		"plugins/woocommerce/tests/e2e/tests/woopayments-native/pilots/saved-method-cutover.spec.ts"
 	],
-	"source_test_sha256": "6d831bf3212b8af4cdcf918ae1147b2c8adee0f712dd6579afe2e7f324a43bb6",
+	"source_test_sha256": "0e8d36dc61f5609d2152edd81b21192ecd744ee4f87ffad1b69ee63acd0f8709",
 	"contract_ids": [
 		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-admin-transactions.spec.ts:14::Admin transactions › page should load without errors",
 		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-manual-capture.spec.ts:39::Order › Manual Capture › should create an \"On hold\" order then capture the charge",
@@ -76,6 +76,11 @@
 			"command": "E2E_TRANSITION_RUN_ID=pilot-calibration-20260727174138 pnpm --dir plugins/woocommerce test:e2e:woopayments:transition-saved-method",
 			"exit_code": 0,
 			"summary": "Playwright 1.61.1 ran plugin default saved method survives ephemeral native cutover once with one worker and zero retries against rolling reference 265e275802e9d8cadefe61c68c492911d14a1534 and approved seed sha256 85cf0f70afbf23db118dec6f163a169b6886ee81b98a128677750ff7b7628997; exact plugin-origin basic method correlation and one classic plus one Blocks payment passed, both exact cards were deleted, the disposable workspace was removed, and the redacted run artifact is redacted:transition-log:sha256:1d36ee6760abe5bd76097d75f0ecea7c40a9d7cae6c1b852897a1f88e47a1621"
+		},
+		{
+			"command": "E2E_TRANSITION_RUN_ID=repair-recalibration-20260730085627 pnpm --dir plugins/woocommerce test:e2e:woopayments:transition-saved-method",
+			"exit_code": 0,
+			"summary": "Playwright ran plugin default saved method survives ephemeral native cutover once with one worker and zero retries against the immutable WooPayments 10.5.0 seed; the retained plugin-origin default basic saved method funded one Classic and one Blocks order with successful captured USD 10.99 evidence and one charge/capture occurrence each, the exact saved cards were deleted, the disposable workspace was removed, and the redacted run artifact is redacted:transition-log:sha256:9a563c86ad912e751160736e79d1b5d0f00bd84fb005e936c99c4eeca8d8536e"
 		}
 	],
 	"reviews": [
@@ -152,7 +157,76 @@
 			"summary": "Confirmed that every acquired lock is preflighted, required quarantine is durable before release, and publication failure retains all surviving locks"
 		}
 	],
-	"closures": [],
+	"closures": [
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-save-card-and-purchase.spec.ts:93::Saved cards › When using a basic card added on checkout › should process a payment with the saved card",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/pilots/saved-method-cutover.spec.ts",
+				"contract": "plugin default saved method survives ephemeral native cutover"
+			},
+			"verification": [
+				{
+					"command": "E2E_TRANSITION_RUN_ID=repair-recalibration-20260730085627 pnpm --dir plugins/woocommerce test:e2e:woopayments:transition-saved-method",
+					"exit_code": 0,
+					"summary": "Playwright ran plugin default saved method survives ephemeral native cutover once with one worker and zero retries against the immutable WooPayments 10.5.0 seed; the retained plugin-origin default basic saved method funded one Classic and one Blocks order with successful captured USD 10.99 evidence and one charge/capture occurrence each, the exact saved cards were deleted, the disposable workspace was removed, and the redacted run artifact is redacted:transition-log:sha256:9a563c86ad912e751160736e79d1b5d0f00bd84fb005e936c99c4eeca8d8536e"
+				}
+			],
+			"reviews": [
+				{
+					"role": "code",
+					"verdict": "APPROVE",
+					"source_test_sha256": "0e8d36dc61f5609d2152edd81b21192ecd744ee4f87ffad1b69ee63acd0f8709",
+					"summary": "The source-bound transition pilot ran exactly once with one worker, passed the scoped Classic and Blocks saved-card contracts through exact default-method and financial assertions, completed journaled cleanup and lock release, and removed its disposable environment without unresolved run-owned residue."
+				},
+				{
+					"role": "e2e-tests",
+					"verdict": "APPROVE",
+					"source_test_sha256": "0e8d36dc61f5609d2152edd81b21192ecd744ee4f87ffad1b69ee63acd0f8709",
+					"summary": "One serialized, zero-retry transition run proved the retained default saved card through Classic and Blocks checkout with exact financial correlation and completed cleanup."
+				},
+				{
+					"role": "reliability",
+					"verdict": "APPROVE",
+					"source_test_sha256": "0e8d36dc61f5609d2152edd81b21192ecd744ee4f87ffad1b69ee63acd0f8709",
+					"summary": "The single zero-retry transition run passed both saved-card checkout paths with exact financial and identity evidence, durable serialized submission handling, exact cleanup, successful disposable teardown, and no run-owned lock, journal, or quarantine residue."
+				}
+			]
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-saved-card-checkout-and-usage.spec.ts:71::WooCommerce Blocks › Saved cards › should process a payment with the saved card from Blocks checkout",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/pilots/saved-method-cutover.spec.ts",
+				"contract": "plugin default saved method survives ephemeral native cutover"
+			},
+			"verification": [
+				{
+					"command": "E2E_TRANSITION_RUN_ID=repair-recalibration-20260730085627 pnpm --dir plugins/woocommerce test:e2e:woopayments:transition-saved-method",
+					"exit_code": 0,
+					"summary": "Playwright ran plugin default saved method survives ephemeral native cutover once with one worker and zero retries against the immutable WooPayments 10.5.0 seed; the retained plugin-origin default basic saved method funded one Classic and one Blocks order with successful captured USD 10.99 evidence and one charge/capture occurrence each, the exact saved cards were deleted, the disposable workspace was removed, and the redacted run artifact is redacted:transition-log:sha256:9a563c86ad912e751160736e79d1b5d0f00bd84fb005e936c99c4eeca8d8536e"
+				}
+			],
+			"reviews": [
+				{
+					"role": "code",
+					"verdict": "APPROVE",
+					"source_test_sha256": "0e8d36dc61f5609d2152edd81b21192ecd744ee4f87ffad1b69ee63acd0f8709",
+					"summary": "The source-bound transition pilot ran exactly once with one worker, passed the scoped Classic and Blocks saved-card contracts through exact default-method and financial assertions, completed journaled cleanup and lock release, and removed its disposable environment without unresolved run-owned residue."
+				},
+				{
+					"role": "e2e-tests",
+					"verdict": "APPROVE",
+					"source_test_sha256": "0e8d36dc61f5609d2152edd81b21192ecd744ee4f87ffad1b69ee63acd0f8709",
+					"summary": "One serialized, zero-retry transition run proved the retained default saved card through Classic and Blocks checkout with exact financial correlation and completed cleanup."
+				},
+				{
+					"role": "reliability",
+					"verdict": "APPROVE",
+					"source_test_sha256": "0e8d36dc61f5609d2152edd81b21192ecd744ee4f87ffad1b69ee63acd0f8709",
+					"summary": "The single zero-retry transition run passed both saved-card checkout paths with exact financial and identity evidence, durable serialized submission handling, exact cleanup, successful disposable teardown, and no run-owned lock, journal, or quarantine residue."
+				}
+			]
+		}
+	],
 	"known_gaps": [],
 	"deferral": null
 }
