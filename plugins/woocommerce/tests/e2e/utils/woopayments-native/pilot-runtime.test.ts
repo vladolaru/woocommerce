@@ -209,6 +209,8 @@ function runtime(
 	lockDir: string,
 	calls: RequestCall[],
 	options: {
+		captureEvidenceError?: Error;
+		captureEvidenceResponses?: Record< string, unknown >;
 		manualCapture?: boolean;
 		providerPaymentMethods?: unknown[];
 		runtime?: 'native' | 'transition';
@@ -280,6 +282,17 @@ function runtime(
 				return response( {
 					is_manual_capture_enabled: manualCapture,
 				} );
+			}
+			if (
+				url === '/wp-json/wc/v3/orders/42' &&
+				options.captureEvidenceError
+			) {
+				throw options.captureEvidenceError;
+			}
+			if (
+				Object.hasOwn( options.captureEvidenceResponses ?? {}, url )
+			) {
+				return response( options.captureEvidenceResponses?.[ url ] );
 			}
 			throw new Error( `Unexpected GET ${ url }` );
 		},
@@ -432,6 +445,54 @@ function exactEvidence(): PaymentEvidence {
 		chargeCaptured: false,
 		occurrenceCount: 1,
 		captureOccurrenceCount: 0,
+	};
+}
+
+function capturedPaymentResponses(
+	options: {
+		chargeCaptured?: boolean;
+		timelineEvents?: unknown[];
+	} = {}
+): Record< string, unknown > {
+	return {
+		'/wp-json/wc/v3/orders/42': {
+			id: 42,
+			order_key: 'wc_order_key',
+			total: '10.99',
+			currency: 'USD',
+			status: 'processing',
+			meta_data: [
+				{
+					key: '_e2e_woopayments_run_id',
+					value: 'run-pilot-runtime',
+				},
+				{ key: '_intent_id', value: 'pi_exact' },
+				{ key: '_charge_id', value: 'ch_exact' },
+				{ key: '_payment_method_id', value: 'pm_exact' },
+			],
+		},
+		'/wp-json/wc/v3/payments/payment_intents/pi_exact': {
+			id: 'pi_exact',
+			amount: 1099,
+			currency: 'usd',
+			status: 'succeeded',
+			payment_method: 'pm_exact',
+			charges: {
+				data: [ { id: 'ch_exact' } ],
+			},
+		},
+		'/wp-json/wc/v3/payments/charges/ch_exact': {
+			id: 'ch_exact',
+			amount: 1099,
+			currency: 'usd',
+			status: 'succeeded',
+			captured: options.chargeCaptured ?? true,
+			payment_intent: 'pi_exact',
+			payment_method: 'pm_exact',
+		},
+		'/wp-json/wc/v3/payments/timeline/pi_exact': {
+			data: options.timelineEvents ?? [ { type: 'captured' } ],
+		},
 	};
 }
 
@@ -2108,20 +2169,150 @@ test( 'blocks queued provider submissions after uncertainty and waits before qua
 	}
 } );
 
+const manualCaptureResourceKeys = [
+	'acct_native/account:provider-writes',
+	'acct_native/native-store/store:native-store',
+	'acct_native/native-store/feature-setting:manual-capture',
+	'acct_native/native-store/record-event:merchant-manual-capture',
+];
+
+async function expectUncertainManualCapture(
+	directory: string,
+	pilotRuntime: WooPaymentsPilotRuntime,
+	fixture: ReturnType< typeof captureContractPage >,
+	annotated: ResourceQuarantineReceipt[]
+): Promise< unknown > {
+	let captureError: unknown;
+	try {
+		await pilotRuntime.withCapturedManualCaptureSetting( async () => {
+			await pilotRuntime.captureExactOrder(
+				fixture.page,
+				exactEvidence()
+			);
+		} );
+	} catch ( error ) {
+		captureError = error;
+	}
+
+	expect( fixture.applied() ).toBe( true );
+	expect(
+		await findUnresolvedProviderWriteAttempts(
+			directory,
+			manualCaptureResourceKeys.slice( 0, 2 ),
+			'a-later-run'
+		)
+	).toHaveLength( 1 );
+	expect( annotated ).toHaveLength( 4 );
+	expect(
+		annotated.every(
+			( receipt ) => receipt.reasonCode === 'uncertain-provider-write'
+		)
+	).toBe( true );
+	for ( const key of manualCaptureResourceKeys ) {
+		await expect(
+			assertResourcesUsable( [ key ], directory )
+		).rejects.toThrow( /quarantined/i );
+	}
+	return captureError;
+}
+
 test( 'uses the Core order-actions dropdown and Apply button for capture', async () => {
 	const directory = await lockDirectory();
 	const calls: RequestCall[] = [];
-	const pilotRuntime = runtime( directory, calls );
+	const pilotRuntime = runtime( directory, calls, {
+		captureEvidenceResponses: capturedPaymentResponses(),
+	} );
 	const fixture = captureContractPage();
 
 	try {
-		await pilotRuntime.withProviderWriteLocks(
+		const captured: unknown = await pilotRuntime.withProviderWriteLocks(
 			{ recordEvent: 'capture-order-dom' },
 			async () =>
 				pilotRuntime.captureExactOrder( fixture.page, exactEvidence() )
 		);
 		expect( fixture.selected() ).toBe( true );
 		expect( fixture.applied() ).toBe( true );
+		expect( captured ).toEqual( {
+			runId: 'run-pilot-runtime',
+			orderId: 42,
+			orderKey: 'wc_order_key',
+			intentId: 'pi_exact',
+			chargeId: 'ch_exact',
+			paymentMethodId: 'pm_exact',
+			amountMinor: 1099,
+			currency: 'USD',
+			orderStatus: 'processing',
+			providerStatus: 'succeeded',
+			chargeStatus: 'succeeded',
+			chargeCaptured: true,
+			occurrenceCount: 1,
+			captureOccurrenceCount: 1,
+		} );
+		expect(
+			await findUnresolvedProviderWriteAttempts(
+				directory,
+				[
+					'acct_native/account:provider-writes',
+					'acct_native/native-store/store:native-store',
+				],
+				'a-later-run'
+			)
+		).toEqual( [] );
+	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'keeps an uncertain manual-capture attempt and quarantines every held resource', async () => {
+	const directory = await lockDirectory();
+	const calls: RequestCall[] = [];
+	const annotated: ResourceQuarantineReceipt[] = [];
+	const captureEvidenceError = new Error(
+		'Capture proof response was lost.'
+	);
+	const pilotRuntime = runtime( directory, calls, {
+		captureEvidenceError,
+		onResourceQuarantined: ( receipt ) => annotated.push( receipt ),
+	} );
+	const fixture = captureContractPage();
+
+	try {
+		const captureError = await expectUncertainManualCapture(
+			directory,
+			pilotRuntime,
+			fixture,
+			annotated
+		);
+		expect( captureError ).toBe( captureEvidenceError );
+	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'keeps an uncertain manual-capture attempt when succeeded provider evidence contradicts exact capture state', async () => {
+	const directory = await lockDirectory();
+	const calls: RequestCall[] = [];
+	const annotated: ResourceQuarantineReceipt[] = [];
+	const pilotRuntime = runtime( directory, calls, {
+		captureEvidenceResponses: capturedPaymentResponses( {
+			chargeCaptured: false,
+			timelineEvents: [],
+		} ),
+		onResourceQuarantined: ( receipt ) => annotated.push( receipt ),
+	} );
+	const fixture = captureContractPage();
+
+	try {
+		const captureError = await expectUncertainManualCapture(
+			directory,
+			pilotRuntime,
+			fixture,
+			annotated
+		);
+		expect( captureError ).toBeInstanceOf( Error );
+		expect( ( captureError as Error ).message ).toBe(
+			'Manual capture evidence mismatch for chargeCaptured: expected true, received false.'
+		);
 	} finally {
 		await rm( directory, { recursive: true, force: true } );
 	}

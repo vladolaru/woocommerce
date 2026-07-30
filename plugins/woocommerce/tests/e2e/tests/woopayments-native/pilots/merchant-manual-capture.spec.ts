@@ -2,9 +2,7 @@ import { expect, tags, test } from '../../../fixtures/woopayments-native';
 import {
 	getCaptureOrderNoteEvidence,
 	getPaymentEvidence,
-	type PaymentEvidence,
 } from '../../../utils/woopayments-native/record-evidence';
-import { waitForPaymentState } from '../../../utils/woopayments-native/provider-evidence';
 
 test(
 	'merchant manually captures one exact authorization and restores capture mode',
@@ -36,12 +34,9 @@ test(
 			expect( authorized.providerStatus ).toBe( 'requires_capture' );
 			expect( authorized.chargeCaptured ).toBe( false );
 			expect( authorized.orderStatus ).toBe( 'on-hold' );
-			await pilotRuntime.captureExactOrder( page, authorized );
-			const captured: PaymentEvidence = await waitForPaymentState(
-				adminApi,
-				authorized,
-				'succeeded',
-				Date.now() + 30_000
+			const captured = await pilotRuntime.captureExactOrder(
+				page,
+				authorized
 			);
 
 			expect( captured.orderId ).toBe( authorized.orderId );

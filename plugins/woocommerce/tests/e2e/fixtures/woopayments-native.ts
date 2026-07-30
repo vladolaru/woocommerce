@@ -35,6 +35,7 @@ import {
 	type ResourceQuarantineReceipt,
 } from '../utils/woopayments-native/resource-quarantine';
 import type { PaymentEvidence } from '../utils/woopayments-native/record-evidence';
+import { waitForPaymentState } from '../utils/woopayments-native/provider-evidence';
 import { assertApprovedProviderFixture } from '../utils/woopayments-native/provider-fixture';
 import {
 	findUnresolvedProviderWriteAttempts,
@@ -94,6 +95,45 @@ interface ProviderSubmissionScope {
 }
 
 export class ProviderSubmissionNotStartedError extends Error {}
+
+function assertPaymentEvidenceField< Key extends keyof PaymentEvidence >(
+	evidence: PaymentEvidence,
+	field: Key,
+	expected: PaymentEvidence[ Key ]
+): void {
+	if ( evidence[ field ] !== expected ) {
+		throw new Error(
+			`Manual capture evidence mismatch for ${ field }: expected ${ String(
+				expected
+			) }, received ${ String( evidence[ field ] ) }.`
+		);
+	}
+}
+
+function assertExactCapturedPaymentEvidence(
+	original: PaymentEvidence,
+	captured: PaymentEvidence
+): void {
+	for ( const field of [
+		'runId',
+		'orderId',
+		'orderKey',
+		'intentId',
+		'chargeId',
+		'paymentMethodId',
+		'amountMinor',
+		'currency',
+	] as const ) {
+		assertPaymentEvidenceField( captured, field, original[ field ] );
+	}
+
+	assertPaymentEvidenceField( captured, 'orderStatus', 'processing' );
+	assertPaymentEvidenceField( captured, 'providerStatus', 'succeeded' );
+	assertPaymentEvidenceField( captured, 'chargeStatus', 'succeeded' );
+	assertPaymentEvidenceField( captured, 'chargeCaptured', true );
+	assertPaymentEvidenceField( captured, 'occurrenceCount', 1 );
+	assertPaymentEvidenceField( captured, 'captureOccurrenceCount', 1 );
+}
 
 function providerResourceKeys( accountId: string, storeId: string ): string[] {
 	return [
@@ -1218,7 +1258,7 @@ export class WooPaymentsPilotRuntime {
 	public async captureExactOrder(
 		page: Page,
 		evidence: PaymentEvidence
-	): Promise< void > {
+	): Promise< PaymentEvidence > {
 		await this.assertCanWrite();
 		this.requireApprovedProviderFixture( 'manual-capture-action' );
 		await this.logInAsAdmin( page );
@@ -1235,11 +1275,24 @@ export class WooPaymentsPilotRuntime {
 			label: 'Capture charge',
 			value: 'capture_charge',
 		} );
-		await this.performWrite( () =>
-			page
-				.locator( '#actions' )
-				.getByRole( 'button', { name: /^Apply\b/ } )
-				.click()
+		return this.withProviderSubmissionJournal(
+			'manual-capture',
+			async () => {
+				await this.performWrite( () =>
+					page
+						.locator( '#actions' )
+						.getByRole( 'button', { name: /^Apply\b/ } )
+						.click()
+				);
+				const captured = await waitForPaymentState(
+					this.adminApi,
+					evidence,
+					'succeeded',
+					Date.now() + 30_000
+				);
+				assertExactCapturedPaymentEvidence( evidence, captured );
+				return captured;
+			}
 		);
 	}
 

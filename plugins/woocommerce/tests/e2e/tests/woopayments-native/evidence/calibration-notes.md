@@ -3,6 +3,14 @@
 Durable, public-safe record of calibration blockers and ledger revisions
 that the evidence JSON schema cannot carry. Newest entries first.
 
+## 2026-07-30 — saved-token closures reopened after capture safety fix
+
+The shared fixture changed after the single transition calibration. Manual
+capture now retains a durable attempt from before Apply through exact provider
+proof and quarantines ambiguity. The saved-token behavior remains implemented,
+but current-byte closure needs a separately authorized transition run and fresh
+reviews.
+
 ## 2026-07-30 — saved-token closures re-established
 
 One serialized, zero-retry transition run re-established the Classic
