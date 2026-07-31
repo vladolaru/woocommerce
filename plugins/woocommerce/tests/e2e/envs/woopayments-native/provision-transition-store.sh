@@ -84,8 +84,8 @@ require_command() {
 
 validate_run_id() {
 	local run_id="$1"
-	if [[ ! "$run_id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
-		echo 'E2E_TRANSITION_RUN_ID must contain only letters, numbers, dots, underscores, and hyphens.' >&2
+	if [[ ! "$run_id" =~ ^[a-z0-9][a-z0-9-]{0,47}$ ]]; then
+		echo 'E2E_TRANSITION_RUN_ID must be a bounded lowercase DNS label (1-48 lowercase letters, numbers, or hyphens).' >&2
 		exit 1
 	fi
 }

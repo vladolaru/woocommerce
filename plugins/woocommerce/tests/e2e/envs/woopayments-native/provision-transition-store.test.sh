@@ -37,6 +37,32 @@ expect_log_absent() {
 	fi
 }
 
+expected_run_id_error='E2E_TRANSITION_RUN_ID must be a bounded lowercase DNS label (1-48 lowercase letters, numbers, or hyphens).'
+for invalid_run_id in \
+	'Run-safe' \
+	'run.safe' \
+	'run_safe' \
+	'-run-safe' \
+	'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'; do
+	expect_failure env \
+		TMPDIR="$TEST_ROOT" \
+		E2E_TRANSITION_RUN_ID="$invalid_run_id" \
+		E2E_TRANSITION_SEED_ARCHIVE="$FIXTURES/transition-seed.tar.gz" \
+		E2E_TRANSITION_SEED_MANIFEST="$SEED_MANIFEST" \
+		E2E_TRANSITION_STORE_PROVISIONER="$FIXTURES/fake-transition-provisioner.sh" \
+		"$PROVISION_SCRIPT" create
+	if ! diff -u \
+		<(printf '%s\n' "$expected_run_id_error") \
+		"$TEST_ROOT/expected-error"; then
+		echo "Unexpected validation error for transition run ID: $invalid_run_id" >&2
+		exit 1
+	fi
+	if [[ -e "$TEST_ROOT/woopayments-native-transition-$invalid_run_id" ]]; then
+		echo "Invalid transition run ID left a workspace behind: $invalid_run_id" >&2
+		exit 1
+	fi
+done
+
 expect_failure env \
 	TMPDIR="$TEST_ROOT" \
 	E2E_TRANSITION_RUN_ID='missing-seed' \
