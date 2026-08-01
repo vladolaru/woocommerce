@@ -3,6 +3,27 @@
 Durable, public-safe record of calibration blockers and ledger revisions
 that the evidence JSON schema cannot carry. Newest entries first.
 
+## 2026-08-01 — saved-token closures re-established under narrow driver bundles
+
+The authorized run `slice1-reclose-20260801222519` executed exactly once and
+passed its one test with one worker and zero retries. Three fresh closure
+reviews in the `code`, `e2e-tests`, and `reliability` roles approved the exact
+six-file behavior bundle at source SHA-256
+`ae55a768a61a02394d068d0e26d82c21a65a37fa5e954cde218be27b402ed54e`.
+The run used the approved deterministic WooPayments 10.5.0 seed with transport
+SHA-256
+`899fea3b8594b6823a9454572404bf3736d0c4ad4713e4a60abd28575488f178`
+and canonical tar SHA-256
+`8c4cbfe257f23ab19bfe0cca4c4de5b1f76c1d3658048847e72ab55009583b1b`.
+
+The exact saved cards were cleaned up, ephemeral teardown completed, and no
+active lock, journal, or quarantine residue remained. All 21 listener
+deliveries returned HTTP 200. The Task-owned Transact listener was then
+stopped, and no listener process remains. The retained public-safe run
+reference is `redacted:transition-log:sha256:39edea9135787e7079b60a70e6053a46b47ab420520e84466238a68e9ad4c332`.
+Exactly the Classic and Blocks basic saved-token rows were reclosed; no other
+contract changed state.
+
 ## 2026-08-01 — deterministic transition seed baseline replaced
 
 The explicit user authorization `Replace the missing baseline` approves the
