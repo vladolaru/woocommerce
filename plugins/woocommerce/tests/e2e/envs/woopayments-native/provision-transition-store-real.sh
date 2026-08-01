@@ -5,6 +5,7 @@ umask 077
 
 readonly SEED_COMMIT='a1f755fc903966387f8629f78f75976ac8d2016e'
 readonly SEED_VERSION='10.5.0'
+readonly ARCHIVE_PROFILE='git-sha1-fixed-pax+gzip-n9-v1'
 readonly FRONTEND_LOCK_SHA256="${E2E_TRANSITION_FRONTEND_LOCK_SHA256:-6e279cfadb1851486976f67a72a11bc9ea36fa62c7f74d31b4d0d73c006b34b1}"
 readonly SCRIPT_DIR="$(
 	cd "$(dirname "${BASH_SOURCE[0]}")"
@@ -22,6 +23,7 @@ readonly WP_ENV_BIN_INPUT="${E2E_TRANSITION_WP_ENV_BIN:-$PLUGIN_ROOT/node_module
 readonly REFERENCE_STORE_DIR="${E2E_TRANSITION_REFERENCE_STORE_DIR:-$PROJECTS_ROOT/woocommerce-payments}"
 readonly REFERENCE_WP_BIN="${E2E_TRANSITION_REFERENCE_WP_BIN:-}"
 readonly DOCKER_BIN="${E2E_TRANSITION_DOCKER_BIN:-docker}"
+readonly GZIP_BIN="${E2E_TRANSITION_GZIP_BIN:-gzip}"
 readonly STATE_WRITER="$SCRIPT_DIR/write-transition-state.js"
 
 workspace=''
@@ -120,6 +122,15 @@ validate_seed() {
 		echo 'Transition seed archive and manifest must be read-only.' >&2
 		exit 1
 	fi
+	local canonical_tar_hash
+	if ! canonical_tar_hash="$(
+		"$GZIP_BIN" -cd "$seed_archive" |
+			shasum -a 256 |
+			awk '{ print $1 }'
+	)"; then
+		echo 'Transition seed archive cannot produce its canonical tar identity.' >&2
+		exit 1
+	fi
 
 	node -e '
 		const { createHash } = require( "node:crypto" );
@@ -128,13 +139,34 @@ validate_seed() {
 		const archiveHash = createHash( "sha256" )
 			.update( readFileSync( process.argv[ 2 ] ) )
 			.digest( "hex" );
+		const toolchain = manifest.build_toolchain;
+		const toolchainKeys = [ "composer", "git", "gzip", "node", "npm", "zlib" ];
+		const hasExactToolchain =
+			toolchain !== null &&
+			typeof toolchain === "object" &&
+			!Array.isArray( toolchain ) &&
+			JSON.stringify( Object.keys( toolchain ).sort() ) ===
+				JSON.stringify( toolchainKeys ) &&
+			toolchainKeys.every(
+				( key ) =>
+					typeof toolchain[ key ] === "string" &&
+					toolchain[ key ].length > 0 &&
+					toolchain[ key ].length <= 256 &&
+					!/[\u0000-\u001f\u007f]/u.test( toolchain[ key ] )
+			) &&
+			toolchain.node === "v20.11.1" &&
+			toolchain.npm === "10.2.4";
 		if (
-			manifest.schema_version !== 1 ||
+			manifest.schema_version !== 2 ||
 			manifest.plugin !== "woocommerce-payments" ||
 			manifest.plugin_version !== process.argv[ 3 ] ||
 			manifest.source_commit !== process.argv[ 4 ] ||
 			manifest.archive_sha256 !== archiveHash ||
+			! /^[a-f0-9]{64}$/.test( manifest.canonical_tar_sha256 ) ||
+			manifest.canonical_tar_sha256 !== process.argv[ 6 ] ||
+			manifest.archive_profile !== process.argv[ 7 ] ||
 			manifest.archive_format !== "tar.gz" ||
+			! hasExactToolchain ||
 			! /^[a-f0-9]{64}$/.test( manifest.dependency_lock_sha256 ) ||
 			! Number.isSafeInteger( manifest.production_package_count ) ||
 			manifest.production_package_count <= 0 ||
@@ -172,7 +204,9 @@ validate_seed() {
 		"$seed_archive" \
 		"$SEED_VERSION" \
 		"$SEED_COMMIT" \
-		"$FRONTEND_LOCK_SHA256"
+		"$FRONTEND_LOCK_SHA256" \
+		"$canonical_tar_hash" \
+		"$ARCHIVE_PROFILE"
 
 	if ! tar -tzf "$seed_archive" |
 		grep -Fqx 'woocommerce-payments/woocommerce-payments.php'; then

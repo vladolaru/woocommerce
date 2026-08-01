@@ -6,6 +6,10 @@ readonly COMMAND_LOG="${E2E_FAKE_COMMAND_LOG:?E2E_FAKE_COMMAND_LOG is required}"
 printf 'npm %s\n' "$*" >> "$COMMAND_LOG"
 
 case "$*" in
+	'--version')
+		printf '%s\n' "${E2E_FAKE_NPM_VERSION:-10.2.4}"
+		exit 0
+		;;
 	'ci --ignore-scripts --no-audit --no-fund')
 		if [[ ! -f package-lock.json || -e node_modules ]]; then
 			echo 'Fake npm ci requires a clean extracted lockfile tree.' >&2
@@ -25,6 +29,9 @@ case "$*" in
 		printf 'generated checkout JavaScript\n' > dist/checkout.js
 		if [[ "${E2E_FAKE_NPM_MODE:-complete}" != 'partial' ]]; then
 			printf 'generated blocks checkout JavaScript\n' > dist/blocks-checkout.js
+		fi
+		if [[ -n "${E2E_FAKE_GENERATED_MTIME:-}" ]]; then
+			find dist -exec touch -t "$E2E_FAKE_GENERATED_MTIME" {} +
 		fi
 		;;
 	*)

@@ -125,15 +125,30 @@ cat > "$TEST_ROOT/seed/woocommerce-payments/woocommerce-payments.php" <<'PHP'
 PHP
 tar -czf "$TEST_ROOT/source-only-seed.tar.gz" -C "$TEST_ROOT/seed" woocommerce-payments
 source_only_seed_hash="$(shasum -a 256 "$TEST_ROOT/source-only-seed.tar.gz" | awk '{ print $1 }')"
+source_only_canonical_hash="$(
+	gzip -cd "$TEST_ROOT/source-only-seed.tar.gz" |
+		shasum -a 256 |
+		awk '{ print $1 }'
+)"
 node -e '
 	const { writeFileSync } = require( "node:fs" );
 	writeFileSync( process.argv[ 1 ], `${ JSON.stringify( {
-		schema_version: 1,
+		schema_version: 2,
 		plugin: "woocommerce-payments",
 		plugin_version: "10.5.0",
 		source_commit: "a1f755fc903966387f8629f78f75976ac8d2016e",
 		archive_sha256: process.argv[ 2 ],
+		canonical_tar_sha256: process.argv[ 3 ],
+		archive_profile: "git-sha1-fixed-pax+gzip-n9-v1",
 		archive_format: "tar.gz",
+		build_toolchain: {
+			composer: "Composer version 2.8.6 2025-06-10 13:15:10",
+			git: "git version 2.54.0",
+			gzip: "Apple gzip 479",
+			node: "v20.11.1",
+			npm: "10.2.4",
+			zlib: "1.2.13",
+		},
 		dependency_lock_sha256: "0".repeat( 64 ),
 		production_package_count: 2,
 		executable_seed_files: [
@@ -143,7 +158,10 @@ node -e '
 			"vendor/composer/installed.json",
 		],
 	} ) }\n` );
-' "$TEST_ROOT/source-only-seed.json" "$source_only_seed_hash"
+' \
+	"$TEST_ROOT/source-only-seed.json" \
+	"$source_only_seed_hash" \
+	"$source_only_canonical_hash"
 mkdir -p "$TEST_ROOT/seed/woocommerce-payments/vendor/composer"
 cat > "$TEST_ROOT/seed/woocommerce-payments/composer.lock" <<'JSON'
 {
@@ -208,10 +226,16 @@ printf 'generated index JavaScript\n' > "$TEST_ROOT/seed/woocommerce-payments/di
 printf 'generated index CSS\n' > "$TEST_ROOT/seed/woocommerce-payments/dist/index.css"
 printf 'generated checkout JavaScript\n' > "$TEST_ROOT/seed/woocommerce-payments/dist/checkout.js"
 printf 'generated blocks checkout JavaScript\n' > "$TEST_ROOT/seed/woocommerce-payments/dist/blocks-checkout.js"
+printf 'unselected canonical payload\n' > "$TEST_ROOT/seed/woocommerce-payments/payload.txt"
 chmod -R a-w "$TEST_ROOT/seed/woocommerce-payments"
 tar -czf "$TEST_ROOT/seed.tar.gz" -C "$TEST_ROOT/seed" woocommerce-payments
 chmod -R u+w "$TEST_ROOT/seed/woocommerce-payments"
 seed_hash="$(shasum -a 256 "$TEST_ROOT/seed.tar.gz" | awk '{ print $1 }')"
+seed_canonical_hash="$(
+	gzip -cd "$TEST_ROOT/seed.tar.gz" |
+		shasum -a 256 |
+		awk '{ print $1 }'
+)"
 dependency_lock_hash="$(shasum -a 256 "$TEST_ROOT/seed/woocommerce-payments/composer.lock" | awk '{ print $1 }')"
 frontend_lock_hash="$(shasum -a 256 "$TEST_ROOT/seed/woocommerce-payments/package-lock.json" | awk '{ print $1 }')"
 frontend_index_js_hash="$(shasum -a 256 "$TEST_ROOT/seed/woocommerce-payments/dist/index.js" | awk '{ print $1 }')"
@@ -221,12 +245,22 @@ frontend_blocks_checkout_js_hash="$(shasum -a 256 "$TEST_ROOT/seed/woocommerce-p
 node -e '
 	const { writeFileSync } = require( "node:fs" );
 	writeFileSync( process.argv[ 1 ], `${ JSON.stringify( {
-		schema_version: 1,
+		schema_version: 2,
 		plugin: "woocommerce-payments",
 		plugin_version: "10.5.0",
 		source_commit: "a1f755fc903966387f8629f78f75976ac8d2016e",
 		archive_sha256: process.argv[ 2 ],
+		canonical_tar_sha256: process.argv[ 9 ],
+		archive_profile: "git-sha1-fixed-pax+gzip-n9-v1",
 		archive_format: "tar.gz",
+		build_toolchain: {
+			composer: "Composer version 2.8.6 2025-06-10 13:15:10",
+			git: "git version 2.54.0",
+			gzip: "Apple gzip 479",
+			node: "v20.11.1",
+			npm: "10.2.4",
+			zlib: "1.2.13",
+		},
 		dependency_lock_sha256: process.argv[ 3 ],
 		production_package_count: 2,
 		frontend_lock_sha256: process.argv[ 4 ],
@@ -258,7 +292,8 @@ node -e '
 	"$frontend_index_js_hash" \
 	"$frontend_index_css_hash" \
 	"$frontend_checkout_js_hash" \
-	"$frontend_blocks_checkout_js_hash"
+	"$frontend_blocks_checkout_js_hash" \
+	"$seed_canonical_hash"
 export E2E_TRANSITION_FRONTEND_LOCK_SHA256="$frontend_lock_hash"
 chmod 0444 \
 	"$TEST_ROOT/source-only-seed.tar.gz" \
@@ -294,6 +329,115 @@ node -e '
 	if ( plan.plugin_version !== "10.5.0" ) process.exit( 1 );
 ' "$plan"
 
+make_invalid_seed_manifest() {
+	local variant="$1"
+	local variant_manifest="$TEST_ROOT/$variant-seed.json"
+	node -e '
+		const { readFileSync, writeFileSync } = require( "node:fs" );
+		const manifest = JSON.parse( readFileSync( process.argv[ 1 ], "utf8" ) );
+		switch ( process.argv[ 3 ] ) {
+			case "schema-one":
+				manifest.schema_version = 1;
+				break;
+			case "missing-canonical":
+				delete manifest.canonical_tar_sha256;
+				break;
+			case "malformed-canonical":
+				manifest.canonical_tar_sha256 = "not-a-sha256";
+				break;
+			case "wrong-canonical":
+				manifest.canonical_tar_sha256 = "0".repeat( 64 );
+				break;
+			case "unsupported-profile":
+				manifest.archive_profile = "unsupported-profile";
+				break;
+			case "missing-toolchain":
+				delete manifest.build_toolchain;
+				break;
+			case "malformed-toolchain":
+				manifest.build_toolchain.extra = "not-an-observed-tool";
+				break;
+			default:
+				process.exit( 2 );
+		}
+		writeFileSync( process.argv[ 2 ], `${ JSON.stringify( manifest ) }\n` );
+	' "$TEST_ROOT/seed.json" "$variant_manifest" "$variant"
+	chmod 0444 "$variant_manifest"
+}
+
+for invalid_manifest in \
+	schema-one \
+	missing-canonical \
+	malformed-canonical \
+	wrong-canonical \
+	unsupported-profile \
+	missing-toolchain \
+	malformed-toolchain; do
+	make_invalid_seed_manifest "$invalid_manifest"
+done
+
+tampered_tree="$TEST_ROOT/unselected-tampered-tree"
+cp -R "$TEST_ROOT/seed" "$tampered_tree"
+printf 'tampered outside selected validation files\n' > \
+	"$tampered_tree/woocommerce-payments/payload.txt"
+tar -czf "$TEST_ROOT/unselected-tampered-seed.tar.gz" \
+	-C "$tampered_tree" woocommerce-payments
+tampered_archive_hash="$(
+	shasum -a 256 "$TEST_ROOT/unselected-tampered-seed.tar.gz" |
+		awk '{ print $1 }'
+)"
+node -e '
+	const { readFileSync, writeFileSync } = require( "node:fs" );
+	const manifest = JSON.parse( readFileSync( process.argv[ 1 ], "utf8" ) );
+	manifest.archive_sha256 = process.argv[ 3 ];
+	writeFileSync( process.argv[ 2 ], `${ JSON.stringify( manifest ) }\n` );
+' \
+	"$TEST_ROOT/seed.json" \
+	"$TEST_ROOT/unselected-tampered-seed.json" \
+	"$tampered_archive_hash"
+chmod 0444 \
+	"$TEST_ROOT/unselected-tampered-seed.tar.gz" \
+	"$TEST_ROOT/unselected-tampered-seed.json"
+
+assert_seed_rejected_before_workspace_mutation() {
+	local variant="$1"
+	local archive="$2"
+	local manifest="$3"
+	local before_rejection
+	before_rejection="$(find "$workspace" -mindepth 1 -print)"
+	if env E2E_TRANSITION_PORT=19091 \
+		"$PROVISIONER" plan \
+		--workspace "$workspace" \
+		--seed-archive "$archive" \
+		--seed-manifest "$manifest" \
+		--run-id "$variant" > /dev/null 2>&1; then
+		echo "Plan accepted the invalid transition seed: $variant." >&2
+		exit 1
+	fi
+	if [[ "$(find "$workspace" -mindepth 1 -print)" != "$before_rejection" ]]; then
+		echo "Seed validation mutated the workspace before rejecting: $variant." >&2
+		exit 1
+	fi
+}
+
+for invalid_manifest in \
+	schema-one \
+	missing-canonical \
+	malformed-canonical \
+	wrong-canonical \
+	unsupported-profile \
+	missing-toolchain \
+	malformed-toolchain; do
+	assert_seed_rejected_before_workspace_mutation \
+		"$invalid_manifest" \
+		"$TEST_ROOT/seed.tar.gz" \
+		"$TEST_ROOT/$invalid_manifest-seed.json"
+done
+assert_seed_rejected_before_workspace_mutation \
+	'unselected-tampered' \
+	"$TEST_ROOT/unselected-tampered-seed.tar.gz" \
+	"$TEST_ROOT/unselected-tampered-seed.json"
+
 make_invalid_frontend_seed() {
 	local variant="$1"
 	local variant_tree="$TEST_ROOT/$variant-tree"
@@ -324,12 +468,19 @@ make_invalid_frontend_seed() {
 	tar -czf "$variant_archive" -C "$variant_tree" woocommerce-payments
 	local variant_archive_hash
 	variant_archive_hash="$(shasum -a 256 "$variant_archive" | awk '{ print $1 }')"
+	local variant_canonical_hash
+	variant_canonical_hash="$(
+		gzip -cd "$variant_archive" |
+			shasum -a 256 |
+			awk '{ print $1 }'
+	)"
 	local variant_lock_hash
 	variant_lock_hash="$(shasum -a 256 "$variant_tree/woocommerce-payments/package-lock.json" | awk '{ print $1 }')"
 	node -e '
 		const { readFileSync, writeFileSync } = require( "node:fs" );
 		const manifest = JSON.parse( readFileSync( process.argv[ 1 ], "utf8" ) );
 		manifest.archive_sha256 = process.argv[ 3 ];
+		manifest.canonical_tar_sha256 = process.argv[ 6 ];
 		if ( process.argv[ 5 ] === "forged-hash" ) {
 			manifest.frontend_bundles[ 0 ].sha256 = "0".repeat( 64 );
 		}
@@ -342,7 +493,8 @@ make_invalid_frontend_seed() {
 		"$variant_manifest" \
 		"$variant_archive_hash" \
 		"$variant_lock_hash" \
-		"$variant"
+		"$variant" \
+		"$variant_canonical_hash"
 	chmod 0444 "$variant_archive" "$variant_manifest"
 }
 

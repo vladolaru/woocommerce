@@ -4,6 +4,11 @@ set -euo pipefail
 
 printf 'composer %s\n' "$*" >> "${E2E_FAKE_COMMAND_LOG:?E2E_FAKE_COMMAND_LOG is required}"
 
+if [[ "${1:-}" == '--version' ]]; then
+	printf 'Composer version 2.8.6 2025-06-10 13:15:10\n'
+	exit 0
+fi
+
 working_dir=''
 for argument in "$@"; do
 	case "$argument" in
@@ -37,8 +42,14 @@ node -e '
 	"$working_dir/vendor/composer/installed.json" \
 	"${E2E_FAKE_COMPOSER_MODE:-good}"
 
-if [[ "${E2E_FAKE_COMPOSER_MODE:-good}" != 'missing' ]]; then
+if [[ "${E2E_FAKE_COMPOSER_MODE:-good}" == 'special' ]]; then
+	mkfifo "$working_dir/vendor/unsupported-pipe"
+elif [[ "${E2E_FAKE_COMPOSER_MODE:-good}" != 'missing' ]]; then
 	printf '<?php // generated Jetpack package autoloader\n' > "$working_dir/vendor/autoload_packages.php"
+fi
+
+if [[ -n "${E2E_FAKE_GENERATED_MTIME:-}" ]]; then
+	find "$working_dir/vendor" -exec touch -t "$E2E_FAKE_GENERATED_MTIME" {} +
 fi
 
 printf 'fake-composer-output-with-secret=%s\n' "${E2E_FAKE_COMPOSER_SECRET:-unset}"

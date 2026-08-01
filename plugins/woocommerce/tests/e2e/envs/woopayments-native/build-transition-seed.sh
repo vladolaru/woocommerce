@@ -6,6 +6,9 @@ umask 077
 readonly SEED_COMMIT='a1f755fc903966387f8629f78f75976ac8d2016e'
 readonly SEED_VERSION='10.5.0'
 readonly FRONTEND_NODE_LINE='20.11'
+readonly FRONTEND_NODE_VERSION='v20.11.1'
+readonly FRONTEND_NPM_VERSION='10.2.4'
+readonly ARCHIVE_PROFILE='git-sha1-fixed-pax+gzip-n9-v1'
 readonly FRONTEND_LOCK_SHA256="${E2E_TRANSITION_FRONTEND_LOCK_SHA256:-6e279cfadb1851486976f67a72a11bc9ea36fa62c7f74d31b4d0d73c006b34b1}"
 readonly SCRIPT_DIR="$(
 	cd "$(dirname "${BASH_SOURCE[0]}")"
@@ -17,6 +20,8 @@ readonly PROJECTS_ROOT="$(
 )"
 readonly WCPAY_REPOSITORY="${E2E_TRANSITION_WCPAY_REPO:-$PROJECTS_ROOT/woocommerce-payments}"
 readonly GIT_BIN="${E2E_TRANSITION_GIT_BIN:-git}"
+readonly ARCHIVE_GIT_BIN="${E2E_TRANSITION_ARCHIVE_GIT_BIN:-git}"
+readonly GZIP_BIN="${E2E_TRANSITION_GZIP_BIN:-gzip}"
 readonly COMPOSER_BIN="${E2E_TRANSITION_COMPOSER_BIN:-composer}"
 readonly NODE_BIN="${E2E_TRANSITION_NODE_BIN:-node}"
 readonly NPM_BIN="${E2E_TRANSITION_NPM_BIN:-npm}"
@@ -64,6 +69,40 @@ cleanup() {
 }
 trap cleanup EXIT
 
+validate_seed_tree() {
+	if find "$plugin_root" -type l -print -quit | grep -q .; then
+		echo 'The materialized transition seed contains a symbolic link.' >&2
+		exit 1
+	fi
+	if find "$plugin_root" ! -type d ! -type f -print -quit | grep -q .; then
+		echo 'The materialized transition seed contains a special filesystem entry.' >&2
+		exit 1
+	fi
+	if find "$plugin_root" -type d -empty -print -quit | grep -q .; then
+		echo 'The materialized transition seed contains an empty directory.' >&2
+		exit 1
+	fi
+	if find "$plugin_root" -name .gitattributes -print -quit | grep -q .; then
+		echo 'The materialized transition seed contains forbidden .gitattributes.' >&2
+		exit 1
+	fi
+	if ! "$NODE_BIN" -e '
+		const { readdirSync } = require( "node:fs" );
+		const { join } = require( "node:path" );
+		const visit = ( root, relative = "" ) => {
+			for ( const entry of readdirSync( root, { withFileTypes: true } ) ) {
+				const path = relative ? `${ relative }/${ entry.name }` : entry.name;
+				if ( /[\u0000-\u001f\u007f]/u.test( path ) ) process.exit( 1 );
+				if ( entry.isDirectory() ) visit( join( root, entry.name ), path );
+			}
+		};
+		visit( process.argv[ 1 ] );
+	' "$plugin_root"; then
+		echo 'The materialized transition seed contains a control character in a path.' >&2
+		exit 1
+	fi
+}
+
 raw_archive="$staging/source.tar"
 extracted="$staging/extracted"
 mkdir "$extracted"
@@ -103,13 +142,39 @@ if [[ -e "$plugin_root/vendor" || -e "$plugin_root/node_modules" || -e "$plugin_
 	echo 'The approved tracked seed unexpectedly contains mutable dependency or distribution artifacts.' >&2
 	exit 1
 fi
+validate_seed_tree
 if [[ "$(< "$node_version_file")" != "$FRONTEND_NODE_LINE" ]]; then
 	echo "The approved seed requires the pinned Node $FRONTEND_NODE_LINE line." >&2
 	exit 1
 fi
 executing_node_version="$("$NODE_BIN" --version 2> /dev/null || true)"
-if [[ ! "$executing_node_version" =~ ^v20\.11\.[0-9]+$ ]]; then
-	echo "Transition frontend build requires Node 20.11.x; found ${executing_node_version:-no executable version}." >&2
+if [[ "$executing_node_version" != "$FRONTEND_NODE_VERSION" ]]; then
+	echo "Transition frontend build requires Node ${FRONTEND_NODE_VERSION#v}; found ${executing_node_version:-no executable version}." >&2
+	exit 1
+fi
+executing_npm_version="$("$NPM_BIN" --version 2> /dev/null || true)"
+if [[ "$executing_npm_version" != "$FRONTEND_NPM_VERSION" ]]; then
+	echo "Transition frontend build requires npm $FRONTEND_NPM_VERSION; found ${executing_npm_version:-no executable version}." >&2
+	exit 1
+fi
+if ! composer_version_output="$("$COMPOSER_BIN" --version 2>&1)"; then
+	echo 'Transition seed build could not observe the Composer version.' >&2
+	exit 1
+fi
+composer_version="${composer_version_output%%$'\n'*}"
+if ! archive_git_version_output="$("$ARCHIVE_GIT_BIN" --version 2>&1)"; then
+	echo 'Transition seed build could not observe the archive Git version.' >&2
+	exit 1
+fi
+archive_git_version="${archive_git_version_output%%$'\n'*}"
+if ! gzip_version_output="$("$GZIP_BIN" --version 2>&1)"; then
+	echo 'Transition seed build could not observe the gzip version.' >&2
+	exit 1
+fi
+gzip_version="${gzip_version_output%%$'\n'*}"
+zlib_version="$("$NODE_BIN" -p 'process.versions.zlib' 2> /dev/null || true)"
+if [[ -z "$composer_version" || -z "$archive_git_version" || -z "$gzip_version" || -z "$zlib_version" ]]; then
+	echo 'Transition seed build could not observe its complete build toolchain.' >&2
 	exit 1
 fi
 frontend_lock_hash="$(shasum -a 256 "$frontend_lock" | awk '{ print $1 }')"
@@ -160,6 +225,8 @@ if ! (
 	echo 'Pinned transition frontend production build failed.' >&2
 	exit 1
 fi
+rm -rf "$plugin_root/node_modules"
+validate_seed_tree
 
 readonly -a EXECUTABLE_SEED_FILES=(
 	'vendor/autoload_packages.php'
@@ -229,26 +296,97 @@ for frontend_bundle in "${FRONTEND_BUNDLES[@]}"; do
 			awk '{ print $1 }'
 	)")
 done
-rm -rf "$plugin_root/node_modules"
-
 find "$extracted" -type d -exec chmod 0555 {} +
 find "$extracted" -type f -exec chmod 0444 {} +
 
 mkdir "$output_dir"
 archive_path="$output_dir/woocommerce-payments-${SEED_VERSION}-${SEED_COMMIT}.tar.gz"
 manifest_path="$output_dir/woocommerce-payments-${SEED_VERSION}-${SEED_COMMIT}.json"
-tar -czf "$archive_path" -C "$extracted" woocommerce-payments
+archive_repository="$staging/archive.git"
+archive_index="$staging/archive.index"
+archive_home="$staging/archive-home"
+archive_xdg="$archive_home/xdg"
+canonical_tar="$staging/canonical.tar"
+mkdir -p "$archive_home" "$archive_xdg"
+
+if ! env -i \
+	PATH="$PATH" \
+	LC_ALL=C \
+	HOME="$archive_home" \
+	XDG_CONFIG_HOME="$archive_xdg" \
+	GIT_CONFIG_NOSYSTEM=1 \
+	GIT_CONFIG_GLOBAL=/dev/null \
+	"$ARCHIVE_GIT_BIN" init \
+		--quiet \
+		--bare \
+		--object-format=sha1 \
+		"$archive_repository" > /dev/null; then
+	echo 'Transition seed build could not initialize its private SHA-1 archive repository.' >&2
+	exit 1
+fi
+
+archive_git() {
+	env -i \
+		PATH="$PATH" \
+		LC_ALL=C \
+		HOME="$archive_home" \
+		XDG_CONFIG_HOME="$archive_xdg" \
+		GIT_CONFIG_NOSYSTEM=1 \
+		GIT_CONFIG_GLOBAL=/dev/null \
+		GIT_DIR="$archive_repository" \
+		GIT_WORK_TREE="$plugin_root" \
+		GIT_INDEX_FILE="$archive_index" \
+		GIT_AUTHOR_NAME='WooCommerce E2E' \
+		GIT_AUTHOR_EMAIL='e2e@example.invalid' \
+		GIT_AUTHOR_DATE='2000-01-01T00:00:00+0000' \
+		GIT_COMMITTER_NAME='WooCommerce E2E' \
+		GIT_COMMITTER_EMAIL='e2e@example.invalid' \
+		GIT_COMMITTER_DATE='2000-01-01T00:00:00+0000' \
+		"$ARCHIVE_GIT_BIN" \
+		-c core.autocrlf=false \
+		-c core.filemode=false \
+		"$@"
+}
+
+archive_git add --force --all -- .
+archive_tree="$(archive_git write-tree)"
+archive_commit="$(
+	printf 'WooPayments transition seed\n' |
+		archive_git commit-tree "$archive_tree"
+)"
+if [[ ! "$archive_commit" =~ ^[a-f0-9]{40}$ ]]; then
+	echo 'Transition seed build did not create an exact SHA-1 archive commit.' >&2
+	exit 1
+fi
+archive_git \
+	-c tar.umask=0222 \
+	archive \
+	--format=tar \
+	--prefix=woocommerce-payments/ \
+	"$archive_commit" > "$canonical_tar"
+canonical_tar_hash="$(shasum -a 256 "$canonical_tar" | awk '{ print $1 }')"
+"$GZIP_BIN" -n -9 -c "$canonical_tar" > "$archive_path"
 archive_hash="$(shasum -a 256 "$archive_path" | awk '{ print $1 }')"
 
 "$NODE_BIN" -e '
 	const { writeFileSync } = require( "node:fs" );
 	const manifest = {
-		schema_version: 1,
+		schema_version: 2,
 		plugin: "woocommerce-payments",
 		plugin_version: process.argv[ 2 ],
 		source_commit: process.argv[ 3 ],
 		archive_sha256: process.argv[ 4 ],
+		canonical_tar_sha256: process.argv[ 13 ],
+		archive_profile: process.argv[ 14 ],
 		archive_format: "tar.gz",
+		build_toolchain: {
+			composer: process.argv[ 15 ],
+			git: process.argv[ 16 ],
+			gzip: process.argv[ 17 ],
+			node: process.argv[ 18 ],
+			npm: process.argv[ 19 ],
+			zlib: process.argv[ 20 ],
+		},
 		dependency_lock_sha256: process.argv[ 5 ],
 		production_package_count: Number( process.argv[ 6 ] ),
 		frontend_lock_sha256: process.argv[ 7 ],
@@ -285,7 +423,15 @@ archive_hash="$(shasum -a 256 "$archive_path" | awk '{ print $1 }')"
 	"$production_package_count" \
 	"$frontend_lock_hash" \
 	"$FRONTEND_NODE_LINE" \
-	"${frontend_bundle_hashes[@]}"
+	"${frontend_bundle_hashes[@]}" \
+	"$canonical_tar_hash" \
+	"$ARCHIVE_PROFILE" \
+	"$composer_version" \
+	"$archive_git_version" \
+	"$gzip_version" \
+	"$executing_node_version" \
+	"$executing_npm_version" \
+	"$zlib_version"
 chmod 0444 "$archive_path" "$manifest_path"
 
 "$NODE_BIN" -e '
