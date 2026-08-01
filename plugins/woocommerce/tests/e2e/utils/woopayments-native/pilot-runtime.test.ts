@@ -28,6 +28,7 @@ import {
 	WooPaymentsPilotRuntime,
 } from '../../fixtures/woopayments-native';
 import WooPaymentsKnownGapsReporter from '../../reporters/woopayments-known-gaps';
+import { completeCardCheckout } from './drivers/checkout';
 import {
 	assertResourcesUsable,
 	quarantineResources,
@@ -2495,7 +2496,8 @@ test( 'blocks a card payment after lock loss during checkout preparation', async
 				mutation: { role: 'button', name: 'place order' },
 			},
 			async ( pilotRuntime, page ) => {
-				await pilotRuntime.completeCardCheckout(
+				await completeCardCheckout(
+					pilotRuntime,
 					page,
 					{ id: 73, name: 'Owned product', amount: '10.99' },
 					'run-pilot-runtime'
@@ -2522,7 +2524,8 @@ test( 'blocks the order metadata write after lock loss during confirmation', asy
 			pilotRuntime.withProviderWriteLocks(
 				{ recordEvent: 'order-metadata-ownership-loss' },
 				async () => {
-					await pilotRuntime.completeCardCheckout(
+					await completeCardCheckout(
+						pilotRuntime,
 						page,
 						{
 							id: 73,

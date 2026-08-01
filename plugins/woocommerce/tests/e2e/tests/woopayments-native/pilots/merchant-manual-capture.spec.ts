@@ -1,4 +1,5 @@
 import { expect, tags, test } from '../../../fixtures/woopayments-native';
+import { completeCardCheckout } from '../../../utils/woopayments-native/drivers/checkout';
 import {
 	getCaptureOrderNoteEvidence,
 	getPaymentEvidence,
@@ -24,7 +25,8 @@ test(
 		await pilotRuntime.withCapturedManualCaptureSetting( async () => {
 			pilotRuntime.requireApprovedProviderFixture( 'manual-capture' );
 			const product = await pilotRuntime.createOwnedProduct( '12.00' );
-			const orderId = await pilotRuntime.completeCardCheckout(
+			const orderId = await completeCardCheckout(
+				pilotRuntime,
 				page,
 				product,
 				runId

@@ -1,4 +1,5 @@
 import { expect, tags, test } from '../../../fixtures/woopayments-native';
+import { completeCardCheckout } from '../../../utils/woopayments-native/drivers/checkout';
 import { getPaymentEvidence } from '../../../utils/woopayments-native/record-evidence';
 
 test(
@@ -27,7 +28,8 @@ test(
 				const product = await pilotRuntime.createOwnedProduct(
 					'15.50'
 				);
-				const orderId = await pilotRuntime.completeCardCheckout(
+				const orderId = await completeCardCheckout(
+					pilotRuntime,
 					page,
 					product,
 					runId
