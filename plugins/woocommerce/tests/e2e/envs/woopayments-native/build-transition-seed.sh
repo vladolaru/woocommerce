@@ -54,14 +54,6 @@ if [[ -e "$output_dir" ]]; then
 	exit 1
 fi
 
-resolved_commit="$(
-	"$GIT_BIN" -C "$WCPAY_REPOSITORY" rev-parse --verify "${SEED_COMMIT}^{commit}"
-)"
-if [[ "$resolved_commit" != "$SEED_COMMIT" ]]; then
-	echo 'The WooPayments seed floor did not resolve to the approved immutable commit.' >&2
-	exit 1
-fi
-
 staging="$(mktemp -d "$TEMP_ROOT/woopayments-transition-seed.XXXXXX")"
 cleanup() {
 	chmod -R u+w "$staging" 2> /dev/null || true
@@ -69,7 +61,69 @@ cleanup() {
 }
 trap cleanup EXIT
 
+source_git_home="$staging/source-git-home"
+source_git_xdg="$source_git_home/xdg"
+mkdir -p "$source_git_home" "$source_git_xdg"
+source_git() {
+	env \
+		-u GIT_ALTERNATE_OBJECT_DIRECTORIES \
+		-u GIT_ATTR_SOURCE \
+		-u GIT_CEILING_DIRECTORIES \
+		-u GIT_COMMON_DIR \
+		-u GIT_CONFIG \
+		-u GIT_CONFIG_COUNT \
+		-u GIT_CONFIG_PARAMETERS \
+		-u GIT_DIR \
+		-u GIT_DISCOVERY_ACROSS_FILESYSTEM \
+		-u GIT_INDEX_FILE \
+		-u GIT_NAMESPACE \
+		-u GIT_OBJECT_DIRECTORY \
+		-u GIT_REPLACE_REF_BASE \
+		-u GIT_WORK_TREE \
+		GIT_ATTR_NOSYSTEM=1 \
+		GIT_CONFIG_GLOBAL=/dev/null \
+		GIT_CONFIG_NOSYSTEM=1 \
+		GIT_CONFIG_SYSTEM=/dev/null \
+		HOME="$source_git_home" \
+		XDG_CONFIG_HOME="$source_git_xdg" \
+		"$GIT_BIN" \
+		-c core.attributesFile=/dev/null \
+		-C "$WCPAY_REPOSITORY" \
+		"$@"
+}
+
+resolved_commit="$(
+	source_git rev-parse --verify "${SEED_COMMIT}^{commit}"
+)"
+if [[ "$resolved_commit" != "$SEED_COMMIT" ]]; then
+	echo 'The WooPayments seed floor did not resolve to the approved immutable commit.' >&2
+	exit 1
+fi
+
+source_git_dir="$(source_git rev-parse --path-format=absolute --git-dir)"
+source_git_common_dir="$(source_git rev-parse --path-format=absolute --git-common-dir)"
+source_git_info_attributes="$(
+	source_git rev-parse --path-format=absolute --git-path info/attributes
+)"
+for repository_attributes in \
+	"$source_git_info_attributes" \
+	"$source_git_dir/info/attributes" \
+	"$source_git_common_dir/info/attributes"; do
+	if [[ -z "$repository_attributes" || "$repository_attributes" != /* ]]; then
+		echo 'The WooPayments source Git attributes path could not be resolved exactly.' >&2
+		exit 1
+	fi
+	if [[ -e "$repository_attributes" || -L "$repository_attributes" ]]; then
+		echo "The WooPayments source repository has forbidden repository-local Git attributes: $repository_attributes" >&2
+		exit 1
+	fi
+done
+
 validate_seed_tree() {
+	if find "$plugin_root" -name .git -print -quit | grep -q .; then
+		echo 'The materialized transition seed contains Git metadata.' >&2
+		exit 1
+	fi
 	if find "$plugin_root" -type l -print -quit | grep -q .; then
 		echo 'The materialized transition seed contains a symbolic link.' >&2
 		exit 1
@@ -106,7 +160,7 @@ validate_seed_tree() {
 raw_archive="$staging/source.tar"
 extracted="$staging/extracted"
 mkdir "$extracted"
-"$GIT_BIN" -C "$WCPAY_REPOSITORY" archive \
+source_git archive \
 	--format=tar \
 	--prefix=woocommerce-payments/ \
 	"$SEED_COMMIT" > "$raw_archive"

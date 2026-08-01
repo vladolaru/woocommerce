@@ -48,6 +48,25 @@ elif [[ "${E2E_FAKE_COMPOSER_MODE:-good}" != 'missing' ]]; then
 	printf '<?php // generated Jetpack package autoloader\n' > "$working_dir/vendor/autoload_packages.php"
 fi
 
+if [[ "${E2E_FAKE_COMPOSER_MODE:-good}" == 'nested-git' ]]; then
+	nested_repository="$working_dir/vendor/nested-source-fallback"
+	mkdir "$nested_repository"
+	printf '<?php // nested source fallback payload\n' > "$nested_repository/dependency.php"
+	git -C "$nested_repository" init --quiet
+	git -C "$nested_repository" -c core.autocrlf=false add dependency.php
+	env \
+		GIT_AUTHOR_NAME='Fake Composer' \
+		GIT_AUTHOR_EMAIL='fake-composer@example.invalid' \
+		GIT_AUTHOR_DATE='2000-01-01T00:00:00+0000' \
+		GIT_COMMITTER_NAME='Fake Composer' \
+		GIT_COMMITTER_EMAIL='fake-composer@example.invalid' \
+		GIT_COMMITTER_DATE='2000-01-01T00:00:00+0000' \
+		git -C "$nested_repository" \
+			-c commit.gpgSign=false \
+			commit --quiet -m 'Materialize nested source fallback'
+	find "$nested_repository/.git" -depth -type d -empty -delete
+fi
+
 if [[ -n "${E2E_FAKE_GENERATED_MTIME:-}" ]]; then
 	find "$working_dir/vendor" -exec touch -t "$E2E_FAKE_GENERATED_MTIME" {} +
 fi

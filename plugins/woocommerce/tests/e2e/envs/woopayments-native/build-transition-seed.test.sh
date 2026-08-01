@@ -222,6 +222,109 @@ if run_builder "$TEST_ROOT/git-attributes" > /dev/null 2>&1; then
 fi
 rm "$TEST_ROOT/tree/woocommerce-payments/.gitattributes"
 
+repository_attributes="$TEST_ROOT/repository-info-attributes"
+printf 'woocommerce-payments/payload.txt export-ignore\n' > "$repository_attributes"
+repository_attributes_stderr="$TEST_ROOT/repository-attributes-stderr"
+if repository_attributes_output="$(
+	run_builder \
+		"$TEST_ROOT/repository-attributes" \
+		E2E_FAKE_GIT_INFO_ATTRIBUTES="$repository_attributes" \
+		2> "$repository_attributes_stderr"
+)"; then
+	repository_attributes_archive="$(
+		node -p 'JSON.parse(process.argv[1]).archive_path' "$repository_attributes_output"
+	)"
+	if tar -tzf "$repository_attributes_archive" |
+		grep -Fqx 'woocommerce-payments/payload.txt'; then
+		echo 'The repository-local attributes fixture did not affect the source archive.' >&2
+	else
+		echo 'The seed builder accepted a source archive altered by repository-local attributes.' >&2
+	fi
+	red_case_failed=1
+elif ! grep -Fq 'repository-local Git attributes' "$repository_attributes_stderr"; then
+	echo 'The seed builder did not explicitly reject repository-local Git attributes.' >&2
+	red_case_failed=1
+fi
+
+linked_git_dir="$TEST_ROOT/linked-worktree-git"
+linked_common_dir="$TEST_ROOT/linked-common-git"
+mkdir -p "$linked_common_dir/info"
+printf 'woocommerce-payments/payload.txt export-ignore\n' > \
+	"$linked_common_dir/info/attributes"
+linked_attributes_stderr="$TEST_ROOT/linked-attributes-stderr"
+if run_builder \
+	"$TEST_ROOT/linked-attributes" \
+	E2E_FAKE_GIT_DIR="$linked_git_dir" \
+	E2E_FAKE_GIT_COMMON_DIR="$linked_common_dir" \
+	E2E_FAKE_GIT_INFO_ATTRIBUTES="$linked_git_dir/info/attributes" \
+	> /dev/null 2> "$linked_attributes_stderr"; then
+	echo 'The seed builder accepted common repository attributes for a linked worktree.' >&2
+	red_case_failed=1
+elif ! grep -Fq 'repository-local Git attributes' "$linked_attributes_stderr"; then
+	echo 'The seed builder did not reject linked-worktree common Git attributes explicitly.' >&2
+	red_case_failed=1
+fi
+
+global_attributes="$TEST_ROOT/global-attributes.rules"
+printf 'woocommerce-payments/payload.txt export-ignore\n' > "$global_attributes"
+if global_attributes_output="$(
+	run_builder \
+		"$TEST_ROOT/global-attributes" \
+		E2E_FAKE_GIT_GLOBAL_ATTRIBUTES="$global_attributes"
+)"; then
+	global_attributes_archive="$(
+		node -p 'JSON.parse(process.argv[1]).archive_path' "$global_attributes_output"
+	)"
+	if ! tar -tzf "$global_attributes_archive" |
+		grep -Fqx 'woocommerce-payments/payload.txt'; then
+		echo 'The source archive inherited global Git attributes.' >&2
+		red_case_failed=1
+	fi
+else
+	echo 'The source archive failed instead of isolating global Git attributes.' >&2
+	red_case_failed=1
+fi
+
+system_attributes="$TEST_ROOT/system-attributes.rules"
+printf 'woocommerce-payments/payload.txt export-ignore\n' > "$system_attributes"
+if system_attributes_output="$(
+	run_builder \
+		"$TEST_ROOT/system-attributes" \
+		E2E_FAKE_GIT_SYSTEM_ATTRIBUTES="$system_attributes"
+)"; then
+	system_attributes_archive="$(
+		node -p 'JSON.parse(process.argv[1]).archive_path' "$system_attributes_output"
+	)"
+	if ! tar -tzf "$system_attributes_archive" |
+		grep -Fqx 'woocommerce-payments/payload.txt'; then
+		echo 'The source archive inherited system Git attributes.' >&2
+		red_case_failed=1
+	fi
+else
+	echo 'The source archive failed instead of isolating system Git attributes.' >&2
+	red_case_failed=1
+fi
+
+nested_git_stderr="$TEST_ROOT/nested-git-stderr"
+if nested_git_output="$(
+	run_builder \
+		"$TEST_ROOT/nested-git" \
+		E2E_FAKE_COMPOSER_MODE='nested-git' \
+		2> "$nested_git_stderr"
+)"; then
+	nested_git_archive="$(node -p 'JSON.parse(process.argv[1]).archive_path' "$nested_git_output")"
+	if tar -tzf "$nested_git_archive" |
+		grep -Fqx 'woocommerce-payments/vendor/nested-source-fallback/dependency.php'; then
+		echo 'The seed builder accepted generated nested Git metadata.' >&2
+	else
+		echo 'The seed builder silently lost a nested source dependency through a Git link.' >&2
+	fi
+	red_case_failed=1
+elif ! grep -Fq 'Git metadata' "$nested_git_stderr"; then
+	echo 'The seed builder did not explicitly reject generated nested Git metadata.' >&2
+	red_case_failed=1
+fi
+
 special_stderr="$TEST_ROOT/special-stderr"
 if run_builder \
 	"$TEST_ROOT/special-entry" \

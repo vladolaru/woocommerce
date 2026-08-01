@@ -4,13 +4,68 @@ set -euo pipefail
 
 printf 'git %s\n' "$*" >> "${E2E_FAKE_COMMAND_LOG:?E2E_FAKE_COMMAND_LOG is required}"
 
+repository=''
+previous_argument=''
+for argument in "$@"; do
+	if [[ "$previous_argument" == '-C' ]]; then
+		repository="$argument"
+	fi
+	previous_argument="$argument"
+done
+fake_git_dir="${E2E_FAKE_GIT_DIR:-$repository/.git}"
+fake_git_common_dir="${E2E_FAKE_GIT_COMMON_DIR:-$fake_git_dir}"
+fake_git_info_attributes="${E2E_FAKE_GIT_INFO_ATTRIBUTES:-$fake_git_dir/info/attributes}"
+
 if [[ "$*" == *'rev-parse --verify'* ]]; then
 	printf '%s\n' "${E2E_FAKE_GIT_COMMIT:-a1f755fc903966387f8629f78f75976ac8d2016e}"
 	exit 0
 fi
 
+if [[ "$*" == *'rev-parse --path-format=absolute --git-dir'* ]]; then
+	printf '%s\n' "$fake_git_dir"
+	exit 0
+fi
+
+if [[ "$*" == *'rev-parse --path-format=absolute --git-common-dir'* ]]; then
+	printf '%s\n' "$fake_git_common_dir"
+	exit 0
+fi
+
+if [[ "$*" == *'rev-parse --path-format=absolute --git-path info/attributes'* ]]; then
+	printf '%s\n' "$fake_git_info_attributes"
+	exit 0
+fi
+
 if [[ "$*" == *'archive --format=tar'* ]]; then
-	tar -cf - -C "${E2E_FAKE_SEED_TREE:?E2E_FAKE_SEED_TREE is required}" woocommerce-payments
+	archive_attributes=''
+	for attributes_path in \
+		"$fake_git_info_attributes" \
+		"$fake_git_common_dir/info/attributes"; do
+		if [[ -f "$attributes_path" ]]; then
+			archive_attributes="$attributes_path"
+			break
+		fi
+	done
+	if [[ -z "$archive_attributes" ]] &&
+		[[ -n "${E2E_FAKE_GIT_GLOBAL_ATTRIBUTES:-}" ]] &&
+		[[ "${GIT_CONFIG_GLOBAL:-}" != '/dev/null' ]] &&
+		[[ "$*" != *'core.attributesFile=/dev/null'* ]]; then
+		archive_attributes="$E2E_FAKE_GIT_GLOBAL_ATTRIBUTES"
+	fi
+	if [[ -z "$archive_attributes" ]] &&
+		[[ -n "${E2E_FAKE_GIT_SYSTEM_ATTRIBUTES:-}" ]] &&
+		[[ "${GIT_ATTR_NOSYSTEM:-}" != '1' ]]; then
+		archive_attributes="$E2E_FAKE_GIT_SYSTEM_ATTRIBUTES"
+	fi
+	if [[ -n "$archive_attributes" ]] &&
+		grep -Fqx 'woocommerce-payments/payload.txt export-ignore' "$archive_attributes"; then
+		tar -cf - \
+			--exclude='woocommerce-payments/payload.txt' \
+			-C "${E2E_FAKE_SEED_TREE:?E2E_FAKE_SEED_TREE is required}" \
+			woocommerce-payments
+	else
+		tar -cf - -C "${E2E_FAKE_SEED_TREE:?E2E_FAKE_SEED_TREE is required}" woocommerce-payments
+	fi
 	exit 0
 fi
 
