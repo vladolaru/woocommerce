@@ -443,6 +443,13 @@ function visibleLocator(
 	return locator;
 }
 
+function hiddenLocator(): Locator {
+	return {
+		...visibleLocator(),
+		_expect: async () => ( { matches: false, received: 'hidden' } ),
+	} as unknown as Locator;
+}
+
 function exactEvidence(): PaymentEvidence {
 	return {
 		runId: 'run-pilot-runtime',
@@ -698,7 +705,9 @@ function savedCheckoutContractPage(
 	};
 }
 
-function savedCardCreationPage(): {
+function savedCardCreationPage(
+	pageOptions: { successBannerVisible?: boolean } = {}
+): {
 	page: Page;
 	submissions: () => number;
 } {
@@ -732,7 +741,11 @@ function savedCardCreationPage(): {
 			}
 			return visibleLocator();
 		},
-		getByText: () => visibleLocator(),
+		getByText: ( text: string ) =>
+			text === 'Payment method successfully added.' &&
+			pageOptions.successBannerVisible === false
+				? hiddenLocator()
+				: visibleLocator(),
 		getByTitle: () =>
 			visibleLocator( {
 				contentFrame: () => frame,
@@ -742,6 +755,54 @@ function savedCardCreationPage(): {
 	return {
 		page,
 		submissions: () => submissions,
+	};
+}
+
+function savedCardDeletionPage(
+	tokenId: number,
+	options: { successBannerVisible?: boolean } = {}
+): {
+	deletions: () => number;
+	page: Page;
+} {
+	let deletions = 0;
+	const deleteAction = visibleLocator( {
+		click: async () => {
+			deletions++;
+		},
+		getAttribute: async ( name ) =>
+			name === 'href'
+				? `http://native.test/my-account/delete-payment-method/${ tokenId }/?_wpnonce=nonce-${ tokenId }`
+				: null,
+	} );
+	const page = {
+		context: () => ( {
+			clearCookies: async () => {},
+		} ),
+		goto: async () => {},
+		getByLabel: () => visibleLocator(),
+		getByText: ( text: string ) =>
+			text === 'Payment method deleted.' &&
+			options.successBannerVisible === false
+				? hiddenLocator()
+				: visibleLocator(),
+		getByRole: (
+			role: string,
+			roleOptions?: { name?: string | RegExp }
+		) => {
+			const name = String( roleOptions?.name ?? '' );
+			if ( role === 'link' && name === 'Delete' ) {
+				return visibleLocator( {
+					all: async () => [ deleteAction ],
+				} );
+			}
+			return visibleLocator();
+		},
+	} as unknown as Page;
+
+	return {
+		deletions: () => deletions,
+		page,
 	};
 }
 
@@ -1059,6 +1120,192 @@ test( 'creates two plugin-owned cards from exact token diffs and returns distinc
 		] );
 		expect( fixture.submissions() ).toBe( 2 );
 		expect( cards[ 0 ] ).not.toEqual( cards[ 1 ] );
+	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+const savedCardProviderResourceKeys = [
+	'acct_native/account:provider-writes',
+	'acct_native/native-store/store:native-store',
+];
+
+test( 'keeps an uncertain saved-card creation attempt in the durable journal', async () => {
+	const directory = await lockDirectory();
+	const calls: RequestCall[] = [];
+	const annotated: ResourceQuarantineReceipt[] = [];
+	const pilotRuntime = runtime( directory, calls, {
+		savedCardEvidence: [
+			{
+				creation_ready: true,
+				tokens: [],
+			},
+		],
+		onResourceQuarantined: ( receipt ) => annotated.push( receipt ),
+	} );
+	const fixture = savedCardCreationPage( {
+		successBannerVisible: false,
+	} );
+
+	try {
+		let creationError: unknown;
+		try {
+			await pilotRuntime.withProviderWriteLocks(
+				{ recordEvent: 'uncertain-saved-card-create' },
+				async () => {
+					try {
+						await createPluginOwnedSavedCard(
+							pilotRuntime,
+							fixture.page,
+							'uncertain card'
+						);
+					} catch ( error ) {
+						creationError = error;
+						throw error;
+					}
+				}
+			);
+		} catch {}
+
+		expect( fixture.submissions() ).toBe( 1 );
+		expect( creationError ).toBeInstanceOf(
+			ResourceQuarantineRequiredError
+		);
+		const attempts = await findUnresolvedProviderWriteAttempts(
+			directory,
+			savedCardProviderResourceKeys,
+			'a-later-run'
+		);
+		expect( attempts ).toHaveLength( 1 );
+		expect( attempts[ 0 ] ).toMatchObject( {
+			description: 'plugin-saved-card-create',
+		} );
+		expect( creationError ).toMatchObject( {
+			reasonCode: 'uncertain-provider-write',
+		} );
+		for ( const key of savedCardProviderResourceKeys ) {
+			expect( annotated ).toContainEqual(
+				expect.objectContaining( {
+					reasonCode: 'uncertain-provider-write',
+					resourceKeyHash: sha256( key ),
+				} )
+			);
+			await expect(
+				assertResourcesUsable( [ key ], directory )
+			).rejects.toThrow( /quarantined/i );
+		}
+	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'keeps an uncertain saved-card deletion attempt in the durable journal', async () => {
+	const directory = await lockDirectory();
+	const calls: RequestCall[] = [];
+	const annotated: ResourceQuarantineReceipt[] = [];
+	const pilotRuntime = runtime( directory, calls, {
+		onResourceQuarantined: ( receipt ) => annotated.push( receipt ),
+	} );
+	const fixture = savedCardDeletionPage( 73, {
+		successBannerVisible: false,
+	} );
+
+	try {
+		let deletionError: unknown;
+		try {
+			await pilotRuntime.withProviderWriteLocks(
+				{ recordEvent: 'uncertain-saved-card-delete' },
+				async () => {
+					try {
+						await deleteExactSavedCards(
+							pilotRuntime,
+							fixture.page,
+							[
+								{
+									tokenId: 73,
+									paymentMethodId: 'pm_uncertain',
+								},
+							],
+							'cus_exact'
+						);
+					} catch ( error ) {
+						deletionError = error;
+						throw error;
+					}
+				}
+			);
+		} catch {}
+
+		expect( fixture.deletions() ).toBe( 1 );
+		expect( deletionError ).toBeInstanceOf(
+			ResourceQuarantineRequiredError
+		);
+		const attempts = await findUnresolvedProviderWriteAttempts(
+			directory,
+			savedCardProviderResourceKeys,
+			'a-later-run'
+		);
+		expect( attempts ).toHaveLength( 1 );
+		expect( attempts[ 0 ] ).toMatchObject( {
+			description: 'plugin-saved-card-delete',
+		} );
+		expect( deletionError ).toMatchObject( {
+			reasonCode: 'uncertain-provider-write',
+		} );
+		for ( const key of savedCardProviderResourceKeys ) {
+			expect( annotated ).toContainEqual(
+				expect.objectContaining( {
+					reasonCode: 'uncertain-provider-write',
+					resourceKeyHash: sha256( key ),
+				} )
+			);
+			await expect(
+				assertResourcesUsable( [ key ], directory )
+			).rejects.toThrow( /quarantined/i );
+		}
+	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'a clean saved-card creation resolves its journal attempt', async () => {
+	const directory = await lockDirectory();
+	const calls: RequestCall[] = [];
+	const pilotRuntime = runtime( directory, calls, {
+		savedCardEvidence: [
+			{
+				creation_ready: true,
+				tokens: [],
+			},
+			{
+				creation_ready: true,
+				tokens: [
+					{
+						token_id: 73,
+						payment_method_id: 'pm_created',
+						is_default: true,
+					},
+				],
+			},
+		],
+	} );
+	const fixture = savedCardCreationPage();
+
+	try {
+		await pilotRuntime.withProviderWriteLocks(
+			{ recordEvent: 'clean-saved-card-create' },
+			async () =>
+				createPluginOwnedSavedCard(
+					pilotRuntime,
+					fixture.page,
+					'clean card'
+				)
+		);
+
+		expect( fixture.submissions() ).toBe( 1 );
+		expect(
+			await readdir( join( directory, 'provider-write-attempts' ) )
+		).toEqual( [] );
 	} finally {
 		await rm( directory, { recursive: true, force: true } );
 	}

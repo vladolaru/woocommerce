@@ -1,5 +1,6 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 
+import { ProviderSubmissionNotStartedError } from '../provider-write-journal';
 import { ResourceQuarantineRequiredError } from '../resource-locks';
 import { submitBlocksCheckout } from './checkout';
 import type { ProviderWriteSession } from '../../../fixtures/woopayments-native';
@@ -222,62 +223,70 @@ export async function createPluginOwnedSavedCard(
 		name: 'Add payment method',
 		exact: true,
 	} );
-	let submissionAttempted = false;
-	try {
-		await session.performWrite( () => {
-			submissionAttempted = true;
-			return addPaymentMethod.click();
-		} );
-		await expect(
-			page.getByText( 'Payment method successfully added.', {
-				exact: true,
-			} )
-		).toBeVisible();
+	return session.withProviderSubmissionJournal(
+		'plugin-saved-card-create',
+		async () => {
+			let submissionAttempted = false;
+			try {
+				await session.performWrite( () => {
+					submissionAttempted = true;
+					return addPaymentMethod.click();
+				} );
+				await expect(
+					page.getByText( 'Payment method successfully added.', {
+						exact: true,
+					} )
+				).toBeVisible();
 
-		const after = await getSavedCardEvidence( session );
-		const beforeByTokenId = new Map(
-			before.tokens.map( ( token ) => [ token.tokenId, token ] )
-		);
-		for ( const token of before.tokens ) {
-			const preserved = after.tokens.find(
-				( candidate ) => candidate.tokenId === token.tokenId
-			);
-			if (
-				! preserved ||
-				preserved.paymentMethodId !== token.paymentMethodId
-			) {
-				throw new Error(
-					`Saved-card ${ label } changed the existing local token ${ token.tokenId } mapping.`
+				const after = await getSavedCardEvidence( session );
+				const beforeByTokenId = new Map(
+					before.tokens.map( ( token ) => [ token.tokenId, token ] )
+				);
+				for ( const token of before.tokens ) {
+					const preserved = after.tokens.find(
+						( candidate ) => candidate.tokenId === token.tokenId
+					);
+					if (
+						! preserved ||
+						preserved.paymentMethodId !== token.paymentMethodId
+					) {
+						throw new Error(
+							`Saved-card ${ label } changed the existing local token ${ token.tokenId } mapping.`
+						);
+					}
+				}
+
+				const created = after.tokens.filter(
+					( token ) => ! beforeByTokenId.has( token.tokenId )
+				);
+				if ( created.length !== 1 ) {
+					throw new Error(
+						`Saved-card ${ label } must create exactly one new local token; found ${ created.length }.`
+					);
+				}
+
+				return {
+					tokenId: created[ 0 ].tokenId,
+					paymentMethodId: created[ 0 ].paymentMethodId,
+				};
+			} catch ( error ) {
+				if ( ! submissionAttempted ) {
+					throw new ProviderSubmissionNotStartedError(
+						`Saved-card ${ label } submission was never dispatched.`,
+						{ cause: error }
+					);
+				}
+				if ( error instanceof ResourceQuarantineRequiredError ) {
+					throw error;
+				}
+				throw new ResourceQuarantineRequiredError(
+					`Saved-card ${ label } creation could not be proven after submission.`,
+					'uncertain-provider-write',
+					error
 				);
 			}
 		}
-
-		const created = after.tokens.filter(
-			( token ) => ! beforeByTokenId.has( token.tokenId )
-		);
-		if ( created.length !== 1 ) {
-			throw new Error(
-				`Saved-card ${ label } must create exactly one new local token; found ${ created.length }.`
-			);
-		}
-
-		return {
-			tokenId: created[ 0 ].tokenId,
-			paymentMethodId: created[ 0 ].paymentMethodId,
-		};
-	} catch ( error ) {
-		if (
-			! submissionAttempted ||
-			error instanceof ResourceQuarantineRequiredError
-		) {
-			throw error;
-		}
-		throw new ResourceQuarantineRequiredError(
-			`Saved-card ${ label } creation could not be proven after submission.`,
-			'cleanup-failed',
-			error
-		);
-	}
+	);
 }
 
 export async function makeSavedCardDefault(
@@ -326,37 +335,70 @@ export async function deleteExactSavedCards(
 		session.requireApprovedProviderFixture( 'saved-card-cleanup' );
 		await session.logInAsCustomer( page );
 
-		for ( const card of cards.toReversed() ) {
-			await page.goto( 'my-account/payment-methods/' );
-			const candidates = await page
-				.getByRole( 'link', { name: 'Delete', exact: true } )
-				.all();
-			const matchingActions: Locator[] = [];
-			for ( const candidate of candidates ) {
-				const href = await candidate.getAttribute( 'href' );
-				if ( ! href ) {
-					continue;
-				}
-				const url = new URL( href, session.baseURL );
-				if (
-					url.pathname.endsWith(
-						`/delete-payment-method/${ card.tokenId }/`
-					) &&
-					url.searchParams.has( '_wpnonce' )
-				) {
-					matchingActions.push( candidate );
+		await session.withProviderSubmissionJournal(
+			'plugin-saved-card-delete',
+			async () => {
+				for ( const card of cards.toReversed() ) {
+					let submissionAttempted = false;
+					try {
+						await page.goto( 'my-account/payment-methods/' );
+						const candidates = await page
+							.getByRole( 'link', {
+								name: 'Delete',
+								exact: true,
+							} )
+							.all();
+						const matchingActions: Locator[] = [];
+						for ( const candidate of candidates ) {
+							const href = await candidate.getAttribute( 'href' );
+							if ( ! href ) {
+								continue;
+							}
+							const url = new URL( href, session.baseURL );
+							if (
+								url.pathname.endsWith(
+									`/delete-payment-method/${ card.tokenId }/`
+								) &&
+								url.searchParams.has( '_wpnonce' )
+							) {
+								matchingActions.push( candidate );
+							}
+						}
+						if ( matchingActions.length !== 1 ) {
+							throw new Error(
+								`Saved-card delete action is not uniquely bound to local token ${ card.tokenId }.`
+							);
+						}
+						await session.performWrite( () => {
+							submissionAttempted = true;
+							return matchingActions[ 0 ].click();
+						} );
+						await expect(
+							page.getByText( 'Payment method deleted.', {
+								exact: true,
+							} )
+						).toBeVisible();
+					} catch ( error ) {
+						if ( ! submissionAttempted ) {
+							throw new ProviderSubmissionNotStartedError(
+								`Saved-card ${ card.tokenId } deletion was never dispatched.`,
+								{ cause: error }
+							);
+						}
+						if (
+							error instanceof ResourceQuarantineRequiredError
+						) {
+							throw error;
+						}
+						throw new ResourceQuarantineRequiredError(
+							`Saved-card ${ card.tokenId } deletion could not be proven after submission.`,
+							'uncertain-provider-write',
+							error
+						);
+					}
 				}
 			}
-			if ( matchingActions.length !== 1 ) {
-				throw new Error(
-					`Saved-card delete action is not uniquely bound to local token ${ card.tokenId }.`
-				);
-			}
-			await session.performWrite( () => matchingActions[ 0 ].click() );
-			await expect(
-				page.getByText( 'Payment method deleted.', { exact: true } )
-			).toBeVisible();
-		}
+		);
 
 		const evidence = await getSavedCardEvidence( session );
 		for ( const card of cards ) {
