@@ -1,4 +1,4 @@
 Significance: patch
 Type: dev
 
-Harden the WooPayments native E2E migration controller: row-scoped closure evidence bound to current bytes, provider-write uncertainty quarantine with a durable attempt journal, a complete saved-method financial oracle, stricter public-safety evidence validation, and serialized transition teardown.
+Harden the WooPayments native E2E migration controller: row-scoped closure evidence bound to current bytes, provider-write uncertainty quarantine with a durable attempt journal, a complete saved-method financial oracle, stricter public-safety evidence validation, and serialized transition teardown. Decompose the pilot fixture into feature drivers with enforced narrow closure-evidence bundles and complete saved-card journal coverage.
