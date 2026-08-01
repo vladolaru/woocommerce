@@ -28,6 +28,8 @@ export interface ProviderWriteAttempt {
 
 export type NewProviderWriteAttempt = Omit< ProviderWriteAttempt, 'attemptId' >;
 
+export class ProviderSubmissionNotStartedError extends Error {}
+
 function assertProviderWriteAttempt(
 	value: unknown,
 	path: string

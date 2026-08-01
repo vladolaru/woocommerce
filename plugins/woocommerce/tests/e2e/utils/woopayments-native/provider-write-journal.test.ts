@@ -226,3 +226,13 @@ test( 'discovery rejects a filename that does not bind the attempt identity', as
 	).rejects.toThrow( /filename.*identity/i );
 	expect( basename( attemptPath ) ).not.toBe( 'wrong-name.json' );
 } );
+
+test( 'exports the not-started protocol error alongside the journal', async () => {
+	const { ProviderSubmissionNotStartedError } = await import(
+		'./provider-write-journal'
+	);
+
+	expect(
+		new ProviderSubmissionNotStartedError( 'no dispatch' )
+	).toBeInstanceOf( Error );
+} );

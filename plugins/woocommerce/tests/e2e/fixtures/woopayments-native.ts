@@ -40,14 +40,16 @@ import { assertApprovedProviderFixture } from '../utils/woopayments-native/provi
 import {
 	findUnresolvedProviderWriteAttempts,
 	openProviderWriteAttempt,
+	ProviderSubmissionNotStartedError,
 	resolveProviderWriteAttempt,
 } from '../utils/woopayments-native/provider-write-journal';
 import { assertTransitionAllocation } from '../utils/woopayments-native/transition-allocation';
 
 export { tags } from './fixtures';
 export { ResourceQuarantineRequiredError };
+export { ProviderSubmissionNotStartedError } from '../utils/woopayments-native/provider-write-journal';
 
-interface OwnedProduct {
+export interface OwnedProduct {
 	id: number;
 	name: string;
 	amount: string;
@@ -75,7 +77,7 @@ interface SavedCardEvidence {
 	providerCustomerId?: string;
 }
 
-interface ProviderWriteLockOptions {
+export interface ProviderWriteLockOptions {
 	featureSetting?: string;
 	recordEvent?: string;
 }
@@ -93,8 +95,6 @@ interface ProviderSubmissionScope {
 	blockedError?: unknown;
 	firstError?: unknown;
 }
-
-export class ProviderSubmissionNotStartedError extends Error {}
 
 function assertPaymentEvidenceField< Key extends keyof PaymentEvidence >(
 	evidence: PaymentEvidence,
@@ -379,6 +379,32 @@ export async function loadInitialRuntimeStatus(
 	return ( await response.json() ) as RuntimeStatus;
 }
 
+export interface ProviderWriteSession {
+	readonly adminApi: APIRequestContext;
+	readonly runtime: WooPaymentsRuntime;
+	readonly runId: string;
+	readonly baseURL: string;
+	requireApprovedProviderFixture( capability: string ): void;
+	requireEphemeralTransitionAllocation(): void;
+	assertCurrentRuntimeReady( runtime: WooPaymentsRuntime ): Promise< void >;
+	assertCanWrite(): Promise< void >;
+	performWrite< Result >( write: () => Promise< Result > ): Promise< Result >;
+	withProviderSubmissionJournal< Result >(
+		description: string,
+		submit: () => Promise< Result >
+	): Promise< Result >;
+	withProviderWriteLocks< Result >(
+		options: ProviderWriteLockOptions,
+		callback: () => Promise< Result >
+	): Promise< Result >;
+	getActiveFeatureSettingLock(): ResourceLock | undefined;
+	logInAsAdmin( page: Page ): Promise< void >;
+	logInAsCustomer( page: Page ): Promise< void >;
+	createOwnedProduct( amount: string ): Promise< OwnedProduct >;
+	setOrderRunId( orderId: number, runId: string ): Promise< void >;
+	getOrderIdFromUrl( url: string ): number;
+}
+
 interface PilotRuntimeOptions {
 	lockDir?: string;
 	onResourceQuarantined?: (
@@ -386,11 +412,11 @@ interface PilotRuntimeOptions {
 	) => void | Promise< void >;
 }
 
-export class WooPaymentsPilotRuntime {
-	private readonly adminApi: APIRequestContext;
-	private readonly runtime: WooPaymentsRuntime;
-	private readonly runId: string;
-	private readonly baseURL: string;
+export class WooPaymentsPilotRuntime implements ProviderWriteSession {
+	public readonly adminApi: APIRequestContext;
+	public readonly runtime: WooPaymentsRuntime;
+	public readonly runId: string;
+	public readonly baseURL: string;
 	private readonly wpcomBlogId: number;
 	private readonly storeId: string;
 	private readonly accountId: string;
@@ -946,6 +972,10 @@ export class WooPaymentsPilotRuntime {
 		const orderId = this.getOrderIdFromUrl( page.url() );
 		await this.setOrderRunId( orderId, runId );
 		return orderId;
+	}
+
+	public getActiveFeatureSettingLock(): ResourceLock | undefined {
+		return this.activeProviderWriteLocks?.featureSetting;
 	}
 
 	public async withProviderWriteLocks< Result >(
@@ -1626,7 +1656,7 @@ export class WooPaymentsPilotRuntime {
 		return lockDir;
 	}
 
-	private withProviderSubmissionJournal< Result >(
+	public withProviderSubmissionJournal< Result >(
 		description: string,
 		submit: () => Promise< Result >
 	): Promise< Result > {
@@ -1717,7 +1747,7 @@ export class WooPaymentsPilotRuntime {
 		return trackedSubmission;
 	}
 
-	private async assertCanWrite(): Promise< void > {
+	public async assertCanWrite(): Promise< void > {
 		const locks = this.activeProviderWriteLocks;
 		if ( ! locks ) {
 			throw new Error(
@@ -1753,14 +1783,14 @@ export class WooPaymentsPilotRuntime {
 		}
 	}
 
-	private async performWrite< Result >(
+	public async performWrite< Result >(
 		write: () => Promise< Result >
 	): Promise< Result > {
 		await this.assertCanWrite();
 		return write();
 	}
 
-	private async logInAsAdmin( page: Page ): Promise< void > {
+	public async logInAsAdmin( page: Page ): Promise< void > {
 		const credentials = getWooPaymentsAdminCredentials();
 		await page.context().clearCookies();
 		await page.goto( 'wp-login.php' );
@@ -1773,7 +1803,7 @@ export class WooPaymentsPilotRuntime {
 		await page.getByRole( 'button', { name: 'Log In' } ).click();
 	}
 
-	private async logInAsCustomer( page: Page ): Promise< void > {
+	public async logInAsCustomer( page: Page ): Promise< void > {
 		await page.context().clearCookies();
 		await page.goto( 'wp-login.php' );
 		await page
@@ -1789,7 +1819,7 @@ export class WooPaymentsPilotRuntime {
 		).toHaveValue( customer.email );
 	}
 
-	private async assertCurrentRuntimeReady(
+	public async assertCurrentRuntimeReady(
 		runtime: WooPaymentsRuntime
 	): Promise< void > {
 		const deadline = Date.now() + 30_000;
@@ -1842,7 +1872,7 @@ export class WooPaymentsPilotRuntime {
 		}
 	}
 
-	private getOrderIdFromUrl( url: string ): number {
+	public getOrderIdFromUrl( url: string ): number {
 		const match = url.match( /order-received\/(\d+)/ );
 		if ( ! match ) {
 			throw new Error(
@@ -1852,7 +1882,7 @@ export class WooPaymentsPilotRuntime {
 		return Number( match[ 1 ] );
 	}
 
-	private async setOrderRunId(
+	public async setOrderRunId(
 		orderId: number,
 		runId: string
 	): Promise< void > {
