@@ -3,6 +3,41 @@
 Durable, public-safe record of calibration blockers and ledger revisions
 that the evidence JSON schema cannot carry. Newest entries first.
 
+## 2026-08-01 — deterministic transition seed baseline replaced
+
+The explicit user authorization `Replace the missing baseline` approves the
+deterministic replacement for the unavailable transition seed. The new
+compressed transport SHA-256 is
+`899fea3b8594b6823a9454572404bf3736d0c4ad4713e4a60abd28575488f178`,
+which supersedes the prior transport hash
+`dc69d2cbb1ad73ce54ed585a3d8aebfb1085cd4dd59fb6a55e954309dcb9b186`.
+Its uncompressed canonical tar SHA-256 is
+`8c4cbfe257f23ab19bfe0cca4c4de5b1f76c1d3658048847e72ab55009583b1b`
+under archive profile `git-sha1-fixed-pax+gzip-n9-v1`.
+
+The immutable payload remains WooPayments 10.5.0 from source commit
+`a1f755fc903966387f8629f78f75976ac8d2016e`. Its Composer lock SHA-256 is
+`d345f41ee68fc121f00f6f7ca713fd0cb0c2764e844b3f102c9e12eefa216e8e`
+with 15 production packages. Its frontend lock SHA-256 is
+`6e279cfadb1851486976f67a72a11bc9ea36fa62c7f74d31b4d0d73c006b34b1`.
+The four production bundle hashes are:
+
+- `dist/index.js`: `065744d76e24ef28d1cb824301ef22d0816426d7a3f0fbe2e549c210b2e78ed7`
+- `dist/index.css`: `f9e9ac58624842d627efe38d95710beaf17bae7c760d0c2736b396c3d208266a`
+- `dist/checkout.js`: `4257da2777c531a375cf579ceb0ae9f69eee7d6157783ac9aa8a93fec054c17c`
+- `dist/blocks-checkout.js`: `0ec1ee938fe1727eb3be3bdc6768faf0465c4585f66f40f12909f2c08bd33d57`
+
+The observed six-value build toolchain was Composer
+`Composer version 2.9.5 2026-01-29 11:40:53`, Git `git version 2.54.0`,
+gzip `Apple gzip 479`, Node `v20.11.1`, npm `10.2.4`, and zlib
+`1.2.13.1-motley-5daffc7`. Two independent builds produced byte-identical
+archives and byte-identical schema-2 manifests. Independent checks reproduced
+both hashes, lock and bundle hashes, package count, canonical plugin entry,
+read-only modes, and absence of Git metadata and `node_modules`. The real
+provisioner's read-only `plan` accepted the first pair without mutating its
+empty workspace. Task 10 and its provider-backed transition scenario have not
+run yet.
+
 ## 2026-08-01 — Slice 1 deferred on seed hash mismatch
 
 The automated provider preflight rebuilt the pinned WooPayments 10.5.0 seed
