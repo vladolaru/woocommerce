@@ -37,6 +37,12 @@ if [[ "$*" == *'rev-parse --path-format=absolute --git-path info/attributes'* ]]
 fi
 
 if [[ "$*" == *'archive --format=tar'* ]]; then
+	archive_tree="${E2E_FAKE_SEED_TREE:?E2E_FAKE_SEED_TREE is required}"
+	if [[ -n "${E2E_FAKE_GIT_REPLACEMENT_TREE:-}" ]] &&
+		[[ "${GIT_NO_REPLACE_OBJECTS:-}" != '1' ]] &&
+		[[ "$*" != *'--no-replace-objects'* ]]; then
+		archive_tree="$E2E_FAKE_GIT_REPLACEMENT_TREE"
+	fi
 	archive_attributes=''
 	for attributes_path in \
 		"$fake_git_info_attributes" \
@@ -61,10 +67,10 @@ if [[ "$*" == *'archive --format=tar'* ]]; then
 		grep -Fqx 'woocommerce-payments/payload.txt export-ignore' "$archive_attributes"; then
 		tar -cf - \
 			--exclude='woocommerce-payments/payload.txt' \
-			-C "${E2E_FAKE_SEED_TREE:?E2E_FAKE_SEED_TREE is required}" \
+			-C "$archive_tree" \
 			woocommerce-payments
 	else
-		tar -cf - -C "${E2E_FAKE_SEED_TREE:?E2E_FAKE_SEED_TREE is required}" woocommerce-payments
+		tar -cf - -C "$archive_tree" woocommerce-payments
 	fi
 	exit 0
 fi

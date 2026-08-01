@@ -305,6 +305,38 @@ else
 	red_case_failed=1
 fi
 
+replacement_tree="$TEST_ROOT/replacement-tree"
+cp -R "$TEST_ROOT/tree" "$replacement_tree"
+printf 'replacement-ref payload\n' > \
+	"$replacement_tree/woocommerce-payments/payload.txt"
+if replacement_output="$(
+	run_builder \
+		"$TEST_ROOT/replacement-ref" \
+		E2E_FAKE_GIT_REPLACEMENT_TREE="$replacement_tree"
+)"; then
+	replacement_archive="$(
+		node -p 'JSON.parse(process.argv[1]).archive_path' "$replacement_output"
+	)"
+	replacement_manifest="$(
+		node -p 'JSON.parse(process.argv[1]).manifest_path' "$replacement_output"
+	)"
+	if [[ "$(
+		node -p 'JSON.parse(require("node:fs").readFileSync(process.argv[1])).source_commit' \
+			"$replacement_manifest"
+	)" != 'a1f755fc903966387f8629f78f75976ac8d2016e' ]]; then
+		echo 'The replacement-ref fixture did not preserve the apparently approved source commit.' >&2
+		red_case_failed=1
+	elif [[ "$(
+		tar -xOzf "$replacement_archive" woocommerce-payments/payload.txt
+	)" != 'immutable payload' ]]; then
+		echo 'The approved source commit was archived through a default replacement object.' >&2
+		red_case_failed=1
+	fi
+else
+	echo 'The source archive failed instead of disabling replacement objects.' >&2
+	red_case_failed=1
+fi
+
 nested_git_stderr="$TEST_ROOT/nested-git-stderr"
 if nested_git_output="$(
 	run_builder \

@@ -84,6 +84,7 @@ source_git() {
 		GIT_CONFIG_GLOBAL=/dev/null \
 		GIT_CONFIG_NOSYSTEM=1 \
 		GIT_CONFIG_SYSTEM=/dev/null \
+		GIT_NO_REPLACE_OBJECTS=1 \
 		HOME="$source_git_home" \
 		XDG_CONFIG_HOME="$source_git_xdg" \
 		"$GIT_BIN" \
