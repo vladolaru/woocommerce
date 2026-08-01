@@ -669,12 +669,85 @@ test( 'closure collection follows a real ledger JavaScript target dependency', (
 	);
 } );
 
-test( 'bundle coverage ignores commented and dynamic relative imports', () => {
+test( 'bundle coverage includes literal dynamic import and CommonJS dependencies', () => {
 	const sourceRepositoryRoot = createTrackedClosureRepository( {
 		'sample.spec.ts':
-			"/*\nimport { commented } from './commented';\n*/\nexport const load = () => import('./dynamic');\n",
-		'commented.ts': 'export const commented = true;\n',
+			"export const load = () => import('./dynamic');\nexport const loadCommonJs = () => require(`./commonjs`);\nexport const loadParenthesized = () => ((require))('./parenthesized');\nexport const loadAsExpression = () => (require as any)('./as-expression');\nexport const loadNonNull = () => require!('./non-null');\nexport const loadSatisfies = () => (require satisfies any)('./satisfies');\n",
 		'dynamic.ts': 'export const dynamic = true;\n',
+		'commonjs.ts': 'export const commonjs = true;\n',
+		'parenthesized.ts': 'export const parenthesized = true;\n',
+		'as-expression.ts': 'export const asExpression = true;\n',
+		'non-null.ts': 'export const nonNull = true;\n',
+		'satisfies.ts': 'export const satisfies = true;\n',
+	} );
+	const row = { ...contractMap.rows[ 0 ] };
+	specify( row );
+	row.migration_state = 'closed';
+	row.native_support_state = 'supported';
+	row.target_path = 'sample.spec.ts';
+
+	assert.throws(
+		() =>
+			assertClosureBundleCoverage(
+				row,
+				{ source_test_paths: [ row.target_path ] },
+				sourceRepositoryRoot
+			),
+		/bundle must attest every behavior module.*dynamic\.ts.*commonjs\.ts.*parenthesized\.ts.*as-expression\.ts.*non-null\.ts.*satisfies\.ts/
+	);
+	assert.doesNotThrow( () =>
+		assertClosureBundleCoverage(
+			row,
+			{
+				source_test_paths: [
+					row.target_path,
+					'dynamic.ts',
+					'commonjs.ts',
+					'parenthesized.ts',
+					'as-expression.ts',
+					'non-null.ts',
+					'satisfies.ts',
+				],
+			},
+			sourceRepositoryRoot
+		)
+	);
+} );
+
+test( 'bundle coverage includes TypeScript import-equals dependencies', () => {
+	const sourceRepositoryRoot = createTrackedClosureRepository( {
+		'sample.spec.ts':
+			"import behavior = require('./behavior');\nexport { behavior };\n",
+		'behavior.ts': 'export const behavior = true;\n',
+	} );
+	const row = { ...contractMap.rows[ 0 ] };
+	specify( row );
+	row.migration_state = 'closed';
+	row.native_support_state = 'supported';
+	row.target_path = 'sample.spec.ts';
+
+	assert.throws(
+		() =>
+			assertClosureBundleCoverage(
+				row,
+				{ source_test_paths: [ row.target_path ] },
+				sourceRepositoryRoot
+			),
+		/bundle must attest every behavior module.*behavior\.ts/
+	);
+	assert.doesNotThrow( () =>
+		assertClosureBundleCoverage(
+			row,
+			{ source_test_paths: [ row.target_path, 'behavior.ts' ] },
+			sourceRepositoryRoot
+		)
+	);
+} );
+
+test( 'bundle coverage ignores imports inside comments', () => {
+	const sourceRepositoryRoot = createTrackedClosureRepository( {
+		'sample.spec.ts':
+			"/*\nimport { commented } from './commented';\nimport('./dynamic-comment');\nrequire('./commonjs-comment');\n*/\nexport const use = true;\n",
 	} );
 	const row = { ...contractMap.rows[ 0 ] };
 	specify( row );
@@ -690,6 +763,46 @@ test( 'bundle coverage ignores commented and dynamic relative imports', () => {
 		)
 	);
 } );
+
+for ( const [ dependencyForm, source ] of [
+	[ 'dynamic import', 'const path = "./dynamic";\nimport(path);\n' ],
+	[
+		'parenthesized CommonJS require',
+		'const path = "./commonjs";\n((require))(path);\n',
+	],
+	[
+		'as-expression CommonJS require',
+		'const path = "./commonjs";\n(require as any)(path);\n',
+	],
+	[
+		'non-null CommonJS require',
+		'const path = "./commonjs";\nrequire!(path);\n',
+	],
+	[
+		'satisfies CommonJS require',
+		'const path = "./commonjs";\n(require satisfies any)(path);\n',
+	],
+	[
+		'TypeScript import-equals',
+		'const path = "./behavior";\nimport behavior = require(path);\n',
+	],
+] ) {
+	test( `bundle coverage rejects non-literal ${ dependencyForm } dependencies`, () => {
+		const sourceRepositoryRoot = createTrackedClosureRepository( {
+			'sample.spec.ts': source,
+		} );
+		const row = { ...contractMap.rows[ 0 ] };
+		specify( row );
+		row.migration_state = 'closed';
+		row.native_support_state = 'supported';
+		row.target_path = 'sample.spec.ts';
+
+		assert.throws(
+			() => collectClosureBundlePaths( row, sourceRepositoryRoot ),
+			/non-literal dynamic dependency.*sample\.spec\.ts/
+		);
+	} );
+}
 
 test( 'bundle coverage rejects an import that escapes into an infrastructure-looking path', () => {
 	const sourceRepositoryRoot = createTrackedClosureRepository( {

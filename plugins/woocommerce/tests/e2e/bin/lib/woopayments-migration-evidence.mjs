@@ -564,23 +564,58 @@ const collectRelativeModuleSpecifiers = ( sourcePath, source ) => {
 	);
 	const specifiers = [];
 
-	for ( const statement of sourceFile.statements ) {
+	const visit = ( node ) => {
+		let moduleSpecifier;
+
 		if (
-			! (
-				ts.isImportDeclaration( statement ) ||
-				ts.isExportDeclaration( statement )
-			) ||
-			! statement.moduleSpecifier ||
-			! ts.isStringLiteral( statement.moduleSpecifier )
+			( ts.isImportDeclaration( node ) ||
+				ts.isExportDeclaration( node ) ) &&
+			node.moduleSpecifier &&
+			ts.isStringLiteral( node.moduleSpecifier )
 		) {
-			continue;
+			moduleSpecifier = node.moduleSpecifier;
+		} else if ( ts.isCallExpression( node ) ) {
+			const callee = ts.skipOuterExpressions( node.expression );
+			const isDynamicImport = callee.kind === ts.SyntaxKind.ImportKeyword;
+			const isCommonJsRequire =
+				ts.isIdentifier( callee ) && callee.text === 'require';
+
+			if ( isDynamicImport || isCommonJsRequire ) {
+				[ moduleSpecifier ] = node.arguments;
+
+				if (
+					! moduleSpecifier ||
+					! ts.isStringLiteralLike( moduleSpecifier )
+				) {
+					throw new Error(
+						`Closure bundle cannot attest a non-literal dynamic dependency in ${ sourcePath }`
+					);
+				}
+			}
+		} else if (
+			ts.isImportEqualsDeclaration( node ) &&
+			ts.isExternalModuleReference( node.moduleReference )
+		) {
+			moduleSpecifier = node.moduleReference.expression;
+
+			if (
+				! moduleSpecifier ||
+				! ts.isStringLiteralLike( moduleSpecifier )
+			) {
+				throw new Error(
+					`Closure bundle cannot attest a non-literal dynamic dependency in ${ sourcePath }`
+				);
+			}
 		}
 
-		const specifier = statement.moduleSpecifier.text;
-		if ( specifier.startsWith( '.' ) ) {
-			specifiers.push( specifier );
+		if ( moduleSpecifier?.text.startsWith( '.' ) ) {
+			specifiers.push( moduleSpecifier.text );
 		}
-	}
+
+		ts.forEachChild( node, visit );
+	};
+
+	visit( sourceFile );
 
 	return specifiers;
 };
