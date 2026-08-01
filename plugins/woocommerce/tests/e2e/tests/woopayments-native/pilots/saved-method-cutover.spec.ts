@@ -4,6 +4,14 @@ import {
 	tags,
 	test,
 } from '../../../fixtures/woopayments-native';
+import {
+	createPluginOwnedSavedCard,
+	deleteExactSavedCards,
+	getSavedCardState,
+	makeSavedCardDefault,
+	payWithExactSavedCard,
+	type SavedCardIdentity,
+} from '../../../utils/woopayments-native/drivers/saved-cards';
 import { getPaymentEvidence } from '../../../utils/woopayments-native/record-evidence';
 
 test(
@@ -36,52 +44,49 @@ test(
 					'saved-method-cutover'
 				);
 				pilotRuntime.requireEphemeralTransitionAllocation();
-				const savedCards: Array< {
-					tokenId: number;
-					paymentMethodId: string;
-				} > = [];
+				const savedCards: SavedCardIdentity[] = [];
 				let scenarioFailure: unknown;
 				let providerCustomerId: string | undefined;
 
 				try {
-					const firstCard =
-						await pilotRuntime.createPluginOwnedSavedCard(
-							page,
-							`${ runId }-first`
-						);
+					const firstCard = await createPluginOwnedSavedCard(
+						pilotRuntime,
+						page,
+						`${ runId }-first`
+					);
 					savedCards.push( firstCard );
-					const defaultCard =
-						await pilotRuntime.createPluginOwnedSavedCard(
-							page,
-							`${ runId }-default`
-						);
+					const defaultCard = await createPluginOwnedSavedCard(
+						pilotRuntime,
+						page,
+						`${ runId }-default`
+					);
 					savedCards.push( defaultCard );
-					await pilotRuntime.makeSavedCardDefault(
+					await makeSavedCardDefault(
+						pilotRuntime,
 						page,
 						defaultCard.tokenId
 					);
 					await pilotRuntime.softCutOverEphemeralStore( page );
-					const nativeDefaultCard =
-						await pilotRuntime.getSavedCardState( [
-							firstCard,
-							defaultCard,
-						] );
+					const nativeDefaultCard = await getSavedCardState(
+						pilotRuntime,
+						[ firstCard, defaultCard ]
+					);
 					providerCustomerId = nativeDefaultCard.providerCustomerId;
 
-					const classicOrderId =
-						await pilotRuntime.payWithExactSavedCard(
-							page,
-							defaultCard,
-							'classic',
-							runId
-						);
-					const blocksOrderId =
-						await pilotRuntime.payWithExactSavedCard(
-							page,
-							defaultCard,
-							'blocks',
-							runId
-						);
+					const classicOrderId = await payWithExactSavedCard(
+						pilotRuntime,
+						page,
+						defaultCard,
+						'classic',
+						runId
+					);
+					const blocksOrderId = await payWithExactSavedCard(
+						pilotRuntime,
+						page,
+						defaultCard,
+						'blocks',
+						runId
+					);
 					const classicEvidence = await getPaymentEvidence(
 						adminApi,
 						classicOrderId
@@ -128,7 +133,8 @@ test(
 				}
 
 				try {
-					await pilotRuntime.deleteExactSavedCards(
+					await deleteExactSavedCards(
+						pilotRuntime,
 						page,
 						savedCards,
 						providerCustomerId

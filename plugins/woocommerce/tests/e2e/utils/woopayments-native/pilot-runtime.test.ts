@@ -30,6 +30,13 @@ import {
 import WooPaymentsKnownGapsReporter from '../../reporters/woopayments-known-gaps';
 import { completeCardCheckout } from './drivers/checkout';
 import {
+	createPluginOwnedSavedCard,
+	deleteExactSavedCards,
+	getSavedCardState,
+	makeSavedCardDefault,
+	payWithExactSavedCard,
+} from './drivers/saved-cards';
+import {
 	assertResourcesUsable,
 	quarantineResources,
 	RESOURCE_QUARANTINE_ANNOTATION,
@@ -1027,11 +1034,13 @@ test( 'creates two plugin-owned cards from exact token diffs and returns distinc
 		const cards = await pilotRuntime.withProviderWriteLocks(
 			{ recordEvent: 'saved-card-exact-diff' },
 			async () => [
-				await pilotRuntime.createPluginOwnedSavedCard(
+				await createPluginOwnedSavedCard(
+					pilotRuntime,
 					fixture.page,
 					'first card'
 				),
-				await pilotRuntime.createPluginOwnedSavedCard(
+				await createPluginOwnedSavedCard(
+					pilotRuntime,
 					fixture.page,
 					'second card'
 				),
@@ -1109,7 +1118,8 @@ for ( const invalidDiff of [
 				pilotRuntime.withProviderWriteLocks(
 					{ recordEvent: 'saved-card-invalid-diff' },
 					async () =>
-						pilotRuntime.createPluginOwnedSavedCard(
+						createPluginOwnedSavedCard(
+							pilotRuntime,
 							fixture.page,
 							invalidDiff.name
 						)
@@ -1155,7 +1165,8 @@ test( 'rejects malformed saved-card token evidence before submitting', async () 
 			pilotRuntime.withProviderWriteLocks(
 				{ recordEvent: 'saved-card-malformed-evidence' },
 				async () =>
-					pilotRuntime.createPluginOwnedSavedCard(
+					createPluginOwnedSavedCard(
+						pilotRuntime,
 						fixture.page,
 						'malformed evidence'
 					)
@@ -1201,7 +1212,7 @@ test( 'proves both exact saved-card mappings and the second-card default after n
 		const state = await pilotRuntime.withProviderWriteLocks(
 			{ recordEvent: 'saved-card-state-exact' },
 			async () =>
-				pilotRuntime.getSavedCardState( [
+				getSavedCardState( pilotRuntime, [
 					{
 						tokenId: 41,
 						paymentMethodId: 'pm_first',
@@ -1308,7 +1319,7 @@ for ( const invalidState of [
 				pilotRuntime.withProviderWriteLocks(
 					{ recordEvent: 'saved-card-invalid-state' },
 					async () =>
-						pilotRuntime.getSavedCardState( [
+						getSavedCardState( pilotRuntime, [
 							{
 								tokenId: 41,
 								paymentMethodId: 'pm_first',
@@ -1369,7 +1380,7 @@ test( 'uses the token-bound semantic My Account action rendered by Core', async 
 	try {
 		await pilotRuntime.withProviderWriteLocks(
 			{ recordEvent: 'saved-card-default-dom' },
-			async () => pilotRuntime.makeSavedCardDefault( page, 73 )
+			async () => makeSavedCardDefault( pilotRuntime, page, 73 )
 		);
 		expect( clicked ).toBe( true );
 	} finally {
@@ -1438,7 +1449,8 @@ test( 'deletes only the two exact run-owned saved cards through My Account', asy
 		await pilotRuntime.withProviderWriteLocks(
 			{ recordEvent: 'saved-card-cleanup' },
 			async () =>
-				pilotRuntime.deleteExactSavedCards(
+				deleteExactSavedCards(
+					pilotRuntime,
 					page,
 					[
 						{ tokenId: 73, paymentMethodId: 'pm_first' },
@@ -1508,7 +1520,8 @@ test( 'quarantines saved-card resources while an exact provider payment method r
 			pilotRuntime.withProviderWriteLocks(
 				{ recordEvent: 'saved-card-provider-cleanup' },
 				async () =>
-					pilotRuntime.deleteExactSavedCards(
+					deleteExactSavedCards(
+						pilotRuntime,
 						page,
 						[
 							{
@@ -1562,7 +1575,8 @@ for ( const contract of checkoutContracts ) {
 			const orderId = await pilotRuntime.withProviderWriteLocks(
 				{ recordEvent: `saved-card-${ contract.checkout }-dom` },
 				async () =>
-					pilotRuntime.payWithExactSavedCard(
+					payWithExactSavedCard(
+						pilotRuntime,
 						fixture.page,
 						{
 							tokenId: 73,
@@ -1868,7 +1882,8 @@ test( 'removes the provider write attempt after successful submission and confir
 		await pilotRuntime.withProviderWriteLocks(
 			{ recordEvent: 'successful-journaled-checkout' },
 			async () =>
-				pilotRuntime.payWithExactSavedCard(
+				payWithExactSavedCard(
+					pilotRuntime,
 					fixture.page,
 					{ tokenId: 73, paymentMethodId: 'pm_provider_only' },
 					'classic',
@@ -1933,7 +1948,8 @@ test( 'keeps a dispatched unconfirmed attempt and quarantines it in the current 
 			pilotRuntime.withProviderWriteLocks(
 				{ recordEvent: 'uncertain-journaled-checkout' },
 				async () =>
-					pilotRuntime.payWithExactSavedCard(
+					payWithExactSavedCard(
+						pilotRuntime,
 						fixture.page,
 						{
 							tokenId: 73,
@@ -2559,7 +2575,7 @@ test( 'blocks a saved-card default update after lock loss during preparation', a
 				},
 			},
 			async ( pilotRuntime, page ) => {
-				await pilotRuntime.makeSavedCardDefault( page, 73 );
+				await makeSavedCardDefault( pilotRuntime, page, 73 );
 			}
 		)
 	).resolves.toBeUndefined();
@@ -2716,7 +2732,8 @@ test( 'blocks a saved-card checkout after lock loss during preparation', async (
 				mutation: { role: 'button', name: 'place order' },
 			},
 			async ( pilotRuntime, page ) => {
-				await pilotRuntime.payWithExactSavedCard(
+				await payWithExactSavedCard(
+					pilotRuntime,
 					page,
 					{ tokenId: 73, paymentMethodId: 'pm_saved_card' },
 					'classic',
