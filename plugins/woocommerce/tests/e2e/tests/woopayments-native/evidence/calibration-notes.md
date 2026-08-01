@@ -3,6 +3,18 @@
 Durable, public-safe record of calibration blockers and ledger revisions
 that the evidence JSON schema cannot carry. Newest entries first.
 
+## 2026-07-31 — driver decomposition and bundle policy
+
+The pilot fixture was decomposed into a provider-write session plus
+per-feature driver modules under `utils/woopayments-native/drivers/`.
+Closure evidence bundles now attest the target spec plus its transitive
+static relative behavior imports and exports (drivers and oracle readers);
+controller infrastructure (locks, journal, quarantine, session, readiness)
+is attested by the controller unit suite instead of per-closure. The validator
+enforces bundle coverage for every verified or closed row. Editing a driver
+reopens only the closures that statically import or re-export it; editing
+infrastructure reopens none but must keep the controller suite green.
+
 ## 2026-07-30 — saved-token closures reopened after capture safety fix
 
 The shared fixture changed after the single transition calibration. Manual
