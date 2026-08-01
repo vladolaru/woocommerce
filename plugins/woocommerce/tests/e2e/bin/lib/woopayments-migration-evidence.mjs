@@ -1,12 +1,20 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+	existsSync,
 	lstatSync,
 	readFileSync,
 	realpathSync,
 	statSync,
 } from 'node:fs';
-import { isAbsolute, relative, resolve, sep as pathSeparator } from 'node:path';
+import {
+	dirname,
+	isAbsolute,
+	relative,
+	resolve,
+	sep as pathSeparator,
+} from 'node:path';
+import ts from 'typescript';
 
 import {
 	isAnchoredMessagePattern,
@@ -35,6 +43,13 @@ const SHA1_PATTERN = /^[0-9a-f]{40}$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const URI_SCHEME_PATTERN = /^[a-z][a-z\d+.-]*:/i;
 const REGULAR_GIT_INDEX_MODES = new Set( [ '100644', '100755' ] );
+const INFRASTRUCTURE_MODULE_PATTERNS = [
+	/^plugins\/woocommerce\/tests\/e2e\/fixtures\//,
+	/^plugins\/woocommerce\/tests\/e2e\/reporters\//,
+	/^plugins\/woocommerce\/tests\/e2e\/test-data\//,
+	/^plugins\/woocommerce\/tests\/e2e\/utils\/woopayments-native\/(?:resource-locks|resource-quarantine|provider-write-journal|durable-fs|runtime-readiness|transition-allocation|provider-fixture|known-gap|lock-test-helpers)\.ts$/,
+	/^plugins\/woocommerce\/tests\/e2e\/utils\/woopayments-native\/known-gap-format\.mjs$/,
+];
 
 /**
  * The one definition of a legal repository-relative path in the ledger. The
@@ -381,10 +396,16 @@ const assertRepositoryRelativePath = ( value, label ) => {
 const sha256 = ( value ) =>
 	createHash( 'sha256' ).update( value ).digest( 'hex' );
 
-const readCurrentSource = ( repositoryRoot, sourcePath ) => {
-	const invalidSourceMessage = `Invalid migration evidence source_test_paths; current source must be a tracked regular file within the repository: ${ sourcePath }`;
-
+const resolveCurrentSource = (
+	repositoryRoot,
+	sourcePath,
+	invalidSourceMessage
+) => {
 	try {
+		if ( ! isRepositoryRelativePath( sourcePath ) ) {
+			throw new Error( invalidSourceMessage );
+		}
+
 		const indexEntries = execFileSync(
 			'git',
 			[
@@ -408,13 +429,8 @@ const readCurrentSource = ( repositoryRoot, sourcePath ) => {
 			.split( ' ' );
 
 		const realRepositoryRoot = realpathSync( repositoryRoot );
-		const absoluteSourcePath = resolve(
-			realRepositoryRoot,
-			sourcePath
-		);
-		const realSourcePath = realpathSync(
-			absoluteSourcePath
-		);
+		const absoluteSourcePath = resolve( realRepositoryRoot, sourcePath );
+		const realSourcePath = realpathSync( absoluteSourcePath );
 		const repositoryRelativeRealPath = relative(
 			realRepositoryRoot,
 			realSourcePath
@@ -434,7 +450,7 @@ const readCurrentSource = ( repositoryRoot, sourcePath ) => {
 			throw new Error( invalidSourceMessage );
 		}
 
-		return readFileSync( realSourcePath );
+		return realSourcePath;
 	} catch ( error ) {
 		if ( error.message === invalidSourceMessage ) {
 			throw error;
@@ -442,6 +458,17 @@ const readCurrentSource = ( repositoryRoot, sourcePath ) => {
 
 		throw new Error( invalidSourceMessage, { cause: error } );
 	}
+};
+
+const readCurrentSource = ( repositoryRoot, sourcePath ) => {
+	const invalidSourceMessage = `Invalid migration evidence source_test_paths; current source must be a tracked regular file within the repository: ${ sourcePath }`;
+	const sourceFile = resolveCurrentSource(
+		repositoryRoot,
+		sourcePath,
+		invalidSourceMessage
+	);
+
+	return readFileSync( sourceFile );
 };
 
 const assertSourceTestBundle = (
@@ -504,6 +531,179 @@ const assertSourceTestBundle = (
 			bindCurrentBytes
 				? 'Invalid migration evidence source bundle SHA-256; terminal evidence must attest the current retained bytes'
 				: 'Invalid migration evidence source bundle SHA-256; reviewed source changed'
+		);
+	}
+};
+
+const isInfrastructureModule = ( repositoryPath ) =>
+	INFRASTRUCTURE_MODULE_PATTERNS.some( ( pattern ) =>
+		pattern.test( repositoryPath )
+	);
+
+const scriptKindForPath = ( sourcePath ) => {
+	if ( sourcePath.endsWith( '.tsx' ) ) {
+		return ts.ScriptKind.TSX;
+	}
+	if ( sourcePath.endsWith( '.jsx' ) ) {
+		return ts.ScriptKind.JSX;
+	}
+	if ( sourcePath.endsWith( '.js' ) || sourcePath.endsWith( '.mjs' ) ) {
+		return ts.ScriptKind.JS;
+	}
+
+	return ts.ScriptKind.TS;
+};
+
+const collectRelativeModuleSpecifiers = ( sourcePath, source ) => {
+	const sourceFile = ts.createSourceFile(
+		sourcePath,
+		source,
+		ts.ScriptTarget.Latest,
+		false,
+		scriptKindForPath( sourcePath )
+	);
+	const specifiers = [];
+
+	for ( const statement of sourceFile.statements ) {
+		if (
+			! (
+				ts.isImportDeclaration( statement ) ||
+				ts.isExportDeclaration( statement )
+			) ||
+			! statement.moduleSpecifier ||
+			! ts.isStringLiteral( statement.moduleSpecifier )
+		) {
+			continue;
+		}
+
+		const specifier = statement.moduleSpecifier.text;
+		if ( specifier.startsWith( '.' ) ) {
+			specifiers.push( specifier );
+		}
+	}
+
+	return specifiers;
+};
+
+const closureBoundaryMessage = ( row, fromPath, specifier ) =>
+	`Invalid migration evidence for ${ row.case_id }; bundle must attest every behavior module the target imports: ${ specifier } from ${ fromPath } must resolve to a Git stage-0 tracked regular repository file within the repository without symlinks`;
+
+const resolveRelativeImport = (
+	row,
+	repositoryRoot,
+	fromPath,
+	fromFile,
+	specifier
+) => {
+	const base = resolve( dirname( fromFile ), specifier );
+	const realRepositoryRoot = realpathSync( repositoryRoot );
+	const candidates = [
+		base,
+		`${ base }.js`,
+		`${ base }.mjs`,
+		`${ base }.jsx`,
+		`${ base }.ts`,
+		`${ base }.tsx`,
+		resolve( base, 'index.js' ),
+		resolve( base, 'index.mjs' ),
+		resolve( base, 'index.jsx' ),
+		resolve( base, 'index.ts' ),
+		resolve( base, 'index.tsx' ),
+	];
+
+	for ( const candidate of candidates ) {
+		if ( ! existsSync( candidate ) ) {
+			continue;
+		}
+
+		if ( candidate === base && lstatSync( candidate ).isDirectory() ) {
+			continue;
+		}
+
+		const repositoryPath = relative(
+			realRepositoryRoot,
+			candidate
+		).replaceAll( '\\', '/' );
+		const absolutePath = resolveCurrentSource(
+			repositoryRoot,
+			repositoryPath,
+			closureBoundaryMessage( row, fromPath, specifier )
+		);
+
+		return { absolutePath, repositoryPath };
+	}
+
+	throw new Error(
+		`Invalid migration evidence for ${ row.case_id }; bundle must attest every behavior module the target imports: unresolved relative import ${ specifier } from ${ fromPath }`
+	);
+};
+
+export const collectClosureBundlePaths = ( row, repositoryRoot ) => {
+	const targetPaths = row.target_path
+		.split( ';' )
+		.map( ( targetPath ) => targetPath.trim() );
+	const visited = new Set();
+	const required = new Set( targetPaths );
+	const queue = targetPaths.map( ( targetPath ) => ( {
+		absolutePath: resolveCurrentSource(
+			repositoryRoot,
+			targetPath,
+			closureBoundaryMessage( row, targetPath, targetPath )
+		),
+		repositoryPath: targetPath,
+	} ) );
+
+	while ( queue.length > 0 ) {
+		const current = queue.pop();
+
+		if ( visited.has( current.repositoryPath ) ) {
+			continue;
+		}
+
+		visited.add( current.repositoryPath );
+		const source = readFileSync( current.absolutePath, 'utf8' );
+
+		for ( const specifier of collectRelativeModuleSpecifiers(
+			current.repositoryPath,
+			source
+		) ) {
+			const resolved = resolveRelativeImport(
+				row,
+				repositoryRoot,
+				current.repositoryPath,
+				current.absolutePath,
+				specifier
+			);
+
+			if ( isInfrastructureModule( resolved.repositoryPath ) ) {
+				continue;
+			}
+
+			required.add( resolved.repositoryPath );
+			queue.push( resolved );
+		}
+	}
+
+	return [ ...required ];
+};
+
+export const assertClosureBundleCoverage = (
+	row,
+	evidence,
+	repositoryRoot
+) => {
+	const required = collectClosureBundlePaths( row, repositoryRoot );
+
+	const attested = new Set( evidence.source_test_paths );
+	const missing = required.filter( ( path ) => ! attested.has( path ) );
+
+	if ( missing.length > 0 ) {
+		throw new Error(
+			`Invalid migration evidence for ${
+				row.case_id
+			}; bundle must attest every behavior module the target imports: missing ${ missing.join(
+				', '
+			) }`
 		);
 	}
 };
@@ -615,11 +815,7 @@ const assertClosureReviewList = ( reviews, label ) => {
 
 	const roles = new Set();
 	for ( const [ index, review ] of reviews.entries() ) {
-		assertExactKeys(
-			review,
-			REVIEW_KEYS,
-			`${ label } review ${ index }`
-		);
+		assertExactKeys( review, REVIEW_KEYS, `${ label } review ${ index }` );
 		assertExactString( review.role, `${ label }[${ index }].role` );
 		assertExactString( review.verdict, `${ label }[${ index }].verdict` );
 		assertExactString(
@@ -643,11 +839,7 @@ const assertClosures = ( closures, row, evidence ) => {
 
 	const contractIds = new Set();
 	for ( const [ index, closure ] of closures.entries() ) {
-		assertExactKeys(
-			closure,
-			CLOSURE_KEYS,
-			`evidence closure ${ index }`
-		);
+		assertExactKeys( closure, CLOSURE_KEYS, `evidence closure ${ index }` );
 		assertExactString(
 			closure.contract_id,
 			`closures[${ index }].contract_id`
@@ -683,7 +875,10 @@ const assertClosures = ( closures, row, evidence ) => {
 			closure.verification,
 			`closures[${ index }].verification`
 		);
-		for ( const [ resultIndex, result ] of closure.verification.entries() ) {
+		for ( const [
+			resultIndex,
+			result,
+		] of closure.verification.entries() ) {
 			assertExactKeys(
 				result,
 				VERIFICATION_KEYS,
@@ -913,6 +1108,9 @@ export const validateMigrationEvidence = (
 		evidence.verified_at_commit,
 		[ 'verified', 'closed' ].includes( row.migration_state )
 	);
+	if ( [ 'verified', 'closed' ].includes( row.migration_state ) ) {
+		assertClosureBundleCoverage( row, evidence, repositoryRoot );
+	}
 
 	assertArray( evidence.contract_ids, 'contract_ids' );
 	for ( const contractId of evidence.contract_ids ) {

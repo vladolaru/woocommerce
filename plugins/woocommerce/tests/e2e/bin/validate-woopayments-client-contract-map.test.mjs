@@ -30,6 +30,8 @@ import {
 	validateStateTransition,
 } from './lib/woopayments-contract-map.mjs';
 import {
+	assertClosureBundleCoverage,
+	collectClosureBundlePaths,
 	REQUIRED_CLOSURE_REVIEW_ROLES,
 	validateMigrationEvidence,
 } from './lib/woopayments-migration-evidence.mjs';
@@ -61,71 +63,6 @@ const temporaryTargetDirectories = new Set();
 const cloneContractMap = ( source = contractMap ) => ( {
 	headers: [ ...source.headers ],
 	rows: source.rows.map( ( row ) => ( { ...row } ) ),
-} );
-
-const createClosureEntry = ( row, overrides = {} ) => ( {
-	contract_id: row.case_id,
-	target: {
-		path: row.target_path,
-		contract: row.target_contract,
-	},
-	verification: [
-		{
-			command: 'pnpm test:e2e:woopayments:controller',
-			exit_code: 0,
-			summary: 'closure verification passed',
-		},
-	],
-	reviews: REQUIRED_CLOSURE_REVIEW_ROLES.map( ( role ) => ( {
-		role,
-		verdict: 'APPROVE',
-		source_test_sha256: DEFAULT_SOURCE_TEST_SHA256,
-		summary: `${ role } closure review approved`,
-	} ) ),
-	...overrides,
-} );
-
-const createValidEvidence = ( fixtureRow, overrides = {} ) => ( {
-	schema_version: 2,
-	slice_id: 'fixture-slice',
-	wc_base_commit: '1'.repeat( 40 ),
-	verified_at_commit: currentCommit,
-	reference_contract_commit: '6dda1d4eb101f05c22f60882d67a22f75281ae45',
-	source_test_paths: [ ...DEFAULT_SOURCE_TEST_PATHS ],
-	source_test_sha256: DEFAULT_SOURCE_TEST_SHA256,
-	contract_ids: [ fixtureRow.case_id ],
-	targets: [
-		{
-			path: fixtureRow.target_path,
-			contract: fixtureRow.target_contract,
-		},
-	],
-	implementation_commits: [ '3'.repeat( 40 ) ],
-	verification: [
-		{
-			command: 'pnpm test:e2e:woopayments:controller',
-			exit_code: 0,
-			summary: 'controller checks passed',
-		},
-	],
-	reviews: [
-		{
-			role: 'spec',
-			verdict: 'APPROVE',
-			source_test_sha256: DEFAULT_SOURCE_TEST_SHA256,
-			summary: 'contract preserved',
-		},
-		{
-			role: 'code',
-			verdict: 'APPROVE',
-			source_test_sha256: DEFAULT_SOURCE_TEST_SHA256,
-			summary: 'implementation approved',
-		},
-	],
-	closures: [],
-	known_gaps: [],
-	deferral: null,
-	...overrides,
 } );
 
 const createEvidenceContext = ( row ) => ( {
@@ -186,6 +123,28 @@ const DEFAULT_SOURCE_TEST_SHA256 = calculateSourceBundleSha256(
 	DEFAULT_SOURCE_TEST_PATHS
 );
 
+const createClosureEntry = ( row, overrides = {} ) => ( {
+	contract_id: row.case_id,
+	target: {
+		path: row.target_path,
+		contract: row.target_contract,
+	},
+	verification: [
+		{
+			command: 'pnpm test:e2e:woopayments:controller',
+			exit_code: 0,
+			summary: 'closure verification passed',
+		},
+	],
+	reviews: REQUIRED_CLOSURE_REVIEW_ROLES.map( ( role ) => ( {
+		role,
+		verdict: 'APPROVE',
+		source_test_sha256: DEFAULT_SOURCE_TEST_SHA256,
+		summary: `${ role } closure review approved`,
+	} ) ),
+	...overrides,
+} );
+
 const serializeLegacyContractMap = () => {
 	const legacyHeaders = [
 		...contractMap.headers.slice( 0, 32 ),
@@ -233,6 +192,108 @@ const runHistoryComparison = ( currentMap, previousMap ) =>
 const repositoryRelativePath = ( absolutePath ) =>
 	relative( repositoryRoot, absolutePath ).split( pathSeparator ).join( '/' );
 
+const relativeModuleSpecifier = ( fromFile, toFile ) => {
+	const relativePath = relative( dirname( fromFile ), toFile )
+		.split( pathSeparator )
+		.join( '/' )
+		.replace( /\.(?:mjs|tsx?)$/, '' );
+
+	return relativePath.startsWith( '.' )
+		? relativePath
+		: `./${ relativePath }`;
+};
+const repositoryRelativePathFromRoot = ( absolutePath, sourceRepositoryRoot ) =>
+	relative( sourceRepositoryRoot, absolutePath )
+		.split( pathSeparator )
+		.join( '/' );
+
+const createValidEvidence = (
+	fixtureRow,
+	overrides = {},
+	sourceRepositoryRoot = repositoryRoot
+) => {
+	const isTerminal = [ 'verified', 'closed' ].includes(
+		fixtureRow.migration_state
+	);
+	let sourceTestPaths;
+
+	if ( Object.hasOwn( overrides, 'source_test_paths' ) ) {
+		sourceTestPaths = overrides.source_test_paths;
+	} else if ( isTerminal ) {
+		sourceTestPaths = collectClosureBundlePaths(
+			fixtureRow,
+			sourceRepositoryRoot
+		);
+	} else {
+		sourceTestPaths = [ ...DEFAULT_SOURCE_TEST_PATHS ];
+	}
+
+	let sourceTestSha256;
+
+	if ( Object.hasOwn( overrides, 'source_test_sha256' ) ) {
+		sourceTestSha256 = overrides.source_test_sha256;
+	} else if ( isTerminal ) {
+		sourceTestSha256 = calculateCurrentSourceBundleSha256(
+			sourceTestPaths,
+			sourceRepositoryRoot
+		);
+	} else {
+		sourceTestSha256 = DEFAULT_SOURCE_TEST_SHA256;
+	}
+
+	const closures = ( overrides.closures ?? [] ).map( ( closure ) => ( {
+		...closure,
+		reviews: closure.reviews.map( ( review ) =>
+			review.source_test_sha256 === DEFAULT_SOURCE_TEST_SHA256
+				? { ...review, source_test_sha256: sourceTestSha256 }
+				: review
+		),
+	} ) );
+
+	return {
+		schema_version: 2,
+		slice_id: 'fixture-slice',
+		wc_base_commit: '1'.repeat( 40 ),
+		verified_at_commit: currentCommit,
+		reference_contract_commit: '6dda1d4eb101f05c22f60882d67a22f75281ae45',
+		contract_ids: [ fixtureRow.case_id ],
+		targets: [
+			{
+				path: fixtureRow.target_path,
+				contract: fixtureRow.target_contract,
+			},
+		],
+		implementation_commits: [ '3'.repeat( 40 ) ],
+		verification: [
+			{
+				command: 'pnpm test:e2e:woopayments:controller',
+				exit_code: 0,
+				summary: 'controller checks passed',
+			},
+		],
+		reviews: [
+			{
+				role: 'spec',
+				verdict: 'APPROVE',
+				source_test_sha256: sourceTestSha256,
+				summary: 'contract preserved',
+			},
+			{
+				role: 'code',
+				verdict: 'APPROVE',
+				source_test_sha256: sourceTestSha256,
+				summary: 'implementation approved',
+			},
+		],
+		known_gaps: [],
+		deferral: null,
+		...overrides,
+		source_test_paths: sourceTestPaths,
+		source_test_sha256: sourceTestSha256,
+		closures,
+	};
+};
+
 const createRepositoryTemporaryDirectory = () => {
 	const temporaryDirectory = mkdtempSync(
 		join( binDirectory, '.contract-map-test-' )
@@ -264,8 +325,17 @@ const createDecisionReadyDeferral = (
 	quarantine_status: 'No shared resource was allocated',
 } );
 
-const createEvidenceFile = ( row, overrides = {} ) => {
-	const temporaryDirectory = createRepositoryTemporaryDirectory();
+const createEvidenceFile = (
+	row,
+	overrides = {},
+	sourceRepositoryRoot = repositoryRoot
+) => {
+	const temporaryDirectory =
+		sourceRepositoryRoot === repositoryRoot
+			? createRepositoryTemporaryDirectory()
+			: mkdtempSync(
+					join( sourceRepositoryRoot, '.contract-map-test-' )
+			  );
 	const evidencePath = join( temporaryDirectory, 'evidence.json' );
 	const stateOverrides = {};
 
@@ -285,16 +355,20 @@ const createEvidenceFile = ( row, overrides = {} ) => {
 	writeFileSync(
 		evidencePath,
 		`${ JSON.stringify(
-			createValidEvidence( row, {
-				...stateOverrides,
-				...overrides,
-			} ),
+			createValidEvidence(
+				row,
+				{
+					...stateOverrides,
+					...overrides,
+				},
+				sourceRepositoryRoot
+			),
 			null,
 			2
 		) }\n`
 	);
 
-	return repositoryRelativePath( evidencePath );
+	return repositoryRelativePathFromRoot( evidencePath, sourceRepositoryRoot );
 };
 
 const createExternalTemporaryFile = () => {
@@ -316,6 +390,19 @@ const createTemporaryGitRepository = () => {
 	externalTemporaryDirectories.push( temporaryDirectory );
 	execFileSync( 'git', [ '-C', temporaryDirectory, 'init', '--quiet' ] );
 	return temporaryDirectory;
+};
+
+const createTrackedClosureRepository = ( files ) => {
+	const sourceRepositoryRoot = createTemporaryGitRepository();
+
+	for ( const [ repositoryPath, source ] of Object.entries( files ) ) {
+		const absolutePath = resolve( sourceRepositoryRoot, repositoryPath );
+		mkdirSync( dirname( absolutePath ), { recursive: true } );
+		writeFileSync( absolutePath, source );
+	}
+
+	execFileSync( 'git', [ '-C', sourceRepositoryRoot, 'add', '--all' ] );
+	return sourceRepositoryRoot;
 };
 
 const createMissingTargetFile = ( repositoryPath ) => {
@@ -360,23 +447,44 @@ const specify = ( row ) => {
 	row.migration_state = 'specified';
 };
 
-const close = ( row ) => {
+const close = ( row, sourceRepositoryRoot = repositoryRoot ) => {
 	specify( row );
 	row.migration_state = 'closed';
 	row.native_support_state = 'supported';
 	row.gap_or_decision_reference = 'none';
-	row.evidence_path = createEvidenceFile( row, {
-		closures: [ createClosureEntry( row ) ],
-	} );
+	row.evidence_path = createEvidenceFile(
+		row,
+		{
+			closures: [ createClosureEntry( row ) ],
+		},
+		sourceRepositoryRoot
+	);
 };
 
 const closeInventory = ( map ) => {
-	for ( const row of map.rows ) {
-		for ( const targetPath of row.target_path.split( ';' ) ) {
-			createMissingTargetFile( targetPath );
-		}
+	const sourceRepositoryRoot = createTemporaryGitRepository();
 
-		close( row );
+	for ( const row of map.rows ) {
+		for ( const repositoryPath of [
+			...row.target_path.split( ';' ),
+			...row.native_owner_paths.split( ';' ),
+			...row.native_lower_layer_context.split( ';' ),
+		] ) {
+			const absolutePath = resolve(
+				sourceRepositoryRoot,
+				repositoryPath
+			);
+			mkdirSync( dirname( absolutePath ), { recursive: true } );
+			if ( ! existsSync( absolutePath ) ) {
+				writeFileSync( absolutePath, '// Empty source fixture.\n' );
+			}
+		}
+	}
+
+	execFileSync( 'git', [ '-C', sourceRepositoryRoot, 'add', '--all' ] );
+
+	for ( const row of map.rows ) {
+		close( row, sourceRepositoryRoot );
 		if (
 			row.accepted_disposition ===
 			'Retire because the test is stale, redundant, or guards only obsolete plugin structure'
@@ -386,6 +494,9 @@ const closeInventory = ( map ) => {
 				'human-approved:inventory-retirement-review';
 		}
 	}
+
+	execFileSync( 'git', [ '-C', sourceRepositoryRoot, 'add', '--all' ] );
+	return sourceRepositoryRoot;
 };
 
 afterEach( () => {
@@ -426,6 +537,470 @@ afterEach( () => {
 			rmdirSync( temporaryDirectory );
 		}
 	}
+} );
+
+test( 'bundle coverage detects side-effect and double-quoted static imports', () => {
+	const sourceRepositoryRoot = createTrackedClosureRepository( {
+		'sample.spec.ts':
+			'import \'./side-effect\';\nimport { behavior } from "./behavior";\nexport const use = behavior;\n',
+		'side-effect.ts': 'export const sideEffect = true;\n',
+		'behavior.ts': 'export const behavior = true;\n',
+	} );
+	const row = { ...contractMap.rows[ 0 ] };
+	specify( row );
+	row.migration_state = 'closed';
+	row.native_support_state = 'supported';
+	row.target_path = 'sample.spec.ts';
+
+	assert.throws(
+		() =>
+			assertClosureBundleCoverage(
+				row,
+				{ source_test_paths: [ row.target_path ] },
+				sourceRepositoryRoot
+			),
+		/bundle must attest every behavior module/
+	);
+	assert.doesNotThrow( () =>
+		assertClosureBundleCoverage(
+			row,
+			{
+				source_test_paths: [
+					row.target_path,
+					'side-effect.ts',
+					'behavior.ts',
+				],
+			},
+			sourceRepositoryRoot
+		)
+	);
+} );
+
+test( 'bundle coverage resolves TSX modules and directory indexes', () => {
+	const sourceRepositoryRoot = createTrackedClosureRepository( {
+		'sample.spec.ts':
+			"export { direct } from './direct';\nexport { indexedTs } from './indexed-ts';\nexport { indexedTsx } from './indexed-tsx';\nexport { indexedMjs } from './indexed-mjs';\n",
+		'direct.tsx': 'export const direct = true;\n',
+		'indexed-ts/index.ts': 'export const indexedTs = true;\n',
+		'indexed-tsx/index.tsx': 'export const indexedTsx = true;\n',
+		'indexed-mjs/index.mjs': 'export const indexedMjs = true;\n',
+	} );
+	const row = { ...contractMap.rows[ 0 ] };
+	specify( row );
+	row.migration_state = 'closed';
+	row.native_support_state = 'supported';
+	row.target_path = 'sample.spec.ts';
+
+	assert.throws(
+		() =>
+			assertClosureBundleCoverage(
+				row,
+				{ source_test_paths: [ row.target_path ] },
+				sourceRepositoryRoot
+			),
+		/bundle must attest every behavior module/
+	);
+	assert.doesNotThrow( () =>
+		assertClosureBundleCoverage(
+			row,
+			{
+				source_test_paths: [
+					row.target_path,
+					'direct.tsx',
+					'indexed-ts/index.ts',
+					'indexed-tsx/index.tsx',
+					'indexed-mjs/index.mjs',
+				],
+			},
+			sourceRepositoryRoot
+		)
+	);
+} );
+
+test( 'bundle coverage resolves extensionless JavaScript modules and directory indexes', () => {
+	const sourceRepositoryRoot = createTrackedClosureRepository( {
+		'sample.spec.js':
+			"export { directJs } from './direct-js';\nexport { directJsx } from './direct-jsx';\nexport { indexedJs } from './indexed-js';\nexport { indexedJsx } from './indexed-jsx';\n",
+		'direct-js.js': 'export const directJs = true;\n',
+		'direct-jsx.jsx': 'export const directJsx = true;\n',
+		'indexed-js/index.js': 'export const indexedJs = true;\n',
+		'indexed-jsx/index.jsx': 'export const indexedJsx = true;\n',
+	} );
+	const row = { ...contractMap.rows[ 0 ] };
+	specify( row );
+	row.migration_state = 'closed';
+	row.native_support_state = 'supported';
+	row.target_path = 'sample.spec.js';
+
+	assert.deepEqual(
+		collectClosureBundlePaths( row, sourceRepositoryRoot ).toSorted(),
+		[
+			row.target_path,
+			'direct-js.js',
+			'direct-jsx.jsx',
+			'indexed-js/index.js',
+			'indexed-jsx/index.jsx',
+		].toSorted()
+	);
+} );
+
+test( 'closure collection follows a real ledger JavaScript target dependency', () => {
+	const targetPath =
+		'plugins/woocommerce/client/blocks/assets/js/blocks/multi-currency-switcher/test/index.js';
+	const ledgerRow = contractMap.rows.find( ( row ) =>
+		row.target_path.split( ';' ).includes( targetPath )
+	);
+	assert.notEqual( ledgerRow, undefined );
+	const row = { ...ledgerRow, target_path: targetPath };
+	const requiredPaths = collectClosureBundlePaths( row, repositoryRoot );
+
+	assert.equal( requiredPaths.includes( targetPath ), true );
+	assert.equal(
+		requiredPaths.includes(
+			'plugins/woocommerce/client/blocks/assets/js/blocks/multi-currency-switcher/index.js'
+		),
+		true
+	);
+	assert.equal(
+		requiredPaths.includes(
+			'plugins/woocommerce/client/blocks/assets/js/blocks/multi-currency-switcher/block.js'
+		),
+		true
+	);
+} );
+
+test( 'bundle coverage ignores commented and dynamic relative imports', () => {
+	const sourceRepositoryRoot = createTrackedClosureRepository( {
+		'sample.spec.ts':
+			"/*\nimport { commented } from './commented';\n*/\nexport const load = () => import('./dynamic');\n",
+		'commented.ts': 'export const commented = true;\n',
+		'dynamic.ts': 'export const dynamic = true;\n',
+	} );
+	const row = { ...contractMap.rows[ 0 ] };
+	specify( row );
+	row.migration_state = 'closed';
+	row.native_support_state = 'supported';
+	row.target_path = 'sample.spec.ts';
+
+	assert.doesNotThrow( () =>
+		assertClosureBundleCoverage(
+			row,
+			{ source_test_paths: [ row.target_path ] },
+			sourceRepositoryRoot
+		)
+	);
+} );
+
+test( 'bundle coverage rejects an import that escapes into an infrastructure-looking path', () => {
+	const sourceRepositoryRoot = createTrackedClosureRepository( {
+		'sample.spec.ts': 'export const use = true;\n',
+	} );
+	const externalDirectory = mkdtempSync(
+		join( tmpdir(), 'woocommerce-contract-map-outside-' )
+	);
+	externalTemporaryDirectories.push( externalDirectory );
+	const externalPath = join(
+		externalDirectory,
+		'tests/e2e/fixtures/behavior.ts'
+	);
+	mkdirSync( dirname( externalPath ), { recursive: true } );
+	writeFileSync( externalPath, 'export const behavior = true;\n' );
+	const specPath = resolve( sourceRepositoryRoot, 'sample.spec.ts' );
+	const externalSpecifier = relativeModuleSpecifier( specPath, externalPath );
+	writeFileSync(
+		specPath,
+		`import { behavior } from '${ externalSpecifier }';\nexport const use = behavior;\n`
+	);
+	const row = { ...contractMap.rows[ 0 ] };
+	specify( row );
+	row.migration_state = 'closed';
+	row.native_support_state = 'supported';
+	row.target_path = 'sample.spec.ts';
+
+	assert.throws(
+		() =>
+			assertClosureBundleCoverage(
+				row,
+				{ source_test_paths: [ row.target_path ] },
+				sourceRepositoryRoot
+			),
+		/bundle must attest every behavior module.*tracked regular repository file/
+	);
+} );
+
+test( 'bundle coverage rejects a symlinked infrastructure module', () => {
+	const sourceRepositoryRoot = createTrackedClosureRepository( {
+		'sample.spec.ts':
+			"import { behavior } from './plugins/woocommerce/tests/e2e/fixtures/behavior';\nexport const use = behavior;\n",
+		'behavior.ts': 'export const behavior = true;\n',
+	} );
+	const symlinkPath = resolve(
+		sourceRepositoryRoot,
+		'plugins/woocommerce/tests/e2e/fixtures/behavior.ts'
+	);
+	mkdirSync( dirname( symlinkPath ), { recursive: true } );
+	symlinkSync( resolve( sourceRepositoryRoot, 'behavior.ts' ), symlinkPath );
+	execFileSync( 'git', [ '-C', sourceRepositoryRoot, 'add', '--all' ] );
+	const row = { ...contractMap.rows[ 0 ] };
+	specify( row );
+	row.migration_state = 'closed';
+	row.native_support_state = 'supported';
+	row.target_path = 'sample.spec.ts';
+
+	assert.throws(
+		() =>
+			assertClosureBundleCoverage(
+				row,
+				{ source_test_paths: [ row.target_path ] },
+				sourceRepositoryRoot
+			),
+		/bundle must attest every behavior module.*without symlinks/
+	);
+} );
+
+test( 'bundle coverage rejects unresolved relative imports', () => {
+	const sourceRepositoryRoot = createTrackedClosureRepository( {
+		'sample.spec.ts':
+			"import { behavior } from './missing';\nexport const use = behavior;\n",
+	} );
+	const row = { ...contractMap.rows[ 0 ] };
+	specify( row );
+	row.migration_state = 'closed';
+	row.native_support_state = 'supported';
+	row.target_path = 'sample.spec.ts';
+
+	assert.throws(
+		() =>
+			assertClosureBundleCoverage(
+				row,
+				{ source_test_paths: [ row.target_path ] },
+				sourceRepositoryRoot
+			),
+		/bundle must attest every behavior module.*unresolved relative import/
+	);
+} );
+
+test( 'bundle coverage rejects an untracked relative import', () => {
+	const sourceRepositoryRoot = createTrackedClosureRepository( {
+		'sample.spec.ts':
+			"import { behavior } from './behavior';\nexport const use = behavior;\n",
+	} );
+	writeFileSync(
+		resolve( sourceRepositoryRoot, 'behavior.ts' ),
+		'export const behavior = true;\n'
+	);
+	const row = { ...contractMap.rows[ 0 ] };
+	specify( row );
+	row.migration_state = 'closed';
+	row.native_support_state = 'supported';
+	row.target_path = 'sample.spec.ts';
+
+	assert.throws(
+		() =>
+			assertClosureBundleCoverage(
+				row,
+				{ source_test_paths: [ row.target_path ] },
+				sourceRepositoryRoot
+			),
+		/bundle must attest every behavior module.*tracked regular repository file/
+	);
+} );
+
+test( 'a terminal row evidence bundle must cover the transitive spec import closure', () => {
+	const sourceRepositoryRoot = createTrackedClosureRepository( {
+		'sample.spec.ts':
+			"import { widget } from './drivers/widget';\nexport const use = widget;\n",
+		'drivers/widget.ts':
+			"export { helper } from './widget-helper';\nexport const widget = 1;\n",
+		'drivers/widget-helper.mjs':
+			"import { widget } from './widget';\nexport const helper = widget;\n",
+		'drivers/unused.ts': 'export const unused = true;\n',
+	} );
+	const specRepositoryPath = 'sample.spec.ts';
+	const driverRepositoryPath = 'drivers/widget.ts';
+	const helperRepositoryPath = 'drivers/widget-helper.mjs';
+	const unusedRepositoryPath = 'drivers/unused.ts';
+	const row = { ...contractMap.rows[ 0 ] };
+	specify( row );
+	row.migration_state = 'closed';
+	row.native_support_state = 'supported';
+	row.target_path = specRepositoryPath;
+
+	assert.throws(
+		() =>
+			assertClosureBundleCoverage(
+				row,
+				{ source_test_paths: [ specRepositoryPath ] },
+				sourceRepositoryRoot
+			),
+		new RegExp(
+			`bundle must attest every behavior module.*${ driverRepositoryPath }`
+		)
+	);
+	assert.throws(
+		() =>
+			assertClosureBundleCoverage(
+				row,
+				{
+					source_test_paths: [
+						specRepositoryPath,
+						driverRepositoryPath,
+					],
+				},
+				sourceRepositoryRoot
+			),
+		new RegExp(
+			`bundle must attest every behavior module.*${ helperRepositoryPath }`
+		)
+	);
+
+	assert.doesNotThrow( () =>
+		assertClosureBundleCoverage(
+			row,
+			{
+				source_test_paths: [
+					specRepositoryPath,
+					driverRepositoryPath,
+					helperRepositoryPath,
+					unusedRepositoryPath,
+				],
+			},
+			sourceRepositoryRoot
+		)
+	);
+} );
+
+test( 'bundle coverage traverses every trimmed multi-target segment', () => {
+	const sourceRepositoryRoot = createTrackedClosureRepository( {
+		'first.spec.ts':
+			"import { first } from './first-driver';\nexport const useFirst = first;\n",
+		'second.spec.ts':
+			"import { second } from './second-driver';\nexport const useSecond = second;\n",
+		'first-driver.ts': 'export const first = 1;\n',
+		'second-driver.mjs': 'export const second = 2;\n',
+	} );
+	const firstSpecRepositoryPath = 'first.spec.ts';
+	const secondSpecRepositoryPath = 'second.spec.ts';
+	const firstDriverRepositoryPath = 'first-driver.ts';
+	const secondDriverRepositoryPath = 'second-driver.mjs';
+	const row = { ...contractMap.rows[ 0 ] };
+	specify( row );
+	row.migration_state = 'verified';
+	row.native_support_state = 'supported';
+	row.target_path = `${ firstSpecRepositoryPath }; ${ secondSpecRepositoryPath }`;
+
+	assert.throws(
+		() =>
+			assertClosureBundleCoverage(
+				row,
+				{
+					source_test_paths: [
+						firstSpecRepositoryPath,
+						firstDriverRepositoryPath,
+						secondSpecRepositoryPath,
+					],
+				},
+				sourceRepositoryRoot
+			),
+		new RegExp(
+			`bundle must attest every behavior module.*${ secondDriverRepositoryPath }`
+		)
+	);
+
+	assert.doesNotThrow( () =>
+		assertClosureBundleCoverage(
+			row,
+			{
+				source_test_paths: [
+					firstSpecRepositoryPath,
+					firstDriverRepositoryPath,
+					secondSpecRepositoryPath,
+					secondDriverRepositoryPath,
+				],
+			},
+			sourceRepositoryRoot
+		)
+	);
+} );
+
+test( 'bundle coverage traversal stops at controller infrastructure modules', () => {
+	const infrastructurePaths = [
+		'plugins/woocommerce/tests/e2e/fixtures/woopayments-native.ts',
+		'plugins/woocommerce/tests/e2e/reporters/environment-reporter.ts',
+		'plugins/woocommerce/tests/e2e/test-data/data.ts',
+		'plugins/woocommerce/tests/e2e/utils/woopayments-native/resource-locks.ts',
+	];
+	const specPath = resolve( '/', 'infra.spec.ts' );
+	const imports = infrastructurePaths
+		.map( ( infrastructurePath, index ) => {
+			const absoluteInfrastructurePath = resolve(
+				'/',
+				infrastructurePath
+			);
+
+			return `import { value${ index } } from '${ relativeModuleSpecifier(
+				specPath,
+				absoluteInfrastructurePath
+			) }';`;
+		} )
+		.join( '\n' );
+	const sourceRepositoryRoot = createTrackedClosureRepository( {
+		'infra.spec.ts': `${ imports }\nexport const use = true;\n`,
+		...Object.fromEntries(
+			infrastructurePaths.map( ( infrastructurePath, index ) => [
+				infrastructurePath,
+				`export const value${ index } = true;\n`,
+			] )
+		),
+	} );
+	const specRepositoryPath = 'infra.spec.ts';
+	const row = { ...contractMap.rows[ 0 ] };
+	specify( row );
+	row.migration_state = 'closed';
+	row.native_support_state = 'supported';
+	row.target_path = specRepositoryPath;
+
+	assert.doesNotThrow( () =>
+		assertClosureBundleCoverage(
+			row,
+			{ source_test_paths: [ specRepositoryPath ] },
+			sourceRepositoryRoot
+		)
+	);
+} );
+
+test( 'bundle coverage attests infrastructure basename collisions with unlisted extensions', () => {
+	const behaviorPath =
+		'plugins/woocommerce/tests/e2e/utils/woopayments-native/known-gap.tsx';
+	const sourceRepositoryRoot = createTrackedClosureRepository( {
+		'sample.spec.ts':
+			"import { behavior } from './plugins/woocommerce/tests/e2e/utils/woopayments-native/known-gap';\nexport const use = behavior;\n",
+		[ behaviorPath ]: 'export const behavior = true;\n',
+	} );
+	const row = { ...contractMap.rows[ 0 ] };
+	specify( row );
+	row.migration_state = 'closed';
+	row.native_support_state = 'supported';
+	row.target_path = 'sample.spec.ts';
+
+	assert.throws(
+		() =>
+			assertClosureBundleCoverage(
+				row,
+				{ source_test_paths: [ row.target_path ] },
+				sourceRepositoryRoot
+			),
+		new RegExp(
+			`bundle must attest every behavior module.*${ behaviorPath }`
+		)
+	);
+	assert.doesNotThrow( () =>
+		assertClosureBundleCoverage(
+			row,
+			{ source_test_paths: [ row.target_path, behaviorPath ] },
+			sourceRepositoryRoot
+		)
+	);
 } );
 
 test( 'keeps normal parsing strict while adapting the historical ledger for transition checks', () => {
@@ -1584,6 +2159,7 @@ test( 'terminal evidence attests modified tracked working-tree bytes', () => {
 	closedRow.native_support_state = 'supported';
 	const sourceRepositoryRoot = createTemporaryGitRepository();
 	const sourceTestPaths = [ 'tracked-source.mjs' ];
+	closedRow.target_path = sourceTestPaths[ 0 ];
 	const sourcePath = resolve( sourceRepositoryRoot, sourceTestPaths[ 0 ] );
 	writeFileSync( sourcePath, 'indexed source bytes\n' );
 	execFileSync( 'git', [
@@ -2330,10 +2906,7 @@ test( 'rejects JSON payloads embedded after a prose prefix', () => {
 for ( const [ description, embeddedPayload ] of [
 	[ 'a numeric scalar-leading array', '[1234567890123456]' ],
 	[ 'a boolean and null scalar-leading array', '[true,false,null]' ],
-	[
-		'an object with an escaped key',
-		'{"na\\"me":"Synthetic Person"}',
-	],
+	[ 'an object with an escaped key', '{"na\\"me":"Synthetic Person"}' ],
 ] ) {
 	test( `rejects ${ description } embedded after a prose prefix`, () => {
 		const row = contractMap.rows[ 0 ];
@@ -2490,9 +3063,14 @@ test( 'require-migrated rejects known gaps and deferrals', () => {
 test( 'require-migrated accepts a fully closed inventory with zero gaps', () => {
 	const map = cloneContractMap();
 
-	closeInventory( map );
+	const sourceRepositoryRoot = closeInventory( map );
 
-	assert.doesNotThrow( () => validate( map, { requireMigrated: true } ) );
+	assert.doesNotThrow( () =>
+		validate( map, {
+			repositoryRoot: sourceRepositoryRoot,
+			requireMigrated: true,
+		} )
+	);
 } );
 
 test( 'keeps frozen columns bound to the metadata SHA-256', () => {
