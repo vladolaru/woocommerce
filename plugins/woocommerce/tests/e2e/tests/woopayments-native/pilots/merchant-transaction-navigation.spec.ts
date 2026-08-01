@@ -1,5 +1,9 @@
 import { expect, tags, test } from '../../../fixtures/woopayments-native';
 import { completeCardCheckout } from '../../../utils/woopayments-native/drivers/checkout';
+import {
+	expectExactMerchantTransaction,
+	openExactMerchantTransaction,
+} from '../../../utils/woopayments-native/drivers/merchant-transactions';
 import { getPaymentEvidence } from '../../../utils/woopayments-native/record-evidence';
 
 test(
@@ -36,11 +40,13 @@ test(
 				);
 				const evidence = await getPaymentEvidence( adminApi, orderId );
 
-				await pilotRuntime.openExactMerchantTransaction(
+				await openExactMerchantTransaction(
+					pilotRuntime,
 					page,
 					evidence
 				);
-				await pilotRuntime.expectExactMerchantTransaction(
+				await expectExactMerchantTransaction(
+					pilotRuntime,
 					page,
 					evidence
 				);

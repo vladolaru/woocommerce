@@ -12,6 +12,7 @@ import {
 	payWithExactSavedCard,
 	type SavedCardIdentity,
 } from '../../../utils/woopayments-native/drivers/saved-cards';
+import { softCutOverEphemeralStore } from '../../../utils/woopayments-native/drivers/store-transition';
 import { getPaymentEvidence } from '../../../utils/woopayments-native/record-evidence';
 
 test(
@@ -66,7 +67,7 @@ test(
 						page,
 						defaultCard.tokenId
 					);
-					await pilotRuntime.softCutOverEphemeralStore( page );
+					await softCutOverEphemeralStore( pilotRuntime, page );
 					const nativeDefaultCard = await getSavedCardState(
 						pilotRuntime,
 						[ firstCard, defaultCard ]

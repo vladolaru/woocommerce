@@ -30,12 +30,18 @@ import {
 import WooPaymentsKnownGapsReporter from '../../reporters/woopayments-known-gaps';
 import { completeCardCheckout } from './drivers/checkout';
 import {
+	captureExactOrder,
+	withCapturedManualCaptureSetting,
+} from './drivers/manual-capture';
+import { expectExactMerchantTransaction } from './drivers/merchant-transactions';
+import {
 	createPluginOwnedSavedCard,
 	deleteExactSavedCards,
 	getSavedCardState,
 	makeSavedCardDefault,
 	payWithExactSavedCard,
 } from './drivers/saved-cards';
+import { softCutOverEphemeralStore } from './drivers/store-transition';
 import {
 	assertResourcesUsable,
 	quarantineResources,
@@ -2201,8 +2207,9 @@ async function expectUncertainManualCapture(
 ): Promise< unknown > {
 	let captureError: unknown;
 	try {
-		await pilotRuntime.withCapturedManualCaptureSetting( async () => {
-			await pilotRuntime.captureExactOrder(
+		await withCapturedManualCaptureSetting( pilotRuntime, async () => {
+			await captureExactOrder(
+				pilotRuntime,
 				fixture.page,
 				exactEvidence()
 			);
@@ -2245,7 +2252,7 @@ test( 'uses the Core order-actions dropdown and Apply button for capture', async
 		const captured: unknown = await pilotRuntime.withProviderWriteLocks(
 			{ recordEvent: 'capture-order-dom' },
 			async () =>
-				pilotRuntime.captureExactOrder( fixture.page, exactEvidence() )
+				captureExactOrder( pilotRuntime, fixture.page, exactEvidence() )
 		);
 		expect( fixture.selected() ).toBe( true );
 		expect( fixture.applied() ).toBe( true );
@@ -2362,7 +2369,7 @@ test( 'asserts the real payment details heading and exact evidence fields', asyn
 	} as unknown as Page;
 
 	try {
-		await pilotRuntime.expectExactMerchantTransaction( page, evidence );
+		await expectExactMerchantTransaction( pilotRuntime, page, evidence );
 		expect( requested ).toContain(
 			'heading:/^(Payment details|Transaction details)$/:undefined'
 		);
@@ -2457,7 +2464,7 @@ test( 'routes every provider-writing pilot through a lock-owning wrapper', async
 		},
 		{
 			file: 'merchant-manual-capture.spec.ts',
-			wrapper: 'pilotRuntime.withCapturedManualCaptureSetting',
+			wrapper: 'withCapturedManualCaptureSetting( pilotRuntime',
 			firstProviderAction:
 				"pilotRuntime.requireApprovedProviderFixture( 'manual-capture' )",
 		},
@@ -2678,7 +2685,7 @@ test( 'drives the nonce-protected product cutover controller entry point', async
 	try {
 		await pilotRuntime.withProviderWriteLocks(
 			{ recordEvent: 'product-cutover-entry-point' },
-			async () => pilotRuntime.softCutOverEphemeralStore( page )
+			async () => softCutOverEphemeralStore( pilotRuntime, page )
 		);
 
 		expect( cutoverClicked ).toBe( true );
@@ -2718,7 +2725,7 @@ test( 'blocks cutover after lock loss during admin preparation', async () => {
 				},
 			},
 			async ( pilotRuntime, page ) => {
-				await pilotRuntime.softCutOverEphemeralStore( page );
+				await softCutOverEphemeralStore( pilotRuntime, page );
 			}
 		)
 	).resolves.toBeUndefined();
@@ -2752,7 +2759,7 @@ test( 'blocks capture after lock loss during order preparation', async () => {
 				mutation: { role: 'button', name: 'Apply' },
 			},
 			async ( pilotRuntime, page ) => {
-				await pilotRuntime.captureExactOrder( page, {
+				await captureExactOrder( pilotRuntime, page, {
 					runId: 'run-pilot-runtime',
 					orderId: 42,
 					orderKey: 'wc_order_key',
@@ -2782,7 +2789,7 @@ test( 'fails before a manual-setting write when the feature lock is lost', async
 
 	try {
 		await expect(
-			pilotRuntime.withCapturedManualCaptureSetting( async () => {} )
+			withCapturedManualCaptureSetting( pilotRuntime, async () => {} )
 		).rejects.toThrow( /feature-setting.*ownership/i );
 		expect( calls.filter( ( call ) => call.method === 'POST' ) ).toEqual(
 			[]
@@ -2899,7 +2906,7 @@ test( 'manual-capture restoration failure quarantines account/store/setting', as
 
 	try {
 		await expect(
-			pilotRuntime.withCapturedManualCaptureSetting( async () => {} )
+			withCapturedManualCaptureSetting( pilotRuntime, async () => {} )
 		).rejects.toThrow( /restoration failed/i );
 		for ( const key of keys ) {
 			await expect( assertResourcesUsable( [ key ] ) ).rejects.toThrow(
@@ -2945,7 +2952,7 @@ test( 'publishes restoration-failure quarantine before releasing provider locks'
 
 	try {
 		await expect(
-			pilotRuntime.withCapturedManualCaptureSetting( async () => {} )
+			withCapturedManualCaptureSetting( pilotRuntime, async () => {} )
 		).rejects.toThrow( /restoration failed/i );
 		expect( releaseObservations ).toHaveLength( 4 );
 		expect(
@@ -3007,7 +3014,8 @@ test( 'stale-journal recovery failure quarantines resources and preserves the or
 	try {
 		let thrown: unknown;
 		try {
-			await pilotRuntime.withCapturedManualCaptureSetting(
+			await withCapturedManualCaptureSetting(
+				pilotRuntime,
 				async () => {}
 			);
 		} catch ( error ) {
@@ -3134,7 +3142,7 @@ test( 'uses the exact aggregate settings contract for mutation and restore', asy
 	const pilotRuntime = runtime( directory, calls );
 
 	try {
-		await pilotRuntime.withCapturedManualCaptureSetting( async () => {} );
+		await withCapturedManualCaptureSetting( pilotRuntime, async () => {} );
 		expect( calls ).toEqual( [
 			{
 				method: 'GET',
@@ -3165,7 +3173,7 @@ test( 'restores the aggregate setting when the update applies and then throws', 
 
 	try {
 		await expect(
-			pilotRuntime.withCapturedManualCaptureSetting( async () => {
+			withCapturedManualCaptureSetting( pilotRuntime, async () => {
 				throw new Error( 'The pilot callback must not run.' );
 			} )
 		).rejects.toThrow( /response lost/i );
@@ -3197,7 +3205,7 @@ test( 'rejects a non-200 aggregate update response and still restores', async ()
 
 	try {
 		await expect(
-			pilotRuntime.withCapturedManualCaptureSetting( async () => {} )
+			withCapturedManualCaptureSetting( pilotRuntime, async () => {} )
 		).rejects.toThrow( /HTTP 201/i );
 		expect(
 			calls.filter(

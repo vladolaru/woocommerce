@@ -1,6 +1,11 @@
 import { expect, tags, test } from '../../../fixtures/woopayments-native';
 import { completeCardCheckout } from '../../../utils/woopayments-native/drivers/checkout';
 import {
+	captureExactOrder,
+	expectCapturedOrderState,
+	withCapturedManualCaptureSetting,
+} from '../../../utils/woopayments-native/drivers/manual-capture';
+import {
 	getCaptureOrderNoteEvidence,
 	getPaymentEvidence,
 } from '../../../utils/woopayments-native/record-evidence';
@@ -22,7 +27,7 @@ test(
 		],
 	},
 	async ( { adminApi, page, pilotRuntime, runId } ) => {
-		await pilotRuntime.withCapturedManualCaptureSetting( async () => {
+		await withCapturedManualCaptureSetting( pilotRuntime, async () => {
 			pilotRuntime.requireApprovedProviderFixture( 'manual-capture' );
 			const product = await pilotRuntime.createOwnedProduct( '12.00' );
 			const orderId = await completeCardCheckout(
@@ -36,7 +41,8 @@ test(
 			expect( authorized.providerStatus ).toBe( 'requires_capture' );
 			expect( authorized.chargeCaptured ).toBe( false );
 			expect( authorized.orderStatus ).toBe( 'on-hold' );
-			const captured = await pilotRuntime.captureExactOrder(
+			const captured = await captureExactOrder(
+				pilotRuntime,
 				page,
 				authorized
 			);
@@ -59,7 +65,7 @@ test(
 			expect( captureNote.captureNote ).toContain(
 				'was <strong>successfully captured</strong> using WooPayments'
 			);
-			await pilotRuntime.expectCapturedOrderState( page, captured );
+			await expectCapturedOrderState( pilotRuntime, page, captured );
 		} );
 	}
 );
