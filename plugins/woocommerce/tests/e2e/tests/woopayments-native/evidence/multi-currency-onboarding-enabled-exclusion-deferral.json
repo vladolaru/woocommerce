@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "multi-currency-onboarding-enabled-exclusion-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "1515a6ccc8b65a6b1096caece7cf8cddf162a3d6",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-on-boarding.spec.ts:110::Multi-currency on-boarding › Currency selection and management › should exclude already enabled currencies from the onboarding"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/multi-currency.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad revision review approved evidence SHA 2f348c90ced731044c51f5a816f8081429ee3a510f978c514b20d187a1cd999d against ledger SHA 3bfc19eb109602c1816cffa2db1086d641d2ecbc87cfebac5b06fdf10a193973 with no findings: only the line-110 contract transitions to deferred/blocked-environment/blocked-environment:PILOT-NATIVE-READINESS/evidence, with the pending target and owner unresolved. The evidence correctly binds the checked-once/unchecked-never GBP oracle, journaled one-write setup, raw snapshot/restoration, zero behavior-time mutation, catalog control, provider-free isolation, accessibility/drift quarantine, and readiness-first/no-defect disposition."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing-native readiness fails before the authenticated native multi-currency route can run; the provisional shared target is absent; and the exact target contract, settings owner, deterministic GBP catalog fixture, persisted setup driver, raw restoration mechanism, and row-safe topology remain pending. Core's checked enabled-currency representation is a plausible honest adapter when GBP cannot also appear as an unchecked, duplicate, or otherwise addable choice, so no production defect or product-authority conflict is established.",
+		"affected_scope": "Only the exact already-enabled exclusion contract: authoritatively persist one deterministic non-default currency such as GBP exactly once, join that persisted identity to exactly one checked semantic checkbox in the native management dialog, and prove there is zero unchecked/addable or duplicate control for the same currency. Do not toggle or save during the behavior interval; require zero behavior-time settings POST and no raw-state change after setup. Literal absence from a removal-capable management list, recommendation copy or order, shopper availability, rates, checkout, and provider behavior remain outside this row.",
+		"no_allowlisted_action_reason": "The run cannot enable native ownership, establish account/callback readiness, repair shared Core E2E sites, invent the pending target/owner/topology, guarantee a deterministic GBP catalog, or perform an unjournaled persistent setup. Component and REST tests cannot substitute for the authenticated persisted-identity-to-accessibility-tree join, duplicate/addability exclusion, zero-write interval, or exact raw restoration. No provider writer, listener, or provider CI allocation can unlock this local settings contract.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy native readiness; approve the exact shared-scenario target, native settings owner, checked-selection adapter, and row-safe topology; provide a deterministic catalog containing GBP plus ordered account, store, currency-settings, and catalog ownership, a complete byte-exact snapshot of currency and feature options, and a pre-write restoration journal before at most one setup write; implement the authoritative enabled-once to checked-once and unchecked-never oracle, observe zero behavior-time mutation, and restore the complete raw snapshot; then run once with one worker and zero retries and obtain fresh code, E2E-test, reliability, and accessibility reviews.",
+		"quarantine_status": "No browser context, account, store, currency setting, catalog fixture, lock, journal, provider object, listener, environment, retention record, or quarantine was created or changed for this row. A future ambiguous setup acknowledgement, identity mismatch, duplicate/addable GBP control, unexpected settings write, catalog drift, lost ownership, or incomplete restoration must preserve evidence and quarantine the exact store, currency settings, catalog fixture, and setup journal; no financial or provider resource belongs to this contract."
+	}
+}
