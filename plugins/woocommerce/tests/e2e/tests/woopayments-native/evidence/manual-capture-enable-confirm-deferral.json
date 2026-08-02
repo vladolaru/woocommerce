@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "manual-capture-enable-confirm-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "6eef487c42bfe60f5365fbfac1cf1c550c815b24",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-payment-settings-manual-capture.spec.ts:22::As a merchant, I should be prompted a confirmation modal when I try to activate the manual capture › should show the confirmation dialog when enabling the manual capture"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/manual-capture.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved evidence SHA cb530f52e167d773e326b41e7ccc38710b016b7f87bcd0b73277076e2caf1f53 against ledger SHA 5ee0c84f2bdc16b097c0a2c30734dc33bf391457a0f0c1b5b77b12a73e216b56: the row-58 diff changes only fields 37-40 from planned/not-assessed/none/none to deferred/blocked-environment/blocked-environment:PILOT-NATIVE-READINESS/the evidence path, preserving the pending disposition, absent target, pending target contract, and unresolved owner. The evidence accurately limits the contract to a disabled manual-capture baseline, one semantic activation opening the named accessible seven-day capture-warning dialog, and zero pre-confirmation setting, dirty-state, save-availability, HTTP-mutation, or raw-configuration change. It correctly treats matching Core implementation/component coverage as evidence against a defect or known gap without substituting for the open E2E contract, and its readiness ordering, provider-free/resource-free status, drift and accessibility requirements, plus future settings locking, byte-identical snapshot, pre-write restoration journal, and exact-resource quarantine controls are sound."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing-native readiness fails before the native settings browser route can run; the provisional scenario target is absent; and the row-specific settings-surface target contract, owner, and provider-free project topology remain pending. Core already implements and component-tests the confirmation-before-mutation boundary, so no production defect is established.",
+		"affected_scope": "Only the exact provider-free manual-capture enable-warning contract: from an authoritatively disabled raw setting and clean native settings page, one semantic checkbox activation opens a named accessible confirmation explaining capture from order details and the configured standard-card seven-day deadline/consequence; before confirmation or save, the checkbox's authoritative value, full raw gateway/payment-method configuration, settings dirty state, save availability, and settings HTTP mutation count remain unchanged. Rows that confirm, disable, or alter incompatible payment methods remain separate.",
+		"no_allowlisted_action_reason": "The run cannot enable native ownership, establish the required native account/callback readiness, repair shared Core E2E sites, invent the pending row-specific target/owner/project topology, or treat component mocks and service tests as the authenticated browser plus raw-option immutability proof. No provider writer or listener can unlock this settings-only row.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy native readiness and provide a runnable Core browser target; approve a drift-safe provider-free row target, settings-surface owner, and project topology; provide a deterministic standard-card seven-day capability with manual capture already disabled or a settings-locked setup carrying a pre-write raw-byte restoration journal; implement the semantic accessible adapter and zero-update/full-byte-identity oracle; then run once with one worker and zero retries and obtain fresh code, E2E-test, reliability, and accessibility reviews.",
+		"quarantine_status": "No browser context, account, store, setting, lock, journal, listener, provider object, environment, retention record, or quarantine was created or changed for this row. A future normalization write must quarantine the exact settings resource on ambiguity, but this row uses no provider capacity."
+	}
+}
