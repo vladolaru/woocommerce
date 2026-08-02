@@ -14,6 +14,44 @@ readonly PLUGIN_ROOT="$(
 readonly WRAPPER="${E2E_TRANSITION_WRAPPER:-$SCRIPT_DIR/provision-transition-store.sh}"
 readonly REAL_PROVISIONER="${E2E_TRANSITION_STORE_PROVISIONER:-$SCRIPT_DIR/provision-transition-store-real.sh}"
 readonly RUN_ID="${E2E_TRANSITION_RUN_ID:?E2E_TRANSITION_RUN_ID is required}"
+readonly SCENARIO="${E2E_TRANSITION_SCENARIO:-saved-method}"
+SPEC=''
+CAPABILITIES=()
+case "$SCENARIO" in
+	saved-method)
+		SPEC='tests/woopayments-native/pilots/saved-method-cutover.spec.ts'
+		CAPABILITIES=(
+			'saved-method-cutover'
+			'plugin-owned-saved-card'
+			'saved-card-default'
+			'soft-cutover'
+			'saved-card-state'
+			'saved-card-cleanup'
+			'saved-card-classic'
+			'saved-card-blocks'
+			'product/payment'
+		)
+		;;
+	historical-tokens)
+		SPEC='tests/woopayments-native/transitions/historical-tokens.spec.ts'
+		CAPABILITIES=(
+			'historical-tokens'
+			'plugin-owned-saved-card'
+			'saved-card-default'
+			'soft-cutover'
+			'saved-card-state'
+			'saved-card-cleanup'
+			'saved-card-classic'
+			'product/payment'
+		)
+		;;
+	*)
+		echo "Unknown transition scenario: $SCENARIO" >&2
+		exit 64
+		;;
+esac
+readonly SPEC
+readonly -a CAPABILITIES
 
 allocation=''
 teardown_started=0
@@ -87,17 +125,7 @@ provider_approval="$(
 			account_id: process.argv[ 6 ],
 			account_alias: process.argv[ 7 ],
 			test_mode: true,
-			capabilities: [
-				"saved-method-cutover",
-				"plugin-owned-saved-card",
-				"saved-card-default",
-				"soft-cutover",
-				"saved-card-state",
-				"saved-card-cleanup",
-				"saved-card-classic",
-				"saved-card-blocks",
-				"product/payment",
-			],
+			capabilities: process.argv.slice( 8 ),
 		};
 		process.stdout.write( JSON.stringify( approval ) );
 	' \
@@ -107,7 +135,8 @@ provider_approval="$(
 		"$BASE_URL" \
 		"$WPCOM_BLOG_ID" \
 		"$ACCOUNT_ID" \
-		"$ACCOUNT_ALIAS"
+		"$ACCOUNT_ALIAS" \
+		"${CAPABILITIES[@]}"
 )"
 account_allocations="$(
 	node -e '
@@ -138,7 +167,6 @@ if [[ "$EXECUTION_SCOPE" == 'ci' ]]; then
 fi
 
 readonly CONFIG='tests/e2e/envs/woopayments-native/playwright.config.ts'
-readonly SPEC='tests/woopayments-native/pilots/saved-method-cutover.spec.ts'
 if [[ -n "${E2E_TRANSITION_TEST_RUNNER:-}" ]]; then
 	(
 		cd "$PLUGIN_ROOT"

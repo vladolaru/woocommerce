@@ -16,6 +16,11 @@ trap cleanup EXIT
 
 run_orchestrator() {
 	local run_id="${1:-orchestrator-run}"
+	local scenario="${2:-}"
+	local -a scenario_environment=()
+	if [[ -n "$scenario" ]]; then
+		scenario_environment+=( "E2E_TRANSITION_SCENARIO=$scenario" )
+	fi
 	env \
 		TMPDIR="$TEST_ROOT" \
 		E2E_TRANSITION_RUN_ID="$run_id" \
@@ -25,7 +30,51 @@ run_orchestrator() {
 		E2E_TRANSITION_WRAPPER="$SCRIPT_DIR/test-fixtures/fake-transition-wrapper.sh" \
 		E2E_TRANSITION_TEST_RUNNER="$SCRIPT_DIR/test-fixtures/fake-transition-test-runner.sh" \
 		E2E_FAKE_COMMAND_LOG="$TEST_ROOT/commands.log" \
+		${scenario_environment[@]+"${scenario_environment[@]}"} \
 		"$ORCHESTRATOR"
+}
+
+assert_exact_capabilities() {
+	local log_path="$1"
+	shift
+	node - "$log_path" "$@" <<'NODE'
+const { readFileSync } = require( 'node:fs' );
+
+const logPath = process.argv[ 2 ];
+const expected = process.argv.slice( 3 );
+const marker = ' E2E_WOOPAYMENTS_PROVIDER_FIXTURE=';
+const runnerLines = readFileSync( logPath, 'utf8' )
+	.split( '\n' )
+	.filter( ( line ) => line.startsWith( 'runner ' ) && line.includes( marker ) );
+if ( runnerLines.length !== 1 ) {
+	console.error(
+		`Expected exactly one runner approval in ${ logPath }; found ${ runnerLines.length }.`
+	);
+	process.exit( 1 );
+}
+
+let approval;
+try {
+	approval = JSON.parse(
+		runnerLines[ 0 ].slice( runnerLines[ 0 ].indexOf( marker ) + marker.length )
+	);
+} catch ( error ) {
+	console.error( `Runner approval is not valid JSON: ${ error.message }` );
+	process.exit( 1 );
+}
+
+if (
+	! Array.isArray( approval.capabilities ) ||
+	JSON.stringify( approval.capabilities ) !== JSON.stringify( expected )
+) {
+	console.error(
+		`Expected capabilities ${ JSON.stringify( expected ) }; received ${ JSON.stringify(
+			approval.capabilities
+		) }.`
+	);
+	process.exit( 1 );
+}
+NODE
 }
 
 printf 'seed\n' > "$TEST_ROOT/seed.tar.gz"
@@ -39,11 +88,66 @@ grep -Fq 'WCPAY_RUNTIME=transition' "$TEST_ROOT/commands.log"
 grep -Fq 'E2E_WOOPAYMENTS_WPCOM_BLOG_ID=77' "$TEST_ROOT/commands.log"
 grep -Fq 'E2E_WOOPAYMENTS_ACCOUNT_ID=acct_transition_77' "$TEST_ROOT/commands.log"
 grep -Fq 'E2E_WOOPAYMENTS_ACCOUNT_ALIAS=reference-client' "$TEST_ROOT/commands.log"
+assert_exact_capabilities \
+	"$TEST_ROOT/commands.log" \
+	'saved-method-cutover' \
+	'plugin-owned-saved-card' \
+	'saved-card-default' \
+	'soft-cutover' \
+	'saved-card-state' \
+	'saved-card-cleanup' \
+	'saved-card-classic' \
+	'saved-card-blocks' \
+	'product/payment'
+if assert_exact_capabilities \
+	"$TEST_ROOT/commands.log" \
+	'plugin-owned-saved-card' \
+	'saved-method-cutover' \
+	'saved-card-default' \
+	'soft-cutover' \
+	'saved-card-state' \
+	'saved-card-cleanup' \
+	'saved-card-classic' \
+	'saved-card-blocks' \
+	'product/payment' 2>/dev/null; then
+	echo 'The exact capability helper accepted a reordered approval.' >&2
+	exit 1
+fi
 grep -Fq 'destroy exact-allocation' "$TEST_ROOT/commands.log"
 
+: > "$TEST_ROOT/commands.log"
+run_orchestrator 'historical-token-run' 'historical-tokens'
+grep -Fq -- 'tests/woopayments-native/transitions/historical-tokens.spec.ts' "$TEST_ROOT/commands.log"
+assert_exact_capabilities \
+	"$TEST_ROOT/commands.log" \
+	'historical-tokens' \
+	'plugin-owned-saved-card' \
+	'saved-card-default' \
+	'soft-cutover' \
+	'saved-card-state' \
+	'saved-card-cleanup' \
+	'saved-card-classic' \
+	'product/payment'
+grep -Fq 'destroy exact-allocation' "$TEST_ROOT/commands.log"
+
+: > "$TEST_ROOT/commands.log"
+if run_orchestrator 'invalid-scenario-run' 'not-allowlisted'; then
+	echo 'The transition orchestrator accepted an unknown scenario.' >&2
+	exit 1
+fi
+if [[ -s "$TEST_ROOT/commands.log" ]]; then
+	echo 'An unknown transition scenario reached allocation or the test runner.' >&2
+	exit 1
+fi
+
 run_orchestrator 'orchestrator-run-2'
+run_orchestrator 'historical-token-run-2' 'historical-tokens'
+if [[ "$( grep -c '^runner ' "$TEST_ROOT/commands.log" )" != '2' ]]; then
+	echo 'The shared lock-root assertion requires two successful transition runs.' >&2
+	exit 1
+fi
 if [[ "$(
-	sed -n 's/.* E2E_WOOPAYMENTS_LOCK_DIR=//p' "$TEST_ROOT/commands.log" |
+	sed -n 's/.* E2E_WOOPAYMENTS_LOCK_DIR=\([^ ]*\) E2E_WOOPAYMENTS_PROVIDER_FIXTURE=.*/\1/p' "$TEST_ROOT/commands.log" |
 		sort -u |
 		wc -l |
 		tr -d ' '

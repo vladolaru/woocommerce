@@ -95,6 +95,7 @@
 		"test:e2e:woopayments:native:pr": "WCPAY_RUNTIME=native pnpm test:e2e:with-env woopayments-native --project=woopayments-native-provider --grep @woopayments-pr",
 		"test:e2e:woopayments:native:scheduled": "WCPAY_RUNTIME=native pnpm test:e2e:with-env woopayments-native --project=woopayments-native-readonly --project=woopayments-native-provider",
 		"test:e2e:woopayments:client:scheduled": "WCPAY_RUNTIME=client pnpm test:e2e:with-env woopayments-native --project=woopayments-native-readonly --project=woopayments-native-provider",
+		"test:e2e:woopayments:transition-historical-tokens": "E2E_TRANSITION_SCENARIO=historical-tokens bash tests/e2e/envs/woopayments-native/run-saved-method-transition.sh",
 		"test:e2e:woopayments:transition-saved-method": "bash tests/e2e/envs/woopayments-native/run-saved-method-transition.sh",
 		"test:e2e:woopayments:transition-unit": "bash tests/e2e/envs/woopayments-native/build-transition-seed.test.sh && bash tests/e2e/envs/woopayments-native/provision-transition-store-real.test.sh && bash tests/e2e/envs/woopayments-native/provision-transition-store.test.sh && bash tests/e2e/envs/woopayments-native/run-saved-method-transition.test.sh && pnpm playwright test --config=tests/e2e/envs/woopayments-native/unit.playwright.config.ts tests/e2e/utils/woopayments-native/transition-allocation.test.ts",
 		"test:env:start": "pnpm env:test",
