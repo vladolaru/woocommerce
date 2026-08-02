@@ -3,6 +3,30 @@
 Durable, public-safe record of calibration blockers and ledger revisions
 that the evidence JSON schema cannot carry. Newest entries first.
 
+## 2026-08-02 — historical default-token provider evidence deferred
+
+The dedicated historical default-token transition was implemented at commit
+`0ddb1576e51c174b2034a1068e08dac7f0c27edf` and invoked exactly once as run
+`historical-default-20260802`, with one worker and zero retries. It used the
+approved deterministic WooPayments 10.5.0 seed with transport SHA-256
+`899fea3b8594b6823a9454572404bf3736d0c4ad4713e4a60abd28575488f178`
+and canonical tar SHA-256
+`8c4cbfe257f23ab19bfe0cca4c4de5b1f76c1d3658048847e72ab55009583b1b`.
+The retained test reached `1 passed`; disposable teardown completed; the
+run-owned listener observed 17 of 17 HTTP 200 deliveries; and no transition
+lease, journal, or quarantine residue remained. The public-safe run reference
+is `redacted:transition-log:sha256:2629999777465229b21805f519085a26c960c855983615c4f0d4e3d91b924c23`.
+
+Closure is nevertheless deferred. A separately owned listener appeared after
+the exact single-listener preflight and remained active during part of the
+provider interval, so exclusive webhook delivery attribution cannot be
+established. The run-owned listener was stopped by exact ownership; the
+separately owned process was left untouched. The provider mutation was not
+rerun. The exact row is deferred as `blocked-environment` under
+`PILOT-PROVIDER-LISTENER-EXCLUSIVITY`; the smallest unlock is a fresh
+authorized migration run with one exclusively owned listener maintained for
+the full provider interval.
+
 ## 2026-08-01 — saved-token closures re-established under narrow driver bundles
 
 The authorized run `slice1-reclose-20260801222519` executed exactly once and
