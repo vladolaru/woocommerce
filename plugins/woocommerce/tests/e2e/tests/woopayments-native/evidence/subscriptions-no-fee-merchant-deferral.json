@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "subscriptions-no-fee-merchant-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "e0d13004f3e0330b1ad7342d7c69941cd69b697a",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/subscriptions/shopper/shopper-subscriptions-purchase-no-signup-fee.spec.ts:71::Shopper Subscriptions Purchase No Signup Fee › It should have a charge for subscription cost without fee & an active subscription"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/subscriptions/purchase.spec.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved this exact line-71 merchant blocked-environment deferral, its strict dependency boundary from line 37, full exactly-one $9.99/no-extra-fee provider and active-subscription contract, semantic merchant surfaces, earliest native-readiness blocker, later prerequisites, pending target and owner, calibration bundle, and zero quarantine."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing native ownership, account, and callback readiness fails first. The run also lacks an approved deterministic version-pinned active WooCommerce Subscriptions provisioner, a resolved concrete native owner and exact target contract, an exact run-owned creation lifecycle because this row consumes line 37's module-level orderId, controlled multicurrency locking and restoration, durable local and provider correlations, and an exclusively owned listener interval.",
+		"affected_scope": "Only the exact line-71 merchant observation: the first order for the no-signup-fee product has exactly one successful and captured provider PaymentIntent or charge for $9.99 in the intended currency, with no additional signup-fee line or component, second payment, or duplicate capture; the exact related subscription is active with the correct product and $9.99/month schedule; the order, subscription, shopper, customer, payment method, token, and provider record are durably correlated; and semantic merchant order, transaction, and subscription surfaces render the same truth.",
+		"no_allowlisted_action_reason": "No allowlisted action can repair standing native readiness, approve or supply the pinned active Subscriptions fixture, implement and close line 37 or approve an independent provisioner for its exact lifecycle, assign the unresolved native target owner or exact contract, establish semantic merchant adapters and exact local and provider correlations, control multicurrency restoration, or establish listener exclusivity. Mocked PaymentIntent routing and persistence, subscription policy and token synchronization tests, merchant component tests, plugin-specific routes or DOM, and rendered success copy cannot substitute for one real successful and captured $9.99 payment, no extra signup-fee component or duplicate, the exact active subscription and schedule, and semantic merchant surfaces.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally provide a standing store that passes the existing native ownership, account, and callback readiness gate and an approved deterministic version-pinned active WooCommerce Subscriptions provisioner. Implement and close line 37 first, or approve an independent shared provisioner that creates its exact correlated no-signup-fee shopper, product, order, active subscription, saved credential, and provider lifecycle. Resolve the concrete line-71 owner and exact target contract; then execute this distinct merchant observation once with one worker and zero retries under exact account, store, provider-write, feature-setting, and multicurrency locks, provider-write and restoration journals, one exclusively owned listener interval, exact $9.99 and no-extra-fee exactly-once local and provider assertions, durable order, subscription, customer, payment-method, token, and provider correlations, semantic merchant surfaces, unconditional verified multicurrency restoration, bounded cleanup, and fail-closed quarantine for uncertain submission, correlation, restoration, cleanup, or event delivery.",
+		"quarantine_status": "This deferral allocated and mutated nothing, acquired no lease or lock, opened no provider-write or restoration journal, performed no browser or provider run, and created no quarantine. The existing separately owned listener is a later independent blocker and remains untouched."
+	}
+}
