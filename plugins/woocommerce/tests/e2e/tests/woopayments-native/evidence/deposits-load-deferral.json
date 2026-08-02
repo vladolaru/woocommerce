@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "deposits-load-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "91b1f0fe9cc1279a8fe439c26d2073161ace3b05",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-admin-deposits.spec.ts:11::Merchant deposits › Load the deposits list page"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/payouts-disputes-smoke.spec.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved this exact line-11 blocked-environment deferral and its four-field-only transition, strict separation from line 28, retained manage_woocommerce authorization and semantic navigation, awaited heading, successful same-account list and summary reads, loaded-or-empty terminal state with no protected-route or data error, frozen false-positive rejection, earliest native-readiness blocker, later read-only prerequisites, pending owner and target preservation, lower-layer non-substitution, shared-target bundle-drift handling, listener irrelevance, calibration bundle, predecessor binding, and zero quarantine."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing native ownership, account, and callback readiness fails first. The run also lacks a resolved exact target contract and implementation owner, authenticated merchant state and a connected test-mode account under native ownership, stable semantic navigation and terminal-state locators, and an approved one-worker zero-retry native read-only execution path.",
+		"affected_scope": "Only the exact line-11 payout-history load observation: an authenticated merchant with manage_woocommerce reaches the native payout-history surface through semantic product navigation; awaits the accessible Payout history heading; observes the payout-list and payout-summary requests both settle successfully for the same connected account; and reaches a semantic loaded-or-empty terminal state without a protected-route, capability, migration/runtime, fetch, alert, or page-exception failure. Every assertion is awaited. No payout count, amount, currency, status, schedule, provider identity, filter behavior, or reconciliation is claimed.",
+		"no_allowlisted_action_reason": "No allowlisted action can repair standing native readiness, assign the unresolved target owner or exact contract, provide the exact authenticated connected native fixture, or establish the complete semantic browser observation. Existing route, mocked component/data, query, REST-controller, and API-client tests prove useful pieces but cannot substitute for the assembled authenticated native admin route, built assets, connected list and summary reads, and terminal browser state. The frozen plugin route, loading CSS class, and un-awaited heading assertion are not durable proof, and line 28's separate filter contract cannot be inherited.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally provide a standing store that passes the existing native ownership, account, and callback readiness gate; resolve the concrete owner and exact target contract; and provide authenticated merchant state with a connected test-mode account. Then execute one zero-retry read-only observation with one worker through semantic native navigation, await the Payout history heading, require both list and summary reads to succeed for the same account, and require a loaded-or-empty terminal state with no protected-route or data error. Before eventual closure, resolve the shared provisional target's bundle-drift risk by completing all intended shared-file edits or assigning a row-specific target under an authorized specification decision.",
+		"quarantine_status": "This deferral allocated and mutated nothing, acquired no lease or lock, opened no provider-write or restoration journal, performed no browser or provider run, and created no quarantine. The existing separately owned listener is irrelevant to this connected-read contract and remains untouched."
+	}
+}
