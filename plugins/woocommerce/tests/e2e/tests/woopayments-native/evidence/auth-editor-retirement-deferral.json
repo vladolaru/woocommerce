@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "auth-editor-retirement-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "1c6d1e7dcb18b20eca644cd5047b9b9774812dc8",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::setup::tests/e2e/specs/auth.setup.ts:112::authenticate as editor"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/fixtures/auth.setup.ts;plugins/woocommerce/tests/e2e/tests/basic/dashboard-access.spec.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved evidence SHA 846197e726525277072ba1f9a9eef5db3ef8427c71f62125fb3c8e29a0813099 against ledger SHA 9648d50d5fec58c53252ba1416fe7a5a89e59dd5fa1bb8d4d6980dc32ed4f3c0: exactly the editor-authentication setup row moves through the four permitted fields from planned/not-assessed to deferred/ambiguous-decision under ambiguous-decision:PILOT-RETIREMENT-AUTHORITY. Its accepted disposition remains pending; the composite target path, pending target contract, and owner-decision-required remain unchanged; and no retirement is asserted. Explicit human disposition and editor-session ownership authority is correctly primary, with Core/native readiness secondary. Administrator, customer, lower-layer capability, and still-open editor role-access coverage do not substitute for this decision. The evidence binds the canonical calibration bundle, claims no runtime/resource/quarantine activity, and records the exact smallest unlock: either approve retirement of only this setup row while assigning fresh editor-session proof to a concrete retained role-access target, or retain the standalone contract and approve its exact target and owner, then resolve the applicable runtime readiness."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Retiring this standalone editor-authentication setup row requires explicit human disposition authority and a decision that the separate retained editor role-access contract will own fresh editor-session creation and verification.",
+		"affected_scope": "Only the exact editor authentication setup row. Administrator and customer setup remain separate, and the retained editor Dashboard-plus-payments-denial contracts are neither retired nor closed by this decision request.",
+		"no_allowlisted_action_reason": "The autonomous run cannot mint retirement approval, decide which retained role-access row owns editor session creation, or reinterpret customer dashboard denial and lower-layer capability tests as real editor browser proof. Current Core and native environment blockers are secondary to that authority decision.",
+		"reference": "ambiguous-decision:PILOT-RETIREMENT-AUTHORITY",
+		"unlock_decision": "Explicitly approve retirement of only this setup row and assign fresh editor-session creation to a concrete retained editor role-access target, or retain the standalone authentication contract and approve its exact target contract and owner. Then resolve the relevant Core/native runtime readiness before executing the chosen retained behavior.",
+		"quarantine_status": "No browser state, credentials, account, store, provider record, listener, lock, journal, or quarantine was created or changed for this row. The separately owned listener remains untouched."
+	}
+}
