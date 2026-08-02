@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "multi-currency-onboarding-empty-selection-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "9957a0f93dc64ffd4daf642ce9c358e93ad68e1b",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-on-boarding.spec.ts:59::Multi-currency on-boarding › Currency selection and management › should disable the submit button when no currencies are selected"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/onboarding.spec.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved evidence SHA 3467aa6eb139c08f04fa79ea1e14ec487fabe3a5620457b3921c96b010355bcb against ledger SHA 086c3643d62ce25be392380a3db3892b28aa21de7a74dbf8cdef50c6e3ae7e42: the sole ledger change correctly defers the source line-59 empty-selection contract for product/target authority, preserves its pending disposition and target plus unresolved ownership, leaves rows 86, 110, and 125 untouched, accurately treats native readiness as secondary, and records the required no-op, accessibility, restoration, locking, journaling, and quarantine boundaries without substituting lower-layer coverage."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Product and target authority has not decided whether native Core should add a dedicated add-currencies onboarding task, pair this guard with another onboarding acceptance surface, or retire the client-only task. Core's existing management modal intentionally permits a default-only submission so merchants can remove every additional currency; disabling that action would change valid behavior rather than fix an established defect. The exact target contract and owner remain pending, and standing native readiness is a secondary execution blocker.",
+		"affected_scope": "Only the exact dedicated onboarding no-selection guard: with exactly the store default currency enabled and zero additional currencies selected, the semantic add-currencies completion control is disabled, so the bounded interval produces zero onboarding completion, currency-settings request, option write, rate/cache side effect, or provider effect. Client route, viewport, checkbox selectors, wizard hierarchy, and literal button copy are adapter details. Core's default-only management submission and the adjacent multi-selection, already-enabled exclusion, and suggestion-ordering contracts remain separate.",
+		"no_allowlisted_action_reason": "The run cannot autonomously invent a new native onboarding task, reinterpret a management action whose default-only submission intentionally removes additional currencies, pair the contract elsewhere, or retire it. It also cannot resolve the pending owner/target contract or bypass native readiness. Existing component, REST, and persistence tests describe the management surface but cannot choose product semantics or substitute for the approved authenticated browser contract. No provider writer or listener can resolve this decision.",
+		"reference": "ambiguous-decision:PILOT-MULTI-CURRENCY-ONBOARDING-AUTHORITY",
+		"unlock_decision": "Approve whether native Core owns a dedicated add-currencies onboarding task, an explicitly paired equivalent, or retirement of this client-only guard, and name the exact target contract and owner; externally satisfy native readiness; provide a reversible default-only currency baseline under ordered account, store, and currency-settings ownership with complete raw snapshots and a pre-write restoration journal if setup writes are required; implement the approved semantic no-selection boundary and zero-update oracle; then run once with one worker and zero retries and obtain fresh code, E2E-test, reliability, and accessibility reviews.",
+		"quarantine_status": "No browser context, account, store, currency setting, lock, journal, provider object, listener, environment, retention record, or quarantine was created or changed for this row. A future ambiguous currency request, raw-byte divergence, lost ownership, or uncertain restoration must preserve the request/restoration evidence and quarantine the exact store and currency-settings resources; no financial or provider resource belongs to this contract."
+	}
+}
