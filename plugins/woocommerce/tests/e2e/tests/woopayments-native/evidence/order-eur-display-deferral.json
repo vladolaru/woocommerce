@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "order-eur-display-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "b605af5110e333d647eb5715934637f2194db4ae",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-multi-currency.spec.ts:54::Admin Multi-Currency Orders › order should display in shopper currency"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/multi-currency.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved the exact line-54 blocked-environment deferral and four-field-only transition, strict separation from transaction conversion and refund rows, fresh exact EUR product/shopper/order/intent/charge/balance identities, one captured occurrence, exact WooCommerce paid and line amounts, matching order/intent/charge EUR currency and provider minor units, semantic merchant-admin exact EUR display, rejected DOM/symbol-only/plugin coupling, option-existence and byte-exact feature/currency/rate/gateway/session restoration, isolated shopper and wcpay currency cleanup, protected allocation and exclusive listener gates, ordered locks, checkout journal, one worker and zero retries with no replay, bounded reads, retained records, local/context cleanup and quarantine, exact shared-target preservation and drift handling, predecessor/calibration binding, PILOT-first prerequisite order, no native-defect claim, zero current inventory, and the separately owned listener remaining unavailable and untouched."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing exact-store, account, and callback native readiness fails first. The run also lacks a resolved row-safe target contract and owner; an approved deterministic USD-store/EUR-shopper order-conversion and rate oracle; protected provider allocation and one exclusively owned listener; exact account, store, feature/currency/rate/setting, provider-write, and financial-record locks; a durable checkout journal; bounded identity/provider/event/order/UI reads; option-existence plus byte-exact global and shopper-session restoration; and approved retained-record, local/context cleanup, and quarantine handling.",
+		"affected_scope": "Only line 54 EUR merchant-order display: one fresh run-owned product and isolated shopper create unique order O1, intent PI1, charge C1, and balance transaction BT1 with exactly one successful captured EUR payment; exact dynamic WooCommerce paid total and item amounts, O1 currency EUR, PI1/C1 currency EUR, and provider minor units equal the WC paid total; an authenticated authorized merchant semantically opens O1 and sees every relevant item and total as the same exact values with explicit EUR. It claims no transaction-detail shopper currency, settlement conversion/fee, refund, refunded timeline, classic order route, #woocommerce-order-items, price CSS, symbol-only oracle, or plugin checkout helper.",
+		"no_allowlisted_action_reason": "No allowlisted action can repair standing native readiness, resolve the shared target/owner topology, approve deterministic order and rate semantics, allocate the protected provider lane, establish exclusive listener attribution, or approve exact locks, journal, byte-restoration, retained-record, cleanup, and quarantine controls. Lower settings/pricing/rate/block tests cannot substitute for one exact provider-backed EUR payment and merchant order-admin amount/currency crossing. No bounded line-54 native defect is known before prerequisites and exact-target RED. Replaying checkout after dispatch to erase uncertainty is forbidden.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally provide successful exact-store/account/callback native readiness; resolve a row-safe target and owner; approve deterministic USD/EUR order-conversion and rate semantics, protected allocation, and retained-record policy; obtain one exclusively owned listener; then run once with one worker and zero retries under ordered account/store/feature/currency/rate/setting/provider-write/record locks, one pre-dispatch checkout journal, exact one-occurrence identities/amount/currency/event/order/UI correlation, isolated shopper session, no replay, bounded convergence, byte-exact restoration, safe local/context cleanup, and fail-closed quarantine. Use row-specific targets or explicitly reopen/re-close after shared-target drift.",
+		"quarantine_status": "This deferral allocated and mutated nothing, acquired no lease, lock, setting, shopper session, journal, browser, provider record, or quarantine, and consumed no provider capacity. Campaign inventory remains zero for active leases, transition workspaces, open provider/restoration journals, quarantine receipts/events, and stale recoveries. The existing separately owned listener remains present, unavailable, and untouched. Any uncertain eventual checkout, event, restoration, session cleanup, local cleanup, lock, listener, or attribution state must preserve journals, quarantine affected resources, and must not be replayed."
+	}
+}
