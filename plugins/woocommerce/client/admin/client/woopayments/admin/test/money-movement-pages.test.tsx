@@ -634,6 +634,145 @@ describe( 'WooPayments money movement pages', () => {
 		expect( summary.querySelector( 'img' ) ).toBeNull();
 	} );
 
+	it( 'prefers each usable balance field and currency over conflicting flat settlement values', () => {
+		render(
+			<WooPaymentsPaymentSummarySection
+				transaction={ {
+					status: 'succeeded',
+					amount: 5000,
+					currency: 'eur',
+					fee: 999,
+					net: 4999,
+					balance_transaction: {
+						id: 'txn_fx',
+						amount: 5532,
+						fee: 180,
+						currency: 'usd',
+					},
+				} }
+			/>
+		);
+
+		const summary = screen
+			.getByRole( 'heading', { name: 'Summary' } )
+			.closest( 'section' ) as HTMLElement;
+		expect(
+			within( summary ).getByText( 'Converted amount: $55.32 USD' )
+		).toBeInTheDocument();
+		expect(
+			within( summary ).getByText( 'Fees: -$1.80 USD' )
+		).toBeInTheDocument();
+		expect(
+			within( summary ).getByText( 'Net: €49.99' )
+		).toBeInTheDocument();
+	} );
+
+	it( 'resolves settlement fields independently and keeps refunds in charge currency', () => {
+		render(
+			<WooPaymentsPaymentSummarySection
+				transaction={ {
+					status: 'partially_refunded',
+					amount: 5000,
+					amount_refunded: 1000,
+					currency: 'eur',
+					fee: 125,
+					net: 4999,
+					balance_transaction: {
+						id: 'txn_fx_net',
+						amount: 5532,
+						net: 5352,
+						currency: 'usd',
+					},
+				} }
+			/>
+		);
+
+		const summary = screen
+			.getByRole( 'heading', { name: 'Summary' } )
+			.closest( 'section' ) as HTMLElement;
+		expect(
+			within( summary ).getByText( 'Converted amount: $55.32 USD' )
+		).toBeInTheDocument();
+		expect(
+			within( summary ).getByText( 'Refunded: -€10.00' )
+		).toBeInTheDocument();
+		expect(
+			within( summary ).getByText( 'Fees: -€1.25' )
+		).toBeInTheDocument();
+		expect(
+			within( summary ).getByText( 'Net: $53.52 USD' )
+		).toBeInTheDocument();
+	} );
+
+	it( 'keeps same-currency settlement output unchanged', () => {
+		render(
+			<WooPaymentsPaymentSummarySection
+				transaction={ {
+					status: 'succeeded',
+					amount: 5000,
+					currency: 'usd',
+					fee: 180,
+					net: 4820,
+					balance_transaction: {
+						id: 'txn_usd',
+						amount: 5000,
+						fee: 180,
+						net: 4820,
+						currency: 'usd',
+					},
+				} }
+			/>
+		);
+
+		const summary = screen
+			.getByRole( 'heading', { name: 'Summary' } )
+			.closest( 'section' ) as HTMLElement;
+		expect(
+			within( summary ).queryByText( /Converted amount:/ )
+		).not.toBeInTheDocument();
+		expect(
+			within( summary ).getByText( 'Fees: -$1.80' )
+		).toBeInTheDocument();
+		expect(
+			within( summary ).getByText( 'Net: $48.20' )
+		).toBeInTheDocument();
+	} );
+
+	it.each( [
+		[ 'an id', 'txn_legacy' ],
+		[ 'no balance transaction', undefined ],
+		[
+			'an object without currency',
+			{ id: 'txn_incomplete', amount: 5532, fee: 180, net: 5352 },
+		],
+	] )( 'uses flat charge-currency fallbacks for %s', ( _case, balance ) => {
+		render(
+			<WooPaymentsPaymentSummarySection
+				transaction={ {
+					status: 'succeeded',
+					amount: 5000,
+					currency: 'eur',
+					fee: 180,
+					net: 4820,
+					balance_transaction: balance,
+				} }
+			/>
+		);
+
+		const summary = screen
+			.getByRole( 'heading', { name: 'Summary' } )
+			.closest( 'section' ) as HTMLElement;
+		expect(
+			within( summary ).queryByText( /Converted amount:/ )
+		).not.toBeInTheDocument();
+		expect(
+			within( summary ).getByText( 'Fees: -€1.80' )
+		).toBeInTheDocument();
+		expect(
+			within( summary ).getByText( 'Net: €48.20' )
+		).toBeInTheDocument();
+	} );
+
 	afterEach( () => {
 		mockHistoryNavigate = null;
 		anchorClickSpy.mockRestore();
@@ -2449,6 +2588,111 @@ describe( 'WooPayments money movement pages', () => {
 		expect( await screen.findByRole( 'alert' ) ).toHaveTextContent(
 			'Readers details not loaded. The request timed out.'
 		);
+	} );
+
+	it( 'renders charge gross in shopper currency and settlement amounts in balance currency', async () => {
+		mockGetPaymentIntent.mockResolvedValue( {
+			id: 'pi_fx',
+			status: 'succeeded',
+			amount: 5000,
+			currency: 'eur',
+			charge: {
+				id: 'ch_fx',
+				payment_intent: 'pi_fx',
+				type: 'charge',
+				amount: 5000,
+				currency: 'eur',
+				balance_transaction: {
+					id: 'txn_fx',
+					amount: 5532,
+					fee: 180,
+					net: 5352,
+					currency: 'usd',
+				},
+			},
+		} );
+		mockGetTimeline.mockResolvedValue( { data: [] } );
+
+		render(
+			<MemoryRouter
+				initialEntries={ [
+					'/woopayments/transactions/details?id=pi_fx&transaction_id=txn_fx',
+				] }
+			>
+				<WooPaymentsTransactionDetailsPage />
+			</MemoryRouter>
+		);
+
+		expect(
+			await screen.findByRole( 'heading', { name: 'Payment details' } )
+		).toBeInTheDocument();
+
+		const summary = screen
+			.getByRole( 'heading', { name: 'Summary' } )
+			.closest( 'section' ) as HTMLElement;
+		expect( within( summary ).getByText( '€50.00' ) ).toBeInTheDocument();
+		expect( within( summary ).getByText( 'EUR' ) ).toBeInTheDocument();
+		expect(
+			within( summary ).getByText( 'Converted amount: $55.32 USD' )
+		).toBeInTheDocument();
+		expect(
+			within( summary ).getByText( 'Fees: -$1.80 USD' )
+		).toBeInTheDocument();
+		expect(
+			within( summary ).getByText( 'Net: $53.52 USD' )
+		).toBeInTheDocument();
+	} );
+
+	it( 'omits settlement amounts when the balance currency is missing', async () => {
+		mockGetPaymentIntent.mockResolvedValue( {
+			id: 'pi_incomplete_balance',
+			status: 'succeeded',
+			amount: 5000,
+			currency: 'eur',
+			charge: {
+				id: 'ch_incomplete_balance',
+				payment_intent: 'pi_incomplete_balance',
+				type: 'charge',
+				amount: 5000,
+				currency: 'eur',
+				balance_transaction: {
+					id: 'txn_incomplete_balance',
+					amount: 5532,
+					fee: 180,
+					net: 5352,
+				},
+			},
+		} );
+		mockGetTimeline.mockResolvedValue( { data: [] } );
+
+		render(
+			<MemoryRouter
+				initialEntries={ [
+					'/woopayments/transactions/details?id=pi_incomplete_balance&transaction_id=txn_incomplete_balance',
+				] }
+			>
+				<WooPaymentsTransactionDetailsPage />
+			</MemoryRouter>
+		);
+
+		expect(
+			await screen.findByRole( 'heading', { name: 'Payment details' } )
+		).toBeInTheDocument();
+
+		const summary = screen
+			.getByRole( 'heading', { name: 'Summary' } )
+			.closest( 'section' ) as HTMLElement;
+		expect( within( summary ).getByText( '€50.00' ) ).toBeInTheDocument();
+		expect( within( summary ).getByText( 'EUR' ) ).toBeInTheDocument();
+		expect(
+			within( summary ).queryByText( /Converted amount:/ )
+		).not.toBeInTheDocument();
+		expect(
+			within( summary ).queryByText( /Fees:/ )
+		).not.toBeInTheDocument();
+		expect(
+			within( summary ).queryByText( /Net:/ )
+		).not.toBeInTheDocument();
 	} );
 
 	it( 'loads payment intent details when the route id is a payment intent', async () => {

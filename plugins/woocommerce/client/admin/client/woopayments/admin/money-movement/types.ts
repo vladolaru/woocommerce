@@ -162,6 +162,7 @@ export interface WooPaymentsPaymentIntent {
 
 export interface WooPaymentsBalanceTransaction {
 	id?: string;
+	amount?: number;
 	fee?: number;
 	net?: number;
 	currency?: string;

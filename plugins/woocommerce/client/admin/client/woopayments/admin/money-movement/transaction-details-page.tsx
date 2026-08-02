@@ -110,6 +110,8 @@ const getBalanceTransactionAmount = (
 	if (
 		balanceTransaction &&
 		typeof balanceTransaction === 'object' &&
+		typeof balanceTransaction.currency === 'string' &&
+		balanceTransaction.currency.trim() &&
 		typeof balanceTransaction[ key ] === 'number'
 	) {
 		return balanceTransaction[ key ];

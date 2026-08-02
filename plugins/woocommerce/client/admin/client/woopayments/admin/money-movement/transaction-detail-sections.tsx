@@ -547,6 +547,18 @@ const StackedLines = ( { lines }: { lines: ReactNode[] } ) => {
 const getTransactionFee = ( transaction: WooPaymentsTransaction ) =>
 	transaction.fee ?? transaction.application_fee_amount;
 
+const formatPaymentSummaryAmount = (
+	amount: number | undefined,
+	currency: string | undefined,
+	showCurrencyCode: boolean
+) => {
+	const formattedAmount = formatAmount( amount, currency );
+
+	return showCurrencyCode && currency
+		? `${ formattedAmount } ${ currency.toUpperCase() }`
+		: formattedAmount;
+};
+
 const disputeStatusLabels: Record< string, string > = {
 	warning_needs_response: __( 'Inquiry: Response needed', 'woocommerce' ),
 	warning_under_review: __( 'Inquiry: Under review', 'woocommerce' ),
@@ -631,7 +643,30 @@ export const WooPaymentsPaymentSummarySection = ( {
 	transaction: WooPaymentsTransaction;
 } ) => {
 	const paymentMethodLabel = getPaymentMethodLabel( transaction );
-	const fee = getTransactionFee( transaction );
+	const balanceTransaction =
+		transaction.balance_transaction &&
+		typeof transaction.balance_transaction === 'object' &&
+		typeof transaction.balance_transaction.currency === 'string' &&
+		transaction.balance_transaction.currency.trim()
+			? transaction.balance_transaction
+			: undefined;
+	const balanceCurrency = balanceTransaction?.currency;
+	const hasDifferentBalanceCurrency = !! (
+		balanceCurrency &&
+		transaction.currency &&
+		balanceCurrency.toLowerCase() !== transaction.currency.toLowerCase()
+	);
+	const feeFromBalance = typeof balanceTransaction?.fee === 'number';
+	const fee = feeFromBalance
+		? balanceTransaction.fee
+		: getTransactionFee( transaction );
+	const feeCurrency = feeFromBalance ? balanceCurrency : transaction.currency;
+	const netFromBalance = typeof balanceTransaction?.net === 'number';
+	const net = netFromBalance ? balanceTransaction.net : transaction.net;
+	const netCurrency = netFromBalance ? balanceCurrency : transaction.currency;
+	const hasConvertedAmount =
+		hasDifferentBalanceCurrency &&
+		typeof balanceTransaction?.amount === 'number';
 	const hasRefundedAmount =
 		typeof transaction.amount_refunded === 'number' &&
 		transaction.amount_refunded > 0;
@@ -665,6 +700,19 @@ export const WooPaymentsPaymentSummarySection = ( {
 				) }
 			</div>
 			<div className="woocommerce-woopayments-money-movement__summary-breakdown">
+				{ hasConvertedAmount && (
+					<span>
+						{ sprintf(
+							/* translators: %s: formatted converted settlement amount. */
+							__( 'Converted amount: %s', 'woocommerce' ),
+							formatPaymentSummaryAmount(
+								balanceTransaction.amount,
+								balanceCurrency,
+								true
+							)
+						) }
+					</span>
+				) }
 				{ hasRefundedAmount && (
 					<span>
 						{ sprintf(
@@ -684,21 +732,23 @@ export const WooPaymentsPaymentSummarySection = ( {
 						{ sprintf(
 							/* translators: %s: formatted fee amount. */
 							__( 'Fees: %s', 'woocommerce' ),
-							formatAmount(
+							formatPaymentSummaryAmount(
 								-Math.abs( Number( fee ) ),
-								transaction.currency
+								feeCurrency,
+								feeFromBalance && hasDifferentBalanceCurrency
 							)
 						) }
 					</span>
 				) }
-				{ hasDisplayValue( transaction.net ) && (
+				{ hasDisplayValue( net ) && (
 					<span>
 						{ sprintf(
 							/* translators: %s: formatted net amount. */
 							__( 'Net: %s', 'woocommerce' ),
-							formatAmount(
-								transaction.net,
-								transaction.currency
+							formatPaymentSummaryAmount(
+								net,
+								netCurrency,
+								netFromBalance && hasDifferentBalanceCurrency
 							)
 						) }
 					</span>
@@ -756,18 +806,20 @@ export const WooPaymentsPaymentSummarySection = ( {
 				{ hasDisplayValue( fee ) && (
 					<DetailRow
 						label={ __( 'Fee', 'woocommerce' ) }
-						value={ formatAmount(
+						value={ formatPaymentSummaryAmount(
 							Number( fee ),
-							transaction.currency
+							feeCurrency,
+							feeFromBalance && hasDifferentBalanceCurrency
 						) }
 					/>
 				) }
-				{ hasDisplayValue( transaction.net ) && (
+				{ hasDisplayValue( net ) && (
 					<DetailRow
 						label={ __( 'Net amount', 'woocommerce' ) }
-						value={ formatAmount(
-							transaction.net,
-							transaction.currency
+						value={ formatPaymentSummaryAmount(
+							net,
+							netCurrency,
+							netFromBalance && hasDifferentBalanceCurrency
 						) }
 					/>
 				) }
