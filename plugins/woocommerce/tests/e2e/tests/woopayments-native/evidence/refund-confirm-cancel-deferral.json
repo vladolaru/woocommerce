@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "refund-confirm-cancel-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "d9cc3bbfd099ba0bf690e1b96e88d7ae84eb1488",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-status-change.spec.ts:116::Order › Status Change › Change Status of order to Refunded › Show Refund Confirmation modal, do not change status if Cancel clicked"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/refund.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved evidence SHA c0824fd8a41bf9cb34747dba3dc62f336cac4314034645e79217ddb8b5579829 against ledger SHA 84dcb6bda1074987ef91773657b14dc40ad8af24005fb34449c95c0879e5948c: exactly the dismissed full-refund confirmation row moves through the four permitted fields from planned/not-assessed to deferred/blocked-environment under blocked-environment:PILOT-NATIVE-READINESS, while its pending accepted disposition, absent provisional target, pending target contract, unresolved owner, cancellation siblings, and affirmative-refund row remain unchanged. The retained contract requires an accessible semantic cancel branch, restored and persisted Processing, the complete refundable balance, unchanged local order/payment identities and captured provider intent/charge, and zero refund request, native REST call, gateway invocation, provider write, or refund event dispatch. The client cancel handler restores status and closes the modal without entering the affirmative AJAX path; Core's standard refund confirmation has the same pre-dispatch cancel boundary and is therefore a plausible thin adapter, not evidence of a native defect or known-gap. Financial semantics are explicit, while the target/owner/topology choice is correctly recorded as an unlock without misclassifying the row as ambiguous-decision. Native readiness is primary and Core readiness secondary. The evidence preserves the affirmative mutation boundary, addresses shared-target drift, and records protected allocation, exclusive listener attribution, ordered locks, one checkout journal, no replay, explicit zero-attempt observation, byte-exact restoration, retained unchanged financial evidence, safe cleanup, quarantine, one worker, and zero retries while truthfully claiming zero current resources or quarantine."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing-native readiness fails before account, callback, fixture, or browser work; the provisional scenario target is absent; and the exact native confirmation adapter target contract and owner remain pending. Core's standard refund confirmation is a plausible adapter, so no production defect is established before an approved target can run.",
+		"affected_scope": "Only the exact dismissed full-refund confirmation contract: an accessible confirmation distinguishes cancellation from refunding the displayed full amount; one semantic cancel restores and persists Processing; the complete refundable balance, local order/payment identities, captured provider intent/charge, and zero-refund state remain unchanged; and no refund request, gateway call, provider write, or refund event begins. The affirmative full refund remains separate.",
+		"no_allowlisted_action_reason": "The run cannot enable native ownership, establish account/callback readiness, repair shared Core E2E sites, allocate an unapproved provider lane, invent the pending row-specific target or owner, or decide whether the approved thin adapter uses Core's standard refund UI or requires a status-selector shortcut. Existing affirmative-refund, validation, effect, event, and generic order tests do not prove the accessible cancel branch plus zero-dispatch join.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy native and Core E2E readiness and allocate an exclusive provider/listener interval; approve a drift-safe row-specific target, owner, and thin-adapter topology; add lower-layer accessible confirmation, original-status restoration, and zero-refund-dispatch RED/GREEN coverage; provision one exact captured order with ordered locks, one checkout journal, zero replay, explicit zero-attempt observation, byte-exact setting restoration, retained unchanged financial evidence, safe cleanup, and quarantine controls; then run once with one worker and zero retries and obtain fresh required reviews.",
+		"quarantine_status": "No browser context, account, store, order, product, payment, provider record, listener, lock, journal, setting, retention record, or quarantine was created or changed for this row. The separately owned listener remains untouched."
+	}
+}
