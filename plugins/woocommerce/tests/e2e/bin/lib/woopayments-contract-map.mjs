@@ -165,6 +165,18 @@ const FUTURE_ONLY_DISPOSITIONS = new Set( [
 ] );
 const NATIVE_TESTS_ROOT =
 	'plugins/woocommerce/tests/e2e/tests/woopayments-native';
+const CORRECTED_REFUND_LOWER_LAYER_TARGET =
+	'plugins/woocommerce/tests/php/includes/class-wc-ajax-test.php';
+const CORRECTED_LOWER_LAYER_TARGETS_BY_CASE_ID = new Map(
+	[
+		'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid quantity › should fail refund attempt when quantity is greater than maximum',
+		'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid quantity › should fail refund attempt when quantity is negative',
+		'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid refund amount in line item › should fail refund attempt when refund amount in line item is greater than maximum',
+		'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid refund amount in line item › should fail refund attempt when refund amount in line item is negative',
+		'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid total refund amount › should fail refund attempt when total refund amount is greater than maximum',
+		'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid total refund amount › should fail refund attempt when total refund amount is negative',
+	].map( ( caseId ) => [ caseId, CORRECTED_REFUND_LOWER_LAYER_TARGET ] )
+);
 const APPROVED_FUTURE_TARGET_DISPOSITIONS = new Map( [
 	[
 		`${ NATIVE_TESTS_ROOT }/pilots/shopper-card-payment.spec.ts`,
@@ -429,6 +441,8 @@ const assertCompatibleTargets = ( row, repositoryRoot, realRepositoryRoot ) => {
 	const lowerLayerPaths = new Set(
 		splitPaths( row, 'native_lower_layer_context' )
 	);
+	const correctedLowerLayerTarget =
+		CORRECTED_LOWER_LAYER_TARGETS_BY_CASE_ID.get( row.case_id );
 	let retainedEvidenceCount = 0;
 	let approvedFutureTargetCount = 0;
 
@@ -456,9 +470,12 @@ const assertCompatibleTargets = ( row, repositoryRoot, realRepositoryRoot ) => {
 			continue;
 		}
 
-		if ( ! lowerLayerPaths.has( targetPath ) ) {
+		if (
+			! lowerLayerPaths.has( targetPath ) &&
+			targetPath !== correctedLowerLayerTarget
+		) {
 			throw new Error(
-				`target_path is neither an approved future target nor source-named lower-layer evidence for ${ row.case_id }: ${ targetPath }`
+				`target_path is neither an approved future target nor approved lower-layer evidence for ${ row.case_id }: ${ targetPath }`
 			);
 		}
 

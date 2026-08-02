@@ -127,6 +127,29 @@ const canonicalAnnotationPath = ( file, packageDirectory ) =>
 const canonicalLedgerTargetPath = ( file, packageDirectory ) =>
 	resolve( packageDirectory, '../..', file );
 
+const annotationTargetPathForRow = ( row ) => {
+	const targetPaths = row.target_path.split( ';' );
+
+	if ( targetPaths.length === 1 ) {
+		return targetPaths[ 0 ];
+	}
+
+	const wooPaymentsNativeE2eSpecs = targetPaths.filter(
+		( targetPath ) =>
+			targetPath.startsWith(
+				'plugins/woocommerce/tests/e2e/tests/woopayments-native/'
+			) && targetPath.endsWith( '.spec.ts' )
+	);
+
+	if ( wooPaymentsNativeE2eSpecs.length !== 1 ) {
+		throw new Error(
+			`Terminal multi-target ledger contract must contain exactly one WooPayments-native E2E spec target: ${ row.case_id }`
+		);
+	}
+
+	return wooPaymentsNativeE2eSpecs[ 0 ];
+};
+
 export const validateContractAnnotationBindings = (
 	ledgerRows,
 	annotationRecords,
@@ -176,7 +199,10 @@ export const validateContractAnnotationBindings = (
 		}
 		if (
 			canonicalAnnotationPath( record.file, packageDirectory ) !==
-			canonicalLedgerTargetPath( row.target_path, packageDirectory )
+			canonicalLedgerTargetPath(
+				annotationTargetPathForRow( row ),
+				packageDirectory
+			)
 		) {
 			throw new Error(
 				`Terminal ledger contract annotation has the wrong target file: ${ row.case_id }`

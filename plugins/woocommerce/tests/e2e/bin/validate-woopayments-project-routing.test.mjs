@@ -31,6 +31,18 @@ const validAnnotationRecord = {
 	],
 	title: terminalRow.target_contract,
 };
+const correctedRefundLowerLayerTarget =
+	'plugins/woocommerce/tests/php/includes/class-wc-ajax-test.php';
+const refundValidationSmokeTarget =
+	'plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/orders-refunds.spec.ts';
+const multiTargetTerminalRow = {
+	...terminalRow,
+	target_path: `${ correctedRefundLowerLayerTarget };${ refundValidationSmokeTarget }`,
+};
+const validMultiTargetAnnotationRecord = {
+	...validAnnotationRecord,
+	file: 'woopayments-native/merchant/orders-refunds.spec.ts',
+};
 
 const validateSyntheticBindings = ( rows, annotations ) =>
 	projectRouting.validateContractAnnotationBindings(
@@ -111,6 +123,63 @@ test( 'terminal annotations must name the exact target file', () => {
 					file: 'woopayments-native/pilots/unrelated.spec.ts',
 				},
 			] ),
+		/Terminal ledger contract annotation has the wrong target file: synthetic-terminal-contract/
+	);
+} );
+
+test( 'a multi-target terminal row binds its annotation to its sole WooPayments-native E2E spec', () => {
+	assert.doesNotThrow( () =>
+		validateSyntheticBindings(
+			[ multiTargetTerminalRow ],
+			[ validMultiTargetAnnotationRecord ]
+		)
+	);
+} );
+
+test( 'a multi-target terminal row rejects zero WooPayments-native E2E specs', () => {
+	const row = {
+		...multiTargetTerminalRow,
+		target_path: `${ correctedRefundLowerLayerTarget };plugins/woocommerce/tests/php/includes/class-wc-cart-test.php`,
+	};
+
+	assert.throws(
+		() =>
+			validateSyntheticBindings(
+				[ row ],
+				[ validMultiTargetAnnotationRecord ]
+			),
+		/Terminal multi-target ledger contract must contain exactly one WooPayments-native E2E spec target: synthetic-terminal-contract/
+	);
+} );
+
+test( 'a multi-target terminal row rejects multiple WooPayments-native E2E specs', () => {
+	const row = {
+		...multiTargetTerminalRow,
+		target_path: `${ multiTargetTerminalRow.target_path };plugins/woocommerce/tests/e2e/tests/woopayments-native/pilots/synthetic-transition.spec.ts`,
+	};
+
+	assert.throws(
+		() =>
+			validateSyntheticBindings(
+				[ row ],
+				[ validMultiTargetAnnotationRecord ]
+			),
+		/Terminal multi-target ledger contract must contain exactly one WooPayments-native E2E spec target: synthetic-terminal-contract/
+	);
+} );
+
+test( 'a multi-target terminal row rejects an annotation from an unrelated spec', () => {
+	assert.throws(
+		() =>
+			validateSyntheticBindings(
+				[ multiTargetTerminalRow ],
+				[
+					{
+						...validMultiTargetAnnotationRecord,
+						file: 'woopayments-native/merchant/unrelated.spec.ts',
+					},
+				]
+			),
 		/Terminal ledger contract annotation has the wrong target file: synthetic-terminal-contract/
 	);
 } );

@@ -50,6 +50,18 @@ const metadataPath = resolve(
 const metadata = JSON.parse( readFileSync( metadataPath, 'utf8' ) );
 const ledgerContent = readFileSync( ledgerPath, 'utf8' );
 const contractMap = parseContractMap( ledgerContent );
+const correctedRefundLowerLayerTarget =
+	'plugins/woocommerce/tests/php/includes/class-wc-ajax-test.php';
+const refundValidationSmokeTarget =
+	'plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/orders-refunds.spec.ts';
+const refundValidationCaseIds = [
+	'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid quantity › should fail refund attempt when quantity is greater than maximum',
+	'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid quantity › should fail refund attempt when quantity is negative',
+	'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid refund amount in line item › should fail refund attempt when refund amount in line item is greater than maximum',
+	'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid refund amount in line item › should fail refund attempt when refund amount in line item is negative',
+	'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid total refund amount › should fail refund attempt when total refund amount is greater than maximum',
+	'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid total refund amount › should fail refund attempt when total refund amount is negative',
+];
 const currentCommit = execFileSync(
 	'git',
 	[ '-C', repositoryRoot, 'rev-parse', 'HEAD' ],
@@ -449,6 +461,130 @@ const specify = ( row ) => {
 	row.gap_or_decision_reference = 'none';
 	row.evidence_path = 'none';
 };
+
+const specifyRefundValidationRows = ( map, targetPath ) =>
+	refundValidationCaseIds.map( ( caseId ) => {
+		const row = map.rows.find(
+			( candidate ) => candidate.case_id === caseId
+		);
+
+		assert.notEqual( row, undefined );
+		specify( row );
+		row.target_path = targetPath;
+		return row;
+	} );
+
+test( 'accepts the corrected AJAX lower-layer target for the six refund-validation contracts', () => {
+	const map = cloneContractMap();
+
+	specifyRefundValidationRows(
+		map,
+		`${ correctedRefundLowerLayerTarget };${ refundValidationSmokeTarget }`
+	);
+
+	assert.doesNotThrow( () => validate( map ) );
+} );
+
+test( 'counts the corrected refund target as lower-layer evidence rather than a future smoke', () => {
+	const map = cloneContractMap();
+	const row = map.rows.find(
+		( candidate ) => candidate.case_id === refundValidationCaseIds[ 0 ]
+	);
+
+	assert.notEqual( row, undefined );
+	const [ sourceNamedLowerLayerTarget ] =
+		row.native_lower_layer_context.split( ';' );
+	specify( row );
+	row.target_path = `${ sourceNamedLowerLayerTarget };${ correctedRefundLowerLayerTarget }`;
+
+	assert.throws(
+		() => validate( map ),
+		new RegExp(
+			`Lower-layer disposition requires retained evidence and a future E2E smoke target for ${ row.case_id }`
+		)
+	);
+} );
+
+test( 'counts the refund-validation E2E target as a future smoke rather than lower-layer evidence', () => {
+	const map = cloneContractMap();
+	const row = map.rows.find(
+		( candidate ) => candidate.case_id === refundValidationCaseIds[ 0 ]
+	);
+
+	assert.notEqual( row, undefined );
+	const [ sourceNamedLowerLayerTarget ] =
+		row.native_lower_layer_context.split( ';' );
+	specify( row );
+	row.target_path = `${ sourceNamedLowerLayerTarget };${ refundValidationSmokeTarget }`;
+
+	assert.doesNotThrow( () => validate( map ) );
+} );
+
+test( 'rejects the corrected refund lower-layer target for an unrelated contract', () => {
+	const map = cloneContractMap();
+	const row = map.rows.find(
+		( candidate ) =>
+			candidate.planned_disposition ===
+				'Cover at a lower layer plus a smaller E2E smoke test' &&
+			! refundValidationCaseIds.includes( candidate.case_id )
+	);
+
+	assert.notEqual( row, undefined );
+	specify( row );
+	row.target_path = `${ correctedRefundLowerLayerTarget };${ refundValidationSmokeTarget }`;
+
+	assert.throws(
+		() => validate( map ),
+		/target_path is neither an approved future target nor .*lower-layer evidence/
+	);
+} );
+
+test( 'rejects an arbitrary replacement lower-layer target for a refund-validation contract', () => {
+	const map = cloneContractMap();
+	const arbitraryLowerLayerTarget =
+		'plugins/woocommerce/tests/php/includes/class-wc-cart-test.php';
+	const [ row ] = specifyRefundValidationRows(
+		map,
+		`${ arbitraryLowerLayerTarget };${ refundValidationSmokeTarget }`
+	);
+
+	assert.throws(
+		() => validate( map ),
+		new RegExp(
+			`target_path is neither an approved future target nor .*lower-layer evidence for ${ row.case_id }`
+		)
+	);
+} );
+
+test( 'still requires a future E2E smoke with the corrected refund lower-layer target', () => {
+	const map = cloneContractMap();
+	const [ row ] = specifyRefundValidationRows(
+		map,
+		correctedRefundLowerLayerTarget
+	);
+
+	assert.throws(
+		() => validate( map ),
+		new RegExp(
+			`Lower-layer disposition requires retained evidence and a future E2E smoke target for ${ row.case_id }`
+		)
+	);
+} );
+
+test( 'still requires lower-layer evidence with the refund-validation E2E smoke target', () => {
+	const map = cloneContractMap();
+	const [ row ] = specifyRefundValidationRows(
+		map,
+		refundValidationSmokeTarget
+	);
+
+	assert.throws(
+		() => validate( map ),
+		new RegExp(
+			`Lower-layer disposition requires retained evidence and a future E2E smoke target for ${ row.case_id }`
+		)
+	);
+} );
 
 const close = ( row, sourceRepositoryRoot = repositoryRoot ) => {
 	specify( row );
