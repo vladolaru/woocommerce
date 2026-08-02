@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "subscriptions-free-trial-merchant-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "e36b9c760e5ee66346c1c06ab2fc6d74f6b8f262",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/subscriptions/shopper/shopper-subscriptions-purchase-free-trial.spec.ts:166::Shopper: Subscriptions - Purchase Free Trial › Merchant should be able to create an order with \"Setup Intent\""
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/subscriptions/purchase.spec.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved this exact one-row blocked-environment deferral after one revision preserved the full provider contract: a real valid future-payment intent durably associated with the exact active subscription, seeded product, $9.99 recurring amount, and first renewal date. It also verified the strict boundary from line 77, earliest native-readiness blocker, additional prerequisites, pending target and owner, smallest unlock, calibration bundle, and zero resource or quarantine effect."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing native ownership, account, and callback readiness fails first. The run also lacks an approved version-pinned active WooCommerce Subscriptions provisioner, a resolved exact target owner and contract, an independently owned creation lifecycle because this source row consumes line-77 orderId and subscriptionId, controlled multicurrency restoration, and an exclusive listener interval.",
+		"affected_scope": "Only the exact line-166 contract that a zero-charge free-trial order creates a real valid future-payment intent durably associated with the exact active subscription, seeded product, $9.99 recurring amount, and first renewal date; the rendered seti_ identifier and merchant order and subscription surfaces are observations of that relationship, not the whole contract.",
+		"no_allowlisted_action_reason": "No allowlisted action can repair standing native readiness, approve or supply the pinned active Subscriptions lifecycle, independently create the prerequisite order and subscription, assign the unresolved native target owner or contract, control shared multicurrency restoration, or establish listener exclusivity. Mocked SetupIntent routing, metadata, token-persistence, and gateway-hook tests cannot substitute for the real provider association and exact merchant surfaces.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Provide native ownership, account, and callback readiness plus an approved version-pinned active WooCommerce Subscriptions fixture; first implement and close line 77 or approve shared test-owned setup that creates its exact free-trial order, active subscription, SetupIntent, token, and correlations; resolve the target owner and contract; establish controlled multicurrency restoration and an exclusive listener interval; then run once with one worker, zero retries, exact locks and journaling, durable provider correlation, and bounded cleanup.",
+		"quarantine_status": "This deferral allocated and mutated nothing, acquired no lease, opened no journal, and created no quarantine. The existing separately owned listener is a later independent blocker and remains untouched."
+	}
+}
