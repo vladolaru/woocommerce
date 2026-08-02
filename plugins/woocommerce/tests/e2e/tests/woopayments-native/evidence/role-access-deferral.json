@@ -1,0 +1,41 @@
+{
+	"schema_version": 2,
+	"slice_id": "role-access-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "4449964373ee8ca443299487480a784b69fae0a6",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/non-admin-wp-admin-access.spec.ts:43::Non-admin WP-Admin access › should be able to access wp-admin of fully onboarded WooPayments site",
+		"default::chromium::tests/e2e/specs/wcpay/merchant/non-admin-wp-admin-access.spec.ts:58::Non-admin WP-Admin access › should be able to access wp-admin before and after onboarding"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/role-access.spec.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved pre-review evidence SHA 49442ec2c90b1761988abde562be1b413bed86db01aca08463bfb1b2457e9762 against ledger SHA f81c0fd4c5c10dc35d04c465f883a6d2d36a25fdd86ec9f673f0b56cbab15bcf with no findings. Exactly the two named role-access rows change, and only fields 37-40, to the shared earliest readiness blocker. Each row retains an independent fresh canonical editor and context with role/capability proof and exact-ID cleanup. The connected row binds semantic Dashboard access, accessibility-tree WooPayments-menu absence, native admin HTTP 403 plus accessible denial, and same-session REST 403 without payload. The pre/post row separately binds a local-only pre-onboarding projection, complete user/account/option/transient/autoload journals and locks, byte-exact finally restoration, fresh-process connected/full proof, and Pages continuity. Zero retries, order dependence, shared contexts, provider writes, and listener use are excluded; hard-failure quarantine and source/Core/schema/calibration/target/adapter drift reopening are preserved."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing-native readiness fails before either editor-access contract can establish an authoritative native-owned account baseline: runtime ownership is absent, native payments are disabled, the authenticated account route is unavailable, and callback proof is missing. The planned target and owner are also pending. Core already protects WooPayments navigation and admin/REST resources with manage_woocommerce while ordinary editor capabilities remain independent, so no retirement authority issue, production defect, known gap, or source staleness is established. The pre/post-onboarding row additionally needs a later approved reversible local account-state adapter.",
+		"affected_scope": "Two independently executed editor-access outcomes sharing only the earliest readiness blocker. The connected row creates one unique canonical editor, proves ordinary Dashboard access, WooPayments menu absence, and local 403 denial for the native transactions admin page and REST resource, then deletes that exact user. The state-transition row uses a distinct editor, projects one journaled local pre-onboarding state without provider calls, proves Dashboard continuity, restores exact connected account bytes in finally, proves restored full state, then proves Pages access. Success, users, contexts, and restoration cannot transfer between rows.",
+		"no_allowlisted_action_reason": "The run cannot establish native owner/account/callback readiness, approve the pending target/owner, or invent a safe reversible account-state adapter. Cached editor storage, a shared editor, plugin Dev Tools, broad account reset, provider onboarding, legacy copy, footer text, repeated toggle/save sequences, or lower-layer permission tests cannot substitute for fresh role/capability proof, semantic admin access, local authorization denial, authoritative state joins, exact finally restoration, and exact-ID user cleanup. Provider writer allocation and the listener cannot unlock these local authorization contracts.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy exact native owner, connected account, successful account route, and callback readiness; approve the planned target contract and owner; provide independent fresh editor fixtures with exact-ID journals and cleanup. Run the connected authorization row once with zero retries. Separately approve for the pre/post row an allowlisted local-only account/setup projection, exclusivity locks, complete option/transient/autoload journal, byte-exact finally restoration, and quarantine policy; run it once with an independent editor/context and no provider traffic; then obtain fresh code, E2E-test, reliability, and accessibility reviews.",
+		"quarantine_status": "No browser context, credentials, user, account, store, option, transient, lock, journal, provider object, listener, retention record, or quarantine was created or changed for either row. A future ambiguous user create/delete, partial or unknown account write, asynchronous refresh or callback mutation, account/runtime identity drift, option-set drift, lost ownership, or incomplete byte restoration must preserve diagnostics and quarantine the exact store/account/options/user journal without replay. No checkout, order, payment, refund, financial provider object, or listener resource belongs to either contract."
+	}
+}
