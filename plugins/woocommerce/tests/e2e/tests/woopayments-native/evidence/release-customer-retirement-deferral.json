@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "release-customer-retirement-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "cbebeaf2b6741bdc3870091fd8cdf302de7f9a49",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/basic.spec.ts:29::A basic set of tests to ensure WP, wp-admin and my-account load › Sign in as customer › Load customer my account page"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsTokenServiceTest.php;plugins/woocommerce/client/blocks/assets/js/data/payment/test/default-state.ts;plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/NativeWooPaymentsGatewayTest.php",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved the exact one-row ambiguous-decision deferral: retirement remains human-authority-gated and limited to the duplicate Chromium instance, the retained basic counterpart is deferred rather than closed, pending fields remain unchanged, and lower-layer token or gateway coverage cannot replace the full-stack My Account smoke."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Retiring this duplicate requires explicit human disposition authority and a viable retained basic-project customer-account smoke, which is currently deferred.",
+		"affected_scope": "The exact duplicate Chromium authenticated customer My Account release-smoke instance, not the retained customer-account contract.",
+		"no_allowlisted_action_reason": "The autonomous run cannot mint retirement approval or substitute token or gateway lower-layer tests for the full-stack retained smoke.",
+		"reference": "ambiguous-decision:PILOT-RETIREMENT-AUTHORITY",
+		"unlock_decision": "Establish an approved viable retained customer My Account smoke, then explicitly approve retirement of only this duplicate.",
+		"quarantine_status": "No resource was allocated or mutated, and no row-specific quarantine exists."
+	}
+}
