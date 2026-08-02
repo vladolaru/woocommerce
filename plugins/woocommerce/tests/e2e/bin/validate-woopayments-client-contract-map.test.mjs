@@ -445,6 +445,9 @@ const specify = ( row ) => {
 	row.target_contract = `Native contract for ${ row.case_id }`;
 	row.implementation_owner = 'woocommerce-e2e';
 	row.migration_state = 'specified';
+	row.native_support_state = 'not-assessed';
+	row.gap_or_decision_reference = 'none';
+	row.evidence_path = 'none';
 };
 
 const close = ( row, sourceRepositoryRoot = repositoryRoot ) => {
