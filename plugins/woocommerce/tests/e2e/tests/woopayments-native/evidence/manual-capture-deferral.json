@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "manual-capture-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "d705c735fff54cefc19a9f37b987863830735d9d",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-manual-capture.spec.ts:39::Order › Manual Capture › should create an \"On hold\" order then capture the charge"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/pilots/merchant-manual-capture.spec.ts",
+			"contract": "merchant manually captures one exact authorization and restores capture mode"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved the exact specified line-39 blocked-environment deferral and fields-37-through-40-only transition after withdrawing a raw-file-versus-canonical-bundle hash mismatch finding. The final review confirmed preserved accepted disposition, concrete pilot target, non-pending target contract and owner; calibration did not run or attest manual capture; accurate static coverage; complete manual authorization and exactly-one-capture identities, amount, currency, event, occurrence, order, and audit oracle; missing explicit manual mode, authorization event/audit, capture audit amount/currency, byte-exact raw setting restore, and runtime proof; ordered locks, separate journals, allocation/listener gates, one worker and zero retries with no replay, bounded convergence, retained records, product cleanup and quarantine; predecessor/canonical-calibration binding; PILOT-first order; no native defect or known gap; no manual resources; and the separately owned listener remaining unavailable and untouched."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing exact-store, account, and callback native readiness fails first. The current calibration never executed the manual-capture target and attests only the saved-method bundle. The run also lacks protected provider allocation and one exclusively owned listener; explicit capture_method=manual and authorization occurrence/event/audit proof; capture audit amount/currency proof; option-existence plus byte-exact raw capture-setting restoration; and exact executed evidence under the existing account, store, setting, provider-write, and record-event locks, separate checkout/capture journals, bounded convergence, retained-record cleanup, and quarantine protocol.",
+		"affected_scope": "Only the specified line-39 manual authorization/capture contract: after byte-exact capture-mode snapshot, one unique exact checkout produces one provider authorization with capture_method=manual, requires_capture, uncaptured charge, exact order, intent, charge, payment-method, amount, currency, and occurrence, one correlated authorization event, order on-hold, and truthful authorization audit evidence; exactly one merchant capture preserves the identities, amount, and currency and yields provider succeeded/captured, one capture event and timeline occurrence, order processing, and truthful capture audit evidence including exact amount/currency. It preserves the concrete pilot target, target contract, accepted disposition, and owner and claims no plugin selector, modal copy, action value, route, branded prose, or runtime success.",
+		"no_allowlisted_action_reason": "No allowlisted action can repair standing native readiness, allocate the protected provider lane, obtain exclusive listener ownership, or turn the saved-method calibration into manual-capture evidence. Static pilot controls do not prove execution, explicit provider manual mode, authorization occurrence/event/audit semantics, exact capture-note amount/currency, or byte-exact raw setting restoration. Lower gateway/effect/event tests cannot substitute for real authorization-to-single-capture convergence. These are evidence and prerequisite limitations, not a proven native/provider defect or known gap. Replaying checkout or capture after dispatch to erase uncertainty is forbidden.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally provide successful exact-store/account/callback native readiness and protected allocation; obtain one exclusively owned listener; retain the concrete target/contract/owner; add the missing explicit manual-mode, authorization event/audit, capture amount/currency, and byte-exact raw-setting oracles; then execute exactly once with one worker and zero retries under ordered account, store, setting, provider-write, and record-event locks, separate checkout/capture journals, no replay, bounded convergence, retained financial records, safe product cleanup, exact restoration, and fail-closed quarantine. Recompute the complete current target bundle and obtain all unconditional closure reviews before any closure claim.",
+		"quarantine_status": "Neither calibration nor this deferral executed manual capture. No manual browser, provider allocation, lock, journal, authorization, capture, event, record, cleanup, or quarantine was created, and no provider capacity was consumed. The existing separately owned listener remains present, unavailable, and untouched. Any uncertain eventual checkout, capture, event, restoration, cleanup, lock, listener, or attribution state must preserve journals, quarantine all affected resources, and must not be replayed."
+	}
+}
