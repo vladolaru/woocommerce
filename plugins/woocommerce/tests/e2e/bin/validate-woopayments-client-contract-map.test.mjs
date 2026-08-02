@@ -77,6 +77,21 @@ const cloneContractMap = ( source = contractMap ) => ( {
 	rows: source.rows.map( ( row ) => ( { ...row } ) ),
 } );
 
+const resetToPlanned = ( row ) => {
+	row.accepted_disposition = 'pending';
+	row.target_contract = 'pending';
+	row.implementation_owner = 'owner-decision-required';
+	row.migration_state = 'planned';
+	row.native_support_state = 'not-assessed';
+	row.gap_or_decision_reference = 'none';
+	row.evidence_path = 'none';
+
+	return row;
+};
+
+const createPlannedFixtureRow = () =>
+	resetToPlanned( { ...contractMap.rows[ 0 ] } );
+
 const createEvidenceContext = ( row ) => ( {
 	row,
 	metadata,
@@ -1276,16 +1291,18 @@ test( 'keeps normal parsing strict while adapting the historical ledger for tran
 } );
 
 test( 'CLI from-git-ref rejects an illegal transition in a changed row', () => {
+	const currentContractMap = cloneContractMap();
 	const previousContractMap = cloneContractMap();
-	const row = previousContractMap.rows[ 0 ];
+	resetToPlanned( currentContractMap.rows[ 0 ] );
+	const previousRow = resetToPlanned( previousContractMap.rows[ 0 ] );
 	let gitLoadCount = 0;
 
-	row.migration_state = 'closed';
+	previousRow.migration_state = 'closed';
 
 	assert.throws(
 		() =>
 			runCli( [ '--from-git-ref', 'HEAD' ], {
-				ledgerContent,
+				ledgerContent: serializeContractMap( currentContractMap ),
 				metadata,
 				repositoryRoot,
 				loadFromGitRef: ( gitRef, repositoryPath ) => {
@@ -1429,8 +1446,8 @@ for ( const [ description, plannedDisposition ] of [
 test( 'disposition history allows initial pending to select the planned disposition', () => {
 	const currentMap = cloneContractMap();
 	const previousMap = cloneContractMap();
-	const currentRow = currentMap.rows[ 0 ];
-	const previousRow = previousMap.rows[ 0 ];
+	const currentRow = resetToPlanned( currentMap.rows[ 0 ] );
+	const previousRow = resetToPlanned( previousMap.rows[ 0 ] );
 
 	specify( currentRow );
 
@@ -3184,7 +3201,7 @@ for ( const [ description, embeddedPayload ] of [
 }
 
 test( 'accepts incidental non-JSON brackets and braces in evidence strings', () => {
-	const row = contractMap.rows[ 0 ];
+	const row = createPlannedFixtureRow();
 	const evidence = createValidEvidence( row, {
 		verification: [
 			{
@@ -3221,7 +3238,7 @@ test( 'rejects opening-heavy evidence strings over 4096 characters', () => {
 } );
 
 test( 'accepts safe evidence strings exactly 4096 characters long', () => {
-	const row = contractMap.rows[ 0 ];
+	const row = createPlannedFixtureRow();
 	const evidence = createValidEvidence( row, {
 		verification: [
 			{
