@@ -1,0 +1,29 @@
+{
+	"schema_version": 2,
+	"slice_id": "pay-for-order-currency-integrity-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "1fba85b2fbf1aa18f94af2031721f84c4be869da",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": ["plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": ["default::chromium::tests/e2e/specs/wcpay/shopper/shopper-multi-currency-widget.spec.ts:106::Shopper Multi-Currency widget › should not display currency switcher on pay for order page"],
+	"targets": [{"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/pay-for-order.spec.ts", "contract": "pending"}],
+	"implementation_commits": [], "verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh independent review approved pre-review switcher SHA 32aa3b839f53b1d46a1cf8aab1b4170b9d6b3230c1f588d0c1c5f86498b21d23, context-switching SHA adad6de54f961c90c2eee8554288cc9d9d8f0d5721abcb392ec5a3c2559d70a9, order-received SHA 08f4cf266ce95e9f35e4567578cb11855337cdcd1f042c558eb9048c0d16fee5, historical-order SHA e7710661c3d71114ce472975a4e63e7bfbb51485e372be94cfcaea9350cc1734 and pay-for-order SHA d5c63e6eae3c0af549c4151ffb36b3a1b353b60c08bee8fae2a3696843de27fb against mutated ledger SHA ff9521f565ec2195ba46b710706eeebf88d7c67bb21f79e14527092754d7a4a4 and baseline 2fb5e5b50cd574c256e537f8c5d447c805216faf4b1a72e485f2c91c3ffc82a6 at 1fba85b2fbf1aa18f94af2031721f84c4be869da, with no findings. Exactly eight rows change only fields 37-40 across honest 2/3/1/1/1 groups. Enabled/disabled owner semantics, exact USD 10.00 to EUR 8.00 continuity, the sole 1000 usd provider/listener graph, provider-free historical/pay-for-order boundaries, zero replay, exact restoration, retention, quarantine, accessibility and drift are preserved; disabled behavior remains only a future RED and no unsupported claim is made."
+		}
+	],
+	"closures": [], "known_gaps": [],
+	"deferral": {
+		"blocker": "The pay-for-order target is absent with pending contract/owner, and standing readiness cannot allocate the exact Core-owned deterministic currency/session and unpaid-obligation fixture. Lower compatibility projections statically hide switching, but the frozen row does not bind the exact order currency/amount or authoritative zero payment dispatch; no product defect is established.",
+		"affected_scope": "One provider-free logged-in customer and exact run-owned pending USD 10.00 obligation with secret order key retained only in a private journal. After the shopper's current currency is set to EUR or an EUR request is made within pay-for-order context, the customer payment page binds to the exact order ID, keeps an accessible fixed USD 10.00 payable total and unchanged stored tuple, and exposes zero enabled Currency or alternate switch controls. Payment is never submitted and provider writer, listener, intent, method and charge are absent.",
+		"no_allowlisted_action_reason": "No allowlisted local action can assign the target/owner or provision and bind the exact unpaid order/session fixture under ready Core ownership. Selector absence alone can hide a broken page. The row needs exact order identity, total/currency, semantic control absence and authoritative zero-dispatch proof, with one order creation and one selection occurrence, zero retries/replay and no provider access.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Approve target/owner, satisfy readiness and provision deterministic USD/EUR settings plus one run-owned logged-in unpaid order. Journal the secret key privately, prove page/order binding, fixed accessible USD total, unchanged tuple, semantic switcher absence and zero dispatch, then delete only the exact unpaid order when safe and restore raw currency/session bytes. Quarantine local uncertainty and obtain code/E2E/reliability/accessibility/security/drift reviews; no listener is required.",
+		"quarantine_status": "No browser, customer, order, secret key, option, session, writer, listener, provider object, mutation or quarantine was created; the separately owned listener remains untouched. Future identity, access, amount, currency, switcher, zero-dispatch, cleanup, restoration, publication or drift mismatch must preserve the private journal and quarantine the exact store/session/customer/unpaid-order graph without payment, replay, broad reset or listener action."
+	}
+}
