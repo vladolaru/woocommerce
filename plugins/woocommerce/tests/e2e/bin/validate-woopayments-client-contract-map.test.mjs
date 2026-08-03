@@ -1823,14 +1823,14 @@ test( 'rejects deferred -> specified without a new unlock satisfaction', () => {
 	);
 } );
 
-test( 'rejects deferred -> specified when unlock decision whitespace drifts', () => {
+test( 'rejects deferred -> specified when the unlock decision differs from the prior packet', () => {
 	const scenario = createDeferredReopenScenario();
 	const [ currentRow ] = scenario.currentRows;
 	const currentEvidence = structuredClone( scenario.previousEvidence );
 
 	currentEvidence.deferral.unlock_satisfactions = [
 		createUnlockSatisfaction( currentRow, {
-			unlock_decision: `${ currentEvidence.deferral.unlock_decision } `,
+			unlock_decision: 'Grant a different external account authority',
 		} ),
 	];
 	writeCurrentReopenEvidence( scenario, currentEvidence );
@@ -1838,7 +1838,7 @@ test( 'rejects deferred -> specified when unlock decision whitespace drifts', ()
 
 	assert.throws(
 		() => runDeferredReopenScenario( scenario ),
-		/unlock_decision/
+		/satisfaction must reproduce the exact prior unlock_decision/
 	);
 } );
 
