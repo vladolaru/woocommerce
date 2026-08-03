@@ -3,6 +3,54 @@
 Durable, public-safe record of calibration blockers and ledger revisions
 that the evidence JSON schema cannot carry. Newest entries first.
 
+## 2026-08-03 — native standing store calibrated
+
+Stable reference: `calibration-notes:2026-08-03:native-standing-store-calibrated`.
+
+The calibrated WooCommerce commit is
+`4a96a82c76e113bb7a47aa4052beeb51ce965c4a`. Its rolling, read-only
+WooPayments reference is `265e275802e9d8cadefe61c68c492911d14a1534`,
+and its rolling, read-only WooCommerce Subscriptions reference is
+`0887151df977fd7e0454c55b2b49984c545df94a`. There is no pinned
+Subscriptions provisioner artifact; the same clone is mounted by design. The
+ledger SHA-256 is
+`285080c37e06ab087d83d0865b8c99bbd188e67325ccffdbeb53be511e4a2402`.
+
+The public-safe identity triple is site URL
+`http://store8889.localhost:8889`, WPCOM blog ID `4`, and account identity
+`redacted:account:sha256:3e5fe6b30db44a9921dd5141bca73e4a1dc99add811541b56c65df558f5eb578`.
+Store doctor confirmed the exact blog, domain, and token match with the current
+adapter loaded. Core-native onboarding adopted the already-dedicated non-live
+test-drive account without replacement or reset. Runtime ownership is native
+and enabled, the standalone client is inactive, the kill switch is false, the
+gateway is enabled in test mode, and Card is enabled.
+
+The callback probe confirmed the exact blog `4` and store, Jetpack capability
+authentication, and registered, reachable, successful delivery with
+`provider_write=false`. The repository's real
+`assertRuntimeReady(... requireCallback:true)` passed against the
+independent private identity. Public-safe private artifact references are:
+
+- `redacted:runtime-status:sha256:9d3e31177d68a8b4ddd4ce6eb8a8406b47387a0a9184a2ebe1c6272bf8122bdb`
+- `redacted:callback-probe:sha256:b7809b0a8efd7a42ade37661dca634555887130134a4dd0d670b5800f1c1b5e8`
+- `redacted:readiness-assertion:sha256:4cee6e6c92ba77c388923c7839a9a6c2e8698a6c30ceaef697a8c8facd85e754`
+- `redacted:owned-listener-record:sha256:f96865031dd695dbdf3361c96e9d34e3d756f47794c4b2325491ba37d26ffa3e`
+- `redacted:final-zero-listener-scan:sha256:23d2b94ccc5b4c8d15d4e281f78d87cd8df13a65959f9a5641bf832dc4c6ef38`
+
+A pre-existing listener was stopped by exact identity under dated authority.
+One owned, PID-recorded wrapper and direct child remained identity-stable
+through the callback proof. The owned listener was then stopped, and immediate
+and delayed global scans both found zero listeners.
+
+No checkout, payment, or provider mutation ran. No account was reset or
+deleted, no shared environment was reset or reseeded, the `:8082` standalone
+store received no write, no other repository was changed, and no ledger row
+transitioned. The ledger remains exactly `2 closed / 179 deferred`. Browser
+inspection reported one non-blocking missing WooCommerce Subscriptions
+`build/admin.css` local build artifact; native UI, state, and proofs remained
+complete, and the read-only clone was untouched. No Core-native defect was
+found.
+
 ## 2026-08-02 — historical default-token provider evidence deferred
 
 The dedicated historical default-token transition was implemented at commit
