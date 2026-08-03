@@ -1349,9 +1349,17 @@ test( 'CLI from-git-ref HEAD runs git show and prints the real summary', () => {
 		),
 		true
 	);
+	const summarizedNativeSupportStates = Object.entries(
+		summary.nativeSupportStateCounts
+	)
+		.filter( ( [ , count ] ) => count > 0 )
+		.map(
+			( [ state, count ] ) =>
+				`${ count }\tnative_support_state\t${ state }`
+		);
 	assert.equal(
-		logLines.includes(
-			`${ summary.nativeSupportStateCounts[ 'not-assessed' ] }\tnative_support_state\tnot-assessed`
+		summarizedNativeSupportStates.every( ( line ) =>
+			logLines.includes( line )
 		),
 		true
 	);
@@ -3275,8 +3283,11 @@ test( 'rejects JWT-shaped tokens in evidence strings', () => {
 } );
 
 test( 'require-saturated rejects a planned contract', () => {
+	const map = cloneContractMap();
+	resetToPlanned( map.rows[ 0 ] );
+
 	assert.throws(
-		() => validate( cloneContractMap(), { requireSaturated: true } ),
+		() => validate( map, { requireSaturated: true } ),
 		/Unsaturated contract: /
 	);
 } );
