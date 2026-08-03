@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "checkout-basic-card-protection-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "e352e7655e15d864dead40847370ec0b12651cc5",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase.spec.ts:53::Successful purchase › Carding protection true › using a basic card"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/card-payment.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh independent review approved pre-review basic evidence SHA 194bd417e71eee3f5fc08d585a1321021ee72e516b26786b2ee7bafb6f6e8568 and 3DS evidence SHA 171723759a4baf237927034c2edad17c65b68de4b8179b15590f61ade956b4dd against mutated ledger SHA 2286900cc3e6600a0adbdd12b41a6a3c0acb258efd90e33145146fc17a9659a3 and committed baseline cd881f9401aa33ce707308e408ade24ca2c7bd74d3fc0a555b97308d0b91387a at e352e7655e15d864dead40847370ec0b12651cc5, with no findings. Exactly the intended three rows change only fields 37-40 while the specified false-basic pilot remains byte-identical. The protected basic artifact binds authoritative true state and redacted submitted-token equality to one 4242 order, 1099 USD capture and accessible receipt under one writer, exclusive listener, zero retries/replay, exact restoration, retention, quarantine and drift controls. Readiness remains first and no defect, gap, implementation, verification or closure is claimed."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing native readiness fails before this protected basic-card checkout may allocate the exact site/blog/account, provider writer, or exclusively owned callback listener. The shared card-payment target is absent, its contract and owner remain pending, and no approved controller proves and byte-restores authoritative true card-testing-protection state. The frozen source's global token check and retrying submission cannot establish enforcement or one financial occurrence. Core implements the token verification and successful card lifecycle statically, so no current native defect or source drift is established.",
+		"affected_scope": "One fresh shopper/session/cart and unique virtual USD 10.99 product under authoritative cached protection true. The same single 16-character token is proved by redacted equal digests across the account-derived session/configuration state, Classic checkout exposure, and the sole submitted wcpay-fraud-prevention-token value. One semantically selected Card option, named card fields and one Place order activation join the exact order/key, run marker, Visa 4242 payment method, intent and charge to 1099 USD, succeeded captured state, one intent lineage, one charge and one capture, no customer-action challenge, merchant processing-or-completed state, and an accessible exact order-received summary. The already specified protection-false basic row and closed saved-token bundles contribute no support or closure state.",
+		"no_allowlisted_action_reason": "No allowlisted local action can establish readiness, approve the target/owner, allocate the protected writer/listener interval, safely set and restore the raw account protection cache, or convert a frontend global into submitted-token and provider-cardinality proof. The existing pilot is specified rather than closed and its false-protection graph cannot satisfy this true-state row. The future row uses one worker, zero Playwright or helper retries, one semantic submission, bounded read-only reconciliation, no replay, and no challenge fallback; an ambiguous dispatch halts without another click or borrowed result.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy owner-approved readiness for the exact native runtime, site/blog/account, Card gateway and callback route; approve the target and owner; allocate one provider writer and one exclusively owned listener; and supply an authoritative true-state controller with raw cache/settings snapshots and cold-read restoration. Add a one-shot Classic card driver and exact order/payment-method/intent/charge/capture reader, journal allocation and dispatch, execute once with zero retries/replay, retain immutable redacted financial/event evidence, restore reversible gateway/account/protection/session/cart state exactly, quarantine uncertainty, and obtain fresh code, E2E-test, reliability, concurrency, accessibility, security and provider-evidence reviews without drifting the closed saved-token bundle.",
+		"quarantine_status": "This readiness deferral opened no browser, allocated no account/store/writer/listener, acquired no lock, created no journal, changed no protection/gateway/session/cart/product state, created no order or provider record, and created no quarantine; the separately owned listener remains untouched. A future readiness, protection, token, dispatch, identity, amount, currency, status, cardinality, listener, lock, restoration, retention, publication or source/target-bundle mismatch must preserve journals and immutable financial history and quarantine the exact account/store/feature/session/product/order/provider/event graph without replay, provider deletion, broad reset, listener takeover, or edits to closed target bundles."
+	}
+}
