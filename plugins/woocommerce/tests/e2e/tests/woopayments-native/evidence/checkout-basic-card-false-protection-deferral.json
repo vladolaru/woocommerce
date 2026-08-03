@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "checkout-basic-card-false-protection-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "fc2f5c3f15dc7f08029a76446c931f5933d62b7f",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase.spec.ts:53::Successful purchase › Carding protection false › using a basic card"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/card-payment.ts",
+			"contract": "Successful purchase › Carding protection false › using a basic card"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh terminal-deferral review approved pre-review SHA ece2d73a687a74e4f8b6740a7a24c4106757b27c9374c6299781457771100053 for checkout-basic-card-false-protection-deferral.json and pre-review SHA c55cc8fa60bdcaffb78b31a0ca52b18cb12e55b616ddf3bb9a3c2f5ff850a161 for historical-3ds-saved-token-deferral.json against mutated ledger SHA 285080c37e06ab087d83d0865b8c99bbd188e67325ccffdbeb53be511e4a2402, with no findings. Exactly physical rows 121 and 127 change only fields 37-40 while their accepted dispositions, exact non-pending targets/contracts and autonomous-run:pilot-calibration owners remain byte-identical. Closure is correctly rejected: row 121 remains readiness-blocked with its target absent and a future strict-false, one-request, one 1099 USD 4242 financial graph, no-token/no-challenge/no-duplicate and accessible oracle; row 127 remains blocked by same-lane listener exclusivity because basic calibration cannot prove historical 3184, with exact creation-cutover-use identity, two mandatory accessible same-intent challenge lifecycles and one native-use capture required. Both packets require one writer and exclusive listener, zero retries/replay, separate journals, restoration, immutable retention, connected-graph quarantine, drift handling and protected-closure reopening if touched, without inventing a defect, known gap, execution, verification or closure."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing native site, account, Card-gateway and callback readiness fails before this specified provider contract can execute. The exact card-payment target is absent, and no approved strict-false protection controller, one-shot checkout request reader, protected provider-writer allocation or exclusively owned listener exists. Calibration proved only an unexecuted exact-payment fragment and deliberately omitted the false-protection clause; no native defect is established.",
+		"affected_scope": "One fresh authenticated run-owned shopper, browser context, session and cart use one unique virtual USD 10.99 product under authoritative strict-Boolean false card-testing protection. Cold account/cache state, rendered configuration, browser state and the sole submitted payment-data manifest prove no fraud-prevention token: configuration is empty, the legacy global is absent and submitted wcpay-fraud-prevention-token is empty. One keyboard-operable Card selection and one Place order activation create exactly one Store API checkout POST for gateway woocommerce_payments with new-payment-method false, empty payment-method error fields and public-safe platform fields. That sole request joins one exact order/key, Visa 4242 payment method, PaymentIntent and captured charge at 1099 USD with succeeded provider and charge status, one intent lineage, one charge and one capture occurrence, merchant processing-or-completed state and an accessible exact order-received summary. Exactly zero second request, order, intent, method, charge, capture, customer-action callback, challenge, saved token, reusable attachment or default-method mutation exists.",
+		"no_allowlisted_action_reason": "No allowlisted local action can repair standing readiness, implement the absent accepted target, allocate the provider writer and listener, or convert the calibration payment fragment into strict false-state request and cardinality proof. The protected-true sibling, Blocks purchase sibling, lower-layer tests, browser global, receipt or merchant status cannot substitute. Use one worker, one provider writer and one exclusive listener interval, a journal opened before the sole activation, zero Playwright or helper retries, zero provider replay and bounded read-only convergence; any possibly dispatched or ambiguous outcome halts without another click.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally establish owner-approved readiness for one exact non-quarantined native site, blog and account with Card enabled, test mode, USD, authenticated order/provider readers and reachable callback route. Allocate one provider-writer interval with one exclusively owned listener while leaving the separately owned listener untouched. Implement the already specified card-payment target with a reviewed strict-false controller, one-shot checkout request reader and exact order/provider/accessibility oracle; execute once with zero retries or replay, byte-restore reversible gateway, account, protection, session and cart state, retain immutable financial/event evidence, quarantine uncertainty and obtain fresh row-scoped code, E2E, reliability, concurrency, accessibility, security and provider-evidence reviews.",
+		"quarantine_status": "This deferral opened no browser, allocated no account, store, writer or listener, acquired no lock, created no journal, changed no protection, gateway, session, cart or product state, performed no checkout or provider write and created no quarantine; the separately owned listener remains untouched. A future readiness, ownership, false-state, token, dispatch, identity, amount, currency, status, cardinality, accessibility, callback, restoration, cleanup, publication or source/target drift mismatch must preserve journals and financial history, halt without replay and quarantine the exact account, store, blog, session, cart, product, order, intent, method, charge, event, listener and held-lock graph."
+	}
+}
