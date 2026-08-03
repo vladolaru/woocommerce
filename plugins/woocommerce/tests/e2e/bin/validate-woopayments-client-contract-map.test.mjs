@@ -47,6 +47,8 @@ const metadataPath = resolve(
 	binDirectory,
 	'../tests/woopayments-native/client-contract-map.meta.json'
 );
+const calibrationNotesRepositoryPath =
+	'plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md';
 const metadata = JSON.parse( readFileSync( metadataPath, 'utf8' ) );
 const ledgerContent = readFileSync( ledgerPath, 'utf8' );
 const contractMap = parseContractMap( ledgerContent );
@@ -212,7 +214,14 @@ const runHistoryComparison = ( currentMap, previousMap ) =>
 		ledgerContent: serializeContractMap( currentMap ),
 		metadata,
 		repositoryRoot,
-		loadFromGitRef: () => serializeContractMap( previousMap ),
+		loadFromGitRef: ( gitRef, repositoryPath ) =>
+			repositoryPath ===
+			'plugins/woocommerce/tests/e2e/tests/woopayments-native/client-contract-map.tsv'
+				? serializeContractMap( previousMap )
+				: readFileSync(
+						resolve( repositoryRoot, repositoryPath ),
+						'utf8'
+				  ),
 		log: () => {},
 	} );
 
@@ -352,6 +361,14 @@ const createDecisionReadyDeferral = (
 	quarantine_status: 'No shared resource was allocated',
 } );
 
+const createUnlockSatisfaction = ( row, overrides = {} ) => ( {
+	contract_id: row.case_id,
+	unlock_decision: 'Grant the required external account authority',
+	satisfied_on: '2026-08-03',
+	reference: `redacted:calibration:sha256:${ 'a'.repeat( 64 ) }`,
+	...overrides,
+} );
+
 const createEvidenceFile = (
 	row,
 	overrides = {},
@@ -397,6 +414,107 @@ const createEvidenceFile = (
 
 	return repositoryRelativePathFromRoot( evidencePath, sourceRepositoryRoot );
 };
+
+const createDeferredReopenScenario = ( { shared = false } = {} ) => {
+	const currentMap = cloneContractMap();
+	const previousMap = cloneContractMap();
+	const currentRows = currentMap.rows
+		.filter(
+			( row ) =>
+				row.migration_state === 'deferred' &&
+				row.planned_disposition ===
+					'Run unchanged against both runtimes'
+		)
+		.slice( 0, shared ? 2 : 1 );
+	const previousRows = currentRows.map( ( currentRow ) =>
+		previousMap.rows.find( ( row ) => row.case_id === currentRow.case_id )
+	);
+	const deferralReference = 'blocked-external:fixture-authority';
+
+	for ( const row of [ ...currentRows, ...previousRows ] ) {
+		row.migration_state = 'deferred';
+		row.native_support_state = 'blocked-external';
+		row.gap_or_decision_reference = deferralReference;
+	}
+
+	const evidence = createValidEvidence( previousRows[ 0 ], {
+		contract_ids: previousRows.map( ( row ) => row.case_id ),
+		targets: previousRows.map( ( row ) => ( {
+			path: row.target_path,
+			contract: row.target_contract,
+		} ) ),
+		implementation_commits: [],
+		verification: [],
+		deferral: createDecisionReadyDeferral( deferralReference ),
+	} );
+	const evidencePath = createEvidenceFile( previousRows[ 0 ], evidence );
+
+	for ( const row of [ ...currentRows, ...previousRows ] ) {
+		row.evidence_path = evidencePath;
+	}
+
+	return {
+		currentMap,
+		previousMap,
+		currentRows,
+		previousRows,
+		evidencePath,
+		previousEvidence: evidence,
+	};
+};
+
+const writeCurrentReopenEvidence = ( scenario, evidence ) => {
+	writeFileSync(
+		resolve( repositoryRoot, scenario.evidencePath ),
+		`${ JSON.stringify( evidence, null, 2 ) }\n`
+	);
+};
+
+const runDeferredReopenScenario = ( scenario, overrides = {} ) =>
+	runCli( [ '--from-git-ref', 'moving-ref' ], {
+		ledgerContent: serializeContractMap( scenario.currentMap ),
+		metadata,
+		repositoryRoot,
+		resolveGitRef: ( gitRef ) => {
+			assert.equal( gitRef, 'moving-ref' );
+			return 'f'.repeat( 40 );
+		},
+		loadFromGitRef: ( gitRef, repositoryPath ) => {
+			assert.equal(
+				[ 'moving-ref', 'f'.repeat( 40 ) ].includes( gitRef ),
+				true
+			);
+			if ( repositoryPath === scenario.evidencePath ) {
+				return `${ JSON.stringify(
+					scenario.previousEvidence,
+					null,
+					2
+				) }\n`;
+			}
+			if (
+				repositoryPath === calibrationNotesRepositoryPath &&
+				scenario.previousCalibrationNotesContent !== undefined
+			) {
+				return scenario.previousCalibrationNotesContent;
+			}
+
+			if (
+				repositoryPath ===
+				'plugins/woocommerce/tests/e2e/tests/woopayments-native/client-contract-map.tsv'
+			) {
+				return serializeContractMap( scenario.previousMap );
+			}
+
+			return readFileSync(
+				resolve( repositoryRoot, repositoryPath ),
+				'utf8'
+			);
+		},
+		readCurrentFile: ( repositoryPath ) =>
+			readFileSync( resolve( repositoryRoot, repositoryPath ), 'utf8' ),
+		log: () => {},
+		...overrides,
+	} );
 
 const createExternalTemporaryFile = () => {
 	const temporaryDirectory = mkdtempSync(
@@ -1307,12 +1425,14 @@ test( 'CLI from-git-ref rejects an illegal transition in a changed row', () => {
 				repositoryRoot,
 				loadFromGitRef: ( gitRef, repositoryPath ) => {
 					gitLoadCount++;
-					assert.equal( gitRef, 'HEAD' );
-					assert.equal(
-						repositoryPath,
+					assert.equal( gitRef, currentCommit );
+					return repositoryPath ===
 						'plugins/woocommerce/tests/e2e/tests/woopayments-native/client-contract-map.tsv'
-					);
-					return serializeContractMap( previousContractMap );
+						? serializeContractMap( previousContractMap )
+						: readFileSync(
+								resolve( repositoryRoot, repositoryPath ),
+								'utf8'
+						  );
 				},
 				log: () => {},
 			} ),
@@ -1610,6 +1730,357 @@ test( 'allows reopening a closed contract to implemented and nothing else', () =
 		() => validateStateTransition( 'closed', 'planned' ),
 		/Illegal migration transition/
 	);
+} );
+
+test( 'rejects the context-free deferred -> specified transition without a history-bound unlock satisfaction', () => {
+	assert.throws(
+		() => validateStateTransition( 'deferred', 'specified' ),
+		/history-bound unlock satisfaction/
+	);
+} );
+
+test( 'accepts a deferred -> specified transition with one exact unlock satisfaction', () => {
+	const scenario = createDeferredReopenScenario();
+	const [ currentRow ] = scenario.currentRows;
+	const currentEvidence = structuredClone( scenario.previousEvidence );
+
+	currentEvidence.deferral.unlock_satisfactions = [
+		createUnlockSatisfaction( currentRow ),
+	];
+	writeCurrentReopenEvidence( scenario, currentEvidence );
+	specify( currentRow );
+
+	assert.doesNotThrow( () => runDeferredReopenScenario( scenario ) );
+} );
+
+test( 'resolves a moving ref once before loading deferred -> specified history', () => {
+	const scenario = createDeferredReopenScenario();
+	const [ currentRow ] = scenario.currentRows;
+	const currentEvidence = structuredClone( scenario.previousEvidence );
+	const immutableCommit = 'e'.repeat( 40 );
+	let resolveCount = 0;
+	const loadedRefs = [];
+
+	currentEvidence.deferral.unlock_satisfactions = [
+		createUnlockSatisfaction( currentRow ),
+	];
+	writeCurrentReopenEvidence( scenario, currentEvidence );
+	specify( currentRow );
+
+	assert.doesNotThrow( () =>
+		runCli( [ '--from-git-ref', 'moving-ref' ], {
+			ledgerContent: serializeContractMap( scenario.currentMap ),
+			metadata,
+			repositoryRoot,
+			resolveGitRef: ( gitRef ) => {
+				resolveCount++;
+				assert.equal( gitRef, 'moving-ref' );
+				return immutableCommit;
+			},
+			loadFromGitRef: ( gitRef, repositoryPath ) => {
+				loadedRefs.push( gitRef );
+				if ( repositoryPath === scenario.evidencePath ) {
+					return JSON.stringify( scenario.previousEvidence );
+				}
+				if (
+					repositoryPath ===
+					'plugins/woocommerce/tests/e2e/tests/woopayments-native/client-contract-map.tsv'
+				) {
+					return serializeContractMap( scenario.previousMap );
+				}
+
+				return readFileSync(
+					resolve( repositoryRoot, repositoryPath ),
+					'utf8'
+				);
+			},
+			readCurrentFile: ( repositoryPath ) =>
+				readFileSync(
+					resolve( repositoryRoot, repositoryPath ),
+					'utf8'
+				),
+			log: () => {},
+		} )
+	);
+	assert.equal( resolveCount, 1 );
+	assert.equal( loadedRefs.length > 1, true );
+	assert.equal(
+		loadedRefs.every( ( gitRef ) => gitRef === immutableCommit ),
+		true
+	);
+} );
+
+test( 'rejects deferred -> specified without a new unlock satisfaction', () => {
+	const scenario = createDeferredReopenScenario();
+	const [ currentRow ] = scenario.currentRows;
+
+	writeCurrentReopenEvidence( scenario, scenario.previousEvidence );
+	specify( currentRow );
+
+	assert.throws(
+		() => runDeferredReopenScenario( scenario ),
+		/exactly one new unlock satisfaction/
+	);
+} );
+
+test( 'rejects deferred -> specified when unlock decision whitespace drifts', () => {
+	const scenario = createDeferredReopenScenario();
+	const [ currentRow ] = scenario.currentRows;
+	const currentEvidence = structuredClone( scenario.previousEvidence );
+
+	currentEvidence.deferral.unlock_satisfactions = [
+		createUnlockSatisfaction( currentRow, {
+			unlock_decision: `${ currentEvidence.deferral.unlock_decision } `,
+		} ),
+	];
+	writeCurrentReopenEvidence( scenario, currentEvidence );
+	specify( currentRow );
+
+	assert.throws(
+		() => runDeferredReopenScenario( scenario ),
+		/unlock_decision/
+	);
+} );
+
+test( 'rejects deferred -> specified when immutable deferral facts change', () => {
+	const scenario = createDeferredReopenScenario();
+	const [ currentRow ] = scenario.currentRows;
+	const currentEvidence = structuredClone( scenario.previousEvidence );
+
+	currentEvidence.deferral.blocker = 'A rewritten blocker';
+	currentEvidence.deferral.unlock_satisfactions = [
+		createUnlockSatisfaction( currentRow ),
+	];
+	writeCurrentReopenEvidence( scenario, currentEvidence );
+	specify( currentRow );
+
+	assert.throws(
+		() => runDeferredReopenScenario( scenario ),
+		/previous deferral packet content must remain unchanged/
+	);
+} );
+
+test( 'rejects duplicate unlock satisfactions for one deferred -> specified row', () => {
+	const scenario = createDeferredReopenScenario();
+	const [ currentRow ] = scenario.currentRows;
+	const currentEvidence = structuredClone( scenario.previousEvidence );
+	const satisfaction = createUnlockSatisfaction( currentRow );
+
+	currentEvidence.deferral.unlock_satisfactions = [
+		satisfaction,
+		{ ...satisfaction },
+	];
+	writeCurrentReopenEvidence( scenario, currentEvidence );
+	specify( currentRow );
+
+	assert.throws(
+		() => runDeferredReopenScenario( scenario ),
+		/duplicate contract_id|exactly one new unlock satisfaction/
+	);
+} );
+
+test( 'rejects deferred -> specified when a prior unlock satisfaction is rewritten', () => {
+	const scenario = createDeferredReopenScenario( { shared: true } );
+	const [ reopenedRow, siblingRow ] = scenario.currentRows;
+	const priorSatisfaction = createUnlockSatisfaction( siblingRow, {
+		reference: `redacted:calibration:sha256:${ 'b'.repeat( 64 ) }`,
+	} );
+
+	scenario.previousEvidence.deferral.unlock_satisfactions = [
+		priorSatisfaction,
+	];
+	const currentEvidence = structuredClone( scenario.previousEvidence );
+	currentEvidence.deferral.unlock_satisfactions[ 0 ].satisfied_on =
+		'2026-08-02';
+	currentEvidence.deferral.unlock_satisfactions.push(
+		createUnlockSatisfaction( reopenedRow )
+	);
+	writeCurrentReopenEvidence( scenario, currentEvidence );
+	specify( reopenedRow );
+
+	assert.throws(
+		() => runDeferredReopenScenario( scenario ),
+		/prior unlock satisfactions must remain unchanged/
+	);
+} );
+
+test( 'rejects a prior unlock satisfaction whose calibration heading exists only in the current tree', () => {
+	const scenario = createDeferredReopenScenario( { shared: true } );
+	const [ reopenedRow, siblingRow ] = scenario.currentRows;
+	const currentEvidence = structuredClone( scenario.previousEvidence );
+
+	scenario.previousEvidence.deferral.unlock_satisfactions = [
+		createUnlockSatisfaction( siblingRow, {
+			satisfied_on: '2026-08-02',
+			reference:
+				'calibration-notes:2026-08-02:historical-default-token-provider-evidence-deferred',
+		} ),
+	];
+	scenario.previousCalibrationNotesContent =
+		'# WooPayments pilot calibration notes\n';
+	currentEvidence.deferral.unlock_satisfactions = [
+		...scenario.previousEvidence.deferral.unlock_satisfactions,
+		createUnlockSatisfaction( reopenedRow ),
+	];
+	writeCurrentReopenEvidence( scenario, currentEvidence );
+	specify( reopenedRow );
+
+	assert.throws(
+		() => runDeferredReopenScenario( scenario ),
+		/prior.*calibration|matching dated heading/
+	);
+} );
+
+test( 'rejects a sibling unlock satisfaction when only one shared-packet row reopens', () => {
+	const scenario = createDeferredReopenScenario( { shared: true } );
+	const [ reopenedRow, siblingRow ] = scenario.currentRows;
+	const currentEvidence = structuredClone( scenario.previousEvidence );
+
+	currentEvidence.deferral.unlock_satisfactions = [
+		createUnlockSatisfaction( reopenedRow ),
+		createUnlockSatisfaction( siblingRow ),
+	];
+	writeCurrentReopenEvidence( scenario, currentEvidence );
+	specify( reopenedRow );
+
+	assert.throws(
+		() => runDeferredReopenScenario( scenario ),
+		/unlock satisfaction.*row not reopened/
+	);
+} );
+
+test( 'rejects a sibling unlock satisfaction hidden behind a replacement evidence path', () => {
+	const scenario = createDeferredReopenScenario( { shared: true } );
+	const [ reopenedRow, siblingRow ] = scenario.currentRows;
+	const currentEvidence = structuredClone( scenario.previousEvidence );
+
+	currentEvidence.deferral.unlock_satisfactions = [
+		createUnlockSatisfaction( reopenedRow ),
+	];
+	writeCurrentReopenEvidence( scenario, currentEvidence );
+	specify( reopenedRow );
+	siblingRow.evidence_path = createEvidenceFile( siblingRow, {
+		deferral: {
+			...createDecisionReadyDeferral(
+				siblingRow.gap_or_decision_reference
+			),
+			unlock_satisfactions: [ createUnlockSatisfaction( siblingRow ) ],
+		},
+	} );
+
+	assert.throws(
+		() => runDeferredReopenScenario( scenario ),
+		/deferred evidence_path must remain unchanged/
+	);
+} );
+
+for ( const previousState of [ 'planned', 'specified' ] ) {
+	test( `rejects an unlock satisfaction introduced by a newly deferred row from ${ previousState }`, () => {
+		const scenario = createDeferredReopenScenario();
+		const [ currentRow ] = scenario.currentRows;
+		const [ previousRow ] = scenario.previousRows;
+		const currentEvidence = structuredClone( scenario.previousEvidence );
+
+		previousRow.migration_state = previousState;
+		previousRow.native_support_state = 'not-assessed';
+		previousRow.gap_or_decision_reference = 'none';
+		previousRow.evidence_path = 'none';
+		currentEvidence.deferral.unlock_satisfactions = [
+			createUnlockSatisfaction( currentRow ),
+		];
+		writeCurrentReopenEvidence( scenario, currentEvidence );
+
+		assert.throws(
+			() => runDeferredReopenScenario( scenario ),
+			/newly introduced deferred evidence packet cannot contain unlock satisfactions/
+		);
+	} );
+}
+
+test( 'accepts a legacy deferred evidence_path upgrade without unlock satisfactions', () => {
+	const scenario = createDeferredReopenScenario();
+	const [ previousRow ] = scenario.previousRows;
+
+	previousRow.evidence_path = 'none';
+
+	assert.doesNotThrow( () => runDeferredReopenScenario( scenario ) );
+} );
+
+test( 'rejects an unlock satisfaction introduced by a legacy deferred evidence_path upgrade', () => {
+	const scenario = createDeferredReopenScenario( { shared: true } );
+	const [ reopenedRow, siblingRow ] = scenario.currentRows;
+	const [ , previousSiblingRow ] = scenario.previousRows;
+	const currentEvidence = structuredClone( scenario.previousEvidence );
+
+	currentEvidence.deferral.unlock_satisfactions = [
+		createUnlockSatisfaction( reopenedRow ),
+	];
+	writeCurrentReopenEvidence( scenario, currentEvidence );
+	specify( reopenedRow );
+	previousSiblingRow.evidence_path = 'none';
+	siblingRow.evidence_path = createEvidenceFile( siblingRow, {
+		deferral: {
+			...createDecisionReadyDeferral(
+				siblingRow.gap_or_decision_reference
+			),
+			unlock_satisfactions: [ createUnlockSatisfaction( siblingRow ) ],
+		},
+	} );
+
+	assert.throws(
+		() => runDeferredReopenScenario( scenario ),
+		/legacy deferred evidence packet cannot introduce unlock satisfactions/
+	);
+} );
+
+test( 'rejects reopening a legacy deferred row without a previous evidence packet', () => {
+	const scenario = createDeferredReopenScenario();
+	const [ currentRow ] = scenario.currentRows;
+	const [ previousRow ] = scenario.previousRows;
+	const currentEvidence = structuredClone( scenario.previousEvidence );
+
+	previousRow.evidence_path = 'none';
+	currentEvidence.deferral.unlock_satisfactions = [
+		createUnlockSatisfaction( currentRow ),
+	];
+	writeCurrentReopenEvidence( scenario, currentEvidence );
+	specify( currentRow );
+
+	assert.throws(
+		() => runDeferredReopenScenario( scenario ),
+		/exact previous evidence_path is required/
+	);
+} );
+
+test( 'rejects an unlock satisfaction when no packet row reopens', () => {
+	const scenario = createDeferredReopenScenario();
+	const [ deferredRow ] = scenario.currentRows;
+	const currentEvidence = structuredClone( scenario.previousEvidence );
+
+	currentEvidence.deferral.unlock_satisfactions = [
+		createUnlockSatisfaction( deferredRow ),
+	];
+	writeCurrentReopenEvidence( scenario, currentEvidence );
+
+	assert.throws(
+		() => runDeferredReopenScenario( scenario ),
+		/unlock satisfaction.*row not reopened/
+	);
+} );
+
+test( 'accepts one unlock satisfaction for each shared-packet row reopened together', () => {
+	const scenario = createDeferredReopenScenario( { shared: true } );
+	const currentEvidence = structuredClone( scenario.previousEvidence );
+
+	currentEvidence.deferral.unlock_satisfactions = scenario.currentRows.map(
+		( row ) => createUnlockSatisfaction( row )
+	);
+	writeCurrentReopenEvidence( scenario, currentEvidence );
+	for ( const row of scenario.currentRows ) {
+		specify( row );
+	}
+
+	assert.doesNotThrow( () => runDeferredReopenScenario( scenario ) );
 } );
 
 for ( const [ previous, next ] of [
@@ -2829,6 +3300,204 @@ test( 'accepts a decision-ready deferral without invented runtime evidence', () 
 		validateMigrationEvidence( evidence, createEvidenceContext( row ) )
 	);
 } );
+
+test( 'accepts an optional redacted unlock satisfaction on schema-v2 deferred evidence', () => {
+	const row = {
+		...contractMap.rows[ 0 ],
+		migration_state: 'deferred',
+		native_support_state: 'blocked-external',
+		gap_or_decision_reference: 'issue:12345',
+	};
+	const evidence = createValidEvidence( row, {
+		implementation_commits: [],
+		verification: [],
+		deferral: {
+			...createDecisionReadyDeferral( 'issue:12345' ),
+			unlock_satisfactions: [ createUnlockSatisfaction( row ) ],
+		},
+	} );
+
+	assert.doesNotThrow( () =>
+		validateMigrationEvidence( evidence, createEvidenceContext( row ) )
+	);
+} );
+
+for ( const publicReference of [
+	'https://github.com/woocommerce/woocommerce/issues/12345',
+	'https://github.com/woocommerce/woocommerce/pull/12345',
+	`https://github.com/woocommerce/woocommerce/commit/${ 'a'.repeat( 40 ) }`,
+] ) {
+	test( `accepts the public WooCommerce unlock satisfaction reference ${ publicReference }`, () => {
+		const row = {
+			...contractMap.rows[ 0 ],
+			migration_state: 'deferred',
+			native_support_state: 'blocked-external',
+			gap_or_decision_reference: 'issue:12345',
+		};
+		const evidence = createValidEvidence( row, {
+			implementation_commits: [],
+			verification: [],
+			deferral: {
+				...createDecisionReadyDeferral( 'issue:12345' ),
+				unlock_satisfactions: [
+					createUnlockSatisfaction( row, {
+						reference: publicReference,
+					} ),
+				],
+			},
+		} );
+
+		assert.doesNotThrow( () =>
+			validateMigrationEvidence( evidence, createEvidenceContext( row ) )
+		);
+	} );
+}
+
+for ( const arbitraryPublicReference of [
+	'https://github.com/woocommerce/woocommerce/discussions/12345',
+	'https://github.com/woocommerce/woocommerce/issues/12345?notification=1',
+	'https://github.com/another-owner/woocommerce/issues/12345',
+] ) {
+	test( `rejects the arbitrary public URL unlock satisfaction reference ${ arbitraryPublicReference }`, () => {
+		const row = {
+			...contractMap.rows[ 0 ],
+			migration_state: 'deferred',
+			native_support_state: 'blocked-external',
+			gap_or_decision_reference: 'issue:12345',
+		};
+		const evidence = createValidEvidence( row, {
+			implementation_commits: [],
+			verification: [],
+			deferral: {
+				...createDecisionReadyDeferral( 'issue:12345' ),
+				unlock_satisfactions: [
+					createUnlockSatisfaction( row, {
+						reference: arbitraryPublicReference,
+					} ),
+				],
+			},
+		} );
+
+		assert.throws(
+			() =>
+				validateMigrationEvidence(
+					evidence,
+					createEvidenceContext( row )
+				),
+			/unlock satisfaction.*reference/
+		);
+	} );
+}
+
+test( 'accepts a calibration-notes unlock satisfaction with the same dated heading', () => {
+	const row = {
+		...contractMap.rows[ 0 ],
+		migration_state: 'deferred',
+		native_support_state: 'blocked-external',
+		gap_or_decision_reference: 'issue:12345',
+	};
+	const evidence = createValidEvidence( row, {
+		implementation_commits: [],
+		verification: [],
+		deferral: {
+			...createDecisionReadyDeferral( 'issue:12345' ),
+			unlock_satisfactions: [
+				createUnlockSatisfaction( row, {
+					reference:
+						'calibration-notes:2026-08-03:native-runtime-ready',
+				} ),
+			],
+		},
+	} );
+
+	assert.doesNotThrow( () =>
+		validateMigrationEvidence( evidence, {
+			...createEvidenceContext( row ),
+			calibrationNotesContent:
+				'# Calibration\n\n## 2026-08-03 — Native runtime ready\n',
+		} )
+	);
+} );
+
+test( 'rejects a calibration-notes unlock satisfaction without its matching dated heading', () => {
+	const row = {
+		...contractMap.rows[ 0 ],
+		migration_state: 'deferred',
+		native_support_state: 'blocked-external',
+		gap_or_decision_reference: 'issue:12345',
+	};
+	const evidence = createValidEvidence( row, {
+		implementation_commits: [],
+		verification: [],
+		deferral: {
+			...createDecisionReadyDeferral( 'issue:12345' ),
+			unlock_satisfactions: [
+				createUnlockSatisfaction( row, {
+					reference:
+						'calibration-notes:2026-08-03:native-runtime-ready',
+				} ),
+			],
+		},
+	} );
+
+	assert.throws(
+		() =>
+			validateMigrationEvidence( evidence, {
+				...createEvidenceContext( row ),
+				calibrationNotesContent:
+					'# Calibration\n\n## 2026-08-02 — Native runtime ready\n',
+			} ),
+		/matching dated heading/
+	);
+} );
+
+for ( const [ description, overrides ] of [
+	[ 'timestamp-shaped date', { satisfied_on: '2026-08-03T12:00:00Z' } ],
+	[ 'impossible date', { satisfied_on: '2026-02-30' } ],
+	[ 'placeholder reference', { reference: 'pending' } ],
+	[
+		'internal URL reference',
+		{ reference: 'https://example.a8c.com/calibration' },
+	],
+	[
+		'raw provider ID reference',
+		{ reference: 'redacted:calibration:acct_123456789' },
+	],
+	[ 'email reference', { reference: 'test-merchant@example.com' } ],
+	[
+		'credential reference',
+		{ reference: 'authorization: Bearer abcdefghijklmnop' },
+	],
+	[ 'absolute path reference', { reference: '/private/calibration.json' } ],
+] ) {
+	test( `rejects an unlock satisfaction with ${ description }`, () => {
+		const row = {
+			...contractMap.rows[ 0 ],
+			migration_state: 'deferred',
+			native_support_state: 'blocked-external',
+			gap_or_decision_reference: 'issue:12345',
+		};
+		const evidence = createValidEvidence( row, {
+			implementation_commits: [],
+			verification: [],
+			deferral: {
+				...createDecisionReadyDeferral( 'issue:12345' ),
+				unlock_satisfactions: [
+					createUnlockSatisfaction( row, overrides ),
+				],
+			},
+		} );
+
+		assert.throws(
+			() =>
+				validateMigrationEvidence(
+					evidence,
+					createEvidenceContext( row )
+				),
+			/unlock satisfaction|public-safe|credentials|provider identifiers|absolute paths/
+		);
+	} );
+}
 
 for ( const unresolvedPlaceholder of [
 	'none',

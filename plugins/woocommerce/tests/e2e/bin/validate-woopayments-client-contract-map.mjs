@@ -9,6 +9,11 @@ import {
 	validateDispositionTransition,
 	validateStateTransition,
 } from './lib/woopayments-contract-map.mjs';
+import {
+	CALIBRATION_NOTES_REPOSITORY_PATH,
+	readCurrentTrackedFile,
+	validateDeferredContractReopens,
+} from './lib/woopayments-migration-evidence.mjs';
 
 const binDirectory = dirname( fileURLToPath( import.meta.url ) );
 const repositoryRoot = realpathSync(
@@ -101,6 +106,28 @@ export const runCli = ( cliArguments, overrides = {} ) => {
 					encoding: 'utf8',
 				}
 			) );
+	const resolveGitRef =
+		overrides.resolveGitRef ??
+		( ( gitRef ) =>
+			execFileSync(
+				'git',
+				[ 'rev-parse', '--verify', `${ gitRef }^{commit}` ],
+				{
+					cwd: activeRepositoryRoot,
+					encoding: 'utf8',
+				}
+			).trim() );
+	const readCurrentFile =
+		overrides.readCurrentFile ??
+		( ( repositoryPath ) => {
+			const invalidEvidenceMessage = `Deferred contract reopening requires a tracked regular current-tree evidence file: ${ repositoryPath }`;
+
+			return readCurrentTrackedFile(
+				activeRepositoryRoot,
+				repositoryPath,
+				invalidEvidenceMessage
+			).toString( 'utf8' );
+		} );
 	const log = overrides.log ?? console.log;
 	const options = parseArguments( cliArguments );
 	const contractMap = parseContractMap( ledgerContent );
@@ -112,8 +139,16 @@ export const runCli = ( cliArguments, overrides = {} ) => {
 	} );
 
 	if ( options.fromGitRef ) {
+		const comparisonCommit = resolveGitRef( options.fromGitRef );
+
+		if ( ! /^[0-9a-f]{40}$/.test( comparisonCommit ) ) {
+			throw new Error(
+				`Could not resolve ${ options.fromGitRef } to an immutable commit`
+			);
+		}
+
 		const previousContent = loadFromGitRef(
-			options.fromGitRef,
+			comparisonCommit,
 			ledgerRepositoryPath
 		);
 		const previousContractMap = parseContractMap( previousContent, {
@@ -122,6 +157,7 @@ export const runCli = ( cliArguments, overrides = {} ) => {
 		const previousRows = new Map(
 			previousContractMap.rows.map( ( row ) => [ row.case_id, row ] )
 		);
+		const deferredReopens = [];
 
 		for ( const row of contractMap.rows ) {
 			const previousRow = previousRows.get( row.case_id );
@@ -133,13 +169,46 @@ export const runCli = ( cliArguments, overrides = {} ) => {
 			}
 
 			if ( JSON.stringify( previousRow ) !== JSON.stringify( row ) ) {
-				validateStateTransition(
-					previousRow.migration_state,
-					row.migration_state
-				);
+				if (
+					previousRow.migration_state === 'deferred' &&
+					row.migration_state === 'specified'
+				) {
+					deferredReopens.push( {
+						previousRow,
+						nextRow: row,
+					} );
+				} else {
+					validateStateTransition(
+						previousRow.migration_state,
+						row.migration_state
+					);
+				}
 				validateDispositionTransition( previousRow, row );
 			}
 		}
+
+		validateDeferredContractReopens(
+			previousContractMap.rows.filter(
+				( row ) => row.migration_state === 'deferred'
+			),
+			deferredReopens,
+			{
+				metadata,
+				repositoryRoot: activeRepositoryRoot,
+				currentDeferredRows: contractMap.rows.filter(
+					( row ) => row.migration_state === 'deferred'
+				),
+				loadPreviousEvidence: ( repositoryPath ) =>
+					loadFromGitRef( comparisonCommit, repositoryPath ),
+				loadCurrentEvidence: readCurrentFile,
+				loadPreviousCalibrationNotes: () =>
+					loadFromGitRef(
+						comparisonCommit,
+						CALIBRATION_NOTES_REPOSITORY_PATH
+					),
+				calibrationNotesContent: overrides.calibrationNotesContent,
+			}
+		);
 	}
 
 	log( `Validated ${ summary.rowCount } WooPayments client contracts.` );

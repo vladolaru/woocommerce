@@ -39,6 +39,13 @@ const RAW_PROVIDER_ID_PATTERN = /\b(?:acct|ch|cus|pi|pm)_[A-Za-z0-9]{6,}\b/;
 const REDACTED_PROVIDER_REFERENCE_PATTERN =
 	/^redacted:[a-z][a-z0-9-]*:sha256:[0-9a-f]{64}$/;
 const REDACTED_PROVIDER_REFERENCE_CANDIDATE_PATTERN = /\bredacted:[^\s;,]+/g;
+const ISO_CALENDAR_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const CALIBRATION_NOTE_REFERENCE_PATTERN =
+	/^calibration-notes:(\d{4}-\d{2}-\d{2}):([a-z0-9]+(?:-[a-z0-9]+)*)$/;
+const PUBLIC_WOOCOMMERCE_REFERENCE_PATTERN =
+	/^https:\/\/github\.com\/woocommerce\/woocommerce\/(?:issues\/[1-9]\d*|pull\/[1-9]\d*|commit\/[0-9a-f]{40})$/;
+export const CALIBRATION_NOTES_REPOSITORY_PATH =
+	'plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md';
 const SHA1_PATTERN = /^[0-9a-f]{40}$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const URI_SCHEME_PATTERN = /^[a-z][a-z\d+.-]*:/i;
@@ -114,6 +121,16 @@ const DEFERRAL_KEYS = [
 	'reference',
 	'unlock_decision',
 	'quarantine_status',
+];
+const DEFERRAL_KEYS_WITH_UNLOCK_SATISFACTIONS = [
+	...DEFERRAL_KEYS,
+	'unlock_satisfactions',
+];
+const UNLOCK_SATISFACTION_KEYS = [
+	'contract_id',
+	'unlock_decision',
+	'satisfied_on',
+	'reference',
 ];
 const DECISION_READY_DEFERRAL_KEYS = [
 	'blocker',
@@ -460,15 +477,27 @@ const resolveCurrentSource = (
 	}
 };
 
+export const readCurrentTrackedFile = (
+	repositoryRoot,
+	repositoryPath,
+	invalidFileMessage
+) =>
+	readFileSync(
+		resolveCurrentSource(
+			repositoryRoot,
+			repositoryPath,
+			invalidFileMessage
+		)
+	);
+
 const readCurrentSource = ( repositoryRoot, sourcePath ) => {
 	const invalidSourceMessage = `Invalid migration evidence source_test_paths; current source must be a tracked regular file within the repository: ${ sourcePath }`;
-	const sourceFile = resolveCurrentSource(
+
+	return readCurrentTrackedFile(
 		repositoryRoot,
 		sourcePath,
 		invalidSourceMessage
 	);
-
-	return readFileSync( sourceFile );
 };
 
 const assertSourceTestBundle = (
@@ -1050,7 +1079,152 @@ const assertKnownGaps = ( knownGaps, row ) => {
 	}
 };
 
-const assertDeferral = ( deferral, row, evidence ) => {
+const isRealIsoCalendarDate = ( value ) => {
+	if ( ! ISO_CALENDAR_DATE_PATTERN.test( value ) ) {
+		return false;
+	}
+
+	const [ year, month, day ] = value.split( '-' ).map( Number );
+	const date = new Date( Date.UTC( year, month - 1, day ) );
+
+	return (
+		year >= 1 &&
+		date.getUTCFullYear() === year &&
+		date.getUTCMonth() === month - 1 &&
+		date.getUTCDate() === day
+	);
+};
+
+const headingSlug = ( title ) =>
+	title
+		.normalize( 'NFKD' )
+		.replaceAll( /[\u0300-\u036f]/g, '' )
+		.toLowerCase()
+		.replaceAll( /[^a-z0-9]+/g, '-' )
+		.replaceAll( /^-|-$/g, '' );
+
+const hasMatchingCalibrationHeading = ( content, date, expectedSlug ) =>
+	content.split( /\r?\n/ ).some( ( line ) => {
+		const headingMatch = line.match(
+			/^## (\d{4}-\d{2}-\d{2}) — (\S(?:.*\S)?)$/
+		);
+
+		return (
+			headingMatch?.[ 1 ] === date &&
+			headingSlug( headingMatch[ 2 ] ) === expectedSlug
+		);
+	} );
+
+const assertUnlockSatisfactions = (
+	deferral,
+	evidence,
+	repositoryRoot,
+	calibrationNotesContent
+) => {
+	if ( ! Object.hasOwn( deferral, 'unlock_satisfactions' ) ) {
+		return;
+	}
+
+	assertArray(
+		deferral.unlock_satisfactions,
+		'deferral.unlock_satisfactions'
+	);
+	const contractIds = new Set();
+	let loadedCalibrationNotes = calibrationNotesContent;
+
+	for ( const [
+		index,
+		satisfaction,
+	] of deferral.unlock_satisfactions.entries() ) {
+		const label = `unlock satisfaction ${ index }`;
+
+		assertExactKeys( satisfaction, UNLOCK_SATISFACTION_KEYS, label );
+		assertExactString(
+			satisfaction.contract_id,
+			`deferral.unlock_satisfactions[${ index }].contract_id`
+		);
+		assertExactString(
+			satisfaction.unlock_decision,
+			`deferral.unlock_satisfactions[${ index }].unlock_decision`
+		);
+		assertExactString(
+			satisfaction.satisfied_on,
+			`deferral.unlock_satisfactions[${ index }].satisfied_on`
+		);
+		assertExactString(
+			satisfaction.reference,
+			`deferral.unlock_satisfactions[${ index }].reference`
+		);
+
+		if ( contractIds.has( satisfaction.contract_id ) ) {
+			throw new Error(
+				`Invalid migration evidence unlock satisfaction ${ index }; duplicate contract_id`
+			);
+		}
+		contractIds.add( satisfaction.contract_id );
+
+		if ( ! evidence.contract_ids.includes( satisfaction.contract_id ) ) {
+			throw new Error(
+				`Invalid migration evidence unlock satisfaction ${ index }; contract must occur in contract_ids`
+			);
+		}
+
+		if ( ! isRealIsoCalendarDate( satisfaction.satisfied_on ) ) {
+			throw new Error(
+				`Invalid migration evidence unlock satisfaction ${ index }; satisfied_on must be a real YYYY-MM-DD calendar date`
+			);
+		}
+
+		const calibrationMatch = satisfaction.reference.match(
+			CALIBRATION_NOTE_REFERENCE_PATTERN
+		);
+		if ( calibrationMatch ) {
+			if ( calibrationMatch[ 1 ] !== satisfaction.satisfied_on ) {
+				throw new Error(
+					`Invalid migration evidence unlock satisfaction ${ index }; calibration reference date must match satisfied_on`
+				);
+			}
+
+			loadedCalibrationNotes ??= readCurrentSource(
+				repositoryRoot,
+				CALIBRATION_NOTES_REPOSITORY_PATH
+			).toString( 'utf8' );
+			if (
+				! hasMatchingCalibrationHeading(
+					loadedCalibrationNotes,
+					calibrationMatch[ 1 ],
+					calibrationMatch[ 2 ]
+				)
+			) {
+				throw new Error(
+					`Invalid migration evidence unlock satisfaction ${ index }; calibration reference requires a matching dated heading`
+				);
+			}
+			continue;
+		}
+
+		if (
+			! REDACTED_PROVIDER_REFERENCE_PATTERN.test(
+				satisfaction.reference
+			) &&
+			! PUBLIC_WOOCOMMERCE_REFERENCE_PATTERN.test(
+				satisfaction.reference
+			)
+		) {
+			throw new Error(
+				`Invalid migration evidence unlock satisfaction ${ index }; reference must be a redacted SHA-256, calibration-notes reference, or approved public WooCommerce reference`
+			);
+		}
+	}
+};
+
+const assertDeferral = (
+	deferral,
+	row,
+	evidence,
+	repositoryRoot,
+	calibrationNotesContent
+) => {
 	if ( row.migration_state !== 'deferred' ) {
 		if ( deferral !== null ) {
 			throw new Error(
@@ -1060,7 +1234,14 @@ const assertDeferral = ( deferral, row, evidence ) => {
 		return;
 	}
 
-	assertExactKeys( deferral, DEFERRAL_KEYS, 'evidence deferral' );
+	assertExactKeys(
+		deferral,
+		isPlainObject( deferral ) &&
+			Object.hasOwn( deferral, 'unlock_satisfactions' )
+			? DEFERRAL_KEYS_WITH_UNLOCK_SATISFACTIONS
+			: DEFERRAL_KEYS,
+		'evidence deferral'
+	);
 	assertExactString( deferral.reference, 'deferral.reference' );
 	for ( const key of DECISION_READY_DEFERRAL_KEYS ) {
 		assertExactString( deferral[ key ], `deferral.${ key }` );
@@ -1075,6 +1256,12 @@ const assertDeferral = ( deferral, row, evidence ) => {
 			);
 		}
 	}
+	assertUnlockSatisfactions(
+		deferral,
+		evidence,
+		repositoryRoot,
+		calibrationNotesContent
+	);
 
 	if (
 		deferral.reference !== row.gap_or_decision_reference ||
@@ -1089,7 +1276,7 @@ const assertDeferral = ( deferral, row, evidence ) => {
 
 export const validateMigrationEvidence = (
 	evidence,
-	{ row, metadata, repositoryRoot } = {}
+	{ row, metadata, repositoryRoot, calibrationNotesContent } = {}
 ) => {
 	assertPublicSafeJson( evidence );
 	assertExactKeys( evidence, EVIDENCE_KEYS, 'migration evidence' );
@@ -1163,7 +1350,248 @@ export const validateMigrationEvidence = (
 	assertReviews( evidence.reviews );
 	assertClosures( evidence.closures, row, evidence );
 	assertKnownGaps( evidence.known_gaps, row );
-	assertDeferral( evidence.deferral, row, evidence );
+	assertDeferral(
+		evidence.deferral,
+		row,
+		evidence,
+		repositoryRoot,
+		calibrationNotesContent
+	);
 
 	return evidence;
+};
+
+const parseHistoricalEvidence = ( content, label ) => {
+	try {
+		return JSON.parse( content );
+	} catch ( error ) {
+		throw new Error( `Invalid migration evidence JSON at ${ label }`, {
+			cause: error,
+		} );
+	}
+};
+
+const evidenceWithoutUnlockSatisfactions = ( evidence ) => {
+	const comparableEvidence = structuredClone( evidence );
+
+	if ( isPlainObject( comparableEvidence.deferral ) ) {
+		delete comparableEvidence.deferral.unlock_satisfactions;
+	}
+
+	return comparableEvidence;
+};
+
+const unlockSatisfactions = ( evidence ) =>
+	evidence.deferral.unlock_satisfactions ?? [];
+
+export const validateDeferredContractReopens = (
+	previousDeferredRows,
+	transitions,
+	{
+		metadata,
+		repositoryRoot,
+		currentDeferredRows = [],
+		loadPreviousEvidence,
+		loadCurrentEvidence,
+		loadPreviousCalibrationNotes,
+		calibrationNotesContent,
+	} = {}
+) => {
+	if (
+		previousDeferredRows.length === 0 &&
+		currentDeferredRows.length === 0
+	) {
+		return;
+	}
+
+	const currentDeferredRowsByContractId = new Map(
+		currentDeferredRows.map( ( row ) => [ row.case_id, row ] )
+	);
+	const previousRowsByEvidencePath = new Map();
+	const legacyUpgradeEvidencePaths = new Set();
+	for ( const previousRow of previousDeferredRows ) {
+		const currentDeferredRow = currentDeferredRowsByContractId.get(
+			previousRow.case_id
+		);
+
+		if ( previousRow.evidence_path === 'none' ) {
+			if ( ! currentDeferredRow ) {
+				throw new Error(
+					`Deferred contract reopening rejected for ${ previousRow.case_id }; an exact previous evidence_path is required`
+				);
+			}
+
+			if ( currentDeferredRow.evidence_path === 'none' ) {
+				continue;
+			}
+
+			legacyUpgradeEvidencePaths.add(
+				currentDeferredRow.evidence_path
+			);
+			continue;
+		}
+
+		if (
+			currentDeferredRow &&
+			currentDeferredRow.evidence_path !== previousRow.evidence_path
+		) {
+			throw new Error(
+				`Deferred contract history rejected for ${ previousRow.case_id }; deferred evidence_path must remain unchanged`
+			);
+		}
+
+		const evidencePath = previousRow.evidence_path;
+		const groupedRows =
+			previousRowsByEvidencePath.get( evidencePath ) ?? [];
+
+		groupedRows.push( previousRow );
+		previousRowsByEvidencePath.set( evidencePath, groupedRows );
+	}
+
+	const currentRowsByEvidencePath = new Map();
+	for ( const currentRow of currentDeferredRows ) {
+		const groupedRows =
+			currentRowsByEvidencePath.get( currentRow.evidence_path ) ?? [];
+
+		groupedRows.push( currentRow );
+		currentRowsByEvidencePath.set( currentRow.evidence_path, groupedRows );
+	}
+
+	for ( const [ evidencePath, groupedRows ] of currentRowsByEvidencePath ) {
+		if ( previousRowsByEvidencePath.has( evidencePath ) ) {
+			continue;
+		}
+
+		const currentEvidence = parseHistoricalEvidence(
+			loadCurrentEvidence( evidencePath ),
+			`the current tree:${ evidencePath }`
+		);
+		for ( const currentRow of groupedRows ) {
+			validateMigrationEvidence( currentEvidence, {
+				row: currentRow,
+				metadata,
+				repositoryRoot,
+				calibrationNotesContent,
+			} );
+		}
+		if ( unlockSatisfactions( currentEvidence ).length > 0 ) {
+			const reason = legacyUpgradeEvidencePaths.has( evidencePath )
+				? 'a legacy deferred evidence packet cannot introduce unlock satisfactions'
+				: 'a newly introduced deferred evidence packet cannot contain unlock satisfactions';
+
+			throw new Error(
+				`Deferred contract history rejected at ${ evidencePath }; ${ reason }`
+			);
+		}
+	}
+
+	let previousCalibrationNotesContent;
+	for ( const [ evidencePath, groupedRows ] of previousRowsByEvidencePath ) {
+		if ( ! isRepositoryRelativePath( evidencePath ) ) {
+			throw new Error(
+				`Deferred contract reopening requires an exact previous evidence_path: ${ evidencePath }`
+			);
+		}
+
+		const previousEvidence = parseHistoricalEvidence(
+			loadPreviousEvidence( evidencePath ),
+			`the comparison commit:${ evidencePath }`
+		);
+		const currentEvidence = parseHistoricalEvidence(
+			loadCurrentEvidence( evidencePath ),
+			`the current tree:${ evidencePath }`
+		);
+		const groupedTransitions = transitions.filter(
+			( { previousRow } ) => previousRow.evidence_path === evidencePath
+		);
+
+		if ( groupedTransitions.length > 0 ) {
+			previousCalibrationNotesContent ??= loadPreviousCalibrationNotes();
+			for ( const previousRow of groupedRows ) {
+				validateMigrationEvidence( previousEvidence, {
+					row: previousRow,
+					metadata,
+					repositoryRoot,
+					calibrationNotesContent: previousCalibrationNotesContent,
+				} );
+			}
+			validateMigrationEvidence( currentEvidence, {
+				row: groupedRows[ 0 ],
+				metadata,
+				repositoryRoot,
+				calibrationNotesContent,
+			} );
+		}
+
+		if (
+			groupedTransitions.length > 0 &&
+			JSON.stringify(
+				evidenceWithoutUnlockSatisfactions( currentEvidence )
+			) !==
+				JSON.stringify(
+					evidenceWithoutUnlockSatisfactions( previousEvidence )
+				)
+		) {
+			throw new Error(
+				`Deferred contract reopening rejected at ${ evidencePath }; previous deferral packet content must remain unchanged`
+			);
+		}
+
+		const previousSatisfactions = unlockSatisfactions( previousEvidence );
+		const currentSatisfactions = unlockSatisfactions( currentEvidence );
+		if (
+			currentSatisfactions.length < previousSatisfactions.length ||
+			previousSatisfactions.some(
+				( satisfaction, index ) =>
+					JSON.stringify( satisfaction ) !==
+					JSON.stringify( currentSatisfactions[ index ] )
+			)
+		) {
+			throw new Error(
+				`Deferred contract reopening rejected at ${ evidencePath }; prior unlock satisfactions must remain unchanged`
+			);
+		}
+
+		const addedSatisfactions = currentSatisfactions.slice(
+			previousSatisfactions.length
+		);
+		const reopenedContractIds = new Set(
+			groupedTransitions.map( ( { previousRow } ) => previousRow.case_id )
+		);
+		const extraSatisfaction = addedSatisfactions.find(
+			( satisfaction ) =>
+				! reopenedContractIds.has( satisfaction.contract_id )
+		);
+		if ( extraSatisfaction ) {
+			throw new Error(
+				`Deferred contract reopening rejected at ${ evidencePath }; unlock satisfaction added for row not reopened in this ledger change: ${ extraSatisfaction.contract_id }`
+			);
+		}
+
+		if ( addedSatisfactions.length !== reopenedContractIds.size ) {
+			throw new Error(
+				`Deferred contract reopening rejected at ${ evidencePath }; exactly one new unlock satisfaction is required for each reopened row`
+			);
+		}
+
+		for ( const { previousRow } of groupedTransitions ) {
+			const matchingSatisfactions = addedSatisfactions.filter(
+				( satisfaction ) =>
+					satisfaction.contract_id === previousRow.case_id
+			);
+			if ( matchingSatisfactions.length !== 1 ) {
+				throw new Error(
+					`Deferred contract reopening rejected for ${ previousRow.case_id }; exactly one new unlock satisfaction is required`
+				);
+			}
+			if (
+				matchingSatisfactions[ 0 ].unlock_decision !==
+				previousEvidence.deferral.unlock_decision
+			) {
+				throw new Error(
+					`Deferred contract reopening rejected for ${ previousRow.case_id }; satisfaction must reproduce the exact prior unlock_decision`
+				);
+			}
+		}
+	}
 };

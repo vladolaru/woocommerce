@@ -63,7 +63,7 @@ const ALLOWED_MIGRATION_TRANSITIONS = new Map( [
 	],
 	[ 'verified', new Set( [ 'verified', 'closed', 'deferred' ] ) ],
 	[ 'closed', new Set( [ 'closed', 'implemented' ] ) ],
-	[ 'deferred', new Set( [ 'deferred' ] ) ],
+	[ 'deferred', new Set( [ 'deferred', 'specified' ] ) ],
 ] );
 
 const FROZEN_SOURCE_HEADERS = [
@@ -835,6 +835,12 @@ export const validateStateTransition = ( previous, next ) => {
 	if ( ! ALLOWED_MIGRATION_TRANSITIONS.get( previous )?.has( next ) ) {
 		throw new Error(
 			`Illegal migration transition: ${ previous } -> ${ next }`
+		);
+	}
+
+	if ( previous === 'deferred' && next === 'specified' ) {
+		throw new Error(
+			'Deferred -> specified requires a history-bound unlock satisfaction'
 		);
 	}
 };
