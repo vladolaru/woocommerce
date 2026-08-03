@@ -1,0 +1,34 @@
+{
+	"schema_version": 2,
+	"slice_id": "checkout-saved-card-duplicate-retirements-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "502b3d45fa50ccd440ec003ca4e71f4d504f3c85",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": ["plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-save-card-and-purchase.spec.ts:109::Saved cards › When using a 3ds card added on checkout › should delete the card",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-save-card-and-purchase.spec.ts:117::Saved cards › When using a 3ds card added on checkout › should not allow guest user to save the card"
+	],
+	"targets": [{"path": "plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsTokenServiceTest.php;plugins/woocommerce/client/blocks/assets/js/data/payment/test/default-state.ts;plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/NativeWooPaymentsGatewayTest.php", "contract": "pending"}],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh independent review approved pre-review basic save/delete SHA 35182748ec541caab6b191c721b12cffcb429114316aacf65cd62eb8d7e6961d, 3DS save SHA c8c0b74e66bb8528fb25c888dc817cb86ef03a3a270d169350022e1cf999e7d3, guest eligibility SHA 6b92895797f112b7dbbd33710fe7c4a5507c62f5724148b8357d86957a79e78f and duplicate-retirements SHA 0ee9af2098e98f37635b1a7edbe7bd98f1d03c1ebad6c703045668f04135d6b1 against mutated ledger SHA 2fb5e5b50cd574c256e537f8c5d447c805216faf4b1a72e485f2c91c3ffc82a6 and baseline 2286900cc3e6600a0adbdd12b41a6a3c0acb258efd90e33145146fc17a9659a3 at 502b3d45fa50ccd440ec003ca4e71f4d504f3c85, with no findings. Exactly six rows change only fields 37-40: four readiness deferrals and two retirement-authority deferrals. The evidence preserves exact save/delete/provider identity, mandatory same-intent 3DS, provider-free guest accessibility and zero dispatch, duplicate-only retirement reasoning, one writer/listener, no retry/replay, journals, exact restoration, retention, quarantine and drift, with no unsupported defect, gap, implementation, verification, closure or retirement claim."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Human retirement authority is absent for two analysis-reviewed duplicate rows whose accepted disposition, exact lower-layer contract and implementation owner remain pending. The line-109 3DS-origin deletion executes the same exact-token delete/detach behavior as the retained basic lifecycle; the line-117 body never consumes its card-type or card parameter and is byte-for-byte the retained basic guest eligibility case. Static redundancy is established, but only an authorized owner may select retirement or require independent coverage.",
+		"affected_scope": "Two independent decision records, not runtime results. For line 109, the retained basic save/delete lifecycle owns exact local/provider deletion semantics while the challenged-save row deletes its 3DS token as cleanup; challenge provenance does not alter token deletion. For line 117, the basic guest row owns the complete provider-free guest eligibility contract because neither parameterized body enters card details or dispatches payment. The decision must map each original invariant to retained coverage/lower proof, preserve source identities and residual detach/affordance risks, and must not inherit runtime closure from sibling rows.",
+		"no_allowlisted_action_reason": "No autonomous action can supply human authority, change accepted disposition, approve the exact multi-target contract or name an implementation owner. Running either duplicate cannot decide product-policy ownership and would add provider work for row count rather than evidence. Keep both deferred and perform no provider, browser or environment action until an owner explicitly approves retirement or requests separate live coverage.",
+		"reference": "ambiguous-decision:PILOT-RETIREMENT-AUTHORITY",
+		"unlock_decision": "Have the responsible human owner review the exact source bodies, retained basic save/delete and guest evidence boundaries, challenged-save cleanup, lower-layer target tuple and residual risks. If retirement is approved, record authority, select the retirement disposition and close each row with row-specific mapping and required review. If declined, assign an exact executable target/owner and collect independent evidence without borrowing sibling closure. Re-review on source, target, token-delete or guest-policy drift.",
+		"quarantine_status": "No runtime, browser, provider, environment, listener, lock, journal, target, disposition, ledger authority, record or quarantine was created or changed. A future decision or evidence packet that lacks exact authority, row-specific invariant mapping, target identity, residual-risk treatment or drift provenance must remain deferred; no provider run, broad cleanup, listener action or inherited sibling result may be used to force retirement."
+	}
+}
