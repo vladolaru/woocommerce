@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "checkout-invalid-number-validation-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "5ee93fd094e4fc4fac212dba56668dd4ebba7ffe",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-failures.spec.ts:155::Shopper › Checkout › Failures with various cards › should throw an error that the card was declined due to incorrect card number"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/declines.spec.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh independent review approved pre-review evidence SHA 64715984289e51f925e27ccb0c8b05c0c908c91500545fdd4be5245965d03afb against mutated ledger SHA 07f414b64fc8d0a7e88a567d6266ad1cb360e35fcb9c90d1df5b6469834cd708 and committed baseline 72b896a3887c171d6e961dfbfa91aa4844ffb065b0c80d3f8a9ead5e6ddb4d39 at 5ee93fd094e4fc4fac212dba56668dd4ebba7ffe, with no findings. Exactly the intended decline-family rows change fields 37-40 while fields 1-36 and target tuples remain exact. The artifact replaces the frozen unawaited false-pass with an awaited accessible invalid-number and zero-call oracle requiring no writer or listener. Readiness remains first; one writer and exclusive listener apply only where provider-backed, with zero retries/replay, complete journals, restoration, retention, halt, quarantine, accessibility and drift controls, and no unsupported product-defect, known-gap, implementation, verification or closure claim."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "The standing PILOT-NATIVE-READINESS preflight fails before an exact native account, store, gateway, Payment Element, fresh shopper browser context, Woo session, or run-owned product and cart can be established. The committed target contract remains pending and its implementation owner remains owner-decision-required; the absent declines suite is shared with a semantically different expired-card row, so this deferral does not choose or merge their topology. Frozen and rolling source inputs have no relevant drift. The frozen source constructs but does not await the p#Field-numberError text expectation, allowing a false pass, and also depends on a private provider ID; these are source-test defects, not evidence of a native product defect.",
+		"affected_scope": "Only the source-line-155 Luhn-invalid card-number client-validation contract. Its future proof requires an independent fresh browser context and Woo session with a uniquely run-owned product/cart marker, one invalid-entry gesture using card number 4242424242424241, and an explicitly awaited semantic accessibility oracle: the native Payment Element field remains invalid; a visible field error conveys the stable meaning that the card number is invalid without depending on a private provider ID or exact typography; the field exposes an accessible invalid state and the error is programmatically associated or announced in the provider frame; checkout remains on the same form with no Order received state; and correction remains available. The local no-call journal must prove exactly zero same-origin Classic checkout AJAX posts, zero Store API checkout posts, and before/after deltas of exactly zero Woo orders, provider PaymentMethods, PaymentIntents, charges, balance transactions, and relevant provider events. This client-only row allocates no provider writer or listener.",
+		"no_allowlisted_action_reason": "No allowed dossier action can repair or assume native readiness, approve the pending target contract or owner, or allocate the isolated browser/store identity needed for authoritative request and object cardinality. An unawaited assertion, visible provider text at a private element ID, lower-layer coverage, an unchanged checkout page, or an assumed absence of submission cannot substitute for an explicitly awaited accessible invalid/error association plus the exact local request journal and zero local/provider deltas. No implementation, browser verification, provider query, closure, known gap, or product defect is claimed.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "First provide a fresh authorized window that passes PILOT-NATIVE-READINESS for the exact native account, store, gateway, and Payment Element, then assign an implementation owner and explicitly approve the target topology and contract without silently changing the expired-card sibling or closure-bound drivers. Create a fresh isolated context, Woo session, unique product/cart marker, before snapshots, and durable local no-call/request journal; perform one invalid-card-number gesture with zero Playwright retries or replay; explicitly await the semantic visible and accessible invalid/error-association proof so the frozen false-pass cannot survive, correction availability, exact zero Classic and Store API checkout posts, and exact zero local/provider object and event deltas. Restore only run-owned browser/session/cart/product state and verify the before state; retain redacted request logs, accessibility evidence, hashes, and identifiers under the Phase 3 policy; then obtain fresh reviews before any ledger transition beyond the specified deferral fields.",
+		"quarantine_status": "This deferral created no browser context, store allocation, shopper, product, cart, Woo session, order, provider object, writer, listener, lock, journal, retained run artifact, or quarantine residue; it inspected or changed no runtime, provider, environment, or listener state. A future readiness or identity mismatch, unexpected Classic or Store API checkout post, Woo order, PaymentMethod, PaymentIntent, charge, balance transaction, relevant event, missing awaited assertion, accessibility-association failure, correction loss, journal loss, restoration mismatch, source/target drift, or evidence-publication failure must stop the row and preserve the exact browser/store diagnostics and any unexpected run-correlated object in quarantine. Do not delete an unexpected object to erase evidence, replay the gesture for cleaner evidence, broadly reset shared state, alter a provider listener, or accept target drift without rebinding and fresh review."
+	}
+}
