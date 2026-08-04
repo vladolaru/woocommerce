@@ -1,0 +1,45 @@
+{
+	"schema_version": 2,
+	"slice_id": "checkout-basic-card-false-protection-closure",
+	"wc_base_commit": "e5df1b9d6450f93bce3efde16831680b6d736b0d",
+	"verified_at_commit": "a92fc49f6494adbb762737e96613248424c4d951",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/pilots/shopper-card-payment.spec.ts",
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/card-payment.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/checkout.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/provider-evidence.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/record-evidence.ts"
+	],
+	"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase.spec.ts:53::Successful purchase › Carding protection false › using a basic card"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/card-payment.ts",
+			"contract": "Successful purchase › Carding protection false › using a basic card"
+		}
+	],
+	"implementation_commits": [
+		"a92fc49f6494adbb762737e96613248424c4d951"
+	],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "implementation-spec",
+			"verdict": "APPROVE",
+			"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
+			"summary": "The reviewed scenario preserves the exact strict-false Blocks checkout, accessible receipt, order, and provider contract with one canonical passing provider-owned annotation."
+		},
+		{
+			"role": "implementation-quality",
+			"verdict": "APPROVE",
+			"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
+			"summary": "The reviewed implementation uses a thin runtime adapter, fail-closed evidence validation, exact collection multiplicity, and focused regression coverage with no remaining findings."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": null
+}
