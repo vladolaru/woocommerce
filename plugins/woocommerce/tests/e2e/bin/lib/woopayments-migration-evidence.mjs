@@ -1524,7 +1524,6 @@ export const validateDeferredContractReopens = (
 		}
 
 		if (
-			groupedTransitions.length > 0 &&
 			JSON.stringify(
 				evidenceWithoutUnlockSatisfactions( currentEvidence )
 			) !==

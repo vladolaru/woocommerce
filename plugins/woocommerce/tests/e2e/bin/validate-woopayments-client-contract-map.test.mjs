@@ -1860,6 +1860,26 @@ test( 'rejects deferred -> specified when immutable deferral facts change', () =
 	);
 } );
 
+test( 'rejects immutable deferral fact changes when no packet row reopens', () => {
+	const scenario = createDeferredReopenScenario();
+	const currentEvidence = structuredClone( scenario.previousEvidence );
+
+	currentEvidence.deferral.unlock_decision =
+		'Grant a different external account authority';
+	writeCurrentReopenEvidence( scenario, currentEvidence );
+
+	assert.throws(
+		() => runDeferredReopenScenario( scenario ),
+		( error ) => {
+			assert.equal(
+				error.message,
+				`Deferred contract reopening rejected at ${ scenario.evidencePath }; previous deferral packet content must remain unchanged`
+			);
+			return true;
+		}
+	);
+} );
+
 test( 'rejects duplicate unlock satisfactions for one deferred -> specified row', () => {
 	const scenario = createDeferredReopenScenario();
 	const [ currentRow ] = scenario.currentRows;
