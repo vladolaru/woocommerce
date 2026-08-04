@@ -19,6 +19,7 @@ import {
 	type Locator,
 	type Page,
 } from '@playwright/test';
+import ts from 'typescript';
 
 import {
 	loadInitialRuntimeStatus,
@@ -2688,6 +2689,121 @@ test( 'owns account, store, and record locks before a provider helper call', asy
 	}
 } );
 
+interface ProviderActionLockContract {
+	file: string;
+	wrapper:
+		| 'pilotRuntime.withProviderWriteLocks'
+		| 'withCapturedManualCaptureSetting';
+	providerActions: string[];
+}
+
+function callCallee( call: ts.CallExpression ): string | undefined {
+	const expression = call.expression;
+	if ( ts.isIdentifier( expression ) ) {
+		return expression.text;
+	}
+	if (
+		ts.isPropertyAccessExpression( expression ) &&
+		ts.isIdentifier( expression.expression )
+	) {
+		return `${ expression.expression.text }.${ expression.name.text }`;
+	}
+	return undefined;
+}
+
+function assertProviderActionsWithinDeclaredLockWrapper(
+	source: string,
+	contract: ProviderActionLockContract
+): void {
+	const sourceFile = ts.createSourceFile(
+		contract.file,
+		source,
+		ts.ScriptTarget.Latest,
+		true,
+		ts.ScriptKind.TS
+	);
+	const calls: ts.CallExpression[] = [];
+	const visit = ( node: ts.Node ): void => {
+		if ( ts.isCallExpression( node ) ) {
+			calls.push( node );
+		}
+		ts.forEachChild( node, visit );
+	};
+	visit( sourceFile );
+
+	const wrapperCallbacks = calls
+		.filter( ( call ) => {
+			if ( callCallee( call ) !== contract.wrapper ) {
+				return false;
+			}
+			if ( contract.wrapper === 'pilotRuntime.withProviderWriteLocks' ) {
+				return true;
+			}
+			const runtimeArgument = call.arguments[ 0 ];
+			return Boolean(
+				runtimeArgument &&
+					ts.isIdentifier( runtimeArgument ) &&
+					runtimeArgument.text === 'pilotRuntime'
+			);
+		} )
+		.map( ( call ) => call.arguments[ 1 ] )
+		.filter(
+			(
+				callback
+			): callback is ts.ArrowFunction | ts.FunctionExpression =>
+				Boolean(
+					callback &&
+						( ts.isArrowFunction( callback ) ||
+							ts.isFunctionExpression( callback ) )
+				)
+		);
+
+	if ( wrapperCallbacks.length === 0 ) {
+		throw new Error(
+			`${ contract.file } has no declared ${ contract.wrapper } lock-wrapper callback.`
+		);
+	}
+
+	for ( const providerAction of contract.providerActions ) {
+		const actionCalls = calls.filter(
+			( call ) => callCallee( call ) === providerAction
+		);
+		if ( actionCalls.length === 0 ) {
+			throw new Error(
+				`${ contract.file } has no ${ providerAction } provider action call.`
+			);
+		}
+		for ( const actionCall of actionCalls ) {
+			let ancestor: ts.Node | undefined = actionCall.parent;
+			while ( ancestor && ! wrapperCallbacks.includes( ancestor ) ) {
+				ancestor = ancestor.parent;
+			}
+			if ( ! ancestor ) {
+				throw new Error(
+					`${ contract.file } ${ providerAction } is outside its declared lock-wrapper callback.`
+				);
+			}
+		}
+	}
+}
+
+test( 'rejects a provider action outside its declared lock-wrapper callback', () => {
+	const source = `
+		async function run( pilotRuntime ) {
+			await pilotRuntime.withProviderWriteLocks( {}, async () => {} );
+			await pilotRuntime.createOwnedProduct( '10.99' );
+		}
+	`;
+
+	expect( () =>
+		assertProviderActionsWithinDeclaredLockWrapper( source, {
+			file: 'synthetic-invalid.ts',
+			wrapper: 'pilotRuntime.withProviderWriteLocks',
+			providerActions: [ 'pilotRuntime.createOwnedProduct' ],
+		} )
+	).toThrow( /outside.*lock-wrapper callback/i );
+} );
+
 test( 'routes every provider-writing pilot through a lock-owning wrapper', async () => {
 	const contractDirectory = resolve(
 		process.cwd(),
@@ -2697,43 +2813,54 @@ test( 'routes every provider-writing pilot through a lock-owning wrapper', async
 		{
 			file: 'scenarios/card-payment.ts',
 			wrapper: 'pilotRuntime.withProviderWriteLocks',
-			firstProviderAction: 'pilotRuntime.createOwnedProduct',
+			providerActions: [
+				'pilotRuntime.createOwnedProduct',
+				'adapter.completeCheckout',
+			],
 		},
 		{
 			file: 'pilots/saved-method-cutover.spec.ts',
 			wrapper: 'pilotRuntime.withProviderWriteLocks',
-			firstProviderAction: 'pilotRuntime.requireApprovedProviderFixture',
+			providerActions: [
+				'pilotRuntime.requireApprovedProviderFixture',
+				'pilotRuntime.requireEphemeralTransitionAllocation',
+				'createPluginOwnedSavedCard',
+				'makeSavedCardDefault',
+				'softCutOverEphemeralStore',
+				'payWithExactSavedCard',
+				'deleteExactSavedCards',
+			],
 		},
 		{
 			file: 'pilots/merchant-transaction-navigation.spec.ts',
 			wrapper: 'pilotRuntime.withProviderWriteLocks',
-			firstProviderAction: 'pilotRuntime.requireApprovedProviderFixture',
+			providerActions: [
+				'pilotRuntime.requireApprovedProviderFixture',
+				'pilotRuntime.createOwnedProduct',
+				'completeCardCheckout',
+			],
 		},
 		{
 			file: 'pilots/merchant-manual-capture.spec.ts',
-			wrapper: 'withCapturedManualCaptureSetting( pilotRuntime',
-			firstProviderAction:
-				"pilotRuntime.requireApprovedProviderFixture( 'manual-capture' )",
+			wrapper: 'withCapturedManualCaptureSetting',
+			providerActions: [
+				'pilotRuntime.requireApprovedProviderFixture',
+				'pilotRuntime.createOwnedProduct',
+				'completeCardCheckout',
+				'captureExactOrder',
+			],
 		},
-	];
+	] satisfies ProviderActionLockContract[];
 
 	for ( const contract of pilotContracts ) {
 		const source = await readFile(
 			join( contractDirectory, contract.file ),
 			'utf8'
 		);
-		const wrapperIndex = source.indexOf( contract.wrapper );
-		const actionIndex = source.indexOf( contract.firstProviderAction );
 
-		expect(
-			wrapperIndex,
-			`${ contract.file } lock wrapper`
-		).toBeGreaterThan( -1 );
-		expect(
-			actionIndex,
-			`${ contract.file } first provider action`
-		).toBeGreaterThan( -1 );
-		expect( wrapperIndex ).toBeLessThan( actionIndex );
+		expect( () =>
+			assertProviderActionsWithinDeclaredLockWrapper( source, contract )
+		).not.toThrow();
 	}
 } );
 

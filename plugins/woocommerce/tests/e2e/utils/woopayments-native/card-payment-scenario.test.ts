@@ -130,6 +130,24 @@ test.describe( 'card payment evidence validator', () => {
 		}
 	} );
 
+	test( 'rejects nonempty checkout observer failures', () => {
+		const evidence = exactEvidence();
+		evidence.observerFailures = [ 'checkout-response-capture' ];
+
+		expect( () => validateCardPaymentEvidence( evidence ) ).toThrow(
+			/checkout observation.*cleanly/i
+		);
+	} );
+
+	test( 'rejects a non-2xx checkout response', () => {
+		const evidence = exactEvidence();
+		evidence.checkoutResponses[ 0 ].status = 500;
+
+		expect( () => validateCardPaymentEvidence( evidence ) ).toThrow(
+			/checkout response.*successful/i
+		);
+	} );
+
 	for ( const cardinality of [
 		{
 			name: 'zero checkout requests',
