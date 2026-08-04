@@ -2689,28 +2689,28 @@ test( 'owns account, store, and record locks before a provider helper call', asy
 } );
 
 test( 'routes every provider-writing pilot through a lock-owning wrapper', async () => {
-	const pilotDirectory = resolve(
+	const contractDirectory = resolve(
 		process.cwd(),
-		'tests/e2e/tests/woopayments-native/pilots'
+		'tests/e2e/tests/woopayments-native'
 	);
 	const pilotContracts = [
 		{
-			file: 'shopper-card-payment.spec.ts',
+			file: 'scenarios/card-payment.ts',
 			wrapper: 'pilotRuntime.withProviderWriteLocks',
 			firstProviderAction: 'pilotRuntime.createOwnedProduct',
 		},
 		{
-			file: 'saved-method-cutover.spec.ts',
+			file: 'pilots/saved-method-cutover.spec.ts',
 			wrapper: 'pilotRuntime.withProviderWriteLocks',
 			firstProviderAction: 'pilotRuntime.requireApprovedProviderFixture',
 		},
 		{
-			file: 'merchant-transaction-navigation.spec.ts',
+			file: 'pilots/merchant-transaction-navigation.spec.ts',
 			wrapper: 'pilotRuntime.withProviderWriteLocks',
 			firstProviderAction: 'pilotRuntime.requireApprovedProviderFixture',
 		},
 		{
-			file: 'merchant-manual-capture.spec.ts',
+			file: 'pilots/merchant-manual-capture.spec.ts',
 			wrapper: 'withCapturedManualCaptureSetting( pilotRuntime',
 			firstProviderAction:
 				"pilotRuntime.requireApprovedProviderFixture( 'manual-capture' )",
@@ -2719,7 +2719,7 @@ test( 'routes every provider-writing pilot through a lock-owning wrapper', async
 
 	for ( const contract of pilotContracts ) {
 		const source = await readFile(
-			join( pilotDirectory, contract.file ),
+			join( contractDirectory, contract.file ),
 			'utf8'
 		);
 		const wrapperIndex = source.indexOf( contract.wrapper );
