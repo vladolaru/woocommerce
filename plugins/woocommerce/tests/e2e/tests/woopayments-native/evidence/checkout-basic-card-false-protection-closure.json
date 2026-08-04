@@ -2,7 +2,7 @@
 	"schema_version": 2,
 	"slice_id": "checkout-basic-card-false-protection-closure",
 	"wc_base_commit": "e5df1b9d6450f93bce3efde16831680b6d736b0d",
-	"verified_at_commit": "a92fc49f6494adbb762737e96613248424c4d951",
+	"verified_at_commit": "6523528308510eb06f9a6d485f1bb1acd1c6661b",
 	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
 	"source_test_paths": [
 		"plugins/woocommerce/tests/e2e/tests/woopayments-native/pilots/shopper-card-payment.spec.ts",
@@ -22,9 +22,26 @@
 		}
 	],
 	"implementation_commits": [
-		"a92fc49f6494adbb762737e96613248424c4d951"
+		"a92fc49f6494adbb762737e96613248424c4d951",
+		"6523528308510eb06f9a6d485f1bb1acd1c6661b"
 	],
-	"verification": [],
+	"verification": [
+		{
+			"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep='Successful purchase › Carding protection false › using a basic card' tests/e2e/tests/woopayments-native/pilots/shopper-card-payment.spec.ts",
+			"exit_code": 0,
+			"summary": "The actual provider-capable execution ran once with one worker and zero retries; 1/1 passed in 22.7 seconds. It proved strict-false configuration, one Store API request and response, exact guest USD 10.99 WooPayments order and provider graph, succeeded captured state, no action/save path, empty customer methods, accessible receipt, exact event cardinality, and exact cleanup with zero listener, attempt, quarantine, or live-lock residue. Hash-attested references: redacted:run-id:sha256:4537d8f34e917f6c7fe68a56a6d59b597f531f8e39d21a31240cd191aea56f31; redacted:order-record:sha256:ea87fb99f47628068cb927567a4120804d6415996154a12d350bd022753d5f4b; redacted:listener-log:sha256:519280637f04fbdb7bcbb8d88d6df6ec6b0c9413c1e15f3bcddb610fc546beba; redacted:listener-identity:sha256:69f28b27b32801d1d64f70278318ed00cead9bbbebaa88ca780956336d13e264"
+		},
+		{
+			"command": "pnpm --dir plugins/woocommerce exec playwright test --config=tests/e2e/envs/woopayments-native/unit.playwright.config.ts tests/e2e/utils/woopayments-native/card-payment-scenario.test.ts tests/e2e/utils/woopayments-native/pilot-runtime.test.ts",
+			"exit_code": 0,
+			"summary": "All 117 focused scenario and pilot-runtime tests passed after the final test-only review correction; the five-file provider-verified bundle remained byte-identical."
+		},
+		{
+			"command": "pnpm --dir plugins/woocommerce test:e2e:woopayments:controller",
+			"exit_code": 0,
+			"summary": "The final controller passed 219 contract-map unit tests, all 181 ledger rows, 20 routing tests, environment setup, and 205 Playwright unit tests on the verified proposal."
+		}
+	],
 	"reviews": [
 		{
 			"role": "implementation-spec",
@@ -37,9 +54,175 @@
 			"verdict": "APPROVE",
 			"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
 			"summary": "The reviewed implementation uses a thin runtime adapter, fail-closed evidence validation, exact collection multiplicity, and focused regression coverage with no remaining findings."
+		},
+		{
+			"role": "code",
+			"verdict": "APPROVE",
+			"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
+			"summary": "Final code review approved the exact frozen native contract and five-file bundle with no actionable findings."
+		},
+		{
+			"role": "e2e-tests",
+			"verdict": "APPROVE",
+			"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
+			"summary": "E2E review approved the exact Blocks route, single request and response, provider correlation, and cleanup; unrelated protected-helper hardening does not weaken this run."
+		},
+		{
+			"role": "js-tests",
+			"verdict": "APPROVE",
+			"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
+			"summary": "JavaScript test review approved AST lock-callback containment and explicit observer-failure and unsuccessful-response coverage without source-bundle drift."
+		},
+		{
+			"role": "reliability",
+			"verdict": "APPROVE",
+			"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
+			"summary": "Reliability review approved exact listener cardinality, correlated provider identities, successful ownership persistence, exact cleanup, and zero residual state."
+		},
+		{
+			"role": "concurrency",
+			"verdict": "APPROVE",
+			"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
+			"summary": "Concurrency review approved serialized provider writes, one-shot journaling, scoped observers, and deterministic teardown under one worker and zero retries."
+		},
+		{
+			"role": "accessibility",
+			"verdict": "APPROVE",
+			"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
+			"summary": "Accessibility review approved the bounded visible status and semantic list, listitem, card or Visa, and 4242 receipt oracle."
+		},
+		{
+			"role": "security",
+			"verdict": "APPROVE",
+			"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
+			"summary": "Security review approved the bounded request contract, downstream method lineage, test-mode write safeguards, and exclusively redacted tracked evidence."
+		},
+		{
+			"role": "provider-evidence",
+			"verdict": "APPROVE",
+			"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
+			"summary": "Provider-evidence review approved the combined correlation, singleton cardinality, required negatives, exact cleanup, zero residue, and hash-attested public references."
+		},
+		{
+			"role": "architecture",
+			"verdict": "APPROVE",
+			"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
+			"summary": "Architecture review approved the four-line composition root, narrow runtime adapter, cohesive shared scenario, and unchanged evidence boundaries."
+		},
+		{
+			"role": "api-contract-backward-compatibility",
+			"verdict": "APPROVE",
+			"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
+			"summary": "API and backward-compatibility review confirmed additive test-internal exports with no production route, hook, response, or public signature change."
+		},
+		{
+			"role": "ecosystem-integration",
+			"verdict": "APPROVE",
+			"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
+			"summary": "Ecosystem review approved native Blocks payload fields, disabled-protection configuration, explicit null action fields, exhaustive charge collection, and receipt rendering."
+		},
+		{
+			"role": "reference-integrity",
+			"verdict": "APPROVE",
+			"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
+			"summary": "Reference review approved every exercised import, export, route, selector, annotation, title, contract ID, target mapping, and five-file bundle member."
 		}
 	],
-	"closures": [],
+	"closures": [
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase.spec.ts:53::Successful purchase › Carding protection false › using a basic card",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/card-payment.ts",
+				"contract": "Successful purchase › Carding protection false › using a basic card"
+			},
+			"verification": [
+				{
+					"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep='Successful purchase › Carding protection false › using a basic card' tests/e2e/tests/woopayments-native/pilots/shopper-card-payment.spec.ts",
+					"exit_code": 0,
+					"summary": "The actual provider-capable execution ran once with one worker and zero retries; 1/1 passed in 22.7 seconds with the complete strict-false checkout, order, provider, listener, accessibility, and cleanup oracle. Public identities are bound by the packet's redacted SHA-256 references."
+				},
+				{
+					"command": "pnpm --dir plugins/woocommerce test:e2e:woopayments:controller",
+					"exit_code": 0,
+					"summary": "The final controller passed every contract-map, routing, environment, and Playwright unit gate on the verified proposal."
+				}
+			],
+			"reviews": [
+				{
+					"role": "code",
+					"verdict": "APPROVE",
+					"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
+					"summary": "Approved the exact frozen native contract and five-file bundle with no actionable findings."
+				},
+				{
+					"role": "e2e-tests",
+					"verdict": "APPROVE",
+					"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
+					"summary": "Approved the exact Blocks request, response, provider correlation, cardinality, and cleanup behavior."
+				},
+				{
+					"role": "js-tests",
+					"verdict": "APPROVE",
+					"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
+					"summary": "Approved focused validator coverage and AST lock-callback containment without bundle drift."
+				},
+				{
+					"role": "reliability",
+					"verdict": "APPROVE",
+					"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
+					"summary": "Approved exact-run listener cardinality, ownership persistence, cleanup, and zero residual state."
+				},
+				{
+					"role": "concurrency",
+					"verdict": "APPROVE",
+					"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
+					"summary": "Approved serialized provider writes, one-shot journaling, scoped observers, and deterministic teardown."
+				},
+				{
+					"role": "accessibility",
+					"verdict": "APPROVE",
+					"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
+					"summary": "Approved the bounded visible status and semantic exact receipt oracle."
+				},
+				{
+					"role": "security",
+					"verdict": "APPROVE",
+					"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
+					"summary": "Approved the bounded request contract, write safeguards, and redacted tracked evidence."
+				},
+				{
+					"role": "provider-evidence",
+					"verdict": "APPROVE",
+					"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
+					"summary": "Approved correlation, singleton cardinality, negatives, cleanup, and hash-attested references."
+				},
+				{
+					"role": "architecture",
+					"verdict": "APPROVE",
+					"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
+					"summary": "Approved the thin composition root, narrow adapter, cohesive scenario, and stable evidence boundaries."
+				},
+				{
+					"role": "api-contract-backward-compatibility",
+					"verdict": "APPROVE",
+					"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
+					"summary": "Approved additive test-internal exports with no production or public contract change."
+				},
+				{
+					"role": "ecosystem-integration",
+					"verdict": "APPROVE",
+					"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
+					"summary": "Approved native Blocks payload, route, provider collection, action fields, and receipt integration."
+				},
+				{
+					"role": "reference-integrity",
+					"verdict": "APPROVE",
+					"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
+					"summary": "Approved every exercised path, import, export, route, annotation, title, ID, and bundle reference."
+				}
+			]
+		}
+	],
 	"known_gaps": [],
 	"deferral": null
 }
