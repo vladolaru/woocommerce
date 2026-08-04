@@ -2017,43 +2017,19 @@ for ( const previousState of [ 'planned', 'specified' ] ) {
 	} );
 }
 
-test( 'accepts a legacy deferred evidence_path upgrade without unlock satisfactions', () => {
+test( 'rejects a previous deferred row without an evidence packet', () => {
 	const scenario = createDeferredReopenScenario();
 	const [ previousRow ] = scenario.previousRows;
 
 	previousRow.evidence_path = 'none';
 
-	assert.doesNotThrow( () => runDeferredReopenScenario( scenario ) );
-} );
-
-test( 'rejects an unlock satisfaction introduced by a legacy deferred evidence_path upgrade', () => {
-	const scenario = createDeferredReopenScenario( { shared: true } );
-	const [ reopenedRow, siblingRow ] = scenario.currentRows;
-	const [ , previousSiblingRow ] = scenario.previousRows;
-	const currentEvidence = structuredClone( scenario.previousEvidence );
-
-	currentEvidence.deferral.unlock_satisfactions = [
-		createUnlockSatisfaction( reopenedRow ),
-	];
-	writeCurrentReopenEvidence( scenario, currentEvidence );
-	specify( reopenedRow );
-	previousSiblingRow.evidence_path = 'none';
-	siblingRow.evidence_path = createEvidenceFile( siblingRow, {
-		deferral: {
-			...createDecisionReadyDeferral(
-				siblingRow.gap_or_decision_reference
-			),
-			unlock_satisfactions: [ createUnlockSatisfaction( siblingRow ) ],
-		},
-	} );
-
 	assert.throws(
 		() => runDeferredReopenScenario( scenario ),
-		/legacy deferred evidence packet cannot introduce unlock satisfactions/
+		/exact previous evidence_path is required/
 	);
 } );
 
-test( 'rejects reopening a legacy deferred row without a previous evidence packet', () => {
+test( 'rejects reopening a deferred row without a previous evidence packet', () => {
 	const scenario = createDeferredReopenScenario();
 	const [ currentRow ] = scenario.currentRows;
 	const [ previousRow ] = scenario.previousRows;

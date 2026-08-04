@@ -1408,27 +1408,15 @@ export const validateDeferredContractReopens = (
 		currentDeferredRows.map( ( row ) => [ row.case_id, row ] )
 	);
 	const previousRowsByEvidencePath = new Map();
-	const legacyUpgradeEvidencePaths = new Set();
 	for ( const previousRow of previousDeferredRows ) {
 		const currentDeferredRow = currentDeferredRowsByContractId.get(
 			previousRow.case_id
 		);
 
 		if ( previousRow.evidence_path === 'none' ) {
-			if ( ! currentDeferredRow ) {
-				throw new Error(
-					`Deferred contract reopening rejected for ${ previousRow.case_id }; an exact previous evidence_path is required`
-				);
-			}
-
-			if ( currentDeferredRow.evidence_path === 'none' ) {
-				continue;
-			}
-
-			legacyUpgradeEvidencePaths.add(
-				currentDeferredRow.evidence_path
+			throw new Error(
+				`Deferred contract reopening rejected for ${ previousRow.case_id }; an exact previous evidence_path is required`
 			);
-			continue;
 		}
 
 		if (
@@ -1475,12 +1463,8 @@ export const validateDeferredContractReopens = (
 			} );
 		}
 		if ( unlockSatisfactions( currentEvidence ).length > 0 ) {
-			const reason = legacyUpgradeEvidencePaths.has( evidencePath )
-				? 'a legacy deferred evidence packet cannot introduce unlock satisfactions'
-				: 'a newly introduced deferred evidence packet cannot contain unlock satisfactions';
-
 			throw new Error(
-				`Deferred contract history rejected at ${ evidencePath }; ${ reason }`
+				`Deferred contract history rejected at ${ evidencePath }; a newly introduced deferred evidence packet cannot contain unlock satisfactions`
 			);
 		}
 	}
@@ -1527,9 +1511,9 @@ export const validateDeferredContractReopens = (
 			JSON.stringify(
 				evidenceWithoutUnlockSatisfactions( currentEvidence )
 			) !==
-				JSON.stringify(
-					evidenceWithoutUnlockSatisfactions( previousEvidence )
-				)
+			JSON.stringify(
+				evidenceWithoutUnlockSatisfactions( previousEvidence )
+			)
 		) {
 			throw new Error(
 				`Deferred contract reopening rejected at ${ evidencePath }; previous deferral packet content must remain unchanged`
