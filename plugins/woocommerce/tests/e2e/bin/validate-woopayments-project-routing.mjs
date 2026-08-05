@@ -17,12 +17,10 @@ const providerPilotOrder = [
 	'merchant-manual-capture',
 ];
 const transitionPilotOrder = [ 'saved-method-cutover' ];
-const cardPaymentScenarioContract =
-	'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase.spec.ts:53::Successful purchase › Carding protection false › using a basic card';
-const cardPaymentScenarioFile = 'woopayments-native/scenarios/card-payment.ts';
-const cardPaymentScenarioTitle =
-	'Successful purchase › Carding protection false › using a basic card';
-const cardPaymentScenarioTags = [
+const scenarioTargetPrefix =
+	'plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/';
+const scenarioMigrationStates = [ 'implemented', 'verified', 'closed' ];
+const scenarioOwnershipTags = [
 	'woopayments-native',
 	'woopayments-provider',
 	'woopayments-pr',
@@ -118,69 +116,6 @@ const collectContractAnnotationRecords = ( tests ) =>
 			} ) )
 	);
 
-const hasCardPaymentContractAnnotation = ( collectedTest ) =>
-	collectedTest.annotations.some(
-		( annotation ) =>
-			annotation.type === 'woopayments-contract' &&
-			annotation.description === cardPaymentScenarioContract
-	);
-
-export const validateCardPaymentScenarioOwnership = ( tests ) => {
-	const scenarioTests = tests.filter(
-		( collectedTest ) =>
-			collectedTest.file === cardPaymentScenarioFile ||
-			collectedTest.title === cardPaymentScenarioTitle ||
-			hasCardPaymentContractAnnotation( collectedTest )
-	);
-
-	if ( scenarioTests.length !== 1 ) {
-		throw new Error(
-			`Card payment scenario must be collected exactly once: found ${ scenarioTests.length }`
-		);
-	}
-
-	const scenarioTest = scenarioTests[ 0 ];
-
-	if ( scenarioTest.file !== cardPaymentScenarioFile ) {
-		throw new Error(
-			`Card payment scenario must use its canonical relative file path: ${ cardPaymentScenarioFile }`
-		);
-	}
-	if ( scenarioTest.title !== cardPaymentScenarioTitle ) {
-		throw new Error(
-			`Card payment scenario must use its exact title: ${ cardPaymentScenarioTitle }`
-		);
-	}
-	if ( scenarioTest.expectedStatus !== 'passed' ) {
-		throw new Error( 'Card payment scenario must expect to pass' );
-	}
-
-	const contractAnnotations = scenarioTest.annotations.filter(
-		( annotation ) =>
-			annotation.type === 'woopayments-contract' &&
-			annotation.description === cardPaymentScenarioContract
-	);
-	if ( contractAnnotations.length !== 1 ) {
-		throw new Error(
-			'Card payment scenario must include exactly one required contract annotation'
-		);
-	}
-
-	for ( const requiredTag of cardPaymentScenarioTags ) {
-		if ( ! scenarioTest.tags.includes( requiredTag ) ) {
-			throw new Error(
-				`Card payment scenario must include required tag: ${ requiredTag }`
-			);
-		}
-	}
-
-	if ( scenarioTest.projectName !== providerProject ) {
-		throw new Error(
-			`Card payment scenario must be owned by project: ${ providerProject }`
-		);
-	}
-};
-
 const owningProjectForTags = ( tags ) => {
 	if ( tags.includes( 'woopayments-transition' ) ) {
 		return transitionProject;
@@ -198,6 +133,11 @@ const canonicalAnnotationPath = ( file, packageDirectory ) =>
 
 const canonicalLedgerTargetPath = ( file, packageDirectory ) =>
 	resolve( packageDirectory, '../..', file );
+
+const isScenarioContract = ( row ) =>
+	scenarioMigrationStates.includes( row.migration_state ) &&
+	row.target_path.startsWith( scenarioTargetPrefix ) &&
+	row.target_path.endsWith( '.ts' );
 
 const annotationTargetPathForRow = ( row ) => {
 	const targetPaths = row.target_path.split( ';' );
@@ -252,19 +192,25 @@ export const validateContractAnnotationBindings = (
 	}
 
 	for ( const row of ledgerRows ) {
-		if ( ! [ 'verified', 'closed' ].includes( row.migration_state ) ) {
+		const scenarioContract = isScenarioContract( row );
+		const terminalContract = [ 'verified', 'closed' ].includes(
+			row.migration_state
+		);
+
+		if ( ! scenarioContract && ! terminalContract ) {
 			continue;
 		}
 
+		const contractKind = scenarioContract ? 'Scenario' : 'Terminal';
 		const record = recordsByDescription.get( row.case_id )?.[ 0 ];
 		if ( ! record ) {
 			throw new Error(
-				`Terminal ledger contract has no collected woopayments-contract annotation: ${ row.case_id }`
+				`${ contractKind } ledger contract has no collected woopayments-contract annotation: ${ row.case_id }`
 			);
 		}
 		if ( record.expectedStatus !== 'passed' ) {
 			throw new Error(
-				`Terminal ledger contract annotation must expect to pass: ${ row.case_id }`
+				`${ contractKind } ledger contract annotation must expect to pass: ${ row.case_id }`
 			);
 		}
 		if (
@@ -275,14 +221,32 @@ export const validateContractAnnotationBindings = (
 			)
 		) {
 			throw new Error(
-				`Terminal ledger contract annotation has the wrong target file: ${ row.case_id }`
+				`${ contractKind } ledger contract annotation has the wrong target file: ${ row.case_id }`
 			);
 		}
 		if ( record.title !== row.target_contract ) {
 			throw new Error(
-				`Terminal ledger contract annotation has the wrong test title: ${ row.case_id }`
+				`${ contractKind } ledger contract annotation has the wrong test title: ${ row.case_id }`
 			);
 		}
+
+		if ( scenarioContract ) {
+			for ( const requiredTag of scenarioOwnershipTags ) {
+				if ( ! record.tags.includes( requiredTag ) ) {
+					throw new Error(
+						`Scenario ledger contract annotation is missing required tag ${ requiredTag }: ${ row.case_id }`
+					);
+				}
+			}
+
+			if ( record.projectName !== providerProject ) {
+				throw new Error(
+					`Scenario ledger contract annotation must be owned by project ${ providerProject }: ${ row.case_id }`
+				);
+			}
+			continue;
+		}
+
 		if ( record.projectName !== owningProjectForTags( record.tags ) ) {
 			throw new Error(
 				`Terminal ledger contract annotation has the wrong owning project: ${ row.case_id }`
@@ -334,7 +298,6 @@ export const validateWooPaymentsProjectRouting = () => {
 	const contractAnnotationRecords = collectContractAnnotationRecords(
 		wooPayments.tests
 	);
-	validateCardPaymentScenarioOwnership( wooPayments.tests );
 	validateContractAnnotationBindings(
 		ledger.rows,
 		contractAnnotationRecords,

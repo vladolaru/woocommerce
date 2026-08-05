@@ -43,20 +43,26 @@ const validMultiTargetAnnotationRecord = {
 	...validAnnotationRecord,
 	file: 'woopayments-native/merchant/orders-refunds.spec.ts',
 };
-const cardPaymentContract =
-	'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase.spec.ts:53::Successful purchase › Carding protection false › using a basic card';
-const validCardPaymentScenarioRecord = {
-	annotations: [
-		{
-			type: 'woopayments-contract',
-			description: cardPaymentContract,
-		},
-	],
+const scenarioTarget =
+	'plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/card-payment.ts';
+const implementedScenarioRow = {
+	case_id: 'synthetic-implemented-scenario-contract',
+	migration_state: 'implemented',
+	target_contract: 'synthetic implemented scenario contract',
+	target_path: scenarioTarget,
+};
+const secondImplementedScenarioRow = {
+	...implementedScenarioRow,
+	case_id: 'second-synthetic-implemented-scenario-contract',
+	target_contract: 'second synthetic implemented scenario contract',
+};
+const validScenarioAnnotationRecord = {
+	description: implementedScenarioRow.case_id,
 	expectedStatus: 'passed',
 	file: 'woopayments-native/scenarios/card-payment.ts',
 	projectName: 'woopayments-native-provider',
 	tags: [ 'woopayments-native', 'woopayments-provider', 'woopayments-pr' ],
-	title: 'Successful purchase › Carding protection false › using a basic card',
+	title: implementedScenarioRow.target_contract,
 };
 
 const validateSyntheticBindings = ( rows, annotations ) =>
@@ -121,107 +127,156 @@ test( 'WooPayments specs are collected once by their owning projects', () => {
 	}
 } );
 
-test( 'card payment scenario collection must not be duplicated', () => {
-	assert.throws(
-		() =>
-			projectRouting.validateCardPaymentScenarioOwnership( [
-				validCardPaymentScenarioRecord,
-				{ ...validCardPaymentScenarioRecord },
-			] ),
-		/Card payment scenario must be collected exactly once: found 2/
-	);
-} );
-
-test( 'card payment scenario must use its canonical relative file path', () => {
-	assert.throws(
-		() =>
-			projectRouting.validateCardPaymentScenarioOwnership( [
+test( 'two implemented contracts can bind to one canonical scenario file', () => {
+	assert.doesNotThrow( () =>
+		validateSyntheticBindings(
+			[ implementedScenarioRow, secondImplementedScenarioRow ],
+			[
+				validScenarioAnnotationRecord,
 				{
-					...validCardPaymentScenarioRecord,
-					file: 'woopayments-native/pilots/shopper-card-payment.spec.ts',
+					...validScenarioAnnotationRecord,
+					description: secondImplementedScenarioRow.case_id,
+					title: secondImplementedScenarioRow.target_contract,
 				},
-			] ),
-		/Card payment scenario must use its canonical relative file path: woopayments-native\/scenarios\/card-payment\.ts/
+			]
+		)
 	);
 } );
 
-test( 'card payment scenario requires its exact native ownership metadata', () => {
-	const invalidRecords = [
-		{
-			label: 'contract annotation',
-			record: {
-				...validCardPaymentScenarioRecord,
-				annotations: [],
-			},
-			expectedError:
-				/Card payment scenario must include exactly one required contract annotation/,
-		},
-		...[
-			'woopayments-native',
-			'woopayments-provider',
-			'woopayments-pr',
-		].map( ( missingTag ) => ( {
-			label: missingTag,
-			record: {
-				...validCardPaymentScenarioRecord,
-				tags: validCardPaymentScenarioRecord.tags.filter(
-					( tag ) => tag !== missingTag
-				),
-			},
-			expectedError: new RegExp(
-				`Card payment scenario must include required tag: ${ missingTag }`
+test( 'implemented scenario contract annotations must be unique per contract ID', () => {
+	assert.throws(
+		() =>
+			validateSyntheticBindings(
+				[ implementedScenarioRow ],
+				[ validScenarioAnnotationRecord, validScenarioAnnotationRecord ]
 			),
-		} ) ),
-		{
-			label: 'provider project',
-			record: {
-				...validCardPaymentScenarioRecord,
-				projectName: 'woopayments-native-readonly',
-			},
-			expectedError:
-				/Card payment scenario must be owned by project: woopayments-native-provider/,
-		},
-	];
+		/Duplicate woopayments-contract annotation records for ledger contract: synthetic-implemented-scenario-contract/
+	);
+} );
 
-	for ( const { expectedError, label, record } of invalidRecords ) {
+test( 'implemented scenario annotations must use their canonical ledger path', () => {
+	assert.throws(
+		() =>
+			validateSyntheticBindings(
+				[ implementedScenarioRow ],
+				[
+					{
+						...validScenarioAnnotationRecord,
+						file: 'woopayments-native/scenarios/unrelated.ts',
+					},
+				]
+			),
+		/Scenario ledger contract annotation has the wrong target file: synthetic-implemented-scenario-contract/
+	);
+} );
+
+for ( const missingTag of [
+	'woopayments-native',
+	'woopayments-provider',
+	'woopayments-pr',
+] ) {
+	test( `implemented scenario annotations require the ${ missingTag } tag`, () => {
 		assert.throws(
 			() =>
-				projectRouting.validateCardPaymentScenarioOwnership( [
-					record,
-				] ),
-			expectedError,
-			label
+				validateSyntheticBindings(
+					[ implementedScenarioRow ],
+					[
+						{
+							...validScenarioAnnotationRecord,
+							tags: validScenarioAnnotationRecord.tags.filter(
+								( tag ) => tag !== missingTag
+							),
+						},
+					]
+				),
+			new RegExp(
+				`Scenario ledger contract annotation is missing required tag ${ missingTag }: synthetic-implemented-scenario-contract`
+			)
 		);
-	}
-} );
+	} );
+}
 
-test( 'card payment scenario must use its exact title', () => {
+test( 'implemented scenario annotations must use their exact ledger title', () => {
 	assert.throws(
 		() =>
-			projectRouting.validateCardPaymentScenarioOwnership( [
-				{
-					...validCardPaymentScenarioRecord,
-					title: 'an unrelated card payment test',
-				},
-			] ),
-		/Card payment scenario must use its exact title: Successful purchase › Carding protection false › using a basic card/
+			validateSyntheticBindings(
+				[ implementedScenarioRow ],
+				[
+					{
+						...validScenarioAnnotationRecord,
+						title: 'an unrelated scenario test',
+					},
+				]
+			),
+		/Scenario ledger contract annotation has the wrong test title: synthetic-implemented-scenario-contract/
 	);
 } );
 
 for ( const expectedStatus of [ 'skipped', 'failed' ] ) {
-	test( `card payment scenario cannot expect to be ${ expectedStatus }`, () => {
+	test( `implemented scenario annotations cannot expect to be ${ expectedStatus }`, () => {
 		assert.throws(
 			() =>
-				projectRouting.validateCardPaymentScenarioOwnership( [
-					{
-						...validCardPaymentScenarioRecord,
-						expectedStatus,
-					},
-				] ),
-			/Card payment scenario must expect to pass/
+				validateSyntheticBindings(
+					[ implementedScenarioRow ],
+					[
+						{
+							...validScenarioAnnotationRecord,
+							expectedStatus,
+						},
+					]
+				),
+			/Scenario ledger contract annotation must expect to pass: synthetic-implemented-scenario-contract/
 		);
 	} );
 }
+
+test( 'implemented scenario annotations must be collected by the provider project', () => {
+	assert.throws(
+		() =>
+			validateSyntheticBindings(
+				[ implementedScenarioRow ],
+				[
+					{
+						...validScenarioAnnotationRecord,
+						projectName: 'woopayments-native-readonly',
+					},
+				]
+			),
+		/Scenario ledger contract annotation must be owned by project woopayments-native-provider: synthetic-implemented-scenario-contract/
+	);
+} );
+
+for ( const migrationState of [ 'implemented', 'verified', 'closed' ] ) {
+	test( `${ migrationState } scenario rows require a collected contract annotation`, () => {
+		assert.throws(
+			() =>
+				validateSyntheticBindings(
+					[
+						{
+							...implementedScenarioRow,
+							migration_state: migrationState,
+						},
+					],
+					[]
+				),
+			/Scenario ledger contract has no collected woopayments-contract annotation: synthetic-implemented-scenario-contract/
+		);
+	} );
+}
+
+test( 'specified scenario rows do not require a collected contract annotation', () => {
+	assert.doesNotThrow( () =>
+		validateSyntheticBindings(
+			[
+				{
+					...implementedScenarioRow,
+					migration_state: 'specified',
+				},
+			],
+			[]
+		)
+	);
+} );
 
 test( 'terminal ledger rows require a collected contract annotation', () => {
 	assert.throws(
