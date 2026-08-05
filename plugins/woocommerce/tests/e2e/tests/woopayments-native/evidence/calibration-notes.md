@@ -3,6 +3,31 @@
 Durable, public-safe record of calibration blockers and ledger revisions
 that the evidence JSON schema cannot carry. Newest entries first.
 
+## 2026-08-05 — false basic-card closure scheduled for current bytes
+
+The native protection-false basic-card contract is reopened from
+`closed / supported` to `implemented / not-assessed` before changing either
+pinned source file. Its current closure bundle SHA-256 is
+`80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892`.
+The selected protection-true slice must generalize the shared
+`card-payment.ts` scenario and re-express the false composition through the new
+definition, so the retained closure must be reviewed and rebound to the future
+current bytes.
+
+The overlapping saved-token files `drivers/checkout.ts`,
+`provider-evidence.ts`, and `record-evidence.ts` remain byte-identical. The
+false contract keeps its own immutable provider execution and receives fresh
+provider-free regression proof plus current-bundle reviews; it does not borrow
+the selected protection-true payment and no second provider payment is
+authorized. If that evidence cannot truthfully support current-byte reclosure,
+the false row will be deferred rather than rerun.
+
+No scenario, pilot, driver, or evidence-reader byte changed in this back-edge.
+No browser, listener, store, account, option, session, cart, product, order,
+provider, lock, journal, or quarantine state changed. The selected true row
+remains `specified`; the other four owner-authorized card rows remain deferred
+and untouched.
+
 ## 2026-08-05 — native protected basic-card prerequisites calibrated
 
 Stable reference:
