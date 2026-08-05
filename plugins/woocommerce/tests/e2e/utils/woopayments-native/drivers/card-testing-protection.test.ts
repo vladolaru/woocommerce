@@ -1,13 +1,9 @@
-import { EventEmitter } from 'node:events';
-
 import { expect, test } from '@playwright/test';
 
 import type { ProviderWriteSession } from '../../../fixtures/woopayments-native';
 import type { JsonValue, ResourceLock } from '../resource-locks';
 import { ResourceQuarantineRequiredError } from '../resource-locks';
 import {
-	NATIVE_STORE_DONE_SENTINEL,
-	NATIVE_STORE_READY_SENTINEL,
 	NativeStoreWpCliRunner,
 	withCapturedCardTestingProtectionState,
 	type CardTestingProtectionScope,
@@ -270,45 +266,6 @@ function afterOperation(
 	};
 }
 
-class FakeNativeStoreChild extends EventEmitter {
-	public pid = 4321;
-	public readonly stdout = new EventEmitter();
-	public readonly stderr = new EventEmitter();
-	public stdinPayload: string | undefined;
-	public readonly stdin = Object.assign( new EventEmitter(), {
-		end: ( payload: string ) => {
-			this.stdinPayload = payload;
-		},
-	} );
-}
-
-function makeNativeStoreRunner(
-	child: FakeNativeStoreChild,
-	overrides: Record< string, unknown > = {}
-) {
-	const spawnCalls: unknown[][] = [];
-	const killCalls: Array< [ number, NodeJS.Signals ] > = [];
-	const runner = new NativeStoreWpCliRunner( {
-		storeDirectory: '/test/native-store',
-		spawnProcess: ( ( ...args: unknown[] ) => {
-			spawnCalls.push( args );
-			return child;
-		} ) as never,
-		killProcess: ( pid, signal ) => {
-			killCalls.push( [ pid, signal ] );
-			return true;
-		},
-		startupTimeoutMs: 100,
-		innerTimeoutSeconds: 1,
-		operationTimeoutMs: 1_500,
-		mutationSafetyTimeoutMs: 1_100,
-		terminationGraceMs: 50,
-		closeFallbackMs: 50,
-		...overrides,
-	} );
-	return { runner, spawnCalls, killCalls };
-}
-
 function runnerRequest(): CardTestingProtectionRunnerRequest {
 	return {
 		operation: 'capture-state',
@@ -320,184 +277,86 @@ function runnerRequest(): CardTestingProtectionRunnerRequest {
 	};
 }
 
-function emittedPhpJsonTerminator( phpSource: string ): string {
-	const emitter = phpSource.match(
-		/function wcpay_e2e_emit\( \$payload \) \{[^}]+\}/
-	)?.[ 0 ];
-	return emitter?.includes( 'JSON_UNESCAPED_SLASHES ) . "\\n";' ) ? '\n' : '';
-}
+test( 'runs canonical PHP with one standard native-store WP-CLI invocation', async () => {
+	const execFileCalls: unknown[][] = [];
+	const runner = new NativeStoreWpCliRunner( {
+		storeDirectory: '/test/native-store',
+		execFile: async ( ...args: unknown[] ) => {
+			execFileCalls.push( args );
+			return `Starting wp-env\n${ JSON.stringify(
+				envelope( { captured: true } )
+			) }\n`;
+		},
+	} );
 
-test( 'waits for an unechoable standalone readiness sentinel before emitting bounded canonical PHP', async () => {
-	const child = new FakeNativeStoreChild();
-	const { runner, spawnCalls } = makeNativeStoreRunner( child );
-	const resultPromise = runner.run( runnerRequest() );
-
-	expect( child.stdinPayload ).toBeUndefined();
-	expect( spawnCalls ).toHaveLength( 1 );
-	const [ command, args, options ] = spawnCalls[ 0 ] as [
+	await expect( runner.run( runnerRequest() ) ).resolves.toEqual(
+		envelope( { captured: true } )
+	);
+	expect( execFileCalls ).toHaveLength( 1 );
+	const [ command, args, options ] = execFileCalls[ 0 ] as [
 		string,
 		string[],
 		Record< string, unknown >
 	];
 	expect( command ).toBe( 'pnpm' );
-	expect( options.detached ).toBe( true );
-	const shellCommand = args.at( -1 );
-	expect( args.slice( -6 ) ).toEqual( [
-		'timeout',
-		'--signal=KILL',
-		'1s',
-		'sh',
-		'-c',
-		shellCommand,
+	expect( options ).toEqual( { cwd: '/test/native-store' } );
+	expect( args.slice( 0, -1 ) ).toEqual( [
+		'exec',
+		'wp-env',
+		'run',
+		'cli',
+		'wp',
+		'--user=1',
+		'eval',
 	] );
-	expect( shellCommand ).not.toContain( NATIVE_STORE_READY_SENTINEL );
-	expect( shellCommand ).not.toContain( NATIVE_STORE_DONE_SENTINEL );
-	expect( shellCommand ).toContain(
-		"printf '%s%s\\n' '__WCPAY_E2E_' 'WP_CLI_READY__'"
-	);
-	expect( shellCommand ).toContain( 'wp --user=1 eval-file -' );
-	expect( shellCommand ).toContain(
-		"printf '%s%s\\n' '__WCPAY_E2E_' 'WP_CLI_DONE__'"
-	);
-	expect( shellCommand ).not.toContain( 'exec timeout' );
-
-	child.stdout.emit(
-		'data',
-		Buffer.from( `info Starting '${ shellCommand }'\n`, 'utf8' )
-	);
-	expect( child.stdinPayload ).toBeUndefined();
-	child.stdout.emit(
-		'data',
-		Buffer.from( `\u001b[32m${ NATIVE_STORE_READY_SENTINEL }\u001b[0m\n` )
-	);
-	expect( child.stdinPayload ).toContain( "array( 'option_value' => '1' )" );
-	expect( child.stdinPayload ).toContain( "'1' === $force_raw" );
-	expect( child.stdinPayload ).not.toContain( 'maybe_serialize( true )' );
-	expect( child.stdinPayload ).toContain(
+	const phpSource = args.at( -1 );
+	expect( phpSource ).not.toContain( '<?php' );
+	expect( phpSource ).toContain( "array( 'option_value' => '1' )" );
+	expect( phpSource ).toContain( "'1' === $force_raw" );
+	expect( phpSource ).not.toContain( 'maybe_serialize( true )' );
+	expect( phpSource ).toContain(
 		"true === $wrapper['data']['card_testing_protection_eligible']"
 	);
-	expect( child.stdinPayload ).not.toContain( 'pcntl_' );
-
-	child.stdout.emit(
-		'data',
-		Buffer.from(
-			`${ JSON.stringify(
-				envelope( { captured: true } )
-			) }${ emittedPhpJsonTerminator(
-				child.stdinPayload as string
-			) }${ NATIVE_STORE_DONE_SENTINEL }\n`
+	expect( phpSource ).toContain(
+		`$wcpay_e2e_operation_base64 = '${ Buffer.from(
+			'capture-state'
+		).toString( 'base64' ) }';`
+	);
+	expect( phpSource ).toContain(
+		Buffer.from( JSON.stringify( runnerRequest().input ) ).toString(
+			'base64'
 		)
 	);
-	child.emit( 'close', 0 );
-	await expect( resultPromise ).resolves.toEqual(
-		envelope( { captured: true } )
-	);
 } );
 
-test( 'group-terminates a startup timeout and rejects only after child close', async () => {
-	const child = new FakeNativeStoreChild();
-	const { runner, killCalls } = makeNativeStoreRunner( child, {
-		startupTimeoutMs: 5,
-		terminationGraceMs: 100,
-		closeFallbackMs: 100,
+test( 'returns a fixed value-free error for native-store command and output failures', async () => {
+	const sensitive = 'private native-store command detail';
+	const failingRunner = new NativeStoreWpCliRunner( {
+		storeDirectory: '/test/native-store',
+		execFile: async () => {
+			throw new Error( sensitive );
+		},
 	} );
-	let rejected = false;
-	const resultPromise = runner.run( runnerRequest() );
-	void resultPromise.catch( () => {
-		rejected = true;
+	const malformedRunner = new NativeStoreWpCliRunner( {
+		storeDirectory: '/test/native-store',
+		execFile: async () => sensitive,
 	} );
 
-	await new Promise( ( resolve ) => setTimeout( resolve, 20 ) );
-	expect( rejected ).toBe( false );
-	expect( killCalls ).toEqual( [ [ -4321, 'SIGTERM' ] ] );
-	child.emit( 'close', null );
-	await expect( resultPromise ).rejects.toThrow(
-		'Native-store WP-CLI capture-state operation failed.'
-	);
+	for ( const runner of [ failingRunner, malformedRunner ] ) {
+		let rejection: Error | undefined;
+		try {
+			await runner.run( runnerRequest() );
+		} catch ( error ) {
+			rejection = error as Error;
+		}
+		expect( rejection?.message ).toBe(
+			'Native-store WP-CLI capture-state operation failed.'
+		);
+		expect( rejection?.message ).not.toContain( sensitive );
+	}
 } );
 
-test( 'handles stdin errors and uses bounded fallback without unsafe PID targeting', async () => {
-	const child = new FakeNativeStoreChild();
-	child.pid = 0;
-	const { runner, killCalls } = makeNativeStoreRunner( child, {
-		startupTimeoutMs: 1_000,
-		terminationGraceMs: 1,
-		closeFallbackMs: 1,
-	} );
-	const resultPromise = runner.run( runnerRequest() );
-
-	child.stdin.emit( 'error', new Error( 'sensitive EPIPE detail' ) );
-	await expect( resultPromise ).rejects.toThrow(
-		'Native-store WP-CLI capture-state operation failed.'
-	);
-	expect( killCalls ).toEqual( [] );
-} );
-
-test( 'holds post-readiness failure until the inner mutator deadline has drained', async () => {
-	const child = new FakeNativeStoreChild();
-	const { runner, killCalls } = makeNativeStoreRunner( child, {
-		maxOutputBytes: NATIVE_STORE_READY_SENTINEL.length + 20,
-	} );
-	let rejection: Error | undefined;
-	const resultPromise = runner.run( runnerRequest() );
-	void resultPromise.catch( ( error: Error ) => {
-		rejection = error;
-	} );
-
-	child.stdout.emit(
-		'data',
-		Buffer.from( `${ NATIVE_STORE_READY_SENTINEL }\n` )
-	);
-	expect( child.stdinPayload ).toBeDefined();
-	child.stderr.emit( 'data', Buffer.alloc( 256, 0x73 ) );
-	expect( killCalls ).toEqual( [ [ -4321, 'SIGTERM' ] ] );
-	child.emit( 'close', null );
-	await new Promise( ( resolve ) => setTimeout( resolve, 25 ) );
-	expect( rejection ).toBeUndefined();
-
-	await expect( resultPromise ).rejects.toThrow(
-		'Native-store WP-CLI capture-state operation failed.'
-	);
-	expect( rejection?.message ).not.toContain( 'ssss' );
-} );
-
-test( 'holds a post-readiness host close without inner completion until the safety deadline', async () => {
-	const child = new FakeNativeStoreChild();
-	const { runner, killCalls } = makeNativeStoreRunner( child );
-	let rejection: Error | undefined;
-	const resultPromise = runner.run( runnerRequest() );
-	void resultPromise.catch( ( error: Error ) => {
-		rejection = error;
-	} );
-
-	child.stdout.emit(
-		'data',
-		Buffer.from( `${ NATIVE_STORE_READY_SENTINEL }\n` )
-	);
-	expect( child.stdinPayload ).toBeDefined();
-	child.emit( 'close', 1 );
-	await new Promise( ( resolve ) => setTimeout( resolve, 25 ) );
-	expect( rejection ).toBeUndefined();
-	expect( killCalls ).toEqual( [] );
-
-	await expect( resultPromise ).rejects.toThrow(
-		'Native-store WP-CLI capture-state operation failed.'
-	);
-} );
-
-test( 'requires a positive safety margin after the inner timeout', () => {
-	expect(
-		() =>
-			new NativeStoreWpCliRunner( {
-				storeDirectory: '/test/native-store',
-				innerTimeoutSeconds: 1,
-				operationTimeoutMs: 1_500,
-				mutationSafetyTimeoutMs: 1_000,
-			} )
-	).toThrow( 'timeout configuration is invalid' );
-} );
-
-test( 'journals exact raw rows before bounded mutation and proves state in a fresh operation', async () => {
+test( 'journals exact raw rows before mutation and proves state in a fresh operation', async () => {
 	const events: string[] = [];
 	const { session, journalValues } = makeSession( events );
 	const runner = new FakeRunner( ( request ) => {

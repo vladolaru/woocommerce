@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { stripVTControlCharacters } from 'node:util';
 
@@ -18,15 +18,6 @@ const TOKEN_LENGTH = 16;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const CUSTOMER_ID_PATTERN = /^t_[a-f0-9]{30}$/;
 const MARKER_PATTERN = /^woopayments-e2e-[a-f0-9]{16}$/;
-const MAX_RUNNER_OUTPUT_BYTES = 1024 * 1024;
-const WP_CLI_STARTUP_TIMEOUT_MS = 30_000;
-const WP_CLI_INNER_TIMEOUT_SECONDS = 45;
-const WP_CLI_OPERATION_TIMEOUT_MS = 50_000;
-const WP_CLI_MUTATION_SAFETY_TIMEOUT_MS = 46_000;
-const WP_CLI_TERMINATION_GRACE_MS = 2_000;
-const WP_CLI_CLOSE_FALLBACK_MS = 5_000;
-export const NATIVE_STORE_READY_SENTINEL = '__WCPAY_E2E_WP_CLI_READY__';
-export const NATIVE_STORE_DONE_SENTINEL = '__WCPAY_E2E_WP_CLI_DONE__';
 
 type RawOptionRow = Readonly< {
 	exists: boolean;
@@ -479,7 +470,7 @@ function nativeStorePhp( request: CardTestingProtectionRunnerRequest ): string {
 		request.input;
 	const encode = ( value: string ): string =>
 		Buffer.from( value, 'utf8' ).toString( 'base64' );
-	const transport = [
+	const bindings = [
 		`$wcpay_e2e_operation_base64 = '${ encode( request.operation ) }';`,
 		`$wcpay_e2e_input_base64 = '${ encode(
 			JSON.stringify( publicInput )
@@ -495,302 +486,91 @@ function nativeStorePhp( request: CardTestingProtectionRunnerRequest ): string {
 		) }';`,
 	].join( '\n' );
 
-	return NATIVE_STORE_PHP.replace( '<?php', `<?php\n${ transport }` );
+	return NATIVE_STORE_PHP.replace( '<?php', bindings );
 }
 
-type NativeStoreSpawn = (
+type NativeStoreExecFile = (
 	command: string,
 	args: string[],
-	options: {
-		cwd: string;
-		env: NodeJS.ProcessEnv;
-		stdio: [ 'pipe', 'pipe', 'pipe' ];
-		detached: true;
-	}
-) => ChildProcessWithoutNullStreams;
-
-type KillProcess = ( pid: number, signal: NodeJS.Signals ) => boolean;
+	options: { cwd: string }
+) => Promise< string >;
 
 export interface NativeStoreWpCliRunnerOptions {
-	spawnProcess?: NativeStoreSpawn;
-	killProcess?: KillProcess;
+	execFile?: NativeStoreExecFile;
 	storeDirectory?: string;
-	startupTimeoutMs?: number;
-	innerTimeoutSeconds?: number;
-	operationTimeoutMs?: number;
-	mutationSafetyTimeoutMs?: number;
-	terminationGraceMs?: number;
-	closeFallbackMs?: number;
-	maxOutputBytes?: number;
 }
 
-function isSafeProcessGroupPid( pid: number | undefined ): pid is number {
-	return (
-		typeof pid === 'number' &&
-		Number.isSafeInteger( pid ) &&
-		pid > 1 &&
-		pid !== process.pid
-	);
+function executeFile(
+	command: string,
+	args: string[],
+	options: { cwd: string }
+): Promise< string > {
+	return new Promise( ( resolve, reject ) => {
+		execFile(
+			command,
+			args,
+			{ cwd: options.cwd, encoding: 'utf8' },
+			( error, stdout ) => {
+				if ( error ) {
+					reject( error );
+					return;
+				}
+				resolve( stdout );
+			}
+		);
+	} );
 }
 
 export class NativeStoreWpCliRunner implements CardTestingProtectionRunner {
-	private readonly options: Required< NativeStoreWpCliRunnerOptions >;
+	private readonly execFile: NativeStoreExecFile;
+	private readonly storeDirectory: string;
 
 	public constructor( options: NativeStoreWpCliRunnerOptions = {} ) {
-		this.options = {
-			spawnProcess: options.spawnProcess ?? ( spawn as NativeStoreSpawn ),
-			killProcess: options.killProcess ?? process.kill.bind( process ),
-			storeDirectory:
-				options.storeDirectory ??
-				process.env.E2E_WOOPAYMENTS_NATIVE_STORE_DIR ??
-				'',
-			startupTimeoutMs:
-				options.startupTimeoutMs ?? WP_CLI_STARTUP_TIMEOUT_MS,
-			innerTimeoutSeconds:
-				options.innerTimeoutSeconds ?? WP_CLI_INNER_TIMEOUT_SECONDS,
-			operationTimeoutMs:
-				options.operationTimeoutMs ?? WP_CLI_OPERATION_TIMEOUT_MS,
-			mutationSafetyTimeoutMs:
-				options.mutationSafetyTimeoutMs ??
-				WP_CLI_MUTATION_SAFETY_TIMEOUT_MS,
-			terminationGraceMs:
-				options.terminationGraceMs ?? WP_CLI_TERMINATION_GRACE_MS,
-			closeFallbackMs:
-				options.closeFallbackMs ?? WP_CLI_CLOSE_FALLBACK_MS,
-			maxOutputBytes: options.maxOutputBytes ?? MAX_RUNNER_OUTPUT_BYTES,
-		};
-		if (
-			! Number.isInteger( this.options.innerTimeoutSeconds ) ||
-			this.options.innerTimeoutSeconds < 1 ||
-			this.options.innerTimeoutSeconds * 1000 >=
-				this.options.operationTimeoutMs ||
-			this.options.mutationSafetyTimeoutMs <=
-				this.options.innerTimeoutSeconds * 1000
-		) {
-			throw new Error(
-				'Native-store WP-CLI timeout configuration is invalid.'
-			);
-		}
+		this.execFile = options.execFile ?? executeFile;
+		this.storeDirectory =
+			options.storeDirectory ??
+			process.env.E2E_WOOPAYMENTS_NATIVE_STORE_DIR ??
+			'';
 	}
 
 	public async run(
 		request: CardTestingProtectionRunnerRequest
 	): Promise< unknown > {
-		const {
-			spawnProcess,
-			killProcess,
-			storeDirectory,
-			startupTimeoutMs,
-			innerTimeoutSeconds,
-			operationTimeoutMs,
-			mutationSafetyTimeoutMs,
-			terminationGraceMs,
-			closeFallbackMs,
-			maxOutputBytes,
-		} = this.options;
-		if ( ! storeDirectory ) {
+		if ( ! this.storeDirectory ) {
 			throw new Error(
 				'E2E_WOOPAYMENTS_NATIVE_STORE_DIR is required for native-store WP-CLI operations.'
 			);
 		}
-		const child = spawnProcess(
-			'pnpm',
-			[
-				'exec',
-				'wp-env',
-				'run',
-				'cli',
-				'timeout',
-				'--signal=KILL',
-				`${ innerTimeoutSeconds }s`,
-				'sh',
-				'-c',
-				"printf '%s%s\\n' '__WCPAY_E2E_' 'WP_CLI_READY__'; wp --user=1 eval-file -; wcpay_status=$?; printf '%s%s\\n' '__WCPAY_E2E_' 'WP_CLI_DONE__'; exit \"$wcpay_status\"",
-			],
-			{
-				cwd: storeDirectory,
-				env: process.env,
-				stdio: [ 'pipe', 'pipe', 'pipe' ],
-				detached: true,
+
+		try {
+			const stdout = await this.execFile(
+				'pnpm',
+				[
+					'exec',
+					'wp-env',
+					'run',
+					'cli',
+					'wp',
+					'--user=1',
+					'eval',
+					nativeStorePhp( request ),
+				],
+				{ cwd: this.storeDirectory }
+			);
+			const jsonLine = stdout
+				.split( /\r?\n/ )
+				.map( ( line ) => stripVTControlCharacters( line ).trim() )
+				.toReversed()
+				.find( ( line ) => line.startsWith( '{' ) );
+			if ( ! jsonLine ) {
+				throw new Error();
 			}
-		);
-
-		return new Promise< unknown >( ( resolve, reject ) => {
-			let stdout = '';
-			let stdoutBytes = 0;
-			let stderrBytes = 0;
-			let settled = false;
-			let readyAt: number | undefined;
-			let doneObserved = false;
-			let terminationRequested = false;
-			let closeObserved = false;
-			let deadline: ReturnType< typeof setTimeout > | undefined;
-			let forceKillTimer: ReturnType< typeof setTimeout > | undefined;
-			let closeFallbackTimer: ReturnType< typeof setTimeout > | undefined;
-			let safeRejectionTimer: ReturnType< typeof setTimeout > | undefined;
-
-			const clearTimers = () => {
-				for ( const timer of [
-					deadline,
-					forceKillTimer,
-					closeFallbackTimer,
-					safeRejectionTimer,
-				] ) {
-					if ( timer ) {
-						clearTimeout( timer );
-					}
-				}
-			};
-			const rejectGeneric = () => {
-				if ( settled ) {
-					return;
-				}
-				settled = true;
-				clearTimers();
-				reject(
-					new Error(
-						`Native-store WP-CLI ${ request.operation } operation failed.`
-					)
-				);
-			};
-			const rejectWhenMutationCannotStillRun = () => {
-				if ( doneObserved ) {
-					rejectGeneric();
-					return;
-				}
-				const safeAt = readyAt
-					? readyAt + mutationSafetyTimeoutMs
-					: Date.now();
-				const delay = Math.max( 0, safeAt - Date.now() );
-				if ( delay === 0 ) {
-					rejectGeneric();
-					return;
-				}
-				safeRejectionTimer = setTimeout( rejectGeneric, delay );
-			};
-			const killGroup = ( signal: NodeJS.Signals ) => {
-				if ( ! isSafeProcessGroupPid( child.pid ) ) {
-					return;
-				}
-				try {
-					killProcess( -child.pid, signal );
-				} catch {
-					// The exact child group may already have exited.
-				}
-			};
-			const requestTermination = () => {
-				if ( settled || terminationRequested ) {
-					return;
-				}
-				terminationRequested = true;
-				if ( deadline ) {
-					clearTimeout( deadline );
-				}
-				killGroup( 'SIGTERM' );
-				forceKillTimer = setTimeout( () => {
-					killGroup( 'SIGKILL' );
-					closeFallbackTimer = setTimeout( () => {
-						if ( ! closeObserved ) {
-							rejectWhenMutationCannotStillRun();
-						}
-					}, closeFallbackMs );
-				}, terminationGraceMs );
-			};
-			const startDeadline = ( milliseconds: number ) => {
-				if ( deadline ) {
-					clearTimeout( deadline );
-				}
-				deadline = setTimeout( requestTermination, milliseconds );
-			};
-
-			startDeadline( startupTimeoutMs );
-			child.once( 'error', requestTermination );
-			child.stdin.once( 'error', requestTermination );
-			child.stdout.on( 'data', ( chunk: Buffer ) => {
-				if ( terminationRequested ) {
-					return;
-				}
-				stdoutBytes += chunk.length;
-				if ( stdoutBytes > maxOutputBytes ) {
-					requestTermination();
-					return;
-				}
-				stdout += chunk.toString( 'utf8' );
-				const normalizedLines = stdout
-					.split( /\r?\n/ )
-					.map( ( line ) => stripVTControlCharacters( line ).trim() );
-				if (
-					readyAt === undefined &&
-					normalizedLines.includes( NATIVE_STORE_READY_SENTINEL )
-				) {
-					readyAt = Date.now();
-					startDeadline( operationTimeoutMs );
-					try {
-						child.stdin.end( nativeStorePhp( request ) );
-					} catch {
-						requestTermination();
-					}
-				}
-				if (
-					readyAt !== undefined &&
-					normalizedLines.includes( NATIVE_STORE_DONE_SENTINEL )
-				) {
-					doneObserved = true;
-				}
-			} );
-			child.stderr.on( 'data', ( chunk: Buffer ) => {
-				if ( terminationRequested ) {
-					return;
-				}
-				stderrBytes += chunk.length;
-				if ( stderrBytes > maxOutputBytes ) {
-					requestTermination();
-				}
-			} );
-			child.once( 'close', ( code ) => {
-				if ( settled ) {
-					return;
-				}
-				closeObserved = true;
-				if ( terminationRequested ) {
-					if ( forceKillTimer ) {
-						clearTimeout( forceKillTimer );
-					}
-					if ( closeFallbackTimer ) {
-						clearTimeout( closeFallbackTimer );
-					}
-					rejectWhenMutationCannotStillRun();
-					return;
-				}
-				if ( deadline ) {
-					clearTimeout( deadline );
-				}
-				if ( readyAt !== undefined && ! doneObserved ) {
-					rejectWhenMutationCannotStillRun();
-					return;
-				}
-				if ( code !== 0 || readyAt === undefined ) {
-					rejectGeneric();
-					return;
-				}
-				const jsonLine = stdout
-					.split( /\r?\n/ )
-					.toReversed()
-					.find( ( line ) => line.trim().startsWith( '{' ) );
-				if ( ! jsonLine ) {
-					rejectGeneric();
-					return;
-				}
-				try {
-					const parsed: unknown = JSON.parse( jsonLine );
-					settled = true;
-					clearTimers();
-					resolve( parsed );
-				} catch {
-					rejectGeneric();
-				}
-			} );
-		} );
+			return JSON.parse( jsonLine ) as unknown;
+		} catch {
+			throw new Error(
+				`Native-store WP-CLI ${ request.operation } operation failed.`
+			);
+		}
 	}
 }
 
