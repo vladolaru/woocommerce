@@ -10,6 +10,7 @@ import { expect, test } from '@playwright/test';
 import {
 	assertAccountSeparation,
 	assertNoDisplacedProviderLocks,
+	type JsonValue,
 	ResourceLock,
 	ResourceLockManager,
 	ResourceQuarantineRequiredError,
@@ -30,6 +31,47 @@ const accountRequest: ResourceLockRequest = {
 
 async function lockDirectory(): Promise< string > {
 	return temporaryLockDirectory( 'woopayments-native-lock-test-' );
+}
+
+async function acquireFeatureSettingLocks(
+	manager: ResourceLockManager
+): Promise< {
+	account: ResourceLock;
+	store: ResourceLock;
+	setting: ResourceLock;
+} > {
+	const account = await manager.acquire( accountRequest );
+	const store = await manager.acquire( {
+		...accountRequest,
+		kind: 'store',
+		resource: accountRequest.storeId,
+	} );
+	const setting = await manager.acquire( {
+		...accountRequest,
+		kind: 'feature-setting',
+		resource: 'manual-capture',
+	} );
+
+	return { account, store, setting };
+}
+
+async function writeUntrustedRestorationValue(
+	lock: ResourceLock,
+	value: unknown
+): Promise< void > {
+	return (
+		lock.writeRestorationJournal as unknown as (
+			originalValue: unknown
+		) => Promise< void >
+	 )( value );
+}
+
+function nestedArray( depth: number ): unknown[] {
+	let value: unknown[] = [];
+	for ( let index = 0; index < depth; index += 1 ) {
+		value = [ value ];
+	}
+	return value;
 }
 
 async function yieldToPeer(): Promise< void > {
@@ -833,6 +875,270 @@ test( 'restores a durable original setting after the enabling worker is killed',
 		await expect( account.release() ).resolves.toBe( true );
 	} finally {
 		await forceStopWorker( worker );
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'persists and recovers a nested JSON setting snapshot after stale takeover', async () => {
+	const directory = await lockDirectory();
+	let now = 1_000;
+	const originalSnapshot = {
+		accountOption: {
+			exists: true,
+			valueBase64: 'YTozOntzOjQ6ImRhdGEiO2I6MDt9',
+			autoload: 'off',
+		},
+		forceOption: {
+			exists: false,
+			valueBase64: null,
+			autoload: null,
+		},
+		page: {
+			slug: 'classic-checkout',
+			marker: 'run-nested-json',
+			postId: null,
+		},
+		flags: [ true, false, 10.99 ],
+	} satisfies JsonValue;
+	const first = new ResourceLockManager( {
+		lockDir: directory,
+		runId: 'run-nested-json-writer',
+		pid: 1101,
+		now: () => now,
+		leaseMs: 100,
+		mutationGuardLeaseMs: 100,
+		autoRenew: false,
+	} );
+
+	try {
+		const firstLocks = await acquireFeatureSettingLocks( first );
+		await firstLocks.setting.writeRestorationJournal( originalSnapshot );
+		const journalFile = ( await readdir( directory ) ).find( ( file ) =>
+			file.endsWith( '.restoration.json' )
+		);
+		expect( journalFile ).toBeDefined();
+		const journalPath = join( directory, journalFile as string );
+		const persisted = JSON.parse(
+			await readFile( journalPath, 'utf8' )
+		) as { originalValue: unknown };
+		expect( persisted.originalValue ).toEqual( originalSnapshot );
+		expect( ( await stat( journalPath ) ).mode % 0o1000 ).toBe( 0o600 );
+
+		now = 1_101;
+		const recoverer = new ResourceLockManager( {
+			lockDir: directory,
+			runId: 'run-nested-json-recoverer',
+			pid: 1102,
+			now: () => now,
+			leaseMs: 500,
+			mutationGuardLeaseMs: 100,
+			maxWaitMs: 1_000,
+			autoRenew: false,
+		} );
+		const recoveredLocks = await acquireFeatureSettingLocks( recoverer );
+		let recoveredSnapshot: unknown;
+
+		await expect(
+			recoveredLocks.setting.restoreFromJournalIfOwned(
+				async ( originalValue: JsonValue ) => {
+					recoveredSnapshot = originalValue;
+				}
+			)
+		).resolves.toBe( true );
+		expect( recoveredSnapshot ).toEqual( originalSnapshot );
+		await expect( readFile( journalPath, 'utf8' ) ).rejects.toMatchObject( {
+			code: 'ENOENT',
+		} );
+
+		await expect( recoveredLocks.setting.release() ).resolves.toBe( true );
+		await expect( recoveredLocks.store.release() ).resolves.toBe( true );
+		await expect( recoveredLocks.account.release() ).resolves.toBe( true );
+	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+const invalidRestorationValues: Array< {
+	name: string;
+	create: () => unknown;
+} > = [
+	{ name: 'undefined', create: () => undefined },
+	{
+		name: 'a function',
+		create: () => ( { nested: () => false } ),
+	},
+	{
+		name: 'a symbol',
+		create: () => ( { nested: Symbol( 'not-json' ) } ),
+	},
+	{
+		name: 'a bigint',
+		create: () => ( { nested: BigInt( 1 ) } ),
+	},
+	{ name: 'NaN', create: () => ( { nested: Number.NaN } ) },
+	{
+		name: 'positive infinity',
+		create: () => Number.POSITIVE_INFINITY,
+	},
+	{
+		name: 'negative infinity',
+		create: () => Number.NEGATIVE_INFINITY,
+	},
+	{
+		name: 'a cycle',
+		create: () => {
+			const cyclic: unknown[] = [];
+			cyclic.push( cyclic );
+			return cyclic;
+		},
+	},
+	{
+		name: 'an unsafe prototype',
+		create: () =>
+			Object.assign( Object.create( { inherited: true } ), {
+				privateSnapshotMarker: 'must-not-appear-in-errors',
+			} ),
+	},
+	{
+		name: 'a non-plain object',
+		create: () => new Date( '2026-08-05T00:00:00.000Z' ),
+	},
+	{
+		name: 'excessive nesting',
+		create: () => nestedArray( 100 ),
+	},
+	{
+		name: 'a serialized UTF-8 value above 64 KiB',
+		create: () => ( { nested: '💳'.repeat( 16_384 ) } ),
+	},
+];
+
+for ( const invalid of invalidRestorationValues ) {
+	test( `rejects ${ invalid.name } before writing a restoration journal`, async () => {
+		const directory = await lockDirectory();
+		const manager = new ResourceLockManager( {
+			lockDir: directory,
+			runId: `run-reject-${ invalid.name }`,
+			autoRenew: false,
+		} );
+
+		try {
+			const { setting } = await acquireFeatureSettingLocks( manager );
+			let rejection: unknown;
+			try {
+				await writeUntrustedRestorationValue(
+					setting,
+					invalid.create()
+				);
+			} catch ( error ) {
+				rejection = error;
+			}
+
+			expect( rejection ).toBeInstanceOf( Error );
+			expect( ( rejection as Error ).message ).toMatch(
+				/invalid restoration journal value/i
+			);
+			expect( ( rejection as Error ).message ).not.toContain(
+				'must-not-appear-in-errors'
+			);
+			expect(
+				( await readdir( directory ) ).filter( ( file ) =>
+					file.endsWith( '.restoration.json' )
+				)
+			).toEqual( [] );
+		} finally {
+			await rm( directory, { recursive: true, force: true } );
+		}
+	} );
+}
+
+test( 'revalidates bounded JSON values read from a restoration journal', async () => {
+	const directory = await lockDirectory();
+	const manager = new ResourceLockManager( {
+		lockDir: directory,
+		runId: 'run-revalidate-journal',
+		autoRenew: false,
+	} );
+
+	try {
+		const { setting } = await acquireFeatureSettingLocks( manager );
+		await setting.writeRestorationJournal( false );
+		const journalFile = ( await readdir( directory ) ).find( ( file ) =>
+			file.endsWith( '.restoration.json' )
+		);
+		expect( journalFile ).toBeDefined();
+		const journalPath = join( directory, journalFile as string );
+		const journalText = await readFile( journalPath, 'utf8' );
+		const journal = JSON.parse( journalText ) as Record< string, unknown >;
+		const tamperedJournalValues = [
+			JSON.stringify( {
+				...journal,
+				originalValue: nestedArray( 100 ),
+			} ),
+			JSON.stringify( {
+				...journal,
+				originalValue: { nested: '💳'.repeat( 16_384 ) },
+			} ),
+			journalText.replace(
+				'"originalValue":false',
+				'"originalValue":1e400'
+			),
+		];
+
+		for ( const tamperedJournal of tamperedJournalValues ) {
+			await writeFile( journalPath, `${ tamperedJournal }\n` );
+			let restoreCalled = false;
+			await expect(
+				setting.restoreFromJournalIfOwned( async () => {
+					restoreCalled = true;
+				} )
+			).rejects.toThrow( /invalid restoration journal value/i );
+			expect( restoreCalled ).toBe( false );
+		}
+	} finally {
+		await rm( directory, { recursive: true, force: true } );
+	}
+} );
+
+test( 'redacts malformed restoration journal values from syntax errors', async () => {
+	const directory = await lockDirectory();
+	const manager = new ResourceLockManager( {
+		lockDir: directory,
+		runId: 'run-redact-malformed-journal',
+		autoRenew: false,
+	} );
+	const privateMarker = 'PVT42';
+
+	try {
+		const { setting } = await acquireFeatureSettingLocks( manager );
+		await setting.writeRestorationJournal( false );
+		const journalFile = ( await readdir( directory ) ).find( ( file ) =>
+			file.endsWith( '.restoration.json' )
+		);
+		expect( journalFile ).toBeDefined();
+		const journalPath = join( directory, journalFile as string );
+		await writeFile(
+			journalPath,
+			`{"originalValue":${ privateMarker }}\n`
+		);
+		let restoreCalled = false;
+		let rejection: unknown;
+
+		try {
+			await setting.restoreFromJournalIfOwned( async () => {
+				restoreCalled = true;
+			} );
+		} catch ( error ) {
+			rejection = error;
+		}
+
+		expect( restoreCalled ).toBe( false );
+		expect( rejection ).toBeInstanceOf( Error );
+		expect( ( rejection as Error ).message ).not.toContain( privateMarker );
+		expect( ( rejection as Error ).message ).toBe(
+			`Invalid restoration journal payload: ${ journalPath }`
+		);
+	} finally {
 		await rm( directory, { recursive: true, force: true } );
 	}
 } );

@@ -106,6 +106,14 @@ interface MutationGuardPayload {
 	expiresAt: number;
 }
 
+export type JsonValue =
+	| null
+	| boolean
+	| number
+	| string
+	| JsonValue[]
+	| { [ key: string ]: JsonValue };
+
 interface RestorationJournalPayload {
 	version: 1;
 	journalId: string;
@@ -113,7 +121,7 @@ interface RestorationJournalPayload {
 	storeHash: string;
 	settingHash: string;
 	runId: string;
-	originalValue: boolean;
+	originalValue: JsonValue;
 	createdAt: number;
 }
 
@@ -128,6 +136,114 @@ const DEFAULT_LEASE_MS = 90_000;
 const DEFAULT_RENEW_EVERY_MS = 30_000;
 const DEFAULT_MAX_WAIT_MS = 120_000;
 const RETRY_INTERVAL_MS = 100;
+const MAX_RESTORATION_VALUE_BYTES = 64 * 1024;
+const MAX_RESTORATION_VALUE_DEPTH = 32;
+
+function invalidRestorationValue(): never {
+	throw new Error( 'Invalid restoration journal value.' );
+}
+
+function validatedRestorationValue( value: unknown ): JsonValue {
+	const ancestors = new Set< object >();
+
+	const validate = ( candidate: unknown, depth: number ): void => {
+		if (
+			candidate === null ||
+			typeof candidate === 'boolean' ||
+			typeof candidate === 'string'
+		) {
+			return;
+		}
+		if ( typeof candidate === 'number' ) {
+			if ( ! Number.isFinite( candidate ) ) {
+				invalidRestorationValue();
+			}
+			return;
+		}
+		if ( typeof candidate !== 'object' ) {
+			invalidRestorationValue();
+		}
+		if ( depth > MAX_RESTORATION_VALUE_DEPTH ) {
+			invalidRestorationValue();
+		}
+		if ( ancestors.has( candidate ) ) {
+			invalidRestorationValue();
+		}
+
+		ancestors.add( candidate );
+		try {
+			if ( Array.isArray( candidate ) ) {
+				if ( Object.getPrototypeOf( candidate ) !== Array.prototype ) {
+					invalidRestorationValue();
+				}
+				const keys = Reflect.ownKeys( candidate ).filter(
+					( key ) => key !== 'length'
+				);
+				if (
+					keys.length !== candidate.length ||
+					keys.some(
+						( key, index ) =>
+							typeof key !== 'string' || key !== String( index )
+					)
+				) {
+					invalidRestorationValue();
+				}
+				for ( let index = 0; index < candidate.length; index += 1 ) {
+					const descriptor = Object.getOwnPropertyDescriptor(
+						candidate,
+						String( index )
+					);
+					if ( ! descriptor || ! ( 'value' in descriptor ) ) {
+						invalidRestorationValue();
+					}
+					validate( descriptor.value, depth + 1 );
+				}
+				return;
+			}
+
+			const prototype = Object.getPrototypeOf( candidate );
+			if ( prototype !== Object.prototype && prototype !== null ) {
+				invalidRestorationValue();
+			}
+			for ( const key of Reflect.ownKeys( candidate ) ) {
+				if ( typeof key !== 'string' ) {
+					invalidRestorationValue();
+				}
+				const descriptor = Object.getOwnPropertyDescriptor(
+					candidate,
+					key
+				);
+				if (
+					! descriptor ||
+					! descriptor.enumerable ||
+					! ( 'value' in descriptor )
+				) {
+					invalidRestorationValue();
+				}
+				validate( descriptor.value, depth + 1 );
+			}
+		} catch {
+			invalidRestorationValue();
+		} finally {
+			ancestors.delete( candidate );
+		}
+	};
+
+	validate( value, 0 );
+	let serialized: string;
+	try {
+		serialized = JSON.stringify( value );
+	} catch {
+		invalidRestorationValue();
+	}
+	if (
+		Buffer.byteLength( serialized, 'utf8' ) > MAX_RESTORATION_VALUE_BYTES
+	) {
+		invalidRestorationValue();
+	}
+
+	return JSON.parse( serialized ) as JsonValue;
+}
 
 function delay( milliseconds: number ): Promise< void > {
 	return new Promise( ( resolve ) => setTimeout( resolve, milliseconds ) );
@@ -288,7 +404,7 @@ export class ResourceLock {
 	}
 
 	public async writeRestorationJournal(
-		originalValue: boolean
+		originalValue: JsonValue
 	): Promise< void > {
 		this.throwRenewalError();
 		await this.manager.writeRestorationJournal(
@@ -299,9 +415,20 @@ export class ResourceLock {
 
 	public async restoreFromJournalIfOwned(
 		restore: ( originalValue: boolean ) => Promise< void >
+	): Promise< boolean >;
+	public async restoreFromJournalIfOwned(
+		restore: ( originalValue: JsonValue ) => Promise< void >
+	): Promise< boolean >;
+	public async restoreFromJournalIfOwned(
+		restore:
+			| ( ( originalValue: boolean ) => Promise< void > )
+			| ( ( originalValue: JsonValue ) => Promise< void > )
 	): Promise< boolean > {
 		this.throwRenewalError();
-		return this.manager.restoreFromJournalIfOwned( this.payload, restore );
+		return this.manager.restoreFromJournalIfOwned(
+			this.payload,
+			restore as ( originalValue: JsonValue ) => Promise< void >
+		);
 	}
 
 	private stopRenewal(): void {
@@ -522,7 +649,7 @@ export class ResourceLockManager {
 
 	public async writeRestorationJournal(
 		ownedPayload: ResourceLockPayload,
-		originalValue: boolean
+		originalValue: JsonValue
 	): Promise< void > {
 		const request = this.getHeldFeatureRequest( ownedPayload );
 		const lockPath = this.getLockPath( ownedPayload.key );
@@ -539,6 +666,8 @@ export class ResourceLockManager {
 					`Cannot replace an unresolved restoration journal: ${ journalPath }`
 				);
 			}
+			const validatedOriginalValue =
+				validatedRestorationValue( originalValue );
 			const journal: RestorationJournalPayload = {
 				version: 1,
 				journalId: randomUUID(),
@@ -546,7 +675,7 @@ export class ResourceLockManager {
 				storeHash: this.redactIdentity( request.storeId ),
 				settingHash: this.redactIdentity( request.resource ),
 				runId: this.runId,
-				originalValue,
+				originalValue: validatedOriginalValue,
 				createdAt: this.now(),
 			};
 			await this.writeDurableJson( journalPath, journal );
@@ -555,7 +684,7 @@ export class ResourceLockManager {
 
 	public async restoreFromJournalIfOwned(
 		ownedPayload: ResourceLockPayload,
-		restore: ( originalValue: boolean ) => Promise< void >
+		restore: ( originalValue: JsonValue ) => Promise< void >
 	): Promise< boolean > {
 		const request = this.getHeldFeatureRequest( ownedPayload );
 		const lockPath = this.getLockPath( ownedPayload.key );
@@ -769,9 +898,25 @@ export class ResourceLockManager {
 		path: string
 	): Promise< RestorationJournalPayload | undefined > {
 		try {
-			const data = JSON.parse(
-				await readFile( path, 'utf8' )
-			) as RestorationJournalPayload;
+			const serialized = await readFile( path, 'utf8' );
+			let parsed: unknown;
+			try {
+				parsed = JSON.parse( serialized );
+			} catch {
+				throw new Error(
+					`Invalid restoration journal payload: ${ path }`
+				);
+			}
+			if (
+				! parsed ||
+				typeof parsed !== 'object' ||
+				Array.isArray( parsed )
+			) {
+				throw new Error(
+					`Invalid restoration journal payload: ${ path }`
+				);
+			}
+			const data = parsed as Record< string, unknown >;
 			if (
 				data.version !== 1 ||
 				typeof data.journalId !== 'string' ||
@@ -779,14 +924,22 @@ export class ResourceLockManager {
 				typeof data.storeHash !== 'string' ||
 				typeof data.settingHash !== 'string' ||
 				typeof data.runId !== 'string' ||
-				typeof data.originalValue !== 'boolean' ||
 				typeof data.createdAt !== 'number'
 			) {
 				throw new Error(
 					`Invalid restoration journal payload: ${ path }`
 				);
 			}
-			return data;
+			return {
+				version: 1,
+				journalId: data.journalId,
+				accountHash: data.accountHash,
+				storeHash: data.storeHash,
+				settingHash: data.settingHash,
+				runId: data.runId,
+				originalValue: validatedRestorationValue( data.originalValue ),
+				createdAt: data.createdAt,
+			};
 		} catch ( error ) {
 			if (
 				error instanceof Error &&
