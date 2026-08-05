@@ -2693,7 +2693,9 @@ interface ProviderActionLockContract {
 	file: string;
 	wrapper:
 		| 'pilotRuntime.withProviderWriteLocks'
+		| 'adapter.withState'
 		| 'withCapturedManualCaptureSetting';
+	callbackArgument?: number;
 	providerActions: string[];
 }
 
@@ -2731,7 +2733,7 @@ function assertProviderActionsWithinDeclaredLockWrapper(
 	};
 	visit( sourceFile );
 
-	const wrapperCallbacks = calls
+	const wrapperCallbacks: ts.Node[] = calls
 		.filter( ( call ) => {
 			if ( callCallee( call ) !== contract.wrapper ) {
 				return false;
@@ -2746,7 +2748,7 @@ function assertProviderActionsWithinDeclaredLockWrapper(
 					runtimeArgument.text === 'pilotRuntime'
 			);
 		} )
-		.map( ( call ) => call.arguments[ 1 ] )
+		.map( ( call ) => call.arguments[ contract.callbackArgument ?? 1 ] )
 		.filter(
 			(
 				callback
@@ -2812,7 +2814,8 @@ test( 'routes every provider-writing pilot through a lock-owning wrapper', async
 	const pilotContracts = [
 		{
 			file: 'scenarios/card-payment.ts',
-			wrapper: 'pilotRuntime.withProviderWriteLocks',
+			wrapper: 'adapter.withState',
+			callbackArgument: 2,
 			providerActions: [
 				'pilotRuntime.createOwnedProduct',
 				'adapter.completeCheckout',

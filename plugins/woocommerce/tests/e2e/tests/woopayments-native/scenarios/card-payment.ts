@@ -19,11 +19,83 @@ import {
 	type PaymentEvidence,
 } from '../../../utils/woopayments-native/record-evidence';
 
-const CARD_PAYMENT_CONTRACT =
-	'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase.spec.ts:53::Successful purchase › Carding protection false › using a basic card';
 const CHECKOUT_ROUTE = '**/wp-json/wc/store/v1/checkout*';
 const CHECKOUT_PATH = '/wp-json/wc/store/v1/checkout';
 const WOOPAYMENTS_GATEWAY = 'woocommerce_payments';
+const CONTRACT_PREFIX =
+	'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase.spec.ts:53::';
+const FALSE_TITLE =
+	'Successful purchase › Carding protection false › using a basic card';
+const TRUE_TITLE =
+	'Successful purchase › Carding protection true › using a basic card';
+
+type CardPaymentScenarioAxes = Readonly< {
+	contractId: string;
+	title: string;
+	card: 'basic-card';
+	price: '10.99';
+} >;
+
+export type CardPaymentScenarioDefinition = CardPaymentScenarioAxes &
+	(
+		| Readonly< {
+				protection: false;
+				checkout: Readonly< {
+					kind: 'blocks';
+					path: 'checkout/';
+				} >;
+		  } >
+		| Readonly< {
+				protection: true;
+				checkout: Readonly< {
+					kind: 'classic';
+					path: 'classic-checkout/';
+				} >;
+		  } >
+	 );
+
+export function defineCardPaymentScenario(
+	definition: CardPaymentScenarioDefinition
+): CardPaymentScenarioDefinition {
+	if (
+		typeof definition !== 'object' ||
+		definition === null ||
+		Array.isArray( definition )
+	) {
+		throw new Error( 'Unsupported card payment scenario definition.' );
+	}
+	const record = definition as unknown as Record< string, unknown >;
+	const checkout = record.checkout as Record< string, unknown >;
+	const title = record.protection === true ? TRUE_TITLE : FALSE_TITLE;
+	const kind = record.protection === true ? 'classic' : 'blocks';
+	const path = record.protection === true ? 'classic-checkout/' : 'checkout/';
+	if (
+		Object.keys( record ).toSorted().join( ',' ) !==
+			'card,checkout,contractId,price,protection,title' ||
+		( record.protection !== false && record.protection !== true ) ||
+		record.contractId !== `${ CONTRACT_PREFIX }${ title }` ||
+		record.title !== title ||
+		record.card !== 'basic-card' ||
+		record.price !== '10.99' ||
+		typeof checkout !== 'object' ||
+		checkout === null ||
+		Array.isArray( checkout ) ||
+		Object.keys( checkout ).toSorted().join( ',' ) !== 'kind,path' ||
+		checkout.kind !== kind ||
+		checkout.path !== path
+	) {
+		throw new Error( 'Unsupported card payment scenario definition.' );
+	}
+
+	return Object.freeze( {
+		contractId: record.contractId,
+		title: record.title,
+		protection: record.protection,
+		card: 'basic-card',
+		price: '10.99',
+		checkout: Object.freeze( { kind, path } ),
+	} ) as CardPaymentScenarioDefinition;
+}
 
 interface CardPaymentDataEntry {
 	key: unknown;
@@ -43,6 +115,23 @@ interface CardPaymentCheckoutResponse {
 	orderKey: unknown;
 }
 
+export interface CardPaymentTokenDigest {
+	length: number;
+	sha256: string;
+}
+
+interface ProviderCardEvidence {
+	type: unknown;
+	brand: unknown;
+	last4: unknown;
+}
+
+export interface CardPaymentProviderCardEvidence {
+	type: 'card';
+	brand: 'visa';
+	last4: '4242';
+}
+
 export interface CardPaymentScenarioEvidence {
 	runId: string;
 	account: {
@@ -52,10 +141,16 @@ export interface CardPaymentScenarioEvidence {
 		renderedFraudPreventionToken: unknown;
 		legacyFraudPreventionToken: unknown;
 	};
+	protectionTokens?: {
+		authoritativeSession: CardPaymentTokenDigest;
+		exposed: CardPaymentTokenDigest;
+		submitted: CardPaymentTokenDigest;
+	};
 	checkoutRequests: CardPaymentCheckoutRequest[];
 	checkoutResponses: CardPaymentCheckoutResponse[];
 	observerFailures?: string[];
 	adapterOrderId: number;
+	adapterOrderKey?: unknown;
 	orderReceived: {
 		orderId: number;
 		orderKey: string;
@@ -75,6 +170,7 @@ export interface CardPaymentScenarioEvidence {
 		setupFutureUsage: unknown;
 	};
 	providerCustomerPaymentMethods: unknown;
+	providerCard?: ProviderCardEvidence;
 	accessibleSummary: {
 		statusVisible: boolean;
 		summaryCount: number;
@@ -83,13 +179,60 @@ export interface CardPaymentScenarioEvidence {
 	};
 }
 
-export interface CardPaymentRuntimeAdapter {
+interface ClassicCardCheckoutResultEvidence {
+	runId: string;
+	orderId: number;
+	orderKey: string;
+	tokens: {
+		exposed: CardPaymentTokenDigest;
+		authoritativeSession: CardPaymentTokenDigest;
+		submitted: CardPaymentTokenDigest;
+	};
+	request: {
+		gateway: 'woocommerce_payments' | 'other' | 'absent';
+		savePaymentMethod: boolean;
+		fraudPreventionToken: CardPaymentTokenDigest;
+		paymentMethodErrorCodePresent: boolean;
+		paymentMethodErrorMessagePresent: boolean;
+		platformPaymentMethod: 'true' | 'false' | 'invalid';
+		fingerprintPresent: boolean;
+	};
+	response: {
+		status: number;
+		orderId: number;
+		orderKey: string;
+	};
+	receipt: {
+		orderId: number;
+		orderKey: string;
+	};
+}
+
+export type CardPaymentCheckoutResult =
+	| Readonly< { kind: 'blocks'; orderId: number } >
+	| Readonly< {
+			kind: 'classic';
+			evidence: ClassicCardCheckoutResultEvidence;
+	  } >;
+
+export interface CardPaymentRuntimeAdapter< Scope = undefined > {
+	withState< Result >(
+		session: ProviderWriteSession,
+		runId: string,
+		callback: ( scope: Scope ) => Promise< Result >
+	): Promise< Result >;
 	completeCheckout(
 		session: ProviderWriteSession,
 		page: Page,
 		product: OwnedProduct,
-		runId: string
-	): Promise< number >;
+		runId: string,
+		definition: CardPaymentScenarioDefinition,
+		scope: Scope
+	): Promise< CardPaymentCheckoutResult >;
+	readCardEvidence?(
+		session: ProviderWriteSession,
+		payment: PaymentEvidence
+	): Promise< CardPaymentProviderCardEvidence >;
 }
 
 interface AccountResponse {
@@ -143,11 +286,66 @@ function requirePositiveInteger( value: unknown, label: string ): number {
 	return value as number;
 }
 
-function requireStrictFalseEligibility( value: unknown ): void {
-	if ( value !== false ) {
+function requireStrictEligibility( value: unknown, expected: boolean ): void {
+	if ( value !== expected ) {
 		fail(
-			'card-testing protection eligibility must be the strict Boolean false.'
+			`card-testing protection eligibility must be the strict Boolean ${ String(
+				expected
+			) }.`
 		);
+	}
+}
+
+function requireTokenDigest(
+	value: unknown,
+	label: string
+): asserts value is { length: 16; sha256: string } {
+	if (
+		typeof value !== 'object' ||
+		value === null ||
+		Array.isArray( value ) ||
+		! ( 'length' in value ) ||
+		value.length !== 16 ||
+		! ( 'sha256' in value ) ||
+		typeof value.sha256 !== 'string' ||
+		! /^[a-f0-9]{64}$/.test( value.sha256 )
+	) {
+		fail( `${ label } must be an exact 16-character token digest.` );
+	}
+}
+
+function requireStrictTrueProtection(
+	evidence: CardPaymentScenarioEvidence,
+	data: Map< string, unknown >
+): void {
+	const tokens = evidence.protectionTokens;
+	if ( ! tokens ) {
+		fail( 'strict-true protection requires token evidence.' );
+	}
+	const submittedField = data.get( 'wcpay-fraud-prevention-token' );
+	requireTokenDigest(
+		tokens.authoritativeSession,
+		'authoritative session token'
+	);
+	requireTokenDigest( tokens.exposed, 'Classic exposure token' );
+	requireTokenDigest( tokens.submitted, 'submitted token' );
+	requireTokenDigest( submittedField, 'sole submitted field token' );
+	if (
+		new Set( [
+			tokens.authoritativeSession.sha256,
+			tokens.exposed.sha256,
+			tokens.submitted.sha256,
+			submittedField.sha256,
+		] ).size !== 1
+	) {
+		fail( 'strict-true protection token digests must be exactly equal.' );
+	}
+	if (
+		evidence.providerCard?.type !== 'card' ||
+		evidence.providerCard.brand !== 'visa' ||
+		evidence.providerCard.last4 !== '4242'
+	) {
+		fail( 'provider card evidence must be card, Visa, and last4 4242.' );
 	}
 }
 
@@ -179,10 +377,13 @@ function normalizeSummaryText( text: string ): string {
 }
 
 export function validateCardPaymentEvidence(
-	evidence: CardPaymentScenarioEvidence
+	evidence: CardPaymentScenarioEvidence,
+	definition?: Pick< CardPaymentScenarioDefinition, 'protection' >
 ): void {
-	requireStrictFalseEligibility(
-		evidence.account.cardTestingProtectionEligible
+	const expectedProtection = definition?.protection ?? false;
+	requireStrictEligibility(
+		evidence.account.cardTestingProtectionEligible,
+		expectedProtection
 	);
 	if ( evidence.observerFailures?.length ) {
 		fail( 'checkout observation did not complete cleanly.' );
@@ -214,7 +415,6 @@ export function validateCardPaymentEvidence(
 		fail( 'the save flag must be the Boolean false.' );
 	}
 	for ( const emptyField of [
-		'wcpay-fraud-prevention-token',
 		'wcpay-payment-method-error-code',
 		'wcpay-payment-method-error-message',
 		'wcpay-fingerprint',
@@ -228,13 +428,18 @@ export function validateCardPaymentEvidence(
 	) {
 		fail( 'the platform marker must be a public-safe string Boolean.' );
 	}
-	if ( evidence.browser.renderedFraudPreventionToken !== '' ) {
-		fail(
-			'the rendered fraud prevention token setting must be explicitly empty.'
-		);
-	}
-	if ( evidence.browser.legacyFraudPreventionToken !== undefined ) {
-		fail( 'the legacy fraud prevention token must be undefined.' );
+	if ( expectedProtection ) {
+		requireStrictTrueProtection( evidence, data );
+	} else {
+		requireEmptyPaymentField( data, 'wcpay-fraud-prevention-token' );
+		if ( evidence.browser.renderedFraudPreventionToken !== '' ) {
+			fail(
+				'the rendered fraud prevention token setting must be explicitly empty.'
+			);
+		}
+		if ( evidence.browser.legacyFraudPreventionToken !== undefined ) {
+			fail( 'the legacy fraud prevention token must be undefined.' );
+		}
 	}
 
 	const responseOrderId = requirePositiveInteger(
@@ -281,14 +486,24 @@ export function validateCardPaymentEvidence(
 		evidence.payment.orderKey,
 		'payment evidence order key'
 	);
-	if (
-		new Set( [
-			responseOrderKey,
-			receivedOrderKey,
-			orderKey,
-			paymentOrderKey,
-		] ).size !== 1
-	) {
+	const correlatedOrderKeys = [
+		responseOrderKey,
+		receivedOrderKey,
+		orderKey,
+		paymentOrderKey,
+	];
+	if ( expectedProtection && evidence.adapterOrderKey === undefined ) {
+		fail( 'strict-true protection requires an adapter order key.' );
+	}
+	if ( evidence.adapterOrderKey !== undefined ) {
+		correlatedOrderKeys.push(
+			requireNonEmptyString(
+				evidence.adapterOrderKey,
+				'adapter order key'
+			)
+		);
+	}
+	if ( new Set( correlatedOrderKeys ).size !== 1 ) {
 		fail( 'order key correlation is incomplete.' );
 	}
 	if ( evidence.order.paymentMethod !== WOOPAYMENTS_GATEWAY ) {
@@ -581,17 +796,108 @@ async function captureAccessibleSummary(
 	};
 }
 
-async function readScenarioEvidence(
-	adminApi: APIRequestContext,
-	orderId: number,
+interface CompletedCheckoutEvidence {
+	orderId: number;
+	orderKey?: string;
+	orderReceived: CardPaymentScenarioEvidence[ 'orderReceived' ];
+	protectionTokens?: CardPaymentScenarioEvidence[ 'protectionTokens' ];
+}
+
+function classicPaymentData(
+	evidence: ClassicCardCheckoutResultEvidence
+): CardPaymentDataEntry[] {
+	return [
+		{
+			key: 'wc-woocommerce_payments-new-payment-method',
+			value: evidence.request.savePaymentMethod,
+		},
+		{
+			key: 'wcpay-fraud-prevention-token',
+			value: evidence.request.fraudPreventionToken,
+		},
+		{
+			key: 'wcpay-payment-method-error-code',
+			value: evidence.request.paymentMethodErrorCodePresent
+				? 'present'
+				: '',
+		},
+		{
+			key: 'wcpay-payment-method-error-message',
+			value: evidence.request.paymentMethodErrorMessagePresent
+				? 'present'
+				: '',
+		},
+		{
+			key: 'wcpay-fingerprint',
+			value: evidence.request.fingerprintPresent ? 'present' : '',
+		},
+		{
+			key: 'wcpay-is-platform-payment-method',
+			value: evidence.request.platformPaymentMethod,
+		},
+	];
+}
+
+async function normalizeCompletedCheckout(
+	definition: CardPaymentScenarioDefinition,
+	result: CardPaymentCheckoutResult,
+	runId: string,
+	page: Page,
+	observation: CheckoutObservation
+): Promise< CompletedCheckoutEvidence > {
+	if ( definition.checkout.kind === 'blocks' ) {
+		if ( result.kind !== 'blocks' ) {
+			fail( 'the adapter returned the wrong checkout surface.' );
+		}
+		return {
+			orderId: result.orderId,
+			orderReceived: await captureOrderReceived( page ),
+		};
+	}
+	if ( result.kind !== 'classic' ) {
+		fail( 'the adapter returned the wrong checkout surface.' );
+	}
+	const classic = result.evidence;
+	if ( classic.runId !== runId ) {
+		fail( 'adapter run ID correlation is incomplete.' );
+	}
+	const requestId = 'classic-checkout-1';
+	observation.requests.push( {
+		requestId,
+		paymentMethod:
+			classic.request.gateway === 'absent'
+				? undefined
+				: classic.request.gateway,
+		paymentData: classicPaymentData( classic ),
+	} );
+	observation.responses.push( {
+		requestId,
+		status: classic.response.status,
+		orderId: classic.response.orderId,
+		orderKey: classic.response.orderKey,
+	} );
+	return {
+		orderId: classic.orderId,
+		orderKey: classic.orderKey,
+		orderReceived: classic.receipt,
+		protectionTokens: classic.tokens,
+	};
+}
+
+async function readScenarioEvidence< Scope >(
+	session: ProviderWriteSession,
+	definition: CardPaymentScenarioDefinition,
+	adapter: CardPaymentRuntimeAdapter< Scope >,
+	checkout: CompletedCheckoutEvidence,
 	runId: string,
 	page: Page,
 	account: CardPaymentScenarioEvidence[ 'account' ],
 	observation: CheckoutObservation
 ): Promise< CardPaymentScenarioEvidence > {
-	const payment = await getPaymentEvidence( adminApi, orderId );
+	const { adminApi } = session;
+	const payment = await getPaymentEvidence( adminApi, checkout.orderId );
 	const order = ( await readJson(
-		await adminApi.get( `/wp-json/wc/v3/orders/${ orderId }` ),
+		await adminApi.get( `/wp-json/wc/v3/orders/${ checkout.orderId }` ),
 		'WooCommerce order'
 	) ) as OrderResponse;
 	const intent = ( await readJson(
@@ -613,16 +919,21 @@ async function readScenarioEvidence(
 					'provider customer payment methods'
 			  )
 			: undefined;
+	const providerCard = definition.protection
+		? await adapter.readCardEvidence?.( session, payment )
+		: undefined;
 
 	return {
 		runId,
 		account,
 		browser: observation.browser,
+		protectionTokens: checkout.protectionTokens,
 		checkoutRequests: observation.requests,
 		checkoutResponses: observation.responses,
 		observerFailures: observation.observerFailures,
-		adapterOrderId: orderId,
-		orderReceived: await captureOrderReceived( page ),
+		adapterOrderId: checkout.orderId,
+		adapterOrderKey: checkout.orderKey,
+		orderReceived: checkout.orderReceived,
 		order: {
 			id: order.id,
 			orderKey: order.order_key,
@@ -638,125 +949,159 @@ async function readScenarioEvidence(
 			setupFutureUsage: intent.setup_future_usage,
 		},
 		providerCustomerPaymentMethods,
+		providerCard,
 		accessibleSummary: await captureAccessibleSummary( page ),
 	};
 }
 
-export function registerCardPaymentScenario(
-	adapter: CardPaymentRuntimeAdapter
+export function registerCardPaymentScenario< Scope >(
+	definitionInput: CardPaymentScenarioDefinition,
+	adapter: CardPaymentRuntimeAdapter< Scope >
 ): void {
-	test(
-		'Successful purchase › Carding protection false › using a basic card',
-		{
-			annotation: [
-				{
-					type: 'woopayments-contract',
-					description: CARD_PAYMENT_CONTRACT,
-				},
-			],
-			tag: [
-				tags.WOOPAYMENTS_NATIVE,
-				tags.WOOPAYMENTS_PROVIDER,
-				tags.WOOPAYMENTS_PR,
-			],
-		},
-		async ( { adminApi, page, pilotRuntime, runId } ) => {
-			await pilotRuntime.withProviderWriteLocks(
-				{ recordEvent: 'shopper-card-payment' },
-				async () => {
-					const accountBody = ( await readJson(
-						await adminApi.get(
-							'/wp-json/wc/v3/payments/accounts'
-						),
-						'WooPayments account'
-					) ) as AccountResponse;
-					const account = {
-						cardTestingProtectionEligible:
-							accountBody.card_testing_protection_eligible,
-					};
-					requireStrictFalseEligibility(
-						account.cardTestingProtectionEligible
-					);
-					const product = await pilotRuntime.createOwnedProduct(
-						'10.99'
-					);
-					const observation = newCheckoutObservation();
-
-					const routeHandler = async (
-						route: Route
-					): Promise< void > => {
-						const request = route.request();
-						try {
-							if ( isCheckoutRequest( request ) ) {
-								const requestId = `checkout-${
-									observation.requests.length + 1
-								}`;
-								observation.requestIds.set(
-									request,
-									requestId
-								);
-								observation.requests.push(
-									normalizeCheckoutRequest(
-										requestId,
-										request.postDataJSON()
-									)
-								);
-								observation.browser =
-									await readDispatchBrowserEvidence( page );
-							}
-						} catch {
-							observation.observerFailures.push(
-								'checkout-request-capture'
-							);
-						} finally {
-							await route.continue();
-						}
-					};
-					const responseHandler = ( response: Response ): void => {
-						if ( ! isCheckoutRequest( response.request() ) ) {
-							return;
-						}
-						const task = captureCheckoutResponse(
-							response,
-							observation
-						).catch( () => {
-							observation.observerFailures.push(
-								'checkout-response-capture'
-							);
-						} );
-						observation.responseTasks.push( task );
-					};
-
-					await page.route( CHECKOUT_ROUTE, routeHandler );
-					page.on( 'response', responseHandler );
-					let orderId: number;
-					try {
-						orderId = await adapter.completeCheckout(
-							pilotRuntime,
-							page,
-							product,
-							runId
-						);
-						await Promise.all( observation.responseTasks );
-					} finally {
-						await Promise.allSettled( observation.responseTasks );
-						page.off( 'response', responseHandler );
-						await page.unroute( CHECKOUT_ROUTE, routeHandler );
-					}
-
-					const evidence = await readScenarioEvidence(
-						adminApi,
-						orderId,
-						runId,
-						page,
-						account,
-						observation
-					);
-					expect( () =>
-						validateCardPaymentEvidence( evidence )
-					).not.toThrow();
-				}
+	const definition = defineCardPaymentScenario( definitionInput );
+	const details = {
+		annotation: [
+			{
+				type: 'woopayments-contract',
+				description: definition.contractId,
+			},
+		],
+		tag: [
+			tags.WOOPAYMENTS_NATIVE,
+			tags.WOOPAYMENTS_PROVIDER,
+			tags.WOOPAYMENTS_PR,
+		],
+	};
+	const runScenario = async ( {
+		adminApi,
+		page,
+		pilotRuntime,
+		runId,
+	}: {
+		adminApi: APIRequestContext;
+		page: Page;
+		pilotRuntime: ProviderWriteSession;
+		runId: string;
+	} ): Promise< void > => {
+		await adapter.withState( pilotRuntime, runId, async ( scope ) => {
+			const accountBody = ( await readJson(
+				await adminApi.get( '/wp-json/wc/v3/payments/accounts' ),
+				'WooPayments account'
+			) ) as AccountResponse;
+			const account = {
+				cardTestingProtectionEligible:
+					accountBody.card_testing_protection_eligible,
+			};
+			requireStrictEligibility(
+				account.cardTestingProtectionEligible,
+				definition.protection
 			);
-		}
-	);
+			const product = await pilotRuntime.createOwnedProduct(
+				definition.price
+			);
+			const observation = newCheckoutObservation();
+
+			const routeHandler = async ( route: Route ): Promise< void > => {
+				const request = route.request();
+				try {
+					if ( isCheckoutRequest( request ) ) {
+						const requestId = `checkout-${
+							observation.requests.length + 1
+						}`;
+						observation.requestIds.set( request, requestId );
+						observation.requests.push(
+							normalizeCheckoutRequest(
+								requestId,
+								request.postDataJSON()
+							)
+						);
+						observation.browser = await readDispatchBrowserEvidence(
+							page
+						);
+					}
+				} catch {
+					observation.observerFailures.push(
+						'checkout-request-capture'
+					);
+				} finally {
+					await route.continue();
+				}
+			};
+			const responseHandler = ( response: Response ): void => {
+				if ( ! isCheckoutRequest( response.request() ) ) {
+					return;
+				}
+				const task = captureCheckoutResponse(
+					response,
+					observation
+				).catch( () => {
+					observation.observerFailures.push(
+						'checkout-response-capture'
+					);
+				} );
+				observation.responseTasks.push( task );
+			};
+
+			const observeBlocks = definition.checkout.kind === 'blocks';
+			if ( observeBlocks ) {
+				await page.route( CHECKOUT_ROUTE, routeHandler );
+				page.on( 'response', responseHandler );
+			}
+			let result: CardPaymentCheckoutResult;
+			try {
+				result = await adapter.completeCheckout(
+					pilotRuntime,
+					page,
+					product,
+					runId,
+					definition,
+					scope
+				);
+				if ( observeBlocks ) {
+					await Promise.all( observation.responseTasks );
+				}
+			} finally {
+				await Promise.allSettled( observation.responseTasks );
+				if ( observeBlocks ) {
+					page.off( 'response', responseHandler );
+					await page.unroute( CHECKOUT_ROUTE, routeHandler );
+				}
+			}
+			const checkout = await normalizeCompletedCheckout(
+				definition,
+				result,
+				runId,
+				page,
+				observation
+			);
+
+			const evidence = await readScenarioEvidence(
+				pilotRuntime,
+				definition,
+				adapter,
+				checkout,
+				runId,
+				page,
+				account,
+				observation
+			);
+			expect( () =>
+				validateCardPaymentEvidence( evidence, definition )
+			).not.toThrow();
+		} );
+	};
+
+	if ( definition.protection ) {
+		test(
+			'Successful purchase › Carding protection true › using a basic card',
+			details,
+			runScenario
+		);
+	} else {
+		test(
+			'Successful purchase › Carding protection false › using a basic card',
+			details,
+			runScenario
+		);
+	}
 }

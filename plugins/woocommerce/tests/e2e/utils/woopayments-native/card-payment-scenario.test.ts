@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test';
 
 import {
+	defineCardPaymentScenario,
+	type CardPaymentScenarioDefinition,
 	type CardPaymentScenarioEvidence,
 	validateCardPaymentEvidence,
 } from '../../tests/woopayments-native/scenarios/card-payment';
@@ -94,6 +96,24 @@ const exactEvidence = (): CardPaymentScenarioEvidence => ( {
 	} as AccessibleSummaryWithPaymentValue,
 } );
 
+const strictTrueDefinition = {
+	contractId:
+		'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase.spec.ts:53::Successful purchase › Carding protection true › using a basic card',
+	title: 'Successful purchase › Carding protection true › using a basic card',
+	protection: true,
+	card: 'basic-card',
+	price: '10.99',
+	checkout: {
+		kind: 'classic',
+		path: 'classic-checkout/',
+	},
+} as const;
+
+const exactDigest = {
+	length: 16,
+	sha256: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+} as const;
+
 const replacePaymentData = (
 	evidence: CardPaymentScenarioEvidence,
 	key: string,
@@ -104,12 +124,201 @@ const replacePaymentData = (
 	);
 };
 
+const exactTrueEvidence = (): CardPaymentScenarioEvidence => {
+	const evidence = exactEvidence();
+	evidence.account.cardTestingProtectionEligible = true;
+	replacePaymentData(
+		evidence,
+		'wcpay-fraud-prevention-token',
+		structuredClone( exactDigest )
+	);
+	Object.assign( evidence, {
+		adapterOrderKey: 'wc_order_exact',
+		protectionTokens: {
+			authoritativeSession: structuredClone( exactDigest ),
+			exposed: structuredClone( exactDigest ),
+			submitted: structuredClone( exactDigest ),
+		},
+		providerCard: {
+			type: 'card',
+			brand: 'visa',
+			last4: '4242',
+		},
+	} );
+	return evidence;
+};
+
 test.describe( 'card payment evidence validator', () => {
+	test( 'accepts one exact strict-true protected card payment graph', () => {
+		expect( () =>
+			validateCardPaymentEvidence(
+				exactTrueEvidence(),
+				strictTrueDefinition
+			)
+		).not.toThrow();
+	} );
+
 	test( 'accepts one exact strict-false card payment graph', () => {
 		expect( () =>
 			validateCardPaymentEvidence( exactEvidence() )
 		).not.toThrow();
 	} );
+
+	test( 'freezes an exact supported scenario definition', () => {
+		const definition = defineCardPaymentScenario( strictTrueDefinition );
+
+		expect( definition ).toEqual( strictTrueDefinition );
+		expect( Object.isFrozen( definition ) ).toBe( true );
+		expect( Object.isFrozen( definition.checkout ) ).toBe( true );
+	} );
+
+	test( 'rejects a non-object scenario definition without inspecting it', () => {
+		expect( () =>
+			defineCardPaymentScenario(
+				null as unknown as typeof strictTrueDefinition
+			)
+		).toThrow( /scenario definition/i );
+	} );
+
+	for ( const invalidDefinition of [
+		{
+			name: 'contract ID',
+			value: { ...strictTrueDefinition, contractId: 'wrong-contract' },
+		},
+		{
+			name: 'title',
+			value: { ...strictTrueDefinition, title: 'wrong title' },
+		},
+		{
+			name: 'protection Boolean',
+			value: { ...strictTrueDefinition, protection: false },
+		},
+		{
+			name: 'card fixture',
+			value: { ...strictTrueDefinition, card: 'saved-card' },
+		},
+		{
+			name: 'price',
+			value: { ...strictTrueDefinition, price: '11.00' },
+		},
+		{
+			name: 'checkout kind',
+			value: {
+				...strictTrueDefinition,
+				checkout: { kind: 'blocks', path: 'classic-checkout/' },
+			},
+		},
+		{
+			name: 'checkout path',
+			value: {
+				...strictTrueDefinition,
+				checkout: { kind: 'classic', path: 'checkout/' },
+			},
+		},
+		{
+			name: 'additional axis',
+			value: { ...strictTrueDefinition, retries: 1 },
+		},
+	] ) {
+		test( `rejects an unsupported scenario ${ invalidDefinition.name }`, () => {
+			expect( () =>
+				defineCardPaymentScenario(
+					invalidDefinition.value as unknown as CardPaymentScenarioDefinition
+				)
+			).toThrow( /scenario definition/i );
+		} );
+	}
+
+	for ( const invalidEligibility of [ false, 0, 'true', null, undefined ] ) {
+		test( `rejects strict-true eligibility ${ String(
+			invalidEligibility
+		) }`, () => {
+			const evidence = exactTrueEvidence();
+			evidence.account.cardTestingProtectionEligible = invalidEligibility;
+
+			expect( () =>
+				validateCardPaymentEvidence( evidence, strictTrueDefinition )
+			).toThrow( /strict Boolean true/i );
+		} );
+	}
+
+	for ( const invalidToken of [
+		{
+			name: 'authoritative session length',
+			mutate: ( evidence: CardPaymentScenarioEvidence ) => {
+				if ( evidence.protectionTokens ) {
+					evidence.protectionTokens.authoritativeSession.length = 15;
+				}
+			},
+			error: /authoritative session token.*16-character/i,
+		},
+		{
+			name: 'Classic exposure digest',
+			mutate: ( evidence: CardPaymentScenarioEvidence ) => {
+				if ( evidence.protectionTokens ) {
+					evidence.protectionTokens.exposed.sha256 = 'not-a-digest';
+				}
+			},
+			error: /Classic exposure token.*16-character/i,
+		},
+		{
+			name: 'submitted evidence equality',
+			mutate: ( evidence: CardPaymentScenarioEvidence ) => {
+				if ( evidence.protectionTokens ) {
+					evidence.protectionTokens.submitted.sha256 = 'f'.repeat(
+						64
+					);
+				}
+			},
+			error: /digests must be exactly equal/i,
+		},
+		{
+			name: 'sole submitted field equality',
+			mutate: ( evidence: CardPaymentScenarioEvidence ) => {
+				replacePaymentData( evidence, 'wcpay-fraud-prevention-token', {
+					length: 16,
+					sha256: 'e'.repeat( 64 ),
+				} );
+			},
+			error: /digests must be exactly equal/i,
+		},
+	] ) {
+		test( `rejects invalid ${ invalidToken.name } evidence`, () => {
+			const evidence = exactTrueEvidence();
+			invalidToken.mutate( evidence );
+
+			expect( () =>
+				validateCardPaymentEvidence( evidence, strictTrueDefinition )
+			).toThrow( invalidToken.error );
+		} );
+	}
+
+	test( 'requires the Classic adapter order key in strict-true evidence', () => {
+		const evidence = exactTrueEvidence();
+		delete evidence.adapterOrderKey;
+
+		expect( () =>
+			validateCardPaymentEvidence( evidence, strictTrueDefinition )
+		).toThrow( /adapter order key/i );
+	} );
+
+	for ( const invalidCard of [
+		{ type: 'bank_account', brand: 'visa', last4: '4242' },
+		{ type: 'card', brand: 'mastercard', last4: '4242' },
+		{ type: 'card', brand: 'visa', last4: '4444' },
+		undefined,
+	] ) {
+		test( `rejects invalid provider card evidence ${ JSON.stringify(
+			invalidCard
+		) }`, () => {
+			const evidence = exactTrueEvidence();
+			evidence.providerCard = invalidCard;
+
+			expect( () =>
+				validateCardPaymentEvidence( evidence, strictTrueDefinition )
+			).toThrow( /card, Visa, and last4 4242/i );
+		} );
+	}
 
 	test( 'accepts Blocks summary labels and accessible Visa alt text with last4', () => {
 		const evidence = exactEvidence();
