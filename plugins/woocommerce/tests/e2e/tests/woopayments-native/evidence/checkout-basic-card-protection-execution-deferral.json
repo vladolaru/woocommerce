@@ -1,0 +1,46 @@
+{
+	"schema_version": 2,
+	"slice_id": "checkout-basic-card-protection-execution-deferral",
+	"wc_base_commit": "f606e403bcd97ecbe2b46926d96a0743fb2e484c",
+	"verified_at_commit": "d3b5462ff107e882385bb9bac0e54335e1703fd3",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/pilots/shopper-card-protection.spec.ts",
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/card-payment.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/card-testing-protection.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/classic-card-checkout.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/provider-card-evidence.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/provider-evidence.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/record-evidence.ts"
+	],
+	"source_test_sha256": "795faa8b07dd6d120a7104dcd504c40b106fe3a5654c9248c54175ef310565bf",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase.spec.ts:53::Successful purchase › Carding protection true › using a basic card"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/card-payment.ts",
+			"contract": "Successful purchase › Carding protection true › using a basic card"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "795faa8b07dd6d120a7104dcd504c40b106fe3a5654c9248c54175ef310565bf",
+			"summary": "Fresh deferral review approved corrected pre-review packet SHA-256 704e53f3c9465b3ae6da3a2725aec58dad73dffdd76d20a319aafae22fa6f472 for the current protected-card bundle. The sole authorized provider execution stopped at capability authorization before protection, checkout, order, or provider mutation; cold state, released mutation guards, empty lock, journal, attempt and quarantine inventory, and three zero-listener scans support no-residue classification. The earlier calibrated packet remains unchanged as repository history; this packet preserves the exact target, contract and owner, claims no product defect, and requires a fresh execution budget without replay or new harness machinery."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "The sole authorized provider-capable execution stopped before protection mutation or checkout because its private approval fixture retained only the prior three capabilities. The intended card-testing-protection-setting and classic-checkout-page capabilities were written to a non-schema field, so the runtime correctly rejected the first missing capability. The no-replay budget is now exhausted without a protected order, submitted-token equality proof, or provider graph.",
+		"affected_scope": "The selected native Classic Checkout contract remains implemented and provider-free tests prove its controller, adapter, and evidence validators, but no successful execution proves authoritative protection true, one exact 16-character session token across configuration, Classic exposure and the sole submitted field, or the correlated guest USD 10.99 Visa 4242 order, payment method, intent, charge, capture, provider-event cardinality and accessible receipt.",
+		"no_allowlisted_action_reason": "Another provider execution would violate the explicit single-invocation and no-replay limits. Static, unit, retained false-state, or failed pre-mutation evidence cannot substitute for the missing protected financial and token graph. No product code defect is established, and no further harness hardening or unrelated card-row work is authorized in this slice.",
+		"reference": "blocked-environment:PILOT-PROVIDER-EXECUTION-BUDGET",
+		"unlock_decision": "Authorize a new protected-card execution budget in a fresh slice. Before that one execution, extend the fixture's actual schema-version-1 capabilities array with the two required capabilities and assert each exact capability against the live native runtime, store, blog, account and alias. Then run only the selected test once with one worker and zero retries, retain public-safe immutable evidence, prove exact restoration and zero residue, obtain fresh hash-bound closure reviews, and close without adding harness machinery or replaying an uncertain payment.",
+		"quarantine_status": "The failed run stopped before protection, page, session, cart, product, checkout, order, or provider mutation. Cold reads prove the raw protection option, force option, and Classic page remain absent. The exact owned listener stopped cleanly; two supervisor scans and a later independent scan found zero listeners. There are zero active locks, restoration journals, provider attempts, quarantine receipts, or symlinks, and every acquired mutation guard has its release marker. No resource requires quarantine."
+	}
+}
