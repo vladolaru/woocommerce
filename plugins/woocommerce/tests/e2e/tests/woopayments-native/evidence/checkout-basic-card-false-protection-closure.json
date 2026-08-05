@@ -1,8 +1,8 @@
 {
 	"schema_version": 2,
 	"slice_id": "checkout-basic-card-false-protection-closure",
-	"wc_base_commit": "e5df1b9d6450f93bce3efde16831680b6d736b0d",
-	"verified_at_commit": "6523528308510eb06f9a6d485f1bb1acd1c6661b",
+	"wc_base_commit": "f606e403bcd97ecbe2b46926d96a0743fb2e484c",
+	"verified_at_commit": "1960d15ed6819724ce6c0d9232d61a80519cabae",
 	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
 	"source_test_paths": [
 		"plugins/woocommerce/tests/e2e/tests/woopayments-native/pilots/shopper-card-payment.spec.ts",
@@ -11,7 +11,7 @@
 		"plugins/woocommerce/tests/e2e/utils/woopayments-native/provider-evidence.ts",
 		"plugins/woocommerce/tests/e2e/utils/woopayments-native/record-evidence.ts"
 	],
-	"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
+	"source_test_sha256": "60fdf437783b3d2dbf5d935140bcfa8f5527de515bf51df2bcb51ab4c053cd91",
 	"contract_ids": [
 		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase.spec.ts:53::Successful purchase › Carding protection false › using a basic card"
 	],
@@ -23,7 +23,8 @@
 	],
 	"implementation_commits": [
 		"a92fc49f6494adbb762737e96613248424c4d951",
-		"6523528308510eb06f9a6d485f1bb1acd1c6661b"
+		"6523528308510eb06f9a6d485f1bb1acd1c6661b",
+		"1960d15ed6819724ce6c0d9232d61a80519cabae"
 	],
 	"verification": [
 		{
@@ -34,98 +35,86 @@
 		{
 			"command": "pnpm --dir plugins/woocommerce exec playwright test --config=tests/e2e/envs/woopayments-native/unit.playwright.config.ts tests/e2e/utils/woopayments-native/card-payment-scenario.test.ts tests/e2e/utils/woopayments-native/pilot-runtime.test.ts",
 			"exit_code": 0,
-			"summary": "All 117 focused scenario and pilot-runtime tests passed after the final test-only review correction; the five-file provider-verified bundle remained byte-identical."
+			"summary": "All 142 current provider-free scenario and pilot-runtime tests passed, including the complete generalized strict-false oracle and composition safeguards."
 		},
 		{
 			"command": "pnpm --dir plugins/woocommerce test:e2e:woopayments:controller",
 			"exit_code": 0,
-			"summary": "The final controller passed 219 contract-map unit tests, all 181 ledger rows, 20 routing tests, environment setup, and 205 Playwright unit tests on the verified proposal."
+			"summary": "The full controller passed on the verified current-bundle proposal before commit."
 		}
 	],
 	"reviews": [
 		{
-			"role": "implementation-spec",
-			"verdict": "APPROVE",
-			"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
-			"summary": "The reviewed scenario preserves the exact strict-false Blocks checkout, accessible receipt, order, and provider contract with one canonical passing provider-owned annotation."
-		},
-		{
-			"role": "implementation-quality",
-			"verdict": "APPROVE",
-			"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
-			"summary": "The reviewed implementation uses a thin runtime adapter, fail-closed evidence validation, exact collection multiplicity, and focused regression coverage with no remaining findings."
-		},
-		{
 			"role": "code",
 			"verdict": "APPROVE",
-			"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
-			"summary": "Final code review approved the exact frozen native contract and five-file bundle with no actionable findings."
+			"source_test_sha256": "60fdf437783b3d2dbf5d935140bcfa8f5527de515bf51df2bcb51ab4c053cd91",
+			"summary": "The generalized bytes preserve the strict-false Blocks checkout contract. The three provider-facing readers are byte-identical to the retained successful run, while the changed pilot and scenario retain the same locks, checkout driver, strict-false assertions, provider correlation and receipt oracle."
 		},
 		{
 			"role": "e2e-tests",
 			"verdict": "APPROVE",
-			"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
-			"summary": "E2E review approved the exact Blocks route, single request and response, provider correlation, and cleanup; unrelated protected-helper hardening does not weaken this run."
+			"source_test_sha256": "60fdf437783b3d2dbf5d935140bcfa8f5527de515bf51df2bcb51ab4c053cd91",
+			"summary": "The generalized bytes preserve the exact strict-false Blocks checkout oracle and lock scope. The retained provider proof remains applicable because checkout, provider-evidence and record-evidence are byte-identical while the changed composition preserves the false branch."
 		},
 		{
 			"role": "js-tests",
 			"verdict": "APPROVE",
-			"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
-			"summary": "JavaScript test review approved AST lock-callback containment and explicit observer-failure and unsuccessful-response coverage without source-bundle drift."
+			"source_test_sha256": "60fdf437783b3d2dbf5d935140bcfa8f5527de515bf51df2bcb51ab4c053cd91",
+			"summary": "Focused test review approved the frozen strict-false definition, exact false eligibility and empty-token checks, unchanged provider readers, provider-write lock wrapper and complete order/provider correlation after generalization."
 		},
 		{
 			"role": "reliability",
 			"verdict": "APPROVE",
-			"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
-			"summary": "Reliability review approved exact listener cardinality, correlated provider identities, successful ownership persistence, exact cleanup, and zero residual state."
+			"source_test_sha256": "60fdf437783b3d2dbf5d935140bcfa8f5527de515bf51df2bcb51ab4c053cd91",
+			"summary": "The current bundle preserves the retained run's one-shot execution, fail-closed evidence correlation, observer cleanup, durable journaling, quarantine behavior and zero-residue teardown guarantees."
 		},
 		{
 			"role": "concurrency",
 			"verdict": "APPROVE",
-			"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
-			"summary": "Concurrency review approved serialized provider writes, one-shot journaling, scoped observers, and deterministic teardown under one worker and zero retries."
+			"source_test_sha256": "60fdf437783b3d2dbf5d935140bcfa8f5527de515bf51df2bcb51ab4c053cd91",
+			"summary": "The generalization preserves the false run's single-writer locks, durable submission journal, scoped observer lifecycle and deterministic teardown; provider-interacting helpers remain byte-identical."
 		},
 		{
 			"role": "accessibility",
 			"verdict": "APPROVE",
-			"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
-			"summary": "Accessibility review approved the bounded visible status and semantic list, listitem, card or Visa, and 4242 receipt oracle."
+			"source_test_sha256": "60fdf437783b3d2dbf5d935140bcfa8f5527de515bf51df2bcb51ab4c053cd91",
+			"summary": "The generalized false route preserves the visible order-received status, one semantic summary list and payment list item, Card or Visa semantics and exact last-four receipt oracle proved by the retained run."
 		},
 		{
 			"role": "security",
 			"verdict": "APPROVE",
-			"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
-			"summary": "Security review approved the bounded request contract, downstream method lineage, test-mode write safeguards, and exclusively redacted tracked evidence."
+			"source_test_sha256": "60fdf437783b3d2dbf5d935140bcfa8f5527de515bf51df2bcb51ab4c053cd91",
+			"summary": "Provider writes remain capability-gated and lock-owned, request and evidence validation fail closed, tracked proof stays redacted, and the retained successful run remains applicable to the current false branch."
 		},
 		{
 			"role": "provider-evidence",
 			"verdict": "APPROVE",
-			"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
-			"summary": "Provider-evidence review approved the combined correlation, singleton cardinality, required negatives, exact cleanup, zero residue, and hash-attested public references."
+			"source_test_sha256": "60fdf437783b3d2dbf5d935140bcfa8f5527de515bf51df2bcb51ab4c053cd91",
+			"summary": "The retained successful run remains applicable to the frozen strict-false Blocks route and unchanged readers, preserving one correlated request, response, order, payment method, intent, charge and capture graph, exact cardinality, required negatives, cleanup and redaction."
 		},
 		{
 			"role": "architecture",
 			"verdict": "APPROVE",
-			"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
-			"summary": "Architecture review approved the four-line composition root, narrow runtime adapter, cohesive shared scenario, and unchanged evidence boundaries."
+			"source_test_sha256": "60fdf437783b3d2dbf5d935140bcfa8f5527de515bf51df2bcb51ab4c053cd91",
+			"summary": "The false pilot remains a thin composition root over a cohesive shared scenario. Lock ownership, Blocks observation, strict-false validation and provider/order evidence boundaries remain intact."
 		},
 		{
 			"role": "api-contract-backward-compatibility",
 			"verdict": "APPROVE",
-			"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
-			"summary": "API and backward-compatibility review confirmed additive test-internal exports with no production route, hook, response, or public signature change."
+			"source_test_sha256": "60fdf437783b3d2dbf5d935140bcfa8f5527de515bf51df2bcb51ab4c053cd91",
+			"summary": "The generalized helpers remain test-internal with all consumers updated and no production route, hook, response or public signature change; the false path preserves its original endpoints and payload contract."
 		},
 		{
 			"role": "ecosystem-integration",
 			"verdict": "APPROVE",
-			"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
-			"summary": "Ecosystem review approved native Blocks payload fields, disabled-protection configuration, explicit null action fields, exhaustive charge collection, and receipt rendering."
+			"source_test_sha256": "60fdf437783b3d2dbf5d935140bcfa8f5527de515bf51df2bcb51ab4c053cd91",
+			"summary": "Upstream route, payload, account, provider collection and receipt contracts align with the current false branch; only composition and shared branching changed, so the retained provider proof remains applicable."
 		},
 		{
 			"role": "reference-integrity",
 			"verdict": "APPROVE",
-			"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
-			"summary": "Reference review approved every exercised import, export, route, selector, annotation, title, contract ID, target mapping, and five-file bundle member."
+			"source_test_sha256": "60fdf437783b3d2dbf5d935140bcfa8f5527de515bf51df2bcb51ab4c053cd91",
+			"summary": "All five bundle paths, imports, exports, REST routes, canonical title and annotation, frozen source contract, unique ledger mapping and retained provider-proof references resolve correctly."
 		}
 	],
 	"closures": [
@@ -139,86 +128,91 @@
 				{
 					"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep='Successful purchase › Carding protection false › using a basic card' tests/e2e/tests/woopayments-native/pilots/shopper-card-payment.spec.ts",
 					"exit_code": 0,
-					"summary": "The actual provider-capable execution ran once with one worker and zero retries; 1/1 passed in 22.7 seconds with the complete strict-false checkout, order, provider, listener, accessibility, and cleanup oracle. Public identities are bound by the packet's redacted SHA-256 references."
+					"summary": "The actual provider-capable execution ran once with one worker and zero retries; 1/1 passed in 22.7 seconds. It proved strict-false configuration, one Store API request and response, exact guest USD 10.99 WooPayments order and provider graph, succeeded captured state, no action/save path, empty customer methods, accessible receipt, exact event cardinality, and exact cleanup with zero listener, attempt, quarantine, or live-lock residue. Hash-attested references: redacted:run-id:sha256:4537d8f34e917f6c7fe68a56a6d59b597f531f8e39d21a31240cd191aea56f31; redacted:order-record:sha256:ea87fb99f47628068cb927567a4120804d6415996154a12d350bd022753d5f4b; redacted:listener-log:sha256:519280637f04fbdb7bcbb8d88d6df6ec6b0c9413c1e15f3bcddb610fc546beba; redacted:listener-identity:sha256:69f28b27b32801d1d64f70278318ed00cead9bbbebaa88ca780956336d13e264"
+				},
+				{
+					"command": "pnpm --dir plugins/woocommerce exec playwright test --config=tests/e2e/envs/woopayments-native/unit.playwright.config.ts tests/e2e/utils/woopayments-native/card-payment-scenario.test.ts tests/e2e/utils/woopayments-native/pilot-runtime.test.ts",
+					"exit_code": 0,
+					"summary": "All 142 current provider-free scenario and pilot-runtime tests passed, including the complete generalized strict-false oracle and composition safeguards."
 				},
 				{
 					"command": "pnpm --dir plugins/woocommerce test:e2e:woopayments:controller",
 					"exit_code": 0,
-					"summary": "The final controller passed every contract-map, routing, environment, and Playwright unit gate on the verified proposal."
+					"summary": "The full controller passed on the verified current-bundle proposal before commit."
 				}
 			],
 			"reviews": [
 				{
 					"role": "code",
 					"verdict": "APPROVE",
-					"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
-					"summary": "Approved the exact frozen native contract and five-file bundle with no actionable findings."
+					"source_test_sha256": "60fdf437783b3d2dbf5d935140bcfa8f5527de515bf51df2bcb51ab4c053cd91",
+					"summary": "The generalized bytes preserve the strict-false Blocks checkout contract. The three provider-facing readers are byte-identical to the retained successful run, while the changed pilot and scenario retain the same locks, checkout driver, strict-false assertions, provider correlation and receipt oracle."
 				},
 				{
 					"role": "e2e-tests",
 					"verdict": "APPROVE",
-					"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
-					"summary": "Approved the exact Blocks request, response, provider correlation, cardinality, and cleanup behavior."
+					"source_test_sha256": "60fdf437783b3d2dbf5d935140bcfa8f5527de515bf51df2bcb51ab4c053cd91",
+					"summary": "The generalized bytes preserve the exact strict-false Blocks checkout oracle and lock scope. The retained provider proof remains applicable because checkout, provider-evidence and record-evidence are byte-identical while the changed composition preserves the false branch."
 				},
 				{
 					"role": "js-tests",
 					"verdict": "APPROVE",
-					"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
-					"summary": "Approved focused validator coverage and AST lock-callback containment without bundle drift."
+					"source_test_sha256": "60fdf437783b3d2dbf5d935140bcfa8f5527de515bf51df2bcb51ab4c053cd91",
+					"summary": "Focused test review approved the frozen strict-false definition, exact false eligibility and empty-token checks, unchanged provider readers, provider-write lock wrapper and complete order/provider correlation after generalization."
 				},
 				{
 					"role": "reliability",
 					"verdict": "APPROVE",
-					"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
-					"summary": "Approved exact-run listener cardinality, ownership persistence, cleanup, and zero residual state."
+					"source_test_sha256": "60fdf437783b3d2dbf5d935140bcfa8f5527de515bf51df2bcb51ab4c053cd91",
+					"summary": "The current bundle preserves the retained run's one-shot execution, fail-closed evidence correlation, observer cleanup, durable journaling, quarantine behavior and zero-residue teardown guarantees."
 				},
 				{
 					"role": "concurrency",
 					"verdict": "APPROVE",
-					"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
-					"summary": "Approved serialized provider writes, one-shot journaling, scoped observers, and deterministic teardown."
+					"source_test_sha256": "60fdf437783b3d2dbf5d935140bcfa8f5527de515bf51df2bcb51ab4c053cd91",
+					"summary": "The generalization preserves the false run's single-writer locks, durable submission journal, scoped observer lifecycle and deterministic teardown; provider-interacting helpers remain byte-identical."
 				},
 				{
 					"role": "accessibility",
 					"verdict": "APPROVE",
-					"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
-					"summary": "Approved the bounded visible status and semantic exact receipt oracle."
+					"source_test_sha256": "60fdf437783b3d2dbf5d935140bcfa8f5527de515bf51df2bcb51ab4c053cd91",
+					"summary": "The generalized false route preserves the visible order-received status, one semantic summary list and payment list item, Card or Visa semantics and exact last-four receipt oracle proved by the retained run."
 				},
 				{
 					"role": "security",
 					"verdict": "APPROVE",
-					"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
-					"summary": "Approved the bounded request contract, write safeguards, and redacted tracked evidence."
+					"source_test_sha256": "60fdf437783b3d2dbf5d935140bcfa8f5527de515bf51df2bcb51ab4c053cd91",
+					"summary": "Provider writes remain capability-gated and lock-owned, request and evidence validation fail closed, tracked proof stays redacted, and the retained successful run remains applicable to the current false branch."
 				},
 				{
 					"role": "provider-evidence",
 					"verdict": "APPROVE",
-					"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
-					"summary": "Approved correlation, singleton cardinality, negatives, cleanup, and hash-attested references."
+					"source_test_sha256": "60fdf437783b3d2dbf5d935140bcfa8f5527de515bf51df2bcb51ab4c053cd91",
+					"summary": "The retained successful run remains applicable to the frozen strict-false Blocks route and unchanged readers, preserving one correlated request, response, order, payment method, intent, charge and capture graph, exact cardinality, required negatives, cleanup and redaction."
 				},
 				{
 					"role": "architecture",
 					"verdict": "APPROVE",
-					"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
-					"summary": "Approved the thin composition root, narrow adapter, cohesive scenario, and stable evidence boundaries."
+					"source_test_sha256": "60fdf437783b3d2dbf5d935140bcfa8f5527de515bf51df2bcb51ab4c053cd91",
+					"summary": "The false pilot remains a thin composition root over a cohesive shared scenario. Lock ownership, Blocks observation, strict-false validation and provider/order evidence boundaries remain intact."
 				},
 				{
 					"role": "api-contract-backward-compatibility",
 					"verdict": "APPROVE",
-					"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
-					"summary": "Approved additive test-internal exports with no production or public contract change."
+					"source_test_sha256": "60fdf437783b3d2dbf5d935140bcfa8f5527de515bf51df2bcb51ab4c053cd91",
+					"summary": "The generalized helpers remain test-internal with all consumers updated and no production route, hook, response or public signature change; the false path preserves its original endpoints and payload contract."
 				},
 				{
 					"role": "ecosystem-integration",
 					"verdict": "APPROVE",
-					"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
-					"summary": "Approved native Blocks payload, route, provider collection, action fields, and receipt integration."
+					"source_test_sha256": "60fdf437783b3d2dbf5d935140bcfa8f5527de515bf51df2bcb51ab4c053cd91",
+					"summary": "Upstream route, payload, account, provider collection and receipt contracts align with the current false branch; only composition and shared branching changed, so the retained provider proof remains applicable."
 				},
 				{
 					"role": "reference-integrity",
 					"verdict": "APPROVE",
-					"source_test_sha256": "80bfb8c4f8007723ee9947d157a5bbc41d2f99494bb7179781788f94bb74e892",
-					"summary": "Approved every exercised path, import, export, route, annotation, title, ID, and bundle reference."
+					"source_test_sha256": "60fdf437783b3d2dbf5d935140bcfa8f5527de515bf51df2bcb51ab4c053cd91",
+					"summary": "All five bundle paths, imports, exports, REST routes, canonical title and annotation, frozen source contract, unique ledger mapping and retained provider-proof references resolve correctly."
 				}
 			]
 		}
