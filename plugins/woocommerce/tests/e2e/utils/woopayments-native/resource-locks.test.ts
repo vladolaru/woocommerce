@@ -226,12 +226,16 @@ function spawnJournalWorker(
 			mutationGuardLeaseMs: ${ leaseMs },
 			autoRenew: false,
 		} );
-		await manager.acquire( ${ JSON.stringify( accountRequest ) } );
-		await manager.acquire( ${ JSON.stringify( storeRequest ) } );
+		const account = await manager.acquire( ${ JSON.stringify( accountRequest ) } );
+		const store = await manager.acquire( ${ JSON.stringify( storeRequest ) } );
 		const setting = await manager.acquire( ${ JSON.stringify( settingRequest ) } );
 		await setting.writeRestorationJournal( false );
 		await writeFile( ${ JSON.stringify( statePath ) }, 'true' );
-		process.stdout.write( JSON.stringify( { event: 'setting-enabled', payload: setting.payload } ) + '\\n' );
+		process.stdout.write( JSON.stringify( {
+			event: 'setting-enabled',
+			payload: setting.payload,
+			lockPayloads: [ account.payload, store.payload, setting.payload ],
+		} ) + '\\n' );
 		setInterval( () => {}, 1_000 );
 	`;
 
@@ -244,7 +248,11 @@ function spawnJournalWorker(
 
 async function readWorkerMessage(
 	worker: ChildProcessWithoutNullStreams
-): Promise< { event: string; payload: { runId: string } } > {
+): Promise< {
+	event: string;
+	payload: ResourceLockPayload;
+	lockPayloads?: ResourceLockPayload[];
+} > {
 	let stderr = '';
 	worker.stderr.setEncoding( 'utf8' );
 	worker.stderr.on( 'data', ( chunk: string ) => {
@@ -256,7 +264,8 @@ async function readWorkerMessage(
 			lines.close();
 			return JSON.parse( line ) as {
 				event: string;
-				payload: { runId: string };
+				payload: ResourceLockPayload;
+				lockPayloads?: ResourceLockPayload[];
 			};
 		}
 	}
@@ -299,6 +308,23 @@ function getPeerAttempt< Result >(
 
 async function waitForMilliseconds( milliseconds: number ): Promise< void > {
 	return new Promise( ( resolve ) => setTimeout( resolve, milliseconds ) );
+}
+
+async function expireExactLockPayloads(
+	lockDir: string,
+	payloads: ResourceLockPayload[]
+): Promise< void > {
+	for ( const payload of payloads ) {
+		const lockPath = join( lockDir, `${ sha256( payload.key ) }.lock` );
+		const current = JSON.parse(
+			await readFile( lockPath, 'utf8' )
+		) as ResourceLockPayload;
+		expect( current ).toEqual( payload );
+		await writeFile(
+			lockPath,
+			`${ JSON.stringify( { ...payload, expiresAt: 0 } ) }\n`
+		);
+	}
 }
 
 interface MutationGuardTestPayload {
@@ -808,12 +834,13 @@ test( 'restores a durable original setting after the enabling worker is killed',
 		directory,
 		statePath,
 		'run-setting-crash',
-		100
+		30_000
 	);
 
 	try {
 		const enabled = await readWorkerMessage( worker );
 		expect( enabled.event ).toBe( 'setting-enabled' );
+		expect( enabled.lockPayloads ).toHaveLength( 3 );
 		expect( await readFile( statePath, 'utf8' ) ).toBe( 'true' );
 		const journalPath = ( await readdir( directory ) ).find( ( file ) =>
 			file.endsWith( '.restoration.json' )
@@ -828,13 +855,16 @@ test( 'restores a durable original setting after the enabling worker is killed',
 
 		worker.kill( 'SIGKILL' );
 		await waitForWorkerExit( worker );
-		await waitForMilliseconds( 250 );
+		await expireExactLockPayloads(
+			directory,
+			enabled.lockPayloads as ResourceLockPayload[]
+		);
 
 		const manager = new ResourceLockManager( {
 			lockDir: directory,
 			runId: 'run-setting-recovery',
-			leaseMs: 500,
-			mutationGuardLeaseMs: 100,
+			leaseMs: 30_000,
+			mutationGuardLeaseMs: 30_000,
 			maxWaitMs: 1_000,
 			autoRenew: false,
 		} );
@@ -849,6 +879,9 @@ test( 'restores a durable original setting after the enabling worker is killed',
 			kind: 'feature-setting',
 			resource: 'manual-capture',
 		} );
+		for ( const lock of [ account, store, setting ] ) {
+			expect( lock.displacedOwner?.runId ).toBe( 'run-setting-crash' );
+		}
 		let recoveredOriginal: boolean | undefined;
 
 		await expect(
