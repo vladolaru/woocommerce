@@ -3,6 +3,41 @@
 Durable, public-safe record of calibration blockers and ledger revisions
 that the evidence JSON schema cannot carry. Newest entries first.
 
+## 2026-08-05 — native protected basic-card prerequisites calibrated
+
+Stable reference:
+`calibration-notes:2026-08-05:native-protected-basic-card-prerequisites-calibrated`.
+
+The owner decision dated 2026-08-04 authorizes the exact native protected
+basic-card contract, the accepted `card-payment.ts` target, and owner
+`autonomous-run:pilot-calibration`. The standing-store Card, test-mode, USD,
+callback, account, provider-writer, and exclusive-listener readiness recorded
+on 2026-08-03 remains current at WooCommerce commit
+`f606e403bcd97ecbe2b46926d96a0743fb2e484c`, rolling read-only WooPayments
+reference `265e275802e9d8cadefe61c68c492911d14a1534`, and rolling read-only
+WooCommerce Subscriptions reference
+`0887151df977fd7e0454c55b2b49984c545df94a`.
+
+Fresh read-only calibration found an authoritative account cache whose
+effective card-testing-protection state is strict false, no force-override
+option, and no pre-existing marker-owned Classic checkout page. The repository
+already provides the bounded resource-lock, restoration-journal, submission-
+journal, quarantine, raw WordPress option, WooCommerce session, native fraud-
+service, Classic gateway bridge, order, and provider-evidence primitives needed
+to implement an exact raw-state controller and one-shot Classic adapter. The
+current environment has no active provider listener and no active lock,
+restoration journal, submission attempt, or quarantine entry. One provider
+writer and one exclusively owned listener remain authorized for the later
+single selected-row execution.
+
+This calibration establishes pre-implementation availability under the
+required reopen-first lifecycle. It does not claim that the strict-true
+controller, Classic driver, selected payment, immutable evidence, restoration,
+or reviews already exist; those remain mandatory before the row can advance
+beyond `specified`. No browser or provider mutation ran, and no store,
+account, protection, gateway, session, cart, product, order, listener, lock,
+journal, or quarantine state changed.
+
 ## 2026-08-03 — native standing store calibrated
 
 Stable reference: `calibration-notes:2026-08-03:native-standing-store-calibrated`.
