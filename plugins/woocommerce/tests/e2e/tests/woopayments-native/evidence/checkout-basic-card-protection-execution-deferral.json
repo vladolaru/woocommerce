@@ -41,6 +41,14 @@
 		"no_allowlisted_action_reason": "Another provider execution would violate the explicit single-invocation and no-replay limits. Static, unit, retained false-state, or failed pre-mutation evidence cannot substitute for the missing protected financial and token graph. No product code defect is established, and no further harness hardening or unrelated card-row work is authorized in this slice.",
 		"reference": "blocked-environment:PILOT-PROVIDER-EXECUTION-BUDGET",
 		"unlock_decision": "Authorize a new protected-card execution budget in a fresh slice. Before that one execution, extend the fixture's actual schema-version-1 capabilities array with the two required capabilities and assert each exact capability against the live native runtime, store, blog, account and alias. Then run only the selected test once with one worker and zero retries, retain public-safe immutable evidence, prove exact restoration and zero residue, obtain fresh hash-bound closure reviews, and close without adding harness machinery or replaying an uncertain payment.",
-		"quarantine_status": "The failed run stopped before protection, page, session, cart, product, checkout, order, or provider mutation. Cold reads prove the raw protection option, force option, and Classic page remain absent. The exact owned listener stopped cleanly; two supervisor scans and a later independent scan found zero listeners. There are zero active locks, restoration journals, provider attempts, quarantine receipts, or symlinks, and every acquired mutation guard has its release marker. No resource requires quarantine."
+		"quarantine_status": "The failed run stopped before protection, page, session, cart, product, checkout, order, or provider mutation. Cold reads prove the raw protection option, force option, and Classic page remain absent. The exact owned listener stopped cleanly; two supervisor scans and a later independent scan found zero listeners. There are zero active locks, restoration journals, provider attempts, quarantine receipts, or symlinks, and every acquired mutation guard has its release marker. No resource requires quarantine.",
+		"unlock_satisfactions": [
+			{
+				"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase.spec.ts:53::Successful purchase › Carding protection true › using a basic card",
+				"unlock_decision": "Authorize a new protected-card execution budget in a fresh slice. Before that one execution, extend the fixture's actual schema-version-1 capabilities array with the two required capabilities and assert each exact capability against the live native runtime, store, blog, account and alias. Then run only the selected test once with one worker and zero retries, retain public-safe immutable evidence, prove exact restoration and zero residue, obtain fresh hash-bound closure reviews, and close without adding harness machinery or replaying an uncertain payment.",
+				"satisfied_on": "2026-08-06",
+				"reference": "calibration-notes:2026-08-06:card-protection-execution-budget"
+			}
+		]
 	}
 }
