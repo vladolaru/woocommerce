@@ -1,7 +1,7 @@
 {
 	"schema_version": 2,
 	"slice_id": "checkout-basic-card-false-protection-closure",
-	"wc_base_commit": "f606e403bcd97ecbe2b46926d96a0743fb2e484c",
+	"wc_base_commit": "08940c92ed8362b55d9ff865ab225d045002daab",
 	"verified_at_commit": "1960d15ed6819724ce6c0d9232d61a80519cabae",
 	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
 	"source_test_paths": [
@@ -28,9 +28,9 @@
 	],
 	"verification": [
 		{
-			"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep='Successful purchase › Carding protection false › using a basic card' tests/e2e/tests/woopayments-native/pilots/shopper-card-payment.spec.ts",
+			"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep='Carding protection false' tests/e2e/tests/woopayments-native/pilots/shopper-card-payment.spec.ts",
 			"exit_code": 0,
-			"summary": "The actual provider-capable execution ran once with one worker and zero retries; 1/1 passed in 22.7 seconds. It proved strict-false configuration, one Store API request and response, exact guest USD 10.99 WooPayments order and provider graph, succeeded captured state, no action/save path, empty customer methods, accessible receipt, exact event cardinality, and exact cleanup with zero listener, attempt, quarantine, or live-lock residue. Hash-attested references: redacted:run-id:sha256:4537d8f34e917f6c7fe68a56a6d59b597f531f8e39d21a31240cd191aea56f31; redacted:order-record:sha256:ea87fb99f47628068cb927567a4120804d6415996154a12d350bd022753d5f4b; redacted:listener-log:sha256:519280637f04fbdb7bcbb8d88d6df6ec6b0c9413c1e15f3bcddb610fc546beba; redacted:listener-identity:sha256:69f28b27b32801d1d64f70278318ed00cead9bbbebaa88ca780956336d13e264"
+			"summary": "The provider-capable execution ran once with one worker and zero retries against the current generalized bytes; 1/1 passed in 28.2 seconds, collected from tests/e2e/tests/woopayments-native/scenarios/card-payment.ts. Callback readiness was proved for native blog 4 before the run. The exclusive owned-listener interval recorded exactly one each of customer.created, payment_intent.created, payment_intent.succeeded, charge.succeeded and application_fee.created, with five successful HTTP 200 deliveries and no other event type. The exact run-owned USD 10.99 order was permanently deleted by run identity, leaving zero run-owned orders or products; the owned listener was stopped and two scans found zero listeners; all four mutation guards carry release markers and no attempt, quarantine or live-lock residue remains. This verification replaces the retained 2026-08-04 run, which exercised the pre-generalization bytes. Hash-attested references: redacted:run-id:sha256:bdfc4d02c30db21e332e1c18df1a57d0df9f28800b4c9acd89cabbe28a83664a; redacted:provider-run-log:sha256:8910cc91b9b2f6a93998d6b86603142424a3106aa92de19a8a539f166a3ea128; redacted:owned-listener-log:sha256:e876ba53db8bece2102b9f776fb8fa5bc4ae530ee89574865c7dc57602005c6a"
 		},
 		{
 			"command": "pnpm --dir plugins/woocommerce exec playwright test --config=tests/e2e/envs/woopayments-native/unit.playwright.config.ts tests/e2e/utils/woopayments-native/card-payment-scenario.test.ts tests/e2e/utils/woopayments-native/pilot-runtime.test.ts",
@@ -126,9 +126,9 @@
 			},
 			"verification": [
 				{
-					"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep='Successful purchase › Carding protection false › using a basic card' tests/e2e/tests/woopayments-native/pilots/shopper-card-payment.spec.ts",
+					"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep='Carding protection false' tests/e2e/tests/woopayments-native/pilots/shopper-card-payment.spec.ts",
 					"exit_code": 0,
-					"summary": "The actual provider-capable execution ran once with one worker and zero retries; 1/1 passed in 22.7 seconds. It proved strict-false configuration, one Store API request and response, exact guest USD 10.99 WooPayments order and provider graph, succeeded captured state, no action/save path, empty customer methods, accessible receipt, exact event cardinality, and exact cleanup with zero listener, attempt, quarantine, or live-lock residue. Hash-attested references: redacted:run-id:sha256:4537d8f34e917f6c7fe68a56a6d59b597f531f8e39d21a31240cd191aea56f31; redacted:order-record:sha256:ea87fb99f47628068cb927567a4120804d6415996154a12d350bd022753d5f4b; redacted:listener-log:sha256:519280637f04fbdb7bcbb8d88d6df6ec6b0c9413c1e15f3bcddb610fc546beba; redacted:listener-identity:sha256:69f28b27b32801d1d64f70278318ed00cead9bbbebaa88ca780956336d13e264"
+					"summary": "The provider-capable execution ran once with one worker and zero retries against the current generalized bytes; 1/1 passed in 28.2 seconds, collected from tests/e2e/tests/woopayments-native/scenarios/card-payment.ts. Callback readiness was proved for native blog 4 before the run. The exclusive owned-listener interval recorded exactly one each of customer.created, payment_intent.created, payment_intent.succeeded, charge.succeeded and application_fee.created, with five successful HTTP 200 deliveries and no other event type. The exact run-owned USD 10.99 order was permanently deleted by run identity, leaving zero run-owned orders or products; the owned listener was stopped and two scans found zero listeners; all four mutation guards carry release markers and no attempt, quarantine or live-lock residue remains. This verification replaces the retained 2026-08-04 run, which exercised the pre-generalization bytes. Hash-attested references: redacted:run-id:sha256:bdfc4d02c30db21e332e1c18df1a57d0df9f28800b4c9acd89cabbe28a83664a; redacted:provider-run-log:sha256:8910cc91b9b2f6a93998d6b86603142424a3106aa92de19a8a539f166a3ea128; redacted:owned-listener-log:sha256:e876ba53db8bece2102b9f776fb8fa5bc4ae530ee89574865c7dc57602005c6a"
 				},
 				{
 					"command": "pnpm --dir plugins/woocommerce exec playwright test --config=tests/e2e/envs/woopayments-native/unit.playwright.config.ts tests/e2e/utils/woopayments-native/card-payment-scenario.test.ts tests/e2e/utils/woopayments-native/pilot-runtime.test.ts",
