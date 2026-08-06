@@ -2241,6 +2241,25 @@ test( 'accepts a retired closure that names its retained contract instead of clo
 	assert.doesNotThrow( () => validate( map ) );
 } );
 
+test( 'accepts a retirement-only evidence packet with no reviewed source bundle', () => {
+	const map = cloneContractMap();
+	const row = findRetirementRow( map );
+
+	retire( row );
+	// A retirement reviews no source, so its packet carries an empty bundle rather than attesting files
+	// that nobody read for the decision.
+	row.evidence_path = createEvidenceFile( row, {
+		closures: [],
+		retirements: [ createRetirementEntry( row ) ],
+		source_test_paths: [],
+		source_test_sha256: createHash( 'sha256' )
+			.update( JSON.stringify( [] ) )
+			.digest( 'hex' ),
+	} );
+
+	assert.doesNotThrow( () => validate( map ) );
+} );
+
 test( 'rejects a retired closure with no retirement entry for the row', () => {
 	const map = cloneContractMap();
 	const row = findRetirementRow( map );

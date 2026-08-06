@@ -521,10 +521,11 @@ const assertSourceTestBundle = (
 	sourceTestSha256,
 	repositoryRoot,
 	verifiedAtCommit,
-	bindCurrentBytes
+	bindCurrentBytes,
+	allowEmptyBundle = false
 ) => {
 	assertArray( sourceTestPaths, 'source_test_paths' );
-	if ( sourceTestPaths.length === 0 ) {
+	if ( sourceTestPaths.length === 0 && ! allowEmptyBundle ) {
 		throw new Error(
 			'Invalid migration evidence source_test_paths; expected at least one reviewed source'
 		);
@@ -1406,14 +1407,24 @@ export const validateMigrationEvidence = (
 		'source_test_sha256',
 		SHA256_PATTERN
 	);
+	// A retirement-only packet reviews no source: nothing was written or read for the decision, so it carries
+	// an empty bundle rather than attesting files that no reviewer looked at.
+	const isRetirementOnlyEvidence =
+		( evidence.retirements ?? [] ).length > 0 &&
+		evidence.closures.length === 0;
+
 	assertSourceTestBundle(
 		evidence.source_test_paths,
 		evidence.source_test_sha256,
 		repositoryRoot,
 		evidence.verified_at_commit,
-		[ 'verified', 'closed' ].includes( row.migration_state )
+		[ 'verified', 'closed' ].includes( row.migration_state ),
+		isRetirementOnlyEvidence
 	);
-	if ( [ 'verified', 'closed' ].includes( row.migration_state ) ) {
+	if (
+		[ 'verified', 'closed' ].includes( row.migration_state ) &&
+		! isRetirementOnlyEvidence
+	) {
 		assertClosureBundleCoverage( row, evidence, repositoryRoot );
 	}
 
