@@ -102,3 +102,25 @@ test( 'requires a unique, non-empty capability allowlist and approval identity',
 		)
 	).toThrow( /unique/i );
 } );
+
+test( 'rejects an approval carrying unknown fields', () => {
+	expect( () =>
+		assertApprovedProviderFixture(
+			approval( {
+				approved_capabilities: [ 'card-testing-protection-setting' ],
+			} ),
+			context,
+			'basic-card'
+		)
+	).toThrow( /unknown field/i );
+} );
+
+test( 'names every unknown field so a misspelled key is obvious', () => {
+	expect( () =>
+		assertApprovedProviderFixture(
+			approval( { extra_capabilities: [], approved_capabilities: [] } ),
+			context,
+			'basic-card'
+		)
+	).toThrow( /approved_capabilities, extra_capabilities/ );
+} );

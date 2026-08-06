@@ -24,6 +24,25 @@ interface ProviderFixtureApproval {
 	capabilities: string[];
 }
 
+/**
+ * The exact approval fields. An unrecognized key is rejected rather than
+ * ignored: a misspelled capability list would otherwise parse cleanly and fail
+ * only once a provider run reached the capability it was meant to approve.
+ */
+const APPROVAL_KEYS = new Set( [
+	'schema_version',
+	'approval_id',
+	'execution_scope',
+	'runtime',
+	'store_id',
+	'site_url',
+	'wpcom_blog_id',
+	'account_id',
+	'account_alias',
+	'test_mode',
+	'capabilities',
+] );
+
 function normalizedUrl( value: string ): string {
 	return value.replace( /\/+$/, '' );
 }
@@ -88,6 +107,17 @@ function parseApproval( raw: string | undefined ): ProviderFixtureApproval {
 	) {
 		throw new Error(
 			'Provider fixture approval capabilities must be unique.'
+		);
+	}
+
+	const unknownKeys = Object.keys( approval ).filter(
+		( key ) => ! APPROVAL_KEYS.has( key )
+	);
+	if ( unknownKeys.length > 0 ) {
+		throw new Error(
+			`Provider fixture approval has unknown field(s): ${ unknownKeys
+				.toSorted()
+				.join( ', ' ) }.`
 		);
 	}
 
