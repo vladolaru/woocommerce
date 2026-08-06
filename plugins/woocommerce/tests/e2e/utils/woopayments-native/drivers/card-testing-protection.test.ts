@@ -329,6 +329,32 @@ test( 'runs canonical PHP with one standard native-store WP-CLI invocation', asy
 	);
 } );
 
+test( 'keeps the underlying cause when a WP-CLI operation fails', async () => {
+	const underlying = new Error( 'wp-env exited with code 1' );
+	const runner = new NativeStoreWpCliRunner( {
+		storeDirectory: '/test/native-store',
+		execFile: async () => {
+			throw underlying;
+		},
+	} );
+
+	await expect( runner.run( runnerRequest() ) ).rejects.toMatchObject( {
+		message: /capture-state operation failed/,
+		cause: underlying,
+	} );
+} );
+
+test( 'explains an absent JSON result line instead of throwing an empty error', async () => {
+	const runner = new NativeStoreWpCliRunner( {
+		storeDirectory: '/test/native-store',
+		execFile: async () => 'Starting wp-env\nPHP Fatal error: whoops\n',
+	} );
+
+	await expect( runner.run( runnerRequest() ) ).rejects.toMatchObject( {
+		cause: { message: /no JSON result line/i },
+	} );
+} );
+
 test( 'returns a fixed value-free error for native-store command and output failures', async () => {
 	const sensitive = 'private native-store command detail';
 	const failingRunner = new NativeStoreWpCliRunner( {

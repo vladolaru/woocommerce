@@ -563,12 +563,15 @@ export class NativeStoreWpCliRunner implements CardTestingProtectionRunner {
 				.toReversed()
 				.find( ( line ) => line.startsWith( '{' ) );
 			if ( ! jsonLine ) {
-				throw new Error();
+				throw new Error(
+					'Native-store WP-CLI output contained no JSON result line.'
+				);
 			}
 			return JSON.parse( jsonLine ) as unknown;
-		} catch {
+		} catch ( error ) {
 			throw new Error(
-				`Native-store WP-CLI ${ request.operation } operation failed.`
+				`Native-store WP-CLI ${ request.operation } operation failed.`,
+				{ cause: error }
 			);
 		}
 	}
