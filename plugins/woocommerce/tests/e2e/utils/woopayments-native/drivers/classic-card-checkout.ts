@@ -418,7 +418,10 @@ export class PlaywrightClassicCardCheckoutBrowser
 		}
 		await billing.getByLabel( /^First name/i ).fill( 'E2E' );
 		await billing.getByLabel( /^Last name/i ).fill( 'WooPayments' );
-		await billing.getByLabel( /^Country \/ Region/i ).selectOption( 'US' );
+		// Select2 enhances country and state into a second labelled control, so
+		// the accessible name matches two elements. Address the underlying
+		// select by id, as the rest of the Core classic-checkout suite does.
+		await billing.locator( '#billing_country' ).selectOption( 'US' );
 		await billing
 			.getByLabel( /^Street address/i )
 			.first()
@@ -426,7 +429,7 @@ export class PlaywrightClassicCardCheckoutBrowser
 		await billing
 			.getByLabel( /^(?:Town \/ City|City)/i )
 			.fill( 'San Francisco' );
-		await billing.getByLabel( /^State/i ).selectOption( 'CA' );
+		await billing.locator( '#billing_state' ).selectOption( 'CA' );
 		await billing.getByLabel( /^(?:ZIP Code|Postcode)/i ).fill( '94107' );
 		await billing.getByLabel( /^Phone/i ).fill( '5555550100' );
 		await billing
