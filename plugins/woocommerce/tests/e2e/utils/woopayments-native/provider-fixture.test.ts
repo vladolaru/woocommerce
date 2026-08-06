@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 import {
+	assertApprovedProviderCapabilities,
 	assertApprovedProviderFixture,
 	type ProviderFixtureContext,
 } from './provider-fixture';
@@ -123,4 +124,36 @@ test( 'names every unknown field so a misspelled key is obvious', () => {
 			'basic-card'
 		)
 	).toThrow( /approved_capabilities, extra_capabilities/ );
+} );
+
+test( 'preflights an entire required capability set at once', () => {
+	expect( () =>
+		assertApprovedProviderCapabilities( approval(), context, [
+			'basic-card',
+			'basic-card-entry',
+		] )
+	).not.toThrow();
+} );
+
+test( 'reports every missing capability in one preflight failure', () => {
+	expect( () =>
+		assertApprovedProviderCapabilities( approval(), context, [
+			'basic-card',
+			'card-testing-protection-setting',
+			'classic-checkout-page',
+		] )
+	).toThrow( /card-testing-protection-setting, classic-checkout-page/ );
+} );
+
+test( 'preflight still surfaces identity mismatches and empty requests', () => {
+	expect( () =>
+		assertApprovedProviderCapabilities(
+			approval( { wpcom_blog_id: 2 } ),
+			context,
+			[ 'basic-card' ]
+		)
+	).toThrow( /does not match/i );
+	expect( () =>
+		assertApprovedProviderCapabilities( approval(), context, [] )
+	).toThrow( /at least one capability/i );
 } );

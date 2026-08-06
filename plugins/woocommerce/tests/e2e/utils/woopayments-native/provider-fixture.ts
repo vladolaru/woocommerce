@@ -152,3 +152,39 @@ export function assertApprovedProviderFixture(
 		);
 	}
 }
+
+/**
+ * Assert an entire required capability set before a provider interval opens, so
+ * an incomplete approval costs nothing instead of an execution budget.
+ */
+export function assertApprovedProviderCapabilities(
+	raw: string | undefined,
+	expected: ProviderFixtureContext,
+	capabilities: readonly string[]
+): void {
+	if ( capabilities.length === 0 ) {
+		throw new Error(
+			'Provider capability preflight requires at least one capability.'
+		);
+	}
+
+	const missing: string[] = [];
+	for ( const capability of capabilities ) {
+		try {
+			assertApprovedProviderFixture( raw, expected, capability );
+		} catch ( error ) {
+			if ( ! /is not approved by fixture/.test( String( error ) ) ) {
+				throw error;
+			}
+			missing.push( capability );
+		}
+	}
+
+	if ( missing.length > 0 ) {
+		throw new Error(
+			`Provider fixture approval is missing capabilities: ${ missing
+				.toSorted()
+				.join( ', ' ) }.`
+		);
+	}
+}
