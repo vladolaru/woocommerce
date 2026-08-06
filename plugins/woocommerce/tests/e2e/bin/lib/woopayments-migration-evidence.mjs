@@ -103,10 +103,26 @@ const EVIDENCE_KEYS = [
 	'known_gaps',
 	'deferral',
 ];
+
+// Optional top-level keys. These must stay optional rather than joining EVIDENCE_KEYS: a committed deferral
+// packet has to remain byte-identical for the reopening check, so an existing evidence file cannot be
+// rewritten to carry a newly required key.
+const OPTIONAL_EVIDENCE_KEYS = [ 'retirements' ];
 const TARGET_KEYS = [ 'path', 'contract' ];
 const VERIFICATION_KEYS = [ 'command', 'exit_code', 'summary' ];
 const REVIEW_KEYS = [ 'role', 'verdict', 'source_test_sha256', 'summary' ];
 const CLOSURE_KEYS = [ 'contract_id', 'target', 'verification', 'reviews' ];
+const RETIREMENT_KEYS = [
+	'contract_id',
+	'retained_contract_id',
+	'approver',
+	'rationale',
+];
+
+// The support state that marks a row as retired rather than migrated. A retirement discharges a contract by
+// naming the retained contract that already carries it, so unlike a closure it has no reviewed source bundle
+// and no verification run to attest.
+const RETIRED_SUPPORT_STATE = 'not-applicable-retired';
 export const REQUIRED_CLOSURE_REVIEW_ROLES = [
 	'code',
 	'e2e-tests',
@@ -898,6 +914,58 @@ const assertClosureReviewList = ( reviews, label ) => {
 	}
 };
 
+const assertRetirements = ( retirements, row ) => {
+	assertArray( retirements, 'retirements' );
+
+	const contractIds = new Set();
+	for ( const [ index, retirement ] of retirements.entries() ) {
+		assertExactKeys(
+			retirement,
+			RETIREMENT_KEYS,
+			`evidence retirement ${ index }`
+		);
+		for ( const key of RETIREMENT_KEYS ) {
+			assertExactString(
+				retirement[ key ],
+				`retirements[${ index }].${ key }`
+			);
+		}
+		if ( contractIds.has( retirement.contract_id ) ) {
+			throw new Error(
+				`Invalid migration evidence retirements[${ index }].contract_id; duplicate contract_id`
+			);
+		}
+		contractIds.add( retirement.contract_id );
+	}
+
+	const rowRetirement = retirements.find(
+		( retirement ) => retirement.contract_id === row.case_id
+	);
+	const isRetired = row.native_support_state === RETIRED_SUPPORT_STATE;
+
+	if ( rowRetirement && ! isRetired ) {
+		throw new Error(
+			`Invalid migration evidence retirements for ${ row.case_id }; only a retired row may carry a retirement entry`
+		);
+	}
+
+	if ( ! isRetired ) {
+		return;
+	}
+
+	if ( ! rowRetirement ) {
+		throw new Error(
+			`Invalid migration evidence retirements for ${ row.case_id }; a retired row requires its own retirement entry`
+		);
+	}
+
+	if ( rowRetirement.retained_contract_id === row.case_id ) {
+		throw new Error(
+			`Invalid migration evidence retirements for ${ row.case_id }; a retirement must name a different retained contract`
+		);
+	}
+};
+
 const assertClosures = ( closures, row, evidence ) => {
 	assertArray( closures, 'closures' );
 
@@ -973,6 +1041,12 @@ const assertClosures = ( closures, row, evidence ) => {
 	}
 
 	if ( ! [ 'verified', 'closed' ].includes( row.migration_state ) ) {
+		return;
+	}
+
+	// A retired row is discharged by its retirement entry, not by a closure. Requiring a closure here would
+	// force reviewers to attest a source bundle that nobody wrote or read for the retirement.
+	if ( row.native_support_state === RETIRED_SUPPORT_STATE ) {
 		return;
 	}
 
@@ -1279,7 +1353,16 @@ export const validateMigrationEvidence = (
 	{ row, metadata, repositoryRoot, calibrationNotesContent } = {}
 ) => {
 	assertPublicSafeJson( evidence );
-	assertExactKeys( evidence, EVIDENCE_KEYS, 'migration evidence' );
+	assertExactKeys(
+		evidence,
+		[
+			...EVIDENCE_KEYS,
+			...OPTIONAL_EVIDENCE_KEYS.filter( ( key ) =>
+				Object.hasOwn( evidence, key )
+			),
+		],
+		'migration evidence'
+	);
 
 	if (
 		! isPlainObject( row ) ||
@@ -1349,6 +1432,7 @@ export const validateMigrationEvidence = (
 	assertVerification( evidence.verification, row );
 	assertReviews( evidence.reviews );
 	assertClosures( evidence.closures, row, evidence );
+	assertRetirements( evidence.retirements ?? [], row );
 	assertKnownGaps( evidence.known_gaps, row );
 	assertDeferral(
 		evidence.deferral,

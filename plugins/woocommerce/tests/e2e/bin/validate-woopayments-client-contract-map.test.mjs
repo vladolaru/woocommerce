@@ -733,6 +733,43 @@ const close = ( row, sourceRepositoryRoot = repositoryRoot ) => {
 	);
 };
 
+const retirementDisposition =
+	'Retire because the test is stale, redundant, or guards only obsolete plugin structure';
+
+const findRetirementRow = ( map ) =>
+	map.rows.find(
+		( candidate ) => candidate.planned_disposition === retirementDisposition
+	);
+
+const createRetirementEntry = ( row, overrides = {} ) => ( {
+	contract_id: row.case_id,
+	retained_contract_id: `retained::${ row.case_id }`,
+	approver: 'human-approved:retirement-review',
+	rationale: 'Duplicate of the retained contract; nothing is migrated.',
+	...overrides,
+} );
+
+// Retire a row without manufacturing closure reviews: a retirement discharges a contract by naming the
+// retained contract that already carries it, so there is no reviewed source bundle to attest.
+const retire = (
+	row,
+	retirementOverrides = {},
+	sourceRepositoryRoot = repositoryRoot
+) => {
+	specify( row );
+	row.migration_state = 'closed';
+	row.native_support_state = 'not-applicable-retired';
+	row.gap_or_decision_reference = 'human-approved:retirement-review';
+	row.evidence_path = createEvidenceFile(
+		row,
+		{
+			closures: [],
+			retirements: [ createRetirementEntry( row, retirementOverrides ) ],
+		},
+		sourceRepositoryRoot
+	);
+};
+
 const closeInventory = ( map ) => {
 	const sourceRepositoryRoot = createTemporaryGitRepository();
 
@@ -756,15 +793,18 @@ const closeInventory = ( map ) => {
 	execFileSync( 'git', [ '-C', sourceRepositoryRoot, 'add', '--all' ] );
 
 	for ( const row of map.rows ) {
-		close( row, sourceRepositoryRoot );
-		if (
-			row.accepted_disposition ===
-			'Retire because the test is stale, redundant, or guards only obsolete plugin structure'
-		) {
-			row.native_support_state = 'not-applicable-retired';
+		if ( row.planned_disposition === retirementDisposition ) {
+			retire(
+				row,
+				{ approver: 'human-approved:inventory-retirement-review' },
+				sourceRepositoryRoot
+			);
 			row.gap_or_decision_reference =
 				'human-approved:inventory-retirement-review';
+			continue;
 		}
+
+		close( row, sourceRepositoryRoot );
 	}
 
 	execFileSync( 'git', [ '-C', sourceRepositoryRoot, 'add', '--all' ] );
@@ -2192,17 +2232,75 @@ test( 'requires a gap reference for known-gap native support', () => {
 	);
 } );
 
-test( 'accepts retired closure with explicit human approval', () => {
+test( 'accepts a retired closure that names its retained contract instead of closure reviews', () => {
 	const map = cloneContractMap();
+	const row = findRetirementRow( map );
+
+	retire( row );
+
+	assert.doesNotThrow( () => validate( map ) );
+} );
+
+test( 'rejects a retired closure with no retirement entry for the row', () => {
+	const map = cloneContractMap();
+	const row = findRetirementRow( map );
+
+	retire( row );
+	row.evidence_path = createEvidenceFile( row, {
+		closures: [],
+		retirements: [],
+	} );
+
+	assert.throws(
+		() => validate( map ),
+		new RegExp(
+			`Invalid migration evidence retirements for ${ row.case_id }; a retired row requires its own retirement entry`
+		)
+	);
+} );
+
+test( 'rejects a retirement entry that retains itself', () => {
+	const map = cloneContractMap();
+	const row = findRetirementRow( map );
+
+	retire( row, { retained_contract_id: row.case_id } );
+
+	assert.throws(
+		() => validate( map ),
+		new RegExp(
+			`Invalid migration evidence retirements for ${ row.case_id }; a retirement must name a different retained contract`
+		)
+	);
+} );
+
+test( 'rejects a retirement entry on a row that is not retired', () => {
+	const map = cloneContractMap();
+	// A row that closes as supported, so the rejection can only come from the retirement entry itself.
 	const row = map.rows.find(
 		( candidate ) =>
 			candidate.planned_disposition ===
-			'Retire because the test is stale, redundant, or guards only obsolete plugin structure'
+			'Run unchanged against both runtimes'
 	);
 
 	close( row );
-	row.native_support_state = 'not-applicable-retired';
-	row.gap_or_decision_reference = 'human-approved:retirement-review';
+	row.evidence_path = createEvidenceFile( row, {
+		closures: [ createClosureEntry( row ) ],
+		retirements: [ createRetirementEntry( row ) ],
+	} );
+
+	assert.throws(
+		() => validate( map ),
+		new RegExp(
+			`Invalid migration evidence retirements for ${ row.case_id }; only a retired row may carry a retirement entry`
+		)
+	);
+} );
+
+test( 'accepts retired closure with explicit human approval', () => {
+	const map = cloneContractMap();
+	const row = findRetirementRow( map );
+
+	retire( row );
 
 	assert.doesNotThrow( () => validate( map ) );
 } );
