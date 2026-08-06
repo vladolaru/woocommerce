@@ -3,6 +3,39 @@
 Durable, public-safe record of calibration blockers and ledger revisions
 that the evidence JSON schema cannot carry. Newest entries first.
 
+## 2026-08-06 — card protection execution budget
+
+Stable reference: `calibration-notes:2026-08-06:card-protection-execution-budget`.
+
+The ledger owner authorized exactly two provider executions for this slice,
+rather than the single execution the previous slice carried.
+
+The first re-proves the generalized strict-false basic-card scenario. Its
+closure was re-established on 2026-08-05 at bundle SHA-256
+`60fdf437783b3d2dbf5d935140bcfa8f5527de515bf51df2bcb51ab4c053cd91`, but its
+provider verification was retained from the 2026-08-04 run, which exercised the
+pre-generalization bytes. Twelve fresh role reviews approved the current
+bundle, and the checkout, provider and record readers are byte-identical, so
+the closure was defensible; it was nevertheless a closure whose live proof came
+from other bytes. This execution rebinds it to a run of its own bytes.
+
+The second executes the protected basic-card contract, whose only prior
+execution stopped before any mutation.
+
+The previous execution was lost to an approval-fixture field-name error: two
+required capabilities were written to a non-schema field while the real
+allowlist kept three values, and the run failed at the first missing capability
+after the budget was spent. Two harness changes now make that class of error
+cheap. The approval parser rejects any field outside its schema, so a
+misspelled key fails at parse time. A capability preflight asserts the entire
+required set against the approval before a provider interval opens, and reports
+every missing capability at once.
+
+The approved capability set for both executions is `product/payment`,
+`basic-card`, `basic-card-entry`, `card-testing-protection-setting`, and
+`classic-checkout-page`. Each execution is a single invocation with one worker,
+zero retries, and no replay, under one exclusively owned listener.
+
 ## 2026-08-05 — false basic-card closure scheduled for current bytes
 
 The native protection-false basic-card contract is reopened from
