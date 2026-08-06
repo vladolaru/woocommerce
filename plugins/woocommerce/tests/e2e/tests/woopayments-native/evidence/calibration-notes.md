@@ -3,6 +3,33 @@
 Durable, public-safe record of calibration blockers and ledger revisions
 that the evidence JSON schema cannot carry. Newest entries first.
 
+## 2026-08-06 — duplicate contract retirement
+
+Stable reference: `calibration-notes:2026-08-06:duplicate-contract-retirement`.
+
+The ledger owner granted retirement authority for the twelve contracts gated on
+`ambiguous-decision:PILOT-RETIREMENT-AUTHORITY`, resolving that gate. Each retired
+contract names the retained contract that already carries it, recorded in
+`evidence/duplicate-contract-retirement.json`.
+
+The twelve divide into duplicate release-zip project instances of the retained
+basic-project smokes, card-variant duplicates where the parameterized 3DS and 3DS2
+iterations repeat a card-agnostic action already proven by the retained basic
+iteration, the legacy Storefront sidebar switcher whose shopper-visible behaviour
+the retained shopper switcher contract proves, and the standalone editor
+authentication setup row, which is a harness fixture with no independent
+WooPayments outcome.
+
+A thirteenth contract originally proposed for retirement, the non-WooPayments
+gateway add-payment-method isolation row, was retained instead: its client test
+never exercised the titled behaviour, so the contract had never been proven
+anywhere. It is now covered natively by
+`WooPaymentsAddPaymentMethodIsolationTest`.
+
+Retirement carries no reviewed source bundle and no verification run, so these
+rows close through the retirement branch of the migration evidence schema rather
+than by manufacturing closure reviews.
+
 ## 2026-08-06 — card protection execution budget
 
 Stable reference: `calibration-notes:2026-08-06:card-protection-execution-budget`.

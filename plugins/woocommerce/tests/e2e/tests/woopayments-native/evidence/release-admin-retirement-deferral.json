@@ -35,6 +35,14 @@
 		"no_allowlisted_action_reason": "The run cannot mint retirement approval or reinterpret lower-layer tests as the full-stack retained smoke.",
 		"reference": "ambiguous-decision:PILOT-RETIREMENT-AUTHORITY",
 		"unlock_decision": "Establish an approved viable retained admin smoke, then explicitly approve retirement of only this duplicate project instance.",
-		"quarantine_status": "No resource was allocated or mutated, and no row-specific quarantine exists."
+		"quarantine_status": "No resource was allocated or mutated, and no row-specific quarantine exists.",
+		"unlock_satisfactions": [
+			{
+				"contract_id": "default::chromium::tests/e2e/specs/basic.spec.ts:16::A basic set of tests to ensure WP, wp-admin and my-account load › Sign in as admin › Load Payments Overview",
+				"unlock_decision": "Establish an approved viable retained admin smoke, then explicitly approve retirement of only this duplicate project instance.",
+				"satisfied_on": "2026-08-06",
+				"reference": "calibration-notes:2026-08-06:duplicate-contract-retirement"
+			}
+		]
 	}
 }

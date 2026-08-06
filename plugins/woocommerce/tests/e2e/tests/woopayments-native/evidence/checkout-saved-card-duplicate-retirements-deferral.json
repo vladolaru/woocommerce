@@ -4,13 +4,20 @@
 	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
 	"verified_at_commit": "502b3d45fa50ccd440ec003ca4e71f4d504f3c85",
 	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
-	"source_test_paths": ["plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"],
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
 	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
 	"contract_ids": [
 		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-save-card-and-purchase.spec.ts:109::Saved cards › When using a 3ds card added on checkout › should delete the card",
 		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-save-card-and-purchase.spec.ts:117::Saved cards › When using a 3ds card added on checkout › should not allow guest user to save the card"
 	],
-	"targets": [{"path": "plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsTokenServiceTest.php;plugins/woocommerce/client/blocks/assets/js/data/payment/test/default-state.ts;plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/NativeWooPaymentsGatewayTest.php", "contract": "pending"}],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsTokenServiceTest.php;plugins/woocommerce/client/blocks/assets/js/data/payment/test/default-state.ts;plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/NativeWooPaymentsGatewayTest.php",
+			"contract": "pending"
+		}
+	],
 	"implementation_commits": [],
 	"verification": [],
 	"reviews": [
@@ -29,6 +36,20 @@
 		"no_allowlisted_action_reason": "No autonomous action can supply human authority, change accepted disposition, approve the exact multi-target contract or name an implementation owner. Running either duplicate cannot decide product-policy ownership and would add provider work for row count rather than evidence. Keep both deferred and perform no provider, browser or environment action until an owner explicitly approves retirement or requests separate live coverage.",
 		"reference": "ambiguous-decision:PILOT-RETIREMENT-AUTHORITY",
 		"unlock_decision": "Have the responsible human owner review the exact source bodies, retained basic save/delete and guest evidence boundaries, challenged-save cleanup, lower-layer target tuple and residual risks. If retirement is approved, record authority, select the retirement disposition and close each row with row-specific mapping and required review. If declined, assign an exact executable target/owner and collect independent evidence without borrowing sibling closure. Re-review on source, target, token-delete or guest-policy drift.",
-		"quarantine_status": "No runtime, browser, provider, environment, listener, lock, journal, target, disposition, ledger authority, record or quarantine was created or changed. A future decision or evidence packet that lacks exact authority, row-specific invariant mapping, target identity, residual-risk treatment or drift provenance must remain deferred; no provider run, broad cleanup, listener action or inherited sibling result may be used to force retirement."
+		"quarantine_status": "No runtime, browser, provider, environment, listener, lock, journal, target, disposition, ledger authority, record or quarantine was created or changed. A future decision or evidence packet that lacks exact authority, row-specific invariant mapping, target identity, residual-risk treatment or drift provenance must remain deferred; no provider run, broad cleanup, listener action or inherited sibling result may be used to force retirement.",
+		"unlock_satisfactions": [
+			{
+				"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-save-card-and-purchase.spec.ts:109::Saved cards › When using a 3ds card added on checkout › should delete the card",
+				"unlock_decision": "Have the responsible human owner review the exact source bodies, retained basic save/delete and guest evidence boundaries, challenged-save cleanup, lower-layer target tuple and residual risks. If retirement is approved, record authority, select the retirement disposition and close each row with row-specific mapping and required review. If declined, assign an exact executable target/owner and collect independent evidence without borrowing sibling closure. Re-review on source, target, token-delete or guest-policy drift.",
+				"satisfied_on": "2026-08-06",
+				"reference": "calibration-notes:2026-08-06:duplicate-contract-retirement"
+			},
+			{
+				"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-save-card-and-purchase.spec.ts:117::Saved cards › When using a 3ds card added on checkout › should not allow guest user to save the card",
+				"unlock_decision": "Have the responsible human owner review the exact source bodies, retained basic save/delete and guest evidence boundaries, challenged-save cleanup, lower-layer target tuple and residual risks. If retirement is approved, record authority, select the retirement disposition and close each row with row-specific mapping and required review. If declined, assign an exact executable target/owner and collect independent evidence without borrowing sibling closure. Re-review on source, target, token-delete or guest-policy drift.",
+				"satisfied_on": "2026-08-06",
+				"reference": "calibration-notes:2026-08-06:duplicate-contract-retirement"
+			}
+		]
 	}
 }

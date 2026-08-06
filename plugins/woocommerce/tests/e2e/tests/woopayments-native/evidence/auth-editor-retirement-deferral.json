@@ -35,6 +35,14 @@
 		"no_allowlisted_action_reason": "The autonomous run cannot mint retirement approval, decide which retained role-access row owns editor session creation, or reinterpret customer dashboard denial and lower-layer capability tests as real editor browser proof. Current Core and native environment blockers are secondary to that authority decision.",
 		"reference": "ambiguous-decision:PILOT-RETIREMENT-AUTHORITY",
 		"unlock_decision": "Explicitly approve retirement of only this setup row and assign fresh editor-session creation to a concrete retained editor role-access target, or retain the standalone authentication contract and approve its exact target contract and owner. Then resolve the relevant Core/native runtime readiness before executing the chosen retained behavior.",
-		"quarantine_status": "No browser state, credentials, account, store, provider record, listener, lock, journal, or quarantine was created or changed for this row. The separately owned listener remains untouched."
+		"quarantine_status": "No browser state, credentials, account, store, provider record, listener, lock, journal, or quarantine was created or changed for this row. The separately owned listener remains untouched.",
+		"unlock_satisfactions": [
+			{
+				"contract_id": "default::setup::tests/e2e/specs/auth.setup.ts:112::authenticate as editor",
+				"unlock_decision": "Explicitly approve retirement of only this setup row and assign fresh editor-session creation to a concrete retained editor role-access target, or retain the standalone authentication contract and approve its exact target contract and owner. Then resolve the relevant Core/native runtime readiness before executing the chosen retained behavior.",
+				"satisfied_on": "2026-08-06",
+				"reference": "calibration-notes:2026-08-06:duplicate-contract-retirement"
+			}
+		]
 	}
 }
