@@ -117,6 +117,9 @@ test( 'WooPayments specs are collected once by their owning projects', () => {
 			wooPaymentsContractAnnotations: [
 				'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-admin-transactions.spec.ts:14::Admin transactions › page should load without errors',
 				'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-manual-capture.spec.ts:39::Order › Manual Capture › should create an "On hold" order then capture the charge',
+				'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-payment-settings-manual-capture.spec.ts:22::As a merchant, I should be prompted a confirmation modal when I try to activate the manual capture › should show the confirmation dialog when enabling the manual capture',
+				'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-payment-settings-manual-capture.spec.ts:34::As a merchant, I should be prompted a confirmation modal when I try to activate the manual capture › should not show the confirmation dialog when disabling the manual capture',
+				'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-payment-settings-manual-capture.spec.ts:48::As a merchant, I should be prompted a confirmation modal when I try to activate the manual capture › should show the non-card methods disabled when manual capture is enabled',
 				'default::chromium::tests/e2e/specs/wcpay/merchant/non-admin-wp-admin-access.spec.ts:43::Non-admin WP-Admin access › should be able to access wp-admin of fully onboarded WooPayments site',
 				'default::chromium::tests/e2e/specs/wcpay/merchant/non-admin-wp-admin-access.spec.ts:58::Non-admin WP-Admin access › should be able to access wp-admin before and after onboarding',
 				'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-failures.spec.ts:155::Shopper › Checkout › Failures with various cards › should throw an error that the card was declined due to incorrect card number',

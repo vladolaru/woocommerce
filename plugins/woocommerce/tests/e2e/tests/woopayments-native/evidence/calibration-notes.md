@@ -3,6 +3,59 @@
 Durable, public-safe record of calibration blockers and ledger revisions
 that the evidence JSON schema cannot carry. Newest entries first.
 
+## 2026-08-07 — settings-modal-copy family smoke
+
+Stable reference: `calibration-notes:2026-08-07:settings-modal-copy-family-smoke`.
+
+Fifth family executed under the bucket-A family-smoke acceptance: the
+settings-modal-copy family, three contracts about the manual-capture
+confirmation modal and the payment-method incompatibility UI on the native
+WooPayments settings screen. All three rows reopen from their manual-capture
+deferral packets and take their planned shared-scenario disposition, with
+`tests/woopayments-native/merchant/settings-methods.spec.ts` as the approved
+target; the core settings and order-effect logic is proven by the retained
+native coverage their frozen lower-layer context names.
+
+The single provider-free test drives the real settings screen as an
+administrator. It repairs its baseline idempotently over REST — manual
+capture must start disabled, since the modal only guards the off-to-on
+transition — then proves all three contracts in the test body. Enabling
+opens a confirmation dialog located by its accessible name (so the heading is
+proven to name the modal, not merely to sit inside some dialog, and it is
+disambiguated from the promotion-badge tooltip dialog the surface also
+renders) whose copy warns about the seven-day capture deadline and the
+card-only incompatibility; cancelling closes it with nothing enabled;
+confirming enables the toggle. With manual capture on, every incompatible
+method carries the reason chip, is removed from the tab order (native
+disabled, not merely aria-disabled), and has the reason programmatically
+associated through aria-describedby so a screen-reader user hears it.
+Disabling asks no confirmation and restores the flagged methods' eligibility.
+
+The whole modal interaction is pre-save client state — the confirm action
+dispatches a local reducer, not the settings-save generator — so the run
+proves zero writes to the settings route and re-reads the stored setting as
+still disabled, leaving the store untouched regardless of outcome. The
+copy strings are core-authored, not provider copy, so pinning them is in
+scope for this family unlike the provider-JS validation family.
+
+Recorded constraint: the idempotent baseline writes the same manual-capture
+setting that the provider pilot `merchant-manual-capture` governs with a
+formal feature-setting lock. This readonly smoke takes no such lock, matching
+the switcher family's precedent of unlocked readonly setup on the disposable
+store; the ledger rows themselves carry the `serial by account or mutable
+setting` CI-lane constraint, so the two must not run concurrently against the
+same store.
+
+The oracle was mutation-checked in both directions before closure: rewording
+the seven-day deadline copy in the built admin chunks fails the run exactly
+at the dialog deadline-warning assertion, and rewording the incompatibility
+chip copy fails it exactly at the chip visibility assertion. A gateway-off
+precondition mutation was not used because disabling the connected gateway
+hangs wp-admin login on this store (the same behaviour the validation family
+recorded); the two copy mutations and the non-vacuous chip-breadth
+precondition carry the anti-vacuity proof instead. The store was verified
+clean — gateway enabled, manual capture disabled — after the mutation sweep.
+
 ## 2026-08-07 — capability-breadth family smoke
 
 Stable reference: `calibration-notes:2026-08-07:capability-breadth-family-smoke`.

@@ -35,6 +35,14 @@
 		"no_allowlisted_action_reason": "The run cannot enable native ownership, establish the required native account/callback readiness, repair shared Core E2E sites, invent the pending row-specific target/owner/project topology, or treat component mocks and service tests as the authenticated browser plus raw-option immutability proof. No provider writer or listener can unlock this settings-only row.",
 		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
 		"unlock_decision": "Externally satisfy native readiness and provide a runnable Core browser target; approve a drift-safe provider-free row target, settings-surface owner, and project topology; provide a deterministic standard-card seven-day capability with manual capture already disabled or a settings-locked setup carrying a pre-write raw-byte restoration journal; implement the semantic accessible adapter and zero-update/full-byte-identity oracle; then run once with one worker and zero retries and obtain fresh code, E2E-test, reliability, and accessibility reviews.",
-		"quarantine_status": "No browser context, account, store, setting, lock, journal, listener, provider object, environment, retention record, or quarantine was created or changed for this row. A future normalization write must quarantine the exact settings resource on ambiguity, but this row uses no provider capacity."
+		"quarantine_status": "No browser context, account, store, setting, lock, journal, listener, provider object, environment, retention record, or quarantine was created or changed for this row. A future normalization write must quarantine the exact settings resource on ambiguity, but this row uses no provider capacity.",
+		"unlock_satisfactions": [
+			{
+				"contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/merchant-payment-settings-manual-capture.spec.ts:22::As a merchant, I should be prompted a confirmation modal when I try to activate the manual capture › should show the confirmation dialog when enabling the manual capture",
+				"unlock_decision": "Externally satisfy native readiness and provide a runnable Core browser target; approve a drift-safe provider-free row target, settings-surface owner, and project topology; provide a deterministic standard-card seven-day capability with manual capture already disabled or a settings-locked setup carrying a pre-write raw-byte restoration journal; implement the semantic accessible adapter and zero-update/full-byte-identity oracle; then run once with one worker and zero retries and obtain fresh code, E2E-test, reliability, and accessibility reviews.",
+				"satisfied_on": "2026-08-07",
+				"reference": "calibration-notes:2026-08-07:settings-modal-copy-family-smoke"
+			}
+		]
 	}
 }
