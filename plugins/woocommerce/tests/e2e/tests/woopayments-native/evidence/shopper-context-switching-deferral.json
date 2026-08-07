@@ -28,6 +28,26 @@
 		"no_allowlisted_action_reason": "No local allowlist can approve the absent target/owner or supply the exact rate/session/theme fixture and raw restoration. URL, symbol, afterEach selection or an empty cart cannot substitute for structured state and same-item totals. Use one selection writer per fresh context, zero retries/replay, no checkout dispatch and no provider writer/listener; halt on selection or state ambiguity.",
 		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
 		"unlock_decision": "Approve target/owner, satisfy readiness, and provision the deterministic product/rate/placement graph with raw wildcard option/cache/session snapshots. Run the three contexts independently once, prove semantic keyboard operation, focus, persisted EUR and exact per-surface totals, close contexts and delete only run-owned local fixtures, restore raw state exactly, quarantine uncertainty, and obtain fresh code/E2E/reliability/accessibility/security/drift reviews.",
-		"quarantine_status": "No browser, product, cart, option, cache, session, order, provider writer/listener, mutation or quarantine was created; the separately owned listener remains untouched. A future owner, selection, persistence, item, amount, currency, readiness-control, restoration, cleanup, publication or drift mismatch must preserve diagnostics and quarantine the exact store/settings/placement/session/product/cart graph without payment, replay, broad reset or listener action."
+		"quarantine_status": "No browser, product, cart, option, cache, session, order, provider writer/listener, mutation or quarantine was created; the separately owned listener remains untouched. A future owner, selection, persistence, item, amount, currency, readiness-control, restoration, cleanup, publication or drift mismatch must preserve diagnostics and quarantine the exact store/settings/placement/session/product/cart graph without payment, replay, broad reset or listener action.",
+		"unlock_satisfactions": [
+			{
+				"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-multi-currency-widget.spec.ts:59::Shopper Multi-Currency widget › Should allow shopper to switch currency › at the product page",
+				"unlock_decision": "Approve target/owner, satisfy readiness, and provision the deterministic product/rate/placement graph with raw wildcard option/cache/session snapshots. Run the three contexts independently once, prove semantic keyboard operation, focus, persisted EUR and exact per-surface totals, close contexts and delete only run-owned local fixtures, restore raw state exactly, quarantine uncertainty, and obtain fresh code/E2E/reliability/accessibility/security/drift reviews.",
+				"satisfied_on": "2026-08-07",
+				"reference": "calibration-notes:2026-08-07:switcher-family-smoke"
+			},
+			{
+				"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-multi-currency-widget.spec.ts:63::Shopper Multi-Currency widget › Should allow shopper to switch currency › at the cart page",
+				"unlock_decision": "Approve target/owner, satisfy readiness, and provision the deterministic product/rate/placement graph with raw wildcard option/cache/session snapshots. Run the three contexts independently once, prove semantic keyboard operation, focus, persisted EUR and exact per-surface totals, close contexts and delete only run-owned local fixtures, restore raw state exactly, quarantine uncertainty, and obtain fresh code/E2E/reliability/accessibility/security/drift reviews.",
+				"satisfied_on": "2026-08-07",
+				"reference": "calibration-notes:2026-08-07:switcher-family-smoke"
+			},
+			{
+				"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-multi-currency-widget.spec.ts:67::Shopper Multi-Currency widget › Should allow shopper to switch currency › at the checkout page",
+				"unlock_decision": "Approve target/owner, satisfy readiness, and provision the deterministic product/rate/placement graph with raw wildcard option/cache/session snapshots. Run the three contexts independently once, prove semantic keyboard operation, focus, persisted EUR and exact per-surface totals, close contexts and delete only run-owned local fixtures, restore raw state exactly, quarantine uncertainty, and obtain fresh code/E2E/reliability/accessibility/security/drift reviews.",
+				"satisfied_on": "2026-08-07",
+				"reference": "calibration-notes:2026-08-07:switcher-family-smoke"
+			}
+		]
 	}
 }

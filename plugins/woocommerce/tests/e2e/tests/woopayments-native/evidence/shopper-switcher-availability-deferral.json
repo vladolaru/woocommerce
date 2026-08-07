@@ -27,6 +27,14 @@
 		"no_allowlisted_action_reason": "No allowlisted local action can assign the absent target/owner, establish readiness, provision the exact placement/settings graph, or resolve the disabled-owner candidate without the row-scoped runtime. A CSS selector, missing widget, source-only arbiter inspection or ordinary helper normalization cannot prove these contracts. Use one writer per feature setup, zero retries/replay, fresh-process reads and halt on any owner or restoration ambiguity; no provider writer or listener is involved.",
 		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
 		"unlock_decision": "Approve the target/owner and row-safe topology, satisfy exact native readiness, and provision a disposable placement plus raw byte snapshots for feature, wildcard currency options, caches, theme and session state. Execute enabled and disabled graphs once with semantic keyboard/focus and owner/effect assertions, restore exact existence/autoload/serialized bytes without blanket widget removal, quarantine local uncertainty, obtain code/E2E/reliability/accessibility/drift reviews, and enter the defect protocol only if the disabled graph produces an anchored RED.",
-		"quarantine_status": "No browser, placement, option, cache, session, product, lock, writer, listener, provider record, mutation or quarantine was created; the separately owned listener remains untouched. Future owner/effect, option, placement, selection, visibility, focus, price, restoration, publication or drift mismatch must preserve diagnostics and quarantine the exact store/settings/theme/session/product graph without broad normalization, provider claims, replay or listener action."
+		"quarantine_status": "No browser, placement, option, cache, session, product, lock, writer, listener, provider record, mutation or quarantine was created; the separately owned listener remains untouched. Future owner/effect, option, placement, selection, visibility, focus, price, restoration, publication or drift mismatch must preserve diagnostics and quarantine the exact store/settings/theme/session/product graph without broad normalization, provider claims, replay or listener action.",
+		"unlock_satisfactions": [
+			{
+				"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-multi-currency-widget.spec.ts:40::Shopper Multi-Currency widget › should display currency switcher widget if multi-currency is enabled",
+				"unlock_decision": "Approve the target/owner and row-safe topology, satisfy exact native readiness, and provision a disposable placement plus raw byte snapshots for feature, wildcard currency options, caches, theme and session state. Execute enabled and disabled graphs once with semantic keyboard/focus and owner/effect assertions, restore exact existence/autoload/serialized bytes without blanket widget removal, quarantine local uncertainty, obtain code/E2E/reliability/accessibility/drift reviews, and enter the defect protocol only if the disabled graph produces an anchored RED.",
+				"satisfied_on": "2026-08-07",
+				"reference": "calibration-notes:2026-08-07:switcher-family-smoke"
+			}
+		]
 	}
 }

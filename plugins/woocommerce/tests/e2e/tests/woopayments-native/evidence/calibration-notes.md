@@ -3,7 +3,45 @@
 Durable, public-safe record of calibration blockers and ledger revisions
 that the evidence JSON schema cannot carry. Newest entries first.
 
-## 2026-08-06 — duplicate contract retirement
+## 2026-08-07 — switcher family smoke
+
+Stable reference: `calibration-notes:2026-08-07:switcher-family-smoke`.
+
+The programme owner settled the bucket-A acceptance decision on family-level UI
+smokes: partial contracts whose core logic is already proven natively receive
+one thin browser smoke per feature family rather than one migrated test per
+row. The shopper currency-switcher family is the first family executed under
+that decision. Its four contracts — switcher visibility on the storefront, and
+currency switching at the product, cart, and checkout pages — reopen from their
+native-readiness deferral and take the lower-layer disposition, with
+`tests/woopayments-native/shopper/multi-currency.spec.ts` as the approved
+family smoke target and the native multi-currency frontend-prices PHPUnit
+coverage retained as lower-layer evidence.
+
+The deferral packets' unlock decisions asked for an approved target and owner,
+native readiness, a deterministic product/rate/placement graph, and semantic
+per-surface assertions. All are satisfied by the smoke; the byte-exact raw
+snapshot and restoration machinery those decisions also described is
+deliberately replaced, by owner decision, with idempotent REST setup, because
+the standing native store is dedicated to this programme and disposable. The
+smoke establishes its own state on every run: a manual EUR rate of 0.80 with
+rounding and charm pinned to zero, enabled currencies reduced to exactly USD
+and EUR, the native switcher block placed in both the theme header and the
+WooCommerce checkout-header template parts, and one run-stable USD 10.00
+virtual product, so USD 10.00 converts to exactly EUR 8.00 on every surface.
+
+The smoke asserts in the test body per context — one keyboard-operable
+Currency combobox visible and unique on the shop page, conversion proven at
+the product, cart, and checkout surfaces, and the EUR selection persisting
+across a query-free request — replacing the client suite's afterEach-only
+oracle. The native REST surface can only re-assert availability for a currency
+that is already available (both multi-currency routes validate against
+available currencies, and this store caches no provider rates), so the run
+fails loudly at its precondition if the store ever loses the family state
+rather than passing vacuously; this was verified by mutation before closure.
+
+The disabled-side contract (switcher absent when multi-currency is disabled)
+is not part of this family smoke and remains deferred in its packet.
 
 Stable reference: `calibration-notes:2026-08-06:duplicate-contract-retirement`.
 

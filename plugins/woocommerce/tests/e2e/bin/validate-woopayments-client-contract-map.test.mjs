@@ -585,13 +585,25 @@ const validate = ( map, options = {} ) =>
 		...options,
 	} );
 
+// A row whose accepted disposition already departs from the planned one under
+// an explicit human approval (a family-smoke acceptance) must keep both fields:
+// resetting acceptance to the planned disposition would clash with the row's
+// retained-plus-future target_path, and dropping the reference would strip the
+// approval the departure requires.
+const hasHumanApprovedAcceptance = ( row ) =>
+	row.accepted_disposition !== 'pending' &&
+	row.accepted_disposition !== row.planned_disposition &&
+	row.gap_or_decision_reference.startsWith( 'human-approved:' );
+
 const specify = ( row ) => {
-	row.accepted_disposition = row.planned_disposition;
+	if ( ! hasHumanApprovedAcceptance( row ) ) {
+		row.accepted_disposition = row.planned_disposition;
+		row.gap_or_decision_reference = 'none';
+	}
 	row.target_contract = `Native contract for ${ row.case_id }`;
 	row.implementation_owner = 'woocommerce-e2e';
 	row.migration_state = 'specified';
 	row.native_support_state = 'not-assessed';
-	row.gap_or_decision_reference = 'none';
 	row.evidence_path = 'none';
 };
 
@@ -723,7 +735,9 @@ const close = ( row, sourceRepositoryRoot = repositoryRoot ) => {
 	specify( row );
 	row.migration_state = 'closed';
 	row.native_support_state = 'supported';
-	row.gap_or_decision_reference = 'none';
+	if ( ! hasHumanApprovedAcceptance( row ) ) {
+		row.gap_or_decision_reference = 'none';
+	}
 	row.evidence_path = createEvidenceFile(
 		row,
 		{
@@ -4080,7 +4094,10 @@ test( 'require-saturated accepts only closed or deferred contracts', () => {
 	for ( const row of map.rows ) {
 		row.migration_state = 'deferred';
 		row.native_support_state = 'blocked-external';
-		row.gap_or_decision_reference = 'issue:inventory-deferral';
+		// A human-approved reference keeps rows whose accepted disposition
+		// legitimately departs from the planned one (family-smoke acceptances)
+		// valid in the synthesized all-deferred inventory.
+		row.gap_or_decision_reference = 'human-approved:inventory-deferral';
 		row.evidence_path = createEvidenceFile( row );
 	}
 
