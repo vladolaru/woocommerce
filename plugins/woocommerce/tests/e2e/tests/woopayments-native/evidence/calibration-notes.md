@@ -3,6 +3,41 @@
 Durable, public-safe record of calibration blockers and ledger revisions
 that the evidence JSON schema cannot carry. Newest entries first.
 
+## 2026-08-07 — guest-save family smoke
+
+Stable reference: `calibration-notes:2026-08-07:guest-save-family-smoke`.
+
+Second family executed under the bucket-A family-smoke acceptance: the
+guest-save UI absence family, one contract. The row reopens from its
+native-readiness deferral and takes the lower-layer disposition, with
+`tests/woopayments-native/shopper/saved-methods.spec.ts` as the approved family
+smoke target and the native token-service PHPUnit coverage retained as
+lower-layer evidence.
+
+The packet's unlock decision asked for approved target/owner, native
+readiness, a provider-free guest fixture, a semantic Core save-control
+adapter, zero-dispatch and local-record counters, a fresh anonymous context,
+and proof that Card stays operable while credential persistence is
+unavailable. All are satisfied by the smoke. The single provider-free test
+establishes its own run-stable product and customer idempotently over REST,
+asserts the store preconditions the absence claim depends on (gateway
+enabled, saved cards enabled, guest checkout permitted), then proves both
+directions on the blocks checkout: a logged-in customer sees exactly the
+semantic save control (the positive control that keeps the absence oracle
+non-vacuous), and a fresh anonymous guest gets a visible, mounted card payment
+surface with zero accessible save controls, zero persistence-implying copy,
+zero Store API checkout dispatches, and unchanged order and token
+cardinalities. The context-restoration and quarantine machinery the packet
+described is deliberately replaced, by owner decision, with idempotent setup
+and context teardown, because the standing native store is dedicated to this
+programme and disposable.
+
+The oracle was mutation-checked in both directions before closure: forcing
+the blocks save-control eligibility open for guests fails the zero-count
+assertion with a received count of one, and disabling saved cards fails
+loudly at the REST precondition rather than letting the absence pass
+vacuously.
+
 ## 2026-08-07 — switcher family smoke
 
 Stable reference: `calibration-notes:2026-08-07:switcher-family-smoke`.

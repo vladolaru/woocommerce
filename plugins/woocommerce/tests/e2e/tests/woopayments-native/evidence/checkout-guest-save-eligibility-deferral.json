@@ -28,6 +28,14 @@
 		"no_allowlisted_action_reason": "No local allowlisted action can assign the absent target/owner or establish the exact native Card and guest-policy fixture without misclassifying a missing gateway as a pass. This row is read-only after fixture provisioning and must not be expanded into a guest purchase. It needs semantic visibility/focus proof and authoritative zero-dispatch/local/provider counters rather than one stale label.",
 		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
 		"unlock_decision": "Externally satisfy exact native readiness and approve the target/owner plus a provider-free guest fixture. Implement a semantic Core save-control adapter and zero-dispatch/local-record counters; use a fresh anonymous context, prove Card remains operable while credential persistence is unavailable, close the context, clear only the run-owned cart/product/session, verify unchanged token/order cardinalities, quarantine local uncertainty, and obtain fresh code, E2E-test, accessibility, reliability and security reviews. No provider allocation or listener is required.",
-		"quarantine_status": "No browser, context, session, product, cart, user, token, order, provider record, writer, listener, journal, mutation or quarantine was created; the separately owned listener remains untouched. A future native-surface, identity, visibility, focusability, zero-dispatch, cleanup, restoration, publication or drift mismatch must preserve diagnostics and quarantine only the exact disposable store/session/product/cart graph without provider claims, replay, broad reset or listener action."
+		"quarantine_status": "No browser, context, session, product, cart, user, token, order, provider record, writer, listener, journal, mutation or quarantine was created; the separately owned listener remains untouched. A future native-surface, identity, visibility, focusability, zero-dispatch, cleanup, restoration, publication or drift mismatch must preserve diagnostics and quarantine only the exact disposable store/session/product/cart graph without provider claims, replay, broad reset or listener action.",
+		"unlock_satisfactions": [
+			{
+				"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-save-card-and-purchase.spec.ts:117::Saved cards › When using a basic card added on checkout › should not allow guest user to save the card",
+				"unlock_decision": "Externally satisfy exact native readiness and approve the target/owner plus a provider-free guest fixture. Implement a semantic Core save-control adapter and zero-dispatch/local-record counters; use a fresh anonymous context, prove Card remains operable while credential persistence is unavailable, close the context, clear only the run-owned cart/product/session, verify unchanged token/order cardinalities, quarantine local uncertainty, and obtain fresh code, E2E-test, accessibility, reliability and security reviews. No provider allocation or listener is required.",
+				"satisfied_on": "2026-08-07",
+				"reference": "calibration-notes:2026-08-07:guest-save-family-smoke"
+			}
+		]
 	}
 }
