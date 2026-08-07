@@ -3,6 +3,51 @@
 Durable, public-safe record of calibration blockers and ledger revisions
 that the evidence JSON schema cannot carry. Newest entries first.
 
+## 2026-08-07 — capability-breadth family smoke
+
+Stable reference: `calibration-notes:2026-08-07:capability-breadth-family-smoke`.
+
+Fourth family executed under the bucket-A family-smoke acceptance: the
+capability-breadth family, two contracts about lower-privileged wp-admin
+access on a WooPayments store. Both rows reopen from their shared
+native-readiness deferral packet and take their planned shared-scenario
+disposition, with `tests/woopayments-native/merchant/role-access.spec.ts` as
+the approved target; their core capability gating is proven by the retained
+native REST-controller integration and runtime-arbiter coverage their frozen
+lower-layer context names.
+
+The single provider-free test establishes a run-stable editor idempotently
+over REST — re-asserting both credentials and the editor role on every run so
+a leftover capability grant cannot silently weaken the denial oracle — and
+proves both directions. Preconditions bind the run to the fully onboarded
+state the first contract names: the runtime status must report a connected
+account and an enabled gateway. Positive controls keep every denial oracle
+non-vacuous: an administrator genuinely reaches the payments admin surface
+and the payments settings REST route at the same addresses the editor is then
+denied on. The editor then gets an untouched dashboard at its own URL — no
+onboarding or payments interception — a working editing surface, the core
+permissions message on the classic settings screen, the payments admin app's
+own not-allowed screen, and a capability-coded REST denial under a genuine
+authenticated nonce.
+
+The second contract's before/after-onboarding half is carried by the family
+acceptance as follows: native ships no admin interception mechanism keyed on
+payments or onboarding state (verified at source — the payments namespace
+registers no admin-page redirect), so the state-change breakage vector the
+client plugin's onboarding wizard created has no native counterpart, and the
+retained lower-layer evidence proves the capability gates independently of
+account state. The pre-onboarding byte-snapshot projection machinery the
+packet described is deliberately not built, by the standing disposable-store
+owner decision; the connected state is the one the smoke executes, and the
+account-cache-absent state was exercised as a mutation direction rather than
+a maintained fixture.
+
+The oracle was mutation-checked in both directions before closure: granting
+the editor role the payments management capability fails the run exactly at
+the first denial assertion, and deleting the account cache fails it exactly
+at the connected-account precondition, with the cache captured privately and
+restored byte-equivalently before the final green runs.
+
 ## 2026-08-07 — provider-js-validation family smoke
 
 Stable reference: `calibration-notes:2026-08-07:provider-js-validation-family-smoke`.
