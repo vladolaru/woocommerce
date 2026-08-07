@@ -115,6 +115,8 @@ test( 'WooPayments specs are collected once by their owning projects', () => {
 			transitionWorkerCount: 1,
 			futureWooPaymentsSpecProjects: [ 'woopayments-native-readonly' ],
 			wooPaymentsContractAnnotations: [
+				'default::chromium::tests/e2e/specs/subscriptions/merchant/merchant-subscriptions-settings.spec.ts:13::WooCommerce › Settings › Subscriptions › Merchant should be able to load WooCommerce Subscriptions settings tab',
+				'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-admin-disputes.spec.ts:15::Merchant disputes › Load the disputes list page',
 				'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-admin-transactions.spec.ts:14::Admin transactions › page should load without errors',
 				'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-manual-capture.spec.ts:39::Order › Manual Capture › should create an "On hold" order then capture the charge',
 				'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-payment-settings-manual-capture.spec.ts:22::As a merchant, I should be prompted a confirmation modal when I try to activate the manual capture › should show the confirmation dialog when enabling the manual capture',

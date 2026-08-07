@@ -35,6 +35,14 @@
 		"no_allowlisted_action_reason": "No allowlisted action can repair standing native readiness, assign the unresolved target owner or exact contract, or supply the exact authenticated connected native fixture. Existing route, mocked page/data, navigation, REST-controller, API-client, order-enrichment, and event-handler tests prove useful pieces but cannot substitute for the assembled authenticated native admin route, built assets, runtime ownership, capability wiring, two real connected HTTP responses, and terminal browser render. The frozen plugin route, loading CSS, positional heading, and un-awaited assertion are not durable proof.",
 		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
 		"unlock_decision": "Externally provide a fresh readiness artifact for the exact store/account showing native ownership and enablement, authenticated account-route availability, and matching callback registration and reachability; resolve the exact target contract and implementation owner; then run one zero-retry native read-only target that requires HTTP 200 from the exact default list and summary requests, awaits the semantic Disputes heading and loaded-or-empty terminal status, and excludes protected-route, alert, and exception states. Before closure, resolve the shared provisional target bundle topology by completing intended shared-file edits or assigning a disputes-only target under an authorized specification decision.",
-		"quarantine_status": "This deferral allocated and mutated nothing, acquired no lease or lock, opened no provider-write or restoration journal, performed no browser or provider run, and created no quarantine. The existing separately owned listener is irrelevant to this connected-read contract and remains untouched."
+		"quarantine_status": "This deferral allocated and mutated nothing, acquired no lease or lock, opened no provider-write or restoration journal, performed no browser or provider run, and created no quarantine. The existing separately owned listener is irrelevant to this connected-read contract and remains untouched.",
+		"unlock_satisfactions": [
+			{
+				"contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/merchant-admin-disputes.spec.ts:15::Merchant disputes › Load the disputes list page",
+				"unlock_decision": "Externally provide a fresh readiness artifact for the exact store/account showing native ownership and enablement, authenticated account-route availability, and matching callback registration and reachability; resolve the exact target contract and implementation owner; then run one zero-retry native read-only target that requires HTTP 200 from the exact default list and summary requests, awaits the semantic Disputes heading and loaded-or-empty terminal status, and excludes protected-route, alert, and exception states. Before closure, resolve the shared provisional target bundle topology by completing intended shared-file edits or assigning a disputes-only target under an authorized specification decision.",
+				"satisfied_on": "2026-08-07",
+				"reference": "calibration-notes:2026-08-07:admin-surface-load-family-smoke"
+			}
+		]
 	}
 }

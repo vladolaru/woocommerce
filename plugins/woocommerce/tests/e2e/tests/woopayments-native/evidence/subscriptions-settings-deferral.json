@@ -35,6 +35,14 @@
 		"no_allowlisted_action_reason": "No allowlisted action can repair shared native readiness, grant fixture approval, or substitute lower-layer or generic settings tests for booting WooCommerce Subscriptions with native ownership active and asserting the exact tab, heading, capability, and no-fatal behavior.",
 		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
 		"unlock_decision": "Provide an externally managed native-ready store and an approved version-pinned activated WooCommerce Subscriptions fixture in both runtimes, establish the exact target owner and contract, and execute the unchanged semantic read-only smoke with retries disabled.",
-		"quarantine_status": "No resource was allocated or mutated, and no row-specific quarantine exists. No provider or listener is required; the existing separately owned listener is irrelevant and untouched."
+		"quarantine_status": "No resource was allocated or mutated, and no row-specific quarantine exists. No provider or listener is required; the existing separately owned listener is irrelevant and untouched.",
+		"unlock_satisfactions": [
+			{
+				"contract_id": "default::chromium::tests/e2e/specs/subscriptions/merchant/merchant-subscriptions-settings.spec.ts:13::WooCommerce › Settings › Subscriptions › Merchant should be able to load WooCommerce Subscriptions settings tab",
+				"unlock_decision": "Provide an externally managed native-ready store and an approved version-pinned activated WooCommerce Subscriptions fixture in both runtimes, establish the exact target owner and contract, and execute the unchanged semantic read-only smoke with retries disabled.",
+				"satisfied_on": "2026-08-07",
+				"reference": "calibration-notes:2026-08-07:admin-surface-load-family-smoke"
+			}
+		]
 	}
 }

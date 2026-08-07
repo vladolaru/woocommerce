@@ -3,6 +3,98 @@
 Durable, public-safe record of calibration blockers and ledger revisions
 that the evidence JSON schema cannot carry. Newest entries first.
 
+## 2026-08-07 — admin-surface-load family smoke
+
+Stable reference: `calibration-notes:2026-08-07:admin-surface-load-family-smoke`.
+
+Sixth family executed under the bucket-A family-smoke acceptance: the
+admin-surface-load family, release page-load smokes for the disputes list and
+the WooCommerce Subscriptions settings tab. The family's third candidate, the
+transactions list row, is deliberately excluded: it is already claimed by the
+merchant-transaction-navigation provider pilot, which carries its annotation
+and its accepted rewrite disposition, and re-targeting it here would duplicate
+that annotation and take a row another workstream owns. The two remaining rows
+reopen from their native-readiness deferrals and take the rewrite disposition
+their approved target permits, with
+`tests/woopayments-native/merchant/payouts-disputes-smoke.spec.ts` as the
+approved target.
+
+The single provider-free test drives all three payments-admin surfaces as an
+administrator — the transactions surface is visited but not claimed, so the
+failed-fetch oracle spans the whole payments admin app —
+behind preconditions that bind the run to the state the contracts assume: a
+connected account, an enabled gateway, and an active Subscriptions extension
+— the last because without it the Subscriptions settings contract would pass
+vacuously on a store that never registered the tab. Each surface must show
+its own heading and exhibit none of the failure shapes the rows name:
+capability denial, fatal error, or pending-migration notice; the two payments
+surfaces must additionally render their list table rather than chrome alone.
+
+The disputes packet asks specifically for HTTP 200 from the default list and
+summary requests, so the run collects every failing REST response the three
+surfaces fetch from the store and requires the set to be empty. That oracle
+is deliberately scoped to the store's own REST API rather than to all
+store-origin requests: the first draft failed on a missing built stylesheet
+belonging to the Subscriptions extension, which is a local packaging gap in
+this environment rather than a payments surface failure, and folding it into
+the oracle would have made the family hostage to unrelated build state.
+
+The single-target question the disputes packet raised — whether to complete
+the shared provisional bundle or assign a disputes-only target — is answered
+by this family's shape: the disputes and Subscriptions-settings rows share one
+approved smoke target, and the transactions row keeps the separate pilot target
+it already had.
+
+**The load proof this family needed, and how it was found.** A first version
+asserted each surface's heading plus the presence of a list table. Both the
+code and accessibility reviewers independently established that this proves
+chrome, not a load: the payments surfaces render their heading and an empty
+grid while a fetch is still pending, so the run could navigate on while
+requests were in flight, and a failure delivered inside an HTTP 200 body was
+invisible to a status-code oracle entirely. The accessibility reviewer
+demonstrated it on the live store — with the disputes fetch broken, every
+assertion passed while the page announced "Could not get a valid response from
+the server." to assistive technology.
+
+The fix needed no product change, because both surfaces already publish a
+screen-reader live region whose copy distinguishes loading, loaded, empty and
+error, flipping to an alert role on failure. Each payments surface now asserts
+that region's exact terminal message before the run leaves it, which settles
+the surface and upgrades the claim from "the chrome rendered" to "the data
+resolved", through the same channel a screen-reader user consumes. The table
+check became a named column header rather than whichever table came first in
+the document, and the failure-text checks moved ahead of the heading check so
+a denial or fatal — which replace the document — reports as itself.
+
+**Two correct review findings pulled in opposite directions.** The code
+reviewer observed that asserting only the loaded message silently requires a
+seeded store, while this row's packet asks for a "loaded-or-empty terminal
+status". Widening the pattern to accept the empty message satisfied the
+contract — and, on re-running the silent-failure mutation, passed: a malformed
+payload yields zero rows, which renders the empty message. Widening alone gave
+back exactly the protection the accessibility finding had bought. The
+resolution keeps both properties rather than trading between them. The live
+region proves terminality and accepts loaded-or-empty, so an unseeded store is
+honest; and a separate read of the disputes route through the admin API
+requires its data key to be an array, proving the payload was well-formed
+independently of row count. The general lesson: when a contract's wording and
+an anti-vacuity guard conflict, the conflict usually means one assertion is
+carrying two jobs, and the fix is to split them rather than to loosen either.
+
+The oracle was mutation-checked in three directions: forcing the disputes REST
+routes to answer 500 fails the run with both the list and summary routes named
+in the failed-response set; returning HTTP 200 with a wrong-shaped body for the
+same routes — the silent shape, with no failing status for a network oracle to
+see, and the case both the first version and the naively-widened version passed
+on — fails at the payload-shape assertion; and deleting the account cache fails
+it at the connected-account precondition. Both were reverted and the store verified
+healthy — the disputes route answering 200 again — before the final green
+runs. Recorded environment note for the next session: the mutation mu-plugin
+must be removed through the same `wp-env run cli` path that created it; a
+`docker exec` against a similarly named container writes to a different
+container than the one `wp-env` targets, and removing the file there leaves
+the real one in place.
+
 ## 2026-08-07 — settings-modal-copy family smoke
 
 Stable reference: `calibration-notes:2026-08-07:settings-modal-copy-family-smoke`.

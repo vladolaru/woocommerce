@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Add a provider-free WooPayments-native E2E smoke proving the payments admin surfaces load for an authorized merchant without denial, fatal, or failed data fetches, and reopen the disputes-list and Subscriptions-settings contracts under the family-smoke acceptance.
