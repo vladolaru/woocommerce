@@ -48,6 +48,19 @@ the first denial assertion, and deleting the account cache fails it exactly
 at the connected-account precondition, with the cache captured privately and
 restored byte-equivalently before the final green runs.
 
+Recorded coverage limit: the capability mutation aborts at the first denial
+assertion — the classic settings screen — so the two later denial oracles,
+the payments admin app's not-allowed screen and the capability-coded REST
+403, are proven to pass against the healthy store but were not observed to
+flip under the mutated capability. They are each backed by a same-URL
+administrator positive control that proves the surface and route genuinely
+exist, so a missing surface cannot masquerade as a denial. Recorded inherited
+product observations on the denial surfaces, not asserted because neither is
+assertable without a product change: the core permissions screen is a bare
+wp_die with no heading, landmark, or recovery path, and the payments admin
+not-allowed screen neither announces itself through a live region nor moves
+focus on the route change.
+
 ## 2026-08-07 — provider-js-validation family smoke
 
 Stable reference: `calibration-notes:2026-08-07:provider-js-validation-family-smoke`.
