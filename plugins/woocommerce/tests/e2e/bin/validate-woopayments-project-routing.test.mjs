@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -479,5 +480,134 @@ test( 'unknown contract annotations are rejected', () => {
 test( 'one passing exact annotation satisfies a terminal transition row', () => {
 	assert.doesNotThrow( () =>
 		validateSyntheticBindings( [ terminalRow ], [ validAnnotationRecord ] )
+	);
+} );
+
+const providerDriverImport =
+	"import { completeCardCheckout } from '../../../utils/woopayments-native/drivers/checkout';";
+const rogueSpecFile = 'woopayments-native/shopper/rogue.spec.ts';
+const collectedTest = ( tags ) => ( {
+	file: rogueSpecFile,
+	tags: [ 'woopayments-native', ...tags ],
+	title: 'reaches the provider',
+} );
+
+// The walk reads real files, so each case builds a throwaway package tree
+// rather than writing into the checked-in test tree.
+const withSyntheticPackage = ( files, assertion ) => {
+	const packageDirectory = mkdtempSync(
+		join( tmpdir(), 'woopayments-machinery-' )
+	);
+
+	try {
+		for ( const [ relativePath, contents ] of Object.entries( files ) ) {
+			const absolutePath = join( packageDirectory, relativePath );
+
+			mkdirSync( dirname( absolutePath ), { recursive: true } );
+			writeFileSync( absolutePath, contents, 'utf8' );
+		}
+
+		assertion( packageDirectory );
+	} finally {
+		rmSync( packageDirectory, { recursive: true, force: true } );
+	}
+};
+
+const validateMachineryTags = ( tests, packageDirectory ) =>
+	projectRouting.validateProviderMachineryTags( tests, packageDirectory );
+
+test( 'a test reaching a provider driver without a provider tag is rejected', () => {
+	withSyntheticPackage(
+		{ [ `tests/e2e/tests/${ rogueSpecFile }` ]: providerDriverImport },
+		( packageDirectory ) => {
+			assert.throws(
+				() =>
+					validateMachineryTags(
+						[ collectedTest( [] ) ],
+						packageDirectory
+					),
+				/must carry @woopayments-provider or @woopayments-transition/
+			);
+		}
+	);
+} );
+
+test( 'either provider involvement tag satisfies the provider machinery rule', () => {
+	withSyntheticPackage(
+		{ [ `tests/e2e/tests/${ rogueSpecFile }` ]: providerDriverImport },
+		( packageDirectory ) => {
+			for ( const tag of [
+				'woopayments-provider',
+				'woopayments-transition',
+			] ) {
+				assert.doesNotThrow( () =>
+					validateMachineryTags(
+						[ collectedTest( [ tag ] ) ],
+						packageDirectory
+					)
+				);
+			}
+		}
+	);
+} );
+
+test( 'provider-prefixed utility modules count as provider machinery', () => {
+	withSyntheticPackage(
+		{
+			[ `tests/e2e/tests/${ rogueSpecFile }` ]:
+				"import { requireApprovedProviderFixture } from '../../../utils/woopayments-native/provider-fixture';",
+		},
+		( packageDirectory ) => {
+			assert.throws(
+				() =>
+					validateMachineryTags(
+						[ collectedTest( [] ) ],
+						packageDirectory
+					),
+				/must carry @woopayments-provider/
+			);
+		}
+	);
+} );
+
+test( 'provider machinery reached through a local scenario module is caught', () => {
+	withSyntheticPackage(
+		{
+			[ `tests/e2e/tests/${ rogueSpecFile }` ]:
+				"import { runScenario } from '../scenarios/shared-scenario';",
+			'tests/e2e/tests/woopayments-native/scenarios/shared-scenario.ts':
+				providerDriverImport,
+		},
+		( packageDirectory ) => {
+			assert.throws(
+				() =>
+					validateMachineryTags(
+						[ collectedTest( [] ) ],
+						packageDirectory
+					),
+				/must carry @woopayments-provider/
+			);
+		}
+	);
+} );
+
+test( 'the shared fixtures barrel does not make every test provider-involved', () => {
+	withSyntheticPackage(
+		{
+			[ `tests/e2e/tests/${ rogueSpecFile }` ]:
+				"import { expect, tags, test } from '../../../fixtures/woopayments-native';",
+			// The real barrel imports provider machinery, which is exactly why
+			// the walk must not descend into it.
+			'tests/e2e/fixtures/woopayments-native.ts':
+				"import { completeCardCheckout } from '../utils/woopayments-native/drivers/checkout';",
+		},
+		( packageDirectory ) => {
+			assert.doesNotThrow( () =>
+				validateMachineryTags(
+					[ collectedTest( [] ) ],
+					packageDirectory
+				)
+			);
+		}
 	);
 } );

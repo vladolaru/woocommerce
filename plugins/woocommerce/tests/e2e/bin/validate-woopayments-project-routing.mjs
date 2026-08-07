@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { dirname, isAbsolute, resolve } from 'node:path';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { parseContractMap } from './lib/woopayments-contract-map.mjs';
@@ -25,6 +25,21 @@ const scenarioOwnershipTags = [
 	'woopayments-provider',
 	'woopayments-pr',
 ];
+const providerInvolvementTags = [
+	'woopayments-provider',
+	'woopayments-transition',
+];
+// Modules that drive the payment provider or handle its records. Reaching any
+// of them is what makes a test provider-involved in substance, which must
+// match the tags it declares.
+const providerMachineryPrefixes = [
+	'tests/e2e/utils/woopayments-native/drivers/',
+	'tests/e2e/utils/woopayments-native/provider-',
+];
+// Matches `import x from '...'`, `export … from '...'` and bare `import '...'`.
+// Deliberately permissive: over-matching costs a false positive that a human
+// resolves by adding a tag, while under-matching silently ungates a test.
+const importSourcePattern = /(?:\bfrom|\bimport)\s*['"]([^'"]+)['"]/g;
 
 const listTests = ( configPath ) => {
 	let output;
@@ -160,6 +175,126 @@ const annotationTargetPathForRow = ( row ) => {
 	}
 
 	return wooPaymentsNativeE2eSpecs[ 0 ];
+};
+
+const isInsideWooPaymentsTestTree = ( candidate, packageDirectory ) =>
+	candidate.startsWith(
+		`${ resolve( packageDirectory, wooPaymentsTestRoot ) }/`
+	);
+
+const readModuleSource = ( modulePath ) => {
+	for ( const candidate of [
+		modulePath,
+		`${ modulePath }.ts`,
+		join( modulePath, 'index.ts' ),
+	] ) {
+		if ( existsSync( candidate ) && statSync( candidate ).isFile() ) {
+			return readFileSync( candidate, 'utf8' );
+		}
+	}
+
+	return null;
+};
+
+/**
+ * Whether the module defining a test reaches provider machinery. The walk
+ * follows relative imports that stay inside the WooPayments-native test tree,
+ * because a spec commonly defines its tests in a shared scenario module and
+ * that module is where the provider work lives. It deliberately does not
+ * descend into the fixtures barrel or the wider utils tree: every spec imports
+ * the barrel, and the barrel itself imports provider machinery, so following
+ * it would mark every test provider-involved.
+ */
+export const reachesProviderMachinery = ( entryFile, packageDirectory ) => {
+	const visited = new Set();
+	const pending = [ entryFile ];
+
+	while ( pending.length > 0 ) {
+		const current = pending.pop();
+
+		if ( visited.has( current ) ) {
+			continue;
+		}
+		visited.add( current );
+
+		const source = readModuleSource( current );
+
+		if ( source === null ) {
+			continue;
+		}
+
+		for ( const match of source.matchAll( importSourcePattern ) ) {
+			const specifier = match[ 1 ];
+
+			if ( ! specifier.startsWith( '.' ) ) {
+				continue;
+			}
+
+			const resolved = resolve( dirname( current ), specifier );
+			const relativePath = relative( packageDirectory, resolved );
+
+			if (
+				providerMachineryPrefixes.some( ( prefix ) =>
+					relativePath.startsWith( prefix )
+				)
+			) {
+				return true;
+			}
+
+			if ( isInsideWooPaymentsTestTree( resolved, packageDirectory ) ) {
+				pending.push( resolved );
+			}
+		}
+	}
+
+	return false;
+};
+
+/**
+ * Provider readiness and provider-resource quarantine are gated on the
+ * provider tags, so a test that reaches provider machinery without carrying
+ * one runs against the real provider with no account assertion, no callback
+ * proof and no quarantine check. Mis-tagging used to be harmless because
+ * every test was gated; now it is the whole decision, so it is checked here.
+ */
+export const validateProviderMachineryTags = ( tests, packageDirectory ) => {
+	const reachabilityByFile = new Map();
+	const violations = new Set();
+
+	for ( const collectedTest of tests ) {
+		const definingFile = canonicalAnnotationPath(
+			collectedTest.file,
+			packageDirectory
+		);
+
+		if ( ! reachabilityByFile.has( definingFile ) ) {
+			reachabilityByFile.set(
+				definingFile,
+				reachesProviderMachinery( definingFile, packageDirectory )
+			);
+		}
+
+		if ( ! reachabilityByFile.get( definingFile ) ) {
+			continue;
+		}
+
+		if (
+			collectedTest.tags.some( ( tag ) =>
+				providerInvolvementTags.includes( tag )
+			)
+		) {
+			continue;
+		}
+
+		violations.add( `${ collectedTest.file }::${ collectedTest.title }` );
+	}
+
+	if ( violations.size > 0 ) {
+		throw new Error(
+			'WooPayments tests reaching provider machinery must carry @woopayments-provider or @woopayments-transition, otherwise provider readiness and provider-resource quarantine are skipped for them:\n' +
+				[ ...violations ].toSorted().join( '\n' )
+		);
+	}
 };
 
 export const validateContractAnnotationBindings = (
@@ -309,6 +444,7 @@ export const validateWooPaymentsProjectRouting = () => {
 		contractAnnotationRecords,
 		packageRoot
 	);
+	validateProviderMachineryTags( wooPayments.tests, packageRoot );
 
 	return {
 		baseProjectsCollectWooPayments: base.tests.length > 0,

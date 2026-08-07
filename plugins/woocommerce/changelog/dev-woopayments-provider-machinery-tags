@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Reject WooPayments-native E2E tests that reach provider machinery without carrying the provider or transition tag, so provider readiness and provider-resource quarantine cannot be skipped by a mis-tagged test.
