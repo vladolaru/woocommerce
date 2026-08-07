@@ -6,11 +6,13 @@ import {
 	type APIRequestContext,
 	type BrowserContext,
 	type Page,
+	type TestInfo,
 } from '@playwright/test';
 
-import { test as baseTest } from './fixtures';
+import { tags, test as baseTest } from './fixtures';
 import { admin, customer } from '../test-data/data';
 import {
+	assertRuntimeOwnership,
 	assertRuntimeReady,
 	readRuntimeStatusArtifact,
 	type RuntimeStatus,
@@ -48,6 +50,26 @@ export {
 	submitBlocksCheckout,
 } from '../utils/woopayments-native/drivers/checkout';
 export type { SavedCardIdentity } from '../utils/woopayments-native/drivers/saved-cards';
+
+const PROVIDER_INVOLVEMENT_TAGS: readonly string[] = [
+	tags.WOOPAYMENTS_PROVIDER,
+	tags.WOOPAYMENTS_TRANSITION,
+];
+
+/**
+ * Whether a test involves the payment provider. Provider readiness — account
+ * identity, allocations, callback proof, and provider-resource quarantine —
+ * applies exactly to these tests. The predicate is the tags, not the project
+ * name: the readonly project is defined as "everything carrying neither tag",
+ * and a provider-free mutating spec legitimately lands there.
+ */
+export function testInvolvesProvider(
+	testInfo: Pick< TestInfo, 'tags' >
+): boolean {
+	return testInfo.tags.some( ( tag ) =>
+		PROVIDER_INVOLVEMENT_TAGS.includes( tag )
+	);
+}
 
 export interface OwnedProduct {
 	id: number;
@@ -878,13 +900,19 @@ interface WooPaymentsNativeFixtures {
 }
 
 export const test = baseTest.extend< WooPaymentsNativeFixtures >( {
-	adminApi: async ( { baseURL, browser }, use ) => {
-		await assertResourcesUsable(
-			providerResourceKeys(
-				requireValue( 'E2E_WOOPAYMENTS_ACCOUNT_ID' ),
-				requireValue( 'E2E_WOOPAYMENTS_STORE_ID' )
-			)
-		);
+	adminApi: async ( { baseURL, browser }, use, testInfo ) => {
+		// Provider-resource quarantine guards provider work. A provider-free
+		// test declares no provider resources, so it has nothing to check
+		// here; provider specs are additionally re-checked per resource at
+		// lock acquisition.
+		if ( testInvolvesProvider( testInfo ) ) {
+			await assertResourcesUsable(
+				providerResourceKeys(
+					requireValue( 'E2E_WOOPAYMENTS_ACCOUNT_ID' ),
+					requireValue( 'E2E_WOOPAYMENTS_STORE_ID' )
+				)
+			);
+		}
 		if ( ! baseURL ) {
 			throw new Error( 'BASE_URL is required for WooPayments pilots.' );
 		}
@@ -905,18 +933,33 @@ export const test = baseTest.extend< WooPaymentsNativeFixtures >( {
 		await use( `woopayments-${ randomUUID() }` );
 	},
 	runtimeReadiness: [
-		async ( { adminApi, baseURL }, use ) => {
+		async ( { adminApi, baseURL }, use, testInfo ) => {
 			const runtime = getRuntime();
-			const expected = {
-				siteUrl: requireUrlValue( 'E2E_WOOPAYMENTS_SITE_URL', baseURL ),
-				wpcomBlogId: requireNumber( 'E2E_WOOPAYMENTS_WPCOM_BLOG_ID' ),
-				accountId: requireValue( 'E2E_WOOPAYMENTS_ACCOUNT_ID' ),
-			};
+			const siteUrl = requireUrlValue(
+				'E2E_WOOPAYMENTS_SITE_URL',
+				baseURL
+			);
 			const status = await loadInitialRuntimeStatus(
 				runtime,
 				adminApi,
 				process.env.E2E_WOOPAYMENTS_DIAGNOSTICS_DIR
 			);
+
+			if ( ! testInvolvesProvider( testInfo ) ) {
+				// A provider-free test still needs the expected runtime kind
+				// to actually own the store it drives; the provider account,
+				// callback proof, and account allocations are not its
+				// concern.
+				assertRuntimeOwnership( runtime, status, { siteUrl } );
+				await use();
+				return;
+			}
+
+			const expected = {
+				siteUrl,
+				wpcomBlogId: requireNumber( 'E2E_WOOPAYMENTS_WPCOM_BLOG_ID' ),
+				accountId: requireValue( 'E2E_WOOPAYMENTS_ACCOUNT_ID' ),
+			};
 			assertRuntimeReady( runtime, status, expected, {
 				requireCallback: runtime !== 'transition',
 			} );

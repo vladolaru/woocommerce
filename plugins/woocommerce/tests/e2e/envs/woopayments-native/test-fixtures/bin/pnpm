@@ -45,5 +45,19 @@ if [[ "$*" == *"/wc/v3/payments/accounts"* ]]; then
 	exit 0
 fi
 
+if [[ "$*" == *"playwright test"* && "$*" == *"--list"* ]]; then
+	if [[ "${E2E_FAKE_LIST_FAIL:-0}" == '1' ]]; then
+		echo 'fake playwright listing failure' >&2
+		exit 1
+	fi
+	tags_json='[]'
+	if [[ -n "${E2E_FAKE_LIST_TAGS:-}" ]]; then
+		# shellcheck disable=SC2086 # word-splitting the space-separated tags is intended
+		tags_json="$(printf '%s\n' ${E2E_FAKE_LIST_TAGS} | jq -R . | jq -cs .)"
+	fi
+	printf '{"config":{"projects":[]},"errors":[],"suites":[{"title":"fake.spec.ts","specs":[{"title":"fake","tags":%s,"tests":[]}],"suites":[]}]}\n' "$tags_json"
+	exit 0
+fi
+
 echo "Unexpected fake pnpm invocation: $*" >&2
 exit 1

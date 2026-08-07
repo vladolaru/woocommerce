@@ -75,6 +75,38 @@ export async function readRuntimeStatusArtifact(
 	return status;
 }
 
+/**
+ * The runtime-ownership subset of readiness: the store the test will drive is
+ * the expected one and the expected runtime kind actually owns it. This is
+ * the whole readiness contract for a provider-free test; account identity,
+ * gateway state, allocations, and callback proof are provider concerns and
+ * live in assertRuntimeReady, whose pinned check order is why the three
+ * shared checks are restated here instead of extracted.
+ */
+export function assertRuntimeOwnership(
+	runtime: WooPaymentsRuntime,
+	status: RuntimeStatus,
+	expected: { siteUrl: string }
+): void {
+	const expectedOwner = runtime === 'native' ? 'native' : 'plugin';
+
+	if ( status.site_url !== expected.siteUrl ) {
+		throw new Error(
+			`Runtime readiness failed: site URL ${ status.site_url } does not exactly match ${ expected.siteUrl }.`
+		);
+	}
+	if ( status.runtime_owner !== expectedOwner ) {
+		throw new Error(
+			`Runtime readiness failed: expected runtime owner ${ expectedOwner }, received ${ status.runtime_owner }.`
+		);
+	}
+	if ( runtime === 'native' && status.native_enabled !== true ) {
+		throw new Error(
+			'Runtime readiness failed: the native runtime is not enabled.'
+		);
+	}
+}
+
 export function assertRuntimeReady(
 	runtime: WooPaymentsRuntime,
 	status: RuntimeStatus,

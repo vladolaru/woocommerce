@@ -55,8 +55,28 @@ run_setup() {
 			;;
 	esac
 
+	# Everything before an optional `--` is an env assignment; everything
+	# after it is passed to env-setup.sh as script arguments, mirroring the
+	# runner's Playwright-argument pass-through.
+	local -a extra_env=()
+	local -a script_args=()
+	local parsing_script_args=0
+	local argument
+	for argument in "$@"; do
+		if [[ "$argument" == '--' && "$parsing_script_args" == '0' ]]; then
+			parsing_script_args=1
+			continue
+		fi
+		if [[ "$parsing_script_args" == '1' ]]; then
+			script_args+=( "$argument" )
+		else
+			extra_env+=( "$argument" )
+		fi
+	done
+
 	local status=0
-	env "${setup_env[@]}" "$@" "$SCRIPT_PATH/env-setup.sh" \
+	env "${setup_env[@]}" ${extra_env[@]+"${extra_env[@]}"} \
+		"$SCRIPT_PATH/env-setup.sh" ${script_args[@]+"${script_args[@]}"} \
 		> "$TEST_ROOT/$slug-stdout" 2> "$TEST_ROOT/$slug-stderr" || status=$?
 
 	# The earliest failures exit before the fakes log anything, so only collect
@@ -282,6 +302,48 @@ expect_readiness_failure 'native' 'callback' \
 	E2E_FAKE_NATIVE_CALLBACK_FAIL=1
 if jq -e '.callback_probe.reachable == true' "$TEST_ROOT/callback-diagnostics/native/runtime-status.json" > /dev/null; then
 	fail 'A failed native callback probe must not leave reachable readiness evidence.'
+fi
+
+# A run whose collected tests carry no provider tag needs runtime ownership
+# only: no account assertion, no callback probe. The account fake is forced
+# into error to prove the account assertion is skipped, not merely passing.
+run_setup 'native' 'provider-free' \
+	E2E_FAKE_ACCOUNT_ERROR=1 \
+	E2E_FAKE_LIST_TAGS='woopayments-native' \
+	-- --project=woopayments-native-readonly tests/e2e/tests/woopayments-native/shopper/multi-currency.spec.ts
+grep -q 'WooPayments provider-free readiness proved for native' \
+	"$TEST_ROOT/provider-free-stdout"
+if grep -Fq 'wcpay callback probe' "$TEST_ROOT/provider-free-commands.log"; then
+	fail 'A provider-free run must not run the callback probe.'
+fi
+
+# Runtime ownership stays load-bearing on the provider-free path.
+expect_readiness_failure 'native' 'provider-free-disabled' \
+	'A disabled native runtime must fail readiness even provider-free.' \
+	E2E_FAKE_NATIVE_DISABLED=1 \
+	E2E_FAKE_LIST_TAGS='woopayments-native' \
+	-- --project=woopayments-native-readonly tests/e2e/tests/woopayments-native/shopper/multi-currency.spec.ts
+assert_stderr_contains 'provider-free-disabled' \
+	'runtime_owner=native and native_enabled=true'
+
+# Arguments that collect a provider-tagged test keep the full gates.
+run_setup 'native' 'provider-args' \
+	E2E_FAKE_LIST_TAGS='woopayments-native woopayments-provider' \
+	-- --project=woopayments-native-provider
+grep -q 'WooPayments callback readiness proved for native blog 2.' \
+	"$TEST_ROOT/provider-args-stdout"
+if ! grep -Fq 'wcpay callback probe' "$TEST_ROOT/provider-args-commands.log"; then
+	fail 'A provider-tagged run must keep the callback probe.'
+fi
+
+# A failed listing fails closed to full gates.
+run_setup 'native' 'list-broken' \
+	E2E_FAKE_LIST_FAIL=1 \
+	-- --project=woopayments-native-readonly
+grep -q 'WooPayments callback readiness proved for native blog 2.' \
+	"$TEST_ROOT/list-broken-stdout"
+if ! grep -Fq 'wcpay callback probe' "$TEST_ROOT/list-broken-commands.log"; then
+	fail 'A failed test listing must fail closed to full provider gates.'
 fi
 
 if [[ ${#COMMAND_LOGS[@]} -eq 0 ]]; then

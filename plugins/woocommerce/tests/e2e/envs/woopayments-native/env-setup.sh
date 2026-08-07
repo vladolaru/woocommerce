@@ -31,6 +31,41 @@ case "$WCPAY_RUNTIME" in
 		;;
 esac
 
+readonly SCRIPT_DIR="$(
+	cd "$(dirname "${BASH_SOURCE[0]}")"
+	pwd -P
+)"
+readonly PLAYWRIGHT_CONFIG="$SCRIPT_DIR/playwright.config.ts"
+
+# Provider readiness — the matching test-mode account assertion and the live
+# callback probe — applies exactly when this invocation will run at least one
+# test tagged @woopayments-provider or @woopayments-transition. The runner
+# passes its Playwright arguments through, so listing with those arguments
+# describes exactly the collected set. Anything ambiguous — no arguments, a
+# failed listing, unparsable output — fails closed to full provider readiness.
+PROVIDER_READINESS_REQUIRED=1
+if [[ $# -gt 0 ]]; then
+	provider_tag_scan=''
+	if provider_list_json="$(
+		CI=1 BASE_URL="${BASE_URL:-http://localhost:8086}" \
+			pnpm exec playwright test \
+			--config="$PLAYWRIGHT_CONFIG" --list --reporter=json "$@" \
+			2> /dev/null
+	)"; then
+		provider_tag_scan="$(
+			printf '%s\n' "$provider_list_json" | jq -r '
+				[ .. | objects | select( has("specs") ) | .specs[].tags[]? ]
+				| any( . == "woopayments-provider" or . == "woopayments-transition" )
+			' 2> /dev/null
+		)" || provider_tag_scan=''
+	fi
+
+	if [[ "$provider_tag_scan" == 'false' ]]; then
+		PROVIDER_READINESS_REQUIRED=0
+	fi
+fi
+readonly PROVIDER_READINESS_REQUIRED
+
 run_store_wp() {
 	local store_name="$1"
 	shift
@@ -192,29 +227,34 @@ if ! jq -e \
 	exit 1
 fi
 
-if ! runtime_account_id="$(
-	jq -er '.account_id | select(type == "string" and length > 0)' "$runtime_status_path"
-)"; then
-	echo "WooPayments $STORE_NAME runtime status has no account identity." >&2
-	exit 1
+if [[ "$PROVIDER_READINESS_REQUIRED" == '1' ]]; then
+	if ! runtime_account_id="$(
+		jq -er '.account_id | select(type == "string" and length > 0)' "$runtime_status_path"
+	)"; then
+		echo "WooPayments $STORE_NAME runtime status has no account identity." >&2
+		exit 1
+	fi
+
+	account_status_path="$DIAGNOSTICS_DIR/$STORE_NAME/account.json"
+	if ! jq -e \
+		--arg account_id "$runtime_account_id" \
+		'.status >= 200 and
+		.status < 300 and
+		.is_error == false and
+		.account_id == $account_id and
+		.test_mode == true' \
+		"$account_status_path" > /dev/null; then
+		echo "WooPayments $STORE_NAME account readiness is not a matching test-mode account." >&2
+		exit 1
+	fi
+
+	blog_id="$(runtime_blog_id "$runtime_status_path")"
+	run_callback_probe "$STORE_NAME" "$STORE_DIR" "$STORE_URL" "$blog_id"
+
+	printf 'WooPayments callback readiness proved for %s blog %s.\n' \
+		"$STORE_NAME" \
+		"$blog_id"
+else
+	printf 'WooPayments provider-free readiness proved for %s; this invocation collects no provider-tagged tests.\n' \
+		"$STORE_NAME"
 fi
-
-account_status_path="$DIAGNOSTICS_DIR/$STORE_NAME/account.json"
-if ! jq -e \
-	--arg account_id "$runtime_account_id" \
-	'.status >= 200 and
-	.status < 300 and
-	.is_error == false and
-	.account_id == $account_id and
-	.test_mode == true' \
-	"$account_status_path" > /dev/null; then
-	echo "WooPayments $STORE_NAME account readiness is not a matching test-mode account." >&2
-	exit 1
-fi
-
-blog_id="$(runtime_blog_id "$runtime_status_path")"
-run_callback_probe "$STORE_NAME" "$STORE_DIR" "$STORE_URL" "$blog_id"
-
-printf 'WooPayments callback readiness proved for %s blog %s.\n' \
-	"$STORE_NAME" \
-	"$blog_id"

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 
 import {
+	assertRuntimeOwnership,
 	assertRuntimeReady,
 	readRuntimeStatusArtifact,
 	type RuntimeStatus,
@@ -195,4 +196,58 @@ test( 'rejects a malformed runtime status artifact', async () => {
 	} finally {
 		await rm( directory, { recursive: true, force: true } );
 	}
+} );
+
+test( 'ownership assertion accepts a native-owned store without provider expectations', () => {
+	// Empty account, disconnected gateway, unregistered callback: none of it
+	// is an ownership concern.
+	expect( () =>
+		assertRuntimeOwnership(
+			'native',
+			readyStatus( {
+				account_id: '',
+				account_connected: false,
+				gateway_enabled: false,
+				test_mode: false,
+				enabled_payment_methods: [],
+				callback_probe: {
+					registered: false,
+					reachable: false,
+					wpcom_blog_id: 0,
+				},
+			} ),
+			{ siteUrl: expected.siteUrl }
+		)
+	).not.toThrow();
+} );
+
+test( 'ownership assertion still rejects a foreign site, wrong owner, or disabled native runtime', () => {
+	expect( () =>
+		assertRuntimeOwnership(
+			'native',
+			readyStatus( { site_url: 'http://other.test' } ),
+			{ siteUrl: expected.siteUrl }
+		)
+	).toThrow( /site URL/ );
+	expect( () =>
+		assertRuntimeOwnership(
+			'native',
+			readyStatus( { runtime_owner: 'plugin' } ),
+			{ siteUrl: expected.siteUrl }
+		)
+	).toThrow( /runtime owner/ );
+	expect( () =>
+		assertRuntimeOwnership(
+			'native',
+			readyStatus( { native_enabled: false } ),
+			{ siteUrl: expected.siteUrl }
+		)
+	).toThrow( /native runtime is not enabled/ );
+	expect( () =>
+		assertRuntimeOwnership(
+			'client',
+			readyStatus( { runtime_owner: 'native' } ),
+			{ siteUrl: expected.siteUrl }
+		)
+	).toThrow( /expected runtime owner plugin/ );
 } );
