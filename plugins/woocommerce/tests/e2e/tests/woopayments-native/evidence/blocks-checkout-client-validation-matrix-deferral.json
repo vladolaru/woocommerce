@@ -30,6 +30,26 @@
 		"no_allowlisted_action_reason": "No local action can assign target/owner, satisfy exact Payment Element readiness or add authoritative request/provider-object and accessibility readers. Private frame selectors, typography, raw third-party IDs or assumed network silence are insufficient. Run each gesture once with one worker and zero retries; provider writer, listener and financial journal are intentionally absent.",
 		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
 		"unlock_decision": "Approve target/owner, satisfy native Blocks Payment Element readiness and add exact checkout/no-call/object counters plus a semantic hosted-field accessibility adapter. Execute three independent gestures once, prove literal semantic errors, zero checkout/provider effects and recoverable focus, restore local session/cart state and obtain fresh code, E2E, reliability, accessibility, security and drift reviews.",
-		"quarantine_status": "No shopper, cart, request, order, provider object, writer, listener, journal, restoration or quarantine was created; the separately owned listener remains untouched and is unnecessary. Future unexpected checkout/provider object, inaccessible error, request-boundary, restoration or publication ambiguity stops without replay and quarantines the exact local context, trace and held locks; no provider graph is invented."
+		"quarantine_status": "No shopper, cart, request, order, provider object, writer, listener, journal, restoration or quarantine was created; the separately owned listener remains untouched and is unnecessary. Future unexpected checkout/provider object, inaccessible error, request-boundary, restoration or publication ambiguity stops without replay and quarantines the exact local context, trace and held locks; no provider graph is invented.",
+		"unlock_satisfactions": [
+			{
+				"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-checkout-failures.spec.ts:90::WooCommerce Blocks › Checkout failures › Should show error – Your card number is invalid.",
+				"unlock_decision": "Approve target/owner, satisfy native Blocks Payment Element readiness and add exact checkout/no-call/object counters plus a semantic hosted-field accessibility adapter. Execute three independent gestures once, prove literal semantic errors, zero checkout/provider effects and recoverable focus, restore local session/cart state and obtain fresh code, E2E, reliability, accessibility, security and drift reviews.",
+				"satisfied_on": "2026-08-07",
+				"reference": "calibration-notes:2026-08-07:provider-js-validation-family-smoke"
+			},
+			{
+				"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-checkout-failures.spec.ts:90::WooCommerce Blocks › Checkout failures › Should show error – Your card’s expiration year is in the past.",
+				"unlock_decision": "Approve target/owner, satisfy native Blocks Payment Element readiness and add exact checkout/no-call/object counters plus a semantic hosted-field accessibility adapter. Execute three independent gestures once, prove literal semantic errors, zero checkout/provider effects and recoverable focus, restore local session/cart state and obtain fresh code, E2E, reliability, accessibility, security and drift reviews.",
+				"satisfied_on": "2026-08-07",
+				"reference": "calibration-notes:2026-08-07:provider-js-validation-family-smoke"
+			},
+			{
+				"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-checkout-failures.spec.ts:90::WooCommerce Blocks › Checkout failures › Should show error – Your card’s security code is incomplete.",
+				"unlock_decision": "Approve target/owner, satisfy native Blocks Payment Element readiness and add exact checkout/no-call/object counters plus a semantic hosted-field accessibility adapter. Execute three independent gestures once, prove literal semantic errors, zero checkout/provider effects and recoverable focus, restore local session/cart state and obtain fresh code, E2E, reliability, accessibility, security and drift reviews.",
+				"satisfied_on": "2026-08-07",
+				"reference": "calibration-notes:2026-08-07:provider-js-validation-family-smoke"
+			}
+		]
 	}
 }

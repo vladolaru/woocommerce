@@ -3,6 +3,56 @@
 Durable, public-safe record of calibration blockers and ledger revisions
 that the evidence JSON schema cannot carry. Newest entries first.
 
+## 2026-08-07 — provider-js-validation family smoke
+
+Stable reference: `calibration-notes:2026-08-07:provider-js-validation-family-smoke`.
+
+Third family executed under the bucket-A family-smoke acceptance: the
+provider-JS validation family, six contracts asserting the provider's
+client-side field validation across the classic checkout, the blocks checkout,
+and the My Account add-payment-method surface. All six reopen from their
+native-readiness deferrals and take the lower-layer disposition, with
+`tests/woopayments-native/shopper/declines.spec.ts` as the approved family
+smoke target and each row's retained native coverage — the gateway,
+token-service, and blocks-integration tests its frozen lower-layer context
+names — as lower-layer evidence.
+
+The programme owner's Decision 5, folded into the bucket-A family settlement,
+downscoped these rows to a single accessibility-focused check: the validated
+behaviour belongs to the provider's hosted JavaScript, and Core committing to
+per-field provider copy would fossilize a third party's strings. The smoke
+therefore performs three independent invalid-input gestures once each on the
+blocks checkout payment element — a Luhn-failing card number, an expiration
+date in the past, and an incomplete security code — and for each proves the
+rejection is exposed accessibly and associated with the exact field it
+concerns: the field is marked invalid, an error element is programmatically
+associated through the field's description list, that element carries
+non-empty text, the same text is announced through an alert live region, and
+correcting the input clears the invalid state. No provider copy is asserted,
+by that owner decision; the packets' "literal semantic errors" phrasing is
+satisfied at the semantics level, not the strings level.
+
+Recorded deviations, all under the standing disposable-store owner decision
+or the family-level acceptance: the blocks checkout gesture set represents
+the family's classic-checkout and My Account mounts, whose core-side handling
+is the retained lower-layer evidence; the isolated-customer, byte-snapshot,
+and restoration-journal machinery the packets describe is replaced by
+idempotent setup, per-run request counters, and REST cardinality equality;
+and the authorized-window readiness the two classic-checkout packets name is
+satisfied by the provider-involvement-gated readiness model — these gestures
+write nothing to the provider, so the run proves runtime ownership and the
+live payment-element mount rather than a provider account window.
+
+The oracle was mutation-checked in three directions before closure: renaming
+the payment-element container in the built integration fails the mount gate
+while the REST precondition stays green; feeding a valid card number where
+the invalid one belongs fails the invalid-state assertion, proving the error
+oracle demands a real rejection; and disabling the gateway fails the run
+loudly at setup. The gateway-off direction surfaced a store observation worth
+recording: with a connected account and the gateway disabled, wp-admin login
+hangs past the action timeout, so the run dies at admin authentication before
+the REST precondition is even read.
+
 ## 2026-08-07 — guest-save family smoke
 
 Stable reference: `calibration-notes:2026-08-07:guest-save-family-smoke`.

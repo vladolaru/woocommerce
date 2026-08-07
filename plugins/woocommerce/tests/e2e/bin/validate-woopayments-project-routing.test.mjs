@@ -117,6 +117,8 @@ test( 'WooPayments specs are collected once by their owning projects', () => {
 			wooPaymentsContractAnnotations: [
 				'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-admin-transactions.spec.ts:14::Admin transactions › page should load without errors',
 				'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-manual-capture.spec.ts:39::Order › Manual Capture › should create an "On hold" order then capture the charge',
+				'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-failures.spec.ts:155::Shopper › Checkout › Failures with various cards › should throw an error that the card was declined due to incorrect card number',
+				'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-failures.spec.ts:89::Shopper › Checkout › Failures with various cards › should throw an error that the card CVV number is invalid',
 				'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase.spec.ts:53::Successful purchase › Carding protection false › using a basic card',
 				'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase.spec.ts:53::Successful purchase › Carding protection true › using a basic card',
 				'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-save-card-and-purchase.spec.ts:117::Saved cards › When using a basic card added on checkout › should not allow guest user to save the card',
@@ -125,7 +127,11 @@ test( 'WooPayments specs are collected once by their owning projects', () => {
 				'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-multi-currency-widget.spec.ts:59::Shopper Multi-Currency widget › Should allow shopper to switch currency › at the product page',
 				'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-multi-currency-widget.spec.ts:63::Shopper Multi-Currency widget › Should allow shopper to switch currency › at the cart page',
 				'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-multi-currency-widget.spec.ts:67::Shopper Multi-Currency widget › Should allow shopper to switch currency › at the checkout page',
+				'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-payment-methods-add-fail.spec.ts:71::Payment Methods › when attempting to add a declined-incorrect card › it should not add the card',
 				'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:214::Shopper can save and delete cards › Testing card: basic › should be able to set the basic card as default payment method',
+				'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-checkout-failures.spec.ts:90::WooCommerce Blocks › Checkout failures › Should show error – Your card number is invalid.',
+				'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-checkout-failures.spec.ts:90::WooCommerce Blocks › Checkout failures › Should show error – Your card’s expiration year is in the past.',
+				'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-checkout-failures.spec.ts:90::WooCommerce Blocks › Checkout failures › Should show error – Your card’s security code is incomplete.',
 				'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-saved-card-checkout-and-usage.spec.ts:71::WooCommerce Blocks › Saved cards › should process a payment with the saved card from Blocks checkout',
 			],
 		} );

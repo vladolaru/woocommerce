@@ -14,6 +14,14 @@
 		"no_allowlisted_action_reason": "No local action can assign target/owner or provision the exact served Payment Element and authoritative zero-call counters. Assumed network silence, private IDs or screenshot text are insufficient. Run once with zero retries/replay; provider writer and listener are intentionally absent.",
 		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
 		"unlock_decision": "Approve target/owner, satisfy exact native readiness and provision one isolated customer plus preinstalled request/object counters. Execute one invalid input gesture, prove semantic error association and exact zero local/provider deltas, restore session/customer state, quarantine local uncertainty, and obtain fresh code/E2E/reliability/accessibility/security/provider-hosted-copy/drift reviews; no listener is required.",
-		"quarantine_status": "No browser, customer, input, token, provider request/object, writer, listener, journal, mutation or quarantine was created; the separately owned listener remains untouched. Future validation, request-counter, token, accessibility, restoration, publication or drift mismatch must preserve diagnostics and quarantine the exact local customer/session graph without provider claims, replay, broad reset or listener action."
+		"quarantine_status": "No browser, customer, input, token, provider request/object, writer, listener, journal, mutation or quarantine was created; the separately owned listener remains untouched. Future validation, request-counter, token, accessibility, restoration, publication or drift mismatch must preserve diagnostics and quarantine the exact local customer/session graph without provider claims, replay, broad reset or listener action.",
+		"unlock_satisfactions": [
+			{
+				"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-payment-methods-add-fail.spec.ts:71::Payment Methods › when attempting to add a declined-incorrect card › it should not add the card",
+				"unlock_decision": "Approve target/owner, satisfy exact native readiness and provision one isolated customer plus preinstalled request/object counters. Execute one invalid input gesture, prove semantic error association and exact zero local/provider deltas, restore session/customer state, quarantine local uncertainty, and obtain fresh code/E2E/reliability/accessibility/security/provider-hosted-copy/drift reviews; no listener is required.",
+				"satisfied_on": "2026-08-07",
+				"reference": "calibration-notes:2026-08-07:provider-js-validation-family-smoke"
+			}
+		]
 	}
 }
