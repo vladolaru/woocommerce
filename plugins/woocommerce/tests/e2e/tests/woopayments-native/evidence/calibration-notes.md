@@ -53,6 +53,15 @@ recording: with a connected account and the gateway disabled, wp-admin login
 hangs past the action timeout, so the run dies at admin authentication before
 the REST precondition is even read.
 
+Closure-bundle membership notes. The three blocks rows' retained lower-layer
+member is the PHP blocks-integration test rather than the JS test their
+frozen context also names, because the closure validator attests every
+production module a JS bundle member imports, which would couple ledger
+validity to routine edits of the shipped blocks integration. And the retained
+gateway coverage is the gateway test under the provider's own test namespace;
+a similarly named sibling file exists one directory level up and is not the
+attested member — resolve bundle members by full path, never by class name.
+
 ## 2026-08-07 — guest-save family smoke
 
 Stable reference: `calibration-notes:2026-08-07:guest-save-family-smoke`.
