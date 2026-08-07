@@ -201,6 +201,12 @@ export const validateContractAnnotationBindings = (
 			continue;
 		}
 
+		// A retired contract is terminal but was never migrated, so no native spec carries its annotation.
+		// Its retained contract is the one that must stay annotated, and that row is checked on its own.
+		if ( row.native_support_state === 'not-applicable-retired' ) {
+			continue;
+		}
+
 		const contractKind = scenarioContract ? 'Scenario' : 'Terminal';
 		const record = recordsByDescription.get( row.case_id )?.[ 0 ];
 		if ( ! record ) {

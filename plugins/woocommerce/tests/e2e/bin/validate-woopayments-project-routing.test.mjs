@@ -128,6 +128,28 @@ test( 'WooPayments specs are collected once by their owning projects', () => {
 	}
 } );
 
+test( 'a retired terminal contract needs no annotation because nothing was migrated', () => {
+	const retiredRow = {
+		...terminalRow,
+		case_id: 'synthetic-retired-contract',
+		migration_state: 'closed',
+		native_support_state: 'not-applicable-retired',
+	};
+
+	assert.doesNotThrow( () =>
+		validateSyntheticBindings( [ retiredRow ], [] )
+	);
+} );
+
+test( 'a non-retired terminal contract still requires its annotation', () => {
+	assert.throws(
+		() => validateSyntheticBindings( [ terminalRow ], [] ),
+		new RegExp(
+			`Terminal ledger contract has no collected woopayments-contract annotation: ${ terminalRow.case_id }`
+		)
+	);
+} );
+
 test( 'two implemented contracts can bind to one canonical scenario file', () => {
 	assert.doesNotThrow( () =>
 		validateSyntheticBindings(
