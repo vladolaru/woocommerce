@@ -3,6 +3,77 @@
 Durable, public-safe record of calibration blockers and ledger revisions
 that the evidence JSON schema cannot carry. Newest entries first.
 
+## 2026-08-08 — Multi-currency empty-selection guard
+
+Stable reference: `calibration-notes:2026-08-08:multi-currency-empty-selection-guard`.
+
+The empty-selection submit guard is the one carve-out in the 2026-08-08
+decision: built rather than dispositioned away. Native's "Add enabled
+currencies" modal disabled its primary action only while a save was in flight,
+so a merchant who cleared the list and pressed a button labelled "Update
+selected" removed every additional enabled currency behind a success notice.
+The action is now non-actionable while nothing is checked, with an
+`aria-describedby` hint saying why, and the row takes its planned rewrite
+disposition against the native settings screen.
+
+The guard is deliberately narrow, which answers the row's own deferral packet
+rather than ignoring it. That packet argues Core "intentionally permits a
+default-only submission so merchants can remove every additional currency", and
+that is true — so `saveEnabledCurrencies` is untouched and the per-row Remove
+action can still take a store down to its default alone. Only the bulk
+remove-everything path through a modal titled "Add enabled currencies" is
+closed, and that path was indistinguishable from an accidental submission.
+
+Three of this family's rows are not here, for two separate reasons that are
+worth keeping apart.
+
+**The catalog is one code wide.** The multi-select row and the
+selection-persistence row need at least two selectable non-default currencies
+and four respectively. This store's `available` set is `USD` and `EUR`, and
+that is not a stale cache: deleting `wcpay_multi_currency_cached_currencies`
+and re-reading the currencies route refetches and re-caches **zero** currencies
+with `errored: false`. `MultiCurrencyStateBuilder::build()` composes `available`
+from the store default plus the cached provider rates plus already-enabled
+currencies carrying a manual rate, and every route that could widen it
+validates its codes against `available` first, so no product path adds a third
+currency and there is no filter or registrar hook to inject rates. Both rows'
+unlock decisions name a deterministic catalog as an environment prerequisite;
+it is genuinely still unmet, so they keep their `PILOT-NATIVE-READINESS`
+deferrals untouched. The remaining provider-free option would be a write route
+in the fail-closed read-only diagnostics test plugin, which is not worth
+widening for two rows.
+
+**Enabling automatic geolocation switching bricks the store.** Writing the
+proof for the geolocation opt-in row uncovered a native defect: with
+`wcpay_multi_currency_enable_auto_currency` set to `yes`, every request dies of
+memory exhaustion, WP-CLI included, and the settings screen that turned it on
+cannot load to turn it off. `MultiCurrencyAsyncPriceRendererController::register()`
+runs from `WooCommerce::init_hooks()`, inside `WooCommerce::__construct()`,
+before the singleton is assigned; its `has_active_session()` argument calls
+`WC()`, which constructs a second `WooCommerce`, whose `init_hooks()` calls
+`register()` again. The recursion is unbounded rather than merely expensive — a
+2 GB limit exhausts too — and the automatic-switching check is the only guard
+standing between a normal store and the cycle. Bisected by stubbing
+`register()`, which lets the store boot with the option still on; a depth guard
+in `MultiCurrencySelectedCurrencyController::handle_geolocation_init()` never
+fired, ruling that path out. The store was restored with
+`wp --skip-plugins --skip-themes option update ... no` and verified healthy.
+
+The opt-in row therefore stays deferred: its packet requires proving the
+setting persists and survives a full reload, and doing that on current native
+code takes the store down. The geolocation preview row was to be retired
+against it, and retiring a contract against a broken native behaviour would be
+a false pairing, so it travels with it.
+
+The oracle was mutation-checked in both directions on the closed bytes.
+Reverting the built bundle's `disabled` prop to the saving flag alone fails the
+`aria-disabled` assertion with a received value of empty string. Writing the
+enabled-currency option down to the store default alone fails the precondition
+that something must be enabled beyond the default for the guard to be
+reachable; the option was written raw so the per-currency manual-rate settings
+survived, and both the enabled and available sets were confirmed restored
+afterwards.
+
 ## 2026-08-08 — Multi-currency theme compatibility pairing
 
 Stable reference: `calibration-notes:2026-08-08:multi-currency-theme-compatibility-pairing`.
