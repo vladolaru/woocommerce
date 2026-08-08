@@ -72,6 +72,16 @@ that the placement must start off, which keeps "the offer is absent" from being
 a claim about a store that had it enabled all along. The store's multi-currency
 settings were re-read after the sweep and match the pre-run response exactly.
 
+One advisory is recorded rather than changed, on its own reviewer's guidance.
+The smoke compares `site_theme` against the themes route's `name.rendered`,
+which WordPress passes through the display filters, while the projection reads
+the raw `Name` header. A theme name carrying a straight apostrophe, quotes or a
+double hyphen would texturize on one side and not the other, and the join would
+red for a reason unrelated to the contract. It is exact on this store and on
+every bundled theme, and it fails loudly rather than silently, so this is
+latent brittleness only; hardening it would cost a full review round for no
+change in what the smoke proves today.
+
 Two product observations from the review round, both outside these rows' frozen
 scope and neither caused by this work:
 
