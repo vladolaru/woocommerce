@@ -3,6 +3,94 @@
 Durable, public-safe record of calibration blockers and ledger revisions
 that the evidence JSON schema cannot carry. Newest entries first.
 
+## 2026-08-08 — Multi-currency theme compatibility pairing
+
+Stable reference: `calibration-notes:2026-08-08:multi-currency-theme-compatibility-pairing`.
+
+The two Currency Switcher widget rows take their planned client-only
+disposition under the 2026-08-08 decision that the multi-currency settings
+screen is native Core's equivalent of the client's onboarding wizard. Both
+rows keep their client test and pair with native coverage; the ledger's
+approved client-only target,
+`tests/woopayments-native/shopper/theme-compatibility.spec.ts`, carries the
+single native surface smoke their `smallest_honest_adaptation` asks for.
+
+Four owner-decided deviations are recorded rather than hidden.
+
+The smoke proves only the negative half directly. Storefront is not installed
+on the dedicated native store — `wp theme list` reports Twenty Twenty-Five
+active with Twenty Twenty-Four and Twenty Twenty-Three available — so the
+Storefront-positive row is paired rather than re-asserted end to end. Both
+halves of its conditional are pinned natively at the layer that owns them, and
+both were read before being named:
+`MultiCurrencyStorefrontIntegrationControllerTest` asserts that the breadcrumb
+filter and the style action register under Storefront and do not register under
+Twenty Twenty-Five, and `store-settings.test.tsx` asserts that the placement
+checkbox renders when `site_theme` is `Storefront` and is absent when it is
+`Twenty Twenty-Four`. Installing a theme to re-prove a conditional two native
+tests already pin would buy coupling, not coverage.
+
+The merchant-facing test lives under `shopper/` because that is the row's
+frozen approved client-only target and the only allowlisted path whose
+disposition set permits `clientOnly`. Extending the allowlist to add a
+`merchant/` path would have meant approving my own target, which is the one
+thing the allowlist exists to prevent. The directory is a wart; the approval
+provenance is not. A future session that wants the file moved should move it
+deliberately, with the allowlist entry changed in the same step.
+
+The retained lower-layer target is narrowed to
+`MultiCurrencySettingsControllerTest.php`. The frozen analysis listed four
+lower-layer files; the other three are the frontend-price, rate-provider and
+switcher-block tests, none of which says anything about which placements the
+settings screen offers. Dropping the switcher-block test also keeps two shipped
+production modules out of the closure bundle, which the validator would
+otherwise pull in through that test's imports and so tie this closure to
+routine edits of the block. The two tests that actually carry the pairing —
+`MultiCurrencyStorefrontIntegrationControllerTest` and `store-settings.test.tsx`
+— cannot appear in `target_path` at all, because a retained target must come
+from the row's frozen `native_lower_layer_context` and neither is in it. They
+are named in the closure evidence instead.
+
+The unsupported-theme row's reproduced unlock decision asks for "a
+deterministic preinstalled exact Twenty Twenty-Four store". The store runs
+Twenty Twenty-Five. Amendment 9 requires the satisfaction to reproduce the
+prior text verbatim, so the wording stands as written and the deviation is
+recorded here: the contract is about a theme that cannot carry the Storefront
+breadcrumb placement, and the smoke proves that property of whatever theme is
+active rather than hard-coding one slug. That generalization is deliberate and
+is the stronger claim.
+
+The oracle was mutation-checked in three directions on the closed bytes.
+Inverting the built bundle's theme predicate so the Storefront placement
+renders under every theme fails the absence assertion with a received count of
+one. Regressing the `site_theme` projection to an empty string fails the
+precondition join with "the settings screen must report the same active theme
+WordPress does", which is what stops a broken theme derivation from satisfying
+the precondition and the absence assertion at the same time. Turning the
+Storefront-switcher setting on through the settings route fails the precondition
+that the placement must start off, which keeps "the offer is absent" from being
+a claim about a store that had it enabled all along. The store's multi-currency
+settings were re-read after the sweep and match the pre-run response exactly.
+
+Two product observations from the review round, both outside these rows' frozen
+scope and neither caused by this work:
+
+- **The two theme predicates disagree.** The native Storefront integration
+  decides eligibility from the theme *slug*
+  (`MultiCurrencyStorefrontProjectionService::is_storefront_theme` matches
+  `storefront` as stylesheet or template), while the settings screen decides
+  from the *display name* (`site_theme` is `wp_get_theme()->get( 'Name' )`).
+  Under a Storefront child theme the backend registers the breadcrumb hooks
+  while the settings screen hides the checkbox that turns them on. Row 214's
+  `affected_scope` explicitly puts child-theme eligibility outside the row, so
+  this does not block the pairing; it is worth a native defect on its own
+  terms. The smoke now asserts the two identities agree for the active theme,
+  which is the join no lower-layer test makes.
+- **The store-settings loading and error paragraphs are inserted together with
+  their own text**, so an `aria-live="polite"` region added at the same moment
+  is unlikely to announce, and nothing announces the loaded state when the form
+  replaces it. A `speak()` call or a persistent live region would fix it.
+
 ## 2026-08-07 — admin-surface-load family smoke
 
 Stable reference: `calibration-notes:2026-08-07:admin-surface-load-family-smoke`.
