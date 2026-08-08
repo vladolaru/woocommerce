@@ -1,6 +1,7 @@
 /**
  * External dependencies
  */
+import { speak } from '@wordpress/a11y';
 import apiFetch from '@wordpress/api-fetch';
 import {
 	Button,
@@ -23,6 +24,14 @@ import { CurrencySettingsModal } from './currency-settings-modal';
 const REST_BASE = '/wc/v3/payments/multi-currency';
 const EMPTY_SELECTION_HINT_ID =
 	'woocommerce-multi-currency-settings__empty-selection-hint';
+
+// One source for the refusal wording, so what a screen reader is told when the
+// selection empties cannot drift from what the button's description says.
+const emptySelectionHint = (): string =>
+	__(
+		'Select at least one currency to update your enabled currencies. To stop offering a currency, remove it from the list of enabled currencies.',
+		'woocommerce'
+	);
 
 const currencyValues = (
 	currencies: Record< string, MultiCurrencyCurrency >
@@ -167,6 +176,28 @@ export function MultiCurrencySettingsApp() {
 		() => ! selectedCodes.some( ( code ) => code !== defaultCode ),
 		[ selectedCodes, defaultCode ]
 	);
+
+	// Disabling the primary action is a state change nothing else announces:
+	// focus stays on the checkbox the merchant just cleared, and the button is
+	// two tab stops away, so a screen-reader user would meet a dead control
+	// with no explanation. Announce on the edge only - not when the modal
+	// opens on an already-empty selection, where the hint is read with the
+	// rest of the dialog.
+	const previousEmptySelectionRef = useRef< boolean | null >( null );
+
+	useEffect( () => {
+		if ( ! isModalOpen ) {
+			previousEmptySelectionRef.current = null;
+			return;
+		}
+
+		const wasEmptySelection = previousEmptySelectionRef.current;
+		previousEmptySelectionRef.current = hasNoSelectedCurrency;
+
+		if ( hasNoSelectedCurrency && wasEmptySelection === false ) {
+			speak( emptySelectionHint(), 'polite' );
+		}
+	}, [ isModalOpen, hasNoSelectedCurrency ] );
 
 	const filteredAvailableCurrencies = useMemo( () => {
 		const query = search.trim().toLowerCase();
@@ -446,10 +477,7 @@ export function MultiCurrencySettingsApp() {
 					</div>
 					{ hasNoSelectedCurrency && (
 						<p id={ EMPTY_SELECTION_HINT_ID }>
-							{ __(
-								'Select at least one currency to update your enabled currencies. To stop offering a currency, remove it from the list of enabled currencies.',
-								'woocommerce'
-							) }
+							{ emptySelectionHint() }
 						</p>
 					) }
 					<div className="woocommerce-multi-currency-settings__modal-actions">

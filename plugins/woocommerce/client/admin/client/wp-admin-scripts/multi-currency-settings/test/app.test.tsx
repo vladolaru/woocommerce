@@ -2,6 +2,7 @@
  * External dependencies
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { speak } from '@wordpress/a11y';
 import apiFetch from '@wordpress/api-fetch';
 
 /**
@@ -13,6 +14,7 @@ import type { StoreCurrenciesResponse } from '../types';
 const mockCreateSuccessNotice = jest.fn();
 const mockCreateErrorNotice = jest.fn();
 
+jest.mock( '@wordpress/a11y', () => ( { speak: jest.fn() } ) );
 jest.mock( '@wordpress/api-fetch', () => jest.fn() );
 jest.mock( '@wordpress/data', () => {
 	const actual = jest.requireActual( '@wordpress/data' );
@@ -290,6 +292,42 @@ describe( 'MultiCurrencySettingsApp', () => {
 		).not.toBeInTheDocument();
 	} );
 
+	it( 'refuses to update on open when only the store default is enabled', async () => {
+		// The contract's own shape: a store with exactly the default currency
+		// enabled meets a refused control before touching anything, which is
+		// where the client's first-run wizard started.
+		// Replace the shared USD+EUR fixture queued in beforeEach, rather than
+		// queueing behind it.
+		mockApiFetch.mockReset();
+		mockApiFetch.mockResolvedValueOnce( {
+			...currenciesResponse,
+			enabled: { USD: currenciesResponse.available.USD },
+		} );
+
+		render( <MultiCurrencySettingsApp /> );
+
+		fireEvent.click(
+			await screen.findByRole( 'button', {
+				name: 'Add/remove currencies',
+			} )
+		);
+
+		const updateButton = screen.getByRole( 'button', {
+			name: 'Update selected',
+		} );
+		expect( updateButton ).toHaveAttribute( 'aria-disabled', 'true' );
+		expect( updateButton ).toHaveAccessibleDescription(
+			/Select at least one currency/
+		);
+		// Nothing changed, so nothing is announced: the hint is read with the
+		// dialog it opened inside.
+		expect( speak ).not.toHaveBeenCalled();
+
+		fireEvent.click( updateButton );
+
+		expect( mockApiFetch ).toHaveBeenCalledTimes( 1 );
+	} );
+
 	it( 'refuses to update when no currency is selected and explains why', async () => {
 		render( <MultiCurrencySettingsApp /> );
 
@@ -306,6 +344,12 @@ describe( 'MultiCurrencySettingsApp', () => {
 		expect( updateButton ).toHaveAttribute( 'aria-disabled', 'true' );
 		expect( updateButton ).toHaveAccessibleDescription(
 			/Select at least one currency/
+		);
+		// Focus stays on the checkbox the merchant just cleared, so nothing
+		// carries the button's description to them: the refusal is announced.
+		expect( speak ).toHaveBeenCalledWith(
+			expect.stringMatching( /Select at least one currency/ ),
+			'polite'
 		);
 
 		fireEvent.click( updateButton );
@@ -338,6 +382,9 @@ describe( 'MultiCurrencySettingsApp', () => {
 		} );
 		expect( updateButton ).not.toHaveAttribute( 'aria-disabled', 'true' );
 		expect( updateButton ).toHaveAccessibleDescription( '' );
+		// Announced once, for the moment the selection passed through empty
+		// when Euro was cleared - on the edge, not on every selection change.
+		expect( speak ).toHaveBeenCalledTimes( 1 );
 
 		fireEvent.click( updateButton );
 
