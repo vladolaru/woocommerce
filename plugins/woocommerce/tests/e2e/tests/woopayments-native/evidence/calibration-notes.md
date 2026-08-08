@@ -65,14 +65,52 @@ code takes the store down. The geolocation preview row was to be retired
 against it, and retiring a contract against a broken native behaviour would be
 a false pairing, so it travels with it.
 
-The oracle was mutation-checked in both directions on the closed bytes.
+**The refusal was silent, and the review round caught it.** The first version
+disabled the control and described it with `aria-describedby`, which reaches a
+merchant who navigates onto the button — and nobody else. Probed live: clearing
+the last currency leaves focus on the checkbox just unchecked, both WordPress
+announcement regions empty, and the newly unavailable button two tab stops away
+past Cancel. That is a state change with no status message, so the guard now
+calls `speak()` on the false-to-true edge, sharing one string with the visible
+hint. Edge only: a modal opened on an already-empty selection says nothing
+extra, because the hint is read with the dialog. An `aria-live` region on the
+hint would have announced twice — once on insert, once when focus reaches the
+`aria-describedby` target — and cannot work at all while the hint is
+conditionally rendered. The reviewer also confirmed the announcement is
+reachable rather than merely present: this dialog is `role="dialog"` with no
+`aria-modal`, so the body-level polite region is not hidden from assistive
+technology, which is the failure mode that would have left the fix cosmetic and
+every test green.
+
+The oracle was mutation-checked in three directions on the closed bytes.
 Reverting the built bundle's `disabled` prop to the saving flag alone fails the
-`aria-disabled` assertion with a received value of empty string. Writing the
-enabled-currency option down to the store default alone fails the precondition
-that something must be enabled beyond the default for the guard to be
-reachable; the option was written raw so the per-currency manual-rate settings
-survived, and both the enabled and available sets were confirmed restored
-afterwards.
+`aria-disabled` assertion with a received value of empty string. Neutralising
+the `speak()` call fails the announcement assertion with an empty region.
+Writing the enabled-currency option down to the store default alone fails the
+precondition that something must be enabled beyond the default for the guard to
+be reachable; that option was written raw rather than through the REST route,
+because the route also deletes the per-currency settings and this store's EUR is
+*available* only because its manual-rate option exists. Both the enabled and
+available sets were confirmed restored afterwards.
+
+Two advisories are recorded rather than changed.
+
+The browser test proves tab-reachability with one Tab press anchored on Cancel,
+because both modal buttons sit in a fixed actions row. An earlier version used
+attribute assertions instead, on the stated grounds that counting Tab presses
+would couple the test to the store's currency catalog. That reasoning was
+wrong — the reviewer measured the tab order live — and is corrected here so it
+is not carried forward. The attribute assertions stay alongside the Tab press
+because they localise a lost-reachability failure to its cause.
+
+The sibling `shopper/theme-compatibility.spec.ts` still matches multi-currency
+writes by path substring only. On a plain-permalink store the browser issues
+REST writes as `?rest_route=…` with percent-encoded slashes, which that form
+would miss. This store uses pretty permalinks, and that spec's primary oracle
+is a settings byte comparison rather than the write count, so the gap is
+latent. It was fixed here and not there because reopening a closed row to
+harden a secondary assertion costs more than it buys; a future change to that
+file should carry the same fix.
 
 ## 2026-08-08 — Multi-currency theme compatibility pairing
 
