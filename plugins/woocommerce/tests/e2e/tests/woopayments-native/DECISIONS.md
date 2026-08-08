@@ -28,3 +28,31 @@ Where a contract can be proven either by a migrated client E2E test or by a nati
 ### Accepted risk
 
 A feature family whose contracts all move to the lower layer retains no mandatory assembled-product check. This was surfaced before the decision and accepted. If a family later proves fragile in practice, a thin end-to-end smoke can be added for that family without reopening this default.
+
+## 2026-08-08 — The multi-currency settings screen is the native equivalent of the client's onboarding wizard
+
+Native Core does not owe a first-run multi-currency onboarding wizard. The settings screen at `wc-settings&tab=wcpay_multi_currency`, whose "Add enabled currencies" modal is a search-filtered add/remove list, is the native equivalent of the client's stepped wizard. Contracts written against the wizard are dispositioned against that screen.
+
+This governs all nine contracts in `merchant/multi-currency-on-boarding.spec.ts`, which split three ways:
+
+- **Underlying capabilities** — multi-select, selection persisting to enabled currencies, geolocation switch offered. Native has these; prove them against the settings modal.
+- **Wizard affordances** — excluding already-enabled currencies, suggested-currency ordering, geolocation preview. These exist only because a wizard exists. Pair them with the native behaviour that covers the underlying need, or retire them.
+- **Already paired** — Storefront-theme switcher availability, proven by `MultiCurrencyStorefrontIntegrationControllerTest`.
+
+One carve-out: the empty-selection submit guard is to be **built**, not dispositioned away. Native currently leaves the button enabled with nothing selected and submitting clears the selection. That is worth fixing on its own merits, independently of parity, and the fix happens to satisfy the contract.
+
+### Why
+
+- The wizard is a first-run affordance, and every store migrating from the client plugin is past first run by definition. A merchant with the client plugin configured already has currencies; they arrive at native's settings screen and manage them there. Wizard parity serves close to nobody while costing real net-new UI work.
+- The divergence is a coherent design premise rather than an oversight: a management surface instead of a one-time flow. Verified live on the native store — no empty-selection guard, no suggested ordering, no geolocation preview.
+- The one behaviour worth preserving is a static seven-code recommendation list (`USD, EUR, JPY, GBP, AUD, CAD, INR`) that ignores the store, the account and the merchant's geography. That is weak grounds for fossilizing plugin layout into Core.
+
+### Consequences
+
+- Three of the ledger's four `ambiguous-decision` gates are resolved by this one decision: `PILOT-MULTI-CURRENCY-ONBOARDING-AUTHORITY`, `PILOT-MULTI-CURRENCY-RECOMMENDATION-AUTHORITY` and `PILOT-MULTI-CURRENCY-GEOLOCATION-PREVIEW-AUTHORITY`. They were three framings of one architectural question, asked per row because the ledger had no way to ask it once.
+- This supersedes the pending framing of Decision 4 (suggested currencies) recorded in the 2026-08-06 session notes. That row is a wizard affordance and takes the same treatment as its siblings.
+- A contract asserting a wizard affordance is not evidence of a native gap. Do not open a native defect for one without first checking it against this decision.
+
+### Accepted risk
+
+Native ships no first-run guidance for multi-currency. A merchant who would have been walked through currency selection now meets a settings screen and a search field. That is accepted: discoverability of a settings screen is a product concern that can be addressed on its own terms, and it is not a parity obligation owed to the client plugin's contract set.
