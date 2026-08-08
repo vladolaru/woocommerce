@@ -290,6 +290,66 @@ describe( 'MultiCurrencySettingsApp', () => {
 		).not.toBeInTheDocument();
 	} );
 
+	it( 'refuses to update when no currency is selected and explains why', async () => {
+		render( <MultiCurrencySettingsApp /> );
+
+		fireEvent.click(
+			await screen.findByRole( 'button', {
+				name: 'Add/remove currencies',
+			} )
+		);
+		fireEvent.click( screen.getByRole( 'checkbox', { name: 'Euro EUR' } ) );
+
+		const updateButton = screen.getByRole( 'button', {
+			name: 'Update selected',
+		} );
+		expect( updateButton ).toHaveAttribute( 'aria-disabled', 'true' );
+		expect( updateButton ).toHaveAccessibleDescription(
+			/Select at least one currency/
+		);
+
+		fireEvent.click( updateButton );
+
+		// Only the initial currencies read; the empty selection never
+		// reaches the update route that would drop every enabled currency.
+		expect( mockApiFetch ).toHaveBeenCalledTimes( 1 );
+		expect(
+			screen.getByRole( 'heading', { name: 'Add enabled currencies' } )
+		).toBeInTheDocument();
+	} );
+
+	it( 'makes the update action available again once a currency is selected', async () => {
+		mockApiFetch.mockResolvedValueOnce( updatedResponse );
+
+		render( <MultiCurrencySettingsApp /> );
+
+		fireEvent.click(
+			await screen.findByRole( 'button', {
+				name: 'Add/remove currencies',
+			} )
+		);
+		fireEvent.click( screen.getByRole( 'checkbox', { name: 'Euro EUR' } ) );
+		fireEvent.click(
+			screen.getByRole( 'checkbox', { name: 'Canadian dollar CAD' } )
+		);
+
+		const updateButton = screen.getByRole( 'button', {
+			name: 'Update selected',
+		} );
+		expect( updateButton ).not.toHaveAttribute( 'aria-disabled', 'true' );
+		expect( updateButton ).toHaveAccessibleDescription( '' );
+
+		fireEvent.click( updateButton );
+
+		await waitFor( () => {
+			expect( mockApiFetch ).toHaveBeenLastCalledWith( {
+				path: '/wc/v3/payments/multi-currency/update-enabled-currencies',
+				method: 'POST',
+				data: { enabled: [ 'USD', 'CAD' ] },
+			} );
+		} );
+	} );
+
 	it( 'shows an error notice when updating currencies fails', async () => {
 		mockApiFetch.mockRejectedValueOnce( new Error( 'Nope' ) );
 

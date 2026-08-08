@@ -21,6 +21,8 @@ import { StoreLevelSettings } from './store-settings';
 import { CurrencySettingsModal } from './currency-settings-modal';
 
 const REST_BASE = '/wc/v3/payments/multi-currency';
+const EMPTY_SELECTION_HINT_ID =
+	'woocommerce-multi-currency-settings__empty-selection-hint';
 
 const currencyValues = (
 	currencies: Record< string, MultiCurrencyCurrency >
@@ -157,6 +159,14 @@ export function MultiCurrencySettingsApp() {
 		shouldRestoreManagedCurrencyFocusRef.current = false;
 		manageCurrencyButtonRef.current?.focus();
 	}, [ managedCurrencyCode ] );
+
+	// The store default is always enabled and is filtered out of the modal
+	// list, so it is never something the merchant selected. Reading the
+	// selection without it is what makes "nothing is checked" answerable.
+	const hasNoSelectedCurrency = useMemo(
+		() => ! selectedCodes.some( ( code ) => code !== defaultCode ),
+		[ selectedCodes, defaultCode ]
+	);
 
 	const filteredAvailableCurrencies = useMemo( () => {
 		const query = search.trim().toLowerCase();
@@ -434,6 +444,14 @@ export function MultiCurrencySettingsApp() {
 							/>
 						) ) }
 					</div>
+					{ hasNoSelectedCurrency && (
+						<p id={ EMPTY_SELECTION_HINT_ID }>
+							{ __(
+								'Select at least one currency to update your enabled currencies. To stop offering a currency, remove it from the list of enabled currencies.',
+								'woocommerce'
+							) }
+						</p>
+					) }
 					<div className="woocommerce-multi-currency-settings__modal-actions">
 						<Button
 							variant="tertiary"
@@ -444,8 +462,19 @@ export function MultiCurrencySettingsApp() {
 						<Button
 							variant="primary"
 							isBusy={ isSaving }
-							disabled={ isSaving }
+							// Submitting an empty selection is not an
+							// update: it normalizes to the store default
+							// alone and silently drops every additional
+							// currency behind a success notice. Removing a
+							// currency stays available per row, where the
+							// merchant names the one they mean.
+							disabled={ isSaving || hasNoSelectedCurrency }
 							accessibleWhenDisabled
+							aria-describedby={
+								hasNoSelectedCurrency
+									? EMPTY_SELECTION_HINT_ID
+									: undefined
+							}
 							onClick={ () =>
 								saveEnabledCurrencies( selectedCodes )
 							}
