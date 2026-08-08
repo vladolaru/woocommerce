@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Retire the two multi-currency wizard-affordance contracts against the native settings screen.

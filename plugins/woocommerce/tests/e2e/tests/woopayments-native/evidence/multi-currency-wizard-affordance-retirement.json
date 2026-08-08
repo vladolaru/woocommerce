@@ -2,7 +2,7 @@
 	"schema_version": 2,
 	"slice_id": "multi-currency-wizard-affordance-retirement",
 	"wc_base_commit": "143b1c5ea5d1c2ff63a90e943783ffe815f8a04d",
-	"verified_at_commit": "PENDING",
+	"verified_at_commit": "9c48b899dde321ea39837a53d6254fa85cc2d5f1",
 	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
 	"source_test_paths": [],
 	"source_test_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
@@ -21,7 +21,7 @@
 		}
 	],
 	"implementation_commits": [
-		"PENDING"
+		"9c48b899dde321ea39837a53d6254fa85cc2d5f1"
 	],
 	"verification": [
 		{
