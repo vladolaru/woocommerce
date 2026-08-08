@@ -807,7 +807,16 @@ const closeInventory = ( map ) => {
 	execFileSync( 'git', [ '-C', sourceRepositoryRoot, 'add', '--all' ] );
 
 	for ( const row of map.rows ) {
-		if ( row.planned_disposition === retirementDisposition ) {
+		// The validator decides retirement from the accepted disposition, so
+		// this has to as well: a row planned as one thing and accepted as a
+		// retirement is closed by naming a retained contract, not by
+		// manufacturing a supported closure it can never satisfy.
+		const effectiveDisposition =
+			row.accepted_disposition === 'pending'
+				? row.planned_disposition
+				: row.accepted_disposition;
+
+		if ( effectiveDisposition === retirementDisposition ) {
 			retire(
 				row,
 				{ approver: 'human-approved:inventory-retirement-review' },

@@ -3,6 +3,54 @@
 Durable, public-safe record of calibration blockers and ledger revisions
 that the evidence JSON schema cannot carry. Newest entries first.
 
+## 2026-08-08 — Multi-currency wizard affordance retirement
+
+Stable reference: `calibration-notes:2026-08-08:multi-currency-wizard-affordance-retirement`.
+
+Two of the three wizard affordances the 2026-08-08 decision names are retired
+here: excluding already-enabled currencies from the list, and showing suggested
+currencies first. The decision's instruction is "pair them with the native
+behaviour that covers the underlying need, or retire them", and in this ledger
+those are one action rather than two: a retirement entry names the retained
+contract that carries the need, so the pairing is recorded as a contract
+reference rather than as prose. Both retire against the empty-selection guard
+contract, which closed in the previous change.
+
+**Excluding already-enabled currencies.** Native does not omit an enabled
+currency from the add/remove list; it shows it pre-checked. The underlying need
+is that a merchant cannot add what they already have, and the guard's smoke
+proves exactly that: the enabled currency is offered once, already selected,
+with no second addable control for the same code. The row's own deferral packet
+had reached the same conclusion before the decision did — its `affected_scope`
+already bounds the contract to "exactly one checked semantic checkbox … zero
+unchecked/addable or duplicate control", and calls Core's representation "a
+plausible honest adapter". Literal absence from a removal-capable list is
+wizard structure, and that is what retires.
+
+**Suggested currencies first.** There is nothing to pair. Native ships no
+recommendation policy, no recommendation metadata, and no ordered group; the
+list is alphabetical. The client's own oracle never asserted ordering either —
+it counted recommended-tagged elements and stopped — so migrating it faithfully
+would have produced a check that could not fail. The underlying need is finding
+the currency you want, which the search filter serves and the guard's smoke
+exercises. Retiring this row is what clears
+`ambiguous-decision:PILOT-MULTI-CURRENCY-RECOMMENDATION-AUTHORITY`.
+
+The third affordance, the geolocation preview, is **not** retired. It was to be
+paired against the geolocation opt-in contract, and that contract cannot close
+because enabling automatic switching takes the store down. Retiring a contract
+against a native behaviour that is broken would be a false pairing, so it stays
+deferred with its sibling until the defect is fixed.
+
+A retirement carries no reviewed source bundle, because nothing was written or
+migrated for it: the packet attests the empty bundle the schema reserves for
+exactly this case. The four review roles these packets name in their unlock
+decisions — code, E2E-test, reliability and accessibility — presuppose an
+implementation to review. Only the code role has a subject here, the retirement
+reasoning and the ledger transition, and it is obtained. The other three are
+recorded as inapplicable rather than omitted silently: there is no test, no run
+and no user-facing surface introduced by a retirement.
+
 ## 2026-08-08 — Multi-currency empty-selection guard
 
 Stable reference: `calibration-notes:2026-08-08:multi-currency-empty-selection-guard`.
