@@ -56,3 +56,29 @@ One carve-out: the empty-selection submit guard is to be **built**, not disposit
 ### Accepted risk
 
 Native ships no first-run guidance for multi-currency. A merchant who would have been walked through currency selection now meets a settings screen and a search field. That is accepted: discoverability of a settings screen is a product concern that can be addressed on its own terms, and it is not a parity obligation owed to the client plugin's contract set.
+
+## 2026-08-08 — A provider fidelity run discharges its family, scoped to a named claim
+
+Where native already proves WooCommerce's half of a provider interaction against test doubles, one authorized provider run may discharge every row in that fidelity family — subject to two conditions, and with one family excluded.
+
+**Condition 1: the fidelity claim is named in writing before the run.** Each family states what the run establishes, specifically enough to be wrong out loud. "The provider's real decline codes are the ones native's error mapping and failed-transaction rate limiter are keyed on" qualifies. "Card declines work" does not.
+
+**Condition 2: a row discharges only if its residual risk is entirely contained in that claim.** Rows whose risk falls outside it stay open. Some members of a family will not discharge, and that is the mechanism working rather than failing.
+
+**Excluded: `3ds-authentication` (12 rows).** Every other family rests on substantial core-side proof. This one does not — the assertion corpus contains two authentication-related assertions and both concern scheduled subscription payments, so no customer authentication challenge is exercised anywhere. There is nothing for a thin fidelity check to lean on. This family needs real journey coverage and must not be sold as a fidelity check.
+
+### Why
+
+- Fidelity is shared, and the unit of provider work should match. Nineteen rows that send a card charge ask one question about the provider's decline vocabulary, not nineteen. Re-running the journey per row re-proves request shaping, idempotency, state transitions and error mapping that the lower layer already proves against fakes.
+- Provider execution is the scarcest resource in the programme. This is the difference between roughly 80 authorized runs and roughly 10, which is the difference between finishing and not.
+- There is precedent in this ledger: two closed contracts sit inside `saved-token-lifecycle` and were closed exactly this way.
+
+### Consequences
+
+- Roughly 79 rows become dischargeable through about nine family runs; the 12 `3ds-authentication` rows take conventional treatment.
+- A family's named fidelity claim is part of its closure evidence, not a note. A closure that cannot point to the claim its rows discharged against is incomplete.
+- "Covered core-side" remains an argument for shrinking a provider run, never for skipping one. No family discharges without its run.
+
+### Accepted risk
+
+The failure mode is correlated. "Covered core-side" rests on the test doubles being faithful, so a double that diverges from the real provider is wrong for every row leaning on it at once, and a single family run may not surface a difference that one member row would have caught. This was surfaced before the decision and accepted. The mitigation is not more provider runs but the named claim: a fidelity statement specific enough to be falsified is what makes a wrong double visible.
