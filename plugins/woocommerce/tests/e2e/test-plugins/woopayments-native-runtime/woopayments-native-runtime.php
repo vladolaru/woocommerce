@@ -91,11 +91,30 @@ final class WooCommerce_WooPayments_Native_E2E_Runtime {
 	 * @return bool
 	 */
 	public function handle_native_enabled( bool $enabled ): bool {
-		if ( ! defined( 'E2E_WOOPAYMENTS_NATIVE' ) || true !== E2E_WOOPAYMENTS_NATIVE ) {
+		if ( true !== self::get_e2e_activation_constant() ) {
 			return $enabled;
 		}
 
 		return ! (bool) get_option( self::KILL_SWITCH_OPTION, false );
+	}
+
+	/**
+	 * Read the exact E2E activation constant.
+	 *
+	 * Resolved through Jetpack's constants layer when it is loaded, so a test can
+	 * simulate the constant being absent. That matters because wp-env defines
+	 * this constant for the whole environment — including the PHPUnit container —
+	 * which would otherwise make the absent case impossible to exercise on a
+	 * configured machine while still passing on CI.
+	 *
+	 * @return mixed The constant value, or null when it is not set.
+	 */
+	private static function get_e2e_activation_constant() {
+		if ( class_exists( '\Automattic\Jetpack\Constants' ) ) {
+			return \Automattic\Jetpack\Constants::get_constant( 'E2E_WOOPAYMENTS_NATIVE' );
+		}
+
+		return defined( 'E2E_WOOPAYMENTS_NATIVE' ) ? constant( 'E2E_WOOPAYMENTS_NATIVE' ) : null;
 	}
 
 	/**

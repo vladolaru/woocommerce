@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use WC_Data_Store;
@@ -24,6 +25,11 @@ class NativePaymentsE2EBootstrapTest extends WC_Unit_Test_Case {
 	 */
 	public function test_missing_constant_leaves_native_disabled(): void {
 		$this->load_bootstrap();
+		// wp-env defines this constant for the whole environment, including the
+		// PHPUnit container, so the absent case has to be simulated rather than
+		// assumed. Without this the test silently passes on CI and fails on any
+		// machine configured to run the WooPayments native E2E suite.
+		Constants::set_constant( 'E2E_WOOPAYMENTS_NATIVE', null );
 
 		$this->assertFalse(
 			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercising the bootstrap filter in a test.
@@ -418,13 +424,20 @@ class NativePaymentsE2EBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Load the same file that wp-env maps into the mu-plugins directory when needed.
+	 * Load and activate the same file that wp-env maps into the mu-plugins directory.
+	 *
+	 * The file deliberately skips its own registration under PHPUnit, so that
+	 * merely being loaded as an mu-plugin cannot force native payments ownership
+	 * onto unrelated tests. This class is the one that wants it active, so it
+	 * registers explicitly. A fresh instance per call is correct because the
+	 * WordPress test case restores the hook registry between tests, which drops
+	 * whatever a previous test registered.
 	 */
 	private function load_bootstrap(): void {
-		if ( class_exists( 'WooCommerce_WooPayments_Native_E2E_Runtime', false ) ) {
-			return;
+		if ( ! class_exists( 'WooCommerce_WooPayments_Native_E2E_Runtime', false ) ) {
+			require_once dirname( __DIR__, 4 ) . '/e2e/test-plugins/woopayments-native-runtime/woopayments-native-runtime.php';
 		}
 
-		require_once dirname( __DIR__, 4 ) . '/e2e/test-plugins/woopayments-native-runtime/woopayments-native-runtime.php';
+		( new \WooCommerce_WooPayments_Native_E2E_Runtime() )->register();
 	}
 }
