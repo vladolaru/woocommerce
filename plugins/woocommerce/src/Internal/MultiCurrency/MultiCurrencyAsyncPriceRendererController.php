@@ -161,8 +161,30 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 
 	/**
 	 * Register async price renderer hooks.
+	 *
+	 * Registration is deferred to `woocommerce_init` rather than decided here.
+	 * `register()` runs from `WooCommerce::init_hooks()`, inside
+	 * `WooCommerce::__construct()`, where two things are true: the singleton is
+	 * not yet assigned, so reaching `WC()` re-enters the constructor and
+	 * recurses without bound; and no session exists yet, so the session probe
+	 * this decision depends on could not answer correctly even if it were safe
+	 * to call. By `woocommerce_init` the singleton is assigned and
+	 * `wc_load_cart()` has initialized the session, while every hook registered
+	 * below still fires long afterwards.
 	 */
 	public function register() {
+		$this->add_action_once( 'woocommerce_init', array( $this, 'maybe_register_async_hooks' ) );
+	}
+
+	/**
+	 * Register the async renderer hooks if this request should use them.
+	 *
+	 * Hooked to `woocommerce_init` by {@see register()}; not intended to be
+	 * called during plugin bootstrap.
+	 *
+	 * @internal
+	 */
+	public function maybe_register_async_hooks(): void {
 		$request_context = $this->get_request_context();
 		if (
 			! $this->arbiter->should_core_register()

@@ -57,7 +57,7 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN );
 
-		$sut->register();
+		$sut->maybe_register_async_hooks();
 
 		$this->assert_hooks_not_registered( $sut );
 	}
@@ -69,8 +69,8 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
 		$sut = $this->create_controller();
 
-		$sut->register();
-		$sut->register();
+		$sut->maybe_register_async_hooks();
+		$sut->maybe_register_async_hooks();
 
 		$this->assertSame( 999, has_filter( 'wc_price', array( $sut, 'handle_wc_price' ) ) );
 		$this->assertSame( 999, has_filter( 'woocommerce_format_sale_price', array( $sut, 'handle_woocommerce_format_sale_price' ) ) );
@@ -115,9 +115,60 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 			$active_session
 		);
 
-		$sut->register();
+		$sut->maybe_register_async_hooks();
 
 		$this->assert_hooks_not_registered( $sut );
+	}
+
+	/**
+	 * @testdox Should defer async renderer registration to woocommerce_init instead of deciding during bootstrap.
+	 */
+	public function test_defers_registration_to_woocommerce_init(): void {
+		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
+		$sut = $this->create_controller();
+
+		$sut->register();
+		$sut->register();
+
+		$this->assertSame(
+			10,
+			has_action( 'woocommerce_init', array( $sut, 'maybe_register_async_hooks' ) ),
+			'register() must hook the activation decision to woocommerce_init.'
+		);
+		$this->assert_hooks_not_registered( $sut );
+	}
+
+	/**
+	 * @testdox Should not probe the WooCommerce session while registering, because that reenters the constructor.
+	 */
+	public function test_does_not_probe_the_session_during_registration(): void {
+		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
+		$sut      = $this->create_controller();
+		$probed   = false;
+		$recorder = static function () use ( &$probed ): bool {
+			$probed = true;
+
+			return false;
+		};
+		$sut->set_active_session_resolver( $recorder );
+
+		$sut->register();
+
+		// register() runs from WooCommerce::init_hooks(), inside the constructor,
+		// where the singleton is unassigned. A session probe there resolves WC()
+		// into a second construction and recurses until memory is exhausted, so
+		// the probe must not happen until the deferred callback runs.
+		$this->assertFalse(
+			$probed,
+			'register() must not probe the WooCommerce session; doing so recurses through WC() during bootstrap.'
+		);
+
+		$sut->maybe_register_async_hooks();
+
+		$this->assertTrue(
+			$probed,
+			'The deferred callback must still make the session-dependent activation decision.'
+		);
 	}
 
 	/**
