@@ -765,6 +765,15 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should not leak optional extension aliases to later tests.
+	 *
+	 * Runs isolated on purpose. The assertion is about what *this* test class
+	 * defines, but class definitions are process-global and cannot be undone, so
+	 * in a shared process it also sees classes other suites define — for example
+	 * NativeWooPaymentsGatewayTest evals a WC_Subscriptions_Cart double. A fresh
+	 * process is what makes the assertion mean what its name says.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_woopay_optional_extension_aliases_do_not_leak(): void {
 		$this->assertFalse( class_exists( 'WC_Pre_Orders_Product', false ) );

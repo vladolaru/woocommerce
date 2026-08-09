@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api;
 
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsActivatePmPromotionRequest;
@@ -1112,11 +1113,18 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 		add_filter( 'pre_http_request', $filter, 10, 3 );
 
+		// Jetpack composes this URL from JETPACK__WPCOM_JSON_API_BASE, which a
+		// developer running against a local WPCOM legitimately overrides. Pin it
+		// so the assertion below describes the request this client builds rather
+		// than the machine it runs on.
+		Constants::set_constant( 'JETPACK__WPCOM_JSON_API_BASE', 'https://public-api.wordpress.com' );
+
 		try {
 			$sut    = new WooPaymentsApiClient();
 			$result = $sut->get_recommended_payment_methods( 'GB', 'en_US' );
 		} finally {
 			remove_filter( 'pre_http_request', $filter, 10 );
+			Constants::clear_single_constant( 'JETPACK__WPCOM_JSON_API_BASE' );
 		}
 
 		$this->assertSame( 'card', $result[0]['id'] );
