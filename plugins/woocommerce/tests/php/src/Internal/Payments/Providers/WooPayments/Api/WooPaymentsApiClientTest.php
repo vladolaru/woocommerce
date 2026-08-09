@@ -1113,18 +1113,11 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 		add_filter( 'pre_http_request', $filter, 10, 3 );
 
-		// Jetpack composes this URL from JETPACK__WPCOM_JSON_API_BASE, which a
-		// developer running against a local WPCOM legitimately overrides. Pin it
-		// so the assertion below describes the request this client builds rather
-		// than the machine it runs on.
-		Constants::set_constant( 'JETPACK__WPCOM_JSON_API_BASE', 'https://public-api.wordpress.com' );
-
 		try {
 			$sut    = new WooPaymentsApiClient();
 			$result = $sut->get_recommended_payment_methods( 'GB', 'en_US' );
 		} finally {
 			remove_filter( 'pre_http_request', $filter, 10 );
-			Constants::clear_single_constant( 'JETPACK__WPCOM_JSON_API_BASE' );
 		}
 
 		$this->assertSame( 'card', $result[0]['id'] );
@@ -1141,9 +1134,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	 */
 	public function test_get_recommended_payment_methods_uses_jetpack_wpcom_api_base(): void {
 		$captured_url = '';
-		$base_filter  = static function ( $constant_value, string $constant_name ) {
-			return 'JETPACK__WPCOM_JSON_API_BASE' === $constant_name ? 'http://wpcom.localhost:30001' : $constant_value;
-		};
 		$http_filter  = static function ( $preempt, array $parsed_args, string $url ) use ( &$captured_url ) {
 			unset( $parsed_args );
 			$captured_url = $url;
@@ -1155,15 +1145,22 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			);
 		};
 
-		add_filter( 'jetpack_constant_default_value', $base_filter, 10, 2 );
 		add_filter( 'pre_http_request', $http_filter, 10, 3 );
+
+		// Set the override rather than filtering the default: Constants reads an
+		// override first, a real define() second, and the default-value filter
+		// only when neither exists. Filtering was therefore a no-op wherever the
+		// constant is actually defined, and it lost to the baseline
+		// EnvironmentIsolation sets. This asserts the client follows the
+		// configured base, so it has to be the base that actually applies.
+		Constants::set_constant( 'JETPACK__WPCOM_JSON_API_BASE', 'http://wpcom.localhost:30001' );
 
 		try {
 			$sut = new WooPaymentsApiClient();
 			$sut->get_recommended_payment_methods( 'GB', 'en_US' );
 		} finally {
 			remove_filter( 'pre_http_request', $http_filter, 10 );
-			remove_filter( 'jetpack_constant_default_value', $base_filter, 10 );
+			Constants::set_constant( 'JETPACK__WPCOM_JSON_API_BASE', 'https://public-api.wordpress.com' );
 		}
 
 		$this->assertStringStartsWith( 'http://wpcom.localhost:30001/wpcom/v2/wcpay/payment_methods/recommended?', $captured_url );

@@ -25,10 +25,13 @@ class NativePaymentsE2EBootstrapTest extends WC_Unit_Test_Case {
 	 */
 	public function test_missing_constant_leaves_native_disabled(): void {
 		$this->load_bootstrap();
-		// wp-env defines this constant for the whole environment, including the
-		// PHPUnit container, so the absent case has to be simulated rather than
-		// assumed. Without this the test silently passes on CI and fails on any
-		// machine configured to run the WooPayments native E2E suite.
+
+		// EnvironmentIsolation clears this constant for the main process, but a
+		// @runInSeparateProcess test runs in a child that does not inherit those
+		// overrides, so it has to restate the precondition. wp-env defines the
+		// constant for every environment including this container, which would
+		// otherwise make the absent case unreachable on a machine configured to
+		// run the WooPayments native E2E suite while still passing on CI.
 		Constants::set_constant( 'E2E_WOOPAYMENTS_NATIVE', null );
 
 		$this->assertFalse(
@@ -382,6 +385,12 @@ class NativePaymentsE2EBootstrapTest extends WC_Unit_Test_Case {
 		if ( ! defined( 'E2E_WOOPAYMENTS_NATIVE' ) ) {
 			define( 'E2E_WOOPAYMENTS_NATIVE', true );
 		}
+
+		// A real define() is the weakest of the three layers Constants reads: an
+		// override set earlier wins over it, and EnvironmentIsolation sets one to
+		// clear whatever wp-env defined for this container. Set the override so
+		// this test states its precondition on the layer that actually decides.
+		Constants::set_constant( 'E2E_WOOPAYMENTS_NATIVE', true );
 	}
 
 	/**

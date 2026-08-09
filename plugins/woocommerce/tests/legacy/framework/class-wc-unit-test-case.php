@@ -7,6 +7,7 @@
 
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Testing\Tools\CodeHacking\CodeHacker;
+use Automattic\WooCommerce\Testing\Tools\EnvironmentIsolation;
 use Automattic\WooCommerce\Utilities\OrderUtil;
 use PHPUnit\Framework\Constraint\IsType;
 
@@ -127,6 +128,14 @@ class WC_Unit_Test_Case extends WP_HTTP_TestCase {
 	public function setUp(): void {
 
 		parent::setUp();
+
+		// Re-establish the machine-independent baseline for every test. Applying
+		// it once at bootstrap is not enough: Constants::clear_constants() drops
+		// every override, several suites call it, and after that the development
+		// environment's own constants become visible again to everything that
+		// runs later. Subclass setUp() runs after this, so a test that wants one
+		// of these signals still sets it and wins.
+		EnvironmentIsolation::apply();
 
 		// Add custom factories.
 		$this->factory = new WC_Unit_Test_Factory();
