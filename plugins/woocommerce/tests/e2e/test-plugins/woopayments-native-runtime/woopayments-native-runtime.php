@@ -55,6 +55,28 @@ final class WooCommerce_WooPayments_Native_E2E_Runtime {
 	 *
 	 * @since 11.0.0
 	 */
+	/**
+	 * Tell whether PHPUnit is driving this request rather than a served E2E request.
+	 *
+	 * This file is mapped as an mu-plugin by the top-level `mappings` block in
+	 * `.wp-env.json`, which applies to every wp-env environment, so it also
+	 * loads inside the PHPUnit container. There it would force native payments
+	 * ownership on for every test as an invisible ambient precondition — the
+	 * opposite of the opt-in contract the unit tests are written against, where
+	 * a test needing the native runtime adds the enablement filter itself.
+	 *
+	 * @return bool True when PHPUnit is driving this request.
+	 */
+	public static function is_phpunit_run(): bool {
+		// Both signals are set before WordPress loads mu-plugins: the constant
+		// by PHPUnit's Composer entry point, the class by other install methods.
+		return defined( 'PHPUNIT_COMPOSER_INSTALL' )
+			|| class_exists( 'PHPUnit\\Framework\\TestCase', false );
+	}
+
+	/**
+	 * Install the native-runtime filter and the read-only diagnostics route.
+	 */
 	public function register(): void {
 		add_filter( self::NATIVE_ENABLED_FILTER, array( $this, 'handle_native_enabled' ), 0 );
 		add_action( 'rest_api_init', array( $this, 'handle_rest_api_init' ) );
@@ -361,4 +383,6 @@ final class WooCommerce_WooPayments_Native_E2E_Runtime {
 	}
 }
 
-( new WooCommerce_WooPayments_Native_E2E_Runtime() )->register();
+if ( ! WooCommerce_WooPayments_Native_E2E_Runtime::is_phpunit_run() ) {
+	( new WooCommerce_WooPayments_Native_E2E_Runtime() )->register();
+}
