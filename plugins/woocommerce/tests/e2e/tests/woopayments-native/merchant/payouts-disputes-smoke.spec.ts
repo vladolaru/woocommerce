@@ -9,9 +9,10 @@ const ADMIN_USERNAME =
 const ADMIN_PASSWORD =
 	process.env.E2E_WOOPAYMENTS_ADMIN_PASSWORD ?? admin.password;
 
-// The transactions list contract is deliberately absent: it is already
-// claimed and annotated by the merchant-transaction-navigation provider
-// pilot. This smoke still loads that surface, because the disputes contract's
+// The transactions list contract is deliberately absent: it is claimed and
+// annotated by the ledger's own target for that row,
+// merchant/overview-transactions.spec.ts. This smoke still loads that surface,
+// because the disputes contract's
 // no-failed-fetch oracle is only meaningful across the payments admin app as
 // a whole, but it does not claim the contract.
 const CONTRACT_IDS = [
