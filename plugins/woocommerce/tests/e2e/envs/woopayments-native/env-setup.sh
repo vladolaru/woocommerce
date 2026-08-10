@@ -251,6 +251,45 @@ if [[ "$PROVIDER_READINESS_REQUIRED" == '1' ]]; then
 	blog_id="$(runtime_blog_id "$runtime_status_path")"
 	run_callback_probe "$STORE_NAME" "$STORE_DIR" "$STORE_URL" "$blog_id"
 
+	# Every provider shopper spec logs in as the shared test customer, so a
+	# standing store without that account fails all of them at the login form
+	# with an error about an empty email field rather than about a missing
+	# user. Establish it here, idempotently: existing accounts keep their id
+	# and their orders, and only the password is re-asserted so a store whose
+	# customer was created by hand still matches the suite's fixture.
+	(
+		# The store's own directory, matching every other probe: wp-env
+		# resolves from the package, not from wherever this script was called.
+		cd "$STORE_DIR"
+		run_store_wp "$STORE_NAME" --user=1 eval '
+		$login = "customer";
+		$email = "customer@woocommercecoree2etestsuite.com";
+		$user = get_user_by( "login", $login );
+		if ( ! $user ) {
+			$user_id = wp_insert_user( array(
+				"user_login" => $login,
+				"user_email" => $email,
+				"user_pass"  => "password",
+				"first_name" => "Jane",
+				"last_name"  => "Smith",
+				"role"       => "customer",
+			) );
+			if ( is_wp_error( $user_id ) ) {
+				fwrite( STDERR, $user_id->get_error_message() );
+				exit( 1 );
+			}
+			echo "created";
+			return;
+		}
+		wp_set_password( "password", $user->ID );
+		echo "reused";
+		'
+	) > "$DIAGNOSTICS_DIR/$STORE_NAME/customer.txt"
+
+	printf 'WooPayments shopper fixture %s for %s.\n' \
+		"$(cat "$DIAGNOSTICS_DIR/$STORE_NAME/customer.txt")" \
+		"$STORE_NAME"
+
 	printf 'WooPayments callback readiness proved for %s blog %s.\n' \
 		"$STORE_NAME" \
 		"$blog_id"
