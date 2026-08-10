@@ -7,9 +7,10 @@ import type {
 	ProviderWriteSession,
 } from '../../../fixtures/woopayments-native';
 import { ResourceQuarantineRequiredError } from '../resource-locks';
+import type { ProviderTestCard } from '../test-cards';
 import type { CardTestingProtectionScope } from './card-testing-protection';
 
-const CLASSIC_CHECKOUT_PATH = 'classic-checkout/';
+export const CLASSIC_CHECKOUT_PATH = 'classic-checkout/';
 const WOOPAYMENTS_GATEWAY = 'woocommerce_payments';
 const TOKEN_LENGTH = 16;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
@@ -17,8 +18,33 @@ const SUBMISSION_TIMEOUT_MS = 60_000;
 const BLOCKS_CHECKOUT_MARKERS =
 	'[data-block-name="woocommerce/checkout"], .wp-block-woocommerce-checkout, .wc-block-checkout';
 const CLASSIC_CHECKOUT_FORM = 'form.checkout.woocommerce-checkout';
+const CLASSIC_GATEWAY_BOX = '#payment .payment_method_woocommerce_payments';
+/**
+ * The card frame, addressed across both runtimes.
+ *
+ * The client plugin mounts its payment element in `.wcpay-upe-element`; native
+ * mounts it in `#wcpay-core-payment-element`, printed by
+ * `WooPaymentsCheckoutBridge::render_payment_fields()`. The class the client
+ * uses appears nowhere in native's markup - only in the shared stylesheet - so
+ * a client-only selector cannot find a native card field, and the one authorized
+ * run that would have exposed that failed earlier, in the billing step. Both
+ * containers are matched here because only one of them exists on a given page,
+ * which leaves the exactly-one-frame check below binding rather than permissive.
+ */
 const CLASSIC_CARD_FRAME =
-	'#payment .payment_method_woocommerce_payments .wcpay-upe-element iframe';
+	`${ CLASSIC_GATEWAY_BOX } .wcpay-upe-element iframe, ` +
+	`${ CLASSIC_GATEWAY_BOX } #wcpay-core-payment-element iframe[name^="__privateStripeFrame"]`;
+// Native's own shopper-facing error region on the Classic surface, printed
+// hidden with `role="alert"` and filled by the classic checkout script. It is
+// the announcement channel of this surface: unlike Blocks, nothing here routes
+// through `wp.a11y.speak`, so `#a11y-speak-assertive` stays empty.
+const CLASSIC_PAYMENT_ERROR = '#wcpay-core-payment-errors';
+// Where WooCommerce's own checkout script prepends a rejected submission's
+// notices, wrapped in an element it gives `role="alert"`.
+const CLASSIC_NOTICE_GROUP = `${ CLASSIC_CHECKOUT_FORM } .woocommerce-NoticeGroup-checkout`;
+// `WC_Payment_Gateway::save_payment_method_checkbox()`; native reuses it
+// verbatim outside subscription checkouts.
+const SAVE_CONTROL_LABEL = 'Save to account';
 
 const ALLOWLISTED_REQUEST_FIELDS = [
 	'payment_method',
@@ -43,6 +69,15 @@ export interface ClassicCheckoutRequestEvidence {
 	paymentMethodErrorMessagePresent: boolean;
 	platformPaymentMethod: 'true' | 'false' | 'invalid';
 	fingerprintPresent: boolean;
+}
+
+/**
+ * What a submission that is expected to be turned away carried.
+ */
+export interface ClassicRejectedRequestEvidence {
+	gateway: ClassicCheckoutRequestEvidence[ 'gateway' ];
+	fraudPreventionToken: 'absent' | 'empty' | 'present';
+	savePaymentMethod: boolean;
 }
 
 export interface ClassicCheckoutResponseEvidence {
@@ -88,6 +123,56 @@ export interface RawClassicSubmissionObservation {
 	responses: RawClassicCheckoutResponse[];
 	receiptUrl: string;
 }
+
+/**
+ * Everything the store was asked and answered during one submission interval,
+ * without any claim about how the interval ended. A journey that has to answer
+ * a customer-action challenge between the checkout response and the receipt
+ * cannot use the receipt as its end marker, so the two are separated.
+ */
+export interface RawClassicSubmissionDispatch {
+	requests: RawClassicCheckoutRequest[];
+	responses: RawClassicCheckoutResponse[];
+}
+
+/**
+ * Native's Classic payment error region, read as evidence rather than asserted
+ * in place, so a caller can state what it expected and fail with the whole
+ * observation attached.
+ */
+export interface ClassicPaymentErrorNotice {
+	/** Whether the region carries the assertive role a screen reader reads. */
+	role: string | null;
+	visible: boolean;
+	text: string;
+}
+
+/**
+ * WooCommerce's own rejected-submission notices, as the shopper receives them.
+ */
+export interface ClassicCheckoutRejectionNotice {
+	alertCount: number;
+	messages: string[];
+}
+
+/**
+ * Whether the shopper can still act after a rejected or failed submission.
+ */
+export interface ClassicCheckoutRecoveryState {
+	onClassicCheckout: boolean;
+	placeOrderEnabled: boolean;
+	blockingOverlayCount: number;
+	paymentMethodChoiceCount: number;
+}
+
+/**
+ * The fraud-prevention token the Classic script would submit right now, read
+ * through the same fallback chain the script uses and reduced to a digest so
+ * the token itself never reaches a report.
+ */
+export type EffectiveFraudPreventionToken =
+	| { present: true; digest: PublicTokenDigest }
+	| { present: false };
 
 type PerformWrite = < Result >(
 	write: () => Promise< Result >
@@ -243,6 +328,49 @@ export function normalizeClassicCheckoutRequest(
 			values[ 'wcpay-is-platform-payment-method' ]
 		),
 		fingerprintPresent: ( values[ 'wcpay-fingerprint' ] ?? '' ) !== '',
+	};
+}
+
+/**
+ * Reads only what a rejected submission needs: which gateway it named and
+ * whether it carried a usable session token.
+ *
+ * The exact-contract normalizer above refuses a request with no token field at
+ * all, which is correct for a payment that is meant to settle and wrong for one
+ * that is meant to be turned away for exactly that reason.
+ */
+export function normalizeClassicRejectedRequest(
+	request: Pick< Request, 'method' | 'url' | 'postData' >
+): ClassicRejectedRequestEvidence {
+	if ( ! isClassicCheckoutRequest( request ) ) {
+		fail( 'request does not match the exact checkout endpoint.' );
+	}
+	const body = request.postData();
+	if ( typeof body !== 'string' ) {
+		fail( 'request has no URL-encoded body.' );
+	}
+	const parameters = new URLSearchParams( body );
+	const token = readAtMostOne( parameters, 'wcpay-fraud-prevention-token' );
+	const saveValue = readAtMostOne(
+		parameters,
+		'wc-woocommerce_payments-new-payment-method'
+	);
+
+	let fraudPreventionToken: ClassicRejectedRequestEvidence[ 'fraudPreventionToken' ];
+	if ( token === undefined ) {
+		fraudPreventionToken = 'absent';
+	} else if ( token === '' ) {
+		fraudPreventionToken = 'empty';
+	} else {
+		fraudPreventionToken = 'present';
+	}
+
+	return {
+		gateway: normalizeGateway(
+			readAtMostOne( parameters, 'payment_method' )
+		),
+		fraudPreventionToken,
+		savePaymentMethod: saveValue === 'true',
 	};
 }
 
@@ -449,6 +577,20 @@ export class PlaywrightClassicCardCheckoutBrowser
 	}
 
 	public async fillBasicCard(): Promise< void > {
+		// The basic card stays written out here rather than imported from
+		// `test-cards.ts`, which records why: that module carries the cards
+		// whose behaviour the provider selects, and `4242` selects nothing.
+		await this.fillTestCard( {
+			number: '4242424242424242',
+			expiry: '0245',
+			securityCode: '424',
+		} );
+	}
+
+	/**
+	 * Fills the Classic payment element with a named provider test card.
+	 */
+	public async fillTestCard( card: ProviderTestCard ): Promise< void > {
 		const iframe = this.page.locator( CLASSIC_CARD_FRAME );
 		await iframe.waitFor( { state: 'visible' } );
 		if ( ( await iframe.count() ) !== 1 ) {
@@ -457,13 +599,224 @@ export class PlaywrightClassicCardCheckoutBrowser
 		const frame = this.page.frameLocator( CLASSIC_CARD_FRAME );
 		await frame
 			.getByRole( 'textbox', { name: 'Card number' } )
-			.fill( '4242424242424242' );
+			.fill( card.number );
 		await frame
 			.getByRole( 'textbox', { name: /Expiration date/i } )
-			.fill( '0245' );
+			.fill( card.expiry );
 		await frame
 			.getByRole( 'textbox', { name: 'Security code' } )
-			.fill( '424' );
+			.fill( card.securityCode );
+	}
+
+	/**
+	 * Sets the Classic save-to-account control and proves the state it ended in,
+	 * so a control that silently refused the click fails here rather than
+	 * producing a run that quietly saved nothing.
+	 */
+	public async setSavePaymentMethod( save: boolean ): Promise< void > {
+		const control = await requireOneEnabled(
+			this.page.getByRole( 'checkbox', {
+				name: SAVE_CONTROL_LABEL,
+				exact: true,
+			} ),
+			'save-to-account control'
+		);
+		if ( save ) {
+			await control.check();
+		} else {
+			await control.uncheck();
+		}
+		if ( ( await control.isChecked() ) !== save ) {
+			fail( 'save-to-account control did not take the requested state.' );
+		}
+	}
+
+	/**
+	 * Waits for native's Classic payment error region to carry a message.
+	 *
+	 * Resolves true when the region becomes visible and false when it does not
+	 * within the budget, so a caller can report what it saw instead of dying on
+	 * a raw timeout after a submission that may have reached the provider.
+	 */
+	public async waitForPaymentErrorNotice(
+		timeoutMs: number
+	): Promise< boolean > {
+		try {
+			await this.page
+				.locator( CLASSIC_PAYMENT_ERROR )
+				.waitFor( { state: 'visible', timeout: timeoutMs } );
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
+	/**
+	 * Waits for WooCommerce's own rejected-submission notice group.
+	 */
+	public async waitForCheckoutRejectionNotice(
+		timeoutMs: number
+	): Promise< boolean > {
+		try {
+			await this.page
+				.locator( `${ CLASSIC_NOTICE_GROUP } [role="alert"]` )
+				.waitFor( { state: 'visible', timeout: timeoutMs } );
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
+	public async readPaymentErrorNotice(): Promise< ClassicPaymentErrorNotice > {
+		const notice = this.page.locator( CLASSIC_PAYMENT_ERROR );
+		if ( ( await notice.count() ) !== 1 ) {
+			fail( 'requires exactly one native Classic payment error region.' );
+		}
+		return {
+			role: await notice.getAttribute( 'role' ),
+			visible: await notice.isVisible(),
+			text: ( await notice.innerText() ).trim(),
+		};
+	}
+
+	public async readCheckoutRejectionNotice(): Promise< ClassicCheckoutRejectionNotice > {
+		const alerts = this.page.locator(
+			`${ CLASSIC_NOTICE_GROUP } [role="alert"]`
+		);
+		const alertCount = await alerts.count();
+		if ( alertCount !== 1 ) {
+			return { alertCount, messages: [] };
+		}
+		const messages = await alerts
+			.first()
+			.getByRole( 'listitem' )
+			.allInnerTexts();
+		return {
+			alertCount,
+			messages: messages.map( ( message ) =>
+				message.replace( /\s+/g, ' ' ).trim()
+			),
+		};
+	}
+
+	public async readCheckoutRecoveryState(): Promise< ClassicCheckoutRecoveryState > {
+		let onClassicCheckout: boolean;
+		try {
+			onClassicCheckout =
+				new URL( this.page.url() ).pathname.replace( /\/+$/, '' ) ===
+				new URL( CLASSIC_CHECKOUT_PATH, this.baseURL ).pathname.replace(
+					/\/+$/,
+					''
+				);
+		} catch {
+			onClassicCheckout = false;
+		}
+		const placeOrder = this.page.getByRole( 'button', {
+			name: 'Place order',
+			exact: true,
+		} );
+		return {
+			onClassicCheckout,
+			placeOrderEnabled:
+				( await placeOrder.count() ) === 1 &&
+				( await placeOrder.isEnabled() ),
+			// jQuery blockUI's overlay, which the Classic checkout leaves in
+			// place while a submission is in flight.
+			blockingOverlayCount: await this.page
+				.locator( `${ CLASSIC_CHECKOUT_FORM } .blockUI` )
+				.count(),
+			// Radios inside the payment list. Saved-method radios would count
+			// too, which is why callers assert that a choice remains rather
+			// than taking a gateway census.
+			paymentMethodChoiceCount: await this.page
+				.locator( '#payment .wc_payment_methods' )
+				.getByRole( 'radio' )
+				.count(),
+		};
+	}
+
+	/**
+	 * Reads the token the Classic script would submit, through the same
+	 * fallback chain it uses: the gateway's rendered configuration first, then
+	 * the legacy window global.
+	 */
+	public async captureEffectiveFraudPreventionTokenDigest(): Promise< EffectiveFraudPreventionToken > {
+		const digest = await this.page.evaluate( async () => {
+			const readToken = (): string => {
+				const browserWindow = window as unknown as Record<
+					string,
+					unknown
+				>;
+				for ( const key of Object.keys( browserWindow ) ) {
+					if ( ! key.startsWith( 'wcpay_core_checkout_config' ) ) {
+						continue;
+					}
+					const config = browserWindow[ key ];
+					const token =
+						typeof config === 'object' && config !== null
+							? ( config as { fraudPreventionToken?: unknown } )
+									.fraudPreventionToken
+							: undefined;
+					if ( typeof token === 'string' && token !== '' ) {
+						return token;
+					}
+				}
+				const legacy = browserWindow.wcpayFraudPreventionToken;
+				return typeof legacy === 'string' ? legacy : '';
+			};
+
+			const value = readToken();
+			if ( value === '' ) {
+				return null;
+			}
+			const hash = await crypto.subtle.digest(
+				'SHA-256',
+				new TextEncoder().encode( value )
+			);
+			return {
+				length: value.length,
+				sha256: Array.from( new Uint8Array( hash ) )
+					.map( ( byte ) => byte.toString( 16 ).padStart( 2, '0' ) )
+					.join( '' ),
+			};
+		} );
+
+		if ( digest === null ) {
+			return { present: false };
+		}
+		assertPublicTokenDigest( digest, 'effective Classic' );
+		return { present: true, digest };
+	}
+
+	/**
+	 * Removes the fraud-prevention token from every place the Classic script
+	 * reads it, so the next submission carries none.
+	 *
+	 * This is the card-testing shape stated as a shopper-side fact: a client
+	 * that submits the checkout without the session token native handed it.
+	 * Callers must re-read the effective token afterwards and refuse to submit
+	 * while one remains - a submission that still carries a valid token would
+	 * settle a real payment instead of proving a rejection.
+	 */
+	public async clearFraudPreventionToken(): Promise< void > {
+		await this.page.evaluate( () => {
+			const browserWindow = window as unknown as Record<
+				string,
+				unknown
+			>;
+			for ( const key of Object.keys( browserWindow ) ) {
+				if ( ! key.startsWith( 'wcpay_core_checkout_config' ) ) {
+					continue;
+				}
+				const config = browserWindow[ key ];
+				if ( typeof config === 'object' && config !== null ) {
+					(
+						config as { fraudPreventionToken?: unknown }
+					 ).fraudPreventionToken = '';
+				}
+			}
+			browserWindow.wcpayFraudPreventionToken = '';
+		} );
 	}
 
 	public async captureExposedTokenDigest(): Promise< PublicTokenDigest > {
@@ -505,6 +858,64 @@ export class PlaywrightClassicCardCheckoutBrowser
 	public async observeSubmission(
 		activateOnce: ( activate: () => Promise< void > ) => Promise< void >
 	): Promise< RawClassicSubmissionObservation > {
+		const observation = await this.observeSubmissionInterval(
+			activateOnce,
+			async () => {
+				await this.waitForClassicReceipt();
+			}
+		);
+
+		return {
+			requests: observation.dispatch.requests,
+			responses: observation.dispatch.responses,
+			receiptUrl: observation.url,
+		};
+	}
+
+	/**
+	 * Waits for the receipt the Classic checkout redirects to, and returns the
+	 * order it names.
+	 */
+	public async waitForClassicReceipt(
+		timeoutMs: number = SUBMISSION_TIMEOUT_MS
+	): Promise< ClassicOrderReceipt > {
+		await this.page.waitForURL(
+			( candidate ) => {
+				try {
+					parseClassicOrderReceivedUrl(
+						candidate.href,
+						this.baseURL
+					);
+					return true;
+				} catch {
+					return false;
+				}
+			},
+			{ timeout: timeoutMs }
+		);
+
+		return parseClassicOrderReceivedUrl( this.page.url(), this.baseURL );
+	}
+
+	/**
+	 * Activates Place order exactly once and observes every checkout request
+	 * and response for the whole interval the caller needs, not only up to the
+	 * receipt.
+	 *
+	 * A payment that requires customer action does not end at the checkout
+	 * response: native answers it with a confirmation hash, the shopper answers
+	 * a challenge, and only then does a receipt or a failure appear. `settle`
+	 * owns that middle, and the observation stays open across it so a second
+	 * submission dispatched at any point in the interval is still counted.
+	 */
+	public async observeSubmissionInterval< Result >(
+		activateOnce: ( activate: () => Promise< void > ) => Promise< void >,
+		settle: ( dispatch: RawClassicSubmissionDispatch ) => Promise< Result >
+	): Promise< {
+		dispatch: RawClassicSubmissionDispatch;
+		result: Result;
+		url: string;
+	} > {
 		if ( ! this.placeOrderButton || this.submissionObservationAttempted ) {
 			fail( 'requires one prepared Place order submission.' );
 		}
@@ -550,37 +961,37 @@ export class PlaywrightClassicCardCheckoutBrowser
 			);
 		}, SUBMISSION_TIMEOUT_MS );
 		const clearResponseTimer = () => clearTimeout( responseTimer );
+		const decoded: RawClassicCheckoutResponse[] = [];
+		// Bodies are read once each, in arrival order, so reading the dispatch
+		// twice - before and after the customer-action interval - cannot
+		// double-count or re-consume a response.
+		const decodeNewResponses = async (): Promise< void > => {
+			while ( decoded.length < responses.length ) {
+				const response = responses[ decoded.length ];
+				decoded.push( {
+					requestId:
+						requestIds.get( response.request() ) ??
+						'unmatched-classic-response',
+					status: response.status(),
+					body: await response.json(),
+				} );
+			}
+		};
 
 		try {
 			await activateOnce( () => button.click() );
 			await responseSignal;
-			await this.page.waitForURL(
-				( candidate ) => {
-					try {
-						parseClassicOrderReceivedUrl(
-							candidate.href,
-							this.baseURL
-						);
-						return true;
-					} catch {
-						return false;
-					}
-				},
-				{ timeout: SUBMISSION_TIMEOUT_MS }
-			);
+			await decodeNewResponses();
+			const result = await settle( {
+				requests: [ ...requests ],
+				responses: [ ...decoded ],
+			} );
+			await decodeNewResponses();
 
 			return {
-				requests,
-				responses: await Promise.all(
-					responses.map( async ( response ) => ( {
-						requestId:
-							requestIds.get( response.request() ) ??
-							'unmatched-classic-response',
-						status: response.status(),
-						body: await response.json(),
-					} ) )
-				),
-				receiptUrl: this.page.url(),
+				dispatch: { requests, responses: decoded },
+				result,
+				url: this.page.url(),
 			};
 		} finally {
 			clearResponseTimer();

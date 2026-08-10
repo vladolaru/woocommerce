@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Add a classic-checkout 3D Secure authentication spec and its one-shot classic payment/challenge drivers.

@@ -22,7 +22,7 @@ interface SavedCardTokenEvidence {
 	isDefault: boolean;
 }
 
-interface SavedCardEvidence {
+export interface SavedCardEvidence {
 	creationReady: boolean;
 	tokens: SavedCardTokenEvidence[];
 	providerCustomerId?: string;
@@ -117,7 +117,7 @@ function parseSavedCardEvidence( value: unknown ): SavedCardEvidence {
 	};
 }
 
-async function getSavedCardEvidence(
+export async function getSavedCardEvidence(
 	session: ProviderWriteSession,
 	card?: SavedCardIdentity
 ): Promise< SavedCardEvidence > {
