@@ -17,14 +17,10 @@ const providerPilotOrder = [
 	'merchant-manual-capture',
 ];
 const transitionPilotOrder = [ 'saved-method-cutover' ];
-const scenarioTargetPrefix =
-	'plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/';
-const scenarioMigrationStates = [ 'implemented', 'verified', 'closed' ];
-const scenarioOwnershipTags = [
-	'woopayments-native',
-	'woopayments-provider',
-	'woopayments-pr',
-];
+// A closed ledger row whose targets include a test module under this tree
+// must be proven by a collected Playwright annotation; rows whose targets are
+// only PHP/JS unit tests are closed at that lower layer directly.
+const e2eTestTreePrefix = 'plugins/woocommerce/tests/e2e/tests/';
 const providerInvolvementTags = [
 	'woopayments-provider',
 	'woopayments-transition',
@@ -125,21 +121,9 @@ const collectContractAnnotationRecords = ( tests ) =>
 				description: annotation.description,
 				expectedStatus: collectedTest.expectedStatus,
 				file: collectedTest.file,
-				projectName: collectedTest.projectName,
-				tags: collectedTest.tags,
 				title: collectedTest.title,
 			} ) )
 	);
-
-const owningProjectForTags = ( tags ) => {
-	if ( tags.includes( 'woopayments-transition' ) ) {
-		return transitionProject;
-	}
-	if ( tags.includes( 'woopayments-provider' ) ) {
-		return providerProject;
-	}
-	return readonlyProject;
-};
 
 const canonicalAnnotationPath = ( file, packageDirectory ) =>
 	isAbsolute( file )
@@ -149,33 +133,14 @@ const canonicalAnnotationPath = ( file, packageDirectory ) =>
 const canonicalLedgerTargetPath = ( file, packageDirectory ) =>
 	resolve( packageDirectory, '../..', file );
 
-const isScenarioContract = ( row ) =>
-	scenarioMigrationStates.includes( row.migration_state ) &&
-	row.target_path.startsWith( scenarioTargetPrefix ) &&
-	row.target_path.endsWith( '.ts' );
-
-const annotationTargetPathForRow = ( row ) => {
-	const targetPaths = row.target_path.split( ';' );
-
-	if ( targetPaths.length === 1 ) {
-		return targetPaths[ 0 ];
-	}
-
-	const wooPaymentsNativeE2eSpecs = targetPaths.filter(
-		( targetPath ) =>
-			targetPath.startsWith(
-				'plugins/woocommerce/tests/e2e/tests/woopayments-native/'
-			) && targetPath.endsWith( '.spec.ts' )
-	);
-
-	if ( wooPaymentsNativeE2eSpecs.length !== 1 ) {
-		throw new Error(
-			`Terminal multi-target ledger contract must contain exactly one WooPayments-native E2E spec target: ${ row.case_id }`
+const e2eSpecTargetsForRow = ( row ) =>
+	row.target_path
+		.split( ';' )
+		.filter(
+			( targetPath ) =>
+				targetPath.startsWith( e2eTestTreePrefix ) &&
+				targetPath.endsWith( '.ts' )
 		);
-	}
-
-	return wooPaymentsNativeE2eSpecs[ 0 ];
-};
 
 const isInsideWooPaymentsTestTree = ( candidate, packageDirectory ) =>
 	candidate.startsWith(
@@ -327,70 +292,56 @@ export const validateContractAnnotationBindings = (
 	}
 
 	for ( const row of ledgerRows ) {
-		const scenarioContract = isScenarioContract( row );
-		const terminalContract = [ 'verified', 'closed' ].includes(
-			row.migration_state
-		);
-
-		if ( ! scenarioContract && ! terminalContract ) {
+		if (
+			row.migration_state !== 'closed' ||
+			// A retired contract was never migrated, so no native test carries
+			// its annotation; its retained contract is checked on its own row.
+			row.native_support_state === 'not-applicable-retired'
+		) {
 			continue;
 		}
 
-		// A retired contract is terminal but was never migrated, so no native spec carries its annotation.
-		// Its retained contract is the one that must stay annotated, and that row is checked on its own.
-		if ( row.native_support_state === 'not-applicable-retired' ) {
+		const e2eSpecTargets = e2eSpecTargetsForRow( row );
+
+		// Rows whose targets are only PHP/JS unit tests close at that lower
+		// layer directly; the target-existence check lives in the ledger
+		// validator.
+		if ( e2eSpecTargets.length === 0 ) {
 			continue;
 		}
 
-		const contractKind = scenarioContract ? 'Scenario' : 'Terminal';
 		const record = recordsByDescription.get( row.case_id )?.[ 0 ];
 		if ( ! record ) {
 			throw new Error(
-				`${ contractKind } ledger contract has no collected woopayments-contract annotation: ${ row.case_id }`
+				`Closed ledger contract has no collected woopayments-contract annotation: ${ row.case_id }`
 			);
 		}
 		if ( record.expectedStatus !== 'passed' ) {
 			throw new Error(
-				`${ contractKind } ledger contract annotation must expect to pass: ${ row.case_id }`
-			);
-		}
-		if (
-			canonicalAnnotationPath( record.file, packageDirectory ) !==
-			canonicalLedgerTargetPath(
-				annotationTargetPathForRow( row ),
-				packageDirectory
-			)
-		) {
-			throw new Error(
-				`${ contractKind } ledger contract annotation has the wrong target file: ${ row.case_id }`
+				`Closed ledger contract annotation must expect to pass: ${ row.case_id }`
 			);
 		}
 		if ( record.title !== row.target_contract ) {
 			throw new Error(
-				`${ contractKind } ledger contract annotation has the wrong test title: ${ row.case_id }`
+				`Closed ledger contract annotation has the wrong test title: ${ row.case_id }`
 			);
 		}
 
-		if ( scenarioContract ) {
-			for ( const requiredTag of scenarioOwnershipTags ) {
-				if ( ! record.tags.includes( requiredTag ) ) {
-					throw new Error(
-						`Scenario ledger contract annotation is missing required tag ${ requiredTag }: ${ row.case_id }`
-					);
-				}
-			}
-
-			if ( record.projectName !== providerProject ) {
-				throw new Error(
-					`Scenario ledger contract annotation must be owned by project ${ providerProject }: ${ row.case_id }`
-				);
-			}
-			continue;
-		}
-
-		if ( record.projectName !== owningProjectForTags( record.tags ) ) {
+		const annotationPath = canonicalAnnotationPath(
+			record.file,
+			packageDirectory
+		);
+		if (
+			! e2eSpecTargets.some(
+				( targetPath ) =>
+					canonicalLedgerTargetPath(
+						targetPath,
+						packageDirectory
+					) === annotationPath
+			)
+		) {
 			throw new Error(
-				`Terminal ledger contract annotation has the wrong owning project: ${ row.case_id }`
+				`Closed ledger contract annotation has the wrong target file: ${ row.case_id }`
 			);
 		}
 	}
@@ -484,13 +435,6 @@ export const validateWooPaymentsProjectRouting = () => {
 							'future WooPayments nested routing sentinel'
 					)
 					.map( ( test ) => test.projectName )
-			),
-		].toSorted(),
-		wooPaymentsContractAnnotations: [
-			...new Set(
-				contractAnnotationRecords.map(
-					( annotation ) => annotation.description
-				)
 			),
 		].toSorted(),
 	};

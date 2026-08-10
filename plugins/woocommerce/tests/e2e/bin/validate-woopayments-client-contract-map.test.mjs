@@ -1,24 +1,14 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import {
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
-	rmdirSync,
 	rmSync,
-	symlinkSync,
-	unlinkSync,
 	writeFileSync,
 } from 'node:fs';
-import {
-	dirname,
-	join,
-	relative,
-	resolve,
-	sep as pathSeparator,
-} from 'node:path';
+import { dirname, join, relative, resolve, sep as pathSeparator } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -26,15 +16,7 @@ import { fileURLToPath } from 'node:url';
 import {
 	parseContractMap,
 	validateContractMap,
-	validateDispositionTransition,
-	validateStateTransition,
 } from './lib/woopayments-contract-map.mjs';
-import {
-	assertClosureBundleCoverage,
-	collectClosureBundlePaths,
-	REQUIRED_CLOSURE_REVIEW_ROLES,
-	validateMigrationEvidence,
-} from './lib/woopayments-migration-evidence.mjs';
 import { runCli } from './validate-woopayments-client-contract-map.mjs';
 
 const binDirectory = dirname( fileURLToPath( import.meta.url ) );
@@ -47,8 +29,6 @@ const metadataPath = resolve(
 	binDirectory,
 	'../tests/woopayments-native/client-contract-map.meta.json'
 );
-const calibrationNotesRepositoryPath =
-	'plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md';
 const fidelityPartitionRepositoryPath =
 	'plugins/woocommerce/tests/e2e/tests/woopayments-native/fidelity-partition.tsv';
 const fidelityClaimCaseId =
@@ -62,915 +42,18 @@ const fidelityPartitionHeaders = [
 const metadata = JSON.parse( readFileSync( metadataPath, 'utf8' ) );
 const ledgerContent = readFileSync( ledgerPath, 'utf8' );
 const contractMap = parseContractMap( ledgerContent );
-const correctedRefundLowerLayerTarget =
-	'plugins/woocommerce/tests/php/includes/class-wc-ajax-test.php';
-const refundValidationSmokeTarget =
-	'plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/orders-refunds.spec.ts';
-const refundValidationCaseIds = [
-	'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid quantity › should fail refund attempt when quantity is greater than maximum',
-	'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid quantity › should fail refund attempt when quantity is negative',
-	'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid refund amount in line item › should fail refund attempt when refund amount in line item is greater than maximum',
-	'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid refund amount in line item › should fail refund attempt when refund amount in line item is negative',
-	'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid total refund amount › should fail refund attempt when total refund amount is greater than maximum',
-	'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid total refund amount › should fail refund attempt when total refund amount is negative',
-];
-const currentCommit = execFileSync(
-	'git',
-	[ '-C', repositoryRoot, 'rev-parse', 'HEAD' ],
-	{ encoding: 'utf8' }
-).trim();
-const temporaryDirectories = [];
-const externalTemporaryDirectories = [];
-const temporaryFiles = [];
-const temporaryTargetDirectories = new Set();
-
-const cloneContractMap = ( source = contractMap ) => ( {
-	headers: [ ...source.headers ],
-	rows: source.rows.map( ( row ) => ( { ...row } ) ),
-} );
-
-const resetToPlanned = ( row ) => {
-	row.accepted_disposition = 'pending';
-	row.target_contract = 'pending';
-	row.implementation_owner = 'owner-decision-required';
-	row.migration_state = 'planned';
-	row.native_support_state = 'not-assessed';
-	row.gap_or_decision_reference = 'none';
-	row.evidence_path = 'none';
-
-	return row;
-};
-
-const createPlannedFixtureRow = () =>
-	resetToPlanned( { ...contractMap.rows[ 0 ] } );
-
-const createEvidenceContext = ( row ) => ( {
-	row,
-	metadata,
-	repositoryRoot,
-} );
-
-const calculateSourceBundleSha256 = (
-	repositoryPaths,
-	commit = currentCommit
-) =>
-	createHash( 'sha256' )
-		.update(
-			JSON.stringify(
-				repositoryPaths.toSorted().map( ( repositoryPath ) => [
-					repositoryPath,
-					createHash( 'sha256' )
-						.update(
-							execFileSync( 'git', [
-								'-C',
-								repositoryRoot,
-								'show',
-								`${ commit }:${ repositoryPath }`,
-							] )
-						)
-						.digest( 'hex' ),
-				] )
-			)
-		)
-		.digest( 'hex' );
-
-const calculateCurrentSourceBundleSha256 = (
-	repositoryPaths,
-	sourceRepositoryRoot = repositoryRoot
-) =>
-	createHash( 'sha256' )
-		.update(
-			JSON.stringify(
-				repositoryPaths.toSorted().map( ( repositoryPath ) => [
-					repositoryPath,
-					createHash( 'sha256' )
-						.update(
-							readFileSync(
-								resolve( sourceRepositoryRoot, repositoryPath )
-							)
-						)
-						.digest( 'hex' ),
-				] )
-			)
-		)
-		.digest( 'hex' );
-
-const DEFAULT_SOURCE_TEST_PATHS = [
-	'plugins/woocommerce/tests/e2e/utils/woopayments-native/known-gap-format.mjs',
-];
-const DEFAULT_SOURCE_TEST_SHA256 = calculateSourceBundleSha256(
-	DEFAULT_SOURCE_TEST_PATHS
-);
-
-const createClosureEntry = ( row, overrides = {} ) => ( {
-	contract_id: row.case_id,
-	target: {
-		path: row.target_path,
-		contract: row.target_contract,
-	},
-	verification: [
-		{
-			command: 'pnpm test:e2e:woopayments:controller',
-			exit_code: 0,
-			summary: 'closure verification passed',
-		},
-	],
-	reviews: REQUIRED_CLOSURE_REVIEW_ROLES.map( ( role ) => ( {
-		role,
-		verdict: 'APPROVE',
-		source_test_sha256: DEFAULT_SOURCE_TEST_SHA256,
-		summary: `${ role } closure review approved`,
-	} ) ),
-	...overrides,
-} );
-
-const serializeLegacyContractMap = () => {
-	const legacyHeaders = [
-		...contractMap.headers.slice( 0, 32 ),
-		'accepted_disposition',
-		'target_path',
-		'implementation_owner',
-		'closure_state',
-	];
-
-	return (
-		[
-			legacyHeaders,
-			...contractMap.rows.map( ( row ) =>
-				legacyHeaders.map( ( header ) =>
-					header === 'closure_state'
-						? row.migration_state
-						: row[ header ]
-				)
-			),
-		]
-			.map( ( values ) => values.join( '\t' ) )
-			.join( '\n' ) + '\n'
-	);
-};
-
-const serializeContractMap = ( map ) =>
-	[
-		map.headers,
-		...map.rows.map( ( row ) =>
-			map.headers.map( ( header ) => row[ header ] )
-		),
-	]
-		.map( ( values ) => values.join( '\t' ) )
-		.join( '\n' ) + '\n';
-
-const serializeFidelityPartition = ( rows ) =>
-	[
-		fidelityPartitionHeaders,
-		...rows.map( ( row ) =>
-			fidelityPartitionHeaders.map( ( header ) => row[ header ] )
-		),
-	]
-		.map( ( values ) => values.join( '\t' ) )
-		.join( '\n' ) + '\n';
-
-const runHistoryComparison = ( currentMap, previousMap ) =>
-	runCli( [ '--from-git-ref', 'HEAD' ], {
-		ledgerContent: serializeContractMap( currentMap ),
-		metadata,
-		repositoryRoot,
-		loadFromGitRef: ( gitRef, repositoryPath ) =>
-			repositoryPath ===
-			'plugins/woocommerce/tests/e2e/tests/woopayments-native/client-contract-map.tsv'
-				? serializeContractMap( previousMap )
-				: readFileSync(
-						resolve( repositoryRoot, repositoryPath ),
-						'utf8'
-				  ),
-		log: () => {},
-	} );
-
-const repositoryRelativePath = ( absolutePath ) =>
-	relative( repositoryRoot, absolutePath ).split( pathSeparator ).join( '/' );
-
-const relativeModuleSpecifier = ( fromFile, toFile ) => {
-	const relativePath = relative( dirname( fromFile ), toFile )
-		.split( pathSeparator )
-		.join( '/' )
-		.replace( /\.(?:mjs|tsx?)$/, '' );
-
-	return relativePath.startsWith( '.' )
-		? relativePath
-		: `./${ relativePath }`;
-};
-const repositoryRelativePathFromRoot = ( absolutePath, sourceRepositoryRoot ) =>
-	relative( sourceRepositoryRoot, absolutePath )
-		.split( pathSeparator )
-		.join( '/' );
-
-const createValidEvidence = (
-	fixtureRow,
-	overrides = {},
-	sourceRepositoryRoot = repositoryRoot
-) => {
-	const isTerminal = [ 'verified', 'closed' ].includes(
-		fixtureRow.migration_state
-	);
-	let sourceTestPaths;
-
-	if ( Object.hasOwn( overrides, 'source_test_paths' ) ) {
-		sourceTestPaths = overrides.source_test_paths;
-	} else if ( isTerminal ) {
-		sourceTestPaths = collectClosureBundlePaths(
-			fixtureRow,
-			sourceRepositoryRoot
-		);
-	} else {
-		sourceTestPaths = [ ...DEFAULT_SOURCE_TEST_PATHS ];
-	}
-
-	let sourceTestSha256;
-
-	if ( Object.hasOwn( overrides, 'source_test_sha256' ) ) {
-		sourceTestSha256 = overrides.source_test_sha256;
-	} else if ( isTerminal ) {
-		sourceTestSha256 = calculateCurrentSourceBundleSha256(
-			sourceTestPaths,
-			sourceRepositoryRoot
-		);
-	} else {
-		sourceTestSha256 = DEFAULT_SOURCE_TEST_SHA256;
-	}
-
-	const closures = ( overrides.closures ?? [] ).map( ( closure ) => ( {
-		...closure,
-		reviews: closure.reviews.map( ( review ) =>
-			review.source_test_sha256 === DEFAULT_SOURCE_TEST_SHA256
-				? { ...review, source_test_sha256: sourceTestSha256 }
-				: review
-		),
-	} ) );
-
-	return {
-		schema_version: 2,
-		slice_id: 'fixture-slice',
-		wc_base_commit: '1'.repeat( 40 ),
-		verified_at_commit: currentCommit,
-		reference_contract_commit: '6dda1d4eb101f05c22f60882d67a22f75281ae45',
-		contract_ids: [ fixtureRow.case_id ],
-		targets: [
-			{
-				path: fixtureRow.target_path,
-				contract: fixtureRow.target_contract,
-			},
-		],
-		implementation_commits: [ '3'.repeat( 40 ) ],
-		verification: [
-			{
-				command: 'pnpm test:e2e:woopayments:controller',
-				exit_code: 0,
-				summary: 'controller checks passed',
-			},
-		],
-		reviews: [
-			{
-				role: 'spec',
-				verdict: 'APPROVE',
-				source_test_sha256: sourceTestSha256,
-				summary: 'contract preserved',
-			},
-			{
-				role: 'code',
-				verdict: 'APPROVE',
-				source_test_sha256: sourceTestSha256,
-				summary: 'implementation approved',
-			},
-		],
-		known_gaps: [],
-		deferral: null,
-		...overrides,
-		source_test_paths: sourceTestPaths,
-		source_test_sha256: sourceTestSha256,
-		closures,
-	};
-};
-
-const createRepositoryTemporaryDirectory = () => {
-	const temporaryDirectory = mkdtempSync(
-		join( binDirectory, '.contract-map-test-' )
-	);
-
-	temporaryDirectories.push( temporaryDirectory );
-	return temporaryDirectory;
-};
-
-const createKnownGapEvidence = ( reference = 'issue:known-gap' ) => ( {
-	id: 'WPNATIVE-GAP-0001',
-	owner: 'woocommerce-e2e',
-	reference,
-	fingerprint: {
-		error_name: 'Error',
-		message_pattern: '^Native contract remains unavailable\\.$',
-	},
-} );
-
-const createDecisionReadyDeferral = (
-	reference = 'issue:inventory-deferral'
-) => ( {
-	blocker: 'The required external authority is unavailable',
-	affected_scope: 'The selected WooPayments contract',
-	no_allowlisted_action_reason:
-		'No repository-local action can grant the external authority',
-	reference,
-	unlock_decision: 'Grant the required external account authority',
-	quarantine_status: 'No shared resource was allocated',
-} );
-
-const createUnlockSatisfaction = ( row, overrides = {} ) => ( {
-	contract_id: row.case_id,
-	unlock_decision: 'Grant the required external account authority',
-	satisfied_on: '2026-08-03',
-	reference: `redacted:calibration:sha256:${ 'a'.repeat( 64 ) }`,
-	...overrides,
-} );
-
-const createEvidenceFile = (
-	row,
-	overrides = {},
-	sourceRepositoryRoot = repositoryRoot
-) => {
-	const temporaryDirectory =
-		sourceRepositoryRoot === repositoryRoot
-			? createRepositoryTemporaryDirectory()
-			: mkdtempSync(
-					join( sourceRepositoryRoot, '.contract-map-test-' )
-			  );
-	const evidencePath = join( temporaryDirectory, 'evidence.json' );
-	const stateOverrides = {};
-
-	if ( row.migration_state === 'deferred' ) {
-		stateOverrides.implementation_commits = [];
-		stateOverrides.verification = [];
-		stateOverrides.deferral = createDecisionReadyDeferral(
-			row.gap_or_decision_reference
-		);
-	}
-	if ( row.native_support_state === 'known-gap' ) {
-		stateOverrides.known_gaps = [
-			createKnownGapEvidence( row.gap_or_decision_reference ),
-		];
-	}
-
-	writeFileSync(
-		evidencePath,
-		`${ JSON.stringify(
-			createValidEvidence(
-				row,
-				{
-					...stateOverrides,
-					...overrides,
-				},
-				sourceRepositoryRoot
-			),
-			null,
-			2
-		) }\n`
-	);
-
-	return repositoryRelativePathFromRoot( evidencePath, sourceRepositoryRoot );
-};
-
-const createDeferredReopenScenario = ( { shared = false } = {} ) => {
-	const currentMap = cloneContractMap();
-	const previousMap = cloneContractMap();
-	const currentRows = currentMap.rows
-		.filter(
-			( row ) =>
-				row.migration_state === 'deferred' &&
-				row.planned_disposition ===
-					'Run unchanged against both runtimes'
-		)
-		.slice( 0, shared ? 2 : 1 );
-	const previousRows = currentRows.map( ( currentRow ) =>
-		previousMap.rows.find( ( row ) => row.case_id === currentRow.case_id )
-	);
-	const deferralReference = 'blocked-external:fixture-authority';
-
-	for ( const row of [ ...currentRows, ...previousRows ] ) {
-		row.migration_state = 'deferred';
-		row.native_support_state = 'blocked-external';
-		row.gap_or_decision_reference = deferralReference;
-	}
-
-	const evidence = createValidEvidence( previousRows[ 0 ], {
-		contract_ids: previousRows.map( ( row ) => row.case_id ),
-		targets: previousRows.map( ( row ) => ( {
-			path: row.target_path,
-			contract: row.target_contract,
-		} ) ),
-		implementation_commits: [],
-		verification: [],
-		deferral: createDecisionReadyDeferral( deferralReference ),
-	} );
-	const evidencePath = createEvidenceFile( previousRows[ 0 ], evidence );
-
-	for ( const row of [ ...currentRows, ...previousRows ] ) {
-		row.evidence_path = evidencePath;
-	}
-
-	return {
-		currentMap,
-		previousMap,
-		currentRows,
-		previousRows,
-		evidencePath,
-		previousEvidence: evidence,
-	};
-};
-
-const writeCurrentReopenEvidence = ( scenario, evidence ) => {
-	writeFileSync(
-		resolve( repositoryRoot, scenario.evidencePath ),
-		`${ JSON.stringify( evidence, null, 2 ) }\n`
-	);
-};
-
-const runDeferredReopenScenario = ( scenario, overrides = {} ) =>
-	runCli( [ '--from-git-ref', 'moving-ref' ], {
-		ledgerContent: serializeContractMap( scenario.currentMap ),
-		metadata,
-		repositoryRoot,
-		resolveGitRef: ( gitRef ) => {
-			assert.equal( gitRef, 'moving-ref' );
-			return 'f'.repeat( 40 );
-		},
-		loadFromGitRef: ( gitRef, repositoryPath ) => {
-			assert.equal(
-				[ 'moving-ref', 'f'.repeat( 40 ) ].includes( gitRef ),
-				true
-			);
-			if ( repositoryPath === scenario.evidencePath ) {
-				return `${ JSON.stringify(
-					scenario.previousEvidence,
-					null,
-					2
-				) }\n`;
-			}
-			if (
-				repositoryPath === calibrationNotesRepositoryPath &&
-				scenario.previousCalibrationNotesContent !== undefined
-			) {
-				return scenario.previousCalibrationNotesContent;
-			}
-
-			if (
-				repositoryPath ===
-				'plugins/woocommerce/tests/e2e/tests/woopayments-native/client-contract-map.tsv'
-			) {
-				return serializeContractMap( scenario.previousMap );
-			}
-
-			return readFileSync(
-				resolve( repositoryRoot, repositoryPath ),
-				'utf8'
-			);
-		},
-		readCurrentFile: ( repositoryPath ) =>
-			readFileSync( resolve( repositoryRoot, repositoryPath ), 'utf8' ),
-		log: () => {},
-		...overrides,
-	} );
-
-const createExternalTemporaryFile = () => {
-	const temporaryDirectory = mkdtempSync(
-		join( tmpdir(), 'woocommerce-contract-map-' )
-	);
-	const filePath = join( temporaryDirectory, 'external-evidence.txt' );
-
-	externalTemporaryDirectories.push( temporaryDirectory );
-	writeFileSync( filePath, 'external contract evidence\n' );
-	return filePath;
-};
-
-const createTemporaryGitRepository = () => {
-	const temporaryDirectory = mkdtempSync(
-		join( tmpdir(), 'woocommerce-contract-map-' )
-	);
-
-	externalTemporaryDirectories.push( temporaryDirectory );
-	execFileSync( 'git', [ '-C', temporaryDirectory, 'init', '--quiet' ] );
-	return temporaryDirectory;
-};
-
-const createTrackedClosureRepository = ( files ) => {
-	const sourceRepositoryRoot = createTemporaryGitRepository();
-
-	for ( const [ repositoryPath, source ] of Object.entries( files ) ) {
-		const absolutePath = resolve( sourceRepositoryRoot, repositoryPath );
-		mkdirSync( dirname( absolutePath ), { recursive: true } );
-		writeFileSync( absolutePath, source );
-	}
-
-	execFileSync( 'git', [ '-C', sourceRepositoryRoot, 'add', '--all' ] );
-	return sourceRepositoryRoot;
-};
-
-const createMissingTargetFile = ( repositoryPath ) => {
-	const absolutePath = resolve( repositoryRoot, repositoryPath );
-
-	if ( existsSync( absolutePath ) ) {
-		return;
-	}
-
-	const missingDirectories = [];
-	let directory = dirname( absolutePath );
-
-	while ( ! existsSync( directory ) ) {
-		assert.equal(
-			directory.startsWith( `${ repositoryRoot }${ pathSeparator }` ),
-			true
-		);
-		missingDirectories.push( directory );
-		directory = dirname( directory );
-	}
-
-	mkdirSync( dirname( absolutePath ), { recursive: true } );
-	for ( const missingDirectory of missingDirectories ) {
-		temporaryTargetDirectories.add( missingDirectory );
-	}
-
-	writeFileSync( absolutePath, '// Contract-map test fixture.\n' );
-	temporaryFiles.push( absolutePath );
-};
-
-const validate = ( map, options = {} ) =>
-	validateContractMap( map, {
-		metadata,
-		repositoryRoot,
-		...options,
-	} );
-
-// A row whose accepted disposition already departs from the planned one under
-// an explicit human approval (a family-smoke acceptance) must keep both fields:
-// resetting acceptance to the planned disposition would clash with the row's
-// retained-plus-future target_path, and dropping the reference would strip the
-// approval the departure requires.
-const hasHumanApprovedAcceptance = ( row ) =>
-	row.accepted_disposition !== 'pending' &&
-	row.accepted_disposition !== row.planned_disposition &&
-	row.gap_or_decision_reference.startsWith( 'human-approved:' );
-
-const specify = ( row ) => {
-	if ( ! hasHumanApprovedAcceptance( row ) ) {
-		row.accepted_disposition = row.planned_disposition;
-		row.gap_or_decision_reference = 'none';
-	}
-	row.target_contract = `Native contract for ${ row.case_id }`;
-	row.implementation_owner = 'woocommerce-e2e';
-	row.migration_state = 'specified';
-	row.native_support_state = 'not-assessed';
-	row.evidence_path = 'none';
-};
-
-const specifyRefundValidationRows = ( map, targetPath ) =>
-	refundValidationCaseIds.map( ( caseId ) => {
-		const row = map.rows.find(
-			( candidate ) => candidate.case_id === caseId
-		);
-
-		assert.notEqual( row, undefined );
-		specify( row );
-		row.target_path = targetPath;
-		return row;
-	} );
-
-test( 'accepts the corrected AJAX lower-layer target for the six refund-validation contracts', () => {
-	const map = cloneContractMap();
-
-	specifyRefundValidationRows(
-		map,
-		`${ correctedRefundLowerLayerTarget };${ refundValidationSmokeTarget }`
-	);
-
-	assert.doesNotThrow( () => validate( map ) );
-} );
-
-test( 'counts the corrected refund target as lower-layer evidence rather than a future smoke', () => {
-	const map = cloneContractMap();
-	const row = map.rows.find(
-		( candidate ) => candidate.case_id === refundValidationCaseIds[ 0 ]
-	);
-
-	assert.notEqual( row, undefined );
-	const [ sourceNamedLowerLayerTarget ] =
-		row.native_lower_layer_context.split( ';' );
-	specify( row );
-	row.target_path = `${ sourceNamedLowerLayerTarget };${ correctedRefundLowerLayerTarget }`;
-
-	assert.throws(
-		() => validate( map ),
-		new RegExp(
-			`Lower-layer disposition requires retained evidence and a future E2E smoke target for ${ row.case_id }`
-		)
-	);
-} );
-
-test( 'counts the refund-validation E2E target as a future smoke rather than lower-layer evidence', () => {
-	const map = cloneContractMap();
-	const row = map.rows.find(
-		( candidate ) => candidate.case_id === refundValidationCaseIds[ 0 ]
-	);
-
-	assert.notEqual( row, undefined );
-	const [ sourceNamedLowerLayerTarget ] =
-		row.native_lower_layer_context.split( ';' );
-	specify( row );
-	row.target_path = `${ sourceNamedLowerLayerTarget };${ refundValidationSmokeTarget }`;
-
-	assert.doesNotThrow( () => validate( map ) );
-} );
-
-test( 'rejects the corrected refund lower-layer target for an unrelated contract', () => {
-	const map = cloneContractMap();
-	const row = map.rows.find(
-		( candidate ) =>
-			candidate.planned_disposition ===
-				'Cover at a lower layer plus a smaller E2E smoke test' &&
-			! refundValidationCaseIds.includes( candidate.case_id )
-	);
-
-	assert.notEqual( row, undefined );
-	specify( row );
-	row.target_path = `${ correctedRefundLowerLayerTarget };${ refundValidationSmokeTarget }`;
-
-	assert.throws(
-		() => validate( map ),
-		/target_path is neither an approved future target nor .*lower-layer evidence/
-	);
-} );
-
-test( 'rejects an arbitrary replacement lower-layer target for a refund-validation contract', () => {
-	const map = cloneContractMap();
-	const arbitraryLowerLayerTarget =
-		'plugins/woocommerce/tests/php/includes/class-wc-cart-test.php';
-	const [ row ] = specifyRefundValidationRows(
-		map,
-		`${ arbitraryLowerLayerTarget };${ refundValidationSmokeTarget }`
-	);
-
-	assert.throws(
-		() => validate( map ),
-		new RegExp(
-			`target_path is neither an approved future target nor .*lower-layer evidence for ${ row.case_id }`
-		)
-	);
-} );
-
-test( 'still requires a future E2E smoke with the corrected refund lower-layer target', () => {
-	const map = cloneContractMap();
-	const [ row ] = specifyRefundValidationRows(
-		map,
-		correctedRefundLowerLayerTarget
-	);
-
-	assert.throws(
-		() => validate( map ),
-		new RegExp(
-			`Lower-layer disposition requires retained evidence and a future E2E smoke target for ${ row.case_id }`
-		)
-	);
-} );
-
-test( 'still requires lower-layer evidence with the refund-validation E2E smoke target', () => {
-	const map = cloneContractMap();
-	const [ row ] = specifyRefundValidationRows(
-		map,
-		refundValidationSmokeTarget
-	);
-
-	assert.throws(
-		() => validate( map ),
-		new RegExp(
-			`Lower-layer disposition requires retained evidence and a future E2E smoke target for ${ row.case_id }`
-		)
-	);
-} );
-
-const close = (
-	row,
-	sourceRepositoryRoot = repositoryRoot,
-	closureOverrides = {}
-) => {
-	specify( row );
-	row.migration_state = 'closed';
-	row.native_support_state = 'supported';
-	if ( ! hasHumanApprovedAcceptance( row ) ) {
-		row.gap_or_decision_reference = 'none';
-	}
-	row.evidence_path = createEvidenceFile(
-		row,
-		{
-			closures: [ createClosureEntry( row, closureOverrides ) ],
-		},
-		sourceRepositoryRoot
-	);
-};
-
-const validateFidelityClaimCitation = (
-	partitionRows,
-	fidelityClaim = 'manual-authorization-capture'
-) => {
-	const map = cloneContractMap();
-	const row = map.rows.find(
-		( candidate ) => candidate.case_id === fidelityClaimCaseId
-	);
-
-	assert.notEqual( row, undefined );
-	createMissingTargetFile( row.target_path );
-	close( row, repositoryRoot, { fidelity_claim: fidelityClaim } );
-
-	return runCli( [], {
-		ledgerContent: serializeContractMap( map ),
-		metadata,
-		repositoryRoot,
-		readFidelityPartition: ( repositoryPath ) => {
-			assert.equal( repositoryPath, fidelityPartitionRepositoryPath );
-			return serializeFidelityPartition( partitionRows );
-		},
-		log: () => {},
-	} );
-};
-
-const createFidelityPartitionRow = ( overrides = {} ) => ( {
-	case_id: fidelityClaimCaseId,
-	treatment: 'fidelity',
-	fidelity_family: 'manual-authorization-capture',
-	condition_2_verdict: 'dischargeable',
-	...overrides,
-} );
-
-test( 'accepts a closure citing its dischargeable fidelity family', () => {
-	assert.doesNotThrow( () =>
-		validateFidelityClaimCitation( [ createFidelityPartitionRow() ] )
-	);
-} );
-
-test( 'rejects a closure citing a different fidelity family', () => {
-	assert.throws(
-		() =>
-			validateFidelityClaimCitation(
-				[ createFidelityPartitionRow() ],
-				'card-decline-vocabulary'
-			),
-		/fidelity_family is manual-authorization-capture, not cited card-decline-vocabulary/
-	);
-} );
-
-for ( const [ description, partitionOverrides, expectedError ] of [
-	[
-		'a conventional partition row',
-		{
-			treatment: 'conventional',
-			fidelity_family: 'conventional',
-			condition_2_verdict: 'not-applicable',
-		},
-		/requires treatment fidelity; found conventional/,
-	],
-	[
-		'a not-dischargeable partition row',
-		{ condition_2_verdict: 'not-dischargeable' },
-		/requires condition_2_verdict dischargeable; found not-dischargeable/,
-	],
-] ) {
-	test( `rejects a fidelity citation for ${ description }`, () => {
-		assert.throws(
-			() =>
-				validateFidelityClaimCitation( [
-					createFidelityPartitionRow( partitionOverrides ),
-				] ),
-			expectedError
-		);
-	} );
-}
-
-test( 'rejects a fidelity citation missing from the partition', () => {
-	assert.throws(
-		() =>
-			validateFidelityClaimCitation( [
-				createFidelityPartitionRow( {
-					case_id: 'a-different-contract-id',
-				} ),
-			] ),
-		/exactly one matching case_id; found 0/
-	);
-} );
-
-test( 'rejects a fidelity citation duplicated in the partition', () => {
-	const partitionRow = createFidelityPartitionRow();
-
-	assert.throws(
-		() => validateFidelityClaimCitation( [ partitionRow, partitionRow ] ),
-		/exactly one matching case_id; found 2/
-	);
-} );
-
-test( 'keeps closures without a fidelity citation backward compatible', () => {
-	assert.doesNotThrow( () =>
-		runCli( [], {
-			ledgerContent,
-			metadata,
-			repositoryRoot,
-			readFidelityPartition: () => {
-				throw new Error(
-					'The partition must not be read without a citation'
-				);
-			},
-			log: () => {},
-		} )
-	);
-} );
-
 const retirementDisposition =
 	'Retire because the test is stale, redundant, or guards only obsolete plugin structure';
-
-const findRetirementRow = ( map ) =>
-	map.rows.find(
-		( candidate ) => candidate.planned_disposition === retirementDisposition
-	);
-
-const createRetirementEntry = ( row, overrides = {} ) => ( {
-	contract_id: row.case_id,
-	retained_contract_id: `retained::${ row.case_id }`,
-	approver: 'human-approved:retirement-review',
-	rationale: 'Duplicate of the retained contract; nothing is migrated.',
-	...overrides,
-} );
-
-// Retire a row without manufacturing closure reviews: a retirement discharges a contract by naming the
-// retained contract that already carries it, so there is no reviewed source bundle to attest.
-const retire = (
-	row,
-	retirementOverrides = {},
-	sourceRepositoryRoot = repositoryRoot
-) => {
-	specify( row );
-	row.migration_state = 'closed';
-	row.native_support_state = 'not-applicable-retired';
-	row.gap_or_decision_reference = 'human-approved:retirement-review';
-	row.evidence_path = createEvidenceFile(
-		row,
-		{
-			closures: [],
-			retirements: [ createRetirementEntry( row, retirementOverrides ) ],
-		},
-		sourceRepositoryRoot
-	);
-};
-
-const closeInventory = ( map ) => {
-	const sourceRepositoryRoot = createTemporaryGitRepository();
-
-	for ( const row of map.rows ) {
-		for ( const repositoryPath of [
-			...row.target_path.split( ';' ),
-			...row.native_owner_paths.split( ';' ),
-			...row.native_lower_layer_context.split( ';' ),
-		] ) {
-			const absolutePath = resolve(
-				sourceRepositoryRoot,
-				repositoryPath
-			);
-			mkdirSync( dirname( absolutePath ), { recursive: true } );
-			if ( ! existsSync( absolutePath ) ) {
-				writeFileSync( absolutePath, '// Empty source fixture.\n' );
-			}
-		}
-	}
-
-	execFileSync( 'git', [ '-C', sourceRepositoryRoot, 'add', '--all' ] );
-
-	for ( const row of map.rows ) {
-		// The validator decides retirement from the accepted disposition, so
-		// this has to as well: a row planned as one thing and accepted as a
-		// retirement is closed by naming a retained contract, not by
-		// manufacturing a supported closure it can never satisfy.
-		const effectiveDisposition =
-			row.accepted_disposition === 'pending'
-				? row.planned_disposition
-				: row.accepted_disposition;
-
-		if ( effectiveDisposition === retirementDisposition ) {
-			retire(
-				row,
-				{ approver: 'human-approved:inventory-retirement-review' },
-				sourceRepositoryRoot
-			);
-			row.gap_or_decision_reference =
-				'human-approved:inventory-retirement-review';
-			continue;
-		}
-
-		close( row, sourceRepositoryRoot );
-	}
-
-	execFileSync( 'git', [ '-C', sourceRepositoryRoot, 'add', '--all' ] );
-	return sourceRepositoryRoot;
-};
+// Real, tracked files in this repository; closures may point at them without
+// creating fixtures.
+const trackedSpecTarget =
+	'plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/settings-methods.spec.ts';
+const trackedPhpTarget =
+	'plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsTokenServiceTest.php';
+const trackedEvidencePointer =
+	'plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/pilot-calibration.json';
+const temporaryDirectories = [];
+const externalTemporaryDirectories = [];
 
 afterEach( () => {
 	for ( const temporaryDirectory of temporaryDirectories.splice( 0 ) ) {
@@ -994,3325 +77,158 @@ afterEach( () => {
 		);
 		rmSync( temporaryDirectory, { recursive: true, force: true } );
 	}
+} );
 
-	for ( const temporaryFile of temporaryFiles.splice( 0 ) ) {
-		if ( existsSync( temporaryFile ) ) {
-			unlinkSync( temporaryFile );
-		}
+const cloneContractMap = ( source = contractMap ) => ( {
+	headers: [ ...source.headers ],
+	rows: source.rows.map( ( row ) => ( { ...row } ) ),
+} );
+
+const serializeContractMap = ( map ) =>
+	[
+		map.headers,
+		...map.rows.map( ( row ) =>
+			map.headers.map( ( header ) => row[ header ] )
+		),
+	]
+		.map( ( values ) => values.join( '\t' ) )
+		.join( '\n' ) + '\n';
+
+const serializeFidelityPartition = ( rows ) =>
+	[
+		fidelityPartitionHeaders,
+		...rows.map( ( row ) =>
+			fidelityPartitionHeaders.map( ( header ) => row[ header ] )
+		),
+	]
+		.map( ( values ) => values.join( '\t' ) )
+		.join( '\n' ) + '\n';
+
+const repositoryRelativePath = ( absolutePath ) =>
+	relative( repositoryRoot, absolutePath ).split( pathSeparator ).join( '/' );
+
+// Fixtures for untracked-file checks live inside the repository working tree
+// but never enter the Git index.
+const createRepositoryTemporaryDirectory = () => {
+	const temporaryDirectory = mkdtempSync(
+		join( binDirectory, '.contract-map-test-' )
+	);
+
+	temporaryDirectories.push( temporaryDirectory );
+	return temporaryDirectory;
+};
+
+const createTemporaryGitRepository = () => {
+	const temporaryDirectory = mkdtempSync(
+		join( tmpdir(), 'woocommerce-contract-map-' )
+	);
+
+	externalTemporaryDirectories.push( temporaryDirectory );
+	execFileSync( 'git', [ '-C', temporaryDirectory, 'init', '--quiet' ] );
+	return temporaryDirectory;
+};
+
+const createTrackedFileRepository = ( files ) => {
+	const sourceRepositoryRoot = createTemporaryGitRepository();
+
+	for ( const [ filePath, source ] of Object.entries( files ) ) {
+		const absolutePath = resolve( sourceRepositoryRoot, filePath );
+
+		mkdirSync( dirname( absolutePath ), { recursive: true } );
+		writeFileSync( absolutePath, source );
 	}
 
-	const targetDirectories = [ ...temporaryTargetDirectories ].toSorted(
-		( first, second ) => second.length - first.length
-	);
-	temporaryTargetDirectories.clear();
-	for ( const temporaryDirectory of targetDirectories ) {
-		if ( existsSync( temporaryDirectory ) ) {
-			rmdirSync( temporaryDirectory );
-		}
-	}
-} );
-
-test( 'bundle coverage detects side-effect and double-quoted static imports', () => {
-	const sourceRepositoryRoot = createTrackedClosureRepository( {
-		'sample.spec.ts':
-			'import \'./side-effect\';\nimport { behavior } from "./behavior";\nexport const use = behavior;\n',
-		'side-effect.ts': 'export const sideEffect = true;\n',
-		'behavior.ts': 'export const behavior = true;\n',
-	} );
-	const row = { ...contractMap.rows[ 0 ] };
-	specify( row );
-	row.migration_state = 'closed';
-	row.native_support_state = 'supported';
-	row.target_path = 'sample.spec.ts';
-
-	assert.throws(
-		() =>
-			assertClosureBundleCoverage(
-				row,
-				{ source_test_paths: [ row.target_path ] },
-				sourceRepositoryRoot
-			),
-		/bundle must attest every behavior module/
-	);
-	assert.doesNotThrow( () =>
-		assertClosureBundleCoverage(
-			row,
-			{
-				source_test_paths: [
-					row.target_path,
-					'side-effect.ts',
-					'behavior.ts',
-				],
-			},
-			sourceRepositoryRoot
-		)
-	);
-} );
-
-test( 'bundle coverage resolves TSX modules and directory indexes', () => {
-	const sourceRepositoryRoot = createTrackedClosureRepository( {
-		'sample.spec.ts':
-			"export { direct } from './direct';\nexport { indexedTs } from './indexed-ts';\nexport { indexedTsx } from './indexed-tsx';\nexport { indexedMjs } from './indexed-mjs';\n",
-		'direct.tsx': 'export const direct = true;\n',
-		'indexed-ts/index.ts': 'export const indexedTs = true;\n',
-		'indexed-tsx/index.tsx': 'export const indexedTsx = true;\n',
-		'indexed-mjs/index.mjs': 'export const indexedMjs = true;\n',
-	} );
-	const row = { ...contractMap.rows[ 0 ] };
-	specify( row );
-	row.migration_state = 'closed';
-	row.native_support_state = 'supported';
-	row.target_path = 'sample.spec.ts';
-
-	assert.throws(
-		() =>
-			assertClosureBundleCoverage(
-				row,
-				{ source_test_paths: [ row.target_path ] },
-				sourceRepositoryRoot
-			),
-		/bundle must attest every behavior module/
-	);
-	assert.doesNotThrow( () =>
-		assertClosureBundleCoverage(
-			row,
-			{
-				source_test_paths: [
-					row.target_path,
-					'direct.tsx',
-					'indexed-ts/index.ts',
-					'indexed-tsx/index.tsx',
-					'indexed-mjs/index.mjs',
-				],
-			},
-			sourceRepositoryRoot
-		)
-	);
-} );
-
-test( 'bundle coverage resolves extensionless JavaScript modules and directory indexes', () => {
-	const sourceRepositoryRoot = createTrackedClosureRepository( {
-		'sample.spec.js':
-			"export { directJs } from './direct-js';\nexport { directJsx } from './direct-jsx';\nexport { indexedJs } from './indexed-js';\nexport { indexedJsx } from './indexed-jsx';\n",
-		'direct-js.js': 'export const directJs = true;\n',
-		'direct-jsx.jsx': 'export const directJsx = true;\n',
-		'indexed-js/index.js': 'export const indexedJs = true;\n',
-		'indexed-jsx/index.jsx': 'export const indexedJsx = true;\n',
-	} );
-	const row = { ...contractMap.rows[ 0 ] };
-	specify( row );
-	row.migration_state = 'closed';
-	row.native_support_state = 'supported';
-	row.target_path = 'sample.spec.js';
-
-	assert.deepEqual(
-		collectClosureBundlePaths( row, sourceRepositoryRoot ).toSorted(),
-		[
-			row.target_path,
-			'direct-js.js',
-			'direct-jsx.jsx',
-			'indexed-js/index.js',
-			'indexed-jsx/index.jsx',
-		].toSorted()
-	);
-} );
-
-test( 'closure collection follows a real ledger JavaScript target dependency', () => {
-	const targetPath =
-		'plugins/woocommerce/client/blocks/assets/js/blocks/multi-currency-switcher/test/index.js';
-	const ledgerRow = contractMap.rows.find( ( row ) =>
-		row.target_path.split( ';' ).includes( targetPath )
-	);
-	assert.notEqual( ledgerRow, undefined );
-	const row = { ...ledgerRow, target_path: targetPath };
-	const requiredPaths = collectClosureBundlePaths( row, repositoryRoot );
-
-	assert.equal( requiredPaths.includes( targetPath ), true );
-	assert.equal(
-		requiredPaths.includes(
-			'plugins/woocommerce/client/blocks/assets/js/blocks/multi-currency-switcher/index.js'
-		),
-		true
-	);
-	assert.equal(
-		requiredPaths.includes(
-			'plugins/woocommerce/client/blocks/assets/js/blocks/multi-currency-switcher/block.js'
-		),
-		true
-	);
-} );
-
-test( 'bundle coverage includes literal dynamic import and CommonJS dependencies', () => {
-	const sourceRepositoryRoot = createTrackedClosureRepository( {
-		'sample.spec.ts':
-			"export const load = () => import('./dynamic');\nexport const loadCommonJs = () => require(`./commonjs`);\nexport const loadParenthesized = () => ((require))('./parenthesized');\nexport const loadAsExpression = () => (require as any)('./as-expression');\nexport const loadNonNull = () => require!('./non-null');\nexport const loadSatisfies = () => (require satisfies any)('./satisfies');\n",
-		'dynamic.ts': 'export const dynamic = true;\n',
-		'commonjs.ts': 'export const commonjs = true;\n',
-		'parenthesized.ts': 'export const parenthesized = true;\n',
-		'as-expression.ts': 'export const asExpression = true;\n',
-		'non-null.ts': 'export const nonNull = true;\n',
-		'satisfies.ts': 'export const satisfies = true;\n',
-	} );
-	const row = { ...contractMap.rows[ 0 ] };
-	specify( row );
-	row.migration_state = 'closed';
-	row.native_support_state = 'supported';
-	row.target_path = 'sample.spec.ts';
-
-	assert.throws(
-		() =>
-			assertClosureBundleCoverage(
-				row,
-				{ source_test_paths: [ row.target_path ] },
-				sourceRepositoryRoot
-			),
-		/bundle must attest every behavior module.*dynamic\.ts.*commonjs\.ts.*parenthesized\.ts.*as-expression\.ts.*non-null\.ts.*satisfies\.ts/
-	);
-	assert.doesNotThrow( () =>
-		assertClosureBundleCoverage(
-			row,
-			{
-				source_test_paths: [
-					row.target_path,
-					'dynamic.ts',
-					'commonjs.ts',
-					'parenthesized.ts',
-					'as-expression.ts',
-					'non-null.ts',
-					'satisfies.ts',
-				],
-			},
-			sourceRepositoryRoot
-		)
-	);
-} );
-
-test( 'bundle coverage includes TypeScript import-equals dependencies', () => {
-	const sourceRepositoryRoot = createTrackedClosureRepository( {
-		'sample.spec.ts':
-			"import behavior = require('./behavior');\nexport { behavior };\n",
-		'behavior.ts': 'export const behavior = true;\n',
-	} );
-	const row = { ...contractMap.rows[ 0 ] };
-	specify( row );
-	row.migration_state = 'closed';
-	row.native_support_state = 'supported';
-	row.target_path = 'sample.spec.ts';
-
-	assert.throws(
-		() =>
-			assertClosureBundleCoverage(
-				row,
-				{ source_test_paths: [ row.target_path ] },
-				sourceRepositoryRoot
-			),
-		/bundle must attest every behavior module.*behavior\.ts/
-	);
-	assert.doesNotThrow( () =>
-		assertClosureBundleCoverage(
-			row,
-			{ source_test_paths: [ row.target_path, 'behavior.ts' ] },
-			sourceRepositoryRoot
-		)
-	);
-} );
-
-test( 'bundle coverage ignores imports inside comments', () => {
-	const sourceRepositoryRoot = createTrackedClosureRepository( {
-		'sample.spec.ts':
-			"/*\nimport { commented } from './commented';\nimport('./dynamic-comment');\nrequire('./commonjs-comment');\n*/\nexport const use = true;\n",
-	} );
-	const row = { ...contractMap.rows[ 0 ] };
-	specify( row );
-	row.migration_state = 'closed';
-	row.native_support_state = 'supported';
-	row.target_path = 'sample.spec.ts';
-
-	assert.doesNotThrow( () =>
-		assertClosureBundleCoverage(
-			row,
-			{ source_test_paths: [ row.target_path ] },
-			sourceRepositoryRoot
-		)
-	);
-} );
-
-for ( const [ dependencyForm, source ] of [
-	[ 'dynamic import', 'const path = "./dynamic";\nimport(path);\n' ],
-	[
-		'parenthesized CommonJS require',
-		'const path = "./commonjs";\n((require))(path);\n',
-	],
-	[
-		'as-expression CommonJS require',
-		'const path = "./commonjs";\n(require as any)(path);\n',
-	],
-	[
-		'non-null CommonJS require',
-		'const path = "./commonjs";\nrequire!(path);\n',
-	],
-	[
-		'satisfies CommonJS require',
-		'const path = "./commonjs";\n(require satisfies any)(path);\n',
-	],
-	[
-		'TypeScript import-equals',
-		'const path = "./behavior";\nimport behavior = require(path);\n',
-	],
-] ) {
-	test( `bundle coverage rejects non-literal ${ dependencyForm } dependencies`, () => {
-		const sourceRepositoryRoot = createTrackedClosureRepository( {
-			'sample.spec.ts': source,
-		} );
-		const row = { ...contractMap.rows[ 0 ] };
-		specify( row );
-		row.migration_state = 'closed';
-		row.native_support_state = 'supported';
-		row.target_path = 'sample.spec.ts';
-
-		assert.throws(
-			() => collectClosureBundlePaths( row, sourceRepositoryRoot ),
-			/non-literal dynamic dependency.*sample\.spec\.ts/
-		);
-	} );
-}
-
-test( 'bundle coverage rejects an import that escapes into an infrastructure-looking path', () => {
-	const sourceRepositoryRoot = createTrackedClosureRepository( {
-		'sample.spec.ts': 'export const use = true;\n',
-	} );
-	const externalDirectory = mkdtempSync(
-		join( tmpdir(), 'woocommerce-contract-map-outside-' )
-	);
-	externalTemporaryDirectories.push( externalDirectory );
-	const externalPath = join(
-		externalDirectory,
-		'tests/e2e/fixtures/behavior.ts'
-	);
-	mkdirSync( dirname( externalPath ), { recursive: true } );
-	writeFileSync( externalPath, 'export const behavior = true;\n' );
-	const specPath = resolve( sourceRepositoryRoot, 'sample.spec.ts' );
-	const externalSpecifier = relativeModuleSpecifier( specPath, externalPath );
-	writeFileSync(
-		specPath,
-		`import { behavior } from '${ externalSpecifier }';\nexport const use = behavior;\n`
-	);
-	const row = { ...contractMap.rows[ 0 ] };
-	specify( row );
-	row.migration_state = 'closed';
-	row.native_support_state = 'supported';
-	row.target_path = 'sample.spec.ts';
-
-	assert.throws(
-		() =>
-			assertClosureBundleCoverage(
-				row,
-				{ source_test_paths: [ row.target_path ] },
-				sourceRepositoryRoot
-			),
-		/bundle must attest every behavior module.*tracked regular repository file/
-	);
-} );
-
-test( 'bundle coverage rejects a symlinked infrastructure module', () => {
-	const sourceRepositoryRoot = createTrackedClosureRepository( {
-		'sample.spec.ts':
-			"import { behavior } from './plugins/woocommerce/tests/e2e/fixtures/behavior';\nexport const use = behavior;\n",
-		'behavior.ts': 'export const behavior = true;\n',
-	} );
-	const symlinkPath = resolve(
-		sourceRepositoryRoot,
-		'plugins/woocommerce/tests/e2e/fixtures/behavior.ts'
-	);
-	mkdirSync( dirname( symlinkPath ), { recursive: true } );
-	symlinkSync( resolve( sourceRepositoryRoot, 'behavior.ts' ), symlinkPath );
 	execFileSync( 'git', [ '-C', sourceRepositoryRoot, 'add', '--all' ] );
-	const row = { ...contractMap.rows[ 0 ] };
-	specify( row );
-	row.migration_state = 'closed';
-	row.native_support_state = 'supported';
-	row.target_path = 'sample.spec.ts';
+	return sourceRepositoryRoot;
+};
 
-	assert.throws(
-		() =>
-			assertClosureBundleCoverage(
-				row,
-				{ source_test_paths: [ row.target_path ] },
-				sourceRepositoryRoot
-			),
-		/bundle must attest every behavior module.*without symlinks/
-	);
-} );
-
-test( 'bundle coverage rejects unresolved relative imports', () => {
-	const sourceRepositoryRoot = createTrackedClosureRepository( {
-		'sample.spec.ts':
-			"import { behavior } from './missing';\nexport const use = behavior;\n",
-	} );
-	const row = { ...contractMap.rows[ 0 ] };
-	specify( row );
-	row.migration_state = 'closed';
-	row.native_support_state = 'supported';
-	row.target_path = 'sample.spec.ts';
-
-	assert.throws(
-		() =>
-			assertClosureBundleCoverage(
-				row,
-				{ source_test_paths: [ row.target_path ] },
-				sourceRepositoryRoot
-			),
-		/bundle must attest every behavior module.*unresolved relative import/
-	);
-} );
-
-test( 'bundle coverage rejects an untracked relative import', () => {
-	const sourceRepositoryRoot = createTrackedClosureRepository( {
-		'sample.spec.ts':
-			"import { behavior } from './behavior';\nexport const use = behavior;\n",
-	} );
-	writeFileSync(
-		resolve( sourceRepositoryRoot, 'behavior.ts' ),
-		'export const behavior = true;\n'
-	);
-	const row = { ...contractMap.rows[ 0 ] };
-	specify( row );
-	row.migration_state = 'closed';
-	row.native_support_state = 'supported';
-	row.target_path = 'sample.spec.ts';
-
-	assert.throws(
-		() =>
-			assertClosureBundleCoverage(
-				row,
-				{ source_test_paths: [ row.target_path ] },
-				sourceRepositoryRoot
-			),
-		/bundle must attest every behavior module.*tracked regular repository file/
-	);
-} );
-
-test( 'a terminal row evidence bundle must cover the transitive spec import closure', () => {
-	const sourceRepositoryRoot = createTrackedClosureRepository( {
-		'sample.spec.ts':
-			"import { widget } from './drivers/widget';\nexport const use = widget;\n",
-		'drivers/widget.ts':
-			"export { helper } from './widget-helper';\nexport const widget = 1;\n",
-		'drivers/widget-helper.mjs':
-			"import { widget } from './widget';\nexport const helper = widget;\n",
-		'drivers/unused.ts': 'export const unused = true;\n',
-	} );
-	const specRepositoryPath = 'sample.spec.ts';
-	const driverRepositoryPath = 'drivers/widget.ts';
-	const helperRepositoryPath = 'drivers/widget-helper.mjs';
-	const unusedRepositoryPath = 'drivers/unused.ts';
-	const row = { ...contractMap.rows[ 0 ] };
-	specify( row );
-	row.migration_state = 'closed';
-	row.native_support_state = 'supported';
-	row.target_path = specRepositoryPath;
-
-	assert.throws(
-		() =>
-			assertClosureBundleCoverage(
-				row,
-				{ source_test_paths: [ specRepositoryPath ] },
-				sourceRepositoryRoot
-			),
-		new RegExp(
-			`bundle must attest every behavior module.*${ driverRepositoryPath }`
-		)
-	);
-	assert.throws(
-		() =>
-			assertClosureBundleCoverage(
-				row,
-				{
-					source_test_paths: [
-						specRepositoryPath,
-						driverRepositoryPath,
-					],
-				},
-				sourceRepositoryRoot
-			),
-		new RegExp(
-			`bundle must attest every behavior module.*${ helperRepositoryPath }`
-		)
-	);
-
-	assert.doesNotThrow( () =>
-		assertClosureBundleCoverage(
-			row,
-			{
-				source_test_paths: [
-					specRepositoryPath,
-					driverRepositoryPath,
-					helperRepositoryPath,
-					unusedRepositoryPath,
-				],
-			},
-			sourceRepositoryRoot
-		)
-	);
-} );
-
-test( 'bundle coverage traverses every trimmed multi-target segment', () => {
-	const sourceRepositoryRoot = createTrackedClosureRepository( {
-		'first.spec.ts':
-			"import { first } from './first-driver';\nexport const useFirst = first;\n",
-		'second.spec.ts':
-			"import { second } from './second-driver';\nexport const useSecond = second;\n",
-		'first-driver.ts': 'export const first = 1;\n',
-		'second-driver.mjs': 'export const second = 2;\n',
-	} );
-	const firstSpecRepositoryPath = 'first.spec.ts';
-	const secondSpecRepositoryPath = 'second.spec.ts';
-	const firstDriverRepositoryPath = 'first-driver.ts';
-	const secondDriverRepositoryPath = 'second-driver.mjs';
-	const row = { ...contractMap.rows[ 0 ] };
-	specify( row );
-	row.migration_state = 'verified';
-	row.native_support_state = 'supported';
-	row.target_path = `${ firstSpecRepositoryPath }; ${ secondSpecRepositoryPath }`;
-
-	assert.throws(
-		() =>
-			assertClosureBundleCoverage(
-				row,
-				{
-					source_test_paths: [
-						firstSpecRepositoryPath,
-						firstDriverRepositoryPath,
-						secondSpecRepositoryPath,
-					],
-				},
-				sourceRepositoryRoot
-			),
-		new RegExp(
-			`bundle must attest every behavior module.*${ secondDriverRepositoryPath }`
-		)
-	);
-
-	assert.doesNotThrow( () =>
-		assertClosureBundleCoverage(
-			row,
-			{
-				source_test_paths: [
-					firstSpecRepositoryPath,
-					firstDriverRepositoryPath,
-					secondSpecRepositoryPath,
-					secondDriverRepositoryPath,
-				],
-			},
-			sourceRepositoryRoot
-		)
-	);
-} );
-
-test( 'bundle coverage traversal stops at controller infrastructure modules', () => {
-	const infrastructurePaths = [
-		'plugins/woocommerce/tests/e2e/fixtures/woopayments-native.ts',
-		'plugins/woocommerce/tests/e2e/reporters/environment-reporter.ts',
-		'plugins/woocommerce/tests/e2e/test-data/data.ts',
-		'plugins/woocommerce/tests/e2e/utils/woopayments-native/resource-locks.ts',
-	];
-	const specPath = resolve( '/', 'infra.spec.ts' );
-	const imports = infrastructurePaths
-		.map( ( infrastructurePath, index ) => {
-			const absoluteInfrastructurePath = resolve(
-				'/',
-				infrastructurePath
-			);
-
-			return `import { value${ index } } from '${ relativeModuleSpecifier(
-				specPath,
-				absoluteInfrastructurePath
-			) }';`;
-		} )
-		.join( '\n' );
-	const sourceRepositoryRoot = createTrackedClosureRepository( {
-		'infra.spec.ts': `${ imports }\nexport const use = true;\n`,
-		...Object.fromEntries(
-			infrastructurePaths.map( ( infrastructurePath, index ) => [
-				infrastructurePath,
-				`export const value${ index } = true;\n`,
-			] )
-		),
-	} );
-	const specRepositoryPath = 'infra.spec.ts';
-	const row = { ...contractMap.rows[ 0 ] };
-	specify( row );
-	row.migration_state = 'closed';
-	row.native_support_state = 'supported';
-	row.target_path = specRepositoryPath;
-
-	assert.doesNotThrow( () =>
-		assertClosureBundleCoverage(
-			row,
-			{ source_test_paths: [ specRepositoryPath ] },
-			sourceRepositoryRoot
-		)
-	);
-} );
-
-test( 'bundle coverage attests infrastructure basename collisions with unlisted extensions', () => {
-	const behaviorPath =
-		'plugins/woocommerce/tests/e2e/utils/woopayments-native/known-gap.tsx';
-	const sourceRepositoryRoot = createTrackedClosureRepository( {
-		'sample.spec.ts':
-			"import { behavior } from './plugins/woocommerce/tests/e2e/utils/woopayments-native/known-gap';\nexport const use = behavior;\n",
-		[ behaviorPath ]: 'export const behavior = true;\n',
-	} );
-	const row = { ...contractMap.rows[ 0 ] };
-	specify( row );
-	row.migration_state = 'closed';
-	row.native_support_state = 'supported';
-	row.target_path = 'sample.spec.ts';
-
-	assert.throws(
-		() =>
-			assertClosureBundleCoverage(
-				row,
-				{ source_test_paths: [ row.target_path ] },
-				sourceRepositoryRoot
-			),
-		new RegExp(
-			`bundle must attest every behavior module.*${ behaviorPath }`
-		)
-	);
-	assert.doesNotThrow( () =>
-		assertClosureBundleCoverage(
-			row,
-			{ source_test_paths: [ row.target_path, behaviorPath ] },
-			sourceRepositoryRoot
-		)
-	);
-} );
-
-test( 'keeps normal parsing strict while adapting the historical ledger for transition checks', () => {
-	const legacyContent = serializeLegacyContractMap();
-
-	assert.throws(
-		() => parseContractMap( legacyContent ),
-		/Invalid contract-map schema; expected the exact 40 ordered columns/
-	);
-
-	const historicalContractMap = parseContractMap( legacyContent, {
-		allowLegacySchema: true,
-	} );
-
-	assert.equal( historicalContractMap.headers.length, 40 );
-	assert.equal(
-		historicalContractMap.rows[ 0 ].migration_state,
-		contractMap.rows[ 0 ].migration_state
-	);
-	assert.equal( historicalContractMap.rows[ 0 ].target_contract, 'pending' );
-} );
-
-test( 'CLI from-git-ref rejects an illegal transition in a changed row', () => {
-	const currentContractMap = cloneContractMap();
-	const previousContractMap = cloneContractMap();
-	resetToPlanned( currentContractMap.rows[ 0 ] );
-	const previousRow = resetToPlanned( previousContractMap.rows[ 0 ] );
-	let gitLoadCount = 0;
-
-	previousRow.migration_state = 'closed';
-
-	assert.throws(
-		() =>
-			runCli( [ '--from-git-ref', 'HEAD' ], {
-				ledgerContent: serializeContractMap( currentContractMap ),
-				metadata,
-				repositoryRoot,
-				loadFromGitRef: ( gitRef, repositoryPath ) => {
-					gitLoadCount++;
-					assert.equal( gitRef, currentCommit );
-					return repositoryPath ===
-						'plugins/woocommerce/tests/e2e/tests/woopayments-native/client-contract-map.tsv'
-						? serializeContractMap( previousContractMap )
-						: readFileSync(
-								resolve( repositoryRoot, repositoryPath ),
-								'utf8'
-						  );
-				},
-				log: () => {},
-			} ),
-		/Illegal migration transition: closed -> planned/
-	);
-	assert.equal( gitLoadCount, 1 );
-} );
-
-test( 'CLI from-git-ref HEAD runs git show and prints the real summary', () => {
-	const logLines = [];
-
-	const summary = runCli( [ '--from-git-ref', 'HEAD', '--summary' ], {
-		ledgerContent,
+const validate = ( map, options = {} ) =>
+	validateContractMap( map, {
 		metadata,
 		repositoryRoot,
-		log: ( line ) => logLines.push( line ),
+		...options,
 	} );
 
-	assert.equal( summary.rowCount, 181 );
-	assert.equal(
-		logLines[ 0 ],
-		'Validated 181 WooPayments client contracts.'
-	);
-	const summarizedMigrationStates = Object.entries(
-		summary.migrationStateCounts
-	)
-		.filter( ( [ , count ] ) => count > 0 )
-		.map(
-			( [ state, count ] ) => `${ count }\tmigration_state\t${ state }`
-		);
-	assert.equal(
-		summarizedMigrationStates.every( ( line ) =>
-			logLines.includes( line )
-		),
-		true
-	);
-	const summarizedNativeSupportStates = Object.entries(
-		summary.nativeSupportStateCounts
-	)
-		.filter( ( [ , count ] ) => count > 0 )
-		.map(
-			( [ state, count ] ) =>
-				`${ count }\tnative_support_state\t${ state }`
-		);
-	assert.equal(
-		summarizedNativeSupportStates.every( ( line ) =>
-			logLines.includes( line )
-		),
-		true
-	);
-	assert.equal(
-		logLines.includes(
-			'117\tExtract a shared scenario with thin runtime adapters'
-		),
-		true
-	);
-} );
-
-test( 'CLI history rejects returning to the planned disposition without fresh approval', () => {
-	const currentMap = cloneContractMap();
-	const previousMap = cloneContractMap();
-	const currentRow = currentMap.rows[ 0 ];
-	const previousRow = previousMap.rows[ 0 ];
-
-	specify( currentRow );
-	specify( previousRow );
-	previousRow.accepted_disposition =
-		'Retire because the test is stale, redundant, or guards only obsolete plugin structure';
-	previousRow.gap_or_decision_reference = 'human-approved:initial-retirement';
-
-	assert.throws(
-		() => runHistoryComparison( currentMap, previousMap ),
-		new RegExp(
-			`Disposition transition requires fresh human approval: ${ currentRow.case_id }`
-		)
-	);
-} );
-
-test( 'CLI history rejects a changed disposition with reused approval', () => {
-	const currentMap = cloneContractMap();
-	const previousMap = cloneContractMap();
-	const currentRow = currentMap.rows.find(
-		( row ) =>
-			row.planned_disposition ===
-			'Rewrite as a native-specific E2E test preserving the contract'
-	);
-	const previousRow = previousMap.rows.find(
-		( row ) => row.case_id === currentRow.case_id
-	);
-
-	specify( currentRow );
-	specify( previousRow );
-	previousRow.accepted_disposition =
-		'Retire because the test is stale, redundant, or guards only obsolete plugin structure';
-	previousRow.gap_or_decision_reference = 'human-approved:first-decision';
-	currentRow.gap_or_decision_reference = 'human-approved:first-decision';
-
-	assert.throws(
-		() => runHistoryComparison( currentMap, previousMap ),
-		new RegExp(
-			`Disposition transition requires fresh human approval: ${ currentRow.case_id }`
-		)
-	);
-} );
-
-for ( const [ description, plannedDisposition ] of [
-	[
-		'returning to the planned disposition',
-		'Run unchanged against both runtimes',
-	],
-	[
-		'selecting a different non-pending disposition',
-		'Rewrite as a native-specific E2E test preserving the contract',
-	],
-] ) {
-	test( `CLI history accepts fresh approval when ${ description }`, () => {
-		const currentMap = cloneContractMap();
-		const previousMap = cloneContractMap();
-		const currentRow = currentMap.rows.find(
-			( row ) => row.planned_disposition === plannedDisposition
-		);
-		const previousRow = previousMap.rows.find(
-			( row ) => row.case_id === currentRow.case_id
-		);
-
-		specify( currentRow );
-		specify( previousRow );
-		previousRow.accepted_disposition =
-			'Retire because the test is stale, redundant, or guards only obsolete plugin structure';
-		previousRow.gap_or_decision_reference = 'human-approved:first-decision';
-		currentRow.gap_or_decision_reference = 'human-approved:fresh-follow-up';
-
-		assert.doesNotThrow( () =>
-			runHistoryComparison( currentMap, previousMap )
-		);
-	} );
-}
-
-test( 'disposition history allows initial pending to select the planned disposition', () => {
-	const currentMap = cloneContractMap();
-	const previousMap = cloneContractMap();
-	const currentRow = resetToPlanned( currentMap.rows[ 0 ] );
-	const previousRow = resetToPlanned( previousMap.rows[ 0 ] );
-
-	specify( currentRow );
-
-	assert.doesNotThrow( () =>
-		validateDispositionTransition( previousRow, currentRow )
-	);
-	assert.doesNotThrow( () =>
-		runHistoryComparison( currentMap, previousMap )
-	);
-} );
-
-for ( const [ column, invalidValue ] of [
-	[ 'migration_state', 'complete-ish' ],
-	[ 'native_support_state', 'probably-supported' ],
-] ) {
-	test( `rejects an unknown ${ column }`, () => {
-		const map = cloneContractMap();
-		map.rows[ 0 ][ column ] = invalidValue;
-
-		assert.throws(
-			() => validate( map ),
-			new RegExp( `Invalid ${ column }.*${ invalidValue }` )
-		);
-	} );
-}
-
-for ( const [ description, mutate ] of [
-	[
-		'an unsupported native state',
-		( row ) => {
-			close( row );
-			row.native_support_state = 'known-gap';
-			row.gap_or_decision_reference = 'issue:known-gap';
-		},
-	],
-	[
-		'missing evidence',
-		( row ) => {
-			close( row );
-			row.evidence_path = 'none';
-		},
-	],
-	[
-		'a missing evidence file',
-		( row ) => {
-			close( row );
-			row.evidence_path =
-				'plugins/woocommerce/tests/e2e/bin/missing-evidence.txt';
-		},
-	],
-] ) {
-	test( `rejects closure with ${ description }`, () => {
-		const map = cloneContractMap();
-		const row = map.rows[ 0 ];
-
-		mutate( row );
-
-		assert.throws(
-			() => validate( map ),
-			new RegExp(
-				`Closed contract must be supported and reference evidence: ${ row.case_id }`
-			)
-		);
-	} );
-}
-
-test( 'rejects a changed disposition without human approval', () => {
-	const map = cloneContractMap();
-	const row = map.rows[ 0 ];
-	const replacementDisposition = map.rows.find(
-		( candidate ) =>
-			candidate.planned_disposition !== row.planned_disposition
-	).planned_disposition;
-
-	specify( row );
-	row.accepted_disposition = replacementDisposition;
-
-	assert.throws(
-		() => validate( map ),
-		new RegExp(
-			`Disposition change requires an explicit decision reference for ${ row.case_id }`
-		)
-	);
-} );
-
-test( 'accepts a changed disposition with human approval', () => {
-	const map = cloneContractMap();
-	const row = map.rows[ 0 ];
-	const replacementDisposition = map.rows.find(
-		( candidate ) =>
-			candidate.planned_disposition !== row.planned_disposition
-	).planned_disposition;
-
-	specify( row );
-	row.accepted_disposition = replacementDisposition;
-	row.gap_or_decision_reference = 'human-approved:contract-review';
-
-	assert.doesNotThrow( () => validate( map ) );
-} );
-
-for ( const [ description, decisionReference ] of [
-	[ 'an empty authority', 'human-approved:' ],
-	[ 'whitespace-only authority', 'human-approved: ' ],
-	[ 'leading authority whitespace', 'human-approved: review' ],
-	[ 'trailing authority whitespace', 'human-approved:review ' ],
-	[ 'a none placeholder', 'human-approved:none' ],
-	[ 'a pending placeholder', 'human-approved:pending' ],
-	[
-		'an owner-decision placeholder',
-		'human-approved:owner-decision-required',
-	],
-] ) {
-	test( `rejects a changed disposition with ${ description }`, () => {
-		const map = cloneContractMap();
-		const row = map.rows[ 0 ];
-		const replacementDisposition = map.rows.find(
-			( candidate ) =>
-				candidate.planned_disposition !== row.planned_disposition
-		).planned_disposition;
-
-		specify( row );
-		row.accepted_disposition = replacementDisposition;
-		row.gap_or_decision_reference = decisionReference;
-
-		assert.throws(
-			() => validate( map ),
-			new RegExp(
-				`Disposition change requires an explicit decision reference for ${ row.case_id }`
-			)
-		);
-	} );
-}
-
-for ( const [ previous, next ] of [ [ 'planned', 'closed' ] ] ) {
-	test( `rejects the ${ previous } -> ${ next } migration transition`, () => {
-		assert.throws(
-			() => validateStateTransition( previous, next ),
-			new RegExp(
-				`Illegal migration transition: ${ previous } -> ${ next }`
-			)
-		);
-	} );
-}
-
-test( 'allows reopening a closed contract to implemented and nothing else', () => {
-	validateStateTransition( 'closed', 'implemented' );
-	assert.throws(
-		() => validateStateTransition( 'closed', 'specified' ),
-		/Illegal migration transition/
-	);
-	assert.throws(
-		() => validateStateTransition( 'closed', 'planned' ),
-		/Illegal migration transition/
-	);
-} );
-
-test( 'rejects the context-free deferred -> specified transition without a history-bound unlock satisfaction', () => {
-	assert.throws(
-		() => validateStateTransition( 'deferred', 'specified' ),
-		/history-bound unlock satisfaction/
-	);
-} );
-
-test( 'accepts a deferred -> specified transition with one exact unlock satisfaction', () => {
-	const scenario = createDeferredReopenScenario();
-	const [ currentRow ] = scenario.currentRows;
-	const currentEvidence = structuredClone( scenario.previousEvidence );
-
-	currentEvidence.deferral.unlock_satisfactions = [
-		createUnlockSatisfaction( currentRow ),
-	];
-	writeCurrentReopenEvidence( scenario, currentEvidence );
-	specify( currentRow );
-
-	assert.doesNotThrow( () => runDeferredReopenScenario( scenario ) );
-} );
-
-test( 'resolves a moving ref once before loading deferred -> specified history', () => {
-	const scenario = createDeferredReopenScenario();
-	const [ currentRow ] = scenario.currentRows;
-	const currentEvidence = structuredClone( scenario.previousEvidence );
-	const immutableCommit = 'e'.repeat( 40 );
-	let resolveCount = 0;
-	const loadedRefs = [];
-
-	currentEvidence.deferral.unlock_satisfactions = [
-		createUnlockSatisfaction( currentRow ),
-	];
-	writeCurrentReopenEvidence( scenario, currentEvidence );
-	specify( currentRow );
-
-	assert.doesNotThrow( () =>
-		runCli( [ '--from-git-ref', 'moving-ref' ], {
-			ledgerContent: serializeContractMap( scenario.currentMap ),
-			metadata,
-			repositoryRoot,
-			resolveGitRef: ( gitRef ) => {
-				resolveCount++;
-				assert.equal( gitRef, 'moving-ref' );
-				return immutableCommit;
-			},
-			loadFromGitRef: ( gitRef, repositoryPath ) => {
-				loadedRefs.push( gitRef );
-				if ( repositoryPath === scenario.evidencePath ) {
-					return JSON.stringify( scenario.previousEvidence );
-				}
-				if (
-					repositoryPath ===
-					'plugins/woocommerce/tests/e2e/tests/woopayments-native/client-contract-map.tsv'
-				) {
-					return serializeContractMap( scenario.previousMap );
-				}
-
-				return readFileSync(
-					resolve( repositoryRoot, repositoryPath ),
-					'utf8'
-				);
-			},
-			readCurrentFile: ( repositoryPath ) =>
-				readFileSync(
-					resolve( repositoryRoot, repositoryPath ),
-					'utf8'
-				),
-			log: () => {},
-		} )
-	);
-	assert.equal( resolveCount, 1 );
-	assert.equal( loadedRefs.length > 1, true );
-	assert.equal(
-		loadedRefs.every( ( gitRef ) => gitRef === immutableCommit ),
-		true
-	);
-} );
-
-test( 'rejects deferred -> specified without a new unlock satisfaction', () => {
-	const scenario = createDeferredReopenScenario();
-	const [ currentRow ] = scenario.currentRows;
-
-	writeCurrentReopenEvidence( scenario, scenario.previousEvidence );
-	specify( currentRow );
-
-	assert.throws(
-		() => runDeferredReopenScenario( scenario ),
-		/exactly one new unlock satisfaction/
-	);
-} );
-
-test( 'rejects deferred -> specified when the unlock decision differs from the prior packet', () => {
-	const scenario = createDeferredReopenScenario();
-	const [ currentRow ] = scenario.currentRows;
-	const currentEvidence = structuredClone( scenario.previousEvidence );
-
-	currentEvidence.deferral.unlock_satisfactions = [
-		createUnlockSatisfaction( currentRow, {
-			unlock_decision: 'Grant a different external account authority',
-		} ),
-	];
-	writeCurrentReopenEvidence( scenario, currentEvidence );
-	specify( currentRow );
-
-	assert.throws(
-		() => runDeferredReopenScenario( scenario ),
-		/satisfaction must reproduce the exact prior unlock_decision/
-	);
-} );
-
-test( 'rejects deferred -> specified when immutable deferral facts change', () => {
-	const scenario = createDeferredReopenScenario();
-	const [ currentRow ] = scenario.currentRows;
-	const currentEvidence = structuredClone( scenario.previousEvidence );
-
-	currentEvidence.deferral.blocker = 'A rewritten blocker';
-	currentEvidence.deferral.unlock_satisfactions = [
-		createUnlockSatisfaction( currentRow ),
-	];
-	writeCurrentReopenEvidence( scenario, currentEvidence );
-	specify( currentRow );
-
-	assert.throws(
-		() => runDeferredReopenScenario( scenario ),
-		/previous deferral packet content must remain unchanged/
-	);
-} );
-
-test( 'rejects immutable deferral fact changes when no packet row reopens', () => {
-	const scenario = createDeferredReopenScenario();
-	const currentEvidence = structuredClone( scenario.previousEvidence );
-
-	currentEvidence.deferral.unlock_decision =
-		'Grant a different external account authority';
-	writeCurrentReopenEvidence( scenario, currentEvidence );
-
-	assert.throws(
-		() => runDeferredReopenScenario( scenario ),
-		( error ) => {
-			assert.equal(
-				error.message,
-				`Deferred contract reopening rejected at ${ scenario.evidencePath }; previous deferral packet content must remain unchanged`
-			);
-			return true;
-		}
-	);
-} );
-
-test( 'rejects duplicate unlock satisfactions for one deferred -> specified row', () => {
-	const scenario = createDeferredReopenScenario();
-	const [ currentRow ] = scenario.currentRows;
-	const currentEvidence = structuredClone( scenario.previousEvidence );
-	const satisfaction = createUnlockSatisfaction( currentRow );
-
-	currentEvidence.deferral.unlock_satisfactions = [
-		satisfaction,
-		{ ...satisfaction },
-	];
-	writeCurrentReopenEvidence( scenario, currentEvidence );
-	specify( currentRow );
-
-	assert.throws(
-		() => runDeferredReopenScenario( scenario ),
-		/duplicate contract_id|exactly one new unlock satisfaction/
-	);
-} );
-
-test( 'rejects deferred -> specified when a prior unlock satisfaction is rewritten', () => {
-	const scenario = createDeferredReopenScenario( { shared: true } );
-	const [ reopenedRow, siblingRow ] = scenario.currentRows;
-	const priorSatisfaction = createUnlockSatisfaction( siblingRow, {
-		reference: `redacted:calibration:sha256:${ 'b'.repeat( 64 ) }`,
-	} );
-
-	scenario.previousEvidence.deferral.unlock_satisfactions = [
-		priorSatisfaction,
-	];
-	const currentEvidence = structuredClone( scenario.previousEvidence );
-	currentEvidence.deferral.unlock_satisfactions[ 0 ].satisfied_on =
-		'2026-08-02';
-	currentEvidence.deferral.unlock_satisfactions.push(
-		createUnlockSatisfaction( reopenedRow )
-	);
-	writeCurrentReopenEvidence( scenario, currentEvidence );
-	specify( reopenedRow );
-
-	assert.throws(
-		() => runDeferredReopenScenario( scenario ),
-		/prior unlock satisfactions must remain unchanged/
-	);
-} );
-
-test( 'rejects a prior unlock satisfaction whose calibration heading exists only in the current tree', () => {
-	const scenario = createDeferredReopenScenario( { shared: true } );
-	const [ reopenedRow, siblingRow ] = scenario.currentRows;
-	const currentEvidence = structuredClone( scenario.previousEvidence );
-
-	scenario.previousEvidence.deferral.unlock_satisfactions = [
-		createUnlockSatisfaction( siblingRow, {
-			satisfied_on: '2026-08-02',
-			reference:
-				'calibration-notes:2026-08-02:historical-default-token-provider-evidence-deferred',
-		} ),
-	];
-	scenario.previousCalibrationNotesContent =
-		'# WooPayments pilot calibration notes\n';
-	currentEvidence.deferral.unlock_satisfactions = [
-		...scenario.previousEvidence.deferral.unlock_satisfactions,
-		createUnlockSatisfaction( reopenedRow ),
-	];
-	writeCurrentReopenEvidence( scenario, currentEvidence );
-	specify( reopenedRow );
-
-	assert.throws(
-		() => runDeferredReopenScenario( scenario ),
-		/prior.*calibration|matching dated heading/
-	);
-} );
-
-test( 'rejects a sibling unlock satisfaction when only one shared-packet row reopens', () => {
-	const scenario = createDeferredReopenScenario( { shared: true } );
-	const [ reopenedRow, siblingRow ] = scenario.currentRows;
-	const currentEvidence = structuredClone( scenario.previousEvidence );
-
-	currentEvidence.deferral.unlock_satisfactions = [
-		createUnlockSatisfaction( reopenedRow ),
-		createUnlockSatisfaction( siblingRow ),
-	];
-	writeCurrentReopenEvidence( scenario, currentEvidence );
-	specify( reopenedRow );
-
-	assert.throws(
-		() => runDeferredReopenScenario( scenario ),
-		/unlock satisfaction.*row not reopened/
-	);
-} );
-
-test( 'rejects a sibling unlock satisfaction hidden behind a replacement evidence path', () => {
-	const scenario = createDeferredReopenScenario( { shared: true } );
-	const [ reopenedRow, siblingRow ] = scenario.currentRows;
-	const currentEvidence = structuredClone( scenario.previousEvidence );
-
-	currentEvidence.deferral.unlock_satisfactions = [
-		createUnlockSatisfaction( reopenedRow ),
-	];
-	writeCurrentReopenEvidence( scenario, currentEvidence );
-	specify( reopenedRow );
-	siblingRow.evidence_path = createEvidenceFile( siblingRow, {
-		deferral: {
-			...createDecisionReadyDeferral(
-				siblingRow.gap_or_decision_reference
-			),
-			unlock_satisfactions: [ createUnlockSatisfaction( siblingRow ) ],
-		},
-	} );
-
-	assert.throws(
-		() => runDeferredReopenScenario( scenario ),
-		/deferred evidence_path must remain unchanged/
-	);
-} );
-
-for ( const previousState of [ 'planned', 'specified' ] ) {
-	test( `rejects an unlock satisfaction introduced by a newly deferred row from ${ previousState }`, () => {
-		const scenario = createDeferredReopenScenario();
-		const [ currentRow ] = scenario.currentRows;
-		const [ previousRow ] = scenario.previousRows;
-		const currentEvidence = structuredClone( scenario.previousEvidence );
-
-		previousRow.migration_state = previousState;
-		previousRow.native_support_state = 'not-assessed';
-		previousRow.gap_or_decision_reference = 'none';
-		previousRow.evidence_path = 'none';
-		currentEvidence.deferral.unlock_satisfactions = [
-			createUnlockSatisfaction( currentRow ),
-		];
-		writeCurrentReopenEvidence( scenario, currentEvidence );
-
-		assert.throws(
-			() => runDeferredReopenScenario( scenario ),
-			/newly introduced deferred evidence packet cannot contain unlock satisfactions/
-		);
-	} );
-}
-
-test( 'rejects a previous deferred row without an evidence packet', () => {
-	const scenario = createDeferredReopenScenario();
-	const [ previousRow ] = scenario.previousRows;
-
-	previousRow.evidence_path = 'none';
-
-	assert.throws(
-		() => runDeferredReopenScenario( scenario ),
-		/exact previous evidence_path is required/
-	);
-} );
-
-test( 'rejects reopening a deferred row without a previous evidence packet', () => {
-	const scenario = createDeferredReopenScenario();
-	const [ currentRow ] = scenario.currentRows;
-	const [ previousRow ] = scenario.previousRows;
-	const currentEvidence = structuredClone( scenario.previousEvidence );
-
-	previousRow.evidence_path = 'none';
-	currentEvidence.deferral.unlock_satisfactions = [
-		createUnlockSatisfaction( currentRow ),
-	];
-	writeCurrentReopenEvidence( scenario, currentEvidence );
-	specify( currentRow );
-
-	assert.throws(
-		() => runDeferredReopenScenario( scenario ),
-		/exact previous evidence_path is required/
-	);
-} );
-
-test( 'rejects an unlock satisfaction when no packet row reopens', () => {
-	const scenario = createDeferredReopenScenario();
-	const [ deferredRow ] = scenario.currentRows;
-	const currentEvidence = structuredClone( scenario.previousEvidence );
-
-	currentEvidence.deferral.unlock_satisfactions = [
-		createUnlockSatisfaction( deferredRow ),
-	];
-	writeCurrentReopenEvidence( scenario, currentEvidence );
-
-	assert.throws(
-		() => runDeferredReopenScenario( scenario ),
-		/unlock satisfaction.*row not reopened/
-	);
-} );
-
-test( 'accepts one unlock satisfaction for each shared-packet row reopened together', () => {
-	const scenario = createDeferredReopenScenario( { shared: true } );
-	const currentEvidence = structuredClone( scenario.previousEvidence );
-
-	currentEvidence.deferral.unlock_satisfactions = scenario.currentRows.map(
-		( row ) => createUnlockSatisfaction( row )
-	);
-	writeCurrentReopenEvidence( scenario, currentEvidence );
-	for ( const row of scenario.currentRows ) {
-		specify( row );
-	}
-
-	assert.doesNotThrow( () => runDeferredReopenScenario( scenario ) );
-} );
-
-for ( const [ previous, next ] of [
-	[ 'planned', 'specified' ],
-	[ 'specified', 'closed' ],
-] ) {
-	test( `accepts the ${ previous } -> ${ next } migration transition`, () => {
-		assert.doesNotThrow( () => validateStateTransition( previous, next ) );
-	} );
-}
-
-test( 'does not allow a known gap to be closed', () => {
-	const map = cloneContractMap();
-	const row = map.rows[ 0 ];
-
-	close( row );
-	row.native_support_state = 'known-gap';
-	row.gap_or_decision_reference = 'issue:known-gap';
-
-	assert.throws(
-		() => validate( map ),
-		new RegExp(
-			`Closed contract must be supported and reference evidence: ${ row.case_id }`
-		)
-	);
-} );
-
-for ( const nativeSupportState of [
-	'not-assessed',
-	'supported',
-	'not-applicable-retired',
-] ) {
-	test( `rejects deferred with ${ nativeSupportState } native support`, () => {
-		const map = cloneContractMap();
-		const row = map.rows[ 0 ];
-
-		row.migration_state = 'deferred';
-		row.native_support_state = nativeSupportState;
-		row.gap_or_decision_reference = 'issue:deferral';
-		row.evidence_path = createEvidenceFile( row );
-
-		assert.throws(
-			() => validate( map ),
-			new RegExp(
-				`Deferred contract requires an expected gap state, reference, and evidence: ${ row.case_id }`
-			)
-		);
-	} );
-}
-
-for ( const nativeSupportState of [
-	'known-gap',
-	'blocked-external',
-	'blocked-environment',
-	'ambiguous-decision',
-] ) {
-	test( `accepts deferred with ${ nativeSupportState } native support`, () => {
-		const map = cloneContractMap();
-		const row = map.rows[ 0 ];
-
-		row.migration_state = 'deferred';
-		row.native_support_state = nativeSupportState;
-		row.gap_or_decision_reference = 'issue:deferral';
-		row.evidence_path = createEvidenceFile( row );
-
-		assert.doesNotThrow( () => validate( map ) );
-	} );
-}
-
-for ( const [ description, mutate ] of [
-	[
-		'a none reference',
-		( row ) => {
-			row.gap_or_decision_reference = 'none';
-		},
-	],
-	[
-		'no evidence file',
-		( row ) => {
-			row.evidence_path = 'none';
-		},
-	],
-] ) {
-	test( `rejects deferred with ${ description }`, () => {
-		const map = cloneContractMap();
-		const row = map.rows[ 0 ];
-
-		row.migration_state = 'deferred';
-		row.native_support_state = 'known-gap';
-		row.gap_or_decision_reference = 'issue:deferral';
-		row.evidence_path = createEvidenceFile( row );
-		mutate( row );
-
-		assert.throws(
-			() => validate( map ),
-			new RegExp(
-				`Deferred contract requires an expected gap state, reference, and evidence: ${ row.case_id }`
-			)
-		);
-	} );
-}
-
-test( 'requires a gap reference for known-gap native support', () => {
-	const map = cloneContractMap();
-	const row = map.rows[ 0 ];
-
-	specify( row );
-	row.native_support_state = 'known-gap';
-
-	assert.throws(
-		() => validate( map ),
-		new RegExp( `Known gap requires a reference: ${ row.case_id }` )
-	);
-} );
-
-test( 'accepts a retired closure that names its retained contract instead of closure reviews', () => {
-	const map = cloneContractMap();
-	const row = findRetirementRow( map );
-
-	retire( row );
-
-	assert.doesNotThrow( () => validate( map ) );
-} );
-
-test( 'accepts a retirement-only evidence packet with no reviewed source bundle', () => {
-	const map = cloneContractMap();
-	const row = findRetirementRow( map );
-
-	retire( row );
-	// A retirement reviews no source, so its packet carries an empty bundle rather than attesting files
-	// that nobody read for the decision.
-	row.evidence_path = createEvidenceFile( row, {
-		closures: [],
-		retirements: [ createRetirementEntry( row ) ],
-		source_test_paths: [],
-		source_test_sha256: createHash( 'sha256' )
-			.update( JSON.stringify( [] ) )
-			.digest( 'hex' ),
-	} );
-
-	assert.doesNotThrow( () => validate( map ) );
-} );
-
-test( 'rejects a retired closure with no retirement entry for the row', () => {
-	const map = cloneContractMap();
-	const row = findRetirementRow( map );
-
-	retire( row );
-	row.evidence_path = createEvidenceFile( row, {
-		closures: [],
-		retirements: [],
-	} );
-
-	assert.throws(
-		() => validate( map ),
-		new RegExp(
-			`Invalid migration evidence retirements for ${ row.case_id }; a retired row requires its own retirement entry`
-		)
-	);
-} );
-
-test( 'rejects a retirement entry that retains itself', () => {
-	const map = cloneContractMap();
-	const row = findRetirementRow( map );
-
-	retire( row, { retained_contract_id: row.case_id } );
-
-	assert.throws(
-		() => validate( map ),
-		new RegExp(
-			`Invalid migration evidence retirements for ${ row.case_id }; a retirement must name a different retained contract`
-		)
-	);
-} );
-
-test( 'rejects a retirement entry on a row that is not retired', () => {
-	const map = cloneContractMap();
-	// A row that closes as supported, so the rejection can only come from the retirement entry itself.
-	const row = map.rows.find(
-		( candidate ) =>
-			candidate.planned_disposition ===
-			'Run unchanged against both runtimes'
-	);
-
-	close( row );
-	row.evidence_path = createEvidenceFile( row, {
-		closures: [ createClosureEntry( row ) ],
-		retirements: [ createRetirementEntry( row ) ],
-	} );
-
-	assert.throws(
-		() => validate( map ),
-		new RegExp(
-			`Invalid migration evidence retirements for ${ row.case_id }; only a retired row may carry a retirement entry`
-		)
-	);
-} );
-
-test( 'accepts retired closure with explicit human approval', () => {
-	const map = cloneContractMap();
-	const row = findRetirementRow( map );
-
-	retire( row );
-
-	assert.doesNotThrow( () => validate( map ) );
-} );
-
-test( 'rejects retired closure without explicit human approval', () => {
-	const map = cloneContractMap();
-	const row = map.rows.find(
-		( candidate ) =>
-			candidate.planned_disposition ===
-			'Retire because the test is stale, redundant, or guards only obsolete plugin structure'
-	);
-
-	close( row );
+const closeSupported = ( row, targetPath = trackedSpecTarget ) => {
+	row.accepted_disposition = row.planned_disposition;
+	row.target_path = targetPath;
+	row.target_contract = `Native contract for ${ row.case_id }`;
+	row.implementation_owner = 'woocommerce-e2e';
+	row.migration_state = 'closed';
+	row.native_support_state = 'supported';
+	row.gap_or_decision_reference = 'none';
+	row.evidence_path = 'none';
+};
+
+const retireRow = ( row ) => {
+	row.accepted_disposition = retirementDisposition;
+	row.target_path = trackedPhpTarget;
+	row.target_contract = `Retired as a duplicate of: a retained contract carrying ${ row.feature_family }`;
+	row.implementation_owner = 'woocommerce-e2e';
+	row.migration_state = 'closed';
 	row.native_support_state = 'not-applicable-retired';
-
-	assert.throws(
-		() => validate( map ),
-		new RegExp(
-			`Closed contract must be supported and reference evidence: ${ row.case_id }`
-		)
-	);
-} );
-
-for ( const [ description, decisionReference ] of [
-	[ 'an empty authority', 'human-approved:' ],
-	[ 'whitespace-only authority', 'human-approved: ' ],
-	[ 'leading authority whitespace', 'human-approved: review' ],
-	[ 'trailing authority whitespace', 'human-approved:review ' ],
-	[ 'a none placeholder', 'human-approved:none' ],
-	[ 'a pending placeholder', 'human-approved:pending' ],
-	[
-		'an owner-decision placeholder',
-		'human-approved:owner-decision-required',
-	],
-] ) {
-	test( `rejects retired closure with ${ description }`, () => {
-		const map = cloneContractMap();
-		const row = map.rows.find(
-			( candidate ) =>
-				candidate.planned_disposition ===
-				'Retire because the test is stale, redundant, or guards only obsolete plugin structure'
-		);
-
-		close( row );
-		row.native_support_state = 'not-applicable-retired';
-		row.gap_or_decision_reference = decisionReference;
-
-		assert.throws(
-			() => validate( map ),
-			new RegExp(
-				`Closed contract must be supported and reference evidence: ${ row.case_id }`
-			)
-		);
-	} );
-}
-
-test( 'rejects a rewritten retirement contract with retirement-only targets', () => {
-	const map = cloneContractMap();
-	const row = map.rows.find(
-		( candidate ) =>
-			candidate.planned_disposition ===
-			'Retire because the test is stale, redundant, or guards only obsolete plugin structure'
-	);
-
-	close( row );
-	row.accepted_disposition =
-		'Rewrite as a native-specific E2E test preserving the contract';
-	row.gap_or_decision_reference = 'human-approved:rewrite-decision';
-
-	assert.throws(
-		() => validate( map ),
-		new RegExp(
-			`Rewrite as a native-specific E2E test preserving the contract requires only approved future targets for ${ row.case_id }`
-		)
-	);
-} );
-
-test( 'accepts a rewritten retirement contract with a compatible exact target', () => {
-	const map = cloneContractMap();
-	const row = map.rows.find(
-		( candidate ) =>
-			candidate.planned_disposition ===
-			'Retire because the test is stale, redundant, or guards only obsolete plugin structure'
-	);
-	const targetPath =
-		'plugins/woocommerce/tests/e2e/tests/woopayments-native/pilots/merchant-transaction-navigation.spec.ts';
-
-	assert.equal( existsSync( resolve( repositoryRoot, targetPath ) ), true );
-	close( row );
-	row.accepted_disposition =
-		'Rewrite as a native-specific E2E test preserving the contract';
-	row.gap_or_decision_reference = 'human-approved:rewrite-decision';
-	row.target_path = targetPath;
-	row.evidence_path = createEvidenceFile( row, {
-		closures: [ createClosureEntry( row ) ],
-	} );
-
-	assert.doesNotThrow( () => validate( map ) );
-} );
-
-test( 'rejects changing a non-pilot-gated contract to a shared disposition', () => {
-	const map = cloneContractMap();
-	const row = map.rows.find(
-		( candidate ) =>
-			candidate.planned_disposition ===
-			'Retire because the test is stale, redundant, or guards only obsolete plugin structure'
-	);
-	const targetPath =
-		'plugins/woocommerce/tests/e2e/tests/woopayments-native/pilots/merchant-manual-capture.spec.ts';
-
-	assert.notEqual( row.disposition_state, 'pilot-gated' );
-	assert.equal( existsSync( resolve( repositoryRoot, targetPath ) ), true );
-	close( row );
-	row.accepted_disposition =
-		'Extract a shared scenario with thin runtime adapters';
-	row.gap_or_decision_reference = 'human-approved:shared-decision';
-	row.target_path = targetPath;
-	row.evidence_path = createEvidenceFile( row );
-
-	assert.throws(
-		() => validate( map ),
-		new RegExp( `Unproven shared disposition for ${ row.case_id }` )
-	);
-} );
-
-test( 'rejects repository path traversal', () => {
-	const map = cloneContractMap();
-	const row = map.rows[ 0 ];
-
-	close( row );
-	row.target_path = '../outside-repository.spec.ts';
-
-	assert.throws(
-		() => validate( map ),
-		new RegExp(
-			`Invalid target_path for ${ row.case_id }: ../outside-repository.spec.ts`
-		)
-	);
-} );
-
-test( 'rejects a repository-contained symlink that escapes the repository', () => {
-	const map = cloneContractMap();
-	const row = map.rows[ 0 ];
-	const repositoryDirectory = createRepositoryTemporaryDirectory();
-	const externalFile = createExternalTemporaryFile();
-	const symlinkPath = join( repositoryDirectory, 'escaped-evidence.txt' );
-
-	symlinkSync( externalFile, symlinkPath );
-	specify( row );
-	row.migration_state = 'implemented';
-	row.native_support_state = 'known-gap';
-	row.gap_or_decision_reference = 'issue:known-gap';
-	row.evidence_path = repositoryRelativePath( symlinkPath );
-
-	assert.throws(
-		() => validate( map ),
-		new RegExp(
-			`Non-concrete or out-of-repository evidence_path for ${ row.case_id }`
-		)
-	);
-} );
-
-test( 'rejects malformed JSON evidence', () => {
-	const map = cloneContractMap();
-	const row = map.rows[ 0 ];
-	const repositoryDirectory = createRepositoryTemporaryDirectory();
-	const evidencePath = join( repositoryDirectory, 'malformed-evidence.json' );
-
-	writeFileSync( evidencePath, '{not-json}\n' );
-	specify( row );
-	row.migration_state = 'implemented';
-	row.native_support_state = 'known-gap';
-	row.gap_or_decision_reference = 'issue:known-gap';
-	row.evidence_path = repositoryRelativePath( evidencePath );
-
-	assert.throws(
-		() => validate( map ),
-		new RegExp( `Invalid migration evidence JSON for ${ row.case_id }` )
-	);
-} );
-
-test( 'rejects an existing directory as a target file', () => {
-	const map = cloneContractMap();
-	const row = map.rows[ 0 ];
-	const repositoryDirectory = createRepositoryTemporaryDirectory();
-
-	close( row );
-	row.target_path = repositoryRelativePath( repositoryDirectory );
-
-	assert.throws(
-		() => validate( map ),
-		new RegExp(
-			`Non-concrete or out-of-repository target_path for ${ row.case_id }`
-		)
-	);
-} );
-
-for ( const migrationState of [ 'verified', 'closed' ] ) {
-	test( `${ migrationState } requires existing exact target files`, () => {
-		const map = cloneContractMap();
-		const row = map.rows[ 0 ];
-
-		close( row );
-		row.migration_state = migrationState;
-		row.target_path =
-			'plugins/woocommerce/tests/e2e/bin/does-not-exist.spec.ts';
-
-		assert.equal(
-			existsSync( resolve( repositoryRoot, row.target_path ) ),
-			false
-		);
-		assert.throws(
-			() => validate( map ),
-			new RegExp(
-				`Non-concrete target_path for ${ row.case_id }: ${ row.target_path }`
-			)
-		);
-	} );
-}
-
-for ( const [ description, mutate ] of [
-	[
-		'an unresolved target contract',
-		( row ) => {
-			row.target_contract = 'pending';
-		},
-	],
-	[
-		'a placeholder owner',
-		( row ) => {
-			row.implementation_owner = 'owner-decision-required';
-		},
-	],
-] ) {
-	test( `rejects specified with ${ description }`, () => {
-		const map = cloneContractMap();
-		const row = map.rows[ 0 ];
-
-		specify( row );
-		mutate( row );
-
-		assert.throws(
-			() => validate( map ),
-			new RegExp(
-				`Specified contract requires an exact target and owner: ${ row.case_id }`
-			)
-		);
-	} );
-}
-
-test( 'allows an implemented contract to remain a known gap', () => {
-	const map = cloneContractMap();
-	const row = map.rows[ 0 ];
-
-	specify( row );
-	row.migration_state = 'implemented';
-	row.native_support_state = 'known-gap';
-	row.gap_or_decision_reference = 'issue:known-gap';
-	row.evidence_path = createEvidenceFile( row );
-
-	assert.doesNotThrow( () => validate( map ) );
-} );
-
-test( 'requires implementation evidence', () => {
-	const map = cloneContractMap();
-	const row = map.rows[ 0 ];
-
-	specify( row );
-	row.migration_state = 'implemented';
-	row.native_support_state = 'known-gap';
-	row.gap_or_decision_reference = 'issue:known-gap';
+	row.gap_or_decision_reference = 'retirement-review-2026-08-10';
 	row.evidence_path = 'none';
-
-	assert.throws(
-		() => validate( map ),
-		new RegExp(
-			`Implemented contract requires target evidence: ${ row.case_id }`
-		)
-	);
-} );
-
-test( 'requires an existing implemented target file', () => {
-	const map = cloneContractMap();
-	const row = map.rows[ 0 ];
-
-	specify( row );
-	row.migration_state = 'implemented';
-	row.native_support_state = 'known-gap';
-	row.gap_or_decision_reference = 'issue:known-gap';
-	row.evidence_path = createEvidenceFile( row );
-	row.target_path =
-		'plugins/woocommerce/tests/e2e/bin/does-not-exist.spec.ts';
-
-	assert.throws(
-		() => validate( map ),
-		new RegExp(
-			`Non-concrete target_path for ${ row.case_id }: ${ row.target_path }`
-		)
-	);
-} );
-
-test( 'requires verification evidence', () => {
-	const map = cloneContractMap();
-	const row = map.rows[ 0 ];
-
-	close( row );
-	row.migration_state = 'verified';
-	row.evidence_path = 'none';
-
-	assert.throws(
-		() => validate( map ),
-		new RegExp(
-			`Verified contract requires target evidence: ${ row.case_id }`
-		)
-	);
-} );
-
-test( 'accepts public-safe evidence bound to the referencing row', () => {
-	const row = {
-		...contractMap.rows[ 0 ],
-		target_contract: 'Native fixture contract',
-		migration_state: 'closed',
-		native_support_state: 'supported',
-	};
-	const evidence = createValidEvidence( row, {
-		closures: [ createClosureEntry( row ) ],
-	} );
-
-	assert.doesNotThrow( () =>
-		validateMigrationEvidence( evidence, createEvidenceContext( row ) )
-	);
-} );
-
-test( 'rejects closing a row that shares slice evidence without its own closure entry', () => {
-	const map = cloneContractMap();
-	const [ first, second ] = map.rows.slice( 0, 2 );
-	specify( first );
-	specify( second );
-	first.migration_state = 'closed';
-	first.native_support_state = 'supported';
-	second.migration_state = 'closed';
-	second.native_support_state = 'supported';
-	const sharedEvidencePath = createEvidenceFile( first, {
-		contract_ids: [ first.case_id, second.case_id ],
-		targets: [
-			{ path: first.target_path, contract: first.target_contract },
-			{ path: second.target_path, contract: second.target_contract },
-		],
-		closures: [ createClosureEntry( first ) ],
-	} );
-	first.evidence_path = sharedEvidencePath;
-	second.evidence_path = sharedEvidencePath;
-	createMissingTargetFile( first.target_path );
-	createMissingTargetFile( second.target_path );
-
-	assert.throws(
-		() => validate( map ),
-		/a terminal row requires its own closure entry/
-	);
-} );
-
-test( 'rejects a closure entry whose target is not the exact ledger target', () => {
-	const row = cloneContractMap().rows[ 0 ];
-	specify( row );
-	row.migration_state = 'closed';
-	row.native_support_state = 'supported';
-	const evidence = createValidEvidence( row, {
-		closures: [
-			createClosureEntry( row, {
-				target: {
-					path: row.target_path,
-					contract: 'a different contract',
-				},
-			} ),
-		],
-	} );
-
-	assert.throws(
-		() =>
-			validateMigrationEvidence( evidence, createEvidenceContext( row ) ),
-		/closure target must match the exact ledger target/
-	);
-} );
-
-test( 'rejects a closure missing a required review role', () => {
-	const row = cloneContractMap().rows[ 0 ];
-	specify( row );
-	row.migration_state = 'closed';
-	row.native_support_state = 'supported';
-	const evidence = createValidEvidence( row, {
-		closures: [
-			createClosureEntry( row, {
-				reviews: [
-					{
-						role: 'code',
-						verdict: 'APPROVE',
-						source_test_sha256: DEFAULT_SOURCE_TEST_SHA256,
-						summary: 'code closure review approved',
-					},
-				],
-			} ),
-		],
-	} );
-
-	assert.throws(
-		() =>
-			validateMigrationEvidence( evidence, createEvidenceContext( row ) ),
-		/every required role must approve the current source bundle/
-	);
-} );
-
-test( 'rejects a closure review that does not bind the evidence source bundle hash', () => {
-	const row = cloneContractMap().rows[ 0 ];
-	specify( row );
-	row.migration_state = 'closed';
-	row.native_support_state = 'supported';
-	const evidence = createValidEvidence( row, {
-		closures: [
-			createClosureEntry( row, {
-				reviews: REQUIRED_CLOSURE_REVIEW_ROLES.map( ( role ) => ( {
-					role,
-					verdict: 'APPROVE',
-					source_test_sha256: 'e'.repeat( 64 ),
-					summary: `${ role } closure review approved`,
-				} ) ),
-			} ),
-		],
-	} );
-
-	assert.throws(
-		() =>
-			validateMigrationEvidence( evidence, createEvidenceContext( row ) ),
-		/every required role must approve the current source bundle/
-	);
-} );
-
-test( 'rejects duplicate closure entries for the same contract', async ( t ) => {
-	const row = cloneContractMap().rows[ 0 ];
-	specify( row );
-	row.migration_state = 'closed';
-	row.native_support_state = 'supported';
-	const validClosure = createClosureEntry( row );
-	const conflictingClosure = createClosureEntry( row, {
-		target: {
-			path: row.target_path,
-			contract: 'a conflicting contract',
-		},
-		verification: [
-			{
-				command: 'pnpm test:e2e:woopayments:controller',
-				exit_code: 1,
-				summary: 'closure verification failed',
-			},
-		],
-		reviews: [
-			{
-				role: 'code',
-				verdict: 'APPROVE',
-				source_test_sha256: DEFAULT_SOURCE_TEST_SHA256,
-				summary: 'code closure review approved',
-			},
-		],
-	} );
-
-	for ( const [ label, closures ] of [
-		[ 'valid entry first', [ validClosure, conflictingClosure ] ],
-		[ 'conflicting entry first', [ conflictingClosure, validClosure ] ],
-	] ) {
-		await t.test( label, () => {
-			const evidence = createValidEvidence( row, { closures } );
-
-			assert.throws(
-				() =>
-					validateMigrationEvidence(
-						evidence,
-						createEvidenceContext( row )
-					),
-				/duplicate contract_id/
-			);
-		} );
-	}
-} );
-
-test( 'terminal evidence must attest the current retained source bytes', () => {
-	const closedRow = cloneContractMap().rows[ 0 ];
-	specify( closedRow );
-	closedRow.migration_state = 'closed';
-	closedRow.native_support_state = 'supported';
-	const sourceTestPaths = [
-		'plugins/woocommerce/tests/e2e/bin/lib/woopayments-contract-map.mjs',
-	];
-	const lastTouchCommit = execFileSync(
-		'git',
-		[
-			'-C',
-			repositoryRoot,
-			'log',
-			'-n',
-			'1',
-			'--format=%H',
-			'--',
-			sourceTestPaths[ 0 ],
-		],
-		{ encoding: 'utf8' }
-	).trim();
-	const historicalCommit = execFileSync(
-		'git',
-		[ '-C', repositoryRoot, 'rev-parse', `${ lastTouchCommit }^` ],
-		{ encoding: 'utf8' }
-	).trim();
-	const staleSha256 = calculateSourceBundleSha256(
-		sourceTestPaths,
-		historicalCommit
-	);
-	const currentSha256 = calculateSourceBundleSha256( sourceTestPaths );
-	assert.notEqual( staleSha256, currentSha256 );
-
-	const evidence = createValidEvidence( closedRow, {
-		verified_at_commit: historicalCommit,
-		source_test_paths: sourceTestPaths,
-		source_test_sha256: staleSha256,
-		closures: [
-			createClosureEntry( closedRow, {
-				reviews: REQUIRED_CLOSURE_REVIEW_ROLES.map( ( role ) => ( {
-					role,
-					verdict: 'APPROVE',
-					source_test_sha256: staleSha256,
-					summary: `${ role } closure review approved`,
-				} ) ),
-			} ),
-		],
-		reviews: [
-			{
-				role: 'code',
-				verdict: 'APPROVE',
-				source_test_sha256: staleSha256,
-				summary: 'historical source bundle approved',
-			},
-		],
-	} );
-
-	assert.throws(
-		() =>
-			validateMigrationEvidence(
-				evidence,
-				createEvidenceContext( closedRow )
-			),
-		/terminal evidence must attest the current retained bytes/
-	);
-} );
-
-test( 'terminal evidence rejects an untracked current source path', () => {
-	const closedRow = cloneContractMap().rows[ 0 ];
-	specify( closedRow );
-	closedRow.migration_state = 'closed';
-	closedRow.native_support_state = 'supported';
-	const sourceRepositoryRoot = createTemporaryGitRepository();
-	const sourceTestPaths = [ '.git/HEAD' ];
-	const sourceTestSha256 = calculateCurrentSourceBundleSha256(
-		sourceTestPaths,
-		sourceRepositoryRoot
-	);
-	const evidence = createValidEvidence( closedRow, {
-		source_test_paths: sourceTestPaths,
-		source_test_sha256: sourceTestSha256,
-		closures: [
-			createClosureEntry( closedRow, {
-				reviews: REQUIRED_CLOSURE_REVIEW_ROLES.map( ( role ) => ( {
-					role,
-					verdict: 'APPROVE',
-					source_test_sha256: sourceTestSha256,
-					summary: `${ role } closure review approved`,
-				} ) ),
-			} ),
-		],
-	} );
-
-	assert.throws(
-		() =>
-			validateMigrationEvidence( evidence, {
-				...createEvidenceContext( closedRow ),
-				repositoryRoot: sourceRepositoryRoot,
-			} ),
-		/current source must be a tracked regular file within the repository/
-	);
-} );
-
-test( 'terminal evidence rejects an escaping current source symlink', () => {
-	const closedRow = cloneContractMap().rows[ 0 ];
-	specify( closedRow );
-	closedRow.migration_state = 'closed';
-	closedRow.native_support_state = 'supported';
-	const sourceRepositoryRoot = createTemporaryGitRepository();
-	const externalFile = createExternalTemporaryFile();
-	const sourceTestPaths = [ 'tracked-source.mjs' ];
-	symlinkSync(
-		externalFile,
-		resolve( sourceRepositoryRoot, sourceTestPaths[ 0 ] )
-	);
-	execFileSync( 'git', [
-		'-C',
-		sourceRepositoryRoot,
-		'add',
-		'--',
-		sourceTestPaths[ 0 ],
-	] );
-	const sourceTestSha256 = calculateCurrentSourceBundleSha256(
-		sourceTestPaths,
-		sourceRepositoryRoot
-	);
-	const evidence = createValidEvidence( closedRow, {
-		source_test_paths: sourceTestPaths,
-		source_test_sha256: sourceTestSha256,
-		closures: [
-			createClosureEntry( closedRow, {
-				reviews: REQUIRED_CLOSURE_REVIEW_ROLES.map( ( role ) => ( {
-					role,
-					verdict: 'APPROVE',
-					source_test_sha256: sourceTestSha256,
-					summary: `${ role } closure review approved`,
-				} ) ),
-			} ),
-		],
-	} );
-
-	assert.throws(
-		() =>
-			validateMigrationEvidence( evidence, {
-				...createEvidenceContext( closedRow ),
-				repositoryRoot: sourceRepositoryRoot,
-			} ),
-		/current source must be a tracked regular file within the repository/
-	);
-} );
-
-test( 'terminal evidence rejects a tracked symlink to an untracked in-repository file', () => {
-	const closedRow = cloneContractMap().rows[ 0 ];
-	specify( closedRow );
-	closedRow.migration_state = 'closed';
-	closedRow.native_support_state = 'supported';
-	const sourceRepositoryRoot = createTemporaryGitRepository();
-	const sourceTestPaths = [ 'tracked-source.mjs' ];
-	const untrackedTargetPath = resolve(
-		sourceRepositoryRoot,
-		'untracked-target.mjs'
-	);
-	writeFileSync( untrackedTargetPath, 'untracked in-repository source\n' );
-	symlinkSync(
-		untrackedTargetPath,
-		resolve( sourceRepositoryRoot, sourceTestPaths[ 0 ] )
-	);
-	execFileSync( 'git', [
-		'-C',
-		sourceRepositoryRoot,
-		'add',
-		'--',
-		sourceTestPaths[ 0 ],
-	] );
-	assert.equal(
-		execFileSync( 'git', [ '-C', sourceRepositoryRoot, 'ls-files' ], {
-			encoding: 'utf8',
-		} ).trim(),
-		sourceTestPaths[ 0 ]
-	);
-	const sourceTestSha256 = calculateCurrentSourceBundleSha256(
-		sourceTestPaths,
-		sourceRepositoryRoot
-	);
-	const evidence = createValidEvidence( closedRow, {
-		source_test_paths: sourceTestPaths,
-		source_test_sha256: sourceTestSha256,
-		closures: [
-			createClosureEntry( closedRow, {
-				reviews: REQUIRED_CLOSURE_REVIEW_ROLES.map( ( role ) => ( {
-					role,
-					verdict: 'APPROVE',
-					source_test_sha256: sourceTestSha256,
-					summary: `${ role } closure review approved`,
-				} ) ),
-			} ),
-		],
-	} );
-
-	assert.throws(
-		() =>
-			validateMigrationEvidence( evidence, {
-				...createEvidenceContext( closedRow ),
-				repositoryRoot: sourceRepositoryRoot,
-			} ),
-		/current source must be a tracked regular file within the repository/
-	);
-} );
-
-test( 'terminal evidence attests modified tracked working-tree bytes', () => {
-	const closedRow = cloneContractMap().rows[ 0 ];
-	specify( closedRow );
-	closedRow.migration_state = 'closed';
-	closedRow.native_support_state = 'supported';
-	const sourceRepositoryRoot = createTemporaryGitRepository();
-	const sourceTestPaths = [ 'tracked-source.mjs' ];
-	closedRow.target_path = sourceTestPaths[ 0 ];
-	const sourcePath = resolve( sourceRepositoryRoot, sourceTestPaths[ 0 ] );
-	writeFileSync( sourcePath, 'indexed source bytes\n' );
-	execFileSync( 'git', [
-		'-C',
-		sourceRepositoryRoot,
-		'add',
-		'--',
-		sourceTestPaths[ 0 ],
-	] );
-	writeFileSync( sourcePath, 'modified working-tree source bytes\n' );
-	const sourceTestSha256 = calculateCurrentSourceBundleSha256(
-		sourceTestPaths,
-		sourceRepositoryRoot
-	);
-	const evidence = createValidEvidence( closedRow, {
-		source_test_paths: sourceTestPaths,
-		source_test_sha256: sourceTestSha256,
-		closures: [
-			createClosureEntry( closedRow, {
-				reviews: REQUIRED_CLOSURE_REVIEW_ROLES.map( ( role ) => ( {
-					role,
-					verdict: 'APPROVE',
-					source_test_sha256: sourceTestSha256,
-					summary: `${ role } closure review approved`,
-				} ) ),
-			} ),
-		],
-	} );
-
-	assert.doesNotThrow( () =>
-		validateMigrationEvidence( evidence, {
-			...createEvidenceContext( closedRow ),
-			repositoryRoot: sourceRepositoryRoot,
-		} )
-	);
-} );
-
-test( 'implemented evidence still validates against the verified revision', () => {
-	const implementedRow = cloneContractMap().rows[ 0 ];
-	specify( implementedRow );
-	implementedRow.migration_state = 'implemented';
-	const sourceTestPaths = [
-		'plugins/woocommerce/tests/e2e/bin/lib/woopayments-contract-map.mjs',
-	];
-	const lastTouchCommit = execFileSync(
-		'git',
-		[
-			'-C',
-			repositoryRoot,
-			'log',
-			'-n',
-			'1',
-			'--format=%H',
-			'--',
-			sourceTestPaths[ 0 ],
-		],
-		{ encoding: 'utf8' }
-	).trim();
-	const historicalCommit = execFileSync(
-		'git',
-		[ '-C', repositoryRoot, 'rev-parse', `${ lastTouchCommit }^` ],
-		{ encoding: 'utf8' }
-	).trim();
-	const historicalSha256 = calculateSourceBundleSha256(
-		sourceTestPaths,
-		historicalCommit
-	);
-	const currentSha256 = calculateSourceBundleSha256( sourceTestPaths );
-	assert.notEqual( historicalSha256, currentSha256 );
-
-	const evidence = createValidEvidence( implementedRow, {
-		verified_at_commit: historicalCommit,
-		source_test_paths: sourceTestPaths,
-		source_test_sha256: historicalSha256,
-		reviews: [
-			{
-				role: 'code',
-				verdict: 'APPROVE',
-				source_test_sha256: historicalSha256,
-				summary: 'verified revision source bundle approved',
-			},
-		],
-	} );
-
-	assert.doesNotThrow( () =>
-		validateMigrationEvidence(
-			evidence,
-			createEvidenceContext( implementedRow )
-		)
-	);
-} );
-
-test( 'accepts public-safe Phase 3 proof through the approved evidence entries', () => {
-	const artifactSha256 = 'b'.repeat( 64 );
-	const providerCorrelationSha256 = 'c'.repeat( 64 );
-	const row = {
-		...contractMap.rows[ 0 ],
-		target_contract:
-			'Shopper card payment: pays with the selected saved method',
-		migration_state: 'closed',
-		native_support_state: 'supported',
-	};
-	const evidence = createValidEvidence( row, {
-		verification: [
-			{
-				command:
-					'pnpm exec playwright test tests/e2e/tests/woopayments-native/shopper/card-payment.spec.ts',
-				exit_code: 0,
-				summary: `Target/title passed; provider redacted:payment-intent:sha256:${ providerCorrelationSha256 }; cleanup restored; quarantine not required; artifact SHA-256 ${ artifactSha256 }`,
-			},
-		],
-		reviews: [
-			{
-				role: 'spec',
-				verdict: 'APPROVE',
-				source_test_sha256: DEFAULT_SOURCE_TEST_SHA256,
-				summary: `Specification provenance approved at artifact SHA-256 ${ artifactSha256 }`,
-			},
-			{
-				role: 'code',
-				verdict: 'APPROVE',
-				source_test_sha256: DEFAULT_SOURCE_TEST_SHA256,
-				summary:
-					'The password and token safeguards were reviewed; no credential values were recorded',
-			},
-		],
-		closures: [ createClosureEntry( row ) ],
-	} );
-
-	assert.doesNotThrow( () =>
-		validateMigrationEvidence( evidence, createEvidenceContext( row ) )
-	);
-} );
-
-for ( const [ description, mutate, expectedError ] of [
-	[
-		'an unsupported schema version',
-		( evidence ) => {
-			evidence.schema_version = 1;
-		},
-		/expected 2/,
-	],
-	[
-		'an empty slice ID',
-		( evidence ) => {
-			evidence.slice_id = '';
-		},
-		/slice_id/,
-	],
-	[
-		'an invalid WC base commit',
-		( evidence ) => {
-			evidence.wc_base_commit = 'A'.repeat( 40 );
-		},
-		/wc_base_commit/,
-	],
-	[
-		'an invalid verified-at commit',
-		( evidence ) => {
-			evidence.verified_at_commit = 'not-a-commit';
-		},
-		/verified_at_commit/,
-	],
-	[
-		'a reference commit that differs from frozen metadata',
-		( evidence ) => {
-			evidence.reference_contract_commit = '4'.repeat( 40 );
-		},
-		/reference_contract_commit/,
-	],
-	[
-		'a missing referencing contract ID',
-		( evidence ) => {
-			evidence.contract_ids = [ 'another-contract-id' ];
-		},
-		/contract_ids/,
-	],
-	[
-		'a missing exact target path',
-		( evidence ) => {
-			evidence.targets[ 0 ].path =
-				'plugins/woocommerce/tests/e2e/tests/woopayments-native/other.spec.ts';
-		},
-		/targets/,
-	],
-	[
-		'a missing exact target contract',
-		( evidence ) => {
-			evidence.targets[ 0 ].contract = 'A neighboring contract';
-		},
-		/targets/,
-	],
-] ) {
-	test( `rejects evidence with ${ description }`, () => {
-		const row = {
-			...contractMap.rows[ 0 ],
-			target_contract: 'Native fixture contract',
-			migration_state: 'closed',
-			native_support_state: 'supported',
-		};
-		const evidence = createValidEvidence( row );
-
-		mutate( evidence );
-
-		assert.throws(
-			() =>
-				validateMigrationEvidence(
-					evidence,
-					createEvidenceContext( row )
-				),
-			expectedError
-		);
-	} );
-}
-
-for ( const migrationState of [ 'implemented', 'verified', 'closed' ] ) {
-	test( `rejects ${ migrationState } evidence without implementation commits`, () => {
-		const row = {
-			...contractMap.rows[ 0 ],
-			target_contract: 'Native fixture contract',
-			migration_state: migrationState,
-			native_support_state:
-				migrationState === 'implemented' ? 'known-gap' : 'supported',
-			gap_or_decision_reference:
-				migrationState === 'implemented' ? 'issue:12345' : 'none',
-		};
-		const evidence = createValidEvidence( row, {
-			implementation_commits: [],
-			known_gaps:
-				migrationState === 'implemented'
-					? [
-							{
-								id: 'WPNATIVE-GAP-0001',
-								owner: 'payments',
-								reference: 'issue:12345',
-								fingerprint: {
-									error_name: 'Error',
-									message_pattern:
-										'^Native payment is unavailable\\.$',
-								},
-							},
-					  ]
-					: [],
-		} );
-
-		assert.throws(
-			() =>
-				validateMigrationEvidence(
-					evidence,
-					createEvidenceContext( row )
-				),
-			/implementation_commits/
-		);
-	} );
-}
-
-for ( const migrationState of [ 'verified', 'closed' ] ) {
-	for ( const [ description, verification ] of [
-		[ 'no verification commands', [] ],
-		[
-			'a failing verification command',
-			[
-				{
-					command: 'pnpm test:e2e:woopayments:controller',
-					exit_code: 1,
-					summary: 'controller checks failed',
-				},
-			],
-		],
-	] ) {
-		test( `rejects ${ migrationState } evidence with ${ description }`, () => {
-			const row = {
-				...contractMap.rows[ 0 ],
-				target_contract: 'Native fixture contract',
-				migration_state: migrationState,
-				native_support_state: 'supported',
-			};
-			const evidence = createValidEvidence( row, { verification } );
-
-			assert.throws(
-				() =>
-					validateMigrationEvidence(
-						evidence,
-						createEvidenceContext( row )
-					),
-				/verification/
-			);
-		} );
-	}
-}
-
-for ( const [ description, reviews ] of [
-	[ 'no reviews', [] ],
-	[
-		'a non-approving review',
-		[
-			{
-				role: 'spec',
-				verdict: 'REVISE',
-				source_test_sha256: DEFAULT_SOURCE_TEST_SHA256,
-				summary: 'contract needs revision',
-			},
-		],
-	],
-] ) {
-	test( `rejects evidence with ${ description }`, () => {
-		const row = {
-			...contractMap.rows[ 0 ],
-			target_contract: 'Native fixture contract',
-			migration_state: 'closed',
-			native_support_state: 'supported',
-		};
-		const evidence = createValidEvidence( row, { reviews } );
-
-		assert.throws(
-			() =>
-				validateMigrationEvidence(
-					evidence,
-					createEvidenceContext( row )
-				),
-			/reviews/
-		);
-	} );
-}
-
-test( 'accepts historical slice reviews that predate the current source bundle', () => {
-	const row = {
-		...contractMap.rows[ 0 ],
-		target_contract: 'Native fixture contract',
-		migration_state: 'closed',
-		native_support_state: 'supported',
-	};
-	const evidence = createValidEvidence( row, {
-		reviews: [
-			{
-				role: 'spec',
-				verdict: 'APPROVE',
-				source_test_sha256: 'b'.repeat( 64 ),
-				summary: 'historical source review approved',
-			},
-		],
-		closures: [ createClosureEntry( row ) ],
-	} );
-
-	assert.doesNotThrow( () =>
-		validateMigrationEvidence( evidence, createEvidenceContext( row ) )
-	);
-} );
-
-test( 'rejects deferred evidence without a decision-ready deferral', () => {
-	const row = {
-		...contractMap.rows[ 0 ],
-		migration_state: 'deferred',
-		native_support_state: 'blocked-external',
-	};
-	const evidence = createValidEvidence( row, {
-		implementation_commits: [],
-		verification: [],
-	} );
-
-	assert.throws(
-		() =>
-			validateMigrationEvidence( evidence, createEvidenceContext( row ) ),
-		/deferral/
-	);
-} );
-
-test( 'accepts a decision-ready deferral without invented runtime evidence', () => {
-	const row = {
-		...contractMap.rows[ 0 ],
-		migration_state: 'deferred',
-		native_support_state: 'blocked-external',
-		gap_or_decision_reference: 'issue:12345',
-	};
-	const evidence = createValidEvidence( row, {
-		implementation_commits: [],
-		verification: [],
-		deferral: {
-			blocker: 'External account authority is unavailable',
-			affected_scope: 'The selected saved-payment contract',
-			no_allowlisted_action_reason:
-				'No repository-local action can grant account authority',
-			reference: 'issue:12345',
-			unlock_decision: 'Grant the required account authority',
-			quarantine_status: 'No shared resource was allocated',
-		},
-	} );
-
-	assert.doesNotThrow( () =>
-		validateMigrationEvidence( evidence, createEvidenceContext( row ) )
-	);
-} );
-
-test( 'accepts an optional redacted unlock satisfaction on schema-v2 deferred evidence', () => {
-	const row = {
-		...contractMap.rows[ 0 ],
-		migration_state: 'deferred',
-		native_support_state: 'blocked-external',
-		gap_or_decision_reference: 'issue:12345',
-	};
-	const evidence = createValidEvidence( row, {
-		implementation_commits: [],
-		verification: [],
-		deferral: {
-			...createDecisionReadyDeferral( 'issue:12345' ),
-			unlock_satisfactions: [ createUnlockSatisfaction( row ) ],
-		},
-	} );
-
-	assert.doesNotThrow( () =>
-		validateMigrationEvidence( evidence, createEvidenceContext( row ) )
-	);
-} );
-
-for ( const publicReference of [
-	'https://github.com/woocommerce/woocommerce/issues/12345',
-	'https://github.com/woocommerce/woocommerce/pull/12345',
-	`https://github.com/woocommerce/woocommerce/commit/${ 'a'.repeat( 40 ) }`,
-] ) {
-	test( `accepts the public WooCommerce unlock satisfaction reference ${ publicReference }`, () => {
-		const row = {
-			...contractMap.rows[ 0 ],
-			migration_state: 'deferred',
-			native_support_state: 'blocked-external',
-			gap_or_decision_reference: 'issue:12345',
-		};
-		const evidence = createValidEvidence( row, {
-			implementation_commits: [],
-			verification: [],
-			deferral: {
-				...createDecisionReadyDeferral( 'issue:12345' ),
-				unlock_satisfactions: [
-					createUnlockSatisfaction( row, {
-						reference: publicReference,
-					} ),
-				],
-			},
-		} );
-
-		assert.doesNotThrow( () =>
-			validateMigrationEvidence( evidence, createEvidenceContext( row ) )
-		);
-	} );
-}
-
-for ( const arbitraryPublicReference of [
-	'https://github.com/woocommerce/woocommerce/discussions/12345',
-	'https://github.com/woocommerce/woocommerce/issues/12345?notification=1',
-	'https://github.com/another-owner/woocommerce/issues/12345',
-] ) {
-	test( `rejects the arbitrary public URL unlock satisfaction reference ${ arbitraryPublicReference }`, () => {
-		const row = {
-			...contractMap.rows[ 0 ],
-			migration_state: 'deferred',
-			native_support_state: 'blocked-external',
-			gap_or_decision_reference: 'issue:12345',
-		};
-		const evidence = createValidEvidence( row, {
-			implementation_commits: [],
-			verification: [],
-			deferral: {
-				...createDecisionReadyDeferral( 'issue:12345' ),
-				unlock_satisfactions: [
-					createUnlockSatisfaction( row, {
-						reference: arbitraryPublicReference,
-					} ),
-				],
-			},
-		} );
-
-		assert.throws(
-			() =>
-				validateMigrationEvidence(
-					evidence,
-					createEvidenceContext( row )
-				),
-			/unlock satisfaction.*reference/
-		);
-	} );
-}
-
-test( 'accepts a calibration-notes unlock satisfaction with the same dated heading', () => {
-	const row = {
-		...contractMap.rows[ 0 ],
-		migration_state: 'deferred',
-		native_support_state: 'blocked-external',
-		gap_or_decision_reference: 'issue:12345',
-	};
-	const evidence = createValidEvidence( row, {
-		implementation_commits: [],
-		verification: [],
-		deferral: {
-			...createDecisionReadyDeferral( 'issue:12345' ),
-			unlock_satisfactions: [
-				createUnlockSatisfaction( row, {
-					reference:
-						'calibration-notes:2026-08-03:native-runtime-ready',
-				} ),
-			],
-		},
-	} );
-
-	assert.doesNotThrow( () =>
-		validateMigrationEvidence( evidence, {
-			...createEvidenceContext( row ),
-			calibrationNotesContent:
-				'# Calibration\n\n## 2026-08-03 — Native runtime ready\n',
-		} )
-	);
-} );
-
-test( 'rejects a calibration-notes unlock satisfaction without its matching dated heading', () => {
-	const row = {
-		...contractMap.rows[ 0 ],
-		migration_state: 'deferred',
-		native_support_state: 'blocked-external',
-		gap_or_decision_reference: 'issue:12345',
-	};
-	const evidence = createValidEvidence( row, {
-		implementation_commits: [],
-		verification: [],
-		deferral: {
-			...createDecisionReadyDeferral( 'issue:12345' ),
-			unlock_satisfactions: [
-				createUnlockSatisfaction( row, {
-					reference:
-						'calibration-notes:2026-08-03:native-runtime-ready',
-				} ),
-			],
-		},
-	} );
-
-	assert.throws(
-		() =>
-			validateMigrationEvidence( evidence, {
-				...createEvidenceContext( row ),
-				calibrationNotesContent:
-					'# Calibration\n\n## 2026-08-02 — Native runtime ready\n',
-			} ),
-		/matching dated heading/
-	);
-} );
-
-for ( const [ description, overrides ] of [
-	[ 'timestamp-shaped date', { satisfied_on: '2026-08-03T12:00:00Z' } ],
-	[ 'impossible date', { satisfied_on: '2026-02-30' } ],
-	[ 'placeholder reference', { reference: 'pending' } ],
-	[
-		'internal URL reference',
-		{ reference: 'https://example.a8c.com/calibration' },
-	],
-	[
-		'raw provider ID reference',
-		{ reference: 'redacted:calibration:acct_123456789' },
-	],
-	[ 'email reference', { reference: 'test-merchant@example.com' } ],
-	[
-		'credential reference',
-		{ reference: 'authorization: Bearer abcdefghijklmnop' },
-	],
-	[ 'absolute path reference', { reference: '/private/calibration.json' } ],
-] ) {
-	test( `rejects an unlock satisfaction with ${ description }`, () => {
-		const row = {
-			...contractMap.rows[ 0 ],
-			migration_state: 'deferred',
-			native_support_state: 'blocked-external',
-			gap_or_decision_reference: 'issue:12345',
-		};
-		const evidence = createValidEvidence( row, {
-			implementation_commits: [],
-			verification: [],
-			deferral: {
-				...createDecisionReadyDeferral( 'issue:12345' ),
-				unlock_satisfactions: [
-					createUnlockSatisfaction( row, overrides ),
-				],
-			},
-		} );
-
-		assert.throws(
-			() =>
-				validateMigrationEvidence(
-					evidence,
-					createEvidenceContext( row )
-				),
-			/unlock satisfaction|public-safe|credentials|provider identifiers|absolute paths/
-		);
-	} );
-}
-
-for ( const unresolvedPlaceholder of [
-	'none',
-	'PeNdInG',
-	'unknown',
-	'TBD',
-	'N / A',
-	'not-assessed',
-	'Owner Decision Required',
-] ) {
-	test( `rejects a deferred blocker using the unresolved placeholder ${ unresolvedPlaceholder }`, () => {
-		const row = {
-			...contractMap.rows[ 0 ],
-			migration_state: 'deferred',
-			native_support_state: 'blocked-external',
-			gap_or_decision_reference: 'issue:12345',
-		};
-		const evidence = createValidEvidence( row, {
-			implementation_commits: [],
-			verification: [],
-			deferral: {
-				...createDecisionReadyDeferral( 'issue:12345' ),
-				blocker: unresolvedPlaceholder,
-			},
-		} );
-
-		assert.throws(
-			() =>
-				validateMigrationEvidence(
-					evidence,
-					createEvidenceContext( row )
-				),
-			/deferral/
-		);
-	} );
-}
-
-for ( const deferralField of [
-	'blocker',
-	'affected_scope',
-	'no_allowlisted_action_reason',
-	'unlock_decision',
-	'quarantine_status',
-] ) {
-	test( `rejects an unresolved ${ deferralField } deferral field`, () => {
-		const row = {
-			...contractMap.rows[ 0 ],
-			migration_state: 'deferred',
-			native_support_state: 'blocked-external',
-			gap_or_decision_reference: 'issue:12345',
-		};
-		const evidence = createValidEvidence( row, {
-			implementation_commits: [],
-			verification: [],
-			deferral: {
-				...createDecisionReadyDeferral( 'issue:12345' ),
-				[ deferralField ]: 'pending',
-			},
-		} );
-
-		assert.throws(
-			() =>
-				validateMigrationEvidence(
-					evidence,
-					createEvidenceContext( row )
-				),
-			/deferral/
-		);
-	} );
-}
-
-for ( const [ description, overrides ] of [
-	[
-		'a mismatched decision reference',
-		{
-			deferral: createDecisionReadyDeferral( 'issue:another-decision' ),
-		},
-	],
-	[
-		'invented implementation commits',
-		{
-			implementation_commits: [ '3'.repeat( 40 ) ],
-			deferral: createDecisionReadyDeferral( 'issue:12345' ),
-		},
-	],
-	[
-		'invented verification results',
-		{
-			verification: [
-				{
-					command: 'pnpm test:e2e:woopayments:controller',
-					exit_code: 0,
-					summary: 'controller checks passed',
-				},
-			],
-			deferral: createDecisionReadyDeferral( 'issue:12345' ),
-		},
-	],
-] ) {
-	test( `rejects deferred evidence with ${ description }`, () => {
-		const row = {
-			...contractMap.rows[ 0 ],
-			migration_state: 'deferred',
-			native_support_state: 'blocked-external',
-			gap_or_decision_reference: 'issue:12345',
-		};
-		const evidence = createValidEvidence( row, {
-			implementation_commits: [],
-			verification: [],
-			...overrides,
-		} );
-
-		assert.throws(
-			() =>
-				validateMigrationEvidence(
-					evidence,
-					createEvidenceContext( row )
-				),
-			/deferral|implementation_commits|verification/
-		);
-	} );
-}
-
-for ( const [ description, mutate ] of [
-	[ 'no known gaps', ( evidence ) => ( evidence.known_gaps = [] ) ],
-	[
-		'a gap without a stable local ID',
-		( evidence ) => {
-			evidence.known_gaps[ 0 ].id = 'provider-gap';
-		},
-	],
-	[
-		'a gap without an owner',
-		( evidence ) => {
-			evidence.known_gaps[ 0 ].owner = '';
-		},
-	],
-	[
-		'a gap without an issue reference',
-		( evidence ) => {
-			evidence.known_gaps[ 0 ].reference = '';
-		},
-	],
-	[
-		'a gap without an error-name fingerprint',
-		( evidence ) => {
-			evidence.known_gaps[ 0 ].fingerprint.error_name = '';
-		},
-	],
-	[
-		'a gap without a message-pattern fingerprint',
-		( evidence ) => {
-			evidence.known_gaps[ 0 ].fingerprint.message_pattern = '';
-		},
-	],
-	[
-		'a gap with a catch-all zero-or-more fingerprint',
-		( evidence ) => {
-			evidence.known_gaps[ 0 ].fingerprint.message_pattern = '^.*$';
-		},
-	],
-	[
-		'a gap with a catch-all one-or-more fingerprint',
-		( evidence ) => {
-			evidence.known_gaps[ 0 ].fingerprint.message_pattern = '^.+$';
-		},
-	],
-	[
-		'a gap with an alternative match-all fingerprint',
-		( evidence ) => {
-			evidence.known_gaps[ 0 ].fingerprint.message_pattern =
-				'^[\\s\\S]*$';
-		},
-	],
-	[
-		'a gap with an invalid anchored fingerprint',
-		( evidence ) => {
-			evidence.known_gaps[ 0 ].fingerprint.message_pattern = '^(?$';
-		},
-	],
-	[
-		'a gap bound to another decision reference',
-		( evidence ) => {
-			evidence.known_gaps[ 0 ].reference = 'issue:another-gap';
-		},
-	],
-] ) {
-	test( `rejects known-gap evidence with ${ description }`, () => {
-		const row = {
-			...contractMap.rows[ 0 ],
-			target_contract: 'Native fixture contract',
-			migration_state: 'implemented',
-			native_support_state: 'known-gap',
-			gap_or_decision_reference: 'issue:12345',
-		};
-		const evidence = createValidEvidence( row, {
-			known_gaps: [
-				{
-					id: 'WPNATIVE-GAP-0001',
-					owner: 'payments',
-					reference: 'issue:12345',
-					fingerprint: {
-						error_name: 'Error',
-						message_pattern: '^Native payment is unavailable\\.$',
-					},
-				},
-			],
-		} );
-
-		mutate( evidence );
-
-		assert.throws(
-			() =>
-				validateMigrationEvidence(
-					evidence,
-					createEvidenceContext( row )
-				),
-			/known_gaps/
-		);
-	} );
-}
-
-for ( const [ description, mutate ] of [
-	[
-		'an absolute filesystem path',
-		( evidence ) => {
-			evidence.verification[ 0 ].summary =
-				'/private/provider/evidence.json';
-		},
-	],
-	[
-		'a secret-bearing key',
-		( evidence ) => {
-			evidence.verification[ 0 ].authorization = 'Bearer redacted';
-		},
-	],
-	[
-		'a raw provider payload',
-		( evidence ) => {
-			evidence.verification[ 0 ].raw_payload = {
-				provider_id: 'redacted:provider-account',
-			};
-		},
-	],
-	[
-		'an unexpected object key',
-		( evidence ) => {
-			evidence.unexpected_field = 'not part of the evidence contract';
-		},
-	],
-] ) {
-	test( `rejects evidence containing ${ description }`, () => {
-		const row = {
-			...contractMap.rows[ 0 ],
-			target_contract: 'Native fixture contract',
-			migration_state: 'closed',
-			native_support_state: 'supported',
-		};
-		const evidence = createValidEvidence( row );
-
-		mutate( evidence );
-
-		assert.throws(
-			() =>
-				validateMigrationEvidence(
-					evidence,
-					createEvidenceContext( row )
-				),
-			/public-safe|unsafe/i
-		);
-	} );
-}
-
-for ( const [ description, unsafeValue ] of [
-	[ 'an email address', 'Merchant email merchant@example.com was removed' ],
-	[
-		'a bearer credential',
-		'Provider response used Bearer sk_test_51N4secretvalue',
-	],
-	[ 'a key-value credential', 'api_key=sk_test_51N4secretvalue pnpm test' ],
-	[ 'a serialized JSON object', '{"result":"passed"}' ],
-	[
-		'an unredacted provider ID',
-		'Provider payment intent pi_3MtwBwLkdIwHu7ix28a3tqPa was verified',
-	],
-	[
-		'a provider correlation without a one-way hash',
-		'Provider correlation redacted:payment-intent',
-	],
-] ) {
-	test( `rejects evidence containing ${ description } in an allowed string field`, () => {
-		const row = {
-			...contractMap.rows[ 0 ],
-			target_contract: 'Native fixture contract',
-			migration_state: 'closed',
-			native_support_state: 'supported',
-		};
-		const evidence = createValidEvidence( row );
-
-		evidence.verification[ 0 ].summary = unsafeValue;
-
-		assert.throws(
-			() =>
-				validateMigrationEvidence(
-					evidence,
-					createEvidenceContext( row )
-				),
-			/public-safe|unsafe/i
-		);
-	} );
-}
-
-test( 'rejects a standalone provider secret token in evidence strings', () => {
-	const row = contractMap.rows[ 0 ];
-	const evidence = createValidEvidence( row, {
-		verification: [
-			{
-				command: 'pnpm test:e2e:woopayments:controller',
-				exit_code: 0,
-				summary: 'verified with sk_live_1234567890abcdefTESTONLY',
-			},
-		],
-	} );
-
-	assert.throws(
-		() =>
-			validateMigrationEvidence( evidence, createEvidenceContext( row ) ),
-		/credentials are forbidden/
-	);
-} );
-
-test( 'rejects JSON payloads embedded after a prose prefix', () => {
-	const row = contractMap.rows[ 0 ];
-	const evidence = createValidEvidence( row, {
-		verification: [
-			{
-				command: 'pnpm test:e2e:woopayments:controller',
-				exit_code: 0,
-				summary:
-					'provider response: {"name":"Synthetic Person","phone":"555-0100"}',
-			},
-		],
-	} );
-
-	assert.throws(
-		() =>
-			validateMigrationEvidence( evidence, createEvidenceContext( row ) ),
-		/serialized payloads are forbidden/
-	);
-} );
-
-for ( const [ description, embeddedPayload ] of [
-	[ 'a numeric scalar-leading array', '[1234567890123456]' ],
-	[ 'a boolean and null scalar-leading array', '[true,false,null]' ],
-	[ 'an object with an escaped key', '{"na\\"me":"Synthetic Person"}' ],
-] ) {
-	test( `rejects ${ description } embedded after a prose prefix`, () => {
-		const row = contractMap.rows[ 0 ];
-		const evidence = createValidEvidence( row, {
-			verification: [
-				{
-					command: 'pnpm test:e2e:woopayments:controller',
-					exit_code: 0,
-					summary: `provider response: ${ embeddedPayload }`,
-				},
-			],
-		} );
-
-		assert.throws(
-			() =>
-				validateMigrationEvidence(
-					evidence,
-					createEvidenceContext( row )
-				),
-			/serialized payloads are forbidden/
-		);
-	} );
-}
-
-test( 'accepts incidental non-JSON brackets and braces in evidence strings', () => {
-	const row = createPlannedFixtureRow();
-	const evidence = createValidEvidence( row, {
-		verification: [
-			{
-				command: 'pnpm test:e2e:woopayments:controller',
-				exit_code: 0,
-				summary:
-					'Verified items[primary] with the expected {status} placeholder',
-			},
-		],
-	} );
-
-	assert.doesNotThrow( () =>
-		validateMigrationEvidence( evidence, createEvidenceContext( row ) )
-	);
-} );
-
-test( 'rejects opening-heavy evidence strings over 4096 characters', () => {
-	const row = contractMap.rows[ 0 ];
-	const evidence = createValidEvidence( row, {
-		verification: [
-			{
-				command: 'pnpm test:e2e:woopayments:controller',
-				exit_code: 0,
-				summary: '['.repeat( 4097 ),
-			},
-		],
-	} );
-
-	assert.throws(
-		() =>
-			validateMigrationEvidence( evidence, createEvidenceContext( row ) ),
-		/evidence strings must not exceed 4096 characters/
-	);
-} );
-
-test( 'accepts safe evidence strings exactly 4096 characters long', () => {
-	const row = createPlannedFixtureRow();
-	const evidence = createValidEvidence( row, {
-		verification: [
-			{
-				command: 'pnpm test:e2e:woopayments:controller',
-				exit_code: 0,
-				summary: 'x'.repeat( 4096 ),
-			},
-		],
-	} );
-
-	assert.doesNotThrow( () =>
-		validateMigrationEvidence( evidence, createEvidenceContext( row ) )
-	);
-} );
-
-test( 'rejects JWT-shaped tokens in evidence strings', () => {
-	const row = contractMap.rows[ 0 ];
-	const evidence = createValidEvidence( row, {
-		verification: [
-			{
-				command: 'pnpm test:e2e:woopayments:controller',
-				exit_code: 0,
-				summary:
-					'session eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl',
-			},
-		],
-	} );
-
-	assert.throws(
-		() =>
-			validateMigrationEvidence( evidence, createEvidenceContext( row ) ),
-		/credentials are forbidden/
-	);
-} );
-
-test( 'require-saturated rejects a planned contract', () => {
-	const map = cloneContractMap();
-	resetToPlanned( map.rows[ 0 ] );
-
-	assert.throws(
-		() => validate( map, { requireSaturated: true } ),
-		/Unsaturated contract: /
-	);
-} );
-
-test( 'require-saturated accepts only closed or deferred contracts', () => {
-	const map = cloneContractMap();
-
-	for ( const row of map.rows ) {
-		row.migration_state = 'deferred';
-		row.native_support_state = 'blocked-external';
-		// A human-approved reference keeps rows whose accepted disposition
-		// legitimately departs from the planned one (family-smoke acceptances)
-		// valid in the synthesized all-deferred inventory.
-		row.gap_or_decision_reference = 'human-approved:inventory-deferral';
-		row.evidence_path = createEvidenceFile( row );
-	}
-
-	assert.doesNotThrow( () => validate( map, { requireSaturated: true } ) );
-} );
-
-test( 'require-migrated rejects any state other than closed', () => {
-	assert.throws(
-		() => validate( cloneContractMap(), { requireMigrated: true } ),
-		/Unmigrated contract: /
-	);
-} );
-
-test( 'require-closed remains an alias for migrated semantics', () => {
-	assert.throws(
-		() =>
-			runCli( [ '--require-closed' ], {
-				ledgerContent,
-				metadata,
-				repositoryRoot,
-				log: () => {},
-			} ),
-		/Unmigrated contract: /
-	);
-} );
-
-test( 'require-migrated rejects known gaps and deferrals', () => {
-	const map = cloneContractMap();
-	const row = map.rows[ 0 ];
-
+};
+
+const deferRow = ( row, reference = 'blocked-environment:PILOT-FIXTURE' ) => {
+	row.accepted_disposition = row.planned_disposition;
+	row.target_contract = `Native contract for ${ row.case_id }`;
+	row.implementation_owner = 'woocommerce-e2e';
 	row.migration_state = 'deferred';
-	row.native_support_state = 'known-gap';
-	row.gap_or_decision_reference = 'issue:known-gap';
-	row.evidence_path = createEvidenceFile( row );
+	row.native_support_state = 'blocked-environment';
+	row.gap_or_decision_reference = reference;
+	row.evidence_path = 'none';
+};
+
+// ---------------------------------------------------------------------------
+// Parsing
+// ---------------------------------------------------------------------------
+
+test( 'rejects empty ledger content', () => {
+	assert.throws(
+		() => parseContractMap( '' ),
+		/Contract map must be non-empty TSV content/
+	);
+} );
+
+test( 'rejects a ledger without the exact ordered schema', () => {
+	const map = cloneContractMap();
+	const truncatedHeaders = map.headers.slice( 0, -1 );
+	const content =
+		[
+			truncatedHeaders,
+			...map.rows.map( ( row ) =>
+				truncatedHeaders.map( ( header ) => row[ header ] )
+			),
+		]
+			.map( ( values ) => values.join( '\t' ) )
+			.join( '\n' ) + '\n';
 
 	assert.throws(
-		() => validate( map, { requireMigrated: true } ),
-		new RegExp( `Unmigrated contract: ${ row.case_id }` )
+		() => parseContractMap( content ),
+		/Invalid contract-map schema; expected the exact 40 ordered columns/
 	);
 } );
 
-test( 'require-migrated accepts a fully closed inventory with zero gaps', () => {
-	const map = cloneContractMap();
+test( 'rejects a row with the wrong column count', () => {
+	const lines = serializeContractMap( cloneContractMap() ).split( '\n' );
 
-	const sourceRepositoryRoot = closeInventory( map );
+	lines[ 1 ] += '\textra-column';
 
-	assert.doesNotThrow( () =>
-		validate( map, {
-			repositoryRoot: sourceRepositoryRoot,
-			requireMigrated: true,
-		} )
-	);
-} );
-
-test( 'keeps frozen columns bound to the metadata SHA-256', () => {
-	const summary = validate( cloneContractMap() );
-	const map = cloneContractMap();
-
-	assert.equal( summary.frozenSourceSha256, metadata.frozen_source_sha256 );
-
-	map.rows[ 0 ].contract = `${ map.rows[ 0 ].contract } changed`;
 	assert.throws(
-		() => validate( map ),
-		new RegExp(
-			`Frozen source content drifted; expected SHA-256 ${ metadata.frozen_source_sha256 }`
-		)
+		() => parseContractMap( lines.join( '\n' ) ),
+		/Row 2 has 41 columns; expected 40/
 	);
 } );
+
+test( 'parses the current ledger into 181 contracts', () => {
+	assert.equal( contractMap.rows.length, 181 );
+} );
+
+// ---------------------------------------------------------------------------
+// Metadata pinning and the frozen inventory
+// ---------------------------------------------------------------------------
 
 for ( const [ field, invalidValue ] of [
 	[ 'schema_version', 2 ],
@@ -4338,12 +254,39 @@ for ( const [ field, invalidValue ] of [
 	} );
 }
 
+test( 'rejects an unparsed contract map', () => {
+	assert.throws( () => validate( null ), /Invalid parsed contract map/ );
+} );
+
+test( 'keeps frozen columns bound to the metadata SHA-256', () => {
+	const summary = validate( cloneContractMap() );
+	const map = cloneContractMap();
+
+	assert.equal( summary.frozenSourceSha256, metadata.frozen_source_sha256 );
+
+	map.rows[ 0 ].contract = `${ map.rows[ 0 ].contract } changed`;
+	assert.throws(
+		() => validate( map ),
+		new RegExp(
+			`Frozen source content drifted; expected SHA-256 ${ metadata.frozen_source_sha256 }`
+		)
+	);
+} );
+
 test( 'rejects the wrong inventory row count', () => {
 	const map = cloneContractMap();
 
 	map.rows.pop();
 
 	assert.throws( () => validate( map ), /Expected 181 cases; found 180/ );
+} );
+
+test( 'rejects a contract without a case_id', () => {
+	const map = cloneContractMap();
+
+	map.rows[ 0 ].case_id = '';
+
+	assert.throws( () => validate( map ), /Found a contract without a case_id/ );
 } );
 
 test( 'rejects duplicate case IDs', () => {
@@ -4357,24 +300,680 @@ test( 'rejects duplicate case IDs', () => {
 	);
 } );
 
+// ---------------------------------------------------------------------------
+// Editable columns and legal values
+// ---------------------------------------------------------------------------
+
+test( 'rejects an empty editable column', () => {
+	const map = cloneContractMap();
+	const row = map.rows[ 0 ];
+
+	row.evidence_path = '';
+
+	assert.throws(
+		() => validate( map ),
+		new RegExp( `Incomplete closure fields for ${ row.case_id }` )
+	);
+} );
+
+test( 'rejects an unknown migration_state', () => {
+	const map = cloneContractMap();
+	const row = map.rows[ 0 ];
+
+	row.migration_state = 'complete';
+
+	assert.throws(
+		() => validate( map ),
+		new RegExp( `Invalid migration_state for ${ row.case_id }: complete` )
+	);
+} );
+
+test( 'rejects an unknown native_support_state', () => {
+	const map = cloneContractMap();
+	const row = map.rows[ 0 ];
+
+	row.native_support_state = 'mostly-supported';
+
+	assert.throws(
+		() => validate( map ),
+		new RegExp(
+			`Invalid native_support_state for ${ row.case_id }: mostly-supported`
+		)
+	);
+} );
+
+test( 'rejects an accepted_disposition outside the legal sentences', () => {
+	const map = cloneContractMap();
+	const row = map.rows[ 0 ];
+
+	row.accepted_disposition = 'Just retire it';
+
+	assert.throws(
+		() => validate( map ),
+		new RegExp( `Invalid accepted_disposition for ${ row.case_id }` )
+	);
+} );
+
+test( 'accepts a disposition that departs from the plan without any approval token', () => {
+	const map = cloneContractMap();
+	const row = map.rows[ 0 ];
+
+	closeSupported( row );
+	row.accepted_disposition =
+		row.planned_disposition === 'Run unchanged against both runtimes'
+			? 'Rewrite as a native-specific E2E test preserving the contract'
+			: 'Run unchanged against both runtimes';
+	assert.notEqual( row.accepted_disposition, row.planned_disposition );
+
+	assert.doesNotThrow( () => validate( map ) );
+} );
+
+// ---------------------------------------------------------------------------
+// evidence_path: an optional pointer, never schema-validated content
+// ---------------------------------------------------------------------------
+
+test( 'accepts evidence_path none on a closed contract', () => {
+	const map = cloneContractMap();
+
+	closeSupported( map.rows[ 0 ] );
+
+	assert.doesNotThrow( () => validate( map ) );
+} );
+
+test( 'accepts a tracked evidence pointer without validating its content', () => {
+	const map = cloneContractMap();
+	const row = map.rows[ 0 ];
+
+	closeSupported( row );
+	// A packet written for entirely different rows: only existence and
+	// tracking matter now.
+	row.evidence_path = trackedEvidencePointer;
+
+	assert.doesNotThrow( () => validate( map ) );
+} );
+
+test( 'rejects more than one evidence file', () => {
+	const map = cloneContractMap();
+	const row = map.rows[ 0 ];
+
+	deferRow( row );
+	row.evidence_path = `${ trackedEvidencePointer };${ trackedEvidencePointer }`;
+
+	assert.throws(
+		() => validate( map ),
+		new RegExp(
+			`Evidence must be none or one tracked JSON file for ${ row.case_id }`
+		)
+	);
+} );
+
+test( 'rejects a non-JSON evidence pointer', () => {
+	const map = cloneContractMap();
+	const row = map.rows[ 0 ];
+
+	deferRow( row );
+	row.evidence_path = trackedSpecTarget;
+
+	assert.throws(
+		() => validate( map ),
+		new RegExp(
+			`Evidence must be none or one tracked JSON file for ${ row.case_id }`
+		)
+	);
+} );
+
+test( 'rejects a missing evidence file', () => {
+	const map = cloneContractMap();
+	const row = map.rows[ 0 ];
+
+	deferRow( row );
+	row.evidence_path =
+		'plugins/woocommerce/tests/e2e/bin/does-not-exist-evidence.json';
+
+	assert.throws(
+		() => validate( map ),
+		new RegExp( `Non-concrete evidence_path for ${ row.case_id }` )
+	);
+} );
+
+test( 'rejects an untracked evidence file', () => {
+	const map = cloneContractMap();
+	const row = map.rows[ 0 ];
+	const temporaryDirectory = createRepositoryTemporaryDirectory();
+	const evidencePath = join( temporaryDirectory, 'evidence.json' );
+
+	writeFileSync( evidencePath, '{}\n' );
+	deferRow( row );
+	row.evidence_path = repositoryRelativePath( evidencePath );
+
+	assert.throws(
+		() => validate( map ),
+		new RegExp( `Untracked evidence_path for ${ row.case_id }` )
+	);
+} );
+
+// ---------------------------------------------------------------------------
+// Closed rows: existing tracked targets, supported or retired
+// ---------------------------------------------------------------------------
+
+test( 'rejects a closed contract that is neither supported nor retired', () => {
+	const map = cloneContractMap();
+	const row = map.rows[ 0 ];
+
+	closeSupported( row );
+	row.native_support_state = 'known-gap';
+	row.gap_or_decision_reference = 'issue:known-gap';
+
+	assert.throws(
+		() => validate( map ),
+		new RegExp(
+			`Closed contract must be supported or retired onto a retained contract: ${ row.case_id }`
+		)
+	);
+} );
+
+test( 'accepts a retired closure that names its retained contract', () => {
+	const map = cloneContractMap();
+
+	retireRow( map.rows[ 0 ] );
+
+	assert.doesNotThrow( () => validate( map ) );
+} );
+
+test( 'rejects a retired closure without a retained-contract reference', () => {
+	const map = cloneContractMap();
+	const row = map.rows[ 0 ];
+
+	retireRow( row );
+	row.target_contract = 'pending';
+
+	assert.throws(
+		() => validate( map ),
+		new RegExp(
+			`Closed contract must be supported or retired onto a retained contract: ${ row.case_id }`
+		)
+	);
+} );
+
+test( 'rejects a retired support state without the retirement disposition', () => {
+	const map = cloneContractMap();
+	const row = map.rows[ 0 ];
+
+	retireRow( row );
+	row.accepted_disposition = 'Run unchanged against both runtimes';
+
+	assert.throws(
+		() => validate( map ),
+		new RegExp(
+			`Closed contract must be supported or retired onto a retained contract: ${ row.case_id }`
+		)
+	);
+} );
+
+test( 'rejects repository path traversal in a target', () => {
+	const map = cloneContractMap();
+	const row = map.rows[ 0 ];
+
+	closeSupported( row );
+	row.target_path = '../outside-repository.spec.ts';
+
+	assert.throws(
+		() => validate( map ),
+		new RegExp(
+			`Invalid target_path for ${ row.case_id }: ../outside-repository.spec.ts`
+		)
+	);
+} );
+
+test( 'rejects a missing closed target file', () => {
+	const map = cloneContractMap();
+	const row = map.rows[ 0 ];
+
+	closeSupported(
+		row,
+		'plugins/woocommerce/tests/e2e/bin/does-not-exist.spec.ts'
+	);
+
+	assert.equal(
+		existsSync( resolve( repositoryRoot, row.target_path ) ),
+		false
+	);
+	assert.throws(
+		() => validate( map ),
+		new RegExp(
+			`Non-concrete target_path for ${ row.case_id }: ${ row.target_path }`
+		)
+	);
+} );
+
+test( 'rejects an existing directory as a closed target file', () => {
+	const map = cloneContractMap();
+	const row = map.rows[ 0 ];
+	const temporaryDirectory = createRepositoryTemporaryDirectory();
+
+	closeSupported( row, repositoryRelativePath( temporaryDirectory ) );
+
+	assert.throws(
+		() => validate( map ),
+		new RegExp(
+			`Non-concrete or out-of-repository target_path for ${ row.case_id }`
+		)
+	);
+} );
+
+test( 'rejects an untracked closed target file', () => {
+	const map = cloneContractMap();
+	const row = map.rows[ 0 ];
+	const temporaryDirectory = createRepositoryTemporaryDirectory();
+	const targetPath = join( temporaryDirectory, 'fixture.spec.ts' );
+
+	writeFileSync( targetPath, '// Contract-map test fixture.\n' );
+	closeSupported( row, repositoryRelativePath( targetPath ) );
+
+	assert.throws(
+		() => validate( map ),
+		new RegExp( `Untracked target_path for ${ row.case_id }` )
+	);
+} );
+
+test( 'checks every segment of a multi-target closed row', () => {
+	const map = cloneContractMap();
+	const row = map.rows[ 0 ];
+
+	closeSupported( row, `${ trackedPhpTarget };${ trackedSpecTarget }` );
+	assert.doesNotThrow( () => validate( map ) );
+
+	closeSupported(
+		row,
+		`${ trackedPhpTarget };plugins/woocommerce/tests/e2e/bin/does-not-exist.spec.ts`
+	);
+	assert.throws(
+		() => validate( map ),
+		new RegExp( `Non-concrete target_path for ${ row.case_id }` )
+	);
+} );
+
+test( 'a closed row may target only a lower-layer PHPUnit test', () => {
+	const map = cloneContractMap();
+
+	closeSupported( map.rows[ 0 ], trackedPhpTarget );
+
+	assert.doesNotThrow( () => validate( map ) );
+} );
+
+test( 'non-closed rows may name targets that do not exist yet', () => {
+	const map = cloneContractMap();
+	const row = map.rows[ 0 ];
+
+	deferRow( row );
+	row.target_path =
+		'plugins/woocommerce/tests/e2e/tests/woopayments-native/future/not-written-yet.spec.ts';
+
+	assert.doesNotThrow( () => validate( map ) );
+} );
+
+// ---------------------------------------------------------------------------
+// Deferred rows
+// ---------------------------------------------------------------------------
+
+test( 'accepts a deferred contract with a one-line reason', () => {
+	const map = cloneContractMap();
+
+	deferRow( map.rows[ 0 ] );
+
+	assert.doesNotThrow( () => validate( map ) );
+} );
+
+for ( const placeholder of [ 'none', 'pending' ] ) {
+	test( `rejects a deferred contract with reference ${ placeholder }`, () => {
+		const map = cloneContractMap();
+		const row = map.rows[ 0 ];
+
+		deferRow( row, placeholder );
+
+		assert.throws(
+			() => validate( map ),
+			new RegExp(
+				`Deferred contract requires a gap or decision reference: ${ row.case_id }`
+			)
+		);
+	} );
+}
+
+// ---------------------------------------------------------------------------
+// Saturation and migration gates
+// ---------------------------------------------------------------------------
+
+test( 'require-saturated accepts the current closed-or-deferred inventory', () => {
+	assert.doesNotThrow( () =>
+		validate( cloneContractMap(), { requireSaturated: true } )
+	);
+} );
+
+test( 'require-saturated rejects a contract that is still in flight', () => {
+	const map = cloneContractMap();
+	const row = map.rows[ 0 ];
+
+	deferRow( row );
+	row.migration_state = 'specified';
+
+	assert.throws(
+		() => validate( map, { requireSaturated: true } ),
+		new RegExp( `Unsaturated contract: ${ row.case_id }` )
+	);
+} );
+
+test( 'require-migrated rejects the current inventory while deferrals remain', () => {
+	assert.throws(
+		() => validate( cloneContractMap(), { requireMigrated: true } ),
+		/Unmigrated contract: /
+	);
+} );
+
+test( 'require-closed remains an alias for migrated semantics', () => {
+	assert.throws(
+		() =>
+			runCli( [ '--require-closed' ], {
+				ledgerContent,
+				metadata,
+				repositoryRoot,
+				log: () => {},
+			} ),
+		/Unmigrated contract: /
+	);
+} );
+
+test( 'require-migrated accepts a fully closed inventory with zero gaps', () => {
+	const map = cloneContractMap();
+	const files = {};
+
+	for ( const row of map.rows ) {
+		closeSupported( row, row.target_path );
+		for ( const targetPath of row.target_path.split( ';' ) ) {
+			files[ targetPath ] = '// Contract-map test fixture.\n';
+		}
+	}
+
+	const sourceRepositoryRoot = createTrackedFileRepository( files );
+
+	assert.doesNotThrow( () =>
+		validate( map, {
+			repositoryRoot: sourceRepositoryRoot,
+			requireMigrated: true,
+		} )
+	);
+} );
+
 test( 'summarizes migration and native-support states', () => {
 	const summary = validate( cloneContractMap() );
 
 	assert.equal(
-		summary.migrationStateCounts.planned,
-		contractMap.rows.filter( ( row ) => row.migration_state === 'planned' )
+		summary.migrationStateCounts.closed,
+		contractMap.rows.filter( ( row ) => row.migration_state === 'closed' )
 			.length
 	);
 	assert.equal(
-		summary.migrationStateCounts.specified,
+		summary.migrationStateCounts.deferred,
 		contractMap.rows.filter(
-			( row ) => row.migration_state === 'specified'
+			( row ) => row.migration_state === 'deferred'
 		).length
 	);
 	assert.equal(
-		summary.nativeSupportStateCounts[ 'not-assessed' ],
+		summary.nativeSupportStateCounts.supported,
 		contractMap.rows.filter(
-			( row ) => row.native_support_state === 'not-assessed'
+			( row ) => row.native_support_state === 'supported'
 		).length
+	);
+} );
+
+// ---------------------------------------------------------------------------
+// CLI
+// ---------------------------------------------------------------------------
+
+test( 'CLI validates the real ledger and prints the summary', () => {
+	const logLines = [];
+
+	const summary = runCli( [ '--summary' ], {
+		ledgerContent,
+		metadata,
+		repositoryRoot,
+		log: ( line ) => logLines.push( line ),
+	} );
+
+	assert.equal( summary.rowCount, 181 );
+	assert.equal(
+		logLines[ 0 ],
+		'Validated 181 WooPayments client contracts.'
+	);
+
+	const summarizedMigrationStates = Object.entries(
+		summary.migrationStateCounts
+	)
+		.filter( ( [ , count ] ) => count > 0 )
+		.map(
+			( [ state, count ] ) => `${ count }\tmigration_state\t${ state }`
+		);
+	assert.equal(
+		summarizedMigrationStates.every( ( line ) =>
+			logLines.includes( line )
+		),
+		true
+	);
+
+	const summarizedNativeSupportStates = Object.entries(
+		summary.nativeSupportStateCounts
+	)
+		.filter( ( [ , count ] ) => count > 0 )
+		.map(
+			( [ state, count ] ) =>
+				`${ count }\tnative_support_state\t${ state }`
+		);
+	assert.equal(
+		summarizedNativeSupportStates.every( ( line ) =>
+			logLines.includes( line )
+		),
+		true
+	);
+} );
+
+test( 'CLI stays quiet without the summary flag', () => {
+	const logLines = [];
+
+	runCli( [], {
+		ledgerContent,
+		metadata,
+		repositoryRoot,
+		log: ( line ) => logLines.push( line ),
+	} );
+
+	assert.deepEqual( logLines, [
+		'Validated 181 WooPayments client contracts.',
+	] );
+} );
+
+test( 'CLI rejects unknown arguments', () => {
+	assert.throws(
+		() =>
+			runCli( [ '--nope' ], {
+				ledgerContent,
+				metadata,
+				repositoryRoot,
+				log: () => {},
+			} ),
+		/Unknown argument\(s\): --nope/
+	);
+} );
+
+test( 'CLI no longer recognizes the retired history mode', () => {
+	assert.throws(
+		() =>
+			runCli( [ '--from-git-ref', 'HEAD' ], {
+				ledgerContent,
+				metadata,
+				repositoryRoot,
+				log: () => {},
+			} ),
+		/Unknown argument\(s\): --from-git-ref, HEAD/
+	);
+} );
+
+// ---------------------------------------------------------------------------
+// Fidelity claim citations, read best-effort from evidence packets
+// ---------------------------------------------------------------------------
+
+const fidelityPacketPath = 'evidence/fidelity-citation.json';
+
+const runFidelityCitation = ( packetContent, partitionRows ) => {
+	const map = cloneContractMap();
+
+	// Deferring every row detaches the ledger from this repository's files so
+	// the run can validate against a minimal fixture repository.
+	for ( const row of map.rows ) {
+		deferRow( row );
+	}
+
+	const row = map.rows.find(
+		( candidate ) => candidate.case_id === fidelityClaimCaseId
+	);
+
+	assert.notEqual( row, undefined );
+	row.evidence_path = fidelityPacketPath;
+
+	const sourceRepositoryRoot = createTrackedFileRepository( {
+		[ fidelityPacketPath ]: packetContent,
+	} );
+
+	return runCli( [], {
+		ledgerContent: serializeContractMap( map ),
+		metadata,
+		repositoryRoot: sourceRepositoryRoot,
+		readFidelityPartition: ( repositoryPath ) => {
+			assert.equal( repositoryPath, fidelityPartitionRepositoryPath );
+			return serializeFidelityPartition( partitionRows );
+		},
+		log: () => {},
+	} );
+};
+
+const createCitationPacket = (
+	fidelityClaim = 'manual-authorization-capture'
+) =>
+	`${ JSON.stringify( {
+		closures: [
+			{
+				contract_id: fidelityClaimCaseId,
+				fidelity_claim: fidelityClaim,
+			},
+		],
+	} ) }\n`;
+
+const createFidelityPartitionRow = ( overrides = {} ) => ( {
+	case_id: fidelityClaimCaseId,
+	treatment: 'fidelity',
+	fidelity_family: 'manual-authorization-capture',
+	condition_2_verdict: 'dischargeable',
+	...overrides,
+} );
+
+test( 'accepts a closure citing its dischargeable fidelity family', () => {
+	assert.doesNotThrow( () =>
+		runFidelityCitation( createCitationPacket(), [
+			createFidelityPartitionRow(),
+		] )
+	);
+} );
+
+test( 'rejects a closure citing a different fidelity family', () => {
+	assert.throws(
+		() =>
+			runFidelityCitation(
+				createCitationPacket( 'card-decline-vocabulary' ),
+				[ createFidelityPartitionRow() ]
+			),
+		/fidelity_family is manual-authorization-capture, not cited card-decline-vocabulary/
+	);
+} );
+
+for ( const [ description, partitionOverrides, expectedError ] of [
+	[
+		'a conventional partition row',
+		{
+			treatment: 'conventional',
+			fidelity_family: 'conventional',
+			condition_2_verdict: 'not-applicable',
+		},
+		/requires treatment fidelity; found conventional/,
+	],
+	[
+		'a not-dischargeable partition row',
+		{ condition_2_verdict: 'not-dischargeable' },
+		/requires condition_2_verdict dischargeable; found not-dischargeable/,
+	],
+] ) {
+	test( `rejects a fidelity citation for ${ description }`, () => {
+		assert.throws(
+			() =>
+				runFidelityCitation( createCitationPacket(), [
+					createFidelityPartitionRow( partitionOverrides ),
+				] ),
+			expectedError
+		);
+	} );
+}
+
+test( 'rejects a fidelity citation missing from the partition', () => {
+	assert.throws(
+		() =>
+			runFidelityCitation( createCitationPacket(), [
+				createFidelityPartitionRow( {
+					case_id: 'a-different-contract-id',
+				} ),
+			] ),
+		/exactly one matching case_id; found 0/
+	);
+} );
+
+test( 'rejects a fidelity citation duplicated in the partition', () => {
+	const partitionRow = createFidelityPartitionRow();
+
+	assert.throws(
+		() =>
+			runFidelityCitation( createCitationPacket(), [
+				partitionRow,
+				partitionRow,
+			] ),
+		/exactly one matching case_id; found 2/
+	);
+} );
+
+for ( const [ description, packetContent ] of [
+	[ 'a packet that is not JSON', 'not json at all\n' ],
+	[ 'a packet without closures', '{}\n' ],
+	[ 'a packet whose closures are not an array', '{"closures":{}}\n' ],
+	[
+		'a closure without a fidelity claim',
+		'{"closures":[{"contract_id":"whatever"}]}\n',
+	],
+] ) {
+	test( `tolerates ${ description }`, () => {
+		assert.doesNotThrow( () =>
+			runFidelityCitation( packetContent, [] )
+		);
+	} );
+}
+
+test( 'keeps closures without a fidelity citation backward compatible', () => {
+	assert.doesNotThrow( () =>
+		runCli( [], {
+			ledgerContent,
+			metadata,
+			repositoryRoot,
+			readFidelityPartition: () => {
+				throw new Error(
+					'The partition must not be read without a citation'
+				);
+			},
+			log: () => {},
+		} )
 	);
 } );

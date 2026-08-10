@@ -154,3 +154,31 @@ Six family claims in `FIDELITY-CLAIMS.md` gain extension cases before any family
 ### Accepted risk
 
 Larger claims make longer runs, and a longer run has more ways to fail for reasons unrelated to the proposition under test — a fragile block-theme swap or a slow Cash App Afterpay refund can now block a family whose original cases were sound. That is accepted: the alternative is discharging these 13 rows against claims that do not contain their risk, which Condition 2 exists to prevent. If an extension case proves operationally unstable before the first authorized run, it can be split into its own claim without disturbing this doctrine.
+
+## 2026-08-10 — The verification machinery simplifies to tests, inventory, and provider safety
+
+Owner decision, recorded verbatim in intent: do not get stuck in false ceremony and over-convoluted verification; if machinery does not push the native WooPayments integration forward at high quality with full client parity and backward compatibility, remove it and put saner tests in place.
+
+The evidence that forced this: on this same day, two contracts already proven by a green closed spec could not be closed because adding their annotations to that spec would invalidate a byte-frozen bundle attestation and demand a family re-attestation with fresh hash-bound reviews; and a behavior proven by a passing PHPUnit test (`WooPaymentsAddPaymentMethodIsolationTest`, run green: 2 tests, 3 assertions) had no legal closure shape at all, because closure required a collected Playwright annotation that a PHP test can never carry. The machinery built to prevent dishonest coverage claims had begun preventing honest coverage.
+
+### What is removed
+
+- Byte-frozen closure bundles: `source_test_sha256` attestation over targets plus transitive imports, and the rule that editing an attested file invalidates closure evidence. Tests may be refactored; git history is the audit trail.
+- Hash-bound reviewer verdicts embedded in evidence packets, and required review roles per closure. Review happens in the normal development flow.
+- Deferral-packet immutability, byte-exact `unlock_satisfactions`, slug-validated calibration-heading references, and the deferred→specified→closed two-commit transition enforcement (`--from-git-ref` reopen validation, the migration-state transition table, and disposition-transition `human-approved:` token gates).
+- Mandatory evidence-packet schemas for closures, retirements, and deferrals. `evidence_path` becomes an optional pointer: if set, the file must exist; its content is no longer schema-validated.
+
+### What is kept
+
+- The 181-row ledger with its frozen upstream columns and hash — the parity inventory is the instrument, and its inventory half stays tamper-evident.
+- The state machine's vocabulary (states, dispositions, support states) without transition ceremony. The closure rule becomes: a row is closed when its `target_path` names existing tracked tests and, for rows whose target is a Playwright spec, a collected test carries the row's `woopayments-contract` annotation with a title equal to `target_contract` and passes in its lane. Rows covered at a lower layer close against the covering PHPUnit/JS test path directly. Retired rows keep `not-applicable-retired` plus a retained-contract reference in `target_contract`; deferred rows keep a one-line reason in `gap_or_decision_reference`.
+- The annotation↔ledger binding check (a closed row must point at a real, collected, passing test — coverage claims stay honest), relaxed from a deep-equal fixture to a per-row existence and identity check.
+- `FIDELITY-CLAIMS.md`, the partition, and the Condition 1/2 discipline for provider runs, including the `fidelity_claim` citation check. Naming what a paid-provider run proves before running it is good test design, not ceremony.
+- All provider-safety machinery: resource locks, quarantine receipts, the provider write journal, runtime readiness, transition allocation. That code protects a real financial test account.
+- Existing evidence packets and calibration notes remain in the tree as historical record. Nothing is deleted; it is simply no longer load-bearing.
+
+### Consequences
+
+- The rows this machinery was blocking close on their merits: the two multi-currency frontend rows annotate their covering spec directly, and the add-method isolation row closes against its covering PHPUnit test.
+- The gate pseudo-governance embedded in deferral packets (revision-cap authorizations, target/owner approval clauses) dissolves into the normal rule: fix the recorded defect, write the test, close the row. Real prior findings recorded in those packets (for example the refund-validation DOM-synchronization finding) still must be addressed in the tests that close those rows — removing ceremony does not remove the defects it recorded.
+- Provider-run authorization remains with the owner: runs are still named in writing first, journaled, quarantined on uncertainty, and never performed for row count.

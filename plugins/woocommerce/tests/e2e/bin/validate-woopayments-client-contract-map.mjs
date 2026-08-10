@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process';
 import { readFileSync, realpathSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -6,14 +5,7 @@ import { fileURLToPath } from 'node:url';
 import {
 	parseContractMap,
 	validateContractMap,
-	validateDispositionTransition,
-	validateStateTransition,
 } from './lib/woopayments-contract-map.mjs';
-import {
-	CALIBRATION_NOTES_REPOSITORY_PATH,
-	readCurrentTrackedFile,
-	validateDeferredContractReopens,
-} from './lib/woopayments-migration-evidence.mjs';
 
 const binDirectory = dirname( fileURLToPath( import.meta.url ) );
 const repositoryRoot = realpathSync(
@@ -34,28 +26,46 @@ const fidelityPartitionHeaders = [
 	'condition_2_verdict',
 ];
 
+// Evidence packets are optional pointers whose content carries no schema, so a
+// citation is collected best-effort: a packet that is not JSON, or that has no
+// closures array, simply cites nothing.
 const collectFidelityClaimCitations = ( contractMap, activeRepositoryRoot ) => {
-	const evidenceByPath = new Map();
+	const readEvidencePaths = new Set();
 	const citations = [];
 
 	for ( const row of contractMap.rows ) {
 		if (
 			row.evidence_path === 'none' ||
-			evidenceByPath.has( row.evidence_path )
+			readEvidencePaths.has( row.evidence_path )
 		) {
 			continue;
 		}
+		readEvidencePaths.add( row.evidence_path );
 
-		const evidence = JSON.parse(
-			readFileSync(
-				resolve( activeRepositoryRoot, row.evidence_path ),
-				'utf8'
-			)
-		);
-		evidenceByPath.set( row.evidence_path, evidence );
+		let evidence;
+
+		try {
+			evidence = JSON.parse(
+				readFileSync(
+					resolve( activeRepositoryRoot, row.evidence_path ),
+					'utf8'
+				)
+			);
+		} catch {
+			continue;
+		}
+
+		if ( ! Array.isArray( evidence?.closures ) ) {
+			continue;
+		}
 
 		for ( const closure of evidence.closures ) {
-			if ( Object.hasOwn( closure, 'fidelity_claim' ) ) {
+			if (
+				closure !== null &&
+				typeof closure === 'object' &&
+				! Array.isArray( closure ) &&
+				Object.hasOwn( closure, 'fidelity_claim' )
+			) {
 				citations.push( {
 					caseId: closure.contract_id,
 					fidelityClaim: closure.fidelity_claim,
@@ -147,16 +157,13 @@ const validateFidelityClaimCitations = (
 
 const parseArguments = ( cliArguments ) => {
 	const options = {
-		fromGitRef: undefined,
 		requireMigrated: false,
 		requireSaturated: false,
 		showSummary: false,
 	};
 	const unknownArguments = [];
 
-	for ( let index = 0; index < cliArguments.length; index++ ) {
-		const argument = cliArguments[ index ];
-
+	for ( const argument of cliArguments ) {
 		if ( argument === '--' ) {
 			continue;
 		}
@@ -173,18 +180,6 @@ const parseArguments = ( cliArguments ) => {
 			argument === '--require-closed'
 		) {
 			options.requireMigrated = true;
-			continue;
-		}
-		if ( argument === '--from-git-ref' ) {
-			const gitRef = cliArguments[ index + 1 ];
-
-			if ( ! gitRef || gitRef.startsWith( '--' ) || options.fromGitRef ) {
-				throw new Error(
-					'--from-git-ref requires exactly one Git reference'
-				);
-			}
-			options.fromGitRef = gitRef;
-			index++;
 			continue;
 		}
 
@@ -216,39 +211,6 @@ export const runCli = ( cliArguments, overrides = {} ) => {
 				'utf8'
 			)
 		);
-	const loadFromGitRef =
-		overrides.loadFromGitRef ??
-		( ( gitRef, repositoryPath ) =>
-			execFileSync(
-				'git',
-				[ 'show', `${ gitRef }:${ repositoryPath }` ],
-				{
-					cwd: activeRepositoryRoot,
-					encoding: 'utf8',
-				}
-			) );
-	const resolveGitRef =
-		overrides.resolveGitRef ??
-		( ( gitRef ) =>
-			execFileSync(
-				'git',
-				[ 'rev-parse', '--verify', `${ gitRef }^{commit}` ],
-				{
-					cwd: activeRepositoryRoot,
-					encoding: 'utf8',
-				}
-			).trim() );
-	const readCurrentFile =
-		overrides.readCurrentFile ??
-		( ( repositoryPath ) => {
-			const invalidEvidenceMessage = `Deferred contract reopening requires a tracked regular current-tree evidence file: ${ repositoryPath }`;
-
-			return readCurrentTrackedFile(
-				activeRepositoryRoot,
-				repositoryPath,
-				invalidEvidenceMessage
-			).toString( 'utf8' );
-		} );
 	const readFidelityPartition =
 		overrides.readFidelityPartition ??
 		( ( repositoryPath ) =>
@@ -270,79 +232,6 @@ export const runCli = ( cliArguments, overrides = {} ) => {
 		activeRepositoryRoot,
 		readFidelityPartition
 	);
-
-	if ( options.fromGitRef ) {
-		const comparisonCommit = resolveGitRef( options.fromGitRef );
-
-		if ( ! /^[0-9a-f]{40}$/.test( comparisonCommit ) ) {
-			throw new Error(
-				`Could not resolve ${ options.fromGitRef } to an immutable commit`
-			);
-		}
-
-		const previousContent = loadFromGitRef(
-			comparisonCommit,
-			ledgerRepositoryPath
-		);
-		const previousContractMap = parseContractMap( previousContent, {
-			allowLegacySchema: true,
-		} );
-		const previousRows = new Map(
-			previousContractMap.rows.map( ( row ) => [ row.case_id, row ] )
-		);
-		const deferredReopens = [];
-
-		for ( const row of contractMap.rows ) {
-			const previousRow = previousRows.get( row.case_id );
-
-			if ( ! previousRow ) {
-				throw new Error(
-					`Contract is missing from ${ options.fromGitRef }: ${ row.case_id }`
-				);
-			}
-
-			if ( JSON.stringify( previousRow ) !== JSON.stringify( row ) ) {
-				if (
-					previousRow.migration_state === 'deferred' &&
-					row.migration_state === 'specified'
-				) {
-					deferredReopens.push( {
-						previousRow,
-						nextRow: row,
-					} );
-				} else {
-					validateStateTransition(
-						previousRow.migration_state,
-						row.migration_state
-					);
-				}
-				validateDispositionTransition( previousRow, row );
-			}
-		}
-
-		validateDeferredContractReopens(
-			previousContractMap.rows.filter(
-				( row ) => row.migration_state === 'deferred'
-			),
-			deferredReopens,
-			{
-				metadata,
-				repositoryRoot: activeRepositoryRoot,
-				currentDeferredRows: contractMap.rows.filter(
-					( row ) => row.migration_state === 'deferred'
-				),
-				loadPreviousEvidence: ( repositoryPath ) =>
-					loadFromGitRef( comparisonCommit, repositoryPath ),
-				loadCurrentEvidence: readCurrentFile,
-				loadPreviousCalibrationNotes: () =>
-					loadFromGitRef(
-						comparisonCommit,
-						CALIBRATION_NOTES_REPOSITORY_PATH
-					),
-				calibrationNotesContent: overrides.calibrationNotesContent,
-			}
-		);
-	}
 
 	log( `Validated ${ summary.rowCount } WooPayments client contracts.` );
 

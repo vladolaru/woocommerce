@@ -1,11 +1,7 @@
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep as pathSeparator } from 'node:path';
-
-import {
-	isRepositoryRelativePath,
-	validateMigrationEvidence,
-} from './woopayments-migration-evidence.mjs';
 
 export const MIGRATION_STATES = new Set( [
 	'planned',
@@ -14,14 +10,6 @@ export const MIGRATION_STATES = new Set( [
 	'verified',
 	'closed',
 	'deferred',
-] );
-
-// States in which the migration work itself has been carried out, so the row
-// must name a real target file and a real owner.
-export const EXECUTED_MIGRATION_STATES = new Set( [
-	'implemented',
-	'verified',
-	'closed',
 ] );
 
 // States that count as terminal for a saturation check: nothing further is
@@ -38,32 +26,12 @@ export const NATIVE_SUPPORT_STATES = new Set( [
 	'not-applicable-retired',
 ] );
 
+// Support states that keep a row unmigrated even when its state is closed.
 const DEFERRED_SUPPORT_STATES = new Set( [
 	'known-gap',
 	'blocked-external',
 	'blocked-environment',
 	'ambiguous-decision',
-] );
-
-const ALLOWED_MIGRATION_TRANSITIONS = new Map( [
-	[ 'planned', new Set( [ 'planned', 'specified', 'deferred' ] ) ],
-	[
-		'specified',
-		new Set( [
-			'specified',
-			'implemented',
-			'verified',
-			'closed',
-			'deferred',
-		] ),
-	],
-	[
-		'implemented',
-		new Set( [ 'implemented', 'verified', 'closed', 'deferred' ] ),
-	],
-	[ 'verified', new Set( [ 'verified', 'closed', 'deferred' ] ) ],
-	[ 'closed', new Set( [ 'closed', 'implemented' ] ) ],
-	[ 'deferred', new Set( [ 'deferred', 'specified' ] ) ],
 ] );
 
 const FROZEN_SOURCE_HEADERS = [
@@ -113,22 +81,7 @@ const EDITABLE_HEADERS = [
 ];
 
 const EXPECTED_HEADERS = [ ...FROZEN_SOURCE_HEADERS, ...EDITABLE_HEADERS ];
-const LEGACY_EDITABLE_HEADERS = [
-	'accepted_disposition',
-	'target_path',
-	'implementation_owner',
-	'closure_state',
-];
-const LEGACY_HEADERS = [ ...FROZEN_SOURCE_HEADERS, ...LEGACY_EDITABLE_HEADERS ];
 
-// Columns the legacy schema never carried; reading a legacy ledger backfills
-// them with the same values a freshly planned row would hold.
-const LEGACY_SCHEMA_DEFAULTS = {
-	target_contract: 'pending',
-	native_support_state: 'not-assessed',
-	gap_or_decision_reference: 'none',
-	evidence_path: 'none',
-};
 const EXPECTED_METADATA = {
 	schema_version: 1,
 	source_repository: 'woocommerce/woocommerce-payments',
@@ -154,159 +107,35 @@ const dispositions = {
 
 const ALLOWED_DISPOSITIONS = Object.values( dispositions );
 const ALLOWED_DISPOSITION_SET = new Set( ALLOWED_DISPOSITIONS );
-const getEffectiveDisposition = ( row ) =>
-	row.accepted_disposition === 'pending'
-		? row.planned_disposition
-		: row.accepted_disposition;
-const FUTURE_ONLY_DISPOSITIONS = new Set( [
-	dispositions.shared,
-	dispositions.rewrite,
-	dispositions.transition,
-] );
-const NATIVE_TESTS_ROOT =
-	'plugins/woocommerce/tests/e2e/tests/woopayments-native';
-const CORRECTED_REFUND_LOWER_LAYER_TARGET =
-	'plugins/woocommerce/tests/php/includes/class-wc-ajax-test.php';
-const CORRECTED_LOWER_LAYER_TARGETS_BY_CASE_ID = new Map(
-	[
-		'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid quantity › should fail refund attempt when quantity is greater than maximum',
-		'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid quantity › should fail refund attempt when quantity is negative',
-		'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid refund amount in line item › should fail refund attempt when refund amount in line item is greater than maximum',
-		'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid refund amount in line item › should fail refund attempt when refund amount in line item is negative',
-		'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid total refund amount › should fail refund attempt when total refund amount is greater than maximum',
-		'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid total refund amount › should fail refund attempt when total refund amount is negative',
-	].map( ( caseId ) => [ caseId, CORRECTED_REFUND_LOWER_LAYER_TARGET ] )
-);
-const APPROVED_FUTURE_TARGET_DISPOSITIONS = new Map( [
-	[
-		`${ NATIVE_TESTS_ROOT }/pilots/shopper-card-payment.spec.ts`,
-		new Set( [ dispositions.shared ] ),
-	],
-	[
-		`${ NATIVE_TESTS_ROOT }/pilots/saved-method-cutover.spec.ts`,
-		new Set( [ dispositions.transition ] ),
-	],
-	[
-		`${ NATIVE_TESTS_ROOT }/pilots/merchant-manual-capture.spec.ts`,
-		new Set( [ dispositions.shared ] ),
-	],
-	[
-		`${ NATIVE_TESTS_ROOT }/pilots/merchant-transaction-navigation.spec.ts`,
-		new Set( [ dispositions.rewrite ] ),
-	],
-	[
-		`${ NATIVE_TESTS_ROOT }/scenarios/card-payment.ts`,
-		new Set( [ dispositions.shared ] ),
-	],
-	[
-		`${ NATIVE_TESTS_ROOT }/scenarios/saved-method.ts`,
-		new Set( [ dispositions.shared ] ),
-	],
-	[
-		`${ NATIVE_TESTS_ROOT }/scenarios/manual-capture.ts`,
-		new Set( [ dispositions.shared ] ),
-	],
-	[
-		`${ NATIVE_TESTS_ROOT }/scenarios/transaction-navigation.ts`,
-		new Set( [ dispositions.shared ] ),
-	],
-	[
-		`${ NATIVE_TESTS_ROOT }/scenarios/checkout.ts`,
-		new Set( [ dispositions.shared, dispositions.unchanged ] ),
-	],
-	[
-		`${ NATIVE_TESTS_ROOT }/scenarios/decline.ts`,
-		new Set( [ dispositions.shared ] ),
-	],
-	[
-		`${ NATIVE_TESTS_ROOT }/scenarios/multi-currency.ts`,
-		new Set( [ dispositions.shared ] ),
-	],
-	[
-		`${ NATIVE_TESTS_ROOT }/scenarios/refund.ts`,
-		new Set( [ dispositions.shared ] ),
-	],
-	[
-		`${ NATIVE_TESTS_ROOT }/shopper/alternative-methods.spec.ts`,
-		new Set( [ dispositions.rewrite ] ),
-	],
-	[
-		`${ NATIVE_TESTS_ROOT }/shopper/declines.spec.ts`,
-		new Set( [ dispositions.rewrite, dispositions.lowerLayer ] ),
-	],
-	[
-		`${ NATIVE_TESTS_ROOT }/shopper/pay-for-order.spec.ts`,
-		new Set( [ dispositions.rewrite ] ),
-	],
-	[
-		`${ NATIVE_TESTS_ROOT }/shopper/saved-methods.spec.ts`,
-		new Set( [ dispositions.unchanged, dispositions.lowerLayer ] ),
-	],
-	[
-		`${ NATIVE_TESTS_ROOT }/shopper/multi-currency.spec.ts`,
-		new Set( [ dispositions.rewrite, dispositions.lowerLayer ] ),
-	],
-	[
-		`${ NATIVE_TESTS_ROOT }/shopper/theme-compatibility.spec.ts`,
-		new Set( [ dispositions.clientOnly, dispositions.lowerLayer ] ),
-	],
-	[
-		`${ NATIVE_TESTS_ROOT }/merchant/orders-refunds.spec.ts`,
-		new Set( [ dispositions.lowerLayer ] ),
-	],
-	[
-		`${ NATIVE_TESTS_ROOT }/merchant/settings-methods.spec.ts`,
-		new Set( [ dispositions.shared, dispositions.rewrite ] ),
-	],
-	[
-		`${ NATIVE_TESTS_ROOT }/merchant/overview-transactions.spec.ts`,
-		new Set( [ dispositions.rewrite ] ),
-	],
-	[
-		`${ NATIVE_TESTS_ROOT }/merchant/payouts-disputes-smoke.spec.ts`,
-		new Set( [ dispositions.rewrite ] ),
-	],
-	[
-		`${ NATIVE_TESTS_ROOT }/merchant/role-access.spec.ts`,
-		new Set( [ dispositions.shared ] ),
-	],
-	[
-		`${ NATIVE_TESTS_ROOT }/merchant/onboarding.spec.ts`,
-		new Set( [ dispositions.rewrite ] ),
-	],
-	[
-		`${ NATIVE_TESTS_ROOT }/merchant/dispute-lifecycle.spec.ts`,
-		new Set( [ dispositions.shared ] ),
-	],
-	[
-		`${ NATIVE_TESTS_ROOT }/subscriptions/purchase.spec.ts`,
-		new Set( [ dispositions.shared, dispositions.unchanged ] ),
-	],
-	[
-		`${ NATIVE_TESTS_ROOT }/subscriptions/renewal.spec.ts`,
-		new Set( [ dispositions.shared ] ),
-	],
-	[
-		`${ NATIVE_TESTS_ROOT }/subscriptions/payment-methods.spec.ts`,
-		new Set( [ dispositions.shared ] ),
-	],
-	[
-		`${ NATIVE_TESTS_ROOT }/performance/checkout-readiness.spec.ts`,
-		new Set( [ dispositions.lowerLayer ] ),
-	],
-	[
-		`${ NATIVE_TESTS_ROOT }/transitions/historical-money-records.spec.ts`,
-		new Set( [ dispositions.transition ] ),
-	],
-	[
-		`${ NATIVE_TESTS_ROOT }/transitions/historical-tokens.spec.ts`,
-		new Set( [ dispositions.transition ] ),
-	],
-	[
-		`${ NATIVE_TESTS_ROOT }/transitions/historical-subscriptions.spec.ts`,
-		new Set( [ dispositions.transition ] ),
-	],
-] );
+
+const ABSOLUTE_PATH_PATTERN = /^(?:\/|[A-Za-z]:[\\/])/;
+const URI_SCHEME_PATTERN = /^[a-z][a-z\d+.-]*:/i;
+const REGULAR_GIT_INDEX_MODES = new Set( [ '100644', '100755' ] );
+
+/**
+ * The one definition of a legal repository-relative path in the ledger.
+ */
+const isRepositoryRelativePath = ( value ) => {
+	if (
+		typeof value !== 'string' ||
+		value.length === 0 ||
+		value !== value.trim()
+	) {
+		return false;
+	}
+
+	const pathParts = value.split( '/' );
+
+	return ! (
+		ABSOLUTE_PATH_PATTERN.test( value ) ||
+		URI_SCHEME_PATTERN.test( value ) ||
+		value.includes( '\\' ) ||
+		value.endsWith( '/' ) ||
+		pathParts.includes( '' ) ||
+		pathParts.includes( '.' ) ||
+		pathParts.includes( '..' )
+	);
+};
 
 const hasExactValue = ( value ) =>
 	typeof value === 'string' &&
@@ -314,28 +143,6 @@ const hasExactValue = ( value ) =>
 	value !== '' &&
 	value !== 'none' &&
 	value !== 'pending';
-
-const hasDecisionReference = ( row ) =>
-	hasExactValue( row.gap_or_decision_reference );
-
-const hasHumanApproval = ( row ) => {
-	const approvalPrefix = 'human-approved:';
-	const decisionReference = row.gap_or_decision_reference;
-
-	if (
-		typeof decisionReference !== 'string' ||
-		! decisionReference.startsWith( approvalPrefix )
-	) {
-		return false;
-	}
-
-	const approvalReference = decisionReference.slice( approvalPrefix.length );
-
-	return (
-		hasExactValue( approvalReference ) &&
-		approvalReference !== 'owner-decision-required'
-	);
-};
 
 const assertMetadata = ( metadata ) => {
 	for ( const [ key, expectedValue ] of Object.entries(
@@ -364,20 +171,18 @@ const splitPaths = ( row, column ) => {
 };
 
 /**
- * Filesystem checks dominate a validation run: a handful of shared owner and
- * lower-layer files are named by dozens of rows each, and every mention costs
- * an existsSync/realpathSync/statSync triple. These caches hold results for
+ * Filesystem checks dominate a validation run: a handful of shared target and
+ * evidence files are named by dozens of rows each, and every mention costs an
+ * existsSync/realpathSync/statSync triple. This cache holds results for
  * exactly one validateContractMap() call — reset() at the top of it — so a
  * fixture file created or deleted between calls is never served stale.
  *
  * Only successes are cached; a failure aborts the whole run anyway.
  */
 let verifiedFilePaths = new Set();
-let parsedEvidenceByPath = new Map();
 
 const resetValidationCaches = () => {
 	verifiedFilePaths = new Set();
-	parsedEvidenceByPath = new Map();
 };
 
 const assertConcreteExistingFile = (
@@ -419,120 +224,92 @@ const assertConcreteExistingFile = (
 	verifiedFilePaths.add( filePath );
 };
 
-const assertConcreteExistingFiles = (
-	row,
-	column,
-	repositoryRoot,
-	realRepositoryRoot
-) => {
-	for ( const filePath of splitPaths( row, column ) ) {
-		assertConcreteExistingFile(
-			row,
-			column,
-			filePath,
-			repositoryRoot,
-			realRepositoryRoot
+const assertTrackedFile = ( row, column, filePath, trackedFilePaths ) => {
+	if ( ! trackedFilePaths.has( filePath ) ) {
+		throw new Error(
+			`Untracked ${ column } for ${ row.case_id }: ${ filePath }`
 		);
 	}
 };
 
-const assertCompatibleTargets = ( row, repositoryRoot, realRepositoryRoot ) => {
-	const effectiveDisposition = getEffectiveDisposition( row );
-	const lowerLayerPaths = new Set(
-		splitPaths( row, 'native_lower_layer_context' )
-	);
-	const correctedLowerLayerTarget =
-		CORRECTED_LOWER_LAYER_TARGETS_BY_CASE_ID.get( row.case_id );
-	let retainedEvidenceCount = 0;
-	let approvedFutureTargetCount = 0;
+// Every path the ledger requires to be Git-tracked: each row's evidence
+// pointer and every closed row's target files.
+const collectTrackedPathCandidates = ( rows ) => {
+	const candidatePaths = new Set();
 
-	for ( const targetPath of splitPaths( row, 'target_path' ) ) {
-		const absolutePath = resolve( repositoryRoot, targetPath );
-		const allowedTargetDispositions =
-			APPROVED_FUTURE_TARGET_DISPOSITIONS.get( targetPath );
-
-		if ( allowedTargetDispositions ) {
-			if ( ! allowedTargetDispositions.has( effectiveDisposition ) ) {
-				throw new Error(
-					`target_path is not approved for ${ effectiveDisposition } in ${ row.case_id }: ${ targetPath }`
-				);
-			}
-			if ( existsSync( absolutePath ) ) {
-				assertConcreteExistingFile(
-					row,
-					'target_path',
-					targetPath,
-					repositoryRoot,
-					realRepositoryRoot
-				);
-			}
-			approvedFutureTargetCount++;
-			continue;
+	for ( const row of rows ) {
+		if (
+			row.evidence_path !== 'none' &&
+			isRepositoryRelativePath( row.evidence_path )
+		) {
+			candidatePaths.add( row.evidence_path );
 		}
 
 		if (
-			! lowerLayerPaths.has( targetPath ) &&
-			targetPath !== correctedLowerLayerTarget
+			row.migration_state === 'closed' &&
+			typeof row.target_path === 'string'
 		) {
-			throw new Error(
-				`target_path is neither an approved future target nor approved lower-layer evidence for ${ row.case_id }: ${ targetPath }`
-			);
+			for ( const targetPath of row.target_path.split( ';' ) ) {
+				if ( isRepositoryRelativePath( targetPath ) ) {
+					candidatePaths.add( targetPath );
+				}
+			}
+		}
+	}
+
+	return [ ...candidatePaths ];
+};
+
+// One git call resolves every candidate at once. A path is tracked when the
+// index holds exactly one clean stage-0 regular-file entry for it; symlinks,
+// merge conflicts, and untracked working-tree files all fail the check.
+const loadTrackedFilePaths = ( repositoryRoot, candidatePaths ) => {
+	const trackedFilePaths = new Set();
+
+	if ( candidatePaths.length === 0 ) {
+		return trackedFilePaths;
+	}
+
+	const output = execFileSync(
+		'git',
+		[
+			'-C',
+			repositoryRoot,
+			'ls-files',
+			'--stage',
+			'-z',
+			'--',
+			...candidatePaths.map(
+				( candidatePath ) => `:(literal)${ candidatePath }`
+			),
+		],
+		{ encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 }
+	);
+	const seenPaths = new Set();
+
+	for ( const entry of output.split( '\0' ) ) {
+		if ( entry === '' ) {
+			continue;
 		}
 
-		assertConcreteExistingFile(
-			row,
-			'target_path',
-			targetPath,
-			repositoryRoot,
-			realRepositoryRoot
-		);
-		retainedEvidenceCount++;
+		const [ indexPart, entryPath ] = entry.split( '\t' );
+		const [ indexMode, , indexStage ] = indexPart.split( ' ' );
+
+		if ( seenPaths.has( entryPath ) ) {
+			trackedFilePaths.delete( entryPath );
+			continue;
+		}
+		seenPaths.add( entryPath );
+
+		if (
+			REGULAR_GIT_INDEX_MODES.has( indexMode ) &&
+			indexStage === '0'
+		) {
+			trackedFilePaths.add( entryPath );
+		}
 	}
 
-	if (
-		FUTURE_ONLY_DISPOSITIONS.has( effectiveDisposition ) &&
-		( approvedFutureTargetCount === 0 || retainedEvidenceCount > 0 )
-	) {
-		throw new Error(
-			`${ effectiveDisposition } requires only approved future targets for ${ row.case_id }`
-		);
-	}
-
-	if (
-		effectiveDisposition === dispositions.lowerLayer &&
-		( retainedEvidenceCount === 0 || approvedFutureTargetCount === 0 )
-	) {
-		throw new Error(
-			`Lower-layer disposition requires retained evidence and a future E2E smoke target for ${ row.case_id }`
-		);
-	}
-
-	if (
-		effectiveDisposition === dispositions.clientOnly &&
-		( retainedEvidenceCount === 0 || approvedFutureTargetCount === 0 )
-	) {
-		throw new Error(
-			`Client-only disposition requires retained evidence and a paired native target for ${ row.case_id }`
-		);
-	}
-
-	if (
-		effectiveDisposition === dispositions.retired &&
-		( retainedEvidenceCount === 0 || approvedFutureTargetCount > 0 )
-	) {
-		throw new Error(
-			`Retired disposition requires only retained lower-layer evidence for ${ row.case_id }`
-		);
-	}
-
-	if (
-		effectiveDisposition === dispositions.manual &&
-		( retainedEvidenceCount === 0 || approvedFutureTargetCount > 0 )
-	) {
-		throw new Error(
-			`Manual disposition requires existing retained or classified manual evidence for ${ row.case_id }`
-		);
-	}
+	return trackedFilePaths;
 };
 
 const createStateCounts = ( states ) =>
@@ -552,85 +329,49 @@ const calculateFrozenSourceSha256 = ( rows ) => {
 	return createHash( 'sha256' ).update( frozenSourceContent ).digest( 'hex' );
 };
 
-const assertExactTargetAndOwner = ( row ) => {
-	if (
-		! hasExactValue( row.target_contract ) ||
-		! hasExactValue( row.implementation_owner ) ||
-		row.implementation_owner === 'owner-decision-required'
-	) {
-		throw new Error(
-			`Specified contract requires an exact target and owner: ${ row.case_id }`
-		);
-	}
-};
-
-const assertEvidence = ( row, repositoryRoot, realRepositoryRoot ) => {
-	if ( ! hasExactValue( row.evidence_path ) ) {
-		return false;
-	}
-
-	assertConcreteExistingFiles(
-		row,
-		'evidence_path',
-		repositoryRoot,
-		realRepositoryRoot
-	);
-	return true;
-};
-
-const assertMigrationEvidence = (
+// evidence_path is an optional pointer: 'none', or a single tracked JSON file
+// that exists in the repository. Its content is not validated.
+const assertEvidencePath = (
 	row,
-	metadata,
 	repositoryRoot,
-	realRepositoryRoot
+	realRepositoryRoot,
+	trackedFilePaths
 ) => {
-	if ( ! hasExactValue( row.evidence_path ) ) {
+	if ( row.evidence_path === 'none' ) {
 		return;
 	}
 
-	if ( row.evidence_path.includes( ';' ) ) {
+	if (
+		row.evidence_path.includes( ';' ) ||
+		! row.evidence_path.endsWith( '.json' ) ||
+		! isRepositoryRelativePath( row.evidence_path )
+	) {
 		throw new Error(
-			`Migration evidence must use one JSON file for ${ row.case_id }`
+			`Evidence must be none or one tracked JSON file for ${ row.case_id }: ${ row.evidence_path }`
 		);
 	}
 
-	assertConcreteExistingFiles(
+	assertConcreteExistingFile(
 		row,
 		'evidence_path',
+		row.evidence_path,
 		repositoryRoot,
 		realRepositoryRoot
 	);
-
-	let evidence = parsedEvidenceByPath.get( row.evidence_path );
-
-	if ( evidence === undefined ) {
-		try {
-			evidence = JSON.parse(
-				readFileSync(
-					resolve( repositoryRoot, row.evidence_path ),
-					'utf8'
-				)
-			);
-		} catch ( error ) {
-			if ( error instanceof SyntaxError ) {
-				throw new Error(
-					`Invalid migration evidence JSON for ${ row.case_id }`,
-					{ cause: error }
-				);
-			}
-			throw error;
-		}
-		parsedEvidenceByPath.set( row.evidence_path, evidence );
-	}
-
-	validateMigrationEvidence( evidence, {
+	assertTrackedFile(
 		row,
-		metadata,
-		repositoryRoot,
-	} );
+		'evidence_path',
+		row.evidence_path,
+		trackedFilePaths
+	);
 };
 
-const assertRowState = ( row, repositoryRoot, realRepositoryRoot ) => {
+const assertRowState = (
+	row,
+	repositoryRoot,
+	realRepositoryRoot,
+	trackedFilePaths
+) => {
 	if ( ! MIGRATION_STATES.has( row.migration_state ) ) {
 		throw new Error(
 			`Invalid migration_state for ${ row.case_id }: ${ row.migration_state }`
@@ -652,119 +393,49 @@ const assertRowState = ( row, repositoryRoot, realRepositoryRoot ) => {
 		);
 	}
 
+	assertEvidencePath(
+		row,
+		repositoryRoot,
+		realRepositoryRoot,
+		trackedFilePaths
+	);
+
 	if (
-		row.accepted_disposition !== 'pending' &&
-		row.accepted_disposition !== row.planned_disposition &&
-		! hasHumanApproval( row )
+		row.migration_state === 'deferred' &&
+		! hasExactValue( row.gap_or_decision_reference )
 	) {
 		throw new Error(
-			`Disposition change requires an explicit decision reference for ${ row.case_id }`
+			`Deferred contract requires a gap or decision reference: ${ row.case_id }`
 		);
 	}
 
-	if ( row.migration_state === 'planned' ) {
-		if (
-			row.accepted_disposition !== 'pending' ||
-			row.target_contract !== 'pending' ||
-			row.implementation_owner !== 'owner-decision-required' ||
-			row.native_support_state !== 'not-assessed' ||
-			row.gap_or_decision_reference !== 'none' ||
-			row.evidence_path !== 'none'
-		) {
-			throw new Error(
-				`Planned contract has advanced closure fields: ${ row.case_id }`
-			);
-		}
+	const targetPaths = splitPaths( row, 'target_path' );
+
+	if ( row.migration_state !== 'closed' ) {
 		return;
 	}
 
-	if ( row.migration_state === 'specified' ) {
-		assertExactTargetAndOwner( row );
+	const supportedClosure = row.native_support_state === 'supported';
+	const retiredClosure =
+		row.accepted_disposition === dispositions.retired &&
+		row.native_support_state === 'not-applicable-retired' &&
+		hasExactValue( row.target_contract );
+
+	if ( ! supportedClosure && ! retiredClosure ) {
+		throw new Error(
+			`Closed contract must be supported or retired onto a retained contract: ${ row.case_id }`
+		);
 	}
 
-	if ( row.migration_state === 'deferred' ) {
-		if (
-			! DEFERRED_SUPPORT_STATES.has( row.native_support_state ) ||
-			! hasDecisionReference( row ) ||
-			! assertEvidence( row, repositoryRoot, realRepositoryRoot )
-		) {
-			throw new Error(
-				`Deferred contract requires an expected gap state, reference, and evidence: ${ row.case_id }`
-			);
-		}
-		return;
-	}
-
-	if ( row.native_support_state === 'known-gap' ) {
-		if (
-			row.migration_state === 'closed' ||
-			! hasDecisionReference( row )
-		) {
-			if ( row.migration_state === 'closed' ) {
-				throw new Error(
-					`Closed contract must be supported and reference evidence: ${ row.case_id }`
-				);
-			}
-			throw new Error(
-				`Known gap requires a reference: ${ row.case_id }`
-			);
-		}
-	}
-
-	if ( EXECUTED_MIGRATION_STATES.has( row.migration_state ) ) {
-		assertExactTargetAndOwner( row );
-	}
-
-	if (
-		row.migration_state === 'implemented' ||
-		row.migration_state === 'verified'
-	) {
-		if ( ! assertEvidence( row, repositoryRoot, realRepositoryRoot ) ) {
-			const state =
-				row.migration_state === 'implemented'
-					? 'Implemented'
-					: 'Verified';
-			throw new Error(
-				`${ state } contract requires target evidence: ${ row.case_id }`
-			);
-		}
-	}
-
-	if ( EXECUTED_MIGRATION_STATES.has( row.migration_state ) ) {
-		assertConcreteExistingFiles(
+	for ( const targetPath of targetPaths ) {
+		assertConcreteExistingFile(
 			row,
 			'target_path',
+			targetPath,
 			repositoryRoot,
 			realRepositoryRoot
 		);
-	}
-
-	if ( row.migration_state === 'closed' ) {
-		const retiredClosure =
-			row.accepted_disposition === dispositions.retired &&
-			row.native_support_state === 'not-applicable-retired' &&
-			hasHumanApproval( row );
-		const supportedClosure =
-			row.accepted_disposition !== 'pending' &&
-			row.accepted_disposition !== dispositions.retired &&
-			row.native_support_state === 'supported';
-		let evidenceIsValid = false;
-
-		try {
-			evidenceIsValid = assertEvidence(
-				row,
-				repositoryRoot,
-				realRepositoryRoot
-			);
-		} catch {
-			evidenceIsValid = false;
-		}
-
-		if ( ( ! supportedClosure && ! retiredClosure ) || ! evidenceIsValid ) {
-			throw new Error(
-				`Closed contract must be supported and reference evidence: ${ row.case_id }`
-			);
-		}
+		assertTrackedFile( row, 'target_path', targetPath, trackedFilePaths );
 	}
 };
 
@@ -774,27 +445,21 @@ const hasExactHeaders = ( actualHeaders, expectedHeaders ) =>
 		( header, index ) => header === expectedHeaders[ index ]
 	);
 
-export const parseContractMap = (
-	content,
-	{ allowLegacySchema = false } = {}
-) => {
+export const parseContractMap = ( content ) => {
 	if ( typeof content !== 'string' || content.length === 0 ) {
 		throw new Error( 'Contract map must be non-empty TSV content' );
 	}
 
 	const lines = content.replace( /\r?\n$/, '' ).split( /\r?\n/ );
 	const headers = lines.shift().split( '\t' );
-	const usesCurrentSchema = hasExactHeaders( headers, EXPECTED_HEADERS );
-	const usesLegacySchema =
-		allowLegacySchema && hasExactHeaders( headers, LEGACY_HEADERS );
 
-	if ( ! usesCurrentSchema && ! usesLegacySchema ) {
+	if ( ! hasExactHeaders( headers, EXPECTED_HEADERS ) ) {
 		throw new Error(
 			`Invalid contract-map schema; expected the exact ${ EXPECTED_HEADERS.length } ordered columns`
 		);
 	}
 
-	const parsedRows = lines.map( ( line, index ) => {
+	const rows = lines.map( ( line, index ) => {
 		const values = line.split( '\t' );
 
 		if ( values.length !== headers.length ) {
@@ -813,66 +478,7 @@ export const parseContractMap = (
 		);
 	} );
 
-	if ( usesCurrentSchema ) {
-		return { headers, rows: parsedRows };
-	}
-
-	const rows = parsedRows.map( ( legacyRow ) =>
-		Object.fromEntries(
-			EXPECTED_HEADERS.map( ( header ) => [
-				header,
-				header === 'migration_state'
-					? legacyRow.closure_state
-					: LEGACY_SCHEMA_DEFAULTS[ header ] ?? legacyRow[ header ],
-			] )
-		)
-	);
-
-	return { headers: [ ...EXPECTED_HEADERS ], rows };
-};
-
-export const validateStateTransition = ( previous, next ) => {
-	if ( ! ALLOWED_MIGRATION_TRANSITIONS.get( previous )?.has( next ) ) {
-		throw new Error(
-			`Illegal migration transition: ${ previous } -> ${ next }`
-		);
-	}
-
-	if ( previous === 'deferred' && next === 'specified' ) {
-		throw new Error(
-			'Deferred -> specified requires a history-bound unlock satisfaction'
-		);
-	}
-};
-
-export const validateDispositionTransition = ( previousRow, nextRow ) => {
-	const previousDisposition = previousRow.accepted_disposition;
-	const nextDisposition = nextRow.accepted_disposition;
-
-	if ( previousDisposition === nextDisposition ) {
-		return;
-	}
-
-	if ( previousDisposition === 'pending' ) {
-		if (
-			nextDisposition === 'pending' ||
-			nextDisposition === nextRow.planned_disposition ||
-			hasHumanApproval( nextRow )
-		) {
-			return;
-		}
-	} else if (
-		nextDisposition !== 'pending' &&
-		hasHumanApproval( nextRow ) &&
-		nextRow.gap_or_decision_reference !==
-			previousRow.gap_or_decision_reference
-	) {
-		return;
-	}
-
-	throw new Error(
-		`Disposition transition requires fresh human approval: ${ nextRow.case_id }`
-	);
+	return { headers, rows };
 };
 
 export const validateContractMap = (
@@ -931,6 +537,10 @@ export const validateContractMap = (
 	}
 
 	const realRepositoryRoot = realpathSync( repositoryRoot );
+	const trackedFilePaths = loadTrackedFilePaths(
+		repositoryRoot,
+		collectTrackedPathCandidates( contractMap.rows )
+	);
 	const dispositionCounts = Object.fromEntries(
 		ALLOWED_DISPOSITIONS.map( ( disposition ) => [ disposition, 0 ] )
 	);
@@ -938,21 +548,6 @@ export const validateContractMap = (
 	const nativeSupportStateCounts = createStateCounts( NATIVE_SUPPORT_STATES );
 
 	for ( const row of contractMap.rows ) {
-		if ( ! ALLOWED_DISPOSITION_SET.has( row.planned_disposition ) ) {
-			throw new Error(
-				`Invalid planned_disposition for ${ row.case_id }: ${ row.planned_disposition }`
-			);
-		}
-
-		if (
-			getEffectiveDisposition( row ) === dispositions.shared &&
-			row.disposition_state !== 'pilot-gated'
-		) {
-			throw new Error(
-				`Unproven shared disposition for ${ row.case_id }`
-			);
-		}
-
 		for ( const column of EDITABLE_HEADERS ) {
 			if ( ! row[ column ] ) {
 				throw new Error(
@@ -961,26 +556,11 @@ export const validateContractMap = (
 			}
 		}
 
-		assertConcreteExistingFiles(
+		assertRowState(
 			row,
-			'native_owner_paths',
 			repositoryRoot,
-			realRepositoryRoot
-		);
-		assertConcreteExistingFiles(
-			row,
-			'native_lower_layer_context',
-			repositoryRoot,
-			realRepositoryRoot
-		);
-
-		assertRowState( row, repositoryRoot, realRepositoryRoot );
-		assertCompatibleTargets( row, repositoryRoot, realRepositoryRoot );
-		assertMigrationEvidence(
-			row,
-			metadata,
-			repositoryRoot,
-			realRepositoryRoot
+			realRepositoryRoot,
+			trackedFilePaths
 		);
 
 		if (
