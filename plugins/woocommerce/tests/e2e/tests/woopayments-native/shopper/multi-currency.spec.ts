@@ -9,6 +9,16 @@ const CONTRACT_IDS = [
 	`${ CONTRACT_PREFIX }59::Shopper Multi-Currency widget › Should allow shopper to switch currency › at the product page`,
 	`${ CONTRACT_PREFIX }63::Shopper Multi-Currency widget › Should allow shopper to switch currency › at the cart page`,
 	`${ CONTRACT_PREFIX }67::Shopper Multi-Currency widget › Should allow shopper to switch currency › at the checkout page`,
+	// The client suite reached the same two properties from the merchant
+	// widget-setup spec: that the published switcher offers the default plus
+	// every enabled currency, and that switching it on the frontend converts
+	// prices. This test already proves both — the enabled set is pinned and
+	// read back, the switcher is asserted to expose USD and EUR, and each
+	// surface asserts the exact converted amount — so they bind here rather
+	// than to a separate merchant-side test that would assert the same thing
+	// through a widget editor native does not have.
+	'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-multi-currency-widget.spec.ts:172::Multi-currency widget setup › displays enabled currencies correctly in the frontend',
+	'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-multi-currency-widget.spec.ts:248::Multi-currency widget setup › currency switching works on the frontend',
 ];
 
 const MULTI_CURRENCY_API = '/wp-json/wc/v3/payments/multi-currency';
