@@ -98,3 +98,26 @@ Executing this decision required deriving the family partition and writing the n
 **Scope note.** The partition covers the 130 `PILOT-NATIVE-READINESS` rows plus one row pulled in from the `PILOT-PROVIDER-EXECUTION-BUDGET` gate, because its case runs inside an already-authorized run. That widening is labelled in `FIDELITY-CLAIMS.md`; it is not part of the readiness-gated derivation.
 
 **Why this correction exists in this form.** The disproved authentication premise was in-session analysis that was never checked in, which is why executing this decision had to reproduce the observation rather than inherit it. A false premise supporting a correct conclusion is the more dangerous shape: a reader who checks it finds it false and may overturn a conclusion that is actually right. Record the ground a decision genuinely rests on, and correct it in place when the ground moves.
+
+## 2026-08-10 — The 3ds and 3ds2 contract pairs consolidate
+
+The client suite's `3ds` and `3ds2` contracts test one code path with two card numbers. They consolidate: one contract per journey, driven by the 3DS2 card, with the paired row retired against it rather than duplicated.
+
+This governs the four rows in `shopper-myaccount-saved-cards.spec.ts` that split by card variant — adding the method, and purchasing with the saved method — and applies to any future row that proposes the same split.
+
+### Why
+
+- Neither implementation distinguishes the protocols. The client plugin calls `handleNextAction` and `confirmCardPayment` (`client/checkout/api/index.js:203,215,221`) and native calls the same SDK entry points from both checkout surfaces. A search of the client's `includes/`, `client/` and `src/` for `3ds2`, protocol versions, or `three_d_secure_usage` returns nothing. The provider negotiates the protocol with the issuer and renders whatever challenge comes back; both implementations await a result.
+- The only `three_d_secure` mentions in the client are a REST schema entry declared as a bare object with no properties, and one line copying the provider's blob into a prepared response. Nothing in `client/` renders it. It is passthrough, not behaviour.
+- So the split lives entirely in the test fixture — two card numbers in the client's `tests/e2e/config/default.ts` — with no code path behind it. A second row cannot catch anything the first does not, because there is nothing different to catch.
+- The ledger already framed the test: the `3ds2` rows ask for a distinct outcome or a deliberate consolidation. The distinct outcome does not exist.
+
+### Consequences
+
+- The recorded rationale on those rows changes from an open question to a settled one. Their `excluded` treatment does not change: they remain outside fidelity discharge with the rest of the `3ds-authentication` family, and still need real journey coverage.
+- `shopper/card-authentication.spec.ts` is scoped to the 3DS2 card deliberately, not provisionally.
+- A future row proposing a 3DS1/3DS2 split must first show an implementation that distinguishes them. Absent that, it is one contract.
+
+### Accepted risk
+
+This is a claim about the two implementations, not about the provider. If the provider ever presented a materially different challenge shape per protocol, both drivers would observe it only as "a challenge", and a consolidated contract would not notice the difference. That is accepted, and it is the same reason the 2026-08-08 decision excluded this family from thin fidelity checks: authentication needs real journey coverage, and a journey that exercises a live challenge is where such a divergence would surface.
