@@ -313,12 +313,17 @@ test.describe( 'WooPayments native card authentication', () => {
 					'a failed challenge must tell the shopper'
 				).toBeVisible();
 
-				// Recorded, not asserted: that message renders as plain text
-				// with no alert role or live region, so a screen reader user
-				// is never told the payment failed. The copy is native's but
-				// the surface is the checkout block's generic error area, so
-				// fixing it reaches every payment error and belongs outside
-				// this contract.
+				// And is announced, not merely displayed. The notice carries
+				// no alert role of its own, which is easy to misread as
+				// silence; WordPress announces through a shared off-screen
+				// region instead, and an error notice is assertive. Assert
+				// the region a screen reader actually reads, so losing the
+				// announcement fails here rather than passing because the
+				// text is still on screen somewhere.
+				await expect(
+					page.locator( '#a11y-speak-assertive' ),
+					'a failed challenge must be announced, not only shown'
+				).toHaveText( AUTHENTICATION_FAILURE_TEXT );
 			}
 		);
 	} );
