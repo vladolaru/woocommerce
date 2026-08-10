@@ -23,6 +23,127 @@ const ledgerRepositoryPath =
 	'plugins/woocommerce/tests/e2e/tests/woopayments-native/client-contract-map.tsv';
 const metadataRepositoryPath =
 	'plugins/woocommerce/tests/e2e/tests/woopayments-native/client-contract-map.meta.json';
+// A fidelity_claim slug names the corresponding section in sibling FIDELITY-CLAIMS.md; the partition
+// supplies only the contract-to-family assignment and its Condition 2 verdict.
+const fidelityPartitionRepositoryPath =
+	'plugins/woocommerce/tests/e2e/tests/woopayments-native/fidelity-partition.tsv';
+const fidelityPartitionHeaders = [
+	'case_id',
+	'treatment',
+	'fidelity_family',
+	'condition_2_verdict',
+];
+
+const collectFidelityClaimCitations = ( contractMap, activeRepositoryRoot ) => {
+	const evidenceByPath = new Map();
+	const citations = [];
+
+	for ( const row of contractMap.rows ) {
+		if (
+			row.evidence_path === 'none' ||
+			evidenceByPath.has( row.evidence_path )
+		) {
+			continue;
+		}
+
+		const evidence = JSON.parse(
+			readFileSync(
+				resolve( activeRepositoryRoot, row.evidence_path ),
+				'utf8'
+			)
+		);
+		evidenceByPath.set( row.evidence_path, evidence );
+
+		for ( const closure of evidence.closures ) {
+			if ( Object.hasOwn( closure, 'fidelity_claim' ) ) {
+				citations.push( {
+					caseId: closure.contract_id,
+					fidelityClaim: closure.fidelity_claim,
+				} );
+			}
+		}
+	}
+
+	return citations;
+};
+
+const parseFidelityPartition = ( content ) => {
+	const [ headerLine, ...rowLines ] = content.split( /\r?\n/ );
+	const headers = headerLine.split( '\t' );
+	const missingHeaders = fidelityPartitionHeaders.filter(
+		( header ) => ! headers.includes( header )
+	);
+
+	if ( missingHeaders.length > 0 ) {
+		throw new Error(
+			`Invalid fidelity partition; missing required header(s): ${ missingHeaders.join(
+				', '
+			) }`
+		);
+	}
+
+	return rowLines
+		.filter( ( line ) => line !== '' )
+		.map( ( line ) => {
+			const values = line.split( '\t' );
+
+			return Object.fromEntries(
+				fidelityPartitionHeaders.map( ( header ) => [
+					header,
+					values[ headers.indexOf( header ) ],
+				] )
+			);
+		} );
+};
+
+const validateFidelityClaimCitations = (
+	contractMap,
+	activeRepositoryRoot,
+	readFidelityPartition
+) => {
+	const citations = collectFidelityClaimCitations(
+		contractMap,
+		activeRepositoryRoot
+	);
+
+	if ( citations.length === 0 ) {
+		return;
+	}
+
+	const partitionRows = parseFidelityPartition(
+		readFidelityPartition( fidelityPartitionRepositoryPath )
+	);
+
+	for ( const { caseId, fidelityClaim } of citations ) {
+		const matchingRows = partitionRows.filter(
+			( row ) => row.case_id === caseId
+		);
+
+		if ( matchingRows.length !== 1 ) {
+			throw new Error(
+				`Invalid fidelity claim citation for ${ caseId }; fidelity partition must contain exactly one matching case_id; found ${ matchingRows.length }`
+			);
+		}
+
+		const [ partitionRow ] = matchingRows;
+
+		if ( partitionRow.treatment !== 'fidelity' ) {
+			throw new Error(
+				`Invalid fidelity claim citation for ${ caseId }; requires treatment fidelity; found ${ partitionRow.treatment }`
+			);
+		}
+		if ( partitionRow.fidelity_family !== fidelityClaim ) {
+			throw new Error(
+				`Invalid fidelity claim citation for ${ caseId }; fidelity_family is ${ partitionRow.fidelity_family }, not cited ${ fidelityClaim }`
+			);
+		}
+		if ( partitionRow.condition_2_verdict !== 'dischargeable' ) {
+			throw new Error(
+				`Invalid fidelity claim citation for ${ caseId }; requires condition_2_verdict dischargeable; found ${ partitionRow.condition_2_verdict }`
+			);
+		}
+	}
+};
 
 const parseArguments = ( cliArguments ) => {
 	const options = {
@@ -128,6 +249,13 @@ export const runCli = ( cliArguments, overrides = {} ) => {
 				invalidEvidenceMessage
 			).toString( 'utf8' );
 		} );
+	const readFidelityPartition =
+		overrides.readFidelityPartition ??
+		( ( repositoryPath ) =>
+			readFileSync(
+				resolve( activeRepositoryRoot, repositoryPath ),
+				'utf8'
+			) );
 	const log = overrides.log ?? console.log;
 	const options = parseArguments( cliArguments );
 	const contractMap = parseContractMap( ledgerContent );
@@ -137,6 +265,11 @@ export const runCli = ( cliArguments, overrides = {} ) => {
 		requireMigrated: options.requireMigrated,
 		requireSaturated: options.requireSaturated,
 	} );
+	validateFidelityClaimCitations(
+		contractMap,
+		activeRepositoryRoot,
+		readFidelityPartition
+	);
 
 	if ( options.fromGitRef ) {
 		const comparisonCommit = resolveGitRef( options.fromGitRef );

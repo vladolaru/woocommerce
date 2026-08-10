@@ -49,6 +49,16 @@ const metadataPath = resolve(
 );
 const calibrationNotesRepositoryPath =
 	'plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md';
+const fidelityPartitionRepositoryPath =
+	'plugins/woocommerce/tests/e2e/tests/woopayments-native/fidelity-partition.tsv';
+const fidelityClaimCaseId =
+	'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-manual-capture.spec.ts:39::Order › Manual Capture › should create an "On hold" order then capture the charge';
+const fidelityPartitionHeaders = [
+	'case_id',
+	'treatment',
+	'fidelity_family',
+	'condition_2_verdict',
+];
 const metadata = JSON.parse( readFileSync( metadataPath, 'utf8' ) );
 const ledgerContent = readFileSync( ledgerPath, 'utf8' );
 const contractMap = parseContractMap( ledgerContent );
@@ -204,6 +214,16 @@ const serializeContractMap = ( map ) =>
 		map.headers,
 		...map.rows.map( ( row ) =>
 			map.headers.map( ( header ) => row[ header ] )
+		),
+	]
+		.map( ( values ) => values.join( '\t' ) )
+		.join( '\n' ) + '\n';
+
+const serializeFidelityPartition = ( rows ) =>
+	[
+		fidelityPartitionHeaders,
+		...rows.map( ( row ) =>
+			fidelityPartitionHeaders.map( ( header ) => row[ header ] )
 		),
 	]
 		.map( ( values ) => values.join( '\t' ) )
@@ -731,7 +751,11 @@ test( 'still requires lower-layer evidence with the refund-validation E2E smoke 
 	);
 } );
 
-const close = ( row, sourceRepositoryRoot = repositoryRoot ) => {
+const close = (
+	row,
+	sourceRepositoryRoot = repositoryRoot,
+	closureOverrides = {}
+) => {
 	specify( row );
 	row.migration_state = 'closed';
 	row.native_support_state = 'supported';
@@ -741,11 +765,125 @@ const close = ( row, sourceRepositoryRoot = repositoryRoot ) => {
 	row.evidence_path = createEvidenceFile(
 		row,
 		{
-			closures: [ createClosureEntry( row ) ],
+			closures: [ createClosureEntry( row, closureOverrides ) ],
 		},
 		sourceRepositoryRoot
 	);
 };
+
+const validateFidelityClaimCitation = (
+	partitionRows,
+	fidelityClaim = 'manual-authorization-capture'
+) => {
+	const map = cloneContractMap();
+	const row = map.rows.find(
+		( candidate ) => candidate.case_id === fidelityClaimCaseId
+	);
+
+	assert.notEqual( row, undefined );
+	createMissingTargetFile( row.target_path );
+	close( row, repositoryRoot, { fidelity_claim: fidelityClaim } );
+
+	return runCli( [], {
+		ledgerContent: serializeContractMap( map ),
+		metadata,
+		repositoryRoot,
+		readFidelityPartition: ( repositoryPath ) => {
+			assert.equal( repositoryPath, fidelityPartitionRepositoryPath );
+			return serializeFidelityPartition( partitionRows );
+		},
+		log: () => {},
+	} );
+};
+
+const createFidelityPartitionRow = ( overrides = {} ) => ( {
+	case_id: fidelityClaimCaseId,
+	treatment: 'fidelity',
+	fidelity_family: 'manual-authorization-capture',
+	condition_2_verdict: 'dischargeable',
+	...overrides,
+} );
+
+test( 'accepts a closure citing its dischargeable fidelity family', () => {
+	assert.doesNotThrow( () =>
+		validateFidelityClaimCitation( [ createFidelityPartitionRow() ] )
+	);
+} );
+
+test( 'rejects a closure citing a different fidelity family', () => {
+	assert.throws(
+		() =>
+			validateFidelityClaimCitation(
+				[ createFidelityPartitionRow() ],
+				'card-decline-vocabulary'
+			),
+		/fidelity_family is manual-authorization-capture, not cited card-decline-vocabulary/
+	);
+} );
+
+for ( const [ description, partitionOverrides, expectedError ] of [
+	[
+		'a conventional partition row',
+		{
+			treatment: 'conventional',
+			fidelity_family: 'conventional',
+			condition_2_verdict: 'not-applicable',
+		},
+		/requires treatment fidelity; found conventional/,
+	],
+	[
+		'a not-dischargeable partition row',
+		{ condition_2_verdict: 'not-dischargeable' },
+		/requires condition_2_verdict dischargeable; found not-dischargeable/,
+	],
+] ) {
+	test( `rejects a fidelity citation for ${ description }`, () => {
+		assert.throws(
+			() =>
+				validateFidelityClaimCitation( [
+					createFidelityPartitionRow( partitionOverrides ),
+				] ),
+			expectedError
+		);
+	} );
+}
+
+test( 'rejects a fidelity citation missing from the partition', () => {
+	assert.throws(
+		() =>
+			validateFidelityClaimCitation( [
+				createFidelityPartitionRow( {
+					case_id: 'a-different-contract-id',
+				} ),
+			] ),
+		/exactly one matching case_id; found 0/
+	);
+} );
+
+test( 'rejects a fidelity citation duplicated in the partition', () => {
+	const partitionRow = createFidelityPartitionRow();
+
+	assert.throws(
+		() => validateFidelityClaimCitation( [ partitionRow, partitionRow ] ),
+		/exactly one matching case_id; found 2/
+	);
+} );
+
+test( 'keeps closures without a fidelity citation backward compatible', () => {
+	assert.doesNotThrow( () =>
+		runCli( [], {
+			ledgerContent,
+			metadata,
+			repositoryRoot,
+			readFidelityPartition: () => {
+				throw new Error(
+					'The partition must not be read without a citation'
+				);
+			},
+			log: () => {},
+		} )
+	);
+} );
 
 const retirementDisposition =
 	'Retire because the test is stale, redundant, or guards only obsolete plugin structure';

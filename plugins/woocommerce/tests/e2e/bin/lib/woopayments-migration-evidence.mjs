@@ -112,6 +112,7 @@ const TARGET_KEYS = [ 'path', 'contract' ];
 const VERIFICATION_KEYS = [ 'command', 'exit_code', 'summary' ];
 const REVIEW_KEYS = [ 'role', 'verdict', 'source_test_sha256', 'summary' ];
 const CLOSURE_KEYS = [ 'contract_id', 'target', 'verification', 'reviews' ];
+const OPTIONAL_CLOSURE_KEYS = [ 'fidelity_claim' ];
 const RETIREMENT_KEYS = [
 	'contract_id',
 	'retained_contract_id',
@@ -972,11 +973,26 @@ const assertClosures = ( closures, row, evidence ) => {
 
 	const contractIds = new Set();
 	for ( const [ index, closure ] of closures.entries() ) {
-		assertExactKeys( closure, CLOSURE_KEYS, `evidence closure ${ index }` );
+		assertExactKeys(
+			closure,
+			[
+				...CLOSURE_KEYS,
+				...OPTIONAL_CLOSURE_KEYS.filter( ( key ) =>
+					Object.hasOwn( closure, key )
+				),
+			],
+			`evidence closure ${ index }`
+		);
 		assertExactString(
 			closure.contract_id,
 			`closures[${ index }].contract_id`
 		);
+		if ( Object.hasOwn( closure, 'fidelity_claim' ) ) {
+			assertExactString(
+				closure.fidelity_claim,
+				`closures[${ index }].fidelity_claim`
+			);
+		}
 		if ( contractIds.has( closure.contract_id ) ) {
 			throw new Error(
 				`Invalid migration evidence closures[${ index }].contract_id; duplicate contract_id`
