@@ -8,6 +8,7 @@ readonly WPCOM_LOCAL_BIN="${E2E_WPCOM_LOCAL_BIN:-wpcom-local}"
 readonly ACCOUNT_REQUEST_CODE='$request = new WP_REST_Request( "GET", "/wc/v3/payments/accounts" ); $response = rest_do_request( $request ); $data = $response->get_data(); echo wp_json_encode( array( "status" => $response->get_status(), "is_error" => $response->is_error(), "account_id" => is_array( $data ) ? (string) ( $data["account_id"] ?? "" ) : "", "test_mode" => is_array( $data ) ? (bool) ( $data["test_mode"] ?? false ) : false ) );'
 readonly CLIENT_RUNTIME_STATUS_CODE='if ( ! function_exists( "is_plugin_active" ) ) { require_once ABSPATH . "wp-admin/includes/plugin.php"; } $plugin_active = is_plugin_active( "woocommerce-payments/woocommerce-payments.php" ); $account = $plugin_active && class_exists( "WC_Payments" ) ? WC_Payments::get_account_service()->get_cached_account_data() : array(); $account = is_array( $account ) ? $account : array(); $settings = get_option( "woocommerce_woocommerce_payments_settings", array() ); $settings = is_array( $settings ) ? $settings : array(); $methods = $settings["upe_enabled_payment_method_ids"] ?? array(); $methods = is_array( $methods ) ? array_values( array_map( "strval", array_filter( $methods, "is_scalar" ) ) ) : array(); echo wp_json_encode( array( "site_url" => get_site_url(), "wpcom_blog_id" => class_exists( "Jetpack_Options" ) ? (int) Jetpack_Options::get_option( "id" ) : 0, "runtime_owner" => $plugin_active ? "plugin" : "none", "native_enabled" => false, "account_id" => (string) ( $account["account_id"] ?? "" ), "account_connected" => ! empty( $account["account_id"] ), "gateway_enabled" => "yes" === ( $settings["enabled"] ?? "no" ), "test_mode" => "yes" === ( $settings["test_mode"] ?? "no" ), "enabled_payment_methods" => $methods, "last_webhook_fetch" => 0, "callback_probe" => array( "registered" => false, "reachable" => false, "wpcom_blog_id" => 0 ) ) );'
 readonly NATIVE_RUNTIME_STATUS_CODE='$request = new WP_REST_Request( "GET", "/wc-native-payments-e2e/v1/status" ); $response = rest_do_request( $request ); echo wp_json_encode( $response->get_data() );'
+readonly SHOPPER_FIXTURE_CODE='$login = "customer"; $user = get_user_by( "login", $login ); if ( ! $user ) { $created = wp_insert_user( array( "user_login" => $login, "user_email" => "customer@woocommercecoree2etestsuite.com", "user_pass" => "password", "first_name" => "Jane", "last_name" => "Smith", "role" => "customer" ) ); if ( is_wp_error( $created ) ) { fwrite( STDERR, $created->get_error_message() ); exit( 1 ); } echo "created"; } else { wp_set_password( "password", $user->ID ); echo "reused"; }'
 readonly THEME_STATUS_CODE='echo wp_json_encode( array( "active_theme_exists" => wp_get_theme()->exists() ) );'
 
 case "$WCPAY_RUNTIME" in
@@ -261,29 +262,7 @@ if [[ "$PROVIDER_READINESS_REQUIRED" == '1' ]]; then
 		# The store's own directory, matching every other probe: wp-env
 		# resolves from the package, not from wherever this script was called.
 		cd "$STORE_DIR"
-		run_store_wp "$STORE_NAME" --user=1 eval '
-		$login = "customer";
-		$email = "customer@woocommercecoree2etestsuite.com";
-		$user = get_user_by( "login", $login );
-		if ( ! $user ) {
-			$user_id = wp_insert_user( array(
-				"user_login" => $login,
-				"user_email" => $email,
-				"user_pass"  => "password",
-				"first_name" => "Jane",
-				"last_name"  => "Smith",
-				"role"       => "customer",
-			) );
-			if ( is_wp_error( $user_id ) ) {
-				fwrite( STDERR, $user_id->get_error_message() );
-				exit( 1 );
-			}
-			echo "created";
-			return;
-		}
-		wp_set_password( "password", $user->ID );
-		echo "reused";
-		'
+		run_store_wp "$STORE_NAME" --user=1 eval "$SHOPPER_FIXTURE_CODE"
 	) > "$DIAGNOSTICS_DIR/$STORE_NAME/customer.txt"
 
 	printf 'WooPayments shopper fixture %s for %s.\n' \

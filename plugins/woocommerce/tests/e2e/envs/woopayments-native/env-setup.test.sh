@@ -172,6 +172,12 @@ fi
 if ! grep -F "$CLIENT_STORE	" "$CLIENT_COMMAND_LOG" | grep -Fq 'get_account_service()->get_cached_account_data()'; then
 	fail 'Client readiness must use the WooPayments account service.'
 fi
+if ! grep -F "$CLIENT_STORE	" "$CLIENT_COMMAND_LOG" | grep -Fq 'wp_insert_user'; then
+	fail 'Provider readiness must establish the shared shopper account.'
+fi
+if ! grep -Fq 'created' "$TEST_ROOT/client-diagnostics/client/customer.txt"; then
+	fail 'Provider readiness must record the shopper fixture outcome.'
+fi
 jq -e '
 	.runtime_owner == "plugin" and
 	.native_enabled == false and

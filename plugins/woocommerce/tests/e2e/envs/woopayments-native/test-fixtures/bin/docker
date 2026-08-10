@@ -23,5 +23,12 @@ if [[ "$*" == *"/wc/v3/payments/accounts"* ]]; then
 	exit 0
 fi
 
+# Shopper fixture provisioning: the store either has the shared test
+# customer already or gains it, and setup prints which.
+if [[ "$*" == *'wp_insert_user'* ]]; then
+	printf 'created\n'
+	exit 0
+fi
+
 echo "Unexpected fake docker invocation: $*" >&2
 exit 1

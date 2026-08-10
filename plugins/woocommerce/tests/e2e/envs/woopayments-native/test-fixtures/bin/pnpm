@@ -59,5 +59,12 @@ if [[ "$*" == *"playwright test"* && "$*" == *"--list"* ]]; then
 	exit 0
 fi
 
+# Shopper fixture provisioning: the store either has the shared test
+# customer already or gains it, and setup prints which.
+if [[ "$*" == *'wp_insert_user'* ]]; then
+	printf 'created\n'
+	exit 0
+fi
+
 echo "Unexpected fake pnpm invocation: $*" >&2
 exit 1
