@@ -14,6 +14,12 @@
 		"no_allowlisted_action_reason": "No action can satisfy readiness, assign target/owner, approve distinctness/challenge readers or own the listener. A duplicate green provider run cannot create meaning. Use one worker, one provider writer/listener interval, one setup/payment sequence, zero retries/replay and halt on indistinguishable or ambiguous evidence.",
 		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
 		"unlock_decision": "Approve discovered target/owner, readiness, saved-3220 capabilities and an authoritative purchase-authentication distinction or explicit consolidation decision. If distinct, prove the full token/order/provider/accessibility graph, cleanup/restoration and fresh reviews; otherwise perform no mutation for row count.",
-		"quarantine_status": "No customer, token, order, challenge, provider object, listener, journal or quarantine was created. Future distinction, challenge, dispatch, identity, listener, detach or restoration ambiguity stops without replay and quarantines the connected graph, interval and locks while retaining history."
+		"quarantine_status": "No customer, token, order, challenge, provider object, listener, journal or quarantine was created. Future distinction, challenge, dispatch, identity, listener, detach or restoration ambiguity stops without replay and quarantines the connected graph, interval and locks while retaining history.",
+		"unlock_satisfactions": [{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:196::Shopper can save and delete cards › Testing card: 3ds2 › should be able to purchase with the saved 3ds2 card",
+			"unlock_decision": "Approve discovered target/owner, readiness, saved-3220 capabilities and an authoritative purchase-authentication distinction or explicit consolidation decision. If distinct, prove the full token/order/provider/accessibility graph, cleanup/restoration and fresh reviews; otherwise perform no mutation for row count.",
+			"satisfied_on": "2026-08-10",
+			"reference": "calibration-notes:2026-08-10:3ds2-twin-retirement-under-the-journey-consolidation"
+		}]
 	}
 }

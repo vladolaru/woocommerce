@@ -3,6 +3,39 @@
 Durable, public-safe record of calibration blockers and ledger revisions
 that the evidence JSON schema cannot carry. Newest entries first.
 
+## 2026-08-10 — 3DS2 twin retirement under the journey consolidation
+
+Stable reference: `calibration-notes:2026-08-10:3ds2-twin-retirement-under-the-journey-consolidation`.
+
+Both 3DS2 saved-method deferral packets — the `:146` add and the `:196`
+purchase — wrote their exit condition as a fork: approve an authoritative
+authentication distinction from the 3DS row, "or explicit consolidation
+authority", and "without it, perform no provider run for row count". The
+2026-08-10 DECISIONS.md entry "The 3ds and 3ds2 contract pairs consolidate" is
+that explicit consolidation authority: neither the client nor native
+implementation carries a protocol-aware branch, both call the same SDK entry
+points, and the split exists only in client fixture titles. The decision fixes
+one contract per journey, driven by the 3DS2 card, "with the paired row retired
+against it rather than duplicated", and extends to any future row proposing the
+same split.
+
+The packets' own instruction is honored exactly: no provider run is performed
+for row count. Each 3DS2 twin retires against its 3DS sibling at the same spec
+line — the add against the 3DS add, the purchase against the saved-3DS-card
+purchase — because for these two rows authentication is the contract itself,
+so the retained carrier is the challenge row, not the basic variant the
+authentication-agnostic `:214`/`:249` twins retired against on 2026-08-06. The
+retained 3DS rows stay open and are routed by the 2026-08-10 treatment plan
+into the saved-method authentication journey, which the consolidation decision
+requires to drive the 3DS2 card, so the 3DS2 fixture's behavior remains
+exercised by the surviving contract.
+
+A retirement carries no reviewed source bundle: nothing was written or migrated
+for it, and the packet attests the empty bundle the schema reserves for this
+case. The review roles the unlock decisions name presuppose an implementation
+to review; only the disposition reasoning has a subject here, and it is
+obtained. The others are recorded as inapplicable rather than omitted silently.
+
 ## 2026-08-08 — Multi-currency wizard affordance retirement
 
 Stable reference: `calibration-notes:2026-08-08:multi-currency-wizard-affordance-retirement`.
