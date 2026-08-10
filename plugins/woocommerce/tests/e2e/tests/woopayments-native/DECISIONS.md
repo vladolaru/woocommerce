@@ -121,3 +121,36 @@ This governs the four rows in `shopper-myaccount-saved-cards.spec.ts` that split
 ### Accepted risk
 
 This is a claim about the two implementations, not about the provider. If the provider ever presented a materially different challenge shape per protocol, both drivers would observe it only as "a challenge", and a consolidated contract would not notice the difference. That is accepted, and it is the same reason the 2026-08-08 decision excluded this family from thin fidelity checks: authentication needs real journey coverage, and a journey that exercises a live challenge is where such a divergence would surface.
+
+## 2026-08-10 — Six claims extend before their first authorized runs
+
+Six family claims in `FIDELITY-CLAIMS.md` gain extension cases before any family run has executed: `basic-card-charge` (`B1c`, `B1f`, `B1pf`), `saved-token-lifecycle` (`T1b`), `redirect-method-provider-outcome` (`A1b`), `refund-settlement` (`R1v`, a re-scoped `R2`, `R7`), `dispute-lifecycle` (`DP-nav`), and `subscription-provider-lifecycle` (extensions to `S1`, `S2`, and `S6`, plus `S7`). Thirteen partition rows whose Condition 2 verdict was `not-dischargeable` flip to `dischargeable` because their recorded residual risk is now honestly contained by a named case:
+
+- `merchant-subscriptions-renew-action-scheduler.spec.ts:64` — `S6` dispatches the seeded due action through the wp-cron loopback into `action_scheduler_run_queue` and the queue runner instead of the admin Run action; only cron timing semantics stay excluded.
+- `shopper-subscriptions-purchase-multiple-subscriptions.spec.ts:53` — `S7` drives a two-product same-schedule basket with product-ID line attribution and one combined `2197 usd` intent/charge.
+- `shopper-subscriptions-purchase-no-signup-fee.spec.ts:71` — `S2` now asserts at the record level that the parent order carries zero fee lines.
+- `shopper-subscriptions-purchase-sign-up-fee.spec.ts:43` — `S1` now asserts one USD 9.99 recurring line and one USD 1.99 signup-fee line summing to the proven `1198 usd` provider total.
+- `merchant-orders-full-refund.spec.ts:62` — `R1v` asserts the native transaction view's semantic amount, refunded status, and merchant reason, copy-flexibly with bounded polling.
+- `merchant-orders-partial-refund.spec.ts:118` (two of three products) — `R2` re-scopes to a three-line order with order-item-ID line selection and per-line allocation, keeping the `333 usd` total.
+- `shopper-bnpls-checkout.spec.ts:113` (Cash App Afterpay refund) — `R7` refunds a fresh `afterpay_clearpay` source charge built from the `A3` inputs under an explicitly extended convergence budget, with `RP`'s same-key replay applying.
+- `merchant-disputes-view-details-via-order-notice.spec.ts:40` — `DP-nav` follows each dispute-created order-note link with exact order/dispute IDs, fails loudly on absence, and records an explicit native-version expectation.
+- `shopper-checkout-cart-coupon.spec.ts:67` — `B1c` applies and removes a free coupon before the one submission and requires `B1`'s exact local total and provider graph.
+- `shopper-checkout-purchase-site-editor.spec.ts:91` (both protection variants) — `B1f` and `B1pf` repeat `B1`/`B1p` on the native FSE surface, on one shared block-theme snapshot/restore driver; `B1pf` raises no 3DS challenge and says so.
+- `shopper-myaccount-saved-cards.spec.ts:105` — `T1b` proves the 20-second cooldown rejection creates nothing at the provider and a post-cooldown add still attaches and deletes cleanly.
+- `alipay-checkout-purchase.spec.ts:84` — `A1b` drives the `A1` proposition unconditionally through the native Blocks checkout surface.
+
+### Why
+
+- No family run has executed and no closure cites any `fidelity_claim`, so extending a claim now is naming cases in writing before the run that discharges them — exactly what Condition 1 of the 2026-08-08 decision requires. There is nothing retroactive to protect: a claim can grow freely until its first authorized run turns it into evidence.
+- Extending a **Falsified by** case enumeration — `S1`–`S6` to `S1`–`S7`, `R1`–`R6` to `R1`–`R7`, and the named additions elsewhere — is a non-propositional range extension: it adds cases the run must drive without weakening any proposition an earlier case fixed. Doctrine: such range extensions are permitted before any authorized run, for the same Condition 1 reason. Once a family's first authorized run executes, its claim freezes; later coverage takes a new claim or an explicit correction entry.
+- Each flip is justified only by containment: the new or extended case's fixed contract states the formerly-outside element of the row's literal `residual_risk`. Where a boundary remains, the case states it — `B1pf` raises no 3DS challenge, `DP-nav` does not touch historical-version/cutover compatibility, `S6` still does not assert cron timing semantics.
+
+### Consequences
+
+- The programme partition moves from 52 dischargeable and 27 not dischargeable to 65 and 14. `FIDELITY-CLAIMS.md` and `fidelity-partition.tsv` remain authoritative for all counts.
+- The `residual_risk` column of every re-verdicted row is deliberately untouched. It is the Condition 2 input, not a description of the verdict; the flip lives entirely in the verdict and reason columns, so the containment judgment stays auditable against the original risk text.
+- The three parked treatments are **not** part of this amendment and remain open: status-change confirmation-modal ownership across coexisting runtimes (`merchant-orders-status-change.spec.ts:141`), the retirement question for the duplicated expired-card decline row, and the multi-currency geolocation preview.
+
+### Accepted risk
+
+Larger claims make longer runs, and a longer run has more ways to fail for reasons unrelated to the proposition under test — a fragile block-theme swap or a slow Cash App Afterpay refund can now block a family whose original cases were sound. That is accepted: the alternative is discharging these 13 rows against claims that do not contain their risk, which Condition 2 exists to prevent. If an extension case proves operationally unstable before the first authorized run, it can be split into its own claim without disturbing this doctrine.
