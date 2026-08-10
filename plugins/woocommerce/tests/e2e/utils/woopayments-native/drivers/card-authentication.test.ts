@@ -10,6 +10,7 @@ import {
 interface StubOptions {
 	outerFrame?: boolean;
 	challengeFrame?: boolean;
+	challengeReady?: boolean;
 	dismissed?: boolean;
 	respondError?: Error;
 }
@@ -22,6 +23,7 @@ function stubBrowser( options: StubOptions = {} ): Stub {
 	const {
 		outerFrame = true,
 		challengeFrame = true,
+		challengeReady = true,
 		dismissed = true,
 		respondError,
 	} = options;
@@ -39,6 +41,7 @@ function stubBrowser( options: StubOptions = {} ): Stub {
 		},
 		async waitForChallengeReady() {
 			calls.push( 'waitForChallengeReady' );
+			return challengeReady;
 		},
 		async respondToChallenge( response: ChallengeResponse ) {
 			calls.push( `respondToChallenge:${ response }` );
@@ -64,6 +67,7 @@ test( 'a presented challenge answered with complete yields dismissed evidence', 
 
 	expect( evidence ).toEqual( {
 		expectation: 'challenge',
+		authenticationSurfacePresented: true,
 		challengePresented: true,
 		response: 'complete',
 		challengeDismissed: true,
@@ -93,7 +97,7 @@ test( 'an expected challenge that never appears fails instead of passing', async
 			response: 'complete',
 			browser,
 		} )
-	).rejects.toThrow( /presented no challenge frame/ );
+	).rejects.toThrow( /no readable challenge frame/ );
 
 	expect( browser.calls ).not.toContain( 'respondToChallenge:complete' );
 } );
@@ -114,7 +118,7 @@ test( 'an expected challenge with no authentication surface at all is distinguis
 } );
 
 test( 'a frictionless expectation passes only when no challenge is presented', async () => {
-	const browser = stubBrowser( { challengeFrame: false } );
+	const browser = stubBrowser( { outerFrame: false, challengeFrame: false } );
 
 	const evidence = await completeCardAuthentication( {
 		expectation: 'frictionless',
@@ -123,6 +127,7 @@ test( 'a frictionless expectation passes only when no challenge is presented', a
 
 	expect( evidence ).toEqual( {
 		expectation: 'frictionless',
+		authenticationSurfacePresented: false,
 		challengePresented: false,
 	} );
 	expect( browser.calls ).not.toContain( 'waitForChallengeReady' );
@@ -192,4 +197,66 @@ test( 'failures before any response are plain errors, not quarantines', async ()
 
 	expect( error ).toBeInstanceOf( Error );
 	expect( error ).not.toBeInstanceOf( ResourceQuarantineRequiredError );
+} );
+
+test( 'a frictionless expectation fails when the surface opened but no challenge could be read', async () => {
+	// The regression that matters: this is what a renamed challenge-frame
+	// locator looks like. Passing here would make every frictionless
+	// assertion survive a locator that matches nothing.
+	const browser = stubBrowser( { outerFrame: true, challengeFrame: false } );
+
+	await expect(
+		completeCardAuthentication( {
+			expectation: 'frictionless',
+			browser,
+		} )
+	).rejects.toThrow( /could not be read/ );
+} );
+
+test( 'a challenge still loading fails before the response rather than after it', async () => {
+	const browser = stubBrowser( { challengeReady: false } );
+
+	const error = await completeCardAuthentication( {
+		expectation: 'challenge',
+		response: 'complete',
+		browser,
+	} ).catch( ( thrown: unknown ) => thrown );
+
+	// Nothing was dispatched, so this must not consume a quarantine.
+	expect( error ).not.toBeInstanceOf( ResourceQuarantineRequiredError );
+	expect( ( error as Error ).message ).toMatch( /Nothing was submitted/ );
+	expect( browser.calls ).not.toContain( 'respondToChallenge:complete' );
+} );
+
+test( 'an unrecognized response is rejected before the challenge is answered', async () => {
+	const browser = stubBrowser();
+
+	await expect(
+		completeCardAuthentication( {
+			expectation: 'challenge',
+			// A JavaScript caller the union cannot reach.
+			response: 'complte' as ChallengeResponse,
+			browser,
+		} )
+	).rejects.toThrow( /does not recognize the response complte/ );
+
+	expect(
+		browser.calls.some( ( call ) =>
+			call.startsWith( 'respondToChallenge' )
+		)
+	).toBe( false );
+} );
+
+test( 'a quarantine carries the underlying error for diagnosis', async () => {
+	const primaryError = new Error( 'detached frame' );
+
+	const error = await completeCardAuthentication( {
+		expectation: 'challenge',
+		response: 'complete',
+		browser: stubBrowser( { respondError: primaryError } ),
+	} ).catch( ( thrown: unknown ) => thrown );
+
+	expect( ( error as ResourceQuarantineRequiredError ).primaryError ).toBe(
+		primaryError
+	);
 } );
