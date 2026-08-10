@@ -59,6 +59,8 @@ Native ships no first-run guidance for multi-currency. A merchant who would have
 
 ## 2026-08-08 — A provider fidelity run discharges its family, scoped to a named claim
 
+> **Two premises in this decision were disproved when it was executed. The decision itself stands.** Read *Correction 2026-08-09* at the end of this section before acting on the excluded-family rationale or the row counts.
+
 Where native already proves WooCommerce's half of a provider interaction against test doubles, one authorized provider run may discharge every row in that fidelity family — subject to two conditions, and with one family excluded.
 
 **Condition 1: the fidelity claim is named in writing before the run.** Each family states what the run establishes, specifically enough to be wrong out loud. "The provider's real decline codes are the ones native's error mapping and failed-transaction rate limiter are keyed on" qualifies. "Card declines work" does not.
@@ -82,3 +84,17 @@ Where native already proves WooCommerce's half of a provider interaction against
 ### Accepted risk
 
 The failure mode is correlated. "Covered core-side" rests on the test doubles being faithful, so a double that diverges from the real provider is wrong for every row leaning on it at once, and a single family run may not surface a difference that one member row would have caught. This was surfaced before the decision and accepted. The mitigation is not more provider runs but the named claim: a fidelity statement specific enough to be falsified is what makes a wrong double visible.
+
+### Correction 2026-08-09 — premises restated against the tree
+
+Executing this decision required deriving the family partition and writing the nine claims. Doing that against the current tree disproved two of the premises recorded above. The decision, both conditions, and the exclusion all stand; the reasoning under them is corrected here. The original text is left intact so the change is visible.
+
+**The `3ds-authentication` exclusion stands, but not for the recorded reason.** The 12-row population reproduces exactly. The rationale does not: the tree no longer contains only two authentication-related assertions, and Core now holds substantial lower-layer customer-action coverage. That surviving coverage is **not** grounds to reclassify these rows into a fidelity family. The exclusion rests on a different and still-true fact — no native browser journey performs a live authentication challenge, so there is no assembled-product evidence for a thin fidelity check to lean on. The original instruction is unchanged and load-bearing: this family needs real journey coverage and must not be sold as a fidelity check.
+
+**Condition 2 yields 52 dischargeable rows, not roughly 79.** The recorded estimate turns out to be the size of the fidelity population itself, so it assumed every family member would discharge — which Condition 2's own text says will not happen. Exact containment against each row's literal `residual_risk` gives 52 dischargeable and 27 retaining residue, across nine families. `FIDELITY-CLAIMS.md` and `fidelity-partition.tsv` are authoritative for all counts; treat any number in this section as historical.
+
+**One exclusion inside the claims was withdrawn on evidence.** An early draft excluded card-testing-protection enforcement from the `basic-card-charge` and `redirect-method-provider-outcome` claims, leaving five rows open. Enforcement is core-side — the gateway rejects before a payment context exists — and the target account's ineligibility is surmountable through the existing byte-restoring driver, so both families now drive protection on as well as off. Those five rows discharge. The claims record that this proves native's enforcement and not the provider's provisioning of the capability.
+
+**Scope note.** The partition covers the 130 `PILOT-NATIVE-READINESS` rows plus one row pulled in from the `PILOT-PROVIDER-EXECUTION-BUDGET` gate, because its case runs inside an already-authorized run. That widening is labelled in `FIDELITY-CLAIMS.md`; it is not part of the readiness-gated derivation.
+
+**Why this correction exists in this form.** The disproved authentication premise was in-session analysis that was never checked in, which is why executing this decision had to reproduce the observation rather than inherit it. A false premise supporting a correct conclusion is the more dangerous shape: a reader who checks it finds it false and may overturn a conclusion that is actually right. Record the ground a decision genuinely rests on, and correct it in place when the ground moves.
