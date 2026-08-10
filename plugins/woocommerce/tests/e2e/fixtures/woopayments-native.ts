@@ -823,6 +823,15 @@ export class WooPaymentsPilotRuntime implements ProviderWriteSession {
 					);
 				}
 				const candidate = ( await response.json() ) as RuntimeStatus;
+				// Callback readiness is proved once, at setup, against the
+				// diagnostics artifact that carries it. This route cannot
+				// report it: the probe registers a callback and calls it from
+				// outside the store, and the store never learns the result, so
+				// the live payload always answers registered false, reachable
+				// false, blog 0. Demanding it here made the recheck
+				// unsatisfiable for a standing store rather than strict. What
+				// this recheck is for is the volatile half - that the expected
+				// runtime still owns the store, on the same account, mid-run.
 				assertRuntimeReady(
 					runtime,
 					candidate,
@@ -831,7 +840,7 @@ export class WooPaymentsPilotRuntime implements ProviderWriteSession {
 						wpcomBlogId: this.wpcomBlogId,
 						accountId: this.accountId,
 					},
-					{ requireCallback: this.runtime !== 'transition' }
+					{ requireCallback: false }
 				);
 				status = candidate;
 			} catch ( error ) {
