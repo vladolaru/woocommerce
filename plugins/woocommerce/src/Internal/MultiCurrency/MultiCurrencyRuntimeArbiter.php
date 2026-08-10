@@ -79,11 +79,11 @@ class MultiCurrencyRuntimeArbiter {
 	public function get_runtime_owner(): string {
 		$payments_owner = $this->payments_arbiter->get_runtime_owner();
 
-		if ( NativePaymentsRuntimeArbiter::OWNER_PLUGIN === $payments_owner && $this->is_plugin_multi_currency_enabled() ) {
+		if ( NativePaymentsRuntimeArbiter::OWNER_PLUGIN === $payments_owner && $this->is_customer_multi_currency_enabled() ) {
 			return self::OWNER_PLUGIN;
 		}
 
-		if ( NativePaymentsRuntimeArbiter::OWNER_NATIVE === $payments_owner ) {
+		if ( NativePaymentsRuntimeArbiter::OWNER_NATIVE === $payments_owner && $this->is_customer_multi_currency_enabled() ) {
 			return self::OWNER_CORE;
 		}
 
@@ -109,14 +109,16 @@ class MultiCurrencyRuntimeArbiter {
 	}
 
 	/**
-	 * Tell whether the standalone WooPayments plugin loads customer multi-currency.
+	 * Tell whether the merchant has customer multi-currency switched on.
 	 *
 	 * WooPayments defaults `_wcpay_feature_customer_multi_currency` to enabled and
 	 * returns before loading its multi-currency module when the option is `0`.
+	 * Core reads the same option so that a merchant who switched the feature off
+	 * under the plugin does not find it switched back on by moving to native.
 	 *
-	 * @return bool True when the plugin multi-currency module should be active.
+	 * @return bool True when the multi-currency runtime may take ownership.
 	 */
-	private function is_plugin_multi_currency_enabled(): bool {
+	private function is_customer_multi_currency_enabled(): bool {
 		return '1' === (string) $this->legacy_proxy->call_function( 'get_option', '_wcpay_feature_customer_multi_currency', '1' );
 	}
 }

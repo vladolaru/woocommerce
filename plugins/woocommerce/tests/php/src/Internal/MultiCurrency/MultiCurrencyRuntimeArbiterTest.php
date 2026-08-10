@@ -126,6 +126,18 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should leave multi-currency unowned when native payments owns the site but the merchant switched customer multi-currency off.
+	 */
+	public function test_native_payments_owner_with_disabled_customer_multi_currency_leaves_multi_currency_unowned(): void {
+		$this->fake_plugin( false, false, false, false );
+		$this->enable_native_runtime();
+
+		$this->assertSame( MultiCurrencyRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner(), 'A merchant who switched customer multi-currency off must not have it switched back on by native payments ownership.' );
+		$this->assertFalse( $this->sut->should_core_register(), 'Core multi-currency must not register while the merchant has the feature switched off.' );
+		$this->assertFalse( $this->sut->should_plugin_register(), 'Plugin multi-currency must not register in native mode either.' );
+	}
+
+	/**
 	 * @testdox Should leave multi-currency unowned when no payments runtime owns the site.
 	 */
 	public function test_no_payments_owner_leaves_multi_currency_unowned(): void {

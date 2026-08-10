@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Honor the customer multi-currency feature setting in native payments mode, so a merchant who switched multi-currency off does not have it switched back on.
