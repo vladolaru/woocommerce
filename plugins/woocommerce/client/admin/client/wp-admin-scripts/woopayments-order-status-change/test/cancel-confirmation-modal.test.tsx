@@ -10,6 +10,7 @@ import userEvent from '@testing-library/user-event';
 import { CancelConfirmationModal } from '../cancel-confirmation-modal';
 
 const submit = jest.fn();
+const requestSubmit = jest.fn();
 
 const renderModal = () => {
 	const onClose = jest.fn();
@@ -44,8 +45,10 @@ describe( 'CancelConfirmationModal', () => {
 		) as HTMLSelectElement;
 		field.value = 'wc-cancelled';
 
-		// jsdom does not implement form submission.
-		( document.querySelector( 'form' ) as HTMLFormElement ).submit = submit;
+		// jsdom implements neither form submission entry point.
+		const form = document.querySelector( 'form' ) as HTMLFormElement;
+		form.submit = submit;
+		form.requestSubmit = requestSubmit;
 	} );
 
 	it( 'offers the refund documentation alongside both actions', () => {
@@ -69,7 +72,11 @@ describe( 'CancelConfirmationModal', () => {
 			screen.getByRole( 'button', { name: 'Cancel order' } )
 		);
 
-		expect( submit ).toHaveBeenCalled();
+		// requestSubmit(), not submit(): the order screen binds submit
+		// handlers (the unsaved-changes guard among them) that the raw DOM
+		// submit() would skip.
+		expect( requestSubmit ).toHaveBeenCalled();
+		expect( submit ).not.toHaveBeenCalled();
 		expect( onClose ).toHaveBeenCalled();
 		expect(
 			( document.getElementById( 'order_status' ) as HTMLSelectElement )
@@ -85,6 +92,7 @@ describe( 'CancelConfirmationModal', () => {
 		);
 
 		expect( submit ).not.toHaveBeenCalled();
+		expect( requestSubmit ).not.toHaveBeenCalled();
 		expect( onClose ).toHaveBeenCalled();
 		expect(
 			( document.getElementById( 'order_status' ) as HTMLSelectElement )

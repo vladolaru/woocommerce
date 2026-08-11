@@ -43,5 +43,20 @@ export function resetOrderStatus( previousStatus: string ): void {
  * Submit the order edit form, letting the status change save normally.
  */
 export function submitOrderForm(): void {
-	getOrderStatusField()?.closest( 'form' )?.submit();
+	const form = getOrderStatusField()?.closest( 'form' );
+	if ( ! form ) {
+		return;
+	}
+
+	// requestSubmit() rather than submit(): the raw DOM submit() bypasses
+	// submit handlers, and the order screen binds real behaviour to them —
+	// the unsaved-changes guard and the saving overlay among them. Confirming
+	// here has to save the order the same way pressing Update does, including
+	// whatever handlers an extension has added.
+	if ( typeof form.requestSubmit === 'function' ) {
+		form.requestSubmit();
+		return;
+	}
+
+	form.submit();
 }
