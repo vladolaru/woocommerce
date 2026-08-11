@@ -200,6 +200,10 @@ class FakeRealAdapterPage {
 		exact: boolean | undefined;
 	} > = [];
 	public cardChecked = false;
+	// Core hides the payment-method radio when a store offers a single
+	// method, because there is no choice to make; it is pre-selected instead.
+	public soleHiddenCardGateway = false;
+	public cardLabelText = 'Card Test Mode Visa Mastercard';
 	public emitSubmissionOnClick = false;
 	public placeOrderFailure?: Error;
 	public waitForResponseCalls = 0;
@@ -263,6 +267,27 @@ class FakeRealAdapterPage {
 				}
 			},
 		};
+	}
+
+	public locator( selector: string ) {
+		if ( selector === 'input[name="payment_method"]' ) {
+			return {
+				count: async () => 1,
+				inputValue: async () => 'woocommerce_payments',
+				isVisible: async () => ! this.soleHiddenCardGateway,
+				isChecked: async () => this.soleHiddenCardGateway,
+				check: async () => {
+					this.cardChecked = true;
+				},
+			};
+		}
+		if ( selector.startsWith( 'label[for="payment_method_' ) ) {
+			return {
+				isVisible: async () => true,
+				innerText: async () => this.cardLabelText,
+			};
+		}
+		throw new Error( `unexpected locator: ${ selector }` );
 	}
 
 	public on( event: PageEventName, listener: PageEventListener ): this {
@@ -405,13 +430,37 @@ test( 'selects the semantic Card radio when its accessible name includes test-mo
 	await browser.selectWooPaymentsCard();
 
 	expect( page.cardChecked ).toBe( true );
-	expect( page.roleQueries ).toEqual( [
-		{
-			role: 'radio',
-			name: /^Card\b/i,
-			exact: undefined,
-		},
-	] );
+} );
+
+test( 'accepts the sole Card gateway that core renders hidden and pre-selected', async () => {
+	const page = new FakeRealAdapterPage();
+	page.soleHiddenCardGateway = true;
+	const browser = new PlaywrightClassicCardCheckoutBrowser(
+		page as never,
+		BASE_URL,
+		314
+	);
+
+	// No click: core does not render a control to click when the shopper has
+	// only one payment method, and demanding one would fail on every
+	// single-gateway store.
+	await browser.selectWooPaymentsCard();
+
+	expect( page.cardChecked ).toBe( false );
+} );
+
+test( 'refuses a gateway the shopper is not offered as Card', async () => {
+	const page = new FakeRealAdapterPage();
+	page.cardLabelText = 'Cash on delivery';
+	const browser = new PlaywrightClassicCardCheckoutBrowser(
+		page as never,
+		BASE_URL,
+		314
+	);
+
+	await expect( browser.selectWooPaymentsCard() ).rejects.toThrow(
+		/not labelled as Card/
+	);
 } );
 
 test( 'uses the exact-store receipt parser while waiting for navigation', async () => {

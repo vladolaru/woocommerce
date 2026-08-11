@@ -566,14 +566,41 @@ export class PlaywrightClassicCardCheckoutBrowser
 	}
 
 	public async selectWooPaymentsCard(): Promise< void > {
-		const card = await requireOneEnabled(
-			this.page.getByRole( 'radio', { name: /^Card\b/i } ),
-			'Card gateway'
-		);
+		// Located by name rather than by role: when a store offers a single
+		// payment method core renders its radio hidden, because there is no
+		// choice to make, and a hidden input has no accessibility role. The
+		// contract is still that the shopper pays by the WooPayments Card
+		// method, so that is what gets asserted either way.
+		const card = this.page.locator( 'input[name="payment_method"]' );
+		if ( ( await card.count() ) !== 1 ) {
+			fail( 'requires exactly one enabled semantic Card gateway.' );
+		}
 		if ( ( await card.inputValue() ) !== WOOPAYMENTS_GATEWAY ) {
 			fail( 'semantic Card gateway is not WooPayments.' );
 		}
-		await card.check();
+
+		const label = this.page.locator(
+			`label[for="payment_method_${ WOOPAYMENTS_GATEWAY }"]`
+		);
+		if ( ! ( await label.isVisible() ) ) {
+			fail( 'the Card gateway is not offered to the shopper.' );
+		}
+		if ( ! /^Card\b/i.test( ( await label.innerText() ).trim() ) ) {
+			fail( 'the offered gateway is not labelled as Card.' );
+		}
+
+		if ( await card.isVisible() ) {
+			await card.check();
+			return;
+		}
+
+		// Sole method: core hides the control and pre-selects it. Requiring a
+		// click here would demand a control core deliberately does not render.
+		if ( ! ( await card.isChecked() ) ) {
+			fail(
+				'the sole Card gateway is hidden but not selected, so no payment method is chosen.'
+			);
+		}
 	}
 
 	public async fillBasicCard(): Promise< void > {
