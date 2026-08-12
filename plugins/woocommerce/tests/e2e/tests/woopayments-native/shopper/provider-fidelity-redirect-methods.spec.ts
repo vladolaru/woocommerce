@@ -372,7 +372,19 @@ function expectRequestedRedirect(
 		request.status,
 		'the intent must await the provider redirect at this point'
 	).toBe( 'requires_action' );
-	expect( request.nextActionType ).toBe( 'redirect_to_url' );
+	// The provider does not name every redirect action the same way. Methods it
+	// models explicitly get their own key — Alipay produces
+	// `alipay_handle_redirect` — carrying the same hosted URL and return URL as
+	// the generic `redirect_to_url`. Accepting the method's own name is
+	// *stricter* than accepting only the generic one: it requires the action to
+	// belong to the method this case drives, so an intent that somehow awaited a
+	// different method's redirect would fail here rather than pass.
+	expect(
+		request.nextActionType,
+		`the intent must await ${ method.id }'s own provider redirect`
+	).toMatch(
+		new RegExp( `^(redirect_to_url|${ method.id }_handle_redirect)$` )
+	);
 	expect(
 		request.chargeCount,
 		'no charge may exist before the shopper authorizes'
@@ -383,7 +395,20 @@ function expectRequestedRedirect(
 	// boundary rather than this claim's subject, so the identity compared is
 	// the origin and path — which is what names the provider's own object.
 	const hosted = new URL( request.providerRedirectUrl );
-	const handed = new URL( observation.storeRedirectUrl );
+	// Resolved against the store, because what the store hands back is not
+	// required to be absolute, and reported raw on failure — a bare `new URL()`
+	// here throws `Invalid URL` and says nothing about what the store actually
+	// answered with.
+	let handed: URL;
+	try {
+		handed = new URL( observation.storeRedirectUrl, expected.storeOrigin );
+	} catch {
+		throw new Error(
+			`the store answered Place order with a redirect this case cannot resolve against ${
+				expected.storeOrigin
+			}: ${ JSON.stringify( observation.storeRedirectUrl ) }`
+		);
+	}
 	expect( hosted.protocol, 'the provider handoff must be over HTTPS' ).toBe(
 		'https:'
 	);

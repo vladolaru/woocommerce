@@ -724,11 +724,23 @@ export async function readRedirectIntentRequest(
 		typeof intent.next_action === 'object' && intent.next_action !== null
 			? ( intent.next_action as Record< string, unknown > )
 			: {};
-	const redirectToUrl =
-		typeof nextAction.redirect_to_url === 'object' &&
-		nextAction.redirect_to_url !== null
-			? ( nextAction.redirect_to_url as Record< string, unknown > )
-			: {};
+	// The provider does not use one next-action shape for every redirect
+	// method. `redirect_to_url` is the generic one; a method the provider
+	// models explicitly gets its own — Alipay produces
+	// `alipay_handle_redirect`, and the `*_handle_redirect` family carries the
+	// same `url` and `return_url` pair under its own key. Binding to the
+	// generic name alone reads a real, correctly-formed redirect as an
+	// unreadable one, and quarantines the account for it.
+	const redirectActionKey = Object.keys( nextAction ).find(
+		( key ) =>
+			( key === 'redirect_to_url' ||
+				key.endsWith( '_handle_redirect' ) ) &&
+			typeof nextAction[ key ] === 'object' &&
+			nextAction[ key ] !== null
+	);
+	const redirectToUrl = redirectActionKey
+		? ( nextAction[ redirectActionKey ] as Record< string, unknown > )
+		: {};
 	const types = Array.isArray( intent.payment_method_types )
 		? intent.payment_method_types.map( ( value, index ) =>
 				requiredString( value, `payment method type ${ index + 1 }` )
@@ -736,7 +748,13 @@ export async function readRedirectIntentRequest(
 		: [];
 
 	if ( strict ) {
-		if ( nextAction.type !== 'redirect_to_url' ) {
+		// Still binding: the action has to *be* a redirect, and it has to be
+		// the one whose payload was read above. Anything else — a QR code, a
+		// card challenge, no action at all — is not this case.
+		if (
+			! redirectActionKey ||
+			String( nextAction.type ) !== redirectActionKey
+		) {
 			throw quarantine(
 				`intent ${ intentId } carries next action ${ String(
 					nextAction.type
