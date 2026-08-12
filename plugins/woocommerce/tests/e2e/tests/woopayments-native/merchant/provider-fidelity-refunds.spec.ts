@@ -13,6 +13,16 @@ import {
 import { completeCardCheckout } from '../../../utils/woopayments-native/drivers/checkout';
 import { withClassicCheckoutPage } from '../../../utils/woopayments-native/drivers/classic-checkout-page';
 import { openExactMerchantTransaction } from '../../../utils/woopayments-native/drivers/merchant-transactions';
+import {
+	AFFIRM,
+	AFTERPAY,
+	ALIPAY,
+	BANCONTACT,
+	completeRedirectCheckout,
+	withEnabledPaymentMethod,
+	withForeignCurrency,
+	type RedirectMethod,
+} from '../../../utils/woopayments-native/drivers/redirect-methods';
 import { readProviderCardEvidence } from '../../../utils/woopayments-native/provider-card-evidence';
 import {
 	getPaymentEvidence,
@@ -93,9 +103,6 @@ const CONTRACT_R7 =
 const CONTRACT_R6 =
 	'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase-with-upe-methods.spec.ts:131::Local payment method checkout with card testing › merchant can see and refund a Bancontact order';
 
-const PAYMENTS_SETTINGS_API = '/wp-json/wc/v3/payments/settings';
-const MULTI_CURRENCY_API = '/wp-json/wc/v3/payments/multi-currency';
-
 /**
  * The merchant-supplied refund reason.
  *
@@ -126,17 +133,19 @@ const R2_ORDER_TOTAL = '10.99';
 const R2_REMAINING_REFUNDABLE = 7.66;
 
 // R3/R6: EUR 12.34, priced through a pinned manual rate of 1.0 so the
-// converted amount is exact and independent of any provider-fetched rate.
+// converted amount is exact and independent of any provider-fetched rate. The
+// rate pin itself lives in the shared redirect-method driver, which owns the
+// enabled-currency snapshot both families restore from.
 const EUR_PRICE = '12.34';
 const EUR_MINOR = 1234;
-const EUR_MANUAL_RATE = 1;
 
-// R4-R7: the `A*` redirect-method inputs from the sibling
-// `redirect-method-provider-outcome` contract.
-const ALIPAY_PRICE = '12.00';
-const ALIPAY_MINOR = 1200;
-const BNPL_PRICE = '100.00';
-const BNPL_MINOR = 10000;
+// R4-R7 drive the `A*` redirect-method inputs from the sibling
+// `redirect-method-provider-outcome` contract. The method catalog, the billing
+// addresses, the enabled-method snapshot, the foreign-currency snapshot and the
+// classic redirect journey are shared with that family through
+// `utils/woopayments-native/drivers/redirect-methods.ts`: both families drive
+// the same five methods and must restore the same store state byte-for-byte,
+// so there is one implementation of that and two sets of assertions over it.
 
 /** Convergence, as fixed by the claim. */
 const SETTLE_INTERVAL_MS = 3_000;
@@ -149,82 +158,6 @@ const REPLAY_INTERVAL_MS = 3_000;
 const REPLAY_BUDGET_MS = 60_000;
 /** `R1v`'s bounded propagation window for the transaction view. */
 const TRANSACTION_VIEW_BUDGET_MS = 120_000;
-
-interface BillingAddress {
-	country: string;
-	state?: string;
-	city: string;
-	address: string;
-	postcode: string;
-}
-
-const US_BILLING: BillingAddress = {
-	country: 'US',
-	state: 'CA',
-	city: 'San Francisco',
-	address: '123 Test Street',
-	postcode: '94107',
-};
-
-const BE_BILLING: BillingAddress = {
-	country: 'BE',
-	city: 'Brussels',
-	address: 'Rue de la Loi 16',
-	postcode: '1000',
-};
-
-interface RedirectMethod {
-	/** The provider method ID, as `enabled_payment_method_ids` names it. */
-	id: string;
-	/** The split gateway ID native registers for it. */
-	gatewayId: string;
-	/** The label the shopper reads on the classic checkout. */
-	label: RegExp;
-	billing: BillingAddress;
-	currency: string;
-	price: string;
-	amountMinor: number;
-}
-
-const ALIPAY: RedirectMethod = {
-	id: 'alipay',
-	gatewayId: 'woocommerce_payments_alipay',
-	label: /alipay/i,
-	billing: US_BILLING,
-	currency: 'USD',
-	price: ALIPAY_PRICE,
-	amountMinor: ALIPAY_MINOR,
-};
-
-const AFFIRM: RedirectMethod = {
-	id: 'affirm',
-	gatewayId: 'woocommerce_payments_affirm',
-	label: /affirm/i,
-	billing: US_BILLING,
-	currency: 'USD',
-	price: BNPL_PRICE,
-	amountMinor: BNPL_MINOR,
-};
-
-const BANCONTACT: RedirectMethod = {
-	id: 'bancontact',
-	gatewayId: 'woocommerce_payments_bancontact',
-	label: /bancontact/i,
-	billing: BE_BILLING,
-	currency: 'EUR',
-	price: EUR_PRICE,
-	amountMinor: EUR_MINOR,
-};
-
-const AFTERPAY: RedirectMethod = {
-	id: 'afterpay_clearpay',
-	gatewayId: 'woocommerce_payments_afterpay_clearpay',
-	label: /cash app afterpay|afterpay|clearpay/i,
-	billing: US_BILLING,
-	currency: 'USD',
-	price: BNPL_PRICE,
-	amountMinor: BNPL_MINOR,
-};
 
 interface ProviderRefund {
 	id: string;
@@ -949,490 +882,6 @@ async function createPaidCardOrder(
 	await readProviderCardEvidence( adminApi, paid );
 
 	return paid;
-}
-
-/* -------------------------------------------------------------------------
- * Enabled-payment-method snapshot and byte restoration
- * ---------------------------------------------------------------------- */
-
-async function readEnabledPaymentMethodIds(
-	restApi: APIRequestContext
-): Promise< string[] > {
-	const settings = await readJson< Record< string, unknown > >(
-		await restApi.get( PAYMENTS_SETTINGS_API ),
-		'Payments settings read'
-	);
-	const enabled = settings.enabled_payment_method_ids;
-	if ( ! Array.isArray( enabled ) ) {
-		fail( 'payments settings exposed no enabled-payment-method list.' );
-	}
-	return enabled.map( ( value, index ) =>
-		requiredString( value, `enabled payment method ${ index + 1 }` )
-	);
-}
-
-async function writeEnabledPaymentMethodIds(
-	session: ProviderWriteSession,
-	ids: string[],
-	description: string
-): Promise< void > {
-	await readJson(
-		await session.performWrite( () =>
-			session.adminApi.post( PAYMENTS_SETTINGS_API, {
-				data: { enabled_payment_method_ids: ids },
-			} )
-		),
-		description
-	);
-	// The route answers 200 with the unchanged list when it declines a value,
-	// so the cold re-read is the proof rather than the response.
-	const echoed = await readEnabledPaymentMethodIds( session.adminApi );
-	if ( echoed.toSorted().join( ',' ) !== ids.toSorted().join( ',' ) ) {
-		fail(
-			`enabled-payment-method write did not take effect; requested ${ ids
-				.toSorted()
-				.join( ', ' ) } but the store reports ${ echoed
-				.toSorted()
-				.join( ', ' ) }.`
-		);
-	}
-}
-
-/**
- * Run `callback` with one extra provider method enabled, then restore the
- * recorded set byte-for-byte in its original order and prove the restoration on
- * a cold read.
- *
- * A method that is already enabled is left alone and restored to enabled: the
- * store's own configuration is the baseline, never a value this suite prefers.
- */
-async function withEnabledPaymentMethod< Result >(
-	session: ProviderWriteSession,
-	method: RedirectMethod,
-	callback: () => Promise< Result >
-): Promise< Result > {
-	session.requireApprovedProviderFixture( CAPABILITY_METHOD );
-	const original = await readEnabledPaymentMethodIds( session.adminApi );
-	const alreadyEnabled = original.includes( method.id );
-
-	if ( ! alreadyEnabled ) {
-		await writeEnabledPaymentMethodIds(
-			session,
-			[ ...original, method.id ],
-			`${ method.id } enable`
-		);
-	}
-
-	let scenarioError: unknown;
-	let result: Result | undefined;
-	try {
-		result = await callback();
-	} catch ( error ) {
-		scenarioError = error;
-	}
-
-	// Restoration must never mask the scenario's own failure: a `finally` that
-	// throws replaces the original error, which would hide exactly the finding
-	// the run exists to produce.
-	let restorationError: unknown;
-	try {
-		if ( ! alreadyEnabled ) {
-			await writeEnabledPaymentMethodIds(
-				session,
-				original,
-				`${ method.id } restore`
-			);
-		}
-		const restored = await readEnabledPaymentMethodIds( session.adminApi );
-		if ( restored.join( ',' ) !== original.join( ',' ) ) {
-			restorationError = new ResourceQuarantineRequiredError(
-				`The enabled-payment-method set was not restored: the store reports ${ restored.join(
-					', '
-				) } against a recorded ${ original.join( ', ' ) }.`,
-				'restoration-failed'
-			);
-		}
-	} catch ( error ) {
-		restorationError = new ResourceQuarantineRequiredError(
-			`Restoring the enabled-payment-method set after ${ method.id } failed.`,
-			'restoration-failed',
-			error
-		);
-	}
-
-	if ( scenarioError !== undefined ) {
-		throw scenarioError;
-	}
-	if ( restorationError !== undefined ) {
-		throw restorationError;
-	}
-	return result as Result;
-}
-
-/* -------------------------------------------------------------------------
- * Enabled-currency snapshot and byte restoration
- * ---------------------------------------------------------------------- */
-
-interface CurrencyRecord {
-	code: string;
-	name: string;
-	rate: number;
-	is_default: boolean;
-}
-
-interface StoreCurrencies {
-	available: Record< string, CurrencyRecord >;
-	enabled: Record< string, CurrencyRecord >;
-	default: CurrencyRecord;
-}
-
-interface SingleCurrencySettings {
-	exchange_rate_type: string;
-	manual_rate: unknown;
-	price_rounding: unknown;
-	price_charm: unknown;
-}
-
-interface CurrencySnapshot {
-	enabledCodes: string[];
-	multiCurrencyEnabled: boolean;
-	currencySettings: SingleCurrencySettings;
-}
-
-async function readStoreCurrencies(
-	restApi: APIRequestContext
-): Promise< StoreCurrencies > {
-	return readJson< StoreCurrencies >(
-		await restApi.get( `${ MULTI_CURRENCY_API }/currencies` ),
-		'Multi-currency state read'
-	);
-}
-
-async function readSingleCurrencySettings(
-	restApi: APIRequestContext,
-	code: string
-): Promise< SingleCurrencySettings > {
-	return readJson< SingleCurrencySettings >(
-		await restApi.get( `${ MULTI_CURRENCY_API }/currencies/${ code }` ),
-		`${ code } settings read`
-	);
-}
-
-async function setEnabledCurrencies(
-	session: ProviderWriteSession,
-	codes: string[],
-	description: string
-): Promise< void > {
-	const updated = await readJson< StoreCurrencies >(
-		await session.performWrite( () =>
-			session.adminApi.post(
-				`${ MULTI_CURRENCY_API }/update-enabled-currencies`,
-				{ data: { enabled: codes } }
-			)
-		),
-		description
-	);
-	// The route answers HTTP 200 with the unchanged list when the payload is
-	// not a non-empty array, so assert the returned state rather than trusting
-	// a green response.
-	const echoed = Object.keys( updated.enabled ?? {} ).toSorted();
-	const expectedCodes = [ ...new Set( codes ) ].toSorted();
-	if ( echoed.join( ',' ) !== expectedCodes.join( ',' ) ) {
-		fail(
-			`enabled-currency write did not take effect; requested ${ expectedCodes.join(
-				', '
-			) } but the store reports ${ echoed.join( ', ' ) }.`
-		);
-	}
-}
-
-/**
- * Run `callback` with one foreign currency enabled at a pinned manual rate of
- * 1.0 and no rounding or charm adjustment, so the converted order total is
- * exactly the catalog price and independent of any provider-fetched rate. Then
- * restore the recorded enabled set, per-currency settings and multi-currency
- * feature flag, and prove the restoration on cold reads.
- */
-async function withForeignCurrency< Result >(
-	session: ProviderWriteSession,
-	code: string,
-	callback: () => Promise< Result >
-): Promise< Result > {
-	session.requireApprovedProviderFixture( CAPABILITY_CURRENCY );
-	const restApi = session.adminApi;
-
-	const paymentsSettings = await readJson< Record< string, unknown > >(
-		await restApi.get( PAYMENTS_SETTINGS_API ),
-		'Payments settings read'
-	);
-	const multiCurrencyEnabled =
-		paymentsSettings.is_multi_currency_enabled === true;
-	if ( ! multiCurrencyEnabled ) {
-		await readJson(
-			await session.performWrite( () =>
-				restApi.post( PAYMENTS_SETTINGS_API, {
-					data: { is_multi_currency_enabled: true },
-				} )
-			),
-			'Multi-currency enable'
-		);
-	}
-
-	const currencies = await readStoreCurrencies( restApi );
-	if ( ! Object.keys( currencies.available ?? {} ).includes( code ) ) {
-		fail(
-			`${ code } is not in this store's available currency catalog, so no ${ code } charge can be created here.`
-		);
-	}
-	const snapshot: CurrencySnapshot = {
-		enabledCodes: Object.keys( currencies.enabled ?? {} ),
-		multiCurrencyEnabled,
-		currencySettings: await readSingleCurrencySettings( restApi, code ),
-	};
-
-	await readJson(
-		await session.performWrite( () =>
-			restApi.post( `${ MULTI_CURRENCY_API }/currencies/${ code }`, {
-				data: {
-					exchange_rate_type: 'manual',
-					manual_rate: EUR_MANUAL_RATE,
-					price_rounding: 0,
-					price_charm: 0,
-				},
-			} )
-		),
-		`${ code } manual-rate pin`
-	);
-	if ( ! snapshot.enabledCodes.includes( code ) ) {
-		await setEnabledCurrencies(
-			session,
-			[ ...snapshot.enabledCodes, code ],
-			`${ code } enable`
-		);
-	}
-
-	let scenarioError: unknown;
-	let result: Result | undefined;
-	try {
-		result = await callback();
-	} catch ( error ) {
-		scenarioError = error;
-	}
-
-	let restorationError: unknown;
-	try {
-		if ( snapshot.enabledCodes.includes( code ) ) {
-			// The currency stays enabled, so its per-currency options are
-			// restored in place rather than deleted by removal.
-			await readJson(
-				await session.performWrite( () =>
-					restApi.post(
-						`${ MULTI_CURRENCY_API }/currencies/${ code }`,
-						{ data: snapshot.currencySettings }
-					)
-				),
-				`${ code } settings restore`
-			);
-		}
-		await setEnabledCurrencies(
-			session,
-			snapshot.enabledCodes,
-			'Enabled-currencies restore'
-		);
-		const rereadCurrencies = await readStoreCurrencies( restApi );
-		const restoredCodes = Object.keys( rereadCurrencies.enabled ?? {} );
-		const restoredSettings = await readSingleCurrencySettings(
-			restApi,
-			code
-		);
-		if ( ! multiCurrencyEnabled ) {
-			await readJson(
-				await session.performWrite( () =>
-					restApi.post( PAYMENTS_SETTINGS_API, {
-						data: { is_multi_currency_enabled: false },
-					} )
-				),
-				'Multi-currency restore'
-			);
-		}
-		const restoredPaymentsSettings = await readJson<
-			Record< string, unknown >
-		>(
-			await restApi.get( PAYMENTS_SETTINGS_API ),
-			'Payments settings restoration re-read'
-		);
-		if (
-			restoredCodes.join( ',' ) !== snapshot.enabledCodes.join( ',' ) ||
-			JSON.stringify( restoredSettings ) !==
-				JSON.stringify( snapshot.currencySettings ) ||
-			restoredPaymentsSettings.is_multi_currency_enabled !==
-				multiCurrencyEnabled
-		) {
-			restorationError = new ResourceQuarantineRequiredError(
-				`The ${ code } currency configuration was not restored to its recorded state.`,
-				'restoration-failed'
-			);
-		}
-	} catch ( error ) {
-		restorationError = new ResourceQuarantineRequiredError(
-			`Restoring the ${ code } currency configuration failed.`,
-			'restoration-failed',
-			error
-		);
-	}
-
-	if ( scenarioError !== undefined ) {
-		throw scenarioError;
-	}
-	if ( restorationError !== undefined ) {
-		throw restorationError;
-	}
-	return result as Result;
-}
-
-/* -------------------------------------------------------------------------
- * Redirect-method checkout
- * ---------------------------------------------------------------------- */
-
-async function fillClassicBilling(
-	page: Page,
-	runId: string,
-	address: BillingAddress
-): Promise< void > {
-	const billing = page.locator( '.woocommerce-billing-fields' );
-	await expect( billing ).toBeVisible();
-	await billing.getByLabel( /^First name/i ).fill( 'E2E' );
-	await billing.getByLabel( /^Last name/i ).fill( 'WooPayments' );
-	// Select2 enhances country and state into a second labelled control, so the
-	// accessible name matches two elements. Address the underlying select by id,
-	// as the rest of the Core classic-checkout suite does.
-	await billing.locator( '#billing_country' ).selectOption( address.country );
-	await billing
-		.getByLabel( /^Street address/i )
-		.first()
-		.fill( address.address );
-	await billing.getByLabel( /^(?:Town \/ City|City)/i ).fill( address.city );
-	if ( address.state ) {
-		await billing.locator( '#billing_state' ).selectOption( address.state );
-	}
-	await billing
-		.getByLabel( /^(?:ZIP Code|Postcode)/i )
-		.fill( address.postcode );
-	await billing.getByLabel( /^Phone/i ).fill( '5555550100' );
-	await billing
-		.getByLabel( /^Email address/i )
-		.fill( `woopayments-${ runId }@example.com` );
-}
-
-/**
- * Drive one redirect-method purchase end to end on the classic checkout and
- * hand back the proven payment identity.
- *
- * The provider's hosted test page is the one surface here that native does not
- * own; it is followed exactly once, by activating its own "Authorize Test
- * Payment" control, and the journey then has to land back on this store's
- * order-received page. Everything asserted afterwards is read from the store
- * and the provider, never from the hosted page.
- */
-async function completeRedirectCheckout(
-	session: ProviderWriteSession,
-	page: Page,
-	product: OwnedProduct,
-	runId: string,
-	method: RedirectMethod,
-	currencyQuery: string
-): Promise< PaymentEvidence > {
-	await session.assertCanWrite();
-	session.requireApprovedProviderFixture( CAPABILITY_FAMILY );
-
-	return withClassicCheckoutPage( session, runId, async ( scope ) => {
-		await page.goto(
-			`?post_type=product&p=${ product.id }&currency=${ currencyQuery }`
-		);
-		await session.performWrite( () =>
-			page
-				.getByRole( 'button', { name: 'Add to cart', exact: true } )
-				.click()
-		);
-		await page.goto(
-			`${ scope.classicCheckout.path }?currency=${ currencyQuery }`
-		);
-		await expect(
-			page.locator( 'form.checkout.woocommerce-checkout' )
-		).toBeVisible();
-		await fillClassicBilling( page, runId, method.billing );
-
-		const methodRadio = page.locator(
-			`input[name="payment_method"][value="${ method.gatewayId }"]`
-		);
-		await expect(
-			methodRadio,
-			`${ method.id } is not offered on this store's checkout, so this case cannot be driven here; the account must actually carry the ${ method.id } capability and the method must be enabled`
-		).toHaveCount( 1 );
-		await methodRadio.check();
-		await expect(
-			page.locator( `label[for="payment_method_${ method.gatewayId }"]` )
-		).toHaveText( method.label );
-
-		const orderId = await session.withProviderSubmissionJournal(
-			`refund-settlement-${ method.id }-checkout`,
-			async () => {
-				try {
-					await session.performWrite( () =>
-						page
-							.getByRole( 'button', {
-								name: 'Place order',
-								exact: true,
-							} )
-							.click()
-					);
-					// The provider's hosted test page. It is followed once and
-					// only once; there is no retry, because a second handoff
-					// would be a second provider interaction.
-					const authorize = page
-						.getByText( 'Authorize Test Payment' )
-						.first();
-					await authorize.waitFor( {
-						state: 'visible',
-						timeout: 90_000,
-					} );
-					await session.performWrite( () => authorize.click() );
-					await page.waitForURL(
-						/\/order-received\/[1-9]\d*\/?(?:\?.*)?$/,
-						{ timeout: 90_000 }
-					);
-					await expect(
-						page.getByText(
-							/^(Your order has been received|Order received)$/i
-						)
-					).toBeVisible();
-				} catch ( error ) {
-					throw new ResourceQuarantineRequiredError(
-						`WooPayments ${ method.id } checkout submission has no proven outcome.`,
-						'uncertain-provider-write',
-						error instanceof Error
-							? error
-							: new Error( String( error ) )
-					);
-				}
-
-				return session.getOrderIdFromUrl( page.url() );
-			}
-		);
-
-		await session.setOrderRunId( orderId, runId );
-		const paid = await getPaymentEvidence( session.adminApi, orderId );
-
-		expect( paid.amountMinor ).toBe( method.amountMinor );
-		expect( paid.currency ).toBe( method.currency );
-		expect( paid.providerStatus ).toBe( 'succeeded' );
-		expect( paid.chargeStatus ).toBe( 'succeeded' );
-		expect( paid.chargeCaptured ).toBe( true );
-		expect( paid.occurrenceCount ).toBe( 1 );
-		expect( [ 'processing', 'completed' ] ).toContain( paid.orderStatus );
-
-		return paid;
-	} );
 }
 
 /**
@@ -2322,6 +1771,7 @@ test.describe.serial( 'refund-settlement R3', () => {
 					await withForeignCurrency(
 						pilotRuntime,
 						'EUR',
+						CAPABILITY_CURRENCY,
 						async () => {
 							const refundRequests = trackRefundRequests( page );
 							const product =
@@ -2567,13 +2017,21 @@ async function driveRedirectRefund(
 	await assertMoneyFormatAssumptions( adminApi );
 	const refundRequests = trackRefundRequests( page );
 	const product = await pilotRuntime.createOwnedProduct( method.price );
-	const paid = await completeRedirectCheckout(
+	pilotRuntime.requireApprovedProviderFixture( CAPABILITY_FAMILY );
+	const paid = await withClassicCheckoutPage(
 		pilotRuntime,
-		page,
-		product,
 		runId,
-		method,
-		method.currency
+		( scope ) =>
+			completeRedirectCheckout(
+				pilotRuntime,
+				page,
+				product,
+				runId,
+				method,
+				method.currency,
+				scope.classicCheckout,
+				`refund-settlement-${ method.id }-checkout`
+			)
 	);
 
 	const orderBefore = await readOrderRecord( adminApi, paid.orderId );
@@ -2734,11 +2192,25 @@ async function runRedirectRefundCase(
 			const drive = () => driveRedirectRefund( fixtures, redirectCase );
 
 			if ( method.currency === 'USD' ) {
-				return withEnabledPaymentMethod( pilotRuntime, method, drive );
+				return withEnabledPaymentMethod(
+					pilotRuntime,
+					method,
+					CAPABILITY_METHOD,
+					drive
+				);
 			}
 
-			return withForeignCurrency( pilotRuntime, method.currency, () =>
-				withEnabledPaymentMethod( pilotRuntime, method, drive )
+			return withForeignCurrency(
+				pilotRuntime,
+				method.currency,
+				CAPABILITY_CURRENCY,
+				() =>
+					withEnabledPaymentMethod(
+						pilotRuntime,
+						method,
+						CAPABILITY_METHOD,
+						drive
+					)
 			);
 		}
 	);
