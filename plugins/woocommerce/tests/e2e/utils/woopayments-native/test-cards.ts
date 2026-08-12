@@ -61,6 +61,19 @@ export const THREE_DS_DECLINED_CARD: ProviderTestCard = {
 };
 
 /**
+ * Pays normally and is then disputed by the provider as `fraudulent`, without
+ * anything local asking for it. This is the only lever a run has for creating a
+ * real dispute: the dispute arrives asynchronously on the captured charge, and
+ * every native effect that follows arrives later still, as ingested provider
+ * events. Matches the extension suite's `disputed-fraudulent` fixture.
+ */
+export const DISPUTED_FRAUDULENT_CARD: ProviderTestCard = {
+	number: '4000000000000259',
+	expiry: '0545',
+	securityCode: '525',
+};
+
+/**
  * Payment method the provider resolves to a card that always requires
  * authentication, for confirming a PaymentIntent server-side with no browser.
  * Used for the off-session shape, where there is no shopper present to answer

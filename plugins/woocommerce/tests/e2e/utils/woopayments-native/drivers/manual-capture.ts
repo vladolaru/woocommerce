@@ -5,6 +5,14 @@ import type { PaymentEvidence } from '../record-evidence';
 import { ResourceQuarantineRequiredError } from '../resource-locks';
 import type { ProviderWriteSession } from '../../../fixtures/woopayments-native';
 
+/**
+ * How long a capture has to reach its terminal provider state.
+ *
+ * Fixed by the `manual-authorization-capture` claim's Convergence row, which
+ * gives each terminal state at most 60 seconds.
+ */
+export const CAPTURE_SETTLE_BUDGET_MS = 60_000;
+
 function assertPaymentEvidenceField< Key extends keyof PaymentEvidence >(
 	evidence: PaymentEvidence,
 	field: Key,
@@ -212,7 +220,7 @@ export async function captureExactOrder(
 				session.adminApi,
 				evidence,
 				'succeeded',
-				Date.now() + 30_000
+				Date.now() + CAPTURE_SETTLE_BUDGET_MS
 			);
 			assertExactCapturedPaymentEvidence( evidence, captured );
 			return captured;

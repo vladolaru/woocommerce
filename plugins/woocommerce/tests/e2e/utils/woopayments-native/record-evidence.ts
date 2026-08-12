@@ -55,6 +55,11 @@ export interface CaptureOrderNoteEvidence {
 	captureNote: string;
 }
 
+export interface AuthorizationOrderNoteEvidence {
+	authorizationNoteCount: number;
+	authorizationNote: string;
+}
+
 async function readJson(
 	response: APIResponse,
 	resource: string
@@ -184,16 +189,14 @@ export async function getPaymentEvidence(
 	};
 }
 
-export async function getCaptureOrderNoteEvidence(
+async function readOrderNoteContents(
 	restApi: APIRequestContext,
-	evidence: Pick< PaymentEvidence, 'orderId' | 'intentId' >
-): Promise< CaptureOrderNoteEvidence > {
+	evidence: Pick< PaymentEvidence, 'orderId' | 'intentId' >,
+	label: string
+): Promise< string[] > {
 	if ( ! Number.isInteger( evidence.orderId ) || evidence.orderId <= 0 ) {
-		throw new Error(
-			'Capture note evidence requires a positive order ID.'
-		);
+		throw new Error( `${ label } evidence requires a positive order ID.` );
 	}
-	const intentId = requiredString( evidence.intentId, 'intent ID' );
 	const notes = await readJson(
 		await restApi.get(
 			`/wp-json/wc/v3/orders/${ evidence.orderId }/notes?context=edit&per_page=100`
@@ -201,33 +204,70 @@ export async function getCaptureOrderNoteEvidence(
 		`WooCommerce order ${ evidence.orderId } notes`
 	);
 	if ( ! Array.isArray( notes ) ) {
-		throw new Error(
-			'Capture note evidence requires an order note array.'
-		);
+		throw new Error( `${ label } evidence requires an order note array.` );
 	}
 
-	const captureNotes = ( notes as OrderNoteResponse[] )
-		.map( ( note, index ) => {
-			if ( typeof note.note !== 'string' ) {
-				throw new Error(
-					`Capture note evidence requires note ${
-						index + 1
-					} to be a string.`
-				);
-			}
-			return note.note;
-		} )
-		.filter(
-			( note ) =>
-				note.startsWith( 'A payment of ' ) &&
-				note.includes(
-					' was <strong>successfully captured</strong> using WooPayments ('
-				) &&
-				note.endsWith( `>${ intentId }</a>).` )
-		);
+	return ( notes as OrderNoteResponse[] ).map( ( note, index ) => {
+		if ( typeof note.note !== 'string' ) {
+			throw new Error(
+				`${ label } evidence requires note ${
+					index + 1
+				} to be a string.`
+			);
+		}
+		return note.note;
+	} );
+}
+
+export async function getCaptureOrderNoteEvidence(
+	restApi: APIRequestContext,
+	evidence: Pick< PaymentEvidence, 'orderId' | 'intentId' >
+): Promise< CaptureOrderNoteEvidence > {
+	const intentId = requiredString( evidence.intentId, 'intent ID' );
+	const captureNotes = (
+		await readOrderNoteContents( restApi, evidence, 'Capture note' )
+	 ).filter(
+		( note ) =>
+			note.startsWith( 'A payment of ' ) &&
+			note.includes(
+				' was <strong>successfully captured</strong> using WooPayments ('
+			) &&
+			note.endsWith( `>${ intentId }</a>).` )
+	);
 
 	return {
 		captureNoteCount: captureNotes.length,
 		captureNote: captureNotes.length === 1 ? captureNotes[ 0 ] : '',
+	};
+}
+
+/**
+ * The authorization half of the capture graph, read off the order's own notes.
+ *
+ * `WooPaymentsOrderNoteService::format_payment_authorized_note()` renders one
+ * sentence per authorization, ending in the intent it authorized, so counting
+ * the notes that name this exact intent is how "exactly one authorization
+ * event" becomes observable rather than inferred from the intent's status.
+ */
+export async function getAuthorizationOrderNoteEvidence(
+	restApi: APIRequestContext,
+	evidence: Pick< PaymentEvidence, 'orderId' | 'intentId' >
+): Promise< AuthorizationOrderNoteEvidence > {
+	const intentId = requiredString( evidence.intentId, 'intent ID' );
+	const authorizationNotes = (
+		await readOrderNoteContents( restApi, evidence, 'Authorization note' )
+	 ).filter(
+		( note ) =>
+			note.startsWith( 'A payment of ' ) &&
+			note.includes(
+				' was <strong>authorized</strong> using WooPayments ('
+			) &&
+			note.endsWith( `>${ intentId }</a>).` )
+	);
+
+	return {
+		authorizationNoteCount: authorizationNotes.length,
+		authorizationNote:
+			authorizationNotes.length === 1 ? authorizationNotes[ 0 ] : '',
 	};
 }
