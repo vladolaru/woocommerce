@@ -955,7 +955,44 @@ async function readMoneyGraph(
 		payment
 	);
 
-	return { payment, order, settlement };
+	return {
+		payment,
+		order: normalizeIntentCurrencyCase( order ),
+		settlement,
+	};
+}
+
+/**
+ * Upper-case `_wcpay_intent_currency` so two reads of a settled order can be
+ * compared for equality.
+ *
+ * The value flips on a settled order without anything about the money
+ * changing. Native writes the order's uppercase code synchronously, and then
+ * `WooPaymentsEventIngestor` overwrites it with the provider's own lowercase
+ * code when the event lands — so a terminal-state check that compares raw
+ * reads sees `USD` become `usd` and reports a graph that is "still settling"
+ * when it has settled.
+ *
+ * Normalising rather than excluding keeps the field under the check: a change
+ * of *currency* still fails, only a change of case does not. The case is not a
+ * contract on either side — native writes this key `strtoupper`ed from
+ * `WooPaymentsOrderEffects…:106` and `strtolower`ed from `…:266`, and the
+ * WooPayments client is the same mixture, with
+ * `WC_Payments_Utils::set_order_intent_currency()` storing the order's
+ * uppercase code and `attach_intent_info_to_order__legacy()` the intent's
+ * lowercase one. Both read it back through a getter that falls back to
+ * `$order->get_currency()`, and currency codes are case-insensitive at the
+ * provider.
+ */
+function normalizeIntentCurrencyCase< T extends OrderRecord >( order: T ): T {
+	const value = order.meta[ META_INTENT_CURRENCY ];
+	if ( typeof value !== 'string' ) {
+		return order;
+	}
+	return {
+		...order,
+		meta: { ...order.meta, [ META_INTENT_CURRENCY ]: value.toUpperCase() },
+	};
 }
 
 /**
@@ -1056,9 +1093,19 @@ function expectSingleSettledGraph(
 		graph.order.customerId,
 		'this family buys as a guest, so no shopper account currency preference is written'
 	).toBe( 0 );
-	expect( graph.order.meta[ META_INTENT_CURRENCY ] ).toBe(
-		expected.currency
-	);
+	// Compared case-insensitively, because the case of this key is not a
+	// contract on either side. Native writes it `strtoupper`ed from
+	// `WooPaymentsOrderEffects::…:106`, `strtolower`ed from `…:266`, and raw
+	// from the event ingestor and the mobile controller — where the provider's
+	// own lowercase code comes through. The WooPayments client is the same
+	// mixture: `WC_Payments_Utils::set_order_intent_currency()` stores the
+	// order's uppercase code while `attach_intent_info_to_order__legacy()`
+	// stores the intent's lowercase one. Both read it back through a getter
+	// that falls back to `$order->get_currency()`, and currency codes are
+	// case-insensitive at the provider, so the code is what this asserts.
+	expect(
+		String( graph.order.meta[ META_INTENT_CURRENCY ] ).toUpperCase()
+	).toBe( expected.currency );
 	expect(
 		graph.order.meta[ META_BALANCE_TRANSACTION ],
 		'the order must store the exact balance transaction the provider bound to this charge'
