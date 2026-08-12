@@ -226,6 +226,33 @@ function asContext( source: Page | BrowserContext ): BrowserContext {
 	return source as BrowserContext;
 }
 
+/**
+ * Decodes a cookie value the way PHP decodes it into `$_COOKIE`.
+ *
+ * WooCommerce writes the guest session cookie with `setcookie()`, which
+ * percent-encodes the value: the `|` field separators reach the browser as
+ * `%7C` and a `$generic$` hash prefix as `%24generic%24`. Playwright reports
+ * the wire value verbatim, so the encoding has to be undone before anything can
+ * read the cookie's fields - and before the value is handed to PHP, where
+ * `WC_Session_Handler::get_session_cookie()` runs it through
+ * `sanitize_text_field()`, which deletes percent-escapes outright rather than
+ * decoding them.
+ *
+ * PHP decodes cookies with `php_url_decode()`, which also maps `+` to a space,
+ * so this mirrors that. `setcookie()` is the encoder on the other side of the
+ * wire, so the pair round-trips exactly; a value that carries no escapes at all
+ * passes through unchanged.
+ */
+function decodeCookieValue( value: string ): string {
+	try {
+		return decodeURIComponent( value.replaceAll( '+', ' ' ) );
+	} catch {
+		return invalid(
+			'WooCommerce guest session cookie is not a decodable cookie value.'
+		);
+	}
+}
+
 function parseGuestCustomerId( cookieValue: string ): string {
 	const parts = cookieValue.includes( '||' )
 		? cookieValue.split( '||' )
@@ -870,9 +897,11 @@ export async function withCapturedCardTestingProtectionState< Result >(
 								path: cookie.path,
 							};
 							registeredCookie = trackedCookie;
-							const customerId = parseGuestCustomerId(
+							const cookieValue = decodeCookieValue(
 								cookie.value
 							);
+							const customerId =
+								parseGuestCustomerId( cookieValue );
 							trackedSession = {
 								customerId,
 								verified: false,
@@ -884,7 +913,7 @@ export async function withCapturedCardTestingProtectionState< Result >(
 									{
 										baseURL: session.baseURL,
 										cookieName: cookie.name,
-										cookieValue: cookie.value,
+										cookieValue,
 										customerId,
 									},
 									session.baseURL
@@ -957,8 +986,9 @@ export async function withCapturedCardTestingProtectionState< Result >(
 						domain: cookie.domain,
 						path: cookie.path,
 					};
+					const cookieValue = decodeCookieValue( cookie.value );
 					const candidateSession: TrackedGuestSession = {
-						customerId: parseGuestCustomerId( cookie.value ),
+						customerId: parseGuestCustomerId( cookieValue ),
 						verified: false,
 					};
 					trackedSession = candidateSession;
@@ -969,7 +999,7 @@ export async function withCapturedCardTestingProtectionState< Result >(
 							{
 								baseURL: session.baseURL,
 								cookieName: cookie.name,
-								cookieValue: cookie.value,
+								cookieValue,
 								customerId: candidateSession.customerId,
 							},
 							session.baseURL

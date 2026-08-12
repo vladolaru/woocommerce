@@ -15,6 +15,8 @@ const WOOPAYMENTS_GATEWAY = 'woocommerce_payments';
 const TOKEN_LENGTH = 16;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const SUBMISSION_TIMEOUT_MS = 60_000;
+const CHECKOUT_SETTLE_TIMEOUT_MS = 15_000;
+const OVERLAY_SETTLE_TIMEOUT_MS = 5_000;
 const BLOCKS_CHECKOUT_MARKERS =
 	'[data-block-name="woocommerce/checkout"], .wp-block-woocommerce-checkout, .wc-block-checkout';
 const CLASSIC_CHECKOUT_FORM = 'form.checkout.woocommerce-checkout';
@@ -563,6 +565,84 @@ export class PlaywrightClassicCardCheckoutBrowser
 		await billing
 			.getByLabel( /^Email address/i )
 			.fill( `woopayments-${ runId }@example.com` );
+		await this.waitForCheckoutSettled();
+	}
+
+	/**
+	 * Waits out WooCommerce's `update_order_review` cycle.
+	 *
+	 * Filling the billing address schedules WooCommerce's debounced
+	 * `update_checkout`, which blocks the order review behind a jQuery blockUI
+	 * overlay, replaces the payment box, and remounts native's Stripe payment
+	 * element. Submitting inside that window strands the submission in silence:
+	 * native's Classic handler returns `false` and waits on `elements.submit()`,
+	 * which never settles while the element is being remounted, so the store is
+	 * never asked, no notice appears, and the page simply stops changing.
+	 *
+	 * Rather than guess at a quiet period, this asks for one more update and
+	 * waits for WooCommerce's own `updated_checkout`. The request it triggers
+	 * cancels and supersedes whatever the field changes had already scheduled,
+	 * so what follows runs against a settled page - which is what every other
+	 * Classic journey has been relying on the incidental delay of its next step
+	 * to provide.
+	 */
+	public async waitForCheckoutSettled(): Promise< void > {
+		const settled = await this.page.evaluate( ( budget ) => {
+			const jq = (
+				window as unknown as {
+					jQuery?: ( target: unknown ) => {
+						one: ( event: string, handler: () => void ) => void;
+						off: ( event: string, handler: () => void ) => void;
+						trigger: ( event: string ) => void;
+					};
+				}
+			 ).jQuery;
+			if ( ! jq ) {
+				return false;
+			}
+			return new Promise< boolean >( ( resolve ) => {
+				const body = jq( document.body );
+				let timer = 0;
+				const onUpdated = () => {
+					window.clearTimeout( timer );
+					resolve( true );
+				};
+				timer = window.setTimeout( () => {
+					body.off( 'updated_checkout', onUpdated );
+					resolve( false );
+				}, budget );
+				body.one( 'updated_checkout', onUpdated );
+				body.trigger( 'update_checkout' );
+			} );
+		}, CHECKOUT_SETTLE_TIMEOUT_MS );
+		if ( ! settled ) {
+			fail( 'order review never finished updating.' );
+		}
+
+		// The unblock fades the overlay out, and a fading overlay still
+		// intercepts pointer events, so the last click before it clears lands
+		// on the overlay rather than on Place order.
+		const overlay = this.page.locator(
+			`${ CLASSIC_CHECKOUT_FORM } .blockUI`
+		);
+		const deadline = Date.now() + CHECKOUT_SETTLE_TIMEOUT_MS;
+		while ( ( await overlay.count() ) > 0 ) {
+			const remaining = deadline - Date.now();
+			if ( remaining <= 0 ) {
+				fail(
+					'order review stayed blocked after it finished updating.'
+				);
+			}
+			try {
+				await overlay
+					.first()
+					.waitFor( { state: 'detached', timeout: remaining } );
+			} catch {
+				fail(
+					'order review stayed blocked after it finished updating.'
+				);
+			}
+		}
 	}
 
 	public async selectWooPaymentsCard(): Promise< void > {
@@ -714,16 +794,58 @@ export class PlaywrightClassicCardCheckoutBrowser
 		if ( alertCount !== 1 ) {
 			return { alertCount, messages: [] };
 		}
-		const messages = await alerts
-			.first()
-			.getByRole( 'listitem' )
-			.allInnerTexts();
+		// Core prints checkout errors through one of two templates, and which
+		// one a store gets is a theme decision rather than anything this
+		// contract is about. `notices/error.php` is a `<ul role="alert">` of
+		// `<li>` messages; `block-notices/error.php` - what block themes get,
+		// including the Twenty Twenty-Five store these run against - is a
+		// banner that lists its messages only when there are several and
+		// otherwise carries the single message as its own content. So read the
+		// list when there is one and the region's text when there is not.
+		const alert = alerts.first();
+		const items = alert.getByRole( 'listitem' );
+		const messages =
+			( await items.count() ) > 0
+				? await items.allInnerTexts()
+				: [ await alert.innerText() ];
 		return {
 			alertCount,
 			messages: messages.map( ( message ) =>
 				message.replace( /\s+/g, ' ' ).trim()
 			),
 		};
+	}
+
+	/**
+	 * Counts the checkout's blocking overlays once they have stopped changing.
+	 *
+	 * jQuery blockUI fades its overlay out rather than removing it, so a count
+	 * taken the instant a rejection notice appears sees an animation rather
+	 * than the state the shopper is left in. This waits for the overlay to go
+	 * and reports zero, or gives up and reports what is still there.
+	 */
+	private async countSettledBlockingOverlays(): Promise< number > {
+		const overlay = this.page.locator(
+			`${ CLASSIC_CHECKOUT_FORM } .blockUI`
+		);
+		const deadline = Date.now() + OVERLAY_SETTLE_TIMEOUT_MS;
+		for (;;) {
+			const count = await overlay.count();
+			if ( count === 0 ) {
+				return 0;
+			}
+			const remaining = deadline - Date.now();
+			if ( remaining <= 0 ) {
+				return count;
+			}
+			try {
+				await overlay
+					.first()
+					.waitFor( { state: 'detached', timeout: remaining } );
+			} catch {
+				return overlay.count();
+			}
+		}
 	}
 
 	public async readCheckoutRecoveryState(): Promise< ClassicCheckoutRecoveryState > {
@@ -748,16 +870,22 @@ export class PlaywrightClassicCardCheckoutBrowser
 				( await placeOrder.count() ) === 1 &&
 				( await placeOrder.isEnabled() ),
 			// jQuery blockUI's overlay, which the Classic checkout leaves in
-			// place while a submission is in flight.
-			blockingOverlayCount: await this.page
-				.locator( `${ CLASSIC_CHECKOUT_FORM } .blockUI` )
-				.count(),
-			// Radios inside the payment list. Saved-method radios would count
-			// too, which is why callers assert that a choice remains rather
-			// than taking a gateway census.
+			// place while a submission is in flight and then fades out over
+			// several hundred milliseconds. The contract is that the shopper is
+			// not left behind an overlay, so the fade is given its moment and
+			// the settled state is what gets reported; an overlay that outlasts
+			// the budget is still counted, and still fails the caller.
+			blockingOverlayCount: await this.countSettledBlockingOverlays(),
+			// Radios inside the payment list, addressed by markup rather than
+			// by role: core renders one per method and hides it when a store
+			// offers a single method, because there is no choice to make, and
+			// a hidden input carries no accessibility role. Counting roles
+			// would therefore report "nothing left to pay with" on exactly the
+			// stores where paying is the only option. Saved-method radios
+			// count too, which is why callers assert that something remains
+			// rather than taking a gateway census.
 			paymentMethodChoiceCount: await this.page
-				.locator( '#payment .wc_payment_methods' )
-				.getByRole( 'radio' )
+				.locator( '#payment .wc_payment_methods input[type="radio"]' )
 				.count(),
 		};
 	}

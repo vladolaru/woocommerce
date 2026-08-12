@@ -18,6 +18,19 @@ const CUSTOMER_ID = 't_0123456789abcdef0123456789abcd';
 const COOKIE_VALUE = `${ CUSTOMER_ID }|2000000000|1999990000|signature`;
 const TOKEN_DIGEST = 'a'.repeat( 64 );
 
+/**
+ * The guest session cookie as a real store puts it on the wire.
+ *
+ * WooCommerce writes it with `setcookie()`, so the `|` field separators arrive
+ * percent-encoded and so does the `$generic$` prefix `wp_fast_hash` gives the
+ * signature. This is the shape Playwright reports from an actual Classic
+ * checkout; the signature body is synthetic, but its alphabet is not.
+ */
+const WIRE_CUSTOMER_ID = 't_012a23e1851d1e1cad4a1c0dd420b2';
+const WIRE_SIGNATURE = '$generic$AbCdEf01-_gHiJkLmNoPqRsTuVwXyZ0123456789';
+const WIRE_COOKIE_VALUE = `${ WIRE_CUSTOMER_ID }%7C1786694699%7C1786608299%7C%24generic%24AbCdEf01-_gHiJkLmNoPqRsTuVwXyZ0123456789`;
+const DECODED_WIRE_COOKIE_VALUE = `${ WIRE_CUSTOMER_ID }|1786694699|1786608299|${ WIRE_SIGNATURE }`;
+
 const accountRow = {
 	exists: true,
 	valueBase64: Buffer.from( 'serialized-account' ).toString( 'base64' ),
@@ -1055,6 +1068,103 @@ test( 'exposes only the public session token digest and keeps capture one-shot',
 		cookieValue: COOKIE_VALUE,
 		customerId: CUSTOMER_ID,
 	} );
+} );
+
+test( 'reads the percent-encoded session cookie a real store puts on the wire', async () => {
+	const { session } = makeSession( [] );
+	const runner = new FakeRunner();
+	const { context } = fakeContext( [], [ WIRE_COOKIE_VALUE ] );
+
+	await withCapturedCardTestingProtectionState(
+		session,
+		RUN_ID,
+		async ( scope ) => {
+			await scope.registerFreshContext( context as never );
+			expect(
+				await scope.captureGuestSessionToken( context as never )
+			).toEqual( { length: 16, sha256: TOKEN_DIGEST } );
+		},
+		{ runner }
+	);
+
+	// PHP fills `$_COOKIE` with the decoded value, and
+	// `WC_Session_Handler::get_session_cookie()` deletes percent-escapes rather
+	// than decoding them, so the wire form must never reach the store.
+	expect(
+		runner.requests.find(
+			( request ) => request.operation === 'read-guest-session'
+		)?.input
+	).toMatchObject( {
+		cookieName: COOKIE_NAME,
+		cookieValue: DECODED_WIRE_COOKIE_VALUE,
+		customerId: WIRE_CUSTOMER_ID,
+	} );
+	// And the session this run then owns - and deletes - is the one the decoded
+	// cookie names, not some other guest's.
+	expect(
+		runner.requests.find(
+			( request ) => request.operation === 'delete-guest-session'
+		)?.input
+	).toMatchObject( { customerId: WIRE_CUSTOMER_ID } );
+} );
+
+test( 'quarantines wire cookies that decode to something unverifiable', async () => {
+	for ( const cookieValue of [
+		// Decodes cleanly, but to a value with the wrong field count.
+		`${ WIRE_CUSTOMER_ID }%7C1786694699`,
+		// Decodes cleanly, but names no guest customer.
+		`4%7C1786694699%7C1786608299%7C%24generic%24AbCdEf01`,
+		// Not a decodable cookie value at all.
+		`${ WIRE_CUSTOMER_ID }%7C1786694699%7C1786608299%7C%zz`,
+		`${ WIRE_CUSTOMER_ID }%7C1786694699%7C1786608299%7C%`,
+	] ) {
+		const { session } = makeSession( [] );
+		const runner = new FakeRunner();
+		const { context } = fakeContext( [], [ cookieValue ] );
+		await expect(
+			withCapturedCardTestingProtectionState(
+				session,
+				RUN_ID,
+				async ( scope ) => {
+					await scope.registerFreshContext( context as never );
+					await scope.captureGuestSessionToken( context as never );
+				},
+				{ runner }
+			)
+		).rejects.toBeInstanceOf( ResourceQuarantineRequiredError );
+		// Nothing was read, so nothing may be deleted on this session's behalf.
+		expect( operationNames( runner ) ).not.toContain(
+			'delete-guest-session'
+		);
+	}
+} );
+
+test( 'decoding a wire cookie cannot stand in for Core verifying the session', async () => {
+	const { session } = makeSession( [] );
+	const { context } = fakeContext( [], [ WIRE_COOKIE_VALUE ] );
+	const runner = new FakeRunner(
+		replaceOperationResult(
+			'read-guest-session',
+			envelope( {
+				cookieValid: false,
+				sessionExists: false,
+				token: null,
+			} )
+		)
+	);
+
+	await expect(
+		withCapturedCardTestingProtectionState(
+			session,
+			RUN_ID,
+			async ( scope ) => {
+				await scope.registerFreshContext( context as never );
+				await scope.captureGuestSessionToken( context as never );
+			},
+			{ runner }
+		)
+	).rejects.toBeInstanceOf( ResourceQuarantineRequiredError );
+	expect( operationNames( runner ) ).not.toContain( 'delete-guest-session' );
 } );
 
 test( 'rejects missing, duplicate, and malformed WooCommerce session cookies', async () => {
