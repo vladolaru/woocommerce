@@ -257,6 +257,26 @@ never sees a header. The WooPayments client plugin does exactly the same thing,
 so this is a standing contract mismatch rather than a native regression, and
 native is at parity.
 
+**Confirmed end to end 2026-08-12, and it is worse than a refusal.** The
+reading above was inferred from code. It was then tested against the live
+provider on one captured, un-refunded charge, twice, with a partial amount so
+the over-refund guard could not mask the result:
+
+| Key sent as | call 1 | call 2 | refunds created |
+|---|---|---|---|
+| `Idempotency-Key` header — what native and the client both do | `re_…0jqGhZrO` | `re_…0gA9BUKn` | **2** |
+| `idempotency-key` body parameter | `re_…0vSc9Lim` | `re_…0vSc9Lim` | **1** |
+
+Same charge, same client, same amount; only the transport differs. The platform
+honours the key as a *request parameter* and ignores the HTTP header. It also
+declares `idempotency_key` as a REST arg on its routes
+(`class-base-controller.php:702`), which is the contract both callers are
+missing.
+
+So the over-refund guard is not a safety net in general — it only happens to be
+one when the charge has no room left. A partial refund replayed under the same
+key creates a second refund and moves money twice.
+
 **What the case now establishes.** The property that actually protects money:
 one same-key replay reaches the provider exactly once and creates no second
 refund on either side — whether it is replayed or refused. The refused branch
@@ -264,9 +284,9 @@ additionally requires the refusal to name an over-refund of that exact charge,
 so a refusal for any other reason still fails.
 
 **What it no longer claims.** That idempotency is in force for refunds. On this
-path it is not, and the over-refund guard is the only thing standing between a
-replay and a duplicate. For a *full* refund that guard has no room to fail; a
-partial refund does, and no case here exercises that.
+path it is not. `R7` refunds in full, so the over-refund guard turns the replay
+into a refusal there; that is the guard's doing, not idempotency's, and it does
+not generalise — see the confirmation above.
 
 **Boundary.** Established against the local Transact Platform checkout. It is
 evidence about the WPCOM code path as it exists locally, not proof of production
