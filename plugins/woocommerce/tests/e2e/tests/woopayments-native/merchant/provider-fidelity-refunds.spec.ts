@@ -12,7 +12,6 @@ import {
 } from '../../../fixtures/woopayments-native';
 import { completeCardCheckout } from '../../../utils/woopayments-native/drivers/checkout';
 import { withClassicCheckoutPage } from '../../../utils/woopayments-native/drivers/classic-checkout-page';
-import { openExactMerchantTransaction } from '../../../utils/woopayments-native/drivers/merchant-transactions';
 import {
 	AFFIRM,
 	AFTERPAY,
@@ -802,6 +801,56 @@ async function waitForSettledRefund(
 }
 
 /**
+ * Poll WooCommerce's own record of the refund's provider status until it
+ * reaches `successful`.
+ *
+ * The provider refund reaching `succeeded` and WooCommerce recording
+ * `successful` are two different events, and for a redirect method they are not
+ * simultaneous. Native writes `_wcpay_refund_status` from the refund response
+ * it gets back synchronously; a card refund settles inside that call, while a
+ * redirect-method refund comes back `pending` and only becomes successful when
+ * the provider's refund event reaches
+ * `WooPaymentsRefundEventHandler`. Reading the order once, straight after the
+ * provider side converged, therefore samples a value that is still in flight.
+ *
+ * This is a convergence, not a relaxation: `pending` is never accepted as a
+ * terminal answer. The budget is the case's own, so a method whose refund never
+ * reports successful fails with its exact last-seen value rather than passing.
+ */
+async function waitForWooRefundStatus(
+	restApi: APIRequestContext,
+	orderId: number,
+	budgetMs: number,
+	intervalMs: number
+): Promise< void > {
+	const deadline = Date.now() + budgetMs;
+	let lastSeen = '';
+
+	for (;;) {
+		const order = await readOrderRecord( restApi, orderId );
+		lastSeen = order.refundStatusMeta;
+		if ( lastSeen === 'successful' ) {
+			return;
+		}
+		if ( lastSeen === 'failed' ) {
+			fail(
+				`WooCommerce recorded refund status failed on order ${ orderId }.`
+			);
+		}
+
+		const remaining = deadline - Date.now();
+		if ( remaining <= 0 ) {
+			fail(
+				`WooCommerce did not record refund status successful on order ${ orderId } within ${ budgetMs }ms (last seen: ${
+					lastSeen || 'no status recorded'
+				} ).`
+			);
+		}
+		await delay( Math.min( intervalMs, remaining ) );
+	}
+}
+
+/**
  * Assert the settled refund graph both sides agree on: one provider refund, one
  * WooCommerce refund, and the join between them.
  */
@@ -996,6 +1045,36 @@ async function waitForRefundOnTransactionView(
 }
 
 /**
+ * The native transaction-details route for one charge.
+ *
+ * Keyed on the charge, which is native's own deep-link key for this route —
+ * `WooPaymentsDisputeEventHandler` builds
+ * `path=/payments/transactions/details&id=<charge_id>&transaction_id=<balance_txn>`
+ * and the admin navigation controller maps that legacy path onto this native
+ * one. The details page accepts either identifier (`isPaymentIntentId( id )`
+ * picks the branch), so the charge is a choice rather than a necessity — but it
+ * is the identifier native itself links with, and one ledger row already
+ * records the difference as native behaviour: "Native UI may not expose the
+ * PaymentIntent as an order-page link; adapter must use a supported transaction
+ * relationship."
+ *
+ * Navigating the route directly, rather than hunting a row in the transactions
+ * list, is deliberate. What `R1v` and `R3v` are about is what the details view
+ * presents about a settled refund; how a merchant reaches that view is the
+ * transaction-navigation family's contract, not this one's, and binding to the
+ * list's link keying made this family fail for a reason that has nothing to do
+ * with refunds.
+ */
+function transactionDetailsPath( chargeId: string ): string {
+	const query = new URLSearchParams( {
+		page: 'wc-admin',
+		path: '/woopayments/transactions/details',
+		id: chargeId,
+	} );
+	return `wp-admin/admin.php?${ query.toString() }`;
+}
+
+/**
  * Open the merchant's transaction view for a settled refund and prove the
  * record it is a view of is still exactly one succeeded refund.
  *
@@ -1017,12 +1096,18 @@ async function openSettledRefundTransactionView(
 	expect( charge.refunds[ 0 ].id ).toBe( settled.providerRefund.id );
 	expect( charge.refunds[ 0 ].status ).toBe( 'succeeded' );
 
-	await openExactMerchantTransaction( session, page, settled.paid );
+	await session.assertCanWrite();
+	await session.logInAsAdmin( page );
+	await page.waitForURL( '**/wp-admin/**' );
+	await page.goto( transactionDetailsPath( settled.paid.chargeId ) );
+
 	await expect(
 		page.getByRole( 'heading', {
 			name: /^(Payment details|Transaction details)$/,
 		} )
 	).toBeVisible();
+	// The view is of this order's payment, not merely of some transaction: an
+	// `id` the route could not resolve renders an error instead of this link.
 	await expect(
 		page.getByRole( 'link', {
 			name: `Order #${ settled.paid.orderId }`,
@@ -1413,6 +1498,12 @@ test.describe.serial( 'refund-settlement R1', () => {
 						SETTLE_BUDGET_MS,
 						SETTLE_INTERVAL_MS
 					);
+					await waitForWooRefundStatus(
+						adminApi,
+						paid.orderId,
+						SETTLE_BUDGET_MS,
+						SETTLE_INTERVAL_MS
+					);
 					const wooRefund = await expectSingleJoinedRefund(
 						adminApi,
 						paid,
@@ -1668,6 +1759,12 @@ test(
 					SETTLE_BUDGET_MS,
 					SETTLE_INTERVAL_MS
 				);
+				await waitForWooRefundStatus(
+					adminApi,
+					paid.orderId,
+					SETTLE_BUDGET_MS,
+					SETTLE_INTERVAL_MS
+				);
 				const wooRefund = await expectSingleJoinedRefund(
 					adminApi,
 					paid,
@@ -1863,6 +1960,12 @@ test.describe.serial( 'refund-settlement R3', () => {
 							const providerRefund = await waitForSettledRefund(
 								adminApi,
 								paid.chargeId,
+								SETTLE_BUDGET_MS,
+								SETTLE_INTERVAL_MS
+							);
+							await waitForWooRefundStatus(
+								adminApi,
+								paid.orderId,
 								SETTLE_BUDGET_MS,
 								SETTLE_INTERVAL_MS
 							);
@@ -2072,6 +2175,12 @@ async function driveRedirectRefund(
 	const providerRefund = await waitForSettledRefund(
 		adminApi,
 		paid.chargeId,
+		redirectCase.settleBudgetMs,
+		redirectCase.settleIntervalMs
+	);
+	await waitForWooRefundStatus(
+		adminApi,
+		paid.orderId,
 		redirectCase.settleBudgetMs,
 		redirectCase.settleIntervalMs
 	);
