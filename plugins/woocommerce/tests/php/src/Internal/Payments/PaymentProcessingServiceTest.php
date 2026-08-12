@@ -887,7 +887,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 
 		$result = $this->sut->process_checkout( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_test' ), $provider );
 
-		$this->assertSame( 'fail', $result['result'] );
+		$this->assertSame( 'failure', $result['result'], 'WooCommerce recognizes failure, not fail; an unrecognized value costs the shopper the decline message.' );
 		$this->assertSame( 0, $provider->charge_calls );
 		$this->store->unlock_order_payment( $order, $this->persistence_profile );
 	}
@@ -903,7 +903,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 
 		$result = $this->sut->process_checkout( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_test' ), $provider );
 
-		$this->assertSame( 'fail', $result['result'] );
+		$this->assertSame( 'failure', $result['result'], 'WooCommerce recognizes failure, not fail; an unrecognized value costs the shopper the decline message.' );
 		$this->assertSame( 0, $provider->charge_calls );
 		$this->store->unlock_order_payment( $order, $this->persistence_profile );
 	}

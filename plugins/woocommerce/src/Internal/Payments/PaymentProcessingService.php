@@ -1022,7 +1022,14 @@ class PaymentProcessingService {
 	private function format_checkout_result( PaymentContext $context, WC_Order $order, PaymentOutcome $outcome ): array {
 		if ( PaymentOutcome::STATUS_FAILED === $outcome->get_status() ) {
 			return array(
-				'result'         => 'fail',
+				// 'failure', not 'fail'. WooCommerce recognizes exactly
+				// success, failure, pending and error; the Store API turns a
+				// failed payment's notice into a shopper-visible error only on
+				// an exact 'failure' match, then clears the notice queue. An
+				// unrecognized value skips that conversion, is coerced to
+				// failure for the status, and leaves the shopper a failed
+				// checkout with no reason given.
+				'result'         => 'failure',
 				'redirect'       => '',
 				'payment_method' => '',
 			);
