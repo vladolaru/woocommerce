@@ -118,6 +118,57 @@ export async function submitBlocksCheckout(
 	);
 }
 
+/**
+ * Fills the Blocks checkout contact and address fields for a shopper who may
+ * already have one on file.
+ *
+ * A shopper who has checked out before arrives with the address group rendered
+ * but collapsed behind an Edit button and no editable country field. Supplying
+ * an address is a precondition for reaching payment rather than something a
+ * caller asserts, so the fill is skipped in that state instead of timing out on
+ * a field the surface deliberately does not offer.
+ *
+ * Exported because every signed-in saved-method journey meets the returning
+ * shopper shape, which `fillCheckoutDetails` below - written for the guest
+ * journeys that own it - does not handle. Choosing the payment method is left
+ * to the caller: a saved-method journey has more to say about that than "Card".
+ */
+export async function fillBlocksCheckoutAddress(
+	page: Page,
+	runId: string
+): Promise< void > {
+	const shipping = page.getByRole( 'group', { name: 'Shipping address' } );
+	const billing = page.getByRole( 'group', { name: 'Billing address' } );
+	const address = ( await shipping.isVisible() ) ? shipping : billing;
+	const country = address.getByRole( 'combobox', { name: 'Country/Region' } );
+
+	if ( ! ( await country.isVisible() ) ) {
+		return;
+	}
+
+	await page
+		.getByRole( 'textbox', { name: 'Email address' } )
+		.fill( `woopayments-${ runId }@example.com` );
+	await country.selectOption( 'US' );
+	await address.getByRole( 'textbox', { name: 'First name' } ).fill( 'E2E' );
+	await address
+		.getByRole( 'textbox', { name: 'Last name' } )
+		.fill( 'WooPayments' );
+	await address
+		.getByRole( 'textbox', { name: 'Address', exact: true } )
+		.fill( '123 Test Street' );
+	await address
+		.getByRole( 'textbox', { name: 'City', exact: true } )
+		.fill( 'San Francisco' );
+	await address
+		.getByRole( 'combobox', { name: 'State', exact: true } )
+		.selectOption( 'CA' );
+	await address.getByRole( 'textbox', { name: 'ZIP Code' } ).fill( '94107' );
+	await address
+		.getByRole( 'textbox', { name: 'Phone (optional)' } )
+		.fill( '5555550100' );
+}
+
 async function fillCheckoutDetails(
 	page: Page,
 	runId: string
