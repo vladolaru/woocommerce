@@ -965,6 +965,22 @@ async function observeCheckoutExchange< Result >(
 ): Promise< { exchange: CheckoutExchange; result: Result } > {
 	const requests: Request[] = [];
 	const responses: Response[] = [];
+	/**
+	 * Each observed response's body, read at the instant it arrived.
+	 *
+	 * A redirect method's checkout response is immediately followed by a
+	 * navigation to the provider, and once the browser leaves the document
+	 * Chromium discards the buffer: `Network.getResponseBody` then answers "No
+	 * resource with given identifier found" for a response this driver has
+	 * already seen and counted. Reading here rather than after the await keeps
+	 * the body and the observation in the same instant. The settled shape is
+	 * kept so a genuine parse failure still surfaces its own reason instead of
+	 * being flattened into "no body".
+	 */
+	const bodies = new Map<
+		Response,
+		Promise< { ok: true; value: unknown } | { ok: false; error: unknown } >
+	>();
 	let resolveResponse = () => {};
 	let rejectResponse: ( error: Error ) => void = () => {};
 	const responseSignal = new Promise< void >( ( resolve, reject ) => {
@@ -981,6 +997,13 @@ async function observeCheckoutExchange< Result >(
 	const onResponse = ( response: Response ) => {
 		if ( matches( response.request() ) ) {
 			responses.push( response );
+			bodies.set(
+				response,
+				response.json().then(
+					( value: unknown ) => ( { ok: true as const, value } ),
+					( error: unknown ) => ( { ok: false as const, error } )
+				)
+			);
 			resolveResponse();
 		}
 	};
@@ -1005,14 +1028,19 @@ async function observeCheckoutExchange< Result >(
 		}
 
 		const first = responses[ 0 ];
+		const firstBody = await bodies.get( first );
+		if ( ! firstBody?.ok ) {
+			throw quarantine(
+				`checkout response body could not be read (${ String(
+					firstBody?.error ?? 'no read was started'
+				) }), so the submission has no proven outcome.`
+			);
+		}
 		const exchange: CheckoutExchange = {
 			requestCount: requests.length,
 			responseCount: responses.length,
 			status: first.status(),
-			body: requiredObject(
-				await first.json(),
-				'checkout response body'
-			),
+			body: requiredObject( firstBody.value, 'checkout response body' ),
 			fields: readSubmittedFields( first.request().postData() ),
 			elapsedMs: Date.now() - activatedAt,
 		};
