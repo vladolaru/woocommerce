@@ -432,7 +432,7 @@ final class WooCommerce_WooPayments_Native_E2E_Runtime {
 				);
 			}
 
-			$customer_subscriptions = wcs_get_subscriptions(
+			$customer_subscriptions    = wcs_get_subscriptions(
 				array(
 					'customer_id'            => $customer->ID,
 					'subscriptions_per_page' => 200,
