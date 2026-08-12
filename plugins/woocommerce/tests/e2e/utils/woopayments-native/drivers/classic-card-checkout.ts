@@ -1123,12 +1123,23 @@ export class PlaywrightClassicCardCheckoutBrowser
 		const decodeNewResponses = async (): Promise< void > => {
 			while ( decoded.length < responses.length ) {
 				const response = responses[ decoded.length ];
+				// The body may be gone by the time it is read. A checkout that
+				// succeeds navigates to the receipt, and the browser discards
+				// the body of a request whose page it has left — so reading it
+				// races the very success it is meant to record, and success is
+				// the case that loses. An unreadable body is recorded as
+				// undefined rather than thrown, because the outcome is proven
+				// from the provider record and the order, and the status line
+				// below is retained either way.
+				const body = await response
+					.json()
+					.catch( () => undefined as unknown );
 				decoded.push( {
 					requestId:
 						requestIds.get( response.request() ) ??
 						'unmatched-classic-response',
 					status: response.status(),
-					body: await response.json(),
+					body,
 				} );
 			}
 		};
