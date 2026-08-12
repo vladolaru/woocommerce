@@ -1064,10 +1064,18 @@ async function waitForRefundOnTransactionView(
  * transaction-navigation family's contract, not this one's, and binding to the
  * list's link keying made this family fail for a reason that has nothing to do
  * with refunds.
+ *
+ * The host page is `wc-settings&tab=checkout`, not `wc-admin`. Native's routes
+ * live under the Core-owned Settings > Payments surface — `Settings\Utils::
+ * wc_payments_settings_url()` is the one builder every native link goes
+ * through — and `wc-admin` answers an unregistered path with a "Not allowed"
+ * screen rather than a 404, so getting this wrong reads as a missing heading
+ * rather than as a bad address.
  */
 function transactionDetailsPath( chargeId: string ): string {
 	const query = new URLSearchParams( {
-		page: 'wc-admin',
+		page: 'wc-settings',
+		tab: 'checkout',
 		path: '/woopayments/transactions/details',
 		id: chargeId,
 	} );
