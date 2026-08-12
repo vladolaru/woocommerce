@@ -10,6 +10,7 @@ import type { APIResponse, Page, Request } from '@playwright/test';
 import {
 	expect,
 	getBlocksCardFrameSelector,
+	ProviderSubmissionNotStartedError,
 	ResourceQuarantineRequiredError,
 	submitBlocksCheckout,
 	tags,
@@ -27,7 +28,6 @@ import {
 } from '../../../utils/woopayments-native/drivers/classic-card-checkout';
 import { withClassicCheckoutPage } from '../../../utils/woopayments-native/drivers/classic-checkout-page';
 import { readHighestOrderId } from '../../../utils/woopayments-native/drivers/classic-card-authentication';
-import { getSavedCardEvidence } from '../../../utils/woopayments-native/drivers/saved-cards';
 import type { ProviderTestCard } from '../../../utils/woopayments-native/test-cards';
 
 /**
@@ -130,8 +130,8 @@ interface DeclineFixture {
 	readonly card: ProviderTestCard;
 	/** Top-level provider error code on `last_payment_error`/`last_setup_error`. */
 	readonly errorCode: string;
-	/** Provider decline code, or null when the card returns none. */
-	readonly declineCode: string | null;
+	/** Provider decline code. Every card in this matrix returns one. */
+	readonly declineCode: string;
 	/** Native's own catalog sentence for this code pair. */
 	readonly message: string;
 }
@@ -143,6 +143,17 @@ interface DeclineFixture {
  * Expiry and security code carry no provider meaning beyond being well-formed;
  * they match the WooPayments extension suite's fixtures so a native run and an
  * extension run can be compared field by field.
+ *
+ * **The decline codes below are observed, not assumed.** `FIDELITY-CLAIMS.md`
+ * originally fixed `expired_card`, `incorrect_cvc` and `processing_error` as
+ * returning *no* decline code. The first authorized run of this family
+ * falsified that on both checkout surfaces: the provider returns a decline code
+ * for all five cards, and for those three it mirrors the top-level code. The
+ * claims file carries the dated correction; these values are what the provider
+ * actually returned. Nothing user-visible was wrong, because
+ * `WooPaymentsErrorMessages::get_shopper_message()` consults `decline_code`
+ * first and all three mirrored codes are in the same catalog that the top-level
+ * codes map into, so the shopper sentence is identical either way.
  */
 const GENERIC_DECLINE: DeclineFixture = {
 	familyCase: 'D-PI-generic',
@@ -155,7 +166,7 @@ const EXPIRED_CARD: DeclineFixture = {
 	familyCase: 'D-PI-expired',
 	card: { number: '4000000000000069', expiry: '0245', securityCode: '424' },
 	errorCode: 'expired_card',
-	declineCode: null,
+	declineCode: 'expired_card',
 	message: 'Error: Your card has expired.',
 };
 const INSUFFICIENT_FUNDS: DeclineFixture = {
@@ -169,14 +180,14 @@ const INCORRECT_CVC: DeclineFixture = {
 	familyCase: 'D-PI-cvc',
 	card: { number: '4000000000000127', expiry: '0245', securityCode: '424' },
 	errorCode: 'incorrect_cvc',
-	declineCode: null,
+	declineCode: 'incorrect_cvc',
 	message: "Error: Your card's security code is incorrect.",
 };
 const PROCESSING_ERROR: DeclineFixture = {
 	familyCase: 'D-PI-processing',
 	card: { number: '4000000000000119', expiry: '0245', securityCode: '424' },
 	errorCode: 'processing_error',
-	declineCode: null,
+	declineCode: 'processing_error',
 	message:
 		'Error: An error occurred while processing your card. Try again in a little bit.',
 };
@@ -362,6 +373,70 @@ function isStoreCheckoutRequest( request: Request ): boolean {
 	} catch {
 		return false;
 	}
+}
+
+/**
+ * Undo the HTML escaping core applies to a Store API error message.
+ *
+ * `CheckoutTrait::process_payment()` re-throws the payment failure as
+ * `throw new RouteException( …, esc_html( $e->getMessage() ), 400 )`, so the
+ * transport JSON carries `Error: Your card&#039;s security code is incorrect.`
+ * where native's catalog sentence has a plain apostrophe. That is core encoding
+ * the message for transport, not a different sentence, so the comparison
+ * decodes rather than hard-coding the entity — which would leave the expectation
+ * silently wrong the day core stops escaping.
+ *
+ * Deliberately narrow: it reverses exactly the five substitutions `esc_html()`
+ * makes and nothing else, so a genuinely different string cannot be massaged
+ * into a match. The shopper-facing assertions still run against the rendered
+ * DOM, where a literal `&#039;` would fail to match and would be a real bug
+ * rather than something this helper hides.
+ */
+function decodeEscapedHtml( value: string ): string {
+	return value
+		.replace( /&#0?39;/g, "'" )
+		.replace( /&quot;/g, '"' )
+		.replace( /&lt;/g, '<' )
+		.replace( /&gt;/g, '>' )
+		.replace( /&amp;/g, '&' );
+}
+
+/**
+ * Whether a Store API checkout body asked to save the card.
+ *
+ * Native's Blocks integration always sends
+ * `wc-woocommerce_payments-new-payment-method` in `payment_data`, with the
+ * value `false` when nothing is being saved, so key presence proves nothing and
+ * an earlier `postData.includes(...)` check read every submission as a save.
+ * The value is what matters, and an unrecognized encoding fails loudly rather
+ * than defaulting to "not saving".
+ */
+function readBlocksSaveFlag( postData: string ): boolean {
+	const body = JSON.parse( postData ) as {
+		payment_data?: Array< { key?: unknown; value?: unknown } >;
+	};
+	if ( ! Array.isArray( body.payment_data ) ) {
+		throw new Error(
+			'The Store API checkout body carried no payment_data collection.'
+		);
+	}
+	const entry = body.payment_data.find(
+		( item ) => item.key === 'wc-woocommerce_payments-new-payment-method'
+	);
+	if ( entry === undefined ) {
+		return false;
+	}
+	if ( entry.value === false || entry.value === 'false' ) {
+		return false;
+	}
+	if ( entry.value === true || entry.value === 'true' ) {
+		return true;
+	}
+	throw new Error(
+		`The Store API save-payment-method flag carried an unrecognized value: ${ JSON.stringify(
+			entry.value
+		) }`
+	);
 }
 
 /** Whether a request is the native add-payment-method SetupIntent AJAX call. */
@@ -639,9 +714,14 @@ async function convergeFailedPayment(
 
 		if ( Date.now() >= deadline ) {
 			throw new Error(
-				`Order ${ orderId } did not reach a stable terminal failed payment within ${ CONVERGENCE_BUDGET_MS }ms. ` +
-					'Native persists no intent identity on a decline, so this state arrives with the ingested ' +
-					`payment_intent.payment_failed event; last read: ${ serialized }`
+				`Order ${ orderId } did not reach a stable terminal failed payment within ${ CONVERGENCE_BUDGET_MS }ms; ` +
+					`last read: ${ serialized }\n` +
+					'An empty intentIdMeta here almost always means the provider event listener is not running. ' +
+					'Native persists no intent identity on a decline, so the only thing that ever writes _intent_id ' +
+					'onto a failed order is the ingested payment_intent.payment_failed event, and that event only ' +
+					'reaches the store while the operator-run listener (`wpcom-local transact listen`) is forwarding ' +
+					'Stripe events into local WPCOM. The pull fallback cannot substitute: with the listener down the ' +
+					'platform never receives the event, so it has none queued to hand back.'
 			);
 		}
 		await delay( CONVERGENCE_POLL_MS );
@@ -733,11 +813,12 @@ function expectDeclinedPaymentGraph(
 		evidence.errorCode,
 		`${ fixture.card.number } must return top-level ${ fixture.errorCode }`
 	).toBe( fixture.errorCode );
+	// Exact pair, not "some decline code": the oracle is as strong as the one
+	// the claim originally stated, just true. A card that starts returning a
+	// different decline code must fail here rather than pass a loosened check.
 	expect(
 		evidence.declineCode,
-		fixture.declineCode === null
-			? `${ fixture.card.number } must return no decline code`
-			: `${ fixture.card.number } must return decline code ${ fixture.declineCode }`
+		`${ fixture.card.number } must return decline code ${ fixture.declineCode }`
 	).toBe( fixture.declineCode );
 	expect( evidence.intentAmount ).toBe( checkoutCase.amountMinor );
 	expect( evidence.intentCurrency ).toBe( PROVIDER_CURRENCY );
@@ -763,6 +844,11 @@ function expectDeclinedPaymentGraph(
 		evidence.failureNoteCount,
 		'one submission must leave at most one local failure effect'
 	).toBeLessThanOrEqual( 1 );
+	// Corroboration only, never a substitute for the provider read above.
+	// `WooPaymentsOutcomeMetadataMapper::get_default_intention_status()` writes
+	// this synchronously for *any* failed outcome, including one where native
+	// never reached the provider at all, so it says what native concluded rather
+	// than what the provider returned. Observed present on every real run.
 	if ( evidence.intentionStatusMeta !== '' ) {
 		expect( evidence.intentionStatusMeta ).toBe( TERMINAL_INTENT_STATUS );
 	}
@@ -992,8 +1078,17 @@ async function submitBlocksDecline(
 				try {
 					response = await checkoutResponse;
 				} catch ( error ) {
+					// Same distinction as the SetupIntent helper: a submission
+					// the browser never sent reached no provider, so it closes
+					// the journal rather than quarantining the account.
+					if ( requestCount === 0 ) {
+						throw new ProviderSubmissionNotStartedError(
+							'The Blocks submission never dispatched a checkout request, so nothing reached the provider.',
+							{ cause: error }
+						);
+					}
 					throw new ResourceQuarantineRequiredError(
-						'A declining Blocks submission produced no checkout response, so its outcome is unknown.',
+						`A declining Blocks submission dispatched ${ requestCount } checkout request(s) and saw no response, so its outcome is unknown.`,
 						'uncertain-provider-write',
 						error
 					);
@@ -1002,15 +1097,17 @@ async function submitBlocksDecline(
 					await response.json(),
 					'Store API checkout response'
 				);
-				const postData = response.request().postData() ?? '';
 
 				return {
 					status: response.status(),
 					code: body.code,
-					message: body.message,
+					message:
+						typeof body.message === 'string'
+							? decodeEscapedHtml( body.message )
+							: body.message,
 					requestCount,
-					savePaymentMethodRequested: postData.includes(
-						'wc-woocommerce_payments-new-payment-method'
+					savePaymentMethodRequested: readBlocksSaveFlag(
+						response.request().postData() ?? ''
 					),
 				};
 			}
@@ -1020,29 +1117,195 @@ async function submitBlocksDecline(
 	}
 }
 
-interface ProviderCustomerState {
+interface RunOwnedShopper {
+	id: number;
+	username: string;
+	password: string;
+}
+
+/**
+ * A shopper account this case owns outright, created for it and deleted after.
+ *
+ * `FIDELITY-CLAIMS.md` specifies five independent fresh My Account customers,
+ * one per `D-SI-*` case, and it is right to. An earlier revision of this file
+ * ran all five against the standing E2E customer and compared an exact recorded
+ * baseline, which is a weaker oracle — a delta rather than an absolute — and,
+ * more importantly, it was observed to trip the platform's own
+ * `wcpay_card_testing_prevention` after four consecutive declines on one
+ * provider customer. That surfaces as native's generic message (the platform
+ * error is not a `card_error`, so `WooPaymentsErrorMessages` falls through to
+ * the generic sentence) and fails the case for a reason that has nothing to do
+ * with the card under test. A fresh shopper per case gives each one its own
+ * provider customer, and turns every assertion below from "nothing changed"
+ * into "there is nothing here at all".
+ */
+async function createRunOwnedShopper(
+	session: ProviderWriteSession,
+	setupCase: SetupIntentCase
+): Promise< RunOwnedShopper > {
+	await session.assertCanWrite();
+	// The run ID is unique per test, so one short slice of it plus the case
+	// name keeps the login inside WordPress's 60-character limit while staying
+	// attributable to this exact run.
+	const runSlice = session.runId.replace( 'woopayments-', '' ).slice( 0, 8 );
+	const caseSlug = setupCase.familyCase.replace( 'D-SI-', '' );
+	const username = `wcdecl-${ runSlice }-${ caseSlug }`;
+	// Derived rather than shared: a throwaway credential for one local-store
+	// account that exists for the length of one case.
+	const password = `woopayments-e2e-${ runSlice }`;
+
+	const created = requireObject(
+		await readJson(
+			await session.performWrite( () =>
+				session.adminApi.post( '/wp-json/wc/v3/customers', {
+					data: {
+						email: `${ username }@example.com`,
+						username,
+						password,
+						first_name: 'E2E',
+						last_name: 'WooPayments',
+					},
+				} )
+			),
+			`run-owned shopper ${ username } creation`
+		),
+		'created customer'
+	);
+	if ( ! Number.isSafeInteger( created.id ) || Number( created.id ) <= 0 ) {
+		throw new Error(
+			`Run-owned shopper ${ username } creation returned no usable ID, so nothing here could remove it.`
+		);
+	}
+
+	return { id: created.id as number, username, password };
+}
+
+/**
+ * Remove the run-owned shopper and prove it is gone.
+ *
+ * Deleting the WordPress user removes any local token with it. The provider
+ * customer the failed attempt created is left behind deliberately: it holds no
+ * attached payment method — that is precisely what the case asserts — so it is
+ * inert, and the family's cleanup contract retains provider-side records under
+ * their run rather than deleting them.
+ */
+async function deleteRunOwnedShopper(
+	session: ProviderWriteSession,
+	shopper: RunOwnedShopper
+): Promise< void > {
+	const response = await session.performWrite( () =>
+		session.adminApi.delete( `/wp-json/wc/v3/customers/${ shopper.id }`, {
+			params: { force: true, reassign: 0 },
+			failOnStatusCode: false,
+		} )
+	);
+	if ( ! response.ok() ) {
+		throw new Error(
+			`Run-owned shopper ${ shopper.username } (${
+				shopper.id
+			}) could not be deleted: HTTP ${ response.status() } ${ await response.text() }`
+		);
+	}
+
+	const readBack = await session.adminApi.get(
+		`/wp-json/wc/v3/customers/${ shopper.id }`,
+		{ failOnStatusCode: false }
+	);
+	if ( readBack.status() !== 404 ) {
+		throw new Error(
+			`Run-owned shopper ${ shopper.username } (${
+				shopper.id
+			}) still exists after deletion: HTTP ${ readBack.status() }`
+		);
+	}
+}
+
+/** Sign the browser in as a run-owned shopper. */
+async function logInAsShopper(
+	page: Page,
+	shopper: RunOwnedShopper
+): Promise< void > {
+	await page.context().clearCookies();
+	await page.goto( 'wp-login.php' );
+	await page
+		.getByLabel( 'Username or Email Address' )
+		.fill( shopper.username );
+	await page
+		.getByRole( 'textbox', { name: 'Password' } )
+		.fill( shopper.password );
+	await page.getByRole( 'button', { name: 'Log In' } ).click();
+	// Prove the session belongs to this shopper before anything is submitted
+	// under it; a failed login would otherwise drive the add-payment-method
+	// form as whoever the browser was last.
+	await page.goto( 'my-account/edit-account/' );
+	await expect(
+		page.getByRole( 'textbox', { name: /Email address/i } )
+	).toHaveValue( `${ shopper.username }@example.com` );
+}
+
+interface ShopperProviderState {
 	providerCustomerId: string;
 	attachedPaymentMethodIds: string[];
 	localTokenIds: number[];
 }
 
 /**
- * The saved-method baseline this family's negative SetupIntent cases are
- * measured against: which local tokens the shopper holds and which payment
- * methods the provider has attached to their customer.
+ * Everything this family asserts about one shopper's saved-method state: the
+ * local tokens they hold, and the payment methods the provider has attached to
+ * their customer.
+ *
+ * Read through the harness route by username rather than through the
+ * saved-card driver, whose reader is bound to the standing E2E customer.
  */
-async function readProviderCustomerState(
-	session: ProviderWriteSession
-): Promise< ProviderCustomerState > {
-	const evidence = await getSavedCardEvidence( session );
-	const providerCustomerId = evidence.providerCustomerId ?? '';
+async function readShopperProviderState(
+	session: ProviderWriteSession,
+	username: string
+): Promise< ShopperProviderState > {
+	const evidence = requireObject(
+		await readJson(
+			await session.adminApi.get(
+				`/wp-json/wc-native-payments-e2e/v1/saved-card-evidence?customer_username=${ encodeURIComponent(
+					username
+				) }`
+			),
+			`saved-card evidence for ${ username }`
+		),
+		'saved-card evidence'
+	);
+	if ( ! Array.isArray( evidence.tokens ) ) {
+		throw new Error(
+			`Saved-card evidence for ${ username } carried no token collection.`
+		);
+	}
+	const localTokenIds = evidence.tokens
+		.map( ( value, index ) => {
+			const token = requireObject(
+				value,
+				`saved-card token ${ index + 1 }`
+			);
+			if (
+				! Number.isSafeInteger( token.token_id ) ||
+				Number( token.token_id ) <= 0
+			) {
+				throw new Error(
+					`Saved-card token ${
+						index + 1
+					} for ${ username } has no exact ID.`
+				);
+			}
+			return token.token_id as number;
+		} )
+		.toSorted();
+
+	const providerCustomerId =
+		typeof evidence.provider_customer_id === 'string'
+			? evidence.provider_customer_id
+			: '';
 	if ( providerCustomerId === '' ) {
 		return {
 			providerCustomerId,
 			attachedPaymentMethodIds: [],
-			localTokenIds: evidence.tokens
-				.map( ( token ) => token.tokenId )
-				.toSorted(),
+			localTokenIds,
 		};
 	}
 
@@ -1069,9 +1332,7 @@ async function readProviderCustomerState(
 				)
 			)
 			.toSorted(),
-		localTokenIds: evidence.tokens
-			.map( ( token ) => token.tokenId )
-			.toSorted(),
+		localTokenIds,
 	};
 }
 
@@ -1099,7 +1360,8 @@ interface SetupIntentRejection {
 async function submitDecliningPaymentMethod(
 	session: ProviderWriteSession,
 	page: Page,
-	setupCase: SetupIntentCase
+	setupCase: SetupIntentCase,
+	shopper: RunOwnedShopper
 ): Promise< SetupIntentRejection > {
 	const { card } = setupCase;
 	let requestCount = 0;
@@ -1117,29 +1379,43 @@ async function submitDecliningPaymentMethod(
 	page.on( 'request', countSetupIntentRequest );
 
 	try {
-		await session.logInAsCustomer( page );
+		await logInAsShopper( page, shopper );
 		// The same navigation the saved-card driver uses, so this negative case
 		// meets exactly the form its positive twin is known to drive.
 		await page.goto( 'my-account/payment-methods/' );
 		await page.getByRole( 'link', { name: /add payment method/i } ).click();
-		await page.getByText( 'Card', { exact: true } ).click();
 
-		const cardFrame = page
-			.getByTitle( 'Secure payment input frame' )
-			.contentFrame();
+		// WooPayments is the store's only gateway, so core renders its radio
+		// pre-selected. Assert that rather than clicking a label: there is no
+		// choice to make, and a run against a store offering a second gateway
+		// must fail here instead of adding a card through something else.
+		const gateway = page.locator( 'input[name="payment_method"]' );
+		await expect( gateway ).toHaveCount( 1 );
+		await expect( gateway ).toHaveValue( 'woocommerce_payments' );
+		await expect( gateway ).toBeChecked();
+
+		// Native's own mount, not the client plugin's. Binding the frame to
+		// `#wcpay-core-payment-element` keeps a client-runtime page from
+		// silently satisfying this locator.
+		const cardFrame = page.frameLocator(
+			'#wcpay-core-payment-element iframe[name^="__privateStripeFrame"]'
+		);
 		await cardFrame
-			.getByPlaceholder( '1234 1234 1234 1234' )
+			.getByRole( 'textbox', { name: 'Card number' } )
 			.fill( card.number );
 		await cardFrame
-			.getByPlaceholder( 'MM / YY' )
-			.fill(
-				`${ card.expiry.slice( 0, 2 ) } / ${ card.expiry.slice( 2 ) }`
-			);
-		await cardFrame.getByPlaceholder( 'CVC' ).fill( card.securityCode );
+			.getByRole( 'textbox', { name: /Expiration date/i } )
+			.fill( card.expiry );
+		await cardFrame
+			.getByRole( 'textbox', { name: 'Security code' } )
+			.fill( card.securityCode );
 		await cardFrame
 			.getByRole( 'combobox', { name: /country/i } )
 			.selectOption( 'US' );
-		await cardFrame.getByLabel( /ZIP/i ).fill( '90210' );
+		// The postal field only exists once a country that uses one is chosen.
+		await cardFrame
+			.getByRole( 'textbox', { name: /zip|postal/i } )
+			.fill( '90210' );
 
 		return await session.withProviderSubmissionJournal(
 			`card-decline-setup-intent-${ setupCase.familyCase }`,
@@ -1162,8 +1438,22 @@ async function submitDecliningPaymentMethod(
 				try {
 					response = await setupIntentResponse;
 				} catch ( error ) {
+					// Tell "never dispatched" apart from "dispatched, outcome
+					// unknown". The native script calls Stripe.js
+					// `createPaymentMethod()` before it POSTs
+					// `create_setup_intent`, so a client-side failure means no
+					// request left the browser and nothing reached the
+					// provider. Quarantining the shared account for that is a
+					// false alarm that blocks every later test; the journal
+					// just needs to close cleanly.
+					if ( requestCount === 0 ) {
+						throw new ProviderSubmissionNotStartedError(
+							'The add-payment-method submission never dispatched a SetupIntent request, so nothing reached the provider.',
+							{ cause: error }
+						);
+					}
 					throw new ResourceQuarantineRequiredError(
-						'A declining add-payment-method submission produced no SetupIntent response, so its outcome is unknown.',
+						`A declining add-payment-method submission dispatched ${ requestCount } SetupIntent request(s) and saw no response, so its outcome is unknown.`,
 						'uncertain-provider-write',
 						error
 					);
@@ -1329,7 +1619,19 @@ async function runBlocksDeclineCase(
 				'one Place order activation must ask the Store API exactly once'
 			).toBe( 1 );
 			expect( rejection.status ).toBe( 400 );
-			expect( rejection.code ).toBe( 'woocommerce_rest_payment_error' );
+			// Core wraps this twice and the outer wrapper wins. A declined
+			// gateway result reaches `StoreApi\Legacy::process_legacy_payment()`,
+			// which turns the queued notice into a `RouteException` coded
+			// `woocommerce_rest_payment_error`; that exception then propagates
+			// into `CheckoutTrait::process_payment()`'s `catch ( \Exception )`,
+			// which re-wraps it as `woocommerce_rest_checkout_process_payment_error`
+			// while preserving the message. Both are core's own coding of the
+			// same event, so the code is asserted as a set and the message —
+			// which survives the re-wrap intact — carries the discrimination.
+			expect( [
+				'woocommerce_rest_payment_error',
+				'woocommerce_rest_checkout_process_payment_error',
+			] ).toContain( rejection.code );
 			expect(
 				rejection.savePaymentMethodRequested,
 				'a purchase that saves nothing must not ask to save'
@@ -1392,71 +1694,122 @@ async function runSetupIntentDeclineCase(
 		},
 		async () => {
 			const baselineOrderId = await readHighestOrderId( session );
-			const before = await readProviderCustomerState( session );
-			// The attachment assertions below are vacuous without a provider
-			// customer to read, so an absent one fails here rather than passing
-			// by having nothing to check.
-			expect(
-				before.providerCustomerId,
-				'this case must run against a shopper the provider already knows'
-			).not.toBe( '' );
+			const shopper = await createRunOwnedShopper( session, setupCase );
+			let primaryError: unknown;
 
-			const rejection = await submitDecliningPaymentMethod(
-				session,
-				page,
-				setupCase
-			);
+			try {
+				// A genuinely fresh shopper: no local token, and not yet known
+				// to the provider at all. This is what makes every assertion
+				// after the submission absolute rather than a delta.
+				const before = await readShopperProviderState(
+					session,
+					shopper.username
+				);
+				expect(
+					before.localTokenIds,
+					'a fresh shopper must hold no saved card'
+				).toEqual( [] );
+				expect(
+					before.providerCustomerId,
+					'a fresh shopper must not yet be known to the provider'
+				).toBe( '' );
 
-			expect(
-				rejection.requestCount,
-				'one Add payment method activation must ask the store exactly once'
-			).toBe( 1 );
-			expect(
-				rejection.paymentMethodId,
-				'the submission must have created one provider payment method to confirm'
-			).not.toBe( '' );
-			expect( rejection.success ).toBe( false );
-			expect( rejection.status ).toBe( 502 );
-			// Native derives this sentence from the provider's own error type,
-			// code and decline code, and its catalog is injective over this
-			// family's five codes, so the sentence identifies the code the
-			// provider returned — and rules out the local refusals, which never
-			// reach `create_and_confirm_setup_intention` at all.
-			expectProviderDerivedDecline(
-				[ String( rejection.message ) ],
-				setupCase.message,
-				setupCase.familyCase
-			);
-			expect( rejection.message ).toBe( setupCase.message );
+				const rejection = await submitDecliningPaymentMethod(
+					session,
+					page,
+					setupCase,
+					shopper
+				);
 
-			// The provider-side observation the ledger rows ask for: the
-			// declined method never attached, and a late attachment cannot hide
-			// inside the quiet interval.
-			const after = await readProviderCustomerState( session );
-			expect( after ).toEqual( before );
-			expect(
-				after.attachedPaymentMethodIds,
-				'the declined payment method must not be attached to the provider customer'
-			).not.toContain( rejection.paymentMethodId );
+				expect(
+					rejection.requestCount,
+					'one Add payment method activation must ask the store exactly once'
+				).toBe( 1 );
+				expect(
+					rejection.paymentMethodId,
+					'the submission must have created one provider payment method to confirm'
+				).not.toBe( '' );
+				expect( rejection.success ).toBe( false );
+				expect( rejection.status ).toBe( 502 );
+				// Native derives this sentence from the provider's own error
+				// type, code and decline code, and its catalog is injective
+				// over this family's five codes, so the sentence identifies the
+				// code the provider returned — and rules out the local
+				// refusals, which never reach
+				// `create_and_confirm_setup_intention` at all.
+				expectProviderDerivedDecline(
+					[ String( rejection.message ) ],
+					setupCase.message,
+					setupCase.familyCase
+				);
+				expect( rejection.message ).toBe( setupCase.message );
 
-			await delay( ATTACHMENT_QUIET_MS );
-			expect(
-				await readProviderCustomerState( session ),
-				'no attachment or token may appear after the rejection'
-			).toEqual( before );
+				// The provider-side observation the ledger rows ask for. The
+				// attempt created this shopper's provider customer before
+				// confirming against it, so the customer must now exist and
+				// must hold nothing: the declined method never attached.
+				const after = await readShopperProviderState(
+					session,
+					shopper.username
+				);
+				expect(
+					after.providerCustomerId,
+					'the attempt must have created the provider customer it confirmed against'
+				).not.toBe( '' );
+				expect(
+					after.attachedPaymentMethodIds,
+					'a declined SetupIntent must attach no payment method to the provider customer'
+				).toEqual( [] );
+				expect(
+					after.localTokenIds,
+					'a declined SetupIntent must create no Woo token'
+				).toEqual( [] );
 
-			// And nothing else was created either.
-			const delta = await readOrderDelta( session, baselineOrderId );
-			expect(
-				delta.newOrderIds,
-				'a failed SetupIntent must create no order'
-			).toEqual( [] );
+				// A late attachment cannot hide inside the quiet interval.
+				await delay( ATTACHMENT_QUIET_MS );
+				expect(
+					await readShopperProviderState( session, shopper.username ),
+					'no attachment or token may appear after the rejection'
+				).toEqual( after );
 
-			// The shopper was told, in native's own error region.
-			const errorRegion = page.locator( NATIVE_PAYMENT_ERROR_REGION );
-			await expect( errorRegion ).toBeVisible();
-			await expect( errorRegion ).toHaveText( setupCase.message );
-			await expect( errorRegion ).toHaveAttribute( 'role', 'alert' );
+				// And nothing else was created either.
+				const delta = await readOrderDelta( session, baselineOrderId );
+				expect(
+					delta.newOrderIds,
+					'a failed SetupIntent must create no order'
+				).toEqual( [] );
+
+				// The shopper was told, in native's own error region.
+				const errorRegion = page.locator( NATIVE_PAYMENT_ERROR_REGION );
+				await expect( errorRegion ).toBeVisible();
+				await expect( errorRegion ).toHaveText( setupCase.message );
+				await expect( errorRegion ).toHaveAttribute( 'role', 'alert' );
+			} catch ( error ) {
+				primaryError = error;
+			}
+
+			// Removal always runs, but it must never replace the failure that
+			// brought us here: a plain `finally` that throws would report a
+			// cleanup problem and discard the assertion that actually failed.
+			let cleanupError: unknown;
+			try {
+				await deleteRunOwnedShopper( session, shopper );
+			} catch ( error ) {
+				cleanupError = error;
+			}
+
+			if ( primaryError !== undefined ) {
+				if ( cleanupError !== undefined ) {
+					console.error(
+						'Run-owned shopper removal also failed after the primary failure:',
+						cleanupError
+					);
+				}
+				throw primaryError;
+			}
+			if ( cleanupError !== undefined ) {
+				throw cleanupError;
+			}
 		}
 	);
 }
@@ -1468,11 +1821,17 @@ const PROVIDER_TAGS = [
 ];
 
 test.describe( 'WooPayments native card decline vocabulary', () => {
-	// Serial on purpose. The classic cases provision and remove the shared
-	// `classic-checkout` page and must never overlap, and a failure must halt
-	// the cases after it rather than spend more provider budget on a store
-	// whose state is no longer understood.
-	test.describe.configure( { mode: 'serial', timeout: 300_000 } );
+	// Independent, not serial. Overlap is already impossible — the provider
+	// project runs one worker and every case holds the account and store locks
+	// for its whole interval — and `withClassicCheckoutPage()` creates, verifies
+	// and removes the shared `classic-checkout` slug per case, so the classic
+	// cases do not depend on each other either. Serial mode was tried and
+	// removed: each case owns its own product, order and provider objects, so a
+	// failure in one says nothing about the next, and skipping the remaining
+	// thirteen hid which parts of the family actually work. A run that leaves
+	// the store genuinely unclear quarantines instead, which is the mechanism
+	// that is supposed to stop a suite mid-flight.
+	test.describe.configure( { timeout: 300_000 } );
 
 	test(
 		'A classic-checkout submission with the generic-decline card leaves one PaymentIntent for 1001 usd in requires_payment_method with error card_declined and decline code generic_decline, one unpaid run-owned order, and no charge, capture, paid order, or token',
@@ -1491,7 +1850,7 @@ test.describe( 'WooPayments native card decline vocabulary', () => {
 	);
 
 	test(
-		'A classic-checkout submission with the expired card leaves one PaymentIntent for 1002 usd in requires_payment_method with error expired_card and no decline code, one unpaid run-owned order, and no charge, capture, paid order, or token',
+		'A classic-checkout submission with the expired card leaves one PaymentIntent for 1002 usd in requires_payment_method with error expired_card and decline code expired_card, one unpaid run-owned order, and no charge, capture, paid order, or token',
 		{
 			annotation: [
 				{
@@ -1527,7 +1886,7 @@ test.describe( 'WooPayments native card decline vocabulary', () => {
 	);
 
 	test(
-		'A classic-checkout submission with the incorrect-CVC card leaves one PaymentIntent for 1004 usd in requires_payment_method with error incorrect_cvc and no decline code, one unpaid run-owned order, and no charge, capture, paid order, or token',
+		'A classic-checkout submission with the incorrect-CVC card leaves one PaymentIntent for 1004 usd in requires_payment_method with error incorrect_cvc and decline code incorrect_cvc, one unpaid run-owned order, and no charge, capture, paid order, or token',
 		{
 			annotation: [
 				{
@@ -1543,7 +1902,7 @@ test.describe( 'WooPayments native card decline vocabulary', () => {
 	);
 
 	test(
-		'A classic-checkout submission with the processing-error card leaves one PaymentIntent for 1005 usd in requires_payment_method with error processing_error and no decline code, one unpaid run-owned order, and no charge, capture, paid order, or token',
+		'A classic-checkout submission with the processing-error card leaves one PaymentIntent for 1005 usd in requires_payment_method with error processing_error and decline code processing_error, one unpaid run-owned order, and no charge, capture, paid order, or token',
 		{
 			annotation: [
 				{
@@ -1579,7 +1938,7 @@ test.describe( 'WooPayments native card decline vocabulary', () => {
 	);
 
 	test(
-		'A Blocks-checkout submission with the expired card leaves one PaymentIntent for 1002 usd in requires_payment_method with error expired_card and no decline code, one unpaid run-owned order, and no charge, capture, paid order, or token',
+		'A Blocks-checkout submission with the expired card leaves one PaymentIntent for 1002 usd in requires_payment_method with error expired_card and decline code expired_card, one unpaid run-owned order, and no charge, capture, paid order, or token',
 		{
 			annotation: [
 				{
@@ -1615,7 +1974,7 @@ test.describe( 'WooPayments native card decline vocabulary', () => {
 	);
 
 	test(
-		'A Blocks-checkout submission with the incorrect-CVC card leaves one PaymentIntent for 1004 usd in requires_payment_method with error incorrect_cvc and no decline code, one unpaid run-owned order, and no charge, capture, paid order, or token',
+		'A Blocks-checkout submission with the incorrect-CVC card leaves one PaymentIntent for 1004 usd in requires_payment_method with error incorrect_cvc and decline code incorrect_cvc, one unpaid run-owned order, and no charge, capture, paid order, or token',
 		{
 			annotation: [
 				{
