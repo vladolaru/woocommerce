@@ -166,6 +166,9 @@ function fail( message: string ): never {
 	throw new Error( `WooPayments dispute fidelity ${ message }` );
 }
 
+/** How long to wait before re-asking after a dead connection. */
+const TRANSPORT_RETRY_DELAY_MS = 2_000;
+
 function delay( milliseconds: number ): Promise< void > {
 	return new Promise( ( resolve ) => setTimeout( resolve, milliseconds ) );
 }
@@ -368,6 +371,44 @@ async function readDispute(
 }
 
 /**
+ * Ask the store for one charge, re-asking once if the connection dies.
+ *
+ * This poll re-reads the same charge every couple of seconds for the whole
+ * dispute-creation budget, and the request context's keep-alive connection is
+ * dropped often enough under that load to fail the case with
+ * `apiRequestContext.get: socket hang up`. The same request answers HTTP 200 in
+ * about a second server-side, so the connection died rather than the store
+ * refusing — a non-answer, not an answer.
+ *
+ * Retrying is safe *because this is a read*. The harness's no-retry rule exists
+ * so a submission is never made twice; nothing here writes, so re-asking cannot
+ * duplicate anything. A second failure still fails the case: this closes a
+ * transport hole, not an evidence gap.
+ */
+async function getChargeWithTransportRetry(
+	restApi: APIRequestContext,
+	chargeId: string
+): Promise< APIResponse > {
+	const path = `/wp-json/wc/v3/payments/charges/${ encodeURIComponent(
+		chargeId
+	) }`;
+	try {
+		return await restApi.get( path );
+	} catch ( error ) {
+		await delay( TRANSPORT_RETRY_DELAY_MS );
+		try {
+			return await restApi.get( path );
+		} catch ( retryError ) {
+			fail(
+				`charge ${ chargeId } could not be read: the connection failed twice (${ String(
+					retryError
+				) }), so the provider's answer is unknown rather than absent.`
+			);
+		}
+	}
+}
+
+/**
  * The dispute the provider has attached to this exact charge, or an empty
  * string while none exists yet. Read off the charge rather than off the
  * disputes list: the list is cached by `WooPaymentsDisputeCacheService`, and a
@@ -379,11 +420,7 @@ async function readChargeDisputeId(
 	chargeId: string
 ): Promise< string > {
 	const charge = await readJson< Record< string, unknown > >(
-		await restApi.get(
-			`/wp-json/wc/v3/payments/charges/${ encodeURIComponent(
-				chargeId
-			) }`
-		),
+		await getChargeWithTransportRetry( restApi, chargeId ),
 		`Provider charge ${ chargeId } read`
 	);
 
