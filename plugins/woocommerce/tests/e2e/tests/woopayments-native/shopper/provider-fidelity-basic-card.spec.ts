@@ -38,6 +38,7 @@ import {
 	getPaymentEvidence,
 	type PaymentEvidence,
 } from '../../../utils/woopayments-native/record-evidence';
+import { decodeEscapedHtml } from '../../../utils/woopayments-native/store-api-text';
 import type { ProviderTestCard } from '../../../utils/woopayments-native/test-cards';
 
 /**
@@ -156,6 +157,19 @@ const SETTLEMENT_BUDGET_MS = 60_000;
 const EMPTY_INTERVAL_MS = 10_000;
 const CHECKOUT_RESPONSE_TIMEOUT_MS = 60_000;
 const RECEIPT_TIMEOUT_MS = 60_000;
+
+/**
+ * WooCommerce's snackbar notice area, and the budget for emptying it.
+ *
+ * The settle budget exceeds the block's own `SNACKBAR_TIMEOUT` of 10 seconds so
+ * that a notice this suite could not dismiss still has its own timer as a way
+ * out; the per-click budget is short because a click that cannot land is a
+ * notice that has already gone.
+ */
+const SNACKBAR_LIST_SELECTOR = '.wc-block-components-notice-snackbar-list';
+const SNACKBAR_SELECTOR = '.wc-block-components-notice-snackbar';
+const SNACKBAR_DISMISS_TIMEOUT_MS = 2_000;
+const SNACKBAR_SETTLE_TIMEOUT_MS = 15_000;
 
 const STORE_CART_API = '/wp-json/wc/store/v1/cart';
 const STORE_CHECKOUT_PATH = '/wp-json/wc/store/v1/checkout';
@@ -981,6 +995,40 @@ async function deleteRunCoupon(
 	}
 }
 
+/**
+ * Wait out, or dismiss, every snackbar notice the checkout is showing.
+ *
+ * WooCommerce announces an applied and a removed coupon in a snackbar, and
+ * `.wc-block-components-notice-snackbar-list` is `position: fixed` at the
+ * bottom-left of the viewport with `pointer-events: all` on each notice — the
+ * corner the Place order button occupies. Each notice clears itself after
+ * `SNACKBAR_TIMEOUT` (10 seconds), so a case that touches a coupon and then
+ * places the order is racing that timer: the click lands on the notice and
+ * Playwright reports an intercepted click, which is a statement about a toast
+ * rather than about the payment the case exists to prove.
+ *
+ * The dismissal pass is what makes this fast; the assertion after it is what
+ * makes it true. A click is allowed to fail because a notice may time itself
+ * out between the count and the click — that is the outcome being asked for —
+ * but the surface still has to end up quiet.
+ */
+async function quietCheckoutSnackbars( page: Page ): Promise< void > {
+	const snackbars = page.locator(
+		`${ SNACKBAR_LIST_SELECTOR } ${ SNACKBAR_SELECTOR }`
+	);
+	for ( let pending = await snackbars.count(); pending > 0; pending -= 1 ) {
+		await snackbars
+			.first()
+			.getByRole( 'button', { name: 'Dismiss this notice' } )
+			.click( { timeout: SNACKBAR_DISMISS_TIMEOUT_MS } )
+			.catch( () => undefined );
+	}
+	await expect(
+		snackbars,
+		'a snackbar notice still covers the checkout controls'
+	).toHaveCount( 0, { timeout: SNACKBAR_SETTLE_TIMEOUT_MS } );
+}
+
 async function applyCouponOnBlocksCheckout(
 	page: Page,
 	code: string
@@ -995,6 +1043,7 @@ async function applyCouponOnBlocksCheckout(
 		page.getByLabel( `Remove coupon "${ code }"` ),
 		'the applied coupon must be offered back to the shopper as removable'
 	).toBeVisible();
+	await quietCheckoutSnackbars( page );
 }
 
 async function removeCouponOnBlocksCheckout(
@@ -1007,6 +1056,7 @@ async function removeCouponOnBlocksCheckout(
 		removeControl,
 		'a removed coupon must stop being offered'
 	).toBeHidden();
+	await quietCheckoutSnackbars( page );
 }
 
 /* -------------------------------------------------------------------------
@@ -1697,12 +1747,25 @@ test.describe( 'WooPayments native basic card charge fidelity', () => {
 								'the tokenless submission must actually have carried no token'
 							).toBeUndefined();
 							expect( rejection.status ).toBe( 400 );
-							expect( rejection.code ).toBe(
-								'woocommerce_rest_payment_error'
-							);
-							expect( rejection.message ).toBe(
-								CARD_TESTING_REJECTION_TEXT
-							);
+							// Core codes this event twice and the outer coding
+							// wins. `StoreApi\Legacy::process_legacy_payment()`
+							// turns native's queued notice into a
+							// `RouteException` coded
+							// `woocommerce_rest_payment_error`, and
+							// `CheckoutTrait::process_payment()` re-wraps that as
+							// `woocommerce_rest_checkout_process_payment_error`
+							// while preserving the message. Both are core's own
+							// coding of the same refusal, so the code is asserted
+							// as a set and the message carries the
+							// discrimination — the same reading the declines
+							// family arrived at.
+							expect( [
+								'woocommerce_rest_payment_error',
+								'woocommerce_rest_checkout_process_payment_error',
+							] ).toContain( rejection.code );
+							expect(
+								decodeEscapedHtml( String( rejection.message ) )
+							).toBe( CARD_TESTING_REJECTION_TEXT );
 							expect( rejection.url ).not.toContain(
 								'order-received'
 							);
