@@ -360,7 +360,6 @@ interface SingleCurrencySettings {
 
 interface CurrencySnapshot {
 	enabledCodes: string[];
-	multiCurrencyEnabled: boolean;
 	currencySettings: SingleCurrencySettings;
 }
 
@@ -412,11 +411,47 @@ async function setEnabledCurrencies(
 }
 
 /**
+ * Read the multi-currency feature flag as the store itself derives it.
+ *
+ * `WooPaymentsSettingsService` projects this from `'1' === get_option(
+ * '_wcpay_feature_customer_multi_currency', '0' )`, so the payload value is a
+ * strict boolean and anything else means the settings surface changed shape
+ * under us — which must fail rather than be read as "off".
+ */
+async function readMultiCurrencyEnabled(
+	restApi: APIRequestContext
+): Promise< boolean > {
+	const paymentsSettings = await readJson< Record< string, unknown > >(
+		await restApi.get( PAYMENTS_SETTINGS_API ),
+		'Payments settings read'
+	);
+	const enabled = paymentsSettings.is_multi_currency_enabled;
+	if ( typeof enabled !== 'boolean' ) {
+		fail(
+			`the payments settings surface reported a non-boolean multi-currency flag (${ JSON.stringify(
+				enabled
+			) }), so its state cannot be recorded or restored.`
+		);
+	}
+	return enabled;
+}
+
+/**
  * Run `callback` with one foreign currency enabled at a pinned manual rate of
  * 1.0 and no rounding or charm adjustment, so the converted order total is
  * exactly the catalog price and independent of any provider-fetched rate. Then
- * restore the recorded enabled set, per-currency settings and multi-currency
- * feature flag, and prove the restoration on cold reads.
+ * restore the recorded enabled set and per-currency settings, and prove the
+ * restoration — including that the feature flag is untouched — on cold reads,
+ * quarantining rather than continuing if any of it did not take.
+ *
+ * The multi-currency feature flag is deliberately never written. It is a
+ * store-wide switch, and its off state is not a value this helper can put back:
+ * disabling it discards the derived multi-currency runtime — available set,
+ * enabled set and default — so an off-on-off round trip leaves the store
+ * emptier than it found it while every value this helper recorded still reads
+ * as restored. A run once did exactly that here. So the flag is a precondition
+ * instead: a store with multi-currency off fails before the first write, with
+ * the repair named, rather than being silently toggled and silently damaged.
  */
 export async function withForeignCurrency< Result >(
 	session: ProviderWriteSession,
@@ -427,20 +462,9 @@ export async function withForeignCurrency< Result >(
 	session.requireApprovedProviderFixture( capability );
 	const restApi = session.adminApi;
 
-	const paymentsSettings = await readJson< Record< string, unknown > >(
-		await restApi.get( PAYMENTS_SETTINGS_API ),
-		'Payments settings read'
-	);
-	const multiCurrencyEnabled =
-		paymentsSettings.is_multi_currency_enabled === true;
-	if ( ! multiCurrencyEnabled ) {
-		await readJson(
-			await session.performWrite( () =>
-				restApi.post( PAYMENTS_SETTINGS_API, {
-					data: { is_multi_currency_enabled: true },
-				} )
-			),
-			'Multi-currency enable'
+	if ( ! ( await readMultiCurrencyEnabled( restApi ) ) ) {
+		fail(
+			`multi-currency is disabled on this store, and enabling it is not reversible: turning the flag back off discards the available, enabled and default currency runtime it governs. Enable multi-currency on the store first (option _wcpay_feature_customer_multi_currency = "1") and re-run; this helper will not toggle it.`
 		);
 	}
 
@@ -452,7 +476,6 @@ export async function withForeignCurrency< Result >(
 	}
 	const snapshot: CurrencySnapshot = {
 		enabledCodes: Object.keys( currencies.enabled ?? {} ),
-		multiCurrencyEnabled,
 		currencySettings: await readSingleCurrencySettings( restApi, code ),
 	};
 
@@ -505,37 +528,44 @@ export async function withForeignCurrency< Result >(
 			snapshot.enabledCodes,
 			'Enabled-currencies restore'
 		);
+
+		// Cold reads of everything this helper could have moved, plus the flag
+		// it deliberately did not. The flag is verified rather than written
+		// because a run that turned it off — directly, or as a side effect of
+		// some future write on this surface — would leave the whole
+		// multi-currency runtime empty for every later spec, and that must
+		// quarantine the store rather than pass as "restored".
 		const rereadCurrencies = await readStoreCurrencies( restApi );
 		const restoredCodes = Object.keys( rereadCurrencies.enabled ?? {} );
 		const restoredSettings = await readSingleCurrencySettings(
 			restApi,
 			code
 		);
-		if ( ! multiCurrencyEnabled ) {
-			await readJson(
-				await session.performWrite( () =>
-					restApi.post( PAYMENTS_SETTINGS_API, {
-						data: { is_multi_currency_enabled: false },
-					} )
-				),
-				'Multi-currency restore'
+		const flagStillEnabled = await readMultiCurrencyEnabled( restApi );
+		const drift: string[] = [];
+		if ( ! flagStillEnabled ) {
+			drift.push(
+				'the multi-currency feature flag is off, which empties the available, enabled and default currency runtime'
 			);
 		}
-		const restoredPaymentsSettings = await readJson<
-			Record< string, unknown >
-		>(
-			await restApi.get( PAYMENTS_SETTINGS_API ),
-			'Payments settings restoration re-read'
-		);
+		if ( restoredCodes.join( ',' ) !== snapshot.enabledCodes.join( ',' ) ) {
+			drift.push(
+				`enabled currencies are ${ restoredCodes.join(
+					', '
+				) } against a recorded ${ snapshot.enabledCodes.join( ', ' ) }`
+			);
+		}
 		if (
-			restoredCodes.join( ',' ) !== snapshot.enabledCodes.join( ',' ) ||
 			JSON.stringify( restoredSettings ) !==
-				JSON.stringify( snapshot.currencySettings ) ||
-			restoredPaymentsSettings.is_multi_currency_enabled !==
-				multiCurrencyEnabled
+			JSON.stringify( snapshot.currencySettings )
 		) {
+			drift.push( `${ code } per-currency settings differ` );
+		}
+		if ( drift.length > 0 ) {
 			restorationError = new ResourceQuarantineRequiredError(
-				`The ${ code } currency configuration was not restored to its recorded state.`,
+				`The ${ code } currency configuration was not restored to its recorded state: ${ drift.join(
+					'; '
+				) }.`,
 				'restoration-failed'
 			);
 		}
