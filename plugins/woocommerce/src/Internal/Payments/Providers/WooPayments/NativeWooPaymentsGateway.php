@@ -1177,7 +1177,14 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		$order = wc_get_order( $order_id );
 		if ( ! $order instanceof WC_Order ) {
 			return array(
-				'result'         => 'fail',
+				// 'failure', not 'fail'. WooCommerce recognizes exactly success,
+				// failure, pending and error. On the Store API path,
+				// StoreApi\Legacy::process_legacy_payment() turns the notices this
+				// method adds into a shopper-visible error only on an exact
+				// 'failure' match, and then calls wc_clear_notices() regardless -
+				// so any other spelling silently discards the explanation and
+				// leaves the shopper with a bare HTTP 400.
+				'result'         => 'failure',
 				'redirect'       => '',
 				'payment_method' => '',
 			);
@@ -1197,7 +1204,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			wc_add_notice( $fraud_prevention_error, 'error', array( 'icon' => 'error' ) );
 
 			return array(
-				'result'         => 'fail',
+				'result'         => 'failure',
 				'redirect'       => '',
 				'payment_method' => '',
 			);
@@ -1208,7 +1215,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			wc_add_notice( $failed_transaction_rate_limiter_error, 'error', array( 'icon' => 'error' ) );
 
 			return array(
-				'result'         => 'fail',
+				'result'         => 'failure',
 				'redirect'       => '',
 				'payment_method' => '',
 			);
@@ -1226,7 +1233,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			wc_add_notice( $existing_intent_result->get_error_message(), 'error', array( 'icon' => 'error' ) );
 
 			return array(
-				'result'         => 'fail',
+				'result'         => 'failure',
 				'redirect'       => '',
 				'payment_method' => '',
 			);
