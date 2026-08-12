@@ -233,6 +233,46 @@ The protection-on twins carry one boundary that must not be overstated. The targ
 
 Financial reconciliation proves only the `R1`–`R7` dimensions; Bucket-E proves final refund/order facts, not the transition sequence. The HARNESS runbook still calls for the full refund matrix. Merchant-visible presentation is in scope only through `R1v` and `R3v`, and only semantically: exact copy, wording, symbol placement, locale formatting, and layout are excluded there as everywhere else. This claim deliberately excludes refund-dialog presentation, coexistence ownership across runtimes, payout behavior, and every combination not listed above.
 
+### Correction 2026-08-12 — the same-key replay is refused, not replayed
+
+This family's first authorized run of `R7` falsified part of its own claim, and
+the record keeps the falsification rather than absorbing it.
+
+**What was asserted.** That a byte-identical refund request carrying the same
+derived idempotency key "returns that same refund instead of creating a second"
+— an idempotent replay.
+
+**What was observed.** The provider evaluated the replay as a fresh request and
+refused it:
+
+    WooPaymentsApiException: Error: Charge py_3U3f31BzWlxcwgpP18XYGnag
+    has already been refunded.
+
+**Why.** The key never reaches Stripe. `WooPaymentsApiClient::request()` strips
+`idempotency_key` out of the body and promotes it to an `Idempotency-Key` HTTP
+header, and the platform reads it back as a *parameter* —
+`get_param( 'idempotency-key' ) ?? get_param( 'idempotency_key' )` in
+`Wcpay_Rest_Request::get_idempotency_key_for_stripe_proxy_request()` — which
+never sees a header. The WooPayments client plugin does exactly the same thing,
+so this is a standing contract mismatch rather than a native regression, and
+native is at parity.
+
+**What the case now establishes.** The property that actually protects money:
+one same-key replay reaches the provider exactly once and creates no second
+refund on either side — whether it is replayed or refused. The refused branch
+additionally requires the refusal to name an over-refund of that exact charge,
+so a refusal for any other reason still fails.
+
+**What it no longer claims.** That idempotency is in force for refunds. On this
+path it is not, and the over-refund guard is the only thing standing between a
+replay and a duplicate. For a *full* refund that guard has no room to fail; a
+partial refund does, and no case here exercises that.
+
+**Boundary.** Established against the local Transact Platform checkout. It is
+evidence about the WPCOM code path as it exists locally, not proof of production
+platform behaviour; the header-versus-parameter mismatch should be confirmed
+against production before it is treated as a live defect.
+
 ## `manual-authorization-capture`
 
 ### Claim

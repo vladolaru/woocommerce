@@ -1162,9 +1162,20 @@ async function expectRefundUnchangedAfterViewing(
  * currency, reason and refund instance.
  *
  * Safety: the case this probe runs against has already been refunded in full,
- * so a key that failed to match would be refused by the provider as an
- * over-refund rather than creating a second refund. The probe therefore cannot
- * move money a second time; it can only fail loudly.
+ * so a key that failed to match is refused by the provider as an over-refund
+ * rather than creating a second refund. The probe therefore cannot move money a
+ * second time; it can only report which of the two happened.
+ *
+ * That second branch is not hypothetical, and the first authorized run took it.
+ * Both native and the WooPayments client strip `idempotency_key` out of the
+ * request body and send it as an `Idempotency-Key` HTTP header, while the
+ * platform reads it back with
+ * `get_param( 'idempotency-key' ) ?? get_param( 'idempotency_key' )` — a
+ * *parameter* lookup that never sees a header. So the key does not reach
+ * Stripe, the request is evaluated fresh, and the over-refund guard is what
+ * stands between a replay and a duplicate refund. The probe therefore reports a
+ * refusal as an outcome rather than dying on it; see the `refund-settlement`
+ * correction in FIDELITY-CLAIMS.md.
  *
  * Automatic transport retries are disabled for the probe by throwing out of the
  * client's own per-attempt response filter, so the second attempt the retry loop
@@ -1221,12 +1232,24 @@ try {
 		4
 	);
 
-	$result = $api_client->refund_charge( (string) $input['chargeId'], (int) $amount_minor, (string) $refund->get_reason(), 'woocommerce_native', $key );
-	if ( 1 !== $attempts || ! is_array( $result ) ) { wcpay_rp_fail(); }
+	$refusal = '';
+	$result = array();
+	try {
+		$result = $api_client->refund_charge( (string) $input['chargeId'], (int) $amount_minor, (string) $refund->get_reason(), 'woocommerce_native', $key );
+	} catch ( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException $api_error ) {
+		// The provider answered, and its answer is the observation. Only a
+		// transport or harness failure is a failure of this probe; a refusal
+		// is a result the case has to be able to report and assert on.
+		$refusal = $api_error->getMessage();
+	}
+	if ( 1 !== $attempts ) { wcpay_rp_fail(); }
+	if ( '' === $refusal && ! is_array( $result ) ) { wcpay_rp_fail(); }
 
 	wcpay_rp_emit(
 		array(
 			'attempts' => $attempts,
+			'outcome' => '' === $refusal ? 'replayed' : 'refused',
+			'refusal' => $refusal,
 			'refundId' => isset( $result['id'] ) ? (string) $result['id'] : '',
 			'status' => isset( $result['status'] ) ? (string) $result['status'] : '',
 			'amount' => isset( $result['amount'] ) ? (int) $result['amount'] : -1,
@@ -1254,6 +1277,17 @@ interface ReplayInput {
 
 interface ReplayResult {
 	attempts: number;
+	/**
+	 * What the provider did with the replayed request.
+	 *
+	 * `replayed` means the same-key request came back as the original refund —
+	 * idempotency in force. `refused` means the provider evaluated it as a
+	 * fresh request and turned it down. Both are answers; only a transport or
+	 * harness failure is a non-answer.
+	 */
+	outcome: 'replayed' | 'refused';
+	/** The provider's refusal text, empty when it replayed. */
+	refusal: string;
 	refundId: string;
 	status: string;
 	amount: number;
@@ -2233,14 +2267,37 @@ async function driveRedirectRefund(
 		replay.attempts,
 		'the replay must reach the provider exactly once, with automatic retries disabled'
 	).toBe( 1 );
-	expect(
-		replay.refundId,
-		'the replay must return the same provider refund, not a new one'
-	).toBe( providerRefund.id );
-	expect( replay.status ).toBe( 'succeeded' );
-	expect( replay.amount ).toBe( method.amountMinor );
-	expect( replay.currency ).toBe( method.currency );
-	expect( replay.charge ).toBe( paid.chargeId );
+
+	// What the replay is really for is that a second same-key refund request
+	// cannot move money a second time. There are two ways the provider can
+	// deliver that, and this run established which one it is here — see the
+	// `refund-settlement` correction in FIDELITY-CLAIMS.md.
+	if ( replay.outcome === 'replayed' ) {
+		expect(
+			replay.refundId,
+			'a replayed request must return the same provider refund, not a new one'
+		).toBe( providerRefund.id );
+		expect( replay.status ).toBe( 'succeeded' );
+		expect( replay.amount ).toBe( method.amountMinor );
+		expect( replay.currency ).toBe( method.currency );
+		expect( replay.charge ).toBe( paid.chargeId );
+	} else {
+		// Refused, which is what this platform does: it reads the idempotency
+		// key from a request *parameter*, and both native and the client send
+		// it as an `Idempotency-Key` header, so the key never reaches Stripe
+		// and the request is evaluated fresh. The over-refund guard is then
+		// the thing standing between a replay and a duplicate refund. A
+		// refusal for any other reason is not this contract and fails.
+		expect(
+			replay.refusal,
+			'a refused replay must be refused as an over-refund of this exact charge'
+		).toContain( 'has already been refunded' );
+		expect( replay.refusal ).toContain( paid.chargeId );
+		expect(
+			replay.refundId,
+			'a refused replay must not report a provider refund of its own'
+		).toBe( '' );
+	}
 
 	// Post-replay convergence, then one final provider list read and one final
 	// Woo order read proving both counts stay at one and the refunded total is
@@ -2438,7 +2495,7 @@ test(
 );
 
 test(
-	'A full refund of a Cash App Afterpay charge settles as one succeeded provider refund, and a byte-identical same-key replay returns that same refund instead of creating a second',
+	'A full refund of a Cash App Afterpay charge settles as one succeeded provider refund, and a byte-identical same-key replay creates no second refund on either side',
 	{
 		annotation: [
 			{ type: 'woopayments-contract', description: CONTRACT_R7 },
