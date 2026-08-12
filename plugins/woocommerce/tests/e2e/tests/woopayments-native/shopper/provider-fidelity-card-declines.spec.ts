@@ -26,6 +26,11 @@ import {
 	type ClassicCheckoutRejectionNotice,
 	type ClassicRejectedRequestEvidence,
 } from '../../../utils/woopayments-native/drivers/classic-card-checkout';
+import {
+	CARD_EXPIRY_FIELD_NAME,
+	enterProviderCardEntry,
+	enterProviderCardTriple,
+} from '../../../utils/woopayments-native/drivers/card-entry';
 import { withClassicCheckoutPage } from '../../../utils/woopayments-native/drivers/classic-checkout-page';
 import { readHighestOrderId } from '../../../utils/woopayments-native/drivers/classic-card-authentication';
 import type { ProviderTestCard } from '../../../utils/woopayments-native/test-cards';
@@ -1047,15 +1052,7 @@ async function submitBlocksDecline(
 		const frame = page.frameLocator(
 			getBlocksCardFrameSelector( session.runtime )
 		);
-		await frame
-			.getByRole( 'textbox', { name: 'Card number' } )
-			.fill( fixture.card.number );
-		await frame
-			.getByRole( 'textbox', { name: /Expiration date/i } )
-			.fill( fixture.card.expiry );
-		await frame
-			.getByRole( 'textbox', { name: 'Security code' } )
-			.fill( fixture.card.securityCode );
+		await enterProviderCardTriple( frame, fixture.card, 'Blocks checkout' );
 		await page.getByRole( 'button', { name: /place order/i } ).focus();
 
 		return await session.withProviderSubmissionJournal(
@@ -1400,22 +1397,59 @@ async function submitDecliningPaymentMethod(
 		const cardFrame = page.frameLocator(
 			'#wcpay-core-payment-element iframe[name^="__privateStripeFrame"]'
 		);
-		await cardFrame
-			.getByRole( 'textbox', { name: 'Card number' } )
-			.fill( card.number );
-		await cardFrame
-			.getByRole( 'textbox', { name: /Expiration date/i } )
-			.fill( card.expiry );
-		await cardFrame
-			.getByRole( 'textbox', { name: 'Security code' } )
-			.fill( card.securityCode );
-		await cardFrame
-			.getByRole( 'combobox', { name: /country/i } )
-			.selectOption( 'US' );
-		// The postal field only exists once a country that uses one is chosen.
-		await cardFrame
-			.getByRole( 'textbox', { name: /zip|postal/i } )
-			.fill( '90210' );
+		// The billing pair belongs in the same entry as the card: the element
+		// clears everything it holds when its deferred `elements/sessions`
+		// response lands, so entering the card through the read-back contract
+		// and then filling country and postcode outside it would leave those
+		// two subject to the very reset the contract exists to survive.
+		await enterProviderCardEntry(
+			[
+				{
+					label: 'card number',
+					locator: cardFrame.getByRole( 'textbox', {
+						name: 'Card number',
+					} ),
+					value: card.number,
+					kind: 'digits',
+				},
+				{
+					label: 'expiry',
+					locator: cardFrame.getByRole( 'textbox', {
+						name: CARD_EXPIRY_FIELD_NAME,
+					} ),
+					value: card.expiry,
+					kind: 'digits',
+				},
+				{
+					label: 'security code',
+					locator: cardFrame.getByRole( 'textbox', {
+						name: 'Security code',
+					} ),
+					value: card.securityCode,
+					kind: 'digits',
+				},
+				{
+					label: 'country',
+					locator: cardFrame.getByRole( 'combobox', {
+						name: /country/i,
+					} ),
+					value: 'US',
+					kind: 'option',
+				},
+				{
+					// Only exists once a country that uses one is chosen, and
+					// the choice above is made in the same pass.
+					label: 'postcode',
+					locator: cardFrame.getByRole( 'textbox', {
+						name: /zip|postal/i,
+					} ),
+					value: '90210',
+					kind: 'digits',
+					optional: true,
+				},
+			],
+			'My Account add-payment-method'
+		);
 
 		return await session.withProviderSubmissionJournal(
 			`card-decline-setup-intent-${ setupCase.familyCase }`,

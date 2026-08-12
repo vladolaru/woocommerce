@@ -13,6 +13,7 @@ import {
 	PlaywrightCardAuthenticationBrowser,
 	type CardAuthenticationEvidence,
 } from '../../../utils/woopayments-native/drivers/card-authentication';
+import { enterProviderCardTriple } from '../../../utils/woopayments-native/drivers/card-entry';
 import { submitBlocksCheckout } from '../../../utils/woopayments-native/drivers/checkout';
 import { THREE_DS_2_CARD } from '../../../utils/woopayments-native/test-cards';
 
@@ -121,15 +122,7 @@ async function fillThreeDsCard(
 		getBlocksCardFrameSelector( session.runtime )
 	);
 
-	await frame
-		.getByRole( 'textbox', { name: 'Card number' } )
-		.fill( THREE_DS_2_CARD.number );
-	await frame
-		.getByRole( 'textbox', { name: /Expiration date/i } )
-		.fill( THREE_DS_2_CARD.expiry );
-	await frame
-		.getByRole( 'textbox', { name: 'Security code' } )
-		.fill( THREE_DS_2_CARD.securityCode );
+	await enterProviderCardTriple( frame, THREE_DS_2_CARD, 'Blocks checkout' );
 	await page.getByRole( 'button', { name: /place order/i } ).focus();
 }
 

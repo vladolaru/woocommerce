@@ -9,6 +9,7 @@ import {
 	PlaywrightClassicCardCheckoutBrowser,
 	parseClassicOrderReceivedUrl,
 } from './classic-card-checkout';
+import { enterProviderCardTriple } from './card-entry';
 import type { ClassicCheckoutTarget } from './classic-checkout-page';
 
 /**
@@ -946,15 +947,11 @@ export async function changeSubscriptionPaymentMethod(
 			`#payment .payment_method_${ SUBSCRIPTION_GATEWAY } #wcpay-core-payment-element iframe[name^="__privateStripeFrame"], ` +
 				`#payment .payment_method_${ SUBSCRIPTION_GATEWAY } .wcpay-upe-element iframe`
 		);
-		await frame
-			.getByRole( 'textbox', { name: 'Card number' } )
-			.fill( options.selection.card.number );
-		await frame
-			.getByRole( 'textbox', { name: /Expiration date/i } )
-			.fill( options.selection.card.expiry );
-		await frame
-			.getByRole( 'textbox', { name: 'Security code' } )
-			.fill( options.selection.card.securityCode );
+		await enterProviderCardTriple(
+			frame,
+			options.selection.card,
+			'subscription change-payment'
+		);
 	}
 
 	const submit = page.getByRole( 'button', {

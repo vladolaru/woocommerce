@@ -14,6 +14,7 @@ import {
 	getPaymentEvidence,
 	type PaymentEvidence,
 } from '../../../utils/woopayments-native/record-evidence';
+import { enterProviderCardTriple } from '../../../utils/woopayments-native/drivers/card-entry';
 import { DISPUTED_FRAUDULENT_CARD } from '../../../utils/woopayments-native/test-cards';
 
 /**
@@ -714,15 +715,11 @@ async function fillDisputedCard(
 		const frame = page.frameLocator(
 			getBlocksCardFrameSelector( session.runtime )
 		);
-		await frame
-			.getByRole( 'textbox', { name: 'Card number' } )
-			.fill( DISPUTED_FRAUDULENT_CARD.number );
-		await frame
-			.getByRole( 'textbox', { name: /Expiration date/i } )
-			.fill( DISPUTED_FRAUDULENT_CARD.expiry );
-		await frame
-			.getByRole( 'textbox', { name: 'Security code' } )
-			.fill( DISPUTED_FRAUDULENT_CARD.securityCode );
+		await enterProviderCardTriple(
+			frame,
+			DISPUTED_FRAUDULENT_CARD,
+			'Blocks checkout'
+		);
 		await page.getByRole( 'button', { name: /place order/i } ).focus();
 		return;
 	}

@@ -32,6 +32,7 @@ import {
 	type ClassicCardCheckoutEvidence,
 } from '../../../utils/woopayments-native/drivers/classic-card-checkout';
 import { fillBlocksCheckoutAddress } from '../../../utils/woopayments-native/drivers/checkout';
+import { enterProviderCardTriple } from '../../../utils/woopayments-native/drivers/card-entry';
 import { readProviderCardEvidence } from '../../../utils/woopayments-native/provider-card-evidence';
 import {
 	getPaymentEvidence,
@@ -463,15 +464,7 @@ async function selectBlocksCardAndFill(
 	const frame = page.frameLocator(
 		getBlocksCardFrameSelector( session.runtime )
 	);
-	await frame
-		.getByRole( 'textbox', { name: 'Card number' } )
-		.fill( BASIC_CARD.number );
-	await frame
-		.getByRole( 'textbox', { name: /Expiration date/i } )
-		.fill( BASIC_CARD.expiry );
-	await frame
-		.getByRole( 'textbox', { name: 'Security code' } )
-		.fill( BASIC_CARD.securityCode );
+	await enterProviderCardTriple( frame, BASIC_CARD, 'Blocks checkout' );
 	await page.getByRole( 'button', { name: /place order/i } ).focus();
 }
 

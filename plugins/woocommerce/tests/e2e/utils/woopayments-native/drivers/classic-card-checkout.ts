@@ -8,6 +8,7 @@ import type {
 } from '../../../fixtures/woopayments-native';
 import { ResourceQuarantineRequiredError } from '../resource-locks';
 import type { ProviderTestCard } from '../test-cards';
+import { enterProviderCardTriple } from './card-entry';
 import type { CardTestingProtectionScope } from './card-testing-protection';
 
 export const CLASSIC_CHECKOUT_PATH = 'classic-checkout/';
@@ -704,15 +705,7 @@ export class PlaywrightClassicCardCheckoutBrowser
 			fail( 'requires exactly one native Classic Stripe frame.' );
 		}
 		const frame = this.page.frameLocator( CLASSIC_CARD_FRAME );
-		await frame
-			.getByRole( 'textbox', { name: 'Card number' } )
-			.fill( card.number );
-		await frame
-			.getByRole( 'textbox', { name: /Expiration date/i } )
-			.fill( card.expiry );
-		await frame
-			.getByRole( 'textbox', { name: 'Security code' } )
-			.fill( card.securityCode );
+		await enterProviderCardTriple( frame, card, 'Classic checkout' );
 	}
 
 	/**

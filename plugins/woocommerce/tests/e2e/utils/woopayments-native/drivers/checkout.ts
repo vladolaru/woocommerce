@@ -9,10 +9,23 @@ import {
 import type { WooPaymentsRuntime } from '../runtime-readiness';
 import { ProviderSubmissionNotStartedError } from '../provider-write-journal';
 import { ResourceQuarantineRequiredError } from '../resource-locks';
+import { enterProviderCardTriple } from './card-entry';
+import type { ProviderTestCard } from '../test-cards';
 import type {
 	OwnedProduct,
 	ProviderWriteSession,
 } from '../../../fixtures/woopayments-native';
+
+/**
+ * The basic card, written out here rather than imported from `test-cards.ts`,
+ * which records why: that module carries the cards whose *behaviour* the
+ * provider selects, and `4242` selects nothing.
+ */
+const BASIC_CARD: ProviderTestCard = {
+	number: '4242424242424242',
+	expiry: '0245',
+	securityCode: '424',
+};
 
 export function getBlocksCardFrameSelector(
 	runtime: WooPaymentsRuntime
@@ -247,15 +260,11 @@ async function fillBasicTestCard(
 		const frame = page.frameLocator(
 			getBlocksCardFrameSelector( session.runtime )
 		);
-		await frame
-			.getByRole( 'textbox', { name: 'Card number' } )
-			.fill( '4242424242424242' );
-		await frame
-			.getByRole( 'textbox', { name: /Expiration date/i } )
-			.fill( '0245' );
-		await frame
-			.getByRole( 'textbox', { name: 'Security code' } )
-			.fill( '424' );
+		// Through the shared entry contract: the Blocks element relabels its
+		// expiry field and discards what has been typed when its deferred
+		// `elements/sessions` response lands, so a single fill against the
+		// pre-hydration label is a race this driver used to win by luck.
+		await enterProviderCardTriple( frame, BASIC_CARD, 'Blocks checkout' );
 		await page.getByRole( 'button', { name: /place order/i } ).focus();
 		return;
 	}
