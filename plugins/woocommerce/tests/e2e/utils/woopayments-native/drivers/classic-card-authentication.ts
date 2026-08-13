@@ -259,17 +259,54 @@ function chargeCount( intent: Record< string, unknown > ): number {
 	return 0;
 }
 
+export function providerIntentReadTarget( intentId: string ): {
+	kind: 'payment' | 'setup';
+	path: string;
+} {
+	if ( intentId.startsWith( 'seti_' ) ) {
+		return {
+			kind: 'setup',
+			path: `/wp-json/wc-native-payments-e2e/v1/subscription-evidence?setup_intent_id=${ encodeURIComponent(
+				intentId
+			) }`,
+		};
+	}
+	return {
+		kind: 'payment',
+		path: `/wp-json/wc/v3/payments/payment_intents/${ encodeURIComponent(
+			intentId
+		) }`,
+	};
+}
+
 async function readProviderIntent(
 	session: ProviderWriteSession,
 	intentId: string
 ): Promise< Record< string, unknown > > {
+	const target = providerIntentReadTarget( intentId );
+	if ( target.kind === 'setup' ) {
+		const evidence = requireObject(
+			await readJson(
+				await session.adminApi.get( target.path ),
+				`provider setup intent ${ intentId }`
+			),
+			'provider setup-intent evidence'
+		);
+		const setupIntent = requireObject(
+			evidence.setup_intent,
+			'provider setup intent'
+		);
+		return {
+			...setupIntent,
+			next_action: {
+				type: setupIntent.next_action_type ?? null,
+			},
+			charges: { data: [] },
+		};
+	}
 	return requireObject(
 		await readJson(
-			await session.adminApi.get(
-				`/wp-json/wc/v3/payments/payment_intents/${ encodeURIComponent(
-					intentId
-				) }`
-			),
+			await session.adminApi.get( target.path ),
 			`provider intent ${ intentId }`
 		),
 		'provider intent'

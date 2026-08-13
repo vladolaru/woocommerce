@@ -588,6 +588,7 @@ final class WooCommerce_WooPayments_Native_E2E_Runtime {
 			'payment_count'           => (int) $subscription->get_payment_count(),
 			'start_gmt'               => (string) $subscription->get_date( 'start' ),
 			'trial_end_gmt'           => (string) $subscription->get_date( 'trial_end' ),
+			'trial_end_display'       => date_i18n( wc_date_format(), wcs_date_to_time( get_date_from_gmt( $subscription->get_date( 'trial_end' ) ) ) ),
 			'next_payment_gmt'        => (string) $subscription->get_date( 'next_payment' ),
 			'payment_token_ids'       => $token_ids,
 			'active_token_id'         => count( $token_ids ) > 0 ? (int) end( $token_ids ) : 0,
@@ -760,6 +761,10 @@ final class WooCommerce_WooPayments_Native_E2E_Runtime {
 		if ( is_array( $customer ) ) {
 			$customer = $customer['id'] ?? '';
 		}
+		$last_setup_error = $setup_intent['last_setup_error'] ?? array();
+		$last_setup_error = is_array( $last_setup_error ) ? $last_setup_error : array();
+		$next_action      = $setup_intent['next_action'] ?? array();
+		$next_action      = is_array( $next_action ) ? $next_action : array();
 
 		// Redacted on purpose: the identity fields the claim needs and nothing
 		// else, so no client secret or raw provider payload leaves the store.
@@ -769,6 +774,11 @@ final class WooCommerce_WooPayments_Native_E2E_Runtime {
 			'usage'             => (string) ( $setup_intent['usage'] ?? '' ),
 			'payment_method_id' => is_scalar( $payment_method ) ? (string) $payment_method : '',
 			'customer_id'       => is_scalar( $customer ) ? (string) $customer : '',
+			'next_action_type'  => is_scalar( $next_action['type'] ?? null ) ? (string) $next_action['type'] : '',
+			'last_setup_error'  => array(
+				'type' => is_scalar( $last_setup_error['type'] ?? null ) ? (string) $last_setup_error['type'] : '',
+				'code' => is_scalar( $last_setup_error['code'] ?? null ) ? (string) $last_setup_error['code'] : '',
+			),
 		);
 	}
 

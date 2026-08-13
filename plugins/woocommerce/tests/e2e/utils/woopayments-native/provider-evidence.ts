@@ -69,7 +69,7 @@ function assertExactId(
 
 function assertAmountCurrency(
 	value: ProviderObject,
-	order: OrderPaymentEvidence,
+	order: Pick< OrderPaymentEvidence, 'amountMinor' | 'currency' >,
 	label: string
 ): void {
 	if ( value.amount !== order.amountMinor ) {
@@ -215,7 +215,10 @@ function bindRequestDeadline(
 
 export async function getProviderEvidence(
 	restApi: APIRequestContext,
-	order: OrderPaymentEvidence
+	order: Pick<
+		OrderPaymentEvidence,
+		'intentId' | 'chargeId' | 'paymentMethodId' | 'amountMinor' | 'currency'
+	>
 ): Promise< ProviderPaymentEvidence > {
 	const intent = ( await readJson(
 		await restApi.get(

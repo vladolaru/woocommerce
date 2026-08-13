@@ -288,6 +288,7 @@ export interface SubscriptionEvidence {
 	paymentCount: number;
 	startGmt: string;
 	trialEndGmt: string;
+	trialEndDisplay: string;
 	nextPaymentGmt: string;
 	paymentTokenIds: number[];
 	activeTokenId: number;
@@ -359,6 +360,10 @@ function parseSubscription( value: unknown ): SubscriptionEvidence {
 		paymentCount: requireNumber( record.payment_count, 'payment count' ),
 		startGmt: requireString( record.start_gmt, 'start date' ),
 		trialEndGmt: requireString( record.trial_end_gmt, 'trial end date' ),
+		trialEndDisplay: requireString(
+			record.trial_end_display,
+			'trial end display date'
+		),
 		nextPaymentGmt: requireString(
 			record.next_payment_gmt,
 			'next payment date'
@@ -1046,7 +1051,8 @@ export async function processMerchantRenewal(
 		`wp-admin/admin.php?page=wc-orders--shop_subscription&action=edit&id=${ subscriptionId }`
 	);
 
-	const actions = page.locator( ORDER_ACTIONS_SELECT );
+	const orderActionsBox = page.locator( '#woocommerce-order-actions' );
+	const actions = orderActionsBox.locator( ORDER_ACTIONS_SELECT );
 	if ( ( await actions.count() ) !== 1 ) {
 		fail(
 			`requires exactly one order-actions control on subscription ${ subscriptionId }.`
@@ -1062,7 +1068,10 @@ export async function processMerchantRenewal(
 	}
 	await actions.selectOption( PROCESS_RENEWAL_ACTION );
 
-	const apply = page.getByRole( 'button', { name: 'Update', exact: true } );
+	const apply = orderActionsBox.getByRole( 'button', {
+		name: 'Update',
+		exact: true,
+	} );
 	if ( ( await apply.count() ) !== 1 ) {
 		fail(
 			'requires exactly one Update control on the subscription screen.'
@@ -1072,10 +1081,48 @@ export async function processMerchantRenewal(
 	await session.withProviderSubmissionJournal( journal, async () => {
 		let submissionAttempted = false;
 		try {
-			submissionAttempted = true;
-			await session.performWrite( () => apply.click() );
-			await page.waitForURL( /post\.php|wc-orders/, {
-				timeout: SUBMISSION_TIMEOUT_MS,
+			const matchesRenewalRequest = ( request: Request ): boolean => {
+				const url = new URL( request.url() );
+				const body = new URLSearchParams( request.postData() ?? '' );
+
+				return (
+					request.method() === 'POST' &&
+					url.pathname.endsWith( '/wp-admin/admin.php' ) &&
+					url.searchParams.get( 'page' ) ===
+						'wc-orders--shop_subscription' &&
+					url.searchParams.get( 'id' ) === String( subscriptionId ) &&
+					body.get( 'wc_order_action' ) === PROCESS_RENEWAL_ACTION
+				);
+			};
+			const renewalRequest = page
+				.waitForRequest( matchesRenewalRequest, {
+					timeout: SUBMISSION_TIMEOUT_MS,
+				} )
+				.then( ( request ) => {
+					submissionAttempted = true;
+					return request;
+				} );
+			const confirmation = page
+				.waitForEvent( 'dialog', { timeout: SUBMISSION_TIMEOUT_MS } )
+				.then( async ( dialog ) => {
+					if (
+						dialog.type() !== 'confirm' ||
+						! /process a renewal/i.test( dialog.message() )
+					) {
+						await dialog.dismiss();
+						fail(
+							'requires the WooCommerce Subscriptions renewal confirmation.'
+						);
+					}
+					await dialog.accept();
+				} );
+
+			await session.performWrite( async () => {
+				await Promise.all( [
+					apply.click(),
+					confirmation,
+					renewalRequest,
+				] );
 			} );
 		} catch ( error ) {
 			if ( ! submissionAttempted ) {

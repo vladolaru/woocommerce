@@ -1,8 +1,10 @@
-import type { Page } from '@playwright/test';
+import type { Page, Request, Response } from '@playwright/test';
 
 import {
 	expect,
 	getBlocksCardFrameSelector,
+	ProviderSubmissionNotStartedError,
+	ResourceQuarantineRequiredError,
 	tags,
 	test,
 	type OwnedProduct,
@@ -13,9 +15,20 @@ import {
 	PlaywrightCardAuthenticationBrowser,
 	type CardAuthenticationEvidence,
 } from '../../../utils/woopayments-native/drivers/card-authentication';
+import { findBlocksPaymentIntentConfirmation } from '../../../utils/woopayments-native/drivers/blocks-card-authentication';
 import { enterProviderCardTriple } from '../../../utils/woopayments-native/drivers/card-entry';
+import {
+	readFailedAuthenticationIntent,
+	readHighestOrderId,
+	readOrderDeltaAfter,
+	readSettledClassicPayment,
+} from '../../../utils/woopayments-native/drivers/classic-card-authentication';
 import { submitBlocksCheckout } from '../../../utils/woopayments-native/drivers/checkout';
-import { THREE_DS_2_CARD } from '../../../utils/woopayments-native/test-cards';
+import {
+	THREE_DS_2_CARD,
+	THREE_DS_DECLINED_CARD,
+	type ProviderTestCard,
+} from '../../../utils/woopayments-native/test-cards';
 
 /**
  * Proves the provider's 3D Secure challenge is real and that native carries a
@@ -33,18 +46,30 @@ import { THREE_DS_2_CARD } from '../../../utils/woopayments-native/test-cards';
  * thin fidelity check, and it must not be sold as one.
  */
 
+const CONTRACT_SUCCESS =
+	'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-checkout-purchase.spec.ts:42::WooCommerce Blocks › Successful purchase › using a 3DS card';
+const CONTRACT_DECLINE =
+	'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-checkout-failures.spec.ts:90::WooCommerce Blocks › Checkout failures › Should show error – Your card has been declined.';
 const CONTRACT_IDS = [
 	'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase.spec.ts:78::Successful purchase › Carding protection false › using a 3DS card',
-	'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-checkout-purchase.spec.ts:42::WooCommerce Blocks › Successful purchase › using a 3DS card',
+	CONTRACT_SUCCESS,
 ];
 
 const PROVIDER_CAPABILITY = 'card-authentication';
 const PRICE = '10.99';
+const AMOUNT_MINOR = 1099;
+const CURRENCY = 'USD';
 const PAID_STATUSES = [ 'processing', 'completed' ];
+const UNPAID_STATUSES = [ 'pending', 'failed' ];
 const RECEIPT_TIMEOUT_MS = 30_000;
+const CHECKOUT_RESPONSE_TIMEOUT_MS = 60_000;
+const STORE_CHECKOUT_PATH = '/wp-json/wc/store/v1/checkout';
+const AUTHENTICATION_FRAME =
+	'body > div > iframe[name^="__privateStripeFrame"]';
 // Native's own copy for payment_intent_authentication_failure.
 const AUTHENTICATION_FAILURE_TEXT =
 	'We are unable to authenticate your payment method. Please choose a different payment method and try again.';
+const CARD_DECLINED_TEXT = 'Your card has been declined.';
 
 /**
  * Selects the WooPayments card option, which a returning shopper's checkout
@@ -116,20 +141,31 @@ async function fillBlocksCheckoutDetails(
 
 async function fillThreeDsCard(
 	session: ProviderWriteSession,
-	page: Page
+	page: Page,
+	card: ProviderTestCard
 ): Promise< void > {
 	const frame = page.frameLocator(
 		getBlocksCardFrameSelector( session.runtime )
 	);
 
-	await enterProviderCardTriple( frame, THREE_DS_2_CARD, 'Blocks checkout' );
+	await enterProviderCardTriple( frame, card, 'Blocks checkout' );
 	await page.getByRole( 'button', { name: /place order/i } ).focus();
 }
 
-async function readOrderStatus(
+interface OrderSnapshot {
+	status: string;
+	total: string;
+	currency: string;
+	paymentMethod: string;
+	runId: string;
+	intentId: string;
+	chargeId: string;
+}
+
+async function readOrderSnapshot(
 	session: ProviderWriteSession,
 	orderId: number
-): Promise< string > {
+): Promise< OrderSnapshot > {
 	const response = await session.adminApi.get(
 		`/wp-json/wc/v3/orders/${ orderId }`
 	);
@@ -140,12 +176,73 @@ async function readOrderStatus(
 		);
 	}
 
-	const order = ( await response.json() ) as { status?: unknown };
-	if ( typeof order.status !== 'string' ) {
+	const order = ( await response.json() ) as {
+		id?: unknown;
+		status?: unknown;
+		total?: unknown;
+		currency?: unknown;
+		payment_method?: unknown;
+		meta_data?: unknown;
+	};
+	if (
+		order.id !== orderId ||
+		typeof order.status !== 'string' ||
+		typeof order.total !== 'string' ||
+		typeof order.currency !== 'string' ||
+		typeof order.payment_method !== 'string'
+	) {
 		throw new Error( `Order ${ orderId } carried no status.` );
 	}
+	const meta = Array.isArray( order.meta_data )
+		? ( order.meta_data as Array< { key?: unknown; value?: unknown } > )
+		: [];
+	const metaValue = ( key: string ): string => {
+		const entry = meta.find( ( item ) => item.key === key );
+		return typeof entry?.value === 'string' ? entry.value : '';
+	};
 
-	return order.status;
+	return {
+		status: order.status,
+		total: order.total,
+		currency: order.currency.toUpperCase(),
+		paymentMethod: order.payment_method,
+		runId: metaValue( '_e2e_woopayments_run_id' ),
+		intentId: metaValue( '_intent_id' ),
+		chargeId: metaValue( '_charge_id' ),
+	};
+}
+
+function isStoreCheckoutRequest( request: Request ): boolean {
+	if ( request.method() !== 'POST' ) {
+		return false;
+	}
+	try {
+		const url = new URL( request.url() );
+		const restRoute = url.searchParams.get( 'rest_route' ) ?? '';
+		return (
+			url.pathname.replace( /\/+$/, '' ) === STORE_CHECKOUT_PATH ||
+			restRoute.replace( /\/+$/, '' ) === '/wc/store/v1/checkout'
+		);
+	} catch {
+		return false;
+	}
+}
+
+interface BlocksAuthenticationDispatch {
+	orderId: number;
+	intentId: string;
+	orderKey: string;
+	responseStatus: number;
+	checkoutRequestCount: number;
+	checkoutResponseCount: number;
+	orderStatusUpdates: Array< { orderId: string; intentId: string } >;
+}
+
+interface ChallengeCheckoutOutcome {
+	evidence: CardAuthenticationEvidence;
+	dispatch: BlocksAuthenticationDispatch;
+	reachedReceipt: boolean;
+	url: string;
 }
 
 /**
@@ -156,12 +253,14 @@ async function checkoutWithChallenge(
 	session: ProviderWriteSession,
 	page: Page,
 	product: OwnedProduct,
-	response: 'complete' | 'fail'
-): Promise< {
-	evidence: CardAuthenticationEvidence;
-	reachedReceipt: boolean;
-	receiptUrl: string;
-} > {
+	options: {
+		card: ProviderTestCard;
+		response: 'complete' | 'fail';
+		expected: 'receipt' | 'error';
+		errorText?: string;
+		journal: string;
+	}
+): Promise< ChallengeCheckoutOutcome > {
 	await session.logInAsCustomer( page );
 
 	// Same navigation and add-to-cart shape the card checkout driver uses, so
@@ -174,98 +273,442 @@ async function checkoutWithChallenge(
 	await page.goto( 'checkout/' );
 	await fillBlocksCheckoutDetails( page, session.runId );
 
-	await fillThreeDsCard( session, page );
+	await fillThreeDsCard( session, page, options.card );
 
-	let evidence: CardAuthenticationEvidence | undefined;
-
-	await session.withProviderSubmissionJournal(
-		`3ds-checkout-${ response }`,
-		async () => {
-			await submitBlocksCheckout( page, async ( button ) => {
-				await button.click();
-				return 'dispatched';
-			} );
-
-			// The challenge is the assertion, not a step to get past. A card
-			// that no longer triggers one fails here instead of producing a
-			// green run that proves nothing about the authenticated path.
-			evidence = await completeCardAuthentication( {
-				expectation: 'challenge',
-				response,
-				browser: new PlaywrightCardAuthenticationBrowser( page ),
+	let checkoutRequestCount = 0;
+	let checkoutResponseCount = 0;
+	const orderStatusUpdates: Array< {
+		orderId: string;
+		intentId: string;
+	} > = [];
+	const observeRequest = ( request: Request ): void => {
+		if ( isStoreCheckoutRequest( request ) ) {
+			checkoutRequestCount += 1;
+			return;
+		}
+		if ( request.method() !== 'POST' ) {
+			return;
+		}
+		const body = new URLSearchParams( request.postData() ?? '' );
+		if ( body.get( 'action' ) === 'update_order_status' ) {
+			orderStatusUpdates.push( {
+				orderId: body.get( 'order_id' ) ?? '',
+				intentId: body.get( 'intent_id' ) ?? '',
 			} );
 		}
-	);
+	};
+	const observeResponse = ( response: Response ): void => {
+		if ( isStoreCheckoutRequest( response.request() ) ) {
+			checkoutResponseCount += 1;
+		}
+	};
+	page.on( 'request', observeRequest );
+	page.on( 'response', observeResponse );
 
-	if ( ! evidence ) {
-		throw new Error( 'The challenge produced no evidence.' );
+	try {
+		return await session.withProviderSubmissionJournal(
+			options.journal,
+			async () => {
+				const checkoutResponsePromise = page.waitForResponse(
+					( response ) =>
+						isStoreCheckoutRequest( response.request() ),
+					{ timeout: CHECKOUT_RESPONSE_TIMEOUT_MS }
+				);
+				await submitBlocksCheckout( page, async ( button ) => {
+					await session.performWrite( () => button.click() );
+					return 'dispatched';
+				} );
+
+				let checkoutResponse: Response;
+				try {
+					checkoutResponse = await checkoutResponsePromise;
+				} catch ( error ) {
+					if ( checkoutRequestCount === 0 ) {
+						throw new ProviderSubmissionNotStartedError(
+							'The Blocks 3DS submission never dispatched a checkout request.',
+							{ cause: error }
+						);
+					}
+					throw new ResourceQuarantineRequiredError(
+						`The Blocks 3DS submission dispatched ${ checkoutRequestCount } checkout request(s) but produced no response.`,
+						'uncertain-provider-write',
+						error
+					);
+				}
+
+				const body = ( await checkoutResponse.json() ) as {
+					order_id?: unknown;
+					order_key?: unknown;
+				};
+				if (
+					! Number.isSafeInteger( body.order_id ) ||
+					Number( body.order_id ) <= 0 ||
+					typeof body.order_key !== 'string' ||
+					! body.order_key
+				) {
+					throw new Error(
+						'The Blocks checkout response carried no exact order identity.'
+					);
+				}
+				const orderId = body.order_id as number;
+				const orderKey = body.order_key;
+				const confirmation =
+					findBlocksPaymentIntentConfirmation( body );
+				if ( ! confirmation ) {
+					throw new Error(
+						'The Blocks checkout response carried no PaymentIntent confirmation.'
+					);
+				}
+				if ( confirmation.orderId !== orderId ) {
+					throw new Error(
+						'The Blocks checkout response and confirmation named different orders.'
+					);
+				}
+
+				// Attribute the order before answering the challenge. Once Complete
+				// is activated, both settlement and a provider decline are real
+				// outcomes that must remain traceable to this run.
+				await session.setOrderRunId(
+					confirmation.orderId,
+					session.runId
+				);
+
+				const evidence = await completeCardAuthentication( {
+					expectation: 'challenge',
+					response: options.response,
+					browser: new PlaywrightCardAuthenticationBrowser( page ),
+				} );
+
+				if ( options.expected === 'receipt' ) {
+					await page.waitForURL( /order-received/, {
+						timeout: RECEIPT_TIMEOUT_MS,
+					} );
+				} else {
+					if ( ! options.errorText ) {
+						throw new Error(
+							'An expected Blocks 3DS error requires exact shopper copy.'
+						);
+					}
+					await page
+						.getByText( options.errorText, { exact: true } )
+						.first()
+						.waitFor( {
+							state: 'visible',
+							timeout: RECEIPT_TIMEOUT_MS,
+						} );
+				}
+
+				if (
+					checkoutRequestCount !== 1 ||
+					checkoutResponseCount !== 1
+				) {
+					throw new ResourceQuarantineRequiredError(
+						`The Blocks 3DS interval observed ${ checkoutRequestCount } checkout request(s) and ${ checkoutResponseCount } response(s); exactly one of each is required.`,
+						'uncertain-provider-write'
+					);
+				}
+
+				return {
+					evidence,
+					dispatch: {
+						...confirmation,
+						orderKey,
+						responseStatus: checkoutResponse.status(),
+						checkoutRequestCount,
+						checkoutResponseCount,
+						orderStatusUpdates,
+					},
+					reachedReceipt: page.url().includes( 'order-received' ),
+					url: page.url(),
+				};
+			}
+		);
+	} finally {
+		page.off( 'request', observeRequest );
+		page.off( 'response', observeResponse );
 	}
-
-	// Wait for the receipt specifically, and treat not arriving as an answer
-	// rather than an error. Waiting on a pattern that also matches the checkout
-	// URL would resolve immediately - the page is already there - so the
-	// failed-challenge assertion below would pass before the payment had a
-	// chance to succeed, which is no assertion at all.
-	const reachedReceipt = await page
-		.waitForURL( /order-received/, { timeout: RECEIPT_TIMEOUT_MS } )
-		.then( () => true )
-		.catch( () => false );
-
-	return { evidence, reachedReceipt, receiptUrl: page.url() };
 }
 
 test.describe( 'WooPayments native card authentication', () => {
-	test.describe.configure( { mode: 'serial' } );
+	test.describe.configure( { mode: 'serial', timeout: 300_000 } );
 
-	test( `completes a 3DS challenge and pays the order ${ tags.WOOPAYMENTS_PROVIDER }`, async ( {
-		page,
-		pilotRuntime,
-	} ) => {
-		test.info().annotations.push(
-			...CONTRACT_IDS.map( ( contractId ) => ( {
-				type: 'contract',
-				description: contractId,
-			} ) )
-		);
+	test(
+		'a completed Blocks 3DS challenge settles one exact USD 10.99 order, PaymentIntent, and captured charge',
+		{
+			annotation: [
+				{
+					type: 'woopayments-contract',
+					description: CONTRACT_SUCCESS,
+				},
+			],
+			tag: [ tags.WOOPAYMENTS_NATIVE, tags.WOOPAYMENTS_PROVIDER ],
+		},
+		async ( { page, pilotRuntime } ) => {
+			test.info().annotations.push(
+				...CONTRACT_IDS.map( ( contractId ) => ( {
+					type: 'contract',
+					description: contractId,
+				} ) )
+			);
 
-		pilotRuntime.requireApprovedProviderFixture( PROVIDER_CAPABILITY );
-		await pilotRuntime.assertCurrentRuntimeReady( 'native' );
+			pilotRuntime.requireApprovedProviderFixture( PROVIDER_CAPABILITY );
+			await pilotRuntime.assertCurrentRuntimeReady( 'native' );
 
-		await pilotRuntime.withProviderWriteLocks(
-			{ recordEvent: 'shopper-card-authentication' },
-			async () => {
-				const product = await pilotRuntime.createOwnedProduct( PRICE );
-
-				const { evidence, reachedReceipt, receiptUrl } =
-					await checkoutWithChallenge(
-						pilotRuntime,
-						page,
-						product,
-						'complete'
+			await pilotRuntime.withProviderWriteLocks(
+				{ recordEvent: 'shopper-card-authentication' },
+				async () => {
+					const baselineOrderId = await readHighestOrderId(
+						pilotRuntime
+					);
+					const product = await pilotRuntime.createOwnedProduct(
+						PRICE
 					);
 
-				// The challenge happened, was answered, and went away.
-				expect( evidence.authenticationSurfacePresented ).toBe( true );
-				expect( evidence.challengePresented ).toBe( true );
-				expect( evidence.response ).toBe( 'complete' );
-				expect( evidence.challengeDismissed ).toBe( true );
+					const { evidence, dispatch, reachedReceipt, url } =
+						await checkoutWithChallenge(
+							pilotRuntime,
+							page,
+							product,
+							{
+								card: THREE_DS_2_CARD,
+								response: 'complete',
+								expected: 'receipt',
+								journal: '3ds-checkout-complete',
+							}
+						);
 
-				// A completed challenge must produce a paid order, not just a
-				// dismissed dialog.
-				expect(
-					reachedReceipt,
-					`a completed challenge must reach the receipt; stopped at ${ receiptUrl }`
-				).toBe( true );
-				const orderId = pilotRuntime.getOrderIdFromUrl( receiptUrl );
-				await pilotRuntime.setOrderRunId( orderId, pilotRuntime.runId );
+					// The challenge happened, was answered, and went away.
+					expect( evidence.authenticationSurfacePresented ).toBe(
+						true
+					);
+					expect( evidence.challengePresented ).toBe( true );
+					expect( evidence.response ).toBe( 'complete' );
+					expect( evidence.challengeDismissed ).toBe( true );
 
-				expect(
-					PAID_STATUSES,
-					'a completed challenge must leave a paid order'
-				).toContain( await readOrderStatus( pilotRuntime, orderId ) );
-			}
-		);
-	} );
+					// A completed challenge must produce a paid order, not just a
+					// dismissed dialog.
+					expect(
+						reachedReceipt,
+						`a completed challenge must reach the receipt; stopped at ${ url }`
+					).toBe( true );
+					expect( pilotRuntime.getOrderIdFromUrl( url ) ).toBe(
+						dispatch.orderId
+					);
+					await expect(
+						page.getByRole( 'heading', { name: 'Order received' } )
+					).toBeVisible();
+					const receiptKey = new URL( url ).searchParams.get( 'key' );
+					expect( receiptKey ).toBe( dispatch.orderKey );
+					expect( dispatch.responseStatus ).toBe( 200 );
+					expect( dispatch.checkoutRequestCount ).toBe( 1 );
+					expect( dispatch.checkoutResponseCount ).toBe( 1 );
+					expect( dispatch.orderStatusUpdates ).toEqual( [
+						{
+							orderId: String( dispatch.orderId ),
+							intentId: dispatch.intentId,
+						},
+					] );
+
+					const payment = await readSettledClassicPayment(
+						pilotRuntime,
+						dispatch.orderId,
+						dispatch.intentId
+					);
+					expect( payment.runId ).toBe( pilotRuntime.runId );
+					expect( payment.orderId ).toBe( dispatch.orderId );
+					expect( payment.orderKey ).toBe( dispatch.orderKey );
+					expect( payment.intentId ).toBe( dispatch.intentId );
+					expect( payment.amountMinor ).toBe( AMOUNT_MINOR );
+					expect( payment.currency ).toBe( CURRENCY );
+					expect( PAID_STATUSES ).toContain( payment.orderStatus );
+					expect( payment.providerStatus ).toBe( 'succeeded' );
+					expect( payment.chargeStatus ).toBe( 'succeeded' );
+					expect( payment.chargeCaptured ).toBe( true );
+					expect( payment.occurrenceCount ).toBe( 1 );
+					expect( payment.captureOccurrenceCount ).toBe( 1 );
+					const order = await readOrderSnapshot(
+						pilotRuntime,
+						dispatch.orderId
+					);
+					expect( order.paymentMethod ).toBe(
+						'woocommerce_payments'
+					);
+
+					const orders = await readOrderDeltaAfter(
+						pilotRuntime,
+						baselineOrderId
+					);
+					expect( orders.newOrderIds ).toEqual( [
+						dispatch.orderId,
+					] );
+					expect( orders.paidOrderIds ).toEqual( [
+						dispatch.orderId,
+					] );
+				}
+			);
+		}
+	);
+
+	test(
+		'a completed Blocks 3DS challenge that is declined leaves the same PaymentIntent unpaid and restores Place order',
+		{
+			annotation: [
+				{
+					type: 'woopayments-contract',
+					description: CONTRACT_DECLINE,
+				},
+			],
+			tag: [ tags.WOOPAYMENTS_NATIVE, tags.WOOPAYMENTS_PROVIDER ],
+		},
+		async ( { page, pilotRuntime } ) => {
+			pilotRuntime.requireApprovedProviderFixture( PROVIDER_CAPABILITY );
+			await pilotRuntime.assertCurrentRuntimeReady( 'native' );
+
+			await pilotRuntime.withProviderWriteLocks(
+				{ recordEvent: 'shopper-card-authentication-declined' },
+				async () => {
+					const baselineOrderId = await readHighestOrderId(
+						pilotRuntime
+					);
+					const product = await pilotRuntime.createOwnedProduct(
+						PRICE
+					);
+					const { evidence, dispatch, reachedReceipt, url } =
+						await checkoutWithChallenge(
+							pilotRuntime,
+							page,
+							product,
+							{
+								card: THREE_DS_DECLINED_CARD,
+								response: 'complete',
+								expected: 'error',
+								errorText: CARD_DECLINED_TEXT,
+								journal: '3ds-checkout-declined',
+							}
+						);
+
+					expect( evidence.authenticationSurfacePresented ).toBe(
+						true
+					);
+					expect( evidence.challengePresented ).toBe( true );
+					expect( evidence.response ).toBe( 'complete' );
+					expect( evidence.challengeDismissed ).toBe( true );
+					expect( dispatch.responseStatus ).toBe( 200 );
+					expect( dispatch.checkoutRequestCount ).toBe( 1 );
+					expect( dispatch.checkoutResponseCount ).toBe( 1 );
+					expect(
+						dispatch.orderStatusUpdates,
+						'a provider decline after authentication must not ask native to complete the order'
+					).toEqual( [] );
+
+					const intent = await readFailedAuthenticationIntent(
+						pilotRuntime,
+						dispatch.intentId
+					);
+					expect( intent.id ).toBe( dispatch.intentId );
+					expect( intent.status ).toBe( 'requires_payment_method' );
+					expect( intent.lastPaymentErrorCode ).toBe(
+						'card_declined'
+					);
+					expect(
+						intent.chargeCount,
+						'the provider records one failed charge attempt for this post-auth decline'
+					).toBe( 1 );
+
+					const providerResponse = await pilotRuntime.adminApi.get(
+						`/wp-json/wc/v3/payments/payment_intents/${ encodeURIComponent(
+							dispatch.intentId
+						) }`
+					);
+					expect( providerResponse.ok() ).toBe( true );
+					const providerIntent =
+						( await providerResponse.json() ) as {
+							id?: unknown;
+							amount?: unknown;
+							amount_received?: unknown;
+							currency?: unknown;
+							charges?: {
+								data?: Array< {
+									status?: unknown;
+									paid?: unknown;
+									captured?: unknown;
+									amount_captured?: unknown;
+									failure_code?: unknown;
+								} >;
+							};
+						};
+					expect( providerIntent.id ).toBe( dispatch.intentId );
+					expect( providerIntent.amount ).toBe( AMOUNT_MINOR );
+					expect( providerIntent.currency ).toBe( 'usd' );
+					expect( [ 0, null ] ).toContain(
+						providerIntent.amount_received ?? null
+					);
+					expect( providerIntent.charges?.data ).toEqual( [
+						expect.objectContaining( {
+							status: 'failed',
+							paid: false,
+							captured: false,
+							amount_captured: 0,
+							failure_code: 'card_declined',
+						} ),
+					] );
+
+					const order = await readOrderSnapshot(
+						pilotRuntime,
+						dispatch.orderId
+					);
+					expect( UNPAID_STATUSES ).toContain( order.status );
+					expect( order.total ).toBe( PRICE );
+					expect( order.currency ).toBe( CURRENCY );
+					expect( order.paymentMethod ).toBe(
+						'woocommerce_payments'
+					);
+					expect( order.runId ).toBe( pilotRuntime.runId );
+					expect( order.intentId ).toBe( dispatch.intentId );
+					expect( order.chargeId ).toBe( '' );
+
+					const orders = await readOrderDeltaAfter(
+						pilotRuntime,
+						baselineOrderId
+					);
+					expect( orders.newOrderIds ).toEqual( [
+						dispatch.orderId,
+					] );
+					expect( orders.paidOrderIds ).toEqual( [] );
+
+					expect( reachedReceipt ).toBe( false );
+					expect( url ).not.toContain( 'order-received' );
+					await expect( page ).toHaveURL( /\/checkout\/?(?:\?.*)?$/ );
+					await expect(
+						page
+							.getByText( CARD_DECLINED_TEXT, { exact: true } )
+							.first()
+					).toBeVisible();
+					await expect(
+						page.locator( '#a11y-speak-assertive' )
+					).toHaveText( CARD_DECLINED_TEXT );
+
+					const placeOrder = page.getByRole( 'button', {
+						name: /place order/i,
+					} );
+					await expect( placeOrder ).toBeVisible();
+					await expect( placeOrder ).toBeEnabled();
+					await expect( placeOrder ).not.toHaveClass(
+						/wc-block-components-checkout-place-order-button--loading/
+					);
+					await expect(
+						placeOrder.locator( '.wc-block-components-spinner' )
+					).toHaveCount( 0 );
+					await expect(
+						page.locator( AUTHENTICATION_FRAME )
+					).toBeHidden();
+					await expect(
+						page.getByRole( 'heading', { name: 'Order received' } )
+					).toHaveCount( 0 );
+				}
+			);
+		}
+	);
 
 	test( `leaves the order unpaid when the challenge is failed ${ tags.WOOPAYMENTS_PROVIDER }`, async ( {
 		page,
@@ -280,12 +723,13 @@ test.describe( 'WooPayments native card authentication', () => {
 				const product = await pilotRuntime.createOwnedProduct( PRICE );
 
 				const { evidence, reachedReceipt } =
-					await checkoutWithChallenge(
-						pilotRuntime,
-						page,
-						product,
-						'fail'
-					);
+					await checkoutWithChallenge( pilotRuntime, page, product, {
+						card: THREE_DS_2_CARD,
+						response: 'fail',
+						expected: 'error',
+						errorText: AUTHENTICATION_FAILURE_TEXT,
+						journal: '3ds-checkout-fail',
+					} );
 
 				expect( evidence.challengePresented ).toBe( true );
 				expect( evidence.response ).toBe( 'fail' );

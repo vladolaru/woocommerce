@@ -200,6 +200,7 @@ class FakeRealAdapterPage {
 		exact: boolean | undefined;
 	} > = [];
 	public cardChecked = false;
+	public paymentMethodCount = 1;
 	// Core hides the payment-method radio when a store offers a single
 	// method, because there is no choice to make; it is pre-selected instead.
 	public soleHiddenCardGateway = false;
@@ -271,6 +272,14 @@ class FakeRealAdapterPage {
 
 	public locator( selector: string ) {
 		if ( selector === 'input[name="payment_method"]' ) {
+			return {
+				count: async () => this.paymentMethodCount,
+			};
+		}
+		if (
+			selector ===
+			'input[name="payment_method"][value="woocommerce_payments"]'
+		) {
 			return {
 				count: async () => 1,
 				inputValue: async () => 'woocommerce_payments',
@@ -421,6 +430,20 @@ test( 'matches only POST requests whose exact wc-ajax query value is checkout', 
 
 test( 'selects the semantic Card radio when its accessible name includes test-mode and brand content', async () => {
 	const page = new FakeRealAdapterPage();
+	const browser = new PlaywrightClassicCardCheckoutBrowser(
+		page as never,
+		BASE_URL,
+		314
+	);
+
+	await browser.selectWooPaymentsCard();
+
+	expect( page.cardChecked ).toBe( true );
+} );
+
+test( 'selects Card without disabling another enabled gateway', async () => {
+	const page = new FakeRealAdapterPage();
+	page.paymentMethodCount = 2;
 	const browser = new PlaywrightClassicCardCheckoutBrowser(
 		page as never,
 		BASE_URL,

@@ -652,12 +652,11 @@ export class PlaywrightClassicCardCheckoutBrowser
 		// choice to make, and a hidden input has no accessibility role. The
 		// contract is still that the shopper pays by the WooPayments Card
 		// method, so that is what gets asserted either way.
-		const card = this.page.locator( 'input[name="payment_method"]' );
+		const card = this.page.locator(
+			`input[name="payment_method"][value="${ WOOPAYMENTS_GATEWAY }"]`
+		);
 		if ( ( await card.count() ) !== 1 ) {
-			fail( 'requires exactly one enabled semantic Card gateway.' );
-		}
-		if ( ( await card.inputValue() ) !== WOOPAYMENTS_GATEWAY ) {
-			fail( 'semantic Card gateway is not WooPayments.' );
+			fail( 'requires exactly one enabled WooPayments Card gateway.' );
 		}
 
 		const label = this.page.locator(
@@ -677,6 +676,14 @@ export class PlaywrightClassicCardCheckoutBrowser
 
 		// Sole method: core hides the control and pre-selects it. Requiring a
 		// click here would demand a control core deliberately does not render.
+		const paymentMethods = this.page.locator(
+			'input[name="payment_method"]'
+		);
+		if ( ( await paymentMethods.count() ) !== 1 ) {
+			fail(
+				'hides Card even though the shopper has another gateway choice.'
+			);
+		}
 		if ( ! ( await card.isChecked() ) ) {
 			fail(
 				'the sole Card gateway is hidden but not selected, so no payment method is chosen.'
