@@ -190,14 +190,27 @@ const META_FEE = '_wcpay_transaction_fee';
 const META_NET = '_wcpay_net';
 
 /**
- * The two admissible renderings of the EUR order total in wp-admin. The order
+ * The admissible renderings of the EUR order total in wp-admin. The order
  * screen formats with `wc_price( $total, array( 'currency' => 'EUR' ) )`, which
  * takes the symbol from EUR but the position and separators from the store, so
  * a USD-defaulted store prints `€12.34` while a store that also carries EUR's
  * own locale prints `12,34 €`. Both name the same money; the digits are pinned
  * either way and no dollar rendering can match.
+ *
+ * The trailing code is multi-currency's explicit-price format, which both
+ * runtimes append on an order whose currency is not the store's: native through
+ * `MultiCurrencyExplicitPriceProjectionService`, the WooPayments client through
+ * `WC_Payments_Explicit_Price_Formatter`, both registered around
+ * `woocommerce_admin_order_totals_after_tax`. It is optional here because this
+ * case is about immutability rather than price formatting — but when it is
+ * present it must read `EUR`, so an order that silently re-currencied to the
+ * store default still fails.
+ *
+ * Leading and trailing whitespace is admitted because Playwright normalizes
+ * whitespace when `toHaveText` is given a string and does not when it is given
+ * a regular expression, and the surrounding cell markup is indented.
  */
-const EUR_ADMIN_TOTAL = /^(?:€\s?12\.34|12,34\s?€)$/;
+const EUR_ADMIN_TOTAL = /^\s*(?:€\s?12\.34|12,34\s?€)(?:\s*EUR)?\s*$/;
 
 /* -------------------------------------------------------------------------
  * Shared readers
