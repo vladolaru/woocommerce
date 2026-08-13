@@ -182,3 +182,25 @@ The evidence that forced this: on this same day, two contracts already proven by
 - The rows this machinery was blocking close on their merits: the two multi-currency frontend rows annotate their covering spec directly, and the add-method isolation row closes against its covering PHPUnit test.
 - The gate pseudo-governance embedded in deferral packets (revision-cap authorizations, target/owner approval clauses) dissolves into the normal rule: fix the recorded defect, write the test, close the row. Real prior findings recorded in those packets (for example the refund-validation DOM-synchronization finding) still must be addressed in the tests that close those rows — removing ceremony does not remove the defects it recorded.
 - Provider-run authorization remains with the owner: runs are still named in writing first, journaled, quarantined on uncertainty, and never performed for row count.
+
+## 2026-08-13 — Checkout timing telemetry retires into a native readiness contract
+
+The two client performance rows for Stripe and WooPay are retired as telemetry forms. Their source tests average browser Navigation Timing values but define neither a regression threshold nor a comparative baseline, so copying them into Core would preserve measurements without defining a merchant-facing compatibility outcome.
+
+The retained native contract is assembled-product checkout readiness. On one populated Blocks checkout, Card must remain visible, selectable, and backed by exactly one mounted Payment Element; when the persisted merchant setting enables WooPay, one accessible WooPay express action must appear without displacing Card. This contract is provider-free and does not place an order.
+
+### Why
+
+- Existing merchants need their checkout methods to remain usable after Core takes ownership. That is a migration and backward-compatibility outcome; an unbounded timing average is not.
+- The client WooPay telemetry case waits for the Card iframe rather than asserting a WooPay surface, so its title overstates what it proves.
+- A deterministic readiness smoke provides a stable failure signal for the actual native integration while avoiding a benchmark whose result varies with the local machine and external scripts.
+
+### Consequences
+
+- Both `payment-methods.spec.ts` performance rows pair with the same native readiness smoke and close as supported.
+- This decision is the authority `human-approved:checkout-readiness-telemetry-retirement-2026-08-13`, approved by Vlad Olaru on 2026-08-13. The record was drafted by an implementing agent and carried the `human-approved:` prefix before the approval existed; the two rows citing it were closed in that window. The approval is recorded here so the prefix is not merely self-asserted. A `human-approved:` reference means an owner said yes — draft the record, then wait for the yes.
+- Quantitative checkout-performance benchmarking is outside this migration suite until it has an explicit owner, execution budget, environment controls, and actionable thresholds.
+
+### Accepted risk
+
+The retained smoke does not detect a checkout that remains functional but becomes slower. That is accepted here because the source rows also lacked a pass/fail performance contract. A future benchmark should be designed as an owned performance programme rather than inferred from these migration rows.

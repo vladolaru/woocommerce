@@ -1,0 +1,142 @@
+{
+	"schema_version": 2,
+	"slice_id": "site-editor-3ds-theme-closure",
+	"wc_base_commit": "1a4c8f6fb9e984f412144f29c080ef22fa68da23",
+	"verified_at_commit": "1a4c8f6fb9e984f412144f29c080ef22fa68da23",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/site-editor-card-authentication.spec.ts"
+	],
+	"source_test_sha256": "6a223c1978ee72485db55b012afab30df77587c4fa955fa4fb64f0fe4a99cf49",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase-site-editor.spec.ts:95::Successful purchase, site builder theme › card prevention: false › 3DS card",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase-site-editor.spec.ts:95::Successful purchase, site builder theme › card prevention: true › 3DS card"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/block-theme.test.ts;plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/card-authentication.test.ts;plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/site-editor-card-authentication.spec.ts",
+			"contract": "a mandatory 3DS challenge remains topmost, keyboard-operable, and pays the exact order under Twenty Twenty-Four with card-testing protection off"
+		},
+		{
+			"path": "plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/block-theme.test.ts;plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/card-authentication.test.ts;plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/card-testing-protection.test.ts;plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/site-editor-card-authentication.spec.ts",
+			"contract": "card-testing protection admits a token-bearing mandatory 3DS challenge that remains topmost, keyboard-operable, and pays the exact order under Twenty Twenty-Four"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [
+		{
+			"command": "pnpm --dir plugins/woocommerce exec eslint tests/e2e/tests/woopayments-native/shopper/site-editor-card-authentication.spec.ts && pnpm --dir plugins/woocommerce exec prettier --check tests/e2e/tests/woopayments-native/shopper/site-editor-card-authentication.spec.ts",
+			"exit_code": 0,
+			"summary": "Targeted ESLint and Prettier checks passed for the Site Editor smoke spec."
+		},
+		{
+			"command": "pnpm --dir plugins/woocommerce exec playwright test --config=tests/e2e/envs/woopayments-native/playwright.config.ts --project=woopayments-native-provider --list tests/e2e/tests/woopayments-native/shopper/site-editor-card-authentication.spec.ts",
+			"exit_code": 0,
+			"summary": "Provider-project collection found exactly the two annotated Site Editor contracts and no extra case."
+		},
+		{
+			"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 tests/e2e/tests/woopayments-native/shopper/site-editor-card-authentication.spec.ts",
+			"exit_code": 1,
+			"summary": "The mixed two-contract invocation did not pass overall. The protection-off contract passed in 20.0 seconds. The protection-on contract then stopped after 1.8 seconds, before any mutation or payment, because the temporary provider approval omitted the controller-required classic-checkout-page capability."
+		},
+		{
+			"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep='card-testing protection admits a token-bearing mandatory 3DS challenge that remains topmost, keyboard-operable, and pays the exact order under Twenty Twenty-Four' tests/e2e/tests/woopayments-native/shopper/site-editor-card-authentication.spec.ts",
+			"exit_code": 1,
+			"summary": "With the controller-required capability approved, the protection-on case stopped before payment on an obsolete global-only token assertion. Core intentionally exposes the token through native Blocks payment settings when the legacy global is absent; the oracle was corrected to Core's exact global-then-settings fallback and independently re-approved."
+		},
+		{
+			"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep='card-testing protection admits a token-bearing mandatory 3DS challenge that remains topmost, keyboard-operable, and pays the exact order under Twenty Twenty-Four' tests/e2e/tests/woopayments-native/shopper/site-editor-card-authentication.spec.ts",
+			"exit_code": 0,
+			"summary": "The protection-on contract passed 1/1 in 34.9 seconds, with a 33.9-second test body. Afterward the listener inventory contained the expected single listener with q=0 and a=0, and the existing scoped drivers verified restoration of the active theme and card-testing-protection state."
+		},
+		{
+			"command": "pnpm --dir plugins/woocommerce test:e2e:woopayments:contract-map:unit",
+			"exit_code": 0,
+			"summary": "All 60 contract-map validator unit tests passed with the new tracked closure packet."
+		},
+		{
+			"command": "pnpm --dir plugins/woocommerce test:e2e:woopayments:contract-map",
+			"exit_code": 0,
+			"summary": "The final ledger validated all 181 frozen WooPayments client contracts."
+		},
+		{
+			"command": "pnpm --dir plugins/woocommerce exec node --test tests/e2e/bin/validate-woopayments-project-routing.test.mjs",
+			"exit_code": 0,
+			"summary": "All 21 project-routing tests passed, including exact annotation binding and provider-project ownership."
+		}
+	],
+	"reviews": [
+		{
+			"role": "spec",
+			"verdict": "APPROVE",
+			"source_test_sha256": "6a223c1978ee72485db55b012afab30df77587c4fa955fa4fb64f0fe4a99cf49",
+			"summary": "The two exact Site Editor contracts are bound to separate annotations and retain the product boundary: Twenty Twenty-Four stays active while a mandatory 3DS challenge remains visually topmost and keyboard-operable, and the exact created order reaches paid status under authoritative protection-off and protection-on state."
+		},
+		{
+			"role": "quality",
+			"verdict": "APPROVE",
+			"source_test_sha256": "6a223c1978ee72485db55b012afab30df77587c4fa955fa4fb64f0fe4a99cf49",
+			"summary": "The smoke keeps the unique cross-layer theme and authentication interaction while lower-layer driver tests own deterministic theme, challenge and protection behavior. The protected-token oracle now mirrors Core's exact legacy-global-then-native-settings fallback, and scoped theme and protection controls restore prior state."
+		}
+	],
+	"closures": [
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase-site-editor.spec.ts:95::Successful purchase, site builder theme › card prevention: false › 3DS card",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/block-theme.test.ts;plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/card-authentication.test.ts;plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/site-editor-card-authentication.spec.ts",
+				"contract": "a mandatory 3DS challenge remains topmost, keyboard-operable, and pays the exact order under Twenty Twenty-Four with card-testing protection off"
+			},
+			"verification": [
+				{
+					"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 tests/e2e/tests/woopayments-native/shopper/site-editor-card-authentication.spec.ts",
+					"exit_code": 1,
+					"summary": "A shopper completed the mandatory 3DS challenge under Twenty Twenty-Four with card-testing protection authoritatively off; the challenge stayed topmost and keyboard-operable and the exact created order was paid. This contract passed in 20.0 seconds inside the mixed invocation, whose overall exit was 1 only because the later protection-on case failed its temporary approval precondition before mutation."
+				}
+			],
+			"reviews": [
+				{
+					"role": "spec",
+					"verdict": "APPROVE",
+					"source_test_sha256": "6a223c1978ee72485db55b012afab30df77587c4fa955fa4fb64f0fe4a99cf49",
+					"summary": "The smoke preserves the supported block-theme and mandatory-authentication product boundary while the named lower-layer tests own deterministic theme and challenge behavior."
+				},
+				{
+					"role": "quality",
+					"verdict": "APPROVE",
+					"source_test_sha256": "6a223c1978ee72485db55b012afab30df77587c4fa955fa4fb64f0fe4a99cf49",
+					"summary": "The protection-off case is isolated by strict effective-false eligibility and scoped theme restoration, and asserts the exact paid order rather than URL-only success."
+				}
+			]
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase-site-editor.spec.ts:95::Successful purchase, site builder theme › card prevention: true › 3DS card",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/block-theme.test.ts;plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/card-authentication.test.ts;plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/card-testing-protection.test.ts;plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/site-editor-card-authentication.spec.ts",
+				"contract": "card-testing protection admits a token-bearing mandatory 3DS challenge that remains topmost, keyboard-operable, and pays the exact order under Twenty Twenty-Four"
+			},
+			"verification": [
+				{
+					"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep='card-testing protection admits a token-bearing mandatory 3DS challenge that remains topmost, keyboard-operable, and pays the exact order under Twenty Twenty-Four' tests/e2e/tests/woopayments-native/shopper/site-editor-card-authentication.spec.ts",
+					"exit_code": 0,
+					"summary": "A shopper completed a token-bearing mandatory 3DS challenge under Twenty Twenty-Four with card-testing protection authoritatively on; the challenge stayed topmost and keyboard-operable and the exact created order was paid. The exact grep passed 1/1 in 34.9 seconds, the token oracle matched Core's global-then-native-settings transport, and scoped drivers restored theme and protection state."
+				}
+			],
+			"reviews": [
+				{
+					"role": "spec",
+					"verdict": "APPROVE",
+					"source_test_sha256": "6a223c1978ee72485db55b012afab30df77587c4fa955fa4fb64f0fe4a99cf49",
+					"summary": "The smoke joins authoritative protection-on state, token transport, the supported block theme, mandatory authentication and the exact paid order."
+				},
+				{
+					"role": "quality",
+					"verdict": "APPROVE",
+					"source_test_sha256": "6a223c1978ee72485db55b012afab30df77587c4fa955fa4fb64f0fe4a99cf49",
+					"summary": "The independently re-approved token oracle follows Core's exact global-then-settings fallback, while lower-layer protection tests and scoped restoration keep the E2E proof small and migration-faithful."
+				}
+			]
+		}
+	],
+	"known_gaps": [],
+	"deferral": null
+}

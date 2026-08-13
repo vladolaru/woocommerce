@@ -1,0 +1,85 @@
+{
+  "schema_version": 2,
+  "slice_id": "saved-method-authentication-closure",
+  "wc_base_commit": "1a4c8f6fb9e984f412144f29c080ef22fa68da23",
+  "verified_at_commit": "1a4c8f6fb9e984f412144f29c080ef22fa68da23",
+  "reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+  "source_test_paths": [
+    "plugins/woocommerce/client/legacy/js/frontend/test/woopayments-checkout.js",
+    "plugins/woocommerce/client/legacy/js/frontend/woopayments-checkout.js",
+    "plugins/woocommerce/tests/e2e/test-plugins/woopayments-native-runtime/woopayments-native-runtime.php",
+    "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/saved-method-authentication.spec.ts",
+    "plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/classic-card-checkout.test.ts",
+    "plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/classic-card-checkout.ts",
+    "plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/saved-method-authentication.test.ts",
+    "plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/saved-method-authentication.ts"
+  ],
+  "source_test_sha256": "cef65074ca61592550d9ee56ecb19eecf2aa069e074986204ace9fc532c799de",
+  "contract_ids": [
+    "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-payment-methods-add-fail.spec.ts:71::Payment Methods › when attempting to add a declined-3ds card › it should not add the card",
+    "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:146::Shopper can save and delete cards › Testing card: 3ds › should add the 3ds card as a new payment method",
+    "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:196::Shopper can save and delete cards › Testing card: 3ds › should be able to purchase with the saved 3ds card"
+  ],
+  "targets": [
+    {
+      "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/saved-method-authentication.spec.ts",
+      "contract": "a failed My Account 3DS challenge leaves the exact SetupIntent unauthenticated, saves no token or attachment, and returns an announced usable add-method form"
+    },
+    {
+      "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/saved-method-authentication.spec.ts",
+      "contract": "one My Account 3DS token completes required SetupIntent and Classic PaymentIntent challenges and settles one exact USD 10.99 payment"
+    }
+  ],
+  "implementation_commits": [],
+  "execution_fixture": {
+    "site": "http://store8891.localhost:8891",
+    "wpcom_blog_id": 9,
+    "account_id": "acct_1U1lUVQyxU4hIRSI",
+    "runtime_owner": "native",
+    "migration_state": "WooPayments client deactivated after preserving the existing merchant database; client-era Klarna enablement retained alongside Card"
+  },
+  "verification": [
+    {
+      "command": "WCPAY_RUNTIME=native BASE_URL=http://store8891.localhost:8891 playwright test --project=woopayments-native-provider --workers=1 --retries=0 tests/e2e/tests/woopayments-native/shopper/saved-method-authentication.spec.ts",
+      "exit_code": 0,
+      "raw_result_sha256": "b567125c34f69354fbf7af67cd95d660170f94471b3f2e1317908f0f024833da",
+      "summary": "Passed 2/2 serially with zero retries: failed challenge 30.454 seconds and authenticated add-and-purchase 62.815 seconds. The failed SetupIntent saved no credential and restored the shopper's usable My Account form. The positive journey preserved accessible Visa identity from My Account into Classic checkout and joined one challenged SetupIntent through the exact provider customer, attached method, Woo token, challenged PaymentIntent, and one captured USD 10.99 charge. Cleanup removed the run-owned shopper, token, attachment, product, and order without quarantine."
+    },
+    {
+      "command": "focused legacy checkout Jest regression",
+      "exit_code": 0,
+      "summary": "The My Account failure-recovery regression failed before the Core fix and then passed in the full 77/77 legacy checkout suite after the add-payment-method form was explicitly unblocked."
+    },
+    {
+      "command": "focused Classic Card driver unit suite",
+      "exit_code": 0,
+      "summary": "Passed 36/36, including selecting Card while another migrated gateway remains enabled."
+    }
+  ],
+  "reviews": [],
+  "closures": [
+    {
+      "contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-payment-methods-add-fail.spec.ts:71::Payment Methods › when attempting to add a declined-3ds card › it should not add the card",
+      "target": {
+        "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/saved-method-authentication.spec.ts",
+        "contract": "a failed My Account 3DS challenge leaves the exact SetupIntent unauthenticated, saves no token or attachment, and returns an announced usable add-method form"
+      }
+    },
+    {
+      "contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:146::Shopper can save and delete cards › Testing card: 3ds › should add the 3ds card as a new payment method",
+      "target": {
+        "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/saved-method-authentication.spec.ts",
+        "contract": "one My Account 3DS token completes required SetupIntent and Classic PaymentIntent challenges and settles one exact USD 10.99 payment"
+      }
+    },
+    {
+      "contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:196::Shopper can save and delete cards › Testing card: 3ds › should be able to purchase with the saved 3ds card",
+      "target": {
+        "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/saved-method-authentication.spec.ts",
+        "contract": "one My Account 3DS token completes required SetupIntent and Classic PaymentIntent challenges and settles one exact USD 10.99 payment"
+      }
+    }
+  ],
+  "known_gaps": [],
+  "deferral": null
+}
