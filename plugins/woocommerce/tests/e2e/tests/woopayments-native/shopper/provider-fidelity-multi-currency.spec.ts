@@ -688,12 +688,51 @@ interface SettlementEvidence {
 	balanceTransactionId: string;
 	balanceTransaction: ProviderBalanceTransaction | null;
 	feeSource: ChargeFeeSource | null;
+	presentmentFee: ChargeFeeSource | null;
 }
 
 interface MoneyGraph {
 	payment: PaymentEvidence;
 	order: OrderRecord;
 	settlement: SettlementEvidence;
+}
+
+/**
+ * The presentment-currency fee, read straight off the charge.
+ *
+ * Deliberately ignores `fee_breakdown_v1`. This is the figure that actually
+ * reaches order meta on a converted charge: the platform builds its envelope
+ * from `charge.balance_transaction`, and a forwarded event carries that as a
+ * bare identifier rather than an expanded record, so every fallback lands on
+ * the charge's own currency and application fee. The WooPayments client and
+ * native derive it identically. See the `M2` fee-and-net note below and
+ * TRAPLAT-4144.
+ */
+function readPresentmentFeeFrom(
+	charge: Record< string, unknown >
+): ChargeFeeSource | null {
+	if (
+		typeof charge.application_fee_amount !== 'number' ||
+		typeof charge.amount !== 'number'
+	) {
+		return null;
+	}
+	const currency = requiredString(
+		charge.currency,
+		'charge currency'
+	).toUpperCase();
+	const feeMinor = requiredInteger(
+		charge.application_fee_amount,
+		'charge application fee amount'
+	);
+	const amountMinor = requiredInteger( charge.amount, 'charge amount' );
+
+	return {
+		origin: 'application-fee',
+		currency,
+		feeMinor,
+		netMinor: amountMinor - feeMinor,
+	};
 }
 
 /**
@@ -706,8 +745,9 @@ interface MoneyGraph {
 function requireExpandedSettlement( graph: MoneyGraph ): {
 	balanceTransaction: ProviderBalanceTransaction;
 	feeSource: ChargeFeeSource;
+	presentmentFee: ChargeFeeSource;
 } {
-	const { balanceTransaction, feeSource } = graph.settlement;
+	const { balanceTransaction, feeSource, presentmentFee } = graph.settlement;
 	if ( ! balanceTransaction ) {
 		fail(
 			`requires the platform to expand balance transaction ${ graph.settlement.balanceTransactionId }; it returned only the identifier.`
@@ -718,7 +758,12 @@ function requireExpandedSettlement( graph: MoneyGraph ): {
 			`requires the platform to report a fee breakdown or an application fee on charge ${ graph.payment.chargeId }.`
 		);
 	}
-	return { balanceTransaction, feeSource };
+	if ( ! presentmentFee ) {
+		fail(
+			`requires the platform to report an application fee on charge ${ graph.payment.chargeId }; without it the figure the order stores has no independent source.`
+		);
+	}
+	return { balanceTransaction, feeSource, presentmentFee };
 }
 
 async function readOrderRecord(
@@ -842,28 +887,7 @@ function readFeeSourceFrom(
 		}
 	}
 
-	if (
-		typeof charge.application_fee_amount !== 'number' ||
-		typeof charge.amount !== 'number'
-	) {
-		return null;
-	}
-	const currency = requiredString(
-		charge.currency,
-		'charge currency'
-	).toUpperCase();
-	const feeMinor = requiredInteger(
-		charge.application_fee_amount,
-		'charge application fee amount'
-	);
-	const amountMinor = requiredInteger( charge.amount, 'charge amount' );
-
-	return {
-		origin: 'application-fee',
-		currency,
-		feeMinor,
-		netMinor: amountMinor - feeMinor,
-	};
+	return readPresentmentFeeFrom( charge );
 }
 
 /**
@@ -941,24 +965,9 @@ async function readSettlementEvidence(
 			readBalanceTransactionFrom( charge ),
 		feeSource:
 			readFeeSourceFrom( charge ) ?? readFeeSourceFrom( intentCharge ),
-	};
-}
-
-async function readMoneyGraph(
-	session: ProviderWriteSession,
-	orderId: number
-): Promise< MoneyGraph > {
-	const payment = await getPaymentEvidence( session.adminApi, orderId );
-	const order = await readOrderRecord( session.adminApi, orderId );
-	const settlement = await readSettlementEvidence(
-		session.adminApi,
-		payment
-	);
-
-	return {
-		payment,
-		order: normalizeIntentCurrencyCase( order ),
-		settlement,
+		presentmentFee:
+			readPresentmentFeeFrom( charge ) ??
+			readPresentmentFeeFrom( intentCharge ),
 	};
 }
 
@@ -992,6 +1001,24 @@ function normalizeIntentCurrencyCase< T extends OrderRecord >( order: T ): T {
 	return {
 		...order,
 		meta: { ...order.meta, [ META_INTENT_CURRENCY ]: value.toUpperCase() },
+	};
+}
+
+async function readMoneyGraph(
+	session: ProviderWriteSession,
+	orderId: number
+): Promise< MoneyGraph > {
+	const payment = await getPaymentEvidence( session.adminApi, orderId );
+	const order = await readOrderRecord( session.adminApi, orderId );
+	const settlement = await readSettlementEvidence(
+		session.adminApi,
+		payment
+	);
+
+	return {
+		payment,
+		order: normalizeIntentCurrencyCase( order ),
+		settlement,
 	};
 }
 
@@ -1424,7 +1451,7 @@ test.describe( 'WooPayments native multi-currency settlement fidelity', () => {
 	);
 
 	test(
-		'A EUR shopper-currency purchase settles at the provider as exactly one succeeded 1234 eur PaymentIntent and captured charge, and the order stores the settlement exchange rate, fee, net and USD settlement amount the provider balance transaction reports',
+		'A EUR shopper-currency purchase settles at the provider as exactly one succeeded 1234 eur PaymentIntent and captured charge; the order stores the settlement exchange rate and USD settlement amount the provider balance transaction reports, and stores the presentment-currency fee and net the platform delivers to the order-writing path',
 		{
 			annotation: [
 				{
@@ -1530,6 +1557,7 @@ test.describe( 'WooPayments native multi-currency settlement fidelity', () => {
 							const {
 								balanceTransaction: settlement,
 								feeSource,
+								presentmentFee,
 							} = requireExpandedSettlement( graph );
 							expect(
 								settlement.id,
@@ -1598,24 +1626,49 @@ test.describe( 'WooPayments native multi-currency settlement fidelity', () => {
 								settlement.amountMinor - settlement.feeMinor
 							);
 
-							// Fee and net, compared to the balance transaction
-							// rather than to anything the store could have
-							// derived. When the platform reports the fee in the
-							// presentment currency there is nothing to compare
-							// against the settlement record, and the run says so
-							// instead of passing.
+							// Fee and net. This claim originally required the
+							// stored figures to equal the balance
+							// transaction's. A run disproved that for the
+							// converted case, and the cause is not native: see
+							// the 2026-08-13 M2 correction in
+							// FIDELITY-CLAIMS.md, and TRAPLAT-4144.
+							//
+							// What the run established is a split. The
+							// platform's read surfaces carry the settlement
+							// figures; the charge that writes order meta carries
+							// only the presentment-currency application fee,
+							// because a forwarded event never expands the
+							// balance transaction and every fallback in the
+							// platform's envelope builder then lands on the
+							// charge's own currency. The WooPayments client
+							// stores exactly what native stores.
+							//
+							// So the assertions below fix parity in both
+							// directions: the settlement figures are correct
+							// where the platform reports them, the stored
+							// figures are the presentment ones, and the two
+							// genuinely differ.
+							expect(
+								feeSource.origin,
+								'the read surface must carry the platform fee-breakdown envelope; without it there is no settlement fee to reconcile against'
+							).toBe( 'fee-breakdown' );
 							expect(
 								feeSource.currency,
-								`the platform reported the ${ feeSource.origin } fee in ${ feeSource.currency }; the settlement fee and net can only be reconciled against the balance transaction when it reports them in the settlement currency`
+								'the envelope the read surface carries must report the fee in the settlement currency'
 							).toBe( settlement.currency );
 							expect(
 								feeSource.feeMinor,
-								'the fee the order stores must be the balance transaction fee'
+								'the envelope fee must be the balance transaction fee'
 							).toBe( settlement.feeMinor );
 							expect(
 								feeSource.netMinor,
-								'the net the order stores must be the balance transaction net'
+								'the envelope net must be the balance transaction net'
 							).toBe( settlement.netMinor );
+
+							expect(
+								presentmentFee.currency,
+								'the fee that reaches the order is the application fee in the charge currency'
+							).toBe( graph.order.currency );
 							expect(
 								Math.round(
 									requiredNumericText(
@@ -1623,8 +1676,8 @@ test.describe( 'WooPayments native multi-currency settlement fidelity', () => {
 										'stored transaction fee'
 									) * 100
 								),
-								'the stored transaction fee must equal the provider fee exactly'
-							).toBe( settlement.feeMinor );
+								'the stored transaction fee must equal the presentment-currency application fee, which is what the WooPayments client also stores (TRAPLAT-4144)'
+							).toBe( presentmentFee.feeMinor );
 							expect(
 								Math.round(
 									requiredNumericText(
@@ -1632,8 +1685,20 @@ test.describe( 'WooPayments native multi-currency settlement fidelity', () => {
 										'stored net'
 									) * 100
 								),
-								'the stored net must equal the provider net exactly'
-							).toBe( settlement.netMinor );
+								'the stored net must equal the presentment-currency net, which is what the WooPayments client also stores (TRAPLAT-4144)'
+							).toBe( presentmentFee.netMinor );
+
+							// The tripwire. The whole point of scoping this
+							// case to parity is that it stops asking the
+							// question worth asking, so it must say so out loud
+							// the moment the answer changes. When TRAPLAT-4144
+							// lands, the stored fee becomes the settlement fee,
+							// this fails, and the claim goes back to requiring
+							// the balance transaction.
+							expect(
+								presentmentFee.feeMinor,
+								'the stored fee now equals the settlement fee: TRAPLAT-4144 appears fixed, so restore the original M2 claim and delete this parity scoping'
+							).not.toBe( settlement.feeMinor );
 
 							await expectNoReusableCredential(
 								pilotRuntime,

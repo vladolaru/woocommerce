@@ -399,9 +399,11 @@ Bucket-E explicitly excludes subscription and token state. HARNESS section 3's j
 
 ### Claim
 
-> **Claim.** Each listed order carries exactly one provider amount and currency graph; the converted money metadata WooCommerce stores equals the authoritative provider balance transaction rather than a locally recomputed figure; and a later shopper-currency change leaves the stored order and its provider graph unchanged.
+> **Claim.** Each listed order carries exactly one provider amount and currency graph; the converted settlement metadata WooCommerce stores — the exchange rate and the settlement amount — equals the authoritative provider balance transaction rather than a locally recomputed figure; the stored fee and net equal what the platform delivers to the order-writing path, which is what the WooPayments client stores from the same data; and a later shopper-currency change leaves the stored order and its provider graph unchanged.
 >
-> **Falsified by.** `M1`–`M3` observing a provider amount or currency that diverges from the order, stored conversion metadata that disagrees with the balance transaction, or a historical order mutated by a subsequent currency change.
+> **Falsified by.** `M1`–`M3` observing a provider amount or currency that diverges from the order, a stored exchange rate or settlement amount that disagrees with the balance transaction, a stored fee or net that diverges from the figure the platform delivers, or a historical order mutated by a subsequent currency change.
+>
+> The fee-and-net clause reads as it does because of the 2026-08-13 correction below; it is deliberately narrower than the settlement clause and carries a tripwire that fires when the platform defect is fixed.
 
 ### Fixed run contract
 
@@ -409,10 +411,26 @@ Bucket-E explicitly excludes subscription and token state. HARNESS section 3's j
 |---|---|
 | Intended selector | Proposed future selector; it does not exist yet: `pnpm exec playwright test plugins/woocommerce/tests/e2e/tests/woopayments-native/provider-fidelity.spec.ts --project=chromium --grep "@fidelity:multi-currency-settlement" --workers=1 --retries=0` |
 | `M1` USD | Store settlement currency USD; shopper currency USD; one USD 10.99 `4242` order. Exactly one `1099 usd` succeeded PaymentIntent and captured charge bind the exact order. |
-| `M2` EUR conversion | Store settlement currency USD; shopper currency EUR; one EUR 12.34 `4242` order. Exactly one `1234 eur` succeeded PaymentIntent and captured charge bind the order; Woo stored exchange rate, fee, net, and USD settlement amount equal the exact provider balance-transaction fields. The provider response supplies the numeric rate; equality, not a guessed rate, is asserted. |
+| `M2` EUR conversion | Store settlement currency USD; shopper currency EUR; one EUR 12.34 `4242` order. Exactly one `1234 eur` succeeded PaymentIntent and captured charge bind the order; Woo stored exchange rate and USD settlement amount equal the exact provider balance-transaction fields. The provider response supplies the numeric rate; equality, not a guessed rate, is asserted. Stored fee and net are scoped to parity with the WooPayments client — see the 2026-08-13 correction. |
 | `M3` immutability | After `M2`, switch the same shopper session from EUR to USD and hard-reload order receipt/My Account. The `M2` order ID, `1234 eur` total, intent/charge IDs, and stored/provider settlement graph remain byte-identical to their `M2` snapshots. No new order or charge occurs. |
 | Convergence | Poll exact order/intent/charge/balance-transaction IDs every 2 seconds for at most 60 seconds; require two identical terminal reads before and after `M3`. |
 | Cleanup/restoration | Restore raw enabled-currency set, store currency, shopper-session/customer currency, gateway, customer-default, cart, and local token/default snapshots byte-for-byte; empty carts and remove run products/sessions. Retain immutable financial graphs by run ID. Any changed original currency/customer/configuration, second order/charge, or unowned delta fails cleanup. |
+
+### Correction 2026-08-13 — the stored fee and net are the presentment ones, and that is not native's doing
+
+**Asserted.** `M2` required the fee and net WooCommerce stores to equal the provider balance transaction's — 87 / 1337 USD for the EUR 12.34 fixture — on the same footing as the exchange rate and settlement amount.
+
+**Observed.** A run stored 0.75 / 11.59 EUR: the charge's `application_fee_amount` in the presentment currency. The rate and settlement amount were correct, so only the fee half of the clause failed.
+
+**What established the cause.** The platform attaches its `fee_breakdown_v1` envelope at three points, not one. `GET /charges/{id}` returned `totals.fee = 87 usd`, `totals.net = 1337 usd`, `fx: 1 eur → 1.15396 usd`, and the order's own timeline note already read `$0.87` / `$13.37`. So the settlement figures exist and the platform reports them correctly where it expands the balance transaction.
+
+The order-writing path does not get them. The builder derives everything from `charge.balance_transaction`, and a forwarded `payment_intent.succeeded` carries that as a bare string — Stripe does not expand sub-objects in event payloads. Every fallback in `charge_context()` then lands on the charge itself: store currency becomes the presentment currency, fee becomes the application fee, exchange rate becomes `0`. The envelope built there reports the same number the legacy inference reported, under the wrong currency label.
+
+Both implementations take `$intent->get_charge()` at checkout — the WooPayments client at `class-wc-payment-gateway-wcpay.php:2206,2407,4237`, native through `WooPaymentsOrderEffects::transaction_fee_from_charge`. **They store the same value.** Native is at parity, and the defect is platform-side, filed as TRAPLAT-4144.
+
+**Consequence for the claim.** The fee-and-net half of `M2` is scoped to parity: the case now asserts that the read-surface envelope carries the settlement figures, that the stored figures are the presentment ones, and — as a tripwire — that the two differ. When TRAPLAT-4144 lands the tripwire fails, which is the signal to restore the original requirement rather than to weaken the case again. The exchange-rate and settlement-amount half of the claim is unchanged and still binding.
+
+**Accepted risk.** Between now and that fix, this family does not prove that a converted order stores the fee a merchant is actually charged. It proves only that native stores what the platform hands it, and that the platform hands the same thing to both runtimes.
 
 ### Core-side proof
 
