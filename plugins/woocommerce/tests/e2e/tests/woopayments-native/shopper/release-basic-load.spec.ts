@@ -22,8 +22,7 @@ const STORE_PRODUCTS_API =
 // end: a fatal that replaces the document, and leaked PHP notice output that
 // corrupts it. The notice pattern requires the "on line N" tail so ordinary
 // storefront copy containing the bare words cannot trip it.
-const FATAL_TEXT =
-	/fatal error|parse error|there has been a critical error/i;
+const FATAL_TEXT = /fatal error|parse error|there has been a critical error/i;
 const NOTICE_TEXT = /\b(?:Warning|Notice|Deprecated):[^\n]*\bon line \d+/;
 
 function requireBaseUrl( baseURL: string | undefined ): string {
@@ -151,7 +150,7 @@ test(
 			typeof siteIndex.home === 'string' && siteIndex.home !== ''
 				? siteIndex.home
 				: storeBase
-		 ).replace( /\/+$/, '' );
+		).replace( /\/+$/, '' );
 
 		// The shop-content half is data-driven the same way: the store's own
 		// public Store API names a purchasable product, and its page must
@@ -177,7 +176,7 @@ test(
 			product.is_purchasable !== true
 		) {
 			throw new Error(
-				'The store\'s first simple in-stock product is not purchasable with a name and permalink.'
+				"The store's first simple in-stock product is not purchasable with a name and permalink."
 			);
 		}
 

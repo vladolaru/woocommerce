@@ -477,6 +477,10 @@ async function fillPostTitle( page: Page, title: string ): Promise< void > {
 	await titleField.fill( title );
 }
 
+function escapeForRegExp( value: string ): string {
+	return value.replace( /[.*+?^${}()|[\]\\]/g, '\\$&' );
+}
+
 /**
  * Insert a block through the editor's own inserter, which is what makes this
  * a discoverability proof rather than a content injection.
@@ -489,10 +493,6 @@ async function fillPostTitle( page: Page, title: string ): Promise< void > {
  * @param page      Editor page.
  * @param blockName Block title as shown in the inserter.
  */
-function escapeForRegExp( value: string ): string {
-	return value.replace( /[.*+?^${}()|[\]\\]/g, '\\$&' );
-}
-
 async function insertBlockFromInserter(
 	page: Page,
 	blockName: string

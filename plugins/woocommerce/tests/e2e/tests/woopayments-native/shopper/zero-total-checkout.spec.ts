@@ -189,9 +189,7 @@ async function ensureContactAndBillingDetails( page: Page ): Promise< void > {
 	await expect( billing ).toBeVisible();
 	const firstName = billing.getByRole( 'textbox', { name: 'First name' } );
 	const savedAddressEdit = billing.getByRole( 'button', { name: /edit/i } );
-	await expect(
-		firstName.or( savedAddressEdit ).first()
-	).toBeVisible();
+	await expect( firstName.or( savedAddressEdit ).first() ).toBeVisible();
 	if ( ! ( await firstName.isVisible() ) ) {
 		return;
 	}
@@ -261,9 +259,7 @@ function trackProviderClientRequests( page: Page ): () => string[] {
 		try {
 			const { hostname } = new URL( request.url() );
 			if ( PROVIDER_TRANSACTING_HOSTS.includes( hostname ) ) {
-				providerRequests.push(
-					`${ request.method() } ${ hostname }`
-				);
+				providerRequests.push( `${ request.method() } ${ hostname }` );
 			}
 		} catch {
 			// Unparsable URLs cannot be provider requests.
@@ -405,9 +401,7 @@ test(
 				`/wp-json/wc/v3/orders/${ orderId }`,
 				{
 					data: {
-						meta_data: [
-							{ key: RUN_META_KEY, value: runId },
-						],
+						meta_data: [ { key: RUN_META_KEY, value: runId } ],
 					},
 				}
 			);

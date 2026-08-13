@@ -189,8 +189,7 @@ test(
 		);
 		expect( before.is_wcpay_enabled ).toBe( true );
 		const featureFlags =
-			before.feature_flags &&
-			typeof before.feature_flags === 'object'
+			before.feature_flags && typeof before.feature_flags === 'object'
 				? ( before.feature_flags as Record< string, unknown > )
 				: {};
 		expect(
