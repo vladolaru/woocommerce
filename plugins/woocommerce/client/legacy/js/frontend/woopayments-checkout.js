@@ -1810,6 +1810,7 @@
 				submitAddPaymentMethodForm( formElement );
 			} )
 			.catch( function ( error ) {
+				$( formElement ).removeClass( 'processing' ).unblock();
 				setError( error && error.message ? error.message : '' );
 			} );
 

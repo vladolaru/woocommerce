@@ -2457,6 +2457,55 @@ describe( 'WooPayments checkout', () => {
 		expect( addPaymentMethodForm.submit ).not.toHaveBeenCalled();
 	} );
 
+	test( 'releases add-payment-method after a failed SetupIntent confirmation', async () => {
+		const addPaymentMethodForm = createAddPaymentMethodForm();
+		global.jQuery.post.mockReturnValueOnce( {
+			done: jest.fn( ( callback ) => {
+				callback( {
+					success: true,
+					data: {
+						id: 'seti_failed_authentication',
+						status: 'requires_action',
+						client_secret: 'seti_failed_authentication_secret_abc',
+					},
+				} );
+				return {
+					fail: jest.fn(),
+				};
+			} ),
+		} );
+		stripeMock.confirmSetup.mockResolvedValueOnce( {
+			error: {
+				message:
+					'We are unable to authenticate your payment method. Please choose a different payment method and try again.',
+			},
+		} );
+
+		require( '../woopayments-checkout' );
+		addPaymentMethodForm.dispatchEvent(
+			new window.Event( 'submit', { bubbles: true, cancelable: true } )
+		);
+		await flushPromises();
+
+		expect( stripeMock.confirmSetup ).toHaveBeenCalledWith( {
+			clientSecret: 'seti_failed_authentication_secret_abc',
+			redirect: 'if_required',
+		} );
+		expect(
+			document.getElementById( 'wcpay-core-payment-errors' ).textContent
+		).toBe(
+			'We are unable to authenticate your payment method. Please choose a different payment method and try again.'
+		);
+		expect( global.jQuery ).toHaveBeenCalledWith( addPaymentMethodForm );
+		expect(
+			global.jQuery.checkoutFormResult.removeClass
+		).toHaveBeenCalledWith( 'processing' );
+		expect(
+			global.jQuery.checkoutFormResult.unblock
+		).toHaveBeenCalledTimes( 1 );
+		expect( addPaymentMethodForm.submit ).not.toHaveBeenCalled();
+	} );
+
 	test( 'preserves a safe setup-intent error from an HTTP failure', async () => {
 		const addPaymentMethodForm = createAddPaymentMethodForm();
 		const submitButton = addPaymentMethodForm.querySelector(
