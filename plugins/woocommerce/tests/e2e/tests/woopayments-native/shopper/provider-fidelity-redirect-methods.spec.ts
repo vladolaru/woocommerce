@@ -1586,6 +1586,80 @@ test.describe( 'WooPayments native redirect-method provider outcome fidelity', (
 		}
 	);
 
+	// Klarna runs before Bancontact deliberately. Bancontact cannot be offered
+	// at all on a US-country connected account -- the registry lists it for BE
+	// only, and the gateway matches that against the account country -- so its
+	// two cases fail at gateway selection on this fixture, before any provider
+	// write. Under serial mode that failure would halt everything after it, and
+	// Klarna would go unverified for a reason that has nothing to do with
+	// Klarna. Ordering costs nothing here: no case after Bancontact depends on
+	// it, and the twin still directly follows the protection-off case it
+	// compares against.
+
+	test(
+		'One Klarna checkout sends the provider method klarna for 10000 usd with this run order-received return URL and returns requires_action with exactly one HTTPS provider redirect, no charge, and no capture',
+		{ tag: FAMILY_TAGS },
+		async ( { page, pilotRuntime } ) => {
+			await runProtectionOffClassicCase(
+				pilotRuntime,
+				page,
+				{
+					method: KLARNA,
+					recordEvent: 'redirect-klarna-classic',
+					journal: 'redirect-klarna-handoff',
+					// The contract stops before hosted authorization, and the
+					// driver refuses every cross-origin navigation while it does
+					// so, which is what makes "stops before" a fact rather than
+					// an intention.
+					follow: false,
+				},
+				async ( result ) => {
+					expectRequestedRedirect( result.observation, KLARNA, {
+						storeOrigin: result.storeOrigin,
+						orderKey: result.orderKey,
+					} );
+					expect(
+						result.observation.handoffElapsedMs,
+						'the requires_action redirect response must arrive within the fixed 30-second window'
+					).toBeLessThanOrEqual( HANDOFF_BUDGET_MS );
+					expect(
+						result.observation.paid,
+						'this case must not follow the handoff, so it must produce no settled payment'
+					).toBeUndefined();
+					expect( result.observation.landedUrl ).toBeUndefined();
+					await expectSingleRunOrder(
+						pilotRuntime,
+						result.baselineOrderId,
+						result.observation.orderId
+					);
+
+					// Zero charge and zero capture, held rather than sampled:
+					// an authorization that arrived a moment later would
+					// otherwise slip between the read and the assertion.
+					await expectIntentStaysUnauthorized(
+						pilotRuntime,
+						result.observation.request.id
+					);
+
+					const order = await readOrderFacts(
+						pilotRuntime.adminApi,
+						result.observation.orderId
+					);
+					expect(
+						UNPAID_ORDER_STATUSES,
+						'an unauthorized handoff must leave the order unpaid'
+					).toContain( order.status );
+					expect(
+						order.chargeId,
+						'an unpaid order must carry no charge'
+					).toBe( '' );
+					expect( order.intentId ).toBe(
+						result.observation.request.id
+					);
+				}
+			);
+		}
+	);
 	test(
 		'One Bancontact checkout sends the provider method bancontact for 1234 eur with this run order-received return URL, and the single redirect settles that same PaymentIntent to succeeded with one captured charge',
 		{
@@ -1668,68 +1742,4 @@ test.describe( 'WooPayments native redirect-method provider outcome fidelity', (
 		}
 	);
 
-	test(
-		'One Klarna checkout sends the provider method klarna for 10000 usd with this run order-received return URL and returns requires_action with exactly one HTTPS provider redirect, no charge, and no capture',
-		{ tag: FAMILY_TAGS },
-		async ( { page, pilotRuntime } ) => {
-			await runProtectionOffClassicCase(
-				pilotRuntime,
-				page,
-				{
-					method: KLARNA,
-					recordEvent: 'redirect-klarna-classic',
-					journal: 'redirect-klarna-handoff',
-					// The contract stops before hosted authorization, and the
-					// driver refuses every cross-origin navigation while it does
-					// so, which is what makes "stops before" a fact rather than
-					// an intention.
-					follow: false,
-				},
-				async ( result ) => {
-					expectRequestedRedirect( result.observation, KLARNA, {
-						storeOrigin: result.storeOrigin,
-						orderKey: result.orderKey,
-					} );
-					expect(
-						result.observation.handoffElapsedMs,
-						'the requires_action redirect response must arrive within the fixed 30-second window'
-					).toBeLessThanOrEqual( HANDOFF_BUDGET_MS );
-					expect(
-						result.observation.paid,
-						'this case must not follow the handoff, so it must produce no settled payment'
-					).toBeUndefined();
-					expect( result.observation.landedUrl ).toBeUndefined();
-					await expectSingleRunOrder(
-						pilotRuntime,
-						result.baselineOrderId,
-						result.observation.orderId
-					);
-
-					// Zero charge and zero capture, held rather than sampled:
-					// an authorization that arrived a moment later would
-					// otherwise slip between the read and the assertion.
-					await expectIntentStaysUnauthorized(
-						pilotRuntime,
-						result.observation.request.id
-					);
-
-					const order = await readOrderFacts(
-						pilotRuntime.adminApi,
-						result.observation.orderId
-					);
-					expect(
-						UNPAID_ORDER_STATUSES,
-						'an unauthorized handoff must leave the order unpaid'
-					).toContain( order.status );
-					expect(
-						order.chargeId,
-						'an unpaid order must carry no charge'
-					).toBe( '' );
-					expect( order.intentId ).toBe(
-						result.observation.request.id
-					);
-				}
-			);
-		}
-	);
 } );
