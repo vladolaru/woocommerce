@@ -1194,6 +1194,77 @@ async function withoutProviderNavigation< Result >(
 	}
 }
 
+/**
+ * Reads the redirect a Blocks checkout answered with, from either place the
+ * Store API puts it.
+ *
+ * `payment_result.redirect_url` is set when the Store API itself decides to
+ * redirect. When the gateway's `process_payment()` returns its own `redirect`,
+ * the Store API passes that return array through as `payment_details` key/value
+ * pairs instead and leaves `redirect_url` empty — which is what a native Alipay
+ * submission produces: `payment_status=success` with
+ * `payment_details` carrying `result`, `redirect` and `payment_method`, the
+ * `redirect` being the `#wcpay-confirm-pi:` hash the provider script acts on.
+ *
+ * Reading only `redirect_url` therefore reads a correct handoff as a missing
+ * one, and quarantines the account for it — the same shape of mistake the
+ * classic surface made by binding to `redirect_to_url`. Both places are read
+ * here, `redirect_url` first because a Store API redirect outranks the
+ * gateway's own.
+ */
+function readBlocksRedirect(
+	paymentResult: Record< string, unknown >
+): string {
+	const direct = paymentResult.redirect_url;
+	if ( typeof direct === 'string' && direct.trim() ) {
+		return direct;
+	}
+
+	const details = Array.isArray( paymentResult.payment_details )
+		? paymentResult.payment_details
+		: [];
+	for ( const entry of details ) {
+		if ( ! entry || typeof entry !== 'object' ) {
+			continue;
+		}
+		const { key, value } = entry as { key?: unknown; value?: unknown };
+		if ( key === 'redirect' && typeof value === 'string' && value.trim() ) {
+			return value;
+		}
+	}
+
+	return '';
+}
+
+/**
+ * Describes the shape of a Store API payment result for a failure message.
+ *
+ * Names only: `payment_details` carries the intent client secret on some paths,
+ * so the keys are reported and the values never are. What a reader needs from a
+ * missing-redirect failure is which fields the store *did* answer with, and
+ * that is exactly what a key list gives them.
+ */
+function describePaymentResult(
+	paymentResult: Record< string, unknown >
+): string {
+	const details = Array.isArray( paymentResult.payment_details )
+		? paymentResult.payment_details
+		: [];
+	const detailKeys = details
+		.map( ( entry ) =>
+			entry && typeof entry === 'object' && 'key' in entry
+				? String( ( entry as { key: unknown } ).key )
+				: '?'
+		)
+		.join( ',' );
+
+	return `payment_result keys=[${ Object.keys( paymentResult ).join(
+		','
+	) }] payment_status=${ String(
+		paymentResult.payment_status ?? '(absent)'
+	) } payment_details keys=[${ detailKeys }]`;
+}
+
 export interface ClassicRedirectCheckoutOptions {
 	method: RedirectMethod;
 	product: OwnedProduct;
@@ -1507,10 +1578,12 @@ export async function driveBlocksRedirectCheckout(
 					exchange.body.payment_result,
 					'Blocks payment result'
 				);
-				const redirectUrl = paymentResult.redirect_url;
-				if ( typeof redirectUrl !== 'string' || ! redirectUrl.trim() ) {
+				const redirectUrl = readBlocksRedirect( paymentResult );
+				if ( ! redirectUrl ) {
 					throw quarantine(
-						'Blocks checkout response carries no redirect.'
+						`Blocks checkout response carries no redirect. ${ describePaymentResult(
+							paymentResult
+						) }`
 					);
 				}
 				await session.setOrderRunId( Number( orderId ), runId );
