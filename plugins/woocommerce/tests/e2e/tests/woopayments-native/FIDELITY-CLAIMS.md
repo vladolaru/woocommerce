@@ -188,6 +188,62 @@ Save-at-checkout token creation is *not* excluded: `T4` and `T5` name it, on the
 - `plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsFraudPreventionServiceTest.php`: session-token generation/persistence, exact-token-only verification, regeneration, and reading eligibility from the account cache.
 - `plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsCheckoutBridgeTest.php`: token exposure in classic checkout config and Blocks payment-method data when protection is enabled.
 
+### Correction 2026-08-14 — the provider does not hand every redirect method back the same way, and neither runtime pretends it does
+
+`A1`'s first passing run required four assumptions to be cleared, all of them the same
+mistake: reading the generic `redirect_to_url` shape as if it were the only one. Three were
+cleared on 2026-08-10 inside the test. The fourth and fifth are recorded here because they
+are facts about the provider and about both runtimes, not about the harness.
+
+**Asserted.** That for every method in this family the store answers Place order with the
+hosted URL the intent names, and that the intent's `next_action` return URL is the
+order-received URL on this store.
+
+**Observed, for Alipay.** Neither holds, and the payment settles correctly anyway.
+
+| | `redirect_to_url` methods (`A2`–`A5`) | `alipay_handle_redirect` (`A1`) |
+|---|---|---|
+| Store's Place order answer | the hosted URL | `#wcpay-confirm-pi:{order}:{secret}:{nonce}` |
+| `next_action` return URL | the merchant order-received URL | `https://pm-redirects.stripe.com/return/…` |
+| Who performs the handoff | the browser, following the store's answer | the provider's own script |
+
+**Cause of the first half.** `WooPaymentsIntentCodec::raw_next_action_redirect_url()`
+returns `''` for any next-action type but `redirect_to_url`, so
+`requires_confirmation_redirect()` holds and `WooPaymentsProviderGatewayAdapter` substitutes
+the confirmation hash. **The WooPayments client plugin has the identical branch** at
+`class-wc-payment-gateway-wcpay.php:2093-2107`: `redirect_to_url` gets the URL,
+`multibanco_display_details` gets its own arm, and everything else — `*_handle_redirect`
+included — falls into the same `else` that builds the same hash. Native is at parity, and
+teaching native to follow `*_handle_redirect` server-side would *break* that parity rather
+than restore it.
+
+**Cause of the second half.** The provider interposes its own return hop for these methods,
+and the merchant return URL native supplied is not observable on the intent at all — the
+platform's PaymentIntent passthrough exposes no top-level `return_url` field, confirmed by
+reading its full key set on 2026-08-14.
+
+**Consequence for the claim.** The Claim's proposition is unchanged and still binding: the
+provider is asked for the right method, amount, currency and return URL, and reaches the
+fixed state with one correlated graph. What is scoped is *how* the two handoff facts are
+observed, and only for methods whose next action is not `redirect_to_url`:
+
+- The store's answer must be the confirmation hash naming this exact order.
+- The intent's return URL must be the provider's own HTTPS hop, off this store.
+- The run-identifying half moves to the *landed* URL, which `expectReturnedToStore` already
+  asserts by origin, order ID, order key and gateway marker. For these methods that is the
+  stronger oracle: it proves the shopper came back where native asked, rather than that a
+  request field said they would.
+
+Each branch carries a tripwire — an off-store answer where the hash is expected, or an
+on-store return URL where the provider hop is expected — so a change in either runtime or
+at the provider fails loudly and says to restore the direct assertions rather than keep the
+scoped ones.
+
+**Accepted risk.** For `*_handle_redirect` methods this family no longer proves from the
+request that native handed the provider a return URL on this store. It proves that the
+shopper returned to this run's own order-received page and that the payment settled there.
+`A2`–`A5` are untouched and still carry the full direct read.
+
 ### HARNESS residue and deliberate exclusions
 
 A4aq explicitly does not cover redirects or full wallet sheets; Bucket-E sees only final sampled-order state. This claim deliberately excludes hosted-page usability/content, cross-origin accessibility, Klarna completion beyond `A5`, Blocks/client wiring for methods other than Alipay — `A1b` drives the Alipay Blocks surface; the other methods' Blocks wiring stays outside — merchant admin presentation, method visibility/recomputation, and refunds.

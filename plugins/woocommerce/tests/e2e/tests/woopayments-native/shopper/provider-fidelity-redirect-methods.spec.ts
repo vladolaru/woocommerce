@@ -32,6 +32,7 @@ import {
 	withEnabledPaymentMethod,
 	withForeignCurrency,
 	type RedirectHandoffObservation,
+	type RedirectIntentRequest,
 	type RedirectMethod,
 } from '../../../utils/woopayments-native/drivers/redirect-methods';
 import {
@@ -343,6 +344,128 @@ async function waitForSettledRedirect(
 }
 
 /**
+ * Asserts what the store handed the shopper to reach the provider with.
+ *
+ * There are two shapes, and which one applies is decided by the provider, not by
+ * this store. When the intent's next action is the generic `redirect_to_url`,
+ * both runtimes answer Place order with the hosted URL itself and the browser
+ * navigates to it — so the store's answer must *be* the redirect the intent
+ * names, and that identity is asserted.
+ *
+ * When the provider models the method explicitly it emits its own next-action
+ * key — Alipay gives `alipay_handle_redirect` — and neither runtime recognises
+ * it. `WooPaymentsIntentCodec::raw_next_action_redirect_url()` returns `''` for
+ * any type but `redirect_to_url`, so `requires_confirmation_redirect()` holds
+ * and the adapter substitutes the `#wcpay-confirm-pi:` hash instead; the
+ * WooPayments client plugin has the identical branch at
+ * `class-wc-payment-gateway-wcpay.php:2093-2107`, with `*_handle_redirect`
+ * falling into the same `else`. The provider's own script then performs the
+ * handoff client-side. Native is at parity, so this case asserts the parity
+ * rather than a server-side handoff neither runtime does.
+ *
+ * The hash branch carries a tripwire. It requires the answer to be the
+ * confirmation hash for this exact order and *not* the hosted URL, so if either
+ * runtime ever starts handing back the provider redirect for these methods this
+ * case fails and says to restore the identity assertion above rather than
+ * quietly keeping the weaker one. The hash also carries the intent's client
+ * secret, which is a credential for this one payment: its segment count is
+ * checked, its value never leaves this function.
+ */
+function expectStoreHandoff(
+	observation: RedirectHandoffObservation,
+	request: RedirectIntentRequest,
+	handed: URL,
+	hosted: URL,
+	expected: { storeOrigin: string }
+): void {
+	if ( request.nextActionType === 'redirect_to_url' ) {
+		expect(
+			`${ handed.origin }${ handed.pathname }`,
+			'the store must hand the shopper the exact redirect the intent names'
+		).toBe( `${ hosted.origin }${ hosted.pathname }` );
+		return;
+	}
+
+	const segments = handed.hash.split( ':' );
+	expect(
+		segments[ 0 ],
+		`neither runtime reads ${ request.nextActionType } as a redirect, so the store must hand back the local confirmation hash and let the provider script do the handoff`
+	).toBe( '#wcpay-confirm-pi' );
+	expect(
+		Number( segments[ 1 ] ),
+		'the confirmation hash must name the order this submission created'
+	).toBe( observation.orderId );
+	expect(
+		segments.length,
+		'the confirmation hash must carry its order, client secret and nonce'
+	).toBeGreaterThanOrEqual( 4 );
+	expect(
+		`${ handed.origin }${ handed.pathname }`,
+		'the store answered with an off-store redirect for a method whose next action neither runtime reads: the parity scoping below is stale, so restore the exact-redirect assertion above'
+	).toBe( `${ expected.storeOrigin }/` );
+}
+
+/**
+ * Asserts the return URL half of the request, which also has two shapes.
+ *
+ * Under the generic `redirect_to_url` next action the provider echoes the
+ * merchant return URL native supplied, so it is read directly: this store's
+ * origin, this order, this order key, the WooPayments gateway marker, and the
+ * redirect-return nonce native signs it with. That is what makes this run's
+ * handoff this run's, and the nonce's value never leaves `readReturnUrlFacts`.
+ *
+ * Under a `*_handle_redirect` next action the provider does not echo it. It
+ * interposes its own return hop — an Alipay intent carries
+ * `https://pm-redirects.stripe.com/return/<account>/<nonce>` — and the merchant
+ * URL appears nowhere on the intent, not even as a top-level `return_url`
+ * (the platform's PaymentIntent passthrough has no such field; its key set was
+ * read on 2026-08-14 to be sure). So for these methods the request-side
+ * assertion is what is actually observable — the hop is the provider's own,
+ * over HTTPS, and off this store — and the run-identifying half is carried by
+ * `expectReturnedToStore`, which asserts the *landed* URL's origin, order ID,
+ * order key and gateway marker. That is the stronger evidence anyway: it proves
+ * the shopper came back where native asked, rather than that a field said so.
+ *
+ * The tripwire is the off-store requirement. If the provider ever starts
+ * echoing the merchant URL for these methods, this fails and says to restore
+ * the direct read above rather than keep the weaker one.
+ */
+function expectRequestedReturnUrl(
+	observation: RedirectHandoffObservation,
+	request: RedirectIntentRequest,
+	expected: { storeOrigin: string; orderKey: string }
+): void {
+	if ( request.nextActionType !== 'redirect_to_url' ) {
+		const hop = new URL( request.returnUrl );
+		expect(
+			hop.protocol,
+			'the provider return hop must be over HTTPS'
+		).toBe( 'https:' );
+		expect(
+			hop.origin,
+			`the provider echoed a return URL on this store for ${ request.nextActionType }: it no longer interposes its own hop, so restore the direct return-URL assertion`
+		).not.toBe( expected.storeOrigin );
+		return;
+	}
+
+	const returnUrl = readReturnUrlFacts( request.returnUrl );
+	expect(
+		returnUrl.origin,
+		'the provider must have been given a return URL on this store'
+	).toBe( expected.storeOrigin );
+	expect(
+		returnUrl.orderId,
+		'the return URL must name the order this submission created'
+	).toBe( observation.orderId );
+	expect( returnUrl.orderKey ).toBe( expected.orderKey );
+	expect( returnUrl.paymentMethod ).toBe( WOOPAYMENTS_GATEWAY );
+	expect(
+		returnUrl.noncePresent,
+		'the return URL must carry the redirect-return nonce native signs it with'
+	).toBe( true );
+}
+
+/**
  * The request half of the claim: the exact method, minor amount, currency and
  * run return URL the provider actually received, read from the intent while it
  * still awaits the redirect.
@@ -416,29 +539,9 @@ function expectRequestedRedirect(
 		hosted.origin,
 		'the handoff must leave this store for the provider'
 	).not.toBe( expected.storeOrigin );
-	expect(
-		`${ handed.origin }${ handed.pathname }`,
-		'the store must hand the shopper the exact redirect the intent names'
-	).toBe( `${ hosted.origin }${ hosted.pathname }` );
+	expectStoreHandoff( observation, request, handed, hosted, expected );
 
-	// The return URL, which is what makes this run's handoff this run's. The
-	// nonce it also carries is a credential for this one payment; only its
-	// presence is read.
-	const returnUrl = readReturnUrlFacts( request.returnUrl );
-	expect(
-		returnUrl.origin,
-		'the provider must have been given a return URL on this store'
-	).toBe( expected.storeOrigin );
-	expect(
-		returnUrl.orderId,
-		'the return URL must name the order this submission created'
-	).toBe( observation.orderId );
-	expect( returnUrl.orderKey ).toBe( expected.orderKey );
-	expect( returnUrl.paymentMethod ).toBe( WOOPAYMENTS_GATEWAY );
-	expect(
-		returnUrl.noncePresent,
-		'the return URL must carry the redirect-return nonce native signs it with'
-	).toBe( true );
+	expectRequestedReturnUrl( observation, request, expected );
 }
 
 function settledShape(
