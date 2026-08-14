@@ -18,7 +18,8 @@
     "default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-multi-currency.spec.ts:181::Admin Multi-Currency Orders › refund displays correctly on transaction page",
     "default::chromium::tests/e2e/specs/wcpay/shopper/alipay-checkout-purchase.spec.ts:74::Alipay Checkout › merchant can see and refund an Alipay order",
     "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-bnpls-checkout.spec.ts:113::BNPL checkout › merchant can see and refund a Affirm order",
-    "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-bnpls-checkout.spec.ts:113::BNPL checkout › merchant can see and refund a Cash App Afterpay order"
+    "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-bnpls-checkout.spec.ts:113::BNPL checkout › merchant can see and refund a Cash App Afterpay order",
+    "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase-with-upe-methods.spec.ts:131::Local payment method checkout with card testing › merchant can see and refund a Bancontact order"
   ],
   "targets": [
     {
@@ -56,6 +57,11 @@
       "command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep \"@fidelity:refund-settlement\"",
       "exit_code": 1,
       "summary": "Passed 8/9 with one worker and zero retries, on approval 2026-08-14-country-gate-parity-refund-3. R6 Bancontact and R7 Cash App Afterpay passed, while R2 failed because its partial refund did not appear on the provider charge within 180 seconds. Quarantine receipts and unresolved provider-write attempts both ended at zero, and the payment-method settings were restored. This result is retained as verification history only and does not close R6 because the full family did not reach 9/9; none of these three new attempts authorizes an R6 ledger closure."
+    },
+    {
+      "command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep \"@fidelity:refund-settlement\"",
+      "exit_code": 0,
+      "summary": "Passed 9/9 in 4.4 minutes with one worker and zero retries, on approval 2026-08-14-refund-reliability-1 — the first complete run this family has had. It follows three reliability fixes made after the four attempts above, each matched to one observed failure: the charge poll now re-asks once when the keep-alive connection dies (the same read-only guard the dispute family already used, extracted so both families share one copy), and the refund-convergence failure now reports the charge refund count, refunded flag and refunded total rather than only \"no refund yet\". No convergence budget was raised and no assertion was weakened; R2, which timed out once, passed here on the unchanged 180-second budget. This run is what closes R6 — every earlier attempt is retained above, including the one where R6 itself failed on the account-country gate. Lock directory ended with zero quarantine receipts and zero unresolved provider write attempts."
     }
   ],
   "reviews": [],
@@ -140,6 +146,15 @@
       },
       "fidelity_claim": "refund-settlement",
       "fidelity_case": "R7"
+    },
+    {
+      "contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase-with-upe-methods.spec.ts:131::Local payment method checkout with card testing › merchant can see and refund a Bancontact order",
+      "target": {
+        "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/provider-fidelity-refunds.spec.ts",
+        "contract": "A full refund of a Bancontact charge settles in EUR as one succeeded provider refund stored on the exact WooCommerce refund"
+      },
+      "fidelity_claim": "refund-settlement",
+      "fidelity_case": "R6"
     }
   ],
   "known_gaps": [],
