@@ -307,10 +307,38 @@
 		var container =
 			gatewayElement &&
 			gatewayElement.querySelector( '#wcpay-core-payment-element' );
+		var sharedContainer;
+		var owningRow;
 
-		return (
-			container || document.getElementById( 'wcpay-core-payment-element' )
+		if ( container ) {
+			return container;
+		}
+
+		sharedContainer = document.getElementById(
+			'wcpay-core-payment-element'
 		);
+
+		// Without a row to compare against there is nothing to attribute the
+		// container to, so the historical fallback stands.
+		if ( ! sharedContainer || ! gatewayElement ) {
+			return sharedContainer;
+		}
+
+		// A container rendered inside another gateway's row belongs to that
+		// gateway. Handing it over mounts a Payment Element the shopper never
+		// fills in, and then the submit handler treats this gateway as
+		// element-backed: it tries to create a card payment method, fails, and
+		// returns early without ever posting the checkout, so Place order does
+		// nothing at all. Methods that collect nothing here -- the redirect and
+		// BNPL gateways -- must simply have no container.
+		owningRow = sharedContainer.closest
+			? sharedContainer.closest( 'li' )
+			: null;
+		if ( owningRow && owningRow !== gatewayElement ) {
+			return null;
+		}
+
+		return sharedContainer;
 	}
 
 	function getPaymentMethodConfigForGateway( paymentGatewayId ) {

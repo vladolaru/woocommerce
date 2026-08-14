@@ -899,6 +899,60 @@ describe( 'WooPayments checkout', () => {
 		expect( mountPaymentElement ).toHaveBeenCalledWith( selectedContainer );
 	} );
 
+	test( 'does not mount a redirect gateway into another gateway payment element container', () => {
+		// A redirect method such as Affirm or Alipay collects nothing on this
+		// page, so it renders no payment-element container of its own. The card
+		// gateway's container is still in the document, and handing that one to
+		// the redirect gateway mounts an element the shopper never fills in and
+		// makes the submit handler try to create a card payment method for a
+		// redirect submission -- which returns early and never posts the
+		// checkout at all, so Place order silently does nothing.
+		document.body.innerHTML =
+			'<form class="checkout">' +
+			'<ul class="payment_methods">' +
+			'<li class="wc_payment_method payment_method_woocommerce_payments">' +
+			'<input id="payment_method_woocommerce_payments" type="radio" name="payment_method" value="woocommerce_payments" />' +
+			'<div class="payment_box payment_method_woocommerce_payments">' +
+			'<div id="wcpay-core-payment-element" data-gateway-marker="card"></div>' +
+			'</div>' +
+			'</li>' +
+			'<li class="wc_payment_method payment_method_woocommerce_payments_affirm">' +
+			'<input id="payment_method_woocommerce_payments_affirm" type="radio" ' +
+			'name="payment_method" value="woocommerce_payments_affirm" checked />' +
+			'<div class="payment_box payment_method_woocommerce_payments_affirm"></div>' +
+			'</li>' +
+			'</ul>' +
+			'<button id="place_order" type="button">Place order</button>' +
+			'</form>';
+		window.wcpay_core_checkout_config = Object.assign(
+			{},
+			window.wcpay_core_checkout_config,
+			{
+				gatewayId: 'woocommerce_payments',
+				paymentMethodTypes: [ 'card' ],
+			}
+		);
+		window.wcpay_core_checkout_config_woocommerce_payments_affirm =
+			Object.assign( {}, window.wcpay_core_checkout_config, {
+				gatewayId: 'woocommerce_payments_affirm',
+				paymentMethodTypes: [ 'affirm' ],
+				paymentMethodsConfig: {
+					affirm: {
+						isReusable: false,
+					},
+				},
+			} );
+
+		const cardContainer = document
+			.getElementById( 'payment_method_woocommerce_payments' )
+			.closest( 'li' )
+			.querySelector( '#wcpay-core-payment-element' );
+
+		require( '../woopayments-checkout' );
+
+		expect( mountPaymentElement ).not.toHaveBeenCalledWith( cardContainer );
+	} );
+
 	test( 'remounts split gateway Stripe Elements when the shopper changes payment method', () => {
 		document.body.innerHTML =
 			'<form class="checkout">' +
