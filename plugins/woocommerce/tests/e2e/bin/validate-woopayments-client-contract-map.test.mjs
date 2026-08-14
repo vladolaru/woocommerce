@@ -8,7 +8,13 @@ import {
 	rmSync,
 	writeFileSync,
 } from 'node:fs';
-import { dirname, join, relative, resolve, sep as pathSeparator } from 'node:path';
+import {
+	dirname,
+	join,
+	relative,
+	resolve,
+	sep as pathSeparator,
+} from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -286,7 +292,10 @@ test( 'rejects a contract without a case_id', () => {
 
 	map.rows[ 0 ].case_id = '';
 
-	assert.throws( () => validate( map ), /Found a contract without a case_id/ );
+	assert.throws(
+		() => validate( map ),
+		/Found a contract without a case_id/
+	);
 } );
 
 test( 'rejects duplicate case IDs', () => {
@@ -714,9 +723,8 @@ test( 'summarizes migration and native-support states', () => {
 	);
 	assert.equal(
 		summary.migrationStateCounts.deferred,
-		contractMap.rows.filter(
-			( row ) => row.migration_state === 'deferred'
-		).length
+		contractMap.rows.filter( ( row ) => row.migration_state === 'deferred' )
+			.length
 	);
 	assert.equal(
 		summary.nativeSupportStateCounts.supported,
@@ -956,24 +964,58 @@ for ( const [ description, packetContent ] of [
 	],
 ] ) {
 	test( `tolerates ${ description }`, () => {
-		assert.doesNotThrow( () =>
-			runFidelityCitation( packetContent, [] )
-		);
+		assert.doesNotThrow( () => runFidelityCitation( packetContent, [] ) );
 	} );
 }
 
 test( 'keeps closures without a fidelity citation backward compatible', () => {
+	// Asserted against a synthetic packet rather than the shipped ledger. This
+	// test used to run the real ledger and prove the partition was never read,
+	// which held only while no fidelity closure existed anywhere in the
+	// repository. The first fidelity closures landed on 2026-08-14, so that
+	// premise is now false and reading the shipped ledger here would assert the
+	// opposite of what the test is named for. The property itself is unchanged
+	// and still worth pinning: a closure carrying no `fidelity_claim` must not
+	// cause the partition to be read at all.
 	assert.doesNotThrow( () =>
-		runCli( [], {
-			ledgerContent,
-			metadata,
-			repositoryRoot,
-			readFidelityPartition: () => {
-				throw new Error(
-					'The partition must not be read without a citation'
-				);
-			},
-			log: () => {},
-		} )
+		runFidelityCitation( '{"closures":[{"contract_id":"whatever"}]}\n', [] )
 	);
+} );
+
+test( 'reads the partition once a closure carries a fidelity citation', () => {
+	// The other half of the pair above, so the backward-compatible path cannot
+	// silently become "never reads the partition at all".
+	let partitionReads = 0;
+
+	assert.doesNotThrow( () =>
+		runFidelityCitation( createCitationPacket(), [
+			createFidelityPartitionRow(),
+		] )
+	);
+
+	const map = cloneContractMap();
+	for ( const row of map.rows ) {
+		deferRow( row );
+	}
+	const row = map.rows.find(
+		( candidate ) => candidate.case_id === fidelityClaimCaseId
+	);
+	row.evidence_path = fidelityPacketPath;
+
+	runCli( [], {
+		ledgerContent: serializeContractMap( map ),
+		metadata,
+		repositoryRoot: createTrackedFileRepository( {
+			[ fidelityPacketPath ]: createCitationPacket(),
+		} ),
+		readFidelityPartition: () => {
+			partitionReads += 1;
+			return serializeFidelityPartition( [
+				createFidelityPartitionRow(),
+			] );
+		},
+		log: () => {},
+	} );
+
+	assert.equal( partitionReads, 1 );
 } );
