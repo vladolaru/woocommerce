@@ -1,4 +1,9 @@
-import type { APIRequestContext, APIResponse, Page } from '@playwright/test';
+import type {
+	APIRequestContext,
+	APIResponse,
+	BrowserContext,
+	Page,
+} from '@playwright/test';
 
 import {
 	expect,
@@ -644,6 +649,18 @@ async function expectSingleRunOrder(
  * this proves is the stronger nearby fact that the run's currency selection does
  * not outlive the run at all, on a fresh session read against the store's own
  * configured default.
+ *
+ * The verification runs on a context this function owns when the case's own has
+ * gone. A protection-on twin registers the test's context with the card-testing
+ * controller, and that controller closes the context it was given when its scope
+ * ends (`card-testing-protection.ts`, `registeredContext.close()`). Clearing
+ * cookies on it afterwards fails with `Target page, context or browser has been
+ * closed`, which is what made `A2p`, `A3p` and `A4p` unable to pass at all
+ * rather than unable to pass reliably. Two cleanup layers both owned the
+ * context; the inner one is right to close it, because closing is a *stronger*
+ * session reset than clearing cookies. What the outer layer must not lose is its
+ * cold read, so when the page is gone it opens a throwaway context of its own to
+ * take that read, and closes it again.
  */
 async function withRestoredShopperSession< Result >(
 	session: ProviderWriteSession,
@@ -651,6 +668,9 @@ async function withRestoredShopperSession< Result >(
 	callback: () => Promise< Result >
 ): Promise< Result > {
 	const defaultCurrency = await readStoreDefaultCurrency( session.adminApi );
+	// Captured before the callback: once the context is closed the browser
+	// handle is the only way back to a usable page.
+	const browser = page.context().browser();
 
 	let scenarioError: unknown;
 	let result: Result | undefined;
@@ -661,10 +681,24 @@ async function withRestoredShopperSession< Result >(
 	}
 
 	let restorationError: unknown;
+	let disposableContext: BrowserContext | undefined;
 	try {
-		await page.context().clearCookies();
-		await page.goto( 'shop/' );
-		const cart = await readShopperCartState( page );
+		let readPage = page;
+		if ( page.isClosed() ) {
+			if ( ! browser ) {
+				throw new Error(
+					'the case closed its browser context and no browser handle is available to take the cold read from'
+				);
+			}
+			disposableContext = await browser.newContext( {
+				baseURL: session.baseURL,
+			} );
+			readPage = await disposableContext.newPage();
+		} else {
+			await page.context().clearCookies();
+		}
+		await readPage.goto( 'shop/' );
+		const cart = await readShopperCartState( readPage );
 		if ( cart.itemsCount !== 0 ) {
 			restorationError = new ResourceQuarantineRequiredError(
 				`The run shopper cart was not emptied: a fresh session still holds ${ cart.itemsCount } item(s).`,
@@ -677,11 +711,22 @@ async function withRestoredShopperSession< Result >(
 			);
 		}
 	} catch ( error ) {
+		// The cause is passed for the chain and named in the message as well.
+		// A restoration failure aborts the family, so the one line a reader
+		// gets has to say what actually went wrong; `cause` alone is not always
+		// rendered by the reporter, and "restoring failed" on its own sends
+		// them to the trace for a string the run already had.
 		restorationError = new ResourceQuarantineRequiredError(
-			'Restoring the run shopper session failed.',
+			`Restoring the run shopper session failed: ${
+				error instanceof Error ? error.message : String( error )
+			}`,
 			'restoration-failed',
 			error
 		);
+	} finally {
+		// Only ever the context this function opened; the case's own is not
+		// this function's to close.
+		await disposableContext?.close();
 	}
 
 	if ( scenarioError !== undefined ) {
