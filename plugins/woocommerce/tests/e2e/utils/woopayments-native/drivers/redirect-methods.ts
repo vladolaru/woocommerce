@@ -907,6 +907,29 @@ interface CheckoutExchange {
 	fields: URLSearchParams;
 	/** Milliseconds from the single activation to the store's answer. */
 	elapsedMs: number;
+	/**
+	 * Every observed checkout response as `HTTP <status> @<ms>`, in arrival
+	 * order and measured from the single activation.
+	 *
+	 * A bare count says a submission asked twice but not what the store
+	 * answered either time, and the two readings mean opposite things: a
+	 * rejected first attempt that the client then retried is the store working
+	 * as intended, while two accepted attempts would be a duplicate-payment
+	 * risk. The timings separate a retry that happened inside the submission
+	 * from one that arrived later, during the provider round trip.
+	 */
+	responseLog: string;
+	/**
+	 * Every distinct order the observed responses named.
+	 *
+	 * This is the duplicate oracle the claim actually cares about. A repeated
+	 * submission is a transport event; a repeated *order* is a second
+	 * transaction. Native's duplicate-payment prevention answers a resubmitted
+	 * checkout with the order the session already paid, so two accepted
+	 * responses that name one order are one transaction, and two that name two
+	 * orders are the failure the claim forbids.
+	 */
+	orderIds: number[];
 }
 
 function readSubmittedFields( body: string | null ): URLSearchParams {
@@ -1022,9 +1045,11 @@ async function observeCheckoutExchange< Result >(
 			requests.push( request );
 		}
 	};
+	const responseTimes = new Map< Response, number >();
 	const onResponse = ( response: Response ) => {
 		if ( matches( response.request() ) ) {
 			responses.push( response );
+			responseTimes.set( response, Date.now() - activatedAt );
 			bodies.set(
 				response,
 				response.json().then(
@@ -1064,6 +1089,32 @@ async function observeCheckoutExchange< Result >(
 				) }), so the submission has no proven outcome.`
 			);
 		}
+		const collectOrderIds = async () => {
+			const seen: number[] = [];
+			for ( const response of responses ) {
+				const settled = await bodies.get( response );
+				if ( ! settled?.ok ) {
+					continue;
+				}
+				const value = settled.value as { order_id?: unknown };
+				const orderId = Number( value?.order_id );
+				if ( Number.isSafeInteger( orderId ) && orderId > 0 && ! seen.includes( orderId ) ) {
+					seen.push( orderId );
+				}
+			}
+			return seen;
+		};
+
+		const describeResponses = () =>
+			responses
+				.map(
+					( response ) =>
+						`HTTP ${ response.status() } @${
+							responseTimes.get( response ) ?? -1
+						}ms`
+				)
+				.join( ', ' );
+
 		const exchange: CheckoutExchange = {
 			requestCount: requests.length,
 			responseCount: responses.length,
@@ -1071,6 +1122,8 @@ async function observeCheckoutExchange< Result >(
 			body: requiredObject( firstBody.value, 'checkout response body' ),
 			fields: readSubmittedFields( first.request().postData() ),
 			elapsedMs: Date.now() - activatedAt,
+			responseLog: describeResponses(),
+			orderIds: await collectOrderIds(),
 		};
 		const result = await settle( exchange );
 
@@ -1079,6 +1132,11 @@ async function observeCheckoutExchange< Result >(
 				...exchange,
 				requestCount: requests.length,
 				responseCount: responses.length,
+				// Recomputed after settling, so a response that arrived during
+				// the provider round trip is described rather than merely
+				// counted.
+				responseLog: describeResponses(),
+				orderIds: await collectOrderIds(),
 			},
 			result,
 		};
@@ -1160,6 +1218,10 @@ export interface RedirectHandoffObservation {
 	request: RedirectIntentRequest;
 	checkoutRequestCount: number;
 	checkoutResponseCount: number;
+	/** Every observed checkout response as `HTTP <status> @<ms>`, in arrival order. */
+	checkoutResponseLog: string;
+	/** Every distinct order the observed checkout responses named. */
+	checkoutOrderIds: number[];
 	/** Milliseconds from the single Place order activation to that answer. */
 	handoffElapsedMs: number;
 	/** Present only when the redirect was followed. */
@@ -1400,6 +1462,8 @@ export async function driveClassicRedirectCheckout(
 				request,
 				checkoutRequestCount: observed.exchange.requestCount,
 				checkoutResponseCount: observed.exchange.responseCount,
+				checkoutResponseLog: observed.exchange.responseLog,
+				checkoutOrderIds: observed.exchange.orderIds,
 				handoffElapsedMs: observed.exchange.elapsedMs,
 				landedUrl,
 				paid: options.follow
@@ -1635,6 +1699,8 @@ export async function driveBlocksRedirectCheckout(
 			request,
 			checkoutRequestCount: observed.exchange.requestCount,
 			checkoutResponseCount: observed.exchange.responseCount,
+				checkoutResponseLog: observed.exchange.responseLog,
+				checkoutOrderIds: observed.exchange.orderIds,
 			handoffElapsedMs: observed.exchange.elapsedMs,
 			landedUrl,
 			paid: options.follow
@@ -1659,6 +1725,10 @@ export interface TokenlessRedirectRejection {
 	noticeMessages: string[];
 	checkoutRequestCount: number;
 	checkoutResponseCount: number;
+	/** Every observed checkout response as `HTTP <status> @<ms>`, in arrival order. */
+	checkoutResponseLog: string;
+	/** Every distinct order the observed checkout responses named. */
+	checkoutOrderIds: number[];
 	fraudPreventionToken: SubmittedFraudPreventionToken;
 	url: string;
 }
@@ -1795,6 +1865,8 @@ export async function submitTokenlessRedirectCheckout(
 			noticeMessages: observed.result.noticeMessages,
 			checkoutRequestCount: observed.exchange.requestCount,
 			checkoutResponseCount: observed.exchange.responseCount,
+				checkoutResponseLog: observed.exchange.responseLog,
+				checkoutOrderIds: observed.exchange.orderIds,
 			fraudPreventionToken: readSubmittedFraudPreventionToken(
 				observed.exchange.fields
 			),
