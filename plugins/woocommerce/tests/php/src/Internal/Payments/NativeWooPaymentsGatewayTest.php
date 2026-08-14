@@ -160,6 +160,115 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Shopper country rules should not restrict gateway availability by merchant country.
+	 * @dataProvider payment_method_country_availability_provider
+	 *
+	 * @param string   $payment_method_id           Payment method ID.
+	 * @param string   $account_country             Merchant account country.
+	 * @param string   $currency                    Checkout currency.
+	 * @param string   $capability_key              Active payment method capability key.
+	 * @param string[] $expected_shopper_countries Expected shopper billing countries.
+	 */
+	public function test_gateway_availability_keeps_shopper_country_rules_separate_from_merchant_country_rules(
+		string $payment_method_id,
+		string $account_country,
+		string $currency,
+		string $capability_key,
+		array $expected_shopper_countries
+	): void {
+		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method_id );
+		$this->assertNotNull( $definition );
+
+		$settings_filter = static function (): array {
+			return array( 'enabled' => 'yes' );
+		};
+		$currency_filter = static function () use ( $currency ): string {
+			return $currency;
+		};
+		$settings_option = "pre_option_woocommerce_woocommerce_payments_{$payment_method_id}_settings";
+		$previous_cart   = WC()->cart;
+		WC()->cart       = new \WC_Cart();
+		WC()->cart->set_total( '0' );
+		add_filter( $settings_option, $settings_filter );
+		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
+
+		try {
+			$gateway = new NativeWooPaymentsGateway( $definition );
+			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $this->create_account_service_for_country( $account_country, $capability_key ) );
+
+			$this->assertTrue( $gateway->is_available(), "{$payment_method_id} should be admitted for a {$account_country} merchant accepting {$currency}." );
+			$this->assertSame(
+				$expected_shopper_countries,
+				$gateway->get_payment_method_definition()->get_supported_countries( $account_country ),
+				"{$payment_method_id} should preserve its shopper billing-country rules."
+			);
+		} finally {
+			remove_filter( $settings_option, $settings_filter );
+			remove_filter( 'pre_option_woocommerce_currency', $currency_filter );
+			WC()->cart = $previous_cart;
+		}
+	}
+
+	/**
+	 * Data provider for merchant and shopper country availability scenarios.
+	 *
+	 * @return array<string,array{string,string,string,string,string[]}>
+	 */
+	public function payment_method_country_availability_provider(): array {
+		return array(
+			'Bancontact admits a US merchant while preserving Belgian shopper filtering' => array(
+				'bancontact',
+				'US',
+				'EUR',
+				'bancontact_payments',
+				array( 'BE' ),
+			),
+			'Affirm admits a nonmatching merchant while preserving domestic shopper filtering' => array(
+				'affirm',
+				'NL',
+				'USD',
+				'affirm_payments',
+				array( 'US', 'CA' ),
+			),
+			'Afterpay admits a nonmatching merchant while preserving domestic shopper filtering' => array(
+				'afterpay_clearpay',
+				'NL',
+				'USD',
+				'afterpay_clearpay_payments',
+				array( 'US', 'CA', 'AU', 'NZ', 'GB' ),
+			),
+			'Klarna admits a nonmatching EEA merchant while preserving calculated shopper filtering' => array(
+				'klarna',
+				'PL',
+				'EUR',
+				'klarna_payments',
+				array( 'AT', 'BE', 'FI', 'FR', 'DE', 'IE', 'IT', 'NL', 'ES' ),
+			),
+			'Alipay preserves unrestricted shopper filtering' => array(
+				'alipay',
+				'US',
+				'USD',
+				'alipay_payments',
+				array(),
+			),
+			'Affirm limits shopper filtering to the US for a US merchant' => array(
+				'affirm',
+				'US',
+				'USD',
+				'affirm_payments',
+				array( 'US' ),
+			),
+			'Cash App Afterpay limits shopper filtering to the US for a US merchant' => array(
+				'afterpay_clearpay',
+				'US',
+				'USD',
+				'afterpay_clearpay_payments',
+				array( 'US' ),
+			),
+		);
+	}
+
+	/**
 	 * @testdox Should hide a split gateway when its gateway setting is disabled.
 	 */
 	public function test_split_gateway_availability_requires_enabled_setting(): void {

@@ -351,11 +351,14 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return false;
 		}
 
-		$currency        = $this->get_checkout_currency();
-		$account_country = $this->get_account_country();
+		$currency             = strtoupper( $this->get_checkout_currency() );
+		$account_country      = $this->get_account_country();
+		$supported_currencies = $this->payment_method_definition->get_supported_currencies( $account_country );
+		if ( ! empty( $supported_currencies ) && ! in_array( $currency, $supported_currencies, true ) ) {
+			return false;
+		}
 
-		return $this->payment_method_definition->is_available_for( $currency, $account_country )
-			&& $this->is_checkout_amount_within_definition_limits( $currency, $account_country );
+		return $this->is_checkout_amount_within_definition_limits( $currency, $account_country );
 	}
 
 	/**
