@@ -870,6 +870,16 @@ export async function fillClassicBilling(
 /**
  * Chooses one redirect method on the classic checkout and proves the shopper
  * was actually offered it under its own name.
+ *
+ * The absence message names all three gates rather than the two a reader would
+ * guess at. `NativeWooPaymentsGateway::is_available()` ends on
+ * `is_available_for( $currency, $account_country )`, and `$account_country` is
+ * the *connected account's* country, not the shopper's — so a method whose
+ * registry entry lists countries the account is not in can never appear here,
+ * however it is configured. Bancontact against this programme's US account is
+ * exactly that: `countries => [ 'BE' ]`, capability active, method enabled, and
+ * still no radio. A message naming only capability and enabled state sends the
+ * next reader to check the two things that are already correct.
  */
 export async function selectClassicRedirectGateway(
 	page: Page,
@@ -880,7 +890,7 @@ export async function selectClassicRedirectGateway(
 	);
 	await expect(
 		methodRadio,
-		`${ method.id } is not offered on this store's checkout, so this case cannot be driven here; the account must actually carry the ${ method.id } capability and the method must be enabled`
+		`${ method.id } is not offered on this store's checkout, so this case cannot be driven here. Three gates have to hold, and the third is the one that is not configurable: the method must be enabled on the store, the connected account must carry the ${ method.id } capability, and the connected account's own country must be in the method's country list in WooPaymentsPaymentMethodRegistry. Check that country list first — it is matched against the account country rather than the shopper's, so no amount of enabling or capability will surface a method the account's country is not in`
 	).toHaveCount( 1 );
 	await methodRadio.check();
 	await expect(
@@ -1806,21 +1816,40 @@ export interface ReturnUrlFacts {
 }
 
 /**
+ * Redacts the two credentials a return URL carries, so a failure can name the
+ * URL it rejected without putting a payment nonce or an order key in a log.
+ */
+function redactReturnUrl( value: string ): string {
+	return value
+		.replace( /(_wpnonce=)[^&]*/, '$1<redacted>' )
+		.replace( /(key=)[^&]*/, '$1<redacted>' );
+}
+
+/**
  * Reads the run-identifying half of a return URL.
  *
  * The nonce the URL also carries is a credential for this one payment: its
  * presence is reported, its value never leaves this function.
+ *
+ * Both rejections name the URL they rejected, with credentials redacted. A
+ * message that only says the shape was wrong sends the reader to guess at a
+ * value the run already had in hand, and this family has lost a cycle to that
+ * more than once.
  */
 export function readReturnUrlFacts( value: string ): ReturnUrlFacts {
 	let parsed: URL;
 	try {
 		parsed = new URL( value );
 	} catch {
-		fail( `return URL ${ value } is not a URL.` );
+		fail( `return URL ${ redactReturnUrl( value ) } is not a URL.` );
 	}
 	const match = parsed.pathname.match( ORDER_RECEIVED_PATH );
 	if ( ! match ) {
-		fail( 'return URL does not name an order-received page.' );
+		fail(
+			`return URL does not name an order-received page: ${ redactReturnUrl(
+				value
+			) }`
+		);
 	}
 
 	return {
