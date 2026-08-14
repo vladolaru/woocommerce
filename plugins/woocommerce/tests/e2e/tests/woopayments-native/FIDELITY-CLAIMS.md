@@ -2,7 +2,7 @@
 
 These claims implement the 2026-08-08 decision before any new provider execution. A “single run” means one authorized, isolated, zero-retry family-suite invocation with one worker; a family suite may drive its explicitly named fixture matrix. Every result must retain public-safe exact-order/provider correlation and prove its own fixture preconditions and cleanup. Passing a family claim does not discharge every family member: `fidelity-partition.tsv` applies Condition 2 from each row's exact `residual_risk`.
 
-The fixed contracts and selectors below are proposed for future implementation. No suite implements these fixed contracts yet, and the proposed selectors have not been run.
+Every family below is implemented and has been run against the real provider. Each `Intended selector` row is the exact invocation that collects that family, and the case count in it is measured from `--list` rather than counted off the contract table — the two differ where one contract item is driven by more than one case, or where one case drives two items. The dated corrections inside a family record where a run contradicted what that family asserted before it ran; they are kept as falsifications, not tidied away.
 
 Each family states its claim in two parts. **Claim** is a proposition about what the real provider does and how native answers it — the thing a run establishes, and the thing a closure cites. **Falsified by** names how a run says it is wrong, so the statement can fail out loud rather than merely go unproven. The fixed contract below each pair is the oracle that makes the falsifier binding; a claim whose oracle is too weak to reject its falsifier is not established by a green run.
 
@@ -84,7 +84,7 @@ Surfaces are not interchangeable here and no case may be read as evidence for on
 
 | Contract item | Fixed value |
 |---|---|
-| Intended selector | Proposed future selector; it does not exist yet: `pnpm exec playwright test plugins/woocommerce/tests/e2e/tests/woopayments-native/provider-fidelity.spec.ts --project=chromium --grep "@fidelity:card-decline-vocabulary" --workers=1 --retries=0` |
+| Intended selector | `WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep "@fidelity:card-decline-vocabulary"`, which collects exactly the fourteen cases below from `plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-card-declines.spec.ts`. The five `D-PI-*` and five `D-SI-*` contract rows above are ten *items*; the suite collects fourteen cases, because several items are driven by more than one case. |
 | `D-PI-generic` | Classic native checkout, USD 10.01, card `4000000000000002`; exactly one PaymentIntent for `1001 usd` ends `requires_payment_method` with top-level error `card_declined` and decline code `generic_decline`, one semantic generic-decline alert, and exactly one unpaid run-owned Woo order. |
 | `D-PI-expired` | Blocks native checkout, USD 10.02, card `4000000000000069`; exactly one PaymentIntent for `1002 usd` ends `requires_payment_method` with top-level error `expired_card` and decline code `expired_card`, one expired-card semantic alert, and exactly one unpaid run-owned Woo order. |
 | `D-PI-insufficient` | Blocks native checkout, USD 10.03, card `4000000000009995`; exactly one PaymentIntent for `1003 usd` ends `requires_payment_method` with top-level error `card_declined` and decline code `insufficient_funds`, one insufficient-funds semantic alert, and exactly one unpaid run-owned Woo order. |
@@ -166,7 +166,7 @@ Save-at-checkout token creation is *not* excluded: `T4` and `T5` name it, on the
 
 | Contract item | Fixed value |
 |---|---|
-| Intended selector | Proposed future selector; it does not exist yet: `pnpm exec playwright test plugins/woocommerce/tests/e2e/tests/woopayments-native/provider-fidelity.spec.ts --project=chromium --grep "@fidelity:redirect-method-provider-outcome" --workers=1 --retries=0` |
+| Intended selector | `WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep "@fidelity:redirect-method-provider-outcome"`, which collects exactly the nine cases below from `plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-redirect-methods.spec.ts`. |
 | `A1` Alipay | CTP off; Alipay enabled; shopper/store currency USD; one USD 12.00 order. Request method is `alipay`, amount `1200`, currency `usd`, and the run return URL; one provider redirect is followed once and the same PaymentIntent becomes `succeeded` with one captured charge. |
 | `A1b` Alipay on Blocks | Repeat `A1`'s exact proposition — method `alipay`, amount `1200`, currency `usd`, run return URL, one redirect followed once, the same PaymentIntent `succeeded` with one captured charge — driven unconditionally through the native Blocks checkout surface. The method or surface being unavailable fails the case; there is no conditional skip. |
 | `A2` Affirm | CTP off; Affirm enabled; USD 100.00 order and eligible US address. Request method is `affirm`, amount `10000`, currency `usd`, and the run return URL; one provider redirect is followed once and the same PaymentIntent becomes `succeeded` with one captured charge. |
@@ -262,7 +262,7 @@ The protection-on twins carry one boundary that must not be overstated. The targ
 
 | Contract item | Fixed value |
 |---|---|
-| Intended selector | Proposed future selector; it does not exist yet: `pnpm exec playwright test plugins/woocommerce/tests/e2e/tests/woopayments-native/provider-fidelity.spec.ts --project=chromium --grep "@fidelity:refund-settlement" --workers=1 --retries=0` |
+| Intended selector | `WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep "@fidelity:refund-settlement"`, which collects exactly the nine cases below from `plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/provider-fidelity-refunds.spec.ts`. `RP` is not a case of its own: it runs inside `R7`, which is why the suite collects nine rather than the ten items listed above. |
 | `R1` card full | Source is one captured `4242` USD 10.99 charge; refund `1099 usd`; one provider refund becomes `succeeded`, the Woo refund stores its ID once, and order refunded total is USD 10.99. |
 | `R1v` transaction view | After `R1` converges, the merchant loads the native transaction view for `R1`'s charge and asserts the refund's semantic facts — amount USD 10.99, refunded status, and the merchant-supplied refund reason — with bounded async polling for propagation. The assertion is semantic, not copy-exact; native presentation wording may differ. |
 | `R2` card partial | Source is one captured `4242` charge on a three-line USD 10.99 order; the refund selects the two intended lines by order-item ID for `333 usd`; one provider refund becomes `succeeded`, the Woo refund stores its ID once and its per-line allocation across exactly those two order items is asserted, and remaining refundable amount is USD 7.66. |
@@ -361,7 +361,7 @@ against production before it is treated as a live defect.
 
 | Contract item | Fixed value |
 |---|---|
-| Intended selector | Proposed future selector; it does not exist yet: `pnpm exec playwright test plugins/woocommerce/tests/e2e/tests/woopayments-native/provider-fidelity.spec.ts --project=chromium --grep "@fidelity:manual-authorization-capture" --workers=1 --retries=0` |
+| Intended selector | `WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep "@fidelity:manual-authorization-capture"`, which collects exactly the one cases below from `plugins/woocommerce/tests/e2e/tests/woopayments-native/pilots/merchant-manual-capture.spec.ts`. |
 | `C1` input | Snapshot raw capture mode, set manual capture, create one unique USD 10.99 product/cart, use card `4242424242424242`, and activate Place order once; then activate Capture once for the exact order. |
 | Authorization outcome | Exactly one `1099 usd` PaymentIntent is `requires_capture`, its one charge is uncaptured for `1099 usd`, the order is `on-hold`, and exactly one authorization event/note exists. |
 | Capture outcome | The same intent becomes `succeeded`; the same charge is captured for `1099 usd`; the order becomes `processing`; exactly one capture event/note exists; a final read proves no second capture. |
@@ -392,7 +392,7 @@ Financial reconciliation covers capture only when an authorized fixture is actua
 
 | Contract item | Fixed value |
 |---|---|
-| Intended selector | Proposed future selector; it does not exist yet: `pnpm exec playwright test plugins/woocommerce/tests/e2e/tests/woopayments-native/provider-fidelity.spec.ts --project=chromium --grep "@fidelity:dispute-lifecycle" --workers=1 --retries=0` |
+| Intended selector | `WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep "@fidelity:dispute-lifecycle"`, which collects exactly the four cases below from `plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/provider-fidelity-disputes.spec.ts`. |
 | Shared creation | Three independent fresh shoppers/products use provider dispute test card `4000000000000259` for one captured `5000 usd` charge each. Each produces exactly one fraudulent dispute in `needs_response`, one created event, one `on-hold` order, and matching dispute ID, charge ID, order ID, amount, currency, reason, and due date. |
 | `DP1` accept | Send one close request for the exact first dispute ID. The same dispute becomes `lost`; exactly one closed event/note and one capped local dispute-refund effect apply. No evidence-submit request occurs. |
 | `DP2` win | Submit one physical-product evidence payload containing the provider's exact `winning_evidence` test value with `submit=true`. The same dispute becomes `under_review` and then `won`; exactly one update and one closed-won effect apply. |
@@ -428,7 +428,7 @@ The provider-created gate explicitly excludes later dispute lifecycle states, ev
 
 | Contract item | Fixed value |
 |---|---|
-| Intended selector | Proposed future selector; it does not exist yet: `pnpm exec playwright test plugins/woocommerce/tests/e2e/tests/woopayments-native/provider-fidelity.spec.ts --project=chromium --grep "@fidelity:subscription-provider-lifecycle" --workers=1 --retries=0` |
+| Intended selector | `WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep "@fidelity:subscription-provider-lifecycle"`, which collects exactly the seven cases below from `plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-subscriptions.spec.ts`. |
 | Shared input | Pinned active WooCommerce Subscriptions fixture; isolated tax-free/shipping-free store; USD 9.99 monthly product, one-month interval, native Card, and fresh provider customer. Paid cases use `4242424242424242`; the new-method case uses `5555555555554444`. |
 | `S1` signup fee | Product has one USD 1.99 signup fee. One submit creates one USD 11.98 parent order, one active subscription, one token/method/customer graph, one `1198 usd` succeeded PaymentIntent, one captured charge, and zero renewal orders. Provider metadata identifies initial recurring payment. The parent order record carries exactly one USD 9.99 recurring line item and one USD 1.99 signup-fee line item summing to the proven `1198 usd` provider total. |
 | `S2` no signup fee | Product has no signup fee. One submit creates one USD 9.99 parent order, one active subscription, one token/method/customer graph, one `999 usd` succeeded PaymentIntent, and one captured charge. The parent order record carries zero fee lines, asserting at the record level that the signup-fee component is exactly zero. |
@@ -465,7 +465,7 @@ Bucket-E explicitly excludes subscription and token state. HARNESS section 3's j
 
 | Contract item | Fixed value |
 |---|---|
-| Intended selector | Proposed future selector; it does not exist yet: `pnpm exec playwright test plugins/woocommerce/tests/e2e/tests/woopayments-native/provider-fidelity.spec.ts --project=chromium --grep "@fidelity:multi-currency-settlement" --workers=1 --retries=0` |
+| Intended selector | `WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep "@fidelity:multi-currency-settlement"`, which collects exactly the three cases below from `plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-multi-currency.spec.ts`. |
 | `M1` USD | Store settlement currency USD; shopper currency USD; one USD 10.99 `4242` order. Exactly one `1099 usd` succeeded PaymentIntent and captured charge bind the exact order. |
 | `M2` EUR conversion | Store settlement currency USD; shopper currency EUR; one EUR 12.34 `4242` order. Exactly one `1234 eur` succeeded PaymentIntent and captured charge bind the order; Woo stored exchange rate and USD settlement amount equal the exact provider balance-transaction fields. The provider response supplies the numeric rate; equality, not a guessed rate, is asserted. Stored fee and net are scoped to parity with the WooPayments client — see the 2026-08-13 correction. |
 | `M3` immutability | After `M2`, switch the same shopper session from EUR to USD and hard-reload order receipt/My Account. The `M2` order ID, `1234 eur` total, intent/charge IDs, and stored/provider settlement graph remain byte-identical to their `M2` snapshots. No new order or charge occurs. |
