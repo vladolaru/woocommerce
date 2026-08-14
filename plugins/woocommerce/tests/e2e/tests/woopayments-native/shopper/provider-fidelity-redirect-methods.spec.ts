@@ -1741,5 +1741,4 @@ test.describe( 'WooPayments native redirect-method provider outcome fidelity', (
 			] );
 		}
 	);
-
 } );

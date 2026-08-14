@@ -1045,6 +1045,9 @@ async function observeCheckoutExchange< Result >(
 			requests.push( request );
 		}
 	};
+	// Declared before the handlers that close over it: the response handler
+	// timestamps each arrival relative to this activation.
+	const activatedAt = Date.now();
 	const responseTimes = new Map< Response, number >();
 	const onResponse = ( response: Response ) => {
 		if ( matches( response.request() ) ) {
@@ -1071,8 +1074,6 @@ async function observeCheckoutExchange< Result >(
 	}, CHECKOUT_EXCHANGE_TIMEOUT_MS );
 	const clearResponseTimer = () => clearTimeout( responseTimer );
 
-	const activatedAt = Date.now();
-
 	try {
 		await activate();
 		await responseSignal;
@@ -1098,7 +1099,11 @@ async function observeCheckoutExchange< Result >(
 				}
 				const value = settled.value as { order_id?: unknown };
 				const orderId = Number( value?.order_id );
-				if ( Number.isSafeInteger( orderId ) && orderId > 0 && ! seen.includes( orderId ) ) {
+				if (
+					Number.isSafeInteger( orderId ) &&
+					orderId > 0 &&
+					! seen.includes( orderId )
+				) {
 					seen.push( orderId );
 				}
 			}
@@ -1699,8 +1704,8 @@ export async function driveBlocksRedirectCheckout(
 			request,
 			checkoutRequestCount: observed.exchange.requestCount,
 			checkoutResponseCount: observed.exchange.responseCount,
-				checkoutResponseLog: observed.exchange.responseLog,
-				checkoutOrderIds: observed.exchange.orderIds,
+			checkoutResponseLog: observed.exchange.responseLog,
+			checkoutOrderIds: observed.exchange.orderIds,
 			handoffElapsedMs: observed.exchange.elapsedMs,
 			landedUrl,
 			paid: options.follow
@@ -1865,8 +1870,8 @@ export async function submitTokenlessRedirectCheckout(
 			noticeMessages: observed.result.noticeMessages,
 			checkoutRequestCount: observed.exchange.requestCount,
 			checkoutResponseCount: observed.exchange.responseCount,
-				checkoutResponseLog: observed.exchange.responseLog,
-				checkoutOrderIds: observed.exchange.orderIds,
+			checkoutResponseLog: observed.exchange.responseLog,
+			checkoutOrderIds: observed.exchange.orderIds,
 			fraudPreventionToken: readSubmittedFraudPreventionToken(
 				observed.exchange.fields
 			),
