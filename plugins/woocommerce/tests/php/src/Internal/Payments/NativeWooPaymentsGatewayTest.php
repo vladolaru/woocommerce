@@ -2903,6 +2903,117 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Create a paid order carrying the provider identifiers native writes.
+	 *
+	 * @param string $intention_status Provider intention status meta.
+	 * @param string $intent_id        Provider intent ID meta.
+	 * @param string $charge_id        Provider charge ID meta.
+	 * @return WC_Order
+	 */
+	private function create_order_with_provider_meta( string $intention_status, string $intent_id, string $charge_id = '' ): WC_Order {
+		$order = $this->create_order();
+		$order->update_meta_data( '_intention_status', $intention_status );
+		$order->update_meta_data( '_intent_id', $intent_id );
+		if ( '' !== $charge_id ) {
+			$order->update_meta_data( '_charge_id', $charge_id );
+		}
+		$order->save();
+
+		return $order;
+	}
+
+	/**
+	 * A succeeded payment links the admin order page to its transaction details.
+	 *
+	 * Native writes `_transaction_id` on every paid order, so WooCommerce renders the
+	 * identifier on the order page either way; answering `get_transaction_url()` is
+	 * what makes it the link the merchant had before switching runtimes.
+	 */
+	public function test_get_transaction_url_links_a_succeeded_payment_to_its_intent(): void {
+		$order   = $this->create_order_with_provider_meta( 'succeeded', 'pi_transaction_url', 'ch_transaction_url' );
+		$gateway = new NativeWooPaymentsGateway();
+
+		$url = $gateway->get_transaction_url( $order );
+
+		$this->assertStringContainsString( 'page=wc-admin', $url );
+		$this->assertStringContainsString( 'id=pi_transaction_url', $url );
+		// The path is carried unencoded because native composes this through the same
+		// admin-URL helper its order notes use, so a note's link and the order page's
+		// link are byte-identical. The client plugin rawurlencodes it instead; both
+		// forms read back as the same `path` query value, so the destination is the
+		// same and the internal consistency is the more useful property.
+		$this->assertStringContainsString( 'path=/payments/transactions/details', $url );
+	}
+
+	/**
+	 * An authorized-but-uncaptured payment still has a transaction to show.
+	 */
+	public function test_get_transaction_url_links_an_uncaptured_authorization(): void {
+		$order   = $this->create_order_with_provider_meta( 'requires_capture', 'pi_uncaptured' );
+		$gateway = new NativeWooPaymentsGateway();
+
+		$this->assertStringContainsString( 'id=pi_uncaptured', $gateway->get_transaction_url( $order ) );
+	}
+
+	/**
+	 * The charge ID carries the link when no intent ID was stored.
+	 */
+	public function test_get_transaction_url_falls_back_to_the_charge_id(): void {
+		$order   = $this->create_order_with_provider_meta( 'succeeded', '', 'ch_only' );
+		$gateway = new NativeWooPaymentsGateway();
+
+		$this->assertStringContainsString( 'id=ch_only', $gateway->get_transaction_url( $order ) );
+	}
+
+	/**
+	 * An unauthorized intention has no payment to link to.
+	 *
+	 * @dataProvider provider_unlinkable_intention_statuses
+	 *
+	 * @param string $intention_status Provider intention status meta.
+	 */
+	public function test_get_transaction_url_is_empty_for_an_unauthorized_intention( string $intention_status ): void {
+		$order   = $this->create_order_with_provider_meta( $intention_status, 'pi_unauthorized' );
+		$gateway = new NativeWooPaymentsGateway();
+
+		$this->assertSame( '', $gateway->get_transaction_url( $order ) );
+	}
+
+	/**
+	 * Intention statuses that must not produce a transaction link.
+	 *
+	 * @return array<string, array<string>>
+	 */
+	public function provider_unlinkable_intention_statuses(): array {
+		return array(
+			'requires payment method' => array( 'requires_payment_method' ),
+			'requires action'         => array( 'requires_action' ),
+			'canceled'                => array( 'canceled' ),
+			'no status recorded'      => array( '' ),
+		);
+	}
+
+	/**
+	 * A SetupIntent stores no payment, so it must not be linked as a transaction.
+	 */
+	public function test_get_transaction_url_refuses_a_setup_intent(): void {
+		$order   = $this->create_order_with_provider_meta( 'succeeded', 'seti_saved_card' );
+		$gateway = new NativeWooPaymentsGateway();
+
+		$this->assertSame( '', $gateway->get_transaction_url( $order ) );
+	}
+
+	/**
+	 * An order carrying no provider identifier has nothing to link.
+	 */
+	public function test_get_transaction_url_is_empty_without_provider_identifiers(): void {
+		$order   = $this->create_order_with_provider_meta( 'succeeded', '' );
+		$gateway = new NativeWooPaymentsGateway();
+
+		$this->assertSame( '', $gateway->get_transaction_url( $order ) );
+	}
+
+	/**
 	 * Create an order for gateway tests.
 	 *
 	 * @return WC_Order

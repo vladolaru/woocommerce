@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
+use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
@@ -62,6 +63,19 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * Native payment method capability for express checkout methods.
 	 */
 	private const PAYMENT_METHOD_CAPABILITY_EXPRESS_CHECKOUT = 'express_checkout';
+
+	/**
+	 * Provider intention statuses that mean a payment exists to link to.
+	 *
+	 * Mirrors the WooPayments client plugin's `Intent_Status::AUTHORIZED_STATUSES`,
+	 * so an order links to its transaction under exactly the same conditions in both
+	 * runtimes.
+	 */
+	private const AUTHORIZED_INTENTION_STATUSES = array(
+		'succeeded',
+		'requires_capture',
+		'processing',
+	);
 
 	/**
 	 * Shopper-facing card brand icons.
@@ -342,6 +356,56 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 		return $this->payment_method_definition->is_available_for( $currency, $account_country )
 			&& $this->is_checkout_amount_within_definition_limits( $currency, $account_country );
+	}
+
+	/**
+	 * Get the admin transaction-details URL for an order, called by WooCommerce core.
+	 *
+	 * WooCommerce renders the order's transaction ID on the admin order page, and links
+	 * it when the gateway answers this with a URL. Native writes `_transaction_id` on
+	 * every paid order, so without this the ID renders as plain text and the merchant
+	 * loses the click-through to payment details they had before switching — a
+	 * user-visible parity regression rather than a missing nicety.
+	 *
+	 * Deliberately matched to the WooPayments client plugin's `get_transaction_url()`:
+	 * the same authorized-status gate, the same preference for the intent ID with the
+	 * charge ID as fallback, the same refusal to link a SetupIntent (which has no
+	 * transaction to show). The URL is composed through the shared admin helper the
+	 * order notes already use, so a note's link and the order page's link resolve to
+	 * the same place.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @param WC_Order $order Order shown on the admin order page.
+	 * @return string Transaction details URL, or an empty string when there is nothing to link.
+	 */
+	public function get_transaction_url( $order ): string {
+		if ( ! $order instanceof WC_Order ) {
+			return '';
+		}
+
+		$intention_status = (string) $order->get_meta( '_intention_status', true );
+		if ( ! in_array( $intention_status, self::AUTHORIZED_INTENTION_STATUSES, true ) ) {
+			return '';
+		}
+
+		$intent_id = (string) $order->get_meta( '_intent_id', true );
+		$charge_id = (string) $order->get_meta( '_charge_id', true );
+
+		if ( '' === $intent_id && '' === $charge_id ) {
+			return '';
+		}
+
+		// A SetupIntent stores no payment, so there is no transaction page to send
+		// the merchant to.
+		if ( false !== strpos( $intent_id, 'seti_' ) ) {
+			return '';
+		}
+
+		return Utils::wc_payments_legacy_admin_url(
+			'/payments/transactions/details',
+			array( 'id' => '' !== $intent_id ? $intent_id : $charge_id )
+		);
 	}
 
 	/**
