@@ -26,7 +26,9 @@
       "contract": "the refund-settlement provider-fidelity family"
     }
   ],
-  "implementation_commits": [],
+  "implementation_commits": [
+    "ee807fbed23bcec414cc4208d558b9f791f8138c"
+  ],
   "execution_fixture": {
     "site": "http://store8889.localhost:8889",
     "wpcom_blog_id": 4,
@@ -39,6 +41,21 @@
       "command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep \"@fidelity:refund-settlement\"",
       "exit_code": 1,
       "summary": "Passed 8/9 in 3.8 minutes with one worker and zero retries, on approval 2026-08-14-refund-settlement-rerun. The run exits 1 and that is retained rather than replaced: R6 Bancontact failed and its ledger row is deliberately NOT closed by this packet. R6 cannot be driven on this fixture because WooPaymentsPaymentMethodRegistry gives Bancontact countries [BE] and NativeWooPaymentsGateway::is_available() matches that against the connected account country, which is US here; the account does carry bancontact_payments active, so enabling the method changes nothing. The nine cases this packet does close each passed: R1, R1v, R2 (both allocations), R3, R3v, R4 Alipay, R5 Affirm and R7 Cash App Afterpay with its same-key replay. R7 is an improvement on the 2026-08-12 result, where the replay could not run at all. Lock directory ended clean."
+    },
+    {
+      "command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep \"@fidelity:refund-settlement\"",
+      "exit_code": 1,
+      "summary": "Passed 8/9 with one worker and zero retries, on approval 2026-08-14-country-gate-parity-refund. R6 Bancontact passed after the shopper-country availability fix, while R7 failed when a store REST request ended with a socket hang up. Quarantine receipts and unresolved provider-write attempts both ended at zero, and the payment-method settings were restored. This result is retained as verification history only and does not close R6 because the full family did not reach 9/9."
+    },
+    {
+      "command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep \"@fidelity:refund-settlement\"",
+      "exit_code": 1,
+      "summary": "Passed 8/9 with one worker and zero retries, on approval 2026-08-14-country-gate-parity-refund-2. R6 Bancontact passed, while R7 failed because Chromium could not read the checkout response body. The run quarantined four resources and left one unresolved write attempt. The follow-up audit proved that the only provider object at issue was one test-mode Cash App Afterpay intent in requires_action with amount_received 0 and no charge, refund, or money movement; the run-owned product was removed, all receipts were preserved with a resolution record, and the lock lineage was rotated. No raw provider identifier is retained here. This result is retained as verification history only and does not close R6 because the full family did not reach 9/9."
+    },
+    {
+      "command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep \"@fidelity:refund-settlement\"",
+      "exit_code": 1,
+      "summary": "Passed 8/9 with one worker and zero retries, on approval 2026-08-14-country-gate-parity-refund-3. R6 Bancontact and R7 Cash App Afterpay passed, while R2 failed because its partial refund did not appear on the provider charge within 180 seconds. Quarantine receipts and unresolved provider-write attempts both ended at zero, and the payment-method settings were restored. This result is retained as verification history only and does not close R6 because the full family did not reach 9/9; none of these three new attempts authorizes an R6 ledger closure."
     }
   ],
   "reviews": [],
