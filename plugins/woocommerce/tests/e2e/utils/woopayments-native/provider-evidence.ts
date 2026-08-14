@@ -325,3 +325,49 @@ export async function waitForPaymentState(
 		await delay( Math.min( 500, remainingMs ) );
 	}
 }
+
+/** How long to wait before re-asking a store read whose connection died. */
+const TRANSPORT_RETRY_DELAY_MS = 2_000;
+
+/**
+ * Ask the store for one charge, re-asking once if the connection dies.
+ *
+ * Both provider families poll this same charge every few seconds for the whole
+ * of a long convergence budget, and the request context's keep-alive connection
+ * is dropped often enough under that load to fail a case with
+ * `apiRequestContext.get: socket hang up`. The same request answers HTTP 200 in
+ * about a second server-side, so the connection died rather than the store
+ * refusing — a non-answer, not an answer. It has cost the refund family two
+ * otherwise-complete runs and the dispute family one.
+ *
+ * Retrying is safe *because this is a read*. The harness's no-retry rule exists
+ * so a submission is never made twice; nothing here writes, so re-asking cannot
+ * duplicate anything. A second failure still fails the case: this closes a
+ * transport hole, not an evidence gap.
+ *
+ * @param restApi  Authenticated store REST context.
+ * @param chargeId Exact provider charge ID.
+ * @return The store's answer.
+ */
+export async function getChargeWithTransportRetry(
+	restApi: APIRequestContext,
+	chargeId: string
+): Promise< APIResponse > {
+	const path = `/wp-json/wc/v3/payments/charges/${ encodeURIComponent(
+		chargeId
+	) }`;
+	try {
+		return await restApi.get( path );
+	} catch ( error ) {
+		await delay( TRANSPORT_RETRY_DELAY_MS );
+		try {
+			return await restApi.get( path );
+		} catch ( retryError ) {
+			throw new Error(
+				`WooPayments charge ${ chargeId } could not be read: the connection failed twice (${ String(
+					retryError
+				) }), so the provider's answer is unknown rather than absent.`
+			);
+		}
+	}
+}

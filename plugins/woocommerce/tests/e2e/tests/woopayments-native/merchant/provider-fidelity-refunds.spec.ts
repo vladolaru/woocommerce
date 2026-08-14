@@ -23,6 +23,7 @@ import {
 	type RedirectMethod,
 } from '../../../utils/woopayments-native/drivers/redirect-methods';
 import { readProviderCardEvidence } from '../../../utils/woopayments-native/provider-card-evidence';
+import { getChargeWithTransportRetry } from '../../../utils/woopayments-native/provider-evidence';
 import {
 	getPaymentEvidence,
 	type PaymentEvidence,
@@ -311,11 +312,7 @@ async function readChargeRefundState(
 	chargeId: string
 ): Promise< ChargeRefundState > {
 	const charge = await readJson< Record< string, unknown > >(
-		await restApi.get(
-			`/wp-json/wc/v3/payments/charges/${ encodeURIComponent(
-				chargeId
-			) }`
-		),
+		await getChargeWithTransportRetry( restApi, chargeId ),
 		`Provider charge ${ chargeId } read`
 	);
 	if ( charge.id !== chargeId ) {
@@ -772,8 +769,19 @@ async function waitForSettledRefund(
 			);
 		}
 		const refund = charge.refunds[ 0 ];
+		// Described even when no refund has appeared. "No refund yet" alone
+		// cannot distinguish provider propagation lag from a refund that was
+		// never created, and this poll runs for minutes before failing -- so the
+		// charge's own refunded flag and refunded total are carried too, which
+		// move as soon as the provider has accepted anything at all.
+		lastSeen = refund
+			? `${ refund.id } ${ refund.status }`
+			: `no provider refund yet (charge refunds=${
+					charge.refunds.length
+			  }, refunded=${ String( charge.refunded ) }, amount refunded=${
+					charge.amountRefundedMinor
+			  } ${ charge.currency })`;
 		if ( refund ) {
-			lastSeen = `${ refund.id } ${ refund.status }`;
 			if ( refund.status === 'succeeded' ) {
 				const signature = `${ refund.id }|${ refund.status }|${ refund.amountMinor }|${ refund.currency }`;
 				if ( signature === previousSignature ) {
