@@ -947,7 +947,9 @@ async function waitForCreatedDispute(
 		const remaining = deadline - Date.now();
 		if ( remaining <= 0 ) {
 			fail(
-				`charge ${ paid.chargeId } did not reach a created dispute with its native effects within ${ CREATION_BUDGET_MS }ms (last seen: ${ lastSeen }). The order's own status history was: ${
+				`charge ${
+					paid.chargeId
+				} did not reach a created dispute with its native effects within ${ CREATION_BUDGET_MS }ms (last seen: ${ lastSeen }). The order's own status history was: ${
 					lastHistory.length > 0
 						? lastHistory.join( ' | ' )
 						: 'no status transition at all'

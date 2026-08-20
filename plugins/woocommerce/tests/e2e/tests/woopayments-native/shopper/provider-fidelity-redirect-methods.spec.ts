@@ -482,9 +482,22 @@ function expectRequestedRedirect(
 ): void {
 	// Deliberately not asserted here: how many times the client submitted, and
 	// how many answers came back. Both are transport facts, and on the Blocks
-	// surface neither is stable -- the client resubmits the Store API checkout for
-	// a redirect method in roughly a third of runs, and a submission whose answer
-	// arrives after the navigation is never observed at all.
+	// surface neither is stable -- though not for the reason this comment used
+	// to give.
+	//
+	// The client does not resubmit. In roughly a third of runs a second request
+	// reaches `/wc/store/v1/checkout` a few seconds after the order is placed,
+	// and it is `updateDraftOrder` from `data/checkout/push-changes.ts`: a
+	// `PUT ...?__experimental_calc_totals=true` that `@wordpress/api-fetch`'s
+	// `httpV1Middleware` tunnels as a POST carrying `X-HTTP-Method-Override`, so
+	// a counter keyed on method and path cannot tell a draft-order sync from a
+	// second order placement. Measured by wrapping `window.fetch` and recording
+	// a stack per checkout request: the two requests are 5.9 seconds apart, the
+	// first at checkout status `processing` and the second at `after_processing`
+	// with no error, the second's stack running through `updateDraftOrder`. It
+	// is intermittent because `push-changes` only pushes when the checkout data
+	// it watches actually changed. A submission whose answer arrives after the
+	// navigation is never observed at all.
 	//
 	// What the claim forbids is a second *transaction*, and that is already proven
 	// twice from the store, without a browser in the loop: `readSubmittedOrder`
