@@ -2,7 +2,7 @@
   "schema_version": 2,
   "slice_id": "redirect-method-provider-outcome-fidelity-closure",
   "wc_base_commit": "48a85823c254285c3c4a398556452d66680380b9",
-  "verified_at_commit": "6646cbe64550ac8e21bf3c55ef55ddd4925bf263",
+  "verified_at_commit": "b94578719a36b9e6ba3323ab7ad0a8da84d0be37",
   "reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
   "source_test_paths": [
     "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-redirect-methods.spec.ts"
@@ -10,7 +10,13 @@
   "source_test_sha256": "1b74f1c5b4c948a302bd6addaf5caf73896286d1a7db0d8b6099d04086159503",
   "contract_ids": [
     "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase-with-upe-methods.spec.ts:125::Local payment method checkout with card testing › Card testing protection enabled: false › should successfully place order with Bancontact",
-    "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase-with-upe-methods.spec.ts:125::Local payment method checkout with card testing › Card testing protection enabled: true › should successfully place order with Bancontact"
+    "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase-with-upe-methods.spec.ts:125::Local payment method checkout with card testing › Card testing protection enabled: true › should successfully place order with Bancontact",
+    "default::chromium::tests/e2e/specs/wcpay/shopper/alipay-checkout-purchase.spec.ts:60::Alipay Checkout › checkout on shortcode checkout page",
+    "default::chromium::tests/e2e/specs/wcpay/shopper/alipay-checkout-purchase.spec.ts:84::Alipay Checkout › checkout on block-based checkout page › completes payment successfully",
+    "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-bnpls-checkout.spec.ts:98::BNPL checkout › Carding protection false › Checkout with Affirm",
+    "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-bnpls-checkout.spec.ts:98::BNPL checkout › Carding protection true › Checkout with Affirm",
+    "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-bnpls-checkout.spec.ts:98::BNPL checkout › Carding protection false › Checkout with Cash App Afterpay",
+    "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-bnpls-checkout.spec.ts:98::BNPL checkout › Carding protection true › Checkout with Cash App Afterpay"
   ],
   "targets": [
     {
@@ -32,6 +38,11 @@
       "command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep \"@fidelity:redirect-method-provider-outcome\"",
       "exit_code": 0,
       "summary": "Passed 9/9 in approximately 6.3 minutes with one worker and zero retries, on approval 2026-08-14-country-gate-parity-redirect-2. A4 proved one Bancontact EUR checkout sent the provider method bancontact with the run-owned return URL and settled one succeeded intent with one captured charge. A4p proved card-testing protection admitted the token-bearing Bancontact checkout to the same settled graph while the tokenless submission created no provider object. The lock directory ended with zero quarantine receipts and zero unresolved provider-write attempts, and enabled payment methods were restored to the original card-only set. This packet closes only A4 and A4p; the family's other cases are outside this packet."
+    },
+    {
+      "command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep \"@fidelity:redirect-method-provider-outcome\"",
+      "exit_code": 0,
+      "summary": "Passed 9/9 in 7.1 minutes with one worker and zero retries, on approval 2026-08-20-body-dependency-removal-2. This is the run that closes the six rows added here: Alipay on the shortcode and block-based surfaces, and Affirm and Cash App Afterpay each under card-testing protection off and on. The two Bancontact rows closed earlier in this packet on their own 9/9 run. The run also exercised the removal of the drivers dependence on the checkout response body: order identity now comes from the store order delta, so the Blocks Alipay case no longer fails when a navigation frees the response buffer before Chromium can answer for it. Lock directory ended with zero quarantine receipts and zero unresolved provider write attempts."
     }
   ],
   "reviews": [],
@@ -53,6 +64,54 @@
       },
       "fidelity_claim": "redirect-method-provider-outcome",
       "fidelity_case": "A4p"
+    },
+    {
+      "contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/alipay-checkout-purchase.spec.ts:60::Alipay Checkout › checkout on shortcode checkout page",
+      "target": {
+        "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-redirect-methods.spec.ts",
+        "contract": "One Alipay checkout sends the provider method alipay for 1200 usd with this run order-received return URL, and the single redirect settles that same PaymentIntent to succeeded with one captured charge"
+      },
+      "fidelity_claim": "redirect-method-provider-outcome"
+    },
+    {
+      "contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/alipay-checkout-purchase.spec.ts:84::Alipay Checkout › checkout on block-based checkout page › completes payment successfully",
+      "target": {
+        "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-redirect-methods.spec.ts",
+        "contract": "One Alipay checkout on the native Blocks surface sends the provider method alipay for 1200 usd with this run order-received return URL, and the single redirect settles that same PaymentIntent to succeeded with one captured charge"
+      },
+      "fidelity_claim": "redirect-method-provider-outcome"
+    },
+    {
+      "contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-bnpls-checkout.spec.ts:98::BNPL checkout › Carding protection false › Checkout with Affirm",
+      "target": {
+        "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-redirect-methods.spec.ts",
+        "contract": "Card-testing protection admits one token-bearing Affirm checkout to the same affirm 10000 usd settled graph and creates no provider object for a tokenless one"
+      },
+      "fidelity_claim": "redirect-method-provider-outcome"
+    },
+    {
+      "contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-bnpls-checkout.spec.ts:98::BNPL checkout › Carding protection true › Checkout with Affirm",
+      "target": {
+        "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-redirect-methods.spec.ts",
+        "contract": "Card-testing protection admits one token-bearing Affirm checkout to the same affirm 10000 usd settled graph and creates no provider object for a tokenless one"
+      },
+      "fidelity_claim": "redirect-method-provider-outcome"
+    },
+    {
+      "contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-bnpls-checkout.spec.ts:98::BNPL checkout › Carding protection false › Checkout with Cash App Afterpay",
+      "target": {
+        "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-redirect-methods.spec.ts",
+        "contract": "One Cash App Afterpay checkout sends the provider method afterpay_clearpay for 10000 usd with this run order-received return URL, and the single handoff settles that same PaymentIntent to succeeded with one captured charge"
+      },
+      "fidelity_claim": "redirect-method-provider-outcome"
+    },
+    {
+      "contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-bnpls-checkout.spec.ts:98::BNPL checkout › Carding protection true › Checkout with Cash App Afterpay",
+      "target": {
+        "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-redirect-methods.spec.ts",
+        "contract": "Card-testing protection admits one token-bearing Cash App Afterpay checkout to the same afterpay_clearpay 10000 usd settled graph and creates no provider object for a tokenless one"
+      },
+      "fidelity_claim": "redirect-method-provider-outcome"
     }
   ],
   "known_gaps": [],

@@ -1,0 +1,84 @@
+{
+  "schema_version": 2,
+  "slice_id": "multi-currency-settlement-fidelity-closure",
+  "wc_base_commit": "b94578719a36b9e6ba3323ab7ad0a8da84d0be37",
+  "verified_at_commit": "b94578719a36b9e6ba3323ab7ad0a8da84d0be37",
+  "reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+  "source_test_paths": [
+    "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-multi-currency.spec.ts"
+  ],
+  "source_test_sha256": "3308574152cb1d8573175cbe326a92f1042b5368583365e388b0d1686b6cd7ad",
+  "contract_ids": [
+    "default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-multi-currency.spec.ts:54::Admin Multi-Currency Orders › order should display in shopper currency",
+    "default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-multi-currency.spec.ts:88::Admin Multi-Currency Orders › transaction page shows converted merchant currency",
+    "default::chromium::tests/e2e/specs/wcpay/shopper/multi-currency-checkout.spec.ts:51::Multi-currency checkout › Checkout with multiple currencies › checkout with EUR",
+    "default::chromium::tests/e2e/specs/wcpay/shopper/multi-currency-checkout.spec.ts:51::Multi-currency checkout › Checkout with multiple currencies › checkout with USD",
+    "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-multi-currency-widget.spec.ts:84::Shopper Multi-Currency widget › Should not affect prices › at the order received page"
+  ],
+  "targets": [
+    {
+      "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-multi-currency.spec.ts",
+      "contract": "the multi-currency-settlement provider-fidelity family"
+    }
+  ],
+  "implementation_commits": [],
+  "execution_fixture": {
+    "site": "http://store8889.localhost:8889",
+    "wpcom_blog_id": 4,
+    "account_id": "acct_1TrY2nBzWlxcwgpP",
+    "runtime_owner": "native",
+    "migration_state": "WooPayments client plugin inactive; native runtime owner; Stripe test mode"
+  },
+  "verification": [
+    {
+      "command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep \"@fidelity:multi-currency-settlement\"",
+      "exit_code": 0,
+      "summary": "Passed 3/3 in 2.5 minutes with one worker and zero retries, on approval 2026-08-20-multi-currency-closure. M1 USD, M2 EUR conversion and M3 immutability all green. Re-run deliberately rather than citing the 2026-08-13 result: that evidence predates changes to the redirect drivers, the gateway availability logic and the shared provider-evidence module, and closing a row on a week-old narrative is the failure mode this programme exists to avoid. M2 asserts the fee and net at parity with the WooPayments client rather than against the balance transaction, and carries a tripwire that fires when TRAPLAT-4144 is fixed. Lock directory ended with zero quarantine receipts and zero unresolved provider write attempts."
+    }
+  ],
+  "reviews": [],
+  "closures": [
+    {
+      "contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-multi-currency.spec.ts:54::Admin Multi-Currency Orders › order should display in shopper currency",
+      "target": {
+        "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-multi-currency.spec.ts",
+        "contract": "Switching the shopper session to USD after a EUR purchase leaves that order, its provider settlement graph, its receipt and its merchant-administration currency unchanged, and creates no second order or charge"
+      },
+      "fidelity_claim": "multi-currency-settlement"
+    },
+    {
+      "contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-multi-currency.spec.ts:88::Admin Multi-Currency Orders › transaction page shows converted merchant currency",
+      "target": {
+        "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-multi-currency.spec.ts",
+        "contract": "A EUR shopper-currency purchase settles at the provider as exactly one succeeded 1234 eur PaymentIntent and captured charge; the order stores the settlement exchange rate and USD settlement amount the provider balance transaction reports, and stores the presentment-currency fee and net the platform delivers to the order-writing path"
+      },
+      "fidelity_claim": "multi-currency-settlement"
+    },
+    {
+      "contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/multi-currency-checkout.spec.ts:51::Multi-currency checkout › Checkout with multiple currencies › checkout with EUR",
+      "target": {
+        "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-multi-currency.spec.ts",
+        "contract": "A EUR shopper-currency purchase settles at the provider as exactly one succeeded 1234 eur PaymentIntent and captured charge; the order stores the settlement exchange rate and USD settlement amount the provider balance transaction reports, and stores the presentment-currency fee and net the platform delivers to the order-writing path"
+      },
+      "fidelity_claim": "multi-currency-settlement"
+    },
+    {
+      "contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/multi-currency-checkout.spec.ts:51::Multi-currency checkout › Checkout with multiple currencies › checkout with USD",
+      "target": {
+        "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-multi-currency.spec.ts",
+        "contract": "A USD shopper-currency purchase settles at the provider as exactly one succeeded 1099 usd PaymentIntent and captured charge bound to the exact order, and the order stores no converted-currency metadata"
+      },
+      "fidelity_claim": "multi-currency-settlement"
+    },
+    {
+      "contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-multi-currency-widget.spec.ts:84::Shopper Multi-Currency widget › Should not affect prices › at the order received page",
+      "target": {
+        "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-multi-currency.spec.ts",
+        "contract": "Switching the shopper session to USD after a EUR purchase leaves that order, its provider settlement graph, its receipt and its merchant-administration currency unchanged, and creates no second order or charge"
+      },
+      "fidelity_claim": "multi-currency-settlement"
+    }
+  ],
+  "known_gaps": [],
+  "deferral": null
+}
