@@ -13,6 +13,11 @@
 	var paymentElement = null;
 	var paymentElementGatewayId = null;
 	var paymentElementContainer = null;
+	// The `loaderror` the payment element reported, when it reported one. The
+	// WooPayments client plugin keeps the same flag and refuses to submit while
+	// it is set; without it a shopper whose payment form failed to load presses
+	// the button and gets no navigation, no message and no explanation.
+	var paymentElementLoadError = null;
 	var isSubmittingWithPaymentMethod = false;
 	var isSubmittingWithSetupIntent = false;
 	var cardBrandIconsHydratedLabel = null;
@@ -1654,6 +1659,13 @@
 	}
 
 	function submitElements() {
+		// A payment element that failed to load can never produce a payment
+		// method, and asking it for one leaves the shopper waiting on a
+		// promise that will not resolve. Answer with what it already reported.
+		if ( paymentElementLoadError ) {
+			return Promise.reject( new Error( paymentElementLoadError ) );
+		}
+
 		if ( ! elements || ! elements.submit ) {
 			return Promise.resolve( {} );
 		}
@@ -1694,6 +1706,7 @@
 		paymentElement = null;
 		paymentElementContainer = null;
 		paymentElementGatewayId = null;
+		paymentElementLoadError = null;
 	}
 
 	function initializeStripeElement() {
@@ -1737,6 +1750,14 @@
 			'payment',
 			getStripePaymentElementOptions()
 		);
+		paymentElementLoadError = null;
+		paymentElement.on( 'loaderror', function ( event ) {
+			paymentElementLoadError =
+				event && event.error && event.error.message
+					? event.error.message
+					: config.genericErrorMessage || '';
+			setError( paymentElementLoadError );
+		} );
 		paymentElement.mount( container );
 		paymentElementContainer = container;
 		paymentElementGatewayId = gatewayId;

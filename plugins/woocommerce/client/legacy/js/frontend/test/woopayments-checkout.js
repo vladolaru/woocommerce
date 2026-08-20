@@ -11,6 +11,7 @@ describe( 'WooPayments checkout', () => {
 	let orderPayFormState;
 	let elementsMock;
 	let mountPaymentElement;
+	let paymentElementHandlers;
 	let paymentElementOptions;
 	let stripeMock;
 	let stripeElementsOptions;
@@ -198,6 +199,10 @@ describe( 'WooPayments checkout', () => {
 				bodyEventHandlers[ event ] = handler;
 				return bodyResult;
 			} ),
+			// The checkout script announces failures with
+			// `$( document.body ).trigger( 'checkout_error', ... )`, so the
+			// double has to accept a trigger as well as a subscription.
+			trigger: jest.fn( () => bodyResult ),
 		};
 		const windowResult = {
 			length: 1,
@@ -394,6 +399,7 @@ describe( 'WooPayments checkout', () => {
 		windowEventHandlers = {};
 		submitElements = jest.fn( () => Promise.resolve( {} ) );
 		mountPaymentElement = jest.fn();
+		paymentElementHandlers = {};
 		paymentElementOptions = null;
 		stripeElementsOptions = null;
 		unmountPaymentElement = jest.fn();
@@ -481,6 +487,13 @@ describe( 'WooPayments checkout', () => {
 							mount: mountPaymentElement,
 							unmount: unmountPaymentElement,
 							update: updatePaymentElement,
+							// Stripe payment elements emit `ready`,
+							// `loaderror` and friends; the double has to
+							// expose `on` or it is not the thing it stands in
+							// for.
+							on: ( event, handler ) => {
+								paymentElementHandlers[ event ] = handler;
+							},
 						};
 					} ),
 				};
@@ -1845,6 +1858,33 @@ describe( 'WooPayments checkout', () => {
 		expect( submitElements.mock.invocationCallOrder[ 0 ] ).toBeLessThan(
 			stripeMock.createPaymentMethod.mock.invocationCallOrder[ 0 ]
 		);
+	} );
+
+	test( 'refuses a checkout submission when the payment element failed to load', async () => {
+		document
+			.querySelector( 'form.checkout' )
+			.insertAdjacentHTML(
+				'beforeend',
+				'<div id="wcpay-core-payment-errors" hidden></div>'
+			);
+
+		require( '../woopayments-checkout' );
+
+		paymentElementHandlers.loaderror( {
+			error: { message: 'The payment form could not be loaded.' },
+		} );
+
+		expect(
+			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
+		).toBe( false );
+
+		await flushPromises();
+
+		expect( submitElements ).not.toHaveBeenCalled();
+		expect( stripeMock.createPaymentMethod ).not.toHaveBeenCalled();
+		expect(
+			document.getElementById( 'wcpay-core-payment-errors' ).textContent
+		).toBe( 'The payment form could not be loaded.' );
 	} );
 
 	test( 'intercepts the WooCommerce form checkout event before creating a payment method', async () => {
