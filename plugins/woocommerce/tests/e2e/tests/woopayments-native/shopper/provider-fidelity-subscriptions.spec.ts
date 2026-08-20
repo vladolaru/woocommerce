@@ -763,6 +763,11 @@ async function expectOneNewRenewal(
 		'one renewal must create exactly one renewal order'
 	).toHaveLength( 1 );
 	scope.ledger.orderIds.push( created[ 0 ] );
+	// WooCommerce Subscriptions builds the renewal order itself, so it carries
+	// no run ID; this is the point where the run learns the order exists and
+	// takes ownership of it, so it is the point that stamps it. Without the
+	// stamp the provider-evidence reader refuses the order as unowned.
+	await session.setOrderRunId( created[ 0 ], session.runId );
 
 	expect(
 		subscription.paymentCount,
@@ -788,7 +793,7 @@ test.describe( 'WooPayments native subscription provider lifecycle fidelity', ()
 	test.describe.configure( { mode: 'serial', timeout: 900_000 } );
 
 	test(
-		'one signup-fee subscription checkout creates one USD 11.98 parent order whose one recurring line and one fee line match a single 1198 usd succeeded intent and captured charge, one active subscription, one token and provider-customer graph, and zero renewal orders',
+		'one signup-fee subscription checkout creates one USD 11.98 parent order whose single product line carries the fee and matches a single 1198 usd succeeded intent and captured charge, one active subscription, one token and provider-customer graph, and zero renewal orders',
 		{
 			annotation: contracts(
 				CONTRACT_S1_PURCHASE,
@@ -850,9 +855,15 @@ test.describe( 'WooPayments native subscription provider lifecycle fidelity', ()
 					).toBe( outcome.providerCustomerId );
 
 					// The record side: the parent order's line composition, at
-					// the record level rather than as rendered money. One
-					// recurring line and one signup-fee line, summing to the
-					// total the provider proved.
+					// the record level rather than as rendered money.
+					// Subscriptions charges a signup fee by raising the
+					// product's own price for the initial payment
+					// (`WC_Subscriptions_Cart::set_subscription_prices_for_calculation`),
+					// so the fee arrives inside the product line and no
+					// WooCommerce fee line is ever created. The discriminating
+					// assertion is therefore the line total itself: 11.98 here,
+					// against the 9.99 S2 proves for the same product without a
+					// fee.
 					const parent = await readOrderRecord(
 						pilotRuntime,
 						outcome.parentOrderId
@@ -864,26 +875,16 @@ test.describe( 'WooPayments native subscription provider lifecycle fidelity', ()
 						product.id
 					);
 					expect( parent.lineItems[ 0 ].quantity ).toBe( 1 );
-					expect( Number( parent.lineItems[ 0 ].total ) ).toBeCloseTo(
-						Number( RECURRING_PRICE ),
-						2
-					);
-					expect(
-						parent.feeLines,
-						'a signup-fee product must put its fee on exactly one fee line'
-					).toHaveLength( 1 );
-					expect( Number( parent.feeLines[ 0 ].total ) ).toBeCloseTo(
-						Number( SIGNUP_FEE ),
-						2
-					);
 					expect(
 						Math.round(
-							( Number( parent.lineItems[ 0 ].total ) +
-								Number( parent.feeLines[ 0 ].total ) ) *
-								100
+							Number( parent.lineItems[ 0 ].total ) * 100
 						),
-						'the recurring and fee lines must sum to the proven provider total'
+						'the signup fee must arrive inside the product line, making that line the proven provider total'
 					).toBe( SIGNUP_FEE_TOTAL_MINOR );
+					expect(
+						parent.feeLines,
+						'a signup fee is not a WooCommerce fee line'
+					).toEqual( [] );
 
 					// The subscription renews on the recurring price only, and
 					// no renewal has happened yet. Re-read after settlement so
@@ -971,20 +972,26 @@ test.describe( 'WooPayments native subscription provider lifecycle fidelity', ()
 					).toBe( outcome.providerCustomerId );
 
 					// The zero-fee assertion the fixed contract asks for is a
-					// record-level one: no fee line exists at all, rather than a
-					// rendered total that happens to look right.
+					// record-level one, and it has to be the line total. A
+					// signup fee would arrive inside this very line rather than
+					// beside it (see S1), so 9.99 here — not an absent fee line,
+					// which is absent either way — is what proves no fee was
+					// charged.
 					const parent = await readOrderRecord(
 						pilotRuntime,
 						outcome.parentOrderId
 					);
-					expect(
-						parent.feeLines,
-						'a no-signup-fee product must produce no fee line whatsoever'
-					).toEqual( [] );
 					expect( parent.lineItems ).toHaveLength( 1 );
 					expect( parent.lineItems[ 0 ].productId ).toBe(
 						product.id
 					);
+					expect(
+						Math.round(
+							Number( parent.lineItems[ 0 ].total ) * 100
+						),
+						'a no-signup-fee product must put exactly the recurring price on its line'
+					).toBe( RECURRING_MINOR );
+					expect( parent.feeLines ).toEqual( [] );
 					expect(
 						Math.round( Number( parent.total ) * 100 ),
 						'the parent total must be exactly the recurring price'
@@ -1779,21 +1786,25 @@ test.describe( 'WooPayments native subscription provider lifecycle fidelity', ()
 							( left, right ) => left - right
 						)
 					);
+					// With the fee inside its product's line rather than on an
+					// anonymous fee line, the basket is stronger evidence than
+					// the contract originally asked for: the fee is
+					// attributable to the exact product that carries it.
 					for ( const item of parent.lineItems ) {
 						expect( item.quantity ).toBe( 1 );
-						expect( Number( item.total ) ).toBeCloseTo(
-							Number( RECURRING_PRICE ),
-							2
+						expect(
+							Math.round( Number( item.total ) * 100 ),
+							`line total for product ${ item.productId }`
+						).toBe(
+							item.productId === withFee.id
+								? SIGNUP_FEE_TOTAL_MINOR
+								: RECURRING_MINOR
 						);
 					}
 					expect(
 						parent.feeLines,
-						'exactly one of the two products carries a signup fee'
-					).toHaveLength( 1 );
-					expect( Number( parent.feeLines[ 0 ].total ) ).toBeCloseTo(
-						Number( SIGNUP_FEE ),
-						2
-					);
+						'a signup fee is not a WooCommerce fee line'
+					).toEqual( [] );
 					expect(
 						Math.round( Number( parent.total ) * 100 ),
 						'the parent total must be the proven provider total'
