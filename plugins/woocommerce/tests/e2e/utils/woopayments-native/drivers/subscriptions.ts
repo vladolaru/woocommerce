@@ -837,13 +837,18 @@ async function openChangePaymentSurface(
 	subscriptionId: number
 ): Promise< void > {
 	await page.goto( `my-account/view-subscription/${ subscriptionId }/` );
-	const changePayment = page.getByRole( 'link', {
+	// Queried by the `button` role, not `link`. WooCommerce Subscriptions
+	// renders every subscription action as an anchor carrying an explicit
+	// `role="button"` (see `templates/myaccount/subscription-details.php`),
+	// because the actions are styled as buttons; a `link` query never matches
+	// one.
+	const changePayment = page.getByRole( 'button', {
 		name: 'Change payment',
 		exact: true,
 	} );
 	if ( ( await changePayment.count() ) !== 1 ) {
 		fail(
-			`requires exactly one Change payment action on subscription ${ subscriptionId }.`
+			`requires exactly one Change payment action on subscription ${ subscriptionId }; the browser is at ${ page.url() }.`
 		);
 	}
 	await session.performWrite( () => changePayment.click() );
@@ -878,6 +883,43 @@ async function openChangePaymentSurface(
 				'could not clear the update-all-subscriptions control, which would rewrite unowned subscriptions.'
 			);
 		}
+	}
+}
+
+/**
+ * What the change-payment surface looks like right now, for a failure message.
+ * Deliberately tolerant: this runs while a case is already failing, and a
+ * secondary error here would hide the primary one.
+ */
+async function describeChangeSurface(
+	page: Page,
+	submissionCount: number
+): Promise< string > {
+	try {
+		const errorRegion = page.locator( CLASSIC_PAYMENT_ERROR );
+		const errorText =
+			( await errorRegion.count() ) === 1
+				? ( ( await errorRegion.innerText() ) ?? '' ).trim()
+				: '';
+		const selectedToken = await page
+			.locator(
+				`input[name="wc-${ SUBSCRIPTION_GATEWAY }-payment-token"]:checked`
+			)
+			.getAttribute( 'value' )
+			.catch( () => null );
+		const blocked = await page.locator( '.blockUI' ).count();
+
+		return `the browser is at ${
+			page.url().split( '?' )[ 0 ]
+		}, ${ submissionCount } submission POST(s) were observed, the selected credential control is ${
+			selectedToken ?? 'none'
+		}, the error region reads ${
+			errorText === '' ? 'nothing' : JSON.stringify( errorText )
+		}, and the form is ${ blocked > 0 ? 'blocked' : 'not blocked' }.`;
+	} catch ( describeFailure ) {
+		return `the surface could not be described (${ String(
+			describeFailure
+		) }).`;
 	}
 }
 
@@ -1016,8 +1058,15 @@ export async function changeSubscriptionPaymentMethod(
 					{ cause: error }
 				);
 			}
+			// Name what the surface was actually doing. A change that neither
+			// navigates nor reports an error is indistinguishable from one that
+			// was never dispatched unless the page state is recorded here.
+			const surface = await describeChangeSurface(
+				page,
+				submissionCount
+			);
 			throw quarantine(
-				`payment-method change ${ options.journal } has no proven outcome.`,
+				`payment-method change ${ options.journal } has no proven outcome; ${ surface }`,
 				'uncertain-provider-write',
 				error
 			);
