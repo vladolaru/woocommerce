@@ -985,6 +985,7 @@ export async function changeSubscriptionPaymentMethod(
 	session.requireApprovedProviderFixture(
 		'subscription-lifecycle-method-change'
 	);
+
 	await session.logInAsCustomer( page );
 	await openChangePaymentSurface( session, page, options.subscriptionId );
 	await selectChangePaymentMethod( page, options.selection );
@@ -1009,6 +1010,21 @@ export async function changeSubscriptionPaymentMethod(
 		fail( 'requires exactly one Change payment method submit control.' );
 	}
 
+	// The submit control shares this surface with the provider's cross-origin
+	// element iframe, an out-of-process frame whose compositor hit-test
+	// regions lag the layouts the surface keeps producing - the pre-click
+	// scroll on the new-card path, the tokenization form collapsing the card
+	// box on the saved-token path. A mouse click dispatched into that lag is
+	// routed to the iframe at its old position: the run's probe recorded the
+	// click as provider field interactions while the parent document saw no
+	// events at all, and the submission silently never started. Activating
+	// the control through focus instead of coordinates removes the routing
+	// question entirely - Enter on a focused submit control is the same
+	// form-submission gesture with no hit-testing in the path.
+	await submit.scrollIntoViewIfNeeded();
+	// eslint-disable-next-line playwright/no-wait-for-timeout -- A deliberate compositor settle after the scroll, not a wait for page state: the out-of-process iframe's hit-test regions have no observable "caught up" signal.
+	await page.waitForTimeout( 400 );
+
 	const changeUrl = page.url();
 	let submissionCount = 0;
 	const countSubmission = ( request: Request ): void => {
@@ -1025,7 +1041,7 @@ export async function changeSubscriptionPaymentMethod(
 		let submissionAttempted = false;
 		try {
 			submissionAttempted = true;
-			await session.performWrite( () => submit.click() );
+			await session.performWrite( () => submit.press( 'Enter' ) );
 
 			// A change either navigates away or reports a failure in native's
 			// own Classic error region. Waiting for either keeps a rejected
