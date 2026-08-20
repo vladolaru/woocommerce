@@ -1,0 +1,97 @@
+{
+	"schema_version": 2,
+	"slice_id": "subscription-provider-lifecycle-family-closure",
+	"wc_base_commit": "add6641c3fb764c1c88fd49ac92e4e64b79077da",
+	"verified_at_commit": "add6641c3fb764c1c88fd49ac92e4e64b79077da",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-subscriptions.spec.ts"
+	],
+	"source_test_sha256": "a46771b60b8ed26e2d7857efee781086564267cc6a9247155cf733f1f9d368b0",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/subscriptions/merchant/merchant-subscriptions-renew-action-scheduler.spec.ts:64::Subscriptions › Renew a subscription via Action Scheduler › should renew a subscription with action scheduler",
+		"default::chromium::tests/e2e/specs/subscriptions/merchant/merchant-subscriptions-renew.spec.ts:61::Subscriptions › Renew a subscription as a merchant › should be able to renew a subscription in my account",
+		"default::chromium::tests/e2e/specs/subscriptions/shopper/shopper-subscriptions-manage-payments.spec.ts:67::Shopper › Subscriptions › Manage Payment Methods › should change a default payment method to a new one",
+		"default::chromium::tests/e2e/specs/subscriptions/shopper/shopper-subscriptions-manage-payments.spec.ts:85::Shopper › Subscriptions › Manage Payment Methods › should set a payment method to an already saved card",
+		"default::chromium::tests/e2e/specs/subscriptions/shopper/shopper-subscriptions-purchase-multiple-subscriptions.spec.ts:53::Subscriptions › Purchase multiple subscriptions › should be able to purchase multiple subscriptions"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-subscriptions.spec.ts",
+			"contract": "the subscription-provider-lifecycle provider-fidelity family"
+		}
+	],
+	"implementation_commits": [],
+	"execution_fixture": {
+		"site": "http://store8889.localhost:8889",
+		"wpcom_blog_id": 4,
+		"account_id": "acct_1TrY2nBzWlxcwgpP",
+		"runtime_owner": "native",
+		"migration_state": "WooPayments client plugin inactive; native runtime owner; Stripe test mode"
+	},
+	"verification": [
+		{
+			"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep \"@fidelity:subscription-provider-lifecycle\"",
+			"exit_code": 0,
+			"summary": "Passed 7/7 in 8.2 minutes with one worker and zero retries, on approval 2026-08-20-subscriptions-family-closure-4. The first fully green serial family run: S1 signup fee, S2 no signup fee, S3 free trial plus journaled renewal, S4 change to a newly entered card plus off-session renewal on it, S5 change to an already-saved card plus off-session renewal on it, S6 merchant and wp-cron Action Scheduler renewals, and S7 a two-product basket. The lock directory ended with zero quarantine receipts and zero unresolved provider write attempts. S4's six-session stall was never a runtime behaviour: a page probe showed the submit click producing no events in the parent document while the provider element recorded two field interactions, because the mouse events were routed into the provider's out-of-process iframe wherever its compositor hit-test regions lagged the surface's layout - the pre-click scroll on the new-card path, the tokenization form reflow on the saved-token path. The driver now activates the submit control through focus and Enter, which puts no hit-testing in the gesture. Two parity fixes landed during the diagnosis, both refuted as stall causes by measurement: the classic loaderror flag, and the change-payment surface being handed a payment-mode 999 element where the client plugin serves setup mode - fixed in WooPaymentsCheckoutBridge::get_payment_context with a discriminating unit test."
+		},
+		{
+			"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep \"@fidelity:subscription-provider-lifecycle\"",
+			"exit_code": 1,
+			"summary": "Retained rather than tidied away: the first full family run, on approval 2026-08-20-subscriptions-family-closure, passed S1-S4 - S4 for the first time, proving the scroll-then-settle click fix on the new-card path - and then S5, on its first execution ever, lost its saved-token seed change to the identical silent-click signature: zero submission POSTs, empty error region, form unblocked. The saved-token path performs no pre-click scroll, but it reflows the card box around the provider's out-of-process iframe, which is the same compositor hit-test lag with a different trigger. That second occurrence is what moved the driver from ordering the layout around a coordinate click to focus-and-Enter activation. No provider object was created by the swallowed gesture."
+		},
+		{
+			"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep \"@fidelity:subscription-provider-lifecycle\"",
+			"exit_code": 1,
+			"summary": "Retained rather than tidied away: the second full family run, on approval 2026-08-20-subscriptions-family-closure-2, passed S1-S5 - S5 for the first time - and S6, on its first execution ever, failed in its cron half at the seeding step with an ordinary assertion, no quarantine and a clean lock directory. The seed dated next_payment into the past, and WooCommerce Subscriptions never schedules an Action Scheduler action for a past timestamp - WCS_Action_Scheduler::update_date cancels the pending action and returns before scheduling - so no due pending action can exist from a past-dated seed. The case premise was wrong in the same way S1's fee-line premise was; the seed now lands 45 seconds ahead of the clock and the convergence poll waits for it to fall due. The merchant-renewal half had already completed one legitimate journaled renewal, cleaned up by the run."
+		},
+		{
+			"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep \"@fidelity:subscription-provider-lifecycle\"",
+			"exit_code": 1,
+			"summary": "Retained rather than tidied away: the third full family run, on approval 2026-08-20-subscriptions-family-closure-3, proved the corrected near-future seed arms the action - and then the Action Scheduler queue runner completed it within one poll interval of it falling due, producing the correct 999 usd renewal order, intent and captured charge before the case could observe a due-and-pending state or dispatch wp-cron itself. Store traffic, the convergence poll's own reads included, dispatches Action Scheduler's async runner, and the action row records no dispatcher identity, so due-and-pending is unobservable at a 3-second poll and the dispatch channel is unprovable from the record. The case now observes the armed action inside a near horizon and asserts that the queue runner completes the exact seeded action; see the 2026-08-20 seeding correction in FIDELITY-CLAIMS.md."
+		}
+	],
+	"reviews": [],
+	"closures": [
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/subscriptions/merchant/merchant-subscriptions-renew-action-scheduler.spec.ts:64::Subscriptions › Renew a subscription via Action Scheduler › should renew a subscription with action scheduler",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-subscriptions.spec.ts",
+				"contract": "one merchant renewal and one schedule-driven Action Scheduler renewal each produce exactly one distinct 999 usd renewal order, intent and captured charge on the same saved credential, advance the subscription once each, and leave no duplicate action, order, token or subscription"
+			},
+			"fidelity_claim": "subscription-provider-lifecycle"
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/subscriptions/merchant/merchant-subscriptions-renew.spec.ts:61::Subscriptions › Renew a subscription as a merchant › should be able to renew a subscription in my account",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-subscriptions.spec.ts",
+				"contract": "one merchant renewal and one schedule-driven Action Scheduler renewal each produce exactly one distinct 999 usd renewal order, intent and captured charge on the same saved credential, advance the subscription once each, and leave no duplicate action, order, token or subscription"
+			},
+			"fidelity_claim": "subscription-provider-lifecycle"
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/subscriptions/shopper/shopper-subscriptions-manage-payments.spec.ts:67::Shopper › Subscriptions › Manage Payment Methods › should change a default payment method to a new one",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-subscriptions.spec.ts",
+				"contract": "changing a subscription to a newly entered card moves its recurring token to that exact new provider method, leaves the original token stored and unused, and one off-session renewal then charges 999 usd on the new method alone"
+			},
+			"fidelity_claim": "subscription-provider-lifecycle"
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/subscriptions/shopper/shopper-subscriptions-manage-payments.spec.ts:85::Shopper › Subscriptions › Manage Payment Methods › should set a payment method to an already saved card",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-subscriptions.spec.ts",
+				"contract": "selecting an already-saved card for a subscription restores that exact original token as the recurring method rather than the seeded one, and one off-session renewal then charges 999 usd on it alone"
+			},
+			"fidelity_claim": "subscription-provider-lifecycle"
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/subscriptions/shopper/shopper-subscriptions-purchase-multiple-subscriptions.spec.ts:53::Subscriptions › Purchase multiple subscriptions › should be able to purchase multiple subscriptions",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-subscriptions.spec.ts",
+				"contract": "one basket of two same-schedule USD 9.99 monthly subscription products creates one USD 21.97 parent order, one active subscription whose two line items are the exact purchased product IDs, one token and provider-customer graph, a single 2197 usd succeeded intent and captured charge, and zero renewal orders"
+			},
+			"fidelity_claim": "subscription-provider-lifecycle"
+		}
+	]
+}
