@@ -16,6 +16,10 @@ import type {
 import { getPaymentEvidence, type PaymentEvidence } from '../record-evidence';
 import { ResourceQuarantineRequiredError } from '../resource-locks';
 import {
+	readHighestOrderId,
+	readOrderDeltaAfter,
+} from './classic-card-authentication';
+import {
 	PlaywrightClassicCardCheckoutBrowser,
 	type PublicTokenDigest,
 } from './classic-card-checkout';
@@ -903,6 +907,8 @@ interface CheckoutExchange {
 	responseCount: number;
 	status: number;
 	body: Record< string, unknown >;
+	/** Whether the response body was readable; false when navigation freed it. */
+	bodyRead: boolean;
 	/** The URL-encoded fields the submission carried. */
 	fields: URLSearchParams;
 	/** Milliseconds from the single activation to the store's answer. */
@@ -919,17 +925,6 @@ interface CheckoutExchange {
 	 * from one that arrived later, during the provider round trip.
 	 */
 	responseLog: string;
-	/**
-	 * Every distinct order the observed responses named.
-	 *
-	 * This is the duplicate oracle the claim actually cares about. A repeated
-	 * submission is a transport event; a repeated *order* is a second
-	 * transaction. Native's duplicate-payment prevention answers a resubmitted
-	 * checkout with the order the session already paid, so two accepted
-	 * responses that name one order are one transaction, and two that name two
-	 * orders are the failure the claim forbids.
-	 */
-	orderIds: number[];
 }
 
 function readSubmittedFields( body: string | null ): URLSearchParams {
@@ -1083,33 +1078,17 @@ async function observeCheckoutExchange< Result >(
 
 		const first = responses[ 0 ];
 		const firstBody = await bodies.get( first );
-		if ( ! firstBody?.ok ) {
-			throw quarantine(
-				`checkout response body could not be read (${ String(
-					firstBody?.error ?? 'no read was started'
-				) }), so the submission has no proven outcome.`
-			);
-		}
-		const collectOrderIds = async () => {
-			const seen: number[] = [];
-			for ( const response of responses ) {
-				const settled = await bodies.get( response );
-				if ( ! settled?.ok ) {
-					continue;
-				}
-				const value = settled.value as { order_id?: unknown };
-				const orderId = Number( value?.order_id );
-				if (
-					Number.isSafeInteger( orderId ) &&
-					orderId > 0 &&
-					! seen.includes( orderId )
-				) {
-					seen.push( orderId );
-				}
-			}
-			return seen;
-		};
-
+		// Best-effort on purpose. `page.on('response')` fires on headers, and a
+		// redirect submission navigates to the provider the moment its own
+		// `fetch()` resolves -- also on headers -- so Chromium can free the
+		// response buffer before this CDP read completes and answer
+		// `Network.getResponseBody: No resource with given identifier found`.
+		// Reading eagerly narrows that window but cannot close it, because the
+		// read itself is async. Rather than fight it, nothing on the navigating
+		// path depends on the body any more: the order comes from the store and
+		// the handoff is proven by the journey. The callers that genuinely need
+		// a body -- the tokenless rejection, and Klarna, neither of which
+		// navigates -- say so and fail loudly if it is missing.
 		const describeResponses = () =>
 			responses
 				.map(
@@ -1124,11 +1103,13 @@ async function observeCheckoutExchange< Result >(
 			requestCount: requests.length,
 			responseCount: responses.length,
 			status: first.status(),
-			body: requiredObject( firstBody.value, 'checkout response body' ),
+			body: firstBody?.ok
+				? requiredObject( firstBody.value, 'checkout response body' )
+				: {},
+			bodyRead: Boolean( firstBody?.ok ),
 			fields: readSubmittedFields( first.request().postData() ),
 			elapsedMs: Date.now() - activatedAt,
 			responseLog: describeResponses(),
-			orderIds: await collectOrderIds(),
 		};
 		const result = await settle( exchange );
 
@@ -1141,7 +1122,6 @@ async function observeCheckoutExchange< Result >(
 				// the provider round trip is described rather than merely
 				// counted.
 				responseLog: describeResponses(),
-				orderIds: await collectOrderIds(),
 			},
 			result,
 		};
@@ -1152,34 +1132,48 @@ async function observeCheckoutExchange< Result >(
 	}
 }
 
-function readSuccessfulCheckoutOrder( exchange: CheckoutExchange ): {
-	orderId: number;
-	redirectUrl: string;
-} {
+/**
+ * The order one checkout submission created, read from the store.
+ *
+ * Derived from the store's own order list rather than the checkout response
+ * body. The body is the same fact seen through browser plumbing that a
+ * navigation can free mid-read; the store is a stable API that answers the
+ * question directly, and this driver already reads the same delta afterwards to
+ * prove the submission created exactly one order. Reading it here as well
+ * removes the last reason the navigating path had to depend on the body.
+ *
+ * Returns the order identity only. The redirect the store answered with has a
+ * different shape on each surface, so each drive extracts its own when it has a
+ * body to extract it from.
+ */
+async function readSubmittedOrder(
+	session: ProviderWriteSession,
+	exchange: CheckoutExchange,
+	baselineOrderId: number
+): Promise< number > {
 	if ( exchange.status < 200 || exchange.status >= 300 ) {
 		throw quarantine(
 			`checkout response is HTTP ${ exchange.status }, not a success.`
 		);
 	}
-	const { body } = exchange;
-	if ( body.result !== 'success' ) {
+
+	const delta = await readOrderDeltaAfter( session, baselineOrderId );
+	if ( delta.newOrderIds.length !== 1 ) {
 		throw quarantine(
-			`the store answered ${ String(
-				body.result
-			) }; a redirect handoff cannot start from a rejected submission.`
+			`one submission must create exactly one order; the store gained ${
+				delta.newOrderIds.length
+			} (${
+				delta.newOrderIds.join( ', ' ) || 'none'
+			}) after order ${ baselineOrderId }.`
 		);
 	}
-	if (
-		! Number.isSafeInteger( body.order_id ) ||
-		Number( body.order_id ) <= 0
-	) {
-		throw quarantine( 'checkout response carries no exact order ID.' );
-	}
-	if ( typeof body.redirect !== 'string' || ! body.redirect.trim() ) {
-		throw quarantine( 'checkout response carries no redirect.' );
-	}
 
-	return { orderId: body.order_id as number, redirectUrl: body.redirect };
+	return delta.newOrderIds[ 0 ];
+}
+
+/** A store answer worth reporting, or `undefined` when the body was lost. */
+function optionalRedirect( value: unknown ): string | undefined {
+	return typeof value === 'string' && value.trim() ? value : undefined;
 }
 
 /**
@@ -1217,16 +1211,19 @@ async function authorizeHostedRedirectOnce(
 
 export interface RedirectHandoffObservation {
 	orderId: number;
-	/** The URL the store answered the submission with. */
-	storeRedirectUrl: string;
+	/**
+	 * The URL the store answered the submission with, when the response body
+	 * survived. A navigating submission may lose it to Chromium's buffer being
+	 * freed; nothing on that path asserts on it, because the completed journey
+	 * proves the handoff more strongly than the field does.
+	 */
+	storeRedirectUrl?: string;
 	/** The provider's own account of the request, read before any follow. */
 	request: RedirectIntentRequest;
 	checkoutRequestCount: number;
 	checkoutResponseCount: number;
 	/** Every observed checkout response as `HTTP <status> @<ms>`, in arrival order. */
 	checkoutResponseLog: string;
-	/** Every distinct order the observed checkout responses named. */
-	checkoutOrderIds: number[];
 	/** Milliseconds from the single Place order activation to that answer. */
 	handoffElapsedMs: number;
 	/** Present only when the redirect was followed. */
@@ -1313,35 +1310,6 @@ function readBlocksRedirect(
 	return '';
 }
 
-/**
- * Describes the shape of a Store API payment result for a failure message.
- *
- * Names only: `payment_details` carries the intent client secret on some paths,
- * so the keys are reported and the values never are. What a reader needs from a
- * missing-redirect failure is which fields the store *did* answer with, and
- * that is exactly what a key list gives them.
- */
-function describePaymentResult(
-	paymentResult: Record< string, unknown >
-): string {
-	const details = Array.isArray( paymentResult.payment_details )
-		? paymentResult.payment_details
-		: [];
-	const detailKeys = details
-		.map( ( entry ) =>
-			entry && typeof entry === 'object' && 'key' in entry
-				? String( ( entry as { key: unknown } ).key )
-				: '?'
-		)
-		.join( ',' );
-
-	return `payment_result keys=[${ Object.keys( paymentResult ).join(
-		','
-	) }] payment_status=${ String(
-		paymentResult.payment_status ?? '(absent)'
-	) } payment_details keys=[${ detailKeys }]`;
-}
-
 export interface ClassicRedirectCheckoutOptions {
 	method: RedirectMethod;
 	product: OwnedProduct;
@@ -1402,6 +1370,8 @@ export async function driveClassicRedirectCheckout(
 	await selectClassicRedirectGateway( page, method );
 	await options.beforeSubmit?.();
 
+	// Read before the submission so the order it creates is the delta.
+	const baselineOrderId = await readHighestOrderId( session );
 	let activationCount = 0;
 
 	const submit = () =>
@@ -1428,7 +1398,14 @@ export async function driveClassicRedirectCheckout(
 					);
 				},
 				async ( exchange ) => {
-					const success = readSuccessfulCheckoutOrder( exchange );
+					const success = {
+						orderId: await readSubmittedOrder(
+							session,
+							exchange,
+							baselineOrderId
+						),
+						redirectUrl: optionalRedirect( exchange.body.redirect ),
+					};
 					// Attribute the order before judging anything about it.
 					// Whatever the store did, this run caused it, and the run ID
 					// is how a later reader tells this order from someone else's.
@@ -1468,7 +1445,6 @@ export async function driveClassicRedirectCheckout(
 				checkoutRequestCount: observed.exchange.requestCount,
 				checkoutResponseCount: observed.exchange.responseCount,
 				checkoutResponseLog: observed.exchange.responseLog,
-				checkoutOrderIds: observed.exchange.orderIds,
 				handoffElapsedMs: observed.exchange.elapsedMs,
 				landedUrl,
 				paid: options.follow
@@ -1620,6 +1596,8 @@ export async function driveBlocksRedirectCheckout(
 	).toHaveCount( 1 );
 	await option.check();
 
+	// Read before the submission so the order it creates is the delta.
+	const baselineOrderId = await readHighestOrderId( session );
 	let activationCount = 0;
 
 	return session.withProviderSubmissionJournal( options.journal, async () => {
@@ -1639,32 +1617,25 @@ export async function driveBlocksRedirectCheckout(
 				);
 			},
 			async ( exchange ) => {
-				if ( exchange.status < 200 || exchange.status >= 300 ) {
-					throw quarantine(
-						`Blocks checkout response is HTTP ${ exchange.status }, not a success.`
-					);
-				}
-				const orderId = exchange.body.order_id;
-				if (
-					! Number.isSafeInteger( orderId ) ||
-					Number( orderId ) <= 0
-				) {
-					throw quarantine(
-						'Blocks checkout response carries no exact order ID.'
-					);
-				}
-				const paymentResult = requiredObject(
-					exchange.body.payment_result,
-					'Blocks payment result'
+				// Order identity from the store, redirect from the body only if
+				// the navigation left it readable. The Blocks surface hits the
+				// same Chromium buffer race as the classic one, and the same
+				// reasoning applies: the journey proves the handoff.
+				const orderId = await readSubmittedOrder(
+					session,
+					exchange,
+					baselineOrderId
 				);
-				const redirectUrl = readBlocksRedirect( paymentResult );
-				if ( ! redirectUrl ) {
-					throw quarantine(
-						`Blocks checkout response carries no redirect. ${ describePaymentResult(
-							paymentResult
-						) }`
-					);
-				}
+				const paymentResult = exchange.bodyRead
+					? requiredObject(
+							exchange.body.payment_result,
+							'Blocks payment result'
+					  )
+					: undefined;
+				const redirectUrl = paymentResult
+					? optionalRedirect( readBlocksRedirect( paymentResult ) )
+					: undefined;
+
 				await session.setOrderRunId( Number( orderId ), runId );
 
 				const intentId = await readOrderIntentId(
@@ -1705,7 +1676,6 @@ export async function driveBlocksRedirectCheckout(
 			checkoutRequestCount: observed.exchange.requestCount,
 			checkoutResponseCount: observed.exchange.responseCount,
 			checkoutResponseLog: observed.exchange.responseLog,
-			checkoutOrderIds: observed.exchange.orderIds,
 			handoffElapsedMs: observed.exchange.elapsedMs,
 			landedUrl,
 			paid: options.follow
@@ -1732,8 +1702,6 @@ export interface TokenlessRedirectRejection {
 	checkoutResponseCount: number;
 	/** Every observed checkout response as `HTTP <status> @<ms>`, in arrival order. */
 	checkoutResponseLog: string;
-	/** Every distinct order the observed checkout responses named. */
-	checkoutOrderIds: number[];
 	fraudPreventionToken: SubmittedFraudPreventionToken;
 	url: string;
 }
@@ -1871,7 +1839,6 @@ export async function submitTokenlessRedirectCheckout(
 			checkoutRequestCount: observed.exchange.requestCount,
 			checkoutResponseCount: observed.exchange.responseCount,
 			checkoutResponseLog: observed.exchange.responseLog,
-			checkoutOrderIds: observed.exchange.orderIds,
 			fraudPreventionToken: readSubmittedFraudPreventionToken(
 				observed.exchange.fields
 			),

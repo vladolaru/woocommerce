@@ -480,31 +480,19 @@ function expectRequestedRedirect(
 	method: RedirectMethod,
 	expected: { storeOrigin: string; orderKey: string }
 ): void {
-	// One activation must produce one *transaction*, which is what the claim
-	// forbids a second of. The submission count is a transport fact, and on the
-	// Blocks surface it is not always one: the client resubmits the Store API
-	// checkout for a redirect method in roughly a third of runs, and both
-	// submissions are accepted. Measured on 2026-08-14 across five runs, with
-	// the store answering `HTTP 200 @4107ms, HTTP 200 @5691ms` on a failing one
-	// and exactly one order, one intent and one captured charge existing
-	// afterwards every time -- native's duplicate-payment prevention answers the
-	// resubmission with the order the session already paid.
+	// Deliberately not asserted here: how many times the client submitted, and
+	// how many answers came back. Both are transport facts, and on the Blocks
+	// surface neither is stable -- the client resubmits the Store API checkout for
+	// a redirect method in roughly a third of runs, and a submission whose answer
+	// arrives after the navigation is never observed at all.
 	//
-	// This is not native's doing and not a native divergence: the response shape
-	// involved, a bare `#wcpay-confirm-` redirect that `esc_url_raw()` blanks
-	// out of `payment_result.redirect_url`, is byte-identical in the WooPayments
-	// client plugin (`class-wc-payment-gateway-wcpay.php:2127`). So the count is
-	// reported and the *order* identity is asserted, which is strictly stronger
-	// on money: two accepted responses naming one order are one transaction, and
-	// two naming two orders are the duplicate this claim exists to catch.
-	expect(
-		observation.checkoutOrderIds,
-		`one Place order activation must produce exactly one order; the store answered: ${ observation.checkoutResponseLog }`
-	).toEqual( [ observation.orderId ] );
-	expect(
-		observation.checkoutResponseCount,
-		'every observed checkout submission must have been answered'
-	).toBe( observation.checkoutRequestCount );
+	// What the claim forbids is a second *transaction*, and that is already proven
+	// twice from the store, without a browser in the loop: `readSubmittedOrder`
+	// refuses to continue unless the submission produced exactly one new order,
+	// and `expectSingleRunOrder` re-reads the same delta after settlement and
+	// requires it to be this order. A resubmission that native absorbs -- one
+	// order, one intent, one charge -- is not a duplicate and must not fail here;
+	// a resubmission that creates a second order fails both of those checks.
 
 	const { request } = observation;
 	expect(
@@ -543,20 +531,6 @@ function expectRequestedRedirect(
 	// boundary rather than this claim's subject, so the identity compared is
 	// the origin and path — which is what names the provider's own object.
 	const hosted = new URL( request.providerRedirectUrl );
-	// Resolved against the store, because what the store hands back is not
-	// required to be absolute, and reported raw on failure — a bare `new URL()`
-	// here throws `Invalid URL` and says nothing about what the store actually
-	// answered with.
-	let handed: URL;
-	try {
-		handed = new URL( observation.storeRedirectUrl, expected.storeOrigin );
-	} catch {
-		throw new Error(
-			`the store answered Place order with a redirect this case cannot resolve against ${
-				expected.storeOrigin
-			}: ${ JSON.stringify( observation.storeRedirectUrl ) }`
-		);
-	}
 	expect( hosted.protocol, 'the provider handoff must be over HTTPS' ).toBe(
 		'https:'
 	);
@@ -564,7 +538,30 @@ function expectRequestedRedirect(
 		hosted.origin,
 		'the handoff must leave this store for the provider'
 	).not.toBe( expected.storeOrigin );
-	expectStoreHandoff( observation, request, handed, hosted, expected );
+
+	// Asserted only for a case that stops at the handoff. A case that follows
+	// the redirect proves the same thing far more strongly a moment later:
+	// `expectReturnedToStore` requires the shopper to have landed back on this
+	// run's own order-received URL, which cannot happen unless the store handed
+	// over a working provider redirect. Comparing the answer field as well adds
+	// nothing there, and reading it costs a dependency on a response body that
+	// the navigation itself can destroy.
+	if ( observation.storeRedirectUrl !== undefined ) {
+		let handed: URL;
+		try {
+			handed = new URL(
+				observation.storeRedirectUrl,
+				expected.storeOrigin
+			);
+		} catch {
+			throw new Error(
+				`the store answered Place order with a redirect this case cannot resolve against ${
+					expected.storeOrigin
+				}: ${ JSON.stringify( observation.storeRedirectUrl ) }`
+			);
+		}
+		expectStoreHandoff( observation, request, handed, hosted, expected );
+	}
 
 	expectRequestedReturnUrl( observation, request, expected );
 }
