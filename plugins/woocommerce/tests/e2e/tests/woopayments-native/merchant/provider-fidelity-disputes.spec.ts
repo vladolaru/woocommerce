@@ -1622,7 +1622,7 @@ test.describe.serial( 'dispute-lifecycle', () => {
 	);
 
 	test(
-		'One winning-evidence submission carries the same dispute through under review to won with one update effect and one closed-won effect',
+		'One winning-evidence submission carries the same dispute through under review to won with one closed-won effect and no relayed update effect',
 		{
 			annotation: [
 				{
@@ -1748,7 +1748,7 @@ test.describe.serial( 'dispute-lifecycle', () => {
 	);
 
 	test(
-		'One losing-evidence submission carries the same dispute through under review to lost with one update effect and one capped local dispute refund',
+		'One losing-evidence submission carries the same dispute through under review to lost with one capped local dispute refund and no relayed update effect',
 		{
 			annotation: [
 				{
