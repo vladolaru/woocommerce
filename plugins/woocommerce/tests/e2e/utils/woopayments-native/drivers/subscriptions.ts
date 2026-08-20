@@ -1206,27 +1206,34 @@ export async function processMerchantRenewal(
 }
 
 /**
- * Moves one subscription's schedule into the past so its Action Scheduler
- * renewal action becomes due.
+ * Reschedules one subscription's next payment into the near future so its
+ * Action Scheduler renewal action exists and shortly falls due.
+ *
+ * The date must be in the future because WooCommerce Subscriptions refuses to
+ * schedule an action for a past date — `WCS_Action_Scheduler::update_date()`
+ * cancels the pending action and returns before scheduling when the new
+ * timestamp is not after the current time, so a past-dated seed produces no
+ * due action at all, only a cancelled one. Seeding just ahead of the clock
+ * lets Subscriptions schedule its own action and the caller's convergence
+ * poll wait for the wall clock to pass it.
  *
  * Both dates go in one request on purpose: WooCommerce Subscriptions validates
  * the whole date set together and rejects a next payment that does not fall
- * after the start date, so a past next payment needs a start date moved with
- * it. Nothing here touches Action Scheduler directly — WooCommerce
- * Subscriptions reschedules its own action off the date change, which is the
- * mechanism the case is about.
+ * after the start date. Nothing here touches Action Scheduler directly —
+ * WooCommerce Subscriptions reschedules its own action off the date change,
+ * which is the mechanism the case is about.
  */
 export async function seedDueRenewalAction(
 	session: ProviderWriteSession,
 	subscriptionId: number,
-	options: { startSecondsAgo: number; dueSecondsAgo: number }
+	options: { startSecondsAgo: number; dueInSeconds: number }
 ): Promise< void > {
 	await session.assertCanWrite();
 	session.requireApprovedProviderFixture( 'subscription-lifecycle-renewal' );
 
 	const now = Date.now();
-	const asGmt = ( secondsAgo: number ): string =>
-		new Date( now - secondsAgo * 1000 )
+	const asGmt = ( offsetMs: number ): string =>
+		new Date( now + offsetMs )
 			.toISOString()
 			.replace( 'T', ' ' )
 			.replace( /\.\d+Z$/, '' );
@@ -1237,8 +1244,8 @@ export async function seedDueRenewalAction(
 				`${ SUBSCRIPTIONS_ROUTE }/${ subscriptionId }`,
 				{
 					data: {
-						start_date: asGmt( options.startSecondsAgo ),
-						next_payment_date: asGmt( options.dueSecondsAgo ),
+						start_date: asGmt( -options.startSecondsAgo * 1000 ),
+						next_payment_date: asGmt( options.dueInSeconds * 1000 ),
 					},
 				}
 			)
@@ -1255,7 +1262,11 @@ export async function seedDueRenewalAction(
  * runs every due cron hook, `action_scheduler_run_queue` among them, which is
  * what hands the due renewal to the Action Scheduler queue runner. That is the
  * whole point of the case: the renewal must be driven by the scheduler, not by
- * an admin action that fires the hook by hand.
+ * an admin action that fires the hook by hand. On a lively store the queue
+ * runner may take the action through Action Scheduler's own async runner
+ * before or between these dispatches - the dispatch keeps a dormant store
+ * converging; which loopback enqueued the winning queue iteration is not
+ * recorded by Action Scheduler and is not what the case asserts.
  */
 export async function dispatchWpCronUntilActionRan(
 	session: ProviderWriteSession,

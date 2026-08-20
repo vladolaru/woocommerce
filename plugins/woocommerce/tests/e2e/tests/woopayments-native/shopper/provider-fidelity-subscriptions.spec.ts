@@ -222,9 +222,22 @@ const POLL_INTERVAL_MS = 3_000;
 /** The claim's per-phase budget. */
 const PHASE_TIMEOUT_MS = 120_000;
 
-/** How far back `S6` moves the seeded schedule so the action is unambiguously due. */
+/** How far back `S6` moves the seeded subscription's start date. */
 const SEED_START_SECONDS_AGO = 2 * 24 * 60 * 60;
-const SEED_DUE_SECONDS_AGO = 5 * 60;
+/**
+ * How far ahead `S6` seeds the next payment. WooCommerce Subscriptions only
+ * schedules an Action Scheduler action for a future date - a past-dated seed
+ * cancels the pending action and schedules nothing - so the seed lands just
+ * ahead of the clock and the convergence poll waits for it to fall due.
+ */
+const SEED_DUE_IN_SECONDS = 45;
+/**
+ * The window that separates the seeded renewal action from the natural
+ * schedule: the seed lands within a minute, the month-out renewal thirty
+ * days away, so any renewal action scheduled inside this horizon is the
+ * seeded one.
+ */
+const SEED_HORIZON_MS = 10 * 60 * 1000;
 
 /* ------------------------------------------------------------------------ *
  * Shared assertions
@@ -1487,7 +1500,7 @@ test.describe( 'WooPayments native subscription provider lifecycle fidelity', ()
 	);
 
 	test(
-		'one merchant renewal and one wp-cron dispatched Action Scheduler renewal each produce exactly one distinct 999 usd renewal order, intent and captured charge on the same saved credential, advance the subscription once each, and leave no duplicate action, order, token or subscription',
+		'one merchant renewal and one schedule-driven Action Scheduler renewal each produce exactly one distinct 999 usd renewal order, intent and captured charge on the same saved credential, advance the subscription once each, and leave no duplicate action, order, token or subscription',
 		{
 			annotation: contracts(
 				CONTRACT_S6_MERCHANT,
@@ -1562,16 +1575,24 @@ test.describe( 'WooPayments native subscription provider lifecycle fidelity', ()
 						SUBSCRIPTION_GATEWAY
 					);
 
-					/* -- Half two: a seeded due action, run by wp-cron -- */
+					/* -- Half two: a seeded action, run by the queue runner -- */
 					await seedDueRenewalAction(
 						pilotRuntime,
 						outcome.subscription.id,
 						{
 							startSecondsAgo: SEED_START_SECONDS_AGO,
-							dueSecondsAgo: SEED_DUE_SECONDS_AGO,
+							dueInSeconds: SEED_DUE_IN_SECONDS,
 						}
 					);
 
+					// The seeded action is observed while still armed: pending
+					// and scheduled inside the seed horizon, unambiguously
+					// distinct from the natural month-out schedule. Waiting for
+					// it to be pending AND overdue is not observable: the queue
+					// runner claims a due action within seconds - store traffic,
+					// the convergence poll's own reads included, dispatches
+					// Action Scheduler's async runner - so due-and-pending can
+					// vanish inside one poll interval.
 					const seeded = await convergedSubscription(
 						pilotRuntime,
 						outcome.subscription.id,
@@ -1581,41 +1602,50 @@ test.describe( 'WooPayments native subscription provider lifecycle fidelity', ()
 									action.hook === RENEWAL_ACTION_HOOK &&
 									action.status === 'pending' &&
 									action.scheduledTimestamp * 1000 <
-										Date.now()
+										Date.now() + SEED_HORIZON_MS
 							),
-						'the seeded schedule must leave exactly one due pending renewal action'
+						'the seeding must arm one near-horizon renewal action'
 					);
-					const duePending = seeded.scheduledActions.filter(
+					const seededPending = seeded.scheduledActions.filter(
 						( action ) =>
 							action.hook === RENEWAL_ACTION_HOOK &&
-							action.status === 'pending'
+							action.status === 'pending' &&
+							action.scheduledTimestamp * 1000 <
+								Date.now() + SEED_HORIZON_MS
 					);
 					expect(
-						duePending,
-						'seeding must leave exactly one pending renewal action, not a duplicate'
+						seededPending,
+						'seeding must arm exactly one renewal action, not a duplicate'
 					).toHaveLength( 1 );
 
-					// Provider safety: dispatching wp-cron runs the whole due
-					// queue. Refuse unless the only renewal action due right now
-					// is this run's, so a foreign fixture on the standing store
-					// stops the case instead of being charged by it.
+					// Provider safety: the queue runner takes the whole due
+					// queue. Refuse unless no other subscription comes due
+					// inside the seed horizon, so a foreign fixture on the
+					// standing store stops the case instead of being charged
+					// by it.
 					const now = Date.now();
 					const foreignDue = (
 						await readPendingRenewalActions( pilotRuntime )
 					 ).filter(
 						( action ) =>
-							action.scheduledTimestamp * 1000 <= now &&
+							action.scheduledTimestamp * 1000 <=
+								now + SEED_HORIZON_MS &&
 							action.subscriptionId !== outcome.subscription.id
 					);
 					expect(
 						foreignDue.map( ( action ) => action.subscriptionId ),
-						'wp-cron must not be dispatched while another subscription is due for renewal'
+						'the queue must not be run while another subscription is due for renewal'
 					).toEqual( [] );
 
+					// The wp-cron loopback keeps the queue moving on a dormant
+					// store; on a lively one the async runner may have taken
+					// the action already. Either way the assertion is the same:
+					// the queue runner - not an admin gesture - completes the
+					// exact seeded action.
 					const ranAction = await dispatchWpCronUntilActionRan(
 						pilotRuntime,
 						outcome.subscription.id,
-						duePending[ 0 ].actionId,
+						seededPending[ 0 ].actionId,
 						{
 							pollIntervalMs: POLL_INTERVAL_MS,
 							timeoutMs: PHASE_TIMEOUT_MS,
@@ -1684,7 +1714,7 @@ test.describe( 'WooPayments native subscription provider lifecycle fidelity', ()
 					expect(
 						finalState.scheduledActions.filter(
 							( action ) =>
-								action.actionId === duePending[ 0 ].actionId
+								action.actionId === seededPending[ 0 ].actionId
 						),
 						'the seeded action must exist exactly once after it ran'
 					).toHaveLength( 1 );
