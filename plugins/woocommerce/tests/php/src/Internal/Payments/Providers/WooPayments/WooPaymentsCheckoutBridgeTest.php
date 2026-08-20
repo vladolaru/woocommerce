@@ -556,6 +556,63 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should resolve a subscription payment-method change to the cart context, not the order behind its order-pay URL.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_get_payment_fields_js_config_change_payment_request_uses_cart_context(): void {
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; this isolated test needs its availability marker.
+		eval( 'namespace { class WC_Subscriptions_Core_Plugin {} }' );
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; this isolated test needs its public detector.
+		eval( 'namespace { function wcs_is_subscription( $subscription_id ) { return in_array( $subscription_id, $GLOBALS["wcpay_test_subscription_ids"] ?? array(), true ); } }' );
+
+		update_option( 'woocommerce_currency', 'USD' );
+		$customer_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$order       = wc_create_order( array( 'customer_id' => $customer_id ) );
+		$order->set_currency( 'EUR' );
+		$order->set_total( '12.34' );
+		$order->set_billing_country( 'BE' );
+		$order->save();
+		wp_set_current_user( $customer_id );
+
+		// WooCommerce Subscriptions serves the change form at
+		// order-pay/<subscription_id>?change_payment_method=<subscription_id>.
+		// The endpoint detector reads `$wp->query_vars` while the context
+		// reads `$wp_query`, so the request must exist in both.
+		global $wp;
+		$wp->query_vars['order-pay'] = $order->get_id();
+		set_query_var( 'order-pay', $order->get_id() );
+		$GLOBALS['wcpay_test_subscription_ids'] = array( (string) $order->get_id() );
+		$_GET['change_payment_method']          = (string) $order->get_id(); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only request context matching WooCommerce Subscriptions.
+
+		$legacy_runtime = $this->create_legacy_runtime_for_bridge();
+		$legacy_runtime->method( 'get_gateway_prepared_customer_data' )->willReturn( array() );
+		$bridge = new WooPaymentsCheckoutBridge();
+		$bridge->init(
+			$legacy_runtime,
+			$this->create_account_service_for_bridge( true ),
+			$this->create_woopay_session_service_for_bridge( false ),
+			$this->create_frontend_styles_service_for_bridge(),
+			$this->create_frontend_tracking_controller_for_bridge()
+		);
+
+		$config = $bridge->get_payment_fields_js_config();
+
+		// A payment-method change collects no payment, so the order's 12.34 EUR
+		// must not become the element's context: the checkout script derives a
+		// payment-mode Payment Element from any positive `cartTotal`, where the
+		// WooPayments client plugin serves this surface a setup-mode element.
+		$this->assertTrue( $config['isChangingPayment'] );
+		$this->assertSame( 0, $config['cartTotal'] );
+		$this->assertSame( 'USD', $config['currency'] );
+		$this->assertArrayNotHasKey( 'isOrderPay', $config );
+		$this->assertArrayNotHasKey( 'orderId', $config );
+		// The order still legitimately prefills the element's default billing
+		// details - the client plugin does the same for any pay_for_order URL.
+		$this->assertSame( 'BE', $config['customerData']['billing_country'] );
+	}
+
+	/**
 	 * @testdox Should fold enabled Link configuration into the card Payment Element.
 	 */
 	public function test_get_payment_fields_js_config_folds_link_into_card(): void {

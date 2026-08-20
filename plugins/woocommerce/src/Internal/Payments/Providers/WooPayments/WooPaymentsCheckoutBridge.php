@@ -984,7 +984,15 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 */
 	private function get_payment_context(): array {
 		$order_id = absint( get_query_var( 'order-pay' ) );
-		if ( 0 < $order_id ) {
+
+		// A subscription payment-method change arrives on an order-pay URL but
+		// collects no payment, so the order behind it must not decide the
+		// context: its total would flow into `cartTotal` and make the checkout
+		// script build a payment-mode Payment Element for an amount the shopper
+		// is not paying. The WooPayments client plugin resolves this request to
+		// the cart context, whose empty-cart total of zero yields a setup-mode
+		// element, and this bridge must produce the same element.
+		if ( 0 < $order_id && ! $this->is_changing_payment_method_for_subscription() ) {
 			$order = wc_get_order( $order_id );
 			if ( $order instanceof \WC_Order && current_user_can( 'pay_for_order', $order->get_id() ) ) {
 				$currency = '' !== $order->get_currency() ? strtoupper( $order->get_currency() ) : strtoupper( get_woocommerce_currency() );
