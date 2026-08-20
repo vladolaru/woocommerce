@@ -526,6 +526,18 @@ function closedDisputeNotes(
 	);
 }
 
+/**
+ * WooCommerce writes one note per status transition, so the order carries a
+ * durable record of every status it passed through. A poll that samples the
+ * current status every few seconds cannot tell "never transitioned" from
+ * "transitioned and was moved back"; this record can.
+ */
+function statusTransitionNotes( notes: readonly string[] ): string[] {
+	return notes.filter( ( note ) =>
+		note.includes( 'Order status changed from' )
+	);
+}
+
 function updatedDisputeNotes( notes: readonly string[] ): string[] {
 	return notes.filter( ( note ) =>
 		note.includes( 'Payment dispute has been updated' )
@@ -837,6 +849,7 @@ async function waitForCreatedDispute(
 ): Promise< ProviderDisputeRecord > {
 	const deadline = Date.now() + CREATION_BUDGET_MS;
 	let lastSeen = 'no dispute on the charge yet';
+	let lastHistory: string[] = [];
 
 	for (;;) {
 		const disputeId = await readChargeDisputeId( restApi, paid.chargeId );
@@ -846,6 +859,7 @@ async function waitForCreatedDispute(
 			const orderStatus = await readOrderStatus( restApi, paid.orderId );
 			const notes = await readOrderNotes( restApi, paid.orderId );
 			const created = createdDisputeNotes( notes, paid.chargeId );
+			lastHistory = statusTransitionNotes( notes );
 
 			if ( created.length > 1 ) {
 				fail(
@@ -862,7 +876,11 @@ async function waitForCreatedDispute(
 		const remaining = deadline - Date.now();
 		if ( remaining <= 0 ) {
 			fail(
-				`charge ${ paid.chargeId } did not reach a created dispute with its native effects within ${ CREATION_BUDGET_MS }ms (last seen: ${ lastSeen }). Dispute creation is delivered to this store as a provider event; a run whose platform event listener is not forwarding charge.dispute.created will always stop here.`
+				`charge ${ paid.chargeId } did not reach a created dispute with its native effects within ${ CREATION_BUDGET_MS }ms (last seen: ${ lastSeen }). The order's own status history was: ${
+					lastHistory.length > 0
+						? lastHistory.join( ' | ' )
+						: 'no status transition at all'
+				}. A history that never reaches On hold means the creation effect did not run; one that reaches it and leaves again means a later event overwrote it. Dispute creation is delivered to this store as a provider event; a run whose platform event listener is not forwarding charge.dispute.created will always stop here.`
 			);
 		}
 		await delay( Math.min( CREATION_INTERVAL_MS, remaining ) );
