@@ -922,7 +922,7 @@ test.describe( 'WooPayments native subscription provider lifecycle fidelity', ()
 	);
 
 	test(
-		'one no-signup-fee subscription checkout creates one USD 9.99 parent order carrying zero fee lines, a single 999 usd succeeded intent and captured charge, one active subscription, and one token and provider-customer graph',
+		'one no-signup-fee subscription checkout creates one USD 9.99 parent order whose single product line carries the recurring price alone, a single 999 usd succeeded intent and captured charge, one active subscription, and one token and provider-customer graph',
 		{
 			annotation: contracts( CONTRACT_S2_PURCHASE, CONTRACT_S2_CHARGE ),
 			tag: FAMILY_TAGS,

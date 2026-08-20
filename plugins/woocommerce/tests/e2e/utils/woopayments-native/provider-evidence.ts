@@ -326,24 +326,88 @@ export async function waitForPaymentState(
 	}
 }
 
-/** How long to wait before re-asking a store read whose connection died. */
-const TRANSPORT_RETRY_DELAY_MS = 2_000;
+/** How long to wait before re-asking a read that came back a non-answer. */
+const READ_RETRY_DELAY_MS = 2_000;
+
+/** How many extra times a read is re-asked before its non-answer stands. */
+const READ_RETRY_ATTEMPTS = 2;
 
 /**
- * Ask the store for one charge, re-asking once if the connection dies.
+ * Tell whether a response is the provider refusing to answer *for now*.
  *
- * Both provider families poll this same charge every few seconds for the whole
- * of a long convergence budget, and the request context's keep-alive connection
- * is dropped often enough under that load to fail a case with
- * `apiRequestContext.get: socket hang up`. The same request answers HTTP 200 in
- * about a second server-side, so the connection died rather than the store
- * refusing — a non-answer, not an answer. It has cost the refund family two
- * otherwise-complete runs and the dispute family one.
+ * Stripe answers HTTP 429 `lock_timeout` when another request or an internal
+ * process holds the object being read, and its own message says the condition
+ * is transient and the request should be retried. That is a non-answer in the
+ * same sense a dropped connection is: the object's state was not reported, as
+ * opposed to reported as something unexpected.
+ */
+async function isRetryableProviderLock(
+	response: APIResponse
+): Promise< boolean > {
+	if ( response.status() !== 429 ) {
+		return false;
+	}
+	return ( await response.text().catch( () => '' ) ).includes(
+		'lock_timeout'
+	);
+}
+
+/**
+ * Ask the store for one provider object, re-asking while the answer is a
+ * non-answer rather than an answer.
+ *
+ * Two things produce a non-answer under the load these families generate. The
+ * request context's keep-alive connection is dropped often enough during a long
+ * convergence budget to fail a case with `apiRequestContext.get: socket hang
+ * up`, while the same request answers HTTP 200 in about a second server-side.
+ * And the provider itself answers 429 `lock_timeout` when something else is
+ * touching the object — which is routine while a dispute is being adjudicated,
+ * because the adjudication is what the case is waiting on. Between them these
+ * have cost the refund family two otherwise-complete runs and the dispute
+ * family two.
  *
  * Retrying is safe *because this is a read*. The harness's no-retry rule exists
  * so a submission is never made twice; nothing here writes, so re-asking cannot
- * duplicate anything. A second failure still fails the case: this closes a
- * transport hole, not an evidence gap.
+ * duplicate anything. A read that keeps coming back a non-answer still fails
+ * the case: this closes a transport hole, not an evidence gap.
+ *
+ * @param restApi  Authenticated store REST context.
+ * @param path     Store REST path to read.
+ * @param resource What is being read, for the failure message.
+ * @return The store's answer.
+ */
+export async function getWithReadRetry(
+	restApi: APIRequestContext,
+	path: string,
+	resource: string
+): Promise< APIResponse > {
+	let lastNonAnswer = '';
+
+	for ( let attempt = 0; attempt <= READ_RETRY_ATTEMPTS; attempt += 1 ) {
+		if ( attempt > 0 ) {
+			await delay( READ_RETRY_DELAY_MS );
+		}
+		try {
+			const response = await restApi.get( path );
+			if ( ! ( await isRetryableProviderLock( response ) ) ) {
+				return response;
+			}
+			lastNonAnswer =
+				'the provider held the object and answered HTTP 429 lock_timeout';
+		} catch ( error ) {
+			lastNonAnswer = `the connection failed (${ String( error ) })`;
+		}
+	}
+
+	throw new Error(
+		`WooPayments ${ resource } could not be read: ${ lastNonAnswer } on every one of ${
+			READ_RETRY_ATTEMPTS + 1
+		} attempts, so the provider's answer is unknown rather than absent.`
+	);
+}
+
+/**
+ * Ask the store for one charge, tolerating a non-answer.
  *
  * @param restApi  Authenticated store REST context.
  * @param chargeId Exact provider charge ID.
@@ -353,21 +417,9 @@ export async function getChargeWithTransportRetry(
 	restApi: APIRequestContext,
 	chargeId: string
 ): Promise< APIResponse > {
-	const path = `/wp-json/wc/v3/payments/charges/${ encodeURIComponent(
-		chargeId
-	) }`;
-	try {
-		return await restApi.get( path );
-	} catch ( error ) {
-		await delay( TRANSPORT_RETRY_DELAY_MS );
-		try {
-			return await restApi.get( path );
-		} catch ( retryError ) {
-			throw new Error(
-				`WooPayments charge ${ chargeId } could not be read: the connection failed twice (${ String(
-					retryError
-				) }), so the provider's answer is unknown rather than absent.`
-			);
-		}
-	}
+	return getWithReadRetry(
+		restApi,
+		`/wp-json/wc/v3/payments/charges/${ encodeURIComponent( chargeId ) }`,
+		`charge ${ chargeId }`
+	);
 }

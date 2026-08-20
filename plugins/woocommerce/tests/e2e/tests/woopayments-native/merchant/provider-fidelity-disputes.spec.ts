@@ -14,7 +14,10 @@ import {
 	getPaymentEvidence,
 	type PaymentEvidence,
 } from '../../../utils/woopayments-native/record-evidence';
-import { getChargeWithTransportRetry } from '../../../utils/woopayments-native/provider-evidence';
+import {
+	getChargeWithTransportRetry,
+	getWithReadRetry,
+} from '../../../utils/woopayments-native/provider-evidence';
 import { enterProviderCardTriple } from '../../../utils/woopayments-native/drivers/card-entry';
 import { DISPUTED_FRAUDULENT_CARD } from '../../../utils/woopayments-native/test-cards';
 
@@ -352,10 +355,15 @@ async function readDispute(
 ): Promise< ProviderDisputeRecord > {
 	const dispute = toDisputeRecord(
 		await readJson< unknown >(
-			await restApi.get(
+			// Read through the shared retry: this poll runs against a dispute
+			// the provider is concurrently adjudicating, so a 429 lock_timeout
+			// is routine and means "not reported yet", not "reported wrong".
+			await getWithReadRetry(
+				restApi,
 				`/wp-json/wc/v3/payments/disputes/${ encodeURIComponent(
 					disputeId
-				) }`
+				) }`,
+				`dispute ${ disputeId }`
 			),
 			`Provider dispute ${ disputeId } read`
 		)
@@ -538,10 +546,40 @@ function statusTransitionNotes( notes: readonly string[] ): string[] {
 	);
 }
 
+/**
+ * The "Payment dispute has been updated" notes on an order.
+ *
+ * There are never any, and that is a platform fact rather than a native one.
+ * `WooPaymentsDisputeEventHandler` writes this note for any supported dispute
+ * event that is not a funds movement — that is, for `charge.dispute.updated` —
+ * but the platform's charge event handler forwards only
+ * `charge.dispute.created`, `charge.dispute.closed`,
+ * `charge.dispute.funds_withdrawn` and `charge.dispute.funds_reinstated` to the
+ * merchant store. Its `charge.dispute.updated` branch tracks and caches the
+ * event and returns without calling `forward_event()`, so the store never sees
+ * one and neither runtime can write the note. See the 2026-08-20 correction in
+ * `FIDELITY-CLAIMS.md`.
+ */
 function updatedDisputeNotes( notes: readonly string[] ): string[] {
 	return notes.filter( ( note ) =>
 		note.includes( 'Payment dispute has been updated' )
 	);
+}
+
+/**
+ * The update-effect tripwire.
+ *
+ * Asserting the absence keeps the case honest about what it proves today. It is
+ * a tripwire rather than a silence: if the platform ever starts forwarding
+ * `charge.dispute.updated`, this fails, and that failure is the signal to
+ * restore the original requirement of exactly one update effect rather than to
+ * weaken the case again.
+ */
+function expectNoRelayedDisputeUpdate( notes: readonly string[] ): void {
+	expect(
+		updatedDisputeNotes( notes ),
+		'the platform does not forward charge.dispute.updated, so no update note can exist; if one does, the platform changed and this clause must be restored to requiring exactly one'
+	).toEqual( [] );
 }
 
 /**
@@ -717,6 +755,37 @@ async function fillGuestCheckoutDetails(
 	return false;
 }
 
+/**
+ * The billing phone still holds a phone number, and not a card.
+ *
+ * The third checkout of a run has twice stored
+ * `<phone><card PAN>` in `billing_phone` and failed with no provider object,
+ * while the first two stored the phone alone. Every `fill` in those runs
+ * targeted its intended element — the trace shows the card going into the
+ * provider iframe each time — so the corruption is not the driver typing in the
+ * wrong place. Checking here says whether the corrupted value exists in the
+ * browser *before* the submission or appears between the form and the stored
+ * order, and fails at the point of corruption rather than sixty seconds later
+ * at a receipt that never arrives.
+ */
+async function expectUncorruptedBillingPhone( page: Page ): Promise< void > {
+	const phone = page
+		.locator(
+			'input[name="phone"], input[id$="-phone"], #billing_phone, #shipping-phone, #billing-phone'
+		)
+		.first();
+	if ( ( await phone.count() ) === 0 ) {
+		return;
+	}
+	const value = ( await phone.inputValue().catch( () => '' ) ) ?? '';
+	expect(
+		value.includes( DISPUTED_FRAUDULENT_CARD.number ),
+		`the billing phone field holds ${ JSON.stringify(
+			value
+		) }, which contains the card number; submitting would store a PAN on the order`
+	).toBe( false );
+}
+
 async function fillDisputedCard(
 	session: ProviderWriteSession,
 	page: Page,
@@ -732,6 +801,7 @@ async function fillDisputedCard(
 			'Blocks checkout'
 		);
 		await page.getByRole( 'button', { name: /place order/i } ).focus();
+		await expectUncorruptedBillingPhone( page );
 		return;
 	}
 
@@ -757,6 +827,7 @@ async function fillDisputedCard(
 		.locator( '[name="cvc"]' )
 		.fill( DISPUTED_FRAUDULENT_CARD.securityCode );
 	await page.getByRole( 'button', { name: /place order/i } ).focus();
+	await expectUncorruptedBillingPhone( page );
 }
 
 /**
@@ -1655,11 +1726,9 @@ test.describe.serial( 'dispute-lifecycle', () => {
 								WON_STATUS
 							);
 
-							// One update effect, one closed-won effect, nothing
-							// applied twice.
-							expect(
-								updatedDisputeNotes( outcome.notes )
-							).toHaveLength( 1 );
+							// One closed-won effect, nothing applied twice, and
+							// no update effect — see the tripwire.
+							expectNoRelayedDisputeUpdate( outcome.notes );
 							expect(
 								closedDisputeNotes( outcome.notes, WON_STATUS )
 							).toHaveLength( 1 );
@@ -1779,9 +1848,7 @@ test.describe.serial( 'dispute-lifecycle', () => {
 								LOST_STATUS
 							);
 
-							expect(
-								updatedDisputeNotes( outcome.notes )
-							).toHaveLength( 1 );
+							expectNoRelayedDisputeUpdate( outcome.notes );
 							expect(
 								closedDisputeNotes( outcome.notes, LOST_STATUS )
 							).toHaveLength( 1 );
