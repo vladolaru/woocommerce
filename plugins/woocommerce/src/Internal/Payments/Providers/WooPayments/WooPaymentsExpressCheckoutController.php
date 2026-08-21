@@ -117,8 +117,8 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 			wc_setcookie( 'wcpay_express_checkout_redirect_url', $url, time() + MINUTE_IN_SECONDS * 10 );
 
 			$my_account_url = get_permalink( get_option( 'woocommerce_myaccount_page_id' ) );
-			if ( is_string( $my_account_url ) ) {
-				wp_safe_redirect( $my_account_url );
+			if ( is_string( $my_account_url ) && wp_safe_redirect( $my_account_url ) ) {
+				exit;
 			}
 		}
 	}
