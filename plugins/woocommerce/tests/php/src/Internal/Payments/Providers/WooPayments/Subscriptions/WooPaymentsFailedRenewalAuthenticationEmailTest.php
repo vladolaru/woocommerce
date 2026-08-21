@@ -41,8 +41,8 @@ class WooPaymentsFailedRenewalAuthenticationEmailTest extends WC_Unit_Test_Case 
 	 * @testdox Should leave the retry rule alone for an unrelated order.
 	 */
 	public function test_set_store_owner_custom_email_ignores_unrelated_orders(): void {
-		$order = wc_create_order();
-		$email = new WooPaymentsFailedRenewalAuthenticationEmail();
+		$order         = wc_create_order();
+		$email         = new WooPaymentsFailedRenewalAuthenticationEmail();
 		$email->object = $order;
 
 		$rule = $email->set_store_owner_custom_email(
