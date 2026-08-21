@@ -107,6 +107,61 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 		if ( false === has_action( 'wp_enqueue_scripts', array( $this, 'enqueue_assets' ) ) ) {
 			add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_assets' ) );
 		}
+
+		// Priority 11 so the notices append after the store's own order-received text
+		// customizations, matching the WooPayments extension. The same filter renders on
+		// the classic thank-you template and the blocks order-confirmation page.
+		if ( false === has_filter( 'woocommerce_thankyou_order_received_text', array( $this, 'add_notice_previous_paid_order' ) ) ) {
+			add_filter( 'woocommerce_thankyou_order_received_text', array( $this, 'add_notice_previous_paid_order' ), 11 );
+		}
+
+		if ( false === has_filter( 'woocommerce_thankyou_order_received_text', array( $this, 'add_notice_previous_successful_intent' ) ) ) {
+			add_filter( 'woocommerce_thankyou_order_received_text', array( $this, 'add_notice_previous_successful_intent' ), 11 );
+		}
+	}
+
+	/**
+	 * Tell the shopper a duplicate-order payment was prevented.
+	 *
+	 * The duplicate-payment guard redirects here with a flag instead of charging a second
+	 * time; without this notice the shopper lands on a plain thank-you page and never
+	 * learns why their new order disappeared.
+	 *
+	 * @internal
+	 *
+	 * @param string $text Default thank-you text.
+	 * @return string
+	 */
+	public function add_notice_previous_paid_order( $text ) {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Display-only flag appended by the duplicate-payment redirect.
+		if ( isset( $_GET[ WooPaymentsDuplicatePaymentPreventionService::FLAG_PREVIOUS_ORDER_PAID ] ) ) {
+			$text .= sprintf(
+				'<div class="woocommerce-info">%s</div>',
+				esc_html__( 'We detected and prevented an attempt to pay for a duplicate order. If this was a mistake and you wish to try again, please create a new order.', 'woocommerce' )
+			);
+		}
+
+		return $text;
+	}
+
+	/**
+	 * Tell the shopper a second payment for this order was prevented.
+	 *
+	 * @internal
+	 *
+	 * @param string $text Default thank-you text.
+	 * @return string
+	 */
+	public function add_notice_previous_successful_intent( $text ) {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Display-only flag appended by the duplicate-payment redirect.
+		if ( isset( $_GET[ WooPaymentsDuplicatePaymentPreventionService::FLAG_PREVIOUS_SUCCESSFUL_INTENT ] ) ) {
+			$text .= sprintf(
+				'<div class="woocommerce-info">%s</div>',
+				esc_html__( 'We prevented multiple payments for the same order. If this was a mistake and you wish to try again, please create a new order.', 'woocommerce' )
+			);
+		}
+
+		return $text;
 	}
 
 	/**

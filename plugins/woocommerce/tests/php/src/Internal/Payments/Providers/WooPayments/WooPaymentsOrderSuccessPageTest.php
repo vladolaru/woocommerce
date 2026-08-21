@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderSuccessPage;
@@ -276,6 +277,69 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 		$order = $this->create_multibanco_order();
 
 		$this->assertSame( 'Stored title', $page->filter_payment_method_title( 'Stored title', $order ) );
+	}
+
+	/**
+	 * @testdox Should tell the shopper on the thank-you page when a duplicate-order payment was prevented.
+	 */
+	public function test_thankyou_text_gains_notice_for_prevented_duplicate_order(): void {
+		$page = $this->create_page( true );
+
+		$_GET[ WooPaymentsDuplicatePaymentPreventionService::FLAG_PREVIOUS_ORDER_PAID ] = 'yes';
+		try {
+			$text = $page->add_notice_previous_paid_order( 'Thank you.' );
+		} finally {
+			unset( $_GET[ WooPaymentsDuplicatePaymentPreventionService::FLAG_PREVIOUS_ORDER_PAID ] );
+		}
+
+		$this->assertStringStartsWith( 'Thank you.', $text );
+		$this->assertStringContainsString( 'woocommerce-info', $text );
+		$this->assertStringContainsString( 'duplicate order', $text );
+	}
+
+	/**
+	 * @testdox Should tell the shopper on the thank-you page when a second payment for the same order was prevented.
+	 */
+	public function test_thankyou_text_gains_notice_for_prevented_second_payment(): void {
+		$page = $this->create_page( true );
+
+		$_GET[ WooPaymentsDuplicatePaymentPreventionService::FLAG_PREVIOUS_SUCCESSFUL_INTENT ] = 'yes';
+		try {
+			$text = $page->add_notice_previous_successful_intent( 'Thank you.' );
+		} finally {
+			unset( $_GET[ WooPaymentsDuplicatePaymentPreventionService::FLAG_PREVIOUS_SUCCESSFUL_INTENT ] );
+		}
+
+		$this->assertStringStartsWith( 'Thank you.', $text );
+		$this->assertStringContainsString( 'woocommerce-info', $text );
+		$this->assertStringContainsString( 'multiple payments for the same order', $text );
+	}
+
+	/**
+	 * @testdox Should leave the thank-you text alone without the duplicate-prevention flags.
+	 */
+	public function test_thankyou_text_unchanged_without_prevention_flags(): void {
+		$page = $this->create_page( true );
+
+		$this->assertSame( 'Thank you.', $page->add_notice_previous_paid_order( 'Thank you.' ) );
+		$this->assertSame( 'Thank you.', $page->add_notice_previous_successful_intent( 'Thank you.' ) );
+	}
+
+	/**
+	 * @testdox Should hook both duplicate-prevention notices into the order-received text when native owns the runtime.
+	 */
+	public function test_register_hooks_duplicate_prevention_notices(): void {
+		$page = $this->create_page( true );
+
+		$page->register();
+
+		try {
+			$this->assertSame( 11, has_filter( 'woocommerce_thankyou_order_received_text', array( $page, 'add_notice_previous_paid_order' ) ) );
+			$this->assertSame( 11, has_filter( 'woocommerce_thankyou_order_received_text', array( $page, 'add_notice_previous_successful_intent' ) ) );
+		} finally {
+			remove_filter( 'woocommerce_thankyou_order_received_text', array( $page, 'add_notice_previous_paid_order' ), 11 );
+			remove_filter( 'woocommerce_thankyou_order_received_text', array( $page, 'add_notice_previous_successful_intent' ), 11 );
+		}
 	}
 
 	/**
