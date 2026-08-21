@@ -338,10 +338,19 @@ const initOrderAttribution = () => {
 };
 
 const getPlaceOrderExtensions = () => {
-	const inputs = document.querySelectorAll(
+	let inputs = document.querySelectorAll(
 		`#${ ORDER_ATTRIBUTION_ELEMENT_ID } input`
 	);
 	const orderAttributionData = {};
+
+	// The attribution script can load after our init ran; retry once at
+	// collection time so a late load doesn't silently drop attribution.
+	if ( ! inputs.length ) {
+		initOrderAttribution();
+		inputs = document.querySelectorAll(
+			`#${ ORDER_ATTRIBUTION_ELEMENT_ID } input`
+		);
+	}
 
 	inputs.forEach( ( input ) => {
 		const name = ( input.name || '' ).replace(

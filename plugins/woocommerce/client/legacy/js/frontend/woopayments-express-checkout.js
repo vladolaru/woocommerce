@@ -803,6 +803,15 @@
 		var orderAttributionData = {};
 		var extensions = {};
 
+		// The attribution script can load after our init ran; retry once at
+		// collection time so a late load doesn't silently drop attribution.
+		if ( ! inputs.length ) {
+			initOrderAttribution();
+			inputs = document.querySelectorAll(
+				'#' + ORDER_ATTRIBUTION_ELEMENT_ID + ' input'
+			);
+		}
+
 		inputs.forEach( function ( input ) {
 			var name = ( input.name || '' ).replace(
 				'wc_order_attribution_',
