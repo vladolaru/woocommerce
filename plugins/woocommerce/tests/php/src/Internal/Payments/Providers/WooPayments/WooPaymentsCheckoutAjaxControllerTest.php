@@ -1756,6 +1756,91 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Create-setup-intent requests with an invalid fraud-prevention token are rejected before any SetupIntent exists.
+	 */
+	public function test_create_setup_intent_rejects_invalid_fraud_prevention_token_before_creating(): void {
+		$user_id = $this->factory->user->create();
+		wp_set_current_user( $user_id );
+		WC()->initialize_session();
+
+		// Seed through the container's account service: it memoizes the account
+		// cache per instance, and the controller's fraud service reads through
+		// that same shared instance.
+		wc_get_container()->get( WooPaymentsAccountService::class )->cache_account_data(
+			array(
+				'account_id'                       => 'acct_fraud_check',
+				'is_live'                          => true,
+				'card_testing_protection_eligible' => true,
+			)
+		);
+
+		$api_client = new class() extends WooPaymentsApiClient {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * SetupIntent creation requests this fake received.
+			 *
+			 * @var array<int,array<string,mixed>>
+			 */
+			public array $created_setup_intents = array();
+
+			/**
+			 * Create and confirm a SetupIntent.
+			 *
+			 * @param array<string,mixed> $request_data    Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_setup_intention( array $request_data, string $idempotency_key ): array {
+				// Avoid parameter not used PHPCS errors.
+				unset( $idempotency_key );
+				$this->created_setup_intents[] = $request_data;
+
+				return array(
+					'id'     => 'seti_should_not_exist',
+					'status' => 'succeeded',
+				);
+			}
+		};
+
+		$fraud_prevention_service = wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService::class );
+		$this->assertTrue( $fraud_prevention_service->has_session(), 'Precondition: the fraud service must see the WooCommerce session.' );
+		$this->assertTrue( $fraud_prevention_service->is_enabled(), 'Precondition: card-testing protection must read as eligible.' );
+
+		$sut      = $this->create_controller( $api_client );
+		$response = $sut->get_create_setup_intent_response(
+			array(
+				'_ajax_nonce'                  => wp_create_nonce( 'wcpay_create_setup_intent_nonce' ),
+				'wcpay-payment-method'         => 'pm_card',
+				'wcpay-fraud-prevention-token' => 'wrong-token',
+			)
+		);
+
+		$this->assertFalse( $response['success'] );
+		$this->assertSame( 400, $response['status_code'] );
+		$this->assertSame( array(), $api_client->created_setup_intents, 'A fraud-failed request must never create a SetupIntent.' );
+
+		// The container's account service memoizes the account cache per
+		// instance; reset the shared instance to a non-eligible payload so the
+		// fraud gate disarms for the rest of the suite, then drop the option.
+		wc_get_container()->get( WooPaymentsAccountService::class )->cache_account_data(
+			array(
+				'account_id' => 'acct_fraud_check',
+				'is_live'    => true,
+			)
+		);
+		delete_option( 'wcpay_account_data' );
+		wp_set_current_user( 0 );
+	}
+
+	/**
 	 * Create a checkout AJAX controller.
 	 *
 	 * @param WooPaymentsApiClient              $api_client       API client.

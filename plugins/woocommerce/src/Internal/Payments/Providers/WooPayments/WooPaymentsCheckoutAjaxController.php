@@ -50,6 +50,13 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	private WooPaymentsCustomerService $customer_service;
 
 	/**
+	 * Fraud prevention service.
+	 *
+	 * @var WooPaymentsFraudPreventionService
+	 */
+	private WooPaymentsFraudPreventionService $fraud_prevention_service;
+
+	/**
 	 * Order lifecycle service.
 	 *
 	 * @var OrderPaymentLifecycleService
@@ -305,6 +312,20 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 
 		if ( ! $this->is_nonce_valid( $request, 'wcpay_create_setup_intent_nonce' ) ) {
 			return $this->json_error_response( __( "We're not able to add this payment method. Please refresh the page and try again.", 'woocommerce' ), 403 );
+		}
+
+		// The card-testing prevention check must run BEFORE the SetupIntent is
+		// created: a fraud-failed attempt that has already created and
+		// confirmed a SetupIntent leaves the payment method attached to the
+		// customer server-side with nothing to detach it. Same ordering as the
+		// plugin's create_setup_intent_ajax: nonce, fraud check, rate limit.
+		$fraud_prevention_service = $this->get_fraud_prevention_service();
+		if (
+			$fraud_prevention_service->has_session()
+			&& $fraud_prevention_service->is_enabled()
+			&& ! $fraud_prevention_service->verify_token( $this->get_request_string( $request, WooPaymentsFraudPreventionService::TOKEN_NAME ) )
+		) {
+			return $this->json_error_response( __( "We're not able to add this payment method. Please refresh the page and try again.", 'woocommerce' ), 400 );
 		}
 
 		$user_id        = get_current_user_id();
@@ -803,5 +824,18 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 		}
 
 		return sanitize_text_field( (string) $value );
+	}
+
+	/**
+	 * Get the fraud prevention service.
+	 *
+	 * @return WooPaymentsFraudPreventionService
+	 */
+	private function get_fraud_prevention_service(): WooPaymentsFraudPreventionService {
+		if ( ! isset( $this->fraud_prevention_service ) ) {
+			$this->fraud_prevention_service = wc_get_container()->get( WooPaymentsFraudPreventionService::class );
+		}
+
+		return $this->fraud_prevention_service;
 	}
 }
