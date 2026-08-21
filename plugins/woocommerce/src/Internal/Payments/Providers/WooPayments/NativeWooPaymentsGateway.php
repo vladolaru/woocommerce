@@ -1377,10 +1377,52 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return new WP_Error( 'native_payment_refund_missing_charge', __( 'This order does not have a WooPayments charge to refund.', 'woocommerce' ) );
 		}
 
-		return $this->get_processing_service()->process_refund(
+		$result = $this->get_processing_service()->process_refund(
 			PaymentContext::for_refund( $order, $this->id, $refund_amount, (string) $reason ),
 			$this->get_provider()
 		);
+
+		// The lock refusal made no platform attempt, so there is no failure to record.
+		if ( is_wp_error( $result ) && 'native_payment_refund_locked' !== $result->get_error_code() ) {
+			$this->record_refund_failure( $order, $refund_amount, $result );
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Record a failed synchronous refund attempt on the order.
+	 *
+	 * The merchant is looking at the order screen when a refund fails, and the error they
+	 * dismissed is otherwise gone: the note and the failed refund status keep the failure
+	 * visible on the order itself.
+	 *
+	 * @param WC_Order $order  Order that was being refunded.
+	 * @param float    $amount Refund amount.
+	 * @param WP_Error $error  Refund failure.
+	 */
+	private function record_refund_failure( WC_Order $order, float $amount, WP_Error $error ): void {
+		$intent_currency = (string) $order->get_meta( '_wcpay_intent_currency', true );
+		$note            = wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_refund_failure_note(
+			$order,
+			$amount,
+			'' !== $intent_currency ? $intent_currency : (string) $order->get_currency(),
+			$error->get_error_message()
+		);
+
+		if ( function_exists( 'wc_get_logger' ) ) {
+			wc_get_logger()->error(
+				$note,
+				array(
+					'source'   => 'woopayments-payments',
+					'order_id' => $order->get_id(),
+				)
+			);
+		}
+
+		$order->add_order_note( $note );
+		$order->update_meta_data( '_wcpay_refund_status', 'failed' );
+		$order->save();
 	}
 
 	/**

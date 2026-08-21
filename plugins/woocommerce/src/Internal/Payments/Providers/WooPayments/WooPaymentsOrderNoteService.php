@@ -649,6 +649,24 @@ class WooPaymentsOrderNoteService {
 	}
 
 	/**
+	 * Build the order note for a synchronous refund attempt that failed.
+	 *
+	 * @param WC_Order $order         Order object.
+	 * @param float    $amount        Refund amount.
+	 * @param string   $currency      Refund currency.
+	 * @param string   $error_message Failure message.
+	 * @return string
+	 */
+	public function format_refund_failure_note( WC_Order $order, float $amount, string $currency, string $error_message ): string {
+		return sprintf(
+			/* translators: %1$s: the refund amount, %2$s: error message. */
+			__( 'A refund of %1$s failed to complete: %2$s', 'woocommerce' ),
+			$this->format_refund_amount( $order, $amount, $currency ),
+			$error_message
+		);
+	}
+
+	/**
 	 * Build a localized provider refund failure message.
 	 *
 	 * @param string $provider_status Provider refund status.

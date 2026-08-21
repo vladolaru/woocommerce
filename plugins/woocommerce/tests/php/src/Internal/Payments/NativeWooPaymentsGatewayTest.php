@@ -2696,6 +2696,75 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should write a failure note and mark the refund failed when a synchronous refund attempt fails.
+	 */
+	public function test_process_refund_failure_writes_order_note_and_failed_status(): void {
+		$order = $this->create_order();
+		$order->update_meta_data( '_charge_id', 'ch_test' );
+		$order->save();
+
+		$service = new class() extends RecordingPaymentProcessingService {
+			/**
+			 * Fail the refund like a provider refusal.
+			 *
+			 * @param PaymentContext   $context  Payment context.
+			 * @param ProviderContract $provider Provider.
+			 * @return bool|\WP_Error
+			 */
+			public function process_refund( PaymentContext $context, ProviderContract $provider ) {
+				parent::process_refund( $context, $provider );
+
+				return new \WP_Error( 'insufficient_balance_for_refund', 'The balance is too low.' );
+			}
+		};
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		$result = $gateway->process_refund( $order->get_id(), 4.25, 'Adjustment' );
+
+		$this->assertWPError( $result );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'failed', $order->get_meta( '_wcpay_refund_status', true ) );
+		$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+		$this->assertNotEmpty( $notes );
+		$this->assertStringContainsString( 'failed to complete', (string) $notes[0]->content );
+		$this->assertStringContainsString( 'The balance is too low.', (string) $notes[0]->content );
+	}
+
+	/**
+	 * @testdox Should not record a refund failure when the attempt was refused for a concurrent refund.
+	 */
+	public function test_process_refund_lock_refusal_records_no_failure(): void {
+		$order = $this->create_order();
+		$order->update_meta_data( '_charge_id', 'ch_test' );
+		$order->save();
+
+		$service = new class() extends RecordingPaymentProcessingService {
+			/**
+			 * Refuse the refund before any platform attempt.
+			 *
+			 * @param PaymentContext   $context  Payment context.
+			 * @param ProviderContract $provider Provider.
+			 * @return bool|\WP_Error
+			 */
+			public function process_refund( PaymentContext $context, ProviderContract $provider ) {
+				parent::process_refund( $context, $provider );
+
+				return new \WP_Error( 'native_payment_refund_locked', 'A refund is already in progress for this order.' );
+			}
+		};
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		$result = $gateway->process_refund( $order->get_id(), 4.25, 'Adjustment' );
+
+		$this->assertWPError( $result );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( '', $order->get_meta( '_wcpay_refund_status', true ), 'A refusal that made no platform attempt must not mark the refund failed.' );
+		$this->assertCount( 0, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+	}
+
+	/**
 	 * @testdox Should resolve native dependencies when WooCommerce instantiates the gateway directly.
 	 */
 	public function test_process_payment_resolves_dependencies_without_explicit_init(): void {
