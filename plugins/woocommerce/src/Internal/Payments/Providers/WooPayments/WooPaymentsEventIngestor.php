@@ -15,6 +15,7 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
 use InvalidArgumentException;
 use Throwable;
 use WC_Order;
+use WC_Payment_Token;
 
 /**
  * Ingests WooPayments provider webhook events into native payment lifecycle effects.
@@ -348,6 +349,7 @@ class WooPaymentsEventIngestor {
 			return;
 		}
 
+		$this->maybe_repair_recurring_order_token( $order, $event_type, $event_object );
 		$this->lifecycle_service->apply( $order, $lifecycle_event, new WooPaymentsPersistenceProfile() );
 		$this->maybe_send_ipp_receipt_email( $order, $event_type, $event_object );
 		$this->run_delivery_hook( 'woocommerce_payments_after_webhook_delivery', $event_type, $event );
@@ -1066,7 +1068,92 @@ class WooPaymentsEventIngestor {
 	}
 
 	/**
-	 * Get the WooPayments account service.
+	 * Repair the payment token on an unpaid recurring order paid through a webhook.
+	 *
+	 * A recurring order can reach `payment_intent.succeeded` without a usable local
+	 * token — WooPay checkouts and platform-side charges save the method at the
+	 * provider, not locally. Without the repair, the next scheduled renewal finds no
+	 * token and fails. Runs before the lifecycle apply on purpose: once this same
+	 * event marks the order paid, the redelivery guard below would skip the repair.
+	 *
+	 * @param WC_Order            $order        Order the event resolved to.
+	 * @param string              $event_type   Event type.
+	 * @param array<string,mixed> $event_object Provider intent object.
+	 */
+	private function maybe_repair_recurring_order_token( WC_Order $order, string $event_type, array $event_object ): void {
+		if ( 'payment_intent.succeeded' !== $event_type ) {
+			return;
+		}
+
+		$payment_method_id = $this->get_payment_method_id_from_intent( $event_object );
+		$intent_status     = isset( $event_object['status'] ) ? (string) $event_object['status'] : '';
+		if ( '' === $payment_method_id || ! WooPaymentsIntentCodec::is_authorized_native_intent_status( $intent_status ) ) {
+			return;
+		}
+
+		if ( ! $this->is_recurring_order( $order ) ) {
+			return;
+		}
+
+		// A paid order already had its token saved at checkout, so this is a
+		// redelivered event. Saving again could re-point sibling subscriptions to a
+		// card the customer has since replaced.
+		if ( $order->is_paid() ) {
+			return;
+		}
+
+		$token_service  = wc_get_container()->get( WooPaymentsTokenService::class );
+		$previous_token = $token_service->get_active_token_for_order( $order );
+
+		try {
+			$token = $token_service->get_or_create_token_for_user( $payment_method_id, (int) $order->get_customer_id() );
+			if ( ! $token instanceof WC_Payment_Token ) {
+				return;
+			}
+
+			$token_service->attach_token_to_order( $order, $token );
+
+			if ( $previous_token instanceof WC_Payment_Token && $previous_token->get_id() !== $token->get_id() ) {
+				$note = sprintf(
+					/* translators: 1: Previous payment token ID, 2: New payment token ID. */
+					__( 'WooPayments updated the subscription payment method token from token #%1$d to #%2$d after receiving a successful renewal payment webhook.', 'woocommerce' ),
+					$previous_token->get_id(),
+					$token->get_id()
+				);
+				wc_get_logger()->info( $note, array( 'source' => 'woopayments-subscriptions' ) );
+				$order->add_order_note( $note );
+			}
+		} catch ( Throwable $exception ) {
+			wc_get_logger()->error(
+				'Error when saving payment method from webhook: ' . $exception->getMessage(),
+				array(
+					'source'   => 'woopayments-subscriptions',
+					'order_id' => $order->get_id(),
+				)
+			);
+			$order->add_order_note( __( 'Unable to save payment method for subscription. Please try again or use a different payment method.', 'woocommerce' ) );
+		}
+	}
+
+	/**
+	 * Tell whether an order belongs to a recurring payment.
+	 *
+	 * `wcs_order_contains_subscription()` deliberately excludes renewals, so both
+	 * detectors participate, matching the extension's is_payment_recurring().
+	 *
+	 * @param WC_Order $order Order object.
+	 * @return bool
+	 */
+	private function is_recurring_order( WC_Order $order ): bool {
+		if ( function_exists( 'wcs_order_contains_subscription' ) && wcs_order_contains_subscription( $order->get_id() ) ) {
+			return true;
+		}
+
+		return function_exists( 'wcs_order_contains_renewal' ) && (bool) wcs_order_contains_renewal( $order->get_id() );
+	}
+
+	/**
+	 * Get the account service.
 	 *
 	 * @return WooPaymentsAccountService
 	 */

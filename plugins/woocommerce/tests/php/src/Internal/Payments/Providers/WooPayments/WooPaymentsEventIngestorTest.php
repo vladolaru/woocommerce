@@ -153,6 +153,119 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox payment_intent.succeeded repairs the payment token on an unpaid recurring order.
+	 */
+	public function test_payment_intent_succeeded_repairs_token_for_recurring_unpaid_order(): void {
+		$this->ensure_wcs_order_contains_renewal_double();
+		$customer_id = self::factory()->user->create();
+
+		$token = new \WC_Payment_Token_CC();
+		$token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$token->set_user_id( $customer_id );
+		$token->set_token( 'pm_123' );
+		$token->set_card_type( 'visa' );
+		$token->set_last4( '4242' );
+		$token->set_expiry_month( '12' );
+		$token->set_expiry_year( '2030' );
+		$token->save();
+
+		$order = $this->create_woopayments_order();
+		$order->set_customer_id( $customer_id );
+		$order->save();
+
+		$GLOBALS['wcpay_test_renewal_order_ids'] = array( $order->get_id() );
+
+		try {
+			$this->sut->process( $this->create_payment_intent_event( 'payment_intent.succeeded', $order ) );
+		} finally {
+			unset( $GLOBALS['wcpay_test_renewal_order_ids'] );
+		}
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertContains( $token->get_id(), array_map( 'absint', $order->get_payment_tokens() ), 'The webhook must restore the token so the next scheduled renewal can charge.' );
+	}
+
+	/**
+	 * @testdox payment_intent.succeeded does not re-save the token on an already-paid recurring order.
+	 */
+	public function test_payment_intent_succeeded_skips_token_repair_for_paid_order(): void {
+		$this->ensure_wcs_order_contains_renewal_double();
+		$customer_id = self::factory()->user->create();
+
+		$token = new \WC_Payment_Token_CC();
+		$token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$token->set_user_id( $customer_id );
+		$token->set_token( 'pm_123' );
+		$token->set_card_type( 'visa' );
+		$token->set_last4( '4242' );
+		$token->set_expiry_month( '12' );
+		$token->set_expiry_year( '2030' );
+		$token->save();
+
+		$order = $this->create_woopayments_order();
+		$order->set_customer_id( $customer_id );
+		$order->set_status( 'processing' );
+		$order->save();
+
+		$GLOBALS['wcpay_test_renewal_order_ids'] = array( $order->get_id() );
+
+		try {
+			$this->sut->process( $this->create_payment_intent_event( 'payment_intent.succeeded', $order ) );
+		} finally {
+			unset( $GLOBALS['wcpay_test_renewal_order_ids'] );
+		}
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertNotContains( $token->get_id(), array_map( 'absint', $order->get_payment_tokens() ), 'A paid order already saved its token at checkout; a redelivered event must not re-point it.' );
+	}
+
+	/**
+	 * @testdox payment_intent.succeeded notes the token change when repair replaces an attached token.
+	 */
+	public function test_payment_intent_succeeded_notes_token_change_on_repair(): void {
+		$this->ensure_wcs_order_contains_renewal_double();
+		$customer_id = self::factory()->user->create();
+
+		$old_token = new \WC_Payment_Token_CC();
+		$old_token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$old_token->set_user_id( $customer_id );
+		$old_token->set_token( 'pm_old' );
+		$old_token->set_card_type( 'visa' );
+		$old_token->set_last4( '1111' );
+		$old_token->set_expiry_month( '11' );
+		$old_token->set_expiry_year( '2029' );
+		$old_token->save();
+
+		$new_token = new \WC_Payment_Token_CC();
+		$new_token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$new_token->set_user_id( $customer_id );
+		$new_token->set_token( 'pm_123' );
+		$new_token->set_card_type( 'visa' );
+		$new_token->set_last4( '4242' );
+		$new_token->set_expiry_month( '12' );
+		$new_token->set_expiry_year( '2030' );
+		$new_token->save();
+
+		$order = $this->create_woopayments_order();
+		$order->set_customer_id( $customer_id );
+		$order->add_payment_token( $old_token );
+		$order->save();
+
+		$GLOBALS['wcpay_test_renewal_order_ids'] = array( $order->get_id() );
+
+		try {
+			$this->sut->process( $this->create_payment_intent_event( 'payment_intent.succeeded', $order ) );
+		} finally {
+			unset( $GLOBALS['wcpay_test_renewal_order_ids'] );
+		}
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertContains( $new_token->get_id(), array_map( 'absint', $order->get_payment_tokens() ) );
+		$notes = implode( ' | ', array_map( static fn( $note ): string => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) ) );
+		$this->assertStringContainsString( 'updated the subscription payment method token', $notes );
+	}
+
+	/**
 	 * @testdox payment_intent.succeeded records the structural payment-success note identity.
 	 */
 	public function test_payment_intent_succeeded_records_structural_payment_complete_note_identity(): void {
@@ -3221,7 +3334,21 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a WooPayments order for ingestor tests.
+	 * Ensure a minimal renewal-order detector double exists.
+	 *
+	 * @return void
+	 */
+	private function ensure_wcs_order_contains_renewal_double(): void {
+		if ( function_exists( 'wcs_order_contains_renewal' ) ) {
+			return;
+		}
+
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public renewal detector.
+		eval( 'namespace { function wcs_order_contains_renewal( $order ) { $order_id = is_object( $order ) && method_exists( $order, "get_id" ) ? $order->get_id() : absint( $order ); return in_array( $order_id, $GLOBALS["wcpay_test_renewal_order_ids"] ?? array(), true ); } }' );
+	}
+
+	/**
+	 * Create a WooPayments-paid order for webhook tests.
 	 *
 	 * @return WC_Order
 	 */
