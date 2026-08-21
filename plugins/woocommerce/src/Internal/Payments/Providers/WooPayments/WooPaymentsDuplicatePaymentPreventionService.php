@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
@@ -14,6 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Utilities\OrderUtil;
 use Throwable;
 use WC_Order;
 use WC_Payment_Gateway;
@@ -271,6 +273,106 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 		$this->apply_attached_intent_lifecycle( $intent, $order );
 
 		return $this->success_redirect( $gateway, $order, self::FLAG_PREVIOUS_SUCCESSFUL_INTENT );
+	}
+
+	/**
+	 * Stop a second payment for an order whose stored status is already paid.
+	 *
+	 * Last-resort guard for a resubmission that reuses the same order.
+	 * `check_payment_intent_attached_to_order_succeeded()` covers that case with a richer
+	 * response, but it needs `_intent_id` to have been written and the intent lookup to
+	 * succeed, and returns silently otherwise — including on an API timeout, which is when
+	 * shoppers resubmit. This reads the stored order status instead, so it holds when the
+	 * platform does not respond.
+	 *
+	 * @param WC_Order           $order                  Current order in process_payment.
+	 * @param WC_Payment_Gateway $gateway                Gateway used to build the return URL.
+	 * @param bool               $is_subscription_change Whether this request changes a subscription's payment method.
+	 * @return array<string,string>|null A successful response when the order was already paid, null if not.
+	 */
+	public function check_order_already_paid( WC_Order $order, WC_Payment_Gateway $gateway, bool $is_subscription_change = false ): ?array {
+		// A subscription payment-method change re-runs payment processing against an entity
+		// that was already paid once, so it must not be treated as a duplicate.
+		if ( $is_subscription_change ) {
+			return null;
+		}
+
+		// The instance loaded by process_payment() may be stale, so the stored status decides.
+		$status = $this->get_stored_order_status( $order->get_id() ) ?? $order->get_status();
+
+		if ( ! in_array( $status, wc_get_is_paid_statuses(), true ) ) {
+			return null;
+		}
+
+		// A store can declare one of its paid statuses still payable — deposit and
+		// partial-payment extensions do exactly that, collecting the balance through
+		// pay-for-order. Defer to that declaration rather than blocking a payment the store
+		// expects. `WC_Order::needs_payment()` cannot answer this: it reads the in-memory
+		// status, which is the stale value this guard exists to look past.
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Documented in includes/class-wc-order.php.
+		$payable_statuses = apply_filters( 'woocommerce_valid_order_statuses_for_payment', array( OrderStatus::PENDING, OrderStatus::FAILED ), $order );
+
+		if ( in_array( $status, (array) $payable_statuses, true ) ) {
+			return null;
+		}
+
+		/**
+		 * Filters whether a payment for an already-paid order should be prevented.
+		 *
+		 * Escape hatch for a flow that legitimately re-runs payment against an entity that
+		 * was already paid, and cannot say so through the order's status — the subscription
+		 * payment-method change exempted above is one such flow. Returning false lets the
+		 * payment through, so only do it for a specific flow you recognise: a blanket false
+		 * restores the double-charge this guard exists to stop.
+		 *
+		 * Kept under the WooPayments plugin's filter name: extensions already hook it.
+		 *
+		 * @since 11.0.0
+		 *
+		 * @param bool     $should_prevent Whether to stop the payment. Default true.
+		 * @param WC_Order $order          The order about to be paid a second time.
+		 * @param string   $status         The order's stored status.
+		 */
+		if ( ! apply_filters( 'wcpay_should_prevent_payment_for_paid_order', true, $order, $status ) ) {
+			return null;
+		}
+
+		$order->add_order_note(
+			__( 'WooPayments: detected and prevented a second payment for this order, which had already been paid.', 'woocommerce' )
+		);
+
+		$this->remove_session_processing_order( $order->get_id() );
+
+		return $this->success_redirect( $gateway, $order, self::FLAG_PREVIOUS_SUCCESSFUL_INTENT );
+	}
+
+	/**
+	 * Read an order's status straight from its storage table.
+	 *
+	 * `wc_get_order()` can serve a cached instance whose status predates the payment this
+	 * guard is looking for, so the read bypasses object caching on purpose.
+	 *
+	 * @param int $order_id Order ID.
+	 * @return string|null The unprefixed stored status, or null when the order row is missing.
+	 */
+	private function get_stored_order_status( int $order_id ): ?string {
+		global $wpdb;
+
+		if ( OrderUtil::custom_orders_table_usage_is_enabled() ) {
+			$orders_table = OrderUtil::get_table_for_orders();
+
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Uncached by design; the table name comes from OrderUtil, not from input.
+			$status = $wpdb->get_var( $wpdb->prepare( "SELECT status FROM {$orders_table} WHERE id = %d", $order_id ) );
+		} else {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Uncached by design.
+			$status = $wpdb->get_var( $wpdb->prepare( "SELECT post_status FROM {$wpdb->posts} WHERE ID = %d", $order_id ) );
+		}
+
+		if ( null === $status ) {
+			return null;
+		}
+
+		return OrderUtil::remove_status_prefix( (string) $status );
 	}
 
 	/**

@@ -359,6 +359,102 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	}
 
 	/**
+	 * @testdox Should stop a second payment when the order's stored status is already paid.
+	 */
+	public function test_check_order_already_paid_blocks_paid_order(): void {
+		$session = $this->create_session();
+		$sut     = $this->create_service( $session );
+		$order   = $this->create_order( 'hash', 'processing' );
+		$session->set( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $order->get_id() );
+
+		$result = $sut->check_order_already_paid( $order, $this->create_gateway() );
+
+		$this->assertIsArray( $result );
+		$this->assertSame( 'success', $result['result'] );
+		$this->assertStringContainsString( 'wcpay_previous_successful_intent=yes', $result['redirect'] );
+		$this->assertNull( $session->get( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER ) );
+
+		$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+		$this->assertStringContainsString( 'detected and prevented a second payment', (string) $notes[0]->content );
+	}
+
+	/**
+	 * @testdox Should read the stored status fresh so a stale in-memory instance cannot slip a second payment through.
+	 */
+	public function test_check_order_already_paid_reads_the_stored_status_past_a_stale_instance(): void {
+		$order = $this->create_order( 'hash', 'pending' );
+		$stale = wc_get_order( $order->get_id() );
+		$order->set_status( 'processing' );
+		$order->save();
+
+		$result = $this->create_service()->check_order_already_paid( $stale, $this->create_gateway() );
+
+		$this->assertIsArray( $result );
+		$this->assertSame( 'success', $result['result'] );
+	}
+
+	/**
+	 * @testdox Should let the payment proceed when only the in-memory status looks paid.
+	 */
+	public function test_check_order_already_paid_lets_unpaid_stored_status_through(): void {
+		$order = $this->create_order( 'hash', 'pending' );
+		// In-memory only; the stored status stays pending.
+		$order->set_status( 'processing' );
+
+		$result = $this->create_service()->check_order_already_paid( $order, $this->create_gateway() );
+
+		$this->assertNull( $result );
+	}
+
+	/**
+	 * @testdox Should exempt subscription payment-method changes from the already-paid guard.
+	 */
+	public function test_check_order_already_paid_exempts_subscription_payment_method_change(): void {
+		$order = $this->create_order( 'hash', 'processing' );
+
+		$result = $this->create_service()->check_order_already_paid( $order, $this->create_gateway(), true );
+
+		$this->assertNull( $result );
+	}
+
+	/**
+	 * @testdox Should defer to a store that declares a paid status still payable.
+	 */
+	public function test_check_order_already_paid_defers_to_store_declared_payable_statuses(): void {
+		$order  = $this->create_order( 'hash', 'processing' );
+		$filter = static function ( $statuses ) {
+			$statuses[] = 'processing';
+			return $statuses;
+		};
+		add_filter( 'woocommerce_valid_order_statuses_for_payment', $filter );
+
+		try {
+			$result = $this->create_service()->check_order_already_paid( $order, $this->create_gateway() );
+		} finally {
+			remove_filter( 'woocommerce_valid_order_statuses_for_payment', $filter );
+		}
+
+		$this->assertNull( $result );
+	}
+
+	/**
+	 * @testdox Should let a recognised flow re-run payment through the escape-hatch filter.
+	 */
+	public function test_check_order_already_paid_honors_escape_hatch_filter(): void {
+		$order  = $this->create_order( 'hash', 'completed' );
+		$filter = static fn(): bool => false;
+		add_filter( 'wcpay_should_prevent_payment_for_paid_order', $filter );
+
+		try {
+			$result = $this->create_service()->check_order_already_paid( $order, $this->create_gateway() );
+		} finally {
+			remove_filter( 'wcpay_should_prevent_payment_for_paid_order', $filter );
+		}
+
+		$this->assertNull( $result );
+	}
+
+	/**
 	 * Create a duplicate-payment prevention service.
 	 *
 	 * @param \WC_Session|null                  $session    Optional WooCommerce session.

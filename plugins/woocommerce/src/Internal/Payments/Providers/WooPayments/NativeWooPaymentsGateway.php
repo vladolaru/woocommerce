@@ -1311,14 +1311,23 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		$is_subscription_change = $this->is_subscription_change_payment_request( $order );
-		$context                = PaymentContext::for_checkout(
+
+		// Runs after the intent check so that a reachable intent still produces the richer
+		// response, including the amount-mismatch message. This catches the same-order
+		// resubmission when that check returns empty-handed.
+		$already_paid_result = $this->get_duplicate_payment_prevention_service()->check_order_already_paid( $order, $this, $is_subscription_change );
+		if ( is_array( $already_paid_result ) ) {
+			return $already_paid_result;
+		}
+
+		$context = PaymentContext::for_checkout(
 			$order,
 			$this->id,
 			$this->get_request_payment_method_id(),
 			$this->get_checkout_payment_data( $is_subscription_change ),
 			$this->get_checkout_provider_data( $is_subscription_change )
 		);
-		$outcome                = $this->get_processing_service()->process_checkout_outcome( $context, $this->get_provider() );
+		$outcome = $this->get_processing_service()->process_checkout_outcome( $context, $this->get_provider() );
 		$this->maybe_bump_failed_transaction_rate_limiter( $outcome );
 		self::maybe_add_failed_checkout_notice( $outcome );
 
