@@ -593,6 +593,48 @@ describe( 'woopayments-express-checkout', () => {
 		} );
 	} );
 
+	describe( 'displayLoginConfirmation', () => {
+		it( 'substitutes the wallet name and redirects on confirmation', () => {
+			const { displayLoginConfirmation } = loadModule(
+				baseParams( {
+					login_confirmation: {
+						message:
+							'To complete your transaction with **the selected payment method**, you must log in.',
+						redirect_url: 'http://shop.test/login-redirect/',
+					},
+				} )
+			);
+			window.confirm = jest.fn( () => true );
+
+			displayLoginConfirmation( 'google_pay' );
+
+			expect( window.confirm ).toHaveBeenCalledWith(
+				'To complete your transaction with Google Pay, you must log in.'
+			);
+			expect( window.location.href ).toBe(
+				'http://shop.test/login-redirect/'
+			);
+			delete window.confirm;
+		} );
+
+		it( 'stays on the page when the dialog is dismissed', () => {
+			const { displayLoginConfirmation } = loadModule(
+				baseParams( {
+					login_confirmation: {
+						message: 'Log in with **wallet**.',
+						redirect_url: 'http://shop.test/login-redirect/',
+					},
+				} )
+			);
+			window.confirm = jest.fn( () => false );
+
+			displayLoginConfirmation( 'apple_pay' );
+
+			expect( window.location.href ).toBe( 'http://shop.test/cart/' );
+			delete window.confirm;
+		} );
+	} );
+
 	describe( 'placeOrder', () => {
 		it( 'refreshes the shipping address from the wallet confirm event', async () => {
 			const testables = loadModule( baseParams() );

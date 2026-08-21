@@ -291,6 +291,32 @@ const getStoreApiPath = ( path ) =>
 			undefined,
 	} );
 
+const displayLoginConfirmation = ( expressPaymentType ) => {
+	const loginConfirmation = params?.login_confirmation;
+	const paymentTypesMap = {
+		apple_pay: 'Apple Pay',
+		google_pay: 'Google Pay',
+		amazon_pay: 'Amazon Pay',
+		paypal: 'PayPal',
+		link: 'Link',
+	};
+
+	if ( ! loginConfirmation ) {
+		return;
+	}
+
+	// Replace the dialog text with the specific express checkout type, and
+	// remove the asterisk markers.
+	const message = ( loginConfirmation.message || '' )
+		.replace( /\*\*.*?\*\*/, paymentTypesMap[ expressPaymentType ] )
+		.replace( /\*\*/g, '' );
+
+	// eslint-disable-next-line no-alert
+	if ( window.confirm( message ) ) {
+		window.location.href = loginConfirmation.redirect_url;
+	}
+};
+
 const ORDER_ATTRIBUTION_ELEMENT_ID =
 	'wcpay-express-checkout__order-attribution-inputs';
 
@@ -983,6 +1009,13 @@ const ExpressCheckoutContent = ( {
 		} );
 
 		expressElementRef.current.on( 'click', ( event ) => {
+			// If login is required for checkout, display the redirect
+			// confirmation dialog instead of opening the wallet sheet.
+			if ( params?.login_confirmation ) {
+				displayLoginConfirmation( event?.expressPaymentType );
+				return;
+			}
+
 			const currentCart = getCurrentCart();
 			const shippingAddressRequired = Boolean(
 				shippingData?.needsShipping || params?.checkout?.needs_shipping

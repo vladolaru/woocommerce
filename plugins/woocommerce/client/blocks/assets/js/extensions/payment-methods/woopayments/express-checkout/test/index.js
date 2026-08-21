@@ -888,6 +888,41 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		).not.toContain( 'wcpay-is-platform-payment-method' );
 	} );
 
+	it( 'gates the wallet sheet behind the login confirmation dialog', async () => {
+		baseExpressCheckoutParams.login_confirmation = {
+			message: 'To pay with **the selected payment method**, log in.',
+			redirect_url: 'https://shop.test/login-redirect/',
+		};
+		window.confirm = jest.fn( () => false );
+
+		registerExpressCheckout();
+		const googlePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_googlePay'
+		);
+
+		renderExpressPaymentMethod( googlePayRegistration );
+
+		await waitFor( () => {
+			expect( expressHandlers.click ).toBeDefined();
+		} );
+
+		const event = {
+			expressPaymentType: 'google_pay',
+			resolve: jest.fn(),
+		};
+		await act( async () => {
+			expressHandlers.click( event );
+		} );
+
+		expect( window.confirm ).toHaveBeenCalledWith(
+			'To pay with Google Pay, log in.'
+		);
+		expect( event.resolve ).not.toHaveBeenCalled();
+
+		delete window.confirm;
+		baseExpressCheckoutParams.login_confirmation = false;
+	} );
+
 	it( 'sends order attribution data in the extensions payload', async () => {
 		document.body.insertAdjacentHTML(
 			'beforeend',

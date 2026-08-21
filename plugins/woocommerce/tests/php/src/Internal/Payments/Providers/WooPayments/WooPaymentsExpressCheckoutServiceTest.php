@@ -24,6 +24,12 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_tax_based_on' );
 		delete_option( 'woocommerce_calc_taxes' );
 		delete_option( 'woocommerce_price_num_decimals' );
+		delete_option( 'woocommerce_enable_guest_checkout' );
+		delete_option( 'woocommerce_enable_signup_and_login_from_checkout' );
+		delete_option( 'woocommerce_enable_signup_from_checkout_for_subscriptions' );
+		delete_option( 'woocommerce_registration_generate_username' );
+		delete_option( 'woocommerce_registration_generate_password' );
+		wp_set_current_user( 0 );
 		unset( $_GET['pay_for_order'], $_GET['key'] );
 		remove_all_filters( 'woocommerce_woopayments_express_checkout_enabled_methods' );
 		remove_all_filters( 'wcpay_payment_request_supported_types' );
@@ -139,6 +145,63 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 1234, $product['displayItems'][0]['amount'] );
 		$this->assertSame( 1234, $product['total']['amount'] );
+	}
+
+	/**
+	 * @testdox Should compute login confirmation settings when authentication is required.
+	 */
+	public function test_login_confirmation_settings_when_authentication_required(): void {
+		wp_set_current_user( 0 );
+		update_option( 'woocommerce_enable_guest_checkout', 'no' );
+		update_option( 'woocommerce_enable_signup_and_login_from_checkout', 'no' );
+
+		$params = $this->create_service()->get_express_checkout_params( 'checkout' );
+
+		$this->assertIsArray( $params['login_confirmation'] );
+		$this->assertStringContainsString( '**the selected payment method**', $params['login_confirmation']['message'] );
+		$this->assertStringContainsString( 'wcpay_express_checkout_redirect_url=', $params['login_confirmation']['redirect_url'] );
+		$this->assertStringContainsString( '_wpnonce=', $params['login_confirmation']['redirect_url'] );
+	}
+
+	/**
+	 * @testdox Should not require login confirmation when guest checkout is enabled.
+	 */
+	public function test_login_confirmation_false_when_guest_checkout_enabled(): void {
+		wp_set_current_user( 0 );
+		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
+
+		$params = $this->create_service()->get_express_checkout_params( 'checkout' );
+
+		$this->assertFalse( $params['login_confirmation'] );
+	}
+
+	/**
+	 * @testdox Should not require login confirmation for logged-in shoppers.
+	 */
+	public function test_login_confirmation_false_for_logged_in_user(): void {
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+		update_option( 'woocommerce_enable_guest_checkout', 'no' );
+		update_option( 'woocommerce_enable_signup_and_login_from_checkout', 'no' );
+
+		$params = $this->create_service()->get_express_checkout_params( 'checkout' );
+
+		$this->assertFalse( $params['login_confirmation'] );
+	}
+
+	/**
+	 * @testdox Should not require login confirmation when checkout signup is possible.
+	 */
+	public function test_login_confirmation_false_when_account_creation_possible(): void {
+		wp_set_current_user( 0 );
+		update_option( 'woocommerce_enable_guest_checkout', 'no' );
+		update_option( 'woocommerce_enable_signup_and_login_from_checkout', 'yes' );
+		update_option( 'woocommerce_registration_generate_username', 'yes' );
+		update_option( 'woocommerce_registration_generate_password', 'yes' );
+
+		$params = $this->create_service()->get_express_checkout_params( 'checkout' );
+
+		$this->assertFalse( $params['login_confirmation'] );
 	}
 
 	/**

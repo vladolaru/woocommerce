@@ -725,6 +725,32 @@
 		);
 	}
 
+	function displayLoginConfirmation( expressPaymentType ) {
+		var loginConfirmation = config.login_confirmation;
+		var paymentTypesMap = {
+			apple_pay: 'Apple Pay',
+			google_pay: 'Google Pay',
+			amazon_pay: 'Amazon Pay',
+			paypal: 'PayPal',
+			link: 'Link',
+		};
+		var message;
+
+		if ( ! loginConfirmation ) {
+			return;
+		}
+
+		// Replace the dialog text with the specific express checkout type,
+		// and remove the asterisk markers.
+		message = ( loginConfirmation.message || '' )
+			.replace( /\*\*.*?\*\*/, paymentTypesMap[ expressPaymentType ] )
+			.replace( /\*\*/g, '' );
+
+		if ( window.confirm( message ) ) {
+			window.location.href = loginConfirmation.redirect_url;
+		}
+	}
+
 	function initOrderAttribution() {
 		var orderAttributionInputs;
 
@@ -1640,6 +1666,13 @@
 		} );
 
 		expressElement.on( 'click', async function ( event ) {
+			// If login is required for checkout, display the redirect
+			// confirmation dialog instead of opening the wallet sheet.
+			if ( config.login_confirmation ) {
+				displayLoginConfirmation( event && event.expressPaymentType );
+				return;
+			}
+
 			recordExpressCheckoutClickEvent(
 				event && event.expressPaymentType
 			);
@@ -1766,6 +1799,7 @@
 			handleShippingRateChange: handleShippingRateChange,
 			placeOrder: placeOrder,
 			redirectToOrder: redirectToOrder,
+			displayLoginConfirmation: displayLoginConfirmation,
 			parseConfirmationHash: parseConfirmationHash,
 			getElementCurrency: function () {
 				return elementCurrency;

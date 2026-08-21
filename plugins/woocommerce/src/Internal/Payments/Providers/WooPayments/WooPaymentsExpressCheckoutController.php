@@ -86,6 +86,59 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 		if ( false === has_filter( 'wcpay_tracks_event_properties', array( $this, 'add_tracking_event_properties' ) ) ) {
 			add_filter( 'wcpay_tracks_event_properties', array( $this, 'add_tracking_event_properties' ), 10, 2 );
 		}
+
+		if ( false === has_action( 'template_redirect', array( $this, 'handle_express_checkout_redirect' ) ) ) {
+			add_action( 'template_redirect', array( $this, 'handle_express_checkout_redirect' ) );
+		}
+
+		if ( false === has_filter( 'woocommerce_login_redirect', array( $this, 'get_login_redirect_url' ) ) ) {
+			add_filter( 'woocommerce_login_redirect', array( $this, 'get_login_redirect_url' ) );
+		}
+
+		if ( false === has_filter( 'woocommerce_registration_redirect', array( $this, 'get_login_redirect_url' ) ) ) {
+			add_filter( 'woocommerce_registration_redirect', array( $this, 'get_login_redirect_url' ) );
+		}
+	}
+
+	/**
+	 * Handle the express checkout login redirect when the login confirmation
+	 * dialog's "Continue" is clicked: stash the URL to return to after
+	 * authentication and send the shopper to the my-account page.
+	 */
+	public function handle_express_checkout_redirect(): void {
+		if (
+			! empty( $_GET['wcpay_express_checkout_redirect_url'] )
+			&& ! empty( $_GET['_wpnonce'] )
+			&& wp_verify_nonce( sanitize_key( wp_unslash( $_GET['_wpnonce'] ) ), 'wcpay-set-redirect-url' )
+		) {
+			$url = rawurldecode( esc_url_raw( wp_unslash( $_GET['wcpay_express_checkout_redirect_url'] ) ) );
+			// Sets a redirect URL cookie for 10 minutes, which we will redirect to after authentication.
+			// Users have a 10 minute window to log in / create an account before the URL expires.
+			wc_setcookie( 'wcpay_express_checkout_redirect_url', $url, time() + MINUTE_IN_SECONDS * 10 );
+
+			$my_account_url = get_permalink( get_option( 'woocommerce_myaccount_page_id' ) );
+			if ( is_string( $my_account_url ) ) {
+				wp_safe_redirect( $my_account_url );
+			}
+		}
+	}
+
+	/**
+	 * Return the stashed express checkout URL as the login redirect.
+	 *
+	 * @param string $redirect Default redirect URL.
+	 * @return string
+	 */
+	public function get_login_redirect_url( $redirect ) {
+		$url = esc_url_raw( wp_unslash( $_COOKIE['wcpay_express_checkout_redirect_url'] ?? '' ) );
+
+		if ( empty( $url ) ) {
+			return $redirect;
+		}
+
+		wc_setcookie( 'wcpay_express_checkout_redirect_url', '' );
+
+		return $url;
 	}
 
 	/**

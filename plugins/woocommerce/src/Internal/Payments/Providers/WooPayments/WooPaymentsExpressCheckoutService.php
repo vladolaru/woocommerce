@@ -114,7 +114,7 @@ class WooPaymentsExpressCheckoutService {
 			'isShopperTrackingEnabled'    => $tracking_enabled,
 			'is_shopper_tracking_enabled' => $tracking_enabled,
 			'button'                      => $this->get_button_settings( $context ),
-			'login_confirmation'          => false,
+			'login_confirmation'          => $this->get_login_confirmation_settings(),
 			'button_context'              => $context,
 			'has_block'                   => has_block( 'woocommerce/cart' ) || has_block( 'woocommerce/checkout' ),
 			'product'                     => 'product' === $context ? $this->get_product_data() : array(),
@@ -681,6 +681,76 @@ class WooPaymentsExpressCheckoutService {
 	 */
 	private function prepare_amount( float $amount, string $currency ): int {
 		return (int) round( $amount * ( 10 ** WooPaymentsCurrencyUtils::get_stripe_minor_unit_for_currency( $currency ) ) );
+	}
+
+	/**
+	 * Get the login confirmation settings for the wallet click gate.
+	 *
+	 * When checkout requires an authenticated account that the express flow
+	 * cannot create, the wallet sheet must not open; the scripts show a
+	 * login redirect confirmation instead.
+	 *
+	 * @return array{message:string,redirect_url:string}|false
+	 */
+	private function get_login_confirmation_settings() {
+		if ( is_user_logged_in() || ! $this->is_authentication_required() ) {
+			return false;
+		}
+
+		/* translators: The text encapsulated in `**` can be replaced with "Apple Pay" or "Google Pay". Please translate this text, but don't remove the `**`. */
+		$message      = __( 'To complete your transaction with **the selected payment method**, you must log in or create an account with our site.', 'woocommerce' );
+		$redirect_url = add_query_arg(
+			array(
+				'_wpnonce'                            => wp_create_nonce( 'wcpay-set-redirect-url' ),
+				'wcpay_express_checkout_redirect_url' => rawurlencode( home_url( add_query_arg( array() ) ) ),
+			),
+			home_url()
+		);
+
+		return array(
+			'message'      => $message,
+			'redirect_url' => $redirect_url,
+		);
+	}
+
+	/**
+	 * Tell whether authentication is required for checkout.
+	 *
+	 * @return bool
+	 */
+	private function is_authentication_required(): bool {
+		// If guest checkout is disabled and account creation is not possible, authentication is required.
+		if ( 'no' === get_option( 'woocommerce_enable_guest_checkout', 'yes' ) && ! $this->is_account_creation_possible() ) {
+			return true;
+		}
+
+		// If the cart contains a subscription and account creation is not possible, authentication is required.
+		if ( WooPaymentsSubscriptionMethodPolicy::cart_contains_subscription_or_renewal() && ! $this->is_account_creation_possible() ) {
+			return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * Tell whether account creation is possible during checkout.
+	 *
+	 * @return bool
+	 */
+	private function is_account_creation_possible(): bool {
+		$is_signup_from_checkout_allowed = 'yes' === get_option( 'woocommerce_enable_signup_and_login_from_checkout', 'no' );
+
+		// If a subscription is being purchased, check if account creation is allowed for subscriptions.
+		if ( ! $is_signup_from_checkout_allowed && WooPaymentsSubscriptionMethodPolicy::cart_contains_subscription_or_renewal() ) {
+			$is_signup_from_checkout_allowed = 'yes' === get_option( 'woocommerce_enable_signup_from_checkout_for_subscriptions', 'no' );
+		}
+
+		// With automatically generated username/password disabled, the express
+		// checkout payload can't carry those fields, so account creation is
+		// not possible.
+		return $is_signup_from_checkout_allowed
+			&& 'yes' === get_option( 'woocommerce_registration_generate_username', 'yes' )
+			&& 'yes' === get_option( 'woocommerce_registration_generate_password', 'yes' );
 	}
 
 	/**

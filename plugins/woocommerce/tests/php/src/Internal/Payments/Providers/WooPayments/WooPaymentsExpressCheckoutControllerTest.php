@@ -289,6 +289,92 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should stash the login redirect URL in a cookie and redirect to my-account on a valid nonce.
+	 */
+	public function test_handle_express_checkout_redirect_redirects_to_my_account(): void {
+		$this->sut = $this->create_controller( true, true );
+
+		$my_account_page_id = $this->factory()->post->create( array( 'post_type' => 'page' ) );
+		update_option( 'woocommerce_myaccount_page_id', $my_account_page_id );
+
+		$_GET['wcpay_express_checkout_redirect_url'] = rawurlencode( 'https://example.test/checkout/' );
+		$_GET['_wpnonce']                            = wp_create_nonce( 'wcpay-set-redirect-url' );
+
+		$captured_redirect = null;
+		add_filter(
+			'wp_redirect',
+			function ( $location ) use ( &$captured_redirect ) {
+				$captured_redirect = $location;
+				return false;
+			}
+		);
+
+		$this->sut->handle_express_checkout_redirect();
+
+		$this->assertSame( get_permalink( $my_account_page_id ), $captured_redirect );
+
+		remove_all_filters( 'wp_redirect' );
+		unset( $_GET['wcpay_express_checkout_redirect_url'], $_GET['_wpnonce'] );
+		delete_option( 'woocommerce_myaccount_page_id' );
+	}
+
+	/**
+	 * @testdox Should not redirect on an invalid nonce.
+	 */
+	public function test_handle_express_checkout_redirect_ignores_invalid_nonce(): void {
+		$this->sut = $this->create_controller( true, true );
+
+		$_GET['wcpay_express_checkout_redirect_url'] = rawurlencode( 'https://example.test/checkout/' );
+		$_GET['_wpnonce']                            = 'invalid';
+
+		$captured_redirect = null;
+		add_filter(
+			'wp_redirect',
+			function ( $location ) use ( &$captured_redirect ) {
+				$captured_redirect = $location;
+				return false;
+			}
+		);
+
+		$this->sut->handle_express_checkout_redirect();
+
+		$this->assertNull( $captured_redirect );
+
+		remove_all_filters( 'wp_redirect' );
+		unset( $_GET['wcpay_express_checkout_redirect_url'], $_GET['_wpnonce'] );
+	}
+
+	/**
+	 * @testdox Should return the stashed express checkout URL as the login redirect.
+	 */
+	public function test_get_login_redirect_url_uses_stashed_cookie(): void {
+		$this->sut = $this->create_controller( true, true );
+
+		$_COOKIE['wcpay_express_checkout_redirect_url'] = 'https://example.test/checkout/';
+
+		$this->assertSame(
+			'https://example.test/checkout/',
+			$this->sut->get_login_redirect_url( 'https://example.test/my-account/' )
+		);
+
+		unset( $_COOKIE['wcpay_express_checkout_redirect_url'] );
+	}
+
+	/**
+	 * @testdox Should keep the default login redirect without a stashed URL.
+	 */
+	public function test_get_login_redirect_url_keeps_default_without_cookie(): void {
+		$this->sut = $this->create_controller( true, true );
+
+		unset( $_COOKIE['wcpay_express_checkout_redirect_url'] );
+
+		$this->assertSame(
+			'https://example.test/my-account/',
+			$this->sut->get_login_redirect_url( 'https://example.test/my-account/' )
+		);
+	}
+
+	/**
 	 * Create the System Under Test.
 	 *
 	 * @param bool                                   $native_register     Whether native should register hooks.
