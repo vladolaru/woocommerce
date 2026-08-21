@@ -14,6 +14,9 @@
 	// More than 9 options will prevent the UI from behaving correctly.
 	var SHIPPING_RATES_UPPER_LIMIT_COUNT = 9;
 
+	var GENERIC_PAYMENT_ERROR_MESSAGE =
+		'Unable to process this payment, please try again.';
+
 	function getApiFetch() {
 		return window.wp && window.wp.apiFetch;
 	}
@@ -728,15 +731,173 @@
 		} );
 	}
 
+	function parseConfirmationHash( url ) {
+		var hashIndex = ( url || '' ).indexOf( '#wcpay-confirm-' );
+		var match;
+		var clientSecret;
+
+		if ( hashIndex === -1 ) {
+			return null;
+		}
+
+		match = url
+			.substring( hashIndex )
+			.match(
+				/^#wcpay-confirm-(pi|si):([^:]+):([^:]+):([^:]+)(?::(.+))?$/
+			);
+
+		if ( ! match ) {
+			return null;
+		}
+
+		clientSecret = decodeURIComponent( match[ 3 ] );
+
+		return {
+			type: match[ 1 ],
+			orderId: decodeURIComponent( match[ 2 ] ),
+			clientSecret: clientSecret,
+			nonce: decodeURIComponent( match[ 4 ] ),
+			confirmationToken: match[ 5 ]
+				? decodeURIComponent( match[ 5 ] )
+				: '',
+		};
+	}
+
+	function requestOrderStatusUpdate( confirmation, intentId ) {
+		var body = new window.FormData();
+
+		body.append( 'action', 'update_order_status' );
+		body.append( 'order_id', confirmation.orderId );
+		body.append( '_ajax_nonce', confirmation.nonce );
+		body.append( 'intent_id', intentId );
+		body.append( 'should_save_payment_method', 'false' );
+		body.append( 'is_changing_payment', 'false' );
+
+		return window
+			.fetch( config.ajax_url || config.ajaxUrl, {
+				method: 'POST',
+				credentials: 'same-origin',
+				body: body,
+			} )
+			.then( function ( response ) {
+				return response.json();
+			} );
+	}
+
+	function confirmIntentAndRedirect( confirmation ) {
+		var stripe = getStripe();
+		var confirmationPromise;
+
+		if ( ! stripe ) {
+			return Promise.reject(
+				new Error( GENERIC_PAYMENT_ERROR_MESSAGE )
+			);
+		}
+
+		if (
+			confirmation.type === 'si' &&
+			confirmation.confirmationToken &&
+			stripe.confirmSetup
+		) {
+			confirmationPromise = stripe.confirmSetup( {
+				clientSecret: confirmation.clientSecret,
+				confirmParams: {
+					confirmation_token: confirmation.confirmationToken,
+				},
+				redirect: 'if_required',
+			} );
+		} else if ( stripe.handleNextAction ) {
+			confirmationPromise = stripe.handleNextAction( {
+				clientSecret: confirmation.clientSecret,
+			} );
+		}
+
+		if ( ! confirmationPromise ) {
+			return Promise.reject(
+				new Error( GENERIC_PAYMENT_ERROR_MESSAGE )
+			);
+		}
+
+		return confirmationPromise
+			.then( function ( result ) {
+				var intent;
+
+				if ( ! result || typeof result !== 'object' ) {
+					throw new Error( GENERIC_PAYMENT_ERROR_MESSAGE );
+				}
+
+				if ( result.error ) {
+					throw new Error(
+						result.error.message || GENERIC_PAYMENT_ERROR_MESSAGE
+					);
+				}
+
+				intent =
+					confirmation.type === 'si'
+						? result.setupIntent
+						: result.paymentIntent;
+
+				if ( ! intent || typeof intent.id !== 'string' ) {
+					throw new Error( GENERIC_PAYMENT_ERROR_MESSAGE );
+				}
+
+				return requestOrderStatusUpdate( confirmation, intent.id );
+			} )
+			.then( function ( response ) {
+				var returnUrl;
+
+				if ( response && response.error ) {
+					throw new Error(
+						( response.error && response.error.message ) ||
+							GENERIC_PAYMENT_ERROR_MESSAGE
+					);
+				}
+
+				returnUrl =
+					response && typeof response.return_url === 'string'
+						? response.return_url.trim()
+						: '';
+
+				if ( ! returnUrl ) {
+					throw new Error( GENERIC_PAYMENT_ERROR_MESSAGE );
+				}
+
+				returnUrl = new window.URL( returnUrl, window.location.href );
+
+				if (
+					returnUrl.protocol !== 'http:' &&
+					returnUrl.protocol !== 'https:'
+				) {
+					throw new Error( GENERIC_PAYMENT_ERROR_MESSAGE );
+				}
+
+				window.location.href = returnUrl.href;
+			} );
+	}
+
 	function redirectToOrder( response ) {
 		var redirectUrl =
 			response &&
 			response.payment_result &&
 			response.payment_result.redirect_url;
+		var confirmation;
 
-		if ( redirectUrl ) {
-			window.location.href = redirectUrl;
+		if ( ! redirectUrl ) {
+			return Promise.resolve();
 		}
+
+		confirmation = parseConfirmationHash( redirectUrl );
+
+		// When the intent needs a next action (SCA/3DS), the server responds
+		// with a `#wcpay-confirm-...` redirect. Navigating to a bare hash
+		// would run no confirmation on express surfaces, so confirm the
+		// intent here and navigate to the authenticated return URL instead.
+		if ( confirmation ) {
+			return confirmIntentAndRedirect( confirmation );
+		}
+
+		window.location.href = redirectUrl;
+		return Promise.resolve();
 	}
 
 	function getFieldValue( form, selector ) {
@@ -1345,7 +1506,7 @@
 			} catch ( error ) {
 				setError(
 					( error && error.message ) ||
-						'Unable to process this payment, please try again.'
+						GENERIC_PAYMENT_ERROR_MESSAGE
 				);
 				await emptyProductCart();
 			}
@@ -1400,11 +1561,11 @@
 					confirmationResult.confirmationToken.id,
 					event
 				);
-				redirectToOrder( response );
+				await redirectToOrder( response );
 			} catch ( error ) {
 				setError(
 					( error && error.message ) ||
-						'Unable to process this payment, please try again.'
+						GENERIC_PAYMENT_ERROR_MESSAGE
 				);
 				await emptyProductCart();
 			}
@@ -1454,6 +1615,8 @@
 			handleShippingAddressChange: handleShippingAddressChange,
 			handleShippingRateChange: handleShippingRateChange,
 			placeOrder: placeOrder,
+			redirectToOrder: redirectToOrder,
+			parseConfirmationHash: parseConfirmationHash,
 			setState: function ( state ) {
 				if ( 'elements' in state ) {
 					elements = state.elements;

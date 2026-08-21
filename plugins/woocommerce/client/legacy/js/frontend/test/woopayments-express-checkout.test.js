@@ -91,17 +91,23 @@ const cartResponse = ( overrides = {} ) => ( {
 
 describe( 'woopayments-express-checkout', () => {
 	let apiFetch;
+	const originalLocation = window.location;
 
 	beforeEach( () => {
 		apiFetch = jest.fn();
 		window.wp = { apiFetch };
 		global.jQuery = jest.fn( () => ( { on: jest.fn() } ) );
+		delete window.location;
+		window.location = { href: 'http://shop.test/cart/', hash: '' };
 	} );
 
 	afterEach( () => {
+		window.location = originalLocation;
 		delete window.wcpayExpressCheckoutParams;
 		delete window.wp;
 		delete global.jQuery;
+		delete window.Stripe;
+		delete window.fetch;
 	} );
 
 	describe( 'transformPrice', () => {
@@ -407,6 +413,111 @@ describe( 'woopayments-express-checkout', () => {
 			expect(
 				getStripeElementsOptions( productShapedData ).setupFutureUsage
 			).toBe( 'off_session' );
+		} );
+	} );
+
+	describe( 'redirectToOrder', () => {
+		const stripeParams = {
+			stripe: { publishableKey: 'pk_test_123', accountId: 'acct_1' },
+			ajax_url: 'http://shop.test/wp-admin/admin-ajax.php',
+		};
+		const confirmationHash =
+			'#wcpay-confirm-pi:77:pi_123_secret_456:nonce-abc';
+
+		it( 'navigates directly when the redirect URL carries no confirmation hash', async () => {
+			const { redirectToOrder } = loadModule( baseParams() );
+
+			await redirectToOrder( {
+				payment_result: {
+					redirect_url: 'http://shop.test/thank-you/',
+				},
+			} );
+
+			expect( window.location.href ).toBe(
+				'http://shop.test/thank-you/'
+			);
+		} );
+
+		it( 'confirms the intent and navigates to the authenticated return URL', async () => {
+			const handleNextAction = jest.fn( () =>
+				Promise.resolve( { paymentIntent: { id: 'pi_123' } } )
+			);
+			window.Stripe = jest.fn( () => ( { handleNextAction } ) );
+			window.fetch = jest.fn( () =>
+				Promise.resolve( {
+					json: () =>
+						Promise.resolve( {
+							return_url: 'http://shop.test/order-received/77/',
+						} ),
+				} )
+			);
+			const { redirectToOrder } = loadModule(
+				baseParams( stripeParams )
+			);
+
+			await redirectToOrder( {
+				payment_result: { redirect_url: confirmationHash },
+			} );
+
+			expect( handleNextAction ).toHaveBeenCalledWith( {
+				clientSecret: 'pi_123_secret_456',
+			} );
+			const fetchBody = window.fetch.mock.calls[ 0 ][ 1 ].body;
+			expect( fetchBody.get( 'action' ) ).toBe( 'update_order_status' );
+			expect( fetchBody.get( 'order_id' ) ).toBe( '77' );
+			expect( fetchBody.get( '_ajax_nonce' ) ).toBe( 'nonce-abc' );
+			expect( fetchBody.get( 'intent_id' ) ).toBe( 'pi_123' );
+			expect( window.location.href ).toBe(
+				'http://shop.test/order-received/77/'
+			);
+		} );
+
+		it( 'rejects with the Stripe error message when the authentication fails', async () => {
+			window.Stripe = jest.fn( () => ( {
+				handleNextAction: jest.fn( () =>
+					Promise.resolve( {
+						error: { message: 'Authentication failed.' },
+					} )
+				),
+			} ) );
+			window.fetch = jest.fn();
+			const { redirectToOrder } = loadModule(
+				baseParams( stripeParams )
+			);
+
+			await expect(
+				redirectToOrder( {
+					payment_result: { redirect_url: confirmationHash },
+				} )
+			).rejects.toThrow( 'Authentication failed.' );
+			expect( window.fetch ).not.toHaveBeenCalled();
+			expect( window.location.href ).toBe( 'http://shop.test/cart/' );
+		} );
+
+		it( 'rejects when the order-status update reports an error', async () => {
+			window.Stripe = jest.fn( () => ( {
+				handleNextAction: jest.fn( () =>
+					Promise.resolve( { paymentIntent: { id: 'pi_123' } } )
+				),
+			} ) );
+			window.fetch = jest.fn( () =>
+				Promise.resolve( {
+					json: () =>
+						Promise.resolve( {
+							error: { message: 'Order update failed.' },
+						} ),
+				} )
+			);
+			const { redirectToOrder } = loadModule(
+				baseParams( stripeParams )
+			);
+
+			await expect(
+				redirectToOrder( {
+					payment_result: { redirect_url: confirmationHash },
+				} )
+			).rejects.toThrow( 'Order update failed.' );
+			expect( window.location.href ).toBe( 'http://shop.test/cart/' );
 		} );
 	} );
 
