@@ -36,7 +36,12 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 
 	private const RETURN_URL_MARKER = 'woopayments-custom-session';
 
-	private const TOKENIZED_CART_NONCE_ACTION = 'woopayments_tokenized_cart_nonce';
+	/**
+	 * Nonce action shared by every surface that authenticates tokenized-cart
+	 * Store API requests (session controller, express service localization,
+	 * currency guard).
+	 */
+	public const TOKENIZED_CART_NONCE_ACTION = 'woopayments_tokenized_cart_nonce';
 
 	private const TOKENIZED_CART_HEADER = 'X-WooPayments-Tokenized-Cart';
 

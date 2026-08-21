@@ -27,8 +27,6 @@ class WooPaymentsExpressCheckoutCurrencyGuard implements RegisterHooksInterface 
 
 	private const MISMATCH_ERROR_CODE = 'wcpay_express_checkout_currency_mismatch';
 
-	private const TOKENIZED_CART_NONCE_ACTION = 'woopayments_tokenized_cart_nonce';
-
 	/**
 	 * Runtime owner arbiter.
 	 *
@@ -127,6 +125,6 @@ class WooPaymentsExpressCheckoutCurrencyGuard implements RegisterHooksInterface 
 
 		$nonce = (string) $request->get_header( 'X-WooPayments-Tokenized-Cart-Nonce' );
 
-		return (bool) wp_verify_nonce( $nonce, self::TOKENIZED_CART_NONCE_ACTION );
+		return (bool) wp_verify_nonce( $nonce, WooPaymentsTokenizedCartSessionController::TOKENIZED_CART_NONCE_ACTION );
 	}
 }
