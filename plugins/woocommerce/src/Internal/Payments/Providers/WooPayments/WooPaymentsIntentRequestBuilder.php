@@ -73,6 +73,13 @@ class WooPaymentsIntentRequestBuilder {
 	private WooPaymentsPaymentMethodRegistry $payment_method_registry;
 
 	/**
+	 * Level 3 data service.
+	 *
+	 * @var WooPaymentsLevel3Service
+	 */
+	private WooPaymentsLevel3Service $level3_service;
+
+	/**
 	 * Initialize the request builder.
 	 *
 	 * @internal
@@ -81,17 +88,22 @@ class WooPaymentsIntentRequestBuilder {
 	 * @param WooPaymentsOrderDataService      $order_data_service      Order data service.
 	 * @param WooPaymentsTokenService          $token_service           Token service.
 	 * @param WooPaymentsPaymentMethodRegistry $payment_method_registry Payment method registry.
+	 * @param WooPaymentsLevel3Service|null    $level3_service          Level 3 data service.
 	 */
 	final public function init(
 		WooPaymentsAccountService $account_service,
 		WooPaymentsOrderDataService $order_data_service,
 		WooPaymentsTokenService $token_service,
-		WooPaymentsPaymentMethodRegistry $payment_method_registry
+		WooPaymentsPaymentMethodRegistry $payment_method_registry,
+		?WooPaymentsLevel3Service $level3_service = null
 	): void {
 		$this->account_service         = $account_service;
 		$this->order_data_service      = $order_data_service;
 		$this->token_service           = $token_service;
 		$this->payment_method_registry = $payment_method_registry;
+		if ( null !== $level3_service ) {
+			$this->level3_service = $level3_service;
+		}
 	}
 
 	/**
@@ -145,6 +157,11 @@ class WooPaymentsIntentRequestBuilder {
 
 		if ( ! $is_renewal && $save_payment_method ) {
 			$request_data['setup_future_usage'] = 'off_session';
+		}
+
+		$level3_data = $this->get_level3_service()->get_data_from_order( $order );
+		if ( array() !== $level3_data ) {
+			$request_data['level3'] = $level3_data;
 		}
 
 		if ( self::is_mandate_data_required( $payment_method_types ) ) {
@@ -486,5 +503,18 @@ class WooPaymentsIntentRequestBuilder {
 		$payment_token = isset( $payment_data['payment_token'] ) ? (string) $payment_data['payment_token'] : '';
 
 		return '' !== $payment_token && 'new' !== $payment_token;
+	}
+
+	/**
+	 * Get the Level 3 data service.
+	 *
+	 * @return WooPaymentsLevel3Service
+	 */
+	private function get_level3_service(): WooPaymentsLevel3Service {
+		if ( ! isset( $this->level3_service ) ) {
+			$this->level3_service = wc_get_container()->get( WooPaymentsLevel3Service::class );
+		}
+
+		return $this->level3_service;
 	}
 }

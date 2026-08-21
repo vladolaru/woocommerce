@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLevel3Service;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentType;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
@@ -217,6 +218,47 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 		$this->assertArrayNotHasKey( 'fraud_prevention_data_shopper_ua_hash', $metadata );
 		$this->assertArrayHasKey( 'fraud_prevention_data_shopper_ip_hash', $metadata );
 		$this->assertTrue( $metadata['fraud_prevention_data_available'] );
+	}
+
+	/**
+	 * @testdox Charge requests carry Level 3 data for US accounts and omit it when the service returns none.
+	 */
+	public function test_charge_request_attaches_level3_data_for_us_accounts(): void {
+		$product = \WC_Helper_Product::create_simple_product( true, array( 'regular_price' => '12.00' ) );
+		$order   = wc_create_order();
+		$order->add_product( $product, 1 );
+		$order->calculate_totals();
+		$order->save();
+
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_gateway_setting', 'get_account_country' ) )
+			->getMock();
+		$account_service->method( 'get_gateway_setting' )->willReturn( 'no' );
+		$account_service->method( 'get_account_country' )->willReturn( 'US' );
+
+		$level3_service = new WooPaymentsLevel3Service();
+		$level3_service->init( $account_service, new WooPaymentsOrderDataService() );
+
+		$request_builder = new WooPaymentsIntentRequestBuilder();
+		$request_builder->init(
+			$account_service,
+			new WooPaymentsOrderDataService(),
+			$this->createStub( WooPaymentsTokenService::class ),
+			new WooPaymentsPaymentMethodRegistry(),
+			$level3_service
+		);
+
+		$request = $request_builder->charge_request_data(
+			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_card' ),
+			'pm_card',
+			'cus_native',
+			false
+		);
+
+		$this->assertArrayHasKey( 'level3', $request );
+		$this->assertSame( (string) $order->get_id(), $request['level3']['merchant_reference'] );
+		$this->assertSame( 1200, $request['level3']['line_items'][0]->unit_cost );
 	}
 
 	/**
