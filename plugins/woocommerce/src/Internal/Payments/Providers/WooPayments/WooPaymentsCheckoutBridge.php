@@ -198,6 +198,13 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	private WooPaymentsAccountService $account_service;
 
 	/**
+	 * WooPayments fraud service.
+	 *
+	 * @var WooPaymentsFraudService
+	 */
+	private WooPaymentsFraudService $fraud_service;
+
+	/**
 	 * Native WooPayments customer service.
 	 *
 	 * @var WooPaymentsCustomerService
@@ -1053,7 +1060,20 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 * @return array<string,mixed>
 	 */
 	private function get_fraud_services_config(): array {
-		return $this->get_account_service()->get_fraud_services_config();
+		return $this->get_fraud_service()->get_fraud_services_config();
+	}
+
+	/**
+	 * Get the native WooPayments fraud service.
+	 *
+	 * @return WooPaymentsFraudService
+	 */
+	private function get_fraud_service(): WooPaymentsFraudService {
+		if ( ! isset( $this->fraud_service ) ) {
+			$this->fraud_service = wc_get_container()->get( WooPaymentsFraudService::class );
+		}
+
+		return $this->fraud_service;
 	}
 
 	/**

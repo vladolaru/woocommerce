@@ -26,7 +26,7 @@ class WooPaymentsOrderTrackingService implements RegisterHooksInterface {
 	 *
 	 * @var string
 	 */
-	const FILTER_FRAUD_SERVICES_CONFIG = WooPaymentsAccountService::FILTER_FRAUD_SERVICES_CONFIG;
+	const FILTER_FRAUD_SERVICES_CONFIG = WooPaymentsFraudService::FILTER_FRAUD_SERVICES_CONFIG;
 
 	/**
 	 * Preserved WooPayments new-order tracking hook.
@@ -78,6 +78,13 @@ class WooPaymentsOrderTrackingService implements RegisterHooksInterface {
 	private WooPaymentsAccountService $account_service;
 
 	/**
+	 * WooPayments fraud service.
+	 *
+	 * @var WooPaymentsFraudService
+	 */
+	private WooPaymentsFraudService $fraud_service;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -86,17 +93,20 @@ class WooPaymentsOrderTrackingService implements RegisterHooksInterface {
 	 * @param WooPaymentsActionSchedulerService $scheduler       Action Scheduler service.
 	 * @param WooPaymentsApiClient              $api_client      WooPayments API client.
 	 * @param WooPaymentsAccountService         $account_service WooPayments account service.
+	 * @param WooPaymentsFraudService           $fraud_service   WooPayments fraud service.
 	 */
 	final public function init(
 		NativePaymentsRuntimeArbiter $arbiter,
 		WooPaymentsActionSchedulerService $scheduler,
 		WooPaymentsApiClient $api_client,
-		WooPaymentsAccountService $account_service
+		WooPaymentsAccountService $account_service,
+		WooPaymentsFraudService $fraud_service
 	): void {
 		$this->arbiter         = $arbiter;
 		$this->scheduler       = $scheduler;
 		$this->api_client      = $api_client;
 		$this->account_service = $account_service;
+		$this->fraud_service   = $fraud_service;
 	}
 
 	/**
@@ -326,7 +336,7 @@ class WooPaymentsOrderTrackingService implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_sift_tracking_enabled(): bool {
-		$config = $this->account_service->get_fraud_services_config();
+		$config = $this->fraud_service->get_fraud_services_config();
 
 		return array_key_exists( 'sift', $config );
 	}

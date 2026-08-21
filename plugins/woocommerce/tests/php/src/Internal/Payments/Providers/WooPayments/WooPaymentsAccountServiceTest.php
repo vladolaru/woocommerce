@@ -141,37 +141,6 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose filterable fraud-services config from the preserved account payload.
-	 */
-	public function test_exposes_fraud_services_config_from_account_cache(): void {
-		$sut = $this->create_service();
-		$sut->cache_account_data(
-			array(
-				'account_id'     => 'acct_fraud_services',
-				'is_live'        => true,
-				'fraud_services' => array(
-					'stripe' => array(),
-				),
-			)
-		);
-		add_filter(
-			'woocommerce_woopayments_fraud_services_config',
-			static function ( array $config ): array {
-				$config['sift'] = array( 'beacon_key' => 'beacon_test' );
-				return $config;
-			}
-		);
-
-		$this->assertSame(
-			array(
-				'stripe' => array(),
-				'sift'   => array( 'beacon_key' => 'beacon_test' ),
-			),
-			$sut->get_fraud_services_config()
-		);
-	}
-
-	/**
 	 * @testdox Should fail closed when the native WooPayments gateway enabled setting is absent.
 	 */
 	public function test_gateway_enabled_state_defaults_to_disabled_when_setting_is_absent(): void {

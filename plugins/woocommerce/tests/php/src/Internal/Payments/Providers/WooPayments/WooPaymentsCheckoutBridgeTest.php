@@ -12,6 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionService;
@@ -338,6 +339,21 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	public function setUp(): void {
 		parent::setUp();
 		$this->reset_frontend_surface_state();
+		// The fraud service falls back to the platform's public fraud-services
+		// config when the account payload carries none; unit tests must never
+		// reach the real platform.
+		add_filter(
+			'pre_http_request',
+			static function ( $preempt, $parsed_args, string $url ) {
+				if ( false !== strpos( $url, 'public-api.wordpress.com' ) ) {
+					return new \WP_Error( 'blocked_in_test', 'Platform requests are blocked in unit tests.' );
+				}
+
+				return $preempt;
+			},
+			10,
+			3
+		);
 	}
 
 	/**
@@ -348,6 +364,8 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		unset( $_GET['change_payment_method'], $GLOBALS['wcpay_test_subscription_ids'] );
 		delete_option( '_wcpay_feature_dynamic_checkout_place_order_button' );
 		remove_all_filters( 'wcpay_payment_fields_js_config' );
+		remove_all_filters( 'pre_http_request' );
+		delete_transient( 'woocommerce_woopayments_public_fraud_services' );
 		wp_dequeue_script( 'wc-woopayments-checkout' );
 		wp_deregister_script( 'wc-woopayments-checkout' );
 		wp_dequeue_script( 'wc-woopayments-appearance' );
@@ -449,7 +467,9 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$this->assertArrayHasKey( 'woopaySignatureNonce', $config );
 		$this->assertSame( array( 'encrypted' => 'minimum' ), $config['woopayMinimumSessionData'] );
 		$this->assertSame( 'There was a problem processing the payment. Please check your email inbox and refresh the page to try again.', $config['genericErrorMessage'] );
-		$this->assertSame( array(), $config['fraudServices'] );
+		// With no account fraud-services config and the platform unreachable,
+		// the prepared config falls back to the bare stripe default.
+		$this->assertSame( array( 'stripe' => array() ), $config['fraudServices'] );
 		$this->assertContains( 'products', $config['features'] );
 		$this->assertFalse( $config['isPreview'] );
 		$this->assertFalse( $config['isShortcodeCheckout'] );
@@ -1214,7 +1234,9 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$this->assertSame( '12345', $config['woopayMerchantId'] );
 		$this->assertSame( array(), $config['woopayMinimumSessionData'] );
 		$this->assertSame( 'There was a problem processing the payment. Please check your email inbox and refresh the page to try again.', $config['genericErrorMessage'] );
-		$this->assertSame( array(), $config['fraudServices'] );
+		// With no account fraud-services config and the platform unreachable,
+		// the prepared config falls back to the bare stripe default.
+		$this->assertSame( array( 'stripe' => array() ), $config['fraudServices'] );
 		$this->assertContains( 'products', $config['features'] );
 		$this->assertFalse( $config['isPreview'] );
 		$this->assertFalse( $config['isShortcodeCheckout'] );
@@ -1245,10 +1267,34 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 
 		$bridge = new WooPaymentsCheckoutBridge();
 		$bridge->init( $legacy_runtime, $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$this->inject_fraud_service_for_bridge( $bridge, $account_service );
 
 		$config = $bridge->get_payment_fields_js_config();
 
 		$this->assertSame( array( 'stripe' => array() ), $config['fraudServices'] );
+	}
+
+	/**
+	 * Inject a fraud service wired to the given (mocked) account service into a bridge.
+	 *
+	 * The bridge otherwise resolves the fraud service from the container, whose
+	 * account service is the real one — the test's mocked account payload would
+	 * never reach it.
+	 *
+	 * @param WooPaymentsCheckoutBridge $bridge          Bridge under test.
+	 * @param WooPaymentsAccountService $account_service Account service (usually a mock) the fraud service should read.
+	 */
+	private function inject_fraud_service_for_bridge( WooPaymentsCheckoutBridge $bridge, WooPaymentsAccountService $account_service ): void {
+		$api_client       = new WooPaymentsApiClient();
+		$customer_service = new WooPaymentsCustomerService();
+		$customer_service->init( $api_client, $account_service );
+
+		$fraud_service = new WooPaymentsFraudService();
+		$fraud_service->init( $account_service, $customer_service, $api_client );
+
+		$property = new \ReflectionProperty( WooPaymentsCheckoutBridge::class, 'fraud_service' );
+		$property->setAccessible( true );
+		$property->setValue( $bridge, $fraud_service );
 	}
 
 	/**
@@ -1294,7 +1340,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	private function create_account_service_for_bridge( bool $can_process_payments, array $account_data = array( 'country' => 'RO' ), array $gateway_settings = array() ) {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_publishable_key', 'get_account_id', 'get_cached_account_data', 'get_fraud_services_config', 'get_gateway_setting', 'is_payment_request_method_enabled', 'can_process_payments', 'is_test_mode_enabled' ) )
+			->onlyMethods( array( 'get_publishable_key', 'get_account_id', 'get_cached_account_data', 'get_gateway_setting', 'is_payment_request_method_enabled', 'can_process_payments', 'is_test_mode_enabled' ) )
 			->getMock();
 
 		$account_service
@@ -1306,24 +1352,6 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$account_service
 			->method( 'get_cached_account_data' )
 			->willReturn( $account_data );
-		$account_service
-			->method( 'get_fraud_services_config' )
-			->willReturnCallback(
-				static function () use ( $account_data ): array {
-					$config = isset( $account_data['fraud_services'] ) && is_array( $account_data['fraud_services'] )
-						? $account_data['fraud_services']
-						: array();
-
-					/**
-					 * Applies the production fraud-services configuration filter in the fixture.
-					 *
-					 * @since 11.0.0
-					 *
-					 * @param array<string,mixed> $config Fraud-services configuration.
-					 */
-					return apply_filters( WooPaymentsAccountService::FILTER_FRAUD_SERVICES_CONFIG, $config );
-				}
-			);
 		$account_service
 			->method( 'get_gateway_setting' )
 			->willReturnCallback(

@@ -68,13 +68,6 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		'PR',
 	);
 
-	/**
-	 * Filters the native WooPayments fraud-services config.
-	 *
-	 * @var string
-	 */
-	public const FILTER_FRAUD_SERVICES_CONFIG = 'woocommerce_woopayments_fraud_services_config';
-
 	private const ACCOUNT_OPTION = 'wcpay_account_data';
 
 	private const SETTINGS_OPTION = 'woocommerce_woocommerce_payments_settings';
@@ -959,30 +952,6 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		}
 
 		return $supported_countries;
-	}
-
-	/**
-	 * Get fraud-services config from the preserved account payload.
-	 *
-	 * @since 11.0.0
-	 * @return array<string,mixed>
-	 */
-	public function get_fraud_services_config(): array {
-		$account_data = $this->get_cached_account_data();
-		$config       = isset( $account_data['fraud_services'] ) && is_array( $account_data['fraud_services'] )
-			? $account_data['fraud_services']
-			: array();
-
-		/**
-		 * Filters native WooPayments fraud-services config.
-		 *
-		 * @since 11.0.0
-		 *
-		 * @param array<string,mixed> $config Fraud-services config.
-		 */
-		$config = apply_filters( self::FILTER_FRAUD_SERVICES_CONFIG, $config );
-
-		return is_array( $config ) ? $config : array();
 	}
 
 	/**

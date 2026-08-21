@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderTrackingService;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
 use WC_Order;
@@ -473,20 +474,23 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	 * @param WooPaymentsActionSchedulerService|null $scheduler       Scheduler service.
 	 * @param WooPaymentsApiClient|null              $api_client      API client.
 	 * @param WooPaymentsAccountService|null         $account_service Account service.
+	 * @param WooPaymentsFraudService|null           $fraud_service   Fraud service.
 	 * @return WooPaymentsOrderTrackingService
 	 */
 	private function create_service(
 		NativePaymentsRuntimeArbiter $arbiter,
 		?WooPaymentsActionSchedulerService $scheduler = null,
 		?WooPaymentsApiClient $api_client = null,
-		?WooPaymentsAccountService $account_service = null
+		?WooPaymentsAccountService $account_service = null,
+		?WooPaymentsFraudService $fraud_service = null
 	): WooPaymentsOrderTrackingService {
 		$service = new WooPaymentsOrderTrackingService();
 		$service->init(
 			$arbiter,
 			$scheduler ?? new RecordingActionSchedulerService(),
 			$api_client ?? $this->create_api_client(),
-			$account_service ?? $this->create_account_service( true )
+			$account_service ?? $this->create_account_service( true ),
+			$fraud_service ?? $this->create_fraud_service()
 		);
 
 		$this->services[] = $service;
@@ -515,24 +519,41 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	private function create_account_service( bool $test_mode ): WooPaymentsAccountService {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_fraud_services_config', 'is_test_mode_enabled' ) )
+			->onlyMethods( array( 'is_test_mode_enabled' ) )
 			->getMock();
 
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( $test_mode );
-		$account_service
+
+		return $account_service;
+	}
+
+	/**
+	 * Create a WooPayments fraud service mock whose config is driven by the
+	 * production fraud-services filter, so tests control Sift presence the same
+	 * way site code would.
+	 *
+	 * @return WooPaymentsFraudService
+	 */
+	private function create_fraud_service(): WooPaymentsFraudService {
+		$fraud_service = $this->getMockBuilder( WooPaymentsFraudService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_fraud_services_config' ) )
+			->getMock();
+
+		$fraud_service
 			->method( 'get_fraud_services_config' )
 			->willReturnCallback(
 				static function (): array {
 					/**
-					 * Filters the fraud-services fixture returned by this account-service mock.
+					 * Filters the fraud-services fixture returned by this fraud-service mock.
 					 *
 					 * @since 11.0.0
 					 */
-					return (array) apply_filters( WooPaymentsAccountService::FILTER_FRAUD_SERVICES_CONFIG, array() );
+					return (array) apply_filters( WooPaymentsFraudService::FILTER_FRAUD_SERVICES_CONFIG, array() );
 				}
 			);
 
-		return $account_service;
+		return $fraud_service;
 	}
 
 	/**
