@@ -10,6 +10,7 @@ import { applyFilters } from '@wordpress/hooks';
 import { __ } from '@wordpress/i18n';
 import { useCallback, useEffect, useRef } from '@wordpress/element';
 import apiFetch from '@wordpress/api-fetch';
+import { addQueryArgs } from '@wordpress/url';
 
 /**
  * Internal dependencies
@@ -279,6 +280,16 @@ const getCartTotalPrice = ( cart ) => {
 
 	return Number( params?.checkout?.cart_total || 0 );
 };
+
+// Pin the currency the page was rendered with, so cache-optimized or
+// geolocation-driven multi-currency setups can't serve the request in a
+// different currency than the wallet sheet shows.
+const getStoreApiPath = ( path ) =>
+	addQueryArgs( path, {
+		currency:
+			( params?.checkout?.currency_code || '' ).toUpperCase() ||
+			undefined,
+	} );
 
 const getStoreApiHeaders = ( includeSessionNonce = false ) => {
 	const nonce = params?.nonce || {};
@@ -975,7 +986,9 @@ const ExpressCheckoutContent = ( {
 				try {
 					const updatedCart = await apiFetch( {
 						method: 'POST',
-						path: '/wc/store/v1/cart/update-customer',
+						path: getStoreApiPath(
+							'/wc/store/v1/cart/update-customer'
+						),
 						headers: getStoreApiHeaders(),
 						data: {
 							shipping_address: getShippingAddressFromEvent(
@@ -1039,7 +1052,9 @@ const ExpressCheckoutContent = ( {
 			try {
 				const updatedCart = await apiFetch( {
 					method: 'POST',
-					path: '/wc/store/v1/cart/select-shipping-rate',
+					path: getStoreApiPath(
+						'/wc/store/v1/cart/select-shipping-rate'
+					),
 					headers: getStoreApiHeaders(),
 					data: {
 						package_id: getPackageIdForShippingRate(
@@ -1110,12 +1125,21 @@ const ExpressCheckoutContent = ( {
 					: shippingData?.shippingAddress;
 				const response = await apiFetch( {
 					method: 'POST',
-					path: '/wc/store/v1/checkout',
+					path: getStoreApiPath( '/wc/store/v1/checkout' ),
 					headers: {
 						...getStoreApiHeaders(
 							params.button_context === 'product'
 						),
 						'X-WooPayments-Tokenized-Cart': true,
+						// Lets the server reject placement when the cart's
+						// currency drifted away from the one the Element
+						// booted with.
+						...( elementCurrency
+							? {
+									'X-WooPayments-Payment-Currency':
+										elementCurrency,
+							  }
+							: {} ),
 					},
 					data: {
 						payment_method: PAYMENT_METHOD_NAME,

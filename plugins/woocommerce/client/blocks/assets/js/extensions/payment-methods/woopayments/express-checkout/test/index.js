@@ -850,11 +850,12 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		expect( checkoutRequest ).toEqual(
 			expect.objectContaining( {
 				method: 'POST',
-				path: '/wc/store/v1/checkout',
+				path: '/wc/store/v1/checkout?currency=USD',
 				headers: expect.objectContaining( {
 					Nonce: 'store-api-nonce',
 					'X-WooPayments-Tokenized-Cart-Nonce': 'cart-nonce',
 					'X-WooPayments-Tokenized-Cart': true,
+					'X-WooPayments-Payment-Currency': 'usd',
 				} ),
 				data: expect.objectContaining( {
 					payment_method: 'woocommerce_payments',
@@ -1016,7 +1017,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		expect( apiFetch ).toHaveBeenCalledWith(
 			expect.objectContaining( {
 				method: 'POST',
-				path: '/wc/store/v1/cart/update-customer',
+				path: '/wc/store/v1/cart/update-customer?currency=USD',
 				headers: expect.objectContaining( {
 					Nonce: 'store-api-nonce',
 					'X-WooPayments-Tokenized-Cart-Nonce': 'cart-nonce',
@@ -1125,7 +1126,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		expect( apiFetch ).toHaveBeenCalledWith(
 			expect.objectContaining( {
 				method: 'POST',
-				path: '/wc/store/v1/cart/select-shipping-rate',
+				path: '/wc/store/v1/cart/select-shipping-rate?currency=USD',
 				data: {
 					package_id: 0,
 					rate_id: 'free_shipping:1',
@@ -1247,7 +1248,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		expect( apiFetch ).toHaveBeenCalledWith(
 			expect.objectContaining( {
 				method: 'POST',
-				path: '/wc/store/v1/cart/select-shipping-rate',
+				path: '/wc/store/v1/cart/select-shipping-rate?currency=USD',
 				data: {
 					package_id: 'sub_month_0',
 					rate_id: 'subscription_rate:1',
