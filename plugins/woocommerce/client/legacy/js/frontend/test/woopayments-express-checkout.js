@@ -227,7 +227,7 @@ describe( 'WooPayments express checkout', () => {
 		expect( window.wp.apiFetch ).toHaveBeenCalledWith(
 			expect.objectContaining( {
 				method: 'GET',
-				path: '/wc/store/v1/cart',
+				path: '/wc/store/v1/cart?currency=USD',
 				headers: expect.objectContaining( {
 					Nonce: 'store-api-nonce',
 					'X-WooPayments-Tokenized-Cart-Nonce': 'cart-nonce',
@@ -470,7 +470,7 @@ describe( 'WooPayments express checkout', () => {
 		expect( window.wp.apiFetch ).toHaveBeenLastCalledWith(
 			expect.objectContaining( {
 				method: 'POST',
-				path: '/wc/store/v1/checkout',
+				path: '/wc/store/v1/checkout?currency=USD',
 				headers: expect.objectContaining( {
 					Nonce: 'store-api-nonce',
 					'X-WooPayments-Tokenized-Cart': true,
@@ -482,10 +482,6 @@ describe( 'WooPayments express checkout', () => {
 						{
 							key: 'wcpay-confirmation-token',
 							value: 'ctoken_123',
-						},
-						{
-							key: 'wcpay-is-platform-payment-method',
-							value: 'true',
 						},
 						{
 							key: 'wcpay-express-payment-method-types',
@@ -699,7 +695,7 @@ describe( 'WooPayments express checkout', () => {
 		expect( window.wp.apiFetch ).toHaveBeenCalledWith(
 			expect.objectContaining( {
 				method: 'POST',
-				path: '/wc/store/v1/cart/add-item',
+				path: '/wc/store/v1/cart/add-item?currency=USD',
 				parse: false,
 				headers: expect.objectContaining( {
 					Nonce: 'store-api-nonce',
@@ -754,7 +750,7 @@ describe( 'WooPayments express checkout', () => {
 		expect( window.wp.apiFetch ).toHaveBeenCalledWith(
 			expect.objectContaining( {
 				method: 'POST',
-				path: '/wc/store/v1/cart/add-item',
+				path: '/wc/store/v1/cart/add-item?currency=USD',
 			} )
 		);
 		expect( resolveClick ).toHaveBeenCalledWith(
@@ -781,7 +777,10 @@ describe( 'WooPayments express checkout', () => {
 		);
 		await flushPromises();
 
-		expect( elements.update ).toHaveBeenCalledWith( { amount: 3000 } );
+		expect( elements.update ).toHaveBeenCalledWith( {
+			amount: 3000,
+			setupFutureUsage: null,
+		} );
 	} );
 
 	test( 'carries the product tokenized cart session into checkout', async () => {
@@ -849,11 +848,14 @@ describe( 'WooPayments express checkout', () => {
 			},
 		} );
 
-		expect( elements.update ).toHaveBeenCalledWith( { amount: 3000 } );
+		expect( elements.update ).toHaveBeenCalledWith( {
+			amount: 3000,
+			setupFutureUsage: null,
+		} );
 		expect( window.wp.apiFetch ).toHaveBeenLastCalledWith(
 			expect.objectContaining( {
 				method: 'POST',
-				path: '/wc/store/v1/checkout',
+				path: '/wc/store/v1/checkout?currency=USD',
 				parse: false,
 				data: expect.objectContaining( {
 					billing_address: expect.objectContaining( {
@@ -933,7 +935,7 @@ describe( 'WooPayments express checkout', () => {
 		expect( window.wp.apiFetch ).toHaveBeenLastCalledWith(
 			expect.objectContaining( {
 				method: 'GET',
-				path: '/wc/store/v1/cart',
+				path: '/wc/store/v1/cart?currency=USD',
 				parse: false,
 				headers: expect.objectContaining( {
 					'X-WooPayments-Tokenized-Cart-Session':
@@ -998,7 +1000,7 @@ describe( 'WooPayments express checkout', () => {
 		expect( window.wp.apiFetch ).toHaveBeenLastCalledWith(
 			expect.objectContaining( {
 				method: 'GET',
-				path: '/wc/store/v1/cart',
+				path: '/wc/store/v1/cart?currency=USD',
 				headers: expect.objectContaining( {
 					'X-WooPayments-Tokenized-Cart-Session':
 						'cart-session-token',
@@ -1062,7 +1064,7 @@ describe( 'WooPayments express checkout', () => {
 		expect( window.wp.apiFetch ).toHaveBeenLastCalledWith(
 			expect.objectContaining( {
 				method: 'GET',
-				path: '/wc/store/v1/cart',
+				path: '/wc/store/v1/cart?currency=USD',
 				headers: expect.objectContaining( {
 					'X-WooPayments-Tokenized-Cart-Session':
 						'cart-session-token',
@@ -1179,7 +1181,7 @@ describe( 'WooPayments express checkout', () => {
 		expect( window.wp.apiFetch ).toHaveBeenLastCalledWith(
 			expect.objectContaining( {
 				method: 'POST',
-				path: '/wc/store/v1/cart/update-customer',
+				path: '/wc/store/v1/cart/update-customer?currency=USD',
 				data: expect.objectContaining( {
 					shipping_address: expect.objectContaining( {
 						first_name: 'Ada',
@@ -1300,7 +1302,7 @@ describe( 'WooPayments express checkout', () => {
 		expect( window.wp.apiFetch ).toHaveBeenLastCalledWith(
 			expect.objectContaining( {
 				method: 'POST',
-				path: '/wc/store/v1/cart/select-shipping-rate',
+				path: '/wc/store/v1/cart/select-shipping-rate?currency=USD',
 				data: {
 					package_id: 2,
 					rate_id: 'local_pickup:2',
