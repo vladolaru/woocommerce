@@ -276,7 +276,7 @@ describe( 'woopayments-express-checkout', () => {
 			expect( apiFetch ).toHaveBeenCalledWith(
 				expect.objectContaining( {
 					method: 'POST',
-					path: '/wc/store/v1/cart/update-customer',
+					path: '/wc/store/v1/cart/update-customer?currency=USD',
 					data: {
 						shipping_address: expect.objectContaining( {
 							first_name: 'Jane',
@@ -350,7 +350,8 @@ describe( 'woopayments-express-checkout', () => {
 			expect( apiFetch ).toHaveBeenCalledWith(
 				expect.objectContaining( {
 					method: 'POST',
-					path: '/wc/store/v1/cart/select-shipping-rate',
+					path:
+						'/wc/store/v1/cart/select-shipping-rate?currency=USD',
 					data: { package_id: 0, rate_id: 'flat_rate:1' },
 				} )
 			);
@@ -518,6 +519,77 @@ describe( 'woopayments-express-checkout', () => {
 				} )
 			).rejects.toThrow( 'Order update failed.' );
 			expect( window.location.href ).toBe( 'http://shop.test/cart/' );
+		} );
+	} );
+
+	describe( 'currency pinning and drift', () => {
+		it( 'pins the localized currency on tokenized-cart Store API requests', async () => {
+			const testables = loadModule( baseParams() );
+			testables.setState( {
+				elements: { update: jest.fn( () => Promise.resolve() ) },
+			} );
+			apiFetch.mockResolvedValue( cartResponse() );
+
+			await testables.handleShippingRateChange( {
+				shippingRate: { id: 'flat_rate:1' },
+				resolve: jest.fn(),
+				reject: jest.fn(),
+			} );
+
+			expect( apiFetch.mock.calls[ 0 ][ 0 ].path ).toBe(
+				'/wc/store/v1/cart/select-shipping-rate?currency=USD'
+			);
+		} );
+
+		it( 'sends the element boot currency with order placement', async () => {
+			const testables = loadModule( baseParams() );
+			testables.setState( { elementCurrency: 'usd' } );
+			apiFetch.mockResolvedValue( { payment_result: {} } );
+
+			await testables.placeOrder( 'ctoken_123', {
+				billingDetails: { name: 'Jane Q Shopper' },
+			} );
+
+			expect( apiFetch.mock.calls[ 0 ][ 0 ].headers ).toEqual(
+				expect.objectContaining( {
+					'X-WooPayments-Payment-Currency': 'usd',
+				} )
+			);
+		} );
+
+		it( 'remembers the element currency when building creation options', () => {
+			const testables = loadModule( baseParams() );
+
+			testables.getStripeElementsOptions( cartResponse() );
+			expect( testables.getElementCurrency() ).toBe( 'usd' );
+		} );
+
+		it( 'rejects a wallet address whose cart currency drifted from the element', async () => {
+			const testables = loadModule( baseParams() );
+			testables.setState( {
+				elementCurrency: 'usd',
+				elements: { update: jest.fn( () => Promise.resolve() ) },
+			} );
+			apiFetch.mockResolvedValue(
+				cartResponse( {
+					totals: {
+						total_price: '1500',
+						currency_code: 'EUR',
+						currency_minor_unit: 2,
+					},
+				} )
+			);
+
+			const event = {
+				name: 'Jane Q Shopper',
+				address: { country: 'FR' },
+				resolve: jest.fn(),
+				reject: jest.fn(),
+			};
+			await testables.handleShippingAddressChange( event );
+
+			expect( event.reject ).toHaveBeenCalled();
+			expect( event.resolve ).not.toHaveBeenCalled();
 		} );
 	} );
 

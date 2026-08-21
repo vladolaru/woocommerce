@@ -7,6 +7,9 @@
 	var elements = null;
 	var expressElement = null;
 	var tokenizedCartSession = null;
+	// An open Apple Pay / Google Pay sheet is locked to the currency it opened
+	// with; remember it to detect cart-currency drift mid-sheet.
+	var elementCurrency = null;
 	var productAddToCartPromise = Promise.resolve();
 	var productAddToCartErrorMessage = '';
 
@@ -158,6 +161,15 @@
 		var apiFetch = getApiFetch();
 		var includeSessionNonce = isProduct();
 		var requestOptions = Object.assign( {}, options, {
+			// Pin the currency the page was rendered with, so cache-optimized
+			// or geolocation-driven multi-currency setups can't serve the
+			// request in a different currency than the wallet sheet shows.
+			path: addQueryArgs( options.path, {
+				currency: (
+					( config.checkout && config.checkout.currency_code ) ||
+					''
+				).toUpperCase(),
+			} ),
 			headers: Object.assign(
 				{},
 				getStoreApiHeaders( includeSessionNonce, true ),
@@ -322,6 +334,35 @@
 		return cartHasAnySubscription( cartData ) ? 'off_session' : null;
 	}
 
+	function cartCurrencyDriftedFromElement( cartData ) {
+		var cartCurrency =
+			cartData && cartData.totals && cartData.totals.currency_code
+				? cartData.totals.currency_code.toLowerCase()
+				: '';
+
+		return Boolean(
+			elementCurrency && cartCurrency && elementCurrency !== cartCurrency
+		);
+	}
+
+	// `event.reject()` only surfaces the wallet's generic "address
+	// unsupported" message, so the real reason is also surfaced as a notice.
+	function getCurrencyMismatchMessage( cartData ) {
+		var from = ( elementCurrency || '' ).toUpperCase();
+		var to = cartData.totals.currency_code.toUpperCase();
+
+		return (
+			'This express payment started in ' +
+			from +
+			' and cannot switch to ' +
+			to +
+			' for the address you selected. Choose a different shipping ' +
+			'address, or use the regular checkout to pay in ' +
+			to +
+			'.'
+		);
+	}
+
 	function getTotalAmount( cartData ) {
 		if (
 			cartData &&
@@ -429,16 +470,21 @@
 
 	function getStripeElementsOptions( cartData ) {
 		var amount = getTotalAmount( cartData );
+		var currency = getCurrency( cartData );
 		// The product payload shape carries no Store API extensions; fall back
 		// to the localized subscription flag there.
 		var setupFutureUsage =
 			cartData && cartData.totals
 				? getSetupFutureUsageForCart( cartData )
 				: ( config.has_subscription ? 'off_session' : null );
-		var options = {
+		var options;
+
+		elementCurrency = currency;
+
+		options = {
 			mode: 'payment',
 			amount: amount,
-			currency: getCurrency( cartData ),
+			currency: currency,
 			loader: 'never',
 			paymentMethodTypes: getPaymentMethodTypes(),
 		};
@@ -706,12 +752,21 @@
 			} );
 		}
 
+		var placeOrderHeaders = {
+			'X-WooPayments-Tokenized-Cart': true,
+		};
+
+		// Lets the server reject placement when the cart's currency drifted
+		// away from the one the Element booted with.
+		if ( elementCurrency ) {
+			placeOrderHeaders[ 'X-WooPayments-Payment-Currency' ] =
+				elementCurrency;
+		}
+
 		return requestCart( {
 			method: 'POST',
 			path: '/wc/store/v1/checkout',
-			headers: {
-				'X-WooPayments-Tokenized-Cart': true,
-			},
+			headers: placeOrderHeaders,
 			data: {
 				payment_method: 'woocommerce_payments',
 				billing_address: getBillingAddress(
@@ -1306,7 +1361,15 @@
 			},
 		} )
 			.then( function ( cartData ) {
-				var shippingRates = getShippingRates( cartData );
+				var shippingRates;
+
+				if ( cartCurrencyDriftedFromElement( cartData ) ) {
+					setError( getCurrencyMismatchMessage( cartData ) );
+					event.reject();
+					return;
+				}
+
+				shippingRates = getShippingRates( cartData );
 
 				// When no shipping options are returned, the API still responds
 				// with a 200 status code. Ensure options are present - otherwise
@@ -1347,6 +1410,12 @@
 			},
 		} )
 			.then( function ( cartData ) {
+				if ( cartCurrencyDriftedFromElement( cartData ) ) {
+					setError( getCurrencyMismatchMessage( cartData ) );
+					event.reject();
+					return;
+				}
+
 				cachedCartData = cartData;
 
 				return updateElementsForCart( cartData ).then( function () {
@@ -1617,9 +1686,15 @@
 			placeOrder: placeOrder,
 			redirectToOrder: redirectToOrder,
 			parseConfirmationHash: parseConfirmationHash,
+			getElementCurrency: function () {
+				return elementCurrency;
+			},
 			setState: function ( state ) {
 				if ( 'elements' in state ) {
 					elements = state.elements;
+				}
+				if ( 'elementCurrency' in state ) {
+					elementCurrency = state.elementCurrency;
 				}
 				if ( 'cachedCartData' in state ) {
 					cachedCartData = state.cachedCartData;
