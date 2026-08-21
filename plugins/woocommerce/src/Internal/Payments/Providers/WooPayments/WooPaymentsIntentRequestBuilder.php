@@ -447,7 +447,9 @@ class WooPaymentsIntentRequestBuilder {
 
 		$split_gateway_payment_method_type = $this->payment_method_type_from_gateway_id( $context->get_gateway_id() );
 		if ( '' !== $split_gateway_payment_method_type ) {
-			return array( $split_gateway_payment_method_type );
+			return 'card' === $split_gateway_payment_method_type
+				? $this->card_payment_method_types( $currency )
+				: array( $split_gateway_payment_method_type );
 		}
 
 		$submitted_types = $provider_data[ WooPaymentsExpressPaymentMethodTypes::PROVIDER_DATA_KEY ] ?? array();
@@ -457,7 +459,26 @@ class WooPaymentsIntentRequestBuilder {
 		$allowed_types   = WooPaymentsExpressPaymentMethodTypes::get_allowed_payment_method_types_for_account( $this->account_service, $express_context, $currency );
 		$validated_types = WooPaymentsExpressPaymentMethodTypes::validate_submitted_payment_method_types( $submitted_types, $allowed_types );
 
-		return empty( $validated_types ) ? array( WooPaymentsExpressPaymentMethodTypes::STRIPE_TYPE_CARD ) : $validated_types;
+		return empty( $validated_types ) ? $this->card_payment_method_types( $currency ) : $validated_types;
+	}
+
+	/**
+	 * Resolve the payment method types for a new card payment.
+	 *
+	 * The Payment Element enables Link whenever the account folds it into the
+	 * card method, so the intent must declare it too — otherwise a shopper
+	 * paying through the Link wallet produces a credential the intent's
+	 * payment_method_types does not cover.
+	 *
+	 * @param string $currency Order currency.
+	 * @return array<int,string>
+	 */
+	private function card_payment_method_types( string $currency ): array {
+		if ( WooPaymentsFeaturePolicy::is_link_folded_into_card( $this->account_service, $this->payment_method_registry, $currency ) ) {
+			return array( WooPaymentsExpressPaymentMethodTypes::STRIPE_TYPE_CARD, 'link' );
+		}
+
+		return array( WooPaymentsExpressPaymentMethodTypes::STRIPE_TYPE_CARD );
 	}
 
 	/**

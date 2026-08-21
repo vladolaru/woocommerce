@@ -986,20 +986,14 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function should_fold_link_into_card( array $enabled_method_ids, string $currency ): bool {
-		if ( ! in_array( 'card', $enabled_method_ids, true ) || ! in_array( 'link', $enabled_method_ids, true ) ) {
-			return false;
-		}
+		unset( $enabled_method_ids );
 
-		$link_definition = $this->get_payment_method_registry()->get( 'link' );
-		if ( null === $link_definition || ! $link_definition->is_available_for( $currency, $this->get_account_country() ) ) {
-			return false;
-		}
-
-		$account_data = $this->get_account_service()->get_cached_account_data();
-		$capabilities = is_array( $account_data['capabilities'] ?? null ) ? $account_data['capabilities'] : array();
-		$fees         = is_array( $account_data['fees'] ?? null ) ? $account_data['fees'] : array();
-
-		return 'active' === ( $capabilities['link_payments'] ?? null ) && array_key_exists( 'link', $fees );
+		return WooPaymentsFeaturePolicy::is_link_folded_into_card(
+			$this->get_account_service(),
+			$this->get_payment_method_registry(),
+			$currency,
+			$this->get_legacy_runtime()
+		);
 	}
 
 	/**

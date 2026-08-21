@@ -279,6 +279,52 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox New card payments declare link in payment_method_types whenever the account folds Link into card.
+	 */
+	public function test_card_payment_method_types_include_link_when_folded(): void {
+		$order = wc_create_order();
+		$order->set_currency( 'USD' );
+		$order->set_total( '10.00' );
+		$order->save();
+
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_gateway_setting', 'get_cached_account_data', 'get_account_country' ) )
+			->getMock();
+		$account_service->method( 'get_gateway_setting' )->willReturnCallback(
+			static function ( string $key, $fallback = null ) {
+				return 'upe_enabled_payment_method_ids' === $key ? array( 'card', 'link' ) : $fallback;
+			}
+		);
+		$account_service->method( 'get_cached_account_data' )->willReturn(
+			array(
+				'capabilities' => array( 'link_payments' => 'active' ),
+				'fees'         => array( 'link' => array() ),
+			)
+		);
+		$account_service->method( 'get_account_country' )->willReturn( 'US' );
+
+		$request_builder = new WooPaymentsIntentRequestBuilder();
+		$request_builder->init(
+			$account_service,
+			new WooPaymentsOrderDataService(),
+			$this->createStub( WooPaymentsTokenService::class ),
+			new WooPaymentsPaymentMethodRegistry()
+		);
+
+		$request = $request_builder->charge_request_data(
+			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_card' ),
+			'pm_card',
+			'cus_native',
+			false
+		);
+
+		$this->assertSame( array( 'card', 'link' ), $request['payment_method_types'] );
+		// Link in the types arms the online mandate for customer-present payments — oracle behavior.
+		$this->assertArrayHasKey( 'mandate_data', $request );
+	}
+
+	/**
 	 * @testdox Merchant-initiated renewals never fabricate mandate acceptance; customer-present payments source the IP from the order.
 	 */
 	public function test_mandate_data_is_suppressed_for_renewals_and_sourced_from_order(): void {
