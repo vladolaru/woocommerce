@@ -148,6 +148,34 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should flag has_subscription on the product page for a subscription product.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_product_page_has_subscription_for_subscription_product(): void {
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- Test double for an absent WCS class.
+		eval( 'namespace { class WC_Subscriptions_Product { public static function is_subscription( $product ) { return true; } } }' );
+
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		update_option( 'woocommerce_currency', 'USD' );
+		$product = \WC_Helper_Product::create_simple_product(
+			true,
+			array(
+				'name'          => 'Sub Widget',
+				'regular_price' => '10',
+				'virtual'       => true,
+				'price'         => '10',
+			)
+		);
+		$this->set_current_product( $product );
+
+		$params = $this->create_service()->get_express_checkout_params( 'product' );
+
+		$this->assertTrue( $params['has_subscription'] );
+	}
+
+	/**
 	 * @testdox Should compute login confirmation settings when authentication is required.
 	 */
 	public function test_login_confirmation_settings_when_authentication_required(): void {

@@ -109,7 +109,7 @@ class WooPaymentsExpressCheckoutService {
 				'allowed_shipping_countries' => function_exists( 'WC' ) && WC() && WC()->countries ? array_keys( WC()->countries->get_shipping_countries() ?? array() ) : array(),
 				'display_prices_with_tax'    => 'incl' === get_option( 'woocommerce_tax_display_cart' ),
 			),
-			'has_subscription'            => WooPaymentsSubscriptionMethodPolicy::cart_contains_subscription_or_renewal(),
+			'has_subscription'            => $this->context_has_subscription( $context ),
 			'is_manual_capture'           => $this->is_truthy_gateway_setting( 'manual_capture' ),
 			'isShopperTrackingEnabled'    => $tracking_enabled,
 			'is_shopper_tracking_enabled' => $tracking_enabled,
@@ -725,11 +725,48 @@ class WooPaymentsExpressCheckoutService {
 		}
 
 		// If the cart contains a subscription and account creation is not possible, authentication is required.
-		if ( WooPaymentsSubscriptionMethodPolicy::cart_contains_subscription_or_renewal() && ! $this->is_account_creation_possible() ) {
+		if ( $this->cart_has_any_subscription_schedule() && ! $this->is_account_creation_possible() ) {
 			return true;
 		}
 
 		return false;
+	}
+
+	/**
+	 * Tell whether express checkout should treat the context as carrying a
+	 * subscription: a subscription product on the product page, or any
+	 * subscription schedule in the cart (initial, renewal, resubscribe or
+	 * switch), mirroring the client plugin's has_subscription_product().
+	 *
+	 * @param string $context Express checkout context.
+	 * @return bool
+	 */
+	private function context_has_subscription( string $context ): bool {
+		if ( 'product' === $context && class_exists( 'WC_Subscriptions_Product' ) ) {
+			$product = $this->get_product_for_product_page();
+			if ( $product instanceof \WC_Product && \WC_Subscriptions_Product::is_subscription( $product ) ) {
+				return true;
+			}
+		}
+
+		return $this->cart_has_any_subscription_schedule();
+	}
+
+	/**
+	 * Tell whether the cart carries any subscription schedule.
+	 *
+	 * @return bool
+	 */
+	private function cart_has_any_subscription_schedule(): bool {
+		if ( WooPaymentsSubscriptionMethodPolicy::cart_contains_subscription_or_renewal() ) {
+			return true;
+		}
+
+		if ( function_exists( 'wcs_cart_contains_resubscribe' ) && false !== wcs_cart_contains_resubscribe() ) {
+			return true;
+		}
+
+		return function_exists( 'wcs_cart_contains_switches' ) && false !== wcs_cart_contains_switches();
 	}
 
 	/**
@@ -741,7 +778,7 @@ class WooPaymentsExpressCheckoutService {
 		$is_signup_from_checkout_allowed = 'yes' === get_option( 'woocommerce_enable_signup_and_login_from_checkout', 'no' );
 
 		// If a subscription is being purchased, check if account creation is allowed for subscriptions.
-		if ( ! $is_signup_from_checkout_allowed && WooPaymentsSubscriptionMethodPolicy::cart_contains_subscription_or_renewal() ) {
+		if ( ! $is_signup_from_checkout_allowed && $this->cart_has_any_subscription_schedule() ) {
 			$is_signup_from_checkout_allowed = 'yes' === get_option( 'woocommerce_enable_signup_from_checkout_for_subscriptions', 'no' );
 		}
 
