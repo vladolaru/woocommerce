@@ -204,16 +204,29 @@ class WooPaymentsIntentRequestBuilder {
 	 * @return array<string,mixed>
 	 */
 	public function setup_intent_request_data( PaymentContext $context, string $payment_credential, string $customer_id, bool $is_recurring ): array {
+		$order                = $context->get_order();
 		$payment_type         = $is_recurring ? 'recurring' : 'single';
 		$subscription_payment = 'recurring' === $payment_type ? 'initial' : 'no';
+		$payment_method_types = $this->payment_method_types_for_request( $context, (string) $order->get_currency() );
 		$request_data         = array(
 			'customer'             => $customer_id,
+			'description'          => self::intent_description( (string) $order->get_order_number() ),
 			'metadata'             => array_merge(
-				self::metadata_from_order( $context->get_order(), $payment_type, $subscription_payment ),
+				self::metadata_from_order( $order, $payment_type, $subscription_payment ),
 				self::fingerprint_metadata( $context )
 			),
-			'payment_method_types' => $this->payment_method_types_for_request( $context, (string) $context->get_order()->get_currency() ),
+			'payment_method_types' => $payment_method_types,
 		);
+
+		// Setup intents are always customer-present, so a link/sepa type must
+		// carry the same online mandate acceptance the charge path pairs with
+		// it — the provider refuses a Link setup intent without one.
+		if ( self::is_mandate_data_required( $payment_method_types ) ) {
+			$mandate_data = self::mandate_data( $order );
+			if ( null !== $mandate_data ) {
+				$request_data['mandate_data'] = $mandate_data;
+			}
+		}
 
 		if ( ! WooPaymentsIntentCodec::is_confirmation_token( $payment_credential ) ) {
 			$request_data['payment_method'] = $payment_credential;

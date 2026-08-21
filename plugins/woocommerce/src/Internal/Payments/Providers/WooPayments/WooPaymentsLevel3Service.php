@@ -115,14 +115,34 @@ class WooPaymentsLevel3Service {
 			);
 		}
 
-		return is_array( $level3_data ) ? $level3_data : array();
+		if ( ! is_array( $level3_data ) ) {
+			return array();
+		}
+
+		// The provider requires at least one line item; an item-less order
+		// (fees stripped by the filter, deposits, zero-item edge cases) gets
+		// the plugin's synthetic placeholder instead of an empty list.
+		if ( ! isset( $level3_data['line_items'] ) || ! is_array( $level3_data['line_items'] ) || 0 === count( $level3_data['line_items'] ) ) {
+			$level3_data['line_items'] = array(
+				(object) array(
+					'discount_amount'     => 0,
+					'product_code'        => 'empty-order',
+					'product_description' => 'The order is empty',
+					'quantity'            => 1,
+					'tax_amount'          => 0,
+					'unit_cost'           => 0,
+				),
+			);
+		}
+
+		return $level3_data;
 	}
 
 	/**
 	 * Process a single order item into Level 3 line items.
 	 *
 	 * @param WC_Order_Item_Product|WC_Order_Item_Fee $item     Line item or fee.
-	 * @param string                                   $currency Order currency.
+	 * @param string                                  $currency Order currency.
 	 * @return array<int,\stdClass>
 	 */
 	private function process_item( $item, string $currency ): array {
@@ -136,8 +156,11 @@ class WooPaymentsLevel3Service {
 		}
 
 		$description = substr( $item->get_name(), 0, 26 );
-		$quantity    = (int) ceil( (float) $item->get_quantity() );
-		$tax_amount  = $this->order_data_service->prepare_amount( (float) $item->get_total_tax(), $currency );
+		// Admin-created orders can carry zero-quantity items; never divide by
+		// zero on the money path (the plugin would fatal here — deliberate
+		// hardening, not parity).
+		$quantity   = max( 1, (int) ceil( (float) $item->get_quantity() ) );
+		$tax_amount = $this->order_data_service->prepare_amount( (float) $item->get_total_tax(), $currency );
 		if ( $subtotal >= 0 ) {
 			$unit_cost       = $this->order_data_service->prepare_amount( $subtotal / $quantity, $currency );
 			$discount_amount = $this->order_data_service->prepare_amount( $subtotal - (float) $item->get_total(), $currency );

@@ -70,7 +70,14 @@ class WooPaymentsLevel3ServiceTest extends WC_Unit_Test_Case {
 	public function test_adds_rounding_fix_item_when_division_drops_cents(): void {
 		$product = WC_Helper_Product::create_simple_product( true, array( 'regular_price' => '3.3333' ) );
 		$order   = wc_create_order();
-		$item_id = $order->add_product( $product, 3, array( 'subtotal' => 10.00, 'total' => 10.00 ) );
+		$item_id = $order->add_product(
+			$product,
+			3,
+			array(
+				'subtotal' => 10.00,
+				'total'    => 10.00,
+			)
+		);
 		$order->save();
 
 		$level3 = $this->make_sut( 'US' )->get_data_from_order( $order );
@@ -117,6 +124,40 @@ class WooPaymentsLevel3ServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 0, $level3['line_items'][0]->unit_cost );
 		$this->assertSame( 250, $level3['line_items'][0]->discount_amount );
+	}
+
+	/**
+	 * @testdox Should ship the synthetic empty-order item instead of an empty line-item list.
+	 */
+	public function test_normalizes_empty_line_items_to_placeholder(): void {
+		$order = wc_create_order();
+
+		$level3 = $this->make_sut( 'US' )->get_data_from_order( $order );
+
+		$this->assertCount( 1, $level3['line_items'] );
+		$this->assertSame( 'empty-order', $level3['line_items'][0]->product_code );
+	}
+
+	/**
+	 * @testdox Should never divide by zero for zero-quantity line items.
+	 */
+	public function test_handles_zero_quantity_items(): void {
+		$product = WC_Helper_Product::create_simple_product( true, array( 'regular_price' => '5.00' ) );
+		$order   = wc_create_order();
+		$order->add_product(
+			$product,
+			0,
+			array(
+				'subtotal' => 0.0,
+				'total'    => 0.0,
+			)
+		);
+		$order->save();
+
+		$level3 = $this->make_sut( 'US' )->get_data_from_order( $order );
+
+		$this->assertSame( 1, $level3['line_items'][0]->quantity );
+		$this->assertSame( 0, $level3['line_items'][0]->unit_cost );
 	}
 
 	/**

@@ -322,6 +322,18 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'card', 'link' ), $request['payment_method_types'] );
 		// Link in the types arms the online mandate for customer-present payments — oracle behavior.
 		$this->assertArrayHasKey( 'mandate_data', $request );
+
+		// The setup-intent path (free trials, zero-total subscriptions) must
+		// pair the same mandate with link and carry the dashboard description.
+		$setup_request = $request_builder->setup_intent_request_data(
+			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_card' ),
+			'pm_card',
+			'cus_native',
+			true
+		);
+		$this->assertSame( array( 'card', 'link' ), $setup_request['payment_method_types'] );
+		$this->assertArrayHasKey( 'mandate_data', $setup_request );
+		$this->assertStringStartsWith( 'Online Payment for Order #', $setup_request['description'] );
 	}
 
 	/**
