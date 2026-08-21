@@ -1041,6 +1041,8 @@ const WooPaymentsContent = ( {
 						result.error.message || '';
 					paymentMethodData[ 'wcpay-payment-method-error-type' ] =
 						result.error.type || '';
+					paymentMethodData[ 'wcpay-fingerprint' ] =
+						await getDeviceFingerprint();
 
 					return getSuccessResponse(
 						emitResponseRef.current,
