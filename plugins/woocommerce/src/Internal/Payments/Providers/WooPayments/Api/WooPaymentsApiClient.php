@@ -105,6 +105,11 @@ class WooPaymentsApiClient {
 	private const STORE_SETUP_API = 'accounts/store_setup';
 
 	/**
+	 * WooPayments public fraud-services config API path.
+	 */
+	private const FRAUD_SERVICES_API = 'accounts/fraud_services';
+
+	/**
 	 * WooPayments compatibility API path.
 	 */
 	private const COMPATIBILITY_API = 'compatibility';
@@ -1616,6 +1621,58 @@ class WooPaymentsApiClient {
 		$decoded_body = json_decode( wp_remote_retrieve_body( $response ), true );
 
 		return is_array( $decoded_body ) ? $decoded_body : array();
+	}
+
+	/**
+	 * Fetch the platform's public (merchant-agnostic) fraud-services config.
+	 *
+	 * This endpoint is public and unauthenticated by design — it serves the
+	 * merchant-agnostic fallback used before account data carries a
+	 * merchant-specific config — so the request deliberately bypasses the
+	 * signed transport. Failures return null: fraud config is best-effort and
+	 * must never break a checkout render.
+	 *
+	 * @return array<string,mixed>|null Decoded config, or null when unavailable.
+	 */
+	public function fetch_public_fraud_services_config(): ?array {
+		$request_args = Jetpack_Connection_Client::validate_args_for_wpcom_json_api_request(
+			self::ENDPOINT_REST_BASE . '/' . self::FRAUD_SERVICES_API,
+			'2',
+			array(),
+			'wpcom'
+		);
+
+		/**
+		 * Filters WooPayments public API request headers.
+		 *
+		 * @since 11.0.0
+		 *
+		 * @param array<string,string> $headers Request headers.
+		 */
+		$headers = apply_filters(
+			'wcpay_api_request_headers',
+			array(
+				'Content-type' => 'application/json; charset=utf-8',
+			)
+		);
+
+		$response = wp_remote_get(
+			$request_args['url'],
+			array(
+				'headers'    => $headers,
+				'user-agent' => $this->get_user_agent(),
+				'timeout'    => self::REQUEST_TIMEOUT_SECONDS,
+				'sslverify'  => true,
+			)
+		);
+
+		if ( is_wp_error( $response ) || 200 !== (int) wp_remote_retrieve_response_code( $response ) ) {
+			return null;
+		}
+
+		$decoded_body = json_decode( wp_remote_retrieve_body( $response ), true );
+
+		return is_array( $decoded_body ) && array() !== $decoded_body ? $decoded_body : null;
 	}
 
 	/**
