@@ -630,6 +630,44 @@ describe( 'woopayments-express-checkout', () => {
 			);
 		} );
 
+		it( 'sends order attribution data in the extensions payload', async () => {
+			document.body.innerHTML =
+				'<wc-order-attribution-inputs id="wcpay-express-checkout__order-attribution-inputs">' +
+				'<input type="hidden" name="wc_order_attribution_source_type" value="organic" />' +
+				'<input type="hidden" name="wc_order_attribution_utm_source" value="duckduckgo" />' +
+				'<input type="hidden" name="wc_order_attribution_utm_medium" value="" />' +
+				'</wc-order-attribution-inputs>';
+			const testables = loadModule( baseParams() );
+			apiFetch.mockResolvedValue( { payment_result: {} } );
+
+			await testables.placeOrder( 'ctoken_123', {
+				billingDetails: { name: 'Jane Q Shopper' },
+			} );
+
+			expect(
+				apiFetch.mock.calls[ 0 ][ 0 ].data.extensions
+			).toEqual( {
+				'woocommerce/order-attribution': {
+					source_type: 'organic',
+					utm_source: 'duckduckgo',
+				},
+			} );
+			document.body.innerHTML = '';
+		} );
+
+		it( 'sends empty extensions without attribution inputs', async () => {
+			const testables = loadModule( baseParams() );
+			apiFetch.mockResolvedValue( { payment_result: {} } );
+
+			await testables.placeOrder( 'ctoken_123', {
+				billingDetails: { name: 'Jane Q Shopper' },
+			} );
+
+			expect( apiFetch.mock.calls[ 0 ][ 0 ].data.extensions ).toEqual(
+				{}
+			);
+		} );
+
 		it( 'normalizes wallet billing name and phone on confirm', async () => {
 			const testables = loadModule( baseParams() );
 			apiFetch.mockResolvedValue( { payment_result: {} } );

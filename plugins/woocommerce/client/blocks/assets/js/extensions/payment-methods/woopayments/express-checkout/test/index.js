@@ -888,6 +888,45 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		).not.toContain( 'wcpay-is-platform-payment-method' );
 	} );
 
+	it( 'sends order attribution data in the extensions payload', async () => {
+		document.body.insertAdjacentHTML(
+			'beforeend',
+			'<wc-order-attribution-inputs id="wcpay-express-checkout__order-attribution-inputs">' +
+				'<input type="hidden" name="wc_order_attribution_source_type" value="referral" />' +
+				'</wc-order-attribution-inputs>'
+		);
+		registerExpressCheckout();
+		const googlePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_googlePay'
+		);
+
+		renderExpressPaymentMethod( googlePayRegistration );
+
+		await waitFor( () => {
+			expect( expressHandlers.confirm ).toBeDefined();
+		} );
+
+		await act( async () => {
+			await expressHandlers.confirm( {
+				billingDetails: {
+					email: 'shopper@example.test',
+					name: 'Ada Lovelace',
+				},
+			} );
+		} );
+
+		expect( apiFetch.mock.calls[ 0 ][ 0 ].data.extensions ).toEqual( {
+			'woocommerce/order-attribution': {
+				source_type: 'referral',
+			},
+		} );
+		document
+			.getElementById(
+				'wcpay-express-checkout__order-attribution-inputs'
+			)
+			.remove();
+	} );
+
 	it( 'normalizes wallet billing name and phone on confirm', async () => {
 		registerExpressCheckout();
 		const googlePayRegistration = getRegistration(

@@ -20,6 +20,9 @@
 	var GENERIC_PAYMENT_ERROR_MESSAGE =
 		'Unable to process this payment, please try again.';
 
+	var ORDER_ATTRIBUTION_ELEMENT_ID =
+		'wcpay-express-checkout__order-attribution-inputs';
+
 	function getApiFetch() {
 		return window.wp && window.wp.apiFetch;
 	}
@@ -722,6 +725,60 @@
 		);
 	}
 
+	function initOrderAttribution() {
+		var orderAttributionInputs;
+
+		// The PHP-rendered element may not be present on all surfaces.
+		if ( ! document.getElementById( ORDER_ATTRIBUTION_ELEMENT_ID ) ) {
+			orderAttributionInputs = document.createElement(
+				'wc-order-attribution-inputs'
+			);
+			orderAttributionInputs.id = ORDER_ATTRIBUTION_ELEMENT_ID;
+			document.body.appendChild( orderAttributionInputs );
+		}
+
+		// Manually calling the helper to ensure the hidden inputs are
+		// populated with attribution data.
+		if (
+			window.wc_order_attribution &&
+			typeof window.wc_order_attribution.setOrderTracking === 'function'
+		) {
+			window.wc_order_attribution.setOrderTracking(
+				window.wc_order_attribution.params &&
+					window.wc_order_attribution.params.allowTracking
+			);
+		}
+	}
+
+	function getPlaceOrderExtensions() {
+		var inputs = document.querySelectorAll(
+			'#' + ORDER_ATTRIBUTION_ELEMENT_ID + ' input'
+		);
+		var orderAttributionData = {};
+		var extensions = {};
+
+		inputs.forEach( function ( input ) {
+			var name = ( input.name || '' ).replace(
+				'wc_order_attribution_',
+				''
+			);
+
+			if ( name && input.value ) {
+				orderAttributionData[ name ] = input.value;
+			}
+		} );
+
+		if ( Object.keys( orderAttributionData ).length ) {
+			extensions[ 'woocommerce/order-attribution' ] =
+				orderAttributionData;
+		}
+
+		return applyWpFilters(
+			'wcpay.express-checkout.cart-place-order-extension-data',
+			extensions
+		);
+	}
+
 	function getPaymentData( confirmationTokenId ) {
 		return [
 			{
@@ -761,6 +818,7 @@
 					shipping_address:
 						cachedCartData && cachedCartData.shipping_address,
 					payment_data: getPaymentData( confirmationTokenId ),
+					extensions: getPlaceOrderExtensions(),
 				},
 			} );
 		}
@@ -803,6 +861,7 @@
 						  )
 						: cachedCartData && cachedCartData.shipping_address,
 				payment_data: getPaymentData( confirmationTokenId ),
+				extensions: getPlaceOrderExtensions(),
 			},
 		} );
 	}
@@ -1675,6 +1734,7 @@
 		}
 
 		hideExpressButton();
+		initOrderAttribution();
 
 		if (
 			getButtonContext() !== 'checkout' ||

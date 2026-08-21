@@ -291,6 +291,51 @@ const getStoreApiPath = ( path ) =>
 			undefined,
 	} );
 
+const ORDER_ATTRIBUTION_ELEMENT_ID =
+	'wcpay-express-checkout__order-attribution-inputs';
+
+const initOrderAttribution = () => {
+	// The PHP-rendered element may not be present on block surfaces.
+	if ( ! document.getElementById( ORDER_ATTRIBUTION_ELEMENT_ID ) ) {
+		const orderAttributionInputs = document.createElement(
+			'wc-order-attribution-inputs'
+		);
+		orderAttributionInputs.id = ORDER_ATTRIBUTION_ELEMENT_ID;
+		document.body.appendChild( orderAttributionInputs );
+	}
+
+	// Manually calling the helper to ensure the hidden inputs are populated
+	// with attribution data.
+	window?.wc_order_attribution?.setOrderTracking(
+		window?.wc_order_attribution?.params?.allowTracking
+	);
+};
+
+const getPlaceOrderExtensions = () => {
+	const inputs = document.querySelectorAll(
+		`#${ ORDER_ATTRIBUTION_ELEMENT_ID } input`
+	);
+	const orderAttributionData = {};
+
+	inputs.forEach( ( input ) => {
+		const name = ( input.name || '' ).replace(
+			'wc_order_attribution_',
+			''
+		);
+
+		if ( name && input.value ) {
+			orderAttributionData[ name ] = input.value;
+		}
+	} );
+
+	return applyFilters(
+		'wcpay.express-checkout.cart-place-order-extension-data',
+		Object.keys( orderAttributionData ).length
+			? { 'woocommerce/order-attribution': orderAttributionData }
+			: {}
+	);
+};
+
 const getStoreApiHeaders = ( includeSessionNonce = false ) => {
 	const nonce = params?.nonce || {};
 	const headers = {};
@@ -907,6 +952,8 @@ const ExpressCheckoutContent = ( {
 			return;
 		}
 
+		initOrderAttribution();
+
 		stripeRef.current = window.Stripe( params.stripe.publishableKey, {
 			locale: params.stripe.locale || 'auto',
 			...( params.stripe.accountId
@@ -1163,6 +1210,7 @@ const ExpressCheckoutContent = ( {
 							confirmationResult.confirmationToken.id,
 							paymentMethodTypes
 						),
+						extensions: getPlaceOrderExtensions(),
 					},
 				} );
 
