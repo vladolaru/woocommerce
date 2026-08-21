@@ -1881,6 +1881,116 @@ describe( 'WooPayments checkout', () => {
 		);
 	} );
 
+	test( 'lets the form submit for server validation when required billing fields are missing', async () => {
+		window.wcpay_core_checkout_config.enabledBillingFields = {
+			billing_email: { required: true },
+			billing_country: { required: true },
+		};
+		document
+			.querySelector( 'form.checkout' )
+			.insertAdjacentHTML(
+				'beforeend',
+				'<input type="email" id="billing_email" value="" />' +
+					'<select id="billing_country"><option value="US" selected>US</option></select>'
+			);
+
+		require( '../woopayments-checkout' );
+
+		expect(
+			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
+		).toBe( true );
+
+		await flushPromises();
+
+		expect( submitElements ).not.toHaveBeenCalled();
+		expect( stripeMock.createPaymentMethod ).not.toHaveBeenCalled();
+
+		delete window.wcpay_core_checkout_config.enabledBillingFields;
+	} );
+
+	test( 'intercepts the submission when the enabled billing fields are filled', async () => {
+		window.wcpay_core_checkout_config.enabledBillingFields = {
+			billing_email: { required: true },
+		};
+		document
+			.querySelector( 'form.checkout' )
+			.insertAdjacentHTML(
+				'beforeend',
+				'<input type="email" id="billing_email" value="shopper@example.test" />'
+			);
+
+		require( '../woopayments-checkout' );
+
+		expect(
+			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
+		).toBe( false );
+
+		await flushPromises();
+
+		expect( stripeMock.createPaymentMethod ).toHaveBeenCalled();
+
+		delete window.wcpay_core_checkout_config.enabledBillingFields;
+	} );
+
+	test( 'honors locale-specific requirements over the enabled-fields flag', async () => {
+		window.wcpay_core_checkout_config.enabledBillingFields = {
+			billing_country: { required: true },
+			billing_postcode: { required: true },
+		};
+		window.wc_address_i18n_params = {
+			locale: JSON.stringify( {
+				AE: { postcode: { required: false } },
+				default: { postcode: { required: true } },
+			} ).replace( /"/g, '&quot;' ),
+		};
+		document
+			.querySelector( 'form.checkout' )
+			.insertAdjacentHTML(
+				'beforeend',
+				'<select id="billing_country"><option value="AE" selected>AE</option></select>' +
+					'<input type="text" id="billing_postcode" value="" />'
+			);
+
+		require( '../woopayments-checkout' );
+
+		// The locale says the postcode is optional in AE, so the submission
+		// is intercepted even though the field is empty.
+		expect(
+			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
+		).toBe( false );
+
+		delete window.wcpay_core_checkout_config.enabledBillingFields;
+		delete window.wc_address_i18n_params;
+	} );
+
+	test( 'strips a partial billing address for BNPL on the pay-for-order page', async () => {
+		window.wcpay_core_checkout_config.isOrderPay = true;
+		window.wcpay_core_checkout_config.paymentMethodTypes = [ 'affirm' ];
+		document.body.innerHTML =
+			'<form id="order_review">' +
+			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
+			'<div id="wcpay-core-payment-element"></div>' +
+			'<input type="text" id="billing_first_name" value="Ada" />' +
+			'<input type="text" id="billing_last_name" value="Lovelace" />' +
+			'<input type="email" id="billing_email" value="ada@example.test" />' +
+			'<input type="text" id="billing_country" value="US" />' +
+			'</form>';
+
+		require( '../woopayments-checkout' );
+
+		orderPayFormEventHandlers.submit.call(
+			document.getElementById( 'order_review' )
+		);
+		await flushPromises();
+
+		const request = stripeMock.createPaymentMethod.mock.calls[ 0 ][ 0 ];
+		expect( request.params.billing_details.address ).toBeUndefined();
+		expect( request.params.billing_details.name ).toBe( 'Ada Lovelace' );
+
+		delete window.wcpay_core_checkout_config.isOrderPay;
+		delete window.wcpay_core_checkout_config.paymentMethodTypes;
+	} );
+
 	test( 'submits the checkout with the error sentinel when payment method creation fails', async () => {
 		stripeMock.createPaymentMethod.mockResolvedValueOnce( {
 			error: {

@@ -648,6 +648,88 @@
 		};
 	}
 
+	function getParsedAddressLocale() {
+		var params = window.wc_address_i18n_params;
+
+		if ( ! params || typeof params.locale !== 'string' ) {
+			return null;
+		}
+
+		try {
+			return JSON.parse( params.locale.replace( /&quot;/g, '"' ) );
+		} catch ( error ) {
+			return null;
+		}
+	}
+
+	/**
+	 * Tell whether required billing information is missing from the checkout
+	 * form. When it is, the submission is left to WooCommerce so its own
+	 * validation surfaces the field errors, instead of creating an orphan
+	 * PaymentMethod first.
+	 */
+	function isBillingInformationMissing() {
+		var enabledBillingFields = config.enabledBillingFields;
+		var name;
+		var billingFieldsToValidate;
+		var country;
+		var locale;
+
+		if ( ! enabledBillingFields ) {
+			return false;
+		}
+
+		// First and last name are special - one of them filled is enough.
+		name = (
+			getInputValue( 'billing_first_name' ) +
+			' ' +
+			getInputValue( 'billing_last_name' )
+		).trim();
+		if (
+			! name &&
+			( enabledBillingFields.billing_first_name ||
+				enabledBillingFields.billing_last_name )
+		) {
+			return true;
+		}
+
+		billingFieldsToValidate = [
+			'billing_email',
+			'billing_country',
+			'billing_address_1',
+			'billing_city',
+			'billing_postcode',
+		].filter( function ( field ) {
+			return !! enabledBillingFields[ field ];
+		} );
+
+		country =
+			billingFieldsToValidate.indexOf( 'billing_country' ) !== -1
+				? getInputValue( 'billing_country' )
+				: null;
+		locale = getParsedAddressLocale();
+
+		return billingFieldsToValidate.some( function ( fieldName ) {
+			var isRequired =
+				enabledBillingFields[ fieldName ] &&
+				enabledBillingFields[ fieldName ].required;
+			var key;
+			var localeRule;
+
+			if ( country && locale && fieldName !== 'billing_email' ) {
+				key = fieldName.replace( 'billing_', '' );
+				localeRule =
+					( locale[ country ] && locale[ country ][ key ] ) ||
+					( locale.default && locale.default[ key ] );
+				if ( localeRule && localeRule.required !== undefined ) {
+					isRequired = localeRule.required;
+				}
+			}
+
+			return isRequired && ! getInputValue( fieldName );
+		} );
+	}
+
 	function getCheckoutBillingDetails() {
 		var firstName = getInputValue( 'billing_first_name' );
 		var lastName = getInputValue( 'billing_last_name' );
@@ -1700,12 +1782,57 @@
 		} );
 	}
 
+	function isMissingRequiredAddressFieldsForBNPL( billingDetails ) {
+		var paymentMethodTypes = getStripePaymentMethodTypes() || [];
+		var isAffirm = paymentMethodTypes.indexOf( 'affirm' ) !== -1;
+		var isAfterpay =
+			paymentMethodTypes.indexOf( 'afterpay_clearpay' ) !== -1;
+		var address = billingDetails && billingDetails.address;
+		var requiredAddressFields;
+		var isFieldMissing;
+
+		if ( ( ! isAffirm && ! isAfterpay ) || ! address ) {
+			return false;
+		}
+
+		// Line2 is not required for Affirm; city and state are not required
+		// for Afterpay.
+		requiredAddressFields = isAffirm
+			? [ 'line1', 'state', 'city', 'postal_code', 'country' ]
+			: [ 'line1', 'postal_code', 'country' ];
+
+		isFieldMissing = requiredAddressFields.some( function ( field ) {
+			return (
+				address[ field ] === '' ||
+				address[ field ] === null ||
+				address[ field ] === undefined
+			);
+		} );
+
+		if ( isFieldMissing ) {
+			return true;
+		}
+
+		// Name is required for Affirm.
+		return isAffirm && ! billingDetails.name;
+	}
+
 	function createPaymentMethod() {
 		return submitElements().then( function () {
 			var billingDetails = getCheckoutBillingDetails();
 			var request = {
 				elements: elements,
 			};
+
+			if (
+				baseConfig.isOrderPay &&
+				isMissingRequiredAddressFieldsForBNPL( billingDetails )
+			) {
+				// These payment methods reject an address object with partial
+				// information; remove it entirely so the element gathers the
+				// missing fields itself.
+				delete billingDetails.address;
+			}
 
 			if ( billingDetails ) {
 				request.params = {
@@ -1836,6 +1963,12 @@
 
 		if ( isUsingSavedPaymentMethod() ) {
 			appendPaymentFields( form, null, null );
+			return true;
+		}
+
+		// Let WooCommerce's own validation surface missing billing fields
+		// instead of creating an orphan PaymentMethod first.
+		if ( isBillingInformationMissing() ) {
 			return true;
 		}
 
