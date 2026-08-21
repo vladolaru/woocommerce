@@ -17,6 +17,7 @@ import {
 	getFontRulesFromPage,
 } from './upe-styles';
 import { recordWooPaymentsUserEvent } from './tracks';
+import enqueueFraudScripts from './fraud-scripts';
 
 const PAYMENT_METHOD_NAME = 'woocommerce_payments';
 const defaultSettings = getPaymentMethodData( PAYMENT_METHOD_NAME, {} );
@@ -1162,5 +1163,9 @@ const registerWooPayments = () => {
 };
 
 registerWooPayments();
+
+window.addEventListener( 'load', () => {
+	enqueueFraudScripts( defaultSettings?.fraudServices || {} );
+} );
 
 export default registerWooPayments;

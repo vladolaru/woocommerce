@@ -2189,7 +2189,60 @@
 		);
 	}
 
+	/**
+	 * Enqueue the anti-fraud scripts described by the localized fraud-services
+	 * config, mirroring the WooPayments client plugin's fraud-scripts loader.
+	 *
+	 * Idempotent across scripts sharing the page: the Sift snippet must push
+	 * its account, identity and pageview commands exactly once.
+	 */
+	function enqueueFraudScripts() {
+		var fraudConfig = baseConfig.fraudServices;
+		var siftConfig;
+		var siftQueue;
+		var script;
+
+		if ( ! fraudConfig || window.__wooPaymentsFraudScriptsEnqueued ) {
+			return;
+		}
+		window.__wooPaymentsFraudScriptsEnqueued = true;
+
+		if ( fraudConfig.sift ) {
+			siftConfig = fraudConfig.sift;
+			siftQueue = window._sift = window._sift || [];
+			siftQueue.push( [ '_setAccount', siftConfig.beacon_key ] );
+			siftQueue.push( [ '_setUserId', siftConfig.user_id ] );
+			siftQueue.push( [ '_setSessionId', siftConfig.session_id ] );
+			siftQueue.push( [ '_trackPageview' ] );
+
+			if (
+				! document.querySelector(
+					'[src="https://cdn.sift.com/s.js"]'
+				)
+			) {
+				script = document.createElement( 'script' );
+				script.src = 'https://cdn.sift.com/s.js';
+				script.async = true;
+				document.body.appendChild( script );
+			}
+		}
+
+		// Stripe.js is already a registered dependency of this script; the
+		// injection below only covers the config-driven case where it is not,
+		// matching the plugin's loader.
+		if (
+			fraudConfig.stripe &&
+			! document.querySelector( '[src^="https://js.stripe.com/v3"]' )
+		) {
+			script = document.createElement( 'script' );
+			script.src = 'https://js.stripe.com/v3';
+			script.async = true;
+			document.body.appendChild( script );
+		}
+	}
+
 	$( function () {
+		enqueueFraudScripts();
 		registerPaymentListWallets();
 		togglePaymentMethodsForBillingCountry();
 		initializeStripeElement();

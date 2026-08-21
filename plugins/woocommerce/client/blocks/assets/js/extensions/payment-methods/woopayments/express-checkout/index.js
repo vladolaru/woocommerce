@@ -16,6 +16,7 @@ import apiFetch from '@wordpress/api-fetch';
  */
 import { recordWooPaymentsUserEvent } from '../tracks';
 import { getBlocksCheckoutAppearance } from '../upe-styles';
+import enqueueFraudScripts from '../fraud-scripts';
 
 const PAYMENT_METHOD_NAME = 'woocommerce_payments';
 const EXPRESS_CHECKOUT_PAYMENT_METHOD_NAME =
@@ -1233,5 +1234,12 @@ const registerWooPaymentsExpressCheckout = () => {
 };
 
 registerWooPaymentsExpressCheckout();
+
+// The express entry can render on pages where the regular payment-method
+// bundle never loads (blocks cart); the loader itself is idempotent, so
+// whichever bundle runs first wins and the other is a no-op.
+window.addEventListener( 'load', () => {
+	enqueueFraudScripts( settings?.fraudServices || {} );
+} );
 
 export default registerWooPaymentsExpressCheckout;
