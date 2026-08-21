@@ -150,7 +150,10 @@ class WooPaymentsOrderTrackingService implements RegisterHooksInterface {
 			return;
 		}
 
-		if ( ! $this->is_woopayments_payment_method( $order->get_payment_method() ) ) {
+		// The plugin tracks Sift orders for the main card gateway only — an
+		// exact gateway-ID match, never the split sub-gateways — so native
+		// must not widen the population Sift trains on.
+		if ( OrderPaymentStore::GATEWAY_ID !== $order->get_payment_method() ) {
 			return;
 		}
 
@@ -318,16 +321,6 @@ class WooPaymentsOrderTrackingService implements RegisterHooksInterface {
 		}
 
 		return in_array( $order_mode, array( 'prod', 'live' ), true );
-	}
-
-	/**
-	 * Tell whether a payment method belongs to WooPayments.
-	 *
-	 * @param string $payment_method Payment method ID.
-	 * @return bool
-	 */
-	private function is_woopayments_payment_method( string $payment_method ): bool {
-		return OrderPaymentStore::GATEWAY_ID === $payment_method || 0 === strpos( $payment_method, OrderPaymentStore::GATEWAY_ID_PREFIX );
 	}
 
 	/**

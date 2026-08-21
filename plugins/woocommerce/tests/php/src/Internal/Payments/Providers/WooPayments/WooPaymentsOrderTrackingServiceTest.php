@@ -172,13 +172,13 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should schedule a preserved new-order tracking action for split-UPE WooPayments orders.
+	 * @testdox Should not schedule Sift tracking for split sub-gateway orders — the plugin trains Sift on the card gateway only.
 	 */
-	public function test_schedules_new_order_tracking_for_prefixed_woopayments_orders(): void {
+	public function test_does_not_schedule_tracking_for_split_sub_gateway_orders(): void {
 		$scheduler = new RecordingActionSchedulerService();
 		$service   = $this->create_service( new StaticNativeRuntimeArbiter( true ), $scheduler );
 		$order     = $this->create_order(
-			OrderPaymentStore::GATEWAY_ID_PREFIX . 'card',
+			OrderPaymentStore::GATEWAY_ID_PREFIX . 'bancontact',
 			array(
 				'_payment_method_id' => 'pm_123',
 				'_wcpay_mode'        => 'test',
@@ -189,15 +189,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 
 		$service->handle_woocommerce_update_order( $order->get_id(), $order );
 
-		$this->assertSame(
-			array(
-				array(
-					'hook' => 'wcpay_track_new_order',
-					'args' => array( 'order_id' => $order->get_id() ),
-				),
-			),
-			$scheduler->scheduled_jobs
-		);
+		$this->assertSame( array(), $scheduler->scheduled_jobs );
 	}
 
 	/**
