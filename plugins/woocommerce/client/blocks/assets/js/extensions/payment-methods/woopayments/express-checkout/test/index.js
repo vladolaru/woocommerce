@@ -327,6 +327,11 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 					id: 'ctoken_123',
 				},
 			} ),
+			createPaymentMethod: jest.fn().mockResolvedValue( {
+				paymentMethod: {
+					id: 'pm_456',
+				},
+			} ),
 		};
 		window.Stripe = jest.fn( () => stripe );
 	} );
@@ -886,6 +891,58 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		expect(
 			checkoutRequest.data.payment_data.map( ( entry ) => entry.key )
 		).not.toContain( 'wcpay-is-platform-payment-method' );
+	} );
+
+	it( 'falls back to a payment method when confirmation tokens are disabled', async () => {
+		baseExpressCheckoutParams.flags = {
+			isEceUsingConfirmationTokens: false,
+		};
+		baseExpressCheckoutParams.has_subscription = true;
+
+		registerExpressCheckout();
+		const googlePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_googlePay'
+		);
+
+		renderExpressPaymentMethod( googlePayRegistration );
+
+		await waitFor( () => {
+			expect( expressHandlers.confirm ).toBeDefined();
+		} );
+
+		const elementsOptions = stripe.elements.mock.calls[ 0 ][ 0 ];
+		expect( elementsOptions.paymentMethodCreation ).toBe( 'manual' );
+		expect( elementsOptions ).not.toHaveProperty( 'paymentMethodTypes' );
+		expect( elementsOptions ).not.toHaveProperty( 'setupFutureUsage' );
+
+		await act( async () => {
+			await expressHandlers.confirm( {
+				billingDetails: {
+					email: 'shopper@example.test',
+					name: 'Ada Lovelace',
+				},
+			} );
+		} );
+
+		expect( stripe.createPaymentMethod ).toHaveBeenCalledWith( {
+			elements,
+		} );
+		expect( stripe.createConfirmationToken ).not.toHaveBeenCalled();
+
+		const paymentData = apiFetch.mock.calls[ 0 ][ 0 ].data.payment_data;
+		expect( paymentData ).toEqual(
+			expect.arrayContaining( [
+				{ key: 'wcpay-payment-method', value: 'pm_456' },
+			] )
+		);
+		expect( paymentData.map( ( entry ) => entry.key ) ).not.toContain(
+			'wcpay-confirmation-token'
+		);
+
+		baseExpressCheckoutParams.flags = {
+			isEceUsingConfirmationTokens: true,
+		};
+		baseExpressCheckoutParams.has_subscription = false;
 	} );
 
 	it( 'gates the wallet sheet behind the login confirmation dialog', async () => {

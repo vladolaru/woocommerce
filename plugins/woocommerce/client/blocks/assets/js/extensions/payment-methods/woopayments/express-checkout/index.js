@@ -411,12 +411,17 @@ const getCartTotalsCurrency = ( cart ) =>
 
 const getCartTotalsAmount = ( cart ) => getCartTotalPrice( cart );
 
+// Defaults to true when the flag is absent; the platform's
+// ece_confirmation_tokens_disabled kill switch turns it off.
+const shouldUseConfirmationTokens = () =>
+	params?.flags?.isEceUsingConfirmationTokens ?? true;
+
 const addReferenceElementOptions = ( options ) => {
-	if ( params?.is_manual_capture ) {
+	if ( shouldUseConfirmationTokens() && params?.is_manual_capture ) {
 		options.captureMethod = 'manual';
 	}
 
-	if ( params?.has_subscription ) {
+	if ( shouldUseConfirmationTokens() && params?.has_subscription ) {
 		options.setupFutureUsage = 'off_session';
 	}
 
@@ -447,7 +452,11 @@ const getStripeElementsOptions = ( billing, cart ) => {
 		mode: amount > 0 ? 'payment' : 'setup',
 		loader: 'never',
 		currency: getCartCurrency( billing ),
-		paymentMethodTypes: getPaymentMethodTypes( cartData ),
+		// Without confirmation tokens, the payment method is created
+		// manually at confirm time.
+		...( shouldUseConfirmationTokens()
+			? { paymentMethodTypes: getPaymentMethodTypes( cartData ) }
+			: { paymentMethodCreation: 'manual' } ),
 	} );
 
 	if ( options.mode === 'payment' ) {
@@ -874,10 +883,12 @@ const getCheckoutErrorMessage = ( response ) => {
 	);
 };
 
-const getPaymentData = ( confirmationTokenId, paymentMethodTypes ) => [
+const getPaymentData = ( paymentCredentialId, paymentMethodTypes ) => [
 	{
-		key: 'wcpay-confirmation-token',
-		value: confirmationTokenId,
+		key: shouldUseConfirmationTokens()
+			? 'wcpay-confirmation-token'
+			: 'wcpay-payment-method',
+		value: paymentCredentialId,
 	},
 	{
 		key: 'wcpay-express-payment-method-types',
@@ -1189,14 +1200,21 @@ const ExpressCheckoutContent = ( {
 					throw new Error( submitResult.error.message );
 				}
 
-				const confirmationResult =
-					await stripeRef.current.createConfirmationToken( {
-						elements: elementsRef.current,
-					} );
+				const credentialResult = shouldUseConfirmationTokens()
+					? await stripeRef.current.createConfirmationToken( {
+							elements: elementsRef.current,
+					  } )
+					: await stripeRef.current.createPaymentMethod( {
+							elements: elementsRef.current,
+					  } );
 
-				if ( confirmationResult?.error ) {
-					throw new Error( confirmationResult.error.message );
+				if ( credentialResult?.error ) {
+					throw new Error( credentialResult.error.message );
 				}
+
+				const paymentCredentialId = shouldUseConfirmationTokens()
+					? credentialResult.confirmationToken.id
+					: credentialResult.paymentMethod.id;
 
 				const paymentMethodTypes = getPaymentMethodTypes(
 					getCurrentCart()
@@ -1240,7 +1258,7 @@ const ExpressCheckoutContent = ( {
 						shipping_address: eventShippingAddress || undefined,
 						...( orderNotes ? { customer_note: orderNotes } : {} ),
 						payment_data: getPaymentData(
-							confirmationResult.confirmationToken.id,
+							paymentCredentialId,
 							paymentMethodTypes
 						),
 						extensions: getPlaceOrderExtensions(),

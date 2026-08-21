@@ -74,6 +74,17 @@
 		return paymentMethodTypes.length ? paymentMethodTypes : [ 'card' ];
 	}
 
+	function shouldUseConfirmationTokens() {
+		// Defaults to true when the flag is absent; the platform's
+		// ece_confirmation_tokens_disabled kill switch turns it off.
+		return Boolean(
+			config.flags &&
+			config.flags.isEceUsingConfirmationTokens !== undefined
+				? config.flags.isEceUsingConfirmationTokens
+				: true
+		);
+	}
+
 	function getStoreApiHeaders(
 		includeSessionNonce,
 		includeTokenizedCartNonce
@@ -480,6 +491,7 @@
 			cartData && cartData.totals
 				? getSetupFutureUsageForCart( cartData )
 				: ( config.has_subscription ? 'off_session' : null );
+		var useConfirmationTokens = shouldUseConfirmationTokens();
 		var options;
 
 		elementCurrency = currency;
@@ -489,8 +501,16 @@
 			amount: amount,
 			currency: currency,
 			loader: 'never',
-			paymentMethodTypes: getPaymentMethodTypes(),
 		};
+
+		// Without confirmation tokens, the payment method is created manually
+		// at confirm time (https://docs.stripe.com/js/elements_object/create_without_intent).
+		if ( ! useConfirmationTokens ) {
+			options.paymentMethodCreation = 'manual';
+			return options;
+		}
+
+		options.paymentMethodTypes = getPaymentMethodTypes();
 
 		if ( config.is_manual_capture ) {
 			options.captureMethod = 'manual';
@@ -805,11 +825,37 @@
 		);
 	}
 
-	function getPaymentData( confirmationTokenId ) {
+	function createPaymentCredential( stripe ) {
+		if ( shouldUseConfirmationTokens() ) {
+			return stripe
+				.createConfirmationToken( { elements: elements } )
+				.then( function ( result ) {
+					if ( result && result.error ) {
+						throw new Error( result.error.message );
+					}
+
+					return result.confirmationToken.id;
+				} );
+		}
+
+		return stripe
+			.createPaymentMethod( { elements: elements } )
+			.then( function ( result ) {
+				if ( result && result.error ) {
+					throw new Error( result.error.message );
+				}
+
+				return result.paymentMethod.id;
+			} );
+	}
+
+	function getPaymentData( paymentCredentialId ) {
 		return [
 			{
-				key: 'wcpay-confirmation-token',
-				value: confirmationTokenId,
+				key: shouldUseConfirmationTokens()
+					? 'wcpay-confirmation-token'
+					: 'wcpay-payment-method',
+				value: paymentCredentialId,
 			},
 			{
 				key: 'wcpay-express-payment-method-types',
@@ -1363,9 +1409,9 @@
 
 	function updateElementsForCart( cartData ) {
 		var amount = getTotalAmount( cartData );
-		var updateOptions = {
-			setupFutureUsage: getSetupFutureUsageForCart( cartData ),
-		};
+		var updateOptions = shouldUseConfirmationTokens()
+			? { setupFutureUsage: getSetupFutureUsageForCart( cartData ) }
+			: {};
 
 		if ( amount > 0 ) {
 			updateOptions.amount = amount;
@@ -1715,7 +1761,7 @@
 
 		expressElement.on( 'confirm', async function ( event ) {
 			var submitResult;
-			var confirmationResult;
+			var paymentCredentialId;
 			var response;
 
 			try {
@@ -1731,18 +1777,9 @@
 					throw new Error( submitResult.error.message );
 				}
 
-				confirmationResult = await stripe.createConfirmationToken( {
-					elements: elements,
-				} );
+				paymentCredentialId = await createPaymentCredential( stripe );
 
-				if ( confirmationResult && confirmationResult.error ) {
-					throw new Error( confirmationResult.error.message );
-				}
-
-				response = await placeOrder(
-					confirmationResult.confirmationToken.id,
-					event
-				);
+				response = await placeOrder( paymentCredentialId, event );
 				await redirectToOrder( response );
 			} catch ( error ) {
 				setError(
@@ -1800,6 +1837,7 @@
 			placeOrder: placeOrder,
 			redirectToOrder: redirectToOrder,
 			displayLoginConfirmation: displayLoginConfirmation,
+			createPaymentCredential: createPaymentCredential,
 			parseConfirmationHash: parseConfirmationHash,
 			getElementCurrency: function () {
 				return elementCurrency;

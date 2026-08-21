@@ -593,6 +593,80 @@ describe( 'woopayments-express-checkout', () => {
 		} );
 	} );
 
+	describe( 'confirmation-token kill switch', () => {
+		const disabledFlagParams = () =>
+			baseParams( {
+				flags: { isEceUsingConfirmationTokens: false },
+				has_subscription: true,
+				is_manual_capture: true,
+			} );
+
+		it( 'creates elements with manual payment method creation when tokens are disabled', () => {
+			const { getStripeElementsOptions } = loadModule(
+				disabledFlagParams()
+			);
+
+			const options = getStripeElementsOptions( cartResponse() );
+
+			expect( options.paymentMethodCreation ).toBe( 'manual' );
+			expect( options ).not.toHaveProperty( 'paymentMethodTypes' );
+			expect( options ).not.toHaveProperty( 'captureMethod' );
+			expect( options ).not.toHaveProperty( 'setupFutureUsage' );
+		} );
+
+		it( 'creates a payment method credential when tokens are disabled', async () => {
+			const testables = loadModule( disabledFlagParams() );
+			const stripeMock = {
+				createPaymentMethod: jest.fn( () =>
+					Promise.resolve( { paymentMethod: { id: 'pm_456' } } )
+				),
+				createConfirmationToken: jest.fn(),
+			};
+			testables.setState( { elements: {} } );
+
+			await expect(
+				testables.createPaymentCredential( stripeMock )
+			).resolves.toBe( 'pm_456' );
+			expect( stripeMock.createConfirmationToken ).not.toHaveBeenCalled();
+		} );
+
+		it( 'sends the credential under the wcpay-payment-method key when tokens are disabled', async () => {
+			const testables = loadModule( disabledFlagParams() );
+			apiFetch.mockResolvedValue( { payment_result: {} } );
+
+			await testables.placeOrder( 'pm_456', {
+				billingDetails: { name: 'Jane Q Shopper' },
+			} );
+
+			const paymentData = apiFetch.mock.calls[ 0 ][ 0 ].data.payment_data;
+			expect( paymentData ).toEqual(
+				expect.arrayContaining( [
+					{ key: 'wcpay-payment-method', value: 'pm_456' },
+				] )
+			);
+			expect(
+				paymentData.map( ( entry ) => entry.key )
+			).not.toContain( 'wcpay-confirmation-token' );
+		} );
+
+		it( 'omits setupFutureUsage from element updates when tokens are disabled', async () => {
+			const testables = loadModule( disabledFlagParams() );
+			const elementsMock = { update: jest.fn( () => Promise.resolve() ) };
+			testables.setState( { elements: elementsMock } );
+			apiFetch.mockResolvedValue( cartResponse() );
+
+			await testables.handleShippingRateChange( {
+				shippingRate: { id: 'flat_rate:1' },
+				resolve: jest.fn(),
+				reject: jest.fn(),
+			} );
+
+			expect( elementsMock.update ).toHaveBeenCalledWith( {
+				amount: 1500,
+			} );
+		} );
+	} );
+
 	describe( 'displayLoginConfirmation', () => {
 		it( 'substitutes the wallet name and redirects on confirmation', () => {
 			const { displayLoginConfirmation } = loadModule(
