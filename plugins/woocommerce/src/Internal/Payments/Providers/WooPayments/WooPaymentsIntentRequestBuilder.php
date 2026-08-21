@@ -130,6 +130,7 @@ class WooPaymentsIntentRequestBuilder {
 			'capture_method'       => ! $is_renewal && 'yes' === $this->account_service->get_gateway_setting( 'manual_capture', 'no' ) ? 'manual' : 'automatic',
 			'currency'             => strtolower( (string) $order->get_currency() ),
 			'customer'             => $customer_id,
+			'description'          => self::intent_description( (string) $order->get_order_number() ),
 			'metadata'             => array_merge(
 				self::metadata_from_order( $order, $payment_type, $subscription_payment ),
 				self::fingerprint_metadata( $context )
@@ -252,6 +253,28 @@ class WooPaymentsIntentRequestBuilder {
 		$metadata = apply_filters( 'wcpay_metadata_from_order', $metadata, $order, $payment_type );
 
 		return is_array( $metadata ) ? $metadata : array();
+	}
+
+	/**
+	 * Build the Stripe-dashboard intention description.
+	 *
+	 * Format matches the WooPayments plugin (no i18n on purpose — the text is
+	 * only ever shown in the provider dashboard).
+	 *
+	 * @param string $order_number Order number (may differ from the ID).
+	 * @return string
+	 */
+	public static function intent_description( string $order_number ): string {
+		$domain_name = str_replace( array( 'https://', 'http://' ), '', get_site_url() );
+		$blog_id     = class_exists( 'Jetpack_Options' ) ? \Jetpack_Options::get_option( 'id' ) : null;
+		$blog_id     = is_numeric( $blog_id ) && (int) $blog_id > 0 ? (int) $blog_id : null;
+
+		return sprintf(
+			'Online Payment%s for %s%s',
+			'' !== $order_number && '0' !== $order_number ? " for Order #$order_number" : '',
+			$domain_name,
+			null !== $blog_id ? " blog_id $blog_id" : ''
+		);
 	}
 
 	/**

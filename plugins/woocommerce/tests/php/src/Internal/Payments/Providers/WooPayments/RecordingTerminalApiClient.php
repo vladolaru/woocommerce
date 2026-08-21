@@ -306,9 +306,10 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 	 * @param string              $intent_id          Intent ID.
 	 * @param int                 $amount_to_capture Amount to capture.
 	 * @param array<string,mixed> $metadata           Intent metadata.
+	 * @param array<string,mixed> $level3            Level 3 data.
 	 * @return array<string,mixed>
 	 */
-	public function capture_intention( string $intent_id, int $amount_to_capture, array $metadata = array() ): array {
+	public function capture_intention( string $intent_id, int $amount_to_capture, array $metadata = array(), array $level3 = array() ): array {
 		unset( $intent_id, $amount_to_capture, $metadata );
 
 		return $this->captured_intention_response;

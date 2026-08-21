@@ -220,7 +220,8 @@ class WooPaymentsProviderGatewayAdapter {
 					$result  = $this->api_client->capture_intention(
 						$intent_id,
 						$this->order_data_service->prepare_amount( $context->get_amount() ?? (float) $order->get_total(), (string) $order->get_currency() ),
-						array()
+						$this->capture_metadata( $order ),
+						$this->capture_level3_data( $order )
 					);
 					$outcome = WooPaymentsIntentCodec::outcome_from_native_capture_result( $result, $intent_id );
 
@@ -635,5 +636,42 @@ class WooPaymentsProviderGatewayAdapter {
 				'operation'                     => $operation,
 			)
 		);
+	}
+
+	/**
+	 * Build the metadata re-sent on capture.
+	 *
+	 * The plugin re-sends the full order-derived metadata on every capture so
+	 * the platform's copy reflects the order at capture time, not at
+	 * authorization time.
+	 *
+	 * @param \WC_Order $order Order being captured.
+	 * @return array<string,mixed>
+	 */
+	private function capture_metadata( \WC_Order $order ): array {
+		$is_renewal      = function_exists( 'wcs_order_contains_renewal' ) && wcs_order_contains_renewal( $order );
+		$is_subscription = $is_renewal || ( function_exists( 'wcs_order_contains_subscription' ) && wcs_order_contains_subscription( $order ) );
+
+		return WooPaymentsIntentRequestBuilder::metadata_from_order(
+			$order,
+			$is_subscription ? 'recurring' : 'single',
+			$is_renewal ? 'renewal' : ( $is_subscription ? 'initial' : 'no' )
+		);
+	}
+
+	/**
+	 * Build the Level 3 data sent on capture.
+	 *
+	 * Amazon Pay captures skip Level 3, matching the plugin.
+	 *
+	 * @param \WC_Order $order Order being captured.
+	 * @return array<string,mixed>
+	 */
+	private function capture_level3_data( \WC_Order $order ): array {
+		if ( false !== strpos( (string) $order->get_payment_method(), 'amazon_pay' ) ) {
+			return array();
+		}
+
+		return wc_get_container()->get( WooPaymentsLevel3Service::class )->get_data_from_order( $order );
 	}
 }

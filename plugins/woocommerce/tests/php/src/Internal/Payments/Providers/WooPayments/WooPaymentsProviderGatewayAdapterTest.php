@@ -2700,7 +2700,16 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->willReturn( true );
 		$api_client->expects( $this->once() )
 			->method( 'capture_intention' )
-			->with( 'pi_capture', 1000, array() )
+			->with(
+				'pi_capture',
+				1000,
+				$this->callback(
+					static function ( array $metadata ): bool {
+						return isset( $metadata['order_id'], $metadata['order_key'], $metadata['payment_type'] );
+					}
+				),
+				array()
+			)
 			->willReturn(
 				array(
 					'id'     => 'pi_capture',
@@ -2734,7 +2743,16 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->willReturn( true );
 		$api_client->expects( $this->once() )
 			->method( 'capture_intention' )
-			->with( 'pi_capture_partial', 425, array() )
+			->with(
+				'pi_capture_partial',
+				425,
+				$this->callback(
+					static function ( array $metadata ): bool {
+						return isset( $metadata['order_id'], $metadata['order_key'], $metadata['payment_type'] );
+					}
+				),
+				array()
+			)
 			->willReturn(
 				array(
 					'id'     => 'pi_capture_partial',
@@ -2772,7 +2790,16 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->willReturn( true );
 		$api_client->expects( $this->once() )
 			->method( 'capture_intention' )
-			->with( 'pi_capture_notes', 5000, array() )
+			->with(
+				'pi_capture_notes',
+				5000,
+				$this->callback(
+					static function ( array $metadata ): bool {
+						return isset( $metadata['order_id'], $metadata['order_key'], $metadata['payment_type'] );
+					}
+				),
+				array()
+			)
 			->willReturn(
 				array(
 					'id'       => 'pi_capture_notes',
@@ -2856,7 +2883,16 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->willReturn( true );
 		$api_client->expects( $this->once() )
 			->method( 'capture_intention' )
-			->with( 'pi_capture', 1000, array() )
+			->with(
+				'pi_capture',
+				1000,
+				$this->callback(
+					static function ( array $metadata ): bool {
+						return isset( $metadata['order_id'], $metadata['order_key'], $metadata['payment_type'] );
+					}
+				),
+				array()
+			)
 			->willReturn(
 				array(
 					'id'      => 'pi_capture',
@@ -2906,7 +2942,16 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->willReturn( true );
 		$api_client->expects( $this->once() )
 			->method( 'capture_intention' )
-			->with( 'pi_capture_converted', 4000, array() )
+			->with(
+				'pi_capture_converted',
+				4000,
+				$this->callback(
+					static function ( array $metadata ): bool {
+						return isset( $metadata['order_id'], $metadata['order_key'], $metadata['payment_type'] );
+					}
+				),
+				array()
+			)
 			->willReturn(
 				array(
 					'id'      => 'pi_capture_converted',
@@ -2980,7 +3025,16 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->willReturn( true );
 		$api_client->expects( $this->once() )
 			->method( 'capture_intention' )
-			->with( 'pi_capture_meta', 1000, array() )
+			->with(
+				'pi_capture_meta',
+				1000,
+				$this->callback(
+					static function ( array $metadata ): bool {
+						return isset( $metadata['order_id'], $metadata['order_key'], $metadata['payment_type'] );
+					}
+				),
+				array()
+			)
 			->willReturn(
 				array(
 					'id'     => 'pi_capture_meta',

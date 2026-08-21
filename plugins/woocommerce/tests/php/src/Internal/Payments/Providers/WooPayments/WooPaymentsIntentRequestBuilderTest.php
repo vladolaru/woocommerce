@@ -259,6 +259,12 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 		$this->assertArrayHasKey( 'level3', $request );
 		$this->assertSame( (string) $order->get_id(), $request['level3']['merchant_reference'] );
 		$this->assertSame( 1200, $request['level3']['line_items'][0]->unit_cost );
+
+		$domain = str_replace( array( 'https://', 'http://' ), '', get_site_url() );
+		$this->assertStringStartsWith(
+			sprintf( 'Online Payment for Order #%s for %s', $order->get_order_number(), $domain ),
+			$request['description']
+		);
 	}
 
 	/**

@@ -280,12 +280,14 @@ class WooPaymentsApiClient {
 	 * @param string              $intent_id          Intent ID.
 	 * @param int                 $amount_to_capture  Minor-unit capture amount.
 	 * @param array<string,mixed> $metadata           Intent metadata.
+	 * @param array<string,mixed> $level3             Level 3 data; sent even when empty, matching the plugin's capture request shape.
 	 * @return array<string,mixed>
 	 */
-	public function capture_intention( string $intent_id, int $amount_to_capture, array $metadata = array() ): array {
+	public function capture_intention( string $intent_id, int $amount_to_capture, array $metadata = array(), array $level3 = array() ): array {
 		$params = array(
 			'amount_to_capture' => $amount_to_capture,
 			'metadata'          => $metadata,
+			'level3'            => $level3,
 		);
 
 		return $this->request( $params, 'intentions/' . $intent_id . '/capture', 'POST' );
