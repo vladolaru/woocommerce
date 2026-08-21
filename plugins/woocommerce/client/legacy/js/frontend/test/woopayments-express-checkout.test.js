@@ -473,7 +473,39 @@ describe( 'woopayments-express-checkout', () => {
 			);
 		} );
 
-		it( 'rejects with the Stripe error message when the authentication fails', async () => {
+		it( 'reports the failed intent and rejects when the authentication fails', async () => {
+			window.Stripe = jest.fn( () => ( {
+				handleNextAction: jest.fn( () =>
+					Promise.resolve( {
+						error: {
+							message: 'Authentication failed.',
+							payment_intent: {
+								id: 'pi_123',
+								status: 'requires_payment_method',
+							},
+						},
+					} )
+				),
+			} ) );
+			window.fetch = jest.fn( () =>
+				Promise.resolve( { json: () => Promise.resolve( {} ) } )
+			);
+			const { redirectToOrder } = loadModule(
+				baseParams( stripeParams )
+			);
+
+			await expect(
+				redirectToOrder( {
+					payment_result: { redirect_url: confirmationHash },
+				} )
+			).rejects.toThrow( 'Authentication failed.' );
+			const fetchBody = window.fetch.mock.calls[ 0 ][ 1 ].body;
+			expect( fetchBody.get( 'action' ) ).toBe( 'update_order_status' );
+			expect( fetchBody.get( 'intent_id' ) ).toBe( 'pi_123' );
+			expect( window.location.href ).toBe( 'http://shop.test/cart/' );
+		} );
+
+		it( 'rejects without a server report when the error carries no intent', async () => {
 			window.Stripe = jest.fn( () => ( {
 				handleNextAction: jest.fn( () =>
 					Promise.resolve( {
@@ -492,6 +524,33 @@ describe( 'woopayments-express-checkout', () => {
 				} )
 			).rejects.toThrow( 'Authentication failed.' );
 			expect( window.fetch ).not.toHaveBeenCalled();
+		} );
+
+		it( 'treats a closed wallet sheet (requires_action) as a reported failure', async () => {
+			window.Stripe = jest.fn( () => ( {
+				handleNextAction: jest.fn( () =>
+					Promise.resolve( {
+						paymentIntent: {
+							id: 'pi_123',
+							status: 'requires_action',
+						},
+					} )
+				),
+			} ) );
+			window.fetch = jest.fn( () =>
+				Promise.resolve( { json: () => Promise.resolve( {} ) } )
+			);
+			const { redirectToOrder } = loadModule(
+				baseParams( stripeParams )
+			);
+
+			await expect(
+				redirectToOrder( {
+					payment_result: { redirect_url: confirmationHash },
+				} )
+			).rejects.toThrow( 'Payment requires additional action.' );
+			const fetchBody = window.fetch.mock.calls[ 0 ][ 1 ].body;
+			expect( fetchBody.get( 'intent_id' ) ).toBe( 'pi_123' );
 			expect( window.location.href ).toBe( 'http://shop.test/cart/' );
 		} );
 

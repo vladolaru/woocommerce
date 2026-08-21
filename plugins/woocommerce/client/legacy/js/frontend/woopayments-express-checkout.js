@@ -1028,12 +1028,30 @@
 		return confirmationPromise
 			.then( function ( result ) {
 				var intent;
+				var failedIntentId;
+				var paymentError;
 
 				if ( ! result || typeof result !== 'object' ) {
 					throw new Error( GENERIC_PAYMENT_ERROR_MESSAGE );
 				}
 
 				if ( result.error ) {
+					// Report the failed authentication so the order is
+					// marked failed synchronously instead of staying
+					// pending until a webhook maybe arrives.
+					failedIntentId =
+						( result.error.payment_intent &&
+							result.error.payment_intent.id ) ||
+						( result.error.setup_intent &&
+							result.error.setup_intent.id ) ||
+						'';
+					if ( failedIntentId ) {
+						requestOrderStatusUpdate(
+							confirmation,
+							failedIntentId
+						).catch( function () {} );
+					}
+
 					throw new Error(
 						result.error.message || GENERIC_PAYMENT_ERROR_MESSAGE
 					);
@@ -1048,7 +1066,28 @@
 					throw new Error( GENERIC_PAYMENT_ERROR_MESSAGE );
 				}
 
-				return requestOrderStatusUpdate( confirmation, intent.id );
+				if (
+					intent.last_payment_error &&
+					intent.last_payment_error.message
+				) {
+					paymentError = intent.last_payment_error.message;
+				}
+
+				// When a wallet sheet is closed, Stripe resolves without an
+				// error but the intent status stays requires_action.
+				if ( intent.status === 'requires_action' ) {
+					paymentError = 'Payment requires additional action.';
+				}
+
+				return requestOrderStatusUpdate( confirmation, intent.id ).then(
+					function ( response ) {
+						if ( paymentError ) {
+							throw new Error( paymentError );
+						}
+
+						return response;
+					}
+				);
 			} )
 			.then( function ( response ) {
 				var returnUrl;
