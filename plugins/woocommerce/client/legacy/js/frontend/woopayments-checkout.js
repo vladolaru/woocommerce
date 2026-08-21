@@ -2022,6 +2022,7 @@
 		var confirmation = parseConfirmationHash( window.location.hash || '' );
 		var activePaymentForm;
 		var intentId;
+		var failedIntentId;
 		var confirmationPromise;
 		var shouldSaveAfterConfirmation;
 		var hasReleasedConfirmationUi = false;
@@ -2103,6 +2104,25 @@
 
 				if ( result.error ) {
 					setError( getConfirmationErrorMessage( result.error ) );
+
+					// Report the failed authentication to the server so the
+					// order is marked failed synchronously (stock released,
+					// failure note recorded) instead of staying
+					// pending-payment until a webhook maybe arrives.
+					failedIntentId =
+						( result.error.payment_intent &&
+							result.error.payment_intent.id ) ||
+						( result.error.setup_intent &&
+							result.error.setup_intent.id ) ||
+						'';
+					if ( failedIntentId ) {
+						updateOrderStatusAfterConfirmation(
+							confirmation,
+							failedIntentId,
+							shouldSaveAfterConfirmation
+						);
+					}
+
 					if ( isRetrySafePaymentIntentError( result.error ) ) {
 						releaseConfirmationUi();
 					}

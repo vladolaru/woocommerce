@@ -1471,7 +1471,15 @@ describe( 'WooPayments checkout', () => {
 		).toHaveBeenCalledTimes( 1 );
 		expectClassicCheckoutBlockCount( 1 );
 		expectClassicCheckoutUiState( false );
-		expect( global.jQuery.post ).not.toHaveBeenCalled();
+		expect( global.jQuery.post ).toHaveBeenCalledWith(
+			'https://example.test/admin-ajax.php',
+			expect.objectContaining( {
+				action: 'update_order_status',
+				order_id: '123',
+				_ajax_nonce: 'nonce',
+				intent_id: 'pi_failed_authentication',
+			} )
+		);
 		expect( stripeMock.createPaymentMethod ).not.toHaveBeenCalled();
 		expect(
 			global.jQuery.checkoutFormResult.trigger
@@ -1503,7 +1511,14 @@ describe( 'WooPayments checkout', () => {
 		await flushPromises();
 
 		expect( stripeMock.handleNextAction ).toHaveBeenCalledTimes( 1 );
-		expect( global.jQuery.post ).not.toHaveBeenCalled();
+		expect( global.jQuery.post ).toHaveBeenCalledTimes( 1 );
+		expect( global.jQuery.post ).toHaveBeenCalledWith(
+			'https://example.test/admin-ajax.php',
+			expect.objectContaining( {
+				action: 'update_order_status',
+				intent_id: 'pi_failed_authentication',
+			} )
+		);
 		expectClassicCheckoutReleaseCount( 1 );
 		expectClassicCheckoutBlockCount( 1 );
 		expectClassicCheckoutUiState( false );
@@ -1542,7 +1557,13 @@ describe( 'WooPayments checkout', () => {
 			blocked: false,
 		} );
 		expectClassicCheckoutReleaseCount( 0 );
-		expect( global.jQuery.post ).not.toHaveBeenCalled();
+		expect( global.jQuery.post ).toHaveBeenCalledWith(
+			'https://example.test/admin-ajax.php',
+			expect.objectContaining( {
+				action: 'update_order_status',
+				intent_id: 'pi_order_pay_failed',
+			} )
+		);
 	} );
 
 	test( 'keeps ambiguous 3DS failures non-reentrant', async () => {
@@ -1568,7 +1589,13 @@ describe( 'WooPayments checkout', () => {
 			global.jQuery.checkoutFormResult.unblock
 		).not.toHaveBeenCalled();
 		expectClassicCheckoutBlockedOnce();
-		expect( global.jQuery.post ).not.toHaveBeenCalled();
+		expect( global.jQuery.post ).toHaveBeenCalledWith(
+			'https://example.test/admin-ajax.php',
+			expect.objectContaining( {
+				action: 'update_order_status',
+				intent_id: 'pi_ambiguous',
+			} )
+		);
 	} );
 
 	test( 'releases classic checkout after a canceled PaymentIntent', async () => {
@@ -1589,7 +1616,13 @@ describe( 'WooPayments checkout', () => {
 		expectClassicCheckoutReleaseCount( 1 );
 		expectClassicCheckoutBlockCount( 1 );
 		expectClassicCheckoutUiState( false );
-		expect( global.jQuery.post ).not.toHaveBeenCalled();
+		expect( global.jQuery.post ).toHaveBeenCalledWith(
+			'https://example.test/admin-ajax.php',
+			expect.objectContaining( {
+				action: 'update_order_status',
+				intent_id: 'pi_canceled',
+			} )
+		);
 		expectNoConfirmationResubmit();
 	} );
 
@@ -1614,7 +1647,13 @@ describe( 'WooPayments checkout', () => {
 			await flushPromises();
 
 			expectClassicCheckoutBlockedOnce();
-			expect( global.jQuery.post ).not.toHaveBeenCalled();
+			expect( global.jQuery.post ).toHaveBeenCalledWith(
+				'https://example.test/admin-ajax.php',
+				expect.objectContaining( {
+					action: 'update_order_status',
+					intent_id: 'pi_' + label,
+				} )
+			);
 			expectNoConfirmationResubmit();
 		}
 	);
