@@ -419,7 +419,7 @@ class WooPaymentsExpressCheckoutService {
 		$items     = array(
 			array(
 				'label'  => $product->get_name(),
-				'amount' => $this->prepare_amount( $price ),
+				'amount' => $this->prepare_amount( $price, $currency ),
 			),
 		);
 
@@ -428,7 +428,7 @@ class WooPaymentsExpressCheckoutService {
 			$total_tax += $tax;
 			$items[]    = array(
 				'label'   => __( 'Tax', 'woocommerce' ),
-				'amount'  => $this->prepare_amount( $tax ),
+				'amount'  => $this->prepare_amount( $tax, $currency ),
 				'pending' => 0.0 === $tax,
 			);
 		}
@@ -446,7 +446,7 @@ class WooPaymentsExpressCheckoutService {
 			'displayItems'   => $items,
 			'total'          => array(
 				'label'   => $total_label,
-				'amount'  => $this->prepare_amount( $price + $total_tax ),
+				'amount'  => $this->prepare_amount( $price + $total_tax, $currency ),
 				'pending' => true,
 			),
 			'needs_shipping' => $this->product_needs_shipping( $product ),
@@ -675,11 +675,12 @@ class WooPaymentsExpressCheckoutService {
 	/**
 	 * Convert a decimal WooCommerce amount to a Stripe minor-unit amount.
 	 *
-	 * @param float $amount Decimal amount.
+	 * @param float  $amount   Decimal amount.
+	 * @param string $currency Currency code the amount is in.
 	 * @return int
 	 */
-	private function prepare_amount( float $amount ): int {
-		return (int) round( $amount * ( 10 ** wc_get_price_decimals() ) );
+	private function prepare_amount( float $amount, string $currency ): int {
+		return (int) round( $amount * ( 10 ** WooPaymentsCurrencyUtils::get_stripe_minor_unit_for_currency( $currency ) ) );
 	}
 
 	/**

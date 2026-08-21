@@ -23,6 +23,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_currency' );
 		delete_option( 'woocommerce_tax_based_on' );
 		delete_option( 'woocommerce_calc_taxes' );
+		delete_option( 'woocommerce_price_num_decimals' );
 		unset( $_GET['pay_for_order'], $_GET['key'] );
 		remove_all_filters( 'woocommerce_woopayments_express_checkout_enabled_methods' );
 		remove_all_filters( 'wcpay_payment_request_supported_types' );
@@ -111,6 +112,32 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 			),
 			$product['displayItems']
 		);
+		$this->assertSame( 1234, $product['total']['amount'] );
+	}
+
+	/**
+	 * @testdox Should prepare product-page amounts in Stripe minor units, not WooCommerce price decimals.
+	 */
+	public function test_product_page_amounts_use_stripe_minor_units_for_zero_decimal_currency(): void {
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		update_option( 'woocommerce_currency', 'JPY' );
+		update_option( 'woocommerce_price_num_decimals', '2' );
+		update_option( 'woocommerce_calc_taxes', 'no' );
+		$product = \WC_Helper_Product::create_simple_product(
+			true,
+			array(
+				'name'          => 'Yen Widget',
+				'regular_price' => '1234',
+				'virtual'       => true,
+				'price'         => '1234',
+			)
+		);
+		$this->set_current_product( $product );
+
+		$params  = $this->create_service()->get_express_checkout_params( 'product' );
+		$product = $params['product'];
+
+		$this->assertSame( 1234, $product['displayItems'][0]['amount'] );
 		$this->assertSame( 1234, $product['total']['amount'] );
 	}
 
