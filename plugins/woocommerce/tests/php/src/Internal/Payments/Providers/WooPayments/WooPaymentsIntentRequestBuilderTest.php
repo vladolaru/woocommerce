@@ -279,6 +279,56 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Merchant-initiated renewals never fabricate mandate acceptance; customer-present payments source the IP from the order.
+	 */
+	public function test_mandate_data_is_suppressed_for_renewals_and_sourced_from_order(): void {
+		$order = wc_create_order();
+		$order->set_currency( 'EUR' );
+		$order->set_total( '25.00' );
+		$order->set_customer_ip_address( '203.0.113.7' );
+		$order->save();
+
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_gateway_setting' ) )
+			->getMock();
+		$account_service->method( 'get_gateway_setting' )->willReturn( 'no' );
+
+		$request_builder = new WooPaymentsIntentRequestBuilder();
+		$request_builder->init(
+			$account_service,
+			new WooPaymentsOrderDataService(),
+			$this->createStub( WooPaymentsTokenService::class ),
+			new WooPaymentsPaymentMethodRegistry()
+		);
+
+		$renewal_request = $request_builder->charge_request_data(
+			PaymentContext::for_checkout(
+				$order,
+				OrderPaymentStore::GATEWAY_ID,
+				'pm_link',
+				array(),
+				array(
+					'scheduled_subscription_payment' => true,
+					WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SAVED_PAYMENT_METHOD_TYPE => 'link',
+				)
+			),
+			'pm_link',
+			'cus_native',
+			true
+		);
+		$this->assertArrayNotHasKey( 'mandate_data', $renewal_request, 'Merchant-initiated renewals must not fabricate a mandate acceptance.' );
+
+		$checkout_request = $request_builder->charge_request_data(
+			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID_PREFIX . 'sepa_debit', 'pm_sepa' ),
+			'pm_sepa',
+			'cus_native',
+			false
+		);
+		$this->assertSame( '203.0.113.7', $checkout_request['mandate_data']['customer_acceptance']['online']['ip_address'] );
+	}
+
+	/**
 	 * Build a charge request with a payment-method save requested.
 	 *
 	 * @param string $gateway_id Gateway ID.

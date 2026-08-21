@@ -169,8 +169,15 @@ class WooPaymentsIntentRequestBuilder {
 			$request_data['level3'] = $level3_data;
 		}
 
-		if ( self::is_mandate_data_required( $payment_method_types ) ) {
-			$request_data['mandate_data'] = self::mandate_data();
+		// Mandate acceptance is a customer-present artifact: merchant-initiated
+		// renewals must not fabricate one (the platform authorizes MIT through
+		// the network-transaction-ID framework), and an acceptance without a
+		// valid shopper IP is refused by the provider outright.
+		if ( ! $is_renewal && self::is_mandate_data_required( $payment_method_types ) ) {
+			$mandate_data = self::mandate_data( $order );
+			if ( null !== $mandate_data ) {
+				$request_data['mandate_data'] = $mandate_data;
+			}
 		}
 
 		if ( self::is_redirect_return_url_required( $payment_method_types ) ) {
@@ -542,16 +549,28 @@ class WooPaymentsIntentRequestBuilder {
 	}
 
 	/**
-	 * Build online mandate acceptance data from the current request.
+	 * Build online mandate acceptance data for a customer-present payment.
 	 *
-	 * @return array<string,mixed>
+	 * The shopper's IP comes from the order first — the address the shopper
+	 * actually placed the order from — with the live request as the fallback.
+	 *
+	 * @param WC_Order $order Order being charged.
+	 * @return array<string,mixed>|null Mandate data, or null when no valid shopper IP exists.
 	 */
-	private static function mandate_data(): array {
+	private static function mandate_data( WC_Order $order ): ?array {
+		$ip_address = (string) $order->get_customer_ip_address();
+		if ( false === filter_var( $ip_address, FILTER_VALIDATE_IP ) ) {
+			$ip_address = (string) \WC_Geolocation::get_ip_address();
+		}
+		if ( false === filter_var( $ip_address, FILTER_VALIDATE_IP ) ) {
+			return null;
+		}
+
 		return array(
 			'customer_acceptance' => array(
 				'type'   => 'online',
 				'online' => array(
-					'ip_address' => \WC_Geolocation::get_ip_address(),
+					'ip_address' => $ip_address,
 					'user_agent' => 'WooCommerce Payments/' . self::WCPAY_V1_CLIENT_CAPABILITY_VERSION . '; ' . get_bloginfo( 'url' ),
 				),
 			),
