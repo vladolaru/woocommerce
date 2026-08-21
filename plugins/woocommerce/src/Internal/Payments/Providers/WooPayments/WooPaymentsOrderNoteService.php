@@ -18,6 +18,11 @@ use WC_Order;
  * @internal Transitional internal component for the native payments runtime.
  */
 class WooPaymentsOrderNoteService {
+
+	/**
+	 * FROD (Future Refunds or Disputes) balances are unavailable in these account countries.
+	 */
+	private const FROD_UNSUPPORTED_COUNTRIES = array( 'HK', 'SG', 'AE' );
 	/**
 	 * Private identity metadata stored on WooPayments order-note comments.
 	 *
@@ -646,6 +651,42 @@ class WooPaymentsOrderNoteService {
 
 		/* translators: %s: provider error message. */
 		return sprintf( __( 'With the following message: <code>%s</code>', 'woocommerce' ), $message );
+	}
+
+	/**
+	 * Build the order note for a refund that failed for insufficient WooPayments balance.
+	 *
+	 * The generic failure line would bury the actionable guidance: this note tells the
+	 * merchant how to fund the refund, pointing at the FROD balance where the account
+	 * country supports one.
+	 *
+	 * @param WC_Order $order           Order object.
+	 * @param float    $amount          Refund amount.
+	 * @param string   $currency        Refund currency.
+	 * @param string   $account_country Connected account country.
+	 * @return string
+	 */
+	public function format_insufficient_balance_refund_note( WC_Order $order, float $amount, string $currency, string $account_country ): string {
+		$currency         = strtoupper( '' !== $currency ? $currency : $order->get_currency() );
+		$formatted_amount = wc_price( $amount, array( 'currency' => $currency ) );
+
+		if ( in_array( strtoupper( $account_country ), self::FROD_UNSUPPORTED_COUNTRIES, true ) ) {
+			$note = sprintf(
+				/* translators: %1$s: Formatted refund amount. */
+				__( 'Refund of %1$s <strong>failed</strong> due to insufficient funds in your WooPayments balance.', 'woocommerce' ),
+				$formatted_amount
+			);
+		} else {
+			$learn_more_url = 'https://woocommerce.com/document/woopayments/fees/preventing-negative-balances/#adding-funds';
+			$note           = sprintf(
+				/* translators: 1: Formatted refund amount, 2: Learn more URL. */
+				__( 'Refund of %1$s <strong>failed</strong> due to insufficient funds in your WooPayments balance. To prevent delays in refunding customers, please consider adding funds to your Future Refunds or Disputes (FROD) balance. <a href="%2$s" target="_blank" rel="noopener noreferrer">Learn more</a>.', 'woocommerce' ),
+				$formatted_amount,
+				esc_url( $learn_more_url )
+			);
+		}
+
+		return wp_kses_post( $note );
 	}
 
 	/**

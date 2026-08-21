@@ -2714,7 +2714,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			public function process_refund( PaymentContext $context, ProviderContract $provider ) {
 				parent::process_refund( $context, $provider );
 
-				return new \WP_Error( 'insufficient_balance_for_refund', 'The balance is too low.' );
+				return new \WP_Error( 'expired_or_canceled_card', 'The card was declined.' );
 			}
 		};
 		$gateway = new NativeWooPaymentsGateway();
@@ -2728,7 +2728,44 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
 		$this->assertNotEmpty( $notes );
 		$this->assertStringContainsString( 'failed to complete', (string) $notes[0]->content );
-		$this->assertStringContainsString( 'The balance is too low.', (string) $notes[0]->content );
+		$this->assertStringContainsString( 'The card was declined.', (string) $notes[0]->content );
+	}
+
+	/**
+	 * @testdox Should give an insufficient-balance refund failure the dedicated funding-guidance note.
+	 */
+	public function test_process_refund_insufficient_balance_writes_dedicated_note(): void {
+		$order = $this->create_order();
+		$order->update_meta_data( '_charge_id', 'ch_test' );
+		$order->save();
+
+		$service = new class() extends RecordingPaymentProcessingService {
+			/**
+			 * Fail the refund with the platform's insufficient-balance code.
+			 *
+			 * @param PaymentContext   $context  Payment context.
+			 * @param ProviderContract $provider Provider.
+			 * @return bool|\WP_Error
+			 */
+			public function process_refund( PaymentContext $context, ProviderContract $provider ) {
+				parent::process_refund( $context, $provider );
+
+				return new \WP_Error( 'insufficient_balance_for_refund', 'Could not refund the payment: insufficient funds.' );
+			}
+		};
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider(), null, null, $this->create_account_service_for_country( 'US' ) );
+
+		$result = $gateway->process_refund( $order->get_id(), 4.25, 'Adjustment' );
+
+		$this->assertWPError( $result );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'failed', $order->get_meta( '_wcpay_refund_status', true ) );
+		$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+		$this->assertNotEmpty( $notes );
+		$this->assertStringContainsString( 'insufficient funds in your WooPayments balance', (string) $notes[0]->content );
+		$this->assertStringContainsString( 'FROD', (string) $notes[0]->content, 'A US account supports FROD, so the note must carry the funding guidance.' );
+		$this->assertStringNotContainsString( 'failed to complete', (string) $notes[0]->content, 'The generic failure line must not bury the funding guidance.' );
 	}
 
 	/**

@@ -1383,6 +1383,10 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		);
 
 		// The lock refusal made no platform attempt, so there is no failure to record.
+		// This gates by exclusion: every other WP_Error from the processing service today
+		// comes from an actual platform refund attempt. A new pre-flight refusal added
+		// inside the service must be excluded here too, or it will start recording
+		// failures for refunds that never reached the provider.
 		if ( is_wp_error( $result ) && 'native_payment_refund_locked' !== $result->get_error_code() ) {
 			$this->record_refund_failure( $order, $refund_amount, $result );
 		}
@@ -1402,22 +1406,26 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @param WP_Error $error  Refund failure.
 	 */
 	private function record_refund_failure( WC_Order $order, float $amount, WP_Error $error ): void {
+		$note_service    = wc_get_container()->get( WooPaymentsOrderNoteService::class );
 		$intent_currency = (string) $order->get_meta( '_wcpay_intent_currency', true );
-		$note            = wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_refund_failure_note(
-			$order,
-			$amount,
-			'' !== $intent_currency ? $intent_currency : (string) $order->get_currency(),
-			$error->get_error_message()
-		);
+		$currency        = '' !== $intent_currency ? $intent_currency : (string) $order->get_currency();
 
-		if ( function_exists( 'wc_get_logger' ) ) {
-			wc_get_logger()->error(
-				$note,
-				array(
-					'source'   => 'woopayments-payments',
-					'order_id' => $order->get_id(),
-				)
-			);
+		if ( 'insufficient_balance_for_refund' === $error->get_error_code() ) {
+			// The dedicated note carries the funding guidance; the generic failure
+			// line (and its log) is deliberately skipped, matching the extension.
+			$note = $note_service->format_insufficient_balance_refund_note( $order, $amount, $currency, $this->get_account_service()->get_account_country() );
+		} else {
+			$note = $note_service->format_refund_failure_note( $order, $amount, $currency, $error->get_error_message() );
+
+			if ( function_exists( 'wc_get_logger' ) ) {
+				wc_get_logger()->error(
+					$note,
+					array(
+						'source'   => 'woopayments-payments',
+						'order_id' => $order->get_id(),
+					)
+				);
+			}
 		}
 
 		$order->add_order_note( $note );
