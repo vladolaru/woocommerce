@@ -177,4 +177,81 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 			$is_recurring
 		);
 	}
+
+	/**
+	 * @testdox Charge requests attach the buyer-fingerprinting risk metadata the platform scores on.
+	 */
+	public function test_charge_request_attaches_buyer_fingerprint_metadata(): void {
+		$order = wc_create_order();
+		$order->set_currency( 'USD' );
+		$order->set_total( '10.00' );
+		$order->save();
+
+		$request = $this->build_charge_request_for_fingerprint(
+			$order,
+			array( 'fingerprint' => 'device_fp_123' )
+		);
+
+		$metadata = $request['metadata'];
+		$this->assertSame(
+			hash( 'sha512', \WC_Geolocation::get_ip_address() ),
+			$metadata['fraud_prevention_data_shopper_ip_hash']
+		);
+		$this->assertSame( 'device_fp_123', $metadata['fraud_prevention_data_shopper_ua_hash'] );
+		$this->assertTrue( $metadata['fraud_prevention_data_available'] );
+		$this->assertSame( 0, $metadata['fraud_prevention_data_cart_contents'] );
+	}
+
+	/**
+	 * @testdox Charge requests omit the device-fingerprint hash when the browser supplied none, but stay flagged available.
+	 */
+	public function test_charge_request_omits_ua_hash_without_fingerprint(): void {
+		$order = wc_create_order();
+		$order->set_currency( 'USD' );
+		$order->set_total( '10.00' );
+		$order->save();
+
+		$request = $this->build_charge_request_for_fingerprint( $order, array() );
+
+		$metadata = $request['metadata'];
+		$this->assertArrayNotHasKey( 'fraud_prevention_data_shopper_ua_hash', $metadata );
+		$this->assertArrayHasKey( 'fraud_prevention_data_shopper_ip_hash', $metadata );
+		$this->assertTrue( $metadata['fraud_prevention_data_available'] );
+	}
+
+	/**
+	 * Build a charge request with the given provider data.
+	 *
+	 * @param WC_Order            $order         Order being charged.
+	 * @param array<string,mixed> $provider_data Provider data for the payment context.
+	 * @return array<string,mixed>
+	 */
+	private function build_charge_request_for_fingerprint( WC_Order $order, array $provider_data ): array {
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_gateway_setting' ) )
+			->getMock();
+		$account_service->method( 'get_gateway_setting' )->willReturn( 'no' );
+
+		$request_builder = new WooPaymentsIntentRequestBuilder();
+		$request_builder->init(
+			$account_service,
+			new WooPaymentsOrderDataService(),
+			$this->createStub( WooPaymentsTokenService::class ),
+			new WooPaymentsPaymentMethodRegistry()
+		);
+
+		return $request_builder->charge_request_data(
+			PaymentContext::for_checkout(
+				$order,
+				OrderPaymentStore::GATEWAY_ID,
+				'pm_card',
+				array(),
+				$provider_data
+			),
+			'pm_card',
+			'cus_native',
+			false
+		);
+	}
 }

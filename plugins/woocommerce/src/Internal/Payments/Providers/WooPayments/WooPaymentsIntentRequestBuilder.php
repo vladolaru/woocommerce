@@ -118,7 +118,10 @@ class WooPaymentsIntentRequestBuilder {
 			'capture_method'       => ! $is_renewal && 'yes' === $this->account_service->get_gateway_setting( 'manual_capture', 'no' ) ? 'manual' : 'automatic',
 			'currency'             => strtolower( (string) $order->get_currency() ),
 			'customer'             => $customer_id,
-			'metadata'             => self::metadata_from_order( $order, $payment_type, $subscription_payment ),
+			'metadata'             => array_merge(
+				self::metadata_from_order( $order, $payment_type, $subscription_payment ),
+				self::fingerprint_metadata( $context )
+			),
 			'payment_method_types' => $payment_method_types,
 		);
 
@@ -176,7 +179,10 @@ class WooPaymentsIntentRequestBuilder {
 		$subscription_payment = 'recurring' === $payment_type ? 'initial' : 'no';
 		$request_data         = array(
 			'customer'             => $customer_id,
-			'metadata'             => self::metadata_from_order( $context->get_order(), $payment_type, $subscription_payment ),
+			'metadata'             => array_merge(
+				self::metadata_from_order( $context->get_order(), $payment_type, $subscription_payment ),
+				self::fingerprint_metadata( $context )
+			),
 			'payment_method_types' => $this->payment_method_types_for_request( $context, (string) $context->get_order()->get_currency() ),
 		);
 
@@ -229,6 +235,50 @@ class WooPaymentsIntentRequestBuilder {
 		$metadata = apply_filters( 'wcpay_metadata_from_order', $metadata, $order, $payment_type );
 
 		return is_array( $metadata ) ? $metadata : array();
+	}
+
+	/**
+	 * Build the buyer-fingerprinting risk metadata for a payment context.
+	 *
+	 * Mirrors the WooPayments plugin's Buyer_Fingerprinting_Service: sha512 of
+	 * the shopper IP, the browser-computed device fingerprint as the UA hash,
+	 * the geolocated IP country, and the purchase size — with empty values
+	 * dropped and the availability flag always set, so platform risk rules
+	 * keyed on these fields score native charges the same as plugin charges.
+	 * The purchase size prefers the live cart and falls back to the order's
+	 * item count, which covers pay-for-order and off-session renewals.
+	 *
+	 * @param PaymentContext $context Payment context.
+	 * @return array<string,mixed>
+	 */
+	private static function fingerprint_metadata( PaymentContext $context ): array {
+		$provider_data = $context->get_provider_data();
+		$fingerprint   = isset( $provider_data['fingerprint'] ) && is_scalar( $provider_data['fingerprint'] )
+			? (string) $provider_data['fingerprint']
+			: '';
+
+		$cart_contents = null !== WC()->cart ? intval( WC()->cart->get_cart_contents_count() ) : null;
+		if ( ! $cart_contents ) {
+			$cart_contents = $context->get_order()->get_item_count();
+		}
+
+		$metadata = array_filter(
+			array(
+				'fraud_prevention_data_shopper_ip_hash' => hash( 'sha512', \WC_Geolocation::get_ip_address() ),
+				'fraud_prevention_data_shopper_ua_hash' => $fingerprint,
+				'fraud_prevention_data_ip_country'      => \WC_Geolocation::geolocate_ip( '', true )['country'],
+				'fraud_prevention_data_cart_contents'   => $cart_contents,
+			),
+			static function ( $value ): bool {
+				// Same semantics as the plugin's strlen filter: drop null,
+				// false and empty strings while keeping zero values.
+				return null !== $value && false !== $value && '' !== $value;
+			}
+		);
+
+		$metadata['fraud_prevention_data_available'] = true;
+
+		return $metadata;
 	}
 
 	/**
