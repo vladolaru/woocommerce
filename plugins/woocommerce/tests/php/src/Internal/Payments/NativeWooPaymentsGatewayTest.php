@@ -1840,7 +1840,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$this->assertSame(
 			array(
-				'result'         => 'fail',
+				'result'         => 'failure',
 				'redirect'       => '',
 				'payment_method' => '',
 			),
@@ -1911,7 +1911,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$this->assertSame(
 			array(
-				'result'         => 'fail',
+				'result'         => 'failure',
 				'redirect'       => '',
 				'payment_method' => '',
 			),
