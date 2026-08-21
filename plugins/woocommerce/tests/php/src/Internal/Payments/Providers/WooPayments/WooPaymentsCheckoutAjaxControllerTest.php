@@ -1841,6 +1841,75 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Add-payment-method setup intents carry the buyer-fingerprinting risk metadata.
+	 */
+	public function test_create_setup_intent_attaches_fingerprint_metadata(): void {
+		$user_id = $this->factory->user->create();
+		wp_set_current_user( $user_id );
+
+		$api_client = new class() extends WooPaymentsApiClient {
+			/**
+			 * Captured setup-intention payloads.
+			 *
+			 * @var array<int,array<string,mixed>>
+			 */
+			public array $captured = array();
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Create and confirm a SetupIntent.
+			 *
+			 * @param array<string,mixed> $request_data    Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_setup_intention( array $request_data, string $idempotency_key ): array {
+				// Avoid parameter not used PHPCS errors.
+				unset( $idempotency_key );
+				$this->captured[] = $request_data;
+
+				return array(
+					'id'            => 'seti_fp',
+					'status'        => 'succeeded',
+					'client_secret' => 'seti_fp_secret',
+				);
+			}
+		};
+
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_user' ) )
+			->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_user' )->willReturn( 'cus_fp' );
+
+		$sut      = $this->create_controller( $api_client, $customer_service );
+		$response = $sut->get_create_setup_intent_response(
+			array(
+				'_ajax_nonce'          => wp_create_nonce( 'wcpay_create_setup_intent_nonce' ),
+				'wcpay-payment-method' => 'pm_card',
+				'wcpay-fingerprint'    => 'device_fp_addpm',
+			)
+		);
+
+		$this->assertTrue( $response['success'] );
+		$this->assertCount( 1, $api_client->captured );
+		$metadata = $api_client->captured[0]['metadata'];
+		$this->assertSame( 'device_fp_addpm', $metadata['fraud_prevention_data_shopper_ua_hash'] );
+		$this->assertSame( hash( 'sha512', \WC_Geolocation::get_ip_address() ), $metadata['fraud_prevention_data_shopper_ip_hash'] );
+		$this->assertTrue( $metadata['fraud_prevention_data_available'] );
+
+		wp_set_current_user( 0 );
+	}
+
+	/**
 	 * Create a checkout AJAX controller.
 	 *
 	 * @param WooPaymentsApiClient              $api_client       API client.

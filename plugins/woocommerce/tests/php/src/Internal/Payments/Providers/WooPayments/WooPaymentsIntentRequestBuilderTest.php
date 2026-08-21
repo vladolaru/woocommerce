@@ -268,6 +268,52 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox setup_future_usage is requested only for reusable payment method types.
+	 */
+	public function test_setup_future_usage_respects_payment_method_reusability(): void {
+		$reusable_request = $this->build_save_requested_charge( OrderPaymentStore::GATEWAY_ID_PREFIX . 'card', 'pm_card' );
+		$this->assertSame( 'off_session', $reusable_request['setup_future_usage'] ?? null );
+
+		$bnpl_request = $this->build_save_requested_charge( OrderPaymentStore::GATEWAY_ID_PREFIX . 'klarna', 'pm_klarna' );
+		$this->assertArrayNotHasKey( 'setup_future_usage', $bnpl_request );
+	}
+
+	/**
+	 * Build a charge request with a payment-method save requested.
+	 *
+	 * @param string $gateway_id Gateway ID.
+	 * @param string $credential Payment credential.
+	 * @return array<string,mixed>
+	 */
+	private function build_save_requested_charge( string $gateway_id, string $credential ): array {
+		$order = wc_create_order();
+		$order->set_currency( 'EUR' );
+		$order->set_total( '25.00' );
+		$order->save();
+
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_gateway_setting' ) )
+			->getMock();
+		$account_service->method( 'get_gateway_setting' )->willReturn( 'no' );
+
+		$request_builder = new WooPaymentsIntentRequestBuilder();
+		$request_builder->init(
+			$account_service,
+			new WooPaymentsOrderDataService(),
+			$this->createStub( WooPaymentsTokenService::class ),
+			new WooPaymentsPaymentMethodRegistry()
+		);
+
+		return $request_builder->charge_request_data(
+			PaymentContext::for_checkout( $order, $gateway_id, $credential, array( 'save_payment_method' => true ) ),
+			$credential,
+			'cus_native',
+			false
+		);
+	}
+
+	/**
 	 * Build a charge request with the given provider data.
 	 *
 	 * @param WC_Order            $order         Order being charged.

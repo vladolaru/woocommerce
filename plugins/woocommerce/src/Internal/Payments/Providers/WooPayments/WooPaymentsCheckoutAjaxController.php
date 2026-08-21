@@ -345,6 +345,9 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 					'customer'             => $this->customer_service->get_or_create_customer_id_for_user( $user_id ),
 					'payment_method'       => $payment_method_id,
 					'payment_method_types' => array( $this->get_setup_intent_payment_method_type( $request ) ),
+					'metadata'             => WooPaymentsIntentRequestBuilder::fingerprint_metadata_from_value(
+						$this->get_request_string( $request, 'wcpay-fingerprint' )
+					),
 				),
 				'add_payment_method_' . $user_id . '_' . md5( $payment_method_id )
 			);

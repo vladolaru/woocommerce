@@ -156,7 +156,11 @@ class WooPaymentsIntentRequestBuilder {
 			}
 		}
 
-		if ( ! $is_renewal && $save_payment_method ) {
+		// Only reusable payment methods may request future usage: the plugin
+		// silently omits setup_future_usage for non-reusable types (BNPL,
+		// single-use redirects) even when a save was requested — the provider
+		// rejects the combination outright, failing the whole checkout.
+		if ( ! $is_renewal && $save_payment_method && $this->are_payment_method_types_reusable( $payment_method_types ) ) {
 			$request_data['setup_future_usage'] = 'off_session';
 		}
 
@@ -297,9 +301,23 @@ class WooPaymentsIntentRequestBuilder {
 			? (string) $provider_data['fingerprint']
 			: '';
 
+		return self::fingerprint_metadata_from_value( $fingerprint, $context->get_order() );
+	}
+
+	/**
+	 * Build the buyer-fingerprinting risk metadata from a raw device fingerprint.
+	 *
+	 * Order-less callers (the add-payment-method setup intent) get the cart
+	 * count only when a live cart exists, matching the plugin.
+	 *
+	 * @param string        $fingerprint Browser-computed device fingerprint.
+	 * @param WC_Order|null $order       Order to fall back to for the purchase size.
+	 * @return array<string,mixed>
+	 */
+	public static function fingerprint_metadata_from_value( string $fingerprint, ?WC_Order $order = null ): array {
 		$cart_contents = null !== WC()->cart ? intval( WC()->cart->get_cart_contents_count() ) : null;
-		if ( ! $cart_contents ) {
-			$cart_contents = $context->get_order()->get_item_count();
+		if ( ! $cart_contents && null !== $order ) {
+			$cart_contents = $order->get_item_count();
 		}
 
 		$metadata = array_filter(
@@ -450,6 +468,30 @@ class WooPaymentsIntentRequestBuilder {
 		$definition        = $this->payment_method_registry->get( $payment_method_id );
 
 		return null === $definition ? '' : $definition->get_stripe_payment_method_type();
+	}
+
+	/**
+	 * Tell whether every resolved Stripe payment method type is reusable.
+	 *
+	 * @param array<int,string> $payment_method_types Stripe payment method types.
+	 * @return bool
+	 */
+	private function are_payment_method_types_reusable( array $payment_method_types ): bool {
+		$definitions_by_stripe_type = array();
+		foreach ( $this->payment_method_registry->get_all() as $definition ) {
+			$definitions_by_stripe_type[ $definition->get_stripe_payment_method_type() ] = $definition;
+		}
+
+		foreach ( $payment_method_types as $payment_method_type ) {
+			$definition = $definitions_by_stripe_type[ $payment_method_type ] ?? null;
+			// Unknown types (saved-token types outside the catalog) are the
+			// vaulted reusable ones; only a known non-reusable type blocks.
+			if ( null !== $definition && ! in_array( 'tokenization', $definition->get_capabilities(), true ) ) {
+				return false;
+			}
+		}
+
+		return true;
 	}
 
 	/**
