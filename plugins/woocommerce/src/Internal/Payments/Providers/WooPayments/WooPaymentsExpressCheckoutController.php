@@ -41,6 +41,13 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 	private WooPaymentsExpressCheckoutService $express_checkout_service;
 
 	/**
+	 * Fraud prevention service.
+	 *
+	 * @var WooPaymentsFraudPreventionService
+	 */
+	private WooPaymentsFraudPreventionService $fraud_prevention_service;
+
+	/**
 	 * Whether express checkout buttons have already rendered in this request.
 	 *
 	 * @var bool
@@ -54,10 +61,12 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 	 *
 	 * @param NativePaymentsRuntimeArbiter      $arbiter                  Runtime owner arbiter.
 	 * @param WooPaymentsExpressCheckoutService $express_checkout_service Express checkout service.
+	 * @param WooPaymentsFraudPreventionService $fraud_prevention_service Fraud prevention service.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsExpressCheckoutService $express_checkout_service ): void {
+	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsExpressCheckoutService $express_checkout_service, WooPaymentsFraudPreventionService $fraud_prevention_service ): void {
 		$this->arbiter                  = $arbiter;
 		$this->express_checkout_service = $express_checkout_service;
+		$this->fraud_prevention_service = $fraud_prevention_service;
 	}
 
 	/**
@@ -99,6 +108,11 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 			wp_enqueue_script( 'wp-hooks' );
 		}
 		wp_enqueue_script( self::CLASSIC_EXPRESS_CHECKOUT_SCRIPT_HANDLE );
+		// Wallet payments started from product and cart pages must carry the
+		// card-testing prevention token; only checkout surfaces exposed it
+		// before, so live stores with card-testing protection rejected every
+		// product- and cart-initiated wallet payment.
+		$this->fraud_prevention_service->maybe_enqueue_token_script();
 	}
 
 	/**

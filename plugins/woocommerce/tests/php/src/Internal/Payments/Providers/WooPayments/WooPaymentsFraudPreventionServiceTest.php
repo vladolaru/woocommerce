@@ -63,6 +63,32 @@ class WooPaymentsFraudPreventionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should expose the token to shopper scripts once per page, only when protection applies.
+	 */
+	public function test_maybe_enqueue_token_script_is_a_guarded_singleton(): void {
+		$session = $this->create_session();
+		$session->set( WooPaymentsFraudPreventionService::TOKEN_NAME, 'known-token' );
+
+		$disabled = $this->create_service( false, $session );
+		$disabled->maybe_enqueue_token_script();
+		$this->assertFalse( wp_script_is( WooPaymentsFraudPreventionService::TOKEN_NAME, 'enqueued' ) );
+
+		$sut = $this->create_service( true, $session );
+		$sut->maybe_enqueue_token_script();
+		$this->assertTrue( wp_script_is( WooPaymentsFraudPreventionService::TOKEN_NAME, 'enqueued' ) );
+		$inline = wp_scripts()->get_data( WooPaymentsFraudPreventionService::TOKEN_NAME, 'after' );
+		$this->assertStringContainsString( "window.wcpayFraudPreventionToken = 'known-token';", implode( '', array_filter( (array) $inline, 'is_string' ) ) );
+
+		// A second owner calling again must not duplicate the inline script.
+		$sut->maybe_enqueue_token_script();
+		$inline = wp_scripts()->get_data( WooPaymentsFraudPreventionService::TOKEN_NAME, 'after' );
+		$this->assertCount( 1, array_filter( (array) $inline, 'is_string' ) );
+
+		wp_dequeue_script( WooPaymentsFraudPreventionService::TOKEN_NAME );
+		wp_deregister_script( WooPaymentsFraudPreventionService::TOKEN_NAME );
+	}
+
+	/**
 	 * Create a fraud-prevention service with controlled account eligibility.
 	 *
 	 * @param bool             $eligible Whether the account is eligible for card-testing protection.

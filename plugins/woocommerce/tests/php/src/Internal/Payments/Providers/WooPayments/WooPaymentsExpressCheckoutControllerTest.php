@@ -307,7 +307,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 		$service->should_show_payment_request_button = $payment_request_on;
 
 		$controller = new WooPaymentsExpressCheckoutController();
-		$controller->init( $arbiter, $service );
+		$controller->init( $arbiter, $service, $this->createStub( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService::class ) );
 
 		return $controller;
 	}

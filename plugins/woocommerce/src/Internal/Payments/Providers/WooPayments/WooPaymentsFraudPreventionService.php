@@ -116,6 +116,32 @@ class WooPaymentsFraudPreventionService {
 	}
 
 	/**
+	 * Enqueue the inline script exposing the fraud-prevention token to
+	 * shopper-side scripts, when protection applies to this session.
+	 *
+	 * Safe to call from more than one surface owner: the enqueued-script
+	 * guard makes the token script a per-page singleton, mirroring the
+	 * WooPayments plugin's maybe_append_fraud_prevention_token().
+	 */
+	public function maybe_enqueue_token_script(): void {
+		if ( wp_script_is( self::TOKEN_NAME, 'enqueued' ) ) {
+			return;
+		}
+		if ( ! $this->has_session() || ! $this->is_enabled() ) {
+			return;
+		}
+
+		if ( ! wp_script_is( self::TOKEN_NAME, 'registered' ) ) {
+			wp_register_script( self::TOKEN_NAME, false, array(), WC_VERSION, true );
+		}
+		wp_add_inline_script(
+			self::TOKEN_NAME,
+			"window.wcpayFraudPreventionToken = '" . esc_js( $this->get_token() ) . "';"
+		);
+		wp_enqueue_script( self::TOKEN_NAME );
+	}
+
+	/**
 	 * Verify a submitted token against the session token.
 	 *
 	 * @param string|null $token Submitted token.
