@@ -10,6 +10,10 @@
 	var productAddToCartPromise = Promise.resolve();
 	var productAddToCartErrorMessage = '';
 
+	// This const defines the max number of shipping options that can be handled by the ECE.
+	// More than 9 options will prevent the UI from behaving correctly.
+	var SHIPPING_RATES_UPPER_LIMIT_COUNT = 9;
+
 	function getApiFetch() {
 		return window.wp && window.wp.apiFetch;
 	}
@@ -196,12 +200,79 @@
 		} );
 	}
 
+	function applyWpFilters( hookName, value, extraArg, secondExtraArg ) {
+		if (
+			window.wp &&
+			window.wp.hooks &&
+			typeof window.wp.hooks.applyFilters === 'function'
+		) {
+			return window.wp.hooks.applyFilters(
+				hookName,
+				value,
+				extraArg,
+				secondExtraArg
+			);
+		}
+
+		return value;
+	}
+
+	function decodeEntities( text ) {
+		var textarea;
+
+		if ( ! text || String( text ).indexOf( '&' ) === -1 ) {
+			return text;
+		}
+
+		textarea = document.createElement( 'textarea' );
+		textarea.innerHTML = text;
+
+		return textarea.value;
+	}
+
+	function displayPricesIncludeTax() {
+		return Boolean(
+			config.checkout && config.checkout.display_prices_with_tax
+		);
+	}
+
+	/**
+	 * GooglePay/ApplePay expect prices in the smallest unit Stripe bills in.
+	 * The Store API reports amounts in WooCommerce minor units
+	 * (`currency_minor_unit`), which can differ from what Stripe expects
+	 * (e.g. JPY configured with two WooCommerce decimals against Stripe's
+	 * zero-decimal yen). Rescale, rounding only when narrowing precision;
+	 * widening and same-scale conversions are already integer-exact.
+	 *
+	 * @param {number} price       The price to format.
+	 * @param {Object} priceObject The price object returned by the Store API.
+	 * @return {number} The price amount in the unit Stripe expects.
+	 */
+	function transformPrice( price, priceObject ) {
+		var stripeMinorUnit =
+			config.checkout && config.checkout.stripe_minor_unit !== undefined
+				? config.checkout.stripe_minor_unit
+				: 2;
+		var currencyMinorUnit =
+			priceObject && priceObject.currency_minor_unit !== undefined
+				? priceObject.currency_minor_unit
+				: 2;
+		var converted =
+			price * Math.pow( 10, stripeMinorUnit - currencyMinorUnit );
+
+		return stripeMinorUnit < currencyMinorUnit
+			? Math.round( converted )
+			: converted;
+	}
+
 	function getTotalAmount( cartData ) {
 		if (
 			cartData &&
 			cartData.total &&
 			cartData.total.amount !== undefined
 		) {
+			// Product-page payload amounts are prepared server-side in
+			// Stripe minor units already.
 			return Math.max( parseInt( cartData.total.amount || 0, 10 ), 0 );
 		}
 
@@ -209,7 +280,14 @@
 		var total = parseInt( totals.total_price || 0, 10 );
 		var refund = parseInt( totals.total_refund || 0, 10 );
 
-		return Math.max( total - refund, 0 );
+		return Math.max(
+			applyWpFilters(
+				'wcpay.express-checkout.total-amount',
+				transformPrice( total - refund, totals ),
+				cartData
+			),
+			0
+		);
 	}
 
 	function getCurrency( cartData ) {
@@ -572,8 +650,15 @@
 				billing_address: getBillingAddress(
 					event && event.billingDetails
 				),
+				// Refresh the shipping address from the wallet sheet, now that
+				// the customer is placing the order.
 				shipping_address:
-					cachedCartData && cachedCartData.shipping_address,
+					event && event.shippingAddress
+						? transformShippingAddress(
+								event.shippingAddress.name || '',
+								event.shippingAddress.address
+						  )
+						: cachedCartData && cachedCartData.shipping_address,
 				payment_data: getPaymentData( confirmationTokenId ),
 			},
 		} );
@@ -684,39 +769,210 @@
 	}
 
 	function getShippingRates( cartData ) {
-		var rates =
+		var includeTax = displayPricesIncludeTax();
+		var baseRates =
 			cartData &&
 			cartData.shipping_rates &&
 			cartData.shipping_rates[ 0 ] &&
 			Array.isArray( cartData.shipping_rates[ 0 ].shipping_rates )
 				? cartData.shipping_rates[ 0 ].shipping_rates
 				: [];
+		var rates = applyWpFilters(
+			'wcpay.express-checkout.shipping-rates',
+			baseRates,
+			cartData
+		);
 
-		return rates.map( function ( rate ) {
-			return {
-				id: rate.rate_id,
-				displayName: rate.name,
-				amount:
-					parseInt( rate.price || 0, 10 ) +
-					parseInt( rate.taxes || 0, 10 ),
-			};
-		} );
+		if ( ! Array.isArray( rates ) || ! rates.length ) {
+			return [];
+		}
+
+		return rates
+			.slice()
+			.sort( function ( rateA, rateB ) {
+				if ( rateA.selected === rateB.selected ) {
+					return 0;
+				}
+
+				// Rates with `selected: true` come first.
+				return rateA.selected ? -1 : 1;
+			} )
+			.slice( 0, SHIPPING_RATES_UPPER_LIMIT_COUNT )
+			.map( function ( rate ) {
+				var metaData = Array.isArray( rate.meta_data )
+					? rate.meta_data
+					: [];
+
+				return {
+					id: rate.rate_id,
+					displayName: decodeEntities( rate.name ),
+					amount: transformPrice(
+						includeTax
+							? parseInt( rate.price || 0, 10 ) +
+									parseInt( rate.taxes || 0, 10 )
+							: parseInt( rate.price || 0, 10 ),
+						rate
+					),
+					deliveryEstimate: [ 'pickup_address', 'pickup_details' ]
+						.map( function ( key ) {
+							var entry = metaData.find( function ( metadata ) {
+								return metadata.key === key;
+							} );
+
+							return entry && entry.value;
+						} )
+						.filter( Boolean )
+						.map( decodeEntities )
+						.join( ' - ' ),
+				};
+			} );
 	}
 
-	function getLineItems( cartData ) {
-		var items =
-			cartData && Array.isArray( cartData.items ) ? cartData.items : [];
-
-		return items.map( function ( item ) {
-			var totals = item.totals || {};
+	function getDisplayItems( rawCartData ) {
+		var includeTax = displayPricesIncludeTax();
+		// Allow extensions to manipulate the individual items returned by the backend.
+		var cartData = applyWpFilters(
+			'wcpay.express-checkout.map-line-items',
+			rawCartData
+		);
+		var items = Array.isArray( cartData.items ) ? cartData.items : [];
+		var totals = cartData.totals || {};
+		var totalAmount;
+		var totalAmountOfDisplayItems;
+		var displayItems = items.map( function ( item ) {
+			var itemTotals = item.totals || {};
 
 			return {
-				name: item.name,
-				amount:
-					parseInt( totals.line_subtotal || 0, 10 ) +
-					parseInt( totals.line_subtotal_tax || 0, 10 ),
+				amount: transformPrice(
+					includeTax && item.totals
+						? parseInt( itemTotals.line_subtotal, 10 ) +
+								parseInt( itemTotals.line_subtotal_tax, 10 )
+						: parseInt(
+								itemTotals.line_subtotal ||
+									( item.prices && item.prices.price ) ||
+									0,
+								10
+						  ),
+					item.totals || item.prices || {}
+				),
+				name: [
+					item.name,
+					item.quantity > 1 && '(x' + item.quantity + ')',
+					item.variation && item.variation.length > 0 && '-',
+					item.variation &&
+						item.variation
+							.map( function ( variation ) {
+								return (
+									variation.attribute +
+									': ' +
+									variation.value
+								);
+							} )
+							.join( ', ' ),
+					item.item_data && item.item_data.length > 0 && '-',
+					item.item_data &&
+						item.item_data
+							.map( function ( itemData ) {
+								return (
+									( itemData.name || itemData.key ) +
+									': ' +
+									itemData.value
+								);
+							} )
+							.join( ', ' ),
+				]
+					.filter( Boolean )
+					.map( decodeEntities )
+					.join( ' ' ),
 			};
 		} );
+		var shippingAmount = parseInt( totals.total_shipping || '0', 10 );
+		var discountsAmount = parseInt( totals.total_discount || '0', 10 );
+		var feesAmount = parseInt( totals.total_fees || '0', 10 );
+		var taxAmount = parseInt( totals.total_tax || '0', 10 );
+		var refundAmount = parseInt( totals.total_refund || '0', 10 );
+
+		if ( shippingAmount ) {
+			displayItems.push( {
+				amount: transformPrice(
+					includeTax
+						? shippingAmount +
+								parseInt(
+									totals.total_shipping_tax || '0',
+									10
+								)
+						: shippingAmount,
+					totals
+				),
+				name: 'Shipping',
+			} );
+		}
+
+		if ( discountsAmount ) {
+			displayItems.push( {
+				amount: -transformPrice(
+					includeTax
+						? discountsAmount +
+								parseInt(
+									totals.total_discount_tax || '0',
+									10
+								)
+						: discountsAmount,
+					totals
+				),
+				name: 'Discount',
+			} );
+		}
+
+		if ( feesAmount ) {
+			displayItems.push( {
+				amount: transformPrice(
+					includeTax
+						? feesAmount +
+								parseInt( totals.total_fees_tax || '0', 10 )
+						: feesAmount,
+					totals
+				),
+				name: 'Fees',
+			} );
+		}
+
+		if ( taxAmount && ! includeTax ) {
+			displayItems.push( {
+				amount: transformPrice( taxAmount, totals ),
+				name: 'Tax',
+			} );
+		}
+
+		if ( refundAmount ) {
+			displayItems.push( {
+				amount: -transformPrice( refundAmount, totals ),
+				name: 'Refund',
+			} );
+		}
+
+		totalAmount = transformPrice(
+			parseInt( totals.total_price || 0, 10 ) -
+				parseInt( totals.total_refund || 0, 10 ),
+			totals
+		);
+		totalAmountOfDisplayItems = displayItems.reduce( function (
+			accumulator,
+			item
+		) {
+			return accumulator + item.amount;
+		},
+		0 );
+
+		// If the total is even slightly less than the sum of the line items
+		// (rounding on individual items/taxes/shipping, or the
+		// `woocommerce_tax_round_at_subtotal` setting), Stripe throws an
+		// error - in that case, show only the total to the customer.
+		if ( totalAmount < totalAmountOfDisplayItems ) {
+			return [];
+		}
+
+		return displayItems;
 	}
 
 	function updateElementsForCart( cartData ) {
@@ -730,35 +986,19 @@
 	}
 
 	function filterSelectedProduct( product ) {
-		if (
-			window.wp &&
-			window.wp.hooks &&
-			typeof window.wp.hooks.applyFilters === 'function'
-		) {
-			return window.wp.hooks.applyFilters(
-				'wcpay.express-checkout.cart-add-item',
-				product
-			);
-		}
-
-		return product;
+		return applyWpFilters(
+			'wcpay.express-checkout.cart-add-item',
+			product
+		);
 	}
 
 	function filterShippingPackageId( packageId, cartData, rateId ) {
-		if (
-			window.wp &&
-			window.wp.hooks &&
-			typeof window.wp.hooks.applyFilters === 'function'
-		) {
-			return window.wp.hooks.applyFilters(
-				'wcpay.express-checkout.shipping-package-id',
-				packageId,
-				cartData,
-				rateId
-			);
-		}
-
-		return packageId;
+		return applyWpFilters(
+			'wcpay.express-checkout.shipping-package-id',
+			packageId,
+			cartData,
+			rateId
+		);
 	}
 
 	function addSelectedProductToCart( product ) {
@@ -816,26 +1056,29 @@
 		};
 	}
 
-	function updateProductShippingAddress( event ) {
-		return productAddToCartPromise
-			.then( function () {
-				return requestCart( {
-					method: 'POST',
-					path: '/wc/store/v1/cart/update-customer',
-					headers: {
-						'X-WooPayments-Tokenized-Cart': true,
-					},
-					data: {
-						shipping_address: transformShippingAddress(
-							event.name,
-							event.address
-						),
-					},
-				} );
-			} )
+	function handleShippingAddressChange( event ) {
+		// Please note that `event.address` might not contain all the fields.
+		// Some fields might not be present (like `line_1` or `line_2`) due to
+		// semi-anonymized data.
+		return requestCart( {
+			method: 'POST',
+			path: '/wc/store/v1/cart/update-customer',
+			headers: {
+				'X-WooPayments-Tokenized-Cart': true,
+			},
+			data: {
+				shipping_address: transformShippingAddress(
+					event.name,
+					event.address
+				),
+			},
+		} )
 			.then( function ( cartData ) {
 				var shippingRates = getShippingRates( cartData );
 
+				// When no shipping options are returned, the API still responds
+				// with a 200 status code. Ensure options are present - otherwise
+				// the ECE dialog won't update correctly.
 				if ( ! shippingRates.length ) {
 					event.reject();
 					return;
@@ -843,57 +1086,46 @@
 
 				cachedCartData = cartData;
 
-				return updateElementsForCart( cartData )
-					.then( function () {
-						event.resolve( {
-							shippingRates: shippingRates,
-							lineItems: getLineItems( cartData ),
-						} );
-					} )
-					.catch( function () {
-						event.reject();
-						return emptyProductCart();
+				return updateElementsForCart( cartData ).then( function () {
+					event.resolve( {
+						shippingRates: shippingRates,
+						lineItems: getDisplayItems( cartData ),
 					} );
-			} )
-			.catch( function () {
-				event.resolve();
-			} );
-	}
-
-	function selectProductShippingRate( event ) {
-		var rateId = event && event.shippingRate ? event.shippingRate.id : '';
-
-		return productAddToCartPromise
-			.then( function () {
-				return requestCart( {
-					method: 'POST',
-					path: '/wc/store/v1/cart/select-shipping-rate',
-					data: {
-						package_id: filterShippingPackageId(
-							0,
-							cachedCartData,
-							rateId
-						),
-						rate_id: rateId,
-					},
 				} );
-			} )
-			.then( function ( cartData ) {
-				cachedCartData = cartData;
-
-				return updateElementsForCart( cartData )
-					.then( function () {
-						event.resolve( {
-							lineItems: getLineItems( cartData ),
-						} );
-					} )
-					.catch( function () {
-						event.reject();
-						return emptyProductCart();
-					} );
 			} )
 			.catch( function () {
 				event.reject();
+				return emptyProductCart();
+			} );
+	}
+
+	function handleShippingRateChange( event ) {
+		var rateId = event && event.shippingRate ? event.shippingRate.id : '';
+
+		return requestCart( {
+			method: 'POST',
+			path: '/wc/store/v1/cart/select-shipping-rate',
+			data: {
+				package_id: filterShippingPackageId(
+					0,
+					cachedCartData,
+					rateId
+				),
+				rate_id: rateId,
+			},
+		} )
+			.then( function ( cartData ) {
+				cachedCartData = cartData;
+
+				return updateElementsForCart( cartData ).then( function () {
+					event.resolve( {
+						lineItems: getDisplayItems( cartData ),
+					} );
+				} );
+			} )
+			.catch( function () {
+				event.reject();
+				return emptyProductCart();
 			} );
 	}
 
@@ -932,12 +1164,28 @@
 				? getShippingRates( cachedCartData )
 				: undefined;
 
+		var lineItems;
+
+		// Fallback for initialization (and initialization _only_), before an
+		// address is provided by the ECE.
 		if (
-			isProduct() &&
 			shippingAddressRequired &&
 			( ! shippingRates || ! shippingRates.length )
 		) {
 			shippingRates = [ getPendingShippingRate() ];
+		}
+
+		if ( cachedCartData ) {
+			lineItems = getDisplayItems( cachedCartData );
+		} else if ( isProduct() && config.product ) {
+			lineItems = ( config.product.displayItems || [] ).map( function (
+				item
+			) {
+				return {
+					name: item.label,
+					amount: item.amount,
+				};
+			} );
 		}
 
 		return {
@@ -954,6 +1202,7 @@
 					config.checkout.allowed_shipping_countries ) ||
 				[],
 			shippingRates: shippingRates,
+			lineItems: lineItems,
 		};
 	}
 
@@ -1032,19 +1281,22 @@
 		} );
 
 		expressElement.on( 'shippingaddresschange', async function ( event ) {
-			if ( ! isProduct() ) {
+			await productAddToCartPromise.catch( function () {} );
+
+			if ( productAddToCartErrorMessage ) {
+				// Pretending like everything is fine - the payment will not be
+				// confirmed in the `confirm` handler later. This prevents a
+				// misleading "invalid shipping address" message on the payment
+				// sheet.
+				event.resolve();
 				return;
 			}
 
-			await updateProductShippingAddress( event );
+			await handleShippingAddressChange( event );
 		} );
 
 		expressElement.on( 'shippingratechange', async function ( event ) {
-			if ( ! isProduct() ) {
-				return;
-			}
-
-			await selectProductShippingRate( event );
+			await handleShippingRateChange( event );
 		} );
 
 		expressElement.on( 'confirm', async function ( event ) {
@@ -1119,4 +1371,27 @@
 			return initExpressCheckout();
 		} );
 	} );
+	// Expose internals for unit testing only.
+	if ( typeof module !== 'undefined' && module.exports ) {
+		module.exports.__test__ = {
+			transformPrice: transformPrice,
+			getShippingRates: getShippingRates,
+			getDisplayItems: getDisplayItems,
+			getTotalAmount: getTotalAmount,
+			handleShippingAddressChange: handleShippingAddressChange,
+			handleShippingRateChange: handleShippingRateChange,
+			placeOrder: placeOrder,
+			setState: function ( state ) {
+				if ( 'elements' in state ) {
+					elements = state.elements;
+				}
+				if ( 'cachedCartData' in state ) {
+					cachedCartData = state.cachedCartData;
+				}
+				if ( 'tokenizedCartSession' in state ) {
+					tokenizedCartSession = state.tokenizedCartSession;
+				}
+			},
+		};
+	}
 } )( jQuery, window, document );
