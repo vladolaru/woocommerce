@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 use WP_Error;
@@ -279,10 +280,10 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 		$api_client = new WooPaymentsApiClient();
 
 		$customer_service = new WooPaymentsCustomerService();
-		$customer_service->init( $api_client, $account_service );
+		$customer_service->init( $api_client, $account_service, new WooPaymentsSessionService() );
 
 		$sut = new WooPaymentsFraudService();
-		$sut->init( $account_service, $customer_service, $api_client );
+		$sut->init( $account_service, $customer_service, new WooPaymentsSessionService(), $api_client );
 
 		return $sut;
 	}

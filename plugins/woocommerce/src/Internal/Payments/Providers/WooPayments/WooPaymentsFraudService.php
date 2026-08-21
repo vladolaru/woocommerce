@@ -40,15 +40,6 @@ class WooPaymentsFraudService {
 	public const FILTER_FRAUD_SERVICE_CONFIG = 'woocommerce_woopayments_fraud_service_config';
 
 	/**
-	 * Option holding the persisted random store ID used to derive Sift session IDs.
-	 *
-	 * Deliberately reuses the WooPayments plugin's option name: a store cut over
-	 * from the plugin to the native integration must keep deriving the same
-	 * session IDs, or Sift loses the continuity of every ongoing browsing session.
-	 */
-	private const SESSION_STORE_ID_OPTION = 'wcpay_session_store_id';
-
-	/**
 	 * Transient caching the platform's public fraud-services config.
 	 */
 	private const PUBLIC_CONFIG_TRANSIENT = 'woocommerce_woopayments_public_fraud_services';
@@ -79,6 +70,13 @@ class WooPaymentsFraudService {
 	private WooPaymentsCustomerService $customer_service;
 
 	/**
+	 * Session service.
+	 *
+	 * @var WooPaymentsSessionService
+	 */
+	private WooPaymentsSessionService $session_service;
+
+	/**
 	 * Native WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
@@ -92,11 +90,13 @@ class WooPaymentsFraudService {
 	 *
 	 * @param WooPaymentsAccountService  $account_service  Account service.
 	 * @param WooPaymentsCustomerService $customer_service Customer service.
+	 * @param WooPaymentsSessionService  $session_service  Session service.
 	 * @param WooPaymentsApiClient       $api_client       Native WooPayments API client.
 	 */
-	final public function init( WooPaymentsAccountService $account_service, WooPaymentsCustomerService $customer_service, WooPaymentsApiClient $api_client ): void {
+	final public function init( WooPaymentsAccountService $account_service, WooPaymentsCustomerService $customer_service, WooPaymentsSessionService $session_service, WooPaymentsApiClient $api_client ): void {
 		$this->account_service  = $account_service;
 		$this->customer_service = $customer_service;
+		$this->session_service  = $session_service;
 		$this->api_client       = $api_client;
 	}
 
@@ -190,7 +190,7 @@ class WooPaymentsFraudService {
 		unset( $config['sandbox_beacon_key'] );
 
 		$config['user_id']    = $this->get_sift_user_id();
-		$config['session_id'] = $this->get_sift_session_id();
+		$config['session_id'] = $this->session_service->get_sift_session_id();
 
 		return $config;
 	}
@@ -213,93 +213,6 @@ class WooPaymentsFraudService {
 		$customer_id = $this->customer_service->get_customer_id_by_user_id( get_current_user_id() );
 
 		return null !== $customer_id ? $customer_id : '';
-	}
-
-	/**
-	 * Get the Sift session ID for the current browsing session.
-	 *
-	 * @return string|null Session ID, or null when there is no valid session for the current process.
-	 */
-	public function get_sift_session_id(): ?string {
-		if ( $this->user_just_logged_in() ) {
-			return $this->get_cookie_session_id();
-		}
-
-		if ( WC()->session instanceof \WC_Session ) {
-			return $this->generate_session_id( (string) WC()->session->get_customer_id() );
-		}
-
-		return null;
-	}
-
-	/**
-	 * Tell whether the current user logged in during this request — their
-	 * session cookie still carries the pre-login customer ID.
-	 *
-	 * @return bool
-	 */
-	private function user_just_logged_in(): bool {
-		if ( ! get_current_user_id() ) {
-			return false;
-		}
-
-		WC()->initialize_session();
-		$session_handler = WC()->session;
-		// Some session handlers (e.g. the Store API one) do not expose the cookie.
-		if ( ! $session_handler || ! method_exists( $session_handler, 'get_session_cookie' ) ) {
-			return false;
-		}
-		$cookie = $session_handler->get_session_cookie();
-		if ( ! $cookie ) {
-			return false;
-		}
-
-		return $session_handler->get_customer_id() !== $cookie[0];
-	}
-
-	/**
-	 * Get the session ID carried by the session cookie — the ID used for the
-	 * browsing session up to now, before any login rotated the customer ID.
-	 *
-	 * @return string|null Session ID, or null when unknown.
-	 */
-	private function get_cookie_session_id(): ?string {
-		$session_handler = WC()->session;
-		if ( ! $session_handler || ! method_exists( $session_handler, 'get_session_cookie' ) ) {
-			return null;
-		}
-		$cookie = $session_handler->get_session_cookie();
-		if ( ! $cookie || ! isset( $cookie[0] ) ) {
-			return null;
-		}
-
-		return $this->generate_session_id( (string) $cookie[0] );
-	}
-
-	/**
-	 * Derive a Sift session ID from the persisted store ID and a session customer ID.
-	 *
-	 * @param string $session_customer_id WooCommerce session customer ID.
-	 * @return string
-	 */
-	private function generate_session_id( string $session_customer_id ): string {
-		return $this->get_store_id() . '_' . $session_customer_id;
-	}
-
-	/**
-	 * Get the persisted random store ID, generating it on first use.
-	 *
-	 * @return string
-	 */
-	private function get_store_id(): string {
-		$store_id = get_option( self::SESSION_STORE_ID_OPTION, false );
-		if ( ! is_string( $store_id ) || '' === $store_id ) {
-			// 'st_' prefix plus alphanumerics only, within Sift's user_id charset.
-			$store_id = 'st_' . wp_generate_password( 29, false, false );
-			update_option( self::SESSION_STORE_ID_OPTION, $store_id );
-		}
-
-		return $store_id;
 	}
 
 	/**

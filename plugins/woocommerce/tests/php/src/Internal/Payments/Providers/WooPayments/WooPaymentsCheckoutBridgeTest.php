@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionService;
@@ -843,7 +844,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$legacy_runtime->expects( $this->never() )->method( 'get_gateway_prepared_customer_data' );
 		$account_service  = $this->create_account_service_for_bridge( true );
 		$customer_service = new WooPaymentsCustomerService();
-		$customer_service->init( $this->createStub( WooPaymentsApiClient::class ), $account_service );
+		$customer_service->init( $this->createStub( WooPaymentsApiClient::class ), $account_service, new WooPaymentsSessionService() );
 
 		$bridge = new WooPaymentsCheckoutBridge();
 		$bridge->init(
@@ -1287,10 +1288,10 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	private function inject_fraud_service_for_bridge( WooPaymentsCheckoutBridge $bridge, WooPaymentsAccountService $account_service ): void {
 		$api_client       = new WooPaymentsApiClient();
 		$customer_service = new WooPaymentsCustomerService();
-		$customer_service->init( $api_client, $account_service );
+		$customer_service->init( $api_client, $account_service, new WooPaymentsSessionService() );
 
 		$fraud_service = new WooPaymentsFraudService();
-		$fraud_service->init( $account_service, $customer_service, $api_client );
+		$fraud_service->init( $account_service, $customer_service, new WooPaymentsSessionService(), $api_client );
 
 		$property = new \ReflectionProperty( WooPaymentsCheckoutBridge::class, 'fraud_service' );
 		$property->setAccessible( true );

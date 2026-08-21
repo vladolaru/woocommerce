@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
 use WC_Order;
 use WC_Unit_Test_Case;
 
@@ -19,6 +20,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
+		delete_option( 'wcpay_session_store_id' );
 		if ( WC()->session ) {
 			WC()->session->set( 'wcpay_customer_id', null );
 		}
@@ -171,7 +173,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 		$sut = $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->onlyMethods( array( 'get_customer_id_by_user_id' ) )
 			->getMock();
-		$sut->init( $api_client, $account_service );
+		$sut->init( $api_client, $account_service, new WooPaymentsSessionService() );
 
 		// The fast-path read misses; the re-read after losing the lock finds the
 		// ID that the winning concurrent request just persisted.
@@ -206,7 +208,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 		$sut = $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->onlyMethods( array( 'get_customer_id_by_user_id' ) )
 			->getMock();
-		$sut->init( $api_client, $account_service );
+		$sut->init( $api_client, $account_service, new WooPaymentsSessionService() );
 
 		// Both the fast-path read and the re-read after losing the lock miss: the
 		// lock holder has not persisted the ID yet, so this request must create.
@@ -397,6 +399,29 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Customer create payloads carry the shopper's Sift session ID; the platform links the browsing session for fraud scoring.
+	 */
+	public function test_customer_create_payload_carries_sift_session_id(): void {
+		update_option( 'wcpay_session_store_id', 'st_fixture' );
+		WC()->initialize_session();
+
+		$order = wc_create_order();
+		$order->set_billing_email( 'shopper@example.com' );
+		$order->save();
+
+		$api_client = $this->create_customer_api_client( array( 'cus_new' ) );
+		$sut        = $this->create_sut( false, $api_client );
+
+		$sut->get_or_create_customer_id_for_order( $order );
+
+		$this->assertCount( 1, $api_client->created_customers );
+		$this->assertSame(
+			'st_fixture_' . (string) WC()->session->get_customer_id(),
+			$api_client->created_customers[0]['session_id']
+		);
+	}
+
+	/**
 	 * Create a customer service System Under Test.
 	 *
 	 * @param bool                 $test_mode  Whether test mode is enabled.
@@ -412,7 +437,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( $test_mode );
 
 		$sut = new WooPaymentsCustomerService();
-		$sut->init( $api_client, $account_service );
+		$sut->init( $api_client, $account_service, new WooPaymentsSessionService() );
 
 		return $sut;
 	}

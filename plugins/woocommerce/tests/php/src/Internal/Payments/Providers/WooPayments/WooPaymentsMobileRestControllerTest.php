@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsMobileRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use WC_Helper_Order;
@@ -854,7 +855,7 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		);
 
 		$customer_service = new WooPaymentsCustomerService();
-		$customer_service->init( $this->api_client, $account_service );
+		$customer_service->init( $this->api_client, $account_service, new WooPaymentsSessionService() );
 
 		$controller = new WooPaymentsMobileRestController();
 		$controller->init( $arbiter, $this->api_client, $account_service, $customer_service, new WooPaymentsOrderDataService() );

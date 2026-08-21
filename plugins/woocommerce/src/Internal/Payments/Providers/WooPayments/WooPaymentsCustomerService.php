@@ -61,16 +61,25 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	private WooPaymentsAccountService $account_service;
 
 	/**
+	 * WooPayments session service.
+	 *
+	 * @var WooPaymentsSessionService
+	 */
+	private WooPaymentsSessionService $session_service;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
 	 * @param WooPaymentsApiClient      $api_client      Native API client.
 	 * @param WooPaymentsAccountService $account_service WooPayments account service.
+	 * @param WooPaymentsSessionService $session_service WooPayments session service.
 	 */
-	final public function init( WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service ): void {
+	final public function init( WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service, WooPaymentsSessionService $session_service ): void {
 		$this->api_client      = $api_client;
 		$this->account_service = $account_service;
+		$this->session_service = $session_service;
 	}
 
 	/**
@@ -245,7 +254,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 		}
 
 		try {
-			$customer_id = $this->api_client->create_customer( $this->map_customer_data( $order ) );
+			$customer_id = $this->api_client->create_customer( $this->with_session_id( $this->map_customer_data( $order ) ) );
 			$this->persist_customer_id( $user_id, $customer_id );
 
 			return $customer_id;
@@ -294,7 +303,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 		$user_id = $this->get_order_user_id( $order );
 		$this->delete_customer_id( $user_id );
 
-		$customer_id = $this->api_client->create_customer( $this->map_customer_data( $order ) );
+		$customer_id = $this->api_client->create_customer( $this->with_session_id( $this->map_customer_data( $order ) ) );
 		$this->persist_customer_id( $user_id, $customer_id );
 
 		return $customer_id;
@@ -312,7 +321,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 			return $customer_id;
 		}
 
-		$customer_id = $this->api_client->create_customer( $this->map_customer_data_for_user( $user_id ) );
+		$customer_id = $this->api_client->create_customer( $this->with_session_id( $this->map_customer_data_for_user( $user_id ) ) );
 		$this->persist_customer_id( $user_id, $customer_id );
 
 		return $customer_id;
@@ -551,5 +560,21 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 		$user_id = (int) $order->get_customer_id();
 
 		return $user_id > 0 ? $user_id : null;
+	}
+
+	/**
+	 * Attach the shopper's Sift session ID to a customer-create payload.
+	 *
+	 * Create-only, matching the WooPayments plugin: the platform links the
+	 * browsing session to the new customer for fraud scoring; updates never
+	 * carry it.
+	 *
+	 * @param array<string,mixed> $customer_data Customer payload.
+	 * @return array<string,mixed>
+	 */
+	private function with_session_id( array $customer_data ): array {
+		$customer_data['session_id'] = $this->session_service->get_sift_session_id();
+
+		return $customer_data;
 	}
 }
