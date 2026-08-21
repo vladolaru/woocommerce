@@ -343,7 +343,7 @@ class WooPaymentsApiClient {
 	 * Create and confirm a positive-amount WooPayments PaymentIntent.
 	 *
 	 * @param array<string,mixed> $request_data     Intent payload.
-	 * @param string              $idempotency_key  Deterministic idempotency key.
+	 * @param string              $idempotency_key  Caller-supplied idempotency key (minted per payment attempt).
 	 * @return array<string,mixed>
 	 * @throws WooPaymentsApiException When the request shape is invalid.
 	 */
@@ -367,7 +367,7 @@ class WooPaymentsApiClient {
 	 * Create and confirm a WooPayments SetupIntent.
 	 *
 	 * @param array<string,mixed> $request_data    SetupIntent payload.
-	 * @param string              $idempotency_key Deterministic idempotency key.
+	 * @param string              $idempotency_key Caller-supplied idempotency key.
 	 * @return array<string,mixed>
 	 * @throws WooPaymentsApiException When the request shape is invalid.
 	 */
