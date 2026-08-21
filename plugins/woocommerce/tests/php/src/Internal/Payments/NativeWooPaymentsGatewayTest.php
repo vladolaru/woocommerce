@@ -2802,6 +2802,27 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should short-circuit process_payment when the order is already paid, before reaching the processing service.
+	 */
+	public function test_process_payment_short_circuits_when_order_already_paid(): void {
+		$order = $this->create_order();
+		$order->set_payment_method( 'woocommerce_payments' );
+		$order->set_status( 'processing' );
+		$order->save();
+
+		$service = new RecordingPaymentProcessingService();
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$this->assertIsArray( $result );
+		$this->assertSame( 'success', $result['result'] );
+		$this->assertStringContainsString( 'wcpay_previous_successful_intent=yes', $result['redirect'] );
+		$this->assertSame( 0, $service->checkout_attempt_count, 'An already-paid order must never reach the processing service.' );
+	}
+
+	/**
 	 * @testdox Should resolve native dependencies when WooCommerce instantiates the gateway directly.
 	 */
 	public function test_process_payment_resolves_dependencies_without_explicit_init(): void {
