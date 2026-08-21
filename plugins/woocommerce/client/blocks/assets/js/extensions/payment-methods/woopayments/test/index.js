@@ -790,6 +790,29 @@ describe( 'wc-payment-method-woopayments', () => {
 		expect( harness.calls ).toEqual( [ 'submit', 'createPaymentMethod' ] );
 	} );
 
+	it( 'records failed tokenization with the error sentinel instead of aborting', async () => {
+		const harness = await setUpNewCardPayment();
+		harness.createPaymentMethod.mockResolvedValueOnce( {
+			error: {
+				code: 'incomplete_number',
+				decline_code: 'do_not_honor',
+				message: 'Your card number is invalid.',
+				type: 'validation_error',
+			},
+		} );
+
+		const result = await harness.setupCallbacks[ 0 ]();
+
+		expect( result.type ).toBe( 'success' );
+		expect( result.meta.paymentMethodData ).toMatchObject( {
+			'wcpay-payment-method': 'woocommerce_payments_payment_method_error',
+			'wcpay-payment-method-error-code': 'incomplete_number',
+			'wcpay-payment-method-error-decline-code': 'do_not_honor',
+			'wcpay-payment-method-error-message': 'Your card number is invalid.',
+			'wcpay-payment-method-error-type': 'validation_error',
+		} );
+	} );
+
 	it( 'uses the historical Blocks billing data alias when the modern alias is absent', async () => {
 		const harness = await setUpNewCardPayment( {
 			billingData: {
@@ -1538,7 +1561,7 @@ describe( 'wc-payment-method-woopayments', () => {
 		expect( unsubscribeCheckoutSuccess ).not.toHaveBeenCalled();
 	} );
 
-	it( 'returns a payment notice when Stripe element validation fails', async () => {
+	it( 'submits the tokenization failure so the server records the attempt', async () => {
 		const createPaymentMethod = jest.fn().mockResolvedValue( {
 			error: {
 				code: 'incomplete_number',
@@ -1586,10 +1609,17 @@ describe( 'wc-payment-method-woopayments', () => {
 			expect( onPaymentSetup ).toHaveBeenCalled();
 		} );
 
-		await expect( setupResult ).resolves.toEqual( {
-			type: 'error',
-			message: 'Your card number is incomplete.',
-			messageContext: 'payments',
+		await expect( setupResult ).resolves.toMatchObject( {
+			type: 'success',
+			meta: {
+				paymentMethodData: {
+					'wcpay-payment-method':
+						'woocommerce_payments_payment_method_error',
+					'wcpay-payment-method-error-code': 'incomplete_number',
+					'wcpay-payment-method-error-message':
+						'Your card number is incomplete.',
+				},
+			},
 		} );
 	} );
 

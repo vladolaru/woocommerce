@@ -68,6 +68,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'wcs_get_retry_rule_raw' );
 		unset( $_POST['wcpay-setup-intent'] );
 		unset( $_POST['wcpay-payment-method'] );
+		unset( $_POST['wcpay-payment-method-error-message'] );
+		unset( $_POST['wcpay-payment-method-error-code'] );
 		unset( $_POST['wcpay-is-platform-payment-method'] );
 		unset( $_POST['wcpay-express-payment-method-types'] );
 		unset( $_POST['wcpay-express-checkout-context'] );
@@ -1726,6 +1728,50 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				unset( $wp_actions['init'] );
 			}
 		}
+	}
+
+	/**
+	 * @testdox Should record a failed order when the client reports a payment method creation error.
+	 */
+	public function test_process_payment_fails_order_for_client_payment_method_error(): void {
+		$order   = $this->create_order();
+		$service = new RecordingPaymentProcessingService();
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		$_POST['wcpay-payment-method']               = 'woocommerce_payments_payment_method_error';
+		$_POST['wcpay-payment-method-error-message'] = 'Your card number is invalid.';
+		$_POST['wcpay-payment-method-error-code']    = 'incomplete_number';
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$this->assertSame( 'failure', $result['result'] );
+		$this->assertNull( $service->last_checkout_context );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'failed', $order->get_status() );
+
+		$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+		$this->assertNotEmpty( $notes );
+		$note_contents = implode( ' | ', wp_list_pluck( $notes, 'content' ) );
+		$this->assertStringContainsString( 'Your card number is invalid.', $note_contents );
+	}
+
+	/**
+	 * @testdox Should fall back to a generic message when the client error carries none.
+	 */
+	public function test_process_payment_client_error_uses_generic_message_fallback(): void {
+		$order   = $this->create_order();
+		$service = new RecordingPaymentProcessingService();
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		$_POST['wcpay-payment-method'] = 'woocommerce_payments_payment_method_error';
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$this->assertSame( 'failure', $result['result'] );
+		$this->assertSame( 'failed', wc_get_order( $order->get_id() )->get_status() );
 	}
 
 	/**

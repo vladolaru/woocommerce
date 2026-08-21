@@ -50,6 +50,13 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	private const METHOD_TITLE = 'WooPayments';
 
 	/**
+	 * Sentinel the checkout scripts submit in place of a payment method when
+	 * client-side payment method creation failed. Matches the WooPayments
+	 * client plugin's Payment_Information::PAYMENT_METHOD_ERROR.
+	 */
+	private const CLIENT_PAYMENT_METHOD_ERROR_SENTINEL = 'woocommerce_payments_payment_method_error';
+
+	/**
 	 * Untranslated gateway description.
 	 */
 	private const METHOD_DESCRIPTION = 'Accept payments with WooPayments.';
@@ -1415,6 +1422,11 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return $already_paid_result;
 		}
 
+		$client_error_result = $this->maybe_fail_for_client_payment_method_error( $order );
+		if ( is_array( $client_error_result ) ) {
+			return $client_error_result;
+		}
+
 		$context = PaymentContext::for_checkout(
 			$order,
 			$this->id,
@@ -2311,6 +2323,40 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		return '';
+	}
+
+	/**
+	 * Fail the order when the client reported a payment method creation error.
+	 *
+	 * When Stripe rejects createPaymentMethod in the browser (element
+	 * validation, some client-side declines), the checkout scripts submit the
+	 * WooPayments error sentinel with the error details instead of a payment
+	 * method, so the attempt is recorded as a failed order instead of leaving
+	 * no trace. Mirrors the client plugin's PAYMENT_METHOD_ERROR handling
+	 * (Payment_Information:290-297).
+	 *
+	 * @param WC_Order $order Order being paid.
+	 * @return array<string,string>|null Failure result, or null when no client error was reported.
+	 */
+	private function maybe_fail_for_client_payment_method_error( WC_Order $order ): ?array {
+		if ( self::CLIENT_PAYMENT_METHOD_ERROR_SENTINEL !== $this->get_request_payment_method_id() ) {
+			return null;
+		}
+
+		$message = $this->sanitize_post_string( 'wcpay-payment-method-error-message' );
+		if ( '' === $message ) {
+			$message = __( "We're not able to process this payment. Please try again later.", 'woocommerce' );
+		}
+
+		$order->update_status( 'failed', $message );
+
+		wc_add_notice( $message, 'error', array( 'icon' => 'error' ) );
+
+		return array(
+			'result'         => 'failure',
+			'redirect'       => '',
+			'payment_method' => '',
+		);
 	}
 
 	/**

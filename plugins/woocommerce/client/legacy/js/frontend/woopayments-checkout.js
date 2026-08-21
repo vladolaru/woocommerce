@@ -7,6 +7,12 @@
 	var baseConfig = window.wcpay_core_checkout_config || {};
 	var appearanceUtils = window.wcpayAppearance;
 	var config = baseConfig;
+
+	// Sentinel submitted in place of a payment method when client-side
+	// payment method creation failed, so the server records a failed order.
+	// Matches the WooPayments plugin's Payment_Information::PAYMENT_METHOD_ERROR.
+	var PAYMENT_METHOD_ERROR_SENTINEL =
+		'woocommerce_payments_payment_method_error';
 	var gatewayId = config.gatewayId || defaultGatewayId;
 	var stripe = null;
 	var elements = null;
@@ -1230,11 +1236,15 @@
 	}
 
 	function appendPaymentFields( form, paymentMethod, error ) {
-		ensureHiddenField(
-			form,
-			'wcpay-payment-method',
-			paymentMethod && paymentMethod.id ? paymentMethod.id : ''
-		);
+		var paymentMethodValue = '';
+
+		if ( paymentMethod && paymentMethod.id ) {
+			paymentMethodValue = paymentMethod.id;
+		} else if ( error ) {
+			paymentMethodValue = PAYMENT_METHOD_ERROR_SENTINEL;
+		}
+
+		ensureHiddenField( form, 'wcpay-payment-method', paymentMethodValue );
 		ensureHiddenField(
 			form,
 			'wcpay-payment-method-error-code',
@@ -1242,8 +1252,18 @@
 		);
 		ensureHiddenField(
 			form,
+			'wcpay-payment-method-error-decline-code',
+			error && error.decline_code ? error.decline_code : ''
+		);
+		ensureHiddenField(
+			form,
 			'wcpay-payment-method-error-message',
 			error && error.message ? error.message : ''
+		);
+		ensureHiddenField(
+			form,
+			'wcpay-payment-method-error-type',
+			error && error.type ? error.type : ''
 		);
 		// The buyer *device* fingerprint. The WooPayments plugin sends the
 		// FingerprintJS visitor ID here; the Stripe card fingerprint is a
@@ -1773,11 +1793,12 @@
 		createPaymentMethod()
 			.then( function ( result ) {
 				if ( result.error ) {
+					// Submit with the error sentinel so the server records a
+					// failed order carrying the decline reason; the failure
+					// message is surfaced from the server response.
 					appendPaymentFields( form, null, result.error );
-					setError( result.error.message );
-					$( document.body ).trigger( 'checkout_error', [
-						result.error.message,
-					] );
+					isSubmittingWithPaymentMethod = true;
+					form.trigger( 'submit' );
 					return;
 				}
 

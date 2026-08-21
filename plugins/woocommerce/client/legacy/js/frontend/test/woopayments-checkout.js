@@ -1881,6 +1881,41 @@ describe( 'WooPayments checkout', () => {
 		);
 	} );
 
+	test( 'submits the checkout with the error sentinel when payment method creation fails', async () => {
+		stripeMock.createPaymentMethod.mockResolvedValueOnce( {
+			error: {
+				code: 'incomplete_number',
+				decline_code: 'do_not_honor',
+				message: 'Your card number is invalid.',
+				type: 'validation_error',
+			},
+		} );
+
+		require( '../woopayments-checkout' );
+		checkoutFormEventHandlers.checkout_place_order_woocommerce_payments();
+		await flushPromises();
+
+		const fields = global.jQuery.checkoutFormFields;
+		expect( fields[ 'wcpay-payment-method' ].value ).toBe(
+			'woocommerce_payments_payment_method_error'
+		);
+		expect( fields[ 'wcpay-payment-method-error-code' ].value ).toBe(
+			'incomplete_number'
+		);
+		expect(
+			fields[ 'wcpay-payment-method-error-decline-code' ].value
+		).toBe( 'do_not_honor' );
+		expect( fields[ 'wcpay-payment-method-error-message' ].value ).toBe(
+			'Your card number is invalid.'
+		);
+		expect( fields[ 'wcpay-payment-method-error-type' ].value ).toBe(
+			'validation_error'
+		);
+		expect(
+			global.jQuery.checkoutFormResult.trigger
+		).toHaveBeenCalledWith( 'submit' );
+	} );
+
 	test( 'submits Stripe Elements before creating a checkout payment method', async () => {
 		require( '../woopayments-checkout' );
 

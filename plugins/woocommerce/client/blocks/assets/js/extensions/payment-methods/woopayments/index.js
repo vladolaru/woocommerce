@@ -255,6 +255,12 @@ const getSuccessResponse = (
 	},
 } );
 
+// Sentinel submitted in place of a payment method when client-side payment
+// method creation failed, so the server records a failed order. Matches the
+// WooPayments plugin's Payment_Information::PAYMENT_METHOD_ERROR.
+const PAYMENT_METHOD_ERROR_SENTINEL =
+	'woocommerce_payments_payment_method_error';
+
 const getErrorResponse = ( emitResponse, message ) => ( {
 	type: emitResponse.responseTypes.ERROR,
 	message,
@@ -1021,18 +1027,24 @@ const WooPaymentsContent = ( {
 				} );
 
 				if ( result.error ) {
+					// Return success with the error sentinel so the checkout
+					// request goes through and the attempt is recorded as a
+					// failed order carrying the decline reason.
+					paymentMethodData[ 'wcpay-payment-method' ] =
+						PAYMENT_METHOD_ERROR_SENTINEL;
 					paymentMethodData[ 'wcpay-payment-method-error-code' ] =
 						result.error.code || '';
+					paymentMethodData[
+						'wcpay-payment-method-error-decline-code'
+					] = result.error.decline_code || '';
 					paymentMethodData[ 'wcpay-payment-method-error-message' ] =
 						result.error.message || '';
+					paymentMethodData[ 'wcpay-payment-method-error-type' ] =
+						result.error.type || '';
 
-					return getErrorResponse(
+					return getSuccessResponse(
 						emitResponseRef.current,
-						result.error.message ||
-							__(
-								'There was a problem validating your payment details.',
-								'woocommerce'
-							)
+						paymentMethodData
 					);
 				}
 
