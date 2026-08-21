@@ -82,6 +82,20 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should ship no beacon key at all in test mode when the platform sent no sandbox key.
+	 */
+	public function test_drops_beacon_key_in_test_mode_without_sandbox_key(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$this->seed_account_fraud_services(
+			array( 'sift' => array( 'beacon_key' => 'prod_beacon' ) )
+		);
+
+		$config = $this->make_sut()->get_fraud_services_config();
+
+		$this->assertArrayNotHasKey( 'beacon_key', $config['sift'] );
+	}
+
+	/**
 	 * @testdox Should inject an empty sift user_id and a session_id entry for logged-out shoppers.
 	 */
 	public function test_injects_sift_identity_keys_for_logged_out_shopper(): void {

@@ -184,8 +184,15 @@ class WooPaymentsFraudService {
 		// The platform returns both production and sandbox beacon keys; the
 		// sandbox key must replace the production one whenever the store is in
 		// test mode so test traffic never trains the production Sift account.
-		if ( $this->account_service->is_test_mode_enabled() && isset( $config['sandbox_beacon_key'] ) ) {
-			$config['beacon_key'] = $config['sandbox_beacon_key'];
+		// When the platform sends no sandbox key, fail safe and ship no beacon
+		// key at all — a deliberate divergence from the plugin, which falls
+		// through to the production key in that config shape.
+		if ( $this->account_service->is_test_mode_enabled() ) {
+			if ( isset( $config['sandbox_beacon_key'] ) ) {
+				$config['beacon_key'] = $config['sandbox_beacon_key'];
+			} else {
+				unset( $config['beacon_key'] );
+			}
 		}
 		unset( $config['sandbox_beacon_key'] );
 
