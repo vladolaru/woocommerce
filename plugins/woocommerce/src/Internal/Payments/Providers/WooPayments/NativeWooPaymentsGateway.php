@@ -2078,7 +2078,14 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return bool
 	 */
 	private function cart_contains_subscription(): bool {
-		return WooPaymentsSubscriptionMethodPolicy::cart_contains_subscription_or_renewal();
+		// Deliberately renewal-blind: this gates only the classic save checkbox, and the
+		// extension's display_save_payment_method_checkbox keeps that surface showing the
+		// checkbox on a renewal-only cart (the save is forced server-side regardless).
+		// The renewal-inclusive check lives in WooPaymentsSubscriptionMethodPolicy for the
+		// surfaces the extension does include renewals on.
+		return class_exists( 'WC_Subscriptions_Cart' )
+			&& is_callable( array( 'WC_Subscriptions_Cart', 'cart_contains_subscription' ) )
+			&& (bool) \WC_Subscriptions_Cart::cart_contains_subscription();
 	}
 
 	/**

@@ -2979,6 +2979,29 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should keep the visible unchecked save control on a renewal-only classic cart, like the extension.
+	 */
+	public function test_save_payment_method_checkbox_stays_visible_for_renewal_only_cart(): void {
+		$this->ensure_wcs_cart_double();
+		$this->ensure_wcs_cart_renewal_double();
+		$GLOBALS['wcpay_test_cart_contains_subscription'] = false;
+		$GLOBALS['wcpay_test_cart_contains_renewal']      = true;
+
+		$gateway = new NativeWooPaymentsGateway();
+
+		try {
+			ob_start();
+			$gateway->save_payment_method_checkbox();
+			$output = (string) ob_get_clean();
+		} finally {
+			unset( $GLOBALS['wcpay_test_cart_contains_renewal'] );
+		}
+
+		$this->assertStringNotContainsString( 'style="display:none;"', $output, 'The extension keeps the classic checkbox visible on renewal carts; the save is forced server-side regardless.' );
+		$this->assertDoesNotMatchRegularExpression( '/<input[^>]+id="wc-woocommerce_payments-new-payment-method"[^>]+checked[^>]*>/', $output );
+	}
+
+	/**
 	 * @testdox Should keep the ordinary save control when subscription change form identity does not match.
 	 */
 	public function test_payment_fields_reject_mismatched_subscription_change_form_identity(): void {
@@ -3595,6 +3618,20 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$this->assertNull( $service->last_checkout_context );
 		$this->assertSame( 'failed', wc_get_order( $renewal->get_id() )->get_status() );
+	}
+
+	/**
+	 * Ensure a minimal renewal-cart detector double exists.
+	 *
+	 * @return void
+	 */
+	private function ensure_wcs_cart_renewal_double(): void {
+		if ( function_exists( 'wcs_cart_contains_renewal' ) ) {
+			return;
+		}
+
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public renewal detector.
+		eval( 'namespace { function wcs_cart_contains_renewal() { return (bool) ( $GLOBALS["wcpay_test_cart_contains_renewal"] ?? false ); } }' );
 	}
 
 	/**
