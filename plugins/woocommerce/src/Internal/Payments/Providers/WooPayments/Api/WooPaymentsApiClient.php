@@ -30,6 +30,11 @@ class WooPaymentsApiClient {
 	private const REQUEST_TIMEOUT_SECONDS = 70;
 
 	/**
+	 * Longest metadata value the platform accepts, in characters.
+	 */
+	private const METADATA_VALUE_MAX_LENGTH = 500;
+
+	/**
 	 * Retry attempts after the initial request for idempotent transport failures.
 	 */
 	private const REQUEST_RETRIES_LIMIT = 3;
@@ -268,7 +273,9 @@ class WooPaymentsApiClient {
 		}
 
 		if ( null !== $reason && '' !== $reason ) {
-			$params['metadata']['merchant_refund_reason'] = $reason;
+			// The platform caps metadata values at 500 characters and rejects the whole
+			// request beyond it; a long merchant reason must cost its tail, not the refund.
+			$params['metadata']['merchant_refund_reason'] = mb_substr( $reason, 0, self::METADATA_VALUE_MAX_LENGTH );
 		}
 
 		return $this->request( $params, 'refunds', 'POST' );

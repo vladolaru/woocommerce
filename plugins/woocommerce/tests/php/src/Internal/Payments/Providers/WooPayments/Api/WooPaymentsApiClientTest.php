@@ -74,6 +74,30 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should truncate the merchant refund reason to the platform's 500-character metadata limit.
+	 */
+	public function test_refund_charge_truncates_merchant_reason_to_metadata_limit(): void {
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id  = 123;
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode( array( 'id' => 're_test' ) ),
+		);
+
+		$sut = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( false ) );
+
+		$long_reason = str_repeat( 'r', 620 );
+		$sut->refund_charge( 'ch_test', 250, $long_reason, 'native_transport', 'idem_test' );
+
+		$body = json_decode( (string) $http_client->last_body, true );
+		$this->assertIsArray( $body );
+		$this->assertArrayNotHasKey( 'reason', $body, 'A free-text reason is not one of the provider reason enums.' );
+		$this->assertSame( str_repeat( 'r', 500 ), $body['metadata']['merchant_refund_reason'], 'The platform rejects metadata values over 500 characters; the tail must be dropped, not the refund.' );
+	}
+
+	/**
 	 * @testdox Should generate reference transport headers for non-GET requests without caller idempotency keys.
 	 */
 	public function test_post_request_generates_transport_headers_without_caller_idempotency_key(): void {
