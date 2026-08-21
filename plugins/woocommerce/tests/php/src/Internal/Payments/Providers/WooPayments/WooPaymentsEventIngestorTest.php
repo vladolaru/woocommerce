@@ -186,6 +186,68 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox payment_intent.succeeded writes the repaired token through to related subscriptions.
+	 */
+	public function test_payment_intent_succeeded_repair_syncs_related_subscriptions(): void {
+		$this->ensure_wcs_order_contains_renewal_double();
+		$this->ensure_wcs_subscriptions_for_order_double();
+		$customer_id = self::factory()->user->create();
+
+		$token = new \WC_Payment_Token_CC();
+		$token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$token->set_user_id( $customer_id );
+		$token->set_token( 'pm_123' );
+		$token->set_card_type( 'visa' );
+		$token->set_last4( '4242' );
+		$token->set_expiry_month( '12' );
+		$token->set_expiry_year( '2030' );
+		$token->save();
+
+		$order = $this->create_woopayments_order();
+		$order->set_customer_id( $customer_id );
+		$order->save();
+
+		$subscription = wc_create_order();
+		$subscription->set_customer_id( $customer_id );
+		$subscription->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$subscription->save();
+
+		$GLOBALS['wcpay_test_renewal_order_ids']      = array( $order->get_id() );
+		$GLOBALS['wcpay_test_order_subscription_ids'] = array( $order->get_id() => array( $subscription->get_id() ) );
+
+		try {
+			$this->sut->process( $this->create_payment_intent_event( 'payment_intent.succeeded', $order ) );
+		} finally {
+			unset( $GLOBALS['wcpay_test_renewal_order_ids'], $GLOBALS['wcpay_test_order_subscription_ids'] );
+		}
+
+		$subscription = wc_get_order( $subscription->get_id() );
+		$this->assertContains( $token->get_id(), array_map( 'absint', $subscription->get_payment_tokens() ), 'WCS copies the subscription tokens into each new renewal order; a stale subscription charges the replaced card next renewal.' );
+		$this->assertSame( 'pm_123', $subscription->get_meta( '_payment_method_id', true ) );
+	}
+
+	/**
+	 * @testdox payment_intent.succeeded reads the payment method ID out of an expanded payment_method object.
+	 */
+	public function test_payment_intent_succeeded_extracts_expanded_payment_method_id(): void {
+		$order = $this->create_woopayments_order();
+
+		$this->sut->process(
+			$this->create_payment_intent_event(
+				'payment_intent.succeeded',
+				$order,
+				array(
+					'payment_method' => array( 'id' => 'pm_expanded' ),
+					'charges'        => array( 'data' => array( array( 'payment_method' => array( 'id' => 'pm_expanded' ) ) ) ),
+				)
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'pm_expanded', $order->get_meta( '_payment_method_id', true ) );
+	}
+
+	/**
 	 * @testdox payment_intent.succeeded does not re-save the token on an already-paid recurring order.
 	 */
 	public function test_payment_intent_succeeded_skips_token_repair_for_paid_order(): void {
@@ -3331,6 +3393,20 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			$property->setAccessible( true );
 			$this->assertNotNull( $property->getValue( $sut ), "Handler {$property_name} should be injected by the container." );
 		}
+	}
+
+	/**
+	 * Ensure a minimal subscriptions-for-order lookup double exists.
+	 *
+	 * @return void
+	 */
+	private function ensure_wcs_subscriptions_for_order_double(): void {
+		if ( function_exists( 'wcs_get_subscriptions_for_order' ) ) {
+			return;
+		}
+
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public order lookup.
+		eval( 'namespace { function wcs_get_subscriptions_for_order( $order_id ) { $ids = $GLOBALS["wcpay_test_order_subscription_ids"][ $order_id ] ?? array(); return array_map( "wc_get_order", $ids ); } }' );
 	}
 
 	/**

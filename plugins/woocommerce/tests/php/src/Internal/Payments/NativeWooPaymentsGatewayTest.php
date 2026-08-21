@@ -3508,6 +3508,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$renewal_fresh = wc_get_order( $renewal->get_id() );
 		$this->assertNotSame( 'failed', $renewal_fresh->get_status() );
+		$this->assertContains( $token->get_id(), array_map( 'absint', $renewal_fresh->get_payment_tokens() ), 'The restored token must land on the renewal order itself.' );
 		$renewal_notes = array_map( static fn( $note ) => (string) $note->content, wc_get_order_notes( array( 'order_id' => $renewal->get_id() ) ) );
 		$this->assertContains( 'Recovered missing subscription payment method token from the parent order.', $renewal_notes );
 

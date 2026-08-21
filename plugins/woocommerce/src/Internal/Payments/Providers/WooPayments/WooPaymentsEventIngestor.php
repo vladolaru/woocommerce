@@ -762,6 +762,11 @@ class WooPaymentsEventIngestor {
 	private function get_payment_method_id_from_intent( array $event_object ): string {
 		$payment_method_id = $event_object['charges']['data'][0]['payment_method'] ?? $event_object['payment_method'] ?? '';
 
+		// An event created with an expanded payment_method carries the whole object.
+		if ( is_array( $payment_method_id ) ) {
+			$payment_method_id = $payment_method_id['id'] ?? '';
+		}
+
 		return is_string( $payment_method_id ) ? $payment_method_id : '';
 	}
 
@@ -1112,6 +1117,17 @@ class WooPaymentsEventIngestor {
 			}
 
 			$token_service->attach_token_to_order( $order, $token );
+
+			// Write the restored token through to every related subscription: WCS
+			// copies the subscription's tokens into each new renewal order, so a
+			// subscription left pointing at the replaced card would charge it on
+			// the next renewal.
+			$token_service->sync_related_subscriptions_payment_token(
+				$order,
+				$token,
+				$payment_method_id,
+				(string) $order->get_meta( '_stripe_customer_id', true )
+			);
 
 			if ( $previous_token instanceof WC_Payment_Token && $previous_token->get_id() !== $token->get_id() ) {
 				$note = sprintf(
