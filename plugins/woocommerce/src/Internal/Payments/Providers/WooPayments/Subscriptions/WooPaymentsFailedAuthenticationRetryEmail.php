@@ -27,6 +27,20 @@ class WooPaymentsFailedAuthenticationRetryEmail extends WC_Email_Failed_Order {
 	private ?object $retry = null;
 
 	/**
+	 * Register the legacy email FQCN as an alias when the WooPayments extension is absent.
+	 *
+	 * WooCommerce Subscriptions sends the admin retry email by instantiating the class
+	 * named in the retry rule (`class_exists` + `new`), not by looking it up in the WC
+	 * mailer registry — so the extension's global class name must resolve to this class
+	 * or the email is silently skipped.
+	 */
+	public static function register_legacy_alias(): void {
+		if ( ! class_exists( 'WC_Payments_Email_Failed_Authentication_Retry' ) ) {
+			class_alias( self::class, 'WC_Payments_Email_Failed_Authentication_Retry' );
+		}
+	}
+
+	/**
 	 * Constructor.
 	 */
 	public function __construct() {

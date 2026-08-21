@@ -218,6 +218,8 @@ class WooPaymentsFailedRenewalAuthenticationEmail extends WC_Email {
 		unset( $retry_number );
 
 		if ( $this->is_current_order_id( $order_id ) && '' !== (string) ( $rule_array['email_template_admin'] ?? '' ) ) {
+			// Subscriptions instantiates this class by its global name; make it resolvable.
+			WooPaymentsFailedAuthenticationRetryEmail::register_legacy_alias();
 			$rule_array['email_template_admin'] = 'WC_Payments_Email_Failed_Authentication_Retry';
 		}
 
