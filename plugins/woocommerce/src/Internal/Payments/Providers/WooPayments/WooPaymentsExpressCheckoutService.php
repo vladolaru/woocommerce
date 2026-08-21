@@ -114,7 +114,7 @@ class WooPaymentsExpressCheckoutService {
 			'isShopperTrackingEnabled'    => $tracking_enabled,
 			'is_shopper_tracking_enabled' => $tracking_enabled,
 			'button'                      => $this->get_button_settings( $context ),
-			'login_confirmation'          => $this->get_login_confirmation_settings(),
+			'login_confirmation'          => $this->get_login_confirmation_settings( $context ),
 			'button_context'              => $context,
 			'has_block'                   => has_block( 'woocommerce/cart' ) || has_block( 'woocommerce/checkout' ),
 			'product'                     => 'product' === $context ? $this->get_product_data() : array(),
@@ -690,10 +690,11 @@ class WooPaymentsExpressCheckoutService {
 	 * cannot create, the wallet sheet must not open; the scripts show a
 	 * login redirect confirmation instead.
 	 *
+	 * @param string $context Express checkout context.
 	 * @return array{message:string,redirect_url:string}|false
 	 */
-	private function get_login_confirmation_settings() {
-		if ( is_user_logged_in() || ! $this->is_authentication_required() ) {
+	private function get_login_confirmation_settings( string $context ) {
+		if ( is_user_logged_in() || ! $this->is_authentication_required( $context ) ) {
 			return false;
 		}
 
@@ -716,16 +717,17 @@ class WooPaymentsExpressCheckoutService {
 	/**
 	 * Tell whether authentication is required for checkout.
 	 *
+	 * @param string $context Express checkout context.
 	 * @return bool
 	 */
-	private function is_authentication_required(): bool {
+	private function is_authentication_required( string $context ): bool {
 		// If guest checkout is disabled and account creation is not possible, authentication is required.
-		if ( 'no' === get_option( 'woocommerce_enable_guest_checkout', 'yes' ) && ! $this->is_account_creation_possible() ) {
+		if ( 'no' === get_option( 'woocommerce_enable_guest_checkout', 'yes' ) && ! $this->is_account_creation_possible( $context ) ) {
 			return true;
 		}
 
-		// If the cart contains a subscription and account creation is not possible, authentication is required.
-		if ( $this->cart_has_any_subscription_schedule() && ! $this->is_account_creation_possible() ) {
+		// If a subscription is being bought and account creation is not possible, authentication is required.
+		if ( $this->context_has_subscription( $context ) && ! $this->is_account_creation_possible( $context ) ) {
 			return true;
 		}
 
@@ -772,13 +774,14 @@ class WooPaymentsExpressCheckoutService {
 	/**
 	 * Tell whether account creation is possible during checkout.
 	 *
+	 * @param string $context Express checkout context.
 	 * @return bool
 	 */
-	private function is_account_creation_possible(): bool {
+	private function is_account_creation_possible( string $context ): bool {
 		$is_signup_from_checkout_allowed = 'yes' === get_option( 'woocommerce_enable_signup_and_login_from_checkout', 'no' );
 
 		// If a subscription is being purchased, check if account creation is allowed for subscriptions.
-		if ( ! $is_signup_from_checkout_allowed && $this->cart_has_any_subscription_schedule() ) {
+		if ( ! $is_signup_from_checkout_allowed && $this->context_has_subscription( $context ) ) {
 			$is_signup_from_checkout_allowed = 'yes' === get_option( 'woocommerce_enable_signup_from_checkout_for_subscriptions', 'no' );
 		}
 
