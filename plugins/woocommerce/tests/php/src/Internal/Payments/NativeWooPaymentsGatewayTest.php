@@ -2659,6 +2659,27 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should refuse refunds while the payment is only authorized, pointing at the capture actions.
+	 */
+	public function test_process_refund_refuses_uncaptured_payment(): void {
+		$order = $this->create_order();
+		$order->update_meta_data( '_charge_id', 'ch_test' );
+		$order->update_meta_data( '_intention_status', 'requires_capture' );
+		$order->save();
+
+		$service = new RecordingPaymentProcessingService();
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		$result = $gateway->process_refund( $order->get_id(), 4.25, 'Adjustment' );
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'uncaptured-payment', $result->get_error_code() );
+		$this->assertStringContainsString( 'not captured yet', $result->get_error_message() );
+		$this->assertNull( $service->last_refund_context, 'An uncaptured payment must never reach the platform refund call.' );
+	}
+
+	/**
 	 * @testdox Should fail refunds that do not have a WooPayments charge.
 	 */
 	public function test_process_refund_fails_without_charge_id(): void {

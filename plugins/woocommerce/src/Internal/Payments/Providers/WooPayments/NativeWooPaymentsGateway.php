@@ -1362,6 +1362,16 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return false;
 		}
 
+		// An authorized-but-uncaptured payment has nothing to refund yet; refunding the
+		// charge would race the capture. Point the merchant at the order actions instead.
+		if ( 'requires_capture' === (string) $order->get_meta( '_intention_status', true ) ) {
+			return new WP_Error(
+				'uncaptured-payment',
+				/* translators: an error message which will appear if a user tries to refund an order which has been authorized but not yet charged. */
+				__( "This payment is not captured yet. To cancel this order, please go to 'Order Actions' > 'Cancel authorization'. To proceed with a refund, please go to 'Order Actions' > 'Capture charge' to charge the payment card, and then trigger a refund via the 'Refund' button.", 'woocommerce' )
+			);
+		}
+
 		$refund_amount = null === $amount ? 0.0 : (float) $amount;
 		if ( '0.00' !== sprintf( '%0.2f', $refund_amount ) && ! $this->can_refund_order( $order ) ) {
 			return new WP_Error( 'native_payment_refund_missing_charge', __( 'This order does not have a WooPayments charge to refund.', 'woocommerce' ) );
