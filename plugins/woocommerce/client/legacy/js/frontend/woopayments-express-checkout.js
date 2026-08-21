@@ -712,10 +712,6 @@
 				value: confirmationTokenId,
 			},
 			{
-				key: 'wcpay-is-platform-payment-method',
-				value: 'true',
-			},
-			{
 				key: 'wcpay-express-payment-method-types',
 				value: JSON.stringify( getPaymentMethodTypes() ),
 			},

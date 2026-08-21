@@ -865,10 +865,6 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 							value: 'ctoken_123',
 						},
 						{
-							key: 'wcpay-is-platform-payment-method',
-							value: 'true',
-						},
-						{
 							key: 'wcpay-express-payment-method-types',
 							value: JSON.stringify( [ 'card' ] ),
 						},
@@ -887,6 +883,9 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		expect( checkoutRequest.headers ).not.toHaveProperty(
 			'X-WooPayments-Tokenized-Cart-Session-Nonce'
 		);
+		expect(
+			checkoutRequest.data.payment_data.map( ( entry ) => entry.key )
+		).not.toContain( 'wcpay-is-platform-payment-method' );
 	} );
 
 	it( 'resolves wallet clicks with cart line items and shipping rates', async () => {

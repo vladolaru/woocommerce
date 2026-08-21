@@ -630,6 +630,20 @@ describe( 'woopayments-express-checkout', () => {
 			);
 		} );
 
+		it( 'does not flag express payments as platform-created payment methods', async () => {
+			const testables = loadModule( baseParams() );
+			apiFetch.mockResolvedValue( { payment_result: {} } );
+
+			await testables.placeOrder( 'ctoken_123', {
+				billingDetails: { name: 'Jane Q Shopper' },
+			} );
+
+			const paymentData = apiFetch.mock.calls[ 0 ][ 0 ].data.payment_data;
+			expect(
+				paymentData.map( ( entry ) => entry.key )
+			).not.toContain( 'wcpay-is-platform-payment-method' );
+		} );
+
 		it( 'falls back to the cached cart shipping address without a wallet address', async () => {
 			const testables = loadModule( baseParams() );
 			testables.setState( {
