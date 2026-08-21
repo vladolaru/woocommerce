@@ -13,21 +13,27 @@ use WC_Unit_Test_Case;
 class PaymentOperationIdempotencyTest extends WC_Unit_Test_Case {
 
 	/**
-	 * @testdox Should derive the same key for identical charge inputs.
+	 * @testdox Should mint a fresh key for every payment attempt.
 	 */
-	public function test_derives_same_key_for_identical_charge_inputs(): void {
-		$order = wc_create_order();
-		$order->set_currency( 'USD' );
-		$order->set_total( '12.34' );
-		$order->save();
-
+	public function test_mints_a_fresh_key_for_every_attempt(): void {
 		$sut = new PaymentOperationIdempotency();
 
-		$first  = $sut->derive_key( $order, OrderPaymentStore::GATEWAY_ID, 'charge', 12.34, 'USD' );
-		$second = $sut->derive_key( $order, OrderPaymentStore::GATEWAY_ID, 'charge', 12.34, 'USD' );
+		$first  = $sut->mint_attempt_key();
+		$second = $sut->mint_attempt_key();
 
-		$this->assertSame( $first, $second, 'Retries of the same operation must collapse to one provider operation.' );
-		$this->assertStringStartsWith( 'wc_native_payments_', $first );
+		$this->assertNotSame( $first, $second, 'Each payment attempt must carry its own key so the provider never replays a previous attempt\'s cached outcome.' );
+	}
+
+	/**
+	 * @testdox Should mint attempt keys in the UUID v4 shape the platform-proven client sends.
+	 */
+	public function test_mints_attempt_keys_as_uuid4(): void {
+		$sut = new PaymentOperationIdempotency();
+
+		$this->assertMatchesRegularExpression(
+			'/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/',
+			$sut->mint_attempt_key()
+		);
 	}
 
 	/**

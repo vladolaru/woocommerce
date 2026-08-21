@@ -10,12 +10,36 @@ namespace Automattic\WooCommerce\Internal\Payments;
 use WC_Order;
 
 /**
- * Builds deterministic idempotency keys for native payment operations.
+ * Builds idempotency keys for native payment operations.
+ *
+ * Two policies live here. Charges use a fresh key per payment attempt
+ * (`mint_attempt_key()`): WooCommerce cannot tell whether a resubmitted checkout retries a
+ * failed attempt or starts a genuinely new one, and a reused key would make the provider
+ * replay the first attempt's cached failure instead of charging. Duplicate-charge protection
+ * comes from the application-level guards, not the key. Refunds, captures, and cancels use
+ * deterministic derived keys (`derive_key()`), where replay on retry is exactly the
+ * protection wanted.
  *
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
 class PaymentOperationIdempotency {
+
+	/**
+	 * Mint a fresh idempotency key for a single payment attempt.
+	 *
+	 * Minted once per attempt and carried through every transport-level retry within it, so
+	 * one attempt can never double-charge while a new attempt is never poisoned by a previous
+	 * one's cached response. Matches the platform-proven client, which sends a UUID v4 per
+	 * request family.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @return string
+	 */
+	public function mint_attempt_key(): string {
+		return wp_generate_uuid4();
+	}
 
 	/**
 	 * Derive a deterministic idempotency key for an order-scoped provider operation.

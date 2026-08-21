@@ -72,7 +72,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should call the provider with a deterministic key and complete the order for completed outcomes.
+	 * @testdox Should call the provider with a per-attempt key and complete the order for completed outcomes.
 	 */
 	public function test_process_checkout_completes_order_for_completed_outcome(): void {
 		$order    = $this->create_woopayments_order( '10.00' );
@@ -98,10 +98,10 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'success', $result['result'] );
 		$this->assertSame( 'pm_test', $result['payment_method'] );
-		$this->assertSame(
-			$this->idempotency->derive_key( $order, OrderPaymentStore::GATEWAY_ID, 'charge', 10.00, 'USD' ),
+		$this->assertMatchesRegularExpression(
+			'/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/',
 			$provider->last_idempotency_key,
-			'The provider must receive the deterministic operation key.'
+			'The provider must receive a fresh per-attempt key, not a derived one.'
 		);
 		$this->assertSame( 'completed', $order->get_status() );
 		$this->assertSame( 'pi_test', $order->get_meta( '_intent_id', true ) );
@@ -138,7 +138,10 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			}
 
 			public function charge( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
-				unset( $context, $idempotency_key );
+				unset( $context );
+				// Recorded so the test can prove the log correlates to the exact key the
+				// provider received — charge keys are minted per attempt, not derivable.
+				$this->last_idempotency_key = $idempotency_key;
 				throw $this->exception;
 			}
 
@@ -171,7 +174,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		switch ( $operation ) {
 			case 'charge':
 				$outcome                  = $sut->process_checkout_outcome( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_failure' ), $provider );
-				$expected_idempotency_key = $this->idempotency->derive_key( $order, OrderPaymentStore::GATEWAY_ID, 'charge', 10.0, 'USD' );
+				$expected_idempotency_key = $provider->last_idempotency_key;
+				$this->assertMatchesRegularExpression( '/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/', $expected_idempotency_key );
 				$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 				break;
 
@@ -880,7 +884,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_process_checkout_returns_failure_when_order_operation_is_locked(): void {
 		$order = $this->create_woopayments_order( '10.00' );
-		$key   = $this->idempotency->derive_key( $order, OrderPaymentStore::GATEWAY_ID, 'charge', 10.00, 'USD' );
+		$key   = $this->idempotency->mint_attempt_key();
 		$this->store->lock_order_payment( $order, $this->persistence_profile, $key );
 
 		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_test' ) );

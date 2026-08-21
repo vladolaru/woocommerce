@@ -119,7 +119,7 @@ class PaymentProcessingService {
 		$order           = $context->get_order();
 		$amount          = (float) $order->get_total();
 		$currency        = (string) $order->get_currency();
-		$idempotency_key = $this->idempotency->derive_key( $order, $provider->get_id(), 'charge', $amount, $currency );
+		$idempotency_key = $this->idempotency->mint_attempt_key();
 		$profile         = $provider->get_persistence_profile();
 
 		if ( ! $this->order_payment_store->claim_order_payment_lock( $order, $profile, $idempotency_key ) ) {
