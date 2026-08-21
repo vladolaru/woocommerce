@@ -7,6 +7,7 @@ import { decodeEntities } from '@wordpress/html-entities';
 import { __ } from '@wordpress/i18n';
 import { createRoot, useEffect, useRef, useState } from '@wordpress/element';
 import { useSelect } from '@wordpress/data';
+import FingerprintJS from '@fingerprintjs/fingerprintjs';
 
 /**
  * Internal dependencies
@@ -26,6 +27,22 @@ const testModeBadgeLabel = __( 'Test Mode', 'woocommerce' );
 const saveUserRoots = new WeakMap();
 const copyTestNumberSuccessDuration = 2000;
 const EMPTY_BILLING_DATA = {};
+
+// The buyer *device* fingerprint the platform's risk rules score on — the
+// FingerprintJS visitor ID, the same signal the WooPayments plugin posts.
+// Computed once per page, warmed at load so checkout submission never waits
+// on it; best-effort, so failures resolve to an empty value.
+let deviceFingerprintPromise = null;
+const getDeviceFingerprint = () => {
+	if ( ! deviceFingerprintPromise ) {
+		deviceFingerprintPromise = FingerprintJS.load( { monitoring: false } )
+			.then( ( agent ) => agent.get() )
+			.then( ( result ) => result?.visitorId || '' )
+			.catch( () => '' );
+	}
+
+	return deviceFingerprintPromise;
+};
 
 const getPrimaryPaymentMethodConfig = ( paymentSettings = defaultSettings ) => {
 	const paymentMethodsConfig = paymentSettings?.paymentMethodsConfig || {};
@@ -1031,8 +1048,10 @@ const WooPaymentsContent = ( {
 
 				paymentMethodData[ 'wcpay-payment-method' ] =
 					result.paymentMethod.id || '';
+				// The device fingerprint — never the Stripe card fingerprint,
+				// which is a different signal entirely.
 				paymentMethodData[ 'wcpay-fingerprint' ] =
-					result.paymentMethod.card?.fingerprint || '';
+					await getDeviceFingerprint();
 			}
 
 			return getSuccessResponse(
@@ -1166,6 +1185,7 @@ registerWooPayments();
 
 window.addEventListener( 'load', () => {
 	enqueueFraudScripts( defaultSettings?.fraudServices || {} );
+	getDeviceFingerprint();
 } );
 
 export default registerWooPayments;

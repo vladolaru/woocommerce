@@ -70,6 +70,11 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	private const CLASSIC_SCRIPT_HANDLE = 'wc-woopayments-checkout';
 
 	/**
+	 * Handle for the vendored FingerprintJS device-fingerprinting script.
+	 */
+	private const FINGERPRINT_SCRIPT_HANDLE = 'wc-woopayments-fingerprintjs';
+
+	/**
 	 * Core-owned classic checkout style handle.
 	 */
 	private const CLASSIC_STYLE_HANDLE = 'wc-woopayments-checkout';
@@ -662,11 +667,24 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 
 		WooPaymentsFrontendAssets::register_appearance_script();
 
+		if ( ! wp_script_is( self::FINGERPRINT_SCRIPT_HANDLE, 'registered' ) ) {
+			// Vendored FingerprintJS UMD build (pre-minified upstream, no suffix
+			// variant): supplies the buyer device fingerprint the platform's
+			// risk rules score on.
+			wp_register_script(
+				self::FINGERPRINT_SCRIPT_HANDLE,
+				WC()->plugin_url() . '/assets/js/fingerprintjs/fp.umd.min.js',
+				array(),
+				WC_VERSION,
+				true
+			);
+		}
+
 		if ( ! wp_script_is( self::CLASSIC_SCRIPT_HANDLE, 'registered' ) ) {
 			wp_register_script(
 				self::CLASSIC_SCRIPT_HANDLE,
 				WC()->plugin_url() . '/assets/js/frontend/woopayments-checkout' . $suffix . '.js',
-				array( 'jquery', 'wc-checkout', self::STRIPE_SCRIPT_HANDLE, WooPaymentsFrontendAssets::APPEARANCE_SCRIPT_HANDLE ),
+				array( 'jquery', 'wc-checkout', self::STRIPE_SCRIPT_HANDLE, self::FINGERPRINT_SCRIPT_HANDLE, WooPaymentsFrontendAssets::APPEARANCE_SCRIPT_HANDLE ),
 				WC_VERSION,
 				true
 			);

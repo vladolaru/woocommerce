@@ -193,6 +193,12 @@ module.exports = function ( grunt ) {
 						src: ['node_modules/sourcebuster/dist/sourcebuster*','node_modules/sourcebuster/LICENSE'],
 						dest: '<%= dirs.jsDest %>/sourcebuster/',
 					},
+					{
+						expand: true,
+						flatten: true,
+						src: ['node_modules/@fingerprintjs/fingerprintjs/dist/fp.umd.min.js','node_modules/@fingerprintjs/fingerprintjs/LICENSE'],
+						dest: '<%= dirs.jsDest %>/fingerprintjs/',
+					},
 				],
 			},
 		},

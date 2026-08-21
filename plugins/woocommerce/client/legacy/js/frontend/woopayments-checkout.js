@@ -18,6 +18,7 @@
 	// it is set; without it a shopper whose payment form failed to load presses
 	// the button and gets no navigation, no message and no explanation.
 	var paymentElementLoadError = null;
+	var deviceFingerprint = '';
 	var isSubmittingWithPaymentMethod = false;
 	var isSubmittingWithSetupIntent = false;
 	var cardBrandIconsHydratedLabel = null;
@@ -1229,11 +1230,6 @@
 	}
 
 	function appendPaymentFields( form, paymentMethod, error ) {
-		var fingerprint =
-			paymentMethod && paymentMethod.card
-				? paymentMethod.card.fingerprint
-				: '';
-
 		ensureHiddenField(
 			form,
 			'wcpay-payment-method',
@@ -1249,7 +1245,10 @@
 			'wcpay-payment-method-error-message',
 			error && error.message ? error.message : ''
 		);
-		ensureHiddenField( form, 'wcpay-fingerprint', fingerprint || '' );
+		// The buyer *device* fingerprint. The WooPayments plugin sends the
+		// FingerprintJS visitor ID here; the Stripe card fingerprint is a
+		// different signal entirely and must not be posted under this name.
+		ensureHiddenField( form, 'wcpay-fingerprint', deviceFingerprint || '' );
 		ensureHiddenField(
 			form,
 			'wcpay-fraud-prevention-token',
@@ -1315,6 +1314,8 @@
 			$.post( config.ajaxUrl, {
 				action: 'create_setup_intent',
 				'wcpay-payment-method': paymentMethodId,
+				'wcpay-fingerprint': deviceFingerprint || '',
+				'wcpay-fraud-prevention-token': getFraudPreventionToken(),
 				_ajax_nonce: config.createSetupIntentNonce || '',
 			} )
 				.done( function ( response ) {
@@ -2241,8 +2242,29 @@
 		}
 	}
 
+	/**
+	 * Compute the buyer *device* fingerprint the platform's risk rules score
+	 * on. Best-effort: fingerprinting must never block or break checkout.
+	 */
+	function computeDeviceFingerprint() {
+		if ( ! window.FingerprintJS || ! window.FingerprintJS.load ) {
+			return;
+		}
+		window.FingerprintJS.load( { monitoring: false } )
+			.then( function ( agent ) {
+				return agent.get();
+			} )
+			.then( function ( result ) {
+				deviceFingerprint = ( result && result.visitorId ) || '';
+			} )
+			.catch( function () {
+				// Fingerprinting is best-effort; checkout proceeds without it.
+			} );
+	}
+
 	$( function () {
 		enqueueFraudScripts();
+		computeDeviceFingerprint();
 		registerPaymentListWallets();
 		togglePaymentMethodsForBillingCountry();
 		initializeStripeElement();

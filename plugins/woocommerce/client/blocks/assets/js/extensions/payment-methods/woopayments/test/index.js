@@ -19,6 +19,15 @@ import {
 	normalizeAppearanceValueForStripe,
 } from '../upe-styles';
 
+jest.mock( '@fingerprintjs/fingerprintjs', () => ( {
+	__esModule: true,
+	default: {
+		load: jest.fn().mockResolvedValue( {
+			get: () => Promise.resolve( { visitorId: 'device_fp_123' } ),
+		} ),
+	},
+} ) );
+
 jest.mock( '@woocommerce/blocks-registry', () => ( {
 	registerPaymentMethod: jest.fn(),
 	registerExpressPaymentMethod: jest.fn(),
@@ -754,7 +763,7 @@ describe( 'wc-payment-method-woopayments', () => {
 			meta: {
 				paymentMethodData: {
 					'wcpay-payment-method': 'pm_123',
-					'wcpay-fingerprint': 'fp_123',
+					'wcpay-fingerprint': 'device_fp_123',
 					'wcpay-is-platform-payment-method': 'true',
 				},
 			},
