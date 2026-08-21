@@ -570,6 +570,10 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			$token = $this->maybe_repair_renewal_order_payment_token( $renewal_order );
 		}
 
+		// Deliberate divergence: on a network forcing network-wide saved cards, the
+		// extension proceeds with a null token and lets the platform resolve the
+		// network card. Native has no network-card machinery, so a tokenless renewal
+		// fails honestly here instead of sending a charge with no payment method.
 		if ( ! $token instanceof WC_Payment_Token ) {
 			$renewal_order->add_order_note( __( 'Subscription renewal failed: No saved payment method found.', 'woocommerce' ) );
 			$renewal_order->update_status( 'failed' );
