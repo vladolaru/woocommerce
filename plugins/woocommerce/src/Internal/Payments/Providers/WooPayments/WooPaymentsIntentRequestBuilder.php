@@ -455,6 +455,24 @@ class WooPaymentsIntentRequestBuilder {
 			: '';
 
 		if ( '' !== $saved_payment_method_type ) {
+			// A Link credential rides on the card rails: the intent must declare card
+			// alongside link, and link stays declared even when the checkout fold is
+			// off — the token was valid when saved and must keep renewing.
+			if ( 'link' === $saved_payment_method_type ) {
+				$types = $this->card_payment_method_types( $currency );
+				if ( ! in_array( 'link', $types, true ) ) {
+					$types[] = 'link';
+				}
+
+				return $types;
+			}
+
+			// Saved card tokens follow the same card/link fold as fresh card payments,
+			// matching the extension's token branch.
+			if ( WooPaymentsExpressPaymentMethodTypes::STRIPE_TYPE_CARD === $saved_payment_method_type ) {
+				return $this->card_payment_method_types( $currency );
+			}
+
 			return array( $saved_payment_method_type );
 		}
 

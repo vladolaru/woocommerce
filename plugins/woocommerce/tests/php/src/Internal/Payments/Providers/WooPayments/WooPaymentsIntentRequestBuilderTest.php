@@ -337,6 +337,151 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Link-token renewals declare card and link with no return_url, even when the checkout fold is off.
+	 */
+	public function test_link_token_renewals_declare_card_and_link_without_return_url(): void {
+		$order = wc_create_order();
+		$order->set_currency( 'USD' );
+		$order->set_total( '10.00' );
+		$order->save();
+
+		// The fold is OFF (no link setting, capability, or fee): the token was valid
+		// when saved and must keep renewing regardless of current checkout state.
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_gateway_setting', 'get_cached_account_data', 'get_account_country' ) )
+			->getMock();
+		$account_service->method( 'get_gateway_setting' )->willReturnCallback(
+			static fn( string $key, $fallback = null ) => $fallback
+		);
+		$account_service->method( 'get_cached_account_data' )->willReturn( array() );
+		$account_service->method( 'get_account_country' )->willReturn( 'US' );
+
+		$request_builder = new WooPaymentsIntentRequestBuilder();
+		$request_builder->init(
+			$account_service,
+			new WooPaymentsOrderDataService(),
+			$this->createStub( WooPaymentsTokenService::class ),
+			new WooPaymentsPaymentMethodRegistry()
+		);
+
+		$request = $request_builder->charge_request_data(
+			PaymentContext::for_checkout(
+				$order,
+				OrderPaymentStore::GATEWAY_ID,
+				'pm_link',
+				array(),
+				array(
+					'scheduled_subscription_payment' => true,
+					WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SAVED_PAYMENT_METHOD_TYPE => 'link',
+				)
+			),
+			'pm_link',
+			'cus_native',
+			true
+		);
+
+		$this->assertSame( array( 'card', 'link' ), $request['payment_method_types'], 'A Link credential rides the card rails; a lone link type makes the platform refuse the charge.' );
+		$this->assertArrayNotHasKey( 'return_url', $request, 'An off-session renewal has no shopper present to redirect.' );
+	}
+
+	/**
+	 * @testdox Saved-card-token charges follow the card/link fold like fresh card payments.
+	 */
+	public function test_saved_card_token_charges_follow_the_card_link_fold(): void {
+		$order = wc_create_order();
+		$order->set_currency( 'USD' );
+		$order->set_total( '10.00' );
+		$order->save();
+
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_gateway_setting', 'get_cached_account_data', 'get_account_country' ) )
+			->getMock();
+		$account_service->method( 'get_gateway_setting' )->willReturnCallback(
+			static function ( string $key, $fallback = null ) {
+				return 'upe_enabled_payment_method_ids' === $key ? array( 'card', 'link' ) : $fallback;
+			}
+		);
+		$account_service->method( 'get_cached_account_data' )->willReturn(
+			array(
+				'capabilities' => array( 'link_payments' => 'active' ),
+				'fees'         => array( 'link' => array() ),
+			)
+		);
+		$account_service->method( 'get_account_country' )->willReturn( 'US' );
+
+		$request_builder = new WooPaymentsIntentRequestBuilder();
+		$request_builder->init(
+			$account_service,
+			new WooPaymentsOrderDataService(),
+			$this->createStub( WooPaymentsTokenService::class ),
+			new WooPaymentsPaymentMethodRegistry()
+		);
+
+		$request = $request_builder->charge_request_data(
+			PaymentContext::for_checkout(
+				$order,
+				OrderPaymentStore::GATEWAY_ID,
+				'pm_card',
+				array(),
+				array(
+					'scheduled_subscription_payment' => true,
+					WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SAVED_PAYMENT_METHOD_TYPE => 'card',
+				)
+			),
+			'pm_card',
+			'cus_native',
+			true
+		);
+
+		$this->assertSame( array( 'card', 'link' ), $request['payment_method_types'] );
+		$this->assertArrayNotHasKey( 'return_url', $request );
+	}
+
+	/**
+	 * @testdox Saved single-method redirect tokens keep their lone type and return_url.
+	 */
+	public function test_saved_sepa_token_keeps_single_type_and_return_url(): void {
+		$order = wc_create_order();
+		$order->set_currency( 'EUR' );
+		$order->set_total( '25.00' );
+		$order->save();
+
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_gateway_setting' ) )
+			->getMock();
+		$account_service->method( 'get_gateway_setting' )->willReturn( 'no' );
+
+		$request_builder = new WooPaymentsIntentRequestBuilder();
+		$request_builder->init(
+			$account_service,
+			new WooPaymentsOrderDataService(),
+			$this->createStub( WooPaymentsTokenService::class ),
+			new WooPaymentsPaymentMethodRegistry()
+		);
+
+		$request = $request_builder->charge_request_data(
+			PaymentContext::for_checkout(
+				$order,
+				OrderPaymentStore::GATEWAY_ID_PREFIX . 'sepa_debit',
+				'pm_sepa',
+				array(),
+				array(
+					WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SAVED_PAYMENT_METHOD_TYPE => 'sepa_debit',
+				)
+			),
+			'pm_sepa',
+			'cus_native',
+			false
+		);
+
+		$this->assertSame( array( 'sepa_debit' ), $request['payment_method_types'] );
+		$this->assertArrayHasKey( 'return_url', $request );
+	}
+
+	/**
 	 * @testdox Merchant-initiated renewals never fabricate mandate acceptance; customer-present payments source the IP from the order.
 	 */
 	public function test_mandate_data_is_suppressed_for_renewals_and_sourced_from_order(): void {
