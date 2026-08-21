@@ -688,8 +688,25 @@
 		};
 	}
 
-	function getBillingAddress( billingDetails ) {
+	function normalizePhone( phone ) {
+		return ( phone || '' ).replace( /[() -]/g, '' );
+	}
+
+	function getWalletBillingPhone( event ) {
+		var billingDetails = event && event.billingDetails;
+
+		return normalizePhone(
+			( billingDetails && billingDetails.phone ) ||
+				( event && event.payerPhone )
+		);
+	}
+
+	function getBillingAddress( event ) {
+		var billingDetails = event && event.billingDetails;
 		var nameParts = splitName( billingDetails && billingDetails.name );
+
+		// Some wallets provide a single name; checkout requires a last name.
+		nameParts.last_name = nameParts.last_name || '-';
 
 		return normalizeAddress(
 			Object.assign(
@@ -698,7 +715,7 @@
 				billingDetails && billingDetails.address,
 				{
 					email: billingDetails && billingDetails.email,
-					phone: billingDetails && billingDetails.phone,
+					phone: getWalletBillingPhone( event ),
 				}
 			),
 			cachedCartData && cachedCartData.billing_address
@@ -765,16 +782,24 @@
 			headers: placeOrderHeaders,
 			data: {
 				payment_method: 'woocommerce_payments',
-				billing_address: getBillingAddress(
-					event && event.billingDetails
-				),
+				billing_address: getBillingAddress( event ),
 				// Refresh the shipping address from the wallet sheet, now that
-				// the customer is placing the order.
+				// the customer is placing the order. Stripe provides no
+				// separate shipping phone, so the billing one is reused.
 				shipping_address:
 					event && event.shippingAddress
-						? transformShippingAddress(
-								event.shippingAddress.name || '',
-								event.shippingAddress.address
+						? Object.assign(
+								transformShippingAddress(
+									event.shippingAddress.name || '',
+									event.shippingAddress.address
+								),
+								getWalletBillingPhone( event )
+									? {
+											phone: getWalletBillingPhone(
+												event
+											),
+									  }
+									: {}
 						  )
 						: cachedCartData && cachedCartData.shipping_address,
 				payment_data: getPaymentData( confirmationTokenId ),

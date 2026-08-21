@@ -630,6 +630,41 @@ describe( 'woopayments-express-checkout', () => {
 			);
 		} );
 
+		it( 'normalizes wallet billing name and phone on confirm', async () => {
+			const testables = loadModule( baseParams() );
+			apiFetch.mockResolvedValue( { payment_result: {} } );
+
+			await testables.placeOrder( 'ctoken_123', {
+				billingDetails: {
+					name: 'Cher',
+					phone: '(212) 555-0100',
+					address: { country: 'US' },
+				},
+				shippingAddress: {
+					name: 'Cher',
+					address: { city: 'New York', country: 'US' },
+				},
+			} );
+
+			const requestData = apiFetch.mock.calls[ 0 ][ 0 ].data;
+			expect( requestData.billing_address.last_name ).toBe( '-' );
+			expect( requestData.billing_address.phone ).toBe( '2125550100' );
+			expect( requestData.shipping_address.phone ).toBe( '2125550100' );
+		} );
+
+		it( 'falls back to the payer phone when billing details carry none', async () => {
+			const testables = loadModule( baseParams() );
+			apiFetch.mockResolvedValue( { payment_result: {} } );
+
+			await testables.placeOrder( 'ctoken_123', {
+				billingDetails: { name: 'Jane Q Shopper' },
+				payerPhone: '646 555-0111',
+			} );
+
+			const requestData = apiFetch.mock.calls[ 0 ][ 0 ].data;
+			expect( requestData.billing_address.phone ).toBe( '6465550111' );
+		} );
+
 		it( 'does not flag express payments as platform-created payment methods', async () => {
 			const testables = loadModule( baseParams() );
 			apiFetch.mockResolvedValue( { payment_result: {} } );

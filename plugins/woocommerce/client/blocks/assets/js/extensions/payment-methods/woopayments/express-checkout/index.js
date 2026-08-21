@@ -544,14 +544,23 @@ const normalizeAddress = ( address = {}, fallback = {} ) => ( {
 	phone: address.phone || fallback.phone || '',
 } );
 
-const getBillingAddress = ( eventBillingDetails, billing ) => {
+const normalizePhone = ( phone ) => ( phone || '' ).replace( /[() -]/g, '' );
+
+const getWalletBillingPhone = ( event ) =>
+	normalizePhone( event?.billingDetails?.phone || event?.payerPhone );
+
+const getBillingAddress = ( event, billing ) => {
+	const eventBillingDetails = event?.billingDetails;
 	const nameParts = splitName( eventBillingDetails?.name || '' );
+
+	// Some wallets provide a single name; checkout requires a last name.
+	nameParts.last_name = nameParts.last_name || '-';
 
 	return normalizeAddress(
 		{
 			...nameParts,
 			email: eventBillingDetails?.email || '',
-			phone: eventBillingDetails?.phone || '',
+			phone: getWalletBillingPhone( event ),
 			...( eventBillingDetails?.address || {} ),
 		},
 		billing?.billingAddress || {}
@@ -1113,11 +1122,19 @@ const ExpressCheckoutContent = ( {
 					getCurrentCart()
 				);
 				const orderNotes = getOrderNotes();
+				// Stripe provides no separate shipping phone, so the
+				// billing one is reused on the shipping address.
+				const walletBillingPhone = getWalletBillingPhone( event );
 				const eventShippingAddress = event?.shippingAddress
-					? getShippingAddressFromEvent(
-							event.shippingAddress,
-							shippingData?.shippingAddress || {}
-					  )
+					? {
+							...getShippingAddressFromEvent(
+								event.shippingAddress,
+								shippingData?.shippingAddress || {}
+							),
+							...( walletBillingPhone
+								? { phone: walletBillingPhone }
+								: {} ),
+					  }
 					: shippingData?.shippingAddress;
 				const response = await apiFetch( {
 					method: 'POST',
@@ -1139,10 +1156,7 @@ const ExpressCheckoutContent = ( {
 					},
 					data: {
 						payment_method: PAYMENT_METHOD_NAME,
-						billing_address: getBillingAddress(
-							event?.billingDetails,
-							billing
-						),
+						billing_address: getBillingAddress( event, billing ),
 						shipping_address: eventShippingAddress || undefined,
 						...( orderNotes ? { customer_note: orderNotes } : {} ),
 						payment_data: getPaymentData(

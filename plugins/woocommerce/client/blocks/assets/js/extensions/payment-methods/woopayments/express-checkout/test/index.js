@@ -888,6 +888,42 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		).not.toContain( 'wcpay-is-platform-payment-method' );
 	} );
 
+	it( 'normalizes wallet billing name and phone on confirm', async () => {
+		registerExpressCheckout();
+		const googlePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_googlePay'
+		);
+
+		renderExpressPaymentMethod( googlePayRegistration );
+
+		await waitFor( () => {
+			expect( expressHandlers.confirm ).toBeDefined();
+		} );
+
+		await act( async () => {
+			await expressHandlers.confirm( {
+				billingDetails: {
+					email: 'shopper@example.test',
+					name: 'Cher',
+					phone: '(212) 555-0100',
+				},
+				shippingAddress: {
+					name: 'Cher',
+					address: { city: 'New York', country: 'US' },
+				},
+			} );
+		} );
+
+		const checkoutRequest = apiFetch.mock.calls[ 0 ][ 0 ];
+		expect( checkoutRequest.data.billing_address.last_name ).toBe( '-' );
+		expect( checkoutRequest.data.billing_address.phone ).toBe(
+			'2125550100'
+		);
+		expect( checkoutRequest.data.shipping_address.phone ).toBe(
+			'2125550100'
+		);
+	} );
+
 	it( 'resolves wallet clicks with cart line items and shipping rates', async () => {
 		const onClick = jest.fn();
 		const resolve = jest.fn();
