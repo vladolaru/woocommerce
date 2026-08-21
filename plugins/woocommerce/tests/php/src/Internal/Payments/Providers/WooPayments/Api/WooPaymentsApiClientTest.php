@@ -10,6 +10,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsGetPmPromotionsRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDocumentsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsReportingBalanceSummaryRequest;
 use WCPay\Core\Server\Request\Get_Reporting_Balance_Summary;
@@ -3845,5 +3846,72 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$sut->init( $http_client, $this->create_account_service( $test_mode ) );
 
 		return array( $sut, $http_client );
+	}
+
+	/**
+	 * @testdox A platform fraud-flagged decline rotates the card-testing prevention token; ordinary declines leave it alone.
+	 */
+	public function test_platform_fraud_decline_rotates_the_fraud_prevention_token(): void {
+		WC()->initialize_session();
+		wc_get_container()->get( WooPaymentsAccountService::class )->cache_account_data(
+			array(
+				'account_id'                       => 'acct_rotation',
+				'is_live'                          => true,
+				'card_testing_protection_eligible' => true,
+			)
+		);
+		$fraud_prevention_service = wc_get_container()->get( WooPaymentsFraudPreventionService::class );
+		$original_token           = $fraud_prevention_service->get_token();
+
+		$client       = new WooPaymentsApiClient();
+		$throw_method = new \ReflectionMethod( $client, 'throw_api_error' );
+		$throw_method->setAccessible( true );
+
+		// An ordinary decline must not rotate.
+		try {
+			$throw_method->invoke(
+				$client,
+				array(
+					'error' => array(
+						'code'         => 'card_declined',
+						'decline_code' => 'insufficient_funds',
+						'message'      => 'declined',
+					),
+				),
+				402
+			);
+			$this->fail( 'throw_api_error must throw.' );
+		} catch ( WooPaymentsApiException $exception ) {
+			$this->assertSame( $original_token, $fraud_prevention_service->get_token() );
+		}
+
+		// A fraud-flagged decline must rotate.
+		try {
+			$throw_method->invoke(
+				$client,
+				array(
+					'error' => array(
+						'code'         => 'card_declined',
+						'decline_code' => 'fraudulent',
+						'message'      => 'declined',
+					),
+				),
+				402
+			);
+			$this->fail( 'throw_api_error must throw.' );
+		} catch ( WooPaymentsApiException $exception ) {
+			$this->assertNotSame( $original_token, $fraud_prevention_service->get_token() );
+		}
+
+		// The container's account service memoizes the account cache per
+		// instance; reset the shared instance to a non-eligible payload so the
+		// card-testing gate disarms for every suite that runs after this one.
+		wc_get_container()->get( WooPaymentsAccountService::class )->cache_account_data(
+			array(
+				'account_id' => 'acct_rotation',
+				'is_live'    => true,
+			)
+		);
+		delete_option( 'wcpay_account_data' );
 	}
 }

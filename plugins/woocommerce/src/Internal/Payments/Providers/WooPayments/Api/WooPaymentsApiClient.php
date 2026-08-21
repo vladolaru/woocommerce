@@ -2373,6 +2373,28 @@ class WooPaymentsApiClient {
 	}
 
 	/**
+	 * Rotate the card-testing prevention token when the platform signals a
+	 * fraud-flagged decline, so a card tester cannot replay the same session
+	 * token across attempts. Mirrors the plugin's maybe_act_on_fraud_prevention:
+	 * only the fraudulent decline and the platform's card-testing code rotate.
+	 *
+	 * @param string $error_code Platform error or decline code.
+	 */
+	private function maybe_rotate_fraud_prevention_token( string $error_code ): void {
+		if ( ! in_array( $error_code, array( 'fraudulent', 'wcpay_card_testing_prevention' ), true ) ) {
+			return;
+		}
+		if ( ! function_exists( 'WC' ) || null === WC()->session ) {
+			return;
+		}
+
+		$fraud_prevention_service = wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService::class );
+		if ( $fraud_prevention_service->is_enabled() ) {
+			$fraud_prevention_service->regenerate_token();
+		}
+	}
+
+	/**
 	 * Throw a normalized API exception from a decoded response body.
 	 *
 	 * @param array<string,mixed> $response_body Decoded response body.
@@ -2394,6 +2416,9 @@ class WooPaymentsApiClient {
 			$error_code    = (string) $response_body['code'];
 			$error_message = isset( $response_body['message'] ) ? (string) $response_body['message'] : $error_message;
 		}
+
+		$this->maybe_rotate_fraud_prevention_token( $decline_code );
+		$this->maybe_rotate_fraud_prevention_token( $error_code );
 
 		// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Provider error is transported as structured application data, not rendered HTML.
 		throw new WooPaymentsApiException(
