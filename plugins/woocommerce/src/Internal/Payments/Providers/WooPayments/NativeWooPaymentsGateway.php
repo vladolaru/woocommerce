@@ -566,6 +566,10 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		$token = $this->get_payment_token_from_order( $renewal_order );
+		if ( ! $token instanceof WC_Payment_Token && ! $this->is_network_saved_cards_enabled() ) {
+			$token = $this->maybe_repair_renewal_order_payment_token( $renewal_order );
+		}
+
 		if ( ! $token instanceof WC_Payment_Token ) {
 			$renewal_order->add_order_note( __( 'Subscription renewal failed: No saved payment method found.', 'woocommerce' ) );
 			$renewal_order->update_status( 'failed' );
@@ -775,6 +779,93 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		return $parent_order;
+	}
+
+	/**
+	 * Recover a renewal order's missing payment token from the parent order.
+	 *
+	 * A renewal can arrive without a token — the subscription's token row was deleted,
+	 * or a migration dropped the link. Failing the renewal outright loses revenue the
+	 * merchant can still collect: the original order's payment method ID identifies a
+	 * charge-able saved method. Ports the WooPayments extension's repair.
+	 *
+	 * @param WC_Order $renewal_order Renewal order missing its token.
+	 * @return WC_Payment_Token|null The restored token, or null when repair is impossible.
+	 */
+	private function maybe_repair_renewal_order_payment_token( WC_Order $renewal_order ): ?WC_Payment_Token {
+		$subscription = $this->get_subscription_for_renewal_order( $renewal_order );
+		if ( ! $subscription instanceof WC_Order ) {
+			return null;
+		}
+
+		$parent_order = wc_get_order( (int) $subscription->get_parent_id() );
+		if ( ! $parent_order instanceof WC_Order ) {
+			return null;
+		}
+
+		$payment_method_id = (string) $parent_order->get_meta( '_payment_method_id', true );
+		if ( '' === $payment_method_id ) {
+			return null;
+		}
+
+		try {
+			// The parent order is only a source for the payment method ID, never a
+			// write target: attaching the token to it would fan the token out to every
+			// subscription that order created, silently re-pointing sibling
+			// subscriptions the customer has since moved to a different card.
+			$token = $this->get_token_service()->get_or_create_token_for_user( $payment_method_id, (int) $subscription->get_customer_id() );
+			if ( ! $token instanceof WC_Payment_Token ) {
+				return null;
+			}
+
+			$this->get_token_service()->attach_token_to_order( $renewal_order, $token );
+
+			$subscription_token = $this->get_payment_token_from_order( $subscription );
+			if ( ! $subscription_token instanceof WC_Payment_Token || $token->get_id() !== $subscription_token->get_id() ) {
+				$subscription->add_payment_token( $token );
+				$subscription->add_order_note(
+					sprintf(
+						/* translators: %s: payment method display name. */
+						__( 'The saved payment method for this subscription was missing, so WooPayments restored %s from the original order to complete the renewal.', 'woocommerce' ),
+						$token->get_display_name()
+					)
+				);
+			}
+
+			$renewal_order->add_order_note( __( 'Recovered missing subscription payment method token from the parent order.', 'woocommerce' ) );
+
+			return $token;
+		} catch ( Throwable $exception ) {
+			wc_get_logger()->error(
+				'Error repairing subscription renewal payment token for order #' . $renewal_order->get_id() . ': ' . $exception->getMessage(),
+				array( 'source' => 'woopayments-subscriptions' )
+			);
+
+			return null;
+		}
+	}
+
+	/**
+	 * Tell whether the site only uses network-wide saved payment methods.
+	 *
+	 * On such networks the token intentionally lives outside the site, so the local
+	 * repair must not run and re-localize it.
+	 *
+	 * @return bool
+	 */
+	private function is_network_saved_cards_enabled(): bool {
+		/**
+		 * Allows forcing WooPayments to use network-wide saved payment methods across a multisite network.
+		 *
+		 * Kept under the WooPayments extension's filter name for parity. The extension
+		 * marks it internal to Automattic; it participates here only so the repair
+		 * honors the same opt-out.
+		 *
+		 * @since 11.0.0
+		 *
+		 * @param bool $enabled Whether the site should only use network-wide saved payment methods.
+		 */
+		return (bool) apply_filters( 'wcpay_force_network_saved_cards', false );
 	}
 
 	/**

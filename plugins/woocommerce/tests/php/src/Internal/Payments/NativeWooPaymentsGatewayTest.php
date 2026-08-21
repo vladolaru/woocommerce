@@ -3458,6 +3458,159 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should repair a renewal order's missing token from the parent order and charge it.
+	 */
+	public function test_scheduled_subscription_payment_repairs_missing_token_from_parent_order(): void {
+		$this->ensure_wcs_renewal_subscriptions_double();
+		$customer_id = self::factory()->user->create();
+
+		$parent = wc_create_order();
+		$parent->set_customer_id( $customer_id );
+		$parent->update_meta_data( '_payment_method_id', 'pm_repair_123' );
+		$parent->save();
+
+		$subscription = wc_create_order();
+		$subscription->set_parent_id( $parent->get_id() );
+		$subscription->set_customer_id( $customer_id );
+		$subscription->set_payment_method( 'woocommerce_payments' );
+		$subscription->save();
+
+		$token = new \WC_Payment_Token_CC();
+		$token->set_gateway_id( OrderPaymentStore::GATEWAY_ID );
+		$token->set_user_id( $customer_id );
+		$token->set_token( 'pm_repair_123' );
+		$token->set_card_type( 'visa' );
+		$token->set_last4( '4242' );
+		$token->set_expiry_month( '12' );
+		$token->set_expiry_year( '2030' );
+		$token->save();
+
+		$renewal = wc_create_order();
+		$renewal->set_customer_id( $customer_id );
+		$renewal->set_payment_method( 'woocommerce_payments' );
+		$renewal->set_total( '10.00' );
+		$renewal->save();
+
+		$GLOBALS['wcpay_test_renewal_subscription_ids'] = array( $renewal->get_id() => array( $subscription->get_id() ) );
+
+		$service = new RecordingPaymentProcessingService();
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		try {
+			$gateway->scheduled_subscription_payment( 10.00, $renewal );
+		} finally {
+			unset( $GLOBALS['wcpay_test_renewal_subscription_ids'] );
+		}
+
+		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context, 'The repaired token must let the renewal charge proceed.' );
+		$this->assertSame( (string) $token->get_id(), $service->last_checkout_context->get_payment_data()['payment_token'] );
+
+		$renewal_fresh = wc_get_order( $renewal->get_id() );
+		$this->assertNotSame( 'failed', $renewal_fresh->get_status() );
+		$renewal_notes = array_map( static fn( $note ) => (string) $note->content, wc_get_order_notes( array( 'order_id' => $renewal->get_id() ) ) );
+		$this->assertContains( 'Recovered missing subscription payment method token from the parent order.', $renewal_notes );
+
+		$subscription_fresh = wc_get_order( $subscription->get_id() );
+		$this->assertContains( $token->get_id(), array_map( 'absint', $subscription_fresh->get_payment_tokens() ), 'The subscription must get the restored token so the next renewal does not need repair.' );
+		$subscription_notes = implode( ' | ', array_map( static fn( $note ) => (string) $note->content, wc_get_order_notes( array( 'order_id' => $subscription->get_id() ) ) ) );
+		$this->assertStringContainsString( 'restored', $subscription_notes );
+	}
+
+	/**
+	 * @testdox Should still fail the renewal when the parent order has no payment method to restore.
+	 */
+	public function test_scheduled_subscription_payment_fails_when_repair_finds_nothing(): void {
+		$this->ensure_wcs_renewal_subscriptions_double();
+		$customer_id = self::factory()->user->create();
+
+		$parent = wc_create_order();
+		$parent->set_customer_id( $customer_id );
+		$parent->save();
+
+		$subscription = wc_create_order();
+		$subscription->set_parent_id( $parent->get_id() );
+		$subscription->set_customer_id( $customer_id );
+		$subscription->save();
+
+		$renewal = wc_create_order();
+		$renewal->set_customer_id( $customer_id );
+		$renewal->set_payment_method( 'woocommerce_payments' );
+		$renewal->save();
+
+		$GLOBALS['wcpay_test_renewal_subscription_ids'] = array( $renewal->get_id() => array( $subscription->get_id() ) );
+
+		$service = new RecordingPaymentProcessingService();
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		try {
+			$gateway->scheduled_subscription_payment( 10.00, $renewal );
+		} finally {
+			unset( $GLOBALS['wcpay_test_renewal_subscription_ids'] );
+		}
+
+		$this->assertNull( $service->last_checkout_context );
+		$renewal_fresh = wc_get_order( $renewal->get_id() );
+		$this->assertSame( 'failed', $renewal_fresh->get_status() );
+	}
+
+	/**
+	 * @testdox Should not attempt token repair when network-wide saved cards are forced.
+	 */
+	public function test_scheduled_subscription_payment_skips_repair_for_network_saved_cards(): void {
+		$this->ensure_wcs_renewal_subscriptions_double();
+		$customer_id = self::factory()->user->create();
+
+		$parent = wc_create_order();
+		$parent->set_customer_id( $customer_id );
+		$parent->update_meta_data( '_payment_method_id', 'pm_repair_123' );
+		$parent->save();
+
+		$subscription = wc_create_order();
+		$subscription->set_parent_id( $parent->get_id() );
+		$subscription->set_customer_id( $customer_id );
+		$subscription->save();
+
+		$renewal = wc_create_order();
+		$renewal->set_customer_id( $customer_id );
+		$renewal->set_payment_method( 'woocommerce_payments' );
+		$renewal->save();
+
+		$GLOBALS['wcpay_test_renewal_subscription_ids'] = array( $renewal->get_id() => array( $subscription->get_id() ) );
+		$filter = static fn(): bool => true;
+		add_filter( 'wcpay_force_network_saved_cards', $filter );
+
+		$service = new RecordingPaymentProcessingService();
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		try {
+			$gateway->scheduled_subscription_payment( 10.00, $renewal );
+		} finally {
+			remove_filter( 'wcpay_force_network_saved_cards', $filter );
+			unset( $GLOBALS['wcpay_test_renewal_subscription_ids'] );
+		}
+
+		$this->assertNull( $service->last_checkout_context );
+		$this->assertSame( 'failed', wc_get_order( $renewal->get_id() )->get_status() );
+	}
+
+	/**
+	 * Ensure a minimal renewal-subscriptions lookup double exists.
+	 *
+	 * @return void
+	 */
+	private function ensure_wcs_renewal_subscriptions_double(): void {
+		if ( function_exists( 'wcs_get_subscriptions_for_renewal_order' ) ) {
+			return;
+		}
+
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public renewal lookup.
+		eval( 'namespace { function wcs_get_subscriptions_for_renewal_order( $order_id ) { $ids = $GLOBALS["wcpay_test_renewal_subscription_ids"][ $order_id ] ?? array(); return array_map( "wc_get_order", $ids ); } }' );
+	}
+
+	/**
 	 * Ensure a minimal WooCommerce Subscriptions cart double exists.
 	 *
 	 * @return void
