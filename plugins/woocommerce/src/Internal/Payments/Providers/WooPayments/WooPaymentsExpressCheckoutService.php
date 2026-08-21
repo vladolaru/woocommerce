@@ -7,6 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
+
 /**
  * Native WooPayments express checkout helpers for platform payment methods.
  *
@@ -107,7 +109,7 @@ class WooPaymentsExpressCheckoutService {
 				'allowed_shipping_countries' => function_exists( 'WC' ) && WC() && WC()->countries ? array_keys( WC()->countries->get_shipping_countries() ?? array() ) : array(),
 				'display_prices_with_tax'    => 'incl' === get_option( 'woocommerce_tax_display_cart' ),
 			),
-			'has_subscription'            => class_exists( '\WC_Subscriptions_Cart' ) && is_callable( array( '\WC_Subscriptions_Cart', 'cart_contains_subscription' ) ) && \WC_Subscriptions_Cart::cart_contains_subscription(),
+			'has_subscription'            => WooPaymentsSubscriptionMethodPolicy::cart_contains_subscription_or_renewal(),
 			'is_manual_capture'           => $this->is_truthy_gateway_setting( 'manual_capture' ),
 			'isShopperTrackingEnabled'    => $tracking_enabled,
 			'is_shopper_tracking_enabled' => $tracking_enabled,

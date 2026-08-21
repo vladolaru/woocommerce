@@ -513,6 +513,31 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should flag a renewal-only cart as containing a subscription, like the extension.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_get_payment_fields_js_config_flags_renewal_cart_as_subscription(): void {
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; this isolated test needs its public cart contract.
+		eval( 'namespace { class WC_Subscriptions_Cart { public static function cart_contains_subscription() { return false; } } }' );
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; this isolated test needs its public renewal detector.
+		eval( 'namespace { function wcs_cart_contains_renewal() { return true; } }' );
+
+		$bridge = new WooPaymentsCheckoutBridge();
+		$bridge->init(
+			$this->create_legacy_runtime_for_bridge(),
+			$this->create_account_service_for_bridge( true ),
+			$this->create_woopay_session_service_for_bridge( false ),
+			$this->create_frontend_styles_service_for_bridge(),
+			$this->create_frontend_tracking_controller_for_bridge()
+		);
+
+		$config = $bridge->get_payment_fields_js_config();
+
+		$this->assertTrue( $config['cartContainsSubscription'], 'A renewal cart pays for a subscription; the forced-save signal must fire for it.' );
+	}
+
+	/**
 	 * @testdox Should expose change-payment state only for an order-pay subscription request without mutating it.
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled

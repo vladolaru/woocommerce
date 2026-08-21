@@ -18,6 +18,24 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 final class WooPaymentsSubscriptionMethodPolicy {
 
 	/**
+	 * Tell whether the current cart contains a subscription or a subscription renewal.
+	 *
+	 * Mirrors the WooPayments extension's is_subscription_item_in_cart(): a renewal cart
+	 * pays for an existing subscription, so every surface that forces card saving for
+	 * subscription purchases must treat a renewal cart the same way.
+	 *
+	 * @return bool
+	 */
+	public static function cart_contains_subscription_or_renewal(): bool {
+		$contains_subscription = class_exists( 'WC_Subscriptions_Cart' )
+			&& is_callable( array( 'WC_Subscriptions_Cart', 'cart_contains_subscription' ) )
+			&& (bool) \WC_Subscriptions_Cart::cart_contains_subscription();
+
+		return $contains_subscription
+			|| ( function_exists( 'wcs_cart_contains_renewal' ) && (bool) wcs_cart_contains_renewal() );
+	}
+
+	/**
 	 * Get gateway IDs that support reusable subscription payment methods.
 	 *
 	 * @return array<int,string>

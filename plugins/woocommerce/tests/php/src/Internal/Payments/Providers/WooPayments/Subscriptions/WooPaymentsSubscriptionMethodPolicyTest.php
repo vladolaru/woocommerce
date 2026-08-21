@@ -45,6 +45,34 @@ class WooPaymentsSubscriptionMethodPolicyTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should treat a renewal-only cart as a subscription cart, like the extension.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_cart_contains_subscription_or_renewal_includes_renewal_carts(): void {
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; this isolated test needs its public cart contract.
+		eval( 'namespace { class WC_Subscriptions_Cart { public static function cart_contains_subscription() { return false; } } }' );
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; this isolated test needs its public renewal detector.
+		eval( 'namespace { function wcs_cart_contains_renewal() { return true; } }' );
+
+		$this->assertTrue( WooPaymentsSubscriptionMethodPolicy::cart_contains_subscription_or_renewal() );
+	}
+
+	/**
+	 * @testdox Should report no subscription cart when neither a subscription nor a renewal is present.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_cart_contains_subscription_or_renewal_false_without_either(): void {
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; this isolated test needs its public cart contract.
+		eval( 'namespace { class WC_Subscriptions_Cart { public static function cart_contains_subscription() { return false; } } }' );
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; this isolated test needs its public renewal detector.
+		eval( 'namespace { function wcs_cart_contains_renewal() { return false; } }' );
+
+		$this->assertFalse( WooPaymentsSubscriptionMethodPolicy::cart_contains_subscription_or_renewal() );
+	}
+
+	/**
 	 * Reusable gateway ID scenarios.
 	 *
 	 * @return array<string,array{string,bool}>

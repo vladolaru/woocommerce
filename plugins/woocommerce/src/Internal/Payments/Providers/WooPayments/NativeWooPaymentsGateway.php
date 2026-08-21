@@ -1987,9 +1987,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return bool
 	 */
 	private function cart_contains_subscription(): bool {
-		return class_exists( 'WC_Subscriptions_Cart' )
-			&& is_callable( array( 'WC_Subscriptions_Cart', 'cart_contains_subscription' ) )
-			&& (bool) \WC_Subscriptions_Cart::cart_contains_subscription();
+		return WooPaymentsSubscriptionMethodPolicy::cart_contains_subscription_or_renewal();
 	}
 
 	/**

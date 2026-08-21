@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
@@ -1425,9 +1426,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function cart_contains_subscription(): bool {
-		return class_exists( '\WC_Subscriptions_Cart' ) &&
-			is_callable( array( '\WC_Subscriptions_Cart', 'cart_contains_subscription' ) ) &&
-			\WC_Subscriptions_Cart::cart_contains_subscription();
+		return WooPaymentsSubscriptionMethodPolicy::cart_contains_subscription_or_renewal();
 	}
 
 	/**
