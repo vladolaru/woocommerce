@@ -289,6 +289,7 @@ describe( 'woopayments-express-checkout', () => {
 			);
 			expect( elementsMock.update ).toHaveBeenCalledWith( {
 				amount: 1500,
+				setupFutureUsage: null,
 			} );
 			expect( event.resolve ).toHaveBeenCalledWith( {
 				shippingRates: expect.arrayContaining( [
@@ -349,10 +350,63 @@ describe( 'woopayments-express-checkout', () => {
 			);
 			expect( elementsMock.update ).toHaveBeenCalledWith( {
 				amount: 1500,
+				setupFutureUsage: null,
 			} );
 			expect( event.resolve ).toHaveBeenCalledWith( {
 				lineItems: expect.any( Array ),
 			} );
+		} );
+	} );
+
+	describe( 'setupFutureUsage', () => {
+		it( 'is off_session at creation for carts with a subscription schedule', () => {
+			const { getStripeElementsOptions } = loadModule( baseParams() );
+			const cartData = cartResponse( {
+				extensions: {
+					subscriptions: [ { billing_period: 'month' } ],
+				},
+			} );
+
+			expect( getStripeElementsOptions( cartData ).setupFutureUsage ).toBe(
+				'off_session'
+			);
+		} );
+
+		it( 'is off_session when a cart item carries a subscription schedule', () => {
+			const { getSetupFutureUsageForCart } = loadModule( baseParams() );
+			const cartData = cartResponse();
+			cartData.items[ 0 ].extensions = {
+				subscriptions: {
+					billing_period: 'month',
+					billing_interval: 1,
+				},
+			};
+
+			expect( getSetupFutureUsageForCart( cartData ) ).toBe(
+				'off_session'
+			);
+		} );
+
+		it( 'is omitted at creation for non-subscription carts', () => {
+			const { getStripeElementsOptions } = loadModule( baseParams() );
+
+			expect( getStripeElementsOptions( cartResponse() ) ).not.toHaveProperty(
+				'setupFutureUsage'
+			);
+		} );
+
+		it( 'falls back to the localized has_subscription flag for the product payload shape', () => {
+			const { getStripeElementsOptions } = loadModule(
+				baseParams( { has_subscription: true } )
+			);
+			const productShapedData = {
+				total: { amount: 1500 },
+				currency: 'usd',
+			};
+
+			expect(
+				getStripeElementsOptions( productShapedData ).setupFutureUsage
+			).toBe( 'off_session' );
 		} );
 	} );
 

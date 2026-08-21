@@ -265,6 +265,60 @@
 			: converted;
 	}
 
+	function isSubscriptionData( subscriptionData ) {
+		if ( Array.isArray( subscriptionData ) ) {
+			return subscriptionData.length > 0;
+		}
+
+		if (
+			typeof subscriptionData !== 'object' ||
+			subscriptionData === null
+		) {
+			return false;
+		}
+
+		return (
+			typeof subscriptionData.billing_period === 'string' &&
+			subscriptionData.billing_period.length > 0 &&
+			typeof subscriptionData.billing_interval === 'number' &&
+			subscriptionData.billing_interval > 0
+		);
+	}
+
+	/**
+	 * Tell whether the cart contains any subscription schedule (trial or
+	 * recurring). WC Subscriptions exposes subscription data on the Store API
+	 * response in two places: `extensions.subscriptions` on the cart (initial
+	 * purchases; empty for renewal carts) and on each cart item
+	 * (renewals/resubscribes/switches). Checking both keeps the detection
+	 * robust across cart shapes.
+	 */
+	function cartHasAnySubscription( cartData ) {
+		var schedules = cartData && cartData.extensions
+			? cartData.extensions.subscriptions
+			: undefined;
+
+		if ( Array.isArray( schedules ) && schedules.length > 0 ) {
+			return true;
+		}
+
+		if ( ! cartData || ! Array.isArray( cartData.items ) ) {
+			return false;
+		}
+
+		return cartData.items.some( function ( item ) {
+			return isSubscriptionData(
+				item && item.extensions
+					? item.extensions.subscriptions
+					: undefined
+			);
+		} );
+	}
+
+	function getSetupFutureUsageForCart( cartData ) {
+		return cartHasAnySubscription( cartData ) ? 'off_session' : null;
+	}
+
 	function getTotalAmount( cartData ) {
 		if (
 			cartData &&
@@ -372,6 +426,12 @@
 
 	function getStripeElementsOptions( cartData ) {
 		var amount = getTotalAmount( cartData );
+		// The product payload shape carries no Store API extensions; fall back
+		// to the localized subscription flag there.
+		var setupFutureUsage =
+			cartData && cartData.totals
+				? getSetupFutureUsageForCart( cartData )
+				: ( config.has_subscription ? 'off_session' : null );
 		var options = {
 			mode: 'payment',
 			amount: amount,
@@ -382,6 +442,10 @@
 
 		if ( config.is_manual_capture ) {
 			options.captureMethod = 'manual';
+		}
+
+		if ( setupFutureUsage ) {
+			options.setupFutureUsage = setupFutureUsage;
 		}
 
 		return options;
@@ -977,9 +1041,16 @@
 
 	function updateElementsForCart( cartData ) {
 		var amount = getTotalAmount( cartData );
+		var updateOptions = {
+			setupFutureUsage: getSetupFutureUsageForCart( cartData ),
+		};
 
-		if ( elements && typeof elements.update === 'function' && amount > 0 ) {
-			return elements.update( { amount: amount } );
+		if ( amount > 0 ) {
+			updateOptions.amount = amount;
+		}
+
+		if ( elements && typeof elements.update === 'function' ) {
+			return elements.update( updateOptions );
 		}
 
 		return Promise.resolve();
@@ -1378,6 +1449,8 @@
 			getShippingRates: getShippingRates,
 			getDisplayItems: getDisplayItems,
 			getTotalAmount: getTotalAmount,
+			getStripeElementsOptions: getStripeElementsOptions,
+			getSetupFutureUsageForCart: getSetupFutureUsageForCart,
 			handleShippingAddressChange: handleShippingAddressChange,
 			handleShippingRateChange: handleShippingRateChange,
 			placeOrder: placeOrder,
