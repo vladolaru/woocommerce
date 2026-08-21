@@ -1422,7 +1422,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return $already_paid_result;
 		}
 
-		$client_error_result = $this->maybe_fail_for_client_payment_method_error( $order );
+		$client_error_result = $this->maybe_fail_for_client_payment_method_error( $order, $is_subscription_change );
 		if ( is_array( $client_error_result ) ) {
 			return $client_error_result;
 		}
@@ -2335,10 +2335,11 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * no trace. Mirrors the client plugin's PAYMENT_METHOD_ERROR handling
 	 * (Payment_Information:290-297).
 	 *
-	 * @param WC_Order $order Order being paid.
+	 * @param WC_Order $order                  Order being paid.
+	 * @param bool     $is_subscription_change Whether this is a validated subscription payment-method change.
 	 * @return array<string,string>|null Failure result, or null when no client error was reported.
 	 */
-	private function maybe_fail_for_client_payment_method_error( WC_Order $order ): ?array {
+	private function maybe_fail_for_client_payment_method_error( WC_Order $order, bool $is_subscription_change = false ): ?array {
 		if ( self::CLIENT_PAYMENT_METHOD_ERROR_SENTINEL !== $this->get_request_payment_method_id() ) {
 			return null;
 		}
@@ -2348,7 +2349,12 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			$message = __( "We're not able to process this payment. Please try again later.", 'woocommerce' );
 		}
 
-		$order->update_status( 'failed', $message );
+		// On a subscription payment-method change $order is the subscription
+		// itself: 'failed' is not a valid subscription transition, and the
+		// existing method stays in place, so only the notice is surfaced.
+		if ( ! $is_subscription_change ) {
+			$order->update_status( 'failed', $message );
+		}
 
 		wc_add_notice( $message, 'error', array( 'icon' => 'error' ) );
 

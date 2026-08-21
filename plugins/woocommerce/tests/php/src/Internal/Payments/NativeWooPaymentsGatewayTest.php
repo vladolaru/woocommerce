@@ -1758,6 +1758,32 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should not flip the order status for a client payment method error on a subscription payment-method change.
+	 */
+	public function test_process_payment_client_error_keeps_status_on_subscription_change(): void {
+		$order   = $this->create_order();
+		$service = new RecordingPaymentProcessingService();
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		$this->ensure_wcs_subscription_detector_double();
+		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
+
+		$previous_status = $order->get_status();
+
+		$_POST['_wcsnonce']                          = wp_create_nonce( 'wcs_change_payment_method' );
+		$_POST['woocommerce_change_payment']         = (string) $order->get_id();
+		$_POST['wcpay-payment-method']               = 'woocommerce_payments_payment_method_error';
+		$_POST['wcpay-payment-method-error-message'] = 'Your card number is invalid.';
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$this->assertSame( 'failure', $result['result'] );
+		$this->assertNull( $service->last_checkout_context );
+		$this->assertSame( $previous_status, wc_get_order( $order->get_id() )->get_status() );
+	}
+
+	/**
 	 * @testdox Should fall back to a generic message when the client error carries none.
 	 */
 	public function test_process_payment_client_error_uses_generic_message_fallback(): void {
