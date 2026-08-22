@@ -1513,6 +1513,62 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should clear the cached AVS flag when stepping down from an AVS-bearing advanced ruleset to a built-in level.
+	 */
+	public function test_update_settings_patches_cached_avs_flag_when_stepping_down_from_advanced(): void {
+		update_option( 'current_protection_level', 'advanced' );
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'    => array(
+					'account_id'                => 'acct_native_test',
+					'is_live'                   => true,
+					'capabilities'              => array(
+						'card_payments' => 'active',
+					),
+					'fees'                      => array(
+						'card' => array(),
+					),
+					'fraud_mitigation_settings' => array(
+						'avs_check_enabled' => true,
+					),
+				),
+				'fetched' => time(),
+				'errored' => false,
+			)
+		);
+		set_transient(
+			'wcpay_fraud_protection_settings',
+			array(
+				array(
+					'key'     => 'avs_verification',
+					'outcome' => 'block',
+					'check'   => array(
+						'key'      => 'avs_mismatch',
+						'operator' => 'equals',
+						'value'    => true,
+					),
+				),
+			),
+			DAY_IN_SECONDS
+		);
+
+		$result = $this->sut->update_settings(
+			array(
+				'current_protection_level'           => 'standard',
+				'advanced_fraud_protection_settings' => array(),
+			)
+		);
+
+		$cached_account = get_option( 'wcpay_account_data' );
+
+		$this->assertIsArray( $result );
+		$this->assertIsArray( $cached_account );
+		$this->assertSame( 'standard', get_option( 'current_protection_level' ) );
+		$this->assertFalse( $cached_account['data']['fraud_mitigation_settings']['avs_check_enabled'], 'Stepping down from an AVS-bearing advanced ruleset must overwrite the cached true.' );
+	}
+
+	/**
 	 * @testdox Should save canonical fraud presets instead of stale advanced rules.
 	 */
 	public function test_update_settings_saves_canonical_fraud_presets(): void {

@@ -1304,16 +1304,14 @@ class WooPaymentsSettingsService {
 	}
 
 	/**
-	 * Keep account-level fraud mitigation flags aligned with the just-saved advanced ruleset.
+	 * Keep account-level fraud mitigation flags aligned with the just-saved ruleset.
+	 *
+	 * Runs for every protection level like the plugin's unconditional cache write: the built-in rulesets never contain avs_verification, so stepping down from an AVS-bearing advanced ruleset must overwrite the cached true.
 	 *
 	 * @param array{protection_level:string,ruleset_config:array<int|string,mixed>} $fraud_settings Saved fraud settings.
 	 * @return void
 	 */
 	private function sync_cached_fraud_mitigation_settings_after_fraud_save( array $fraud_settings ): void {
-		if ( 'advanced' !== $fraud_settings['protection_level'] ) {
-			return;
-		}
-
 		$account_data = $this->account_service->get_cached_account_data();
 		if ( empty( $account_data ) ) {
 			return;
