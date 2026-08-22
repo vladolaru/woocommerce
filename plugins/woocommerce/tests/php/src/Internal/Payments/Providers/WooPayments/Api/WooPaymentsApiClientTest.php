@@ -653,6 +653,275 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Install a recording logger as the WooCommerce logger.
+	 *
+	 * @return object Recording logger with a public $entries array.
+	 */
+	private function install_recording_logger(): object {
+		$logger = new class() implements \WC_Logger_Interface {
+			/**
+			 * Logged entries.
+			 *
+			 * @var array<int,array{level:string,message:string,context:array<string,mixed>}>
+			 */
+			public array $entries = array();
+
+			/**
+			 * Add a log entry.
+			 *
+			 * @param string $handle  File handle.
+			 * @param string $message Log message.
+			 * @param string $level   Log level.
+			 * @return bool
+			 */
+			public function add( $handle, $message, $level = \WC_Log_Levels::NOTICE ) {
+				$this->log( $level, $message, array( 'source' => $handle ) );
+
+				return true;
+			}
+
+			/**
+			 * Record a log entry.
+			 *
+			 * @param string              $level   Log level.
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			public function log( $level, $message, $context = array() ) {
+				$this->entries[] = array(
+					'level'   => (string) $level,
+					'message' => (string) $message,
+					'context' => (array) $context,
+				);
+			}
+
+			/**
+			 * Log an emergency message.
+			 *
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			public function emergency( $message, $context = array() ) {
+				$this->log( 'emergency', $message, $context );
+			}
+
+			/**
+			 * Log an alert message.
+			 *
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			public function alert( $message, $context = array() ) {
+				$this->log( 'alert', $message, $context );
+			}
+
+			/**
+			 * Log a critical message.
+			 *
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			public function critical( $message, $context = array() ) {
+				$this->log( 'critical', $message, $context );
+			}
+
+			/**
+			 * Log an error message.
+			 *
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			public function error( $message, $context = array() ) {
+				$this->log( 'error', $message, $context );
+			}
+
+			/**
+			 * Log a warning message.
+			 *
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			public function warning( $message, $context = array() ) {
+				$this->log( 'warning', $message, $context );
+			}
+
+			/**
+			 * Log a notice message.
+			 *
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			public function notice( $message, $context = array() ) {
+				$this->log( 'notice', $message, $context );
+			}
+
+			/**
+			 * Log an info message.
+			 *
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			public function info( $message, $context = array() ) {
+				$this->log( 'info', $message, $context );
+			}
+
+			/**
+			 * Log a debug message.
+			 *
+			 * @param string              $message Log message.
+			 * @param array<string,mixed> $context Log context.
+			 */
+			public function debug( $message, $context = array() ) {
+				$this->log( 'debug', $message, $context );
+			}
+		};
+
+		add_filter(
+			'woocommerce_logging_class',
+			static function () use ( $logger ): object {
+				return $logger;
+			}
+		);
+
+		return $logger;
+	}
+
+	/**
+	 * @testdox Should log a correlated, redacted request/response pair when transport logging is enabled.
+	 */
+	public function test_transport_logs_correlated_redacted_request_and_response(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		$logger = $this->install_recording_logger();
+
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id  = 123;
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode(
+				array(
+					'id'            => 're_test',
+					'client_secret' => 'secret_private_value',
+				)
+			),
+		);
+
+		$sut = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( false ) );
+
+		try {
+			$sut->refund_charge( 'ch_test', 250, 'shopper emailed john@example.com', 'native_transport', 'idem_test' );
+		} finally {
+			remove_all_filters( 'woocommerce_logging_class' );
+			delete_option( 'woocommerce_woocommerce_payments_settings' );
+		}
+
+		$request_entries  = array_values( array_filter( $logger->entries, static fn( array $entry ): bool => 0 === strpos( $entry['message'], 'API REQUEST (' ) ) );
+		$response_entries = array_values( array_filter( $logger->entries, static fn( array $entry ): bool => 0 === strpos( $entry['message'], 'API RESPONSE (' ) ) );
+
+		$this->assertCount( 1, $request_entries );
+		$this->assertCount( 1, $response_entries );
+		$this->assertSame( 'info', $request_entries[0]['level'] );
+		$this->assertSame( 'woopayments', $request_entries[0]['context']['source'] );
+		$this->assertStringContainsString( 'POST /sites/123/wcpay/refunds', $request_entries[0]['message'] );
+
+		$this->assertSame( '(redacted)', $request_entries[0]['context']['body']['metadata']['merchant_refund_reason'] ?? null, 'The free-text refund reason can carry PII and must never be logged.' );
+		$this->assertSame( '(redacted)', $response_entries[0]['context']['body']['client_secret'] ?? null );
+		$this->assertSame( 're_test', $response_entries[0]['context']['body']['id'] ?? null );
+
+		preg_match( '/^API REQUEST \(([^)]+)\)/', $request_entries[0]['message'], $request_id );
+		preg_match( '/^API RESPONSE \(([^)]+)\)/', $response_entries[0]['message'], $response_id );
+		$this->assertNotEmpty( $request_id[1] ?? '' );
+		$this->assertSame( $request_id[1] ?? '', $response_id[1] ?? null, 'The response must correlate to its request by id.' );
+	}
+
+	/**
+	 * @testdox Should log an error line for API errors when transport logging is enabled.
+	 */
+	public function test_transport_logs_api_error_line(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		$logger = $this->install_recording_logger();
+
+		try {
+			$this->capture_api_error(
+				array(
+					'error' => array(
+						'code'    => 'card_declined',
+						'message' => 'Your card was declined.',
+						'type'    => 'card_error',
+					),
+				),
+				402
+			);
+		} finally {
+			remove_all_filters( 'woocommerce_logging_class' );
+			delete_option( 'woocommerce_woocommerce_payments_settings' );
+		}
+
+		$error_entries = array_values( array_filter( $logger->entries, static fn( array $entry ): bool => 'error' === $entry['level'] ) );
+		$this->assertNotEmpty( $error_entries );
+		$this->assertSame( 'Your card was declined. (card_declined)', $error_entries[0]['message'] );
+	}
+
+	/**
+	 * @testdox Should stay silent when neither dev mode nor the logging setting enables transport logging.
+	 */
+	public function test_transport_logging_is_gated_off_by_default(): void {
+		delete_option( 'woocommerce_woocommerce_payments_settings' );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$logger = $this->install_recording_logger();
+
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id  = 123;
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode( array( 'id' => 're_test' ) ),
+		);
+
+		$sut = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( false ) );
+
+		try {
+			$sut->refund_charge( 'ch_test', 250, 'requested_by_customer', 'native_transport', 'idem_test' );
+		} finally {
+			remove_all_filters( 'woocommerce_logging_class' );
+			remove_filter( 'wcpay_dev_mode', '__return_false' );
+		}
+
+		$this->assertSame( array(), $logger->entries, 'Transport logging must be opt-in: dev mode or the enable_logging gateway setting.' );
+	}
+
+	/**
+	 * @testdox Should log transport traffic in dev mode without the logging setting.
+	 */
+	public function test_transport_logs_in_dev_mode_without_setting(): void {
+		delete_option( 'woocommerce_woocommerce_payments_settings' );
+		add_filter( 'wcpay_dev_mode', '__return_true' );
+		$logger = $this->install_recording_logger();
+
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id  = 123;
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode( array( 'id' => 're_test' ) ),
+		);
+
+		$sut = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( false ) );
+
+		try {
+			$sut->refund_charge( 'ch_test', 250, 'requested_by_customer', 'native_transport', 'idem_test' );
+		} finally {
+			remove_all_filters( 'woocommerce_logging_class' );
+			remove_filter( 'wcpay_dev_mode', '__return_true' );
+		}
+
+		$this->assertNotEmpty( $logger->entries );
+	}
+
+	/**
 	 * @testdox Should apply the preserved WooPayments response filter after transport requests.
 	 */
 	public function test_request_applies_preserved_response_filter_after_transport_requests(): void {

@@ -46,6 +46,42 @@ class WooPaymentsApiClient {
 	private const REQUEST_RETRIES_BACKOFF_MICROSECONDS = 250000;
 
 	/**
+	 * Common keys in API requests/responses that must be redacted before logging.
+	 *
+	 * Ported verbatim from the plugin's API_KEYS_TO_REDACT; the list is the
+	 * logging redaction contract and must not be re-derived.
+	 */
+	private const API_KEYS_TO_REDACT = array(
+		'client_secret',
+		'email',
+		'name',
+		'first_name',
+		'last_name',
+		'phone',
+		'company',
+		'address_1',
+		'address_2',
+		'line1',
+		'line2',
+		'postal_code',
+		'postcode',
+		'state',
+		'city',
+		'country',
+		'customer_name',
+		'customer_email',
+		// Free-text refund reason can contain merchant-entered PII, so keep it out of logs.
+		'merchant_refund_reason',
+		// Address autocomplete JWT is a credential; keep it out of logs.
+		'token',
+	);
+
+	/**
+	 * Maximum recursion depth when redacting nested payloads for logging.
+	 */
+	private const REDACT_MAX_ARRAY_DEPTH = 10;
+
+	/**
 	 * Public WordPress.com API base preserved for compatibility filters.
 	 */
 	private const WPCOM_ENDPOINT_BASE = 'https://public-api.wordpress.com/wpcom/v2';
@@ -2108,6 +2144,8 @@ class WooPaymentsApiClient {
 		 */
 		$params = apply_filters( 'wcpay_api_request_params', $params, $api, $method );
 
+		$redacted_params = self::redact_array( $params, self::API_KEYS_TO_REDACT );
+
 		$headers = array(
 			'Content-Type' => 'application/json; charset=utf-8',
 			'User-Agent'   => $this->get_user_agent(),
@@ -2159,6 +2197,12 @@ class WooPaymentsApiClient {
 		while ( true ) {
 			$headers['X-Request-Initiated'] = (string) microtime( true );
 
+			$log_request_id = uniqid();
+			$this->log_transport_info(
+				sprintf( 'API REQUEST (%s): %s %s', $log_request_id, $method, $path ),
+				null !== $body ? array( 'body' => $redacted_params ) : array()
+			);
+
 			$response = $this->http_client->request(
 				$method,
 				$path,
@@ -2206,6 +2250,11 @@ class WooPaymentsApiClient {
 		$content_type        = is_array( $content_type_header ) ? implode( ',', $content_type_header ) : (string) $content_type_header;
 		$is_json             = false !== strpos( strtolower( $content_type ), 'application/json' );
 		$decoded_body        = json_decode( $response_body, true );
+
+		$this->log_transport_info(
+			sprintf( 'API RESPONSE (%s): %s %s', $log_request_id, $method, $path ),
+			array( 'body' => self::redact_array( is_array( $decoded_body ) ? $decoded_body : $response_body, self::API_KEYS_TO_REDACT ) )
+		);
 
 		if ( $return_raw_response && 400 > $response_code ) {
 			return is_array( $response ) ? $response : array();
@@ -2459,6 +2508,8 @@ class WooPaymentsApiClient {
 		$this->maybe_rotate_fraud_prevention_token( $decline_code );
 		$this->maybe_rotate_fraud_prevention_token( $error_code );
 
+		$this->log_transport_error( "$error_message ($error_code)" );
+
 		$message = $wrap_message
 			? sprintf(
 				/* translators: %s: provider error message. */
@@ -2525,6 +2576,91 @@ class WooPaymentsApiClient {
 			),
 			true
 		);
+	}
+
+	/**
+	 * Log a transport info event when transport logging is enabled.
+	 *
+	 * @param string              $message Log message.
+	 * @param array<string,mixed> $context Log context; values must already be redacted.
+	 */
+	private function log_transport_info( string $message, array $context = array() ): void {
+		if ( ! $this->can_log_transport() ) {
+			return;
+		}
+
+		wc_get_logger()->info( $message, array_merge( $context, array( 'source' => 'woopayments' ) ) );
+	}
+
+	/**
+	 * Log a transport error line when transport logging is enabled.
+	 *
+	 * @param string $message Log message.
+	 */
+	private function log_transport_error( string $message ): void {
+		if ( ! $this->can_log_transport() ) {
+			return;
+		}
+
+		wc_get_logger()->error( $message, array( 'source' => 'woopayments' ) );
+	}
+
+	/**
+	 * Tell whether transport logging is enabled.
+	 *
+	 * Mirrors the plugin's gate: dev mode always logs; otherwise the gateway's
+	 * enable_logging setting must be on, read raw from the settings option so
+	 * no gateway needs to be initialized.
+	 *
+	 * @return bool
+	 */
+	private function can_log_transport(): bool {
+		if ( isset( $this->account_service ) && $this->account_service->is_dev_mode_enabled() ) {
+			return true;
+		}
+
+		$settings = get_option( 'woocommerce_woocommerce_payments_settings' );
+
+		return is_array( $settings ) && 'yes' === ( $settings['enable_logging'] ?? '' );
+	}
+
+	/**
+	 * Redact sensitive keys from a payload before logging.
+	 *
+	 * Ported from the plugin's redact_array: matching keys are replaced with
+	 * '(redacted)' at any depth, objects log as their class name, and deep
+	 * recursion is cut off.
+	 *
+	 * @param mixed    $input          Payload to redact.
+	 * @param string[] $keys_to_redact Keys to redact.
+	 * @param int      $level          Current recursion depth.
+	 * @return mixed
+	 */
+	private static function redact_array( $input, array $keys_to_redact, int $level = 0 ) {
+		if ( is_object( $input ) ) {
+			return get_class( $input ) . '()';
+		}
+
+		if ( ! is_array( $input ) ) {
+			return $input;
+		}
+
+		if ( self::REDACT_MAX_ARRAY_DEPTH <= $level ) {
+			return '(recursion limit reached)';
+		}
+
+		$result = array();
+
+		foreach ( $input as $key => $value ) {
+			if ( in_array( $key, $keys_to_redact, true ) ) {
+				$result[ $key ] = '(redacted)';
+				continue;
+			}
+
+			$result[ $key ] = self::redact_array( $value, $keys_to_redact, $level + 1 );
+		}
+
+		return $result;
 	}
 
 	/**
