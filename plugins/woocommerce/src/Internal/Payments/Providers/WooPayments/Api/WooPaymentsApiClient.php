@@ -48,8 +48,9 @@ class WooPaymentsApiClient {
 	/**
 	 * Common keys in API requests/responses that must be redacted before logging.
 	 *
-	 * Ported verbatim from the plugin's API_KEYS_TO_REDACT; the list is the
-	 * logging redaction contract and must not be re-derived.
+	 * Ported from the plugin's API_KEYS_TO_REDACT; the list is the logging
+	 * redaction contract and must not be re-derived. Native-only additions are
+	 * commented inline — redacting MORE than the plugin is always acceptable.
 	 */
 	private const API_KEYS_TO_REDACT = array(
 		'client_secret',
@@ -74,6 +75,8 @@ class WooPaymentsApiClient {
 		'merchant_refund_reason',
 		// Address autocomplete JWT is a credential; keep it out of logs.
 		'token',
+		// WooPay webhook signing secret is a credential; a logged copy would let a log reader forge order-status deliveries. Native-only hardening: the plugin's list does not carry it.
+		'webhook_secret',
 	);
 
 	/**

@@ -854,6 +854,37 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should redact the WooPay webhook secret from transport logs.
+	 */
+	public function test_transport_logs_redact_woopay_webhook_secret(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		$logger = $this->install_recording_logger();
+
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id  = 123;
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode( array( 'result' => 'success' ) ),
+		);
+
+		$sut = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( false ) );
+
+		try {
+			$sut->update_woopay( array( 'webhook_secret' => 'woopay_webhook_signing_secret_value' ) );
+		} finally {
+			remove_all_filters( 'woocommerce_logging_class' );
+			delete_option( 'woocommerce_woocommerce_payments_settings' );
+		}
+
+		$request_entries = array_values( array_filter( $logger->entries, static fn( array $entry ): bool => 0 === strpos( $entry['message'], 'API REQUEST (' ) ) );
+
+		$this->assertCount( 1, $request_entries );
+		$this->assertSame( '(redacted)', $request_entries[0]['context']['body']['webhook_secret'] ?? null, 'The WooPay webhook signing secret must never be logged in cleartext.' );
+	}
+
+	/**
 	 * @testdox Should redact GET query strings in transport logs and keep the lifted idempotency key out of logged bodies.
 	 */
 	public function test_transport_logs_redact_query_strings_and_lifted_idempotency_key(): void {
