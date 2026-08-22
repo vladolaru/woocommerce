@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAdaptedExtensions;
@@ -1747,10 +1748,10 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @param string   $customer_id       Customer id to return.
 	 * @param int|null $captured_user_id  Captures the user id the service was asked about.
-	 * @return \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService
+	 * @return WooPaymentsCustomerService
 	 */
-	private function create_recording_customer_service( string $customer_id, ?int &$captured_user_id ): \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService {
-		$customer_service = $this->getMockBuilder( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService::class )
+	private function create_recording_customer_service( string $customer_id, ?int &$captured_user_id ): WooPaymentsCustomerService {
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_or_create_customer_id_for_user' ) )
 			->getMock();
@@ -2036,15 +2037,15 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the System Under Test.
 	 *
-	 * @param array<string,mixed>                                                                             $settings           Gateway settings.
-	 * @param array<string,mixed>                                                                             $account_data       Account data.
-	 * @param WooPaymentsWooPayAdaptedExtensions|null                                                         $adapted_extensions Adapted extensions registry.
-	 * @param callable(string):void|null                                                                      $event_recorder     Optional account-service event recorder.
-	 * @param \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService|null $customer_service Optional customer service.
+	 * @param array<string,mixed>                     $settings           Gateway settings.
+	 * @param array<string,mixed>                     $account_data       Account data.
+	 * @param WooPaymentsWooPayAdaptedExtensions|null $adapted_extensions Adapted extensions registry.
+	 * @param callable(string):void|null              $event_recorder     Optional account-service event recorder.
+	 * @param WooPaymentsCustomerService|null         $customer_service   Optional customer service.
 	 * @param bool                                    $test_mode          Whether the account reports test mode.
 	 * @return TestableWooPaySessionService
 	 */
-	private function create_service( array $settings = array(), array $account_data = array(), ?WooPaymentsWooPayAdaptedExtensions $adapted_extensions = null, ?callable $event_recorder = null, ?\Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService $customer_service = null, bool $test_mode = true ): TestableWooPaySessionService {
+	private function create_service( array $settings = array(), array $account_data = array(), ?WooPaymentsWooPayAdaptedExtensions $adapted_extensions = null, ?callable $event_recorder = null, ?WooPaymentsCustomerService $customer_service = null, bool $test_mode = true ): TestableWooPaySessionService {
 		$settings     = array_merge(
 			array(
 				'platform_checkout'                    => 'yes',
