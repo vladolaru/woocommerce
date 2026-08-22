@@ -77,7 +77,7 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( MultiCurrencySwitcherWidget::class, $first_widget );
 		$this->assertSame( $first_widget, $sut->get_registered_widget() );
-		$this->assertSame( $first_widget, $wp_widget_factory->widgets[ spl_object_hash( $first_widget ) ] ?? null );
+		$this->assertTrue( in_array( $first_widget, $wp_widget_factory->widgets, true ), 'The widget instance must be registered with the widget factory, whatever key derivation the WordPress version uses.' );
 	}
 
 	/**
