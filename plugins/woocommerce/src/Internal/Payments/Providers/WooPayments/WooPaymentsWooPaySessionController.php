@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\Jetpack\Connection\Rest_Authentication;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
@@ -68,7 +67,26 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	 * Register WooPay REST and AJAX hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_native_register() || ! $this->session_service->is_woopay_enabled() ) {
+		if ( ! $this->arbiter->should_native_register() ) {
+			return;
+		}
+
+		// Inbound WooPay identity hooks stay registered regardless of the enabled/eligibility
+		// snapshot — the plugin registers them unconditionally and every WooPay-specific check
+		// runs per request inside the callbacks themselves.
+		if ( false === has_filter( 'determine_current_user', array( $this->session_service, 'determine_current_user_for_woopay' ) ) ) {
+			add_filter( 'determine_current_user', array( $this->session_service, 'determine_current_user_for_woopay' ), 20 );
+		}
+
+		if ( false === has_action( 'woocommerce_order_payment_status_changed', array( $this->session_service, 'woopay_order_payment_status_changed' ) ) ) {
+			add_action( 'woocommerce_order_payment_status_changed', array( $this->session_service, 'woopay_order_payment_status_changed' ) );
+		}
+
+		if ( false === has_action( 'woopay_restore_order_customer_id', array( $this->session_service, 'restore_order_customer_id_from_requests_with_verified_email' ) ) ) {
+			add_action( 'woopay_restore_order_customer_id', array( $this->session_service, 'restore_order_customer_id_from_requests_with_verified_email' ) );
+		}
+
+		if ( ! $this->session_service->is_woopay_enabled() ) {
 			return;
 		}
 
@@ -120,23 +138,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			return new WP_Error( 'woocommerce_rest_cannot_view', __( 'Sorry, you cannot list resources.', 'woocommerce' ), array( 'status' => rest_authorization_required_code() ) );
 		}
 
-		$signed = class_exists( Rest_Authentication::class )
-			? Rest_Authentication::is_signed_with_blog_token()
-			: false;
-
-		/**
-		 * Filters whether a WooPay session request is signed with the connected blog token.
-		 *
-		 * Strengthen-only: the real blog-token check is authoritative. This filter can
-		 * further restrict access but can never grant it when the request is unsigned.
-		 *
-		 * @param bool $signed Whether the request is signed.
-		 *
-		 * @since 11.0.0
-		 */
-		$signed = $signed && (bool) apply_filters( 'wcpay_woopay_is_signed_with_blog_token', $signed );
-
-		if ( ! $signed ) {
+		if ( ! $this->session_service->has_valid_request_signature() ) {
 			return new WP_Error( 'woocommerce_rest_cannot_view', __( 'Sorry, you cannot list resources.', 'woocommerce' ), array( 'status' => rest_authorization_required_code() ) );
 		}
 

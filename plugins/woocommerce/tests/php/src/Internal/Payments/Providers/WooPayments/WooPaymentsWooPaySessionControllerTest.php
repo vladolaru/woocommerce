@@ -84,7 +84,8 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Should register WooPay route and AJAX hooks when native owns runtime and WooPay is enabled.
 	 */
 	public function test_registers_woopay_route_and_ajax_hooks_when_native_owns_runtime_and_woopay_is_enabled(): void {
-		$this->sut = $this->create_controller( true, true );
+		$service   = new RecordingWooPaySessionService();
+		$this->sut = $this->create_controller( true, true, $service );
 
 		$this->sut->register();
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
@@ -92,6 +93,9 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 
 		$this->assertArrayHasKey( '/payments/woopay/session', $this->server->get_routes() );
 		$this->assertRouteHasMethod( $this->server->get_routes()['/payments/woopay/session'], WP_REST_Server::READABLE );
+		$this->assertSame( 20, has_filter( 'determine_current_user', array( $service, 'determine_current_user_for_woopay' ) ) );
+		$this->assertNotFalse( has_action( 'woocommerce_order_payment_status_changed', array( $service, 'woopay_order_payment_status_changed' ) ) );
+		$this->assertNotFalse( has_action( 'woopay_restore_order_customer_id', array( $service, 'restore_order_customer_id_from_requests_with_verified_email' ) ) );
 
 		foreach ( $this->get_expected_ajax_hooks() as $hook => $method ) {
 			$this->assertNotFalse( has_action( $hook, array( $this->sut, $method ) ), "{$hook} should be registered." );
@@ -130,10 +134,14 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Should register no hooks when native does not own runtime.
 	 */
 	public function test_registers_no_hooks_when_native_does_not_own_runtime(): void {
-		$this->sut = $this->create_controller( false, true );
+		$service   = new RecordingWooPaySessionService();
+		$this->sut = $this->create_controller( false, true, $service );
 
 		$this->sut->register();
 
+		$this->assertFalse( has_filter( 'determine_current_user', array( $service, 'determine_current_user_for_woopay' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_order_payment_status_changed', array( $service, 'woopay_order_payment_status_changed' ) ) );
+		$this->assertFalse( has_action( 'woopay_restore_order_customer_id', array( $service, 'restore_order_customer_id_from_requests_with_verified_email' ) ) );
 		$this->assertFalse( has_action( 'rest_api_init', array( $this->sut, 'register_routes' ) ) );
 		foreach ( $this->get_expected_ajax_hooks() as $hook => $method ) {
 			$this->assertFalse( has_action( $hook, array( $this->sut, $method ) ) );
@@ -145,13 +153,17 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register no hooks when WooPay is disabled.
+	 * @testdox Should register only the inbound identity hooks when WooPay is disabled.
 	 */
-	public function test_registers_no_hooks_when_platform_checkout_is_disabled(): void {
-		$this->sut = $this->create_controller( true, false );
+	public function test_registers_only_inbound_identity_hooks_when_platform_checkout_is_disabled(): void {
+		$service   = new RecordingWooPaySessionService();
+		$this->sut = $this->create_controller( true, false, $service );
 
 		$this->sut->register();
 
+		$this->assertSame( 20, has_filter( 'determine_current_user', array( $service, 'determine_current_user_for_woopay' ) ) );
+		$this->assertNotFalse( has_action( 'woocommerce_order_payment_status_changed', array( $service, 'woopay_order_payment_status_changed' ) ) );
+		$this->assertNotFalse( has_action( 'woopay_restore_order_customer_id', array( $service, 'restore_order_customer_id_from_requests_with_verified_email' ) ) );
 		$this->assertFalse( has_action( 'rest_api_init', array( $this->sut, 'register_routes' ) ) );
 		foreach ( $this->get_expected_ajax_hooks() as $hook => $method ) {
 			$this->assertFalse( has_action( $hook, array( $this->sut, $method ) ) );

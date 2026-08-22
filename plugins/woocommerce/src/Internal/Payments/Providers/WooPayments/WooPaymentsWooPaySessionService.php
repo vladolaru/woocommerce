@@ -8,9 +8,12 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Connection\Client as Jetpack_Connection_Client;
+use Automattic\Jetpack\Connection\Rest_Authentication;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAdaptedExtensions;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayBlocksDataExtractor;
+use Automattic\WooCommerce\StoreApi\SessionHandler;
 use Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils;
+use WC_Order;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -30,6 +33,27 @@ class WooPaymentsWooPaySessionService {
 	private const WOOPAY_REST_NAMESPACE = 'wp-json/platform-checkout/v1';
 
 	private const APPEARANCE_OPTION = 'wcpay_woopay_checkout_appearance';
+
+	/**
+	 * Platform-synced list of adapted extensions active on the store. Written by
+	 * WooPaymentsWooPayExtensionSync; byte-identical to the WooPayments plugin option name.
+	 */
+	private const ENABLED_ADAPTED_EXTENSIONS_OPTION = 'woopay_enabled_adapted_extensions';
+
+	/**
+	 * Accepted Store API issuers on inbound cart tokens; matches the WooPayments plugin pattern.
+	 */
+	private const STORE_API_NAMESPACE_PATTERN = '@^(wc/store(/v[\d]+)?|store-api)$@';
+
+	/**
+	 * Order meta stowing the real customer id while a verified-email guest order is detached.
+	 */
+	private const MERCHANT_CUSTOMER_ID_META = 'woopay_merchant_customer_id';
+
+	/**
+	 * Scheduled-event hook restoring a detached order customer id; byte-identical to the plugin hook.
+	 */
+	private const RESTORE_CUSTOMER_ID_HOOK = 'woopay_restore_order_customer_id';
 
 	/**
 	 * WooPayments account service.
@@ -143,6 +167,254 @@ class WooPaymentsWooPaySessionService {
 	 */
 	public function get_woopay_merchant_id(): string {
 		return $this->get_store_blog_id();
+	}
+
+	/**
+	 * Resolve the current user for WooPay-originated Store API requests.
+	 *
+	 * Mirrors the WooPayments plugin's WooPay_Session::determine_current_user_for_woopay():
+	 * WooPay callbacks must be signed with the connected blog token (hard 401 otherwise),
+	 * are flagged through the wcpay_is_woopay_store_api_request filter, and resolve to the
+	 * shopper account carried by the Cart-Token session so orders keep their customer linkage.
+	 *
+	 * @param int|bool $user Current user ID resolved so far, or false.
+	 * @return int|bool
+	 *
+	 * @since 11.0.0
+	 */
+	public function determine_current_user_for_woopay( $user ) {
+		if ( ! $this->is_request_from_woopay() || ! $this->is_store_api_request() ) {
+			return $user;
+		}
+
+		if ( ! $this->is_woopay_enabled() ) {
+			return $user;
+		}
+
+		if ( ! $this->has_valid_request_signature() ) {
+			wc_get_logger()->info(
+				'WooPay request is not signed correctly.',
+				array( 'source' => 'woopayments-woopay-session' )
+			);
+			wp_die( esc_html__( 'WooPay request is not signed correctly.', 'woocommerce' ), 401 );
+		}
+
+		add_filter( 'wcpay_is_woopay_store_api_request', '__return_true' );
+
+		$cart_token_user_id = $this->get_user_id_from_cart_token();
+		if ( null === $cart_token_user_id ) {
+			return $user;
+		}
+
+		return $cart_token_user_id;
+	}
+
+	/**
+	 * Tell whether the current request originates from WooPay.
+	 *
+	 * @return bool
+	 *
+	 * @since 11.0.0
+	 */
+	public function is_request_from_woopay(): bool {
+		return isset( $_SERVER['HTTP_USER_AGENT'] ) && 'WooPay' === $_SERVER['HTTP_USER_AGENT'];
+	}
+
+	/**
+	 * Tell whether the current request is signed with the connected blog token.
+	 *
+	 * @return bool
+	 *
+	 * @since 11.0.0
+	 */
+	public function has_valid_request_signature(): bool {
+		$signed = class_exists( Rest_Authentication::class )
+			? Rest_Authentication::is_signed_with_blog_token()
+			: false;
+
+		/**
+		 * Filters whether a WooPay session request is signed with the connected blog token.
+		 *
+		 * Strengthen-only: the real blog-token check is authoritative. This filter can
+		 * further restrict access but can never grant it when the request is unsigned.
+		 *
+		 * @param bool $signed Whether the request is signed.
+		 *
+		 * @since 11.0.0
+		 */
+		return $signed && (bool) apply_filters( 'wcpay_woopay_is_signed_with_blog_token', $signed );
+	}
+
+	/**
+	 * Resolve the shopper user id from the request's Cart-Token session.
+	 *
+	 * @return int|null
+	 *
+	 * @since 11.0.0
+	 */
+	public function get_user_id_from_cart_token(): ?int {
+		$payload = $this->get_payload_from_cart_token();
+		if ( null === $payload ) {
+			return null;
+		}
+
+		$session_handler = new SessionHandler();
+		$session_data    = $session_handler->get_session( (string) $payload['user_id'] );
+		$customer        = is_array( $session_data ) && isset( $session_data['customer'] )
+			? maybe_unserialize( $session_data['customer'] )
+			: null;
+		if ( ! is_array( $customer ) ) {
+			return null;
+		}
+
+		// An already-authenticated cart-token session carries the shopper's customer id.
+		if ( is_numeric( $customer['id'] ?? null ) && intval( $customer['id'] ) > 0 ) {
+			return intval( $customer['id'] );
+		}
+
+		$woopay_verified_email_address = $this->get_woopay_verified_email_address();
+		$enabled_adapted_extensions    = get_option( self::ENABLED_ADAPTED_EXTENSIONS_OPTION, array() );
+
+		// A WooPay-verified email matching the cart-token session's email resolves to the matching
+		// store account without authentication, but only while an adapted extension is active —
+		// the same gate the plugin applies before honoring the verified-email flow.
+		if ( ( is_countable( $enabled_adapted_extensions ) ? count( $enabled_adapted_extensions ) : 0 ) > 0 && null !== $woopay_verified_email_address && ! empty( $customer['email'] ) ) {
+			$user = get_user_by( 'email', $woopay_verified_email_address );
+
+			if ( $woopay_verified_email_address === $customer['email'] && $user ) {
+				// Remove the Gift Cards session cache so account gift cards load.
+				add_filter( 'woocommerce_gc_account_session_timeout_minutes', '__return_false' );
+
+				return (int) $user->ID;
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Detach the customer id from a WooPay verified-email guest order until restoration runs.
+	 *
+	 * A verified-email resolution grants order placement without store authentication; stowing
+	 * the customer id keeps the thank-you page from exposing the matched account, and the
+	 * scheduled restore re-links the order ten minutes later.
+	 *
+	 * @param int|mixed $order_id Order ID from woocommerce_order_payment_status_changed.
+	 *
+	 * @since 11.0.0
+	 */
+	public function woopay_order_payment_status_changed( $order_id ): void {
+		if ( ! $this->is_woopay_enabled() ) {
+			return;
+		}
+
+		if ( ! $this->is_request_from_woopay() || ! $this->is_store_api_request() ) {
+			return;
+		}
+
+		$woopay_verified_email_address = $this->get_woopay_verified_email_address();
+		if ( null === $woopay_verified_email_address ) {
+			return;
+		}
+
+		$enabled_adapted_extensions = get_option( self::ENABLED_ADAPTED_EXTENSIONS_OPTION, array() );
+		if ( 0 === ( is_countable( $enabled_adapted_extensions ) ? count( $enabled_adapted_extensions ) : 0 ) ) {
+			return;
+		}
+
+		$payload = $this->get_payload_from_cart_token();
+		if ( null === $payload ) {
+			return;
+		}
+
+		$order = wc_get_order( $order_id );
+		if ( ! $order instanceof WC_Order ) {
+			return;
+		}
+
+		// Guest users' user_id on the cart token payload looks like "t_hash" while the order
+		// customer id is 0; logged-in users carry the real user id in both places.
+		$user_is_logged_in = $payload['user_id'] === $order->get_customer_id();
+
+		if ( ! $user_is_logged_in && $woopay_verified_email_address === $order->get_billing_email() ) {
+			$order->add_meta_data( self::MERCHANT_CUSTOMER_ID_META, (string) $order->get_customer_id(), true );
+			$order->set_customer_id( 0 );
+			$order->save();
+
+			wp_schedule_single_event( time() + 10 * MINUTE_IN_SECONDS, self::RESTORE_CUSTOMER_ID_HOOK, array( $order->get_id() ) );
+		}
+	}
+
+	/**
+	 * Restore the customer id a verified-email WooPay order was detached from.
+	 *
+	 * @param int|mixed $order_id Order ID from the woopay_restore_order_customer_id event.
+	 *
+	 * @since 11.0.0
+	 */
+	public function restore_order_customer_id_from_requests_with_verified_email( $order_id ): void {
+		$order = wc_get_order( $order_id );
+		if ( ! $order instanceof WC_Order || ! $order->meta_exists( self::MERCHANT_CUSTOMER_ID_META ) ) {
+			return;
+		}
+
+		$order->set_customer_id( (int) $order->get_meta( self::MERCHANT_CUSTOMER_ID_META ) );
+		$order->delete_meta_data( self::MERCHANT_CUSTOMER_ID_META );
+		$order->save();
+	}
+
+	/**
+	 * Tell whether the current request targets the Store API.
+	 *
+	 * @return bool
+	 */
+	private function is_store_api_request(): bool {
+		if ( function_exists( 'WC' ) && is_callable( array( WC(), 'is_store_api_request' ) ) && WC()->is_store_api_request() ) {
+			return true;
+		}
+
+		// Sites without pretty permalinks route REST calls through the rest_route query
+		// argument, which core's REQUEST_URI check does not inspect.
+		$rest_route = isset( $_REQUEST['rest_route'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['rest_route'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		return '' !== $rest_route && false !== strpos( $rest_route, '/wc/store/' );
+	}
+
+	/**
+	 * Get the validated Cart-Token payload from the current request.
+	 *
+	 * @return array<string,mixed>|null
+	 */
+	private function get_payload_from_cart_token(): ?array {
+		if ( ! isset( $_SERVER['HTTP_CART_TOKEN'] ) ) {
+			return null;
+		}
+
+		$cart_token = wc_clean( wp_unslash( $_SERVER['HTTP_CART_TOKEN'] ) );
+		if ( ! is_string( $cart_token ) || '' === $cart_token || ! CartTokenUtils::validate_cart_token( $cart_token ) ) {
+			return null;
+		}
+
+		$payload = CartTokenUtils::get_cart_token_payload( $cart_token );
+
+		// The Store API namespace is used as the token issuer.
+		if ( 1 !== preg_match( self::STORE_API_NAMESPACE_PATTERN, (string) $payload['iss'] ) ) {
+			return null;
+		}
+
+		return $payload;
+	}
+
+	/**
+	 * Get the WooPay-verified email address from the request headers, when present.
+	 *
+	 * @return string|null
+	 */
+	private function get_woopay_verified_email_address(): ?string {
+		if ( ! isset( $_SERVER['HTTP_X_WOOPAY_VERIFIED_EMAIL_ADDRESS'] ) ) {
+			return null;
+		}
+
+		return sanitize_text_field( wp_unslash( $_SERVER['HTTP_X_WOOPAY_VERIFIED_EMAIL_ADDRESS'] ) );
 	}
 
 	/**

@@ -183,6 +183,12 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'wcpay_woopay_button_is_product_supported' );
 		remove_all_filters( 'wcpay_platform_checkout_button_are_cart_items_supported' );
 		remove_all_filters( 'pre_option_woocommerce_enable_guest_checkout' );
+		unset( $_SERVER['HTTP_USER_AGENT'], $_SERVER['HTTP_CART_TOKEN'], $_SERVER['HTTP_X_WOOPAY_VERIFIED_EMAIL_ADDRESS'], $_REQUEST['rest_route'] );
+		remove_filter( 'wcpay_is_woopay_store_api_request', '__return_true' );
+		remove_filter( 'woocommerce_gc_account_session_timeout_minutes', '__return_false' );
+		remove_all_filters( 'wcpay_woopay_is_signed_with_blog_token' );
+		wp_clear_scheduled_hook( 'woopay_restore_order_customer_id' );
+		$this->reset_real_blog_token_signed();
 		$this->reset_frontend_surface_state();
 		wp_set_current_user( 0 );
 		parent::tearDown();
@@ -1459,6 +1465,282 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 			substr( wp_hash( $nonce_tick . '|wc_store_api|' . $user_id . '|', 'nonce' ), -12, 10 ),
 			$request['email_verified_session_nonce']
 		);
+	}
+
+	/**
+	 * @testdox Should leave the resolved user untouched when the request does not carry the WooPay user agent.
+	 */
+	public function test_determine_current_user_passes_through_without_woopay_user_agent(): void {
+		$_SERVER['REQUEST_URI'] = '/wp-json/wc/store/v1/checkout';
+
+		$this->assertFalse( $this->create_service()->determine_current_user_for_woopay( false ) );
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		$this->assertFalse( apply_filters( 'wcpay_is_woopay_store_api_request', false ) );
+	}
+
+	/**
+	 * @testdox Should leave the resolved user untouched outside Store API requests.
+	 */
+	public function test_determine_current_user_passes_through_outside_store_api_requests(): void {
+		$_SERVER['HTTP_USER_AGENT'] = 'WooPay';
+		$_SERVER['REQUEST_URI']     = '/checkout/';
+
+		$this->assertFalse( $this->create_service()->determine_current_user_for_woopay( false ) );
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		$this->assertFalse( apply_filters( 'wcpay_is_woopay_store_api_request', false ) );
+	}
+
+	/**
+	 * @testdox Should leave the resolved user untouched when WooPay is disabled.
+	 */
+	public function test_determine_current_user_passes_through_when_woopay_disabled(): void {
+		$this->simulate_woopay_store_api_request();
+
+		$sut = $this->create_service( array( 'platform_checkout' => 'no' ) );
+
+		$this->assertFalse( $sut->determine_current_user_for_woopay( false ) );
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		$this->assertFalse( apply_filters( 'wcpay_is_woopay_store_api_request', false ) );
+	}
+
+	/**
+	 * @testdox Should die with a 401 when a WooPay Store API request is not signed with the blog token.
+	 */
+	public function test_determine_current_user_dies_401_when_request_is_not_signed(): void {
+		$this->simulate_woopay_store_api_request();
+
+		$this->expectException( \WPDieException::class );
+		$this->expectExceptionMessage( 'WooPay request is not signed correctly.' );
+
+		$this->create_service()->determine_current_user_for_woopay( false );
+	}
+
+	/**
+	 * @testdox Should detect Store API requests routed through the rest_route query argument.
+	 */
+	public function test_determine_current_user_covers_rest_route_query_form(): void {
+		$_SERVER['HTTP_USER_AGENT'] = 'WooPay';
+		$_SERVER['REQUEST_URI']     = '/index.php?rest_route=%2Fwc%2Fstore%2Fv1%2Fcheckout';
+		$_REQUEST['rest_route']     = '/wc/store/v1/checkout';
+
+		$this->expectException( \WPDieException::class );
+		$this->expectExceptionMessage( 'WooPay request is not signed correctly.' );
+
+		try {
+			$this->create_service()->determine_current_user_for_woopay( false );
+		} finally {
+			unset( $_REQUEST['rest_route'] );
+		}
+	}
+
+	/**
+	 * @testdox Should flag the request through wcpay_is_woopay_store_api_request when signed, even without a resolvable cart token.
+	 */
+	public function test_determine_current_user_flags_woopay_store_api_request_when_signed(): void {
+		$this->simulate_woopay_store_api_request();
+		$this->force_real_blog_token_signed();
+		$_SERVER['HTTP_CART_TOKEN'] = 'garbage-token';
+
+		$this->assertFalse( $this->create_service()->determine_current_user_for_woopay( false ) );
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		$this->assertTrue( apply_filters( 'wcpay_is_woopay_store_api_request', false ) );
+	}
+
+	/**
+	 * @testdox Should resolve the shopper from an authenticated cart-token session.
+	 */
+	public function test_determine_current_user_resolves_user_from_authenticated_cart_token(): void {
+		$this->simulate_woopay_store_api_request();
+		$this->force_real_blog_token_signed();
+
+		$user_id = $this->factory->user->create( array( 'user_email' => 'cart-token-shopper@example.com' ) );
+		$this->insert_store_api_session(
+			(string) $user_id,
+			array(
+				'id'    => (string) $user_id,
+				'email' => 'cart-token-shopper@example.com',
+			)
+		);
+		$_SERVER['HTTP_CART_TOKEN'] = \Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils::get_cart_token( (string) $user_id );
+
+		$this->assertSame( $user_id, $this->create_service()->determine_current_user_for_woopay( false ) );
+	}
+
+	/**
+	 * @testdox Should resolve a WooPay-verified email to the matching store account when an adapted extension is active.
+	 */
+	public function test_determine_current_user_resolves_verified_email_user_when_adapted_extension_active(): void {
+		$this->simulate_woopay_store_api_request();
+		$this->force_real_blog_token_signed();
+
+		$user_id = $this->factory->user->create( array( 'user_email' => 'verified-shopper@example.com' ) );
+		update_option( 'woopay_enabled_adapted_extensions', array( 'woocommerce-gift-cards' ) );
+		$this->insert_store_api_session(
+			't_guesthash',
+			array(
+				'id'    => '0',
+				'email' => 'verified-shopper@example.com',
+			)
+		);
+		$_SERVER['HTTP_CART_TOKEN']                      = \Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils::get_cart_token( 't_guesthash' );
+		$_SERVER['HTTP_X_WOOPAY_VERIFIED_EMAIL_ADDRESS'] = 'verified-shopper@example.com';
+
+		$this->assertSame( $user_id, $this->create_service()->determine_current_user_for_woopay( false ) );
+	}
+
+	/**
+	 * @testdox Should not resolve a WooPay-verified email without an active adapted extension.
+	 */
+	public function test_determine_current_user_ignores_verified_email_without_adapted_extension(): void {
+		$this->simulate_woopay_store_api_request();
+		$this->force_real_blog_token_signed();
+
+		$this->factory->user->create( array( 'user_email' => 'verified-shopper@example.com' ) );
+		$this->insert_store_api_session(
+			't_guesthash',
+			array(
+				'id'    => '0',
+				'email' => 'verified-shopper@example.com',
+			)
+		);
+		$_SERVER['HTTP_CART_TOKEN']                      = \Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils::get_cart_token( 't_guesthash' );
+		$_SERVER['HTTP_X_WOOPAY_VERIFIED_EMAIL_ADDRESS'] = 'verified-shopper@example.com';
+
+		$this->assertFalse( $this->create_service()->determine_current_user_for_woopay( false ) );
+	}
+
+	/**
+	 * @testdox Should detach the customer id from a verified-email guest order and schedule its restoration.
+	 */
+	public function test_payment_status_change_detaches_customer_id_for_verified_email_guest_order(): void {
+		$this->simulate_woopay_store_api_request();
+
+		$user_id = $this->factory->user->create( array( 'user_email' => 'verified-shopper@example.com' ) );
+		update_option( 'woopay_enabled_adapted_extensions', array( 'woocommerce-gift-cards' ) );
+		$_SERVER['HTTP_CART_TOKEN']                      = \Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils::get_cart_token( 't_guesthash' );
+		$_SERVER['HTTP_X_WOOPAY_VERIFIED_EMAIL_ADDRESS'] = 'verified-shopper@example.com';
+
+		$order = wc_create_order();
+		$order->set_customer_id( $user_id );
+		$order->set_billing_email( 'verified-shopper@example.com' );
+		$order->save();
+
+		$this->create_service()->woopay_order_payment_status_changed( $order->get_id() );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 0, $order->get_customer_id() );
+		$this->assertSame( (string) $user_id, $order->get_meta( 'woopay_merchant_customer_id' ) );
+		$this->assertNotFalse( wp_next_scheduled( 'woopay_restore_order_customer_id', array( $order->get_id() ) ) );
+	}
+
+	/**
+	 * @testdox Should not detach the customer id when no verified-email header is present.
+	 */
+	public function test_payment_status_change_leaves_order_untouched_without_verified_email(): void {
+		$this->simulate_woopay_store_api_request();
+
+		$user_id = $this->factory->user->create( array( 'user_email' => 'verified-shopper@example.com' ) );
+		update_option( 'woopay_enabled_adapted_extensions', array( 'woocommerce-gift-cards' ) );
+		$_SERVER['HTTP_CART_TOKEN'] = \Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils::get_cart_token( 't_guesthash' );
+
+		$order = wc_create_order();
+		$order->set_customer_id( $user_id );
+		$order->set_billing_email( 'verified-shopper@example.com' );
+		$order->save();
+
+		$this->create_service()->woopay_order_payment_status_changed( $order->get_id() );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( $user_id, $order->get_customer_id() );
+		$this->assertFalse( $order->meta_exists( 'woopay_merchant_customer_id' ) );
+	}
+
+	/**
+	 * @testdox Should restore the stowed customer id and remove the bookkeeping meta.
+	 */
+	public function test_restore_order_customer_id_restores_stowed_customer(): void {
+		$user_id = $this->factory->user->create();
+
+		$order = wc_create_order();
+		$order->set_customer_id( 0 );
+		$order->add_meta_data( 'woopay_merchant_customer_id', $user_id, true );
+		$order->save();
+
+		$this->create_service()->restore_order_customer_id_from_requests_with_verified_email( $order->get_id() );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( $user_id, $order->get_customer_id() );
+		$this->assertFalse( $order->meta_exists( 'woopay_merchant_customer_id' ) );
+	}
+
+	/**
+	 * Simulate an inbound WooPay Store API request.
+	 */
+	private function simulate_woopay_store_api_request(): void {
+		$_SERVER['HTTP_USER_AGENT'] = 'WooPay';
+		$_SERVER['REQUEST_URI']     = '/wp-json/wc/store/v1/checkout';
+	}
+
+	/**
+	 * Insert a Store API session row the cart-token resolution can read.
+	 *
+	 * @param string               $session_key Session key (user id or guest hash).
+	 * @param array<string,string> $customer    Customer session payload.
+	 */
+	private function insert_store_api_session( string $session_key, array $customer ): void {
+		global $wpdb;
+
+		$wpdb->insert(
+			$wpdb->prefix . 'woocommerce_sessions',
+			array(
+				'session_key'    => $session_key,
+				'session_value'  => maybe_serialize( array( 'customer' => maybe_serialize( $customer ) ) ),
+				'session_expiry' => time() + HOUR_IN_SECONDS,
+			)
+		);
+	}
+
+	/**
+	 * Force the Jetpack blog-token signed check to report true.
+	 *
+	 * Rest_Authentication::is_signed_with_blog_token() reads a private singleton
+	 * state that is false in tests; this drives it to a signed blog-token result.
+	 */
+	private function force_real_blog_token_signed(): void {
+		if ( ! class_exists( \Automattic\Jetpack\Connection\Rest_Authentication::class ) ) {
+			$this->markTestSkipped( 'Jetpack Rest_Authentication is unavailable.' );
+		}
+
+		$instance   = \Automattic\Jetpack\Connection\Rest_Authentication::init();
+		$reflection = new \ReflectionClass( \Automattic\Jetpack\Connection\Rest_Authentication::class );
+
+		$status = $reflection->getProperty( 'rest_authentication_status' );
+		$status->setAccessible( true );
+		$status->setValue( $instance, true );
+
+		$type = $reflection->getProperty( 'rest_authentication_type' );
+		$type->setAccessible( true );
+		$type->setValue( $instance, 'blog' );
+	}
+
+	/**
+	 * Reset the Jetpack blog-token signed check state forced during a test.
+	 */
+	private function reset_real_blog_token_signed(): void {
+		if ( ! class_exists( \Automattic\Jetpack\Connection\Rest_Authentication::class ) ) {
+			return;
+		}
+
+		$instance   = \Automattic\Jetpack\Connection\Rest_Authentication::init();
+		$reflection = new \ReflectionClass( \Automattic\Jetpack\Connection\Rest_Authentication::class );
+
+		$status = $reflection->getProperty( 'rest_authentication_status' );
+		$status->setAccessible( true );
+		$status->setValue( $instance, null );
+
+		$type = $reflection->getProperty( 'rest_authentication_type' );
+		$type->setAccessible( true );
+		$type->setValue( $instance, null );
 	}
 
 	/**
