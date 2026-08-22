@@ -363,6 +363,10 @@ class WooPaymentsProviderGatewayAdapter {
 		$outcome = WooPaymentsIntentCodec::failed_transport_outcome( 'charge', $exception );
 		$data    = $outcome->get_data();
 
+		if ( $this->is_blocked_by_fraud_rules( $exception ) ) {
+			return $this->fraud_blocked_charge_outcome( $order, $exception, $outcome, $data );
+		}
+
 		$note_candidates = $this->note_service->format_checkout_payment_failed_note_candidates(
 			$order,
 			$exception->getMessage(),
@@ -390,6 +394,98 @@ class WooPaymentsProviderGatewayAdapter {
 			'',
 			$data
 		);
+	}
+
+	/**
+	 * Build the failed outcome for a charge blocked by fraud rules.
+	 *
+	 * Mirrors the plugin's mark_order_blocked_for_fraud effects: the order keeps
+	 * its status (the merchant decides whether to cancel), records the block
+	 * state and the fired ruleset results, and gets the blocked-payment note.
+	 *
+	 * @param WC_Order                $order     Order object.
+	 * @param WooPaymentsApiException $exception Transport exception.
+	 * @param PaymentOutcome          $outcome   Failed transport outcome.
+	 * @param array<string,mixed>     $data      Outcome data.
+	 * @return PaymentOutcome
+	 */
+	private function fraud_blocked_charge_outcome( WC_Order $order, WooPaymentsApiException $exception, PaymentOutcome $outcome, array $data ): PaymentOutcome {
+		$ruleset_results = array();
+		if ( 'wcpay_blocked_by_fraud_rule' === $exception->get_error_code() ) {
+			$error_data      = $exception->get_error_data();
+			$ruleset_results = isset( $error_data['ruleset_results'] ) && is_array( $error_data['ruleset_results'] ) ? $error_data['ruleset_results'] : array();
+		} else {
+			// AVS blocks surface as a Stripe card error rather than a rule engine
+			// outcome, so no ruleset results accompany them; the fired rule is known.
+			$ruleset_results = array( 'avs_verification' => 'block' );
+		}
+
+		$meta = isset( $data[ PaymentOutcome::DATA_META ] ) && is_array( $data[ PaymentOutcome::DATA_META ] ) ? $data[ PaymentOutcome::DATA_META ] : array();
+
+		$meta['_wcpay_fraud_outcome_status'] = 'block';
+		$meta['_wcpay_fraud_meta_box_type']  = 'block';
+		$meta['_intention_status']           = 'canceled';
+		if ( array() !== $ruleset_results ) {
+			$meta['_wcpay_fraud_ruleset_results'] = (string) wp_json_encode( $ruleset_results );
+		}
+		$data[ PaymentOutcome::DATA_META ]                  = $meta;
+		$data[ PaymentOutcome::DATA_PRESERVE_ORDER_STATUS ] = true;
+
+		$note_candidates = $this->note_service->format_fraud_blocked_note_candidates( $order, $exception->get_payment_intent_id(), $ruleset_results );
+		if ( array() !== $note_candidates ) {
+			$data[ PaymentOutcome::DATA_NOTE ]             = $note_candidates[0];
+			$data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] = $note_candidates;
+		}
+
+		return new PaymentOutcome(
+			PaymentOutcome::STATUS_FAILED,
+			$outcome->get_provider_payment_id(),
+			'',
+			'',
+			'',
+			$data
+		);
+	}
+
+	/**
+	 * Tell whether a charge failure was blocked by fraud rules.
+	 *
+	 * @param WooPaymentsApiException $exception Transport exception.
+	 * @return bool
+	 */
+	private function is_blocked_by_fraud_rules( WooPaymentsApiException $exception ): bool {
+		if ( 'wcpay_blocked_by_fraud_rule' === $exception->get_error_code() ) {
+			return true;
+		}
+
+		// The AVS mismatch is part of the advanced fraud protection, so an
+		// incorrect_zip card error counts as a block while that rule is active.
+		return 'card_error' === $exception->get_error_type()
+			&& 'incorrect_zip' === $exception->get_error_code()
+			&& $this->is_avs_verification_fraud_rule_enabled();
+	}
+
+	/**
+	 * Tell whether the advanced fraud protection AVS verification rule is active.
+	 *
+	 * Reads the same cached ruleset the plugin consults; a missing or malformed
+	 * cache means the rule is treated as inactive.
+	 *
+	 * @return bool
+	 */
+	private function is_avs_verification_fraud_rule_enabled(): bool {
+		$ruleset = get_transient( 'wcpay_fraud_protection_settings' );
+		if ( ! is_array( $ruleset ) ) {
+			return false;
+		}
+
+		foreach ( $ruleset as $rule ) {
+			if ( is_array( $rule ) && 'avs_verification' === ( $rule['key'] ?? null ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**

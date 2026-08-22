@@ -611,6 +611,133 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Native charge blocked by fraud rules records the block state without failing the order.
+	 */
+	public function test_charge_blocked_by_fraud_rules_records_block_state(): void {
+		$order      = $this->create_woopayments_order( '25.00' );
+		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ) );
+		$api_client = new class() extends WooPaymentsApiClient {
+			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- Test double always throws.
+			/**
+			 * Create and confirm a payment intention.
+			 *
+			 * @param array<string,mixed> $request_data Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
+				throw new WooPaymentsApiException(
+					'Error: Transaction blocked by fraud rules.',
+					'wcpay_blocked_by_fraud_rule',
+					402,
+					'',
+					'',
+					array( 'ruleset_results' => array( 'international_ip_address' => 'block' ) ),
+					'pi_blocked_test'
+				);
+			}
+			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+		};
+
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_native' );
+
+		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, null, $this->create_account_service( true ) );
+		$outcome = $sut->charge( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_request' ), 'key_charge' );
+		$data    = $outcome->get_data();
+		$meta    = $data[ PaymentOutcome::DATA_META ] ?? array();
+
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertTrue( $data[ PaymentOutcome::DATA_PRESERVE_ORDER_STATUS ] ?? false, 'A fraud block must not fail the order; the merchant decides whether to cancel.' );
+		$this->assertSame( 'block', $meta['_wcpay_fraud_outcome_status'] ?? null );
+		$this->assertSame( 'block', $meta['_wcpay_fraud_meta_box_type'] ?? null );
+		$this->assertSame( wp_json_encode( array( 'international_ip_address' => 'block' ) ), $meta['_wcpay_fraud_ruleset_results'] ?? null );
+		$this->assertSame( 'canceled', $meta['_intention_status'] ?? null );
+		$this->assertSame( 'pi_blocked_test', $outcome->get_provider_payment_id() );
+		$this->assertStringContainsString( '<strong>blocked</strong> by the following risk filters', $data[ PaymentOutcome::DATA_NOTE ] ?? '' );
+	}
+
+	/**
+	 * @testdox Native charge treats an incorrect_zip decline as a fraud block only while the AVS rule is enabled.
+	 */
+	public function test_charge_treats_incorrect_zip_as_block_only_with_avs_rule_enabled(): void {
+		delete_transient( 'wcpay_fraud_protection_settings' );
+		set_transient( 'wcpay_fraud_protection_settings', array( array( 'key' => 'avs_verification' ) ), DAY_IN_SECONDS );
+
+		$make_api_client = function () {
+			return new class() extends WooPaymentsApiClient {
+				// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- Test double always throws.
+				/**
+				 * Create and confirm a payment intention.
+				 *
+				 * @param array<string,mixed> $request_data Request data.
+				 * @param string              $idempotency_key Idempotency key.
+				 * @return array<string,mixed>
+				 */
+				public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
+					throw new WooPaymentsApiException(
+						'Error: Your postal code failed validation.',
+						'incorrect_zip',
+						402,
+						'card_error',
+						'',
+						array(),
+						'pi_avs_test'
+					);
+				}
+				// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
+
+				/**
+				 * Tell whether the transport is available.
+				 *
+				 * @return bool
+				 */
+				public function is_available(): bool {
+					return true;
+				}
+			};
+		};
+
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_native' );
+
+		$order   = $this->create_woopayments_order( '25.00' );
+		$gateway = new RecordingLegacyGateway( array( 'result' => 'success' ) );
+		$sut     = $this->create_adapter( $gateway, $make_api_client(), $customer_service, null, $this->create_account_service( true ) );
+		$outcome = $sut->charge( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_request' ), 'key_charge' );
+		$meta    = $outcome->get_data()[ PaymentOutcome::DATA_META ] ?? array();
+
+		$this->assertSame( 'block', $meta['_wcpay_fraud_meta_box_type'] ?? null, 'With the AVS rule enabled, an incorrect_zip decline is an AVS block.' );
+		$this->assertSame( wp_json_encode( array( 'avs_verification' => 'block' ) ), $meta['_wcpay_fraud_ruleset_results'] ?? null );
+
+		delete_transient( 'wcpay_fraud_protection_settings' );
+
+		$order   = $this->create_woopayments_order( '25.00' );
+		$sut     = $this->create_adapter( $gateway, $make_api_client(), $customer_service, null, $this->create_account_service( true ) );
+		$outcome = $sut->charge( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_request' ), 'key_charge' );
+		$data    = $outcome->get_data();
+		$meta    = $data[ PaymentOutcome::DATA_META ] ?? array();
+
+		$this->assertSame( 'allow', $meta['_wcpay_fraud_meta_box_type'] ?? null, 'Without the AVS rule, an incorrect_zip decline is an ordinary card error.' );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_PRESERVE_ORDER_STATUS, $data );
+	}
+
+	/**
 	 * @testdox Native charge defers settlement exchange-rate metadata to its effect plan.
 	 */
 	public function test_native_charge_defers_settlement_exchange_rate_meta_to_effect_plan(): void {

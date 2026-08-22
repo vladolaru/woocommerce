@@ -158,6 +158,17 @@ class PaymentOutcome {
 	public const DATA_CHECKOUT_REDIRECT = 'checkout_redirect';
 
 	/**
+	 * Data key flagging that a failed outcome must not transition the order status.
+	 *
+	 * A payment refused before processing (for example by fraud screening) records
+	 * its meta and note effects while leaving the order status for the merchant to
+	 * decide; the checkout result is still a failure for the shopper.
+	 *
+	 * @var string
+	 */
+	public const DATA_PRESERVE_ORDER_STATUS = 'preserve_order_status';
+
+	/**
 	 * Outcome status.
 	 *
 	 * @var string

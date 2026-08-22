@@ -836,11 +836,21 @@ class PaymentProcessingService {
 	 * @param ProviderContract $provider Provider.
 	 */
 	private function apply_checkout_outcome( WC_Order $order, PaymentOutcome $outcome, ProviderContract $provider ): void {
+		$lifecycle_status  = $this->get_lifecycle_status( $outcome );
+		$payment_reference = $this->get_lifecycle_payment_reference( $outcome );
+
+		if ( PaymentLifecycleEvent::STATUS_FAILED === $lifecycle_status && $this->should_preserve_order_status( $outcome ) ) {
+			// A payment refused before processing records its effects without
+			// failing the order and without claiming the order transaction id.
+			$lifecycle_status  = PaymentLifecycleEvent::STATUS_STARTED;
+			$payment_reference = null;
+		}
+
 		$this->lifecycle_service->apply_unlocked(
 			$order,
 			new PaymentLifecycleEvent(
-				$this->get_lifecycle_status( $outcome ),
-				$this->get_lifecycle_payment_reference( $outcome ),
+				$lifecycle_status,
+				$payment_reference,
 				$this->get_lifecycle_meta( $outcome, $provider ),
 				$this->get_lifecycle_meta_to_delete( $outcome ),
 				$this->get_lifecycle_note( $outcome ),
@@ -849,6 +859,16 @@ class PaymentProcessingService {
 			),
 			$provider->get_persistence_profile()
 		);
+	}
+
+	/**
+	 * Tell whether a failed outcome asked to preserve the current order status.
+	 *
+	 * @param PaymentOutcome $outcome Provider outcome.
+	 * @return bool
+	 */
+	private function should_preserve_order_status( PaymentOutcome $outcome ): bool {
+		return true === ( $outcome->get_data()[ PaymentOutcome::DATA_PRESERVE_ORDER_STATUS ] ?? false );
 	}
 
 	/**

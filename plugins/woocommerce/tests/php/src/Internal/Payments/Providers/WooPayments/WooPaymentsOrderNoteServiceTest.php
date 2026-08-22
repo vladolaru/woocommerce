@@ -179,6 +179,79 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Fraud-blocked notes list the fired risk filters with the blocked transaction link.
+	 */
+	public function test_formats_fraud_blocked_note_with_risk_filter_labels(): void {
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->set_currency( 'USD' );
+		$order->set_total( '25.00' );
+		$order->save();
+		$sut = new WooPaymentsOrderNoteService();
+
+		$candidates = $sut->format_fraud_blocked_note_candidates(
+			$order,
+			'pi_blocked_test',
+			array(
+				'international_ip_address' => 'block',
+				'order_items_threshold'    => 'allow',
+			)
+		);
+		$url        = $sut->blocked_transaction_url( 'pi_blocked_test', (string) $order->get_id() );
+
+		$this->assertSame(
+			sprintf(
+				'&#x1F6AB; A payment of %1$s USD was <strong>blocked</strong> by the following risk filters:<br>%2$s<br><br><a href="%3$s" target="_blank" rel="noopener noreferrer">View more details</a>.',
+				wc_price( 25.00, array( 'currency' => 'USD' ) ),
+				'&#8226; Block if the country resolved from customer IP is not listed in your selling countries',
+				$url
+			),
+			$candidates[0],
+			'Allowed rules must not appear in the fired-filter list.'
+		);
+	}
+
+	/**
+	 * @testdox Fraud-blocked notes without ruleset results fall back to the generic blocked copy.
+	 */
+	public function test_formats_generic_fraud_blocked_note_without_ruleset_results(): void {
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->set_currency( 'USD' );
+		$order->set_total( '25.00' );
+		$order->save();
+		$sut = new WooPaymentsOrderNoteService();
+
+		$candidates = $sut->format_fraud_blocked_note_candidates( $order, '', array() );
+		$url        = $sut->blocked_transaction_url( '', (string) $order->get_id() );
+
+		$this->assertSame(
+			sprintf(
+				'&#x1F6AB; A payment of %1$s USD was <strong>blocked</strong> by one or more risk filters.<br><br><a href="%2$s" target="_blank" rel="noopener noreferrer">View more details</a>.',
+				wc_price( 25.00, array( 'currency' => 'USD' ) ),
+				$url
+			),
+			$candidates[0]
+		);
+	}
+
+	/**
+	 * @testdox Unknown risk filter keys render as readable labels.
+	 */
+	public function test_formats_fraud_blocked_note_with_unknown_rule_key(): void {
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->set_currency( 'USD' );
+		$order->set_total( '25.00' );
+		$order->save();
+		$sut = new WooPaymentsOrderNoteService();
+
+		$candidates = $sut->format_fraud_blocked_note_candidates( $order, 'pi_blocked_test', array( 'new_platform_rule' => 'block' ) );
+
+		$this->assertStringContainsString( '&#8226; New platform rule', $candidates[0] );
+	}
+
+	/**
 	 * @testdox Authorization and started notes preserve WooPayments reference copy.
 	 */
 	public function test_formats_authorization_and_started_notes(): void {

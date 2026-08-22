@@ -110,6 +110,45 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A failed outcome flagged to preserve the order status records meta and note without failing the order.
+	 */
+	public function test_process_checkout_preserves_order_status_for_flagged_failed_outcome(): void {
+		$order    = $this->create_woopayments_order( '10.00' );
+		$provider = new RecordingProvider(
+			new PaymentOutcome(
+				PaymentOutcome::STATUS_FAILED,
+				'pi_blocked_test',
+				'',
+				'',
+				'',
+				array(
+					PaymentOutcome::DATA_ERROR_CODE => 'wcpay_blocked_by_fraud_rule',
+					PaymentOutcome::DATA_PRESERVE_ORDER_STATUS => true,
+					PaymentOutcome::DATA_META       => array(
+						'_wcpay_fraud_outcome_status' => 'block',
+						'_intention_status'           => 'canceled',
+					),
+					PaymentOutcome::DATA_NOTE       => 'A payment was blocked by risk filters.',
+				)
+			)
+		);
+
+		$result = $this->sut->process_checkout( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_test' ), $provider );
+		$order  = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'failure', $result['result'], 'The shopper-facing checkout result must still be a failure.' );
+		$this->assertSame( 'pending', $order->get_status(), 'A blocked payment must not fail the order; the merchant decides whether to cancel.' );
+		$this->assertSame( 'block', $order->get_meta( '_wcpay_fraud_outcome_status', true ) );
+		$this->assertSame( 'canceled', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( 'pi_blocked_test', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( '', (string) $order->get_transaction_id(), 'A blocked attempt must not claim the order transaction id.' );
+
+		$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+		$this->assertContains( 'A payment was blocked by risk filters.', wp_list_pluck( $notes, 'content' ) );
+	}
+
+	/**
 	 * @testdox Provider throwables emit one structured operation log with idempotency correlation.
 	 * @dataProvider provider_failure_operations
 	 *

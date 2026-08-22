@@ -209,6 +209,59 @@ class WooPaymentsOrderNoteService {
 	}
 
 	/**
+	 * Build exact Core- and plugin-catalog renderings of a fraud-blocked payment note.
+	 *
+	 * Mirrors the plugin's blocked-payment note: fired risk filters render as a
+	 * bullet list with a link to the blocked transaction, and a block without
+	 * ruleset results falls back to the generic blocked copy.
+	 *
+	 * @param WC_Order             $order           Order object.
+	 * @param string               $intent_id       Blocked payment intent ID, when the block carried one.
+	 * @param array<string,string> $ruleset_results Fired fraud-rule results, keyed by rule.
+	 * @return string[] Exact equivalent renderings, with the native Core rendering first.
+	 *
+	 * @since 11.0.0
+	 */
+	public function format_fraud_blocked_note_candidates( WC_Order $order, string $intent_id, array $ruleset_results ): array {
+		return $this->format_amount_note_candidates(
+			$order,
+			fn( string $text_domain, string $formatted_amount ): string => $this->format_fraud_blocked_note_for_domain( $order, $intent_id, $ruleset_results, $text_domain, $formatted_amount )
+		);
+	}
+
+	/**
+	 * Build the blocked-transaction details URL for a fraud-blocked payment note.
+	 *
+	 * Links the note to the specific blocked attempt: the intent id when the
+	 * block carried one, otherwise the order id (rule-engine blocks fire before
+	 * an intent exists).
+	 *
+	 * @param string $intent_id Blocked payment intent ID.
+	 * @param string $order_id  Order ID fallback.
+	 * @return string
+	 *
+	 * @since 11.0.0
+	 */
+	public function blocked_transaction_url( string $intent_id, string $order_id ): string {
+		if ( '' === $intent_id && '' === $order_id ) {
+			return '';
+		}
+
+		if ( false !== strpos( $intent_id, 'seti_' ) ) {
+			return '';
+		}
+
+		return Utils::wc_payments_legacy_admin_url(
+			'/payments/transactions/details',
+			array(
+				'id'        => '' !== $intent_id ? $intent_id : $order_id,
+				'status_is' => 'block',
+				'type_is'   => 'order_note',
+			)
+		);
+	}
+
+	/**
 	 * Build exact Core- and plugin-catalog renderings of a synchronous checkout payment-failure note.
 	 *
 	 * Mirrors the plugin's gateway decline note: the raw diagnostics (plus the
@@ -494,6 +547,130 @@ class WooPaymentsOrderNoteService {
 		);
 
 		return '' === $message ? $note : $note . ' ' . $message;
+	}
+
+	/**
+	 * Build a fraud-blocked payment rendering from one known catalog.
+	 *
+	 * @param WC_Order             $order            Order object.
+	 * @param string               $intent_id        Blocked payment intent ID.
+	 * @param array<string,string> $ruleset_results  Fired fraud-rule results, keyed by rule.
+	 * @param string               $text_domain      Translation catalog to render.
+	 * @param string               $formatted_amount Preformatted order amount.
+	 * @return string
+	 */
+	private function format_fraud_blocked_note_for_domain( WC_Order $order, string $intent_id, array $ruleset_results, string $text_domain, string $formatted_amount ): string {
+		$transaction_url = $this->blocked_transaction_url( $intent_id, (string) $order->get_id() );
+		$labels          = $this->get_ruleset_result_labels( $ruleset_results, $text_domain );
+
+		if ( array() !== $labels ) {
+			$rules_list = '&#8226; ' . implode( '<br>&#8226; ', array_map( 'esc_html', $labels ) );
+
+			if ( 'woocommerce-payments' === $text_domain ) {
+				/* translators: %1$s: the blocked amount, %2$s: the list of risk filters that blocked the payment. */
+				$note_format = __( '&#x1F6AB; A payment of %1$s was <strong>blocked</strong> by the following risk filters:<br>%2$s<br><br><a>View more details</a>.', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+			} else {
+				/* translators: %1$s: the blocked amount, %2$s: the list of risk filters that blocked the payment. */
+				$note_format = __( '&#x1F6AB; A payment of %1$s was <strong>blocked</strong> by the following risk filters:<br>%2$s<br><br><a>View more details</a>.', 'woocommerce' );
+			}
+
+			return sprintf(
+				WooPaymentsHtmlUtils::escape_interpolated_html(
+					$note_format,
+					array(
+						'strong' => '<strong>',
+						'br'     => '<br>',
+						'a'      => '' !== $transaction_url ? '<a href="%3$s" target="_blank" rel="noopener noreferrer">' : '<code>',
+					)
+				),
+				$formatted_amount,
+				$rules_list,
+				$transaction_url
+			);
+		}
+
+		if ( 'woocommerce-payments' === $text_domain ) {
+			/* translators: %1$s: the blocked amount. */
+			$note_format = __( '&#x1F6AB; A payment of %1$s was <strong>blocked</strong> by one or more risk filters.<br><br><a>View more details</a>.', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+		} else {
+			/* translators: %1$s: the blocked amount. */
+			$note_format = __( '&#x1F6AB; A payment of %1$s was <strong>blocked</strong> by one or more risk filters.<br><br><a>View more details</a>.', 'woocommerce' );
+		}
+
+		return sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
+				$note_format,
+				array(
+					'strong' => '<strong>',
+					'br'     => '<br>',
+					'a'      => '' !== $transaction_url ? '<a href="%2$s" target="_blank" rel="noopener noreferrer">' : '<code>',
+				)
+			),
+			$formatted_amount,
+			$transaction_url
+		);
+	}
+
+	/**
+	 * Map fired fraud-rule results to the plugin's merchant-facing filter labels.
+	 *
+	 * @param array<string,string> $ruleset_results Fired fraud-rule results, keyed by rule.
+	 * @param string               $text_domain     Translation catalog to render.
+	 * @return string[]
+	 */
+	private function get_ruleset_result_labels( array $ruleset_results, string $text_domain ): array {
+		if ( 'woocommerce-payments' === $text_domain ) {
+			// phpcs:disable WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+			$mapping = array(
+				'review' => array(
+					'avs_verification'         => __( 'Place in review if the AVS verification fails', 'woocommerce-payments' ),
+					'address_mismatch'         => __( 'Place in review if the shipping address country differs from the billing address country', 'woocommerce-payments' ),
+					'international_ip_address' => __( 'Place in review if the country resolved from customer IP is not listed in your selling countries', 'woocommerce-payments' ),
+					'ip_address_mismatch'      => __( 'Place in review if the order originates from a country different from the shipping address country', 'woocommerce-payments' ),
+					'order_items_threshold'    => __( 'Place in review if the items count is not in your defined range', 'woocommerce-payments' ),
+					'purchase_price_threshold' => __( 'Place in review if the purchase price is not in your defined range', 'woocommerce-payments' ),
+				),
+				'block'  => array(
+					'avs_verification'         => __( 'Block if the AVS verification fails', 'woocommerce-payments' ),
+					'address_mismatch'         => __( 'Block if the shipping address differs from the billing address', 'woocommerce-payments' ),
+					'international_ip_address' => __( 'Block if the country resolved from customer IP is not listed in your selling countries', 'woocommerce-payments' ),
+					'ip_address_mismatch'      => __( 'Block if the order originates from a country different from the shipping address country', 'woocommerce-payments' ),
+					'order_items_threshold'    => __( 'Block if the items count is not in your defined range', 'woocommerce-payments' ),
+					'purchase_price_threshold' => __( 'Block if the purchase price is not in your defined range', 'woocommerce-payments' ),
+				),
+			);
+			// phpcs:enable WordPress.WP.I18n.TextDomainMismatch
+		} else {
+			$mapping = array(
+				'review' => array(
+					'avs_verification'         => __( 'Place in review if the AVS verification fails', 'woocommerce' ),
+					'address_mismatch'         => __( 'Place in review if the shipping address country differs from the billing address country', 'woocommerce' ),
+					'international_ip_address' => __( 'Place in review if the country resolved from customer IP is not listed in your selling countries', 'woocommerce' ),
+					'ip_address_mismatch'      => __( 'Place in review if the order originates from a country different from the shipping address country', 'woocommerce' ),
+					'order_items_threshold'    => __( 'Place in review if the items count is not in your defined range', 'woocommerce' ),
+					'purchase_price_threshold' => __( 'Place in review if the purchase price is not in your defined range', 'woocommerce' ),
+				),
+				'block'  => array(
+					'avs_verification'         => __( 'Block if the AVS verification fails', 'woocommerce' ),
+					'address_mismatch'         => __( 'Block if the shipping address differs from the billing address', 'woocommerce' ),
+					'international_ip_address' => __( 'Block if the country resolved from customer IP is not listed in your selling countries', 'woocommerce' ),
+					'ip_address_mismatch'      => __( 'Block if the order originates from a country different from the shipping address country', 'woocommerce' ),
+					'order_items_threshold'    => __( 'Block if the items count is not in your defined range', 'woocommerce' ),
+					'purchase_price_threshold' => __( 'Block if the purchase price is not in your defined range', 'woocommerce' ),
+				),
+			);
+		}
+
+		$labels = array();
+		foreach ( $ruleset_results as $key => $outcome ) {
+			if ( ! is_string( $key ) || ! is_string( $outcome ) || 'allow' === $outcome ) {
+				continue;
+			}
+
+			$labels[] = $mapping[ $outcome ][ $key ] ?? ucfirst( str_replace( '_', ' ', $key ) );
+		}
+
+		return $labels;
 	}
 
 	/**
