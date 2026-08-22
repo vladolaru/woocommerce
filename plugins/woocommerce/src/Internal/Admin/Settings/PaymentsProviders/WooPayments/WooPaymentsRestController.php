@@ -770,6 +770,11 @@ class WooPaymentsRestController extends RestApiControllerBase {
 			'deposit_schedule_monthly_anchor'      => $this->get_typed_arg( array( 'integer', 'null' ) ),
 			'advanced_fraud_protection_settings'   => $this->get_advanced_fraud_protection_settings_arg(),
 			'account_business_support_address'     => $this->get_typed_arg( 'object' ),
+			'account_statement_descriptor'         => array(
+				'type'              => 'string',
+				'required'          => false,
+				'validate_callback' => array( $this, 'validate_statement_descriptor' ),
+			),
 		);
 
 		foreach (
@@ -797,7 +802,6 @@ class WooPaymentsRestController extends RestApiControllerBase {
 				'payment_request_button_theme',
 				'woopay_custom_message',
 				'woopay_store_logo',
-				'account_statement_descriptor',
 				'account_statement_descriptor_kanji',
 				'account_statement_descriptor_kana',
 				'account_business_name',
@@ -870,6 +874,38 @@ class WooPaymentsRestController extends RestApiControllerBase {
 				return true;
 			},
 		);
+	}
+
+	/**
+	 * Validate the account statement descriptor with the WooPayments plugin's rules.
+	 *
+	 * The platform validates before Stripe as well, but a boundary rejection is the only shape that surfaces the field-specific inline error the settings UI renders.
+	 *
+	 * @param mixed           $value   Statement descriptor value.
+	 * @param WP_REST_Request $request Request.
+	 * @param string          $param   Parameter name.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return true|WP_Error
+	 */
+	public function validate_statement_descriptor( $value, WP_REST_Request $request, string $param ) {
+		$validation = rest_validate_request_arg( $value, $request, $param );
+		if ( true !== $validation ) {
+			return $validation;
+		}
+
+		$descriptor = trim( stripslashes( (string) $value ) );
+		if (
+			! preg_match( '/^.{5,22}$/', $descriptor )
+			|| ! preg_match( '/^.*[a-zA-Z]+/', $descriptor )
+			|| ! preg_match( '/^[^*"\'<>]*$/', $descriptor )
+		) {
+			return new WP_Error(
+				'rest_invalid_pattern',
+				__( 'Customer bank statement is invalid. Statement should be between 5 and 22 characters long, contain at least single Latin character and does not contain special characters: \' " * &lt; &gt;', 'woocommerce' )
+			);
+		}
+
+		return true;
 	}
 
 	/**

@@ -514,6 +514,76 @@ class WooPaymentsRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should reject invalid statement descriptors before settings persistence.
+	 * @dataProvider provider_invalid_statement_descriptors
+	 *
+	 * @param string $descriptor Invalid statement descriptor.
+	 */
+	public function test_update_native_settings_rejects_invalid_statement_descriptor( string $descriptor ): void {
+		$this->mock_settings_service
+			->expects( $this->never() )
+			->method( 'update_settings' );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
+		$request->set_body_params(
+			array(
+				'account_statement_descriptor' => $descriptor,
+			)
+		);
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertSame( 'rest_invalid_param', $response->get_data()['code'] );
+		$this->assertArrayHasKey( 'account_statement_descriptor', $response->get_data()['data']['params'] );
+		$this->assertSame( 'rest_invalid_pattern', $response->get_data()['data']['details']['account_statement_descriptor']['code'] );
+	}
+
+	/**
+	 * Invalid statement descriptor vectors, mirroring the WooPayments plugin's validator.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public function provider_invalid_statement_descriptors(): array {
+		return array(
+			'shorter than 5 characters'    => array( 'WOOP' ),
+			'longer than 22 characters'    => array( 'WOOPAYMENTS STORE NAME XL' ),
+			'no Latin letter'              => array( '1234567890' ),
+			'contains asterisk'            => array( 'WOO*STORE' ),
+			'contains double quote'        => array( 'WOO"STORE' ),
+			'contains single quote'        => array( "WOO'STORE" ),
+			'contains angle brackets'      => array( 'WOO<STORE>' ),
+			'only whitespace when trimmed' => array( '      ' ),
+		);
+	}
+
+	/**
+	 * @testdox Should accept a valid statement descriptor and pass it through to settings persistence.
+	 */
+	public function test_update_native_settings_accepts_valid_statement_descriptor(): void {
+		$this->mock_settings_service
+			->expects( $this->once() )
+			->method( 'update_settings' )
+			->with(
+				$this->callback(
+					static function ( array $params ): bool {
+						return 'WOO STORE' === $params['account_statement_descriptor'];
+					}
+				)
+			)
+			->willReturn( array() );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
+		$request->set_body_params(
+			array(
+				'account_statement_descriptor' => 'WOO STORE',
+			)
+		);
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 200, $response->get_status() );
+	}
+
+	/**
 	 * @testdox Should expose visible native WooPayments payment method promotions.
 	 */
 	public function test_get_native_pm_promotions_by_manager(): void {
