@@ -27,3 +27,15 @@ The plugin parses the platform's "You cannot combine currencies on a single cust
 ### Typeless-error shopper copy is stricter than the plugin (observed during S6)
 
 For platform errors with an empty `error.type` (for example `wcpay_blocked_by_fraud_rule`, top-level platform codes) the plugin shows the raw platform message to the shopper; native's `WooPaymentsErrorMessages` redacts everything that is not a `card_error` to the generic message. Kept deliberately — native's redaction is the safer behavior — but it is a known bytes divergence from the plugin. Revisit only if shopper-copy parity for these paths becomes a requirement.
+
+### WooPay email-input/OTP and direct-checkout front ends not ported (S7, D3)
+
+The checkout config publishes `isWooPayEmailInputEnabled` and `isWooPayDirectCheckoutEnabled` as `false` because neither flow has a native JS consumer (no OTP iframe, no `handleWooPayEmailInput`, no `encryptedData` producer). The email-input/OTP port is a scheduled follow-up slice of the parity programme; it re-enables the flag, ports the plugin's `wcpay_is_woopay_email_input_enabled` filter, and adds the `encrypted_data` branch to the session email fallback chain. The direct-checkout front end has no scheduled port; if it lands, flip its flag in `WooPaymentsWooPaySessionService::get_woopay_frontend_config()`.
+
+### wcpay_woopay_is_signed_with_blog_token stays strengthen-only (S7, finding 12 — deliberate divergence)
+
+The plugin's filter can grant access to WooPay session callbacks on its own (`return apply_filters( ..., Rest_Authentication::is_signed_with_blog_token() )`); native applies it strengthen-only — it can restrict but never grant when the request is unsigned. This is deliberate hardening: the only grant-mode consumers found are the WCPay dev-tools plugin and the plugin's own unit tests. Cost: local/proxied WooPay dev setups that rely on the grant behavior (e.g. dev-tools `mock_rest_authentication_is_signed_with_blog_token`) do not work against a native store; anyone needing local WooPay e2e against native must drive the real Jetpack signature state instead. Revisit only if a production consumer of the grant behavior surfaces.
+
+### Verified-email restore drain across runtime cutover (S7, finding 9 rider)
+
+A verified-email WooPay order detaches its customer id and schedules `woopay_restore_order_customer_id` ten minutes out. Both the native runtime and the plugin register a handler for that hook, so pending restores drain under either owner — but if the native runtime stops registering (arbiter hands ownership back) while the plugin is absent, scheduled events fire with no handler and the order keeps `customer_id 0` with the real id parked in `woopay_merchant_customer_id` meta. The plugin drains pending schedules at deactivation; native has no deactivation moment. If runtime cutover tooling gains a disable path, drain or re-run these events there.
