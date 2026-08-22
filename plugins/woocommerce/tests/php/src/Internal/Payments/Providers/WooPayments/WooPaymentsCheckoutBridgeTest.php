@@ -457,7 +457,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$this->assertArrayHasKey( 'cartTotal', $config );
 		$this->assertFalse( $config['cartContainsSubscription'] );
 		$this->assertSame( 'styles-v1', $config['stylesCacheVersion'] );
-		$this->assertSame( defined( 'WC_VERSION' ) ? WC_VERSION : '', $config['wcpayVersionNumber'] );
+		$this->assertSame( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion::VERSION, $config['wcpayVersionNumber'] );
 		$this->assertArrayHasKey( 'createSetupIntentNonce', $config );
 		$this->assertArrayHasKey( 'updateOrderStatusNonce', $config );
 		$this->assertSame( 'https://pay.woo.com', $config['woopayHost'] );
@@ -1499,7 +1499,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 				'forceNetworkSavedCards'            => false,
 				'platformTrackerNonce'              => 'platform-tracks-nonce',
 				'woopayHost'                        => 'https://pay.woo.com',
-				'wcpayVersionNumber'                => defined( 'WC_VERSION' ) ? WC_VERSION : '',
+				'wcpayVersionNumber'                => \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion::VERSION,
 				'woopayMerchantId'                  => '12345',
 				'initWooPayNonce'                   => 'init-woopay-nonce',
 				'woopaySessionNonce'                => 'woopay-session-nonce',

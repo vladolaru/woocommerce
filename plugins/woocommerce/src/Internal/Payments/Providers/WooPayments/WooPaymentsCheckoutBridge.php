@@ -499,7 +499,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 			'platformTrackerNonce'                     => wp_create_nonce( 'platform_tracks_nonce' ),
 			'woopayHost'                               => $this->get_woopay_session_service()->get_woopay_url(),
 			'accountIdForIntentConfirmation'           => $account_id_for_intent_confirmation,
-			'wcpayVersionNumber'                       => defined( 'WC_VERSION' ) ? WC_VERSION : '',
+			'wcpayVersionNumber'                       => WooPaymentsClientVersion::VERSION,
 			'icon'                                     => '',
 			'isExpressCheckoutInPaymentMethodsEnabled' => $this->is_express_checkout_in_payment_methods_enabled(),
 			'confirmationErrorMessage'                 => __( 'There was a problem confirming your payment.', 'woocommerce' ),

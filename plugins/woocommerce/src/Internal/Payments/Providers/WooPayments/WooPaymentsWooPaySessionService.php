@@ -498,7 +498,7 @@ class WooPaymentsWooPaySessionService {
 	 */
 	public function get_minimum_session_data(): array {
 		return array(
-			'wcpay_version'     => defined( 'WC_VERSION' ) ? WC_VERSION : '',
+			'wcpay_version'     => WooPaymentsClientVersion::VERSION,
 			'blog_id'           => $this->get_store_blog_id(),
 			'blog_rest_url'     => get_rest_url(),
 			'blog_checkout_url' => function_exists( 'wc_get_checkout_url' ) ? wc_get_checkout_url() : home_url( '/' ),
@@ -577,7 +577,7 @@ class WooPaymentsWooPaySessionService {
 		$email            = $this->resolve_session_email( $email );
 
 		$request = array(
-			'wcpay_version'        => defined( 'WC_VERSION' ) ? WC_VERSION : '',
+			'wcpay_version'        => WooPaymentsClientVersion::VERSION,
 			'user_id'              => get_current_user_id(),
 			'customer_id'          => $this->get_platform_customer_id(),
 			'session_nonce'        => $this->create_woopay_nonce( get_current_user_id() ),
@@ -808,7 +808,7 @@ class WooPaymentsWooPaySessionService {
 			'isShopperTrackingEnabled'          => $this->get_frontend_tracking_controller()->is_shopper_tracking_enabled(),
 			'is_shopper_tracking_enabled'       => $this->get_frontend_tracking_controller()->is_shopper_tracking_enabled(),
 			'woopayHost'                        => $this->get_woopay_url(),
-			'wcpayVersionNumber'                => defined( 'WC_VERSION' ) ? WC_VERSION : '',
+			'wcpayVersionNumber'                => WooPaymentsClientVersion::VERSION,
 			'woopayMerchantId'                  => $this->get_woopay_merchant_id(),
 			'initWooPayNonce'                   => wp_create_nonce( 'wcpay_init_woopay_nonce' ),
 			'woopaySessionNonce'                => wp_create_nonce( 'woopay_session_nonce' ),

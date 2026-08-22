@@ -1823,6 +1823,19 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should report the WooPayments compatibility version to WooPay, not the WooCommerce core version.
+	 */
+	public function test_woopay_payloads_report_the_woopayments_client_version(): void {
+		$sut = $this->create_service();
+
+		$expected = \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion::VERSION;
+
+		$this->assertSame( $expected, $sut->get_minimum_session_data()['wcpay_version'] );
+		$this->assertSame( $expected, $sut->get_init_session_request( 'shopper@example.com' )['wcpay_version'] );
+		$this->assertSame( $expected, $sut->get_woopay_frontend_config( 'checkout' )['wcpayVersionNumber'] );
+	}
+
+	/**
 	 * Simulate an inbound WooPay Store API request.
 	 */
 	private function simulate_woopay_store_api_request(): void {
