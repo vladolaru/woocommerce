@@ -2144,8 +2144,6 @@ class WooPaymentsApiClient {
 		 */
 		$params = apply_filters( 'wcpay_api_request_params', $params, $api, $method );
 
-		$redacted_params = self::redact_array( $params, self::API_KEYS_TO_REDACT );
-
 		$headers = array(
 			'Content-Type' => 'application/json; charset=utf-8',
 			'User-Agent'   => $this->get_user_agent(),
@@ -2161,6 +2159,8 @@ class WooPaymentsApiClient {
 			$headers['Idempotency-Key'] = '' !== $caller_idempotency_key ? $caller_idempotency_key : wp_generate_uuid4();
 		}
 
+		$redacted_params = self::redact_array( $params, self::API_KEYS_TO_REDACT );
+
 		/**
 		 * Filters the WooPayments native request headers before transport dispatch.
 		 *
@@ -2175,12 +2175,14 @@ class WooPaymentsApiClient {
 			? sprintf( '/sites/%d/%s/%s', (int) $site_id, $endpoint_rest_base, $api )
 			: sprintf( '/%s/%s', $endpoint_rest_base, $api );
 		$body               = null;
+		$redacted_path      = $path;
 		$filter_url         = $this->get_filter_request_url( $api, $is_site_scoped, $use_v2_api );
 
 		if ( in_array( $method, array( 'GET', 'DELETE' ), true ) ) {
-			$query_string = http_build_query( $params );
-			$path        .= '?' . $query_string;
-			$filter_url  .= '?' . $query_string;
+			$query_string   = http_build_query( $params );
+			$path          .= '?' . $query_string;
+			$filter_url    .= '?' . $query_string;
+			$redacted_path .= '?' . http_build_query( is_array( $redacted_params ) ? $redacted_params : array() );
 		} else {
 			$body = wp_json_encode( $params );
 
@@ -2199,7 +2201,7 @@ class WooPaymentsApiClient {
 
 			$log_request_id = uniqid();
 			$this->log_transport_info(
-				sprintf( 'API REQUEST (%s): %s %s', $log_request_id, $method, $path ),
+				sprintf( 'API REQUEST (%s): %s %s', $log_request_id, $method, $redacted_path ),
 				null !== $body ? array( 'body' => $redacted_params ) : array()
 			);
 
@@ -2252,7 +2254,7 @@ class WooPaymentsApiClient {
 		$decoded_body        = json_decode( $response_body, true );
 
 		$this->log_transport_info(
-			sprintf( 'API RESPONSE (%s): %s %s', $log_request_id, $method, $path ),
+			sprintf( 'API RESPONSE (%s): %s %s', $log_request_id, $method, $redacted_path ),
 			array( 'body' => self::redact_array( is_array( $decoded_body ) ? $decoded_body : $response_body, self::API_KEYS_TO_REDACT ) )
 		);
 

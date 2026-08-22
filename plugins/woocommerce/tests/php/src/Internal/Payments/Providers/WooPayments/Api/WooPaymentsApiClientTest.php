@@ -836,6 +836,53 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should redact GET query strings in transport logs and keep the lifted idempotency key out of logged bodies.
+	 */
+	public function test_transport_logs_redact_query_strings_and_lifted_idempotency_key(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		$logger = $this->install_recording_logger();
+
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id  = 123;
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode( array( 'data' => array() ) ),
+		);
+
+		$sut    = new WooPaymentsApiClient();
+		$filter = static function ( array $params ): array {
+			$params['email'] = 'john@example.com';
+			return $params;
+		};
+
+		$sut->init( $http_client, $this->create_account_service( false ) );
+		add_filter( 'wcpay_api_request_params', $filter, 10, 3 );
+
+		try {
+			$sut->get_terminal_locations();
+			$sut->refund_charge( 'ch_test', 250, 'requested_by_customer', 'native_transport', 'idem_private' );
+		} finally {
+			remove_filter( 'wcpay_api_request_params', $filter, 10 );
+			remove_all_filters( 'woocommerce_logging_class' );
+			delete_option( 'woocommerce_woocommerce_payments_settings' );
+		}
+
+		$request_entries = array_values( array_filter( $logger->entries, static fn( array $entry ): bool => 0 === strpos( $entry['message'], 'API REQUEST (' ) ) );
+		$this->assertCount( 2, $request_entries );
+
+		$get_entry = $request_entries[0];
+		$this->assertStringContainsString( 'GET /sites/123/wcpay/terminal/locations?', $get_entry['message'] );
+		$this->assertStringContainsString( 'email=%28redacted%29', $get_entry['message'], 'Redactable params must be masked in the logged query string.' );
+		$this->assertStringNotContainsString( 'john%40example.com', $get_entry['message'] );
+		$this->assertStringContainsString( 'email=john%40example.com', (string) $http_client->requests[0]['path'], 'The wire request itself must keep the real value.' );
+
+		foreach ( $request_entries as $entry ) {
+			$this->assertStringNotContainsString( 'idem_private', wp_json_encode( $entry ), 'The lifted idempotency key must not appear in logged bodies.' );
+		}
+	}
+
+	/**
 	 * @testdox Should log an error line for API errors when transport logging is enabled.
 	 */
 	public function test_transport_logs_api_error_line(): void {
