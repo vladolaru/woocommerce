@@ -1,6 +1,6 @@
 # Native WooPayments — follow-up obligations
 
-One entry per outstanding obligation for the native WooPayments implementation. Entries are appended when work is deliberately deferred, and removed (with a pointer to the resolving change) when done. This file is the durable home for follow-ups that would otherwise live only in session scratchpads; harness-scoped coverage gaps stay in `tools/woopayments-merge/HARNESS.md` §3.
+One entry per outstanding obligation for the native WooPayments implementation. Entries are appended when work is deliberately deferred, and removed (with a pointer to the resolving change) when done. This file is the durable home for implementation follow-ups that would otherwise live only in session scratchpads; harness-scoped coverage gaps stay in `tools/woopayments-merge/HARNESS.md` §3 and harness decisions in `tests/e2e/tests/woopayments-native/DECISIONS.md`.
 
 ## Recurring
 
