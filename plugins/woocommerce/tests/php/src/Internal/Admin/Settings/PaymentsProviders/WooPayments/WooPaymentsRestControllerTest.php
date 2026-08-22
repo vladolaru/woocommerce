@@ -492,6 +492,94 @@ class WooPaymentsRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should reject a structurally invalid advanced fraud ruleset before settings persistence.
+	 */
+	public function test_update_native_settings_rejects_invalid_advanced_fraud_ruleset(): void {
+		$this->mock_settings_service
+			->expects( $this->once() )
+			->method( 'is_valid_fraud_ruleset' )
+			->willReturn( false );
+		$this->mock_settings_service
+			->expects( $this->never() )
+			->method( 'update_settings' );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
+		$request->set_body_params(
+			array(
+				'current_protection_level'           => 'advanced',
+				'advanced_fraud_protection_settings' => array( array( 'bogus' => true ) ),
+			)
+		);
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertSame( 'rest_invalid_param', $response->get_data()['code'] );
+		$this->assertSame( 'rest_invalid_pattern', $response->get_data()['data']['details']['advanced_fraud_protection_settings']['code'] );
+	}
+
+	/**
+	 * @testdox Should accept a structurally valid advanced fraud ruleset.
+	 */
+	public function test_update_native_settings_accepts_valid_advanced_fraud_ruleset(): void {
+		$ruleset = array(
+			array(
+				'key'     => 'international_ip_address',
+				'outcome' => 'block',
+				'check'   => array(
+					'key'      => 'ip_country',
+					'operator' => 'in',
+					'value'    => 'US',
+				),
+			),
+		);
+
+		$this->mock_settings_service
+			->expects( $this->once() )
+			->method( 'is_valid_fraud_ruleset' )
+			->with( $ruleset )
+			->willReturn( true );
+		$this->mock_settings_service
+			->expects( $this->once() )
+			->method( 'update_settings' )
+			->willReturn( array() );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
+		$request->set_body_params(
+			array(
+				'current_protection_level'           => 'advanced',
+				'advanced_fraud_protection_settings' => $ruleset,
+			)
+		);
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 200, $response->get_status() );
+	}
+
+	/**
+	 * @testdox Should not structurally validate the fraud ruleset when the protection level is not advanced.
+	 */
+	public function test_update_native_settings_skips_fraud_ruleset_validation_for_non_advanced_level(): void {
+		$this->mock_settings_service
+			->expects( $this->never() )
+			->method( 'is_valid_fraud_ruleset' );
+		$this->mock_settings_service
+			->expects( $this->once() )
+			->method( 'update_settings' )
+			->willReturn( array() );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
+		$request->set_body_params(
+			array(
+				'current_protection_level'           => 'standard',
+				'advanced_fraud_protection_settings' => array( array( 'bogus' => true ) ),
+			)
+		);
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 200, $response->get_status() );
+	}
+
+	/**
 	 * @testdox Should reject invalid payment method IDs before settings persistence.
 	 */
 	public function test_update_native_settings_rejects_invalid_payment_method_ids(): void {

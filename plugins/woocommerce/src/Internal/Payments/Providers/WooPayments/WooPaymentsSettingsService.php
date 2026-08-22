@@ -1485,10 +1485,12 @@ class WooPaymentsSettingsService {
 	/**
 	 * Validate a submitted fraud ruleset.
 	 *
+	 * Public so the settings REST boundary can reject a structurally invalid advanced ruleset before any persistence.
+	 *
 	 * @param array<int|string,mixed> $ruleset Submitted ruleset.
 	 * @return bool
 	 */
-	private function is_valid_fraud_ruleset( array $ruleset ): bool {
+	public function is_valid_fraud_ruleset( array $ruleset ): bool {
 		foreach ( $ruleset as $rule ) {
 			if ( ! is_array( $rule ) || ! $this->is_valid_fraud_rule( $rule ) ) {
 				return false;

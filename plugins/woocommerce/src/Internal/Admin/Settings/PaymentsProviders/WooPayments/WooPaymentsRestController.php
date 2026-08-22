@@ -871,31 +871,55 @@ class WooPaymentsRestController extends RestApiControllerBase {
 		return array(
 			'type'              => array( 'string', 'array' ),
 			'required'          => false,
-			'validate_callback' => static function ( $value, WP_REST_Request $request, string $param ) {
-				unset( $request );
-
-				$validation = rest_validate_value_from_schema(
-					$value,
-					array(
-						'type' => array( 'string', 'array' ),
-					),
-					$param
-				);
-				if ( is_wp_error( $validation ) ) {
-					return $validation;
-				}
-
-				if ( is_string( $value ) && 'error' !== $value ) {
-					return new WP_Error(
-						'rest_invalid_param',
-						esc_html__( 'The advanced fraud protection settings field accepts only the error sentinel or a ruleset array.', 'woocommerce' ),
-						array( 'status' => 400 )
-					);
-				}
-
-				return true;
-			},
+			'validate_callback' => array( $this, 'validate_advanced_fraud_protection_settings' ),
 		);
+	}
+
+	/**
+	 * Validate the advanced fraud protection settings field.
+	 *
+	 * A structurally invalid advanced ruleset must fail the save here: the settings service would otherwise skip the fraud block silently and return 200 while the platform keeps the previous ruleset. The WooPayments plugin persists its non-fraud settings and then dies with a 500 on the same input; rejecting atomically with a 400 is a deliberate, strictly safer deviation.
+	 *
+	 * @param mixed           $value   Advanced fraud protection settings value.
+	 * @param WP_REST_Request $request Request.
+	 * @param string          $param   Parameter name.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return true|WP_Error
+	 */
+	public function validate_advanced_fraud_protection_settings( $value, WP_REST_Request $request, string $param ) {
+		$validation = rest_validate_value_from_schema(
+			$value,
+			array(
+				'type' => array( 'string', 'array' ),
+			),
+			$param
+		);
+		if ( is_wp_error( $validation ) ) {
+			return $validation;
+		}
+
+		// The settings GET contract exposes the string "error" sentinel when the platform ruleset is unavailable; the POST route must keep accepting it for round-trips.
+		if ( is_string( $value ) && 'error' !== $value ) {
+			return new WP_Error(
+				'rest_invalid_param',
+				esc_html__( 'The advanced fraud protection settings field accepts only the error sentinel or a ruleset array.', 'woocommerce' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		// Only an advanced-level save consumes the submitted ruleset; other levels use the built-in rulesets and ignore this field.
+		if (
+			is_array( $value )
+			&& 'advanced' === $request->get_param( 'current_protection_level' )
+			&& ! $this->get_settings_service()->is_valid_fraud_ruleset( $value )
+		) {
+			return new WP_Error(
+				'rest_invalid_pattern',
+				__( 'Invalid ruleset configuration.', 'woocommerce' )
+			);
+		}
+
+		return true;
 	}
 
 	/**
