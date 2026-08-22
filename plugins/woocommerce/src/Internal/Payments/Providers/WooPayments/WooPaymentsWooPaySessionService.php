@@ -109,6 +109,20 @@ class WooPaymentsWooPaySessionService {
 	private ?WooPaymentsCustomerService $customer_service = null;
 
 	/**
+	 * Order ID an in-flight WooPay Store API checkout is processing, for fatal capture.
+	 *
+	 * @var int|null
+	 */
+	private ?int $checkout_error_order_id = null;
+
+	/**
+	 * Whether the WooPay checkout fatal-capture shutdown handler is registered.
+	 *
+	 * @var bool
+	 */
+	private bool $is_error_handler_registered = false;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -435,6 +449,85 @@ class WooPaymentsWooPaySessionService {
 		}
 
 		return $this->customer_service->get_or_create_customer_id_for_user( get_current_user_id() );
+	}
+
+	/**
+	 * Arm fatal-error capture for a WooPay-originated Store API checkout.
+	 *
+	 * Mirrors the plugin's WooPay_Session::catch_woopay_checkout_errors(): a shutdown
+	 * handler logs the fatal and leaves an order note so the merchant gets a diagnostic
+	 * trail instead of an order stuck in an intermediate state.
+	 *
+	 * @param mixed $order Order the Store API checkout is processing.
+	 *
+	 * @since 11.0.0
+	 */
+	public function catch_woopay_checkout_errors( $order ): void {
+		if ( ! $this->is_request_from_woopay() || ! ( $order instanceof WC_Order ) ) {
+			return;
+		}
+
+		$this->checkout_error_order_id = $order->get_id();
+
+		if ( $this->is_error_handler_registered ) {
+			return;
+		}
+
+		register_shutdown_function(
+			function (): void {
+				$this->maybe_record_woopay_checkout_fatal( error_get_last() );
+			}
+		);
+
+		$this->is_error_handler_registered = true;
+	}
+
+	/**
+	 * Record a fatal error from a WooPay Store API checkout, when one occurred.
+	 *
+	 * @param array<string,mixed>|null $error Last PHP error, as error_get_last() reports it.
+	 *
+	 * @since 11.0.0
+	 */
+	public function maybe_record_woopay_checkout_fatal( ?array $error ): void {
+		if ( ! $error || ! $this->is_request_from_woopay() ) {
+			return;
+		}
+
+		if ( ! in_array( $error['type'], array( E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR ), true ) ) {
+			return;
+		}
+
+		if ( null === $this->checkout_error_order_id ) {
+			return;
+		}
+
+		wc_get_logger()->error(
+			sprintf(
+				'WooPay checkout fatal error: %s in %s on line %d',
+				$error['message'],
+				$error['file'],
+				$error['line']
+			),
+			array( 'source' => 'woopayments-woopay-session' )
+		);
+
+		$order = wc_get_order( $this->checkout_error_order_id );
+		if ( ! $order instanceof WC_Order ) {
+			return;
+		}
+
+		$error_first_line = strtok( (string) $error['message'], "\n" );
+		if ( false === $error_first_line ) {
+			$error_first_line = (string) $error['message'];
+		}
+		$order->add_order_note(
+			sprintf(
+				/* translators: %s: error message */
+				__( 'WooPay checkout encountered a fatal error: %s', 'woocommerce' ),
+				esc_html( $error_first_line )
+			)
+		);
 	}
 
 	/**

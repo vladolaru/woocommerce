@@ -99,6 +99,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( 20, has_filter( 'determine_current_user', array( $service, 'determine_current_user_for_woopay' ) ) );
 		$this->assertNotFalse( has_action( 'woocommerce_order_payment_status_changed', array( $service, 'woopay_order_payment_status_changed' ) ) );
 		$this->assertNotFalse( has_action( 'woopay_restore_order_customer_id', array( $service, 'restore_order_customer_id_from_requests_with_verified_email' ) ) );
+		$this->assertSame( 1, has_action( 'woocommerce_store_api_checkout_order_processed', array( $service, 'catch_woopay_checkout_errors' ) ) );
 
 		foreach ( $this->get_expected_ajax_hooks() as $hook => $method ) {
 			$this->assertNotFalse( has_action( $hook, array( $this->sut, $method ) ), "{$hook} should be registered." );
@@ -145,6 +146,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertFalse( has_filter( 'determine_current_user', array( $service, 'determine_current_user_for_woopay' ) ) );
 		$this->assertFalse( has_action( 'woocommerce_order_payment_status_changed', array( $service, 'woopay_order_payment_status_changed' ) ) );
 		$this->assertFalse( has_action( 'woopay_restore_order_customer_id', array( $service, 'restore_order_customer_id_from_requests_with_verified_email' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_store_api_checkout_order_processed', array( $service, 'catch_woopay_checkout_errors' ) ) );
 		$this->assertFalse( has_action( 'rest_api_init', array( $this->sut, 'register_routes' ) ) );
 		foreach ( $this->get_expected_ajax_hooks() as $hook => $method ) {
 			$this->assertFalse( has_action( $hook, array( $this->sut, $method ) ) );

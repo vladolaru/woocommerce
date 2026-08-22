@@ -1877,6 +1877,82 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should record a WooPay checkout fatal as an order note with the error's first line.
+	 */
+	public function test_woopay_checkout_fatal_is_recorded_as_an_order_note(): void {
+		$_SERVER['HTTP_USER_AGENT'] = 'WooPay';
+		$order                      = wc_create_order();
+
+		$sut = $this->create_service();
+		$sut->catch_woopay_checkout_errors( $order );
+		$sut->maybe_record_woopay_checkout_fatal(
+			array(
+				'type'    => E_ERROR,
+				'message' => "Allowed memory size exhausted\nStack trace: #0",
+				'file'    => 'checkout.php',
+				'line'    => 42,
+			)
+		);
+
+		$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+		$this->assertNotEmpty( $notes );
+		$this->assertSame( 'WooPay checkout encountered a fatal error: Allowed memory size exhausted', $notes[0]->content );
+	}
+
+	/**
+	 * @testdox Should ignore non-fatal errors and non-WooPay requests when recording checkout fatals.
+	 */
+	public function test_woopay_checkout_fatal_capture_ignores_non_fatals_and_non_woopay_requests(): void {
+		$_SERVER['HTTP_USER_AGENT'] = 'WooPay';
+		$order                      = wc_create_order();
+
+		$sut = $this->create_service();
+		$sut->catch_woopay_checkout_errors( $order );
+
+		$sut->maybe_record_woopay_checkout_fatal(
+			array(
+				'type'    => E_WARNING,
+				'message' => 'Just a warning',
+				'file'    => 'checkout.php',
+				'line'    => 7,
+			)
+		);
+		$this->assertSame( array(), wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+
+		unset( $_SERVER['HTTP_USER_AGENT'] );
+		$sut->maybe_record_woopay_checkout_fatal(
+			array(
+				'type'    => E_ERROR,
+				'message' => 'Fatal after UA vanished',
+				'file'    => 'checkout.php',
+				'line'    => 9,
+			)
+		);
+		$this->assertSame( array(), wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+	}
+
+	/**
+	 * @testdox Should not track checkout orders for fatal capture outside WooPay requests.
+	 */
+	public function test_woopay_checkout_fatal_capture_requires_a_woopay_request_at_registration(): void {
+		$order = wc_create_order();
+
+		$sut = $this->create_service();
+		$sut->catch_woopay_checkout_errors( $order );
+
+		$_SERVER['HTTP_USER_AGENT'] = 'WooPay';
+		$sut->maybe_record_woopay_checkout_fatal(
+			array(
+				'type'    => E_ERROR,
+				'message' => 'Fatal without registration',
+				'file'    => 'checkout.php',
+				'line'    => 3,
+			)
+		);
+		$this->assertSame( array(), wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+	}
+
+	/**
 	 * Simulate an inbound WooPay Store API request.
 	 */
 	private function simulate_woopay_store_api_request(): void {
