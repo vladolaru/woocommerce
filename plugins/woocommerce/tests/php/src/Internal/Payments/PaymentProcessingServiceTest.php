@@ -149,6 +149,45 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A preserve-status failed outcome for an already-paid order is skipped by the late-failure guard.
+	 */
+	public function test_preserve_status_failed_outcome_does_not_overwrite_paid_order(): void {
+		$order = $this->create_woopayments_order( '10.00' );
+		$order->payment_complete( 'pi_paid_first' );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertTrue( $order->is_paid() );
+
+		$provider = new RecordingProvider(
+			new PaymentOutcome(
+				PaymentOutcome::STATUS_FAILED,
+				'pi_blocked_late',
+				'',
+				'',
+				'',
+				array(
+					PaymentOutcome::DATA_ERROR_CODE => 'wcpay_blocked_by_fraud_rule',
+					PaymentOutcome::DATA_PRESERVE_ORDER_STATUS => true,
+					PaymentOutcome::DATA_META       => array(
+						'_wcpay_fraud_outcome_status' => 'block',
+						'_intention_status'           => 'canceled',
+					),
+					PaymentOutcome::DATA_NOTE       => 'A payment was blocked by risk filters.',
+				)
+			)
+		);
+
+		$this->sut->process_checkout( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_test' ), $provider );
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertTrue( $order->is_paid(), 'A late blocked outcome must not disturb a paid order.' );
+		$this->assertSame( '', (string) $order->get_meta( '_wcpay_fraud_outcome_status', true ), 'Block meta must not overwrite a paid order.' );
+		$this->assertNotSame( 'canceled', (string) $order->get_meta( '_intention_status', true ) );
+		$this->assertNotContains( 'A payment was blocked by risk filters.', wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ) );
+	}
+
+	/**
 	 * @testdox Provider throwables emit one structured operation log with idempotency correlation.
 	 * @dataProvider provider_failure_operations
 	 *

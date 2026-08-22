@@ -179,6 +179,13 @@ class PaymentLifecycleEvent {
 	private array $note_equivalents;
 
 	/**
+	 * Whether this event must leave the order status untouched.
+	 *
+	 * @var bool
+	 */
+	private bool $preserve_order_status;
+
+	/**
 	 * Constructor.
 	 *
 	 * @since 11.0.0
@@ -190,20 +197,34 @@ class PaymentLifecycleEvent {
 	 * @param string|null         $note              Order note to add.
 	 * @param string|null         $note_type         Stable note type.
 	 * @param array<int,mixed>    $note_equivalents  Exact equivalent note renderings.
+	 * @param bool                $preserve_order_status Whether the order status must stay untouched.
 	 * @throws InvalidArgumentException When an unknown status is supplied.
 	 */
-	public function __construct( string $status, ?string $payment_reference = null, array $meta_to_update = array(), array $meta_to_delete = array(), ?string $note = null, ?string $note_type = null, array $note_equivalents = array() ) {
+	public function __construct( string $status, ?string $payment_reference = null, array $meta_to_update = array(), array $meta_to_delete = array(), ?string $note = null, ?string $note_type = null, array $note_equivalents = array(), bool $preserve_order_status = false ) {
 		if ( ! in_array( $status, $this->get_allowed_statuses(), true ) ) {
 			throw new InvalidArgumentException( esc_html( sprintf( 'Unknown payment lifecycle status: %s', $status ) ) );
 		}
 
-		$this->status            = $status;
-		$this->payment_reference = $payment_reference;
-		$this->meta_to_update    = $this->normalize_meta_to_update( $meta_to_update );
-		$this->meta_to_delete    = array_values( array_map( 'strval', $meta_to_delete ) );
-		$this->note              = $note;
-		$this->note_type         = null === $note_type || '' === $note_type ? null : $note_type;
-		$this->note_equivalents  = $this->normalize_note_equivalents( $note_equivalents );
+		$this->status                = $status;
+		$this->payment_reference     = $payment_reference;
+		$this->meta_to_update        = $this->normalize_meta_to_update( $meta_to_update );
+		$this->meta_to_delete        = array_values( array_map( 'strval', $meta_to_delete ) );
+		$this->note                  = $note;
+		$this->note_type             = null === $note_type || '' === $note_type ? null : $note_type;
+		$this->note_equivalents      = $this->normalize_note_equivalents( $note_equivalents );
+		$this->preserve_order_status = $preserve_order_status;
+	}
+
+	/**
+	 * Tell whether this event must leave the order status untouched.
+	 *
+	 * A payment refused before processing (for example by fraud screening)
+	 * records its meta and note effects while the merchant decides the status.
+	 *
+	 * @return bool
+	 */
+	public function should_preserve_order_status(): bool {
+		return $this->preserve_order_status;
 	}
 
 	/**

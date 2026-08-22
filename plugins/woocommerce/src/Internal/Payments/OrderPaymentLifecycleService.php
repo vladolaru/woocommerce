@@ -201,6 +201,10 @@ class OrderPaymentLifecycleService {
 
 			case PaymentLifecycleEvent::STATUS_FAILED:
 			case PaymentLifecycleEvent::STATUS_CAPTURE_EXPIRED:
+				if ( $event->should_preserve_order_status() ) {
+					return false;
+				}
+
 				$order->update_status( 'failed' );
 				return true;
 

@@ -836,26 +836,20 @@ class PaymentProcessingService {
 	 * @param ProviderContract $provider Provider.
 	 */
 	private function apply_checkout_outcome( WC_Order $order, PaymentOutcome $outcome, ProviderContract $provider ): void {
-		$lifecycle_status  = $this->get_lifecycle_status( $outcome );
-		$payment_reference = $this->get_lifecycle_payment_reference( $outcome );
-
-		if ( PaymentLifecycleEvent::STATUS_FAILED === $lifecycle_status && $this->should_preserve_order_status( $outcome ) ) {
-			// A payment refused before processing records its effects without
-			// failing the order and without claiming the order transaction id.
-			$lifecycle_status  = PaymentLifecycleEvent::STATUS_STARTED;
-			$payment_reference = null;
-		}
-
 		$this->lifecycle_service->apply_unlocked(
 			$order,
 			new PaymentLifecycleEvent(
-				$lifecycle_status,
-				$payment_reference,
+				$this->get_lifecycle_status( $outcome ),
+				$this->get_lifecycle_payment_reference( $outcome ),
 				$this->get_lifecycle_meta( $outcome, $provider ),
 				$this->get_lifecycle_meta_to_delete( $outcome ),
 				$this->get_lifecycle_note( $outcome ),
 				$this->get_lifecycle_note_type( $outcome ),
-				$this->get_lifecycle_note_equivalents( $outcome )
+				$this->get_lifecycle_note_equivalents( $outcome ),
+				// The event stays a failure so the late-failure guard still
+				// protects already-paid orders; only the status transition is
+				// suppressed when the outcome asked to preserve the status.
+				$this->should_preserve_order_status( $outcome )
 			),
 			$provider->get_persistence_profile()
 		);
