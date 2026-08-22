@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
 use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use Automattic\WooCommerce\Internal\Utilities\ArrayUtil;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPmPromotionsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
 use Exception;
@@ -94,6 +95,13 @@ class WooPaymentsRestController extends RestApiControllerBase {
 	 * @var WooPaymentsOverviewService|null
 	 */
 	private ?WooPaymentsOverviewService $overview_service = null;
+
+	/**
+	 * The native WooPayments account service.
+	 *
+	 * @var WooPaymentsAccountService|null
+	 */
+	private ?WooPaymentsAccountService $account_service = null;
 
 	/**
 	 * Native payments runtime arbiter.
@@ -587,16 +595,18 @@ class WooPaymentsRestController extends RestApiControllerBase {
 	 * @param NativePaymentsRuntimeArbiter|null   $runtime_arbiter Optional native payments runtime arbiter.
 	 * @param WooPaymentsPmPromotionsService|null $pm_promotions_service Optional native WooPayments PM promotions service.
 	 * @param WooPaymentsOverviewService|null     $overview_service Optional native WooPayments Overview projection service.
+	 * @param WooPaymentsAccountService|null      $account_service Optional native WooPayments account service.
 	 *
 	 * @internal
 	 */
-	final public function init( Payments $payments, WooPaymentsService $woopayments, ?WooPaymentsSettingsService $settings_service = null, ?NativePaymentsRuntimeArbiter $runtime_arbiter = null, ?WooPaymentsPmPromotionsService $pm_promotions_service = null, ?WooPaymentsOverviewService $overview_service = null ): void {
+	final public function init( Payments $payments, WooPaymentsService $woopayments, ?WooPaymentsSettingsService $settings_service = null, ?NativePaymentsRuntimeArbiter $runtime_arbiter = null, ?WooPaymentsPmPromotionsService $pm_promotions_service = null, ?WooPaymentsOverviewService $overview_service = null, ?WooPaymentsAccountService $account_service = null ): void {
 		$this->payments              = $payments;
 		$this->woopayments           = $woopayments;
 		$this->settings_service      = $settings_service;
 		$this->runtime_arbiter       = $runtime_arbiter;
 		$this->pm_promotions_service = $pm_promotions_service;
 		$this->overview_service      = $overview_service;
+		$this->account_service       = $account_service;
 	}
 
 	/**
@@ -769,7 +779,16 @@ class WooPaymentsRestController extends RestApiControllerBase {
 			'payment_request_button_border_radius' => $this->get_typed_arg( 'integer' ),
 			'deposit_schedule_monthly_anchor'      => $this->get_typed_arg( array( 'integer', 'null' ) ),
 			'advanced_fraud_protection_settings'   => $this->get_advanced_fraud_protection_settings_arg(),
-			'account_business_support_address'     => $this->get_typed_arg( 'object' ),
+			'account_business_support_address'     => array(
+				'type'              => 'object',
+				'required'          => false,
+				'validate_callback' => array( $this, 'validate_business_support_address' ),
+			),
+			'account_business_support_phone'       => array(
+				'type'              => 'string',
+				'required'          => false,
+				'validate_callback' => array( $this, 'validate_business_support_phone' ),
+			),
 			'account_statement_descriptor'         => array(
 				'type'              => 'string',
 				'required'          => false,
@@ -812,7 +831,6 @@ class WooPaymentsRestController extends RestApiControllerBase {
 				'account_business_name',
 				'account_business_url',
 				'account_business_support_email',
-				'account_business_support_phone',
 				'account_branding_logo',
 				'account_branding_icon',
 				'account_branding_primary_color',
@@ -944,6 +962,85 @@ class WooPaymentsRestController extends RestApiControllerBase {
 		}
 
 		return true;
+	}
+
+	/**
+	 * Validate the business support phone with the WooPayments plugin's rules.
+	 *
+	 * Japanese accounts require a +81 number even when the value is empty, matching the plugin.
+	 *
+	 * @param mixed           $value   Support phone value.
+	 * @param WP_REST_Request $request Request.
+	 * @param string          $param   Parameter name.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return true|WP_Error
+	 */
+	public function validate_business_support_phone( $value, WP_REST_Request $request, string $param ) {
+		$validation = rest_validate_request_arg( $value, $request, $param );
+		if ( true !== $validation ) {
+			return $validation;
+		}
+
+		$phone = (string) $value;
+		if ( '' !== $phone && ! \WC_Validation::is_phone( $phone ) ) {
+			return new WP_Error(
+				'rest_invalid_pattern',
+				__( 'Error: Invalid phone number: ', 'woocommerce' ) . $phone
+			);
+		}
+
+		if ( 'JP' === $this->get_account_service()->get_account_country() && '+81' !== substr( $phone, 0, 3 ) ) {
+			return new WP_Error(
+				'rest_invalid_pattern',
+				__( 'Error: Invalid Japanese phone number: ', 'woocommerce' ) . $phone
+			);
+		}
+
+		return true;
+	}
+
+	/**
+	 * Validate the business support address key allowlist with the WooPayments plugin's rules.
+	 *
+	 * The platform maps the address straight onto the provider account, so a stray key fails the whole account update opaquely.
+	 *
+	 * @param mixed           $value   Support address value.
+	 * @param WP_REST_Request $request Request.
+	 * @param string          $param   Parameter name.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return true|WP_Error
+	 */
+	public function validate_business_support_address( $value, WP_REST_Request $request, string $param ) {
+		$validation = rest_validate_request_arg( $value, $request, $param );
+		if ( true !== $validation ) {
+			return $validation;
+		}
+
+		if ( is_array( $value ) ) {
+			foreach ( array_keys( $value ) as $field ) {
+				if ( ! in_array( $field, array( 'city', 'country', 'line1', 'line2', 'postal_code', 'state' ), true ) ) {
+					return new WP_Error(
+						'rest_invalid_pattern',
+						__( 'Error: Invalid address format!', 'woocommerce' )
+					);
+				}
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * Get the native WooPayments account service.
+	 *
+	 * @return WooPaymentsAccountService
+	 */
+	private function get_account_service(): WooPaymentsAccountService {
+		if ( null === $this->account_service ) {
+			$this->account_service = wc_get_container()->get( WooPaymentsAccountService::class );
+		}
+
+		return $this->account_service;
 	}
 
 	/**

@@ -9,6 +9,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments
 use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsRestController;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPmPromotionsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
 use PHPUnit\Framework\MockObject\MockObject;
@@ -67,6 +68,11 @@ class WooPaymentsRestControllerTest extends WC_Unit_Test_Case {
 	private $mock_runtime_arbiter;
 
 	/**
+	 * @var MockObject|WooPaymentsAccountService
+	 */
+	private $mock_account_service;
+
+	/**
 	 * The ID of the store admin user.
 	 *
 	 * @var int
@@ -79,6 +85,13 @@ class WooPaymentsRestControllerTest extends WC_Unit_Test_Case {
 	 * @var \WP_REST_Server
 	 */
 	protected $server;
+
+	/**
+	 * Account country returned by the mocked account service.
+	 *
+	 * @var string
+	 */
+	private string $account_country = 'US';
 
 	/**
 	 * Set up test.
@@ -105,9 +118,16 @@ class WooPaymentsRestControllerTest extends WC_Unit_Test_Case {
 		$this->mock_runtime_arbiter
 			->method( 'should_native_register' )
 			->willReturn( true );
+		$this->mock_account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_account_country' ) )
+			->getMock();
+		$this->mock_account_service
+			->method( 'get_account_country' )
+			->willReturnCallback( fn() => $this->account_country );
 
 		$this->sut = new WooPaymentsRestController();
-		$this->sut->init( $this->mock_payments_service, $this->mock_woopayments_service, $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service );
+		$this->sut->init( $this->mock_payments_service, $this->mock_woopayments_service, $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service );
 		$this->server = $this->create_rest_server_with_routes(
 			array(
 				function () {
@@ -641,6 +661,163 @@ class WooPaymentsRestControllerTest extends WC_Unit_Test_Case {
 		$request->set_body_params(
 			array(
 				'account_communications_email' => 'merchant@example.com',
+			)
+		);
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 200, $response->get_status() );
+	}
+
+	/**
+	 * @testdox Should reject a malformed support phone before settings persistence.
+	 */
+	public function test_update_native_settings_rejects_malformed_support_phone(): void {
+		$this->mock_settings_service
+			->expects( $this->never() )
+			->method( 'update_settings' );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
+		$request->set_body_params(
+			array(
+				'account_business_support_phone' => 'not a phone!',
+			)
+		);
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertSame( 'rest_invalid_param', $response->get_data()['code'] );
+		$this->assertSame( 'rest_invalid_pattern', $response->get_data()['data']['details']['account_business_support_phone']['code'] );
+	}
+
+	/**
+	 * @testdox Should accept an empty support phone on a non-Japanese account.
+	 */
+	public function test_update_native_settings_accepts_empty_support_phone_outside_japan(): void {
+		$this->mock_settings_service
+			->expects( $this->once() )
+			->method( 'update_settings' )
+			->willReturn( array() );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
+		$request->set_body_params(
+			array(
+				'account_business_support_phone' => '',
+			)
+		);
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 200, $response->get_status() );
+	}
+
+	/**
+	 * @testdox Should reject a support phone without the +81 prefix on a Japanese account.
+	 * @dataProvider provider_invalid_japanese_support_phones
+	 *
+	 * @param string $phone Support phone rejected for a Japanese account.
+	 */
+	public function test_update_native_settings_rejects_non_japanese_support_phone_on_japanese_account( string $phone ): void {
+		$this->account_country = 'JP';
+		$this->mock_settings_service
+			->expects( $this->never() )
+			->method( 'update_settings' );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
+		$request->set_body_params(
+			array(
+				'account_business_support_phone' => $phone,
+			)
+		);
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertSame( 'rest_invalid_pattern', $response->get_data()['data']['details']['account_business_support_phone']['code'] );
+	}
+
+	/**
+	 * Support phone vectors a Japanese account must reject, mirroring the WooPayments plugin's validator.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public function provider_invalid_japanese_support_phones(): array {
+		return array(
+			'US number'    => array( '+12345678901' ),
+			'empty string' => array( '' ),
+		);
+	}
+
+	/**
+	 * @testdox Should accept a +81 support phone on a Japanese account.
+	 */
+	public function test_update_native_settings_accepts_japanese_support_phone_on_japanese_account(): void {
+		$this->account_country = 'JP';
+		$this->mock_settings_service
+			->expects( $this->once() )
+			->method( 'update_settings' )
+			->willReturn( array() );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
+		$request->set_body_params(
+			array(
+				'account_business_support_phone' => '+81312345678',
+			)
+		);
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 200, $response->get_status() );
+	}
+
+	/**
+	 * @testdox Should reject a support address carrying keys outside the allowlist.
+	 */
+	public function test_update_native_settings_rejects_support_address_with_unknown_key(): void {
+		$this->mock_settings_service
+			->expects( $this->never() )
+			->method( 'update_settings' );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
+		$request->set_body_params(
+			array(
+				'account_business_support_address' => array(
+					'city'   => 'Portland',
+					'planet' => 'Earth',
+				),
+			)
+		);
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertSame( 'rest_invalid_pattern', $response->get_data()['data']['details']['account_business_support_address']['code'] );
+	}
+
+	/**
+	 * @testdox Should accept a support address restricted to the allowlisted keys.
+	 */
+	public function test_update_native_settings_accepts_allowlisted_support_address(): void {
+		$address = array(
+			'city'        => 'Portland',
+			'country'     => 'US',
+			'line1'       => '123 Main St',
+			'line2'       => '',
+			'postal_code' => '97201',
+			'state'       => 'OR',
+		);
+
+		$this->mock_settings_service
+			->expects( $this->once() )
+			->method( 'update_settings' )
+			->with(
+				$this->callback(
+					static function ( array $params ) use ( $address ): bool {
+						return $address === $params['account_business_support_address'];
+					}
+				)
+			)
+			->willReturn( array() );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
+		$request->set_body_params(
+			array(
+				'account_business_support_address' => $address,
 			)
 		);
 		$response = $this->server->dispatch( $request );
