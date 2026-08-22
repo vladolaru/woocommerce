@@ -188,6 +188,8 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		remove_filter( 'woocommerce_gc_account_session_timeout_minutes', '__return_false' );
 		remove_all_filters( 'wcpay_woopay_is_signed_with_blog_token' );
 		wp_clear_scheduled_hook( 'woopay_restore_order_customer_id' );
+		remove_all_filters( 'woocommerce_geolocate_ip' );
+		delete_option( 'woocommerce_woocommerce_payments_woopay_available_countries' );
 		$this->reset_real_blog_token_signed();
 		$this->reset_frontend_surface_state();
 		wp_set_current_user( 0 );
@@ -524,7 +526,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		)->should_show_woopay_button( 'product' );
 
 		$this->assertTrue( $result );
-		$this->assertSame( array( 'gateway', 'account', 'account', 'account', 'account', 'account', 'enabled', 'account', 'location', 'product', 'guest' ), $events );
+		$this->assertSame( array( 'gateway', 'account', 'account', 'account', 'account', 'account', 'enabled', 'location', 'product', 'guest' ), $events );
 	}
 
 	/**
@@ -1065,10 +1067,12 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 			'US eligible WooPay checkout should enable first-party auth.'
 		);
 
+		add_filter( 'woocommerce_geolocate_ip', static fn() => 'DE' );
 		$this->assertFalse(
-			$this->create_service( array(), array( 'country' => 'CA' ) )->get_woopay_frontend_config( 'checkout' )['isWoopayFirstPartyAuthEnabled'],
-			'Non-US WooPay accounts should not enable first-party auth.'
+			$this->create_service( array(), array(), null, null, null, false )->get_woopay_frontend_config( 'checkout' )['isWoopayFirstPartyAuthEnabled'],
+			'Live-mode shoppers outside the synced WooPay country list should not enable first-party auth.'
 		);
+		remove_all_filters( 'woocommerce_geolocate_ip' );
 
 		$this->assertFalse(
 			$this->create_service( array(), array( 'platform_checkout_eligible' => false ) )->get_woopay_frontend_config( 'checkout' )['isWoopayFirstPartyAuthEnabled'],
@@ -1779,6 +1783,46 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should treat every country as WooPay-available in test mode.
+	 */
+	public function test_country_availability_short_circuits_in_test_mode(): void {
+		add_filter( 'woocommerce_geolocate_ip', static fn() => 'DE' );
+		update_option( 'woocommerce_woocommerce_payments_woopay_available_countries', wp_json_encode( array( 'US' ) ) );
+
+		$sut = $this->create_service( array( 'force_network_saved_cards' => 'yes' ) );
+
+		$this->assertTrue( $sut->should_load_woopay_save_user_assets( 'checkout' ) );
+	}
+
+	/**
+	 * @testdox Should geolocate the shopper against the platform-synced country list in live mode.
+	 */
+	public function test_country_availability_geolocates_against_synced_list_in_live_mode(): void {
+		add_filter( 'woocommerce_geolocate_ip', static fn() => 'DE' );
+
+		$sut = $this->create_service( array( 'force_network_saved_cards' => 'yes' ), array(), null, null, null, false );
+
+		// The synced list defaults to US only, so a DE shopper is unavailable.
+		$this->assertFalse( $sut->should_load_woopay_save_user_assets( 'checkout' ) );
+
+		// Once the platform-synced list includes DE, the same shopper is available.
+		update_option( 'woocommerce_woocommerce_payments_woopay_available_countries', wp_json_encode( array( 'US', 'DE' ) ) );
+		$this->assertTrue( $sut->should_load_woopay_save_user_assets( 'checkout' ) );
+	}
+
+	/**
+	 * @testdox Should fall back to the US-only default when the synced country list is malformed.
+	 */
+	public function test_country_availability_falls_back_to_default_on_malformed_list(): void {
+		add_filter( 'woocommerce_geolocate_ip', static fn() => 'US' );
+		update_option( 'woocommerce_woocommerce_payments_woopay_available_countries', 'not-json' );
+
+		$sut = $this->create_service( array( 'force_network_saved_cards' => 'yes' ), array(), null, null, null, false );
+
+		$this->assertTrue( $sut->should_load_woopay_save_user_assets( 'checkout' ) );
+	}
+
+	/**
 	 * Simulate an inbound WooPay Store API request.
 	 */
 	private function simulate_woopay_store_api_request(): void {
@@ -1856,9 +1900,10 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 * @param WooPaymentsWooPayAdaptedExtensions|null                                                         $adapted_extensions Adapted extensions registry.
 	 * @param callable(string):void|null                                                                      $event_recorder     Optional account-service event recorder.
 	 * @param \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService|null $customer_service Optional customer service.
+	 * @param bool                                    $test_mode          Whether the account reports test mode.
 	 * @return TestableWooPaySessionService
 	 */
-	private function create_service( array $settings = array(), array $account_data = array(), ?WooPaymentsWooPayAdaptedExtensions $adapted_extensions = null, ?callable $event_recorder = null, ?\Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService $customer_service = null ): TestableWooPaySessionService {
+	private function create_service( array $settings = array(), array $account_data = array(), ?WooPaymentsWooPayAdaptedExtensions $adapted_extensions = null, ?callable $event_recorder = null, ?\Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService $customer_service = null, bool $test_mode = true ): TestableWooPaySessionService {
 		$settings     = array_merge(
 			array(
 				'platform_checkout'                    => 'yes',
@@ -1908,7 +1953,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 				return $account_data;
 			}
 		);
-		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( $test_mode );
 		$account_service->method( 'get_gateway_setting' )->willReturnCallback(
 			static function ( string $key, $fallback = null ) use ( $settings, $event_recorder ) {
 				if ( null !== $event_recorder && 0 === strpos( $key, 'express_checkout_' ) ) {

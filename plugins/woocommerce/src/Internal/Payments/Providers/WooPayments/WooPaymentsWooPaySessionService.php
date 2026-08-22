@@ -56,6 +56,17 @@ class WooPaymentsWooPaySessionService {
 	private const RESTORE_CUSTOMER_ID_HOOK = 'woopay_restore_order_customer_id';
 
 	/**
+	 * Platform-synced list of WooPay-available countries. Written by
+	 * WooPaymentsWooPayExtensionSync; byte-identical to the WooPayments plugin option name.
+	 */
+	private const AVAILABLE_COUNTRIES_OPTION = 'woocommerce_woocommerce_payments_woopay_available_countries';
+
+	/**
+	 * Default WooPay country list when the platform has not synced one; matches the plugin.
+	 */
+	private const AVAILABLE_COUNTRIES_DEFAULT = '["US"]';
+
+	/**
 	 * WooPayments account service.
 	 *
 	 * @var WooPaymentsAccountService
@@ -1195,7 +1206,28 @@ class WooPaymentsWooPaySessionService {
 	 * @return bool
 	 */
 	private function is_woopay_country_available(): bool {
-		return 'US' === $this->get_account_country();
+		if ( $this->get_account_service()->is_test_mode_enabled() ) {
+			return true;
+		}
+
+		$location_data = \WC_Geolocation::geolocate_ip();
+
+		return in_array( $location_data['country'] ?? '', $this->get_persisted_available_countries(), true );
+	}
+
+	/**
+	 * Get the platform-synced list of WooPay-available countries.
+	 *
+	 * @return array<int,string>
+	 */
+	private function get_persisted_available_countries(): array {
+		$available_countries = json_decode( (string) get_option( self::AVAILABLE_COUNTRIES_OPTION, self::AVAILABLE_COUNTRIES_DEFAULT ), true );
+
+		if ( ! is_array( $available_countries ) ) {
+			return json_decode( self::AVAILABLE_COUNTRIES_DEFAULT, true );
+		}
+
+		return $available_countries;
 	}
 
 	/**
@@ -1565,25 +1597,6 @@ class WooPaymentsWooPaySessionService {
 		$value = $this->get_account_service()->get_gateway_setting( $key, 'no' );
 
 		return true === $value || 'yes' === $value || '1' === $value || 1 === $value;
-	}
-
-	/**
-	 * Get the connected account country.
-	 *
-	 * @return string
-	 */
-	private function get_account_country(): string {
-		$account_data = $this->get_account_service()->get_cached_account_data();
-		$country      = isset( $account_data['country'] ) && is_scalar( $account_data['country'] )
-			? strtoupper( (string) $account_data['country'] )
-			: '';
-
-		if ( false !== strpos( $country, ':' ) ) {
-			$base_country = strtok( $country, ':' );
-			$country      = is_string( $base_country ) ? $base_country : '';
-		}
-
-		return '' !== $country ? $country : $this->get_store_base_country();
 	}
 
 	/**
