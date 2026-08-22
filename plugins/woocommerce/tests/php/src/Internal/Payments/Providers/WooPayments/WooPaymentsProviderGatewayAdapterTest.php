@@ -417,6 +417,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$order      = $this->create_woopayments_order( '0.50' );
 		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$api_client = new class() extends WooPaymentsApiClient {
+			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- Test double always throws.
 			/**
 			 * Create and confirm a payment intention.
 			 *
@@ -427,6 +428,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
 				throw new \RuntimeException( 'A sub-minimum charge must not reach the platform.' );
 			}
+			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
 
 			/**
 			 * Tell whether the transport is available.
@@ -503,6 +505,109 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
 
 		delete_transient( 'wcpay_minimum_amount_usd' );
+	}
+
+	/**
+	 * @testdox Native charge declines write the payment-failed order note with the seller message and allow fraud meta.
+	 */
+	public function test_charge_decline_composes_failed_note_and_allow_fraud_meta(): void {
+		$order      = $this->create_woopayments_order( '25.00' );
+		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ) );
+		$api_client = new class() extends WooPaymentsApiClient {
+			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- Test double always throws.
+			/**
+			 * Create and confirm a payment intention.
+			 *
+			 * @param array<string,mixed> $request_data Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
+				throw new WooPaymentsApiException(
+					'Error: Your card was declined.',
+					'card_declined',
+					402,
+					'card_error',
+					'do_not_honor',
+					array(),
+					'pi_declined_test',
+					'The bank did not return any further details with this decline.'
+				);
+			}
+			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+		};
+
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_native' );
+
+		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, null, $this->create_account_service( true ) );
+		$outcome = $sut->charge( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_request' ), 'key_charge' );
+		$data    = $outcome->get_data();
+
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( 'pi_declined_test', $outcome->get_provider_payment_id() );
+		$this->assertArrayHasKey( PaymentOutcome::DATA_NOTE, $data );
+		$this->assertStringContainsString( '<strong>failed</strong> to complete with the following message:', $data[ PaymentOutcome::DATA_NOTE ] );
+		$this->assertStringContainsString( 'Error: Your card was declined. The bank did not return any further details with this decline', $data[ PaymentOutcome::DATA_NOTE ] );
+		$this->assertNotEmpty( $data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] ?? array() );
+		$this->assertSame( 'allow', ( $data[ PaymentOutcome::DATA_META ] ?? array() )['_wcpay_fraud_meta_box_type'] ?? null, 'A card error means fraud checks passed; the meta box must show allow.' );
+	}
+
+	/**
+	 * @testdox Native charge declines without a card error keep the failed note but no fraud meta box type.
+	 */
+	public function test_charge_decline_without_card_error_writes_note_without_fraud_meta(): void {
+		$order      = $this->create_woopayments_order( '25.00' );
+		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ) );
+		$api_client = new class() extends WooPaymentsApiClient {
+			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- Test double always throws.
+			/**
+			 * Create and confirm a payment intention.
+			 *
+			 * @param array<string,mixed> $request_data Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
+				throw new WooPaymentsApiException( 'Error: Upstream provider unavailable.', 'api_connection_error', 502, 'api_error' );
+			}
+			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+		};
+
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_native' );
+
+		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, null, $this->create_account_service( true ) );
+		$outcome = $sut->charge( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_request' ), 'key_charge' );
+		$data    = $outcome->get_data();
+
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertStringContainsString( 'Error: Upstream provider unavailable', $data[ PaymentOutcome::DATA_NOTE ] ?? '' );
+		$this->assertArrayNotHasKey( '_wcpay_fraud_meta_box_type', $data[ PaymentOutcome::DATA_META ] ?? array() );
 	}
 
 	/**

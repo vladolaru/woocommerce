@@ -130,7 +130,7 @@ class WooPaymentsProviderGatewayAdapter {
 					? $this->charge_via_native_transport( $context, $idempotency_key )
 					: $this->setup_intent_via_native_transport( $context, $idempotency_key );
 			} catch ( WooPaymentsApiException $exception ) {
-				return WooPaymentsIntentCodec::failed_transport_outcome( 'charge', $exception );
+				return $this->failed_charge_outcome( $context->get_order(), $exception );
 			}
 		}
 
@@ -345,6 +345,51 @@ class WooPaymentsProviderGatewayAdapter {
 		);
 
 		return $outcome->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $result, $is_recurring ) );
+	}
+
+	/**
+	 * Build a failed charge outcome carrying the plugin's decline order effects.
+	 *
+	 * Mirrors the plugin's process_payment catch block: the order receives a
+	 * payment-failed note with the raw diagnostics (and the card_declined
+	 * seller message when the charge outcome carried one), and a card error
+	 * marks the fraud meta box allow because fraud checks passed.
+	 *
+	 * @param WC_Order                $order     Order object.
+	 * @param WooPaymentsApiException $exception Transport exception.
+	 * @return PaymentOutcome
+	 */
+	private function failed_charge_outcome( WC_Order $order, WooPaymentsApiException $exception ): PaymentOutcome {
+		$outcome = WooPaymentsIntentCodec::failed_transport_outcome( 'charge', $exception );
+		$data    = $outcome->get_data();
+
+		$note_candidates = $this->note_service->format_checkout_payment_failed_note_candidates(
+			$order,
+			$exception->getMessage(),
+			$exception->get_merchant_message(),
+			$exception->get_error_type(),
+			$exception->get_error_code()
+		);
+		if ( array() !== $note_candidates ) {
+			$data[ PaymentOutcome::DATA_NOTE ]             = $note_candidates[0];
+			$data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] = $note_candidates;
+		}
+
+		if ( 'card_error' === $exception->get_error_type() ) {
+			$meta = isset( $data[ PaymentOutcome::DATA_META ] ) && is_array( $data[ PaymentOutcome::DATA_META ] ) ? $data[ PaymentOutcome::DATA_META ] : array();
+
+			$meta['_wcpay_fraud_meta_box_type'] = 'allow';
+			$data[ PaymentOutcome::DATA_META ]  = $meta;
+		}
+
+		return new PaymentOutcome(
+			PaymentOutcome::STATUS_FAILED,
+			$outcome->get_provider_payment_id(),
+			'',
+			'',
+			'',
+			$data
+		);
 	}
 
 	/**

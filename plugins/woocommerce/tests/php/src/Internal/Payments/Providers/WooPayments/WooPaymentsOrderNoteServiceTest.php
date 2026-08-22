@@ -92,6 +92,93 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Checkout payment-failure notes carry the error details and the merchant seller message.
+	 */
+	public function test_formats_checkout_payment_failed_note_with_seller_message(): void {
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->set_currency( 'USD' );
+		$order->set_total( '25.00' );
+		$order->save();
+		$sut = new WooPaymentsOrderNoteService();
+
+		$candidates = $sut->format_checkout_payment_failed_note_candidates(
+			$order,
+			'Error: Your card was declined.',
+			'The bank did not return any further details with this decline.',
+			'card_error',
+			'card_declined'
+		);
+
+		$this->assertSame(
+			sprintf(
+				'A payment of %1$s USD <strong>failed</strong> to complete with the following message: <code>%2$s</code>.',
+				wc_price( 25.00, array( 'currency' => 'USD' ) ),
+				'Error: Your card was declined. The bank did not return any further details with this decline'
+			),
+			$candidates[0]
+		);
+	}
+
+	/**
+	 * @testdox Checkout payment-failure notes without a seller message keep just the error details.
+	 */
+	public function test_formats_checkout_payment_failed_note_without_seller_message(): void {
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->set_currency( 'USD' );
+		$order->set_total( '25.00' );
+		$order->save();
+		$sut = new WooPaymentsOrderNoteService();
+
+		$candidates = $sut->format_checkout_payment_failed_note_candidates(
+			$order,
+			'Error: Your card has insufficient funds.',
+			'',
+			'card_error',
+			'card_declined'
+		);
+
+		$this->assertSame(
+			sprintf(
+				'A payment of %1$s USD <strong>failed</strong> to complete with the following message: <code>%2$s</code>.',
+				wc_price( 25.00, array( 'currency' => 'USD' ) ),
+				'Error: Your card has insufficient funds'
+			),
+			$candidates[0]
+		);
+	}
+
+	/**
+	 * @testdox Checkout payment-failure notes replace the incorrect_zip diagnostics with the postal-code guidance.
+	 */
+	public function test_formats_checkout_payment_failed_note_for_incorrect_zip(): void {
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->set_currency( 'USD' );
+		$order->set_total( '25.00' );
+		$order->save();
+		$sut = new WooPaymentsOrderNoteService();
+
+		$candidates = $sut->format_checkout_payment_failed_note_candidates(
+			$order,
+			'Error: Your card\'s zip code failed validation.',
+			'',
+			'card_error',
+			'incorrect_zip'
+		);
+
+		$this->assertSame(
+			sprintf(
+				'A payment of %1$s USD <strong>failed</strong>. %2$s',
+				wc_price( 25.00, array( 'currency' => 'USD' ) ),
+				'We couldn’t verify the postal code in the billing address. If the issue persists, suggest the customer to reach out to the card issuing bank.'
+			),
+			$candidates[0]
+		);
+	}
+
+	/**
 	 * @testdox Authorization and started notes preserve WooPayments reference copy.
 	 */
 	public function test_formats_authorization_and_started_notes(): void {

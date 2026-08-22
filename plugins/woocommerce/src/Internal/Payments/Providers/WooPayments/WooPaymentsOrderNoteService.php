@@ -209,6 +209,30 @@ class WooPaymentsOrderNoteService {
 	}
 
 	/**
+	 * Build exact Core- and plugin-catalog renderings of a synchronous checkout payment-failure note.
+	 *
+	 * Mirrors the plugin's gateway decline note: the raw diagnostics (plus the
+	 * card_declined seller message when the charge outcome carried one) render
+	 * inside the message code block, and an incorrect_zip card error swaps in
+	 * the postal-code guidance instead of the raw diagnostics.
+	 *
+	 * @param WC_Order $order            Order object.
+	 * @param string   $message          Provider error message.
+	 * @param string   $merchant_message Merchant-facing seller message, when present.
+	 * @param string   $error_type       Provider error type.
+	 * @param string   $error_code       Provider error code.
+	 * @return string[] Exact equivalent renderings, with the native Core rendering first.
+	 *
+	 * @since 11.0.0
+	 */
+	public function format_checkout_payment_failed_note_candidates( WC_Order $order, string $message, string $merchant_message, string $error_type, string $error_code ): array {
+		return $this->format_amount_note_candidates(
+			$order,
+			fn( string $text_domain, string $formatted_amount ): string => $this->format_checkout_payment_failed_note_for_domain( $message, $merchant_message, $error_type, $error_code, $text_domain, $formatted_amount )
+		);
+	}
+
+	/**
 	 * Build exact Core- and plugin-catalog renderings of a payment-failure note.
 	 *
 	 * @param WC_Order            $order              Order object.
@@ -470,6 +494,58 @@ class WooPaymentsOrderNoteService {
 		);
 
 		return '' === $message ? $note : $note . ' ' . $message;
+	}
+
+	/**
+	 * Build a synchronous checkout payment-failure rendering from one known catalog.
+	 *
+	 * @param string $message          Provider error message.
+	 * @param string $merchant_message Merchant-facing seller message, when present.
+	 * @param string $error_type       Provider error type.
+	 * @param string $error_code       Provider error code.
+	 * @param string $text_domain      Translation catalog to render.
+	 * @param string $formatted_amount Preformatted order amount.
+	 * @return string
+	 */
+	private function format_checkout_payment_failed_note_for_domain( string $message, string $merchant_message, string $error_type, string $error_code, string $text_domain, string $formatted_amount ): string {
+		$error_details = esc_html( rtrim( $message, '.' ) );
+		if ( '' !== $merchant_message ) {
+			$error_details = $error_details . '. ' . esc_html( rtrim( $merchant_message, '.' ) );
+		}
+
+		if ( 'woocommerce-payments' === $text_domain ) {
+			/* translators: %1$s: the failed payment amount, %2$s: error message. */
+			$note_format = __( 'A payment of %1$s <strong>failed</strong> to complete with the following message: <code>%2$s</code>.', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+		} else {
+			/* translators: %1$s: the failed payment amount, %2$s: error message. */
+			$note_format = __( 'A payment of %1$s <strong>failed</strong> to complete with the following message: <code>%2$s</code>.', 'woocommerce' );
+		}
+
+		if ( 'card_error' === $error_type && 'incorrect_zip' === $error_code ) {
+			if ( 'woocommerce-payments' === $text_domain ) {
+				/* translators: %1$s: the failed payment amount, %2$s: error message. */
+				$note_format = __( 'A payment of %1$s <strong>failed</strong>. %2$s', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+
+				$error_details = __( 'We couldn’t verify the postal code in the billing address. If the issue persists, suggest the customer to reach out to the card issuing bank.', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+			} else {
+				/* translators: %1$s: the failed payment amount, %2$s: error message. */
+				$note_format = __( 'A payment of %1$s <strong>failed</strong>. %2$s', 'woocommerce' );
+
+				$error_details = __( 'We couldn’t verify the postal code in the billing address. If the issue persists, suggest the customer to reach out to the card issuing bank.', 'woocommerce' );
+			}
+		}
+
+		return sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
+				$note_format,
+				array(
+					'strong' => '<strong>',
+					'code'   => '<code>',
+				)
+			),
+			$formatted_amount,
+			$error_details
+		);
 	}
 
 	/**
