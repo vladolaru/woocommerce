@@ -3,6 +3,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayOrderStatusSync;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService;
@@ -48,6 +50,13 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	 * @var Task25WooPayAccountService|null
 	 */
 	private ?Task25WooPayAccountService $account_service = null;
+
+	/**
+	 * Most recently created recording WooPay API client.
+	 *
+	 * @var Task25WooPayApiClient|null
+	 */
+	private ?Task25WooPayApiClient $api_client = null;
 
 	/**
 	 * Set up test fixtures.
@@ -143,6 +152,22 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		$this->assertSame( 50, strlen( $webhook->get_secret() ) );
 		$this->assertArrayNotHasKey( self::WEBHOOK_ID_OPTION, wp_load_alloptions( true ) );
 		$this->assertFalse( get_option( self::WEBHOOK_LOCK_OPTION, false ) );
+		$this->assertSame( array( array( 'webhook_secret' => $webhook->get_secret() ) ), $this->api_client->woopay_updates, 'The new webhook secret must be registered with the platform.' );
+	}
+
+	/**
+	 * @testdox A failed platform secret registration rolls the local webhook back.
+	 */
+	public function test_failed_woopay_secret_registration_rolls_back_local_webhook(): void {
+		$sync = $this->create_sync( true, true );
+		$sync->register();
+		$this->api_client->update_woopay_exception = new WooPaymentsApiException( 'Error updating account.', 'wcpay_bad_request', 400 );
+
+		$sync->reconcile_webhook();
+
+		$this->assertCount( 1, $this->api_client->woopay_updates );
+		$this->assertSame( 0, absint( get_option( self::WEBHOOK_ID_OPTION, 0 ) ), 'A webhook whose secret WooPay does not hold must not stay owned.' );
+		$this->assertCount( 0, $this->find_webhooks_by_name( 'WooPayments woopay order status sync' ), 'The local webhook row must be rolled back.' );
 	}
 
 	/**
@@ -160,6 +185,7 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		$this->assertGreaterThan( 0, $first_id );
 		$this->assertSame( $first_id, $second_id );
 		$this->assertCount( 1, $this->find_webhooks_by_name( 'WooPayments woopay order status sync' ) );
+		$this->assertCount( 1, $this->api_client->woopay_updates, 'The secret must only be registered when a webhook is created.' );
 	}
 
 	/**
@@ -996,8 +1022,9 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		$this->account_service->account_data_overrides = $account_data;
 		$this->session_service                         = new Task25WooPaySessionService();
 		$this->session_service->init( $this->account_service, new WooPaymentsFrontendStylesService(), new WooPaymentsFrontendTrackingController() );
-		$sync = $sync ?? new WooPaymentsWooPayOrderStatusSync();
-		$sync->init( new StaticNativeRuntimeArbiter( $native_register ), $this->session_service );
+		$this->api_client = new Task25WooPayApiClient();
+		$sync             = $sync ?? new WooPaymentsWooPayOrderStatusSync();
+		$sync->init( new StaticNativeRuntimeArbiter( $native_register ), $this->session_service, $this->api_client );
 
 		$this->syncs[] = $sync;
 
@@ -1110,6 +1137,35 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 class Task25WooPaySessionService extends WooPaymentsWooPaySessionService {
 	public function get_woopay_rest_url( string $endpoint ): string {
 		return 'https://pay.woo.com/wp-json/platform-checkout/v1/' . ltrim( $endpoint, '/' );
+	}
+}
+
+/**
+ * Recording WooPay API client for webhook lifecycle tests.
+ */
+class Task25WooPayApiClient extends WooPaymentsApiClient {
+	/**
+	 * Recorded update_woopay payloads.
+	 *
+	 * @var array<int,array<string,mixed>>
+	 */
+	public array $woopay_updates = array();
+
+	/**
+	 * Exception to throw from update_woopay, when configured.
+	 *
+	 * @var WooPaymentsApiException|null
+	 */
+	public ?WooPaymentsApiException $update_woopay_exception = null;
+
+	public function update_woopay( array $data ): array {
+		$this->woopay_updates[] = $data;
+
+		if ( $this->update_woopay_exception instanceof WooPaymentsApiException ) {
+			throw $this->update_woopay_exception;
+		}
+
+		return array( 'result' => 'success' );
 	}
 }
 

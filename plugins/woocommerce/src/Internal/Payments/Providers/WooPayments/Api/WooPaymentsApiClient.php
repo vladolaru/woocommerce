@@ -102,6 +102,11 @@ class WooPaymentsApiClient {
 	private const CAPABILITIES_API = 'accounts/capabilities';
 
 	/**
+	 * WooPay (platform checkout) accounts endpoint.
+	 */
+	private const WOOPAY_ACCOUNTS_API = 'accounts/platform_checkout';
+
+	/**
 	 * WooPayments files API path.
 	 */
 	private const FILES_API = 'files';
@@ -1863,6 +1868,25 @@ class WooPaymentsApiClient {
 		}
 
 		return $this->request( $account_settings, self::ACCOUNTS_API, 'POST', true, true );
+	}
+
+	/**
+	 * Update the account's WooPay (platform checkout) data.
+	 *
+	 * Mirrors the plugin's update_woopay(): blog-token auth and the test-mode-onboarding flag, since the platform resolves the WooPay account per onboarding mode.
+	 *
+	 * @param array<string,mixed> $data WooPay account data (e.g. webhook_secret).
+	 * @return array<string,mixed>
+	 */
+	public function update_woopay( array $data ): array {
+		return $this->request(
+			array_merge(
+				array( 'test_mode' => $this->account_service->is_test_mode_onboarding_enabled() ),
+				$data
+			),
+			self::WOOPAY_ACCOUNTS_API,
+			'POST'
+		);
 	}
 
 	/**

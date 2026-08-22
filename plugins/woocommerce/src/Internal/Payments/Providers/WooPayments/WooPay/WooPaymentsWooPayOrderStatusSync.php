@@ -8,6 +8,8 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
@@ -79,16 +81,38 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	private WooPaymentsWooPaySessionService $session_service;
 
 	/**
+	 * WooPayments API client.
+	 *
+	 * @var WooPaymentsApiClient|null
+	 */
+	private ?WooPaymentsApiClient $api_client = null;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
 	 * @param NativePaymentsRuntimeArbiter    $arbiter         Runtime owner arbiter.
 	 * @param WooPaymentsWooPaySessionService $session_service WooPay session service.
+	 * @param WooPaymentsApiClient|null       $api_client      Optional WooPayments API client.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsWooPaySessionService $session_service ): void {
+	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsWooPaySessionService $session_service, ?WooPaymentsApiClient $api_client = null ): void {
 		$this->arbiter         = $arbiter;
 		$this->session_service = $session_service;
+		$this->api_client      = $api_client;
+	}
+
+	/**
+	 * Get the WooPayments API client.
+	 *
+	 * @return WooPaymentsApiClient
+	 */
+	private function get_api_client(): WooPaymentsApiClient {
+		if ( null === $this->api_client ) {
+			$this->api_client = wc_get_container()->get( WooPaymentsApiClient::class );
+		}
+
+		return $this->api_client;
 	}
 
 	/**
@@ -334,6 +358,16 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 
 				if ( ! $this->session_service->is_woopay_enabled() ) {
 					$this->remove_owned_webhook();
+					return;
+				}
+
+				// WooPay must hold the secret of every locally active webhook, or merchant-notification deliveries cannot be verified. Like the plugin, a failed registration rolls the local webhook back so the next reconciliation retries the whole pair.
+				try {
+					$this->get_api_client()->update_woopay( array( 'webhook_secret' => $webhook->get_secret() ) );
+				} catch ( WooPaymentsApiException $api_exception ) {
+					unset( $api_exception );
+					$this->remove_owned_webhook();
+					$this->log_reconciliation_error( 'Unable to register the WooPay order-status webhook secret with the platform.' );
 					return;
 				}
 
