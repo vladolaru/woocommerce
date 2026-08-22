@@ -1846,6 +1846,37 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should withhold stored appearance and font rules from the session when global theme support is off.
+	 */
+	public function test_init_session_request_gates_stored_appearance_on_global_theme_support(): void {
+		$sut = $this->create_service(
+			array( 'is_woopay_global_theme_support_enabled' => 'no' ),
+			array( 'platform_global_theme_support_enabled' => true )
+		);
+		$sut->save_woopay_appearance( array( 'theme' => 'night' ), array( array( 'src' => 'https://example.com/font.woff2' ) ) );
+
+		$request = $sut->get_init_session_request( 'shopper@example.com' );
+
+		$this->assertNull( $request['appearance'] );
+		$this->assertSame( array(), $request['font_rules'] );
+	}
+
+	/**
+	 * @testdox Should fall back to stored appearance and font rules when global theme support is on.
+	 */
+	public function test_init_session_request_uses_stored_appearance_when_global_theme_support_is_on(): void {
+		$sut = $this->create_service(
+			array( 'is_woopay_global_theme_support_enabled' => 'yes' ),
+			array( 'platform_global_theme_support_enabled' => true )
+		);
+		$sut->save_woopay_appearance( array( 'theme' => 'night' ), array() );
+
+		$request = $sut->get_init_session_request( 'shopper@example.com' );
+
+		$this->assertSame( array( 'theme' => 'night' ), $request['appearance'] );
+	}
+
+	/**
 	 * Simulate an inbound WooPay Store API request.
 	 */
 	private function simulate_woopay_store_api_request(): void {
