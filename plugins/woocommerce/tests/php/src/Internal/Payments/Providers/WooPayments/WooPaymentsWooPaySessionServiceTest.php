@@ -1710,6 +1710,58 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should carry the platform customer id for the current user in the init-session request.
+	 */
+	public function test_init_session_request_carries_platform_customer_id(): void {
+		$user_id = $this->factory->user->create();
+		wp_set_current_user( $user_id );
+
+		$captured_user_id = null;
+		$customer_service = $this->create_recording_customer_service( 'cus_test_123', $captured_user_id );
+
+		$request = $this->create_service( array(), array(), null, null, $customer_service )->get_init_session_request( 'shopper@example.com' );
+
+		$this->assertSame( 'cus_test_123', $request['customer_id'] );
+		$this->assertSame( $user_id, $captured_user_id );
+	}
+
+	/**
+	 * @testdox Should create a guest platform customer for the init-session request when nobody is logged in.
+	 */
+	public function test_init_session_request_creates_guest_platform_customer(): void {
+		$captured_user_id = null;
+		$customer_service = $this->create_recording_customer_service( 'cus_guest_456', $captured_user_id );
+
+		$request = $this->create_service( array(), array(), null, null, $customer_service )->get_init_session_request( 'guest@example.com' );
+
+		$this->assertSame( 'cus_guest_456', $request['customer_id'] );
+		$this->assertSame( 0, $captured_user_id );
+	}
+
+	/**
+	 * Build a customer-service mock recording the get-or-create call.
+	 *
+	 * @param string   $customer_id       Customer id to return.
+	 * @param int|null $captured_user_id  Captures the user id the service was asked about.
+	 * @return \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService
+	 */
+	private function create_recording_customer_service( string $customer_id, ?int &$captured_user_id ): \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService {
+		$customer_service = $this->getMockBuilder( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_user' ) )
+			->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_user' )->willReturnCallback(
+			function ( int $user_id ) use ( $customer_id, &$captured_user_id ): string {
+				$captured_user_id = $user_id;
+
+				return $customer_id;
+			}
+		);
+
+		return $customer_service;
+	}
+
+	/**
 	 * Simulate an inbound WooPay Store API request.
 	 */
 	private function simulate_woopay_store_api_request(): void {
@@ -1782,13 +1834,14 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the System Under Test.
 	 *
-	 * @param array<string,mixed>                     $settings           Gateway settings.
-	 * @param array<string,mixed>                     $account_data       Account data.
-	 * @param WooPaymentsWooPayAdaptedExtensions|null $adapted_extensions Adapted extensions registry.
-	 * @param callable(string):void|null              $event_recorder     Optional account-service event recorder.
+	 * @param array<string,mixed>                                                                             $settings           Gateway settings.
+	 * @param array<string,mixed>                                                                             $account_data       Account data.
+	 * @param WooPaymentsWooPayAdaptedExtensions|null                                                         $adapted_extensions Adapted extensions registry.
+	 * @param callable(string):void|null                                                                      $event_recorder     Optional account-service event recorder.
+	 * @param \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService|null $customer_service Optional customer service.
 	 * @return TestableWooPaySessionService
 	 */
-	private function create_service( array $settings = array(), array $account_data = array(), ?WooPaymentsWooPayAdaptedExtensions $adapted_extensions = null, ?callable $event_recorder = null ): TestableWooPaySessionService {
+	private function create_service( array $settings = array(), array $account_data = array(), ?WooPaymentsWooPayAdaptedExtensions $adapted_extensions = null, ?callable $event_recorder = null, ?\Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService $customer_service = null ): TestableWooPaySessionService {
 		$settings     = array_merge(
 			array(
 				'platform_checkout'                    => 'yes',
@@ -1856,7 +1909,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$tracking_controller->method( 'is_shopper_tracking_enabled' )->willReturn( true );
 
 		$sut = new TestableWooPaySessionService();
-		$sut->init( $account_service, new WooPaymentsFrontendStylesService(), $tracking_controller, null, $adapted_extensions );
+		$sut->init( $account_service, new WooPaymentsFrontendStylesService(), $tracking_controller, null, $adapted_extensions, $customer_service );
 
 		return $sut;
 	}

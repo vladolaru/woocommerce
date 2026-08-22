@@ -91,6 +91,13 @@ class WooPaymentsWooPaySessionService {
 	private ?WooPaymentsWooPayAdaptedExtensions $adapted_extensions = null;
 
 	/**
+	 * WooPayments customer service.
+	 *
+	 * @var WooPaymentsCustomerService|null
+	 */
+	private ?WooPaymentsCustomerService $customer_service = null;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -100,13 +107,15 @@ class WooPaymentsWooPaySessionService {
 	 * @param WooPaymentsFrontendTrackingController     $frontend_tracking_controller Frontend tracking controller.
 	 * @param WooPaymentsWooPayBlocksDataExtractor|null $blocks_data_extractor        WooPay blocks data extractor.
 	 * @param WooPaymentsWooPayAdaptedExtensions|null   $adapted_extensions           WooPay adapted extensions registry.
+	 * @param WooPaymentsCustomerService|null           $customer_service             WooPayments customer service.
 	 */
-	final public function init( WooPaymentsAccountService $account_service, WooPaymentsFrontendStylesService $frontend_styles_service, WooPaymentsFrontendTrackingController $frontend_tracking_controller, ?WooPaymentsWooPayBlocksDataExtractor $blocks_data_extractor = null, ?WooPaymentsWooPayAdaptedExtensions $adapted_extensions = null ): void {
+	final public function init( WooPaymentsAccountService $account_service, WooPaymentsFrontendStylesService $frontend_styles_service, WooPaymentsFrontendTrackingController $frontend_tracking_controller, ?WooPaymentsWooPayBlocksDataExtractor $blocks_data_extractor = null, ?WooPaymentsWooPayAdaptedExtensions $adapted_extensions = null, ?WooPaymentsCustomerService $customer_service = null ): void {
 		$this->account_service              = $account_service;
 		$this->frontend_styles_service      = $frontend_styles_service;
 		$this->frontend_tracking_controller = $frontend_tracking_controller;
 		$this->blocks_data_extractor        = $blocks_data_extractor;
 		$this->adapted_extensions           = $adapted_extensions;
+		$this->customer_service             = $customer_service;
 	}
 
 	/**
@@ -401,6 +410,23 @@ class WooPaymentsWooPaySessionService {
 	}
 
 	/**
+	 * Get (or create) the platform customer id for the current shopper.
+	 *
+	 * The plugin resolves the merchant-account customer for the session — creating one when
+	 * missing, guests included — so WooPay can surface saved payment methods and attach the
+	 * charge to the right customer.
+	 *
+	 * @return string|int The platform customer id, or 0 when no customer service is available.
+	 */
+	private function get_platform_customer_id() {
+		if ( null === $this->customer_service ) {
+			return 0;
+		}
+
+		return $this->customer_service->get_or_create_customer_id_for_user( get_current_user_id() );
+	}
+
+	/**
 	 * Tell whether the current request targets the Store API.
 	 *
 	 * @return bool
@@ -542,7 +568,7 @@ class WooPaymentsWooPaySessionService {
 		$request = array(
 			'wcpay_version'        => defined( 'WC_VERSION' ) ? WC_VERSION : '',
 			'user_id'              => get_current_user_id(),
-			'customer_id'          => 0,
+			'customer_id'          => $this->get_platform_customer_id(),
 			'session_nonce'        => $this->create_woopay_nonce( get_current_user_id() ),
 			'store_api_token'      => $this->get_store_api_token(),
 			'email'                => $email,
