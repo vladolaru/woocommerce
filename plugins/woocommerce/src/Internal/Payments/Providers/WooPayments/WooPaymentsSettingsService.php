@@ -552,7 +552,12 @@ class WooPaymentsSettingsService {
 		$payment_request_enabled = array_key_exists( 'is_payment_request_enabled', $params )
 			? $this->is_yes( $this->normalize_setting_value( $params['is_payment_request_enabled'], 'bool' ) )
 			: null;
-		$error                   = $this->update_provider_backed_settings( $params, $settings );
+		$enabled_methods_update  = $this->prepare_enabled_payment_method_ids_update( $params, $settings );
+		if ( is_wp_error( $enabled_methods_update ) ) {
+			return $enabled_methods_update;
+		}
+
+		$error = $this->update_provider_backed_settings( $params, $settings );
 		if ( is_wp_error( $error ) ) {
 			return $error;
 		}
@@ -581,61 +586,19 @@ class WooPaymentsSettingsService {
 			$settings['platform_checkout_custom_message'] = wp_kses_post( $custom_message );
 		}
 
-		if ( array_key_exists( 'enabled_payment_method_ids', $params ) ) {
-			$requested_payment_method_ids = $this->sanitize_payment_method_ids(
-				is_array( $params['enabled_payment_method_ids'] ) ? $params['enabled_payment_method_ids'] : array(),
-				self::SUPPORTED_PAYMENT_METHOD_IDS
-			);
-			if ( $this->is_manual_capture_enabled_after_update( $params, $settings ) ) {
-				$requested_payment_method_ids = $this->filter_manual_capture_payment_method_ids( $requested_payment_method_ids );
-			}
-
-			$available_payment_method_ids   = $this->get_available_payment_method_ids();
-			$unavailable_payment_method_ids = array_values( array_diff( $requested_payment_method_ids, $available_payment_method_ids ) );
-			if ( ! empty( $unavailable_payment_method_ids ) ) {
-				// The plugin's REST enum is the live available set, so an unavailable method is a hard 400 there — never a silent discard. Failing loudly also stops a cold account cache from wiping previously enabled methods.
-				return new WP_Error(
-					'rest_invalid_param',
-					sprintf(
-						/* translators: %s: settings field key. */
-						__( 'Invalid parameter(s): %s', 'woocommerce' ),
-						'enabled_payment_method_ids'
-					),
-					array(
-						'status'  => 400,
-						'params'  => array(
-							'enabled_payment_method_ids' => sprintf(
-								/* translators: %s: comma-separated payment method IDs. */
-								__( 'These payment methods are not available to the account: %s', 'woocommerce' ),
-								implode( ', ', $unavailable_payment_method_ids )
-							),
-						),
-						'details' => array(
-							'enabled_payment_method_ids' => array(
-								'code'    => 'rest_not_in_enum',
-								'message' => sprintf(
-									/* translators: %s: comma-separated payment method IDs. */
-									__( 'These payment methods are not available to the account: %s', 'woocommerce' ),
-									implode( ', ', $unavailable_payment_method_ids )
-								),
-								'data'    => null,
-							),
-						),
-					)
-				);
-			}
-			$capability_error = $this->request_unrequested_payment_methods( $requested_payment_method_ids );
+		if ( null !== $enabled_methods_update ) {
+			$capability_error = $this->request_unrequested_payment_methods( $enabled_methods_update['requested'] );
 			if ( is_wp_error( $capability_error ) ) {
 				return $capability_error;
 			}
 
 			$previous_enabled_payment_method_ids = $this->sanitize_payment_method_ids(
 				$this->get_array_setting( $settings, 'upe_enabled_payment_method_ids', array( 'card' ) ),
-				$available_payment_method_ids
+				$enabled_methods_update['available']
 			);
 			$enabled_payment_method_ids          = $this->sanitize_payment_method_ids(
-				$requested_payment_method_ids,
-				$available_payment_method_ids
+				$enabled_methods_update['requested'],
+				$enabled_methods_update['available']
 			);
 			foreach ( array_diff( $enabled_payment_method_ids, $previous_enabled_payment_method_ids ) as $payment_method_id ) {
 				$this->get_pm_promotions_service()->maybe_activate_promotion_for_payment_method( $payment_method_id );
@@ -666,7 +629,7 @@ class WooPaymentsSettingsService {
 				continue;
 			}
 
-			// Store exactly what update_provider_backed_settings() sent to the platform: the local mirror is a cache-unavailable fallback for the account data, so a value that diverges from the wire (e.g. a sanitized-to-empty color) would misreport the account. Format guarantees live at the REST boundary validators, and the mirror is only ever emitted through JSON responses.
+			// Store exactly what update_provider_backed_settings() sent to the platform: the local mirror is a cache-unavailable fallback for the account data, so a value that diverges from the wire (e.g. a sanitized-to-empty color) would misreport the account. Format guarantees live at the REST boundary validators; the mirror's read paths (JSON settings responses and the escaped IPP receipt templates) all encode at output.
 			$settings[ $request_key ] = $params[ $request_key ];
 		}
 
@@ -804,6 +767,81 @@ class WooPaymentsSettingsService {
 		}
 
 		return $this->payment_method_registry;
+	}
+
+	/**
+	 * Validate a requested enabled-payment-methods update against the account's live availability.
+	 *
+	 * Runs before any platform mutation so a rejected save is fully atomic, like the plugin's REST-boundary enum. An unknown availability (no fee-backed methods, e.g. a cold or errored account cache) rejects every enabled-methods save — including an empty list, which a settings-screen round-trip would otherwise persist, silently wiping the store's enabled methods without self-healing when the cache returns.
+	 *
+	 * @param array<string,mixed> $params   Request parameters.
+	 * @param array<string,mixed> $settings Current gateway settings.
+	 * @return array{requested:string[],available:string[]}|WP_Error|null Prepared update, an error, or null when the request does not touch enabled methods.
+	 */
+	private function prepare_enabled_payment_method_ids_update( array $params, array $settings ) {
+		if ( ! array_key_exists( 'enabled_payment_method_ids', $params ) ) {
+			return null;
+		}
+
+		$requested_payment_method_ids = $this->sanitize_payment_method_ids(
+			is_array( $params['enabled_payment_method_ids'] ) ? $params['enabled_payment_method_ids'] : array(),
+			self::SUPPORTED_PAYMENT_METHOD_IDS
+		);
+		if ( $this->is_manual_capture_enabled_after_update( $params, $settings ) ) {
+			$requested_payment_method_ids = $this->filter_manual_capture_payment_method_ids( $requested_payment_method_ids );
+		}
+
+		$available_payment_method_ids = $this->get_available_payment_method_ids();
+		if ( empty( $available_payment_method_ids ) ) {
+			return $this->enabled_payment_method_ids_error(
+				__( 'The payment methods available to the account cannot be determined right now. Please try again.', 'woocommerce' )
+			);
+		}
+
+		$unavailable_payment_method_ids = array_values( array_diff( $requested_payment_method_ids, $available_payment_method_ids ) );
+		if ( ! empty( $unavailable_payment_method_ids ) ) {
+			// The plugin's REST enum is the live available set, so an unavailable method is a hard 400 there — never a silent discard.
+			return $this->enabled_payment_method_ids_error(
+				sprintf(
+					/* translators: %s: comma-separated payment method IDs. */
+					__( 'These payment methods are not available to the account: %s', 'woocommerce' ),
+					implode( ', ', $unavailable_payment_method_ids )
+				)
+			);
+		}
+
+		return array(
+			'requested' => $requested_payment_method_ids,
+			'available' => $available_payment_method_ids,
+		);
+	}
+
+	/**
+	 * Build the rest_invalid_param error envelope for a rejected enabled-methods update.
+	 *
+	 * @param string $message Field error message.
+	 * @return WP_Error
+	 */
+	private function enabled_payment_method_ids_error( string $message ): WP_Error {
+		return new WP_Error(
+			'rest_invalid_param',
+			sprintf(
+				/* translators: %s: settings field key. */
+				__( 'Invalid parameter(s): %s', 'woocommerce' ),
+				'enabled_payment_method_ids'
+			),
+			array(
+				'status'  => 400,
+				'params'  => array( 'enabled_payment_method_ids' => $message ),
+				'details' => array(
+					'enabled_payment_method_ids' => array(
+						'code'    => 'rest_not_in_enum',
+						'message' => $message,
+						'data'    => null,
+					),
+				),
+			)
+		);
 	}
 
 	/**

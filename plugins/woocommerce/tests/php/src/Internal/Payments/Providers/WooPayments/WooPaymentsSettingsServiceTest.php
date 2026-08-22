@@ -2014,6 +2014,52 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should reject any enabled-methods save while the account's availability cannot be determined.
+	 */
+	public function test_update_settings_rejects_enabled_methods_save_when_availability_is_unknown(): void {
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array( 'upe_enabled_payment_method_ids' => array( 'card', 'ideal' ) )
+		);
+
+		$result = $this->sut->update_settings( array( 'enabled_payment_method_ids' => array() ) );
+
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertSame( 'rest_invalid_param', $result->get_error_code() );
+		$stored = get_option( 'woocommerce_woocommerce_payments_settings' );
+		$this->assertSame( array( 'card', 'ideal' ), $stored['upe_enabled_payment_method_ids'], 'A settings round-trip during an account-cache outage must not wipe the enabled methods.' );
+	}
+
+	/**
+	 * @testdox Should reject unavailable enabled methods before any platform mutation lands.
+	 */
+	public function test_update_settings_rejects_unavailable_methods_before_any_platform_mutation(): void {
+		$this->set_connected_account_data();
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'upe_enabled_payment_method_ids' => array( 'card' ),
+				'account_statement_descriptor'   => 'OLD STORE',
+				'deposit_schedule_interval'      => 'daily',
+			)
+		);
+		update_option( 'wcpay_next_deposit_notice_dismissed', true );
+
+		$result = $this->sut->update_settings(
+			array(
+				'enabled_payment_method_ids'   => array( 'card', 'ideal' ),
+				'account_statement_descriptor' => 'NEW STORE',
+				'deposit_schedule_interval'    => 'weekly',
+			)
+		);
+
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertSame( 'rest_invalid_param', $result->get_error_code() );
+		$this->assertNull( $this->api_client->last_account_settings, 'A rejected save must not reach the platform accounts endpoint.' );
+		$this->assertTrue( (bool) get_option( 'wcpay_next_deposit_notice_dismissed' ), 'A rejected save must not re-arm the next-deposit notice.' );
+	}
+
+	/**
 	 * @testdox Should report no available payment methods when the account has no fees, like the plugin.
 	 */
 	public function test_get_settings_reports_no_available_methods_without_account_fees(): void {
