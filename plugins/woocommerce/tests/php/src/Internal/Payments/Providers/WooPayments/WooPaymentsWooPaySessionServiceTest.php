@@ -453,7 +453,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertTrue( $config['isWooPayEnabled'] );
 		$this->assertTrue( $config['isWoopayExpressCheckoutEnabled'] );
-		$this->assertTrue( $config['isWooPayEmailInputEnabled'] );
+		$this->assertFalse( $config['isWooPayEmailInputEnabled'] );
 		$this->assertFalse( $config['shouldShowWooPayButton'] );
 		$this->assertSame( 1, $enabled_filter_calls );
 	}
@@ -1022,7 +1022,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertTrue( $config['isWooPayEnabled'] );
 		$this->assertTrue( $config['isWoopayExpressCheckoutEnabled'] );
-		$this->assertTrue( $config['isWooPayEmailInputEnabled'] );
+		$this->assertFalse( $config['isWooPayEmailInputEnabled'] );
 		$this->assertFalse( $config['isWooPayDirectCheckoutEnabled'] );
 		$this->assertFalse( $config['isWooPayGlobalThemeSupportEnabled'] );
 		$this->assertFalse( $config['forceNetworkSavedCards'] );
@@ -1833,6 +1833,16 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( $expected, $sut->get_minimum_session_data()['wcpay_version'] );
 		$this->assertSame( $expected, $sut->get_init_session_request( 'shopper@example.com' )['wcpay_version'] );
 		$this->assertSame( $expected, $sut->get_woopay_frontend_config( 'checkout' )['wcpayVersionNumber'] );
+	}
+
+	/**
+	 * @testdox Should not advertise the WooPay email-input or direct-checkout flows until they are ported.
+	 */
+	public function test_frontend_config_does_not_advertise_unported_woopay_auth_flows(): void {
+		$config = $this->create_service( array( 'is_woopay_direct_checkout_enabled' => 'yes' ) )->get_woopay_frontend_config( 'checkout' );
+
+		$this->assertFalse( $config['isWooPayEmailInputEnabled'] );
+		$this->assertFalse( $config['isWooPayDirectCheckoutEnabled'] );
 	}
 
 	/**

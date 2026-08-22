@@ -799,8 +799,12 @@ class WooPaymentsWooPaySessionService {
 			'isWooPayEnabled'                   => $is_woopay_enabled,
 			'isWoopayExpressCheckoutEnabled'    => $woopay_express_available,
 			'isWoopayFirstPartyAuthEnabled'     => $woopay_first_party_auth_available,
-			'isWooPayEmailInputEnabled'         => $is_woopay_enabled,
-			'isWooPayDirectCheckoutEnabled'     => $this->is_truthy_gateway_setting( 'is_woopay_direct_checkout_enabled' ),
+			// The email-input/OTP and direct-checkout front ends are not ported yet; advertising
+			// them without a JS consumer breaks WooPay's expectations. Flip these when the flows
+			// land (see the follow-ups ledger and the plugin's wcpay_is_woopay_email_input_enabled
+			// filter for the email-input half).
+			'isWooPayEmailInputEnabled'         => false,
+			'isWooPayDirectCheckoutEnabled'     => false,
 			'isWooPayGlobalThemeSupportEnabled' => $is_global_theme_enabled,
 			'forceNetworkSavedCards'            => $this->is_truthy_gateway_setting( 'force_network_saved_cards' ) || $this->should_use_stripe_platform_on_checkout_page( $context ),
 			'ajaxUrl'                           => admin_url( 'admin-ajax.php' ),
