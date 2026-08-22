@@ -804,6 +804,21 @@ class WooPaymentsRestController extends RestApiControllerBase {
 				'required'          => false,
 				'validate_callback' => array( $this, 'validate_business_support_email' ),
 			),
+			'account_branding_primary_color'       => array(
+				'type'              => 'string',
+				'required'          => false,
+				'validate_callback' => array( $this, 'validate_branding_color' ),
+			),
+			'account_branding_secondary_color'     => array(
+				'type'              => 'string',
+				'required'          => false,
+				'validate_callback' => array( $this, 'validate_branding_color' ),
+			),
+			'account_business_url'                 => array(
+				'type'              => 'string',
+				'required'          => false,
+				'validate_callback' => array( $this, 'validate_business_url' ),
+			),
 		);
 
 		foreach (
@@ -834,11 +849,8 @@ class WooPaymentsRestController extends RestApiControllerBase {
 				'account_statement_descriptor_kanji',
 				'account_statement_descriptor_kana',
 				'account_business_name',
-				'account_business_url',
 				'account_branding_logo',
 				'account_branding_icon',
-				'account_branding_primary_color',
-				'account_branding_secondary_color',
 				'deposit_schedule_interval',
 				'deposit_schedule_weekly_anchor',
 				'current_protection_level',
@@ -1013,6 +1025,60 @@ class WooPaymentsRestController extends RestApiControllerBase {
 			return new WP_Error(
 				'rest_invalid_pattern',
 				__( 'Error: Invalid email address: ', 'woocommerce' ) . $value
+			);
+		}
+
+		return true;
+	}
+
+	/**
+	 * Validate a branding color as empty or a hex color.
+	 *
+	 * The plugin has no server-side rule here, but the native runtime mirrors the sent value locally, and an unvalidated non-hex value would previously be sanitized to an empty mirror while the raw value went to the platform. The UI's color picker only emits hex values, so this only constrains direct REST clients.
+	 *
+	 * @param mixed           $value   Branding color value.
+	 * @param WP_REST_Request $request Request.
+	 * @param string          $param   Parameter name.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return true|WP_Error
+	 */
+	public function validate_branding_color( $value, WP_REST_Request $request, string $param ) {
+		$validation = rest_validate_request_arg( $value, $request, $param );
+		if ( true !== $validation ) {
+			return $validation;
+		}
+
+		if ( '' !== $value && sanitize_hex_color( (string) $value ) !== (string) $value ) {
+			return new WP_Error(
+				'rest_invalid_pattern',
+				__( 'Error: Invalid color value.', 'woocommerce' )
+			);
+		}
+
+		return true;
+	}
+
+	/**
+	 * Validate the business URL against dangerous schemes.
+	 *
+	 * Deliberately lenient — the plugin forwards scheme-less values like example.com raw, so only values esc_url_raw() strips entirely (e.g. javascript: URLs) are rejected.
+	 *
+	 * @param mixed           $value   Business URL value.
+	 * @param WP_REST_Request $request Request.
+	 * @param string          $param   Parameter name.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return true|WP_Error
+	 */
+	public function validate_business_url( $value, WP_REST_Request $request, string $param ) {
+		$validation = rest_validate_request_arg( $value, $request, $param );
+		if ( true !== $validation ) {
+			return $validation;
+		}
+
+		if ( '' !== $value && '' === esc_url_raw( (string) $value ) ) {
+			return new WP_Error(
+				'rest_invalid_pattern',
+				__( 'Error: Invalid URL.', 'woocommerce' )
 			);
 		}
 

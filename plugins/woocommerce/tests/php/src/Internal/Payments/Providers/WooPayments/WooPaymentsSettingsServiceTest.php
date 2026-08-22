@@ -1392,38 +1392,33 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should sanitize persisted account setting fields by their field type.
+	 * @testdox Should store account fields exactly as sent to the platform.
 	 */
-	public function test_update_settings_sanitizes_account_setting_fields_by_type(): void {
+	public function test_update_settings_stores_account_fields_exactly_as_sent(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array() );
 
-		$result = $this->sut->update_settings(
-			array(
-				'account_business_name'            => '  Native <script>alert(1)</script> Store  ',
-				'account_statement_descriptor'     => "NATIVE\tSTORE<b></b>",
-				'account_business_support_phone'   => '+1 555 0123<script></script>',
-				'account_business_url'             => 'javascript:alert(document.cookie)',
-				'account_business_support_email'   => 'support<>@example.test',
-				'account_communications_email'     => 'not a valid email',
-				'account_branding_primary_color'   => '#123ABC',
-				'account_branding_secondary_color' => '#eeeeee onload=alert(1)',
-				'account_business_support_address' => array( 'city' => 'San <script>alert(1)</script> Francisco' ),
-			)
+		$params = array(
+			'account_business_name'            => '  Native Store  ',
+			'account_statement_descriptor'     => 'NATIVE STORE',
+			'account_business_support_phone'   => '+1 555 0123',
+			'account_business_url'             => 'example.test/store',
+			'account_business_support_email'   => 'support@example.test',
+			'account_communications_email'     => 'merchant@example.test',
+			'account_branding_primary_color'   => '#123ABC',
+			'account_branding_secondary_color' => '#eeeeee',
+			'account_business_support_address' => array( 'city' => 'San Francisco' ),
 		);
 
+		$result = $this->sut->update_settings( $params );
 		$stored = get_option( 'woocommerce_woocommerce_payments_settings' );
 
 		$this->assertIsArray( $result );
 		$this->assertIsArray( $stored );
-		$this->assertSame( 'Native Store', $stored['account_business_name'], 'Text fields should be passed through sanitize_text_field().' );
-		$this->assertSame( 'NATIVE STORE', $stored['account_statement_descriptor'], 'Descriptors should be passed through sanitize_text_field().' );
-		$this->assertSame( '+1 555 0123', $stored['account_business_support_phone'], 'Phone is a text field and should be sanitized.' );
-		$this->assertSame( '', $stored['account_business_url'], 'A javascript: URL should be stripped by esc_url_raw().' );
-		$this->assertSame( 'support@example.test', $stored['account_business_support_email'], 'Email fields should be passed through sanitize_email().' );
-		$this->assertSame( '', $stored['account_communications_email'], 'An invalid email should be reduced to an empty string.' );
-		$this->assertSame( '#123ABC', $stored['account_branding_primary_color'], 'A valid hex color should be passed through sanitize_hex_color().' );
-		$this->assertSame( '', $stored['account_branding_secondary_color'], 'A malformed hex color should fall back to an empty string.' );
-		$this->assertSame( array( 'city' => 'San Francisco' ), $stored['account_business_support_address'], 'Support address members should be sanitized while preserving the array shape.' );
+		foreach ( $params as $key => $value ) {
+			$this->assertSame( $value, $stored[ $key ], "The stored mirror of {$key} must be byte-identical to the request value." );
+		}
+		$this->assertSame( '  Native Store  ', $this->api_client->last_account_settings['business_name'], 'The wire payload must carry the same raw value as the stored mirror.' );
+		$this->assertSame( 'example.test/store', $this->api_client->last_account_settings['business_url'], 'The wire payload must not be mutated by URL sanitization.' );
 	}
 
 	/**

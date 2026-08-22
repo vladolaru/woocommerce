@@ -183,32 +183,6 @@ class WooPaymentsSettingsService {
 	);
 
 	/**
-	 * Sanitization type for each account setting request key.
-	 *
-	 * The shipping WooPayments client validates these per field at the REST boundary;
-	 * the native runtime persists them, so it must sanitize them by type before storing.
-	 * Keys mirror self::ACCOUNT_SETTING_MAP. Request keys absent here are stored as-is
-	 * (e.g. nullable integer anchors handled by the local setting normalization paths).
-	 */
-	private const ACCOUNT_SETTING_TYPE_MAP = array(
-		'account_statement_descriptor'       => 'text',
-		'account_statement_descriptor_kanji' => 'text',
-		'account_statement_descriptor_kana'  => 'text',
-		'account_business_name'              => 'text',
-		'account_business_url'               => 'url',
-		'account_business_support_address'   => 'address',
-		'account_business_support_email'     => 'email',
-		'account_business_support_phone'     => 'text',
-		'account_branding_logo'              => 'text',
-		'account_branding_icon'              => 'text',
-		'account_branding_primary_color'     => 'color',
-		'account_branding_secondary_color'   => 'color',
-		'account_communications_email'       => 'email',
-		'deposit_schedule_interval'          => 'text',
-		'deposit_schedule_weekly_anchor'     => 'text',
-	);
-
-	/**
 	 * Native WooPayments account service.
 	 *
 	 * @var WooPaymentsAccountService
@@ -659,18 +633,8 @@ class WooPaymentsSettingsService {
 				continue;
 			}
 
-			$type = self::ACCOUNT_SETTING_TYPE_MAP[ $request_key ] ?? null;
-			if ( null === $type ) {
-				$settings[ $request_key ] = $params[ $request_key ];
-				continue;
-			}
-
-			if ( 'address' === $type ) {
-				$settings[ $request_key ] = $this->sanitize_account_support_address( $params[ $request_key ] );
-				continue;
-			}
-
-			$settings[ $request_key ] = $this->sanitize_account_setting_value( $params[ $request_key ], $type );
+			// Store exactly what update_provider_backed_settings() sent to the platform: the local mirror is a cache-unavailable fallback for the account data, so a value that diverges from the wire (e.g. a sanitized-to-empty color) would misreport the account. Format guarantees live at the REST boundary validators, and the mirror is only ever emitted through JSON responses.
+			$settings[ $request_key ] = $params[ $request_key ];
 		}
 
 		// Persist every setting in one canonical write, then project enabled state to split gateways.
@@ -1949,46 +1913,6 @@ class WooPaymentsSettingsService {
 		}
 
 		return is_scalar( $value ) ? (string) $value : '';
-	}
-
-	/**
-	 * Sanitize a scalar account setting value by its field type.
-	 *
-	 * @param mixed  $value Raw request value.
-	 * @param string $type  Field type: 'text', 'url', 'email', or 'color'.
-	 * @return string
-	 */
-	private function sanitize_account_setting_value( $value, string $type ): string {
-		$value = is_scalar( $value ) ? (string) $value : '';
-
-		switch ( $type ) {
-			case 'url':
-				return esc_url_raw( $value );
-			case 'email':
-				return sanitize_email( $value );
-			case 'color':
-				return (string) sanitize_hex_color( $value );
-			case 'text':
-			default:
-				return sanitize_text_field( $value );
-		}
-	}
-
-	/**
-	 * Sanitize the business support address, preserving its array shape.
-	 *
-	 * @param mixed $value Raw request value.
-	 * @return mixed Sanitized array, or the original value when it is not an array.
-	 */
-	private function sanitize_account_support_address( $value ) {
-		if ( ! is_array( $value ) ) {
-			return $this->sanitize_account_setting_value( $value, 'text' );
-		}
-
-		return array_map(
-			fn( $member ) => is_scalar( $member ) ? sanitize_text_field( (string) $member ) : $member,
-			$value
-		);
 	}
 
 	/**

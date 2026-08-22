@@ -822,6 +822,94 @@ class WooPaymentsRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should reject a malformed branding color but accept a valid or empty one.
+	 */
+	public function test_update_native_settings_validates_branding_colors(): void {
+		$this->mock_settings_service
+			->expects( $this->never() )
+			->method( 'update_settings' );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
+		$request->set_body_params(
+			array(
+				'account_branding_primary_color' => '#eeeeee onload=alert(1)',
+			)
+		);
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertSame( 'rest_invalid_pattern', $response->get_data()['data']['details']['account_branding_primary_color']['code'] );
+	}
+
+	/**
+	 * @testdox Should accept a valid hex branding color and an empty secondary color.
+	 */
+	public function test_update_native_settings_accepts_valid_branding_colors(): void {
+		$this->mock_settings_service
+			->expects( $this->once() )
+			->method( 'update_settings' )
+			->willReturn( array() );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
+		$request->set_body_params(
+			array(
+				'account_branding_primary_color'   => '#123ABC',
+				'account_branding_secondary_color' => '',
+			)
+		);
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 200, $response->get_status() );
+	}
+
+	/**
+	 * @testdox Should reject a business URL whose scheme is stripped entirely by esc_url_raw.
+	 */
+	public function test_update_native_settings_rejects_dangerous_business_url(): void {
+		$this->mock_settings_service
+			->expects( $this->never() )
+			->method( 'update_settings' );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
+		$request->set_body_params(
+			array(
+				'account_business_url' => 'javascript:alert(document.cookie)',
+			)
+		);
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertSame( 'rest_invalid_pattern', $response->get_data()['data']['details']['account_business_url']['code'] );
+	}
+
+	/**
+	 * @testdox Should accept scheme-less and empty business URLs like the WooPayments plugin does.
+	 */
+	public function test_update_native_settings_accepts_lenient_business_urls(): void {
+		$this->mock_settings_service
+			->expects( $this->once() )
+			->method( 'update_settings' )
+			->with(
+				$this->callback(
+					static function ( array $params ): bool {
+						return 'example.test/store' === $params['account_business_url'];
+					}
+				)
+			)
+			->willReturn( array() );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
+		$request->set_body_params(
+			array(
+				'account_business_url' => 'example.test/store',
+			)
+		);
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 200, $response->get_status() );
+	}
+
+	/**
 	 * @testdox Should reject a malformed business support email but accept an empty one.
 	 */
 	public function test_update_native_settings_validates_business_support_email(): void {
