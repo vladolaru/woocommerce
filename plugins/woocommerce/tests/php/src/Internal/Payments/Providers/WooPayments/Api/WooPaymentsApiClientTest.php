@@ -449,6 +449,210 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Trigger a provider API error through the fake transport and capture the thrown exception.
+	 *
+	 * @param array<string,mixed> $response_body Decoded provider error body.
+	 * @param int                 $response_code HTTP status code.
+	 * @return WooPaymentsApiException
+	 */
+	private function capture_api_error( array $response_body, int $response_code = 400 ): WooPaymentsApiException {
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id  = 123;
+		$http_client->response = array(
+			'response' => array( 'code' => $response_code ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode( $response_body ),
+		);
+
+		$sut = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( false ) );
+
+		try {
+			$sut->refund_charge( 'ch_test', 250, 'requested_by_customer', 'native_transport', 'idem_test' );
+		} catch ( WooPaymentsApiException $exception ) {
+			return $exception;
+		}
+
+		$this->fail( 'Expected the provider error response to surface a WooPaymentsApiException.' );
+	}
+
+	/**
+	 * @testdox Should preserve the platform data payload on API errors so amount_too_small keeps its minimum.
+	 */
+	public function test_api_error_preserves_top_level_amount_too_small_data(): void {
+		$exception = $this->capture_api_error(
+			array(
+				'code'    => 'amount_too_small',
+				'message' => 'Amount must be at least $0.50 usd',
+				'data'    => array(
+					'minimum_amount' => 50,
+					'currency'       => 'usd',
+				),
+			)
+		);
+
+		$this->assertSame( 'amount_too_small', $exception->get_error_code() );
+		$this->assertSame( 'Amount must be at least $0.50 usd', $exception->getMessage(), 'The plugin throws the platform message unwrapped for amount_too_small.' );
+		$this->assertSame(
+			array(
+				'minimum_amount' => 50,
+				'currency'       => 'usd',
+			),
+			$exception->get_error_data()
+		);
+		$this->assertSame( 400, $exception->get_http_code() );
+	}
+
+	/**
+	 * @testdox Should preserve the failed payment intent id and the card_declined seller message from the error envelope.
+	 */
+	public function test_api_error_preserves_intent_id_and_seller_message(): void {
+		$exception = $this->capture_api_error(
+			array(
+				'error' => array(
+					'code'           => 'card_declined',
+					'message'        => 'Your card was declined.',
+					'type'           => 'card_error',
+					'decline_code'   => 'do_not_honor',
+					'payment_intent' => array(
+						'id'      => 'pi_failed_test',
+						'status'  => 'requires_payment_method',
+						'charges' => array(
+							'data' => array(
+								array(
+									'outcome' => array(
+										'seller_message' => 'The bank did not return any further details with this decline.',
+									),
+								),
+							),
+						),
+					),
+				),
+			),
+			402
+		);
+
+		$this->assertSame( 'pi_failed_test', $exception->get_payment_intent_id() );
+		$this->assertSame( 'The bank did not return any further details with this decline.', $exception->get_merchant_message() );
+		$this->assertSame( 'card_declined', $exception->get_error_code() );
+		$this->assertSame( 'do_not_honor', $exception->get_decline_code() );
+	}
+
+	/**
+	 * @testdox Should keep the seller message for card_declined only, matching the plugin extraction guard.
+	 */
+	public function test_api_error_ignores_seller_message_for_other_decline_codes(): void {
+		$exception = $this->capture_api_error(
+			array(
+				'error' => array(
+					'code'           => 'expired_card',
+					'message'        => 'Your card has expired.',
+					'type'           => 'card_error',
+					'payment_intent' => array(
+						'id'      => 'pi_failed_test',
+						'charges' => array(
+							'data' => array(
+								array(
+									'outcome' => array(
+										'seller_message' => 'The card has expired.',
+									),
+								),
+							),
+						),
+					),
+				),
+			),
+			402
+		);
+
+		$this->assertSame( '', $exception->get_merchant_message() );
+		$this->assertSame( 'pi_failed_test', $exception->get_payment_intent_id() );
+	}
+
+	/**
+	 * @testdox Should preserve top-level data alongside an error envelope, so fraud ruleset results survive.
+	 */
+	public function test_api_error_preserves_fraud_ruleset_results_data(): void {
+		$ruleset_results = array( 'international_ip_address' => 'block' );
+		$exception       = $this->capture_api_error(
+			array(
+				'error' => array(
+					'code'    => 'wcpay_blocked_by_fraud_rule',
+					'message' => 'Transaction blocked by fraud rules.',
+				),
+				'data'  => array( 'ruleset_results' => $ruleset_results ),
+			)
+		);
+
+		$this->assertSame( 'wcpay_blocked_by_fraud_rule', $exception->get_error_code() );
+		$this->assertSame( array( 'ruleset_results' => $ruleset_results ), $exception->get_error_data() );
+	}
+
+	/**
+	 * @testdox Should rewrite the amount_too_large capture error so the merchant is not told to contact support.
+	 */
+	public function test_api_error_rewrites_amount_too_large_for_uncaptured_intents(): void {
+		$exception = $this->capture_api_error(
+			array(
+				'error' => array(
+					'code'           => 'amount_too_large',
+					'message'        => 'Amount must be no more than $999,999.99 usd. If you need to process larger amounts, contact support.',
+					'type'           => 'invalid_request_error',
+					'payment_intent' => array(
+						'id'     => 'pi_auth_test',
+						'status' => 'requires_capture',
+					),
+				),
+			)
+		);
+
+		$this->assertSame( 'amount_too_large', $exception->get_error_code() );
+		$this->assertSame( 'Error: The payment could not be captured because the requested capture amount is greater than the amount you can capture for this charge.', $exception->getMessage() );
+	}
+
+	/**
+	 * @testdox Should pass the amount_too_large message through untouched when the intent is not awaiting capture.
+	 */
+	public function test_api_error_keeps_raw_amount_too_large_message_without_requires_capture(): void {
+		$exception = $this->capture_api_error(
+			array(
+				'error' => array(
+					'code'    => 'amount_too_large',
+					'message' => 'Amount must be no more than $999,999.99 usd.',
+					'type'    => 'invalid_request_error',
+				),
+			)
+		);
+
+		$this->assertSame( 'Error: Amount must be no more than $999,999.99 usd.', $exception->getMessage() );
+	}
+
+	/**
+	 * @testdox Should fall back to message_code and then the error type when the envelope carries no code.
+	 */
+	public function test_api_error_code_falls_back_to_message_code_then_type(): void {
+		$message_code_exception = $this->capture_api_error(
+			array(
+				'error' => array(
+					'message_code' => 'wcpay_platform_message_code',
+					'message'      => 'Platform-coded failure.',
+				),
+			)
+		);
+		$this->assertSame( 'wcpay_platform_message_code', $message_code_exception->get_error_code() );
+
+		$type_exception = $this->capture_api_error(
+			array(
+				'error' => array(
+					'type'    => 'invalid_request_error',
+					'message' => 'Typed failure without a code.',
+				),
+			)
+		);
+		$this->assertSame( 'invalid_request_error', $type_exception->get_error_code() );
+	}
+
+	/**
 	 * @testdox Should apply the preserved WooPayments response filter after transport requests.
 	 */
 	public function test_request_applies_preserved_response_filter_after_transport_requests(): void {

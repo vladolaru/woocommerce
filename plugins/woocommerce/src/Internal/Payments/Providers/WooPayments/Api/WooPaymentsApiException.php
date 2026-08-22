@@ -46,23 +46,50 @@ class WooPaymentsApiException extends RuntimeException {
 	private string $decline_code;
 
 	/**
+	 * Structured platform error data (e.g. minimum_amount, ruleset_results).
+	 *
+	 * @var array<string,mixed>
+	 */
+	private array $error_data;
+
+	/**
+	 * Failed payment intent ID from the error envelope.
+	 *
+	 * @var string
+	 */
+	private string $payment_intent_id;
+
+	/**
+	 * Merchant-facing seller message from the declined charge outcome.
+	 *
+	 * @var string
+	 */
+	private string $merchant_message;
+
+	/**
 	 * Constructor.
 	 *
-	 * @param string $message      Exception message.
-	 * @param string $error_code   Provider error code.
-	 * @param int    $http_code    HTTP status code.
-	 * @param string $error_type   Provider error type.
-	 * @param string $decline_code Provider decline code.
+	 * @param string              $message           Exception message.
+	 * @param string              $error_code        Provider error code.
+	 * @param int                 $http_code         HTTP status code.
+	 * @param string              $error_type        Provider error type.
+	 * @param string              $decline_code      Provider decline code.
+	 * @param array<string,mixed> $error_data        Structured platform error data.
+	 * @param string              $payment_intent_id Failed payment intent ID.
+	 * @param string              $merchant_message  Merchant-facing seller message.
 	 *
 	 * @since 11.0.0
 	 */
-	public function __construct( string $message, string $error_code = '', int $http_code = 0, string $error_type = '', string $decline_code = '' ) {
+	public function __construct( string $message, string $error_code = '', int $http_code = 0, string $error_type = '', string $decline_code = '', array $error_data = array(), string $payment_intent_id = '', string $merchant_message = '' ) {
 		parent::__construct( $message );
 
-		$this->error_code   = $error_code;
-		$this->http_code    = $http_code;
-		$this->error_type   = $error_type;
-		$this->decline_code = $decline_code;
+		$this->error_code        = $error_code;
+		$this->http_code         = $http_code;
+		$this->error_type        = $error_type;
+		$this->decline_code      = $decline_code;
+		$this->error_data        = $error_data;
+		$this->payment_intent_id = $payment_intent_id;
+		$this->merchant_message  = $merchant_message;
 	}
 
 	/**
@@ -107,5 +134,38 @@ class WooPaymentsApiException extends RuntimeException {
 	 */
 	public function get_decline_code(): string {
 		return $this->decline_code;
+	}
+
+	/**
+	 * Get the structured platform error data.
+	 *
+	 * @return array<string,mixed>
+	 *
+	 * @since 11.0.0
+	 */
+	public function get_error_data(): array {
+		return $this->error_data;
+	}
+
+	/**
+	 * Get the failed payment intent ID from the error envelope.
+	 *
+	 * @return string
+	 *
+	 * @since 11.0.0
+	 */
+	public function get_payment_intent_id(): string {
+		return $this->payment_intent_id;
+	}
+
+	/**
+	 * Get the merchant-facing seller message from the declined charge outcome.
+	 *
+	 * @return string
+	 *
+	 * @since 11.0.0
+	 */
+	public function get_merchant_message(): string {
+		return $this->merchant_message;
 	}
 }

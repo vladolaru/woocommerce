@@ -2407,16 +2407,50 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException Always.
 	 */
 	private function throw_api_error( array $response_body, int $response_code ): void {
-		$error_code    = 'wcpay_client_error_code_missing';
-		$error_message = __( 'Server error. Please try again.', 'woocommerce' );
-		$error_type    = '';
-		$decline_code  = '';
+		$error_code        = 'wcpay_client_error_code_missing';
+		$error_message     = __( 'Server error. Please try again.', 'woocommerce' );
+		$error_type        = '';
+		$decline_code      = '';
+		$error_data        = isset( $response_body['data'] ) && is_array( $response_body['data'] ) ? $response_body['data'] : array();
+		$payment_intent_id = '';
+		$merchant_message  = '';
+		$wrap_message      = true;
 
-		if ( isset( $response_body['error'] ) && is_array( $response_body['error'] ) ) {
-			$error_code    = isset( $response_body['error']['code'] ) ? (string) $response_body['error']['code'] : $error_code;
-			$error_message = isset( $response_body['error']['message'] ) ? (string) $response_body['error']['message'] : $error_message;
-			$error_type    = isset( $response_body['error']['type'] ) && is_string( $response_body['error']['type'] ) ? $response_body['error']['type'] : '';
-			$decline_code  = isset( $response_body['error']['decline_code'] ) && is_string( $response_body['error']['decline_code'] ) ? $response_body['error']['decline_code'] : '';
+		if ( isset( $response_body['code'] ) && 'amount_too_small' === $response_body['code'] ) {
+			// The plugin resolves the top-level amount_too_small shape before the error envelope
+			// and throws the platform message unwrapped; the minimum rides in the data payload.
+			$error_code    = 'amount_too_small';
+			$error_message = isset( $response_body['message'] ) ? (string) $response_body['message'] : $error_message;
+			$wrap_message  = false;
+		} elseif ( isset( $response_body['error'] ) && is_array( $response_body['error'] ) ) {
+			$error                 = $response_body['error'];
+			$error_message         = isset( $error['message'] ) ? (string) $error['message'] : $error_message;
+			$error_type            = isset( $error['type'] ) && is_string( $error['type'] ) ? $error['type'] : '';
+			$decline_code          = isset( $error['decline_code'] ) && is_string( $error['decline_code'] ) ? $error['decline_code'] : '';
+			$payment_intent_id     = isset( $error['payment_intent']['id'] ) && is_string( $error['payment_intent']['id'] ) ? $error['payment_intent']['id'] : '';
+			$payment_intent_status = isset( $error['payment_intent']['status'] ) && is_string( $error['payment_intent']['status'] ) ? $error['payment_intent']['status'] : '';
+
+			if ( isset( $error['code'] ) && is_scalar( $error['code'] ) ) {
+				$error_code = (string) $error['code'];
+			} elseif ( isset( $error['message_code'] ) && is_scalar( $error['message_code'] ) ) {
+				$error_code = (string) $error['message_code'];
+			} elseif ( '' !== $error_type ) {
+				$error_code = $error_type;
+			}
+
+			if ( 'amount_too_large' === $error_code && 'requires_capture' === $payment_intent_status ) {
+				// The plugin redacts the raw API message so the merchant is not prompted to
+				// contact support when over-capturing an authorized amount.
+				$error_message = __( 'The payment could not be captured because the requested capture amount is greater than the amount you can capture for this charge.', 'woocommerce' );
+			}
+
+			if (
+				'card_declined' === $error_code
+				&& isset( $error['payment_intent']['charges']['data'][0]['outcome']['seller_message'] )
+				&& is_string( $error['payment_intent']['charges']['data'][0]['outcome']['seller_message'] )
+			) {
+				$merchant_message = $error['payment_intent']['charges']['data'][0]['outcome']['seller_message'];
+			}
 		} elseif ( isset( $response_body['code'] ) ) {
 			$error_code    = (string) $response_body['code'];
 			$error_message = isset( $response_body['message'] ) ? (string) $response_body['message'] : $error_message;
@@ -2425,17 +2459,24 @@ class WooPaymentsApiClient {
 		$this->maybe_rotate_fraud_prevention_token( $decline_code );
 		$this->maybe_rotate_fraud_prevention_token( $error_code );
 
-		// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Provider error is transported as structured application data, not rendered HTML.
-		throw new WooPaymentsApiException(
-			sprintf(
+		$message = $wrap_message
+			? sprintf(
 				/* translators: %s: provider error message. */
 				__( 'Error: %s', 'woocommerce' ),
 				$error_message
-			),
+			)
+			: $error_message;
+
+		// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Provider error is transported as structured application data, not rendered HTML.
+		throw new WooPaymentsApiException(
+			$message,
 			$error_code,
 			$response_code,
 			$error_type,
-			$decline_code
+			$decline_code,
+			$error_data,
+			$payment_intent_id,
+			$merchant_message
 		);
 		// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	}
