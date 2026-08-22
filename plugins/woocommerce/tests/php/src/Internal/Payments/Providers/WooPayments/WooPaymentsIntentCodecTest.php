@@ -334,6 +334,39 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Failed transport outcomes carry the declined payment intent id so the order stays traceable.
+	 */
+	public function test_failed_transport_outcome_uses_intent_id_from_error_envelope(): void {
+		$sut = WooPaymentsIntentCodec::failed_transport_outcome(
+			'charge',
+			new WooPaymentsApiException(
+				'Error: Your card was declined.',
+				'card_declined',
+				402,
+				'card_error',
+				'do_not_honor',
+				array(),
+				'pi_declined_test'
+			)
+		);
+
+		$this->assertSame( 'pi_declined_test', $sut->get_provider_payment_id(), 'A declined charge must keep its intent id so support can find the order from the transaction.' );
+	}
+
+	/**
+	 * @testdox Failed transport outcomes prefer an explicitly supplied provider payment id over the envelope id.
+	 */
+	public function test_failed_transport_outcome_prefers_explicit_provider_payment_id(): void {
+		$sut = WooPaymentsIntentCodec::failed_transport_outcome(
+			'capture',
+			new WooPaymentsApiException( 'Error: boom.', 'processing_error', 402, '', '', array(), 'pi_envelope' ),
+			'pi_explicit'
+		);
+
+		$this->assertSame( 'pi_explicit', $sut->get_provider_payment_id() );
+	}
+
+	/**
 	 * @testdox Failed amount_too_small transport outcomes surface the platform minimum and cache it per currency.
 	 */
 	public function test_failed_transport_outcome_surfaces_and_caches_the_platform_minimum(): void {

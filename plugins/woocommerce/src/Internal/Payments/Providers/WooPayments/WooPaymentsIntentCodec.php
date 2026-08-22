@@ -339,6 +339,12 @@ class WooPaymentsIntentCodec {
 	public static function failed_transport_outcome( string $operation, WooPaymentsApiException $exception, string $provider_payment_id = '' ): PaymentOutcome {
 		$error_code = '' !== $exception->get_error_code() ? $exception->get_error_code() : 'wcpay_native_transport_failed';
 
+		if ( '' === $provider_payment_id ) {
+			// Keep the declined intent id from the error envelope so the failed
+			// order stays traceable and matchable from the transaction side.
+			$provider_payment_id = $exception->get_payment_intent_id();
+		}
+
 		return new PaymentOutcome(
 			PaymentOutcome::STATUS_FAILED,
 			$provider_payment_id,
