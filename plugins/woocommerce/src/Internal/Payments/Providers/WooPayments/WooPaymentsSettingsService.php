@@ -1221,6 +1221,11 @@ class WooPaymentsSettingsService {
 				: ( $settings['deposit_schedule_interval'] ?? '' );
 		}
 
+		// A payout-schedule change must re-arm the next-deposit notice, like the plugin does before its account update. Core renders no such notice yet, but the dismissal flag is already writable through the settings option route.
+		if ( preg_grep( '/^deposit_schedule_/', array_keys( $account_settings ) ) ) {
+			delete_option( 'wcpay_next_deposit_notice_dismissed' );
+		}
+
 		try {
 			if ( ! empty( $account_settings ) ) {
 				$this->api_client->update_account( $account_settings );

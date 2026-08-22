@@ -86,6 +86,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_duplicate_payment_method_notices_dismissed' );
 		delete_option( 'wcpay_fraud_protection_welcome_tour_dismissed' );
 		delete_option( 'wcpay_frt_review_feature_active' );
+		delete_option( 'wcpay_next_deposit_notice_dismissed' );
 		delete_option( 'current_protection_level' );
 		delete_option( 'woocommerce_woocommerce_payments_ideal_settings' );
 		delete_option( 'woocommerce_woocommerce_payments_apple_pay_settings' );
@@ -1892,6 +1893,32 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 			),
 			$this->api_client->last_account_settings
 		);
+	}
+
+	/**
+	 * @testdox Should clear the next-deposit notice dismissal when the payout schedule changes.
+	 */
+	public function test_update_settings_clears_next_deposit_notice_dismissal_on_schedule_change(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'deposit_schedule_interval' => 'daily' ) );
+		update_option( 'wcpay_next_deposit_notice_dismissed', true );
+
+		$result = $this->sut->update_settings( array( 'deposit_schedule_interval' => 'weekly' ) );
+
+		$this->assertIsArray( $result );
+		$this->assertFalse( get_option( 'wcpay_next_deposit_notice_dismissed' ) );
+	}
+
+	/**
+	 * @testdox Should keep the next-deposit notice dismissal when the save does not touch the payout schedule.
+	 */
+	public function test_update_settings_keeps_next_deposit_notice_dismissal_without_schedule_change(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'account_business_name' => 'Old Name' ) );
+		update_option( 'wcpay_next_deposit_notice_dismissed', true );
+
+		$result = $this->sut->update_settings( array( 'account_business_name' => 'New Name' ) );
+
+		$this->assertIsArray( $result );
+		$this->assertTrue( (bool) get_option( 'wcpay_next_deposit_notice_dismissed' ) );
 	}
 
 	/**
