@@ -1953,6 +1953,17 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should carry the shopper's Tracks identity in the init-session request.
+	 */
+	public function test_init_session_request_carries_tracks_user_identity(): void {
+		$request = $this->create_service()->get_init_session_request( 'shopper@example.com' );
+
+		$this->assertIsArray( $request['tracks_user_identity'] );
+		$this->assertSame( 'anon', $request['tracks_user_identity']['_ut'] );
+		$this->assertNotEmpty( $request['tracks_user_identity']['_ui'] );
+	}
+
+	/**
 	 * Simulate an inbound WooPay Store API request.
 	 */
 	private function simulate_woopay_store_api_request(): void {

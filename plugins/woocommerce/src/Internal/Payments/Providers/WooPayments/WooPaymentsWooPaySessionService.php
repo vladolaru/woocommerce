@@ -689,7 +689,7 @@ class WooPaymentsWooPaySessionService {
 					'cart'     => $this->get_cart_data( false, null, null, null, $woopay_request ),
 					'checkout' => $this->get_checkout_data( $woopay_request ),
 				),
-			'tracks_user_identity' => null,
+			'tracks_user_identity' => $this->get_frontend_tracking_controller()->get_tracks_identity_for_current_user(),
 			// Server-stored appearance and font rules back-fill the session only while global
 			// theme support is enabled — the plugin gates both fallbacks the same way, so a
 			// merchant who turns the setting off stops pushing stale theme data into WooPay.

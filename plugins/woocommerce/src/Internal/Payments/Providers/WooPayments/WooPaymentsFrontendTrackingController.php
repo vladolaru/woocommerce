@@ -315,6 +315,20 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Get the Tracks identity for the current user.
+	 *
+	 * The WooPay session payload carries this identity so shopper analytics stay
+	 * continuous across the store and WooPay's hosted checkout.
+	 *
+	 * @return array<string,string>
+	 *
+	 * @since 11.0.0
+	 */
+	public function get_tracks_identity_for_current_user(): array {
+		return $this->get_tracks_identity( get_current_user_id() );
+	}
+
+	/**
 	 * Get the WooPayments-compatible Tracks identity.
 	 *
 	 * @param int $user_id User ID.
