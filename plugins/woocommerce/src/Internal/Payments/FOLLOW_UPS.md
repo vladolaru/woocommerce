@@ -39,3 +39,15 @@ The plugin's filter can grant access to WooPay session callbacks on its own (`re
 ### Verified-email restore drain across runtime cutover (S7, finding 9 rider)
 
 A verified-email WooPay order detaches its customer id and schedules `woopay_restore_order_customer_id` ten minutes out. Both the native runtime and the plugin register a handler for that hook, so pending restores drain under either owner — but if the native runtime stops registering (arbiter hands ownership back) while the plugin is absent, scheduled events fire with no handler and the order keeps `customer_id 0` with the real id parked in `woopay_merchant_customer_id` meta. The plugin drains pending schedules at deactivation; native has no deactivation moment. If runtime cutover tooling gains a disable path, drain or re-run these events there.
+
+### Go-live nudge surface delta: inbox note vs settings-page notice (S8, finding 14 / D4)
+
+The plugin renders its test-to-live nudge as a React notice on the payment settings pages (attach-rate framework) whose CTA one-click flips `test_mode` off when a live account is connected; native has no port of that framework, so the nudge ships as the WC Admin inbox note `wc-payments-notes-test-to-live` whose CTA links to the payment settings instead. The bookkeeping (enable-date option, eligibility transients) is a verbatim port and stands regardless of surface. Revisit the surface only if product judges the placement or the one-click CTA material — escalate rather than porting the attach-rate notice framework.
+
+### Native settings-response Multi-Currency flag default differs from the plugin's feature default (S8, Q6 observation)
+
+The plugin's `WC_Payments_Features::is_customer_multi_currency_enabled()` reads `_wcpay_feature_customer_multi_currency` with default `'1'` (enabled); the native settings response reads the same option with default `'0'` (`WooPaymentsSettingsService::get_feature_flags()`). The S8 store-setup snapshot and MC auto-add guard use the plugin default for wire parity, so the divergence is now confined to the settings-response projection. Align (or justify) the settings-response default in a future settings-contract pass.
+
+### Oracle upstream: /settings business_support_address save path fatals (S8 measurement observation)
+
+The plugin's own `POST /wc/v3/payments/settings` with an `account_business_support_address` object dies with a `TypeError`: `Update_Account::set_business_support_address()` type-hints `string` while the REST boundary validates an array. Measured live on the pristine `:8082` oracle during S8. Native sends the nested object, which is what the platform maps onto Stripe's `business_profile.support_address` dict, so native is correct; this is a candidate upstream report against the WooPayments plugin, not a native change.
