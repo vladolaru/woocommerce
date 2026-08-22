@@ -830,6 +830,53 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Terminal capture converts a thrown amount-too-small API error into the machine-readable payload.
+	 */
+	public function test_capture_terminal_payment_converts_amount_too_small_exception_to_error_details(): void {
+		$order                                        = $this->create_order( 0.30, 'USD' );
+		$this->api_client->payment_intention_response = array(
+			'id'       => 'pi_terminal',
+			'status'   => 'requires_capture',
+			'currency' => 'usd',
+			'metadata' => array(
+				'order_id' => (string) $order->get_id(),
+			),
+		);
+		$this->api_client->captured_intention_exception = new WooPaymentsApiException(
+			'Amount must be at least $0.50 usd',
+			'amount_too_small',
+			400,
+			'',
+			'',
+			array(
+				'minimum_amount' => 50,
+				'currency'       => 'usd',
+			)
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal' );
+
+		$response = $this->sut->capture_terminal_payment( $request );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$this->assertSame( 'wcpay_capture_error_amount_too_small', $response->get_error_code() );
+		$this->assertSame(
+			esc_html(
+				(string) wp_json_encode(
+					array(
+						'minimum_amount'          => 50,
+						'minimum_amount_currency' => 'USD',
+					)
+				)
+			),
+			$response->get_error_message()
+		);
+		$this->assertSame( 400, $response->get_error_data()['status'] );
+	}
+
+	/**
 	 * Create a native mobile REST controller.
 	 *
 	 * @param bool $native_register Whether native should own route registration.

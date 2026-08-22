@@ -472,6 +472,22 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 				)
 			);
 		} catch ( WooPaymentsApiException $exception ) {
+			$error_data = $exception->get_error_data();
+			if ( 'amount_too_small' === $exception->get_error_code() && isset( $error_data['minimum_amount'], $error_data['currency'] ) && is_numeric( $error_data['minimum_amount'] ) && is_string( $error_data['currency'] ) ) {
+				// The mobile app parses this payload to prompt for a higher capture amount.
+				return $this->get_terminal_capture_error(
+					array(
+						'error_code'    => 'amount_too_small',
+						'message'       => $exception->getMessage(),
+						'http_code'     => 0 < $exception->get_http_code() ? $exception->get_http_code() : 400,
+						'extra_details' => array(
+							'minimum_amount'          => (int) $error_data['minimum_amount'],
+							'minimum_amount_currency' => strtoupper( $error_data['currency'] ),
+						),
+					)
+				);
+			}
+
 			return $this->api_exception_to_wp_error( $exception );
 		} catch ( Throwable $exception ) {
 			return $this->server_error();

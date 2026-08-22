@@ -116,6 +116,13 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 	public array $captured_intention_response = array();
 
 	/**
+	 * Exception thrown by capture_intention when set.
+	 *
+	 * @var \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException|null
+	 */
+	public $captured_intention_exception = null;
+
+	/**
 	 * Charge response.
 	 *
 	 * @var array<string,mixed>
@@ -311,6 +318,10 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 	 */
 	public function capture_intention( string $intent_id, int $amount_to_capture, array $metadata = array(), array $level3 = array() ): array {
 		unset( $intent_id, $amount_to_capture, $metadata );
+
+		if ( null !== $this->captured_intention_exception ) {
+			throw $this->captured_intention_exception;
+		}
 
 		return $this->captured_intention_response;
 	}
