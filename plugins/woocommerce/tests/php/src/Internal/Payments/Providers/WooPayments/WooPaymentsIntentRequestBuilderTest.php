@@ -382,6 +382,17 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 			false
 		);
 		$this->assertArrayNotHasKey( 'save_payment_method_to_platform', $bare_request );
+
+		// A saved-token payment must not re-save to the platform even when a stale
+		// session opt-in is present — the plugin derives the flag as
+		// ! is_using_saved_payment_method() && opt-in.
+		$token_request = $request_builder->charge_request_data(
+			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_saved', array( 'payment_token' => '4242' ), $provider_data ),
+			'pm_saved',
+			'cus_native',
+			false
+		);
+		$this->assertArrayNotHasKey( 'save_payment_method_to_platform', $token_request );
 	}
 
 	/**

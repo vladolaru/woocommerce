@@ -46,6 +46,28 @@ class WooPaymentsWooPaySessionService {
 	private const STORE_API_NAMESPACE_PATTERN = '@^(wc/store(/v[\d]+)?|store-api)$@';
 
 	/**
+	 * Store API route patterns the WooPay inbound identity chain handles; matches the
+	 * WooPayments plugin allowlist byte for byte. The last route is not a Store API route:
+	 * WooPay uses it to indirectly reach the Store API, and listing it lets the same chain
+	 * identify the user for the session callback itself.
+	 */
+	private const STORE_API_ROUTE_PATTERNS = array(
+		'@^\/wc\/store(\/v[\d]+)?\/cart$@',
+		'@^\/wc\/store(\/v[\d]+)?\/cart\/add-item$@',
+		'@^\/wc\/store(\/v[\d]+)?\/cart\/remove-item$@',
+		'@^\/wc\/store(\/v[\d]+)?\/cart\/apply-coupon$@',
+		'@^\/wc\/store(\/v[\d]+)?\/cart\/remove-coupon$@',
+		'@^\/wc\/store(\/v[\d]+)?\/cart\/select-shipping-rate$@',
+		'@^\/wc\/store(\/v[\d]+)?\/cart\/update-customer$@',
+		'@^\/wc\/store(\/v[\d]+)?\/cart\/update-item$@',
+		'@^\/wc\/store(\/v[\d]+)?\/cart\/extensions$@',
+		'@^\/wc\/store(\/v[\d]+)?\/checkout\/(?P<id>[\d]+)@',
+		'@^\/wc\/store(\/v[\d]+)?\/checkout$@',
+		'@^\/wc\/store(\/v[\d]+)?\/order\/(?P<id>[\d]+)@',
+		'@^\/payments\/woopay\/session$@',
+	);
+
+	/**
 	 * Order meta stowing the real customer id while a verified-email guest order is detached.
 	 */
 	private const MERCHANT_CUSTOMER_ID_META = 'woopay_merchant_customer_id';
@@ -531,19 +553,62 @@ class WooPaymentsWooPaySessionService {
 	}
 
 	/**
-	 * Tell whether the current request targets the Store API.
+	 * Tell whether the current request targets a Store API route the WooPay chain handles.
+	 *
+	 * Matches the plugin's allowlist rather than core's substring check: the allowlist
+	 * includes the WooPay session route itself (so the session callback resolves the
+	 * shopper) and excludes Store API routes the plugin deliberately leaves alone.
 	 *
 	 * @return bool
 	 */
 	private function is_store_api_request(): bool {
-		if ( function_exists( 'WC' ) && is_callable( array( WC(), 'is_store_api_request' ) ) && WC()->is_store_api_request() ) {
-			return true;
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Read-only route detection, mirroring the plugin.
+		if ( isset( $_REQUEST['rest_route'] ) ) {
+			$rest_route = sanitize_text_field( wp_unslash( $_REQUEST['rest_route'] ) );
+		} else {
+			$rest_route = $this->extract_rest_route_from_url();
+		}
+		// phpcs:enable WordPress.Security.NonceVerification.Recommended
+
+		if ( ! is_string( $rest_route ) || '' === $rest_route ) {
+			return false;
 		}
 
-		// Sites without pretty permalinks route REST calls through the rest_route query
-		// argument, which core's REQUEST_URI check does not inspect.
-		$rest_route = isset( $_REQUEST['rest_route'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['rest_route'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		return '' !== $rest_route && false !== strpos( $rest_route, '/wc/store/' );
+		foreach ( self::STORE_API_ROUTE_PATTERNS as $pattern ) {
+			if ( 1 === preg_match( $pattern, $rest_route ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Extract the REST route from the request URL.
+	 *
+	 * @return string
+	 */
+	private function extract_rest_route_from_url(): string {
+		$url_parts = wp_parse_url( esc_url_raw( wp_unslash( $_SERVER['REQUEST_URI'] ?? '' ) ) );
+		if ( ! is_array( $url_parts ) || empty( $url_parts['path'] ) ) {
+			return '';
+		}
+
+		$request_path = rtrim( $url_parts['path'], '/' );
+		if ( '' === $request_path ) {
+			return '';
+		}
+
+		$rest_prefix = trailingslashit( rest_get_url_prefix() );
+
+		// For multisite subdirectory setups, look for the REST prefix anywhere in the path
+		// and keep everything after it.
+		$rest_prefix_pos = strpos( $request_path, '/' . rtrim( $rest_prefix, '/' ) );
+		if ( false !== $rest_prefix_pos ) {
+			return substr( $request_path, $rest_prefix_pos + strlen( $rest_prefix ) );
+		}
+
+		return str_replace( $rest_prefix, '', $request_path );
 	}
 
 	/**

@@ -1965,6 +1965,29 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should run the inbound identity chain on the WooPay session route itself.
+	 */
+	public function test_determine_current_user_covers_the_woopay_session_route(): void {
+		$_SERVER['HTTP_USER_AGENT'] = 'WooPay';
+		$_SERVER['REQUEST_URI']     = '/wp-json/payments/woopay/session';
+
+		$this->expectException( \WPDieException::class );
+		$this->expectExceptionMessage( 'WooPay request is not signed correctly.' );
+
+		$this->create_service()->determine_current_user_for_woopay( false );
+	}
+
+	/**
+	 * @testdox Should ignore Store API routes outside the plugin's WooPay allowlist.
+	 */
+	public function test_determine_current_user_ignores_store_api_routes_outside_the_allowlist(): void {
+		$_SERVER['HTTP_USER_AGENT'] = 'WooPay';
+		$_SERVER['REQUEST_URI']     = '/wp-json/wc/store/v1/products';
+
+		$this->assertFalse( $this->create_service()->determine_current_user_for_woopay( false ) );
+	}
+
+	/**
 	 * Simulate an inbound WooPay Store API request.
 	 */
 	private function simulate_woopay_store_api_request(): void {

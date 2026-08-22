@@ -184,7 +184,16 @@ class WooPaymentsIntentRequestBuilder {
 			}
 		}
 
-		return WooPaymentsPlatformPaymentMethodContext::from_provider_data( $provider_data )->apply_to_request_data( $request_data );
+		$request_data = WooPaymentsPlatformPaymentMethodContext::from_provider_data( $provider_data )->apply_to_request_data( $request_data );
+
+		// A saved-token payment must not re-save to the platform: the plugin derives the
+		// flag as ! is_using_saved_payment_method() && opt-in, so a stale session opt-in
+		// cannot ride a token confirmation.
+		if ( self::is_using_saved_payment_token( $payment_data ) ) {
+			unset( $request_data[ WooPaymentsPlatformPaymentMethodContext::SAVE_TO_PLATFORM_PROVIDER_DATA_KEY ] );
+		}
+
+		return $request_data;
 	}
 
 	/**
