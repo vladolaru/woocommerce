@@ -126,6 +126,13 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 				'methods'             => WP_REST_Server::READABLE,
 				'callback'            => array( $this, 'get_session' ),
 				'permission_callback' => array( $this, 'check_permission' ),
+				'args'                => array(
+					'email' => array(
+						'type'     => 'string',
+						'format'   => 'email',
+						'required' => true,
+					),
+				),
 			)
 		);
 	}

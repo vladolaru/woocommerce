@@ -93,6 +93,9 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 
 		$this->assertArrayHasKey( '/payments/woopay/session', $this->server->get_routes() );
 		$this->assertRouteHasMethod( $this->server->get_routes()['/payments/woopay/session'], WP_REST_Server::READABLE );
+		$route_args = $this->server->get_routes()['/payments/woopay/session'][0]['args'];
+		$this->assertTrue( $route_args['email']['required'] );
+		$this->assertSame( 'email', $route_args['email']['format'] );
 		$this->assertSame( 20, has_filter( 'determine_current_user', array( $service, 'determine_current_user_for_woopay' ) ) );
 		$this->assertNotFalse( has_action( 'woocommerce_order_payment_status_changed', array( $service, 'woopay_order_payment_status_changed' ) ) );
 		$this->assertNotFalse( has_action( 'woopay_restore_order_customer_id', array( $service, 'restore_order_customer_id_from_requests_with_verified_email' ) ) );

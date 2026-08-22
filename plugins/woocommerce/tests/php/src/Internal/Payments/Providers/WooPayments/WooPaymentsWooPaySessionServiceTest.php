@@ -1674,6 +1674,42 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should fall back to the WooCommerce customer's billing email when no email is supplied.
+	 */
+	public function test_init_session_request_falls_back_to_customer_billing_email(): void {
+		WC()->customer->set_billing_email( 'billing-fallback@example.com' );
+
+		$request = $this->create_service()->get_init_session_request( null );
+
+		$this->assertSame( 'billing-fallback@example.com', $request['email'] );
+	}
+
+	/**
+	 * @testdox Should fall back to the logged-in user's email when neither a request email nor a customer email exists.
+	 */
+	public function test_init_session_request_falls_back_to_logged_in_user_email(): void {
+		$user_id = $this->factory->user->create( array( 'user_email' => 'account-fallback@example.com' ) );
+		wp_set_current_user( $user_id );
+		WC()->customer->set_billing_email( '' );
+		WC()->customer->set_email( '' );
+
+		$request = $this->create_service()->get_init_session_request( null );
+
+		$this->assertSame( 'account-fallback@example.com', $request['email'] );
+	}
+
+	/**
+	 * @testdox Should prefer the supplied email over every fallback.
+	 */
+	public function test_init_session_request_prefers_supplied_email(): void {
+		WC()->customer->set_billing_email( 'billing-fallback@example.com' );
+
+		$request = $this->create_service()->get_init_session_request( 'supplied@example.com' );
+
+		$this->assertSame( 'supplied@example.com', $request['email'] );
+	}
+
+	/**
 	 * Simulate an inbound WooPay Store API request.
 	 */
 	private function simulate_woopay_store_api_request(): void {

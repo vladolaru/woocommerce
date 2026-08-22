@@ -364,6 +364,43 @@ class WooPaymentsWooPaySessionService {
 	}
 
 	/**
+	 * Resolve the WooPay session email through the plugin's fallback chain.
+	 *
+	 * Mirrors WooPay_Session::get_user_email() minus the request-parameter reads (native's
+	 * entry points pass the parameter explicitly) and the encrypted_data branch (its only
+	 * producer, WooPay Direct Checkout, is not ported): supplied email, then the WooCommerce
+	 * customer's billing/account email, then the logged-in user's email.
+	 *
+	 * @param string|null $email Email supplied with the request, if any.
+	 * @return string
+	 */
+	private function resolve_session_email( ?string $email ): string {
+		if ( null !== $email && '' !== $email ) {
+			return $email;
+		}
+
+		$customer = WC()->customer;
+		if ( is_object( $customer ) ) {
+			$billing_email = is_callable( array( $customer, 'get_billing_email' ) ) ? (string) $customer->get_billing_email() : '';
+			if ( '' !== $billing_email ) {
+				return $billing_email;
+			}
+
+			$customer_email = is_callable( array( $customer, 'get_email' ) ) ? (string) $customer->get_email() : '';
+			if ( '' !== $customer_email ) {
+				return $customer_email;
+			}
+		}
+
+		$user = wp_get_current_user();
+		if ( $user->exists() ) {
+			return (string) $user->user_email;
+		}
+
+		return '';
+	}
+
+	/**
 	 * Tell whether the current request targets the Store API.
 	 *
 	 * @return bool
@@ -500,7 +537,7 @@ class WooPaymentsWooPaySessionService {
 		array $font_rules = array()
 	): array {
 		$is_pay_for_order = null !== $order_id;
-		$email            = $email ?? '';
+		$email            = $this->resolve_session_email( $email );
 
 		$request = array(
 			'wcpay_version'        => defined( 'WC_VERSION' ) ? WC_VERSION : '',
