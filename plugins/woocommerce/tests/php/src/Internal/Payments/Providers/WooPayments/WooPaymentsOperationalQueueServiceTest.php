@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIppReceiptEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
 use WC_Data_Store;
 use WC_Order;
@@ -37,6 +38,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		}
 
 		remove_all_filters( 'wcpay_test_mode' );
+		delete_option( '_wcpay_feature_customer_multi_currency' );
 		delete_option( 'wcpay_instant_deposits_previously_eligible' );
 		delete_option( 'wcpay_post_kyc_activation_email_sent_stages' );
 		delete_option( 'wcpay_post_kyc_activation_emails_scheduled' );
@@ -246,6 +248,67 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 			->willReturn( array( 'result' => 'success' ) );
 
 		$this->create_service( new StaticNativeRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client )->handle_wcpay_store_setup_sync();
+	}
+
+	/**
+	 * @testdox Should report real duplicate gateways and the Multi-Currency flag in the store setup snapshot.
+	 */
+	public function test_store_setup_sync_reports_duplicates_and_multi_currency(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
+		update_option( '_wcpay_feature_customer_multi_currency', '0' );
+
+		$settings_service = $this->getMockBuilder( WooPaymentsSettingsService::class )
+			->onlyMethods( array( 'get_duplicated_payment_method_ids' ) )
+			->getMock();
+		$settings_service->method( 'get_duplicated_payment_method_ids' )
+			->willReturn( array( 'card' => array( 'woocommerce_payments', 'stripe' ) ) );
+
+		$api_client = $this->create_api_client( array( 'is_available', 'send_store_setup' ) );
+		$api_client->method( 'is_available' )->willReturn( true );
+		$api_client->expects( $this->once() )
+			->method( 'send_store_setup' )
+			->with(
+				$this->callback(
+					function ( array $snapshot ): bool {
+						return array( 'card' => array( 'woocommerce_payments', 'stripe' ) ) === $snapshot['payment_methods']['duplicates']
+							&& false === $snapshot['multi_currency_enabled']
+							&& false === $snapshot['stripe_billing_enabled'];
+					}
+				)
+			)
+			->willReturn( array( 'result' => 'success' ) );
+
+		$this->create_service( new StaticNativeRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, null, null, $settings_service )->handle_wcpay_store_setup_sync();
+	}
+
+	/**
+	 * @testdox Should report Multi-Currency as enabled by default when the flag option was never written, matching the plugin.
+	 */
+	public function test_store_setup_sync_defaults_multi_currency_flag_to_enabled(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
+		delete_option( '_wcpay_feature_customer_multi_currency' );
+
+		$settings_service = $this->getMockBuilder( WooPaymentsSettingsService::class )
+			->onlyMethods( array( 'get_duplicated_payment_method_ids' ) )
+			->getMock();
+		$settings_service->method( 'get_duplicated_payment_method_ids' )
+			->willReturn( array() );
+
+		$api_client = $this->create_api_client( array( 'is_available', 'send_store_setup' ) );
+		$api_client->method( 'is_available' )->willReturn( true );
+		$api_client->expects( $this->once() )
+			->method( 'send_store_setup' )
+			->with(
+				$this->callback(
+					function ( array $snapshot ): bool {
+						return true === $snapshot['multi_currency_enabled']
+							&& array() === $snapshot['payment_methods']['duplicates'];
+					}
+				)
+			)
+			->willReturn( array( 'result' => 'success' ) );
+
+		$this->create_service( new StaticNativeRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, null, null, $settings_service )->handle_wcpay_store_setup_sync();
 	}
 
 	/**
@@ -736,6 +799,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 * @param WooPaymentsApiClient|null              $api_client         API client.
 	 * @param WooPaymentsAccountService|null         $account_service    Account service.
 	 * @param WooPaymentsOrderDataService|null       $order_data_service Order data service.
+	 * @param WooPaymentsSettingsService|null        $settings_service   Settings service.
 	 * @return WooPaymentsOperationalQueueService
 	 */
 	private function create_service(
@@ -743,7 +807,8 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		?WooPaymentsActionSchedulerService $scheduler = null,
 		?WooPaymentsApiClient $api_client = null,
 		?WooPaymentsAccountService $account_service = null,
-		?WooPaymentsOrderDataService $order_data_service = null
+		?WooPaymentsOrderDataService $order_data_service = null,
+		?WooPaymentsSettingsService $settings_service = null
 	): WooPaymentsOperationalQueueService {
 		$service = new WooPaymentsOperationalQueueService();
 		$service->init(
@@ -751,7 +816,8 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 			$scheduler ?? new RecordingActionSchedulerService(),
 			$api_client ?? $this->create_api_client( array() ),
 			$account_service ?? $this->create_account_service(),
-			$order_data_service ?? wc_get_container()->get( WooPaymentsOrderDataService::class )
+			$order_data_service ?? wc_get_container()->get( WooPaymentsOrderDataService::class ),
+			$settings_service
 		);
 
 		$this->services[] = $service;

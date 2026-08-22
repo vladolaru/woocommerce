@@ -860,9 +860,11 @@ class WooPaymentsSettingsService {
 	/**
 	 * Get payment methods enabled by WooPayments and another gateway.
 	 *
+	 * Public so the operational store-setup snapshot can report real duplicates to the platform.
+	 *
 	 * @return array<string,string[]>
 	 */
-	private function get_duplicated_payment_method_ids(): array {
+	public function get_duplicated_payment_method_ids(): array {
 		try {
 			$duplicate_candidates = array();
 			$settings             = $this->get_gateway_settings();

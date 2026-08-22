@@ -187,6 +187,13 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	private WooPaymentsOrderDataService $order_data_service;
 
 	/**
+	 * WooPayments settings service.
+	 *
+	 * @var WooPaymentsSettingsService|null
+	 */
+	private ?WooPaymentsSettingsService $settings_service = null;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -196,19 +203,35 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	 * @param WooPaymentsApiClient              $api_client         WooPayments API client.
 	 * @param WooPaymentsAccountService         $account_service    WooPayments account service.
 	 * @param WooPaymentsOrderDataService       $order_data_service WooPayments order data service.
+	 * @param WooPaymentsSettingsService|null   $settings_service   Optional WooPayments settings service.
 	 */
 	final public function init(
 		NativePaymentsRuntimeArbiter $arbiter,
 		WooPaymentsActionSchedulerService $scheduler,
 		WooPaymentsApiClient $api_client,
 		WooPaymentsAccountService $account_service,
-		WooPaymentsOrderDataService $order_data_service
+		WooPaymentsOrderDataService $order_data_service,
+		?WooPaymentsSettingsService $settings_service = null
 	): void {
 		$this->arbiter            = $arbiter;
 		$this->scheduler          = $scheduler;
 		$this->api_client         = $api_client;
 		$this->account_service    = $account_service;
 		$this->order_data_service = $order_data_service;
+		$this->settings_service   = $settings_service;
+	}
+
+	/**
+	 * Get the WooPayments settings service.
+	 *
+	 * @return WooPaymentsSettingsService
+	 */
+	private function get_settings_service(): WooPaymentsSettingsService {
+		if ( null === $this->settings_service ) {
+			$this->settings_service = wc_get_container()->get( WooPaymentsSettingsService::class );
+		}
+
+		return $this->settings_service;
 	}
 
 	/**
@@ -828,7 +851,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 				'available'  => $payment_methods_available,
 				'enabled'    => $payment_methods_enabled,
 				'disabled'   => $payment_methods_disabled,
-				'duplicates' => array(),
+				'duplicates' => $this->get_settings_service()->get_duplicated_payment_method_ids(),
 			),
 			'provider_capabilities'                       => array(
 				'available' => $provider_capabilities_available,
@@ -854,7 +877,8 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 				'custom_message'          => $settings['platform_checkout_custom_message'] ?? '',
 				'invalid_extension_found' => (bool) get_option( 'woopay_invalid_extension_found', false ),
 			),
-			'multi_currency_enabled'                      => false,
+			// The plugin reads the Multi-Currency feature flag with a default of enabled; Stripe Billing is retired natively, so false is the true value.
+			'multi_currency_enabled'                      => '1' === (string) get_option( '_wcpay_feature_customer_multi_currency', '1' ),
 			'stripe_billing_enabled'                      => false,
 			'plugin'                                      => array(
 				'version'              => defined( 'WC_VERSION' ) ? explode( '-', WC_VERSION, 2 )[0] : '',
