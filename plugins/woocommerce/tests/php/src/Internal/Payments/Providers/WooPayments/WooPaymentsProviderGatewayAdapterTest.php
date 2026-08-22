@@ -724,6 +724,11 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'block', $meta['_wcpay_fraud_meta_box_type'] ?? null, 'With the AVS rule enabled, an incorrect_zip decline is an AVS block.' );
 		$this->assertSame( wp_json_encode( array( 'avs_verification' => 'block' ) ), $meta['_wcpay_fraud_ruleset_results'] ?? null );
+		$this->assertSame(
+			"We're not able to process this request. Please refresh the page and try again.",
+			$outcome->get_data()[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? null,
+			'A blocked shopper must not be told which field tripped the block.'
+		);
 
 		delete_transient( 'wcpay_fraud_protection_settings' );
 
