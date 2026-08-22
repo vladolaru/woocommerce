@@ -584,6 +584,71 @@ class WooPaymentsRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should reject an empty or malformed communications email before settings persistence.
+	 * @dataProvider provider_invalid_communications_emails
+	 *
+	 * @param string $email Invalid communications email.
+	 */
+	public function test_update_native_settings_rejects_invalid_communications_email( string $email ): void {
+		$this->mock_settings_service
+			->expects( $this->never() )
+			->method( 'update_settings' );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
+		$request->set_body_params(
+			array(
+				'account_communications_email' => $email,
+			)
+		);
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertSame( 'rest_invalid_param', $response->get_data()['code'] );
+		$this->assertArrayHasKey( 'account_communications_email', $response->get_data()['data']['params'] );
+		$this->assertSame( 'rest_invalid_pattern', $response->get_data()['data']['details']['account_communications_email']['code'] );
+	}
+
+	/**
+	 * Invalid communications email vectors, mirroring the WooPayments plugin's validator.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public function provider_invalid_communications_emails(): array {
+		return array(
+			'empty string'      => array( '' ),
+			'malformed address' => array( 'not-an-email' ),
+			'missing domain'    => array( 'merchant@' ),
+		);
+	}
+
+	/**
+	 * @testdox Should accept a valid communications email and pass it through to settings persistence.
+	 */
+	public function test_update_native_settings_accepts_valid_communications_email(): void {
+		$this->mock_settings_service
+			->expects( $this->once() )
+			->method( 'update_settings' )
+			->with(
+				$this->callback(
+					static function ( array $params ): bool {
+						return 'merchant@example.com' === $params['account_communications_email'];
+					}
+				)
+			)
+			->willReturn( array() );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
+		$request->set_body_params(
+			array(
+				'account_communications_email' => 'merchant@example.com',
+			)
+		);
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 200, $response->get_status() );
+	}
+
+	/**
 	 * @testdox Should expose visible native WooPayments payment method promotions.
 	 */
 	public function test_get_native_pm_promotions_by_manager(): void {

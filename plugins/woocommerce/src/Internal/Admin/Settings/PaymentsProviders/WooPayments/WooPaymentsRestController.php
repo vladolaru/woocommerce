@@ -775,6 +775,11 @@ class WooPaymentsRestController extends RestApiControllerBase {
 				'required'          => false,
 				'validate_callback' => array( $this, 'validate_statement_descriptor' ),
 			),
+			'account_communications_email'         => array(
+				'type'              => 'string',
+				'required'          => false,
+				'validate_callback' => array( $this, 'validate_communications_email' ),
+			),
 		);
 
 		foreach (
@@ -812,7 +817,6 @@ class WooPaymentsRestController extends RestApiControllerBase {
 				'account_branding_icon',
 				'account_branding_primary_color',
 				'account_branding_secondary_color',
-				'account_communications_email',
 				'deposit_schedule_interval',
 				'deposit_schedule_weekly_anchor',
 				'current_protection_level',
@@ -902,6 +906,40 @@ class WooPaymentsRestController extends RestApiControllerBase {
 			return new WP_Error(
 				'rest_invalid_pattern',
 				__( 'Customer bank statement is invalid. Statement should be between 5 and 22 characters long, contain at least single Latin character and does not contain special characters: \' " * &lt; &gt;', 'woocommerce' )
+			);
+		}
+
+		return true;
+	}
+
+	/**
+	 * Validate the account communications email with the WooPayments plugin's rules.
+	 *
+	 * The platform stores this address without validating it, so an empty or malformed value would silently detach the merchant from account notification emails.
+	 *
+	 * @param mixed           $value   Communications email value.
+	 * @param WP_REST_Request $request Request.
+	 * @param string          $param   Parameter name.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return true|WP_Error
+	 */
+	public function validate_communications_email( $value, WP_REST_Request $request, string $param ) {
+		$validation = rest_validate_request_arg( $value, $request, $param );
+		if ( true !== $validation ) {
+			return $validation;
+		}
+
+		if ( '' === $value ) {
+			return new WP_Error(
+				'rest_invalid_pattern',
+				__( 'Error: Communications email is required.', 'woocommerce' )
+			);
+		}
+
+		if ( ! is_email( $value ) ) {
+			return new WP_Error(
+				'rest_invalid_pattern',
+				__( 'Error: Invalid email address: ', 'woocommerce' ) . $value
 			);
 		}
 
