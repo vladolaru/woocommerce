@@ -2143,7 +2143,7 @@ class WooPaymentsApiClient {
 		$body               = null;
 		$filter_url         = $this->get_filter_request_url( $api, $is_site_scoped, $use_v2_api );
 
-		if ( 'GET' === $method ) {
+		if ( in_array( $method, array( 'GET', 'DELETE' ), true ) ) {
 			$query_string = http_build_query( $params );
 			$path        .= '?' . $query_string;
 			$filter_url  .= '?' . $query_string;

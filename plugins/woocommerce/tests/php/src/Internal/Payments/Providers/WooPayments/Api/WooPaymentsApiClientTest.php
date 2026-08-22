@@ -2131,8 +2131,30 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 		$sut->delete_terminal_location( 'tml_test' );
 
-		$this->assertSame( '/sites/123/wcpay/terminal/locations/tml_test', $http_client->last_path );
+		$this->assertSame( '/sites/123/wcpay/terminal/locations/tml_test?test_mode=0', $http_client->last_path );
 		$this->assertSame( 'DELETE', $http_client->last_method );
+	}
+
+	/**
+	 * @testdox Should send DELETE parameters in the query string with no request body, so the Jetpack signature verifies.
+	 */
+	public function test_delete_request_sends_params_in_query_string_without_body(): void {
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id  = 123;
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode( array( 'deleted' => true ) ),
+		);
+
+		$sut = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( true ) );
+
+		$sut->delete_terminal_location( 'tml_test' );
+
+		$this->assertSame( '/sites/123/wcpay/terminal/locations/tml_test?test_mode=1', $http_client->last_path );
+		$this->assertSame( 'DELETE', $http_client->last_method );
+		$this->assertNull( $http_client->last_body, 'A DELETE body would be signed with a body-hash the platform rejects for non-POST/PUT/PATCH methods.' );
 	}
 
 	/**
