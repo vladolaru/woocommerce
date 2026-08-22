@@ -38,13 +38,6 @@ class WooPaymentsIntentRequestBuilder {
 	public const PROVIDER_DATA_RECURRING_PAYMENT = 'recurring_payment';
 
 	/**
-	 * WooPayments client version advertised to the V1 API.
-	 *
-	 * @var string
-	 */
-	private const WCPAY_V1_CLIENT_CAPABILITY_VERSION = '10.8.0';
-
-	/**
 	 * WooPayments account service.
 	 *
 	 * @var WooPaymentsAccountService
@@ -257,7 +250,7 @@ class WooPaymentsIntentRequestBuilder {
 			'order_key'            => $order->get_order_key(),
 			'payment_type'         => $payment_type,
 			'checkout_type'        => $order->get_created_via(),
-			'client_version'       => self::WCPAY_V1_CLIENT_CAPABILITY_VERSION,
+			'client_version'       => WooPaymentsClientVersion::VERSION,
 			'subscription_payment' => $subscription_payment,
 		);
 
@@ -623,7 +616,7 @@ class WooPaymentsIntentRequestBuilder {
 				'type'   => 'online',
 				'online' => array(
 					'ip_address' => $ip_address,
-					'user_agent' => 'WooCommerce Payments/' . self::WCPAY_V1_CLIENT_CAPABILITY_VERSION . '; ' . get_bloginfo( 'url' ),
+					'user_agent' => WooPaymentsClientVersion::get_user_agent() . '; ' . get_bloginfo( 'url' ),
 				),
 			),
 		);

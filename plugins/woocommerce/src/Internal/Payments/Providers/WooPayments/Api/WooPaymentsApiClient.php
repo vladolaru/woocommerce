@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
 
 use Automattic\Jetpack\Connection\Client as Jetpack_Connection_Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAuthorizationsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDocumentsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaginatedListRequest;
@@ -43,11 +44,6 @@ class WooPaymentsApiClient {
 	 * Base backoff between transport retries, in microseconds (250 ms).
 	 */
 	private const REQUEST_RETRIES_BACKOFF_MICROSECONDS = 250000;
-
-	/**
-	 * WooPayments V1 client capability version advertised to WPCOM.
-	 */
-	private const WCPAY_V1_CLIENT_CAPABILITY_VERSION = '10.8.0';
 
 	/**
 	 * Public WordPress.com API base preserved for compatibility filters.
@@ -2496,6 +2492,6 @@ class WooPaymentsApiClient {
 	 * @return string
 	 */
 	private function get_user_agent(): string {
-		return 'WooCommerce Payments/' . self::WCPAY_V1_CLIENT_CAPABILITY_VERSION;
+		return WooPaymentsClientVersion::get_user_agent();
 	}
 }

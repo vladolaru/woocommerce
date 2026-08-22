@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLevel3Service;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentType;
@@ -58,10 +59,8 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 	public function test_metadata_client_version_matches_woopayments_transport_capability(): void {
 		$order    = wc_create_order();
 		$metadata = WooPaymentsIntentRequestBuilder::metadata_from_order( $order );
-		$version  = ( new \ReflectionClass( WooPaymentsIntentRequestBuilder::class ) )->getConstant( 'WCPAY_V1_CLIENT_CAPABILITY_VERSION' );
 
-		$this->assertSame( '10.8.0', $version );
-		$this->assertSame( $version, $metadata['client_version'] );
+		$this->assertSame( WooPaymentsClientVersion::VERSION, $metadata['client_version'] );
 	}
 
 	/**
