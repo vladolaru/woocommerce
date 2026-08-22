@@ -299,7 +299,7 @@ class WooPaymentsSettingsService {
 		$settings                        = $this->get_gateway_settings();
 		$filtered_payment_method_catalog = $this->get_payment_method_registry()->get_available_payment_method_ids();
 		$account_fields                  = $this->get_account_backed_response_fields( $settings );
-		$available_payment_method_ids    = $this->get_available_payment_method_ids( $settings, $filtered_payment_method_catalog );
+		$available_payment_method_ids    = $this->get_available_payment_method_ids( $filtered_payment_method_catalog );
 		$enabled_payment_method_ids      = $this->sanitize_payment_method_ids(
 			$this->get_array_setting( $settings, 'upe_enabled_payment_method_ids', array( 'card' ) ),
 			$available_payment_method_ids
@@ -547,13 +547,12 @@ class WooPaymentsSettingsService {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	public function update_settings( array $params ) {
-		$settings                     = $this->get_gateway_settings();
-		$available_payment_method_ids = $this->get_available_payment_method_ids( $settings );
-		$was_woopay_enabled           = $this->is_yes( $settings['platform_checkout'] ?? 'no' );
-		$payment_request_enabled      = array_key_exists( 'is_payment_request_enabled', $params )
+		$settings                = $this->get_gateway_settings();
+		$was_woopay_enabled      = $this->is_yes( $settings['platform_checkout'] ?? 'no' );
+		$payment_request_enabled = array_key_exists( 'is_payment_request_enabled', $params )
 			? $this->is_yes( $this->normalize_setting_value( $params['is_payment_request_enabled'], 'bool' ) )
 			: null;
-		$error                        = $this->update_provider_backed_settings( $params, $settings );
+		$error                   = $this->update_provider_backed_settings( $params, $settings );
 		if ( is_wp_error( $error ) ) {
 			return $error;
 		}
@@ -590,12 +589,46 @@ class WooPaymentsSettingsService {
 			if ( $this->is_manual_capture_enabled_after_update( $params, $settings ) ) {
 				$requested_payment_method_ids = $this->filter_manual_capture_payment_method_ids( $requested_payment_method_ids );
 			}
+
+			$available_payment_method_ids   = $this->get_available_payment_method_ids();
+			$unavailable_payment_method_ids = array_values( array_diff( $requested_payment_method_ids, $available_payment_method_ids ) );
+			if ( ! empty( $unavailable_payment_method_ids ) ) {
+				// The plugin's REST enum is the live available set, so an unavailable method is a hard 400 there — never a silent discard. Failing loudly also stops a cold account cache from wiping previously enabled methods.
+				return new WP_Error(
+					'rest_invalid_param',
+					sprintf(
+						/* translators: %s: settings field key. */
+						__( 'Invalid parameter(s): %s', 'woocommerce' ),
+						'enabled_payment_method_ids'
+					),
+					array(
+						'status'  => 400,
+						'params'  => array(
+							'enabled_payment_method_ids' => sprintf(
+								/* translators: %s: comma-separated payment method IDs. */
+								__( 'These payment methods are not available to the account: %s', 'woocommerce' ),
+								implode( ', ', $unavailable_payment_method_ids )
+							),
+						),
+						'details' => array(
+							'enabled_payment_method_ids' => array(
+								'code'    => 'rest_not_in_enum',
+								'message' => sprintf(
+									/* translators: %s: comma-separated payment method IDs. */
+									__( 'These payment methods are not available to the account: %s', 'woocommerce' ),
+									implode( ', ', $unavailable_payment_method_ids )
+								),
+								'data'    => null,
+							),
+						),
+					)
+				);
+			}
 			$capability_error = $this->request_unrequested_payment_methods( $requested_payment_method_ids );
 			if ( is_wp_error( $capability_error ) ) {
 				return $capability_error;
 			}
 
-			$available_payment_method_ids        = $this->get_available_payment_method_ids( $settings );
 			$previous_enabled_payment_method_ids = $this->sanitize_payment_method_ids(
 				$this->get_array_setting( $settings, 'upe_enabled_payment_method_ids', array( 'card' ) ),
 				$available_payment_method_ids
@@ -776,34 +809,23 @@ class WooPaymentsSettingsService {
 	/**
 	 * Get payment method IDs available to the connected account.
 	 *
-	 * @param array<string,mixed> $settings         Gateway settings.
-	 * @param string[]|null       $filtered_catalog Optional pre-filtered payment method catalog.
+	 * @param string[]|null $filtered_catalog Optional pre-filtered payment method catalog.
 	 * @return string[]
 	 */
-	private function get_available_payment_method_ids( array $settings, ?array $filtered_catalog = null ): array {
-		$filtered_catalog         = $filtered_catalog ?? $this->get_payment_method_registry()->get_available_payment_method_ids();
-		$configured_available_ids = $settings['upe_available_payment_methods'] ?? null;
-		if ( is_array( $configured_available_ids ) && ! empty( $configured_available_ids ) ) {
-			$available_ids = $this->apply_payment_method_feature_policy(
-				$this->sanitize_payment_method_ids( $configured_available_ids, self::SUPPORTED_PAYMENT_METHOD_IDS )
-			);
-		} else {
-			$account_data = $this->account_service->get_cached_account_data();
-			$fees         = is_array( $account_data['fees'] ?? null ) ? array_keys( $account_data['fees'] ) : array();
-			if ( ! empty( $fees ) ) {
-				$available_ids = $this->sanitize_payment_method_ids( $fees, self::SUPPORTED_PAYMENT_METHOD_IDS );
-				if ( in_array( 'card', $available_ids, true ) ) {
-					$available_ids[] = 'apple_pay';
-					$available_ids[] = 'google_pay';
-				}
-
-				$available_ids = $this->apply_payment_method_feature_policy( array_values( array_unique( $available_ids ) ) );
-			} else {
-				$enabled_ids   = $this->get_array_setting( $settings, 'upe_enabled_payment_method_ids', array( 'card' ) );
-				$available_ids = $this->apply_payment_method_feature_policy(
-					$this->sanitize_payment_method_ids( array_merge( array( 'card' ), $enabled_ids ), self::SUPPORTED_PAYMENT_METHOD_IDS )
-				);
+	private function get_available_payment_method_ids( ?array $filtered_catalog = null ): array {
+		// Availability comes from the account's live fee structures only, like the plugin: no locally stored list and no card fallback. Empty fees (no account, or a genuinely feeless cache) means nothing is available — the plugin's settings enum is empty in the same state.
+		$filtered_catalog = $filtered_catalog ?? $this->get_payment_method_registry()->get_available_payment_method_ids();
+		$account_data     = $this->account_service->get_cached_account_data();
+		$fees             = is_array( $account_data['fees'] ?? null ) ? array_keys( $account_data['fees'] ) : array();
+		$available_ids    = array();
+		if ( ! empty( $fees ) ) {
+			$available_ids = $this->sanitize_payment_method_ids( $fees, self::SUPPORTED_PAYMENT_METHOD_IDS );
+			if ( in_array( 'card', $available_ids, true ) ) {
+				$available_ids[] = 'apple_pay';
+				$available_ids[] = 'google_pay';
 			}
+
+			$available_ids = $this->apply_payment_method_feature_policy( array_values( array_unique( $available_ids ) ) );
 		}
 
 		return array_values(

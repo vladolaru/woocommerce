@@ -66,7 +66,6 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
 			array(
-				'upe_available_payment_methods'  => array( 'card', 'affirm', 'klarna', 'afterpay_clearpay' ),
 				'upe_enabled_payment_method_ids' => array( 'card' ),
 			)
 		);
@@ -78,7 +77,10 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 		);
 		$this->account_service->cached_account_data = array(
 			'fees' => array(
-				'affirm' => array(
+				'card'              => array(),
+				'klarna'            => array(),
+				'afterpay_clearpay' => array(),
+				'affirm'            => array(
 					'discount' => array(
 						array( 'discount' => array( 'percentage' => 50 ) ),
 					),
@@ -111,11 +113,16 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
 			array(
-				'upe_available_payment_methods'  => array( 'card', 'klarna' ),
 				'upe_enabled_payment_method_ids' => array( 'card' ),
 			)
 		);
-		$this->api_client->promotions_response = array(
+		$this->account_service->cached_account_data = array(
+			'fees' => array(
+				'card'   => array(),
+				'klarna' => array(),
+			),
+		);
+		$this->api_client->promotions_response      = array(
 			array(
 				'id'             => 'klarna-promo__spotlight',
 				'promo_id'       => 'klarna-promo',
@@ -152,14 +159,19 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
 			array(
-				'upe_available_payment_methods'  => array( 'card', 'klarna' ),
 				'upe_enabled_payment_method_ids' => array( 'card' ),
 			)
 		);
-		$this->api_client->promotions_response = array(
+		$this->account_service->cached_account_data = array(
+			'fees' => array(
+				'card'   => array(),
+				'klarna' => array(),
+			),
+		);
+		$this->api_client->promotions_response      = array(
 			$this->promotion_fixture( 'klarna-promo__spotlight', 'klarna-promo', 'klarna', 'spotlight' ),
 		);
-		$before                                = time();
+		$before                                     = time();
 
 		$result     = $this->sut->dismiss_promotion( 'klarna-promo__spotlight' );
 		$dismissals = get_option( '_wcpay_pm_promotion_dismissals' );
@@ -178,9 +190,14 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
 			array(
-				'upe_available_payment_methods'  => array( 'card', 'klarna' ),
 				'upe_enabled_payment_method_ids' => array( 'card' ),
 			)
+		);
+		$this->account_service->cached_account_data = array(
+			'fees' => array(
+				'card'   => array(),
+				'klarna' => array(),
+			),
 		);
 		set_transient( WooPaymentsPmPromotionsService::PROMOTIONS_CACHE_KEY, array( 'stale' => true ), DAY_IN_SECONDS );
 		$this->api_client->promotions_response = array(
@@ -208,11 +225,16 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
 			array(
-				'upe_available_payment_methods'  => array( 'card', 'klarna' ),
 				'upe_enabled_payment_method_ids' => array( 'card' ),
 			)
 		);
-		$this->api_client->promotions_response = array(
+		$this->account_service->cached_account_data = array(
+			'fees' => array(
+				'card'   => array(),
+				'klarna' => array(),
+			),
+		);
+		$this->api_client->promotions_response      = array(
 			$this->promotion_fixture( 'klarna-promo__spotlight', 'klarna-promo', 'klarna', 'spotlight' ),
 		);
 
@@ -235,11 +257,15 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
 			array(
-				'upe_available_payment_methods'  => array( 'card' ),
 				'upe_enabled_payment_method_ids' => array( 'card' ),
 			)
 		);
-		$this->api_client->promotions_response = array(
+		$this->account_service->cached_account_data = array(
+			'fees' => array(
+				'card' => array(),
+			),
+		);
+		$this->api_client->promotions_response      = array(
 			$this->promotion_fixture( 'klarna-promo__spotlight', 'klarna-promo', 'klarna', 'spotlight' ),
 		);
 

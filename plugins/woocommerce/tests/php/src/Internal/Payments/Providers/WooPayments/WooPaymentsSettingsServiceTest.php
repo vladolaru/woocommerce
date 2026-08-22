@@ -380,8 +380,22 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
 			array(
-				'upe_available_payment_methods'  => array( 'card', 'bancontact' ),
 				'upe_enabled_payment_method_ids' => array( 'card', 'bancontact' ),
+			)
+		);
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'    => array(
+					'account_id' => 'acct_native_test',
+					'is_live'    => true,
+					'fees'       => array(
+						'card'       => array(),
+						'bancontact' => array(),
+					),
+				),
+				'fetched' => time(),
+				'errored' => false,
 			)
 		);
 		$filter_calls = 0;
@@ -400,7 +414,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 
 		$settings = $this->sut->get_settings();
 
-		$this->assertSame( array( 'card' ), $settings['available_payment_method_ids'] );
+		$this->assertSame( array( 'card', 'apple_pay', 'google_pay' ), $settings['available_payment_method_ids'] );
 		$this->assertSame( array( 'card' ), $settings['enabled_payment_method_ids'] );
 		$this->assertSame( 1, $filter_calls, 'One public settings availability computation should dispatch the filter once.' );
 		$this->assertCount( 1, $filter_args, 'The pinned oracle passes no gateway or context argument.' );
@@ -1978,6 +1992,46 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should reject enabling payment methods the account has no fees for instead of dropping them silently.
+	 */
+	public function test_update_settings_rejects_enabled_methods_the_account_has_no_fees_for(): void {
+		$this->set_connected_account_data();
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array( 'upe_enabled_payment_method_ids' => array( 'card' ) )
+		);
+
+		$result = $this->sut->update_settings(
+			array( 'enabled_payment_method_ids' => array( 'card', 'ideal' ) )
+		);
+
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertSame( 'rest_invalid_param', $result->get_error_code() );
+		$this->assertSame( 400, $result->get_error_data()['status'] );
+		$this->assertArrayHasKey( 'enabled_payment_method_ids', $result->get_error_data()['params'] );
+		$stored = get_option( 'woocommerce_woocommerce_payments_settings' );
+		$this->assertSame( array( 'card' ), $stored['upe_enabled_payment_method_ids'], 'A rejected save must not touch the enabled methods.' );
+	}
+
+	/**
+	 * @testdox Should report no available payment methods when the account has no fees, like the plugin.
+	 */
+	public function test_get_settings_reports_no_available_methods_without_account_fees(): void {
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'upe_available_payment_methods'  => array( 'card', 'ideal' ),
+				'upe_enabled_payment_method_ids' => array( 'card' ),
+			)
+		);
+
+		$settings = $this->sut->get_settings();
+
+		$this->assertSame( array(), $settings['available_payment_method_ids'], 'Empty account fees must not fall back to the legacy stored list or the enabled set.' );
+		$this->assertSame( array(), $settings['enabled_payment_method_ids'] );
+	}
+
+	/**
 	 * @testdox Should request unrequested payment method capabilities when enabling methods.
 	 */
 	public function test_update_settings_requests_unrequested_payment_method_capabilities(): void {
@@ -2075,7 +2129,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should request missing payment method capabilities before filtering by fee-backed availability.
 	 */
-	public function test_update_settings_requests_missing_capabilities_without_fee_rows(): void {
+	public function test_update_settings_rejects_methods_without_fee_rows_before_capability_requests(): void {
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
 			array(
@@ -2106,16 +2160,9 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$this->assertIsArray( $result );
-		$this->assertSame(
-			array(
-				array(
-					'capability_id' => 'grabpay_payments',
-					'requested'     => true,
-				),
-			),
-			$this->api_client->capability_requests
-		);
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertSame( 'rest_invalid_param', $result->get_error_code() );
+		$this->assertSame( array(), $this->api_client->capability_requests, 'A rejected save must not request capabilities as a side effect.' );
 	}
 
 	/**

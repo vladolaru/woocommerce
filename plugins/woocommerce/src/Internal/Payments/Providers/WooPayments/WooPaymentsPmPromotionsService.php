@@ -704,24 +704,19 @@ class WooPaymentsPmPromotionsService {
 	 * @return string[]
 	 */
 	private function get_available_payment_method_ids(): array {
-		$settings                 = $this->get_gateway_settings();
-		$configured_available_ids = $settings['upe_available_payment_methods'] ?? null;
-		if ( is_array( $configured_available_ids ) && ! empty( $configured_available_ids ) ) {
-			return $this->sanitize_payment_method_ids( $configured_available_ids );
-		}
-
+		// Availability comes from the account's live fee structures only, mirroring the settings service: a method the account has no fees for can no longer be enabled, so it must not be promoted either.
 		$account_fees = $this->get_account_fees();
-		if ( ! empty( $account_fees ) ) {
-			$available_ids = $this->sanitize_payment_method_ids( array_keys( $account_fees ) );
-			if ( in_array( 'card', $available_ids, true ) ) {
-				$available_ids[] = 'apple_pay';
-				$available_ids[] = 'google_pay';
-			}
-
-			return array_values( array_unique( $available_ids ) );
+		if ( empty( $account_fees ) ) {
+			return array();
 		}
 
-		return $this->sanitize_payment_method_ids( array_merge( array( 'card' ), $this->get_enabled_payment_method_ids() ) );
+		$available_ids = $this->sanitize_payment_method_ids( array_keys( $account_fees ) );
+		if ( in_array( 'card', $available_ids, true ) ) {
+			$available_ids[] = 'apple_pay';
+			$available_ids[] = 'google_pay';
+		}
+
+		return array_values( array_unique( $available_ids ) );
 	}
 
 	/**
