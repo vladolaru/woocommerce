@@ -49,7 +49,10 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_kyc_completion_date' );
 		delete_option( 'wcpay_kyc_submitted_date' );
 		delete_option( 'wcpay_has_live_sale' );
+		delete_option( 'wcpay_test_mode_enabled_date' );
+		delete_transient( 'wcpay_test_to_live_eligible' );
 		delete_transient( 'wcpay_post_kyc_activation_eligible' );
+		$this->delete_notes_with_name( 'wc-payments-notes-test-to-live' );
 		$this->delete_instant_deposit_note();
 		remove_filter( 'woocommerce_email_classes', '__return_empty_array', 20 );
 		remove_filter( 'pre_wp_mail', '__return_true' );
@@ -424,6 +427,115 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card', 'ideal' ) ) );
 
 		$this->assertFalse( get_option( 'wcpay_multi_currency_enabled_currencies' ), 'Disabled Multi-Currency must not gain enabled currencies.' );
+	}
+
+	/**
+	 * @testdox Should stamp the test-mode enable date and clear notice eligibility on a mode flip.
+	 */
+	public function test_test_mode_toggle_stamps_and_clears_bookkeeping(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'no' ) );
+		set_transient( 'wcpay_test_to_live_eligible', '1', 100 );
+		set_transient( 'wcpay_post_kyc_activation_eligible', '1', 100 );
+		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ) );
+		$service->register();
+
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+
+		$enabled_date = (int) get_option( 'wcpay_test_mode_enabled_date' );
+		$this->assertGreaterThan( 0, $enabled_date );
+		$this->assertFalse( get_transient( 'wcpay_test_to_live_eligible' ) );
+		$this->assertFalse( get_transient( 'wcpay_post_kyc_activation_eligible' ) );
+
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'no' ) );
+
+		$this->assertFalse( get_option( 'wcpay_test_mode_enabled_date' ), 'Disabling test mode must restart the nudge clock.' );
+	}
+
+	/**
+	 * @testdox Should preserve the original enable date across saves that do not flip the mode.
+	 */
+	public function test_test_mode_bookkeeping_preserves_enable_date_without_a_flip(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		update_option( 'wcpay_test_mode_enabled_date', 1234567890, false );
+		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ) );
+		$service->register();
+
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'test_mode'      => 'yes',
+				'enable_logging' => 'yes',
+			)
+		);
+
+		$this->assertSame( 1234567890, (int) get_option( 'wcpay_test_mode_enabled_date' ), 'A save without a mode flip must not restamp the enable date.' );
+	}
+
+	/**
+	 * @testdox Should add the test-to-live inbox note after seven days of test mode with a test sale, and remove it when the store goes live.
+	 */
+	public function test_test_to_live_inbox_note_follows_eligibility(): void {
+		update_option( 'wcpay_test_mode_enabled_date', time() - 8 * DAY_IN_SECONDS, false );
+		$order = \WC_Helper_Order::create_order();
+		$order->set_payment_method( 'woocommerce_payments' );
+		$order->set_status( 'completed' );
+		$order->update_meta_data( '_wcpay_mode', 'test' );
+		$order->save();
+
+		$eligible_account = $this->create_account_service(
+			array(
+				'account_id'       => 'acct_native_test',
+				'payments_enabled' => true,
+			),
+			true
+		);
+		$service          = $this->create_service( new StaticNativeRuntimeArbiter( true ), new RecordingActionSchedulerService(), null, $eligible_account );
+
+		$service->maybe_sync_test_to_live_inbox_note();
+
+		$this->assertNotEmpty( $this->get_note_ids_with_name( 'wc-payments-notes-test-to-live' ), 'Seven days in test mode with a test sale must surface the go-live nudge.' );
+
+		$live_account = $this->create_account_service(
+			array(
+				'account_id'       => 'acct_native_test',
+				'payments_enabled' => true,
+			),
+			false
+		);
+		$live_service = $this->create_service( new StaticNativeRuntimeArbiter( true ), new RecordingActionSchedulerService(), null, $live_account );
+
+		$live_service->maybe_sync_test_to_live_inbox_note();
+
+		$this->assertEmpty( $this->get_note_ids_with_name( 'wc-payments-notes-test-to-live' ), 'Going live must clear the go-live nudge.' );
+	}
+
+	/**
+	 * @testdox Should not add the test-to-live inbox note before the seven-day threshold.
+	 */
+	public function test_test_to_live_inbox_note_respects_days_threshold(): void {
+		update_option( 'wcpay_test_mode_enabled_date', time() - 2 * DAY_IN_SECONDS, false );
+		$order = \WC_Helper_Order::create_order();
+		$order->set_payment_method( 'woocommerce_payments' );
+		$order->set_status( 'completed' );
+		$order->update_meta_data( '_wcpay_mode', 'test' );
+		$order->save();
+
+		$service = $this->create_service(
+			new StaticNativeRuntimeArbiter( true ),
+			new RecordingActionSchedulerService(),
+			null,
+			$this->create_account_service(
+				array(
+					'account_id'       => 'acct_native_test',
+					'payments_enabled' => true,
+				),
+				true
+			)
+		);
+
+		$service->maybe_sync_test_to_live_inbox_note();
+
+		$this->assertEmpty( $this->get_note_ids_with_name( 'wc-payments-notes-test-to-live' ) );
 	}
 
 	/**
@@ -1162,8 +1274,37 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		remove_action( 'action_scheduler_ensure_recurring_actions', array( $service, 'schedule_recurring_actions' ) );
 		remove_action( 'updated_option', array( $service, 'handle_site_language_update' ) );
 		remove_action( 'update_option_woocommerce_woocommerce_payments_settings', array( $service, 'maybe_add_missing_currencies' ) );
+		remove_action( 'update_option_woocommerce_woocommerce_payments_settings', array( $service, 'maybe_handle_test_mode_toggle' ) );
+		remove_action( 'woocommerce_payments_account_refreshed', array( $service, 'maybe_sync_test_to_live_inbox_note' ) );
+		remove_action( 'wcpay_store_setup_sync', array( $service, 'maybe_sync_test_to_live_inbox_note' ) );
 		remove_filter( 'woocommerce_email_classes', array( $service, 'add_post_kyc_activation_email' ) );
 		remove_filter( 'woocommerce_email_classes', array( $service, 'add_ipp_receipt_email' ) );
+	}
+
+	/**
+	 * Get note IDs stored under a name.
+	 *
+	 * @param string $name Note name.
+	 * @return array<int|string>
+	 */
+	private function get_note_ids_with_name( string $name ): array {
+		$data_store = \Automattic\WooCommerce\Admin\Notes\Notes::load_data_store();
+
+		return $data_store->get_notes_with_name( $name );
+	}
+
+	/**
+	 * Delete all notes stored under a name.
+	 *
+	 * @param string $name Note name.
+	 */
+	private function delete_notes_with_name( string $name ): void {
+		foreach ( $this->get_note_ids_with_name( $name ) as $note_id ) {
+			$note = \Automattic\WooCommerce\Admin\Notes\Notes::get_note( (int) $note_id );
+			if ( $note instanceof \Automattic\WooCommerce\Admin\Notes\Note ) {
+				$note->delete();
+			}
+		}
 	}
 
 	/**
