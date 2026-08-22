@@ -72,6 +72,13 @@ class WooPaymentsProviderGatewayAdapter {
 	private WooPaymentsOrderNoteService $note_service;
 
 	/**
+	 * WooPayments settings service.
+	 *
+	 * @var WooPaymentsSettingsService
+	 */
+	private WooPaymentsSettingsService $settings_service;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -83,6 +90,7 @@ class WooPaymentsProviderGatewayAdapter {
 	 * @param WooPaymentsAccountService       $account_service    Account service.
 	 * @param WooPaymentsOrderDataService     $order_data_service Order data service.
 	 * @param WooPaymentsOrderNoteService     $note_service       Order note service.
+	 * @param WooPaymentsSettingsService      $settings_service   Settings service.
 	 */
 	final public function init(
 		WooPaymentsLegacyRuntime $legacy_runtime,
@@ -91,7 +99,8 @@ class WooPaymentsProviderGatewayAdapter {
 		WooPaymentsIntentRequestBuilder $request_builder,
 		WooPaymentsAccountService $account_service,
 		WooPaymentsOrderDataService $order_data_service,
-		WooPaymentsOrderNoteService $note_service
+		WooPaymentsOrderNoteService $note_service,
+		WooPaymentsSettingsService $settings_service
 	): void {
 		$this->legacy_runtime     = $legacy_runtime;
 		$this->api_client         = $api_client;
@@ -100,6 +109,7 @@ class WooPaymentsProviderGatewayAdapter {
 		$this->account_service    = $account_service;
 		$this->order_data_service = $order_data_service;
 		$this->note_service       = $note_service;
+		$this->settings_service   = $settings_service;
 	}
 
 	/**
@@ -471,24 +481,14 @@ class WooPaymentsProviderGatewayAdapter {
 	/**
 	 * Tell whether the advanced fraud protection AVS verification rule is active.
 	 *
-	 * Reads the same cached ruleset the plugin consults; a missing or malformed
-	 * cache means the rule is treated as inactive.
+	 * Delegates to the settings service, which refreshes the cached ruleset from
+	 * the platform when the local cache is missing — a cold cache must not turn
+	 * an AVS block into an ordinary decline.
 	 *
 	 * @return bool
 	 */
 	private function is_avs_verification_fraud_rule_enabled(): bool {
-		$ruleset = get_transient( 'wcpay_fraud_protection_settings' );
-		if ( ! is_array( $ruleset ) ) {
-			return false;
-		}
-
-		foreach ( $ruleset as $rule ) {
-			if ( is_array( $rule ) && 'avs_verification' === ( $rule['key'] ?? null ) ) {
-				return true;
-			}
-		}
-
-		return false;
+		return $this->settings_service->is_fraud_rule_active( 'avs_verification' );
 	}
 
 	/**

@@ -21,6 +21,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
@@ -3569,9 +3570,10 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 * @param WooPaymentsTokenService|null     $token_service WooPayments token service.
 	 * @param WooPaymentsAccountService|null   $account_service WooPayments account service.
 	 * @param WooPaymentsOrderDataService|null $order_data_service WooPayments order data service.
+	 * @param WooPaymentsSettingsService|null  $settings_service Settings service.
 	 * @return WooPaymentsProviderGatewayAdapter
 	 */
-	private function create_adapter( ?RecordingLegacyGateway $gateway, ?WooPaymentsApiClient $api_client = null, ?WooPaymentsCustomerService $customer_service = null, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsOrderDataService $order_data_service = null ): WooPaymentsProviderGatewayAdapter {
+	private function create_adapter( ?RecordingLegacyGateway $gateway, ?WooPaymentsApiClient $api_client = null, ?WooPaymentsCustomerService $customer_service = null, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsOrderDataService $order_data_service = null, ?WooPaymentsSettingsService $settings_service = null ): WooPaymentsProviderGatewayAdapter {
 		$legacy_runtime = new WooPaymentsLegacyRuntime();
 		$legacy_runtime->init( new LegacyProxyWithGateway( $gateway ) );
 		$api_client = $api_client ?? $this->getMockBuilder( WooPaymentsApiClient::class )
@@ -3590,6 +3592,29 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$request_builder    = new WooPaymentsIntentRequestBuilder();
 		$request_builder->init( $account_service, $order_data_service, $token_service, new WooPaymentsPaymentMethodRegistry() );
 
+		if ( null === $settings_service ) {
+			$settings_service = $this->getMockBuilder( WooPaymentsSettingsService::class )
+				->disableOriginalConstructor()
+				->onlyMethods( array( 'is_fraud_rule_active' ) )
+				->getMock();
+			$settings_service->method( 'is_fraud_rule_active' )->willReturnCallback(
+				static function ( string $rule_key ): bool {
+					$ruleset = get_transient( 'wcpay_fraud_protection_settings' );
+					if ( ! is_array( $ruleset ) ) {
+						return false;
+					}
+
+					foreach ( $ruleset as $rule ) {
+						if ( is_array( $rule ) && ( $rule['key'] ?? null ) === $rule_key ) {
+							return true;
+						}
+					}
+
+					return false;
+				}
+			);
+		}
+
 		$sut = new WooPaymentsProviderGatewayAdapter();
 		$sut->init(
 			$legacy_runtime,
@@ -3598,7 +3623,8 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			$request_builder,
 			$account_service,
 			$order_data_service,
-			wc_get_container()->get( WooPaymentsOrderNoteService::class )
+			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
+			$settings_service
 		);
 
 		return $sut;

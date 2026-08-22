@@ -1533,6 +1533,39 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should answer fraud-rule activity from the cached ruleset and refresh a cold cache first.
+	 */
+	public function test_is_fraud_rule_active_reads_cached_ruleset_and_refreshes_cold_cache(): void {
+		$this->set_connected_account_data();
+		set_transient(
+			'wcpay_fraud_protection_settings',
+			array(
+				array( 'key' => 'avs_verification' ),
+			),
+			DAY_IN_SECONDS
+		);
+
+		$this->assertTrue( $this->sut->is_fraud_rule_active( 'avs_verification' ) );
+		$this->assertFalse( $this->sut->is_fraud_rule_active( 'purchase_price_threshold' ) );
+		$this->assertSame( 0, $this->api_client->latest_fraud_ruleset_requests, 'A warm cache must not trigger a platform refresh.' );
+
+		delete_transient( 'wcpay_fraud_protection_settings' );
+		$this->api_client->latest_fraud_ruleset_response = array(
+			'ruleset_config' => $this->get_standard_fraud_ruleset_fixture(),
+		);
+
+		$standard_has_avs = false;
+		foreach ( $this->get_standard_fraud_ruleset_fixture() as $rule ) {
+			if ( 'avs_verification' === ( $rule['key'] ?? null ) ) {
+				$standard_has_avs = true;
+			}
+		}
+
+		$this->assertSame( $standard_has_avs, $this->sut->is_fraud_rule_active( 'avs_verification' ), 'A cold cache must be refreshed from the platform before answering, so an AVS block is not misread as an ordinary decline.' );
+		$this->assertSame( 1, $this->api_client->latest_fraud_ruleset_requests );
+	}
+
+	/**
 	 * @testdox Should initialize Basic fraud ruleset when the platform has no ruleset.
 	 */
 	public function test_get_settings_initializes_basic_fraud_ruleset_when_platform_ruleset_is_missing(): void {

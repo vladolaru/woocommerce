@@ -1657,6 +1657,23 @@ class WooPaymentsSettingsService {
 	}
 
 	/**
+	 * Tell whether an advanced fraud protection rule is active.
+	 *
+	 * Refreshes the cached ruleset from the platform when the local cache is
+	 * missing, mirroring the plugin's lazy refresh before rule checks.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @param string $rule_key Fraud rule key (e.g. avs_verification).
+	 * @return bool
+	 */
+	public function is_fraud_rule_active( string $rule_key ): bool {
+		$ruleset = $this->get_advanced_fraud_protection_settings();
+
+		return is_array( $ruleset ) && $this->ruleset_contains_fraud_rule( $ruleset, $rule_key );
+	}
+
+	/**
 	 * Get advanced fraud protection settings.
 	 *
 	 * @return array<int|string,mixed>|string
