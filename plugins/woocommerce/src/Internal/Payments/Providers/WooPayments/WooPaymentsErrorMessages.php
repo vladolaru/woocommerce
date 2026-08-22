@@ -55,6 +55,28 @@ class WooPaymentsErrorMessages {
 	}
 
 	/**
+	 * Get the shopper message for a charge below the platform's per-currency minimum.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @param int    $minimum_amount Minimum amount in provider minor units.
+	 * @param string $currency       Currency code.
+	 * @return string
+	 */
+	public static function get_amount_too_small_message( int $minimum_amount, string $currency ): string {
+		$price = wc_price(
+			WooPaymentsCurrencyUtils::amount_from_minor_units( $minimum_amount, $currency ),
+			array( 'currency' => strtoupper( $currency ) )
+		);
+
+		return sprintf(
+			/* translators: %s: a formatted price. */
+			__( 'The selected payment method requires a total amount of at least %s.', 'woocommerce' ),
+			wp_strip_all_tags( html_entity_decode( $price, ENT_QUOTES ) )
+		);
+	}
+
+	/**
 	 * Get the generic safe request error message.
 	 *
 	 * @since 11.0.0

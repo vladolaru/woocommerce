@@ -89,4 +89,33 @@ final class WooPaymentsCurrencyUtils {
 
 		return (int) round( $amount * ( 10 ** $minor_unit ) );
 	}
+
+	/**
+	 * Cache the platform-reported per-currency minimum charge amount.
+	 *
+	 * Uses the same transient the WooPayments plugin writes, so the learned
+	 * floor survives switching between the plugin and the native runtime.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @param string $currency Currency code.
+	 * @param int    $amount   Minimum amount in provider minor units.
+	 */
+	public static function cache_minimum_amount( string $currency, int $amount ): void {
+		set_transient( 'wcpay_minimum_amount_' . strtolower( $currency ), $amount, DAY_IN_SECONDS );
+	}
+
+	/**
+	 * Get the cached platform-reported minimum charge amount for a currency.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @param string $currency Currency code.
+	 * @return int|null Minimum amount in provider minor units, or null when unknown.
+	 */
+	public static function get_cached_minimum_amount( string $currency ): ?int {
+		$cached = (int) get_transient( 'wcpay_minimum_amount_' . strtolower( $currency ) );
+
+		return 0 < $cached ? $cached : null;
+	}
 }

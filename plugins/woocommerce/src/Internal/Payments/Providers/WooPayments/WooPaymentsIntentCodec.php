@@ -348,10 +348,41 @@ class WooPaymentsIntentCodec {
 			array(
 				PaymentOutcome::DATA_ERROR_CODE            => $error_code,
 				PaymentOutcome::DATA_ERROR_MESSAGE         => $exception->getMessage(),
-				PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE => WooPaymentsErrorMessages::get_shopper_message( $exception->get_error_type(), $error_code, $exception->get_decline_code() ),
+				PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE => self::shopper_message_for_exception( $error_code, $exception ),
 				'operation'                                => $operation,
 			)
 		);
+	}
+
+	/**
+	 * Resolve the shopper-facing message for a failed transport exception.
+	 *
+	 * Mirrors the plugin's get_filtered_error_message ordering: amount_too_small
+	 * renders (and caches) the platform's per-currency floor, amount_too_large
+	 * passes the transport's redacted capture message through, everything else
+	 * goes through the safe card-error mapping.
+	 *
+	 * @param string                  $error_code Provider error code.
+	 * @param WooPaymentsApiException $exception  Transport exception.
+	 * @return string
+	 */
+	private static function shopper_message_for_exception( string $error_code, WooPaymentsApiException $exception ): string {
+		$error_data = $exception->get_error_data();
+
+		if ( 'amount_too_small' === $error_code && isset( $error_data['minimum_amount'], $error_data['currency'] ) && is_numeric( $error_data['minimum_amount'] ) && is_string( $error_data['currency'] ) ) {
+			$minimum_amount = (int) $error_data['minimum_amount'];
+			$currency       = $error_data['currency'];
+
+			WooPaymentsCurrencyUtils::cache_minimum_amount( $currency, $minimum_amount );
+
+			return WooPaymentsErrorMessages::get_amount_too_small_message( $minimum_amount, $currency );
+		}
+
+		if ( 'amount_too_large' === $error_code ) {
+			return $exception->getMessage();
+		}
+
+		return WooPaymentsErrorMessages::get_shopper_message( $exception->get_error_type(), $error_code, $exception->get_decline_code() );
 	}
 
 	/**

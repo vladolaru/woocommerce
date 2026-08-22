@@ -334,6 +334,72 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Failed amount_too_small transport outcomes surface the platform minimum and cache it per currency.
+	 */
+	public function test_failed_transport_outcome_surfaces_and_caches_the_platform_minimum(): void {
+		delete_transient( 'wcpay_minimum_amount_usd' );
+
+		$sut = WooPaymentsIntentCodec::failed_transport_outcome(
+			'charge',
+			new WooPaymentsApiException(
+				'Amount must be at least $0.50 usd',
+				'amount_too_small',
+				400,
+				'',
+				'',
+				array(
+					'minimum_amount' => 50,
+					'currency'       => 'usd',
+				)
+			)
+		);
+
+		$data = $sut->get_data();
+
+		$this->assertSame( 'The selected payment method requires a total amount of at least $0.50.', $data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? null );
+		$this->assertSame( 'Amount must be at least $0.50 usd', $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
+		$this->assertSame( 50, get_transient( 'wcpay_minimum_amount_usd' ), 'The platform floor must be cached per currency so the next attempt can fail before the API call.' );
+
+		delete_transient( 'wcpay_minimum_amount_usd' );
+	}
+
+	/**
+	 * @testdox Failed amount_too_small outcomes without a data payload fall back to the generic shopper message.
+	 */
+	public function test_failed_transport_outcome_amount_too_small_without_data_stays_generic(): void {
+		$sut = WooPaymentsIntentCodec::failed_transport_outcome(
+			'charge',
+			new WooPaymentsApiException( 'Amount too small', 'amount_too_small', 400 )
+		);
+
+		$this->assertSame(
+			"We're not able to process this request. Please refresh the page and try again.",
+			$sut->get_data()[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? null
+		);
+	}
+
+	/**
+	 * @testdox Failed amount_too_large transport outcomes pass the redacted capture message through to the shopper surface.
+	 */
+	public function test_failed_transport_outcome_passes_amount_too_large_message_through(): void {
+		$sut = WooPaymentsIntentCodec::failed_transport_outcome(
+			'capture',
+			new WooPaymentsApiException(
+				'Error: The payment could not be captured because the requested capture amount is greater than the amount you can capture for this charge.',
+				'amount_too_large',
+				400,
+				'invalid_request_error'
+			),
+			'pi_auth_test'
+		);
+
+		$this->assertSame(
+			'Error: The payment could not be captured because the requested capture amount is greater than the amount you can capture for this charge.',
+			$sut->get_data()[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? null
+		);
+	}
+
+	/**
 	 * @testdox Legacy mapping uses the supplied snapshot without reloading an order.
 	 */
 	public function test_legacy_result_uses_supplied_snapshot_without_reloading_order(): void {
