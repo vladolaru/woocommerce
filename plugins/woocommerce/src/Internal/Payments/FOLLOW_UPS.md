@@ -51,3 +51,7 @@ The plugin's `WC_Payments_Features::is_customer_multi_currency_enabled()` reads 
 ### Oracle upstream: /settings business_support_address save path fatals (S8 measurement observation)
 
 The plugin's own `POST /wc/v3/payments/settings` with an `account_business_support_address` object dies with a `TypeError`: `Update_Account::set_business_support_address()` type-hints `string` while the REST boundary validates an array. Measured live on the pristine `:8082` oracle during S8. Native sends the nested object, which is what the platform maps onto Stripe's `business_profile.support_address` dict, so native is correct; this is a candidate upstream report against the WooPayments plugin, not a native change.
+
+### Oracle upstream: the WooPay webhook secret is not in the plugin's log-redaction list (S8 security review)
+
+The plugin's `API_KEYS_TO_REDACT` does not carry `webhook_secret`, so its `update_woopay()` call logs the WooPay webhook signing secret in cleartext whenever transport logging is on — a log reader could forge order-status webhook deliveries. Native added the key to its redaction list (commit 3123b8549a); the plugin still leaks it. Second candidate upstream report.
