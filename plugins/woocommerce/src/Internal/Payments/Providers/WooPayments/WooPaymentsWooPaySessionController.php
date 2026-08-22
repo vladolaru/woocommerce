@@ -86,12 +86,16 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			add_action( 'woopay_restore_order_customer_id', array( $this->session_service, 'restore_order_customer_id_from_requests_with_verified_email' ) );
 		}
 
-		if ( ! $this->session_service->is_woopay_enabled() ) {
-			return;
-		}
-
+		// The session route stays registered whenever native owns the runtime: the plugin
+		// registers it unconditionally and answers ineligible or unsigned callers through the
+		// permission callback (401), so a disabled/ineligible state must not turn into a 404
+		// that makes WooPay's bootstrap fail opaquely.
 		if ( false === has_action( 'rest_api_init', array( $this, 'register_routes' ) ) ) {
 			add_action( 'rest_api_init', array( $this, 'register_routes' ) );
+		}
+
+		if ( ! $this->session_service->is_woopay_enabled() ) {
+			return;
 		}
 
 		foreach ( $this->get_ajax_hooks() as $hook => $callback ) {

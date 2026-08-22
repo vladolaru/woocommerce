@@ -153,9 +153,9 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register only the inbound identity hooks when WooPay is disabled.
+	 * @testdox Should keep the inbound identity hooks and the session route registered when WooPay is disabled.
 	 */
-	public function test_registers_only_inbound_identity_hooks_when_platform_checkout_is_disabled(): void {
+	public function test_keeps_identity_hooks_and_session_route_when_platform_checkout_is_disabled(): void {
 		$service   = new RecordingWooPaySessionService();
 		$this->sut = $this->create_controller( true, false, $service );
 
@@ -164,7 +164,9 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( 20, has_filter( 'determine_current_user', array( $service, 'determine_current_user_for_woopay' ) ) );
 		$this->assertNotFalse( has_action( 'woocommerce_order_payment_status_changed', array( $service, 'woopay_order_payment_status_changed' ) ) );
 		$this->assertNotFalse( has_action( 'woopay_restore_order_customer_id', array( $service, 'restore_order_customer_id_from_requests_with_verified_email' ) ) );
-		$this->assertFalse( has_action( 'rest_api_init', array( $this->sut, 'register_routes' ) ) );
+		// The session route stays registered so an ineligible or disabled state answers with the
+		// permission callback's 401 instead of a 404, mirroring the plugin's unconditional route.
+		$this->assertNotFalse( has_action( 'rest_api_init', array( $this->sut, 'register_routes' ) ) );
 		foreach ( $this->get_expected_ajax_hooks() as $hook => $method ) {
 			$this->assertFalse( has_action( $hook, array( $this->sut, $method ) ) );
 		}
