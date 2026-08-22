@@ -966,7 +966,12 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_settings', 'update_settings' ) )
 			->getMock();
-		$settings_service->method( 'get_settings' )->willReturn( array( 'enabled_payment_method_ids' => array( 'card' ) ) );
+		$settings_service->method( 'get_settings' )->willReturn(
+			array(
+				'enabled_payment_method_ids'   => array( 'card' ),
+				'available_payment_method_ids' => array( 'card', 'ideal' ),
+			)
+		);
 		$update_attempts = 0;
 		$settings_service->expects( $this->exactly( 2 ) )
 			->method( 'update_settings' )

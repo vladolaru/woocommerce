@@ -3273,16 +3273,29 @@ class WooPaymentsService {
 			return true;
 		}
 
-		$capabilities            = is_array( $account_data['capabilities'] ?? null ) ? $account_data['capabilities'] : array();
-		$settings_service        = $this->get_native_settings_service();
-		$settings                = $settings_service->get_settings();
-		$enabled_payment_methods = is_array( $settings['enabled_payment_method_ids'] ?? null )
+		$capabilities              = is_array( $account_data['capabilities'] ?? null ) ? $account_data['capabilities'] : array();
+		$settings_service          = $this->get_native_settings_service();
+		$settings                  = $settings_service->get_settings();
+		$enabled_payment_methods   = is_array( $settings['enabled_payment_method_ids'] ?? null )
 			? $settings['enabled_payment_method_ids']
 			: array( 'card' );
+		$available_payment_methods = is_array( $settings['available_payment_method_ids'] ?? null )
+			? $settings['available_payment_method_ids']
+			: array();
+
+		// No availability means the account state cannot back a projection right now (e.g. an errored or empty account cache); bail so the durable marker retries after the next successful refresh instead of wiping the enabled methods.
+		if ( empty( $available_payment_methods ) ) {
+			return false;
+		}
 
 		foreach ( $selected_definitions as $definition ) {
 			$capability_key = $definition->get_account_capability_key();
 			if ( 'active' !== ( $capabilities[ $capability_key ] ?? null ) ) {
+				continue;
+			}
+
+			// Selected methods without fee-backed availability stay disabled: the settings save rejects unavailable methods outright, so the projection must pre-filter to the account's available set.
+			if ( ! in_array( $definition->get_id(), $available_payment_methods, true ) ) {
 				continue;
 			}
 
