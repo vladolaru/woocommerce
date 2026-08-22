@@ -336,6 +336,55 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox save_payment_method_to_platform rides both the charge and setup-intent requests when the shopper opted in.
+	 */
+	public function test_save_payment_method_to_platform_rides_charge_and_setup_requests(): void {
+		$order = wc_create_order();
+		$order->set_currency( 'USD' );
+		$order->set_total( '10.00' );
+		$order->save();
+
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_gateway_setting' ) )
+			->getMock();
+		$account_service->method( 'get_gateway_setting' )->willReturn( 'no' );
+		$request_builder = new WooPaymentsIntentRequestBuilder();
+		$request_builder->init(
+			$account_service,
+			new WooPaymentsOrderDataService(),
+			$this->createStub( WooPaymentsTokenService::class ),
+			new WooPaymentsPaymentMethodRegistry()
+		);
+
+		$provider_data = array( 'save_payment_method_to_platform' => true );
+
+		$charge_request = $request_builder->charge_request_data(
+			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_card', array(), $provider_data ),
+			'pm_card',
+			'cus_native',
+			false
+		);
+		$this->assertTrue( $charge_request['save_payment_method_to_platform'] );
+
+		$setup_request = $request_builder->setup_intent_request_data(
+			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_card', array(), $provider_data ),
+			'pm_card',
+			'cus_native',
+			false
+		);
+		$this->assertTrue( $setup_request['save_payment_method_to_platform'] );
+
+		$bare_request = $request_builder->charge_request_data(
+			PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_card' ),
+			'pm_card',
+			'cus_native',
+			false
+		);
+		$this->assertArrayNotHasKey( 'save_payment_method_to_platform', $bare_request );
+	}
+
+	/**
 	 * @testdox Link-token renewals declare card and link with no return_url, even when the checkout fold is off.
 	 */
 	public function test_link_token_renewals_declare_card_and_link_without_return_url(): void {

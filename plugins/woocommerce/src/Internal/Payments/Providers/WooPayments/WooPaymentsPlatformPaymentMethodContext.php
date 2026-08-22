@@ -26,6 +26,11 @@ class WooPaymentsPlatformPaymentMethodContext {
 	public const PROVIDER_DATA_KEY = 'is_platform_payment_method';
 
 	/**
+	 * Provider data (and wire) key for the WooPay save-to-platform opt-in.
+	 */
+	public const SAVE_TO_PLATFORM_PROVIDER_DATA_KEY = 'save_payment_method_to_platform';
+
+	/**
 	 * Whether the submitted payment method was created on the Stripe platform account.
 	 *
 	 * @var bool
@@ -33,12 +38,21 @@ class WooPaymentsPlatformPaymentMethodContext {
 	private bool $is_platform_payment_method;
 
 	/**
+	 * Whether the shopper opted to save their payment method on the WooPay platform account.
+	 *
+	 * @var bool
+	 */
+	private bool $save_payment_method_to_platform;
+
+	/**
 	 * Constructor.
 	 *
-	 * @param bool $is_platform_payment_method Whether the submitted payment method was created on the Stripe platform account.
+	 * @param bool $is_platform_payment_method      Whether the submitted payment method was created on the Stripe platform account.
+	 * @param bool $save_payment_method_to_platform Whether the shopper opted to save their payment method on the WooPay platform account.
 	 */
-	private function __construct( bool $is_platform_payment_method ) {
-		$this->is_platform_payment_method = $is_platform_payment_method;
+	private function __construct( bool $is_platform_payment_method, bool $save_payment_method_to_platform = false ) {
+		$this->is_platform_payment_method      = $is_platform_payment_method;
+		$this->save_payment_method_to_platform = $save_payment_method_to_platform;
 	}
 
 	/**
@@ -48,7 +62,22 @@ class WooPaymentsPlatformPaymentMethodContext {
 	 * @return self
 	 */
 	public static function from_provider_data( array $provider_data ): self {
-		return new self( filter_var( $provider_data[ self::PROVIDER_DATA_KEY ] ?? false, FILTER_VALIDATE_BOOLEAN ) );
+		return new self(
+			filter_var( $provider_data[ self::PROVIDER_DATA_KEY ] ?? false, FILTER_VALIDATE_BOOLEAN ),
+			filter_var( $provider_data[ self::SAVE_TO_PLATFORM_PROVIDER_DATA_KEY ] ?? false, FILTER_VALIDATE_BOOLEAN )
+		);
+	}
+
+	/**
+	 * Create provider data from the WooPay save-user opt-in.
+	 *
+	 * @param bool $save_user_in_woopay Whether the shopper opted to save their details in WooPay.
+	 * @return array<string,bool>
+	 */
+	public static function provider_data_from_save_user_value( bool $save_user_in_woopay ): array {
+		return array(
+			self::SAVE_TO_PLATFORM_PROVIDER_DATA_KEY => $save_user_in_woopay,
+		);
 	}
 
 	/**
@@ -81,6 +110,10 @@ class WooPaymentsPlatformPaymentMethodContext {
 	public function apply_to_request_data( array $request_data ): array {
 		if ( $this->is_platform_payment_method() ) {
 			$request_data['is_platform_payment_method'] = true;
+		}
+
+		if ( $this->save_payment_method_to_platform ) {
+			$request_data[ self::SAVE_TO_PLATFORM_PROVIDER_DATA_KEY ] = true;
 		}
 
 		return $request_data;

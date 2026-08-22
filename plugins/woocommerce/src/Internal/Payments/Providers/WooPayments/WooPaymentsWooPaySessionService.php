@@ -1633,6 +1633,20 @@ class WooPaymentsWooPaySessionService {
 	/**
 	 * Tell whether the shopper opted to save their details in WooPay.
 	 *
+	 * Reads the posted save_user_in_woopay field or the stored WooPay session flag —
+	 * the same pair the plugin's WooPay_Utilities::should_save_platform_customer() checks.
+	 *
+	 * @return bool
+	 *
+	 * @since 11.0.0
+	 */
+	public function should_save_user_in_woopay(): bool {
+		return $this->get_woopay_save_user_flag();
+	}
+
+	/**
+	 * Tell whether the shopper opted to save their details in WooPay.
+	 *
 	 * @return bool
 	 */
 	private function get_woopay_save_user_flag(): bool {

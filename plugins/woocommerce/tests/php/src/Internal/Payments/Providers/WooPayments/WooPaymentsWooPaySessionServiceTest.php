@@ -1762,6 +1762,23 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should read the WooPay save-user opt-in from the posted field or the WooPay session.
+	 */
+	public function test_should_save_user_in_woopay_reads_posted_and_session_flags(): void {
+		$sut = $this->create_service();
+
+		$this->assertFalse( $sut->should_save_user_in_woopay() );
+
+		$_POST['save_user_in_woopay'] = 'true';
+		$this->assertTrue( $sut->should_save_user_in_woopay() );
+		unset( $_POST['save_user_in_woopay'] );
+
+		WC()->session->set( 'woopay-user-data', array( 'save_user_in_woopay' => 'true' ) );
+		$this->assertTrue( $sut->should_save_user_in_woopay() );
+		WC()->session->set( 'woopay-user-data', null );
+	}
+
+	/**
 	 * Simulate an inbound WooPay Store API request.
 	 */
 	private function simulate_woopay_store_api_request(): void {

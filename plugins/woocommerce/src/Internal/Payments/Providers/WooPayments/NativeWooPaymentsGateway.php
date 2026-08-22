@@ -146,6 +146,13 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	private WooPaymentsCheckoutBridge $checkout_bridge;
 
 	/**
+	 * WooPay session service.
+	 *
+	 * @var WooPaymentsWooPaySessionService
+	 */
+	private WooPaymentsWooPaySessionService $woopay_session_service;
+
+	/**
 	 * Native WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
@@ -1752,6 +1759,19 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
+	 * Get the WooPay session service.
+	 *
+	 * @return WooPaymentsWooPaySessionService
+	 */
+	private function get_woopay_session_service(): WooPaymentsWooPaySessionService {
+		if ( ! isset( $this->woopay_session_service ) ) {
+			$this->woopay_session_service = wc_get_container()->get( WooPaymentsWooPaySessionService::class );
+		}
+
+		return $this->woopay_session_service;
+	}
+
+	/**
 	 * Get the WooPayments checkout bridge.
 	 *
 	 * @return WooPaymentsCheckoutBridge
@@ -2406,8 +2426,19 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	private function get_checkout_provider_data( bool $is_subscription_change = false ): array {
 		$cvc_key = 'wc-' . $this->id . '-payment-cvc-confirmation';
 
+		$save_user_in_woopay = $this->get_woopay_session_service()->should_save_user_in_woopay();
+		if ( $save_user_in_woopay ) {
+			/**
+			 * Fires when the customer opts to save their account with WooPay.
+			 *
+			 * @since 11.0.0
+			 */
+			do_action( 'woocommerce_payments_save_user_in_woopay' );
+		}
+
 		$provider_data = array_merge(
 			WooPaymentsPlatformPaymentMethodContext::provider_data_from_checkout_value( $this->sanitize_post_string( WooPaymentsPlatformPaymentMethodContext::CHECKOUT_FIELD ) ),
+			WooPaymentsPlatformPaymentMethodContext::provider_data_from_save_user_value( $save_user_in_woopay ),
 			WooPaymentsExpressPaymentMethodTypes::provider_data_from_checkout_value( $this->sanitize_post_string( WooPaymentsExpressPaymentMethodTypes::CHECKOUT_FIELD ) ),
 			WooPaymentsExpressPaymentMethodTypes::provider_context_from_checkout_value( $this->sanitize_post_string( WooPaymentsExpressPaymentMethodTypes::CONTEXT_FIELD ) ),
 			array(
