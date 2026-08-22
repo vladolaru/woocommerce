@@ -322,6 +322,8 @@ class WooPaymentsProviderGatewayAdapter {
 			return $this->missing_payment_credential_outcome();
 		}
 
+		$this->assert_total_meets_cached_platform_minimum( $order );
+
 		$customer_id  = $this->customer_service->get_or_create_customer_id_for_order( $order );
 		$request_data = $this->request_builder->charge_request_data( $context, $payment_credential, $customer_id, $is_recurring );
 
@@ -343,6 +345,43 @@ class WooPaymentsProviderGatewayAdapter {
 		);
 
 		return $outcome->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $result, $is_recurring ) );
+	}
+
+	/**
+	 * Fail a sub-minimum charge before the API call using the cached platform floor.
+	 *
+	 * Mirrors the plugin's pre-flight check: once the platform has reported a
+	 * per-currency minimum, later attempts below it fail locally with the same
+	 * shopper message instead of burning another provider round trip.
+	 *
+	 * @param WC_Order $order Order object.
+	 * @throws WooPaymentsApiException When the order total is below the cached platform minimum.
+	 */
+	private function assert_total_meets_cached_platform_minimum( WC_Order $order ): void {
+		$currency       = (string) $order->get_currency();
+		$minimum_amount = WooPaymentsCurrencyUtils::get_cached_minimum_amount( $currency );
+		if ( null === $minimum_amount ) {
+			return;
+		}
+
+		$converted_amount = $this->order_data_service->prepare_amount( (float) $order->get_total(), $currency );
+		if ( $minimum_amount <= $converted_amount ) {
+			return;
+		}
+
+		// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Message is rendered store copy, consumed as structured application data.
+		throw new WooPaymentsApiException(
+			WooPaymentsErrorMessages::get_amount_too_small_message( $minimum_amount, $currency ),
+			'amount_too_small',
+			400,
+			'',
+			'',
+			array(
+				'minimum_amount' => $minimum_amount,
+				'currency'       => $currency,
+			)
+		);
+		// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	}
 
 	/**

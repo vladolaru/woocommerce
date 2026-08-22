@@ -408,6 +408,104 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Native charge fails before the API call when the order total is below the cached platform minimum.
+	 */
+	public function test_charge_fails_preflight_below_cached_platform_minimum(): void {
+		delete_transient( 'wcpay_minimum_amount_usd' );
+		set_transient( 'wcpay_minimum_amount_usd', 100, DAY_IN_SECONDS );
+
+		$order      = $this->create_woopayments_order( '0.50' );
+		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ) );
+		$api_client = new class() extends WooPaymentsApiClient {
+			/**
+			 * Create and confirm a payment intention.
+			 *
+			 * @param array<string,mixed> $request_data Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
+				throw new \RuntimeException( 'A sub-minimum charge must not reach the platform.' );
+			}
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+		};
+
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+		$customer_service->expects( $this->never() )
+			->method( 'get_or_create_customer_id_for_order' );
+
+		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, null, $this->create_account_service( true ) );
+		$outcome = $sut->charge( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_request' ), 'key_charge' );
+		$data    = $outcome->get_data();
+
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( 'amount_too_small', $data[ PaymentOutcome::DATA_ERROR_CODE ] );
+		$this->assertSame( 'The selected payment method requires a total amount of at least $1.00.', $data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? null );
+		$this->assertSame( 0, $gateway->processed_order_id );
+
+		delete_transient( 'wcpay_minimum_amount_usd' );
+	}
+
+	/**
+	 * @testdox Native charge proceeds to the API when the order total meets the cached platform minimum.
+	 */
+	public function test_charge_proceeds_when_total_meets_cached_platform_minimum(): void {
+		delete_transient( 'wcpay_minimum_amount_usd' );
+		set_transient( 'wcpay_minimum_amount_usd', 50, DAY_IN_SECONDS );
+
+		$order      = $this->create_woopayments_order( '0.50' );
+		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ) );
+		$api_client = new class() extends WooPaymentsApiClient {
+			/**
+			 * Create and confirm a payment intention.
+			 *
+			 * @param array<string,mixed> $request_data Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
+				return array(
+					'id'     => 'pi_min_ok',
+					'status' => 'succeeded',
+				);
+			}
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+		};
+
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_native' );
+
+		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, null, $this->create_account_service( true ) );
+		$outcome = $sut->charge( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_request' ), 'key_charge' );
+
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+
+		delete_transient( 'wcpay_minimum_amount_usd' );
+	}
+
+	/**
 	 * @testdox Native charge defers settlement exchange-rate metadata to its effect plan.
 	 */
 	public function test_native_charge_defers_settlement_exchange_rate_meta_to_effect_plan(): void {
