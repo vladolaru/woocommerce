@@ -12,6 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIp
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
 use WC_Data_Store;
 use WC_Order;
@@ -40,6 +41,8 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'wcpay_test_mode' );
 		delete_option( 'WPLANG' );
 		delete_option( '_wcpay_feature_customer_multi_currency' );
+		delete_option( 'wcpay_multi_currency_enabled_currencies' );
+		delete_option( MultiCurrencyCacheInterface::CURRENCIES_KEY );
 		delete_option( 'wcpay_instant_deposits_previously_eligible' );
 		delete_option( 'wcpay_post_kyc_activation_email_sent_stages' );
 		delete_option( 'wcpay_post_kyc_activation_emails_scheduled' );
@@ -356,6 +359,71 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		$service->register();
 
 		update_option( 'WPLANG', 'de_DE' );
+	}
+
+	/**
+	 * @testdox Should auto-enable the currencies a newly enabled payment method requires.
+	 */
+	public function test_settings_save_auto_adds_currencies_for_enabled_methods(): void {
+		update_option( '_wcpay_feature_customer_multi_currency', '1' );
+		update_option(
+			MultiCurrencyCacheInterface::CURRENCIES_KEY,
+			array(
+				'data'               => array(
+					'currencies' => array( 'eur' => 0.9 ),
+					'updated'    => 123456,
+				),
+				'fetched'            => time(),
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			),
+			false
+		);
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) );
+
+		$account_service = $this->create_account_service(
+			array(
+				'account_id'       => 'acct_native_test',
+				'country'          => 'US',
+				'store_currencies' => array( 'default' => 'usd' ),
+			)
+		);
+		$service         = $this->create_service( new StaticNativeRuntimeArbiter( true ), new RecordingActionSchedulerService(), null, $account_service );
+		$service->register();
+
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card', 'ideal' ) ) );
+
+		$enabled_currencies = get_option( 'wcpay_multi_currency_enabled_currencies' );
+		$this->assertIsArray( $enabled_currencies );
+		$this->assertContains( 'EUR', $enabled_currencies, 'Enabling iDEAL must auto-enable its EUR requirement.' );
+	}
+
+	/**
+	 * @testdox Should leave the enabled currencies untouched when Multi-Currency is disabled.
+	 */
+	public function test_settings_save_does_not_touch_currencies_when_multi_currency_disabled(): void {
+		update_option( '_wcpay_feature_customer_multi_currency', '0' );
+		update_option(
+			MultiCurrencyCacheInterface::CURRENCIES_KEY,
+			array(
+				'data'               => array(
+					'currencies' => array( 'eur' => 0.9 ),
+					'updated'    => 123456,
+				),
+				'fetched'            => time(),
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			),
+			false
+		);
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) );
+
+		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ), new RecordingActionSchedulerService(), null, $this->create_account_service( array( 'account_id' => 'acct_native_test' ) ) );
+		$service->register();
+
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card', 'ideal' ) ) );
+
+		$this->assertFalse( get_option( 'wcpay_multi_currency_enabled_currencies' ), 'Disabled Multi-Currency must not gain enabled currencies.' );
 	}
 
 	/**
@@ -1093,6 +1161,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		remove_action( 'after_switch_theme', array( $service, 'schedule_compatibility_data_update' ) );
 		remove_action( 'action_scheduler_ensure_recurring_actions', array( $service, 'schedule_recurring_actions' ) );
 		remove_action( 'updated_option', array( $service, 'handle_site_language_update' ) );
+		remove_action( 'update_option_woocommerce_woocommerce_payments_settings', array( $service, 'maybe_add_missing_currencies' ) );
 		remove_filter( 'woocommerce_email_classes', array( $service, 'add_post_kyc_activation_email' ) );
 		remove_filter( 'woocommerce_email_classes', array( $service, 'add_ipp_receipt_email' ) );
 	}

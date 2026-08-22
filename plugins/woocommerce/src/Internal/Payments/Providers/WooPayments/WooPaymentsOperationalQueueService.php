@@ -10,8 +10,10 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Admin\Notes\DataStore as NotesDataStore;
 use Automattic\WooCommerce\Admin\Notes\Notes;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -260,6 +262,80 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 		add_action( 'after_switch_theme', array( $this, 'schedule_compatibility_data_update' ) );
 		add_action( 'action_scheduler_ensure_recurring_actions', array( $this, 'schedule_recurring_actions' ) );
 		add_action( 'updated_option', array( $this, 'handle_site_language_update' ), 10, 3 );
+		add_action( 'update_option_' . WooPaymentsSettingsService::SETTINGS_OPTION, array( $this, 'maybe_add_missing_currencies' ) );
+	}
+
+	/**
+	 * Auto-enable the Multi-Currency currencies required by enabled payment methods.
+	 *
+	 * Mirrors the plugin's WC_Payments_Currency_Manager::maybe_add_missing_currencies(): without it, enabling a currency-restricted method such as iDEAL (EUR) leaves the required currency disabled, so the method is marked enabled but never offered at checkout.
+	 */
+	public function maybe_add_missing_currencies(): void {
+		if ( '1' !== (string) get_option( '_wcpay_feature_customer_multi_currency', '1' ) ) {
+			return;
+		}
+
+		$needed_codes = $this->get_enabled_payment_method_currency_codes();
+		if ( empty( $needed_codes ) ) {
+			return;
+		}
+
+		$state_builder = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )->create();
+		$state         = $state_builder->build();
+		$available     = $state->get_available_currencies();
+		$enabled       = $state->get_enabled_currencies();
+
+		$missing_codes = array();
+		foreach ( $needed_codes as $currency_code ) {
+			if ( isset( $available[ $currency_code ] ) && ! isset( $enabled[ $currency_code ] ) ) {
+				$missing_codes[] = $currency_code;
+			}
+		}
+
+		if ( empty( $missing_codes ) ) {
+			return;
+		}
+
+		update_option( 'wcpay_multi_currency_enabled_currencies', array_values( array_unique( array_merge( array_keys( $enabled ), $missing_codes ) ) ) );
+		$state_builder->reset();
+	}
+
+	/**
+	 * Get the currency codes the enabled payment methods are restricted to.
+	 *
+	 * A method with no currency restriction contributes nothing; domestic-only methods require the account's default currency, like the plugin's per-method currency resolution.
+	 *
+	 * @return string[]
+	 */
+	private function get_enabled_payment_method_currency_codes(): array {
+		$settings    = $this->get_gateway_settings();
+		$enabled_ids = is_array( $settings['upe_enabled_payment_method_ids'] ?? null ) ? $settings['upe_enabled_payment_method_ids'] : array();
+		$registry    = wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class );
+		$country     = $this->account_service->get_account_country();
+		$codes       = array();
+
+		foreach ( $enabled_ids as $payment_method_id ) {
+			if ( ! is_string( $payment_method_id ) || in_array( $payment_method_id, array( 'card', 'card_present', 'link' ), true ) ) {
+				continue;
+			}
+
+			$definition = $registry->get( $payment_method_id );
+			if ( null === $definition ) {
+				continue;
+			}
+
+			if ( in_array( WooPaymentsPaymentMethodRegistry::DOMESTIC_TRANSACTIONS_ONLY, $definition->get_capabilities(), true ) ) {
+				$codes[] = strtoupper( $this->account_service->get_account_default_currency() );
+				continue;
+			}
+
+			$currencies = $definition->get_supported_currencies( '' !== $country ? $country : null );
+			foreach ( $currencies as $currency_code ) {
+				$codes[] = strtoupper( (string) $currency_code );
+			}
+		}
+
+		return array_values( array_unique( array_filter( $codes ) ) );
 	}
 
 	/**

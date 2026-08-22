@@ -25,7 +25,12 @@ class WooPaymentsPaymentMethodRegistry {
 
 	private const BUY_NOW_PAY_LATER = 'buy_now_pay_later';
 
-	private const DOMESTIC_TRANSACTIONS_ONLY = 'domestic_transactions_only';
+	/**
+	 * Capability marking a method as restricted to the account's domestic currency.
+	 *
+	 * Public so Multi-Currency reconciliation can honor the restriction when computing the currencies an enabled method requires.
+	 */
+	public const DOMESTIC_TRANSACTIONS_ONLY = 'domestic_transactions_only';
 
 	private const EXPRESS_CHECKOUT = 'express_checkout';
 
