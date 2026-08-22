@@ -757,6 +757,71 @@ class WooPaymentsRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should convert an unattributed account-update rejection into the legacy server_error body.
+	 */
+	public function test_update_native_settings_converts_account_update_rejection_to_server_error_body(): void {
+		$this->mock_settings_service
+			->expects( $this->once() )
+			->method( 'update_settings' )
+			->willReturn(
+				new WP_Error(
+					'woocommerce_woopayments_account_update_rejected',
+					'Error: The account update was rejected.',
+					array( 'status' => 400 )
+				)
+			);
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
+		$request->set_body_params(
+			array(
+				'account_business_name' => 'New Name',
+			)
+		);
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertSame( array( 'server_error' => 'Error: The account update was rejected.' ), $response->get_data() );
+	}
+
+	/**
+	 * @testdox Should pass a field-attributed platform rejection through as the standard error envelope.
+	 */
+	public function test_update_native_settings_passes_attributed_platform_rejection_through(): void {
+		$this->mock_settings_service
+			->expects( $this->once() )
+			->method( 'update_settings' )
+			->willReturn(
+				new WP_Error(
+					'wcpay_server_error',
+					'Invalid parameter(s): account_statement_descriptor',
+					array(
+						'status'  => 400,
+						'params'  => array( 'account_statement_descriptor' => 'Error: Invalid statement descriptor.' ),
+						'details' => array(
+							'account_statement_descriptor' => array(
+								'code'    => 'invalid_request_error',
+								'message' => 'Error: Invalid statement descriptor.',
+								'data'    => null,
+							),
+						),
+					)
+				)
+			);
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
+		$request->set_body_params(
+			array(
+				'account_statement_descriptor' => 'VALID STORE',
+			)
+		);
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertSame( 'wcpay_server_error', $response->get_data()['code'] );
+		$this->assertSame( 'Error: Invalid statement descriptor.', $response->get_data()['data']['details']['account_statement_descriptor']['message'] );
+	}
+
+	/**
 	 * @testdox Should reject a malformed support phone before settings persistence.
 	 */
 	public function test_update_native_settings_rejects_malformed_support_phone(): void {

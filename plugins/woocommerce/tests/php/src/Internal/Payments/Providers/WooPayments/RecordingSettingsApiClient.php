@@ -41,6 +41,13 @@ class RecordingSettingsApiClient extends WooPaymentsApiClient {
 	public ?WooPaymentsApiException $latest_fraud_ruleset_exception = null;
 
 	/**
+	 * Account update exception.
+	 *
+	 * @var WooPaymentsApiException|null
+	 */
+	public ?WooPaymentsApiException $update_account_exception = null;
+
+	/**
 	 * Latest fraud ruleset request count.
 	 *
 	 * @var int
@@ -121,9 +128,14 @@ class RecordingSettingsApiClient extends WooPaymentsApiClient {
 	 *
 	 * @param array<string,mixed> $account_settings Account settings.
 	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the test fixture is configured to fail.
 	 */
 	public function update_account( array $account_settings ): array {
 		$this->last_account_settings = $account_settings;
+
+		if ( $this->update_account_exception instanceof WooPaymentsApiException ) {
+			throw $this->update_account_exception;
+		}
 
 		return $account_settings;
 	}

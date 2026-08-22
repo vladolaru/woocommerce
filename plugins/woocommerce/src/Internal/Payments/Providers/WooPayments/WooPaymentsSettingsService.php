@@ -171,6 +171,18 @@ class WooPaymentsSettingsService {
 	);
 
 	/**
+	 * Settings fields whose platform rejections the settings UI can render inline under the field.
+	 *
+	 * Mirrors the WooPayments plugin's INLINE_ERROR_SETTING_KEYS.
+	 */
+	private const INLINE_ERROR_SETTING_KEYS = array(
+		'account_statement_descriptor',
+		'account_business_support_email',
+		'account_business_support_phone',
+		'account_communications_email',
+	);
+
+	/**
 	 * Sanitization type for each account setting request key.
 	 *
 	 * The shipping WooPayments client validates these per field at the REST boundary;
@@ -1250,7 +1262,11 @@ class WooPaymentsSettingsService {
 				$this->api_client->update_account( $account_settings );
 				$this->account_service->refresh_account_data();
 			}
+		} catch ( WooPaymentsApiException $e ) {
+			return $this->account_update_exception_to_wp_error( $e );
+		}
 
+		try {
 			$fraud_settings = $this->get_changed_fraud_settings( $params );
 			if ( null !== $fraud_settings ) {
 				$this->api_client->save_fraud_ruleset( $fraud_settings['ruleset_config'] );
@@ -1870,6 +1886,49 @@ class WooPaymentsSettingsService {
 			$exception->get_error_code(),
 			$exception->getMessage(),
 			array( 'status' => $exception->get_http_code() )
+		);
+	}
+
+	/**
+	 * Convert a platform account-update rejection into the error shape the settings UI consumes.
+	 *
+	 * The platform names the rejected account field in the error's `param`. When that field has an inline error slot in the settings UI, emit the plugin's `wcpay_server_error` envelope so the message renders under the field; otherwise mark the error for the legacy `server_error` body the REST controller emits.
+	 *
+	 * @param WooPaymentsApiException $exception API exception from the account update.
+	 * @return WP_Error
+	 */
+	private function account_update_exception_to_wp_error( WooPaymentsApiException $exception ): WP_Error {
+		$param       = $exception->get_error_data()['param'] ?? null;
+		$setting_key = is_string( $param ) && '' !== $param
+			? array_search( $param, self::ACCOUNT_SETTING_MAP, true )
+			: false;
+
+		if ( false === $setting_key || ! in_array( $setting_key, self::INLINE_ERROR_SETTING_KEYS, true ) ) {
+			return new WP_Error(
+				'woocommerce_woopayments_account_update_rejected',
+				$exception->getMessage(),
+				array( 'status' => 400 )
+			);
+		}
+
+		return new WP_Error(
+			'wcpay_server_error',
+			sprintf(
+				/* translators: %s: settings field key, e.g. account_business_support_phone. */
+				__( 'Invalid parameter(s): %s', 'woocommerce' ),
+				$setting_key
+			),
+			array(
+				'status'  => 400,
+				'params'  => array( $setting_key => $exception->getMessage() ),
+				'details' => array(
+					$setting_key => array(
+						'code'    => $exception->get_error_code(),
+						'message' => $exception->getMessage(),
+						'data'    => null,
+					),
+				),
+			)
 		);
 	}
 

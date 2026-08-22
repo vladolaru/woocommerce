@@ -2489,6 +2489,11 @@ class WooPaymentsApiClient {
 				$error_code = $error_type;
 			}
 
+			// The platform identifies the request field that caused an account-update rejection in error.param; the code/message/data shape already rides in via the top-level data payload.
+			if ( isset( $error['param'] ) && is_string( $error['param'] ) ) {
+				$error_data['param'] = $error['param'];
+			}
+
 			if ( 'amount_too_large' === $error_code && 'requires_capture' === $payment_intent_status ) {
 				// The plugin redacts the raw API message so the merchant is not prompted to
 				// contact support when over-capturing an authorized amount.

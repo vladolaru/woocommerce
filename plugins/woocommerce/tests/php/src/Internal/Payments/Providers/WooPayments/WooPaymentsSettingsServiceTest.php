@@ -1329,6 +1329,69 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should surface the platform-rejected field as an inline error envelope for inline-capable settings.
+	 */
+	public function test_update_settings_surfaces_platform_param_for_inline_error_fields(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'account_statement_descriptor' => 'OLD STORE' ) );
+		$this->api_client->update_account_exception = new WooPaymentsApiException(
+			'Error: Invalid statement descriptor.',
+			'invalid_request_error',
+			400,
+			'',
+			'',
+			array( 'param' => 'statement_descriptor' )
+		);
+
+		$result = $this->sut->update_settings( array( 'account_statement_descriptor' => 'NATIVE STORE' ) );
+
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertSame( 'wcpay_server_error', $result->get_error_code() );
+		$this->assertSame( 'Invalid parameter(s): account_statement_descriptor', $result->get_error_message() );
+		$data = $result->get_error_data();
+		$this->assertSame( 400, $data['status'] );
+		$this->assertSame( 'Error: Invalid statement descriptor.', $data['params']['account_statement_descriptor'] );
+		$this->assertSame( 'invalid_request_error', $data['details']['account_statement_descriptor']['code'] );
+		$this->assertSame( 'Error: Invalid statement descriptor.', $data['details']['account_statement_descriptor']['message'] );
+	}
+
+	/**
+	 * @testdox Should mark a platform rejection without an inline-capable field for the legacy server_error shape.
+	 * @dataProvider provider_unmapped_platform_rejections
+	 *
+	 * @param array<string,mixed> $error_data Platform error data carried by the exception.
+	 */
+	public function test_update_settings_marks_unmapped_platform_rejection_for_server_error_shape( array $error_data ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'account_business_name' => 'Old Name' ) );
+		$this->api_client->update_account_exception = new WooPaymentsApiException(
+			'Error: The account update was rejected.',
+			'invalid_request_error',
+			400,
+			'',
+			'',
+			$error_data
+		);
+
+		$result = $this->sut->update_settings( array( 'account_business_name' => 'New Name' ) );
+
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertSame( 'woocommerce_woopayments_account_update_rejected', $result->get_error_code() );
+		$this->assertSame( 'Error: The account update was rejected.', $result->get_error_message() );
+		$this->assertSame( 400, $result->get_error_data()['status'] );
+	}
+
+	/**
+	 * Platform rejections that cannot be attributed to an inline-capable settings field.
+	 *
+	 * @return array<string,array{array<string,mixed>}>
+	 */
+	public function provider_unmapped_platform_rejections(): array {
+		return array(
+			'param without an inline slot' => array( array( 'param' => 'business_name' ) ),
+			'no param at all'              => array( array() ),
+		);
+	}
+
+	/**
 	 * @testdox Should sanitize persisted account setting fields by their field type.
 	 */
 	public function test_update_settings_sanitizes_account_setting_fields_by_type(): void {

@@ -1552,6 +1552,11 @@ class WooPaymentsRestController extends RestApiControllerBase {
 	protected function update_native_settings( WP_REST_Request $request ) {
 		$result = $this->get_settings_service()->update_settings( $request->get_params() );
 		if ( is_wp_error( $result ) ) {
+			// A platform account-update rejection with no inline-capable field uses the plugin's legacy body shape, which the settings UI reads from the server_error key.
+			if ( 'woocommerce_woopayments_account_update_rejected' === $result->get_error_code() ) {
+				return new WP_REST_Response( array( 'server_error' => $result->get_error_message() ), 400 );
+			}
+
 			return $result;
 		}
 

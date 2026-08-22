@@ -504,6 +504,24 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should capture the error-object param so account-field rejections keep their attribution.
+	 */
+	public function test_api_error_captures_error_object_param(): void {
+		$exception = $this->capture_api_error(
+			array(
+				'error' => array(
+					'code'    => 'invalid_request_error',
+					'message' => 'Invalid statement descriptor.',
+					'param'   => 'statement_descriptor',
+				),
+			)
+		);
+
+		$this->assertSame( 'invalid_request_error', $exception->get_error_code() );
+		$this->assertSame( 'statement_descriptor', $exception->get_error_data()['param'] );
+	}
+
+	/**
 	 * @testdox Should preserve the failed payment intent id and the card_declined seller message from the error envelope.
 	 */
 	public function test_api_error_preserves_intent_id_and_seller_message(): void {
