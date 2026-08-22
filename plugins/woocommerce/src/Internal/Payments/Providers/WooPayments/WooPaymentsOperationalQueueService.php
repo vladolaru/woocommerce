@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Admin\Notes\Notes;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
 use WC_Order;
@@ -258,6 +259,31 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 		add_filter( 'woocommerce_email_classes', array( $this, 'add_ipp_receipt_email' ), 10, 1 );
 		add_action( 'after_switch_theme', array( $this, 'schedule_compatibility_data_update' ) );
 		add_action( 'action_scheduler_ensure_recurring_actions', array( $this, 'schedule_recurring_actions' ) );
+		add_action( 'updated_option', array( $this, 'handle_site_language_update' ), 10, 3 );
+	}
+
+	/**
+	 * Propagate a site-language change to the connected account's locale.
+	 *
+	 * Mirrors the plugin's possibly_update_wcpay_account_locale(): platform-generated merchant emails and hosted pages render in the account locale, which otherwise never follows WPLANG.
+	 *
+	 * @param string $option_name Updated option name.
+	 * @param mixed  $old_value   Previous option value.
+	 * @param mixed  $new_value   New option value.
+	 */
+	public function handle_site_language_update( $option_name, $old_value, $new_value ): void {
+		unset( $old_value );
+
+		if ( 'WPLANG' !== $option_name || ! $this->account_service->has_account() ) {
+			return;
+		}
+
+		try {
+			$this->api_client->update_account( array( 'locale' => is_string( $new_value ) && '' !== $new_value ? $new_value : 'en_US' ) );
+			$this->account_service->refresh_account_data();
+		} catch ( WooPaymentsApiException $exception ) {
+			$this->log_exception( 'Failed to propagate the site language to the WooPayments account locale.', $exception );
+		}
 	}
 
 	/**

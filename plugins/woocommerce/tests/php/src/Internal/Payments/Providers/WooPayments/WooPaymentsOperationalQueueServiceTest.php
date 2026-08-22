@@ -38,6 +38,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		}
 
 		remove_all_filters( 'wcpay_test_mode' );
+		delete_option( 'WPLANG' );
 		delete_option( '_wcpay_feature_customer_multi_currency' );
 		delete_option( 'wcpay_instant_deposits_previously_eligible' );
 		delete_option( 'wcpay_post_kyc_activation_email_sent_stages' );
@@ -309,6 +310,52 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 			->willReturn( array( 'result' => 'success' ) );
 
 		$this->create_service( new StaticNativeRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, null, null, $settings_service )->handle_wcpay_store_setup_sync();
+	}
+
+	/**
+	 * @testdox Should propagate a site-language change to the connected account's locale.
+	 */
+	public function test_site_language_change_propagates_locale_to_account(): void {
+		update_option( 'WPLANG', '' );
+		$api_client = $this->create_api_client( array( 'update_account' ) );
+		$api_client->expects( $this->once() )
+			->method( 'update_account' )
+			->with( array( 'locale' => 'de_DE' ) )
+			->willReturn( array() );
+		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $this->create_account_service( array( 'account_id' => 'acct_native_test' ) ) );
+		$service->register();
+
+		update_option( 'WPLANG', 'de_DE' );
+	}
+
+	/**
+	 * @testdox Should send the en_US locale fallback when the site language is reset to the default.
+	 */
+	public function test_site_language_reset_sends_default_locale(): void {
+		update_option( 'WPLANG', 'de_DE' );
+		$api_client = $this->create_api_client( array( 'update_account' ) );
+		$api_client->expects( $this->once() )
+			->method( 'update_account' )
+			->with( array( 'locale' => 'en_US' ) )
+			->willReturn( array() );
+		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $this->create_account_service( array( 'account_id' => 'acct_native_test' ) ) );
+		$service->register();
+
+		update_option( 'WPLANG', '' );
+	}
+
+	/**
+	 * @testdox Should not contact the platform for a language change without a connected account.
+	 */
+	public function test_site_language_change_without_account_skips_platform(): void {
+		update_option( 'WPLANG', '' );
+		$api_client = $this->create_api_client( array( 'update_account' ) );
+		$api_client->expects( $this->never() )
+			->method( 'update_account' );
+		$service = $this->create_service( new StaticNativeRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $this->create_account_service( array() ) );
+		$service->register();
+
+		update_option( 'WPLANG', 'de_DE' );
 	}
 
 	/**
@@ -1045,6 +1092,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		remove_action( 'woocommerce_payments_account_refreshed', array( $service, 'maybe_record_kyc_completion_date' ) );
 		remove_action( 'after_switch_theme', array( $service, 'schedule_compatibility_data_update' ) );
 		remove_action( 'action_scheduler_ensure_recurring_actions', array( $service, 'schedule_recurring_actions' ) );
+		remove_action( 'updated_option', array( $service, 'handle_site_language_update' ) );
 		remove_filter( 'woocommerce_email_classes', array( $service, 'add_post_kyc_activation_email' ) );
 		remove_filter( 'woocommerce_email_classes', array( $service, 'add_ipp_receipt_email' ) );
 	}
