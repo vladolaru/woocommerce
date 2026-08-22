@@ -799,6 +799,11 @@ class WooPaymentsRestController extends RestApiControllerBase {
 				'required'          => false,
 				'validate_callback' => array( $this, 'validate_communications_email' ),
 			),
+			'account_business_support_email'       => array(
+				'type'              => 'string',
+				'required'          => false,
+				'validate_callback' => array( $this, 'validate_business_support_email' ),
+			),
 		);
 
 		foreach (
@@ -830,7 +835,6 @@ class WooPaymentsRestController extends RestApiControllerBase {
 				'account_statement_descriptor_kana',
 				'account_business_name',
 				'account_business_url',
-				'account_business_support_email',
 				'account_branding_logo',
 				'account_branding_icon',
 				'account_branding_primary_color',
@@ -979,6 +983,33 @@ class WooPaymentsRestController extends RestApiControllerBase {
 		}
 
 		if ( ! is_email( $value ) ) {
+			return new WP_Error(
+				'rest_invalid_pattern',
+				__( 'Error: Invalid email address: ', 'woocommerce' ) . $value
+			);
+		}
+
+		return true;
+	}
+
+	/**
+	 * Validate the business support email with the WooPayments plugin's rules.
+	 *
+	 * Unlike the communications email, an empty support email is allowed.
+	 *
+	 * @param mixed           $value   Support email value.
+	 * @param WP_REST_Request $request Request.
+	 * @param string          $param   Parameter name.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return true|WP_Error
+	 */
+	public function validate_business_support_email( $value, WP_REST_Request $request, string $param ) {
+		$validation = rest_validate_request_arg( $value, $request, $param );
+		if ( true !== $validation ) {
+			return $validation;
+		}
+
+		if ( '' !== $value && ! is_email( $value ) ) {
 			return new WP_Error(
 				'rest_invalid_pattern',
 				__( 'Error: Invalid email address: ', 'woocommerce' ) . $value

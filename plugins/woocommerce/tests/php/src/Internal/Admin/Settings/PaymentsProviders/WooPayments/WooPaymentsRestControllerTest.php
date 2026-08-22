@@ -822,6 +822,46 @@ class WooPaymentsRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should reject a malformed business support email but accept an empty one.
+	 */
+	public function test_update_native_settings_validates_business_support_email(): void {
+		$this->mock_settings_service
+			->expects( $this->never() )
+			->method( 'update_settings' );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
+		$request->set_body_params(
+			array(
+				'account_business_support_email' => 'not-an-email',
+			)
+		);
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertSame( 'rest_invalid_pattern', $response->get_data()['data']['details']['account_business_support_email']['code'] );
+	}
+
+	/**
+	 * @testdox Should accept an empty business support email.
+	 */
+	public function test_update_native_settings_accepts_empty_business_support_email(): void {
+		$this->mock_settings_service
+			->expects( $this->once() )
+			->method( 'update_settings' )
+			->willReturn( array() );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
+		$request->set_body_params(
+			array(
+				'account_business_support_email' => '',
+			)
+		);
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 200, $response->get_status() );
+	}
+
+	/**
 	 * @testdox Should reject a malformed support phone before settings persistence.
 	 */
 	public function test_update_native_settings_rejects_malformed_support_phone(): void {
