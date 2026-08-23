@@ -428,16 +428,15 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	 */
 	private function map_customer_data_for_user( int $user_id ): array {
 		$customer = new WC_Customer( $user_id );
-		$user     = get_user_by( 'id', $user_id );
-		$name     = trim( $customer->get_first_name() . ' ' . $customer->get_last_name() );
+		$name     = trim( $customer->get_billing_first_name() . ' ' . $customer->get_billing_last_name() );
 
 		/* translators: 1: customer full name, 2: WordPress username. */
 		$description = sprintf( __( 'Name: %1$s, Username: %2$s', 'woocommerce' ), $name, $customer->get_username() );
 
-		return array(
+		$customer_data = array(
 			'name'        => $name,
 			'description' => $description,
-			'email'       => $user ? $user->user_email : $customer->get_email(),
+			'email'       => $customer->get_billing_email(),
 			'phone'       => $customer->get_billing_phone(),
 			'address'     => array(
 				'line1'       => $customer->get_billing_address_1(),
@@ -448,6 +447,22 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 				'country'     => $customer->get_billing_country(),
 			),
 		);
+
+		if ( '' !== $customer->get_shipping_postcode() ) {
+			$customer_data['shipping'] = array(
+				'name'    => trim( $customer->get_shipping_first_name() . ' ' . $customer->get_shipping_last_name() ),
+				'address' => array(
+					'line1'       => $customer->get_shipping_address_1(),
+					'line2'       => $customer->get_shipping_address_2(),
+					'postal_code' => $customer->get_shipping_postcode(),
+					'city'        => $customer->get_shipping_city(),
+					'state'       => $customer->get_shipping_state(),
+					'country'     => $customer->get_shipping_country(),
+				),
+			);
+		}
+
+		return $customer_data;
 	}
 
 	/**

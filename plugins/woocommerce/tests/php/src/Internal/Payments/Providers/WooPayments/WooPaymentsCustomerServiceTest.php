@@ -189,6 +189,75 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Customers created from a user should carry the billing identity and shipping address.
+	 */
+	public function test_customer_created_for_user_uses_billing_identity_and_shipping(): void {
+		$user_id = $this->factory->user->create(
+			array(
+				'first_name' => 'Account',
+				'last_name'  => 'Identity',
+				'user_email' => 'account@example.com',
+				'user_login' => 'apm-billing-identity',
+			)
+		);
+		update_user_meta( $user_id, 'billing_first_name', 'Billing' );
+		update_user_meta( $user_id, 'billing_last_name', 'Person' );
+		update_user_meta( $user_id, 'billing_email', 'billing@example.com' );
+		update_user_meta( $user_id, 'billing_phone', '+40123456789' );
+		update_user_meta( $user_id, 'billing_address_1', 'Strada Exemplu 1' );
+		update_user_meta( $user_id, 'billing_postcode', '010101' );
+		update_user_meta( $user_id, 'billing_city', 'Bucharest' );
+		update_user_meta( $user_id, 'billing_country', 'RO' );
+		update_user_meta( $user_id, 'shipping_first_name', 'Ship' );
+		update_user_meta( $user_id, 'shipping_last_name', 'Person' );
+		update_user_meta( $user_id, 'shipping_address_1', 'Strada Livrare 2' );
+		update_user_meta( $user_id, 'shipping_postcode', '020202' );
+		update_user_meta( $user_id, 'shipping_city', 'Cluj-Napoca' );
+		update_user_meta( $user_id, 'shipping_country', 'RO' );
+
+		$api_client = $this->create_customer_api_client( array( 'cus_apm' ) );
+		$sut        = $this->create_sut( false, $api_client );
+
+		$this->assertSame( 'cus_apm', $sut->get_or_create_customer_id_for_user( $user_id ) );
+
+		$payload = $api_client->created_customers[0];
+		$this->assertSame( 'Billing Person', $payload['name'], 'The provider customer must carry the billing name, not the account name.' );
+		$this->assertSame( 'billing@example.com', $payload['email'], 'The provider customer must carry the billing email, not the account email.' );
+		$this->assertSame( '+40123456789', $payload['phone'] );
+		$this->assertSame( 'Strada Exemplu 1', $payload['address']['line1'] );
+		$this->assertSame(
+			array(
+				'name'    => 'Ship Person',
+				'address' => array(
+					'line1'       => 'Strada Livrare 2',
+					'line2'       => '',
+					'postal_code' => '020202',
+					'city'        => 'Cluj-Napoca',
+					'state'       => '',
+					'country'     => 'RO',
+				),
+			),
+			$payload['shipping'],
+			'A shipping block must be sent when the customer has a shipping postcode.'
+		);
+	}
+
+	/**
+	 * @testdox Customers created from a user without a shipping postcode should omit the shipping block.
+	 */
+	public function test_customer_created_for_user_without_shipping_postcode_omits_shipping(): void {
+		$user_id = $this->factory->user->create( array( 'user_login' => 'apm-no-shipping' ) );
+		update_user_meta( $user_id, 'billing_first_name', 'Billing' );
+		update_user_meta( $user_id, 'billing_last_name', 'Person' );
+
+		$api_client = $this->create_customer_api_client( array( 'cus_apm_ns' ) );
+		$sut        = $this->create_sut( false, $api_client );
+		$sut->get_or_create_customer_id_for_user( $user_id );
+
+		$this->assertArrayNotHasKey( 'shipping', $api_client->created_customers[0] );
+	}
+
+	/**
 	 * @testdox Guest shoppers should use session storage for WooPayments customer IDs.
 	 */
 	public function test_get_or_create_customer_id_uses_session_storage_for_guests(): void {
