@@ -354,7 +354,41 @@ class WooPaymentsProviderGatewayAdapter {
 			$this->native_mapping_context( $result, $context, $payment_credential, $customer_id )
 		);
 
+		$this->maybe_add_customer_notification_note( $order, $result );
+
 		return $outcome->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $result, $is_recurring ) );
+	}
+
+	/**
+	 * Add the pre-debit approval note when the intent reports a pending customer notification.
+	 *
+	 * India RBI mandate flows confirm off-session charges only after the cardholder
+	 * approves a notification from their issuing bank; the intent's processing block
+	 * then names the approval deadline. The note is the merchant's only durable
+	 * explanation of why the order sits unpaid.
+	 *
+	 * @param WC_Order            $order  Order being charged.
+	 * @param array<string,mixed> $result Provider PaymentIntent response.
+	 */
+	private function maybe_add_customer_notification_note( WC_Order $order, array $result ): void {
+		$processing         = isset( $result['processing'] ) && is_array( $result['processing'] ) ? $result['processing'] : array();
+		$approval_requested = $processing['card']['customer_notification']['approval_requested'] ?? false;
+		$completes_at       = $processing['card']['customer_notification']['completes_at'] ?? null;
+		if ( ! $approval_requested || ! is_numeric( $completes_at ) ) {
+			return;
+		}
+
+		$attempt_date = wp_date( get_option( 'date_format', 'F j, Y' ), (int) $completes_at, wp_timezone() );
+		$attempt_time = wp_date( get_option( 'time_format', 'g:i a' ), (int) $completes_at, wp_timezone() );
+
+		$order->add_order_note(
+			sprintf(
+				/* translators: 1) date in date_format or 'F j, Y'; 2) time in time_format or 'g:i a' */
+				__( 'The customer must authorize this payment via a notification sent to them by the bank which issued their card. The authorization must be completed before %1$s at %2$s, when the charge will be attempted.', 'woocommerce' ),
+				$attempt_date,
+				$attempt_time
+			)
+		);
 	}
 
 	/**

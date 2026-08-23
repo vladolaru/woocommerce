@@ -996,6 +996,147 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Charge should add the pre-debit approval note when the intent reports a customer notification.
+	 */
+	public function test_charge_adds_customer_notification_note_for_pre_debit_approval(): void {
+		$order            = $this->create_woopayments_order( '50.00' );
+		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
+		$completes_at     = 1893510000;
+		$api_client       = new class( $completes_at ) extends WooPaymentsApiClient {
+			/**
+			 * Notification deadline.
+			 *
+			 * @var int
+			 */
+			private int $completes_at;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param int $completes_at Notification deadline.
+			 */
+			public function __construct( int $completes_at ) {
+				$this->completes_at = $completes_at;
+			}
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Create and confirm a payment intention.
+			 *
+			 * @param array<string,mixed> $request_data Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
+				unset( $request_data, $idempotency_key );
+
+				return array(
+					'id'             => 'pi_notification',
+					'status'         => 'processing',
+					'customer'       => 'cus_notification',
+					'payment_method' => 'pm_notification',
+					'currency'       => 'inr',
+					'processing'     => array(
+						'card' => array(
+							'customer_notification' => array(
+								'approval_requested' => true,
+								'completes_at'       => $this->completes_at,
+							),
+						),
+					),
+				);
+			}
+		};
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_notification' );
+
+		$sut = $this->create_adapter( $gateway, $api_client, $customer_service );
+		$sut->charge( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_notification' ), 'key_notification' );
+
+		$expected_note = sprintf(
+			'The customer must authorize this payment via a notification sent to them by the bank which issued their card. The authorization must be completed before %1$s at %2$s, when the charge will be attempted.',
+			wp_date( get_option( 'date_format', 'F j, Y' ), $completes_at, wp_timezone() ),
+			wp_date( get_option( 'time_format', 'g:i a' ), $completes_at, wp_timezone() )
+		);
+		$notes         = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+		$matching      = array_filter(
+			$notes,
+			static function ( $note ) use ( $expected_note ): bool {
+				return $expected_note === (string) $note->content;
+			}
+		);
+		$this->assertCount( 1, $matching );
+	}
+
+	/**
+	 * @testdox Charge should not add the pre-debit approval note without a requested approval.
+	 */
+	public function test_charge_skips_customer_notification_note_without_approval(): void {
+		$order            = $this->create_woopayments_order( '50.00' );
+		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
+		$api_client       = new class() extends WooPaymentsApiClient {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Create and confirm a payment intention.
+			 *
+			 * @param array<string,mixed> $request_data Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
+				unset( $request_data, $idempotency_key );
+
+				return array(
+					'id'             => 'pi_no_notification',
+					'status'         => 'processing',
+					'customer'       => 'cus_no_notification',
+					'payment_method' => 'pm_no_notification',
+					'currency'       => 'usd',
+					'processing'     => array(
+						'card' => array(),
+					),
+				);
+			}
+		};
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_no_notification' );
+
+		$sut = $this->create_adapter( $gateway, $api_client, $customer_service );
+		$sut->charge( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_no_notification' ), 'key_no_notification' );
+
+		$notes    = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+		$matching = array_filter(
+			$notes,
+			static function ( $note ): bool {
+				return false !== strpos( (string) $note->content, 'must authorize this payment via a notification' );
+			}
+		);
+		$this->assertCount( 0, $matching );
+	}
+
+	/**
 	 * @testdox Scheduled renewal charges should stay automatic when manual capture is enabled.
 	 */
 	public function test_charge_keeps_scheduled_renewal_capture_method_automatic_when_manual_capture_is_enabled(): void {
