@@ -1272,6 +1272,67 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox payment_intent.succeeded stamps review_allowed on an order held on-hold for review.
+	 */
+	public function test_payment_intent_succeeded_stamps_review_allowed_for_on_hold_order(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( 'on-hold' );
+		$order->save();
+
+		$this->sut->process(
+			$this->create_payment_intent_event(
+				'payment_intent.succeeded',
+				$order,
+				array(
+					'metadata' => array( 'fraud_outcome' => 'allow' ),
+					'charges'  => array(
+						'data' => array(
+							array(
+								'payment_method_details' => array( 'type' => 'card' ),
+							),
+						),
+					),
+				)
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'review_allowed', $order->get_meta( '_wcpay_fraud_meta_box_type', true ) );
+		$this->assertSame( 'allow', $order->get_meta( '_wcpay_fraud_outcome_status', true ) );
+	}
+
+	/**
+	 * @testdox payment_intent.succeeded keeps the plain allow stamp for orders not on hold.
+	 */
+	public function test_payment_intent_succeeded_keeps_allow_for_pending_order(): void {
+		$order = $this->create_woopayments_order();
+
+		$this->sut->process(
+			$this->create_payment_intent_event(
+				'payment_intent.succeeded',
+				$order,
+				array(
+					'metadata' => array( 'fraud_outcome' => 'allow' ),
+					'charges'  => array(
+						'data' => array(
+							array(
+								'payment_method_details' => array( 'type' => 'card' ),
+							),
+						),
+					),
+				)
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'allow', $order->get_meta( '_wcpay_fraud_meta_box_type', true ) );
+	}
+
+	/**
 	 * @testdox payment_intent.payment_failed marks the order failed.
 	 */
 	public function test_payment_intent_failed_marks_order_failed(): void {

@@ -176,6 +176,71 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Completed charge metadata stamps review_allowed when the order was held for review.
+	 */
+	public function test_completed_charge_meta_stamps_review_allowed_when_held_for_review(): void {
+		$intent = array(
+			'currency' => 'usd',
+			'metadata' => array( 'fraud_outcome' => 'allow' ),
+		);
+		$charge = array(
+			'currency'               => 'usd',
+			'payment_method_details' => array( 'type' => 'card' ),
+		);
+
+		$held_meta = WooPaymentsOrderEffects::completed_charge_meta( $intent, $charge, array(), true, true );
+		$this->assertSame( 'allow', $held_meta['_wcpay_fraud_outcome_status'] );
+		$this->assertSame( 'review_allowed', $held_meta['_wcpay_fraud_meta_box_type'] );
+
+		$plain_meta = WooPaymentsOrderEffects::completed_charge_meta( $intent, $charge );
+		$this->assertSame( 'allow', $plain_meta['_wcpay_fraud_outcome_status'] );
+		$this->assertSame( 'allow', $plain_meta['_wcpay_fraud_meta_box_type'] );
+	}
+
+	/**
+	 * @testdox Completed capture metadata threads the held-for-review flag to the fraud meta box.
+	 */
+	public function test_completed_capture_meta_stamps_review_allowed_when_held_for_review(): void {
+		$intent = array(
+			'status'   => 'succeeded',
+			'currency' => 'usd',
+			'metadata' => array( 'fraud_outcome' => 'allow' ),
+			'charges'  => array(
+				'data' => array(
+					array(
+						'id'                     => 'ch_review_capture',
+						'currency'               => 'usd',
+						'payment_method_details' => array( 'type' => 'card' ),
+					),
+				),
+			),
+		);
+
+		$meta = WooPaymentsOrderEffects::completed_capture_meta( $intent, 'USD', 'live', array(), true );
+		$this->assertSame( 'review_allowed', $meta['_wcpay_fraud_meta_box_type'] );
+
+		$plain_meta = WooPaymentsOrderEffects::completed_capture_meta( $intent, 'USD', 'live' );
+		$this->assertSame( 'allow', $plain_meta['_wcpay_fraud_meta_box_type'] );
+	}
+
+	/**
+	 * @testdox Non-card charges stay not_card even when held for review.
+	 */
+	public function test_fraud_outcome_meta_keeps_not_card_for_held_non_card_charges(): void {
+		$intent = array(
+			'currency' => 'usd',
+			'metadata' => array( 'fraud_outcome' => 'allow' ),
+		);
+		$charge = array(
+			'currency'               => 'usd',
+			'payment_method_details' => array( 'type' => 'sepa_debit' ),
+		);
+
+		$meta = WooPaymentsOrderEffects::completed_charge_meta( $intent, $charge, array(), true, true );
+		$this->assertSame( 'not_card', $meta['_wcpay_fraud_meta_box_type'] );
+	}
+
+	/**
 	 * @testdox Display projection returns identity and metadata without dispatching title filters.
 	 */
 	public function test_display_projection_does_not_dispatch_the_title_suffix_filter(): void {

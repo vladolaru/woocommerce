@@ -779,6 +779,38 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Capture effects stamp review_allowed when the order's stored fraud outcome is review.
+	 */
+	public function test_capture_effects_stamp_review_allowed_for_reviewed_order(): void {
+		$order = $this->create_woopayments_order();
+		$order->update_meta_data( '_wcpay_fraud_outcome_status', 'review' );
+		$order->save();
+
+		$capture_result = array(
+			'id'       => 'pi_capture_review',
+			'status'   => 'succeeded',
+			'currency' => 'usd',
+			'metadata' => array( 'fraud_outcome' => 'allow' ),
+			'charges'  => array(
+				'data' => array(
+					array(
+						'id'                     => 'ch_capture_review',
+						'currency'               => 'usd',
+						'payment_method_details' => array( 'type' => 'card' ),
+					),
+				),
+			),
+		);
+
+		$outcome = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_capture_review' );
+		$plan    = WooPaymentsOrderEffectPlan::for_capture( $capture_result );
+		$result  = $this->create_applier()->apply( PaymentContext::for_capture( $order, OrderPaymentStore::GATEWAY_ID ), $outcome, $plan );
+
+		$this->assertSame( 'review_allowed', $result->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_fraud_meta_box_type'] );
+		$this->assertSame( 'allow', $result->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_fraud_outcome_status'] );
+	}
+
+	/**
 	 * @testdox Failed capture effects carry exact candidates with the structured diagnostic.
 	 */
 	public function test_failed_capture_effects_carry_note_equivalents(): void {

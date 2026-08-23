@@ -629,7 +629,8 @@ class WooPaymentsEventIngestor {
 							$event_object,
 							$charge,
 							$settlement_meta,
-							false
+							false,
+							$order->has_status( 'on-hold' )
 						),
 						WooPaymentsOrderEffects::completed_charge_payment_method_backfill_meta(
 							$charge,

@@ -291,7 +291,8 @@ class WooPaymentsOrderEffectApplier {
 					$result,
 					(string) $order->get_currency(),
 					$this->account_service->get_mode(),
-					$settlement_meta
+					$settlement_meta,
+					'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true )
 				),
 				PaymentOutcome::DATA_NOTE             => $note_candidates[0],
 				PaymentOutcome::DATA_NOTE_TYPE        => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS,

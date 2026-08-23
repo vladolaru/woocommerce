@@ -162,9 +162,10 @@ class WooPaymentsOrderEffects {
 	 * @param array<string,mixed>  $charge                         Native Charge response.
 	 * @param array<string,string> $settlement_meta                Precomputed settlement metadata.
 	 * @param bool                 $include_payment_transaction_id Whether to include the balance transaction ID.
+	 * @param bool                 $was_held_for_review            Whether the order was held for fraud review before completing.
 	 * @return array<string,string>
 	 */
-	public static function completed_charge_meta( array $intent, array $charge, array $settlement_meta = array(), bool $include_payment_transaction_id = true ): array {
+	public static function completed_charge_meta( array $intent, array $charge, array $settlement_meta = array(), bool $include_payment_transaction_id = true, bool $was_held_for_review = false ): array {
 		$meta            = array();
 		$transaction_fee = self::transaction_fee_from_charge( $intent, $charge );
 		if ( '' !== $transaction_fee ) {
@@ -181,24 +182,25 @@ class WooPaymentsOrderEffects {
 			$meta['_wcpay_payment_transaction_id'] = $balance_transaction_id;
 		}
 
-		return array_merge( $meta, self::authorized_charge_meta( $intent, $charge, $settlement_meta ) );
+		return array_merge( $meta, self::authorized_charge_meta( $intent, $charge, $settlement_meta, $was_held_for_review ) );
 	}
 
 	/**
 	 * Get charge metadata valid before capture.
 	 *
-	 * @param array<string,mixed>  $intent          Native PaymentIntent response.
-	 * @param array<string,mixed>  $charge          Native Charge response.
-	 * @param array<string,string> $settlement_meta Precomputed settlement metadata.
+	 * @param array<string,mixed>  $intent              Native PaymentIntent response.
+	 * @param array<string,mixed>  $charge              Native Charge response.
+	 * @param array<string,string> $settlement_meta     Precomputed settlement metadata.
+	 * @param bool                 $was_held_for_review Whether the order was held for fraud review before completing.
 	 * @return array<string,string>
 	 */
-	public static function authorized_charge_meta( array $intent, array $charge, array $settlement_meta = array() ): array {
+	public static function authorized_charge_meta( array $intent, array $charge, array $settlement_meta = array(), bool $was_held_for_review = false ): array {
 		$meta = $settlement_meta;
 		if ( isset( $charge['outcome']['risk_level'] ) ) {
 			$meta['_charge_risk_level'] = (string) $charge['outcome']['risk_level'];
 		}
 
-		return array_merge( $meta, self::fraud_outcome_meta( $intent, $charge ) );
+		return array_merge( $meta, self::fraud_outcome_meta( $intent, $charge, $was_held_for_review ) );
 	}
 
 	/**
@@ -250,13 +252,14 @@ class WooPaymentsOrderEffects {
 	/**
 	 * Get lifecycle metadata from a completed capture response.
 	 *
-	 * @param array<string,mixed>  $intent          Native PaymentIntent response.
-	 * @param string               $order_currency  Order currency.
-	 * @param string               $account_mode    WooPayments account mode.
-	 * @param array<string,string> $settlement_meta Precomputed settlement metadata.
+	 * @param array<string,mixed>  $intent              Native PaymentIntent response.
+	 * @param string               $order_currency      Order currency.
+	 * @param string               $account_mode        WooPayments account mode.
+	 * @param array<string,string> $settlement_meta     Precomputed settlement metadata.
+	 * @param bool                 $was_held_for_review Whether the order's stored fraud outcome is review.
 	 * @return array<string,string>
 	 */
-	public static function completed_capture_meta( array $intent, string $order_currency, string $account_mode, array $settlement_meta = array() ): array {
+	public static function completed_capture_meta( array $intent, string $order_currency, string $account_mode, array $settlement_meta = array(), bool $was_held_for_review = false ): array {
 		$charge = self::latest_charge( $intent );
 		if ( empty( $charge ) ) {
 			return array();
@@ -271,7 +274,7 @@ class WooPaymentsOrderEffects {
 			$meta['_charge_id'] = $charge_id;
 		}
 
-		return array_merge( $meta, self::completed_charge_meta( $intent, $charge, $settlement_meta, false ) );
+		return array_merge( $meta, self::completed_charge_meta( $intent, $charge, $settlement_meta, false, $was_held_for_review ) );
 	}
 
 	/**
@@ -286,19 +289,26 @@ class WooPaymentsOrderEffects {
 	/**
 	 * Get WooPayments fraud-outcome order metadata.
 	 *
-	 * @param array<string,mixed> $intent Native PaymentIntent response.
-	 * @param array<string,mixed> $charge Native Charge response.
+	 * An order that succeeds after sitting in fraud review is stamped
+	 * review_allowed, not allow — the meta box then records that a human
+	 * approved the payment rather than the risk filters alone.
+	 *
+	 * @param array<string,mixed> $intent              Native PaymentIntent response.
+	 * @param array<string,mixed> $charge              Native Charge response.
+	 * @param bool                $was_held_for_review Whether the order was held for fraud review before completing.
 	 * @return array<string,string>
 	 */
-	public static function fraud_outcome_meta( array $intent, array $charge ): array {
+	public static function fraud_outcome_meta( array $intent, array $charge, bool $was_held_for_review = false ): array {
 		$metadata      = isset( $intent['metadata'] ) && is_array( $intent['metadata'] ) ? $intent['metadata'] : array();
 		$fraud_outcome = isset( $metadata['fraud_outcome'] ) ? (string) $metadata['fraud_outcome'] : '';
 		$is_card       = self::is_card_charge( $charge );
 
 		if ( in_array( $fraud_outcome, array( 'allow', 'block', 'review' ), true ) ) {
+			$allow_type = $was_held_for_review ? 'review_allowed' : 'allow';
+
 			return array(
 				'_wcpay_fraud_outcome_status' => $fraud_outcome,
-				'_wcpay_fraud_meta_box_type'  => $is_card ? 'allow' : 'not_card',
+				'_wcpay_fraud_meta_box_type'  => $is_card ? $allow_type : 'not_card',
 			);
 		}
 
