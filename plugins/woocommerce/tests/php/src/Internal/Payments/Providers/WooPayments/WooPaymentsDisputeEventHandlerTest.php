@@ -459,6 +459,68 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A closed note written by a pre-suffix plugin version suppresses the replayed close.
+	 */
+	public function test_plugin_era_closed_note_suppresses_replayed_close(): void {
+		$order = $this->create_disputable_order();
+		$order->set_status( 'on-hold' );
+		$order->save();
+
+		$plugin_note = $this->invoke_private(
+			'get_dispute_closed_note',
+			array( 'ch_cutover', 'won', false, 'txn_cutover' )
+		);
+		$order->add_order_note( $plugin_note );
+
+		$this->invoke_private(
+			'process_dispute_closed',
+			array(
+				$order,
+				array(
+					'id'     => 'dp_cutover',
+					'status' => 'won',
+				),
+				'ch_cutover',
+				'txn_cutover',
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'on-hold', $order->get_status() );
+		$this->assertCount( 1, $this->find_order_note( $order, 'Dispute has been closed with status won' ) );
+	}
+
+	/**
+	 * @testdox A created note written by a pre-suffix plugin version suppresses the replayed created event.
+	 */
+	public function test_plugin_era_created_note_suppresses_replayed_created(): void {
+		$order = $this->create_disputable_order();
+
+		$event       = $this->get_created_event_object( 'dp_cutover_created', 'needs_response' );
+		$plugin_note = $this->invoke_private(
+			'get_dispute_created_note',
+			array(
+				'ch_cutover_created',
+				$this->invoke_private( 'get_formatted_dispute_amount', array( $order, 1000 ) ),
+				$this->invoke_private( 'get_dispute_reason_description', array( 'fraudulent' ) ),
+				$this->invoke_private( 'get_dispute_due_by_date', array( 1893456000 ) ),
+				false,
+				'txn_cutover_created',
+			)
+		);
+		$order->add_order_note( $plugin_note );
+
+		$this->invoke_private(
+			'process_dispute_created',
+			array( $order, $event, 'ch_cutover_created', 'txn_cutover_created' )
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'processing', $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+	}
+
+	/**
 	 * Create an order suitable for dispute processing.
 	 *
 	 * @return \WC_Order

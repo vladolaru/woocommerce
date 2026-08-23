@@ -175,15 +175,10 @@ class WooPaymentsDisputeEventHandler {
 		$dispute_id = $this->get_required_string( $event_object, 'id' );
 		$status     = $this->get_required_string( $event_object, 'status' );
 		$is_inquiry = 0 === strpos( $status, 'warning_' );
-		$note       = $this->get_dispute_created_note(
-			$charge_id,
-			$this->get_formatted_dispute_amount( $order, $this->get_required_int( $event_object, 'amount' ) ),
-			$this->get_dispute_reason_description( $this->get_required_string( $event_object, 'reason' ) ),
-			$this->get_dispute_due_by_date( $this->get_required_int( $evidence, 'due_by' ) ),
-			$is_inquiry,
-			$balance_transaction_id,
-			$dispute_id
-		);
+		$amount     = $this->get_formatted_dispute_amount( $order, $this->get_required_int( $event_object, 'amount' ) );
+		$reason     = $this->get_dispute_reason_description( $this->get_required_string( $event_object, 'reason' ) );
+		$due_by     = $this->get_dispute_due_by_date( $this->get_required_int( $evidence, 'due_by' ) );
+		$note       = $this->get_dispute_created_note( $charge_id, $amount, $reason, $due_by, $is_inquiry, $balance_transaction_id, $dispute_id );
 		$note_type  = $is_inquiry ? 'created_inquiry' : 'created_dispute';
 
 		if (
@@ -196,7 +191,10 @@ class WooPaymentsDisputeEventHandler {
 				function () use ( $order, $dispute_id ): void {
 					$this->add_open_dispute_id( $order, $dispute_id );
 					$order->update_status( 'on-hold' );
-				}
+				},
+				// Plugin versions predating the dispute-ID suffix wrote the bare note;
+				// on a cutover store the replayed webhook must still match it.
+				array( $this->get_dispute_created_note( $charge_id, $amount, $reason, $due_by, $is_inquiry, $balance_transaction_id ) )
 			)
 		) {
 			return;
@@ -270,7 +268,10 @@ class WooPaymentsDisputeEventHandler {
 					remove_filter( 'woocommerce_email_enabled_customer_refunded_order', '__return_false' );
 					remove_filter( 'woocommerce_email_enabled_customer_completed_renewal_order', '__return_false' );
 				}
-			}
+			},
+			// Plugin versions predating the dispute-ID suffix wrote the bare note;
+			// on a cutover store the replayed webhook must still match it.
+			array( $this->get_dispute_closed_note( $charge_id, $status, $is_inquiry, $balance_transaction_id ) )
 		);
 	}
 
@@ -691,14 +692,15 @@ class WooPaymentsDisputeEventHandler {
 	 * @param string   $event_status Provider dispute status.
 	 * @param string   $note_type    Stable note type.
 	 * @param callable $before_add   Side effects to apply only when the note is new.
+	 * @param string[] $equivalent_notes Equivalent note texts written by other implementations or versions.
 	 * @return bool True when the note was added.
 	 */
-	private function add_dispute_order_note_once( WC_Order $order, string $note, string $dispute_id, string $event_status, string $note_type, ?callable $before_add = null ): bool {
+	private function add_dispute_order_note_once( WC_Order $order, string $note, string $dispute_id, string $event_status, string $note_type, ?callable $before_add = null, array $equivalent_notes = array() ): bool {
 		return $this->get_order_note_service()->add_note_once(
 			$order,
 			$note,
 			'dispute:' . $dispute_id . '|' . $event_status . '|' . $note_type,
-			array(),
+			$equivalent_notes,
 			array( $this->get_dispute_note_marker_key( $dispute_id, $event_status, $note_type ) ),
 			$before_add
 		);
