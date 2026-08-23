@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeCacheService;
@@ -1680,9 +1681,12 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	public function test_charge_expired_marks_order_failed(): void {
 		$order = $this->create_woopayments_order();
 		$order->update_meta_data( '_charge_id', 'ch_expired' );
+		$order->update_meta_data( '_intent_id', 'pi_expired' );
 		$order->save();
 
-		$this->sut->process(
+		$sut = $this->create_charge_expired_ingestor( array( 'status' => 'canceled' ) );
+
+		$sut->process(
 			array(
 				'id'   => 'evt_expired',
 				'type' => 'charge.expired',
@@ -1722,7 +1726,9 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			$note_service->transaction_url( 'pi_expired_fallback', 'ch_expired' )
 		);
 
-		$this->sut->process(
+		$sut = $this->create_charge_expired_ingestor( array( 'status' => 'canceled' ) );
+
+		$sut->process(
 			array(
 				'id'   => 'evt_expired',
 				'type' => 'charge.expired',
@@ -1764,7 +1770,9 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		);
 		$order->add_order_note( $plugin_note );
 
-		$this->sut->process(
+		$sut = $this->create_charge_expired_ingestor( array( 'status' => 'canceled' ) );
+
+		$sut->process(
 			array(
 				'id'   => 'evt_expired_plugin_note',
 				'type' => 'charge.expired',
@@ -1784,6 +1792,214 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( 1, $this->count_order_notes_matching( $order, $plugin_note ) );
 		$this->assertOrderLacksNoteContaining( $order, array( 'Core-Autorisierung' ) );
 		$this->assertSame( '', $order->get_meta( '_wc_native_payments_note_' . md5( 'ch_expired_plugin_note|capture_expired|capture_expired' ), true ) );
+	}
+
+	/**
+	 * @testdox charge.expired stores the freshly fetched intent status so capture actions stop being offered.
+	 */
+	public function test_charge_expired_stores_fetched_intention_status(): void {
+		$order = $this->create_woopayments_order();
+		$order->update_meta_data( '_charge_id', 'ch_expired_status' );
+		$order->update_meta_data( '_intention_status', 'requires_capture' );
+		$order->save();
+
+		$sut = $this->create_charge_expired_ingestor( array( 'status' => 'canceled' ), $requested_intents );
+
+		$sut->process(
+			array(
+				'id'   => 'evt_expired_status',
+				'type' => 'charge.expired',
+				'data' => array(
+					'object' => array(
+						'id'             => 'ch_expired_status',
+						'payment_intent' => 'pi_expired_status',
+					),
+				),
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'failed', $order->get_status() );
+		$this->assertSame( 'canceled', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( array( 'pi_expired_status' ), $requested_intents );
+	}
+
+	/**
+	 * @testdox charge.expired stamps review_expired on fraud-reviewed orders.
+	 */
+	public function test_charge_expired_sets_review_expired_for_reviewed_order(): void {
+		$order = $this->create_woopayments_order();
+		$order->update_meta_data( '_charge_id', 'ch_expired_review' );
+		$order->update_meta_data( '_intent_id', 'pi_expired_review' );
+		$order->update_meta_data( '_wcpay_fraud_outcome_status', 'review' );
+		$order->save();
+
+		$sut = $this->create_charge_expired_ingestor( array( 'status' => 'canceled' ), $requested_intents );
+
+		$sut->process(
+			array(
+				'id'   => 'evt_expired_review',
+				'type' => 'charge.expired',
+				'data' => array(
+					'object' => array(
+						'id' => 'ch_expired_review',
+					),
+				),
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'review_expired', $order->get_meta( '_wcpay_fraud_meta_box_type', true ) );
+		$this->assertSame( array( 'pi_expired_review' ), $requested_intents );
+	}
+
+	/**
+	 * @testdox charge.expired leaves the fraud meta box alone for unreviewed orders.
+	 */
+	public function test_charge_expired_keeps_fraud_meta_for_unreviewed_order(): void {
+		$order = $this->create_woopayments_order();
+		$order->update_meta_data( '_charge_id', 'ch_expired_plain' );
+		$order->update_meta_data( '_intent_id', 'pi_expired_plain' );
+		$order->update_meta_data( '_wcpay_fraud_meta_box_type', 'allow' );
+		$order->save();
+
+		$sut = $this->create_charge_expired_ingestor( array( 'status' => 'canceled' ), $requested_intents );
+
+		$sut->process(
+			array(
+				'id'   => 'evt_expired_plain',
+				'type' => 'charge.expired',
+				'data' => array(
+					'object' => array(
+						'id' => 'ch_expired_plain',
+					),
+				),
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'allow', $order->get_meta( '_wcpay_fraud_meta_box_type', true ) );
+	}
+
+	/**
+	 * @testdox charge.expired propagates an intent fetch failure so the event is redelivered.
+	 */
+	public function test_charge_expired_propagates_intent_fetch_failure(): void {
+		$order = $this->create_woopayments_order();
+		$order->update_meta_data( '_charge_id', 'ch_expired_error' );
+		$order->update_meta_data( '_intent_id', 'pi_expired_error' );
+		$order->save();
+
+		$api_client = new class() extends WooPaymentsApiClient {
+			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- This test double always throws.
+			/**
+			 * Fail the intent retrieval.
+			 *
+			 * @param string $intent_id Intent ID.
+			 * @return array<string,mixed>
+			 * @throws WooPaymentsApiException Always.
+			 */
+			public function get_payment_intention( string $intent_id ): array {
+				unset( $intent_id );
+				throw new WooPaymentsApiException( 'boom', 'wcpay_server_error', 500 );
+			}
+			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
+		};
+
+		$sut = $this->create_ingestor(
+			wc_get_container()->get( OrderPaymentLifecycleService::class ),
+			new LegacyProxy(),
+			new WooPaymentsLegacyRuntime(),
+			$api_client
+		);
+
+		$this->expectException( WooPaymentsApiException::class );
+
+		try {
+			$sut->process(
+				array(
+					'id'   => 'evt_expired_error',
+					'type' => 'charge.expired',
+					'data' => array(
+						'object' => array(
+							'id' => 'ch_expired_error',
+						),
+					),
+				)
+			);
+		} finally {
+			$order = wc_get_order( $order->get_id() );
+			$this->assertInstanceOf( WC_Order::class, $order );
+			$this->assertSame( 'pending', $order->get_status() );
+		}
+	}
+
+	/**
+	 * Create an ingestor whose API client returns a fixture intent for charge.expired.
+	 *
+	 * @param array<string,mixed>    $intent            Intent fixture merged over defaults.
+	 * @param array<int,string>|null $requested_intents Receives the requested intent IDs.
+	 * @return WooPaymentsEventIngestor
+	 */
+	private function create_charge_expired_ingestor( array $intent, ?array &$requested_intents = null ): WooPaymentsEventIngestor {
+		$requested_intents = array();
+		$api_client        = new class( $intent, $requested_intents ) extends WooPaymentsApiClient {
+			/**
+			 * Intent fixture.
+			 *
+			 * @var array<string,mixed>
+			 */
+			private array $intent;
+
+			/**
+			 * Requested intent IDs.
+			 *
+			 * @var array<int,string>
+			 */
+			private $requested_intents;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param array<string,mixed> $intent            Intent fixture.
+			 * @param array<int,string>   $requested_intents Requested-intent recorder.
+			 */
+			public function __construct( array $intent, array &$requested_intents ) {
+				$this->intent            = $intent;
+				$this->requested_intents = &$requested_intents;
+			}
+
+			/**
+			 * Retrieve the fixture intent.
+			 *
+			 * @param string $intent_id Intent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_payment_intention( string $intent_id ): array {
+				$this->requested_intents[] = $intent_id;
+
+				return array_replace_recursive(
+					array(
+						'id'     => $intent_id,
+						'status' => 'canceled',
+					),
+					$this->intent
+				);
+			}
+		};
+
+		return $this->create_ingestor(
+			wc_get_container()->get( OrderPaymentLifecycleService::class ),
+			new LegacyProxy(),
+			new WooPaymentsLegacyRuntime(),
+			$api_client
+		);
 	}
 
 	/**

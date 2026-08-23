@@ -689,14 +689,25 @@ class WooPaymentsEventIngestor {
 					: (string) $order->get_meta( '_intent_id', true );
 				$note_candidates = $this->get_order_note_service()->format_capture_expired_note_candidates( $intent_id, $charge_id );
 
+				// The stored intention status still says requires_capture; only the live
+				// intent knows its post-expiry status (canceled), and leaving the stale
+				// value keeps capture/cancel actions offered against a dead intent. The
+				// fetch is load-bearing: on failure the exception propagates so the
+				// platform redelivers the event, matching the plugin.
+				$expired_intent = $this->api_client->get_payment_intention( $intent_id );
+
+				$meta = array(
+					'_charge_id'        => $charge_id,
+					'_intention_status' => isset( $expired_intent['status'] ) ? (string) $expired_intent['status'] : '',
+				);
+				if ( 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true ) ) {
+					$meta['_wcpay_fraud_meta_box_type'] = 'review_expired';
+				}
+
 				return new PaymentLifecycleEvent(
 					PaymentLifecycleEvent::STATUS_CAPTURE_EXPIRED,
 					$charge_id,
-					$this->without_empty_values(
-						array(
-							'_charge_id' => $charge_id,
-						)
-					),
+					$this->without_empty_values( $meta ),
 					array(),
 					$note_candidates[0],
 					PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_EXPIRED,
