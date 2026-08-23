@@ -224,6 +224,79 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Pre-capture intents with a review outcome stamp the review fraud meta box.
+	 */
+	public function test_payment_intent_meta_stamps_review_box_when_holding_for_review(): void {
+		$intent = array(
+			'status'   => 'requires_capture',
+			'currency' => 'usd',
+			'metadata' => array( 'fraud_outcome' => 'review' ),
+			'charges'  => array(
+				'data' => array(
+					array(
+						'id'                     => 'ch_review_hold',
+						'currency'               => 'usd',
+						'payment_method_details' => array( 'type' => 'card' ),
+					),
+				),
+			),
+		);
+
+		$meta = WooPaymentsOrderEffects::payment_intent_meta( $intent, 'USD', 'live' );
+
+		$this->assertSame( 'review', $meta['_wcpay_fraud_outcome_status'] );
+		$this->assertSame( 'review', $meta['_wcpay_fraud_meta_box_type'] );
+	}
+
+	/**
+	 * @testdox Pre-capture intents with an allow outcome keep the allow fraud meta box.
+	 */
+	public function test_payment_intent_meta_keeps_allow_box_for_allowed_authorizations(): void {
+		$intent = array(
+			'status'   => 'requires_capture',
+			'currency' => 'usd',
+			'metadata' => array( 'fraud_outcome' => 'allow' ),
+			'charges'  => array(
+				'data' => array(
+					array(
+						'id'                     => 'ch_allow_hold',
+						'currency'               => 'usd',
+						'payment_method_details' => array( 'type' => 'card' ),
+					),
+				),
+			),
+		);
+
+		$meta = WooPaymentsOrderEffects::payment_intent_meta( $intent, 'USD', 'live' );
+
+		$this->assertSame( 'allow', $meta['_wcpay_fraud_meta_box_type'] );
+	}
+
+	/**
+	 * @testdox Completed intents with a review outcome do not stamp the review box.
+	 */
+	public function test_payment_intent_meta_does_not_stamp_review_box_on_completion(): void {
+		$intent = array(
+			'status'   => 'succeeded',
+			'currency' => 'usd',
+			'metadata' => array( 'fraud_outcome' => 'review' ),
+			'charges'  => array(
+				'data' => array(
+					array(
+						'id'                     => 'ch_review_done',
+						'currency'               => 'usd',
+						'payment_method_details' => array( 'type' => 'card' ),
+					),
+				),
+			),
+		);
+
+		$meta = WooPaymentsOrderEffects::payment_intent_meta( $intent, 'USD', 'live' );
+
+		$this->assertSame( 'allow', $meta['_wcpay_fraud_meta_box_type'] );
+	}
+
+	/**
 	 * @testdox Non-card charges stay not_card even when held for review.
 	 */
 	public function test_fraud_outcome_meta_keeps_not_card_for_held_non_card_charges(): void {

@@ -120,7 +120,7 @@ class WooPaymentsOrderEffects {
 			$meta = array_merge( $meta, self::completed_charge_meta( $intent, $charge, $settlement_meta ) );
 		} elseif ( in_array( $status, array( 'requires_capture', 'processing' ), true ) ) {
 			$meta['_intention_status'] = $status;
-			$meta                      = array_merge( $meta, self::authorized_charge_meta( $intent, $charge, $settlement_meta ) );
+			$meta                      = array_merge( $meta, self::authorized_charge_meta( $intent, $charge, $settlement_meta, false, true ) );
 		} elseif ( in_array( $status, array( 'requires_action', 'requires_confirmation' ), true ) ) {
 			$meta = array_merge( $meta, self::started_payment_meta( $intent, $order_currency ) );
 		}
@@ -188,19 +188,20 @@ class WooPaymentsOrderEffects {
 	/**
 	 * Get charge metadata valid before capture.
 	 *
-	 * @param array<string,mixed>  $intent              Native PaymentIntent response.
-	 * @param array<string,mixed>  $charge              Native Charge response.
-	 * @param array<string,string> $settlement_meta     Precomputed settlement metadata.
-	 * @param bool                 $was_held_for_review Whether the order was held for fraud review before completing.
+	 * @param array<string,mixed>  $intent               Native PaymentIntent response.
+	 * @param array<string,mixed>  $charge               Native Charge response.
+	 * @param array<string,string> $settlement_meta      Precomputed settlement metadata.
+	 * @param bool                 $was_held_for_review  Whether the order was held for fraud review before completing.
+	 * @param bool                 $entering_review_hold Whether a review outcome is placing the order in fraud review right now.
 	 * @return array<string,string>
 	 */
-	public static function authorized_charge_meta( array $intent, array $charge, array $settlement_meta = array(), bool $was_held_for_review = false ): array {
+	public static function authorized_charge_meta( array $intent, array $charge, array $settlement_meta = array(), bool $was_held_for_review = false, bool $entering_review_hold = false ): array {
 		$meta = $settlement_meta;
 		if ( isset( $charge['outcome']['risk_level'] ) ) {
 			$meta['_charge_risk_level'] = (string) $charge['outcome']['risk_level'];
 		}
 
-		return array_merge( $meta, self::fraud_outcome_meta( $intent, $charge, $was_held_for_review ) );
+		return array_merge( $meta, self::fraud_outcome_meta( $intent, $charge, $was_held_for_review, $entering_review_hold ) );
 	}
 
 	/**
@@ -293,22 +294,31 @@ class WooPaymentsOrderEffects {
 	 * review_allowed, not allow — the meta box then records that a human
 	 * approved the payment rather than the risk filters alone.
 	 *
-	 * @param array<string,mixed> $intent              Native PaymentIntent response.
-	 * @param array<string,mixed> $charge              Native Charge response.
-	 * @param bool                $was_held_for_review Whether the order was held for fraud review before completing.
+	 * @param array<string,mixed> $intent               Native PaymentIntent response.
+	 * @param array<string,mixed> $charge               Native Charge response.
+	 * @param bool                $was_held_for_review  Whether the order was held for fraud review before completing.
+	 * @param bool                $entering_review_hold Whether a review outcome is placing the order in fraud review right now.
 	 * @return array<string,string>
 	 */
-	public static function fraud_outcome_meta( array $intent, array $charge, bool $was_held_for_review = false ): array {
+	public static function fraud_outcome_meta( array $intent, array $charge, bool $was_held_for_review = false, bool $entering_review_hold = false ): array {
 		$metadata      = isset( $intent['metadata'] ) && is_array( $intent['metadata'] ) ? $intent['metadata'] : array();
 		$fraud_outcome = isset( $metadata['fraud_outcome'] ) ? (string) $metadata['fraud_outcome'] : '';
 		$is_card       = self::is_card_charge( $charge );
 
 		if ( in_array( $fraud_outcome, array( 'allow', 'block', 'review' ), true ) ) {
-			$allow_type = $was_held_for_review ? 'review_allowed' : 'allow';
+			// A review outcome on a pre-capture intent is the plugin's
+			// mark_order_held_for_review_for_fraud stamp: the meta box must show the
+			// held-for-review panel until the merchant decides. On completion the
+			// outcome value no longer drives the box; the held-for-review history does.
+			if ( 'review' === $fraud_outcome && $entering_review_hold ) {
+				$box_type = 'review';
+			} else {
+				$box_type = $was_held_for_review ? 'review_allowed' : 'allow';
+			}
 
 			return array(
 				'_wcpay_fraud_outcome_status' => $fraud_outcome,
-				'_wcpay_fraud_meta_box_type'  => $is_card ? $allow_type : 'not_card',
+				'_wcpay_fraud_meta_box_type'  => $is_card ? $box_type : 'not_card',
 			);
 		}
 
