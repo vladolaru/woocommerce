@@ -779,6 +779,38 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Payment-intent effects stamp review_allowed when a held-for-review order succeeds.
+	 */
+	public function test_payment_intent_effects_stamp_review_allowed_for_reviewed_order(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( 'on-hold' );
+		$order->update_meta_data( '_wcpay_fraud_outcome_status', 'review' );
+		$order->save();
+
+		$result = array(
+			'id'       => 'pi_review_confirm',
+			'status'   => 'succeeded',
+			'currency' => 'usd',
+			'metadata' => array( 'fraud_outcome' => 'allow' ),
+			'charges'  => array(
+				'data' => array(
+					array(
+						'id'                     => 'ch_review_confirm',
+						'currency'               => 'usd',
+						'payment_method_details' => array( 'type' => 'card' ),
+					),
+				),
+			),
+		);
+
+		$outcome  = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_review_confirm' );
+		$plan     = WooPaymentsOrderEffectPlan::for_payment_intent( $result, false );
+		$enriched = $this->create_applier()->enrich_outcome_for_lifecycle( PaymentContext::for_checkout( $order, OrderPaymentStore::GATEWAY_ID, 'pm_review_confirm' ), $outcome, $plan );
+
+		$this->assertSame( 'review_allowed', $enriched->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_fraud_meta_box_type'] );
+	}
+
+	/**
 	 * @testdox Capture effects stamp review_allowed when the order's stored fraud outcome is review.
 	 */
 	public function test_capture_effects_stamp_review_allowed_for_reviewed_order(): void {

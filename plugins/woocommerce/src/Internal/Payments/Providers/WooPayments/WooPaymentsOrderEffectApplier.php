@@ -227,7 +227,8 @@ class WooPaymentsOrderEffectApplier {
 			$result,
 			(string) $order->get_currency(),
 			$this->account_service->get_mode(),
-			$settlement_meta
+			$settlement_meta,
+			$order->has_status( 'on-hold' ) || 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true )
 		);
 		if ( ! empty( $display_effects ) ) {
 			$meta = array_merge( $meta, $display_effects['meta'] );

@@ -394,7 +394,8 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 			$intent,
 			(string) $order->get_currency(),
 			$order_mode,
-			$settlement_meta
+			$settlement_meta,
+			$order->has_status( 'on-hold' ) || 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true )
 		);
 	}
 

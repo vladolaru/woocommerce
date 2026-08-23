@@ -90,13 +90,14 @@ class WooPaymentsOrderEffects {
 	/**
 	 * Compose lifecycle metadata for a native PaymentIntent.
 	 *
-	 * @param array<string,mixed>  $intent         Native PaymentIntent response.
-	 * @param string               $order_currency Order currency.
-	 * @param string               $account_mode   WooPayments account mode.
-	 * @param array<string,string> $settlement_meta Precomputed settlement metadata.
+	 * @param array<string,mixed>  $intent              Native PaymentIntent response.
+	 * @param string               $order_currency      Order currency.
+	 * @param string               $account_mode        WooPayments account mode.
+	 * @param array<string,string> $settlement_meta     Precomputed settlement metadata.
+	 * @param bool                 $was_held_for_review Whether the order was held for fraud review before completing.
 	 * @return array<string,string>
 	 */
-	public static function payment_intent_meta( array $intent, string $order_currency, string $account_mode, array $settlement_meta = array() ): array {
+	public static function payment_intent_meta( array $intent, string $order_currency, string $account_mode, array $settlement_meta = array(), bool $was_held_for_review = false ): array {
 		$status                 = isset( $intent['status'] ) ? (string) $intent['status'] : '';
 		$charge                 = self::latest_charge( $intent );
 		$charge_id              = isset( $charge['id'] ) ? (string) $charge['id'] : '';
@@ -117,7 +118,7 @@ class WooPaymentsOrderEffects {
 		}
 
 		if ( 'succeeded' === $status ) {
-			$meta = array_merge( $meta, self::completed_charge_meta( $intent, $charge, $settlement_meta ) );
+			$meta = array_merge( $meta, self::completed_charge_meta( $intent, $charge, $settlement_meta, true, $was_held_for_review ) );
 		} elseif ( in_array( $status, array( 'requires_capture', 'processing' ), true ) ) {
 			$meta['_intention_status'] = $status;
 			$meta                      = array_merge( $meta, self::authorized_charge_meta( $intent, $charge, $settlement_meta, false, true ) );
