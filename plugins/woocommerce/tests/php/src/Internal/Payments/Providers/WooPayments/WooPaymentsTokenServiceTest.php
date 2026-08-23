@@ -399,6 +399,137 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should detach SEPA, Link and Amazon Pay payment methods when their saved tokens are deleted.
+	 */
+	public function test_detaches_non_card_payment_methods_when_tokens_are_deleted(): void {
+		$user_id    = $this->factory()->user->create();
+		$api_client = new class() extends WooPaymentsApiClient {
+			/**
+			 * Detached payment method IDs.
+			 *
+			 * @var string[]
+			 */
+			public array $detached_payment_method_ids = array();
+
+			/**
+			 * Detach a payment method.
+			 *
+			 * @param string $payment_method_id Payment method ID.
+			 * @return array<string,mixed>
+			 */
+			public function detach_payment_method( string $payment_method_id ): array {
+				$this->detached_payment_method_ids[] = $payment_method_id;
+
+				return array( 'id' => $payment_method_id );
+			}
+		};
+		$sut        = $this->create_service(
+			array(
+				'pm_sepa'   => array(
+					'id'         => 'pm_sepa',
+					'type'       => 'sepa_debit',
+					'sepa_debit' => array( 'last4' => '6789' ),
+				),
+				'pm_link'   => array(
+					'id'   => 'pm_link',
+					'type' => 'link',
+					'link' => array( 'email' => 'buyer@example.com' ),
+				),
+				'pm_amazon' => array(
+					'id'              => 'pm_amazon',
+					'type'            => 'amazon_pay',
+					'billing_details' => array( 'email' => 'buyer@example.com' ),
+				),
+			),
+			$api_client,
+			null,
+			$this->create_account_service( true )
+		);
+
+		foreach ( array( 'pm_sepa', 'pm_link', 'pm_amazon' ) as $payment_method_id ) {
+			$token = $sut->get_or_create_token_for_user( $payment_method_id, $user_id );
+			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token deletion hook.
+			do_action( 'woocommerce_payment_token_deleted', $token->get_id(), $token );
+		}
+
+		$this->assertSame( array( 'pm_sepa', 'pm_link', 'pm_amazon' ), $api_client->detached_payment_method_ids, 'Every reusable WooPayments token type must detach at the provider on deletion.' );
+	}
+
+	/**
+	 * @testdox Should set the remote customer default payment method when a non-card token becomes default.
+	 */
+	public function test_sets_remote_default_payment_method_when_sepa_token_becomes_default(): void {
+		$user_id          = $this->factory()->user->create();
+		$customer_service = new class() extends WooPaymentsCustomerService {
+			/**
+			 * Customer IDs keyed by WordPress user ID.
+			 *
+			 * @var array<int,string>
+			 */
+			public array $customer_ids_by_user_id = array();
+
+			/**
+			 * Default payment method updates.
+			 *
+			 * @var array<int,array{customer_id:string,payment_method_id:string}>
+			 */
+			public array $default_payment_methods = array();
+
+			/**
+			 * Get a customer ID for a user.
+			 *
+			 * @param int|null $user_id User ID.
+			 * @return string|null
+			 */
+			public function get_customer_id_by_user_id( ?int $user_id ): ?string {
+				return null === $user_id ? null : $this->customer_ids_by_user_id[ $user_id ] ?? null;
+			}
+
+			/**
+			 * Set a payment method as default for a customer.
+			 *
+			 * @param string $customer_id       Customer ID.
+			 * @param string $payment_method_id Payment method ID.
+			 * @return void
+			 */
+			public function set_default_payment_method_for_customer( string $customer_id, string $payment_method_id ): void {
+				$this->default_payment_methods[] = array(
+					'customer_id'       => $customer_id,
+					'payment_method_id' => $payment_method_id,
+				);
+			}
+		};
+		$customer_service->customer_ids_by_user_id[ $user_id ] = 'cus_test';
+
+		$sut = $this->create_service(
+			array(
+				'pm_sepa' => array(
+					'id'         => 'pm_sepa',
+					'type'       => 'sepa_debit',
+					'sepa_debit' => array( 'last4' => '6789' ),
+				),
+			),
+			null,
+			$customer_service
+		);
+
+		$token = $sut->get_or_create_token_for_user( 'pm_sepa', $user_id );
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered default-token hook.
+		do_action( 'woocommerce_payment_token_set_default', $token->get_id(), $token );
+
+		$this->assertSame(
+			array(
+				array(
+					'customer_id'       => 'cus_test',
+					'payment_method_id' => 'pm_sepa',
+				),
+			),
+			$customer_service->default_payment_methods,
+			'A non-card default must update the provider customer default payment method.'
+		);
+	}
+
+	/**
 	 * @testdox Should clear cached payment methods when a native WooPayments card token becomes default.
 	 */
 	public function test_clears_cached_payment_methods_when_native_card_token_becomes_default(): void {

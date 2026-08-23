@@ -155,7 +155,7 @@ class WooPaymentsTokenService {
 	public function handle_woocommerce_payment_token_deleted( $token_id, $token ): void {
 		unset( $token_id );
 
-		if ( ! $this->is_native_woopayments_card_token( $token ) ) {
+		if ( ! $this->is_supported_native_woopayments_token( $token ) ) {
 			return;
 		}
 
@@ -190,7 +190,7 @@ class WooPaymentsTokenService {
 	public function handle_woocommerce_payment_token_set_default( $token_id, $token ): void {
 		unset( $token_id );
 
-		if ( ! $this->is_native_woopayments_card_token( $token ) ) {
+		if ( ! $this->is_supported_native_woopayments_token( $token ) ) {
 			return;
 		}
 
