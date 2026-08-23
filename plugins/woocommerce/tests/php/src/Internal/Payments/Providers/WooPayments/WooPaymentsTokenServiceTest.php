@@ -618,6 +618,42 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Saving a new token should bust the cached provider list so reconciliation cannot delete it.
+	 */
+	public function test_reconcile_keeps_tokens_created_after_the_cache_was_warmed(): void {
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+
+		$card_details     = array(
+			'id'   => 'pm_new_card',
+			'type' => 'card',
+			'card' => array(
+				'brand'     => 'visa',
+				'last4'     => '4242',
+				'exp_month' => 12,
+				'exp_year'  => 2030,
+			),
+		);
+		$customer_service = $this->create_reconciling_customer_service( 'cus_1', array( 'card' => array() ) );
+		$sut              = $this->create_service( array( 'pm_new_card' => $card_details ), null, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card' ) ) );
+
+		// Warm the cache with an empty provider list (a My Account visit before saving).
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token filter.
+		apply_filters( 'woocommerce_get_customer_payment_tokens', array(), $user_id, '' );
+
+		// The provider attaches the payment method, then checkout saves it locally.
+		$customer_service->payment_methods_by_type['card'] = array( $card_details );
+		$token = $sut->get_or_create_token_for_user( 'pm_new_card', $user_id );
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token filter.
+		$tokens = apply_filters( 'woocommerce_get_customer_payment_tokens', array( $token->get_id() => $token ), $user_id, '' );
+
+		$this->assertArrayHasKey( $token->get_id(), $tokens, 'A token saved after the cache was warmed must survive the next reconciliation.' );
+		$this->assertNotNull( \WC_Payment_Tokens::get( $token->get_id() ) );
+		$this->assertGreaterThanOrEqual( 2, $customer_service->fetch_counts['card'] ?? 0, 'Saving a token must invalidate the cached provider payment methods.' );
+	}
+
+	/**
 	 * @testdox Should cache fetched provider payment methods per customer and bust on customer change.
 	 */
 	public function test_reconcile_caches_fetched_payment_methods_per_customer(): void {

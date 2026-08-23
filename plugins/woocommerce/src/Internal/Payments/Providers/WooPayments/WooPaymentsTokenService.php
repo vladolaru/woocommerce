@@ -920,6 +920,10 @@ class WooPaymentsTokenService {
 			return null;
 		}
 
+		// A stale cached provider list would diff the just-created token away on
+		// the next reconcile, deleting it locally while it stays attached remotely.
+		$this->clear_cached_payment_methods_for_user( $user_id );
+
 		switch ( $method_type ) {
 			case self::PAYMENT_METHOD_TYPE_CARD:
 			case self::PAYMENT_METHOD_TYPE_CARD_PRESENT:
