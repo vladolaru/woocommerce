@@ -457,7 +457,8 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 				: $this->api_client->capture_intention(
 					$intent_id,
 					$this->order_data_service->prepare_amount( (float) $order->get_total(), (string) $order->get_currency() ),
-					$this->get_intent_metadata( $intent )
+					// Order-derived metadata first; the intent's own metadata wins, mirroring the plugin's mobile-app priority.
+					array_merge( WooPaymentsIntentRequestBuilder::capture_metadata_from_order( $order ), $this->get_intent_metadata( $intent ) )
 				);
 
 			if ( 'succeeded' !== (string) ( $result['status'] ?? '' ) ) {

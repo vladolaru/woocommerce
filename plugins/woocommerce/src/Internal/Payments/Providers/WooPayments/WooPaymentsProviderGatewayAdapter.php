@@ -867,14 +867,7 @@ class WooPaymentsProviderGatewayAdapter {
 	 * @return array<string,mixed>
 	 */
 	private function capture_metadata( \WC_Order $order ): array {
-		$is_renewal      = function_exists( 'wcs_order_contains_renewal' ) && wcs_order_contains_renewal( $order );
-		$is_subscription = $is_renewal || ( function_exists( 'wcs_order_contains_subscription' ) && wcs_order_contains_subscription( $order ) );
-
-		return WooPaymentsIntentRequestBuilder::metadata_from_order(
-			$order,
-			$is_subscription ? 'recurring' : 'single',
-			$is_renewal ? 'renewal' : ( $is_subscription ? 'initial' : 'no' )
-		);
+		return WooPaymentsIntentRequestBuilder::capture_metadata_from_order( $order );
 	}
 
 	/**

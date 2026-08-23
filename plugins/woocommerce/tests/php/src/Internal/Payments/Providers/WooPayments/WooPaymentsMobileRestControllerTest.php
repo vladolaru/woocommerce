@@ -814,6 +814,52 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Terminal capture merges order-derived metadata under the intent's own, like the reference client.
+	 */
+	public function test_capture_terminal_payment_merges_order_metadata_with_intent_metadata(): void {
+		$order = $this->create_order( 12.34, 'USD' );
+		$order->set_billing_first_name( 'Ada' );
+		$order->set_billing_last_name( 'Lovelace' );
+		$order->set_billing_email( 'ada@example.com' );
+		$order->save();
+
+		$intent_metadata = array(
+			'order_id'      => (string) $order->get_id(),
+			'ipp_channel'   => 'mobile_pos',
+			'reader_ID'     => 'rdr_123',
+			'customer_name' => 'App Override',
+		);
+		$this->api_client->payment_intention_response = array(
+			'id'       => 'pi_terminal',
+			'status'   => 'requires_capture',
+			'currency' => 'usd',
+			'metadata' => $intent_metadata,
+		);
+		$this->api_client->captured_intention_response = array(
+			'id'       => 'pi_terminal',
+			'status'   => 'succeeded',
+			'currency' => 'usd',
+			'metadata' => $intent_metadata,
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal' );
+
+		$response = $this->sut->capture_terminal_payment( $request );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$sent = $this->api_client->last_capture_metadata;
+		$this->assertSame( 'ada@example.com', $sent['customer_email'] );
+		$this->assertSame( $order->get_order_key(), $sent['order_key'] );
+		$this->assertSame( esc_url( get_site_url() ), $sent['site_url'] );
+		$this->assertSame( 'single', (string) $sent['payment_type'] );
+		$this->assertSame( 'rdr_123', $sent['reader_ID'] );
+		$this->assertSame( 'mobile_pos', $sent['ipp_channel'] );
+		$this->assertSame( 'App Override', $sent['customer_name'], 'Intent metadata must override order-derived keys (mobile app priority).' );
+	}
+
+	/**
 	 * @testdox Terminal capture does not write an IPP channel the plugin does not recognize.
 	 */
 	public function test_capture_terminal_payment_ignores_unrecognized_ipp_channel(): void {

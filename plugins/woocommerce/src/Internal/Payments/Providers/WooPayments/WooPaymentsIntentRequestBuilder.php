@@ -282,6 +282,28 @@ class WooPaymentsIntentRequestBuilder {
 	}
 
 	/**
+	 * Build the subscriptions-aware capture metadata for an order.
+	 *
+	 * Derives the payment type the way the plugin's capture path does
+	 * (recurring when the order contains a subscription or renewal) and runs
+	 * the result through metadata_from_order(), which carries the
+	 * wcpay_metadata_from_order filter.
+	 *
+	 * @param WC_Order $order Order being captured.
+	 * @return array<string,mixed>
+	 */
+	public static function capture_metadata_from_order( WC_Order $order ): array {
+		$is_renewal      = function_exists( 'wcs_order_contains_renewal' ) && wcs_order_contains_renewal( $order );
+		$is_subscription = $is_renewal || ( function_exists( 'wcs_order_contains_subscription' ) && wcs_order_contains_subscription( $order ) );
+
+		return self::metadata_from_order(
+			$order,
+			$is_subscription ? 'recurring' : 'single',
+			$is_renewal ? 'renewal' : ( $is_subscription ? 'initial' : 'no' )
+		);
+	}
+
+	/**
 	 * Build the Stripe-dashboard intention description.
 	 *
 	 * Format matches the WooPayments plugin (no i18n on purpose — the text is
