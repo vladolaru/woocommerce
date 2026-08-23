@@ -108,6 +108,12 @@ class WooPaymentsAdminMenuBadgeService {
 	public function invalidate_authorization_summary_caches(): void {
 		delete_option( self::AUTHORIZATION_SUMMARY_KEY );
 		delete_option( self::AUTHORIZATION_SUMMARY_KEY_TEST_MODE );
+
+		// delete_option() returns before touching caches when the row is already
+		// gone, so an external object cache can keep serving the stale value. The
+		// plugin deletes the cache entry explicitly for the same reason.
+		wp_cache_delete( self::AUTHORIZATION_SUMMARY_KEY, 'options' );
+		wp_cache_delete( self::AUTHORIZATION_SUMMARY_KEY_TEST_MODE, 'options' );
 	}
 
 	/**

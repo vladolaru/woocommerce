@@ -149,6 +149,28 @@ class WooPaymentsAdminMenuBadgeServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Invalidation purges a stale object-cache entry even when the option row is already gone.
+	 */
+	public function test_invalidate_authorization_summary_caches_purges_stale_object_cache(): void {
+		// delete_option() returns before touching caches when the row does not
+		// exist, so a stale external-object-cache entry would survive it.
+		delete_option( 'wcpay_authorization_summary_cache' );
+		wp_cache_set(
+			'wcpay_authorization_summary_cache',
+			array(
+				'data'    => array( 'count' => 9 ),
+				'fetched' => time(),
+				'errored' => false,
+			),
+			'options'
+		);
+
+		$this->create_service( $this->create_api_client( array(), array( 'count' => 3 ) ) )->invalidate_authorization_summary_caches();
+
+		$this->assertFalse( wp_cache_get( 'wcpay_authorization_summary_cache', 'options' ) );
+	}
+
+	/**
 	 * @testdox Should return zero when manual capture is disabled.
 	 */
 	public function test_get_uncaptured_transactions_count_returns_zero_when_manual_capture_is_disabled(): void {
