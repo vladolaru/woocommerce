@@ -337,6 +337,48 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Account liveness should be tri-state: live, test, or unknown when undetermined.
+	 */
+	public function test_get_account_is_live_reports_tristate_liveness(): void {
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data' => array(
+					'account_id' => 'acct_123',
+					'is_live'    => true,
+				),
+			)
+		);
+		$this->assertTrue( $this->create_service()->get_account_is_live() );
+
+		// A non-live cached account is only valid while onboarding test mode is on.
+		update_option( 'wcpay_onboarding_test_mode', 'yes' );
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data' => array(
+					'account_id' => 'acct_123',
+					'is_live'    => false,
+				),
+			)
+		);
+		$this->assertFalse( $this->create_service()->get_account_is_live() );
+
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data' => array(
+					'account_id' => 'acct_123',
+				),
+			)
+		);
+		$this->assertNull( $this->create_service()->get_account_is_live(), 'A cached account without an is_live field must report unknown liveness.' );
+
+		delete_option( 'wcpay_account_data' );
+		$this->assertNull( $this->create_service()->get_account_is_live(), 'An unfetched account must report unknown liveness.' );
+	}
+
+	/**
 	 * @testdox Should not autoload the onboarding test-mode option when enabling it on the dev-mode cache path.
 	 */
 	public function test_dev_mode_cache_path_does_not_autoload_onboarding_test_mode_option(): void {

@@ -106,6 +106,89 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Legacy customer IDs should migrate to the live key when the account is live, even in test mode.
+	 */
+	public function test_migration_targets_live_key_when_account_is_live_even_in_test_mode(): void {
+		$user_id = $this->factory->user->create( array( 'user_login' => 'legacy-live-account' ) );
+		update_user_option( $user_id, WooPaymentsCustomerService::DEPRECATED_CUSTOMER_ID_OPTION, 'cus_legacy' );
+
+		$sut = $this->create_sut( true, $this->create_customer_api_client( array() ), true );
+
+		$this->assertNull( $sut->get_customer_id_by_user_id( $user_id ), 'A live-account legacy ID must not resolve as the test-mode customer.' );
+
+		$this->assertSame( 'cus_legacy', get_user_option( WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, $user_id ), 'A live account\'s legacy customer must land under the live key regardless of the store mode.' );
+		$this->assertFalse( get_user_option( WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, $user_id ) );
+		$this->assertFalse( get_user_option( WooPaymentsCustomerService::DEPRECATED_CUSTOMER_ID_OPTION, $user_id ) );
+	}
+
+	/**
+	 * @testdox Legacy customer IDs on a live account in live mode should migrate and resolve immediately.
+	 */
+	public function test_migration_resolves_live_key_on_live_account_in_live_mode(): void {
+		$user_id = $this->factory->user->create( array( 'user_login' => 'legacy-live-live' ) );
+		update_user_option( $user_id, WooPaymentsCustomerService::DEPRECATED_CUSTOMER_ID_OPTION, 'cus_legacy' );
+
+		$sut = $this->create_sut( false, $this->create_customer_api_client( array() ), true );
+
+		$this->assertSame( 'cus_legacy', $sut->get_customer_id_by_user_id( $user_id ) );
+		$this->assertSame( 'cus_legacy', get_user_option( WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, $user_id ) );
+		$this->assertFalse( get_user_option( WooPaymentsCustomerService::DEPRECATED_CUSTOMER_ID_OPTION, $user_id ) );
+	}
+
+	/**
+	 * @testdox Legacy customer IDs should migrate to the test key when the account is not live.
+	 */
+	public function test_migration_targets_test_key_when_account_is_not_live(): void {
+		$user_id = $this->factory->user->create( array( 'user_login' => 'legacy-test-account' ) );
+		update_user_option( $user_id, WooPaymentsCustomerService::DEPRECATED_CUSTOMER_ID_OPTION, 'cus_legacy' );
+
+		$sut = $this->create_sut( true, $this->create_customer_api_client( array() ), false );
+
+		$this->assertSame( 'cus_legacy', $sut->get_customer_id_by_user_id( $user_id ) );
+		$this->assertSame( 'cus_legacy', get_user_option( WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, $user_id ) );
+		$this->assertFalse( get_user_option( WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, $user_id ) );
+		$this->assertFalse( get_user_option( WooPaymentsCustomerService::DEPRECATED_CUSTOMER_ID_OPTION, $user_id ) );
+
+		$other_user_id = $this->factory->user->create( array( 'user_login' => 'legacy-test-account-live-mode' ) );
+		update_user_option( $other_user_id, WooPaymentsCustomerService::DEPRECATED_CUSTOMER_ID_OPTION, 'cus_legacy' );
+
+		$live_mode_sut = $this->create_sut( false, $this->create_customer_api_client( array() ), false );
+
+		$this->assertNull( $live_mode_sut->get_customer_id_by_user_id( $other_user_id ), 'A test-account legacy ID must not resolve as the live-mode customer.' );
+		$this->assertSame( 'cus_legacy', get_user_option( WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, $other_user_id ) );
+		$this->assertFalse( get_user_option( WooPaymentsCustomerService::DEPRECATED_CUSTOMER_ID_OPTION, $other_user_id ) );
+	}
+
+	/**
+	 * @testdox Legacy customer IDs should default to the live key when the account liveness is unknown.
+	 */
+	public function test_migration_defaults_to_live_key_when_account_liveness_is_unknown(): void {
+		$user_id = $this->factory->user->create( array( 'user_login' => 'legacy-unknown-account' ) );
+		update_user_option( $user_id, WooPaymentsCustomerService::DEPRECATED_CUSTOMER_ID_OPTION, 'cus_legacy' );
+
+		$sut = $this->create_sut( false, $this->create_customer_api_client( array() ), null );
+
+		$this->assertSame( 'cus_legacy', $sut->get_customer_id_by_user_id( $user_id ), 'Unknown account liveness must be treated as live to avoid losing live customer data.' );
+		$this->assertSame( 'cus_legacy', get_user_option( WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, $user_id ) );
+		$this->assertFalse( get_user_option( WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, $user_id ) );
+		$this->assertFalse( get_user_option( WooPaymentsCustomerService::DEPRECATED_CUSTOMER_ID_OPTION, $user_id ) );
+	}
+
+	/**
+	 * @testdox The legacy customer option should be kept when the migrated write cannot be confirmed.
+	 */
+	public function test_migration_keeps_legacy_option_when_the_write_fails(): void {
+		$user_id = $this->factory->user->create( array( 'user_login' => 'legacy-write-failure' ) );
+		update_user_option( $user_id, WooPaymentsCustomerService::DEPRECATED_CUSTOMER_ID_OPTION, 'cus_legacy' );
+		update_user_option( $user_id, WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, 'cus_legacy' );
+
+		$sut = $this->create_sut( true, $this->create_customer_api_client( array() ), true );
+
+		$this->assertNull( $sut->get_customer_id_by_user_id( $user_id ) );
+		$this->assertSame( 'cus_legacy', get_user_option( WooPaymentsCustomerService::DEPRECATED_CUSTOMER_ID_OPTION, $user_id ), 'The legacy option must survive when the migrated write is not confirmed.' );
+	}
+
+	/**
 	 * @testdox Guest shoppers should use session storage for WooPayments customer IDs.
 	 */
 	public function test_get_or_create_customer_id_uses_session_storage_for_guests(): void {
@@ -424,17 +507,19 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a customer service System Under Test.
 	 *
-	 * @param bool                 $test_mode  Whether test mode is enabled.
-	 * @param WooPaymentsApiClient $api_client Native API client mock.
+	 * @param bool                 $test_mode       Whether test mode is enabled.
+	 * @param WooPaymentsApiClient $api_client      Native API client mock.
+	 * @param bool|null            $account_is_live Account liveness: true live, false test, null unknown.
 	 * @return WooPaymentsCustomerService
 	 */
-	private function create_sut( bool $test_mode, WooPaymentsApiClient $api_client ): WooPaymentsCustomerService {
+	private function create_sut( bool $test_mode, WooPaymentsApiClient $api_client, ?bool $account_is_live = null ): WooPaymentsCustomerService {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_test_mode_enabled' ) )
+			->onlyMethods( array( 'is_test_mode_enabled', 'get_account_is_live' ) )
 			->getMock();
 
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( $test_mode );
+		$account_service->method( 'get_account_is_live' )->willReturn( $account_is_live );
 
 		$sut = new WooPaymentsCustomerService();
 		$sut->init( $api_client, $account_service, new WooPaymentsSessionService() );

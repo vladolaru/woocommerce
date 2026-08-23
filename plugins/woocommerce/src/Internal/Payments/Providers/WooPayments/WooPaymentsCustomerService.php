@@ -537,8 +537,20 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 			return;
 		}
 
-		update_user_option( $user_id, $this->get_customer_id_option(), $customer_id );
-		delete_user_option( $user_id, self::DEPRECATED_CUSTOMER_ID_OPTION );
+		// A live account is optimistically assumed to hold a live customer, to avoid losing live
+		// customer data; a non-live account can only hold test objects. When liveness cannot be
+		// determined, default to live so a live account is never treated as test.
+		$account_is_live = $this->account_service->get_account_is_live();
+		$target_option   = false === $account_is_live ? self::TEST_CUSTOMER_ID_OPTION : self::LIVE_CUSTOMER_ID_OPTION;
+
+		if ( update_user_option( $user_id, $target_option, $customer_id ) ) {
+			delete_user_option( $user_id, self::DEPRECATED_CUSTOMER_ID_OPTION );
+		} else {
+			wc_get_logger()->error(
+				'Failed to store the migrated WooPayments customer ID for user ' . $user_id . '; the legacy customer option was kept.',
+				array( 'source' => 'woopayments' )
+			);
+		}
 	}
 
 	/**

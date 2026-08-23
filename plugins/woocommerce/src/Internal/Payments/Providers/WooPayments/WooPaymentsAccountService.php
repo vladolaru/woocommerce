@@ -799,6 +799,22 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Get the cached account's liveness, when it can be determined.
+	 *
+	 * @return bool|null True for a live account, false for a non-live one, null when no cached
+	 *                   account data carries an is_live field (liveness unknown).
+	 */
+	public function get_account_is_live(): ?bool {
+		$account_data = $this->get_cached_account_data();
+
+		if ( array() === $account_data || ! isset( $account_data['is_live'] ) ) {
+			return null;
+		}
+
+		return $this->is_truthy( $account_data['is_live'] );
+	}
+
+	/**
 	 * Tell whether the cached account is rejected.
 	 *
 	 * @return bool
