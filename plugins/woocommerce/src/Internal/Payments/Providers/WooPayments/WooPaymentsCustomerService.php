@@ -579,7 +579,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 			// update_user_option() also returns false when the stored value is already
 			// current, which is routine here (every order update re-persists); only a
 			// write that leaves a different value behind is a real failure.
-			if ( ! $updated && $customer_id !== get_user_option( $this->get_customer_id_option(), $user_id ) ) {
+			if ( ! $updated && get_user_option( $this->get_customer_id_option(), $user_id ) !== $customer_id ) {
 				wc_get_logger()->error(
 					'Failed to update the WooPayments customer ID for user ' . $user_id . '.',
 					array( 'source' => 'woopayments' )
