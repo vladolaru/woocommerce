@@ -546,7 +546,9 @@ class WooPaymentsOrderNoteService {
 			$transaction_url
 		);
 
-		return '' === $message ? $note : $note . ' ' . $message;
+		// The provider error message is inert text in the note, matching the
+		// plugin's esc_html() before mark_payment_capture_failed.
+		return '' === $message ? $note : $note . ' ' . esc_html( $message );
 	}
 
 	/**

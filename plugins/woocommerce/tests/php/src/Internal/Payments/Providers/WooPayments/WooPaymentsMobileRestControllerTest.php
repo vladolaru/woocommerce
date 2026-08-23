@@ -1123,6 +1123,107 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox An amount-too-small capture failure notes the provider minimum like the reference client.
+	 */
+	public function test_capture_failure_note_carries_the_amount_too_small_minimum(): void {
+		$order = $this->create_order( 0.30, 'USD' );
+		$this->api_client->payment_intention_response_queue = array(
+			array(
+				'id'       => 'pi_terminal',
+				'status'   => 'requires_capture',
+				'currency' => 'usd',
+				'metadata' => array(
+					'order_id' => (string) $order->get_id(),
+				),
+			),
+			array(
+				'id'     => 'pi_terminal',
+				'status' => 'requires_capture',
+			),
+		);
+		$this->api_client->captured_intention_exception     = new WooPaymentsApiException(
+			'Amount must be at least $0.50 usd',
+			'amount_too_small',
+			400,
+			'',
+			'',
+			array(
+				'minimum_amount' => 50,
+				'currency'       => 'usd',
+			)
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal' );
+
+		$response = $this->sut->capture_terminal_payment( $request );
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$note = $this->get_order_note_containing( $order, 'The minimum amount to capture is' );
+		$this->assertNotEmpty( $note, 'The failure note must carry the appended minimum-amount sentence.' );
+		$this->assertStringContainsString( '0.50', wp_strip_all_tags( $note ) );
+		$this->assertStringContainsString( 'USD', wp_strip_all_tags( $note ) );
+	}
+
+	/**
+	 * @testdox Provider error markup arrives inert in the capture-failure note.
+	 */
+	public function test_capture_failure_note_escapes_provider_markup(): void {
+		$order = $this->create_order( 12.34, 'USD' );
+		$this->api_client->payment_intention_response_queue = array(
+			array(
+				'id'       => 'pi_terminal',
+				'status'   => 'requires_capture',
+				'currency' => 'usd',
+				'metadata' => array(
+					'order_id' => (string) $order->get_id(),
+				),
+			),
+			array(
+				'id'     => 'pi_terminal',
+				'status' => 'requires_capture',
+			),
+		);
+		$this->api_client->captured_intention_exception     = new WooPaymentsApiException( 'Declined <a href="https://evil.example">verify</a>.', 'wcpay_capture_error', 402 );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal' );
+
+		$response = $this->sut->capture_terminal_payment( $request );
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$note = $this->get_order_note_containing( $order, 'Declined' );
+		$this->assertNotEmpty( $note );
+		$this->assertStringContainsString( '&lt;a href=', $note, 'Provider markup must be encoded inert, matching the reference esc_html().' );
+		$this->assertStringNotContainsString( '<a href="https://evil.example">', $note );
+	}
+
+	/**
+	 * @testdox A pre-check intent fetch failure returns the error without marking the order.
+	 */
+	public function test_precheck_fetch_failure_does_not_mark_the_order(): void {
+		$order = $this->create_order( 12.34, 'USD' );
+		$order->update_status( 'on-hold' );
+		$this->api_client->payment_intention_exception = new WooPaymentsApiException( 'Connection lost.', 'wcpay_fetch_error', 500 );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal' );
+
+		$response = $this->sut->capture_terminal_payment( $request );
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$this->assertSame( 'on-hold', $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_intention_status', true ), 'A pre-check failure must not stamp capture-failure state on the order.' );
+		$this->assertSame( '', $this->get_order_note_containing( $order, 'capture' ), 'A pre-check failure must not leave a capture note on the order.' );
+	}
+
+	/**
 	 * @testdox Terminal capture rejects intents without matching order metadata.
 	 */
 	public function test_capture_terminal_payment_rejects_intent_without_order_metadata(): void {

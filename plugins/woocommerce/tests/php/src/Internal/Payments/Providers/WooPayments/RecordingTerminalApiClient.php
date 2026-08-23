@@ -144,6 +144,13 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 	public array $payment_intention_response_queue = array();
 
 	/**
+	 * Exception thrown by get_payment_intention when set.
+	 *
+	 * @var \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException|null
+	 */
+	public $payment_intention_exception = null;
+
+	/**
 	 * File contents response.
 	 *
 	 * @var array<string,mixed>
@@ -342,6 +349,10 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 	 */
 	public function get_payment_intention( string $intent_id ): array {
 		unset( $intent_id );
+
+		if ( null !== $this->payment_intention_exception ) {
+			throw $this->payment_intention_exception;
+		}
 
 		if ( array() !== $this->payment_intention_response_queue ) {
 			return array_shift( $this->payment_intention_response_queue );
