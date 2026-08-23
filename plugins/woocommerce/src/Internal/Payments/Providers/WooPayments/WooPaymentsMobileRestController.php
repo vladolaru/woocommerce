@@ -37,8 +37,6 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 
 	private const LOCATION_CACHE_TTL = DAY_IN_SECONDS;
 
-	private const METADATA_MAX_ENTRIES = 50;
-
 	/**
 	 * Runtime owner arbiter.
 	 *
@@ -361,7 +359,10 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 
 		try {
 			$currency        = strtolower( $order->get_currency() );
-			$metadata        = $this->sanitize_metadata( $request->get_param( 'metadata' ) );
+			$raw_metadata    = $request->get_param( 'metadata' );
+			// Forwarded verbatim like the plugin: the apps reconcile on exact metadata
+			// names, and the payload only ever travels to the provider API.
+			$metadata        = is_array( $raw_metadata ) ? $raw_metadata : array();
 			$payment_methods = $this->get_terminal_intent_payment_methods( $request );
 			$capture_method  = $this->get_terminal_intent_capture_method( $request );
 			$request_data    = array(
@@ -564,7 +565,7 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 
 		$label        = $this->get_request_string( $request, 'label' );
 		$raw_metadata = $request->get_param( 'metadata' );
-		$metadata     = is_array( $raw_metadata ) ? $this->sanitize_metadata( $raw_metadata ) : null;
+		$metadata     = is_array( $raw_metadata ) ? $raw_metadata : null;
 
 		try {
 			$reader = $this->api_client->register_terminal_reader(
@@ -702,10 +703,7 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 
 			$location = $this->api_client->create_terminal_location(
 				$display_names[0],
-				$address,
-				array(
-					'source' => 'woocommerce_native',
-				)
+				$address
 			);
 			delete_transient( self::STORE_LOCATIONS_TRANSIENT_KEY );
 
@@ -772,13 +770,12 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 	public function create_terminal_location( WP_REST_Request $request ) {
 		$address      = $request->get_param( 'address' );
 		$display_name = $this->get_request_string( $request, 'display_name' );
-		$metadata     = $this->sanitize_metadata( $request->get_param( 'metadata' ) );
 
 		try {
+			// No metadata is forwarded on location create, matching the plugin.
 			$location = $this->api_client->create_terminal_location(
 				$display_name,
-				is_array( $address ) ? $address : array(),
-				$metadata
+				is_array( $address ) ? $address : array()
 			);
 			delete_transient( self::STORE_LOCATIONS_TRANSIENT_KEY );
 
@@ -847,42 +844,6 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 		}
 
 		return $order;
-	}
-
-	/**
-	 * Sanitize user-supplied metadata before forwarding it to the provider API.
-	 *
-	 * Non-array input yields an empty array; each entry key is passed through
-	 * sanitize_key() and each scalar value through sanitize_text_field(). Non-scalar
-	 * values are dropped and the number of forwarded entries is capped.
-	 *
-	 * @param mixed $metadata Raw metadata from the request.
-	 * @return array<string,string>
-	 */
-	private function sanitize_metadata( $metadata ): array {
-		if ( ! is_array( $metadata ) ) {
-			return array();
-		}
-
-		$sanitized = array();
-		foreach ( $metadata as $key => $value ) {
-			if ( count( $sanitized ) >= self::METADATA_MAX_ENTRIES ) {
-				break;
-			}
-
-			if ( ! is_scalar( $value ) ) {
-				continue;
-			}
-
-			$sanitized_key = sanitize_key( (string) $key );
-			if ( '' === $sanitized_key ) {
-				continue;
-			}
-
-			$sanitized[ $sanitized_key ] = sanitize_text_field( (string) $value );
-		}
-
-		return $sanitized;
 	}
 
 	/**

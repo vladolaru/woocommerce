@@ -166,9 +166,9 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Terminal intent creation sanitizes user-supplied metadata before forwarding it to the provider API.
+	 * @testdox Terminal intent creation forwards app-supplied metadata verbatim like the reference mobile route.
 	 */
-	public function test_create_terminal_intent_sanitizes_metadata_before_forwarding(): void {
+	public function test_create_terminal_intent_forwards_metadata_verbatim(): void {
 		$order = $this->create_order( 12.34, 'USD' );
 
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/create_terminal_intent' );
@@ -176,9 +176,9 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$request->set_param(
 			'metadata',
 			array(
-				'Bad Key<script>' => '<script>alert(1)</script>Legit Value',
-				'channel'         => 'mobile',
-				'nested'          => array( 'ignored' => true ),
+				'readerID'    => 'rdr_ABC',
+				'pos.session' => 'session-42',
+				'channel'     => 'mobile',
 			)
 		);
 
@@ -187,16 +187,11 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertInstanceOf( WP_REST_Response::class, $response );
 		$metadata = $this->api_client->last_terminal_intent_payload['metadata'];
 
-		// The dirty key is sanitize_key'd and its value is sanitize_text_field'd.
-		$this->assertArrayNotHasKey( 'Bad Key<script>', $metadata );
-		$this->assertArrayHasKey( 'badkeyscript', $metadata );
-		$this->assertSame( 'Legit Value', $metadata['badkeyscript'] );
-
-		// Clean scalar entries are preserved.
+		// Mixed-case and dotted keys must reach the provider unrenamed - the apps
+		// reconcile on the exact metadata names, and the platform is the boundary.
+		$this->assertSame( 'rdr_ABC', $metadata['readerID'] );
+		$this->assertSame( 'session-42', $metadata['pos.session'] );
 		$this->assertSame( 'mobile', $metadata['channel'] );
-
-		// Non-scalar entries are dropped.
-		$this->assertArrayNotHasKey( 'nested', $metadata );
 
 		// Internal order metadata is still appended.
 		$this->assertSame( (string) $order->get_id(), $metadata['order_id'] );
@@ -204,17 +199,17 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Reader registration sanitizes user-supplied metadata before forwarding it to the provider API.
+	 * @testdox Reader registration forwards app-supplied metadata verbatim like the reference client.
 	 */
-	public function test_register_reader_sanitizes_metadata_before_forwarding(): void {
+	public function test_register_reader_forwards_metadata_verbatim(): void {
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/readers' );
 		$request->set_param( 'location', 'tml_store' );
 		$request->set_param( 'registration_code', 'puppies-plug-could' );
 		$request->set_param(
 			'metadata',
 			array(
-				'Bad Key<script>' => '<script>alert(1)</script>Legit Value',
-				'nested'          => array( 'ignored' => true ),
+				'readerID'    => 'rdr_ABC',
+				'pos.session' => 'session-42',
 			)
 		);
 
@@ -225,10 +220,23 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertInstanceOf( WP_REST_Response::class, $response );
 		$metadata = $this->api_client->last_registered_reader['metadata'];
 
-		$this->assertArrayNotHasKey( 'Bad Key<script>', $metadata );
-		$this->assertArrayHasKey( 'badkeyscript', $metadata );
-		$this->assertSame( 'Legit Value', $metadata['badkeyscript'] );
-		$this->assertArrayNotHasKey( 'nested', $metadata );
+		$this->assertSame( 'rdr_ABC', $metadata['readerID'] );
+		$this->assertSame( 'session-42', $metadata['pos.session'] );
+	}
+
+	/**
+	 * @testdox Terminal location creation does not forward metadata, like the reference client.
+	 */
+	public function test_create_terminal_location_does_not_forward_metadata(): void {
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/terminal/locations' );
+		$request->set_param( 'display_name', 'Warehouse' );
+		$request->set_param( 'address', array( 'country' => 'US' ) );
+		$request->set_param( 'metadata', array( 'ignored' => 'yes' ) );
+
+		$response = $this->sut->create_terminal_location( $request );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( array(), $this->api_client->last_created_location['metadata'] );
 	}
 
 	/**
@@ -717,6 +725,7 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( 'US', $this->api_client->last_created_location['address']['country'] );
 		$this->assertSame( 'CA', $this->api_client->last_created_location['address']['state'] );
 		$this->assertSame( '123 Main St', $this->api_client->last_created_location['address']['line1'] );
+		$this->assertSame( array(), $this->api_client->last_created_location['metadata'], 'The auto-created store location must carry no metadata, like the reference client.' );
 	}
 
 	/**
