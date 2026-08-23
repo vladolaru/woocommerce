@@ -239,7 +239,14 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 
 		$this->create_authorizations_controller( true, $processing_service )->register_routes();
 
-		$missing_response = $this->server->dispatch( new WP_REST_Request( 'POST', '/wc/v3/payments/orders/999999/capture_authorization' ) );
+		$no_intent_response = $this->server->dispatch( new WP_REST_Request( 'POST', '/wc/v3/payments/orders/999999/capture_authorization' ) );
+
+		$this->assertSame( 400, $no_intent_response->get_status(), 'payment_intent_id is a required route arg, like the reference client.' );
+		$this->assertSame( 'rest_missing_callback_param', $no_intent_response->get_data()['code'] );
+
+		$missing_request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/999999/capture_authorization' );
+		$missing_request->set_body_params( array( 'payment_intent_id' => 'pi_auth' ) );
+		$missing_response = $this->server->dispatch( $missing_request );
 
 		$this->assertSame( 404, $missing_response->get_status() );
 		$this->assertSame( 'wcpay_missing_order', $missing_response->get_data()['code'] );

@@ -129,27 +129,42 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 
 		register_rest_route(
 			self::NAMESPACE,
-			'/payments/orders/(?P<order_id>\d+)/capture_terminal_payment',
+			'/payments/orders/(?P<order_id>\w+)/capture_terminal_payment',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
 				'callback'            => array( $this, 'capture_terminal_payment' ),
 				'permission_callback' => array( $this, 'check_permission' ),
+				'args'                => array(
+					'payment_intent_id' => array(
+						'required' => true,
+					),
+				),
 			)
 		);
 
 		register_rest_route(
 			self::NAMESPACE,
-			'/payments/orders/(?P<order_id>\d+)/prepare_terminal_payment',
+			'/payments/orders/(?P<order_id>\w+)/prepare_terminal_payment',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
 				'callback'            => array( $this, 'prepare_terminal_payment' ),
 				'permission_callback' => array( $this, 'check_permission' ),
+				'args'                => array(
+					'order_id'          => array(
+						'required' => true,
+						'type'     => 'integer',
+					),
+					'payment_intent_id' => array(
+						'required' => true,
+						'type'     => 'string',
+					),
+				),
 			)
 		);
 
 		register_rest_route(
 			self::NAMESPACE,
-			'/payments/orders/(?P<order_id>\d+)/create_terminal_intent',
+			'/payments/orders/(?P<order_id>\w+)/create_terminal_intent',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
 				'callback'            => array( $this, 'create_terminal_intent' ),
@@ -180,6 +195,22 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 					'methods'             => WP_REST_Server::CREATABLE,
 					'callback'            => array( $this, 'register_reader' ),
 					'permission_callback' => array( $this, 'check_permission' ),
+					'args'                => array(
+						'location'          => array(
+							'type'     => 'string',
+							'required' => true,
+						),
+						'registration_code' => array(
+							'type'     => 'string',
+							'required' => true,
+						),
+						'label'             => array(
+							'type' => 'string',
+						),
+						'metadata'          => array(
+							'type' => 'object',
+						),
+					),
 				),
 			)
 		);
@@ -237,6 +268,16 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 					'methods'             => WP_REST_Server::CREATABLE,
 					'callback'            => array( $this, 'create_terminal_location' ),
 					'permission_callback' => array( $this, 'check_permission' ),
+					'args'                => array(
+						'display_name' => array(
+							'type'     => 'string',
+							'required' => true,
+						),
+						'address'      => array(
+							'type'     => 'object',
+							'required' => true,
+						),
+					),
 				),
 			)
 		);
@@ -254,6 +295,16 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 					'methods'             => WP_REST_Server::CREATABLE,
 					'callback'            => array( $this, 'update_terminal_location' ),
 					'permission_callback' => array( $this, 'check_permission' ),
+					'args'                => array(
+						'display_name' => array(
+							'type'     => 'string',
+							'required' => false,
+						),
+						'address'      => array(
+							'type'     => 'object',
+							'required' => false,
+						),
+					),
 				),
 				array(
 					'methods'             => WP_REST_Server::DELETABLE,

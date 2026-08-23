@@ -117,7 +117,7 @@ class WooPaymentsAuthorizationsRestController implements RegisterHooksInterface 
 		register_rest_route( self::NAMESPACE, '/payments/authorizations/summary', $this->get_readable_route( 'get_authorizations_summary' ) );
 		register_rest_route( self::NAMESPACE, '/payments/authorizations/(?P<payment_intent_id>\w+)', $this->get_readable_route( 'get_authorization' ) );
 		register_rest_route( self::NAMESPACE, '/payments/orders/(?P<order_id>\w+)/capture_authorization', $this->get_capture_route() );
-		register_rest_route( self::NAMESPACE, '/payments/orders/(?P<order_id>\w+)/cancel_authorization', $this->get_creatable_route( 'cancel_authorization' ) );
+		register_rest_route( self::NAMESPACE, '/payments/orders/(?P<order_id>\w+)/cancel_authorization', $this->get_cancel_route() );
 	}
 
 	/**
@@ -300,9 +300,28 @@ class WooPaymentsAuthorizationsRestController implements RegisterHooksInterface 
 	private function get_capture_route(): array {
 		$route         = $this->get_creatable_route( 'capture_authorization' );
 		$route['args'] = array(
+			'payment_intent_id' => array(
+				'required' => true,
+			),
 			'amount' => array(
 				'required' => false,
 				'type'     => 'number',
+			),
+		);
+
+		return $route;
+	}
+
+	/**
+	 * Build the cancel route definition with its required intent ID.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_cancel_route(): array {
+		$route         = $this->get_creatable_route( 'cancel_authorization' );
+		$route['args'] = array(
+			'payment_intent_id' => array(
+				'required' => true,
 			),
 		);
 

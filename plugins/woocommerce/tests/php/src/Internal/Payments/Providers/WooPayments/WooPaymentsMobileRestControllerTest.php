@@ -333,7 +333,7 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * @testdox Order-scoped terminal routes match numeric order IDs and reject non-numeric ones.
 	 */
-	public function test_order_scoped_terminal_routes_reject_non_numeric_order_id(): void {
+	public function test_order_scoped_terminal_routes_match_the_reference_route_split(): void {
 		$this->sut->register_routes();
 
 		$order = $this->create_order( 12.34, 'USD' );
@@ -344,12 +344,53 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		);
 		$this->assertSame( 200, $numeric_response->get_status() );
 
-		// A non-numeric order ID that would match \w+ no longer matches the numeric route.
+		// The reference client uses \w+ on the terminal order routes, so a
+		// non-numeric ID reaches the handler and yields wcpay_missing_order.
 		$non_numeric_response = $this->server->dispatch(
 			new WP_REST_Request( 'POST', '/wc/v3/payments/orders/notnumeric/create_terminal_intent' )
 		);
 		$this->assertSame( 404, $non_numeric_response->get_status() );
-		$this->assertSame( 'rest_no_route', $non_numeric_response->get_data()['code'] );
+		$this->assertSame( 'wcpay_missing_order', $non_numeric_response->get_data()['code'] );
+
+		// create_customer is the one route the reference client pins to \d+.
+		$customer_response = $this->server->dispatch(
+			new WP_REST_Request( 'POST', '/wc/v3/payments/orders/notnumeric/create_customer' )
+		);
+		$this->assertSame( 404, $customer_response->get_status() );
+		$this->assertSame( 'rest_no_route', $customer_response->get_data()['code'] );
+	}
+
+	/**
+	 * @testdox Missing required params fail with the WordPress args-schema code like the reference client.
+	 */
+	public function test_terminal_routes_require_params_via_args_schemas(): void {
+		$this->sut->register_routes();
+
+		$order = $this->create_order( 12.34, 'USD' );
+
+		$capture_response = $this->server->dispatch(
+			new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' )
+		);
+		$this->assertSame( 400, $capture_response->get_status() );
+		$this->assertSame( 'rest_missing_callback_param', $capture_response->get_data()['code'] );
+
+		$prepare_response = $this->server->dispatch(
+			new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/prepare_terminal_payment' )
+		);
+		$this->assertSame( 400, $prepare_response->get_status() );
+		$this->assertSame( 'rest_missing_callback_param', $prepare_response->get_data()['code'] );
+
+		$reader_response = $this->server->dispatch(
+			new WP_REST_Request( 'POST', '/wc/v3/payments/readers' )
+		);
+		$this->assertSame( 400, $reader_response->get_status() );
+		$this->assertSame( 'rest_missing_callback_param', $reader_response->get_data()['code'] );
+
+		$location_response = $this->server->dispatch(
+			new WP_REST_Request( 'POST', '/wc/v3/payments/terminal/locations' )
+		);
+		$this->assertSame( 400, $location_response->get_status() );
+		$this->assertSame( 'rest_missing_callback_param', $location_response->get_data()['code'] );
 	}
 
 	/**
@@ -1379,9 +1420,9 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	private function get_expected_routes(): array {
 		return array(
 			'/wc/v3/payments/connection_tokens'        => array( WP_REST_Server::CREATABLE ),
-			'/wc/v3/payments/orders/(?P<order_id>\\d+)/capture_terminal_payment' => array( WP_REST_Server::CREATABLE ),
-			'/wc/v3/payments/orders/(?P<order_id>\\d+)/prepare_terminal_payment' => array( WP_REST_Server::CREATABLE ),
-			'/wc/v3/payments/orders/(?P<order_id>\\d+)/create_terminal_intent' => array( WP_REST_Server::CREATABLE ),
+			'/wc/v3/payments/orders/(?P<order_id>\\w+)/capture_terminal_payment' => array( WP_REST_Server::CREATABLE ),
+			'/wc/v3/payments/orders/(?P<order_id>\\w+)/prepare_terminal_payment' => array( WP_REST_Server::CREATABLE ),
+			'/wc/v3/payments/orders/(?P<order_id>\\w+)/create_terminal_intent' => array( WP_REST_Server::CREATABLE ),
 			'/wc/v3/payments/orders/(?P<order_id>\\d+)/create_customer' => array( WP_REST_Server::CREATABLE ),
 			'/wc/v3/payments/readers'                  => array( WP_REST_Server::READABLE, WP_REST_Server::CREATABLE ),
 			'/wc/v3/payments/readers/charges/(?P<transaction_id>\\w+)' => array( WP_REST_Server::READABLE ),
