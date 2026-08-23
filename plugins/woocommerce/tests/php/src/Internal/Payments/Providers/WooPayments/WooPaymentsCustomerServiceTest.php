@@ -64,6 +64,10 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Account creation outside a checkout should not adopt the session customer ID.
 	 */
 	public function test_created_customer_outside_checkout_does_not_promote_session_customer_id(): void {
+		if ( defined( 'WOOCOMMERCE_CHECKOUT' ) && WOOCOMMERCE_CHECKOUT ) {
+			$this->markTestSkipped( 'Another test in this process defined WOOCOMMERCE_CHECKOUT; the outside-checkout scenario cannot be simulated.' );
+		}
+
 		$user_id = $this->factory->user->create( array( 'user_login' => 'created-outside-checkout' ) );
 		WC()->session->set( 'wcpay_customer_id', 'cus_guest' );
 		$this->fake_wcs_checkout_blocks_api_request();

@@ -563,7 +563,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 
 		$this->create_service( array(), null, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card', 'sepa_debit' ) ) );
 
-		/** This filter is documented in WooCommerce core. */
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token filter.
 		$tokens = apply_filters( 'woocommerce_get_customer_payment_tokens', array(), $user_id, '' );
 
 		$token_ids = array();
@@ -609,7 +609,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$customer_service = $this->create_reconciling_customer_service( 'cus_1', array( 'card' => array() ) );
 		$this->create_service( array(), $api_client, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card' ) ) );
 
-		/** This filter is documented in WooCommerce core. */
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token filter.
 		$tokens = apply_filters( 'woocommerce_get_customer_payment_tokens', array( $stale_token->get_id() => $stale_token ), $user_id, '' );
 
 		$this->assertArrayNotHasKey( $stale_token->get_id(), $tokens, 'A token whose payment method the provider forgot must not render.' );
@@ -663,9 +663,9 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$customer_service = $this->create_reconciling_customer_service( 'cus_1', array( 'card' => array() ) );
 		$this->create_service( array(), null, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card' ) ) );
 
-		/** This filter is documented in WooCommerce core. */
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token filter.
 		apply_filters( 'woocommerce_get_customer_payment_tokens', array(), $user_id, '' );
-		/** This filter is documented in WooCommerce core. */
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token filter.
 		apply_filters( 'woocommerce_get_customer_payment_tokens', array(), $user_id, '' );
 
 		$this->assertSame( array( 'card' => 1 ), $customer_service->fetch_counts, 'The second read must be served from the cached payment methods.' );
@@ -675,7 +675,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( array(), $cache['payment_method_card'] ?? null );
 
 		$customer_service->customer_id = 'cus_2';
-		/** This filter is documented in WooCommerce core. */
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token filter.
 		apply_filters( 'woocommerce_get_customer_payment_tokens', array(), $user_id, '' );
 
 		$this->assertSame( array( 'card' => 2 ), $customer_service->fetch_counts, 'A different customer ID must bust the cached payment methods.' );
@@ -691,15 +691,85 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		wp_set_current_user( $user_id );
 		$local_token = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_local' );
 
-		$customer_service = $this->create_reconciling_customer_service( 'cus_1', array() );
+		$customer_service               = $this->create_reconciling_customer_service( 'cus_1', array() );
 		$customer_service->fail_fetches = true;
 		$this->create_service( array(), null, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card' ) ) );
 
-		/** This filter is documented in WooCommerce core. */
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token filter.
 		$tokens = apply_filters( 'woocommerce_get_customer_payment_tokens', array( $local_token->get_id() => $local_token ), $user_id, '' );
 
 		$this->assertArrayHasKey( $local_token->get_id(), $tokens, 'A provider outage must degrade to the locally stored list.' );
 		$this->assertNotNull( \WC_Payment_Tokens::get( $local_token->get_id() ), 'A provider outage must not delete local tokens.' );
+	}
+
+	/**
+	 * @testdox Reconciliation should re-register the token filter after adding tokens.
+	 */
+	public function test_reconcile_reregisters_the_filter_after_adding_tokens(): void {
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+
+		$customer_service = $this->create_reconciling_customer_service(
+			'cus_1',
+			array(
+				'card' => array(
+					array(
+						'id'   => 'pm_readd',
+						'type' => 'card',
+						'card' => array(
+							'brand'     => 'visa',
+							'last4'     => '4242',
+							'exp_month' => 12,
+							'exp_year'  => 2030,
+						),
+					),
+				),
+			)
+		);
+		$sut              = $this->create_service( array(), null, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card' ) ) );
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token filter.
+		$tokens = apply_filters( 'woocommerce_get_customer_payment_tokens', array(), $user_id, '' );
+
+		$this->assertCount( 1, $tokens, 'The reconcile run must have added the provider card.' );
+		$this->assertSame( 10, has_filter( 'woocommerce_get_customer_payment_tokens', array( $sut, 'handle_woocommerce_get_customer_payment_tokens' ) ), 'The filter must be re-registered after the recursion guard removed it.' );
+	}
+
+	/**
+	 * @testdox Reconciliation should not run for logged-out requests.
+	 */
+	public function test_reconcile_skips_when_no_user_is_logged_in(): void {
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( 0 );
+		$local_token = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_local' );
+
+		$customer_service = $this->create_reconciling_customer_service( 'cus_1', array( 'card' => array() ) );
+		$this->create_service( array(), null, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card' ) ) );
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token filter.
+		$tokens = apply_filters( 'woocommerce_get_customer_payment_tokens', array( $local_token->get_id() => $local_token ), $user_id, '' );
+
+		$this->assertArrayHasKey( $local_token->get_id(), $tokens );
+		$this->assertSame( array(), $customer_service->fetch_counts, 'Logged-out requests must not reach the provider.' );
+	}
+
+	/**
+	 * @testdox Reconciliation should not run once the unpaginated token page is full.
+	 */
+	public function test_reconcile_skips_at_the_token_page_limit(): void {
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+		update_option( 'posts_per_page', 1 );
+		$local_token = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_local' );
+
+		$customer_service = $this->create_reconciling_customer_service( 'cus_1', array( 'card' => array() ) );
+		$this->create_service( array(), null, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card' ) ) );
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token filter.
+		$tokens = apply_filters( 'woocommerce_get_customer_payment_tokens', array( $local_token->get_id() => $local_token ), $user_id, '' );
+
+		$this->assertArrayHasKey( $local_token->get_id(), $tokens );
+		$this->assertSame( array(), $customer_service->fetch_counts, 'A full first page of tokens must skip reconciliation.' );
 	}
 
 	/**
@@ -719,7 +789,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		);
 		$this->create_service( array(), null, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card', 'sepa_debit', 'link' ) ) );
 
-		/** This filter is documented in WooCommerce core. */
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token filter.
 		apply_filters( 'woocommerce_get_customer_payment_tokens', array(), $user_id, OrderPaymentStore::GATEWAY_ID );
 
 		$this->assertSame(

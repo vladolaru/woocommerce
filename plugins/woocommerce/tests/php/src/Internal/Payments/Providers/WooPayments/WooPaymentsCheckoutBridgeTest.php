@@ -894,8 +894,8 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * @testdox Should expose card platform checkout config independently from WooPay frontend config.
 	 */
 	public function test_card_platform_checkout_config_is_independent_from_woopay_frontend_config(): void {
-		$legacy_runtime  = $this->create_legacy_runtime_for_bridge();
 		add_filter( 'wcpay_force_network_saved_cards', '__return_true' );
+		$legacy_runtime  = $this->create_legacy_runtime_for_bridge();
 		$account_service = $this->create_account_service_for_bridge(
 			true,
 			array(
