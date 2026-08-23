@@ -55,6 +55,13 @@ class WooPaymentsTokenService {
 		self::PAYMENT_METHOD_TYPE_AMAZON_PAY   => OrderPaymentStore::GATEWAY_ID_PREFIX . 'amazon_pay',
 	);
 
+	private const RECONCILABLE_PAYMENT_METHOD_TYPES = array(
+		self::PAYMENT_METHOD_TYPE_CARD,
+		self::PAYMENT_METHOD_TYPE_SEPA,
+		self::PAYMENT_METHOD_TYPE_LINK,
+		self::PAYMENT_METHOD_TYPE_AMAZON_PAY,
+	);
+
 	private const PAYMENT_METHOD_TYPES_BY_TOKEN_TYPE = array(
 		WooPaymentsSepaToken::TYPE      => self::PAYMENT_METHOD_TYPE_SEPA,
 		WooPaymentsLinkToken::TYPE      => self::PAYMENT_METHOD_TYPE_LINK,
@@ -226,6 +233,8 @@ class WooPaymentsTokenService {
 		if ( 0 >= absint( $user_id ) || ( '' !== $gateway_id && ! $this->is_native_woopayments_gateway_id( $gateway_id ) ) ) {
 			return $tokens;
 		}
+
+		$tokens = $this->reconcile_tokens_with_provider( $tokens, absint( $user_id ), $gateway_id );
 
 		foreach ( $tokens as $token_key => $token ) {
 			if (
@@ -480,19 +489,10 @@ class WooPaymentsTokenService {
 			return $existing_token;
 		}
 
-		switch ( $method_type ) {
-			case self::PAYMENT_METHOD_TYPE_CARD:
-			case self::PAYMENT_METHOD_TYPE_CARD_PRESENT:
-				return $this->create_card_token_for_user( $provider_token, $user_id, $payment_method );
-			case self::PAYMENT_METHOD_TYPE_SEPA:
-				return $this->create_sepa_token_for_user( $provider_token, $user_id, $payment_method );
-			case self::PAYMENT_METHOD_TYPE_LINK:
-				return $this->create_link_token_for_user( $provider_token, $user_id, $payment_method );
-			case self::PAYMENT_METHOD_TYPE_AMAZON_PAY:
-				return $this->create_amazon_pay_token_for_user( $provider_token, $user_id, $payment_method );
-		}
+		$payment_method['id']   = $provider_token;
+		$payment_method['type'] = $method_type;
 
-		return null;
+		return $this->create_token_for_user_from_payment_method( $payment_method, $user_id );
 	}
 
 	/**
@@ -716,6 +716,222 @@ class WooPaymentsTokenService {
 		}
 
 		delete_user_meta( $user_id, self::CACHED_PAYMENT_METHODS_META_KEY );
+	}
+
+	/**
+	 * Reconcile locally stored tokens with the provider's payment methods.
+	 *
+	 * Creates WooCommerce tokens for provider payment methods that have no local
+	 * token and deletes local tokens whose payment method no longer exists at the
+	 * provider (without detaching remotely). Provider failures degrade to the
+	 * locally stored list.
+	 *
+	 * @param array<int|string,mixed> $tokens     Customer payment tokens.
+	 * @param int                     $user_id    WooCommerce user ID.
+	 * @param string                  $gateway_id Requested gateway ID, or '' for all.
+	 * @return array<int|string,mixed>
+	 */
+	private function reconcile_tokens_with_provider( array $tokens, int $user_id, string $gateway_id ): array {
+		if ( ! is_user_logged_in() ) {
+			return $tokens;
+		}
+
+		if ( count( $tokens ) >= (int) get_option( 'posts_per_page' ) ) {
+			// The tokens data store is unpaginated and only the first page is retrieved;
+			// a full page of saved methods is an unsupported edge case for reconciliation.
+			return $tokens;
+		}
+
+		$customer_service = $this->get_customer_service();
+		if ( null === $customer_service ) {
+			return $tokens;
+		}
+
+		try {
+			$customer_id = $customer_service->get_customer_id_by_user_id( $user_id );
+			if ( null === $customer_id ) {
+				return $tokens;
+			}
+
+			$stored_tokens = array();
+			foreach ( $tokens as $token ) {
+				if ( $token instanceof WC_Payment_Token && $this->is_native_woopayments_gateway_id( $token->get_gateway_id() ) ) {
+					$stored_tokens[ (string) $token->get_token() ] = $token;
+				}
+			}
+
+			$payment_methods = $this->get_payment_methods_from_provider( $customer_service, $user_id, $customer_id, $gateway_id );
+		} catch ( Throwable $exception ) {
+			wc_get_logger()->error(
+				'Failed to fetch payment methods for customer: ' . $exception->getMessage(),
+				array( 'source' => 'woopayments' )
+			);
+
+			return $tokens;
+		}
+
+		// WC_Payment_Token::save() can re-enter this filter; keep it off while adding.
+		remove_filter( 'woocommerce_get_customer_payment_tokens', array( $this, 'handle_woocommerce_get_customer_payment_tokens' ), 10 );
+		foreach ( $payment_methods as $payment_method ) {
+			if ( ! is_array( $payment_method ) || ! isset( $payment_method['type'], $payment_method['id'] ) ) {
+				continue;
+			}
+
+			$payment_method_id = (string) $payment_method['id'];
+			if ( isset( $stored_tokens[ $payment_method_id ] ) ) {
+				unset( $stored_tokens[ $payment_method_id ] );
+				continue;
+			}
+
+			$method_gateway_id = self::GATEWAY_IDS_BY_PAYMENT_METHOD_TYPE[ (string) $payment_method['type'] ] ?? '';
+			if ( '' !== $gateway_id && $method_gateway_id !== $gateway_id ) {
+				continue;
+			}
+
+			$token = $this->create_token_for_user_from_payment_method( $payment_method, $user_id );
+			if ( $token instanceof WC_Payment_Token ) {
+				$tokens[ $token->get_id() ] = $token;
+			}
+		}
+		add_filter( 'woocommerce_get_customer_payment_tokens', array( $this, 'handle_woocommerce_get_customer_payment_tokens' ), 10, 3 );
+
+		// Local tokens whose payment method the provider no longer holds: delete
+		// locally without detaching (there is nothing left to detach remotely).
+		remove_action( 'woocommerce_payment_token_deleted', array( $this, 'handle_woocommerce_payment_token_deleted' ), 10 );
+		foreach ( $stored_tokens as $stored_token ) {
+			unset( $tokens[ $stored_token->get_id() ] );
+			$stored_token->delete();
+		}
+		add_action( 'woocommerce_payment_token_deleted', array( $this, 'handle_woocommerce_payment_token_deleted' ), 10, 2 );
+
+		return $tokens;
+	}
+
+	/**
+	 * Get the provider's payment methods for a customer, using the per-user cache.
+	 *
+	 * The cache lives in the `_wcpay_payment_methods` user meta, keyed by customer ID
+	 * with one entry per payment method type; it is busted whenever the customer ID
+	 * changes and cleared by the token lifecycle handlers.
+	 *
+	 * @param WooPaymentsCustomerService $customer_service Native customer service.
+	 * @param int                        $user_id          WooCommerce user ID.
+	 * @param string                     $customer_id      Provider customer ID.
+	 * @param string                     $gateway_id       Requested gateway ID, or '' for all.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function get_payment_methods_from_provider( WooPaymentsCustomerService $customer_service, int $user_id, string $customer_id, string $gateway_id ): array {
+		$types_to_retrieve = $this->get_retrievable_payment_method_types( $gateway_id );
+
+		$cache = get_user_meta( $user_id, self::CACHED_PAYMENT_METHODS_META_KEY, true );
+		if ( ! is_array( $cache ) || ! isset( $cache['customer_id'] ) || $cache['customer_id'] !== $customer_id ) {
+			$cache = array( 'customer_id' => $customer_id );
+		}
+
+		$payment_methods = array();
+		foreach ( $types_to_retrieve as $index => $type ) {
+			if ( isset( $cache[ 'payment_method_' . $type ] ) && is_array( $cache[ 'payment_method_' . $type ] ) ) {
+				$payment_methods = array_merge( $payment_methods, $cache[ 'payment_method_' . $type ] );
+				unset( $types_to_retrieve[ $index ] );
+			}
+		}
+
+		if ( array() === $types_to_retrieve ) {
+			return $payment_methods;
+		}
+
+		foreach ( $types_to_retrieve as $type ) {
+			$type_methods = $customer_service->get_payment_methods_for_customer( $customer_id, $type );
+
+			$cache[ 'payment_method_' . $type ] = $type_methods;
+			$payment_methods                    = array_merge( $payment_methods, $type_methods );
+		}
+
+		update_user_meta( $user_id, self::CACHED_PAYMENT_METHODS_META_KEY, $cache );
+
+		return $payment_methods;
+	}
+
+	/**
+	 * Get the payment method types to retrieve from the provider.
+	 *
+	 * With a gateway ID, only that gateway's types are retrieved (Link rides the card
+	 * gateway, so its enablement is checked separately); without one, card is always
+	 * retrieved plus every other reconcilable type that is enabled.
+	 *
+	 * @param string $gateway_id Requested gateway ID, or '' for all.
+	 * @return string[]
+	 */
+	private function get_retrievable_payment_method_types( string $gateway_id ): array {
+		$types = array();
+
+		foreach ( self::RECONCILABLE_PAYMENT_METHOD_TYPES as $type ) {
+			$type_gateway_id = self::GATEWAY_IDS_BY_PAYMENT_METHOD_TYPE[ $type ];
+
+			if ( '' === $gateway_id ) {
+				if ( self::PAYMENT_METHOD_TYPE_CARD !== $type && ! $this->is_payment_method_type_enabled( $type ) ) {
+					continue;
+				}
+			} else {
+				if ( $type_gateway_id !== $gateway_id ) {
+					continue;
+				}
+
+				if ( self::PAYMENT_METHOD_TYPE_LINK === $type && ! $this->is_payment_method_type_enabled( $type ) ) {
+					continue;
+				}
+			}
+
+			$types[] = $type;
+		}
+
+		return $types;
+	}
+
+	/**
+	 * Check if a payment method type is enabled in the gateway settings.
+	 *
+	 * @param string $payment_method_type Payment method type.
+	 * @return bool
+	 */
+	private function is_payment_method_type_enabled( string $payment_method_type ): bool {
+		$account_service = $this->get_account_service();
+		if ( null === $account_service ) {
+			return false;
+		}
+
+		$enabled_method_ids = $account_service->get_gateway_setting( 'upe_enabled_payment_method_ids', array( self::PAYMENT_METHOD_TYPE_CARD ) );
+
+		return is_array( $enabled_method_ids ) && in_array( $payment_method_type, $enabled_method_ids, true );
+	}
+
+	/**
+	 * Create a saved token for a user from fetched payment method details.
+	 *
+	 * @param array<string,mixed> $payment_method Payment method details including id and type.
+	 * @param int                 $user_id        User ID.
+	 * @return WC_Payment_Token|null
+	 */
+	private function create_token_for_user_from_payment_method( array $payment_method, int $user_id ): ?WC_Payment_Token {
+		$method_type    = isset( $payment_method['type'] ) ? (string) $payment_method['type'] : '';
+		$provider_token = isset( $payment_method['id'] ) ? (string) $payment_method['id'] : '';
+
+		if ( '' === $provider_token || ! isset( self::GATEWAY_IDS_BY_PAYMENT_METHOD_TYPE[ $method_type ] ) ) {
+			return null;
+		}
+
+		switch ( $method_type ) {
+			case self::PAYMENT_METHOD_TYPE_CARD:
+			case self::PAYMENT_METHOD_TYPE_CARD_PRESENT:
+				return $this->create_card_token_for_user( $provider_token, $user_id, $payment_method );
+			case self::PAYMENT_METHOD_TYPE_SEPA:
+				return $this->create_sepa_token_for_user( $provider_token, $user_id, $payment_method );
+			case self::PAYMENT_METHOD_TYPE_LINK:
+				return $this->create_link_token_for_user( $provider_token, $user_id, $payment_method );
+			case self::PAYMENT_METHOD_TYPE_AMAZON_PAY:
+			default:
+				return $this->create_amazon_pay_token_for_user( $provider_token, $user_id, $payment_method );
+		}
 	}
 
 	/**

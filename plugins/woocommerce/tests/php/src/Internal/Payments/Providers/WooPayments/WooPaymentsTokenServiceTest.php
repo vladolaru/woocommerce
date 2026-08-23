@@ -530,6 +530,173 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should add provider payment methods that have no local token during reconciliation.
+	 */
+	public function test_reconcile_adds_provider_payment_methods_missing_locally(): void {
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+
+		$customer_service = $this->create_reconciling_customer_service(
+			'cus_1',
+			array(
+				'card'       => array(
+					array(
+						'id'   => 'pm_remote_card',
+						'type' => 'card',
+						'card' => array(
+							'brand'     => 'visa',
+							'last4'     => '4242',
+							'exp_month' => 12,
+							'exp_year'  => 2030,
+						),
+					),
+				),
+				'sepa_debit' => array(
+					array(
+						'id'         => 'pm_remote_sepa',
+						'type'       => 'sepa_debit',
+						'sepa_debit' => array( 'last4' => '6789' ),
+					),
+				),
+			)
+		);
+
+		$this->create_service( array(), null, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card', 'sepa_debit' ) ) );
+
+		/** This filter is documented in WooCommerce core. */
+		$tokens = apply_filters( 'woocommerce_get_customer_payment_tokens', array(), $user_id, '' );
+
+		$token_ids = array();
+		foreach ( $tokens as $token ) {
+			$token_ids[ $token->get_token() ] = get_class( $token );
+			$this->assertGreaterThan( 0, $token->get_id(), 'Reconciled tokens must be persisted.' );
+			$this->assertSame( $user_id, $token->get_user_id() );
+		}
+
+		$this->assertSame( WC_Payment_Token_CC::class, $token_ids['pm_remote_card'] ?? null, 'A provider card with no local token must gain one.' );
+		$this->assertSame( WooPaymentsSepaToken::class, $token_ids['pm_remote_sepa'] ?? null, 'A provider SEPA method with no local token must gain one.' );
+	}
+
+	/**
+	 * @testdox Should delete local tokens whose payment method no longer exists at the provider, without detaching.
+	 */
+	public function test_reconcile_deletes_local_tokens_missing_at_provider_without_detach(): void {
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+		$stale_token = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_gone' );
+
+		$api_client = new class() extends WooPaymentsApiClient {
+			/**
+			 * Detached payment method IDs.
+			 *
+			 * @var string[]
+			 */
+			public array $detached_payment_method_ids = array();
+
+			/**
+			 * Detach a payment method.
+			 *
+			 * @param string $payment_method_id Payment method ID.
+			 * @return array<string,mixed>
+			 */
+			public function detach_payment_method( string $payment_method_id ): array {
+				$this->detached_payment_method_ids[] = $payment_method_id;
+
+				return array( 'id' => $payment_method_id );
+			}
+		};
+
+		$customer_service = $this->create_reconciling_customer_service( 'cus_1', array( 'card' => array() ) );
+		$this->create_service( array(), $api_client, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card' ) ) );
+
+		/** This filter is documented in WooCommerce core. */
+		$tokens = apply_filters( 'woocommerce_get_customer_payment_tokens', array( $stale_token->get_id() => $stale_token ), $user_id, '' );
+
+		$this->assertArrayNotHasKey( $stale_token->get_id(), $tokens, 'A token whose payment method the provider forgot must not render.' );
+		$this->assertNull( \WC_Payment_Tokens::get( $stale_token->get_id() ), 'The stale local token must be deleted.' );
+		$this->assertSame( array(), $api_client->detached_payment_method_ids, 'Pruning a provider-forgotten token must not detach anything remotely.' );
+	}
+
+	/**
+	 * @testdox Should cache fetched provider payment methods per customer and bust on customer change.
+	 */
+	public function test_reconcile_caches_fetched_payment_methods_per_customer(): void {
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+
+		$customer_service = $this->create_reconciling_customer_service( 'cus_1', array( 'card' => array() ) );
+		$this->create_service( array(), null, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card' ) ) );
+
+		/** This filter is documented in WooCommerce core. */
+		apply_filters( 'woocommerce_get_customer_payment_tokens', array(), $user_id, '' );
+		/** This filter is documented in WooCommerce core. */
+		apply_filters( 'woocommerce_get_customer_payment_tokens', array(), $user_id, '' );
+
+		$this->assertSame( array( 'card' => 1 ), $customer_service->fetch_counts, 'The second read must be served from the cached payment methods.' );
+
+		$cache = get_user_meta( $user_id, '_wcpay_payment_methods', true );
+		$this->assertSame( 'cus_1', $cache['customer_id'] ?? null );
+		$this->assertSame( array(), $cache['payment_method_card'] ?? null );
+
+		$customer_service->customer_id = 'cus_2';
+		/** This filter is documented in WooCommerce core. */
+		apply_filters( 'woocommerce_get_customer_payment_tokens', array(), $user_id, '' );
+
+		$this->assertSame( array( 'card' => 2 ), $customer_service->fetch_counts, 'A different customer ID must bust the cached payment methods.' );
+		$cache = get_user_meta( $user_id, '_wcpay_payment_methods', true );
+		$this->assertSame( 'cus_2', $cache['customer_id'] ?? null );
+	}
+
+	/**
+	 * @testdox Should return the locally stored tokens unchanged when the provider fetch fails.
+	 */
+	public function test_reconcile_fetch_failure_returns_local_tokens(): void {
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+		$local_token = $this->create_card_token( $user_id, OrderPaymentStore::GATEWAY_ID, 'pm_local' );
+
+		$customer_service = $this->create_reconciling_customer_service( 'cus_1', array() );
+		$customer_service->fail_fetches = true;
+		$this->create_service( array(), null, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card' ) ) );
+
+		/** This filter is documented in WooCommerce core. */
+		$tokens = apply_filters( 'woocommerce_get_customer_payment_tokens', array( $local_token->get_id() => $local_token ), $user_id, '' );
+
+		$this->assertArrayHasKey( $local_token->get_id(), $tokens, 'A provider outage must degrade to the locally stored list.' );
+		$this->assertNotNull( \WC_Payment_Tokens::get( $local_token->get_id() ), 'A provider outage must not delete local tokens.' );
+	}
+
+	/**
+	 * @testdox Should only retrieve the payment method types belonging to the requested gateway.
+	 */
+	public function test_reconcile_scopes_types_to_the_requested_gateway(): void {
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+
+		$customer_service = $this->create_reconciling_customer_service(
+			'cus_1',
+			array(
+				'card'       => array(),
+				'link'       => array(),
+				'sepa_debit' => array(),
+			)
+		);
+		$this->create_service( array(), null, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card', 'sepa_debit', 'link' ) ) );
+
+		/** This filter is documented in WooCommerce core. */
+		apply_filters( 'woocommerce_get_customer_payment_tokens', array(), $user_id, OrderPaymentStore::GATEWAY_ID );
+
+		$this->assertSame(
+			array(
+				'card' => 1,
+				'link' => 1,
+			),
+			$customer_service->fetch_counts,
+			'A card-gateway request must fetch card and Link only, never SEPA.'
+		);
+	}
+
+	/**
 	 * @testdox Should clear cached payment methods when a native WooPayments card token becomes default.
 	 */
 	public function test_clears_cached_payment_methods_when_native_card_token_becomes_default(): void {
@@ -935,7 +1102,105 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create an account service mock.
+	 * Create a customer-service double that reconciles against fixture payment methods.
+	 *
+	 * @param string                                       $customer_id             Customer ID to report.
+	 * @param array<string,array<int,array<string,mixed>>> $payment_methods_by_type Payment methods keyed by type.
+	 * @return WooPaymentsCustomerService
+	 */
+	private function create_reconciling_customer_service( string $customer_id, array $payment_methods_by_type ) {
+		return new class( $customer_id, $payment_methods_by_type ) extends WooPaymentsCustomerService {
+			/**
+			 * Customer ID to report.
+			 *
+			 * @var string
+			 */
+			public string $customer_id;
+
+			/**
+			 * Payment methods keyed by type.
+			 *
+			 * @var array<string,array<int,array<string,mixed>>>
+			 */
+			public array $payment_methods_by_type;
+
+			/**
+			 * Fetch counts keyed by type.
+			 *
+			 * @var array<string,int>
+			 */
+			public array $fetch_counts = array();
+
+			/**
+			 * Whether fetches should fail.
+			 *
+			 * @var bool
+			 */
+			public bool $fail_fetches = false;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param string                                       $customer_id             Customer ID to report.
+			 * @param array<string,array<int,array<string,mixed>>> $payment_methods_by_type Payment methods keyed by type.
+			 */
+			public function __construct( string $customer_id, array $payment_methods_by_type ) {
+				$this->customer_id             = $customer_id;
+				$this->payment_methods_by_type = $payment_methods_by_type;
+			}
+
+			/**
+			 * Get a customer ID for a user.
+			 *
+			 * @param int|null $user_id User ID.
+			 * @return string|null
+			 */
+			public function get_customer_id_by_user_id( ?int $user_id ): ?string {
+				unset( $user_id );
+
+				return $this->customer_id;
+			}
+
+			/**
+			 * Get payment methods for a customer.
+			 *
+			 * @param string $customer_id Customer ID.
+			 * @param string $type        Payment method type.
+			 * @return array<int,array<string,mixed>>
+			 */
+			public function get_payment_methods_for_customer( string $customer_id, string $type = 'card' ): array {
+				unset( $customer_id );
+
+				if ( $this->fail_fetches ) {
+					throw new RuntimeException( 'Provider unavailable.' );
+				}
+
+				$this->fetch_counts[ $type ] = ( $this->fetch_counts[ $type ] ?? 0 ) + 1;
+
+				return $this->payment_methods_by_type[ $type ] ?? array();
+			}
+		};
+	}
+
+	/**
+	 * Create an account service double reporting enabled payment method IDs.
+	 *
+	 * @param string[] $enabled_method_ids Enabled payment method IDs.
+	 * @return WooPaymentsAccountService
+	 */
+	private function create_account_service_with_enabled_methods( array $enabled_method_ids ): WooPaymentsAccountService {
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_test_mode_enabled', 'get_gateway_setting' ) )
+			->getMock();
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+		$account_service->method( 'get_gateway_setting' )->willReturn( $enabled_method_ids );
+
+		return $account_service;
+	}
+
+	/**
+	 * Create an account service double.
 	 *
 	 * @param bool $test_mode Whether test mode is enabled.
 	 * @return WooPaymentsAccountService
