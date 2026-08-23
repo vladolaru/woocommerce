@@ -1719,6 +1719,42 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox An expired-authorization capture failure moves the order to failed with the expired note.
+	 */
+	public function test_capture_expired_authorization_fails_the_order(): void {
+		$order = $this->create_woopayments_order( '10.00' );
+		$order->set_transaction_id( 'pi_capture_expired' );
+		$order->update_meta_data( '_intent_id', 'pi_capture_expired' );
+		$order->update_meta_data( '_intention_status', 'requires_capture' );
+		$order->save();
+		$order->update_status( 'on-hold' );
+
+		$provider = new RecordingProvider(
+			new PaymentOutcome(
+				PaymentOutcome::STATUS_FAILED,
+				'pi_capture_expired',
+				'',
+				'',
+				'',
+				array(
+					PaymentOutcome::DATA_NOTE      => 'Payment authorization has <strong>expired</strong>.',
+					PaymentOutcome::DATA_NOTE_TYPE => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_EXPIRED,
+					PaymentOutcome::DATA_META      => array( '_intention_status' => 'canceled' ),
+				)
+			)
+		);
+
+		$outcome = $this->sut->capture( PaymentContext::for_capture( $order, OrderPaymentStore::GATEWAY_ID ), $provider );
+		$order   = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( 'failed', $order->get_status(), 'An expired authorization must fail the order like the charge.expired webhook.' );
+		$this->assertSame( 'canceled', $order->get_meta( '_intention_status', true ) );
+		$this->assertOrderHasNoteContaining( $order, 'expired' );
+	}
+
+	/**
 	 * @testdox Failed authorization cancellations should preserve the order status and authorization state.
 	 */
 	public function test_cancel_failure_preserves_authorized_order_status(): void {

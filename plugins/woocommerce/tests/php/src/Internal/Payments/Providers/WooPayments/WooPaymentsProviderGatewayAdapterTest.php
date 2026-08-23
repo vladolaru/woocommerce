@@ -3399,6 +3399,106 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A failed native capture re-fetches the intent and flags an expired authorization.
+	 */
+	public function test_capture_exception_detects_expired_authorization_via_refetch(): void {
+		$order      = $this->create_woopayments_order();
+		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ), true );
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_available', 'capture_intention', 'get_payment_intention' ) )
+			->getMock();
+
+		$order->set_transaction_id( 'pi_expired' );
+		$order->save();
+
+		$api_client->method( 'is_available' )->willReturn( true );
+		$api_client->expects( $this->once() )
+			->method( 'capture_intention' )
+			->willThrowException( new WooPaymentsApiException( 'Capture failed.', 'wcpay_capture_error', 402 ) );
+		$api_client->expects( $this->once() )
+			->method( 'get_payment_intention' )
+			->with( 'pi_expired' )
+			->willReturn(
+				array(
+					'id'      => 'pi_expired',
+					'status'  => 'canceled',
+					'charges' => array(
+						'total_count' => 1,
+						'data'        => array(
+							array( 'id' => 'ch_expired' ),
+						),
+					),
+				)
+			);
+
+		$sut     = $this->create_adapter( $gateway, $api_client );
+		$outcome = $sut->capture( PaymentContext::for_capture( $order, OrderPaymentStore::GATEWAY_ID ), 'key_capture' );
+
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$plan = $outcome->get_effect_plan();
+		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $plan );
+		$this->assertSame( 'canceled', $plan->get_provider_result()['status'], 'The effect plan must carry the re-fetched canceled intent so the applier composes the expired effects.' );
+	}
+
+	/**
+	 * @testdox A failed native capture keeps the plain failure effects when the re-fetch itself fails.
+	 */
+	public function test_capture_exception_keeps_failure_effects_when_refetch_fails(): void {
+		$order      = $this->create_woopayments_order();
+		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ), true );
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_available', 'capture_intention', 'get_payment_intention' ) )
+			->getMock();
+
+		$order->set_transaction_id( 'pi_refetch_dead' );
+		$order->save();
+
+		$api_client->method( 'is_available' )->willReturn( true );
+		$api_client->method( 'capture_intention' )
+			->willThrowException( new WooPaymentsApiException( 'Capture failed.', 'wcpay_capture_error', 402 ) );
+		$api_client->method( 'get_payment_intention' )
+			->willThrowException( new WooPaymentsApiException( 'Fetch failed.', 'wcpay_fetch_error', 500 ) );
+
+		$sut     = $this->create_adapter( $gateway, $api_client );
+		$outcome = $sut->capture( PaymentContext::for_capture( $order, OrderPaymentStore::GATEWAY_ID ), 'key_capture' );
+
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$plan = $outcome->get_effect_plan();
+		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $plan );
+		$this->assertSame( 'failed', $plan->get_provider_result()['status'] );
+		$this->assertSame( 'Capture failed.', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_MESSAGE ], 'The original capture error must survive a failed re-fetch.' );
+	}
+
+	/**
+	 * @testdox A still-capturable intent on re-fetch keeps the plain failure effects.
+	 */
+	public function test_capture_exception_keeps_failure_effects_when_intent_is_still_capturable(): void {
+		$order      = $this->create_woopayments_order();
+		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ), true );
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_available', 'capture_intention', 'get_payment_intention' ) )
+			->getMock();
+
+		$order->set_transaction_id( 'pi_still_live' );
+		$order->save();
+
+		$api_client->method( 'is_available' )->willReturn( true );
+		$api_client->method( 'capture_intention' )
+			->willThrowException( new WooPaymentsApiException( 'Capture failed.', 'wcpay_capture_error', 402 ) );
+		$api_client->method( 'get_payment_intention' )
+			->willReturn( array( 'id' => 'pi_still_live', 'status' => 'requires_capture' ) );
+
+		$sut     = $this->create_adapter( $gateway, $api_client );
+		$outcome = $sut->capture( PaymentContext::for_capture( $order, OrderPaymentStore::GATEWAY_ID ), 'key_capture' );
+
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( 'failed', $outcome->get_effect_plan()->get_provider_result()['status'] );
+	}
+
+	/**
 	 * @testdox Native capture defers settlement exchange-rate metadata to its effect plan.
 	 */
 	public function test_native_capture_defers_settlement_exchange_rate_meta_to_effect_plan(): void {

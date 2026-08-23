@@ -238,7 +238,16 @@ class WooPaymentsProviderGatewayAdapter {
 					return $outcome->with_effect_plan( WooPaymentsOrderEffectPlan::for_capture( $result ) );
 				} catch ( WooPaymentsApiException $exception ) {
 					$outcome = WooPaymentsIntentCodec::failed_transport_outcome( 'capture', $exception, $intent_id );
-					$result  = array(
+
+					// The site may have missed the charge.expired webhook, so a failed capture
+					// re-fetches the intent: a canceled intent means the authorization expired,
+					// and the effect plan carries it so the expired note and failed status land.
+					$expired_intent = $this->get_expired_authorization_intent( $intent_id );
+					if ( null !== $expired_intent ) {
+						return $outcome->with_effect_plan( WooPaymentsOrderEffectPlan::for_capture( $expired_intent ) );
+					}
+
+					$result = array(
 						'id'         => $intent_id,
 						'status'     => 'failed',
 						'error_code' => $exception->get_error_code(),
@@ -868,6 +877,25 @@ class WooPaymentsProviderGatewayAdapter {
 	 */
 	private function capture_metadata( \WC_Order $order ): array {
 		return WooPaymentsIntentRequestBuilder::capture_metadata_from_order( $order );
+	}
+
+	/**
+	 * Re-fetch an intent after a failed capture to detect a dead authorization.
+	 *
+	 * Fetch errors are swallowed on purpose: the original capture error is the
+	 * actionable one, matching the plugin's capture_charge.
+	 *
+	 * @param string $intent_id Intent ID.
+	 * @return array<string,mixed>|null The canceled intent, or null when it is not canceled or cannot be fetched.
+	 */
+	private function get_expired_authorization_intent( string $intent_id ): ?array {
+		try {
+			$intent = $this->api_client->get_payment_intention( $intent_id );
+		} catch ( WooPaymentsApiException $fetch_exception ) {
+			return null;
+		}
+
+		return 'canceled' === (string) ( $intent['status'] ?? '' ) ? $intent : null;
 	}
 
 	/**

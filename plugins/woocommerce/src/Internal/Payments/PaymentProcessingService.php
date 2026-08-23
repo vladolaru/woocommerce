@@ -805,6 +805,26 @@ class PaymentProcessingService {
 	 */
 	private function apply_order_operation_outcome( WC_Order $order, PaymentOutcome $outcome, string $operation, ProviderContract $provider ): void {
 		if ( in_array( $operation, array( 'capture', 'cancel' ), true ) && PaymentOutcome::STATUS_FAILED === $outcome->get_status() ) {
+			// An expired authorization is the one capture failure that must move the order:
+			// the provider effects carry the capture-expired note when the re-fetched intent
+			// came back canceled, and the order goes to failed like the charge.expired webhook.
+			if ( PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_EXPIRED === $this->get_lifecycle_note_type( $outcome ) ) {
+				$this->lifecycle_service->apply_unlocked(
+					$order,
+					new PaymentLifecycleEvent(
+						PaymentLifecycleEvent::STATUS_CAPTURE_EXPIRED,
+						$this->get_lifecycle_payment_reference( $outcome ),
+						$this->get_lifecycle_meta( $outcome, $provider ),
+						array(),
+						$this->get_lifecycle_note( $outcome ),
+						$this->get_lifecycle_note_type( $outcome ),
+						$this->get_lifecycle_note_equivalents( $outcome )
+					),
+					$provider->get_persistence_profile()
+				);
+				return;
+			}
+
 			// A failed authorization operation leaves the original authorization active, regardless of whether
 			// the attempted operation was capture or cancellation.
 			$meta = $this->get_capture_failure_outcome_meta( $outcome, $provider );

@@ -878,6 +878,74 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A canceled capture result composes the expired-authorization effects.
+	 */
+	public function test_expired_capture_effects_compose_expired_note_and_canceled_status_meta(): void {
+		$order = $this->create_woopayments_order();
+		$order->update_meta_data( '_charge_id', 'ch_capture_expired' );
+		$order->save();
+		$outcome = new PaymentOutcome(
+			PaymentOutcome::STATUS_FAILED,
+			'pi_capture_expired',
+			'',
+			'',
+			'',
+			array( PaymentOutcome::DATA_ERROR_MESSAGE => 'Capture failed.' )
+		);
+		$plan    = WooPaymentsOrderEffectPlan::for_capture(
+			array(
+				'id'      => 'pi_capture_expired',
+				'status'  => 'canceled',
+				'charges' => array(
+					'total_count' => 1,
+					'data'        => array(
+						array( 'id' => 'ch_capture_expired' ),
+					),
+				),
+			)
+		);
+
+		$result = $this->create_applier()->apply(
+			PaymentContext::for_capture( $order, OrderPaymentStore::GATEWAY_ID ),
+			$outcome,
+			$plan
+		);
+
+		$data = $result->get_data();
+		$this->assertSame( PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_EXPIRED, $data[ PaymentOutcome::DATA_NOTE_TYPE ] );
+		$this->assertSame( 'canceled', $data[ PaymentOutcome::DATA_META ]['_intention_status'] );
+		$this->assertSame(
+			( new WooPaymentsOrderNoteService() )->format_capture_expired_note_candidates( 'pi_capture_expired', 'ch_capture_expired' ),
+			$data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ]
+		);
+		$this->assertStringContainsString( 'expired', strtolower( wp_strip_all_tags( (string) $data[ PaymentOutcome::DATA_NOTE ] ) ) );
+	}
+
+	/**
+	 * @testdox A reviewed order's expired capture stamps the review-expired fraud meta box type.
+	 */
+	public function test_expired_capture_effects_stamp_review_expired_for_reviewed_order(): void {
+		$order = $this->create_woopayments_order();
+		$order->update_meta_data( '_wcpay_fraud_outcome_status', 'review' );
+		$order->save();
+		$outcome = new PaymentOutcome( PaymentOutcome::STATUS_FAILED, 'pi_review_expired' );
+		$plan    = WooPaymentsOrderEffectPlan::for_capture(
+			array(
+				'id'     => 'pi_review_expired',
+				'status' => 'canceled',
+			)
+		);
+
+		$result = $this->create_applier()->apply(
+			PaymentContext::for_capture( $order, OrderPaymentStore::GATEWAY_ID ),
+			$outcome,
+			$plan
+		);
+
+		$this->assertSame( 'review_expired', $result->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_fraud_meta_box_type'] );
+	}
+
+	/**
 	 * @testdox Cancellation effects compose the successful authorization note and fee metadata cleanup.
 	 */
 	public function test_cancel_effects_compose_note_and_fee_meta_cleanup(): void {

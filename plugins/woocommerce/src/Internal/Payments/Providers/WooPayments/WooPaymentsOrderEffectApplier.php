@@ -305,6 +305,27 @@ class WooPaymentsOrderEffectApplier {
 			return array();
 		}
 
+		if ( 'canceled' === (string) ( $result['status'] ?? '' ) ) {
+			// The capture failed because the authorization already expired (the intent is
+			// canceled provider-side). Compose the same effects the charge.expired webhook
+			// applies: expired note, canceled intention status, review-expired stamp.
+			$note_candidates = $this->note_service->format_capture_expired_note_candidates( $intent_id, $charge_id );
+			$meta            = array( '_intention_status' => 'canceled' );
+			if ( '' !== $charge_id ) {
+				$meta['_charge_id'] = $charge_id;
+			}
+			if ( 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true ) ) {
+				$meta['_wcpay_fraud_meta_box_type'] = 'review_expired';
+			}
+
+			return array(
+				PaymentOutcome::DATA_META             => $meta,
+				PaymentOutcome::DATA_NOTE             => $note_candidates[0],
+				PaymentOutcome::DATA_NOTE_TYPE        => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_EXPIRED,
+				PaymentOutcome::DATA_NOTE_EQUIVALENTS => $note_candidates,
+			);
+		}
+
 		$message = isset( $outcome->get_data()[ PaymentOutcome::DATA_ERROR_MESSAGE ] )
 			? (string) $outcome->get_data()[ PaymentOutcome::DATA_ERROR_MESSAGE ]
 			: (string) ( $result['message'] ?? '' );
