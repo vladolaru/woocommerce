@@ -21,6 +21,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		delete_option( 'wcpay_session_store_id' );
+		unset( $_GET['change_payment_method'], $GLOBALS['wcpay_test_subscription_ids'] );
 		if ( WC()->session ) {
 			WC()->session->set( 'wcpay_customer_id', null );
 		}
@@ -287,6 +288,68 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'cus_order', $sut->get_or_create_customer_id_for_order( $order ) );
 		$this->assertSame( 'cus_order', get_user_option( '_wcpay_customer_id_live', $user_id ) );
+	}
+
+	/**
+	 * @testdox Changing a subscription's payment method should not overwrite the provider customer.
+	 */
+	public function test_customer_update_is_skipped_when_changing_subscription_payment_method(): void {
+		$user_id    = $this->factory->user->create( array( 'user_login' => 'pm-change-customer' ) );
+		$order      = $this->create_checkout_order( $user_id );
+		$api_client = $this->create_customer_api_client( array( 'cus_new' ) );
+
+		$order->update_meta_data( '_stripe_customer_id', 'cus_subscription' );
+		$order->save();
+
+		$this->fake_wcs_is_subscription();
+		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id(), (string) $order->get_id() );
+		$_GET['change_payment_method']          = (string) $order->get_id();
+
+		$sut = $this->create_sut( false, $api_client );
+
+		$this->assertSame( 'cus_subscription', $sut->get_or_create_customer_id_for_order( $order ) );
+		$this->assertSame( array(), $api_client->updated_customers, 'A payment-method change must not push the subscription\'s stale billing to the provider customer.' );
+	}
+
+	/**
+	 * @testdox A user-persisted customer should also be left untouched on a subscription payment-method change.
+	 */
+	public function test_user_persisted_customer_update_is_skipped_when_changing_subscription_payment_method(): void {
+		$user_id    = $this->factory->user->create( array( 'user_login' => 'pm-change-user-customer' ) );
+		$order      = $this->create_checkout_order( $user_id );
+		$api_client = $this->create_customer_api_client( array( 'cus_new' ) );
+
+		update_user_option( $user_id, '_wcpay_customer_id_live', 'cus_user' );
+
+		$this->fake_wcs_is_subscription();
+		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id(), (string) $order->get_id() );
+		$_GET['change_payment_method']          = (string) $order->get_id();
+
+		$sut = $this->create_sut( false, $api_client );
+
+		$this->assertSame( 'cus_user', $sut->get_or_create_customer_id_for_order( $order ) );
+		$this->assertSame( array(), $api_client->updated_customers );
+	}
+
+	/**
+	 * @testdox A change_payment_method parameter that is not a subscription should still update the customer.
+	 */
+	public function test_customer_update_still_runs_when_change_payment_method_is_not_a_subscription(): void {
+		$user_id    = $this->factory->user->create( array( 'user_login' => 'pm-change-non-subscription' ) );
+		$order      = $this->create_checkout_order( $user_id );
+		$api_client = $this->create_customer_api_client( array( 'cus_new' ) );
+
+		$order->update_meta_data( '_stripe_customer_id', 'cus_subscription' );
+		$order->save();
+
+		$this->fake_wcs_is_subscription();
+		$GLOBALS['wcpay_test_subscription_ids'] = array();
+		$_GET['change_payment_method']          = (string) $order->get_id();
+
+		$sut = $this->create_sut( false, $api_client );
+
+		$this->assertSame( 'cus_subscription', $sut->get_or_create_customer_id_for_order( $order ) );
+		$this->assertCount( 1, $api_client->updated_customers, 'Only a verified subscription change may skip the customer update.' );
 	}
 
 	/**
@@ -571,6 +634,18 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 			'st_fixture_' . (string) WC()->session->get_customer_id(),
 			$api_client->created_customers[0]['session_id']
 		);
+	}
+
+	/**
+	 * Define a test-only wcs_is_subscription() backed by \$GLOBALS['wcpay_test_subscription_ids'].
+	 */
+	private function fake_wcs_is_subscription(): void {
+		if ( function_exists( 'wcs_is_subscription' ) ) {
+			return;
+		}
+
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- Test-only shim for the WooCommerce Subscriptions predicate.
+		eval( 'namespace { function wcs_is_subscription( $subscription_id ) { $subscription_id = is_object( $subscription_id ) && method_exists( $subscription_id, "get_id" ) ? $subscription_id->get_id() : $subscription_id; return in_array( $subscription_id, $GLOBALS["wcpay_test_subscription_ids"] ?? array(), true ) || in_array( absint( $subscription_id ), $GLOBALS["wcpay_test_subscription_ids"] ?? array(), true ); } }' );
 	}
 
 	/**
