@@ -574,6 +574,9 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 				$metadata
 			);
 			delete_transient( self::STORE_READERS_TRANSIENT_KEY );
+			// Pairing a reader can change account-derived state (capabilities, IPP
+			// flags); the plugin eagerly refreshes the account cache here.
+			$this->account_service->refresh_account_data();
 
 			return new WP_REST_Response( $this->extract_reader( $reader ) );
 		} catch ( WooPaymentsApiException $exception ) {

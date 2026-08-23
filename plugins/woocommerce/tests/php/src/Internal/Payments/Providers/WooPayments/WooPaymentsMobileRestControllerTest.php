@@ -45,13 +45,21 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	private array $gateway_settings = array();
 
 	/**
+	 * Number of account-data refreshes requested from the account service.
+	 *
+	 * @var int
+	 */
+	private int $account_refresh_calls = 0;
+
+	/**
 	 * Set up test fixtures.
 	 */
 	public function setUp(): void {
 		parent::setUp();
 
-		$this->api_client       = new RecordingTerminalApiClient();
-		$this->gateway_settings = array();
+		$this->api_client            = new RecordingTerminalApiClient();
+		$this->gateway_settings      = array();
+		$this->account_refresh_calls = 0;
 		$this->sut              = $this->create_controller( true );
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
 		delete_transient( 'wcpay_store_terminal_readers' );
@@ -221,6 +229,46 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertArrayHasKey( 'badkeyscript', $metadata );
 		$this->assertSame( 'Legit Value', $metadata['badkeyscript'] );
 		$this->assertArrayNotHasKey( 'nested', $metadata );
+	}
+
+	/**
+	 * @testdox Registering a reader refreshes the cached account data like the reference client.
+	 */
+	public function test_register_reader_refreshes_account_data(): void {
+		$this->api_client->terminal_reader_response = array(
+			'id'          => 'tmr_registered',
+			'livemode'    => false,
+			'device_type' => 'bbpos_wisepos_e',
+			'label'       => 'Front desk',
+			'location'    => 'tml_1',
+			'metadata'    => array(),
+			'status'      => 'online',
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/readers' );
+		$request->set_param( 'location', 'tml_1' );
+		$request->set_param( 'registration_code', 'puppies-plug-could' );
+
+		$response = $this->sut->register_reader( $request );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( 1, $this->account_refresh_calls, 'A successful reader registration must refresh the cached account data.' );
+	}
+
+	/**
+	 * @testdox A failed reader registration does not refresh the cached account data.
+	 */
+	public function test_failed_reader_registration_does_not_refresh_account_data(): void {
+		$this->api_client->register_reader_exception = new WooPaymentsApiException( 'Bad code.', 'wcpay_invalid_registration_code', 400 );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/readers' );
+		$request->set_param( 'location', 'tml_1' );
+		$request->set_param( 'registration_code', 'bad-code' );
+
+		$response = $this->sut->register_reader( $request );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$this->assertSame( 0, $this->account_refresh_calls );
 	}
 
 	/**
@@ -1254,9 +1302,16 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_test_mode_enabled', 'get_mode', 'get_gateway_setting' ) )
+			->onlyMethods( array( 'is_test_mode_enabled', 'get_mode', 'get_gateway_setting', 'refresh_account_data' ) )
 			->getMock();
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+		$account_service->method( 'refresh_account_data' )->willReturnCallback(
+			function (): array {
+				++$this->account_refresh_calls;
+
+				return array();
+			}
+		);
 		$account_service->method( 'get_mode' )->willReturn( 'test' );
 		$account_service->method( 'get_gateway_setting' )->willReturnCallback(
 			function ( string $key, $fallback = null ) {

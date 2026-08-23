@@ -39,6 +39,13 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 	public array $terminal_reader_response = array();
 
 	/**
+	 * Exception thrown by register_terminal_reader when set.
+	 *
+	 * @var \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException|null
+	 */
+	public $register_reader_exception = null;
+
+	/**
 	 * Last registered terminal reader payload.
 	 *
 	 * @var array<string,mixed>
@@ -241,6 +248,10 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 	 * @return array<string,mixed>
 	 */
 	public function register_terminal_reader( string $location, string $registration_code, ?string $label = null, ?array $metadata = null ): array {
+		if ( null !== $this->register_reader_exception ) {
+			throw $this->register_reader_exception;
+		}
+
 		$this->last_registered_reader = array(
 			'location'          => $location,
 			'registration_code' => $registration_code,
