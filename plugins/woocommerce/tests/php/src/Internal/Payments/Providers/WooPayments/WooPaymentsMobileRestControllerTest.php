@@ -952,6 +952,77 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( 400, $response->get_error_data()['status'] );
 		$this->assertStringContainsString( 'Capture failed.', $response->get_error_message() );
 		$this->assertSame( '', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'requires_capture', $order->get_meta( '_intention_status', true ), 'A failed capture must record the still-capturable authorization like the plugin.' );
+		$this->assertNotEmpty( $this->get_order_note_containing( $order, 'failed' ), 'A failed capture must leave a failure note on the order.' );
+	}
+
+	/**
+	 * @testdox A terminal capture attempted against an expired authorization fails the order with the expired note.
+	 */
+	public function test_capture_terminal_payment_expired_authorization_fails_the_order(): void {
+		$order = $this->create_order( 12.34, 'USD' );
+		$order->update_status( 'on-hold' );
+		$this->api_client->payment_intention_response_queue = array(
+			array(
+				'id'       => 'pi_terminal',
+				'status'   => 'requires_capture',
+				'currency' => 'usd',
+				'metadata' => array(
+					'order_id' => (string) $order->get_id(),
+				),
+			),
+			array(
+				'id'     => 'pi_terminal',
+				'status' => 'canceled',
+			),
+		);
+		$this->api_client->captured_intention_exception = new WooPaymentsApiException( 'Capture failed.', 'wcpay_capture_error', 402 );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal' );
+
+		$response = $this->sut->capture_terminal_payment( $request );
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$this->assertSame( 'failed', $order->get_status(), 'An expired authorization must fail the order like the charge.expired webhook.' );
+		$this->assertSame( 'canceled', $order->get_meta( '_intention_status', true ) );
+		$this->assertNotEmpty( $this->get_order_note_containing( $order, 'expired' ) );
+	}
+
+	/**
+	 * @testdox A terminal capture exception with a still-live authorization keeps the order status and adds the failure note.
+	 */
+	public function test_capture_terminal_payment_exception_with_live_intent_adds_failure_note(): void {
+		$order = $this->create_order( 12.34, 'USD' );
+		$order->update_status( 'on-hold' );
+		$this->api_client->payment_intention_response_queue = array(
+			array(
+				'id'       => 'pi_terminal',
+				'status'   => 'requires_capture',
+				'currency' => 'usd',
+				'metadata' => array(
+					'order_id' => (string) $order->get_id(),
+				),
+			),
+			array(
+				'id'     => 'pi_terminal',
+				'status' => 'requires_capture',
+			),
+		);
+		$this->api_client->captured_intention_exception = new WooPaymentsApiException( 'The card was declined at capture.', 'wcpay_capture_error', 402 );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal' );
+
+		$response = $this->sut->capture_terminal_payment( $request );
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$this->assertSame( 'on-hold', $order->get_status(), 'A plain capture failure must leave the original authorization active.' );
+		$this->assertNotEmpty( $this->get_order_note_containing( $order, 'The card was declined at capture.' ) );
 	}
 
 	/**
@@ -1067,9 +1138,26 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$customer_service->init( $this->api_client, $account_service, new WooPaymentsSessionService() );
 
 		$controller = new WooPaymentsMobileRestController();
-		$controller->init( $arbiter, $this->api_client, $account_service, $customer_service, new WooPaymentsOrderDataService() );
+		$controller->init( $arbiter, $this->api_client, $account_service, $customer_service, new WooPaymentsOrderDataService(), new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService() );
 
 		return $controller;
+	}
+
+	/**
+	 * Get the first order note containing a string.
+	 *
+	 * @param \WC_Order $order    Order.
+	 * @param string    $needle   Needle to search for (case-insensitive, tags stripped).
+	 * @return string
+	 */
+	private function get_order_note_containing( \WC_Order $order, string $needle ): string {
+		foreach ( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) as $note ) {
+			if ( false !== stripos( wp_strip_all_tags( (string) $note->content ), $needle ) ) {
+				return (string) $note->content;
+			}
+		}
+
+		return '';
 	}
 
 	/**

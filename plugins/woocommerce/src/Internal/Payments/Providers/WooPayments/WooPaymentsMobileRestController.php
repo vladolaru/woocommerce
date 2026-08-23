@@ -75,6 +75,13 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 	private WooPaymentsOrderDataService $order_data_service;
 
 	/**
+	 * WooPayments order note service.
+	 *
+	 * @var WooPaymentsOrderNoteService
+	 */
+	private WooPaymentsOrderNoteService $note_service;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -84,13 +91,15 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 	 * @param WooPaymentsAccountService    $account_service    WooPayments account service.
 	 * @param WooPaymentsCustomerService   $customer_service   WooPayments customer service.
 	 * @param WooPaymentsOrderDataService  $order_data_service WooPayments order data service.
+	 * @param WooPaymentsOrderNoteService  $note_service       WooPayments order note service.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service, WooPaymentsCustomerService $customer_service, WooPaymentsOrderDataService $order_data_service ): void {
+	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service, WooPaymentsCustomerService $customer_service, WooPaymentsOrderDataService $order_data_service, WooPaymentsOrderNoteService $note_service ): void {
 		$this->arbiter            = $arbiter;
 		$this->api_client         = $api_client;
 		$this->account_service    = $account_service;
 		$this->customer_service   = $customer_service;
 		$this->order_data_service = $order_data_service;
+		$this->note_service       = $note_service;
 	}
 
 	/**
@@ -452,16 +461,25 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 				return new WP_Error( 'wcpay_payment_uncapturable', __( 'Payment cannot be captured for this order.', 'woocommerce' ), array( 'status' => 409 ) );
 			}
 
-			$result = 'succeeded' === $status
-				? $intent
-				: $this->api_client->capture_intention(
-					$intent_id,
-					$this->order_data_service->prepare_amount( (float) $order->get_total(), (string) $order->get_currency() ),
-					// Order-derived metadata first; the intent's own metadata wins, mirroring the plugin's mobile-app priority.
-					array_merge( WooPaymentsIntentRequestBuilder::capture_metadata_from_order( $order ), $this->get_intent_metadata( $intent ) )
-				);
+			try {
+				$result = 'succeeded' === $status
+					? $intent
+					: $this->api_client->capture_intention(
+						$intent_id,
+						$this->order_data_service->prepare_amount( (float) $order->get_total(), (string) $order->get_currency() ),
+						// Order-derived metadata first; the intent's own metadata wins, mirroring the plugin's mobile-app priority.
+						array_merge( WooPaymentsIntentRequestBuilder::capture_metadata_from_order( $order ), $this->get_intent_metadata( $intent ) )
+					);
+			} catch ( WooPaymentsApiException $capture_exception ) {
+				// Only a failed capture call marks the order; pre-check failures must not.
+				$this->reconcile_failed_terminal_capture( $order, $intent_id, $capture_exception->getMessage() );
+
+				throw $capture_exception;
+			}
 
 			if ( 'succeeded' !== (string) ( $result['status'] ?? '' ) ) {
+				$this->record_failed_terminal_capture( $order, $intent_id, isset( $result['message'] ) ? (string) $result['message'] : '' );
+
 				return $this->get_terminal_capture_error( $result );
 			}
 
@@ -1056,6 +1074,95 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 		$allowed_channels = array( 'mobile_pos', 'mobile_store_management' );
 
 		return is_string( $ipp_channel ) && in_array( $ipp_channel, $allowed_channels, true ) ? $ipp_channel : '';
+	}
+
+	/**
+	 * Reconcile a terminal capture that failed with an API error.
+	 *
+	 * Mirrors the plugin's capture_charge: re-fetch the intent to catch an
+	 * authorization that already expired (the site may have missed the
+	 * charge.expired webhook). A canceled intent fails the order with the
+	 * expired note; anything else records the plain capture failure.
+	 *
+	 * @param WC_Order $order     Order.
+	 * @param string   $intent_id Intent ID.
+	 * @param string   $message   Capture error message.
+	 */
+	private function reconcile_failed_terminal_capture( WC_Order $order, string $intent_id, string $message ): void {
+		try {
+			$intent = $this->api_client->get_payment_intention( $intent_id );
+		} catch ( WooPaymentsApiException $fetch_exception ) {
+			$this->record_failed_terminal_capture( $order, $intent_id, $message );
+
+			return;
+		}
+
+		if ( 'canceled' === (string) ( $intent['status'] ?? '' ) ) {
+			$this->record_expired_terminal_capture( $order, $intent_id );
+
+			return;
+		}
+
+		$this->record_failed_terminal_capture( $order, $intent_id, $message );
+	}
+
+	/**
+	 * Record a failed terminal capture: failure note, still-capturable authorization.
+	 *
+	 * The order keeps its status, matching the plugin's mark_payment_capture_failed.
+	 *
+	 * @param WC_Order $order     Order.
+	 * @param string   $intent_id Intent ID.
+	 * @param string   $message   Capture error message.
+	 */
+	private function record_failed_terminal_capture( WC_Order $order, string $intent_id, string $message ): void {
+		$charge_id       = (string) $order->get_meta( '_charge_id', true );
+		$note_candidates = $this->note_service->format_capture_failed_note_candidates( $order, $intent_id, $charge_id, $message );
+
+		$this->note_service->add_note_once(
+			$order,
+			$note_candidates[0],
+			'',
+			$note_candidates,
+			array(),
+			static function () use ( $order ): void {
+				if ( 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true ) ) {
+					$order->update_meta_data( '_wcpay_fraud_meta_box_type', 'review_failed' );
+				}
+
+				$order->update_meta_data( '_intention_status', 'requires_capture' );
+				$order->save();
+			}
+		);
+	}
+
+	/**
+	 * Record an expired-authorization terminal capture: failed order, expired note.
+	 *
+	 * Matches the plugin's mark_payment_capture_expired and the charge.expired webhook.
+	 *
+	 * @param WC_Order $order     Order.
+	 * @param string   $intent_id Intent ID.
+	 */
+	private function record_expired_terminal_capture( WC_Order $order, string $intent_id ): void {
+		$charge_id       = (string) $order->get_meta( '_charge_id', true );
+		$note_candidates = $this->note_service->format_capture_expired_note_candidates( $intent_id, $charge_id );
+
+		$this->note_service->add_note_once(
+			$order,
+			$note_candidates[0],
+			'',
+			$note_candidates,
+			array(),
+			static function () use ( $order ): void {
+				if ( 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true ) ) {
+					$order->update_meta_data( '_wcpay_fraud_meta_box_type', 'review_expired' );
+				}
+
+				$order->update_meta_data( '_intention_status', 'canceled' );
+				$order->update_status( 'failed' );
+			}
+		);
 	}
 
 	/**

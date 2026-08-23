@@ -130,6 +130,13 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 	public array $last_capture_metadata = array();
 
 	/**
+	 * Queue of get_payment_intention responses, shifted per call when non-empty.
+	 *
+	 * @var array<int,array<string,mixed>>
+	 */
+	public array $payment_intention_response_queue = array();
+
+	/**
 	 * Charge response.
 	 *
 	 * @var array<string,mixed>
@@ -310,6 +317,10 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 	 */
 	public function get_payment_intention( string $intent_id ): array {
 		unset( $intent_id );
+
+		if ( array() !== $this->payment_intention_response_queue ) {
+			return array_shift( $this->payment_intention_response_queue );
+		}
 
 		return $this->payment_intention_response;
 	}
