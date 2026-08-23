@@ -815,6 +815,26 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Tell whether the site only uses network-wide saved payment methods.
+	 *
+	 * @return bool
+	 */
+	public function is_network_saved_cards_enabled(): bool {
+		/**
+		 * Allows forcing WooPayments to use network-wide saved payment methods across a multisite network.
+		 *
+		 * Kept under the WooPayments extension's filter name for parity. The extension
+		 * marks it internal to Automattic; native honors the same opt-in so customer
+		 * IDs, saved-method behavior and the WooPay flags stay network-consistent.
+		 *
+		 * @since 11.0.0
+		 *
+		 * @param bool $enabled Whether the site should only use network-wide saved payment methods.
+		 */
+		return (bool) apply_filters( 'wcpay_force_network_saved_cards', false );
+	}
+
+	/**
 	 * Tell whether the cached account is rejected.
 	 *
 	 * @return bool

@@ -971,7 +971,7 @@ class WooPaymentsWooPaySessionService {
 			'isWooPayEmailInputEnabled'         => false,
 			'isWooPayDirectCheckoutEnabled'     => false,
 			'isWooPayGlobalThemeSupportEnabled' => $is_global_theme_enabled,
-			'forceNetworkSavedCards'            => $this->is_truthy_gateway_setting( 'force_network_saved_cards' ) || $this->should_use_stripe_platform_on_checkout_page( $context ),
+			'forceNetworkSavedCards'            => $this->get_account_service()->is_network_saved_cards_enabled() || $this->should_use_stripe_platform_on_checkout_page( $context ),
 			'ajaxUrl'                           => admin_url( 'admin-ajax.php' ),
 			'platformTrackerNonce'              => wp_create_nonce( 'platform_tracks_nonce' ),
 			'isShopperTrackingEnabled'          => $this->get_frontend_tracking_controller()->is_shopper_tracking_enabled(),
@@ -1162,7 +1162,7 @@ class WooPaymentsWooPaySessionService {
 		return 'checkout' === $this->normalize_button_context( $context ) &&
 			$this->is_woopay_enabled() &&
 			$this->is_woopay_country_available() &&
-			( $this->is_truthy_gateway_setting( 'force_network_saved_cards' ) || $this->should_use_stripe_platform_on_checkout_page( $context ) );
+			( $this->get_account_service()->is_network_saved_cards_enabled() || $this->should_use_stripe_platform_on_checkout_page( $context ) );
 	}
 
 	/**

@@ -379,6 +379,18 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Network saved cards should be off by default and opt-in via the parity filter.
+	 */
+	public function test_is_network_saved_cards_enabled_follows_the_parity_filter(): void {
+		$sut = $this->create_service();
+
+		$this->assertFalse( $sut->is_network_saved_cards_enabled() );
+
+		add_filter( 'wcpay_force_network_saved_cards', '__return_true' );
+		$this->assertTrue( $sut->is_network_saved_cards_enabled() );
+	}
+
+	/**
 	 * @testdox Should not autoload the onboarding test-mode option when enabling it on the dev-mode cache path.
 	 */
 	public function test_dev_mode_cache_path_does_not_autoload_onboarding_test_mode_option(): void {

@@ -872,18 +872,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return bool
 	 */
 	private function is_network_saved_cards_enabled(): bool {
-		/**
-		 * Allows forcing WooPayments to use network-wide saved payment methods across a multisite network.
-		 *
-		 * Kept under the WooPayments extension's filter name for parity. The extension
-		 * marks it internal to Automattic; it participates here only so the repair
-		 * honors the same opt-out.
-		 *
-		 * @since 11.0.0
-		 *
-		 * @param bool $enabled Whether the site should only use network-wide saved payment methods.
-		 */
-		return (bool) apply_filters( 'wcpay_force_network_saved_cards', false );
+		return $this->get_account_service()->is_network_saved_cards_enabled();
 	}
 
 	/**

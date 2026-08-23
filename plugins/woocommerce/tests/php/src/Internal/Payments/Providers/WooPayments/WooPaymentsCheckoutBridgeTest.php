@@ -895,14 +895,12 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 */
 	public function test_card_platform_checkout_config_is_independent_from_woopay_frontend_config(): void {
 		$legacy_runtime  = $this->create_legacy_runtime_for_bridge();
+		add_filter( 'wcpay_force_network_saved_cards', '__return_true' );
 		$account_service = $this->create_account_service_for_bridge(
 			true,
 			array(
 				'country'                    => 'US',
 				'platform_checkout_eligible' => true,
-			),
-			array(
-				'force_network_saved_cards' => 'yes',
 			)
 		);
 		$legacy_runtime->method( 'get_gateway_prepared_customer_data' )->willReturn( array() );
@@ -915,6 +913,32 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 
 		$this->assertTrue( $config['forceNetworkSavedCards'] );
 		$this->assertTrue( $config['paymentMethodsConfig']['card']['forceNetworkSavedCards'] );
+	}
+
+	/**
+	 * @testdox Platform-account Stripe should not be forced outside the checkout page.
+	 */
+	public function test_platform_card_checkout_requires_a_checkout_page(): void {
+		$legacy_runtime  = $this->create_legacy_runtime_for_bridge();
+		$account_service = $this->create_account_service_for_bridge(
+			true,
+			array(
+				'country'                    => 'US',
+				'platform_checkout_eligible' => true,
+			),
+			array(
+				'platform_checkout' => 'yes',
+			)
+		);
+		$legacy_runtime->method( 'get_gateway_prepared_customer_data' )->willReturn( array() );
+		$legacy_runtime->method( 'can_handle_checkout_bridge_callbacks' )->willReturn( true );
+
+		$bridge = new WooPaymentsCheckoutBridge();
+		$bridge->init( $legacy_runtime, $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+
+		$config = $bridge->get_payment_fields_js_config();
+
+		$this->assertFalse( $config['forceNetworkSavedCards'], 'Off the checkout page the platform-account branch must stay off, matching the plugin\'s is_checkout()/has_block guard.' );
 	}
 
 	/**

@@ -1790,7 +1790,8 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		add_filter( 'woocommerce_geolocate_ip', static fn() => 'DE' );
 		update_option( 'woocommerce_woocommerce_payments_woopay_available_countries', wp_json_encode( array( 'US' ) ) );
 
-		$sut = $this->create_service( array( 'force_network_saved_cards' => 'yes' ) );
+		add_filter( 'wcpay_force_network_saved_cards', '__return_true' );
+		$sut = $this->create_service();
 
 		$this->assertTrue( $sut->should_load_woopay_save_user_assets( 'checkout' ) );
 	}
@@ -1801,7 +1802,8 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	public function test_country_availability_geolocates_against_synced_list_in_live_mode(): void {
 		add_filter( 'woocommerce_geolocate_ip', static fn() => 'DE' );
 
-		$sut = $this->create_service( array( 'force_network_saved_cards' => 'yes' ), array(), null, null, null, false );
+		add_filter( 'wcpay_force_network_saved_cards', '__return_true' );
+		$sut = $this->create_service( array(), array(), null, null, null, false );
 
 		// The synced list defaults to US only, so a DE shopper is unavailable.
 		$this->assertFalse( $sut->should_load_woopay_save_user_assets( 'checkout' ) );
@@ -1818,7 +1820,8 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		add_filter( 'woocommerce_geolocate_ip', static fn() => 'US' );
 		update_option( 'woocommerce_woocommerce_payments_woopay_available_countries', 'not-json' );
 
-		$sut = $this->create_service( array( 'force_network_saved_cards' => 'yes' ), array(), null, null, null, false );
+		add_filter( 'wcpay_force_network_saved_cards', '__return_true' );
+		$sut = $this->create_service( array(), array(), null, null, null, false );
 
 		$this->assertTrue( $sut->should_load_woopay_save_user_assets( 'checkout' ) );
 	}

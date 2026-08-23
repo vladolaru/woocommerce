@@ -1308,7 +1308,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function should_force_network_saved_cards(): bool {
-		return $this->is_truthy_gateway_setting( 'force_network_saved_cards' ) || $this->should_use_stripe_platform_for_card_checkout();
+		return $this->get_account_service()->is_network_saved_cards_enabled() || $this->should_use_stripe_platform_for_card_checkout();
 	}
 
 	/**
@@ -1344,6 +1344,13 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	private function should_use_stripe_platform_for_card_checkout(): bool {
 		$account_data = $this->get_account_service()->get_cached_account_data();
 		if ( empty( $account_data['platform_checkout_eligible'] ) || 'yes' !== $this->get_string_gateway_setting( 'platform_checkout', 'no' ) ) {
+			return false;
+		}
+
+		if (
+			! ( function_exists( 'is_checkout' ) && is_checkout() )
+			&& ! ( function_exists( 'has_block' ) && has_block( 'woocommerce/checkout' ) )
+		) {
 			return false;
 		}
 
