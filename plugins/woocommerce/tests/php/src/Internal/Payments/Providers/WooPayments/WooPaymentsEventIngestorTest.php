@@ -2073,6 +2073,13 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$order->save();
 
 		$api_client = new class() extends WooPaymentsApiClient {
+			/**
+			 * Number of intent retrieval attempts.
+			 *
+			 * @var int
+			 */
+			public int $fetch_attempts = 0;
+
 			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- This test double always throws.
 			/**
 			 * Fail the intent retrieval.
@@ -2083,6 +2090,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			 */
 			public function get_payment_intention( string $intent_id ): array {
 				unset( $intent_id );
+				++$this->fetch_attempts;
 				throw new WooPaymentsApiException( 'boom', 'wcpay_server_error', 500 );
 			}
 			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
@@ -2095,25 +2103,38 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			$api_client
 		);
 
-		$this->expectException( WooPaymentsApiException::class );
+		$event = array(
+			'id'   => 'evt_expired_error',
+			'type' => 'charge.expired',
+			'data' => array(
+				'object' => array(
+					'id' => 'ch_expired_error',
+				),
+			),
+		);
 
+		$first_throw = null;
 		try {
-			$sut->process(
-				array(
-					'id'   => 'evt_expired_error',
-					'type' => 'charge.expired',
-					'data' => array(
-						'object' => array(
-							'id' => 'ch_expired_error',
-						),
-					),
-				)
-			);
-		} finally {
-			$order = wc_get_order( $order->get_id() );
-			$this->assertInstanceOf( WC_Order::class, $order );
-			$this->assertSame( 'pending', $order->get_status() );
+			$sut->process( $event );
+		} catch ( WooPaymentsApiException $exception ) {
+			$first_throw = $exception;
 		}
+		$this->assertInstanceOf( WooPaymentsApiException::class, $first_throw );
+
+		// The throw must leave no processed marker and release the in-flight
+		// claim: a redelivery of the same event re-enters the handler.
+		$second_throw = null;
+		try {
+			$sut->process( $event );
+		} catch ( WooPaymentsApiException $exception ) {
+			$second_throw = $exception;
+		}
+		$this->assertInstanceOf( WooPaymentsApiException::class, $second_throw );
+		$this->assertSame( 2, $api_client->fetch_attempts );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'pending', $order->get_status() );
 	}
 
 	/**
