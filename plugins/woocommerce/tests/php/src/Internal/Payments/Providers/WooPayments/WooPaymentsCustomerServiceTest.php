@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
+use Automattic\WooCommerce\Tests\Internal\Payments\StaticNativeRuntimeArbiter;
 use WC_Order;
 use WC_Unit_Test_Case;
 
@@ -21,13 +22,72 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		delete_option( 'wcpay_session_store_id' );
-		unset( $_GET['change_payment_method'], $GLOBALS['wcpay_test_subscription_ids'] );
+		unset( $_GET['change_payment_method'], $GLOBALS['wcpay_test_subscription_ids'], $GLOBALS['wcpay_test_checkout_blocks_api_request'] );
 		if ( WC()->session ) {
 			WC()->session->set( 'wcpay_customer_id', null );
 		}
 
 		wp_set_current_user( 0 );
 		parent::tearDown();
+	}
+
+	/**
+	 * @testdox Registration should hook created-customer promotion only when native owns the runtime.
+	 */
+	public function test_register_hooks_created_customer_promotion_only_for_native_runtime(): void {
+		$native_sut = $this->create_sut( false, $this->create_customer_api_client( array() ) );
+		$native_sut->register();
+		$this->assertNotFalse( has_action( 'woocommerce_created_customer', array( $native_sut, 'handle_woocommerce_created_customer' ) ) );
+
+		$plugin_sut = new WooPaymentsCustomerService();
+		$plugin_sut->init( $this->create_customer_api_client( array() ), $this->create_account_service_stub( false ), new WooPaymentsSessionService(), new StaticNativeRuntimeArbiter( false ) );
+		$plugin_sut->register();
+		$this->assertFalse( has_action( 'woocommerce_created_customer', array( $plugin_sut, 'handle_woocommerce_created_customer' ) ), 'The promotion hook must not register while the standalone plugin owns the runtime.' );
+	}
+
+	/**
+	 * @testdox A guest session customer ID should be promoted onto an account created during checkout.
+	 */
+	public function test_created_customer_promotes_guest_session_customer_id_during_checkout(): void {
+		$user_id = $this->factory->user->create( array( 'user_login' => 'created-during-checkout' ) );
+		WC()->session->set( 'wcpay_customer_id', 'cus_guest' );
+		$this->fake_wcs_checkout_blocks_api_request();
+		$GLOBALS['wcpay_test_checkout_blocks_api_request'] = true;
+
+		$sut = $this->create_sut( false, $this->create_customer_api_client( array() ) );
+		$sut->handle_woocommerce_created_customer( $user_id );
+
+		$this->assertSame( 'cus_guest', get_user_option( WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, $user_id ), 'The guest session customer must follow the newly created account.' );
+	}
+
+	/**
+	 * @testdox Account creation outside a checkout should not adopt the session customer ID.
+	 */
+	public function test_created_customer_outside_checkout_does_not_promote_session_customer_id(): void {
+		$user_id = $this->factory->user->create( array( 'user_login' => 'created-outside-checkout' ) );
+		WC()->session->set( 'wcpay_customer_id', 'cus_guest' );
+		$this->fake_wcs_checkout_blocks_api_request();
+		$GLOBALS['wcpay_test_checkout_blocks_api_request'] = false;
+
+		$sut = $this->create_sut( false, $this->create_customer_api_client( array() ) );
+		$sut->handle_woocommerce_created_customer( $user_id );
+
+		$this->assertFalse( get_user_option( WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, $user_id ) );
+	}
+
+	/**
+	 * @testdox Checkout account creation without a guest session customer should write nothing.
+	 */
+	public function test_created_customer_without_session_customer_id_writes_nothing(): void {
+		$user_id = $this->factory->user->create( array( 'user_login' => 'created-no-session-customer' ) );
+		WC()->session->set( 'wcpay_customer_id', null );
+		$this->fake_wcs_checkout_blocks_api_request();
+		$GLOBALS['wcpay_test_checkout_blocks_api_request'] = true;
+
+		$sut = $this->create_sut( false, $this->create_customer_api_client( array() ) );
+		$sut->handle_woocommerce_created_customer( $user_id );
+
+		$this->assertFalse( get_user_option( WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, $user_id ) );
 	}
 
 	/**
@@ -637,6 +697,36 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Define a test-only wcs_is_checkout_blocks_api_request() backed by \$GLOBALS['wcpay_test_checkout_blocks_api_request'].
+	 */
+	private function fake_wcs_checkout_blocks_api_request(): void {
+		if ( function_exists( 'wcs_is_checkout_blocks_api_request' ) ) {
+			return;
+		}
+
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- Test-only shim for the WooCommerce Subscriptions predicate.
+		eval( 'namespace { function wcs_is_checkout_blocks_api_request( $request = "" ) { return ! empty( $GLOBALS["wcpay_test_checkout_blocks_api_request"] ); } }' );
+	}
+
+	/**
+	 * Create a bare account-service stub.
+	 *
+	 * @param bool $test_mode Whether test mode is enabled.
+	 * @return WooPaymentsAccountService
+	 */
+	private function create_account_service_stub( bool $test_mode ): WooPaymentsAccountService {
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_test_mode_enabled', 'get_account_is_live' ) )
+			->getMock();
+
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( $test_mode );
+		$account_service->method( 'get_account_is_live' )->willReturn( null );
+
+		return $account_service;
+	}
+
+	/**
 	 * Define a test-only wcs_is_subscription() backed by \$GLOBALS['wcpay_test_subscription_ids'].
 	 */
 	private function fake_wcs_is_subscription(): void {
@@ -666,7 +756,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 		$account_service->method( 'get_account_is_live' )->willReturn( $account_is_live );
 
 		$sut = new WooPaymentsCustomerService();
-		$sut->init( $api_client, $account_service, new WooPaymentsSessionService() );
+		$sut->init( $api_client, $account_service, new WooPaymentsSessionService(), new StaticNativeRuntimeArbiter( true ) );
 
 		return $sut;
 	}

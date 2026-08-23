@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -68,18 +69,27 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	private WooPaymentsSessionService $session_service;
 
 	/**
+	 * Native runtime owner arbiter.
+	 *
+	 * @var NativePaymentsRuntimeArbiter|null
+	 */
+	private ?NativePaymentsRuntimeArbiter $arbiter = null;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient      $api_client      Native API client.
-	 * @param WooPaymentsAccountService $account_service WooPayments account service.
-	 * @param WooPaymentsSessionService $session_service WooPayments session service.
+	 * @param WooPaymentsApiClient              $api_client      Native API client.
+	 * @param WooPaymentsAccountService         $account_service WooPayments account service.
+	 * @param WooPaymentsSessionService         $session_service WooPayments session service.
+	 * @param NativePaymentsRuntimeArbiter|null $arbiter         Native runtime owner arbiter.
 	 */
-	final public function init( WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service, WooPaymentsSessionService $session_service ): void {
+	final public function init( WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service, WooPaymentsSessionService $session_service, ?NativePaymentsRuntimeArbiter $arbiter = null ): void {
 		$this->api_client      = $api_client;
 		$this->account_service = $account_service;
 		$this->session_service = $session_service;
+		$this->arbiter         = $arbiter;
 	}
 
 	/**
@@ -96,6 +106,44 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	 */
 	public function register() {
 		add_filter( 'wp_privacy_personal_data_erasers', array( $this, 'register_personal_data_eraser' ) );
+
+		if (
+			null !== $this->arbiter
+			&& $this->arbiter->should_native_register()
+			&& false === has_action( 'woocommerce_created_customer', array( $this, 'handle_woocommerce_created_customer' ) )
+		) {
+			add_action( 'woocommerce_created_customer', array( $this, 'handle_woocommerce_created_customer' ) );
+		}
+	}
+
+	/**
+	 * Handle the woocommerce_created_customer hook.
+	 *
+	 * When a shopper starts checkout as a guest and an account is created for them
+	 * mid-checkout (e.g. purchasing a subscription product), promote the guest
+	 * session's provider customer ID onto the new user so their payment history and
+	 * saved methods follow the account instead of being orphaned on a guest customer.
+	 *
+	 * @internal
+	 *
+	 * @param int|string $user_id Newly created WordPress user ID.
+	 * @return void
+	 */
+	public function handle_woocommerce_created_customer( $user_id ): void {
+		// Not processing a checkout, bail.
+		if (
+			! ( defined( 'WOOCOMMERCE_CHECKOUT' ) && WOOCOMMERCE_CHECKOUT )
+			&& ! ( function_exists( 'wcs_is_checkout_blocks_api_request' ) && wcs_is_checkout_blocks_api_request( 'v1/checkout' ) )
+		) {
+			return;
+		}
+
+		$customer_id = WC()->session ? WC()->session->get( self::CUSTOMER_ID_SESSION_KEY ) : null;
+		if ( ! is_string( $customer_id ) || '' === $customer_id ) {
+			return;
+		}
+
+		$this->persist_customer_id( absint( $user_id ), $customer_id );
 	}
 
 	/**
