@@ -525,7 +525,9 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 		unset( $request );
 
 		$cached = get_transient( self::STORE_READERS_TRANSIENT_KEY );
-		if ( is_array( $cached ) ) {
+		// An empty list is a cache miss, matching the plugin's falsy check: a reader
+		// registered elsewhere must not stay invisible for the full TTL.
+		if ( is_array( $cached ) && array() !== $cached ) {
 			return new WP_REST_Response( $cached );
 		}
 
@@ -1245,7 +1247,8 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 	 */
 	private function get_cached_terminal_locations(): array {
 		$cached = get_transient( self::STORE_LOCATIONS_TRANSIENT_KEY );
-		if ( is_array( $cached ) ) {
+		// An empty list is a cache miss, matching the plugin's falsy check.
+		if ( is_array( $cached ) && array() !== $cached ) {
 			return $cached;
 		}
 

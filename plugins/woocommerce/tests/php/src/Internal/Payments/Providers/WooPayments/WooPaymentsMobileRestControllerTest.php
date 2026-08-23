@@ -348,6 +348,55 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox An empty cached reader list is treated as a miss and re-fetched, like the reference client.
+	 */
+	public function test_get_readers_refetches_when_cached_list_is_empty(): void {
+		set_transient( 'wcpay_store_terminal_readers', array() );
+		$this->api_client->terminal_readers_response = array(
+			'data' => array(
+				array(
+					'id'          => 'tmr_new',
+					'livemode'    => false,
+					'device_type' => 'bbpos_wisepos_e',
+					'label'       => 'Front desk',
+					'location'    => 'tml_1',
+					'metadata'    => array(),
+					'status'      => 'online',
+				),
+			),
+		);
+
+		$response = $this->sut->get_readers( new WP_REST_Request( 'GET', '/wc/v3/payments/readers' ) );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertCount( 1, $response->get_data(), 'A reader registered elsewhere must appear despite the cached empty list.' );
+		$this->assertSame( 'tmr_new', $response->get_data()[0]['id'] );
+	}
+
+	/**
+	 * @testdox An empty cached location list is treated as a miss and re-fetched, like the reference client.
+	 */
+	public function test_get_terminal_locations_refetches_when_cached_list_is_empty(): void {
+		set_transient( 'wcpay_store_terminal_locations', array() );
+		$this->api_client->terminal_locations_response = array(
+			'data' => array(
+				array(
+					'id'           => 'tml_new',
+					'display_name' => 'Warehouse',
+					'address'      => array( 'country' => 'US' ),
+					'livemode'     => false,
+				),
+			),
+		);
+
+		$response = $this->sut->get_terminal_locations( new WP_REST_Request( 'GET', '/wc/v3/payments/terminal/locations' ) );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertCount( 1, $response->get_data() );
+		$this->assertSame( 'tml_new', $response->get_data()[0]['id'] );
+	}
+
+	/**
 	 * @testdox Reader charge summary uses the source transaction creation date.
 	 */
 	public function test_get_reader_charge_summary_uses_transaction_created_date(): void {
