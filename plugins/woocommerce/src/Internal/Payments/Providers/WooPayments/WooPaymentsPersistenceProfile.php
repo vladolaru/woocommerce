@@ -76,6 +76,7 @@ class WooPaymentsPersistenceProfile implements ProviderPersistenceProfile {
 		'_stripe_customer_id',
 		'_wcpay_fraud_meta_box_type',
 		'_wcpay_fraud_outcome_status',
+		'_wcpay_open_dispute_ids',
 		'_wcpay_intent_currency',
 		'_wcpay_refund_id',
 		'_wcpay_refund_transaction_id',

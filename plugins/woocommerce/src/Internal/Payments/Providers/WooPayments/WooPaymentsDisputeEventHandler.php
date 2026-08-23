@@ -32,6 +32,13 @@ class WooPaymentsDisputeEventHandler {
 	private const DISPUTE_NOTE_MARKER_PREFIX = '_wc_native_woopayments_dispute_note_';
 
 	/**
+	 * Meta key recording the charge's disputes that are still open.
+	 *
+	 * @var string
+	 */
+	private const OPEN_DISPUTE_IDS_META_KEY = '_wcpay_open_dispute_ids';
+
+	/**
 	 * Native WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
@@ -174,7 +181,8 @@ class WooPaymentsDisputeEventHandler {
 			$this->get_dispute_reason_description( $this->get_required_string( $event_object, 'reason' ) ),
 			$this->get_dispute_due_by_date( $this->get_required_int( $evidence, 'due_by' ) ),
 			$is_inquiry,
-			$balance_transaction_id
+			$balance_transaction_id,
+			$dispute_id
 		);
 		$note_type  = $is_inquiry ? 'created_inquiry' : 'created_dispute';
 
@@ -185,7 +193,8 @@ class WooPaymentsDisputeEventHandler {
 				$dispute_id,
 				$status,
 				$note_type,
-				static function () use ( $order ): void {
+				function () use ( $order, $dispute_id ): void {
+					$this->add_open_dispute_id( $order, $dispute_id );
 					$order->update_status( 'on-hold' );
 				}
 			)
@@ -206,7 +215,7 @@ class WooPaymentsDisputeEventHandler {
 		$status     = $this->get_required_string( $event_object, 'status' );
 		$dispute_id = $this->get_required_string( $event_object, 'id' );
 		$is_inquiry = 0 === strpos( $status, 'warning_' );
-		$note       = $this->get_dispute_closed_note( $charge_id, $status, $is_inquiry, $balance_transaction_id );
+		$note       = $this->get_dispute_closed_note( $charge_id, $status, $is_inquiry, $balance_transaction_id, $dispute_id );
 		$note_type  = $is_inquiry ? 'closed_inquiry' : 'closed_dispute';
 
 		$this->add_dispute_order_note_once(
@@ -220,9 +229,28 @@ class WooPaymentsDisputeEventHandler {
 				add_filter( 'woocommerce_email_enabled_customer_refunded_order', '__return_false' );
 				add_filter( 'woocommerce_email_enabled_customer_completed_renewal_order', '__return_false' );
 
+				$open_dispute_ids = $this->close_open_dispute_id( $order, $dispute_id );
+
 				try {
 					if ( 'lost' === $status ) {
 						$this->create_dispute_lost_refund( $order, $this->get_dispute_summary( $dispute_id, $charge_id ), $charge_id, $dispute_id, $status );
+					} elseif ( ! empty( $open_dispute_ids ) ) {
+						// Another dispute on the same charge is still running its evidence
+						// deadline, and the hold it put on the order has to outlive this one.
+						// Leave the status alone rather than picking a new one: the sibling's
+						// own close will resolve it.
+						$order->add_order_note(
+							sprintf(
+								/* translators: %d: the number of disputes on this payment that are still open */
+								_n(
+									'The order was not marked as completed because %d other dispute on this payment is still open.',
+									'The order was not marked as completed because %d other disputes on this payment are still open.',
+									count( $open_dispute_ids ),
+									'woocommerce'
+								),
+								count( $open_dispute_ids )
+							)
+						);
 					} elseif ( $this->is_order_fully_refunded( $order ) ) {
 						// Promoting a fully refunded order to completed would make Analytics
 						// count it as revenue again. It still has to leave the dispute hold,
@@ -457,11 +485,12 @@ class WooPaymentsDisputeEventHandler {
 	 * @param string $due_by                 Due date.
 	 * @param bool   $is_inquiry             Whether the dispute is an inquiry.
 	 * @param string $balance_transaction_id Balance transaction ID.
+	 * @param string $dispute_id             Dispute ID, appended so a charge's several disputes each get a distinct note.
 	 * @return string
 	 */
-	private function get_dispute_created_note( string $charge_id, string $amount, string $reason, string $due_by, bool $is_inquiry, string $balance_transaction_id = '' ): string {
+	private function get_dispute_created_note( string $charge_id, string $amount, string $reason, string $due_by, bool $is_inquiry, string $balance_transaction_id = '', string $dispute_id = '' ): string {
 		if ( $is_inquiry ) {
-			return sprintf(
+			$note = sprintf(
 				/* translators: %1: the disputed amount and currency; %2: the dispute reason; %3 the deadline date for responding to the inquiry; %4 dispute details URL */
 				__( 'A payment inquiry has been raised for %1$s with reason "%2$s". <a href="%4$s" target="_blank" rel="noopener noreferrer">Response due by %3$s</a>.', 'woocommerce' ),
 				$amount,
@@ -469,16 +498,18 @@ class WooPaymentsDisputeEventHandler {
 				esc_html( $due_by ),
 				esc_url( $this->get_dispute_url( $charge_id, $balance_transaction_id ) )
 			);
+		} else {
+			$note = sprintf(
+				/* translators: %1: the disputed amount and currency; %2: the dispute reason; %3 the deadline date for responding to dispute; %4 dispute details URL */
+				__( 'Payment has been disputed for %1$s with reason "%2$s". <a href="%4$s" target="_blank" rel="noopener noreferrer">Response due by %3$s</a>.', 'woocommerce' ),
+				$amount,
+				esc_html( $reason ),
+				esc_html( $due_by ),
+				esc_url( $this->get_dispute_url( $charge_id, $balance_transaction_id ) )
+			);
 		}
 
-		return sprintf(
-			/* translators: %1: the disputed amount and currency; %2: the dispute reason; %3 the deadline date for responding to dispute; %4 dispute details URL */
-			__( 'Payment has been disputed for %1$s with reason "%2$s". <a href="%4$s" target="_blank" rel="noopener noreferrer">Response due by %3$s</a>.', 'woocommerce' ),
-			$amount,
-			esc_html( $reason ),
-			esc_html( $due_by ),
-			esc_url( $this->get_dispute_url( $charge_id, $balance_transaction_id ) )
-		);
+		return $this->append_dispute_id_to_note( $note, $dispute_id );
 	}
 
 	/**
@@ -488,23 +519,50 @@ class WooPaymentsDisputeEventHandler {
 	 * @param string $status                 Dispute status.
 	 * @param bool   $is_inquiry             Whether the dispute is an inquiry.
 	 * @param string $balance_transaction_id Balance transaction ID.
+	 * @param string $dispute_id             Dispute ID, appended so a charge's several disputes each get a distinct note.
 	 * @return string
 	 */
-	private function get_dispute_closed_note( string $charge_id, string $status, bool $is_inquiry, string $balance_transaction_id = '' ): string {
+	private function get_dispute_closed_note( string $charge_id, string $status, bool $is_inquiry, string $balance_transaction_id = '', string $dispute_id = '' ): string {
 		if ( $is_inquiry ) {
-			return sprintf(
+			$note = sprintf(
 				/* translators: %1: the dispute status; %2: dispute details URL */
 				__( 'Payment inquiry has been closed with status %1$s. See <a href="%2$s" target="_blank" rel="noopener noreferrer">payment status</a> for more details.', 'woocommerce' ),
 				esc_html( $status ),
 				esc_url( $this->get_dispute_url( $charge_id, $balance_transaction_id ) )
 			);
+		} else {
+			$note = sprintf(
+				/* translators: %1: the dispute status; %2: dispute details URL */
+				__( 'Dispute has been closed with status %1$s. See <a href="%2$s" target="_blank" rel="noopener noreferrer">dispute overview</a> for more details.', 'woocommerce' ),
+				esc_html( $status ),
+				esc_url( $this->get_dispute_url( $charge_id, $balance_transaction_id ) )
+			);
 		}
 
-		return sprintf(
-			/* translators: %1: the dispute status; %2: dispute details URL */
-			__( 'Dispute has been closed with status %1$s. See <a href="%2$s" target="_blank" rel="noopener noreferrer">dispute overview</a> for more details.', 'woocommerce' ),
-			esc_html( $status ),
-			esc_url( $this->get_dispute_url( $charge_id, $balance_transaction_id ) )
+		return $this->append_dispute_id_to_note( $note, $dispute_id );
+	}
+
+	/**
+	 * Append the dispute ID to a dispute note.
+	 *
+	 * A charge can carry several disputes whose notes are otherwise byte-identical
+	 * (same amount, reason and deadline, or same close status); without the dispute
+	 * ID the note dedupe collapses them into one and the second dispute's side
+	 * effects are skipped. A re-delivered webhook still de-dupes via its identity.
+	 *
+	 * @param string $note       Note content.
+	 * @param string $dispute_id Provider dispute ID.
+	 * @return string
+	 */
+	private function append_dispute_id_to_note( string $note, string $dispute_id ): string {
+		if ( '' === $dispute_id ) {
+			return $note;
+		}
+
+		return $note . ' ' . sprintf(
+			/* translators: %s: the dispute ID */
+			esc_html__( '(Dispute ID: %s)', 'woocommerce' ),
+			esc_html( $dispute_id )
 		);
 	}
 
@@ -661,6 +719,74 @@ class WooPaymentsDisputeEventHandler {
 	private function is_order_fully_refunded( WC_Order $order ): bool {
 		return $order->has_status( 'refunded' )
 			|| ( (float) $order->get_total() > 0 && (float) $order->get_remaining_refund_amount() <= 0 );
+	}
+
+	/**
+	 * Read the IDs of the charge's disputes that have not closed yet.
+	 *
+	 * @param WC_Order $order The order the disputed charge belongs to.
+	 * @return string[] The open dispute IDs, empty when none were ever recorded.
+	 */
+	private function get_open_dispute_ids( WC_Order $order ): array {
+		$open_dispute_ids = $order->get_meta( self::OPEN_DISPUTE_IDS_META_KEY, true );
+
+		return is_array( $open_dispute_ids ) ? array_values( $open_dispute_ids ) : array();
+	}
+
+	/**
+	 * Record a dispute as open on the order. Does not save the order.
+	 *
+	 * @param WC_Order $order      The order the disputed charge belongs to.
+	 * @param string   $dispute_id The ID of the dispute that was created.
+	 */
+	private function add_open_dispute_id( WC_Order $order, string $dispute_id ): void {
+		if ( '' === $dispute_id ) {
+			return;
+		}
+
+		$open_dispute_ids = $this->get_open_dispute_ids( $order );
+		if ( in_array( $dispute_id, $open_dispute_ids, true ) ) {
+			return;
+		}
+
+		$open_dispute_ids[] = $dispute_id;
+		$order->update_meta_data( self::OPEN_DISPUTE_IDS_META_KEY, $open_dispute_ids );
+	}
+
+	/**
+	 * Drop a dispute from the order's open list and report which disputes are left.
+	 *
+	 * @param WC_Order $order      The order the disputed charge belongs to.
+	 * @param string   $dispute_id The ID of the dispute that closed.
+	 * @return string[] The disputes still open on the charge.
+	 */
+	private function close_open_dispute_id( WC_Order $order, string $dispute_id ): array {
+		// Without an ID there is no telling which of the charge's disputes just closed,
+		// so leave the record untouched and report nothing open. Orders whose disputes
+		// predate this bookkeeping keep the behaviour they had before.
+		if ( '' === $dispute_id ) {
+			return array();
+		}
+
+		$open_dispute_ids = $this->get_open_dispute_ids( $order );
+		$remaining        = array_values( array_diff( $open_dispute_ids, array( $dispute_id ) ) );
+
+		if ( $remaining === $open_dispute_ids ) {
+			return $remaining;
+		}
+
+		if ( empty( $remaining ) ) {
+			$order->delete_meta_data( self::OPEN_DISPUTE_IDS_META_KEY );
+		} else {
+			$order->update_meta_data( self::OPEN_DISPUTE_IDS_META_KEY, $remaining );
+		}
+
+		// Nothing further down the close path is guaranteed to save the order: the lost
+		// branch refunds through a separate order instance and the sibling-open branch
+		// changes no status at all.
+		$order->save();
+
+		return $remaining;
 	}
 
 	/**

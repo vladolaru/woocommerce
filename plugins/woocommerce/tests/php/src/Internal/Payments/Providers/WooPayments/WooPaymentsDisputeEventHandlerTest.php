@@ -319,6 +319,178 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A created dispute is recorded in the order's open-dispute-ids meta.
+	 */
+	public function test_dispute_created_records_open_dispute_id(): void {
+		$order = $this->create_disputable_order();
+
+		$this->invoke_private(
+			'process_dispute_created',
+			array( $order, $this->get_created_event_object( 'dp_a1', 'needs_response' ), 'ch_multi', 'txn_multi' )
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( array( 'dp_a1' ), $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+		$this->assertSame( 'on-hold', $order->get_status() );
+	}
+
+	/**
+	 * @testdox Two disputes on one charge each get their own note and open-dispute record.
+	 */
+	public function test_two_sibling_disputes_are_both_recorded(): void {
+		$order = $this->create_disputable_order();
+
+		$this->invoke_private(
+			'process_dispute_created',
+			array( $order, $this->get_created_event_object( 'dp_b1', 'needs_response' ), 'ch_multi', 'txn_multi' )
+		);
+		$this->invoke_private(
+			'process_dispute_created',
+			array( $order, $this->get_created_event_object( 'dp_b2', 'needs_response' ), 'ch_multi', 'txn_multi' )
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( array( 'dp_b1', 'dp_b2' ), $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+		$this->assertNotEmpty( $this->find_order_note( $order, '(Dispute ID: dp_b1)' ) );
+		$this->assertNotEmpty( $this->find_order_note( $order, '(Dispute ID: dp_b2)' ) );
+	}
+
+	/**
+	 * @testdox Closing one of two disputes keeps the hold and notes the sibling still open.
+	 */
+	public function test_closing_first_sibling_dispute_keeps_hold(): void {
+		$order = $this->create_disputable_order();
+
+		$this->invoke_private(
+			'process_dispute_created',
+			array( $order, $this->get_created_event_object( 'dp_c1', 'needs_response' ), 'ch_multi', 'txn_multi' )
+		);
+		$this->invoke_private(
+			'process_dispute_created',
+			array( $order, $this->get_created_event_object( 'dp_c2', 'needs_response' ), 'ch_multi', 'txn_multi' )
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->invoke_private(
+			'process_dispute_closed',
+			array(
+				$order,
+				array(
+					'id'     => 'dp_c1',
+					'status' => 'won',
+				),
+				'ch_multi',
+				'txn_multi',
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'on-hold', $order->get_status() );
+		$this->assertSame( array( 'dp_c2' ), $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+		$this->assertNotEmpty( $this->find_order_note( $order, 'The order was not marked as completed because 1 other dispute on this payment is still open.' ) );
+	}
+
+	/**
+	 * @testdox Closing the last open dispute completes the order and clears the record.
+	 */
+	public function test_closing_last_sibling_dispute_completes_order(): void {
+		$order = $this->create_disputable_order();
+
+		$this->invoke_private(
+			'process_dispute_created',
+			array( $order, $this->get_created_event_object( 'dp_d1', 'needs_response' ), 'ch_multi', 'txn_multi' )
+		);
+		$this->invoke_private(
+			'process_dispute_created',
+			array( $order, $this->get_created_event_object( 'dp_d2', 'needs_response' ), 'ch_multi', 'txn_multi' )
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->invoke_private(
+			'process_dispute_closed',
+			array(
+				$order,
+				array(
+					'id'     => 'dp_d1',
+					'status' => 'won',
+				),
+				'ch_multi',
+				'txn_multi',
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->invoke_private(
+			'process_dispute_closed',
+			array(
+				$order,
+				array(
+					'id'     => 'dp_d2',
+					'status' => 'won',
+				),
+				'ch_multi',
+				'txn_multi',
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'completed', $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+	}
+
+	/**
+	 * @testdox A replayed created webhook does not duplicate the open-dispute record.
+	 */
+	public function test_replayed_created_webhook_does_not_duplicate_record(): void {
+		$order = $this->create_disputable_order();
+
+		$this->invoke_private(
+			'process_dispute_created',
+			array( $order, $this->get_created_event_object( 'dp_e1', 'needs_response' ), 'ch_multi', 'txn_multi' )
+		);
+		$order = wc_get_order( $order->get_id() );
+		$this->invoke_private(
+			'process_dispute_created',
+			array( $order, $this->get_created_event_object( 'dp_e1', 'needs_response' ), 'ch_multi', 'txn_multi' )
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( array( 'dp_e1' ), $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+	}
+
+	/**
+	 * Create an order suitable for dispute processing.
+	 *
+	 * @return \WC_Order
+	 */
+	private function create_disputable_order(): \WC_Order {
+		$order = wc_create_order();
+		$this->assertInstanceOf( \WC_Order::class, $order );
+		$order->set_total( '10.00' );
+		$order->set_status( 'processing' );
+		$order->save();
+
+		return $order;
+	}
+
+	/**
+	 * Build a dispute created event object fixture.
+	 *
+	 * @param string $dispute_id Dispute ID.
+	 * @param string $status     Dispute status.
+	 * @return array<string,mixed>
+	 */
+	private function get_created_event_object( string $dispute_id, string $status ): array {
+		return array(
+			'id'               => $dispute_id,
+			'status'           => $status,
+			'amount'           => 1000,
+			'reason'           => 'fraudulent',
+			'evidence_details' => array( 'due_by' => 1893456000 ),
+		);
+	}
+
+	/**
 	 * Find an order note containing the given text.
 	 *
 	 * @param \WC_Order $order Order object.
