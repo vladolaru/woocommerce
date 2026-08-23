@@ -319,6 +319,38 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Customer IDs should persist network-wide when network saved cards are enabled.
+	 */
+	public function test_customer_id_persists_network_wide_under_network_saved_cards(): void {
+		add_filter( 'wcpay_force_network_saved_cards', '__return_true' );
+
+		$user_id    = $this->factory->user->create( array( 'user_login' => 'network-saved-cards' ) );
+		$api_client = $this->create_customer_api_client( array( 'cus_network' ) );
+		$sut        = $this->create_sut( false, $api_client );
+
+		$this->assertSame( 'cus_network', $sut->get_or_create_customer_id_for_user( $user_id ) );
+
+		global $wpdb;
+		$this->assertSame( 'cus_network', get_user_meta( $user_id, WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, true ), 'Under network saved cards the customer ID must live under the unprefixed (network-wide) key.' );
+		$this->assertSame( '', get_user_meta( $user_id, $wpdb->get_blog_prefix() . WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, true ), 'No per-site copy should be written in network mode.' );
+		$this->assertSame( 'cus_network', $sut->get_customer_id_by_user_id( $user_id ), 'Reads must resolve the network-wide value through the get_user_option fallback.' );
+	}
+
+	/**
+	 * @testdox Erasing personal data should also delete network-scoped customer IDs.
+	 */
+	public function test_erase_customer_data_deletes_network_scoped_customer_ids(): void {
+		$user_id = $this->factory->user->create( array( 'user_email' => 'erase-network@example.com' ) );
+		update_user_option( $user_id, WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, 'cus_network', true );
+
+		$sut    = $this->create_sut( false, $this->create_customer_api_client( array() ) );
+		$result = $sut->erase_customer_data( 'erase-network@example.com' );
+
+		$this->assertTrue( $result['items_removed'] );
+		$this->assertSame( '', get_user_meta( $user_id, WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, true ), 'Erasure must remove the network-wide copy as well.' );
+	}
+
+	/**
 	 * @testdox Guest shoppers should use session storage for WooPayments customer IDs.
 	 */
 	public function test_get_or_create_customer_id_uses_session_storage_for_guests(): void {

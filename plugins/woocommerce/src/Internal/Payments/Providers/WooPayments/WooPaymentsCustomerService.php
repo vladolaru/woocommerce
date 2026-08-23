@@ -248,7 +248,11 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 				continue;
 			}
 
-			if ( delete_user_option( $user->ID, $option_key ) ) {
+			// The ID may be stored per-site or network-wide (network saved cards); erase both scopes.
+			$removed_local  = delete_user_option( $user->ID, $option_key );
+			$removed_global = delete_user_option( $user->ID, $option_key, true );
+
+			if ( $removed_local || $removed_global ) {
 				$result['items_removed'] = true;
 			}
 		}
@@ -571,7 +575,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	 */
 	private function persist_customer_id( ?int $user_id, string $customer_id ): void {
 		if ( null !== $user_id && 0 !== $user_id ) {
-			update_user_option( $user_id, $this->get_customer_id_option(), $customer_id );
+			update_user_option( $user_id, $this->get_customer_id_option(), $customer_id, $this->account_service->is_network_saved_cards_enabled() );
 		}
 
 		if ( WC()->session ) {
