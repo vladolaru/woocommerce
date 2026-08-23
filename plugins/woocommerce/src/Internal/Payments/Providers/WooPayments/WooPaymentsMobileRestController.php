@@ -358,6 +358,7 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 			$request_data    = array(
 				'amount'               => $this->order_data_service->prepare_amount( (float) $order->get_total(), $currency ),
 				'currency'             => $currency,
+				'description'          => WooPaymentsIntentRequestBuilder::intent_description( (string) $order->get_order_number() ),
 				'metadata'             => array_merge(
 					$metadata,
 					array(

@@ -148,6 +148,11 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( 'mobile', $this->api_client->last_terminal_intent_payload['metadata']['channel'] );
 		$this->assertSame( (string) $order->get_id(), $this->api_client->last_terminal_intent_payload['metadata']['order_id'] );
 		$this->assertSame( $order->get_order_number(), $this->api_client->last_terminal_intent_payload['metadata']['order_number'] );
+		$this->assertSame(
+			\Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder::intent_description( (string) $order->get_order_number() ),
+			$this->api_client->last_terminal_intent_payload['description']
+		);
+		$this->assertStringContainsString( 'Online Payment for Order #' . $order->get_order_number(), $this->api_client->last_terminal_intent_payload['description'] );
 		$this->assertSame( array( 'card_present' ), $this->api_client->last_terminal_intent_payload['payment_method_types'] );
 		$this->assertSame( 'manual', $this->api_client->last_terminal_intent_payload['capture_method'] );
 	}
