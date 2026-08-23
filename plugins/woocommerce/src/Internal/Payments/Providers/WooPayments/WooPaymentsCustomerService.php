@@ -212,9 +212,8 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	 * Erase the WooPayments customer IDs linking a WordPress user to Stripe.
 	 *
 	 * Resolves the user by email and deletes the deprecated, live, and test
-	 * customer-ID user options. Each option is stored via `update_user_option()`
-	 * with the default `$global = false`, so deletion mirrors that by leaving the
-	 * `$global` argument at its default.
+	 * customer-ID user options in both the per-site and network-wide scopes,
+	 * since network saved cards stores the ID network-wide.
 	 *
 	 * @internal
 	 *
@@ -575,7 +574,17 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	 */
 	private function persist_customer_id( ?int $user_id, string $customer_id ): void {
 		if ( null !== $user_id && 0 !== $user_id ) {
-			update_user_option( $user_id, $this->get_customer_id_option(), $customer_id, $this->account_service->is_network_saved_cards_enabled() );
+			$updated = update_user_option( $user_id, $this->get_customer_id_option(), $customer_id, $this->account_service->is_network_saved_cards_enabled() );
+
+			// update_user_option() also returns false when the stored value is already
+			// current, which is routine here (every order update re-persists); only a
+			// write that leaves a different value behind is a real failure.
+			if ( ! $updated && $customer_id !== get_user_option( $this->get_customer_id_option(), $user_id ) ) {
+				wc_get_logger()->error(
+					'Failed to update the WooPayments customer ID for user ' . $user_id . '.',
+					array( 'source' => 'woopayments' )
+				);
+			}
 		}
 
 		if ( WC()->session ) {
