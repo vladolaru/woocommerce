@@ -733,6 +733,85 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Terminal capture persists the IPP channel before the order completes, so POS email suppression sees it.
+	 */
+	public function test_capture_terminal_payment_writes_ipp_channel_before_completion(): void {
+		$order                                        = $this->create_order( 12.34, 'USD' );
+		$this->api_client->payment_intention_response = array(
+			'id'       => 'pi_terminal',
+			'status'   => 'requires_capture',
+			'currency' => 'usd',
+			'metadata' => array(
+				'order_id'    => (string) $order->get_id(),
+				'ipp_channel' => 'mobile_pos',
+			),
+		);
+		$this->api_client->captured_intention_response = array(
+			'id'       => 'pi_terminal',
+			'status'   => 'succeeded',
+			'currency' => 'usd',
+			'metadata' => array(
+				'order_id'    => (string) $order->get_id(),
+				'ipp_channel' => 'mobile_pos',
+			),
+		);
+
+		$channel_at_completion = null;
+		$capture_channel       = function ( $order_id, $completed_order ) use ( &$channel_at_completion ) {
+			unset( $order_id );
+			$channel_at_completion = $completed_order->get_meta( '_wcpay_ipp_channel', true );
+		};
+		add_action( 'woocommerce_order_status_completed', $capture_channel, 10, 2 );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal' );
+
+		$response = $this->sut->capture_terminal_payment( $request );
+		remove_action( 'woocommerce_order_status_completed', $capture_channel, 10 );
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( 'mobile_pos', $channel_at_completion, 'The IPP channel must be on the order when the completion transition fires.' );
+		$this->assertSame( 'mobile_pos', $order->get_meta( '_wcpay_ipp_channel', true ) );
+	}
+
+	/**
+	 * @testdox Terminal capture does not write an IPP channel the plugin does not recognize.
+	 */
+	public function test_capture_terminal_payment_ignores_unrecognized_ipp_channel(): void {
+		$order                                        = $this->create_order( 12.34, 'USD' );
+		$this->api_client->payment_intention_response = array(
+			'id'       => 'pi_terminal',
+			'status'   => 'requires_capture',
+			'currency' => 'usd',
+			'metadata' => array(
+				'order_id'    => (string) $order->get_id(),
+				'ipp_channel' => 'carrier_pigeon',
+			),
+		);
+		$this->api_client->captured_intention_response = array(
+			'id'       => 'pi_terminal',
+			'status'   => 'succeeded',
+			'currency' => 'usd',
+			'metadata' => array(
+				'order_id'    => (string) $order->get_id(),
+				'ipp_channel' => 'carrier_pigeon',
+			),
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal' );
+
+		$response = $this->sut->capture_terminal_payment( $request );
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( '', $order->get_meta( '_wcpay_ipp_channel', true ) );
+	}
+
+	/**
 	 * @testdox Terminal capture rejects intents without matching order metadata.
 	 */
 	public function test_capture_terminal_payment_rejects_intent_without_order_metadata(): void {

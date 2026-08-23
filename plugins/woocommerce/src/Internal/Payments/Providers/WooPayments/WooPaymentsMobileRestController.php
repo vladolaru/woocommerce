@@ -998,6 +998,11 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 		$order->update_meta_data( 'receipt_url', get_rest_url( null, self::NAMESPACE . '/payments/readers/receipts/' . $intent_id ) );
 		$order->update_meta_data( '_wcpay_fraud_meta_box_type', 'terminal_payment' );
 
+		$ipp_channel = $this->get_ipp_channel_from_intent( $intent );
+		if ( '' !== $ipp_channel ) {
+			$order->update_meta_data( '_wcpay_ipp_channel', $ipp_channel );
+		}
+
 		if ( isset( $intent['currency'] ) ) {
 			$order->update_meta_data( '_wcpay_intent_currency', (string) $intent['currency'] );
 		}
@@ -1032,6 +1037,23 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 		}
 
 		$order->save();
+	}
+
+	/**
+	 * Get the IPP channel from a PaymentIntent, restricted to the channels the plugin recognizes.
+	 *
+	 * The write must land before the completion transition: Core's POS email
+	 * suppression reads the meta synchronously while the completion emails fire.
+	 *
+	 * @param array<string,mixed> $intent Intent.
+	 * @return string Validated channel, or an empty string.
+	 */
+	private function get_ipp_channel_from_intent( array $intent ): string {
+		$metadata         = $this->get_intent_metadata( $intent );
+		$ipp_channel      = $metadata['ipp_channel'] ?? '';
+		$allowed_channels = array( 'mobile_pos', 'mobile_store_management' );
+
+		return is_string( $ipp_channel ) && in_array( $ipp_channel, $allowed_channels, true ) ? $ipp_channel : '';
 	}
 
 	/**
