@@ -244,7 +244,7 @@ class WooPaymentsProviderGatewayAdapter {
 					// and the effect plan carries it so the expired note and failed status land.
 					$expired_intent = $this->get_expired_authorization_intent( $intent_id );
 					if ( null !== $expired_intent ) {
-						return $outcome->with_effect_plan( WooPaymentsOrderEffectPlan::for_capture( $expired_intent ) );
+						return $outcome->with_effect_plan( WooPaymentsOrderEffectPlan::for_capture_expired( $expired_intent ) );
 					}
 
 					$result = array(

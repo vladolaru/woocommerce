@@ -134,6 +134,13 @@ class WooPaymentsOrderEffectApplier {
 				$this->apply_capture_fee_details( $context->get_order(), $plan->get_provider_result() );
 				return $outcome;
 
+			case WooPaymentsOrderEffectPlan::TYPE_CAPTURE_EXPIRED:
+				return $this->merge_effect_data_into_outcome(
+					$outcome,
+					$this->compose_capture_expired_effect_data( $context->get_order(), $outcome, $plan->get_provider_result() ),
+					$plan
+				);
+
 			case WooPaymentsOrderEffectPlan::TYPE_CANCEL:
 				return $this->merge_effect_data_into_outcome(
 					$outcome,
@@ -305,27 +312,6 @@ class WooPaymentsOrderEffectApplier {
 			return array();
 		}
 
-		if ( 'canceled' === (string) ( $result['status'] ?? '' ) ) {
-			// The capture failed because the authorization already expired (the intent is
-			// canceled provider-side). Compose the same effects the charge.expired webhook
-			// applies: expired note, canceled intention status, review-expired stamp.
-			$note_candidates = $this->note_service->format_capture_expired_note_candidates( $intent_id, $charge_id );
-			$meta            = array( '_intention_status' => 'canceled' );
-			if ( '' !== $charge_id ) {
-				$meta['_charge_id'] = $charge_id;
-			}
-			if ( 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true ) ) {
-				$meta['_wcpay_fraud_meta_box_type'] = 'review_expired';
-			}
-
-			return array(
-				PaymentOutcome::DATA_META             => $meta,
-				PaymentOutcome::DATA_NOTE             => $note_candidates[0],
-				PaymentOutcome::DATA_NOTE_TYPE        => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_EXPIRED,
-				PaymentOutcome::DATA_NOTE_EQUIVALENTS => $note_candidates,
-			);
-		}
-
 		$message = isset( $outcome->get_data()[ PaymentOutcome::DATA_ERROR_MESSAGE ] )
 			? (string) $outcome->get_data()[ PaymentOutcome::DATA_ERROR_MESSAGE ]
 			: (string) ( $result['message'] ?? '' );
@@ -336,6 +322,39 @@ class WooPaymentsOrderEffectApplier {
 			PaymentOutcome::DATA_META             => WooPaymentsOrderEffects::failed_capture_meta(),
 			PaymentOutcome::DATA_NOTE             => $note_candidates[0],
 			PaymentOutcome::DATA_NOTE_TYPE        => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_FAILED,
+			PaymentOutcome::DATA_NOTE_EQUIVALENTS => $note_candidates,
+		);
+	}
+
+	/**
+	 * Compose the expired-authorization capture effects.
+	 *
+	 * Same effects the charge.expired webhook applies: expired note, canceled
+	 * intention status, review-expired stamp. Reached only through an
+	 * explicitly declared expired plan (the adapter's post-failure re-fetch).
+	 *
+	 * @param WC_Order            $order   Order whose authorization expired.
+	 * @param PaymentOutcome      $outcome Provider capture outcome.
+	 * @param array<string,mixed> $result  Re-fetched canceled intent.
+	 * @return array<string,mixed>
+	 */
+	private function compose_capture_expired_effect_data( WC_Order $order, PaymentOutcome $outcome, array $result ): array {
+		$charge          = WooPaymentsOrderEffects::latest_charge( $result );
+		$intent_id       = '' !== $outcome->get_provider_payment_id() ? $outcome->get_provider_payment_id() : (string) ( $result['id'] ?? '' );
+		$charge_id       = isset( $charge['id'] ) ? (string) $charge['id'] : (string) $order->get_meta( '_charge_id', true );
+		$note_candidates = $this->note_service->format_capture_expired_note_candidates( $intent_id, $charge_id );
+		$meta            = array( '_intention_status' => 'canceled' );
+		if ( '' !== $charge_id ) {
+			$meta['_charge_id'] = $charge_id;
+		}
+		if ( 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true ) ) {
+			$meta['_wcpay_fraud_meta_box_type'] = 'review_expired';
+		}
+
+		return array(
+			PaymentOutcome::DATA_META             => $meta,
+			PaymentOutcome::DATA_NOTE             => $note_candidates[0],
+			PaymentOutcome::DATA_NOTE_TYPE        => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_EXPIRED,
 			PaymentOutcome::DATA_NOTE_EQUIVALENTS => $note_candidates,
 		);
 	}

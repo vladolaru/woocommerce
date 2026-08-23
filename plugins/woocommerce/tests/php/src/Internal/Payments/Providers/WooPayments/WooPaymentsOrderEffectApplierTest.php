@@ -892,7 +892,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			'',
 			array( PaymentOutcome::DATA_ERROR_MESSAGE => 'Capture failed.' )
 		);
-		$plan    = WooPaymentsOrderEffectPlan::for_capture(
+		$plan    = WooPaymentsOrderEffectPlan::for_capture_expired(
 			array(
 				'id'      => 'pi_capture_expired',
 				'status'  => 'canceled',
@@ -929,7 +929,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_wcpay_fraud_outcome_status', 'review' );
 		$order->save();
 		$outcome = new PaymentOutcome( PaymentOutcome::STATUS_FAILED, 'pi_review_expired' );
-		$plan    = WooPaymentsOrderEffectPlan::for_capture(
+		$plan    = WooPaymentsOrderEffectPlan::for_capture_expired(
 			array(
 				'id'     => 'pi_review_expired',
 				'status' => 'canceled',
@@ -943,6 +943,35 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		);
 
 		$this->assertSame( 'review_expired', $result->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_fraud_meta_box_type'] );
+	}
+
+	/**
+	 * @testdox A canceled result on a plain capture plan composes failure effects, never expired ones.
+	 */
+	public function test_canceled_result_on_plain_capture_plan_composes_failure_effects(): void {
+		$order   = $this->create_woopayments_order();
+		$outcome = new PaymentOutcome(
+			PaymentOutcome::STATUS_FAILED,
+			'pi_canceled_response',
+			'',
+			'',
+			'',
+			array( PaymentOutcome::DATA_ERROR_MESSAGE => 'Capture declined.' )
+		);
+		$plan    = WooPaymentsOrderEffectPlan::for_capture(
+			array(
+				'id'     => 'pi_canceled_response',
+				'status' => 'canceled',
+			)
+		);
+
+		$result = $this->create_applier()->apply(
+			PaymentContext::for_capture( $order, OrderPaymentStore::GATEWAY_ID ),
+			$outcome,
+			$plan
+		);
+
+		$this->assertSame( PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_FAILED, $result->get_data()[ PaymentOutcome::DATA_NOTE_TYPE ], 'Expiry must be declared at the re-fetch site, never inferred from a capture result status.' );
 	}
 
 	/**

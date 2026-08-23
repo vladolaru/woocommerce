@@ -39,6 +39,15 @@ class WooPaymentsOrderEffectPlan implements ProviderOperationEffectPlan {
 	public const TYPE_CAPTURE = 'capture';
 
 	/**
+	 * Expired-authorization capture effect plan type.
+	 *
+	 * Declared explicitly at the re-fetch site that detected the dead
+	 * authorization - never inferred from a capture result's status, so a
+	 * non-exception canceled response keeps composing plain failure effects.
+	 */
+	public const TYPE_CAPTURE_EXPIRED = 'capture_expired';
+
+	/**
 	 * Authorization cancellation effect plan.
 	 *
 	 * @var string
@@ -150,6 +159,16 @@ class WooPaymentsOrderEffectPlan implements ProviderOperationEffectPlan {
 	 */
 	public static function for_capture( array $provider_result ): self {
 		return new self( self::TYPE_CAPTURE, $provider_result, false, false );
+	}
+
+	/**
+	 * Build an expired-authorization capture effect plan.
+	 *
+	 * @param array<string,mixed> $provider_result Re-fetched canceled intent.
+	 * @return self
+	 */
+	public static function for_capture_expired( array $provider_result ): self {
+		return new self( self::TYPE_CAPTURE_EXPIRED, $provider_result, false, false );
 	}
 
 	/**
