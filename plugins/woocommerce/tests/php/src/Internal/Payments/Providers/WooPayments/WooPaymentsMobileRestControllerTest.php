@@ -537,6 +537,38 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Store-location address honors the woocommerce_countries_base_* filters like the reference client.
+	 */
+	public function test_get_store_location_address_honors_base_address_filters(): void {
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		update_option( 'woocommerce_store_address', '123 Main St' );
+		update_option( 'woocommerce_store_address_2', 'Floor 2' );
+		update_option( 'woocommerce_store_city', 'San Francisco' );
+		update_option( 'woocommerce_store_postcode', '94107' );
+
+		add_filter( 'woocommerce_countries_base_address', fn() => '456 Warehouse Rd' );
+		add_filter( 'woocommerce_countries_base_address_2', fn() => 'Dock 9' );
+		add_filter( 'woocommerce_countries_base_city', fn() => 'Oakland' );
+		add_filter( 'woocommerce_countries_base_postcode', fn() => '94607' );
+
+		try {
+			$response = $this->sut->get_store_location( new WP_REST_Request( 'GET', '/wc/v3/payments/terminal/locations/store' ) );
+		} finally {
+			remove_all_filters( 'woocommerce_countries_base_address' );
+			remove_all_filters( 'woocommerce_countries_base_address_2' );
+			remove_all_filters( 'woocommerce_countries_base_city' );
+			remove_all_filters( 'woocommerce_countries_base_postcode' );
+		}
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$created_address = $this->api_client->last_created_location['address'];
+		$this->assertSame( '456 Warehouse Rd', $created_address['line1'] );
+		$this->assertSame( 'Dock 9', $created_address['line2'] );
+		$this->assertSame( 'Oakland', $created_address['city'] );
+		$this->assertSame( '94607', $created_address['postal_code'] );
+	}
+
+	/**
 	 * @testdox Store-location lookup reuses hostname-named locations created by the reference client.
 	 */
 	public function test_get_store_location_reuses_matching_hostname_location(): void {

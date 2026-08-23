@@ -1270,10 +1270,10 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 			array(
 				'country'     => $country,
 				'state'       => $state,
-				'city'        => get_option( 'woocommerce_store_city', '' ),
-				'postal_code' => get_option( 'woocommerce_store_postcode', '' ),
-				'line1'       => get_option( 'woocommerce_store_address', '' ),
-				'line2'       => get_option( 'woocommerce_store_address_2', '' ),
+				'city'        => WC()->countries->get_base_city(),
+				'postal_code' => WC()->countries->get_base_postcode(),
+				'line1'       => WC()->countries->get_base_address(),
+				'line2'       => WC()->countries->get_base_address_2(),
 			),
 			static function ( string $value ): bool {
 				return '' !== $value;
