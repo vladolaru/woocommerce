@@ -223,4 +223,118 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 			get_comment_meta( $notes[0]->id, '_wc_woopayments_note_identity', true )
 		);
 	}
+
+	/**
+	 * @testdox A won dispute close on an already refunded order keeps the refunded status instead of completing it.
+	 */
+	public function test_dispute_closed_keeps_refunded_status_on_fully_refunded_order(): void {
+		$order = wc_create_order();
+		$this->assertInstanceOf( \WC_Order::class, $order );
+		$order->set_total( '10.00' );
+		$order->set_status( 'refunded' );
+		$order->save();
+
+		$this->invoke_private(
+			'process_dispute_closed',
+			array(
+				$order,
+				array(
+					'id'     => 'dp_refunded',
+					'status' => 'won',
+				),
+				'ch_refunded',
+				'txn_refunded',
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'refunded', $order->get_status() );
+		$this->assertNotEmpty( $this->find_order_note( $order, 'The order was not marked as completed because it has already been fully refunded.' ) );
+	}
+
+	/**
+	 * @testdox A won dispute close moves an over-refunded on-hold order to refunded, not completed.
+	 */
+	public function test_dispute_closed_moves_over_refunded_order_to_refunded(): void {
+		$order = wc_create_order();
+		$this->assertInstanceOf( \WC_Order::class, $order );
+		$order->set_total( '10.00' );
+		$order->save();
+
+		$refund = wc_create_refund(
+			array(
+				'order_id'       => $order->get_id(),
+				'amount'         => 10.00,
+				'refund_payment' => false,
+			)
+		);
+		$this->assertInstanceOf( \WC_Order_Refund::class, $refund );
+
+		$order = wc_get_order( $order->get_id() );
+		$order->update_status( 'on-hold' );
+
+		$this->invoke_private(
+			'process_dispute_closed',
+			array(
+				$order,
+				array(
+					'id'     => 'dp_overref',
+					'status' => 'won',
+				),
+				'ch_overref',
+				'txn_overref',
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'refunded', $order->get_status() );
+		$this->assertNotEmpty( $this->find_order_note( $order, 'The order was not marked as completed because it has already been fully refunded.' ) );
+	}
+
+	/**
+	 * @testdox A won dispute close on an unrefunded order still completes it.
+	 */
+	public function test_dispute_closed_completes_unrefunded_order(): void {
+		$order = wc_create_order();
+		$this->assertInstanceOf( \WC_Order::class, $order );
+		$order->set_total( '10.00' );
+		$order->set_status( 'on-hold' );
+		$order->save();
+
+		$this->invoke_private(
+			'process_dispute_closed',
+			array(
+				$order,
+				array(
+					'id'     => 'dp_plain',
+					'status' => 'won',
+				),
+				'ch_plain',
+				'txn_plain',
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'completed', $order->get_status() );
+	}
+
+	/**
+	 * Find an order note containing the given text.
+	 *
+	 * @param \WC_Order $order Order object.
+	 * @param string    $text  Note text fragment.
+	 * @return array<int,object>
+	 */
+	private function find_order_note( \WC_Order $order, string $text ): array {
+		$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+
+		return array_values(
+			array_filter(
+				$notes,
+				static function ( $note ) use ( $text ): bool {
+					return false !== strpos( (string) $note->content, $text );
+				}
+			)
+		);
+	}
 }

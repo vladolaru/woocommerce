@@ -223,6 +223,17 @@ class WooPaymentsDisputeEventHandler {
 				try {
 					if ( 'lost' === $status ) {
 						$this->create_dispute_lost_refund( $order, $this->get_dispute_summary( $dispute_id, $charge_id ), $charge_id, $dispute_id, $status );
+					} elseif ( $this->is_order_fully_refunded( $order ) ) {
+						// Promoting a fully refunded order to completed would make Analytics
+						// count it as revenue again. It still has to leave the dispute hold,
+						// though: no other webhook will arrive to move it off on-hold.
+						if ( ! $order->has_status( 'refunded' ) ) {
+							$order->update_status( 'refunded' );
+						}
+
+						$order->add_order_note(
+							__( 'The order was not marked as completed because it has already been fully refunded.', 'woocommerce' )
+						);
 					} else {
 						$order->update_status( 'completed' );
 					}
@@ -633,6 +644,23 @@ class WooPaymentsDisputeEventHandler {
 			array( $this->get_dispute_note_marker_key( $dispute_id, $event_status, $note_type ) ),
 			$before_add
 		);
+	}
+
+	/**
+	 * Tell whether the order has already been refunded in full.
+	 *
+	 * Two independent clauses: has_status() catches WooCommerce's standard
+	 * fully-refunded transition, the remaining-amount check catches stores that
+	 * redirect it via woocommerce_order_fully_refunded_status, plus over-refunds.
+	 * The total clamp guards only the second clause, since on a zero-total order
+	 * (free / 100% coupon) the remaining amount is trivially 0.
+	 *
+	 * @param WC_Order $order Order object.
+	 * @return bool
+	 */
+	private function is_order_fully_refunded( WC_Order $order ): bool {
+		return $order->has_status( 'refunded' )
+			|| ( (float) $order->get_total() > 0 && (float) $order->get_remaining_refund_amount() <= 0 );
 	}
 
 	/**
