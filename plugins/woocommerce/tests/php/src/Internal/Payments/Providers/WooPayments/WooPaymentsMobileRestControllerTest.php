@@ -501,6 +501,87 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Generated receipts embed the account branding logo like the reference client.
+	 */
+	public function test_generate_print_receipt_embeds_account_branding_logo(): void {
+		$order = $this->create_order( 12.34, 'USD' );
+
+		$this->gateway_settings                       = array(
+			'account_business_name'  => 'Logo Receipt Lab',
+			'account_branding_logo'  => 'file_logo_123',
+		);
+		$this->api_client->file_contents_response     = array(
+			'content_type' => 'image/png',
+			'file_content' => base64_encode( 'logo-bytes' ),
+		);
+		$this->api_client->payment_intention_response = array(
+			'id'       => 'pi_receipt',
+			'status'   => 'succeeded',
+			'currency' => 'usd',
+			'metadata' => array(
+				'order_id' => (string) $order->get_id(),
+			),
+			'charges'  => array(
+				'data' => array(
+					array( 'id' => 'ch_receipt' ),
+				),
+			),
+		);
+		$this->api_client->charge_response            = array(
+			'id'                     => 'ch_receipt',
+			'amount_captured'        => 1234,
+			'currency'               => 'usd',
+			'order'                  => array(
+				'number' => $order->get_id(),
+			),
+			'payment_method_details' => array(
+				'card_present' => array(
+					'brand'   => 'visa',
+					'last4'   => '0978',
+					'receipt' => array(
+						'application_preferred_name' => 'visa credit',
+						'dedicated_file_name'        => 'a0000000031010',
+						'account_type'               => 'credit',
+					),
+				),
+			),
+		);
+
+		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/readers/receipts/pi_receipt' );
+		$request->set_param( 'payment_intent_id', 'pi_receipt' );
+
+		$response = $this->sut->generate_print_receipt( $request );
+		$html     = $response->get_data()['html_content'];
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( array( 'file_logo_123', false ), $this->api_client->last_file_contents_request, 'The logo must be fetched platform-side (as_account false) like the reference client.' );
+		$this->assertStringContainsString( 'class="branding-logo"', $html );
+		$this->assertStringContainsString( 'data:image/png;base64,' . base64_encode( 'logo-bytes' ), $html );
+	}
+
+	/**
+	 * @testdox Print receipts render through the theme-overridable WooCommerce template.
+	 */
+	public function test_print_receipt_renders_through_the_overridable_template(): void {
+		$override = get_temp_dir() . 'wcpay-receipt-override-' . wp_generate_password( 8, false ) . '.php';
+		file_put_contents( $override, '<?php echo "THEME-OVERRIDE-RECEIPT"; ?>' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Test fixture file.
+
+		$locate = static function ( $template, $template_name ) use ( $override ) {
+			return 'html-in-person-payment-receipt.php' === $template_name ? $override : $template;
+		};
+		add_filter( 'woocommerce_locate_template', $locate, 10, 2 );
+
+		try {
+			$response = $this->sut->preview_print_receipt( new WP_REST_Request( 'POST', '/wc/v3/payments/readers/receipts/preview' ) );
+		} finally {
+			remove_filter( 'woocommerce_locate_template', $locate, 10 );
+			unlink( $override ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Test fixture cleanup.
+		}
+
+		$this->assertSame( 'THEME-OVERRIDE-RECEIPT', $response->get_data()['html_content'] );
+	}
+
+	/**
 	 * @testdox Generated receipts keep the preserved error envelope when the payment intent is invalid.
 	 */
 	public function test_generate_print_receipt_wraps_invalid_intent_in_preserved_error(): void {

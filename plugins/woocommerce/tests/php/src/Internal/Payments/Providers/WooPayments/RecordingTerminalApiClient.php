@@ -137,6 +137,20 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 	public array $payment_intention_response_queue = array();
 
 	/**
+	 * File contents response.
+	 *
+	 * @var array<string,mixed>
+	 */
+	public array $file_contents_response = array();
+
+	/**
+	 * Last get_file_contents call: array( file_id, as_account ).
+	 *
+	 * @var array<int,mixed>
+	 */
+	public array $last_file_contents_request = array();
+
+	/**
 	 * Charge response.
 	 *
 	 * @var array<string,mixed>
@@ -323,6 +337,19 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 		}
 
 		return $this->payment_intention_response;
+	}
+
+	/**
+	 * Retrieve provider file contents.
+	 *
+	 * @param string $file_id    Provider file ID.
+	 * @param bool   $as_account Whether to fetch the file as the connected account.
+	 * @return array<string,mixed>
+	 */
+	public function get_file_contents( string $file_id, bool $as_account = true ): array {
+		$this->last_file_contents_request = array( $file_id, $as_account );
+
+		return $this->file_contents_response;
 	}
 
 	/**

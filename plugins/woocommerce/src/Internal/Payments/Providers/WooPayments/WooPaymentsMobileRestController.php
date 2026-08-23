@@ -653,9 +653,12 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 				throw new \RuntimeException( __( 'Order not found', 'woocommerce' ) );
 			}
 
+			$receipt_data                  = $this->get_receipt_data( $intent, $charge, $order );
+			$receipt_data['branding_logo'] = $this->get_receipt_branding_logo();
+
 			return new WP_REST_Response(
 				array(
-					'html_content' => $this->render_receipt_html( $this->get_receipt_data( $intent, $charge, $order ) ),
+					'html_content' => $this->render_receipt_html( $receipt_data ),
 				)
 			);
 		} catch ( Throwable $exception ) {
@@ -1448,20 +1451,24 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 				'shipping_tax'        => 0,
 				'line_items'          => array(
 					array(
-						'name'          => 'Sample',
-						'quantity'      => 1,
-						'subtotal'      => 0,
-						'product_id'    => 'sample',
-						'price'         => 0,
-						'regular_price' => 1,
+						'name'     => 'Sample',
+						'quantity' => 1,
+						'subtotal' => 0,
+						'product'  => array(
+							'id'            => 'sample',
+							'price'         => 0,
+							'regular_price' => 1,
+						),
 					),
 					array(
-						'name'          => 'Sample',
-						'quantity'      => 1,
-						'subtotal'      => 0,
-						'product_id'    => 'sample',
-						'price'         => 0,
-						'regular_price' => 1,
+						'name'     => 'Sample',
+						'quantity' => 1,
+						'subtotal' => 0,
+						'product'  => array(
+							'id'            => 'sample',
+							'price'         => 0,
+							'regular_price' => 1,
+						),
 					),
 				),
 				'coupon_lines'        => array(
@@ -1623,16 +1630,18 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 			$product       = $item->get_product();
 			$quantity      = max( 1, (int) $item->get_quantity() );
 			$line_subtotal = (float) $item->get_subtotal();
-			$price         = $quantity > 0 ? $line_subtotal / $quantity : $line_subtotal;
+			$price         = $product instanceof \WC_Product && '' !== $product->get_price() ? (float) $product->get_price() : ( $quantity > 0 ? $line_subtotal / $quantity : $line_subtotal );
 			$regular_price = $product instanceof \WC_Product && '' !== $product->get_regular_price() ? (float) $product->get_regular_price() : $price;
 
 			$items[] = array(
-				'name'          => $item->get_name(),
-				'quantity'      => $quantity,
-				'subtotal'      => $line_subtotal,
-				'product_id'    => $product instanceof \WC_Product ? $product->get_id() : $item->get_product_id(),
-				'price'         => $price,
-				'regular_price' => $regular_price,
+				'name'     => $item->get_name(),
+				'quantity' => $quantity,
+				'subtotal' => $line_subtotal,
+				'product'  => array(
+					'id'            => $product instanceof \WC_Product ? $product->get_id() : $item->get_product_id(),
+					'price'         => $price,
+					'regular_price' => $regular_price,
+				),
 			);
 		}
 
@@ -1686,99 +1695,65 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Render receipt HTML matching the preserved mobile printer contract.
+	 * Render the print receipt through the theme-overridable WooCommerce template.
+	 *
+	 * The template and its variable contract match the WooPayments plugin's
+	 * html-in-person-payment-receipt.php, so theme overrides written against
+	 * the plugin (including legally required receipt text) keep applying.
 	 *
 	 * @param array<string,mixed> $data Receipt data.
 	 * @return string
 	 */
 	private function render_receipt_html( array $data ): string {
-		$currency = isset( $data['currency'] ) ? strtoupper( (string) $data['currency'] ) : get_woocommerce_currency();
-		$receipt  = isset( $data['receipt'] ) && is_array( $data['receipt'] ) ? $data['receipt'] : array();
-		$address  = isset( $data['support_address'] ) && is_array( $data['support_address'] ) ? $data['support_address'] : array();
+		$receipt         = isset( $data['receipt'] ) && is_array( $data['receipt'] ) ? $data['receipt'] : array();
+		$support_address = isset( $data['support_address'] ) && is_array( $data['support_address'] ) ? $data['support_address'] : array();
 
-		ob_start();
-		?>
-		<!DOCTYPE html>
-		<html lang="en">
-		<head>
-			<meta charset="UTF-8">
-			<meta http-equiv="X-UA-Compatible" content="IE=edge">
-			<meta name="viewport" content="width=device-width, initial-scale=1.0">
-			<title>Print Receipt</title>
-			<style>.receipt{min-width:130px;max-width:300px;margin:0 auto;text-align:center;font-family:SF Pro Text,sans-serif;font-size:10px}.receipt-table{width:100%;border-collapse:separate;border-spacing:0 2px;font-size:10px}.align-left{text-align:left}.align-right{text-align:right}.align-top{vertical-align:top}.receipt__header .title{font-size:14px;line-height:17px;margin:12px 0;font-weight:700}.receipt__transaction{line-height:2px}#powered_by{font-size:7px;padding-top:5px}</style>
-		</head>
-		<body>
-			<div class="receipt">
-				<div class="receipt__header">
-					<h1 class="title"><?php echo esc_html( (string) ( $data['business_name'] ?? get_bloginfo( 'name' ) ) ); ?></h1>
-					<hr />
-					<div class="store">
-						<div class="store__address">
-							<p><?php echo esc_html( (string) ( $address['line1'] ?? '' ) ); ?></p>
-							<p><?php echo esc_html( (string) ( $address['line2'] ?? '' ) ); ?></p>
-							<p><?php echo esc_html( implode( ' ', array_filter( array( (string) ( $address['city'] ?? '' ), (string) ( $address['state'] ?? '' ), (string) ( $address['postal_code'] ?? '' ), (string) ( $address['country'] ?? '' ) ) ) ) ); ?></p>
-							<?php echo esc_html( gmdate( 'Y/m/d - H:iA' ) ); ?>
-						</div>
-						<p class="store__contact"><?php echo esc_html( trim( (string) ( $data['support_phone'] ?? '' ) . ' ' . (string) ( $data['support_email'] ?? '' ) ) ); ?></p>
-					</div>
-					<div class="order">
-						<p class="order__title"><?php printf( '%s %s', esc_html__( 'Order', 'woocommerce' ), esc_html( (string) ( $data['order_id'] ?? '' ) ) ); ?></p>
-					</div>
-				</div>
-				<hr />
-				<div class="receipt__products">
-					<table class="receipt-table">
-						<?php foreach ( $this->get_receipt_list( $data, 'line_items' ) as $item ) : ?>
-							<tr>
-								<td class="align-left">
-									<div><?php echo esc_html( (string) ( $item['name'] ?? '' ) ); ?></div>
-									<div><?php echo esc_html( (string) ( $item['quantity'] ?? '' ) ); ?> @ <?php echo wp_kses_post( $this->format_receipt_price( (float) ( $item['price'] ?? 0 ), (float) ( $item['regular_price'] ?? $item['price'] ?? 0 ), $currency ) ); ?></div>
-									<div><?php printf( '%s: %s', esc_html__( 'SKU', 'woocommerce' ), esc_html( (string) ( $item['product_id'] ?? '' ) ) ); ?></div>
-								</td>
-								<td class="align-right align-top"><?php echo wp_kses_post( wc_price( (float) ( $item['subtotal'] ?? 0 ), array( 'currency' => $currency ) ) ); ?></td>
-							</tr>
-						<?php endforeach; ?>
-					</table>
-				</div>
-				<hr />
-				<div class="receipt__subtotal">
-					<table class="receipt-table">
-						<tr><td class="align-left"><b><?php esc_html_e( 'SUBTOTAL', 'woocommerce' ); ?></b></td><td class="align-right"><b><?php echo wp_kses_post( wc_price( (float) ( $data['subtotal'] ?? 0 ), array( 'currency' => $currency ) ) ); ?></b></td></tr>
-						<?php foreach ( $this->get_receipt_list( $data, 'coupon_lines' ) as $coupon ) : ?>
-							<tr><td class="align-left"><div><?php printf( '%s: %s', esc_html__( 'Discount', 'woocommerce' ), esc_html( (string) ( $coupon['code'] ?? '' ) ) ); ?></div><div><?php echo esc_html( (string) ( $coupon['description'] ?? '' ) ); ?></div></td><td class="align-right align-top"><?php echo wp_kses_post( wc_price( abs( (float) ( $coupon['discount'] ?? 0 ) ) * -1, array( 'currency' => $currency ) ) ); ?></td></tr>
-						<?php endforeach; ?>
-						<?php if ( 0 < (float) ( $data['total_fees'] ?? 0 ) ) : ?>
-							<tr><td class="align-left"><?php esc_html_e( 'Fees:', 'woocommerce' ); ?></td><td class="align-right align-top"><?php echo wp_kses_post( wc_price( (float) $data['total_fees'], array( 'currency' => $currency ) ) ); ?></td></tr>
-						<?php endif; ?>
-						<?php if ( 0 < (float) ( $data['shipping_tax'] ?? 0 ) ) : ?>
-							<tr><td class="align-left"><?php esc_html_e( 'Shipping:', 'woocommerce' ); ?></td><td class="align-right align-top"><?php echo wp_kses_post( wc_price( (float) $data['shipping_tax'], array( 'currency' => $currency ) ) ); ?></td></tr>
-						<?php endif; ?>
-						<?php foreach ( $this->get_receipt_list( $data, 'tax_lines' ) as $tax_line ) : ?>
-							<tr><td class="align-left"><div><?php esc_html_e( 'Tax', 'woocommerce' ); ?></div><div><?php echo esc_html( (string) wc_round_tax_total( (float) ( $tax_line['rate_percent'] ?? 0 ) ) ); ?>%</div></td><td class="align-right align-top"><?php echo wp_kses_post( wc_price( (float) ( $tax_line['tax_total'] ?? 0 ) + (float) ( $tax_line['shipping_tax_total'] ?? 0 ), array( 'currency' => $currency ) ) ); ?></td></tr>
-						<?php endforeach; ?>
-						<tr><td class="align-left"><b><?php esc_html_e( 'TOTAL', 'woocommerce' ); ?></b></td><td class="align-right"><b><?php echo wp_kses_post( wc_price( (float) ( $data['total'] ?? 0 ), array( 'currency' => $currency ) ) ); ?></b></td></tr>
-					</table>
-				</div>
-				<hr />
-				<div class="receipt__amount-paid">
-					<table class="receipt-table">
-						<tr><td class="align-left"><b><?php esc_html_e( 'AMOUNT PAID', 'woocommerce' ); ?></b>:</td><td class="align-right"><b><?php echo wp_kses_post( wc_price( (float) ( $data['amount_captured'] ?? 0 ), array( 'currency' => $currency ) ) ); ?></b></td></tr>
-						<tr><td colspan="2" class="align-left"><?php echo esc_html( sprintf( '%s - %s', (string) ( $data['payment_method_name'] ?? strtoupper( (string) ( $data['brand'] ?? '' ) ) ), (string) ( $data['last4'] ?? '' ) ) ); ?></td></tr>
-					</table>
-				</div>
-				<hr />
-				<div class="receipt__transaction">
-					<p id="application-preferred-name"><?php printf( '%s: %s', esc_html__( 'Application name', 'woocommerce' ), esc_html( ucfirst( (string) ( $receipt['application_preferred_name'] ?? '' ) ) ) ); ?></p>
-					<p id="dedicated-file-name"><?php printf( '%s: %s', esc_html__( 'AID', 'woocommerce' ), esc_html( ucfirst( (string) ( $receipt['dedicated_file_name'] ?? '' ) ) ) ); ?></p>
-					<p id="account_type"><?php printf( '%s: %s', esc_html__( 'Account Type', 'woocommerce' ), esc_html( ucfirst( (string) ( $receipt['account_type'] ?? '' ) ) ) ); ?></p>
-					<p id="powered_by"><?php esc_html_e( 'Powered by WooCommerce', 'woocommerce' ); ?></p>
-				</div>
-			</div>
-		</body>
-		</html>
-		<?php
+		return wc_get_template_html(
+			'html-in-person-payment-receipt.php',
+			array(
+				'amount_captured'             => (float) ( $data['amount_captured'] ?? 0 ),
+				'branding_logo'               => isset( $data['branding_logo'] ) && is_array( $data['branding_logo'] ) ? $data['branding_logo'] : array(),
+				'business_name'               => (string) ( $data['business_name'] ?? get_bloginfo( 'name' ) ),
+				'coupon_lines'                => $this->get_receipt_list( $data, 'coupon_lines' ),
+				'line_items'                  => $this->get_receipt_list( $data, 'line_items' ),
+				'order'                       => array(
+					'id'           => (string) ( $data['order_id'] ?? '' ),
+					'currency'     => (string) ( $data['currency'] ?? get_woocommerce_currency() ),
+					'subtotal'     => (float) ( $data['subtotal'] ?? 0 ),
+					'total'        => (float) ( $data['total'] ?? 0 ),
+					'total_fees'   => (float) ( $data['total_fees'] ?? 0 ),
+					'shipping_tax' => (float) ( $data['shipping_tax'] ?? 0 ),
+				),
+				'payment_method_details'      => array( 'last4' => (string) ( $data['last4'] ?? '' ) ),
+				'payment_method_display_name' => (string) ( $data['payment_method_name'] ?? strtoupper( (string) ( $data['brand'] ?? '' ) ) ),
+				'receipt'                     => array(
+					'application_preferred_name' => (string) ( $receipt['application_preferred_name'] ?? '' ),
+					'dedicated_file_name'        => (string) ( $receipt['dedicated_file_name'] ?? '' ),
+					'account_type'               => (string) ( $receipt['account_type'] ?? '' ),
+				),
+				'support_address'             => $support_address,
+				'support_email'               => (string) ( $data['support_email'] ?? '' ),
+				'support_phone'               => (string) ( $data['support_phone'] ?? '' ),
+				'tax_lines'                   => $this->get_receipt_list( $data, 'tax_lines' ),
+			)
+		);
+	}
 
-		return (string) ob_get_clean();
+	/**
+	 * Get the account branding logo contents for the printed receipt.
+	 *
+	 * Fetched platform-side (as_account false) like the reference client; a
+	 * fetch failure propagates to the caller's error envelope.
+	 *
+	 * @return array<string,mixed> File contents payload, or an empty array when no logo is configured.
+	 */
+	private function get_receipt_branding_logo(): array {
+		$branding_logo = (string) $this->account_service->get_gateway_setting( 'account_branding_logo', '' );
+		if ( '' === $branding_logo ) {
+			return array();
+		}
+
+		return $this->api_client->get_file_contents( $branding_logo, false );
 	}
 
 	/**
@@ -1794,22 +1769,6 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 		}
 
 		return $this->normalize_list( $data[ $key ] );
-	}
-
-	/**
-	 * Format a receipt item price.
-	 *
-	 * @param float  $price         Active price.
-	 * @param float  $regular_price Regular price.
-	 * @param string $currency      Currency.
-	 * @return string
-	 */
-	private function format_receipt_price( float $price, float $regular_price, string $currency ): string {
-		if ( $price !== $regular_price ) {
-			return '<s>' . wc_price( $regular_price, array( 'currency' => $currency ) ) . '</s> ' . wc_price( $price, array( 'currency' => $currency ) );
-		}
-
-		return wc_price( $price, array( 'currency' => $currency ) );
 	}
 
 	/**
