@@ -525,7 +525,7 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 					);
 			} catch ( WooPaymentsApiException $capture_exception ) {
 				// Only a failed capture call marks the order; pre-check failures must not.
-				$this->reconcile_failed_terminal_capture( $order, $intent_id, $capture_exception->getMessage() );
+				$this->reconcile_failed_terminal_capture( $order, $intent_id, $this->get_capture_failure_note_message( $capture_exception ) );
 
 				throw $capture_exception;
 			}
@@ -1095,6 +1095,29 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 		$allowed_channels = array( 'mobile_pos', 'mobile_store_management' );
 
 		return is_string( $ipp_channel ) && in_array( $ipp_channel, $allowed_channels, true ) ? $ipp_channel : '';
+	}
+
+	/**
+	 * Build the failure-note message for a failed capture call.
+	 *
+	 * An amount-too-small decline carries the provider minimum; the plugin
+	 * appends the formatted minimum to the message before noting the order.
+	 *
+	 * @param WooPaymentsApiException $exception Capture exception.
+	 * @return string
+	 */
+	private function get_capture_failure_note_message( WooPaymentsApiException $exception ): string {
+		$message    = $exception->getMessage();
+		$error_data = $exception->get_error_data();
+		if ( 'amount_too_small' === $exception->get_error_code() && isset( $error_data['minimum_amount'], $error_data['currency'] ) && is_numeric( $error_data['minimum_amount'] ) && is_string( $error_data['currency'] ) ) {
+			$message .= ' ' . sprintf(
+				/* translators: %s: formatted minimum amount with currency. */
+				__( 'The minimum amount to capture is %s.', 'woocommerce' ),
+				$this->order_data_service->format_explicit_currency_amount( (int) $error_data['minimum_amount'], (string) $error_data['currency'] )
+			);
+		}
+
+		return $message;
 	}
 
 	/**

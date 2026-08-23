@@ -574,8 +574,10 @@ class WooPaymentsOrderDataService {
 	 * @param int    $amount   Stripe integer amount.
 	 * @param string $currency Currency code.
 	 * @return string
+	 *
+	 * @since 11.0.0
 	 */
-	private function format_explicit_currency_amount( int $amount, string $currency ): string {
+	public function format_explicit_currency_amount( int $amount, string $currency ): string {
 		return $this->format_currency_minor_amount( $amount, $currency ) . ' ' . strtoupper( $currency );
 	}
 
