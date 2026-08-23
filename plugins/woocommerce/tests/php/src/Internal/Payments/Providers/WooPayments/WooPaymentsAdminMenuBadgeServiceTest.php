@@ -120,7 +120,36 @@ class WooPaymentsAdminMenuBadgeServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not fetch authorization summary when manual capture is disabled.
+	 * @testdox Should delete both authorization summary cache options on invalidation.
+	 */
+	public function test_invalidate_authorization_summary_caches_deletes_both_options(): void {
+		update_option(
+			'wcpay_authorization_summary_cache',
+			array(
+				'data'    => array( 'count' => 3 ),
+				'fetched' => time(),
+				'errored' => false,
+			),
+			false
+		);
+		update_option(
+			'wcpay_test_authorization_summary_cache',
+			array(
+				'data'    => array( 'count' => 5 ),
+				'fetched' => time(),
+				'errored' => false,
+			),
+			false
+		);
+
+		$this->create_service( $this->create_api_client( array(), array( 'count' => 3 ) ) )->invalidate_authorization_summary_caches();
+
+		$this->assertFalse( get_option( 'wcpay_authorization_summary_cache', false ) );
+		$this->assertFalse( get_option( 'wcpay_test_authorization_summary_cache', false ) );
+	}
+
+	/**
+	 * @testdox Should return zero when manual capture is disabled.
 	 */
 	public function test_get_uncaptured_transactions_count_returns_zero_when_manual_capture_is_disabled(): void {
 		$api_client = $this->create_api_client( array(), array( 'count' => 5 ) );

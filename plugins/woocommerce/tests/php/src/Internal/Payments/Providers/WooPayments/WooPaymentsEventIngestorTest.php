@@ -1737,6 +1737,121 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Authorization-summary caches are invalidated by the four capture-affecting webhook events.
+	 */
+	public function test_webhook_events_invalidate_authorization_summary_caches(): void {
+		// payment_intent.canceled invalidates even when no order resolves, like the plugin.
+		$this->seed_authorization_summary_caches();
+		$this->sut->process(
+			array(
+				'id'   => 'evt_cache_canceled',
+				'type' => 'payment_intent.canceled',
+				'data' => array(
+					'object' => array(
+						'id'     => 'pi_cache_canceled',
+						'status' => 'canceled',
+					),
+				),
+			)
+		);
+		$this->assertAuthorizationSummaryCachesCleared( 'payment_intent.canceled' );
+
+		// payment_intent.amount_capturable_updated does the same.
+		$this->seed_authorization_summary_caches();
+		$this->sut->process(
+			array(
+				'id'   => 'evt_cache_acu',
+				'type' => 'payment_intent.amount_capturable_updated',
+				'data' => array(
+					'object' => array(
+						'id'     => 'pi_cache_acu',
+						'status' => 'requires_capture',
+					),
+				),
+			)
+		);
+		$this->assertAuthorizationSummaryCachesCleared( 'payment_intent.amount_capturable_updated' );
+
+		// payment_intent.succeeded invalidates after the order effects apply.
+		$order = $this->create_woopayments_order();
+		$this->seed_authorization_summary_caches();
+		$this->sut->process( $this->create_payment_intent_event( 'payment_intent.succeeded', $order ) );
+		$this->assertAuthorizationSummaryCachesCleared( 'payment_intent.succeeded' );
+
+		// charge.expired invalidates after the order effects apply.
+		$expired_order = $this->create_woopayments_order();
+		$expired_order->update_meta_data( '_charge_id', 'ch_cache_expired' );
+		$expired_order->update_meta_data( '_intent_id', 'pi_cache_expired' );
+		$expired_order->save();
+		$this->seed_authorization_summary_caches();
+		$sut = $this->create_charge_expired_ingestor( array( 'status' => 'canceled' ) );
+		$sut->process(
+			array(
+				'id'   => 'evt_cache_expired',
+				'type' => 'charge.expired',
+				'data' => array(
+					'object' => array(
+						'id' => 'ch_cache_expired',
+					),
+				),
+			)
+		);
+		$this->assertAuthorizationSummaryCachesCleared( 'charge.expired' );
+	}
+
+	/**
+	 * @testdox Unrelated webhook events leave the authorization-summary caches alone.
+	 */
+	public function test_unrelated_webhook_events_keep_authorization_summary_caches(): void {
+		$order = $this->create_woopayments_order();
+		$order->update_meta_data( '_payment_method_id', 'pm_123' );
+		$order->save();
+		$this->seed_authorization_summary_caches();
+
+		$this->sut->process(
+			$this->create_payment_intent_event(
+				'payment_intent.payment_failed',
+				$order,
+				array(
+					'status'             => 'requires_payment_method',
+					'last_payment_error' => array(
+						'payment_method' => array(
+							'id'   => 'pm_123',
+							'type' => 'card',
+						),
+					),
+				)
+			)
+		);
+
+		$this->assertNotFalse( get_option( 'wcpay_authorization_summary_cache', false ) );
+		$this->assertNotFalse( get_option( 'wcpay_test_authorization_summary_cache', false ) );
+	}
+
+	/**
+	 * Seed both authorization-summary cache options.
+	 */
+	private function seed_authorization_summary_caches(): void {
+		$wrapper = array(
+			'data'    => array( 'count' => 4 ),
+			'fetched' => time(),
+			'errored' => false,
+		);
+		update_option( 'wcpay_authorization_summary_cache', $wrapper, false );
+		update_option( 'wcpay_test_authorization_summary_cache', $wrapper, false );
+	}
+
+	/**
+	 * Assert both authorization-summary cache options are gone.
+	 *
+	 * @param string $event_type Event type under test, for the failure message.
+	 */
+	private function assertAuthorizationSummaryCachesCleared( string $event_type ): void {
+		$this->assertFalse( get_option( 'wcpay_authorization_summary_cache', false ), $event_type . ' should clear the live cache' );
+		$this->assertFalse( get_option( 'wcpay_test_authorization_summary_cache', false ), $event_type . ' should clear the test-mode cache' );
+	}
+
+	/**
 	 * @testdox charge.expired marks the order failed.
 	 */
 	public function test_charge_expired_marks_order_failed(): void {

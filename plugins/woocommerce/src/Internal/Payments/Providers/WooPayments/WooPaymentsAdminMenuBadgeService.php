@@ -99,6 +99,18 @@ class WooPaymentsAdminMenuBadgeService {
 	}
 
 	/**
+	 * Invalidate both authorization-summary caches so the next read refetches.
+	 *
+	 * The plugin deletes both the live and test-mode keys after every
+	 * capture-affecting webhook; captures, cancellations and expiries performed
+	 * from the platform dashboard or mobile app only reach the store this way.
+	 */
+	public function invalidate_authorization_summary_caches(): void {
+		delete_option( self::AUTHORIZATION_SUMMARY_KEY );
+		delete_option( self::AUTHORIZATION_SUMMARY_KEY_TEST_MODE );
+	}
+
+	/**
 	 * Tell whether manual capture is enabled.
 	 *
 	 * @return bool

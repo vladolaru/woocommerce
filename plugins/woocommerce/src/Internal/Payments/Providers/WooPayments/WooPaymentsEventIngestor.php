@@ -167,24 +167,32 @@ class WooPaymentsEventIngestor {
 	private ?WooPaymentsOrderNoteService $order_note_service = null;
 
 	/**
+	 * WooPayments admin menu badge service.
+	 *
+	 * @var WooPaymentsAdminMenuBadgeService|null
+	 */
+	private ?WooPaymentsAdminMenuBadgeService $admin_menu_badge_service = null;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param OrderPaymentLifecycleService        $lifecycle_service          Order lifecycle service.
-	 * @param LegacyProxy                         $legacy_proxy               Legacy proxy.
-	 * @param WooPaymentsLegacyRuntime            $legacy_runtime             WooPayments legacy runtime.
-	 * @param WooPaymentsApiClient                $api_client                 Native WooPayments API client.
-	 * @param WooPaymentsDisputeEventHandler      $dispute_event_handler      Dispute event handler.
-	 * @param WooPaymentsRefundEventHandler       $refund_event_handler       Refund event handler.
-	 * @param WooPaymentsAccountEventHandler      $account_event_handler      Account event handler.
-	 * @param WooPaymentsNotificationEventHandler $notification_event_handler Notification event handler.
-	 * @param WooPaymentsOrderDataService|null    $order_data_service         WooPayments order data service.
-	 * @param WooPaymentsAccountService|null      $account_service            WooPayments account service.
-	 * @param WooPaymentsOrderEffectApplier|null  $order_effect_applier       Optional order effect applier.
-	 * @param WooPaymentsOrderNoteService|null    $order_note_service         Optional order note service.
+	 * @param OrderPaymentLifecycleService          $lifecycle_service          Order lifecycle service.
+	 * @param LegacyProxy                           $legacy_proxy               Legacy proxy.
+	 * @param WooPaymentsLegacyRuntime              $legacy_runtime             WooPayments legacy runtime.
+	 * @param WooPaymentsApiClient                  $api_client                 Native WooPayments API client.
+	 * @param WooPaymentsDisputeEventHandler        $dispute_event_handler      Dispute event handler.
+	 * @param WooPaymentsRefundEventHandler         $refund_event_handler       Refund event handler.
+	 * @param WooPaymentsAccountEventHandler        $account_event_handler      Account event handler.
+	 * @param WooPaymentsNotificationEventHandler   $notification_event_handler Notification event handler.
+	 * @param WooPaymentsOrderDataService|null      $order_data_service         WooPayments order data service.
+	 * @param WooPaymentsAccountService|null        $account_service            WooPayments account service.
+	 * @param WooPaymentsOrderEffectApplier|null    $order_effect_applier       Optional order effect applier.
+	 * @param WooPaymentsOrderNoteService|null      $order_note_service         Optional order note service.
+	 * @param WooPaymentsAdminMenuBadgeService|null $admin_menu_badge_service Optional admin menu badge service.
 	 */
-	final public function init( OrderPaymentLifecycleService $lifecycle_service, LegacyProxy $legacy_proxy, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, WooPaymentsDisputeEventHandler $dispute_event_handler, WooPaymentsRefundEventHandler $refund_event_handler, WooPaymentsAccountEventHandler $account_event_handler, WooPaymentsNotificationEventHandler $notification_event_handler, ?WooPaymentsOrderDataService $order_data_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsOrderEffectApplier $order_effect_applier = null, ?WooPaymentsOrderNoteService $order_note_service = null ): void {
+	final public function init( OrderPaymentLifecycleService $lifecycle_service, LegacyProxy $legacy_proxy, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, WooPaymentsDisputeEventHandler $dispute_event_handler, WooPaymentsRefundEventHandler $refund_event_handler, WooPaymentsAccountEventHandler $account_event_handler, WooPaymentsNotificationEventHandler $notification_event_handler, ?WooPaymentsOrderDataService $order_data_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsOrderEffectApplier $order_effect_applier = null, ?WooPaymentsOrderNoteService $order_note_service = null, ?WooPaymentsAdminMenuBadgeService $admin_menu_badge_service = null ): void {
 		$this->lifecycle_service          = $lifecycle_service;
 		$this->legacy_proxy               = $legacy_proxy;
 		$this->legacy_runtime             = $legacy_runtime;
@@ -197,6 +205,7 @@ class WooPaymentsEventIngestor {
 		$this->account_service            = $account_service;
 		$this->order_effect_applier       = $order_effect_applier;
 		$this->order_note_service         = $order_note_service;
+		$this->admin_menu_badge_service   = $admin_menu_badge_service;
 	}
 
 	/**
@@ -334,6 +343,12 @@ class WooPaymentsEventIngestor {
 			return;
 		}
 
+		// The plugin's canceled/amount_capturable_updated handlers are nothing but
+		// this cache invalidation and never resolve an order, so it runs up front.
+		if ( in_array( $event_type, array( 'payment_intent.canceled', 'payment_intent.amount_capturable_updated' ), true ) ) {
+			$this->get_admin_menu_badge_service()->invalidate_authorization_summary_caches();
+		}
+
 		$order = $this->get_order_for_event_object( $event_type, $event_object );
 		if ( ! $order instanceof WC_Order || ! $this->is_woopayments_order( $order ) ) {
 			$this->run_delivery_hook( 'woocommerce_payments_after_webhook_delivery', $event_type, $event );
@@ -352,6 +367,14 @@ class WooPaymentsEventIngestor {
 		$this->maybe_repair_recurring_order_token( $order, $event_type, $event_object );
 		$this->lifecycle_service->apply( $order, $lifecycle_event, new WooPaymentsPersistenceProfile() );
 		$this->maybe_send_ipp_receipt_email( $order, $event_type, $event_object );
+
+		// Captures and expiries change what the uncaptured-transactions badge counts;
+		// the plugin invalidates after the order effects land, and a failed apply
+		// re-runs the whole delivery anyway.
+		if ( in_array( $event_type, array( 'payment_intent.succeeded', 'charge.expired' ), true ) ) {
+			$this->get_admin_menu_badge_service()->invalidate_authorization_summary_caches();
+		}
+
 		$this->run_delivery_hook( 'woocommerce_payments_after_webhook_delivery', $event_type, $event );
 	}
 
@@ -1003,6 +1026,19 @@ class WooPaymentsEventIngestor {
 				return '' !== $value;
 			}
 		);
+	}
+
+	/**
+	 * Get the WooPayments admin menu badge service.
+	 *
+	 * @return WooPaymentsAdminMenuBadgeService
+	 */
+	private function get_admin_menu_badge_service(): WooPaymentsAdminMenuBadgeService {
+		if ( null === $this->admin_menu_badge_service ) {
+			$this->admin_menu_badge_service = wc_get_container()->get( WooPaymentsAdminMenuBadgeService::class );
+		}
+
+		return $this->admin_menu_badge_service;
 	}
 
 	/**
