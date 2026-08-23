@@ -409,10 +409,10 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 		}
 
 		try {
+			// App metadata is forwarded verbatim like the plugin: the apps reconcile
+			// on exact metadata names, and it only ever travels to the provider API.
 			$currency        = strtolower( $order->get_currency() );
 			$raw_metadata    = $request->get_param( 'metadata' );
-			// Forwarded verbatim like the plugin: the apps reconcile on exact metadata
-			// names, and the payload only ever travels to the provider API.
 			$metadata        = is_array( $raw_metadata ) ? $raw_metadata : array();
 			$payment_methods = $this->get_terminal_intent_payment_methods( $request );
 			$capture_method  = $this->get_terminal_intent_capture_method( $request );
@@ -481,6 +481,7 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 	 * @param WP_REST_Request $request Request.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
 	 * @return WP_REST_Response|WP_Error
+	 * @throws WooPaymentsApiException When the capture call fails; rethrown to the enclosing catch after the order is marked.
 	 */
 	public function capture_terminal_payment( WP_REST_Request $request ) {
 		$order = $this->get_order_from_request( $request );

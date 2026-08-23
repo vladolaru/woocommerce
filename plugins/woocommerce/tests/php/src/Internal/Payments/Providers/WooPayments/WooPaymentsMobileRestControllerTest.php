@@ -60,7 +60,7 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->api_client            = new RecordingTerminalApiClient();
 		$this->gateway_settings      = array();
 		$this->account_refresh_calls = 0;
-		$this->sut              = $this->create_controller( true );
+		$this->sut                   = $this->create_controller( true );
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
 		delete_transient( 'wcpay_store_terminal_readers' );
 		delete_transient( 'wcpay_store_terminal_locations' );
@@ -653,12 +653,12 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$order = $this->create_order( 12.34, 'USD' );
 
 		$this->gateway_settings                       = array(
-			'account_business_name'  => 'Logo Receipt Lab',
-			'account_branding_logo'  => 'file_logo_123',
+			'account_business_name' => 'Logo Receipt Lab',
+			'account_branding_logo' => 'file_logo_123',
 		);
 		$this->api_client->file_contents_response     = array(
 			'content_type' => 'image/png',
-			'file_content' => base64_encode( 'logo-bytes' ),
+			'file_content' => base64_encode( 'logo-bytes' ), // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Test fixture image payload.
 		);
 		$this->api_client->payment_intention_response = array(
 			'id'       => 'pi_receipt',
@@ -702,7 +702,7 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertInstanceOf( WP_REST_Response::class, $response );
 		$this->assertSame( array( 'file_logo_123', false ), $this->api_client->last_file_contents_request, 'The logo must be fetched platform-side (as_account false) like the reference client.' );
 		$this->assertStringContainsString( 'class="branding-logo"', $html );
-		$this->assertStringContainsString( 'data:image/png;base64,' . base64_encode( 'logo-bytes' ), $html );
+		$this->assertStringContainsString( 'data:image/png;base64,' . base64_encode( 'logo-bytes' ), $html ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Test fixture image payload.
 	}
 
 	/**
@@ -1051,13 +1051,13 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$order->set_billing_email( 'ada@example.com' );
 		$order->save();
 
-		$intent_metadata = array(
+		$intent_metadata                               = array(
 			'order_id'      => (string) $order->get_id(),
 			'ipp_channel'   => 'mobile_pos',
 			'reader_ID'     => 'rdr_123',
 			'customer_name' => 'App Override',
 		);
-		$this->api_client->payment_intention_response = array(
+		$this->api_client->payment_intention_response  = array(
 			'id'       => 'pi_terminal',
 			'status'   => 'requires_capture',
 			'currency' => 'usd',
@@ -1204,7 +1204,7 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 				'status' => 'canceled',
 			),
 		);
-		$this->api_client->captured_intention_exception = new WooPaymentsApiException( 'Capture failed.', 'wcpay_capture_error', 402 );
+		$this->api_client->captured_intention_exception     = new WooPaymentsApiException( 'Capture failed.', 'wcpay_capture_error', 402 );
 
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
 		$request->set_param( 'order_id', $order->get_id() );
@@ -1239,7 +1239,7 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 				'status' => 'requires_capture',
 			),
 		);
-		$this->api_client->captured_intention_exception = new WooPaymentsApiException( 'The card was declined at capture.', 'wcpay_capture_error', 402 );
+		$this->api_client->captured_intention_exception     = new WooPaymentsApiException( 'The card was declined at capture.', 'wcpay_capture_error', 402 );
 
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
 		$request->set_param( 'order_id', $order->get_id() );

@@ -3489,7 +3489,12 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$api_client->method( 'capture_intention' )
 			->willThrowException( new WooPaymentsApiException( 'Capture failed.', 'wcpay_capture_error', 402 ) );
 		$api_client->method( 'get_payment_intention' )
-			->willReturn( array( 'id' => 'pi_still_live', 'status' => 'requires_capture' ) );
+			->willReturn(
+				array(
+					'id'     => 'pi_still_live',
+					'status' => 'requires_capture',
+				)
+			);
 
 		$sut     = $this->create_adapter( $gateway, $api_client );
 		$outcome = $sut->capture( PaymentContext::for_capture( $order, OrderPaymentStore::GATEWAY_ID ), 'key_capture' );

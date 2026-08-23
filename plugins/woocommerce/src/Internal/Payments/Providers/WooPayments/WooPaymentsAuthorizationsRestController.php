@@ -303,7 +303,7 @@ class WooPaymentsAuthorizationsRestController implements RegisterHooksInterface 
 			'payment_intent_id' => array(
 				'required' => true,
 			),
-			'amount' => array(
+			'amount'            => array(
 				'required' => false,
 				'type'     => 'number',
 			),
