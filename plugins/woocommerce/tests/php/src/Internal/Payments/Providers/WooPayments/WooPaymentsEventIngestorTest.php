@@ -1275,6 +1275,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 */
 	public function test_payment_intent_failed_marks_order_failed(): void {
 		$order = $this->create_woopayments_order();
+		$order->update_meta_data( '_payment_method_id', 'pm_123' );
+		$order->save();
 
 		$this->sut->process(
 			$this->create_payment_intent_event(
@@ -1305,6 +1307,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 */
 	public function test_payment_intent_failed_marks_au_becs_debit_order_failed(): void {
 		$order = $this->create_woopayments_order();
+		$order->update_meta_data( '_payment_method_id', 'pm_123' );
+		$order->save();
 
 		$this->sut->process(
 			$this->create_payment_intent_event(
@@ -1549,6 +1553,97 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'pending', $order->get_status() );
+	}
+
+	/**
+	 * @testdox payment_intent.payment_failed ignores a failure from a superseded payment method.
+	 */
+	public function test_payment_intent_failed_ignores_mismatched_payment_method(): void {
+		$order = $this->create_woopayments_order();
+		$order->update_meta_data( '_payment_method_id', 'pm_current' );
+		$order->update_meta_data( '_intent_id', 'pi_current' );
+		$order->save();
+
+		$this->sut->process(
+			$this->create_payment_intent_event(
+				'payment_intent.payment_failed',
+				$order,
+				array(
+					'id'                 => 'pi_stale',
+					'status'             => 'requires_payment_method',
+					'last_payment_error' => array(
+						'payment_method' => array(
+							'id'   => 'pm_stale',
+							'type' => 'card',
+						),
+					),
+				)
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'pending', $order->get_status() );
+		$this->assertSame( 'pi_current', $order->get_meta( '_intent_id', true ) );
+		$this->assertCount( 0, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+	}
+
+	/**
+	 * @testdox payment_intent.payment_failed ignores an error carrying no payment method ID.
+	 */
+	public function test_payment_intent_failed_ignores_missing_payment_method_id(): void {
+		$order = $this->create_woopayments_order();
+
+		$this->sut->process(
+			$this->create_payment_intent_event(
+				'payment_intent.payment_failed',
+				$order,
+				array(
+					'status'             => 'requires_payment_method',
+					'last_payment_error' => array(
+						'payment_method' => array(
+							'type' => 'card',
+						),
+					),
+				)
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'pending', $order->get_status() );
+	}
+
+	/**
+	 * @testdox payment_intent.payment_failed still applies card_present failures with a different payment method ID.
+	 */
+	public function test_payment_intent_failed_applies_card_present_with_mismatched_id(): void {
+		$order = $this->create_woopayments_order();
+		$order->update_meta_data( '_payment_method_id', 'pm_current' );
+		$order->save();
+
+		$this->sut->process(
+			$this->create_payment_intent_event(
+				'payment_intent.payment_failed',
+				$order,
+				array(
+					'status'             => 'requires_payment_method',
+					'last_payment_error' => array(
+						'payment_method' => array(
+							'id'   => 'pm_terminal',
+							'type' => 'card_present',
+						),
+					),
+				)
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'failed', $order->get_status() );
 	}
 
 	/**
@@ -1868,7 +1963,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'completed', $order->get_status() );
-		$this->assertOrderHasNote( $order, 'Dispute has been closed with status won. See <a href="' . $this->get_expected_dispute_url( 'ch_123' ) . '" target="_blank" rel="noopener noreferrer">dispute overview</a> for more details.' );
+		$this->assertOrderHasNote( $order, 'Dispute has been closed with status won. See <a href="' . $this->get_expected_dispute_url( 'ch_123' ) . '" target="_blank" rel="noopener noreferrer">dispute overview</a> for more details. (Dispute ID: du_123)' );
 	}
 
 	/**
@@ -1932,7 +2027,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( '-5.00', $refunds[0]->get_total() );
 		$this->assertSame( 'Dispute lost.', $refunds[0]->get_reason() );
 		$this->assertSame( '', $refunds[0]->get_meta( '_wcpay_refund_id', true ) );
-		$this->assertOrderHasNote( $order, 'Dispute has been closed with status lost. See <a href="' . $this->get_expected_dispute_url( 'ch_123' ) . '" target="_blank" rel="noopener noreferrer">dispute overview</a> for more details.' );
+		$this->assertOrderHasNote( $order, 'Dispute has been closed with status lost. See <a href="' . $this->get_expected_dispute_url( 'ch_123' ) . '" target="_blank" rel="noopener noreferrer">dispute overview</a> for more details. (Dispute ID: du_123)' );
 	}
 
 	/**

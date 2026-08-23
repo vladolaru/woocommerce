@@ -650,7 +650,7 @@ class WooPaymentsEventIngestor {
 				);
 
 			case 'payment_intent.payment_failed':
-				if ( ! $this->should_process_payment_failed_event( $event_object ) ) {
+				if ( ! $this->should_process_payment_failed_event( $event_object, $order ) ) {
 					return null;
 				}
 
@@ -711,14 +711,15 @@ class WooPaymentsEventIngestor {
 	 * Tell whether a payment_intent.payment_failed event is actionable.
 	 *
 	 * @param array<string,mixed> $event_object PaymentIntent object.
+	 * @param WC_Order            $order        Order resolved for the event.
 	 * @return bool
 	 */
-	private function should_process_payment_failed_event( array $event_object ): bool {
+	private function should_process_payment_failed_event( array $event_object, WC_Order $order ): bool {
 		$last_payment_error  = $event_object['last_payment_error'] ?? null;
 		$payment_method      = is_array( $last_payment_error ) ? ( $last_payment_error['payment_method'] ?? null ) : null;
 		$payment_method_type = is_array( $payment_method ) && isset( $payment_method['type'] ) && is_string( $payment_method['type'] ) ? $payment_method['type'] : '';
 
-		return in_array(
+		if ( ! in_array(
 			$payment_method_type,
 			array(
 				'card',
@@ -728,7 +729,25 @@ class WooPaymentsEventIngestor {
 				'wechat_pay',
 			),
 			true
-		);
+		) ) {
+			return false;
+		}
+
+		// A failure that names no payment method, or one belonging to a superseded
+		// attempt (the shopper re-paid with another method), must not flip the order
+		// to failed or overwrite its payment meta with the stale intent. Terminal
+		// (card_present) intents are exempt: their payment method is created at the
+		// reader and is never the one stored on the order.
+		$payment_method_id = is_array( $payment_method ) && isset( $payment_method['id'] ) && is_string( $payment_method['id'] ) ? $payment_method['id'] : '';
+		if ( '' === $payment_method_id ) {
+			return false;
+		}
+
+		if ( 'card_present' !== $payment_method_type && $payment_method_id !== (string) $order->get_meta( '_payment_method_id', true ) ) {
+			return false;
+		}
+
+		return true;
 	}
 
 	/**
