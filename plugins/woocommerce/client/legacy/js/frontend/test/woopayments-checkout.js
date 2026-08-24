@@ -1266,6 +1266,35 @@ describe( 'WooPayments checkout', () => {
 		delete window.wcpay_core_checkout_config.enabledBillingFields;
 	} );
 
+	test( 'lets the element collect everything when all billing fields are disabled', () => {
+		window.wcpay_core_checkout_config.enabledBillingFields = {};
+
+		require( '../woopayments-checkout' );
+
+		expect( elementsMock.create ).toHaveBeenCalledWith(
+			'payment',
+			expect.objectContaining( {
+				fields: {
+					billingDetails: {
+						name: 'auto',
+						email: 'auto',
+						phone: 'auto',
+						address: {
+							country: 'auto',
+							line1: 'auto',
+							line2: 'auto',
+							city: 'auto',
+							state: 'auto',
+							postalCode: 'auto',
+						},
+					},
+				},
+			} )
+		);
+
+		delete window.wcpay_core_checkout_config.enabledBillingFields;
+	} );
+
 	test( 'instantiates Stripe with the reference client betas', () => {
 		require( '../woopayments-checkout' );
 

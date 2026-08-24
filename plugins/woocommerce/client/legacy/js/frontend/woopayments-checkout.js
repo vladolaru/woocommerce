@@ -781,58 +781,49 @@
 	}
 
 	function getHiddenBillingFields( enabledBillingFields ) {
-		if (
-			! enabledBillingFields ||
-			Object.keys( enabledBillingFields ).length === 0
-		) {
-			enabledBillingFields = null;
+		// A missing map means a config predating enabledBillingFields: keep the
+		// previous all-hidden behavior. A present-but-empty map is a store with
+		// every billing field disabled: like the reference client, every field
+		// resolves to 'auto' so the Payment Element collects the details itself.
+		if ( ! enabledBillingFields ) {
+			return {
+				name: 'never',
+				email: 'never',
+				phone: 'never',
+				address: {
+					country: 'never',
+					line1: 'never',
+					line2: 'never',
+					city: 'never',
+					state: 'never',
+					postalCode: 'never',
+				},
+			};
 		}
 
 		return {
 			name:
-				! enabledBillingFields ||
 				enabledBillingFields.billing_first_name ||
 				enabledBillingFields.billing_last_name
 					? 'never'
 					: 'auto',
-			email:
-				! enabledBillingFields || enabledBillingFields.billing_email
-					? 'never'
-					: 'auto',
-			phone:
-				! enabledBillingFields || enabledBillingFields.billing_phone
-					? 'never'
-					: 'auto',
+			email: enabledBillingFields.billing_email ? 'never' : 'auto',
+			phone: enabledBillingFields.billing_phone ? 'never' : 'auto',
 			address: {
-				country:
-					! enabledBillingFields ||
-					enabledBillingFields.billing_country
-						? 'never'
-						: 'auto',
-				line1:
-					! enabledBillingFields ||
-					enabledBillingFields.billing_address_1
-						? 'never'
-						: 'auto',
-				line2:
-					! enabledBillingFields ||
-					enabledBillingFields.billing_address_2
-						? 'never'
-						: 'auto',
-				city:
-					! enabledBillingFields || enabledBillingFields.billing_city
-						? 'never'
-						: 'auto',
-				state:
-					! enabledBillingFields ||
-					enabledBillingFields.billing_state
-						? 'never'
-						: 'auto',
-				postalCode:
-					! enabledBillingFields ||
-					enabledBillingFields.billing_postcode
-						? 'never'
-						: 'auto',
+				country: enabledBillingFields.billing_country
+					? 'never'
+					: 'auto',
+				line1: enabledBillingFields.billing_address_1
+					? 'never'
+					: 'auto',
+				line2: enabledBillingFields.billing_address_2
+					? 'never'
+					: 'auto',
+				city: enabledBillingFields.billing_city ? 'never' : 'auto',
+				state: enabledBillingFields.billing_state ? 'never' : 'auto',
+				postalCode: enabledBillingFields.billing_postcode
+					? 'never'
+					: 'auto',
 			},
 		};
 	}
