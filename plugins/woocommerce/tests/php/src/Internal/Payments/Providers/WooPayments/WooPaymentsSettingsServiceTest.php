@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLocaleUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
@@ -328,7 +329,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 				'stripe' => array(
 					'publishableKey' => 'pk_test_native',
 					'accountId'      => 'acct_native_test',
-					'locale'         => strtolower( str_replace( '_', '-', determine_locale() ) ),
+					'locale'         => WooPaymentsLocaleUtils::convert_to_stripe_locale( determine_locale() ),
 				),
 			),
 			$settings['express_checkout_preview']

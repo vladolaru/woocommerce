@@ -955,14 +955,13 @@ class WooPaymentsExpressCheckoutService {
 	}
 
 	/**
-	 * Get a Stripe-compatible locale.
+	 * Get a Stripe-supported locale for the current request.
 	 *
 	 * @return string
 	 */
 	private function get_stripe_locale(): string {
 		$locale = function_exists( 'determine_locale' ) ? determine_locale() : get_locale();
-		$locale = strtolower( str_replace( '_', '-', (string) $locale ) );
 
-		return '' !== $locale ? $locale : 'auto';
+		return WooPaymentsLocaleUtils::convert_to_stripe_locale( (string) $locale );
 	}
 }

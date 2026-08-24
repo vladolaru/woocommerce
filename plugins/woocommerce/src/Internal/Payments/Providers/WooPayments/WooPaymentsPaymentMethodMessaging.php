@@ -249,7 +249,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 			'productId'            => 'base_product',
 			'productVariations'    => $product_variations,
 			'country'              => $country,
-			'locale'               => $this->convert_to_stripe_locale( get_locale() ),
+			'locale'               => WooPaymentsLocaleUtils::convert_to_stripe_locale( get_locale() ),
 			'accountId'            => $this->account_service->get_account_id(),
 			'publishableKey'       => $this->account_service->get_publishable_key(),
 			'paymentMethods'       => array_values( $payment_methods ),
@@ -578,67 +578,5 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 		}
 
 		return $this->order_data_service->prepare_amount( (float) WC()->cart->get_total( 'edit' ), get_woocommerce_currency() );
-	}
-
-	/**
-	 * Convert WordPress locale to the closest Stripe.js locale.
-	 *
-	 * @param string $locale WordPress locale.
-	 * @return string
-	 */
-	private function convert_to_stripe_locale( string $locale ): string {
-		$supported_locales = array(
-			'ar',
-			'bg',
-			'cs',
-			'da',
-			'de',
-			'el',
-			'en',
-			'en-GB',
-			'es',
-			'es-419',
-			'et',
-			'fi',
-			'fil',
-			'fr',
-			'fr-CA',
-			'he',
-			'hr',
-			'hu',
-			'id',
-			'it',
-			'ja',
-			'ko',
-			'lt',
-			'lv',
-			'ms',
-			'mt',
-			'nb',
-			'nl',
-			'pl',
-			'pt',
-			'pt-BR',
-			'ro',
-			'ru',
-			'sk',
-			'sl',
-			'sv',
-			'th',
-			'tr',
-			'vi',
-			'zh',
-			'zh-HK',
-			'zh-TW',
-		);
-
-		$locale = str_replace( '_', '-', $locale );
-		if ( in_array( $locale, $supported_locales, true ) ) {
-			return $locale;
-		}
-
-		$language = strtok( $locale, '-' );
-
-		return is_string( $language ) && in_array( $language, $supported_locales, true ) ? $language : 'auto';
 	}
 }
