@@ -557,6 +557,18 @@
 		);
 	}
 
+	// Betas the reference client requests on every connected-account
+	// Stripe instance; the Link autofill modal only works with Link on.
+	function getStripeBetas() {
+		var betas = [ 'card_country_event_beta_1' ];
+
+		if ( isLinkEnabled() ) {
+			betas.push( 'link_autofill_modal_beta_1' );
+		}
+
+		return betas;
+	}
+
 	function getStripePaymentMethodTypes() {
 		if (
 			Array.isArray( config.paymentMethodTypes ) &&
@@ -960,6 +972,7 @@
 					state.stripe = window.Stripe( gatewayConfig.publishableKey, {
 						locale: gatewayConfig.locale || 'auto',
 						stripeAccount: gatewayConfig.accountId || undefined,
+						betas: getStripeBetas(),
 					} );
 					state.elements = state.stripe.elements( {
 						mode: 'payment',
@@ -1953,6 +1966,7 @@
 		stripe = window.Stripe( config.publishableKey, {
 			locale: config.locale || 'auto',
 			stripeAccount: config.accountId || undefined,
+			betas: getStripeBetas(),
 		} );
 		elements = stripe.elements( getStripeElementsOptions() );
 		paymentElement = elements.create(
@@ -2283,6 +2297,7 @@
 			window.Stripe( config.publishableKey, {
 				locale: config.locale || 'auto',
 				stripeAccount: config.accountId || undefined,
+				betas: getStripeBetas(),
 			} );
 
 		if ( confirmation.type === 'si' ) {

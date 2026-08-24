@@ -535,6 +535,11 @@
 		return window.Stripe( config.stripe.publishableKey, {
 			locale: config.stripe.locale || 'auto',
 			stripeAccount: config.stripe.accountId,
+			// The express config carries no paymentMethodsConfig and the
+			// express surface never renders the Link autofill modal, so
+			// only the card-country beta the reference client always
+			// requests applies here.
+			betas: [ 'card_country_event_beta_1' ],
 		} );
 	}
 
@@ -1884,6 +1889,7 @@
 			handleShippingRateChange: handleShippingRateChange,
 			placeOrder: placeOrder,
 			redirectToOrder: redirectToOrder,
+			getStripe: getStripe,
 			displayLoginConfirmation: displayLoginConfirmation,
 			createPaymentCredential: createPaymentCredential,
 			parseConfirmationHash: parseConfirmationHash,

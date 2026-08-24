@@ -240,6 +240,7 @@ describe( 'WooPayments express checkout', () => {
 		expect( window.Stripe ).toHaveBeenCalledWith( 'pk_test_123', {
 			locale: 'en-us',
 			stripeAccount: 'acct_123',
+			betas: [ 'card_country_event_beta_1' ],
 		} );
 		expect( stripe.elements ).toHaveBeenCalledWith(
 			expect.objectContaining( {

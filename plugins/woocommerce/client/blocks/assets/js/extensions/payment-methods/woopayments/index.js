@@ -458,6 +458,13 @@ const createStripe = (
 			! shouldUsePlatformStripeForCard( paymentSettings ) )
 	) {
 		stripeOptions.stripeAccount = paymentSettings.accountId;
+		// The reference client requests these betas on every
+		// connected-account instance; the platform instance gets none.
+		stripeOptions.betas = [ 'card_country_event_beta_1' ];
+
+		if ( isLinkEnabled( paymentSettings ) ) {
+			stripeOptions.betas.push( 'link_autofill_modal_beta_1' );
+		}
 	}
 
 	return window.Stripe( paymentSettings.publishableKey, stripeOptions );

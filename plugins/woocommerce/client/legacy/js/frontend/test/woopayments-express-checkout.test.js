@@ -417,6 +417,32 @@ describe( 'woopayments-express-checkout', () => {
 		} );
 	} );
 
+	describe( 'getStripe', () => {
+		it( 'instantiates Stripe with the card-country beta on the connected account', () => {
+			window.Stripe = jest.fn( () => ( {} ) );
+			const { getStripe } = loadModule(
+				baseParams( {
+					stripe: {
+						publishableKey: 'pk_test_express',
+						accountId: 'acct_express',
+						locale: 'en',
+					},
+				} )
+			);
+
+			getStripe();
+
+			expect( window.Stripe ).toHaveBeenCalledWith(
+				'pk_test_express',
+				{
+					locale: 'en',
+					stripeAccount: 'acct_express',
+					betas: [ 'card_country_event_beta_1' ],
+				}
+			);
+		} );
+	} );
+
 	describe( 'redirectToOrder', () => {
 		const stripeParams = {
 			stripe: { publishableKey: 'pk_test_123', accountId: 'acct_1' },

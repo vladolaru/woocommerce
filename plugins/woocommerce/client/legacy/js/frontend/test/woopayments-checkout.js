@@ -1266,6 +1266,33 @@ describe( 'WooPayments checkout', () => {
 		delete window.wcpay_core_checkout_config.enabledBillingFields;
 	} );
 
+	test( 'instantiates Stripe with the reference client betas', () => {
+		require( '../woopayments-checkout' );
+
+		expect( window.Stripe ).toHaveBeenCalledWith(
+			'pk_test',
+			expect.objectContaining( {
+				betas: [
+					'card_country_event_beta_1',
+					'link_autofill_modal_beta_1',
+				],
+			} )
+		);
+	} );
+
+	test( 'omits the Link autofill beta when Link is not enabled', () => {
+		delete window.wcpay_core_checkout_config.paymentMethodsConfig.link;
+
+		require( '../woopayments-checkout' );
+
+		expect( window.Stripe ).toHaveBeenCalledWith(
+			'pk_test',
+			expect.objectContaining( {
+				betas: [ 'card_country_event_beta_1' ],
+			} )
+		);
+	} );
+
 	test( 'uses setup mode on the add-payment-method form', () => {
 		document.body.innerHTML =
 			'<form id="add_payment_method">' +

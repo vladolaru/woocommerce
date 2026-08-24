@@ -1750,6 +1750,10 @@ describe( 'wc-payment-method-woopayments', () => {
 		expect( window.Stripe ).toHaveBeenNthCalledWith( 2, 'pk_test_123', {
 			locale: 'auto',
 			stripeAccount: 'acct_123',
+			betas: [
+				'card_country_event_beta_1',
+				'link_autofill_modal_beta_1',
+			],
 		} );
 		expect( window.fetch ).toHaveBeenCalledWith(
 			'https://example.test/wp-admin/admin-ajax.php',
@@ -1833,6 +1837,10 @@ describe( 'wc-payment-method-woopayments', () => {
 		expect( window.Stripe ).toHaveBeenCalledWith( 'pk_test_123', {
 			locale: 'auto',
 			stripeAccount: 'acct_123',
+			betas: [
+				'card_country_event_beta_1',
+				'link_autofill_modal_beta_1',
+			],
 		} );
 		const requestBody = window.fetch.mock.calls[ 0 ][ 1 ].body;
 		expect( requestBody.get( 'action' ) ).toBe( 'update_order_status' );

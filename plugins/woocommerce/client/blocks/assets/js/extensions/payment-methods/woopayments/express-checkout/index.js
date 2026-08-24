@@ -510,6 +510,9 @@ const getStripe = () => {
 		...( params.stripe.accountId
 			? { stripeAccount: params.stripe.accountId }
 			: {} ),
+		// Card-country beta only: the express surface never renders the
+		// Link autofill modal the second reference-client beta drives.
+		betas: [ 'card_country_event_beta_1' ],
 	} );
 
 	return availabilityStripe;
@@ -1005,6 +1008,7 @@ const ExpressCheckoutContent = ( {
 			...( params.stripe.accountId
 				? { stripeAccount: params.stripe.accountId }
 				: {} ),
+			betas: [ 'card_country_event_beta_1' ],
 		} );
 		elementsRef.current = stripeRef.current.elements(
 			getStripeElementsOptions( billing, getCurrentCart() )
