@@ -1159,8 +1159,10 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	/**
 	 * Tell whether the connected account has this payment method's capability active.
 	 *
-	 * An empty capability map is the pre-onboarding fallback used by WooPayments: card remains
-	 * available, while split methods require an explicit active capability.
+	 * An empty capability map is the pre-onboarding fallback used by WooPayments: the reference
+	 * client synthesizes an active card_payments capability, so every method backed by it
+	 * (card, Apple Pay, Google Pay) stays available while other methods require an explicit
+	 * active capability.
 	 *
 	 * @return bool
 	 */
@@ -1169,7 +1171,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		$capabilities = is_array( $account_data['capabilities'] ?? null ) ? $account_data['capabilities'] : array();
 
 		if ( array() === $capabilities ) {
-			return 'card' === $this->get_payment_method_id();
+			return 'card_payments' === $this->payment_method_definition->get_account_capability_key();
 		}
 
 		$capability_key = $this->payment_method_definition->get_account_capability_key();

@@ -1569,6 +1569,37 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should keep card_payments-backed methods active in the bridge on an empty capabilities payload
+	 */
+	public function test_bridge_capability_check_falls_back_to_card_payments_on_empty_capabilities(): void {
+		$sut = new WooPaymentsCheckoutBridge();
+		$sut->init(
+			$this->create_legacy_runtime_for_bridge(),
+			$this->create_account_service_for_bridge( true ),
+			$this->create_woopay_session_service_for_bridge( false ),
+			$this->create_frontend_styles_service_for_bridge(),
+			$this->create_frontend_tracking_controller_for_bridge()
+		);
+
+		$registry = new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry();
+		$method   = new \ReflectionMethod( WooPaymentsCheckoutBridge::class, 'is_payment_method_capability_active' );
+		$method->setAccessible( true );
+
+		$expectations = array(
+			'card'       => true,
+			'apple_pay'  => true,
+			'google_pay' => true,
+			'bancontact' => false,
+		);
+
+		foreach ( $expectations as $payment_method_id => $expected ) {
+			$definition = $registry->get( $payment_method_id );
+			$this->assertNotNull( $definition );
+			$this->assertSame( $expected, $method->invoke( $sut, $definition ), "Empty-capabilities fallback for {$payment_method_id}" );
+		}
+	}
+
+	/**
 	 * Create a frontend tracking controller mock for checkout bridge tests.
 	 *
 	 * @return WooPaymentsFrontendTrackingController|\PHPUnit\Framework\MockObject\MockObject

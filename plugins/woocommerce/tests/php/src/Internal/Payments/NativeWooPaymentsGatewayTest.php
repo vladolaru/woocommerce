@@ -199,6 +199,40 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should keep card_payments-backed methods active on an empty capabilities payload like the reference client
+	 */
+	public function test_empty_capabilities_fallback_follows_account_capability_key(): void {
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
+			->getMock();
+		$account_service->method( 'get_cached_account_data' )->willReturn( array( 'country' => 'US' ) );
+		$account_service->method( 'is_gateway_enabled' )->willReturn( true );
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+
+		$registry = new WooPaymentsPaymentMethodRegistry();
+		$method   = new \ReflectionMethod( NativeWooPaymentsGateway::class, 'is_account_capability_active' );
+		$method->setAccessible( true );
+
+		$expectations = array(
+			'card'       => true,
+			'apple_pay'  => true,
+			'google_pay' => true,
+			'bancontact' => false,
+		);
+
+		foreach ( $expectations as $payment_method_id => $expected ) {
+			$definition = $registry->get( $payment_method_id );
+			$this->assertNotNull( $definition );
+
+			$gateway = new NativeWooPaymentsGateway( $definition );
+			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $account_service );
+
+			$this->assertSame( $expected, $method->invoke( $gateway ), "Empty-capabilities fallback for {$payment_method_id}" );
+		}
+	}
+
+	/**
 	 * @testdox Should hide a split gateway when its definition does not support the checkout currency.
 	 */
 	public function test_split_gateway_availability_follows_payment_method_definition(): void {

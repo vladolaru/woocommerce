@@ -940,6 +940,12 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 		$account_data = $this->get_account_service()->get_cached_account_data();
 		$capabilities = is_array( $account_data['capabilities'] ?? null ) ? $account_data['capabilities'] : array();
 
+		if ( array() === $capabilities ) {
+			// Pre-onboarding fallback: the reference client synthesizes an active
+			// card_payments capability when the map is empty.
+			return 'card_payments' === $definition->get_account_capability_key();
+		}
+
 		return 'active' === ( $capabilities[ $definition->get_account_capability_key() ] ?? null );
 	}
 
