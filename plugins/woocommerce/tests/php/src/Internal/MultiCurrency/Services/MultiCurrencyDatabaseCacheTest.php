@@ -175,6 +175,111 @@ class MultiCurrencyDatabaseCacheTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should shorten the currencies TTL on admin-originated REST requests like the reference client.
+	 */
+	public function test_currencies_ttl_uses_admin_api_branch(): void {
+		$seed_refreshed = false;
+		( new MultiCurrencyDatabaseCache() )->get_or_add(
+			$this->cache_key,
+			static fn() => array(
+				'currencies' => array( 'eur' => 1.2 ),
+				'updated'    => 123,
+			),
+			static fn( $data ) => isset( $data['currencies'], $data['updated'] ),
+			false,
+			$seed_refreshed
+		);
+
+		// Age the payload past the 3-hour admin TTL but inside the 12-hour frontend TTL.
+		$contents            = get_option( $this->cache_key );
+		$contents['fetched'] = time() - 4 * HOUR_IN_SECONDS;
+		update_option( $this->cache_key, $contents );
+		wp_cache_delete( $this->cache_key, 'options' );
+
+		$admin_api_context = $this->createMock( \Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext::class );
+		$admin_api_context->method( 'is_admin_api_request' )->willReturn( true );
+
+		$generator_calls = 0;
+		$generator       = static function () use ( &$generator_calls ): array {
+			++$generator_calls;
+
+			return array(
+				'currencies' => array( 'eur' => 1.3 ),
+				'updated'    => 456,
+			);
+		};
+		$validator       = static fn( $data ) => isset( $data['currencies'], $data['updated'] );
+
+		$frontend_refresh = false;
+		( new MultiCurrencyDatabaseCache() )->get_or_add( $this->cache_key, $generator, $validator, false, $frontend_refresh );
+
+		$this->assertSame( 0, $generator_calls, 'A 4-hour-old payload is fresh on the frontend (12-hour TTL).' );
+
+		$admin_api_refresh = false;
+		( new MultiCurrencyDatabaseCache( $admin_api_context ) )->get_or_add( $this->cache_key, $generator, $validator, false, $admin_api_refresh );
+
+		$this->assertSame( 1, $generator_calls, 'A 4-hour-old payload is stale on admin-originated REST requests (3-hour TTL).' );
+		$this->assertTrue( $admin_api_refresh );
+	}
+
+	/**
+	 * @testdox Should honor the wcpay_database_cache_ttl filter with the reference signature.
+	 */
+	public function test_currencies_ttl_honors_database_cache_ttl_filter(): void {
+		$seed_refreshed = false;
+		( new MultiCurrencyDatabaseCache() )->get_or_add(
+			$this->cache_key,
+			static fn() => array(
+				'currencies' => array( 'eur' => 1.2 ),
+				'updated'    => 123,
+			),
+			static fn( $data ) => isset( $data['currencies'], $data['updated'] ),
+			false,
+			$seed_refreshed
+		);
+
+		$contents            = get_option( $this->cache_key );
+		$contents['fetched'] = time() - HOUR_IN_SECONDS;
+		update_option( $this->cache_key, $contents );
+		wp_cache_delete( $this->cache_key, 'options' );
+
+		$filter_args = array();
+		$ttl_filter  = static function ( $ttl, $key, $cache_contents ) use ( &$filter_args ) {
+			$filter_args = array( $ttl, $key, $cache_contents );
+
+			return MINUTE_IN_SECONDS;
+		};
+		add_filter( 'wcpay_database_cache_ttl', $ttl_filter, 10, 3 );
+
+		try {
+			$generator_calls = 0;
+			$refreshed       = false;
+			( new MultiCurrencyDatabaseCache() )->get_or_add(
+				$this->cache_key,
+				static function () use ( &$generator_calls ): array {
+					++$generator_calls;
+
+					return array(
+						'currencies' => array( 'eur' => 1.3 ),
+						'updated'    => 456,
+					);
+				},
+				static fn( $data ) => isset( $data['currencies'], $data['updated'] ),
+				false,
+				$refreshed
+			);
+
+			$this->assertSame( 1, $generator_calls, 'A one-minute filtered TTL must expire an hour-old payload.' );
+			$this->assertSame( 12 * HOUR_IN_SECONDS, $filter_args[0] );
+			$this->assertSame( $this->cache_key, $filter_args[1] );
+			$this->assertIsArray( $filter_args[2] );
+			$this->assertArrayHasKey( 'fetched', $filter_args[2] );
+		} finally {
+			remove_filter( 'wcpay_database_cache_ttl', $ttl_filter, 10 );
+		}
+	}
+
+	/**
 	 * @testdox Should return previous valid data when regeneration fails.
 	 */
 	public function test_returns_previous_value_when_regeneration_fails(): void {

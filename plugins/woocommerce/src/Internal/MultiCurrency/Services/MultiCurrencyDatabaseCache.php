@@ -28,6 +28,22 @@ class MultiCurrencyDatabaseCache implements MultiCurrencyCacheInterface {
 	private array $in_memory_cache = array();
 
 	/**
+	 * Request context used for TTL resolution.
+	 *
+	 * @var MultiCurrencyRequestContext
+	 */
+	private MultiCurrencyRequestContext $request_context;
+
+	/**
+	 * Constructor.
+	 *
+	 * @param MultiCurrencyRequestContext|null $request_context Optional request context (stateless; owned when omitted).
+	 */
+	public function __construct( ?MultiCurrencyRequestContext $request_context = null ) {
+		$this->request_context = $request_context ?? new MultiCurrencyRequestContext();
+	}
+
+	/**
 	 * Get a value from cache.
 	 *
 	 * @param string $key   Cache key.
@@ -217,16 +233,27 @@ class MultiCurrencyDatabaseCache implements MultiCurrencyCacheInterface {
 	 */
 	private function get_ttl( string $key, array $cache_contents ): int {
 		if ( self::CURRENCIES_KEY === $key ) {
-			if ( defined( 'DOING_CRON' ) || is_admin() ) {
-				return ! empty( $cache_contents['errored'] )
+			if ( defined( 'DOING_CRON' ) || is_admin() || $this->request_context->is_admin_api_request() ) {
+				$ttl = ! empty( $cache_contents['errored'] )
 					? $this->get_errored_ttl( (int) ( $cache_contents['consecutive_errors'] ?? 0 ) )
 					: 3 * HOUR_IN_SECONDS;
+			} else {
+				$ttl = 12 * HOUR_IN_SECONDS;
 			}
-
-			return 12 * HOUR_IN_SECONDS;
+		} else {
+			$ttl = DAY_IN_SECONDS;
 		}
 
-		return DAY_IN_SECONDS;
+		/**
+		 * Filters the multi-currency database cache TTL.
+		 *
+		 * @since 11.0.0
+		 *
+		 * @param int                 $ttl            Cache TTL in seconds.
+		 * @param string              $key            Cache option key.
+		 * @param array<string,mixed> $cache_contents Cache payload wrapper.
+		 */
+		return (int) apply_filters( 'wcpay_database_cache_ttl', $ttl, $key, $cache_contents );
 	}
 
 	/**
