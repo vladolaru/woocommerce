@@ -196,7 +196,10 @@ module.exports = function ( grunt ) {
 					{
 						expand: true,
 						flatten: true,
-						src: ['node_modules/@fingerprintjs/fingerprintjs/dist/fp.umd.min.js','node_modules/@fingerprintjs/fingerprintjs/LICENSE'],
+						src: [
+							'node_modules/@fingerprintjs/fingerprintjs/dist/fp.umd.min.js',
+							'node_modules/@fingerprintjs/fingerprintjs/LICENSE'
+						],
 						dest: '<%= dirs.jsDest %>/fingerprintjs/',
 					},
 				],
