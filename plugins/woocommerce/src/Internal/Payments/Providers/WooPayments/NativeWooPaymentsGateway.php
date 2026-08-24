@@ -1712,7 +1712,12 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return self::METHOD_TITLE;
 		}
 
-		return sprintf( 'WooPayments (%s)', $this->payment_method_definition->get_title( $this->get_account_country() ) );
+		// Deliberately country-less: this is the construction-time placeholder, and
+		// resolving the account country can fire an account API request when the
+		// cache is stale - the reference client keeps that out of construction too
+		// (its country branding happens on init / at title-render time).
+		// handle_init() re-sets the title with the country-branded form.
+		return sprintf( 'WooPayments (%s)', $this->payment_method_definition->get_title() );
 	}
 
 	/**
