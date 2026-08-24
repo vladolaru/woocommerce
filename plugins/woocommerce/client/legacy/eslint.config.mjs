@@ -29,7 +29,7 @@ export default [
 	{
 		files: [ 'js/**/*.js' ],
 		languageOptions: {
-			ecmaVersion: 8,
+			ecmaVersion: 2018,
 			/*
 			 * These are classic scripts, not modules. eslintrc defaulted to
 			 * `script`; flat config defaults `.js` to `module`, which would
