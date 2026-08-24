@@ -118,6 +118,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should return the native WooPayments settings contract without Stripe Billing fields.
 	 */
 	public function test_get_settings_returns_reference_shaped_contract_without_stripe_billing_fields(): void {
+		update_option( '_wcpay_feature_dynamic_checkout_place_order_button', '1' );
 		update_option( 'woocommerce_woocommerce_payments_google_pay_settings', array( 'enabled' => 'yes' ) );
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
@@ -514,6 +515,23 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should default the dynamic place-order feature flag off like the reference client
+	 */
+	public function test_dynamic_checkout_place_order_button_flag_defaults_off(): void {
+		delete_option( '_wcpay_feature_dynamic_checkout_place_order_button' );
+
+		$this->assertFalse( WooPaymentsSettingsService::is_dynamic_checkout_place_order_button_enabled() );
+
+		update_option( '_wcpay_feature_dynamic_checkout_place_order_button', '1' );
+
+		try {
+			$this->assertTrue( WooPaymentsSettingsService::is_dynamic_checkout_place_order_button_enabled() );
+		} finally {
+			delete_option( '_wcpay_feature_dynamic_checkout_place_order_button' );
+		}
+	}
+
+	/**
 	 * @testdox Should expose disabled express checkout feature flags without mutating saved settings.
 	 */
 	public function test_get_settings_exposes_disabled_express_checkout_feature_flags(): void {
@@ -580,6 +598,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should expose WooPay eligibility separately from the saved WooPay setting.
 	 */
 	public function test_get_settings_exposes_woopay_feature_eligibility_separately_from_saved_setting(): void {
+		update_option( '_wcpay_feature_dynamic_checkout_place_order_button', '1' );
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
 			array(

@@ -287,7 +287,9 @@ class WooPaymentsSettingsService {
 	 * @return bool
 	 */
 	public static function is_dynamic_checkout_place_order_button_enabled(): bool {
-		return '1' === (string) get_option( self::DYNAMIC_CHECKOUT_PLACE_ORDER_BUTTON_FLAG_OPTION, '1' );
+		// An absent flag counts as OFF, matching the reference client's default;
+		// the platform delivering '1' with the account payload turns it on.
+		return '1' === (string) get_option( self::DYNAMIC_CHECKOUT_PLACE_ORDER_BUTTON_FLAG_OPTION, '0' );
 	}
 
 	/**
