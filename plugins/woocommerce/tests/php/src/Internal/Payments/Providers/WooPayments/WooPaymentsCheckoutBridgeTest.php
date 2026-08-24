@@ -653,9 +653,10 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'USD', $config['currency'] );
 		$this->assertArrayNotHasKey( 'isOrderPay', $config );
 		$this->assertArrayNotHasKey( 'orderId', $config );
-		// The order still legitimately prefills the element's default billing
-		// details - the client plugin does the same for any pay_for_order URL.
-		$this->assertSame( 'BE', $config['customerData']['billing_country'] );
+		// A change-payment request carries no pay_for_order flag, so the client
+		// plugin ships no prefilled billing details there - and neither must we:
+		// the order's BE billing address stays out of the element defaults.
+		$this->assertSame( array(), $config['customerData'] );
 	}
 
 	/**

@@ -152,8 +152,12 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	 * @return array{name:string,email:string,billing_country:string,address:array<string,string>|null}|array{}
 	 */
 	public function get_prepared_customer_data(): array {
-		$order_id = absint( get_query_var( 'order-pay' ) );
-		if ( 0 < $order_id ) {
+		// Only genuine pay-for-order requests ship order billing data; change-payment
+		// and hand-built order-pay URLs get none, like the reference client.
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only prefill gate on a public URL flag.
+		$pay_for_order = isset( $_GET['pay_for_order'] ) && 'true' === sanitize_text_field( wp_unslash( $_GET['pay_for_order'] ) );
+		$order_id      = absint( get_query_var( 'order-pay' ) );
+		if ( $pay_for_order && 0 < $order_id ) {
 			$order = wc_get_order( $order_id );
 			if ( $order instanceof WC_Order && current_user_can( 'pay_for_order', $order->get_id() ) ) {
 				return array(

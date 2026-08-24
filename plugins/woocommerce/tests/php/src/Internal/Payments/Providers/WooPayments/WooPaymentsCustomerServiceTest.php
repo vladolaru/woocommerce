@@ -131,6 +131,45 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should ship order billing data only on genuine pay-for-order requests like the reference client
+	 */
+	public function test_get_prepared_customer_data_requires_pay_for_order_on_order_pay(): void {
+		$user_id = $this->factory->user->create( array( 'role' => 'administrator' ) );
+		wp_set_current_user( $user_id );
+
+		$order = wc_create_order();
+		$order->set_billing_first_name( 'Grace' );
+		$order->set_billing_last_name( 'Hopper' );
+		$order->set_billing_email( 'grace@example.com' );
+		$order->set_billing_country( 'US' );
+		$order->set_customer_id( $user_id );
+		$order->save();
+
+		set_query_var( 'order-pay', (string) $order->get_id() );
+
+		$sut = $this->create_sut( false, $this->create_customer_api_client( array() ) );
+
+		try {
+			// A change-payment or hand-built order-pay URL carries no pay_for_order flag.
+			$this->assertSame( array(), $sut->get_prepared_customer_data(), 'No pay_for_order flag must ship no customer data.' );
+
+			$_GET['pay_for_order'] = 'false';
+
+			$this->assertSame( array(), $sut->get_prepared_customer_data(), 'A non-true pay_for_order flag must ship no customer data.' );
+
+			$_GET['pay_for_order'] = 'true';
+
+			$data = $sut->get_prepared_customer_data();
+
+			$this->assertSame( 'Grace Hopper', $data['name'] );
+			$this->assertSame( 'grace@example.com', $data['email'] );
+		} finally {
+			unset( $_GET['pay_for_order'] );
+			set_query_var( 'order-pay', '' );
+		}
+	}
+
+	/**
 	 * @testdox Logged-in shoppers should use mode-aware user storage for WooPayments customer IDs.
 	 */
 	public function test_get_or_create_customer_id_uses_mode_aware_user_storage_for_logged_in_customers(): void {
