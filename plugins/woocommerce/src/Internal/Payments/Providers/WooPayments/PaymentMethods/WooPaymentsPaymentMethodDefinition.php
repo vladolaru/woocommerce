@@ -68,15 +68,6 @@ interface WooPaymentsPaymentMethodDefinition {
 	public function get_title( ?string $account_country = null ): string;
 
 	/**
-	 * Get a dynamic title based on Stripe charge details.
-	 *
-	 * @param string              $account_country Merchant account country.
-	 * @param array<string,mixed> $payment_details Stripe payment method details.
-	 * @return string|null
-	 */
-	public function get_title_from_charge_details( string $account_country, array $payment_details ): ?string;
-
-	/**
 	 * Get the customer-facing description.
 	 *
 	 * @param string|null $account_country Optional merchant account country.

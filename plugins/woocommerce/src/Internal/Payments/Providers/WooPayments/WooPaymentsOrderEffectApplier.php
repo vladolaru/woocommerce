@@ -495,14 +495,7 @@ class WooPaymentsOrderEffectApplier {
 
 		$express_type = $effects['express_checkout_type'];
 		if ( '' !== $express_type ) {
-			$title = $this->registered_payment_method_title(
-				$express_type,
-				array(
-					'type'        => $express_type,
-					$express_type => array(),
-				),
-				$display_country
-			);
+			$title = $this->registered_payment_method_title( $express_type, $display_country );
 			if ( '' === $title ) {
 				$title = $this->non_card_payment_method_title( $express_type );
 			}
@@ -558,7 +551,7 @@ class WooPaymentsOrderEffectApplier {
 			return $this->card_payment_method_title( $details['card'] );
 		}
 
-		$title = $this->registered_payment_method_title( $type, $details, $account_country );
+		$title = $this->registered_payment_method_title( $type, $account_country );
 		if ( '' === $title ) {
 			$title = $this->non_card_payment_method_title( $type );
 		}
@@ -625,12 +618,11 @@ class WooPaymentsOrderEffectApplier {
 	/**
 	 * Get a payment method title from the registry.
 	 *
-	 * @param string              $type                   Stripe payment method type.
-	 * @param array<string,mixed> $payment_method_details Payment method details.
-	 * @param string              $account_country        Connected account country.
+	 * @param string $type            Stripe payment method type.
+	 * @param string $account_country Connected account country.
 	 * @return string
 	 */
-	private function registered_payment_method_title( string $type, array $payment_method_details, string $account_country ): string {
+	private function registered_payment_method_title( string $type, string $account_country ): string {
 		if ( '' === $type ) {
 			return '';
 		}
@@ -640,9 +632,7 @@ class WooPaymentsOrderEffectApplier {
 			return '';
 		}
 
-		$dynamic_title = $definition->get_title_from_charge_details( $account_country, $payment_method_details );
-
-		return null !== $dynamic_title ? $dynamic_title : $definition->get_title( $account_country );
+		return $definition->get_title( $account_country );
 	}
 
 	/**

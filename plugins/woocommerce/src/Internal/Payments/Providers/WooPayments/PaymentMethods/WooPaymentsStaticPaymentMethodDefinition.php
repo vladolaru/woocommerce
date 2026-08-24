@@ -106,37 +106,6 @@ class WooPaymentsStaticPaymentMethodDefinition implements WooPaymentsPaymentMeth
 	}
 
 	/**
-	 * Get a dynamic title based on Stripe charge details.
-	 *
-	 * @param string              $_account_country Merchant account country.
-	 * @param array<string,mixed> $payment_details  Stripe payment method details.
-	 * @return string|null
-	 */
-	public function get_title_from_charge_details( string $_account_country, array $payment_details ): ?string {
-		if ( 'card' !== $this->get_id() || ! isset( $payment_details['card'] ) || ! is_array( $payment_details['card'] ) ) {
-			return null;
-		}
-
-		$details       = $payment_details['card'];
-		$funding_types = array(
-			'credit'  => 'credit',
-			'debit'   => 'debit',
-			'prepaid' => 'prepaid',
-			'unknown' => 'unknown',
-		);
-		$funding_key   = isset( $details['funding'] ) && is_string( $details['funding'] ) ? $details['funding'] : 'unknown';
-		$funding       = $funding_types[ $funding_key ] ?? $funding_types['unknown'];
-		$card_network  = $this->get_card_network( $details );
-
-		return sprintf(
-			// Translators: %1$s card brand, %2$s card funding (prepaid, credit, etc.).
-			__( '%1$s %2$s card', 'woocommerce' ),
-			ucwords( $card_network ),
-			$funding
-		);
-	}
-
-	/**
 	 * Get the customer-facing description.
 	 *
 	 * @param string|null $account_country Optional merchant account country.
@@ -424,33 +393,6 @@ class WooPaymentsStaticPaymentMethodDefinition implements WooPaymentsPaymentMeth
 		$limits   = $this->get_limits_per_currency();
 
 		return $limits[ $currency ][ $country ][ $key ] ?? null;
-	}
-
-	/**
-	 * Get the card network from payment details.
-	 *
-	 * @param array<string,mixed> $details Payment method card details.
-	 * @return string
-	 */
-	private function get_card_network( array $details ): string {
-		$network = $details['display_brand'] ?? $details['network'] ?? null;
-
-		if ( ! is_string( $network ) && isset( $details['networks'] ) && is_array( $details['networks'] ) ) {
-			$preferred = $details['networks']['preferred'] ?? null;
-			$available = $details['networks']['available'] ?? null;
-
-			if ( is_string( $preferred ) ) {
-				$network = $preferred;
-			} elseif ( is_array( $available ) && isset( $available[0] ) && is_string( $available[0] ) ) {
-				$network = $available[0];
-			}
-		}
-
-		if ( ! is_string( $network ) || '' === $network ) {
-			$network = 'card';
-		}
-
-		return str_replace( '_', ' ', $network );
 	}
 
 	/**
