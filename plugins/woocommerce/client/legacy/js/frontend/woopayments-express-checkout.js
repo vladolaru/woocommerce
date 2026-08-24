@@ -532,14 +532,19 @@
 			return null;
 		}
 
+		var betas = [ 'card_country_event_beta_1' ];
+
+		if ( config.stripe.linkEnabled ) {
+			// The reference client's express surfaces share the connected-account
+			// Stripe instance, which opts into the Link autofill beta when Link
+			// is enabled - mirror that from the server-computed flag.
+			betas.push( 'link_autofill_modal_beta_1' );
+		}
+
 		return window.Stripe( config.stripe.publishableKey, {
 			locale: config.stripe.locale || 'auto',
 			stripeAccount: config.stripe.accountId,
-			// The express config carries no paymentMethodsConfig and the
-			// express surface never renders the Link autofill modal, so
-			// only the card-country beta the reference client always
-			// requests applies here.
-			betas: [ 'card_country_event_beta_1' ],
+			betas: betas,
 		} );
 	}
 

@@ -496,6 +496,13 @@ const getAvailabilityElementsOptions = ( cart ) => {
 	return options;
 };
 
+// The reference client's express surfaces share the connected-account Stripe
+// instance, which opts into the Link autofill beta when Link is enabled.
+const getStripeBetas = () =>
+	params?.stripe?.linkEnabled
+		? [ 'card_country_event_beta_1', 'link_autofill_modal_beta_1' ]
+		: [ 'card_country_event_beta_1' ];
+
 const getStripe = () => {
 	if ( availabilityStripe ) {
 		return availabilityStripe;
@@ -510,9 +517,7 @@ const getStripe = () => {
 		...( params.stripe.accountId
 			? { stripeAccount: params.stripe.accountId }
 			: {} ),
-		// Card-country beta only: the express surface never renders the
-		// Link autofill modal the second reference-client beta drives.
-		betas: [ 'card_country_event_beta_1' ],
+		betas: getStripeBetas(),
 	} );
 
 	return availabilityStripe;
@@ -1008,7 +1013,7 @@ const ExpressCheckoutContent = ( {
 			...( params.stripe.accountId
 				? { stripeAccount: params.stripe.accountId }
 				: {} ),
-			betas: [ 'card_country_event_beta_1' ],
+			betas: getStripeBetas(),
 		} );
 		elementsRef.current = stripeRef.current.elements(
 			getStripeElementsOptions( billing, getCurrentCart() )

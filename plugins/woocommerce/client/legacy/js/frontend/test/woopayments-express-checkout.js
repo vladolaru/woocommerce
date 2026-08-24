@@ -82,7 +82,7 @@ describe( 'WooPayments express checkout', () => {
 			stripe: {
 				publishableKey: 'pk_test_123',
 				accountId: 'acct_123',
-				locale: 'en-us',
+				locale: 'en',
 			},
 			flags: {
 				isEceUsingConfirmationTokens: true,
@@ -238,7 +238,7 @@ describe( 'WooPayments express checkout', () => {
 			window.wp.apiFetch.mock.calls[ 0 ][ 0 ].headers
 		).not.toHaveProperty( 'X-WooPayments-Tokenized-Cart-Session-Nonce' );
 		expect( window.Stripe ).toHaveBeenCalledWith( 'pk_test_123', {
-			locale: 'en-us',
+			locale: 'en',
 			stripeAccount: 'acct_123',
 			betas: [ 'card_country_event_beta_1' ],
 		} );

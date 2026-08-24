@@ -441,6 +441,34 @@ describe( 'woopayments-express-checkout', () => {
 				}
 			);
 		} );
+
+		it( 'adds the Link autofill beta when the server flags Link as enabled', () => {
+			window.Stripe = jest.fn( () => ( {} ) );
+			const { getStripe } = loadModule(
+				baseParams( {
+					stripe: {
+						publishableKey: 'pk_test_express',
+						accountId: 'acct_express',
+						locale: 'en',
+						linkEnabled: true,
+					},
+				} )
+			);
+
+			getStripe();
+
+			expect( window.Stripe ).toHaveBeenCalledWith(
+				'pk_test_express',
+				{
+					locale: 'en',
+					stripeAccount: 'acct_express',
+					betas: [
+						'card_country_event_beta_1',
+						'link_autofill_modal_beta_1',
+					],
+				}
+			);
+		} );
 	} );
 
 	describe( 'redirectToOrder', () => {

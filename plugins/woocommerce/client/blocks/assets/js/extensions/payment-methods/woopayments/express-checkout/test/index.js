@@ -60,7 +60,7 @@ const baseExpressCheckoutParams = {
 	stripe: {
 		publishableKey: 'pk_test_123',
 		accountId: 'acct_123',
-		locale: 'en-us',
+		locale: 'en',
 	},
 	flags: {
 		isEceUsingConfirmationTokens: true,
@@ -449,7 +449,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		} );
 
 		expect( window.Stripe ).toHaveBeenCalledWith( 'pk_test_123', {
-			locale: 'en-us',
+			locale: 'en',
 			stripeAccount: 'acct_123',
 			betas: [ 'card_country_event_beta_1' ],
 		} );
@@ -573,7 +573,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 				loader: 'never',
 				captureMethod: 'manual',
 				setupFutureUsage: 'off_session',
-				locale: 'en-us',
+				locale: 'en',
 				appearance: expect.any( Object ),
 			} )
 		);
