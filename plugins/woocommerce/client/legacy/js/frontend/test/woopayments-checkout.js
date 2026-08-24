@@ -1229,6 +1229,43 @@ describe( 'WooPayments checkout', () => {
 		} );
 	} );
 
+	test( 'hides only enabled billing fields in the payment element like the reference client', () => {
+		window.wcpay_core_checkout_config.enabledBillingFields = {
+			billing_first_name: { required: true },
+			billing_last_name: { required: true },
+			billing_email: { required: true },
+			billing_country: { required: true },
+			billing_address_1: { required: true },
+			billing_city: { required: true },
+			billing_postcode: { required: true },
+		};
+
+		require( '../woopayments-checkout' );
+
+		expect( elementsMock.create ).toHaveBeenCalledWith(
+			'payment',
+			expect.objectContaining( {
+				fields: {
+					billingDetails: {
+						name: 'never',
+						email: 'never',
+						phone: 'auto',
+						address: {
+							country: 'never',
+							line1: 'never',
+							line2: 'auto',
+							city: 'never',
+							state: 'auto',
+							postalCode: 'never',
+						},
+					},
+				},
+			} )
+		);
+
+		delete window.wcpay_core_checkout_config.enabledBillingFields;
+	} );
+
 	test( 'uses setup mode on the add-payment-method form', () => {
 		document.body.innerHTML =
 			'<form id="add_payment_method">' +
@@ -2196,6 +2233,37 @@ describe( 'WooPayments checkout', () => {
 			stripeMock.createPaymentMethod.mock.calls[ 0 ][ 0 ].params
 				.billing_details.address.state
 		).toBe( '' );
+	} );
+
+	test( 'omits billing details for fields the checkout form does not render', async () => {
+		document
+			.querySelector( 'form.checkout' )
+			.insertAdjacentHTML(
+				'afterbegin',
+				'<input id="billing_email" value="trimmed@example.test" />' +
+					'<input id="billing_country" value="US" />' +
+					'<input id="billing_address_1" value="123 Main St" />'
+			);
+		require( '../woopayments-checkout' );
+
+		expect(
+			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
+		).toBe( false );
+
+		await flushPromises();
+
+		const billingDetails =
+			stripeMock.createPaymentMethod.mock.calls[ 0 ][ 0 ].params
+				.billing_details;
+		expect( billingDetails.name ).toBeUndefined();
+		expect( billingDetails.phone ).toBeUndefined();
+		expect( billingDetails.email ).toBe( 'trimmed@example.test' );
+		expect( billingDetails.address.city ).toBeUndefined();
+		expect( billingDetails.address.line2 ).toBeUndefined();
+		expect( billingDetails.address.postal_code ).toBeUndefined();
+		expect( billingDetails.address.state ).toBeUndefined();
+		expect( billingDetails.address.country ).toBe( 'US' );
+		expect( billingDetails.address.line1 ).toBe( '123 Main St' );
 	} );
 
 	test( 'adds the fraud-prevention token before submitting a new-card classic checkout', async () => {

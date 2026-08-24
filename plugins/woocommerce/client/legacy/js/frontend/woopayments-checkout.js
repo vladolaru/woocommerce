@@ -616,6 +616,15 @@
 		return input && typeof input.value === 'string' ? input.value : '';
 	}
 
+	// Unlike getInputValue, absent inputs yield undefined so the resulting
+	// billing detail is omitted instead of sent as an empty string.
+	function getOptionalInputValue( id ) {
+		var input = document.getElementById( id );
+		return input && typeof input.value === 'string'
+			? input.value
+			: undefined;
+	}
+
 	function hasCheckoutBillingFields() {
 		return checkoutBillingFieldIds.some( function ( id ) {
 			return !! document.getElementById( id );
@@ -733,23 +742,85 @@
 	function getCheckoutBillingDetails() {
 		var firstName = getInputValue( 'billing_first_name' );
 		var lastName = getInputValue( 'billing_last_name' );
-		var postalCode = getInputValue( 'billing_postcode' ).trim();
+		var postalCode = getOptionalInputValue( 'billing_postcode' );
+
+		if ( postalCode !== undefined ) {
+			// Trim to avoid Stripe AVS mismatches on leading/trailing whitespace.
+			postalCode = postalCode.trim();
+		}
 
 		if ( ! hasCheckoutBillingFields() ) {
 			return getPreparedCustomerBillingDetails();
 		}
 
 		return {
-			name: ( firstName + ' ' + lastName ).trim(),
-			email: getInputValue( 'billing_email' ),
-			phone: getInputValue( 'billing_phone' ),
+			name: ( firstName + ' ' + lastName ).trim() || undefined,
+			email: getOptionalInputValue( 'billing_email' ),
+			phone: getOptionalInputValue( 'billing_phone' ),
 			address: {
-				city: getInputValue( 'billing_city' ),
-				country: getInputValue( 'billing_country' ),
-				line1: getInputValue( 'billing_address_1' ),
-				line2: getInputValue( 'billing_address_2' ),
+				city: getOptionalInputValue( 'billing_city' ),
+				country: getOptionalInputValue( 'billing_country' ),
+				line1: getOptionalInputValue( 'billing_address_1' ),
+				line2: getOptionalInputValue( 'billing_address_2' ),
 				postal_code: postalCode,
-				state: getInputValue( 'billing_state' ),
+				state: getOptionalInputValue( 'billing_state' ),
+			},
+		};
+	}
+
+	function getHiddenBillingFields( enabledBillingFields ) {
+		if (
+			! enabledBillingFields ||
+			Object.keys( enabledBillingFields ).length === 0
+		) {
+			enabledBillingFields = null;
+		}
+
+		return {
+			name:
+				! enabledBillingFields ||
+				enabledBillingFields.billing_first_name ||
+				enabledBillingFields.billing_last_name
+					? 'never'
+					: 'auto',
+			email:
+				! enabledBillingFields || enabledBillingFields.billing_email
+					? 'never'
+					: 'auto',
+			phone:
+				! enabledBillingFields || enabledBillingFields.billing_phone
+					? 'never'
+					: 'auto',
+			address: {
+				country:
+					! enabledBillingFields ||
+					enabledBillingFields.billing_country
+						? 'never'
+						: 'auto',
+				line1:
+					! enabledBillingFields ||
+					enabledBillingFields.billing_address_1
+						? 'never'
+						: 'auto',
+				line2:
+					! enabledBillingFields ||
+					enabledBillingFields.billing_address_2
+						? 'never'
+						: 'auto',
+				city:
+					! enabledBillingFields || enabledBillingFields.billing_city
+						? 'never'
+						: 'auto',
+				state:
+					! enabledBillingFields ||
+					enabledBillingFields.billing_state
+						? 'never'
+						: 'auto',
+				postalCode:
+					! enabledBillingFields ||
+					enabledBillingFields.billing_postcode
+						? 'never'
+						: 'auto',
 			},
 		};
 	}
@@ -777,19 +848,9 @@
 			! baseConfig.isChangingPayment
 		) {
 			options.fields = {
-				billingDetails: {
-					name: 'never',
-					email: 'never',
-					phone: 'never',
-					address: {
-						country: 'never',
-						line1: 'never',
-						line2: 'never',
-						city: 'never',
-						state: 'never',
-						postalCode: 'never',
-					},
-				},
+				billingDetails: getHiddenBillingFields(
+					config.enabledBillingFields
+				),
 			};
 		}
 
