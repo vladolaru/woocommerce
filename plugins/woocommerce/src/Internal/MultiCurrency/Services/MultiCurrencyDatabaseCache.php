@@ -114,7 +114,13 @@ class MultiCurrencyDatabaseCache implements MultiCurrencyCacheInterface {
 			return true;
 		}
 
-		if ( defined( 'DOING_CRON' ) || wp_doing_ajax() ) {
+		// Never refresh synchronously inside cron, AJAX, or Action Scheduler jobs.
+		// The reference client latches a refresh_disabled flag on
+		// action_scheduler_before_execute; did_action() is the same latch
+		// (set at the first AS execution, never reset within the request)
+		// without threading hook registration through the factories.
+		/** This action is documented in the Action Scheduler library (ActionScheduler_Abstract_QueueRunner). */
+		if ( defined( 'DOING_CRON' ) || wp_doing_ajax() || did_action( 'action_scheduler_before_execute' ) > 0 ) {
 			return false;
 		}
 

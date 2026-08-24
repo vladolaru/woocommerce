@@ -109,6 +109,72 @@ class MultiCurrencyDatabaseCacheTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should not refresh expired FX rates inside Action Scheduler jobs.
+	 */
+	public function test_does_not_refresh_inside_action_scheduler_jobs(): void {
+		global $wp_actions;
+
+		$had_action_count = is_array( $wp_actions ) && array_key_exists( 'action_scheduler_before_execute', $wp_actions );
+		$previous_count   = $had_action_count ? $wp_actions['action_scheduler_before_execute'] : null;
+
+		$seed_refreshed = false;
+		( new MultiCurrencyDatabaseCache() )->get_or_add(
+			$this->cache_key,
+			static fn() => array(
+				'currencies' => array( 'eur' => 1.2 ),
+				'updated'    => 123,
+			),
+			static fn( $data ) => isset( $data['currencies'], $data['updated'] ),
+			false,
+			$seed_refreshed
+		);
+		$this->assertTrue( $seed_refreshed );
+
+		$contents            = get_option( $this->cache_key );
+		$contents['fetched'] = time() - YEAR_IN_SECONDS;
+		update_option( $this->cache_key, $contents );
+		wp_cache_delete( $this->cache_key, 'options' );
+
+		do_action( 'action_scheduler_before_execute' );
+
+		try {
+			$generator_calls = 0;
+			$stale_refresh   = false;
+			$value           = ( new MultiCurrencyDatabaseCache() )->get_or_add(
+				$this->cache_key,
+				static function () use ( &$generator_calls ): array {
+					++$generator_calls;
+
+					return array(
+						'currencies' => array( 'eur' => 9.9 ),
+						'updated'    => 456,
+					);
+				},
+				static fn( $data ) => isset( $data['currencies'], $data['updated'] ),
+				false,
+				$stale_refresh
+			);
+
+			$this->assertSame( 0, $generator_calls, 'The FX generator must not run inside Action Scheduler jobs.' );
+			$this->assertFalse( $stale_refresh );
+			$this->assertSame(
+				array(
+					'currencies' => array( 'eur' => 1.2 ),
+					'updated'    => 123,
+				),
+				$value
+			);
+		} finally {
+			if ( $had_action_count ) {
+				// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restore the pre-test action count.
+				$wp_actions['action_scheduler_before_execute'] = $previous_count;
+			} else {
+				unset( $wp_actions['action_scheduler_before_execute'] );
+			}
+		}
+	}
+
+	/**
 	 * @testdox Should return previous valid data when regeneration fails.
 	 */
 	public function test_returns_previous_value_when_regeneration_fails(): void {
