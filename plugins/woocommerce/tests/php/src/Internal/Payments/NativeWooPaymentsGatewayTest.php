@@ -233,6 +233,54 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should hide domestic-only methods when the checkout currency is not the account default currency
+	 */
+	public function test_domestic_only_methods_require_the_account_default_currency(): void {
+		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'afterpay_clearpay' );
+		$this->assertNotNull( $definition );
+
+		$default_currency = 'usd';
+		$account_service  = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
+			->getMock();
+		$account_service->method( 'get_cached_account_data' )->willReturnCallback(
+			static function () use ( &$default_currency ): array {
+				return array(
+					'country'          => 'US',
+					'capabilities'     => array( 'afterpay_clearpay_payments' => 'active' ),
+					'store_currencies' => array( 'default' => $default_currency ),
+				);
+			}
+		);
+		$account_service->method( 'is_gateway_enabled' )->willReturn( true );
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+
+		$settings_filter = static function (): array {
+			return array( 'enabled' => 'yes' );
+		};
+		$currency_filter = static function (): string {
+			return 'USD';
+		};
+		add_filter( 'pre_option_woocommerce_woocommerce_payments_afterpay_clearpay_settings', $settings_filter );
+		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
+
+		try {
+			$gateway = new NativeWooPaymentsGateway( $definition );
+			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $account_service );
+
+			$this->assertTrue( $gateway->is_available(), 'USD checkout on a usd-default account must keep Afterpay available.' );
+
+			$default_currency = 'eur';
+
+			$this->assertFalse( $gateway->is_available(), 'A non-domestic checkout currency must hide Afterpay even when a limits row exists.' );
+		} finally {
+			remove_filter( 'pre_option_woocommerce_woocommerce_payments_afterpay_clearpay_settings', $settings_filter );
+			remove_filter( 'pre_option_woocommerce_currency', $currency_filter );
+		}
+	}
+
+	/**
 	 * @testdox Should hide a split gateway when its definition does not support the checkout currency.
 	 */
 	public function test_split_gateway_availability_follows_payment_method_definition(): void {
@@ -286,13 +334,15 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @param string   $currency                    Checkout currency.
 	 * @param string   $capability_key              Active payment method capability key.
 	 * @param string[] $expected_shopper_countries Expected shopper billing countries.
+	 * @param string   $account_default_currency   Account default (domestic) currency.
 	 */
 	public function test_gateway_availability_keeps_shopper_country_rules_separate_from_merchant_country_rules(
 		string $payment_method_id,
 		string $account_country,
 		string $currency,
 		string $capability_key,
-		array $expected_shopper_countries
+		array $expected_shopper_countries,
+		string $account_default_currency = 'usd'
 	): void {
 		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method_id );
 		$this->assertNotNull( $definition );
@@ -312,7 +362,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		try {
 			$gateway = new NativeWooPaymentsGateway( $definition );
-			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $this->create_account_service_for_country( $account_country, $capability_key ) );
+			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $this->create_account_service_for_country( $account_country, $capability_key, true, $account_default_currency ) );
 
 			$this->assertTrue( $gateway->is_available(), "{$payment_method_id} should be admitted for a {$account_country} merchant accepting {$currency}." );
 			$this->assertSame(
@@ -357,10 +407,11 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			),
 			'Klarna admits a nonmatching EEA merchant while preserving calculated shopper filtering' => array(
 				'klarna',
-				'PL',
+				'EE',
 				'EUR',
 				'klarna_payments',
 				array( 'AT', 'BE', 'FI', 'FR', 'DE', 'IE', 'IT', 'NL', 'ES' ),
+				'eur',
 			),
 			'Alipay preserves unrestricted shopper filtering' => array(
 				'alipay',
@@ -3337,20 +3388,22 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * Create an account service test double for a merchant country.
 	 *
-	 * @param string $country        Merchant account country.
-	 * @param string $capability_key Active payment method capability key.
-	 * @param bool   $test_mode      Whether the account is in test mode.
+	 * @param string $country          Merchant account country.
+	 * @param string $capability_key   Active payment method capability key.
+	 * @param bool   $test_mode        Whether the account is in test mode.
+	 * @param string $default_currency Account default (domestic) currency.
 	 * @return WooPaymentsAccountService
 	 */
-	private function create_account_service_for_country( string $country, string $capability_key = 'card_payments', bool $test_mode = true ): WooPaymentsAccountService {
+	private function create_account_service_for_country( string $country, string $capability_key = 'card_payments', bool $test_mode = true, string $default_currency = 'usd' ): WooPaymentsAccountService {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
 			->getMock();
 		$account_service->method( 'get_cached_account_data' )->willReturn(
 			array(
-				'country'      => $country,
-				'capabilities' => array( $capability_key => 'active' ),
+				'country'          => $country,
+				'capabilities'     => array( $capability_key => 'active' ),
+				'store_currencies' => array( 'default' => $default_currency ),
 			)
 		);
 		$account_service->method( 'is_gateway_enabled' )->willReturn( true );

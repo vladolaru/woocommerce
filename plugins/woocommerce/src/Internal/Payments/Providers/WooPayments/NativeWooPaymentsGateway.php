@@ -365,8 +365,20 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return false;
 		}
 
-		$currency             = strtoupper( $this->get_checkout_currency() );
-		$account_country      = $this->get_account_country();
+		$currency        = strtoupper( $this->get_checkout_currency() );
+		$account_country = $this->get_account_country();
+
+		// The reference client rejects a non-domestic presentment currency outright for
+		// domestic-only methods (is_currency_valid with the account's domestic currency).
+		// The limits table blocks the same pairs today, but only as long as every currency
+		// row stays keyed to its domestic country - this gate does not drift with that data.
+		if (
+			$this->payment_method_supports( WooPaymentsPaymentMethodRegistry::DOMESTIC_TRANSACTIONS_ONLY )
+			&& strtolower( $currency ) !== $this->get_account_service()->get_account_default_currency()
+		) {
+			return false;
+		}
+
 		$supported_currencies = $this->payment_method_definition->get_supported_currencies( $account_country );
 		if ( ! empty( $supported_currencies ) && ! in_array( $currency, $supported_currencies, true ) ) {
 			return false;
