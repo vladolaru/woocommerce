@@ -117,6 +117,39 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should brand the gateway titles by account country like the reference client
+	 */
+	public function test_gateway_titles_follow_account_country_branding(): void {
+		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'afterpay_clearpay' );
+		$this->assertNotNull( $definition );
+
+		$expected_titles = array(
+			'GB' => 'Clearpay',
+			'US' => 'Cash App Afterpay',
+			'AU' => 'Afterpay',
+		);
+
+		foreach ( $expected_titles as $account_country => $expected_title ) {
+			$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+				->disableOriginalConstructor()
+				->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
+				->getMock();
+			$account_service->method( 'get_cached_account_data' )->willReturn(
+				array( 'country' => $account_country )
+			);
+			$account_service->method( 'is_gateway_enabled' )->willReturn( true );
+			$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+
+			$gateway = new NativeWooPaymentsGateway( $definition );
+			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $account_service );
+			$gateway->handle_init();
+
+			$this->assertSame( $expected_title, $gateway->title, "Gateway title for {$account_country}" );
+			$this->assertSame( "WooPayments ({$expected_title})", $gateway->method_title, "Method title for {$account_country}" );
+		}
+	}
+
+	/**
 	 * @testdox Should hide a split gateway when its definition does not support the checkout currency.
 	 */
 	public function test_split_gateway_availability_follows_payment_method_definition(): void {

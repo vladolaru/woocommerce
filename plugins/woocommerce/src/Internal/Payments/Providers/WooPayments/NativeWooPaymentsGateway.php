@@ -1678,7 +1678,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return self::METHOD_TITLE;
 		}
 
-		return sprintf( 'WooPayments (%s)', $this->payment_method_definition->get_title() );
+		return sprintf( 'WooPayments (%s)', $this->payment_method_definition->get_title( $this->get_account_country() ) );
 	}
 
 	/**
@@ -1687,7 +1687,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return string
 	 */
 	private function get_translated_payment_method_title(): string {
-		return $this->payment_method_definition->get_title();
+		return $this->payment_method_definition->get_title( $this->get_account_country() );
 	}
 
 	/**
