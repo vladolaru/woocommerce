@@ -54,6 +54,10 @@ class WooPaymentsCurrencyComplianceNotice implements RegisterHooksInterface {
 	 * accepts whole-krona amounts, so a store left at WooCommerce's default
 	 * two price decimals mints amounts the provider rejects on every charge.
 	 *
+	 * One deviation from the reference client: it calls esc_html() on the
+	 * currency code without echoing it (a dropped echo), so its bold prefix
+	 * renders without the code; native echoes it.
+	 *
 	 * @internal
 	 */
 	public function display_isk_decimal_notice(): void {
@@ -69,7 +73,6 @@ class WooPaymentsCurrencyComplianceNotice implements RegisterHooksInterface {
 				<p>
 					<b>
 						<?php esc_html_e( 'Unsupported currency:', 'woocommerce' ); ?>
-						<?php // The reference client calls esc_html() here without echoing - an obvious dropped echo; we render the currency. ?>
 						<?php echo esc_html( ' ' . get_woocommerce_currency() ); ?>
 					</b>
 					<?php

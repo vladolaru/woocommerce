@@ -135,6 +135,11 @@ class MultiCurrencyDatabaseCacheTest extends WC_Unit_Test_Case {
 		update_option( $this->cache_key, $contents );
 		wp_cache_delete( $this->cache_key, 'options' );
 
+		/**
+		 * Fires before Action Scheduler executes an action.
+		 *
+		 * @since 11.0.0
+		 */
 		do_action( 'action_scheduler_before_execute' );
 
 		try {
