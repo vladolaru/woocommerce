@@ -15,6 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsFailedAuthenticationRetryEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsFailedRenewalAuthenticationEmail;
@@ -374,7 +375,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		// row stays keyed to its domestic country - this gate does not drift with that data.
 		if (
 			$this->payment_method_supports( WooPaymentsPaymentMethodRegistry::DOMESTIC_TRANSACTIONS_ONLY )
-			&& strtolower( $currency ) !== $this->get_account_service()->get_account_default_currency()
+			&& strtolower( $currency ) !== $this->get_account_domestic_currency()
 		) {
 			return false;
 		}
@@ -1143,6 +1144,26 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		return in_array( strtolower( get_woocommerce_currency() ), $supported_currencies, true );
+	}
+
+	/**
+	 * Get the connected account's domestic currency, lowercase.
+	 *
+	 * Mirrors the reference client's get_account_domestic_currency(): the merchant
+	 * country's locale data resolves the currency first, and the account default
+	 * currency is only the fallback when locale data is missing for the country.
+	 *
+	 * @return string
+	 */
+	private function get_account_domestic_currency(): string {
+		$country_locale_data = wc_get_container()->get( MultiCurrencyLocalizationService::class )->get_country_locale_data( $this->get_account_country() );
+		$currency_code       = $country_locale_data['currency_code'] ?? null;
+
+		if ( ! is_string( $currency_code ) || '' === $currency_code ) {
+			return $this->get_account_service()->get_account_default_currency();
+		}
+
+		return strtolower( $currency_code );
 	}
 
 	/**

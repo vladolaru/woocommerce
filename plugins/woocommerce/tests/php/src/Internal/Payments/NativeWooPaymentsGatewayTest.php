@@ -233,51 +233,77 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should hide domestic-only methods when the checkout currency is not the account default currency
+	 * @testdox Should hide domestic-only methods when the checkout currency is not the account domestic currency
+	 * @dataProvider provider_domestic_only_currency_cases
+	 *
+	 * @param string $payment_method_id Payment method ID.
+	 * @param string $account_country   Merchant account country.
+	 * @param mixed  $store_currencies  Account store_currencies payload, or null to omit it.
+	 * @param string $capability_key    Active capability key.
+	 * @param string $currency          Checkout currency.
+	 * @param bool   $expected          Expected availability.
 	 */
-	public function test_domestic_only_methods_require_the_account_default_currency(): void {
-		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'afterpay_clearpay' );
+	public function test_domestic_only_methods_require_the_account_domestic_currency(
+		string $payment_method_id,
+		string $account_country,
+		$store_currencies,
+		string $capability_key,
+		string $currency,
+		bool $expected
+	): void {
+		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method_id );
 		$this->assertNotNull( $definition );
 
-		$default_currency = 'usd';
-		$account_service  = $this->getMockBuilder( WooPaymentsAccountService::class )
+		$account_data = array(
+			'country'      => $account_country,
+			'capabilities' => array( $capability_key => 'active' ),
+		);
+		if ( null !== $store_currencies ) {
+			$account_data['store_currencies'] = $store_currencies;
+		}
+
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
 			->getMock();
-		$account_service->method( 'get_cached_account_data' )->willReturnCallback(
-			static function () use ( &$default_currency ): array {
-				return array(
-					'country'          => 'US',
-					'capabilities'     => array( 'afterpay_clearpay_payments' => 'active' ),
-					'store_currencies' => array( 'default' => $default_currency ),
-				);
-			}
-		);
+		$account_service->method( 'get_cached_account_data' )->willReturn( $account_data );
 		$account_service->method( 'is_gateway_enabled' )->willReturn( true );
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
 
 		$settings_filter = static function (): array {
 			return array( 'enabled' => 'yes' );
 		};
-		$currency_filter = static function (): string {
-			return 'USD';
+		$currency_filter = static function () use ( $currency ): string {
+			return $currency;
 		};
-		add_filter( 'pre_option_woocommerce_woocommerce_payments_afterpay_clearpay_settings', $settings_filter );
+		$settings_option = "pre_option_woocommerce_woocommerce_payments_{$payment_method_id}_settings";
+		add_filter( $settings_option, $settings_filter );
 		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
 
 		try {
 			$gateway = new NativeWooPaymentsGateway( $definition );
 			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $account_service );
 
-			$this->assertTrue( $gateway->is_available(), 'USD checkout on a usd-default account must keep Afterpay available.' );
-
-			$default_currency = 'eur';
-
-			$this->assertFalse( $gateway->is_available(), 'A non-domestic checkout currency must hide Afterpay even when a limits row exists.' );
+			$this->assertSame( $expected, $gateway->is_available() );
 		} finally {
-			remove_filter( 'pre_option_woocommerce_woocommerce_payments_afterpay_clearpay_settings', $settings_filter );
+			remove_filter( $settings_option, $settings_filter );
 			remove_filter( 'pre_option_woocommerce_currency', $currency_filter );
 		}
+	}
+
+	/**
+	 * Domestic-only currency gate cases mirroring the reference is_currency_valid().
+	 *
+	 * @return array<string,array{string,string,mixed,string,string,bool}>
+	 */
+	public function provider_domestic_only_currency_cases(): array {
+		return array(
+			'US Afterpay in USD is domestic'     => array( 'afterpay_clearpay', 'US', array( 'default' => 'usd' ), 'afterpay_clearpay_payments', 'USD', true ),
+			'US Afterpay in GBP is not domestic' => array( 'afterpay_clearpay', 'US', array( 'default' => 'usd' ), 'afterpay_clearpay_payments', 'GBP', false ),
+			'DE Klarna in EUR without store_currencies uses country locale data' => array( 'klarna', 'DE', null, 'klarna_payments', 'EUR', true ),
+			'DE Klarna in SEK is not domestic'   => array( 'klarna', 'DE', null, 'klarna_payments', 'SEK', false ),
+			'unknown country falls back to account default currency' => array( 'klarna', 'XX', array( 'default' => 'sek' ), 'klarna_payments', 'SEK', true ),
+		);
 	}
 
 	/**
@@ -393,14 +419,14 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			),
 			'Affirm admits a nonmatching merchant while preserving domestic shopper filtering' => array(
 				'affirm',
-				'NL',
+				'PR',
 				'USD',
 				'affirm_payments',
 				array( 'US', 'CA' ),
 			),
 			'Afterpay admits a nonmatching merchant while preserving domestic shopper filtering' => array(
 				'afterpay_clearpay',
-				'NL',
+				'PR',
 				'USD',
 				'afterpay_clearpay_payments',
 				array( 'US', 'CA', 'AU', 'NZ', 'GB' ),
