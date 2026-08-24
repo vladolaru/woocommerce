@@ -77,14 +77,6 @@ interface WooPaymentsPaymentMethodDefinition {
 	public function get_title_from_charge_details( string $account_country, array $payment_details ): ?string;
 
 	/**
-	 * Get the settings-page label.
-	 *
-	 * @param string|null $account_country Optional merchant account country.
-	 * @return string
-	 */
-	public function get_settings_label( ?string $account_country = null ): string;
-
-	/**
 	 * Get the customer-facing description.
 	 *
 	 * @param string|null $account_country Optional merchant account country.

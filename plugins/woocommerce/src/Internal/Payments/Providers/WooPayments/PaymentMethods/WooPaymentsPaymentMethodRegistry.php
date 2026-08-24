@@ -148,6 +148,70 @@ class WooPaymentsPaymentMethodRegistry {
 		}
 	}
 
+
+	/**
+	 * Translate a catalog title or description at consumption time.
+	 *
+	 * The definition table in get_definition_configs() stays untranslated on
+	 * purpose: definitions are built while gateways are constructed, which can
+	 * happen before 'init', where WordPress 6.7+ forbids loading translations.
+	 * This map carries the extractable twin of every catalog title and
+	 * description; consumers translate when they read, never when they build.
+	 *
+	 * @param string $text Raw catalog string.
+	 * @return string The translation once 'init' has fired; the raw string before that or when unknown.
+	 */
+	public static function translate_catalog_string( string $text ): string {
+		if ( '' === $text || 0 === did_action( 'init' ) ) {
+			return $text;
+		}
+
+		$translations = array(
+			'Card'              => __( 'Card', 'woocommerce' ),
+			'Affirm'            => __( 'Affirm', 'woocommerce' ),
+			'Afterpay'          => __( 'Afterpay', 'woocommerce' ),
+			'Alipay'            => __( 'Alipay', 'woocommerce' ),
+			'Bancontact'        => __( 'Bancontact', 'woocommerce' ),
+			'BECS Direct Debit' => __( 'BECS Direct Debit', 'woocommerce' ),
+			'EPS'               => __( 'EPS', 'woocommerce' ),
+			'GrabPay'           => __( 'GrabPay', 'woocommerce' ),
+			'iDEAL | Wero'      => __( 'iDEAL | Wero', 'woocommerce' ),
+			'Link'              => __( 'Link', 'woocommerce' ),
+			'Multibanco'        => __( 'Multibanco', 'woocommerce' ),
+			'Klarna'            => __( 'Klarna', 'woocommerce' ),
+			'Przelewy24 (P24)'  => __( 'Przelewy24 (P24)', 'woocommerce' ),
+			'SEPA Direct Debit' => __( 'SEPA Direct Debit', 'woocommerce' ),
+			'WeChat Pay'        => __( 'WeChat Pay', 'woocommerce' ),
+			'Apple Pay'         => __( 'Apple Pay', 'woocommerce' ),
+			'Google Pay'        => __( 'Google Pay', 'woocommerce' ),
+			'Amazon Pay'        => __( 'Amazon Pay', 'woocommerce' ),
+			'Cash App Afterpay' => __( 'Cash App Afterpay', 'woocommerce' ),
+			'Clearpay'          => __( 'Clearpay', 'woocommerce' ),
+			'Let your customers pay with major credit and debit cards without leaving your store.' => __( 'Let your customers pay with major credit and debit cards without leaving your store.', 'woocommerce' ),
+			'Allow customers to pay over time with Affirm.' => __( 'Allow customers to pay over time with Affirm.', 'woocommerce' ),
+			'Allow customers to pay over time with Afterpay.' => __( 'Allow customers to pay over time with Afterpay.', 'woocommerce' ),
+			'A digital wallet for customers with mainland China Alipay accounts. Regional versions like AlipayHK are not supported.' => __( 'A digital wallet for customers with mainland China Alipay accounts. Regional versions like AlipayHK are not supported.', 'woocommerce' ),
+			'Bancontact is a bank redirect payment method offered by more than 80% of online businesses in Belgium.' => __( 'Bancontact is a bank redirect payment method offered by more than 80% of online businesses in Belgium.', 'woocommerce' ),
+			'Bulk Electronic Clearing System — Accept secure bank transfer from Australia.' => __( 'Bulk Electronic Clearing System — Accept secure bank transfer from Australia.', 'woocommerce' ),
+			'Accept your payment with EPS — a common payment method in Austria.' => __( 'Accept your payment with EPS — a common payment method in Austria.', 'woocommerce' ),
+			'A popular digital wallet for cashless payments in Singapore.' => __( 'A popular digital wallet for cashless payments in Singapore.', 'woocommerce' ),
+			"Expand your business with iDEAL | Wero — Netherlands's most popular payment method." => __( "Expand your business with iDEAL | Wero — Netherlands's most popular payment method.", 'woocommerce' ),
+			"Link autofills your customers' payment and shipping details to deliver an easy and seamless checkout experience." => __( "Link autofills your customers' payment and shipping details to deliver an easy and seamless checkout experience.", 'woocommerce' ),
+			'A voucher based payment method for your customers in Portugal.' => __( 'A voucher based payment method for your customers in Portugal.', 'woocommerce' ),
+			'Allow customers to pay over time or pay now with Klarna.' => __( 'Allow customers to pay over time or pay now with Klarna.', 'woocommerce' ),
+			'Accept payments with Przelewy24 (P24), the most popular payment method in Poland.' => __( 'Accept payments with Przelewy24 (P24), the most popular payment method in Poland.', 'woocommerce' ),
+			'Reach 500 million customers and over 20 million businesses across the European Union.' => __( 'Reach 500 million customers and over 20 million businesses across the European Union.', 'woocommerce' ),
+			'A digital wallet for customers with mainland China WeChat Pay wallets. Regional versions like WeChat Pay HK are not supported.' => __( 'A digital wallet for customers with mainland China WeChat Pay wallets. Regional versions like WeChat Pay HK are not supported.', 'woocommerce' ),
+			'Apple Pay is an easy and secure way for customers to pay on your store.' => __( 'Apple Pay is an easy and secure way for customers to pay on your store.', 'woocommerce' ),
+			'Offer customers a fast, secure checkout experience with Google Pay.' => __( 'Offer customers a fast, secure checkout experience with Google Pay.', 'woocommerce' ),
+			'Offer customers a fast, secure checkout experience with Amazon Pay.' => __( 'Offer customers a fast, secure checkout experience with Amazon Pay.', 'woocommerce' ),
+			'Allow customers to pay over time with Cash App Afterpay.' => __( 'Allow customers to pay over time with Cash App Afterpay.', 'woocommerce' ),
+			'Allow customers to pay over time with Clearpay.' => __( 'Allow customers to pay over time with Clearpay.', 'woocommerce' ),
+		);
+
+		return $translations[ $text ] ?? $text;
+	}
+
 	/**
 	 * Get definition configs in extension registry order, excluding deprecated methods.
 	 *
@@ -161,7 +225,6 @@ class WooPaymentsPaymentMethodRegistry {
 				'stripe_id'                  => 'card_payments',
 				'stripe_payment_method_type' => 'card',
 				'title'                      => 'Card',
-				'settings_label'             => 'Credit / Debit Cards',
 				'description'                => 'Let your customers pay with major credit and debit cards without leaving your store.',
 				'currencies'                 => array(),
 				'countries'                  => array(),

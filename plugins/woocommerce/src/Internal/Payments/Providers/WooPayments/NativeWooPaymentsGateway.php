@@ -1687,10 +1687,6 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return string
 	 */
 	private function get_translated_payment_method_title(): string {
-		if ( 'card' === $this->get_payment_method_id() ) {
-			return __( 'Card', 'woocommerce' );
-		}
-
 		return $this->payment_method_definition->get_title();
 	}
 

@@ -100,7 +100,9 @@ class WooPaymentsStaticPaymentMethodDefinition implements WooPaymentsPaymentMeth
 	 * @return string
 	 */
 	public function get_title( ?string $account_country = null ): string {
-		return $this->get_country_specific_string( 'title', 'titles_by_country', $account_country );
+		return WooPaymentsPaymentMethodRegistry::translate_catalog_string(
+			$this->get_country_specific_string( 'title', 'titles_by_country', $account_country )
+		);
 	}
 
 	/**
@@ -135,27 +137,15 @@ class WooPaymentsStaticPaymentMethodDefinition implements WooPaymentsPaymentMeth
 	}
 
 	/**
-	 * Get the settings-page label.
-	 *
-	 * @param string|null $account_country Optional merchant account country.
-	 * @return string
-	 */
-	public function get_settings_label( ?string $account_country = null ): string {
-		if ( isset( $this->config['settings_label'] ) ) {
-			return $this->get_config_string( 'settings_label' );
-		}
-
-		return $this->get_title( $account_country );
-	}
-
-	/**
 	 * Get the customer-facing description.
 	 *
 	 * @param string|null $account_country Optional merchant account country.
 	 * @return string
 	 */
 	public function get_description( ?string $account_country = null ): string {
-		return $this->get_country_specific_string( 'description', 'descriptions_by_country', $account_country );
+		return WooPaymentsPaymentMethodRegistry::translate_catalog_string(
+			$this->get_country_specific_string( 'description', 'descriptions_by_country', $account_country )
+		);
 	}
 
 	/**

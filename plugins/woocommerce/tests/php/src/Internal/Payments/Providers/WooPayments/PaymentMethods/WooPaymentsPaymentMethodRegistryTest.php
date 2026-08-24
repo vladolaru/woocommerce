@@ -143,7 +143,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 		$this->assertSame( $expected['stripe_id'], $definition->get_stripe_id() );
 		$this->assertSame( $expected['stripe_payment_method_type'], $definition->get_stripe_payment_method_type() );
 		$this->assertSame( $expected['title'], $definition->get_title() );
-		$this->assertSame( $expected['settings_label'], $definition->get_settings_label() );
 		$this->assertSame( $expected['description'], $definition->get_description() );
 		$this->assertSame( $expected['currencies'], $definition->get_supported_currencies() );
 		$this->assertSame( $expected['countries'], $definition->get_supported_countries() );
@@ -151,6 +150,59 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 		$this->assertSame( $expected['icon'], $definition->get_icon_asset_path() );
 		$this->assertSame( $expected['dark_icon'], $definition->get_dark_icon_asset_path() );
 		$this->assertSame( $expected['settings_icon'], $definition->get_settings_icon_asset_path() );
+	}
+
+	/**
+	 * @testdox Should register catalog titles and descriptions with the woocommerce text domain
+	 */
+	public function test_catalog_strings_are_translatable(): void {
+		$filter = static function ( string $translation, string $text, string $domain ) {
+			if ( 'woocommerce' !== $domain ) {
+				return $translation;
+			}
+
+			$translations = array(
+				'iDEAL | Wero' => 'iDEAL translated',
+				'Clearpay'     => 'Clearpay translated',
+				'Allow customers to pay over time with Clearpay.' => 'Clearpay description translated',
+			);
+
+			return $translations[ $text ] ?? $translation;
+		};
+		add_filter( 'gettext', $filter, 10, 3 );
+
+		try {
+			$registry = new WooPaymentsPaymentMethodRegistry();
+			$ideal    = $registry->get( 'ideal' );
+			$afterpay = $registry->get( 'afterpay_clearpay' );
+
+			$this->assertSame( 'iDEAL translated', $ideal->get_title() );
+			$this->assertSame( 'Clearpay translated', $afterpay->get_title( 'GB' ) );
+			$this->assertSame( 'Clearpay description translated', $afterpay->get_description( 'GB' ) );
+		} finally {
+			remove_filter( 'gettext', $filter, 10 );
+		}
+	}
+
+	/**
+	 * @testdox Should translate every catalog title and description at consumption time
+	 */
+	public function test_every_catalog_title_and_description_is_translatable(): void {
+		$filter = static function ( $translation, $text, $domain ) {
+			return 'woocommerce' === $domain ? 'T:' . $text : $translation;
+		};
+		add_filter( 'gettext', $filter, 10, 3 );
+
+		try {
+			foreach ( ( new WooPaymentsPaymentMethodRegistry() )->get_all() as $id => $definition ) {
+				foreach ( array( null, 'US', 'GB' ) as $country ) {
+					$this->assertStringStartsWith( 'T:', $definition->get_title( $country ), "Untranslated title for {$id} ({$country})" );
+					$this->assertStringStartsWith( 'T:', $definition->get_description( $country ), "Untranslated description for {$id} ({$country})" );
+				}
+			}
+		} finally {
+			remove_filter( 'gettext', $filter, 10 );
+		}
 	}
 
 	/**
@@ -327,7 +379,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'stripe_id'                  => 'card_payments',
 					'stripe_payment_method_type' => 'card',
 					'title'                      => 'Card',
-					'settings_label'             => 'Credit / Debit Cards',
 					'description'                => 'Let your customers pay with major credit and debit cards without leaving your store.',
 					'currencies'                 => array(),
 					'countries'                  => array(),
@@ -344,7 +395,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'stripe_id'                  => 'affirm_payments',
 					'stripe_payment_method_type' => 'affirm',
 					'title'                      => 'Affirm',
-					'settings_label'             => 'Affirm',
 					'description'                => 'Allow customers to pay over time with Affirm.',
 					'currencies'                 => array( 'USD', 'CAD' ),
 					'countries'                  => array( 'US', 'CA' ),
@@ -361,7 +411,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'stripe_id'                  => 'afterpay_clearpay_payments',
 					'stripe_payment_method_type' => 'afterpay_clearpay',
 					'title'                      => 'Afterpay',
-					'settings_label'             => 'Afterpay',
 					'description'                => 'Allow customers to pay over time with Afterpay.',
 					'currencies'                 => array( 'USD', 'CAD', 'AUD', 'NZD', 'GBP' ),
 					'countries'                  => array( 'US', 'CA', 'AU', 'NZ', 'GB' ),
@@ -378,7 +427,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'stripe_id'                  => 'alipay_payments',
 					'stripe_payment_method_type' => 'alipay',
 					'title'                      => 'Alipay',
-					'settings_label'             => 'Alipay',
 					'description'                => 'A digital wallet for customers with mainland China Alipay accounts. Regional versions like AlipayHK are not supported.',
 					'currencies'                 => array( 'USD' ),
 					'countries'                  => array(),
@@ -395,7 +443,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'stripe_id'                  => 'bancontact_payments',
 					'stripe_payment_method_type' => 'bancontact',
 					'title'                      => 'Bancontact',
-					'settings_label'             => 'Bancontact',
 					'description'                => 'Bancontact is a bank redirect payment method offered by more than 80% of online businesses in Belgium.',
 					'currencies'                 => array( 'EUR' ),
 					'countries'                  => array( 'BE' ),
@@ -412,7 +459,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'stripe_id'                  => 'au_becs_debit_payments',
 					'stripe_payment_method_type' => 'au_becs_debit',
 					'title'                      => 'BECS Direct Debit',
-					'settings_label'             => 'BECS Direct Debit',
 					'description'                => 'Bulk Electronic Clearing System — Accept secure bank transfer from Australia.',
 					'currencies'                 => array( 'AUD' ),
 					'countries'                  => array( 'AU' ),
@@ -429,7 +475,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'stripe_id'                  => 'eps_payments',
 					'stripe_payment_method_type' => 'eps',
 					'title'                      => 'EPS',
-					'settings_label'             => 'EPS',
 					'description'                => 'Accept your payment with EPS — a common payment method in Austria.',
 					'currencies'                 => array( 'EUR' ),
 					'countries'                  => array( 'AT' ),
@@ -446,7 +491,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'stripe_id'                  => 'grabpay_payments',
 					'stripe_payment_method_type' => 'grabpay',
 					'title'                      => 'GrabPay',
-					'settings_label'             => 'GrabPay',
 					'description'                => 'A popular digital wallet for cashless payments in Singapore.',
 					'currencies'                 => array( 'SGD' ),
 					'countries'                  => array( 'SG' ),
@@ -463,7 +507,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'stripe_id'                  => 'ideal_payments',
 					'stripe_payment_method_type' => 'ideal',
 					'title'                      => 'iDEAL | Wero',
-					'settings_label'             => 'iDEAL | Wero',
 					'description'                => "Expand your business with iDEAL | Wero — Netherlands's most popular payment method.",
 					'currencies'                 => array( 'EUR' ),
 					'countries'                  => array( 'NL' ),
@@ -480,7 +523,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'stripe_id'                  => 'link_payments',
 					'stripe_payment_method_type' => 'link',
 					'title'                      => 'Link',
-					'settings_label'             => 'Link',
 					'description'                => "Link autofills your customers' payment and shipping details to deliver an easy and seamless checkout experience.",
 					'currencies'                 => array( 'USD' ),
 					'countries'                  => array(),
@@ -497,7 +539,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'stripe_id'                  => 'multibanco_payments',
 					'stripe_payment_method_type' => 'multibanco',
 					'title'                      => 'Multibanco',
-					'settings_label'             => 'Multibanco',
 					'description'                => 'A voucher based payment method for your customers in Portugal.',
 					'currencies'                 => array( 'EUR' ),
 					'countries'                  => array( 'PT' ),
@@ -514,7 +555,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'stripe_id'                  => 'klarna_payments',
 					'stripe_payment_method_type' => 'klarna',
 					'title'                      => 'Klarna',
-					'settings_label'             => 'Klarna',
 					'description'                => 'Allow customers to pay over time or pay now with Klarna.',
 					'currencies'                 => array( 'USD', 'GBP', 'EUR', 'DKK', 'NOK', 'SEK' ),
 					'countries'                  => array( 'US', 'GB', 'AT', 'DE', 'NL', 'BE', 'ES', 'IT', 'IE', 'DK', 'FI', 'NO', 'SE', 'FR' ),
@@ -531,7 +571,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'stripe_id'                  => 'p24_payments',
 					'stripe_payment_method_type' => 'p24',
 					'title'                      => 'Przelewy24 (P24)',
-					'settings_label'             => 'Przelewy24 (P24)',
 					'description'                => 'Accept payments with Przelewy24 (P24), the most popular payment method in Poland.',
 					'currencies'                 => array( 'EUR', 'PLN' ),
 					'countries'                  => array( 'PL' ),
@@ -548,7 +587,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'stripe_id'                  => 'sepa_debit_payments',
 					'stripe_payment_method_type' => 'sepa_debit',
 					'title'                      => 'SEPA Direct Debit',
-					'settings_label'             => 'SEPA Direct Debit',
 					'description'                => 'Reach 500 million customers and over 20 million businesses across the European Union.',
 					'currencies'                 => array( 'EUR' ),
 					'countries'                  => array( 'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'GR', 'HU', 'IE', 'IT', 'LV', 'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE', 'CH', 'GB', 'SM', 'VA', 'AD', 'MC', 'LI', 'NO', 'IS' ),
@@ -565,7 +603,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'stripe_id'                  => 'wechat_pay_payments',
 					'stripe_payment_method_type' => 'wechat_pay',
 					'title'                      => 'WeChat Pay',
-					'settings_label'             => 'WeChat Pay',
 					'description'                => 'A digital wallet for customers with mainland China WeChat Pay wallets. Regional versions like WeChat Pay HK are not supported.',
 					'currencies'                 => array( 'USD' ),
 					'countries'                  => array( 'US', 'AU', 'CA', 'AT', 'BE', 'DK', 'FI', 'FR', 'DE', 'IE', 'IT', 'LU', 'NL', 'NO', 'PT', 'ES', 'SE', 'CH', 'GB', 'HK', 'JP', 'SG' ),
@@ -582,7 +619,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'stripe_id'                  => 'apple_pay_payments',
 					'stripe_payment_method_type' => 'card',
 					'title'                      => 'Apple Pay',
-					'settings_label'             => 'Apple Pay',
 					'description'                => 'Apple Pay is an easy and secure way for customers to pay on your store.',
 					'currencies'                 => array(),
 					'countries'                  => array(),
@@ -599,7 +635,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'stripe_id'                  => 'google_pay_payments',
 					'stripe_payment_method_type' => 'card',
 					'title'                      => 'Google Pay',
-					'settings_label'             => 'Google Pay',
 					'description'                => 'Offer customers a fast, secure checkout experience with Google Pay.',
 					'currencies'                 => array(),
 					'countries'                  => array(),
@@ -616,7 +651,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'stripe_id'                  => 'amazon_pay_payments',
 					'stripe_payment_method_type' => 'amazon_pay',
 					'title'                      => 'Amazon Pay',
-					'settings_label'             => 'Amazon Pay',
 					'description'                => 'Offer customers a fast, secure checkout experience with Amazon Pay.',
 					'currencies'                 => array( 'USD' ),
 					'countries'                  => array(),

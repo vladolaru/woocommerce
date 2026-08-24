@@ -1713,6 +1713,10 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$this->assertSame( 'WooPayments', $gateway->method_title );
 			$this->assertSame( 'Accept payments with WooPayments.', $gateway->method_description );
 
+			// When handle_init() runs on the 'init' hook, did_action( 'init' ) is already 1.
+			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Simulate running on the init hook.
+			$wp_actions['init'] = 1;
+
 			$gateway->handle_init();
 
 			$this->assertSame( 'Translated: Card', $gateway->title );
