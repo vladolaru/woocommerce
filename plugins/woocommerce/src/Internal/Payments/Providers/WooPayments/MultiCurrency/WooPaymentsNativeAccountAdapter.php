@@ -84,22 +84,11 @@ class WooPaymentsNativeAccountAdapter implements MultiCurrencyAccountInterface {
 	 * @return string[]
 	 */
 	public function get_account_customer_supported_currencies(): array {
-		$account_data = $this->get_cached_account_data();
-		if ( ! is_array( $account_data ) ) {
+		try {
+			return $this->account_service->get_customer_supported_currencies();
+		} catch ( \Throwable $e ) {
 			return array();
 		}
-
-		$customer_currencies = $account_data['customer_currencies'] ?? array();
-		if ( ! is_array( $customer_currencies ) ) {
-			return array();
-		}
-
-		$supported_currencies = $customer_currencies['supported'] ?? array();
-		if ( ! is_array( $supported_currencies ) ) {
-			return array();
-		}
-
-		return array_values( array_filter( $supported_currencies, 'is_string' ) );
 	}
 
 	/**

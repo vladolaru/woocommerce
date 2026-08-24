@@ -716,6 +716,33 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Get the account's customer-supported presentment currencies.
+	 *
+	 * Reads the account payload's customer_currencies.supported list, as the
+	 * reference client's get_account_customer_supported_currencies() does.
+	 * Currency codes are returned as the platform ships them (lowercase).
+	 *
+	 * @since 11.0.0
+	 *
+	 * @return string[] Supported presentment currencies, empty when unknown.
+	 */
+	public function get_customer_supported_currencies(): array {
+		$account_data = $this->get_cached_account_data();
+
+		$customer_currencies = $account_data['customer_currencies'] ?? array();
+		if ( ! is_array( $customer_currencies ) ) {
+			return array();
+		}
+
+		$supported_currencies = $customer_currencies['supported'] ?? array();
+		if ( ! is_array( $supported_currencies ) ) {
+			return array();
+		}
+
+		return array_values( array_filter( $supported_currencies, 'is_string' ) );
+	}
+
+	/**
 	 * Get the mode-specific publishable key.
 	 *
 	 * @return string

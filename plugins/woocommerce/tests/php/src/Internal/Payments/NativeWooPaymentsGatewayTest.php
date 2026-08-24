@@ -150,6 +150,55 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should hide the gateway when the account's customer-supported currencies exclude the store currency
+	 */
+	public function test_gateway_availability_follows_account_customer_supported_currencies(): void {
+		$supported_currencies = array( 'usd' );
+		$account_service      = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
+			->getMock();
+		$account_service->method( 'get_cached_account_data' )->willReturnCallback(
+			static function () use ( &$supported_currencies ): array {
+				return array(
+					'country'             => 'US',
+					'capabilities'        => array( 'card_payments' => 'active' ),
+					'customer_currencies' => array( 'supported' => $supported_currencies ),
+				);
+			}
+		);
+		$account_service->method( 'is_gateway_enabled' )->willReturn( true );
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+
+		$settings_filter = static function (): array {
+			return array( 'enabled' => 'yes' );
+		};
+		$currency_filter = static function (): string {
+			return 'EUR';
+		};
+		add_filter( 'pre_option_woocommerce_woocommerce_payments_settings', $settings_filter );
+		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
+
+		try {
+			$gateway = new NativeWooPaymentsGateway();
+			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $account_service );
+
+			$this->assertFalse( $gateway->is_available(), 'EUR store must be unavailable when the account only supports usd.' );
+
+			$supported_currencies = array( 'usd', 'eur' );
+
+			$this->assertTrue( $gateway->is_available(), 'EUR store must be available when the account supports eur.' );
+
+			$supported_currencies = array();
+
+			$this->assertTrue( $gateway->is_available(), 'An empty supported list must not disable the gateway.' );
+		} finally {
+			remove_filter( 'pre_option_woocommerce_woocommerce_payments_settings', $settings_filter );
+			remove_filter( 'pre_option_woocommerce_currency', $currency_filter );
+		}
+	}
+
+	/**
 	 * @testdox Should hide a split gateway when its definition does not support the checkout currency.
 	 */
 	public function test_split_gateway_availability_follows_payment_method_definition(): void {

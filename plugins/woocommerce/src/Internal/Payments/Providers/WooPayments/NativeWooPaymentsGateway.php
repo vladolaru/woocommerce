@@ -361,7 +361,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		) {
 			return false;
 		}
-		if ( $this->needs_https_setup() || ! $this->is_available_for_current_subscription_context() || ! $this->is_bnpl_order_pay_available() ) {
+		if ( $this->needs_https_setup() || ! $this->is_available_for_current_currency() || ! $this->is_available_for_current_subscription_context() || ! $this->is_bnpl_order_pay_available() ) {
 			return false;
 		}
 
@@ -1111,6 +1111,26 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		return self::CARD_BRAND_ICONS;
+	}
+
+	/**
+	 * Tell whether the account's customer-supported currencies allow the store currency.
+	 *
+	 * Mirrors the reference client's is_available_for_current_currency():
+	 * an empty supported list never disables the gateway, and the comparison
+	 * deliberately reads the store presentment currency, not the order-pay
+	 * checkout currency override.
+	 *
+	 * @return bool
+	 */
+	private function is_available_for_current_currency(): bool {
+		$supported_currencies = $this->get_account_service()->get_customer_supported_currencies();
+
+		if ( array() === $supported_currencies ) {
+			return true;
+		}
+
+		return in_array( strtolower( get_woocommerce_currency() ), $supported_currencies, true );
 	}
 
 	/**
