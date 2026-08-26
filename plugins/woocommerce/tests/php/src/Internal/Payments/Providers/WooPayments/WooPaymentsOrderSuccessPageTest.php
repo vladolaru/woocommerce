@@ -5,6 +5,8 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -29,6 +31,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
+		unset( $GLOBALS['wp']->query_vars['order-received'], $_GET['key'] );
 		foreach ( $this->registered_pages as $page ) {
 			remove_action( 'woocommerce_thankyou', array( $page, 'record_order_success_page_view' ) );
 			remove_action( 'woocommerce_before_thankyou', array( $page, 'register_payment_method_title_override' ) );
@@ -343,13 +346,167 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should hook the failed-order copy replacement into the order-received text when native owns the runtime.
+	 */
+	public function test_register_hooks_failed_order_copy_replacement(): void {
+		$page = $this->create_page( true );
+		$page->register();
+
+		try {
+			$this->assertSame( 11, has_filter( 'woocommerce_thankyou_order_received_text', array( $page, 'replace_order_received_text_for_failed_orders' ) ) );
+			$this->assertSame( 10, has_action( 'wp_footer', array( $page, 'output_footer_scripts' ) ) );
+		} finally {
+			remove_filter( 'woocommerce_thankyou_order_received_text', array( $page, 'replace_order_received_text_for_failed_orders' ), 11 );
+			remove_action( 'wp_footer', array( $page, 'output_footer_scripts' ) );
+		}
+
+		$plugin_owned = $this->create_page( false );
+		$plugin_owned->register();
+		$this->assertFalse( has_filter( 'woocommerce_thankyou_order_received_text', array( $plugin_owned, 'replace_order_received_text_for_failed_orders' ) ) );
+	}
+
+	/**
+	 * @testdox Should replace the order-received copy for a failed WooPayments order and hide the block status description.
+	 */
+	public function test_replaces_order_received_text_for_failed_orders(): void {
+		$page  = $this->create_page( true );
+		$order = $this->create_thankyou_order( 'failed', OrderPaymentStore::GATEWAY_ID );
+
+		$text = $page->replace_order_received_text_for_failed_orders( 'Thank you.' );
+
+		$this->assertStringContainsString( 'Unfortunately, your order has failed.', $text );
+		$this->assertStringContainsString( 'href="' . esc_url( wc_get_checkout_url() ) . '"', $text );
+		$this->assertStringContainsString( 'try checking out again', $text );
+
+		ob_start();
+		$page->output_footer_scripts();
+		$this->assertStringContainsString( '.wc-block-order-confirmation-status-description', (string) ob_get_clean() );
+	}
+
+	/**
+	 * @testdox Should re-check the live intent for a still-pending redirect-method order and report its failure.
+	 */
+	public function test_replaces_order_received_text_when_redirect_intent_failed(): void {
+		$api_client = $this->create_api_client_mock(
+			array(
+				'status'             => 'requires_payment_method',
+				'last_payment_error' => array( 'code' => 'payment_intent_authentication_failure' ),
+			)
+		);
+		$page       = $this->create_page( true, null, $api_client );
+		$this->create_thankyou_order( 'pending', OrderPaymentStore::GATEWAY_ID_PREFIX . 'wechat_pay', 'pi_wechat' );
+
+		$this->assertStringContainsString( 'Unfortunately, your order has failed.', $page->replace_order_received_text_for_failed_orders( 'Thank you.' ) );
+	}
+
+	/**
+	 * @testdox Should leave the order-received copy alone when the redirect intent is not failed.
+	 */
+	public function test_keeps_order_received_text_when_redirect_intent_is_pending(): void {
+		$api_client = $this->create_api_client_mock( array( 'status' => 'processing' ) );
+		$page       = $this->create_page( true, null, $api_client );
+		$this->create_thankyou_order( 'pending', OrderPaymentStore::GATEWAY_ID_PREFIX . 'wechat_pay', 'pi_wechat' );
+
+		$this->assertSame( 'Thank you.', $page->replace_order_received_text_for_failed_orders( 'Thank you.' ) );
+
+		ob_start();
+		$page->output_footer_scripts();
+		$this->assertSame( '', (string) ob_get_clean() );
+	}
+
+	/**
+	 * @testdox Should not fetch the intent for non-redirect, paid, foreign-gateway or wrong-key orders.
+	 */
+	public function test_keeps_order_received_text_outside_the_redirect_failure_case(): void {
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_available', 'get_payment_intention' ) )
+			->getMock();
+		$api_client->method( 'is_available' )->willReturn( true );
+		$api_client->expects( $this->never() )->method( 'get_payment_intention' );
+		$page = $this->create_page( true, null, $api_client );
+
+		$this->create_thankyou_order( 'pending', OrderPaymentStore::GATEWAY_ID, 'pi_card' );
+		$this->assertSame( 'Thank you.', $page->replace_order_received_text_for_failed_orders( 'Thank you.' ), 'A pending card order is not a redirect return.' );
+
+		$this->create_thankyou_order( 'processing', OrderPaymentStore::GATEWAY_ID_PREFIX . 'wechat_pay', 'pi_wechat' );
+		$this->assertSame( 'Thank you.', $page->replace_order_received_text_for_failed_orders( 'Thank you.' ), 'A paid order needs no re-check.' );
+
+		$this->create_thankyou_order( 'failed', 'cod' );
+		$this->assertSame( 'Thank you.', $page->replace_order_received_text_for_failed_orders( 'Thank you.' ), 'Other gateways keep their own copy.' );
+
+		$this->create_thankyou_order( 'failed', OrderPaymentStore::GATEWAY_ID );
+		$_GET['key'] = 'wc_order_wrong';
+		$this->assertSame( 'Thank you.', $page->replace_order_received_text_for_failed_orders( 'Thank you.' ), 'The order key must match.' );
+	}
+
+	/**
+	 * @testdox Should keep the default copy when the live intent cannot be fetched.
+	 */
+	public function test_keeps_order_received_text_when_intent_fetch_fails(): void {
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_available', 'get_payment_intention' ) )
+			->getMock();
+		$api_client->method( 'is_available' )->willReturn( true );
+		$api_client->method( 'get_payment_intention' )->willThrowException( new WooPaymentsApiException( 'Nope.', 'wcpay_error', 500 ) );
+		$page = $this->create_page( true, null, $api_client );
+		$this->create_thankyou_order( 'pending', OrderPaymentStore::GATEWAY_ID_PREFIX . 'wechat_pay', 'pi_wechat' );
+
+		$this->assertSame( 'Thank you.', $page->replace_order_received_text_for_failed_orders( 'Thank you.' ) );
+	}
+
+	/**
+	 * Create an API client mock answering the intent fetch.
+	 *
+	 * @param array $intent Intent payload to return.
+	 * @return WooPaymentsApiClient
+	 */
+	private function create_api_client_mock( array $intent ): WooPaymentsApiClient {
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_available', 'get_payment_intention' ) )
+			->getMock();
+		$api_client->method( 'is_available' )->willReturn( true );
+		$api_client->expects( $this->once() )->method( 'get_payment_intention' )->with( 'pi_wechat' )->willReturn( array_merge( array( 'id' => 'pi_wechat' ), $intent ) );
+
+		return $api_client;
+	}
+
+	/**
+	 * Create an order and point the order-received request at it.
+	 *
+	 * @param string $status         Order status.
+	 * @param string $payment_method Payment method id.
+	 * @param string $intent_id      Optional intent id stored on the order.
+	 * @return WC_Order
+	 */
+	private function create_thankyou_order( string $status, string $payment_method, string $intent_id = '' ): WC_Order {
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->set_payment_method( $payment_method );
+		$order->set_total( '10.00' );
+		$order->set_status( $status );
+		if ( '' !== $intent_id ) {
+			$order->update_meta_data( '_intent_id', $intent_id );
+		}
+		$order->save();
+
+		$GLOBALS['wp']->query_vars['order-received'] = $order->get_id();
+		$_GET['key']                                 = $order->get_order_key();
+
+		return $order;
+	}
+
+	/**
 	 * Create an order-success page controller.
 	 *
 	 * @param bool                                       $native_register Whether native should own runtime.
 	 * @param WooPaymentsFrontendTrackingController|null $tracker        Optional tracking controller.
+	 * @param WooPaymentsApiClient|null                  $api_client     Optional API client.
 	 * @return WooPaymentsOrderSuccessPage
 	 */
-	private function create_page( bool $native_register, ?WooPaymentsFrontendTrackingController $tracker = null ): WooPaymentsOrderSuccessPage {
+	private function create_page( bool $native_register, ?WooPaymentsFrontendTrackingController $tracker = null, ?WooPaymentsApiClient $api_client = null ): WooPaymentsOrderSuccessPage {
 		$arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'should_native_register' ) )
@@ -362,7 +519,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 		$account_service->method( 'get_account_country' )->willReturn( 'US' );
 
 		$page = new WooPaymentsOrderSuccessPage();
-		$page->init( $arbiter, new WooPaymentsPaymentMethodRegistry(), $account_service, $tracker );
+		$page->init( $arbiter, new WooPaymentsPaymentMethodRegistry(), $account_service, $tracker, $api_client );
 
 		return $page;
 	}

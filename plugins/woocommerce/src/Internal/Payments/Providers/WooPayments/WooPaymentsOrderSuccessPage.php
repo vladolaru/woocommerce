@@ -10,6 +10,8 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -60,6 +62,30 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 	private ?WooPaymentsFrontendTrackingController $frontend_tracking_controller = null;
 
 	/**
+	 * Payment methods that complete through a provider redirect, whose still-pending
+	 * orders get a live intent re-check on the thank-you page.
+	 *
+	 * Mirrors the plugin's Payment_Method::REDIRECT_PAYMENT_METHODS.
+	 *
+	 * @var string[]
+	 */
+	private const REDIRECT_PAYMENT_METHODS = array( 'wechat_pay' );
+
+	/**
+	 * API client, for the live intent re-check.
+	 *
+	 * @var WooPaymentsApiClient|null
+	 */
+	private ?WooPaymentsApiClient $api_client = null;
+
+	/**
+	 * Whether the failed-order copy replaced the order-received text on this request.
+	 *
+	 * @var bool
+	 */
+	private bool $should_hide_status_description = false;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -68,12 +94,14 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 	 * @param WooPaymentsPaymentMethodRegistry           $payment_method_registry Payment-method definition registry.
 	 * @param WooPaymentsAccountService                  $account_service              WooPayments account service.
 	 * @param WooPaymentsFrontendTrackingController|null $frontend_tracking_controller Optional frontend tracking controller.
+	 * @param WooPaymentsApiClient|null                  $api_client                   Optional API client for the redirect-method intent re-check.
 	 */
-	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsPaymentMethodRegistry $payment_method_registry, WooPaymentsAccountService $account_service, ?WooPaymentsFrontendTrackingController $frontend_tracking_controller = null ): void {
+	final public function init( NativePaymentsRuntimeArbiter $arbiter, WooPaymentsPaymentMethodRegistry $payment_method_registry, WooPaymentsAccountService $account_service, ?WooPaymentsFrontendTrackingController $frontend_tracking_controller = null, ?WooPaymentsApiClient $api_client = null ): void {
 		$this->arbiter                      = $arbiter;
 		$this->payment_method_registry      = $payment_method_registry;
 		$this->account_service              = $account_service;
 		$this->frontend_tracking_controller = $frontend_tracking_controller;
+		$this->api_client                   = $api_client;
 	}
 
 	/**
@@ -118,6 +146,102 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 		if ( false === has_filter( 'woocommerce_thankyou_order_received_text', array( $this, 'add_notice_previous_successful_intent' ) ) ) {
 			add_filter( 'woocommerce_thankyou_order_received_text', array( $this, 'add_notice_previous_successful_intent' ), 11 );
 		}
+
+		if ( false === has_filter( 'woocommerce_thankyou_order_received_text', array( $this, 'replace_order_received_text_for_failed_orders' ) ) ) {
+			add_filter( 'woocommerce_thankyou_order_received_text', array( $this, 'replace_order_received_text_for_failed_orders' ), 11 );
+		}
+
+		if ( false === has_action( 'wp_footer', array( $this, 'output_footer_scripts' ) ) ) {
+			add_action( 'wp_footer', array( $this, 'output_footer_scripts' ) );
+		}
+	}
+
+	/**
+	 * Replace the order-received text with a failure message when the order's payment failed.
+	 *
+	 * Mirrors the plugin's replace_order_received_text_for_failed_orders(): a failed order
+	 * gets the failure copy outright; a still-unpaid redirect-method order gets a live
+	 * intent re-check, because its failure may reach the store after the shopper does.
+	 *
+	 * @internal
+	 *
+	 * @param string $text Default thank-you text.
+	 * @return string
+	 */
+	public function replace_order_received_text_for_failed_orders( $text ) {
+		$order = $this->get_order_received_order();
+		if ( null === $order || ! $order->needs_payment() || 0 !== strpos( $order->get_payment_method(), OrderPaymentStore::GATEWAY_ID ) ) {
+			return $text;
+		}
+
+		$should_show_failure = $order->has_status( 'failed' );
+		if ( ! $should_show_failure ) {
+			$payment_method_type = str_replace( OrderPaymentStore::GATEWAY_ID_PREFIX, '', $order->get_payment_method() );
+			$intent_id           = (string) $order->get_meta( '_intent_id', true );
+			if ( '' === $intent_id ) {
+				$intent_id = (string) $order->get_transaction_id();
+			}
+
+			if ( '' !== $intent_id && in_array( $payment_method_type, self::REDIRECT_PAYMENT_METHODS, true ) && null !== $this->api_client && $this->api_client->is_available() ) {
+				// Give the redirect return a moment to land before reading the intent, as the plugin does.
+				sleep( 1 );
+
+				try {
+					$intent = $this->api_client->get_payment_intention( $intent_id );
+				} catch ( WooPaymentsApiException $exception ) {
+					return $text;
+				}
+
+				$should_show_failure = 'requires_payment_method' === (string) ( $intent['status'] ?? '' ) && ! empty( $intent['last_payment_error'] );
+			}
+		}
+
+		if ( ! $should_show_failure ) {
+			return $text;
+		}
+
+		$this->should_hide_status_description = true;
+
+		return sprintf(
+			/* translators: %s: checkout URL */
+			__( 'Unfortunately, your order has failed. Please <a href="%s">try checking out again</a>.', 'woocommerce' ),
+			esc_url( wc_get_checkout_url() )
+		);
+	}
+
+	/**
+	 * Hide the block order-confirmation status description once the failure copy replaced it.
+	 *
+	 * @internal
+	 */
+	public function output_footer_scripts(): void {
+		if ( ! $this->should_hide_status_description ) {
+			return;
+		}
+
+		wp_print_inline_script_tag( "const element = document.querySelector('.wc-block-order-confirmation-status-description'); if (element) { element.style.display = 'none'; }" );
+	}
+
+	/**
+	 * Resolve the order the order-received page is showing, when its key matches.
+	 *
+	 * @return WC_Order|null
+	 */
+	private function get_order_received_order(): ?WC_Order {
+		global $wp;
+
+		// phpcs:disable WooCommerce.Commenting.CommentHooks.MissingHookComment -- WooCommerce core hooks, applied as the thank-you template does.
+		$order_id  = (int) apply_filters( 'woocommerce_thankyou_order_id', absint( $wp->query_vars['order-received'] ?? 0 ) );
+		$order_key = (string) apply_filters( 'woocommerce_thankyou_order_key', empty( $_GET['key'] ) ? '' : wc_clean( wp_unslash( $_GET['key'] ) ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Order key on the order-received URL, verified against the order below.
+		// phpcs:enable WooCommerce.Commenting.CommentHooks.MissingHookComment
+
+		if ( $order_id <= 0 ) {
+			return null;
+		}
+
+		$order = wc_get_order( $order_id );
+
+		return $order instanceof WC_Order && hash_equals( $order->get_order_key(), $order_key ) ? $order : null;
 	}
 
 	/**
