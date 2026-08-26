@@ -1029,6 +1029,8 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$this->assertFalse( $config['forceNetworkSavedCards'] );
 		$this->assertSame( 'https://pay.woo.com', $config['woopayHost'] );
 		$this->assertSame( '12345', $config['woopayMerchantId'] );
+		$this->assertSame( 'WooPay SMS code verification', $config['woopayOtpIframeTitle'] );
+		$this->assertSame( 'WooPay is unavailable at this time. Please complete your checkout below. Sorry for the inconvenience.', $config['woopayUnavailableMessage'] );
 		$this->assertSame( 'checkout', $config['woopayButton']['context'] );
 		$this->assertSame( 'default', $config['woopayButton']['type'] );
 		$this->assertSame( 'dark', $config['woopayButton']['theme'] );

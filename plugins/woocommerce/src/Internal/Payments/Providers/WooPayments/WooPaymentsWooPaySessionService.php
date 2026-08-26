@@ -1009,6 +1009,8 @@ class WooPaymentsWooPaySessionService {
 			),
 			'woopaySaveUserLabel'               => __( 'Securely save my information for 1-click checkout', 'woocommerce' ),
 			'woopayPhoneLabel'                  => __( 'Mobile phone number', 'woocommerce' ),
+			'woopayOtpIframeTitle'              => __( 'WooPay SMS code verification', 'woocommerce' ),
+			'woopayUnavailableMessage'          => __( 'WooPay is unavailable at this time. Please complete your checkout below. Sorry for the inconvenience.', 'woocommerce' ),
 		);
 	}
 
