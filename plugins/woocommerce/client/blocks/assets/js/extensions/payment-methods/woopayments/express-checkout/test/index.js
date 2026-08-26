@@ -1221,6 +1221,57 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		expect( event.reject ).not.toHaveBeenCalled();
 	} );
 
+	it( 'keeps setupFutureUsage out of Elements updates when confirmation tokens are disabled', async () => {
+		baseExpressCheckoutParams.flags = {
+			isEceUsingConfirmationTokens: false,
+		};
+		baseExpressCheckoutParams.has_subscription = true;
+		apiFetch.mockResolvedValueOnce(
+			cartWithExpressMethods( [ 'payment_request' ] )
+		);
+		registerExpressCheckout();
+		const applePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_applePay'
+		);
+
+		renderExpressPaymentMethod( applePayRegistration, {
+			...getPaymentMethodInterfaceProps(
+				cartWithExpressMethods( [ 'payment_request' ] )
+			),
+		} );
+
+		await waitFor( () => {
+			expect( expressHandlers.shippingaddresschange ).toBeDefined();
+		} );
+
+		const event = {
+			name: 'Ada Lovelace',
+			address: {
+				line1: '2 Wallet Way',
+				city: 'New York',
+				state: 'NY',
+				postal_code: '10001',
+				country: 'US',
+			},
+			resolve: jest.fn(),
+			reject: jest.fn(),
+		};
+
+		await act( async () => {
+			await expressHandlers.shippingaddresschange( event );
+		} );
+
+		// Elements was created in manual payment-method mode, so the
+		// confirmation-token-only setupFutureUsage option must stay out of
+		// the update too, or Stripe rejects the shipping change.
+		expect( elements.update ).toHaveBeenCalled();
+		expect( elements.update.mock.calls[ 0 ][ 0 ] ).not.toHaveProperty(
+			'setupFutureUsage'
+		);
+		expect( event.resolve ).toHaveBeenCalled();
+		expect( event.reject ).not.toHaveBeenCalled();
+	} );
+
 	it( 'selects Store API shipping rates and updates Elements when the wallet shipping rate changes', async () => {
 		const updatedCart = cartWithExpressMethods( [ 'payment_request' ], {
 			items: [

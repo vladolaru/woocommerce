@@ -855,7 +855,9 @@ const getElementsUpdateOptionsForCart = ( cart ) => {
 		),
 	};
 
-	if ( params?.has_subscription ) {
+	// setupFutureUsage is a confirmation-token option; Elements created in
+	// manual payment-method mode rejects it on update.
+	if ( shouldUseConfirmationTokens() && params?.has_subscription ) {
 		options.setupFutureUsage = 'off_session';
 	}
 
