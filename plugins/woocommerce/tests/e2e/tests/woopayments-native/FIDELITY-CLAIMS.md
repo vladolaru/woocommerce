@@ -289,6 +289,12 @@ The protection-on twins carry one boundary that must not be overstated. The targ
 
 Financial reconciliation proves only the `R1`–`R7` dimensions; Bucket-E proves final refund/order facts, not the transition sequence. The HARNESS runbook still calls for the full refund matrix. Merchant-visible presentation is in scope only through `R1v` and `R3v`, and only semantically: exact copy, wording, symbol placement, locale formatting, and layout are excluded there as everywhere else. This claim deliberately excludes refund-dialog presentation, coexistence ownership across runtimes, payout behavior, and every combination not listed above.
 
+### Correction 2026-08-26 — when the platform does replay, it replays the original response
+
+The Task 13 regression re-run of `R7` took the *replayed* branch for the first time: the same-key replay reached the provider once and returned the same provider refund id, amount, currency and charge — no second refund on either side, which is the property the case protects. Native's transport is unchanged since the 2026-08-12 correction (the key still travels as the `Idempotency-Key` header), so the replay behaviour observed here is the platform's, not a native change, and the 2026-08-12 finding about the header-versus-parameter contract stands as a platform observation.
+
+What the replayed branch had over-asserted: that the replayed body reads `succeeded`. An idempotent replay returns the original response, and Cash App Afterpay refunds are created `pending` and settle asynchronously, so the replayed body reads `pending` while the converged refund (already read twice as `succeeded` before the probe) is settled. The case now accepts `pending` or `succeeded` on the replayed body and keeps every identity assertion. Run record: 2026-08-26 `refund-settlement` 8/9 with `R7` failing only on this over-assertion; `R6` Bancontact passed on this run.
+
 ### Correction 2026-08-12 — the same-key replay is refused, not replayed
 
 This family's first authorized run of `R7` falsified part of its own claim, and

@@ -2285,7 +2285,11 @@ async function driveRedirectRefund(
 			replay.refundId,
 			'a replayed request must return the same provider refund, not a new one'
 		).toBe( providerRefund.id );
-		expect( replay.status ).toBe( 'succeeded' );
+		// An idempotent replay returns the *original* response, so for a method
+		// whose refunds settle asynchronously (Cash App Afterpay) the replayed
+		// body still reads `pending` even though the refund has since reached
+		// `succeeded` — see the 2026-08-26 correction in FIDELITY-CLAIMS.md.
+		expect( [ 'pending', 'succeeded' ] ).toContain( replay.status );
 		expect( replay.amount ).toBe( method.amountMinor );
 		expect( replay.currency ).toBe( method.currency );
 		expect( replay.charge ).toBe( paid.chargeId );
