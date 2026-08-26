@@ -32,7 +32,6 @@ For platform errors with an empty `error.type` (for example `wcpay_blocked_by_fr
 
 The email-input/OTP flow is ported (classic `woopayments-checkout.js`, blocks `woopay/email-input-iframe.js`) and `isWooPayEmailInputEnabled` follows the plugin's `wcpay_is_woopay_email_input_enabled` filter. The checkout config still publishes `isWooPayDirectCheckoutEnabled` as `false` because the direct-checkout front end has no native JS consumer (no `encryptedData` producer); the `encrypted_data` branch of the session email fallback chain belongs with that port, its only producer. If it lands, flip the flag in `WooPaymentsWooPaySessionService::get_woopay_frontend_config()`.
 
-Related layout gap, not part of the email-input hook contract: with WooPay enabled the plugin relocates the classic billing email into a "Contact information" section above the billing fields (`woopay_fields_before_billing_details()` on `woocommerce_checkout_billing` at priority -50, hiding the core field through `woocommerce_form_field_email`, adding the `woopay-billing-email` wrapper class and enqueuing `wc-blocks-style`). Native keeps the email in its default position; the OTP popover anchors to the field wherever it sits, so the flow works, but the checkout layout differs from a WooPay-enabled plugin store. Needs a product decision before porting.
 
 ### wcpay_woopay_is_signed_with_blog_token stays strengthen-only (S7, finding 12 — deliberate divergence)
 
