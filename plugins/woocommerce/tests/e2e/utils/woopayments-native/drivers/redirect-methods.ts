@@ -846,7 +846,12 @@ export async function fillClassicBilling(
 	runId: string,
 	address: BillingAddress
 ): Promise< void > {
-	const billing = page.locator( '.woocommerce-billing-fields' );
+	// With WooPay enabled the store relocates the billing email into a second
+	// `.woocommerce-billing-fields` block ("Contact information") above the
+	// billing details; the billing form proper carries the name fields.
+	const billing = page.locator(
+		'.woocommerce-billing-fields:has(#billing_first_name)'
+	);
 	await expect( billing ).toBeVisible();
 	await billing.getByLabel( /^First name/i ).fill( 'E2E' );
 	await billing.getByLabel( /^Last name/i ).fill( 'WooPayments' );
@@ -866,8 +871,10 @@ export async function fillClassicBilling(
 		.getByLabel( /^(?:ZIP Code|Postcode)/i )
 		.fill( address.postcode );
 	await billing.getByLabel( /^Phone/i ).fill( '5555550100' );
-	await billing
-		.getByLabel( /^Email address/i )
+	// The email field sits in the billing block by default and in the WooPay
+	// "Contact information" block when WooPay relocates it; address it by id.
+	await page
+		.locator( '#billing_email' )
 		.fill( `woopayments-${ runId }@example.com` );
 }
 

@@ -540,7 +540,13 @@ export class PlaywrightClassicCardCheckoutBrowser
 	}
 
 	public async fillBillingDetails( runId: string ): Promise< void > {
-		const billing = this.page.locator( '.woocommerce-billing-fields' );
+		// With WooPay enabled the store relocates the billing email into a second
+		// `.woocommerce-billing-fields` block ("Contact information") above the
+		// billing details, on the plugin and on native alike; the billing form
+		// proper is the block that carries the name fields.
+		const billing = this.page.locator(
+			'.woocommerce-billing-fields:has(#billing_first_name)'
+		);
 		if (
 			( await billing.count() ) !== 1 ||
 			! ( await billing.isVisible() )
@@ -563,8 +569,10 @@ export class PlaywrightClassicCardCheckoutBrowser
 		await billing.locator( '#billing_state' ).selectOption( 'CA' );
 		await billing.getByLabel( /^(?:ZIP Code|Postcode)/i ).fill( '94107' );
 		await billing.getByLabel( /^Phone/i ).fill( '5555550100' );
-		await billing
-			.getByLabel( /^Email address/i )
+		// The email field sits in the billing block by default and in the WooPay
+		// "Contact information" block when WooPay relocates it; address it by id.
+		await this.page
+			.locator( '#billing_email' )
 			.fill( `woopayments-${ runId }@example.com` );
 		await this.waitForCheckoutSettled();
 	}
