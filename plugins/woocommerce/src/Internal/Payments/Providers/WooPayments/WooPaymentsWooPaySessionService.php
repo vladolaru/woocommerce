@@ -964,11 +964,9 @@ class WooPaymentsWooPaySessionService {
 			'isWooPayEnabled'                   => $is_woopay_enabled,
 			'isWoopayExpressCheckoutEnabled'    => $woopay_express_available,
 			'isWoopayFirstPartyAuthEnabled'     => $woopay_first_party_auth_available,
-			// The email-input/OTP and direct-checkout front ends are not ported yet; advertising
-			// them without a JS consumer breaks WooPay's expectations. Flip these when the flows
-			// land (see the follow-ups ledger and the plugin's wcpay_is_woopay_email_input_enabled
-			// filter for the email-input half).
-			'isWooPayEmailInputEnabled'         => false,
+			'isWooPayEmailInputEnabled'         => $this->is_woopay_email_input_enabled(),
+			// The direct-checkout front end is not ported yet; advertising it without a JS
+			// consumer breaks WooPay's expectations. Flip this when the flow lands.
 			'isWooPayDirectCheckoutEnabled'     => false,
 			'isWooPayGlobalThemeSupportEnabled' => $is_global_theme_enabled,
 			'forceNetworkSavedCards'            => $this->get_account_service()->is_network_saved_cards_enabled() || $this->should_use_stripe_platform_on_checkout_page( $context ),
@@ -1012,6 +1010,25 @@ class WooPaymentsWooPaySessionService {
 			'woopaySaveUserLabel'               => __( 'Securely save my information for 1-click checkout', 'woocommerce' ),
 			'woopayPhoneLabel'                  => __( 'Mobile phone number', 'woocommerce' ),
 		);
+	}
+
+	/**
+	 * Tell whether the WooPay email-input hooks (user lookup + OTP prompt) should run on checkout.
+	 *
+	 * This does not affect the appearance of the email input, only whether the
+	 * email-exists check and the OTP auto-redirection are wired up.
+	 *
+	 * @return bool
+	 */
+	public function is_woopay_email_input_enabled(): bool {
+		/**
+		 * Filters whether the WooPay email input hooks should be enabled.
+		 *
+		 * @since 11.0.0
+		 *
+		 * @param bool $enabled Whether the WooPay email input behaviour is enabled.
+		 */
+		return (bool) apply_filters( 'wcpay_is_woopay_email_input_enabled', true );
 	}
 
 	/**

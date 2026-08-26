@@ -454,7 +454,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertTrue( $config['isWooPayEnabled'] );
 		$this->assertTrue( $config['isWoopayExpressCheckoutEnabled'] );
-		$this->assertFalse( $config['isWooPayEmailInputEnabled'] );
+		$this->assertTrue( $config['isWooPayEmailInputEnabled'] );
 		$this->assertFalse( $config['shouldShowWooPayButton'] );
 		$this->assertSame( 1, $enabled_filter_calls );
 	}
@@ -1023,7 +1023,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertTrue( $config['isWooPayEnabled'] );
 		$this->assertTrue( $config['isWoopayExpressCheckoutEnabled'] );
-		$this->assertFalse( $config['isWooPayEmailInputEnabled'] );
+		$this->assertTrue( $config['isWooPayEmailInputEnabled'] );
 		$this->assertFalse( $config['isWooPayDirectCheckoutEnabled'] );
 		$this->assertFalse( $config['isWooPayGlobalThemeSupportEnabled'] );
 		$this->assertFalse( $config['forceNetworkSavedCards'] );
@@ -1840,13 +1840,25 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not advertise the WooPay email-input or direct-checkout flows until they are ported.
+	 * @testdox Should advertise the WooPay email-input flow by default while direct checkout stays unported.
 	 */
-	public function test_frontend_config_does_not_advertise_unported_woopay_auth_flows(): void {
+	public function test_frontend_config_advertises_email_input_but_not_direct_checkout(): void {
 		$config = $this->create_service( array( 'is_woopay_direct_checkout_enabled' => 'yes' ) )->get_woopay_frontend_config( 'checkout' );
 
-		$this->assertFalse( $config['isWooPayEmailInputEnabled'] );
+		$this->assertTrue( $config['isWooPayEmailInputEnabled'] );
 		$this->assertFalse( $config['isWooPayDirectCheckoutEnabled'] );
+	}
+
+	/**
+	 * @testdox Should let the wcpay_is_woopay_email_input_enabled filter switch the email-input flow off.
+	 */
+	public function test_email_input_flag_honors_plugin_filter(): void {
+		add_filter( 'wcpay_is_woopay_email_input_enabled', '__return_false' );
+
+		$sut = $this->create_service();
+
+		$this->assertFalse( $sut->is_woopay_email_input_enabled() );
+		$this->assertFalse( $sut->get_woopay_frontend_config( 'checkout' )['isWooPayEmailInputEnabled'] );
 	}
 
 	/**
