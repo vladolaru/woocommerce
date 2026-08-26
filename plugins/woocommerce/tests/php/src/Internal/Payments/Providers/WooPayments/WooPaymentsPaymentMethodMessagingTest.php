@@ -71,6 +71,44 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The cart-total AJAX handler recalculates the cart before answering.
+	 */
+	public function test_get_cart_total_ajax_recalculates_stale_cart_totals(): void {
+		$controller = $this->create_controller( true, true, array( 'card', 'affirm' ), array( 'affirm_payments' => 'active' ) );
+		$product    = \WC_Helper_Product::create_simple_product( true, array( 'regular_price' => '10' ) );
+
+		WC()->cart->empty_cart();
+		WC()->cart->add_to_cart( $product->get_id(), 2 );
+		WC()->cart->calculate_totals();
+		// A stale in-memory figure, as after a change that has not been recalculated on this request.
+		WC()->cart->set_total( 0 );
+
+		$_REQUEST['security'] = wp_create_nonce( 'wcpay-get-cart-total' );
+		$die_handler          = static function () {
+			return static function () {
+				throw new \Exception( 'ajax-die' );
+			};
+		};
+		add_filter( 'wp_doing_ajax', '__return_true' );
+		add_filter( 'wp_die_ajax_handler', $die_handler );
+
+		ob_start();
+		try {
+			$controller->handle_get_cart_total();
+		} catch ( \Exception $exception ) {
+			$this->assertSame( 'ajax-die', $exception->getMessage() );
+		} finally {
+			$json = (string) ob_get_clean();
+			remove_filter( 'wp_doing_ajax', '__return_true' );
+			remove_filter( 'wp_die_ajax_handler', $die_handler );
+			unset( $_REQUEST['security'] );
+			WC()->cart->empty_cart();
+		}
+
+		$this->assertSame( 2000, json_decode( $json, true )['total'] ?? null, 'The AJAX answer must come from a freshly calculated cart, as in the plugin.' );
+	}
+
+	/**
 	 * @testdox Should register BNPL messaging hooks only when native owns runtime and active BNPL methods exist.
 	 */
 	public function test_registers_bnpl_messaging_hooks_only_when_native_owns_runtime_and_active_bnpl_methods_exist(): void {

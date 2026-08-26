@@ -157,6 +157,14 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	public function handle_get_cart_total(): void {
 		check_ajax_referer( 'wcpay-get-cart-total', 'security' );
 
+		// Recalculate before answering so the widget never receives a stale session
+		// figure, as the plugin's ajax_get_cart_total() does.
+		if ( WC()->cart ) {
+			wc_maybe_define_constant( 'WOOCOMMERCE_CART', true );
+			wc_maybe_define_constant( 'WOOCOMMERCE_CHECKOUT', true );
+			WC()->cart->calculate_totals();
+		}
+
 		wp_send_json( $this->get_cart_total_response() );
 	}
 
