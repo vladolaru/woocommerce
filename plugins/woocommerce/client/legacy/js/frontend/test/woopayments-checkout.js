@@ -2084,6 +2084,43 @@ describe( 'WooPayments checkout', () => {
 		delete window.wcpay_core_checkout_config.paymentMethodTypes;
 	} );
 
+	test( 'tokenizes a new card on the subscription change-payment page even though it carries no billing fields', async () => {
+		window.wcpay_core_checkout_config.isOrderPay = true;
+		window.wcpay_core_checkout_config.isChangingPayment = true;
+		window.wcpay_core_checkout_config.enabledBillingFields = {
+			billing_first_name: { required: true },
+			billing_last_name: { required: true },
+			billing_email: { required: true },
+			billing_country: { required: true },
+			billing_address_1: { required: true },
+			billing_city: { required: true },
+			billing_postcode: { required: true },
+		};
+		document.body.innerHTML =
+			'<form id="order_review">' +
+			'<input type="hidden" name="change_payment_method" value="42" />' +
+			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
+			'<div id="wcpay-core-payment-element"></div>' +
+			'</form>';
+
+		require( '../woopayments-checkout' );
+
+		const submitResult = orderPayFormEventHandlers.submit.call(
+			document.getElementById( 'order_review' )
+		);
+		await flushPromises();
+
+		// The billing-completeness guard belongs to the checkout form only: the
+		// order-pay and change-payment forms carry no billing fields, and letting
+		// them submit natively posts the change with no card at all.
+		expect( submitResult ).toBe( false );
+		expect( stripeMock.createPaymentMethod ).toHaveBeenCalledTimes( 1 );
+
+		delete window.wcpay_core_checkout_config.isOrderPay;
+		delete window.wcpay_core_checkout_config.isChangingPayment;
+		delete window.wcpay_core_checkout_config.enabledBillingFields;
+	} );
+
 	test( 'submits the checkout with the error sentinel when payment method creation fails', async () => {
 		stripeMock.createPaymentMethod.mockResolvedValueOnce( {
 			error: {

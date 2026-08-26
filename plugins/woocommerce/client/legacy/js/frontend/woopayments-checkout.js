@@ -2011,7 +2011,7 @@
 		return false;
 	}
 
-	function handleGatewaySubmission( paymentGatewayId, form ) {
+	function handleGatewaySubmission( paymentGatewayId, form, isCheckoutForm ) {
 		setCurrentGatewayConfig( paymentGatewayId );
 
 		if ( ! isSelectedGateway() ) {
@@ -2033,8 +2033,10 @@
 		}
 
 		// Let WooCommerce's own validation surface missing billing fields
-		// instead of creating an orphan PaymentMethod first.
-		if ( isBillingInformationMissing() ) {
+		// instead of creating an orphan PaymentMethod first. Only the checkout
+		// form carries billing fields: the pay-for-order and change-payment
+		// forms must still tokenize the card, as the plugin does.
+		if ( isCheckoutForm && isBillingInformationMissing() ) {
 			return true;
 		}
 
@@ -3297,7 +3299,8 @@
 			function () {
 				return handleGatewaySubmission(
 					paymentGatewayId,
-					$( 'form.checkout' )
+					$( 'form.checkout' ),
+					true
 				);
 			}
 		);
@@ -3310,6 +3313,6 @@
 			return true;
 		}
 
-		return handleGatewaySubmission( paymentGatewayId, $( this ) );
+		return handleGatewaySubmission( paymentGatewayId, $( this ), false );
 	} );
 } )( jQuery, window, document );
