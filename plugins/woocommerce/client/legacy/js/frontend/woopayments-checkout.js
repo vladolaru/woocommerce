@@ -2503,9 +2503,742 @@
 			} );
 	}
 
+
+	// ------------------------------------------------------------------
+	// WooPay email-input / OTP flow — port of the plugin's
+	// checkout/woopay/email-input-iframe.js. Looks the typed billing email
+	// up at WooPay and, for a registered shopper, opens WooPay's
+	// one-time-code iframe anchored to the field; a verified code hands the
+	// platform session back through postMessage and redirects to WooPay.
+	// ------------------------------------------------------------------
+	var wooPayEmailInputWaitTime = 500;
+	var wooPayFullScreenModalBreakpoint = 768;
+	var isWooPayInitRequesting = false;
+
+	function getWooPayHostOrigin() {
+		try {
+			return new window.URL( baseConfig.woopayHost ).origin;
+		} catch ( error ) {
+			return '';
+		}
+	}
+
+	function buildWooPayAjaxUrl( endpoint ) {
+		return ( baseConfig.wcAjaxUrl || '' ).replace(
+			'%%endpoint%%',
+			'wcpay_' + endpoint
+		);
+	}
+
+	function validateWooPayEmail( value ) {
+		// Borrowed from WooCommerce checkout.js with a slight tweak to add
+		// `{2,}` to the end and make the TLD at least 2 characters.
+		/* eslint-disable */
+		var pattern = new RegExp(
+			/^([a-z\d!#$%&'*+\-\/=?^_`{|}~\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF]+(\.[a-z\d!#$%&'*+\-\/=?^_`{|}~\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF]+)*|"((([ \t]*\r\n)?[ \t]+)?([\x01-\x08\x0b\x0c\x0e-\x1f\x7f\x21\x23-\x5b\x5d-\x7e\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF]|\\[\x01-\x09\x0b\x0c\x0d-\x7f\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF]))*(([ \t]*\r\n)?[ \t]+)?")@(([a-z\d\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF]|[a-z\d\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF][a-z\d\-._~\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF]*[a-z\d\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])\.)+([a-z\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF]|[a-z\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF][a-z\d\-._~\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF]*[0-9a-z\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF]){2,}\.?$/i
+		);
+		/* eslint-enable */
+		return pattern.test( value );
+	}
+
+	// The shopper opted out of WooPay for this session (back button from
+	// WooPay, or ?skip_woopay=true); the cookie extends the skip to the
+	// whole session.
+	function shouldSkipWooPay() {
+		var skipWooPayCookie = document.cookie
+			.split( ';' )
+			.filter( function ( cookie ) {
+				return cookie.indexOf( 'skip_woopay' ) !== -1;
+			} )[ 0 ];
+		var parts;
+
+		if ( ! skipWooPayCookie ) {
+			return false;
+		}
+
+		parts = skipWooPayCookie.split( '=' );
+
+		return parts[ 0 ].trim() === 'skip_woopay' && parts[ 1 ].trim() === '1';
+	}
+
+	// Called when the shopper explicitly opts back into WooPay.
+	function deleteSkipWooPayCookie() {
+		if ( ! shouldSkipWooPay() ) {
+			return;
+		}
+
+		document.cookie =
+			'skip_woopay=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;';
+	}
+
+	function getTracksIdentityCookieValue() {
+		var nameEq = 'tk_ai=';
+		var cookies = document.cookie.split( ';' );
+		var i;
+		var cookie;
+
+		for ( i = 0; i < cookies.length; i++ ) {
+			cookie = cookies[ i ].replace( /^\s+/, '' );
+			if ( cookie.indexOf( nameEq ) === 0 ) {
+				return cookie.substring( nameEq.length );
+			}
+		}
+
+		return undefined;
+	}
+
+	// Resolves the stringified Tracks identity WooPay stitches its own
+	// events to — from the tk_ai cookie when present, otherwise through
+	// the platform's get_identity bridge. Never rejects.
+	function getTracksIdentity() {
+		var ajaxUrl = baseConfig.ajaxUrl || baseConfig.ajax_url;
+		var nonce =
+			baseConfig.platformTrackerNonce ||
+			baseConfig.platform_tracker_nonce;
+		var cookieIdentity = getTracksIdentityCookieValue();
+		var body;
+
+		if ( cookieIdentity ) {
+			return Promise.resolve(
+				JSON.stringify( { _ut: 'anon', _ui: cookieIdentity } )
+			);
+		}
+
+		if ( ! ajaxUrl || ! nonce || ! window.fetch || ! window.FormData ) {
+			return Promise.resolve( undefined );
+		}
+
+		body = new window.FormData();
+		body.append( 'tracksNonce', nonce );
+		body.append( 'action', 'get_identity' );
+
+		return window
+			.fetch( ajaxUrl, { method: 'POST', body: body } )
+			.then( function ( response ) {
+				if ( ! response.ok ) {
+					return undefined;
+				}
+
+				return response.json().then( function ( data ) {
+					if (
+						data &&
+						data.success &&
+						data.data &&
+						data.data._ui &&
+						data.data._ut
+					) {
+						return JSON.stringify( data.data );
+					}
+
+					return undefined;
+				} );
+			} )
+			.catch( function () {
+				return undefined;
+			} );
+	}
+
+	// The plugin's resolveWoopayAppearance(): server-computed appearance
+	// first, DOM extraction on the shortcode checkout as the fallback.
+	function getWooPayEmailInputAppearance() {
+		if ( ! baseConfig.isWooPayGlobalThemeSupportEnabled ) {
+			return null;
+		}
+
+		if ( baseConfig.woopayAppearance ) {
+			return baseConfig.woopayAppearance;
+		}
+
+		return baseConfig.isShortcodeCheckout
+			? getClassicCheckoutAppearance()
+			: null;
+	}
+
+	// The plugin's initWooPay(): a single init_woopay request in flight per
+	// page — WooPay's <Login> re-renders and fires the redirect message
+	// twice, and the second call must return undefined.
+	function initWooPayFromEmailInput( email, userSession ) {
+		var appearance = null;
+		var fontRules = null;
+
+		if ( isWooPayInitRequesting ) {
+			return undefined;
+		}
+
+		isWooPayInitRequesting = true;
+
+		if ( baseConfig.isWooPayGlobalThemeSupportEnabled ) {
+			if ( baseConfig.isShortcodeCheckout ) {
+				appearance = getClassicCheckoutAppearance();
+				fontRules = appearanceUtils.getFontRulesFromPage();
+			} else {
+				appearance = baseConfig.woopayAppearance || null;
+				fontRules = baseConfig.woopayFontRules || null;
+			}
+		}
+
+		return new Promise( function ( resolve, reject ) {
+			$.post( buildWooPayAjaxUrl( 'init_woopay' ), {
+				_wpnonce: baseConfig.initWooPayNonce || '',
+				appearance: appearance,
+				font_rules: fontRules,
+				email: email,
+				user_session: userSession,
+				order_id: baseConfig.orderId || '',
+				key: baseConfig.key || '',
+				billing_email: baseConfig.billing_email || '',
+			} )
+				.done( resolve )
+				.fail( reject )
+				.always( function () {
+					isWooPayInitRequesting = false;
+				} );
+		} );
+	}
+
+	function handleWooPayEmailInput( selector ) {
+		var woopayEmailInput = document.querySelector( selector );
+		var timer;
+		var tracksUserId;
+		var spinner;
+		var parentDiv;
+		var iframeWrapper;
+		var iframe;
+		var iframeArrow;
+		var errorMessage;
+		var searchParams;
+		var isSkipWoopayCookieSet;
+		var customerClickedBackButton;
+		var iframeHeaderValue = true;
+		var abortController;
+		var checkoutForm;
+		var followingDay;
+		var pathname;
+
+		// Pay-for-order pages carry their own WooPay entry point.
+		if ( baseConfig.isOrderPay || ! woopayEmailInput ) {
+			return;
+		}
+
+		spinner = document.createElement( 'div' );
+		parentDiv = woopayEmailInput.parentNode;
+		spinner.classList.add( 'wc-block-components-spinner' );
+
+		// The OTP iframe wrapper (the dimmed backdrop on wide viewports).
+		iframeWrapper = document.createElement( 'div' );
+		iframeWrapper.setAttribute( 'role', 'dialog' );
+		iframeWrapper.setAttribute( 'aria-modal', 'true' );
+		iframeWrapper.classList.add( 'woopay-otp-iframe-wrapper' );
+
+		iframe = document.createElement( 'iframe' );
+		iframe.title = baseConfig.woopayOtpIframeTitle || '';
+		iframe.classList.add( 'woopay-otp-iframe' );
+		// Keep twentytwenty.intrinsicRatioVideos from resizing the iframe.
+		iframe.classList.add( 'intrinsic-ignore' );
+
+		iframeArrow = document.createElement( 'span' );
+		iframeArrow.setAttribute( 'aria-hidden', 'true' );
+		iframeArrow.classList.add( 'arrow' );
+
+		// A back-button return from WooPay (or ?skip_woopay=true) must not
+		// bounce the shopper straight back; the cookie extends the skip to
+		// the whole session.
+		searchParams = new window.URLSearchParams( window.location.search );
+		isSkipWoopayCookieSet = shouldSkipWooPay();
+		customerClickedBackButton =
+			( typeof window.performance !== 'undefined' &&
+				window.performance.getEntriesByType &&
+				window.performance.getEntriesByType( 'navigation' )[ 0 ] &&
+				window.performance.getEntriesByType( 'navigation' )[ 0 ]
+					.type === 'back_forward' ) ||
+			searchParams.get( 'skip_woopay' ) === 'true' ||
+			isSkipWoopayCookieSet;
+
+		if ( customerClickedBackButton && ! isSkipWoopayCookieSet ) {
+			followingDay = new Date( Date.now() + 24 * 60 * 60 * 1000 );
+			document.cookie =
+				'skip_woopay=1; path=/; expires=' +
+				followingDay.toUTCString();
+		}
+
+		// Tracks the iframe header state; the default must match the
+		// platform's default.
+		function getWindowSize() {
+			if (
+				( wooPayFullScreenModalBreakpoint <= window.innerWidth &&
+					iframeHeaderValue ) ||
+				( wooPayFullScreenModalBreakpoint > window.innerWidth &&
+					! iframeHeaderValue )
+			) {
+				iframeHeaderValue = ! iframeHeaderValue;
+				iframe.contentWindow.postMessage(
+					{ action: 'setHeader', value: iframeHeaderValue },
+					baseConfig.woopayHost
+				);
+			}
+
+			// Prevent scrolling while the iframe is open.
+			document.body.style.overflow = 'hidden';
+		}
+
+		// Positions the popover to the right of the input unless the window
+		// is too narrow, in which case it sticks 50px from the right edge.
+		function setPopoverPosition() {
+			var anchorRect;
+			var iframeRect;
+			var topOffset;
+			var scrollTop;
+
+			if ( wooPayFullScreenModalBreakpoint > window.innerWidth ) {
+				iframe.style.left = '0';
+				iframe.style.right = '';
+				return;
+			}
+
+			// Scroll the iframe into view when it is off the top or bottom.
+			if (
+				iframe.getBoundingClientRect().top <= 0 ||
+				window.innerHeight -
+					( iframe.getBoundingClientRect().height +
+						iframe.getBoundingClientRect().top ) <=
+					0
+			) {
+				topOffset = 50;
+				scrollTop =
+					document.documentElement.scrollTop +
+					woopayEmailInput.getBoundingClientRect().top -
+					iframe.getBoundingClientRect().height / 2 -
+					topOffset;
+				window.scrollTo( { top: scrollTop } );
+			}
+
+			anchorRect = woopayEmailInput.getBoundingClientRect();
+			iframeRect = iframe.getBoundingClientRect();
+
+			iframe.style.top =
+				Math.floor( anchorRect.top - iframeRect.height / 2 ) + 'px';
+			iframeArrow.style.top =
+				Math.floor(
+					anchorRect.top +
+						anchorRect.height / 2 -
+						parseFloat(
+							window.getComputedStyle( iframeArrow )[
+								'border-right-width'
+							]
+						)
+				) + 'px';
+
+			if (
+				window.innerWidth - ( anchorRect.right + iframeRect.width ) <=
+				50
+			) {
+				iframe.style.left = 'auto';
+				iframeArrow.style.left = 'auto';
+				iframe.style.right = '50px';
+				iframeArrow.style.right = iframeRect.width + 50 + 'px';
+			} else {
+				iframe.style.left = anchorRect.right + 5 + 'px';
+				iframe.style.right = '';
+				iframeArrow.style.left = anchorRect.right - 10 + 'px';
+				iframeArrow.style.right = '';
+			}
+		}
+
+		iframe.addEventListener( 'load', function () {
+			iframeHeaderValue = true;
+
+			if ( baseConfig.isWoopayFirstPartyAuthEnabled ) {
+				$.post( buildWooPayAjaxUrl( 'get_woopay_session' ), {
+					_ajax_nonce: baseConfig.woopaySessionNonce || '',
+					order_id: baseConfig.orderId || '',
+					key: baseConfig.key || '',
+					billing_email: baseConfig.billing_email || '',
+					appearance: getWooPayEmailInputAppearance(),
+				} ).done( function ( response ) {
+					if ( response && response.data && response.data.session ) {
+						iframe.contentWindow.postMessage(
+							{ action: 'setSessionData', value: response },
+							baseConfig.woopayHost
+						);
+					}
+				} );
+			}
+
+			getWindowSize();
+			window.addEventListener( 'resize', getWindowSize );
+
+			setPopoverPosition();
+			window.addEventListener( 'resize', setPopoverPosition );
+
+			iframe.classList.add( 'open' );
+		} );
+
+		iframeWrapper.insertBefore( iframeArrow, null );
+		iframeWrapper.insertBefore( iframe, null );
+
+		errorMessage = document.createElement( 'div' );
+		errorMessage.textContent = baseConfig.woopayUnavailableMessage || '';
+		errorMessage.classList.add( 'wc-block-checkout__guest-checkout-notice' );
+
+		function closeIframe( focus ) {
+			window.removeEventListener( 'resize', getWindowSize );
+			window.removeEventListener( 'resize', setPopoverPosition );
+
+			iframeWrapper.remove();
+			iframe.classList.remove( 'open' );
+
+			if ( focus !== false ) {
+				woopayEmailInput.focus();
+			}
+
+			document.body.style.overflow = '';
+		}
+
+		iframeWrapper.addEventListener( 'click', function () {
+			closeIframe();
+		} );
+
+		function openIframe( email ) {
+			var urlParams;
+			var checkoutPermalink =
+				window.wcSettings &&
+				window.wcSettings.storePages &&
+				window.wcSettings.storePages.checkout &&
+				window.wcSettings.storePages.checkout.permalink;
+
+			// Only one OTP iframe at a time.
+			if ( document.querySelector( '.woopay-otp-iframe' ) ) {
+				return;
+			}
+
+			urlParams = new window.URLSearchParams();
+			urlParams.append( 'email', email );
+			urlParams.append( 'testMode', !! baseConfig.testMode );
+			urlParams.append(
+				'needsHeader',
+				wooPayFullScreenModalBreakpoint > window.innerWidth
+			);
+			urlParams.append( 'wcpayVersion', baseConfig.wcpayVersionNumber );
+			urlParams.append( 'is_blocks', 'false' );
+			urlParams.append(
+				'source_url',
+				checkoutPermalink || window.location.href
+			);
+			urlParams.append(
+				'viewport',
+				document.documentElement.clientWidth +
+					'x' +
+					document.documentElement.clientHeight
+			);
+
+			if ( tracksUserId ) {
+				urlParams.append( 'tracksUserIdentity', tracksUserId );
+			}
+
+			iframe.src =
+				baseConfig.woopayHost + '/otp/?' + urlParams.toString();
+
+			parentDiv.insertBefore( iframeWrapper, null );
+
+			setPopoverPosition();
+
+			iframe.focus();
+		}
+
+		function showErrorMessage() {
+			parentDiv.insertBefore( errorMessage, null );
+		}
+
+		document.addEventListener( 'keyup', function ( event ) {
+			if ( event.key === 'Escape' ) {
+				closeIframe();
+			}
+		} );
+
+		// Placing the order before the lookup returns cancels the WooPay
+		// request and closes the iframe.
+		abortController = window.AbortController
+			? new window.AbortController()
+			: null;
+
+		if ( abortController ) {
+			abortController.signal.addEventListener( 'abort', function () {
+				spinner.remove();
+				closeIframe( false );
+			} );
+
+			checkoutForm = document.querySelector( 'form[name="checkout"]' );
+			if ( checkoutForm ) {
+				checkoutForm.addEventListener( 'submit', function () {
+					abortController.abort();
+				} );
+			}
+		}
+
+		function dispatchUserExistEvent( userExist ) {
+			window.dispatchEvent(
+				new window.CustomEvent( 'woopayUserCheck', {
+					detail: { isRegisteredUser: userExist },
+				} )
+			);
+		}
+
+		function woopayLocateUser( email, shouldOpenIframe ) {
+			parentDiv.insertBefore( spinner, woopayEmailInput );
+
+			if ( parentDiv.contains( errorMessage ) ) {
+				parentDiv.removeChild( errorMessage );
+			}
+
+			recordUserEvent( 'checkout_email_address_woopay_check' );
+
+			new Promise( function ( resolve, reject ) {
+				$.post( buildWooPayAjaxUrl( 'get_woopay_signature' ), {
+					_ajax_nonce: baseConfig.woopaySignatureNonce || '',
+				} )
+					.done( resolve )
+					.fail( reject );
+			} )
+				.then( function ( response ) {
+					if ( response && response.success ) {
+						return response.data;
+					}
+
+					throw new Error( 'Request for signature failed.' );
+				} )
+				.then( function ( data ) {
+					if ( data && data.signature ) {
+						return data.signature;
+					}
+
+					throw new Error( 'Signature not found.' );
+				} )
+				.then( function ( signature ) {
+					var emailExistsQuery = new window.URLSearchParams();
+
+					emailExistsQuery.append( 'email', email );
+					emailExistsQuery.append(
+						'test_mode',
+						!! baseConfig.testMode
+					);
+					emailExistsQuery.append(
+						'wcpay_version',
+						baseConfig.wcpayVersionNumber
+					);
+					emailExistsQuery.append(
+						'blog_id',
+						baseConfig.woopayMerchantId
+					);
+					emailExistsQuery.append( 'request_signature', signature );
+
+					return window.fetch(
+						baseConfig.woopayHost +
+							'/wp-json/platform-checkout/v1/user/exists?' +
+							emailExistsQuery.toString(),
+						abortController ? { signal: abortController.signal } : {}
+					);
+				} )
+				.then( function ( response ) {
+					if ( response.status !== 200 ) {
+						showErrorMessage();
+					}
+
+					return response.json();
+				} )
+				.then( function ( data ) {
+					dispatchUserExistEvent( data[ 'user-exists' ] );
+
+					if ( data[ 'user-exists' ] ) {
+						if ( shouldOpenIframe !== false ) {
+							openIframe( email );
+						}
+					} else if ( data.code !== 'rest_invalid_param' ) {
+						recordUserEvent( 'checkout_woopay_save_my_info_offered' );
+
+						if (
+							window.woopayCheckout &&
+							window.woopayCheckout.PRE_CHECK_SAVE_MY_INFO
+						) {
+							recordUserEvent( 'checkout_save_my_info_click', {
+								status: 'checked',
+							} );
+						}
+					}
+				} )
+				.catch( function ( err ) {
+					// Only surface connection errors reaching WooPay.
+					if (
+						! baseConfig.woopayIsCountryAvailable ||
+						err.name !== 'TypeError'
+					) {
+						return;
+					}
+
+					showErrorMessage();
+				} )
+				.then( function () {
+					spinner.remove();
+				} );
+		}
+
+		woopayEmailInput.addEventListener( 'input', function ( e ) {
+			var email = e.currentTarget.value;
+
+			window.clearTimeout( timer );
+			spinner.remove();
+
+			timer = window.setTimeout( function () {
+				// Always show the checkbox until the email belongs to a
+				// WooPay user.
+				dispatchUserExistEvent( false );
+
+				if ( validateWooPayEmail( email ) ) {
+					woopayLocateUser( email );
+				}
+			}, wooPayEmailInputWaitTime );
+		} );
+
+		window.addEventListener( 'message', function ( e ) {
+			var promise;
+
+			if ( e.origin !== getWooPayHostOrigin() ) {
+				return;
+			}
+
+			switch ( e.data.action ) {
+				case 'redirect_to_woopay_skip_session_init':
+					if ( e.data.redirectUrl ) {
+						deleteSkipWooPayCookie();
+						window.location = e.data.redirectUrl;
+					}
+					break;
+				case 'redirect_to_platform_checkout':
+				case 'redirect_to_woopay':
+					promise = initWooPayFromEmailInput(
+						woopayEmailInput.value,
+						e.data.platformCheckoutUserSession
+					);
+
+					// WooPay's <Login> re-renders and sends the message
+					// twice; the second init is skipped.
+					if ( ! promise ) {
+						break;
+					}
+
+					promise
+						.then( function ( response ) {
+							// The iframe was closed meanwhile.
+							if (
+								! document.querySelector( '.woopay-otp-iframe' )
+							) {
+								return;
+							}
+							if ( response && response.result === 'success' ) {
+								deleteSkipWooPayCookie();
+								window.location = response.url;
+							} else {
+								showErrorMessage();
+								closeIframe( false );
+							}
+						} )
+						.catch( function () {
+							showErrorMessage();
+							closeIframe( false );
+						} );
+					break;
+				case 'otp_validation_failed':
+					break;
+				case 'close_modal':
+					closeIframe();
+					break;
+				case 'iframe_height':
+					if ( e.data.height > 300 ) {
+						if (
+							wooPayFullScreenModalBreakpoint <= window.innerWidth
+						) {
+							// Attach the iframe to the right of the input.
+							iframe.style.height = e.data.height + 'px';
+							iframe.style.top =
+								Math.floor(
+									woopayEmailInput.getBoundingClientRect()
+										.top -
+										e.data.height / 2
+								) + 'px';
+							iframeArrow.style.top =
+								Math.floor(
+									woopayEmailInput.getBoundingClientRect()
+										.top +
+										woopayEmailInput.getBoundingClientRect()
+											.height /
+											2 -
+										parseFloat(
+											window.getComputedStyle(
+												iframeArrow
+											)[ 'border-right-width' ]
+										)
+								) + 'px';
+						} else {
+							iframe.style.height = '';
+							iframe.style.top = '';
+						}
+					}
+					break;
+				default:
+				// Only respond to expected actions.
+			}
+		} );
+
+		window.addEventListener( 'pageshow', function ( event ) {
+			if ( event.persisted ) {
+				// Safari needs the iframe closed on bfcache restore.
+				closeIframe( false );
+			}
+		} );
+
+		getTracksIdentity().then( function ( identity ) {
+			tracksUserId = identity;
+		} );
+
+		if (
+			woopayEmailInput.value &&
+			validateWooPayEmail( woopayEmailInput.value )
+		) {
+			woopayLocateUser( woopayEmailInput.value, false );
+		}
+
+		if ( customerClickedBackButton ) {
+			// The shopper returned via the back button: they exist. Wait for
+			// the window to settle before announcing it.
+			window.setTimeout( function () {
+				dispatchUserExistEvent( true );
+			}, 2000 );
+
+			recordUserEvent( 'woopay_skipped', {} );
+
+			searchParams.delete( 'skip_woopay' );
+
+			pathname = window.location.pathname;
+			if ( searchParams.toString() !== '' ) {
+				pathname += '?' + searchParams.toString();
+			}
+
+			window.history.replaceState( null, null, pathname );
+
+			// Safari needs the iframe closed here too.
+			closeIframe( false );
+		}
+	}
+
 	$( function () {
 		enqueueFraudScripts();
 		computeDeviceFingerprint();
+		if (
+			baseConfig.isWooPayEnabled &&
+			baseConfig.isWooPayEmailInputEnabled &&
+			! baseConfig.isPreview
+		) {
+			handleWooPayEmailInput( '#billing_email' );
+		}
 		registerPaymentListWallets();
 		togglePaymentMethodsForBillingCountry();
 		initializeStripeElement();
