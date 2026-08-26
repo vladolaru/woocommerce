@@ -227,6 +227,58 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should move the classic billing email into a contact section only while WooPay is enabled.
+	 */
+	public function test_register_relocates_classic_email_field_only_when_woopay_is_enabled(): void {
+		$this->sut = $this->create_controller( true, false );
+		$this->sut->register();
+
+		$this->assertFalse( has_action( 'woocommerce_checkout_billing', array( $this->sut, 'woopay_fields_before_billing_details' ) ) );
+		$this->assertFalse( has_filter( 'woocommerce_form_field_email', array( $this->sut, 'filter_woocommerce_form_field_woopay_email' ) ) );
+
+		$this->sut = $this->create_controller( true, true );
+		$this->sut->register();
+
+		$this->assertSame( -50, has_action( 'woocommerce_checkout_billing', array( $this->sut, 'woopay_fields_before_billing_details' ) ) );
+		$this->assertSame( 20, has_filter( 'woocommerce_form_field_email', array( $this->sut, 'filter_woocommerce_form_field_woopay_email' ) ) );
+	}
+
+	/**
+	 * @testdox Should render the WooPay contact section with the billing email field.
+	 */
+	public function test_woopay_fields_before_billing_details_renders_contact_section(): void {
+		$this->sut = $this->create_controller( true, true );
+		$this->set_checkout_shortcode_page();
+
+		ob_start();
+		$this->sut->woopay_fields_before_billing_details();
+		$output = (string) ob_get_clean();
+
+		$this->assertStringContainsString( '<div class="woocommerce-billing-fields" id="contact_details">', $output );
+		$this->assertStringContainsString( '<h3>Contact information</h3>', $output );
+		$this->assertStringContainsString( 'name="billing_email"', $output );
+		$this->assertStringContainsString( 'woopay-billing-email', $output );
+		$this->assertStringContainsString( 'woopay-billing-email-input', $output );
+		$this->assertStringContainsString( 'type="email"', $output );
+		$this->assertTrue( wp_style_is( 'wc-blocks-style', 'enqueued' ) );
+	}
+
+	/**
+	 * @testdox Should hide the core billing email on checkout while leaving the WooPay one and other pages alone.
+	 */
+	public function test_filter_woocommerce_form_field_woopay_email_hides_core_field_on_checkout(): void {
+		$this->sut = $this->create_controller( true, true );
+		$field     = '<p class="form-row"><input type="email" name="billing_email" /></p>';
+
+		$this->assertSame( $field, $this->sut->filter_woocommerce_form_field_woopay_email( $field, 'billing_email', array( 'class' => array( 'form-row-wide' ) ), '' ) );
+
+		$this->set_checkout_shortcode_page();
+
+		$this->assertSame( '', $this->sut->filter_woocommerce_form_field_woopay_email( $field, 'billing_email', array( 'class' => array( 'form-row-wide' ) ), '' ) );
+		$this->assertSame( $field, $this->sut->filter_woocommerce_form_field_woopay_email( $field, 'billing_email', array( 'class' => array( 'form-row-wide woopay-billing-email' ) ), '' ) );
+	}
+
+	/**
 	 * @testdox Should render the WooPay separator on checkout.
 	 */
 	public function test_display_express_checkout_buttons_renders_separator_on_checkout(): void {

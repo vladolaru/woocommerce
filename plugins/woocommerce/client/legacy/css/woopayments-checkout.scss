@@ -240,6 +240,14 @@
 }
 
 /* stylelint-disable selector-id-pattern */
+#contact_details {
+	float: none;
+}
+
+#contact_details + #customer_details {
+	display: block;
+}
+
 #billing_email_field {
 
 	.wc-block-components-spinner {

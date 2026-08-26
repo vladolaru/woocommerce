@@ -117,6 +117,67 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 		if ( false === has_filter( 'wcpay_metadata_from_order', array( $this, 'maybe_add_woopay_user_metadata' ) ) ) {
 			add_filter( 'wcpay_metadata_from_order', array( $this, 'maybe_add_woopay_user_metadata' ), 10, 2 );
 		}
+
+		// With WooPay on, the plugin moves the classic billing email into a "Contact
+		// information" section above the billing fields so the OTP popover anchors to it.
+		if ( false === has_action( 'woocommerce_checkout_billing', array( $this, 'woopay_fields_before_billing_details' ) ) ) {
+			add_action( 'woocommerce_checkout_billing', array( $this, 'woopay_fields_before_billing_details' ), -50 );
+		}
+
+		if ( false === has_filter( 'woocommerce_form_field_email', array( $this, 'filter_woocommerce_form_field_woopay_email' ) ) ) {
+			add_filter( 'woocommerce_form_field_email', array( $this, 'filter_woocommerce_form_field_woopay_email' ), 20, 4 );
+		}
+	}
+
+	/**
+	 * Render the WooPay contact section carrying the billing email above the billing fields.
+	 *
+	 * Mirrors the plugin's WC_Payments::woopay_fields_before_billing_details().
+	 */
+	public function woopay_fields_before_billing_details(): void {
+		$checkout = WC()->checkout();
+
+		echo '<div class="woocommerce-billing-fields" id="contact_details">';
+		echo '<h3>' . esc_html__( 'Contact information', 'woocommerce' ) . '</h3>';
+		echo '<div class="woocommerce-billing-fields__field-wrapper">';
+		woocommerce_form_field(
+			'billing_email',
+			array(
+				'type'        => 'email',
+				'label'       => __( 'Email address', 'woocommerce' ),
+				'class'       => array( 'form-row-wide woopay-billing-email' ),
+				'input_class' => array( 'woopay-billing-email-input' ),
+				'validate'    => array( 'email' ),
+				'required'    => true,
+			),
+			$checkout->get_value( 'billing_email' )
+		);
+		echo '</div>';
+		echo '</div>';
+
+		// Block themes with the classic checkout do not load the Blocks stylesheet the
+		// email spinner and notice borrow.
+		wp_enqueue_style( 'wc-blocks-style' );
+	}
+
+	/**
+	 * Hide the core billing email field on checkout: the WooPay contact section renders it.
+	 *
+	 * Mirrors the plugin's WC_Payments::filter_woocommerce_form_field_woopay_email().
+	 *
+	 * @param string $field         The rendered field markup.
+	 * @param string $key           The field key.
+	 * @param mixed  $args          Field arguments.
+	 * @param mixed  $_unused_value Field value.
+	 * @return string
+	 */
+	public function filter_woocommerce_form_field_woopay_email( $field, $key, $args, $_unused_value ) {
+		$class = is_array( $args ) && isset( $args['class'][0] ) ? (string) $args['class'][0] : '';
+		if ( false === strpos( $class, 'woopay-billing-email' ) && is_checkout() && ! is_checkout_pay_page() ) {
+			return '';
+		}
+
+		return $field;
 	}
 
 	/**
