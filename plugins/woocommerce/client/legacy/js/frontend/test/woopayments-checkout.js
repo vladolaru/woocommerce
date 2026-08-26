@@ -3087,7 +3087,8 @@ describe( 'WooPayments checkout', () => {
 				);
 		}
 
-		function setupWooPayEmailInput( configOverrides = {} ) {
+		// The flow wires up once the Tracks identity resolves, like the plugin.
+		async function setupWooPayEmailInput( configOverrides = {} ) {
 			document.body.innerHTML =
 				'<form class="checkout" name="checkout">' +
 				'<p class="form-row" id="billing_email_field">' +
@@ -3140,6 +3141,7 @@ describe( 'WooPayments checkout', () => {
 				} );
 			} );
 			require( '../woopayments-checkout' );
+			await flushPromises();
 			return document.getElementById( 'billing_email' );
 		}
 
@@ -3216,7 +3218,7 @@ describe( 'WooPayments checkout', () => {
 		} );
 
 		test( 'does not wire the email input when the email-input flag is off', async () => {
-			const input = setupWooPayEmailInput( {
+			const input = await setupWooPayEmailInput( {
 				isWooPayEmailInputEnabled: false,
 			} );
 
@@ -3230,7 +3232,7 @@ describe( 'WooPayments checkout', () => {
 			[ 'pay-for-order pages', { isOrderPay: true } ],
 			[ 'preview pages', { isPreview: true } ],
 		] )( 'skips the lookup on %s', async ( description, overrides ) => {
-			const input = setupWooPayEmailInput( overrides );
+			const input = await setupWooPayEmailInput( overrides );
 
 			await typeEmail( input, 'shopper@example.com' );
 
@@ -3239,7 +3241,7 @@ describe( 'WooPayments checkout', () => {
 
 		test( 'skips the lookup inside the Customizer preview iframe', async () => {
 			window.location.search = '?customize_messenger_channel=preview-0';
-			const input = setupWooPayEmailInput();
+			const input = await setupWooPayEmailInput();
 
 			await typeEmail( input, 'shopper@example.com' );
 
@@ -3247,7 +3249,7 @@ describe( 'WooPayments checkout', () => {
 		} );
 
 		test( 'ignores WooPay messages from any other origin', async () => {
-			const input = setupWooPayEmailInput();
+			const input = await setupWooPayEmailInput();
 			await typeEmail( input, 'shopper@example.com' );
 
 			postWooPayMessage(
@@ -3266,7 +3268,7 @@ describe( 'WooPayments checkout', () => {
 		} );
 
 		test( 'ignores emails that do not validate', async () => {
-			const input = setupWooPayEmailInput();
+			const input = await setupWooPayEmailInput();
 
 			await typeEmail( input, 'not-an-email' );
 
@@ -3279,7 +3281,7 @@ describe( 'WooPayments checkout', () => {
 			window.addEventListener( 'woopayUserCheck', ( event ) => {
 				userCheckEvents.push( event.detail.isRegisteredUser );
 			} );
-			const input = setupWooPayEmailInput();
+			const input = await setupWooPayEmailInput();
 
 			await typeEmail( input, 'shopper@example.com' );
 
@@ -3338,7 +3340,7 @@ describe( 'WooPayments checkout', () => {
 			window.addEventListener( 'woopayUserCheck', ( event ) => {
 				userCheckEvents.push( event.detail.isRegisteredUser );
 			} );
-			const input = setupWooPayEmailInput();
+			const input = await setupWooPayEmailInput();
 
 			await typeEmail( input, 'new@example.com' );
 
@@ -3351,7 +3353,7 @@ describe( 'WooPayments checkout', () => {
 		} );
 
 		test( 'hands the WooPay session back through init_woopay and redirects once', async () => {
-			const input = setupWooPayEmailInput();
+			const input = await setupWooPayEmailInput();
 			await typeEmail( input, 'shopper@example.com' );
 			expect( document.querySelector( '.woopay-otp-iframe' ) ).not.toBeNull();
 
@@ -3393,7 +3395,7 @@ describe( 'WooPayments checkout', () => {
 
 		test( 'shows the unavailable notice and closes the iframe when init_woopay fails', async () => {
 			postResponses.init_woopay = { response: { result: 'error' } };
-			const input = setupWooPayEmailInput();
+			const input = await setupWooPayEmailInput();
 			await typeEmail( input, 'shopper@example.com' );
 
 			postWooPayMessage( {
@@ -3433,7 +3435,7 @@ describe( 'WooPayments checkout', () => {
 						),
 			],
 		] )( 'closes the OTP iframe on %s', async ( description, close ) => {
-			const input = setupWooPayEmailInput();
+			const input = await setupWooPayEmailInput();
 			await typeEmail( input, 'shopper@example.com' );
 			document.body.style.overflow = 'hidden';
 			jest.spyOn( input, 'focus' );
@@ -3449,7 +3451,7 @@ describe( 'WooPayments checkout', () => {
 			fetchResponses[
 				`${ WOOPAY_HOST }/wp-json/platform-checkout/v1/user/exists?`
 			] = { reject: new TypeError( 'Failed to fetch' ) };
-			const input = setupWooPayEmailInput();
+			const input = await setupWooPayEmailInput();
 
 			await typeEmail( input, 'shopper@example.com' );
 
@@ -3467,7 +3469,7 @@ describe( 'WooPayments checkout', () => {
 			fetchResponses[
 				`${ WOOPAY_HOST }/wp-json/platform-checkout/v1/user/exists?`
 			] = { reject: new TypeError( 'Failed to fetch' ) };
-			const input = setupWooPayEmailInput( {
+			const input = await setupWooPayEmailInput( {
 				woopayIsCountryAvailable: false,
 			} );
 
@@ -3487,7 +3489,7 @@ describe( 'WooPayments checkout', () => {
 				userCheckEvents.push( event.detail.isRegisteredUser );
 			} );
 
-			setupWooPayEmailInput();
+			await setupWooPayEmailInput();
 			await flushPromises();
 
 			expect( document.cookie ).toContain( 'skip_woopay=1' );
@@ -3503,7 +3505,7 @@ describe( 'WooPayments checkout', () => {
 
 		test( 'looks a prefilled email up without opening the iframe', async () => {
 			document.body.innerHTML = '';
-			const input = setupWooPayEmailInput();
+			const input = await setupWooPayEmailInput();
 			input.value = 'shopper@example.com';
 			// Re-require with the prefilled value in place.
 			jest.resetModules();
