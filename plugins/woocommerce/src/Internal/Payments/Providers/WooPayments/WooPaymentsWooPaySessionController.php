@@ -147,9 +147,10 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			return;
 		}
 
-		$phone_field = isset( $_POST['woopay_user_phone_field'] ) && is_array( $_POST['woopay_user_phone_field'] ) ? wp_unslash( $_POST['woopay_user_phone_field'] ) : array();
+		$phone = isset( $_POST['woopay_user_phone_field']['full'] ) && is_scalar( $_POST['woopay_user_phone_field']['full'] )
+			? trim( sanitize_text_field( wp_unslash( (string) $_POST['woopay_user_phone_field']['full'] ) ) )
+			: '';
 		// phpcs:enable WordPress.Security.NonceVerification.Missing
-		$phone = is_scalar( $phone_field['full'] ?? null ) ? trim( (string) $phone_field['full'] ) : '';
 
 		if ( '' === $phone ) {
 			wc_add_notice( '<strong>' . esc_html__( 'Mobile Number', 'woocommerce' ) . '</strong> ' . esc_html__( 'is required to create an WooPay account.', 'woocommerce' ), 'error' );
