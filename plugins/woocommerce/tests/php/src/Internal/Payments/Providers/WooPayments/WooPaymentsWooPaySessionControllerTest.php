@@ -270,12 +270,6 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->sut = $this->create_controller( true, true );
 		$field     = '<p class="form-row"><input type="email" name="billing_email" /></p>';
 
-		if ( ! defined( 'WOOCOMMERCE_CHECKOUT' ) ) {
-			// is_checkout() is pinned true process-wide once any test defines the constant,
-			// so the off-checkout branch can only be proven when nothing has defined it yet.
-			$this->assertSame( $field, $this->sut->filter_woocommerce_form_field_woopay_email( $field, 'billing_email', array( 'class' => array( 'form-row-wide' ) ), '' ) );
-		}
-
 		$this->set_checkout_shortcode_page();
 
 		$this->assertSame( '', $this->sut->filter_woocommerce_form_field_woopay_email( $field, 'billing_email', array( 'class' => array( 'form-row-wide' ) ), '' ) );
@@ -285,6 +279,20 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$GLOBALS['wp']->query_vars['order-pay'] = 123;
 		$this->assertSame( $field, $this->sut->filter_woocommerce_form_field_woopay_email( $field, 'billing_email', array( 'class' => array( 'form-row-wide' ) ), '' ) );
 		unset( $GLOBALS['wp']->query_vars['order-pay'] );
+	}
+
+	/**
+	 * @testdox Should leave the core billing email alone away from the checkout page.
+	 */
+	public function test_filter_woocommerce_form_field_woopay_email_keeps_core_field_off_checkout(): void {
+		if ( defined( 'WOOCOMMERCE_CHECKOUT' ) ) {
+			$this->markTestSkipped( 'Another test in this process defined WOOCOMMERCE_CHECKOUT; is_checkout() cannot be false here.' );
+		}
+
+		$this->sut = $this->create_controller( true, true );
+		$field     = '<p class="form-row"><input type="email" name="billing_email" /></p>';
+
+		$this->assertSame( $field, $this->sut->filter_woocommerce_form_field_woopay_email( $field, 'billing_email', array( 'class' => array( 'form-row-wide' ) ), '' ) );
 	}
 
 	/**
