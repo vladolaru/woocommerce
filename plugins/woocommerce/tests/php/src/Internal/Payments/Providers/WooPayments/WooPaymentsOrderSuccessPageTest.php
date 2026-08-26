@@ -457,6 +457,17 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should receive the API client from the container so the redirect re-check is wired in production.
+	 */
+	public function test_container_wires_the_api_client(): void {
+		$page     = wc_get_container()->get( WooPaymentsOrderSuccessPage::class );
+		$property = new \ReflectionProperty( WooPaymentsOrderSuccessPage::class, 'api_client' );
+		$property->setAccessible( true );
+
+		$this->assertInstanceOf( WooPaymentsApiClient::class, $property->getValue( $page ) );
+	}
+
+	/**
 	 * Create an API client mock answering the intent fetch.
 	 *
 	 * @param array $intent Intent payload to return.
@@ -518,7 +529,12 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 			->getMock();
 		$account_service->method( 'get_account_country' )->willReturn( 'US' );
 
-		$page = new WooPaymentsOrderSuccessPage();
+		$page = new class() extends WooPaymentsOrderSuccessPage {
+			/**
+			 * Skip the plugin-parity one-second wait before the intent re-check.
+			 */
+			protected function wait_before_intent_recheck(): void {}
+		};
 		$page->init( $arbiter, new WooPaymentsPaymentMethodRegistry(), $account_service, $tracker, $api_client );
 
 		return $page;

@@ -182,12 +182,12 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 				$intent_id = (string) $order->get_transaction_id();
 			}
 
-			if ( '' !== $intent_id && in_array( $payment_method_type, self::REDIRECT_PAYMENT_METHODS, true ) && null !== $this->api_client && $this->api_client->is_available() ) {
-				// Give the redirect return a moment to land before reading the intent, as the plugin does.
-				sleep( 1 );
+			$api_client = $this->api_client;
+			if ( '' !== $intent_id && in_array( $payment_method_type, self::REDIRECT_PAYMENT_METHODS, true ) && null !== $api_client && $api_client->is_available() ) {
+				$this->wait_before_intent_recheck();
 
 				try {
-					$intent = $this->api_client->get_payment_intention( $intent_id );
+					$intent = $api_client->get_payment_intention( $intent_id );
 				} catch ( WooPaymentsApiException $exception ) {
 					return $text;
 				}
@@ -207,6 +207,15 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 			__( 'Unfortunately, your order has failed. Please <a href="%s">try checking out again</a>.', 'woocommerce' ),
 			esc_url( wc_get_checkout_url() )
 		);
+	}
+
+	/**
+	 * Give the redirect return a moment to land before reading the intent, as the plugin does.
+	 *
+	 * Overridable so tests need not pay the wait.
+	 */
+	protected function wait_before_intent_recheck(): void {
+		sleep( 1 );
 	}
 
 	/**
