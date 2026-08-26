@@ -19,6 +19,7 @@ import {
 } from './upe-styles';
 import { recordWooPaymentsUserEvent } from './tracks';
 import enqueueFraudScripts from './fraud-scripts';
+import { handleWooPayEmailInput } from './woopay/email-input-iframe';
 
 const PAYMENT_METHOD_NAME = 'woocommerce_payments';
 const defaultSettings = getPaymentMethodData( PAYMENT_METHOD_NAME, {} );
@@ -1203,6 +1204,17 @@ const registerWooPayments = () => {
 };
 
 registerWooPayments();
+
+// The WooPay email lookup runs on the checkout block only, mirroring the
+// WooPayments plugin's blocks entry point.
+if (
+	defaultSettings.isWooPayEnabled &&
+	defaultSettings.isWooPayEmailInputEnabled &&
+	! defaultSettings.isPreview &&
+	document.querySelector( '[data-block-name="woocommerce/checkout"]' )
+) {
+	handleWooPayEmailInput( '#email', defaultSettings );
+}
 
 window.addEventListener( 'load', () => {
 	enqueueFraudScripts( defaultSettings?.fraudServices || {} );

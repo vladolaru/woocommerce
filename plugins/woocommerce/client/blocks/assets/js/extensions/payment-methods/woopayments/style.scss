@@ -213,3 +213,96 @@
 		margin-bottom: 4px;
 	}
 }
+
+/*
+ * WooPay email-input / OTP flow — ported from the WooPayments plugin's
+ * checkout/woopay/style.scss. The one-time-code iframe slides up as a
+ * full-screen sheet on narrow viewports and floats next to the email field
+ * behind a dimmed backdrop on wide ones.
+ */
+#contact-fields {
+	.wc-block-components-text-input {
+		display: inline-block;
+		position: relative;
+		width: 100%;
+
+		.wc-block-components-spinner {
+			right: 10px;
+			width: 24px;
+		}
+	}
+}
+
+/* Address-form email field spinner alignment. */
+.wc-block-components-address-form__email {
+	position: relative;
+
+	.wc-block-components-spinner {
+		top: 50%;
+		left: auto;
+		right: 10px;
+		width: 24px;
+		height: 24px;
+		transform: translateY(-50%);
+	}
+}
+
+.woopay-otp-iframe {
+	transition: top 500ms;
+	width: 100%;
+	height: 100dvh; /* stylelint-disable-line unit-no-unknown */
+	position: fixed;
+	top: 100%;
+	left: 0;
+	z-index: 355000;
+	border: 0;
+	background: #fff;
+
+	&.open {
+		top: 0;
+	}
+}
+
+.woopay-otp-iframe-wrapper {
+	.arrow {
+		position: fixed;
+		top: 100%;
+	}
+}
+
+@media screen and (min-width: 768px) {
+	.woopay-otp-iframe-wrapper {
+		position: fixed;
+		background: rgba(117, 117, 117, 0.6);
+		top: 0;
+		left: 0;
+		width: 100vw;
+		height: 100vh;
+		content: " ";
+		display: block;
+		z-index: 355000;
+
+		.woopay-otp-iframe {
+			transition: none;
+			height: 90vh;
+			max-height: 650px;
+			position: absolute;
+			max-width: 374px;
+			border-radius: 8px;
+			right: 50px;
+			left: auto;
+		}
+
+		.arrow {
+			position: absolute;
+			right: calc(15px / 2);
+			background: transparent;
+			width: 0;
+			height: 0;
+			z-index: 355001;
+			border-top: 15px solid transparent;
+			border-bottom: 15px solid transparent;
+			border-right: 15px solid #fff;
+		}
+	}
+}
