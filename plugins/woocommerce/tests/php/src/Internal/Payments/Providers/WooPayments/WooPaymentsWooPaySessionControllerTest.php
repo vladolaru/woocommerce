@@ -279,6 +279,56 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should require a phone number when the shopper asks to save their details in WooPay.
+	 */
+	public function test_maybe_show_woopay_phone_number_error_requires_phone_when_saving_user(): void {
+		$this->sut = $this->create_controller( true, true );
+		$this->sut->register();
+
+		$this->assertSame( 10, has_action( 'woocommerce_checkout_process', array( $this->sut, 'maybe_show_woopay_phone_number_error' ) ) );
+
+		$cases = array(
+			'not saving, no phone'       => array( array(), 0 ),
+			'not saving, checkbox false' => array( array( 'save_user_in_woopay' => 'false' ), 0 ),
+			'saving without phone field' => array( array( 'save_user_in_woopay' => 'true' ), 1 ),
+			'saving with empty phone'    => array(
+				array(
+					'save_user_in_woopay'     => 'true',
+					'woopay_user_phone_field' => array( 'full' => '' ),
+				),
+				1,
+			),
+			'saving with phone'          => array(
+				array(
+					'save_user_in_woopay'     => 'true',
+					'woopay_user_phone_field' => array( 'full' => '+15555550123' ),
+				),
+				0,
+			),
+		);
+
+		foreach ( $cases as $label => list( $post, $expected_errors ) ) {
+			wc_clear_notices();
+			$_POST = $post;
+
+			$this->sut->maybe_show_woopay_phone_number_error();
+
+			$this->assertCount( $expected_errors, wc_get_notices( 'error' ), $label );
+		}
+
+		$notice = wc_get_notices( 'error' );
+		$_POST  = array();
+		wc_clear_notices();
+		$this->assertSame( array(), $notice );
+
+		$_POST = array( 'save_user_in_woopay' => 'true' );
+		$this->sut->maybe_show_woopay_phone_number_error();
+		$this->assertStringContainsString( '<strong>Mobile Number</strong> is required to create an WooPay account.', wc_get_notices( 'error' )[0]['notice'] );
+		$_POST = array();
+		wc_clear_notices();
+	}
+
+	/**
 	 * @testdox Should render the WooPay separator on checkout.
 	 */
 	public function test_display_express_checkout_buttons_renders_separator_on_checkout(): void {

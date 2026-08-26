@@ -127,6 +127,33 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 		if ( false === has_filter( 'woocommerce_form_field_email', array( $this, 'filter_woocommerce_form_field_woopay_email' ) ) ) {
 			add_filter( 'woocommerce_form_field_email', array( $this, 'filter_woocommerce_form_field_woopay_email' ), 20, 4 );
 		}
+
+		if ( false === has_action( 'woocommerce_checkout_process', array( $this, 'maybe_show_woopay_phone_number_error' ) ) ) {
+			add_action( 'woocommerce_checkout_process', array( $this, 'maybe_show_woopay_phone_number_error' ) );
+		}
+	}
+
+	/**
+	 * Reject a classic checkout that asks to save the shopper in WooPay without a phone number.
+	 *
+	 * Mirrors the plugin's WC_Payments::maybe_show_woopay_phone_number_error(). The plugin
+	 * validates the `no-country-code` half its intl-tel-input field posts; the native save-user
+	 * form posts a single `full` number (see set_woopay_phone_session_data()), so that is the
+	 * value validated here.
+	 */
+	public function maybe_show_woopay_phone_number_error(): void {
+		// phpcs:disable WordPress.Security.NonceVerification.Missing -- WooCommerce verifies the checkout nonce before firing woocommerce_checkout_process.
+		if ( ! isset( $_POST['save_user_in_woopay'] ) || 'true' !== $_POST['save_user_in_woopay'] ) {
+			return;
+		}
+
+		$phone_field = isset( $_POST['woopay_user_phone_field'] ) && is_array( $_POST['woopay_user_phone_field'] ) ? wp_unslash( $_POST['woopay_user_phone_field'] ) : array();
+		// phpcs:enable WordPress.Security.NonceVerification.Missing
+		$phone = is_scalar( $phone_field['full'] ?? null ) ? trim( (string) $phone_field['full'] ) : '';
+
+		if ( '' === $phone ) {
+			wc_add_notice( '<strong>' . esc_html__( 'Mobile Number', 'woocommerce' ) . '</strong> ' . esc_html__( 'is required to create an WooPay account.', 'woocommerce' ), 'error' );
+		}
 	}
 
 	/**
