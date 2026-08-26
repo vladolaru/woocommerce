@@ -3246,6 +3246,25 @@ describe( 'WooPayments checkout', () => {
 			expect( getPostCalls( 'get_woopay_signature' ) ).toHaveLength( 0 );
 		} );
 
+		test( 'ignores WooPay messages from any other origin', async () => {
+			const input = setupWooPayEmailInput();
+			await typeEmail( input, 'shopper@example.com' );
+
+			postWooPayMessage(
+				{
+					action: 'redirect_to_woopay_skip_session_init',
+					redirectUrl: 'https://evil.example/phish',
+				},
+				'https://evil.example'
+			);
+			postWooPayMessage( { action: 'close_modal' }, 'https://evil.example' );
+			await flushPromises();
+
+			expect( window.location.href ).toBe( 'https://example.test/checkout/' );
+			expect( document.querySelector( '.woopay-otp-iframe-wrapper' ) ).not.toBeNull();
+			expect( getPostCalls( 'init_woopay' ) ).toHaveLength( 0 );
+		} );
+
 		test( 'ignores emails that do not validate', async () => {
 			const input = setupWooPayEmailInput();
 

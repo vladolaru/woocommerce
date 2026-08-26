@@ -220,6 +220,11 @@ export const handleWooPayEmailInput = async ( field, paymentSettings ) => {
 			return '';
 		}
 	};
+	// Fail closed: no resolvable WooPay origin, no trusted sender.
+	const isWooPayMessage = ( event ) => {
+		const woopayOrigin = getWooPayHostOrigin();
+		return !! woopayOrigin && event.origin === woopayOrigin;
+	};
 	const recordUserEvent = ( eventName, eventProperties ) =>
 		recordWooPaymentsUserEvent(
 			paymentSettings,
@@ -584,7 +589,7 @@ export const handleWooPayEmailInput = async ( field, paymentSettings ) => {
 	} );
 
 	window.addEventListener( 'message', ( e ) => {
-		if ( e.origin !== getWooPayHostOrigin() ) {
+		if ( ! isWooPayMessage( e ) ) {
 			return;
 		}
 		switch ( e.data.action ) {

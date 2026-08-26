@@ -214,6 +214,47 @@ describe( 'WooPay email input (blocks)', () => {
 		expect( shouldHandleWooPayEmailInput( baseSettings ) ).toBe( false );
 	} );
 
+	test( 'ignores WooPay messages from any other origin', async () => {
+		const input = await setup();
+		await typeEmail( input, 'shopper@example.com' );
+
+		postWooPayMessage(
+			{
+				action: 'redirect_to_woopay_skip_session_init',
+				redirectUrl: 'https://evil.example/phish',
+			},
+			'https://evil.example'
+		);
+		postWooPayMessage( { action: 'close_modal' }, 'https://evil.example' );
+		postWooPayMessage(
+			{
+				action: 'redirect_to_woopay',
+				platformCheckoutUserSession: 'stolen',
+			},
+			'https://evil.example'
+		);
+		await flushPromises();
+
+		expect( window.location.href ).toBe( 'https://example.test/checkout/' );
+		expect( document.querySelector( '.woopay-otp-iframe-wrapper' ) ).not.toBeNull();
+		expect( getAjaxCalls( 'init_woopay' ) ).toHaveLength( 0 );
+	} );
+
+	test( 'trusts no sender when the WooPay host is unparsable', async () => {
+		const input = await setup( { woopayHost: 'not a url' } );
+		await typeEmail( input, 'shopper@example.com' );
+
+		postWooPayMessage(
+			{
+				action: 'redirect_to_woopay_skip_session_init',
+				redirectUrl: 'https://evil.example/phish',
+			},
+			''
+		);
+
+		expect( window.location.href ).toBe( 'https://example.test/checkout/' );
+	} );
+
 	test( 'does nothing on pay-for-order pages', async () => {
 		const input = await setup( { isOrderPay: true } );
 

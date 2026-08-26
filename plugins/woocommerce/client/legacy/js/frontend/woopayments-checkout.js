@@ -3110,8 +3110,10 @@
 
 		window.addEventListener( 'message', function ( e ) {
 			var promise;
+			var woopayOrigin = getWooPayHostOrigin();
 
-			if ( e.origin !== getWooPayHostOrigin() ) {
+			// Fail closed: no resolvable WooPay origin, no trusted sender.
+			if ( ! woopayOrigin || e.origin !== woopayOrigin ) {
 				return;
 			}
 
