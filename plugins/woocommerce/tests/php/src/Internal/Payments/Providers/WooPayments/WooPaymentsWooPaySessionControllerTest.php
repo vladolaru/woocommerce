@@ -270,12 +270,21 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->sut = $this->create_controller( true, true );
 		$field     = '<p class="form-row"><input type="email" name="billing_email" /></p>';
 
-		$this->assertSame( $field, $this->sut->filter_woocommerce_form_field_woopay_email( $field, 'billing_email', array( 'class' => array( 'form-row-wide' ) ), '' ) );
+		if ( ! defined( 'WOOCOMMERCE_CHECKOUT' ) ) {
+			// is_checkout() is pinned true process-wide once any test defines the constant,
+			// so the off-checkout branch can only be proven when nothing has defined it yet.
+			$this->assertSame( $field, $this->sut->filter_woocommerce_form_field_woopay_email( $field, 'billing_email', array( 'class' => array( 'form-row-wide' ) ), '' ) );
+		}
 
 		$this->set_checkout_shortcode_page();
 
 		$this->assertSame( '', $this->sut->filter_woocommerce_form_field_woopay_email( $field, 'billing_email', array( 'class' => array( 'form-row-wide' ) ), '' ) );
 		$this->assertSame( $field, $this->sut->filter_woocommerce_form_field_woopay_email( $field, 'billing_email', array( 'class' => array( 'form-row-wide woopay-billing-email' ) ), '' ) );
+
+		// The pay-for-order page is a checkout page the relocation must leave alone.
+		$GLOBALS['wp']->query_vars['order-pay'] = 123;
+		$this->assertSame( $field, $this->sut->filter_woocommerce_form_field_woopay_email( $field, 'billing_email', array( 'class' => array( 'form-row-wide' ) ), '' ) );
+		unset( $GLOBALS['wp']->query_vars['order-pay'] );
 	}
 
 	/**
