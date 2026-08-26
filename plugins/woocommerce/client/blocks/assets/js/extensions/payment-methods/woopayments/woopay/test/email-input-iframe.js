@@ -193,7 +193,10 @@ describe( 'WooPay email input (blocks)', () => {
 		renderCheckout();
 		expect( shouldHandleWooPayEmailInput( baseSettings ) ).toBe( true );
 		expect(
-			shouldHandleWooPayEmailInput( { ...baseSettings, isWooPayEnabled: false } )
+			shouldHandleWooPayEmailInput( {
+				...baseSettings,
+				isWooPayEnabled: false,
+			} )
 		).toBe( false );
 		expect(
 			shouldHandleWooPayEmailInput( {
@@ -236,7 +239,9 @@ describe( 'WooPay email input (blocks)', () => {
 		await flushPromises();
 
 		expect( window.location.href ).toBe( 'https://example.test/checkout/' );
-		expect( document.querySelector( '.woopay-otp-iframe-wrapper' ) ).not.toBeNull();
+		expect(
+			document.querySelector( '.woopay-otp-iframe-wrapper' )
+		).not.toBeNull();
 		expect( getAjaxCalls( 'init_woopay' ) ).toHaveLength( 0 );
 	} );
 
@@ -307,7 +312,9 @@ describe( 'WooPay email input (blocks)', () => {
 		expect( wrapper.parentNode ).toBe( input.parentNode );
 		expect( iframe.title ).toBe( 'WooPay SMS code verification' );
 		const otpUrl = new URL( iframe.src );
-		expect( otpUrl.origin + otpUrl.pathname ).toBe( `${ WOOPAY_HOST }/otp/` );
+		expect( otpUrl.origin + otpUrl.pathname ).toBe(
+			`${ WOOPAY_HOST }/otp/`
+		);
 		expect( Object.fromEntries( otpUrl.searchParams ) ).toEqual( {
 			email: 'shopper@example.com',
 			testMode: 'true',
@@ -329,7 +336,8 @@ describe( 'WooPay email input (blocks)', () => {
 	} );
 
 	test( 'resolves the Tracks identity through the platform when no cookie is set', async () => {
-		document.cookie = 'tk_ai=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;';
+		document.cookie =
+			'tk_ai=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;';
 		fetchResponses[ baseSettings.ajaxUrl ] = {
 			body: { success: true, data: { _ut: 'user', _ui: '42' } },
 		};
@@ -345,7 +353,9 @@ describe( 'WooPay email input (blocks)', () => {
 		expect( identityCall[ 1 ].body.get( 'tracksNonce' ) ).toBe(
 			'tracks-nonce'
 		);
-		const otpUrl = new URL( document.querySelector( '.woopay-otp-iframe' ).src );
+		const otpUrl = new URL(
+			document.querySelector( '.woopay-otp-iframe' ).src
+		);
 		expect( otpUrl.searchParams.get( 'tracksUserIdentity' ) ).toBe(
 			JSON.stringify( { _ut: 'user', _ui: '42' } )
 		);
@@ -437,7 +447,9 @@ describe( 'WooPay email input (blocks)', () => {
 				billing_email: '',
 			},
 		] );
-		expect( window.location ).toBe( `${ WOOPAY_HOST }/checkout/?session=1` );
+		expect( window.location ).toBe(
+			`${ WOOPAY_HOST }/checkout/?session=1`
+		);
 	} );
 
 	test( 'redirects straight away on redirect_to_woopay_skip_session_init', async () => {
@@ -467,34 +479,50 @@ describe( 'WooPay email input (blocks)', () => {
 		await flushPromises();
 		await flushPromises();
 
-		expect( document.querySelector( '.woopay-otp-iframe-wrapper' ) ).toBeNull();
+		expect(
+			document.querySelector( '.woopay-otp-iframe-wrapper' )
+		).toBeNull();
 		const notice = document.querySelector(
 			'.wc-block-checkout__guest-checkout-notice'
 		);
-		expect( notice.textContent ).toBe( 'WooPay is unavailable at this time.' );
+		expect( notice.textContent ).toBe(
+			'WooPay is unavailable at this time.'
+		);
 		expect( notice.parentNode ).toBe( input.parentNode.parentNode );
 	} );
 
 	test( 'closes the OTP iframe on close_modal, Escape and the place-order click', async () => {
 		const input = await setup();
 		await typeEmail( input, 'shopper@example.com' );
-		expect( document.querySelector( '.woopay-otp-iframe-wrapper' ) ).not.toBeNull();
+		expect(
+			document.querySelector( '.woopay-otp-iframe-wrapper' )
+		).not.toBeNull();
 		postWooPayMessage( { action: 'close_modal' } );
-		expect( document.querySelector( '.woopay-otp-iframe-wrapper' ) ).toBeNull();
+		expect(
+			document.querySelector( '.woopay-otp-iframe-wrapper' )
+		).toBeNull();
 
 		await typeEmail( input, 'shopper@example.com' );
-		expect( document.querySelector( '.woopay-otp-iframe-wrapper' ) ).not.toBeNull();
+		expect(
+			document.querySelector( '.woopay-otp-iframe-wrapper' )
+		).not.toBeNull();
 		document.dispatchEvent(
 			new window.KeyboardEvent( 'keyup', { key: 'Escape' } )
 		);
-		expect( document.querySelector( '.woopay-otp-iframe-wrapper' ) ).toBeNull();
+		expect(
+			document.querySelector( '.woopay-otp-iframe-wrapper' )
+		).toBeNull();
 
 		await typeEmail( input, 'shopper@example.com' );
-		expect( document.querySelector( '.woopay-otp-iframe-wrapper' ) ).not.toBeNull();
+		expect(
+			document.querySelector( '.woopay-otp-iframe-wrapper' )
+		).not.toBeNull();
 		document
 			.querySelector( '.wc-block-components-checkout-place-order-button' )
 			.click();
-		expect( document.querySelector( '.woopay-otp-iframe-wrapper' ) ).toBeNull();
+		expect(
+			document.querySelector( '.woopay-otp-iframe-wrapper' )
+		).toBeNull();
 	} );
 
 	test( 'surfaces the unavailable notice when WooPay cannot be reached', async () => {
@@ -506,10 +534,13 @@ describe( 'WooPay email input (blocks)', () => {
 		await typeEmail( input, 'shopper@example.com' );
 
 		expect(
-			document.querySelector( '.wc-block-checkout__guest-checkout-notice' )
-				.textContent
+			document.querySelector(
+				'.wc-block-checkout__guest-checkout-notice'
+			).textContent
 		).toBe( 'WooPay is unavailable at this time.' );
-		expect( document.querySelector( '.wc-block-components-spinner' ) ).toBeNull();
+		expect(
+			document.querySelector( '.wc-block-components-spinner' )
+		).toBeNull();
 	} );
 
 	test( 'records a back-button return, sets the session skip cookie and cleans the URL', async () => {
@@ -541,6 +572,8 @@ describe( 'WooPay email input (blocks)', () => {
 			result: 'success',
 			url: `${ WOOPAY_HOST }/checkout/?session=1`,
 		} );
-		expect( initWooPay( baseSettings, 'shopper@example.com', 'tok' ) ).toBeDefined();
+		expect(
+			initWooPay( baseSettings, 'shopper@example.com', 'tok' )
+		).toBeDefined();
 	} );
 } );
