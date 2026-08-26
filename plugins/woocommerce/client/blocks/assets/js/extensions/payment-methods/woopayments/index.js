@@ -440,6 +440,12 @@ const shouldUsePlatformStripeForCard = ( paymentSettings = defaultSettings ) =>
 			?.forceNetworkSavedCards ?? paymentSettings.forceNetworkSavedCards
 	);
 
+const isLinkEnabled = ( paymentSettings = defaultSettings ) =>
+	Boolean(
+		paymentSettings.paymentMethodsConfig?.link !== undefined &&
+			paymentSettings.paymentMethodsConfig?.card !== undefined
+	);
+
 const createStripe = (
 	paymentSettings = defaultSettings,
 	forceAccountRequest = false
@@ -488,12 +494,6 @@ const getReusablePaymentMethodTerms = (
 		{}
 	);
 };
-
-const isLinkEnabled = ( paymentSettings = defaultSettings ) =>
-	Boolean(
-		paymentSettings.paymentMethodsConfig?.link !== undefined &&
-			paymentSettings.paymentMethodsConfig?.card !== undefined
-	);
 
 const getStripePaymentMethodTypes = ( paymentSettings = defaultSettings ) => {
 	if (
