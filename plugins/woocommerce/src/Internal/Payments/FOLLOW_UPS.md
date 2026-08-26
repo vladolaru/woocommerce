@@ -28,9 +28,11 @@ The plugin parses the platform's "You cannot combine currencies on a single cust
 
 For platform errors with an empty `error.type` (for example `wcpay_blocked_by_fraud_rule`, top-level platform codes) the plugin shows the raw platform message to the shopper; native's `WooPaymentsErrorMessages` redacts everything that is not a `card_error` to the generic message. Kept deliberately — native's redaction is the safer behavior — but it is a known bytes divergence from the plugin. Revisit only if shopper-copy parity for these paths becomes a requirement.
 
-### WooPay email-input/OTP and direct-checkout front ends not ported (S7, D3)
+### WooPay direct-checkout front end not ported (S7, D3; email-input ported in S7b)
 
-The checkout config publishes `isWooPayEmailInputEnabled` and `isWooPayDirectCheckoutEnabled` as `false` because neither flow has a native JS consumer (no OTP iframe, no `handleWooPayEmailInput`, no `encryptedData` producer). The email-input/OTP port is a scheduled follow-up slice of the parity programme; it re-enables the flag, ports the plugin's `wcpay_is_woopay_email_input_enabled` filter, and adds the `encrypted_data` branch to the session email fallback chain. The direct-checkout front end has no scheduled port; if it lands, flip its flag in `WooPaymentsWooPaySessionService::get_woopay_frontend_config()`.
+The email-input/OTP flow is ported (classic `woopayments-checkout.js`, blocks `woopay/email-input-iframe.js`) and `isWooPayEmailInputEnabled` follows the plugin's `wcpay_is_woopay_email_input_enabled` filter. The checkout config still publishes `isWooPayDirectCheckoutEnabled` as `false` because the direct-checkout front end has no native JS consumer (no `encryptedData` producer); the `encrypted_data` branch of the session email fallback chain belongs with that port, its only producer. If it lands, flip the flag in `WooPaymentsWooPaySessionService::get_woopay_frontend_config()`.
+
+Related layout gap, not part of the email-input hook contract: with WooPay enabled the plugin relocates the classic billing email into a "Contact information" section above the billing fields (`woopay_fields_before_billing_details()` on `woocommerce_checkout_billing` at priority -50, hiding the core field through `woocommerce_form_field_email`, adding the `woopay-billing-email` wrapper class and enqueuing `wc-blocks-style`). Native keeps the email in its default position; the OTP popover anchors to the field wherever it sits, so the flow works, but the checkout layout differs from a WooPay-enabled plugin store. Needs a product decision before porting.
 
 ### wcpay_woopay_is_signed_with_blog_token stays strengthen-only (S7, finding 12 — deliberate divergence)
 
