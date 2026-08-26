@@ -1,0 +1,4 @@
+Significance: minor
+Type: add
+
+Send Level 3 line-item data and re-send order metadata on native WooPayments charges, renewals and captures.

@@ -1,0 +1,4 @@
+Significance: minor
+Type: add
+
+Render native WooPayments in-person payment receipts from theme-overridable templates with the store's branding logo, and record the terminal channel before capture.
