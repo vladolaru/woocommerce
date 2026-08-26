@@ -72,6 +72,12 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox The cart-total AJAX handler recalculates the cart before answering.
+	 *
+	 * Runs in its own process: the handler defines the cart/checkout context
+	 * constants, which would otherwise pin is_checkout() for every later test.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_get_cart_total_ajax_recalculates_stale_cart_totals(): void {
 		$controller = $this->create_controller( true, true, array( 'card', 'affirm' ), array( 'affirm_payments' => 'active' ) );
