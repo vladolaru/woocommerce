@@ -3399,6 +3399,85 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A failed native cancel re-fetches the intent and treats an already-canceled authorization as canceled.
+	 */
+	public function test_cancel_exception_self_heals_when_intent_is_already_canceled(): void {
+		$order      = $this->create_woopayments_order();
+		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ), true );
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_available', 'cancel_intention', 'get_payment_intention' ) )
+			->getMock();
+
+		$order->set_transaction_id( 'pi_cancel_healed' );
+		$order->save();
+
+		$api_client->method( 'is_available' )->willReturn( true );
+		$api_client->expects( $this->once() )
+			->method( 'cancel_intention' )
+			->willThrowException( new WooPaymentsApiException( 'Cancel failed.', 'wcpay_cancel_error', 402 ) );
+		$api_client->expects( $this->once() )
+			->method( 'get_payment_intention' )
+			->with( 'pi_cancel_healed' )
+			->willReturn(
+				array(
+					'id'      => 'pi_cancel_healed',
+					'status'  => 'canceled',
+					'charges' => array(
+						'data' => array(
+							array( 'id' => 'ch_healed' ),
+						),
+					),
+				)
+			);
+
+		$sut     = $this->create_adapter( $gateway, $api_client );
+		$outcome = $sut->cancel( PaymentContext::for_cancel( $order, OrderPaymentStore::GATEWAY_ID ), 'key_cancel' );
+
+		$this->assertSame( PaymentOutcome::STATUS_CANCELED, $outcome->get_status(), 'A transport failure on an intent the provider already canceled is a completed cancel, as in the plugin.' );
+		$plan = $outcome->get_effect_plan();
+		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $plan );
+		$this->assertSame( 'cancel', $plan->get_type() );
+		$this->assertSame( 'ch_healed', $plan->get_provider_result()['charges']['data'][0]['id'], 'The effect plan must carry the re-fetched intent.' );
+	}
+
+	/**
+	 * @testdox A failed native cancel stays failed when the re-fetched intent is not canceled.
+	 */
+	public function test_cancel_exception_stays_failed_when_intent_is_not_canceled(): void {
+		$order      = $this->create_woopayments_order();
+		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ), true );
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_available', 'cancel_intention', 'get_payment_intention' ) )
+			->getMock();
+
+		$order->set_transaction_id( 'pi_cancel_live' );
+		$order->save();
+
+		$api_client->method( 'is_available' )->willReturn( true );
+		$api_client->expects( $this->once() )
+			->method( 'cancel_intention' )
+			->willThrowException( new WooPaymentsApiException( 'Cancel failed.', 'wcpay_cancel_error', 402 ) );
+		$api_client->expects( $this->once() )
+			->method( 'get_payment_intention' )
+			->with( 'pi_cancel_live' )
+			->willReturn(
+				array(
+					'id'     => 'pi_cancel_live',
+					'status' => 'requires_capture',
+				)
+			);
+
+		$sut     = $this->create_adapter( $gateway, $api_client );
+		$outcome = $sut->cancel( PaymentContext::for_cancel( $order, OrderPaymentStore::GATEWAY_ID ), 'key_cancel' );
+
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertNull( $outcome->get_effect_plan() );
+		$this->assertSame( '', $gateway->last_idempotency_key, 'The legacy gateway must not be consulted after a native transport failure.' );
+	}
+
+	/**
 	 * @testdox A failed native capture re-fetches the intent and flags an expired authorization.
 	 */
 	public function test_capture_exception_detects_expired_authorization_via_refetch(): void {
