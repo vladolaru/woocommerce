@@ -17,6 +17,8 @@ import {
 const RUN_ID = 'run-classic-card';
 const BASE_URL = 'https://native.test/';
 const TOKEN = 'abcdefghijklmnop';
+// A FingerprintJS visitor id, the device fingerprint the extension posts.
+const DEVICE_FINGERPRINT = '2ee41551fca70edc977286f51aeb02ba';
 const TOKEN_DIGEST: PublicTokenDigest = {
 	length: 16,
 	sha256: createHash( 'sha256' ).update( TOKEN ).digest( 'hex' ),
@@ -37,7 +39,7 @@ const REQUEST_BODY = new URLSearchParams( [
 	[ 'wcpay-fraud-prevention-token', TOKEN ],
 	[ 'wcpay-payment-method-error-code', '' ],
 	[ 'wcpay-payment-method-error-message', '' ],
-	[ 'wcpay-fingerprint', '' ],
+	[ 'wcpay-fingerprint', DEVICE_FINGERPRINT ],
 ] ).toString();
 
 function checkoutRequest( body = REQUEST_BODY ) {
@@ -590,7 +592,8 @@ test( 'normalizes only public-safe allowlisted Classic checkout fields', () => {
 		paymentMethodErrorCodePresent: false,
 		paymentMethodErrorMessagePresent: false,
 		platformPaymentMethod: 'false',
-		fingerprintPresent: false,
+		fingerprintPresent: true,
+		deviceFingerprint: true,
 	} );
 	const serialized = JSON.stringify( evidence );
 	expect( serialized ).not.toContain( TOKEN );
@@ -870,8 +873,15 @@ for ( const unsafeRequest of [
 	{
 		name: 'provider fingerprint',
 		body: REQUEST_BODY.replace(
-			'wcpay-fingerprint=',
+			`wcpay-fingerprint=${ DEVICE_FINGERPRINT }`,
 			'wcpay-fingerprint=provider_fingerprint'
+		),
+	},
+	{
+		name: 'missing device fingerprint',
+		body: REQUEST_BODY.replace(
+			`wcpay-fingerprint=${ DEVICE_FINGERPRINT }`,
+			'wcpay-fingerprint='
 		),
 	},
 ] ) {

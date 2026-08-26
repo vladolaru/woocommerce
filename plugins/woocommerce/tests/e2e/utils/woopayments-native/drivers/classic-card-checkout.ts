@@ -72,6 +72,12 @@ export interface ClassicCheckoutRequestEvidence {
 	paymentMethodErrorMessagePresent: boolean;
 	platformPaymentMethod: 'true' | 'false' | 'invalid';
 	fingerprintPresent: boolean;
+	/**
+	 * Whether `wcpay-fingerprint` carries a FingerprintJS device visitor id
+	 * (32 lowercase hex), the value the WooPayments extension posts. A
+	 * provider/card fingerprint or any other shape is not that.
+	 */
+	deviceFingerprint: boolean;
 }
 
 /**
@@ -331,6 +337,9 @@ export function normalizeClassicCheckoutRequest(
 			values[ 'wcpay-is-platform-payment-method' ]
 		),
 		fingerprintPresent: ( values[ 'wcpay-fingerprint' ] ?? '' ) !== '',
+		deviceFingerprint: /^[a-f0-9]{32}$/.test(
+			values[ 'wcpay-fingerprint' ] ?? ''
+		),
 	};
 }
 
@@ -1195,7 +1204,7 @@ function requireExpectedRequestEvidence(
 		evidence.paymentMethodErrorCodePresent ||
 		evidence.paymentMethodErrorMessagePresent ||
 		evidence.platformPaymentMethod === 'invalid' ||
-		evidence.fingerprintPresent
+		! evidence.deviceFingerprint
 	) {
 		fail(
 			'submitted request evidence is not the exact basic-card contract.'
