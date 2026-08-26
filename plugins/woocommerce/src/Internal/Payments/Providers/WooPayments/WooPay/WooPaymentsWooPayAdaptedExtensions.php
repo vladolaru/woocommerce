@@ -187,6 +187,29 @@ class WooPaymentsWooPayAdaptedExtensions extends IntegrationRegistry {
 	}
 
 	/**
+	 * Update extension order data after a WooPay checkout completes.
+	 *
+	 * Extensions that attribute orders through cookies never see the shopper's browser
+	 * during a WooPay checkout, so the attribution rides the WooPay request instead:
+	 * Affiliate for WooCommerce receives the referrer as an `affiliate` query parameter.
+	 *
+	 * @param int $order_id The completed WooPay order ID.
+	 */
+	public function update_order_extension_data( int $order_id ): void {
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- WooPay server-to-store request; the order is authenticated upstream.
+		if ( empty( $_GET['affiliate'] ) || ! is_scalar( $_GET['affiliate'] ) || ! $this->is_affiliate_for_woocommerce_enabled() ) {
+			return;
+		}
+
+		$affiliate_id = (int) wc_clean( wp_unslash( (string) $_GET['affiliate'] ) );
+		// phpcs:enable WordPress.Security.NonceVerification.Recommended
+
+		$api_class     = 'AFWC_API';
+		$affiliate_api = $api_class::get_instance();
+		$affiliate_api->track_conversion( $order_id, $affiliate_id, '', array( 'is_affiliate_eligible' => true ) );
+	}
+
+	/**
 	 * Register only integrations WooPay can adapt.
 	 *
 	 * @param IntegrationInterface $integration Blocks integration.

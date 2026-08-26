@@ -1663,6 +1663,36 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should update adapted-extension order data for every WooPay Store API order, verified email or not.
+	 */
+	public function test_payment_status_change_updates_extension_order_data_without_verified_email(): void {
+		$this->simulate_woopay_store_api_request();
+
+		$order = wc_create_order();
+		$order->save();
+
+		$adapted_extensions = $this->createMock( WooPaymentsWooPayAdaptedExtensions::class );
+		$adapted_extensions->expects( $this->once() )
+			->method( 'update_order_extension_data' )
+			->with( $order->get_id() );
+
+		$this->create_service( array(), array(), $adapted_extensions )->woopay_order_payment_status_changed( $order->get_id() );
+	}
+
+	/**
+	 * @testdox Should not touch adapted-extension order data outside a WooPay Store API request.
+	 */
+	public function test_payment_status_change_skips_extension_order_data_outside_woopay_request(): void {
+		$order = wc_create_order();
+		$order->save();
+
+		$adapted_extensions = $this->createMock( WooPaymentsWooPayAdaptedExtensions::class );
+		$adapted_extensions->expects( $this->never() )->method( 'update_order_extension_data' );
+
+		$this->create_service( array(), array(), $adapted_extensions )->woopay_order_payment_status_changed( $order->get_id() );
+	}
+
+	/**
 	 * @testdox Should restore the stowed customer id and remove the bookkeeping meta.
 	 */
 	public function test_restore_order_customer_id_restores_stowed_customer(): void {

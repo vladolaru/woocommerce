@@ -368,6 +368,10 @@ class WooPaymentsWooPaySessionService {
 			return;
 		}
 
+		// Cookie-attributed extensions get their order data from the WooPay request itself,
+		// independently of the verified-email flow below.
+		$this->get_adapted_extensions()->update_order_extension_data( (int) $order_id );
+
 		$woopay_verified_email_address = $this->get_woopay_verified_email_address();
 		if ( null === $woopay_verified_email_address ) {
 			return;
