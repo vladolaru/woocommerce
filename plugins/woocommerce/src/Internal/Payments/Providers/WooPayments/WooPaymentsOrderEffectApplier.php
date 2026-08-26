@@ -368,7 +368,25 @@ class WooPaymentsOrderEffectApplier {
 	 * @return array<string,mixed>
 	 */
 	private function compose_cancel_effect_data( WC_Order $order, PaymentOutcome $outcome, array $result ): array {
-		if ( PaymentOutcome::STATUS_CANCELED !== $outcome->get_status() || 'canceled' !== (string) ( $result['status'] ?? '' ) ) {
+		$provider_status = (string) ( $result['status'] ?? '' );
+		if ( PaymentOutcome::STATUS_FAILED === $outcome->get_status() && '' !== $provider_status && 'canceled' !== $provider_status ) {
+			// The cancel failed but the intent was re-read: record the status the
+			// provider still reports and the failure note, as the plugin's
+			// cancel_authorization() does, so the admin actions reflect reality.
+			$message         = isset( $outcome->get_data()[ PaymentOutcome::DATA_ERROR_MESSAGE ] )
+				? (string) $outcome->get_data()[ PaymentOutcome::DATA_ERROR_MESSAGE ]
+				: (string) ( $result['message'] ?? '' );
+			$note_candidates = $this->note_service->format_cancel_failed_note_candidates( $message );
+
+			return array(
+				PaymentOutcome::DATA_META             => array( '_intention_status' => $provider_status ),
+				PaymentOutcome::DATA_NOTE             => $note_candidates[0],
+				PaymentOutcome::DATA_NOTE_TYPE        => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_FAILED,
+				PaymentOutcome::DATA_NOTE_EQUIVALENTS => $note_candidates,
+			);
+		}
+
+		if ( PaymentOutcome::STATUS_CANCELED !== $outcome->get_status() || 'canceled' !== $provider_status ) {
 			return array();
 		}
 

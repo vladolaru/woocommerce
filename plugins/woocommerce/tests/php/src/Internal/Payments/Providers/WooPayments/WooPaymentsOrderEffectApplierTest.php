@@ -1057,9 +1057,49 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	 */
 	public static function provide_unsuccessful_cancel_effects(): array {
 		return array(
-			'failed outcome and provider result' => array( PaymentOutcome::STATUS_FAILED, 'requires_capture' ),
+			'failed outcome without an observed provider status' => array( PaymentOutcome::STATUS_FAILED, '' ),
 			'canceled outcome with mismatched provider result' => array( PaymentOutcome::STATUS_CANCELED, 'requires_capture' ),
 		);
+	}
+
+	/**
+	 * @testdox A failed cancellation with a re-read provider status records that status and the failure note.
+	 */
+	public function test_failed_cancel_with_observed_status_records_status_and_note(): void {
+		$order = $this->create_woopayments_order();
+		$order->update_meta_data( '_wcpay_transaction_fee', '1.25' );
+		$order->save();
+		$outcome = new PaymentOutcome(
+			PaymentOutcome::STATUS_FAILED,
+			'pi_cancel_observed',
+			'',
+			'',
+			'',
+			array( PaymentOutcome::DATA_ERROR_MESSAGE => 'Cancellation rejected.' )
+		);
+		$plan    = WooPaymentsOrderEffectPlan::for_cancel(
+			array(
+				'id'     => 'pi_cancel_observed',
+				'status' => 'requires_capture',
+			)
+		);
+
+		$result = $this->create_applier()->apply(
+			PaymentContext::for_cancel( $order, OrderPaymentStore::GATEWAY_ID ),
+			$outcome,
+			$plan
+		);
+
+		$data = $result->get_data();
+		$this->assertSame( array( '_intention_status' => 'requires_capture' ), $data[ PaymentOutcome::DATA_META ], 'The status the provider still reports must be recorded, as the plugin does.' );
+		$this->assertSame(
+			( new WooPaymentsOrderNoteService() )->format_cancel_failed_note_candidates( 'Cancellation rejected.' )[0],
+			$data[ PaymentOutcome::DATA_NOTE ]
+		);
+		$this->assertStringContainsString( '<code>Cancellation rejected.</code>', $data[ PaymentOutcome::DATA_NOTE ] );
+		$this->assertSame( PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_FAILED, $data[ PaymentOutcome::DATA_NOTE_TYPE ] );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_META_TO_DELETE, $data );
+		$this->assertSame( '1.25', $order->get_meta( '_wcpay_transaction_fee', true ) );
 	}
 
 	/**

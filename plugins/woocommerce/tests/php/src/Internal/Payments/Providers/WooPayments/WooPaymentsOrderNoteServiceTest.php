@@ -691,4 +691,19 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 	public function translate_test_string( string $translation, string $text, string $domain ): string {
 		return $this->gettext_replacements[ $domain ][ $text ] ?? $translation;
 	}
+	/**
+	 * @testdox Should render the plugin's failed-cancel notes with and without a provider message.
+	 */
+	public function test_format_cancel_failed_note_candidates(): void {
+		$sut = new WooPaymentsOrderNoteService();
+
+		$this->assertSame(
+			array( 'Canceling authorization <strong>failed</strong> to complete.' ),
+			$sut->format_cancel_failed_note_candidates( '' )
+		);
+		$this->assertSame(
+			array( 'Canceling authorization <strong>failed</strong> to complete with the following message: <code>Not &lt;now&gt;.</code>.' ),
+			$sut->format_cancel_failed_note_candidates( 'Not <now>.' )
+		);
+	}
 }

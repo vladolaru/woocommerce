@@ -209,6 +209,37 @@ class WooPaymentsOrderNoteService {
 	}
 
 	/**
+	 * Build the renderings of a failed authorization-cancel note.
+	 *
+	 * Mirrors the plugin's cancel_authorization() failure notes: the provider's
+	 * message is quoted when there is one, the generic copy otherwise.
+	 *
+	 * @param string $message Failure message from the provider, if any.
+	 * @return string[] Exact equivalent renderings, with the native Core rendering first.
+	 *
+	 * @since 11.0.0
+	 */
+	public function format_cancel_failed_note_candidates( string $message ): array {
+		if ( '' === $message ) {
+			return array( WooPaymentsHtmlUtils::escape_interpolated_html( __( 'Canceling authorization <strong>failed</strong> to complete.', 'woocommerce' ), array( 'strong' => '<strong>' ) ) );
+		}
+
+		return array(
+			sprintf(
+				WooPaymentsHtmlUtils::escape_interpolated_html(
+					/* translators: %1$s: error message */
+					__( 'Canceling authorization <strong>failed</strong> to complete with the following message: <code>%1$s</code>.', 'woocommerce' ),
+					array(
+						'strong' => '<strong>',
+						'code'   => '<code>',
+					)
+				),
+				esc_html( $message )
+			),
+		);
+	}
+
+	/**
 	 * Build exact Core- and plugin-catalog renderings of a fraud-blocked payment note.
 	 *
 	 * Mirrors the plugin's blocked-payment note: fired risk filters render as a

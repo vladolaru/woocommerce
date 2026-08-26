@@ -3473,8 +3473,39 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$outcome = $sut->cancel( PaymentContext::for_cancel( $order, OrderPaymentStore::GATEWAY_ID ), 'key_cancel' );
 
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
-		$this->assertNull( $outcome->get_effect_plan() );
+		$plan = $outcome->get_effect_plan();
+		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $plan );
+		$this->assertSame( 'cancel', $plan->get_type() );
+		$this->assertSame( 'requires_capture', $plan->get_provider_result()['status'], 'The re-read status rides on the plan so the applier can record it.' );
 		$this->assertSame( '', $gateway->last_idempotency_key, 'The legacy gateway must not be consulted after a native transport failure.' );
+	}
+
+	/**
+	 * @testdox A failed native cancel whose re-fetch also fails keeps the plain failed outcome.
+	 */
+	public function test_cancel_exception_without_refetch_keeps_plain_failure(): void {
+		$order      = $this->create_woopayments_order();
+		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ), true );
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_available', 'cancel_intention', 'get_payment_intention' ) )
+			->getMock();
+
+		$order->set_transaction_id( 'pi_cancel_dark' );
+		$order->save();
+
+		$api_client->method( 'is_available' )->willReturn( true );
+		$api_client->method( 'cancel_intention' )
+			->willThrowException( new WooPaymentsApiException( 'Cancel failed.', 'wcpay_cancel_error', 402 ) );
+		$api_client->method( 'get_payment_intention' )
+			->willThrowException( new WooPaymentsApiException( 'Fetch failed.', 'wcpay_fetch_error', 500 ) );
+
+		$sut     = $this->create_adapter( $gateway, $api_client );
+		$outcome = $sut->cancel( PaymentContext::for_cancel( $order, OrderPaymentStore::GATEWAY_ID ), 'key_cancel' );
+
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertNull( $outcome->get_effect_plan() );
+		$this->assertSame( 'Cancel failed.', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_MESSAGE ], 'The original cancel error stays the actionable one.' );
 	}
 
 	/**
