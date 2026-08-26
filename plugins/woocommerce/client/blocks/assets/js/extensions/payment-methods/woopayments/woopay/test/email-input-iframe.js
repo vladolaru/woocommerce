@@ -4,6 +4,8 @@
 import {
 	handleWooPayEmailInput,
 	initWooPay,
+	isPreviewing,
+	shouldHandleWooPayEmailInput,
 	validateEmail,
 	shouldSkipWooPay,
 	deleteSkipWooPayCookie,
@@ -185,6 +187,31 @@ describe( 'WooPay email input (blocks)', () => {
 		expect( shouldSkipWooPay() ).toBe( true );
 		deleteSkipWooPayCookie();
 		expect( shouldSkipWooPay() ).toBe( false );
+	} );
+
+	test( 'gates the flow like the plugin blocks entry point', () => {
+		renderCheckout();
+		expect( shouldHandleWooPayEmailInput( baseSettings ) ).toBe( true );
+		expect(
+			shouldHandleWooPayEmailInput( { ...baseSettings, isWooPayEnabled: false } )
+		).toBe( false );
+		expect(
+			shouldHandleWooPayEmailInput( {
+				...baseSettings,
+				isWooPayEmailInputEnabled: false,
+			} )
+		).toBe( false );
+		expect(
+			shouldHandleWooPayEmailInput( { ...baseSettings, isPreview: true } )
+		).toBe( false );
+
+		window.location.search = '?customize_messenger_channel=preview-0';
+		expect( isPreviewing( baseSettings ) ).toBe( true );
+		expect( shouldHandleWooPayEmailInput( baseSettings ) ).toBe( false );
+		window.location.search = '';
+
+		document.body.innerHTML = '<div id="email"></div>';
+		expect( shouldHandleWooPayEmailInput( baseSettings ) ).toBe( false );
 	} );
 
 	test( 'does nothing on pay-for-order pages', async () => {

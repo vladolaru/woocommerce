@@ -168,6 +168,31 @@ export const initWooPay = ( paymentSettings, userEmail, userSession ) => {
 };
 
 /**
+ * The plugin's isPreviewing(): the Customizer preview iframe (which carries
+ * customize_messenger_channel) or a post preview.
+ *
+ * @param {Object} paymentSettings Payment method settings.
+ * @return {boolean} True while previewing.
+ */
+export const isPreviewing = ( paymentSettings ) =>
+	new URLSearchParams( window.location.search ).get(
+		'customize_messenger_channel'
+	) !== null || !! paymentSettings?.isPreview;
+
+/**
+ * Whether the checkout should wire the WooPay email-input flow — the plugin's
+ * blocks entry gate: WooPay on, email input on, not previewing, checkout block present.
+ *
+ * @param {Object} paymentSettings Payment method settings.
+ * @return {boolean} True when the flow should be wired.
+ */
+export const shouldHandleWooPayEmailInput = ( paymentSettings ) =>
+	!! paymentSettings?.isWooPayEnabled &&
+	!! paymentSettings?.isWooPayEmailInputEnabled &&
+	! isPreviewing( paymentSettings ) &&
+	!! document.querySelector( '[data-block-name="woocommerce/checkout"]' );
+
+/**
  * Wire the WooPay email-input flow to the checkout email field.
  *
  * @param {string} field           The email field selector.

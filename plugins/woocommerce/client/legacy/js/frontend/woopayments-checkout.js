@@ -2515,6 +2515,16 @@
 	var wooPayFullScreenModalBreakpoint = 768;
 	var isWooPayInitRequesting = false;
 
+	// The plugin's isPreviewing(): the Customizer preview iframe (which
+	// carries customize_messenger_channel) or a post preview.
+	function isPreviewing() {
+		return (
+			new window.URLSearchParams( window.location.search ).get(
+				'customize_messenger_channel'
+			) !== null || !! baseConfig.isPreview
+		);
+	}
+
 	function getWooPayHostOrigin() {
 		try {
 			return new window.URL( baseConfig.woopayHost ).origin;
@@ -3235,7 +3245,7 @@
 		if (
 			baseConfig.isWooPayEnabled &&
 			baseConfig.isWooPayEmailInputEnabled &&
-			! baseConfig.isPreview
+			! isPreviewing()
 		) {
 			handleWooPayEmailInput( '#billing_email' );
 		}

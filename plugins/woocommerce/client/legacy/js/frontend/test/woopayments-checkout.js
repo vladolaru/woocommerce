@@ -3237,6 +3237,15 @@ describe( 'WooPayments checkout', () => {
 			expect( getPostCalls( 'get_woopay_signature' ) ).toHaveLength( 0 );
 		} );
 
+		test( 'skips the lookup inside the Customizer preview iframe', async () => {
+			window.location.search = '?customize_messenger_channel=preview-0';
+			const input = setupWooPayEmailInput();
+
+			await typeEmail( input, 'shopper@example.com' );
+
+			expect( getPostCalls( 'get_woopay_signature' ) ).toHaveLength( 0 );
+		} );
+
 		test( 'ignores emails that do not validate', async () => {
 			const input = setupWooPayEmailInput();
 
