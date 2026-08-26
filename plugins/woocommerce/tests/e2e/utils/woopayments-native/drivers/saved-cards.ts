@@ -1592,6 +1592,17 @@ export async function saveCardAtBlocksCheckout(
 			exact: true,
 		} );
 		if ( ( await save.count() ) !== 1 ) {
+			// With WooPay enabled the store hides this control for a signed-in
+			// shopper by design (the card is network-saved through the platform
+			// instead), on the plugin and on native alike; the family's contract
+			// presumes WooPay off.
+			if (
+				( await page.locator( '#save_user_in_woopay' ).count() ) > 0
+			) {
+				savedCardFailure(
+					'found the WooPay save-my-info control instead of the save-to-account control; this case requires WooPay to be disabled on the store.'
+				);
+			}
 			savedCardFailure(
 				'requires exactly one Blocks save-to-account control; a shopper who cannot ask to save proves nothing here.'
 			);
