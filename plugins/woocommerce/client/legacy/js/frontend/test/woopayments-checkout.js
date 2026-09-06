@@ -3356,7 +3356,7 @@ describe( 'WooPayments checkout', () => {
 				needsHeader: 'false',
 				wcpayVersion: '10.8.0',
 				is_blocks: 'false',
-				source_url: 'https://example.test/checkout/',
+				source_url: 'https://local/checkout/',
 				viewport: '0x0',
 				tracksUserIdentity: JSON.stringify( {
 					_ut: 'anon',

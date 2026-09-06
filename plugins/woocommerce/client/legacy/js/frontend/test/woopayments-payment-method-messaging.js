@@ -2,6 +2,8 @@
  * @jest-environment jest-fixed-jsdom
  */
 
+const { server, http, HttpResponse } = require( '@woocommerce/test-utils/msw' );
+
 describe( 'WooPayments BNPL payment method messaging', () => {
 	let bodyHandlers;
 	let createElement;
@@ -9,6 +11,7 @@ describe( 'WooPayments BNPL payment method messaging', () => {
 	let updateElement;
 	let quantityHandlers;
 	let stripeElements;
+	let availabilityRequest;
 
 	async function flushPromises() {
 		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
@@ -99,14 +102,22 @@ describe( 'WooPayments BNPL payment method messaging', () => {
 		document.body.innerHTML = '<div id="payment-method-message"></div>';
 		window.jQuery = createJQueryMock();
 		global.jQuery = window.jQuery;
-		window.fetch = jest.fn( () =>
-			Promise.resolve( {
-				json: () =>
-					Promise.resolve( {
+		availabilityRequest = undefined;
+		server.use(
+			http.post(
+				'https://example.test/',
+				async ( { request } ) => {
+					availabilityRequest = {
+						formData: await request.formData(),
+						method: request.method,
+						url: request.url,
+					};
+					return HttpResponse.json( {
 						success: true,
 						data: { is_available: true },
-					} ),
-			} )
+					} );
+				}
+			)
 		);
 		mountElement = jest.fn();
 		updateElement = jest.fn();
@@ -129,7 +140,6 @@ describe( 'WooPayments BNPL payment method messaging', () => {
 		delete global.jQuery;
 		delete window.jQuery;
 		delete window.Stripe;
-		delete window.fetch;
 		delete window.wcpayAppearance;
 		delete window.wcpayStripeSiteMessaging;
 	} );
@@ -167,13 +177,11 @@ describe( 'WooPayments BNPL payment method messaging', () => {
 			amount: 10000,
 			currency: 'USD',
 		} );
-		expect( window.fetch ).toHaveBeenCalledWith(
-			'https://example.test/?wc-ajax=wcpay_check_bnpl_availability',
-			expect.objectContaining( {
-				method: 'POST',
-			} )
+		expect( availabilityRequest.url ).toBe(
+			'https://example.test/?wc-ajax=wcpay_check_bnpl_availability'
 		);
-		const formData = window.fetch.mock.calls[ 0 ][ 1 ].body;
+		expect( availabilityRequest.method ).toBe( 'POST' );
+		const { formData } = availabilityRequest;
 		expect( formData.get( 'price' ) ).toBe( '10000' );
 		expect( formData.get( 'currency' ) ).toBe( 'USD' );
 		expect( formData.get( 'country' ) ).toBe( 'US' );

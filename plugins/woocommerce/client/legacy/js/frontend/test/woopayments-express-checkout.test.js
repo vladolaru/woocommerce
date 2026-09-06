@@ -2,6 +2,8 @@
  * Tests for the classic (shortcode) WooPayments express checkout script.
  */
 
+const { server, http, HttpResponse } = require( '@woocommerce/test-utils/msw' );
+
 const loadModule = ( params ) => {
 	let exported;
 
@@ -92,6 +94,26 @@ const cartResponse = ( overrides = {} ) => ( {
 describe( 'woopayments-express-checkout', () => {
 	let apiFetch;
 	const originalLocation = window.location;
+	const stripeParams = {
+		stripe: { publishableKey: 'pk_test_123', accountId: 'acct_1' },
+		ajax_url: 'http://shop.test/wp-admin/admin-ajax.php',
+	};
+
+	function mockOrderStatusUpdate( response ) {
+		let resolveFormData;
+		const formData = new Promise( ( resolve ) => {
+			resolveFormData = resolve;
+		} );
+
+		server.use(
+			http.post( stripeParams.ajax_url, async ( { request } ) => {
+				resolveFormData( await request.formData() );
+				return HttpResponse.json( response );
+			} )
+		);
+
+		return formData;
+	}
 
 	beforeEach( () => {
 		apiFetch = jest.fn();
@@ -107,7 +129,6 @@ describe( 'woopayments-express-checkout', () => {
 		delete window.wp;
 		delete global.jQuery;
 		delete window.Stripe;
-		delete window.fetch;
 	} );
 
 	describe( 'transformPrice', () => {
@@ -472,10 +493,6 @@ describe( 'woopayments-express-checkout', () => {
 	} );
 
 	describe( 'redirectToOrder', () => {
-		const stripeParams = {
-			stripe: { publishableKey: 'pk_test_123', accountId: 'acct_1' },
-			ajax_url: 'http://shop.test/wp-admin/admin-ajax.php',
-		};
 		const confirmationHash =
 			'#wcpay-confirm-pi:77:pi_123_secret_456:nonce-abc';
 
@@ -494,18 +511,13 @@ describe( 'woopayments-express-checkout', () => {
 		} );
 
 		it( 'confirms the intent and navigates to the authenticated return URL', async () => {
+			const orderStatusFormData = mockOrderStatusUpdate( {
+				return_url: 'http://shop.test/order-received/77/',
+			} );
 			const handleNextAction = jest.fn( () =>
 				Promise.resolve( { paymentIntent: { id: 'pi_123' } } )
 			);
 			window.Stripe = jest.fn( () => ( { handleNextAction } ) );
-			window.fetch = jest.fn( () =>
-				Promise.resolve( {
-					json: () =>
-						Promise.resolve( {
-							return_url: 'http://shop.test/order-received/77/',
-						} ),
-				} )
-			);
 			const { redirectToOrder } = loadModule(
 				baseParams( stripeParams )
 			);
@@ -517,7 +529,7 @@ describe( 'woopayments-express-checkout', () => {
 			expect( handleNextAction ).toHaveBeenCalledWith( {
 				clientSecret: 'pi_123_secret_456',
 			} );
-			const fetchBody = window.fetch.mock.calls[ 0 ][ 1 ].body;
+			const fetchBody = await orderStatusFormData;
 			expect( fetchBody.get( 'action' ) ).toBe( 'update_order_status' );
 			expect( fetchBody.get( 'order_id' ) ).toBe( '77' );
 			expect( fetchBody.get( '_ajax_nonce' ) ).toBe( 'nonce-abc' );
@@ -528,6 +540,7 @@ describe( 'woopayments-express-checkout', () => {
 		} );
 
 		it( 'reports the failed intent and rejects when the authentication fails', async () => {
+			const orderStatusFormData = mockOrderStatusUpdate( {} );
 			window.Stripe = jest.fn( () => ( {
 				handleNextAction: jest.fn( () =>
 					Promise.resolve( {
@@ -541,9 +554,6 @@ describe( 'woopayments-express-checkout', () => {
 					} )
 				),
 			} ) );
-			window.fetch = jest.fn( () =>
-				Promise.resolve( { json: () => Promise.resolve( {} ) } )
-			);
 			const { redirectToOrder } = loadModule(
 				baseParams( stripeParams )
 			);
@@ -553,13 +563,14 @@ describe( 'woopayments-express-checkout', () => {
 					payment_result: { redirect_url: confirmationHash },
 				} )
 			).rejects.toThrow( 'Authentication failed.' );
-			const fetchBody = window.fetch.mock.calls[ 0 ][ 1 ].body;
+			const fetchBody = await orderStatusFormData;
 			expect( fetchBody.get( 'action' ) ).toBe( 'update_order_status' );
 			expect( fetchBody.get( 'intent_id' ) ).toBe( 'pi_123' );
 			expect( window.location.href ).toBe( 'http://shop.test/cart/' );
 		} );
 
 		it( 'rejects without a server report when the error carries no intent', async () => {
+			const fetchSpy = jest.spyOn( global, 'fetch' );
 			window.Stripe = jest.fn( () => ( {
 				handleNextAction: jest.fn( () =>
 					Promise.resolve( {
@@ -567,20 +578,24 @@ describe( 'woopayments-express-checkout', () => {
 					} )
 				),
 			} ) );
-			window.fetch = jest.fn();
 			const { redirectToOrder } = loadModule(
 				baseParams( stripeParams )
 			);
 
-			await expect(
-				redirectToOrder( {
-					payment_result: { redirect_url: confirmationHash },
-				} )
-			).rejects.toThrow( 'Authentication failed.' );
-			expect( window.fetch ).not.toHaveBeenCalled();
+			try {
+				await expect(
+					redirectToOrder( {
+						payment_result: { redirect_url: confirmationHash },
+					} )
+				).rejects.toThrow( 'Authentication failed.' );
+				expect( fetchSpy ).not.toHaveBeenCalled();
+			} finally {
+				fetchSpy.mockRestore();
+			}
 		} );
 
 		it( 'treats a closed wallet sheet (requires_action) as a reported failure', async () => {
+			const orderStatusFormData = mockOrderStatusUpdate( {} );
 			window.Stripe = jest.fn( () => ( {
 				handleNextAction: jest.fn( () =>
 					Promise.resolve( {
@@ -591,9 +606,6 @@ describe( 'woopayments-express-checkout', () => {
 					} )
 				),
 			} ) );
-			window.fetch = jest.fn( () =>
-				Promise.resolve( { json: () => Promise.resolve( {} ) } )
-			);
 			const { redirectToOrder } = loadModule(
 				baseParams( stripeParams )
 			);
@@ -603,25 +615,20 @@ describe( 'woopayments-express-checkout', () => {
 					payment_result: { redirect_url: confirmationHash },
 				} )
 			).rejects.toThrow( 'Payment requires additional action.' );
-			const fetchBody = window.fetch.mock.calls[ 0 ][ 1 ].body;
+			const fetchBody = await orderStatusFormData;
 			expect( fetchBody.get( 'intent_id' ) ).toBe( 'pi_123' );
 			expect( window.location.href ).toBe( 'http://shop.test/cart/' );
 		} );
 
 		it( 'rejects when the order-status update reports an error', async () => {
+			mockOrderStatusUpdate( {
+				error: { message: 'Order update failed.' },
+			} );
 			window.Stripe = jest.fn( () => ( {
 				handleNextAction: jest.fn( () =>
 					Promise.resolve( { paymentIntent: { id: 'pi_123' } } )
 				),
 			} ) );
-			window.fetch = jest.fn( () =>
-				Promise.resolve( {
-					json: () =>
-						Promise.resolve( {
-							error: { message: 'Order update failed.' },
-						} ),
-				} )
-			);
 			const { redirectToOrder } = loadModule(
 				baseParams( stripeParams )
 			);
