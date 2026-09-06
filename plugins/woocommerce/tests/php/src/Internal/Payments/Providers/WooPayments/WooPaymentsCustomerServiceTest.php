@@ -47,17 +47,48 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox A guest session customer ID should be promoted onto an account created during checkout.
+	 * @dataProvider configured_customer_promotion_provider
+	 *
+	 * @param bool   $test_mode       Whether the configured account is in test mode.
+	 * @param string $customer_option Customer option expected to receive the guest ID.
 	 */
-	public function test_created_customer_promotes_guest_session_customer_id_during_checkout(): void {
+	public function test_created_customer_promotes_guest_session_customer_id_during_checkout( bool $test_mode, string $customer_option ): void {
 		$user_id = $this->factory->user->create( array( 'user_login' => 'created-during-checkout' ) );
 		WC()->session->set( 'wcpay_customer_id', 'cus_guest' );
 		$this->fake_wcs_checkout_blocks_api_request();
 		$GLOBALS['wcpay_test_checkout_blocks_api_request'] = true;
 
-		$sut = $this->create_sut( false, $this->create_customer_api_client( array() ) );
+		$sut = $this->create_sut( $test_mode, $this->create_customer_api_client( array() ) );
 		$sut->handle_woocommerce_created_customer( $user_id );
 
-		$this->assertSame( 'cus_guest', get_user_option( WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, $user_id ), 'The guest session customer must follow the newly created account.' );
+		$this->assertSame( 'cus_guest', get_user_option( $customer_option, $user_id ), 'The guest session customer must follow the newly created account.' );
+	}
+
+	/**
+	 * Data provider for configured account promotion modes.
+	 *
+	 * @return array<string,array{0: bool, 1: string}>
+	 */
+	public function configured_customer_promotion_provider(): array {
+		return array(
+			'live account' => array( false, WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION ),
+			'test account' => array( true, WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION ),
+		);
+	}
+
+	/**
+	 * @testdox Should not promote a guest customer ID while WooPayments has no account.
+	 */
+	public function test_created_customer_does_not_promote_guest_session_customer_id_without_a_woopayments_account(): void {
+		$user_id = $this->factory->user->create( array( 'user_login' => 'created-without-woopayments-account' ) );
+		WC()->session->set( 'wcpay_customer_id', 'cus_guest' );
+		$this->fake_wcs_checkout_blocks_api_request();
+		$GLOBALS['wcpay_test_checkout_blocks_api_request'] = true;
+
+		$sut = $this->create_sut( false, $this->create_customer_api_client( array() ), null, false );
+		$sut->handle_woocommerce_created_customer( $user_id );
+
+		$this->assertFalse( get_user_option( WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, $user_id ) );
 	}
 
 	/**
@@ -818,15 +849,17 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @param bool                 $test_mode       Whether test mode is enabled.
 	 * @param WooPaymentsApiClient $api_client      Native API client mock.
-	 * @param bool|null            $account_is_live Account liveness: true live, false test, null unknown.
+	 * @param bool|null            $account_is_live    Account liveness: true live, false test, null unknown.
+	 * @param bool                 $has_account        Whether WooPayments has an account.
 	 * @return WooPaymentsCustomerService
 	 */
-	private function create_sut( bool $test_mode, WooPaymentsApiClient $api_client, ?bool $account_is_live = null ): WooPaymentsCustomerService {
+	private function create_sut( bool $test_mode, WooPaymentsApiClient $api_client, ?bool $account_is_live = null, bool $has_account = true ): WooPaymentsCustomerService {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_test_mode_enabled', 'get_account_is_live' ) )
+			->onlyMethods( array( 'has_account', 'is_test_mode_enabled', 'get_account_is_live' ) )
 			->getMock();
 
+		$account_service->method( 'has_account' )->willReturn( $has_account );
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( $test_mode );
 		$account_service->method( 'get_account_is_live' )->willReturn( $account_is_live );
 

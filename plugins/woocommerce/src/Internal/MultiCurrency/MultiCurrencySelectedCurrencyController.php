@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\Providers\MultiCurrencyProviderAccountResolver;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyCompatibilityProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyGeolocationService;
@@ -38,6 +39,13 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 	 * @var MultiCurrencyRuntimeArbiter
 	 */
 	private MultiCurrencyRuntimeArbiter $arbiter;
+
+	/**
+	 * Provider account resolver.
+	 *
+	 * @var MultiCurrencyProviderAccountResolver|null
+	 */
+	private ?MultiCurrencyProviderAccountResolver $account_resolver = null;
 
 	/**
 	 * Selected currency persistence service.
@@ -99,6 +107,17 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 	}
 
 	/**
+	 * Set the provider account resolver.
+	 *
+	 * @internal Used by tests and future explicit provider bootstrap.
+	 *
+	 * @param MultiCurrencyProviderAccountResolver $account_resolver Provider account resolver.
+	 */
+	public function set_account_resolver( MultiCurrencyProviderAccountResolver $account_resolver ): void {
+		$this->account_resolver = $account_resolver;
+	}
+
+	/**
 	 * Set the request context.
 	 *
 	 * @internal Used by tests and future explicit bootstrap definitions.
@@ -127,6 +146,8 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 		if ( ! $this->arbiter->should_core_register() ) {
 			return;
 		}
+
+		$this->add_filter_once( 'woocommerce_rest_prepare_customer', array( $this, 'handle_woocommerce_rest_prepare_customer' ), 10, 3 );
 
 		if ( $this->get_request_context()->should_register_selected_currency_entry_hooks() ) {
 			if ( $this->get_request_context()->is_store_api_request() ) {
@@ -290,7 +311,51 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 	 * @param mixed $customer_id Customer ID.
 	 */
 	public function handle_woocommerce_created_customer( $customer_id ): void {
+		if ( ! $this->get_account_resolver()->is_provider_connected() ) {
+			return;
+		}
+
 		$this->get_persistence_service()->set_new_customer_currency_meta( absint( $customer_id ) );
+	}
+
+	/**
+	 * Remove native provider bookkeeping from customer REST representations.
+	 *
+	 * @internal
+	 *
+	 * @param mixed            $response Customer response.
+	 * @param \WP_User         $user_data Customer user data.
+	 * @param \WP_REST_Request $request REST request.
+	 *
+	 * @phpstan-param \WP_REST_Request<array<string, mixed>> $request
+	 * @return mixed Customer response without provider bookkeeping metadata.
+	 */
+	public function handle_woocommerce_rest_prepare_customer( $response, \WP_User $user_data, \WP_REST_Request $request ) {
+		unset( $user_data, $request );
+		if ( ! $response instanceof \WP_REST_Response ) {
+			return $response;
+		}
+
+		$data = $response->get_data();
+		if ( ! isset( $data['meta_data'] ) || ! is_array( $data['meta_data'] ) ) {
+			return $response;
+		}
+
+		$data['meta_data'] = array_values(
+			array_filter(
+				$data['meta_data'],
+				static function ( $meta ): bool {
+					if ( $meta instanceof \WC_Meta_Data ) {
+						return 'wcpay_currency' !== $meta->key;
+					}
+
+					return ! ( is_array( $meta ) && isset( $meta['key'] ) && 'wcpay_currency' === $meta['key'] );
+				}
+			)
+		);
+		$response->set_data( $data );
+
+		return $response;
 	}
 
 	/**
@@ -357,6 +422,19 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 		}
 
 		return $this->persistence_service;
+	}
+
+	/**
+	 * Get the provider account resolver.
+	 *
+	 * @return MultiCurrencyProviderAccountResolver
+	 */
+	private function get_account_resolver(): MultiCurrencyProviderAccountResolver {
+		if ( null === $this->account_resolver ) {
+			$this->account_resolver = wc_get_container()->get( MultiCurrencyProviderAccountResolver::class );
+		}
+
+		return $this->account_resolver;
 	}
 
 	/**

@@ -138,6 +138,10 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 			return;
 		}
 
+		if ( ! $this->account_service->has_account() ) {
+			return;
+		}
+
 		$customer_id = WC()->session ? WC()->session->get( self::CUSTOMER_ID_SESSION_KEY ) : null;
 		if ( ! is_string( $customer_id ) || '' === $customer_id ) {
 			return;
