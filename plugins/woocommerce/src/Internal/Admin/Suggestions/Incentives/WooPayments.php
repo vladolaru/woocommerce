@@ -82,11 +82,11 @@ class WooPayments extends Incentive {
 	public function __construct( string $suggestion_id, ?WooPaymentsLegacyRuntime $legacy_runtime = null ) {
 		parent::__construct( $suggestion_id );
 
-		$this->cache_transient_name              = self::PREFIX . $suggestion_id . '_cache';
-		$this->store_has_orders_transient_name   = self::PREFIX . $suggestion_id . '_store_has_orders';
+		$this->cache_transient_name                      = self::PREFIX . $suggestion_id . '_cache';
+		$this->store_has_orders_transient_name           = self::PREFIX . $suggestion_id . '_store_has_orders';
 		$this->store_had_woopayments_option_name         = self::PREFIX . $suggestion_id . '_store_had_woopayments';
 		$this->store_had_woopayments_version_option_name = $this->store_had_woopayments_option_name . '_version';
-		$this->legacy_runtime                    = $legacy_runtime;
+		$this->legacy_runtime                            = $legacy_runtime;
 	}
 
 	/**
