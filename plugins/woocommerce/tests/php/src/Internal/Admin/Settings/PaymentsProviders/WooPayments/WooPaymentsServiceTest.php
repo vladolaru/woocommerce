@@ -2615,7 +2615,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			),
 		);
 		$expected_pms_state      = array(
-			'card'         => true, // Force enabled because it is required.
+			// Force enabled because it is required.
+			'card'         => true,
 			'apple_google' => true,
 		);
 
@@ -3420,7 +3421,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			'stored statuses ignored - WPCOM connection: store connected, connected owner' => array(
 				array(
 					WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
-					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // A working connection will overwrite the stored status.
+					// A working connection will overwrite the stored status.
+					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT       => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
 					WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
 				),
@@ -3451,7 +3453,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			'stored statuses respected - WPCOM connection missing' => array(
 				array(
 					WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
-					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_STARTED, // The stored status is respected.
+					// The stored status is respected.
+					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_STARTED,
 					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT       => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
 					WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
 				),
@@ -3471,7 +3474,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			'stored statuses ignored - WPCOM connection broken' => array(
 				array(
 					WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
-					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_STARTED, // The stored status is ignored.
+					// The stored status is ignored.
+					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_STARTED,
 					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT       => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
 					WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
 				),
@@ -3502,9 +3506,12 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			),
 			'stored statuses ignored - Test account completed with requirements met' => array(
 				array(
-					WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // Since we have an account, this step is completed.
-					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // The connection is required to be completed.
-					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT       => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // The stored status is ignored.
+					// Since we have an account, this step is completed.
+					WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
+					// The connection is required to be completed.
+					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
+					// The stored status is ignored.
+					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT       => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 					WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
 				),
 				array(
@@ -3540,7 +3547,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			),
 			'stored statuses ignored - Test account not completed due to unmet requirements' => array(
 				array(
-					WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // Since we have an account, this step is completed.
+					// Since we have an account, this step is completed.
+					WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
 					// The completed stored status is ignored due to unmet requirements.
 					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT       => WooPaymentsService::ONBOARDING_STEP_STATUS_STARTED,
@@ -3581,8 +3589,10 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			'stored statuses respected - Test account started with no account' => array(
 				array(
 					WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
-					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // The connection is required to be completed.
-					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT       => WooPaymentsService::ONBOARDING_STEP_STATUS_STARTED, // The stored status is respected.
+					// The connection is required to be completed.
+					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
+					// The stored status is respected.
+					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT       => WooPaymentsService::ONBOARDING_STEP_STATUS_STARTED,
 					WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
 				),
 				array(
@@ -3619,8 +3629,10 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			'stored statuses respected - Test account step with live, invalid account' => array(
 				array(
 					WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
-					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // The connection is required to be completed.
-					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT       => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // The stored status is respected.
+					// The connection is required to be completed.
+					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
+					// The stored status is respected.
+					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT       => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 					WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
 				),
 				array(
@@ -3657,9 +3669,12 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			),
 			'stored statuses respected - Test account with live, valid account' => array(
 				array(
-					WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // Since we have an account, this step is completed.
-					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // The connection is required to be completed.
-					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT       => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // The stored status is respected.
+					// Since we have an account, this step is completed.
+					WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
+					// The connection is required to be completed.
+					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
+					// The stored status is respected.
+					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT       => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 					WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 				),
 				array(
@@ -3696,8 +3711,10 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			),
 			'stored statuses ignored - Business verification completed with requirements met' => array(
 				array(
-					WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // Since we have an account, this step is completed.
-					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // The connection is required to be completed.
+					// Since we have an account, this step is completed.
+					WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
+					// The connection is required to be completed.
+					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT       => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 					WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 				),
@@ -3740,8 +3757,10 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			),
 			'stored statuses ignored - Business verification not completed due to unmet requirements' => array(
 				array(
-					WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // Since we have an account, this step is completed.
-					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED, // The connection is required to be completed.
+					// Since we have an account, this step is completed.
+					WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
+					// The connection is required to be completed.
+					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
 					// The completed stored status is ignored due to unmet requirements.
 					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT       => WooPaymentsService::ONBOARDING_STEP_STATUS_STARTED,
 					// The completed stored status is ignored due to unmet requirements.
@@ -3788,9 +3807,11 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			'stored statuses respected - Business verification started with no account' => array(
 				array(
 					WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
-					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // The connection is required to be completed.
+					// The connection is required to be completed.
+					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT       => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
-					WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION => WooPaymentsService::ONBOARDING_STEP_STATUS_STARTED, // The stored status is respected.
+					// The stored status is respected.
+					WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION => WooPaymentsService::ONBOARDING_STEP_STATUS_STARTED,
 				),
 				array(
 					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT   => array(
@@ -3831,10 +3852,13 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			),
 			'stored statuses ignored - Business verification with live, valid account' => array(
 				array(
-					WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // Since we have an account, this step is completed.
-					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // The connection is required to be completed.
+					// Since we have an account, this step is completed.
+					WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
+					// The connection is required to be completed.
+					WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION   => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT       => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
-					WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // The stored status is ignored.
+					// The stored status is ignored.
+					WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 				),
 				array(
 					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT   => array(
@@ -3880,7 +3904,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 					WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT          => WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 					WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION => WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
 				),
-				array(), // no stored profile steps.
+				// no stored profile steps.
+				array(),
 				$default_recommended_pms,
 				$expected_pms_state,
 				array_merge(
@@ -4321,7 +4346,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 				WooPaymentsService::ONBOARDING_STEP_WPCOM_CONNECTION,
 				WooPaymentsService::ONBOARDING_STEP_STATUS_NOT_STARTED,
 				array(
-					WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED => $current_time, // This will be ignored.
+					// This will be ignored.
+					WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED => $current_time,
 				),
 				array(
 					'is_store_connected'  => false,
@@ -4902,7 +4928,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			),
 			'test_account - stored completed with no account, met requirements' => array(
 				WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT,
-				WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // We trust the stored status since we can be in progress with switch to live.
+				// We trust the stored status since we can be in progress with switch to live.
+				WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 				array(
 					WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED => $current_time,
 				),
@@ -4918,7 +4945,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			),
 			'test_account - stored failed and completed with no account, met requirements' => array(
 				WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT,
-				WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // We trust the stored status since we can be in progress with switch to live.
+				// We trust the stored status since we can be in progress with switch to live.
+				WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 				array(
 					WooPaymentsService::ONBOARDING_STEP_STATUS_FAILED => $current_time - 10,
 					WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED => $current_time,
@@ -4935,7 +4963,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			),
 			'test_account - stored blocked and completed with no account, met requirements' => array(
 				WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT,
-				WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // We trust the stored status since we can be in progress with switch to live.
+				// We trust the stored status since we can be in progress with switch to live.
+				WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 				array(
 					WooPaymentsService::ONBOARDING_STEP_STATUS_BLOCKED => $current_time - 10,
 					WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED => $current_time,
@@ -5289,7 +5318,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			),
 			'test_account - stored started and completed with no account, met requirements' => array(
 				WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT,
-				WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // We trust the completed stored status since we can be in progress with switch to live.
+				// We trust the completed stored status since we can be in progress with switch to live.
+				WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 				array(
 					WooPaymentsService::ONBOARDING_STEP_STATUS_STARTED => $current_time - 10,
 					WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED => $current_time,
@@ -5306,7 +5336,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			),
 			'test_account - stored started, failed, and completed with no account, met requirements' => array(
 				WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT,
-				WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, // We trust the completed stored status since we can be in progress with switch to live.
+				// We trust the completed stored status since we can be in progress with switch to live.
+				WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED,
 				array(
 					WooPaymentsService::ONBOARDING_STEP_STATUS_STARTED => $current_time - 10,
 					WooPaymentsService::ONBOARDING_STEP_STATUS_FAILED => $current_time - 5,
@@ -8465,7 +8496,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$this->mock_account_service
 			->expects( $this->any() )
 			->method( 'is_stripe_account_valid' )
-			->willReturn( false ); // Make it invalid, for good measure.
+			// Make it invalid, for good measure.
+			->willReturn( false );
 		$this->mock_account_service
 			->expects( $this->any() )
 			->method( 'get_account_status_data' )
@@ -8536,7 +8568,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$this->mock_account_service
 			->expects( $this->any() )
 			->method( 'is_stripe_account_valid' )
-			->willReturn( false ); // Make it invalid, for good measure.
+			// Make it invalid, for good measure.
+			->willReturn( false );
 		$this->mock_account_service
 			->expects( $this->any() )
 			->method( 'get_account_status_data' )
@@ -9135,7 +9168,8 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			array(
 				Utils::class => array(
 					'rest_endpoint_post_request' => function ( string $endpoint, array $params = array() ) use ( $error_data_with_extra_keys ) {
-						unset( $params ); // Avoid parameter not used PHPCS errors.
+						// Avoid parameter not used PHPCS errors.
+						unset( $params );
 						if ( '/wc/v3/payments/onboarding/test_drive_account/init' === $endpoint ) {
 							return new WP_Error( 'test_error', 'Test error message', $error_data_with_extra_keys );
 						}
@@ -9241,13 +9275,15 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 				'existing_key'    => 'existing value',
 				'conflicting_key' => 'context value',
 			),
-			'conflicting_key' => 'extra key value', // This should be overwritten by context value.
+			// This should be overwritten by context value.
+			'conflicting_key' => 'extra key value',
 		);
 		$this->mockable_proxy->register_static_mocks(
 			array(
 				Utils::class => array(
 					'rest_endpoint_post_request' => function ( string $endpoint, array $params = array() ) use ( $error_data ) {
-						unset( $params ); // Avoid parameter not used PHPCS errors.
+						// Avoid parameter not used PHPCS errors.
+						unset( $params );
 						if ( '/wc/v3/payments/onboarding/test_drive_account/init' === $endpoint ) {
 							return new WP_Error( 'test_error', 'Test error message', $error_data );
 						}
@@ -9345,17 +9381,20 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		// The error_data has a nested 'context' key that should be flattened.
 		$error_data = array(
 			'top_level_key'   => 'top value',
-			'conflicting_key' => 'top level value', // Should be overwritten by nested context value.
+			// Should be overwritten by nested context value.
+			'conflicting_key' => 'top level value',
 			'context'         => array(
 				'nested_key'      => 'nested value',
-				'conflicting_key' => 'nested context value', // Takes precedence.
+				// Takes precedence.
+				'conflicting_key' => 'nested context value',
 			),
 		);
 		$this->mockable_proxy->register_static_mocks(
 			array(
 				Utils::class => array(
 					'rest_endpoint_post_request' => function ( string $endpoint, array $params = array() ) use ( $error_data ) {
-						unset( $params ); // Avoid parameter not used PHPCS errors.
+						// Avoid parameter not used PHPCS errors.
+						unset( $params );
 						if ( '/wc/v3/payments/onboarding/test_drive_account/init' === $endpoint ) {
 							return new WP_Error( 'test_error', 'Test error message', $error_data );
 						}
@@ -12387,8 +12426,10 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		self::assertEquals( $expected_response, $result );
 		self::assertCount( 1, $requests_made );
 		self::assertEquals( $expected_payload, $requests_made[0] );
-		self::assertEquals( 1, $onboarding_lock_cleared ); // The onboarding lock should be cleared.
-		self::assertEquals( 1, $deleted_profiles ); // The NOX profile option should be deleted.
+		// The onboarding lock should be cleared.
+		self::assertEquals( 1, $onboarding_lock_cleared );
+		// The NOX profile option should be deleted.
+		self::assertEquals( 1, $deleted_profiles );
 	}
 
 	/**
@@ -12460,9 +12501,12 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 
 		// Assert.
 		self::assertEquals( $expected_response, $result );
-		self::assertCount( 0, $requests_made ); // No request should be made when there is no connected account.
-		self::assertEquals( 1, $onboarding_lock_cleared ); // The onboarding lock should be cleared.
-		self::assertEquals( 1, $deleted_profiles ); // The NOX profile option should be deleted.
+		// No request should be made when there is no connected account.
+		self::assertCount( 0, $requests_made );
+		// The onboarding lock should be cleared.
+		self::assertEquals( 1, $onboarding_lock_cleared );
+		// The NOX profile option should be deleted.
+		self::assertEquals( 1, $deleted_profiles );
 	}
 
 	/**
