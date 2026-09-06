@@ -17,13 +17,13 @@ Reference store:
 
 Target store:
 
-3. WP Admin → WooCommerce → Settings → Payments. **Confirm the WooPayments setup entry is discoverable** without any plugin install (native gateway, enable/setup call-to-action).
-4. Start setup from that entry.
+1. WP Admin → WooCommerce → Settings → Payments. **Confirm the WooPayments setup entry is discoverable** without any plugin install (native gateway, enable/setup call-to-action).
+2. Start setup from that entry.
 
 BOTH stores:
 
-5. Complete Jetpack/WordPress.com connection if prompted; take the test-mode onboarding path. **Confirm the wizard/NOX flow completes** and returns to a configured Settings → Payments state.
-6. Add the product to the cart and open checkout. **Confirm the WooPayments card method renders and is selectable.**
+1. Complete Jetpack/WordPress.com connection if prompted; take the test-mode onboarding path. **Confirm the wizard/NOX flow completes** and returns to a configured Settings → Payments state.
+2. Add the product to the cart and open checkout. **Confirm the WooPayments card method renders and is selectable.**
 
 End state: both stores finish onboarded in test mode with the card method live at checkout; the differing entry points are recorded as visual divergence, not regression.
 

@@ -9,7 +9,7 @@ Each family states its claim in two parts. **Claim** is a proposition about what
 ## Programme partition
 
 | Family/treatment | Total | Dischargeable | Not dischargeable | Excluded | Not applicable |
-|---|---:|---:|---:|---:|---:|
+| --- | ---: | ---: | ---: | ---: | ---: |
 | `basic-card-charge` | 7 | 5 | 2 | 0 | 0 |
 | `card-decline-vocabulary` | 18 | 14 | 4 | 0 | 0 |
 | `saved-token-lifecycle` | 7 | 7 | 0 | 0 | 0 |
@@ -44,7 +44,7 @@ An optional schema-v2 closure field, `fidelity_claim: "<family-slug>"`, cites th
 ### Fixed run contract
 
 | Contract item | Fixed value |
-|---|---|
+| --- | --- |
 | Intended selector | `WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep "@fidelity:basic-card-charge"`, which collects exactly the five cases below from `plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-basic-card.spec.ts`. |
 | `B1` input | Fresh guest shopper session on the native Blocks checkout, and the provider customer native creates for the order; one unique run-owned virtual product priced USD 10.99; cart contains only quantity one of that product and nothing else; native Card; provider test card `4242424242424242`, expiry `02/45`, CVC `424`; one Place order activation. The shopper is a guest rather than a signed-in customer because the protection-on twins have to read the WooCommerce *guest* session token native issues, and every case here must be the same shopper shape for "repeat `B1`" to mean anything. The expiry and security code are the ones the shared Blocks and Classic checkout drivers fill; neither carries provider meaning beyond being well-formed. |
 | `B1` required outcome | Exactly one run-owned Woo order, one PaymentIntent for `1099 usd` in `succeeded`, one captured charge for `1099 usd`, and one capture occurrence; order is `processing` or `completed`; the provider charge is a Visa ending `4242`; the provider customer the intent is drawn on holds no attached payment method and the intent sets up no future usage; the cart the purchase emptied is empty; zero SetupIntents, challenges, Woo tokens, second checkout requests, second orders, second intents, or second charges. |
@@ -83,7 +83,7 @@ Surfaces are not interchangeable here and no case may be read as evidence for on
 ### Fixed run contract
 
 | Contract item | Fixed value |
-|---|---|
+| --- | --- |
 | Intended selector | `WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep "@fidelity:card-decline-vocabulary"`, which collects exactly the fourteen cases below from `plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-card-declines.spec.ts`. The five `D-PI-*` and five `D-SI-*` contract rows above are ten *items*; the suite collects fourteen cases, because several items are driven by more than one case. |
 | `D-PI-generic` | Classic native checkout, USD 10.01, card `4000000000000002`; exactly one PaymentIntent for `1001 usd` ends `requires_payment_method` with top-level error `card_declined` and decline code `generic_decline`, one semantic generic-decline alert, and exactly one unpaid run-owned Woo order. |
 | `D-PI-expired` | Blocks native checkout, USD 10.02, card `4000000000000069`; exactly one PaymentIntent for `1002 usd` ends `requires_payment_method` with top-level error `expired_card` and decline code `expired_card`, one expired-card semantic alert, and exactly one unpaid run-owned Woo order. |
@@ -129,7 +129,7 @@ Bucket-E can show the sampled order's final failed state but not the transition 
 ### Fixed run contract
 
 | Contract item | Fixed value |
-|---|---|
+| --- | --- |
 | Intended selector | `WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep "@fidelity:saved-token-lifecycle"`, which collects exactly the six cases below from `plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-saved-tokens.spec.ts`. |
 | `T1` create | Fresh customer with recorded zero-run-token baseline submits card `4242424242424242` once through native My Account. One SetupIntent succeeds, one provider method attaches to that customer, and exactly one Woo token stores that method; zero orders, PaymentIntents, charges, or captures. |
 | `T1b` cooldown | Immediately after a successful save, submit one more add attempt through the same native My Account form during WooCommerce's 20-second cooldown: exactly one native rejection and an empty provider-attachment interval for the run customer — zero new attachments, methods, or Woo tokens. After the cooldown elapses, one normal add succeeds with one succeeded SetupIntent, one provider attachment, and one Woo token, and that token/method is deleted and verified absent. The anchoring save is the case's own rather than `T1`'s: fixture teardown and setup between two cases can consume most of a 20-second window, and a window that quietly expired would convert this rejection contract into a silently attached second card — a case that passes while proving nothing. The case therefore requires WooCommerce to still report the shopper rate-limited before it clicks, and deletes both cards it created. |
@@ -165,7 +165,7 @@ Save-at-checkout token creation is *not* excluded: `T4` and `T5` name it, on the
 ### Fixed run contract
 
 | Contract item | Fixed value |
-|---|---|
+| --- | --- |
 | Intended selector | `WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep "@fidelity:redirect-method-provider-outcome"`, which collects exactly the nine cases below from `plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-redirect-methods.spec.ts`. |
 | `A1` Alipay | CTP off; Alipay enabled; shopper/store currency USD; one USD 12.00 order. Request method is `alipay`, amount `1200`, currency `usd`, and the run return URL; one provider redirect is followed once and the same PaymentIntent becomes `succeeded` with one captured charge. |
 | `A1b` Alipay on Blocks | Repeat `A1`'s exact proposition — method `alipay`, amount `1200`, currency `usd`, run return URL, one redirect followed once, the same PaymentIntent `succeeded` with one captured charge — driven unconditionally through the native Blocks checkout surface. The method or surface being unavailable fails the case; there is no conditional skip. |
@@ -202,7 +202,7 @@ order-received URL on this store.
 **Observed, for Alipay.** Neither holds, and the payment settles correctly anyway.
 
 | | `redirect_to_url` methods (`A2`–`A5`) | `alipay_handle_redirect` (`A1`) |
-|---|---|---|
+| --- | --- | --- |
 | Store's Place order answer | the hosted URL | `#wcpay-confirm-pi:{order}:{secret}:{nonce}` |
 | `next_action` return URL | the merchant order-received URL | `https://pm-redirects.stripe.com/return/…` |
 | Who performs the handoff | the browser, following the store's answer | the provider's own script |
@@ -261,7 +261,7 @@ The protection-on twins carry one boundary that must not be overstated. The targ
 ### Fixed run contract
 
 | Contract item | Fixed value |
-|---|---|
+| --- | --- |
 | Intended selector | `WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep "@fidelity:refund-settlement"`, which collects exactly the nine cases below from `plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/provider-fidelity-refunds.spec.ts`. `RP` is not a case of its own: it runs inside `R7`, which is why the suite collects nine rather than the ten items listed above. |
 | `R1` card full | Source is one captured `4242` USD 10.99 charge; refund `1099 usd`; one provider refund becomes `succeeded`, the Woo refund stores its ID once, and order refunded total is USD 10.99. |
 | `R1v` transaction view | After `R1` converges, the merchant loads the native transaction view for `R1`'s charge and asserts the refund's semantic facts — amount USD 10.99, refunded status, and the merchant-supplied refund reason — with bounded async polling for propagation. The assertion is semantic, not copy-exact; native presentation wording may differ. |
@@ -325,7 +325,7 @@ provider on one captured, un-refunded charge, twice, with a partial amount so
 the over-refund guard could not mask the result:
 
 | Key sent as | call 1 | call 2 | refunds created |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `Idempotency-Key` header — what native and the client both do | `re_…0jqGhZrO` | `re_…0gA9BUKn` | **2** |
 | `idempotency-key` body parameter | `re_…0vSc9Lim` | `re_…0vSc9Lim` | **1** |
 
@@ -366,7 +366,7 @@ against production before it is treated as a live defect.
 ### Fixed run contract
 
 | Contract item | Fixed value |
-|---|---|
+| --- | --- |
 | Intended selector | `WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep "@fidelity:manual-authorization-capture"`, which collects exactly the one cases below from `plugins/woocommerce/tests/e2e/tests/woopayments-native/pilots/merchant-manual-capture.spec.ts`. |
 | `C1` input | Snapshot raw capture mode, set manual capture, create one unique USD 10.99 product/cart, use card `4242424242424242`, and activate Place order once; then activate Capture once for the exact order. |
 | Authorization outcome | Exactly one `1099 usd` PaymentIntent is `requires_capture`, its one charge is uncaptured for `1099 usd`, the order is `on-hold`, and exactly one authorization event/note exists. |
@@ -397,7 +397,7 @@ Financial reconciliation covers capture only when an authorized fixture is actua
 ### Fixed run contract
 
 | Contract item | Fixed value |
-|---|---|
+| --- | --- |
 | Intended selector | `WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep "@fidelity:dispute-lifecycle"`, which collects exactly the four cases below from `plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/provider-fidelity-disputes.spec.ts`. |
 | Shared creation | Three independent fresh shoppers/products use provider dispute test card `4000000000000259` for one captured `5000 usd` charge each. Each produces exactly one fraudulent dispute in `needs_response`, one created event, one `on-hold` order, and matching dispute ID, charge ID, order ID, amount, currency, reason, and due date. |
 | `DP1` accept | Send one close request for the exact first dispute ID. The same dispute becomes `lost`; exactly one closed event/note and one capped local dispute-refund effect apply. No evidence-submit request occurs. |
@@ -447,7 +447,7 @@ The provider-created gate explicitly excludes later dispute lifecycle states, ev
 ### Fixed run contract
 
 | Contract item | Fixed value |
-|---|---|
+| --- | --- |
 | Intended selector | `WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep "@fidelity:subscription-provider-lifecycle"`, which collects exactly the seven cases below from `plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-subscriptions.spec.ts`. |
 | Shared input | Pinned active WooCommerce Subscriptions fixture; isolated tax-free/shipping-free store; USD 9.99 monthly product, one-month interval, native Card, and fresh provider customer. Paid cases use `4242424242424242`; the new-method case uses `5555555555554444`. |
 | `S1` signup fee | Product has one USD 1.99 signup fee. One submit creates one USD 11.98 parent order, one active subscription, one token/method/customer graph, one `1198 usd` succeeded PaymentIntent, one captured charge, and zero renewal orders. Provider metadata identifies initial recurring payment. The parent order record carries exactly one line item — the product's own, at USD 11.98 — and no fee line, because Subscriptions charges a signup fee by raising the product's price for the initial payment. See the 2026-08-20 correction. |
@@ -506,7 +506,7 @@ Bucket-E explicitly excludes subscription and token state. HARNESS section 3's j
 ### Fixed run contract
 
 | Contract item | Fixed value |
-|---|---|
+| --- | --- |
 | Intended selector | `WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep "@fidelity:multi-currency-settlement"`, which collects exactly the three cases below from `plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-multi-currency.spec.ts`. |
 | `M1` USD | Store settlement currency USD; shopper currency USD; one USD 10.99 `4242` order. Exactly one `1099 usd` succeeded PaymentIntent and captured charge bind the exact order. |
 | `M2` EUR conversion | Store settlement currency USD; shopper currency EUR; one EUR 12.34 `4242` order. Exactly one `1234 eur` succeeded PaymentIntent and captured charge bind the order; Woo stored exchange rate and USD settlement amount equal the exact provider balance-transaction fields. The provider response supplies the numeric rate; equality, not a guessed rate, is asserted. Stored fee and net are scoped to parity with the WooPayments client — see the 2026-08-13 correction. |

@@ -23,7 +23,7 @@ Design context: `../../../ai-prompts/goals/woopayments-merge/` — `design-spec.
 There are **two WooCommerce-core checkouts on this machine, on purpose**, and a **third unrelated one**:
 
 | Checkout (path) | Role | Local env | Why |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **`~/Work/a8c/woocommerce-develop`** | **pristine WC trunk** (unmodified) | **REFERENCE / oracle** — `http://localhost:8082` | the baseline you diff against — must stay unmodified |
 | **`~/Work/a8c/woocommerce-develop-2`** (THIS repo) | **our working clone** — where native payments is built | **TARGET** — `http://store8889.localhost:8889` | where all your changes go |
 | `~/Work/a8c/woocommerce-develop` again, separate env | unrelated day-to-day WC work | `http://localhost:8888` | **NOT this project — ignore it** |
@@ -44,7 +44,7 @@ retired stand-down model needed one; the settled model does not). Plugin active-
 ### 1b. How to reach each piece
 
 | Piece | What | How you reach it |
-|---|---|---|
+| --- | --- | --- |
 | **Reference store** (oracle) | pristine `woocommerce-develop` WC + unmodified WooPayments plugin + connected account + Test Lab, on `:8082` | `REF_WP="docker exec -i wcpay_wp_default wp --allow-root"`; also set `REF_COMPOSE_PROJECT` to that container's exact `com.docker.compose.project` label |
 | **Target store** | this repo's `woocommerce-develop-2` WC core + native WooPayments + separate WooPayments plugin inactive + dev-tools + subscriptions, on `:8889` | set `TARGET_COMPOSE_PROJECT` from this repo's authorized wp-env instance, then `TARGET_WP="docker exec -i ${TARGET_COMPOSE_PROJECT}-cli-1 wp"`; never discover it with broad container matching |
 | **Connected test account** | processes test payments | Verify current `wcpay_account_data`, Jetpack connection, mode, and capability state read-only on each exact store before a live gate. Country/business/capability restrictions are manual-testing prerequisites; do not fabricate account state or weaken Core eligibility. |
@@ -167,7 +167,7 @@ record the residual INCOMPLETE and its acknowledged rows in the release evidence
 ### Automated-deterministic gates (trust within the bound)
 
 | Gate | Covers (deterministic) | Does NOT cover |
-|---|---|---|
+| --- | --- | --- |
 | **BC + Tracks drift** (`bc-drift-gate.sh`) | grep-matched BC surface didn't change vs baseline | dynamic/variable hook & event names, var-built meta keys, indirect registrations; it's drift on the *reference*, not proof native reproduces it |
 | **Bucket-E parity** (`parity-diff.sh`) | byte-identical **status / pattern-matched meta / notes / refunds / total / txn_id** for the **orders you dump** | meta keys outside the pattern; customer/token/subscription/session/option state; **final state only, not the transition sequence**; only sampled orders |
 | **Financial reconciliation matrix** (`financial-reconcile.sh`) | For supplied orders, WC charge amount/currency, capture state, refunds, fee/net meta, dispute IDs or dispute side-effect evidence, payout linkage, and multi-currency exchange-rate meta match Stripe raw source; fail-closed | Only dimensions present on the **driven orders**. Full coverage still requires driving full/partial refund, payout, capture/auth, and multi-currency fixtures |

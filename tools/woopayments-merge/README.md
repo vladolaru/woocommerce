@@ -128,7 +128,7 @@ The harness is the **delta** on top of the already-wired env + existing test sui
 `tests/metrics`, `tests/php`; WooPayments `tests/e2e` + `tests/fixtures`; WP-CLI):
 
 | Piece | Status | Notes |
-|---|---|---|
+| --- | --- | --- |
 | **Orchestrator** | **built** | `verify.sh` — one entry point; runs every gate, per-gate verdict + aggregate exit; self-check (A0) + cross-store (A1). 5/5 PASS on the unmodified plugin |
 | Manifest drift check | **built** (§2) | `bc-drift-gate.sh`; 6 categories incl. `tracks`; PASS + fail-closed proven |
 | Bucket-E surface dump | **built** | `dump-bucket-e-surface.{php,sh}` — per-order status/meta/notes/refunds; deterministic |
