@@ -35,7 +35,10 @@ export function* activatePmPromotion(
 			method: 'POST',
 		} );
 
-		dispatch( STORE_NAME ).invalidateResolution( 'getPmPromotions', [] );
+		void dispatch( STORE_NAME ).invalidateResolution(
+			'getPmPromotions',
+			[]
+		);
 		dispatch( 'core/notices' ).createSuccessNotice(
 			__( 'Promotion activated successfully.', 'woocommerce' )
 		);
@@ -60,7 +63,10 @@ export function* dismissPmPromotion(
 			method: 'POST',
 		} );
 
-		dispatch( STORE_NAME ).invalidateResolution( 'getPmPromotions', [] );
+		void dispatch( STORE_NAME ).invalidateResolution(
+			'getPmPromotions',
+			[]
+		);
 		dispatch( 'core/notices' ).createSuccessNotice(
 			__( 'Promotion dismissed.', 'woocommerce' )
 		);

@@ -523,10 +523,10 @@ type MockRequestListener = ( request: MockRequest ) => void;
 type MockClickOutcome = 'dispatched' | 'not-dispatched';
 
 interface SubmissionJournalRuntime {
-	withProviderSubmissionJournal< Result >(
+	withProviderSubmissionJournal: < Result >(
 		description: string,
 		submit: () => Promise< Result >
-	): Promise< Result >;
+	) => Promise< Result >;
 }
 
 function submissionJournalRuntime(
@@ -579,7 +579,7 @@ function createBlocksSubmissionPage( options: {
 		off: ( _event: string, listener: MockRequestListener ) => {
 			listeners.delete( listener );
 		},
-		getByRole: () => ( {} as Locator ),
+		getByRole: () => ( {} ) as Locator,
 		waitForFunction: (
 			_fn: unknown,
 			_arg: unknown,

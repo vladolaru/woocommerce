@@ -272,10 +272,9 @@ export type WooPaymentsReaderChargeSummaryResponse =
 	  };
 
 export interface WooPaymentsDisputeMetadata {
-	/* eslint-disable @typescript-eslint/naming-convention -- provider metadata keys can include leading underscores. */
 	__product_type?: string;
 	__evidence_submitted_at?: string | number;
-	/* eslint-enable @typescript-eslint/naming-convention */
+
 	[ key: string ]: unknown;
 }
 

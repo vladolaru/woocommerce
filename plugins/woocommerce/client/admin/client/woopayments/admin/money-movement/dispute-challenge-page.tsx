@@ -172,7 +172,7 @@ export const WooPaymentsDisputeChallengePage = () => {
 			}
 		};
 
-		loadDispute();
+		void loadDispute();
 
 		return () => {
 			isMounted = false;

@@ -1207,7 +1207,7 @@ describe( 'wc-payment-method-woopayments', () => {
 					'box-shadow': 'rgb(43 45 47 / 0.8) 0px 1px 2px',
 					color: 'rgb(43 45 47)',
 					'font-size': '16px',
-				}[ property ] || '' ),
+				} )[ property ] || '',
 		} ) );
 
 		try {

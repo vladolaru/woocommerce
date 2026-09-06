@@ -57,7 +57,7 @@ export const wooPaymentsTransactionSearchCompleter = {
 				key: string;
 				label: JSX.Element;
 				value: TransactionSearchOption;
-			}
+			},
 		];
 	},
 	getOptionLabel( option: TransactionSearchOption ) {

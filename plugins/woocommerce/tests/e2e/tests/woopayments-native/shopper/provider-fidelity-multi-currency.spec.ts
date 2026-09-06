@@ -1362,12 +1362,10 @@ test.describe( 'WooPayments native multi-currency settlement fidelity', () => {
 					await assertMoneyFormatAssumptions( adminApi );
 					await assertUsdSettlementPremise( adminApi );
 					await assertSelectableCurrencyContext( adminApi );
-					const highestOrderId = await readHighestOrderId(
-						pilotRuntime
-					);
-					const product = await pilotRuntime.createOwnedProduct(
-						USD_PRICE
-					);
+					const highestOrderId =
+						await readHighestOrderId( pilotRuntime );
+					const product =
+						await pilotRuntime.createOwnedProduct( USD_PRICE );
 
 					// The store's settlement currency, selected explicitly as
 					// the shopper currency rather than left to default, so the
@@ -1454,7 +1452,7 @@ test.describe( 'WooPayments native multi-currency settlement fidelity', () => {
 								pilotRuntime,
 								highestOrderId
 							)
-						 ).newOrderIds,
+						).newOrderIds,
 						'one submission must create exactly one order'
 					).toEqual( [ orderId ] );
 					expect( await readShopperCartItemCount( page ) ).toBe( 0 );
@@ -1497,9 +1495,8 @@ test.describe( 'WooPayments native multi-currency settlement fidelity', () => {
 						pilotRuntime,
 						'EUR',
 						async () => {
-							const highestOrderId = await readHighestOrderId(
-								pilotRuntime
-							);
+							const highestOrderId =
+								await readHighestOrderId( pilotRuntime );
 							const product =
 								await pilotRuntime.createOwnedProduct(
 									EUR_PRICE
@@ -1723,7 +1720,7 @@ test.describe( 'WooPayments native multi-currency settlement fidelity', () => {
 										pilotRuntime,
 										highestOrderId
 									)
-								 ).newOrderIds,
+								).newOrderIds,
 								'one submission must create exactly one order'
 							).toEqual( [ orderId ] );
 							expect(
@@ -1785,9 +1782,8 @@ test.describe( 'WooPayments native multi-currency settlement fidelity', () => {
 						pilotRuntime,
 						'EUR',
 						async () => {
-							const highestOrderId = await readHighestOrderId(
-								pilotRuntime
-							);
+							const highestOrderId =
+								await readHighestOrderId( pilotRuntime );
 
 							await withRestoredShopperSession(
 								browser,
@@ -1860,7 +1856,7 @@ test.describe( 'WooPayments native multi-currency settlement fidelity', () => {
 										pilotRuntime,
 										highestOrderId
 									)
-								 ).newOrderIds,
+								).newOrderIds,
 								'a currency change must create no order'
 							).toEqual( [] );
 						}

@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
-/* eslint-disable import/order */
+
 /**
  * External dependencies
  */

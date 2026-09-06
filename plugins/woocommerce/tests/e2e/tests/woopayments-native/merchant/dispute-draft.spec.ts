@@ -511,9 +511,8 @@ test.describe( 'native dispute draft persistence', () => {
 			await pilotRuntime.withProviderWriteLocks(
 				{ recordEvent: 'dispute-draft' },
 				async () => {
-					const product = await pilotRuntime.createOwnedProduct(
-						PRICE
-					);
+					const product =
+						await pilotRuntime.createOwnedProduct( PRICE );
 					const orderId = await completeDisputedCardCheckout(
 						pilotRuntime,
 						page,

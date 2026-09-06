@@ -52,7 +52,7 @@ export type CardPaymentScenarioDefinition = CardPaymentScenarioAxes &
 					path: 'classic-checkout/';
 				} >;
 		  } >
-	 );
+	);
 
 export function defineCardPaymentScenario(
 	definition: CardPaymentScenarioDefinition
@@ -216,23 +216,23 @@ export type CardPaymentCheckoutResult =
 	  } >;
 
 export interface CardPaymentRuntimeAdapter< Scope = undefined > {
-	withState< Result >(
+	withState: < Result >(
 		session: ProviderWriteSession,
 		runId: string,
 		callback: ( scope: Scope ) => Promise< Result >
-	): Promise< Result >;
-	completeCheckout(
+	) => Promise< Result >;
+	completeCheckout: (
 		session: ProviderWriteSession,
 		page: Page,
 		product: OwnedProduct,
 		runId: string,
 		definition: CardPaymentScenarioDefinition,
 		scope: Scope
-	): Promise< CardPaymentCheckoutResult >;
-	readCardEvidence?(
+	) => Promise< CardPaymentCheckoutResult >;
+	readCardEvidence?: (
 		session: ProviderWriteSession,
 		payment: PaymentEvidence
-	): Promise< CardPaymentProviderCardEvidence >;
+	) => Promise< CardPaymentProviderCardEvidence >;
 }
 
 interface AccountResponse {
@@ -1015,9 +1015,8 @@ export function registerCardPaymentScenario< Scope >(
 								request.postDataJSON()
 							)
 						);
-						observation.browser = await readDispatchBrowserEvidence(
-							page
-						);
+						observation.browser =
+							await readDispatchBrowserEvidence( page );
 					}
 				} catch {
 					observation.observerFailures.push(

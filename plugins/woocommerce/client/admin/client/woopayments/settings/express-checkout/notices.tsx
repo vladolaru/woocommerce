@@ -61,7 +61,7 @@ export const ExpressCheckoutSettingsNotices = ( {
 } ) => {
 	const [ isWooPayEnabled ] = useWooPayEnabledSettings() as [ boolean ];
 	const [ isPaymentRequestEnabled ] = usePaymentRequestEnabledSettings() as [
-		boolean
+		boolean,
 	];
 	const [ isAmazonPayEnabled ] = useAmazonPayEnabledSettings() as [ boolean ];
 	const settings = asSettingsRecord( useGetSettings() );

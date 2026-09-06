@@ -236,7 +236,7 @@ const buildRecommendedDocuments = (
 			DocumentEvidenceField,
 			number,
 			( string | undefined )?,
-			( string | undefined )?
+			( string | undefined )?,
 		]
 	>
 ): RecommendedDocumentField[] =>

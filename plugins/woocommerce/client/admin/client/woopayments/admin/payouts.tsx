@@ -210,7 +210,7 @@ export const WooPaymentsPayouts = () => {
 			}
 		};
 
-		loadPayouts();
+		void loadPayouts();
 
 		return () => {
 			isMounted = false;

@@ -655,9 +655,8 @@ const WooPayExpressContent = () => {
 			return;
 		}
 
-		const sessionResponse = await sendPreemptiveSessionDataToWooPay(
-			sessionData
-		);
+		const sessionResponse =
+			await sendPreemptiveSessionDataToWooPay( sessionData );
 
 		if ( sessionResponse?.is_error ) {
 			await continueWooPay();

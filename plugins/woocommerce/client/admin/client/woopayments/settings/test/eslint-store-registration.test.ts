@@ -4,7 +4,6 @@
 import path from 'path';
 import { ESLint } from 'eslint';
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires -- Load the local override list without the plugin extends that Jest's resolver remaps.
 const eslintConfig = require( '../../../../.eslintrc.js' );
 
 const lintWooPaymentsFixture = async ( filePath: string, code: string ) => {

@@ -108,7 +108,7 @@ test( 'a second quarantine preserves the first receipt and appends an event', as
 		);
 		const events = (
 			await readFile( join( quarantinePath, 'events.jsonl' ), 'utf8' )
-		 )
+		)
 			.trim()
 			.split( '\n' )
 			.map( ( line ) => JSON.parse( line ) );
@@ -167,7 +167,7 @@ test( 'concurrent quarantines both resolve with an immutable first receipt and v
 		);
 		const events = (
 			await readFile( join( quarantinePath, 'events.jsonl' ), 'utf8' )
-		 )
+		)
 			.trim()
 			.split( '\n' )
 			.map( ( line ) => JSON.parse( line ) );

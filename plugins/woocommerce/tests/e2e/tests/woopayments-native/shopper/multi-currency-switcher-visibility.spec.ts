@@ -483,9 +483,8 @@ test(
 	},
 	async ( { adminApi, baseURL, page, runId } ) => {
 		const storeBase = requireBaseUrl( baseURL );
-		const { defaultCode, additionalCode } = await readCurrencyBaseline(
-			adminApi
-		);
+		const { defaultCode, additionalCode } =
+			await readCurrencyBaseline( adminApi );
 		// The euro-absence assertions below are derived from the additional
 		// enabled currency being EUR. If the store's enabled set ever changes,
 		// that expectation must be re-derived rather than silently weakened,

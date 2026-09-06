@@ -335,28 +335,28 @@ interface MutationGuardTestPayload {
 }
 
 interface MutationGuardTestManager {
-	readMutationGuard(
+	readMutationGuard: (
 		guardPath: string
-	): Promise< MutationGuardTestPayload | undefined >;
-	renewMutationGuard(
+	) => Promise< MutationGuardTestPayload | undefined >;
+	renewMutationGuard: (
 		guardPath: string,
 		owner: MutationGuardTestPayload
-	): Promise< void >;
-	releaseMutationGuard(
+	) => Promise< void >;
+	releaseMutationGuard: (
 		guardPath: string,
 		owner: MutationGuardTestPayload
-	): Promise< void >;
+	) => Promise< void >;
 }
 
 interface ResourceLockAcquisitionTestManager {
-	tryCreate(
+	tryCreate: (
 		lockPath: string,
 		payload: ResourceLockPayload
-	): Promise< boolean >;
-	tryCreateMutationGuard(
+	) => Promise< boolean >;
+	tryCreateMutationGuard: (
 		guardPath: string,
 		owner: MutationGuardTestPayload
-	): Promise< boolean >;
+	) => Promise< boolean >;
 }
 
 function pauseSecondTryCreate( manager: ResourceLockManager ): {

@@ -1134,7 +1134,7 @@ function expectAdmittedClassicSubmission(
 	).toBe( false );
 
 	const sessionToken = evidence.tokens.authoritativeSession;
-	expect( sessionToken.length ).toBe( 16 );
+	expect( sessionToken ).toHaveLength( 16 );
 	expect( sessionToken.sha256 ).toMatch( /^[a-f0-9]{64}$/ );
 	expect(
 		evidence.tokens.exposed,
@@ -1174,12 +1174,10 @@ test.describe( 'WooPayments native basic card charge fidelity', () => {
 			await pilotRuntime.withProviderWriteLocks(
 				{ recordEvent: 'basic-card-charge-b1' },
 				async () => {
-					const baselineOrderId = await readHighestOrderId(
-						pilotRuntime
-					);
-					const product = await pilotRuntime.createOwnedProduct(
-						PRICE
-					);
+					const baselineOrderId =
+						await readHighestOrderId( pilotRuntime );
+					const product =
+						await pilotRuntime.createOwnedProduct( PRICE );
 
 					await openBlocksCheckoutWithProduct(
 						pilotRuntime,
@@ -1269,12 +1267,10 @@ test.describe( 'WooPayments native basic card charge fidelity', () => {
 			await pilotRuntime.withProviderWriteLocks(
 				{ recordEvent: 'basic-card-charge-b1c' },
 				async () => {
-					const baselineOrderId = await readHighestOrderId(
-						pilotRuntime
-					);
-					const product = await pilotRuntime.createOwnedProduct(
-						PRICE
-					);
+					const baselineOrderId =
+						await readHighestOrderId( pilotRuntime );
+					const product =
+						await pilotRuntime.createOwnedProduct( PRICE );
 					const coupon = await createRunCoupon( pilotRuntime );
 					let scenarioFailure: unknown;
 
@@ -1363,7 +1359,7 @@ test.describe( 'WooPayments native basic card charge fidelity', () => {
 									pilotRuntime,
 									baselineOrderId
 								)
-							 ).newOrderIds,
+							).newOrderIds,
 							'one submission must create exactly one order'
 						).toEqual( [ purchase.orderId ] );
 					} catch ( error ) {
@@ -1401,12 +1397,10 @@ test.describe( 'WooPayments native basic card charge fidelity', () => {
 				pilotRuntime.runId,
 				async ( scope: CardTestingProtectionScope ) => {
 					await scope.registerFreshContext( page );
-					const baselineOrderId = await readHighestOrderId(
-						pilotRuntime
-					);
-					const product = await pilotRuntime.createOwnedProduct(
-						PRICE
-					);
+					const baselineOrderId =
+						await readHighestOrderId( pilotRuntime );
+					const product =
+						await pilotRuntime.createOwnedProduct( PRICE );
 
 					// Half one: a token-bearing submission settles exactly as
 					// the protection-off graph does. The Classic driver reads
@@ -1438,9 +1432,8 @@ test.describe( 'WooPayments native basic card charge fidelity', () => {
 					// submission with the session token absent. Without this a
 					// run where protection silently failed to engage would pass
 					// exactly like the one above.
-					const tokenlessBaselineOrderId = await readHighestOrderId(
-						pilotRuntime
-					);
+					const tokenlessBaselineOrderId =
+						await readHighestOrderId( pilotRuntime );
 					const prepared = await prepareClassicBasicCardCheckout(
 						pilotRuntime,
 						page,
@@ -1509,7 +1502,7 @@ test.describe( 'WooPayments native basic card charge fidelity', () => {
 								pilotRuntime,
 								baselineOrderId
 							)
-						 ).paidOrderIds,
+						).paidOrderIds,
 						'the admitted submission is the only one that may have paid'
 					).toEqual( [ admitted.orderId ] );
 				}
@@ -1546,9 +1539,8 @@ test.describe( 'WooPayments native basic card charge fidelity', () => {
 							).not.toBe( FSE_THEME );
 							expect( theme.active.stylesheet ).toBe( FSE_THEME );
 
-							const baselineOrderId = await readHighestOrderId(
-								pilotRuntime
-							);
+							const baselineOrderId =
+								await readHighestOrderId( pilotRuntime );
 							const product =
 								await pilotRuntime.createOwnedProduct( PRICE );
 
@@ -1604,7 +1596,7 @@ test.describe( 'WooPayments native basic card charge fidelity', () => {
 										pilotRuntime,
 										baselineOrderId
 									)
-								 ).newOrderIds,
+								).newOrderIds,
 								'one submission must create exactly one order'
 							).toEqual( [ purchase.orderId ] );
 						}
@@ -1644,9 +1636,8 @@ test.describe( 'WooPayments native basic card charge fidelity', () => {
 						async ( theme ) => {
 							expect( theme.active.stylesheet ).toBe( FSE_THEME );
 
-							const baselineOrderId = await readHighestOrderId(
-								pilotRuntime
-							);
+							const baselineOrderId =
+								await readHighestOrderId( pilotRuntime );
 							const product =
 								await pilotRuntime.createOwnedProduct( PRICE );
 
@@ -1800,7 +1791,7 @@ test.describe( 'WooPayments native basic card charge fidelity', () => {
 										pilotRuntime,
 										baselineOrderId
 									)
-								 ).paidOrderIds,
+								).paidOrderIds,
 								'the admitted submission is the only one that may have paid'
 							).toEqual( [ purchase.orderId ] );
 						}

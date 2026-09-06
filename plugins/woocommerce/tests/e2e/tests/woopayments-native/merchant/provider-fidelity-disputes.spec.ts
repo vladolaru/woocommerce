@@ -1414,9 +1414,8 @@ test.describe.serial( 'dispute-lifecycle', () => {
 							// than discovered: the client row it replaces
 							// returned silently when the notice was absent, and
 							// that silence is what this case exists to remove.
-							const version = await readWooCommerceVersion(
-								adminApi
-							);
+							const version =
+								await readWooCommerceVersion( adminApi );
 							test.info().annotations.push( {
 								type: 'woopayments-native-version',
 								description: version,

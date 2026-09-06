@@ -218,18 +218,18 @@ export const WooPaySettings = () => {
 		useWooPayEnabledSettings() as [ boolean, ( value: boolean ) => void ];
 	const [ wooPayLocations, updateWooPayLocation ] = useWooPayLocations() as [
 		string[],
-		( location: 'product' | 'cart' | 'checkout', value: boolean ) => void
+		( location: 'product' | 'cart' | 'checkout', value: boolean ) => void,
 	];
 	const [ isWooPayGlobalThemeSupportEnabled, setWooPayGlobalThemeSupport ] =
 		useWooPayGlobalThemeSupportEnabledSettings() as [
 			boolean,
-			( value: boolean ) => void
+			( value: boolean ) => void,
 		];
 	const [ wooPayCustomMessage, setWooPayCustomMessage ] =
 		useWooPayCustomMessage() as [ string, ( value: string ) => void ];
 	const [ wooPayStoreLogo, setWooPayStoreLogo ] = useWooPayStoreLogo() as [
 		string,
-		( value: string ) => void
+		( value: string ) => void,
 	];
 	const showIncompatibilityNotice = Boolean(
 		useWooPayShowIncompatibilityNotice()

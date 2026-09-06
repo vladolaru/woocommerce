@@ -902,7 +902,7 @@ async function runProtectionOffClassicCase< Result >(
 											session.adminApi,
 											observation.orderId
 										)
-									 ).orderKey,
+									).orderKey,
 									storeOrigin: new URL( session.baseURL )
 										.origin,
 									baselineOrderId,
@@ -1164,7 +1164,7 @@ async function runProtectionOnTwin(
 								session.adminApi,
 								admitted.orderId
 							)
-						 ).orderKey;
+						).orderKey;
 						expectRequestedRedirect( admitted, method, {
 							storeOrigin,
 							orderKey,
@@ -1200,9 +1200,8 @@ async function runProtectionOnTwin(
 						// submission with the session token absent. Without it a
 						// run where protection silently failed to engage would
 						// pass exactly like the one above.
-						const baselineOrderId = await readHighestOrderId(
-							session
-						);
+						const baselineOrderId =
+							await readHighestOrderId( session );
 						const rejection = await submitTokenlessRedirectCheckout(
 							session,
 							page,
@@ -1274,7 +1273,7 @@ async function runProtectionOnTwin(
 										session.adminApi,
 										orderId
 									)
-								 ).status
+								).status
 							);
 						}
 
@@ -1408,7 +1407,7 @@ test.describe( 'WooPayments native redirect-method provider outcome fidelity', (
 											pilotRuntime.adminApi,
 											observation.orderId
 										)
-									 ).orderKey;
+									).orderKey;
 
 									expectRequestedRedirect(
 										observation,
@@ -1670,6 +1669,7 @@ test.describe( 'WooPayments native redirect-method provider outcome fidelity', (
 			);
 		}
 	);
+
 	test(
 		'One Bancontact checkout sends the provider method bancontact for 1234 eur with this run order-received return URL, and the single redirect settles that same PaymentIntent to succeeded with one captured charge',
 		{

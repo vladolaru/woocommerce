@@ -175,7 +175,7 @@ async function restoreEnabledCurrencies(
 	) }, found ${ restoredCodes.join(
 		', '
 	) }. The standing store needs manual restoration before other specs run.`;
-	// eslint-disable-next-line no-console
+
 	console.error( message );
 
 	return message;
@@ -351,7 +351,7 @@ test(
 				enabledBefore
 			).catch( ( error ) => {
 				const message = `Restoration could not run against the store: ${ error }. The standing store may need manual restoration before other specs run.`;
-				// eslint-disable-next-line no-console
+
 				console.error( message );
 				return message;
 			} );

@@ -75,8 +75,8 @@ export interface InstalledTheme extends BlockThemeIdentity {
  * restoration logic can be tested without a WordPress.
  */
 export interface BlockThemeGateway {
-	listInstalledThemes(): Promise< InstalledTheme[] >;
-	activateTheme( stylesheet: string ): Promise< void >;
+	listInstalledThemes: () => Promise< InstalledTheme[] >;
+	activateTheme: ( stylesheet: string ) => Promise< void >;
 }
 
 export interface BlockThemeScope {

@@ -478,7 +478,7 @@ export async function getSavedCardState(
 	session: ProviderWriteSession,
 	cards: readonly [
 		firstCard: SavedCardIdentity,
-		defaultCard: SavedCardIdentity
+		defaultCard: SavedCardIdentity,
 	]
 ): Promise< SavedCardState > {
 	await session.assertCanWrite();
@@ -757,7 +757,7 @@ export async function findSavedCardProviderCustomerId(
 			tokenId: defaultToken.tokenId,
 			paymentMethodId: defaultToken.paymentMethodId,
 		} )
-	 ).providerCustomerId;
+	).providerCustomerId;
 }
 
 /**

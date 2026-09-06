@@ -64,7 +64,7 @@ export const WooPaymentsCardReadersPage = () => {
 			}
 		};
 
-		loadReaders();
+		void loadReaders();
 
 		return () => {
 			isMounted = false;

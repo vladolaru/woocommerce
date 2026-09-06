@@ -385,9 +385,8 @@ test.describe( 'WooPayments native Classic checkout card authentication', () => 
 						'the forced premise must be in effect before either submission'
 					).toBe( true );
 
-					const product = await pilotRuntime.createOwnedProduct(
-						PRICE
-					);
+					const product =
+						await pilotRuntime.createOwnedProduct( PRICE );
 					const prepared = await prepareClassicCardCheckout(
 						pilotRuntime,
 						page,
@@ -399,9 +398,8 @@ test.describe( 'WooPayments native Classic checkout card authentication', () => 
 							captureExposedToken: true,
 						}
 					);
-					const sessionToken = await scope.captureGuestSessionToken(
-						page
-					);
+					const sessionToken =
+						await scope.captureGuestSessionToken( page );
 					expect(
 						prepared.exposedTokenDigest,
 						'the token the page exposes must be the token the session holds'
@@ -436,9 +434,8 @@ test.describe( 'WooPayments native Classic checkout card authentication', () => 
 					// submission with the session token absent. Without this a
 					// run where protection silently failed to engage would pass
 					// exactly like the one above.
-					const baselineOrderId = await readHighestOrderId(
-						pilotRuntime
-					);
+					const baselineOrderId =
+						await readHighestOrderId( pilotRuntime );
 					const tokenless = await prepareClassicCardCheckout(
 						pilotRuntime,
 						page,
@@ -715,9 +712,8 @@ test.describe( 'WooPayments native Classic checkout card authentication', () => 
 							// this journey creates is identified by difference
 							// rather than by a card label that stale tokens
 							// could also carry.
-							const before = await getSavedCardEvidence(
-								pilotRuntime
-							);
+							const before =
+								await getSavedCardEvidence( pilotRuntime );
 							const knownTokenIds = new Set(
 								before.tokens.map( ( token ) => token.tokenId )
 							);
@@ -765,9 +761,8 @@ test.describe( 'WooPayments native Classic checkout card authentication', () => 
 								pilotRuntime.runId
 							);
 
-							const after = await getSavedCardEvidence(
-								pilotRuntime
-							);
+							const after =
+								await getSavedCardEvidence( pilotRuntime );
 							const created = after.tokens.filter(
 								( token ) =>
 									! knownTokenIds.has( token.tokenId )

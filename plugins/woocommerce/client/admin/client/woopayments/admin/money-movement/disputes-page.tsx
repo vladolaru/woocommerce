@@ -239,7 +239,7 @@ export const WooPaymentsDisputesPage = () => {
 			}
 		};
 
-		loadDisputes();
+		void loadDisputes();
 
 		return () => {
 			isMounted = false;

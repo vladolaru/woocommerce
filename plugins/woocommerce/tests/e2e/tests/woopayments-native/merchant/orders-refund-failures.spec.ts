@@ -677,7 +677,7 @@ async function runRejectedRefundContract(
 		const availableBefore = ( await availableCell.innerText() ).trim();
 		const alreadyRefundedBefore = (
 			await alreadyRefundedCell.innerText()
-		 ).trim();
+		).trim();
 		// Guard the oracle itself: comparing two empty strings after the
 		// reload would prove nothing.
 		expect(
@@ -803,7 +803,7 @@ async function runRejectedRefundContract(
 					page,
 					'Total available to refund'
 				).innerText()
-			 ).trim()
+			).trim()
 		).toBe( availableBefore );
 		expect(
 			(
@@ -811,7 +811,7 @@ async function runRejectedRefundContract(
 					page,
 					'Amount already refunded'
 				).innerText()
-			 ).trim()
+			).trim()
 		).toBe( alreadyRefundedBefore );
 
 		// The authoritative record, independent of anything rendered.

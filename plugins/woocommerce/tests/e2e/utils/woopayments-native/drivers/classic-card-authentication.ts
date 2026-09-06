@@ -574,9 +574,10 @@ export async function submitClassicCardAuthentication(
 				if ( options.response === 'complete' ) {
 					let receipt: ClassicOrderReceipt;
 					try {
-						receipt = await browser.waitForClassicReceipt(
-							RECEIPT_TIMEOUT_MS
-						);
+						receipt =
+							await browser.waitForClassicReceipt(
+								RECEIPT_TIMEOUT_MS
+							);
 					} catch ( error ) {
 						const notice = await browser.readPaymentErrorNotice();
 						throw quarantine(

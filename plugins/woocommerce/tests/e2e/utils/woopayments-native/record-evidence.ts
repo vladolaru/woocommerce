@@ -226,7 +226,7 @@ export async function getCaptureOrderNoteEvidence(
 	const intentId = requiredString( evidence.intentId, 'intent ID' );
 	const captureNotes = (
 		await readOrderNoteContents( restApi, evidence, 'Capture note' )
-	 ).filter(
+	).filter(
 		( note ) =>
 			note.startsWith( 'A payment of ' ) &&
 			note.includes(
@@ -256,7 +256,7 @@ export async function getAuthorizationOrderNoteEvidence(
 	const intentId = requiredString( evidence.intentId, 'intent ID' );
 	const authorizationNotes = (
 		await readOrderNoteContents( restApi, evidence, 'Authorization note' )
-	 ).filter(
+	).filter(
 		( note ) =>
 			note.startsWith( 'A payment of ' ) &&
 			note.includes(

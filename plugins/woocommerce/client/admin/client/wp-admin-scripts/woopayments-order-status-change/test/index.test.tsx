@@ -28,7 +28,6 @@ jest.mock( '../cancel-confirmation-modal', () => ( {
 	} ) => <div>Cancel confirmation from { previousStatus }</div>,
 } ) );
 
-// eslint-disable-next-line import/no-unassigned-import -- The entry point is the subject under test.
 import '../index';
 
 const bootEntry = () => {

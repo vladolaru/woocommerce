@@ -126,7 +126,7 @@ function tokenIdentities(
 				[ token.tokenId, token.paymentMethodId, token.isDefault ] as [
 					number,
 					string,
-					boolean
+					boolean,
 				]
 		)
 		.toSorted( ( left, right ) => left[ 0 ] - right[ 0 ] );
@@ -194,7 +194,7 @@ async function releaseRun(
 	const { baseline } = scope;
 	const subscriptionIds = (
 		await readCustomerSubscriptionIds( session )
-	 ).filter( ( id ) => ! baseline.subscriptionIds.includes( id ) );
+	).filter( ( id ) => ! baseline.subscriptionIds.includes( id ) );
 
 	for ( const subscriptionId of subscriptionIds.toReversed() ) {
 		await removeRunSubscription( session, subscriptionId );
@@ -252,7 +252,7 @@ async function releaseRun(
 		expect(
 			(
 				await getProviderPaymentMethodIds( session, providerCustomerId )
-			 ).toSorted(),
+			).toSorted(),
 			'the free-trial journey must restore the exact provider attachment baseline'
 		).toEqual( baseline.providerAttachments.toSorted() );
 	}
@@ -365,9 +365,9 @@ async function waitForSingleSubscription(
 	await expect
 		.poll(
 			async () =>
-				(
-					await readCustomerSubscriptionIds( session )
-				 ).filter( ( id ) => ! baselineIds.includes( id ) ).length,
+				( await readCustomerSubscriptionIds( session ) ).filter(
+					( id ) => ! baselineIds.includes( id )
+				).length,
 			{
 				message: 'one signup must create exactly one subscription',
 				timeout: PHASE_TIMEOUT_MS,
@@ -630,9 +630,8 @@ test.describe( 'WooPayments native product-first free-trial authentication', () 
 						async () =>
 							newCards(
 								scope.baseline.tokens,
-								(
-									await getSavedCardEvidence( pilotRuntime )
-								 ).tokens
+								( await getSavedCardEvidence( pilotRuntime ) )
+									.tokens
 							).length,
 						{
 							message:
@@ -641,9 +640,8 @@ test.describe( 'WooPayments native product-first free-trial authentication', () 
 						}
 					)
 					.toBe( 1 );
-				const tokensAfterSignup = await getSavedCardEvidence(
-					pilotRuntime
-				);
+				const tokensAfterSignup =
+					await getSavedCardEvidence( pilotRuntime );
 				const createdCards = newCards(
 					scope.baseline.tokens,
 					tokensAfterSignup.tokens

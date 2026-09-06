@@ -228,7 +228,7 @@ function tokenIdentities(
 				[ token.tokenId, token.paymentMethodId, token.isDefault ] as [
 					number,
 					string,
-					boolean
+					boolean,
 				]
 		)
 		.toSorted( ( left, right ) => left[ 0 ] - right[ 0 ] );
@@ -254,7 +254,7 @@ async function expectStableProviderAttachments(
 	for (;;) {
 		const observed = (
 			await getProviderPaymentMethodIds( session, providerCustomerId )
-		 ).toSorted();
+		).toSorted();
 		expect( observed, reason ).toEqual( wanted );
 		const remaining = deadline - Date.now();
 		if ( remaining <= 0 ) {
@@ -450,9 +450,8 @@ async function releaseCheckoutCardsAfterFailure(
 	}
 
 	try {
-		const providerCustomerId = await findSavedCardProviderCustomerId(
-			session
-		);
+		const providerCustomerId =
+			await findSavedCardProviderCustomerId( session );
 		if ( ! providerCustomerId ) {
 			throw new Error(
 				'No provider customer could be named, so detachment cannot be proven.'
@@ -613,9 +612,8 @@ test.describe( 'WooPayments native saved-token lifecycle fidelity', () => {
 				async () => {
 					const baseline = await readBaseline( pilotRuntime );
 					runBaseline = baseline;
-					const highestOrderId = await readHighestOrderId(
-						pilotRuntime
-					);
+					const highestOrderId =
+						await readHighestOrderId( pilotRuntime );
 
 					const observation = await submitNativeAddPaymentMethod(
 						pilotRuntime,
@@ -731,9 +729,8 @@ test.describe( 'WooPayments native saved-token lifecycle fidelity', () => {
 						pilotRuntime,
 						providerCustomerId
 					);
-					const highestOrderId = await readHighestOrderId(
-						pilotRuntime
-					);
+					const highestOrderId =
+						await readHighestOrderId( pilotRuntime );
 					const created: SavedCardIdentity[] = [];
 
 					try {
@@ -908,7 +905,7 @@ test.describe( 'WooPayments native saved-token lifecycle fidelity', () => {
 						expect(
 							(
 								await getSavedCardEvidence( pilotRuntime )
-							 ).tokens.map( ( token ) => token.tokenId ),
+							).tokens.map( ( token ) => token.tokenId ),
 							'the token the family shares must survive this case untouched'
 						).toContain( sharedCard.tokenId );
 					} catch ( error ) {
@@ -1108,9 +1105,8 @@ test.describe( 'WooPayments native saved-token lifecycle fidelity', () => {
 					const card = requireRunCard();
 					const providerCustomerId = requireRunProviderCustomer();
 					const baseline = requireRunBaseline();
-					const highestOrderId = await readHighestOrderId(
-						pilotRuntime
-					);
+					const highestOrderId =
+						await readHighestOrderId( pilotRuntime );
 
 					// The deletion is the contract, so its own proof - the
 					// token gone locally and the method detached at the
@@ -1304,9 +1300,8 @@ test.describe( 'WooPayments native saved-token lifecycle fidelity', () => {
 								);
 								created.length = 0;
 								await delay( CONVERGENCE_WINDOW_MS );
-								const after = await getSavedCardEvidence(
-									pilotRuntime
-								);
+								const after =
+									await getSavedCardEvidence( pilotRuntime );
 								expect(
 									after.tokens.map(
 										( token ) => token.tokenId
@@ -1374,9 +1369,8 @@ test.describe( 'WooPayments native saved-token lifecycle fidelity', () => {
 
 					try {
 						await pilotRuntime.logInAsCustomer( page );
-						const product = await pilotRuntime.createOwnedProduct(
-							PRICE
-						);
+						const product =
+							await pilotRuntime.createOwnedProduct( PRICE );
 						const saved = await saveCardAtBlocksCheckout(
 							pilotRuntime,
 							page,

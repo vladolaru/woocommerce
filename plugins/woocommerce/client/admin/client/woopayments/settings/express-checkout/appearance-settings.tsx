@@ -82,19 +82,19 @@ export const ExpressCheckoutAppearanceSettings = ( {
 } ) => {
 	const [ buttonType, setButtonType ] = usePaymentRequestButtonType() as [
 		string,
-		( value: string ) => void
+		( value: string ) => void,
 	];
 	const [ size, setSize ] = usePaymentRequestButtonSize() as [
 		string,
-		( value: string ) => void
+		( value: string ) => void,
 	];
 	const [ theme, setTheme ] = usePaymentRequestButtonTheme() as [
 		string,
-		( value: string ) => void
+		( value: string ) => void,
 	];
 	const [ radius, setRadius ] = usePaymentRequestButtonBorderRadius() as [
 		number,
-		( value: number ) => void
+		( value: number ) => void,
 	];
 
 	return (

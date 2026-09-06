@@ -899,9 +899,10 @@ async function submitClassicDecline(
 					await session.performWrite( activate );
 				},
 				async () => {
-					const shown = await browser.waitForCheckoutRejectionNotice(
-						NOTICE_TIMEOUT_MS
-					);
+					const shown =
+						await browser.waitForCheckoutRejectionNotice(
+							NOTICE_TIMEOUT_MS
+						);
 					if ( ! shown ) {
 						throw new ResourceQuarantineRequiredError(
 							'A declining classic submission produced no rejection notice, so its outcome is unknown.',

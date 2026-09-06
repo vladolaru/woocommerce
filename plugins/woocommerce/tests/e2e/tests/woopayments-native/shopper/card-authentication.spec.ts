@@ -457,12 +457,10 @@ test.describe( 'WooPayments native card authentication', () => {
 			await pilotRuntime.withProviderWriteLocks(
 				{ recordEvent: 'shopper-card-authentication' },
 				async () => {
-					const baselineOrderId = await readHighestOrderId(
-						pilotRuntime
-					);
-					const product = await pilotRuntime.createOwnedProduct(
-						PRICE
-					);
+					const baselineOrderId =
+						await readHighestOrderId( pilotRuntime );
+					const product =
+						await pilotRuntime.createOwnedProduct( PRICE );
 
 					const { evidence, dispatch, reachedReceipt, url } =
 						await checkoutWithChallenge(
@@ -567,12 +565,10 @@ test.describe( 'WooPayments native card authentication', () => {
 			await pilotRuntime.withProviderWriteLocks(
 				{ recordEvent: 'shopper-card-authentication-declined' },
 				async () => {
-					const baselineOrderId = await readHighestOrderId(
-						pilotRuntime
-					);
-					const product = await pilotRuntime.createOwnedProduct(
-						PRICE
-					);
+					const baselineOrderId =
+						await readHighestOrderId( pilotRuntime );
+					const product =
+						await pilotRuntime.createOwnedProduct( PRICE );
 					const { evidence, dispatch, reachedReceipt, url } =
 						await checkoutWithChallenge(
 							pilotRuntime,

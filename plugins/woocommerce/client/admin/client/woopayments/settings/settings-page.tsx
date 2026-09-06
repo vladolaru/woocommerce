@@ -946,14 +946,14 @@ const useDuplicatePaymentMethodNotices = () => {
 		setDismissedDuplicatePaymentMethodNotices,
 	] = useDismissedDuplicatePaymentMethodNotices() as [
 		DuplicatePaymentMethodNotices,
-		typeof updateDismissedDuplicatePaymentMethodNotices
+		typeof updateDismissedDuplicatePaymentMethodNotices,
 	];
 
 	const onDismissDuplicateNotice = (
 		notices: Record< string, string[] >
 	) => {
 		setDismissedDuplicatePaymentMethodNotices( notices );
-		saveOption(
+		void saveOption(
 			'wcpay_duplicate_payment_method_notices_dismissed',
 			notices
 		);
@@ -992,11 +992,11 @@ const PaymentMethodsSettingsSection = () => {
 		useEnabledPaymentMethodIds() as StringArraySetting;
 	const [ , addPaymentMethod ] = usePaymentMethodSelection() as [
 		string[],
-		( id: string ) => void
+		( id: string ) => void,
 	];
 	const [ , removePaymentMethod ] = usePaymentMethodDeselection() as [
 		string[],
-		( id: string ) => void
+		( id: string ) => void,
 	];
 	const [ isManualCaptureEnabled ] = useManualCapture() as BooleanSetting;
 	const accountCountry = asString( settings.account_country );
@@ -1086,11 +1086,11 @@ const BuyNowPayLaterSettingsSection = () => {
 		useEnabledPaymentMethodIds() as StringArraySetting;
 	const [ , addPaymentMethod ] = usePaymentMethodSelection() as [
 		string[],
-		( id: string ) => void
+		( id: string ) => void,
 	];
 	const [ , removePaymentMethod ] = usePaymentMethodDeselection() as [
 		string[],
-		( id: string ) => void
+		( id: string ) => void,
 	];
 	const [ isManualCaptureEnabled ] = useManualCapture() as BooleanSetting;
 	const accountCountry = asString( settings.account_country );

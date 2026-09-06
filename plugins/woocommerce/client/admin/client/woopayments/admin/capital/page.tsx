@@ -328,7 +328,7 @@ export const WooPaymentsCapitalPage = () => {
 			}
 		};
 
-		loadCapitalData();
+		void loadCapitalData();
 
 		return () => {
 			isMounted = false;

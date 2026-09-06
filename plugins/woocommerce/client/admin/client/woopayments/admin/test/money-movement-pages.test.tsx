@@ -549,8 +549,8 @@ describe( 'WooPayments money movement pages', () => {
 		mockCreateSuccessNotice.mockReset();
 		mockCreateErrorNotice.mockReset();
 		mockHistoryPush.mockReset();
-		mockHistoryPush.mockImplementation( ( to: string ) =>
-			mockHistoryNavigate?.( to )
+		mockHistoryPush.mockImplementation(
+			( to: string ) => mockHistoryNavigate?.( to )
 		);
 	} );
 
@@ -1285,10 +1285,10 @@ describe( 'WooPayments money movement pages', () => {
 			expect(
 				screen.getByTestId( 'money-movement-dataviews' )
 			).toHaveAttribute( 'data-view-filters', '[]' );
-			expect(
-				screen.getByTestId( 'money-movement-dataviews' )
-			).toHaveAttribute( 'data-visible-fields', 'order,amount' );
 		} );
+		expect(
+			screen.getByTestId( 'money-movement-dataviews' )
+		).toHaveAttribute( 'data-visible-fields', 'order,amount' );
 		expect( mockGetAuthorizations ).toHaveBeenLastCalledWith(
 			expect.not.objectContaining( { type_is: expect.anything() } )
 		);
@@ -2939,7 +2939,7 @@ describe( 'WooPayments money movement pages', () => {
 
 		const paymentMethod = (
 			await screen.findByRole( 'heading', { name: 'Payment method' } )
-		 ).closest( 'section' ) as HTMLElement;
+		).closest( 'section' ) as HTMLElement;
 
 		// The placeholder is discoverable by role with an accessible name,
 		// which a bare aria-labelled <span> would not expose.
@@ -2993,7 +2993,7 @@ describe( 'WooPayments money movement pages', () => {
 
 		const summary = (
 			await screen.findByRole( 'heading', { name: 'Summary' } )
-		 ).closest( 'section' ) as HTMLElement;
+		).closest( 'section' ) as HTMLElement;
 
 		expect( getDetailValue( summary, 'Sales channel' ) ).toHaveTextContent(
 			'In-person (POS)'
@@ -3049,7 +3049,7 @@ describe( 'WooPayments money movement pages', () => {
 			await screen.findByRole( 'heading', {
 				name: 'Payment method',
 			} )
-		 ).closest( 'section' ) as HTMLElement;
+		).closest( 'section' ) as HTMLElement;
 
 		expect( getDetailValue( paymentMethod, 'Type' ) ).toHaveTextContent(
 			'Link'
@@ -3125,7 +3125,7 @@ describe( 'WooPayments money movement pages', () => {
 			await screen.findByRole( 'heading', {
 				name: 'Payment method',
 			} )
-		 ).closest( 'section' ) as HTMLElement;
+		).closest( 'section' ) as HTMLElement;
 
 		expect(
 			getDetailValue( paymentMethod, 'Bank name' )
@@ -3412,7 +3412,7 @@ describe( 'WooPayments money movement pages', () => {
 
 		const notice = (
 			await screen.findByText( 'Viewing test payments.' )
-		 ).closest( '.components-notice' ) as HTMLElement;
+		).closest( '.components-notice' ) as HTMLElement;
 		expect( notice ).toBeInTheDocument();
 		expect(
 			within( notice ).getByText(

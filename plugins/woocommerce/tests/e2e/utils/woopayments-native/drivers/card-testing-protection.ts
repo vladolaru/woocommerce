@@ -49,7 +49,7 @@ export interface CardTestingProtectionRunnerRequest {
 }
 
 export interface CardTestingProtectionRunner {
-	run( request: CardTestingProtectionRunnerRequest ): Promise< unknown >;
+	run: ( request: CardTestingProtectionRunnerRequest ) => Promise< unknown >;
 }
 
 export interface CardTestingTokenDigest {
@@ -63,10 +63,10 @@ export interface CardTestingProtectionScope {
 		slug: typeof CLASSIC_CHECKOUT_SLUG;
 		path: 'classic-checkout/';
 	} >;
-	registerFreshContext( source: Page | BrowserContext ): Promise< void >;
-	captureGuestSessionToken(
+	registerFreshContext: ( source: Page | BrowserContext ) => Promise< void >;
+	captureGuestSessionToken: (
 		source: Page | BrowserContext
-	): Promise< CardTestingTokenDigest >;
+	) => Promise< CardTestingTokenDigest >;
 }
 
 interface ControllerOptions {

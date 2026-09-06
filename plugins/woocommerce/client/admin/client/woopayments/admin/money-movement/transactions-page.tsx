@@ -538,7 +538,7 @@ export const WooPaymentsTransactionsPage = () => {
 	useEffect( () => {
 		let isMounted = true;
 
-		loadMoneyMovement( {
+		void loadMoneyMovement( {
 			isCurrent: () => isMounted,
 		} );
 
@@ -550,7 +550,7 @@ export const WooPaymentsTransactionsPage = () => {
 	useEffect( () => {
 		isMountedRef.current = true;
 
-		loadUncapturedCount();
+		void loadUncapturedCount();
 
 		return () => {
 			isMountedRef.current = false;

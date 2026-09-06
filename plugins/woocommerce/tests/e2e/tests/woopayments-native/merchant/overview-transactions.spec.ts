@@ -821,7 +821,7 @@ test(
 		const afterSummary = requireSummaryFigures(
 			await readSummary( 'Transactions summary re-read' )
 		);
-		expect( ( afterList.data ?? [] ).length ).toBe( expectedRows.length );
+		expect( afterList.data ?? [] ).toHaveLength( expectedRows.length );
 		expect( afterSummary ).toEqual( beforeSummary );
 
 		expect( restTracker.observed() ).toBeGreaterThan( 0 );

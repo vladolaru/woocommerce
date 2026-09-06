@@ -609,9 +609,8 @@ test(
 	},
 	async ( { adminApi, baseURL, page, runId } ) => {
 		const storeBase = requireBaseUrl( baseURL );
-		const { enabledCodes, defaultCode } = await readEnabledCurrencies(
-			adminApi
-		);
+		const { enabledCodes, defaultCode } =
+			await readEnabledCurrencies( adminApi );
 
 		const post = await createRunPost(
 			adminApi,
@@ -899,9 +898,8 @@ test(
 	},
 	async ( { adminApi, baseURL, page, runId } ) => {
 		const storeBase = requireBaseUrl( baseURL );
-		const { enabledCodes, defaultCode } = await readEnabledCurrencies(
-			adminApi
-		);
+		const { enabledCodes, defaultCode } =
+			await readEnabledCurrencies( adminApi );
 		const additionalCode = enabledCodes.filter(
 			( code ) => code !== defaultCode
 		)[ 0 ];

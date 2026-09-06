@@ -39,14 +39,14 @@ export const PaymentRequestSettings = () => {
 	const [ isPaymentRequestEnabled, setIsPaymentRequestEnabled ] =
 		usePaymentRequestEnabledSettings() as [
 			boolean,
-			( value: boolean ) => void
+			( value: boolean ) => void,
 		];
 	const [
 		isExpressCheckoutInPaymentMethodsEnabled,
 		setIsExpressCheckoutInPaymentMethodsEnabled,
 	] = useExpressCheckoutInPaymentMethodsEnabledSettings() as [
 		boolean,
-		( value: boolean ) => void
+		( value: boolean ) => void,
 	];
 	const [ paymentRequestLocations, updatePaymentRequestLocation ] =
 		usePaymentRequestLocations() as [
@@ -54,7 +54,7 @@ export const PaymentRequestSettings = () => {
 			(
 				location: 'product' | 'cart' | 'checkout',
 				value: boolean
-			) => void
+			) => void,
 		];
 	const isPaymentMethodsListMode =
 		supportsPaymentMethodsListMode &&

@@ -19,7 +19,7 @@ test( 'authenticates REST through the exact browser cookie and nonce session', a
 			fill: async ( value: string ) => {
 				actions.push( `fill:${ name }:${ value }` );
 			},
-		} as Locator );
+		} ) as Locator;
 	const page = {
 		close: async () => {
 			actions.push( 'close' );

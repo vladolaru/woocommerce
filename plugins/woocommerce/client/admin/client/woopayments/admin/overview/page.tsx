@@ -134,7 +134,7 @@ export const WooPaymentsOverviewPage = () => {
 			}
 		};
 
-		loadOverview();
+		void loadOverview();
 
 		return () => {
 			isMounted = false;
@@ -152,9 +152,8 @@ export const WooPaymentsOverviewPage = () => {
 			setIsPayoutsLoading( true );
 
 			try {
-				const recent = await getWooPaymentsRecentDeposits(
-					selectedCurrency
-				);
+				const recent =
+					await getWooPaymentsRecentDeposits( selectedCurrency );
 
 				if ( isMounted ) {
 					setRecentPayouts( recent.data );
@@ -172,7 +171,7 @@ export const WooPaymentsOverviewPage = () => {
 			}
 		};
 
-		loadRecentPayouts();
+		void loadRecentPayouts();
 
 		return () => {
 			isMounted = false;

@@ -241,25 +241,29 @@ export interface ProviderWriteSession {
 	readonly runtime: WooPaymentsRuntime;
 	readonly runId: string;
 	readonly baseURL: string;
-	requireApprovedProviderFixture( capability: string ): void;
-	requireEphemeralTransitionAllocation(): void;
-	assertCurrentRuntimeReady( runtime: WooPaymentsRuntime ): Promise< void >;
-	assertCanWrite(): Promise< void >;
-	performWrite< Result >( write: () => Promise< Result > ): Promise< Result >;
-	withProviderSubmissionJournal< Result >(
+	requireApprovedProviderFixture: ( capability: string ) => void;
+	requireEphemeralTransitionAllocation: () => void;
+	assertCurrentRuntimeReady: (
+		runtime: WooPaymentsRuntime
+	) => Promise< void >;
+	assertCanWrite: () => Promise< void >;
+	performWrite: < Result >(
+		write: () => Promise< Result >
+	) => Promise< Result >;
+	withProviderSubmissionJournal: < Result >(
 		description: string,
 		submit: () => Promise< Result >
-	): Promise< Result >;
-	withProviderWriteLocks< Result >(
+	) => Promise< Result >;
+	withProviderWriteLocks: < Result >(
 		options: ProviderWriteLockOptions,
 		callback: () => Promise< Result >
-	): Promise< Result >;
-	getActiveFeatureSettingLock(): ResourceLock | undefined;
-	logInAsAdmin( page: Page ): Promise< void >;
-	logInAsCustomer( page: Page ): Promise< void >;
-	createOwnedProduct( amount: string ): Promise< OwnedProduct >;
-	setOrderRunId( orderId: number, runId: string ): Promise< void >;
-	getOrderIdFromUrl( url: string ): number;
+	) => Promise< Result >;
+	getActiveFeatureSettingLock: () => ResourceLock | undefined;
+	logInAsAdmin: ( page: Page ) => Promise< void >;
+	logInAsCustomer: ( page: Page ) => Promise< void >;
+	createOwnedProduct: ( amount: string ) => Promise< OwnedProduct >;
+	setOrderRunId: ( orderId: number, runId: string ) => Promise< void >;
+	getOrderIdFromUrl: ( url: string ) => number;
 }
 
 interface PilotRuntimeOptions {

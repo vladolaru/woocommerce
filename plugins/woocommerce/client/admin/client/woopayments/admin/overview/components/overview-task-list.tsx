@@ -90,12 +90,12 @@ export const OverviewTaskList = ( {
 		shouldMoveFocusRef.current = true;
 		setLocalVisibility( nextVisibility );
 		setAnnouncement( message );
-		saveOption( optionName, nextItems );
+		void saveOption( optionName, nextItems );
 		createUndoNotice( message, () => {
 			shouldMoveFocusRef.current = true;
 			setLocalVisibility( previousVisibility );
 			setAnnouncement( __( 'Task restored.', 'woocommerce' ) );
-			saveOption( optionName, previousVisibility[ kind ] );
+			void saveOption( optionName, previousVisibility[ kind ] );
 		} );
 	};
 
@@ -114,12 +114,15 @@ export const OverviewTaskList = ( {
 		shouldMoveFocusRef.current = true;
 		setLocalVisibility( nextVisibility );
 		setAnnouncement( message );
-		saveOption( 'woocommerce_remind_me_later_todo_tasks', nextReminders );
+		void saveOption(
+			'woocommerce_remind_me_later_todo_tasks',
+			nextReminders
+		);
 		createUndoNotice( message, () => {
 			shouldMoveFocusRef.current = true;
 			setLocalVisibility( previousVisibility );
 			setAnnouncement( __( 'Task restored.', 'woocommerce' ) );
-			saveOption(
+			void saveOption(
 				'woocommerce_remind_me_later_todo_tasks',
 				previousVisibility.remind_me_later_todo_tasks
 			);

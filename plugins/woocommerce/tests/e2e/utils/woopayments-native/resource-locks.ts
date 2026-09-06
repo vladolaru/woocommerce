@@ -713,9 +713,8 @@ export class ResourceLockManager {
 			await restore( journal.originalValue );
 
 			const afterRestore = await this.readPayload( lockPath );
-			const afterJournal = await this.readRestorationJournal(
-				journalPath
-			);
+			const afterJournal =
+				await this.readRestorationJournal( journalPath );
 			if (
 				! afterRestore ||
 				! exactOwner( afterRestore, ownedPayload ) ||
@@ -1077,18 +1076,21 @@ export class ResourceLockManager {
 
 		let renewalError: Error | undefined;
 		let renewalInFlight = Promise.resolve();
-		const renewalTimer = setInterval( () => {
-			renewalInFlight = renewalInFlight.then( async () => {
-				try {
-					await this.renewMutationGuard( guardPath, guardOwner );
-				} catch ( error ) {
-					renewalError =
-						error instanceof Error
-							? error
-							: new Error( String( error ) );
-				}
-			} );
-		}, Math.max( 10, Math.floor( this.mutationGuardLeaseMs / 3 ) ) );
+		const renewalTimer = setInterval(
+			() => {
+				renewalInFlight = renewalInFlight.then( async () => {
+					try {
+						await this.renewMutationGuard( guardPath, guardOwner );
+					} catch ( error ) {
+						renewalError =
+							error instanceof Error
+								? error
+								: new Error( String( error ) );
+					}
+				} );
+			},
+			Math.max( 10, Math.floor( this.mutationGuardLeaseMs / 3 ) )
+		);
 		renewalTimer.unref();
 
 		let primaryError: unknown;
@@ -1364,7 +1366,7 @@ export class ResourceLockManager {
 						),
 						'utf8'
 					)
-				 ).trim() === owner.ownerId
+				).trim() === owner.ownerId
 			);
 		} catch ( error ) {
 			if (

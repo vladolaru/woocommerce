@@ -261,7 +261,7 @@ function tokenIdentities(
 				[ token.tokenId, token.paymentMethodId, token.isDefault ] as [
 					number,
 					string,
-					boolean
+					boolean,
 				]
 		)
 		.toSorted( ( left, right ) => left[ 0 ] - right[ 0 ] );
@@ -492,7 +492,7 @@ async function releaseRun(
 		expect(
 			(
 				await getProviderPaymentMethodIds( session, providerCustomerId )
-			 ).toSorted(),
+			).toSorted(),
 			'the run must return the provider attachment set to the recorded baseline'
 		).toEqual( baseline.providerAttachments.toSorted() );
 	}
@@ -1190,9 +1190,8 @@ test.describe( 'WooPayments native subscription provider lifecycle fidelity', ()
 						outcome.parentOrderId
 					);
 
-					const tokensBefore = await getSavedCardEvidence(
-						pilotRuntime
-					);
+					const tokensBefore =
+						await getSavedCardEvidence( pilotRuntime );
 					const change = await changeSubscriptionPaymentMethod(
 						pilotRuntime,
 						page,
@@ -1214,9 +1213,8 @@ test.describe( 'WooPayments native subscription provider lifecycle fidelity', ()
 						'the change must not report a payment error'
 					).toBe( '' );
 
-					const tokensAfter = await getSavedCardEvidence(
-						pilotRuntime
-					);
+					const tokensAfter =
+						await getSavedCardEvidence( pilotRuntime );
 					const newTokens = tokensAfter.tokens.filter(
 						( token ) =>
 							! tokensBefore.tokens.some(
@@ -1449,7 +1447,7 @@ test.describe( 'WooPayments native subscription provider lifecycle fidelity', ()
 					expect(
 						(
 							await getSavedCardEvidence( pilotRuntime )
-						 ).tokens.map( ( token ) => token.tokenId ),
+						).tokens.map( ( token ) => token.tokenId ),
 						'selecting a stored card must not create a third credential'
 					).toEqual(
 						expect.arrayContaining( [
@@ -1626,7 +1624,7 @@ test.describe( 'WooPayments native subscription provider lifecycle fidelity', ()
 					const now = Date.now();
 					const foreignDue = (
 						await readPendingRenewalActions( pilotRuntime )
-					 ).filter(
+					).filter(
 						( action ) =>
 							action.scheduledTimestamp * 1000 <=
 								now + SEED_HORIZON_MS &&

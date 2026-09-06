@@ -892,7 +892,7 @@ test.describe( 'WooPayments native order status change confirmation', () => {
 					// second transition behind it.
 					const newNotes = (
 						await readOrderNotes( adminApi, paid.orderId )
-					 ).filter( ( note ) => ! notesBefore.includes( note ) );
+					).filter( ( note ) => ! notesBefore.includes( note ) );
 					expect(
 						newNotes.filter( ( note ) =>
 							/^Order status changed from .+ to .+\.$/.test(
@@ -1091,7 +1091,7 @@ test.describe( 'WooPayments native order status change confirmation', () => {
 										adminApi,
 										paid.chargeId
 									)
-								 ).refunds.map( ( refund ) => refund.status ),
+								).refunds.map( ( refund ) => refund.status ),
 							{
 								message:
 									'the single provider refund must reach succeeded',
@@ -1132,7 +1132,7 @@ test.describe( 'WooPayments native order status change confirmation', () => {
 					// The merchant is told, once.
 					const newNotes = (
 						await readOrderNotes( adminApi, paid.orderId )
-					 ).filter( ( note ) => ! notesBefore.includes( note ) );
+					).filter( ( note ) => ! notesBefore.includes( note ) );
 					expect(
 						newNotes.filter( ( note ) =>
 							note.includes( charge.refunds[ 0 ].id )

@@ -7,7 +7,7 @@ import type { ReactNode } from 'react';
 import { DataViews, type Field, type View } from '@wordpress/dataviews/wp';
 
 export type WooPaymentsMoneyMovementDataViewsProps<
-	Item extends { id?: string }
+	Item extends { id?: string },
 > = {
 	fields: Field< Item >[];
 	rows: Item[];
@@ -25,7 +25,7 @@ export type WooPaymentsMoneyMovementDataViewsProps<
 };
 
 export function WooPaymentsMoneyMovementDataViews<
-	Item extends { id?: string }
+	Item extends { id?: string },
 >( {
 	fields,
 	rows,

@@ -241,7 +241,7 @@ export const WooPaymentsPayoutDetailsPage = () => {
 			}
 		};
 
-		loadPayoutDetails();
+		void loadPayoutDetails();
 
 		return () => {
 			isMounted = false;

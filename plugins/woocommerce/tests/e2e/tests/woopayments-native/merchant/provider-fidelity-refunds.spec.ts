@@ -696,8 +696,8 @@ async function dispatchGatewayRefund(
 
 	let confirmations = 0;
 	const onDialog = ( dialog: {
-		type(): string;
-		accept(): Promise< void >;
+		type: () => string;
+		accept: () => Promise< void >;
 	} ) => {
 		if ( dialog.type() === 'confirm' ) {
 			confirmations += 1;
@@ -953,7 +953,7 @@ function resolveRefundedLines(
 ): [
 	OrderRecord[ 'lineItems' ][ number ],
 	OrderRecord[ 'lineItems' ][ number ],
-	OrderRecord[ 'lineItems' ][ number ]
+	OrderRecord[ 'lineItems' ][ number ],
 ] {
 	const lineByTotal = new Map(
 		order.lineItems.map( ( line ) => [ line.total, line ] )
@@ -1584,7 +1584,7 @@ test.describe.serial( 'refund-settlement R1', () => {
 					// The merchant is told, once.
 					const newNotes = (
 						await readOrderNotes( adminApi, paid.orderId )
-					 ).filter( ( note ) => ! notesBefore.includes( note ) );
+					).filter( ( note ) => ! notesBefore.includes( note ) );
 					expect(
 						newNotes.filter( ( note ) =>
 							note.includes( providerRefund.id )

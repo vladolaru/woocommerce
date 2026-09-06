@@ -19,7 +19,7 @@ export const ConnectionSuccessModal = ( {
 
 	const dismiss = () => {
 		setDismissed( true );
-		saveOption( 'wcpay_connection_success_modal_dismissed', true );
+		void saveOption( 'wcpay_connection_success_modal_dismissed', true );
 	};
 
 	if ( dismissed ) {

@@ -31,7 +31,7 @@ export const AmazonPaySettings = () => {
 	const [ isAmazonPayEnabled, setIsAmazonPayEnabled ] =
 		useAmazonPayEnabledSettings() as [
 			boolean,
-			( value: boolean ) => void
+			( value: boolean ) => void,
 		];
 	const [ amazonPayLocations, updateAmazonPayLocation ] =
 		useAmazonPayLocations() as [
@@ -39,14 +39,14 @@ export const AmazonPaySettings = () => {
 			(
 				location: 'product' | 'cart' | 'checkout',
 				value: boolean
-			) => void
+			) => void,
 		];
 	const [
 		isExpressCheckoutInPaymentMethodsEnabled,
 		setIsExpressCheckoutInPaymentMethodsEnabled,
 	] = useExpressCheckoutInPaymentMethodsEnabledSettings() as [
 		boolean,
-		( value: boolean ) => void
+		( value: boolean ) => void,
 	];
 	const isPaymentMethodsListMode =
 		supportsPaymentMethodsListMode &&

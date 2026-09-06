@@ -833,7 +833,7 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 	}, [ currency, query ] );
 
 	useEffect( () => {
-		load();
+		void load();
 	}, [ load ] );
 
 	useEffect( () => {
@@ -966,7 +966,7 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 								'wcpay_reports_balance_reload_click',
 								{}
 							);
-							load();
+							void load();
 						} }
 					>
 						{ __( 'Reload report', 'woocommerce' ) }
@@ -1206,7 +1206,7 @@ const FeesReport = () => {
 	}, [ hasFilters, serializedQuery ] );
 
 	useEffect( () => {
-		load();
+		void load();
 	}, [ load ] );
 
 	useEffect( () => {
@@ -1429,7 +1429,7 @@ const FeesReport = () => {
 								'wcpay_reports_fees_reload_click',
 								{}
 							);
-							load();
+							void load();
 						} }
 					>
 						{ __( 'Reload report', 'woocommerce' ) }

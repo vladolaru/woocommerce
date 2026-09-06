@@ -133,9 +133,8 @@ test.describe( 'WooPayments native saved-method authentication', () => {
 			await pilotRuntime.withProviderWriteLocks(
 				{ recordEvent: 'shopper-saved-method-3ds-failure' },
 				async () => {
-					const highestOrderId = await readHighestOrderId(
-						pilotRuntime
-					);
+					const highestOrderId =
+						await readHighestOrderId( pilotRuntime );
 					const shopper = await createRunOwnedSavedMethodShopper(
 						pilotRuntime,
 						'failed'
@@ -287,9 +286,8 @@ test.describe( 'WooPayments native saved-method authentication', () => {
 			await pilotRuntime.withProviderWriteLocks(
 				{ recordEvent: 'shopper-saved-method-3ds-purchase' },
 				async () => {
-					const highestOrderId = await readHighestOrderId(
-						pilotRuntime
-					);
+					const highestOrderId =
+						await readHighestOrderId( pilotRuntime );
 					const shopper = await createRunOwnedSavedMethodShopper(
 						pilotRuntime,
 						'complete'

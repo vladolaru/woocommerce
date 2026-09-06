@@ -62,14 +62,14 @@ export interface CardAuthenticationEvidence {
  */
 export interface CardAuthenticationBrowser {
 	/** Resolves true when the provider's outer frame becomes visible. */
-	waitForOuterFrame( timeoutMs: number ): Promise< boolean >;
+	waitForOuterFrame: ( timeoutMs: number ) => Promise< boolean >;
 	/** Resolves true when the challenge frame inside it becomes visible. */
-	waitForChallengeFrame( timeoutMs: number ): Promise< boolean >;
+	waitForChallengeFrame: ( timeoutMs: number ) => Promise< boolean >;
 	/** Resolves true when the challenge has finished loading. */
-	waitForChallengeReady( timeoutMs: number ): Promise< boolean >;
-	respondToChallenge( response: ChallengeResponse ): Promise< void >;
+	waitForChallengeReady: ( timeoutMs: number ) => Promise< boolean >;
+	respondToChallenge: ( response: ChallengeResponse ) => Promise< void >;
 	/** Resolves true when the challenge surface is gone. */
-	waitForChallengeDismissed( timeoutMs: number ): Promise< boolean >;
+	waitForChallengeDismissed: ( timeoutMs: number ) => Promise< boolean >;
 }
 
 interface SharedCardAuthenticationOptions {
@@ -91,7 +91,7 @@ export type CompleteCardAuthenticationOptions =
 		(
 			| { expectation: 'challenge'; response: ChallengeResponse }
 			| { expectation: 'frictionless'; response?: never }
-		 );
+		);
 
 function fail( message: string ): never {
 	throw new Error( `Card authentication ${ message }` );
@@ -142,9 +142,8 @@ export async function completeCardAuthentication(
 		);
 	}
 
-	const authenticationSurfacePresented = await browser.waitForOuterFrame(
-		frameTimeoutMs
-	);
+	const authenticationSurfacePresented =
+		await browser.waitForOuterFrame( frameTimeoutMs );
 	const challengePresented = authenticationSurfacePresented
 		? await browser.waitForChallengeFrame( frameTimeoutMs )
 		: false;
@@ -182,9 +181,8 @@ export async function completeCardAuthentication(
 
 	// Everything above this line is safe to fail loudly: nothing has been
 	// authorized. Everything below can leave a charge behind.
-	const challengeReady = await browser.waitForChallengeReady(
-		frameTimeoutMs
-	);
+	const challengeReady =
+		await browser.waitForChallengeReady( frameTimeoutMs );
 
 	if ( ! challengeReady ) {
 		// Fail before the click rather than after. Clicking a challenge that
@@ -205,9 +203,8 @@ export async function completeCardAuthentication(
 		);
 	}
 
-	const challengeDismissed = await browser.waitForChallengeDismissed(
-		settleTimeoutMs
-	);
+	const challengeDismissed =
+		await browser.waitForChallengeDismissed( settleTimeoutMs );
 
 	if ( ! challengeDismissed ) {
 		// A challenge still on screen means the response did not take, or took

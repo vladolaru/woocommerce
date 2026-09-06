@@ -68,7 +68,7 @@ export interface CurrencyCatalogRunnerRequest {
 }
 
 export interface CurrencyCatalogRunner {
-	run( request: CurrencyCatalogRunnerRequest ): Promise< unknown >;
+	run: ( request: CurrencyCatalogRunnerRequest ) => Promise< unknown >;
 }
 
 /**

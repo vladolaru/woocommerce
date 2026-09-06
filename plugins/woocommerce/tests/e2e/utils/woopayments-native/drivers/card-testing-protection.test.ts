@@ -309,7 +309,7 @@ test( 'runs canonical PHP with one standard native-store WP-CLI invocation', asy
 	const [ command, args, options ] = execFileCalls[ 0 ] as [
 		string,
 		string[],
-		Record< string, unknown >
+		Record< string, unknown >,
 	];
 	expect( command ).toBe( 'pnpm' );
 	expect( options ).toEqual( { cwd: '/test/native-store' } );

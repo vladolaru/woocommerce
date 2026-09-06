@@ -331,7 +331,7 @@ const AppleGooglePayPreview = ( {
 			}
 		};
 
-		mountPreview();
+		void mountPreview();
 
 		return () => {
 			isCurrent = false;
@@ -368,7 +368,7 @@ export const ExpressCheckoutPreview = () => {
 	const [ radius ] = usePaymentRequestButtonBorderRadius() as [ number ];
 	const [ isWooPayEnabled ] = useWooPayEnabledSettings() as [ boolean ];
 	const [ isPaymentRequestEnabled ] = usePaymentRequestEnabledSettings() as [
-		boolean
+		boolean,
 	];
 	const height = getButtonHeight( size );
 	const stripeConfig = getStripePreviewConfig( settings );

@@ -640,9 +640,8 @@ export const WooPaymentsTransactionDetailsPage = () => {
 				const timelineId = getTimelineId( nextTransaction, id );
 				if ( timelineId ) {
 					try {
-						const timeline = await getWooPaymentsTimeline(
-							timelineId
-						);
+						const timeline =
+							await getWooPaymentsTimeline( timelineId );
 						nextTimelineEvents = timeline?.data || [];
 					} catch ( timelineError ) {
 						nextTimelineErrorMessage = getErrorMessage(
@@ -699,7 +698,7 @@ export const WooPaymentsTransactionDetailsPage = () => {
 			};
 		}
 
-		loadTransaction( {
+		void loadTransaction( {
 			shouldUpdate: () => isMounted,
 		} );
 

@@ -30,9 +30,8 @@ test(
 				pilotRuntime.requireApprovedProviderFixture(
 					'transaction-navigation'
 				);
-				const product = await pilotRuntime.createOwnedProduct(
-					'15.50'
-				);
+				const product =
+					await pilotRuntime.createOwnedProduct( '15.50' );
 				const orderId = await completeCardCheckout(
 					pilotRuntime,
 					page,

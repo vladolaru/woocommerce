@@ -188,23 +188,25 @@ type PerformWrite = < Result >(
 ) => Promise< Result >;
 
 export interface ClassicCardCheckoutBrowser {
-	preflightClassicPage(
+	preflightClassicPage: (
 		path: typeof CLASSIC_CHECKOUT_PATH,
 		pageId: number
-	): Promise< void >;
-	addProductOnce(
+	) => Promise< void >;
+	addProductOnce: (
 		productId: number,
 		performWrite: PerformWrite
-	): Promise< void >;
-	openClassicCheckout( path: typeof CLASSIC_CHECKOUT_PATH ): Promise< void >;
-	fillBillingDetails( runId: string ): Promise< void >;
-	selectWooPaymentsCard(): Promise< void >;
-	fillBasicCard(): Promise< void >;
-	captureExposedTokenDigest(): Promise< PublicTokenDigest >;
-	prepareSubmission(): Promise< void >;
-	observeSubmission(
+	) => Promise< void >;
+	openClassicCheckout: (
+		path: typeof CLASSIC_CHECKOUT_PATH
+	) => Promise< void >;
+	fillBillingDetails: ( runId: string ) => Promise< void >;
+	selectWooPaymentsCard: () => Promise< void >;
+	fillBasicCard: () => Promise< void >;
+	captureExposedTokenDigest: () => Promise< PublicTokenDigest >;
+	prepareSubmission: () => Promise< void >;
+	observeSubmission: (
 		activateOnce: ( activate: () => Promise< void > ) => Promise< void >
-	): Promise< RawClassicSubmissionObservation >;
+	) => Promise< RawClassicSubmissionObservation >;
 }
 
 interface CompleteClassicCardCheckoutOptions {
