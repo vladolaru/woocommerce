@@ -808,7 +808,8 @@ describe( 'wc-payment-method-woopayments', () => {
 			'wcpay-payment-method': 'woocommerce_payments_payment_method_error',
 			'wcpay-payment-method-error-code': 'incomplete_number',
 			'wcpay-payment-method-error-decline-code': 'do_not_honor',
-			'wcpay-payment-method-error-message': 'Your card number is invalid.',
+			'wcpay-payment-method-error-message':
+				'Your card number is invalid.',
 			'wcpay-payment-method-error-type': 'validation_error',
 			'wcpay-fingerprint': 'device_fp_123',
 		} );
