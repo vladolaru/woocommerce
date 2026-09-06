@@ -2,7 +2,7 @@
 	"core": "https://wordpress.org/wordpress-latest.zip",
 	"phpVersion": "8.1",
 	"testsEnvironment": false,
-	"plugins": [ ".", "./tests/e2e/test-plugins/wc-email-template-sync-test-helper" ],
+	"plugins": [ "." ],
 	"mappings": {
 		"wp-content/mu-plugins/woopayments-native-runtime.php": "./tests/e2e/test-plugins/woopayments-native-runtime/woopayments-native-runtime.php"
 	},
