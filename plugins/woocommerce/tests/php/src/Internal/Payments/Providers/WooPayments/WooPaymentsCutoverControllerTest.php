@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNavigationController;
+use Automattic\WooCommerce\Internal\DataStores\Orders\DataSynchronizer;
 use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeAccountAdapter;
@@ -195,6 +196,27 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	private array $raw_hpos_order_ids = array();
 
 	/**
+	 * Whether this test class created the HPOS tables for a disabled-after-use fixture.
+	 *
+	 * @var bool
+	 */
+	private bool $created_hpos_tables = false;
+
+	/**
+	 * Value of the HPOS table-created option before a disabled-after-use fixture.
+	 *
+	 * @var string|false
+	 */
+	private $previous_hpos_tables_created_option = false;
+
+	/**
+	 * Whether this test class captured the HPOS table-created option.
+	 *
+	 * @var bool
+	 */
+	private bool $captured_hpos_tables_created_option = false;
+
+	/**
 	 * Action Scheduler hooks created by tests.
 	 *
 	 * @var string[]
@@ -330,6 +352,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			$this->registered_subscription_order_type = false;
 		}
 		$this->delete_raw_hpos_orders();
+		$this->clean_up_disabled_hpos_fixture();
 		foreach ( $this->scheduled_action_hooks as $hook_name ) {
 			as_unschedule_all_actions( $hook_name );
 		}
@@ -1665,6 +1688,8 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	private function create_legacy_stripe_billing_hpos_marker( string $meta_key ): int {
 		global $wpdb;
 
+		$this->create_disabled_hpos_fixture();
+
 		$orders_table = OrdersTableDataStore::get_orders_table_name();
 		$meta_table   = OrdersTableDataStore::get_meta_table_name();
 		$order_id     = (int) $wpdb->get_var( "SELECT COALESCE(MAX(id), 0) + 1 FROM {$orders_table}" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
@@ -1694,6 +1719,46 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->raw_hpos_order_ids[] = $order_id;
 
 		return $order_id;
+	}
+
+	/**
+	 * Create HPOS tables while keeping HPOS disabled, as on a store that used HPOS before disabling it.
+	 */
+	private function create_disabled_hpos_fixture(): void {
+		if ( ! $this->captured_hpos_tables_created_option ) {
+			$this->previous_hpos_tables_created_option = get_option( DataSynchronizer::ORDERS_TABLE_CREATED, false );
+			$this->captured_hpos_tables_created_option = true;
+		}
+
+		$synchronizer = wc_get_container()->get( DataSynchronizer::class );
+		if ( $synchronizer->check_orders_table_exists() ) {
+			return;
+		}
+
+		$this->created_hpos_tables = true;
+		$this->assertTrue( $synchronizer->create_database_tables() );
+	}
+
+	/**
+	 * Delete the temporary HPOS tables and restore the original table-created option.
+	 */
+	private function clean_up_disabled_hpos_fixture(): void {
+		if ( ! $this->captured_hpos_tables_created_option ) {
+			return;
+		}
+
+		if ( $this->created_hpos_tables ) {
+			wc_get_container()->get( DataSynchronizer::class )->delete_database_tables();
+			$this->created_hpos_tables = false;
+		}
+
+		if ( false === $this->previous_hpos_tables_created_option ) {
+			delete_option( DataSynchronizer::ORDERS_TABLE_CREATED );
+		} else {
+			update_option( DataSynchronizer::ORDERS_TABLE_CREATED, $this->previous_hpos_tables_created_option );
+		}
+		$this->captured_hpos_tables_created_option = false;
+		$this->previous_hpos_tables_created_option = false;
 	}
 
 	/**
