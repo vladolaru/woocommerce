@@ -621,12 +621,8 @@ class WooPaymentsWooPaySessionService {
 	 * @return array<string,mixed>|null
 	 */
 	private function get_payload_from_cart_token(): ?array {
-		if ( ! isset( $_SERVER['HTTP_CART_TOKEN'] ) ) {
-			return null;
-		}
-
-		$cart_token = wc_clean( wp_unslash( $_SERVER['HTTP_CART_TOKEN'] ) );
-		if ( ! is_string( $cart_token ) || '' === $cart_token || ! CartTokenUtils::validate_cart_token( $cart_token ) ) {
+		$cart_token = CartTokenUtils::get_request_cart_token();
+		if ( '' === $cart_token || ! CartTokenUtils::validate_cart_token( $cart_token ) ) {
 			return null;
 		}
 

@@ -1107,6 +1107,54 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Operational queue scanning blocks cutover without querying when identifier placeholders are unavailable.
+	 */
+	public function test_operational_queue_scan_blocks_without_querying_when_identifier_placeholders_are_unavailable(): void {
+		$wpdb                          = $this->getMockBuilder( \wpdb::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'has_cap', 'prepare', 'get_col' ) )
+			->getMock();
+		$wpdb->actionscheduler_actions = 'wp_actionscheduler_actions';
+		$wpdb->expects( $this->once() )
+			->method( 'has_cap' )
+			->with( 'identifier_placeholders' )
+			->willReturn( false );
+		$wpdb->expects( $this->never() )->method( 'prepare' );
+		$wpdb->expects( $this->never() )->method( 'get_col' );
+
+		$controller = $this->create_cutover_controller( null, $wpdb );
+		$method     = new \ReflectionMethod( $controller, 'get_queued_operational_action_hooks' );
+		$this->assertNotSame( array(), $method->invoke( $controller ) );
+	}
+
+	/**
+	 * @testdox Operational queue scanning uses identifier placeholders when the database supports them.
+	 */
+	public function test_operational_queue_scan_uses_identifier_placeholders_when_supported(): void {
+		$wpdb                          = $this->getMockBuilder( \wpdb::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'has_cap', 'prepare', 'esc_like', 'get_col' ) )
+			->getMock();
+		$wpdb->actionscheduler_actions = 'wp_actionscheduler_actions';
+		$wpdb->expects( $this->once() )
+			->method( 'has_cap' )
+			->with( 'identifier_placeholders' )
+			->willReturn( true );
+		$wpdb->expects( $this->once() )
+			->method( 'prepare' )
+			->with( $this->stringContains( 'FROM %i' ) )
+			->willReturnArgument( 0 );
+		$wpdb->method( 'esc_like' )->willReturnArgument( 0 );
+		$wpdb->expects( $this->once() )
+			->method( 'get_col' )
+			->willReturn( array( 'wcpay_test_hook' ) );
+
+		$controller = $this->create_cutover_controller( null, $wpdb );
+		$method     = new \ReflectionMethod( $controller, 'get_queued_operational_action_hooks' );
+		$this->assertSame( array( 'wcpay_test_hook' ), $method->invoke( $controller ) );
+	}
+
+	/**
 	 * @testdox Cutover preflight discovers pending WooPayments actions without a static hook inventory.
 	 */
 	public function test_preflight_blocks_when_unknown_woopayments_action_is_pending(): void {
@@ -1351,10 +1399,34 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 * Create a cutover controller wired to this test's dependencies.
 	 *
 	 * @param WooPaymentsAdminNavigationController|null $admin_navigation_controller Optional admin navigation owner.
+	 * @param \wpdb|null                                $database Controlled database abstraction.
 	 * @return WooPaymentsCutoverController
 	 */
-	private function create_cutover_controller( ?WooPaymentsAdminNavigationController $admin_navigation_controller = null ): WooPaymentsCutoverController {
-		$controller = new WooPaymentsCutoverController();
+	private function create_cutover_controller( ?WooPaymentsAdminNavigationController $admin_navigation_controller = null, ?\wpdb $database = null ): WooPaymentsCutoverController {
+		$controller = null === $database ? new WooPaymentsCutoverController() : new class( $database ) extends WooPaymentsCutoverController {
+			/**
+			 * WordPress database access abstraction.
+			 *
+			 * @var \wpdb
+			 */
+			private \wpdb $database;
+
+			/**
+			 * @param \wpdb $database WordPress database access abstraction.
+			 */
+			public function __construct( \wpdb $database ) {
+				$this->database = $database;
+			}
+
+			/**
+			 * Get the controlled database abstraction.
+			 *
+			 * @return \wpdb WordPress database access abstraction.
+			 */
+			protected function get_database(): \wpdb {
+				return $this->database;
+			}
+		};
 		$controller->init(
 			wc_get_container()->get( NativePaymentsRuntimeArbiter::class ),
 			wc_get_container()->get( LegacyProxy::class ),

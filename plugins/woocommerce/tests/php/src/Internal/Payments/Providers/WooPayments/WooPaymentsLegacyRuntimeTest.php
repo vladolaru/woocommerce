@@ -288,10 +288,23 @@ class WooPaymentsLegacyRuntimeTest extends WC_Unit_Test_Case {
 	 */
 	public function test_reports_only_live_cached_account_data_as_live(): void {
 		$accounts = array(
-			'live'       => array( 'account_id' => 'acct_live', 'is_live' => true, 'is_test_drive' => false ),
-			'test_drive' => array( 'account_id' => 'acct_test_drive', 'is_live' => false, 'is_test_drive' => true ),
-			'sandbox'    => array( 'account_id' => 'acct_sandbox', 'is_live' => false ),
-			'legacy'     => array( 'account_id' => 'acct_legacy' ),
+			'live'       => array(
+				'account_id'    => 'acct_live',
+				'is_live'       => true,
+				'is_test_drive' => false,
+			),
+			'test_drive' => array(
+				'account_id'    => 'acct_test_drive',
+				'is_live'       => false,
+				'is_test_drive' => true,
+			),
+			'sandbox'    => array(
+				'account_id' => 'acct_sandbox',
+				'is_live'    => false,
+			),
+			'legacy'     => array(
+				'account_id' => 'acct_legacy',
+			),
 		);
 
 		foreach ( $accounts as $name => $account ) {

@@ -156,6 +156,13 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	);
 
 	/**
+	 * Sentinel operational hook returned when the database cannot safely prepare identifier placeholders.
+	 *
+	 * @var string
+	 */
+	private const IDENTIFIER_PLACEHOLDERS_UNAVAILABLE_HOOK = 'woocommerce_woopayments_identifier_placeholders_unavailable';
+
+	/**
 	 * Option containing the last active WooPayments plugin version.
 	 *
 	 * @var string
@@ -875,6 +882,9 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 */
 	private function get_pending_operational_queue_hooks(): array {
 		$queued_hook_names = $this->get_queued_operational_action_hooks();
+		if ( in_array( self::IDENTIFIER_PLACEHOLDERS_UNAVAILABLE_HOOK, $queued_hook_names, true ) ) {
+			return array( self::IDENTIFIER_PLACEHOLDERS_UNAVAILABLE_HOOK );
+		}
 
 		/**
 		 * Filters operational queue hooks that still need native cutover disposition.
@@ -908,15 +918,14 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @return string[] Operational hook names.
 	 */
 	private function get_queued_operational_action_hooks(): array {
-		global $wpdb;
-		/**
-		 * WordPress database access abstraction.
-		 *
-		 * @var \wpdb $wpdb
-		 */
+		$wpdb = $this->get_database();
 
 		if ( ! class_exists( '\\ActionScheduler_Store' ) || empty( $wpdb->actionscheduler_actions ) ) {
 			return array();
+		}
+
+		if ( ! $wpdb->has_cap( 'identifier_placeholders' ) ) {
+			return array( self::IDENTIFIER_PLACEHOLDERS_UNAVAILABLE_HOOK );
 		}
 
 		$query      = $wpdb->prepare(
@@ -934,6 +943,17 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 		$hook_names = $wpdb->get_col( $query ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- One request-memoized indexed operational preflight scan.
 
 		return array_values( array_map( 'strval', $hook_names ) );
+	}
+
+	/**
+	 * Get the WordPress database abstraction.
+	 *
+	 * @return \wpdb WordPress database access abstraction.
+	 */
+	protected function get_database(): \wpdb {
+		global $wpdb;
+
+		return $wpdb;
 	}
 
 	/**

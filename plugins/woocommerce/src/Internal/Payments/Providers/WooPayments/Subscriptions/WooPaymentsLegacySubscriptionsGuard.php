@@ -82,7 +82,11 @@ class WooPaymentsLegacySubscriptionsGuard {
 	 * @return bool True when at least one marker exists.
 	 */
 	private function query_legacy_marker_exists_from_hpos_tables(): bool {
-		global $wpdb;
+		$wpdb = $this->get_database();
+
+		if ( ! $wpdb->has_cap( 'identifier_placeholders' ) ) {
+			return true;
+		}
 
 		// Keep this placeholder matrix in sync with the fixed marker constants above.
 		$sql = $wpdb->prepare(
@@ -116,7 +120,11 @@ class WooPaymentsLegacySubscriptionsGuard {
 	 * @return bool True when at least one marker exists.
 	 */
 	private function query_legacy_marker_exists_from_posts(): bool {
-		global $wpdb;
+		$wpdb = $this->get_database();
+
+		if ( ! $wpdb->has_cap( 'identifier_placeholders' ) ) {
+			return true;
+		}
 
 		// Keep this placeholder matrix in sync with the fixed marker constants above.
 		$sql = $wpdb->prepare(
@@ -142,5 +150,16 @@ class WooPaymentsLegacySubscriptionsGuard {
 		);
 
 		return null !== $wpdb->get_var( $sql ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+	}
+
+	/**
+	 * Get the WordPress database abstraction.
+	 *
+	 * @return \wpdb WordPress database access abstraction.
+	 */
+	protected function get_database(): \wpdb {
+		global $wpdb;
+
+		return $wpdb;
 	}
 }
