@@ -7,6 +7,9 @@
 		window.wcpay_core_woopay_config ||
 		window.wcpay_core_checkout_config ||
 		{};
+	var navigate = function ( url ) {
+		window.location.href = url;
+	};
 	var isWooPayRequesting = false;
 	var wooPayConnectPostMessagePromise = null;
 	var wooPayConnectCallbacks = {};
@@ -559,7 +562,7 @@
 		var request;
 
 		if ( redirectUrl ) {
-			window.location.href = redirectUrl;
+			navigate( redirectUrl );
 			isWooPayRequesting = false;
 			return;
 		}
@@ -576,7 +579,7 @@
 		request.done( function ( response ) {
 			redirectUrl = getWooPayMinimumSessionRedirectUrl( response );
 			if ( redirectUrl ) {
-				window.location.href = redirectUrl;
+				navigate( redirectUrl );
 			} else {
 				setError( config.confirmationErrorMessage || '' );
 			}
@@ -621,7 +624,7 @@
 
 		request.done( function ( response ) {
 			if ( response && response.result === 'success' && response.url ) {
-				window.location.href = response.url;
+				navigate( response.url );
 			}
 			isWooPayRequesting = false;
 		} );
@@ -673,7 +676,7 @@
 				}
 
 				if ( sessionResponse && sessionResponse.redirect_url ) {
-					window.location.href = sessionResponse.redirect_url;
+					navigate( sessionResponse.redirect_url );
 				}
 				isWooPayRequesting = false;
 			} );
@@ -1001,4 +1004,12 @@
 			renderWooPaySaveUserFields();
 			fetchPreferredCardFromWooPay();
 		} );
+
+	if ( typeof module !== 'undefined' && module.exports ) {
+		module.exports.__test__ = {
+			setNavigate: function ( callback ) {
+				navigate = callback;
+			},
+		};
+	}
 } )( jQuery, window, document );

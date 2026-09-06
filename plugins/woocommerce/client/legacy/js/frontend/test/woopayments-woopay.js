@@ -5,7 +5,6 @@
 describe( 'WooPayments WooPay checkout', () => {
 	let bodyEventHandlers;
 	const originalFetch = window.fetch;
-	const originalLocation = window.location;
 
 	async function flushPromises() {
 		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
@@ -114,11 +113,6 @@ describe( 'WooPayments WooPay checkout', () => {
 			delete window.jQuery;
 			delete window.$;
 			delete window.wcpay_core_woopay_config;
-			Object.defineProperty( window, 'location', {
-				configurable: true,
-				writable: true,
-				value: originalLocation,
-			} );
 			window.localStorage.clear();
 			window.fetch = originalFetch;
 			document.body.innerHTML = '';
@@ -231,13 +225,6 @@ describe( 'WooPayments WooPay checkout', () => {
 					};
 				},
 			} );
-			Object.defineProperty( window, 'location', {
-				configurable: true,
-				writable: true,
-				value: {
-					href: 'https://store.test/checkout/',
-				},
-			} );
 			window.wcpay_core_woopay_config.isWoopayFirstPartyAuthEnabled = true;
 			window.wcpay_core_woopay_config.woopayHost = 'https://pay.woo.test';
 			global.jQuery.post = jest.fn( ( url, data ) => ( {
@@ -264,7 +251,9 @@ describe( 'WooPayments WooPay checkout', () => {
 				data,
 			} ) );
 
-			require( '../woopayments-woopay' );
+			const { __test__ } = require( '../woopayments-woopay' );
+			const navigate = jest.fn();
+			__test__.setNavigate( navigate );
 
 			document.querySelector( '#wcpay-woopay-button a' ).click();
 			await flushPromises();
@@ -301,7 +290,7 @@ describe( 'WooPayments WooPay checkout', () => {
 			);
 			await flushPromises();
 
-			expect( window.location.href ).toBe(
+			expect( navigate ).toHaveBeenCalledWith(
 				'https://pay.woo.test/checkout/session'
 			);
 
