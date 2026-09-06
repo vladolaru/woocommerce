@@ -21,7 +21,7 @@ class WooPaymentsLegacySubscriptionsGuardTest extends WC_Unit_Test_Case {
 	public function test_blocks_cutover_without_querying_when_identifier_placeholders_are_unavailable(): void {
 		$wpdb = $this->getMockBuilder( \wpdb::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'has_cap', 'prepare', 'get_var' ) )
+			->onlyMethods( array( 'has_cap', 'prepare', 'get_var', 'esc_like' ) )
 			->getMock();
 		$wpdb->expects( $this->once() )
 			->method( 'has_cap' )
@@ -39,7 +39,7 @@ class WooPaymentsLegacySubscriptionsGuardTest extends WC_Unit_Test_Case {
 	public function test_queries_with_identifier_placeholders_when_supported(): void {
 		$wpdb           = $this->getMockBuilder( \wpdb::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'has_cap', 'prepare', 'get_var' ) )
+			->onlyMethods( array( 'has_cap', 'prepare', 'get_var', 'esc_like' ) )
 			->getMock();
 		$wpdb->posts    = 'wp_posts';
 		$wpdb->postmeta = 'wp_postmeta';
@@ -47,13 +47,116 @@ class WooPaymentsLegacySubscriptionsGuardTest extends WC_Unit_Test_Case {
 			->method( 'has_cap' )
 			->with( 'identifier_placeholders' )
 			->willReturn( true );
+		$wpdb->method( 'prepare' )->willReturnArgument( 0 );
+		$wpdb->method( 'esc_like' )->willReturnArgument( 0 );
+		$wpdb->expects( $this->exactly( 3 ) )
+			->method( 'get_var' )
+			->willReturn( 'wp_wc_orders', 'wp_wc_orders_meta', '1' );
+
+		$this->assertTrue( $this->create_guard( $wpdb )->has_legacy_stripe_billing_subscription_markers() );
+	}
+
+	/**
+	 * @testdox Missing HPOS tables skip only the HPOS scan and continue with the CPT scan.
+	 */
+	public function test_skips_hpos_scan_when_hpos_tables_are_missing(): void {
+		$wpdb           = $this->getMockBuilder( \wpdb::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'has_cap', 'prepare', 'get_var', 'esc_like' ) )
+			->getMock();
+		$wpdb->posts    = 'wp_posts';
+		$wpdb->postmeta = 'wp_postmeta';
+		$wpdb->expects( $this->exactly( 2 ) )
+			->method( 'has_cap' )
+			->with( 'identifier_placeholders' )
+			->willReturn( true );
 		$wpdb->expects( $this->once() )
-			->method( 'prepare' )
-			->with( $this->stringContains( 'FROM %i AS orders' ) )
+			->method( 'esc_like' )
+			->with( 'wp_wc_orders' )
 			->willReturnArgument( 0 );
+		$wpdb->method( 'prepare' )->willReturnArgument( 0 );
+		$wpdb->expects( $this->exactly( 2 ) )
+			->method( 'get_var' )
+			->willReturnCallback(
+				function ( string $sql ): ?string {
+					static $queries = 0;
+					++$queries;
+					if ( 1 === $queries ) {
+						$this->assertStringContainsString( 'SHOW TABLES LIKE', $sql );
+					} else {
+						$this->assertStringContainsString( 'FROM %i AS posts', $sql );
+					}
+
+					return null;
+				}
+			);
+
+		$this->assertFalse( $this->create_guard( $wpdb )->has_legacy_stripe_billing_subscription_markers() );
+	}
+
+	/**
+	 * @testdox An HPOS table availability query error blocks cutover.
+	 */
+	public function test_blocks_cutover_when_hpos_table_availability_query_fails(): void {
+		$wpdb = $this->getMockBuilder( \wpdb::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'has_cap', 'prepare', 'get_var', 'esc_like' ) )
+			->getMock();
+		$wpdb->expects( $this->once() )
+			->method( 'has_cap' )
+			->with( 'identifier_placeholders' )
+			->willReturn( true );
+		$wpdb->expects( $this->once() )
+			->method( 'esc_like' )
+			->with( 'wp_wc_orders' )
+			->willReturnArgument( 0 );
+		$wpdb->method( 'prepare' )->willReturnArgument( 0 );
 		$wpdb->expects( $this->once() )
 			->method( 'get_var' )
-			->willReturn( '1' );
+			->willReturnCallback(
+				function ( string $sql ) use ( $wpdb ): ?string {
+					$this->assertStringContainsString( 'SHOW TABLES LIKE', $sql );
+					$wpdb->last_error = 'database unavailable';
+
+					return null;
+				}
+			);
+
+		$this->assertTrue( $this->create_guard( $wpdb )->has_legacy_stripe_billing_subscription_markers() );
+	}
+
+	/**
+	 * @testdox An HPOS marker query error blocks cutover.
+	 */
+	public function test_blocks_cutover_when_hpos_marker_query_fails(): void {
+		$wpdb = $this->getMockBuilder( \wpdb::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'has_cap', 'prepare', 'get_var', 'esc_like' ) )
+			->getMock();
+		$wpdb->expects( $this->once() )
+			->method( 'has_cap' )
+			->with( 'identifier_placeholders' )
+			->willReturn( true );
+		$wpdb->method( 'esc_like' )->willReturnArgument( 0 );
+		$wpdb->method( 'prepare' )->willReturnArgument( 0 );
+		$wpdb->expects( $this->exactly( 3 ) )
+			->method( 'get_var' )
+			->willReturnCallback(
+				function ( string $sql ) use ( $wpdb ): ?string {
+					static $queries = 0;
+					++$queries;
+					if ( $queries < 3 ) {
+						$this->assertStringContainsString( 'SHOW TABLES LIKE', $sql );
+
+						return 1 === $queries ? 'wp_wc_orders' : 'wp_wc_orders_meta';
+					}
+
+					$this->assertStringContainsString( 'FROM %i AS orders', $sql );
+					$wpdb->last_error = 'database unavailable';
+
+					return null;
+				}
+			);
 
 		$this->assertTrue( $this->create_guard( $wpdb )->has_legacy_stripe_billing_subscription_markers() );
 	}

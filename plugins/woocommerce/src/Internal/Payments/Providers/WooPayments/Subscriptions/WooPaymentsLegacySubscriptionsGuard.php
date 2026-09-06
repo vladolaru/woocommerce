@@ -88,6 +88,14 @@ class WooPaymentsLegacySubscriptionsGuard {
 			return true;
 		}
 
+		$hpos_tables_available = $this->has_hpos_tables();
+		if ( null === $hpos_tables_available ) {
+			return true;
+		}
+		if ( ! $hpos_tables_available ) {
+			return false;
+		}
+
 		// Keep this placeholder matrix in sync with the fixed marker constants above.
 		$sql = $wpdb->prepare(
 			'SELECT 1
@@ -111,7 +119,34 @@ class WooPaymentsLegacySubscriptionsGuard {
 			self::LEGACY_POST_META_KEYS[8]
 		);
 
-		return null !== $wpdb->get_var( $sql ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		$wpdb->last_error = '';
+		$marker           = $wpdb->get_var( $sql ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+
+		return $this->database_has_error( $wpdb ) || null !== $marker;
+	}
+
+	/**
+	 * Check whether both HPOS tables are available without treating an unavailable table as a marker.
+	 *
+	 * @return bool|null True when present, false when absent, and null on a database error.
+	 */
+	private function has_hpos_tables(): ?bool {
+		$wpdb = $this->get_database();
+
+		foreach ( array( OrdersTableDataStore::get_orders_table_name(), OrdersTableDataStore::get_meta_table_name() ) as $table_name ) {
+			$wpdb->last_error = '';
+			$table            = $wpdb->get_var(
+				$wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $table_name ) )
+			);
+			if ( $this->database_has_error( $wpdb ) ) {
+				return null;
+			}
+			if ( $table_name !== $table ) {
+				return false;
+			}
+		}
+
+		return true;
 	}
 
 	/**
@@ -149,7 +184,20 @@ class WooPaymentsLegacySubscriptionsGuard {
 			self::LEGACY_POST_META_KEYS[8]
 		);
 
-		return null !== $wpdb->get_var( $sql ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		$wpdb->last_error = '';
+		$marker           = $wpdb->get_var( $sql ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+
+		return $this->database_has_error( $wpdb ) || null !== $marker;
+	}
+
+	/**
+	 * Check whether the most recent database query failed.
+	 *
+	 * @param \wpdb $wpdb WordPress database access abstraction.
+	 * @return bool True when the last query failed.
+	 */
+	private function database_has_error( \wpdb $wpdb ): bool {
+		return '' !== $wpdb->last_error;
 	}
 
 	/**
