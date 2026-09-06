@@ -133,6 +133,7 @@ class Events {
 	 */
 	public function do_wc_admin_daily() {
 		$this->possibly_add_notes();
+		$this->possibly_delete_notes();
 		$this->possibly_update_notes();
 		$this->possibly_delete_deprecated_notes();
 		$this->possibly_refresh_data_source_pollers();
@@ -188,6 +189,13 @@ class Events {
 				$note_class::possibly_add_note();
 			}
 		}
+	}
+
+	/**
+	 * Deletes notes that should be deleted.
+	 */
+	protected function possibly_delete_notes() {
+		FullRefundFixDataToolNotice::delete_if_not_applicable();
 	}
 
 	/**
