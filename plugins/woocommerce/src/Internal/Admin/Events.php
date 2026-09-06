@@ -194,7 +194,7 @@ class Events {
 	/**
 	 * Deletes notes that should be deleted.
 	 */
-	protected function possibly_delete_notes() {
+	protected function possibly_delete_notes(): void {
 		FullRefundFixDataToolNotice::delete_if_not_applicable();
 	}
 
