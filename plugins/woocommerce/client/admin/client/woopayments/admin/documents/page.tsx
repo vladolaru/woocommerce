@@ -13,7 +13,7 @@ import { __, _n, sprintf } from '@wordpress/i18n';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 // @ts-expect-error - Use the WordPress-bundled DataViews entry in wp-admin builds.
-import { DataViews, type Field } from '@wordpress/dataviews/wp'; // eslint-disable-line @woocommerce/dependency-group
+import { DataViews, type Field } from '@wordpress/dataviews/wp';
 
 /**
  * Internal dependencies

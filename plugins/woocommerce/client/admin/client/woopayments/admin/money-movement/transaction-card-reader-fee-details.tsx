@@ -176,7 +176,10 @@ export const WooPaymentsCardReaderFeeDetails = ( {
 		'Readers details not loaded',
 		'woocommerce'
 	);
-	const emptyMessage: string = __( 'No reader details found.', 'woocommerce' );
+	const emptyMessage: string = __(
+		'No reader details found.',
+		'woocommerce'
+	);
 	let liveMessage: string = __( 'Reader details loaded.', 'woocommerce' );
 
 	if ( hasError ) {
