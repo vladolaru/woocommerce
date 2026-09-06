@@ -5,7 +5,7 @@
  * This template can be overridden by copying it to yourtheme/woocommerce/failed-renewal-authentication-requested.php.
  *
  * @package WooCommerce\Templates\Emails
- * @version 11.0.0
+ * @version 11.2.0
  */
 
 defined( 'ABSPATH' ) || exit;
