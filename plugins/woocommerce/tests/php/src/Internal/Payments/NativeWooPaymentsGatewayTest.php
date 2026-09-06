@@ -144,8 +144,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $account_service );
 			$gateway->handle_init();
 
-			$this->assertSame( $expected_title, $gateway->title, "Gateway title for {$account_country}" );
-			$this->assertSame( "WooPayments ({$expected_title})", $gateway->method_title, "Method title for {$account_country}" );
+			$this->assertSame( $expected_title, $gateway->get_title(), "Gateway title for {$account_country}" );
+			$this->assertSame( "WooPayments ({$expected_title})", $gateway->get_method_title(), "Method title for {$account_country}" );
 		}
 	}
 
@@ -1895,9 +1895,17 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$filter                = static function ( $translation, $text, $domain ) {
 			return 'woocommerce' === $domain ? 'Translated: ' . $text : $translation;
 		};
+		$gateway_title_filter  = static function ( string $title ): string {
+			return 'Filtered: ' . $title;
+		};
+		$method_title_filter   = static function ( string $title ): string {
+			return 'Filtered: ' . $title;
+		};
 
 		unset( $wp_actions['init'] );
 		add_filter( 'gettext', $filter, 10, 3 );
+		add_filter( 'woocommerce_gateway_title', $gateway_title_filter );
+		add_filter( 'woocommerce_gateway_method_title', $method_title_filter );
 
 		try {
 			$gateway = new NativeWooPaymentsGateway();
@@ -1912,11 +1920,13 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 			$gateway->handle_init();
 
-			$this->assertSame( 'Translated: Card', $gateway->title );
-			$this->assertSame( 'Translated: WooPayments', $gateway->method_title );
+			$this->assertSame( 'Filtered: Translated: Card', $gateway->get_title() );
+			$this->assertSame( 'Filtered: Translated: WooPayments', $gateway->get_method_title() );
 			$this->assertSame( 'Translated: Accept payments with WooPayments.', $gateway->method_description );
 		} finally {
 			remove_filter( 'gettext', $filter, 10 );
+			remove_filter( 'woocommerce_gateway_title', $gateway_title_filter );
+			remove_filter( 'woocommerce_gateway_method_title', $method_title_filter );
 
 			if ( $had_init_action_count ) {
 				// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Simulate pre-init construction for the WP 6.7 textdomain guard.

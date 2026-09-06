@@ -210,6 +210,20 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	private WooPaymentsPaymentMethodDefinition $payment_method_definition;
 
 	/**
+	 * Country-branded checkout title, resolved lazily.
+	 *
+	 * @var string|null
+	 */
+	private ?string $branded_title = null;
+
+	/**
+	 * Country-branded admin title, resolved lazily.
+	 *
+	 * @var string|null
+	 */
+	private ?string $branded_method_title = null;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param WooPaymentsPaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
@@ -250,9 +264,35 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @internal
 	 */
 	public function handle_init(): void {
-		$this->title              = $this->get_translated_payment_method_title();
-		$this->method_title       = $this->get_translated_method_title();
 		$this->method_description = __( 'Accept payments with WooPayments.', 'woocommerce' );
+	}
+
+	/**
+	 * Return the gateway's checkout title.
+	 *
+	 * @return string
+	 */
+	public function get_title() {
+		if ( null === $this->branded_title ) {
+			$this->branded_title = $this->get_translated_payment_method_title();
+			$this->title         = $this->branded_title;
+		}
+
+		return parent::get_title();
+	}
+
+	/**
+	 * Return the gateway's admin title.
+	 *
+	 * @return string
+	 */
+	public function get_method_title() {
+		if ( null === $this->branded_method_title ) {
+			$this->branded_method_title = $this->get_translated_method_title();
+			$this->method_title         = $this->branded_method_title;
+		}
+
+		return parent::get_method_title();
 	}
 
 	/**
@@ -1177,8 +1217,9 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			? strtoupper( (string) $account_data['country'] )
 			: '';
 
-		if ( '' === $country && function_exists( 'WC' ) && WC() && WC()->countries ) {
-			$country = strtoupper( (string) WC()->countries->get_base_country() );
+		if ( '' === $country ) {
+			$base    = function_exists( 'wc_get_base_location' ) ? wc_get_base_location() : array();
+			$country = strtoupper( (string) ( $base['country'] ?? '' ) );
 		}
 
 		if ( false !== strpos( $country, ':' ) ) {
