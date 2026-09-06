@@ -14,7 +14,7 @@
 ## Related documentation
 
 | Concern | Location |
-|---------|----------|
+| --------- | ---------- |
 | Implementation follow-ups | `src/Internal/Payments/FOLLOW_UPS.md` (this directory) |
 | E2E harness coverage gaps | `tools/woopayments-merge/HARNESS.md` §3 (monorepo root) |
 | E2E harness decisions | `plugins/woocommerce/tests/e2e/tests/woopayments-native/DECISIONS.md` |
