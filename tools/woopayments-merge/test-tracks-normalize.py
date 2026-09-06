@@ -101,4 +101,3 @@ def test_duplicate_event_cardinality_remains_visible() -> None:
     assert len(double) == 1
     assert double[0].endswith("| occurrences=2")
     assert single != double
-
