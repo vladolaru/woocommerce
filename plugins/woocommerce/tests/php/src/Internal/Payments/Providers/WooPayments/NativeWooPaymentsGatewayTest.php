@@ -32,7 +32,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$base_country_filter = static function (): string {
 			return 'FR';
 		};
-		$account_service = $this->createMock( WooPaymentsAccountService::class );
+		$account_service     = $this->createMock( WooPaymentsAccountService::class );
 		$account_service->method( 'get_cached_account_data' )->willReturn( array() );
 		wc_get_container()->replace( WooPaymentsAccountService::class, $account_service );
 		wc_get_container()->reset_all_resolved();
@@ -82,7 +82,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should lazily memoize account-country branding when the admin title is requested.
 	 */
 	public function test_get_method_title_lazily_memoizes_account_country_branding(): void {
-		$registry = new WooPaymentsPaymentMethodRegistry();
+		$registry        = new WooPaymentsPaymentMethodRegistry();
 		$account_service = $this->createMock( WooPaymentsAccountService::class );
 		$account_service->expects( $this->once() )
 			->method( 'get_cached_account_data' )
