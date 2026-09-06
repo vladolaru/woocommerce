@@ -2,7 +2,7 @@
  * @jest-environment jest-fixed-jsdom
  */
 
-const { server, http, HttpResponse } = require( '@woocommerce/test-utils/msw' );
+const { server, http, HttpResponse } = require( './msw-setup' );
 
 describe( 'WooPayments BNPL payment method messaging', () => {
 	let bodyHandlers;

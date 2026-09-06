@@ -2,7 +2,7 @@
  * Tests for the classic (shortcode) WooPayments express checkout script.
  */
 
-const { server, http, HttpResponse } = require( '@woocommerce/test-utils/msw' );
+const { server, http, HttpResponse } = require( './msw-setup' );
 
 const loadModule = ( params ) => {
 	let exported;
