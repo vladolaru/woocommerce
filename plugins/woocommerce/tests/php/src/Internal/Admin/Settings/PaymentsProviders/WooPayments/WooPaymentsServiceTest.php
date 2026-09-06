@@ -13000,6 +13000,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		);
 	}
 
+	/**
 	 * Mock a working WPCOM connection.
 	 *
 	 * Required for onboarding step completion that depends on the WPCOM connection step.
