@@ -297,7 +297,7 @@ class WooPaymentsLegacyRuntimeTest extends WC_Unit_Test_Case {
 		foreach ( $accounts as $name => $account ) {
 			$sut = $this->create_runtime_with_account_data( array( 'data' => $account ) );
 
-			$this->assertSame( 'live' === $name, $sut->has_live_cached_account_data() );
+			$this->assertSame( in_array( $name, array( 'live', 'legacy' ), true ), $sut->has_live_cached_account_data() );
 		}
 	}
 
