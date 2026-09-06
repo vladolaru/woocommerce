@@ -7,6 +7,9 @@
 	var baseConfig = window.wcpay_core_checkout_config || {};
 	var appearanceUtils = window.wcpayAppearance;
 	var config = baseConfig;
+	var navigate = function ( url ) {
+		window.location = url;
+	};
 
 	// Sentinel submitted in place of a payment method when client-side
 	// payment method creation failed, so the server records a failed order.
@@ -3131,7 +3134,7 @@
 					case 'redirect_to_woopay_skip_session_init':
 						if ( e.data.redirectUrl ) {
 							deleteSkipWooPayCookie();
-							window.location = e.data.redirectUrl;
+							navigate( e.data.redirectUrl );
 						}
 						break;
 					case 'redirect_to_platform_checkout':
@@ -3157,7 +3160,7 @@
 								}
 								if ( response && response.result === 'success' ) {
 									deleteSkipWooPayCookie();
-									window.location = response.url;
+									navigate( response.url );
 								} else {
 									showErrorMessage();
 									closeIframe( false );
@@ -3315,4 +3318,12 @@
 
 		return handleGatewaySubmission( paymentGatewayId, $( this ), false );
 	} );
+
+	if ( typeof module !== 'undefined' && module.exports ) {
+		module.exports.__test__ = {
+			setNavigate: function ( callback ) {
+				navigate = callback;
+			},
+		};
+	}
 } )( jQuery, window, document );

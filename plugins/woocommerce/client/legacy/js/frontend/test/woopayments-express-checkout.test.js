@@ -6,13 +6,16 @@ const { server, http, HttpResponse } = require( './msw-setup' );
 
 const loadModule = ( params ) => {
 	let exported;
+	let navigate;
 
 	jest.isolateModules( () => {
 		window.wcpayExpressCheckoutParams = params;
 		exported = require( '../woopayments-express-checkout' ).__test__;
+		navigate = jest.fn();
+		exported.setNavigate( navigate );
 	} );
 
-	return exported;
+	return { ...exported, navigate };
 };
 
 const baseParams = ( overrides = {} ) => ( {
@@ -93,7 +96,6 @@ const cartResponse = ( overrides = {} ) => ( {
 
 describe( 'woopayments-express-checkout', () => {
 	let apiFetch;
-	const originalLocation = window.location;
 	const stripeParams = {
 		stripe: { publishableKey: 'pk_test_123', accountId: 'acct_1' },
 		ajax_url: 'http://shop.test/wp-admin/admin-ajax.php',
@@ -119,12 +121,9 @@ describe( 'woopayments-express-checkout', () => {
 		apiFetch = jest.fn();
 		window.wp = { apiFetch };
 		global.jQuery = jest.fn( () => ( { on: jest.fn() } ) );
-		delete window.location;
-		window.location = { href: 'http://shop.test/cart/', hash: '' };
 	} );
 
 	afterEach( () => {
-		window.location = originalLocation;
 		delete window.wcpayExpressCheckoutParams;
 		delete window.wp;
 		delete global.jQuery;
@@ -497,7 +496,7 @@ describe( 'woopayments-express-checkout', () => {
 			'#wcpay-confirm-pi:77:pi_123_secret_456:nonce-abc';
 
 		it( 'navigates directly when the redirect URL carries no confirmation hash', async () => {
-			const { redirectToOrder } = loadModule( baseParams() );
+			const { redirectToOrder, navigate } = loadModule( baseParams() );
 
 			await redirectToOrder( {
 				payment_result: {
@@ -505,7 +504,7 @@ describe( 'woopayments-express-checkout', () => {
 				},
 			} );
 
-			expect( window.location.href ).toBe(
+			expect( navigate ).toHaveBeenCalledWith(
 				'http://shop.test/thank-you/'
 			);
 		} );
@@ -518,7 +517,7 @@ describe( 'woopayments-express-checkout', () => {
 				Promise.resolve( { paymentIntent: { id: 'pi_123' } } )
 			);
 			window.Stripe = jest.fn( () => ( { handleNextAction } ) );
-			const { redirectToOrder } = loadModule(
+			const { redirectToOrder, navigate } = loadModule(
 				baseParams( stripeParams )
 			);
 
@@ -534,7 +533,7 @@ describe( 'woopayments-express-checkout', () => {
 			expect( fetchBody.get( 'order_id' ) ).toBe( '77' );
 			expect( fetchBody.get( '_ajax_nonce' ) ).toBe( 'nonce-abc' );
 			expect( fetchBody.get( 'intent_id' ) ).toBe( 'pi_123' );
-			expect( window.location.href ).toBe(
+			expect( navigate ).toHaveBeenCalledWith(
 				'http://shop.test/order-received/77/'
 			);
 		} );
@@ -554,7 +553,7 @@ describe( 'woopayments-express-checkout', () => {
 					} )
 				),
 			} ) );
-			const { redirectToOrder } = loadModule(
+			const { redirectToOrder, navigate } = loadModule(
 				baseParams( stripeParams )
 			);
 
@@ -566,7 +565,7 @@ describe( 'woopayments-express-checkout', () => {
 			const fetchBody = await orderStatusFormData;
 			expect( fetchBody.get( 'action' ) ).toBe( 'update_order_status' );
 			expect( fetchBody.get( 'intent_id' ) ).toBe( 'pi_123' );
-			expect( window.location.href ).toBe( 'http://shop.test/cart/' );
+			expect( navigate ).not.toHaveBeenCalled();
 		} );
 
 		it( 'rejects without a server report when the error carries no intent', async () => {
@@ -578,7 +577,7 @@ describe( 'woopayments-express-checkout', () => {
 					} )
 				),
 			} ) );
-			const { redirectToOrder } = loadModule(
+			const { redirectToOrder, navigate } = loadModule(
 				baseParams( stripeParams )
 			);
 
@@ -589,6 +588,7 @@ describe( 'woopayments-express-checkout', () => {
 					} )
 				).rejects.toThrow( 'Authentication failed.' );
 				expect( fetchSpy ).not.toHaveBeenCalled();
+				expect( navigate ).not.toHaveBeenCalled();
 			} finally {
 				fetchSpy.mockRestore();
 			}
@@ -606,7 +606,7 @@ describe( 'woopayments-express-checkout', () => {
 					} )
 				),
 			} ) );
-			const { redirectToOrder } = loadModule(
+			const { redirectToOrder, navigate } = loadModule(
 				baseParams( stripeParams )
 			);
 
@@ -617,7 +617,7 @@ describe( 'woopayments-express-checkout', () => {
 			).rejects.toThrow( 'Payment requires additional action.' );
 			const fetchBody = await orderStatusFormData;
 			expect( fetchBody.get( 'intent_id' ) ).toBe( 'pi_123' );
-			expect( window.location.href ).toBe( 'http://shop.test/cart/' );
+			expect( navigate ).not.toHaveBeenCalled();
 		} );
 
 		it( 'rejects when the order-status update reports an error', async () => {
@@ -629,7 +629,7 @@ describe( 'woopayments-express-checkout', () => {
 					Promise.resolve( { paymentIntent: { id: 'pi_123' } } )
 				),
 			} ) );
-			const { redirectToOrder } = loadModule(
+			const { redirectToOrder, navigate } = loadModule(
 				baseParams( stripeParams )
 			);
 
@@ -638,7 +638,7 @@ describe( 'woopayments-express-checkout', () => {
 					payment_result: { redirect_url: confirmationHash },
 				} )
 			).rejects.toThrow( 'Order update failed.' );
-			expect( window.location.href ).toBe( 'http://shop.test/cart/' );
+			expect( navigate ).not.toHaveBeenCalled();
 		} );
 	} );
 
@@ -789,7 +789,7 @@ describe( 'woopayments-express-checkout', () => {
 
 	describe( 'displayLoginConfirmation', () => {
 		it( 'substitutes the wallet name and redirects on confirmation', () => {
-			const { displayLoginConfirmation } = loadModule(
+			const { displayLoginConfirmation, navigate } = loadModule(
 				baseParams( {
 					login_confirmation: {
 						message:
@@ -805,14 +805,14 @@ describe( 'woopayments-express-checkout', () => {
 			expect( window.confirm ).toHaveBeenCalledWith(
 				'To complete your transaction with Google Pay, you must log in.'
 			);
-			expect( window.location.href ).toBe(
+			expect( navigate ).toHaveBeenCalledWith(
 				'http://shop.test/login-redirect/'
 			);
 			delete window.confirm;
 		} );
 
 		it( 'stays on the page when the dialog is dismissed', () => {
-			const { displayLoginConfirmation } = loadModule(
+			const { displayLoginConfirmation, navigate } = loadModule(
 				baseParams( {
 					login_confirmation: {
 						message: 'Log in with **wallet**.',
@@ -824,7 +824,7 @@ describe( 'woopayments-express-checkout', () => {
 
 			displayLoginConfirmation( 'apple_pay' );
 
-			expect( window.location.href ).toBe( 'http://shop.test/cart/' );
+			expect( navigate ).not.toHaveBeenCalled();
 			delete window.confirm;
 		} );
 	} );

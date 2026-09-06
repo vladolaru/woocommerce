@@ -3061,9 +3061,10 @@ describe( 'WooPayments checkout', () => {
 	);
 	describe( 'WooPay email input', () => {
 		const WOOPAY_HOST = 'https://pay.woo.test';
-		const originalLocation = window.location;
+		const nativeHistoryReplaceState = window.history.replaceState;
 		let postResponses;
 		let fetchResponses;
+		let navigate;
 		let windowListeners;
 		let originalWindowAddEventListener;
 
@@ -3177,7 +3178,9 @@ describe( 'WooPayments checkout', () => {
 						Promise.resolve( entry && entry.body ? entry.body : {} ),
 				} );
 			} );
-			require( '../woopayments-checkout' );
+			const { __test__ } = require( '../woopayments-checkout' );
+			navigate = jest.fn();
+			__test__.setNavigate( navigate );
 			await flushPromises();
 			return document.getElementById( 'billing_email' );
 		}
@@ -3196,6 +3199,12 @@ describe( 'WooPayments checkout', () => {
 		}
 
 		beforeEach( () => {
+			nativeHistoryReplaceState.call(
+				window.history,
+				null,
+				'',
+				'/checkout/'
+			);
 			postResponses = {
 				get_woopay_signature: {
 					response: { success: true, data: { signature: 'sig-1' } },
@@ -3232,13 +3241,6 @@ describe( 'WooPayments checkout', () => {
 					);
 				}
 			);
-			delete window.location;
-			window.location = {
-				href: 'https://example.test/checkout/',
-				search: '',
-				pathname: '/checkout/',
-				hash: '',
-			};
 			window.history.replaceState = jest.fn();
 			window.scrollTo = jest.fn();
 		} );
@@ -3250,7 +3252,6 @@ describe( 'WooPayments checkout', () => {
 			[ 'tk_ai', 'skip_woopay' ].forEach( ( name ) => {
 				document.cookie = `${ name }=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;`;
 			} );
-			window.location = originalLocation;
 			document.body.style.overflow = '';
 		} );
 
@@ -3277,7 +3278,12 @@ describe( 'WooPayments checkout', () => {
 		} );
 
 		test( 'skips the lookup inside the Customizer preview iframe', async () => {
-			window.location.search = '?customize_messenger_channel=preview-0';
+			nativeHistoryReplaceState.call(
+				window.history,
+				null,
+				'',
+				'/checkout/?customize_messenger_channel=preview-0'
+			);
 			const input = await setupWooPayEmailInput();
 
 			await typeEmail( input, 'shopper@example.com' );
@@ -3299,7 +3305,7 @@ describe( 'WooPayments checkout', () => {
 			postWooPayMessage( { action: 'close_modal' }, 'https://evil.example' );
 			await flushPromises();
 
-			expect( window.location.href ).toBe( 'https://example.test/checkout/' );
+			expect( navigate ).not.toHaveBeenCalled();
 			expect( document.querySelector( '.woopay-otp-iframe-wrapper' ) ).not.toBeNull();
 			expect( getPostCalls( 'init_woopay' ) ).toHaveLength( 0 );
 		} );
@@ -3356,7 +3362,7 @@ describe( 'WooPayments checkout', () => {
 				needsHeader: 'false',
 				wcpayVersion: '10.8.0',
 				is_blocks: 'false',
-				source_url: 'https://example.test/checkout/',
+				source_url: window.location.href,
 				viewport: '0x0',
 				tracksUserIdentity: JSON.stringify( {
 					_ut: 'anon',
@@ -3425,7 +3431,7 @@ describe( 'WooPayments checkout', () => {
 				key: '',
 				billing_email: '',
 			} );
-			expect( window.location ).toBe(
+			expect( navigate ).toHaveBeenCalledWith(
 				`${ WOOPAY_HOST }/checkout/?session=1`
 			);
 		} );
@@ -3520,7 +3526,12 @@ describe( 'WooPayments checkout', () => {
 		} );
 
 		test( 'records a back-button return, sets the session skip cookie and cleans the URL', async () => {
-			window.location.search = '?skip_woopay=true&foo=bar';
+			nativeHistoryReplaceState.call(
+				window.history,
+				null,
+				'',
+				'/checkout/?skip_woopay=true&foo=bar'
+			);
 			const userCheckEvents = [];
 			window.addEventListener( 'woopayUserCheck', ( event ) => {
 				userCheckEvents.push( event.detail.isRegisteredUser );

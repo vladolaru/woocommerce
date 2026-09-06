@@ -12,6 +12,9 @@
 	var elementCurrency = null;
 	var productAddToCartPromise = Promise.resolve();
 	var productAddToCartErrorMessage = '';
+	var navigate = function ( url ) {
+		window.location.href = url;
+	};
 
 	// This const defines the max number of shipping options that can be handled by the ECE.
 	// More than 9 options will prevent the UI from behaving correctly.
@@ -777,7 +780,7 @@
 			.replace( /\*\*/g, '' );
 
 		if ( window.confirm( message ) ) {
-			window.location.href = loginConfirmation.redirect_url;
+			navigate( loginConfirmation.redirect_url );
 		}
 	}
 
@@ -1136,7 +1139,7 @@
 					throw new Error( GENERIC_PAYMENT_ERROR_MESSAGE );
 				}
 
-				window.location.href = returnUrl.href;
+				navigate( returnUrl.href );
 			} );
 	}
 
@@ -1161,7 +1164,7 @@
 			return confirmIntentAndRedirect( confirmation );
 		}
 
-		window.location.href = redirectUrl;
+		navigate( redirectUrl );
 		return Promise.resolve();
 	}
 
@@ -1898,6 +1901,9 @@
 			displayLoginConfirmation: displayLoginConfirmation,
 			createPaymentCredential: createPaymentCredential,
 			parseConfirmationHash: parseConfirmationHash,
+			setNavigate: function ( callback ) {
+				navigate = callback;
+			},
 			getElementCurrency: function () {
 				return elementCurrency;
 			},
