@@ -3061,7 +3061,9 @@ describe( 'WooPayments checkout', () => {
 	);
 	describe( 'WooPay email input', () => {
 		const WOOPAY_HOST = 'https://pay.woo.test';
+		const CHECKOUT_PERMALINK = 'https://store.test/checkout/';
 		const nativeHistoryReplaceState = window.history.replaceState;
+		const originalWcSettings = window.wcSettings;
 		let postResponses;
 		let fetchResponses;
 		let navigate;
@@ -3199,6 +3201,23 @@ describe( 'WooPayments checkout', () => {
 		}
 
 		beforeEach( () => {
+			const originalStorePages = originalWcSettings
+				? originalWcSettings.storePages
+				: undefined;
+			const originalCheckout = originalStorePages
+				? originalStorePages.checkout
+				: undefined;
+
+			window.wcSettings = {
+				...originalWcSettings,
+				storePages: {
+					...originalStorePages,
+					checkout: {
+						...originalCheckout,
+						permalink: CHECKOUT_PERMALINK,
+					},
+				},
+			};
 			nativeHistoryReplaceState.call(
 				window.history,
 				null,
@@ -3253,6 +3272,11 @@ describe( 'WooPayments checkout', () => {
 				document.cookie = `${ name }=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;`;
 			} );
 			document.body.style.overflow = '';
+			if ( originalWcSettings ) {
+				window.wcSettings = originalWcSettings;
+			} else {
+				delete window.wcSettings;
+			}
 		} );
 
 		test( 'does not wire the email input when the email-input flag is off', async () => {
@@ -3362,7 +3386,7 @@ describe( 'WooPayments checkout', () => {
 				needsHeader: 'false',
 				wcpayVersion: '10.8.0',
 				is_blocks: 'false',
-				source_url: window.location.href,
+				source_url: CHECKOUT_PERMALINK,
 				viewport: '0x0',
 				tracksUserIdentity: JSON.stringify( {
 					_ut: 'anon',
@@ -3373,6 +3397,19 @@ describe( 'WooPayments checkout', () => {
 			expect( getTrackedEventNames() ).toEqual( [
 				'checkout_email_address_woopay_check',
 			] );
+		} );
+
+		test( 'uses the current checkout URL when no permalink is configured', async () => {
+			window.wcSettings.storePages.checkout.permalink = '';
+			const input = await setupWooPayEmailInput();
+
+			await typeEmail( input, 'shopper@example.com' );
+
+			const iframe = document.querySelector( '.woopay-otp-iframe' );
+			const otpUrl = new URL( iframe.src );
+			expect( otpUrl.searchParams.get( 'source_url' ) ).toBe(
+				'http://localhost/checkout/'
+			);
 		} );
 
 		test( 'offers save-my-info instead of the OTP iframe for an unknown email', async () => {

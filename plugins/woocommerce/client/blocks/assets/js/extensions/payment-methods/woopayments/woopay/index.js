@@ -35,6 +35,9 @@ let wooPayConnectPostMessagePromise = null;
 const wooPayConnectCallbacks = {};
 let wooPayConnectListenerAttached = false;
 let preferredCardFetchPromise = null;
+let navigate = ( url ) => {
+	window.location.href = url;
+};
 
 const WooPayIcon = () => (
 	<svg
@@ -611,7 +614,7 @@ const WooPayExpressContent = () => {
 			const redirectUrl =
 				getWooPayMinimumSessionRedirectUrl( sessionData );
 			if ( redirectUrl ) {
-				window.location.href = redirectUrl;
+				navigate( redirectUrl );
 			}
 			return;
 		}
@@ -636,7 +639,7 @@ const WooPayExpressContent = () => {
 
 		const response = await postWooPayAjax( 'init_woopay', body );
 		if ( response?.result === 'success' && response?.url ) {
-			window.location.href = response.url;
+			navigate( response.url );
 		}
 	};
 
@@ -664,7 +667,7 @@ const WooPayExpressContent = () => {
 		}
 
 		if ( sessionResponse?.redirect_url ) {
-			window.location.href = sessionResponse.redirect_url;
+			navigate( sessionResponse.redirect_url );
 		}
 	};
 
@@ -777,3 +780,9 @@ const registerWooPay = () => {
 registerWooPay();
 
 export default registerWooPay;
+
+export const __test__ = {
+	setNavigate: ( callback ) => {
+		navigate = callback;
+	},
+};

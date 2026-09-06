@@ -18,6 +18,9 @@ const FULL_SCREEN_MODAL_BREAKPOINT = 768;
 // re-renders and fires the redirect message twice, and the second call
 // must return undefined.
 let isInitRequesting = false;
+let navigate = ( url ) => {
+	window.location.href = url;
+};
 
 /**
  * Wait for the target element: the Blocks checkout renders its fields
@@ -596,7 +599,7 @@ export const handleWooPayEmailInput = async ( field, paymentSettings ) => {
 			case 'redirect_to_woopay_skip_session_init':
 				if ( e.data.redirectUrl ) {
 					deleteSkipWooPayCookie();
-					window.location = e.data.redirectUrl;
+					navigate( e.data.redirectUrl );
 				}
 				break;
 			case 'redirect_to_platform_checkout':
@@ -623,7 +626,7 @@ export const handleWooPayEmailInput = async ( field, paymentSettings ) => {
 						}
 						if ( response?.result === 'success' ) {
 							deleteSkipWooPayCookie();
-							window.location = response.url;
+							navigate( response.url );
 						} else {
 							showErrorMessage();
 							closeIframe( false );
@@ -706,4 +709,10 @@ export const handleWooPayEmailInput = async ( field, paymentSettings ) => {
 		// Safari needs the iframe closed here too.
 		closeIframe( false );
 	}
+};
+
+export const __test__ = {
+	setNavigate: ( callback ) => {
+		navigate = callback;
+	},
 };

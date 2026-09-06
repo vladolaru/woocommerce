@@ -9,6 +9,7 @@ import {
 	validateEmail,
 	shouldSkipWooPay,
 	deleteSkipWooPayCookie,
+	__test__,
 } from '../email-input-iframe';
 
 const WOOPAY_HOST = 'https://pay.woo.test';
@@ -40,10 +41,11 @@ const flushPromises = () =>
 const wait = ( ms ) => new Promise( ( resolve ) => setTimeout( resolve, ms ) );
 
 describe( 'WooPay email input (blocks)', () => {
-	const originalLocation = window.location;
+	const nativeHistoryReplaceState = window.history.replaceState;
 	let fetchResponses;
 	let windowListeners;
 	let documentListeners;
+	let navigate;
 
 	const renderCheckout = () => {
 		document.body.innerHTML =
@@ -150,13 +152,15 @@ describe( 'WooPay email input (blocks)', () => {
 				originalDocumentAdd( type, listener, options );
 			}
 		);
-		delete window.location;
-		window.location = {
-			href: 'https://example.test/checkout/',
-			search: '',
-			pathname: '/checkout/',
-		};
+		nativeHistoryReplaceState.call(
+			window.history,
+			null,
+			'',
+			'/checkout/'
+		);
 		window.history.replaceState = jest.fn();
+		navigate = jest.fn();
+		__test__.setNavigate( navigate );
 	} );
 
 	afterEach( () => {
@@ -166,11 +170,12 @@ describe( 'WooPay email input (blocks)', () => {
 		documentListeners.forEach( ( [ type, listener, options ] ) =>
 			document.removeEventListener( type, listener, options )
 		);
-		jest.restoreAllMocks();
+		window.addEventListener.mockRestore();
+		document.addEventListener.mockRestore();
+		window.history.replaceState = nativeHistoryReplaceState;
 		[ 'tk_ai', 'skip_woopay' ].forEach( ( name ) => {
 			document.cookie = `${ name }=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;`;
 		} );
-		window.location = originalLocation;
 		document.body.innerHTML = '';
 		document.body.style.overflow = '';
 	} );
@@ -208,10 +213,20 @@ describe( 'WooPay email input (blocks)', () => {
 			shouldHandleWooPayEmailInput( { ...baseSettings, isPreview: true } )
 		).toBe( false );
 
-		window.location.search = '?customize_messenger_channel=preview-0';
+		nativeHistoryReplaceState.call(
+			window.history,
+			null,
+			'',
+			'/checkout/?customize_messenger_channel=preview-0'
+		);
 		expect( isPreviewing( baseSettings ) ).toBe( true );
 		expect( shouldHandleWooPayEmailInput( baseSettings ) ).toBe( false );
-		window.location.search = '';
+		nativeHistoryReplaceState.call(
+			window.history,
+			null,
+			'',
+			'/checkout/'
+		);
 
 		document.body.innerHTML = '<div id="email"></div>';
 		expect( shouldHandleWooPayEmailInput( baseSettings ) ).toBe( false );
@@ -238,7 +253,7 @@ describe( 'WooPay email input (blocks)', () => {
 		);
 		await flushPromises();
 
-		expect( window.location.href ).toBe( 'https://example.test/checkout/' );
+		expect( navigate ).not.toHaveBeenCalled();
 		expect(
 			document.querySelector( '.woopay-otp-iframe-wrapper' )
 		).not.toBeNull();
@@ -257,7 +272,7 @@ describe( 'WooPay email input (blocks)', () => {
 			''
 		);
 
-		expect( window.location.href ).toBe( 'https://example.test/checkout/' );
+		expect( navigate ).not.toHaveBeenCalled();
 	} );
 
 	test( 'does nothing on pay-for-order pages', async () => {
@@ -447,7 +462,7 @@ describe( 'WooPay email input (blocks)', () => {
 				billing_email: '',
 			},
 		] );
-		expect( window.location ).toBe(
+		expect( navigate ).toHaveBeenCalledWith(
 			`${ WOOPAY_HOST }/checkout/?session=1`
 		);
 	} );
@@ -461,7 +476,7 @@ describe( 'WooPay email input (blocks)', () => {
 			redirectUrl: `${ WOOPAY_HOST }/direct/`,
 		} );
 
-		expect( window.location ).toBe( `${ WOOPAY_HOST }/direct/` );
+		expect( navigate ).toHaveBeenCalledWith( `${ WOOPAY_HOST }/direct/` );
 		expect( shouldSkipWooPay() ).toBe( false );
 	} );
 
@@ -544,7 +559,12 @@ describe( 'WooPay email input (blocks)', () => {
 	} );
 
 	test( 'records a back-button return, sets the session skip cookie and cleans the URL', async () => {
-		window.location.search = '?skip_woopay=true&foo=bar';
+		nativeHistoryReplaceState.call(
+			window.history,
+			null,
+			'',
+			'/checkout/?skip_woopay=true&foo=bar'
+		);
 		const userCheckEvents = [];
 		window.addEventListener( 'woopayUserCheck', ( event ) =>
 			userCheckEvents.push( event.detail.isRegisteredUser )

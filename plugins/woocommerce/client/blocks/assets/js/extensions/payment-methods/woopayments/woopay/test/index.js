@@ -15,7 +15,7 @@ import { registerExpressPaymentMethod } from '@woocommerce/blocks-registry';
 /**
  * Internal dependencies
  */
-import registerWooPay from '../index';
+import registerWooPay, { __test__ } from '../index';
 
 jest.mock( '@woocommerce/blocks-registry', () => ( {
 	registerExpressPaymentMethod: jest.fn(),
@@ -72,7 +72,7 @@ const getMockPaymentMethodSettings = () =>
 	globalThis.__wooPayPaymentMethodSettings;
 
 const originalFetch = window.fetch;
-const originalLocation = window.location;
+let navigate;
 
 describe( 'wc-payment-method-woopayments-woopay', () => {
 	afterEach( () => {
@@ -80,11 +80,6 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 		window.fetch = originalFetch;
 		window.localStorage.clear();
 		document.body.innerHTML = '';
-		Object.defineProperty( window, 'location', {
-			configurable: true,
-			writable: true,
-			value: originalLocation,
-		} );
 		Object.assign( getMockPaymentMethodSettings(), {
 			isWoopayFirstPartyAuthEnabled: false,
 			woopayButton: {
@@ -93,6 +88,11 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 			},
 		} );
 		jest.clearAllMocks();
+	} );
+
+	beforeEach( () => {
+		navigate = jest.fn();
+		__test__.setNavigate( navigate );
 	} );
 
 	it( 'registers a branded WooPay express button and initializes WooPay on click', async () => {
@@ -261,13 +261,6 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 			}
 		);
 		getMockPaymentMethodSettings().isWoopayFirstPartyAuthEnabled = true;
-		Object.defineProperty( window, 'location', {
-			configurable: true,
-			writable: true,
-			value: {
-				href: 'https://store.test/checkout/',
-			},
-		} );
 		window.fetch = jest.fn().mockResolvedValue( {
 			json: jest.fn().mockResolvedValue( {
 				blog_id: '12345',
@@ -325,7 +318,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 			} )
 		);
 		await waitFor( () => {
-			expect( window.location.href ).toBe(
+			expect( navigate ).toHaveBeenCalledWith(
 				'https://pay.woo.test/checkout/session'
 			);
 		} );
