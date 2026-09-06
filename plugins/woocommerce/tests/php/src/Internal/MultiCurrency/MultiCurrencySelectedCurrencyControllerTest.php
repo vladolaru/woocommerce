@@ -1109,6 +1109,16 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 			public function has_session(): bool {
 				return $this->has_session;
 			}
+
+			/**
+			 * Accept session writes made by WooCommerce cart teardown.
+			 *
+			 * @param string $key Session key.
+			 * @param mixed  $value Session value.
+			 */
+			public function set( string $key, $value ): void {
+				unset( $key, $value );
+			}
 		};
 	}
 
