@@ -17,6 +17,7 @@ const {
 const WooCommerceDependencyExtractionWebpackPlugin = require( '@woocommerce/dependency-extraction-webpack-plugin/src/index' );
 const CustomTemplatedPathPlugin = require( './bin/custom-templated-path-webpack-plugin' );
 const UnminifyWebpackPlugin = require( './bin/unminify-webpack-plugin.js' );
+const { requestToExternal, requestToHandle } = require( './webpack-externals' );
 
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const WC_ADMIN_PHASE = process.env.WC_ADMIN_PHASE || 'development';
