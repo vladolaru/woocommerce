@@ -354,6 +354,8 @@ class WooPaymentsIppReceiptEmailTest extends WC_Unit_Test_Case {
 		$this->assertIsString( $content );
 
 		if ( ! $plain_text ) {
+			// Current WooCommerce email templates add presentational attributes that were absent from the 10.8.0 oracle.
+			$content = str_replace( array( ' class="wc-product-name"', ' dir="auto"' ), '', $content );
 			$content = preg_replace( '/\s+/', ' ', trim( $content ) );
 			$this->assertIsString( $content );
 			return $content;
