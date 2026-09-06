@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Admin\Suggestions\Incentives;
 use Automattic\WooCommerce\Internal\Admin\Suggestions\Incentives\Incentive;
 use Automattic\WooCommerce\Internal\Admin\Suggestions\Incentives\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\LegacyRuntimeProxy;
 use PHPUnit\Framework\MockObject\MockObject;
 use WC_Unit_Test_Case;
 
@@ -155,6 +156,16 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Configure the runtime result used while deriving the incentives context.
+	 *
+	 * @param bool $has_live_account_data Whether the runtime has meaningful live account data.
+	 */
+	private function mock_runtime_for_incentives_context( bool $has_live_account_data ): void {
+		$this->legacy_runtime->method( 'is_loaded' )->willReturn( false );
+		$this->legacy_runtime->method( 'has_live_cached_account_data' )->willReturn( $has_live_account_data );
+	}
+
+	/**
 	 * Test getting all incentives caches remote response.
 	 */
 	public function test_get_all_caches_remote_response() {
@@ -242,8 +253,8 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 			->expects( $this->never() )
 			->method( 'is_loaded' );
 		$this->legacy_runtime
-			->expects( $this->never() )
-			->method( 'has_live_cached_account_data' );
+			->method( 'has_live_cached_account_data' )
+			->willReturn( false );
 
 		// phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
 		$filter_callback = fn( $caps ) => array( 'manage_woocommerce' => true );
@@ -266,14 +277,8 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_is_visible_with_extension_active_and_no_account_data() {
 		// Arrange.
-		$this->legacy_runtime
-			->expects( $this->once() )
-			->method( 'is_loaded' )
-			->willReturn( true );
-		$this->legacy_runtime
-			->expects( $this->once() )
-			->method( 'has_live_cached_account_data' )
-			->willReturn( false );
+		$this->legacy_runtime->method( 'is_loaded' )->willReturn( true );
+		$this->legacy_runtime->method( 'has_live_cached_account_data' )->willReturn( false );
 
 		add_filter( 'pre_http_request', $this->response_mock_ref, 10, 3 );
 
@@ -289,14 +294,8 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_is_visible_with_extension_active_and_has_account_data() {
 		// Arrange.
-		$this->legacy_runtime
-			->expects( $this->once() )
-			->method( 'is_loaded' )
-			->willReturn( true );
-		$this->legacy_runtime
-			->expects( $this->once() )
-			->method( 'has_live_cached_account_data' )
-			->willReturn( true );
+		$this->legacy_runtime->method( 'is_loaded' )->willReturn( true );
+		$this->legacy_runtime->method( 'has_live_cached_account_data' )->willReturn( true );
 
 		add_filter( 'pre_http_request', $this->response_mock_ref, 10, 3 );
 
@@ -323,9 +322,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_incentives_context_ignores_test_mode_woopayments_orders() {
 		// Arrange.
-		$this->sut
-			->method( 'is_extension_active' )
-			->willReturn( false );
+		$this->mock_runtime_for_incentives_context( false );
 
 		add_filter( 'pre_http_request', $this->response_mock_ref, 10, 3 );
 
@@ -351,9 +348,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_incentives_context_counts_live_mode_woopayments_orders() {
 		// Arrange.
-		$this->sut
-			->method( 'is_extension_active' )
-			->willReturn( false );
+		$this->mock_runtime_for_incentives_context( false );
 
 		add_filter( 'pre_http_request', $this->response_mock_ref, 10, 3 );
 
@@ -382,9 +377,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_incentives_context_ignores_woopayments_orders_without_mode_meta() {
 		// Arrange.
-		$this->sut
-			->method( 'is_extension_active' )
-			->willReturn( false );
+		$this->mock_runtime_for_incentives_context( false );
 
 		add_filter( 'pre_http_request', $this->response_mock_ref, 10, 3 );
 
@@ -409,9 +402,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_incentives_context_ignores_test_drive_account_data() {
 		// Arrange.
-		$this->sut
-			->method( 'is_extension_active' )
-			->willReturn( false );
+		$this->mock_runtime_for_incentives_context( false );
 
 		add_filter( 'pre_http_request', $this->response_mock_ref, 10, 3 );
 
@@ -440,9 +431,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_incentives_context_ignores_sandbox_account_data() {
 		// Arrange.
-		$this->sut
-			->method( 'is_extension_active' )
-			->willReturn( false );
+		$this->mock_runtime_for_incentives_context( false );
 
 		add_filter( 'pre_http_request', $this->response_mock_ref, 10, 3 );
 
@@ -470,9 +459,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_incentives_context_counts_live_account_data() {
 		// Arrange.
-		$this->sut
-			->method( 'is_extension_active' )
-			->willReturn( false );
+		$this->mock_runtime_for_incentives_context( true );
 
 		add_filter( 'pre_http_request', $this->response_mock_ref, 10, 3 );
 
@@ -501,13 +488,13 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_incentives_context_counts_account_data_without_mode_flags() {
 		// Arrange.
-		$this->sut
-			->method( 'is_extension_active' )
-			->willReturn( false );
+		$proxy = new LegacyRuntimeProxy( false );
+		$proxy->set_account_data( array( 'data' => array( 'account_id' => '123' ) ) );
+		$runtime = new WooPaymentsLegacyRuntime();
+		$runtime->init( $proxy );
+		$this->sut = new WooPayments( $this->suggestion_id, $runtime );
 
 		add_filter( 'pre_http_request', $this->response_mock_ref, 10, 3 );
-
-		update_option( 'wcpay_account_data', array( 'data' => array( 'account_id' => '123' ) ) );
 
 		delete_option( self::HAD_WOOPAYMENTS_OPTION );
 
@@ -526,9 +513,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_incentives_context_redetermines_stale_positive() {
 		// Arrange.
-		$this->sut
-			->method( 'is_extension_active' )
-			->willReturn( false );
+		$this->mock_runtime_for_incentives_context( false );
 
 		add_filter( 'pre_http_request', $this->response_mock_ref, 10, 3 );
 
@@ -549,9 +534,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_incentives_context_trusts_current_positive() {
 		// Arrange.
-		$this->sut
-			->method( 'is_extension_active' )
-			->willReturn( false );
+		$this->mock_runtime_for_incentives_context( false );
 
 		add_filter( 'pre_http_request', $this->response_mock_ref, 10, 3 );
 
@@ -573,9 +556,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_incentives_context_trusts_stale_negative() {
 		// Arrange.
-		$this->sut
-			->method( 'is_extension_active' )
-			->willReturn( false );
+		$this->mock_runtime_for_incentives_context( false );
 
 		add_filter( 'pre_http_request', $this->response_mock_ref, 10, 3 );
 
