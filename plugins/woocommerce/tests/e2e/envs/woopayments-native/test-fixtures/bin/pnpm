@@ -55,7 +55,11 @@ if [[ "$*" == *"playwright test"* && "$*" == *"--list"* ]]; then
 		# shellcheck disable=SC2086 # word-splitting the space-separated tags is intended
 		tags_json="$(printf '%s\n' ${E2E_FAKE_LIST_TAGS} | jq -R . | jq -cs .)"
 	fi
-	printf '{"config":{"projects":[]},"errors":[],"suites":[{"title":"fake.spec.ts","specs":[{"title":"fake","tags":%s,"tests":[]}],"suites":[]}]}\n' "$tags_json"
+	annotations_json='[]'
+	if [[ "${E2E_FAKE_LIST_PROFILE_UNAVAILABLE:-0}" == '1' ]]; then
+		annotations_json='[{"type":"profile-unavailable","description":"RULE 5 fixture"}]'
+	fi
+	printf '{"config":{"projects":[]},"errors":[],"suites":[{"title":"fake.spec.ts","specs":[{"title":"fake","tags":%s,"tests":[{"annotations":%s}]}],"suites":[]}]}\n' "$tags_json" "$annotations_json"
 	exit 0
 fi
 

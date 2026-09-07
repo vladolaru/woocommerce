@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -uo pipefail
+set -euo pipefail
 
 usage() {
 	echo 'Usage: run-provider-families.sh --results-dir DIR --store-url URL --native-store-dir DIR --account-id ID --account-alias ALIAS --store-id ID --wpcom-blog-id ID --provider-fixture JSON SPEC...' >&2
@@ -18,14 +18,14 @@ provider_fixture=''
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
-		--results-dir) results_dir="${2:-}"; shift 2 ;;
-		--store-url) store_url="${2:-}"; shift 2 ;;
-		--native-store-dir) native_store_dir="${2:-}"; shift 2 ;;
-		--account-id) account_id="${2:-}"; shift 2 ;;
-		--account-alias) account_alias="${2:-}"; shift 2 ;;
-		--store-id) store_id="${2:-}"; shift 2 ;;
-		--wpcom-blog-id) wpcom_blog_id="${2:-}"; shift 2 ;;
-		--provider-fixture) provider_fixture="${2:-}"; shift 2 ;;
+		--results-dir) [[ $# -ge 2 ]] || usage; results_dir="$2"; shift 2 ;;
+		--store-url) [[ $# -ge 2 ]] || usage; store_url="$2"; shift 2 ;;
+		--native-store-dir) [[ $# -ge 2 ]] || usage; native_store_dir="$2"; shift 2 ;;
+		--account-id) [[ $# -ge 2 ]] || usage; account_id="$2"; shift 2 ;;
+		--account-alias) [[ $# -ge 2 ]] || usage; account_alias="$2"; shift 2 ;;
+		--store-id) [[ $# -ge 2 ]] || usage; store_id="$2"; shift 2 ;;
+		--wpcom-blog-id) [[ $# -ge 2 ]] || usage; wpcom_blog_id="$2"; shift 2 ;;
+		--provider-fixture) [[ $# -ge 2 ]] || usage; provider_fixture="$2"; shift 2 ;;
 		--) shift; break ;;
 		-*) usage ;;
 		*) break ;;
@@ -38,8 +38,10 @@ done
 [[ -d "$native_store_dir" && -f "$provider_fixture" ]] || usage
 jq -e 'type == "object"' "$provider_fixture" > /dev/null || usage
 
+specs=()
 for spec in "$@"; do
 	[[ -f "$spec" && "$spec" == *.spec.ts ]] || usage
+	specs+=( "$(cd "$(dirname "$spec")" && pwd -P)/$(basename "$spec")" )
 done
 
 mkdir -p "$results_dir"
@@ -65,19 +67,31 @@ export E2E_WOOPAYMENTS_PROVIDER_FIXTURE="$(jq -c . "$provider_fixture")"
 readonly status_file="$results_dir/families-status.txt"
 : > "$status_file"
 
-for spec in "$@"; do
+count_residue() {
+	local directory="$1"
+	if [[ ! -d "$directory" ]]; then
+		printf '0'
+		return
+	fi
+	find "$directory" -type f | wc -l | tr -d ' '
+}
+
+for spec in "${specs[@]}"; do
 	name="$(basename "$spec" .spec.ts | sed 's/^provider-fidelity-//')"
 	log_file="$results_dir/e2e-fidelity-$name.log"
 	printf '%s START %s\n' "$(date '+%H:%M:%S')" "$name" >> "$status_file"
-	(
+	if (
 		cd "$native_store_dir"
 		pnpm test:e2e:with-env woopayments-native \
 			--project=woopayments-native-provider "$spec"
-	) > "$log_file" 2>&1
-	rc=$?
+	) > "$log_file" 2>&1; then
+		rc=0
+	else
+		rc=$?
+	fi
 	summary="$(grep -E '^\s+[0-9]+ (passed|failed|skipped|flaky|did not run)' "$log_file" | tr -s ' \n' ' ' || true)"
-	quarantine_count="$(find "$E2E_WOOPAYMENTS_LOCK_DIR/quarantine" -type f 2> /dev/null | wc -l | tr -d ' ')"
-	attempt_count="$(find "$E2E_WOOPAYMENTS_LOCK_DIR/provider-write-attempts" -type f 2> /dev/null | wc -l | tr -d ' ')"
+	quarantine_count="$(count_residue "$E2E_WOOPAYMENTS_LOCK_DIR/quarantine")"
+	attempt_count="$(count_residue "$E2E_WOOPAYMENTS_LOCK_DIR/provider-write-attempts")"
 	printf '%s END %s rc=%s %s q=%s a=%s\n' "$(date '+%H:%M:%S')" "$name" "$rc" "$summary" "$quarantine_count" "$attempt_count" >> "$status_file"
 	if [[ "$rc" -ne 0 ]]; then
 		printf '%s STOP %s rc=%s\n' "$(date '+%H:%M:%S')" "$name" "$rc" >> "$status_file"
