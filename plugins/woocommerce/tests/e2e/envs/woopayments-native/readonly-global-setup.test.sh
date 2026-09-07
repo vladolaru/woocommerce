@@ -27,6 +27,11 @@ grep -Fq 'wp_cache_delete( "wcpay_multi_currency_cached_currencies", "options" )
 [[ "$*" == *'upe_enabled_payment_method_ids'* ]]
 [[ "$*" == *'"card", "klarna"'* ]]
 [[ "$*" == *'WooCommerce_WooPayments_Native_CI_Provider_Fixture'* ]]
+grep -Fq 'registered_instance()' <<< "$*"
+grep -Fq 'remove_filter( "pre_option_wcpay_account_data", $account_cache_callback )' <<< "$*"
+grep -Fq 'add_filter( "pre_option_wcpay_account_data", $account_cache_callback )' <<< "$*"
+grep -Fq '$physical_account_cache = get_option( "wcpay_account_data", null )' <<< "$*"
+grep -Fq 'finally' <<< "$*"
 [[ "$*" == *'wcpay_account_data'* ]]
 [[ "$*" == *'account_id'* ]]
 [[ "$*" == *'readonly-preconditions-seeded'* ]]

@@ -30,6 +30,22 @@ function add_filter( string $name, callable $callback, int $priority = 10, int $
 }
 
 /**
+ * Removes a WordPress filter registration.
+ *
+ * @param string   $name Filter name.
+ * @param callable $callback Filter callback.
+ * @param int      $priority Filter priority.
+ */
+function remove_filter( string $name, callable $callback, int $priority = 10 ): bool {
+	global $filters;
+	if ( ! isset( $filters[ $name ] ) || $filters[ $name ][0] !== $callback || $filters[ $name ][1] !== $priority ) {
+		return false;
+	}
+	unset( $filters[ $name ] );
+	return true;
+}
+
+/**
  * Records a WordPress action registration.
  *
  * @param string   $name Action name.
@@ -59,7 +75,11 @@ function wp_parse_url( string $url ) {
  * @return mixed
  */
 function get_option( string $name, $default_value = false ) {
-	global $options;
+	global $filters, $options;
+	$pre_option = 'pre_option_' . $name;
+	if ( isset( $filters[ $pre_option ] ) ) {
+		return ( $filters[ $pre_option ][0] )( false );
+	}
 	return $options[ $name ] ?? $default_value;
 }
 
@@ -152,7 +172,13 @@ function signed_provider_url( string $route, array $business_query = array() ): 
 	return 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/' . $route . '?' . http_build_query( $query, '', '&', PHP_QUERY_RFC3986 );
 }
 
-$fixture = new WooCommerce_WooPayments_Native_CI_Provider_Fixture();
+$fixture_filter = $filters['pre_option_wcpay_account_data'] ?? null;
+if ( ! is_array( $fixture_filter ) || ! is_array( $fixture_filter[0] ) ) {
+	throw new RuntimeException( 'Provider fixture account-cache filter was not registered.' );
+}
+$fixture = $fixture_filter[0][0] ?? null;
+assert_true( $fixture instanceof WooCommerce_WooPayments_Native_CI_Provider_Fixture, 'registered account-cache filter must belong to the provider fixture' );
+assert_true( WooCommerce_WooPayments_Native_CI_Provider_Fixture::registered_instance() === $fixture, 'fixture registry must expose the exact registered callback owner for physical seeding' );
 assert_true(
 	isset( $filters['script_loader_src'] ) && PHP_INT_MAX === $filters['script_loader_src'][1] && 2 === $filters['script_loader_src'][2],
 	'fixture must filter the final script source with both source and handle'
@@ -178,6 +204,7 @@ assert_true(
 );
 $cache = $fixture->account_cache();
 assert_true( isset( $filters['pre_option_wcpay_account_data'] ), 'fixture must own account-cache reads for consistent provider state' );
+$options['wcpay_account_data'] = $cache;
 assert_true( 'acct_native_ci' === $cache['data']['account_id'], 'fixture account cache must establish a connected account' );
 assert_true( true === $cache['data']['payments_enabled'], 'fixture account cache must establish payment readiness' );
 assert_true( '+10000000000' === $cache['data']['business_profile']['support_phone'], 'fixture account must use Core\'s explicitly valid test-account support phone' );
@@ -195,7 +222,67 @@ assert_true(
 	'fixture account must carry the exact account-details structure projected by the real overview service'
 );
 
-$baseline_provider_state                                     = get_option( 'e2e_woopayments_native_provider_state' );
+$baseline_provider_state                       = get_option( 'e2e_woopayments_native_provider_state' );
+$baseline_request_log                          = get_option( 'e2e_woopayments_native_request_log', array() );
+$baseline_failure_log                          = get_option( 'e2e_woopayments_native_failure_log', array() );
+$options['e2e_woopayments_native_request_log'] = array(
+	array(
+		'method' => 'GET',
+		'path'   => '/wpcom/v2/sites/777/wcpay/accounts',
+	),
+	array(
+		'method' => 'GET',
+		'path'   => '/wpcom/v2/sites/777/wcpay/transactions',
+	),
+	array(
+		'method' => 'GET',
+		'path'   => '/wpcom/v2/sites/777/wcpay/transactions/summary',
+	),
+	array(
+		'method' => 'GET',
+		'path'   => '/wpcom/v2/sites/777/wcpay/authorizations/summary',
+	),
+	array(
+		'method' => 'GET',
+		'path'   => '/wpcom/v2/sites/777/wcpay/deposits/overview-all',
+	),
+	array(
+		'method' => 'GET',
+		'path'   => '/wpcom/v2/sites/777/wcpay/deposits',
+	),
+	array(
+		'method' => 'GET',
+		'path'   => '/wpcom/v2/sites/777/wcpay/deposits/summary',
+	),
+	array(
+		'method' => 'GET',
+		'path'   => '/wpcom/v2/sites/777/wcpay/disputes',
+	),
+	array(
+		'method' => 'POST',
+		'path'   => '/wpcom/v2/sites/777/wcpay/accounts',
+	),
+);
+$options['e2e_woopayments_native_failure_log'] = array();
+$physical_cache_divergence                     = $cache;
+$physical_cache_divergence['data']['business_profile']['name'] = 'Diverged physical cache';
+$options['wcpay_account_data']                                 = $physical_cache_divergence;
+assert_true( 'acct_native_ci' === get_option( 'wcpay_account_data' )['data']['account_id'], 'connected pre-option fixture must continue to mask physical cache reads' );
+$physical_divergence_audit = $fixture->audit();
+assert_true( true === $physical_divergence_audit['coverage'], 'physical-cache mutation proof must isolate restoration from route coverage' );
+assert_true( false === $physical_divergence_audit['state_restored'], 'physical account-cache-only divergence must fail restoration' );
+assert_true( false === $physical_divergence_audit['clean'], 'physical account-cache-only divergence must make the audit non-clean' );
+$physical_cache_error_divergence                       = $cache;
+$physical_cache_error_divergence['errored']            = true;
+$physical_cache_error_divergence['consecutive_errors'] = 1;
+$options['wcpay_account_data']                         = $physical_cache_error_divergence;
+assert_true( false === $fixture->audit()['state_restored'], 'physical account-cache error fields must participate in restoration' );
+$options['wcpay_account_data'] = array_replace( $cache, array( 'fetched' => $cache['fetched'] + 1 ) );
+$volatile_timestamp_audit      = $fixture->audit();
+assert_true( true === $volatile_timestamp_audit['state_restored'], 'physical account-cache fetched timestamp must be the only ignored field' );
+$options['e2e_woopayments_native_request_log']               = $baseline_request_log;
+$options['e2e_woopayments_native_failure_log']               = $baseline_failure_log;
+$options['wcpay_account_data']                               = $cache;
 $mutated_provider_state                                      = $baseline_provider_state;
 $mutated_provider_state['account']['unexpected_account_key'] = true;
 update_option( 'e2e_woopayments_native_provider_state', $mutated_provider_state );
@@ -954,7 +1041,7 @@ $updated = body(
 );
 assert_true( 'Updated native CI store' === $updated['business_profile']['name'], 'settings writes must update private fixture state' );
 assert_true( 'Updated native CI store' === get_option( 'e2e_woopayments_native_provider_state' )['settings']['business_name'], 'private state option must persist settings writes' );
-assert_true( 'Updated native CI store' === get_option( 'wcpay_account_data' )['data']['business_profile']['name'], 'provider writes must synchronize the production account cache' );
+assert_true( 'Native CI store' === $options['wcpay_account_data']['data']['business_profile']['name'], 'fixture provider writes must not mutate the physical production account cache' );
 $refreshed = body(
 	$fixture->intercept(
 		false,
@@ -1133,7 +1220,9 @@ assert_true(
 	'audit coverage must not require conditionally bypassed provider routes that no selected readonly contract exercises'
 );
 assert_true( true === $audit['coverage'], 'audit must require every readonly provider route family' );
-assert_true( true === $audit['state_restored'], 'audit must require the private fixture baseline to be restored' );
+assert_true( true === $audit['state_restored'], 'audit must require the private and physical fixture baselines to be restored' );
+assert_true( true === $audit['physical_account_cache']['restored'], 'audit must expose normalized physical account-cache restoration' );
+assert_true( array( 'fetched' ) === $audit['physical_account_cache']['ignored_fields'], 'audit must ignore only the physical cache fetch timestamp' );
 assert_true( false === $audit['clean'], 'recorded fail-closed test probes must keep the audit non-clean' );
 
 echo "ci-provider-fixture.php tests passed.\n";

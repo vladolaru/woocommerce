@@ -14,6 +14,8 @@ defined( 'ABSPATH' ) || exit;
  * Serves deterministic WooPayments provider responses to the secretless CI lane.
  */
 final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
+	/** @var self|null */
+	private static $registered_instance;
 
 	private const STATE_OPTION         = 'e2e_woopayments_native_provider_state';
 	private const REQUEST_LOG_OPTION   = 'e2e_woopayments_native_request_log';
@@ -55,6 +57,7 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 	 * Registers the identity, transport, and Stripe adapter test seams.
 	 */
 	public function register(): void {
+		self::$registered_instance = $this;
 		add_filter( 'pre_option_jetpack_options', array( $this, 'jetpack_options' ) );
 		add_filter( 'pre_option_jetpack_private_options', array( $this, 'jetpack_private_options' ) );
 		add_filter( 'pre_option_wcpay_account_data', array( $this, 'account_cache' ) );
@@ -62,6 +65,11 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 		add_filter( 'script_loader_src', array( $this, 'stripe_adapter_src' ), PHP_INT_MAX, 2 );
 		add_action( 'wp_enqueue_scripts', array( $this, 'register_stripe_adapter' ), 0 );
 		add_action( 'rest_api_init', array( $this, 'register_audit_route' ) );
+	}
+
+	/** @return self|null */
+	public static function registered_instance(): ?self {
+		return self::$registered_instance;
 	}
 
 	/** @return array<string,mixed> */
@@ -226,7 +234,6 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 				$state['settings'] = array_replace_recursive( $state['settings'], $payload );
 				$state['account']  = $this->apply_account_write( $state['account'], $payload );
 				update_option( self::STATE_OPTION, $state );
-				update_option( 'wcpay_account_data', $this->account_cache(), false );
 				return $this->response( $state['account'] );
 			case 'POST accounts/store_setup':
 				return $this->response( array() );
@@ -308,31 +315,41 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 				$covered[] = (string) ( $request['method'] ?? '' ) . ' transact/' . substr( $path, strlen( $prefix ) );
 			}
 		}
-		$missing         = array_values( array_diff( self::REQUIRED_ROUTES, array_unique( $covered ) ) );
-		$state           = $this->state();
-		$mutable_state   = $this->canonicalize(
+		$missing                 = array_values( array_diff( self::REQUIRED_ROUTES, array_unique( $covered ) ) );
+		$state                   = $this->state();
+		$mutable_state           = $this->canonicalize(
 			array(
 				'account'       => $state['account'] ?? null,
 				'settings'      => $state['settings'] ?? null,
 				'fraud_ruleset' => $state['fraud_ruleset'] ?? null,
 			)
 		);
-		$baseline_state  = is_array( $state['audit_baseline'] ?? null ) ? $this->canonicalize( $state['audit_baseline'] ) : array();
-		$retained_state  = array( 'webhook_secret_hash' => $state['woopay_webhook_secret_hash'] ?? null );
-		$expected_retain = is_array( $state['expected_retained_state'] ?? null ) ? $this->canonicalize( $state['expected_retained_state'] ) : array();
-		$state_restored  = $mutable_state === $baseline_state && $this->canonicalize( $retained_state ) === $expected_retain;
+		$baseline_state          = is_array( $state['audit_baseline'] ?? null ) ? $this->canonicalize( $state['audit_baseline'] ) : array();
+		$retained_state          = array( 'webhook_secret_hash' => $state['woopay_webhook_secret_hash'] ?? null );
+		$expected_retain         = is_array( $state['expected_retained_state'] ?? null ) ? $this->canonicalize( $state['expected_retained_state'] ) : array();
+		$physical_cache          = $this->normalize_account_cache( $this->physical_account_cache() );
+		$physical_cache_baseline = is_array( $state['physical_account_cache_baseline'] ?? null ) ? $state['physical_account_cache_baseline'] : array();
+		$physical_cache_restored = $physical_cache === $physical_cache_baseline;
+		$state_restored          = $mutable_state === $baseline_state
+			&& $this->canonicalize( $retained_state ) === $expected_retain
+			&& $physical_cache_restored;
 
 		return array(
-			'requests'        => $requests,
-			'failures'        => $failures,
-			'required_routes' => self::REQUIRED_ROUTES,
-			'missing_routes'  => $missing,
-			'coverage'        => array() === $missing,
-			'state_restored'  => $state_restored,
-			'retained_state'  => array(
+			'requests'               => $requests,
+			'failures'               => $failures,
+			'required_routes'        => self::REQUIRED_ROUTES,
+			'missing_routes'         => $missing,
+			'coverage'               => array() === $missing,
+			'state_restored'         => $state_restored,
+			'retained_state'         => array(
 				'webhook_secret_hash' => null === $retained_state['webhook_secret_hash'] ? null : '(sha256)',
 			),
-			'clean'           => array() === $failures && array() === $missing && $state_restored,
+			'physical_account_cache' => array(
+				'ignored_fields' => array( 'fetched' ),
+				'normalized'     => $physical_cache,
+				'restored'       => $physical_cache_restored,
+			),
+			'clean'                  => array() === $failures && array() === $missing && $state_restored,
 		);
 	}
 
@@ -366,7 +383,7 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 		if ( is_array( $state ) && isset( $state['account'], $state['transactions'], $state['deposits'] ) ) {
 			return $state;
 		}
-		$account                 = array(
+		$account                                  = array(
 			'account_id'                 => 'acct_native_ci',
 			'country'                    => 'US',
 			'default_currency'           => 'usd',
@@ -420,7 +437,7 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 				'klarna' => array(),
 			),
 		);
-		$settings                = array(
+		$settings                                 = array(
 			'test_mode'                       => true,
 			'statement_descriptor'            => 'NATIVE CI',
 			'statement_descriptor_kanji'      => '',
@@ -439,11 +456,11 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			'deposit_schedule_monthly_anchor' => 1,
 			'deposit_schedule_weekly_anchor'  => 'monday',
 		);
-		$fraud_ruleset           = array(
+		$fraud_ruleset                            = array(
 			'ruleset_config' => array(),
 			'test_mode'      => true,
 		);
-		$state                   = array(
+		$state                                    = array(
 			'account'                    => $account,
 			'settings'                   => $settings,
 			'woopay_webhook_secret_hash' => null,
@@ -517,11 +534,19 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			),
 			'fraud_ruleset'              => $fraud_ruleset,
 		);
-		$state['audit_baseline'] = $this->canonicalize(
+		$state['audit_baseline']                  = $this->canonicalize(
 			array(
 				'account'       => $account,
 				'settings'      => $settings,
 				'fraud_ruleset' => $fraud_ruleset,
+			)
+		);
+		$state['physical_account_cache_baseline'] = $this->normalize_account_cache(
+			array(
+				'data'               => $account,
+				'fetched'            => 0,
+				'errored'            => false,
+				'consecutive_errors' => 0,
 			)
 		);
 		update_option( self::STATE_OPTION, $state );
@@ -1096,6 +1121,37 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 	 */
 	private function is_list( array $value ): bool {
 		return array() === $value || array_keys( $value ) === range( 0, count( $value ) - 1 );
+	}
+
+	/**
+	 * Reads the physical account cache without the fixture's connected-account filter.
+	 *
+	 * @return mixed
+	 */
+	private function physical_account_cache() {
+		$callback = array( $this, 'account_cache' );
+		$removed  = remove_filter( 'pre_option_wcpay_account_data', $callback );
+		try {
+			return get_option( 'wcpay_account_data', null );
+		} finally {
+			if ( $removed ) {
+				add_filter( 'pre_option_wcpay_account_data', $callback );
+			}
+		}
+	}
+
+	/**
+	 * Canonicalizes the account cache while excluding its volatile fetch timestamp.
+	 *
+	 * @param mixed $cache Account cache option value.
+	 * @return array<int|string,mixed>
+	 */
+	private function normalize_account_cache( $cache ): array {
+		if ( ! is_array( $cache ) ) {
+			return array( 'value' => $cache );
+		}
+		unset( $cache['fetched'] );
+		return $this->canonicalize( $cache );
 	}
 
 	/**
