@@ -93,6 +93,24 @@ for predicate in 'is_connected()' 'has_connected_owner()' 'get_connection_owner_
 		exit 1
 	fi
 done
+if ! grep -Fq 'prepare_physical_account_cache_for_run' "$TEST_ROOT/commands.log"; then
+	echo 'Fixture installation must capture and neutralize the fresh-activation account error.' >&2
+	exit 1
+fi
+if ! grep -Fq 'refresh_account_data()' "$TEST_ROOT/commands.log"; then
+	echo 'The real account service must own the physical cache refresh.' >&2
+	exit 1
+fi
+if ! grep -Fq 'restore_pre_fixture_physical_account_cache' "$TEST_ROOT/commands.log"; then
+	echo 'The always-run audit must restore the captured pre-fixture physical cache.' >&2
+	exit 1
+fi
+fixture_enable_line="$(grep -n 'wp config set E2E_WOOPAYMENTS_NATIVE_FIXTURE true --raw' "$TEST_ROOT/commands.log" | head -n 1 | cut -d: -f1)"
+cache_refresh_line="$(grep -n 'prepare_physical_account_cache_for_run' "$TEST_ROOT/commands.log" | head -n 1 | cut -d: -f1)"
+if [[ "$fixture_enable_line" -ge "$cache_refresh_line" ]]; then
+	echo 'The provider fixture must be enabled before refreshing the physical account cache.' >&2
+	exit 1
+fi
 for cache_key in wcpay_authorization_summary_cache wcpay_test_authorization_summary_cache; do
 	if ! grep -Fq "delete_option( \"$cache_key\" )" "$TEST_ROOT/commands.log"; then
 		echo "Fixture installation must clear authorization cache: $cache_key" >&2

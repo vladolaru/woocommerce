@@ -98,6 +98,29 @@ function update_option( string $name, $value, ?bool $autoload = null ): bool {
 }
 
 /**
+ * Deletes an option from private fixture state.
+ *
+ * @param string $name Option name.
+ */
+function delete_option( string $name ): bool {
+	global $options;
+	$existed = array_key_exists( $name, $options );
+	unset( $options[ $name ] );
+	return $existed;
+}
+
+/**
+ * Invalidates an option object-cache entry in the standalone harness.
+ *
+ * @param string $key Cache key.
+ * @param string $group Cache group.
+ */
+function wp_cache_delete( string $key, string $group = '' ): bool {
+	unset( $key, $group );
+	return true;
+}
+
+/**
  * Encodes a value like the WordPress wrapper.
  *
  * @param mixed $value Value to encode.
@@ -137,6 +160,20 @@ require __DIR__ . '/ci-provider-fixture.php';
  */
 function assert_true( bool $condition, string $message ): void {
 	if ( ! $condition ) {
+		throw new RuntimeException( esc_html( $message ) );
+	}
+}
+
+/**
+ * Asserts exact standalone fixture values.
+ *
+ * @param mixed  $expected Expected value.
+ * @param mixed  $actual Actual value.
+ * @param string $message Failure message.
+ * @throws RuntimeException When the values differ.
+ */
+function assert_same( $expected, $actual, string $message ): void {
+	if ( $expected !== $actual ) {
 		throw new RuntimeException( esc_html( $message ) );
 	}
 }
@@ -953,5 +990,44 @@ assert_true( true === $audit['state_restored'], 'audit must require the private 
 assert_true( true === $audit['physical_account_cache']['restored'], 'audit must expose normalized physical account-cache restoration' );
 assert_true( array( 'fetched' ) === $audit['physical_account_cache']['ignored_fields'], 'audit must ignore only the physical cache fetch timestamp' );
 assert_true( false === $audit['clean'], 'recorded fail-closed test probes must keep the audit non-clean' );
+
+$fresh_activation_cache                        = array(
+	'data'               => null,
+	'fetched'            => 123,
+	'errored'            => true,
+	'consecutive_errors' => 1,
+);
+$options['wcpay_account_data']                 = $fresh_activation_cache;
+$options['e2e_woopayments_native_failure_log'] = array();
+$refreshed_account                             = $fixture->prepare_physical_account_cache_for_run(
+	static function () use ( $fixture, &$filters ): array {
+		assert_true( ! isset( $filters['pre_option_wcpay_account_data'] ), 'the connected pre-option filter must not mask the production cache refresh' );
+		$response = $fixture->intercept( false, array( 'method' => 'GET' ), signed_provider_url( 'accounts', array( 'test_mode' => '1' ) ) );
+		$account  = body( $response );
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'               => $account,
+				'fetched'            => 456,
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			)
+		);
+		return $account;
+	}
+);
+assert_true( 'acct_native_ci' === $refreshed_account['account_id'], 'fixture preparation must return the real refresh result' );
+assert_same( false, $options['wcpay_account_data']['errored'], 'fixture preparation must replace the fresh-activation error for the readonly run' );
+$midrun_audit = $fixture->audit();
+assert_same( false, $midrun_audit['physical_account_cache']['pre_fixture_restored'], 'mid-run request inspection must not perform final cache restoration' );
+assert_same( false, $options['wcpay_account_data']['errored'], 'mid-run request inspection must leave the connected cache in place' );
+$fixture->restore_pre_fixture_physical_account_cache();
+$audit = $fixture->audit();
+assert_true( true === $audit['clean'], 'a covered fixture run must remain clean after restoring the pre-fixture cache' );
+assert_true( true === $audit['physical_account_cache']['run_restored'], 'the readonly run must end at its connected physical-cache baseline' );
+assert_true( true === $audit['physical_account_cache']['pre_fixture_restored'], 'audit must restore the physical cache captured before fixture preparation' );
+assert_true( true === $audit['physical_account_cache']['restored'], 'physical-cache restoration requires both run and pre-fixture restoration' );
+assert_same( $fresh_activation_cache, $options['wcpay_account_data'], 'audit must restore the exact fresh-activation error wrapper' );
+assert_true( 'acct_native_ci' === get_option( 'wcpay_account_data' )['data']['account_id'], 'the connected pre-option filter must not mask the physical restoration assertion' );
 
 echo "ci-provider-fixture.php tests passed.\n";

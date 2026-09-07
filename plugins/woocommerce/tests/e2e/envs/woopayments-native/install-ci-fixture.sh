@@ -7,6 +7,7 @@ readonly WP_ENV_CONFIG="${E2E_WOOPAYMENTS_WP_ENV_CONFIG:?E2E_WOOPAYMENTS_WP_ENV_
 readonly -a WP_ENV=( pnpm exec wp-env --config "$WP_ENV_CONFIG" run cli )
 readonly IDENTITY_ASSERT_CODE='$manager = new Automattic\Jetpack\Connection\Manager(); $identity = array( "site_connected" => $manager->is_connected(), "owner_present" => $manager->has_connected_owner(), "owner_id" => $manager->get_connection_owner_id(), "user_connected" => $manager->is_user_connected( 1 ) ); echo wp_json_encode( $identity ); if ( true !== $identity["site_connected"] || true !== $identity["owner_present"] || 1 !== $identity["owner_id"] || true !== $identity["user_connected"] ) { fwrite( STDERR, "Dummy Jetpack identity did not satisfy the WooPayments connection contract.\n" ); exit( 1 ); }'
 readonly AUTHORIZATION_CACHE_CLEAR_CODE='delete_option( "wcpay_authorization_summary_cache" ); delete_option( "wcpay_test_authorization_summary_cache" ); wp_cache_delete( "wcpay_authorization_summary_cache", "options" ); wp_cache_delete( "wcpay_test_authorization_summary_cache", "options" );'
+readonly ACCOUNT_CACHE_PREPARE_CODE='$fixture = WooCommerce_WooPayments_Native_CI_Provider_Fixture::registered_instance(); if ( ! $fixture ) { fwrite( STDERR, "The WooPayments CI provider fixture is not registered.\n" ); exit( 1 ); } $account = $fixture->prepare_physical_account_cache_for_run( static function (): array { return wc_get_container()->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService::class )->refresh_account_data(); } ); echo wp_json_encode( array( "account_id" => $account["account_id"] ?? "" ) );'
 
 cd "$PLUGIN_ROOT"
 readonly source_dir='wp-content/plugins/woocommerce/tests/e2e/envs/woopayments-native'
@@ -21,3 +22,4 @@ readonly source_dir='wp-content/plugins/woocommerce/tests/e2e/envs/woopayments-n
 "${WP_ENV[@]}" wp option delete e2e_woopayments_native_failure_log
 "${WP_ENV[@]}" wp eval "$AUTHORIZATION_CACHE_CLEAR_CODE"
 "${WP_ENV[@]}" wp --user=1 eval "$IDENTITY_ASSERT_CODE"
+"${WP_ENV[@]}" wp --user=1 eval "$ACCOUNT_CACHE_PREPARE_CODE"

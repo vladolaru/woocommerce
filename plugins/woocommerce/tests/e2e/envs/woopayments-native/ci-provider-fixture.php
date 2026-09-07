@@ -63,6 +63,82 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 	}
 
 	/**
+	 * Captures the activation cache and establishes the connected cache through the real account service.
+	 *
+	 * @param callable $refresh_account_data Forced account-service refresh callback returning account data.
+	 * @return array<string,mixed>
+	 * @throws RuntimeException When the refresh does not establish a connected physical cache.
+	 */
+	public function prepare_physical_account_cache_for_run( callable $refresh_account_data ): array {
+		$callback = array( $this, 'account_cache' );
+		$removed  = remove_filter( 'pre_option_wcpay_account_data', $callback );
+		try {
+			$missing                                     = new stdClass();
+			$physical                                    = get_option( 'wcpay_account_data', $missing );
+			$state                                       = $this->state();
+			$state['pre_fixture_physical_account_cache'] = array(
+				'exists'     => $missing !== $physical,
+				'value'      => $missing === $physical ? null : $physical,
+				'normalized' => $this->normalize_account_cache( $missing === $physical ? null : $physical ),
+			);
+			unset( $state['physical_account_cache_restoration'] );
+			update_option( self::STATE_OPTION, $state );
+
+			$account       = $refresh_account_data();
+			$physical      = get_option( 'wcpay_account_data', null );
+			$physical_data = is_array( $physical ) && is_array( $physical['data'] ?? null ) ? $physical['data'] : array();
+			if ( '' === (string) ( $account['account_id'] ?? '' ) || ( $physical_data['account_id'] ?? null ) !== $account['account_id'] || true === ( $physical['errored'] ?? false ) ) {
+				throw new RuntimeException( 'The real account refresh did not establish a connected physical WooPayments cache.' );
+			}
+
+			$state                                    = $this->state();
+			$state['physical_account_cache_baseline'] = $this->normalize_account_cache( $physical );
+			update_option( self::STATE_OPTION, $state );
+			return $account;
+		} finally {
+			if ( $removed ) {
+				add_filter( 'pre_option_wcpay_account_data', $callback );
+			}
+		}
+	}
+
+	/**
+	 * Finalizes a fixture run by restoring the exact account cache captured before installation.
+	 *
+	 * @return array{exists:bool,value:mixed,normalized:array<int|string,mixed>,run_normalized:array<int|string,mixed>,run_restored:bool,pre_fixture_restored:bool}
+	 * @throws RuntimeException When fixture preparation did not capture an account cache.
+	 */
+	public function restore_pre_fixture_physical_account_cache(): array {
+		$state             = $this->state();
+		$pre_fixture_cache = $state['pre_fixture_physical_account_cache'] ?? null;
+		if ( ! is_array( $pre_fixture_cache ) || ! is_bool( $pre_fixture_cache['exists'] ?? null ) || ! array_key_exists( 'value', $pre_fixture_cache ) ) {
+			throw new RuntimeException( 'The pre-fixture WooPayments account cache was not captured.' );
+		}
+
+		$run_cache          = $this->physical_account_cache_snapshot();
+		$run_normalized     = $run_cache['normalized'];
+		$run_baseline       = is_array( $state['physical_account_cache_baseline'] ?? null ) ? $state['physical_account_cache_baseline'] : array();
+		$run_restored       = $run_normalized === $run_baseline;
+		$restoration        = $this->restore_physical_account_cache( $pre_fixture_cache['exists'], $pre_fixture_cache['value'] );
+		$pre_cache_restored = $restoration['exists'] === $pre_fixture_cache['exists']
+			&& $restoration['value'] === $pre_fixture_cache['value'];
+
+		$state['physical_account_cache_restoration'] = array(
+			'run_normalized' => $run_normalized,
+			'run_restored'   => $run_restored,
+		);
+		update_option( self::STATE_OPTION, $state );
+		return array_merge(
+			$restoration,
+			array(
+				'run_normalized'       => $run_normalized,
+				'run_restored'         => $run_restored,
+				'pre_fixture_restored' => $pre_cache_restored,
+			)
+		);
+	}
+
+	/**
 	 * Registers the authenticated post-run audit route.
 	 */
 	public function register_audit_route(): void {
@@ -302,9 +378,28 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 		$baseline_state          = is_array( $state['audit_baseline'] ?? null ) ? $this->canonicalize( $state['audit_baseline'] ) : array();
 		$retained_state          = array( 'webhook_secret_hash' => $state['woopay_webhook_secret_hash'] ?? null );
 		$expected_retain         = is_array( $state['expected_retained_state'] ?? null ) ? $this->canonicalize( $state['expected_retained_state'] ) : array();
-		$physical_cache          = $this->normalize_account_cache( $this->physical_account_cache() );
+		$physical_snapshot       = $this->physical_account_cache_snapshot();
+		$physical_cache          = $physical_snapshot['normalized'];
 		$physical_cache_baseline = is_array( $state['physical_account_cache_baseline'] ?? null ) ? $state['physical_account_cache_baseline'] : array();
-		$physical_cache_restored = $physical_cache === $physical_cache_baseline;
+		$run_cache_restored      = $physical_cache === $physical_cache_baseline;
+		$pre_fixture_restored    = true;
+		$pre_fixture_cache       = $state['pre_fixture_physical_account_cache'] ?? null;
+		if ( is_array( $pre_fixture_cache ) && is_bool( $pre_fixture_cache['exists'] ?? null ) && array_key_exists( 'value', $pre_fixture_cache ) ) {
+			$restoration = $state['physical_account_cache_restoration'] ?? null;
+			if ( is_array( $restoration ) && is_bool( $restoration['run_restored'] ?? null ) && is_array( $restoration['run_normalized'] ?? null ) ) {
+				$run_cache_restored   = $restoration['run_restored'];
+				$physical_cache       = $physical_snapshot['normalized'];
+				$run_normalized       = $restoration['run_normalized'];
+				$pre_fixture_restored = $physical_snapshot['exists'] === $pre_fixture_cache['exists']
+					&& $physical_snapshot['value'] === $pre_fixture_cache['value'];
+			} else {
+				$run_normalized       = $physical_cache;
+				$pre_fixture_restored = false;
+			}
+		} else {
+			$run_normalized = $physical_cache;
+		}
+		$physical_cache_restored = $run_cache_restored && $pre_fixture_restored;
 		$state_restored          = $mutable_state === $baseline_state
 			&& $this->canonicalize( $retained_state ) === $expected_retain
 			&& $physical_cache_restored;
@@ -320,9 +415,12 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 				'webhook_secret_hash' => null === $retained_state['webhook_secret_hash'] ? null : '(sha256)',
 			),
 			'physical_account_cache' => array(
-				'ignored_fields' => array( 'fetched' ),
-				'normalized'     => $physical_cache,
-				'restored'       => $physical_cache_restored,
+				'ignored_fields'       => array( 'fetched' ),
+				'normalized'           => $physical_cache,
+				'run_normalized'       => $run_normalized,
+				'run_restored'         => $run_cache_restored,
+				'pre_fixture_restored' => $pre_fixture_restored,
+				'restored'             => $physical_cache_restored,
 			),
 			'clean'                  => array() === $failures && array() === $missing && $state_restored,
 		);
@@ -713,15 +811,53 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 	}
 
 	/**
-	 * Reads the physical account cache without the fixture's connected-account filter.
+	 * Reads physical account-cache existence and value without the connected fixture filter.
 	 *
-	 * @return mixed
+	 * @return array{exists:bool,value:mixed,normalized:array<int|string,mixed>}
 	 */
-	private function physical_account_cache() {
+	private function physical_account_cache_snapshot(): array {
 		$callback = array( $this, 'account_cache' );
 		$removed  = remove_filter( 'pre_option_wcpay_account_data', $callback );
 		try {
-			return get_option( 'wcpay_account_data', null );
+			$missing = new stdClass();
+			$current = get_option( 'wcpay_account_data', $missing );
+			return array(
+				'exists'     => $missing !== $current,
+				'value'      => $missing === $current ? null : $current,
+				'normalized' => $this->normalize_account_cache( $missing === $current ? null : $current ),
+			);
+		} finally {
+			if ( $removed ) {
+				add_filter( 'pre_option_wcpay_account_data', $callback );
+			}
+		}
+	}
+
+	/**
+	 * Restores the physical account cache captured before fixture installation.
+	 *
+	 * @param bool  $existed Whether the option existed.
+	 * @param mixed $value Exact captured option value.
+	 * @return array{exists:bool,value:mixed,normalized:array<int|string,mixed>}
+	 */
+	private function restore_physical_account_cache( bool $existed, $value ): array {
+		$callback = array( $this, 'account_cache' );
+		$removed  = remove_filter( 'pre_option_wcpay_account_data', $callback );
+		try {
+			if ( $existed ) {
+				update_option( 'wcpay_account_data', $value );
+			} else {
+				delete_option( 'wcpay_account_data' );
+			}
+			$cache_deleted = wp_cache_delete( 'wcpay_account_data', 'options' );
+			unset( $cache_deleted );
+			$missing = new stdClass();
+			$current = get_option( 'wcpay_account_data', $missing );
+			return array(
+				'exists'     => $missing !== $current,
+				'value'      => $missing === $current ? null : $current,
+				'normalized' => $this->normalize_account_cache( $missing === $current ? null : $current ),
+			);
 		} finally {
 			if ( $removed ) {
 				add_filter( 'pre_option_wcpay_account_data', $callback );
