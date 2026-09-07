@@ -6,6 +6,7 @@ import {
 	tags,
 	test,
 } from '../../../fixtures/woopayments-native';
+import { startStrictStripeAdapterBrowserOracle } from '../../../utils/woopayments-native/stripe-adapter-browser';
 
 const CONTRACT_IDS = [
 	'performance::chromium::tests/e2e/specs/performance/payment-methods.spec.ts:42::Checkout page performance › Stripe › measures averaged page load metrics',
@@ -163,6 +164,10 @@ test(
 		tag: [ tags.WOOPAYMENTS_NATIVE ],
 	},
 	async ( { adminApi, page, runId } ) => {
+		const stripeOracle =
+			process.env.E2E_WOOPAYMENTS_NATIVE_FIXTURE === 'true'
+				? startStrictStripeAdapterBrowserOracle( page )
+				: null;
 		const settings = await readJson< Record< string, unknown > >(
 			await adminApi.get( PAYMENTS_SETTINGS_API ),
 			'Payments settings read'
@@ -180,6 +185,9 @@ test(
 			await page.goto( `?add-to-cart=${ product.id }` );
 			await page.goto( 'checkout/' );
 			await assertCardReady( page );
+			await stripeOracle?.assertPaymentMounted(
+				'#wcpay-core-blocks-payment-element'
+			);
 
 			await enableWooPayIfNeeded( adminApi, originalWooPayEnabled );
 			const enabledSettings = await readJson< Record< string, unknown > >(
@@ -190,6 +198,9 @@ test(
 
 			await page.reload();
 			await assertCardReady( page );
+			await stripeOracle?.assertPaymentMounted(
+				'#wcpay-core-blocks-payment-element'
+			);
 			const wooPayAction = page.locator( '.woopay-express-button' );
 			await expect( wooPayAction ).toHaveCount( 1 );
 			await expect( wooPayAction ).toBeVisible();

@@ -6,6 +6,11 @@ import {
 	tags,
 	test,
 } from '../../../fixtures/woopayments-native';
+import {
+	startStrictStripeAdapterBrowserOracle,
+	type StrictStripeAdapterBrowserOracle,
+} from '../../../utils/woopayments-native/stripe-adapter-browser';
+import { isolatedBrowserContextOptions } from '../../../utils/woopayments-native/fixture-settings';
 
 const CONTRACT_ID =
 	'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-save-card-and-purchase.spec.ts:117::Saved cards › When using a basic card added on checkout › should not allow guest user to save the card';
@@ -245,16 +250,35 @@ function trackCheckoutSubmissions( page: Page ): () => number {
  */
 async function openCheckoutWithProduct(
 	page: Page,
-	productId: number
+	productId: number,
+	stripeOracle: StrictStripeAdapterBrowserOracle | null
 ): Promise< void > {
 	await page.goto( `?add-to-cart=${ productId }` );
 	await page.goto( 'checkout/' );
 	const cardFrame = page
 		.locator( getBlocksCardFrameSelector( cardFrameRuntime() ) )
 		.first();
-	await expect( cardFrame ).toBeVisible();
+	try {
+		await expect( cardFrame ).toBeVisible();
+	} catch ( error ) {
+		const adapterState = await page.evaluate( () => ( {
+			errors:
+				Reflect.get( window, '__wooPaymentsStripeAdapterErrors' ) ?? [],
+			paymentCalls:
+				Reflect.get( window, '__wooPaymentsStripePaymentCalls' ) ?? [],
+		} ) );
+		console.error(
+			`WooPayments Stripe adapter state: ${ JSON.stringify(
+				adapterState
+			) }`
+		);
+		throw error;
+	}
 	await expect( cardFrame ).not.toHaveAttribute( 'aria-hidden', 'true' );
 	await expect( cardFrame ).toHaveAttribute( 'title', /\S/ );
+	await stripeOracle?.assertPaymentMounted(
+		'#wcpay-core-blocks-payment-element'
+	);
 }
 
 test(
@@ -268,7 +292,7 @@ test(
 		],
 		tag: [ tags.WOOPAYMENTS_NATIVE ],
 	},
-	async ( { adminApi, page, browser, baseURL } ) => {
+	async ( { adminApi, browser, baseURL } ) => {
 		await ensureSmokeCustomer( adminApi );
 		const productId = await ensureSmokeProduct( adminApi );
 
@@ -303,9 +327,15 @@ test(
 		// the control and that the store state genuinely offers persistence
 		// to account holders. Without this, the guest-side zero-count could
 		// pass on a surface that never renders the control for anyone.
-		const customerContext = await browser.newContext( { baseURL } );
+		const customerContext = await browser.newContext(
+			isolatedBrowserContextOptions( baseURL )
+		);
 		try {
 			const customerPage = await customerContext.newPage();
+			const customerStripeOracle =
+				process.env.E2E_WOOPAYMENTS_NATIVE_FIXTURE === 'true'
+					? startStrictStripeAdapterBrowserOracle( customerPage )
+					: null;
 			const customerSubmissions =
 				trackCheckoutSubmissions( customerPage );
 			await customerPage.goto( 'wp-login.php' );
@@ -319,7 +349,11 @@ test(
 				.getByRole( 'button', { name: 'Log In' } )
 				.click();
 			await customerPage.waitForURL( /my-account|wp-admin/ );
-			await openCheckoutWithProduct( customerPage, productId );
+			await openCheckoutWithProduct(
+				customerPage,
+				productId,
+				customerStripeOracle
+			);
 			await expect( saveControl( customerPage ) ).toBeVisible();
 			// The control is genuinely operable, not just rendered: it
 			// starts opted-out, accepts a check, and accepts the uncheck
@@ -337,23 +371,45 @@ test(
 		// Contract: a fresh anonymous guest gets an operable card payment
 		// surface with no way to request credential persistence and no copy
 		// implying one exists.
-		const guestSubmissions = trackCheckoutSubmissions( page );
-		await openCheckoutWithProduct( page, productId );
-		// The session truly is a guest one: this notice renders only for an
-		// anonymous shopper on a store that permits guest checkout.
-		await expect( page.getByText( GUEST_NOTICE ).first() ).toBeVisible();
-		// The full checkout form has rendered before any absence is read:
-		// the submit control is the last piece of the checkout block tree.
-		await expect(
-			page.getByRole( 'button', { name: /place order/i } )
-		).toBeVisible();
-		await expect( saveControl( page ) ).toHaveCount( 0 );
-		await expect( page.getByRole( 'switch' ) ).toHaveCount( 0 );
-		await expect( page.locator( SAVE_CONTROL_CLASS ) ).toHaveCount( 0 );
-		await expect(
-			page.getByText( /future purchases/i ).filter( { visible: true } )
-		).toHaveCount( 0 );
-		expect( guestSubmissions() ).toBe( 0 );
+		const guestContext = await browser.newContext(
+			isolatedBrowserContextOptions( baseURL )
+		);
+		try {
+			const guestPage = await guestContext.newPage();
+			const guestSubmissions = trackCheckoutSubmissions( guestPage );
+			const guestStripeOracle =
+				process.env.E2E_WOOPAYMENTS_NATIVE_FIXTURE === 'true'
+					? startStrictStripeAdapterBrowserOracle( guestPage )
+					: null;
+			await openCheckoutWithProduct(
+				guestPage,
+				productId,
+				guestStripeOracle
+			);
+			// The session truly is a guest one: this notice renders only for an
+			// anonymous shopper on a store that permits guest checkout.
+			await expect(
+				guestPage.getByText( GUEST_NOTICE ).first()
+			).toBeVisible();
+			// The full checkout form has rendered before any absence is read:
+			// the submit control is the last piece of the checkout block tree.
+			await expect(
+				guestPage.getByRole( 'button', { name: /place order/i } )
+			).toBeVisible();
+			await expect( saveControl( guestPage ) ).toHaveCount( 0 );
+			await expect( guestPage.getByRole( 'switch' ) ).toHaveCount( 0 );
+			await expect( guestPage.locator( SAVE_CONTROL_CLASS ) ).toHaveCount(
+				0
+			);
+			await expect(
+				guestPage
+					.getByText( /future purchases/i )
+					.filter( { visible: true } )
+			).toHaveCount( 0 );
+			expect( guestSubmissions() ).toBe( 0 );
+		} finally {
+			await guestContext.close();
+		}
 
 		// Zero-dispatch proof: no checkout was submitted, no order exists
 		// for the run-owned product beyond what preceded the run, and the

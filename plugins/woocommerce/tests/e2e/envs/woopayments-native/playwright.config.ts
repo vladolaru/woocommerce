@@ -6,6 +6,25 @@ import defaultConfig, {
 
 const wooPaymentsSpecs = '**/tests/woopayments-native/**/*.spec.ts';
 const serializedProjectWorkerLimit = 1;
+const readonlyProjectName = 'woopayments-native-readonly';
+
+export function requestedProjectNames( argv: string[] ): string[] {
+	const projects: string[] = [];
+	for ( let index = 0; index < argv.length; index++ ) {
+		const argument = argv[ index ];
+		if ( argument === '--project' && argv[ index + 1 ] ) {
+			projects.push( argv[ ++index ] );
+		} else if ( argument.startsWith( '--project=' ) ) {
+			projects.push( argument.slice( '--project='.length ) );
+		}
+	}
+	return projects;
+}
+
+const requestedProjects = requestedProjectNames( process.argv.slice( 2 ) );
+const readonlySetupSelected =
+	requestedProjects.length === 0 ||
+	requestedProjects.includes( readonlyProjectName );
 
 export default {
 	...defaultConfig,
@@ -19,12 +38,16 @@ export default {
 	retries: 0,
 	projects: [
 		{
-			name: 'woopayments-native-readonly',
+			name: readonlyProjectName,
 			testMatch: wooPaymentsSpecs,
+			use: { storageState: ADMIN_STATE_PATH },
 			grepInvert:
 				/@woopayments-provider|@woopayments-transition|@woopayments-extension-compat/,
 			metadata: {
-				woopaymentsAdminStatePath: ADMIN_STATE_PATH,
+				woopaymentsReadonlySetup: readonlySetupSelected,
+				...( readonlySetupSelected
+					? { woopaymentsAdminStatePath: ADMIN_STATE_PATH }
+					: {} ),
 			},
 			retries: 0,
 			workers: serializedProjectWorkerLimit,
@@ -35,6 +58,7 @@ export default {
 			grep: /@woopayments-provider/,
 			grepInvert: /@woopayments-transition/,
 			metadata: {
+				woopaymentsReadonlySetup: false,
 				woopaymentsWorkerLimit: serializedProjectWorkerLimit,
 			},
 			retries: 0,
@@ -45,6 +69,18 @@ export default {
 			testMatch: wooPaymentsSpecs,
 			grep: /@woopayments-extension-compat/,
 			grepInvert: /@woopayments-provider|@woopayments-transition/,
+			metadata: {
+				woopaymentsReadonlySetup: false,
+			},
+			retries: 0,
+			workers: serializedProjectWorkerLimit,
+		},
+		{
+			name: 'woopayments-native-ci-profile-skips',
+			testMatch: '**/tests/woopayments-native/profile-dispositions.ci.ts',
+			metadata: {
+				woopaymentsReadonlySetup: false,
+			},
 			retries: 0,
 			workers: serializedProjectWorkerLimit,
 		},
@@ -53,6 +89,7 @@ export default {
 			testMatch: wooPaymentsSpecs,
 			grep: /@woopayments-transition/,
 			metadata: {
+				woopaymentsReadonlySetup: false,
 				woopaymentsWorkerLimit: serializedProjectWorkerLimit,
 			},
 			retries: 0,

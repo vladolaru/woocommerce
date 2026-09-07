@@ -2,6 +2,7 @@ import type { APIRequestContext, Locator, Page } from '@playwright/test';
 
 import { expect, tags, test } from '../../../fixtures/woopayments-native';
 import { admin } from '../../../test-data/data';
+import { FixtureManualCaptureScope } from '../../../utils/woopayments-native/fixture-settings';
 
 /**
  * Native WooPayments overview and transactions
@@ -54,6 +55,9 @@ const PAYMENTS_SETTINGS_API = '/wp-json/wc/v3/payments/settings';
 const DEPOSITS_OVERVIEW_API = '/wp-json/wc/v3/payments/deposits/overview-all';
 const TRANSACTIONS_API = '/wp-json/wc/v3/payments/transactions';
 const TRANSACTIONS_SUMMARY_API = '/wp-json/wc/v3/payments/transactions/summary';
+const TRANSACTIONS_TEST_TITLE =
+	'An authorized merchant loads the native WooPayments transactions list without errors and its rows and totals equal the authoritative transactions the store reports';
+const fixtureManualCapture = new FixtureManualCaptureScope();
 
 // The transactions list's own default query (transactions-page.tsx): page 1,
 // 25 rows, newest dispatch first. The surface additionally sends
@@ -140,6 +144,38 @@ async function readJson< Result = Record< string, unknown > >(
 		);
 	}
 	return ( await response.json() ) as Result;
+}
+
+async function readManualCapture(
+	adminApi: APIRequestContext
+): Promise< boolean > {
+	const settings = await readJson< {
+		is_manual_capture_enabled?: unknown;
+	} >(
+		await adminApi.get( PAYMENTS_SETTINGS_API ),
+		'Manual capture settings read'
+	);
+	if ( typeof settings.is_manual_capture_enabled !== 'boolean' ) {
+		throw new Error(
+			'Manual capture settings did not contain a boolean state.'
+		);
+	}
+	return settings.is_manual_capture_enabled;
+}
+
+async function writeManualCapture(
+	adminApi: APIRequestContext,
+	enabled: boolean
+): Promise< void > {
+	const settings = await readJson< {
+		is_manual_capture_enabled?: unknown;
+	} >(
+		await adminApi.post( PAYMENTS_SETTINGS_API, {
+			data: { is_manual_capture_enabled: enabled },
+		} ),
+		'Manual capture settings write'
+	);
+	expect( settings.is_manual_capture_enabled ).toBe( enabled );
 }
 
 async function logInAsAdmin( page: Page ): Promise< void > {
@@ -543,6 +579,23 @@ async function expectColumnOrder(
 	}
 }
 
+test.beforeEach( async ( { adminApi }, testInfo ) => {
+	await fixtureManualCapture.before( {
+		fixtureEnabled:
+			process.env.E2E_WOOPAYMENTS_NATIVE_FIXTURE === 'true' &&
+			testInfo.title === TRANSACTIONS_TEST_TITLE,
+		read: () => readManualCapture( adminApi ),
+		write: ( enabled ) => writeManualCapture( adminApi, enabled ),
+	} );
+} );
+
+test.afterEach( async ( { adminApi } ) => {
+	await fixtureManualCapture.after( {
+		read: () => readManualCapture( adminApi ),
+		write: ( enabled ) => writeManualCapture( adminApi, enabled ),
+	} );
+} );
+
 test(
 	"An authorized merchant reaches the native WooPayments overview from the store's own Payments navigation and the surface renders its account cards without denial, fatal, migration, or failed data-fetch errors",
 	{
@@ -694,7 +747,7 @@ test(
 );
 
 test(
-	'An authorized merchant loads the native WooPayments transactions list without errors and its rows and totals equal the authoritative transactions the store reports',
+	TRANSACTIONS_TEST_TITLE,
 	{
 		annotation: [
 			{
@@ -707,7 +760,6 @@ test(
 	async ( { adminApi, page, baseURL } ) => {
 		const storeBase = requireBaseUrl( baseURL );
 		await expectConnectedNativeStore( adminApi );
-
 		// The authoritative truth this list must equal, read with the surface's
 		// own default query.
 		const readTransactions = async ( description: string ) =>
@@ -746,7 +798,10 @@ test(
 		// Contract, first half: the transactions surface loads.
 		await expectNoFailureShapes( page );
 		await expect(
-			page.getByRole( 'heading', { name: 'Transactions', exact: true } )
+			page.getByRole( 'heading', {
+				name: 'Transactions',
+				exact: true,
+			} )
 		).toBeVisible();
 		expect( page.url() ).toContain( 'path=%2Fwoopayments%2Ftransactions' );
 		// Loaded or empty, both terminal — the surface keeps its heading and an

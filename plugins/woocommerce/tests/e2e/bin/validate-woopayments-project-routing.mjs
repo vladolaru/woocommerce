@@ -121,6 +121,10 @@ const collectContractAnnotationRecords = ( tests ) =>
 				description: annotation.description,
 				expectedStatus: collectedTest.expectedStatus,
 				file: collectedTest.file,
+				profileUnavailable: collectedTest.annotations.some(
+					( candidate ) => candidate.type === 'profile-unavailable'
+				),
+				tags: collectedTest.tags,
 				title: collectedTest.title,
 			} ) )
 	);
@@ -316,7 +320,14 @@ export const validateContractAnnotationBindings = (
 				`Closed ledger contract has no collected woopayments-contract annotation: ${ row.case_id }`
 			);
 		}
-		if ( record.expectedStatus !== 'passed' ) {
+		const isUnavailableExtensionProfile =
+			record.expectedStatus === 'skipped' &&
+			record.profileUnavailable === true &&
+			record.tags?.includes( 'woopayments-extension-compat' );
+		if (
+			record.expectedStatus !== 'passed' &&
+			! isUnavailableExtensionProfile
+		) {
 			throw new Error(
 				`Closed ledger contract annotation must expect to pass: ${ row.case_id }`
 			);

@@ -2,6 +2,7 @@ import type { Browser, BrowserContext } from '@playwright/test';
 
 import { expect, tags, test } from '../../../fixtures/woopayments-native';
 import { admin, customer } from '../../../test-data/data';
+import { isolatedBrowserContextOptions } from '../../../utils/woopayments-native/fixture-settings';
 
 // The two harness authentication rows from the client suite's setup project.
 // They are about the authentication contract itself — that a session can be
@@ -119,12 +120,12 @@ async function withStorageStateFreeContext< Result >(
 	baseURL: string,
 	work: ( context: BrowserContext ) => Promise< Result >
 ): Promise< Result > {
-	const context = await browser.newContext( { baseURL } );
+	const context = await browser.newContext(
+		isolatedBrowserContextOptions( baseURL )
+	);
 	try {
-		// `browser.newContext` takes only the options given to it, so this
-		// context starts with no cookies and no origin storage — including
-		// none of the admin context the suite's own `adminApi` fixture keeps
-		// open alongside it.
+		// The explicit empty storage state prevents the readonly project's
+		// warmed administrator session from entering this role context.
 		expect(
 			loggedInCookieNames( await context.storageState() ),
 			'a storage-state-free context must start with no WordPress session'

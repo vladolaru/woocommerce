@@ -307,6 +307,7 @@ test(
 		const product = await createRunOwnedProduct( adminApi, runId );
 		let couponId: number | undefined;
 		let primaryError: unknown;
+		let cleanupFailure: Error | AggregateError | undefined;
 		try {
 			const coupon = await createRunOwnedCoupon(
 				adminApi,
@@ -440,7 +441,6 @@ test(
 			expect( metaKeys ).toContain( RUN_META_KEY );
 		} catch ( error ) {
 			primaryError = error;
-			throw error;
 		} finally {
 			// Run-owned fixtures are deleted even when the journey failed;
 			// the order itself is deliberately left behind, stamped with the
@@ -485,14 +485,20 @@ test(
 						);
 					}
 				} else if ( cleanupErrors.length === 1 ) {
-					throw cleanupErrors[ 0 ];
+					cleanupFailure = cleanupErrors[ 0 ];
 				} else {
-					throw new AggregateError(
+					cleanupFailure = new AggregateError(
 						cleanupErrors,
 						'Run-owned fixture cleanup failed.'
 					);
 				}
 			}
+		}
+		if ( primaryError !== undefined ) {
+			throw primaryError;
+		}
+		if ( cleanupFailure ) {
+			throw cleanupFailure;
 		}
 	}
 );

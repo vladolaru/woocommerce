@@ -107,7 +107,10 @@ test( 'WooPayments specs are collected once by their owning projects', () => {
 
 test( 'one passing exact annotation satisfies a closed E2E row', () => {
 	assert.doesNotThrow( () =>
-		validateSyntheticBindings( [ closedSpecRow ], [ validAnnotationRecord ] )
+		validateSyntheticBindings(
+			[ closedSpecRow ],
+			[ validAnnotationRecord ]
+		)
 	);
 } );
 
@@ -127,7 +130,9 @@ test( 'a retired closed contract needs no annotation because nothing was migrate
 		native_support_state: 'not-applicable-retired',
 	};
 
-	assert.doesNotThrow( () => validateSyntheticBindings( [ retiredRow ], [] ) );
+	assert.doesNotThrow( () =>
+		validateSyntheticBindings( [ retiredRow ], [] )
+	);
 } );
 
 test( 'a closed row targeting only lower-layer unit tests needs no annotation', () => {
@@ -256,6 +261,22 @@ for ( const expectedStatus of [ 'skipped', 'failed' ] ) {
 		);
 	} );
 }
+
+test( 'an explicitly unavailable extension profile may retain its closed contract annotation while skipped', () => {
+	assert.doesNotThrow( () =>
+		validateSyntheticBindings(
+			[ closedSpecRow ],
+			[
+				{
+					...validAnnotationRecord,
+					expectedStatus: 'skipped',
+					profileUnavailable: true,
+					tags: [ 'woopayments-extension-compat' ],
+				},
+			]
+		)
+	);
+} );
 
 test( 'contract annotation records must be unique per case_id', () => {
 	assert.throws(

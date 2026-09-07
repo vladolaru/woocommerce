@@ -528,7 +528,7 @@ export class WooPaymentsPilotRuntime implements ProviderWriteSession {
 
 		const submissionScope = this.activeProviderSubmissionScope;
 		if ( submissionScope ) {
-			await Promise.allSettled( [ ...submissionScope.inFlight ] );
+			await Promise.allSettled( submissionScope.inFlight );
 			if (
 				primaryError === undefined &&
 				submissionScope.firstError !== undefined

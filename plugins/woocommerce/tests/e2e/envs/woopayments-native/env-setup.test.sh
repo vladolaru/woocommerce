@@ -51,6 +51,7 @@ run_setup() {
 			setup_env+=(
 				E2E_WOOPAYMENTS_NATIVE_STORE_DIR="$NATIVE_STORE"
 				E2E_WOOPAYMENTS_NATIVE_STORE_URL='http://native.test:8889'
+				E2E_WOOPAYMENTS_WP_ENV_CONFIG='.wp-env.e2e.json'
 			)
 			;;
 	esac
@@ -235,8 +236,11 @@ fi
 if grep -Fq 'docker compose' "$NATIVE_COMMAND_LOG"; then
 	fail 'Native readiness must not invoke client commands.'
 fi
-if ! grep -Fq "$NATIVE_STORE	pnpm exec wp-env run cli wp --user=1 wc-native-payments status" "$NATIVE_COMMAND_LOG"; then
-	fail 'Native readiness must invoke WP-CLI through the native wp-env.'
+if ! grep -Fq "$NATIVE_STORE	pnpm exec wp-env --config .wp-env.e2e.json run cli wp --user=1 wc-native-payments status" "$NATIVE_COMMAND_LOG"; then
+	fail 'Native readiness must invoke WP-CLI through the explicit native wp-env config.'
+fi
+if grep -F "$NATIVE_STORE	" "$NATIVE_COMMAND_LOG" | grep -Eq 'pnpm exec wp-env run|pnpm exec wp-env --config=[^ ]'; then
+	fail 'Native readiness must never fall back to a bare or alternate wp-env profile.'
 fi
 if ! grep -F "$NATIVE_STORE	" "$NATIVE_COMMAND_LOG" | grep -Fq '/wc-native-payments-e2e/v1/status'; then
 	fail 'Native readiness must collect the authenticated native runtime status route.'
@@ -340,6 +344,19 @@ grep -q 'WooPayments callback readiness proved for native blog 2.' \
 	"$TEST_ROOT/provider-args-stdout"
 if ! grep -Fq 'wcpay callback probe' "$TEST_ROOT/provider-args-commands.log"; then
 	fail 'A provider-tagged run must keep the callback probe.'
+fi
+
+# CI-only profile dispositions retain their provider-tagged source titles but
+# execute no provider behavior, so they must remain on provider-free readiness.
+run_setup 'native' 'profile-dispositions' \
+	E2E_FAKE_ACCOUNT_ERROR=1 \
+	E2E_FAKE_LIST_TAGS='woopayments-provider' \
+	E2E_FAKE_LIST_PROFILE_UNAVAILABLE=1 \
+	-- --project=woopayments-native-ci-profile-skips
+grep -q 'WooPayments provider-free readiness proved for native' \
+	"$TEST_ROOT/profile-dispositions-stdout"
+if grep -Fq 'wcpay callback probe' "$TEST_ROOT/profile-dispositions-commands.log"; then
+	fail 'A CI-only skipped profile disposition must not run the callback probe.'
 fi
 
 # Secretless CI owns a local fail-closed provider fixture, so its provider-free

@@ -2,6 +2,7 @@ import type { APIRequestContext, BrowserContext } from '@playwright/test';
 
 import { expect, tags, test } from '../../../fixtures/woopayments-native';
 import { admin } from '../../../test-data/data';
+import { isolatedBrowserContextOptions } from '../../../utils/woopayments-native/fixture-settings';
 
 // The same environment-first resolution the harness fixtures use, so a store
 // with non-default admin credentials drives the UI half and the API half with
@@ -180,7 +181,9 @@ test(
 		// genuinely reaches the payments admin surface at the same URL the
 		// editor is denied on, so the denial assertions cannot pass against
 		// a broken or nonexistent page.
-		const adminContext = await browser.newContext( { baseURL } );
+		const adminContext = await browser.newContext(
+			isolatedBrowserContextOptions( baseURL )
+		);
 		try {
 			await logIn( adminContext, ADMIN_USERNAME, ADMIN_PASSWORD );
 			const adminPage = await adminContext.newPage();
@@ -205,7 +208,9 @@ test(
 		// Contract: an editor's ordinary wp-admin access works on the fully
 		// onboarded store — no payments interception, no fatal — while every
 		// payment administration surface denies without the capability.
-		const editorContext = await browser.newContext( { baseURL } );
+		const editorContext = await browser.newContext(
+			isolatedBrowserContextOptions( baseURL )
+		);
 		try {
 			await logIn( editorContext, EDITOR_USERNAME, EDITOR_PASSWORD );
 			const editorPage = await editorContext.newPage();

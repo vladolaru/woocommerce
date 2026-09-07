@@ -2,7 +2,11 @@ import type { APIRequestContext, Locator, Page } from '@playwright/test';
 
 import { expect, tags, test } from '../../../fixtures/woopayments-native';
 import { admin } from '../../../test-data/data';
-import { withWidenedCurrencyCatalog } from '../../../utils/woopayments-native/multi-currency-catalog';
+import { openFixtureAdminSession } from '../../../utils/woopayments-native/fixture-settings';
+import {
+	withGuaranteedRestoration,
+	withWidenedCurrencyCatalog,
+} from '../../../utils/woopayments-native/multi-currency-catalog';
 
 /**
  * Native multi-currency settings management (mc-settings-management-spec).
@@ -168,18 +172,28 @@ async function readJson< Result = Record< string, unknown > >(
 	return ( await response.json() ) as Result;
 }
 
-async function logInAsAdmin( page: Page ): Promise< void > {
-	// Clear first, matching the harness's own admin login: a stale session
-	// cookie would redirect wp-login.php to wp-admin and leave the form fill
-	// hunting a field that is not there.
-	await page.context().clearCookies();
-	await page.goto( 'wp-login.php' );
-	await page.getByLabel( 'Username or Email Address' ).fill( ADMIN_USERNAME );
-	await page
-		.getByRole( 'textbox', { name: 'Password' } )
-		.fill( ADMIN_PASSWORD );
-	await page.getByRole( 'button', { name: 'Log In' } ).click();
-	await page.waitForURL( '**/wp-admin/**' );
+async function logInAsAdmin(
+	page: Page,
+	baseURL: string | undefined
+): Promise< void > {
+	await openFixtureAdminSession( {
+		baseURL: requireBaseUrl( baseURL ),
+		fixtureEnabled: process.env.E2E_WOOPAYMENTS_NATIVE_FIXTURE === 'true',
+		page,
+		login: async () => {
+			// Connected profiles retain the harness's explicit fresh-login path.
+			await page.context().clearCookies();
+			await page.goto( 'wp-login.php' );
+			await page
+				.getByLabel( 'Username or Email Address' )
+				.fill( ADMIN_USERNAME );
+			await page
+				.getByRole( 'textbox', { name: 'Password' } )
+				.fill( ADMIN_PASSWORD );
+			await page.getByRole( 'button', { name: 'Log In' } ).click();
+			await page.waitForURL( '**/wp-admin/**' );
+		},
+	} );
 }
 
 /**
@@ -618,7 +632,7 @@ test(
 			'/wc/v3/payments/settings'
 		);
 
-		await logInAsAdmin( page );
+		await logInAsAdmin( page, baseURL );
 		await page.goto( MC_SETTINGS_PATH );
 
 		// The surface is discoverable: its own tab is the active one.
@@ -688,7 +702,7 @@ test(
 		],
 		tag: [ tags.WOOPAYMENTS_NATIVE ],
 	},
-	async ( { adminApi, page } ) => {
+	async ( { adminApi, page, baseURL } ) => {
 		// Snapshot the state this test touches, plus the companion settings
 		// the full-form save must not disturb.
 		const settingsBefore = await readJson(
@@ -705,75 +719,82 @@ test(
 			is_payment_request_enabled:
 				settingsBefore.is_payment_request_enabled,
 		};
-
-		// Isolated initial-on fixture: the disable transition needs a
-		// genuinely enabled starting point regardless of prior runs.
-		await ensureMultiCurrencyFeatureFlag( adminApi, true, originalFlag );
-		// Ambient first-run overlay, seeded away and restored below.
 		const tourDismissedBefore = readFraudTourDismissed( settingsBefore );
-		await setFraudTourDismissed( adminApi, true );
 
-		await logInAsAdmin( page );
-		await page.goto( PAYMENTS_SETTINGS_PATH );
+		await withGuaranteedRestoration(
+			async () => {
+				// Isolated initial-on fixture: the disable transition needs a
+				// genuinely enabled starting point regardless of prior runs.
+				await ensureMultiCurrencyFeatureFlag(
+					adminApi,
+					true,
+					originalFlag
+				);
+				// Ambient first-run overlay, seeded away and restored below.
+				await setFraudTourDismissed( adminApi, true );
 
-		const featureToggle = page.getByRole( 'checkbox', {
-			name: FEATURE_TOGGLE_LABEL,
-			exact: true,
-		} );
-		await expect( featureToggle ).toBeChecked();
-		await featureToggle.uncheck();
-		await page.getByRole( 'button', { name: SAVE_CHANGES_BUTTON } ).click();
-		await expect(
-			page.getByText( PAYMENTS_SETTINGS_SAVED_NOTICE ).first()
-		).toBeVisible();
+				await logInAsAdmin( page, baseURL );
+				await page.goto( PAYMENTS_SETTINGS_PATH );
 
-		// Authoritative state, not the save notice: the stored flag reports
-		// disabled through a fresh authenticated read. This is the runtime
-		// arbiter's input and the REST echo the ownership decision consults;
-		// tab/switcher absence is deliberately not asserted while the pinned
-		// native arbiter ignores the flag (see the file header).
-		const settingsAfterDisable = await readJson(
-			await adminApi.get( PAYMENTS_SETTINGS_API ),
-			'Payments settings re-read'
-		);
-		expect( settingsAfterDisable.is_multi_currency_enabled ).toBe( false );
+				const featureToggle = page.getByRole( 'checkbox', {
+					name: FEATURE_TOGGLE_LABEL,
+					exact: true,
+				} );
+				await expect( featureToggle ).toBeChecked();
+				await featureToggle.uncheck();
+				await expect(
+					page.getByRole( 'button', {
+						name: SAVE_CHANGES_BUTTON,
+					} )
+				).toBeEnabled();
+				await page
+					.getByRole( 'button', { name: SAVE_CHANGES_BUTTON } )
+					.click();
+				await expect(
+					page.getByText( PAYMENTS_SETTINGS_SAVED_NOTICE ).first()
+				).toBeVisible();
 
-		// Persistence across reload: the control still reports disabled when
-		// the form is rebuilt from stored state, so this cannot pass on a
-		// transient client-side value behind a success notice.
-		await page.reload();
-		await expect( featureToggle ).not.toBeChecked();
+				const settingsAfterDisable = await readJson(
+					await adminApi.get( PAYMENTS_SETTINGS_API ),
+					'Payments settings re-read'
+				);
+				expect( settingsAfterDisable.is_multi_currency_enabled ).toBe(
+					false
+				);
 
-		// Companion settings survived the full-form save untouched.
-		expect( {
-			enabled_payment_method_ids:
-				settingsAfterDisable.enabled_payment_method_ids,
-			is_manual_capture_enabled:
-				settingsAfterDisable.is_manual_capture_enabled,
-			is_debug_log_enabled: settingsAfterDisable.is_debug_log_enabled,
-			is_payment_request_enabled:
-				settingsAfterDisable.is_payment_request_enabled,
-		} ).toEqual( companionsBefore );
+				await page.reload();
+				await expect( featureToggle ).not.toBeChecked();
 
-		// Restore the snapshot and verify: the suite must not leave the
-		// feature off on the standing store, nor the first-run tour dismissed
-		// when it was not.
-		await readJson(
-			await adminApi.post( PAYMENTS_SETTINGS_API, {
-				data: { is_multi_currency_enabled: originalFlag },
-			} ),
-			'Multi-currency feature restoration'
-		);
-		await setFraudTourDismissed( adminApi, tourDismissedBefore );
-		const settingsRestored = await readJson(
-			await adminApi.get( PAYMENTS_SETTINGS_API ),
-			'Payments settings restoration read'
-		);
-		expect( settingsRestored.is_multi_currency_enabled ).toBe(
-			originalFlag
-		);
-		expect( readFraudTourDismissed( settingsRestored ) ).toBe(
-			tourDismissedBefore
+				expect( {
+					enabled_payment_method_ids:
+						settingsAfterDisable.enabled_payment_method_ids,
+					is_manual_capture_enabled:
+						settingsAfterDisable.is_manual_capture_enabled,
+					is_debug_log_enabled:
+						settingsAfterDisable.is_debug_log_enabled,
+					is_payment_request_enabled:
+						settingsAfterDisable.is_payment_request_enabled,
+				} ).toEqual( companionsBefore );
+			},
+			async () => {
+				await readJson(
+					await adminApi.post( PAYMENTS_SETTINGS_API, {
+						data: { is_multi_currency_enabled: originalFlag },
+					} ),
+					'Multi-currency feature restoration'
+				);
+				await setFraudTourDismissed( adminApi, tourDismissedBefore );
+				const settingsRestored = await readJson(
+					await adminApi.get( PAYMENTS_SETTINGS_API ),
+					'Payments settings restoration read'
+				);
+				expect( settingsRestored.is_multi_currency_enabled ).toBe(
+					originalFlag
+				);
+				expect( readFraudTourDismissed( settingsRestored ) ).toBe(
+					tourDismissedBefore
+				);
+			}
 		);
 	}
 );
@@ -789,7 +810,7 @@ test(
 		],
 		tag: [ tags.WOOPAYMENTS_NATIVE ],
 	},
-	async ( { adminApi, page } ) => {
+	async ( { adminApi, page, baseURL } ) => {
 		const settingsBefore = await readJson(
 			await adminApi.get( PAYMENTS_SETTINGS_API ),
 			'Payments settings read'
@@ -815,7 +836,7 @@ test(
 		);
 		expect( settingsSeeded.is_multi_currency_enabled ).toBe( false );
 
-		await logInAsAdmin( page );
+		await logInAsAdmin( page, baseURL );
 		await page.goto( PAYMENTS_SETTINGS_PATH );
 
 		// The disabled baseline reached the merchant surface: a no-op helper
@@ -917,7 +938,7 @@ test(
 					'/wc/v3/payments/multi-currency/update-enabled-currencies'
 				);
 
-				await logInAsAdmin( page );
+				await logInAsAdmin( page, baseURL );
 				await page.goto( MC_SETTINGS_PATH );
 				await expect(
 					enabledCurrencyRow( page, MANAGED_CODE )
@@ -1031,7 +1052,7 @@ test(
 					'/wc/v3/payments/multi-currency/update-enabled-currencies'
 				);
 
-				await logInAsAdmin( page );
+				await logInAsAdmin( page, baseURL );
 				await page.goto( MC_SETTINGS_PATH );
 
 				const chfRow = enabledCurrencyRow( page, MANAGED_CODE );
@@ -1139,7 +1160,7 @@ test(
 					'/wc/v3/payments/multi-currency/update-settings'
 				);
 
-				await logInAsAdmin( page );
+				await logInAsAdmin( page, baseURL );
 				await page.goto( MC_SETTINGS_PATH );
 				const dialog = await openAddCurrenciesModal( page );
 
@@ -1239,7 +1260,7 @@ test(
 					'/wc/v3/payments/multi-currency/update-enabled-currencies'
 				);
 
-				await logInAsAdmin( page );
+				await logInAsAdmin( page, baseURL );
 				await page.goto( MC_SETTINGS_PATH );
 				const dialog = await openAddCurrenciesModal( page );
 
@@ -1309,7 +1330,7 @@ test(
 		],
 		tag: [ tags.WOOPAYMENTS_NATIVE ],
 	},
-	async ( { adminApi, page } ) => {
+	async ( { adminApi, page, baseURL } ) => {
 		// Per DECISIONS.md 2026-08-08, the geolocation switch capability is
 		// proven against the settings screen. The oracle is the opt-in
 		// setting round-trip — never a live geolocation simulation, and the
@@ -1339,7 +1360,7 @@ test(
 			'/wc/v3/payments/multi-currency/update-settings'
 		);
 
-		await logInAsAdmin( page );
+		await logInAsAdmin( page, baseURL );
 		await page.goto( MC_SETTINGS_PATH );
 
 		// The opt-in is a comprehensible, labelled control that starts

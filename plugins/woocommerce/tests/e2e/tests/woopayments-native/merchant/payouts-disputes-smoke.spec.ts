@@ -258,6 +258,11 @@ test(
 );
 
 test.describe( 'WooCommerce Subscriptions extension compatibility', () => {
+	test.skip(
+		process.env.E2E_WOOPAYMENTS_EXTENSION_COMPAT !== 'true',
+		'E2E_WOOPAYMENTS_EXTENSION_COMPAT is required with a real WooCommerce Subscriptions installation.'
+	);
+
 	test(
 		'payments admin surfaces load for an authorized merchant without denial, fatal, or failed data fetches',
 		{
@@ -266,15 +271,15 @@ test.describe( 'WooCommerce Subscriptions extension compatibility', () => {
 					type: 'woopayments-contract',
 					description: SUBSCRIPTIONS_CONTRACT_ID,
 				},
+				{
+					type: 'profile-unavailable',
+					description:
+						'E2E_WOOPAYMENTS_EXTENSION_COMPAT is required with a real WooCommerce Subscriptions installation.',
+				},
 			],
 			tag: [ tags.WOOPAYMENTS_NATIVE, '@woopayments-extension-compat' ],
 		},
 		async ( { adminApi, page } ) => {
-			test.skip(
-				process.env.E2E_WOOPAYMENTS_EXTENSION_COMPAT !== 'true',
-				'E2E_WOOPAYMENTS_EXTENSION_COMPAT is required with a real WooCommerce Subscriptions installation.'
-			);
-
 			const paymentsSettings = await readJson(
 				await adminApi.get( PAYMENTS_SETTINGS_API ),
 				'Payments settings read'

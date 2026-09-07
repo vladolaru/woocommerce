@@ -27,10 +27,14 @@ function expectedAdapterCalls(): unknown {
 		? [
 				{
 					type: 'paymentMethodMessaging',
+					locale: 'en',
+					countryCode: 'US',
+					elementsOptions: {},
 					paymentMethodTypes: [ KLARNA ],
 					currency: 'USD',
 					amount: PRODUCT_AMOUNT_MINOR,
 					mount: '#payment-method-message',
+					lifecycle: [ 'mount', 'ready-listener' ],
 				},
 		  ]
 		: undefined;

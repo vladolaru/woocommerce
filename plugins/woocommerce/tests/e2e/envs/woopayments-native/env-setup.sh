@@ -25,6 +25,7 @@ case "$WCPAY_RUNTIME" in
 		readonly STORE_URL="${E2E_WOOPAYMENTS_NATIVE_STORE_URL:-http://store8889.localhost:8889}"
 		readonly EXPECTED_RUNTIME_OWNER='native'
 		readonly EXPECTED_NATIVE_ENABLED='true'
+		readonly WP_ENV_CONFIG="${E2E_WOOPAYMENTS_WP_ENV_CONFIG:?E2E_WOOPAYMENTS_WP_ENV_CONFIG is required}"
 		;;
 	*)
 		echo 'WCPAY_RUNTIME must be client or native.' >&2
@@ -55,7 +56,17 @@ if [[ $# -gt 0 ]]; then
 	)"; then
 		provider_tag_scan="$(
 			printf '%s\n' "$provider_list_json" | jq -r '
-				[ .. | objects | select( has("specs") ) | .specs[].tags[]? ]
+				[ ..
+				  | objects
+				  | select( has("specs") )
+				  | .specs[]
+				  | select(
+				      [ .tests[].annotations[]?.type ]
+				      | index("profile-unavailable")
+				      | not
+				    )
+				  | .tags[]?
+				]
 				| any( . == "woopayments-provider" or . == "woopayments-transition" )
 			' 2> /dev/null
 		)" || provider_tag_scan=''
@@ -72,7 +83,7 @@ run_store_wp() {
 	shift
 
 	if [[ "$store_name" == 'native' ]]; then
-		pnpm exec wp-env run cli wp "$@"
+		pnpm exec wp-env --config "$WP_ENV_CONFIG" run cli wp "$@"
 		return
 	fi
 

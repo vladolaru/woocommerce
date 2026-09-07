@@ -2,6 +2,7 @@ import type { APIRequestContext, Locator, Page } from '@playwright/test';
 
 import { expect, tags, test } from '../../../fixtures/woopayments-native';
 import { admin } from '../../../test-data/data';
+import { isolatedBrowserContextOptions } from '../../../utils/woopayments-native/fixture-settings';
 
 /**
  * Native multi-currency switcher visibility boundaries
@@ -784,9 +785,10 @@ test(
 		// above ran against the same published block on the same page with
 		// the feature on, so this is the flag's effect and not a page that
 		// never had a switcher.
-		const disabledVisitor = await page.context().browser()?.newContext( {
-			baseURL: storeBase,
-		} );
+		const disabledVisitor = await page
+			.context()
+			.browser()
+			?.newContext( isolatedBrowserContextOptions( storeBase ) );
 		if ( ! disabledVisitor ) {
 			throw new Error(
 				'Could not open an anonymous context for the disabled-feature check.'

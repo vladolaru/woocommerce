@@ -104,6 +104,51 @@ function toMessage( error: unknown ): string {
 	return error instanceof Error ? error.message : String( error );
 }
 
+/**
+ * Run a stateful scenario and always restore its captured store state.
+ *
+ * The scenario error remains primary so cleanup cannot hide the contract
+ * failure that caused it. A cleanup failure is still included in the error.
+ */
+export async function withGuaranteedRestoration< Result >(
+	scenario: () => Promise< Result >,
+	restore: () => Promise< void >
+): Promise< Result > {
+	let result: Result | undefined;
+	let scenarioError: unknown;
+	try {
+		result = await scenario();
+	} catch ( error ) {
+		scenarioError = error;
+	}
+
+	let restorationError: unknown;
+	try {
+		await restore();
+	} catch ( error ) {
+		restorationError = error;
+	}
+
+	if ( scenarioError !== undefined ) {
+		if ( restorationError !== undefined ) {
+			throw new Error(
+				`${ toMessage(
+					scenarioError
+				) }\n\nScenario state then failed to restore: ${ toMessage(
+					restorationError
+				) }`,
+				{ cause: scenarioError }
+			);
+		}
+		throw scenarioError;
+	}
+	if ( restorationError !== undefined ) {
+		throw restorationError;
+	}
+
+	return result as Result;
+}
+
 function isPlainObject( value: unknown ): value is Record< string, unknown > {
 	return (
 		typeof value === 'object' &&
@@ -335,6 +380,7 @@ function executeFile(
 export class NativeStoreCatalogRunner implements CurrencyCatalogRunner {
 	private readonly execFile: NativeStoreExecFile;
 	private readonly storeDirectory: string;
+	private readonly wpEnvConfig: string;
 
 	public constructor( options: NativeStoreCatalogRunnerOptions = {} ) {
 		this.execFile = options.execFile ?? executeFile;
@@ -342,6 +388,7 @@ export class NativeStoreCatalogRunner implements CurrencyCatalogRunner {
 			options.storeDirectory ??
 			process.env.E2E_WOOPAYMENTS_NATIVE_STORE_DIR ??
 			'';
+		this.wpEnvConfig = process.env.E2E_WOOPAYMENTS_WP_ENV_CONFIG ?? '';
 	}
 
 	public async run(
@@ -352,6 +399,11 @@ export class NativeStoreCatalogRunner implements CurrencyCatalogRunner {
 				'E2E_WOOPAYMENTS_NATIVE_STORE_DIR is required for currency-catalog operations.'
 			);
 		}
+		if ( ! this.wpEnvConfig ) {
+			throw new Error(
+				'E2E_WOOPAYMENTS_WP_ENV_CONFIG is required for currency-catalog operations.'
+			);
+		}
 
 		try {
 			const stdout = await this.execFile(
@@ -359,6 +411,8 @@ export class NativeStoreCatalogRunner implements CurrencyCatalogRunner {
 				[
 					'exec',
 					'wp-env',
+					'--config',
+					this.wpEnvConfig,
 					'run',
 					'cli',
 					'wp',

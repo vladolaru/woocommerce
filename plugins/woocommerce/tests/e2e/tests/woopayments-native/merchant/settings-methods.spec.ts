@@ -18,6 +18,8 @@ const CONTRACT_IDS = [
 ];
 
 const PAYMENTS_SETTINGS_API = '/wp-json/wc/v3/payments/settings';
+const FIXTURE_AUDIT_API =
+	'/wp-json/wc-native-payments-e2e/v1/provider-fixture-audit';
 const SETTINGS_PAGE_PATH =
 	'/wp-admin/admin.php?page=wc-settings&tab=checkout&section=woocommerce_payments';
 
@@ -107,6 +109,65 @@ function trackSettingsWrites( page: Page ): () => number {
 	return () => writeCount;
 }
 
+async function proveSecretlessProviderSettingsRoundTrip(
+	adminApi: APIRequestContext,
+	paymentSettings: Record< string, unknown >
+): Promise< void > {
+	if ( process.env.E2E_WOOPAYMENTS_NATIVE_FIXTURE !== 'true' ) {
+		return;
+	}
+	const originalName = paymentSettings.account_business_name;
+	if ( typeof originalName !== 'string' || originalName === '' ) {
+		throw new Error( 'Fixture settings exposed no account business name.' );
+	}
+	const changedName = 'Native CI REST provider proof';
+	try {
+		await readJson(
+			await adminApi.post( PAYMENTS_SETTINGS_API, {
+				data: { account_business_name: changedName },
+			} ),
+			'Fixture provider-backed settings update'
+		);
+		const reread = await readJson(
+			await adminApi.get( PAYMENTS_SETTINGS_API ),
+			'Fixture provider-backed settings re-read'
+		);
+		expect( reread.account_business_name ).toBe( changedName );
+		const audit = await readJson(
+			await adminApi.get( FIXTURE_AUDIT_API ),
+			'Fixture provider request audit'
+		);
+		const requests = audit.requests;
+		expect( Array.isArray( requests ) ).toBe( true );
+		expect( requests ).toContainEqual( {
+			method: 'POST',
+			path: '/wpcom/v2/sites/777/wcpay/accounts',
+			query: expect.objectContaining( {
+				token: expect.any( String ),
+				timestamp: expect.any( String ),
+				nonce: expect.any( String ),
+				signature: expect.any( String ),
+			} ),
+			body: {
+				business_name: changedName,
+				test_mode: true,
+			},
+		} );
+	} finally {
+		await readJson(
+			await adminApi.post( PAYMENTS_SETTINGS_API, {
+				data: { account_business_name: originalName },
+			} ),
+			'Fixture provider-backed settings restoration'
+		);
+		const restored = await readJson(
+			await adminApi.get( PAYMENTS_SETTINGS_API ),
+			'Fixture provider-backed settings restored-state read'
+		);
+		expect( restored.account_business_name ).toBe( originalName );
+	}
+}
+
 test(
 	'manual capture warns before enabling, flags incompatible methods, and disables without ceremony',
 	{
@@ -128,6 +189,10 @@ test(
 			'Payments settings read'
 		);
 		expect( paymentsSettings.is_wcpay_enabled ).toBe( true );
+		await proveSecretlessProviderSettingsRoundTrip(
+			adminApi,
+			paymentsSettings
+		);
 		await ensureManualCaptureDisabled( adminApi, paymentsSettings );
 
 		const settingsWrites = trackSettingsWrites( page );
