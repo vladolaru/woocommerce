@@ -21,6 +21,12 @@ if "continue-on-error" in serialized:
 if "secrets." in serialized:
     fail("lane must not consume repository or provider secrets")
 environment = job.get("env", {})
+for name, value in environment.items():
+    if isinstance(value, str) and "${{ runner." in value:
+        fail(
+            f"job-level env {name} uses runner context unavailable during "
+            "workflow admission"
+        )
 if environment.get("E2E_WOOPAYMENTS_NATIVE") != "true":
     fail("native runtime opt-in must be explicit")
 if environment.get("E2E_WOOPAYMENTS_NATIVE_FIXTURE") != "true":
@@ -83,6 +89,22 @@ if len(audit_steps) != 1 or audit_steps[0].get("if") != "${{ always() }}":
     fail("fixture audit must run exactly once with always() after Playwright")
 if "test:e2e:with-env" in audit_steps[0].get("run", ""):
     fail("fixture audit must not share Playwright's fail-fast shell step")
+
+readonly_steps = [
+    step
+    for step in job.get("steps", [])
+    if isinstance(step, dict) and "test:e2e:with-env" in step.get("run", "")
+]
+if len(readonly_steps) != 1:
+    fail("secretless readonly project must run exactly once")
+diagnostics_directory = "${{ runner.temp }}/woopayments-native-diagnostics"
+for label, step in (
+    ("readonly project", readonly_steps[0]),
+    ("fixture audit", audit_steps[0]),
+):
+    step_environment = step.get("env", {})
+    if step_environment.get("E2E_WOOPAYMENTS_DIAGNOSTICS_DIR") != diagnostics_directory:
+        fail(f"{label} must receive its diagnostics path from runner temp")
 
 evaluation = jobs.get("evaluate-project-jobs", {})
 needs = evaluation.get("needs", [])

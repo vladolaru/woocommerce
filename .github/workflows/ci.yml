@@ -483,7 +483,6 @@ jobs:
       E2E_WOOPAYMENTS_NATIVE_STORE_DIR: '${{ github.workspace }}/plugins/woocommerce'
       E2E_WOOPAYMENTS_NATIVE_STORE_URL: 'http://localhost:8086'
       E2E_WOOPAYMENTS_WP_ENV_CONFIG: '.wp-env.e2e.json'
-      E2E_WOOPAYMENTS_DIAGNOSTICS_DIR: '${{ runner.temp }}/woopayments-native-diagnostics'
       BASE_URL: 'http://localhost:8086'
       WP_BASE_URL: 'http://localhost:8086'
     steps:
@@ -520,10 +519,14 @@ jobs:
         run: bash plugins/woocommerce/tests/e2e/envs/woopayments-native/install-ci-fixture.sh
 
       - name: 'Run secretless readonly project'
+        env:
+          E2E_WOOPAYMENTS_DIAGNOSTICS_DIR: '${{ runner.temp }}/woopayments-native-diagnostics'
         run: pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly --project=woopayments-native-extension-compat --project=woopayments-native-ci-profile-skips
 
       - name: 'Audit secretless provider fixture'
         if: ${{ always() }}
+        env:
+          E2E_WOOPAYMENTS_DIAGNOSTICS_DIR: '${{ runner.temp }}/woopayments-native-diagnostics'
         run: bash plugins/woocommerce/tests/e2e/envs/woopayments-native/assert-ci-fixture-clean.sh
 
       - name: 'Compare measured WooPayments bundles with 10.8.0'
