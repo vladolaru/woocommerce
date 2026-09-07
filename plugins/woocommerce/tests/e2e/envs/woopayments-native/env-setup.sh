@@ -130,9 +130,15 @@ collect_store_diagnostics() {
 	mkdir -p "$output_dir"
 	(
 		cd "$store_dir"
-		"$WPCOM_LOCAL_BIN" --json env status > "$output_dir/wpcom-env-status.json"
-		"$WPCOM_LOCAL_BIN" --json transact status > "$output_dir/wpcom-transact-status.json"
-		"$WPCOM_LOCAL_BIN" --json store doctor > "$output_dir/wpcom-store-doctor.json"
+		if [[ "${E2E_WOOPAYMENTS_NATIVE_FIXTURE:-false}" == 'true' ]]; then
+			printf '{"mode":"secretless-ci-fixture"}\n' > "$output_dir/wpcom-env-status.json"
+			printf '{"mode":"secretless-ci-fixture"}\n' > "$output_dir/wpcom-transact-status.json"
+			printf '{"mode":"secretless-ci-fixture"}\n' > "$output_dir/wpcom-store-doctor.json"
+		else
+			"$WPCOM_LOCAL_BIN" --json env status > "$output_dir/wpcom-env-status.json"
+			"$WPCOM_LOCAL_BIN" --json transact status > "$output_dir/wpcom-transact-status.json"
+			"$WPCOM_LOCAL_BIN" --json store doctor > "$output_dir/wpcom-store-doctor.json"
+		fi
 		if [[ "$store_name" == 'native' ]]; then
 			run_store_wp "$store_name" --user=1 wc-native-payments status > "$output_dir/native-payments-status.txt"
 			run_store_wp_json "$store_name" --user=1 eval "$NATIVE_RUNTIME_STATUS_CODE" > "$output_dir/runtime-status.json"

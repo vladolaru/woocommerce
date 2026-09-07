@@ -15,10 +15,10 @@ const ADMIN_PASSWORD =
 // because the disputes contract's
 // no-failed-fetch oracle is only meaningful across the payments admin app as
 // a whole, but it does not claim the contract.
-const CONTRACT_IDS = [
-	'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-admin-disputes.spec.ts:15::Merchant disputes › Load the disputes list page',
-	'default::chromium::tests/e2e/specs/subscriptions/merchant/merchant-subscriptions-settings.spec.ts:13::WooCommerce › Settings › Subscriptions › Merchant should be able to load WooCommerce Subscriptions settings tab',
-];
+const DISPUTES_CONTRACT_ID =
+	'default::chromium::tests/e2e/specs/wcpay/merchant/merchant-admin-disputes.spec.ts:15::Merchant disputes › Load the disputes list page';
+const SUBSCRIPTIONS_CONTRACT_ID =
+	'default::chromium::tests/e2e/specs/subscriptions/merchant/merchant-subscriptions-settings.spec.ts:13::WooCommerce › Settings › Subscriptions › Merchant should be able to load WooCommerce Subscriptions settings tab';
 
 const RUNTIME_STATUS_API = '/wp-json/wc-native-payments-e2e/v1/status';
 const PAYMENTS_SETTINGS_API = '/wp-json/wc/v3/payments/settings';
@@ -181,7 +181,7 @@ async function expectDataLoaded(
 test(
 	'payments admin surfaces load for an authorized merchant without denial, fatal, or failed data fetches',
 	{
-		annotation: CONTRACT_IDS.map( ( contractId ) => ( {
+		annotation: [ DISPUTES_CONTRACT_ID ].map( ( contractId ) => ( {
 			type: 'woopayments-contract',
 			description: contractId,
 		} ) ),
@@ -210,11 +210,6 @@ test(
 			'Payments settings read'
 		);
 		expect( paymentsSettings.is_wcpay_enabled ).toBe( true );
-		// The Subscriptions surface only exists when the extension is
-		// active; without this its contract would pass vacuously on a
-		// store that never registered the tab.
-		expect( paymentsSettings.is_subscriptions_plugin_active ).toBe( true );
-
 		const restTracker = trackFailedRestResponses( page, storeBase );
 
 		// Clear first, matching the harness's own admin login: a stale
@@ -254,24 +249,6 @@ test(
 		);
 		expect( Array.isArray( disputesPayload.data ) ).toBe( true );
 
-		// Contract: activating the payment integration does not break the
-		// merchant's WooCommerce Subscriptions settings surface.
-		await page.goto( SUBSCRIPTIONS_SETTINGS_PATH );
-		await expectSurfaceLoaded( page, 'Subscriptions' );
-		// The tab rendered its own settings form, not merely the settings
-		// chrome carrying the tab name: the Subscriptions settings tab is
-		// the active one and its form offers a save control. Scoped to the
-		// settings tab nav, because the admin menu links a differently
-		// purposed "Subscriptions" too.
-		await expect(
-			page
-				.locator( '.nav-tab-wrapper' )
-				.getByRole( 'link', { name: 'Subscriptions', exact: true } )
-		).toHaveClass( /nav-tab-active/ );
-		await expect(
-			page.getByRole( 'button', { name: 'Save changes' } )
-		).toBeVisible();
-
 		// No store REST request behind any visited surface failed. The
 		// observed count guards the oracle itself: an empty failure set
 		// means nothing if the collector never matched a single request.
@@ -279,3 +256,43 @@ test(
 		expect( restTracker.failures() ).toEqual( [] );
 	}
 );
+
+test.describe( 'WooCommerce Subscriptions extension compatibility', () => {
+	test(
+		'payments admin surfaces load for an authorized merchant without denial, fatal, or failed data fetches',
+		{
+			annotation: [
+				{
+					type: 'woopayments-contract',
+					description: SUBSCRIPTIONS_CONTRACT_ID,
+				},
+			],
+			tag: [ tags.WOOPAYMENTS_NATIVE, '@woopayments-extension-compat' ],
+		},
+		async ( { adminApi, page } ) => {
+			test.skip(
+				process.env.E2E_WOOPAYMENTS_EXTENSION_COMPAT !== 'true',
+				'E2E_WOOPAYMENTS_EXTENSION_COMPAT is required with a real WooCommerce Subscriptions installation.'
+			);
+
+			const paymentsSettings = await readJson(
+				await adminApi.get( PAYMENTS_SETTINGS_API ),
+				'Payments settings read'
+			);
+			expect( paymentsSettings.is_subscriptions_plugin_active ).toBe(
+				true
+			);
+			await page.goto( SUBSCRIPTIONS_SETTINGS_PATH );
+			await expectSurfaceLoaded( page, 'Subscriptions' );
+			await expect(
+				page.locator( '.nav-tab-wrapper' ).getByRole( 'link', {
+					name: 'Subscriptions',
+					exact: true,
+				} )
+			).toHaveClass( /nav-tab-active/ );
+			await expect(
+				page.getByRole( 'button', { name: 'Save changes' } )
+			).toBeVisible();
+		}
+	);
+} );

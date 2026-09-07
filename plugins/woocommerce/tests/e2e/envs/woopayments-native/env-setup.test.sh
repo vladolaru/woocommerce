@@ -342,6 +342,18 @@ if ! grep -Fq 'wcpay callback probe' "$TEST_ROOT/provider-args-commands.log"; th
 	fail 'A provider-tagged run must keep the callback probe.'
 fi
 
+# Secretless CI owns a local fail-closed provider fixture, so its provider-free
+# readiness must not require wpcom-local or a connected platform topology.
+run_setup 'native' 'secretless-ci' \
+	E2E_WOOPAYMENTS_NATIVE_FIXTURE=true \
+	E2E_FAKE_LIST_TAGS='woopayments-native' \
+	-- --project=woopayments-native-readonly
+if grep -Fq 'wpcom-local ' "$TEST_ROOT/secretless-ci-commands.log"; then
+	fail 'Secretless CI readiness must not invoke wpcom-local.'
+fi
+grep -q 'WooPayments provider-free readiness proved for native' \
+	"$TEST_ROOT/secretless-ci-stdout"
+
 # A failed listing fails closed to full gates.
 run_setup 'native' 'list-broken' \
 	E2E_FAKE_LIST_FAIL=1 \

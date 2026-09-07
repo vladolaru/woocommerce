@@ -207,6 +207,54 @@ export async function authenticateAdminContext(
 	}
 }
 
+export function adminContextOptions(
+	baseURL: string,
+	projectName: string,
+	warmedStatePath?: string
+): { baseURL: string; storageState?: string } {
+	if ( projectName !== 'woopayments-native-readonly' ) {
+		return { baseURL };
+	}
+	if ( ! warmedStatePath ) {
+		throw new Error(
+			'Readonly admin API contexts require the globally warmed storage state.'
+		);
+	}
+	return { baseURL, storageState: warmedStatePath };
+}
+
+export async function hydrateAdminRestNonce(
+	context: BrowserContext
+): Promise< void > {
+	const page = await context.newPage();
+	try {
+		await page.goto( 'wp-admin/' );
+		if ( ! page.url().includes( '/wp-admin/' ) ) {
+			throw new Error(
+				'Warmed WordPress admin state did not reach wp-admin.'
+			);
+		}
+		const nonce = await page.evaluate( () => {
+			const settings = (
+				window as Window & {
+					wpApiSettings?: { nonce?: unknown };
+				}
+			 ).wpApiSettings;
+			return typeof settings?.nonce === 'string' ? settings.nonce : '';
+		} );
+		if ( ! nonce ) {
+			throw new Error(
+				'Warmed WordPress admin session did not expose a REST nonce.'
+			);
+		}
+		await context.setExtraHTTPHeaders( {
+			'X-WP-Nonce': nonce,
+		} );
+	} finally {
+		await page.close();
+	}
+}
+
 export async function loadInitialRuntimeStatus(
 	runtime: WooPaymentsRuntime,
 	adminApi: APIRequestContext,
@@ -929,13 +977,25 @@ export const test = baseTest.extend< WooPaymentsNativeFixtures >( {
 		if ( ! baseURL ) {
 			throw new Error( 'BASE_URL is required for WooPayments pilots.' );
 		}
-		const adminContext = await browser.newContext( {
+		const warmedStatePath =
+			typeof testInfo.project.metadata.woopaymentsAdminStatePath ===
+			'string'
+				? testInfo.project.metadata.woopaymentsAdminStatePath
+				: undefined;
+		const contextOptions = adminContextOptions(
 			baseURL,
-		} );
-		await authenticateAdminContext(
-			adminContext,
-			getWooPaymentsAdminCredentials()
+			testInfo.project.name,
+			warmedStatePath
 		);
+		const adminContext = await browser.newContext( contextOptions );
+		if ( contextOptions.storageState ) {
+			await hydrateAdminRestNonce( adminContext );
+		} else {
+			await authenticateAdminContext(
+				adminContext,
+				getWooPaymentsAdminCredentials()
+			);
+		}
 		await use( adminContext.request );
 		await adminContext.close();
 	},

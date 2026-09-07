@@ -7,6 +7,7 @@ import {
 	test,
 } from '../../../fixtures/woopayments-native';
 import { customer } from '../../../test-data/data';
+import { isStripeTransactionHost } from '../../../utils/woopayments-native/stripe-transaction-host';
 
 const CONTRACT_ID =
 	'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-cart-coupon.spec.ts:53::Checkout with free coupon & after modifying cart on Checkout page › Checkout with a free coupon';
@@ -241,24 +242,22 @@ async function expectZeroTotal( blockScope: Locator ): Promise< void > {
 }
 
 /**
- * Record browser-side requests to the provider's transacting hosts. This is
+ * Record browser-side requests to the provider's transaction API. This is
  * the client half of the no-provider proof — the payment element never
  * mounted and the page opened no payment exchange — while the server half is
  * the order's missing provider-identity metadata.
  *
  * The provider's script host is deliberately excluded. Native enqueues the
  * provider SDK on every Blocks checkout before the cart total is known, so it
- * loads even here; fetching a script creates no PaymentIntent and is not what
- * this contract forbids. Only hosts that carry payment exchanges count.
+ * loads even here; fetching a script or emitting SDK telemetry creates no
+ * PaymentIntent and is not what this contract forbids.
  */
-const PROVIDER_TRANSACTING_HOSTS = [ 'api.stripe.com', 'm.stripe.com' ];
-
 function trackProviderClientRequests( page: Page ): () => string[] {
 	const providerRequests: string[] = [];
 	page.on( 'request', ( request ) => {
 		try {
 			const { hostname } = new URL( request.url() );
-			if ( PROVIDER_TRANSACTING_HOSTS.includes( hostname ) ) {
+			if ( isStripeTransactionHost( hostname ) ) {
 				providerRequests.push( `${ request.method() } ${ hostname }` );
 			}
 		} catch {

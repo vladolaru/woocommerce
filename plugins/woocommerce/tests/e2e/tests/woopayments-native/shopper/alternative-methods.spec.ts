@@ -20,6 +20,21 @@ const PRODUCT_PRICE_TEXT = '$100.00';
 const PRODUCT_AMOUNT_MINOR = 10000;
 
 const MESSAGING_FRAME_SELECTOR = '#payment-method-message iframe';
+const ADAPTER_CALLS_GLOBAL = '__wooPaymentsStripeMessagingCalls';
+
+function expectedAdapterCalls(): unknown {
+	return process.env.E2E_WOOPAYMENTS_NATIVE_FIXTURE === 'true'
+		? [
+				{
+					type: 'paymentMethodMessaging',
+					paymentMethodTypes: [ KLARNA ],
+					currency: 'USD',
+					amount: PRODUCT_AMOUNT_MINOR,
+					mount: '#payment-method-message',
+				},
+		  ]
+		: undefined;
+}
 
 async function readJson< Result >(
 	response: APIResponse,
@@ -209,6 +224,40 @@ test(
 			await expect( hostedFrame ).toHaveCount( 1 );
 			await expect( hostedFrame ).toBeVisible();
 			await expect( hostedFrame ).toHaveAttribute( 'title', /\S/ );
+			const adapterCalls = await page.evaluate(
+				( key ) => Reflect.get( window, key ),
+				ADAPTER_CALLS_GLOBAL
+			);
+			expect( adapterCalls ).toEqual( expectedAdapterCalls() );
+
+			await expect(
+				main.getByRole( 'button', {
+					name: 'Add to cart',
+					exact: true,
+				} )
+			).toBeEnabled();
+		} finally {
+			await deleteRunProduct( adminApi, product.id );
+		}
+	}
+);
+
+test(
+	'Klarna Checkout › shows provider-hosted messaging in the product page @woopayments-provider',
+	{
+		tag: [ tags.WOOPAYMENTS_NATIVE, tags.WOOPAYMENTS_PROVIDER ],
+	},
+	async ( { adminApi, page, runId, baseURL } ) => {
+		const product = await createRunProduct( adminApi, runId );
+		try {
+			const productUrl = new URL( product.permalink );
+			const storeOrigin = new URL( requireBaseUrl( baseURL ) ).origin;
+			await page.goto(
+				`${ storeOrigin }${ productUrl.pathname }${ productUrl.search }`
+			);
+			const hostedFrame = page.locator( MESSAGING_FRAME_SELECTOR );
+			await expect( hostedFrame ).toHaveCount( 1 );
+			await expect( hostedFrame ).toBeVisible();
 
 			const messageBody = page
 				.frameLocator( MESSAGING_FRAME_SELECTOR )
@@ -222,13 +271,6 @@ test(
 			expect( accessibleMessage ).toMatch(
 				/pay|payment|later|installment|instalment|financ/i
 			);
-
-			await expect(
-				main.getByRole( 'button', {
-					name: 'Add to cart',
-					exact: true,
-				} )
-			).toBeEnabled();
 		} finally {
 			await deleteRunProduct( adminApi, product.id );
 		}
