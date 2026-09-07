@@ -359,16 +359,38 @@ if grep -Fq 'wcpay callback probe' "$TEST_ROOT/profile-dispositions-commands.log
 	fail 'A CI-only skipped profile disposition must not run the callback probe.'
 fi
 
-# Secretless CI owns a local fail-closed provider fixture, so its provider-free
-# readiness must not require wpcom-local or a connected platform topology.
+# Secretless CI owns a local fail-closed provider fixture. Its exact combined
+# project selection may retain provider readiness, but must not require
+# wpcom-local or a connected platform topology.
 run_setup 'native' 'secretless-ci' \
 	E2E_WOOPAYMENTS_NATIVE_FIXTURE=true \
-	E2E_FAKE_LIST_TAGS='woopayments-native' \
-	-- --project=woopayments-native-readonly
+	E2E_FAKE_LIST_TAGS='woopayments-native woopayments-provider' \
+	-- --project=woopayments-native-readonly \
+	--project=woopayments-native-extension-compat \
+	--project=woopayments-native-ci-profile-skips
 if grep -Fq 'wpcom-local ' "$TEST_ROOT/secretless-ci-commands.log"; then
 	fail 'Secretless CI readiness must not invoke wpcom-local.'
 fi
-grep -q 'WooPayments provider-free readiness proved for native' \
+if ! grep -Fq '/wc/v3/payments/accounts' "$TEST_ROOT/secretless-ci-commands.log"; then
+	fail 'Secretless CI provider readiness must validate the fixture account.'
+fi
+if ! grep -Fq 'wp_insert_user' "$TEST_ROOT/secretless-ci-commands.log"; then
+	fail 'Secretless CI provider readiness must establish the shared shopper account.'
+fi
+if [[ -e "$TEST_ROOT/secretless-ci-diagnostics/native/callback-probe.json" ]]; then
+	fail 'Secretless CI readiness must not create connected callback evidence.'
+fi
+jq -e '
+	.status == 200 and
+	.is_error == false and
+	.account_id == "acct_native" and
+	.test_mode == true
+' "$TEST_ROOT/secretless-ci-diagnostics/native/account.json" > /dev/null
+jq -e '
+	.callback_probe.registered == false and
+	.callback_probe.reachable == false
+' "$TEST_ROOT/secretless-ci-diagnostics/native/runtime-status.json" > /dev/null
+grep -q 'WooPayments secretless fixture readiness proved for native blog 2 without connected callback topology.' \
 	"$TEST_ROOT/secretless-ci-stdout"
 
 # A failed listing fails closed to full gates.

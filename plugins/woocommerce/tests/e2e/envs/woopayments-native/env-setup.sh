@@ -39,8 +39,7 @@ readonly SCRIPT_DIR="$(
 )"
 readonly PLAYWRIGHT_CONFIG="$SCRIPT_DIR/playwright.config.ts"
 
-# Provider readiness — the matching test-mode account assertion and the live
-# callback probe — applies exactly when this invocation will run at least one
+# Provider readiness applies exactly when this invocation will run at least one
 # test tagged @woopayments-provider or @woopayments-transition. The runner
 # passes its Playwright arguments through, so listing with those arguments
 # describes exactly the collected set. Anything ambiguous — no arguments, a
@@ -267,7 +266,9 @@ if [[ "$PROVIDER_READINESS_REQUIRED" == '1' ]]; then
 	fi
 
 	blog_id="$(runtime_blog_id "$runtime_status_path")"
-	run_callback_probe "$STORE_NAME" "$STORE_DIR" "$STORE_URL" "$blog_id"
+	if [[ "${E2E_WOOPAYMENTS_NATIVE_FIXTURE:-false}" != 'true' ]]; then
+		run_callback_probe "$STORE_NAME" "$STORE_DIR" "$STORE_URL" "$blog_id"
+	fi
 
 	# Every provider shopper spec logs in as the shared test customer, so a
 	# standing store without that account fails all of them at the login form
@@ -286,9 +287,15 @@ if [[ "$PROVIDER_READINESS_REQUIRED" == '1' ]]; then
 		"$(cat "$DIAGNOSTICS_DIR/$STORE_NAME/customer.txt")" \
 		"$STORE_NAME"
 
-	printf 'WooPayments callback readiness proved for %s blog %s.\n' \
-		"$STORE_NAME" \
-		"$blog_id"
+	if [[ "${E2E_WOOPAYMENTS_NATIVE_FIXTURE:-false}" == 'true' ]]; then
+		printf 'WooPayments secretless fixture readiness proved for %s blog %s without connected callback topology.\n' \
+			"$STORE_NAME" \
+			"$blog_id"
+	else
+		printf 'WooPayments callback readiness proved for %s blog %s.\n' \
+			"$STORE_NAME" \
+			"$blog_id"
+	fi
 else
 	printf 'WooPayments provider-free readiness proved for %s; this invocation collects no provider-tagged tests.\n' \
 		"$STORE_NAME"
