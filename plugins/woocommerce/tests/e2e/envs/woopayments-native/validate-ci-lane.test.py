@@ -13,17 +13,13 @@ VALIDATOR = SCRIPT_DIRECTORY / "validate-ci-lane.py"
 WORKFLOW = SCRIPT_DIRECTORY.parents[5] / ".github" / "workflows" / "ci.yml"
 
 
-class WorkflowAdmissionContextTests(unittest.TestCase):
-    def run_validator_with_job_environment(
-        self, value: str
-    ) -> subprocess.CompletedProcess[str]:
-        document = yaml.load(
+class DiagnosticsPlacementTests(unittest.TestCase):
+    def workflow_document(self) -> dict:
+        return yaml.load(
             WORKFLOW.read_text(encoding="utf-8"), Loader=yaml.BaseLoader
         )
-        document["jobs"]["woopayments-native-secretless"]["env"][
-            "REGRESSION_PROBE"
-        ] = value
 
+    def run_validator(self, document: dict) -> subprocess.CompletedProcess[str]:
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".yml", encoding="utf-8"
         ) as workflow:
@@ -36,31 +32,75 @@ class WorkflowAdmissionContextTests(unittest.TestCase):
                 text=True,
             )
 
-    def test_rejects_runner_context_expression_spelling_variants(self) -> None:
-        expressions = (
-            "${{ runner.temp }}/diagnostics",
-            "${{runner.temp}}/diagnostics",
-            "${{   runner [ 'temp' ]   }}/diagnostics",
+    def test_rejects_any_job_level_diagnostics_binding(self) -> None:
+        values = (
+            "/literal/diagnostics",
+            "${{ (runner).temp }}/diagnostics",
         )
 
-        for expression in expressions:
-            with self.subTest(expression=expression):
-                result = self.run_validator_with_job_environment(expression)
+        for value in values:
+            with self.subTest(value=value):
+                document = self.workflow_document()
+                document["jobs"]["woopayments-native-secretless"]["env"][
+                    "E2E_WOOPAYMENTS_DIAGNOSTICS_DIR"
+                ] = value
+                result = self.run_validator(document)
 
                 self.assertNotEqual(0, result.returncode)
                 self.assertIn(
-                    "job-level env REGRESSION_PROBE uses runner context unavailable "
-                    "during workflow admission",
+                    "diagnostics directory must not be set at job level",
                     result.stderr,
                 )
 
-    def test_accepts_literal_runner_text_outside_an_expression(self) -> None:
-        result = self.run_validator_with_job_environment(
-            "runner.temp is literal documentation"
+    def test_requires_exact_diagnostics_binding_on_both_consumers(self) -> None:
+        mutations = (
+            (
+                "test:e2e:with-env",
+                "${{ (runner).temp }}/woopayments-native-diagnostics",
+                "readonly project",
+            ),
+            (
+                "assert-ci-fixture-clean.sh",
+                "/literal/woopayments-native-diagnostics",
+                "fixture audit",
+            ),
         )
 
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertIn("WooPayments native CI workflow contract passed.", result.stdout)
+        for command, value, label in mutations:
+            with self.subTest(label=label):
+                document = self.workflow_document()
+                job = document["jobs"]["woopayments-native-secretless"]
+                step = next(
+                    item for item in job["steps"] if command in item.get("run", "")
+                )
+                step["env"]["E2E_WOOPAYMENTS_DIAGNOSTICS_DIR"] = value
+                result = self.run_validator(document)
+
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn(
+                    f"{label} must receive its diagnostics path from runner temp",
+                    result.stderr,
+                )
+
+    def test_ignores_unrelated_literal_and_expression_values(self) -> None:
+        values = (
+            "runner.temp is literal documentation",
+            "${{ 'runner.temp is literal documentation' }}",
+            "${{ github.event.runner.temp }}",
+        )
+
+        for value in values:
+            with self.subTest(value=value):
+                document = self.workflow_document()
+                document["jobs"]["woopayments-native-secretless"]["env"][
+                    "REGRESSION_PROBE"
+                ] = value
+                result = self.run_validator(document)
+
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertIn(
+                    "WooPayments native CI workflow contract passed.", result.stdout
+                )
 
 
 if __name__ == "__main__":
