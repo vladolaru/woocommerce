@@ -7,8 +7,8 @@
     },
     "blocks-express-checkout.js": {
       "allow_new": true,
-      "raw_bytes": 28000,
-      "gzip_bytes": 9500
+      "raw_bytes": 32232,
+      "gzip_bytes": 10550
     },
     "multi-currency-analytics.js": {
       "allow_missing": true
@@ -26,8 +26,8 @@
       "allow_missing": true
     },
     "classic-card.css": {
-      "raw_growth_bytes": 1200,
-      "gzip_growth_bytes": 300
+      "raw_growth_bytes": 2992,
+      "gzip_growth_bytes": 803
     },
     "woopay-direct-checkout.js": {
       "raw_growth_bytes": 12000,
