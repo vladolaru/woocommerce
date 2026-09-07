@@ -3,7 +3,7 @@
 set -euo pipefail
 
 usage() {
-	echo 'Usage: run-provider-families.sh --results-dir DIR --store-url URL --native-store-dir DIR --account-id ID --account-alias ALIAS --store-id ID --wpcom-blog-id ID --provider-fixture JSON SPEC...' >&2
+	echo 'Usage: run-provider-families.sh --results-dir DIR --store-url URL --native-store-dir DIR --account-id ID --account-alias ALIAS --store-id ID --wpcom-blog-id ID --wp-env-config JSON --provider-fixture JSON SPEC...' >&2
 	exit 2
 }
 
@@ -14,6 +14,7 @@ account_id=''
 account_alias=''
 store_id=''
 wpcom_blog_id=''
+wp_env_config=''
 provider_fixture=''
 
 while [[ $# -gt 0 ]]; do
@@ -25,6 +26,7 @@ while [[ $# -gt 0 ]]; do
 		--account-alias) [[ $# -ge 2 ]] || usage; account_alias="$2"; shift 2 ;;
 		--store-id) [[ $# -ge 2 ]] || usage; store_id="$2"; shift 2 ;;
 		--wpcom-blog-id) [[ $# -ge 2 ]] || usage; wpcom_blog_id="$2"; shift 2 ;;
+		--wp-env-config) [[ $# -ge 2 ]] || usage; wp_env_config="$2"; shift 2 ;;
 		--provider-fixture) [[ $# -ge 2 ]] || usage; provider_fixture="$2"; shift 2 ;;
 		--) shift; break ;;
 		-*) usage ;;
@@ -32,10 +34,10 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 
-[[ -n "$results_dir" && -n "$store_url" && -n "$native_store_dir" && -n "$account_id" && -n "$account_alias" && -n "$store_id" && -n "$wpcom_blog_id" && -n "$provider_fixture" && $# -gt 0 ]] || usage
+[[ -n "$results_dir" && -n "$store_url" && -n "$native_store_dir" && -n "$account_id" && -n "$account_alias" && -n "$store_id" && -n "$wpcom_blog_id" && -n "$wp_env_config" && -n "$provider_fixture" && $# -gt 0 ]] || usage
 [[ "$store_url" =~ ^https?://[^[:space:]]+$ ]] || usage
 [[ "$wpcom_blog_id" =~ ^[1-9][0-9]*$ ]] || usage
-[[ -d "$native_store_dir" && -f "$provider_fixture" ]] || usage
+[[ -d "$native_store_dir" && -f "$wp_env_config" && -f "$provider_fixture" ]] || usage
 jq -e 'type == "object"' "$provider_fixture" > /dev/null || usage
 
 specs=()
@@ -47,11 +49,13 @@ done
 mkdir -p "$results_dir"
 results_dir="$(cd "$results_dir" && pwd -P)"
 native_store_dir="$(cd "$native_store_dir" && pwd -P)"
+wp_env_config="$(cd "$(dirname "$wp_env_config")" && pwd -P)/$(basename "$wp_env_config")"
 provider_fixture="$(cd "$(dirname "$provider_fixture")" && pwd -P)/$(basename "$provider_fixture")"
 
 export WCPAY_RUNTIME=native
 export E2E_WOOPAYMENTS_NATIVE_STORE_DIR="$native_store_dir"
 export E2E_WOOPAYMENTS_NATIVE_STORE_URL="$store_url"
+export E2E_WOOPAYMENTS_WP_ENV_CONFIG="$wp_env_config"
 export E2E_WOOPAYMENTS_SITE_URL="$store_url"
 export BASE_URL="$store_url"
 export WP_BASE_URL="$store_url"
