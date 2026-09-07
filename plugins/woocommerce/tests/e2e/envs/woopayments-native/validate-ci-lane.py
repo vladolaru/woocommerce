@@ -53,6 +53,27 @@ for forbidden in (
     if forbidden in runs:
         fail(f"wp-env commands must use the single explicit E2E config: {forbidden}")
 
+smoke_steps = [
+    step
+    for step in job.get("steps", [])
+    if isinstance(step, dict) and "fresh-activation-smoke.sh" in step.get("run", "")
+]
+if len(smoke_steps) != 1:
+    fail("fresh activation must run exactly once")
+smoke_run = smoke_steps[0].get("run", "")
+if "install-ci-fixture.sh" in smoke_run:
+    fail("connected-account fixture must not be installed before fresh activation")
+fixture_steps = [
+    step
+    for step in job.get("steps", [])
+    if isinstance(step, dict) and "install-ci-fixture.sh" in step.get("run", "")
+]
+if len(fixture_steps) != 1:
+    fail("provider fixture must be installed exactly once after activation")
+steps = job.get("steps", [])
+if steps.index(fixture_steps[0]) <= steps.index(smoke_steps[0]):
+    fail("provider fixture must be installed after fresh activation")
+
 audit_steps = [
     step
     for step in job.get("steps", [])

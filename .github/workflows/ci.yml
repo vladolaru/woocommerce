@@ -514,8 +514,10 @@ jobs:
       - name: 'Run fresh-activation smoke'
         run: |
           pnpm --dir plugins/woocommerce wp-env:e2e start
-          bash plugins/woocommerce/tests/e2e/envs/woopayments-native/install-ci-fixture.sh
           bash plugins/woocommerce/tests/e2e/envs/woopayments-native/fresh-activation-smoke.sh
+
+      - name: 'Install secretless provider fixture'
+        run: bash plugins/woocommerce/tests/e2e/envs/woopayments-native/install-ci-fixture.sh
 
       - name: 'Run secretless readonly project'
         run: pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly --project=woopayments-native-extension-compat --project=woopayments-native-ci-profile-skips
