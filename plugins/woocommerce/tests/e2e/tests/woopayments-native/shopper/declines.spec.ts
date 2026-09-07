@@ -52,6 +52,10 @@ const PAST_EXPIRY = '0120';
 const FUTURE_EXPIRY = '1234';
 const INCOMPLETE_CVC = '1';
 const COMPLETE_CVC = '123';
+const PROVIDER_UNAVAILABLE_REASON =
+	'RULE 5: provider-owned card field validation and accessibility require the connected provider profile.';
+const providerProfileUnavailable =
+	! process.env.E2E_WOOPAYMENTS_PROVIDER_FIXTURE;
 
 async function readJson(
 	response: Awaited< ReturnType< APIRequestContext[ 'get' ] > >,
@@ -259,12 +263,8 @@ async function expectFieldRecovered(
 }
 
 test(
-	'invalid card input yields accessible field-associated errors before any payment dispatch',
+	'Core mounts the local card element without dispatching checkout',
 	{
-		annotation: CONTRACT_IDS.map( ( contractId ) => ( {
-			type: 'woopayments-contract',
-			description: contractId,
-		} ) ),
 		tag: [ tags.WOOPAYMENTS_NATIVE ],
 	},
 	async ( { adminApi, page } ) => {
@@ -304,98 +304,131 @@ test(
 	}
 );
 
-test(
-	'invalid card input yields accessible field-associated errors before any payment dispatch @woopayments-provider',
-	{
-		tag: [ tags.WOOPAYMENTS_NATIVE, tags.WOOPAYMENTS_PROVIDER ],
-	},
-	async ( { adminApi, page } ) => {
-		const productId = await ensureSmokeProduct( adminApi );
+test.describe( 'Connected provider card validation', () => {
+	test.skip( providerProfileUnavailable, PROVIDER_UNAVAILABLE_REASON );
 
-		// Precondition guard: the accessible-rejection assertions below are
-		// vacuous unless the native runtime actually mounts the provider's
-		// validating payment element. A store whose gateway deactivated must
-		// fail here, loudly, not pass by never reaching a card field.
-		const paymentsSettings = await readJson(
-			await adminApi.get( PAYMENTS_SETTINGS_API ),
-			'Payments settings read'
-		);
-		expect( paymentsSettings.is_wcpay_enabled ).toBe( true );
+	test(
+		'invalid card input yields accessible field-associated errors before any payment dispatch',
+		{
+			annotation: [
+				...CONTRACT_IDS.map( ( contractId ) => ( {
+					type: 'woopayments-contract',
+					description: contractId,
+				} ) ),
+				...( providerProfileUnavailable
+					? [
+							{
+								type: 'profile-unavailable',
+								description: PROVIDER_UNAVAILABLE_REASON,
+							},
+					  ]
+					: [] ),
+			],
+			tag: [ tags.WOOPAYMENTS_NATIVE, tags.WOOPAYMENTS_PROVIDER ],
+		},
+		async ( { adminApi, page } ) => {
+			const productId = await ensureSmokeProduct( adminApi );
 
-		const ordersBefore = await countSmokeProductOrders(
-			adminApi,
-			productId
-		);
-		const submissions = trackCheckoutSubmissions( page );
+			// Precondition guard: the accessible-rejection assertions below are
+			// vacuous unless the native runtime actually mounts the provider's
+			// validating payment element. A store whose gateway deactivated must
+			// fail here, loudly, not pass by never reaching a card field.
+			const paymentsSettings = await readJson(
+				await adminApi.get( PAYMENTS_SETTINGS_API ),
+				'Payments settings read'
+			);
+			expect( paymentsSettings.is_wcpay_enabled ).toBe( true );
 
-		await page.goto( `?add-to-cart=${ productId }` );
-		await page.goto( 'checkout/' );
-		const frameSelector = getBlocksCardFrameSelector( cardFrameRuntime() );
-		const cardFrame = page.locator( frameSelector ).first();
-		await expect( cardFrame ).toBeVisible();
-		await expect( cardFrame ).not.toHaveAttribute( 'aria-hidden', 'true' );
-		await expect( cardFrame ).toHaveAttribute( 'title', /\S/ );
-		// Derive the frame from the exact element the gate just proved, so the
-		// gate and the interaction target are the same iframe by construction.
-		const frame = cardFrame.contentFrame();
-		const numberField = frame.getByRole( 'textbox', {
-			name: /card number/i,
-		} );
-		const expiryField = frame.getByRole( 'textbox', {
-			name: /expir/i,
-		} );
-		const cvcField = frame.getByRole( 'textbox', {
-			name: /security|cvc|cvv/i,
-		} );
-		// The payment element genuinely mounted with all three card fields:
-		// the state every rejection assertion below depends on.
-		await expect( numberField ).toBeVisible();
-		await expect( expiryField ).toBeVisible();
-		await expect( cvcField ).toBeVisible();
+			const ordersBefore = await countSmokeProductOrders(
+				adminApi,
+				productId
+			);
+			const submissions = trackCheckoutSubmissions( page );
 
-		// Gesture 1: a Luhn-failing card number is rejected on the field
-		// with an accessible, field-associated announcement, and correcting
-		// the input clears the rejection. Each gesture starts from a proven
-		// valid baseline so the invalid state it asserts is caused by its
-		// own input, and after each blur click focus must rest on the
-		// clicked field: an error must not steal the shopper's place in the
-		// form.
-		await expect( numberField ).toHaveAttribute( 'aria-invalid', 'false' );
-		await numberField.click();
-		await numberField.fill( INVALID_CARD_NUMBER );
-		await expiryField.click();
-		await expect( expiryField ).toBeFocused();
-		await expectAccessibleFieldError( frame, numberField );
-		await numberField.fill( VALID_CARD_NUMBER );
-		await expiryField.click();
-		await expectFieldRecovered( frame, numberField, /4242.4242.4242.4242/ );
+			await page.goto( `?add-to-cart=${ productId }` );
+			await page.goto( 'checkout/' );
+			const frameSelector = getBlocksCardFrameSelector(
+				cardFrameRuntime()
+			);
+			const cardFrame = page.locator( frameSelector ).first();
+			await expect( cardFrame ).toBeVisible();
+			await expect( cardFrame ).not.toHaveAttribute(
+				'aria-hidden',
+				'true'
+			);
+			await expect( cardFrame ).toHaveAttribute( 'title', /\S/ );
+			// Derive the frame from the exact element the gate just proved, so the
+			// gate and the interaction target are the same iframe by construction.
+			const frame = cardFrame.contentFrame();
+			const numberField = frame.getByRole( 'textbox', {
+				name: /card number/i,
+			} );
+			const expiryField = frame.getByRole( 'textbox', {
+				name: /expir/i,
+			} );
+			const cvcField = frame.getByRole( 'textbox', {
+				name: /security|cvc|cvv/i,
+			} );
+			// The payment element genuinely mounted with all three card fields:
+			// the state every rejection assertion below depends on.
+			await expect( numberField ).toBeVisible();
+			await expect( expiryField ).toBeVisible();
+			await expect( cvcField ).toBeVisible();
 
-		// Gesture 2: an expiration date in the past.
-		await expect( expiryField ).toHaveAttribute( 'aria-invalid', 'false' );
-		await expiryField.fill( PAST_EXPIRY );
-		await cvcField.click();
-		await expect( cvcField ).toBeFocused();
-		await expectAccessibleFieldError( frame, expiryField );
-		await expiryField.fill( FUTURE_EXPIRY );
-		await cvcField.click();
-		await expectFieldRecovered( frame, expiryField, /12\s*\/\s*34/ );
+			// Gesture 1: a Luhn-failing card number is rejected on the field
+			// with an accessible, field-associated announcement, and correcting
+			// the input clears the rejection. Each gesture starts from a proven
+			// valid baseline so the invalid state it asserts is caused by its
+			// own input, and after each blur click focus must rest on the
+			// clicked field: an error must not steal the shopper's place in the
+			// form.
+			await expect( numberField ).toHaveAttribute(
+				'aria-invalid',
+				'false'
+			);
+			await numberField.click();
+			await numberField.fill( INVALID_CARD_NUMBER );
+			await expiryField.click();
+			await expect( expiryField ).toBeFocused();
+			await expectAccessibleFieldError( frame, numberField );
+			await numberField.fill( VALID_CARD_NUMBER );
+			await expiryField.click();
+			await expectFieldRecovered(
+				frame,
+				numberField,
+				/4242.4242.4242.4242/
+			);
 
-		// Gesture 3: an incomplete security code.
-		await expect( cvcField ).toHaveAttribute( 'aria-invalid', 'false' );
-		await cvcField.fill( INCOMPLETE_CVC );
-		await numberField.click();
-		await expect( numberField ).toBeFocused();
-		await expectAccessibleFieldError( frame, cvcField );
-		await cvcField.fill( COMPLETE_CVC );
-		await numberField.click();
-		await expectFieldRecovered( frame, cvcField, /^123$/ );
+			// Gesture 2: an expiration date in the past.
+			await expect( expiryField ).toHaveAttribute(
+				'aria-invalid',
+				'false'
+			);
+			await expiryField.fill( PAST_EXPIRY );
+			await cvcField.click();
+			await expect( cvcField ).toBeFocused();
+			await expectAccessibleFieldError( frame, expiryField );
+			await expiryField.fill( FUTURE_EXPIRY );
+			await cvcField.click();
+			await expectFieldRecovered( frame, expiryField, /12\s*\/\s*34/ );
 
-		// Zero-dispatch proof: three rejections and three corrections never
-		// dispatched a checkout submission, and no order exists for the
-		// run-owned product beyond what preceded the run.
-		expect( submissions() ).toBe( 0 );
-		expect( await countSmokeProductOrders( adminApi, productId ) ).toBe(
-			ordersBefore
-		);
-	}
-);
+			// Gesture 3: an incomplete security code.
+			await expect( cvcField ).toHaveAttribute( 'aria-invalid', 'false' );
+			await cvcField.fill( INCOMPLETE_CVC );
+			await numberField.click();
+			await expect( numberField ).toBeFocused();
+			await expectAccessibleFieldError( frame, cvcField );
+			await cvcField.fill( COMPLETE_CVC );
+			await numberField.click();
+			await expectFieldRecovered( frame, cvcField, /^123$/ );
+
+			// Zero-dispatch proof: three rejections and three corrections never
+			// dispatched a checkout submission, and no order exists for the
+			// run-owned product beyond what preceded the run.
+			expect( submissions() ).toBe( 0 );
+			expect( await countSmokeProductOrders( adminApi, productId ) ).toBe(
+				ordersBefore
+			);
+		}
+	);
+} );

@@ -12,6 +12,10 @@ const adapterPath = path.resolve(
 async function mountLocalPaymentElement(
 	page: import('@playwright/test').Page
 ) {
+	await page.route( 'http://fixture.test/', ( route ) =>
+		route.fulfill( { body: '<!doctype html>' } )
+	);
+	await page.goto( 'http://fixture.test/' );
 	await page.setContent(
 		'<script id="stripe-js" src="http://fixture.test/wp-content/mu-plugins/stripe-messaging-adapter.js"></script><div id="wcpay-core-blocks-payment-element"></div>'
 	);
@@ -57,6 +61,58 @@ test( 'strict browser oracle proves the local adapter mounted through the Core c
 		oracle.assertPaymentMounted( '#wcpay-core-blocks-payment-element' )
 	).resolves.toBeUndefined();
 } );
+
+test( 'strict browser oracle rejects a cross-origin adapter script with the local path', async ( {
+	page,
+} ) => {
+	const oracle = startStrictStripeAdapterBrowserOracle( page );
+	await mountLocalPaymentElement( page );
+	await page.evaluate( () => {
+		const script = document.getElementById(
+			'stripe-js'
+		) as HTMLScriptElement;
+		script.src =
+			'https://evil.example/wp-content/mu-plugins/stripe-messaging-adapter.js';
+	} );
+
+	await expect(
+		oracle.assertPaymentMounted( '#wcpay-core-blocks-payment-element' )
+	).rejects.toThrow( 'same-origin' );
+} );
+
+for ( const [ surface, providerUrl ] of [
+	[ 'telemetry resource', 'https://m.stripe.com/6' ],
+	[ 'unlisted Stripe script', 'https://assets.stripe.com/runtime.js' ],
+	[ 'Stripe CDN resource', 'https://b.stripecdn.com/striped.js' ],
+	[ 'unlisted Stripe iframe', 'https://hooks.stripe.com/redirect' ],
+] as const ) {
+	test( `strict browser oracle rejects ${ surface }`, async ( { page } ) => {
+		await page.route( providerUrl, ( route ) =>
+			route.fulfill( { body: '' } )
+		);
+		const oracle = startStrictStripeAdapterBrowserOracle( page );
+		await mountLocalPaymentElement( page );
+		await page.evaluate( ( mutation ) => {
+			if ( mutation.includes( 'runtime.js' ) ) {
+				const script = document.createElement( 'script' );
+				script.src = mutation;
+				document.body.appendChild( script );
+				return;
+			}
+			if ( mutation.includes( 'redirect' ) ) {
+				const frame = document.createElement( 'iframe' );
+				frame.src = mutation;
+				document.body.appendChild( frame );
+				return;
+			}
+			void fetch( mutation );
+		}, providerUrl );
+
+		await expect(
+			oracle.assertPaymentMounted( '#wcpay-core-blocks-payment-element' )
+		).rejects.toThrow( providerUrl );
+	} );
+}
 
 test( 'strict browser oracle rejects a provider script source', async ( {
 	page,

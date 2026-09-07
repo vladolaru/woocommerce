@@ -278,6 +278,24 @@ test( 'an explicitly unavailable extension profile may retain its closed contrac
 	);
 } );
 
+test( 'an explicitly unavailable provider profile may retain its disposition-backed contract annotation while skipped', () => {
+	assert.doesNotThrow( () =>
+		validateSyntheticBindings(
+			[ closedSpecRow ],
+			[
+				{
+					...validAnnotationRecord,
+					expectedStatus: 'skipped',
+					profileUnavailable: true,
+					profileUnavailableReason:
+						'RULE 5: provider behavior needs a connected profile.',
+					tags: [ 'woopayments-provider' ],
+				},
+			]
+		)
+	);
+} );
+
 test( 'contract annotation records must be unique per case_id', () => {
 	assert.throws(
 		() =>

@@ -1,10 +1,5 @@
 import type { Page } from '@playwright/test';
 
-const PROVIDER_HOSTS = new Set( [
-	'js.stripe.com',
-	'api.stripe.com',
-	'merchant-ui-api.stripe.com',
-] );
 const ADAPTER_PATH = '/wp-content/mu-plugins/stripe-messaging-adapter.js';
 
 interface StripeAdapterSnapshot {
@@ -13,11 +8,20 @@ interface StripeAdapterSnapshot {
 	frames: string[];
 	errors: unknown;
 	calls: unknown;
+	origin: string;
 }
 
 function isProviderUrl( value: string ): boolean {
 	try {
-		return PROVIDER_HOSTS.has( new URL( value ).hostname );
+		const hostname = new URL( value ).hostname.toLowerCase();
+		return (
+			hostname === 'stripe.com' ||
+			hostname.endsWith( '.stripe.com' ) ||
+			hostname === 'stripecdn.com' ||
+			hostname.endsWith( '.stripecdn.com' ) ||
+			hostname === 'stripe.network' ||
+			hostname.endsWith( '.stripe.network' )
+		);
 	} catch {
 		return false;
 	}
@@ -72,6 +76,7 @@ export function startStrictStripeAdapterBrowserOracle(
 						window,
 						'__wooPaymentsStripePaymentCalls'
 					),
+					origin: window.location.origin,
 				} )
 			);
 			const providerUrls = [
@@ -88,16 +93,25 @@ export function startStrictStripeAdapterBrowserOracle(
 				);
 			}
 
-			const stripeScript = snapshot.scripts.find( ( source ) => {
+			const stripeScripts = snapshot.scripts.filter( ( source ) => {
 				try {
 					return new URL( source ).pathname === ADAPTER_PATH;
 				} catch {
 					return false;
 				}
 			} );
-			if ( ! stripeScript ) {
+			if ( stripeScripts.length === 0 ) {
 				throw new Error(
 					`Strict Stripe adapter script ${ ADAPTER_PATH } was not rendered.`
+				);
+			}
+			if (
+				! stripeScripts.some(
+					( source ) => new URL( source ).origin === snapshot.origin
+				)
+			) {
+				throw new Error(
+					`Strict Stripe adapter script must be same-origin with ${ snapshot.origin }.`
 				);
 			}
 

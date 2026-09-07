@@ -131,6 +131,27 @@ function body( $response ): array {
 	return json_decode( $response['body'], true, 512, JSON_THROW_ON_ERROR );
 }
 
+/**
+ * Builds one signed provider URL with deterministic ephemeral values.
+ *
+ * @param string               $route Site-scoped WooPayments route.
+ * @param array<string,string> $business_query Exact business query.
+ */
+function signed_provider_url( string $route, array $business_query = array() ): string {
+	$query = array_merge(
+		array(
+			'body-hash' => '',
+			'nonce'     => 'nonce',
+			'signature' => 'signature',
+			'timestamp' => '1',
+			'token'     => 'dummyblog:1:0',
+		),
+		$business_query
+	);
+
+	return 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/' . $route . '?' . http_build_query( $query, '', '&', PHP_QUERY_RFC3986 );
+}
+
 $fixture = new WooCommerce_WooPayments_Native_CI_Provider_Fixture();
 assert_true(
 	isset( $filters['script_loader_src'] ) && PHP_INT_MAX === $filters['script_loader_src'][1] && 2 === $filters['script_loader_src'][2],
@@ -173,6 +194,22 @@ assert_true(
 	) === $cache['data']['account_details'],
 	'fixture account must carry the exact account-details structure projected by the real overview service'
 );
+
+$baseline_provider_state                                     = get_option( 'e2e_woopayments_native_provider_state' );
+$mutated_provider_state                                      = $baseline_provider_state;
+$mutated_provider_state['account']['unexpected_account_key'] = true;
+update_option( 'e2e_woopayments_native_provider_state', $mutated_provider_state );
+assert_true( false === $fixture->audit()['state_restored'], 'an extra account key must fail complete provider-state restoration' );
+$mutated_provider_state                                        = $baseline_provider_state;
+$mutated_provider_state['settings']['unexpected_settings_key'] = true;
+update_option( 'e2e_woopayments_native_provider_state', $mutated_provider_state );
+assert_true( false === $fixture->audit()['state_restored'], 'an extra settings key must fail complete provider-state restoration' );
+$mutated_provider_state = $baseline_provider_state;
+$mutated_provider_state['fraud_ruleset']['unexpected_fraud_key'] = true;
+update_option( 'e2e_woopayments_native_provider_state', $mutated_provider_state );
+assert_true( false === $fixture->audit()['state_restored'], 'an extra fraud key must fail complete provider-state restoration' );
+update_option( 'e2e_woopayments_native_provider_state', $baseline_provider_state );
+assert_true( true === $fixture->audit()['state_restored'], 'restoring the complete provider snapshot must restore the audit baseline' );
 
 $passthrough       = array( 'fixture_passthrough' => true );
 $requests_before   = get_option( 'e2e_woopayments_native_request_log', array() );
@@ -298,7 +335,7 @@ $store_setup_response = $fixture->intercept(
 	),
 	$store_setup_url
 );
-assert_true( ! $store_setup_response instanceof WP_Error, 'exact production store-setup snapshot must receive a deterministic response: ' . ( $store_setup_response instanceof WP_Error ? $store_setup_response->message : '' ) );
+assert_true( ! $store_setup_response instanceof WP_Error, 'exact production store-setup snapshot must receive a deterministic response: ' . ( $store_setup_response instanceof WP_Error ? $store_setup_response->get_error_message() : '' ) );
 $invalid_store_setup_bodies = array(
 	wp_json_encode(
 		array(
@@ -393,8 +430,68 @@ assert_true(
 );
 $fraud_services = body( $fixture->intercept( false, array( 'method' => 'GET' ), 'https://public-api.wordpress.com/wpcom/v2/wcpay/accounts/fraud_services' ) );
 assert_true( array() !== $fraud_services, 'public fraud-service configuration must be deterministic and non-empty' );
+$incentives = body( $fixture->intercept( false, array( 'method' => 'GET' ), 'https://public-api.wordpress.com/wpcom/v2/wcpay/incentives?country=US&locale=en_US&active_for=26389&has_orders=1&has_payments=1' ) );
+assert_true( array() === $incentives, 'the exact false-WooPayments incentive context must receive an empty deterministic response' );
+foreach (
+	array(
+		'https://public-api.wordpress.com/wpcom/v2/wcpay/incentives?country=US&locale=en_US&active_for=26389&has_orders=0&has_payments=1',
+		'https://public-api.wordpress.com/wpcom/v2/wcpay/incentives?country=US&locale=en_US&active_for=26389&has_orders=1&has_payments=1&has_wcpay=0',
+		'https://public-api.wordpress.com/wpcom/v2/wcpay/incentives?country=US&locale=fr_FR&active_for=26389&has_orders=1&has_payments=1',
+	) as $invalid_incentives_url
+) {
+	assert_true( $fixture->intercept( false, array( 'method' => 'GET' ), $invalid_incentives_url ) instanceof WP_Error, "mutated incentive context must fail closed: $invalid_incentives_url" );
+}
 
-$account = body( $fixture->intercept( false, array( 'method' => 'GET' ), 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/accounts?test_mode=1' ) );
+$pm_promotions = body(
+	$fixture->intercept(
+		false,
+		array( 'method' => 'GET' ),
+		signed_provider_url(
+			'payment_method_promotions',
+			array(
+				'locale'    => 'en_US',
+				'test_mode' => '1',
+			)
+		)
+	)
+);
+assert_true( array() === $pm_promotions, 'the exact payment-method promotion context must receive an empty deterministic response' );
+foreach (
+	array(
+		signed_provider_url(
+			'payment_method_promotions',
+			array(
+				'locale'    => 'fr_FR',
+				'test_mode' => '1',
+			)
+		),
+		signed_provider_url(
+			'payment_method_promotions',
+			array(
+				'locale'    => 'en_US',
+				'test_mode' => '1',
+				'unknown'   => '1',
+			)
+		),
+		'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/payment_method_promotions?locale=en_US&test_mode=1',
+	) as $invalid_promotions_url
+) {
+	assert_true( $fixture->intercept( false, array( 'method' => 'GET' ), $invalid_promotions_url ) instanceof WP_Error, "mutated payment-method promotions query must fail closed: $invalid_promotions_url" );
+}
+
+$account = body(
+	$fixture->intercept(
+		false,
+		array( 'method' => 'GET' ),
+		signed_provider_url(
+			'accounts',
+			array(
+				'test_mode'            => '1',
+				'woocommerce_store_id' => 'store-id',
+			)
+		)
+	)
+);
 assert_true( 'acct_native_ci' === $account['account_id'], 'account fixture must be deterministic' );
 assert_true( true === $fixture->audit()['state_restored'], 'untouched fixture state must satisfy the audit baseline' );
 
@@ -503,10 +600,58 @@ foreach (
 	assert_true( $fixture->intercept( false, array( 'method' => 'GET' ), $invalid_currency_rates_url ) instanceof WP_Error, "mutated currency-rate request must fail closed: $invalid_currency_rates_url" );
 }
 
-$transactions = body( $fixture->intercept( false, array( 'method' => 'GET' ), 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/transactions?page=1&pagesize=25&sort=date&direction=desc&limit=100&test_mode=1' ) );
+$transactions = body(
+	$fixture->intercept(
+		false,
+		array( 'method' => 'GET' ),
+		signed_provider_url(
+			'transactions',
+			array(
+				'page'      => '1',
+				'pagesize'  => '25',
+				'sort'      => 'date',
+				'direction' => 'desc',
+				'limit'     => '100',
+				'test_mode' => '1',
+			)
+		)
+	)
+);
 assert_true( 1 === count( $transactions['data'] ), 'transaction list must be non-empty' );
-body( $fixture->intercept( false, array( 'method' => 'GET' ), 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/transactions/summary?page=1&pagesize=25&sort=date&direction=desc&limit=100&test_mode=1' ) );
-$authorizations_summary = body( $fixture->intercept( false, array( 'method' => 'GET' ), 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/authorizations/summary?page=1&pagesize=25&sort=created&direction=desc&limit=100&test_mode=1' ) );
+body(
+	$fixture->intercept(
+		false,
+		array( 'method' => 'GET' ),
+		signed_provider_url(
+			'transactions/summary',
+			array(
+				'page'      => '1',
+				'pagesize'  => '25',
+				'sort'      => 'date',
+				'direction' => 'desc',
+				'limit'     => '100',
+				'test_mode' => '1',
+			)
+		)
+	)
+);
+$authorizations_summary = body(
+	$fixture->intercept(
+		false,
+		array( 'method' => 'GET' ),
+		signed_provider_url(
+			'authorizations/summary',
+			array(
+				'page'      => '1',
+				'pagesize'  => '25',
+				'sort'      => 'created',
+				'direction' => 'desc',
+				'limit'     => '100',
+				'test_mode' => '1',
+			)
+		)
+	)
+);
 assert_true(
 	array(
 		'count' => 0,
@@ -514,7 +659,7 @@ assert_true(
 	) === $authorizations_summary,
 	'authorization summary must use the production count/total response schema'
 );
-$overview = body( $fixture->intercept( false, array( 'method' => 'GET' ), 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/deposits/overview-all?test_mode=1' ) );
+$overview = body( $fixture->intercept( false, array( 'method' => 'GET' ), signed_provider_url( 'deposits/overview-all', array( 'test_mode' => '1' ) ) ) );
 assert_true( isset( $overview['balance']['available'], $overview['balance']['pending'], $overview['balance']['instant'], $overview['deposit']['last_paid'], $overview['account']['default_currency'] ), 'deposits overview must expose every production balance section consumed by Core' );
 foreach (
 	array(
@@ -524,9 +669,42 @@ foreach (
 ) {
 	assert_true( $fixture->intercept( false, array( 'method' => 'GET' ), $invalid_overview_url ) instanceof WP_Error, "mutated deposits-overview query must fail closed: $invalid_overview_url" );
 }
-$deposits = body( $fixture->intercept( false, array( 'method' => 'GET' ), 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/deposits?page=1&pagesize=25&sort=date&direction=desc&limit=100&test_mode=1' ) );
+$deposits = body(
+	$fixture->intercept(
+		false,
+		array( 'method' => 'GET' ),
+		signed_provider_url(
+			'deposits',
+			array(
+				'page'      => '1',
+				'pagesize'  => '25',
+				'sort'      => 'date',
+				'direction' => 'desc',
+				'limit'     => '100',
+				'test_mode' => '1',
+			)
+		)
+	)
+);
 assert_true( 3 === count( $deposits['data'] ), 'the observed production payout-list query must return the deterministic deposits' );
-$currency_deposits = body( $fixture->intercept( false, array( 'method' => 'GET' ), 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/deposits?page=1&pagesize=3&sort=date&direction=desc&store_currency_is=usd&test_mode=1' ) );
+$currency_deposits = body(
+	$fixture->intercept(
+		false,
+		array( 'method' => 'GET' ),
+		signed_provider_url(
+			'deposits',
+			array(
+				'page'              => '1',
+				'pagesize'          => '3',
+				'sort'              => 'date',
+				'direction'         => 'desc',
+				'limit'             => '100',
+				'store_currency_is' => 'usd',
+				'test_mode'         => '1',
+			)
+		)
+	)
+);
 assert_true( 3 === count( $currency_deposits['data'] ), 'the observed production balance query must accept the exact lowercase store currency' );
 foreach (
 	array(
@@ -545,15 +723,73 @@ foreach (
 
 $paid_query    = 'page=1&pagesize=25&sort=date&direction=desc&limit=100&status_is=paid&test_mode=1';
 $pending_query = 'page=1&pagesize=25&sort=date&direction=desc&limit=100&status_is=pending&test_mode=1';
-$paid          = body( $fixture->intercept( false, array( 'method' => 'GET' ), 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/deposits?' . $paid_query ) );
-$pending       = body( $fixture->intercept( false, array( 'method' => 'GET' ), 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/deposits?' . $pending_query ) );
+$paid          = body(
+	$fixture->intercept(
+		false,
+		array( 'method' => 'GET' ),
+		signed_provider_url(
+			'deposits',
+			array(
+				'page'      => '1',
+				'pagesize'  => '25',
+				'sort'      => 'date',
+				'direction' => 'desc',
+				'limit'     => '100',
+				'status_is' => 'paid',
+				'test_mode' => '1',
+			)
+		)
+	)
+);
+$pending       = body(
+	$fixture->intercept(
+		false,
+		array( 'method' => 'GET' ),
+		signed_provider_url(
+			'deposits',
+			array(
+				'page'      => '1',
+				'pagesize'  => '25',
+				'sort'      => 'date',
+				'direction' => 'desc',
+				'limit'     => '100',
+				'status_is' => 'pending',
+				'test_mode' => '1',
+			)
+		)
+	)
+);
 assert_true( array( 'po_ci_paid' ) === array_column( $paid['data'], 'id' ), 'full paid production scope must contain only the paid fixture' );
 assert_true( array( 'po_ci_pending', 'po_ci_pending_2' ) === array_column( $pending['data'], 'id' ), 'full pending production scope must contain both pending fixtures' );
-$paid_summary    = body( $fixture->intercept( false, array( 'method' => 'GET' ), 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/deposits/summary?status_is=paid&test_mode=1' ) );
-$pending_summary = body( $fixture->intercept( false, array( 'method' => 'GET' ), 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/deposits/summary?status_is=pending&test_mode=1' ) );
+$paid_summary    = body(
+	$fixture->intercept(
+		false,
+		array( 'method' => 'GET' ),
+		signed_provider_url(
+			'deposits/summary',
+			array(
+				'status_is' => 'paid',
+				'test_mode' => '1',
+			)
+		)
+	)
+);
+$pending_summary = body(
+	$fixture->intercept(
+		false,
+		array( 'method' => 'GET' ),
+		signed_provider_url(
+			'deposits/summary',
+			array(
+				'status_is' => 'pending',
+				'test_mode' => '1',
+			)
+		)
+	)
+);
 assert_true( array( 1, 9700, 'usd' ) === array( $paid_summary['count'], $paid_summary['total'], $paid_summary['currency'] ), 'paid summary must match only the paid fixture' );
 assert_true( array( 2, 4000, 'usd' ) === array( $pending_summary['count'], $pending_summary['total'], $pending_summary['currency'] ), 'pending summary must match both pending fixtures' );
-$deposits_summary = body( $fixture->intercept( false, array( 'method' => 'GET' ), 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/deposits/summary?test_mode=1' ) );
+$deposits_summary = body( $fixture->intercept( false, array( 'method' => 'GET' ), signed_provider_url( 'deposits/summary', array( 'test_mode' => '1' ) ) ) );
 assert_true( isset( $deposits_summary['count'], $deposits_summary['total'], $deposits_summary['currency'] ), 'deposits summary must expose the exact count, total, and currency fields consumed by Core' );
 foreach (
 	array(
@@ -564,8 +800,57 @@ foreach (
 	assert_true( $fixture->intercept( false, array( 'method' => 'GET' ), $invalid_deposits_summary_url ) instanceof WP_Error, "mutated deposits-summary query must fail closed: $invalid_deposits_summary_url" );
 }
 $disputes_query = 'page=1&pagesize=25&sort=created&direction=desc&limit=100&test_mode=1';
-body( $fixture->intercept( false, array( 'method' => 'GET' ), 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/disputes?' . $disputes_query ) );
-$disputes_summary = body( $fixture->intercept( false, array( 'method' => 'GET' ), 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/disputes/summary?' . $disputes_query ) );
+body(
+	$fixture->intercept(
+		false,
+		array( 'method' => 'GET' ),
+		signed_provider_url(
+			'disputes',
+			array(
+				'page'      => '0',
+				'pagesize'  => '25',
+				'sort'      => 'created',
+				'direction' => 'desc',
+				'limit'     => '100',
+				'test_mode' => '1',
+			)
+		)
+	)
+);
+body(
+	$fixture->intercept(
+		false,
+		array( 'method' => 'GET' ),
+		signed_provider_url(
+			'disputes',
+			array(
+				'page'      => '1',
+				'pagesize'  => '25',
+				'sort'      => 'created',
+				'direction' => 'desc',
+				'limit'     => '100',
+				'test_mode' => '1',
+			)
+		)
+	)
+);
+$disputes_summary = body(
+	$fixture->intercept(
+		false,
+		array( 'method' => 'GET' ),
+		signed_provider_url(
+			'disputes/summary',
+			array(
+				'page'      => '1',
+				'pagesize'  => '25',
+				'sort'      => 'created',
+				'direction' => 'desc',
+				'limit'     => '100',
+				'test_mode' => '1',
+			)
+		)
+	)
+);
 assert_true(
 	array(
 		'count'    => 0,
@@ -585,8 +870,77 @@ foreach (
 ) {
 	assert_true( $fixture->intercept( false, array( 'method' => 'GET' ), $invalid_disputes_url ) instanceof WP_Error, "mutated production disputes query must fail closed: $invalid_disputes_url" );
 }
-$fraud_ruleset = body( $fixture->intercept( false, array( 'method' => 'GET' ), 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/fraud_ruleset?test_mode=1' ) );
+$fraud_ruleset = body( $fixture->intercept( false, array( 'method' => 'GET' ), signed_provider_url( 'fraud_ruleset', array( 'test_mode' => '1' ) ) ) );
 assert_true( array( 'ruleset_config' => array() ) === $fraud_ruleset, 'fraud settings fixture must match the real provider response envelope' );
+
+$all_account_writes   = array(
+	'test_mode'                       => true,
+	'statement_descriptor'            => 'MUTATED CI',
+	'statement_descriptor_kanji'      => '変更',
+	'statement_descriptor_kana'       => 'ヘンコウ',
+	'business_name'                   => 'Mutated native CI store',
+	'business_url'                    => 'https://mutated.example.test',
+	'business_support_address'        => array( 'country' => 'CA' ),
+	'business_support_email'          => 'mutated@example.test',
+	'business_support_phone'          => '+12223334444',
+	'branding_logo'                   => 'logo_mutated',
+	'branding_icon'                   => 'icon_mutated',
+	'branding_primary_color'          => '#112233',
+	'branding_secondary_color'        => '#445566',
+	'communications_email'            => 'communications@example.test',
+	'deposit_schedule_interval'       => 'weekly',
+	'deposit_schedule_monthly_anchor' => null,
+	'deposit_schedule_weekly_anchor'  => 'friday',
+);
+$all_account_response = body(
+	$fixture->intercept(
+		false,
+		array(
+			'method' => 'POST',
+			'body'   => wp_json_encode( $all_account_writes ),
+		),
+		signed_provider_url( 'accounts' )
+	)
+);
+assert_true( 'MUTATED CI' === $all_account_response['statement_descriptor'], 'statement settings writes must mutate provider state' );
+assert_true( 'Mutated native CI store' === $all_account_response['business_profile']['name'], 'business-profile writes must mutate provider state' );
+assert_true( '#112233' === $all_account_response['branding']['primary_color'], 'branding writes must mutate provider state' );
+assert_true( 'communications@example.test' === $all_account_response['communications_email'], 'communication writes must mutate provider state' );
+assert_true( 'weekly' === $all_account_response['deposits']['interval'], 'deposit-schedule writes must mutate provider state' );
+assert_true( false === $fixture->audit()['state_restored'], 'every account write family must participate in complete restoration' );
+$fixture->intercept(
+	false,
+	array(
+		'method' => 'POST',
+		'body'   => wp_json_encode( $baseline_provider_state['settings'] ),
+	),
+	signed_provider_url( 'accounts' )
+);
+assert_true( true === $fixture->audit()['state_restored'], 'restoring every account write family must restore the canonical baseline' );
+
+$fixture->intercept(
+	false,
+	array(
+		'method' => 'POST',
+		'body'   => wp_json_encode(
+			array(
+				'ruleset_config' => array( array( 'key' => 'mutated' ) ),
+				'test_mode'      => true,
+			)
+		),
+	),
+	signed_provider_url( 'fraud_ruleset' )
+);
+assert_true( false === $fixture->audit()['state_restored'], 'fraud writes must participate in complete restoration' );
+$fixture->intercept(
+	false,
+	array(
+		'method' => 'POST',
+		'body'   => wp_json_encode( $baseline_provider_state['fraud_ruleset'] ),
+	),
+	signed_provider_url( 'fraud_ruleset' )
+);
+assert_true( true === $fixture->audit()['state_restored'], 'restoring fraud settings must restore the canonical baseline' );
 
 $updated = body(
 	$fixture->intercept(
@@ -595,13 +949,25 @@ $updated = body(
 			'method' => 'POST',
 			'body'   => '{"test_mode":true,"business_name":"Updated native CI store"}',
 		),
-		'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/accounts'
+		signed_provider_url( 'accounts' )
 	)
 );
 assert_true( 'Updated native CI store' === $updated['business_profile']['name'], 'settings writes must update private fixture state' );
 assert_true( 'Updated native CI store' === get_option( 'e2e_woopayments_native_provider_state' )['settings']['business_name'], 'private state option must persist settings writes' );
 assert_true( 'Updated native CI store' === get_option( 'wcpay_account_data' )['data']['business_profile']['name'], 'provider writes must synchronize the production account cache' );
-$refreshed = body( $fixture->intercept( false, array( 'method' => 'GET' ), 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/accounts?test_mode=1' ) );
+$refreshed = body(
+	$fixture->intercept(
+		false,
+		array( 'method' => 'GET' ),
+		signed_provider_url(
+			'accounts',
+			array(
+				'test_mode'            => '1',
+				'woocommerce_store_id' => 'store-id',
+			)
+		)
+	)
+);
 assert_true( 'Updated native CI store' === $refreshed['business_profile']['name'], 'account refresh must observe the fixture write' );
 $restored = body(
 	$fixture->intercept(
@@ -610,7 +976,7 @@ $restored = body(
 			'method' => 'POST',
 			'body'   => '{"business_name":"Native CI store","test_mode":true}',
 		),
-		'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/accounts'
+		signed_provider_url( 'accounts' )
 	)
 );
 assert_true( 'Native CI store' === $restored['business_profile']['name'], 'provider state must be restored after the write proof' );
@@ -638,6 +1004,14 @@ assert_true( array( 'result' => 'success' ) === $woopay_response, 'WooPay webhoo
 assert_true( hash( 'sha256', $woopay_secret ) === get_option( 'e2e_woopayments_native_provider_state' )['woopay_webhook_secret_hash'], 'WooPay provider state must retain only a one-way secret hash' );
 assert_true( $account_before_woopay === $fixture->account_cache(), 'WooPay webhook registration must not mutate the production account cache' );
 assert_true( true === $fixture->audit()['state_restored'], 'WooPay webhook registration must preserve the restorable account/settings baseline' );
+$retained_state                               = get_option( 'e2e_woopayments_native_provider_state' );
+$retained_hash                                = $retained_state['woopay_webhook_secret_hash'];
+$retained_state['woopay_webhook_secret_hash'] = hash( 'sha256', 'unexpected-secret' );
+update_option( 'e2e_woopayments_native_provider_state', $retained_state );
+assert_true( false === $fixture->audit()['state_restored'], 'unexpected retained webhook state must fail restoration' );
+$retained_state['woopay_webhook_secret_hash'] = $retained_hash;
+update_option( 'e2e_woopayments_native_provider_state', $retained_state );
+assert_true( true === $fixture->audit()['state_restored'], 'the explicitly retained webhook hash must match its expected final state' );
 foreach (
 	array(
 		array( 'GET', $woopay_url, '' ),
@@ -685,6 +1059,15 @@ foreach ( $bypasses as $bypass ) {
 
 $invalid_contracts = array(
 	array( 'GET', 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/accounts?test_mode=1&unknown=1', '' ),
+	array( 'GET', 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/accounts?test_mode=1', '' ),
+	array( 'GET', 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/transactions?body-hash=&nonce=nonce&signature=signature&timestamp=1&token=token&page=999&pagesize=25&sort=date&direction=desc&limit=100&test_mode=1', '' ),
+	array( 'GET', 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/transactions?body-hash=&nonce=nonce&signature=signature&timestamp=1&token=token&page=1&pagesize=0&sort=date&direction=desc&limit=100&test_mode=1', '' ),
+	array( 'GET', 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/transactions?body-hash=&nonce=nonce&signature=signature&timestamp=1&token=token&page=1&pagesize=25&sort=bogus&direction=desc&limit=100&test_mode=1', '' ),
+	array( 'GET', 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/transactions?body-hash=&nonce=nonce&timestamp=1&token=token&page=1&pagesize=25&sort=date&direction=desc&limit=100&test_mode=1', '' ),
+	array( 'GET', 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/deposits?body-hash=&nonce=nonce&signature=signature&timestamp=1&token=token&page=1&pagesize=25&sort=date&direction=desc&limit=100&status_is=failed&test_mode=1', '' ),
+	array( 'GET', 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/disputes?body-hash=&nonce=nonce&signature=signature&timestamp=1&token=token&page=2&pagesize=25&sort=created&direction=desc&limit=100&test_mode=1', '' ),
+	array( 'GET', 'https://public-api.wordpress.com/wpcom/v2/wcpay/payment_methods/recommended?country_code=CA&locale=en_US', '' ),
+	array( 'GET', 'https://public-api.wordpress.com/wpcom/v2/wcpay/payment_methods/recommended?country_code=US&locale=fr_FR', '' ),
 	array( 'GET', 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/transactions?page=1&pagesize=25&sort=date&direction=asc&limit=100&test_mode=1', '' ),
 	array( 'GET', 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/transactions?page=1&pagesize=25&sort=date&direction=desc&limit=25&test_mode=1', '' ),
 	array( 'GET', 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/transactions?page=1&pagesize=25&sort=date&direction=desc&limit=100&test_mode=1&unknown=1', '' ),
@@ -716,19 +1099,24 @@ foreach ( $invalid_contracts as list( $method, $url, $request_body ) ) {
 }
 
 $requests = get_option( 'e2e_woopayments_native_request_log', array() );
-assert_true( count( $requests ) === 86, 'every provider request must be recorded' );
+assert_true( count( $requests ) === 108, 'every provider request must be recorded, got ' . count( $requests ) );
 $canonical_transactions = array_values(
 	array_filter(
 		$requests,
 		static fn( array $request ): bool => '/wpcom/v2/sites/777/wcpay/transactions' === $request['path']
 			&& 'GET' === $request['method']
 			&& array(
+				'body-hash' => '',
 				'direction' => 'desc',
 				'limit'     => '100',
+				'nonce'     => 'nonce',
 				'page'      => '1',
 				'pagesize'  => '25',
+				'signature' => 'signature',
 				'sort'      => 'date',
 				'test_mode' => '1',
+				'timestamp' => '1',
+				'token'     => 'dummyblog:1:0',
 			) === $request['query']
 	)
 );
@@ -736,7 +1124,8 @@ assert_true(
 	1 === count( $canonical_transactions ) && null === $canonical_transactions[0]['body'],
 	'valid requests must use the canonical audit shape'
 );
-assert_true( count( get_option( 'e2e_woopayments_native_failure_log', array() ) ) === 59, 'fail-closed provider verdicts must remain auditable' );
+$failure_count = count( get_option( 'e2e_woopayments_native_failure_log', array() ) );
+assert_true( 74 === $failure_count, 'fail-closed provider verdicts must remain auditable, got ' . $failure_count );
 $audit = $fixture->audit();
 assert_true(
 	! in_array( 'GET disputes/summary', $audit['required_routes'], true )

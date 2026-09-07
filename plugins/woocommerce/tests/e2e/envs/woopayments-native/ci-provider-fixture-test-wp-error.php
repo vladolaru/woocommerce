@@ -27,4 +27,11 @@ final class WP_Error {
 		$this->code    = $code;
 		$this->message = $message;
 	}
+
+	/**
+	 * Returns the recorded error message.
+	 */
+	public function get_error_message(): string {
+		return $this->message;
+	}
 }

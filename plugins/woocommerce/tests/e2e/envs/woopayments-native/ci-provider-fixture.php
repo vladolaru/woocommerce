@@ -202,6 +202,7 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 				);
 			case 'GET public/incentives':
 			case 'GET public/onboarding/fields_data':
+			case 'GET payment_method_promotions':
 				return $this->response( array() );
 			case 'GET public/accounts/fraud_services':
 				return $this->response(
@@ -232,7 +233,8 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			case 'POST compatibility':
 				return $this->response( array( 'result' => 'ok' ) );
 			case 'POST accounts/platform_checkout':
-				$state['woopay_webhook_secret_hash'] = hash( 'sha256', $payload['webhook_secret'] );
+				$state['woopay_webhook_secret_hash']                     = hash( 'sha256', $payload['webhook_secret'] );
+				$state['expected_retained_state']['webhook_secret_hash'] = $state['woopay_webhook_secret_hash'];
 				update_option( self::STATE_OPTION, $state );
 				return $this->response( array( 'result' => 'success' ) );
 			case 'GET transactions':
@@ -277,7 +279,7 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 					)
 				);
 			case 'GET fraud_ruleset':
-				return $this->response( array( 'ruleset_config' => array() ) );
+				return $this->response( array( 'ruleset_config' => $state['fraud_ruleset']['ruleset_config'] ) );
 			case 'POST fraud_ruleset':
 				$state['fraud_ruleset'] = $payload;
 				update_option( self::STATE_OPTION, $state );
@@ -306,11 +308,19 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 				$covered[] = (string) ( $request['method'] ?? '' ) . ' transact/' . substr( $path, strlen( $prefix ) );
 			}
 		}
-		$missing        = array_values( array_diff( self::REQUIRED_ROUTES, array_unique( $covered ) ) );
-		$state          = $this->state();
-		$state_restored = 'Native CI store' === ( $state['account']['business_profile']['name'] ?? null )
-			&& 'Native CI store' === ( $state['settings']['business_name'] ?? null )
-			&& array() === ( $state['fraud_ruleset'] ?? null );
+		$missing         = array_values( array_diff( self::REQUIRED_ROUTES, array_unique( $covered ) ) );
+		$state           = $this->state();
+		$mutable_state   = $this->canonicalize(
+			array(
+				'account'       => $state['account'] ?? null,
+				'settings'      => $state['settings'] ?? null,
+				'fraud_ruleset' => $state['fraud_ruleset'] ?? null,
+			)
+		);
+		$baseline_state  = is_array( $state['audit_baseline'] ?? null ) ? $this->canonicalize( $state['audit_baseline'] ) : array();
+		$retained_state  = array( 'webhook_secret_hash' => $state['woopay_webhook_secret_hash'] ?? null );
+		$expected_retain = is_array( $state['expected_retained_state'] ?? null ) ? $this->canonicalize( $state['expected_retained_state'] ) : array();
+		$state_restored  = $mutable_state === $baseline_state && $this->canonicalize( $retained_state ) === $expected_retain;
 
 		return array(
 			'requests'        => $requests,
@@ -319,6 +329,9 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			'missing_routes'  => $missing,
 			'coverage'        => array() === $missing,
 			'state_restored'  => $state_restored,
+			'retained_state'  => array(
+				'webhook_secret_hash' => null === $retained_state['webhook_secret_hash'] ? null : '(sha256)',
+			),
 			'clean'           => array() === $failures && array() === $missing && $state_restored,
 		);
 	}
@@ -353,7 +366,7 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 		if ( is_array( $state ) && isset( $state['account'], $state['transactions'], $state['deposits'] ) ) {
 			return $state;
 		}
-		$account = array(
+		$account                 = array(
 			'account_id'                 => 'acct_native_ci',
 			'country'                    => 'US',
 			'default_currency'           => 'usd',
@@ -364,6 +377,8 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			'test_publishable_key'       => 'pk_test_native_ci',
 			'live_publishable_key'       => '',
 			'statement_descriptor'       => 'NATIVE CI',
+			'statement_descriptor_kanji' => '',
+			'statement_descriptor_kana'  => '',
 			'business_profile'           => array(
 				'name'            => 'Native CI store',
 				'url'             => 'https://example.test',
@@ -405,10 +420,34 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 				'klarna' => array(),
 			),
 		);
-		$state   = array(
+		$settings                = array(
+			'test_mode'                       => true,
+			'statement_descriptor'            => 'NATIVE CI',
+			'statement_descriptor_kanji'      => '',
+			'statement_descriptor_kana'       => '',
+			'business_name'                   => 'Native CI store',
+			'business_url'                    => 'https://example.test',
+			'business_support_address'        => array( 'country' => 'US' ),
+			'business_support_email'          => 'support@example.test',
+			'business_support_phone'          => '+10000000000',
+			'branding_logo'                   => '',
+			'branding_icon'                   => '',
+			'branding_primary_color'          => '#000000',
+			'branding_secondary_color'        => '#ffffff',
+			'communications_email'            => 'owner@example.test',
+			'deposit_schedule_interval'       => 'daily',
+			'deposit_schedule_monthly_anchor' => 1,
+			'deposit_schedule_weekly_anchor'  => 'monday',
+		);
+		$fraud_ruleset           = array(
+			'ruleset_config' => array(),
+			'test_mode'      => true,
+		);
+		$state                   = array(
 			'account'                    => $account,
-			'settings'                   => array( 'business_name' => 'Native CI store' ),
+			'settings'                   => $settings,
 			'woopay_webhook_secret_hash' => null,
+			'expected_retained_state'    => array( 'webhook_secret_hash' => null ),
 			'transactions'               => array(
 				array(
 					'id'             => 'ch_ci_1',
@@ -476,7 +515,14 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 				),
 				'account' => array( 'default_currency' => 'usd' ),
 			),
-			'fraud_ruleset'              => array(),
+			'fraud_ruleset'              => $fraud_ruleset,
+		);
+		$state['audit_baseline'] = $this->canonicalize(
+			array(
+				'account'       => $account,
+				'settings'      => $settings,
+				'fraud_ruleset' => $fraud_ruleset,
+			)
 		);
 		update_option( self::STATE_OPTION, $state );
 		return $state;
@@ -551,86 +597,222 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 	 * @return true|WP_Error
 	 */
 	private function validate_query( string $method, string $route, array $query ) {
-		$common_list = array( 'page', 'pagesize', 'sort', 'date_before', 'date_after', 'search', 'currency', 'test_mode' );
-		$signed      = array( 'body-hash', 'nonce', 'signature', 'timestamp', 'token' );
-		$schemas     = array(
-			'GET accounts'                           => array_merge( $signed, array( 'test_mode', 'woocommerce_store_id' ) ),
-			'GET transactions'                       => array_merge( $signed, $common_list, array( 'match', 'type', 'deposit_id', 'direction', 'limit' ) ),
-			'GET transactions/summary'               => array_merge( $signed, $common_list, array( 'match', 'type', 'deposit_id', 'direction', 'limit' ) ),
-			'GET authorizations/summary'             => array_merge( $signed, $common_list, array( 'match', 'direction', 'limit' ) ),
-			'GET deposits/overview-all'              => array_merge( $signed, array( 'test_mode' ) ),
-			'GET deposits'                           => array_merge( $signed, $common_list, array( 'status_is', 'direction', 'limit', 'store_currency_is' ) ),
-			'GET deposits/summary'                   => array_merge( $signed, $common_list, array( 'status_is' ) ),
-			'GET disputes'                           => array_merge( $signed, $common_list, array( 'status_is', 'status_not', 'direction', 'limit' ) ),
-			'GET disputes/summary'                   => array_merge( $signed, $common_list, array( 'status_is', 'status_not', 'direction', 'limit' ) ),
-			'GET transact/currency/rates'            => array_merge( $signed, array( 'currency_from', 'test_mode' ) ),
-			'GET disputes/status_counts'             => array_merge( $signed, array( 'test_mode' ) ),
-			'GET fraud_ruleset'                      => array_merge( $signed, array( 'test_mode' ) ),
-			'GET woopay/compatibility'               => array_merge( $signed, array( 'test_mode' ) ),
-			'POST accounts'                          => $signed,
-			'POST accounts/store_setup'              => $signed,
-			'POST accounts/platform_checkout'        => $signed,
-			'POST compatibility'                     => $signed,
-			'POST fraud_ruleset'                     => $signed,
-			'GET public/payment_methods/recommended' => array( 'country_code', 'locale' ),
-			'GET public/accounts/fraud_services'     => array(),
-			'GET public/incentives'                  => array( 'active_for', 'country', 'locale', 'has_orders', 'has_payments', 'has_wcpay' ),
-			'GET public/onboarding/fields_data'      => array( 'body-hash', 'locale', 'nonce', 'signature', 'test_mode', 'timestamp', 'token' ),
+		$key      = "$method $route";
+		$signed   = array( 'body-hash', 'nonce', 'signature', 'timestamp', 'token' );
+		$variants = array(
+			'GET accounts'                    => array(
+				array(
+					'test_mode'            => '1',
+					'woocommerce_store_id' => '__nonempty__',
+				),
+			),
+			'GET transactions'                => array(
+				array(
+					'direction' => 'desc',
+					'limit'     => '100',
+					'page'      => '1',
+					'pagesize'  => '25',
+					'sort'      => 'date',
+					'test_mode' => '1',
+				),
+			),
+			'GET transactions/summary'        => array(
+				array(
+					'direction' => 'desc',
+					'limit'     => '100',
+					'page'      => '1',
+					'pagesize'  => '25',
+					'sort'      => 'date',
+					'test_mode' => '1',
+				),
+			),
+			'GET authorizations/summary'      => array(
+				array( 'test_mode' => '1' ),
+				array(
+					'direction' => 'desc',
+					'limit'     => '100',
+					'page'      => '1',
+					'pagesize'  => '25',
+					'sort'      => 'created',
+					'test_mode' => '1',
+				),
+			),
+			'GET deposits/overview-all'       => array( array( 'test_mode' => '1' ) ),
+			'GET deposits'                    => array(
+				array(
+					'direction'         => 'desc',
+					'limit'             => '100',
+					'page'              => '1',
+					'pagesize'          => '3',
+					'sort'              => 'date',
+					'store_currency_is' => 'usd',
+					'test_mode'         => '1',
+				),
+				array(
+					'direction' => 'desc',
+					'limit'     => '100',
+					'page'      => '1',
+					'pagesize'  => '25',
+					'sort'      => 'date',
+					'test_mode' => '1',
+				),
+				array(
+					'direction' => 'desc',
+					'limit'     => '100',
+					'page'      => '1',
+					'pagesize'  => '25',
+					'sort'      => 'date',
+					'status_is' => 'paid',
+					'test_mode' => '1',
+				),
+				array(
+					'direction' => 'desc',
+					'limit'     => '100',
+					'page'      => '1',
+					'pagesize'  => '25',
+					'sort'      => 'date',
+					'status_is' => 'pending',
+					'test_mode' => '1',
+				),
+			),
+			'GET deposits/summary'            => array(
+				array( 'test_mode' => '1' ),
+				array(
+					'status_is' => 'paid',
+					'test_mode' => '1',
+				),
+				array(
+					'status_is' => 'pending',
+					'test_mode' => '1',
+				),
+			),
+			'GET disputes'                    => array(
+				array(
+					'direction' => 'desc',
+					'limit'     => '100',
+					'page'      => '0',
+					'pagesize'  => '25',
+					'sort'      => 'created',
+					'test_mode' => '1',
+				),
+				array(
+					'direction' => 'desc',
+					'limit'     => '100',
+					'page'      => '1',
+					'pagesize'  => '25',
+					'sort'      => 'created',
+					'test_mode' => '1',
+				),
+			),
+			'GET disputes/summary'            => array(
+				array(
+					'direction' => 'desc',
+					'limit'     => '100',
+					'page'      => '1',
+					'pagesize'  => '25',
+					'sort'      => 'created',
+					'test_mode' => '1',
+				),
+			),
+			'GET transact/currency/rates'     => array(
+				array(
+					'currency_from' => 'usd',
+					'test_mode'     => '1',
+				),
+			),
+			'GET disputes/status_counts'      => array( array( 'test_mode' => '1' ) ),
+			'GET fraud_ruleset'               => array( array( 'test_mode' => '1' ) ),
+			'GET woopay/compatibility'        => array( array( 'test_mode' => '1' ) ),
+			'GET payment_method_promotions'   => array(
+				array(
+					'locale'    => 'en_US',
+					'test_mode' => '1',
+				),
+			),
+			'POST accounts'                   => array( array() ),
+			'POST accounts/store_setup'       => array( array() ),
+			'POST accounts/platform_checkout' => array( array() ),
+			'POST compatibility'              => array( array() ),
+			'POST fraud_ruleset'              => array( array() ),
 		);
-		$key         = "$method $route";
-		if ( ! isset( $schemas[ $key ] ) ) {
+		$public   = array( 'GET public/payment_methods/recommended', 'GET public/accounts/fraud_services', 'GET public/incentives' );
+		if ( ! isset( $variants[ $key ] ) && ! in_array( $key, $public, true ) && 'GET public/onboarding/fields_data' !== $key ) {
 			return $this->failure( 'unknown_request', "Unrecognized WooPayments fixture request: $method $route" );
 		}
-		$unknown = array_diff( array_keys( $query ), $schemas[ $key ] );
-		foreach ( $query as $value ) {
-			if ( ! is_scalar( $value ) ) {
-				$unknown[] = 'non_scalar_value';
+
+		if ( 'GET public/payment_methods/recommended' === $key ) {
+			return array(
+				'country_code' => 'US',
+				'locale'       => 'en_US',
+			) === $this->canonicalize( $query ) ? true : $this->failure( 'invalid_query', "Fixture rejected query values for $method $route" );
+		}
+		if ( 'GET public/accounts/fraud_services' === $key ) {
+			return array() === $query ? true : $this->failure( 'invalid_query', "Fixture rejected query values for $method $route" );
+		}
+		if ( 'GET public/incentives' === $key ) {
+			$expected_keys = array( 'active_for', 'country', 'has_orders', 'has_payments', 'locale' );
+			$actual_keys   = array_keys( $query );
+			sort( $expected_keys );
+			sort( $actual_keys );
+			$valid = $expected_keys === $actual_keys
+				&& ctype_digit( (string) $query['active_for'] )
+				&& 0 < (int) $query['active_for']
+				&& 'US' === $query['country']
+				&& 'en_US' === $query['locale']
+				&& '1' === $query['has_orders']
+				&& '1' === $query['has_payments'];
+			return $valid ? true : $this->failure( 'invalid_query', "Fixture rejected query values for $method $route" );
+		}
+
+		$business_query = $query;
+		foreach ( $signed as $signing_key ) {
+			if ( ! array_key_exists( $signing_key, $business_query ) || ! is_scalar( $business_query[ $signing_key ] ) ) {
+				return $this->failure( 'invalid_query', "Fixture requires the Jetpack signing envelope for $method $route" );
+			}
+			if ( 'body-hash' !== $signing_key && '' === (string) $business_query[ $signing_key ] ) {
+				return $this->failure( 'invalid_query', "Fixture requires nonempty Jetpack signing values for $method $route" );
+			}
+			unset( $business_query[ $signing_key ] );
+		}
+		if ( 'GET public/onboarding/fields_data' === $key ) {
+			$variants[ $key ] = array(
+				array(
+					'locale'    => 'en_US',
+					'test_mode' => '1',
+				),
+			);
+		}
+		if ( ! isset( $variants[ $key ] ) ) {
+			return $this->failure( 'unknown_request', "Unrecognized WooPayments fixture request: $method $route" );
+		}
+		foreach ( $variants[ $key ] as $variant ) {
+			if ( $this->query_matches_variant( $business_query, $variant ) ) {
+				return true;
 			}
 		}
-		if ( array() !== $unknown ) {
-			return $this->failure( 'invalid_query', "Fixture rejected query parameters for $method $route: " . implode( ', ', $unknown ) );
+
+		return $this->failure( 'invalid_query', "Fixture rejected query values for $method $route" );
+	}
+
+	/**
+	 * Compares one business query with an exact observed variant.
+	 *
+	 * @param array<int|string,mixed> $query Query without its signing envelope.
+	 * @param array<string,string>    $variant Exact route variant.
+	 */
+	private function query_matches_variant( array $query, array $variant ): bool {
+		if ( array_keys( $this->canonicalize( $query ) ) !== array_keys( $this->canonicalize( $variant ) ) ) {
+			return false;
 		}
-		if ( isset( $query['test_mode'] ) && '1' !== $query['test_mode'] ) {
-			return $this->failure( 'invalid_query', "Fixture rejected query values for $method $route" );
-		}
-		if ( in_array( $key, array( 'GET woopay/compatibility', 'POST accounts/store_setup', 'POST accounts/platform_checkout', 'POST compatibility' ), true ) ) {
-			$actual_keys   = array_keys( $query );
-			$expected_keys = 'GET woopay/compatibility' === $key ? array_merge( $signed, array( 'test_mode' ) ) : $signed;
-			sort( $actual_keys );
-			sort( $expected_keys );
-			$required_values = array_diff_key( $query, array( 'body-hash' => true ) );
-			if ( $actual_keys !== $expected_keys || array_filter( $required_values, static fn( $value ): bool => ! is_scalar( $value ) || '' === (string) $value ) ) {
-				return $this->failure( 'invalid_query', "Fixture rejected query parameters for $method $route" );
+		foreach ( $variant as $key => $expected ) {
+			if ( '__nonempty__' === $expected ) {
+				if ( ! is_scalar( $query[ $key ] ) || '' === (string) $query[ $key ] ) {
+					return false;
+				}
+				continue;
 			}
-		}
-		if (
-			in_array( $key, array( 'GET transactions', 'GET transactions/summary', 'GET authorizations/summary', 'GET deposits', 'GET disputes', 'GET disputes/summary' ), true )
-			&& (
-				( isset( $query['direction'] ) && 'desc' !== $query['direction'] )
-				|| ( isset( $query['limit'] ) && '100' !== $query['limit'] )
-			)
-		) {
-			return $this->failure( 'invalid_query', "Fixture rejected query values for $method $route" );
-		}
-		if ( 'GET authorizations/summary' === $key && isset( $query['sort'] ) && 'created' !== $query['sort'] ) {
-			return $this->failure( 'invalid_query', "Fixture rejected query values for $method $route" );
-		}
-		if ( 'GET deposits' === $key && isset( $query['store_currency_is'] ) && 'usd' !== $query['store_currency_is'] ) {
-			return $this->failure( 'invalid_query', "Fixture rejected query values for $method $route" );
-		}
-		if ( 'GET transact/currency/rates' === $key ) {
-			$actual_keys   = array_keys( $query );
-			$expected_keys = array_merge( $signed, array( 'currency_from', 'test_mode' ) );
-			sort( $actual_keys );
-			sort( $expected_keys );
-			$required_values = array_diff_key( $query, array( 'body-hash' => true ) );
-			if (
-				$actual_keys !== $expected_keys
-				|| 'usd' !== ( $query['currency_from'] ?? null )
-				|| '1' !== ( $query['test_mode'] ?? null )
-				|| array_filter( $required_values, static fn( $value ): bool => ! is_scalar( $value ) || '' === (string) $value )
-			) {
-				return $this->failure( 'invalid_query', "Fixture rejected query values for $method $route" );
+			if ( $expected !== $query[ $key ] ) {
+				return false;
 			}
 		}
 
