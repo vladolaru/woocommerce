@@ -1002,6 +1002,7 @@ $options['e2e_woopayments_native_failure_log'] = array();
 $refreshed_account                             = $fixture->prepare_physical_account_cache_for_run(
 	static function () use ( $fixture, &$filters ): array {
 		assert_true( ! isset( $filters['pre_option_wcpay_account_data'] ), 'the connected pre-option filter must not mask the production cache refresh' );
+		assert_same( 'yes', get_option( 'wcpay_onboarding_test_mode', '__missing__' ), 'fixture preparation must explicitly enable test-mode onboarding before refreshing a non-live account' );
 		$response = $fixture->intercept( false, array( 'method' => 'GET' ), signed_provider_url( 'accounts', array( 'test_mode' => '1' ) ) );
 		$account  = body( $response );
 		update_option(
@@ -1020,6 +1021,7 @@ assert_true( 'acct_native_ci' === $refreshed_account['account_id'], 'fixture pre
 assert_same( false, $options['wcpay_account_data']['errored'], 'fixture preparation must replace the fresh-activation error for the readonly run' );
 $midrun_audit = $fixture->audit();
 assert_same( false, $midrun_audit['physical_account_cache']['pre_fixture_restored'], 'mid-run request inspection must not perform final cache restoration' );
+assert_same( false, $midrun_audit['test_mode_premise']['pre_fixture_restored'], 'mid-run request inspection must not restore the test-mode premise before the readonly run ends' );
 assert_same( false, $options['wcpay_account_data']['errored'], 'mid-run request inspection must leave the connected cache in place' );
 $fixture->restore_pre_fixture_physical_account_cache();
 $audit = $fixture->audit();
@@ -1027,7 +1029,15 @@ assert_true( true === $audit['clean'], 'a covered fixture run must remain clean 
 assert_true( true === $audit['physical_account_cache']['run_restored'], 'the readonly run must end at its connected physical-cache baseline' );
 assert_true( true === $audit['physical_account_cache']['pre_fixture_restored'], 'audit must restore the physical cache captured before fixture preparation' );
 assert_true( true === $audit['physical_account_cache']['restored'], 'physical-cache restoration requires both run and pre-fixture restoration' );
+assert_true( true === $audit['test_mode_premise']['pre_fixture_restored'], 'audit must restore the exact test-mode premise captured before fixture preparation' );
 assert_same( $fresh_activation_cache, $options['wcpay_account_data'], 'audit must restore the exact fresh-activation error wrapper' );
+assert_same( '__missing__', get_option( 'wcpay_onboarding_test_mode', '__missing__' ), 'audit must restore an originally absent test-mode onboarding option' );
 assert_true( 'acct_native_ci' === get_option( 'wcpay_account_data' )['data']['account_id'], 'the connected pre-option filter must not mask the physical restoration assertion' );
+update_option( 'wcpay_onboarding_test_mode', 'yes' );
+$diverged_premise_audit = $fixture->audit();
+assert_same( false, $diverged_premise_audit['test_mode_premise']['pre_fixture_restored'], 'audit must detect test-mode premise divergence after finalization' );
+assert_same( false, $diverged_premise_audit['clean'], 'test-mode premise divergence must keep the final audit non-clean' );
+delete_option( 'wcpay_onboarding_test_mode' );
+assert_same( true, $fixture->audit()['clean'], 'restoring the test-mode premise must make the otherwise clean audit pass again' );
 
 echo "ci-provider-fixture.php tests passed.\n";

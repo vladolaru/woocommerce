@@ -75,14 +75,25 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 		try {
 			$missing                                     = new stdClass();
 			$physical                                    = get_option( 'wcpay_account_data', $missing );
+			$test_mode_premise                           = get_option( 'wcpay_onboarding_test_mode', $missing );
 			$state                                       = $this->state();
 			$state['pre_fixture_physical_account_cache'] = array(
 				'exists'     => $missing !== $physical,
 				'value'      => $missing === $physical ? null : $physical,
 				'normalized' => $this->normalize_account_cache( $missing === $physical ? null : $physical ),
 			);
-			unset( $state['physical_account_cache_restoration'] );
+			$state['pre_fixture_test_mode_premise']      = array(
+				'exists' => $missing !== $test_mode_premise,
+				'value'  => $missing === $test_mode_premise ? null : $test_mode_premise,
+			);
+			unset( $state['physical_account_cache_restoration'], $state['test_mode_premise_restoration'] );
 			update_option( self::STATE_OPTION, $state );
+			update_option( 'wcpay_onboarding_test_mode', 'yes', false );
+			$cache_deleted = wp_cache_delete( 'wcpay_onboarding_test_mode', 'options' );
+			unset( $cache_deleted );
+			if ( 'yes' !== get_option( 'wcpay_onboarding_test_mode', 'no' ) ) {
+				throw new RuntimeException( 'The WooPayments test-mode onboarding premise could not be established.' );
+			}
 
 			$account       = $refresh_account_data();
 			$physical      = get_option( 'wcpay_account_data', null );
@@ -115,17 +126,29 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			throw new RuntimeException( 'The pre-fixture WooPayments account cache was not captured.' );
 		}
 
-		$run_cache          = $this->physical_account_cache_snapshot();
-		$run_normalized     = $run_cache['normalized'];
-		$run_baseline       = is_array( $state['physical_account_cache_baseline'] ?? null ) ? $state['physical_account_cache_baseline'] : array();
-		$run_restored       = $run_normalized === $run_baseline;
-		$restoration        = $this->restore_physical_account_cache( $pre_fixture_cache['exists'], $pre_fixture_cache['value'] );
-		$pre_cache_restored = $restoration['exists'] === $pre_fixture_cache['exists']
+		$run_cache             = $this->physical_account_cache_snapshot();
+		$run_normalized        = $run_cache['normalized'];
+		$run_baseline          = is_array( $state['physical_account_cache_baseline'] ?? null ) ? $state['physical_account_cache_baseline'] : array();
+		$run_restored          = $run_normalized === $run_baseline;
+		$restoration           = $this->restore_physical_account_cache( $pre_fixture_cache['exists'], $pre_fixture_cache['value'] );
+		$pre_cache_restored    = $restoration['exists'] === $pre_fixture_cache['exists']
 			&& $restoration['value'] === $pre_fixture_cache['value'];
+		$pre_fixture_test_mode = $state['pre_fixture_test_mode_premise'] ?? null;
+		if ( ! is_array( $pre_fixture_test_mode ) || ! is_bool( $pre_fixture_test_mode['exists'] ?? null ) || ! array_key_exists( 'value', $pre_fixture_test_mode ) ) {
+			throw new RuntimeException( 'The pre-fixture WooPayments test-mode premise was not captured.' );
+		}
+		$test_mode_run_enabled  = 'yes' === get_option( 'wcpay_onboarding_test_mode', 'no' );
+		$test_mode_restoration  = $this->restore_option( 'wcpay_onboarding_test_mode', $pre_fixture_test_mode['exists'], $pre_fixture_test_mode['value'] );
+		$test_mode_pre_restored = $test_mode_restoration['exists'] === $pre_fixture_test_mode['exists']
+			&& $test_mode_restoration['value'] === $pre_fixture_test_mode['value'];
 
 		$state['physical_account_cache_restoration'] = array(
 			'run_normalized' => $run_normalized,
 			'run_restored'   => $run_restored,
+		);
+		$state['test_mode_premise_restoration']      = array(
+			'run_enabled'          => $test_mode_run_enabled,
+			'pre_fixture_restored' => $test_mode_pre_restored,
 		);
 		update_option( self::STATE_OPTION, $state );
 		return array_merge(
@@ -400,9 +423,28 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			$run_normalized = $physical_cache;
 		}
 		$physical_cache_restored = $run_cache_restored && $pre_fixture_restored;
-		$state_restored          = $mutable_state === $baseline_state
+		$test_mode_run_enabled   = true;
+		$test_mode_pre_restored  = true;
+		$pre_fixture_test_mode   = $state['pre_fixture_test_mode_premise'] ?? null;
+		if ( is_array( $pre_fixture_test_mode ) && is_bool( $pre_fixture_test_mode['exists'] ?? null ) && array_key_exists( 'value', $pre_fixture_test_mode ) ) {
+			$test_mode_restoration = $state['test_mode_premise_restoration'] ?? null;
+			if ( is_array( $test_mode_restoration ) && is_bool( $test_mode_restoration['run_enabled'] ?? null ) && is_bool( $test_mode_restoration['pre_fixture_restored'] ?? null ) ) {
+				$missing_option         = new stdClass();
+				$current_test_mode      = get_option( 'wcpay_onboarding_test_mode', $missing_option );
+				$test_mode_run_enabled  = $test_mode_restoration['run_enabled'];
+				$test_mode_pre_restored = $test_mode_restoration['pre_fixture_restored']
+					&& ( $missing_option !== $current_test_mode ) === $pre_fixture_test_mode['exists']
+					&& ( $missing_option === $current_test_mode ? null : $current_test_mode ) === $pre_fixture_test_mode['value'];
+			} else {
+				$test_mode_run_enabled  = 'yes' === get_option( 'wcpay_onboarding_test_mode', 'no' );
+				$test_mode_pre_restored = false;
+			}
+		}
+		$test_mode_premise_restored = $test_mode_run_enabled && $test_mode_pre_restored;
+		$state_restored             = $mutable_state === $baseline_state
 			&& $this->canonicalize( $retained_state ) === $expected_retain
-			&& $physical_cache_restored;
+			&& $physical_cache_restored
+			&& $test_mode_premise_restored;
 
 		return array(
 			'requests'               => $requests,
@@ -421,6 +463,11 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 				'run_restored'         => $run_cache_restored,
 				'pre_fixture_restored' => $pre_fixture_restored,
 				'restored'             => $physical_cache_restored,
+			),
+			'test_mode_premise'      => array(
+				'run_enabled'          => $test_mode_run_enabled,
+				'pre_fixture_restored' => $test_mode_pre_restored,
+				'restored'             => $test_mode_premise_restored,
 			),
 			'clean'                  => array() === $failures && array() === $missing && $state_restored,
 		);
@@ -863,6 +910,30 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 				add_filter( 'pre_option_wcpay_account_data', $callback );
 			}
 		}
+	}
+
+	/**
+	 * Restores one exact option value captured before fixture installation.
+	 *
+	 * @param string $name Option name.
+	 * @param bool   $existed Whether the option existed.
+	 * @param mixed  $value Exact captured option value.
+	 * @return array{exists:bool,value:mixed}
+	 */
+	private function restore_option( string $name, bool $existed, $value ): array {
+		if ( $existed ) {
+			update_option( $name, $value );
+		} else {
+			delete_option( $name );
+		}
+		$cache_deleted = wp_cache_delete( $name, 'options' );
+		unset( $cache_deleted );
+		$missing = new stdClass();
+		$current = get_option( $name, $missing );
+		return array(
+			'exists' => $missing !== $current,
+			'value'  => $missing === $current ? null : $current,
+		);
 	}
 
 	/**
