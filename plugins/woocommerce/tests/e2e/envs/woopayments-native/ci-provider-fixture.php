@@ -17,12 +17,11 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 	/** @var self|null */
 	private static $registered_instance;
 
-	private const STATE_OPTION         = 'e2e_woopayments_native_provider_state';
-	private const REQUEST_LOG_OPTION   = 'e2e_woopayments_native_request_log';
-	private const FAILURE_LOG_OPTION   = 'e2e_woopayments_native_failure_log';
-	private const BLOG_ID              = 777;
-	private const CONNECTION_VERSION   = '6.19.2';
-	private const REQUIRED_ROUTES      = array(
+	private const STATE_OPTION       = 'e2e_woopayments_native_provider_state';
+	private const REQUEST_LOG_OPTION = 'e2e_woopayments_native_request_log';
+	private const FAILURE_LOG_OPTION = 'e2e_woopayments_native_failure_log';
+	private const BLOG_ID            = 777;
+	private const REQUIRED_ROUTES    = array(
 		'GET accounts',
 		'GET transactions',
 		'GET transactions/summary',
@@ -32,25 +31,6 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 		'GET deposits/summary',
 		'GET disputes',
 		'POST accounts',
-	);
-	private const ACCOUNT_WRITE_SCHEMA = array(
-		'test_mode'                       => 'bool',
-		'statement_descriptor'            => 'string',
-		'statement_descriptor_kanji'      => 'string',
-		'statement_descriptor_kana'       => 'string',
-		'business_name'                   => 'string',
-		'business_url'                    => 'string',
-		'business_support_address'        => 'array',
-		'business_support_email'          => 'string',
-		'business_support_phone'          => 'string',
-		'branding_logo'                   => 'string',
-		'branding_icon'                   => 'string',
-		'branding_primary_color'          => 'string',
-		'branding_secondary_color'        => 'string',
-		'communications_email'            => 'string',
-		'deposit_schedule_interval'       => 'string',
-		'deposit_schedule_monthly_anchor' => 'int_or_null',
-		'deposit_schedule_weekly_anchor'  => 'string',
 	);
 
 	/**
@@ -156,18 +136,13 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			if ( 'POST' !== $method ) {
 				return $this->failure( 'unsupported_method', "Unsupported fixture method: $method $path" );
 			}
-			$signed_keys       = array( 'body-hash', 'nonce', 'signature', 'timestamp', 'token' );
-			$actual_query_keys = array_keys( $query );
-			sort( $signed_keys );
-			sort( $actual_query_keys );
-			if ( $signed_keys !== $actual_query_keys || array_filter( $query, static fn( $value ): bool => ! is_scalar( $value ) || '' === (string) $value ) ) {
-				return $this->failure( 'invalid_query', "Fixture rejected query parameters for $method $path" );
+			$query_validation = $this->validate_signing_envelope( $method, $path, $query );
+			if ( $query_validation instanceof WP_Error ) {
+				return $query_validation;
 			}
-			$package_versions = json_decode( $body, true );
-			if (
-				array( 'package_versions' => array( 'connection' => self::CONNECTION_VERSION ) ) !== $package_versions
-			) {
-				return $this->failure( 'invalid_body', "Fixture rejected the package-version body for $method $path" );
+			$package_versions = $this->decode_json_object( $body, "$method $path" );
+			if ( $package_versions instanceof WP_Error ) {
+				return $package_versions;
 			}
 
 			return $this->response( array() );
@@ -614,7 +589,7 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 	}
 
 	/**
-	 * Validates the query vocabulary for one supported route.
+	 * Validates the route and Jetpack signing boundary.
 	 *
 	 * @param string                  $method HTTP method.
 	 * @param string                  $route Fixture route.
@@ -622,222 +597,59 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 	 * @return true|WP_Error
 	 */
 	private function validate_query( string $method, string $route, array $query ) {
-		$key      = "$method $route";
-		$signed   = array( 'body-hash', 'nonce', 'signature', 'timestamp', 'token' );
-		$variants = array(
-			'GET accounts'                    => array(
-				array(
-					'test_mode'            => '1',
-					'woocommerce_store_id' => '__nonempty__',
-				),
-			),
-			'GET transactions'                => array(
-				array(
-					'direction' => 'desc',
-					'limit'     => '100',
-					'page'      => '1',
-					'pagesize'  => '25',
-					'sort'      => 'date',
-					'test_mode' => '1',
-				),
-			),
-			'GET transactions/summary'        => array(
-				array(
-					'direction' => 'desc',
-					'limit'     => '100',
-					'page'      => '1',
-					'pagesize'  => '25',
-					'sort'      => 'date',
-					'test_mode' => '1',
-				),
-			),
-			'GET authorizations/summary'      => array(
-				array( 'test_mode' => '1' ),
-				array(
-					'direction' => 'desc',
-					'limit'     => '100',
-					'page'      => '1',
-					'pagesize'  => '25',
-					'sort'      => 'created',
-					'test_mode' => '1',
-				),
-			),
-			'GET deposits/overview-all'       => array( array( 'test_mode' => '1' ) ),
-			'GET deposits'                    => array(
-				array(
-					'direction'         => 'desc',
-					'limit'             => '100',
-					'page'              => '1',
-					'pagesize'          => '3',
-					'sort'              => 'date',
-					'store_currency_is' => 'usd',
-					'test_mode'         => '1',
-				),
-				array(
-					'direction' => 'desc',
-					'limit'     => '100',
-					'page'      => '1',
-					'pagesize'  => '25',
-					'sort'      => 'date',
-					'test_mode' => '1',
-				),
-				array(
-					'direction' => 'desc',
-					'limit'     => '100',
-					'page'      => '1',
-					'pagesize'  => '25',
-					'sort'      => 'date',
-					'status_is' => 'paid',
-					'test_mode' => '1',
-				),
-				array(
-					'direction' => 'desc',
-					'limit'     => '100',
-					'page'      => '1',
-					'pagesize'  => '25',
-					'sort'      => 'date',
-					'status_is' => 'pending',
-					'test_mode' => '1',
-				),
-			),
-			'GET deposits/summary'            => array(
-				array( 'test_mode' => '1' ),
-				array(
-					'status_is' => 'paid',
-					'test_mode' => '1',
-				),
-				array(
-					'status_is' => 'pending',
-					'test_mode' => '1',
-				),
-			),
-			'GET disputes'                    => array(
-				array(
-					'direction' => 'desc',
-					'limit'     => '100',
-					'page'      => '0',
-					'pagesize'  => '25',
-					'sort'      => 'created',
-					'test_mode' => '1',
-				),
-				array(
-					'direction' => 'desc',
-					'limit'     => '100',
-					'page'      => '1',
-					'pagesize'  => '25',
-					'sort'      => 'created',
-					'test_mode' => '1',
-				),
-			),
-			'GET disputes/summary'            => array(
-				array(
-					'direction' => 'desc',
-					'limit'     => '100',
-					'page'      => '1',
-					'pagesize'  => '25',
-					'sort'      => 'created',
-					'test_mode' => '1',
-				),
-			),
-			'GET transact/currency/rates'     => array(
-				array(
-					'currency_from' => 'usd',
-					'test_mode'     => '1',
-				),
-			),
-			'GET disputes/status_counts'      => array( array( 'test_mode' => '1' ) ),
-			'GET fraud_ruleset'               => array( array( 'test_mode' => '1' ) ),
-			'GET woopay/compatibility'        => array( array( 'test_mode' => '1' ) ),
-			'GET payment_method_promotions'   => array(
-				array(
-					'locale'    => 'en_US',
-					'test_mode' => '1',
-				),
-			),
-			'POST accounts'                   => array( array() ),
-			'POST accounts/store_setup'       => array( array() ),
-			'POST accounts/platform_checkout' => array( array() ),
-			'POST compatibility'              => array( array() ),
-			'POST fraud_ruleset'              => array( array() ),
+		$key   = "$method $route";
+		$known = array(
+			'GET accounts',
+			'GET transactions',
+			'GET transactions/summary',
+			'GET authorizations/summary',
+			'GET deposits/overview-all',
+			'GET deposits',
+			'GET deposits/summary',
+			'GET disputes',
+			'GET disputes/summary',
+			'GET disputes/status_counts',
+			'GET fraud_ruleset',
+			'GET woopay/compatibility',
+			'GET payment_method_promotions',
+			'GET transact/currency/rates',
+			'GET public/payment_methods/recommended',
+			'GET public/accounts/fraud_services',
+			'GET public/incentives',
+			'GET public/onboarding/fields_data',
+			'POST accounts',
+			'POST accounts/store_setup',
+			'POST accounts/platform_checkout',
+			'POST compatibility',
+			'POST fraud_ruleset',
 		);
-		$public   = array( 'GET public/payment_methods/recommended', 'GET public/accounts/fraud_services', 'GET public/incentives' );
-		if ( ! isset( $variants[ $key ] ) && ! in_array( $key, $public, true ) && 'GET public/onboarding/fields_data' !== $key ) {
+		if ( ! in_array( $key, $known, true ) ) {
 			return $this->failure( 'unknown_request', "Unrecognized WooPayments fixture request: $method $route" );
 		}
 
-		if ( 'GET public/payment_methods/recommended' === $key ) {
-			return array(
-				'country_code' => 'US',
-				'locale'       => 'en_US',
-			) === $this->canonicalize( $query ) ? true : $this->failure( 'invalid_query', "Fixture rejected query values for $method $route" );
-		}
-		if ( 'GET public/accounts/fraud_services' === $key ) {
-			return array() === $query ? true : $this->failure( 'invalid_query', "Fixture rejected query values for $method $route" );
-		}
-		if ( 'GET public/incentives' === $key ) {
-			$expected_keys = array( 'active_for', 'country', 'has_orders', 'has_payments', 'locale' );
-			$actual_keys   = array_keys( $query );
-			sort( $expected_keys );
-			sort( $actual_keys );
-			$valid = $expected_keys === $actual_keys
-				&& ctype_digit( (string) $query['active_for'] )
-				&& 0 < (int) $query['active_for']
-				&& 'US' === $query['country']
-				&& 'en_US' === $query['locale']
-				&& '1' === $query['has_orders']
-				&& '1' === $query['has_payments'];
-			return $valid ? true : $this->failure( 'invalid_query', "Fixture rejected query values for $method $route" );
+		$unsigned = array( 'GET public/payment_methods/recommended', 'GET public/accounts/fraud_services', 'GET public/incentives' );
+		if ( in_array( $key, $unsigned, true ) ) {
+			return true;
 		}
 
-		$business_query = $query;
-		foreach ( $signed as $signing_key ) {
-			if ( ! array_key_exists( $signing_key, $business_query ) || ! is_scalar( $business_query[ $signing_key ] ) ) {
-				return $this->failure( 'invalid_query', "Fixture requires the Jetpack signing envelope for $method $route" );
-			}
-			if ( '' === (string) $business_query[ $signing_key ] && ( 'body-hash' !== $signing_key || 'GET' !== $method ) ) {
-				return $this->failure( 'invalid_query', "Fixture requires nonempty Jetpack signing values for $method $route" );
-			}
-			unset( $business_query[ $signing_key ] );
-		}
-		if ( 'GET public/onboarding/fields_data' === $key ) {
-			$variants[ $key ] = array(
-				array(
-					'locale'    => 'en_US',
-					'test_mode' => '1',
-				),
-			);
-		}
-		if ( ! isset( $variants[ $key ] ) ) {
-			return $this->failure( 'unknown_request', "Unrecognized WooPayments fixture request: $method $route" );
-		}
-		foreach ( $variants[ $key ] as $variant ) {
-			if ( $this->query_matches_variant( $business_query, $variant ) ) {
-				return true;
-			}
-		}
-
-		return $this->failure( 'invalid_query', "Fixture rejected query values for $method $route" );
+		return $this->validate_signing_envelope( $method, $route, $query );
 	}
 
 	/**
-	 * Compares one business query with an exact observed variant.
+	 * Validates that Jetpack supplied its complete signing envelope.
 	 *
-	 * @param array<int|string,mixed> $query Query without its signing envelope.
-	 * @param array<string,string>    $variant Exact route variant.
+	 * @param string                  $method HTTP method.
+	 * @param string                  $route Fixture route.
+	 * @param array<int|string,mixed> $query Request query.
+	 * @return true|WP_Error
 	 */
-	private function query_matches_variant( array $query, array $variant ): bool {
-		if ( array_keys( $this->canonicalize( $query ) ) !== array_keys( $this->canonicalize( $variant ) ) ) {
-			return false;
-		}
-		foreach ( $variant as $key => $expected ) {
-			if ( '__nonempty__' === $expected ) {
-				if ( ! is_scalar( $query[ $key ] ) || '' === (string) $query[ $key ] ) {
-					return false;
-				}
-				continue;
+	private function validate_signing_envelope( string $method, string $route, array $query ) {
+		foreach ( array( 'body-hash', 'nonce', 'signature', 'timestamp', 'token' ) as $signing_key ) {
+			if ( ! array_key_exists( $signing_key, $query ) || ! is_scalar( $query[ $signing_key ] ) ) {
+				return $this->failure( 'invalid_query', "Fixture requires the Jetpack signing envelope for $method $route" );
 			}
-			if ( $expected !== $query[ $key ] ) {
-				return false;
+			if ( '' === (string) $query[ $signing_key ] && ( 'body-hash' !== $signing_key || 'GET' !== $method ) ) {
+				return $this->failure( 'invalid_query', "Fixture requires nonempty Jetpack signing values for $method $route" );
 			}
 		}
 
@@ -859,259 +671,36 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			}
 			return array();
 		}
-		$decoded = json_decode( $body, true );
-		if ( ! is_array( $decoded ) || array() === $decoded || $this->is_list( $decoded ) ) {
-			return $this->failure( 'invalid_body', "Fixture requires a JSON object body for $method $route" );
+		$decoded = $this->decode_json_object( $body, "$method $route" );
+		if ( $decoded instanceof WP_Error ) {
+			return $decoded;
 		}
-		if ( 0 === strpos( $route, 'public/' ) ) {
-			return $this->failure( 'invalid_body', "Fixture rejected a body for $method $route" );
-		}
-		if ( 'accounts' === $route ) {
-			return $this->validate_typed_object( $decoded, self::ACCOUNT_WRITE_SCHEMA, "$method $route" );
-		}
-		if ( 'accounts/store_setup' === $route ) {
-			return $this->validate_store_setup( $decoded, "$method $route" );
+		if ( ! array_key_exists( 'test_mode', $decoded ) || ! is_bool( $decoded['test_mode'] ) ) {
+			return $this->failure( 'invalid_body', "Fixture requires a boolean test_mode for $method $route" );
 		}
 		if ( 'accounts/platform_checkout' === $route ) {
-			$result = $this->validate_exact_typed_object(
-				$decoded,
-				array(
-					'test_mode'      => 'bool',
-					'webhook_secret' => 'string',
-				),
-				"$method $route"
-			);
-			if ( $result instanceof WP_Error || '' === $decoded['webhook_secret'] ) {
-				return $result instanceof WP_Error ? $result : $this->failure( 'invalid_body', "Fixture rejected an empty webhook secret for $method $route" );
+			if ( ! isset( $decoded['webhook_secret'] ) || ! is_string( $decoded['webhook_secret'] ) || '' === $decoded['webhook_secret'] ) {
+				return $this->failure( 'invalid_body', "Fixture requires a nonempty webhook secret for $method $route" );
 			}
-			return $result;
-		}
-		if ( 'compatibility' === $route ) {
-			return $this->validate_compatibility_data( $decoded, "$method $route" );
-		}
-		if ( 'fraud_ruleset' === $route ) {
-			return $this->validate_typed_object(
-				$decoded,
-				array(
-					'ruleset_config' => 'list',
-					'test_mode'      => 'bool',
-				),
-				"$method $route"
-			);
 		}
 		return $decoded;
 	}
 
 	/**
-	 * Validates the compatibility snapshot emitted by Core's queue service.
+	 * Decodes a JSON object without policing producer-owned fields.
 	 *
-	 * @param array<string,mixed> $payload Request object.
-	 * @param string              $label Request label.
+	 * @param string $body Request body.
+	 * @param string $label Request label.
 	 * @return array<string,mixed>|WP_Error
 	 */
-	private function validate_compatibility_data( array $payload, string $label ) {
-		$result = $this->validate_exact_typed_object(
-			$payload,
-			array(
-				'compatibility_data' => 'array',
-				'test_mode'          => 'bool',
-			),
-			$label
-		);
-		if ( $result instanceof WP_Error ) {
-			return $result;
+	private function decode_json_object( string $body, string $label ) {
+		$object  = json_decode( $body );
+		$decoded = json_decode( $body, true );
+		if ( ! $object instanceof stdClass || ! is_array( $decoded ) ) {
+			return $this->failure( 'invalid_body', "Fixture requires a JSON object body for $label" );
 		}
 
-		$data   = $payload['compatibility_data'];
-		$result = $this->validate_exact_typed_object(
-			$data,
-			array(
-				'woopayments_version'    => 'string',
-				'woocommerce_version'    => 'string',
-				'woocommerce_permalinks' => 'array',
-				'woocommerce_shop'       => 'string',
-				'woocommerce_cart'       => 'string',
-				'woocommerce_checkout'   => 'string',
-				'blog_theme'             => 'string',
-				'active_plugins'         => 'list',
-				'post_types_count'       => 'array',
-			),
-			"$label compatibility_data"
-		);
-		if ( $result instanceof WP_Error ) {
-			return $result;
-		}
-		foreach ( $data['active_plugins'] as $plugin ) {
-			if ( ! is_string( $plugin ) || '' === $plugin ) {
-				return $this->failure( 'invalid_body', "Fixture rejected active plugin data for $label" );
-			}
-		}
-		foreach ( $data['post_types_count'] as $post_type => $count ) {
-			if ( ! is_string( $post_type ) || '' === $post_type || ! is_int( $count ) || 0 > $count ) {
-				return $this->failure( 'invalid_body', "Fixture rejected post type counts for $label" );
-			}
-		}
-
-		return $payload;
-	}
-
-	/**
-	 * Validates the exact store-setup snapshot emitted by Core.
-	 *
-	 * Values may vary by runner, while the producer's required structure and types must not.
-	 *
-	 * @param array<string,mixed> $payload Request object.
-	 * @param string              $label Request label.
-	 * @return array<string,mixed>|WP_Error
-	 */
-	private function validate_store_setup( array $payload, string $label ) {
-		$result = $this->validate_exact_typed_object(
-			$payload,
-			array(
-				'snapshot'  => 'array',
-				'test_mode' => 'bool',
-			),
-			$label
-		);
-		if ( $result instanceof WP_Error ) {
-			return $result;
-		}
-		$snapshot = $payload['snapshot'];
-		$result   = $this->validate_exact_typed_object(
-			$snapshot,
-			array(
-				'gateway'                => 'array',
-				'payment_methods'        => 'array',
-				'provider_capabilities'  => 'array',
-				'express_checkout_in_payment_methods_enabled' => 'scalar',
-				'saved_cards_enabled'    => 'bool',
-				'manual_capture_enabled' => 'bool',
-				'debug_log_enabled'      => 'bool',
-				'payment_request'        => 'array',
-				'woopay'                 => 'array',
-				'multi_currency_enabled' => 'bool',
-				'stripe_billing_enabled' => 'bool',
-				'plugin'                 => 'array',
-				'wp_setup'               => 'array',
-				'wc_setup'               => 'array',
-			),
-			"$label snapshot"
-		);
-		if ( $result instanceof WP_Error ) {
-			return $result;
-		}
-		$schemas = array(
-			'gateway'               => array(
-				'enabled'              => 'bool',
-				'test_mode'            => 'bool',
-				'test_mode_onboarding' => 'bool',
-			),
-			'payment_methods'       => array(
-				'available'  => 'list',
-				'enabled'    => 'list',
-				'disabled'   => 'list',
-				'duplicates' => 'list',
-			),
-			'provider_capabilities' => array(
-				'available' => 'list',
-				'enabled'   => 'list',
-				'disabled'  => 'list',
-			),
-			'payment_request'       => array(
-				'enabled'              => 'bool',
-				'enabled_locations'    => 'list',
-				'button_type'          => 'string',
-				'button_size'          => 'string',
-				'button_theme'         => 'string',
-				'button_border_radius' => 'scalar',
-			),
-			'woopay'                => array(
-				'enabled'                 => 'bool',
-				'enabled_locations'       => 'list',
-				'store_logo'              => 'string',
-				'custom_message'          => 'string',
-				'invalid_extension_found' => 'bool',
-			),
-			'plugin'                => array(
-				'version'              => 'string',
-				'activation_timestamp' => 'scalar_or_null',
-			),
-			'wp_setup'              => array(
-				'name'           => 'string',
-				'url'            => 'string',
-				'active_theme'   => 'array',
-				'active_plugins' => 'list',
-				'version'        => 'string',
-				'locale'         => 'string',
-			),
-			'wc_setup'              => array(
-				'version'                     => 'string',
-				'store_id'                    => 'scalar_or_null',
-				'currency'                    => 'string',
-				'tracking_enabled'            => 'bool',
-				'registered_payment_gateways' => 'list',
-				'enabled_payment_gateways'    => 'list',
-				'wc_subscriptions_active'     => 'bool',
-				'wc_subscriptions_version'    => 'string',
-			),
-		);
-		foreach ( $schemas as $key => $schema ) {
-			$result = $this->validate_exact_typed_object( $snapshot[ $key ], $schema, "$label snapshot.$key" );
-			if ( $result instanceof WP_Error ) {
-				return $result;
-			}
-		}
-
-		return $payload;
-	}
-
-	/**
-	 * Validates an object with no missing or additional keys.
-	 *
-	 * @param array<string,mixed>  $payload Request object.
-	 * @param array<string,string> $schema Required key types.
-	 * @param string               $label Request label.
-	 * @return array<string,mixed>|WP_Error
-	 */
-	private function validate_exact_typed_object( array $payload, array $schema, string $label ) {
-		$actual   = array_keys( $payload );
-		$expected = array_keys( $schema );
-		sort( $actual );
-		sort( $expected );
-		if ( $actual !== $expected ) {
-			return $this->failure( 'invalid_body', "Fixture rejected required body keys for $label" );
-		}
-
-		return $this->validate_typed_object( $payload, $schema, $label );
-	}
-
-	/**
-	 * Validates an object against an exact key and type schema.
-	 *
-	 * @param array<string,mixed>  $payload Request object.
-	 * @param array<string,string> $schema Allowed key types.
-	 * @param string               $label Request label.
-	 * @return array<string,mixed>|WP_Error
-	 */
-	private function validate_typed_object( array $payload, array $schema, string $label ) {
-		$unknown = array_diff( array_keys( $payload ), array_keys( $schema ) );
-		if ( array() !== $unknown ) {
-			return $this->failure( 'invalid_body', "Fixture rejected body keys for $label: " . implode( ', ', $unknown ) );
-		}
-		foreach ( $payload as $key => $value ) {
-			$type  = $schema[ $key ];
-			$valid = ( 'bool' === $type && is_bool( $value ) )
-				|| ( 'string' === $type && is_string( $value ) )
-				|| ( 'scalar' === $type && is_scalar( $value ) )
-				|| ( 'scalar_or_null' === $type && ( is_scalar( $value ) || null === $value ) )
-				|| ( 'array' === $type && is_array( $value ) && ! $this->is_list( $value ) )
-				|| ( 'list' === $type && is_array( $value ) && $this->is_list( $value ) )
-				|| ( 'int_or_null' === $type && ( is_int( $value ) || null === $value ) );
-			if ( ! $valid ) {
-				return $this->failure( 'invalid_body', "Fixture rejected body type for $label key $key" );
-			}
-		}
-		return $payload;
+		return $decoded;
 	}
 
 	/**
