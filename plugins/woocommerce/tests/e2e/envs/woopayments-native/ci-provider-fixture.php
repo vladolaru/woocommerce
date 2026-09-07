@@ -794,7 +794,7 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			if ( ! array_key_exists( $signing_key, $business_query ) || ! is_scalar( $business_query[ $signing_key ] ) ) {
 				return $this->failure( 'invalid_query', "Fixture requires the Jetpack signing envelope for $method $route" );
 			}
-			if ( 'body-hash' !== $signing_key && '' === (string) $business_query[ $signing_key ] ) {
+			if ( '' === (string) $business_query[ $signing_key ] && ( 'body-hash' !== $signing_key || 'GET' !== $method ) ) {
 				return $this->failure( 'invalid_query', "Fixture requires nonempty Jetpack signing values for $method $route" );
 			}
 			unset( $business_query[ $signing_key ] );

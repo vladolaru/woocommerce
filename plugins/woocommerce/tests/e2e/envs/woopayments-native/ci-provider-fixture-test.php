@@ -156,11 +156,12 @@ function body( $response ): array {
  *
  * @param string               $route Site-scoped WooPayments route.
  * @param array<string,string> $business_query Exact business query.
+ * @param string               $method HTTP method.
  */
-function signed_provider_url( string $route, array $business_query = array() ): string {
+function signed_provider_url( string $route, array $business_query = array(), string $method = 'GET' ): string {
 	$query = array_merge(
 		array(
-			'body-hash' => '',
+			'body-hash' => 'POST' === $method ? 'body-hash' : '',
 			'nonce'     => 'nonce',
 			'signature' => 'signature',
 			'timestamp' => '1',
@@ -986,7 +987,7 @@ $all_account_response = body(
 			'method' => 'POST',
 			'body'   => wp_json_encode( $all_account_writes ),
 		),
-		signed_provider_url( 'accounts' )
+		signed_provider_url( 'accounts', array(), 'POST' )
 	)
 );
 assert_true( 'MUTATED CI' === $all_account_response['statement_descriptor'], 'statement settings writes must mutate provider state' );
@@ -1001,7 +1002,7 @@ $fixture->intercept(
 		'method' => 'POST',
 		'body'   => wp_json_encode( $baseline_provider_state['settings'] ),
 	),
-	signed_provider_url( 'accounts' )
+	signed_provider_url( 'accounts', array(), 'POST' )
 );
 assert_true( true === $fixture->audit()['state_restored'], 'restoring every account write family must restore the canonical baseline' );
 
@@ -1016,7 +1017,7 @@ $fixture->intercept(
 			)
 		),
 	),
-	signed_provider_url( 'fraud_ruleset' )
+	signed_provider_url( 'fraud_ruleset', array(), 'POST' )
 );
 assert_true( false === $fixture->audit()['state_restored'], 'fraud writes must participate in complete restoration' );
 $fixture->intercept(
@@ -1025,7 +1026,7 @@ $fixture->intercept(
 		'method' => 'POST',
 		'body'   => wp_json_encode( $baseline_provider_state['fraud_ruleset'] ),
 	),
-	signed_provider_url( 'fraud_ruleset' )
+	signed_provider_url( 'fraud_ruleset', array(), 'POST' )
 );
 assert_true( true === $fixture->audit()['state_restored'], 'restoring fraud settings must restore the canonical baseline' );
 
@@ -1036,7 +1037,7 @@ $updated = body(
 			'method' => 'POST',
 			'body'   => '{"test_mode":true,"business_name":"Updated native CI store"}',
 		),
-		signed_provider_url( 'accounts' )
+		signed_provider_url( 'accounts', array(), 'POST' )
 	)
 );
 assert_true( 'Updated native CI store' === $updated['business_profile']['name'], 'settings writes must update private fixture state' );
@@ -1063,7 +1064,7 @@ $restored = body(
 			'method' => 'POST',
 			'body'   => '{"business_name":"Native CI store","test_mode":true}',
 		),
-		signed_provider_url( 'accounts' )
+		signed_provider_url( 'accounts', array(), 'POST' )
 	)
 );
 assert_true( 'Native CI store' === $restored['business_profile']['name'], 'provider state must be restored after the write proof' );
@@ -1170,6 +1171,8 @@ $invalid_contracts = array(
 	array( 'POST', 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/accounts', '' ),
 	array( 'POST', 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/accounts', '[]' ),
 	array( 'POST', 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/accounts', '[{"business_name":"Native CI"}]' ),
+	array( 'POST', str_replace( 'body-hash=body-hash', 'body-hash=', signed_provider_url( 'accounts', array(), 'POST' ) ), '{"test_mode":true,"business_name":"Native CI"}' ),
+	array( 'POST', str_replace( 'body-hash=body-hash', 'body-hash=', signed_provider_url( 'fraud_ruleset', array(), 'POST' ) ), '{"ruleset_config":[],"test_mode":true}' ),
 );
 foreach ( $invalid_contracts as list( $method, $url, $request_body ) ) {
 	assert_true(
@@ -1186,7 +1189,7 @@ foreach ( $invalid_contracts as list( $method, $url, $request_body ) ) {
 }
 
 $requests = get_option( 'e2e_woopayments_native_request_log', array() );
-assert_true( count( $requests ) === 108, 'every provider request must be recorded, got ' . count( $requests ) );
+assert_true( count( $requests ) === 110, 'every provider request must be recorded, got ' . count( $requests ) );
 $canonical_transactions = array_values(
 	array_filter(
 		$requests,
@@ -1212,7 +1215,7 @@ assert_true(
 	'valid requests must use the canonical audit shape'
 );
 $failure_count = count( get_option( 'e2e_woopayments_native_failure_log', array() ) );
-assert_true( 74 === $failure_count, 'fail-closed provider verdicts must remain auditable, got ' . $failure_count );
+assert_true( 76 === $failure_count, 'fail-closed provider verdicts must remain auditable, got ' . $failure_count );
 $audit = $fixture->audit();
 assert_true(
 	! in_array( 'GET disputes/summary', $audit['required_routes'], true )
