@@ -25,13 +25,17 @@ if environment.get("E2E_WOOPAYMENTS_NATIVE") != "true":
     fail("native runtime opt-in must be explicit")
 if environment.get("E2E_WOOPAYMENTS_NATIVE_FIXTURE") != "true":
     fail("secretless fixture opt-in must be explicit")
+if environment.get("E2E_WOOPAYMENTS_WP_ENV_CONFIG") != ".wp-env.e2e.json":
+    fail("lane must select the E2E wp-env config explicitly")
 runs = "\n".join(
     step.get("run", "") for step in job.get("steps", []) if isinstance(step, dict)
 )
 for required in (
+    "wp-env:e2e start",
     "fresh-activation-smoke.sh",
     "woopayments-native-readonly",
     "woopayments-native-extension-compat",
+    "--project=woopayments-native-ci-profile-skips",
     "assert-ci-fixture-clean.sh",
     "bundle-size-gate.sh capture",
     "bundle-size-gate.sh compare",
@@ -40,6 +44,24 @@ for required in (
 ):
     if required not in runs:
         fail(f"missing blocking command: {required}")
+for forbidden in (
+    "wp-env start",
+    "install-ci-fixture.sh default",
+    "install-ci-fixture.sh e2e",
+    "--project=woopayments-native-provider",
+):
+    if forbidden in runs:
+        fail(f"wp-env commands must use the single explicit E2E config: {forbidden}")
+
+audit_steps = [
+    step
+    for step in job.get("steps", [])
+    if isinstance(step, dict) and "assert-ci-fixture-clean.sh" in step.get("run", "")
+]
+if len(audit_steps) != 1 or audit_steps[0].get("if") != "${{ always() }}":
+    fail("fixture audit must run exactly once with always() after Playwright")
+if "test:e2e:with-env" in audit_steps[0].get("run", ""):
+    fail("fixture audit must not share Playwright's fail-fast shell step")
 
 evaluation = jobs.get("evaluate-project-jobs", {})
 needs = evaluation.get("needs", [])
