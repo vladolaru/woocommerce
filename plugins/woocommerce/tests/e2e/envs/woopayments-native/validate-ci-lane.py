@@ -1,12 +1,24 @@
 #!/usr/bin/env python3
 import pathlib
+import re
 import sys
 
 import yaml
 
 
+GITHUB_EXPRESSION = re.compile(r"\$\{\{(?P<body>.*?)\}\}", re.DOTALL)
+RUNNER_CONTEXT = re.compile(r"(?<![A-Za-z0-9_])runner\s*(?=\.|\[)")
+
+
 def fail(message: str) -> None:
     raise SystemExit(f"WooPayments native CI contract failed: {message}")
+
+
+def uses_runner_context(value: str) -> bool:
+    return any(
+        RUNNER_CONTEXT.search(expression.group("body"))
+        for expression in GITHUB_EXPRESSION.finditer(value)
+    )
 
 
 workflow = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else ".github/workflows/ci.yml")
@@ -22,7 +34,7 @@ if "secrets." in serialized:
     fail("lane must not consume repository or provider secrets")
 environment = job.get("env", {})
 for name, value in environment.items():
-    if isinstance(value, str) and "${{ runner." in value:
+    if isinstance(value, str) and uses_runner_context(value):
         fail(
             f"job-level env {name} uses runner context unavailable during "
             "workflow admission"
