@@ -113,30 +113,61 @@ class WooPaymentsErrorMessagesTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Grounded platform errors preserve their actionable shopper message.
+	 *
+	 * @dataProvider grounded_platform_error_data
+	 *
+	 * @param string $error_type       Error type.
+	 * @param string $error_code       Error code.
+	 * @param string $platform_message Normalized platform message.
+	 */
+	public function test_get_shopper_message_preserves_grounded_platform_errors( string $error_type, string $error_code, string $platform_message ): void {
+		$this->assertSame(
+			$platform_message,
+			WooPaymentsErrorMessages::get_shopper_message( $error_type, $error_code, '', $platform_message )
+		);
+	}
+
+	/**
+	 * Grounded platform errors whose normalized message is safe to show.
+	 *
+	 * @return array<string,array{string,string,string}>
+	 */
+	public function grounded_platform_error_data(): array {
+		return array(
+			'card-testing prevention' => array( '', 'wcpay_card_testing_prevention', "Error: We're not able to add this payment method. Please try again later." ),
+			'phone length rejection'  => array( 'invalid_request_error', 'invalid_request_error', 'Error: Invalid string length: 55555501004242424242424242 must be at most 20 characters' ),
+		);
+	}
+
+	/**
 	 * @testdox Unsafe provider details are redacted for unknown, non-card, and transport failures.
 	 *
 	 * @dataProvider unsafe_error_data
 	 *
-	 * @param string $error_type Error type.
-	 * @param string $error_code Error code.
+	 * @param string $error_type       Error type.
+	 * @param string $error_code       Error code.
+	 * @param string $platform_message Normalized platform message.
 	 */
-	public function test_get_shopper_message_redacts_unsafe_errors( string $error_type, string $error_code ): void {
+	public function test_get_shopper_message_redacts_unsafe_errors( string $error_type, string $error_code, string $platform_message ): void {
 		$this->assertSame(
 			"We're not able to process this request. Please refresh the page and try again.",
-			WooPaymentsErrorMessages::get_shopper_message( $error_type, $error_code )
+			WooPaymentsErrorMessages::get_shopper_message( $error_type, $error_code, '', $platform_message )
 		);
 	}
 
 	/**
 	 * Unsafe provider errors.
 	 *
-	 * @return array<string,array{string,string}>
+	 * @return array<string,array{string,string,string}>
 	 */
 	public function unsafe_error_data(): array {
 		return array(
-			'unknown card error' => array( 'card_error', 'provider_internal_detail' ),
-			'non-card API error' => array( 'api_error', 'provider_internal_detail' ),
-			'transport failure'  => array( '', 'wcpay_native_transport_error' ),
+			'unknown card error'                   => array( 'card_error', 'provider_internal_detail', 'Error: Provider diagnostic.' ),
+			'wcpay bad request'                    => array( '', 'wcpay_bad_request', 'Error: Provider diagnostic.' ),
+			'arbitrary typeless transport failure' => array( '', 'wcpay_native_transport_error', 'Error: Provider diagnostic.' ),
+			'non-card API error'                   => array( 'api_error', 'provider_internal_detail', 'Error: Provider diagnostic.' ),
+			'allowed pair without a message'       => array( '', 'wcpay_card_testing_prevention', '' ),
 		);
 	}
 }

@@ -106,9 +106,10 @@ class WooPaymentsIntentCodec {
 		$error_code                                 = isset( $error['code'] ) ? (string) $error['code'] : ( 'si' === $intent_type ? 'wcpay_native_setup_intent_failed' : 'wcpay_native_charge_failed' );
 		$error_type                                 = isset( $error['type'] ) && is_string( $error['type'] ) ? $error['type'] : '';
 		$decline_code                               = isset( $error['decline_code'] ) && is_string( $error['decline_code'] ) ? $error['decline_code'] : '';
+		$error_message                              = isset( $error['message'] ) ? (string) $error['message'] : '';
 		$data[ PaymentOutcome::DATA_ERROR_CODE ]    = $error_code;
-		$data[ PaymentOutcome::DATA_ERROR_MESSAGE ] = isset( $error['message'] ) ? (string) $error['message'] : '';
-		$data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] = WooPaymentsErrorMessages::get_shopper_message( $error_type, $error_code, $decline_code );
+		$data[ PaymentOutcome::DATA_ERROR_MESSAGE ] = $error_message;
+		$data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] = WooPaymentsErrorMessages::get_shopper_message( $error_type, $error_code, $decline_code, $error_message );
 
 		return new PaymentOutcome( PaymentOutcome::STATUS_FAILED, $intent_id, '', $payment_method_id, $customer_id, $data );
 	}
@@ -388,7 +389,7 @@ class WooPaymentsIntentCodec {
 			return $exception->getMessage();
 		}
 
-		return WooPaymentsErrorMessages::get_shopper_message( $exception->get_error_type(), $error_code, $exception->get_decline_code() );
+		return WooPaymentsErrorMessages::get_shopper_message( $exception->get_error_type(), $error_code, $exception->get_decline_code(), $exception->getMessage() );
 	}
 
 	/**

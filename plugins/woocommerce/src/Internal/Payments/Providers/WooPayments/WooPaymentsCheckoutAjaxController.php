@@ -366,7 +366,8 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 				WooPaymentsErrorMessages::get_shopper_message(
 					$exception->get_error_type(),
 					$exception->get_error_code(),
-					$exception->get_decline_code()
+					$exception->get_decline_code(),
+					$exception->getMessage()
 				),
 				502
 			);

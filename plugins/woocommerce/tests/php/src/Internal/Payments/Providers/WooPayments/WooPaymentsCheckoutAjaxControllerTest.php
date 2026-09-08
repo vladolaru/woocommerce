@@ -1600,6 +1600,25 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Setup-intent card-testing prevention preserves the platform's actionable message.
+	 */
+	public function test_create_setup_intent_preserves_card_testing_prevention_message(): void {
+		$platform_message = "Error: We're not able to add this payment method. Please try again later.";
+		$response         = $this->get_create_setup_intent_api_error_response(
+			new WooPaymentsApiException(
+				$platform_message,
+				'wcpay_card_testing_prevention',
+				400,
+				''
+			)
+		);
+
+		$this->assertFalse( $response['success'] );
+		$this->assertSame( 502, $response['status_code'] );
+		$this->assertSame( $platform_message, $response['data']['error']['message'] );
+	}
+
+	/**
 	 * @testdox Setup-intent transport failures should redact technical messages.
 	 */
 	public function test_create_setup_intent_redacts_non_card_api_errors(): void {

@@ -216,6 +216,30 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Failed intent mapping preserves a grounded platform message without changing its diagnostic copy.
+	 */
+	public function test_failed_intent_mapping_preserves_grounded_platform_message(): void {
+		$platform_message = "Error: We're not able to add this payment method. Please try again later.";
+		$outcome          = WooPaymentsIntentCodec::outcome_from_intention(
+			array(
+				'id'                 => 'pi_card_testing_prevention',
+				'status'             => 'requires_payment_method',
+				'last_payment_error' => array(
+					'type'    => '',
+					'code'    => 'wcpay_card_testing_prevention',
+					'message' => $platform_message,
+				),
+			),
+			WooPaymentsIntentMappingContext::for_native( 42, 'https://example.test/order-received/42' )
+		);
+
+		$data = $outcome->get_data();
+
+		$this->assertSame( $platform_message, $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
+		$this->assertSame( $platform_message, $data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] );
+	}
+
+	/**
 	 * @testdox Failed intent mapping redacts unknown provider details from shopper copy.
 	 */
 	public function test_failed_intent_mapping_redacts_unknown_provider_message(): void {
@@ -308,6 +332,39 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'Error: Provider diagnostic for request req_private.', $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
 		$this->assertSame( 'Error: Your card has insufficient funds.', $data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? null );
 		$this->assertSame( 'charge', $data['operation'] );
+	}
+
+	/**
+	 * @testdox Failed transport outcomes preserve grounded platform messages without changing diagnostic copy.
+	 *
+	 * @dataProvider grounded_transport_error_data
+	 *
+	 * @param string $error_type       Error type.
+	 * @param string $error_code       Error code.
+	 * @param string $platform_message Normalized platform message.
+	 */
+	public function test_failed_transport_outcome_preserves_grounded_platform_message( string $error_type, string $error_code, string $platform_message ): void {
+		$outcome = WooPaymentsIntentCodec::failed_transport_outcome(
+			'charge',
+			new WooPaymentsApiException( $platform_message, $error_code, 400, $error_type )
+		);
+
+		$data = $outcome->get_data();
+
+		$this->assertSame( $platform_message, $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
+		$this->assertSame( $platform_message, $data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] );
+	}
+
+	/**
+	 * Grounded platform transport errors whose normalized message is safe to show.
+	 *
+	 * @return array<string,array{string,string,string}>
+	 */
+	public function grounded_transport_error_data(): array {
+		return array(
+			'card-testing prevention' => array( '', 'wcpay_card_testing_prevention', "Error: We're not able to add this payment method. Please try again later." ),
+			'phone length rejection'  => array( 'invalid_request_error', 'invalid_request_error', 'Error: Invalid string length: 55555501004242424242424242 must be at most 20 characters' ),
+		);
 	}
 
 	/**

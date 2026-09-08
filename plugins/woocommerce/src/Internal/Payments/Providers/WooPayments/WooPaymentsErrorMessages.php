@@ -20,12 +20,18 @@ class WooPaymentsErrorMessages {
 	 *
 	 * @since 11.0.0
 	 *
-	 * @param string $error_type   Provider error type.
-	 * @param string $error_code   Provider error code.
-	 * @param string $decline_code Provider decline code.
+	 * @param string $error_type       Provider error type.
+	 * @param string $error_code       Provider error code.
+	 * @param string $decline_code     Provider decline code.
+	 * @param string $platform_message Normalized platform message.
 	 * @return string
 	 */
-	public static function get_shopper_message( string $error_type, string $error_code, string $decline_code = '' ): string {
+	public static function get_shopper_message( string $error_type, string $error_code, string $decline_code = '', string $platform_message = '' ): string {
+		// The plugin passes through typeless errors broadly. Native parity is deliberately limited to the observed card-testing error and the V15 invalid-request shape.
+		if ( '' !== $platform_message && ( ( '' === $error_type && 'wcpay_card_testing_prevention' === $error_code ) || ( 'invalid_request_error' === $error_type && 'invalid_request_error' === $error_code ) ) ) {
+			return $platform_message;
+		}
+
 		if ( 'card_error' !== $error_type ) {
 			return self::get_generic_message();
 		}
