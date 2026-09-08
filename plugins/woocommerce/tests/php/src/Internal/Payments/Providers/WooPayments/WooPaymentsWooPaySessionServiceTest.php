@@ -12,6 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWo
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\FakeWooPayMailchimpBlocksIntegration;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\FakeWooPayPointsRewardsBlocksIntegration;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\FakeWooPayPointsRewardsManager;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -195,6 +196,56 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$this->reset_frontend_surface_state();
 		wp_set_current_user( 0 );
 		parent::tearDown();
+	}
+
+	/**
+	 * @testdox Should enable WooPay for each location when only the form-field defaults are absent.
+	 *
+	 * @dataProvider express_checkout_context_provider
+	 * @param string $context Express checkout context.
+	 */
+	public function test_get_express_checkout_params_uses_form_field_defaults_for_missing_location_settings( string $context ): void {
+		delete_option( 'woocommerce_woocommerce_payments_settings' );
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'    => array(
+					'account_id'                 => 'acct_123',
+					'is_live'                    => true,
+					'details_submitted'          => true,
+					'platform_checkout_eligible' => true,
+					'capabilities'               => array( 'card_payments' => 'active' ),
+				),
+				'fetched' => time(),
+				'errored' => false,
+			)
+		);
+		$gateway_settings = array( 'platform_checkout' => 'yes' );
+		$settings_filter  = static function () use ( $gateway_settings ) {
+			return $gateway_settings;
+		};
+		add_filter( 'pre_option_woocommerce_woocommerce_payments_settings', $settings_filter );
+
+		try {
+			$params = $this->create_service_with_real_account_service()->get_express_checkout_params( $context );
+		} finally {
+			remove_filter( 'pre_option_woocommerce_woocommerce_payments_settings', $settings_filter );
+		}
+
+		$this->assertSame( array( 'woopay' ), $params['enabled_methods'] );
+	}
+
+	/**
+	 * Provide each WooPay location context.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public function express_checkout_context_provider(): array {
+		return array(
+			'product'  => array( 'product' ),
+			'cart'     => array( 'cart' ),
+			'checkout' => array( 'checkout' ),
+		);
 	}
 
 	/**
@@ -2184,6 +2235,26 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 
 		$sut = new TestableWooPaySessionService();
 		$sut->init( $account_service, new WooPaymentsFrontendStylesService(), $tracking_controller, null, $adapted_extensions, $customer_service );
+
+		return $sut;
+	}
+
+	/**
+	 * Create a WooPay session service backed by the persisted account service.
+	 *
+	 * @return TestableWooPaySessionService
+	 */
+	private function create_service_with_real_account_service(): TestableWooPaySessionService {
+		$account_service = new WooPaymentsAccountService();
+		$account_service->init( new LegacyProxy() );
+		$tracking_controller = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_shopper_tracking_enabled' ) )
+			->getMock();
+		$tracking_controller->method( 'is_shopper_tracking_enabled' )->willReturn( true );
+
+		$sut = new TestableWooPaySessionService();
+		$sut->init( $account_service, new WooPaymentsFrontendStylesService(), $tracking_controller );
 
 		return $sut;
 	}

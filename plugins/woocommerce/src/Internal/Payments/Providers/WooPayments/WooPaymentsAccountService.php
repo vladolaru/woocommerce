@@ -1027,8 +1027,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		if ( $test_mode_onboarding ) {
 			$test_mode = true;
 		} else {
-			$settings  = $this->get_gateway_settings();
-			$test_mode = 'yes' === ( $settings['test_mode'] ?? 'no' );
+			$test_mode = 'yes' === $this->get_gateway_setting( 'test_mode' );
 		}
 
 		/**
@@ -1054,13 +1053,17 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * Get a persisted WooPayments gateway setting.
 	 *
 	 * @param string $key      Setting key.
-	 * @param mixed  $fallback Fallback value.
-	 * @return mixed
+	 * @param mixed  $fallback Optional caller fallback, which takes precedence over the plugin default.
+	 * @return mixed Persisted value, caller fallback, plugin default, or null when no default exists.
 	 */
 	public function get_gateway_setting( string $key, $fallback = null ) {
 		$settings = $this->get_gateway_settings();
 
-		return array_key_exists( $key, $settings ) ? $settings[ $key ] : $fallback;
+		if ( array_key_exists( $key, $settings ) ) {
+			return $settings[ $key ];
+		}
+
+		return 1 < func_num_args() ? $fallback : WooPaymentsSettingsDefaults::get( $key );
 	}
 
 	/**
@@ -1069,7 +1072,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	public function is_gateway_enabled(): bool {
-		return 'yes' === (string) $this->get_gateway_setting( 'enabled', 'no' );
+		return 'yes' === (string) $this->get_gateway_setting( 'enabled' );
 	}
 
 	/**

@@ -150,6 +150,23 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should use form-field defaults for absent settings while preserving explicit caller fallbacks and merchant values.
+	 */
+	public function test_get_gateway_setting_uses_form_field_defaults_for_absent_settings(): void {
+		$sut = $this->create_service();
+
+		$this->assertSame( 'yes', $sut->get_gateway_setting( 'saved_cards' ) );
+		$this->assertSame( array( 'payment_request', 'woopay', 'amazon_pay' ), $sut->get_gateway_setting( 'express_checkout_product_methods' ) );
+		$this->assertSame( 'no', $sut->get_gateway_setting( 'saved_cards', 'no' ) );
+		$this->assertNull( $sut->get_gateway_setting( 'express_checkout_enabled' ) );
+
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'saved_cards' => 'no' ) );
+
+		$this->assertSame( 'no', $sut->get_gateway_setting( 'saved_cards' ) );
+		$this->assertSame( array( 'payment_request', 'woopay', 'amazon_pay' ), $sut->get_gateway_setting( 'express_checkout_cart_methods' ) );
+	}
+
+	/**
 	 * @testdox Should expose whether onboarding was disabled by the WooPayments platform.
 	 */
 	public function test_exposes_onboarding_disabled_state_from_transient(): void {

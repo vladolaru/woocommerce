@@ -376,6 +376,27 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should expose and persist form-field defaults when settings have not been saved.
+	 */
+	public function test_get_settings_round_trip_persists_form_field_defaults_when_settings_are_absent(): void {
+		delete_option( 'woocommerce_woocommerce_payments_settings' );
+
+		$read_settings = $this->sut->get_settings();
+		$updated       = $this->sut->update_settings( array() );
+		$stored        = get_option( 'woocommerce_woocommerce_payments_settings' );
+
+		$this->assertTrue( $read_settings['is_saved_cards_enabled'] );
+		$this->assertSame( 'By placing this order, you agree to our [terms] and understand our [privacy_policy].', $read_settings['woopay_custom_message'] );
+		$this->assertSame( array( 'payment_request', 'woopay', 'amazon_pay' ), $read_settings['express_checkout_product_methods'] );
+		$this->assertSame( array( 'payment_request', 'woopay', 'amazon_pay' ), $read_settings['express_checkout_cart_methods'] );
+		$this->assertSame( array( 'payment_request', 'woopay', 'amazon_pay' ), $read_settings['express_checkout_checkout_methods'] );
+		$this->assertIsArray( $updated );
+		$this->assertIsArray( $stored );
+		$this->assertSame( array( 'payment_request', 'woopay', 'amazon_pay' ), $stored['express_checkout_product_methods'] );
+		$this->assertSame( 'yes', $stored['saved_cards'] );
+	}
+
+	/**
 	 * @testdox Public settings availability honors the registry-owned compatibility filter exactly once.
 	 */
 	public function test_get_settings_filters_available_payment_method_ids_once(): void {

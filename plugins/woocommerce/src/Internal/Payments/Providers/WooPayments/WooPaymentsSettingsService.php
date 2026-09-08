@@ -303,7 +303,7 @@ class WooPaymentsSettingsService {
 		$account_fields                  = $this->get_account_backed_response_fields( $settings );
 		$available_payment_method_ids    = $this->get_available_payment_method_ids( $filtered_payment_method_catalog );
 		$enabled_payment_method_ids      = $this->sanitize_payment_method_ids(
-			$this->get_array_setting( $settings, 'upe_enabled_payment_method_ids', array( 'card' ) ),
+			$this->get_array_setting( $settings, 'upe_enabled_payment_method_ids' ),
 			$available_payment_method_ids
 		);
 
@@ -316,8 +316,8 @@ class WooPaymentsSettingsService {
 			'dismissed_duplicate_payment_method_notices' => $this->get_dismissed_duplicate_payment_method_notices(),
 			'account_fees'                               => $this->get_account_fees(),
 			'pm_promotions'                              => $this->get_pm_promotions_service()->get_visible_promotions() ?? array(),
-			'is_wcpay_enabled'                           => $this->is_yes( $settings['enabled'] ?? 'no' ),
-			'is_manual_capture_enabled'                  => $this->is_yes( $settings['manual_capture'] ?? 'no' ),
+			'is_wcpay_enabled'                           => $this->is_yes( $settings['enabled'] ),
+			'is_manual_capture_enabled'                  => $this->is_yes( $settings['manual_capture'] ),
 			'is_test_mode_enabled'                       => $this->account_service->is_test_mode_enabled(),
 			'is_test_mode_onboarding'                    => $this->account_service->is_test_mode_onboarding_enabled(),
 			'is_dev_mode_enabled'                        => $this->account_service->is_dev_mode_enabled(),
@@ -344,12 +344,12 @@ class WooPaymentsSettingsService {
 			'is_payment_request_enabled'                 => $this->account_service->is_payment_request_enabled(),
 			'is_express_checkout_in_payment_methods_enabled' => $this->is_yes( $settings['express_checkout_in_payment_methods'] ?? 'no' ),
 			'is_express_checkout_in_payment_methods_list_supported' => true,
-			'is_debug_log_enabled'                       => $this->is_yes( $settings['enable_logging'] ?? 'no' ),
-			'payment_request_button_size'                => $this->get_string_setting( $settings, 'payment_request_button_size', 'medium' ),
-			'payment_request_button_type'                => $this->get_string_setting( $settings, 'payment_request_button_type', 'default' ),
-			'payment_request_button_theme'               => $this->get_string_setting( $settings, 'payment_request_button_theme', 'dark' ),
+			'is_debug_log_enabled'                       => $this->is_yes( $settings['enable_logging'] ),
+			'payment_request_button_size'                => $this->get_string_setting( $settings, 'payment_request_button_size' ),
+			'payment_request_button_type'                => $this->get_string_setting( $settings, 'payment_request_button_type' ),
+			'payment_request_button_theme'               => $this->get_string_setting( $settings, 'payment_request_button_theme' ),
 			'payment_request_button_border_radius'       => $this->get_int_setting( $settings, 'payment_request_button_border_radius', 4 ),
-			'is_saved_cards_enabled'                     => $this->is_yes( $settings['saved_cards'] ?? 'yes' ),
+			'is_saved_cards_enabled'                     => $this->is_yes( $settings['saved_cards'] ),
 			'is_card_present_eligible'                   => false,
 			'is_woopay_enabled'                          => $this->is_yes( $settings['platform_checkout'] ?? 'no' ),
 			'woopay_last_disable_date'                   => $this->get_string_setting( $settings, 'platform_checkout_last_disable_date' ),
@@ -741,7 +741,7 @@ class WooPaymentsSettingsService {
 	private function get_gateway_settings(): array {
 		$settings = get_option( self::SETTINGS_OPTION, array() );
 
-		return is_array( $settings ) ? $settings : array();
+		return array_replace( WooPaymentsSettingsDefaults::all(), is_array( $settings ) ? $settings : array() );
 	}
 
 	/**

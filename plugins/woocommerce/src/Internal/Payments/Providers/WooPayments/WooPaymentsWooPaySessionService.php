@@ -1451,7 +1451,7 @@ class WooPaymentsWooPaySessionService {
 	private function is_woopay_express_checkout_configured_at( string $context ): bool {
 
 		$setting_key = 'express_checkout_' . $this->normalize_button_context( $context ) . '_methods';
-		$methods     = $this->get_account_service()->get_gateway_setting( $setting_key, array() );
+		$methods     = $this->get_account_service()->get_gateway_setting( $setting_key );
 
 		if ( is_array( $methods ) ) {
 			return in_array( 'woopay', $methods, true );
@@ -1709,11 +1709,11 @@ class WooPaymentsWooPaySessionService {
 	 */
 	private function get_woopay_button_settings( string $context ): array {
 		return array(
-			'type'    => $this->get_string_gateway_setting( 'payment_request_button_type', 'default' ),
-			'theme'   => $this->get_string_gateway_setting( 'payment_request_button_theme', 'dark' ),
+			'type'    => $this->get_string_gateway_setting( 'payment_request_button_type' ),
+			'theme'   => $this->get_string_gateway_setting( 'payment_request_button_theme' ),
 			'height'  => $this->get_woopay_button_height(),
 			'radius'  => $this->get_string_gateway_setting_allow_empty( 'payment_request_button_border_radius', '' ),
-			'size'    => $this->get_string_gateway_setting( 'payment_request_button_size', 'default' ),
+			'size'    => $this->get_string_gateway_setting( 'payment_request_button_size' ),
 			'context' => $this->normalize_button_context( $context ),
 		);
 	}
@@ -1724,7 +1724,7 @@ class WooPaymentsWooPaySessionService {
 	 * @return string
 	 */
 	private function get_woopay_button_height(): string {
-		$size = $this->get_string_gateway_setting( 'payment_request_button_size', 'medium' );
+		$size = $this->get_string_gateway_setting( 'payment_request_button_size' );
 
 		if ( 'medium' === $size ) {
 			return '48';
@@ -1752,14 +1752,22 @@ class WooPaymentsWooPaySessionService {
 	/**
 	 * Get a string gateway setting.
 	 *
-	 * @param string $key      Setting key.
-	 * @param string $fallback Fallback value.
+	 * @param string      $key      Setting key.
+	 * @param string|null $fallback Optional explicit fallback value.
 	 * @return string
 	 */
-	private function get_string_gateway_setting( string $key, string $fallback ): string {
-		$value = $this->get_account_service()->get_gateway_setting( $key, $fallback );
+	private function get_string_gateway_setting( string $key, ?string $fallback = null ): string {
+		$value = null === $fallback
+			? $this->get_account_service()->get_gateway_setting( $key )
+			: $this->get_account_service()->get_gateway_setting( $key, $fallback );
 
-		return is_scalar( $value ) && '' !== (string) $value ? sanitize_text_field( (string) $value ) : $fallback;
+		if ( is_scalar( $value ) && '' !== (string) $value ) {
+			return sanitize_text_field( (string) $value );
+		}
+
+		$default = WooPaymentsSettingsDefaults::get( $key );
+
+		return null !== $fallback ? $fallback : ( is_scalar( $default ) ? sanitize_text_field( (string) $default ) : '' );
 	}
 
 	/**
@@ -1782,7 +1790,7 @@ class WooPaymentsWooPaySessionService {
 	 * @return bool
 	 */
 	private function is_truthy_gateway_setting( string $key ): bool {
-		$value = $this->get_account_service()->get_gateway_setting( $key, 'no' );
+		$value = $this->get_account_service()->get_gateway_setting( $key );
 
 		return true === $value || 'yes' === $value || '1' === $value || 1 === $value;
 	}
@@ -2011,10 +2019,10 @@ class WooPaymentsWooPaySessionService {
 			$shop_url = home_url( '/' );
 		}
 
-		$manual_capture = 'yes' === $this->get_account_service()->get_gateway_setting( 'manual_capture', 'no' );
+		$manual_capture = 'yes' === $this->get_account_service()->get_gateway_setting( 'manual_capture' );
 		$order          = $order_id ? wc_get_order( $order_id ) : false;
 		$checkout_url   = function_exists( 'wc_get_checkout_url' ) ? wc_get_checkout_url() : home_url( '/' );
-		$custom_message = (string) $this->get_account_service()->get_gateway_setting( 'platform_checkout_custom_message', '' );
+		$custom_message = (string) $this->get_account_service()->get_gateway_setting( 'platform_checkout_custom_message' );
 		$blocks_data    = $this->get_blocks_data_extractor();
 		if ( $order instanceof \WC_Order ) {
 			$checkout_url = $order->get_checkout_payment_url();

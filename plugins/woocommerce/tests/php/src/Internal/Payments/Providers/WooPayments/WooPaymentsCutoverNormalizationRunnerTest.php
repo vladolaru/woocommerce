@@ -99,7 +99,7 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 		$this->assertContains( 'manual_capture_payment_methods', $summary['changes'] );
 		$this->assertContains( 'link_woopay_mutual_exclusion', $summary['changes'] );
 		$this->assertArrayNotHasKey( 'payment_request', $stored );
-		$this->assertArrayNotHasKey( 'payment_request_button_locations', $stored );
+		$this->assertSame( array( 'product', 'cart', 'checkout' ), $stored['payment_request_button_locations'] );
 		$this->assertArrayNotHasKey( 'platform_checkout_button_locations', $stored );
 		$this->assertArrayNotHasKey( 'payment_request_button_branded_type', $stored );
 		$this->assertSame( array( 'payment_request', 'amazon_pay' ), $stored['express_checkout_product_methods'] );
@@ -111,12 +111,32 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 		$expected_split_settings = array( 'enabled' => 'yes' );
 		$this->assertSame( $expected_split_settings, get_option( 'woocommerce_woocommerce_payments_apple_pay_settings' ) );
 		$this->assertSame( $expected_split_settings, get_option( 'woocommerce_woocommerce_payments_google_pay_settings' ) );
-		$this->assertSame( '2', get_option( self::NORMALIZED_OPTION ) );
+		$this->assertSame( '3', get_option( self::NORMALIZED_OPTION ) );
 
 		$second_summary = $this->create_runner()->run();
 
 		$this->assertFalse( $second_summary['ran'] );
 		$this->assertSame( array( 'already_normalized' ), $second_summary['changes'] );
+	}
+
+	/**
+	 * @testdox Should add missing form-field defaults without overwriting saved settings during cutover.
+	 */
+	public function test_run_adds_missing_form_field_defaults_without_overwriting_saved_settings(): void {
+		update_option( self::VERSION_OPTION, '10.8.0' );
+		update_option( self::SETTINGS_OPTION, array( 'saved_cards' => 'no' ) );
+
+		$summary = $this->create_runner()->run();
+		$stored  = get_option( self::SETTINGS_OPTION );
+
+		$this->assertTrue( $summary['ran'] );
+		$this->assertIsArray( $stored );
+		$this->assertSame( 'no', $stored['saved_cards'] );
+		$this->assertArrayHasKey( 'manual_capture', $stored );
+		$this->assertSame( 'no', $stored['manual_capture'] );
+		$this->assertSame( array( 'payment_request', 'woopay', 'amazon_pay' ), $stored['express_checkout_product_methods'] );
+		$this->assertSame( array( 'payment_request', 'woopay', 'amazon_pay' ), $stored['express_checkout_cart_methods'] );
+		$this->assertSame( array( 'payment_request', 'woopay', 'amazon_pay' ), $stored['express_checkout_checkout_methods'] );
 	}
 
 	/**

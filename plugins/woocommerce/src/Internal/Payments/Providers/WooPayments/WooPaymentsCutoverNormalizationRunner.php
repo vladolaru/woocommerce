@@ -61,7 +61,7 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 
 	private const NORMALIZED_OPTION = 'woocommerce_native_woopayments_cutover_normalization_version';
 
-	private const NORMALIZATION_VERSION = '2';
+	private const NORMALIZATION_VERSION = '3';
 
 	private const LOCATIONS = array( 'product', 'cart', 'checkout' );
 
@@ -208,6 +208,10 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 			$changes[] = 'link_woopay_mutual_exclusion';
 		}
 
+		if ( $this->add_missing_form_field_defaults( $settings ) ) {
+			$changes[] = 'form_field_defaults';
+		}
+
 		$projection = $this->get_gateway_settings_synchronizer()->persist( $settings );
 		if ( ! $projection['persisted'] ) {
 			$this->log_persistence_failure( $projection['failed_option_names'] );
@@ -275,6 +279,26 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 		$settings = get_option( self::SETTINGS_OPTION, array() );
 
 		return is_array( $settings ) ? $settings : array();
+	}
+
+	/**
+	 * Add missing WooPayments form-field defaults without overwriting saved values.
+	 *
+	 * @param array<string,mixed> $settings Gateway settings.
+	 * @return bool Whether a missing setting was added.
+	 */
+	private function add_missing_form_field_defaults( array &$settings ): bool {
+		$updated = false;
+		foreach ( WooPaymentsSettingsDefaults::all() as $key => $value ) {
+			if ( array_key_exists( $key, $settings ) ) {
+				continue;
+			}
+
+			$settings[ $key ] = $value;
+			$updated          = true;
+		}
+
+		return $updated;
 	}
 
 	/**
