@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeEventHandler;
 use WC_Order;
 
 /**
@@ -17,6 +18,13 @@ use WC_Order;
  * @internal Transitional internal component for the native payments runtime.
  */
 class OrderPaymentLifecycleService {
+
+	/**
+	 * Private identity metadata stored on WooPayments order-note comments.
+	 *
+	 * @var string
+	 */
+	private const WOOPAYMENTS_NOTE_IDENTITY_META_KEY = '_wc_woopayments_note_identity';
 
 	/**
 	 * Order payment store.
@@ -116,6 +124,12 @@ class OrderPaymentLifecycleService {
 	 */
 	public function apply_unlocked( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabulary $persistence_profile ): void {
 		if ( $this->should_skip_late_failure_event( $order, $event ) ) {
+			return;
+		}
+
+		$completed_event_skip_reason = $this->get_completed_event_skip_reason( $order, $event, $persistence_profile );
+		if ( null !== $completed_event_skip_reason ) {
+			$this->log_skipped_completed_event( $order, $event, $completed_event_skip_reason );
 			return;
 		}
 
@@ -266,6 +280,102 @@ class OrderPaymentLifecycleService {
 		}
 
 		return false;
+	}
+
+	/**
+	 * Get the reason a completed lifecycle event must be ignored before it changes the order.
+	 *
+	 * @param WC_Order                      $order               Order object.
+	 * @param PaymentLifecycleEvent         $event               Lifecycle event.
+	 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
+	 * @return string|null Skip reason, or null when the event can be applied.
+	 */
+	private function get_completed_event_skip_reason( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabulary $persistence_profile ): ?string {
+		if ( PaymentLifecycleEvent::STATUS_COMPLETED !== $event->get_status() ) {
+			return null;
+		}
+
+		if ( $this->has_open_woopayments_dispute( $order, $persistence_profile ) ) {
+			return 'open_dispute';
+		}
+
+		$note = $event->get_note();
+		if ( null === $note || '' === $note || ! $this->has_persisted_lifecycle_note( $order, $event, $note ) ) {
+			return null;
+		}
+
+		return 'success_note_exists';
+	}
+
+	/**
+	 * Tell whether the provider vocabulary marks this order as carrying an open WooPayments dispute.
+	 *
+	 * @param WC_Order                      $order               Order object.
+	 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
+	 * @return bool
+	 */
+	private function has_open_woopayments_dispute( WC_Order $order, ProviderPersistenceVocabulary $persistence_profile ): bool {
+		$open_dispute_ids_meta_key = WooPaymentsDisputeEventHandler::OPEN_DISPUTE_IDS_META_KEY;
+		if ( ! in_array( $open_dispute_ids_meta_key, $persistence_profile->get_preserved_payment_meta_keys(), true ) ) {
+			return false;
+		}
+
+		$open_dispute_ids = $order->get_meta( $open_dispute_ids_meta_key, true );
+
+		return is_array( $open_dispute_ids ) && ! empty( $open_dispute_ids );
+	}
+
+	/**
+	 * Tell whether an order already stores the identity or legacy marker of a lifecycle note.
+	 *
+	 * @param WC_Order              $order Order object.
+	 * @param PaymentLifecycleEvent $event Lifecycle event.
+	 * @param string                $note  Note content.
+	 * @return bool
+	 */
+	private function has_persisted_lifecycle_note( WC_Order $order, PaymentLifecycleEvent $event, string $note ): bool {
+		if ( 'yes' === $order->get_meta( $this->get_note_marker_key( $event, $note ), true ) ) {
+			return true;
+		}
+
+		$identity_hash = hash( 'sha256', $this->get_note_identity( $event, $note ) );
+		$notes         = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+
+		foreach ( $notes as $order_note ) {
+			$note_identities = get_comment_meta( $order_note->id, self::WOOPAYMENTS_NOTE_IDENTITY_META_KEY, false );
+			if ( in_array( $identity_hash, $note_identities, true ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Log debug context for a completed lifecycle event that was skipped before mutation.
+	 *
+	 * @param WC_Order              $order  Order object.
+	 * @param PaymentLifecycleEvent $event  Lifecycle event.
+	 * @param string                $reason Skip reason.
+	 */
+	private function log_skipped_completed_event( WC_Order $order, PaymentLifecycleEvent $event, string $reason ): void {
+		if ( ! function_exists( 'wc_get_logger' ) ) {
+			return;
+		}
+
+		$message = 'open_dispute' === $reason
+			? 'Native WooPayments completed lifecycle event skipped because an open WooPayments dispute keeps the order on hold.'
+			: 'Native WooPayments completed lifecycle event skipped because an already persisted success note identifies a replay.';
+
+		wc_get_logger()->debug(
+			$message,
+			array(
+				'source'     => 'native-payments-webhook',
+				'order_id'   => $order->get_id(),
+				'event_type' => $event->get_status(),
+				'reason'     => $reason,
+			)
+		);
 	}
 
 	/**

@@ -100,6 +100,77 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Completed events received after a dispute keep the order on hold.
+	 */
+	public function test_success_after_dispute_created_keeps_on_hold(): void {
+		$order = $this->create_woopayments_order();
+		$order->update_meta_data( '_wcpay_open_dispute_ids', array( 'dp_1' ) );
+		$order->update_meta_data( '_intention_status', 'requires_payment_method' );
+		$order->update_status( 'on-hold' );
+		$order->save();
+
+		$this->sut->apply( $order, $this->completed_event( 'pi_1' ), $this->persistence_profile );
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'on-hold', $order->get_status(), 'A late success event must preserve the dispute hold.' );
+		$this->assertSame( array( 'dp_1' ), $order->get_meta( '_wcpay_open_dispute_ids', true ), 'The open dispute record must remain unchanged.' );
+		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ), 'A skipped success event must not update lifecycle metadata.' );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment complete.' ), 'A skipped success event must not add a completion note.' );
+		$this->assertLogged(
+			'debug',
+			'open WooPayments dispute',
+			array(
+				'source'     => 'native-payments-webhook',
+				'order_id'   => $order->get_id(),
+				'event_type' => PaymentLifecycleEvent::STATUS_COMPLETED,
+				'reason'     => 'open_dispute',
+			)
+		);
+	}
+
+	/**
+	 * @testdox Replayed completed events preserve the state established after their first application.
+	 */
+	public function test_success_is_applied_once_then_ignored(): void {
+		$order = $this->create_woopayments_order();
+		$event = $this->completed_event( 'pi_1' );
+
+		$this->sut->apply( $order, $event, $this->persistence_profile );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'completed', $order->get_status() );
+		$this->assertSame( '1.23', $order->get_meta( '_wcpay_transaction_fee', true ) );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Payment complete.' ) );
+
+		$order->update_meta_data( '_wcpay_transaction_fee', '2.34' );
+		$order->update_status( 'on-hold' );
+		$order->save();
+
+		$this->sut->apply( $order, $event, $this->persistence_profile );
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'on-hold', $order->get_status(), 'A replayed success event must not re-complete the order.' );
+		$this->assertSame( 'pi_1', $order->get_transaction_id(), 'A replayed success event must not change the transaction reference.' );
+		$this->assertSame( '2.34', $order->get_meta( '_wcpay_transaction_fee', true ), 'A replayed success event must not overwrite lifecycle metadata.' );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Payment complete.' ), 'A replayed success event must not add another completion note.' );
+		$this->assertLogged(
+			'debug',
+			'already persisted success note',
+			array(
+				'source'     => 'native-payments-webhook',
+				'order_id'   => $order->get_id(),
+				'event_type' => PaymentLifecycleEvent::STATUS_COMPLETED,
+				'reason'     => 'success_note_exists',
+			)
+		);
+	}
+
+	/**
 	 * @testdox Completed events update paid orders without adding duplicate generic completion notes.
 	 */
 	public function test_completed_event_updates_paid_order_without_generic_completion_note(): void {
@@ -760,6 +831,27 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	 */
 	private function apply_event_unlocked( WC_Order $order, PaymentLifecycleEvent $event ): void {
 		$this->sut->apply_unlocked( $order, $event, $this->persistence_profile );
+	}
+
+	/**
+	 * Create a completed lifecycle event with mutable payment metadata.
+	 *
+	 * @param string $payment_reference Provider payment reference.
+	 * @return PaymentLifecycleEvent
+	 */
+	private function completed_event( string $payment_reference ): PaymentLifecycleEvent {
+		return new PaymentLifecycleEvent(
+			PaymentLifecycleEvent::STATUS_COMPLETED,
+			$payment_reference,
+			array(
+				'_intent_id'             => $payment_reference,
+				'_intention_status'      => 'succeeded',
+				'_wcpay_transaction_fee' => '1.23',
+			),
+			array(),
+			'Payment complete.',
+			PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_COMPLETE
+		);
 	}
 
 	/**

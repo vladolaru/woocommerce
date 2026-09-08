@@ -36,7 +36,7 @@ class WooPaymentsDisputeEventHandler {
 	 *
 	 * @var string
 	 */
-	private const OPEN_DISPUTE_IDS_META_KEY = '_wcpay_open_dispute_ids';
+	public const OPEN_DISPUTE_IDS_META_KEY = '_wcpay_open_dispute_ids';
 
 	/**
 	 * Native WooPayments API client.
