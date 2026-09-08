@@ -140,6 +140,32 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should persist localized form-field defaults during cutover.
+	 */
+	public function test_run_persists_localized_form_field_defaults(): void {
+		update_option( self::VERSION_OPTION, '10.8.0' );
+		$translations       = array(
+			'Buy now' => 'Jetzt kaufen',
+			'By placing this order, you agree to our [terms] and understand our [privacy_policy].' => 'Mit der Bestellung stimmen Sie unseren [terms] zu und verstehen unsere [privacy_policy].',
+		);
+		$translation_filter = static function ( string $translation, string $text, string $domain ) use ( $translations ): string {
+			return 'woocommerce' === $domain ? ( $translations[ $text ] ?? $translation ) : $translation;
+		};
+		add_filter( 'gettext', $translation_filter, 10, 3 );
+
+		try {
+			$this->create_runner()->run();
+			$stored = get_option( self::SETTINGS_OPTION );
+		} finally {
+			remove_filter( 'gettext', $translation_filter, 10 );
+		}
+
+		$this->assertIsArray( $stored );
+		$this->assertSame( 'Jetzt kaufen', $stored['payment_request_button_label'] );
+		$this->assertSame( 'Mit der Bestellung stimmen Sie unseren [terms] zu und verstehen unsere [privacy_policy].', $stored['platform_checkout_custom_message'] );
+	}
+
+	/**
 	 * @testdox A partial gateway projection leaves cutover incomplete and preserves later cleanup state.
 	 */
 	public function test_run_does_not_complete_when_gateway_settings_projection_fails(): void {

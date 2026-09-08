@@ -158,11 +158,20 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'yes', $sut->get_gateway_setting( 'saved_cards' ) );
 		$this->assertSame( array( 'payment_request', 'woopay', 'amazon_pay' ), $sut->get_gateway_setting( 'express_checkout_product_methods' ) );
 		$this->assertSame( 'no', $sut->get_gateway_setting( 'saved_cards', 'no' ) );
-		$this->assertNull( $sut->get_gateway_setting( 'express_checkout_enabled' ) );
+		$this->assertSame( '', $sut->get_gateway_setting( 'express_checkout_enabled' ) );
+		$this->assertNull( $sut->get_gateway_setting( 'express_checkout_enabled', null ) );
+		$this->assertSame( 'fallback', $sut->get_gateway_setting( 'express_checkout_enabled', 'fallback' ) );
 
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'saved_cards' => 'no' ) );
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'saved_cards'              => 'no',
+				'express_checkout_enabled' => false,
+			)
+		);
 
 		$this->assertSame( 'no', $sut->get_gateway_setting( 'saved_cards' ) );
+		$this->assertFalse( $sut->get_gateway_setting( 'express_checkout_enabled' ) );
 		$this->assertSame( array( 'payment_request', 'woopay', 'amazon_pay' ), $sut->get_gateway_setting( 'express_checkout_cart_methods' ) );
 	}
 

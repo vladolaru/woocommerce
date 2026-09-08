@@ -19,30 +19,6 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 final class WooPaymentsSettingsDefaults {
 
 	/**
-	 * WooPayments 10.8.0 gateway form-field defaults.
-	 *
-	 * @var array<string,mixed>
-	 */
-	private const DEFAULTS = array(
-		'enabled'                                  => 'no',
-		'manual_capture'                           => 'no',
-		'saved_cards'                              => 'yes',
-		'test_mode'                                => 'no',
-		'enable_logging'                           => 'no',
-		'payment_request_button_type'              => 'default',
-		'payment_request_button_theme'             => 'dark',
-		'payment_request_button_height'            => '44',
-		'payment_request_button_label'             => 'Buy now',
-		'payment_request_button_locations'         => array( 'product', 'cart', 'checkout' ),
-		'upe_enabled_payment_method_ids'           => array( 'card' ),
-		'payment_request_button_size'              => 'medium',
-		'platform_checkout_custom_message'         => 'By placing this order, you agree to our [terms] and understand our [privacy_policy].',
-		'express_checkout_product_methods'         => array( 'payment_request', 'woopay', 'amazon_pay' ),
-		'express_checkout_cart_methods'            => array( 'payment_request', 'woopay', 'amazon_pay' ),
-		'express_checkout_checkout_methods'        => array( 'payment_request', 'woopay', 'amazon_pay' ),
-	);
-
-	/**
 	 * Get a WooPayments form-field default.
 	 *
 	 * @since 11.2.0
@@ -51,7 +27,9 @@ final class WooPaymentsSettingsDefaults {
 	 * @return mixed The source default, or null when the plugin has no form-field default.
 	 */
 	public static function get( string $key ) {
-		return self::DEFAULTS[ $key ] ?? null;
+		$defaults = self::get_defaults();
+
+		return $defaults[ $key ] ?? null;
 	}
 
 	/**
@@ -62,6 +40,32 @@ final class WooPaymentsSettingsDefaults {
 	 * @return array<string,mixed> WooPayments form-field defaults.
 	 */
 	public static function all(): array {
-		return self::DEFAULTS;
+		return self::get_defaults();
+	}
+
+	/**
+	 * Get WooPayments 10.8.0 gateway form-field defaults for the current locale.
+	 *
+	 * @return array<string,mixed> WooPayments form-field defaults.
+	 */
+	private static function get_defaults(): array {
+		return array(
+			'enabled'                           => 'no',
+			'manual_capture'                    => 'no',
+			'saved_cards'                       => 'yes',
+			'test_mode'                         => 'no',
+			'enable_logging'                    => 'no',
+			'payment_request_button_type'       => 'default',
+			'payment_request_button_theme'      => 'dark',
+			'payment_request_button_height'     => '44',
+			'payment_request_button_label'      => __( 'Buy now', 'woocommerce' ),
+			'payment_request_button_locations'  => array( 'product', 'cart', 'checkout' ),
+			'upe_enabled_payment_method_ids'    => array( 'card' ),
+			'payment_request_button_size'       => 'medium',
+			'platform_checkout_custom_message'  => __( 'By placing this order, you agree to our [terms] and understand our [privacy_policy].', 'woocommerce' ),
+			'express_checkout_product_methods'  => array( 'payment_request', 'woopay', 'amazon_pay' ),
+			'express_checkout_cart_methods'     => array( 'payment_request', 'woopay', 'amazon_pay' ),
+			'express_checkout_checkout_methods' => array( 'payment_request', 'woopay', 'amazon_pay' ),
+		);
 	}
 }

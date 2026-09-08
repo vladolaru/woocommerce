@@ -397,6 +397,34 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should expose and persist localized form-field defaults when settings have not been saved.
+	 */
+	public function test_get_settings_and_update_settings_use_localized_form_field_defaults_when_settings_are_absent(): void {
+		delete_option( 'woocommerce_woocommerce_payments_settings' );
+		$translations       = array(
+			'Buy now' => 'Jetzt kaufen',
+			'By placing this order, you agree to our [terms] and understand our [privacy_policy].' => 'Mit der Bestellung stimmen Sie unseren [terms] zu und verstehen unsere [privacy_policy].',
+		);
+		$translation_filter = static function ( string $translation, string $text, string $domain ) use ( $translations ): string {
+			return 'woocommerce' === $domain ? ( $translations[ $text ] ?? $translation ) : $translation;
+		};
+		add_filter( 'gettext', $translation_filter, 10, 3 );
+
+		try {
+			$read_settings = $this->sut->get_settings();
+			$this->sut->update_settings( array() );
+			$stored = get_option( 'woocommerce_woocommerce_payments_settings' );
+		} finally {
+			remove_filter( 'gettext', $translation_filter, 10 );
+		}
+
+		$this->assertSame( 'Mit der Bestellung stimmen Sie unseren [terms] zu und verstehen unsere [privacy_policy].', $read_settings['woopay_custom_message'] );
+		$this->assertIsArray( $stored );
+		$this->assertSame( 'Jetzt kaufen', $stored['payment_request_button_label'] );
+		$this->assertSame( 'Mit der Bestellung stimmen Sie unseren [terms] zu und verstehen unsere [privacy_policy].', $stored['platform_checkout_custom_message'] );
+	}
+
+	/**
 	 * @testdox Public settings availability honors the registry-owned compatibility filter exactly once.
 	 */
 	public function test_get_settings_filters_available_payment_method_ids_once(): void {

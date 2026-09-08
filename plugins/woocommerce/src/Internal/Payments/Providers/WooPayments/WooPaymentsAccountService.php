@@ -1054,7 +1054,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 *
 	 * @param string $key      Setting key.
 	 * @param mixed  $fallback Optional caller fallback, which takes precedence over the plugin default.
-	 * @return mixed Persisted value, caller fallback, plugin default, or null when no default exists.
+	 * @return mixed Persisted value, caller fallback, plugin default, or an empty string when no default exists.
 	 */
 	public function get_gateway_setting( string $key, $fallback = null ) {
 		$settings = $this->get_gateway_settings();
@@ -1063,7 +1063,11 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 			return $settings[ $key ];
 		}
 
-		return 1 < func_num_args() ? $fallback : WooPaymentsSettingsDefaults::get( $key );
+		if ( 1 < func_num_args() ) {
+			return $fallback;
+		}
+
+		return WooPaymentsSettingsDefaults::get( $key ) ?? '';
 	}
 
 	/**
