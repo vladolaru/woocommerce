@@ -9,6 +9,12 @@ fi
 
 readonly STORE_DIR="${E2E_WOOPAYMENTS_NATIVE_STORE_DIR:?E2E_WOOPAYMENTS_NATIVE_STORE_DIR is required}"
 readonly WP_ENV_CONFIG="${E2E_WOOPAYMENTS_WP_ENV_CONFIG:?E2E_WOOPAYMENTS_WP_ENV_CONFIG is required}"
+readonly WP_ENV_SERVICE="${E2E_WOOPAYMENTS_WP_ENV_SERVICE:-cli}"
+
+if [[ "$WP_ENV_SERVICE" != 'cli' && "$WP_ENV_SERVICE" != 'tests-cli' ]]; then
+	echo "Unsupported wp-env service: $WP_ENV_SERVICE" >&2
+	exit 1
+fi
 
 if [[ ! -d "$STORE_DIR" ]]; then
 	echo "Native store directory does not exist: $STORE_DIR" >&2
@@ -19,5 +25,5 @@ readonly SEED_CODE='$settings = get_option( "woocommerce_woocommerce_payments_se
 
 (
 	cd "$STORE_DIR"
-	pnpm exec wp-env --config "$WP_ENV_CONFIG" run cli wp --user=1 eval "$SEED_CODE"
+	pnpm exec wp-env --config "$WP_ENV_CONFIG" run "$WP_ENV_SERVICE" wp --user=1 eval "$SEED_CODE"
 )

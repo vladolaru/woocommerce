@@ -14,7 +14,7 @@ cat > "$TEST_ROOT/bin/pnpm" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'pnpm %s\n' "$*" >> "${E2E_FAKE_COMMAND_LOG:?}"
-[[ "$*" == *'wp-env --config .wp-env.e2e.json run cli wp --user=1 eval'* ]]
+[[ "$*" == *'wp-env --config .wp-env.e2e.json run cli wp --user=1 eval'* || "$*" == *'wp-env --config .wp-env.e2e.json run tests-cli wp --user=1 eval'* ]]
 [[ "$*" == *'_wcpay_feature_customer_multi_currency'* ]]
 [[ "$*" == *'wcpay_multi_currency_enabled_currencies'* ]]
 [[ "$*" == *'express_checkout_checkout_methods'* ]]
@@ -61,12 +61,35 @@ PATH="$TEST_ROOT/bin:$PATH" \
 	E2E_WOOPAYMENTS_WP_ENV_CONFIG='.wp-env.e2e.json' \
 	"$SCRIPT_DIR/seed-readonly.sh"
 
-test "$(wc -l < "$TEST_ROOT/commands.log" | tr -d ' ')" = '2'
+PATH="$TEST_ROOT/bin:$PATH" \
+	E2E_FAKE_COMMAND_LOG="$TEST_ROOT/commands.log" \
+	WCPAY_RUNTIME=native \
+	E2E_WOOPAYMENTS_NATIVE_STORE_DIR="$TEST_ROOT/store" \
+	E2E_WOOPAYMENTS_WP_ENV_CONFIG='.wp-env.e2e.json' \
+	E2E_WOOPAYMENTS_WP_ENV_SERVICE='tests-cli' \
+	"$SCRIPT_DIR/seed-readonly.sh"
+
+command_count="$(wc -l < "$TEST_ROOT/commands.log" | tr -d ' ')"
+if PATH="$TEST_ROOT/bin:$PATH" \
+	E2E_FAKE_COMMAND_LOG="$TEST_ROOT/commands.log" \
+	WCPAY_RUNTIME=native \
+	E2E_WOOPAYMENTS_NATIVE_STORE_DIR="$TEST_ROOT/store" \
+	E2E_WOOPAYMENTS_WP_ENV_CONFIG='.wp-env.e2e.json' \
+	E2E_WOOPAYMENTS_WP_ENV_SERVICE='unsupported' \
+	"$SCRIPT_DIR/seed-readonly.sh" > "$TEST_ROOT/invalid-service.out" 2>&1; then
+	echo 'readonly setup must reject an unsupported wp-env service' >&2
+	exit 1
+fi
+
+test "$(wc -l < "$TEST_ROOT/commands.log" | tr -d ' ')" = "$command_count"
+test "$command_count" = '3'
+test "$(grep -Fc 'run cli wp --user=1 eval' "$TEST_ROOT/commands.log")" = '2'
+test "$(grep -Fc 'run tests-cli wp --user=1 eval' "$TEST_ROOT/commands.log")" = '1'
 grep -Fq 'WooCommerce_WooPayments_Native_CI_Provider_Fixture' "$TEST_ROOT/commands.log"
 grep -Fq 'wcpay_account_data' "$TEST_ROOT/commands.log"
 grep -Fq 'account_id' "$TEST_ROOT/commands.log"
-test "$(grep -Fc 'wcpay_multi_currency_cached_currencies' "$TEST_ROOT/commands.log")" = '2'
-test "$(sed 's/^pnpm //' "$TEST_ROOT/commands.log" | sort -u | wc -l | tr -d ' ')" = '1'
+test "$(grep -Fc 'wcpay_multi_currency_cached_currencies' "$TEST_ROOT/commands.log")" = '3'
+test "$(sed 's/^pnpm //' "$TEST_ROOT/commands.log" | sort -u | wc -l | tr -d ' ')" = '2'
 
 for project in \
 	woopayments-native-provider \
