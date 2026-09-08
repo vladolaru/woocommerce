@@ -3,11 +3,14 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeCacheService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
 use ReflectionClass;
+use RuntimeException;
 use WC_Unit_Test_Case;
 
 /**
@@ -456,6 +459,48 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertSame( array( 'dp_e1' ), $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+	}
+
+	/**
+	 * @testdox A dispute created webhook retries after a lifecycle event releases the order payment lock.
+	 */
+	public function test_created_webhook_retries_after_order_payment_lock_contention(): void {
+		$order = $this->create_disputable_order();
+		$order->set_payment_method( OrderPaymentStore::GATEWAY_ID );
+		$order->update_meta_data( '_charge_id', 'ch_lock_contention' );
+		$order->save();
+
+		$event           = $this->get_created_event_object( 'dp_lock_contention', 'needs_response' );
+		$event['charge'] = 'ch_lock_contention';
+		$payment_store   = wc_get_container()->get( OrderPaymentStore::class );
+		$profile         = new WooPaymentsPersistenceProfile();
+
+		$this->assertTrue( $payment_store->claim_order_payment_lock( $order, $profile, 'pi_lock_holder' ) );
+
+		try {
+			try {
+				$this->sut->process( 'charge.dispute.created', $event );
+				$this->fail( 'A dispute webhook must fail for retry while a lifecycle event holds the order payment lock.' );
+			} catch ( RuntimeException $exception ) {
+				$this->assertStringContainsString( 'Could not claim WooPayments dispute webhook lock', $exception->getMessage() );
+			}
+		} finally {
+			$payment_store->unlock_order_payment( $order, $profile );
+		}
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( \WC_Order::class, $order );
+		$this->assertSame( 'processing', $order->get_status(), 'A contended dispute webhook must not silently change the order state.' );
+		$this->assertSame( '', $order->get_meta( '_wcpay_open_dispute_ids', true ), 'A contended dispute webhook must not write an open-dispute record.' );
+		$this->assertCount( 0, $this->find_order_note( $order, 'Payment has been disputed' ), 'A contended dispute webhook must not add its note before retry.' );
+
+		$this->sut->process( 'charge.dispute.created', $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( \WC_Order::class, $order );
+		$this->assertSame( 'on-hold', $order->get_status(), 'The retried dispute webhook must restore the dispute hold.' );
+		$this->assertSame( array( 'dp_lock_contention' ), $order->get_meta( '_wcpay_open_dispute_ids', true ), 'The retried dispute webhook must persist its open-dispute record.' );
+		$this->assertCount( 1, $this->find_order_note( $order, 'Payment has been disputed' ), 'The retried dispute webhook must add exactly one note.' );
 	}
 
 	/**

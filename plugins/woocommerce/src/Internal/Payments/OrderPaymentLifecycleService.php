@@ -20,13 +20,6 @@ use WC_Order;
 class OrderPaymentLifecycleService {
 
 	/**
-	 * Private identity metadata stored on WooPayments order-note comments.
-	 *
-	 * @var string
-	 */
-	private const WOOPAYMENTS_NOTE_IDENTITY_META_KEY = '_wc_woopayments_note_identity';
-
-	/**
 	 * Order payment store.
 	 *
 	 * @var OrderPaymentStore
@@ -85,6 +78,27 @@ class OrderPaymentLifecycleService {
 	}
 
 	/**
+	 * Refresh an order directly from its data store while its payment lock is held.
+	 *
+	 * A provider webhook can resolve its order before a concurrent event persists a
+	 * dispute hold. Reading the store after the lock is acquired ensures the
+	 * completed-event guard evaluates the state that won serialization.
+	 *
+	 * @param WC_Order $order Order object.
+	 */
+	private function refresh_order_from_data_store( WC_Order $order ): void {
+		wp_cache_delete( $order->get_id(), 'posts' );
+
+		/**
+		 * Order data store.
+		 *
+		 * @var \WC_Object_Data_Store_Interface $data_store
+		 */
+		$data_store = $order->get_data_store();
+		$data_store->read( $order );
+	}
+
+	/**
 	 * Log a warning when a lifecycle event is skipped because the order payment lock is contested.
 	 *
 	 * Webhook-triggered lifecycle events can arrive while a checkout or capture is mid-flight and
@@ -123,10 +137,15 @@ class OrderPaymentLifecycleService {
 	 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
 	 */
 	public function apply_unlocked( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabulary $persistence_profile ): void {
+		if ( PaymentLifecycleEvent::STATUS_COMPLETED === $event->get_status() ) {
+			$this->refresh_order_from_data_store( $order );
+		}
+
 		if ( $this->should_skip_late_failure_event( $order, $event ) ) {
 			return;
 		}
 
+		$note                        = $event->get_note();
 		$completed_event_skip_reason = $this->get_completed_event_skip_reason( $order, $event, $persistence_profile );
 		if ( null !== $completed_event_skip_reason ) {
 			$this->log_skipped_completed_event( $order, $event, $completed_event_skip_reason );
@@ -135,7 +154,6 @@ class OrderPaymentLifecycleService {
 
 		$this->apply_meta_changes( $order, $event );
 
-		$note            = $event->get_note();
 		$should_add_note = null !== $note && '' !== $note && ! $this->should_skip_lifecycle_note( $order, $event, $note, $persistence_profile );
 
 		if ( $this->should_save_meta_before_status_transition( $event ) ) {
@@ -300,7 +318,17 @@ class OrderPaymentLifecycleService {
 		}
 
 		$note = $event->get_note();
-		if ( null === $note || '' === $note || ! $this->has_persisted_lifecycle_note( $order, $event, $note ) ) {
+		if (
+			null === $note
+			|| '' === $note
+			|| ! $this->get_order_note_service()->has_persisted_note(
+				$order,
+				$note,
+				$this->get_note_identity( $event, $note ),
+				$event->get_note_equivalents(),
+				array( $this->get_note_marker_key( $event, $note ) )
+			)
+		) {
 			return null;
 		}
 
@@ -323,32 +351,6 @@ class OrderPaymentLifecycleService {
 		$open_dispute_ids = $order->get_meta( $open_dispute_ids_meta_key, true );
 
 		return is_array( $open_dispute_ids ) && ! empty( $open_dispute_ids );
-	}
-
-	/**
-	 * Tell whether an order already stores the identity or legacy marker of a lifecycle note.
-	 *
-	 * @param WC_Order              $order Order object.
-	 * @param PaymentLifecycleEvent $event Lifecycle event.
-	 * @param string                $note  Note content.
-	 * @return bool
-	 */
-	private function has_persisted_lifecycle_note( WC_Order $order, PaymentLifecycleEvent $event, string $note ): bool {
-		if ( 'yes' === $order->get_meta( $this->get_note_marker_key( $event, $note ), true ) ) {
-			return true;
-		}
-
-		$identity_hash = hash( 'sha256', $this->get_note_identity( $event, $note ) );
-		$notes         = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
-
-		foreach ( $notes as $order_note ) {
-			$note_identities = get_comment_meta( $order_note->id, self::WOOPAYMENTS_NOTE_IDENTITY_META_KEY, false );
-			if ( in_array( $identity_hash, $note_identities, true ) ) {
-				return true;
-			}
-		}
-
-		return false;
 	}
 
 	/**

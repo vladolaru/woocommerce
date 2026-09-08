@@ -1171,6 +1171,61 @@ class WooPaymentsOrderNoteService {
 	}
 
 	/**
+	 * Tell whether an order already has a note with the supplied identity or equivalent content.
+	 *
+	 * When matching current or legacy content, the unified private identity is
+	 * backfilled onto that comment so later replays can use the stable identity.
+	 *
+	 * @param WC_Order $order              Order object.
+	 * @param string   $note               Note content.
+	 * @param string   $identity           Stable private note identity.
+	 * @param string[] $equivalent_notes   Exact catalog renderings equivalent to the native note.
+	 * @param string[] $legacy_marker_keys Legacy order-meta marker keys that identify the same note.
+	 * @return bool True when the order already has the note.
+	 *
+	 * @since 11.0.0
+	 */
+	public function has_persisted_note( WC_Order $order, string $note, string $identity = '', array $equivalent_notes = array(), array $legacy_marker_keys = array() ): bool {
+		if ( '' === $note ) {
+			return false;
+		}
+
+		$equivalent_notes      = $this->get_equivalent_notes( $note, $equivalent_notes );
+		$identity_hash         = '' === $identity ? '' : hash( 'sha256', $identity );
+		$content_match_note_id = 0;
+		$has_legacy_marker     = false;
+		foreach ( $legacy_marker_keys as $legacy_marker_key ) {
+			if ( '' !== $legacy_marker_key && 'yes' === $order->get_meta( $legacy_marker_key, true ) ) {
+				$has_legacy_marker = true;
+				break;
+			}
+		}
+
+		$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+
+		foreach ( $notes as $order_note ) {
+			$note_identities = get_comment_meta( $order_note->id, self::NOTE_IDENTITY_META_KEY, false );
+			if ( '' !== $identity_hash && in_array( $identity_hash, $note_identities, true ) ) {
+				return true;
+			}
+
+			if ( in_array( (string) $order_note->content, $equivalent_notes, true ) ) {
+				$content_match_note_id = $order_note->id;
+			}
+		}
+
+		if ( 0 < $content_match_note_id ) {
+			if ( '' !== $identity_hash ) {
+				add_comment_meta( $content_match_note_id, self::NOTE_IDENTITY_META_KEY, $identity_hash );
+			}
+
+			return true;
+		}
+
+		return $has_legacy_marker;
+	}
+
+	/**
 	 * Add an order note unless its content or private identity already exists.
 	 *
 	 * @param WC_Order      $order              Order object.
@@ -1188,46 +1243,7 @@ class WooPaymentsOrderNoteService {
 			return false;
 		}
 
-		$equivalent_notes      = array_values(
-			array_unique(
-				array_merge(
-					array( $note ),
-					array_filter( $equivalent_notes, static fn( string $candidate ): bool => '' !== $candidate )
-				)
-			)
-		);
-		$identity_hash         = '' === $identity ? '' : hash( 'sha256', $identity );
-		$content_match_note_id = 0;
-		$has_legacy_marker     = false;
-		foreach ( $legacy_marker_keys as $legacy_marker_key ) {
-			if ( '' !== $legacy_marker_key && 'yes' === $order->get_meta( $legacy_marker_key, true ) ) {
-				$has_legacy_marker = true;
-				break;
-			}
-		}
-
-		$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
-
-		foreach ( $notes as $order_note ) {
-			$note_identities = get_comment_meta( $order_note->id, self::NOTE_IDENTITY_META_KEY, false );
-			if ( '' !== $identity_hash && in_array( $identity_hash, $note_identities, true ) ) {
-				return false;
-			}
-
-			if ( in_array( (string) $order_note->content, $equivalent_notes, true ) ) {
-				$content_match_note_id = $order_note->id;
-			}
-		}
-
-		if ( 0 < $content_match_note_id ) {
-			if ( '' !== $identity_hash ) {
-				add_comment_meta( $content_match_note_id, self::NOTE_IDENTITY_META_KEY, $identity_hash );
-			}
-
-			return false;
-		}
-
-		if ( $has_legacy_marker ) {
+		if ( $this->has_persisted_note( $order, $note, $identity, $equivalent_notes, $legacy_marker_keys ) ) {
 			return false;
 		}
 
@@ -1235,11 +1251,30 @@ class WooPaymentsOrderNoteService {
 			$before_add();
 		}
 
-		$meta_data = '' === $identity_hash
+		$identity_hash = '' === $identity ? '' : hash( 'sha256', $identity );
+		$meta_data     = '' === $identity_hash
 			? array()
 			: array( self::NOTE_IDENTITY_META_KEY => $identity_hash );
 
 		return 0 < (int) $order->add_order_note( $note, 0, false, $meta_data );
+	}
+
+	/**
+	 * Normalize a note and its exact equivalent renderings for persisted-note matching.
+	 *
+	 * @param string   $note             Note content.
+	 * @param string[] $equivalent_notes Exact catalog renderings equivalent to the native note.
+	 * @return string[]
+	 */
+	private function get_equivalent_notes( string $note, array $equivalent_notes ): array {
+		return array_values(
+			array_unique(
+				array_merge(
+					array( $note ),
+					array_filter( $equivalent_notes, static fn( string $candidate ): bool => '' !== $candidate )
+				)
+			)
+		);
 	}
 
 	/**

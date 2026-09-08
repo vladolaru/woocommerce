@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceProfile;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceProfile;
 use Automattic\WooCommerce\RestApi\UnitTests\LoggerSpyTrait;
@@ -131,6 +132,69 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A completed event refreshes disputed state that was persisted after its order object loaded.
+	 */
+	public function test_success_after_dispute_created_through_a_second_order_instance_keeps_on_hold(): void {
+		$stale_order = $this->create_woopayments_order();
+
+		$fresh_order = clone $stale_order;
+		/**
+		 * Fresh order data store.
+		 *
+		 * @var \WC_Object_Data_Store_Interface $data_store
+		 */
+		$data_store = $fresh_order->get_data_store();
+		$data_store->read( $fresh_order );
+		$fresh_order->update_meta_data( '_wcpay_open_dispute_ids', array( 'dp_stale' ) );
+		$fresh_order->update_meta_data( '_intention_status', 'requires_payment_method' );
+		$fresh_order->update_status( 'on-hold' );
+
+		$this->sut->apply( $stale_order, $this->completed_event( 'pi_stale' ), $this->persistence_profile );
+
+		$order = wc_get_order( $stale_order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'on-hold', $order->get_status(), 'A success event must refresh and preserve a dispute hold written by another order instance.' );
+		$this->assertSame( array( 'dp_stale' ), $order->get_meta( '_wcpay_open_dispute_ids', true ), 'A success event must preserve freshly persisted open disputes.' );
+		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ), 'A skipped success event must not update lifecycle metadata.' );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment complete.' ), 'A skipped success event must not add a completion note.' );
+	}
+
+	/**
+	 * @testdox A completed event refreshes disputed state when its caller already owns the order payment lock.
+	 */
+	public function test_unlocked_success_after_dispute_created_through_a_second_order_instance_keeps_on_hold(): void {
+		$stale_order = $this->create_woopayments_order();
+
+		$fresh_order = clone $stale_order;
+		/**
+		 * Fresh order data store.
+		 *
+		 * @var \WC_Object_Data_Store_Interface $data_store
+		 */
+		$data_store = $fresh_order->get_data_store();
+		$data_store->read( $fresh_order );
+		$fresh_order->update_meta_data( '_wcpay_open_dispute_ids', array( 'dp_stale_unlocked' ) );
+		$fresh_order->update_meta_data( '_intention_status', 'requires_payment_method' );
+		$fresh_order->update_status( 'on-hold' );
+
+		$this->assertTrue( $this->order_payment_store->claim_order_payment_lock( $stale_order, $this->persistence_profile, 'pi_stale_unlocked' ) );
+		try {
+			$this->sut->apply_unlocked( $stale_order, $this->completed_event( 'pi_stale_unlocked' ), $this->persistence_profile );
+		} finally {
+			$this->order_payment_store->unlock_order_payment( $stale_order, $this->persistence_profile );
+		}
+
+		$order = wc_get_order( $stale_order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'on-hold', $order->get_status(), 'A success event must refresh and preserve a dispute hold while its caller owns the payment lock.' );
+		$this->assertSame( array( 'dp_stale_unlocked' ), $order->get_meta( '_wcpay_open_dispute_ids', true ), 'A success event must preserve freshly persisted open disputes.' );
+		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ), 'A skipped success event must not update lifecycle metadata.' );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment complete.' ), 'A skipped success event must not add a completion note.' );
+	}
+
+	/**
 	 * @testdox Replayed completed events preserve the state established after their first application.
 	 */
 	public function test_success_is_applied_once_then_ignored(): void {
@@ -168,6 +232,124 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 				'reason'     => 'success_note_exists',
 			)
 		);
+	}
+
+	/**
+	 * @testdox A payment success event skips a plugin-rendered equivalent success note before lifecycle mutation.
+	 */
+	public function test_payment_success_replay_with_a_plugin_equivalent_note_keeps_existing_order_state(): void {
+		$order           = $this->create_woopayments_order();
+		$note_candidates = wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_payment_success_note_candidates( $order, 'pi_cutover', 'ch_cutover', 'txn_cutover' );
+
+		$this->assertGreaterThanOrEqual( 2, count( $note_candidates ) );
+		$order->add_order_note( $note_candidates[1] );
+		$order->update_meta_data( '_intention_status', 'requires_payment_method' );
+		$order->update_status( 'on-hold' );
+		$order->save();
+
+		$event = new PaymentLifecycleEvent(
+			PaymentLifecycleEvent::STATUS_COMPLETED,
+			'pi_cutover',
+			array(
+				'_intent_id'             => 'pi_cutover',
+				'_intention_status'      => 'succeeded',
+				'_wcpay_transaction_fee' => '1.23',
+			),
+			array(),
+			$note_candidates[0],
+			PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS,
+			$note_candidates
+		);
+
+		$this->sut->apply( $order, $event, $this->persistence_profile );
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'on-hold', $order->get_status(), 'A replayed payment-success event must not re-complete a plugin-owned order.' );
+		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ), 'A replayed payment-success event must not overwrite lifecycle metadata.' );
+		$this->assertSame( '', $order->get_meta( '_wcpay_transaction_fee', true ), 'A replayed payment-success event must not add payment metadata.' );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, $note_candidates[1] ), 'The plugin-written success note must remain the only equivalent note.' );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, $note_candidates[0] ), 'A replayed payment-success event must not add the Core rendering.' );
+	}
+
+	/**
+	 * @testdox A legacy success marker with an existing equivalent note backfills its stable identity before lifecycle mutation.
+	 */
+	public function test_payment_success_replay_with_a_legacy_marker_and_existing_note_backfills_identity(): void {
+		$order       = $this->create_woopayments_order();
+		$note        = 'Core payment success note.';
+		$plugin_note = 'Plugin payment success note.';
+		$marker_key  = '_wc_native_payments_note_' . md5( 'pi_legacy_existing|completed|payment_success' );
+		$order->add_order_note( $plugin_note );
+		$order->update_meta_data( $marker_key, 'yes' );
+		$order->update_meta_data( '_intention_status', 'requires_payment_method' );
+		$order->update_status( 'on-hold' );
+		$order->save();
+
+		$event = new PaymentLifecycleEvent(
+			PaymentLifecycleEvent::STATUS_COMPLETED,
+			'pi_legacy_existing',
+			array(
+				'_intent_id'        => 'pi_legacy_existing',
+				'_intention_status' => 'succeeded',
+			),
+			array(),
+			$note,
+			PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS,
+			array( $plugin_note )
+		);
+
+		$this->sut->apply( $order, $event, $this->persistence_profile );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'on-hold', $order->get_status(), 'A legacy replay marker must prevent a completed event from changing status.' );
+		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ), 'A legacy replay marker must prevent lifecycle metadata mutation.' );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, $plugin_note ), 'A legacy replay marker must not duplicate the existing equivalent note.' );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, $note ), 'A legacy replay marker must not add the Core note.' );
+
+		$notes = array_values(
+			array_filter(
+				wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+				static fn( $order_note ): bool => $plugin_note === (string) $order_note->content
+			)
+		);
+		$this->assertCount( 1, $notes );
+		$this->assertSame( hash( 'sha256', 'payment_lifecycle:pi_legacy_existing|completed|payment_success' ), get_comment_meta( $notes[0]->id, '_wc_woopayments_note_identity', true ), 'Canonical persisted-note detection must backfill the stable identity.' );
+	}
+
+	/**
+	 * @testdox A legacy success marker without a note skips lifecycle mutation without adding a note.
+	 */
+	public function test_payment_success_replay_with_a_legacy_marker_without_a_note_keeps_existing_order_state(): void {
+		$order      = $this->create_woopayments_order();
+		$note       = 'Core payment success note.';
+		$marker_key = '_wc_native_payments_note_' . md5( 'pi_legacy_marker|completed|payment_success' );
+		$order->update_meta_data( $marker_key, 'yes' );
+		$order->update_meta_data( '_intention_status', 'requires_payment_method' );
+		$order->update_status( 'on-hold' );
+		$order->save();
+
+		$event = new PaymentLifecycleEvent(
+			PaymentLifecycleEvent::STATUS_COMPLETED,
+			'pi_legacy_marker',
+			array(
+				'_intent_id'        => 'pi_legacy_marker',
+				'_intention_status' => 'succeeded',
+			),
+			array(),
+			$note,
+			PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS
+		);
+
+		$this->sut->apply( $order, $event, $this->persistence_profile );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'on-hold', $order->get_status(), 'A legacy replay marker must prevent a completed event from changing status.' );
+		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ), 'A legacy replay marker must prevent lifecycle metadata mutation.' );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, $note ), 'A legacy replay marker without a note must not add the Core note.' );
 	}
 
 	/**

@@ -67,6 +67,20 @@ class WooPaymentsDisputeEventHandler {
 	private ?WooPaymentsOrderNoteService $order_note_service = null;
 
 	/**
+	 * Order payment store.
+	 *
+	 * @var OrderPaymentStore|null
+	 */
+	private ?OrderPaymentStore $order_payment_store = null;
+
+	/**
+	 * WooPayments persistence profile.
+	 *
+	 * @var WooPaymentsPersistenceProfile|null
+	 */
+	private ?WooPaymentsPersistenceProfile $persistence_profile = null;
+
+	/**
 	 * Initialize the handler.
 	 *
 	 * @internal
@@ -75,12 +89,16 @@ class WooPaymentsDisputeEventHandler {
 	 * @param WooPaymentsApiClient           $api_client            Native WooPayments API client.
 	 * @param WooPaymentsDisputeCacheService $dispute_cache_service Dispute cache service.
 	 * @param WooPaymentsOrderNoteService    $order_note_service    WooPayments order note service.
+	 * @param OrderPaymentStore              $order_payment_store   Order payment store.
+	 * @param WooPaymentsPersistenceProfile  $persistence_profile   WooPayments persistence profile.
 	 */
-	final public function init( WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, WooPaymentsDisputeCacheService $dispute_cache_service, ?WooPaymentsOrderNoteService $order_note_service = null ): void {
+	final public function init( WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, WooPaymentsDisputeCacheService $dispute_cache_service, ?WooPaymentsOrderNoteService $order_note_service = null, ?OrderPaymentStore $order_payment_store = null, ?WooPaymentsPersistenceProfile $persistence_profile = null ): void {
 		$this->legacy_runtime        = $legacy_runtime;
 		$this->api_client            = $api_client;
 		$this->dispute_cache_service = $dispute_cache_service;
 		$this->order_note_service    = $order_note_service;
+		$this->order_payment_store   = $order_payment_store;
+		$this->persistence_profile   = $persistence_profile;
 	}
 
 	/**
@@ -181,8 +199,12 @@ class WooPaymentsDisputeEventHandler {
 		$note       = $this->get_dispute_created_note( $charge_id, $amount, $reason, $due_by, $is_inquiry, $balance_transaction_id, $dispute_id );
 		$note_type  = $is_inquiry ? 'created_inquiry' : 'created_dispute';
 
-		if (
-			! $this->add_dispute_order_note_once(
+		$this->claim_dispute_lock( $order, $dispute_id );
+
+		try {
+			$this->refresh_order_from_data_store( $order );
+
+			$this->add_dispute_order_note_once(
 				$order,
 				$note,
 				$dispute_id,
@@ -195,9 +217,9 @@ class WooPaymentsDisputeEventHandler {
 				// Plugin versions predating the dispute-ID suffix wrote the bare note;
 				// on a cutover store the replayed webhook must still match it.
 				array( $this->get_dispute_created_note( $charge_id, $amount, $reason, $due_by, $is_inquiry, $balance_transaction_id ) )
-			)
-		) {
-			return;
+			);
+		} finally {
+			$this->get_order_payment_store()->unlock_order_payment( $order, $this->get_persistence_profile() );
 		}
 	}
 
@@ -707,6 +729,37 @@ class WooPaymentsDisputeEventHandler {
 	}
 
 	/**
+	 * Claim the shared order payment lock for a dispute-created webhook mutation.
+	 *
+	 * @param WC_Order $order      Order object.
+	 * @param string   $dispute_id Provider dispute ID.
+	 * @throws RuntimeException When the order payment lock cannot be claimed.
+	 */
+	private function claim_dispute_lock( WC_Order $order, string $dispute_id ): void {
+		$reference = 'dispute_webhook_' . $dispute_id;
+		if ( ! $this->get_order_payment_store()->claim_order_payment_lock( $order, $this->get_persistence_profile(), $reference ) ) {
+			throw new RuntimeException( esc_html( sprintf( 'Could not claim WooPayments dispute webhook lock for order %1$d and dispute %2$s.', $order->get_id(), $dispute_id ) ) );
+		}
+	}
+
+	/**
+	 * Refresh an order directly from its data store while its payment lock is held.
+	 *
+	 * @param WC_Order $order Order object.
+	 */
+	private function refresh_order_from_data_store( WC_Order $order ): void {
+		wp_cache_delete( $order->get_id(), 'posts' );
+
+		/**
+		 * Order data store.
+		 *
+		 * @var \WC_Object_Data_Store_Interface $data_store
+		 */
+		$data_store = $order->get_data_store();
+		$data_store->read( $order );
+	}
+
+	/**
 	 * Tell whether the order has already been refunded in full.
 	 *
 	 * Two independent clauses: has_status() catches WooCommerce's standard
@@ -814,6 +867,32 @@ class WooPaymentsDisputeEventHandler {
 		}
 
 		return $this->order_note_service;
+	}
+
+	/**
+	 * Get the shared order payment store.
+	 *
+	 * @return OrderPaymentStore
+	 */
+	private function get_order_payment_store(): OrderPaymentStore {
+		if ( null === $this->order_payment_store ) {
+			$this->order_payment_store = wc_get_container()->get( OrderPaymentStore::class );
+		}
+
+		return $this->order_payment_store;
+	}
+
+	/**
+	 * Get the WooPayments persistence profile.
+	 *
+	 * @return WooPaymentsPersistenceProfile
+	 */
+	private function get_persistence_profile(): WooPaymentsPersistenceProfile {
+		if ( null === $this->persistence_profile ) {
+			$this->persistence_profile = wc_get_container()->get( WooPaymentsPersistenceProfile::class );
+		}
+
+		return $this->persistence_profile;
 	}
 
 	/**
