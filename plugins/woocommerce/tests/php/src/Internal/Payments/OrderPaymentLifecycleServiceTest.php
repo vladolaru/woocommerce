@@ -101,6 +101,31 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A normal completed event preserves unsaved changes owned by its caller.
+	 */
+	public function test_unlocked_completed_event_preserves_caller_owned_unsaved_changes(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_customer_note( 'Checkout note saved with payment completion.' );
+		$order->update_meta_data( '_caller_owned_unsaved_meta', 'preserve this value' );
+
+		$this->assertTrue( $this->order_payment_store->claim_order_payment_lock( $order, $this->persistence_profile, 'pi_caller_changes' ) );
+		try {
+			$this->sut->apply_unlocked( $order, $this->completed_event( 'pi_caller_changes' ), $this->persistence_profile );
+		} finally {
+			$this->order_payment_store->unlock_order_payment( $order, $this->persistence_profile );
+		}
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'completed', $order->get_status() );
+		$this->assertSame( 'Checkout note saved with payment completion.', $order->get_customer_note() );
+		$this->assertSame( 'preserve this value', $order->get_meta( '_caller_owned_unsaved_meta', true ) );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Payment complete.' ) );
+	}
+
+	/**
 	 * @testdox Completed events received after a dispute keep the order on hold.
 	 */
 	public function test_success_after_dispute_created_keeps_on_hold(): void {
@@ -190,6 +215,37 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'on-hold', $order->get_status(), 'A success event must refresh and preserve a dispute hold while its caller owns the payment lock.' );
 		$this->assertSame( array( 'dp_stale_unlocked' ), $order->get_meta( '_wcpay_open_dispute_ids', true ), 'A success event must preserve freshly persisted open disputes.' );
+		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ), 'A skipped success event must not update lifecycle metadata.' );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment complete.' ), 'A skipped success event must not add a completion note.' );
+	}
+
+	/**
+	 * @testdox A completed-event skip synchronizes persisted dispute state before a stale caller saves.
+	 */
+	public function test_unlocked_success_skip_prevents_a_stale_caller_save_from_overwriting_a_dispute(): void {
+		$stale_order = $this->create_woopayments_order();
+		$fresh_order = wc_get_order( $stale_order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $fresh_order );
+		$fresh_order->update_meta_data( '_wcpay_open_dispute_ids', array( 'dp_persisted_winner' ) );
+		$fresh_order->update_meta_data( '_intention_status', 'requires_payment_method' );
+		$fresh_order->update_status( 'on-hold' );
+
+		$stale_order->set_status( 'processing' );
+		$stale_order->update_meta_data( '_wcpay_open_dispute_ids', array() );
+		$this->assertTrue( $this->order_payment_store->claim_order_payment_lock( $stale_order, $this->persistence_profile, 'pi_stale_save' ) );
+		try {
+			$this->sut->apply_unlocked( $stale_order, $this->completed_event( 'pi_stale_save' ), $this->persistence_profile );
+			$stale_order->save();
+		} finally {
+			$this->order_payment_store->unlock_order_payment( $stale_order, $this->persistence_profile );
+		}
+
+		$order = wc_get_order( $stale_order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'on-hold', $order->get_status(), 'A stale caller must not restore its pre-dispute status.' );
+		$this->assertSame( array( 'dp_persisted_winner' ), $order->get_meta( '_wcpay_open_dispute_ids', true ), 'A stale caller must not erase persisted open disputes.' );
 		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ), 'A skipped success event must not update lifecycle metadata.' );
 		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment complete.' ), 'A skipped success event must not add a completion note.' );
 	}

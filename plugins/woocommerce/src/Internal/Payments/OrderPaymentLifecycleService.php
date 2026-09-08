@@ -78,24 +78,34 @@ class OrderPaymentLifecycleService {
 	}
 
 	/**
-	 * Refresh an order directly from its data store while its payment lock is held.
+	 * Get an order refreshed directly from its data store while its payment lock is held.
 	 *
 	 * A provider webhook can resolve its order before a concurrent event persists a
 	 * dispute hold. Reading the store after the lock is acquired ensures the
-	 * completed-event guard evaluates the state that won serialization.
+	 * completed-event guard evaluates the state that won serialization without
+	 * clearing changes that its caller has not yet saved.
 	 *
 	 * @param WC_Order $order Order object.
+	 * @return WC_Order Freshly read order.
 	 */
-	private function refresh_order_from_data_store( WC_Order $order ): void {
+	private function get_fresh_order_from_data_store( WC_Order $order ): WC_Order {
 		wp_cache_delete( $order->get_id(), 'posts' );
+		$fresh_order = clone $order;
 
 		/**
 		 * Order data store.
 		 *
 		 * @var \WC_Object_Data_Store_Interface $data_store
 		 */
-		$data_store = $order->get_data_store();
-		$data_store->read( $order );
+		$data_store = $fresh_order->get_data_store();
+		$data_store->read( $fresh_order );
+		/**
+		 * Freshly read order.
+		 *
+		 * @var WC_Order $fresh_order
+		 */
+
+		return $fresh_order;
 	}
 
 	/**
@@ -137,17 +147,16 @@ class OrderPaymentLifecycleService {
 	 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
 	 */
 	public function apply_unlocked( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabulary $persistence_profile ): void {
-		if ( PaymentLifecycleEvent::STATUS_COMPLETED === $event->get_status() ) {
-			$this->refresh_order_from_data_store( $order );
-		}
+		$completed_event_order = PaymentLifecycleEvent::STATUS_COMPLETED === $event->get_status() ? $this->get_fresh_order_from_data_store( $order ) : $order;
 
 		if ( $this->should_skip_late_failure_event( $order, $event ) ) {
 			return;
 		}
 
 		$note                        = $event->get_note();
-		$completed_event_skip_reason = $this->get_completed_event_skip_reason( $order, $event, $persistence_profile );
+		$completed_event_skip_reason = $this->get_completed_event_skip_reason( $completed_event_order, $event, $persistence_profile );
 		if ( null !== $completed_event_skip_reason ) {
+			$this->synchronize_skipped_completed_event_order( $order, $completed_event_order, $completed_event_skip_reason );
 			$this->log_skipped_completed_event( $order, $event, $completed_event_skip_reason );
 			return;
 		}
@@ -333,6 +342,26 @@ class OrderPaymentLifecycleService {
 		}
 
 		return 'success_note_exists';
+	}
+
+	/**
+	 * Synchronize state whose stale caller-side changes could overwrite a completed-event skip.
+	 *
+	 * @param WC_Order $order                    Caller-owned order object.
+	 * @param WC_Order $completed_event_order    Freshly read order used by the completed-event guard.
+	 * @param string   $completed_event_skip_reason Completed-event skip reason.
+	 */
+	private function synchronize_skipped_completed_event_order( WC_Order $order, WC_Order $completed_event_order, string $completed_event_skip_reason ): void {
+		$order->set_status( $completed_event_order->get_status() );
+
+		if ( 'open_dispute' !== $completed_event_skip_reason ) {
+			return;
+		}
+
+		$order->update_meta_data(
+			WooPaymentsDisputeEventHandler::OPEN_DISPUTE_IDS_META_KEY,
+			$completed_event_order->get_meta( WooPaymentsDisputeEventHandler::OPEN_DISPUTE_IDS_META_KEY, true )
+		);
 	}
 
 	/**
