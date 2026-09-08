@@ -7,6 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 
 /**
@@ -33,12 +35,39 @@ final class WooPaymentsGatewaySettingsSynchronizer {
 	private WooPaymentsPaymentMethodRegistry $registry;
 
 	/**
+	 * Durable native payments state store.
+	 *
+	 * @var NativePaymentsState|null
+	 */
+	private ?NativePaymentsState $native_payments_state = null;
+
+	/**
+	 * Native payments runtime arbiter.
+	 *
+	 * @var NativePaymentsRuntimeArbiter|null
+	 */
+	private ?NativePaymentsRuntimeArbiter $runtime_arbiter = null;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param WooPaymentsPaymentMethodRegistry|null $registry Optional payment method registry.
 	 */
 	public function __construct( ?WooPaymentsPaymentMethodRegistry $registry = null ) {
 		$this->registry = $registry ?? wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class );
+	}
+
+	/**
+	 * Initialize native payments state synchronization.
+	 *
+	 * @internal
+	 *
+	 * @param NativePaymentsState          $native_payments_state Durable native payments state store.
+	 * @param NativePaymentsRuntimeArbiter $runtime_arbiter       Native payments runtime arbiter.
+	 */
+	final public function init( NativePaymentsState $native_payments_state, NativePaymentsRuntimeArbiter $runtime_arbiter ): void { // phpcs:ignore Generic.CodeAnalysis.UnnecessaryFinalModifier.Found -- Required by WooCommerce injection method rules.
+		$this->native_payments_state = $native_payments_state;
+		$this->runtime_arbiter       = $runtime_arbiter;
 	}
 
 	/**
@@ -104,6 +133,7 @@ final class WooPaymentsGatewaySettingsSynchronizer {
 				'failed_option_names'           => array( self::SETTINGS_OPTION ),
 			);
 		}
+		$this->synchronize_native_payments_state( $settings );
 
 		$split_projection      = $this->synchronize_split_settings( $settings, $canonical_projection_is_stable );
 		$updated_split_options = $split_projection['updated_options'];
@@ -136,6 +166,31 @@ final class WooPaymentsGatewaySettingsSynchronizer {
 			'removed_deprecated_method_ids' => $normalization['removed_deprecated_method_ids'],
 			'persisted'                     => empty( $failed_option_names ),
 			'failed_option_names'           => $failed_option_names,
+		);
+	}
+
+	/**
+	 * Synchronize durable state without affecting canonical settings persistence.
+	 *
+	 * @param array<string,mixed> $settings Persisted canonical settings.
+	 */
+	private function synchronize_native_payments_state( array $settings ): void {
+		if ( null === $this->native_payments_state || null === $this->runtime_arbiter ) {
+			return;
+		}
+
+		if ( ! $this->runtime_arbiter->is_native_runtime_enabled() ) {
+			$this->native_payments_state->write_state( NativePaymentsState::DISABLED );
+			return;
+		}
+
+		$current_state = $this->native_payments_state->get_state();
+		if ( ! in_array( $current_state, array( NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ), true ) ) {
+			return;
+		}
+
+		$this->native_payments_state->write_state(
+			'yes' === ( $settings['enabled'] ?? null ) ? NativePaymentsState::ACTIVE : NativePaymentsState::CONNECTED
 		);
 	}
 

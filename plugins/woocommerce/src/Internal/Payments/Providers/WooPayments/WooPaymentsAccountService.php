@@ -7,6 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -149,6 +151,20 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	private ?WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer = null;
 
 	/**
+	 * Durable native payments state store.
+	 *
+	 * @var NativePaymentsState|null
+	 */
+	private ?NativePaymentsState $native_payments_state = null;
+
+	/**
+	 * Native payments runtime arbiter.
+	 *
+	 * @var NativePaymentsRuntimeArbiter|null
+	 */
+	private ?NativePaymentsRuntimeArbiter $runtime_arbiter = null;
+
+	/**
 	 * In-request account cache contents keyed by blog ID.
 	 *
 	 * @var array<int,array<string,mixed>|false>
@@ -169,10 +185,19 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 *
 	 * @param LegacyProxy                                 $legacy_proxy                  Legacy proxy.
 	 * @param WooPaymentsGatewaySettingsSynchronizer|null $gateway_settings_synchronizer Optional split settings repository.
+	 * @param NativePaymentsState|null                    $native_payments_state         Optional durable native payments state store.
+	 * @param NativePaymentsRuntimeArbiter|null           $runtime_arbiter               Optional native payments runtime arbiter.
 	 */
-	final public function init( LegacyProxy $legacy_proxy, ?WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer = null ): void {
+	final public function init(
+		LegacyProxy $legacy_proxy,
+		?WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer = null,
+		?NativePaymentsState $native_payments_state = null,
+		?NativePaymentsRuntimeArbiter $runtime_arbiter = null
+	): void {
 		$this->legacy_proxy                  = $legacy_proxy;
 		$this->gateway_settings_synchronizer = $gateway_settings_synchronizer;
+		$this->native_payments_state         = $native_payments_state;
+		$this->runtime_arbiter               = $runtime_arbiter;
 	}
 
 	/**
@@ -569,6 +594,49 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		if ( false !== $result ) {
 			$this->legacy_proxy->call_function( 'wp_cache_delete', self::ACCOUNT_OPTION, 'options' );
 		}
+
+		if ( $this->is_persisted_account_cache( $cache_contents ) ) {
+			$this->synchronize_native_payments_state( $cache_contents );
+		}
+	}
+
+	/**
+	 * Synchronize durable state without affecting the account source write.
+	 *
+	 * @param array<string,mixed> $cache_contents Persisted account cache contents.
+	 */
+	private function synchronize_native_payments_state( array $cache_contents ): void {
+		if (
+			null === $this->native_payments_state ||
+			null === $this->runtime_arbiter ||
+			true === ( $cache_contents['errored'] ?? null ) ||
+			! is_array( $cache_contents['data'] ?? null )
+		) {
+			return;
+		}
+
+		$account_data = $cache_contents['data'];
+		$is_eligible  = ! is_array( $account_data['native_payments'] ?? null ) || false !== ( $account_data['native_payments']['eligible'] ?? null );
+
+		if ( ! $this->runtime_arbiter->is_native_runtime_enabled() || ! $is_eligible ) {
+			$this->native_payments_state->write_state( NativePaymentsState::DISABLED );
+			return;
+		}
+
+		if ( $this->runtime_arbiter->is_plugin_runtime_active() || array() === $account_data ) {
+			$this->native_payments_state->write_state( NativePaymentsState::AVAILABLE );
+			return;
+		}
+
+		$account_id = $account_data['account_id'] ?? null;
+		if ( ! is_scalar( $account_id ) || '' === (string) $account_id ) {
+			return;
+		}
+
+		$settings = $this->get_gateway_settings();
+		$this->native_payments_state->write_state(
+			'yes' === ( $settings['enabled'] ?? null ) ? NativePaymentsState::ACTIVE : NativePaymentsState::CONNECTED
+		);
 	}
 
 	/**
