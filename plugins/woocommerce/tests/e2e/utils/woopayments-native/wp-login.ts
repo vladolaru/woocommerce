@@ -1,15 +1,15 @@
 import type { Page } from '@playwright/test';
 
 /**
- * Wait for WordPress's asynchronously loaded password-strength script before
- * entering credentials. Its login-page initializer can otherwise clear a
- * password that Playwright filled while the script was still loading.
+ * Wait for WordPress's delayed login-focus callback before entering credentials.
+ * The callback clears the password field before focusing either login field.
  */
 export async function waitForWordPressLoginReady(
 	page: Page
 ): Promise< void > {
 	await page.waitForFunction( () => {
-		const loginWindow = window as Window & { zxcvbn?: unknown };
-		return typeof loginWindow.zxcvbn === 'function';
+		return [ 'user_login', 'user_pass' ].includes(
+			document.activeElement?.id ?? ''
+		);
 	} );
 }
