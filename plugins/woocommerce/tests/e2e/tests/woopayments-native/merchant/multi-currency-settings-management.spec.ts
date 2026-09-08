@@ -1,6 +1,11 @@
 import type { APIRequestContext, Locator, Page } from '@playwright/test';
 
-import { expect, tags, test } from '../../../fixtures/woopayments-native';
+import {
+	expect,
+	tags,
+	test,
+	waitForWordPressLoginReady,
+} from '../../../fixtures/woopayments-native';
 import { admin } from '../../../test-data/data';
 import { openFixtureAdminSession } from '../../../utils/woopayments-native/fixture-settings';
 import {
@@ -184,6 +189,7 @@ async function logInAsAdmin(
 			// Connected profiles retain the harness's explicit fresh-login path.
 			await page.context().clearCookies();
 			await page.goto( 'wp-login.php' );
+			await waitForWordPressLoginReady( page );
 			await page
 				.getByLabel( 'Username or Email Address' )
 				.fill( ADMIN_USERNAME );

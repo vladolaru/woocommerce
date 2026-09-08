@@ -5,6 +5,7 @@ import {
 	getBlocksCardFrameSelector,
 	tags,
 	test,
+	waitForWordPressLoginReady,
 } from '../../../fixtures/woopayments-native';
 import {
 	startStrictStripeAdapterBrowserOracle,
@@ -339,6 +340,7 @@ test(
 			const customerSubmissions =
 				trackCheckoutSubmissions( customerPage );
 			await customerPage.goto( 'wp-login.php' );
+			await waitForWordPressLoginReady( customerPage );
 			await customerPage
 				.getByLabel( 'Username or Email Address' )
 				.fill( CUSTOMER_USERNAME );

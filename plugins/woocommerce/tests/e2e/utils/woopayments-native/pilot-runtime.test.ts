@@ -731,6 +731,7 @@ function savedCardCreationPage(
 			clearCookies: async () => {},
 		} ),
 		goto: async () => {},
+		waitForFunction: async () => true,
 		getByLabel: () => visibleLocator(),
 		getByRole: (
 			role: string,
@@ -781,6 +782,7 @@ function savedCardDeletionPage(
 			clearCookies: async () => {},
 		} ),
 		goto: async () => {},
+		waitForFunction: async () => true,
 		getByLabel: () => visibleLocator(),
 		getByText: ( text: string ) =>
 			text === 'Payment method deleted.' &&
@@ -820,6 +822,7 @@ function captureContractPage(): {
 			clearCookies: async () => {},
 		} ),
 		goto: async () => {},
+		waitForFunction: async () => true,
 		getByLabel: () => loginField,
 		getByRole: (
 			role: string,
@@ -979,6 +982,7 @@ function lockLossPage(
 		goto: async ( url: string ) => {
 			await maybeLoseLock( 'goto', url );
 		},
+		waitForFunction: async () => true,
 		url: () => 'http://native.test/checkout/order-received/42/',
 		waitForURL: async () => {},
 	} as unknown as Page;
@@ -1603,6 +1607,7 @@ test( 'uses the token-bound semantic My Account action rendered by Core', async 
 			clearCookies: async () => {},
 		} ),
 		goto: async () => {},
+		waitForFunction: async () => true,
 		getByLabel: () => visibleLocator(),
 		getByRole: ( role: string, options?: { name?: string | RegExp } ) => {
 			if (
@@ -1678,6 +1683,7 @@ test( 'deletes only the two exact run-owned saved cards through My Account', asy
 			clearCookies: async () => {},
 		} ),
 		goto: async () => {},
+		waitForFunction: async () => true,
 		getByLabel: () => visibleLocator(),
 		getByText: () => visibleLocator(),
 		getByRole: ( role: string, options?: { name?: string | RegExp } ) => {
@@ -1749,6 +1755,7 @@ test( 'quarantines saved-card resources while an exact provider payment method r
 			clearCookies: async () => {},
 		} ),
 		goto: async () => {},
+		waitForFunction: async () => true,
 		getByLabel: () => visibleLocator(),
 		getByText: () => visibleLocator(),
 		getByRole: ( role: string, options?: { name?: string | RegExp } ) => {
@@ -3027,6 +3034,7 @@ test( 'drives the nonce-protected product cutover controller entry point', async
 			clearCookies: async () => {},
 		} ),
 		goto: async () => {},
+		waitForFunction: async () => true,
 		getByLabel: () =>
 			visibleLocator( {
 				fill: async ( value ) => {

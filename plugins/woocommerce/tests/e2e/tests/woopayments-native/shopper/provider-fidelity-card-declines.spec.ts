@@ -15,6 +15,7 @@ import {
 	submitBlocksCheckout,
 	tags,
 	test,
+	waitForWordPressLoginReady,
 	type OwnedProduct,
 	type ProviderWriteSession,
 } from '../../../fixtures/woopayments-native';
@@ -1200,6 +1201,7 @@ async function logInAsShopper(
 ): Promise< void > {
 	await page.context().clearCookies();
 	await page.goto( 'wp-login.php' );
+	await waitForWordPressLoginReady( page );
 	await page
 		.getByLabel( 'Username or Email Address' )
 		.fill( shopper.username );

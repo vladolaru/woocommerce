@@ -96,6 +96,9 @@ test( 'authenticates REST through the exact browser cookie and nonce session', a
 		goto: async ( url: string ) => {
 			actions.push( `goto:${ url }` );
 		},
+		waitForFunction: async () => {
+			actions.push( 'wait:login-ready' );
+		},
 		waitForURL: async ( url: string ) => {
 			actions.push( `wait:${ url }` );
 		},
@@ -114,6 +117,7 @@ test( 'authenticates REST through the exact browser cookie and nonce session', a
 
 	expect( actions ).toEqual( [
 		'goto:wp-login.php',
+		'wait:login-ready',
 		'fill:Username or Email Address:pilot-admin',
 		'fill:Password:pilot-password',
 		'click:Log In',

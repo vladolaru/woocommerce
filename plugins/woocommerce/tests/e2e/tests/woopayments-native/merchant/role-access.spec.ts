@@ -1,6 +1,11 @@
 import type { APIRequestContext, BrowserContext } from '@playwright/test';
 
-import { expect, tags, test } from '../../../fixtures/woopayments-native';
+import {
+	expect,
+	tags,
+	test,
+	waitForWordPressLoginReady,
+} from '../../../fixtures/woopayments-native';
 import { admin } from '../../../test-data/data';
 import { isolatedBrowserContextOptions } from '../../../utils/woopayments-native/fixture-settings';
 
@@ -109,6 +114,7 @@ async function logIn(
 	const page = await context.newPage();
 	try {
 		await page.goto( 'wp-login.php' );
+		await waitForWordPressLoginReady( page );
 		await page.getByLabel( 'Username or Email Address' ).fill( username );
 		await page
 			.getByRole( 'textbox', { name: 'Password' } )

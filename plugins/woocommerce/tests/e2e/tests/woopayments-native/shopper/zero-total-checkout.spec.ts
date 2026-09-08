@@ -5,6 +5,7 @@ import {
 	submitBlocksCheckout,
 	tags,
 	test,
+	waitForWordPressLoginReady,
 } from '../../../fixtures/woopayments-native';
 import { customer } from '../../../test-data/data';
 import { isStripeTransactionHost } from '../../../utils/woopayments-native/stripe-transaction-host';
@@ -124,6 +125,7 @@ async function deleteRunOwnedResource(
 async function logInAsCustomer( page: Page ): Promise< void > {
 	await page.context().clearCookies();
 	await page.goto( 'wp-login.php' );
+	await waitForWordPressLoginReady( page );
 	await page
 		.getByLabel( 'Username or Email Address' )
 		.fill( customer.username );

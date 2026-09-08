@@ -41,10 +41,12 @@ import {
 	resolveProviderWriteAttempt,
 } from '../utils/woopayments-native/provider-write-journal';
 import { assertTransitionAllocation } from '../utils/woopayments-native/transition-allocation';
+import { waitForWordPressLoginReady } from '../utils/woopayments-native/wp-login';
 
 export { tags } from './fixtures';
 export { ResourceQuarantineRequiredError };
 export { ProviderSubmissionNotStartedError } from '../utils/woopayments-native/provider-write-journal';
+export { waitForWordPressLoginReady } from '../utils/woopayments-native/wp-login';
 export {
 	getBlocksCardFrameSelector,
 	submitBlocksCheckout,
@@ -178,6 +180,7 @@ export async function authenticateAdminContext(
 	const page = await context.newPage();
 	try {
 		await page.goto( 'wp-login.php' );
+		await waitForWordPressLoginReady( page );
 		await page
 			.getByLabel( 'Username or Email Address' )
 			.fill( credentials.username );
@@ -832,6 +835,7 @@ export class WooPaymentsPilotRuntime implements ProviderWriteSession {
 		const credentials = getWooPaymentsAdminCredentials();
 		await page.context().clearCookies();
 		await page.goto( 'wp-login.php' );
+		await waitForWordPressLoginReady( page );
 		await page
 			.getByLabel( 'Username or Email Address' )
 			.fill( credentials.username );
@@ -844,6 +848,7 @@ export class WooPaymentsPilotRuntime implements ProviderWriteSession {
 	public async logInAsCustomer( page: Page ): Promise< void > {
 		await page.context().clearCookies();
 		await page.goto( 'wp-login.php' );
+		await waitForWordPressLoginReady( page );
 		await page
 			.getByLabel( 'Username or Email Address' )
 			.fill( customer.username );

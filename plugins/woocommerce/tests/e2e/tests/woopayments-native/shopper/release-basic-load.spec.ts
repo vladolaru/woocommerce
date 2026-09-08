@@ -1,6 +1,11 @@
 import type { APIRequestContext, Page } from '@playwright/test';
 
-import { expect, tags, test } from '../../../fixtures/woopayments-native';
+import {
+	expect,
+	tags,
+	test,
+	waitForWordPressLoginReady,
+} from '../../../fixtures/woopayments-native';
 import { customer } from '../../../test-data/data';
 
 // The two retained release-smoke rows from the client suite's basic project.
@@ -263,6 +268,7 @@ test(
 		// that is not there.
 		await page.context().clearCookies();
 		await page.goto( 'wp-login.php' );
+		await waitForWordPressLoginReady( page );
 		await page
 			.getByLabel( 'Username or Email Address' )
 			.fill( customer.username );

@@ -1,6 +1,11 @@
 import type { APIRequestContext, Page } from '@playwright/test';
 
-import { expect, tags, test } from '../../../fixtures/woopayments-native';
+import {
+	expect,
+	tags,
+	test,
+	waitForWordPressLoginReady,
+} from '../../../fixtures/woopayments-native';
 import { admin } from '../../../test-data/data';
 
 // The same environment-first resolution the harness fixtures use.
@@ -217,6 +222,7 @@ test(
 		// the form fill below hunting a field that is not there.
 		await page.context().clearCookies();
 		await page.goto( 'wp-login.php' );
+		await waitForWordPressLoginReady( page );
 		await page
 			.getByLabel( 'Username or Email Address' )
 			.fill( ADMIN_USERNAME );

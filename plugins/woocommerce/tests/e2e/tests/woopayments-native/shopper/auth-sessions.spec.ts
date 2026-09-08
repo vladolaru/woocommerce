@@ -1,6 +1,11 @@
 import type { Browser, BrowserContext } from '@playwright/test';
 
-import { expect, tags, test } from '../../../fixtures/woopayments-native';
+import {
+	expect,
+	tags,
+	test,
+	waitForWordPressLoginReady,
+} from '../../../fixtures/woopayments-native';
 import { admin, customer } from '../../../test-data/data';
 import { isolatedBrowserContextOptions } from '../../../utils/woopayments-native/fixture-settings';
 
@@ -176,6 +181,7 @@ test(
 					} )
 				).toHaveCount( 0 );
 
+				await waitForWordPressLoginReady( page );
 				await page
 					.getByLabel( 'Username or Email Address' )
 					.fill( ADMIN_USERNAME );
@@ -288,6 +294,7 @@ test(
 				// Authenticated the way the harness's own shopper fixtures do
 				// it, through wp-login.
 				await page.goto( 'wp-login.php' );
+				await waitForWordPressLoginReady( page );
 				await page
 					.getByLabel( 'Username or Email Address' )
 					.fill( customer.username );

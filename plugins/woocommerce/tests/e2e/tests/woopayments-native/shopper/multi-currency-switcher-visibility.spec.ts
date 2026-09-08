@@ -1,6 +1,11 @@
 import type { APIRequestContext, Locator, Page } from '@playwright/test';
 
-import { expect, tags, test } from '../../../fixtures/woopayments-native';
+import {
+	expect,
+	tags,
+	test,
+	waitForWordPressLoginReady,
+} from '../../../fixtures/woopayments-native';
 import { admin } from '../../../test-data/data';
 import { isolatedBrowserContextOptions } from '../../../utils/woopayments-native/fixture-settings';
 
@@ -123,6 +128,7 @@ async function logInAsAdmin( page: Page ): Promise< void > {
 	// hunting a field that is not there.
 	await page.context().clearCookies();
 	await page.goto( 'wp-login.php' );
+	await waitForWordPressLoginReady( page );
 	await page.getByLabel( 'Username or Email Address' ).fill( ADMIN_USERNAME );
 	await page
 		.getByRole( 'textbox', { name: 'Password' } )
