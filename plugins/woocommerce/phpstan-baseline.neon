@@ -10675,12 +10675,6 @@ parameters:
 			path: includes/class-wc-countries.php
 
 		-
-			message: '#^Access to an undefined property WC_Countries\:\:\$states\.$#'
-			identifier: property.notFound
-			count: 2
-			path: includes/class-wc-countries.php
-
-		-
 			message: '#^Method WC_Countries\:\:country_dropdown_options\(\) has no return type specified\.$#'
 			identifier: missingType.return
 			count: 1
@@ -43728,7 +43722,7 @@ parameters:
 		-
 			message: '#^Access to property \$intervals on an unknown class Automattic\\WooCommerce\\Admin\\API\\Reports\\Taxes\\Stats\\stdClass\.$#'
 			identifier: class.notFound
-			count: 7
+			count: 4
 			path: src/Admin/API/Reports/Taxes/Stats/DataStore.php
 
 		-
@@ -52720,12 +52714,6 @@ parameters:
 			path: src/Blocks/Domain/Package.php
 
 		-
-			message: '#^Instanceof between WC_Data and WC_Data will always evaluate to true\.$#'
-			identifier: instanceof.alwaysTrue
-			count: 1
-			path: src/Blocks/Domain/Services/CheckoutFields.php
-
-		-
 			message: '#^Method Automattic\\WooCommerce\\Blocks\\Domain\\Services\\CheckoutFields\:\:add_fields_data\(\) has no return type specified\.$#'
 			identifier: missingType.return
 			count: 1
@@ -52741,36 +52729,6 @@ parameters:
 			message: '#^Method Automattic\\WooCommerce\\Blocks\\Domain\\Services\\CheckoutFields\:\:init\(\) has no return type specified\.$#'
 			identifier: missingType.return
 			count: 1
-			path: src/Blocks/Domain/Services/CheckoutFields.php
-
-		-
-			message: '#^Method Automattic\\WooCommerce\\Blocks\\Domain\\Services\\CheckoutFields\:\:process_checkbox_field\(\) never returns false so it can be removed from the return type\.$#'
-			identifier: return.unusedType
-			count: 1
-			path: src/Blocks/Domain/Services/CheckoutFields.php
-
-		-
-			message: '#^Method Automattic\\WooCommerce\\Blocks\\Domain\\Services\\CheckoutFields\:\:process_field_options\(\) should return array but returns array\|false\.$#'
-			identifier: return.type
-			count: 1
-			path: src/Blocks/Domain/Services/CheckoutFields.php
-
-		-
-			message: '#^Method Automattic\\WooCommerce\\Blocks\\Domain\\Services\\CheckoutFields\:\:sync_customer_additional_fields_with_order\(\) has no return type specified\.$#'
-			identifier: missingType.return
-			count: 1
-			path: src/Blocks/Domain/Services/CheckoutFields.php
-
-		-
-			message: '#^Method Automattic\\WooCommerce\\Blocks\\Domain\\Services\\CheckoutFields\:\:sync_order_additional_fields_with_customer\(\) has no return type specified\.$#'
-			identifier: missingType.return
-			count: 1
-			path: src/Blocks/Domain/Services/CheckoutFields.php
-
-		-
-			message: '#^Parameter \#2 \.\.\.\$values of function sprintf expects bool\|float\|int\|string\|null, array given\.$#'
-			identifier: argument.type
-			count: 2
 			path: src/Blocks/Domain/Services/CheckoutFields.php
 
 		-
@@ -53988,12 +53946,6 @@ parameters:
 		-
 			message: '#^Argument of an invalid type list\<string\>\|false supplied for foreach, only iterables are supported\.$#'
 			identifier: foreach.nonIterable
-			count: 1
-			path: src/Blocks/Utils/StyleAttributesUtils.php
-
-		-
-			message: '#^Method Automattic\\WooCommerce\\Blocks\\Utils\\StyleAttributesUtils\:\:join_styles\(\) should return array but returns string\.$#'
-			identifier: return.type
 			count: 1
 			path: src/Blocks/Utils/StyleAttributesUtils.php
 
@@ -58894,12 +58846,6 @@ parameters:
 			path: src/Internal/Admin/WCAdminAssets.php
 
 		-
-			message: '#^Access to offset ''id'' on an unknown class Automattic\\WooCommerce\\Internal\\Admin\\WP_User\.$#'
-			identifier: class.notFound
-			count: 1
-			path: src/Internal/Admin/WCAdminUser.php
-
-		-
 			message: '#^Access to property \$ID on an unknown class Automattic\\WooCommerce\\Internal\\Admin\\WP_User\.$#'
 			identifier: class.notFound
 			count: 1
@@ -58926,12 +58872,6 @@ parameters:
 		-
 			message: '#^Method Automattic\\WooCommerce\\Internal\\Admin\\WCAdminUser\:\:update_user_data_values\(\) has no return type specified\.$#'
 			identifier: missingType.return
-			count: 1
-			path: src/Internal/Admin/WCAdminUser.php
-
-		-
-			message: '#^Parameter \$user of method Automattic\\WooCommerce\\Internal\\Admin\\WCAdminUser\:\:get_user_data_values\(\) has invalid type Automattic\\WooCommerce\\Internal\\Admin\\WP_User\.$#'
-			identifier: class.notFound
 			count: 1
 			path: src/Internal/Admin/WCAdminUser.php
 
