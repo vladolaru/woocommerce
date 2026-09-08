@@ -375,6 +375,25 @@ assert_true(
 	'Jetpack package-version report must fail closed when a required signature key is missing'
 );
 
+$active_plugins_url = str_replace( 'jetpack-package-versions', 'jetpack-active-connected-plugins', $package_versions_url );
+$active_plugins     = $fixture->intercept(
+	false,
+	array(
+		'method' => 'POST',
+		'body'   => '{"future_active_plugin_shape":{"accepted":true}}',
+	),
+	$active_plugins_url
+);
+assert_true( ! $active_plugins instanceof WP_Error, 'Jetpack active-plugin reports must accept any parsable object while retaining the signing boundary' );
+assert_true(
+	$fixture->intercept(
+		false,
+		array( 'method' => 'GET' ),
+		$active_plugins_url
+	) instanceof WP_Error,
+	'Jetpack active-plugin reports must fail closed for unsupported methods'
+);
+
 $store_setup_url      = 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/accounts/store_setup?body-hash=hash&nonce=nonce&signature=signature&timestamp=1&token=dummyblog%3A1%3A0';
 $store_setup_body     = wp_json_encode(
 	array(

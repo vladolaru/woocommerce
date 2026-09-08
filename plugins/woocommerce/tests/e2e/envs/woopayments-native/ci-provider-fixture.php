@@ -230,8 +230,11 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 		) {
 			return $this->failure( 'escaped_request', "Secretless WooPayments CI blocked external request: $method $url" );
 		}
-		$package_versions_path = '/wpcom/v2/sites/' . self::BLOG_ID . '/jetpack-package-versions';
-		if ( $package_versions_path === $path ) {
+		$jetpack_report_paths = array(
+			'/wpcom/v2/sites/' . self::BLOG_ID . '/jetpack-active-connected-plugins',
+			'/wpcom/v2/sites/' . self::BLOG_ID . '/jetpack-package-versions',
+		);
+		if ( in_array( $path, $jetpack_report_paths, true ) ) {
 			if ( 'POST' !== $method ) {
 				return $this->failure( 'unsupported_method', "Unsupported fixture method: $method $path" );
 			}
@@ -239,9 +242,9 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			if ( $query_validation instanceof WP_Error ) {
 				return $query_validation;
 			}
-			$package_versions = $this->decode_json_object( $body, "$method $path" );
-			if ( $package_versions instanceof WP_Error ) {
-				return $package_versions;
+			$report = $this->decode_json_object( $body, "$method $path" );
+			if ( $report instanceof WP_Error ) {
+				return $report;
 			}
 
 			return $this->response( array() );
