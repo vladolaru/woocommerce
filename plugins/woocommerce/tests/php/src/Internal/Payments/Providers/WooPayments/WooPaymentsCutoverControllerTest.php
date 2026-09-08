@@ -1147,6 +1147,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 
 		$controller = $this->create_cutover_controller( null, $wpdb );
 		$method     = new \ReflectionMethod( $controller, 'get_queued_operational_action_hooks' );
+		$method->setAccessible( true );
 		$this->assertNotSame( array(), $method->invoke( $controller ) );
 	}
 
@@ -1174,6 +1175,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 
 		$controller = $this->create_cutover_controller( null, $wpdb );
 		$method     = new \ReflectionMethod( $controller, 'get_queued_operational_action_hooks' );
+		$method->setAccessible( true );
 		$this->assertSame( array( 'wcpay_test_hook' ), $method->invoke( $controller ) );
 	}
 

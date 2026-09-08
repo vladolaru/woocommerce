@@ -63,6 +63,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		remove_all_actions( 'woocommerce_woocommerce_payments_payment_requires_action' );
 		remove_all_filters( 'woocommerce_woopayments_subscriptions_for_renewal_order' );
 		$subscription_handlers = new \ReflectionProperty( NativeWooPaymentsGateway::class, 'has_attached_subscription_handlers' );
+		$subscription_handlers->setAccessible( true );
 		$subscription_handlers->setValue( null, false );
 		remove_all_filters( 'woocommerce_email_classes' );
 		remove_all_filters( 'wcs_get_retry_rule_raw' );
@@ -1056,6 +1057,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertNotNull( $amazon_definition );
 
 		$method = new \ReflectionMethod( NativeWooPaymentsGateway::class, 'is_available_for_subscription_context' );
+		$method->setAccessible( true );
 
 		$this->assertTrue( $method->invoke( new NativeWooPaymentsGateway( $bancontact_definition ), false, false ) );
 		$this->assertFalse( $method->invoke( new NativeWooPaymentsGateway( $bancontact_definition ), true, false ) );

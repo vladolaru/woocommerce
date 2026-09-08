@@ -313,8 +313,9 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 		array $initial,
 		array $expected
 	): void {
-		$runner    = $this->create_runner();
-		$method    = new \ReflectionMethod( $runner, $method_name );
+		$runner = $this->create_runner();
+		$method = new \ReflectionMethod( $runner, $method_name );
+		$method->setAccessible( true );
 		$settings  = $initial;
 		$arguments = array( &$settings, $before_version );
 
@@ -402,8 +403,9 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 	 * @param array<string,mixed> $expected    Expected migrated settings.
 	 */
 	public function test_unversioned_settings_migrations_are_idempotent( string $method_name, array $initial, array $expected ): void {
-		$runner   = $this->create_runner();
-		$method   = new \ReflectionMethod( $runner, $method_name );
+		$runner = $this->create_runner();
+		$method = new \ReflectionMethod( $runner, $method_name );
+		$method->setAccessible( true );
 		$settings = $initial;
 
 		$this->assertTrue( $method->invokeArgs( $runner, array( &$settings ) ) );
@@ -456,6 +458,7 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 	public function test_multi_currency_cache_autodetect_version_boundary(): void {
 		$runner = $this->create_runner();
 		$method = new \ReflectionMethod( $runner, 'mark_multi_currency_cache_autodetect_done' );
+		$method->setAccessible( true );
 
 		$this->assertTrue( $method->invoke( $runner, '10.9.9' ) );
 		$this->assertSame( 'yes', get_option( 'wcpay_multi_currency_cache_autodetect_done' ) );
