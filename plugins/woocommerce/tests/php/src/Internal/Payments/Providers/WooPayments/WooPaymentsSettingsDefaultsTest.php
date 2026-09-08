@@ -49,22 +49,22 @@ class WooPaymentsSettingsDefaultsTest extends WC_Unit_Test_Case {
 	 */
 	public function form_field_defaults_provider(): array {
 		return array(
-			'enabled'                                  => array( 'enabled', 'no' ),
-			'manual capture'                           => array( 'manual_capture', 'no' ),
-			'saved cards'                              => array( 'saved_cards', 'yes' ),
-			'test mode'                                => array( 'test_mode', 'no' ),
-			'debug log'                                => array( 'enable_logging', 'no' ),
-			'payment request button type'              => array( 'payment_request_button_type', 'default' ),
-			'payment request button theme'             => array( 'payment_request_button_theme', 'dark' ),
-			'payment request button height'            => array( 'payment_request_button_height', '44' ),
-			'payment request button label'             => array( 'payment_request_button_label', 'Buy now' ),
-			'payment request button locations'         => array( 'payment_request_button_locations', array( 'product', 'cart', 'checkout' ) ),
-			'enabled payment methods'                  => array( 'upe_enabled_payment_method_ids', array( 'card' ) ),
-			'payment request button size'              => array( 'payment_request_button_size', 'medium' ),
-			'platform checkout custom message'         => array( 'platform_checkout_custom_message', 'By placing this order, you agree to our [terms] and understand our [privacy_policy].' ),
-			'express checkout product methods'         => array( 'express_checkout_product_methods', array( 'payment_request', 'woopay', 'amazon_pay' ) ),
-			'express checkout cart methods'            => array( 'express_checkout_cart_methods', array( 'payment_request', 'woopay', 'amazon_pay' ) ),
-			'express checkout checkout methods'        => array( 'express_checkout_checkout_methods', array( 'payment_request', 'woopay', 'amazon_pay' ) ),
+			'enabled'                           => array( 'enabled', 'no' ),
+			'manual capture'                    => array( 'manual_capture', 'no' ),
+			'saved cards'                       => array( 'saved_cards', 'yes' ),
+			'test mode'                         => array( 'test_mode', 'no' ),
+			'debug log'                         => array( 'enable_logging', 'no' ),
+			'payment request button type'       => array( 'payment_request_button_type', 'default' ),
+			'payment request button theme'      => array( 'payment_request_button_theme', 'dark' ),
+			'payment request button height'     => array( 'payment_request_button_height', '44' ),
+			'payment request button label'      => array( 'payment_request_button_label', 'Buy now' ),
+			'payment request button locations'  => array( 'payment_request_button_locations', array( 'product', 'cart', 'checkout' ) ),
+			'enabled payment methods'           => array( 'upe_enabled_payment_method_ids', array( 'card' ) ),
+			'payment request button size'       => array( 'payment_request_button_size', 'medium' ),
+			'platform checkout custom message'  => array( 'platform_checkout_custom_message', 'By placing this order, you agree to our [terms] and understand our [privacy_policy].' ),
+			'express checkout product methods'  => array( 'express_checkout_product_methods', array( 'payment_request', 'woopay', 'amazon_pay' ) ),
+			'express checkout cart methods'     => array( 'express_checkout_cart_methods', array( 'payment_request', 'woopay', 'amazon_pay' ) ),
+			'express checkout checkout methods' => array( 'express_checkout_checkout_methods', array( 'payment_request', 'woopay', 'amazon_pay' ) ),
 		);
 	}
 }
