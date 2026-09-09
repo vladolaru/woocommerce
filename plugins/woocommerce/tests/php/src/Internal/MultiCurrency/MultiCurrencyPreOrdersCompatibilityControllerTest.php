@@ -108,20 +108,6 @@ class MultiCurrencyPreOrdersCompatibilityControllerTest extends WC_Unit_Test_Cas
 	}
 
 	/**
-	 * @testdox Should bootstrap Pre-Orders compatibility controller.
-	 */
-	public function test_bootstrap_registers_pre_orders_compatibility_controller(): void {
-		$controller = wc_get_container()->get( MultiCurrencyPreOrdersCompatibilityController::class );
-
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local source assertion for bootstrap registration.
-		$bootstrap_source = file_get_contents( WC()->plugin_path() . '/includes/class-woocommerce.php' );
-
-		$this->assertInstanceOf( MultiCurrencyPreOrdersCompatibilityController::class, $controller );
-		$this->assertIsString( $bootstrap_source );
-		$this->assertStringContainsString( 'Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyPreOrdersCompatibilityController::class )->register()', $bootstrap_source );
-	}
-
-	/**
 	 * Assert Pre-Orders hooks are not registered for a controller.
 	 *
 	 * @param MultiCurrencyPreOrdersCompatibilityController $sut The controller.

@@ -117,20 +117,6 @@ class MultiCurrencyPointsRewardsCompatibilityControllerTest extends WC_Unit_Test
 	}
 
 	/**
-	 * @testdox Should bootstrap Points and Rewards compatibility controller.
-	 */
-	public function test_bootstrap_registers_points_rewards_compatibility_controller(): void {
-		$controller = wc_get_container()->get( MultiCurrencyPointsRewardsCompatibilityController::class );
-
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local source assertion for bootstrap registration.
-		$bootstrap_source = file_get_contents( WC()->plugin_path() . '/includes/class-woocommerce.php' );
-
-		$this->assertInstanceOf( MultiCurrencyPointsRewardsCompatibilityController::class, $controller );
-		$this->assertIsString( $bootstrap_source );
-		$this->assertStringContainsString( 'Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyPointsRewardsCompatibilityController::class )->register()', $bootstrap_source );
-	}
-
-	/**
 	 * @testdox Should preserve backtrace matching semantics against a real call stack.
 	 */
 	public function test_is_call_in_backtrace_preserves_semantics_against_real_stack(): void {

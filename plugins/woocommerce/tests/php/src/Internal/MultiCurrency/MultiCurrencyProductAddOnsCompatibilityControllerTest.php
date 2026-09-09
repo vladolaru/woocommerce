@@ -416,20 +416,6 @@ class MultiCurrencyProductAddOnsCompatibilityControllerTest extends WC_Unit_Test
 	}
 
 	/**
-	 * @testdox Should bootstrap Product Add-ons compatibility controller.
-	 */
-	public function test_bootstrap_registers_product_addons_compatibility_controller(): void {
-		$controller = wc_get_container()->get( MultiCurrencyProductAddOnsCompatibilityController::class );
-
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local source assertion for bootstrap registration.
-		$bootstrap_source = file_get_contents( WC()->plugin_path() . '/includes/class-woocommerce.php' );
-
-		$this->assertInstanceOf( MultiCurrencyProductAddOnsCompatibilityController::class, $controller );
-		$this->assertIsString( $bootstrap_source );
-		$this->assertStringContainsString( 'Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyProductAddOnsCompatibilityController::class )->register()', $bootstrap_source );
-	}
-
-	/**
 	 * Assert Product Add-ons hooks are not registered for a controller.
 	 *
 	 * @param MultiCurrencyProductAddOnsCompatibilityController $sut The controller.

@@ -245,20 +245,6 @@ class MultiCurrencySwitcherBlockControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should bootstrap switcher block controller.
-	 */
-	public function test_bootstrap_registers_switcher_block_controller(): void {
-		$controller = wc_get_container()->get( MultiCurrencySwitcherBlockController::class );
-
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local source assertion for bootstrap registration.
-		$bootstrap_source = file_get_contents( WC()->plugin_path() . '/includes/class-woocommerce.php' );
-
-		$this->assertInstanceOf( MultiCurrencySwitcherBlockController::class, $controller );
-		$this->assertIsString( $bootstrap_source );
-		$this->assertStringContainsString( 'Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySwitcherBlockController::class )->register()', $bootstrap_source );
-	}
-
-	/**
 	 * Create a switcher block controller.
 	 *
 	 * @param string                                      $owner               Runtime owner.

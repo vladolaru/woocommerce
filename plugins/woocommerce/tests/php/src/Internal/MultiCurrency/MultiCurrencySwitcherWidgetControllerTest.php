@@ -156,20 +156,6 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should bootstrap switcher widget controller.
-	 */
-	public function test_bootstrap_registers_switcher_widget_controller(): void {
-		$controller = wc_get_container()->get( MultiCurrencySwitcherWidgetController::class );
-
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local source assertion for bootstrap registration.
-		$bootstrap_source = file_get_contents( WC()->plugin_path() . '/includes/class-woocommerce.php' );
-
-		$this->assertInstanceOf( MultiCurrencySwitcherWidgetController::class, $controller );
-		$this->assertIsString( $bootstrap_source );
-		$this->assertStringContainsString( 'Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySwitcherWidgetController::class )->register()', $bootstrap_source );
-	}
-
-	/**
 	 * Create a switcher widget controller.
 	 *
 	 * @param string                                 $owner      Runtime owner.

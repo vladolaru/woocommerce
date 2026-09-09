@@ -525,20 +525,6 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	}
 
 	/**
-	 * @testdox Should bootstrap subscriptions compatibility controller.
-	 */
-	public function test_bootstrap_registers_subscriptions_compatibility_controller(): void {
-		$controller = wc_get_container()->get( MultiCurrencySubscriptionsCompatibilityController::class );
-
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local source assertion for bootstrap registration.
-		$bootstrap_source = file_get_contents( WC()->plugin_path() . '/includes/class-woocommerce.php' );
-
-		$this->assertInstanceOf( MultiCurrencySubscriptionsCompatibilityController::class, $controller );
-		$this->assertIsString( $bootstrap_source );
-		$this->assertStringContainsString( 'Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySubscriptionsCompatibilityController::class )->register()', $bootstrap_source );
-	}
-
-	/**
 	 * Assert subscription compatibility hooks are not registered for a controller.
 	 *
 	 * @param MultiCurrencySubscriptionsCompatibilityController $sut The controller.

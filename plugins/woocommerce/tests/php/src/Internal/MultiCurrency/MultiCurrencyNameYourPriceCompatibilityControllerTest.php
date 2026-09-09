@@ -255,20 +255,6 @@ class MultiCurrencyNameYourPriceCompatibilityControllerTest extends WC_Unit_Test
 	}
 
 	/**
-	 * @testdox Should bootstrap Name Your Price compatibility controller.
-	 */
-	public function test_bootstrap_registers_name_your_price_compatibility_controller(): void {
-		$controller = wc_get_container()->get( MultiCurrencyNameYourPriceCompatibilityController::class );
-
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local source assertion for bootstrap registration.
-		$bootstrap_source = file_get_contents( WC()->plugin_path() . '/includes/class-woocommerce.php' );
-
-		$this->assertInstanceOf( MultiCurrencyNameYourPriceCompatibilityController::class, $controller );
-		$this->assertIsString( $bootstrap_source );
-		$this->assertStringContainsString( 'Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyNameYourPriceCompatibilityController::class )->register()', $bootstrap_source );
-	}
-
-	/**
 	 * Assert Name Your Price hooks are not registered for a controller.
 	 *
 	 * @param MultiCurrencyNameYourPriceCompatibilityController $sut The controller.

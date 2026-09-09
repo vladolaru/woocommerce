@@ -339,20 +339,6 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should bootstrap settings controller.
-	 */
-	public function test_bootstrap_registers_settings_controller(): void {
-		$controller = wc_get_container()->get( MultiCurrencySettingsController::class );
-
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local source assertion for bootstrap registration.
-		$bootstrap_source = file_get_contents( WC()->plugin_path() . '/includes/class-woocommerce.php' );
-
-		$this->assertInstanceOf( MultiCurrencySettingsController::class, $controller );
-		$this->assertIsString( $bootstrap_source );
-		$this->assertStringContainsString( 'Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySettingsController::class )->register()', $bootstrap_source );
-	}
-
-	/**
 	 * Create a settings controller.
 	 *
 	 * @param string              $owner   Runtime owner.

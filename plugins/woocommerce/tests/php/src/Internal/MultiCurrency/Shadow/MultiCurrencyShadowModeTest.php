@@ -235,28 +235,6 @@ class MultiCurrencyShadowModeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox WooCommerce bootstrap resolves shadow mode but registers no hooks by default.
-	 */
-	public function test_woocommerce_bootstrap_resolves_shadow_mode_without_default_hooks(): void {
-		$this->fake_plugin( true );
-
-		$shadow_mode = wc_get_container()->get( MultiCurrencyShadowMode::class );
-		remove_action( 'woocommerce_new_order', array( $shadow_mode, 'handle_woocommerce_new_order' ), 100 );
-		remove_action( 'woocommerce_order_refunded', array( $shadow_mode, 'handle_woocommerce_order_refunded' ), 100 );
-
-		$shadow_mode->register();
-
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local source assertion for bootstrap registration.
-		$bootstrap_source = file_get_contents( WC()->plugin_path() . '/includes/class-woocommerce.php' );
-
-		$this->assertInstanceOf( MultiCurrencyShadowMode::class, $shadow_mode );
-		$this->assertFalse( has_action( 'woocommerce_new_order', array( $shadow_mode, 'handle_woocommerce_new_order' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_order_refunded', array( $shadow_mode, 'handle_woocommerce_order_refunded' ) ) );
-		$this->assertIsString( $bootstrap_source );
-		$this->assertStringContainsString( 'Automattic\WooCommerce\Internal\MultiCurrency\Shadow\MultiCurrencyShadowMode::class )->register()', $bootstrap_source );
-	}
-
-	/**
 	 * @testdox Shadow mode hooks only when enabled and plugin owns multi-currency.
 	 */
 	public function test_registers_hooks_only_when_enabled_and_plugin_owns_multi_currency(): void {

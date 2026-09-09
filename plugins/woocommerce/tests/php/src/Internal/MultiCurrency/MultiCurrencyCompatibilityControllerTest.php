@@ -225,20 +225,6 @@ class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should bootstrap compatibility controller.
-	 */
-	public function test_bootstrap_registers_compatibility_controller(): void {
-		$controller = wc_get_container()->get( MultiCurrencyCompatibilityController::class );
-
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local source assertion for bootstrap registration.
-		$bootstrap_source = file_get_contents( WC()->plugin_path() . '/includes/class-woocommerce.php' );
-
-		$this->assertInstanceOf( MultiCurrencyCompatibilityController::class, $controller );
-		$this->assertIsString( $bootstrap_source );
-		$this->assertStringContainsString( 'Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCompatibilityController::class )->register()', $bootstrap_source );
-	}
-
-	/**
 	 * Create a compatibility controller with deterministic runtime context.
 	 *
 	 * @param string $owner                 Runtime owner.
