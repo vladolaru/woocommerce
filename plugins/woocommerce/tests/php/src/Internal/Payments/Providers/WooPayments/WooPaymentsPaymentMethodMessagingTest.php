@@ -136,6 +136,11 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should not read eligibility on an unsupported shopper surface.
+	 *
+	 * Runs in its own process because prior cart tests can pin the WOOCOMMERCE_CART constant, making this unsupported surface look supported.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_does_not_read_eligibility_on_unsupported_shopper_surface(): void {
 		$account_service = $this->create_account_service( true, array( 'affirm' ), array( 'affirm_payments' => 'active' ), 0 );
