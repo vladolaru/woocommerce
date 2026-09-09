@@ -18,6 +18,14 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 final class WooPaymentsFeaturePolicy {
 
 	private const AMAZON_PAY_FLAG_OPTION = '_wcpay_feature_amazon_pay';
+	private const ACCOUNT_CACHE_OPTION   = 'wcpay_account_data';
+
+	/**
+	 * Last request-local Amazon Pay policy decision.
+	 *
+	 * @var array{blog_id:int,account_service:WooPaymentsAccountService,rollout_flag:string,decision:bool}|null
+	 */
+	private static $amazon_pay_enabled;
 
 	/**
 	 * Tell whether ECE confirmation tokens are enabled for the connected account.
@@ -38,8 +46,93 @@ final class WooPaymentsFeaturePolicy {
 	 * @return bool
 	 */
 	public static function is_amazon_pay_enabled( WooPaymentsAccountService $account_service ): bool {
-		return '1' === (string) get_option( self::AMAZON_PAY_FLAG_OPTION, '1' )
+		$blog_id      = get_current_blog_id();
+		$rollout_flag = (string) get_option( self::AMAZON_PAY_FLAG_OPTION, '1' );
+		if (
+			null !== self::$amazon_pay_enabled &&
+			$blog_id === self::$amazon_pay_enabled['blog_id'] &&
+			$account_service === self::$amazon_pay_enabled['account_service'] &&
+			$rollout_flag === self::$amazon_pay_enabled['rollout_flag']
+		) {
+			return self::$amazon_pay_enabled['decision'];
+		}
+
+		$decision = '1' === $rollout_flag
 			&& self::is_ece_confirmation_tokens_enabled( $account_service );
+
+		self::$amazon_pay_enabled = array(
+			'blog_id'         => $blog_id,
+			'account_service' => $account_service,
+			'rollout_flag'    => $rollout_flag,
+			'decision'        => $decision,
+		);
+		self::register_account_cache_invalidation();
+
+		return $decision;
+	}
+
+	/**
+	 * Reset request-local feature-policy decisions.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @internal
+	 */
+	public static function reset_cache(): void {
+		self::$amazon_pay_enabled = null;
+		remove_action( 'woocommerce_payments_account_refreshed', array( self::class, 'handle_account_refresh' ), 10 );
+		remove_action( 'added_option', array( self::class, 'handle_account_cache_option_change' ), 10 );
+		remove_action( 'updated_option', array( self::class, 'handle_account_cache_option_change' ), 10 );
+		remove_action( 'deleted_option', array( self::class, 'handle_account_cache_option_change' ), 10 );
+	}
+
+	/**
+	 * Clear the policy decision after account data is refreshed.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @internal
+	 */
+	public static function handle_account_refresh(): void {
+		self::reset_cache();
+	}
+
+	/**
+	 * Clear the policy decision when the authoritative account cache changes.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @internal
+	 *
+	 * @param mixed $option Option name.
+	 */
+	public static function handle_account_cache_option_change( $option ): void {
+		if ( self::ACCOUNT_CACHE_OPTION !== $option ) {
+			return;
+		}
+
+		self::reset_cache();
+	}
+
+	/**
+	 * Register the authoritative account-cache invalidation signals.
+	 */
+	private static function register_account_cache_invalidation(): void {
+		if ( false === has_action( 'woocommerce_payments_account_refreshed', array( self::class, 'handle_account_refresh' ) ) ) {
+			add_action( 'woocommerce_payments_account_refreshed', array( self::class, 'handle_account_refresh' ) );
+		}
+
+		if ( false === has_action( 'added_option', array( self::class, 'handle_account_cache_option_change' ) ) ) {
+			add_action( 'added_option', array( self::class, 'handle_account_cache_option_change' ) );
+		}
+
+		if ( false === has_action( 'updated_option', array( self::class, 'handle_account_cache_option_change' ) ) ) {
+			add_action( 'updated_option', array( self::class, 'handle_account_cache_option_change' ) );
+		}
+
+		if ( false === has_action( 'deleted_option', array( self::class, 'handle_account_cache_option_change' ) ) ) {
+			add_action( 'deleted_option', array( self::class, 'handle_account_cache_option_change' ) );
+		}
 	}
 
 	/**

@@ -9,6 +9,8 @@ use Automattic\WooCommerce\Blocks\Payments\Integrations\Cheque;
 use Automattic\WooCommerce\Blocks\Payments\Integrations\PayPal;
 use Automattic\WooCommerce\Blocks\Payments\Integrations\WooPayments;
 use Automattic\WooCommerce\Internal\Features\BlockEditorUnifiedAssets;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsBootstrap;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 
 /**
  *  The Api class provides an interface to payment method registration.
@@ -140,6 +142,10 @@ class Api {
 		$payment_method_registry->register(
 			Package::container()->get( CashOnDelivery::class )
 		);
+
+		if ( NativePaymentsState::ACTIVE !== NativePaymentsBootstrap::get_effective_state() ) {
+			return;
+		}
 
 		$woopayments = Package::container()->get( WooPayments::class );
 		foreach ( $woopayments->get_payment_method_integrations() as $woopayments_integration ) {

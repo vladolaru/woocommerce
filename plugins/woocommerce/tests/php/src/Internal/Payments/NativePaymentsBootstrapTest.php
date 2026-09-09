@@ -241,6 +241,14 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsDuplicatePaymentPreventionService',
 	);
 
+	/**
+	 * Tear down test fixtures.
+	 */
+	public function tearDown(): void {
+		NativePaymentsBootstrap::reset_effective_state();
+		parent::tearDown();
+	}
+
 	/** @testdox Production composition supplies the provider root matrix through a lazy closure. */
 	public function test_production_composition_uses_lazy_provider_matrix_resolver(): void {
 		$method       = new ReflectionMethod( \WooCommerce::class, 'init_hooks' );
@@ -278,6 +286,62 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertSame( array(), $container->events, 'The disabled bootstrap should not resolve any service.' );
 		$this->assertSame( 0, $rest_calls, 'The disabled bootstrap should not classify the request.' );
 		$this->assertSame( 0, $matrix_calls, 'The disabled bootstrap should not ask the provider for its root matrix.' );
+	}
+
+	/** @testdox Should publish a disabled effective state when the bootstrap is disabled. */
+	public function test_bootstrap_filter_false_publishes_disabled_effective_state(): void {
+		add_filter( NativePaymentsBootstrap::FILTER_BOOTSTRAP_ENABLED, '__return_false' );
+		$sut = $this->make_bootstrap();
+
+		$sut->register( $this->make_container( NativePaymentsState::ACTIVE, NativePaymentsRuntimeArbiter::OWNER_NATIVE ), '__return_false' );
+
+		$this->assertSame( NativePaymentsState::DISABLED, NativePaymentsBootstrap::get_effective_state(), 'The no-op comparison must not expose the native Blocks graph.' );
+	}
+
+	/** @testdox Resetting the effective state restores the disabled default. */
+	public function test_reset_effective_state_restores_the_disabled_default(): void {
+		NativePaymentsBootstrap::reset_effective_state();
+		$this->assertSame( NativePaymentsState::DISABLED, NativePaymentsBootstrap::get_effective_state(), 'The initial state must be safe before bootstrap registration.' );
+
+		$sut = $this->make_bootstrap();
+		$sut->register( $this->make_container( NativePaymentsState::ACTIVE, NativePaymentsRuntimeArbiter::OWNER_NATIVE ), '__return_false' );
+		$this->assertSame( NativePaymentsState::ACTIVE, NativePaymentsBootstrap::get_effective_state() );
+
+		NativePaymentsBootstrap::reset_effective_state();
+
+		$this->assertSame( NativePaymentsState::DISABLED, NativePaymentsBootstrap::get_effective_state(), 'The reset state must remain safe before the next registration.' );
+	}
+
+	/**
+	 * @testdox Should publish the resolved effective state without another container lookup.
+	 *
+	 * @dataProvider effective_states
+	 *
+	 * @param string $state Native payments tier.
+	 */
+	public function test_register_publishes_effective_state_passively( string $state ): void {
+		$container = $this->make_container( $state, NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+		$sut       = $this->make_bootstrap();
+
+		$sut->register( $container, '__return_false' );
+		$resolved_before_read = $container->resolved;
+
+		$this->assertSame( $state, NativePaymentsBootstrap::get_effective_state(), 'Blocks should read the state that bootstrap already resolved.' );
+		$this->assertSame( $resolved_before_read, $container->resolved, 'Reading the published state must not resolve another service.' );
+	}
+
+	/**
+	 * Provide the native payments states that bootstrap can publish directly.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public static function effective_states(): array {
+		return array(
+			'disabled'  => array( NativePaymentsState::DISABLED ),
+			'available' => array( NativePaymentsState::AVAILABLE ),
+			'connected' => array( NativePaymentsState::CONNECTED ),
+			'active'    => array( NativePaymentsState::ACTIVE ),
+		);
 	}
 
 	/**
