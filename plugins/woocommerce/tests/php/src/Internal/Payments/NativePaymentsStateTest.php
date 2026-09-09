@@ -141,6 +141,21 @@ class NativePaymentsStateTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Owner-less sites return disabled without overwriting their stored state.
+	 * @dataProvider provide_native_payments_states
+	 *
+	 * @param string $stored_state Stored native payments tier.
+	 */
+	public function test_get_state_returns_disabled_without_overwriting_the_stored_state_when_no_runtime_owns_the_site( string $stored_state ): void {
+		update_option( NativePaymentsState::OPTION_NAME, $stored_state );
+		$this->state->invalidate();
+		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
+
+		$this->assertSame( NativePaymentsState::DISABLED, $this->state->get_state() );
+		$this->assertSame( $stored_state, get_option( NativePaymentsState::OPTION_NAME ) );
+	}
+
+	/**
 	 * @testdox State memoization remains isolated by blog.
 	 * @group multisite
 	 */
@@ -174,6 +189,20 @@ class NativePaymentsStateTest extends WC_Unit_Test_Case {
 	 */
 	public function provide_connected_tiers(): array {
 		return array(
+			'connected' => array( NativePaymentsState::CONNECTED ),
+			'active'    => array( NativePaymentsState::ACTIVE ),
+		);
+	}
+
+	/**
+	 * Provide every stored native payments tier.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public function provide_native_payments_states(): array {
+		return array(
+			'disabled'  => array( NativePaymentsState::DISABLED ),
+			'available' => array( NativePaymentsState::AVAILABLE ),
 			'connected' => array( NativePaymentsState::CONNECTED ),
 			'active'    => array( NativePaymentsState::ACTIVE ),
 		);

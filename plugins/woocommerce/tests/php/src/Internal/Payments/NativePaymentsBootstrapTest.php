@@ -241,14 +241,6 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		self::WCPAY . 'WooPaymentsDuplicatePaymentPreventionService',
 	);
 
-	/**
-	 * Tear down test fixtures.
-	 */
-	public function tearDown(): void {
-		NativePaymentsBootstrap::reset_effective_state();
-		parent::tearDown();
-	}
-
 	/** @testdox Production composition supplies the provider root matrix through a lazy closure. */
 	public function test_production_composition_uses_lazy_provider_matrix_resolver(): void {
 		$method       = new ReflectionMethod( \WooCommerce::class, 'init_hooks' );
@@ -286,62 +278,6 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertSame( array(), $container->events, 'The disabled bootstrap should not resolve any service.' );
 		$this->assertSame( 0, $rest_calls, 'The disabled bootstrap should not classify the request.' );
 		$this->assertSame( 0, $matrix_calls, 'The disabled bootstrap should not ask the provider for its root matrix.' );
-	}
-
-	/** @testdox Should publish a disabled effective state when the bootstrap is disabled. */
-	public function test_bootstrap_filter_false_publishes_disabled_effective_state(): void {
-		add_filter( NativePaymentsBootstrap::FILTER_BOOTSTRAP_ENABLED, '__return_false' );
-		$sut = $this->make_bootstrap();
-
-		$sut->register( $this->make_container( NativePaymentsState::ACTIVE, NativePaymentsRuntimeArbiter::OWNER_NATIVE ), '__return_false' );
-
-		$this->assertSame( NativePaymentsState::DISABLED, NativePaymentsBootstrap::get_effective_state(), 'The no-op comparison must not expose the native Blocks graph.' );
-	}
-
-	/** @testdox Resetting the effective state restores the disabled default. */
-	public function test_reset_effective_state_restores_the_disabled_default(): void {
-		NativePaymentsBootstrap::reset_effective_state();
-		$this->assertSame( NativePaymentsState::DISABLED, NativePaymentsBootstrap::get_effective_state(), 'The initial state must be safe before bootstrap registration.' );
-
-		$sut = $this->make_bootstrap();
-		$sut->register( $this->make_container( NativePaymentsState::ACTIVE, NativePaymentsRuntimeArbiter::OWNER_NATIVE ), '__return_false' );
-		$this->assertSame( NativePaymentsState::ACTIVE, NativePaymentsBootstrap::get_effective_state() );
-
-		NativePaymentsBootstrap::reset_effective_state();
-
-		$this->assertSame( NativePaymentsState::DISABLED, NativePaymentsBootstrap::get_effective_state(), 'The reset state must remain safe before the next registration.' );
-	}
-
-	/**
-	 * @testdox Should publish the resolved effective state without another container lookup.
-	 *
-	 * @dataProvider effective_states
-	 *
-	 * @param string $state Native payments tier.
-	 */
-	public function test_register_publishes_effective_state_passively( string $state ): void {
-		$container = $this->make_container( $state, NativePaymentsRuntimeArbiter::OWNER_NATIVE );
-		$sut       = $this->make_bootstrap();
-
-		$sut->register( $container, '__return_false' );
-		$resolved_before_read = $container->resolved;
-
-		$this->assertSame( $state, NativePaymentsBootstrap::get_effective_state(), 'Blocks should read the state that bootstrap already resolved.' );
-		$this->assertSame( $resolved_before_read, $container->resolved, 'Reading the published state must not resolve another service.' );
-	}
-
-	/**
-	 * Provide the native payments states that bootstrap can publish directly.
-	 *
-	 * @return array<string,array{string}>
-	 */
-	public static function effective_states(): array {
-		return array(
-			'disabled'  => array( NativePaymentsState::DISABLED ),
-			'available' => array( NativePaymentsState::AVAILABLE ),
-			'connected' => array( NativePaymentsState::CONNECTED ),
-			'active'    => array( NativePaymentsState::ACTIVE ),
-		);
 	}
 
 	/**
@@ -487,19 +423,10 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		}
 	}
 
-	/** @testdox Should clamp plugin ownership to available while keeping cutover reachable without default shadow cost. */
-	public function test_plugin_owner_clamps_to_available_without_default_shadow(): void {
-		$effective_state = new ReflectionMethod( NativePaymentsBootstrap::class, 'effective_state' );
-		$effective_state->setAccessible( true );
-		$roots_for = new ReflectionMethod( NativePaymentsBootstrap::class, 'roots_for' );
-		$roots_for->setAccessible( true );
-		$effective = $effective_state->invoke( null, NativePaymentsState::ACTIVE, NativePaymentsRuntimeArbiter::OWNER_PLUGIN );
-
-		$this->assertSame( NativePaymentsState::AVAILABLE, $effective );
-		$sut = $this->make_bootstrap();
-		$this->assertSame( self::AVAILABLE_ADMIN, $roots_for->invoke( $sut, $effective, 'admin' ) );
-
+	/** @testdox Plugin-owned sites retain the available effective state without default shadow cost. */
+	public function test_plugin_owner_uses_the_available_effective_state_without_default_shadow(): void {
 		$container = $this->make_container( NativePaymentsState::ACTIVE, NativePaymentsRuntimeArbiter::OWNER_PLUGIN );
+		$sut       = $this->make_bootstrap();
 
 		$sut->register( $container, '__return_false' );
 
@@ -518,8 +445,8 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertSame( $this->expected_events( array( NativePaymentsShadowMode::class ) ), $container->events );
 	}
 
-	/** @testdox Should clamp an active state to disabled when no runtime owns the site. */
-	public function test_owner_none_clamps_an_active_state_to_disabled(): void {
+	/** @testdox Owner-less sites receive a disabled effective state. */
+	public function test_owner_none_uses_a_disabled_effective_state(): void {
 		add_filter( NativePaymentsShadowMode::FILTER_SHADOW_ENABLED, '__return_true' );
 		$container = $this->make_container( NativePaymentsState::ACTIVE, NativePaymentsRuntimeArbiter::OWNER_NONE );
 		$sut       = $this->make_bootstrap();
@@ -656,8 +583,19 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 							return MultiCurrencyRuntimeArbiter::class === $this->class_name ? MultiCurrencyRuntimeArbiter::OWNER_NONE : $this->owner;
 						}
 
-						/** Return the configured native state. */
+						/** Return the configured effective native state. */
 						public function get_state(): string {
+							if ( NativePaymentsRuntimeArbiter::OWNER_NONE === $this->owner ) {
+								return NativePaymentsState::DISABLED;
+							}
+
+							if (
+								NativePaymentsRuntimeArbiter::OWNER_PLUGIN === $this->owner &&
+								in_array( $this->state, array( NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ), true )
+							) {
+								return NativePaymentsState::AVAILABLE;
+							}
+
 							return $this->state;
 						}
 

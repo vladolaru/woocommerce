@@ -17,9 +17,6 @@ use Automattic\WooCommerce\Blocks\Payments\Integrations\Cheque;
 use Automattic\WooCommerce\Blocks\Payments\Integrations\PayPal;
 use Automattic\WooCommerce\Blocks\Payments\Integrations\WooPayments;
 use Automattic\WooCommerce\Blocks\Payments\PaymentMethodRegistry;
-use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
-use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutBridge;
@@ -33,12 +30,28 @@ use WC_Unit_Test_Case;
  */
 class ApiTest extends WC_Unit_Test_Case {
 
+	/** @var NativePaymentsState */
+	private NativePaymentsState $state;
+
+	/**
+	 * Set up test fixtures.
+	 */
+	public function setUp(): void {
+		parent::setUp();
+
+		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
+		$this->state = wc_get_container()->get( NativePaymentsState::class );
+		$this->state->invalidate();
+	}
+
 	/**
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
 		Package::container( true );
-		NativePaymentsBootstrap::reset_effective_state();
+		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
+		delete_option( NativePaymentsState::OPTION_NAME );
+		$this->state->invalidate();
 		parent::tearDown();
 	}
 
@@ -51,7 +64,7 @@ class ApiTest extends WC_Unit_Test_Case {
 	 */
 	public function test_registers_bundled_integrations_without_resolving_woopayments_below_active_tier( string $state ): void {
 		$woopayments_resolutions = 0;
-		$this->publish_effective_state( $state );
+		$this->state->write_state( $state );
 		$this->register_blocks_integrations(
 			static function () use ( &$woopayments_resolutions ): WooPayments {
 				++$woopayments_resolutions;
@@ -84,7 +97,7 @@ class ApiTest extends WC_Unit_Test_Case {
 			$this->createMock( WooPaymentsWooPaySessionService::class ),
 			$this->createMock( WooPaymentsExpressCheckoutService::class )
 		);
-		$this->publish_effective_state( NativePaymentsState::ACTIVE );
+		$this->state->write_state( NativePaymentsState::ACTIVE );
 		$this->register_blocks_integrations(
 			static function () use ( &$woopayments_resolutions, $woopayments ): WooPayments {
 				++$woopayments_resolutions;
@@ -130,76 +143,5 @@ class ApiTest extends WC_Unit_Test_Case {
 		$container->register( BankTransfer::class, new BankTransfer( $asset_api ) );
 		$container->register( CashOnDelivery::class, new CashOnDelivery( $asset_api ) );
 		$container->register( WooPayments::class, $woopayments_factory );
-	}
-
-	/**
-	 * Publish an effective tier through the bootstrap without resolving payment roots.
-	 *
-	 * @param string $state Native payments tier.
-	 */
-	private function publish_effective_state( string $state ): void {
-		$bootstrap = new NativePaymentsBootstrap( static fn(): array => array() );
-		$bootstrap->register(
-			new class( $state ) extends RuntimeContainer {
-				/** @var string */
-				private $state;
-
-				/**
-				 * Initialize the bootstrap container.
-				 *
-				 * @param string $state Native payments tier.
-				 */
-				public function __construct( string $state ) {
-					parent::__construct( array() );
-					$this->state = $state;
-				}
-
-				/**
-				 * Return the dependencies needed to publish the effective state.
-				 *
-				 * @param string $class_name Dependency class name.
-				 * @return object
-				 */
-				public function get( string $class_name ) {
-					if ( MultiCurrencyRuntimeArbiter::class === $class_name ) {
-						return new class() {
-							/** Return an inactive Multi-Currency owner. */
-							public function get_runtime_owner(): string {
-								return MultiCurrencyRuntimeArbiter::OWNER_NONE;
-							}
-						};
-					}
-
-					if ( NativePaymentsState::class === $class_name ) {
-						return new class( $this->state ) {
-							/** @var string */
-							private $state;
-
-							/**
-							 * Initialize the configured state.
-							 *
-							 * @param string $state Native payments tier.
-							 */
-							public function __construct( string $state ) {
-								$this->state = $state;
-							}
-
-							/** Return the configured native payments tier. */
-							public function get_state(): string {
-								return $this->state;
-							}
-						};
-					}
-
-					return new class() {
-						/** Return the native runtime owner. */
-						public function get_runtime_owner(): string {
-							return NativePaymentsRuntimeArbiter::OWNER_NATIVE;
-						}
-					};
-				}
-			},
-			'__return_false'
-		);
 	}
 }

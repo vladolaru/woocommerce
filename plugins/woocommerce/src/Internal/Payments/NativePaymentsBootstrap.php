@@ -25,15 +25,6 @@ final class NativePaymentsBootstrap {
 	public const FILTER_BOOTSTRAP_ENABLED = 'woocommerce_native_payments_bootstrap_enabled';
 
 	/**
-	 * Effective tier published by the current bootstrap request.
-	 *
-	 * A disabled default keeps callers passive and safe before registration, including the controlled no-op comparison path.
-	 *
-	 * @var string
-	 */
-	private static $effective_state = NativePaymentsState::DISABLED;
-
-	/**
 	 * Provider-owned root matrix resolver.
 	 *
 	 * @var callable
@@ -60,8 +51,6 @@ final class NativePaymentsBootstrap {
 	 * @param callable                   $is_rest_api_request Whether the current request is a REST request.
 	 */
 	public function register( $container, callable $is_rest_api_request ): void {
-		self::$effective_state = NativePaymentsState::DISABLED;
-
 		/**
 		 * Filters whether the branch-native payments bootstrap runs for automated performance comparison.
 		 *
@@ -77,12 +66,11 @@ final class NativePaymentsBootstrap {
 
 		( new MultiCurrencyBootstrap() )->register( $container );
 
-		$state_store           = $container->get( NativePaymentsState::class );
-		$arbiter               = $container->get( NativePaymentsRuntimeArbiter::class );
-		$owner                 = $arbiter->get_runtime_owner();
-		$state                 = self::effective_state( $state_store->get_state(), $owner );
-		$request               = $this->classify_request( $is_rest_api_request );
-		self::$effective_state = $state;
+		$state_store = $container->get( NativePaymentsState::class );
+		$arbiter     = $container->get( NativePaymentsRuntimeArbiter::class );
+		$owner       = $arbiter->get_runtime_owner();
+		$state       = $state_store->get_state();
+		$request     = $this->classify_request( $is_rest_api_request );
 
 		$this->register_roots( $container, $this->roots_for( $state, $request ) );
 
@@ -96,50 +84,6 @@ final class NativePaymentsBootstrap {
 		if ( NativePaymentsRuntimeArbiter::OWNER_PLUGIN === $owner && apply_filters( NativePaymentsShadowMode::FILTER_SHADOW_ENABLED, false ) ) {
 			$this->register_root( $container, NativePaymentsShadowMode::class );
 		}
-	}
-
-	/**
-	 * Get the effective tier selected by bootstrap for this request.
-	 *
-	 * @since 11.2.0
-	 *
-	 * @return string Effective tier.
-	 */
-	public static function get_effective_state(): string {
-		return self::$effective_state;
-	}
-
-	/**
-	 * Reset the published effective tier to its safe default.
-	 *
-	 * @since 11.2.0
-	 *
-	 * @internal
-	 */
-	public static function reset_effective_state(): void {
-		self::$effective_state = NativePaymentsState::DISABLED;
-	}
-
-	/**
-	 * Apply request-local ownership clamps to the durable tier.
-	 *
-	 * @param string $state Persisted tier.
-	 * @param string $owner Runtime owner.
-	 * @return string Effective tier.
-	 */
-	private static function effective_state( string $state, string $owner ): string {
-		if ( NativePaymentsRuntimeArbiter::OWNER_NONE === $owner ) {
-			return NativePaymentsState::DISABLED;
-		}
-
-		if (
-			NativePaymentsRuntimeArbiter::OWNER_PLUGIN === $owner &&
-			in_array( $state, array( NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ), true )
-		) {
-			return NativePaymentsState::AVAILABLE;
-		}
-
-		return $state;
 	}
 
 	/**

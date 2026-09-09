@@ -9,7 +9,6 @@ use Automattic\WooCommerce\Blocks\Payments\Integrations\Cheque;
 use Automattic\WooCommerce\Blocks\Payments\Integrations\PayPal;
 use Automattic\WooCommerce\Blocks\Payments\Integrations\WooPayments;
 use Automattic\WooCommerce\Internal\Features\BlockEditorUnifiedAssets;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 
 /**
@@ -143,7 +142,7 @@ class Api {
 			Package::container()->get( CashOnDelivery::class )
 		);
 
-		if ( NativePaymentsState::ACTIVE !== NativePaymentsBootstrap::get_effective_state() ) {
+		if ( NativePaymentsState::ACTIVE !== wc_get_container()->get( NativePaymentsState::class )->get_state() ) {
 			return;
 		}
 

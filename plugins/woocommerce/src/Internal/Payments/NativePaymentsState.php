@@ -70,7 +70,12 @@ final class NativePaymentsState {
 		}
 
 		$state = $this->states[ $blog_id ];
-		if ( in_array( $state, array( self::CONNECTED, self::ACTIVE ), true ) && $this->runtime_arbiter->is_plugin_runtime_active() ) {
+		$owner = $this->runtime_arbiter->get_runtime_owner();
+		if ( NativePaymentsRuntimeArbiter::OWNER_NONE === $owner ) {
+			return self::DISABLED;
+		}
+
+		if ( NativePaymentsRuntimeArbiter::OWNER_PLUGIN === $owner && in_array( $state, array( self::CONNECTED, self::ACTIVE ), true ) ) {
 			return self::AVAILABLE;
 		}
 
