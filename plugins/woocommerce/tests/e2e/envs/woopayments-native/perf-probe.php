@@ -275,7 +275,7 @@ final class WooCommerce_Native_Payments_Perf_Probe {
 	 * @return string Attribution state, or an empty string.
 	 */
 	private function get_trace_state(): string {
-		$trace_state = $_SERVER['HTTP_X_WOOCOMMERCE_NATIVE_PAYMENTS_PERF_TRACE'] ?? '';
+		$trace_state = sanitize_text_field( wp_unslash( $_SERVER['HTTP_X_WOOCOMMERCE_NATIVE_PAYMENTS_PERF_TRACE'] ?? '' ) );
 		if ( ! is_string( $trace_state ) || ! in_array( $trace_state, array( 'baseline_noop', 'disabled', 'active_native', 'active_plugin' ), true ) ) {
 			return '';
 		}
@@ -296,6 +296,7 @@ final class WooCommerce_Native_Payments_Perf_Probe {
 			return $sql;
 		}
 
+		// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_wp_debug_backtrace_summary -- This call is the probe's attribution trace.
 		$this->query_trace[] = array( $sql, wp_debug_backtrace_summary( null, 0, false ) );
 		return $sql;
 	}
@@ -437,8 +438,8 @@ final class WooCommerce_Native_Payments_Perf_Probe {
 		sort( $files, SORT_STRING );
 		$query_lines = array();
 		foreach ( $this->query_trace as $query ) {
-			$sql = $this->normalize_sql( $query[0] );
-			$frames = array_reverse(
+			$sql           = $this->normalize_sql( $query[0] );
+			$frames        = array_reverse(
 				array_filter(
 					$query[1],
 					static function ( string $frame ): bool {
