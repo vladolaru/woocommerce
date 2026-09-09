@@ -420,120 +420,15 @@ final class WooCommerce {
 		$container->get( Automattic\WooCommerce\Internal\CostOfGoodsSold\CostOfGoodsSoldController::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\Admin\Settings\PaymentsController::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsController::class )->register();
-		$container->get( Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNavigationController::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStatusReport::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\Payments\NativePaymentsCliCommand::class )->register();
 
-		/*
-		 * Native WooPayments + Multi-Currency controllers.
-		 *
-		 * Every controller below (the native payments runtime, the WooPayments REST controllers, and
-		 * the Multi-Currency stack) is wired UNCONDITIONALLY here. None of them is gated at this call
-		 * site. Instead, each one self-guards at runtime inside its own register() method:
-		 *  - native payments controllers consult NativePaymentsRuntimeArbiter::should_native_register();
-		 *  - multi-currency controllers consult MultiCurrencyRuntimeArbiter::should_core_register(),
-		 *    which delegates to the payments arbiter (core multi-currency owns the pipeline only when
-		 *    the native payments runtime owns the site).
-		 * A registration therefore becomes a no-op whenever its runtime does not own the site.
-		 *
-		 * Single kill-switch for incident response: the `woocommerce_native_payments_enabled` filter
-		 * (NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED). Returning `false` from it forces the
-		 * native runtime dormant for the whole request, regardless of the registrations below:
-		 * should_native_register() then returns false everywhere, and because the multi-currency
-		 * arbiter delegates to the payments arbiter, should_core_register() goes false too — so the
-		 * entire cluster registers nothing. It defaults to false today and is the one place to flip
-		 * to disable native payments in an incident (no need to touch this registration list). Note
-		 * the standalone WooPayments plugin already wins whenever it is active, independent of this
-		 * filter; the filter only governs the native runtime. See NativePaymentsRuntimeArbiter for
-		 * the full ownership rules.
-		 */
-		/**
-		 * Filters whether the branch-native payments bootstrap runs for automated performance comparison.
-		 *
-		 * This internal filter defaults to enabled and is not a merchant-facing kill switch.
-		 *
-		 * @since 11.2.0
-		 *
-		 * @param bool $enabled Whether to bootstrap the branch-native payments registrations.
-		 */
-		if ( apply_filters( 'woocommerce_native_payments_bootstrap_enabled', true ) ) {
-			$container->get( Automattic\WooCommerce\Internal\Payments\Shadow\NativePaymentsShadowMode::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutBridge::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\MultiCurrency\Shadow\MultiCurrencyShadowMode::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyProviderBootstrap::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyStoreCurrencyLifecycleController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendCurrenciesController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendPricesController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySelectedCurrencyController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAnalyticsController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCompatibilityController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyBookingsCompatibilityController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyDepositsCompatibilityController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyPreOrdersCompatibilityController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyUpsCompatibilityController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFedExCompatibilityController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyPointsRewardsCompatibilityController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyNameYourPriceCompatibilityController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyProductAddOnsCompatibilityController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySubscriptionsCompatibilityController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyExplicitPriceController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySwitcherWidgetController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySwitcherBlockController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySettingsController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyStorefrontIntegrationController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAsyncPriceRendererController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRestController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRestRequestOverrideController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyTrackingController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAdminNoticesController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAdminNoteController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverNormalizationRunner::class )->register();
-			$native_payments_gateway_registry = $container->get( Automattic\WooCommerce\Internal\Payments\NativePaymentsGatewayRegistry::class );
-			$native_payments_gateway_registry->register_provider( $container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider::class ) );
-			$native_payments_gateway_registry->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAddressProvider::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderFraudMetaBox::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAjaxController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRedirectReturnController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderAdminActionsController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderStatusChangeController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenizedCartSessionController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayOrderStatusSync::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayExtensionSync::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutStoreApiExtension::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutCurrencyGuard::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderSuccessPage::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodMessaging::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsApplePayDomainService::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyComplianceNotice::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWebhookRestController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsMobileRestController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountSessionRestController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomersRestController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDepositsRestController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentDetailsRestController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAuthorizationsRestController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTransactionsRestController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputesRestController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeReadinessRestController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCapitalRestController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDocumentsRestController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsReportsRestController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTosRestController::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWebhookReliabilityService::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderTrackingService::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService::class )->register();
-			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverController::class )->register();
-		}
+		( new Automattic\WooCommerce\Internal\Payments\NativePaymentsBootstrap(
+			static fn(): array => Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider::get_bootstrap_root_matrix()
+		) )->register(
+			$container,
+			fn(): bool => $this->is_rest_api_request()
+		);
 		$container->get( Automattic\WooCommerce\Internal\Utilities\LegacyRestApiStub::class )->register();
 		$container->get( LegacySelect2UsageTracker::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\VariationGallery\Telemetry::class )->register();

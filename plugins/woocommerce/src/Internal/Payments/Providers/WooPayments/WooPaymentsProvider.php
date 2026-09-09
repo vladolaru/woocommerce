@@ -7,13 +7,18 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNavigationController;
 use Automattic\WooCommerce\Internal\Payments\CapabilityManifest;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsGatewayRegistry;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayExtensionSync;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayOrderStatusSync;
 use Automattic\WooCommerce\Internal\Payments\ProviderContract;
 use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\ProviderOutcomeMetadataMapper;
@@ -96,6 +101,165 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 		$this->payment_method_registry = $payment_method_registry ?? new WooPaymentsPaymentMethodRegistry();
 		$this->order_effect_applier    = $order_effect_applier;
 		$this->payment_gateways        = null;
+	}
+
+	/**
+	 * Get the provider-owned roots for each native dormancy tier and request class.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return array<string,array<string,array<int,class-string>>> Root classes in registration order.
+	 */
+	public static function get_bootstrap_root_matrix(): array {
+		$connected_admin = array(
+			WooPaymentsCutoverController::class,
+			WooPaymentsAdminNavigationController::class,
+			WooPaymentsAccountService::class,
+			WooPaymentsWebhookReliabilityService::class,
+			WooPaymentsCustomerService::class,
+			WooPaymentsOrderFraudMetaBox::class,
+			WooPaymentsOrderAdminActionsController::class,
+			WooPaymentsOrderStatusChangeController::class,
+			WooPaymentsWooPayOrderStatusSync::class,
+			WooPaymentsWooPayExtensionSync::class,
+			WooPaymentsApplePayDomainService::class,
+			WooPaymentsCurrencyComplianceNotice::class,
+			WooPaymentsOrderTrackingService::class,
+			WooPaymentsOperationalQueueService::class,
+		);
+		$connected_ajax  = array(
+			WooPaymentsAccountService::class,
+			WooPaymentsWebhookReliabilityService::class,
+			WooPaymentsCustomerService::class,
+			WooPaymentsOrderAdminActionsController::class,
+			WooPaymentsOrderStatusChangeController::class,
+			WooPaymentsWooPayOrderStatusSync::class,
+			WooPaymentsWooPayExtensionSync::class,
+			WooPaymentsApplePayDomainService::class,
+			WooPaymentsOrderTrackingService::class,
+			WooPaymentsOperationalQueueService::class,
+		);
+		$connected_rest  = array(
+			WooPaymentsAccountService::class,
+			WooPaymentsWebhookReliabilityService::class,
+			WooPaymentsCustomerService::class,
+			WooPaymentsOrderAdminActionsController::class,
+			WooPaymentsWooPayOrderStatusSync::class,
+			WooPaymentsApplePayDomainService::class,
+			WooPaymentsWebhookRestController::class,
+			WooPaymentsMobileRestController::class,
+			WooPaymentsAccountSessionRestController::class,
+			WooPaymentsCustomersRestController::class,
+			WooPaymentsDepositsRestController::class,
+			WooPaymentsPaymentDetailsRestController::class,
+			WooPaymentsAuthorizationsRestController::class,
+			WooPaymentsTransactionsRestController::class,
+			WooPaymentsDisputesRestController::class,
+			WooPaymentsDisputeReadinessRestController::class,
+			WooPaymentsCapitalRestController::class,
+			WooPaymentsDocumentsRestController::class,
+			WooPaymentsReportsRestController::class,
+			WooPaymentsTosRestController::class,
+			WooPaymentsOrderTrackingService::class,
+			WooPaymentsOperationalQueueService::class,
+		);
+		$connected_cron  = array(
+			WooPaymentsAccountService::class,
+			WooPaymentsWebhookReliabilityService::class,
+			WooPaymentsOperationalQueueService::class,
+			WooPaymentsOrderTrackingService::class,
+			WooPaymentsWooPayOrderStatusSync::class,
+			WooPaymentsWooPayExtensionSync::class,
+			WooPaymentsApplePayDomainService::class,
+			WooPaymentsCanceledAuthorizationFeeRemediationService::class,
+			WooPaymentsOrderAdminActionsController::class,
+		);
+		$active_prefix   = array(
+			WooPaymentsCutoverNormalizationRunner::class,
+			NativePaymentsGatewayRegistry::class,
+			self::class,
+		);
+
+		return array(
+			NativePaymentsState::AVAILABLE => array(
+				'admin' => array( WooPaymentsCutoverController::class ),
+			),
+			NativePaymentsState::CONNECTED => array(
+				'admin' => $connected_admin,
+				'ajax'  => $connected_ajax,
+				'rest'  => $connected_rest,
+				'cron'  => $connected_cron,
+			),
+			NativePaymentsState::ACTIVE    => array(
+				'front' => array_merge(
+					$active_prefix,
+					array(
+						WooPaymentsAccountService::class,
+						WooPaymentsWebhookReliabilityService::class,
+						WooPaymentsFrontendStylesService::class,
+						WooPaymentsCheckoutBridge::class,
+						WooPaymentsAddressProvider::class,
+						WooPaymentsCustomerService::class,
+						WooPaymentsDuplicatePaymentPreventionService::class,
+						WooPaymentsRedirectReturnController::class,
+						WooPaymentsOrderAdminActionsController::class,
+						WooPaymentsOrderStatusChangeController::class,
+						WooPaymentsTokenizedCartSessionController::class,
+						WooPaymentsWooPaySessionController::class,
+						WooPaymentsWooPayOrderStatusSync::class,
+						WooPaymentsWooPayExtensionSync::class,
+						WooPaymentsExpressCheckoutController::class,
+						WooPaymentsOrderSuccessPage::class,
+						WooPaymentsPaymentMethodMessaging::class,
+						WooPaymentsTokenClassMapController::class,
+						WooPaymentsApplePayDomainService::class,
+						WooPaymentsFrontendTrackingController::class,
+						WooPaymentsOrderTrackingService::class,
+						WooPaymentsOperationalQueueService::class,
+					)
+				),
+				'admin' => array_merge( $active_prefix, $connected_admin ),
+				'ajax'  => array_merge(
+					$active_prefix,
+					$connected_ajax,
+					array(
+						WooPaymentsCheckoutBridge::class,
+						WooPaymentsAddressProvider::class,
+						WooPaymentsDuplicatePaymentPreventionService::class,
+						WooPaymentsCheckoutAjaxController::class,
+						WooPaymentsTokenizedCartSessionController::class,
+						WooPaymentsWooPaySessionController::class,
+						WooPaymentsExpressCheckoutController::class,
+						WooPaymentsPaymentMethodMessaging::class,
+						WooPaymentsTokenClassMapController::class,
+						WooPaymentsFrontendTrackingController::class,
+					)
+				),
+				'rest'  => array_merge(
+					$active_prefix,
+					$connected_rest,
+					array(
+						WooPaymentsCheckoutBridge::class,
+						WooPaymentsAddressProvider::class,
+						WooPaymentsDuplicatePaymentPreventionService::class,
+						WooPaymentsTokenizedCartSessionController::class,
+						WooPaymentsWooPaySessionController::class,
+						WooPaymentsExpressCheckoutController::class,
+						WooPaymentsExpressCheckoutStoreApiExtension::class,
+						WooPaymentsExpressCheckoutCurrencyGuard::class,
+						WooPaymentsTokenClassMapController::class,
+					)
+				),
+				'cron'  => array_merge(
+					$active_prefix,
+					$connected_cron,
+					array(
+						WooPaymentsOrderStatusChangeController::class,
+						WooPaymentsDuplicatePaymentPreventionService::class,
+					)
+				),
+			),
+		);
 	}
 
 	/**
