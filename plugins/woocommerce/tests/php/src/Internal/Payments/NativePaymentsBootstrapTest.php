@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
+use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsMerchantRestController;
 use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsBootstrap;
@@ -70,6 +71,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	private const CONNECTED_REST = array(
 		self::WCPAY . 'WooPaymentsAccountService',
 		self::WCPAY . 'WooPaymentsWebhookReliabilityService',
+		WooPaymentsMerchantRestController::class,
 		self::WCPAY . 'WooPaymentsCustomerService',
 		self::WCPAY . 'WooPaymentsOrderAdminActionsController',
 		self::WCPAY . 'WooPay\WooPaymentsWooPayOrderStatusSync',
@@ -189,6 +191,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		WooPaymentsProvider::class,
 		self::WCPAY . 'WooPaymentsAccountService',
 		self::WCPAY . 'WooPaymentsWebhookReliabilityService',
+		WooPaymentsMerchantRestController::class,
 		self::WCPAY . 'WooPaymentsCustomerService',
 		self::WCPAY . 'WooPaymentsOrderAdminActionsController',
 		self::WCPAY . 'WooPay\WooPaymentsWooPayOrderStatusSync',
@@ -362,6 +365,17 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertContains( self::WCPAY . 'WooPaymentsOrderTrackingService', $active_front, 'Active shopper order creation must retain tracking hooks.' );
+	}
+
+	/** @testdox Should expose merchant routes only for connected and active REST requests. */
+	public function test_provider_matrix_tiers_merchant_rest_routes(): void {
+		$matrix = WooPaymentsProvider::get_bootstrap_root_matrix();
+
+		$this->assertNotContains( WooPaymentsMerchantRestController::class, $matrix[ NativePaymentsState::AVAILABLE ]['admin'] );
+		$this->assertArrayNotHasKey( 'rest', $matrix[ NativePaymentsState::AVAILABLE ] );
+		$this->assertContains( WooPaymentsMerchantRestController::class, $matrix[ NativePaymentsState::CONNECTED ]['rest'] );
+		$this->assertNotContains( WooPaymentsMerchantRestController::class, $matrix[ NativePaymentsState::CONNECTED ]['admin'] );
+		$this->assertContains( WooPaymentsMerchantRestController::class, $matrix[ NativePaymentsState::ACTIVE ]['rest'] );
 	}
 
 	/** @testdox Account refresh roots register the webhook recovery listener before refresh handlers can run. */

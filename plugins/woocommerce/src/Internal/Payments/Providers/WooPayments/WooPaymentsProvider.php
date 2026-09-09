@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNavigationController;
+use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsMerchantRestController;
 use Automattic\WooCommerce\Internal\Payments\CapabilityManifest;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsGatewayRegistry;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
@@ -142,6 +143,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 		$connected_rest  = array(
 			WooPaymentsAccountService::class,
 			WooPaymentsWebhookReliabilityService::class,
+			WooPaymentsMerchantRestController::class,
 			WooPaymentsCustomerService::class,
 			WooPaymentsOrderAdminActionsController::class,
 			WooPaymentsWooPayOrderStatusSync::class,
