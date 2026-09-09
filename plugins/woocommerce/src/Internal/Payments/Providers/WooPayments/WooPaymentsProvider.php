@@ -504,9 +504,24 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 	 * @return array<string,NativeWooPaymentsGateway>
 	 */
 	private function build_payment_gateway_map(): array {
+		$definitions = $this->payment_method_registry->get_all();
+		if ( ! empty( $definitions ) ) {
+			// Prime caches to reduce future queries.
+			wp_prime_option_caches(
+				array_map(
+					static function ( WooPaymentsPaymentMethodDefinition $definition ): string {
+						$payment_method_id = $definition->get_id();
+
+						return sprintf( 'woocommerce_%s_settings', 'card' === $payment_method_id ? OrderPaymentStore::GATEWAY_ID : OrderPaymentStore::GATEWAY_ID . '_' . $payment_method_id );
+					},
+					$definitions
+				)
+			);
+		}
+
 		$gateways = array();
 
-		foreach ( $this->payment_method_registry->get_all() as $definition ) {
+		foreach ( $definitions as $definition ) {
 			if ( 'amazon_pay' === $definition->get_id() && ! WooPaymentsFeaturePolicy::is_amazon_pay_enabled( $this->account_service ) ) {
 				continue;
 			}

@@ -48,6 +48,8 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
+		delete_option( 'woocommerce_woocommerce_payments_affirm_settings' );
+		delete_option( 'woocommerce_woocommerce_payments_klarna_settings' );
 		delete_option( '_wcpay_feature_amazon_pay' );
 		remove_all_filters( 'wcpay_upe_available_payment_methods' );
 
@@ -184,6 +186,54 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 		$this->assertFalse( $klarna_gateway->supports( PaymentGatewayFeature::TOKENIZATION ) );
 		$this->assertTrue( $link_gateway->supports( PaymentGatewayFeature::TOKENIZATION ) );
 		$this->assertSame( $gateways, $provider->get_payment_gateways(), 'Provider should cache split gateway instances for the request.' );
+	}
+
+	/**
+	 * @testdox Provider batches cold canonical and split gateway settings reads before construction.
+	 */
+	public function test_provider_batches_cold_canonical_and_split_gateway_settings_reads_before_construction(): void {
+		delete_option( 'woocommerce_woocommerce_payments_settings' );
+		delete_option( 'woocommerce_woocommerce_payments_klarna_settings' );
+		delete_option( 'woocommerce_woocommerce_payments_affirm_settings' );
+		wp_cache_delete( 'alloptions', 'options' );
+		wp_cache_set( 'notoptions', array(), 'options' );
+
+		$option_family_queries = array();
+		$option_query_observer = static function ( string $query ) use ( &$option_family_queries ): string {
+			if ( false !== strpos( $query, 'woocommerce_woocommerce_payments_' ) ) {
+				$option_family_queries[] = $query;
+			}
+
+			return $query;
+		};
+		add_filter( 'query', $option_query_observer );
+		try {
+			$this->create_provider_with_capabilities( array() )->get_payment_gateways();
+		} finally {
+			remove_filter( 'query', $option_query_observer );
+		}
+
+		$this->assertCount( 1, $option_family_queries, 'Cold split gateway settings must be fetched in one batched option-family query.' );
+		$this->assertStringContainsString( ' IN (', $option_family_queries[0], 'The option-family query must use a batched IN clause.' );
+		$this->assertStringContainsString( "'woocommerce_woocommerce_payments_settings'", $option_family_queries[0], 'The canonical gateway setting must be primed.' );
+		$this->assertStringContainsString( "'woocommerce_woocommerce_payments_klarna_settings'", $option_family_queries[0], 'The Klarna split setting must be primed.' );
+		$this->assertStringContainsString( "'woocommerce_woocommerce_payments_affirm_settings'", $option_family_queries[0], 'The Affirm split setting must be primed.' );
+	}
+
+	/**
+	 * @testdox Provider honors a stored split gateway enabled setting after cache priming.
+	 */
+	public function test_provider_honors_stored_split_gateway_enabled_setting_after_cache_priming(): void {
+		update_option(
+			'woocommerce_woocommerce_payments_klarna_settings',
+			array(
+				'enabled' => 'no',
+			)
+		);
+
+		$gateway = $this->create_provider_with_capabilities( array() )->get_gateway_for_method( 'klarna' );
+
+		$this->assertSame( 'no', $gateway->enabled, 'The stored Klarna setting must continue to control the derived gateway enabled state.' );
 	}
 
 	/**
