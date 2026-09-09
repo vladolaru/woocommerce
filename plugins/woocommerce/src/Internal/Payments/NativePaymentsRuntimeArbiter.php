@@ -124,6 +124,13 @@ class NativePaymentsRuntimeArbiter {
 	private LegacyProxy $legacy_proxy;
 
 	/**
+	 * Request-local runtime owners keyed by blog ID.
+	 *
+	 * @var array<int,string>
+	 */
+	private array $runtime_owners = array();
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -142,12 +149,24 @@ class NativePaymentsRuntimeArbiter {
 	 * @return string One of self::OWNER_PLUGIN, self::OWNER_NATIVE, self::OWNER_NONE.
 	 */
 	public function get_runtime_owner(): string {
-		// Plugin-wins is the only allowed state while the plugin is active; native is dormant.
-		if ( $this->is_woopayments_plugin_active() ) {
-			return self::OWNER_PLUGIN;
+		$blog_id = get_current_blog_id();
+		if ( ! array_key_exists( $blog_id, $this->runtime_owners ) ) {
+			// Plugin-wins is the only allowed state while the plugin is active; native is dormant.
+			$this->runtime_owners[ $blog_id ] = $this->is_woopayments_plugin_active() ? self::OWNER_PLUGIN : ( $this->is_native_runtime_enabled() ? self::OWNER_NATIVE : self::OWNER_NONE );
 		}
 
-		return $this->is_native_runtime_enabled() ? self::OWNER_NATIVE : self::OWNER_NONE;
+		return $this->runtime_owners[ $blog_id ];
+	}
+
+	/**
+	 * Invalidate one blog's memoized runtime owner.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param int|null $blog_id Blog ID, or null for the current blog.
+	 */
+	public function invalidate( ?int $blog_id = null ): void {
+		unset( $this->runtime_owners[ $blog_id ?? get_current_blog_id() ] );
 	}
 
 	/**

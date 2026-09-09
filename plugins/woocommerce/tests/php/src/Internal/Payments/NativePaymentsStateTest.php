@@ -45,6 +45,7 @@ class NativePaymentsStateTest extends WC_Unit_Test_Case {
 		$this->state                 = $container->get( NativePaymentsState::class );
 		$this->account_service       = $container->get( WooPaymentsAccountService::class );
 		$this->settings_synchronizer = $container->get( WooPaymentsGatewaySettingsSynchronizer::class );
+		$container->get( NativePaymentsRuntimeArbiter::class )->invalidate();
 		$this->state->invalidate();
 		$this->account_service->clear_cache();
 	}
@@ -63,6 +64,7 @@ class NativePaymentsStateTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		delete_option( 'active_plugins' );
 		delete_site_option( 'active_sitewide_plugins' );
+		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
 		$this->state->invalidate();
 
 		parent::tearDown();
@@ -136,6 +138,7 @@ class NativePaymentsStateTest extends WC_Unit_Test_Case {
 		$this->assertSame( $stored_state, $this->state->get_state() );
 
 		update_option( 'active_plugins', array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) );
+		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
 
 		$this->assertSame( NativePaymentsState::AVAILABLE, $this->state->get_state() );
 	}

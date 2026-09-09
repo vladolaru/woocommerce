@@ -27,6 +27,7 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	public function setUp(): void {
 		parent::setUp();
 		$this->sut = wc_get_container()->get( NativePaymentsRuntimeArbiter::class );
+		$this->sut->invalidate();
 	}
 
 	/**
@@ -36,6 +37,7 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_native_payments_killswitch' );
 		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
 		remove_all_filters( 'option_woocommerce_native_payments_killswitch' );
+		$this->sut->invalidate();
 		$this->reset_legacy_proxy_mocks();
 		parent::tearDown();
 	}
@@ -178,6 +180,84 @@ class NativePaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NATIVE, $this->sut->get_runtime_owner(), 'Native owns the runtime when the plugin is gone and native is enabled.' );
 		$this->assertTrue( $this->sut->should_native_register(), 'Native must register when it owns the runtime.' );
 		$this->assertFalse( $this->sut->is_plugin_runtime_active(), 'The plugin does not own the runtime when absent.' );
+	}
+
+	/**
+	 * @testdox Runtime ownership is computed once for repeated owner and helper calls.
+	 */
+	public function test_runtime_ownership_is_computed_once_for_repeated_owner_and_helper_calls(): void {
+		$this->fake_plugin();
+		$native_enabled_queries = 0;
+		add_filter(
+			NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED,
+			static function () use ( &$native_enabled_queries ): bool {
+				++$native_enabled_queries;
+				return true;
+			}
+		);
+
+		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NATIVE, $this->sut->get_runtime_owner() );
+		$this->assertTrue( $this->sut->should_native_register() );
+		$this->assertFalse( $this->sut->is_plugin_runtime_active() );
+		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NATIVE, $this->sut->get_runtime_owner() );
+		$this->assertSame( 1, $native_enabled_queries, 'The owner decision should be resolved once for all repeated owner and helper calls.' );
+	}
+
+	/**
+	 * @testdox Explicit invalidation recomputes the runtime owner.
+	 */
+	public function test_explicit_invalidation_recomputes_the_runtime_owner(): void {
+		$this->fake_plugin();
+		$native_enabled = false;
+		add_filter(
+			NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED,
+			static function () use ( &$native_enabled ): bool {
+				return $native_enabled;
+			}
+		);
+
+		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner() );
+		$native_enabled = true;
+		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner(), 'The current request keeps its first owner decision until explicitly invalidated.' );
+
+		$this->sut->invalidate();
+
+		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NATIVE, $this->sut->get_runtime_owner() );
+	}
+
+	/**
+	 * @testdox Runtime ownership memoization is isolated by blog.
+	 * @group multisite
+	 */
+	public function test_runtime_ownership_memoization_is_isolated_by_blog(): void {
+		$this->skipWithoutMultisite();
+		$this->fake_plugin();
+		$native_enabled_queries = 0;
+		$main_blog_id           = get_current_blog_id();
+		add_filter(
+			NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED,
+			static function () use ( &$native_enabled_queries, $main_blog_id ): bool {
+				++$native_enabled_queries;
+				return get_current_blog_id() !== $main_blog_id;
+			}
+		);
+
+		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner() );
+		$blog_id = self::factory()->blog->create();
+		try {
+			switch_to_blog( $blog_id );
+			$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NATIVE, $this->sut->get_runtime_owner() );
+			restore_current_blog();
+
+			$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner() );
+			$this->assertSame( 2, $native_enabled_queries, 'Each blog should resolve and retain its own owner decision.' );
+		} finally {
+			while ( ms_is_switched() ) {
+				restore_current_blog();
+			}
+			$this->sut->invalidate( $blog_id );
+			wpmu_delete_blog( $blog_id, true );
+		}
 	}
 
 	/**
