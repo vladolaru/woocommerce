@@ -161,8 +161,8 @@ fi
 if grep -Eq 'wc-native-payments status|/wc-native-payments-e2e/v1/status|config (get|set|delete) E2E_WOOPAYMENTS_NATIVE' "$CLIENT_COMMAND_LOG"; then
 	fail 'Client readiness must not invoke native commands.'
 fi
-if grep -F "$CLIENT_STORE	" "$CLIENT_COMMAND_LOG" | grep -Fq 'WooPaymentsAccountSessionRestController'; then
-	fail 'Client readiness must not resolve the native account session controller.'
+if grep -F "$CLIENT_STORE	" "$CLIENT_COMMAND_LOG" | grep -Eq 'WooPaymentsAccountSessionRestController|register_routes|account_routes_callback|has_action\( "rest_api_init"'; then
+	fail 'Client readiness must not contain native account route registration.'
 fi
 if ! grep -Fq "$CLIENT_STORE	docker compose exec -T -u www-data wordpress wp --user=1" "$CLIENT_COMMAND_LOG"; then
 	fail 'Client readiness must use the repository Docker WP-CLI path.'
@@ -248,8 +248,8 @@ fi
 if ! grep -F "$NATIVE_STORE	" "$NATIVE_COMMAND_LOG" | grep -Fq '/wc-native-payments-e2e/v1/status'; then
 	fail 'Native readiness must collect the authenticated native runtime status route.'
 fi
-if ! grep -F "$NATIVE_STORE	" "$NATIVE_COMMAND_LOG" | grep -Fq '$account_session_rest_controller = wc_get_container()->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountSessionRestController::class ); $account_session_rest_controller->register(); $request = new WP_REST_Request( "GET", "/wc/v3/payments/accounts" );'; then
-	fail 'Native readiness must register the native account session route before dispatch.'
+if ! grep -F "$NATIVE_STORE	" "$NATIVE_COMMAND_LOG" | grep -Fq '$account_session_rest_controller = wc_get_container()->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountSessionRestController::class ); $account_routes_callback = array( $account_session_rest_controller, "register_routes" ); $account_session_rest_controller->register(); if ( false === has_action( "rest_api_init", $account_routes_callback ) ) { throw new RuntimeException( "WooPayments native account session routes were not registered." ); } $account_session_rest_controller->register_routes(); $request = new WP_REST_Request( "GET", "/wc/v3/payments/accounts" );'; then
+	fail 'Native readiness must prove and register the account session route before dispatch.'
 fi
 if grep -Eq 'config (get|set|delete) E2E_WOOPAYMENTS_NATIVE' "$NATIVE_COMMAND_LOG"; then
 	fail 'Native readiness must not mutate the native runtime constant.'
