@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeS
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySelectedCurrencyPersistenceService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
+use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyProviderBootstrap;
 use WC_Session;
 use WC_Unit_Test_Case;
@@ -459,6 +460,13 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 						return true;
 					}
 					return class_exists( $class_name, $autoload );
+				},
+				'get_option'   => static function ( $name, $default_value = false ) {
+					if ( 'active_plugins' === $name ) {
+						return array( NativePaymentsRuntimeArbiter::PLUGIN_FILE );
+					}
+
+					return get_option( $name, $default_value );
 				},
 			)
 		);
