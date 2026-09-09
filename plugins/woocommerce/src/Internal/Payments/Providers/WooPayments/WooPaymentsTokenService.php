@@ -35,6 +35,10 @@ class WooPaymentsTokenService {
 	 */
 	private const CACHED_PAYMENT_METHODS_META_KEY = '_wcpay_payment_methods';
 
+	private const DISABLED_PAYMENT_METHOD_TOKEN_META_KEY = '_wcpay_payment_method_disabled';
+
+	private const DISABLED_PAYMENT_METHOD_TOKEN_META_VALUE = 'yes';
+
 	private const CACHE_CLEAR_BATCH_SIZE = 500;
 
 	private const PAYMENT_METHOD_TYPE_CARD = 'card';
@@ -240,7 +244,7 @@ class WooPaymentsTokenService {
 			if (
 				$token instanceof WC_Payment_Token
 				&& $this->is_native_woopayments_gateway_id( $token->get_gateway_id() )
-				&& ! $this->is_supported_native_woopayments_token( $token )
+				&& ( ! $this->is_supported_native_woopayments_token( $token ) || $this->is_disabled_payment_method_token( $token ) )
 			) {
 				unset( $tokens[ $token_key ] );
 			}
@@ -374,7 +378,7 @@ class WooPaymentsTokenService {
 			return null;
 		}
 
-		if ( ! $this->is_supported_native_woopayments_token( $token ) || $user_id !== $token->get_user_id() ) {
+		if ( ! $this->is_supported_native_woopayments_token( $token ) || $this->is_disabled_payment_method_token( $token ) || $user_id !== $token->get_user_id() ) {
 			return null;
 		}
 
@@ -736,6 +740,8 @@ class WooPaymentsTokenService {
 			return $tokens;
 		}
 
+		$tokens = $this->mark_disabled_payment_method_tokens( $tokens, $gateway_id );
+
 		if ( count( $tokens ) >= (int) get_option( 'posts_per_page' ) ) {
 			// The tokens data store is unpaginated and only the first page is retrieved;
 			// a full page of saved methods is an unsupported edge case for reconciliation.
@@ -753,14 +759,19 @@ class WooPaymentsTokenService {
 				return $tokens;
 			}
 
-			$stored_tokens = array();
+			$retrieved_payment_method_types = $this->get_retrievable_payment_method_types( $gateway_id );
+			$stored_tokens                  = array();
 			foreach ( $tokens as $token ) {
-				if ( $token instanceof WC_Payment_Token && $this->is_native_woopayments_gateway_id( $token->get_gateway_id() ) ) {
+				if (
+					$token instanceof WC_Payment_Token
+					&& $this->is_supported_native_woopayments_token( $token )
+					&& in_array( $this->get_payment_method_type_for_token( $token ), $retrieved_payment_method_types, true )
+				) {
 					$stored_tokens[ (string) $token->get_token() ] = $token;
 				}
 			}
 
-			$payment_methods = $this->get_payment_methods_from_provider( $customer_service, $user_id, $customer_id, $gateway_id );
+			$payment_methods = $this->get_payment_methods_from_provider( $customer_service, $user_id, $customer_id, $gateway_id, $retrieved_payment_method_types );
 		} catch ( Throwable $exception ) {
 			wc_get_logger()->error(
 				'Failed to fetch payment methods for customer: ' . $exception->getMessage(),
@@ -772,28 +783,32 @@ class WooPaymentsTokenService {
 
 		// WC_Payment_Token::save() can re-enter this filter; keep it off while adding.
 		remove_filter( 'woocommerce_get_customer_payment_tokens', array( $this, 'handle_woocommerce_get_customer_payment_tokens' ), 10 );
-		foreach ( $payment_methods as $payment_method ) {
-			if ( ! is_array( $payment_method ) || ! isset( $payment_method['type'], $payment_method['id'] ) ) {
-				continue;
-			}
+		try {
+			foreach ( $payment_methods as $payment_method ) {
+				if ( ! is_array( $payment_method ) || ! isset( $payment_method['type'], $payment_method['id'] ) ) {
+					continue;
+				}
 
-			$payment_method_id = (string) $payment_method['id'];
-			if ( isset( $stored_tokens[ $payment_method_id ] ) ) {
-				unset( $stored_tokens[ $payment_method_id ] );
-				continue;
-			}
+				$payment_method_id = (string) $payment_method['id'];
+				if ( isset( $stored_tokens[ $payment_method_id ] ) ) {
+					$this->clear_disabled_payment_method_token_marker( $stored_tokens[ $payment_method_id ] );
+					unset( $stored_tokens[ $payment_method_id ] );
+					continue;
+				}
 
-			$method_gateway_id = self::GATEWAY_IDS_BY_PAYMENT_METHOD_TYPE[ (string) $payment_method['type'] ] ?? '';
-			if ( '' !== $gateway_id && $method_gateway_id !== $gateway_id ) {
-				continue;
-			}
+				$method_gateway_id = self::GATEWAY_IDS_BY_PAYMENT_METHOD_TYPE[ (string) $payment_method['type'] ] ?? '';
+				if ( '' !== $gateway_id && $method_gateway_id !== $gateway_id ) {
+					continue;
+				}
 
-			$token = $this->create_token_for_user_from_payment_method( $payment_method, $user_id );
-			if ( $token instanceof WC_Payment_Token ) {
-				$tokens[ $token->get_id() ] = $token;
+				$token = $this->create_token_for_user_from_payment_method( $payment_method, $user_id );
+				if ( $token instanceof WC_Payment_Token ) {
+					$tokens[ $token->get_id() ] = $token;
+				}
 			}
+		} finally {
+			add_filter( 'woocommerce_get_customer_payment_tokens', array( $this, 'handle_woocommerce_get_customer_payment_tokens' ), 10, 3 );
 		}
-		add_filter( 'woocommerce_get_customer_payment_tokens', array( $this, 'handle_woocommerce_get_customer_payment_tokens' ), 10, 3 );
 
 		// Local tokens whose payment method the provider no longer holds: delete
 		// locally without detaching (there is nothing left to detach remotely).
@@ -818,14 +833,25 @@ class WooPaymentsTokenService {
 	 * @param int                        $user_id          WooCommerce user ID.
 	 * @param string                     $customer_id      Provider customer ID.
 	 * @param string                     $gateway_id       Requested gateway ID, or '' for all.
+	 * @param string[]                   $types_to_retrieve Payment method types retrieved for this request.
 	 * @return array<int,array<string,mixed>>
 	 */
-	private function get_payment_methods_from_provider( WooPaymentsCustomerService $customer_service, int $user_id, string $customer_id, string $gateway_id ): array {
-		$types_to_retrieve = $this->get_retrievable_payment_method_types( $gateway_id );
-
+	private function get_payment_methods_from_provider( WooPaymentsCustomerService $customer_service, int $user_id, string $customer_id, string $gateway_id, array $types_to_retrieve ): array {
 		$cache = get_user_meta( $user_id, self::CACHED_PAYMENT_METHODS_META_KEY, true );
 		if ( ! is_array( $cache ) || ! isset( $cache['customer_id'] ) || $cache['customer_id'] !== $customer_id ) {
 			$cache = array( 'customer_id' => $customer_id );
+		}
+
+		$cache_was_pruned = false;
+		foreach ( $this->get_disabled_reconcilable_payment_method_types( $gateway_id ) as $type ) {
+			$cache_key = 'payment_method_' . $type;
+			if ( array_key_exists( $cache_key, $cache ) ) {
+				unset( $cache[ $cache_key ] );
+				$cache_was_pruned = true;
+			}
+		}
+		if ( $cache_was_pruned ) {
+			update_user_meta( $user_id, self::CACHED_PAYMENT_METHODS_META_KEY, $cache );
 		}
 
 		$payment_methods = array();
@@ -863,13 +889,14 @@ class WooPaymentsTokenService {
 	 * @return string[]
 	 */
 	private function get_retrievable_payment_method_types( string $gateway_id ): array {
-		$types = array();
+		$types              = array();
+		$enabled_method_ids = $this->get_enabled_payment_method_ids();
 
 		foreach ( self::RECONCILABLE_PAYMENT_METHOD_TYPES as $type ) {
 			$type_gateway_id = self::GATEWAY_IDS_BY_PAYMENT_METHOD_TYPE[ $type ];
 
 			if ( '' === $gateway_id ) {
-				if ( self::PAYMENT_METHOD_TYPE_CARD !== $type && ! $this->is_payment_method_type_enabled( $type ) ) {
+				if ( self::PAYMENT_METHOD_TYPE_CARD !== $type && ( null === $enabled_method_ids || ! in_array( $type, $enabled_method_ids, true ) ) ) {
 					continue;
 				}
 			} else {
@@ -877,7 +904,7 @@ class WooPaymentsTokenService {
 					continue;
 				}
 
-				if ( self::PAYMENT_METHOD_TYPE_LINK === $type && ! $this->is_payment_method_type_enabled( $type ) ) {
+				if ( self::PAYMENT_METHOD_TYPE_CARD !== $type && ( null === $enabled_method_ids || ! in_array( $type, $enabled_method_ids, true ) ) ) {
 					continue;
 				}
 			}
@@ -889,20 +916,140 @@ class WooPaymentsTokenService {
 	}
 
 	/**
-	 * Check if a payment method type is enabled in the gateway settings.
+	 * Get enabled payment method IDs from the gateway settings.
 	 *
-	 * @param string $payment_method_type Payment method type.
-	 * @return bool
+	 * @return string[]|null Enabled payment method IDs, or null when the setting is unavailable.
 	 */
-	private function is_payment_method_type_enabled( string $payment_method_type ): bool {
+	private function get_enabled_payment_method_ids(): ?array {
 		$account_service = $this->get_account_service();
 		if ( null === $account_service ) {
-			return false;
+			return null;
 		}
 
 		$enabled_method_ids = $account_service->get_gateway_setting( 'upe_enabled_payment_method_ids', array( self::PAYMENT_METHOD_TYPE_CARD ) );
 
-		return is_array( $enabled_method_ids ) && in_array( $payment_method_type, $enabled_method_ids, true );
+		return is_array( $enabled_method_ids ) ? $enabled_method_ids : null;
+	}
+
+	/**
+	 * Get reconcilable payment method types known to be disabled for a listing request.
+	 *
+	 * @param string $gateway_id Requested gateway ID, or '' for all.
+	 * @return string[]
+	 */
+	private function get_disabled_reconcilable_payment_method_types( string $gateway_id ): array {
+		$disabled_types     = array();
+		$enabled_method_ids = $this->get_enabled_payment_method_ids();
+		if ( null === $enabled_method_ids ) {
+			return $disabled_types;
+		}
+
+		foreach ( self::RECONCILABLE_PAYMENT_METHOD_TYPES as $type ) {
+			if ( self::PAYMENT_METHOD_TYPE_CARD === $type || ( '' !== $gateway_id && self::GATEWAY_IDS_BY_PAYMENT_METHOD_TYPE[ $type ] !== $gateway_id ) ) {
+				continue;
+			}
+
+			if ( ! in_array( $type, $enabled_method_ids, true ) ) {
+				$disabled_types[] = $type;
+			}
+		}
+
+		return $disabled_types;
+	}
+
+	/**
+	 * Mark disabled supported payment method tokens in the current listing scope.
+	 *
+	 * @param array<int|string,mixed> $tokens     Customer payment tokens.
+	 * @param string                  $gateway_id Requested gateway ID, or '' for all.
+	 * @return array<int|string,mixed>
+	 */
+	private function mark_disabled_payment_method_tokens( array $tokens, string $gateway_id ): array {
+		$disabled_types = $this->get_disabled_reconcilable_payment_method_types( $gateway_id );
+		if ( array() === $disabled_types ) {
+			return $tokens;
+		}
+
+		foreach ( $tokens as $token ) {
+			if (
+				! $token instanceof WC_Payment_Token
+				|| ! $this->is_supported_native_woopayments_token( $token )
+				|| ( '' !== $gateway_id && $gateway_id !== $token->get_gateway_id() )
+				|| ! in_array( $this->get_payment_method_type_for_token( $token ), $disabled_types, true )
+			) {
+				continue;
+			}
+
+			$this->mark_disabled_payment_method_token( $token );
+		}
+
+		return $tokens;
+	}
+
+	/**
+	 * Check whether a payment token has been marked as disabled.
+	 *
+	 * @param WC_Payment_Token $token Payment token.
+	 * @return bool
+	 */
+	private function is_disabled_payment_method_token( WC_Payment_Token $token ): bool {
+		return self::DISABLED_PAYMENT_METHOD_TOKEN_META_VALUE === $token->get_meta( self::DISABLED_PAYMENT_METHOD_TOKEN_META_KEY, true );
+	}
+
+	/**
+	 * Persist the disabled marker on a payment token.
+	 *
+	 * @param WC_Payment_Token $token Payment token.
+	 * @return void
+	 */
+	private function mark_disabled_payment_method_token( WC_Payment_Token $token ): void {
+		if ( $this->is_disabled_payment_method_token( $token ) ) {
+			return;
+		}
+
+		$this->update_disabled_payment_method_token_marker( $token, true );
+	}
+
+	/**
+	 * Remove the disabled marker from a payment token.
+	 *
+	 * @param WC_Payment_Token $token Payment token.
+	 * @return void
+	 */
+	private function clear_disabled_payment_method_token_marker( WC_Payment_Token $token ): void {
+		if ( ! $this->is_disabled_payment_method_token( $token ) ) {
+			return;
+		}
+
+		$this->update_disabled_payment_method_token_marker( $token, false );
+	}
+
+	/**
+	 * Persist a payment token disabled-marker change without re-entering the token filter.
+	 *
+	 * @param WC_Payment_Token $token    Payment token.
+	 * @param bool             $is_marked Whether the marker should be stored.
+	 * @return void
+	 */
+	private function update_disabled_payment_method_token_marker( WC_Payment_Token $token, bool $is_marked ): void {
+		$filter_was_registered = false !== has_filter( 'woocommerce_get_customer_payment_tokens', array( $this, 'handle_woocommerce_get_customer_payment_tokens' ) );
+		if ( $filter_was_registered ) {
+			remove_filter( 'woocommerce_get_customer_payment_tokens', array( $this, 'handle_woocommerce_get_customer_payment_tokens' ), 10 );
+		}
+
+		try {
+			if ( $is_marked ) {
+				$token->update_meta_data( self::DISABLED_PAYMENT_METHOD_TOKEN_META_KEY, self::DISABLED_PAYMENT_METHOD_TOKEN_META_VALUE );
+			} else {
+				$token->delete_meta_data( self::DISABLED_PAYMENT_METHOD_TOKEN_META_KEY );
+			}
+
+			$token->save();
+		} finally {
+			if ( $filter_was_registered ) {
+				add_filter( 'woocommerce_get_customer_payment_tokens', array( $this, 'handle_woocommerce_get_customer_payment_tokens' ), 10, 3 );
+			}
+		}
 	}
 
 	/**
