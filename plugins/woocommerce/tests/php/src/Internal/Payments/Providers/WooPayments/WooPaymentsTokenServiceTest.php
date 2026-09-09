@@ -654,14 +654,25 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 		$this->create_service( array(), $api_client, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card' ) ) );
+		$updated_token_ids   = array();
+		$record_token_update = static function ( int $token_id ) use ( &$updated_token_ids ): void {
+			$updated_token_ids[] = $token_id;
+		};
+		add_action( 'woocommerce_payment_token_updated', $record_token_update );
 
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token filter.
-		$tokens       = apply_filters( 'woocommerce_get_customer_payment_tokens', array( $sepa_token->get_id() => $sepa_token ), $user_id, '' );
+		try {
+			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token filter.
+			$tokens = apply_filters( 'woocommerce_get_customer_payment_tokens', array( $sepa_token->get_id() => $sepa_token ), $user_id, '' );
+		} finally {
+			remove_action( 'woocommerce_payment_token_updated', $record_token_update );
+		}
+
 		$stored_token = \WC_Payment_Tokens::get( $sepa_token->get_id() );
 
 		$this->assertArrayNotHasKey( $sepa_token->get_id(), $tokens, 'Disabled SEPA tokens must not be returned for My Account or all-gateway checkout listings.' );
 		$this->assertInstanceOf( WooPaymentsSepaToken::class, $stored_token, 'Disabled SEPA tokens must remain stored locally.' );
-		$this->assertSame( 'yes', $stored_token->get_meta( '_wcpay_payment_method_disabled', true ), 'Disabled SEPA tokens must persist a disabled marker.' );
+		$this->assertSame( '', $stored_token->get_meta( '_wcpay_payment_method_disabled', true ), 'Deriving disabled state from settings must not add token metadata.' );
+		$this->assertSame( array(), $updated_token_ids, 'Listing a disabled token must not write to it.' );
 		$this->assertSame( array( 'card' => 1 ), $customer_service->fetch_counts, 'Disabled SEPA must not be fetched during all-gateway reconciliation.' );
 		$this->assertSame( array(), $api_client->detached_payment_method_ids, 'Preserving a disabled token must not trigger a remote detach.' );
 	}
@@ -684,23 +695,21 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertArrayNotHasKey( $sepa_token->get_id(), $tokens, 'Disabled SEPA tokens must not be returned from their gateway-scoped checkout listing.' );
 		$this->assertInstanceOf( WooPaymentsSepaToken::class, $stored_token, 'Disabled gateway-scoped tokens must remain stored locally.' );
-		$this->assertSame( 'yes', $stored_token->get_meta( '_wcpay_payment_method_disabled', true ), 'Gateway-scoped disabled tokens must persist a disabled marker.' );
+		$this->assertSame( '', $stored_token->get_meta( '_wcpay_payment_method_disabled', true ), 'Gateway-scoped filtering must not add token metadata.' );
 		$this->assertSame( array(), $customer_service->fetch_counts, 'Disabled SEPA must not be fetched during a gateway-scoped reconciliation.' );
 	}
 
 	/**
-	 * @testdox Should hide marked tokens when reconciliation cannot reach the provider.
+	 * @testdox Should hide disabled tokens from settings when reconciliation cannot reach the provider.
 	 */
-	public function test_reconcile_hides_marked_tokens_when_reconciliation_skips_or_provider_fetch_fails(): void {
+	public function test_reconcile_hides_disabled_tokens_when_reconciliation_skips_or_provider_fetch_fails(): void {
 		$user_id    = $this->factory()->user->create();
-		$sepa_token = $this->create_sepa_token( $user_id, 'pm_marked_sepa' );
-		$sepa_token->update_meta_data( '_wcpay_payment_method_disabled', 'yes' );
-		$sepa_token->save();
+		$sepa_token = $this->create_sepa_token( $user_id, 'pm_disabled_sepa' );
 
 		$this->register_token_class_map();
 		$customer_service               = $this->create_reconciling_customer_service( 'cus_1', array() );
 		$customer_service->fail_fetches = true;
-		$this->create_service( array(), null, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card', 'sepa_debit' ) ) );
+		$this->create_service( array(), null, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card' ) ) );
 
 		wp_set_current_user( 0 );
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token filter.
@@ -711,16 +720,16 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$failed_tokens = apply_filters( 'woocommerce_get_customer_payment_tokens', array( $sepa_token->get_id() => $sepa_token ), $user_id, '' );
 		$stored_token  = \WC_Payment_Tokens::get( $sepa_token->get_id() );
 
-		$this->assertArrayNotHasKey( $sepa_token->get_id(), $skipped_tokens, 'Marked tokens must stay hidden when reconciliation is skipped.' );
-		$this->assertArrayNotHasKey( $sepa_token->get_id(), $failed_tokens, 'Marked tokens must stay hidden when the provider fetch fails.' );
-		$this->assertInstanceOf( WooPaymentsSepaToken::class, $stored_token, 'A provider outage must not delete marked tokens.' );
-		$this->assertSame( 'yes', $stored_token->get_meta( '_wcpay_payment_method_disabled', true ), 'A provider outage must preserve the disabled marker.' );
+		$this->assertArrayNotHasKey( $sepa_token->get_id(), $skipped_tokens, 'Settings-disabled tokens must stay hidden when reconciliation is skipped.' );
+		$this->assertArrayNotHasKey( $sepa_token->get_id(), $failed_tokens, 'Settings-disabled tokens must stay hidden when the provider fetch fails.' );
+		$this->assertInstanceOf( WooPaymentsSepaToken::class, $stored_token, 'A provider outage must not delete settings-disabled tokens.' );
+		$this->assertSame( '', $stored_token->get_meta( '_wcpay_payment_method_disabled', true ), 'Filtering from settings must not persist token metadata.' );
 	}
 
 	/**
-	 * @testdox Should prune disabled SEPA cache data and restore the token after an authoritative re-enable response.
+	 * @testdox Should restore a disabled SEPA token after re-enable without token or cache writes.
 	 */
-	public function test_reconcile_prunes_disabled_sepa_cache_data_and_restores_the_token_after_reenable(): void {
+	public function test_reconcile_restores_disabled_sepa_token_after_reenable_without_writes(): void {
 		$user_id    = $this->factory()->user->create();
 		$sepa_token = $this->create_sepa_token( $user_id, 'pm_reenabled_sepa' );
 		$sepa_data  = array(
@@ -747,33 +756,43 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 				'payment_method_sepa_debit' => array( $sepa_data ),
 			)
 		);
+		$updated_token_ids   = array();
+		$record_token_update = static function ( int $token_id ) use ( &$updated_token_ids ): void {
+			$updated_token_ids[] = $token_id;
+		};
+		add_action( 'woocommerce_payment_token_updated', $record_token_update );
 
-		$disabled_service = $this->create_service( array(), null, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card' ) ) );
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token filter.
-		$disabled_tokens = apply_filters( 'woocommerce_get_customer_payment_tokens', array( $sepa_token->get_id() => $sepa_token ), $user_id, '' );
-		$disabled_cache  = get_user_meta( $user_id, '_wcpay_payment_methods', true );
+		try {
+			$disabled_service = $this->create_service( array(), null, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card' ) ) );
+			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token filter.
+			$disabled_tokens = apply_filters( 'woocommerce_get_customer_payment_tokens', array( $sepa_token->get_id() => $sepa_token ), $user_id, '' );
+			$disabled_cache  = get_user_meta( $user_id, '_wcpay_payment_methods', true );
 
-		remove_filter( 'woocommerce_get_customer_payment_tokens', array( $disabled_service, 'handle_woocommerce_get_customer_payment_tokens' ), 10 );
-		$enabled_service = $this->create_service( array(), null, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card', 'sepa_debit' ) ) );
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token filter.
-		$enabled_tokens = apply_filters( 'woocommerce_get_customer_payment_tokens', array( $sepa_token->get_id() => $sepa_token ), $user_id, '' );
-		$stored_token   = \WC_Payment_Tokens::get( $sepa_token->get_id() );
+			remove_filter( 'woocommerce_get_customer_payment_tokens', array( $disabled_service, 'handle_woocommerce_get_customer_payment_tokens' ), 10 );
+			$enabled_service = $this->create_service( array(), null, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card', 'sepa_debit' ) ) );
+			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token filter.
+			$enabled_tokens = apply_filters( 'woocommerce_get_customer_payment_tokens', array( $sepa_token->get_id() => $sepa_token ), $user_id, '' );
+			$stored_token   = \WC_Payment_Tokens::get( $sepa_token->get_id() );
+		} finally {
+			remove_action( 'woocommerce_payment_token_updated', $record_token_update );
+		}
 
 		$this->assertArrayNotHasKey( $sepa_token->get_id(), $disabled_tokens, 'Disabled SEPA tokens must stay hidden while their type is disabled.' );
 		$this->assertSame( array(), $disabled_cache['payment_method_card'] ?? null, 'Disabling SEPA must retain unrelated cached card data.' );
-		$this->assertArrayNotHasKey( 'payment_method_sepa_debit', $disabled_cache, 'Disabling SEPA must remove only its stale cached provider data.' );
-		$this->assertArrayHasKey( $sepa_token->get_id(), $enabled_tokens, 'A matching provider response must restore a re-enabled token to the listing.' );
-		$this->assertInstanceOf( WooPaymentsSepaToken::class, $stored_token, 'A matching re-enabled token must remain stored.' );
-		$this->assertSame( '', $stored_token->get_meta( '_wcpay_payment_method_disabled', true ), 'Only an authoritative provider match may clear the disabled marker.' );
-		$this->assertSame( array( 'sepa_debit' => 1 ), $customer_service->fetch_counts, 'Re-enabling SEPA must fetch fresh provider data instead of using the pruned cache.' );
+		$this->assertSame( array( $sepa_data ), $disabled_cache['payment_method_sepa_debit'] ?? null, 'Disabled-state filtering must not mutate the existing provider cache.' );
+		$this->assertArrayHasKey( $sepa_token->get_id(), $enabled_tokens, 'Changing the enabled-method setting must immediately restore the token to listings.' );
+		$this->assertInstanceOf( WooPaymentsSepaToken::class, $stored_token, 'A re-enabled token must remain stored.' );
+		$this->assertSame( '', $stored_token->get_meta( '_wcpay_payment_method_disabled', true ), 'Re-enable must not need persisted marker cleanup.' );
+		$this->assertSame( array(), $updated_token_ids, 'Disable and re-enable listing reads must not write to the payment token.' );
+		$this->assertSame( array(), $customer_service->fetch_counts, 'The unchanged provider cache may satisfy reconciliation after re-enable.' );
 
 		remove_filter( 'woocommerce_get_customer_payment_tokens', array( $enabled_service, 'handle_woocommerce_get_customer_payment_tokens' ), 10 );
 	}
 
 	/**
-	 * @testdox Should persist disabled SEPA cache pruning before a provider fetch fails.
+	 * @testdox Should hide disabled SEPA without changing cached provider data when another provider fetch fails.
 	 */
-	public function test_reconcile_persists_disabled_sepa_cache_pruning_before_a_provider_fetch_failure(): void {
+	public function test_reconcile_hides_disabled_sepa_without_changing_cache_when_provider_fetch_fails(): void {
 		$user_id    = $this->factory()->user->create();
 		$sepa_token = $this->create_sepa_token( $user_id, 'pm_failed_cache_sepa' );
 		$sepa_data  = array(
@@ -817,75 +836,27 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertArrayNotHasKey( $sepa_token->get_id(), $disabled_tokens, 'Disabled tokens must remain hidden when the provider fetch fails.' );
 		$this->assertSame( array(), $failed_cache['payment_method_card'] ?? null, 'A failed provider fetch must retain unrelated cached card data.' );
-		$this->assertArrayNotHasKey( 'payment_method_sepa_debit', $failed_cache, 'Disabled SEPA cache data must be removed before any provider fetch can fail.' );
+		$this->assertSame( array( $sepa_data ), $failed_cache['payment_method_sepa_debit'] ?? null, 'Settings-derived filtering must not change cached SEPA data.' );
 		$this->assertArrayHasKey( $sepa_token->get_id(), $enabled_tokens, 'The matching token must return after re-enable and provider recovery.' );
 		$this->assertInstanceOf( WooPaymentsSepaToken::class, $stored_token, 'The recovered token must remain stored.' );
-		$this->assertSame( '', $stored_token->get_meta( '_wcpay_payment_method_disabled', true ), 'Provider recovery must clear the marker only after a fresh SEPA response.' );
+		$this->assertSame( '', $stored_token->get_meta( '_wcpay_payment_method_disabled', true ), 'Provider recovery must not need persisted marker cleanup.' );
 		$this->assertSame(
 			array(
-				'sepa_debit' => 1,
-				'link'       => 1,
+				'link' => 1,
 			),
 			$customer_service->fetch_counts,
-			'Re-enable after provider recovery must fetch SEPA instead of accepting the stale cached response.'
+			'Re-enable may use unchanged cached SEPA data after the unrelated provider request recovers.'
 		);
 
 		remove_filter( 'woocommerce_get_customer_payment_tokens', array( $enabled_service, 'handle_woocommerce_get_customer_payment_tokens' ), 10 );
 	}
 
 	/**
-	 * @testdox Should restore the token filter when clearing a disabled marker fails.
+	 * @testdox Should delete a local token only after an enabled provider response proves it detached.
 	 */
-	public function test_reconcile_restores_the_token_filter_when_clearing_a_disabled_marker_fails(): void {
-		$user_id    = $this->factory()->user->create();
-		$sepa_token = $this->create_sepa_token( $user_id, 'pm_marker_clear_failure' );
-		$sepa_token->update_meta_data( '_wcpay_payment_method_disabled', 'yes' );
-		$sepa_token->save();
-
-		$this->register_token_class_map();
-		wp_set_current_user( $user_id );
-		$customer_service      = $this->create_reconciling_customer_service(
-			'cus_1',
-			array(
-				'card'       => array(),
-				'sepa_debit' => array(
-					array(
-						'id'         => 'pm_marker_clear_failure',
-						'type'       => 'sepa_debit',
-						'sepa_debit' => array( 'last4' => '6789' ),
-					),
-				),
-			)
-		);
-		$sut                   = $this->create_service( array(), null, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card', 'sepa_debit' ) ) );
-		$throw_on_token_update = static function ( int $token_id ): void {
-			unset( $token_id );
-
-			throw new RuntimeException( 'Marker persistence failed.' );
-		};
-		add_action( 'woocommerce_payment_token_updated', $throw_on_token_update );
-
-		try {
-			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token filter.
-			apply_filters( 'woocommerce_get_customer_payment_tokens', array( $sepa_token->get_id() => $sepa_token ), $user_id, '' );
-			$this->fail( 'Clearing the marker must propagate the persistence failure.' );
-		} catch ( RuntimeException $exception ) {
-			$this->assertSame( 'Marker persistence failed.', $exception->getMessage() );
-		} finally {
-			remove_action( 'woocommerce_payment_token_updated', $throw_on_token_update );
-		}
-
-		$this->assertSame( 10, has_filter( 'woocommerce_get_customer_payment_tokens', array( $sut, 'handle_woocommerce_get_customer_payment_tokens' ) ), 'A marker-clear persistence failure must not leave the customer-token filter removed.' );
-	}
-
-	/**
-	 * @testdox Should delete a marked token only after an enabled provider response proves it detached.
-	 */
-	public function test_reconcile_deletes_marked_tokens_absent_from_an_authoritative_reenabled_response(): void {
+	public function test_reconcile_deletes_tokens_absent_from_an_authoritative_enabled_response(): void {
 		$user_id    = $this->factory()->user->create();
 		$sepa_token = $this->create_sepa_token( $user_id, 'pm_detached_sepa' );
-		$sepa_token->update_meta_data( '_wcpay_payment_method_disabled', 'yes' );
-		$sepa_token->save();
 		$api_client = new class() extends WooPaymentsApiClient {
 			/**
 			 * Detached payment method IDs.
@@ -922,7 +893,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$tokens = apply_filters( 'woocommerce_get_customer_payment_tokens', array( $sepa_token->get_id() => $sepa_token ), $user_id, '' );
 
 		$this->assertArrayNotHasKey( $sepa_token->get_id(), $tokens, 'Tokens absent from an authoritative provider response must not be listed.' );
-		$this->assertNull( \WC_Payment_Tokens::get( $sepa_token->get_id() ), 'A marked token absent after re-enable must be deleted locally.' );
+		$this->assertNull( \WC_Payment_Tokens::get( $sepa_token->get_id() ), 'A token absent from an enabled-type provider response must be deleted locally.' );
 		$this->assertSame(
 			array(
 				'card'       => 1,
@@ -935,24 +906,25 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should reject marked tokens at checkout while retaining order-attached renewal resolution.
+	 * @testdox Should reject settings-disabled tokens at checkout while retaining order-attached renewal resolution.
 	 */
-	public function test_rejects_marked_tokens_for_direct_checkout_but_resolves_them_for_order_renewals(): void {
-		$user_id    = $this->factory()->user->create();
-		$sepa_token = $this->create_sepa_token( $user_id, 'pm_renewal_sepa' );
-		$order      = wc_create_order();
-		$sut        = $this->create_service();
+	public function test_rejects_settings_disabled_tokens_for_direct_checkout_but_resolves_them_for_order_renewals(): void {
+		$user_id      = $this->factory()->user->create();
+		$sepa_token   = $this->create_sepa_token( $user_id, 'pm_renewal_sepa' );
+		$order        = wc_create_order();
+		$disabled_sut = $this->create_service( array(), null, null, $this->create_account_service_with_enabled_methods( array( 'card' ) ) );
+		$enabled_sut  = $this->create_service( array(), null, null, $this->create_account_service_with_enabled_methods( array( 'card', 'sepa_debit' ) ) );
 
 		$this->register_token_class_map();
-		$sepa_token->update_meta_data( '_wcpay_payment_method_disabled', 'yes' );
-		$sepa_token->save();
 		$order->add_payment_token( $sepa_token );
 		$order->save();
 
-		$this->assertSame( '', $sut->resolve_payment_method_id_from_token_id( (string) $sepa_token->get_id(), $user_id ), 'Marked tokens must not resolve from direct shopper checkout input.' );
-		$this->assertSame( '', $sut->resolve_payment_method_type_from_token_id( (string) $sepa_token->get_id(), $user_id ), 'Marked tokens must not resolve a direct shopper payment-method type.' );
-		$this->assertSame( 'pm_renewal_sepa', $sut->resolve_payment_method_id_from_order_token_id( (string) $sepa_token->get_id(), $order ), 'Order-attached renewal resolution must retain the provider payment method ID.' );
-		$this->assertSame( 'sepa_debit', $sut->resolve_payment_method_type_from_order_token_id( (string) $sepa_token->get_id(), $order ), 'Order-attached renewal resolution must retain the payment method type.' );
+		$this->assertSame( '', $disabled_sut->resolve_payment_method_id_from_token_id( (string) $sepa_token->get_id(), $user_id ), 'Settings-disabled tokens must not resolve from direct shopper checkout input.' );
+		$this->assertSame( '', $disabled_sut->resolve_payment_method_type_from_token_id( (string) $sepa_token->get_id(), $user_id ), 'Settings-disabled tokens must not resolve a direct shopper payment-method type.' );
+		$this->assertSame( 'pm_renewal_sepa', $disabled_sut->resolve_payment_method_id_from_order_token_id( (string) $sepa_token->get_id(), $order ), 'Order-attached renewal resolution must retain the provider payment method ID.' );
+		$this->assertSame( 'sepa_debit', $disabled_sut->resolve_payment_method_type_from_order_token_id( (string) $sepa_token->get_id(), $order ), 'Order-attached renewal resolution must retain the payment method type.' );
+		$this->assertSame( 'pm_renewal_sepa', $enabled_sut->resolve_payment_method_id_from_token_id( (string) $sepa_token->get_id(), $user_id ), 'Re-enable must immediately restore direct shopper token resolution.' );
+		$this->assertSame( 'sepa_debit', $enabled_sut->resolve_payment_method_type_from_token_id( (string) $sepa_token->get_id(), $user_id ), 'Re-enable must immediately restore the direct shopper payment-method type.' );
 	}
 
 	/**
@@ -1255,7 +1227,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$sepa_tokens  = array(
 			$sepa_token->get_id() => $sepa_token,
 		);
-		$this->create_service();
+		$this->create_service( array(), null, null, $this->create_account_service_with_enabled_methods( array( 'card', 'link', 'sepa_debit' ) ) );
 
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered customer-token filter.
 		$result = apply_filters( 'woocommerce_get_customer_payment_tokens', $input_tokens, $user_id, OrderPaymentStore::GATEWAY_ID );
