@@ -15,6 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\NativePaymentsGatewayRegistry;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverNormalizationRunner;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWebhookReliabilityService;
 use Automattic\WooCommerce\Internal\Payments\Shadow\NativePaymentsShadowMode;
@@ -109,7 +110,6 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 	/** Active shopper roots. */
 	private const ACTIVE_FRONT = array(
-		self::WCPAY . 'WooPaymentsCutoverNormalizationRunner',
 		NativePaymentsGatewayRegistry::class,
 		WooPaymentsProvider::class,
 		self::WCPAY . 'WooPaymentsAccountService',
@@ -159,7 +159,6 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 	/** Active AJAX roots. */
 	private const ACTIVE_AJAX = array(
-		self::WCPAY . 'WooPaymentsCutoverNormalizationRunner',
 		NativePaymentsGatewayRegistry::class,
 		WooPaymentsProvider::class,
 		self::WCPAY . 'WooPaymentsAccountService',
@@ -186,7 +185,6 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 	/** Active REST and Store API roots. */
 	private const ACTIVE_REST = array(
-		self::WCPAY . 'WooPaymentsCutoverNormalizationRunner',
 		NativePaymentsGatewayRegistry::class,
 		WooPaymentsProvider::class,
 		self::WCPAY . 'WooPaymentsAccountService',
@@ -294,6 +292,19 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		$roots_for->setAccessible( true );
 
 		$this->assertSame( $expected_roots, $roots_for->invoke( $sut, $state, $request_type ), 'The matrix cell should select only its explicit roots in order.' );
+	}
+
+	/**
+	 * @testdox Keeps cutover normalization out of shopper roots while preserving maintenance ordering.
+	 */
+	public function test_active_provider_matrix_bounds_cutover_normalization_to_maintenance_roots(): void {
+		$active_roots = WooPaymentsProvider::get_bootstrap_root_matrix()[ NativePaymentsState::ACTIVE ];
+
+		$this->assertNotContains( WooPaymentsCutoverNormalizationRunner::class, $active_roots['front'], 'A shopper request must not run cutover normalization.' );
+		$this->assertNotContains( WooPaymentsCutoverNormalizationRunner::class, $active_roots['ajax'], 'An AJAX shopper request must not run cutover normalization.' );
+		$this->assertNotContains( WooPaymentsCutoverNormalizationRunner::class, $active_roots['rest'], 'A REST shopper request must not run cutover normalization.' );
+		$this->assertSame( WooPaymentsCutoverNormalizationRunner::class, $active_roots['admin'][0], 'Admin cutover normalization must run before bounded native consumers.' );
+		$this->assertSame( WooPaymentsCutoverNormalizationRunner::class, $active_roots['cron'][0], 'Cron cutover normalization must run before bounded native consumers.' );
 	}
 
 	/** @testdox Should resolve and register each explicit connected REST root once in order. */

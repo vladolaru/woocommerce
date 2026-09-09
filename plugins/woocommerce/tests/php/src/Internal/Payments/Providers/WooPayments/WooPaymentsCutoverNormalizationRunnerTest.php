@@ -120,6 +120,33 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Stores the completed cutover marker in the autoloaded option set.
+	 */
+	public function test_run_stores_completed_marker_as_an_autoloaded_option(): void {
+		$summary    = $this->create_runner()->run();
+		$alloptions = wp_load_alloptions( true );
+
+		$this->assertTrue( $summary['ran'] );
+		$this->assertSame( '3', $alloptions[ self::NORMALIZED_OPTION ] ?? null, 'Completed cutover normalization must not leave its marker as a request-level option read.' );
+	}
+
+	/**
+	 * @testdox Repairs a historical non-autoloaded marker without rerunning cutover normalization.
+	 */
+	public function test_run_repairs_historical_non_autoloaded_marker_without_rerunning_normalization(): void {
+		add_option( self::NORMALIZED_OPTION, '3', '', false );
+
+		$this->assertArrayNotHasKey( self::NORMALIZED_OPTION, wp_load_alloptions( true ), 'The historical marker fixture must begin outside alloptions.' );
+
+		$summary    = $this->create_runner()->run();
+		$alloptions = wp_load_alloptions( true );
+
+		$this->assertFalse( $summary['ran'] );
+		$this->assertSame( array( 'already_normalized' ), $summary['changes'] );
+		$this->assertSame( '3', $alloptions[ self::NORMALIZED_OPTION ] ?? null, 'An existing cutover marker must be repaired into alloptions.' );
+	}
+
+	/**
 	 * @testdox Should add missing form-field defaults without overwriting saved settings during cutover.
 	 */
 	public function test_run_adds_missing_form_field_defaults_without_overwriting_saved_settings(): void {

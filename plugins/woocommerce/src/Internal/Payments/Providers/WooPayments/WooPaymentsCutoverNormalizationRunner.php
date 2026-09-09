@@ -170,6 +170,11 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 	 */
 	public function run(): array {
 		if ( self::NORMALIZATION_VERSION === (string) get_option( self::NORMALIZED_OPTION, '' ) ) {
+			$alloptions = wp_load_alloptions();
+			if ( ! array_key_exists( self::NORMALIZED_OPTION, $alloptions ) ) {
+				wp_set_option_autoload( self::NORMALIZED_OPTION, true );
+			}
+
 			return array(
 				'ran'     => false,
 				'changes' => array( 'already_normalized' ),
@@ -245,7 +250,7 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 			$changes[] = 'multi_currency_cache_autodetect';
 		}
 
-		update_option( self::NORMALIZED_OPTION, self::NORMALIZATION_VERSION, false );
+		update_option( self::NORMALIZED_OPTION, self::NORMALIZATION_VERSION, true );
 
 		if ( empty( $changes ) ) {
 			$changes[] = 'no_changes';

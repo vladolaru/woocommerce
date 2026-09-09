@@ -112,7 +112,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 	 * @return array<string,array<string,array<int,class-string>>> Root classes in registration order.
 	 */
 	public static function get_bootstrap_root_matrix(): array {
-		$connected_admin = array(
+		$connected_admin           = array(
 			WooPaymentsCutoverController::class,
 			WooPaymentsAdminNavigationController::class,
 			WooPaymentsAccountService::class,
@@ -128,7 +128,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 			WooPaymentsOrderTrackingService::class,
 			WooPaymentsOperationalQueueService::class,
 		);
-		$connected_ajax  = array(
+		$connected_ajax            = array(
 			WooPaymentsAccountService::class,
 			WooPaymentsWebhookReliabilityService::class,
 			WooPaymentsCustomerService::class,
@@ -140,7 +140,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 			WooPaymentsOrderTrackingService::class,
 			WooPaymentsOperationalQueueService::class,
 		);
-		$connected_rest  = array(
+		$connected_rest            = array(
 			WooPaymentsAccountService::class,
 			WooPaymentsWebhookReliabilityService::class,
 			WooPaymentsMerchantRestController::class,
@@ -165,7 +165,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 			WooPaymentsOrderTrackingService::class,
 			WooPaymentsOperationalQueueService::class,
 		);
-		$connected_cron  = array(
+		$connected_cron            = array(
 			WooPaymentsAccountService::class,
 			WooPaymentsWebhookReliabilityService::class,
 			WooPaymentsOperationalQueueService::class,
@@ -176,10 +176,13 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 			WooPaymentsCanceledAuthorizationFeeRemediationService::class,
 			WooPaymentsOrderAdminActionsController::class,
 		);
-		$active_prefix   = array(
-			WooPaymentsCutoverNormalizationRunner::class,
+		$active_prefix             = array(
 			NativePaymentsGatewayRegistry::class,
 			self::class,
+		);
+		$active_maintenance_prefix = array_merge(
+			array( WooPaymentsCutoverNormalizationRunner::class ),
+			$active_prefix
 		);
 
 		return array(
@@ -220,7 +223,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 						WooPaymentsOperationalQueueService::class,
 					)
 				),
-				'admin' => array_merge( $active_prefix, $connected_admin ),
+				'admin' => array_merge( $active_maintenance_prefix, $connected_admin ),
 				'ajax'  => array_merge(
 					$active_prefix,
 					$connected_ajax,
@@ -253,7 +256,7 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 					)
 				),
 				'cron'  => array_merge(
-					$active_prefix,
+					$active_maintenance_prefix,
 					$connected_cron,
 					array(
 						WooPaymentsOrderStatusChangeController::class,
