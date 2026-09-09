@@ -73,6 +73,20 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	private ?WooPaymentsFrontendStylesService $frontend_styles_service = null;
 
 	/**
+	 * Cached messaging eligibility for the current request.
+	 *
+	 * @var bool|null
+	 */
+	private ?bool $messaging_eligible = null;
+
+	/**
+	 * Cached active BNPL payment method IDs for the current request.
+	 *
+	 * @var string[]|null
+	 */
+	private ?array $active_bnpl_payment_method_ids = null;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -101,12 +115,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	 * Register BNPL payment method messaging hooks.
 	 */
 	public function register() {
-		if (
-			! $this->arbiter->should_native_register()
-			|| ! $this->account_service->is_gateway_enabled()
-			|| ! $this->account_service->can_process_payments()
-			|| empty( $this->get_active_bnpl_payment_method_ids() )
-		) {
+		if ( ! $this->arbiter->should_native_register() ) {
 			return;
 		}
 
@@ -137,7 +146,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	 * @internal
 	 */
 	public function render_site_messaging(): void {
-		if ( ! $this->is_supported_surface() ) {
+		if ( ! $this->is_supported_surface() || ! $this->is_messaging_eligible() ) {
 			return;
 		}
 
@@ -155,6 +164,10 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	 * @internal
 	 */
 	public function handle_get_cart_total(): void {
+		if ( ! $this->is_messaging_eligible() ) {
+			return;
+		}
+
 		check_ajax_referer( 'wcpay-get-cart-total', 'security' );
 
 		// Recalculate before answering so the widget never receives a stale session
@@ -174,6 +187,10 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	 * @internal
 	 */
 	public function handle_check_bnpl_availability(): void {
+		if ( ! $this->is_messaging_eligible() ) {
+			return;
+		}
+
 		check_ajax_referer( 'wcpay-is-bnpl-available', 'security' );
 
 		$response = $this->get_bnpl_availability_response( wp_unslash( $_POST ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
@@ -451,14 +468,37 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Tell whether messaging can be shown for this request.
+	 *
+	 * @return bool
+	 */
+	private function is_messaging_eligible(): bool {
+		if ( null !== $this->messaging_eligible ) {
+			return $this->messaging_eligible;
+		}
+
+		$this->messaging_eligible = $this->account_service->is_gateway_enabled()
+			&& $this->account_service->can_process_payments()
+			&& ! empty( $this->get_active_bnpl_payment_method_ids() );
+
+		return $this->messaging_eligible;
+	}
+
+	/**
 	 * Get active enabled BNPL payment method IDs.
 	 *
 	 * @return string[]
 	 */
 	private function get_active_bnpl_payment_method_ids(): array {
+		if ( null !== $this->active_bnpl_payment_method_ids ) {
+			return $this->active_bnpl_payment_method_ids;
+		}
+
 		$enabled_payment_methods = $this->account_service->get_gateway_setting( 'upe_enabled_payment_method_ids', array( 'card' ) );
 		if ( ! is_array( $enabled_payment_methods ) ) {
-			return array();
+			$this->active_bnpl_payment_method_ids = array();
+
+			return $this->active_bnpl_payment_method_ids;
 		}
 
 		$enabled_payment_methods = array_map( 'strval', $enabled_payment_methods );
@@ -481,7 +521,9 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 			$active_bnpl_methods[] = $definition->get_id();
 		}
 
-		return array_values( array_unique( $active_bnpl_methods ) );
+		$this->active_bnpl_payment_method_ids = array_values( array_unique( $active_bnpl_methods ) );
+
+		return $this->active_bnpl_payment_method_ids;
 	}
 
 	/**

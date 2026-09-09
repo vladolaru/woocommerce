@@ -115,22 +115,15 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register BNPL messaging hooks only when native owns runtime and active BNPL methods exist.
+	 * @testdox Should register all BNPL messaging hooks when native owns runtime without reading eligibility.
 	 */
-	public function test_registers_bnpl_messaging_hooks_only_when_native_owns_runtime_and_active_bnpl_methods_exist(): void {
+	public function test_registers_bnpl_messaging_hooks_when_native_owns_runtime_without_reading_eligibility(): void {
 		$plugin_owned = $this->create_controller( false, true, array( 'affirm' ), array( 'affirm_payments' => 'active' ) );
 		$plugin_owned->register();
 		$this->assert_hooks_not_registered( $plugin_owned );
 
-		$gateway_disabled = $this->create_controller( true, false, array( 'affirm' ), array( 'affirm_payments' => 'active' ) );
-		$gateway_disabled->register();
-		$this->assert_hooks_not_registered( $gateway_disabled );
-
-		$inactive_bnpl = $this->create_controller( true, true, array( 'card', 'affirm' ), array( 'affirm_payments' => 'inactive' ) );
-		$inactive_bnpl->register();
-		$this->assert_hooks_not_registered( $inactive_bnpl );
-
-		$active_bnpl = $this->create_controller( true, true, array( 'card', 'affirm', 'ideal' ), array( 'affirm_payments' => 'active' ) );
+		$account_service = $this->create_account_service( true, array( 'affirm' ), array( 'affirm_payments' => 'active' ), 0 );
+		$active_bnpl     = $this->create_controller( true, true, array( 'affirm' ), array( 'affirm_payments' => 'active' ), $account_service );
 		$active_bnpl->register();
 		$this->registered_controllers[] = $active_bnpl;
 
@@ -139,6 +132,122 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 		$this->assertSame( 10, has_action( 'woocommerce_blocks_enqueue_cart_block_scripts_after', array( $active_bnpl, 'render_site_messaging' ) ) );
 		$this->assertSame( 10, has_action( 'wc_ajax_wcpay_get_cart_total', array( $active_bnpl, 'handle_get_cart_total' ) ) );
 		$this->assertSame( 10, has_action( 'wc_ajax_wcpay_check_bnpl_availability', array( $active_bnpl, 'handle_check_bnpl_availability' ) ) );
+	}
+
+	/**
+	 * @testdox Should not read eligibility on an unsupported shopper surface.
+	 */
+	public function test_does_not_read_eligibility_on_unsupported_shopper_surface(): void {
+		$account_service = $this->create_account_service( true, array( 'affirm' ), array( 'affirm_payments' => 'active' ), 0 );
+		$controller      = $this->create_controller( true, true, array( 'affirm' ), array( 'affirm_payments' => 'active' ), $account_service );
+
+		ob_start();
+		$controller->render_site_messaging();
+		$output = (string) ob_get_clean();
+
+		$this->assertSame( '', $output );
+	}
+
+	/**
+	 * @testdox Should not render or enqueue messaging on an ineligible product surface.
+	 */
+	public function test_does_not_render_or_enqueue_messaging_on_an_ineligible_product_surface(): void {
+		$product = \WC_Helper_Product::create_simple_product( true, array( 'regular_price' => '50.00' ) );
+		$this->set_current_product( $product );
+
+		$controller = $this->create_controller( true, false, array( 'affirm' ), array( 'affirm_payments' => 'active' ) );
+
+		ob_start();
+		$controller->render_site_messaging();
+		$output = (string) ob_get_clean();
+
+		$this->assertSame( '', $output );
+		$this->assertFalse( wp_script_is( self::SCRIPT_HANDLE, 'registered' ) );
+		$this->assertFalse( wp_script_is( self::SCRIPT_HANDLE, 'enqueued' ) );
+		$this->assertFalse( wp_style_is( self::STYLE_HANDLE, 'registered' ) );
+		$this->assertFalse( wp_style_is( self::STYLE_HANDLE, 'enqueued' ) );
+	}
+
+	/**
+	 * @testdox Should not process the cart-total AJAX callback for ineligible messaging.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_does_not_process_cart_total_ajax_for_ineligible_messaging(): void {
+		$controller  = $this->create_controller( true, false, array( 'affirm' ), array( 'affirm_payments' => 'active' ) );
+		$die_handler = static function () {
+			return static function () {
+				throw new \Exception( 'ajax-die' );
+			};
+		};
+
+		add_filter( 'wp_doing_ajax', '__return_true' );
+		add_filter( 'wp_die_ajax_handler', $die_handler );
+
+		ob_start();
+		try {
+			$controller->handle_get_cart_total();
+		} catch ( \Exception $exception ) {
+			$this->fail( $exception->getMessage() );
+		} finally {
+			$output = (string) ob_get_clean();
+			remove_filter( 'wp_doing_ajax', '__return_true' );
+			remove_filter( 'wp_die_ajax_handler', $die_handler );
+		}
+
+		$this->assertSame( '', $output );
+	}
+
+	/**
+	 * @testdox Should not process the BNPL availability AJAX callback for ineligible messaging.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_does_not_process_bnpl_availability_ajax_for_ineligible_messaging(): void {
+		$controller  = $this->create_controller( true, false, array( 'affirm' ), array( 'affirm_payments' => 'active' ) );
+		$die_handler = static function () {
+			return static function () {
+				throw new \Exception( 'ajax-die' );
+			};
+		};
+
+		add_filter( 'wp_doing_ajax', '__return_true' );
+		add_filter( 'wp_die_ajax_handler', $die_handler );
+
+		ob_start();
+		try {
+			$controller->handle_check_bnpl_availability();
+		} catch ( \Exception $exception ) {
+			$this->fail( $exception->getMessage() );
+		} finally {
+			$output = (string) ob_get_clean();
+			remove_filter( 'wp_doing_ajax', '__return_true' );
+			remove_filter( 'wp_die_ajax_handler', $die_handler );
+		}
+
+		$this->assertSame( '', $output );
+	}
+
+	/**
+	 * @testdox Should reuse eligibility and active methods during repeated eligible rendering.
+	 */
+	public function test_reuses_eligibility_and_active_methods_during_repeated_eligible_rendering(): void {
+		$product = \WC_Helper_Product::create_simple_product( true, array( 'regular_price' => '50.00' ) );
+		$this->set_current_product( $product );
+
+		$account_service = $this->create_account_service( true, array( 'affirm' ), array( 'affirm_payments' => 'active' ), 1 );
+		$controller      = $this->create_controller( true, true, array( 'affirm' ), array( 'affirm_payments' => 'active' ), $account_service );
+
+		ob_start();
+		$controller->render_site_messaging();
+		$payment_methods = $this->get_localized_script_data()['paymentMethods'];
+		$controller->render_site_messaging();
+		$output = (string) ob_get_clean();
+
+		$this->assertSame( '<div id="payment-method-message"></div><div id="payment-method-message"></div>', $output );
+		$this->assertSame( array( 'affirm' ), $payment_methods );
 	}
 
 	/**
@@ -289,17 +398,19 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a BNPL messaging controller.
 	 *
-	 * @param bool                 $native_register        Whether native should own runtime.
-	 * @param bool                 $gateway_enabled        Whether the gateway setting is enabled.
-	 * @param array<int,string>    $enabled_payment_methods Enabled payment method IDs.
-	 * @param array<string,string> $capabilities           Capability statuses keyed by Stripe capability ID.
+	 * @param bool                           $native_register        Whether native should own runtime.
+	 * @param bool                           $gateway_enabled        Whether the gateway setting is enabled.
+	 * @param array<int,string>              $enabled_payment_methods Enabled payment method IDs.
+	 * @param array<string,string>           $capabilities           Capability statuses keyed by Stripe capability ID.
+	 * @param WooPaymentsAccountService|null $account_service Optional account service double.
 	 * @return WooPaymentsPaymentMethodMessaging
 	 */
 	private function create_controller(
 		bool $native_register,
 		bool $gateway_enabled,
 		array $enabled_payment_methods,
-		array $capabilities
+		array $capabilities,
+		?WooPaymentsAccountService $account_service = null
 	): WooPaymentsPaymentMethodMessaging {
 		$arbiter = $this->getMockBuilder( NativePaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
@@ -307,25 +418,7 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 			->getMock();
 		$arbiter->method( 'should_native_register' )->willReturn( $native_register );
 
-		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'can_process_payments', 'is_gateway_enabled', 'get_account_id', 'get_publishable_key', 'get_cached_account_data', 'get_gateway_setting' ) )
-			->getMock();
-		$account_service->method( 'can_process_payments' )->willReturn( $gateway_enabled );
-		$account_service->method( 'is_gateway_enabled' )->willReturn( $gateway_enabled );
-		$account_service->method( 'get_account_id' )->willReturn( 'acct_test' );
-		$account_service->method( 'get_publishable_key' )->willReturn( 'pk_test_123' );
-		$account_service->method( 'get_cached_account_data' )->willReturn(
-			array(
-				'country'      => 'US',
-				'capabilities' => $capabilities,
-			)
-		);
-		$account_service->method( 'get_gateway_setting' )->willReturnCallback(
-			static function ( string $key, $fallback = null ) use ( $enabled_payment_methods ) {
-				return 'upe_enabled_payment_method_ids' === $key ? $enabled_payment_methods : $fallback;
-			}
-		);
+		$account_service = $account_service ?? $this->create_account_service( $gateway_enabled, $enabled_payment_methods, $capabilities );
 
 		$frontend_styles_service = $this->getMockBuilder( WooPaymentsFrontendStylesService::class )
 			->onlyMethods( array( 'get_styles_cache_version' ) )
@@ -336,6 +429,57 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 		$controller->init( $arbiter, $account_service, new WooPaymentsPaymentMethodRegistry(), new WooPaymentsOrderDataService(), $frontend_styles_service );
 
 		return $controller;
+	}
+
+	/**
+	 * Create an account service double for messaging tests.
+	 *
+	 * @param bool                 $gateway_enabled        Whether the gateway setting is enabled.
+	 * @param array<int,string>    $enabled_payment_methods Enabled payment method IDs.
+	 * @param array<string,string> $capabilities           Capability statuses keyed by Stripe capability ID.
+	 * @param int|null             $eligibility_call_count Expected calls to each eligibility read, if constrained.
+	 * @return WooPaymentsAccountService
+	 */
+	private function create_account_service( bool $gateway_enabled, array $enabled_payment_methods, array $capabilities, ?int $eligibility_call_count = null ): WooPaymentsAccountService {
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'can_process_payments', 'is_gateway_enabled', 'get_account_id', 'get_publishable_key', 'get_cached_account_data', 'get_gateway_setting' ) )
+			->getMock();
+
+		if ( null === $eligibility_call_count ) {
+			$account_service->method( 'can_process_payments' )->willReturn( $gateway_enabled );
+			$account_service->method( 'is_gateway_enabled' )->willReturn( $gateway_enabled );
+			$account_service->method( 'get_cached_account_data' )->willReturn(
+				array(
+					'country'      => 'US',
+					'capabilities' => $capabilities,
+				)
+			);
+			$account_service->method( 'get_gateway_setting' )->willReturnCallback(
+				static function ( string $key, $fallback = null ) use ( $enabled_payment_methods ) {
+					return 'upe_enabled_payment_method_ids' === $key ? $enabled_payment_methods : $fallback;
+				}
+			);
+		} else {
+			$account_service->expects( $this->exactly( $eligibility_call_count ) )->method( 'can_process_payments' )->willReturn( $gateway_enabled );
+			$account_service->expects( $this->exactly( $eligibility_call_count ) )->method( 'is_gateway_enabled' )->willReturn( $gateway_enabled );
+			$account_service->expects( $this->exactly( $eligibility_call_count ) )->method( 'get_cached_account_data' )->willReturn(
+				array(
+					'country'      => 'US',
+					'capabilities' => $capabilities,
+				)
+			);
+			$account_service->expects( $this->exactly( $eligibility_call_count ) )->method( 'get_gateway_setting' )->willReturnCallback(
+				static function ( string $key, $fallback = null ) use ( $enabled_payment_methods ) {
+					return 'upe_enabled_payment_method_ids' === $key ? $enabled_payment_methods : $fallback;
+				}
+			);
+		}
+
+		$account_service->method( 'get_account_id' )->willReturn( 'acct_test' );
+		$account_service->method( 'get_publishable_key' )->willReturn( 'pk_test_123' );
+
+		return $account_service;
 	}
 
 	/**
