@@ -105,8 +105,8 @@ class WooPaymentsWooPayExtensionSync implements RegisterHooksInterface {
 			return;
 		}
 
-		if ( false === has_action( 'init', array( $this, 'schedule' ) ) ) {
-			add_action( 'init', array( $this, 'schedule' ) );
+		if ( false === has_action( 'action_scheduler_ensure_recurring_actions', array( $this, 'schedule' ) ) ) {
+			add_action( 'action_scheduler_ensure_recurring_actions', array( $this, 'schedule' ) );
 		}
 
 		if ( false === has_action( self::VALIDATE_COMPATIBILITY_ACTION, array( $this, 'update_compatibility_and_maybe_show_incompatibility_warning' ) ) ) {

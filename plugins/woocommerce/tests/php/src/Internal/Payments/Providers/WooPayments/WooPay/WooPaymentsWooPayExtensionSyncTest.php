@@ -62,7 +62,8 @@ class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
 
 		$native_sync->register();
 
-		$this->assertSame( 10, has_action( 'init', array( $native_sync, 'schedule' ) ) );
+		$this->assertFalse( has_action( 'init', array( $native_sync, 'schedule' ) ) );
+		$this->assertSame( 10, has_action( 'action_scheduler_ensure_recurring_actions', array( $native_sync, 'schedule' ) ) );
 		$this->assertSame( 10, has_action( 'validate_woopay_compatibility', array( $native_sync, 'update_compatibility_and_maybe_show_incompatibility_warning' ) ) );
 		$this->assertSame( 10, has_action( 'activated_plugin', array( $native_sync, 'show_warning_when_incompatible_extension_is_enabled' ) ) );
 		$this->assertSame( 10, has_action( 'deactivated_plugin', array( $native_sync, 'hide_warning_when_incompatible_extension_is_disabled' ) ) );
@@ -72,6 +73,7 @@ class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
 		$plugin_sync->register();
 
 		$this->assertFalse( has_action( 'init', array( $plugin_sync, 'schedule' ) ) );
+		$this->assertFalse( has_action( 'action_scheduler_ensure_recurring_actions', array( $plugin_sync, 'schedule' ) ) );
 		$this->assertFalse( has_action( 'validate_woopay_compatibility', array( $plugin_sync, 'update_compatibility_and_maybe_show_incompatibility_warning' ) ) );
 		$this->assertFalse( has_action( 'activated_plugin', array( $plugin_sync, 'show_warning_when_incompatible_extension_is_enabled' ) ) );
 		$this->assertFalse( has_action( 'deactivated_plugin', array( $plugin_sync, 'hide_warning_when_incompatible_extension_is_disabled' ) ) );
@@ -86,6 +88,29 @@ class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
 
 		$sync->schedule();
 		$sync->schedule();
+
+		$this->assertSame( 1, $this->count_pending_actions( 'validate_woopay_compatibility' ) );
+	}
+
+	/**
+	 * @testdox WooPay compatibility validation is scheduled once through the recurring-actions hook.
+	 */
+	public function test_recurring_action_ensure_hook_schedules_one_compatibility_action(): void {
+		$sync = $this->create_sync( true );
+
+		$sync->register();
+		/**
+		 * Runs the recurring action registration callback.
+		 *
+		 * @since 11.0.0
+		 */
+		do_action( 'action_scheduler_ensure_recurring_actions' );
+		/**
+		 * Runs the recurring action registration callback a second time.
+		 *
+		 * @since 11.0.0
+		 */
+		do_action( 'action_scheduler_ensure_recurring_actions' );
 
 		$this->assertSame( 1, $this->count_pending_actions( 'validate_woopay_compatibility' ) );
 	}
@@ -216,6 +241,7 @@ class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
 	 */
 	private function remove_sync_hooks( WooPaymentsWooPayExtensionSync $sync ): void {
 		remove_action( 'init', array( $sync, 'schedule' ) );
+		remove_action( 'action_scheduler_ensure_recurring_actions', array( $sync, 'schedule' ) );
 		remove_action( 'validate_woopay_compatibility', array( $sync, 'update_compatibility_and_maybe_show_incompatibility_warning' ) );
 		remove_action( 'activated_plugin', array( $sync, 'show_warning_when_incompatible_extension_is_enabled' ) );
 		remove_action( 'deactivated_plugin', array( $sync, 'hide_warning_when_incompatible_extension_is_disabled' ) );
