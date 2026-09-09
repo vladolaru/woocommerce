@@ -227,6 +227,10 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			),
 		);
 
+		foreach ( $this->get_refresh_projection_callbacks() as $registered_callback ) {
+			remove_action( 'woocommerce_payments_account_refreshed', $registered_callback['callback'], $registered_callback['priority'] );
+		}
+
 		$this->sut = new WooPaymentsService();
 		$this->sut->init(
 			$this->mock_providers,
@@ -989,7 +993,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 					return array( 'enabled_payment_method_ids' => array( 'card', 'ideal' ) );
 				}
 			);
-		$fixture = $this->arrange_native_finalize_projection(
+		$fixture   = $this->arrange_native_finalize_projection(
 			array(
 				$this->get_native_finalize_projection_account(),
 				$this->get_native_finalize_projection_account(),
@@ -1000,9 +1004,13 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			),
 			$settings_service
 		);
+		$callbacks = $this->get_refresh_projection_callbacks();
+		$this->assertCount( 1, $callbacks );
+		$this->assertSame( $this->sut, $callbacks[0]['callback'][0] );
 
 		$response = $this->sut->finish_onboarding_kyc_session( 'US' );
 		$this->assertTrue( $response['success'] );
+		$this->assertSame( 1, $update_attempts, 'The finalization refresh should make one projection attempt.' );
 		$this->assertSame( 'US', get_option( self::PENDING_PAYMENT_METHODS_PROJECTION_OPTION ) );
 
 		$fixture['account_service']->refresh_account_data();
@@ -12827,6 +12835,35 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		}
 
 		$this->mockable_proxy->register_function_mocks( $function_mocks );
+	}
+
+	/**
+	 * Get native payment-method projection callbacks registered on account refresh.
+	 *
+	 * @return array<int,array{callback:array,priority:int}>
+	 */
+	private function get_refresh_projection_callbacks(): array {
+		global $wp_filter;
+
+		$projection_callbacks = array();
+		$hook                 = $wp_filter['woocommerce_payments_account_refreshed'] ?? null;
+		if ( ! $hook instanceof \WP_Hook ) {
+			return $projection_callbacks;
+		}
+
+		foreach ( $hook->callbacks as $priority => $callbacks ) {
+			foreach ( $callbacks as $registered_callback ) {
+				$callback = $registered_callback['function'];
+				if ( is_array( $callback ) && isset( $callback[0], $callback[1] ) && $callback[0] instanceof WooPaymentsService && 'maybe_project_pending_onboarding_payment_methods' === $callback[1] ) {
+					$projection_callbacks[] = array(
+						'callback' => $callback,
+						'priority' => $priority,
+					);
+				}
+			}
+		}
+
+		return $projection_callbacks;
 	}
 
 	/**
