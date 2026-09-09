@@ -106,6 +106,9 @@ fake_pnpm() {
 				: > "$root/store-open"
 				printf 'STORE_OPEN\n' >> "$root/events.log"
 			fi
+			if [[ "$3" == '_wcpay_feature_customer_multi_currency' ]]; then
+				printf 'MULTI_CURRENCY_FEATURE\t%s\n' "$4" >> "$root/events.log"
+			fi
 			if [[ "$3" == 'woocommerce_native_payments_perf_probe_control' ]]; then
 				state="$(printf '%s' "$4" | sed -n 's/.*"state":"\([^"]*\)".*/\1/p')"
 				printf '%s\n' "$state" > "$root/current-state"
@@ -138,13 +141,14 @@ fake_pnpm() {
 }
 
 fake_curl() {
-	local root="${PERF_FAKE_ROOT:?}" headers='' body='' cookie='' url='' state kind status=200 final_url queries memory hooks owner tier time_total=.100000 bootstrap=1 http=0 target
+	local root="${PERF_FAKE_ROOT:?}" headers='' body='' cookie='' trace_header='' url='' state kind status=200 final_url queries memory hooks files=250 owner tier time_total=.100000 bootstrap=1 http=0 target
 	while (($#)); do
 		case "$1" in
 		-D) headers="$2"; shift 2 ;;
 		-o) body="$2"; shift 2 ;;
 		-b|-c) cookie="$2"; shift 2 ;;
-		-w|-H|--max-redirs) shift 2 ;;
+		-H) trace_header="$2"; shift 2 ;;
+		-w|--max-redirs) shift 2 ;;
 		--fail-with-body|--location|--silent|--show-error) shift ;;
 		*) url="$1"; shift ;;
 		esac
@@ -158,7 +162,7 @@ fake_curl() {
 		*) exit 72 ;;
 		esac
 	fi
-	printf 'CURL\t%s\t%s\t%s\t%s\n' "$kind" "$state" "$url" "$cookie" >> "$root/samples.log"
+	printf 'CURL\t%s\t%s\t%s\t%s\t%s\n' "$kind" "$state" "$url" "$cookie" "$trace_header" >> "$root/samples.log"
 	final_url="$url"
 	if [[ "$url" == *'add-to-cart=17'* ]]; then : > "$cookie.populated"; fi
 	if [[ "$url" == *'rest_route=/wc/store/v1/cart'* ]]; then printf '{"items":[{"id":17}]}\n' > "$body"; fi
@@ -180,6 +184,7 @@ fake_curl() {
 		timing-fail) [[ "$kind" != timing || "$state" != active_native ]] || time_total=.105001 ;;
 		missing-header) headers='' ;;
 		malformed-header) tier='???' ;;
+		invalid-files) files=unknown ;;
 		wrong-owner) owner=plugin ;;
 		wrong-bootstrap) bootstrap=2 ;;
 		outbound-http) http=1 ;;
@@ -187,7 +192,7 @@ fake_curl() {
 		http-failure) status=503 ;;
 		esac
 		if [[ -n "$headers" ]]; then
-			printf 'HTTP/1.1 %s OK\r\nX-WooCommerce-Native-Payments-Probe: state=%s;tier=%s;owner=%s;bootstrap_calls=%s;queries=%s;used_peak_bytes=%s;hooks=%s;http=%s\r\n\r\n' "$status" "$state" "$tier" "$owner" "$bootstrap" "$queries" "$memory" "$hooks" "$http" > "$headers"
+			printf 'HTTP/1.1 %s OK\r\nX-WooCommerce-Native-Payments-Probe: state=%s;tier=%s;owner=%s;bootstrap_calls=%s;queries=%s;used_peak_bytes=%s;hooks=%s;files=%s;http=%s\r\n\r\n' "$status" "$state" "$tier" "$owner" "$bootstrap" "$queries" "$memory" "$hooks" "$files" "$http" > "$headers"
 		fi
 		printf 'SAMPLE\t%s\t%s\n' "$kind" "$state" >> "$root/events.log"
 	fi
@@ -238,6 +243,86 @@ $expected = array(
 exit( $registered === $expected ? 0 : 1 );
 ' "$PROBE" || fail 'The MU probe did not register its measurement hooks.'
 
+probe_attribution_dir="$TEST_ROOT/probe-attribution"
+mkdir -p "$probe_attribution_dir"
+php -r '
+define( "ABSPATH", __DIR__ );
+define( "WP_PLUGIN_DIR", "/plugins" );
+$registered_filters = array();
+$registered_actions = array();
+$upload_dir = $argv[2];
+$_SERVER["HTTP_X_WOOCOMMERCE_NATIVE_PAYMENTS_PERF_TRACE"] = "baseline_noop";
+function get_option() {
+	return array( "state" => "baseline_noop", "reference_plugin_slug" => "woocommerce-payments-reference/woocommerce-payments.php" );
+}
+function add_filter( $hook, $callback ) {
+	global $registered_filters;
+	$registered_filters[ $hook ] = $callback;
+}
+function add_action( $hook, $callback ) {
+	global $registered_actions;
+	$registered_actions[ $hook ] = $callback;
+}
+function wp_upload_dir() {
+	global $upload_dir;
+	return array( "basedir" => $upload_dir );
+}
+function wp_debug_backtrace_summary() {
+	return array( "wpdb::query", "WooCommerce_Feature::load" );
+}
+function get_num_queries() {
+	return 5;
+}
+$wp_filter = array( "init" => true );
+require $argv[1];
+if ( ! isset( $registered_filters["query"] ) ) {
+	fwrite( STDERR, "The attribution request did not register the query recorder.\n" );
+	exit( 1 );
+}
+$untrusted_query = false;
+if ( $untrusted_query !== call_user_func( $registered_filters["query"], $untrusted_query ) ) {
+	fwrite( STDERR, "The query recorder did not preserve an untrusted query filter value.\n" );
+	exit( 1 );
+}
+call_user_func( $registered_filters["query"], " SELECT  option_value FROM wp_options WHERE option_name = '\''_wcpay_feature_2'\'' AND id = 123 " );
+call_user_func( $registered_actions["shutdown"] );
+$files_path = $upload_dir . "/woocommerce-native-perf-baseline_noop-files.txt";
+$queries_path = $upload_dir . "/woocommerce-native-perf-baseline_noop-queries.tsv";
+if ( ! is_file( $files_path ) || ! in_array( realpath( $argv[1] ), file( $files_path, FILE_IGNORE_NEW_LINES ), true ) ) {
+	fwrite( STDERR, "The attribution request did not write its included-file list.\n" );
+	exit( 1 );
+}
+$expected_query = "SELECT option_value FROM wp_options WHERE option_name = '\''_wcpay_feature_2'\'' AND id = ?\tWooCommerce_Feature::load\n";
+if ( ! is_file( $queries_path ) || $expected_query !== file_get_contents( $queries_path ) ) {
+	fwrite( STDERR, "The attribution request did not write its normalized query trace.\n" );
+	exit( 1 );
+}
+' "$PROBE" "$probe_attribution_dir" || fail 'The MU probe did not write isolated attribution artifacts.'
+
+assert_trace_is_rejected() {
+	local trace_state="$1" control_state="$2"
+	php -r '
+define( "ABSPATH", __DIR__ );
+$registered_filters = array();
+$control_state = $argv[2];
+$_SERVER["HTTP_X_WOOCOMMERCE_NATIVE_PAYMENTS_PERF_TRACE"] = $argv[3];
+function get_option() {
+	global $control_state;
+	return array( "state" => $control_state, "reference_plugin_slug" => "woocommerce-payments-reference/woocommerce-payments.php" );
+}
+function add_filter( $hook ) {
+	global $registered_filters;
+	$registered_filters[] = $hook;
+}
+function add_action() {}
+require $argv[1];
+exit( in_array( "query", $registered_filters, true ) ? 1 : 0 );
+' "$PROBE" "$control_state" "$trace_state" || fail "The probe accepted an unauthorized $trace_state attribution trace for $control_state."
+}
+
+assert_trace_is_rejected disabled baseline_noop
+assert_trace_is_rejected active_native active_native
+
 setup_case() {
 	local name="$1" root="$TEST_ROOT/$1"
 	mkdir -p "$root/bin" "$root/output" "$root/site/wp-content/plugins" "$root/site/wp-content/mu-plugins"
@@ -280,9 +365,12 @@ for target in '/' '/?post_type=product' '/?product=perf-product' '/?page_id=6' '
 	grep -Fq $'CURL\tprimary-capture\tbaseline_noop\thttp://canonical.native.test:8187'"$target"$'\t' "$local_root/samples.log" || fail "The canonical measured route was not used: $target"
 done
 [[ "$(grep -c $'^CURL\ttiming\t' "$local_root/samples.log")" == 18 ]] || fail 'Local timing did not run nine alternating pairs.'
-[[ "$(awk -F '\t' '$2 == "population" && $4 ~ /wc\/store\/v1\/cart/ { count++ } END { print count + 0 }' "$local_root/samples.log")" == 24 ]] || fail 'Every state/timing sample did not prove a populated Store API cart.'
+[[ "$(awk -F '\t' '$2 == "population" && $4 ~ /wc\/store\/v1\/cart/ { count++ } END { print count + 0 }' "$local_root/samples.log")" == 26 ]] || fail 'Every state/timing/attribution sample did not prove a populated Store API cart.'
+[[ "$(grep -c $'^CURL\tattribution\tbaseline_noop\t.*\tX-WooCommerce-Native-Payments-Perf-Trace: baseline_noop$' "$local_root/samples.log")" == 1 ]] || fail 'Local attribution did not trace baseline_noop exactly once.'
+[[ "$(grep -c $'^CURL\tattribution\tdisabled\t.*\tX-WooCommerce-Native-Payments-Perf-Trace: disabled$' "$local_root/samples.log")" == 1 ]] || fail 'Local attribution did not trace disabled exactly once.'
 [[ "$(grep -c $'^DB_EXPORT\t' "$local_root/events.log")" == 1 ]] || fail 'The disposable database was not exported exactly once.'
-[[ "$(grep -c $'^DB_IMPORT\t' "$local_root/events.log")" == 35 ]] || fail 'The disposable database reset count is wrong.'
+[[ "$(grep -c $'^DB_IMPORT\t' "$local_root/events.log")" == 37 ]] || fail 'The disposable database reset count is wrong.'
+[[ "$(grep -c $'^MULTI_CURRENCY_FEATURE\t"0"$' "$local_root/events.log")" == 26 ]] || fail 'Every local state preparation must disable Multi-Currency before native-tier measurement.'
 [[ "$(grep -c $'^REFERENCE_ACTIVATE$' "$local_root/events.log")" == 10 ]] || fail 'The isolated reference was not activated for its ten samples.'
 awk '/^DB_EXPORT/{seen=1} /^DB_IMPORT/ && !seen{exit 1}' "$local_root/events.log" || fail 'Database import preceded the one export.'
 [[ "$(awk '$1 == "SEED" || $1 == "STORE_OPEN" || $1 == "PRODUCT_READY" || $1 == "DB_EXPORT" { printf "%s ", $1 }' "$local_root/events.log" | head -c 40)" == 'SEED STORE_OPEN PRODUCT_READY DB_EXPORT ' ]] || fail 'The open store and product were not ready after seed and before the one database export.'
@@ -301,7 +389,7 @@ for failure in query-fail memory-fail hook-fail timing-fail; do
 done
 grep -Fq $'active_native\tcheckout_median\tNA\tNA\tNA\tactive_plugin\tNA\tNA\tNA\t105.001,100.000,5.001,fail' "$TEST_ROOT/timing-fail/output/result.tsv" || fail 'The 5.001% timing boundary did not fail.'
 
-for invalid in missing-header malformed-header wrong-owner wrong-bootstrap outbound-http wrong-final-page http-failure; do
+for invalid in missing-header malformed-header invalid-files wrong-owner wrong-bootstrap outbound-http wrong-final-page http-failure; do
 	run_case "$invalid" "$invalid" 1 ci
 	grep -Eq 'Invalid (warm-up|capture|populated session)' "$TEST_ROOT/$invalid/stderr" || fail "$invalid lacked a precise invalid-sample error."
 	assert_cleaned "$TEST_ROOT/$invalid"
@@ -313,6 +401,7 @@ ci_root="$TEST_ROOT/ci-pass"; ci_output="$ci_root/output/result.tsv"
 [[ "$(wc -l < "$ci_output" | tr -d ' ')" == 16 ]] || fail 'CI output is not the complete three-state subset.'
 [[ "$(awk -F '\t' 'NR > 1 { states[$1]=1 } END { for (state in states) print state }' "$ci_output" | sort | tr '\n' ' ')" == 'active_native baseline_noop disabled ' ]] || fail 'CI sampled the wrong states.'
 [[ "$(grep -c $'^DB_EXPORT\t' "$ci_root/events.log")" == 1 && "$(grep -c $'^DB_IMPORT\t' "$ci_root/events.log")" == 4 ]] || fail 'CI did not use one export and four resets.'
+[[ "$(grep -c $'^MULTI_CURRENCY_FEATURE\t"0"$' "$ci_root/events.log")" == 3 ]] || fail 'Every CI state preparation must disable Multi-Currency before native-tier measurement.'
 if grep -Eq '^REFERENCE_(INSTALL|ACTIVATE)' "$ci_root/events.log"; then fail 'CI touched the reference plugin.'; fi
 assert_cleaned "$ci_root"
 

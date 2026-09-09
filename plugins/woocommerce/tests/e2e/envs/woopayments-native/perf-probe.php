@@ -43,6 +43,20 @@ final class WooCommerce_Native_Payments_Perf_Probe {
 	private $http_requests = 0;
 
 	/**
+	 * The state selected for local attribution, or an empty string.
+	 *
+	 * @var string
+	 */
+	private $trace_state = '';
+
+	/**
+	 * Queries and callers observed during a local attribution request.
+	 *
+	 * @var array<int, array{0: string, 1: array<int, string>}>
+	 */
+	private $query_trace = array();
+
+	/**
 	 * Handle the runner's product and reference-plugin operations.
 	 *
 	 * Arguments are supplied by `wp eval-file` in its local `$args` variable.
@@ -243,12 +257,47 @@ final class WooCommerce_Native_Payments_Perf_Probe {
 			add_action( 'shutdown', array( $this, 'send_invalid_control_header' ), 0 );
 			return;
 		}
+		$this->trace_state = $this->get_trace_state();
 
 		add_filter( 'woocommerce_native_payments_bootstrap_enabled', array( $this, 'control_bootstrap' ) );
 		add_filter( 'woocommerce_native_payments_enabled', array( $this, 'enable_native_runtime' ) );
 		add_filter( 'pre_http_request', array( $this, 'count_http_request' ), PHP_INT_MIN );
+		if ( '' !== $this->trace_state ) {
+			add_filter( 'query', array( $this, 'handle_query' ), 9999 );
+		}
 		add_action( 'plugins_loaded', array( $this, 'make_reference_plugin_win' ), PHP_INT_MIN );
 		add_action( 'shutdown', array( $this, 'send_measurement_header' ), 0 );
+	}
+
+	/**
+	 * Return the whitelisted local attribution state requested by the runner.
+	 *
+	 * @return string Attribution state, or an empty string.
+	 */
+	private function get_trace_state(): string {
+		$trace_state = $_SERVER['HTTP_X_WOOCOMMERCE_NATIVE_PAYMENTS_PERF_TRACE'] ?? '';
+		if ( ! is_string( $trace_state ) || ! in_array( $trace_state, array( 'baseline_noop', 'disabled' ), true ) ) {
+			return '';
+		}
+
+		return $trace_state === $this->get_control_value( 'state' ) ? $trace_state : '';
+	}
+
+	/**
+	 * Record a query and its caller chain during a local attribution request.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $sql Database query.
+	 * @return mixed Unchanged database query.
+	 */
+	public function handle_query( $sql ) {
+		if ( ! is_string( $sql ) ) {
+			return $sql;
+		}
+
+		$this->query_trace[] = array( $sql, wp_debug_backtrace_summary( null, 0, false ) );
+		return $sql;
 	}
 
 	/**
@@ -361,7 +410,50 @@ final class WooCommerce_Native_Payments_Perf_Probe {
 		);
 		$owner = $this->is_reference_plugin_loaded() ? 'plugin' : 'native';
 		$state = $this->get_control_value( 'state' );
-		header( sprintf( 'X-WooCommerce-Native-Payments-Probe: state=%s;tier=%s;owner=%s;bootstrap_calls=%d;queries=%d;used_peak_bytes=%d;hooks=%d;http=%d', $state, $tiers[ $state ], $owner, $this->bootstrap_calls, get_num_queries(), memory_get_peak_usage( false ), count( $wp_filter ), $this->http_requests ) );
+		$this->write_attribution_artifacts();
+		header( sprintf( 'X-WooCommerce-Native-Payments-Probe: state=%s;tier=%s;owner=%s;bootstrap_calls=%d;queries=%d;used_peak_bytes=%d;hooks=%d;files=%d;http=%d', $state, $tiers[ $state ], $owner, $this->bootstrap_calls, get_num_queries(), memory_get_peak_usage( false ), count( $wp_filter ), count( get_included_files() ), $this->http_requests ) );
+	}
+
+	/**
+	 * Write deterministic included-file and query traces for a local attribution request.
+	 *
+	 * @return void
+	 */
+	private function write_attribution_artifacts(): void {
+		if ( '' === $this->trace_state ) {
+			return;
+		}
+
+		$uploads = wp_upload_dir();
+		$basedir = $uploads['basedir'] ?? '';
+		if ( ! is_string( $basedir ) || ! is_dir( $basedir ) ) {
+			return;
+		}
+
+		$files = get_included_files();
+		sort( $files, SORT_STRING );
+		$query_lines = array();
+		foreach ( $this->query_trace as $query ) {
+			$sql = preg_replace( array( '/\s+/', '/\b\d{2,}\b/' ), array( ' ', '?' ), $query[0] );
+			if ( ! is_string( $sql ) ) {
+				continue;
+			}
+			$frames = array_reverse(
+				array_filter(
+					$query[1],
+					static function ( string $frame ): bool {
+						return 1 !== preg_match( '/^(wpdb|WP_Hook|apply_filters|do_action|require|include|WooCommerce_Native_Payments_Perf_Probe|\{closure\})/', $frame );
+					}
+				)
+			);
+			$query_lines[] = trim( $sql ) . "\t" . implode( ' < ', array_slice( $frames, 0, 12 ) );
+		}
+
+		$prefix = $basedir . '/woocommerce-native-perf-' . $this->trace_state;
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- The local-only probe writes runner-requested diagnostic artifacts.
+		file_put_contents( $prefix . '-files.txt', implode( "\n", $files ) . "\n" );
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- The local-only probe writes runner-requested diagnostic artifacts.
+		file_put_contents( $prefix . '-queries.tsv', implode( "\n", $query_lines ) . ( empty( $query_lines ) ? '' : "\n" ) );
 	}
 }
 

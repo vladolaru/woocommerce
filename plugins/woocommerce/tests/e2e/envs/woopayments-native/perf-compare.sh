@@ -202,6 +202,7 @@ prepare_state() {
 	set_option_json 'woocommerce_native_payments_perf_probe_control' "$control" || return 1
 	set_option_json 'woocommerce_native_payments_state' '"'"$native_state"'"' || return 1
 	set_option_json 'woocommerce_native_payments_killswitch' 'false' || return 1
+	set_option_json '_wcpay_feature_customer_multi_currency' '"0"' || return 1
 	set_option_json 'wcpay_account_data' "$account" || return 1
 	set_option_json 'woocommerce_woocommerce_payments_settings' "$settings" || return 1
 	if [[ "$MODE" == local && "$state" == active_plugin ]]; then
@@ -262,9 +263,15 @@ prepare_populated_session() {
 
 capture_page() {
 	local state="$1" page="$2" path="$3" suffix="$4" cookie="$5" sample_kind="$6"
+	local trace_state="${7:-}"
 	local headers="$TEMP_ROOT/$state-$page-$suffix.headers" body="$TEMP_ROOT/$state-$page-$suffix.body"
 	local result status final_url final_path expected_path queries memory hooks http actual_state tier owner bootstrap probe_header time_total
-	if ! result="$(PERF_COMPARE_SAMPLE_KIND="$sample_kind" curl --fail-with-body --location --max-redirs 3 --silent --show-error -b "$cookie" -c "$cookie" -D "$headers" -o "$body" -w '%{http_code}\t%{url_effective}\t%{time_total}\n' "$REQUEST_BASE$path")"; then
+	if [[ -n "$trace_state" ]]; then
+		result="$(PERF_COMPARE_SAMPLE_KIND="$sample_kind" curl --fail-with-body --location --max-redirs 3 --silent --show-error -b "$cookie" -c "$cookie" -D "$headers" -o "$body" -w '%{http_code}\t%{url_effective}\t%{time_total}\n' -H "X-WooCommerce-Native-Payments-Perf-Trace: $trace_state" "$REQUEST_BASE$path")" || result=''
+	else
+		result="$(PERF_COMPARE_SAMPLE_KIND="$sample_kind" curl --fail-with-body --location --max-redirs 3 --silent --show-error -b "$cookie" -c "$cookie" -D "$headers" -o "$body" -w '%{http_code}\t%{url_effective}\t%{time_total}\n' "$REQUEST_BASE$path")" || result=''
+	fi
+	if [[ -z "$result" ]]; then
 		echo "Invalid $suffix ($state/$page): HTTP request failed." >&2
 		return 1
 	fi
@@ -275,13 +282,24 @@ EOF
 	if [[ ! "$status" =~ ^2[0-9][0-9]$ ]]; then echo "Invalid $suffix ($state/$page): HTTP status $status." >&2; return 1; fi
 	if [[ "$final_path" != "$expected_path" ]]; then echo "Invalid $suffix ($state/$page): final path $final_path, expected $expected_path." >&2; return 1; fi
 	probe_header="$(final_probe_header "$headers")"
-	if [[ ! "$probe_header" =~ ^state=[a-z_]+\;tier=[a-z]+\;owner=(native|plugin)\;bootstrap_calls=[0-9]+\;queries=[0-9]+\;used_peak_bytes=[0-9]+\;hooks=[0-9]+\;http=[0-9]+$ ]]; then echo "Invalid $suffix ($state/$page): missing or malformed probe header." >&2; return 1; fi
+	if [[ ! "$probe_header" =~ ^state=[a-z_]+\;tier=[a-z]+\;owner=(native|plugin)\;bootstrap_calls=[0-9]+\;queries=[0-9]+\;used_peak_bytes=[0-9]+\;hooks=[0-9]+\;files=[0-9]+\;http=[0-9]+$ ]]; then echo "Invalid $suffix ($state/$page): missing or malformed probe header." >&2; return 1; fi
 	actual_state="$(probe_field "$probe_header" state)"; tier="$(probe_field "$probe_header" tier)"; owner="$(probe_field "$probe_header" owner)"; bootstrap="$(probe_field "$probe_header" bootstrap_calls)"
 	queries="$(probe_field "$probe_header" queries)"; memory="$(probe_field "$probe_header" used_peak_bytes)"; hooks="$(probe_field "$probe_header" hooks)"; http="$(probe_field "$probe_header" http)"
 	case "$state" in baseline_noop) expected_tier=noop; expected_owner=native ;; active_plugin) expected_tier=active; expected_owner=plugin ;; active_native) expected_tier=active; expected_owner=native ;; *) expected_tier="$state"; expected_owner=native ;; esac
 	if [[ "$actual_state" != "$state" || "$tier" != "$expected_tier" || "$owner" != "$expected_owner" || "$bootstrap" != '1' ]]; then echo "Invalid $suffix ($state/$page): observed state=$actual_state tier=$tier owner=$owner bootstrap_calls=$bootstrap." >&2; return 1; fi
 	if [[ "$http" != 0 ]]; then echo "Invalid $suffix ($state/$page): observed $http outbound HTTP requests." >&2; return 1; fi
 	printf '%s\t%s\t%s\t%s\n' "$queries" "$memory" "$hooks" "$time_total" > "$TEMP_ROOT/$state-$page-$suffix.metrics"
+}
+
+capture_attribution() {
+	local state cookie
+	for state in baseline_noop disabled; do
+		cookie="$TEMP_ROOT/$state-attribution.cookies"
+		reset_database || return 1
+		prepare_state "$state" || return 1
+		prepare_populated_session "$state-attribution" "$cookie" || return 1
+		capture_page "$state" front "$FRONT_PATH" attribution "$cookie" attribution "$state" || return 1
+	done
 }
 
 sample_state() {
@@ -394,6 +412,10 @@ main() {
 		if [[ "$MODE" == ci && "$state" != baseline_noop && "$state" != disabled && "$state" != active_native ]]; then continue; fi
 		if ! sample_state "$state"; then echo "Invalid sample state: $state" >&2; SAMPLE_FAILED=1; break; fi
 	done
+	if [[ "$MODE" == local && $SAMPLE_FAILED -eq 0 ]] && ! capture_attribution; then
+		echo 'Could not capture baseline_noop and disabled attribution artifacts.' >&2
+		SAMPLE_FAILED=1
+	fi
 	write_rows
 	if [[ "$MODE" == local ]]; then
 		if [[ $SAMPLE_FAILED -ne 0 ]]; then
